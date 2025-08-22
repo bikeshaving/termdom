@@ -1,19 +1,20 @@
 /**
  * TOMDebugPanel - In-app debug display
- * 
+ *
  * Shows debug messages in a panel without corrupting the terminal
  */
 
+// TODO: this seems like dead code right now, but I guess we can leave it
 import { TOMElement } from '../core/TOMElement.js';
 import { DebugPanel } from '../utils/debug.js';
 
 export class TOMDebugPanel extends TOMElement {
   private debugPanel: DebugPanel;
-  
+
   constructor() {
     super('debug-panel', null as any);
     this.debugPanel = new DebugPanel();
-    
+
     // Default styling for debug panel
     this.style.position = 'absolute';
     this.style.bottom = 0;
@@ -28,7 +29,7 @@ export class TOMDebugPanel extends TOMElement {
     this.style.zIndex = 9999;
     this.style.overflow = 'hidden';
   }
-  
+
   /**
    * Log a debug message
    */
@@ -39,7 +40,7 @@ export class TOMDebugPanel extends TOMElement {
       (this.ownerDocument as any).render();
     }
   }
-  
+
   /**
    * Clear all messages
    */
@@ -49,19 +50,19 @@ export class TOMDebugPanel extends TOMElement {
       (this.ownerDocument as any).render();
     }
   }
-  
+
   /**
    * Render debug messages
    */
   tomRender(): void {
     if (!this.screenBuffer) return;
-    
+
     // Clear the buffer
     this.screenBuffer.fill({
       char: ' ',
       attr: this.screenBuffer.DEFAULT_ATTR
     });
-    
+
     // Draw border if enabled
     if (this.computedStyle.border && this.computedStyle.border !== 'none') {
       this.screenBuffer.drawBorder({
@@ -76,14 +77,14 @@ export class TOMDebugPanel extends TOMElement {
         }
       });
     }
-    
+
     // Get messages
     const messages = this.debugPanel.getMessages();
     const contentX = this.computedStyle.border ? 1 : 0;
     const contentY = this.computedStyle.border ? 1 : 0;
     const contentWidth = this.bounds.width - (this.computedStyle.border ? 2 : 0);
     const contentHeight = this.bounds.height - (this.computedStyle.border ? 2 : 0);
-    
+
     // Title
     this.screenBuffer.put({
       x: contentX,
@@ -95,14 +96,14 @@ export class TOMDebugPanel extends TOMElement {
         bold: true
       }
     });
-    
+
     // Messages
     messages.forEach((msg, i) => {
       if (i + 2 < contentHeight) {
         // Truncate if too long
-        const truncated = msg.length > contentWidth ? 
+        const truncated = msg.length > contentWidth ?
           msg.substring(0, contentWidth - 3) + '...' : msg;
-          
+
         this.screenBuffer.put({
           x: contentX,
           y: contentY + i + 2,

@@ -1,6 +1,6 @@
 /**
  * TOM Element - Base class for all TOM elements
- * 
+ *
  * Extends HappyDOM's Element but bypasses HTML/CSS behavior to create
  * terminal-specific elements with custom styling and rendering.
  */
@@ -9,11 +9,13 @@ import { Element } from 'happy-dom';
 import { ScreenBuffer, Cell, Rect } from '../rendering/ScreenBuffer.js';
 import type * as Yoga from 'yoga-layout';
 
+// TODO: Figure out if this can inherit from CSSStyleDeclaration, probably should be put in a separate file
+// TODO: Please make these kebab-case to match CSSOM
 export interface TOMStyle {
   // Display & Positioning
   display?: 'flex' | 'block' | 'inline' | 'inline-block' | 'none';
   position?: 'relative' | 'absolute' | 'fixed';
-  
+
   // Flexbox
   flexDirection?: 'row' | 'column' | 'row-reverse' | 'column-reverse';
   justifyContent?: 'flex-start' | 'center' | 'flex-end' | 'space-between' | 'space-around';
@@ -21,7 +23,7 @@ export interface TOMStyle {
   flex?: number;
   flexGrow?: number;
   flexShrink?: number;
-  
+
   // Box Model
   width?: number | string;
   height?: number | string;
@@ -29,16 +31,17 @@ export interface TOMStyle {
   maxWidth?: number;
   minHeight?: number;
   maxHeight?: number;
-  
+
+	// TOOD: string shorthand. I’m not sure about arrays here
   margin?: [number, number, number, number] | number;
   padding?: [number, number, number, number] | number;
   border?: [number, number, number, number] | number;
-  
+
   // Visual
   color?: string;
   backgroundColor?: string;
   borderColor?: string;
-  
+
   // Text
   fontWeight?: 'normal' | 'bold';
   fontStyle?: 'normal' | 'italic';
@@ -46,7 +49,7 @@ export interface TOMStyle {
   textAlign?: 'left' | 'center' | 'right';
   whiteSpace?: 'normal' | 'nowrap' | 'pre' | 'pre-wrap';
   wordWrap?: 'normal' | 'break-word' | 'nowrap';
-  
+
   // Overflow
   overflow?: 'visible' | 'hidden' | 'scroll';
   overflowX?: 'visible' | 'hidden' | 'scroll';
@@ -64,7 +67,7 @@ export abstract class TOMElement extends Element {
   public bounds: Rect = { x: 0, y: 0, width: 0, height: 0 };
   public yogaNode?: Yoga.Node;
   private _needsRender = true;
-  
+
   constructor() {
     super();
     // Yoga nodes will be created by LayoutEngine when needed
@@ -76,7 +79,7 @@ export abstract class TOMElement extends Element {
   get style(): TOMStyle {
     return { ...this._tomStyle };
   }
-  
+
   set style(value: TOMStyle) {
     this._tomStyle = { ...value };
     this.markForRender();
@@ -88,12 +91,39 @@ export abstract class TOMElement extends Element {
    */
   markForRender(): void {
     this._needsRender = true;
-    
+
     // Bubble up to trigger document re-render
     if (this.ownerDocument) {
       const event = new CustomEvent('tom:needsRender', { bubbles: true });
       this.dispatchEvent(event);
     }
+  }
+
+  /**
+   * Request fullscreen mode for this element
+   */
+  async requestFullscreen(): Promise<void> {
+    // Find the TOMWindow instance
+    const tomWindow = this.getTOMWindow();
+    if (!tomWindow) {
+      throw new Error('Element is not connected to a TOM window');
+    }
+
+    return tomWindow.requestFullscreen(this);
+  }
+
+  /**
+   * Get the TOMWindow instance from the ownerDocument
+   */
+  private getTOMWindow(): any {
+    if (!this.ownerDocument) {
+      return null;
+    }
+
+    // Walk up to find the TOMDocument and its associated TOMWindow
+    // This is a bit hacky but works for our architecture
+    const tomDoc = (this.ownerDocument as any)._tomDocument;
+    return tomDoc?._tomWindow;
   }
 
   /**
@@ -122,26 +152,26 @@ export abstract class TOMElement extends Element {
    */
   private updateYogaStyles(): void {
     if (!this.yogaNode) return;
-    
+
     const style = this._tomStyle;
-    
+
     // Map TOM styles to Yoga properties
     if (style.display === 'flex') {
       // yogaNode.setDisplay(Yoga.DISPLAY_FLEX);
     }
-    
+
     if (style.flexDirection) {
       // Map flex direction values
     }
-    
+
     if (typeof style.width === 'number') {
       // yogaNode.setWidth(style.width);
     }
-    
+
     if (typeof style.height === 'number') {
       // yogaNode.setHeight(style.height);
     }
-    
+
     // TODO: Complete Yoga integration
   }
 
@@ -151,7 +181,7 @@ export abstract class TOMElement extends Element {
   protected getTextStyle(): Partial<Cell> {
     // Use computed style which includes inheritance
     const style = this.computedStyle || this._tomStyle;
-    
+
     return {
       fgColor: style.color,
       bgColor: style.backgroundColor,
@@ -166,15 +196,15 @@ export abstract class TOMElement extends Element {
    */
   protected getPadding(): [number, number, number, number] {
     const padding = this._tomStyle.padding;
-    
+
     if (typeof padding === 'number') {
       return [padding, padding, padding, padding];
     }
-    
+
     if (Array.isArray(padding)) {
       return padding;
     }
-    
+
     return [0, 0, 0, 0];
   }
 
@@ -183,15 +213,15 @@ export abstract class TOMElement extends Element {
    */
   protected getMargin(): [number, number, number, number] {
     const margin = this._tomStyle.margin;
-    
+
     if (typeof margin === 'number') {
       return [margin, margin, margin, margin];
     }
-    
+
     if (Array.isArray(margin)) {
       return margin;
     }
-    
+
     return [0, 0, 0, 0];
   }
 
@@ -200,7 +230,7 @@ export abstract class TOMElement extends Element {
    */
   protected getContentArea(): Rect {
     const [padTop, padRight, padBottom, padLeft] = this.getPadding();
-    
+
     return {
       x: this.bounds.x + padLeft,
       y: this.bounds.y + padTop,
@@ -250,13 +280,13 @@ export abstract class TOMElement extends Element {
    */
   getTOMChildren(): TOMElement[] {
     const children: TOMElement[] = [];
-    
+
     for (const child of this.children) {
       if (child instanceof TOMElement) {
         children.push(child);
       }
     }
-    
+
     return children;
   }
 

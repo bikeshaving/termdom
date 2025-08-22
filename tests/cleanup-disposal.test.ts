@@ -3,6 +3,7 @@
  */
 
 import { test, expect } from "bun:test";
+import { createTOM } from '../src/index.js';
 import { TOMDocument } from '../src/core/TOMDocument.js';
 import { TerminalInterface, TerminalDimensions } from '../src/core/TerminalInterface.js';
 
@@ -67,23 +68,25 @@ class MockTerminal implements TerminalInterface {
   }
 }
 
-test("TOMDocument implements Symbol.dispose", () => {
+test("TOMWindow implements Symbol.dispose", () => {
   const terminal = new MockTerminal();
-  const document = new TOMDocument({ terminal });
+  const tom = createTOM({ terminal });
 
   // Should implement Disposable interface
-  expect(typeof document[Symbol.dispose]).toBe('function');
+  expect(typeof tom[Symbol.dispose]).toBe('function');
+  
+  tom.destroy();
 });
 
 test("Symbol.dispose calls destroy method", () => {
   const terminal = new MockTerminal();
-  const document = new TOMDocument({ terminal });
+  const tom = createTOM({ terminal });
 
   // Track if destroy was called by checking terminal writes
   const initialWrites = terminal.writes.length;
 
   // Call Symbol.dispose
-  document[Symbol.dispose]();
+  tom[Symbol.dispose]();
 
   // Should have written cleanup sequences
   expect(terminal.writes.length).toBeGreaterThan(initialWrites);
@@ -91,53 +94,64 @@ test("Symbol.dispose calls destroy method", () => {
   expect(terminal.hasCursorReset()).toBe(true);
 });
 
-test("TOMDocument cleanup writes mouse reset sequences", () => {
+test("TOMWindow cleanup writes mouse reset sequences", () => {
   const terminal = new MockTerminal();
-  const document = new TOMDocument({ terminal });
+  const tom = createTOM({ terminal });
 
   // Clear any initial writes
   terminal.clearWrites();
 
-  // Destroy the document
-  document.destroy();
+  // Destroy the tom
+  tom.destroy();
 
   // Should write all mouse reset sequences
   expect(terminal.hasMouseReset()).toBe(true);
 });
 
-test("TOMDocument cleanup shows cursor", () => {
+test("TOMWindow cleanup shows cursor", () => {
   const terminal = new MockTerminal();
-  const document = new TOMDocument({ terminal });
+  const tom = createTOM({ terminal });
 
   terminal.clearWrites();
-  document.destroy();
+  tom.destroy();
 
   expect(terminal.hasCursorReset()).toBe(true);
 });
 
-test("TOMDocument cleanup resets styles", () => {
+test("TOMWindow cleanup resets styles", () => {
   const terminal = new MockTerminal();
-  const document = new TOMDocument({ terminal });
+  const tom = createTOM({ terminal });
 
   terminal.clearWrites();
-  document.destroy();
+  tom.destroy();
 
   expect(terminal.hasStyleReset()).toBe(true);
 });
 
-test("TOMDocument cleanup positions cursor at bottom", () => {
+test("TOMWindow cleanup positions cursor at bottom", () => {
   const terminal = new MockTerminal();
-  const document = new TOMDocument({ terminal });
+  const tom = createTOM({ terminal });
 
   terminal.clearWrites();
-  document.destroy();
+  tom.destroy();
 
   const allWrites = terminal.getAllWrites();
   // Should position cursor at row 24 (24;1H)
   expect(allWrites).toMatch(/\x1b\[24;1H/);
 });
 
-test("TOMDocument cleanup handles terminal interface failure gracefully", () => {
+test("TOMDocument still implements Symbol.dispose for backward compatibility", () => {
+  const terminal = new MockTerminal();
+  const document = new TOMDocument({ terminal });
+
+  // Should implement Disposable interface
+  expect(typeof document[Symbol.dispose]).toBe('function');
+  
+  // But cleanup is minimal since TOMWindow handles terminal cleanup
+  document.destroy();
+});
+
+test("TOMWindow cleanup handles terminal interface failure gracefully", () => {
   // Create a terminal that fails only during cleanup, not during initialization
   let shouldFail = false;
   const failingTerminal: TerminalInterface = {
@@ -150,30 +164,30 @@ test("TOMDocument cleanup handles terminal interface failure gracefully", () => 
     }
   };
 
-  const document = new TOMDocument({ terminal: failingTerminal });
+  const tom = createTOM({ terminal: failingTerminal });
   
   // Now make it fail
   shouldFail = true;
 
   // Should not throw when cleanup fails
   expect(() => {
-    document.destroy();
+    tom.destroy();
   }).not.toThrow();
 });
 
-test("TOMDocument prevents double cleanup", () => {
+test("TOMWindow prevents double cleanup", () => {
   const terminal = new MockTerminal();
-  const document = new TOMDocument({ terminal });
+  const tom = createTOM({ terminal });
 
   // Clear any initialization writes
   terminal.clearWrites();
 
   // First cleanup
-  document.destroy();
+  tom.destroy();
   const firstWriteCount = terminal.writes.length;
 
   // Second cleanup should not write anything
-  document.destroy();
+  tom.destroy();
   const secondWriteCount = terminal.writes.length;
 
   expect(secondWriteCount).toBe(firstWriteCount);
@@ -226,12 +240,12 @@ test("using statement automatically cleans up", async () => {
 
 test("emergency reset uses terminal interface when available", () => {
   const terminal = new MockTerminal();
-  const document = new TOMDocument({ terminal });
+  const tom = createTOM({ terminal });
 
   // Force an error in normal cleanup, then destroy
   // We can't easily test private methods, but we can verify
   // that the terminal interface is used for cleanup
-  document.destroy();
+  tom.destroy();
 
   expect(terminal.writes.length).toBeGreaterThan(0);
   expect(terminal.hasMouseReset()).toBe(true);
@@ -239,15 +253,15 @@ test("emergency reset uses terminal interface when available", () => {
 
 test("final state preservation calls render", () => {
   const terminal = new MockTerminal();
-  const document = new TOMDocument({ terminal });
+  const tom = createTOM({ terminal });
 
   // Add some content
-  const container = document.createElement('container');
+  const container = tom.createElement('container');
   container.textContent = 'Final state';
-  document.body.appendChild(container);
+  tom.body.appendChild(container);
 
   terminal.clearWrites();
-  document.destroy();
+  tom.destroy();
 
   // Should have called render as part of preserveFinalState
   // This is indicated by cursor positioning and cleanup sequences

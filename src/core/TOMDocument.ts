@@ -1,19 +1,17 @@
 /**
  * TOMDocument - HappyDOM integration for terminal UIs
- * 
+ *
  * Provides a DOM-like API for terminal applications using HappyDOM's
  * tree structure and event system, with custom terminal rendering.
  */
 
 import { Window } from 'happy-dom';
-// @ts-ignore - NodeFactory not exported from main module  
+// @ts-ignore - NodeFactory not exported from main module
 import NodeFactory from 'happy-dom/lib/nodes/NodeFactory.js';
 // @ts-ignore - PropertySymbol not exported from main module
 import * as PropertySymbol from 'happy-dom/lib/PropertySymbol.js';
 import { TOMElement } from './TOMElement.js';
 import { TOMRenderer } from './TOMRenderer.js';
-import { TOMMouseHandler } from './TOMMouseHandler.js';
-import { TOMKeyboardHandler } from './TOMKeyboardHandler.js';
 import { TOMViewport, ViewportOptions } from './TOMViewport.js';
 import { TOMContainer } from '../elements/TOMContainer.js';
 import { TOMText } from '../elements/TOMText.js';
@@ -28,6 +26,7 @@ export interface TOMDocumentOptions {
   viewport?: ViewportOptions;
 }
 
+// TODO: can we make this extend Document?
 /**
  * TOMDocument manages the DOM tree and coordinates with HappyDOM
  * Implements Disposable for automatic resource cleanup with `using` statements
@@ -36,20 +35,15 @@ export class TOMDocument implements Disposable {
   private _window: Window;
   private elementRegistry: Map<string, typeof TOMElement>;
   private renderer: TOMRenderer;
-  private mouseHandler: TOMMouseHandler;
-  private keyboardHandler: TOMKeyboardHandler;
   private viewport: TOMViewport | null = null;
   private observer: MutationObserver;
   private _terminalWidth: number;
   private _terminalHeight: number;
   private terminal: TerminalInterface;
-  
+
   // Selection and focus management
   private _activeElement: TOMElement | null = null;
   private focusableElements: TOMElement[] = [];
-  private inputMode = false;
-  private mouseEnabled = false;
-  private isExiting = false;
   private cleanupHandlers: (() => void)[] = [];
 
   constructor(options: TOMDocumentOptions = {}) {
@@ -61,11 +55,11 @@ export class TOMDocument implements Disposable {
     } else {
       this.terminal = new ProcessTerminal();
     }
-    
+
     const dimensions = this.terminal.getDimensions();
     this._terminalWidth = options.width ?? dimensions.columns;
     this._terminalHeight = options.height ?? dimensions.rows;
-    
+
     // Create HappyDOM window
     this._window = new Window({
       url: 'https://localhost:3000',
@@ -74,7 +68,7 @@ export class TOMDocument implements Disposable {
     });
 
     this.elementRegistry = new Map();
-    
+
     // Initialize viewport if specified
     if (options.viewport) {
       this.viewport = new TOMViewport({
@@ -83,17 +77,12 @@ export class TOMDocument implements Disposable {
         ...options.viewport
       });
     }
-    
+
     this.renderer = new TOMRenderer(this, this.terminal);
-    this.mouseHandler = new TOMMouseHandler(this, this.terminal);
-    this.keyboardHandler = new TOMKeyboardHandler(this, this.terminal);
-    
+
     this.setupElementRegistry();
     this.setupCustomElementCreation();
     this.setupMutationObserver();
-    this.setupTerminalSizeTracking();
-    this.setupInputHandling();
-    this.setupExitHandlers();
   }
 
   /**
@@ -128,19 +117,6 @@ export class TOMDocument implements Disposable {
     return this._window.document.body;
   }
 
-  /**
-   * Access to mouse handler for testing
-   */
-  get mouseHandler() {
-    return this.mouseHandler;
-  }
-
-  /**
-   * Access to keyboard handler for testing
-   */
-  get keyboardHandler() {
-    return this.keyboardHandler;
-  }
 
   /**
    * Access to viewport (if enabled)
@@ -170,25 +146,25 @@ export class TOMDocument implements Disposable {
    */
   private setupCustomElementCreation(): void {
     const originalCreateElement = this._window.document.createElement.bind(this._window.document);
-    
+
     this._window.document.createElement = (tagName: string): Element => {
       const ElementClass = this.elementRegistry.get(tagName.toLowerCase());
-      
+
       if (ElementClass) {
         // Use HappyDOM's NodeFactory to create the element with proper context
         const element = NodeFactory.createNode(this._window.document, ElementClass) as TOMElement;
-        
+
         // Set the tag name properties like HappyDOM does for SVG elements
         (element as any)[PropertySymbol.tagName] = tagName.toUpperCase();
         (element as any)[PropertySymbol.localName] = tagName.toLowerCase();
         (element as any)[PropertySymbol.prefix] = null;
-        
+
         // Initialize TOM-specific properties
         element.initializeTOM?.();
-        
+
         return element;
       }
-      
+
       // Fall back to default HappyDOM behavior for unknown elements
       return originalCreateElement(tagName);
     };
@@ -201,7 +177,7 @@ export class TOMDocument implements Disposable {
     this.observer = new this._window.MutationObserver((mutations) => {
       // Check if any mutations affect our TOM elements
       let needsRender = false;
-      
+
       for (const mutation of mutations) {
         if (mutation.type === 'childList') {
           // Check added/removed nodes
@@ -222,10 +198,10 @@ export class TOMDocument implements Disposable {
             needsRender = true;
           }
         }
-        
+
         if (needsRender) break;
       }
-      
+
       if (needsRender) {
         this.renderer.scheduleRender();
       }
@@ -241,52 +217,18 @@ export class TOMDocument implements Disposable {
   }
 
   /**
-   * Track terminal size changes
+   * Handle terminal resize (called by TOMWindow)
    */
-  private setupTerminalSizeTracking(): void {
-    if (this.terminal.on) {
-      this.terminal.on('resize', () => {
-        const dimensions = this.terminal.getDimensions();
-        this._terminalWidth = dimensions.columns;
-        this._terminalHeight = dimensions.rows;
-        
-        // Update viewport if present
-        if (this.viewport) {
-          this.viewport.handleResize(this._terminalWidth, this._terminalHeight);
-        }
-        
-        this.renderer.handleResize(this._terminalWidth, this._terminalHeight);
-        
-        // Dispatch DOM resize event
-        const resizeEvent = new this._window.CustomEvent('resize', {
-          detail: { columns: this._terminalWidth, rows: this._terminalHeight }
-        });
-        this._window.document.dispatchEvent(resizeEvent);
-      });
-    }
-  }
+  handleResize(width: number, height: number): void {
+    this._terminalWidth = width;
+    this._terminalHeight = height;
 
-  /**
-   * Set up input handling coordination
-   */
-  private setupInputHandling(): void {
-    if (this.terminal.on) {
-      this.terminal.on('data', (data: Buffer) => {
-        const input = data.toString();
-        
-        // Try mouse input first
-        const mouseHandled = this.mouseHandler.handleMouseInput(input);
-        
-        // If not mouse input, try keyboard
-        if (!mouseHandled) {
-          this.keyboardHandler.handleKeyboardInput(input);
-        }
-      });
+    // Update viewport if present
+    if (this.viewport) {
+      this.viewport.handleResize(width, height);
     }
-    
-    // Enable both handlers
-    this.mouseHandler.enable();
-    this.keyboardHandler.enable();
+
+    this.renderer.handleResize(width, height);
   }
 
   /**
@@ -345,6 +287,33 @@ export class TOMDocument implements Disposable {
     return this._window.document.dispatchEvent(event);
   }
 
+  /**
+   * Exit fullscreen mode (DOM API)
+   */
+  async exitFullscreen(): Promise<void> {
+    const tomWindow = (this as any)._tomWindow;
+    if (!tomWindow) {
+      throw new Error('Document is not connected to a TOM window');
+    }
+
+    return tomWindow.exitFullscreen();
+  }
+
+  /**
+   * Get the currently fullscreen element (DOM API)
+   */
+  get fullscreenElement(): Element | null {
+    const tomWindow = (this as any)._tomWindow;
+    return tomWindow?.fullscreenElement || null;
+  }
+
+  /**
+   * Check if fullscreen is enabled (DOM API)
+   */
+  get fullscreenEnabled(): boolean {
+    return true; // Always supported in TOM
+  }
+
 
   /**
    * Force a render of the document
@@ -367,12 +336,12 @@ export class TOMDocument implements Disposable {
   destroy(): void {
     if (this.isExiting) return; // Prevent double cleanup
     this.isExiting = true;
-    
+
     try {
       // Dispatch beforeunload event for cleanup hooks
       const beforeUnloadEvent = new this._window.Event('beforeunload', { cancelable: true });
       this._window.document.dispatchEvent(beforeUnloadEvent);
-      
+
       // Clean up handlers
       if (this.mouseHandler) {
         this.mouseHandler.disable();
@@ -380,20 +349,20 @@ export class TOMDocument implements Disposable {
       if (this.keyboardHandler) {
         this.keyboardHandler.disable();
       }
-      
+
       // Clean up terminal state
       this.cleanup();
-      
+
       // Destroy renderer
       if (this.renderer && typeof this.renderer.destroy === 'function') {
         this.renderer.destroy();
       }
-      
+
       // Disconnect mutation observer
       if (this.observer) {
         this.observer.disconnect();
       }
-      
+
       // Run custom cleanup handlers
       for (const handler of this.cleanupHandlers) {
         try {
@@ -402,7 +371,7 @@ export class TOMDocument implements Disposable {
           console.warn('Cleanup handler error:', error);
         }
       }
-      
+
     } catch (error) {
       console.warn('Error during TOM cleanup:', error);
     }
@@ -415,56 +384,6 @@ export class TOMDocument implements Disposable {
     this.elementRegistry.set(tagName.toLowerCase(), elementClass);
   }
 
-  /**
-   * Set up process exit handlers
-   * Note: Keyboard shortcuts (Ctrl+C) are handled by TOMKeyboardHandler
-   */
-  private setupExitHandlers(): void {
-    // Handle normal exit
-    process.on('exit', () => {
-      if (!this.isExiting) {
-        this.cleanup();
-      }
-    });
-
-    // Handle SIGTERM (kill command) 
-    process.on('SIGTERM', () => {
-      if (!this.isExiting) {
-        this.isExiting = true;
-        this.terminal.write('\n📡 Received SIGTERM, gracefully exiting...\n');
-        this.destroy();
-        process.exit(0);
-      }
-    });
-
-    // Handle SIGINT as backup (in case keyboard handler doesn't catch it)
-    process.on('SIGINT', () => {
-      if (!this.isExiting) {
-        this.isExiting = true;
-        this.terminal.write('\n📡 Received SIGINT (backup handler), gracefully exiting...\n');
-        this.destroy();
-        process.exit(0);
-      }
-    });
-
-    // Handle uncaught exceptions to clean up terminal
-    process.on('uncaughtException', (error) => {
-      console.error('💥 Uncaught exception:', error);
-      if (!this.isExiting) {
-        this.cleanup(); // Quick cleanup only
-        process.exit(1);
-      }
-    });
-
-    // Handle unhandled promise rejections
-    process.on('unhandledRejection', (reason, promise) => {
-      console.error('💥 Unhandled promise rejection at:', promise, 'reason:', reason);
-      if (!this.isExiting) {
-        this.cleanup(); // Quick cleanup only
-        process.exit(1);
-      }
-    });
-  }
 
   /**
    * Register a cleanup handler to run on document unload
@@ -483,7 +402,7 @@ export class TOMDocument implements Disposable {
       cancelable: false
     });
     this._window.dispatchEvent(unloadEvent);
-    
+
     // Run all registered cleanup handlers
     for (const handler of this.cleanupHandlers) {
       try {
@@ -492,99 +411,27 @@ export class TOMDocument implements Disposable {
         console.error('Cleanup handler error:', e);
       }
     }
-    
+
     // Clear handlers
     this.cleanupHandlers = [];
-    
+
     // Do final cleanup
     this.cleanup();
   }
 
   /**
-   * Clean up terminal state
+   * Clean up document resources (called by TOMWindow)
    */
-  private cleanup(): void {
-    try {
-      // Disable mouse tracking first (most important)
-      if (this.mouseEnabled) {
-        this.disableMouse();
+  cleanup(): void {
+    // Run custom cleanup handlers
+    for (const handler of this.cleanupHandlers) {
+      try {
+        handler();
+      } catch (error) {
+        console.warn('Cleanup handler error:', error);
       }
-      
-      // Disable input mode
-      if (this.inputMode) {
-        this.disableInputMode();
-      }
-      
-      // Comprehensive terminal reset (more defensive)
-      this.resetTerminalState();
-      
-    } catch (error) {
-      // If cleanup fails, try emergency reset
-      console.warn('Cleanup error, attempting emergency terminal reset:', error);
-      this.emergencyTerminalReset();
     }
-  }
-
-  /**
-   * Reset terminal to clean state while preserving final UI as static output
-   */
-  private resetTerminalState(): void {
-    // Perform final render to preserve the last UI state as terminal output
-    this.preserveFinalState();
-    
-    // Show cursor
-    this.terminal.write('\x1b[?25h');
-    
-    // Reset all mouse modes (comprehensive)
-    this.terminal.write('\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1015l');
-    
-    // Reset colors and attributes
-    this.terminal.write('\x1b[0m');
-    
-    // Position cursor at bottom of terminal for next command
-    const dimensions = this.terminal.getDimensions();
-    this.terminal.write(`\x1b[${dimensions.rows};1H`);
-    
-    // Reset character set
-    this.terminal.write('\x1b(B');
-  }
-
-  /**
-   * Preserve the final UI state as static terminal output
-   */
-  private preserveFinalState(): void {
-    try {
-      // Render one final time to ensure we have the latest state
-      this.renderer.render();
-      
-      // The rendered content is already on screen as interactive UI
-      // We just need to "commit" it as static output by:
-      // 1. Disabling interactive features (mouse tracking, etc.)
-      // 2. Positioning cursor appropriately
-      // 3. The content remains visible as if it were regular terminal output
-      
-      // This approach leaves the final UI visible in terminal history,
-      // making TOM apps feel integrated with the terminal workflow
-    } catch (error) {
-      console.warn('Failed to preserve final state:', error);
-    }
-  }
-
-  /**
-   * Emergency terminal reset if normal cleanup fails
-   */
-  private emergencyTerminalReset(): void {
-    try {
-      // Try to use the terminal interface first, fallback to process.stdout only if needed
-      if (this.terminal && typeof this.terminal.write === 'function') {
-        this.terminal.write('\x1b[?25h\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[0m');
-      } else {
-        // Last resort fallback for environments where terminal interface is not available
-        process.stdout.write('\x1b[?25h\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[0m');
-      }
-    } catch (error) {
-      console.warn('Emergency reset also failed:', error);
-    }
+    this.cleanupHandlers = [];
   }
 
   /**
@@ -647,12 +494,12 @@ export class TOMDocument implements Disposable {
    */
   focusNext(): void {
     this.updateFocusableElements();
-    
+
     if (this.focusableElements.length === 0) return;
 
-    const currentIndex = this._activeElement ? 
+    const currentIndex = this._activeElement ?
       this.focusableElements.indexOf(this._activeElement) : -1;
-    
+
     const nextIndex = (currentIndex + 1) % this.focusableElements.length;
     this.setActiveElement(this.focusableElements[nextIndex]);
   }
@@ -662,13 +509,13 @@ export class TOMDocument implements Disposable {
    */
   focusPrevious(): void {
     this.updateFocusableElements();
-    
+
     if (this.focusableElements.length === 0) return;
 
-    const currentIndex = this._activeElement ? 
+    const currentIndex = this._activeElement ?
       this.focusableElements.indexOf(this._activeElement) : -1;
-    
-    const prevIndex = currentIndex <= 0 ? 
+
+    const prevIndex = currentIndex <= 0 ?
       this.focusableElements.length - 1 : currentIndex - 1;
     this.setActiveElement(this.focusableElements[prevIndex]);
   }
@@ -694,93 +541,5 @@ export class TOMDocument implements Disposable {
     }
   }
 
-  /**
-   * Enable input mode for keyboard handling
-   * Note: Input handling is managed by TOMKeyboardHandler and TOMMouseHandler
-   */
-  enableInputMode(): void {
-    if (this.inputMode) return;
-    this.inputMode = true;
-    
-    // Input handling is done through the dedicated handlers
-    this.keyboardHandler.enable();
-  }
-
-  /**
-   * Disable input mode
-   * Note: Input handling is managed by TOMKeyboardHandler and TOMMouseHandler
-   */
-  disableInputMode(): void {
-    if (!this.inputMode) return;
-    this.inputMode = false;
-    
-    // Input handling is done through the dedicated handlers
-    this.keyboardHandler.disable();
-  }
-
-  /**
-   * Scroll viewport (if viewport is enabled)
-   */
-  scroll(deltaX: number, deltaY: number): boolean {
-    if (this.viewport) {
-      const scrolled = this.viewport.scroll(deltaX, deltaY);
-      if (scrolled) {
-        this.render(); // Re-render to show scrolled content
-      }
-      return scrolled;
-    }
-    return false;
-  }
-
-  /**
-   * Scroll to specific position (if viewport is enabled)
-   */
-  scrollTo(x: number, y: number): boolean {
-    if (this.viewport) {
-      const scrolled = this.viewport.scrollTo(x, y);
-      if (scrolled) {
-        this.render(); // Re-render to show scrolled content
-      }
-      return scrolled;
-    }
-    return false;
-  }
-
-  /**
-   * Scroll element into view (if viewport is enabled)
-   */
-  scrollIntoView(element: TOMElement): boolean {
-    if (this.viewport && element.bounds) {
-      const scrolled = this.viewport.scrollIntoView(
-        element.bounds.x,
-        element.bounds.y,
-        element.bounds.width,
-        element.bounds.height
-      );
-      if (scrolled) {
-        this.render(); // Re-render to show scrolled content
-      }
-      return scrolled;
-    }
-    return false;
-  }
-
-  /**
-   * Enable mouse support
-   */
-  enableMouse(): void {
-    if (this.mouseEnabled) return;
-    this.mouseEnabled = true;
-    this.mouseHandler.enable();
-  }
-
-  /**
-   * Disable mouse support
-   */
-  disableMouse(): void {
-    if (!this.mouseEnabled) return;
-    this.mouseEnabled = false;
-    this.mouseHandler.disable();
-  }
 
 }

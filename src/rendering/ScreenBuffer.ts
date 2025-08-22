@@ -1,6 +1,6 @@
 /**
  * TOM ScreenBuffer - Modern TypeScript adaptation of terminal-kit's ScreenBuffer
- * 
+ *
  * Provides efficient terminal rendering with compositing and delta updates.
  * Adapted from terminal-kit's MIT-licensed ScreenBuffer implementation.
  */
@@ -23,6 +23,7 @@ export interface ScreenBufferOptions {
   output?: NodeJS.WriteStream;
 }
 
+// TODO: can we use the DOM Rect APIs, here?
 export interface Rect {
   x: number;
   y: number;
@@ -38,7 +39,7 @@ export class ScreenBuffer {
   public readonly height: number;
   public readonly x: number;
   public readonly y: number;
-  
+
   private cells: Cell[][];
   private lastFrame?: Cell[][];
   private output: NodeJS.WriteStream;
@@ -51,7 +52,7 @@ export class ScreenBuffer {
     this.x = options.x ?? 0;
     this.y = options.y ?? 0;
     this.output = options.output ?? process.stdout;
-    
+
     this.cells = this.createEmptyCells();
   }
 
@@ -77,24 +78,24 @@ export class ScreenBuffer {
   put(x: number, y: number, text: string, style?: Partial<Cell>): void {
     // Handle clipping
     if (x < 0 || y < 0 || y >= this.height) return;
-    
+
     // Use Bun's string width for proper Unicode handling
     const chars = [...text]; // Handle multi-byte Unicode properly
     let currentX = x;
-    
+
     for (const char of chars) {
       if (currentX >= this.width) break;
-      
+
       // Place the character
       this.cells[y][currentX] = {
         char: char,
         ...style
       };
-      
+
       // Get the width of this character and advance cursor
       const charWidth = Bun.stringWidth(char);
       currentX += charWidth;
-      
+
       // For wide characters, fill the extra cell with empty space
       // to prevent other characters from overlapping
       if (charWidth > 1) {
@@ -129,7 +130,7 @@ export class ScreenBuffer {
       for (let x = 0; x < source.width; x++) {
         const targetX = offsetX + x;
         const targetY = offsetY + y;
-        
+
         if (targetX >= 0 && targetX < this.width && targetY >= 0 && targetY < this.height) {
           const sourceCell = source.cells[y][x];
           // Only composite non-empty cells or cells with background colors
@@ -146,29 +147,29 @@ export class ScreenBuffer {
    */
   render(): void {
     let output = '';
-    
+
     for (let y = 0; y < this.height; y++) {
       // Move cursor to line start
       output += `\x1b[${this.y + y + 1};${this.x + 1}H`;
-      
+
       let currentStyle: Partial<Cell> = {};
-      
+
       for (let x = 0; x < this.width; x++) {
         const cell = this.cells[y][x];
-        
+
         // Apply style changes
         if (this.styleChanged(currentStyle, cell)) {
           output += this.generateStyleSequence(cell);
           currentStyle = { ...cell };
         }
-        
+
         output += cell.char;
       }
-      
+
       // Reset styles at end of line
       output += '\x1b[0m';
     }
-    
+
     this.output.write(output);
     this.lastFrame = this.copyFrame(this.cells);
   }
@@ -181,35 +182,35 @@ export class ScreenBuffer {
       this.render();
       return;
     }
-    
+
     let output = '';
     let currentOutputStyle: Partial<Cell> = {};
-    
+
     for (let y = 0; y < this.height; y++) {
       for (let x = 0; x < this.width; x++) {
         const current = this.cells[y][x];
         const last = this.lastFrame[y][x];
-        
+
         if (!this.cellsEqual(current, last)) {
           // Move cursor to changed cell position
           output += `\x1b[${this.y + y + 1};${this.x + x + 1}H`;
-          
+
           // Only generate style sequence if style actually changed
           if (this.styleChanged(currentOutputStyle, current)) {
             output += this.generateStyleSequence(current);
             currentOutputStyle = { ...current };
           }
-          
+
           output += current.char;
         }
       }
     }
-    
+
     if (output) {
       output += '\x1b[0m'; // Reset styles
       this.output.write(output);
     }
-    
+
     this.lastFrame = this.copyFrame(this.cells);
   }
 
@@ -232,26 +233,26 @@ export class ScreenBuffer {
    */
   private generateStyleSequence(cell: Cell): string {
     let sequence = '';
-    
+
     // Reset all attributes first to ensure clean state
     sequence += '\x1b[0m';
-    
+
     // Use Bun's color API for efficient color handling
     if (cell.fgColor) {
       const colorCode = this.colorToAnsi(cell.fgColor, false);
       if (colorCode) sequence += colorCode;
     }
-    
+
     if (cell.bgColor) {
       const colorCode = this.colorToAnsi(cell.bgColor, true);
       if (colorCode) sequence += colorCode;
     }
-    
+
     if (cell.bold) sequence += '\x1b[1m';
     if (cell.italic) sequence += '\x1b[3m';
     if (cell.underline) sequence += '\x1b[4m';
     if (cell.inverse) sequence += '\x1b[7m';
-    
+
     return sequence;
   }
 
@@ -282,13 +283,13 @@ export class ScreenBuffer {
       'black': 0, 'red': 1, 'green': 2, 'yellow': 3,
       'blue': 4, 'magenta': 5, 'cyan': 6, 'white': 7
     };
-    
+
     const colorCode = colors[color.toLowerCase()];
     if (colorCode !== undefined) {
       const base = isBackground ? 40 : 30;
       return `\x1b[${base + colorCode}m`;
     }
-    
+
     return '';
   }
 

@@ -1,6 +1,6 @@
 /**
  * Style Inheritance for TOM
- * 
+ *
  * Implements CSS-like style inheritance for TOM elements.
  * Unlike CSS, we have full control over which properties inherit.
  */
@@ -17,6 +17,8 @@ const INHERITABLE_PROPERTIES: (keyof TOMStyle)[] = [
   'textAlign'
 ];
 
+// TODO: default diplay should be block
+// TODO: kebab-case
 /**
  * Default values for style properties
  */
@@ -35,20 +37,21 @@ const DEFAULT_STYLES: Partial<TOMStyle> = {
   overflow: 'visible'
 };
 
+// TODO: We should figure out if we can use or override HappyDOM’s getComputedStyle interface
 /**
  * Compute the effective style for an element, including inheritance
  */
 export function computeEffectiveStyle(element: TOMElement): TOMStyle {
   const computedStyle: TOMStyle = { ...DEFAULT_STYLES };
-  
+
   // Start from the root and work down, applying inheritance
   const ancestors = getAncestors(element);
-  
+
   // Apply inherited styles from ancestors
   for (const ancestor of ancestors) {
     if (ancestor instanceof TOMElement) {
       const ancestorStyle = ancestor.style;
-      
+
       for (const prop of INHERITABLE_PROPERTIES) {
         if (ancestorStyle[prop] !== undefined) {
           (computedStyle as any)[prop] = ancestorStyle[prop];
@@ -56,10 +59,10 @@ export function computeEffectiveStyle(element: TOMElement): TOMStyle {
       }
     }
   }
-  
+
   // Apply element's own styles (overrides inherited values)
   Object.assign(computedStyle, element.style);
-  
+
   return computedStyle;
 }
 
@@ -69,12 +72,12 @@ export function computeEffectiveStyle(element: TOMElement): TOMStyle {
 function getAncestors(element: TOMElement): Element[] {
   const ancestors: Element[] = [];
   let current = element.parentElement;
-  
+
   while (current) {
     ancestors.unshift(current); // Add to beginning for root-to-parent order
     current = current.parentElement;
   }
-  
+
   return ancestors;
 }
 
@@ -90,7 +93,7 @@ export function isInheritableProperty(property: keyof TOMStyle): boolean {
  */
 export function getInheritedValue(element: TOMElement, property: keyof TOMStyle): any {
   let current = element.parentElement;
-  
+
   while (current) {
     if (current instanceof TOMElement) {
       const value = current.style[property];
@@ -100,7 +103,7 @@ export function getInheritedValue(element: TOMElement, property: keyof TOMStyle)
     }
     current = current.parentElement;
   }
-  
+
   // Return default value if no inherited value found
   return DEFAULT_STYLES[property];
 }
@@ -116,10 +119,10 @@ export function addComputedStyleSupport(ElementClass: typeof TOMElement) {
     },
     configurable: true
   });
-  
+
   // Override the style setter to trigger inheritance recalculation
   const originalStyleSetter = Object.getOwnPropertyDescriptor(ElementClass.prototype, 'style')?.set;
-  
+
   if (originalStyleSetter) {
     Object.defineProperty(ElementClass.prototype, 'style', {
       get: function(this: TOMElement) {
@@ -127,7 +130,7 @@ export function addComputedStyleSupport(ElementClass: typeof TOMElement) {
       },
       set: function(this: TOMElement, value: TOMStyle) {
         originalStyleSetter.call(this, value);
-        
+
         // Trigger re-computation for descendants that might inherit
         this.invalidateDescendantStyles();
       },
