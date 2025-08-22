@@ -40,12 +40,39 @@ export function createDocument(options?: import('./core/TOMDocument.js').TOMDocu
 }
 
 /**
- * Quick start helper - creates document and returns DOM-like API
+ * TOM API object that implements Disposable for automatic cleanup
  */
-export function createTOM(options?: import('./core/TOMDocument.js').TOMDocumentOptions) {
+interface TOMAPI extends Disposable {
+  document: import('./core/TOMDocument.js').TOMDocument;
+  window: any;
+  body: any;
+  createElement: (tagName: string) => Element;
+  createTextNode: (data: string) => Text;
+  querySelector: (selectors: string) => Element | null;
+  querySelectorAll: (selectors: string) => NodeList;
+  getElementById: (id: string) => Element | null;
+  addEventListener: (type: string, listener: EventListener, options?: boolean | AddEventListenerOptions) => void;
+  removeEventListener: (type: string, listener: EventListener, options?: boolean | AddEventListenerOptions) => void;
+  render: () => void;
+  destroy: () => void;
+  activeElement: any;
+  setActiveElement: (element: any) => void;
+  focusNext: () => void;
+  focusPrevious: () => void;
+  enableInputMode: () => void;
+  disableInputMode: () => void;
+  enableMouse: () => void;
+  disableMouse: () => void;
+}
+
+/**
+ * Quick start helper - creates document and returns DOM-like API
+ * Supports automatic cleanup with `using` statements
+ */
+export function createTOM(options?: import('./core/TOMDocument.js').TOMDocumentOptions): TOMAPI {
   const document = createDocument(options);
   
-  return {
+  const api: TOMAPI = {
     document,
     window: document.window,
     body: document.body,
@@ -71,6 +98,13 @@ export function createTOM(options?: import('./core/TOMDocument.js').TOMDocumentO
     
     // Mouse support
     enableMouse: document.enableMouse.bind(document),
-    disableMouse: document.disableMouse.bind(document)
+    disableMouse: document.disableMouse.bind(document),
+
+    // Disposable implementation
+    [Symbol.dispose](): void {
+      document.destroy();
+    }
   };
+
+  return api;
 }

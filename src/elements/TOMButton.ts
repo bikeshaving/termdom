@@ -295,7 +295,10 @@ export class TOMButton extends TOMContainer {
    */
   focus(): void {
     if (!this._disabled) {
-      this.dispatchEvent(new FocusEvent('focus'));
+      // Create FocusEvent using the window's constructor
+      const FocusEventClass = this.ownerDocument?.defaultView?.FocusEvent || Event;
+      const focusEvent = new FocusEventClass('focus', { bubbles: true });
+      this.dispatchEvent(focusEvent);
     }
   }
 }

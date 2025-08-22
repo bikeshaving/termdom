@@ -7,6 +7,7 @@
 
 import { TOMDocument } from './TOMDocument.js';
 import { TOMElement } from './TOMElement.js';
+import { TerminalInterface } from './TerminalInterface.js';
 
 export interface MouseState {
   x: number;
@@ -18,6 +19,7 @@ export interface MouseState {
 
 export class TOMMouseHandler {
   private document: TOMDocument;
+  private terminal: TerminalInterface;
   private isEnabled = false;
   private mouseState: MouseState = {
     x: 0,
@@ -27,8 +29,9 @@ export class TOMMouseHandler {
     mouseDownTarget: null
   };
 
-  constructor(document: TOMDocument) {
+  constructor(document: TOMDocument, terminal: TerminalInterface) {
     this.document = document;
+    this.terminal = terminal;
   }
 
   /**
@@ -40,8 +43,8 @@ export class TOMMouseHandler {
     
     // Enable mouse tracking in terminal
     // Use button + drag mode to ensure we get all press/release events
-    process.stdout.write('\x1b[?1002h'); // Enable mouse button + drag tracking
-    process.stdout.write('\x1b[?1006h'); // Enable SGR extended mode
+    this.terminal.write('\x1b[?1002h'); // Enable mouse button + drag tracking
+    this.terminal.write('\x1b[?1006h'); // Enable SGR extended mode
   }
 
   /**
@@ -52,10 +55,10 @@ export class TOMMouseHandler {
     this.isEnabled = false;
     
     // Disable all mouse tracking modes
-    process.stdout.write('\x1b[?1000l'); // Disable basic mouse reporting
-    process.stdout.write('\x1b[?1002l'); // Disable mouse drag tracking
-    process.stdout.write('\x1b[?1003l'); // Disable motion tracking
-    process.stdout.write('\x1b[?1006l'); // Disable SGR extended mode
+    this.terminal.write('\x1b[?1000l'); // Disable basic mouse reporting
+    this.terminal.write('\x1b[?1002l'); // Disable mouse drag tracking
+    this.terminal.write('\x1b[?1003l'); // Disable motion tracking
+    this.terminal.write('\x1b[?1006l'); // Disable SGR extended mode
   }
 
   /**

@@ -183,6 +183,7 @@ export class ScreenBuffer {
     }
     
     let output = '';
+    let currentOutputStyle: Partial<Cell> = {};
     
     for (let y = 0; y < this.height; y++) {
       for (let x = 0; x < this.width; x++) {
@@ -192,7 +193,13 @@ export class ScreenBuffer {
         if (!this.cellsEqual(current, last)) {
           // Move cursor to changed cell position
           output += `\x1b[${this.y + y + 1};${this.x + x + 1}H`;
-          output += this.generateStyleSequence(current);
+          
+          // Only generate style sequence if style actually changed
+          if (this.styleChanged(currentOutputStyle, current)) {
+            output += this.generateStyleSequence(current);
+            currentOutputStyle = { ...current };
+          }
+          
           output += current.char;
         }
       }
@@ -225,6 +232,9 @@ export class ScreenBuffer {
    */
   private generateStyleSequence(cell: Cell): string {
     let sequence = '';
+    
+    // Reset all attributes first to ensure clean state
+    sequence += '\x1b[0m';
     
     // Use Bun's color API for efficient color handling
     if (cell.fgColor) {

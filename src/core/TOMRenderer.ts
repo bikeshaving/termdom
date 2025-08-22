@@ -10,6 +10,7 @@ import { ScreenBuffer } from '../rendering/ScreenBuffer.js';
 import { LayoutEngine } from '../layout/LayoutEngine.js';
 import { SimpleGreedyTextBreaker } from '../text/SimpleGreedyTextBreaker.js';
 import { type InlineElement } from '../text/index.js';
+import { TerminalInterface } from './TerminalInterface.js';
 
 export interface TOMMouseEvent {
   x: number;
@@ -18,14 +19,6 @@ export interface TOMMouseEvent {
   type: 'click' | 'mousedown' | 'mouseup' | 'mousemove';
 }
 
-export interface TOMKeyboardEvent {
-  key: string;
-  char?: string;
-  sequence: string;
-  ctrl: boolean;
-  shift: boolean;
-  alt: boolean;
-}
 
 /**
  * TOMRenderer orchestrates the rendering pipeline
@@ -37,24 +30,19 @@ export class TOMRenderer {
   private textBreaker: SimpleGreedyTextBreaker;
   private renderScheduled = false;
   private destroyed = false;
-  private output: NodeJS.WriteStream;
+  private terminal: TerminalInterface;
   
-  // Input handling
-  private inputEnabled = false;
-  private focusedElement: TOMElement | null = null;
 
-  constructor(document: any, output: NodeJS.WriteStream) {
+  constructor(document: any, terminal: TerminalInterface) {
     this.document = document;
-    this.output = output;
+    this.terminal = terminal;
     this.rootBuffer = new ScreenBuffer({
       width: document.terminalWidth,
       height: document.terminalHeight,
-      output
+      output: terminal
     });
     this.layoutEngine = new LayoutEngine();
     this.textBreaker = new SimpleGreedyTextBreaker();
-    
-    this.setupInputHandling();
   }
 
   /**
@@ -364,44 +352,14 @@ export class TOMRenderer {
     this.rootBuffer = new ScreenBuffer({
       width,
       height,
-      output: this.output
+      output: this.terminal
     });
     
     // Force a full re-render
     this.scheduleRender();
   }
 
-  /**
-   * Set up terminal input handling
-   */
-  private setupInputHandling(): void {
-    if (this.output !== process.stdout) return;
-    
-    // Set up raw mode for input capture
-    if (process.stdin.setRawMode) {
-      process.stdin.setRawMode(true);
-      process.stdin.resume();
-      
-      // Enable mouse reporting
-      this.output.write('\x1b[?1003h\x1b[?1015h\x1b[?1006h');
-      
-      process.stdin.on('data', this.handleInput.bind(this));
-      this.inputEnabled = true;
-    }
-  }
 
-  /**
-   * Handle raw input data
-   */
-  private handleInput(data: Buffer): void {
-    const input = data.toString();
-    
-    if (this.isMouseInput(input)) {
-      this.handleMouseInput(input);
-    } else {
-      this.handleKeyboardInput(input);
-    }
-  }
 
   /**
    * Check if input is mouse data
@@ -457,68 +415,6 @@ export class TOMRenderer {
     return null;
   }
 
-  /**
-   * Handle keyboard input
-   */
-  private handleKeyboardInput(input: string): void {
-    const keyEvent = this.parseKeyboardInput(input);
-    
-    if (keyEvent) {
-      const target = this.focusedElement || this.document.body;
-      
-      const KeyboardEventClass = this.document.window.KeyboardEvent;
-      const domEvent = new KeyboardEventClass('keydown', {
-        key: keyEvent.key,
-        ctrlKey: keyEvent.ctrl,
-        shiftKey: keyEvent.shift,
-        altKey: keyEvent.alt,
-        bubbles: true
-      });
-      
-      target.dispatchEvent(domEvent);
-    }
-  }
-
-  /**
-   * Parse keyboard input
-   */
-  private parseKeyboardInput(input: string): TOMKeyboardEvent | null {
-    const sequence = input;
-    let key = '';
-    let char = '';
-    let ctrl = false;
-    let shift = false;
-    let alt = false;
-
-    // Handle special keys
-    if (input === '\x03') {
-      key = 'c';
-      ctrl = true;
-    } else if (input === '\x1b') {
-      key = 'Escape';
-    } else if (input === '\r' || input === '\n') {
-      key = 'Enter';
-    } else if (input === '\x7f' || input === '\x08') {
-      key = 'Backspace';
-    } else if (input === '\t') {
-      key = 'Tab';
-    } else if (input.startsWith('\x1b[')) {
-      // Arrow keys and function keys
-      if (input === '\x1b[A') key = 'ArrowUp';
-      else if (input === '\x1b[B') key = 'ArrowDown';
-      else if (input === '\x1b[C') key = 'ArrowRight';
-      else if (input === '\x1b[D') key = 'ArrowLeft';
-      else return null; // Unknown escape sequence
-    } else if (input.length === 1 && input.charCodeAt(0) >= 32) {
-      // Printable character
-      key = input;
-      char = input;
-    } else {
-      return null; // Unknown input
-    }
-
-    return { key, char, sequence, ctrl, shift, alt };
-  }
 
   /**
    * Find element at coordinates (hit testing)
@@ -589,13 +485,15 @@ export class TOMRenderer {
   destroy(): void {
     this.destroyed = true;
     
-    if (this.inputEnabled && process.stdin.setRawMode) {
+    if (this.inputEnabled && this.terminal.setRawMode) {
       // Disable mouse reporting
-      this.output.write('\x1b[?1003l\x1b[?1015l\x1b[?1006l');
+      this.terminal.write('\x1b[?1003l\x1b[?1015l\x1b[?1006l');
       
       // Restore normal input mode
-      process.stdin.setRawMode(false);
-      process.stdin.pause();
+      this.terminal.setRawMode(false);
+      if (this.terminal.pause) {
+        this.terminal.pause();
+      }
     }
   }
 }

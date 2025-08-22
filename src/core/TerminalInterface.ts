@@ -194,6 +194,11 @@ export class MockTerminal implements TerminalInterface {
     }
   }
   
+  // Method to trigger events from tests
+  triggerResize(): void {
+    this.emit('resize');
+  }
+  
   // Stub methods for compatibility
   setRawMode(enabled: boolean): void {
     // Mock implementation - just track state
