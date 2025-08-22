@@ -244,11 +244,13 @@ export class TOMRenderer {
     if (keyEvent) {
       const target = this.focusedElement || this.document.body;
       
-      const domEvent = new KeyboardEvent('keydown', {
+      const KeyboardEventClass = this.document.window.KeyboardEvent;
+      const domEvent = new KeyboardEventClass('keydown', {
         key: keyEvent.key,
         ctrlKey: keyEvent.ctrl,
         shiftKey: keyEvent.shift,
-        altKey: keyEvent.alt
+        altKey: keyEvent.alt,
+        bubbles: true
       });
       
       target.dispatchEvent(domEvent);

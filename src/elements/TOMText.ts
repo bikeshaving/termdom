@@ -18,6 +18,7 @@ export class TOMText extends TOMElement {
     // Set default text styles
     this.style = {
       display: 'inline',
+      minHeight: 1, // Text needs at least 1 cell to display
       ...this.style
     };
   }

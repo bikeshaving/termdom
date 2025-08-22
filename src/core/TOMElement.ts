@@ -57,6 +57,8 @@ export interface TOMStyle {
  */
 export abstract class TOMElement extends Element {
   private _tomStyle: TOMStyle = {};
+  private _tomFocused = false;
+  private _tomFocusable = false;
   public bounds: Rect = { x: 0, y: 0, width: 0, height: 0 };
   public yogaNode?: Yoga.Node;
   private _needsRender = true;
@@ -222,6 +224,25 @@ export abstract class TOMElement extends Element {
       y >= this.bounds.y &&
       y < this.bounds.y + this.bounds.height
     );
+  }
+
+  /**
+   * Focus management methods
+   */
+  tomIsFocused(): boolean {
+    return this._tomFocused;
+  }
+
+  tomSetFocused(focused: boolean): void {
+    this._tomFocused = focused;
+  }
+
+  tomIsFocusable(): boolean {
+    return this._tomFocusable;
+  }
+
+  tomSetFocusable(focusable: boolean): void {
+    this._tomFocusable = focusable;
   }
 
   /**

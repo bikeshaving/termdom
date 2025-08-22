@@ -87,33 +87,62 @@ export class LayoutEngine {
     // Calculate available space
     const availableSpace = isRow ? contentArea.width : contentArea.height;
     
-    // Simple equal distribution for now (will be replaced by Yoga)
-    const childSize = Math.floor(availableSpace / children.length);
+    // Calculate minimum space needed
+    let totalMinSize = 0;
+    for (const child of children) {
+      const minSize = isRow ? (child.style.minWidth || 0) : (child.style.minHeight || 0);
+      totalMinSize += minSize;
+    }
+    
+    // If minimum sizes exceed available space, we'll need scrolling (future feature)
+    const hasEnoughSpace = totalMinSize <= availableSpace;
+    
+    // Distribute space respecting minimum sizes
+    let remainingSpace = availableSpace - totalMinSize;
+    const flexibleChildren = children.filter(child => {
+      const minSize = isRow ? child.style.minWidth : child.style.minHeight;
+      const fixedSize = isRow ? child.style.width : child.style.height;
+      return !fixedSize && (!minSize || minSize < availableSpace / children.length);
+    });
+    
+    const extraSpacePerChild = flexibleChildren.length > 0 
+      ? Math.floor(remainingSpace / flexibleChildren.length)
+      : 0;
     
     let offset = 0;
     const childrenToLayout = isReverse ? [...children].reverse() : children;
     
     for (const child of childrenToLayout) {
       if (isRow) {
-        const childWidth = childSize;
+        // Calculate width respecting minimum
+        const minWidth = child.style.minWidth || 0;
+        const fixedWidth = typeof child.style.width === 'number' ? child.style.width : null;
+        const isFlexible = flexibleChildren.includes(child);
+        const childWidth = fixedWidth || Math.max(minWidth, isFlexible ? minWidth + extraSpacePerChild : minWidth);
         const childHeight = contentArea.height;
+        
         this.simpleLayout(
           child,
           contentArea.x + offset,
           contentArea.y,
-          childWidth,
+          Math.min(childWidth, contentArea.width - offset), // Don't exceed container
           childHeight
         );
         offset += childWidth;
       } else {
+        // Calculate height respecting minimum
+        const minHeight = child.style.minHeight || 0;
+        const fixedHeight = typeof child.style.height === 'number' ? child.style.height : null;
+        const isFlexible = flexibleChildren.includes(child);
+        const childHeight = fixedHeight || Math.max(minHeight, isFlexible ? minHeight + extraSpacePerChild : minHeight);
         const childWidth = contentArea.width;
-        const childHeight = childSize;
+        
         this.simpleLayout(
           child,
           contentArea.x,
           contentArea.y + offset,
           childWidth,
-          childHeight
+          Math.min(childHeight, contentArea.height - offset) // Don't exceed container
         );
         offset += childHeight;
       }

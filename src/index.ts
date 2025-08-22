@@ -47,6 +47,7 @@ export function createTOM(options?: import('./core/TOMDocument.js').TOMDocumentO
   
   return {
     document,
+    window: document.window,
     body: document.body,
     createElement: document.createElement.bind(document),
     querySelector: document.querySelector.bind(document),
@@ -55,6 +56,20 @@ export function createTOM(options?: import('./core/TOMDocument.js').TOMDocumentO
     addEventListener: document.addEventListener.bind(document),
     removeEventListener: document.removeEventListener.bind(document),
     render: document.render.bind(document),
-    destroy: document.destroy.bind(document)
+    destroy: document.destroy.bind(document),
+    
+    // Focus and selection management
+    get activeElement() { return document.activeElement; },
+    setActiveElement: document.setActiveElement.bind(document),
+    focusNext: document.focusNext.bind(document),
+    focusPrevious: document.focusPrevious.bind(document),
+    
+    // Input mode management
+    enableInputMode: document.enableInputMode.bind(document),
+    disableInputMode: document.disableInputMode.bind(document),
+    
+    // Mouse support
+    enableMouse: document.enableMouse.bind(document),
+    disableMouse: document.disableMouse.bind(document)
   };
 }

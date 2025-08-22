@@ -28,6 +28,9 @@ export class TOMButton extends TOMContainer {
   constructor() {
     super();
     
+    // Buttons are focusable by default
+    this.tomSetFocusable(true);
+    
     // Set default button styles
     this.style = {
       display: 'inline-block',
@@ -37,6 +40,7 @@ export class TOMButton extends TOMContainer {
       border: 1,
       borderColor: '#666',
       textAlign: 'center',
+      minHeight: 3, // Minimum 3 cells: border + content + border
       ...this.style
     };
 
@@ -47,10 +51,11 @@ export class TOMButton extends TOMContainer {
    * Get current button state
    */
   get state(): ButtonState {
+    const tomFocused = this.tomIsFocused();
     return {
-      normal: !this._hover && !this._focused && !this._pressed && !this._disabled,
+      normal: !this._hover && !tomFocused && !this._pressed && !this._disabled,
       hover: this._hover && !this._disabled,
-      focused: this._focused && !this._disabled,
+      focused: tomFocused && !this._disabled,
       pressed: this._pressed && !this._disabled,
       disabled: this._disabled
     };
@@ -227,7 +232,7 @@ export class TOMButton extends TOMContainer {
     }
 
     // Center the text vertically and horizontally
-    const lines = content.split('\\n');
+    const lines = content.split('\n');
     const textStyle = this.getTextStyle();
     
     const startY = contentArea.y + Math.floor((contentArea.height - lines.length) / 2);
@@ -250,11 +255,7 @@ export class TOMButton extends TOMContainer {
    * Get visual width of text
    */
   private getTextWidth(text: string): number {
-    try {
-      return (Bun as any).stringWidth?.(text) ?? text.length;
-    } catch {
-      return [...text].length;
-    }
+    return Bun.stringWidth(text);
   }
 
   /**
