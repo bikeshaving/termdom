@@ -11,7 +11,7 @@ import type * as Yoga from 'yoga-layout';
 
 export interface TOMStyle {
   // Display & Positioning
-  display?: 'flex' | 'inline' | 'none';
+  display?: 'flex' | 'block' | 'inline' | 'inline-block' | 'none';
   position?: 'relative' | 'absolute' | 'fixed';
   
   // Flexbox

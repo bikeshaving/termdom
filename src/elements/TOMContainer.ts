@@ -17,8 +17,8 @@ export class TOMContainer extends TOMElement {
     
     // Set default container styles
     this.style = {
-      display: 'block',
-      ...this.style
+      ...this.style,
+      display: 'flex', // Containers are flex by default
     };
   }
 

@@ -8,6 +8,8 @@
 import { TOMElement } from './TOMElement.js';
 import { ScreenBuffer } from '../rendering/ScreenBuffer.js';
 import { LayoutEngine } from '../layout/LayoutEngine.js';
+import { SimpleGreedyTextBreaker } from '../text/SimpleGreedyTextBreaker.js';
+import { type InlineElement } from '../text/index.js';
 
 export interface TOMMouseEvent {
   x: number;
@@ -32,6 +34,7 @@ export class TOMRenderer {
   private document: any; // TOMDocument reference
   private rootBuffer: ScreenBuffer;
   private layoutEngine: LayoutEngine;
+  private textBreaker: SimpleGreedyTextBreaker;
   private renderScheduled = false;
   private destroyed = false;
   private output: NodeJS.WriteStream;
@@ -49,6 +52,7 @@ export class TOMRenderer {
       output
     });
     this.layoutEngine = new LayoutEngine();
+    this.textBreaker = new SimpleGreedyTextBreaker();
     
     this.setupInputHandling();
   }
@@ -127,7 +131,7 @@ export class TOMRenderer {
   }
 
   /**
-   * Render a text node
+   * Render a text node - now handled by inline layout algorithm
    */
   private renderTextNode(textNode: Text, buffer: ScreenBuffer): void {
     const content = textNode.textContent || '';
@@ -135,43 +139,198 @@ export class TOMRenderer {
     
     // Get parent element for style inheritance
     const parent = textNode.parentElement;
-    let textStyle = {};
     
     if (parent instanceof TOMElement) {
-      textStyle = parent.getTextStyle();
-    }
-    
-    // Basic positioning logic:
-    // For now, render text nodes inline within their parent's content area
-    // TODO: Implement proper inline layout with text flow
-    
-    if (parent instanceof TOMElement && parent.bounds.width > 0) {
-      const contentArea = parent.getContentArea();
+      const textStyle = parent.getTextStyle();
       
-      // Calculate position based on previous siblings
-      let x = contentArea.x;
-      let y = contentArea.y;
-      
-      // Find position after previous text/element siblings
-      const siblings = Array.from(parent.childNodes);
-      const myIndex = siblings.indexOf(textNode);
-      
-      for (let i = 0; i < myIndex; i++) {
-        const sibling = siblings[i];
-        if (sibling.nodeType === 3) { // Text node
-          const siblingText = sibling.textContent || '';
-          x += this.getTextWidth(siblingText);
-        } else if (sibling.nodeType === 1 && sibling instanceof TOMElement) { // Element
-          // Skip element width for now - elements handle their own positioning
-          // TODO: Proper inline layout will handle this
-        }
+      if (parent.style.display === 'inline') {
+        // Inline elements: text is positioned by the inline layout algorithm
+        this.renderInlineText(parent, textNode, content, textStyle, buffer);
+      } else if (parent.style.display === 'inline-block') {
+        // Inline-block elements: text within content area (like flex, but inline-positioned)
+        this.renderInlineBlockText(parent, textNode, content, textStyle, buffer);
+      } else {
+        // Flex elements: render text within the element's content area
+        this.renderFlexText(parent, textNode, content, textStyle, buffer);
       }
+    }
+  }
+  
+  /**
+   * Render text within an inline element (positioned by Yoga as flex child)
+   */
+  private renderInlineText(parent: TOMElement, textNode: Text, content: string, textStyle: any, buffer: ScreenBuffer): void {
+    const bounds = parent.bounds;
+    
+    if (bounds.width > 0 && bounds.height > 0) {
+      // For inline elements, text fills the entire bounds (no padding/borders)
+      buffer.put(bounds.x, bounds.y, content, textStyle);
+    }
+  }
+  
+  /**
+   * Render text within an inline-block element (has content area like flex)
+   */
+  private renderInlineBlockText(parent: TOMElement, textNode: Text, content: string, textStyle: any, buffer: ScreenBuffer): void {
+    const contentArea = parent.getContentArea();
+    
+    if (contentArea.width > 0 && contentArea.height > 0) {
+      // For inline-block elements, text goes in content area (respecting padding/borders)
+      // TODO: Handle text alignment within content area
+      buffer.put(contentArea.x, contentArea.y, content, textStyle);
+    }
+  }
+  
+  /**
+   * Render text within a flex element using proper inline flow positioning
+   */
+  private renderFlexText(parent: TOMElement, textNode: Text, content: string, textStyle: any, buffer: ScreenBuffer): void {
+    const contentArea = parent.getContentArea();
+    
+    // Check if text wrapping is enabled and needed
+    const wordWrap = parent.style.wordWrap || 'normal';
+    const shouldWrap = wordWrap === 'break-word' || wordWrap === 'normal';
+    const contentWidth = this.getTextWidth(content);
+    
+    if (shouldWrap && contentWidth > contentArea.width) {
+      // Use TextBreaker for wrapped text rendering
+      this.renderWrappedText(parent, textNode, content, textStyle, buffer, contentArea);
+    } else {
+      // Use existing single-line flow positioning
+      const flowPosition = this.calculateInlineFlowPosition(parent, textNode, contentArea);
       
       // Ensure we don't render outside parent bounds
-      if (x < contentArea.x + contentArea.width) {
-        buffer.put(x, y, content, textStyle);
+      if (flowPosition.x < contentArea.x + contentArea.width) {
+        buffer.put(flowPosition.x, flowPosition.y, content, textStyle);
       }
     }
+  }
+  
+  /**
+   * Render wrapped text using TextBreaker algorithm
+   */
+  private renderWrappedText(parent: TOMElement, textNode: Text, content: string, textStyle: any, buffer: ScreenBuffer, contentArea: any): void {
+    // Collect inline elements from siblings for mixed content processing
+    const inlineElements: InlineElement[] = [];
+    const siblings = Array.from(parent.childNodes);
+    const textNodeIndex = siblings.indexOf(textNode);
+    
+    // Build inline elements array from sibling elements
+    let textOffset = 0;
+    for (let i = 0; i < textNodeIndex; i++) {
+      const sibling = siblings[i];
+      if (sibling.nodeType === 3) {
+        // Text node - advance offset
+        textOffset += (sibling.textContent || '').length;
+      } else if (sibling.nodeType === 1 && sibling instanceof TOMElement) {
+        // Element - add to inline elements
+        if (sibling.style.display === 'inline-block') {
+          inlineElements.push({
+            position: textOffset,
+            width: sibling.bounds.width,
+            height: sibling.bounds.height,
+            breakable: false,
+            element: sibling
+          });
+        }
+      }
+    }
+    
+    // Break text into lines
+    const result = this.textBreaker.breakText(content, {
+      maxWidth: contentArea.width,
+      breakWords: true,
+      inlineElements
+    });
+    
+    // Render each line
+    let currentY = contentArea.y;
+    for (const line of result.lines) {
+      if (currentY >= contentArea.y + contentArea.height) {
+        break; // Don't render outside content area
+      }
+      
+      buffer.put(contentArea.x, currentY, line.text, textStyle);
+      currentY++;
+    }
+  }
+  
+  /**
+   * Calculate position in inline flow using actual element positions (not cumulative widths)
+   */
+  private calculateInlineFlowPosition(parent: TOMElement, targetNode: Node, contentArea: any): { x: number; y: number } {
+    const siblings = Array.from(parent.childNodes);
+    const targetIndex = siblings.indexOf(targetNode);
+    
+    if (targetIndex === 0) {
+      // First child starts at contentArea beginning
+      return { x: contentArea.x, y: contentArea.y };
+    }
+    
+    // Find the rightmost position of all previous siblings
+    let x = contentArea.x;
+    let y = contentArea.y;
+    
+    for (let i = 0; i < targetIndex; i++) {
+      const sibling = siblings[i];
+      
+      if (sibling.nodeType === 3) { // Text node
+        // Text nodes flow after previous content
+        x += this.getTextWidth(sibling.textContent || '');
+      } else if (sibling.nodeType === 1 && sibling instanceof TOMElement) { // Element node
+        // Elements use their actual Yoga-positioned bounds
+        const elementEnd = sibling.bounds.x + sibling.bounds.width;
+        x = Math.max(x, elementEnd); // Position after the rightmost element
+      }
+    }
+    
+    return { x, y };
+  }
+  
+  /**
+   * Get width of any node (text or element) for inline flow calculations
+   */
+  private getNodeWidth(node: Node): number {
+    if (node.nodeType === 3) { // Text node
+      return this.getTextWidth(node.textContent || '');
+    } else if (node.nodeType === 1 && node instanceof TOMElement) { // Element node
+      return this.getElementWidth(node);
+    }
+    return 0;
+  }
+  
+  /**
+   * Get width of an element for inline flow (recursive for inline elements)
+   */
+  private getElementWidth(element: TOMElement): number {
+    const display = element.style.display;
+    
+    if (display === 'inline-block') {
+      // Inline-block elements use their full rendered bounds
+      return element.bounds.width;
+    } else if (display === 'inline') {
+      // Inline elements: recursively calculate width of their content
+      return this.getInlineElementWidth(element);
+    } else if (display === 'none') {
+      return 0;
+    }
+    
+    // Flex elements in inline context (shouldn't happen, but fallback)
+    return element.bounds.width;
+  }
+  
+  /**
+   * Recursively calculate width of inline element content
+   */
+  private getInlineElementWidth(element: TOMElement): number {
+    let totalWidth = 0;
+    
+    // Sum width of all child nodes
+    for (const child of element.childNodes) {
+      totalWidth += this.getNodeWidth(child);
+    }
+    
+    return totalWidth;
   }
   
   /**

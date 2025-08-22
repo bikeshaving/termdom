@@ -7,6 +7,7 @@
 
 import { TOMElement } from '../core/TOMElement.js';
 import { TextMeasurement } from './TextMeasurement.js';
+import { GreedyTextBreaker, type InlineElement } from '../text/index.js';
 import Yoga from 'yoga-layout';
 
 /**
@@ -14,9 +15,11 @@ import Yoga from 'yoga-layout';
  */
 export class LayoutEngine {
   private yoga: typeof Yoga;
+  private textBreaker: GreedyTextBreaker;
 
   constructor() {
     this.yoga = Yoga;
+    this.textBreaker = new GreedyTextBreaker();
   }
 
   /**
@@ -182,17 +185,15 @@ export class LayoutEngine {
     const yogaNode = this.yoga.Node.create();
     element.initializeYogaNode(yogaNode);
     
-    // Set measurement function for inline elements
-    if (element.style.display === 'inline') {
-      element.yogaNode.setMeasureFunc(TextMeasurement.createMeasureFunction(element));
-    }
+    // Inline elements integrate with Yoga as flex children but size themselves based on text content
+    // They don't use measurement functions - sizing happens in the inline layout algorithm
     
     // Apply styles to Yoga node
     this.applyStylesToYoga(element);
   }
 
   /**
-   * Build Yoga tree recursively
+   * Build Yoga tree recursively, handling inline elements specially
    */
   private buildYogaTree(element: TOMElement): void {
     this.setupYogaNode(element);
@@ -204,11 +205,25 @@ export class LayoutEngine {
       element.yogaNode.removeChild(element.yogaNode.getChild(0));
     }
     
-    // Add children to Yoga tree
-    for (let i = 0; i < children.length; i++) {
-      const child = children[i];
-      this.buildYogaTree(child);
-      element.yogaNode.insertChild(child.yogaNode, i);
+    // Add children to Yoga tree, but handle inline/inline-block elements specially
+    let yogaChildIndex = 0;
+    for (const child of children) {
+      if (child.style.display === 'inline' || child.style.display === 'inline-block') {
+        // Inline/inline-block elements are handled by separate inline layout system
+        // They participate in Yoga as flex children but size themselves
+        this.setupYogaNode(child);
+        
+        // Set their size based on content + visual chrome before adding to Yoga tree
+        const visualSize = this.measureInlineBlockElement(child);
+        child.yogaNode.setWidth(visualSize.width);
+        child.yogaNode.setHeight(visualSize.height);
+        
+        element.yogaNode.insertChild(child.yogaNode, yogaChildIndex++);
+      } else {
+        // Flex elements use normal Yoga tree building
+        this.buildYogaTree(child);
+        element.yogaNode.insertChild(child.yogaNode, yogaChildIndex++);
+      }
     }
   }
 
@@ -250,11 +265,16 @@ export class LayoutEngine {
       return;
     } else if (style.display === 'flex') {
       node.setDisplay(this.yoga.DISPLAY_FLEX);
+    } else if (style.display === 'block') {
+      // Block display is syntactic sugar for flex column + stretch
+      node.setDisplay(this.yoga.DISPLAY_FLEX);
+      node.setFlexDirection(this.yoga.FLEX_DIRECTION_COLUMN);
+      node.setAlignItems(this.yoga.ALIGN_STRETCH);
     }
     // inline elements use measurement functions, no special display setting needed
 
-    // Flex direction
-    if (style.flexDirection) {
+    // Flex direction (not allowed for block display)
+    if (style.flexDirection && style.display !== 'block') {
       const flexDir = {
         'row': this.yoga.FLEX_DIRECTION_ROW,
         'column': this.yoga.FLEX_DIRECTION_COLUMN,
@@ -276,8 +296,8 @@ export class LayoutEngine {
       if (justify !== undefined) node.setJustifyContent(justify);
     }
 
-    // Align items
-    if (style.alignItems) {
+    // Align items (not allowed for block display)
+    if (style.alignItems && style.display !== 'block') {
       const align = {
         'stretch': this.yoga.ALIGN_STRETCH,
         'flex-start': this.yoga.ALIGN_FLEX_START,
@@ -316,6 +336,121 @@ export class LayoutEngine {
       node.setMargin(this.yoga.EDGE_BOTTOM, margin[2]);
       node.setMargin(this.yoga.EDGE_LEFT, margin[3]);
     }
+  }
+
+  /**
+   * Measure inline element size based on text content only (no chrome)
+   */
+  private measureInlineElement(element: TOMElement): { width: number; height: number } {
+    const content = element.textContent || '';
+    
+    if (!content) {
+      return { width: 0, height: 0 };
+    }
+
+    const style = element.style;
+    const wordWrap = style.wordWrap || 'normal';
+    const whiteSpace = style.whiteSpace || 'normal';
+    
+    // For inline elements, we size based on content without wrapping constraints
+    // They shrink to fit their content
+    if (wordWrap === 'nowrap' || whiteSpace === 'nowrap' || whiteSpace === 'pre') {
+      return { width: this.getTextWidth(content), height: 1 };
+    }
+    
+    // For normal wrapping, inline elements still size to their content
+    // Wrapping happens at the container level during inline layout
+    const lines = content.split('\n');
+    const width = Math.max(...lines.map(line => this.getTextWidth(line)));
+    return { width, height: lines.length };
+  }
+  
+  /**
+   * Measure text with width constraints using TextBreaker
+   */
+  private measureTextWithWrapping(text: string, maxWidth: number, inlineElements: InlineElement[] = []): { width: number; height: number } {
+    if (!text && inlineElements.length === 0) {
+      return { width: 0, height: 0 };
+    }
+    
+    const result = this.textBreaker.breakText(text, {
+      maxWidth,
+      breakWords: true,
+      inlineElements
+    });
+    
+    return {
+      width: result.maxLineWidth,
+      height: result.totalHeight
+    };
+  }
+  
+  /**
+   * Measure inline-block element size with full visual dimensions
+   */
+  private measureInlineBlockElement(element: TOMElement): { width: number; height: number } {
+    const style = element.style;
+    
+    // 1. Check for explicit dimensions first (highest priority)
+    let width = typeof style.width === 'number' ? style.width : null;
+    let height = typeof style.height === 'number' ? style.height : null;
+    
+    // 2. If no explicit dimensions, calculate from content + chrome
+    if (width === null || height === null) {
+      const contentSize = this.measureInlineElement(element);
+      const [padTop, padRight, padBottom, padLeft] = this.getPadding(element);
+      const borderWidth = this.getBorderWidth(element);
+      
+      if (width === null) {
+        width = contentSize.width + padLeft + padRight + borderWidth * 2;
+      }
+      if (height === null) {
+        height = contentSize.height + padTop + padBottom + borderWidth * 2;
+      }
+    }
+    
+    // 3. Apply minimum constraints
+    if (typeof style.minWidth === 'number') {
+      width = Math.max(width, style.minWidth);
+    }
+    if (typeof style.minHeight === 'number') {
+      height = Math.max(height, style.minHeight);
+    }
+    
+    // 4. Apply maximum constraints
+    if (typeof style.maxWidth === 'number') {
+      width = Math.min(width, style.maxWidth);
+    }
+    if (typeof style.maxHeight === 'number') {
+      height = Math.min(height, style.maxHeight);
+    }
+    
+    return { width, height };
+  }
+  
+  /**
+   * Get border width from element style
+   */
+  private getBorderWidth(element: TOMElement): number {
+    const border = element.style.border;
+    
+    if (typeof border === 'number') {
+      return border;
+    }
+    
+    if (Array.isArray(border)) {
+      // Assume uniform border for now - could be enhanced to handle [top, right, bottom, left]
+      return border[0] || 0;
+    }
+    
+    return 0;
+  }
+  
+  /**
+   * Get visual width of text using Bun's stringWidth
+   */
+  private getTextWidth(text: string): number {
+    return Bun.stringWidth(text);
   }
 
   /**

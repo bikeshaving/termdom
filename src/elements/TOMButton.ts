@@ -33,7 +33,8 @@ export class TOMButton extends TOMContainer {
     
     // Set default button styles
     this.style = {
-      display: 'inline',
+      ...this.style, // Existing styles first
+      display: 'inline-block', // Then our overrides
       backgroundColor: '#333',
       color: 'white',
       padding: [1, 2, 1, 2], // top, right, bottom, left
@@ -41,7 +42,6 @@ export class TOMButton extends TOMContainer {
       borderColor: '#666',
       textAlign: 'center',
       minHeight: 3, // Minimum 3 cells: border + content + border
-      ...this.style
     };
 
     this.setupEventHandlers();
