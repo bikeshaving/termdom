@@ -33,7 +33,7 @@ export class TOMButton extends TOMContainer {
     
     // Set default button styles
     this.style = {
-      display: 'inline-block',
+      display: 'inline',
       backgroundColor: '#333',
       color: 'white',
       padding: [1, 2, 1, 2], // top, right, bottom, left
@@ -224,31 +224,9 @@ export class TOMButton extends TOMContainer {
    * Render button text content
    */
   private renderContent(buffer: ScreenBuffer): void {
-    const contentArea = this.getContentArea();
-    const content = this.textContent || '';
-    
-    if (!content || contentArea.width <= 0 || contentArea.height <= 0) {
-      return;
-    }
-
-    // Center the text vertically and horizontally
-    const lines = content.split('\n');
-    const textStyle = this.getTextStyle();
-    
-    const startY = contentArea.y + Math.floor((contentArea.height - lines.length) / 2);
-    
-    for (let i = 0; i < Math.min(lines.length, contentArea.height); i++) {
-      const line = lines[i];
-      const y = startY + i;
-      
-      if (y >= contentArea.y && y < contentArea.y + contentArea.height) {
-        // Center horizontally
-        const textWidth = this.getTextWidth(line);
-        const x = contentArea.x + Math.floor((contentArea.width - textWidth) / 2);
-        
-        buffer.put(x, y, line, textStyle);
-      }
-    }
+    // Note: Button content (text/elements) is now rendered by TOMRenderer processing childNodes
+    // This method is kept for potential future button-specific content styling
+    // The button background, border, and focus states are handled by renderSelf()
   }
 
   /**

@@ -116,10 +116,69 @@ export class TOMRenderer {
       element.clearRenderFlag();
     }
 
-    // Render children
-    for (const child of element.children) {
-      this.renderElement(child, buffer);
+    // Render all child nodes (including Text nodes)
+    for (const child of element.childNodes) {
+      if (child.nodeType === 1) { // Element node
+        this.renderElement(child as Element, buffer);
+      } else if (child.nodeType === 3) { // Text node
+        this.renderTextNode(child as Text, buffer);
+      }
     }
+  }
+
+  /**
+   * Render a text node
+   */
+  private renderTextNode(textNode: Text, buffer: ScreenBuffer): void {
+    const content = textNode.textContent || '';
+    if (!content) return;
+    
+    // Get parent element for style inheritance
+    const parent = textNode.parentElement;
+    let textStyle = {};
+    
+    if (parent instanceof TOMElement) {
+      textStyle = parent.getTextStyle();
+    }
+    
+    // Basic positioning logic:
+    // For now, render text nodes inline within their parent's content area
+    // TODO: Implement proper inline layout with text flow
+    
+    if (parent instanceof TOMElement && parent.bounds.width > 0) {
+      const contentArea = parent.getContentArea();
+      
+      // Calculate position based on previous siblings
+      let x = contentArea.x;
+      let y = contentArea.y;
+      
+      // Find position after previous text/element siblings
+      const siblings = Array.from(parent.childNodes);
+      const myIndex = siblings.indexOf(textNode);
+      
+      for (let i = 0; i < myIndex; i++) {
+        const sibling = siblings[i];
+        if (sibling.nodeType === 3) { // Text node
+          const siblingText = sibling.textContent || '';
+          x += this.getTextWidth(siblingText);
+        } else if (sibling.nodeType === 1 && sibling instanceof TOMElement) { // Element
+          // Skip element width for now - elements handle their own positioning
+          // TODO: Proper inline layout will handle this
+        }
+      }
+      
+      // Ensure we don't render outside parent bounds
+      if (x < contentArea.x + contentArea.width) {
+        buffer.put(x, y, content, textStyle);
+      }
+    }
+  }
+  
+  /**
+   * Calculate visual width of text (using Bun's stringWidth)
+   */
+  private getTextWidth(text: string): number {
+    return Bun.stringWidth(text);
   }
 
   /**
@@ -130,8 +189,12 @@ export class TOMRenderer {
       element.clearRenderFlag();
     }
 
-    for (const child of element.children) {
-      this.clearRenderFlags(child);
+    // Process all child nodes
+    for (const child of element.childNodes) {
+      if (child.nodeType === 1) { // Element node
+        this.clearRenderFlags(child as Element);
+      }
+      // Text nodes don't have render flags to clear
     }
   }
 

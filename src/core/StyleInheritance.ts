@@ -21,7 +21,7 @@ const INHERITABLE_PROPERTIES: (keyof TOMStyle)[] = [
  * Default values for style properties
  */
 const DEFAULT_STYLES: Partial<TOMStyle> = {
-  display: 'block',
+  display: 'flex',
   position: 'relative',
   flexDirection: 'column',
   justifyContent: 'flex-start',

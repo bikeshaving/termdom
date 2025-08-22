@@ -24,14 +24,13 @@ export class TOMText extends TOMElement {
   }
 
   /**
-   * Render text content with styling and alignment
+   * Render text element - now relies on child nodes being rendered by TOMRenderer
    */
   renderSelf(buffer: ScreenBuffer): void {
     const bounds = this.bounds;
-    const content = this.textContent || '';
     
-    // Skip rendering if no content or size
-    if (!content || bounds.width <= 0 || bounds.height <= 0) {
+    // Skip rendering if no size
+    if (bounds.width <= 0 || bounds.height <= 0) {
       return;
     }
 
@@ -41,28 +40,9 @@ export class TOMText extends TOMElement {
         bgColor: this.style.backgroundColor
       });
     }
-
-    const contentArea = this.getContentArea();
-    const textStyle = this.getTextStyle();
-    const lines = this.prepareLines(content, contentArea.width);
-
-    // Calculate vertical alignment
-    const verticalOffset = this.calculateVerticalOffset(lines.length, contentArea.height);
-
-    // Render each line
-    for (let i = 0; i < Math.min(lines.length, contentArea.height); i++) {
-      const line = lines[i];
-      const y = contentArea.y + verticalOffset + i;
-      
-      if (line.length === 0 || y >= contentArea.y + contentArea.height) continue;
-
-      // Apply text alignment
-      const alignedLine = this.alignText(line, contentArea.width);
-      const x = contentArea.x + alignedLine.offset;
-      
-      // Render the line
-      buffer.put(x, y, alignedLine.text, textStyle);
-    }
+    
+    // Note: Text content is now rendered by TOMRenderer processing childNodes
+    // This element just provides styling context and background/borders
   }
 
   /**

@@ -11,7 +11,7 @@ import type * as Yoga from 'yoga-layout';
 
 export interface TOMStyle {
   // Display & Positioning
-  display?: 'flex' | 'block' | 'inline' | 'none';
+  display?: 'flex' | 'inline' | 'none';
   position?: 'relative' | 'absolute' | 'fixed';
   
   // Flexbox
@@ -44,6 +44,8 @@ export interface TOMStyle {
   fontStyle?: 'normal' | 'italic';
   textDecoration?: 'none' | 'underline';
   textAlign?: 'left' | 'center' | 'right';
+  whiteSpace?: 'normal' | 'nowrap' | 'pre' | 'pre-wrap';
+  wordWrap?: 'normal' | 'break-word' | 'nowrap';
   
   // Overflow
   overflow?: 'visible' | 'hidden' | 'scroll';
@@ -65,7 +67,7 @@ export abstract class TOMElement extends Element {
   
   constructor() {
     super();
-    this.setupYogaNode();
+    // Yoga nodes will be created by LayoutEngine when needed
   }
 
   /**
@@ -109,12 +111,10 @@ export abstract class TOMElement extends Element {
   }
 
   /**
-   * Set up Yoga layout node
+   * Initialize Yoga node - called by LayoutEngine
    */
-  private setupYogaNode(): void {
-    // We'll initialize this when Yoga is available
-    // For now, just mark as undefined
-    this.yogaNode = undefined;
+  public initializeYogaNode(yogaNode: Yoga.Node): void {
+    this.yogaNode = yogaNode;
   }
 
   /**

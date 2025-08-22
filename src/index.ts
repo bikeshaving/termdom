@@ -50,6 +50,7 @@ export function createTOM(options?: import('./core/TOMDocument.js').TOMDocumentO
     window: document.window,
     body: document.body,
     createElement: document.createElement.bind(document),
+    createTextNode: document.createTextNode.bind(document),
     querySelector: document.querySelector.bind(document),
     querySelectorAll: document.querySelectorAll.bind(document),
     getElementById: document.getElementById.bind(document),

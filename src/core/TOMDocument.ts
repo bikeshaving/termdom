@@ -204,6 +204,13 @@ export class TOMDocument {
   }
 
   /**
+   * DOM API: Create text node
+   */
+  createTextNode(data: string): Text {
+    return this._window.document.createTextNode(data);
+  }
+
+  /**
    * DOM API: Query selector
    */
   querySelector(selectors: string): Element | null {
