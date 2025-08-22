@@ -42,8 +42,8 @@ export class TOMMouseHandler {
     this.isEnabled = true;
     
     // Enable mouse tracking in terminal
-    // Use button + drag mode to ensure we get all press/release events
-    this.terminal.write('\x1b[?1002h'); // Enable mouse button + drag tracking
+    // Use motion mode to get all mouse events including wheel
+    this.terminal.write('\x1b[?1003h'); // Enable mouse motion tracking (includes wheel)
     this.terminal.write('\x1b[?1006h'); // Enable SGR extended mode
   }
 
@@ -212,6 +212,17 @@ export class TOMMouseHandler {
    * Handle mouse wheel
    */
   private handleWheel(x: number, y: number, delta: number): void {
+    // Try viewport scrolling first if viewport is available
+    if (this.document.viewport) {
+      const scrollAmount = delta * 3; // Scroll 3 lines per wheel step
+      const scrolled = this.document.scroll(0, scrollAmount);
+      
+      if (scrolled) {
+        return; // Viewport handled the scroll, don't propagate to elements
+      }
+    }
+    
+    // If no viewport or viewport couldn't scroll, dispatch to element
     const element = this.findElementAt(x, y);
     if (!element) return;
     

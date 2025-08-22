@@ -70,26 +70,68 @@ export class TOMRenderer {
 
     try {
       // 1. Layout pass - calculate positions and sizes
+      const layoutWidth = this.document.viewport ? 
+        this.document.viewport.getDocument().width : 
+        this.document.terminalWidth;
+      const layoutHeight = this.document.viewport ? 
+        this.document.viewport.getDocument().height : 
+        this.document.terminalHeight;
+        
       this.layoutEngine.computeLayout(
         this.document.body,
-        this.document.terminalWidth,
-        this.document.terminalHeight
+        layoutWidth,
+        layoutHeight
       );
 
-      // 2. Clear root buffer
+      // 2. Update viewport document size if viewport is enabled
+      if (this.document.viewport) {
+        // Calculate actual document size from layout
+        const documentBounds = this.calculateDocumentBounds();
+        this.document.viewport.setDocumentSize(documentBounds.width, documentBounds.height);
+      }
+
+      // 3. Clear root buffer
       this.rootBuffer.clear();
 
-      // 3. Render all elements
+      // 4. Render all elements (with viewport offset if applicable)
       this.renderElement(this.document.body, this.rootBuffer);
 
-      // 4. Output to terminal (use delta rendering for efficiency)
+      // 5. Output to terminal (use delta rendering for efficiency)
       this.rootBuffer.renderDelta();
 
-      // 5. Clear render flags
+      // 6. Clear render flags
       this.clearRenderFlags(this.document.body);
 
     } catch (error) {
       console.error('TOM render error:', error);
+    }
+  }
+
+  /**
+   * Calculate the bounds of the entire document content
+   */
+  private calculateDocumentBounds(): { width: number; height: number } {
+    let maxX = 0;
+    let maxY = 0;
+    
+    this.calculateElementBounds(this.document.body, (bounds) => {
+      maxX = Math.max(maxX, bounds.x + bounds.width);
+      maxY = Math.max(maxY, bounds.y + bounds.height);
+    });
+    
+    return { width: maxX, height: maxY };
+  }
+  
+  /**
+   * Recursively calculate bounds of all elements
+   */
+  private calculateElementBounds(element: Element, callback: (bounds: any) => void): void {
+    if (element instanceof TOMElement && element.bounds) {
+      callback(element.bounds);
+    }
+    
+    for (const child of element.children) {
+      this.calculateElementBounds(child, callback);
     }
   }
 
@@ -103,8 +145,13 @@ export class TOMRenderer {
         return;
       }
 
-      // Render the element itself
-      element.renderSelf(buffer);
+      // Check if element is visible in viewport
+      if (this.document.viewport && !this.isElementVisible(element)) {
+        return; // Skip rendering elements outside viewport
+      }
+
+      // Render the element itself (with viewport offset)
+      this.renderElementWithViewport(element, buffer);
       element.clearRenderFlag();
     }
 
@@ -116,6 +163,68 @@ export class TOMRenderer {
         this.renderTextNode(child as Text, buffer);
       }
     }
+  }
+
+  /**
+   * Check if element is visible in current viewport
+   */
+  private isElementVisible(element: TOMElement): boolean {
+    if (!this.document.viewport || !element.bounds) {
+      return true; // No viewport or no bounds - render everything
+    }
+    
+    return this.document.viewport.isVisible(
+      element.bounds.x,
+      element.bounds.y,
+      element.bounds.width,
+      element.bounds.height
+    );
+  }
+  
+  /**
+   * Render element with viewport offset applied
+   */
+  private renderElementWithViewport(element: TOMElement, buffer: ScreenBuffer): void {
+    if (this.document.viewport) {
+      // Create a temporary buffer with viewport offset
+      const viewportBounds = this.document.viewport.getVisibleBounds();
+      const offsetBuffer = this.createOffsetBuffer(buffer, -viewportBounds.x, -viewportBounds.y);
+      element.renderSelf(offsetBuffer);
+    } else {
+      // No viewport - render normally
+      element.renderSelf(buffer);
+    }
+  }
+  
+  /**
+   * Create a buffer wrapper that applies offset to all operations
+   */
+  private createOffsetBuffer(buffer: ScreenBuffer, offsetX: number, offsetY: number): ScreenBuffer {
+    return {
+      ...buffer,
+      put: (x: number, y: number, text: string, style?: any) => {
+        buffer.put(x + offsetX, y + offsetY, text, style);
+      },
+      fill: (bounds: any, char?: string, style?: any) => {
+        buffer.fill({
+          ...bounds,
+          x: bounds.x + offsetX,
+          y: bounds.y + offsetY
+        }, char, style);
+      }
+    } as ScreenBuffer;
+  }
+  
+  /**
+   * Create buffer with viewport offset
+   */
+  private createViewportOffsetBuffer(buffer: ScreenBuffer): ScreenBuffer {
+    if (!this.document.viewport) {
+      return buffer;
+    }
+    
+    const viewportBounds = this.document.viewport.getVisibleBounds();
+    return this.createOffsetBuffer(buffer, -viewportBounds.x, -viewportBounds.y);
   }
 
   /**
@@ -131,15 +240,19 @@ export class TOMRenderer {
     if (parent instanceof TOMElement) {
       const textStyle = parent.getTextStyle();
       
+      // Apply viewport offset to buffer if needed
+      const renderBuffer = this.document.viewport ? 
+        this.createViewportOffsetBuffer(buffer) : buffer;
+        
       if (parent.style.display === 'inline') {
         // Inline elements: text is positioned by the inline layout algorithm
-        this.renderInlineText(parent, textNode, content, textStyle, buffer);
+        this.renderInlineText(parent, textNode, content, textStyle, renderBuffer);
       } else if (parent.style.display === 'inline-block') {
         // Inline-block elements: text within content area (like flex, but inline-positioned)
-        this.renderInlineBlockText(parent, textNode, content, textStyle, buffer);
+        this.renderInlineBlockText(parent, textNode, content, textStyle, renderBuffer);
       } else {
         // Flex elements: render text within the element's content area
-        this.renderFlexText(parent, textNode, content, textStyle, buffer);
+        this.renderFlexText(parent, textNode, content, textStyle, renderBuffer);
       }
     }
   }
@@ -420,6 +533,13 @@ export class TOMRenderer {
    * Find element at coordinates (hit testing)
    */
   private hitTest(x: number, y: number): TOMElement | null {
+    // Adjust coordinates for viewport scroll
+    if (this.document.viewport) {
+      const viewportBounds = this.document.viewport.getVisibleBounds();
+      x += viewportBounds.x;
+      y += viewportBounds.y;
+    }
+    
     return this.hitTestRecursive(this.document.body, x, y);
   }
 

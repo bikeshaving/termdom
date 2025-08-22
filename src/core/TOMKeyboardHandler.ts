@@ -115,6 +115,11 @@ export class TOMKeyboardHandler {
    * Returns true if the shortcut was consumed
    */
   private handleSystemShortcuts(keyEvent: TOMKeyboardEvent): boolean {
+    // Handle viewport scrolling first (available even when exit handlers are disabled)
+    if (this.handleViewportScrolling(keyEvent)) {
+      return true;
+    }
+    
     if (!this.enableDefaultExitHandlers) {
       return false; // Skip default handlers if disabled
     }
@@ -151,6 +156,50 @@ export class TOMKeyboardHandler {
         process.exit(0);
       }
       return true;
+    }
+    
+    return false; // Not consumed
+  }
+
+  /**
+   * Handle viewport scrolling keyboard shortcuts
+   * Returns true if the shortcut was consumed
+   */
+  private handleViewportScrolling(keyEvent: TOMKeyboardEvent): boolean {
+    if (!this.document.viewport) {
+      return false; // No viewport to scroll
+    }
+    
+    const scrollAmount = 1;
+    const pageScrollAmount = Math.floor(this.document.viewport.getViewport().height * 0.8);
+    
+    switch (keyEvent.key) {
+      case 'ArrowUp':
+        return this.document.scroll(0, -scrollAmount);
+      case 'ArrowDown':
+        return this.document.scroll(0, scrollAmount);
+      case 'ArrowLeft':
+        return this.document.scroll(-scrollAmount, 0);
+      case 'ArrowRight':
+        return this.document.scroll(scrollAmount, 0);
+      case 'PageUp':
+        return this.document.scroll(0, -pageScrollAmount);
+      case 'PageDown':
+        return this.document.scroll(0, pageScrollAmount);
+      case 'Home':
+        if (keyEvent.ctrl) {
+          // Ctrl+Home: scroll to top
+          return this.document.scrollTo(0, 0);
+        }
+        break;
+      case 'End':
+        if (keyEvent.ctrl) {
+          // Ctrl+End: scroll to bottom
+          const doc = this.document.viewport.getDocument();
+          const viewport = this.document.viewport.getViewport();
+          return this.document.scrollTo(0, Math.max(0, doc.height - viewport.height));
+        }
+        break;
     }
     
     return false; // Not consumed

@@ -14,6 +14,7 @@ import { TOMElement } from './TOMElement.js';
 import { TOMRenderer } from './TOMRenderer.js';
 import { TOMMouseHandler } from './TOMMouseHandler.js';
 import { TOMKeyboardHandler } from './TOMKeyboardHandler.js';
+import { TOMViewport, ViewportOptions } from './TOMViewport.js';
 import { TOMContainer } from '../elements/TOMContainer.js';
 import { TOMText } from '../elements/TOMText.js';
 import { TOMButton } from '../elements/TOMButton.js';
@@ -24,6 +25,7 @@ export interface TOMDocumentOptions {
   output?: NodeJS.WriteStream;  // Deprecated, use terminal
   width?: number;
   height?: number;
+  viewport?: ViewportOptions;
 }
 
 /**
@@ -36,6 +38,7 @@ export class TOMDocument implements Disposable {
   private renderer: TOMRenderer;
   private mouseHandler: TOMMouseHandler;
   private keyboardHandler: TOMKeyboardHandler;
+  private viewport: TOMViewport | null = null;
   private observer: MutationObserver;
   private _terminalWidth: number;
   private _terminalHeight: number;
@@ -71,6 +74,16 @@ export class TOMDocument implements Disposable {
     });
 
     this.elementRegistry = new Map();
+    
+    // Initialize viewport if specified
+    if (options.viewport) {
+      this.viewport = new TOMViewport({
+        width: this._terminalWidth,
+        height: this._terminalHeight,
+        ...options.viewport
+      });
+    }
+    
     this.renderer = new TOMRenderer(this, this.terminal);
     this.mouseHandler = new TOMMouseHandler(this, this.terminal);
     this.keyboardHandler = new TOMKeyboardHandler(this, this.terminal);
@@ -127,6 +140,13 @@ export class TOMDocument implements Disposable {
    */
   get keyboardHandler() {
     return this.keyboardHandler;
+  }
+
+  /**
+   * Access to viewport (if enabled)
+   */
+  get viewport() {
+    return this.viewport;
   }
 
   /**
@@ -229,6 +249,11 @@ export class TOMDocument implements Disposable {
         const dimensions = this.terminal.getDimensions();
         this._terminalWidth = dimensions.columns;
         this._terminalHeight = dimensions.rows;
+        
+        // Update viewport if present
+        if (this.viewport) {
+          this.viewport.handleResize(this._terminalWidth, this._terminalHeight);
+        }
         
         this.renderer.handleResize(this._terminalWidth, this._terminalHeight);
         
@@ -570,15 +595,6 @@ export class TOMDocument implements Disposable {
     this.destroy();
   }
 
-  /**
-   * Clean up resources
-   */
-  destroy(): void {
-    this.unload();
-    this.observer.disconnect();
-    this.renderer.destroy();
-    this._window.close();
-  }
 
   /**
    * Get the renderer instance (for advanced use cases)
@@ -700,6 +716,53 @@ export class TOMDocument implements Disposable {
     
     // Input handling is done through the dedicated handlers
     this.keyboardHandler.disable();
+  }
+
+  /**
+   * Scroll viewport (if viewport is enabled)
+   */
+  scroll(deltaX: number, deltaY: number): boolean {
+    if (this.viewport) {
+      const scrolled = this.viewport.scroll(deltaX, deltaY);
+      if (scrolled) {
+        this.render(); // Re-render to show scrolled content
+      }
+      return scrolled;
+    }
+    return false;
+  }
+
+  /**
+   * Scroll to specific position (if viewport is enabled)
+   */
+  scrollTo(x: number, y: number): boolean {
+    if (this.viewport) {
+      const scrolled = this.viewport.scrollTo(x, y);
+      if (scrolled) {
+        this.render(); // Re-render to show scrolled content
+      }
+      return scrolled;
+    }
+    return false;
+  }
+
+  /**
+   * Scroll element into view (if viewport is enabled)
+   */
+  scrollIntoView(element: TOMElement): boolean {
+    if (this.viewport && element.bounds) {
+      const scrolled = this.viewport.scrollIntoView(
+        element.bounds.x,
+        element.bounds.y,
+        element.bounds.width,
+        element.bounds.height
+      );
+      if (scrolled) {
+        this.render(); // Re-render to show scrolled content
+      }
+      return scrolled;
+    }
+    return false;
   }
 
   /**
