@@ -1,7 +1,8 @@
 /**
- * TOM ScreenBuffer - Modern TypeScript adaptation of terminal-kit's ScreenBuffer
+ * TTY ScreenBuffer - Modern TypeScript adaptation of terminal-kit's ScreenBuffer
  *
- * Provides efficient terminal rendering with compositing and delta updates.
+ * Provides efficient terminal rendering with compositing and delta updates
+ * using TTYRuntime abstraction instead of direct ANSI sequences.
  * Adapted from terminal-kit's MIT-licensed ScreenBuffer implementation.
  */
 
@@ -20,7 +21,7 @@ export interface ScreenBufferOptions {
   height?: number;
   x?: number;
   y?: number;
-  output?: NodeJS.WriteStream;
+  runtime?: import('../core/TTYRuntime.js').TTYRuntime;
 }
 
 // TODO: can we use the DOM Rect APIs, here?
@@ -42,16 +43,25 @@ export class ScreenBuffer {
 
   private cells: Cell[][];
   private lastFrame?: Cell[][];
-  private output: NodeJS.WriteStream;
+  private runtime?: import('../core/TTYRuntime.js').TTYRuntime;
   private cursorX = 0;
   private cursorY = 0;
 
   constructor(options: ScreenBufferOptions = {}) {
-    this.width = options.width ?? process.stdout.columns ?? 80;
-    this.height = options.height ?? process.stdout.rows ?? 24;
+    this.runtime = options.runtime;
+    
+    if (this.runtime) {
+      const dimensions = this.runtime.getTerminalSize();
+      this.width = options.width ?? dimensions.columns;
+      this.height = options.height ?? dimensions.rows;
+    } else {
+      // Fallback for backward compatibility
+      this.width = options.width ?? process.stdout.columns ?? 80;
+      this.height = options.height ?? process.stdout.rows ?? 24;
+    }
+    
     this.x = options.x ?? 0;
     this.y = options.y ?? 0;
-    this.output = options.output ?? process.stdout;
 
     this.cells = this.createEmptyCells();
   }
@@ -93,7 +103,7 @@ export class ScreenBuffer {
       };
 
       // Get the width of this character and advance cursor
-      const charWidth = Bun.stringWidth(char);
+      const charWidth = this.runtime ? this.runtime.measureTextWidth(char) : char.length;
       currentX += charWidth;
 
       // For wide characters, fill the extra cell with empty space
@@ -145,45 +155,52 @@ export class ScreenBuffer {
   /**
    * Render the entire buffer to terminal (full redraw)
    */
-  render(): void {
-    let output = '';
+  async render(): Promise<void> {
+    if (!this.runtime) {
+      console.warn('ScreenBuffer: No TTYRuntime available, skipping render');
+      return;
+    }
 
     for (let y = 0; y < this.height; y++) {
       // Move cursor to line start
-      output += `\x1b[${this.y + y + 1};${this.x + 1}H`;
+      await this.runtime.cursorTo(this.x, this.y + y);
 
       let currentStyle: Partial<Cell> = {};
 
       for (let x = 0; x < this.width; x++) {
         const cell = this.cells[y][x];
 
-        // Apply style changes
+        // Apply style changes using TTYRuntime
         if (this.styleChanged(currentStyle, cell)) {
-          output += this.generateStyleSequence(cell);
+          this.applyStyleToRuntime(cell);
           currentStyle = { ...cell };
         }
 
-        output += cell.char;
+        await this.runtime.writeStdout(cell.char);
       }
 
       // Reset styles at end of line
-      output += '\x1b[0m';
+      this.runtime.resetStyle();
     }
 
-    this.output.write(output);
     this.lastFrame = this.copyFrame(this.cells);
   }
 
   /**
    * Render only changed cells (delta update) - much more efficient
    */
-  renderDelta(): void {
-    if (!this.lastFrame) {
-      this.render();
+  async renderDelta(): Promise<void> {
+    if (!this.runtime) {
+      console.warn('ScreenBuffer: No TTYRuntime available, skipping delta render');
       return;
     }
 
-    let output = '';
+    if (!this.lastFrame) {
+      await this.render();
+      return;
+    }
+
+    let hasChanges = false;
     let currentOutputStyle: Partial<Cell> = {};
 
     for (let y = 0; y < this.height; y++) {
@@ -192,23 +209,24 @@ export class ScreenBuffer {
         const last = this.lastFrame[y][x];
 
         if (!this.cellsEqual(current, last)) {
+          hasChanges = true;
+          
           // Move cursor to changed cell position
-          output += `\x1b[${this.y + y + 1};${this.x + x + 1}H`;
+          await this.runtime.cursorTo(this.x + x, this.y + y);
 
-          // Only generate style sequence if style actually changed
+          // Only apply style if style actually changed
           if (this.styleChanged(currentOutputStyle, current)) {
-            output += this.generateStyleSequence(current);
+            this.applyStyleToRuntime(current);
             currentOutputStyle = { ...current };
           }
 
-          output += current.char;
+          await this.runtime.writeStdout(current.char);
         }
       }
     }
 
-    if (output) {
-      output += '\x1b[0m'; // Reset styles
-      this.output.write(output);
+    if (hasChanges) {
+      this.runtime.resetStyle();
     }
 
     this.lastFrame = this.copyFrame(this.cells);
@@ -229,7 +247,28 @@ export class ScreenBuffer {
   }
 
   /**
-   * Generate ANSI escape sequence for cell styling
+   * Apply cell styling to TTYRuntime
+   */
+  private applyStyleToRuntime(cell: Cell): void {
+    if (!this.runtime) return;
+
+    // Reset styles first
+    this.runtime.resetStyle();
+
+    // Apply colors
+    if (cell.fgColor || cell.bgColor) {
+      this.runtime.setColor(cell.fgColor, cell.bgColor);
+    }
+
+    // Apply text styling
+    if (cell.bold) this.runtime.setBold(true);
+    if (cell.italic) this.runtime.setItalic(true);
+    if (cell.underline) this.runtime.setUnderline(true);
+    if (cell.inverse) this.runtime.setReverse(true);
+  }
+
+  /**
+   * Generate ANSI escape sequence for cell styling (legacy fallback)
    */
   private generateStyleSequence(cell: Cell): string {
     let sequence = '';
@@ -237,15 +276,25 @@ export class ScreenBuffer {
     // Reset all attributes first to ensure clean state
     sequence += '\x1b[0m';
 
-    // Use Bun's color API for efficient color handling
-    if (cell.fgColor) {
-      const colorCode = this.colorToAnsi(cell.fgColor, false);
-      if (colorCode) sequence += colorCode;
-    }
-
-    if (cell.bgColor) {
-      const colorCode = this.colorToAnsi(cell.bgColor, true);
-      if (colorCode) sequence += colorCode;
+    // Use TTYRuntime for color conversion if available
+    if (this.runtime) {
+      if (cell.fgColor) {
+        sequence += this.runtime.colorizeText('', cell.fgColor).replace(/./g, '');
+      }
+      if (cell.bgColor) {
+        const colorCode = this.colorToAnsi(cell.bgColor, true);
+        if (colorCode) sequence += colorCode;
+      }
+    } else {
+      // Fallback for backward compatibility
+      if (cell.fgColor) {
+        const colorCode = this.colorToAnsi(cell.fgColor, false);
+        if (colorCode) sequence += colorCode;
+      }
+      if (cell.bgColor) {
+        const colorCode = this.colorToAnsi(cell.bgColor, true);
+        if (colorCode) sequence += colorCode;
+      }
     }
 
     if (cell.bold) sequence += '\x1b[1m';
@@ -343,7 +392,50 @@ export class ScreenBuffer {
   /**
    * Move cursor to terminal position
    */
-  moveCursorToTerminal(): void {
-    this.output.write(`\x1b[${this.y + this.cursorY + 1};${this.x + this.cursorX + 1}H`);
+  async moveCursorToTerminal(): Promise<void> {
+    if (this.runtime) {
+      await this.runtime.cursorTo(this.x + this.cursorX, this.y + this.cursorY);
+    }
+  }
+
+  /**
+   * Flush the buffer to terminal (convenience method for delta rendering)
+   */
+  async flush(): Promise<void> {
+    await this.renderDelta();
+  }
+
+  /**
+   * Resize the buffer
+   */
+  resize(width: number, height: number): void {
+    if (width === this.width && height === this.height) return;
+
+    // Cast to mutable for resize
+    (this as any).width = width;
+    (this as any).height = height;
+
+    // Create new cell grid
+    const newCells = this.createEmptyCells();
+    
+    // Copy existing cells that fit
+    for (let y = 0; y < Math.min(this.cells.length, height); y++) {
+      for (let x = 0; x < Math.min(this.cells[y].length, width); x++) {
+        newCells[y][x] = this.cells[y][x];
+      }
+    }
+    
+    this.cells = newCells;
+    this.lastFrame = undefined; // Force full redraw on next render
+  }
+
+  /**
+   * Dispose of resources
+   */
+  dispose(): void {
+    // Clear references
+    this.cells = [];
+    this.lastFrame = undefined;
+    this.runtime = undefined;
   }
 }

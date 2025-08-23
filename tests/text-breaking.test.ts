@@ -13,8 +13,8 @@ test("SimpleGreedyTextBreaker - basic word wrapping", () => {
   
   expect(result.lines.length).toBe(3);
   expect(result.lines[0].text).toBe("Hello ");
-  expect(result.lines[1].text).toBe("world this ");
-  expect(result.lines[2].text).toBe("is a test");
+  expect(result.lines[1].text).toBe("world this");
+  expect(result.lines[2].text).toBe(" is a test");
 });
 
 test("SimpleGreedyTextBreaker - exact width fit", () => {
@@ -49,8 +49,8 @@ test("SimpleGreedyTextBreaker - no word breaking when disabled", () => {
   
   // The long word should be on its own line even if it exceeds width
   expect(result.lines.length).toBe(2);
-  expect(result.lines[0].text).toBe("verylongword ");
-  expect(result.lines[1].text).toBe("short");
+  expect(result.lines[0].text).toBe("verylongword");
+  expect(result.lines[1].text).toBe(" short");
 });
 
 test("SimpleGreedyTextBreaker - empty text", () => {

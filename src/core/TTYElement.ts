@@ -1,5 +1,5 @@
 /**
- * TOM Element - Base class for all TOM elements
+ * TTY Element - Base class for all TTY elements
  *
  * Extends HappyDOM's Element but bypasses HTML/CSS behavior to create
  * terminal-specific elements with custom styling and rendering.
@@ -11,7 +11,7 @@ import type * as Yoga from 'yoga-layout';
 
 // TODO: Figure out if this can inherit from CSSStyleDeclaration, probably should be put in a separate file
 // TODO: Please make these kebab-case to match CSSOM
-export interface TOMStyle {
+export interface TTYStyle {
   // Display & Positioning
   display?: 'flex' | 'block' | 'inline' | 'inline-block' | 'none';
   position?: 'relative' | 'absolute' | 'fixed';
@@ -32,7 +32,7 @@ export interface TOMStyle {
   minHeight?: number;
   maxHeight?: number;
 
-	// TOOD: string shorthand. I’m not sure about arrays here
+	// TOOD: string shorthand. I'm not sure about arrays here
   margin?: [number, number, number, number] | number;
   padding?: [number, number, number, number] | number;
   border?: [number, number, number, number] | number;
@@ -57,13 +57,14 @@ export interface TOMStyle {
 }
 
 /**
- * Base TOM element class - extends HappyDOM Element but NOT HTMLElement
- * This gives us the DOM tree structure and events without HTML/CSS baggage
+ * Base TTY element class - extends HappyDOM Element but NOT HTMLElement
+ * This gives us the DOM tree structure and events without HTML/CSS baggage.
+ * This is a concrete class that can be instantiated directly for generic elements.
  */
-export abstract class TOMElement extends Element {
-  private _tomStyle: TOMStyle = {};
-  private _tomFocused = false;
-  private _tomFocusable = false;
+export class TTYElement extends Element {
+  private _ttyStyle: TTYStyle = {};
+  private _ttyFocused = false;
+  private _ttyFocusable = false;
   public bounds: Rect = { x: 0, y: 0, width: 0, height: 0 };
   public yogaNode?: Yoga.Node;
   private _needsRender = true;
@@ -74,14 +75,14 @@ export abstract class TOMElement extends Element {
   }
 
   /**
-   * TOM-specific style system (not CSS)
+   * TTY-specific style system (not CSS)
    */
-  get style(): TOMStyle {
-    return { ...this._tomStyle };
+  get style(): TTYStyle {
+    return { ...this._ttyStyle };
   }
 
-  set style(value: TOMStyle) {
-    this._tomStyle = { ...value };
+  set style(value: TTYStyle) {
+    this._ttyStyle = { ...value };
     this.markForRender();
     this.updateYogaStyles();
   }
@@ -94,7 +95,7 @@ export abstract class TOMElement extends Element {
 
     // Bubble up to trigger document re-render
     if (this.ownerDocument) {
-      const event = new CustomEvent('tom:needsRender', { bubbles: true });
+      const event = new CustomEvent('tty:needsRender', { bubbles: true });
       this.dispatchEvent(event);
     }
   }
@@ -103,27 +104,27 @@ export abstract class TOMElement extends Element {
    * Request fullscreen mode for this element
    */
   async requestFullscreen(): Promise<void> {
-    // Find the TOMWindow instance
-    const tomWindow = this.getTOMWindow();
-    if (!tomWindow) {
-      throw new Error('Element is not connected to a TOM window');
+    // Find the TTYWindow instance
+    const ttyWindow = this.getTTYWindow();
+    if (!ttyWindow) {
+      throw new Error('Element is not connected to a TTY window');
     }
 
-    return tomWindow.requestFullscreen(this);
+    return ttyWindow.requestFullscreen(this);
   }
 
   /**
-   * Get the TOMWindow instance from the ownerDocument
+   * Get the TTYWindow instance from the ownerDocument
    */
-  private getTOMWindow(): any {
+  private getTTYWindow(): any {
     if (!this.ownerDocument) {
       return null;
     }
 
-    // Walk up to find the TOMDocument and its associated TOMWindow
+    // Walk up to find the TTYDocument and its associated TTYWindow
     // This is a bit hacky but works for our architecture
-    const tomDoc = (this.ownerDocument as any)._tomDocument;
-    return tomDoc?._tomWindow;
+    const ttyDoc = (this.ownerDocument as any)._ttyDocument;
+    return ttyDoc?._ttyWindow;
   }
 
   /**
@@ -153,9 +154,9 @@ export abstract class TOMElement extends Element {
   private updateYogaStyles(): void {
     if (!this.yogaNode) return;
 
-    const style = this._tomStyle;
+    const style = this._ttyStyle;
 
-    // Map TOM styles to Yoga properties
+    // Map TTY styles to Yoga properties
     if (style.display === 'flex') {
       // yogaNode.setDisplay(Yoga.DISPLAY_FLEX);
     }
@@ -180,7 +181,7 @@ export abstract class TOMElement extends Element {
    */
   protected getTextStyle(): Partial<Cell> {
     // Use computed style which includes inheritance
-    const style = this.computedStyle || this._tomStyle;
+    const style = this.computedStyle || this._ttyStyle;
 
     return {
       fgColor: style.color,
@@ -195,7 +196,7 @@ export abstract class TOMElement extends Element {
    * Get computed padding as [top, right, bottom, left]
    */
   protected getPadding(): [number, number, number, number] {
-    const padding = this._tomStyle.padding;
+    const padding = this._ttyStyle.padding;
 
     if (typeof padding === 'number') {
       return [padding, padding, padding, padding];
@@ -212,7 +213,7 @@ export abstract class TOMElement extends Element {
    * Get computed margin as [top, right, bottom, left]
    */
   protected getMargin(): [number, number, number, number] {
-    const margin = this._tomStyle.margin;
+    const margin = this._ttyStyle.margin;
 
     if (typeof margin === 'number') {
       return [margin, margin, margin, margin];
@@ -240,9 +241,35 @@ export abstract class TOMElement extends Element {
   }
 
   /**
-   * Abstract method: each element renders itself
+   * Render this element to the screen buffer
+   * Base implementation handles background color and basic styling
    */
-  abstract renderSelf(buffer: ScreenBuffer): void;
+  renderSelf(buffer: ScreenBuffer): void {
+    // Generic TTY elements render their background and apply basic styling
+    if (this.bounds && (this.style.backgroundColor || this.style.color)) {
+      const { x, y, width, height } = this.bounds;
+      
+      // Fill background if specified
+      if (this.style.backgroundColor) {
+        buffer.fill(
+          { x, y, width, height },
+          ' ', // Space character for background fill
+          { bgColor: this.style.backgroundColor }
+        );
+      }
+      
+      // If element has text content, render it
+      if (this.textContent) {
+        buffer.put(x, y, this.textContent, {
+          fgColor: this.style.color,
+          bgColor: this.style.backgroundColor,
+          bold: this.style.fontWeight === 'bold',
+          italic: this.style.fontStyle === 'italic',
+          underline: this.style.textDecoration === 'underline'
+        });
+      }
+    }
+  }
 
   /**
    * Check if point is within element bounds
@@ -259,30 +286,30 @@ export abstract class TOMElement extends Element {
   /**
    * Focus management methods
    */
-  tomIsFocused(): boolean {
-    return this._tomFocused;
+  ttyIsFocused(): boolean {
+    return this._ttyFocused;
   }
 
-  tomSetFocused(focused: boolean): void {
-    this._tomFocused = focused;
+  ttySetFocused(focused: boolean): void {
+    this._ttyFocused = focused;
   }
 
-  tomIsFocusable(): boolean {
-    return this._tomFocusable;
+  ttyIsFocusable(): boolean {
+    return this._ttyFocusable;
   }
 
-  tomSetFocusable(focusable: boolean): void {
-    this._tomFocusable = focusable;
+  ttySetFocusable(focusable: boolean): void {
+    this._ttyFocusable = focusable;
   }
 
   /**
-   * Get all TOM children (filters out non-TOM nodes)
+   * Get all TTY children (filters out non-TTY nodes)
    */
-  getTOMChildren(): TOMElement[] {
-    const children: TOMElement[] = [];
+  getTTYChildren(): TTYElement[] {
+    const children: TTYElement[] = [];
 
     for (const child of this.children) {
-      if (child instanceof TOMElement) {
+      if (child instanceof TTYElement) {
         children.push(child);
       }
     }

@@ -1,74 +1,121 @@
 /**
- * Basic TOM Tests
+ * Basic TTY Tests
  */
 
 import { test, expect } from 'bun:test';
-import { createTOM, TOMDocument, TOMElement } from '../src/index.js';
+import { TTYWindow, TTYDocument, TTYElement, MockTTYRuntime } from '../src/index.js';
+import { TTYTextElement } from '../src/elements/TTYTextElement.js';
 
-test('createTOM returns document API', () => {
-  const tom = createTOM();
+test('TTYWindow provides document API', () => {
+  const mockRuntime = new MockTTYRuntime();
+  const tty = new TTYWindow({ runtime: mockRuntime });
   
-  expect(tom.document).toBeDefined();
-  expect(tom.body).toBeDefined();
-  expect(tom.createElement).toBeDefined();
-  expect(tom.render).toBeDefined();
+  expect(tty.document).toBeDefined();
+  expect(tty.document.body).toBeDefined();
+  expect(tty.document.createElement).toBeDefined();
+  expect(tty.document.render).toBeDefined();
   
-  tom.destroy();
+  tty.dispose();
 });
 
 test('can create elements', () => {
-  const tom = createTOM();
+  const mockRuntime = new MockTTYRuntime();
+  const tty = new TTYWindow({ runtime: mockRuntime });
   
-  const container = tom.createElement('container');
-  const text = tom.createElement('text');
-  const button = tom.createElement('button');
+  const container = tty.document.createElement('container');
+  const text = tty.document.createElement('text');
+  const button = tty.document.createElement('button');
   
   expect(container.tagName).toBe('CONTAINER');
   expect(text.tagName).toBe('TEXT');
   expect(button.tagName).toBe('BUTTON');
   
-  tom.destroy();
+  tty.dispose();
 });
 
 test('can build DOM tree', () => {
-  const tom = createTOM();
+  const mockRuntime = new MockTTYRuntime();
+  const tty = new TTYWindow({ runtime: mockRuntime });
   
-  const container = tom.createElement('container');
-  const text = tom.createElement('text');
+  const container = tty.document.createElement('container');
+  const text = tty.document.createElement('text');
   
-  text.textContent = 'Hello TOM!';
+  text.textContent = 'Hello TTY!';
   container.appendChild(text);
-  tom.body.appendChild(container);
+  tty.document.body.appendChild(container);
   
   expect(container.children.length).toBe(1);
   expect(container.children[0]).toBe(text);
-  expect(text.textContent).toBe('Hello TOM!');
+  expect(text.textContent).toBe('Hello TTY!');
+  expect(tty.document.body.children.length).toBe(1);
+  expect(tty.document.body.children[0]).toBe(container);
   
-  tom.destroy();
+  tty.dispose();
 });
 
-test('can set styles', () => {
-  const tom = createTOM();
+test('can set TTY styles', () => {
+  const mockRuntime = new MockTTYRuntime();
+  const tty = new TTYWindow({ runtime: mockRuntime });
   
-  const element = tom.createElement('container') as TOMElement;
+  const element = tty.document.createElement('container') as TTYElement;
+  
+  // Test that element is a TTYElement instance
+  expect(element).toBeDefined();
+  expect(element.tagName).toBe('CONTAINER');
+  expect(element).toBeInstanceOf(TTYElement);
+  
+  // Test TTY-specific style system
+  expect(element.style).toBeDefined();
+  expect(typeof element.style).toBe('object');
+  
+  // Set TTY styles
   element.style = {
     backgroundColor: 'red',
     color: 'white',
     padding: 10
   };
   
+  // Test that TTY styles were set
   expect(element.style.backgroundColor).toBe('red');
   expect(element.style.color).toBe('white');
   expect(element.style.padding).toBe(10);
   
-  tom.destroy();
+  tty.dispose();
 });
 
 test('document has correct dimensions', () => {
-  const tom = createTOM({ width: 100, height: 50 });
+  const mockRuntime = new MockTTYRuntime({
+    dimensions: { columns: 100, rows: 50 }
+  });
+  const tty = new TTYWindow({ runtime: mockRuntime });
   
-  expect(tom.document.terminalWidth).toBe(100);
-  expect(tom.document.terminalHeight).toBe(50);
+  const dimensions = tty.runtime.getTerminalSize();
+  expect(dimensions.columns).toBe(100);
+  expect(dimensions.rows).toBe(50);
   
-  tom.destroy();
+  tty.dispose();
+});
+
+test('createElement returns appropriate element subtypes', () => {
+  const mockRuntime = new MockTTYRuntime();
+  const tty = new TTYWindow({ runtime: mockRuntime });
+  
+  // Test generic container elements
+  const container = tty.document.createElement('div');
+  expect(container).toBeInstanceOf(TTYElement);
+  expect(container.tagName).toBe('DIV');
+  
+  const section = tty.document.createElement('container');
+  expect(section).toBeInstanceOf(TTYElement);
+  expect(section.tagName).toBe('CONTAINER');
+  
+  // Test text elements
+  const textElement = tty.document.createElement('text');
+  expect(textElement).toBeInstanceOf(TTYTextElement);
+  expect(textElement.tagName).toBe('TEXT');
+  
+  // Test that TTYTextElement is also a TTYElement (inheritance)
+  expect(textElement).toBeInstanceOf(TTYElement);
+  
+  tty.dispose();
 });
