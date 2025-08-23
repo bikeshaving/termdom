@@ -45,6 +45,17 @@ export interface TTYMouseEvent {
   shift: boolean;
 }
 
+export interface CellStyleOptions {
+  fgColor?: string;
+  bgColor?: string;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  inverse?: boolean;
+  dim?: boolean;
+  strikethrough?: boolean;
+}
+
 /**
  * Abstract base class for TTY runtime implementations.
  * Extends EventTarget to provide standard DOM-like event handling.
@@ -91,6 +102,9 @@ export abstract class TTYRuntime extends EventTarget {
   abstract setReverse(enabled: boolean): void;
   abstract setStrikethrough(enabled: boolean): void;
   abstract resetStyle(): void;
+
+  // === ANSI Generation (for ScreenBuffer) ===
+  abstract generateCellStyle(options: CellStyleOptions): string;
 
 	// TODO: WE SHOULD USE BUN NAMES and APIS
   // === Text Utilities ===

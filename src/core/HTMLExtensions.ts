@@ -7,7 +7,7 @@
  * Following HappyDOM's pattern of using Symbol properties for private data.
  */
 
-import { HTMLElement, DOMRect, Element } from 'happy-dom';
+import { HTMLElement, DOMRect, Element, Document, Node } from 'happy-dom';
 // @ts-ignore - DOMRectList not exported from main module, but we can import it directly
 import DOMRectList from 'happy-dom/lib/dom/DOMRectList.js';
 import type * as Yoga from 'yoga-layout';
@@ -25,12 +25,15 @@ export interface YogaElement extends HTMLElement {
   [YOGA_NODE]?: Yoga.Node;
 }
 
-// Augment HappyDOM's HTMLElement with our Symbol properties
+// Augment HappyDOM's HTMLElement and Document with our extensions
 declare module 'happy-dom' {
   interface HTMLElement {
     [YOGA_BOUNDS]?: DOMRect;
     [YOGA_NODE]?: Yoga.Node;
   }
+
+  // Document already has elementFromPoint, but it's a stub that returns null
+  // We'll override it with our Yoga-powered implementation
 }
 
 /**
@@ -184,4 +187,85 @@ export function initializeHTMLExtensions(): void {
     enumerable: true,
     configurable: true
   });
+
+  // === Document API Extensions ===
+  
+  /**
+   * elementFromPoint - Find element at specific coordinates using Yoga layout
+   * This is the core API that TTYEventTranslator will use for hit testing
+   */
+  Document.prototype.elementFromPoint = function(x: number, y: number): Element | null {
+    return findElementAtPoint(this.documentElement, x, y);
+  };
+
+  // === Element Navigation APIs ===
+  
+  /**
+   * Check if this element contains another element
+   */
+  HTMLElement.prototype.contains = function(other: Node | null): boolean {
+    if (!other || other === this) return other === this;
+    
+    let current: Node | null = other;
+    while (current && current !== this) {
+      current = current.parentNode;
+    }
+    return current === this;
+  };
+
+  /**
+   * Find closest ancestor matching selector
+   * For now, just supports simple tag name selectors
+   */
+  HTMLElement.prototype.closest = function(selector: string): Element | null {
+    let current: Element | null = this;
+    
+    // Simple tag name matching (can be enhanced later)
+    const tagName = selector.toUpperCase();
+    
+    while (current) {
+      if (current.tagName === tagName) {
+        return current;
+      }
+      current = current.parentElement;
+    }
+    return null;
+  };
+}
+
+/**
+ * Helper function to find element at specific point using YOGA_BOUNDS
+ * Performs depth-first search to find the deepest element at coordinates
+ */
+function findElementAtPoint(element: Element, x: number, y: number): Element | null {
+  if (!(element instanceof HTMLElement)) {
+    return null;
+  }
+
+  const bounds = element[YOGA_BOUNDS];
+  if (!bounds || !isPointInRect(x, y, bounds)) {
+    return null;
+  }
+
+  // Check children first (deepest first)
+  const children = Array.from(element.children) as HTMLElement[];
+  for (const child of children) {
+    const result = findElementAtPoint(child, x, y);
+    if (result) {
+      return result;
+    }
+  }
+
+  // If no child contains the point, this element is the target
+  return element;
+}
+
+/**
+ * Check if point is inside rectangle
+ */
+function isPointInRect(x: number, y: number, rect: DOMRect): boolean {
+  return x >= rect.x && 
+         x < rect.x + rect.width && 
+         y >= rect.y && 
+         y < rect.y + rect.height;
 }

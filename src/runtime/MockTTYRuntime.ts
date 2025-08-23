@@ -13,7 +13,7 @@
  * - No actual terminal I/O or process control
  */
 
-import { TTYRuntime, type TTYDimensions, type TTYCapabilities, type TTYKeyEvent, type TTYMouseEvent } from '../core/TTYRuntime.js';
+import { TTYRuntime, type TTYDimensions, type TTYCapabilities, type TTYKeyEvent, type TTYMouseEvent, type CellStyleOptions } from '../core/TTYRuntime.js';
 
 interface MockTTYRuntimeOptions {
   dimensions?: TTYDimensions;
@@ -217,6 +217,34 @@ export class MockTTYRuntime extends TTYRuntime {
     this._currentStyle = [];
     this._recordStyle('reset');
     this._outputBuffer.push('\x1b[0m');
+  }
+
+  // === ANSI Generation ===
+  generateCellStyle(options: CellStyleOptions): string {
+    let sequence = '';
+
+    // Reset all attributes first to ensure clean state
+    sequence += '\x1b[0m';
+
+    // Apply colors using mock color conversion
+    if (options.fgColor) {
+      const colorCode = this._colorToAnsi(options.fgColor, false);
+      if (colorCode) sequence += colorCode;
+    }
+    if (options.bgColor) {
+      const colorCode = this._colorToAnsi(options.bgColor, true);
+      if (colorCode) sequence += colorCode;
+    }
+
+    // Apply text styling
+    if (options.bold) sequence += '\x1b[1m';
+    if (options.italic) sequence += '\x1b[3m';
+    if (options.underline) sequence += '\x1b[4m';
+    if (options.dim) sequence += '\x1b[2m';
+    if (options.inverse) sequence += '\x1b[7m';
+    if (options.strikethrough) sequence += '\x1b[9m';
+
+    return sequence;
   }
 
   // === Text Utilities ===

@@ -16,6 +16,8 @@ export interface Cell {
   italic?: boolean;
   underline?: boolean;
   inverse?: boolean;
+  dim?: boolean;
+  strikethrough?: boolean;
 }
 
 export interface ScreenBufferOptions {
@@ -263,83 +265,29 @@ export class ScreenBuffer {
     if (cell.inverse) this.runtime.setReverse(true);
   }
 
-	//TODO: This should be handled by the TTYRuntime API
   /**
-   * Generate ANSI escape sequence for cell styling (legacy fallback)
+   * Generate ANSI escape sequence for cell styling using TTYRuntime
    */
   private generateStyleSequence(cell: Cell): string {
-    let sequence = '';
-
-    // Reset all attributes first to ensure clean state
-    sequence += '\x1b[0m';
-
-    // Use TTYRuntime for color conversion if available
     if (this.runtime) {
-      if (cell.fgColor) {
-        sequence += this.runtime.colorizeText('', cell.fgColor).replace(/./g, '');
-      }
-      if (cell.bgColor) {
-        const colorCode = this.colorToAnsi(cell.bgColor, true);
-        if (colorCode) sequence += colorCode;
-      }
-    } else {
-      // Fallback for backward compatibility
-      if (cell.fgColor) {
-        const colorCode = this.colorToAnsi(cell.fgColor, false);
-        if (colorCode) sequence += colorCode;
-      }
-      if (cell.bgColor) {
-        const colorCode = this.colorToAnsi(cell.bgColor, true);
-        if (colorCode) sequence += colorCode;
-      }
+      // Use TTYRuntime for proper ANSI generation
+      return this.runtime.generateCellStyle({
+        fgColor: cell.fgColor,
+        bgColor: cell.bgColor,
+        bold: cell.bold,
+        italic: cell.italic,
+        underline: cell.underline,
+        inverse: cell.inverse,
+        dim: cell.dim,
+        strikethrough: cell.strikethrough
+      });
     }
 
-    if (cell.bold) sequence += '\x1b[1m';
-    if (cell.italic) sequence += '\x1b[3m';
-    if (cell.underline) sequence += '\x1b[4m';
-    if (cell.inverse) sequence += '\x1b[7m';
-
-    return sequence;
-  }
-
-	//TODO: This should be handled by the TTYRuntime API
-  /**
-   * Convert color to ANSI escape sequence using Bun's color API
-   */
-  private colorToAnsi(color: string, isBackground: boolean): string {
-    try {
-      // Use Bun's color API for efficient color conversion
-      const ansiColor = Bun.color(color, 'ansi');
-      if (ansiColor && isBackground) {
-        // Convert foreground (38) to background (48)
-        return ansiColor.replace('38;', '48;');
-      } else {
-        return ansiColor || '';
-      }
-    } catch {
-      // Fallback for basic colors
-      return this.basicColorToAnsi(color, isBackground);
-    }
-  }
-
-	//TODO: This should be handled by the TTYRuntime API
-  /**
-   * Fallback basic color conversion
-   */
-  private basicColorToAnsi(color: string, isBackground: boolean): string {
-    const colors: Record<string, number> = {
-      'black': 0, 'red': 1, 'green': 2, 'yellow': 3,
-      'blue': 4, 'magenta': 5, 'cyan': 6, 'white': 7
-    };
-
-    const colorCode = colors[color.toLowerCase()];
-    if (colorCode !== undefined) {
-      const base = isBackground ? 40 : 30;
-      return `\x1b[${base + colorCode}m`;
-    }
-
+    // Fallback for when no runtime is available (shouldn't happen in normal usage)
+    console.warn('ScreenBuffer: No TTYRuntime available for style generation');
     return '';
   }
+
 
   /**
    * Check if two cells are equal
