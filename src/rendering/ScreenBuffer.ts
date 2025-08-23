@@ -6,7 +6,7 @@
  * Adapted from terminal-kit's MIT-licensed ScreenBuffer implementation.
  */
 
-import { Node } from 'happy-dom';
+import { Node, DOMRect } from 'happy-dom';
 
 export interface Cell {
   char: string;
@@ -24,14 +24,6 @@ export interface ScreenBufferOptions {
   x?: number;
   y?: number;
   runtime?: import('../core/TTYRuntime.js').TTYRuntime;
-}
-
-// TODO: can we use the DOM Rect APIs, here?
-export interface Rect {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
 }
 
 /**
@@ -126,7 +118,7 @@ export class ScreenBuffer {
   /**
    * Fill a rectangular region with character and style
    */
-  fill(bounds: Rect, char: string = ' ', style?: Partial<Cell>): void {
+  fill(bounds: DOMRect, char: string = ' ', style?: Partial<Cell>): void {
     for (let y = bounds.y; y < bounds.y + bounds.height; y++) {
       for (let x = bounds.x; x < bounds.x + bounds.width; x++) {
         if (x >= 0 && x < this.width && y >= 0 && y < this.height) {
@@ -481,10 +473,9 @@ export class ScreenBuffer {
     const computedStyle = parentElement.ownerDocument?.defaultView?.getComputedStyle(parentElement);
     if (!computedStyle) return;
     
-    // TODO: Get proper bounds from layout engine
-    // For now, use placeholder bounds
-    const bounds = this._getElementBounds(parentElement);
-    if (!bounds) return;
+    // Get bounds from element's getBoundingClientRect (Yoga-powered)
+    const bounds = parentElement.getBoundingClientRect();
+    if (!bounds || (bounds.width === 0 && bounds.height === 0)) return;
     
     // Render text with computed styles
     this.put(bounds.x, bounds.y, text, {
@@ -504,9 +495,9 @@ export class ScreenBuffer {
     const computedStyle = element.ownerDocument?.defaultView?.getComputedStyle(element);
     if (!computedStyle) return;
     
-    // TODO: Get proper bounds from layout engine  
-    const bounds = this._getElementBounds(element);
-    if (!bounds) return;
+    // Get bounds from element's getBoundingClientRect (Yoga-powered)
+    const bounds = element.getBoundingClientRect();
+    if (!bounds || (bounds.width === 0 && bounds.height === 0)) return;
     
     // Render background if specified
     const backgroundColor = computedStyle.getPropertyValue('background-color');
@@ -522,38 +513,6 @@ export class ScreenBuffer {
     }
   }
 
-  /**
-   * Get element bounds for rendering
-   * NAIVE IMPLEMENTATION for baseline testing - will be replaced with Yoga layout
-   */
-  private _getElementBounds(element: Element): Rect | null {
-    // Super naive layout - just flow elements top-to-bottom
-    // This is intentionally simple for baseline testing
-    
-    // Get element's position in tree (for simple Y offset calculation)
-    let y = 0;
-    let currentElement = element.previousElementSibling;
-    while (currentElement) {
-      y += 1; // Each element takes 1 row (naive)
-      currentElement = currentElement.previousElementSibling;
-    }
-    
-    // Add parent element's Y offset if it exists
-    if (element.parentElement && element.parentElement !== element.ownerDocument?.body) {
-      const parentBounds = this._getElementBounds(element.parentElement);
-      if (parentBounds) {
-        y += parentBounds.y + 1; // Parent's position + 1 row for parent content
-      }
-    }
-    
-    // Simple bounds: start at x=0, width=terminal width, height=1 row
-    return {
-      x: 0,
-      y,
-      width: Math.min(this.width, 80), // Don't exceed screen or reasonable width
-      height: 1
-    };
-  }
 
   /**
    * Dispose of resources

@@ -1,34 +1,53 @@
 /**
- * Hello World - TTY's first working demo
+ * Hello World - HTML-to-Terminal Demo 🚀
+ * 
+ * This demonstrates the revolutionary new approach:
+ * Write standard HTML/CSS → Render to beautiful terminal output!
  */
 
-import { createTTYWindow } from '../src/index.js';
+import { createTTYDocument } from '../src/index.js';
 
-function helloWorld() {
-  console.log('🚀 Starting TTY Hello World...\n');
+async function helloWorld() {
+  console.log('🚀 HTML-to-Terminal Hello World!\n');
   
-  // Create TTY window
-  const tty = createTTYWindow();
+  // Create a TTY document (like a browser, but for terminals)
+  const { document, render, dispose } = createTTYDocument();
   
-  // Create a simple text element
-  const text = tty.document.createElement('text');
-  text.textContent = 'Hello, TTY Object Model! 🎯';
+  // Create standard HTML elements with CSS styling!
+  const container = document.createElement('div');
+  container.style.setProperty('background-color', 'blue');
+  container.style.setProperty('color', 'white');
+  container.style.setProperty('padding', '1');
+  container.textContent = '🎯 Hello, HTML Terminal!';
   
-  // Add it to the document
-  tty.document.body.appendChild(text);
+  const subtitle = document.createElement('div');
+  subtitle.style.setProperty('color', 'yellow');
+  subtitle.style.setProperty('margin-top', '1');
+  subtitle.textContent = 'Standard HTML/CSS → ANSI Terminal Output';
   
-  // Try to render
-  console.log('📝 Created element:', text.tagName);
-  console.log('📄 Text content:', text.textContent);
-  console.log('🏗️  Element is instanceof TTYElement:', text.constructor.name);
+  // Add to document (just like web development!)
+  document.body.appendChild(container);
+  document.body.appendChild(subtitle);
   
-  // Force render
-  tty.document.render();
+  console.log('✅ Created HTML elements');
+  console.log('📝 Container tag:', container.tagName);
+  console.log('🎨 Background color:', container.style.getPropertyValue('background-color'));
   
-  console.log('\n✅ Hello World complete!');
+  // Render HTML to terminal with Yoga layout + ANSI output
+  await render();
+  
+  // Show layout information
+  const rect = container.getBoundingClientRect();
+  console.log('\n📐 Layout computed:');
+  console.log(`   Size: ${rect.width} x ${rect.height}`);
+  console.log(`   Position: (${rect.x}, ${rect.y})`);
+  
+  console.log('\n🎉 HTML-to-Terminal rendering complete!');
   
   // Clean up
-  tty[Symbol.dispose]();
+  setTimeout(() => {
+    dispose();
+  }, 2000);
 }
 
 helloWorld();
