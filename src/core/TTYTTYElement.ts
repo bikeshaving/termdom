@@ -13,12 +13,10 @@ import { TTYRuntime, detectTTYRuntime, type TTYDimensions } from './TTYRuntime.j
 import { TTYMouseHandler } from './TTYMouseHandler.js';
 import { TTYKeyboardHandler } from './TTYKeyboardHandler.js';
 import { TTYViewport, type ViewportOptions } from './TTYViewport.js';
-// @ts-ignore - HappyDOM Event class for proper event creation
-import Event from 'happy-dom/lib/event/Event.js';
+import { ScreenBuffer } from '../rendering/ScreenBuffer.js';
+import { Event, PropertySymbol } from 'happy-dom';
 // @ts-ignore - NodeFactory not exported from main module
 import NodeFactory from 'happy-dom/lib/nodes/NodeFactory.js';
-// @ts-ignore - PropertySymbol not exported from main module
-import * as PropertySymbol from 'happy-dom/lib/PropertySymbol.js';
 
 // Import element constructors
 import { TTYContainerElement } from '../elements/TTYContainer.js';
@@ -42,6 +40,7 @@ export type ViewportMode = 'flow' | 'fullscreen';
 export class TTYTTYElement extends TTYElement implements Disposable {
   private _runtime: TTYRuntime;
   private _document: Document;
+  private _screenBuffer: ScreenBuffer | null = null;
   private _viewport: TTYViewport | null = null;
   private _mouseHandler: TTYMouseHandler;
   private _keyboardHandler: TTYKeyboardHandler;
@@ -68,6 +67,14 @@ export class TTYTTYElement extends TTYElement implements Disposable {
     
     // Auto-detect runtime if not provided
     this._runtime = options.runtime || detectTTYRuntime();
+    
+    // Initialize ScreenBuffer for rendering
+    const termSize = this._runtime.getTerminalSize();
+    this._screenBuffer = new ScreenBuffer({
+      width: options.width || termSize.columns,
+      height: options.height || termSize.rows,
+      runtime: this._runtime
+    });
     
     // Initialize handlers with runtime
     this._mouseHandler = new TTYMouseHandler(this._runtime);
@@ -261,27 +268,23 @@ export class TTYTTYElement extends TTYElement implements Disposable {
    * Render the TTY content to the terminal
    * Called automatically by MutationObserver or manually by user
    */
-  render(): void {
-    // TODO: Implement full rendering pipeline
-    // This will coordinate with TTYRenderer, ScreenBuffer, etc.
-    console.log('TTYTTYElement.render() - rendering TTY tree');
+  async render(): Promise<void> {
+    if (!this._screenBuffer) {
+      console.warn('TTYTTYElement.render() - ScreenBuffer not initialized');
+      return;
+    }
 
-    // For now, just trigger a simple render cycle
-    this._renderElements();
-  }
-
-  /**
-   * Simple element rendering (placeholder implementation)
-   */
-  private _renderElements(): void {
-    // TODO: Walk the TTY element tree and render
-    // This will be implemented when we have TTYRenderer ready
-
-    if (this._runtime) {
-      // Simple test - just write some content
-      this._runtime.writeStdout('TTYTTYElement rendered!\\n').catch(console.error);
+    try {
+      // Use ScreenBuffer's DOM-aware rendering pipeline
+      this._screenBuffer.renderTree(this);
+      
+      // Send only changes to terminal (delta rendering)
+      await this._screenBuffer.renderDelta();
+    } catch (error) {
+      console.error('TTYTTYElement.render() - Error during render:', error);
     }
   }
+
 
   // === Cleanup ===
 
@@ -366,11 +369,7 @@ export class TTYTTYElement extends TTYElement implements Disposable {
       return true;
     });
 
-    // TODO: Remove this when we implement MutationObserver-based rendering
-    // Handle render requests (temporary)
-    this.addEventListener('tty:needsRender', () => {
-      this._requestRender();
-    });
+    // MutationObserver handles all rendering now - no manual events needed
   }
 
   private _setupCleanupHandlers(): void {
@@ -401,11 +400,4 @@ export class TTYTTYElement extends TTYElement implements Disposable {
     this._runtime.setRawMode(false);
   }
 
-  private _requestRender(): void {
-    // This will be replaced by MutationObserver-based rendering
-    // For now, just schedule a microtask
-    queueMicrotask(() => {
-      this.render();
-    });
-  }
 }

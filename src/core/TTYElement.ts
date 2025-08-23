@@ -5,60 +5,9 @@
  * terminal-specific elements with custom styling and rendering.
  */
 
-import { Element, Node, CSSStyleDeclaration } from 'happy-dom';
-// @ts-ignore - HappyDOM Event class for proper event creation
-import Event from 'happy-dom/lib/event/Event.js';
-// @ts-ignore - Need internal symbols for CSSStyleDeclaration
-import * as PropertySymbol from 'happy-dom/lib/PropertySymbol.js';
+import { Element, Node, CSSStyleDeclaration, Event, PropertySymbol } from 'happy-dom';
 import { ScreenBuffer, type Cell, type Rect } from '../rendering/ScreenBuffer.js';
 import type * as Yoga from 'yoga-layout';
-
-// TODO: Figure out if this can inherit from CSSStyleDeclaration, probably should be put in a separate file
-// TODO: Please make these kebab-case to match CSSOM
-export interface TTYStyle {
-  // Display & Positioning
-  display?: 'flex' | 'block' | 'inline' | 'inline-block' | 'none';
-  position?: 'relative' | 'absolute' | 'fixed';
-
-  // Flexbox
-  flexDirection?: 'row' | 'column' | 'row-reverse' | 'column-reverse';
-  justifyContent?: 'flex-start' | 'center' | 'flex-end' | 'space-between' | 'space-around';
-  alignItems?: 'stretch' | 'flex-start' | 'center' | 'flex-end';
-  flex?: number;
-  flexGrow?: number;
-  flexShrink?: number;
-
-  // Box Model
-  width?: number | string;
-  height?: number | string;
-  minWidth?: number;
-  maxWidth?: number;
-  minHeight?: number;
-  maxHeight?: number;
-
-	// TOOD: string shorthand. I'm not sure about arrays here
-  margin?: [number, number, number, number] | number;
-  padding?: [number, number, number, number] | number;
-  border?: [number, number, number, number] | number;
-
-  // Visual
-  color?: string;
-  backgroundColor?: string;
-  borderColor?: string;
-
-  // Text
-  fontWeight?: 'normal' | 'bold';
-  fontStyle?: 'normal' | 'italic';
-  textDecoration?: 'none' | 'underline';
-  textAlign?: 'left' | 'center' | 'right';
-  whiteSpace?: 'normal' | 'nowrap' | 'pre' | 'pre-wrap';
-  wordWrap?: 'normal' | 'break-word' | 'nowrap';
-
-  // Overflow
-  overflow?: 'visible' | 'hidden' | 'scroll';
-  overflowX?: 'visible' | 'hidden' | 'scroll';
-  overflowY?: 'visible' | 'hidden' | 'scroll';
-}
 
 /**
  * Base TTY element class - extends HappyDOM Element but NOT HTMLElement
@@ -71,7 +20,6 @@ export class TTYElement extends Element {
   private _ttyFocusable = false;
   public bounds: Rect = { x: 0, y: 0, width: 0, height: 0 };
   public yogaNode?: Yoga.Node;
-  private _needsRender = true;
   private [PropertySymbol.style]: CSSStyleDeclaration | null = null;
 
   constructor() {
@@ -99,19 +47,6 @@ export class TTYElement extends Element {
   // HappyDOM provides style property automatically via Element base class
   // No need to override - it already has proper CSSStyleDeclaration
 
-	// TODO: shouldn't we be using MutationObservers for this?
-  /**
-   * Mark element as needing re-render
-   */
-  markForRender(): void {
-    this._needsRender = true;
-
-    // Bubble up to trigger document re-render
-    if (this.ownerDocument) {
-      const event = new Event('tty:needsRender', { bubbles: true });
-      this.dispatchEvent(event);
-    }
-  }
 
   /**
    * Request fullscreen mode for this element
@@ -140,19 +75,6 @@ export class TTYElement extends Element {
     return ttyDoc?._ttyWindow;
   }
 
-  /**
-   * Check if element needs rendering
-   */
-  get needsRender(): boolean {
-    return this._needsRender;
-  }
-
-  /**
-   * Clear the needs render flag
-   */
-  clearRenderFlag(): void {
-    this._needsRender = false;
-  }
 
   /**
    * Initialize Yoga node - called by LayoutEngine
@@ -215,14 +137,14 @@ export class TTYElement extends Element {
    */
   protected getPadding(): [number, number, number, number] {
     const padding = this.style.getPropertyValue('padding');
-    
+
     if (!padding) {
       return [0, 0, 0, 0];
     }
-    
+
     // Parse CSS padding value (e.g., "10px" or "10px 5px")
     const values = padding.split(/\s+/).map(v => parseInt(v) || 0);
-    
+
     switch (values.length) {
       case 1: return [values[0], values[0], values[0], values[0]];
       case 2: return [values[0], values[1], values[0], values[1]];
@@ -237,14 +159,14 @@ export class TTYElement extends Element {
    */
   protected getMargin(): [number, number, number, number] {
     const margin = this.style.getPropertyValue('margin');
-    
+
     if (!margin) {
       return [0, 0, 0, 0];
     }
-    
+
     // Parse CSS margin value (e.g., "10px" or "10px 5px")
     const values = margin.split(/\s+/).map(v => parseInt(v) || 0);
-    
+
     switch (values.length) {
       case 1: return [values[0], values[0], values[0], values[0]];
       case 2: return [values[0], values[1], values[0], values[1]];
@@ -268,39 +190,6 @@ export class TTYElement extends Element {
     };
   }
 
-  /**
-   * Render this element to the screen buffer
-   * Base implementation handles background color and basic styling
-   */
-  renderSelf(buffer: ScreenBuffer): void {
-    // Generic TTY elements render their background and apply basic styling
-    const backgroundColor = this.style.getPropertyValue('background-color');
-    const color = this.style.getPropertyValue('color');
-    
-    if (this.bounds && (backgroundColor || color)) {
-      const { x, y, width, height } = this.bounds;
-
-      // Fill background if specified
-      if (backgroundColor) {
-        buffer.fill(
-          { x, y, width, height },
-          ' ', // Space character for background fill
-          { bgColor: backgroundColor }
-        );
-      }
-
-      // If element has text content, render it
-      if (this.textContent) {
-        buffer.put(x, y, this.textContent, {
-          fgColor: color,
-          bgColor: backgroundColor,
-          bold: this.style.getPropertyValue('font-weight') === 'bold',
-          italic: this.style.getPropertyValue('font-style') === 'italic',
-          underline: this.style.getPropertyValue('text-decoration') === 'underline'
-        });
-      }
-    }
-  }
 
   /**
    * Check if point is within element bounds
@@ -362,6 +251,7 @@ export class TTYElement extends Element {
     return this.clientHeight; // TODO: Return actual content height when scrolling is implemented
   }
 
+	// TODO: we should use DOM methods
   /**
    * Focus management methods
    */
@@ -380,45 +270,4 @@ export class TTYElement extends Element {
   ttySetFocusable(focusable: boolean): void {
     this._ttyFocusable = focusable;
   }
-
-  /**
-   * @deprecated Use standard DOM properties instead:
-   *
-   * // For all child nodes (including text):
-   * for (const child of element.childNodes) { ... }
-   *
-   * // For element children only:
-   * const elements = Array.from(element.childNodes).filter(child =>
-   *   child.nodeType === Node.ELEMENT_NODE
-   * ) as TTYElement[];
-   *
-   * // Or simply:
-   * for (const child of element.children) { ... }
-   */
-  getTTYChildren(): TTYElement[] {
-    return Array.from(this.childNodes).filter(child =>
-      child.nodeType === Node.ELEMENT_NODE
-    ) as TTYElement[];
-  }
-
-  /**
-   * Override appendChild to trigger re-render
-   */
-  override appendChild<T extends Node>(child: T): T {
-    super.appendChild(child);
-    this.markForRender();
-    return child;
-  }
-
-  /**
-   * Override removeChild to trigger re-render
-   */
-  override removeChild<T extends Node>(child: T): T {
-    super.removeChild(child);
-    this.markForRender();
-    return child;
-  }
-
-  // Note: textContent setter/getter inherited from Element
-  // Re-render is triggered via mutation observers or explicit calls
 }

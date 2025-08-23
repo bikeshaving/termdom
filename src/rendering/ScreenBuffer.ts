@@ -6,6 +6,8 @@
  * Adapted from terminal-kit's MIT-licensed ScreenBuffer implementation.
  */
 
+import { Node } from 'happy-dom';
+
 export interface Cell {
   char: string;
   fgColor?: string;
@@ -432,6 +434,106 @@ export class ScreenBuffer {
 
     this.cells = newCells;
     this.lastFrame = undefined; // Force full redraw on next render
+  }
+
+  /**
+   * Render a DOM tree to the screen buffer
+   * This is the main entry point for TTY DOM rendering
+   */
+  renderTree(rootElement: Element): void {
+    // TODO: Implement sophisticated rendering pipeline:
+    // 1. Layout phase: Calculate bounds for all elements
+    // 2. Invalidation phase: Find elements that changed
+    // 3. Clear phase: Clear old positions for moved elements  
+    // 4. Render phase: Walk tree and render each node
+    // 5. Delta phase: Only send changes to terminal
+    
+    this._walkDOMTree(rootElement);
+  }
+
+  /**
+   * Walk the DOM tree and render each node appropriately
+   */
+  private _walkDOMTree(node: Node): void {
+    // Handle different node types using Node constants
+    if (node.nodeType === Node.TEXT_NODE) {
+      this._renderTextNode(node as Text);
+    } else if (node.nodeType === Node.ELEMENT_NODE) {
+      this._renderElementNode(node as Element);
+    }
+    
+    // Recurse into child nodes
+    node.childNodes.forEach(child => this._walkDOMTree(child));
+  }
+
+  /**
+   * Render a text node to the buffer
+   */
+  private _renderTextNode(textNode: Text): void {
+    const text = textNode.textContent;
+    if (!text || !text.trim()) return;
+    
+    // Get parent element for styling and bounds
+    const parentElement = textNode.parentElement;
+    if (!parentElement) return;
+    
+    // Use computed style for proper CSS cascade
+    const computedStyle = parentElement.ownerDocument?.defaultView?.getComputedStyle(parentElement);
+    if (!computedStyle) return;
+    
+    // TODO: Get proper bounds from layout engine
+    // For now, use placeholder bounds
+    const bounds = this._getElementBounds(parentElement);
+    if (!bounds) return;
+    
+    // Render text with computed styles
+    this.put(bounds.x, bounds.y, text, {
+      fgColor: computedStyle.getPropertyValue('color'),
+      bgColor: computedStyle.getPropertyValue('background-color'),
+      bold: computedStyle.getPropertyValue('font-weight') === 'bold',
+      italic: computedStyle.getPropertyValue('font-style') === 'italic',
+      underline: computedStyle.getPropertyValue('text-decoration')?.includes('underline')
+    });
+  }
+
+  /**
+   * Render an element node to the buffer
+   */
+  private _renderElementNode(element: Element): void {
+    // Use computed style for proper CSS cascade
+    const computedStyle = element.ownerDocument?.defaultView?.getComputedStyle(element);
+    if (!computedStyle) return;
+    
+    // TODO: Get proper bounds from layout engine  
+    const bounds = this._getElementBounds(element);
+    if (!bounds) return;
+    
+    // Render background if specified
+    const backgroundColor = computedStyle.getPropertyValue('background-color');
+    if (backgroundColor && backgroundColor !== 'transparent') {
+      this.fill(bounds, ' ', { bgColor: backgroundColor });
+    }
+    
+    // Render borders if specified
+    const borderWidth = parseInt(computedStyle.getPropertyValue('border-width')) || 0;
+    if (borderWidth > 0) {
+      const borderColor = computedStyle.getPropertyValue('border-color');
+      // TODO: Implement border rendering
+    }
+  }
+
+  /**
+   * Get element bounds for rendering
+   * TODO: Integrate with proper layout engine (Yoga)
+   */
+  private _getElementBounds(element: Element): Rect | null {
+    // Placeholder implementation - this should come from layout engine
+    // For now, return null to prevent rendering until layout is integrated
+    return null;
+    
+    // Future implementation will look like:
+    // const layoutNode = element[LAYOUT_SYMBOL];
+    // return layoutNode ? layoutNode.getComputedLayout() : null;
   }
 
   /**

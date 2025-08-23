@@ -5,11 +5,9 @@
  * Brings familiar web development patterns to terminal applications.
  */
 
-import { Window } from 'happy-dom';
+import { Window, PropertySymbol } from 'happy-dom';
 // @ts-ignore - NodeFactory not exported from main module
 import NodeFactory from 'happy-dom/lib/nodes/NodeFactory.js';
-// @ts-ignore - PropertySymbol not exported from main module
-import * as PropertySymbol from 'happy-dom/lib/PropertySymbol.js';
 import { TTYTTYElement, type TTYOptions } from './core/TTYTTYElement.js';
 
 // === New TTY Core Classes ===
@@ -121,11 +119,13 @@ export function createTTY(options: TTYOptions = {}): TTYTTYElement {
     }
   });
   
-  // Observe the entire document for changes
+  // Observe the entire document for changes that affect rendering
   observer.observe(document, {
-    childList: true,
-    attributes: true,
-    subtree: true
+    childList: true,           // appendChild, removeChild
+    attributes: true,          // style changes, attribute changes  
+    attributeFilter: ['style', 'class'], // Only watch rendering-relevant attributes
+    subtree: true,            // Deep observation of entire TTY tree
+    characterData: true       // Text content changes
   });
   
   // Attach TTY root to DOM
