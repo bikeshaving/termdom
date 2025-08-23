@@ -14,7 +14,7 @@
  * ```
  */
 
-import { Window, Document } from 'happy-dom';
+import { Window, Document, MutationObserver } from 'happy-dom';
 import { TTYRuntime, detectTTYRuntime } from './TTYRuntime.js';
 import { ScreenBuffer } from '../rendering/ScreenBuffer.js';
 import { LayoutEngine } from '../layout/LayoutEngine.js';

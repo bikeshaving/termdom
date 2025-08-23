@@ -5,12 +5,11 @@
  * and ScreenBuffer rendering to efficiently update the terminal through TTYRuntime.
  */
 
-import { TTYElement } from './TTYElement.js';
+import { HTMLElement } from 'happy-dom';
 import { TTYRuntime } from './TTYRuntime.js';
 import { ScreenBuffer } from '../rendering/ScreenBuffer.js';
-// import { LayoutEngine } from '../layout/LayoutEngine.js'; // Temporarily disabled
-// import { SimpleGreedyTextBreaker } from '../text/SimpleGreedyTextBreaker.js'; // Temporarily disabled
-// import { type InlineElement } from '../text/index.js'; // Temporarily disabled
+import { LayoutEngine } from '../layout/LayoutEngine.js';
+import { YOGA_BOUNDS } from './HTMLExtensions.js';
 
 export interface TTYMouseEvent {
   x: number;
@@ -75,7 +74,7 @@ export class TTYRenderer {
 
       // Render document body if it exists
       const body = this.document.body;
-      if (body && body instanceof TTYElement) {
+      if (body && body instanceof HTMLElement) {
         await this._renderElement(body, 0, 0);
       }
 
@@ -103,22 +102,23 @@ export class TTYRenderer {
   /**
    * Render a specific element and its children
    */
-  private async _renderElement(element: TTYElement, x: number, y: number): Promise<void> {
-    // Set element bounds for layout
-    const dimensions = this.runtime.getTerminalSize();
-    element.bounds = {
-      x,
-      y, 
-      width: dimensions.columns - x,
-      height: dimensions.rows - y
-    };
+  private async _renderElement(element: HTMLElement, x: number, y: number): Promise<void> {
+    // Get bounds from Yoga layout (if available)
+    const bounds = element[YOGA_BOUNDS];
+    if (!bounds) {
+      // No layout computed yet, skip rendering
+      return;
+    }
 
-    // Render the element itself
-    element.renderSelf(this.rootBuffer);
+    // Render using ScreenBuffer's compositeElement method
+    this.rootBuffer.compositeElement(element);
 
     // Render children
-    for (const child of element.getTTYChildren()) {
-      await this._renderElement(child, x, y + 1); // Simple vertical stacking for now
+    const children = Array.from(element.children) as HTMLElement[];
+    for (const child of children) {
+      if (child instanceof HTMLElement) {
+        await this._renderElement(child, bounds.x, bounds.y);
+      }
     }
   }
 

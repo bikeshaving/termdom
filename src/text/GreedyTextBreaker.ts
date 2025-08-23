@@ -145,11 +145,12 @@ export class GreedyTextBreaker extends TextBreaker {
    * Get width of a content item
    */
   private getItemWidth(item: MixedContentItem): number {
-    if (item.type === 'text') {
+    if (item.type === 'text' && item.char) {
       return this.getTextWidth(item.char);
-    } else {
+    } else if (item.type === 'element' && item.element) {
       return item.element.width;
     }
+    return 0;
   }
   
   /**
@@ -212,7 +213,7 @@ export class GreedyTextBreaker extends TextBreaker {
         }
         
         // Track last space position
-        if (item.type === 'text' && this.isBreakableSpace(item.char)) {
+        if (item.type === 'text' && item.char && this.isBreakableSpace(item.char)) {
           lastSpaceIndex = i;
         }
         
@@ -238,7 +239,7 @@ export class GreedyTextBreaker extends TextBreaker {
     }
     
     // For text, check if it's a word boundary (space followed by non-space)
-    if (currentItem.type === 'text') {
+    if (currentItem.type === 'text' && currentItem.char) {
       // Break after spaces
       if (this.isBreakableSpace(currentItem.char)) {
         return true;
@@ -308,6 +309,8 @@ interface MixedContentItem {
   type: 'text' | 'element';
   startIndex: number;
   endIndex: number;
+  char?: string; // For text items
+  element?: InlineElement; // For element items
 }
 
 interface MixedTextItem extends MixedContentItem {

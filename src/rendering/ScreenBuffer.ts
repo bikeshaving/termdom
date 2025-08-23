@@ -6,7 +6,7 @@
  * Adapted from terminal-kit's MIT-licensed ScreenBuffer implementation.
  */
 
-import { Node, DOMRect } from 'happy-dom';
+import { Node, DOMRect, Element, Text } from 'happy-dom';
 
 export interface Cell {
   char: string;
@@ -441,6 +441,16 @@ export class ScreenBuffer {
     // 5. Delta phase: Only send changes to terminal
     
     this._walkDOMTree(rootElement);
+  }
+
+  /**
+   * Composite a single element and its children to the buffer
+   * Used by TTYRenderer for direct element rendering
+   */
+  compositeElement(element: Element): void {
+    this._renderElementNode(element);
+    // Recurse into children
+    Array.from(element.childNodes).forEach(child => this._walkDOMTree(child));
   }
 
   /**

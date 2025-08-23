@@ -1,83 +1,83 @@
 /**
- * Integration Tests for TTY Rendering Pipeline
+ * Integration Tests for HTML-to-Terminal Rendering Pipeline
  * 
- * These tests verify that our DOM-aware rendering actually produces
- * the expected terminal output using snapshot testing.
+ * These tests verify that our HTML-to-Terminal rendering actually produces
+ * the expected ANSI terminal output using snapshot testing.
  */
 
 import { test, expect } from 'bun:test';
-import { createTTY, MockTTYRuntime } from '../src/index.js';
+import { createTTYDocument, MockTTYRuntime } from '../src/index.js';
 import { expectSnapshot } from '../src/testing/snapshotUtils.js';
 
-test('renders simple text element', async () => {
+test('renders simple HTML text', async () => {
   const mockRuntime = new MockTTYRuntime();
-  const tty = createTTY({ runtime: mockRuntime });
+  const { document, render, dispose } = createTTYDocument({ runtime: mockRuntime });
   
-  const text = tty.createElement('text');
-  text.textContent = 'Hello World!';
-  tty.appendChild(text);
+  const div = document.createElement('div');
+  div.textContent = 'Hello World!';
+  document.body.appendChild(div);
   
-  await tty.render();
+  await render();
   
   expectSnapshot('simple-text', mockRuntime, { updateSnapshots: true });
-  tty.dispose();
+  dispose();
 });
 
-test('renders nested container with multiple text elements', async () => {
+test('renders nested HTML container with multiple elements', async () => {
   const mockRuntime = new MockTTYRuntime();
-  const tty = createTTY({ runtime: mockRuntime });
+  const { document, render, dispose } = createTTYDocument({ runtime: mockRuntime });
   
-  const container = tty.createElement('container');
-  const text1 = tty.createElement('text');
-  const text2 = tty.createElement('text');
+  const container = document.createElement('div');
+  const span1 = document.createElement('span');
+  const span2 = document.createElement('span');
   
-  text1.textContent = 'First line';
-  text2.textContent = 'Second line';
+  span1.textContent = 'First line';
+  span2.textContent = 'Second line';
   
-  container.appendChild(text1);
-  container.appendChild(text2);
-  tty.appendChild(container);
+  container.appendChild(span1);
+  container.appendChild(span2);
+  document.body.appendChild(container);
   
-  await tty.render();
+  await render();
   
   expectSnapshot('nested-container', mockRuntime, { updateSnapshots: true });
-  tty.dispose();
+  dispose();
 });
 
-test('renders text with colors', async () => {
+test('renders HTML text with CSS colors', async () => {
   const mockRuntime = new MockTTYRuntime();
-  const tty = createTTY({ runtime: mockRuntime });
+  const { document, render, dispose } = createTTYDocument({ runtime: mockRuntime });
   
-  const text1 = tty.createElement('text');
-  const text2 = tty.createElement('text');
+  const div1 = document.createElement('div');
+  const div2 = document.createElement('div');
   
-  text1.textContent = 'Red text';
-  text1.style.setProperty('color', 'red');
+  div1.textContent = 'Red text';
+  div1.style.setProperty('color', 'red');
   
-  text2.textContent = 'Green text';
-  text2.style.setProperty('color', 'green');
+  div2.textContent = 'Green text';
+  div2.style.setProperty('color', 'green');
   
-  tty.appendChild(text1);
-  tty.appendChild(text2);
+  document.body.appendChild(div1);
+  document.body.appendChild(div2);
   
-  await tty.render();
+  await render();
   
   expectSnapshot('colored-text', mockRuntime, { updateSnapshots: true });
-  tty.dispose();
+  dispose();
 });
 
-test('renders background colors', async () => {
+test('renders HTML background colors', async () => {
   const mockRuntime = new MockTTYRuntime();
-  const tty = createTTY({ runtime: mockRuntime });
+  const { document, render, dispose } = createTTYDocument({ runtime: mockRuntime });
   
-  const text = tty.createElement('text');
-  text.textContent = 'Text on blue background';
-  text.style.setProperty('background-color', 'blue');
+  const div = document.createElement('div');
+  div.textContent = 'Text on blue background';
+  div.style.setProperty('background-color', 'blue');
   
-  tty.appendChild(text);
+  document.body.appendChild(div);
   
-  await tty.render();
+  await render();
   
   expectSnapshot('background-colors', mockRuntime, { updateSnapshots: true });
-  tty.dispose();
+  dispose();
 });

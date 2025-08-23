@@ -1,15 +1,15 @@
 /**
- * Tests for CSSOM integration in TTYOM
+ * Tests for HTML CSSOM integration in TTYOM
  */
 
 import { test, expect, describe } from "bun:test";
-import { createTTY, MockTTYRuntime } from '../src/index.js';
+import { createTTYDocument, MockTTYRuntime } from '../src/index.js';
 
-describe("CSSOM Integration", () => {
-  test("TTYElement should have CSSStyleDeclaration", () => {
+describe("HTML CSSOM Integration", () => {
+  test("HTML elements should have CSSStyleDeclaration", () => {
     const mockRuntime = new MockTTYRuntime();
-    const tty = createTTY({ runtime: mockRuntime });
-    const element = tty.createElement('div');
+    const { document, dispose } = createTTYDocument({ runtime: mockRuntime });
+    const element = document.createElement('div');
     
     expect(element.style).toBeDefined();
     expect(element.style.constructor.name).toBe('CSSStyleDeclaration');
@@ -17,13 +17,13 @@ describe("CSSOM Integration", () => {
     expect(typeof element.style.getPropertyValue).toBe('function');
     expect(typeof element.style.removeProperty).toBe('function');
     
-    tty.dispose();
+    dispose();
   });
 
   test("setProperty and getPropertyValue should work", () => {
     const mockRuntime = new MockTTYRuntime();
-    const tty = createTTY({ runtime: mockRuntime });
-    const element = tty.createElement('div');
+    const { document, dispose } = createTTYDocument({ runtime: mockRuntime });
+    const element = document.createElement('div');
     
     element.style.setProperty('color', 'red');
     element.style.setProperty('background-color', 'blue');
@@ -34,13 +34,13 @@ describe("CSSOM Integration", () => {
     expect(element.style.getPropertyValue('display')).toBe('flex');
     expect(element.style.getPropertyValue('font-size')).toBe(''); // not set
     
-    tty.dispose();
+    dispose();
   });
 
   test("removeProperty should work", () => {
     const mockRuntime = new MockTTYRuntime();
-    const tty = createTTY({ runtime: mockRuntime });
-    const element = tty.createElement('div');
+    const { document, dispose } = createTTYDocument({ runtime: mockRuntime });
+    const element = document.createElement('div');
     
     element.style.setProperty('color', 'red');
     expect(element.style.getPropertyValue('color')).toBe('red');
@@ -48,19 +48,19 @@ describe("CSSOM Integration", () => {
     element.style.removeProperty('color');
     expect(element.style.getPropertyValue('color')).toBe('');
     
-    tty.dispose();
+    dispose();
   });
 
-  test("tty.getComputedStyle should work", () => {
+  test("document.defaultView.getComputedStyle should work", () => {
     const mockRuntime = new MockTTYRuntime();
-    const tty = createTTY({ runtime: mockRuntime });
-    const element = tty.createElement('div');
+    const { document, dispose } = createTTYDocument({ runtime: mockRuntime });
+    const element = document.createElement('div');
     
     element.style.setProperty('color', 'red');
     element.style.setProperty('display', 'block');
-    tty.appendChild(element);
+    document.body.appendChild(element);
     
-    const computedStyle = tty.getComputedStyle(element);
+    const computedStyle = document.defaultView!.getComputedStyle(element);
     
     expect(computedStyle).toBeDefined();
     expect(computedStyle.constructor.name).toBe('CSSStyleDeclaration');
@@ -68,13 +68,13 @@ describe("CSSOM Integration", () => {
     expect(computedStyle.getPropertyValue('color')).toBe('red');
     expect(computedStyle.getPropertyValue('display')).toBe('block');
     
-    tty.dispose();
+    dispose();
   });
 
   test("CSS property names should be kebab-case", () => {
     const mockRuntime = new MockTTYRuntime();
-    const tty = createTTY({ runtime: mockRuntime });
-    const element = tty.createElement('div');
+    const { document, dispose } = createTTYDocument({ runtime: mockRuntime });
+    const element = document.createElement('div');
     
     // Use kebab-case property names
     element.style.setProperty('background-color', 'blue');
@@ -87,41 +87,33 @@ describe("CSSOM Integration", () => {
     expect(element.style.getPropertyValue('flex-direction')).toBe('column');
     expect(element.style.getPropertyValue('text-align')).toBe('center');
     
-    tty.dispose();
+    dispose();
   });
 
 
-  test("style changes should trigger re-render", async () => {
+  test("style changes should work with HTML elements", async () => {
     const mockRuntime = new MockTTYRuntime();
-    const tty = createTTY({ runtime: mockRuntime });
-    const element = tty.createElement('div');
+    const { document, render, dispose } = createTTYDocument({ runtime: mockRuntime });
+    const element = document.createElement('div');
     
-    let renderCalled = false;
-    const originalRender = tty.render;
-    tty.render = function() {
-      renderCalled = true;
-      originalRender.call(this);
-    };
-    
-    // Add element to DOM to trigger MutationObserver
-    tty.appendChild(element);
+    // Add element to DOM
+    document.body.appendChild(element);
     element.style.setProperty('color', 'red');
     
-    // Wait for MutationObserver to process changes
-    await new Promise(resolve => setTimeout(resolve, 10));
-    
-    // Note: Current MutationObserver implementation may not detect style changes
-    // This test verifies the API works, not the automatic render triggering
+    // Verify style property works
     expect(element.style.getPropertyValue('color')).toBe('red');
     
-    tty.dispose();
+    // Manual render should work without errors
+    await render();
+    
+    dispose();
   });
 
-  test("createElement should work with custom tag names", () => {
+  test("createElement should work with any HTML tag names", () => {
     const mockRuntime = new MockTTYRuntime();
-    const tty = createTTY({ runtime: mockRuntime });
+    const { document, dispose } = createTTYDocument({ runtime: mockRuntime });
     
-    const element = tty.createElement('custom-element');
+    const element = document.createElement('custom-element');
     
     expect(element).toBeDefined();
     expect(element.tagName).toBe('CUSTOM-ELEMENT');
@@ -132,35 +124,35 @@ describe("CSSOM Integration", () => {
     element.style.setProperty('color', 'green');
     expect(element.style.getPropertyValue('color')).toBe('green');
     
-    tty.dispose();
+    dispose();
   });
 
   test("style property should be the same instance on repeated access", () => {
     const mockRuntime = new MockTTYRuntime();
-    const tty = createTTY({ runtime: mockRuntime });
-    const element = tty.createElement('div');
+    const { document, dispose } = createTTYDocument({ runtime: mockRuntime });
+    const element = document.createElement('div');
     
     const style1 = element.style;
     const style2 = element.style;
     
     expect(style1).toBe(style2);
     
-    tty.dispose();
+    dispose();
   });
 
-  test("computed style should include inherited properties", () => {
+  test("computed style should work with HTML elements", () => {
     const mockRuntime = new MockTTYRuntime();
-    const tty = createTTY({ runtime: mockRuntime });
-    const parent = tty.createElement('div');
-    const child = tty.createElement('span');
+    const { document, dispose } = createTTYDocument({ runtime: mockRuntime });
+    const parent = document.createElement('div');
+    const child = document.createElement('span');
     
     parent.style.setProperty('color', 'blue');
     parent.style.setProperty('font-size', '16px');
     parent.appendChild(child);
-    tty.appendChild(parent);
+    document.body.appendChild(parent);
     
-    const parentComputed = tty.getComputedStyle(parent);
-    const childComputed = tty.getComputedStyle(child);
+    const parentComputed = document.defaultView!.getComputedStyle(parent);
+    const childComputed = document.defaultView!.getComputedStyle(child);
     
     // Parent should have its set values
     expect(parentComputed.getPropertyValue('color')).toBe('blue');
@@ -171,6 +163,6 @@ describe("CSSOM Integration", () => {
     expect(childComputed).toBeDefined();
     expect(typeof childComputed.getPropertyValue).toBe('function');
     
-    tty.dispose();
+    dispose();
   });
 });

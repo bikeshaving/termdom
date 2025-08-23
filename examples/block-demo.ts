@@ -4,46 +4,46 @@
  * Test display: 'block' implementation
  */
 
-import { createTTYWindow } from '../src/index.js';
+import { createTTYDocument } from '../src/index.js';
 
-const tty = createTTYWindow();
+const { document, render, dispose } = createTTYDocument();
 
 // Create a block container
-const blockContainer = tty.document.createElement('container');
-blockContainer.style.display = 'block'; // Should behave like flex column + stretch
-blockContainer.style.backgroundColor = 'blue';
-blockContainer.style.padding = [1, 2, 1, 2];
-blockContainer.style.height = 10;
+const blockContainer = document.createElement('div');
+blockContainer.style.setProperty('display', 'block'); // Should behave like flex column + stretch
+blockContainer.style.setProperty('background-color', 'blue');
+blockContainer.style.setProperty('padding', '5px');
+blockContainer.style.setProperty('height', '10px');
 
 // Add multiple children - they should stack vertically and stretch horizontally
-const child1 = tty.document.createElement('container');
-child1.style.backgroundColor = 'red';
-child1.style.height = 2;
-child1.appendChild(tty.document.createTextNode('Child 1'));
+const child1 = document.createElement('div');
+child1.style.setProperty('background-color', 'red');
+child1.style.setProperty('height', '2px');
+child1.appendChild(document.createTextNode('Child 1'));
 
-const child2 = tty.document.createElement('container');
-child2.style.backgroundColor = 'green';
-child2.style.height = 2;
-child2.appendChild(tty.document.createTextNode('Child 2'));
+const child2 = document.createElement('div');
+child2.style.setProperty('background-color', 'green');
+child2.style.setProperty('height', '2px');
+child2.appendChild(document.createTextNode('Child 2'));
 
-const child3 = tty.document.createElement('container');
-child3.style.backgroundColor = 'yellow';
-child3.style.height = 2;
-child3.appendChild(tty.document.createTextNode('Child 3'));
+const child3 = document.createElement('div');
+child3.style.setProperty('background-color', 'yellow');
+child3.style.setProperty('height', '2px');
+child3.appendChild(document.createTextNode('Child 3'));
 
 blockContainer.appendChild(child1);
 blockContainer.appendChild(child2);
 blockContainer.appendChild(child3);
 
-tty.document.body.appendChild(blockContainer);
+document.body.appendChild(blockContainer);
 
 console.log('Block display test:');
 console.log('- Container should use flex column layout (vertical stack)');
 console.log('- Children should stretch to full width');
 console.log('- Should look like traditional CSS block layout');
 
-tty.document.render();
+render();
 
 setTimeout(() => {
-  tty[Symbol.dispose]();
+  dispose();
 }, 3000);

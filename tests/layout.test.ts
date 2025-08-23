@@ -1,19 +1,19 @@
 /**
- * Unit Tests for DOM Layout APIs
+ * Unit Tests for HTML DOM Layout APIs
  * 
- * Tests the new getBoundingClientRect() and related layout APIs
- * to ensure they work correctly with Yoga layout integration.
+ * Tests the new HTML-to-Terminal layout APIs to ensure they work
+ * correctly with Yoga layout integration and Symbol properties.
  */
 
 import { test, expect } from 'bun:test';
 import { DOMRect } from 'happy-dom';
-import { createTTY, MockTTYRuntime } from '../src/index.js';
+import { createTTYDocument, MockTTYRuntime, YOGA_BOUNDS } from '../src/index.js';
 
 test('getBoundingClientRect returns DOMRect with element bounds', () => {
   const mockRuntime = new MockTTYRuntime();
-  const tty = createTTY({ runtime: mockRuntime });
+  const { document, dispose } = createTTYDocument({ runtime: mockRuntime });
   
-  const element = tty.createElement('container');
+  const element = document.createElement('div');
   
   // Initially bounds should be zeros
   const rect = element.getBoundingClientRect();
@@ -23,8 +23,8 @@ test('getBoundingClientRect returns DOMRect with element bounds', () => {
   expect(rect.width).toBe(0);
   expect(rect.height).toBe(0);
   
-  // Manually set bounds to test the API
-  element.bounds = { x: 10, y: 20, width: 100, height: 50 };
+  // Manually set bounds via Symbol property to test the API
+  element[YOGA_BOUNDS] = new DOMRect(10, 20, 100, 50);
   
   const updatedRect = element.getBoundingClientRect();
   expect(updatedRect.x).toBe(10);
@@ -36,58 +36,58 @@ test('getBoundingClientRect returns DOMRect with element bounds', () => {
   expect(updatedRect.right).toBe(110);
   expect(updatedRect.bottom).toBe(70);
   
-  tty.dispose();
+  dispose();
 });
 
 test('offset properties return element position and dimensions', () => {
   const mockRuntime = new MockTTYRuntime();
-  const tty = createTTY({ runtime: mockRuntime });
+  const { document, dispose } = createTTYDocument({ runtime: mockRuntime });
   
-  const element = tty.createElement('container');
-  element.bounds = { x: 15, y: 25, width: 200, height: 100 };
+  const element = document.createElement('div');
+  element[YOGA_BOUNDS] = new DOMRect(15, 25, 200, 100);
   
   expect(element.offsetLeft).toBe(15);
   expect(element.offsetTop).toBe(25);
   expect(element.offsetWidth).toBe(200);
   expect(element.offsetHeight).toBe(100);
   
-  tty.dispose();
+  dispose();
 });
 
 test('client properties return content area dimensions', () => {
   const mockRuntime = new MockTTYRuntime();
-  const tty = createTTY({ runtime: mockRuntime });
+  const { document, dispose } = createTTYDocument({ runtime: mockRuntime });
   
-  const element = tty.createElement('container');
-  element.bounds = { x: 5, y: 10, width: 150, height: 80 };
+  const element = document.createElement('div');
+  element[YOGA_BOUNDS] = new DOMRect(5, 10, 150, 80);
   
-  // For TTY elements, client dimensions are same as offset (no borders)
+  // For HTML elements, client dimensions are same as offset (no borders)
   expect(element.clientWidth).toBe(150);
   expect(element.clientHeight).toBe(80);
   
-  tty.dispose();
+  dispose();
 });
 
 test('scroll properties return scrollable dimensions', () => {
   const mockRuntime = new MockTTYRuntime();
-  const tty = createTTY({ runtime: mockRuntime });
+  const { document, dispose } = createTTYDocument({ runtime: mockRuntime });
   
-  const element = tty.createElement('container');
-  element.bounds = { x: 0, y: 0, width: 120, height: 60 };
+  const element = document.createElement('div');
+  element[YOGA_BOUNDS] = new DOMRect(0, 0, 120, 60);
   
   // Currently same as client dimensions (no scrolling yet)
   expect(element.scrollWidth).toBe(120);
   expect(element.scrollHeight).toBe(60);
   
-  tty.dispose();
+  dispose();
 });
 
 test('getClientRects returns single rect for block elements', () => {
   const mockRuntime = new MockTTYRuntime();
-  const tty = createTTY({ runtime: mockRuntime });
+  const { document, dispose } = createTTYDocument({ runtime: mockRuntime });
   
-  const element = tty.createElement('container');
-  element.bounds = { x: 30, y: 40, width: 80, height: 20 };
+  const element = document.createElement('div');
+  element[YOGA_BOUNDS] = new DOMRect(30, 40, 80, 20);
   
   const rects = element.getClientRects();
   expect(rects.length).toBe(1);
@@ -107,63 +107,63 @@ test('getClientRects returns single rect for block elements', () => {
   // Test indexed access
   expect(rects[0].x).toBe(30);
   
-  tty.dispose();
+  dispose();
 });
 
 test('layout APIs work with text elements', () => {
   const mockRuntime = new MockTTYRuntime();
-  const tty = createTTY({ runtime: mockRuntime });
+  const { document, dispose } = createTTYDocument({ runtime: mockRuntime });
   
-  const text = tty.createElement('text');
-  text.textContent = 'Hello World';
-  text.bounds = { x: 5, y: 8, width: 11, height: 1 };
+  const span = document.createElement('span');
+  span.textContent = 'Hello World';
+  span[YOGA_BOUNDS] = new DOMRect(5, 8, 11, 1);
   
-  const rect = text.getBoundingClientRect();
+  const rect = span.getBoundingClientRect();
   expect(rect.width).toBe(11);
   expect(rect.height).toBe(1);
   
-  expect(text.offsetWidth).toBe(11);
-  expect(text.offsetHeight).toBe(1);
-  expect(text.clientWidth).toBe(11);
-  expect(text.clientHeight).toBe(1);
+  expect(span.offsetWidth).toBe(11);
+  expect(span.offsetHeight).toBe(1);
+  expect(span.clientWidth).toBe(11);
+  expect(span.clientHeight).toBe(1);
   
-  tty.dispose();
+  dispose();
 });
 
 test('layout APIs work with nested elements', () => {
   const mockRuntime = new MockTTYRuntime();
-  const tty = createTTY({ runtime: mockRuntime });
+  const { document, dispose } = createTTYDocument({ runtime: mockRuntime });
   
-  const container = tty.createElement('container');
-  const text = tty.createElement('text');
+  const container = document.createElement('div');
+  const span = document.createElement('span');
   
-  container.appendChild(text);
-  tty.appendChild(container);
+  container.appendChild(span);
+  document.body.appendChild(container);
   
   // Set bounds manually for testing
-  container.bounds = { x: 0, y: 0, width: 80, height: 24 };
-  text.bounds = { x: 10, y: 5, width: 20, height: 1 };
+  container[YOGA_BOUNDS] = new DOMRect(0, 0, 80, 24);
+  span[YOGA_BOUNDS] = new DOMRect(10, 5, 20, 1);
   
   // Both elements should report their individual bounds
   const containerRect = container.getBoundingClientRect();
   expect(containerRect.width).toBe(80);
   expect(containerRect.height).toBe(24);
   
-  const textRect = text.getBoundingClientRect();
+  const textRect = span.getBoundingClientRect();
   expect(textRect.x).toBe(10);
   expect(textRect.y).toBe(5);
   expect(textRect.width).toBe(20);
   expect(textRect.height).toBe(1);
   
-  tty.dispose();
+  dispose();
 });
 
 test('DOMRect properties are correctly calculated', () => {
   const mockRuntime = new MockTTYRuntime();
-  const tty = createTTY({ runtime: mockRuntime });
+  const { document, dispose } = createTTYDocument({ runtime: mockRuntime });
   
-  const element = tty.createElement('container');
-  element.bounds = { x: 10, y: 15, width: 50, height: 30 };
+  const element = document.createElement('div');
+  element[YOGA_BOUNDS] = new DOMRect(10, 15, 50, 30);
   
   const rect = element.getBoundingClientRect();
   
@@ -177,5 +177,5 @@ test('DOMRect properties are correctly calculated', () => {
   expect(rect.right).toBe(60); // x + width
   expect(rect.bottom).toBe(45); // y + height
   
-  tty.dispose();
+  dispose();
 });

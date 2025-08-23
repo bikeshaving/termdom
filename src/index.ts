@@ -33,9 +33,6 @@ export type {
 // === Backwards Compatibility (DEPRECATED) ===
 // Legacy API - use createTTYDocument() for new projects
 
-import { Window, PropertySymbol } from 'happy-dom';
-// @ts-ignore - NodeFactory not exported from main module
-import NodeFactory from 'happy-dom/lib/nodes/NodeFactory.js';
 import { createTTYDocument } from './core/createTTYDocument.js';
 
 // Temporary stub for backwards compatibility
@@ -56,5 +53,11 @@ export function createTTY(options: any = {}): any {
     appendChild: (child: any) => document.body.appendChild(child),
     [Symbol.dispose]: dispose
   };
+}
+
+// Another alias for backwards compatibility
+export function createTTYWindow(options: any = {}): any {
+  console.warn('DEPRECATED: createTTYWindow() is deprecated. Use createTTYDocument() instead for HTML-based terminal UIs.');
+  return createTTY(options);
 }
 

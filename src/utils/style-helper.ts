@@ -1,3 +1,5 @@
+import type { CSSStyleDeclaration } from 'happy-dom';
+
 /**
  * Helper function to set multiple CSS properties at once
  * Converts camelCase to kebab-case for CSS property names

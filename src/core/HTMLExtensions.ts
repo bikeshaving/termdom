@@ -7,20 +7,29 @@
  * Following HappyDOM's pattern of using Symbol properties for private data.
  */
 
-import { HTMLElement, DOMRect } from 'happy-dom';
+import { HTMLElement, DOMRect, Element } from 'happy-dom';
+// @ts-ignore - DOMRectList not exported from main module, but we can import it directly
+import DOMRectList from 'happy-dom/lib/dom/DOMRectList.js';
 import type * as Yoga from 'yoga-layout';
+
+// Use ReturnType to match Element's getClientRects return type
+type ClientRectsReturnType = ReturnType<Element['getClientRects']>;
 
 // Symbol properties for storing Yoga layout data (following HappyDOM's pattern)
 export const YOGA_BOUNDS = Symbol('yogaBounds');
 export const YOGA_NODE = Symbol('yogaNode');
 
-// Extend HTMLElement interface to include our Symbol properties
-declare global {
-  namespace globalThis {
-    interface HTMLElement {
-      [YOGA_BOUNDS]?: DOMRect;
-      [YOGA_NODE]?: Yoga.Node;
-    }
+// Type for elements with Yoga properties
+export interface YogaElement extends HTMLElement {
+  [YOGA_BOUNDS]?: DOMRect;
+  [YOGA_NODE]?: Yoga.Node;
+}
+
+// Augment HappyDOM's HTMLElement with our Symbol properties
+declare module 'happy-dom' {
+  interface HTMLElement {
+    [YOGA_BOUNDS]?: DOMRect;
+    [YOGA_NODE]?: Yoga.Node;
   }
 }
 
@@ -43,7 +52,7 @@ export function initializeHTMLExtensions(): void {
    * Get element bounds as DOMRect
    * This is the main layout API that integrates with Yoga layout engine
    */
-  HTMLElement.prototype.getBoundingClientRect = function(): DOMRect {
+  HTMLElement.prototype.getBoundingClientRect = function(this: HTMLElement): DOMRect {
     return this[YOGA_BOUNDS] || new DOMRect(0, 0, 0, 0);
   };
 
@@ -51,20 +60,19 @@ export function initializeHTMLExtensions(): void {
    * For inline elements that may span multiple lines
    * Currently returns single rect, but extensible for text wrapping
    */
-  HTMLElement.prototype.getClientRects = function(): DOMRectList {
+  HTMLElement.prototype.getClientRects = function(): ClientRectsReturnType {
     const rect = this.getBoundingClientRect();
-    return {
-      length: 1,
-      item: (index: number) => index === 0 ? rect : null,
-      [Symbol.iterator]: function* () { yield rect; },
-      0: rect
-    } as DOMRectList;
+    // Since DOMRectList extends Array<DOMRect>, we can create it properly
+    const rectArray = [rect];
+    // Add the item method to match DOMRectList interface
+    (rectArray as any).item = (index: number) => index === 0 ? rect : null;
+    return rectArray as ClientRectsReturnType;
   };
 
   // === Offset Properties ===
   
   Object.defineProperty(HTMLElement.prototype, 'offsetLeft', {
-    get: function() {
+    get: function(this: HTMLElement) {
       return this.getBoundingClientRect().x;
     },
     enumerable: true,
@@ -72,7 +80,7 @@ export function initializeHTMLExtensions(): void {
   });
 
   Object.defineProperty(HTMLElement.prototype, 'offsetTop', {
-    get: function() {
+    get: function(this: HTMLElement) {
       return this.getBoundingClientRect().y;
     },
     enumerable: true,
@@ -80,7 +88,7 @@ export function initializeHTMLExtensions(): void {
   });
 
   Object.defineProperty(HTMLElement.prototype, 'offsetWidth', {
-    get: function() {
+    get: function(this: HTMLElement) {
       return this.getBoundingClientRect().width;
     },
     enumerable: true,
@@ -88,7 +96,7 @@ export function initializeHTMLExtensions(): void {
   });
 
   Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
-    get: function() {
+    get: function(this: HTMLElement) {
       return this.getBoundingClientRect().height;
     },
     enumerable: true,
@@ -98,7 +106,7 @@ export function initializeHTMLExtensions(): void {
   // === Client Properties ===
   
   Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
-    get: function() {
+    get: function(this: HTMLElement) {
       // For terminals, client area is same as offset (no borders/scrollbars)
       return this.getBoundingClientRect().width;
     },
@@ -107,7 +115,7 @@ export function initializeHTMLExtensions(): void {
   });
 
   Object.defineProperty(HTMLElement.prototype, 'clientHeight', {
-    get: function() {
+    get: function(this: HTMLElement) {
       // For terminals, client area is same as offset (no borders/scrollbars)
       return this.getBoundingClientRect().height;
     },
@@ -116,7 +124,7 @@ export function initializeHTMLExtensions(): void {
   });
 
   Object.defineProperty(HTMLElement.prototype, 'clientLeft', {
-    get: function() {
+    get: function(this: HTMLElement) {
       // No borders in terminal context
       return 0;
     },
@@ -125,7 +133,7 @@ export function initializeHTMLExtensions(): void {
   });
 
   Object.defineProperty(HTMLElement.prototype, 'clientTop', {
-    get: function() {
+    get: function(this: HTMLElement) {
       // No borders in terminal context
       return 0;
     },
@@ -136,7 +144,7 @@ export function initializeHTMLExtensions(): void {
   // === Scroll Properties ===
   
   Object.defineProperty(HTMLElement.prototype, 'scrollWidth', {
-    get: function() {
+    get: function(this: HTMLElement) {
       // TODO: Return actual content width when scrolling is implemented
       return this.clientWidth;
     },
@@ -145,7 +153,7 @@ export function initializeHTMLExtensions(): void {
   });
 
   Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
-    get: function() {
+    get: function(this: HTMLElement) {
       // TODO: Return actual content height when scrolling is implemented  
       return this.clientHeight;
     },
@@ -154,11 +162,11 @@ export function initializeHTMLExtensions(): void {
   });
 
   Object.defineProperty(HTMLElement.prototype, 'scrollLeft', {
-    get: function() {
+    get: function(this: HTMLElement) {
       // TODO: Implement when we add scrolling
       return 0;
     },
-    set: function(_value: number) {
+    set: function(this: HTMLElement, _value: number) {
       // TODO: Implement when we add scrolling
     },
     enumerable: true,
@@ -166,11 +174,11 @@ export function initializeHTMLExtensions(): void {
   });
 
   Object.defineProperty(HTMLElement.prototype, 'scrollTop', {
-    get: function() {
+    get: function(this: HTMLElement) {
       // TODO: Implement when we add scrolling
       return 0;
     },
-    set: function(_value: number) {
+    set: function(this: HTMLElement, _value: number) {
       // TODO: Implement when we add scrolling
     },
     enumerable: true,

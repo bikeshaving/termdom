@@ -8,13 +8,13 @@
  * - Safe cleanup on Ctrl+C
  */
 
-import { createTTYWindow } from '../src/index.js';
+import { createTTYDocument } from '../src/index.js';
 
-function animatedDemo() {
+async function animatedDemo() {
   console.log('🎬 Starting Animated TOM Demo...');
   console.log('⏰ Will auto-exit in 15 seconds (Ctrl+C to quit early)\n');
   
-  const tty = createTTYWindow();
+  const { document, render, dispose } = createTTYDocument();
   let isRunning = true;
   let frame = 0;
   
@@ -37,7 +37,7 @@ function animatedDemo() {
     
     clearTimeout(timeout);
     clearInterval(animationLoop);
-    tty[Symbol.dispose]();
+    dispose();
     
     // Restore terminal
     process.stdout.write('\x1b[?25h'); // Show cursor
@@ -48,75 +48,79 @@ function animatedDemo() {
   }
   
   // Create main container
-  const mainContainer = tty.document.createElement('container');
-  mainContainer.style.flexDirection = 'column';
-  mainContainer.style.padding = [1, 2, 1, 2];
-  mainContainer.style.backgroundColor = 'blue';
-  tty.document.body.appendChild(mainContainer);
+  const mainContainer = document.createElement('div');
+  mainContainer.style.setProperty('display', 'flex');
+  mainContainer.style.setProperty('flex-direction', 'column');
+  mainContainer.style.setProperty('padding', '5px');
+  mainContainer.style.setProperty('background-color', 'blue');
+  document.body.appendChild(mainContainer);
   
   // Animated title
-  const title = tty.document.createElement('text');
-  title.style.textAlign = 'center';
-  title.style.color = 'white';
-  title.style.backgroundColor = 'darkBlue';
-  title.style.padding = [1, 2, 1, 2];
+  const title = document.createElement('span');
+  title.style.setProperty('text-align', 'center');
+  title.style.setProperty('color', 'white');
+  title.style.setProperty('background-color', 'darkBlue');
+  title.style.setProperty('padding', '5px');
   mainContainer.appendChild(title);
   
   // Progress container
-  const progressContainer = tty.document.createElement('container');
-  progressContainer.style.flexDirection = 'row';
-  progressContainer.style.padding = [1, 1, 1, 1];
-  progressContainer.style.backgroundColor = 'darkGray';
+  const progressContainer = document.createElement('div');
+  progressContainer.style.setProperty('display', 'flex');
+  progressContainer.style.setProperty('flex-direction', 'row');
+  progressContainer.style.setProperty('padding', '3px');
+  progressContainer.style.setProperty('background-color', 'darkGray');
   mainContainer.appendChild(progressContainer);
   
   // Progress bar elements
   const progressBars: any[] = [];
   for (let i = 0; i < 20; i++) {
-    const bar = tty.document.createElement('text');
+    const bar = document.createElement('span');
     bar.textContent = '█';
-    bar.style.color = 'gray';
+    bar.style.setProperty('color', 'gray');
     progressContainer.appendChild(bar);
     progressBars.push(bar);
   }
   
   // Status displays
-  const statusContainer = tty.document.createElement('container');
-  statusContainer.style.flexDirection = 'column';
-  statusContainer.style.padding = [1, 1, 1, 1];
+  const statusContainer = document.createElement('div');
+  statusContainer.style.setProperty('display', 'flex');
+  statusContainer.style.setProperty('flex-direction', 'column');
+  statusContainer.style.setProperty('padding', '3px');
   mainContainer.appendChild(statusContainer);
   
   // CPU Usage simulation
-  const cpuStatus = tty.document.createElement('text');
-  cpuStatus.style.color = 'green';
-  cpuStatus.style.backgroundColor = 'black';
-  cpuStatus.style.padding = [0, 1, 0, 1];
+  const cpuStatus = document.createElement('span');
+  cpuStatus.style.setProperty('color', 'green');
+  cpuStatus.style.setProperty('background-color', 'black');
+  cpuStatus.style.setProperty('padding', '1px 3px');
   statusContainer.appendChild(cpuStatus);
   
   // Memory Usage simulation  
-  const memoryStatus = tty.document.createElement('text');
-  memoryStatus.style.color = 'yellow';
-  memoryStatus.style.backgroundColor = 'black';
-  memoryStatus.style.padding = [0, 1, 0, 1];
+  const memoryStatus = document.createElement('span');
+  memoryStatus.style.setProperty('color', 'yellow');
+  memoryStatus.style.setProperty('background-color', 'black');
+  memoryStatus.style.setProperty('padding', '1px 3px');
   statusContainer.appendChild(memoryStatus);
   
   // Network Status
-  const networkStatus = tty.document.createElement('text');
-  networkStatus.style.color = 'cyan';
-  networkStatus.style.backgroundColor = 'black';
-  networkStatus.style.padding = [0, 1, 0, 1];
+  const networkStatus = document.createElement('span');
+  networkStatus.style.setProperty('color', 'cyan');
+  networkStatus.style.setProperty('background-color', 'black');
+  networkStatus.style.setProperty('padding', '1px 3px');
   statusContainer.appendChild(networkStatus);
   
   // Activity feed
-  const activityFeed = tty.document.createElement('container');
-  activityFeed.style.flexDirection = 'column';
-  activityFeed.style.backgroundColor = 'darkGreen';
-  activityFeed.style.padding = [1, 1, 1, 1];
+  const activityFeed = document.createElement('div');
+  activityFeed.style.setProperty('display', 'flex');
+  activityFeed.style.setProperty('flex-direction', 'column');
+  activityFeed.style.setProperty('background-color', 'darkGreen');
+  activityFeed.style.setProperty('padding', '3px');
   mainContainer.appendChild(activityFeed);
   
-  const activityTitle = tty.document.createElement('text');
+  const activityTitle = document.createElement('span');
   activityTitle.textContent = '📈 Activity Feed';
-  activityTitle.style.color = 'white';
-  activityTitle.style.textAlign = 'center';
+  activityTitle.style.setProperty('color', 'white');
+  activityTitle.style.setProperty('text-align', 'center');
   activityFeed.appendChild(activityTitle);
   
   const activities: any[] = [];
@@ -133,19 +137,19 @@ function animatedDemo() {
   
   // Create activity items
   for (let i = 0; i < 4; i++) {
-    const activity = tty.document.createElement('text');
-    activity.style.color = 'lightGreen';
-    activity.style.padding = [0, 1, 0, 1];
+    const activity = document.createElement('span');
+    activity.style.setProperty('color', 'lightGreen');
+    activity.style.setProperty('padding', '1px 3px');
     activityFeed.appendChild(activity);
     activities.push(activity);
   }
   
   // Timer display
-  const timerDisplay = tty.document.createElement('text');
-  timerDisplay.style.textAlign = 'center';
-  timerDisplay.style.color = 'white';
-  timerDisplay.style.backgroundColor = 'red';
-  timerDisplay.style.padding = [1, 0, 1, 0];
+  const timerDisplay = document.createElement('span');
+  timerDisplay.style.setProperty('text-align', 'center');
+  timerDisplay.style.setProperty('color', 'white');
+  timerDisplay.style.setProperty('background-color', 'red');
+  timerDisplay.style.setProperty('padding', '3px 0');
   mainContainer.appendChild(timerDisplay);
   
   // Animation state
@@ -153,7 +157,7 @@ function animatedDemo() {
   let progressValue = 0;
   
   // Animation loop
-  const animationLoop = setInterval(() => {
+  const animationLoop = setInterval(async () => {
     if (!isRunning) return;
     
     frame++;
@@ -168,9 +172,9 @@ function animatedDemo() {
     // Update progress bar
     progressBars.forEach((bar, index) => {
       if (index < progressValue) {
-        bar.style.color = index < progressValue - 3 ? 'green' : 'yellow';
+        bar.style.setProperty('color', index < progressValue - 3 ? 'green' : 'yellow');
       } else {
-        bar.style.color = 'darkGray';
+        bar.style.setProperty('color', 'darkGray');
       }
     });
     
@@ -198,7 +202,7 @@ function animatedDemo() {
     timerDisplay.textContent = `⏰ ${remaining} seconds remaining`;
     
     // Render the frame
-    tty.document.render();
+    await render();
     
     // Check if demo should end
     if (secondsElapsed >= 15) {
@@ -208,7 +212,7 @@ function animatedDemo() {
   
   // Hide cursor and start
   process.stdout.write('\x1b[?25l'); // Hide cursor
-  tty.document.render();
+  await render();
 }
 
 animatedDemo();

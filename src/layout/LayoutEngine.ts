@@ -6,7 +6,7 @@
  * Works with standard HTML elements enhanced with Symbol properties.
  */
 
-import { HTMLElement, DOMRect, Node } from 'happy-dom';
+import { HTMLElement, DOMRect, Node, Element } from 'happy-dom';
 import { YOGA_BOUNDS, YOGA_NODE } from '../core/HTMLExtensions.js';
 import { TextMeasurement } from './TextMeasurement.js';
 import { GreedyTextBreaker, type InlineElement } from '../text/index.js';
@@ -31,23 +31,28 @@ export class LayoutEngine {
   computeLayout(root: Element, containerWidth: number, containerHeight: number): void {
     if (!(root instanceof HTMLElement)) {
       // Skip non-HTML elements (like Document, Text nodes)
-      for (const child of root.childNodes) {
+      // Convert NodeList to array for iteration
+      const children = Array.from(root.childNodes);
+      for (const child of children) {
         if (child.nodeType === Node.ELEMENT_NODE) {
-          this.computeLayout(child as HTMLElement, containerWidth, containerHeight);
+          this.computeLayout(child as Element, containerWidth, containerHeight);
         }
       }
       return;
     }
 
+    // Now TypeScript knows root is HTMLElement
+    const htmlRoot = root as HTMLElement;
+
     // Ensure root has a Yoga node
-    if (!root[YOGA_NODE]) {
-      this.setupYogaNode(root);
+    if (!htmlRoot[YOGA_NODE]) {
+      this.setupYogaNode(htmlRoot);
     }
 
     // Build Yoga tree and compute layout
-    this.buildYogaTree(root);
-    root[YOGA_NODE]!.calculateLayout(containerWidth, containerHeight);
-    this.extractLayout(root, 0, 0);
+    this.buildYogaTree(htmlRoot);
+    htmlRoot[YOGA_NODE]!.calculateLayout(containerWidth, containerHeight);
+    this.extractLayout(htmlRoot, 0, 0);
   }
 
 

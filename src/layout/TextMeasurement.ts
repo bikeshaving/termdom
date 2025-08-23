@@ -5,7 +5,7 @@
  * using Yoga's measurement API for proper text flow.
  */
 
-import { TTYElement } from '../core/TTYElement.js';
+import { HTMLElement } from 'happy-dom';
 
 export interface TextMeasureResult {
   width: number;
@@ -21,7 +21,7 @@ export class TextMeasurement {
    * This is the core measurement function called by Yoga
    */
   static measureText(
-    element: TTYElement,
+    element: HTMLElement,
     width: number,
     widthMode: 'exactly' | 'at-most' | 'undefined',
     height: number,
@@ -45,7 +45,7 @@ export class TextMeasurement {
     // For undefined width, measure natural text width
     if (widthMode === 'undefined') {
       const lines = content.split('\n');
-      const maxWidth = Math.max(...lines.map(line => this.getTextWidth(line)));
+      const maxWidth = Math.max(...lines.map((line: string) => this.getTextWidth(line)));
       return { width: maxWidth, height: lines.length };
     }
     
@@ -176,7 +176,7 @@ export class TextMeasurement {
   /**
    * Create a Yoga measurement function for an element
    */
-  static createMeasureFunction(element: TTYElement) {
+  static createMeasureFunction(element: HTMLElement) {
     return (
       width: number,
       widthMode: 'exactly' | 'at-most' | 'undefined',
