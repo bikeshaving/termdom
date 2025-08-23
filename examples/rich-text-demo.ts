@@ -120,8 +120,7 @@ main.appendChild(footer);
 
 tty.document.body.appendChild(main);
 
-// Enable interaction
-tty.enableInputMode();
+// Enable interaction - automatic in TTYOM
 
 // Add click handlers
 boldBtn.addEventListener('click', () => {

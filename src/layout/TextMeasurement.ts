@@ -5,7 +5,7 @@
  * using Yoga's measurement API for proper text flow.
  */
 
-import { TOMElement } from '../core/TOMElement.js';
+import { TTYElement } from '../core/TTYElement.js';
 
 export interface TextMeasureResult {
   width: number;
@@ -21,7 +21,7 @@ export class TextMeasurement {
    * This is the core measurement function called by Yoga
    */
   static measureText(
-    element: TOMElement,
+    element: TTYElement,
     width: number,
     widthMode: 'exactly' | 'at-most' | 'undefined',
     height: number,
@@ -176,7 +176,7 @@ export class TextMeasurement {
   /**
    * Create a Yoga measurement function for an element
    */
-  static createMeasureFunction(element: TOMElement) {
+  static createMeasureFunction(element: TTYElement) {
     return (
       width: number,
       widthMode: 'exactly' | 'at-most' | 'undefined',

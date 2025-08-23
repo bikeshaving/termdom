@@ -7,8 +7,10 @@
  */
 
 import { Window } from 'happy-dom';
-import { TTYDocument, TTYDocumentOptions } from './TTYDocument.js';
-import { TTYViewport, ViewportOptions } from './TTYViewport.js';
+// @ts-ignore - HappyDOM Event classes for proper event creation
+import Event from 'happy-dom/lib/event/Event.js';
+import { TTYDocument, type TTYDocumentOptions } from './TTYDocument.js';
+import { TTYViewport, type ViewportOptions } from './TTYViewport.js';
 import { TTYMouseHandler } from './TTYMouseHandler.js';
 import { TTYKeyboardHandler } from './TTYKeyboardHandler.js';
 import { TTYRuntime, detectTTYRuntime, type TTYDimensions } from './TTYRuntime.js';
@@ -98,7 +100,7 @@ export class TTYWindow extends Window implements Disposable {
   /**
    * Get the TTY document
    */
-  get document(): TTYDocument {
+  override get document(): TTYDocument {
     return this._document;
   }
 
@@ -164,21 +166,21 @@ export class TTYWindow extends Window implements Disposable {
   /**
    * Standard window dimensions (in characters)
    */
-  get innerWidth(): number {
+  override get innerWidth(): number {
     const size = this._runtime.getTerminalSize();
     return size.columns;
   }
 
-  get innerHeight(): number {
+  override get innerHeight(): number {
     const size = this._runtime.getTerminalSize();
     return size.rows;
   }
 
-  get outerWidth(): number {
+  override get outerWidth(): number {
     return this.innerWidth;
   }
 
-  get outerHeight(): number {
+  override get outerHeight(): number {
     return this.innerHeight;
   }
 

@@ -5,9 +5,12 @@
  * terminal-specific elements with custom styling and rendering.
  */
 
-import { Element } from 'happy-dom';
-import { ScreenBuffer, Cell, Rect } from '../rendering/ScreenBuffer.js';
+import { Element, Node } from 'happy-dom';
+// @ts-ignore - HappyDOM Event class for proper event creation
+import Event from 'happy-dom/lib/event/Event.js';
+import { ScreenBuffer, type Cell, type Rect } from '../rendering/ScreenBuffer.js';
 import type * as Yoga from 'yoga-layout';
+// Use HappyDOM's built-in CSSStyleDeclaration instead of custom implementation
 
 // TODO: Figure out if this can inherit from CSSStyleDeclaration, probably should be put in a separate file
 // TODO: Please make these kebab-case to match CSSOM
@@ -62,7 +65,7 @@ export interface TTYStyle {
  * This is a concrete class that can be instantiated directly for generic elements.
  */
 export class TTYElement extends Element {
-  private _ttyStyle: TTYStyle = {};
+  // HappyDOM provides the style property automatically
   private _ttyFocused = false;
   private _ttyFocusable = false;
   public bounds: Rect = { x: 0, y: 0, width: 0, height: 0 };
@@ -77,15 +80,8 @@ export class TTYElement extends Element {
   /**
    * TTY-specific style system (not CSS)
    */
-  get style(): TTYStyle {
-    return { ...this._ttyStyle };
-  }
-
-  set style(value: TTYStyle) {
-    this._ttyStyle = { ...value };
-    this.markForRender();
-    this.updateYogaStyles();
-  }
+  // HappyDOM provides style property automatically via Element base class
+  // No need to override - it already has proper CSSStyleDeclaration
 
   /**
    * Mark element as needing re-render
@@ -95,7 +91,7 @@ export class TTYElement extends Element {
 
     // Bubble up to trigger document re-render
     if (this.ownerDocument) {
-      const event = new CustomEvent('tty:needsRender', { bubbles: true });
+      const event = new Event('tty:needsRender', { bubbles: true });
       this.dispatchEvent(event);
     }
   }
@@ -181,7 +177,7 @@ export class TTYElement extends Element {
    */
   protected getTextStyle(): Partial<Cell> {
     // Use computed style which includes inheritance
-    const style = this.computedStyle || this._ttyStyle;
+    const style = (this as any).computedStyle || this._ttyStyle;
 
     return {
       fgColor: style.color,
@@ -303,47 +299,43 @@ export class TTYElement extends Element {
   }
 
   /**
-   * Get all TTY children (filters out non-TTY nodes)
+   * @deprecated Use standard DOM properties instead:
+   * 
+   * // For all child nodes (including text):
+   * for (const child of element.childNodes) { ... }
+   * 
+   * // For element children only:
+   * const elements = Array.from(element.childNodes).filter(child => 
+   *   child.nodeType === Node.ELEMENT_NODE
+   * ) as TTYElement[];
+   * 
+   * // Or simply:
+   * for (const child of element.children) { ... }
    */
   getTTYChildren(): TTYElement[] {
-    const children: TTYElement[] = [];
-
-    for (const child of this.children) {
-      if (child instanceof TTYElement) {
-        children.push(child);
-      }
-    }
-
-    return children;
+    return Array.from(this.childNodes).filter(child => 
+      child.nodeType === Node.ELEMENT_NODE
+    ) as TTYElement[];
   }
 
   /**
    * Override appendChild to trigger re-render
    */
-  appendChild<T extends Node>(child: T): T {
-    const result = super.appendChild(child);
+  override appendChild<T extends Node>(child: T): T {
+    super.appendChild(child);
     this.markForRender();
-    return result;
+    return child;
   }
 
   /**
    * Override removeChild to trigger re-render
    */
-  removeChild<T extends Node>(child: T): T {
-    const result = super.removeChild(child);
+  override removeChild<T extends Node>(child: T): T {
+    super.removeChild(child);
     this.markForRender();
-    return result;
+    return child;
   }
 
-  /**
-   * Set text content and trigger re-render
-   */
-  set textContent(value: string | null) {
-    super.textContent = value;
-    this.markForRender();
-  }
-
-  get textContent(): string | null {
-    return super.textContent;
-  }
+  // Note: textContent setter/getter inherited from Element
+  // Re-render is triggered via mutation observers or explicit calls
 }

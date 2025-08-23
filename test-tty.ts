@@ -22,7 +22,7 @@ try {
     // Clean up
     autoTty.dispose();
   } catch (autoError) {
-    console.log('❌ Auto-detection failed:', autoError.message);
+    console.log('❌ Auto-detection failed:', (autoError as Error).message);
   }
   
   // Clean up

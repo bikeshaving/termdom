@@ -8,7 +8,7 @@
  * 4. Handle inline elements by treating them as fixed-width content
  */
 
-import { TextBreaker, BreakOptions, BreakResult, LineBreak, InlineElement } from './TextBreaker.js';
+import { TextBreaker, type BreakOptions, type BreakResult, type LineBreak, type InlineElement } from './TextBreaker.js';
 
 export class GreedyTextBreaker extends TextBreaker {
   breakText(text: string, options: BreakOptions): BreakResult {

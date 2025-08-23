@@ -93,10 +93,29 @@ export class TTYDocument extends Document {
   }
 
   /**
+   * Create TTY elements using namespace - avoids HTML element type conflicts
+   * Usage: document.createElementNS('https://bikeshaving.org/ttyom', 'button')
+   */
+  override createElementNS(namespaceURI: string, qualifiedName: string): TTYElement {
+    if (namespaceURI === 'https://bikeshaving.org/ttyom') {
+      return this._createTTYElement(qualifiedName);
+    }
+    // Fall back to HappyDOM for other namespaces
+    return super.createElementNS(namespaceURI, qualifiedName) as any;
+  }
+
+  /**
    * Override createElement to return TTYElement instances or subtypes
    * This ensures all elements created have TTY-specific functionality
    */
-  createElement(tagName: string): TTYElement {
+  override createElement(tagName: string): TTYElement {
+    return this._createTTYElement(tagName);
+  }
+
+  /**
+   * Shared TTY element creation logic
+   */
+  private _createTTYElement(tagName: string): TTYElement {
     const tagLower = tagName.toLowerCase();
     let elementClass: typeof TTYElement;
     
@@ -130,7 +149,7 @@ export class TTYDocument extends Document {
   /**
    * Enhanced addEventListener that can route TTY-specific events
    */
-  addEventListener(
+  override addEventListener(
     type: string, 
     listener: EventListenerOrEventListenerObject, 
     options?: boolean | AddEventListenerOptions

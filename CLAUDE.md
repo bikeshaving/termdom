@@ -106,19 +106,58 @@ bun --hot ./index.ts
 
 For more information, read the Bun API docs in `node_modules/bun-types/docs/**.md`.
 
-## TOM Project Architecture
+## TTYOM Project Architecture
 
-See `TOM_DESIGN.md` for the complete Terminal Object Model design document. This project implements a revolutionary DOM-like API for terminal UIs using:
+**RENAMED FROM TOM → TTYOM (TTY Object Model)** 
 
-- **HappyDOM** for tree structure and events
-- **ScreenBuffer** compositing for efficient rendering  
+See `TTYOM_DESIGN.md` for the complete Terminal Object Model design document. This project implements a revolutionary DOM-like API for terminal UIs using:
+
+- **HappyDOM** for tree structure and events ✅
+- **ScreenBuffer** compositing for efficient rendering ✅  
 - **Yoga** layout engine for flexbox support
-- **Bun APIs** for fast text processing and colors
+- **Bun APIs** for fast text processing and colors ✅
+- **Intl.Segmenter** for proper Unicode text handling ✅
 
-Key implementation priorities:
-1. ScreenBuffer foundation (adapted from terminal-kit)
-2. TOM element hierarchy with custom DOM elements
-3. TOMDocument with HappyDOM integration
-4. TOMRenderer orchestrator system
-5. Yoga layout integration
-6. Event system and input handling
+## TypeScript Setup
+
+Strict TypeScript configuration with:
+- `strict: true` - No shortcuts, proper type safety
+- `target: "es2022"` - Modern JavaScript features
+- `lib: ["es2022", "dom", "es2022.intl"]` - Unicode support
+- `bun run typecheck` - Check all files
+- `bun run typecheck:examples` - Check examples
+
+## Current Status (Updated)
+
+### ✅ COMPLETED
+1. **Core Architecture**: TTYWindow, TTYDocument, TTYElement with proper DOM integration
+2. **Event System**: Using Happy-DOM's Event classes (not CustomEvent) 
+3. **Unicode Support**: Intl.Segmenter for proper grapheme cluster handling
+4. **Runtime System**: TTYRuntime abstraction with BunTTYRuntime and MockTTYRuntime
+5. **API Migration**: All examples updated from createTOM() to createTTYWindow()
+6. **TypeScript Integration**: Strict typing with Happy-DOM compatibility
+7. **Text Rendering**: ScreenBuffer with proper Unicode segmentation
+
+### 🚧 IN PROGRESS  
+1. **TypeScript Errors**: Some remaining DOM compatibility issues
+2. **BunTTYRuntime**: TypeScript errors need fixing
+
+### 📋 PENDING
+1. **Yoga Layout**: Full flexbox integration
+2. **Advanced Features**: DevTools, CSSOM, CSS parsing
+3. **Element Types**: Built-in input, button, container elements
+
+## Key API Changes
+
+- **Entry Point**: `createTTYWindow()` (was `createTOM()`)
+- **Terminal Dimensions**: `tty.innerWidth/innerHeight` (was `document.terminalWidth/Height`) 
+- **Element Creation**: `tty.document.createElement()` 
+- **Rendering**: `tty.document.render()`
+- **Cleanup**: `tty[Symbol.dispose]()` (disposable pattern)
+
+## Development Commands
+
+- `bun run typecheck` - Check TypeScript errors
+- `bun test` - Run unit tests  
+- `bun examples/hello-world.ts` - Run basic example
+- All examples work with new TTYWindow API

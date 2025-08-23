@@ -30,7 +30,7 @@ export class BunTTYRuntime extends TTYRuntime {
     super();
     
     // Convert Node streams to Web Streams using Bun's compatibility
-    this._stdin = Readable.toWeb(process.stdin) as ReadableStream<Uint8Array>;
+    this._stdin = Readable.toWeb(process.stdin as any) as unknown as ReadableStream<Uint8Array>;
     this._stdout = Writable.toWeb(process.stdout) as WritableStream<Uint8Array>;
     this._stderr = Writable.toWeb(process.stderr) as WritableStream<Uint8Array>;
 
@@ -40,6 +40,11 @@ export class BunTTYRuntime extends TTYRuntime {
   }
 
   // === I/O Streams ===
+  
+  // Override to avoid stream locking issues
+  override async writeStdout(text: string): Promise<void> {
+    process.stdout.write(text);
+  }
   get stdin(): ReadableStream<Uint8Array> {
     return this._stdin;
   }
@@ -109,9 +114,9 @@ export class BunTTYRuntime extends TTYRuntime {
   // === Screen Control ===
   async cursorTo(x: number, y?: number): Promise<void> {
     if (y !== undefined) {
-      await this._writeAnsi(`\x1b[${y + 1};${x + 1}H`);
+      await this._writeAnsiAsync(`\x1b[${y + 1};${x + 1}H`);
     } else {
-      await this._writeAnsi(`\x1b[${x + 1}G`);
+      await this._writeAnsiAsync(`\x1b[${x + 1}G`);
     }
   }
 
@@ -122,19 +127,19 @@ export class BunTTYRuntime extends TTYRuntime {
       case 1: sequence = '\x1b[0K'; break;  // Clear from cursor to end
       default: sequence = '\x1b[2K'; break; // Clear entire line
     }
-    await this._writeAnsi(sequence);
+    await this._writeAnsiAsync(sequence);
   }
 
   async clearScreen(): Promise<void> {
-    await this._writeAnsi('\x1b[2J\x1b[H');
+    await this._writeAnsiAsync('\x1b[2J\x1b[H');
   }
 
   async hideCursor(): Promise<void> {
-    await this._writeAnsi('\x1b[?25l');
+    await this._writeAnsiAsync('\x1b[?25l');
   }
 
   async showCursor(): Promise<void> {
-    await this._writeAnsi('\x1b[?25h');
+    await this._writeAnsiAsync('\x1b[?25h');
   }
 
   // === Text Styling ===
@@ -188,9 +193,9 @@ export class BunTTYRuntime extends TTYRuntime {
   }
 
   stripAnsiCodes(text: string): string {
-    // Use Bun's optimized ANSI escape function
-    if (typeof Bun !== 'undefined' && Bun.escapeANSI) {
-      return Bun.escapeANSI(text);
+    // Use Bun's optimized ANSI escape function if available
+    if (typeof Bun !== 'undefined' && 'stripANSI' in Bun) {
+      return (Bun as any).stripANSI(text);
     }
     
     // Fallback: regex-based stripping
@@ -199,8 +204,8 @@ export class BunTTYRuntime extends TTYRuntime {
 
   colorizeText(text: string, color: string): string {
     // Use Bun's optimized color function
-    if (typeof Bun !== 'undefined' && Bun.color) {
-      return Bun.color(text, color as any);
+    if (typeof Bun !== 'undefined' && 'color' in Bun) {
+      return (Bun as any).color(text, color);
     }
     
     // Fallback: manual ANSI codes
@@ -275,7 +280,7 @@ export class BunTTYRuntime extends TTYRuntime {
     });
   }
 
-  private async _writeAnsi(sequence: string): Promise<void> {
+  private async _writeAnsiAsync(sequence: string): Promise<void> {
     await this.writeStdout(sequence);
   }
 

@@ -8,7 +8,7 @@
  * 4. Force break long words if necessary
  */
 
-import { TextBreaker, BreakOptions, BreakResult, LineBreak, InlineElement } from './TextBreaker.js';
+import { TextBreaker, type BreakOptions, type BreakResult, type LineBreak, type InlineElement } from './TextBreaker.js';
 
 export class SimpleGreedyTextBreaker extends TextBreaker {
   breakText(text: string, options: BreakOptions): BreakResult {

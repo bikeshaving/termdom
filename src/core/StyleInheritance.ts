@@ -1,16 +1,17 @@
 /**
- * Style Inheritance for TOM
+ * Style Inheritance for TTY
  *
- * Implements CSS-like style inheritance for TOM elements.
+ * Implements CSS-like style inheritance for TTY elements.
  * Unlike CSS, we have full control over which properties inherit.
  */
 
-import { TOMElement, TOMStyle } from './TOMElement.js';
+import { TTYElement } from './TTYElement.js';
+import { TTYCSSStyleDeclaration } from '../css/TTYCSSStyleDeclaration.js';
 
 /**
  * Properties that should inherit from parent to child
  */
-const INHERITABLE_PROPERTIES: (keyof TOMStyle)[] = [
+const INHERITABLE_PROPERTIES: (keyof Record<string, string>)[] = [
   'color',
   'fontWeight',
   'fontStyle',
@@ -22,7 +23,7 @@ const INHERITABLE_PROPERTIES: (keyof TOMStyle)[] = [
 /**
  * Default values for style properties
  */
-const DEFAULT_STYLES: Partial<TOMStyle> = {
+const DEFAULT_STYLES: Partial<Record<string, string>> = {
   display: 'flex',
   position: 'relative',
   flexDirection: 'column',
@@ -41,15 +42,15 @@ const DEFAULT_STYLES: Partial<TOMStyle> = {
 /**
  * Compute the effective style for an element, including inheritance
  */
-export function computeEffectiveStyle(element: TOMElement): TOMStyle {
-  const computedStyle: TOMStyle = { ...DEFAULT_STYLES };
+export function computeEffectiveStyle(element: TTYElement): Record<string, string> {
+  const computedStyle: Record<string, string> = { ...DEFAULT_STYLES };
 
   // Start from the root and work down, applying inheritance
   const ancestors = getAncestors(element);
 
   // Apply inherited styles from ancestors
   for (const ancestor of ancestors) {
-    if (ancestor instanceof TOMElement) {
+    if (ancestor instanceof TTYElement) {
       const ancestorStyle = ancestor.style;
 
       for (const prop of INHERITABLE_PROPERTIES) {
@@ -69,7 +70,7 @@ export function computeEffectiveStyle(element: TOMElement): TOMStyle {
 /**
  * Get all ancestors of an element, from root to direct parent
  */
-function getAncestors(element: TOMElement): Element[] {
+function getAncestors(element: TTYElement): Element[] {
   const ancestors: Element[] = [];
   let current = element.parentElement;
 
@@ -84,18 +85,18 @@ function getAncestors(element: TOMElement): Element[] {
 /**
  * Check if a style property should inherit
  */
-export function isInheritableProperty(property: keyof TOMStyle): boolean {
+export function isInheritableProperty(property: keyof Record<string, string>): boolean {
   return INHERITABLE_PROPERTIES.includes(property);
 }
 
 /**
  * Get inherited value for a property from the parent chain
  */
-export function getInheritedValue(element: TOMElement, property: keyof TOMStyle): any {
+export function getInheritedValue(element: TTYElement, property: keyof Record<string, string>): any {
   let current = element.parentElement;
 
   while (current) {
-    if (current instanceof TOMElement) {
+    if (current instanceof TTYElement) {
       const value = current.style[property];
       if (value !== undefined) {
         return value;
@@ -109,12 +110,12 @@ export function getInheritedValue(element: TOMElement, property: keyof TOMStyle)
 }
 
 /**
- * Mixin to add computed style support to TOMElement
+ * Mixin to add computed style support to TTYElement
  */
-export function addComputedStyleSupport(ElementClass: typeof TOMElement) {
+export function addComputedStyleSupport(ElementClass: typeof TTYElement) {
   // Add computed style getter
   Object.defineProperty(ElementClass.prototype, 'computedStyle', {
-    get: function(this: TOMElement) {
+    get: function(this: TTYElement) {
       return computeEffectiveStyle(this);
     },
     configurable: true
@@ -125,10 +126,10 @@ export function addComputedStyleSupport(ElementClass: typeof TOMElement) {
 
   if (originalStyleSetter) {
     Object.defineProperty(ElementClass.prototype, 'style', {
-      get: function(this: TOMElement) {
+      get: function(this: TTYElement) {
         return this._tomStyle || {};
       },
-      set: function(this: TOMElement, value: TOMStyle) {
+      set: function(this: TTYElement, value: Record<string, string>) {
         originalStyleSetter.call(this, value);
 
         // Trigger re-computation for descendants that might inherit
@@ -140,23 +141,18 @@ export function addComputedStyleSupport(ElementClass: typeof TOMElement) {
 }
 
 /**
- * Extension to TOMElement for style inheritance
+ * Extension methods for TTYElement style inheritance
+ * These are implemented directly in TTYElement.ts
  */
-declare module './TOMElement.js' {
-  interface TOMElement {
-    computedStyle: TOMStyle;
-    invalidateDescendantStyles(): void;
-  }
-}
 
-// Add methods to TOMElement prototype
-Object.assign(TOMElement.prototype, {
+// Add methods to TTYElement prototype
+Object.assign(TTYElement.prototype, {
   /**
    * Invalidate computed styles for all descendants
    */
-  invalidateDescendantStyles(this: TOMElement): void {
+  invalidateDescendantStyles(this: TTYElement): void {
     for (const child of this.children) {
-      if (child instanceof TOMElement) {
+      if (child instanceof TTYElement) {
         child.markForRender();
         child.invalidateDescendantStyles();
       }
@@ -165,4 +161,4 @@ Object.assign(TOMElement.prototype, {
 });
 
 // Apply the computed style support
-addComputedStyleSupport(TOMElement);
+addComputedStyleSupport(TTYElement);

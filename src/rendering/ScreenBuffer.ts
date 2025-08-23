@@ -89,11 +89,13 @@ export class ScreenBuffer {
     // Handle clipping
     if (x < 0 || y < 0 || y >= this.height) return;
 
-    // Use Bun's string width for proper Unicode handling
-    const chars = [...text]; // Handle multi-byte Unicode properly
+    // Use Intl.Segmenter for proper grapheme cluster segmentation
+    const segmenter = new Intl.Segmenter('en', { granularity: 'grapheme' });
+    const segments = Array.from(segmenter.segment(text));
     let currentX = x;
 
-    for (const char of chars) {
+    for (const segment of segments) {
+      const char = segment.segment;
       if (currentX >= this.width) break;
 
       // Place the character
@@ -312,11 +314,11 @@ export class ScreenBuffer {
     try {
       // Use Bun's color API for efficient color conversion
       const ansiColor = Bun.color(color, 'ansi');
-      if (isBackground) {
+      if (ansiColor && isBackground) {
         // Convert foreground (38) to background (48)
         return ansiColor.replace('38;', '48;');
       } else {
-        return ansiColor;
+        return ansiColor || '';
       }
     } catch {
       // Fallback for basic colors

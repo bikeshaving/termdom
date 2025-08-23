@@ -5,7 +5,7 @@
  * Maps TOM styles to Yoga properties and computes element positions/sizes.
  */
 
-import { TOMElement } from '../core/TOMElement.js';
+import { TTYElement } from '../core/TTYElement.js';
 import { TextMeasurement } from './TextMeasurement.js';
 import { GreedyTextBreaker, type InlineElement } from '../text/index.js';
 import Yoga from 'yoga-layout';
@@ -26,10 +26,18 @@ export class LayoutEngine {
    * Compute layout for an element tree using Yoga
    */
   computeLayout(root: Element, containerWidth: number, containerHeight: number): void {
-    if (!(root instanceof TOMElement)) {
-      // For non-TOM elements, just process children
-      for (const child of root.children) {
-        this.computeLayout(child, containerWidth, containerHeight);
+    if (!(root instanceof TTYElement)) {
+      // For non-TTY elements, just process children using standard DOM traversal
+      for (const child of root.childNodes) {
+        if (child.nodeType === Node.ELEMENT_NODE) {
+          this.computeLayout(child as TTYElement, containerWidth, containerHeight);
+        } else if (child.nodeType === Node.TEXT_NODE) {
+          // Text nodes handled by parent element rendering
+          continue;
+        } else {
+          // Unknown node type - skip
+          console.warn(`Unknown node type: ${child.nodeType}, skipping layout`);
+        }
       }
       return;
     }
@@ -48,11 +56,14 @@ export class LayoutEngine {
   /**
    * Simple layout algorithm (temporary until Yoga integration)
    */
-  private simpleLayout(element: TOMElement, x: number, y: number, width: number, height: number): void {
+  private simpleLayout(element: TTYElement, x: number, y: number, width: number, height: number): void {
     // Set element bounds
     element.bounds = { x, y, width, height };
 
-    const children = element.getTOMChildren();
+    // Get element children using standard DOM traversal
+    const children = Array.from(element.childNodes).filter(child => 
+      child.nodeType === Node.ELEMENT_NODE
+    ) as TTYElement[];
     if (children.length === 0) return;
 
     const style = element.style;
@@ -85,7 +96,7 @@ export class LayoutEngine {
   /**
    * Get padding from element style
    */
-  private getPadding(element: TOMElement): [number, number, number, number] {
+  private getPadding(element: TTYElement): [number, number, number, number] {
     const padding = element.style.padding;
     
     if (typeof padding === 'number') {
@@ -102,7 +113,7 @@ export class LayoutEngine {
   /**
    * Flexbox layout - the only layout method in TOM
    */
-  private flexLayout(contentArea: any, children: TOMElement[], style: any): void {
+  private flexLayout(contentArea: any, children: TTYElement[], style: any): void {
     if (children.length === 0) return;
     
     // Default to column if not specified (like CSS flexbox)
@@ -179,7 +190,7 @@ export class LayoutEngine {
   /**
    * Setup Yoga node for element
    */
-  private setupYogaNode(element: TOMElement): void {
+  private setupYogaNode(element: TTYElement): void {
     if (element.yogaNode) return;
 
     const yogaNode = this.yoga.Node.create();
@@ -195,10 +206,13 @@ export class LayoutEngine {
   /**
    * Build Yoga tree recursively, handling inline elements specially
    */
-  private buildYogaTree(element: TOMElement): void {
+  private buildYogaTree(element: TTYElement): void {
     this.setupYogaNode(element);
     
-    const children = element.getTOMChildren();
+    // Get element children using standard DOM traversal
+    const children = Array.from(element.childNodes).filter(child => 
+      child.nodeType === Node.ELEMENT_NODE
+    ) as TTYElement[];
     
     // Clear existing children
     while (element.yogaNode.getChildCount() > 0) {
@@ -230,7 +244,7 @@ export class LayoutEngine {
   /**
    * Extract computed layout from Yoga
    */
-  private extractLayout(element: TOMElement, parentX: number, parentY: number): void {
+  private extractLayout(element: TTYElement, parentX: number, parentY: number): void {
     if (!element.yogaNode) return;
 
     // Get computed layout from Yoga
@@ -243,8 +257,10 @@ export class LayoutEngine {
       height: layout.height
     };
 
-    // Extract layout for children
-    const children = element.getTOMChildren();
+    // Extract layout for children using standard DOM traversal
+    const children = Array.from(element.childNodes).filter(child => 
+      child.nodeType === Node.ELEMENT_NODE
+    ) as TTYElement[];
     for (const child of children) {
       this.extractLayout(child, element.bounds.x, element.bounds.y);
     }
@@ -253,7 +269,7 @@ export class LayoutEngine {
   /**
    * Map TOM styles to Yoga properties
    */
-  private applyStylesToYoga(element: TOMElement): void {
+  private applyStylesToYoga(element: TTYElement): void {
     if (!element.yogaNode) return;
 
     const style = element.style;
@@ -341,7 +357,7 @@ export class LayoutEngine {
   /**
    * Measure inline element size based on text content only (no chrome)
    */
-  private measureInlineElement(element: TOMElement): { width: number; height: number } {
+  private measureInlineElement(element: TTYElement): { width: number; height: number } {
     const content = element.textContent || '';
     
     if (!content) {
@@ -388,7 +404,7 @@ export class LayoutEngine {
   /**
    * Measure inline-block element size with full visual dimensions
    */
-  private measureInlineBlockElement(element: TOMElement): { width: number; height: number } {
+  private measureInlineBlockElement(element: TTYElement): { width: number; height: number } {
     const style = element.style;
     
     // 1. Check for explicit dimensions first (highest priority)
@@ -431,7 +447,7 @@ export class LayoutEngine {
   /**
    * Get border width from element style
    */
-  private getBorderWidth(element: TOMElement): number {
+  private getBorderWidth(element: TTYElement): number {
     const border = element.style.border;
     
     if (typeof border === 'number') {
@@ -456,7 +472,7 @@ export class LayoutEngine {
   /**
    * Get margin from element style
    */
-  private getMargin(element: TOMElement): [number, number, number, number] {
+  private getMargin(element: TTYElement): [number, number, number, number] {
     const margin = element.style.margin;
     
     if (typeof margin === 'number') {

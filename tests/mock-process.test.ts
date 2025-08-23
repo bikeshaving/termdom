@@ -12,7 +12,7 @@ class MockStdout extends Writable {
   public rows: number = 24;
   public isTTY: boolean = true;
 
-  _write(chunk: any, encoding: any, callback: any) {
+  override _write(chunk: any, encoding: any, callback: any) {
     this.output += chunk.toString();
     callback();
   }
@@ -42,7 +42,7 @@ class MockStdin extends Readable {
   private inputQueue: Buffer[] = [];
   public isTTY: boolean = true;
 
-  _read() {
+  override _read() {
     // Process input queue
     if (this.inputQueue.length > 0) {
       const data = this.inputQueue.shift()!;
