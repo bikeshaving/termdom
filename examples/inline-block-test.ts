@@ -4,20 +4,20 @@
  * Test inline-block elements specifically
  */
 
-import { createTOM } from '../src/index.js';
+import { createTTYWindow } from '../src/index.js';
 
-const tom = createTOM();
+const tty = createTTYWindow();
 
 // Simple container with inline-block button
-const container = tom.createElement('container');
+const container = tty.document.createElement('container');
 container.style.backgroundColor = 'blue';
 container.style.padding = [1, 2, 1, 2];
 
 // Add text before button
-container.appendChild(tom.createTextNode('Before '));
+container.appendChild(tty.document.createTextNode('Before '));
 
 // Add inline-block button
-const button = tom.createElement('button');
+const button = tty.document.createElement('button');
 button.textContent = 'CLICK';
 button.style.backgroundColor = 'red';
 button.style.color = 'white';
@@ -32,10 +32,10 @@ console.log('  childNodes.length:', button.childNodes.length);
 container.appendChild(button);
 
 // Add text after button
-container.appendChild(tom.createTextNode(' After'));
+container.appendChild(tty.document.createTextNode(' After'));
 
-tom.body.appendChild(container);
-tom.render();
+tty.document.body.appendChild(container);
+tty.document.render();
 
 // Debug actual layout after render
 console.log('\n=== Layout Debug ===');
@@ -56,5 +56,5 @@ console.log('Expected "After" x position:', contentArea.x + Bun.stringWidth(befo
 console.log('"After" text starts with:', afterText.slice(0, 3));
 
 setTimeout(() => {
-  tom.destroy();
+  tty[Symbol.dispose]();
 }, 3000);

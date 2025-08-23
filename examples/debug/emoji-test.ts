@@ -2,12 +2,12 @@
  * Emoji Width Test - Debug emoji rendering issues
  */
 
-import { createTOM } from '../src/index.js';
+import { createTTYWindow } from '../src/index.js';
 
 function emojiTest() {
   console.log('🧪 Testing emoji width handling...\n');
   
-  const tom = createTOM();
+  const tty = createTTYWindow();
   
   // Test different emoji scenarios
   const testCases = [
@@ -20,24 +20,24 @@ function emojiTest() {
   ];
   
   for (let i = 0; i < testCases.length; i++) {
-    const text = tom.createElement('text');
+    const text = tty.document.createElement('text');
     text.textContent = testCases[i];
     text.style.backgroundColor = i % 2 === 0 ? 'blue' : 'green';
     text.style.color = 'white';
     text.style.padding = [0, 1, 0, 1];
     
-    tom.body.appendChild(text);
+    tty.document.body.appendChild(text);
     
     console.log(`Test ${i + 1}: "${testCases[i]}" (width: ${Bun.stringWidth(testCases[i])})`);
   }
   
   console.log('\n🎨 Rendering...\n');
-  tom.render();
+  tty.document.render();
   
   console.log('\n✅ Emoji test complete!');
   
   setTimeout(() => {
-    tom.destroy();
+    tty[Symbol.dispose]();
   }, 100);
 }
 

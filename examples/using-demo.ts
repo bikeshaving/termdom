@@ -5,17 +5,17 @@
  * ensuring proper terminal cleanup even if exceptions occur or the process exits unexpectedly.
  */
 
-import { createTOM } from '../src/index.js';
+import { createTTYWindow } from '../src/index.js';
 
 async function usingDemo() {
   console.log('🎯 Demonstrating automatic resource management with `using`');
   
   // Using the new 'using' syntax ensures automatic cleanup
-  using tom = createTOM();
+  using tty = createTTYWindow();
   
   try {
     // Create a simple UI
-    const container = tom.createElement('container');
+    const container = tty.document.createElement('container');
     container.style = {
       backgroundColor: '#1a1a1a',
       padding: 2,
@@ -24,10 +24,10 @@ async function usingDemo() {
     };
     container.textContent = 'This demo uses automatic resource management!';
     
-    tom.body.appendChild(container);
-    tom.render();
+    tty.document.body.appendChild(container);
+    tty.document.render();
     
-    console.log('✅ TOM UI rendered with automatic cleanup');
+    console.log('✅ TTY UI rendered with automatic cleanup');
     console.log('💡 Terminal mouse tracking and styling will be cleaned up automatically');
     
     // Simulate some work
@@ -43,7 +43,7 @@ async function usingDemo() {
     console.log('🛡️  But terminal will still be cleaned up properly!');
   }
   
-  // TOM is automatically disposed here when leaving the using block
+  // TTY is automatically disposed here when leaving the using block
   console.log('✨ Using block ended - terminal should be clean!');
 }
 
@@ -51,10 +51,10 @@ async function usingDemo() {
 async function manualDemo() {
   console.log('\n🔧 For comparison - manual cleanup approach:');
   
-  const tom = createTOM();
+  const tty = createTTYWindow();
   
   try {
-    const container = tom.createElement('container');
+    const container = tty.document.createElement('container');
     container.style = {
       backgroundColor: '#2a2a2a',
       padding: 1,
@@ -63,14 +63,14 @@ async function manualDemo() {
     };
     container.textContent = 'This demo requires manual cleanup';
     
-    tom.body.appendChild(container);
-    tom.render();
+    tty.document.body.appendChild(container);
+    tty.document.render();
     
     await new Promise(resolve => setTimeout(resolve, 1000));
     
   } finally {
-    // Must remember to manually call destroy()
-    tom.destroy();
+    // Must remember to manually call [Symbol.dispose]()
+    tty[Symbol.dispose]();
     console.log('🧹 Manually cleaned up');
   }
 }

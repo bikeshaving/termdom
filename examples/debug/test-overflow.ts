@@ -2,24 +2,24 @@
  * Test overflow scenario where content exceeds container
  */
 
-import { createTOM } from '../src/index.js';
+import { createTTYWindow } from '../src/index.js';
 
 function testOverflow() {
   console.log('🔍 Testing overflow scenario...\n');
   
-  const tom = createTOM();
+  const tty = createTTYWindow();
   
   // Small container with many buttons
-  const container = tom.createElement('container');
+  const container = tty.document.createElement('container');
   container.style.flexDirection = 'column';
   container.style.backgroundColor = 'blue';
   container.style.padding = [1, 2, 1, 2];
   container.style.height = 15; // Very limited height
-  tom.body.appendChild(container);
+  tty.document.body.appendChild(container);
   
   // Add many buttons that won't fit
   for (let i = 1; i <= 8; i++) {
-    const button = tom.createElement('button');
+    const button = tty.document.createElement('button');
     button.textContent = `Button ${i}`;
     button.style.backgroundColor = i === 1 ? 'yellow' : 'gray';
     button.style.color = i === 1 ? 'black' : 'white';
@@ -27,7 +27,7 @@ function testOverflow() {
     container.appendChild(button);
   }
   
-  tom.render();
+  tty.document.render();
   
   console.log('\nLayout analysis:');
   console.log(`Container height: ${container.bounds.height}`);
@@ -53,7 +53,7 @@ function testOverflow() {
   }
   
   setTimeout(() => {
-    tom.destroy();
+    tty[Symbol.dispose]();
     console.log('\n✅ Test complete');
   }, 5000);
 }

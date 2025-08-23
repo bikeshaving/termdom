@@ -2,19 +2,19 @@
  * Emoji Alignment Test - Debug emoji positioning in containers
  */
 
-import { createTOM } from '../src/index.js';
+import { createTTYWindow } from '../src/index.js';
 
 function emojiAlignmentTest() {
   console.log('🔍 Testing emoji alignment in containers...\n');
   
-  const tom = createTOM();
+  const tty = createTTYWindow();
   
   // Create a container with fixed width
-  const container = tom.createElement('container');
+  const container = tty.document.createElement('container');
   container.style.flexDirection = 'column';
   container.style.backgroundColor = 'blue';
   container.style.padding = [1, 1, 1, 1];
-  tom.body.appendChild(container);
+  tty.document.body.appendChild(container);
   
   // Test cases: with and without emojis
   const testCases = [
@@ -26,7 +26,7 @@ function emojiAlignmentTest() {
   ];
   
   for (const testCase of testCases) {
-    const text = tom.createElement('text');
+    const text = tty.document.createElement('text');
     text.textContent = testCase.text;
     text.style.backgroundColor = testCase.bg;
     text.style.color = 'black';
@@ -38,13 +38,13 @@ function emojiAlignmentTest() {
   }
   
   console.log('\n🎨 Rendering with visible padding...\n');
-  tom.render();
+  tty.document.render();
   
   console.log('\n📏 Each line should have equal padding on both sides');
   console.log('   If emojis cause misalignment, we\'ll see uneven edges');
   
   setTimeout(() => {
-    tom.destroy();
+    tty[Symbol.dispose]();
   }, 100);
 }
 

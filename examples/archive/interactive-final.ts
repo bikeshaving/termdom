@@ -3,14 +3,14 @@
  * Final Working Interactive Demo
  */
 
-import { createTOM } from '../src/index.js';
+import { createTTYWindow } from '../src/index.js';
 
 async function main() {
   console.clear();
   console.log('🎮 TOM Interactive Demo');
   console.log('Use ↑↓ arrows, Enter to select, Q to quit\n');
 
-  const tom = createTOM();
+  const tty = createTTYWindow();
   let selectedIndex = 0;
   let isRunning = true;
 
@@ -28,20 +28,20 @@ async function main() {
     process.stdin.pause();
     process.stdout.write('\x1b[?25h'); // Show cursor
     
-    tom.destroy();
+    tty[Symbol.dispose]();
     console.log('\n👋 Goodbye!');
     process.exit(0);
   }
 
   // Container - use full screen
-  const container = tom.createElement('container');
+  const container = tty.document.createElement('container');
   container.style.flexDirection = 'column';
   container.style.padding = [1, 2, 1, 2];
   container.style.backgroundColor = 'darkBlue';
-  tom.body.appendChild(container);
+  tty.document.body.appendChild(container);
 
   // Title
-  const title = tom.createElement('text');
+  const title = tty.document.createElement('text');
   title.textContent = '=== TOM Button Demo ===';
   title.style.color = 'yellow';
   title.style.textAlign = 'center';
@@ -49,7 +49,7 @@ async function main() {
   container.appendChild(title);
 
   // Spacer
-  const spacer = tom.createElement('text');
+  const spacer = tty.document.createElement('text');
   spacer.textContent = '';
   spacer.style.minHeight = 1;
   container.appendChild(spacer);
@@ -61,7 +61,7 @@ async function main() {
       action: () => {
         status.textContent = '🚀 Launching... 3... 2... 1... Blast off!';
         status.style.color = 'green';
-        tom.render();
+        tty.document.render();
       }
     },
     { 
@@ -69,7 +69,7 @@ async function main() {
       action: () => {
         status.textContent = '📊 CPU: 42% | Memory: 1.21GB | FPS: 60';
         status.style.color = 'cyan';
-        tom.render();
+        tty.document.render();
       }
     },
     { 
@@ -78,7 +78,7 @@ async function main() {
         container.style.backgroundColor = container.style.backgroundColor === 'darkBlue' ? 'darkRed' : 'darkBlue';
         status.textContent = '🎨 Theme changed!';
         status.style.color = 'magenta';
-        tom.render();
+        tty.document.render();
       }
     },
     { 
@@ -89,7 +89,7 @@ async function main() {
 
   const buttonElements: any[] = [];
   buttons.forEach((btn) => {
-    const button = tom.createElement('button');
+    const button = tty.document.createElement('button');
     button.textContent = btn.text;
     button.style.minHeight = 3;
     container.appendChild(button);
@@ -97,13 +97,13 @@ async function main() {
   });
 
   // Another spacer
-  const spacer2 = tom.createElement('text');
+  const spacer2 = tty.document.createElement('text');
   spacer2.textContent = '';
   spacer2.style.minHeight = 1;
   container.appendChild(spacer2);
 
   // Status
-  const status = tom.createElement('text');
+  const status = tty.document.createElement('text');
   status.textContent = 'Ready. Use arrow keys to navigate.';
   status.style.color = 'white';
   status.style.textAlign = 'center';
@@ -123,7 +123,7 @@ async function main() {
         btn.style.borderColor = '#666';
       }
     });
-    tom.render();
+    tty.document.render();
   }
 
   // Initial render
@@ -176,7 +176,7 @@ async function main() {
   // Auto-exit after 2 minutes
   setTimeout(() => {
     status.textContent = 'Demo timeout - exiting...';
-    tom.render();
+    tty.document.render();
     setTimeout(cleanup, 1000);
   }, 120000);
 }

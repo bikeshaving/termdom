@@ -4,15 +4,15 @@
  * Test Yoga measurement functions for inline text elements
  */
 
-import { createTOM } from '../src/index.js';
+import { createTTYWindow } from '../src/index.js';
 
 console.clear();
 console.log('🧘 Yoga Measurement Test - Text Flow with Measurement Functions\n');
 
-const tom = createTOM();
+const tty = createTTYWindow();
 
 // Main container
-const main = tom.createElement('container');
+const main = tty.document.createElement('container');
 main.style.padding = [2, 3, 2, 3];
 main.style.backgroundColor = 'darkblue';
 main.style.flexDirection = 'column';
@@ -20,7 +20,7 @@ main.style.gap = 2;
 main.style.width = 60; // Fixed width to test wrapping
 
 // Title
-const title = tom.createElement('text');
+const title = tty.document.createElement('text');
 title.textContent = '🧘 Yoga Measurement Test';
 title.style.color = 'yellow';
 title.style.fontWeight = 'bold';
@@ -28,15 +28,15 @@ title.style.textAlign = 'center';
 main.appendChild(title);
 
 // Test paragraph with mixed content
-const paragraph = tom.createElement('container');
+const paragraph = tty.document.createElement('container');
 paragraph.style.backgroundColor = 'blue';
 paragraph.style.padding = [1, 2, 1, 2];
 
 // Add text before inline element
-paragraph.appendChild(tom.createTextNode('This is a test of text flow with '));
+paragraph.appendChild(tty.document.createTextNode('This is a test of text flow with '));
 
 // Inline element (should use measurement function)
-const inlineSpan = tom.createElement('text');
+const inlineSpan = tty.document.createElement('text');
 inlineSpan.style.display = 'inline';
 inlineSpan.style.color = 'yellow';
 inlineSpan.style.fontWeight = 'bold';
@@ -44,16 +44,16 @@ inlineSpan.textContent = 'highlighted text';
 paragraph.appendChild(inlineSpan);
 
 // Add text after inline element
-paragraph.appendChild(tom.createTextNode(' and more text that should wrap properly when the line gets too long for the container width.'));
+paragraph.appendChild(tty.document.createTextNode(' and more text that should wrap properly when the line gets too long for the container width.'));
 
 main.appendChild(paragraph);
 
 // Test word-wrap settings
-const wrapTest = tom.createElement('container');
+const wrapTest = tty.document.createElement('container');
 wrapTest.style.backgroundColor = 'purple';
 wrapTest.style.padding = [1, 2, 1, 2];
 
-const wrapText = tom.createElement('text');
+const wrapText = tty.document.createElement('text');
 wrapText.style.display = 'inline';
 wrapText.style.wordWrap = 'break-word';
 wrapText.style.color = 'cyan';
@@ -63,11 +63,11 @@ wrapTest.appendChild(wrapText);
 main.appendChild(wrapTest);
 
 // Test nowrap
-const nowrapTest = tom.createElement('container');
+const nowrapTest = tty.document.createElement('container');
 nowrapTest.style.backgroundColor = 'darkgreen';
 nowrapTest.style.padding = [1, 2, 1, 2];
 
-const nowrapText = tom.createElement('text');
+const nowrapText = tty.document.createElement('text');
 nowrapText.style.display = 'inline';
 nowrapText.style.wordWrap = 'nowrap';
 nowrapText.style.color = 'white';
@@ -76,12 +76,12 @@ nowrapTest.appendChild(nowrapText);
 
 main.appendChild(nowrapTest);
 
-tom.body.appendChild(main);
+tty.document.body.appendChild(main);
 
 // Enable interaction
-tom.enableInputMode();
+tty.enableInputMode();
 
-tom.addEventListener('keydown', (e: any) => {
+tty.addEventListener('keydown', (e: any) => {
   if (e.key?.toLowerCase() === 'q') {
     console.log('\n🎉 Yoga measurement test completed!');
     console.log('Features tested:');
@@ -90,11 +90,11 @@ tom.addEventListener('keydown', (e: any) => {
     console.log('- ✅ Text breaking with word-wrap: break-word'); 
     console.log('- ✅ No wrapping with word-wrap: nowrap');
     console.log('- ✅ Mixed text and inline elements');
-    tom.destroy();
+    tty[Symbol.dispose]();
     process.exit(0);
   }
 });
 
-tom.render();
+tty.document.render();
 
 console.log('🎮 Press Q to exit');

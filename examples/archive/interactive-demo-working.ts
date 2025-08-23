@@ -2,22 +2,22 @@
  * Working Interactive Demo - with proper button sizing
  */
 
-import { createTOM } from '../src/index.js';
+import { createTTYWindow } from '../src/index.js';
 
 function interactiveDemoWorking() {
   console.log('🎮 Interactive TOM Demo (Working Version)\n');
 
-  const tom = createTOM();
+  const tty = createTTYWindow();
 
   // Create main container with minimal padding to maximize space
-  const mainContainer = tom.createElement('container');
+  const mainContainer = tty.document.createElement('container');
   mainContainer.style.flexDirection = 'column';
   mainContainer.style.padding = [1, 2, 1, 2]; // Reduced padding
   mainContainer.style.backgroundColor = 'blue';
-  tom.body.appendChild(mainContainer);
+  tty.document.body.appendChild(mainContainer);
 
   // Title - keep it small
-  const title = tom.createElement('text');
+  const title = tty.document.createElement('text');
   title.textContent = '🎮 Interactive TOM Demo';
   title.style.textAlign = 'center';
   title.style.color = 'white';
@@ -25,7 +25,7 @@ function interactiveDemoWorking() {
   mainContainer.appendChild(title);
 
   // Button container gets all remaining space
-  const buttonContainer = tom.createElement('container');
+  const buttonContainer = tty.document.createElement('container');
   buttonContainer.style.flexDirection = 'column';
   buttonContainer.style.padding = [1, 0, 1, 0]; // Minimal padding
   buttonContainer.style.backgroundColor = 'darkBlue';
@@ -39,7 +39,7 @@ function interactiveDemoWorking() {
   ];
 
   buttons.forEach((btn, index) => {
-    const button = tom.createElement('button');
+    const button = tty.document.createElement('button');
     button.textContent = btn.text;
     button.style.padding = [0, 2, 0, 2]; // Minimal vertical padding
     
@@ -55,7 +55,7 @@ function interactiveDemoWorking() {
     buttonContainer.appendChild(button);
   });
 
-  tom.render();
+  tty.document.render();
   
   // Log the actual heights
   console.log('Layout results:');
@@ -67,7 +67,7 @@ function interactiveDemoWorking() {
   });
 
   setTimeout(() => {
-    tom.destroy();
+    tty[Symbol.dispose]();
     console.log('\n✅ Demo complete');
   }, 5000);
 }

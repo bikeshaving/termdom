@@ -9,14 +9,14 @@
  * - Safe exit with timeout and Ctrl+C
  */
 
-import { createTOM } from '../src/index.js';
+import { createTTYWindow } from '../src/index.js';
 
 function keyboardNavigationDemo() {
   console.log('⌨️  Starting Keyboard Navigation Demo...');
   console.log('🎮 Controls: Tab/↓ = next, ↑ = previous, Enter = click, Q = quit');
   console.log('⏰ Auto-exits in 30 seconds\n');
   
-  const tom = createTOM();
+  const tty = createTTYWindow();
   let isRunning = true;
   
   // Set up timeout to auto-exit
@@ -37,8 +37,8 @@ function keyboardNavigationDemo() {
     isRunning = false;
     
     clearTimeout(timeout);
-    tom.disableInputMode();
-    tom.destroy();
+    tty.disableInputMode();
+    tty[Symbol.dispose]();
     
     // Restore terminal
     process.stdout.write('\x1b[?25h'); // Show cursor
@@ -49,14 +49,14 @@ function keyboardNavigationDemo() {
   }
   
   // Create main layout
-  const mainContainer = tom.createElement('container');
+  const mainContainer = tty.document.createElement('container');
   mainContainer.style.flexDirection = 'column';
   mainContainer.style.padding = [2, 4, 2, 4];
   mainContainer.style.backgroundColor = 'blue';
-  tom.body.appendChild(mainContainer);
+  tty.document.body.appendChild(mainContainer);
   
   // Title
-  const title = tom.createElement('text');
+  const title = tty.document.createElement('text');
   title.textContent = '⌨️  DOM Events & Navigation Demo';
   title.style.textAlign = 'center';
   title.style.color = 'white';
@@ -65,7 +65,7 @@ function keyboardNavigationDemo() {
   mainContainer.appendChild(title);
   
   // Instructions
-  const instructions = tom.createElement('text');
+  const instructions = tty.document.createElement('text');
   instructions.textContent = 'Tab/↓=Next ↑=Previous Enter=Click Q=Quit';
   instructions.style.textAlign = 'center';
   instructions.style.color = 'yellow';
@@ -73,13 +73,13 @@ function keyboardNavigationDemo() {
   mainContainer.appendChild(instructions);
   
   // Button container
-  const buttonContainer = tom.createElement('container');
+  const buttonContainer = tty.document.createElement('container');
   buttonContainer.style.flexDirection = 'column';
   buttonContainer.style.padding = [1, 0, 1, 0];
   mainContainer.appendChild(buttonContainer);
   
   // Status area (declare early for use in button handlers)
-  const statusDisplay = tom.createElement('text');
+  const statusDisplay = tty.document.createElement('text');
   statusDisplay.textContent = '👆 Use keyboard to navigate and interact';
   statusDisplay.style.textAlign = 'center';
   statusDisplay.style.color = 'white';
@@ -87,7 +87,7 @@ function keyboardNavigationDemo() {
   statusDisplay.style.padding = [1, 2, 1, 2];
   
   // Focus info (declare early)
-  const focusInfo = tom.createElement('text');
+  const focusInfo = tty.document.createElement('text');
   focusInfo.textContent = 'No element focused';
   focusInfo.style.textAlign = 'center';
   focusInfo.style.color = 'cyan';
@@ -106,7 +106,7 @@ function keyboardNavigationDemo() {
   const buttons: any[] = [];
   
   for (const btnData of buttonData) {
-    const button = tom.createElement('button');
+    const button = tty.document.createElement('button');
     button.textContent = btnData.text;
     button.style.backgroundColor = btnData.color;
     button.style.color = 'white';
@@ -120,17 +120,17 @@ function keyboardNavigationDemo() {
       
       if (btnData.action === 'exit') {
         statusDisplay.textContent = '👋 Goodbye! Exiting...';
-        tom.render();
+        tty.document.render();
         setTimeout(cleanup, 1000);
       } else {
         statusDisplay.textContent = btnData.action;
-        tom.render();
+        tty.document.render();
         
         // Reset status after 3 seconds
         setTimeout(() => {
           if (isRunning) {
             statusDisplay.textContent = '👆 Use keyboard to navigate and interact';
-            tom.render();
+            tty.document.render();
           }
         }, 3000);
       }
@@ -143,16 +143,16 @@ function keyboardNavigationDemo() {
       console.log('Target:', event.target?.constructor.name);
       
       focusInfo.textContent = `Focused: ${btnData.text}`;
-      tom.render();
+      tty.document.render();
     });
     
     button.addEventListener('blur', (event) => {
       console.log('\n😶‍🌫️ Blur event:', btnData.text);
       console.log('Event type:', event.type);
       
-      if (tom.activeElement === null) {
+      if (tty.activeElement === null) {
         focusInfo.textContent = 'No element focused';
-        tom.render();
+        tty.document.render();
       }
     });
     
@@ -178,7 +178,7 @@ function keyboardNavigationDemo() {
   
   // Event counter
   let eventCount = 0;
-  const eventCounter = tom.createElement('text');
+  const eventCounter = tty.document.createElement('text');
   eventCounter.textContent = 'Events fired: 0';
   eventCounter.style.textAlign = 'center';
   eventCounter.style.color = 'lightGray';
@@ -186,7 +186,7 @@ function keyboardNavigationDemo() {
   mainContainer.appendChild(eventCounter);
   
   // Document-level keyboard listener to show event bubbling
-  tom.addEventListener('keydown', (event) => {
+  tty.addEventListener('keydown', (event) => {
     eventCount++;
     eventCounter.textContent = `Events fired: ${eventCount}`;
     
@@ -200,18 +200,18 @@ function keyboardNavigationDemo() {
       cleanup();
     }
     
-    tom.render();
+    tty.document.render();
   });
   
   // Set up initial focus and enable input
-  tom.setActiveElement(buttons[0]);
+  tty.setActiveElement(buttons[0]);
   
   // Hide cursor and render
   process.stdout.write('\x1b[?25l'); // Hide cursor
-  tom.render();
+  tty.document.render();
   
   // Enable input mode to start receiving keyboard events
-  tom.enableInputMode();
+  tty.enableInputMode();
   
   console.log('\n🎮 Input mode enabled - start navigating!');
   console.log('Watch the console for detailed event information!');

@@ -2,21 +2,21 @@
  * Debug why button text isn't rendering
  */
 
-import { createTOM } from '../src/index.js';
+import { createTTYWindow } from '../src/index.js';
 
 function debugButtonText() {
   console.log('🔍 Debugging button text rendering...\n');
   
-  const tom = createTOM();
+  const tty = createTTYWindow();
   
   // Simple container
-  const container = tom.createElement('container');
+  const container = tty.document.createElement('container');
   container.style.backgroundColor = 'blue';
   container.style.padding = [2, 2, 2, 2];
-  tom.body.appendChild(container);
+  tty.document.body.appendChild(container);
   
   // Create a button and check its rendering
-  const button = tom.createElement('button');
+  const button = tty.document.createElement('button');
   button.textContent = 'Test Button';
   button.style.backgroundColor = 'yellow';
   button.style.color = 'black';
@@ -39,13 +39,13 @@ function debugButtonText() {
   console.log('  button.textContent:', button.textContent);
   console.log('  button.style:', button.style);
   
-  tom.render();
+  tty.document.render();
   
   console.log('\nAfter render:');
   console.log('  button.bounds:', button.bounds);
   
   setTimeout(() => {
-    tom.destroy();
+    tty[Symbol.dispose]();
     console.log('\n✅ Debug complete');
   }, 2000);
 }

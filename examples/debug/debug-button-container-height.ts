@@ -2,29 +2,29 @@
  * Debug button container height issue
  */
 
-import { createTOM } from '../src/index.js';
+import { createTTYWindow } from '../src/index.js';
 
 function debugButtonContainerHeight() {
   console.log('🔍 Debugging button container height distribution...\n');
   
-  const tom = createTOM();
+  const tty = createTTYWindow();
   
   // Main container with fixed height
-  const mainContainer = tom.createElement('container');
+  const mainContainer = tty.document.createElement('container');
   mainContainer.style.flexDirection = 'column';
   mainContainer.style.backgroundColor = 'blue';
   mainContainer.style.padding = [1, 2, 1, 2];
-  tom.body.appendChild(mainContainer);
+  tty.document.body.appendChild(mainContainer);
   
   // Title text (takes some height)
-  const title = tom.createElement('text');
+  const title = tty.document.createElement('text');
   title.textContent = 'Title Text';
   title.style.color = 'white';
   title.style.padding = [1, 0, 1, 0];
   mainContainer.appendChild(title);
   
   // Button container
-  const buttonContainer = tom.createElement('container');
+  const buttonContainer = tty.document.createElement('container');
   buttonContainer.style.flexDirection = 'column';
   buttonContainer.style.backgroundColor = 'green';
   buttonContainer.style.padding = [1, 1, 1, 1];
@@ -32,7 +32,7 @@ function debugButtonContainerHeight() {
   
   // Add 3 buttons
   for (let i = 0; i < 3; i++) {
-    const button = tom.createElement('button');
+    const button = tty.document.createElement('button');
     button.textContent = `Button ${i + 1}`;
     button.style.backgroundColor = 'yellow';
     button.style.color = 'black';
@@ -41,14 +41,14 @@ function debugButtonContainerHeight() {
   }
   
   // Status text (takes some height)
-  const status = tom.createElement('text');
+  const status = tty.document.createElement('text');
   status.textContent = 'Status Text';
   status.style.color = 'white';
   status.style.padding = [1, 0, 1, 0];
   mainContainer.appendChild(status);
   
   // Render and check heights
-  tom.render();
+  tty.document.render();
   
   console.log('\nAfter render:');
   console.log('Main container bounds:', mainContainer.bounds);
@@ -76,7 +76,7 @@ function debugButtonContainerHeight() {
   console.log(`  Height per child: ${heightPerChild}`);
   
   setTimeout(() => {
-    tom.destroy();
+    tty[Symbol.dispose]();
     console.log('✅ Debug complete');
   }, 3000);
 }

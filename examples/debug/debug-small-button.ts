@@ -2,24 +2,24 @@
  * Debug button text with minimal height
  */
 
-import { createTOM } from '../src/index.js';
+import { createTTYWindow } from '../src/index.js';
 
 function debugSmallButton() {
   console.log('🔍 Debugging small button text...\n');
   
-  const tom = createTOM();
+  const tty = createTTYWindow();
   
   // Container with limited height
-  const container = tom.createElement('container');
+  const container = tty.document.createElement('container');
   container.style.backgroundColor = 'blue';
   container.style.padding = [1, 2, 1, 2];
   container.style.height = 10; // Limited height
   container.style.flexDirection = 'column';
-  tom.body.appendChild(container);
+  tty.document.body.appendChild(container);
   
   // Add 3 buttons to squeeze them
   for (let i = 0; i < 3; i++) {
-    const button = tom.createElement('button');
+    const button = tty.document.createElement('button');
     button.textContent = `Button ${i + 1}`;
     button.style.backgroundColor = i === 0 ? 'yellow' : 'gray';
     button.style.color = i === 0 ? 'black' : 'white';
@@ -28,7 +28,7 @@ function debugSmallButton() {
     container.appendChild(button);
   }
   
-  tom.render();
+  tty.document.render();
   
   console.log('Container height:', container.bounds.height);
   console.log('Content area height:', container.bounds.height - 2);
@@ -43,7 +43,7 @@ function debugSmallButton() {
   }
   
   setTimeout(() => {
-    tom.destroy();
+    tty[Symbol.dispose]();
     console.log('\n✅ Debug complete');
   }, 3000);
 }

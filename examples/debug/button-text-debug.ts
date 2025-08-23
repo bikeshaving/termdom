@@ -2,20 +2,20 @@
  * Debug button text rendering specifically
  */
 
-import { createTOM } from '../src/index.js';
+import { createTTYWindow } from '../src/index.js';
 
 function buttonTextDebug() {
   console.log('🔍 Debug button text rendering...');
   
-  const tom = createTOM();
+  const tty = createTTYWindow();
   
   // Simple setup
-  const container = tom.createElement('container');
+  const container = tty.document.createElement('container');
   container.style.backgroundColor = 'blue';
   container.style.padding = [2, 2, 2, 2];
-  tom.body.appendChild(container);
+  tty.document.body.appendChild(container);
   
-  const button = tom.createElement('button');
+  const button = tty.document.createElement('button');
   button.textContent = 'HELLO';
   button.style.backgroundColor = 'red';
   button.style.color = 'white';
@@ -29,11 +29,11 @@ function buttonTextDebug() {
   console.log('Button is TOMContainer:', button.constructor.name);
   console.log('Button style:', button.style);
   
-  tom.render();
+  tty.document.render();
   
   setTimeout(() => {
     console.log('Button bounds after render:', button.bounds);
-    tom.destroy();
+    tty[Symbol.dispose]();
   }, 2000);
 }
 

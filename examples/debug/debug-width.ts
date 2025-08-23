@@ -4,17 +4,17 @@
  * Debug inline-block width calculations
  */
 
-import { createTOM } from '../src/index.js';
+import { createTTYWindow } from '../src/index.js';
 
-const tom = createTOM();
+const tty = createTTYWindow();
 
-const container = tom.createElement('container');
+const container = tty.document.createElement('container');
 container.style.backgroundColor = 'blue';
 container.style.padding = [1, 2, 1, 2];
 
-container.appendChild(tom.createTextNode('Before '));
+container.appendChild(tty.document.createTextNode('Before '));
 
-const button = tom.createElement('button');
+const button = tty.document.createElement('button');
 button.textContent = 'CLICK';
 button.style.backgroundColor = 'red';
 button.style.color = 'white';
@@ -22,10 +22,10 @@ button.style.minWidth = 6;
 button.style.minHeight = 3;
 
 container.appendChild(button);
-container.appendChild(tom.createTextNode(' After'));
+container.appendChild(tty.document.createTextNode(' After'));
 
-tom.body.appendChild(container);
-tom.render();
+tty.document.body.appendChild(container);
+tty.document.render();
 
 // Debug after render
 console.log('\n=== Debug Width Calculations ===');
@@ -41,5 +41,5 @@ const buttonWidth = renderer.getElementWidth(button);
 console.log('Calculated button width:', buttonWidth);
 
 setTimeout(() => {
-  tom.destroy();
+  tty[Symbol.dispose]();
 }, 3000);

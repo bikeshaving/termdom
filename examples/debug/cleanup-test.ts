@@ -4,18 +4,18 @@
  * Simple test to verify cleanup works properly
  */
 
-import { createTOM } from '../src/index.js';
+import { createTTYWindow } from '../src/index.js';
 
 console.log('🧹 Testing cleanup functionality');
 
-const tom = createTOM();
+const tty = createTTYWindow();
 
 // Enable mouse - this should be cleaned up on exit
-tom.enableMouse();
-tom.enableInputMode();
+tty.enableMouse();
+tty.enableInputMode();
 
 // Register cleanup handler
-tom.document.registerCleanupHandler(() => {
+tty.document.registerCleanupHandler(() => {
   console.log('✅ Cleanup handler called');
 });
 
@@ -25,11 +25,11 @@ tom.window.addEventListener('unload', () => {
 });
 
 // Create simple content
-const text = tom.createElement('text');
+const text = tty.document.createElement('text');
 text.textContent = 'Press Ctrl+C to exit cleanly';
 text.style.color = 'green';
-tom.body.appendChild(text);
+tty.document.body.appendChild(text);
 
-tom.render();
+tty.document.render();
 
 console.log('\nMouse tracking enabled. Exit with Ctrl+C to test cleanup.');

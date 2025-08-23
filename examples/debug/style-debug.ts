@@ -4,16 +4,16 @@
  * Debug style application - where is 'block' coming from?
  */
 
-import { createTOM } from '../src/index.js';
+import { createTTYWindow } from '../src/index.js';
 
-const tom = createTOM();
+const tty = createTTYWindow();
 
 console.log('=== Style Debug Investigation ===\n');
 
 // Test different elements
-const button = tom.createElement('button');
-const text = tom.createElement('text');
-const container = tom.createElement('container');
+const button = tty.document.createElement('button');
+const text = tty.document.createElement('text');
+const container = tty.document.createElement('container');
 
 console.log('1. Fresh elements (no style set):');
 console.log('  Button display:', button.style.display);
@@ -26,7 +26,7 @@ console.log('  Button display after textContent:', button.style.display);
 
 console.log('\n3. TOMButton default style check:');
 // Check what the TOMButton constructor sets
-const freshButton = tom.createElement('button');
+const freshButton = tty.document.createElement('button');
 console.log('  Fresh button internal _tomStyle:', (freshButton as any)._tomStyle);
 console.log('  Fresh button style getter:', freshButton.style);
 
@@ -41,6 +41,6 @@ console.log('  Button prototype:', proto.constructor.name);
 console.log('  Button prototype style:', proto.style);
 
 console.log('\n6. Check if HappyDOM Element has default styles:');
-const rawElement = tom.document.createElement('div');
+const rawElement = tty.document.createElement('div');
 console.log('  Raw HappyDOM element style.display:', rawElement.style?.display);
 console.log('  Raw HappyDOM element:', rawElement.constructor.name);

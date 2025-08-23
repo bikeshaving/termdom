@@ -2,20 +2,20 @@
  * Test minimum size constraints
  */
 
-import { createTOM } from '../src/index.js';
+import { createTTYWindow } from '../src/index.js';
 
 function testMinSizes() {
   console.log('🔍 Testing minimum size constraints...\n');
   
-  const tom = createTOM();
+  const tty = createTTYWindow();
   
   // Container with limited height
-  const container = tom.createElement('container');
+  const container = tty.document.createElement('container');
   container.style.flexDirection = 'column';
   container.style.backgroundColor = 'blue';
   container.style.padding = [1, 2, 1, 2];
   container.style.height = 20; // Fixed height to test constraints
-  tom.body.appendChild(container);
+  tty.document.body.appendChild(container);
   
   // Add many elements to test squeezing
   const elements = [
@@ -29,7 +29,7 @@ function testMinSizes() {
   ];
   
   elements.forEach((elem, i) => {
-    const element = tom.createElement(elem.type as any);
+    const element = tty.document.createElement(elem.type as any);
     element.textContent = elem.content;
     element.style.backgroundColor = elem.bg;
     element.style.color = elem.type === 'button' && elem.bg === 'yellow' ? 'black' : 'white';
@@ -38,7 +38,7 @@ function testMinSizes() {
     container.appendChild(element);
   });
   
-  tom.render();
+  tty.document.render();
   
   console.log('\nLayout results:');
   console.log(`Container height: ${container.bounds.height}`);
@@ -59,7 +59,7 @@ function testMinSizes() {
   }
   
   setTimeout(() => {
-    tom.destroy();
+    tty[Symbol.dispose]();
     console.log('\n✅ Test complete');
   }, 5000);
 }

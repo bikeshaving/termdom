@@ -2,18 +2,18 @@
  * Combined debug - raw mouse + TOM integration
  */
 
-import { createTOM } from '../src/index.js';
+import { createTTYWindow } from '../src/index.js';
 
 console.clear();
 console.log('🔍 Combined Mouse Debug');
 console.log('This will show both raw mouse data AND TOM events');
 console.log('Press Q to quit\n');
 
-const tom = createTOM();
+const tty = createTTYWindow();
 
 // Enable TOM mouse
-tom.enableInputMode();
-tom.enableMouse();
+tty.enableInputMode();
+tty.enableMouse();
 
 // ALSO set up our own raw mouse handler to see what's happening
 if (process.stdin.isTTY) {
@@ -50,12 +50,12 @@ process.stdin.on('data', (data: Buffer) => {
 });
 
 // Create TOM button
-const button = tom.createElement('button');
+const button = tty.document.createElement('button');
 button.textContent = 'Click Me!';
 button.style.backgroundColor = 'red';
 button.style.minHeight = 5;
 button.style.padding = [2, 5, 2, 5];
-tom.body.appendChild(button);
+tty.document.body.appendChild(button);
 
 // Add TOM event listeners
 button.addEventListener('click', () => {
@@ -72,7 +72,7 @@ button.addEventListener('mouseleave', () => {
 });
 
 process.stdout.write('\x1b[?25l'); // Hide cursor
-tom.render();
+tty.document.render();
 
 console.log(`Button bounds: x=${button.bounds.x} y=${button.bounds.y} w=${button.bounds.width} h=${button.bounds.height}`);
 

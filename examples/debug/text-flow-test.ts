@@ -4,37 +4,37 @@
  * Test text flow with mixed content
  */
 
-import { createTOM } from '../src/index.js';
+import { createTTYWindow } from '../src/index.js';
 
 console.clear();
 console.log('Text Flow Test\n');
 
-const tom = createTOM();
+const tty = createTTYWindow();
 
 // Create a container with mixed text and elements
-const container = tom.createElement('container');
+const container = tty.document.createElement('container');
 container.style.padding = [2, 2, 2, 2];
 container.style.backgroundColor = 'blue';
 
 // Add mixed content: text node -> element -> text node
-container.appendChild(tom.createTextNode('Before '));
+container.appendChild(tty.document.createTextNode('Before '));
 
-const emphasis = tom.createElement('text');
+const emphasis = tty.document.createElement('text');
 emphasis.textContent = '[EMPHASIS]';
 emphasis.style.fontWeight = 'bold';
 emphasis.style.color = 'yellow';
 container.appendChild(emphasis);
 
-container.appendChild(tom.createTextNode(' After'));
+container.appendChild(tty.document.createTextNode(' After'));
 
-tom.body.appendChild(container);
+tty.document.body.appendChild(container);
 
 // Also test direct text on body
-tom.body.appendChild(tom.createTextNode('Direct text on body'));
+tty.document.body.appendChild(tty.document.createTextNode('Direct text on body'));
 
-tom.render();
+tty.document.render();
 
 setTimeout(() => {
-  tom.destroy();
+  tty[Symbol.dispose]();
   console.log('\nText flow test completed');
 }, 2000);

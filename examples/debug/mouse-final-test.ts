@@ -2,17 +2,17 @@
  * Final mouse test with fixed event creation
  */
 
-import { createTOM } from '../src/index.js';
+import { createTTYWindow } from '../src/index.js';
 
 console.clear();
 console.log('🖱️  Final Mouse Test');
 console.log('Click the red button to test mouse events');
 console.log('Press Q to quit\n');
 
-const tom = createTOM();
+const tty = createTTYWindow();
 
 // Add more detailed debug logging to mouse handler
-const mouseHandler = (tom.document as any).mouseHandler;
+const mouseHandler = (tty.document as any).mouseHandler;
 
 // Patch findElementAt to add logging
 const originalFindElementAt = mouseHandler.findElementAt;
@@ -36,18 +36,18 @@ mouseHandler.handleMouseUp = function(x: number, y: number, button: number) {
   return originalHandleMouseUp.call(this, x, y, button);
 };
 
-tom.enableInputMode();
-tom.enableMouse();
+tty.enableInputMode();
+tty.enableMouse();
 
 // Create button with specific size
-const button = tom.createElement('button');
+const button = tty.document.createElement('button');
 button.textContent = 'Click Me!';
 button.style.backgroundColor = 'red';
 button.style.color = 'white';
 button.style.minHeight = 5;
 button.style.minWidth = 20;
 button.style.padding = [1, 3, 1, 3];
-tom.body.appendChild(button);
+tty.document.body.appendChild(button);
 
 let clickCount = 0;
 
@@ -67,11 +67,11 @@ button.addEventListener('click', (e: any) => {
   // Visual feedback
   const originalBg = button.style.backgroundColor;
   button.style.backgroundColor = 'green';
-  tom.render();
+  tty.document.render();
   
   setTimeout(() => {
     button.style.backgroundColor = originalBg;
-    tom.render();
+    tty.document.render();
   }, 200);
 });
 
@@ -79,35 +79,35 @@ button.addEventListener('mouseenter', (e: any) => {
   console.log('✅ BUTTON MOUSE ENTER!');
   button.style.backgroundColor = 'yellow';
   button.style.color = 'black';
-  tom.render();
+  tty.document.render();
 });
 
 button.addEventListener('mouseleave', (e: any) => {
   console.log('✅ BUTTON MOUSE LEAVE!');
   button.style.backgroundColor = 'red';
   button.style.color = 'white';
-  tom.render();
+  tty.document.render();
 });
 
 // Quit handler
-tom.addEventListener('keydown', (e: any) => {
+tty.addEventListener('keydown', (e: any) => {
   if (e.key && e.key.toLowerCase() === 'q') {
     process.stdout.write('\x1b[?25h');
-    tom.destroy();
+    tty[Symbol.dispose]();
     console.log('\n👋 Goodbye!');
     process.exit(0);
   }
 });
 
 process.stdout.write('\x1b[?25l');
-tom.render();
+tty.document.render();
 
 console.log(`\nButton bounds: x=${button.bounds.x} y=${button.bounds.y} w=${button.bounds.width} h=${button.bounds.height}`);
 console.log('Click anywhere on the red button area!');
 
 setTimeout(() => {
   process.stdout.write('\x1b[?25h');
-  tom.destroy();
+  tty[Symbol.dispose]();
   console.log('\nTimeout');
   process.exit(0);
 }, 30000);

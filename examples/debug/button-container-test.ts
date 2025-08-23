@@ -5,22 +5,22 @@
  * to see why text elements aren't rendering inside it.
  */
 
-import { createTOM } from '../src/index.js';
+import { createTTYWindow } from '../src/index.js';
 
 function buttonContainerTest() {
   console.log('🔍 Testing button container isolation...');
   
-  const tom = createTOM();
+  const tty = createTTYWindow();
   
   // Main container (same as interactive demo)
-  const mainContainer = tom.createElement('container');
+  const mainContainer = tty.document.createElement('container');
   mainContainer.style.flexDirection = 'column';
   mainContainer.style.padding = [2, 4, 2, 4];
   mainContainer.style.backgroundColor = 'blue';
-  tom.body.appendChild(mainContainer);
+  tty.document.body.appendChild(mainContainer);
   
   // Before container - to prove main container works
-  const beforeText = tom.createElement('text');
+  const beforeText = tty.document.createElement('text');
   beforeText.textContent = 'BEFORE: This text should show';
   beforeText.style.color = 'white';
   beforeText.style.backgroundColor = 'red';
@@ -28,7 +28,7 @@ function buttonContainerTest() {
   mainContainer.appendChild(beforeText);
   
   // Button container (exact copy from interactive demo)
-  const buttonContainer = tom.createElement('container');
+  const buttonContainer = tty.document.createElement('container');
   buttonContainer.style.flexDirection = 'column';
   buttonContainer.style.padding = [1, 0, 1, 0];
   buttonContainer.style.backgroundColor = 'green'; // Add visible background
@@ -44,7 +44,7 @@ function buttonContainerTest() {
   ];
   
   buttons.forEach((btn, index) => {
-    const button = tom.createElement('text');
+    const button = tty.document.createElement('text');
     button.textContent = btn.text;
     button.style.padding = [1, 2, 1, 2];
     button.style.textAlign = 'center';
@@ -60,7 +60,7 @@ function buttonContainerTest() {
   });
   
   // After container - to prove main container still works
-  const afterText = tom.createElement('text');
+  const afterText = tty.document.createElement('text');
   afterText.textContent = 'AFTER: This text should show';
   afterText.style.color = 'white';
   afterText.style.backgroundColor = 'purple';
@@ -72,7 +72,7 @@ function buttonContainerTest() {
   console.log('Button container children:', buttonContainer.children.length);
   
   // Render and check bounds
-  tom.render();
+  tty.document.render();
   
   console.log('\nAfter render:');
   console.log('Button container bounds:', buttonContainer.bounds);
@@ -84,7 +84,7 @@ function buttonContainerTest() {
   });
   
   setTimeout(() => {
-    tom.destroy();
+    tty[Symbol.dispose]();
     console.log('✅ Button container test complete');
   }, 3000);
 }

@@ -1,34 +1,34 @@
 /**
- * Hello World - TOM's first working demo
+ * Hello World - TTY's first working demo
  */
 
-import { createTOM } from '../src/index.js';
+import { createTTYWindow } from '../src/index.js';
 
 function helloWorld() {
-  console.log('🚀 Starting TOM Hello World...\n');
+  console.log('🚀 Starting TTY Hello World...\n');
   
-  // Create TOM document
-  const tom = createTOM();
+  // Create TTY window
+  const tty = createTTYWindow();
   
   // Create a simple text element
-  const text = tom.createElement('text');
-  text.textContent = 'Hello, Terminal Object Model! 🎯';
+  const text = tty.document.createElement('text');
+  text.textContent = 'Hello, TTY Object Model! 🎯';
   
   // Add it to the document
-  tom.body.appendChild(text);
+  tty.document.body.appendChild(text);
   
   // Try to render
   console.log('📝 Created element:', text.tagName);
   console.log('📄 Text content:', text.textContent);
-  console.log('🏗️  Element is instanceof TOMText:', text.constructor.name);
+  console.log('🏗️  Element is instanceof TTYElement:', text.constructor.name);
   
   // Force render
-  tom.render();
+  tty.document.render();
   
   console.log('\n✅ Hello World complete!');
   
   // Clean up
-  tom.destroy();
+  tty[Symbol.dispose]();
 }
 
 helloWorld();

@@ -4,23 +4,23 @@
  * Test inline-flex display type
  */
 
-import { createTOM } from '../src/index.js';
+import { createTTYWindow } from '../src/index.js';
 
 console.clear();
 console.log('Inline-Flex Test\n');
 
-const tom = createTOM();
+const tty = createTTYWindow();
 
 // Create a container with mixed content including inline-flex elements
-const paragraph = tom.createElement('container');
+const paragraph = tty.document.createElement('container');
 paragraph.style.padding = [2, 2, 2, 2];
 paragraph.style.backgroundColor = 'darkblue';
 
 // Add text before
-paragraph.appendChild(tom.createTextNode('Here is some text with '));
+paragraph.appendChild(tty.document.createTextNode('Here is some text with '));
 
 // Create an inline-flex container (like a button group)
-const buttonGroup = tom.createElement('container');
+const buttonGroup = tty.document.createElement('container');
 buttonGroup.style.display = 'inline';
 buttonGroup.style.flexDirection = 'row';
 buttonGroup.style.gap = 1;
@@ -28,14 +28,14 @@ buttonGroup.style.backgroundColor = 'gray';
 buttonGroup.style.padding = [0, 1, 0, 1];
 
 // Add buttons to the inline-flex container
-const btn1 = tom.createElement('button');
+const btn1 = tty.document.createElement('button');
 btn1.textContent = 'A';
 btn1.style.backgroundColor = 'red';
 btn1.style.color = 'white';
 btn1.style.minWidth = 3;
 btn1.style.minHeight = 1;
 
-const btn2 = tom.createElement('button');
+const btn2 = tty.document.createElement('button');
 btn2.textContent = 'B';
 btn2.style.backgroundColor = 'green';  
 btn2.style.color = 'white';
@@ -48,17 +48,17 @@ buttonGroup.appendChild(btn2);
 paragraph.appendChild(buttonGroup);
 
 // Add text after
-paragraph.appendChild(tom.createTextNode(' inline buttons and more text.'));
+paragraph.appendChild(tty.document.createTextNode(' inline buttons and more text.'));
 
-tom.body.appendChild(paragraph);
+tty.document.body.appendChild(paragraph);
 
 // Test display values
 console.log('Button group display:', buttonGroup.style.display);
 console.log('Button display (default):', btn1.style.display);
 
-tom.render();
+tty.document.render();
 
 setTimeout(() => {
-  tom.destroy();
+  tty[Symbol.dispose]();
   console.log('\nInline-flex test completed');
 }, 3000);

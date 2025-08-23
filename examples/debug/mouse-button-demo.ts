@@ -4,20 +4,20 @@
  * Clean mouse demo - Click the big red button!
  */
 
-import { createTOM } from '../src/index.js';
+import { createTTYWindow } from '../src/index.js';
 
 console.clear();
 console.log('🖱️  Mouse Demo - Click the Big Red Button!');
 console.log('Press Q to quit\n');
 
-const tom = createTOM();
+const tty = createTTYWindow();
 
 // Enable input and mouse
-tom.enableInputMode();
-tom.enableMouse();
+tty.enableInputMode();
+tty.enableMouse();
 
 // Create a big red button
-const button = tom.createElement('button');
+const button = tty.document.createElement('button');
 button.textContent = '🎯 CLICK ME! 🎯';
 button.style.backgroundColor = 'red';
 button.style.color = 'white';
@@ -27,16 +27,16 @@ button.style.padding = [2, 5, 2, 5];
 button.style.fontSize = 'large';
 button.style.fontWeight = 'bold';
 button.style.margin = [5, 10, 5, 10];
-tom.body.appendChild(button);
+tty.document.body.appendChild(button);
 
 // Click counter
 let clicks = 0;
-const counter = tom.createElement('text');
+const counter = tty.document.createElement('text');
 counter.textContent = 'Clicks: 0';
 counter.style.color = 'cyan';
 counter.style.marginTop = 2;
 counter.style.textAlign = 'center';
-tom.body.appendChild(counter);
+tty.document.body.appendChild(counter);
 
 // Button events
 button.addEventListener('click', () => {
@@ -46,35 +46,35 @@ button.addEventListener('click', () => {
   // Flash effect
   button.style.backgroundColor = 'green';
   button.textContent = '✨ NICE! ✨';
-  tom.render();
+  tty.document.render();
   
   setTimeout(() => {
     button.style.backgroundColor = 'red';
     button.textContent = '🎯 CLICK ME! 🎯';
-    tom.render();
+    tty.document.render();
   }, 200);
 });
 
 button.addEventListener('mouseenter', () => {
   button.style.backgroundColor = 'darkred';
   button.style.transform = 'scale(1.1)';
-  tom.render();
+  tty.document.render();
 });
 
 button.addEventListener('mouseleave', () => {
   button.style.backgroundColor = 'red';
   button.style.transform = 'scale(1)';
-  tom.render();
+  tty.document.render();
 });
 
 // Quit on Q
-tom.addEventListener('keydown', (e: any) => {
+tty.addEventListener('keydown', (e: any) => {
   if (e.key && e.key.toLowerCase() === 'q') {
     console.log('\n👋 Thanks for clicking!');
-    tom.destroy();
+    tty[Symbol.dispose]();
     process.exit(0);
   }
 });
 
 // Initial render
-tom.render();
+tty.document.render();

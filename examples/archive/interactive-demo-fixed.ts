@@ -2,22 +2,22 @@
  * Fixed Interactive TOM Demo - shows buttons properly
  */
 
-import { createTOM } from '../src/index.js';
+import { createTTYWindow } from '../src/index.js';
 
 function interactiveDemoFixed() {
   console.log('🎮 Starting Fixed Interactive TOM Demo...\n');
 
-  const tom = createTOM();
+  const tty = createTTYWindow();
 
   // Create main container
-  const mainContainer = tom.createElement('container');
+  const mainContainer = tty.document.createElement('container');
   mainContainer.style.flexDirection = 'column';
   mainContainer.style.padding = [2, 4, 2, 4];
   mainContainer.style.backgroundColor = 'blue';
-  tom.body.appendChild(mainContainer);
+  tty.document.body.appendChild(mainContainer);
 
   // Title
-  const title = tom.createElement('text');
+  const title = tty.document.createElement('text');
   title.textContent = '🎮 Interactive TOM Demo';
   title.style.textAlign = 'center';
   title.style.color = 'white';
@@ -26,7 +26,7 @@ function interactiveDemoFixed() {
   mainContainer.appendChild(title);
 
   // Instructions
-  const instructions = tom.createElement('text');
+  const instructions = tty.document.createElement('text');
   instructions.textContent = 'Use ↑↓ arrows to navigate, Enter to click, Q to quit';
   instructions.style.textAlign = 'center';
   instructions.style.color = 'yellow';
@@ -34,7 +34,7 @@ function interactiveDemoFixed() {
   mainContainer.appendChild(instructions);
 
   // Button container
-  const buttonContainer = tom.createElement('container');
+  const buttonContainer = tty.document.createElement('container');
   buttonContainer.style.flexDirection = 'column';
   buttonContainer.style.padding = [1, 0, 1, 0];
   mainContainer.appendChild(buttonContainer);
@@ -50,7 +50,7 @@ function interactiveDemoFixed() {
 
   // Create button elements (using 'button' not 'text')
   buttons.forEach((btn, index) => {
-    const button = tom.createElement('button');
+    const button = tty.document.createElement('button');
     button.textContent = btn.text;
     
     // First button is selected (yellow)
@@ -66,7 +66,7 @@ function interactiveDemoFixed() {
   });
 
   // Status area
-  const statusArea = tom.createElement('text');
+  const statusArea = tty.document.createElement('text');
   statusArea.textContent = '👆 Select a button above';
   statusArea.style.textAlign = 'center';
   statusArea.style.color = 'cyan';
@@ -74,10 +74,10 @@ function interactiveDemoFixed() {
   statusArea.style.padding = [1, 2, 1, 2];
   mainContainer.appendChild(statusArea);
 
-  tom.render();
+  tty.document.render();
 
   setTimeout(() => {
-    tom.destroy();
+    tty[Symbol.dispose]();
     console.log('✅ Demo complete - buttons rendered correctly!');
   }, 5000);
 }

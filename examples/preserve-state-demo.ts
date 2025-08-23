@@ -1,20 +1,20 @@
 /**
- * Demo showing how TOM preserves final UI state as static terminal output
+ * Demo showing how TTY preserves final UI state as static terminal output
  * 
- * This demonstrates how TOM applications feel integrated with terminal workflow
+ * This demonstrates how TTY applications feel integrated with terminal workflow
  * by leaving their final state visible in terminal history after exit.
  */
 
-import { createTOM } from '../src/index.js';
+import { createTTYWindow } from '../src/index.js';
 
 async function preserveStateDemo() {
-  console.log('🎯 TOM Preserve State Demo');
+  console.log('🎯 TTY Preserve State Demo');
   console.log('📊 This will show a data dashboard and preserve it after exit\n');
   
-  using tom = createTOM();
+  using tty = createTTYWindow();
   
   // Create a data dashboard
-  const dashboard = tom.createElement('container');
+  const dashboard = tty.document.createElement('container');
   dashboard.style = {
     backgroundColor: '#1a1a2e',
     padding: 2,
@@ -23,7 +23,7 @@ async function preserveStateDemo() {
   };
   
   // Title
-  const title = tom.createElement('text');
+  const title = tty.document.createElement('text');
   title.textContent = '📊 System Dashboard - Final State';
   title.style = {
     color: '#4cc9f0',
@@ -32,14 +32,14 @@ async function preserveStateDemo() {
   };
   
   // Data section
-  const dataContainer = tom.createElement('container');
+  const dataContainer = tty.document.createElement('container');
   dataContainer.style = {
     flexDirection: 'row',
     gap: 2
   };
   
   // CPU info
-  const cpuBox = tom.createElement('container');
+  const cpuBox = tty.document.createElement('container');
   cpuBox.style = {
     backgroundColor: '#0f1c2e',
     padding: 1,
@@ -48,11 +48,11 @@ async function preserveStateDemo() {
     flex: 1
   };
   
-  const cpuTitle = tom.createElement('text');
+  const cpuTitle = tty.document.createElement('text');
   cpuTitle.textContent = '🖥️  CPU Usage';
   cpuTitle.style = { color: '#7209b7', marginBottom: 1 };
   
-  const cpuValue = tom.createElement('text');
+  const cpuValue = tty.document.createElement('text');
   cpuValue.textContent = '▓▓▓▓▓▓▓░░░ 67%';
   cpuValue.style = { color: '#f72585' };
   
@@ -60,7 +60,7 @@ async function preserveStateDemo() {
   cpuBox.appendChild(cpuValue);
   
   // Memory info
-  const memBox = tom.createElement('container');
+  const memBox = tty.document.createElement('container');
   memBox.style = {
     backgroundColor: '#0f1c2e',
     padding: 1,
@@ -69,11 +69,11 @@ async function preserveStateDemo() {
     flex: 1
   };
   
-  const memTitle = tom.createElement('text');
+  const memTitle = tty.document.createElement('text');
   memTitle.textContent = '💾 Memory';
   memTitle.style = { color: '#7209b7', marginBottom: 1 };
   
-  const memValue = tom.createElement('text');
+  const memValue = tty.document.createElement('text');
   memValue.textContent = '▓▓▓▓▓░░░░░ 52%';
   memValue.style = { color: '#4cc9f0' };
   
@@ -81,7 +81,7 @@ async function preserveStateDemo() {
   memBox.appendChild(memValue);
   
   // Status message
-  const status = tom.createElement('text');
+  const status = tty.document.createElement('text');
   status.textContent = '✅ All systems operational';
   status.style = {
     color: '#4cc9f0',
@@ -97,10 +97,10 @@ async function preserveStateDemo() {
   dashboard.appendChild(dataContainer);
   dashboard.appendChild(status);
   
-  tom.body.appendChild(dashboard);
+  tty.document.body.appendChild(dashboard);
   
   // Initial render
-  tom.render();
+  tty.document.render();
   
   // Show the dashboard for a moment
   await new Promise(resolve => setTimeout(resolve, 2000));
@@ -113,5 +113,5 @@ async function preserveStateDemo() {
 // Run the demo
 preserveStateDemo().then(() => {
   console.log('✨ Notice how the dashboard remains visible in your terminal history!');
-  console.log('🎯 This makes TOM apps feel like integrated terminal tools');
+  console.log('🎯 This makes TTY apps feel like integrated terminal tools');
 }).catch(console.error);

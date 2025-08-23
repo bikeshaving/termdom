@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
 /**
- * TOM Viewport Scrolling Demo
+ * TTY Viewport Scrolling Demo
  * 
  * Demonstrates viewport scrolling with keyboard navigation:
  * - Arrow keys for line-by-line scrolling  
@@ -10,10 +10,10 @@
  * - Ctrl+C to exit
  */
 
-import { createTOM } from '../src/index.js';
+import { createTTYWindow } from '../src/index.js';
 
 async function main() {
-  using tom = createTOM({
+  using tty = createTTYWindow({
     viewport: {
       height: 10, // Fixed viewport height of 10 lines
       overflow: 'scroll'
@@ -21,7 +21,7 @@ async function main() {
   });
 
   // Create content that exceeds viewport height
-  const container = tom.createElement('container');
+  const container = tty.document.createElement('container');
   container.style.display = 'flex';
   container.style.flexDirection = 'column';
   container.style.padding = '1';
@@ -29,7 +29,7 @@ async function main() {
   
   // Add many items to create scrollable content
   for (let i = 1; i <= 30; i++) {
-    const item = tom.createElement('container');
+    const item = tty.document.createElement('container');
     item.style.display = 'flex';
     item.style.padding = '1';
     item.style.margin = '0 0 1 0';
@@ -39,10 +39,10 @@ async function main() {
     container.appendChild(item);
   }
 
-  tom.body.appendChild(container);
+  tty.document.body.appendChild(container);
 
   // Add instructions at the top
-  const instructions = tom.createElement('container');
+  const instructions = tty.document.createElement('container');
   instructions.style.display = 'flex';
   instructions.style.padding = '1';
   instructions.style.backgroundColor = 'cyan';
@@ -50,20 +50,20 @@ async function main() {
   instructions.textContent = '🚀 Use Arrow Keys, Page Up/Down, Mouse Wheel, Ctrl+Home/End to scroll. Ctrl+C to exit.';
   
   // Insert instructions at the beginning
-  tom.body.insertBefore(instructions, container);
+  tty.document.body.insertBefore(instructions, container);
   
-  tom.render();
+  tty.document.render();
 
   // Add scroll position indicator
   function updateScrollIndicator() {
-    if (tom.viewport) {
-      const doc = tom.viewport.getDocument();
-      const viewport = tom.viewport.getViewport();
+    if (tty.viewport) {
+      const doc = tty.viewport.getDocument();
+      const viewport = tty.viewport.getViewport();
       const percentage = doc.height > viewport.height ? 
         Math.round((doc.scrollTop / (doc.height - viewport.height)) * 100) : 0;
       
       instructions.textContent = `🚀 Scroll: ${doc.scrollTop}/${doc.height - viewport.height} (${percentage}%) | Arrow Keys, PgUp/PgDn, Mouse Wheel, Ctrl+Home/End, Ctrl+C`;
-      tom.render();
+      tty.document.render();
     }
   }
 

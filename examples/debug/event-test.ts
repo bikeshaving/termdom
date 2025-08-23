@@ -2,22 +2,22 @@
  * Simple event test to debug KeyboardEvent issue
  */
 
-import { createTOM } from '../src/index.js';
+import { createTTYWindow } from '../src/index.js';
 
 function eventTest() {
   console.log('🧪 Testing event creation...');
   
-  const tom = createTOM();
+  const tty = createTTYWindow();
   
   try {
     // Test event creation
-    console.log('Window:', typeof tom.document);
-    console.log('KeyboardEvent:', typeof tom.document.window?.KeyboardEvent);
+    console.log('Window:', typeof tty.document);
+    console.log('KeyboardEvent:', typeof tty.document.window?.KeyboardEvent);
     
     // Create a button
-    const button = tom.createElement('button');
+    const button = tty.document.createElement('button');
     button.textContent = 'Test Button';
-    tom.body.appendChild(button);
+    tty.document.body.appendChild(button);
     
     // Add event listener
     button.addEventListener('click', () => {
@@ -27,13 +27,13 @@ function eventTest() {
     console.log('✅ Basic setup working');
     
     // Try to enable input mode
-    tom.enableInputMode();
+    tty.enableInputMode();
     console.log('✅ Input mode enabled');
     
   } catch (error) {
     console.error('❌ Error:', error);
   } finally {
-    tom.destroy();
+    tty[Symbol.dispose]();
   }
 }
 

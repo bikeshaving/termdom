@@ -8,14 +8,14 @@
  * - Enter to "click" buttons
  */
 
-import { createTOM } from '../src/index.js';
+import { createTTYWindow } from '../src/index.js';
 
 function interactiveDemo() {
   console.log('🎮 Starting Interactive TOM Demo...');
   console.log('⌨️  Controls: Arrow keys to navigate, Enter to click, Q to quit');
   console.log('⏰ Auto-exits in 20 seconds\n');
 
-  const tom = createTOM();
+  const tty = createTTYWindow();
   let selectedIndex = 0;
   let isRunning = true;
 
@@ -37,7 +37,7 @@ function interactiveDemo() {
     isRunning = false;
 
     clearTimeout(timeout);
-    tom.destroy();
+    tty[Symbol.dispose]();
 
     // Restore terminal
     process.stdout.write('\x1b[?25h'); // Show cursor
@@ -48,14 +48,14 @@ function interactiveDemo() {
   }
 
   // Create main container
-  const mainContainer = tom.createElement('container');
+  const mainContainer = tty.document.createElement('container');
   mainContainer.style.flexDirection = 'column';
   mainContainer.style.padding = [2, 4, 2, 4];
   mainContainer.style.backgroundColor = 'blue';
-  tom.body.appendChild(mainContainer);
+  tty.document.body.appendChild(mainContainer);
 
   // Title
-  const title = tom.createElement('text');
+  const title = tty.document.createElement('text');
   title.textContent = '🎮 Interactive TOM Demo';
   title.style.textAlign = 'center';
   title.style.color = 'white';
@@ -64,7 +64,7 @@ function interactiveDemo() {
   mainContainer.appendChild(title);
 
   // Instructions
-  const instructions = tom.createElement('text');
+  const instructions = tty.document.createElement('text');
   instructions.textContent = 'Use ↑↓ arrows to navigate, Enter to click, Q to quit';
   instructions.style.textAlign = 'center';
   instructions.style.color = 'yellow';
@@ -72,7 +72,7 @@ function interactiveDemo() {
   mainContainer.appendChild(instructions);
 
   // Button container
-  const buttonContainer = tom.createElement('container');
+  const buttonContainer = tty.document.createElement('container');
   buttonContainer.style.flexDirection = 'column';
   buttonContainer.style.padding = [1, 0, 1, 0];
   mainContainer.appendChild(buttonContainer);
@@ -87,7 +87,7 @@ function interactiveDemo() {
   ];
 
   const buttonElements = buttons.map((btn, index) => {
-    const button = tom.createElement('button');
+    const button = tty.document.createElement('button');
     button.textContent = btn.text;
     button.style.padding = [1, 2, 1, 2];
     button.style.textAlign = 'center';
@@ -97,7 +97,7 @@ function interactiveDemo() {
   });
 
   // Status area
-  const statusArea = tom.createElement('text');
+  const statusArea = tty.document.createElement('text');
   statusArea.textContent = '👆 Select a button above';
   statusArea.style.textAlign = 'center';
   statusArea.style.color = 'cyan';
@@ -106,7 +106,7 @@ function interactiveDemo() {
   mainContainer.appendChild(statusArea);
 
   // Timer display
-  const timerDisplay = tom.createElement('text');
+  const timerDisplay = tty.document.createElement('text');
   timerDisplay.textContent = '⏰ 20 seconds remaining';
   timerDisplay.style.textAlign = 'center';
   timerDisplay.style.color = 'white';
@@ -127,7 +127,7 @@ function interactiveDemo() {
     buttonElements.forEach((btn, index) => {
       updateButtonStyle(btn, index === selectedIndex);
     });
-    tom.render();
+    tty.document.render();
   }
 
   function executeAction() {
@@ -135,19 +135,19 @@ function interactiveDemo() {
 
     if (action === 'exit') {
       statusArea.textContent = '👋 Goodbye!';
-      tom.render();
+      tty.document.render();
       setTimeout(cleanup, 1000);
       return;
     }
 
     statusArea.textContent = action;
-    tom.render();
+    tty.document.render();
 
     // Reset status after 2 seconds
     setTimeout(() => {
       if (isRunning) {
         statusArea.textContent = '👆 Select a button above';
-        tom.render();
+        tty.document.render();
       }
     }, 2000);
   }
@@ -158,7 +158,7 @@ function interactiveDemo() {
     secondsRemaining--;
     if (secondsRemaining > 0 && isRunning) {
       timerDisplay.textContent = `⏰ ${secondsRemaining} seconds remaining`;
-      tom.render();
+      tty.document.render();
     }
   }, 1000);
 
@@ -195,7 +195,7 @@ function interactiveDemo() {
 
   // Hide cursor and initial render
   process.stdout.write('\x1b[?25l'); // Hide cursor
-  tom.render();
+  tty.document.render();
 
   // Clean up timer
   setTimeout(() => {

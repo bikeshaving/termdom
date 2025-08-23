@@ -2,22 +2,22 @@
  * Simple Interactive Demo - Minimal version to debug layout
  */
 
-import { createTOM } from '../src/index.js';
+import { createTTYWindow } from '../src/index.js';
 
 function simpleInteractiveDemo() {
   console.log('🎮 Simple Interactive Demo...');
   
-  const tom = createTOM();
+  const tty = createTTYWindow();
   
   // Main container
-  const mainContainer = tom.createElement('container');
+  const mainContainer = tty.document.createElement('container');
   mainContainer.style.flexDirection = 'column';
   mainContainer.style.padding = [2, 4, 2, 4];
   mainContainer.style.backgroundColor = 'blue';
-  tom.body.appendChild(mainContainer);
+  tty.document.body.appendChild(mainContainer);
   
   // Title
-  const title = tom.createElement('text');
+  const title = tty.document.createElement('text');
   title.textContent = '🎮 Simple Interactive Demo';
   title.style.textAlign = 'center';
   title.style.color = 'white';
@@ -26,7 +26,7 @@ function simpleInteractiveDemo() {
   mainContainer.appendChild(title);
   
   // Button container
-  const buttonContainer = tom.createElement('container');
+  const buttonContainer = tty.document.createElement('container');
   buttonContainer.style.flexDirection = 'column';
   buttonContainer.style.backgroundColor = 'darkGray'; // Add background to see the container
   buttonContainer.style.padding = [1, 1, 1, 1];
@@ -40,7 +40,7 @@ function simpleInteractiveDemo() {
   ];
   
   for (const btnData of buttonData) {
-    const button = tom.createElement('button');
+    const button = tty.document.createElement('button');
     button.textContent = btnData.text;
     button.style.backgroundColor = btnData.color;
     button.style.color = 'white';
@@ -51,7 +51,7 @@ function simpleInteractiveDemo() {
   }
   
   // Status
-  const status = tom.createElement('text');
+  const status = tty.document.createElement('text');
   status.textContent = 'Status: Demo loaded';
   status.style.textAlign = 'center';
   status.style.color = 'yellow';
@@ -61,10 +61,10 @@ function simpleInteractiveDemo() {
   console.log('Container children:', mainContainer.children.length);
   console.log('Button container children:', buttonContainer.children.length);
   
-  tom.render();
+  tty.document.render();
   
   setTimeout(() => {
-    tom.destroy();
+    tty[Symbol.dispose]();
     console.log('✅ Simple demo complete');
   }, 5000);
 }

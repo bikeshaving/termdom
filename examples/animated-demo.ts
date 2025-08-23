@@ -8,13 +8,13 @@
  * - Safe cleanup on Ctrl+C
  */
 
-import { createTOM } from '../src/index.js';
+import { createTTYWindow } from '../src/index.js';
 
 function animatedDemo() {
   console.log('🎬 Starting Animated TOM Demo...');
   console.log('⏰ Will auto-exit in 15 seconds (Ctrl+C to quit early)\n');
   
-  const tom = createTOM();
+  const tty = createTTYWindow();
   let isRunning = true;
   let frame = 0;
   
@@ -37,7 +37,7 @@ function animatedDemo() {
     
     clearTimeout(timeout);
     clearInterval(animationLoop);
-    tom.destroy();
+    tty[Symbol.dispose]();
     
     // Restore terminal
     process.stdout.write('\x1b[?25h'); // Show cursor
@@ -48,14 +48,14 @@ function animatedDemo() {
   }
   
   // Create main container
-  const mainContainer = tom.createElement('container');
+  const mainContainer = tty.document.createElement('container');
   mainContainer.style.flexDirection = 'column';
   mainContainer.style.padding = [1, 2, 1, 2];
   mainContainer.style.backgroundColor = 'blue';
-  tom.body.appendChild(mainContainer);
+  tty.document.body.appendChild(mainContainer);
   
   // Animated title
-  const title = tom.createElement('text');
+  const title = tty.document.createElement('text');
   title.style.textAlign = 'center';
   title.style.color = 'white';
   title.style.backgroundColor = 'darkBlue';
@@ -63,7 +63,7 @@ function animatedDemo() {
   mainContainer.appendChild(title);
   
   // Progress container
-  const progressContainer = tom.createElement('container');
+  const progressContainer = tty.document.createElement('container');
   progressContainer.style.flexDirection = 'row';
   progressContainer.style.padding = [1, 1, 1, 1];
   progressContainer.style.backgroundColor = 'darkGray';
@@ -72,7 +72,7 @@ function animatedDemo() {
   // Progress bar elements
   const progressBars: any[] = [];
   for (let i = 0; i < 20; i++) {
-    const bar = tom.createElement('text');
+    const bar = tty.document.createElement('text');
     bar.textContent = '█';
     bar.style.color = 'gray';
     progressContainer.appendChild(bar);
@@ -80,40 +80,40 @@ function animatedDemo() {
   }
   
   // Status displays
-  const statusContainer = tom.createElement('container');
+  const statusContainer = tty.document.createElement('container');
   statusContainer.style.flexDirection = 'column';
   statusContainer.style.padding = [1, 1, 1, 1];
   mainContainer.appendChild(statusContainer);
   
   // CPU Usage simulation
-  const cpuStatus = tom.createElement('text');
+  const cpuStatus = tty.document.createElement('text');
   cpuStatus.style.color = 'green';
   cpuStatus.style.backgroundColor = 'black';
   cpuStatus.style.padding = [0, 1, 0, 1];
   statusContainer.appendChild(cpuStatus);
   
   // Memory Usage simulation  
-  const memoryStatus = tom.createElement('text');
+  const memoryStatus = tty.document.createElement('text');
   memoryStatus.style.color = 'yellow';
   memoryStatus.style.backgroundColor = 'black';
   memoryStatus.style.padding = [0, 1, 0, 1];
   statusContainer.appendChild(memoryStatus);
   
   // Network Status
-  const networkStatus = tom.createElement('text');
+  const networkStatus = tty.document.createElement('text');
   networkStatus.style.color = 'cyan';
   networkStatus.style.backgroundColor = 'black';
   networkStatus.style.padding = [0, 1, 0, 1];
   statusContainer.appendChild(networkStatus);
   
   // Activity feed
-  const activityFeed = tom.createElement('container');
+  const activityFeed = tty.document.createElement('container');
   activityFeed.style.flexDirection = 'column';
   activityFeed.style.backgroundColor = 'darkGreen';
   activityFeed.style.padding = [1, 1, 1, 1];
   mainContainer.appendChild(activityFeed);
   
-  const activityTitle = tom.createElement('text');
+  const activityTitle = tty.document.createElement('text');
   activityTitle.textContent = '📈 Activity Feed';
   activityTitle.style.color = 'white';
   activityTitle.style.textAlign = 'center';
@@ -133,7 +133,7 @@ function animatedDemo() {
   
   // Create activity items
   for (let i = 0; i < 4; i++) {
-    const activity = tom.createElement('text');
+    const activity = tty.document.createElement('text');
     activity.style.color = 'lightGreen';
     activity.style.padding = [0, 1, 0, 1];
     activityFeed.appendChild(activity);
@@ -141,7 +141,7 @@ function animatedDemo() {
   }
   
   // Timer display
-  const timerDisplay = tom.createElement('text');
+  const timerDisplay = tty.document.createElement('text');
   timerDisplay.style.textAlign = 'center';
   timerDisplay.style.color = 'white';
   timerDisplay.style.backgroundColor = 'red';
@@ -198,7 +198,7 @@ function animatedDemo() {
     timerDisplay.textContent = `⏰ ${remaining} seconds remaining`;
     
     // Render the frame
-    tom.render();
+    tty.document.render();
     
     // Check if demo should end
     if (secondsElapsed >= 15) {
@@ -208,7 +208,7 @@ function animatedDemo() {
   
   // Hide cursor and start
   process.stdout.write('\x1b[?25l'); // Hide cursor
-  tom.render();
+  tty.document.render();
 }
 
 animatedDemo();

@@ -1,25 +1,24 @@
 /**
- * Basic TOM Demo
+ * Basic TTY Demo
  * 
- * Demonstrates the core TOM functionality with a simple UI
+ * Demonstrates the core TTY functionality with a simple UI
  * containing containers, text, and buttons.
  */
 
-import { createTOM } from '../src/index.js';
+import { createTTYWindow } from '../src/index.js';
 
 async function basicDemo() {
-  console.log('🚀 Starting TOM Basic Demo...');
+  console.log('🚀 Starting TTY Basic Demo...');
   
   try {
-    // Create TOM document
-    const tom = createTOM();
-    const { document, body, createElement } = tom;
+    // Create TTY document
+    const tty = createTTYWindow();
 
-    console.log('📱 TOM Document created successfully');
-    console.log(`Terminal size: ${tom.document.terminalWidth}x${tom.document.terminalHeight}`);
+    console.log('📱 TTY Document created successfully');
+    console.log(`Terminal size: ${tty.innerWidth}x${tty.innerHeight}`);
 
     // Create main container
-    const container = createElement('container');
+    const container = tty.document.createElement('container');
     container.style = {
       display: 'flex',
       flexDirection: 'column',
@@ -30,42 +29,39 @@ async function basicDemo() {
     };
 
     // Create title
-    const title = createElement('text');
-    title.textContent = '🎯 Terminal Object Model Demo';
+    const title = tty.document.createElement('text');
+    title.textContent = '🎯 Terminal Typewriter Demo';
     title.style = {
       color: '#00ff00',
       fontWeight: 'bold',
-      textAlign: 'center',
-      marginBottom: 1
+      textAlign: 'center'
     };
 
     // Create description
-    const description = createElement('text');
-    description.textContent = 'Welcome to TOM - bringing DOM APIs to the terminal!';
+    const description = tty.document.createElement('text');
+    description.textContent = 'Welcome to TTY - bringing DOM APIs to the terminal!';
     description.style = {
       color: '#888',
-      textAlign: 'center',
-      marginBottom: 2
+      textAlign: 'center'
     };
 
     // Create button container
-    const buttonContainer = createElement('container');
+    const buttonContainer = tty.document.createElement('container');
     buttonContainer.style = {
       display: 'flex',
       flexDirection: 'row',
-      justifyContent: 'center',
-      gap: 2
+      justifyContent: 'center'
     };
 
     // Create buttons
-    const button1 = createElement('button');
+    const button1 = tty.document.createElement('button');
     button1.textContent = 'Click Me!';
     button1.style = {
       backgroundColor: '#0066cc',
       color: 'white'
     };
 
-    const button2 = createElement('button');
+    const button2 = tty.document.createElement('button');
     button2.textContent = 'Or Me!';
     button2.style = {
       backgroundColor: '#cc6600',
@@ -76,13 +72,13 @@ async function basicDemo() {
     button1.addEventListener('click', () => {
       title.textContent = '🎉 Button 1 clicked!';
       title.style = { ...title.style, color: '#ff6600' };
-      tom.render(); // Force re-render to see changes
+      tty.document.render(); // Force re-render to see changes
     });
 
     button2.addEventListener('click', () => {
       title.textContent = '✨ Button 2 clicked!';
       title.style = { ...title.style, color: '#6600ff' };
-      tom.render(); // Force re-render to see changes
+      tty.document.render(); // Force re-render to see changes
     });
 
     // Build the DOM tree
@@ -93,18 +89,18 @@ async function basicDemo() {
     container.appendChild(description);
     container.appendChild(buttonContainer);
     
-    body.appendChild(container);
+    tty.document.body.appendChild(container);
 
     console.log('🏗️  DOM tree constructed');
 
     // Initial render
-    tom.render();
+    tty.document.render();
     console.log('🎨 Initial render complete');
 
     // Setup exit handler
     process.on('SIGINT', () => {
-      console.log('\n👋 Shutting down TOM demo...');
-      tom.destroy();
+      console.log('\n👋 Shutting down TTY demo...');
+      tty[Symbol.dispose]();
       process.exit(0);
     });
 

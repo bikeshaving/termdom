@@ -2,22 +2,22 @@
  * Final Interactive TOM Demo - with proper button elements and minimum sizes
  */
 
-import { createTOM } from '../src/index.js';
+import { createTTYWindow } from '../src/index.js';
 
 function interactiveDemoFinal() {
   console.log('🎮 Interactive TOM Demo with Minimum Sizes\n');
 
-  const tom = createTOM();
+  const tty = createTTYWindow();
 
   // Create main container
-  const mainContainer = tom.createElement('container');
+  const mainContainer = tty.document.createElement('container');
   mainContainer.style.flexDirection = 'column';
   mainContainer.style.padding = [1, 2, 1, 2];
   mainContainer.style.backgroundColor = 'blue';
-  tom.body.appendChild(mainContainer);
+  tty.document.body.appendChild(mainContainer);
 
   // Title (compact)
-  const title = tom.createElement('text');
+  const title = tty.document.createElement('text');
   title.textContent = '🎮 Interactive TOM Demo';
   title.style.textAlign = 'center';
   title.style.color = 'white';
@@ -26,7 +26,7 @@ function interactiveDemoFinal() {
   mainContainer.appendChild(title);
 
   // Instructions (compact)
-  const instructions = tom.createElement('text');
+  const instructions = tty.document.createElement('text');
   instructions.textContent = 'Arrow keys: navigate | Enter: click | Q: quit';
   instructions.style.textAlign = 'center';
   instructions.style.color = 'yellow';
@@ -34,7 +34,7 @@ function interactiveDemoFinal() {
   mainContainer.appendChild(instructions);
 
   // Button container
-  const buttonContainer = tom.createElement('container');
+  const buttonContainer = tty.document.createElement('container');
   buttonContainer.style.flexDirection = 'column';
   buttonContainer.style.backgroundColor = 'darkBlue';
   buttonContainer.style.padding = [0, 0, 0, 0]; // No padding to maximize space
@@ -49,7 +49,7 @@ function interactiveDemoFinal() {
   ];
 
   buttons.forEach((btn, index) => {
-    const button = tom.createElement('button');
+    const button = tty.document.createElement('button');
     button.textContent = btn.text;
     button.style.padding = [0, 2, 0, 2]; // Minimal vertical padding
     
@@ -67,14 +67,14 @@ function interactiveDemoFinal() {
   });
 
   // Status area (compact)
-  const statusArea = tom.createElement('text');
+  const statusArea = tty.document.createElement('text');
   statusArea.textContent = '👆 Ready';
   statusArea.style.textAlign = 'center';
   statusArea.style.color = 'cyan';
   statusArea.style.padding = [1, 0, 0, 0];
   mainContainer.appendChild(statusArea);
 
-  tom.render();
+  tty.document.render();
   
   // Show layout info
   console.log('Layout info:');
@@ -87,7 +87,7 @@ function interactiveDemoFinal() {
   console.log('\n📝 Note: With scrolling support, we could fit unlimited buttons!');
 
   setTimeout(() => {
-    tom.destroy();
+    tty[Symbol.dispose]();
     console.log('\n✅ Demo complete - buttons rendered with minimum sizes!');
   }, 5000);
 }

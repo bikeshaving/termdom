@@ -2,14 +2,14 @@
  * Live Interactive TOM Demo - with real keyboard input
  */
 
-import { createTOM } from '../src/index.js';
+import { createTTYWindow } from '../src/index.js';
 
 function interactiveDemoLive() {
   console.log('🎮 Starting Live Interactive TOM Demo...');
   console.log('⌨️  Controls: ↑↓ arrows to navigate, Enter to click, Q to quit');
   console.log('⏰ Auto-exits in 30 seconds\n');
 
-  const tom = createTOM();
+  const tty = createTTYWindow();
   let selectedIndex = 0;
   let isRunning = true;
 
@@ -31,7 +31,7 @@ function interactiveDemoLive() {
     }
     process.stdin.pause();
     
-    tom.destroy();
+    tty[Symbol.dispose]();
     
     // Show cursor
     process.stdout.write('\x1b[?25h');
@@ -40,14 +40,14 @@ function interactiveDemoLive() {
   }
 
   // Create main container
-  const mainContainer = tom.createElement('container');
+  const mainContainer = tty.document.createElement('container');
   mainContainer.style.flexDirection = 'column';
   mainContainer.style.padding = [1, 2, 1, 2];
   mainContainer.style.backgroundColor = 'blue';
-  tom.body.appendChild(mainContainer);
+  tty.document.body.appendChild(mainContainer);
 
   // Title
-  const title = tom.createElement('text');
+  const title = tty.document.createElement('text');
   title.textContent = '🎮 Interactive TOM Demo';
   title.style.textAlign = 'center';
   title.style.color = 'white';
@@ -56,7 +56,7 @@ function interactiveDemoLive() {
   mainContainer.appendChild(title);
 
   // Button container
-  const buttonContainer = tom.createElement('container');
+  const buttonContainer = tty.document.createElement('container');
   buttonContainer.style.flexDirection = 'column';
   buttonContainer.style.padding = [1, 0, 1, 0];
   mainContainer.appendChild(buttonContainer);
@@ -71,7 +71,7 @@ function interactiveDemoLive() {
 
   const buttonElements: any[] = [];
   buttons.forEach((btn, index) => {
-    const button = tom.createElement('button');
+    const button = tty.document.createElement('button');
     button.textContent = btn.text;
     button.style.padding = [0, 2, 0, 2];
     buttonContainer.appendChild(button);
@@ -79,7 +79,7 @@ function interactiveDemoLive() {
   });
 
   // Status area
-  const statusArea = tom.createElement('text');
+  const statusArea = tty.document.createElement('text');
   statusArea.textContent = '👆 Use arrows to select';
   statusArea.style.textAlign = 'center';
   statusArea.style.color = 'cyan';
@@ -88,7 +88,7 @@ function interactiveDemoLive() {
 
   function updateStatus(text: string) {
     statusArea.textContent = text;
-    tom.render();
+    tty.document.render();
   }
 
   function updateSelection() {
@@ -103,7 +103,7 @@ function interactiveDemoLive() {
         btn.style.borderColor = '#666';
       }
     });
-    tom.render();
+    tty.document.render();
   }
 
   // Initialize selection
@@ -161,7 +161,7 @@ function interactiveDemoLive() {
   process.on('SIGINT', cleanup);
 
   // Initial render
-  tom.render();
+  tty.document.render();
 }
 
 // Run the demo

@@ -2,13 +2,13 @@
  * Working Interactive Demo - ensures buttons have space
  */
 
-import { createTOM } from '../src/index.js';
+import { createTTYWindow } from '../src/index.js';
 
 function interactiveWorking() {
   console.log('🎮 Interactive TOM Demo');
   console.log('⌨️  Use arrow keys, Enter to select, Q to quit\n');
 
-  const tom = createTOM();
+  const tty = createTTYWindow();
   let selectedIndex = 0;
   let isRunning = true;
 
@@ -22,18 +22,18 @@ function interactiveWorking() {
     }
     process.stdin.pause();
     
-    tom.destroy();
+    tty[Symbol.dispose]();
     process.stdout.write('\x1b[?25h'); // Show cursor
     console.log('\n👋 Goodbye!');
     process.exit(0);
   }
 
   // Simple layout - just buttons
-  const container = tom.createElement('container');
+  const container = tty.document.createElement('container');
   container.style.flexDirection = 'column';
   container.style.padding = [1, 2, 1, 2];
   container.style.backgroundColor = 'blue';
-  tom.body.appendChild(container);
+  tty.document.body.appendChild(container);
 
   // Create 3 buttons that will definitely fit
   const buttons = [
@@ -44,14 +44,14 @@ function interactiveWorking() {
 
   const buttonElements: any[] = [];
   buttons.forEach(btn => {
-    const button = tom.createElement('button');
+    const button = tty.document.createElement('button');
     button.textContent = btn.text;
     container.appendChild(button);
     buttonElements.push(button);
   });
 
   // Status text
-  const status = tom.createElement('text');
+  const status = tty.document.createElement('text');
   status.textContent = 'Ready...';
   status.style.color = 'yellow';
   status.style.textAlign = 'center';
@@ -60,13 +60,13 @@ function interactiveWorking() {
 
   function showMessage(msg: string) {
     status.textContent = msg;
-    tom.render();
+    tty.document.render();
     
     // Reset after 2 seconds
     setTimeout(() => {
       if (isRunning) {
         status.textContent = 'Ready...';
-        tom.render();
+        tty.document.render();
       }
     }, 2000);
   }
@@ -81,7 +81,7 @@ function interactiveWorking() {
         btn.style.color = 'white';
       }
     });
-    tom.render();
+    tty.document.render();
   }
 
   // Initial render

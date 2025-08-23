@@ -4,12 +4,12 @@
  * Debug button text rendering
  */
 
-import { createTOM } from '../src/index.js';
+import { createTTYWindow } from '../src/index.js';
 
-const tom = createTOM();
+const tty = createTTYWindow();
 
 // Create a simple test with just a button
-const button = tom.createElement('button');
+const button = tty.document.createElement('button');
 button.textContent = 'TEST';
 button.style.backgroundColor = 'red';
 button.style.color = 'white';
@@ -25,10 +25,10 @@ if (button.childNodes.length > 0) {
   console.log('  First child textContent:', button.childNodes[0].textContent);
 }
 
-tom.body.appendChild(button);
+tty.document.body.appendChild(button);
 
-tom.render();
+tty.document.render();
 
 setTimeout(() => {
-  tom.destroy();
+  tty[Symbol.dispose]();
 }, 2000);
