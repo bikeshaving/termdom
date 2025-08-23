@@ -5,8 +5,6 @@
     "target": "es2022",
     "module": "esnext",
     "moduleDetection": "force",
-    "jsx": "react-jsx",
-    "allowJs": true,
 
     // Bundler mode
     "moduleResolution": "bundler",
