@@ -155,39 +155,68 @@ export class MockTTYRuntime extends TTYRuntime {
   setColor(fg?: string, bg?: string): void {
     if (fg) {
       this._recordStyle(`fg:${fg}`);
+      // Write actual ANSI color code to output
+      const fgCode = this._colorToAnsi(fg, false);
+      if (fgCode) {
+        this._outputBuffer.push(fgCode);
+      }
     }
     if (bg) {
       this._recordStyle(`bg:${bg}`);
+      // Write actual ANSI color code to output
+      const bgCode = this._colorToAnsi(bg, true);
+      if (bgCode) {
+        this._outputBuffer.push(bgCode);
+      }
     }
   }
 
   setBold(enabled: boolean): void {
     this._recordStyle(`bold:${enabled}`);
+    if (enabled) {
+      this._outputBuffer.push('\x1b[1m');
+    }
   }
 
   setItalic(enabled: boolean): void {
     this._recordStyle(`italic:${enabled}`);
+    if (enabled) {
+      this._outputBuffer.push('\x1b[3m');
+    }
   }
 
   setUnderline(enabled: boolean): void {
     this._recordStyle(`underline:${enabled}`);
+    if (enabled) {
+      this._outputBuffer.push('\x1b[4m');
+    }
   }
 
   setDim(enabled: boolean): void {
     this._recordStyle(`dim:${enabled}`);
+    if (enabled) {
+      this._outputBuffer.push('\x1b[2m');
+    }
   }
 
   setReverse(enabled: boolean): void {
     this._recordStyle(`reverse:${enabled}`);
+    if (enabled) {
+      this._outputBuffer.push('\x1b[7m');
+    }
   }
 
   setStrikethrough(enabled: boolean): void {
     this._recordStyle(`strikethrough:${enabled}`);
+    if (enabled) {
+      this._outputBuffer.push('\x1b[9m');
+    }
   }
 
   resetStyle(): void {
     this._currentStyle = [];
     this._recordStyle('reset');
+    this._outputBuffer.push('\x1b[0m');
   }
 
   // === Text Utilities ===
@@ -376,5 +405,34 @@ export class MockTTYRuntime extends TTYRuntime {
   
   private _recordStyle(style: string): void {
     this._currentStyle.push(style);
+  }
+
+  /**
+   * Convert color name to ANSI escape sequence
+   */
+  private _colorToAnsi(color: string, isBackground: boolean): string {
+    const colors: Record<string, number> = {
+      'black': 0, 'red': 1, 'green': 2, 'yellow': 3,
+      'blue': 4, 'magenta': 5, 'cyan': 6, 'white': 7
+    };
+
+    const colorCode = colors[color.toLowerCase()];
+    if (colorCode !== undefined) {
+      const base = isBackground ? 40 : 30;
+      return `\x1b[${base + colorCode}m`;
+    }
+
+    // Try to use Bun's color API if available
+    try {
+      const ansiColor = (Bun as any).color?.(color, 'ansi');
+      if (ansiColor && isBackground) {
+        // Convert foreground (38) to background (48)
+        return ansiColor.replace('38;', '48;');
+      } else {
+        return ansiColor || '';
+      }
+    } catch {
+      return '';
+    }
   }
 }

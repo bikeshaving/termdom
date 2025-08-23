@@ -524,16 +524,35 @@ export class ScreenBuffer {
 
   /**
    * Get element bounds for rendering
-   * TODO: Integrate with proper layout engine (Yoga)
+   * NAIVE IMPLEMENTATION for baseline testing - will be replaced with Yoga layout
    */
   private _getElementBounds(element: Element): Rect | null {
-    // Placeholder implementation - this should come from layout engine
-    // For now, return null to prevent rendering until layout is integrated
-    return null;
+    // Super naive layout - just flow elements top-to-bottom
+    // This is intentionally simple for baseline testing
     
-    // Future implementation will look like:
-    // const layoutNode = element[LAYOUT_SYMBOL];
-    // return layoutNode ? layoutNode.getComputedLayout() : null;
+    // Get element's position in tree (for simple Y offset calculation)
+    let y = 0;
+    let currentElement = element.previousElementSibling;
+    while (currentElement) {
+      y += 1; // Each element takes 1 row (naive)
+      currentElement = currentElement.previousElementSibling;
+    }
+    
+    // Add parent element's Y offset if it exists
+    if (element.parentElement && element.parentElement !== element.ownerDocument?.body) {
+      const parentBounds = this._getElementBounds(element.parentElement);
+      if (parentBounds) {
+        y += parentBounds.y + 1; // Parent's position + 1 row for parent content
+      }
+    }
+    
+    // Simple bounds: start at x=0, width=terminal width, height=1 row
+    return {
+      x: 0,
+      y,
+      width: Math.min(this.width, 80), // Don't exceed screen or reasonable width
+      height: 1
+    };
   }
 
   /**
