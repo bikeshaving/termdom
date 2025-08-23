@@ -1,8 +1,10 @@
 /**
- * TTYContainer - Container element with background and border support
+ * TTYContainerElement - Container element with background and border support
  * 
  * Containers are the building blocks of TTY layouts. They can contain
  * other elements and provide backgrounds, borders, and layout behavior.
+ * 
+ * Follows SVG naming convention: TTYContainerElement for <container> elements
  */
 
 import { TTYElement } from '../core/TTYElement.js';
@@ -11,7 +13,7 @@ import { ScreenBuffer } from '../rendering/ScreenBuffer.js';
 /**
  * Container element - can hold other elements
  */
-export class TTYContainer extends TTYElement {
+export class TTYContainerElement extends TTYElement {
   constructor() {
     super();
     
@@ -23,7 +25,7 @@ export class TTYContainer extends TTYElement {
   /**
    * Render container with background and border
    */
-  override render(screenBuffer: ScreenBuffer): void {
+  render(screenBuffer: ScreenBuffer): void {
     const bounds = this.bounds;
     if (!bounds || bounds.width <= 0 || bounds.height <= 0) return;
 
@@ -33,9 +35,9 @@ export class TTYContainer extends TTYElement {
 
     // Fill background
     if (backgroundColor && backgroundColor !== 'transparent') {
-      screenBuffer.fillRegion(bounds.x, bounds.y, bounds.width, bounds.height, ' ', {
-        color: color || 'white',
-        backgroundColor: backgroundColor
+      screenBuffer.fill(bounds, ' ', {
+        fgColor: color || 'white',
+        bgColor: backgroundColor
       });
     }
 
@@ -98,3 +100,6 @@ export class TTYContainer extends TTYElement {
     return [paddingTop, paddingRight, paddingBottom, paddingLeft];
   }
 }
+
+// Export with old name for compatibility during transition
+export { TTYContainerElement as TTYContainer };

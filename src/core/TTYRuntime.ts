@@ -1,9 +1,9 @@
 /**
  * TTYRuntime - Abstract runtime interface for TTY Object Model
- * 
+ *
  * Provides a clean abstraction over terminal I/O, process signals, and terminal control.
  * Isolates all ANSI escape sequences and platform-specific concerns from the DOM layer.
- * 
+ *
  * Implementations handle:
  * - Converting platform streams to Web Streams
  * - Signal handling (SIGWINCH, SIGTERM, SIGINT, etc.)
@@ -24,6 +24,7 @@ export interface TTYCapabilities {
   supportsUnicode: boolean;
 }
 
+// TODO: Use KeyboardEvent
 export interface TTYKeyEvent {
   key: string;
   ctrl: boolean;
@@ -33,6 +34,7 @@ export interface TTYKeyEvent {
   sequence: string;
 }
 
+// TODO: Should use MouseEvent, not whatever this is.
 export interface TTYMouseEvent {
   x: number;
   y: number;
@@ -46,7 +48,7 @@ export interface TTYMouseEvent {
 /**
  * Abstract base class for TTY runtime implementations.
  * Extends EventTarget to provide standard DOM-like event handling.
- * 
+ *
  * Events emitted:
  * - 'keypress': TTYKeyEvent - Raw keypress from terminal
  * - 'mouse': TTYMouseEvent - Mouse events (when tracking enabled)
@@ -90,9 +92,13 @@ export abstract class TTYRuntime extends EventTarget {
   abstract setStrikethrough(enabled: boolean): void;
   abstract resetStyle(): void;
 
+	// TODO: WE SHOULD USE BUN NAMES and APIS
   // === Text Utilities ===
+	// TODO: rename to stringWidth
   abstract measureTextWidth(text: string): number;
+	// TODO: rename to stripANSI
   abstract stripAnsiCodes(text: string): string;
+	// TODO: rename to colorize or even color?
   abstract colorizeText(text: string, color: string): string;
 
   // === Error Handling ===
@@ -100,7 +106,7 @@ export abstract class TTYRuntime extends EventTarget {
   abstract onUncaughtException(handler: (error: Error) => void): void;
 
   // === Utility Methods ===
-  
+
   /**
    * Write text to stdout with automatic encoding
    */
@@ -115,7 +121,7 @@ export abstract class TTYRuntime extends EventTarget {
   }
 
   /**
-   * Write text to stderr with automatic encoding  
+   * Write text to stderr with automatic encoding
    */
   async writeStderr(text: string): Promise<void> {
     const writer = this.stderr.getWriter();
@@ -166,6 +172,7 @@ export abstract class TTYRuntime extends EventTarget {
   }
 }
 
+// Let’s use import over require, and figure out the async defaults perhaps
 /**
  * Runtime detection utility
  * Auto-detects the appropriate TTYRuntime implementation for the current environment
@@ -184,7 +191,7 @@ export function detectTTYRuntime(): TTYRuntime {
   //   return new NodeTTYRuntime();
   // }
 
-  // Future: Deno fallback  
+  // Future: Deno fallback
   // if (typeof Deno !== 'undefined') {
   //   const { DenoTTYRuntime } = require('../runtime/DenoTTYRuntime.js');
   //   return new DenoTTYRuntime();

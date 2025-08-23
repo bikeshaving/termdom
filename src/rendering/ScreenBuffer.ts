@@ -49,7 +49,7 @@ export class ScreenBuffer {
 
   constructor(options: ScreenBufferOptions = {}) {
     this.runtime = options.runtime;
-    
+
     if (this.runtime) {
       const dimensions = this.runtime.getTerminalSize();
       this.width = options.width ?? dimensions.columns;
@@ -59,7 +59,7 @@ export class ScreenBuffer {
       this.width = options.width ?? process.stdout.columns ?? 80;
       this.height = options.height ?? process.stdout.rows ?? 24;
     }
-    
+
     this.x = options.x ?? 0;
     this.y = options.y ?? 0;
 
@@ -212,7 +212,7 @@ export class ScreenBuffer {
 
         if (!this.cellsEqual(current, last)) {
           hasChanges = true;
-          
+
           // Move cursor to changed cell position
           await this.runtime.cursorTo(this.x + x, this.y + y);
 
@@ -269,6 +269,7 @@ export class ScreenBuffer {
     if (cell.inverse) this.runtime.setReverse(true);
   }
 
+	//TODO: This should be handled by the TTYRuntime API
   /**
    * Generate ANSI escape sequence for cell styling (legacy fallback)
    */
@@ -307,6 +308,7 @@ export class ScreenBuffer {
     return sequence;
   }
 
+	//TODO: This should be handled by the TTYRuntime API
   /**
    * Convert color to ANSI escape sequence using Bun's color API
    */
@@ -326,6 +328,7 @@ export class ScreenBuffer {
     }
   }
 
+	//TODO: This should be handled by the TTYRuntime API
   /**
    * Fallback basic color conversion
    */
@@ -419,14 +422,14 @@ export class ScreenBuffer {
 
     // Create new cell grid
     const newCells = this.createEmptyCells();
-    
+
     // Copy existing cells that fit
     for (let y = 0; y < Math.min(this.cells.length, height); y++) {
       for (let x = 0; x < Math.min(this.cells[y].length, width); x++) {
         newCells[y][x] = this.cells[y][x];
       }
     }
-    
+
     this.cells = newCells;
     this.lastFrame = undefined; // Force full redraw on next render
   }

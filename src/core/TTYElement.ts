@@ -5,12 +5,13 @@
  * terminal-specific elements with custom styling and rendering.
  */
 
-import { Element, Node } from 'happy-dom';
+import { Element, Node, CSSStyleDeclaration } from 'happy-dom';
 // @ts-ignore - HappyDOM Event class for proper event creation
 import Event from 'happy-dom/lib/event/Event.js';
+// @ts-ignore - Need internal symbols for CSSStyleDeclaration
+import * as PropertySymbol from 'happy-dom/lib/PropertySymbol.js';
 import { ScreenBuffer, type Cell, type Rect } from '../rendering/ScreenBuffer.js';
 import type * as Yoga from 'yoga-layout';
-// Use HappyDOM's built-in CSSStyleDeclaration instead of custom implementation
 
 // TODO: Figure out if this can inherit from CSSStyleDeclaration, probably should be put in a separate file
 // TODO: Please make these kebab-case to match CSSOM
@@ -65,16 +66,31 @@ export interface TTYStyle {
  * This is a concrete class that can be instantiated directly for generic elements.
  */
 export class TTYElement extends Element {
-  // HappyDOM provides the style property automatically
+  // TTY-specific properties
   private _ttyFocused = false;
   private _ttyFocusable = false;
   public bounds: Rect = { x: 0, y: 0, width: 0, height: 0 };
   public yogaNode?: Yoga.Node;
   private _needsRender = true;
+  private [PropertySymbol.style]: CSSStyleDeclaration | null = null;
 
   constructor() {
     super();
     // Yoga nodes will be created by LayoutEngine when needed
+  }
+
+  /**
+   * Get the style property - creates CSSStyleDeclaration on demand like HTMLElement
+   */
+  get style(): CSSStyleDeclaration {
+    if (!this[PropertySymbol.style]) {
+      this[PropertySymbol.style] = new CSSStyleDeclaration(
+        PropertySymbol.illegalConstructor,
+        this[PropertySymbol.window],
+        { element: this }
+      );
+    }
+    return this[PropertySymbol.style];
   }
 
   /**
@@ -83,6 +99,7 @@ export class TTYElement extends Element {
   // HappyDOM provides style property automatically via Element base class
   // No need to override - it already has proper CSSStyleDeclaration
 
+	// TODO: shouldn't we be using MutationObservers for this?
   /**
    * Mark element as needing re-render
    */
@@ -150,23 +167,27 @@ export class TTYElement extends Element {
   private updateYogaStyles(): void {
     if (!this.yogaNode) return;
 
-    const style = this._ttyStyle;
+    // TODO: Use computed styles for proper layout calculation
+    const style = this.style;
 
     // Map TTY styles to Yoga properties
-    if (style.display === 'flex') {
+    if (style.getPropertyValue('display') === 'flex') {
       // yogaNode.setDisplay(Yoga.DISPLAY_FLEX);
     }
 
-    if (style.flexDirection) {
+    const flexDirection = style.getPropertyValue('flex-direction');
+    if (flexDirection) {
       // Map flex direction values
     }
 
-    if (typeof style.width === 'number') {
-      // yogaNode.setWidth(style.width);
+    const width = style.getPropertyValue('width');
+    if (width && !isNaN(parseFloat(width))) {
+      // yogaNode.setWidth(parseFloat(width));
     }
 
-    if (typeof style.height === 'number') {
-      // yogaNode.setHeight(style.height);
+    const height = style.getPropertyValue('height');
+    if (height && !isNaN(parseFloat(height))) {
+      // yogaNode.setHeight(parseFloat(height));
     }
 
     // TODO: Complete Yoga integration
@@ -176,15 +197,16 @@ export class TTYElement extends Element {
    * Calculate text styling for terminal output using computed styles
    */
   protected getTextStyle(): Partial<Cell> {
-    // Use computed style which includes inheritance
-    const style = (this as any).computedStyle || this._ttyStyle;
+    // Use proper getComputedStyle API for inheritance
+    const window = this[PropertySymbol.window];
+    const computedStyle = window ? window.getComputedStyle(this) : this.style;
 
     return {
-      fgColor: style.color,
-      bgColor: style.backgroundColor,
-      bold: style.fontWeight === 'bold',
-      italic: style.fontStyle === 'italic',
-      underline: style.textDecoration === 'underline'
+      fgColor: computedStyle.getPropertyValue('color'),
+      bgColor: computedStyle.getPropertyValue('background-color'),
+      bold: computedStyle.getPropertyValue('font-weight') === 'bold',
+      italic: computedStyle.getPropertyValue('font-style') === 'italic',
+      underline: computedStyle.getPropertyValue('text-decoration') === 'underline'
     };
   }
 
@@ -192,34 +214,44 @@ export class TTYElement extends Element {
    * Get computed padding as [top, right, bottom, left]
    */
   protected getPadding(): [number, number, number, number] {
-    const padding = this._ttyStyle.padding;
-
-    if (typeof padding === 'number') {
-      return [padding, padding, padding, padding];
+    const padding = this.style.getPropertyValue('padding');
+    
+    if (!padding) {
+      return [0, 0, 0, 0];
     }
-
-    if (Array.isArray(padding)) {
-      return padding;
+    
+    // Parse CSS padding value (e.g., "10px" or "10px 5px")
+    const values = padding.split(/\s+/).map(v => parseInt(v) || 0);
+    
+    switch (values.length) {
+      case 1: return [values[0], values[0], values[0], values[0]];
+      case 2: return [values[0], values[1], values[0], values[1]];
+      case 3: return [values[0], values[1], values[2], values[1]];
+      case 4: return [values[0], values[1], values[2], values[3]];
+      default: return [0, 0, 0, 0];
     }
-
-    return [0, 0, 0, 0];
   }
 
   /**
    * Get computed margin as [top, right, bottom, left]
    */
   protected getMargin(): [number, number, number, number] {
-    const margin = this._ttyStyle.margin;
-
-    if (typeof margin === 'number') {
-      return [margin, margin, margin, margin];
+    const margin = this.style.getPropertyValue('margin');
+    
+    if (!margin) {
+      return [0, 0, 0, 0];
     }
-
-    if (Array.isArray(margin)) {
-      return margin;
+    
+    // Parse CSS margin value (e.g., "10px" or "10px 5px")
+    const values = margin.split(/\s+/).map(v => parseInt(v) || 0);
+    
+    switch (values.length) {
+      case 1: return [values[0], values[0], values[0], values[0]];
+      case 2: return [values[0], values[1], values[0], values[1]];
+      case 3: return [values[0], values[1], values[2], values[1]];
+      case 4: return [values[0], values[1], values[2], values[3]];
+      default: return [0, 0, 0, 0];
     }
-
-    return [0, 0, 0, 0];
   }
 
   /**
@@ -242,26 +274,29 @@ export class TTYElement extends Element {
    */
   renderSelf(buffer: ScreenBuffer): void {
     // Generic TTY elements render their background and apply basic styling
-    if (this.bounds && (this.style.backgroundColor || this.style.color)) {
+    const backgroundColor = this.style.getPropertyValue('background-color');
+    const color = this.style.getPropertyValue('color');
+    
+    if (this.bounds && (backgroundColor || color)) {
       const { x, y, width, height } = this.bounds;
-      
+
       // Fill background if specified
-      if (this.style.backgroundColor) {
+      if (backgroundColor) {
         buffer.fill(
           { x, y, width, height },
           ' ', // Space character for background fill
-          { bgColor: this.style.backgroundColor }
+          { bgColor: backgroundColor }
         );
       }
-      
+
       // If element has text content, render it
       if (this.textContent) {
         buffer.put(x, y, this.textContent, {
-          fgColor: this.style.color,
-          bgColor: this.style.backgroundColor,
-          bold: this.style.fontWeight === 'bold',
-          italic: this.style.fontStyle === 'italic',
-          underline: this.style.textDecoration === 'underline'
+          fgColor: color,
+          bgColor: backgroundColor,
+          bold: this.style.getPropertyValue('font-weight') === 'bold',
+          italic: this.style.getPropertyValue('font-style') === 'italic',
+          underline: this.style.getPropertyValue('text-decoration') === 'underline'
         });
       }
     }
@@ -277,6 +312,54 @@ export class TTYElement extends Element {
       y >= this.bounds.y &&
       y < this.bounds.y + this.bounds.height
     );
+  }
+
+  /**
+   * DOM viewport properties implemented with cell coordinates
+   */
+  get clientLeft(): number {
+    // Left border width in cells
+    const borderLeft = this.style.getPropertyValue('border-left-width');
+    return borderLeft ? parseInt(borderLeft) || 0 : 0;
+  }
+
+  get clientTop(): number {
+    // Top border width in cells
+    const borderTop = this.style.getPropertyValue('border-top-width');
+    return borderTop ? parseInt(borderTop) || 0 : 0;
+  }
+
+  get clientWidth(): number {
+    // Inner width (content + padding, excluding borders)
+    const borderLeft = this.clientLeft;
+    const borderRight = parseInt(this.style.getPropertyValue('border-right-width')) || 0;
+    return Math.max(0, this.bounds.width - borderLeft - borderRight);
+  }
+
+  get clientHeight(): number {
+    // Inner height (content + padding, excluding borders)
+    const borderTop = this.clientTop;
+    const borderBottom = parseInt(this.style.getPropertyValue('border-bottom-width')) || 0;
+    return Math.max(0, this.bounds.height - borderTop - borderBottom);
+  }
+
+  /**
+   * Scroll properties (terminals don't have traditional scrollbars)
+   */
+  override get scrollLeft(): number {
+    return 0; // TODO: Implement when we add scrolling
+  }
+
+  override get scrollTop(): number {
+    return 0; // TODO: Implement when we add scrolling
+  }
+
+  override get scrollWidth(): number {
+    return this.clientWidth; // TODO: Return actual content width when scrolling is implemented
+  }
+
+  override get scrollHeight(): number {
+    return this.clientHeight; // TODO: Return actual content height when scrolling is implemented
   }
 
   /**
@@ -300,20 +383,20 @@ export class TTYElement extends Element {
 
   /**
    * @deprecated Use standard DOM properties instead:
-   * 
+   *
    * // For all child nodes (including text):
    * for (const child of element.childNodes) { ... }
-   * 
+   *
    * // For element children only:
-   * const elements = Array.from(element.childNodes).filter(child => 
+   * const elements = Array.from(element.childNodes).filter(child =>
    *   child.nodeType === Node.ELEMENT_NODE
    * ) as TTYElement[];
-   * 
+   *
    * // Or simply:
    * for (const child of element.children) { ... }
    */
   getTTYChildren(): TTYElement[] {
-    return Array.from(this.childNodes).filter(child => 
+    return Array.from(this.childNodes).filter(child =>
       child.nodeType === Node.ELEMENT_NODE
     ) as TTYElement[];
   }

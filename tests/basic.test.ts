@@ -3,28 +3,29 @@
  */
 
 import { test, expect } from 'bun:test';
-import { TTYWindow, TTYDocument, TTYElement, MockTTYRuntime } from '../src/index.js';
+import { createTTY, TTYElement, MockTTYRuntime } from '../src/index.js';
 import { TTYTextElement } from '../src/elements/TTYTextElement.js';
 
-test('TTYWindow provides document API', () => {
+test('createTTY provides TTY API', () => {
   const mockRuntime = new MockTTYRuntime();
-  const tty = new TTYWindow({ runtime: mockRuntime });
+  const tty = createTTY({ runtime: mockRuntime });
   
-  expect(tty.document).toBeDefined();
-  expect(tty.document.body).toBeDefined();
-  expect(tty.document.createElement).toBeDefined();
-  expect(tty.document.render).toBeDefined();
+  expect(tty).toBeDefined();
+  expect(tty.createElement).toBeDefined();
+  expect(tty.render).toBeDefined();
+  expect(tty.innerWidth).toBeDefined();
+  expect(tty.innerHeight).toBeDefined();
   
   tty.dispose();
 });
 
 test('can create elements', () => {
   const mockRuntime = new MockTTYRuntime();
-  const tty = new TTYWindow({ runtime: mockRuntime });
+  const tty = createTTY({ runtime: mockRuntime });
   
-  const container = tty.document.createElement('container');
-  const text = tty.document.createElement('text');
-  const button = tty.document.createElement('button');
+  const container = tty.createElement('container');
+  const text = tty.createElement('text');
+  const button = tty.createElement('button');
   
   expect(container.tagName).toBe('CONTAINER');
   expect(text.tagName).toBe('TEXT');
@@ -35,29 +36,29 @@ test('can create elements', () => {
 
 test('can build DOM tree', () => {
   const mockRuntime = new MockTTYRuntime();
-  const tty = new TTYWindow({ runtime: mockRuntime });
+  const tty = createTTY({ runtime: mockRuntime });
   
-  const container = tty.document.createElement('container');
-  const text = tty.document.createElement('text');
+  const container = tty.createElement('container');
+  const text = tty.createElement('text');
   
   text.textContent = 'Hello TTY!';
   container.appendChild(text);
-  tty.document.body.appendChild(container);
+  tty.appendChild(container);
   
   expect(container.children.length).toBe(1);
   expect(container.children[0]).toBe(text);
   expect(text.textContent).toBe('Hello TTY!');
-  expect(tty.document.body.children.length).toBe(1);
-  expect(tty.document.body.children[0]).toBe(container);
+  expect(tty.children.length).toBe(1);
+  expect(tty.children[0]).toBe(container);
   
   tty.dispose();
 });
 
 test('can set TTY styles', () => {
   const mockRuntime = new MockTTYRuntime();
-  const tty = new TTYWindow({ runtime: mockRuntime });
+  const tty = createTTY({ runtime: mockRuntime });
   
-  const element = tty.document.createElement('container') as TTYElement;
+  const element = tty.createElement('container') as TTYElement;
   
   // Test that element is a TTYElement instance
   expect(element).toBeDefined();
@@ -68,17 +69,15 @@ test('can set TTY styles', () => {
   expect(element.style).toBeDefined();
   expect(typeof element.style).toBe('object');
   
-  // Set TTY styles
-  element.style = {
-    backgroundColor: 'red',
-    color: 'white',
-    padding: 10
-  };
+  // Set TTY styles using proper CSSOM API
+  element.style.setProperty('background-color', 'red');
+  element.style.setProperty('color', 'white');
+  element.style.setProperty('padding', '10px');
   
   // Test that TTY styles were set
-  expect(element.style.backgroundColor).toBe('red');
-  expect(element.style.color).toBe('white');
-  expect(element.style.padding).toBe(10);
+  expect(element.style.getPropertyValue('background-color')).toBe('red');
+  expect(element.style.getPropertyValue('color')).toBe('white');
+  expect(element.style.getPropertyValue('padding')).toBe('10px');
   
   tty.dispose();
 });
@@ -87,7 +86,7 @@ test('document has correct dimensions', () => {
   const mockRuntime = new MockTTYRuntime({
     dimensions: { columns: 100, rows: 50 }
   });
-  const tty = new TTYWindow({ runtime: mockRuntime });
+  const tty = createTTY({ runtime: mockRuntime });
   
   const dimensions = tty.runtime.getTerminalSize();
   expect(dimensions.columns).toBe(100);
@@ -98,19 +97,19 @@ test('document has correct dimensions', () => {
 
 test('createElement returns appropriate element subtypes', () => {
   const mockRuntime = new MockTTYRuntime();
-  const tty = new TTYWindow({ runtime: mockRuntime });
+  const tty = createTTY({ runtime: mockRuntime });
   
   // Test generic container elements
-  const container = tty.document.createElement('div');
+  const container = tty.createElement('div');
   expect(container).toBeInstanceOf(TTYElement);
   expect(container.tagName).toBe('DIV');
   
-  const section = tty.document.createElement('container');
+  const section = tty.createElement('container');
   expect(section).toBeInstanceOf(TTYElement);
   expect(section.tagName).toBe('CONTAINER');
   
   // Test text elements
-  const textElement = tty.document.createElement('text');
+  const textElement = tty.createElement('text');
   expect(textElement).toBeInstanceOf(TTYTextElement);
   expect(textElement.tagName).toBe('TEXT');
   

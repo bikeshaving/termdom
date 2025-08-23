@@ -5,79 +5,67 @@
  * containing containers, text, and buttons.
  */
 
-import { createTTYWindow } from '../src/index.js';
+import { createTTY } from '../src/index.js';
 
 async function basicDemo() {
   console.log('🚀 Starting TTY Basic Demo...');
   
   try {
-    // Create TTY document
-    const tty = createTTYWindow();
+    // Create TTY interface
+    const tty = createTTY();
 
     console.log('📱 TTY Document created successfully');
     console.log(`Terminal size: ${tty.innerWidth}x${tty.innerHeight}`);
 
     // Create main container
-    const container = tty.document.createElement('container');
-    container.style = {
-      display: 'flex',
-      flexDirection: 'column',
-      backgroundColor: '#1a1a1a',
-      padding: 2,
-      border: 1,
-      borderColor: '#333'
-    };
+    const container = tty.createElement('container');
+    container.style.setProperty('display', 'flex');
+    container.style.setProperty('flex-direction', 'column');
+    container.style.setProperty('background-color', '#1a1a1a');
+    container.style.setProperty('padding', '2');
+    container.style.setProperty('border', '1');
+    container.style.setProperty('border-color', '#333');
 
     // Create title
-    const title = tty.document.createElement('text');
+    const title = tty.createElement('text');
     title.textContent = '🎯 Terminal Typewriter Demo';
-    title.style = {
-      color: '#00ff00',
-      fontWeight: 'bold',
-      textAlign: 'center'
-    };
+    title.style.setProperty('color', '#00ff00');
+    title.style.setProperty('font-weight', 'bold');
+    title.style.setProperty('text-align', 'center');
 
     // Create description
     const description = tty.document.createElement('text');
     description.textContent = 'Welcome to TTY - bringing DOM APIs to the terminal!';
-    description.style = {
-      color: '#888',
-      textAlign: 'center'
-    };
+    description.style.setProperty('color', '#888');
+    description.style.setProperty('text-align', 'center');
 
     // Create button container
-    const buttonContainer = tty.document.createElement('container');
-    buttonContainer.style = {
-      display: 'flex',
-      flexDirection: 'row',
-      justifyContent: 'center'
-    };
+    const buttonContainer = tty.createElement('container');
+    buttonContainer.style.setProperty('display', 'flex');
+    buttonContainer.style.setProperty('flex-direction', 'row');
+    buttonContainer.style.setProperty('justify-content', 'center');
 
     // Create buttons
-    const button1 = tty.document.createElement('button');
+    const button1 = tty.createElement('button');
     button1.textContent = 'Click Me!';
-    button1.style = {
-      backgroundColor: '#0066cc',
-      color: 'white'
-    };
+    button1.style.setProperty('background-color', '#0066cc');
+    button1.style.setProperty('color', 'white');
 
-    const button2 = tty.document.createElement('button');
+    const button2 = tty.createElement('button');
     button2.textContent = 'Or Me!';
-    button2.style = {
-      backgroundColor: '#cc6600',
-      color: 'white'
-    };
+    button2.style.setProperty('background-color', '#cc6600');
+    button2.style.setProperty('color', 'white');
 
     // Add click handlers
     button1.addEventListener('click', () => {
       title.textContent = '🎉 Button 1 clicked!';
-      title.style = { ...title.style, color: '#ff6600' };
+      title.style.setProperty('color', '#ff6600');
       tty.document.render(); // Force re-render to see changes
     });
 
     button2.addEventListener('click', () => {
       title.textContent = '✨ Button 2 clicked!';
-      title.style = { ...title.style, color: '#6600ff' };
+      title.style.setProperty('color', '#6600ff');
       tty.document.render(); // Force re-render to see changes
     });
 

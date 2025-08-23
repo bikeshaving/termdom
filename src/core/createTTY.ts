@@ -1,6 +1,6 @@
 /**
  * createTTY - Factory function for creating TTY applications
- * 
+ *
  * Provides a convenient way to create TTYWindow instances with sensible defaults.
  * This function is kept for backwards compatibility, but the preferred approach
  * is to use `new TTYWindow()` directly with auto-detection.
@@ -8,17 +8,18 @@
 
 import { TTYWindow, type TTYWindowOptions } from './TTYWindow.js';
 
+// TODO: Rename to createTTYWindow, perhaps, but I don’t see the value over constructor call???
 /**
  * Create a new TTY window - convenience function
- * 
+ *
  * @param options - TTY window options
  * @returns TTYWindow instance
- * 
+ *
  * @example
  * ```typescript
  * // Simple usage
  * const tty = createTTY();
- * 
+ *
  * // With options
  * const tty = createTTY({
  *   width: 80,

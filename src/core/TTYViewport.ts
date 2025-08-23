@@ -10,6 +10,7 @@ export interface ViewportOptions {
   height?: number;
 }
 
+// TODO: this class is not useful enough to keep right now, consider deleting.
 export class TTYViewport {
   constructor(
     private runtime: TTYRuntime,
