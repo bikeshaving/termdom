@@ -5,6 +5,8 @@
  * multiple rects into bounding rectangles and hit-testing operations.
  */
 
+import { DOMRect, DOMRectList } from '../dom.js';
+
 /**
  * Utility class for DOMRect operations
  */
@@ -19,7 +21,7 @@ export class RectUtils {
    * @returns Single DOMRect that bounds all input rects
    */
   static computeBoundingRect(rects: DOMRect[] | DOMRectList): DOMRect {
-    const rectArray = Array.from(rects);
+    const rectArray: DOMRect[] = Array.from(rects) as DOMRect[];
     
     if (rectArray.length === 0) {
       return new DOMRect(0, 0, 0, 0);
@@ -61,7 +63,7 @@ export class RectUtils {
    * @returns True if point intersects any rectangle
    */
   static isPointInAnyRect(x: number, y: number, rects: DOMRect[] | DOMRectList): boolean {
-    const rectArray = Array.from(rects);
+    const rectArray: DOMRect[] = Array.from(rects) as DOMRect[];
     return rectArray.some(rect => this.isPointInRect(x, y, rect));
   }
 

@@ -196,6 +196,9 @@ export class BunTTYRuntime extends TTYRuntime {
     if (options.bgColor) {
       const colorCode = this._getColorCode(options.bgColor, true);
       if (colorCode) sequence += colorCode;
+    } else {
+      // No background color - explicitly reset background to prevent bleeding
+      sequence += '\x1b[49m';
     }
 
     // Apply text styling

@@ -253,25 +253,45 @@ export class ScreenBuffer {
       let lineHasContent = false;
       let lineContent = '';
       let currentLineStyle: Partial<Cell> = {};
+      let lastNonSpaceX = -1;
 
-      for (let x = 0; x < this.width; x++) {
-        const cell = this.cells[y][x];
-        if (cell.char !== ' ' || lineHasContent) {
-          if (this.styleChanged(currentLineStyle, cell)) {
-            // Reset previous style and apply new style
-            if (lineHasContent) {
-              this.runtime.resetStyle();
-            }
-            this.applyStyleToRuntime(cell);
-            currentLineStyle = { ...cell };
-          }
-          lineContent += cell.char;
-          lineHasContent = true;
+      // First pass: find the last non-space character position
+      for (let x = this.width - 1; x >= 0; x--) {
+        if (this.cells[y][x].char !== ' ') {
+          lastNonSpaceX = x;
+          break;
         }
       }
 
+      // Second pass: render with proper style management
+      // Need to check for background colors beyond text
+      let renderToX = lastNonSpaceX;
+      
+      // Check if any cell in this line has a background color
+      for (let x = 0; x < this.width; x++) {
+        if (this.cells[y][x].bgColor) {
+          renderToX = Math.max(renderToX, x);
+        }
+      }
+      
+      
+      for (let x = 0; x <= renderToX; x++) {
+        const cell = this.cells[y][x];
+        if (this.styleChanged(currentLineStyle, cell)) {
+          // Generate and append style sequence directly to lineContent
+          const styleSeq = this.generateStyleSequence(cell);
+          lineContent += styleSeq;
+          currentLineStyle = { ...cell };
+        }
+        lineContent += cell.char;
+        lineHasContent = true;
+      }
+
       if (lineHasContent) {
-        await this.runtime.writeStdout(lineContent.trimEnd());
+        // Don't trim if the line has background colors that need to extend to the right
+        const shouldTrim = renderToX === lastNonSpaceX;
+        await this.runtime.writeStdout(shouldTrim ? lineContent.trimEnd() : lineContent);
+        // Reset style before newline to prevent bleeding
         this.runtime.resetStyle();
         await this.runtime.writeStdout('\n');
       }
@@ -554,9 +574,21 @@ export class ScreenBuffer {
     if (!bounds || (bounds.width === 0 && bounds.height === 0)) return;
     
     // Render text with computed styles
+    const rawFgColor = computedStyle.getPropertyValue('color');
+    const rawBgColor = computedStyle.getPropertyValue('background-color');
+    
+    // Filter out CSS system colors that we don't want to render as literal text
+    const isSystemColor = (color: string) => {
+      const systemColors = ['canvastext', 'canvas', 'linktext', 'visitedtext', 'buttontext', 'buttonface', 'graytext'];
+      return systemColors.includes(color.toLowerCase());
+    };
+    
+    const fgColor = rawFgColor && !isSystemColor(rawFgColor) ? rawFgColor : undefined;
+    const bgColor = rawBgColor && !isSystemColor(rawBgColor) && rawBgColor !== 'rgba(0, 0, 0, 0)' && rawBgColor !== 'transparent' ? rawBgColor : undefined;
+    
     this.put(bounds.x, bounds.y, text, {
-      fgColor: computedStyle.getPropertyValue('color'),
-      bgColor: computedStyle.getPropertyValue('background-color'),
+      fgColor,
+      bgColor,
       bold: computedStyle.getPropertyValue('font-weight') === 'bold',
       italic: computedStyle.getPropertyValue('font-style') === 'italic',
       underline: computedStyle.getPropertyValue('text-decoration')?.includes('underline')
@@ -575,10 +607,25 @@ export class ScreenBuffer {
     const bounds = element.getBoundingClientRect();
     if (!bounds || (bounds.width === 0 && bounds.height === 0)) return;
     
-    // Render background if specified
+    // For block elements with background colors, we need to fill the entire width
     const backgroundColor = computedStyle.getPropertyValue('background-color');
-    if (backgroundColor && backgroundColor !== 'transparent') {
-      this.fill(bounds, ' ', { bgColor: backgroundColor });
+    const display = computedStyle.getPropertyValue('display');
+    
+    if (backgroundColor && backgroundColor !== 'transparent' && backgroundColor !== 'rgba(0, 0, 0, 0)' &&
+        (display === 'block' || display === 'flex')) {
+      
+      
+      // Fill the entire width of the block element with spaces that have the background color
+      for (let y = Math.floor(bounds.y); y < Math.ceil(bounds.y + bounds.height); y++) {
+        for (let x = Math.floor(bounds.x); x < Math.ceil(bounds.x + bounds.width); x++) {
+          if (x >= 0 && x < this.width && y >= 0 && y < this.height) {
+            // Only fill if the cell is empty (preserve text)
+            if (this.cells[y][x].char === ' ') {
+              this.cells[y][x] = { char: ' ', bgColor: backgroundColor };
+            }
+          }
+        }
+      }
     }
     
     // Render borders if specified

@@ -6,7 +6,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { TerminalEmulator } from './TerminalEmulator.js';
+import { TerminalSnapshotter, type TerminalSnapshotterOptions } from './TerminalSnapshotter.js';
 import { MockTTYRuntime } from '../runtime/MockTTYRuntime.js';
 
 export interface SnapshotOptions {
@@ -16,21 +16,26 @@ export interface SnapshotOptions {
 }
 
 /**
- * Generate a snapshot from MockTTYRuntime output
+ * Generate a snapshot from MockTTYRuntime stream output
  */
-export function generateSnapshot(
+export async function generateSnapshot(
   mockRuntime: MockTTYRuntime,
   options: SnapshotOptions = {}
-): string {
-  const emulator = new TerminalEmulator(
-    options.width || 80,
-    options.height || 24
-  );
+): Promise<string> {
+  const snapshotterOptions: TerminalSnapshotterOptions = {
+    width: options.width || 80,
+    height: options.height || 24
+  };
   
-  const ansiOutput = mockRuntime.getStdoutOutput();
-  emulator.processAnsiOutput(ansiOutput);
+  // Get the stdout stream from mock runtime
+  const stdoutStream = mockRuntime.getStdoutStream();
   
-  return emulator.generateStaticAnsi();
+  using snapshotter = new TerminalSnapshotter(stdoutStream, snapshotterOptions);
+  
+  // Signal end of output and let snapshotter consume
+  mockRuntime.closeStdout();
+  
+  return await snapshotter.getSnapshot();
 }
 
 /**
@@ -107,12 +112,12 @@ export function compareSnapshot(
 /**
  * Convenient test helper for snapshot testing
  */
-export function expectSnapshot(
+export async function expectSnapshot(
   snapshotName: string,
   mockRuntime: MockTTYRuntime,
   options: SnapshotOptions = {}
-): void {
-  const actualContent = generateSnapshot(mockRuntime, options);
+): Promise<void> {
+  const actualContent = await generateSnapshot(mockRuntime, options);
   const result = compareSnapshot(snapshotName, actualContent, options);
   
   if (!result.matches) {

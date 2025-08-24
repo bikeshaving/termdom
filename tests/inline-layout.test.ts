@@ -13,7 +13,7 @@ import { test, expect } from 'bun:test';
 import { createTTY, MockTTYRuntime } from '../src/index.js';
 import { ELEMENT_BOUNDS, ELEMENT_RECTS } from '../src/core/HTMLExtensions.js';
 
-test.skip('block elements inside inline are converted to inline-block', () => {
+test('block elements inside inline are converted to inline-block', () => {
   const mockRuntime = new MockTTYRuntime();
   const { document, dispose } = createTTY({ runtime: mockRuntime });
   
@@ -35,23 +35,30 @@ test.skip('block elements inside inline are converted to inline-block', () => {
   // Trigger layout from container
   container.getBoundingClientRect();
   
-  // Debug: Check what we actually got
-  console.log('Div bounds:', div.getBoundingClientRect());
-  console.log('Span bounds:', span.getBoundingClientRect());
+  // The span should remain inline (we don't modify CSS, just treat children as inline-block)
+  const spanComputedStyle = span.ownerDocument!.defaultView!.getComputedStyle(span);
+  const spanDisplay = spanComputedStyle.getPropertyValue('display');
+  expect(spanDisplay).toBe('inline'); // CSS unchanged
   
-  // The div should now behave as inline-block (has its own bounds)
+  // But the div child should be treated as inline-block during layout
+  const divComputedStyle = div.ownerDocument!.defaultView!.getComputedStyle(div);  
+  const divDisplay = divComputedStyle.getPropertyValue('display');
+  expect(divDisplay).toBe('block'); // CSS unchanged, but treated as inline-block
+  
+  // The span should now behave as inline-block (conversion happened)
+  const spanBounds = span.getBoundingClientRect();
+  expect(spanBounds.width).toBeGreaterThan(0);
+  expect(spanBounds.height).toBe(1);
+  
+  // The div inside should also have bounds (regular block child of inline-block parent)
   const divBounds = div.getBoundingClientRect();
   expect(divBounds.width).toBeGreaterThan(0);
   expect(divBounds.height).toBe(1);
   
-  // Span should contain the converted div
-  const spanBounds = span.getBoundingClientRect();
-  expect(spanBounds.width).toBeGreaterThan(0);
-  
   dispose();
 });
 
-test.skip('flex elements inside inline are converted to inline-block', () => {
+test('flex elements inside inline are converted to inline-block', () => {
   const mockRuntime = new MockTTYRuntime();
   const { document, dispose } = createTTY({ runtime: mockRuntime });
   
@@ -156,7 +163,7 @@ test('inline elements ignore vertical margins and width/height', () => {
   dispose();
 });
 
-test.skip('mixed inline and inline-block elements flow together', () => {
+test('mixed inline and inline-block elements flow together', () => {
   const mockRuntime = new MockTTYRuntime();
   const { document, dispose } = createTTY({ runtime: mockRuntime });
   
@@ -284,7 +291,7 @@ test('getClientRects returns single rect for inline elements', () => {
   dispose();
 });
 
-test.skip('nested inline elements maintain proper layout', () => {
+test('nested inline elements maintain proper layout', () => {
   const mockRuntime = new MockTTYRuntime();
   const { document, dispose } = createTTY({ runtime: mockRuntime });
   
@@ -406,6 +413,185 @@ test('empty inline elements with margins still flow correctly', () => {
   
   expect(bounds2.x).toBe(11); // 6 + 2 + 1 + 2 = 11
   expect(bounds2.width).toBe(5); // "After" = 5 chars
+  
+  dispose();
+});
+
+test('inline elements wrapping across lines create multiple rectangles', () => {
+  const mockRuntime = new MockTTYRuntime();
+  const { document, dispose } = createTTY({ runtime: mockRuntime });
+  
+  const container = document.createElement('div');
+  container.style.setProperty('width', '10ch'); // Force wrapping
+  
+  const span = document.createElement('span');
+  span.textContent = 'This is a very long text that should wrap across multiple lines';
+  
+  container.appendChild(span);
+  document.body.appendChild(container);
+  
+  // Trigger layout
+  container.getBoundingClientRect();
+  
+  // Get both single bounding rect and multiple client rects
+  const boundingRect = span.getBoundingClientRect();
+  const clientRects = span.getClientRects();
+  
+  // Should have multiple rectangles due to line wrapping
+  expect(clientRects.length).toBeGreaterThan(1);
+  
+  // Bounding rect should encompass all client rects
+  expect(boundingRect.height).toBeGreaterThan(1); // Multiple lines
+  
+  // Each client rect should be on a different line
+  for (let i = 1; i < clientRects.length; i++) {
+    expect(clientRects[i].y).toBeGreaterThan(clientRects[i-1].y);
+  }
+  
+  // All rects should be within the bounding rect
+  for (const rect of clientRects) {
+    expect(rect.x).toBeGreaterThanOrEqual(boundingRect.x);
+    expect(rect.y).toBeGreaterThanOrEqual(boundingRect.y);
+    expect(rect.x + rect.width).toBeLessThanOrEqual(boundingRect.x + boundingRect.width);
+    expect(rect.y + rect.height).toBeLessThanOrEqual(boundingRect.y + boundingRect.height);
+  }
+  
+  dispose();
+});
+
+test('nested inline elements within wrapped parent maintain correct positioning', () => {
+  const mockRuntime = new MockTTYRuntime();
+  const { document, dispose } = createTTY({ runtime: mockRuntime });
+  
+  const container = document.createElement('div');
+  container.style.setProperty('width', '15ch'); // Force wrapping
+  
+  // Create a complex nested structure
+  const outerSpan = document.createElement('span');
+  outerSpan.textContent = 'Before nested ';
+  
+  const innerSpan = document.createElement('span');
+  innerSpan.textContent = 'inner content';
+  
+  const afterSpan = document.createElement('span');
+  afterSpan.textContent = ' after nested content that continues';
+  
+  outerSpan.appendChild(innerSpan);
+  outerSpan.appendChild(afterSpan);
+  container.appendChild(outerSpan);
+  document.body.appendChild(container);
+  
+  // Trigger layout
+  container.getBoundingClientRect();
+  
+  // Check positioning
+  const outerBounds = outerSpan.getBoundingClientRect();
+  const innerBounds = innerSpan.getBoundingClientRect();
+  const afterBounds = afterSpan.getBoundingClientRect();
+  
+  // Outer span should wrap across multiple lines
+  expect(outerBounds.height).toBeGreaterThan(1);
+  
+  // Inner span should be positioned correctly within the outer span
+  expect(innerBounds.width).toBeGreaterThan(0);
+  expect(innerBounds.height).toBe(1); // Inline elements are single-line
+  
+  // All nested elements should have valid bounds
+  expect(innerBounds.x).toBeGreaterThanOrEqual(0);
+  expect(innerBounds.y).toBeGreaterThanOrEqual(0);
+  expect(afterBounds.x).toBeGreaterThanOrEqual(0);
+  expect(afterBounds.y).toBeGreaterThanOrEqual(0);
+  
+  dispose();
+});
+
+test('mixed inline and inline-block elements with line wrapping', () => {
+  const mockRuntime = new MockTTYRuntime();
+  const { document, dispose } = createTTY({ runtime: mockRuntime });
+  
+  const container = document.createElement('div');
+  container.style.setProperty('width', '12ch'); // Force wrapping
+  
+  const span1 = document.createElement('span');
+  span1.textContent = 'Text before ';
+  
+  const inlineBlock = document.createElement('span');
+  inlineBlock.style.setProperty('display', 'inline-block');
+  inlineBlock.style.setProperty('width', '8ch');
+  inlineBlock.textContent = 'Button';
+  
+  const span2 = document.createElement('span');
+  span2.textContent = ' text after button';
+  
+  container.appendChild(span1);
+  container.appendChild(inlineBlock);
+  container.appendChild(span2);
+  document.body.appendChild(container);
+  
+  // Trigger layout
+  container.getBoundingClientRect();
+  
+  const bounds1 = span1.getBoundingClientRect();
+  const buttonBounds = inlineBlock.getBoundingClientRect();
+  const bounds2 = span2.getBoundingClientRect();
+  
+  // Inline-block should be atomic (single rectangle)
+  const buttonRects = inlineBlock.getClientRects();
+  expect(buttonRects.length).toBe(1);
+  expect(buttonBounds.width).toBe(8); // Explicit width
+  
+  // Text spans may wrap
+  const rects1 = span1.getClientRects();
+  const rects2 = span2.getClientRects();
+  
+  // All elements should have valid positioning
+  expect(bounds1.width).toBeGreaterThan(0);
+  expect(buttonBounds.width).toBe(8);
+  expect(bounds2.width).toBeGreaterThan(0);
+  
+  dispose();
+});
+
+test('deeply nested inline elements maintain layout integrity', () => {
+  const mockRuntime = new MockTTYRuntime();
+  const { document, dispose } = createTTY({ runtime: mockRuntime });
+  
+  const container = document.createElement('div');
+  
+  // Create a deeply nested structure: span > span > span
+  const level1 = document.createElement('span');
+  level1.textContent = 'Level 1 ';
+  
+  const level2 = document.createElement('span');
+  level2.textContent = 'Level 2 ';
+  
+  const level3 = document.createElement('span');
+  level3.textContent = 'Level 3';
+  
+  level2.appendChild(level3);
+  level1.appendChild(level2);
+  container.appendChild(level1);
+  document.body.appendChild(container);
+  
+  // Trigger layout
+  container.getBoundingClientRect();
+  
+  // All nested elements should have bounds
+  const bounds1 = level1.getBoundingClientRect();
+  const bounds2 = level2.getBoundingClientRect();
+  const bounds3 = level3.getBoundingClientRect();
+  
+  expect(bounds1.width).toBeGreaterThan(0);
+  expect(bounds2.width).toBeGreaterThan(0);
+  expect(bounds3.width).toBeGreaterThan(0);
+  
+  // Nested elements should be positioned after their parent's text
+  expect(bounds2.x).toBeGreaterThan(bounds1.x);
+  expect(bounds3.x).toBeGreaterThan(bounds2.x);
+  
+  // All should be on the same line
+  expect(bounds1.y).toBe(bounds2.y);
+  expect(bounds2.y).toBe(bounds3.y);
   
   dispose();
 });

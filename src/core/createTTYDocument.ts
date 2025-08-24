@@ -54,7 +54,7 @@ export function createTTY(options: TTYDocumentOptions = {}): TTYResult {
   document.documentElement.innerHTML = '<head></head><body></body>';
 
   // Initialize HTML extensions with the JSDOM window
-  initializeHTMLExtensions(window);
+  initializeHTMLExtensions(window as any);
 
   // Initialize rendering mode (default to flow for CLI-like behavior)
   const renderMode = options.mode || 'flow';
@@ -75,6 +75,30 @@ export function createTTY(options: TTYDocumentOptions = {}): TTYResult {
   // (use the imported window object, not document.defaultView)
   (window as any)._layoutEngine = layoutEngine;
   (window as any)._terminalSize = termSize;
+  
+  // Set CSSOM-compliant window dimensions to match terminal viewport
+  // These are read-only properties that reflect the actual terminal size
+  Object.defineProperty(window, 'innerWidth', {
+    value: termSize.columns,
+    writable: false,
+    configurable: true
+  });
+  Object.defineProperty(window, 'innerHeight', {
+    value: termSize.rows,
+    writable: false,
+    configurable: true
+  });
+  // In terminals, outer dimensions are the same as inner dimensions
+  Object.defineProperty(window, 'outerWidth', {
+    value: termSize.columns,
+    writable: false,
+    configurable: true
+  });
+  Object.defineProperty(window, 'outerHeight', {
+    value: termSize.rows,
+    writable: false,
+    configurable: true
+  });
 
   // Reset default browser styles for consistent terminal behavior
   document.documentElement.style.setProperty('margin', '0');
@@ -270,7 +294,7 @@ export function createTTY(options: TTYDocumentOptions = {}): TTYResult {
 
   // Set up MutationObserver for automatic rendering (like browsers)
   observer = new window.MutationObserver(async (mutations) => {
-    console.log(`🔄 JSDOM render triggered: ${mutations.length} mutations`);
+    // Process mutations and render
     await internalRender();
   });
 
@@ -307,6 +331,87 @@ export function createTTY(options: TTYDocumentOptions = {}): TTYResult {
     dispose();
   });
 
+  // Handle terminal resize (CSSOM-compliant)
+  runtime.addEventListener('resize', (event: any) => {
+    const newDimensions = event.detail as { columns: number; rows: number };
+    handleTerminalResize(newDimensions);
+  });
+
+  // CSSOM-compliant resize handler
+  const handleTerminalResize = (newSize: { columns: number; rows: number }): void => {
+    console.log('handleTerminalResize called with:', newSize);
+    // Temporarily disconnect observer to prevent mutations during resize
+    observer.disconnect();
+
+    // 1. Update ScreenBuffer dimensions
+    screenBuffer.resize(newSize.columns, newSize.rows);
+
+    // 2. Update CSSOM window properties (redefine since they're not writable)
+    Object.defineProperty(window, 'innerWidth', {
+      value: newSize.columns,
+      writable: false,
+      configurable: true
+    });
+    Object.defineProperty(window, 'innerHeight', {
+      value: newSize.rows,
+      writable: false,
+      configurable: true
+    });
+    Object.defineProperty(window, 'outerWidth', {
+      value: newSize.columns,
+      writable: false,
+      configurable: true
+    });
+    Object.defineProperty(window, 'outerHeight', {
+      value: newSize.rows,
+      writable: false,
+      configurable: true
+    });
+
+    // 3. Update document root styles to match new terminal size
+    document.documentElement.style.setProperty('width', `${newSize.columns}ch`);
+    if (renderMode === 'fullscreen') {
+      document.documentElement.style.setProperty('height', `${newSize.rows}ch`);
+    }
+
+    // 4. Store new terminal size
+    (window as any)._terminalSize = newSize;
+
+    // 5. Force complete layout recomputation with new viewport
+    // Mark entire layout tree as dirty for recomputation
+    dirtyRoots.clear();
+    dirtyRoots.add(document.documentElement as HTMLElement);
+    initialLayoutComputed = false;
+
+    // 6. Fire standard DOM resize event on window (after updates are complete)
+    const resizeEvent = new Event('resize', {
+      bubbles: false,
+      cancelable: false
+    });
+    console.log('Dispatching DOM resize event on window:', window === window.window);
+    console.log('Window dispatchEvent function:', typeof window.dispatchEvent);
+    const result = window.dispatchEvent(resizeEvent);
+    console.log('Event dispatch result:', result);
+
+    // 7. Force immediate layout recomputation with new dimensions
+    // We need to compute layout synchronously before any rendering can happen
+    layoutEngine.computeLayout(
+      document.documentElement,
+      newSize.columns,
+      newSize.rows
+    );
+    dirtyRoots.clear();
+    initialLayoutComputed = true;
+
+    // 8. Reconnect observer after resize is complete
+    observer.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      characterData: true
+    });
+  };
+
   // Handle Ctrl+C gracefully
   runtime.addEventListener('interrupt', () => {
     dispose();
@@ -331,7 +436,7 @@ export function createTTY(options: TTYDocumentOptions = {}): TTYResult {
 
   return {
     document,
-    window,
+    window: window as any,
     runtime,
     dispose,
     requestFullScreen: !screenBuffer.isFullscreen ? requestFullScreen : undefined

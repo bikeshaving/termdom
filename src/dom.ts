@@ -18,6 +18,7 @@ export const {
   Node,
   Document,
   DOMRect,
+  DOMRectList,
   MutationObserver,
   EventTarget,
   Event,

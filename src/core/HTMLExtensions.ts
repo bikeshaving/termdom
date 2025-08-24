@@ -324,7 +324,7 @@ function findElementAtPoint(element: Element, x: number, y: number): Element | n
     return null;
   }
 
-  const htmlElement = element as DOMHTMLElement;
+  const htmlElement = element as HTMLElement;
   
   // Use getClientRects for accurate hit-testing (handles multi-rect inline elements)
   try {

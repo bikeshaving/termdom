@@ -69,6 +69,8 @@ test('renders multiple emojis correctly', async () => {
   // Wait for MutationObserver to process DOM changes
   await new Promise(resolve => setTimeout(resolve));
   
+  // Test snapshot generation
+  
   expectSnapshot('multiple-emojis', mockRuntime, { updateSnapshots: true });
   dispose();
 });

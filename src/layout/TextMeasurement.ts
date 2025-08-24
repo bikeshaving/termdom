@@ -6,6 +6,8 @@
  */
 
 import { HTMLElement } from '../dom.js';
+import Yoga from 'yoga-layout';
+import type * as YogaTypes from 'yoga-layout';
 
 export interface TextMeasureResult {
   width: number;
@@ -23,9 +25,9 @@ export class TextMeasurement {
   static measureText(
     element: HTMLElement,
     width: number,
-    widthMode: 'exactly' | 'at-most' | 'undefined',
+    widthMode: YogaTypes.MeasureMode,
     height: number,
-    heightMode: 'exactly' | 'at-most' | 'undefined'
+    heightMode: YogaTypes.MeasureMode
   ): TextMeasureResult {
     const content = element.textContent || '';
     if (!content) {
@@ -43,7 +45,7 @@ export class TextMeasurement {
     }
     
     // For undefined width, measure natural text width
-    if (widthMode === 'undefined') {
+    if (widthMode === Yoga.MEASURE_MODE_UNDEFINED) {
       const lines = content.split('\n');
       const maxWidth = Math.max(...lines.map((line: string) => this.getTextWidth(line)));
       return { width: maxWidth, height: lines.length };
@@ -176,12 +178,12 @@ export class TextMeasurement {
   /**
    * Create a Yoga measurement function for an element
    */
-  static createMeasureFunction(element: HTMLElement) {
+  static createMeasureFunction(element: HTMLElement): YogaTypes.MeasureFunction {
     return (
       width: number,
-      widthMode: 'exactly' | 'at-most' | 'undefined',
+      widthMode: YogaTypes.MeasureMode,
       height: number,
-      heightMode: 'exactly' | 'at-most' | 'undefined'
+      heightMode: YogaTypes.MeasureMode
     ): { width: number; height: number } => {
       return this.measureText(element, width, widthMode, height, heightMode);
     };

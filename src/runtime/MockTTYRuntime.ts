@@ -36,6 +36,8 @@ export class MockTTYRuntime extends TTYRuntime {
   private _stdout: WritableStream<Uint8Array>;
   private _stderr: WritableStream<Uint8Array>;
   private _stdinController: ReadableStreamDefaultController<Uint8Array>;
+  private _stdoutController: ReadableStreamDefaultController<string>;
+  private _stdoutReadableStream: ReadableStream<string>;
   private _exitCode: number | null = null;
 
   constructor(options: MockTTYRuntimeOptions = {}) {
@@ -59,11 +61,22 @@ export class MockTTYRuntime extends TTYRuntime {
     });
     this._stdinController = stdinController!;
 
-    // Create mock stdout stream
+    // Create stdout readable stream for snapshotter
+    let stdoutController: ReadableStreamDefaultController<string>;
+    this._stdoutReadableStream = new ReadableStream({
+      start(controller) {
+        stdoutController = controller;
+      }
+    });
+    this._stdoutController = stdoutController!;
+
+    // Create mock stdout stream that feeds both buffer and readable stream
     this._stdout = new WritableStream({
       write: (chunk) => {
         const text = new TextDecoder().decode(chunk);
         this._outputBuffer.push(text);
+        // Also enqueue to readable stream for snapshotter
+        this._stdoutController.enqueue(text);
         return Promise.resolve();
       }
     });
@@ -85,6 +98,13 @@ export class MockTTYRuntime extends TTYRuntime {
 
   get stdout(): WritableStream<Uint8Array> {
     return this._stdout;
+  }
+
+  /**
+   * Get readable stream for stdout (for TerminalSnapshotter)
+   */
+  getStdoutStream(): ReadableStream<string> {
+    return this._stdoutReadableStream;
   }
 
   get stderr(): WritableStream<Uint8Array> {
@@ -235,6 +255,9 @@ export class MockTTYRuntime extends TTYRuntime {
     if (options.bgColor) {
       const colorCode = this._colorToAnsi(options.bgColor, true);
       if (colorCode) sequence += colorCode;
+    } else {
+      // No background color - explicitly reset background to prevent bleeding
+      sequence += '\x1b[49m';
     }
 
     // Apply text styling
@@ -279,7 +302,14 @@ export class MockTTYRuntime extends TTYRuntime {
   // === Testing Utilities ===
 
   /**
-   * Get all output written to stdout
+   * Close stdout stream (signals end of output)
+   */
+  closeStdout(): void {
+    this._stdoutController.close();
+  }
+
+  /**
+   * Get all output written to stdout (legacy method for existing tests)
    */
   getStdoutOutput(): string {
     return this._outputBuffer.join('');
