@@ -81,7 +81,7 @@ export function initializeHTMLExtensions(window: DOMWindow): void {
 
     // Check for multiple rects first (inline elements)
     if (this[ELEMENT_RECTS] && this[ELEMENT_RECTS].length > 0) {
-      return RectUtils.computeBoundingRect(this[ELEMENT_RECTS]);
+      return RectUtils.computeBoundingRect(this[ELEMENT_RECTS], window);
     }
 
     // Fall back to single rect (block/flex elements)

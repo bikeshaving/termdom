@@ -181,7 +181,7 @@ test("Mock terminal replacement", () => {
     process.stdout.write("Test output");
     
     expect(mockOut.getOutput()).toBe("Test output");
-    expect(process.stdout.width).toBe(80);
+    expect((process.stdout as any).width).toBe(80);
     
     return "success";
   });

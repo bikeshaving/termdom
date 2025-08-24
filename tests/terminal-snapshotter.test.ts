@@ -18,20 +18,20 @@ describe('TerminalSnapshotter', () => {
       using snapshotter = createSnapshotter('', { width: 10, height: 5 });
       const snapshot = await snapshotter.getSnapshot();
       
-      // Empty screen should produce empty string
-      expect(snapshot).toBe('');
+      // Empty screen should produce just a newline
+      expect(snapshot).toBe('\n');
     });
 
     test('processes simple text output', async () => {
       using snapshotter = createSnapshotter('Hello World', { width: 20, height: 3 });
       const snapshot = await snapshotter.getSnapshot();
-      expect(snapshot).toBe('Hello World');
+      expect(snapshot).toBe('Hello World\n');
     });
 
     test('handles text wrapping', async () => {
       using snapshotter = createSnapshotter('Hello World', { width: 5, height: 3 });
       const snapshot = await snapshotter.getSnapshot();
-      expect(snapshot).toBe('Hello\n Worl\nd');
+      expect(snapshot).toBe('Hello\n Worl\nd\n');
     });
   });
 
@@ -66,14 +66,14 @@ describe('TerminalSnapshotter', () => {
       using snapshotter = createSnapshotter('A\u001b[3CB', { width: 10, height: 5 });
       
       const snapshot = await snapshotter.getSnapshot();
-      expect(snapshot).toBe('A   B');
+      expect(snapshot).toBe('A   B\n');
     });
 
     test('cursor backward (D command)', async () => {
       using snapshotter = createSnapshotter('ABCDE\u001b[3DF', { width: 10, height: 5 });
       
       const snapshot = await snapshotter.getSnapshot();
-      expect(snapshot).toBe('ABFDE');
+      expect(snapshot).toBe('ABFDE\n');
     });
   });
 
@@ -82,14 +82,14 @@ describe('TerminalSnapshotter', () => {
       using snapshotter = createSnapshotter('Hello\nWorld\u001b[2JNew', { width: 10, height: 5 });
       
       const snapshot = await snapshotter.getSnapshot();
-      expect(snapshot).toBe('New');
+      expect(snapshot).toBe('New\n');
     });
 
     test('clear line (K command)', async () => {
       using snapshotter = createSnapshotter('Hello World\u001b[5D\u001b[K', { width: 20, height: 5 }); // Use wider screen to avoid wrapping
       
       const snapshot = await snapshotter.getSnapshot();
-      expect(snapshot).toBe('Hello'); // Clears ' World' leaving 'Hello'
+      expect(snapshot).toBe('Hello\n'); // Clears ' World' leaving 'Hello'
     });
   });
 
@@ -235,7 +235,7 @@ describe('TerminalSnapshotter', () => {
       
       const snapshot = await snapshotter.getSnapshot();
       // Empty params default to 1,1 position (0,0), so B overwrites A
-      expect(snapshot).toBe('B');
+      expect(snapshot).toBe('B\n');
     });
 
     test('preserves trailing spaces in styled content', async () => {
@@ -276,7 +276,7 @@ describe('TerminalSnapshotter', () => {
       using snapshotter = new TerminalSnapshotter(stream, { width: 10, height: 5 });
       const snapshot = await snapshotter.getSnapshot();
       
-      expect(snapshot).toBe('');
+      expect(snapshot).toBe('\n');
     });
   });
 
@@ -285,8 +285,8 @@ describe('TerminalSnapshotter', () => {
       using snapshotter = createSnapshotter('Top line', { width: 10, height: 10 });
       
       const snapshot = await snapshotter.getSnapshot();
-      expect(snapshot).toBe('Top line');
-      expect(snapshot.split('\n')).toHaveLength(1);
+      expect(snapshot).toBe('Top line\n');
+      expect(snapshot.split('\n')).toHaveLength(2);
     });
 
     test('preserves intermediate empty lines with content after', async () => {
@@ -294,7 +294,7 @@ describe('TerminalSnapshotter', () => {
       
       const snapshot = await snapshotter.getSnapshot();
       const lines = snapshot.split('\n');
-      expect(lines).toHaveLength(4);
+      expect(lines).toHaveLength(5);
       expect(lines[0]).toBe('Line 1');
       expect(lines[1]).toBe('');
       expect(lines[2]).toBe('');
@@ -305,7 +305,7 @@ describe('TerminalSnapshotter', () => {
       using snapshotter = createSnapshotter('Hello     ', { width: 20, height: 3 });
       
       const snapshot = await snapshotter.getSnapshot();
-      expect(snapshot).toBe('Hello');
+      expect(snapshot).toBe('Hello\n');
     });
   });
 });

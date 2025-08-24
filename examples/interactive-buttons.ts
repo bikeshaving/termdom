@@ -168,7 +168,7 @@ async function initialize() {
   console.log('');
 
   // Set up event translation
-  const eventTranslator = new TTYEventTranslator(runtime, document);
+  const eventTranslator = new TTYEventTranslator(runtime, window);
   eventTranslator.start();
   
   // Wait for initial render (DOM mutation observer will handle updates)

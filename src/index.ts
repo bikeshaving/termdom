@@ -1,6 +1,6 @@
 /**
  * TTY Object Model (TTYOM) - HTML-to-Terminal Renderer
- * 
+ *
  * Revolutionary approach: Use familiar HTML/CSS to create terminal UIs!
  * Write standard HTML elements with CSS styling, render to ANSI terminal output.
  */
@@ -27,12 +27,9 @@ export type { Cell, ScreenBufferOptions } from './rendering/ScreenBuffer.js';
 export { LayoutEngine } from './layout/LayoutEngine.js';
 
 // Core Types
-export type { 
-  TTYDimensions, 
-  TTYCapabilities, 
-  TTYKeyEvent, 
-  TTYMouseEvent 
+export type {
+  TTYDimensions,
+  TTYCapabilities,
+  TTYKeyEvent,
+  TTYMouseEvent
 } from './core/TTYRuntime.js';
-
-// No backwards compatibility - clean modern API only
-

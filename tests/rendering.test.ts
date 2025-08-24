@@ -12,7 +12,7 @@ import { saveSnapshot } from '../src/testing/snapshotUtils.js';
 
 async function createSnapshot(setupFn: (document: any) => void): Promise<string> {
   const mockRuntime = new MockTTYRuntime({ 
-    dimensions: { columns: 80, rows: 24 } 
+    dimensions: { width: 80, height: 24 } 
   });
   
   const { document, dispose } = createTTY({ runtime: mockRuntime });

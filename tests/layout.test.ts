@@ -11,14 +11,14 @@ import { createTTY, MockTTYRuntime, ELEMENT_BOUNDS } from '../src/index.js';
 
 test('getBoundingClientRect returns DOMRect with element bounds', () => {
   const mockRuntime = new MockTTYRuntime();
-  const { document, dispose } = createTTY({ runtime: mockRuntime });
+  const { document, window, dispose } = createTTY({ runtime: mockRuntime });
 
   const element = document.createElement('div');
   document.body.appendChild(element);
 
   // Block element in flex container should stretch to container width and have intrinsic height
   let rect = element.getBoundingClientRect();
-  expect(rect).toBeInstanceOf(DOMRect);
+  expect(rect).toBeInstanceOf(window.DOMRect);
   expect(rect.x).toBe(0);
   expect(rect.y).toBe(0);
   expect(rect.width).toBe(80); // Stretches to terminal width (default terminal columns)

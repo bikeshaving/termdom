@@ -5,7 +5,7 @@
  * multiple rects into bounding rectangles and hit-testing operations.
  */
 
-// TODO: Update to use DOMContext - temporarily using global DOM classes
+import type { DOMWindow } from 'jsdom';
 
 /**
  * Utility class for DOMRect operations
@@ -20,11 +20,11 @@ export class RectUtils {
    * @param rects Array or DOMRectList of rectangles to merge
    * @returns Single DOMRect that bounds all input rects
    */
-  static computeBoundingRect(rects: DOMRect[] | DOMRectList): DOMRect {
+  static computeBoundingRect(rects: DOMRect[] | DOMRectList, window: DOMWindow): DOMRect {
     const rectArray: DOMRect[] = Array.from(rects) as DOMRect[];
     
     if (rectArray.length === 0) {
-      return new DOMRect(0, 0, 0, 0);
+      return new window.DOMRect(0, 0, 0, 0);
     }
     
     if (rectArray.length === 1) {
@@ -43,7 +43,7 @@ export class RectUtils {
       maxBottom = Math.max(maxBottom, rect.bottom);
     }
     
-    return new DOMRect(
+    return new window.DOMRect(
       minLeft,
       minTop, 
       maxRight - minLeft,

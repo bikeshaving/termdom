@@ -1,12 +1,22 @@
 // Bun Snapshot v1, https://bun.sh/docs/test/snapshots
 
-exports[`renders simple HTML text 1`] = `"Hello World!"`;
-
-exports[`renders nested HTML container with multiple elements 1`] = `"First lineSecond line"`;
-
-exports[`renders HTML text with CSS colors 1`] = `
-"Red text
-Green text"
+exports[`renders simple HTML text 1`] = `
+"Hello World!
+"
 `;
 
-exports[`renders HTML background colors 1`] = `"Text on blue background"`;
+exports[`renders nested HTML container with multiple elements 1`] = `
+"First lineSecond line
+"
+`;
+
+exports[`renders HTML text with CSS colors 1`] = `
+"\x1B[31mRed text\x1B[0m
+\x1B[38;2;0;135;0mGreen text\x1B[0m
+"
+`;
+
+exports[`renders HTML background colors 1`] = `
+"\x1B[44mText on blue background                                                         \x1B[0m
+"
+`;

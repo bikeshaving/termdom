@@ -108,12 +108,12 @@ For more information, read the Bun API docs in `node_modules/bun-types/docs/**.m
 
 ## TTYOM Project Architecture
 
-**RENAMED FROM TOM → TTYOM (TTY Object Model)** 
+**RENAMED FROM TOM → TTYOM (TTY Object Model)**
 
 See `TTYOM_DESIGN.md` for the complete Terminal Object Model design document. This project implements a revolutionary DOM-like API for terminal UIs using:
 
-- **HappyDOM** for tree structure and events ✅
-- **ScreenBuffer** compositing for efficient rendering ✅  
+- **JSDOM** for tree structure and events ✅
+- **ScreenBuffer** compositing for efficient rendering ✅
 - **Yoga** layout engine for flexbox support
 - **Bun APIs** for fast text processing and colors ✅
 - **Intl.Segmenter** for proper Unicode text handling ✅
@@ -131,14 +131,14 @@ Strict TypeScript configuration with:
 
 ### ✅ COMPLETED
 1. **Core Architecture**: TTYWindow, TTYDocument, TTYElement with proper DOM integration
-2. **Event System**: Using Happy-DOM's Event classes (not CustomEvent) 
+2. **Event System**: Using JSDOM’s Event classes (not CustomEvent)
 3. **Unicode Support**: Intl.Segmenter for proper grapheme cluster handling
 4. **Runtime System**: TTYRuntime abstraction with BunTTYRuntime and MockTTYRuntime
 5. **API Migration**: All examples updated from createTOM() to createTTYWindow()
-6. **TypeScript Integration**: Strict typing with Happy-DOM compatibility
+6. **TypeScript Integration**: Strict typing with JSDOM compatibility
 7. **Text Rendering**: ScreenBuffer with proper Unicode segmentation
 
-### 🚧 IN PROGRESS  
+### 🚧 IN PROGRESS
 1. **TypeScript Errors**: Some remaining DOM compatibility issues
 2. **BunTTYRuntime**: TypeScript errors need fixing
 
@@ -150,14 +150,14 @@ Strict TypeScript configuration with:
 ## Key API Changes
 
 - **Entry Point**: `createTTYWindow()` (was `createTOM()`)
-- **Terminal Dimensions**: `tty.innerWidth/innerHeight` (was `document.terminalWidth/Height`) 
-- **Element Creation**: `tty.document.createElement()` 
+- **Terminal Dimensions**: `tty.innerWidth/innerHeight` (was `document.terminalWidth/Height`)
+- **Element Creation**: `tty.document.createElement()`
 - **Rendering**: `tty.document.render()`
 - **Cleanup**: `tty[Symbol.dispose]()` (disposable pattern)
 
 ## Development Commands
 
 - `bun run typecheck` - Check TypeScript errors
-- `bun test` - Run unit tests  
+- `bun test` - Run unit tests
 - `bun examples/hello-world.ts` - Run basic example
 - All examples work with new TTYWindow API

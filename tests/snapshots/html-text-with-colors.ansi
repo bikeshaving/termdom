@@ -1,2 +1,3 @@
-Red text
-Green text
+[31mRed text[0m
+[38;2;0;135;0mGreen text[0m
+

@@ -9,7 +9,7 @@ import { createTTY } from '../src/index.js';
 import { MockTTYRuntime } from '../src/runtime/MockTTYRuntime.js';
 
 test('window dimensions reflect initial terminal size', () => {
-  const runtime = new MockTTYRuntime({ dimensions: { columns: 100, rows: 30 } });
+  const runtime = new MockTTYRuntime({ dimensions: { width: 100, height: 30 } });
   const { window, dispose } = createTTY({ runtime });
 
   expect(window.innerWidth).toBe(100);
@@ -21,7 +21,7 @@ test('window dimensions reflect initial terminal size', () => {
 });
 
 test('window dimensions are read-only', () => {
-  const runtime = new MockTTYRuntime({ dimensions: { columns: 80, rows: 24 } });
+  const runtime = new MockTTYRuntime({ dimensions: { width: 80, height: 24 } });
   const { window, dispose } = createTTY({ runtime });
 
   // Attempting to change dimensions should fail
@@ -41,7 +41,7 @@ test('window dimensions are read-only', () => {
 });
 
 test('resize updates window dimensions', async () => {
-  const runtime = new MockTTYRuntime({ dimensions: { columns: 80, rows: 24 } });
+  const runtime = new MockTTYRuntime({ dimensions: { width: 80, height: 24 } });
   const { window, dispose } = createTTY({ runtime });
 
   // Initial size
@@ -64,7 +64,7 @@ test('resize updates window dimensions', async () => {
 });
 
 test('resize fires DOM resize event', async () => {
-  const runtime = new MockTTYRuntime({ dimensions: { columns: 80, rows: 24 } });
+  const runtime = new MockTTYRuntime({ dimensions: { width: 80, height: 24 } });
   const { window, dispose } = createTTY({ runtime });
 
   let resizeEventFired = false;
@@ -96,7 +96,7 @@ test('resize fires DOM resize event', async () => {
 });
 
 test('resize updates document root styles', async () => {
-  const runtime = new MockTTYRuntime({ dimensions: { columns: 80, rows: 24 } });
+  const runtime = new MockTTYRuntime({ dimensions: { width: 80, height: 24 } });
   const { document, dispose } = createTTY({ runtime });
 
   // Initial styles
@@ -113,7 +113,7 @@ test('resize updates document root styles', async () => {
 });
 
 test('resize updates fullscreen mode document height', async () => {
-  const runtime = new MockTTYRuntime({ dimensions: { columns: 80, rows: 24 } });
+  const runtime = new MockTTYRuntime({ dimensions: { width: 80, height: 24 } });
   const { document, dispose } = createTTY({ 
     runtime, 
     mode: 'fullscreen' 
@@ -135,7 +135,7 @@ test('resize updates fullscreen mode document height', async () => {
 });
 
 test('resize triggers layout recomputation', async () => {
-  const runtime = new MockTTYRuntime({ dimensions: { columns: 80, rows: 24 } });
+  const runtime = new MockTTYRuntime({ dimensions: { width: 80, height: 24 } });
   const { document, dispose } = createTTY({ runtime });
 
   // Create element that should adapt to new width
@@ -164,7 +164,7 @@ test('resize triggers layout recomputation', async () => {
 });
 
 test('multiple rapid resizes are handled gracefully', async () => {
-  const runtime = new MockTTYRuntime({ dimensions: { columns: 80, rows: 24 } });
+  const runtime = new MockTTYRuntime({ dimensions: { width: 80, height: 24 } });
   const { window, dispose } = createTTY({ runtime });
 
   let resizeCount = 0;
@@ -192,7 +192,7 @@ test('multiple rapid resizes are handled gracefully', async () => {
 });
 
 test('resize works with colored backgrounds', async () => {
-  const runtime = new MockTTYRuntime({ dimensions: { columns: 40, rows: 10 } });
+  const runtime = new MockTTYRuntime({ dimensions: { width: 40, height: 10 } });
   const { document, dispose } = createTTY({ runtime });
 
   // Create colored background element
