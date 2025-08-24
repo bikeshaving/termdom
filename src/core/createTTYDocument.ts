@@ -77,6 +77,12 @@ export function createTTY(options: TTYDocumentOptions = {}): TTYResult {
   (window as any)._layoutEngine = layoutEngine;
   (window as any)._terminalSize = termSize;
   
+  // Reset default browser styles for consistent terminal behavior
+  document.documentElement.style.setProperty('margin', '0');
+  document.documentElement.style.setProperty('padding', '0');
+  document.body.style.setProperty('margin', '0');
+  document.body.style.setProperty('padding', '0');
+  
   // Both modes use flexbox layout (required for Yoga engine)
   document.documentElement.style.setProperty('display', 'flex');
   document.documentElement.style.setProperty('flex-direction', 'column');

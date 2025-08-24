@@ -16,13 +16,13 @@ test('getBoundingClientRect returns DOMRect with element bounds', async () => {
   const element = document.createElement('div');
   document.body.appendChild(element);
   
-  // Initially bounds should be zeros
+  // Block element in flex container should stretch to container width and have intrinsic height
   let rect = element.getBoundingClientRect();
   expect(rect).toBeInstanceOf(DOMRect);
   expect(rect.x).toBe(0);
   expect(rect.y).toBe(0);
-  expect(rect.width).toBe(0);
-  expect(rect.height).toBe(0);
+  expect(rect.width).toBe(80); // Stretches to terminal width (default terminal columns)
+  expect(rect.height).toBe(0); // No content, so height is 0
   
   // Set dimensions via CSS and compute layout
   element.style.setProperty('width', '100ch');

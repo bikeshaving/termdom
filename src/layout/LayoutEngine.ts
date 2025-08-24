@@ -59,8 +59,7 @@ export class LayoutEngine {
   /**
    * Get padding from element style (CSS property parsing)
    */
-  private getPadding(element: HTMLElement): [number, number, number, number] {
-    const style = element.style;
+  private getPadding(style: CSSStyleDeclaration): [number, number, number, number] {
     
     // Try individual padding properties first
     const paddingTop = parseInt(style.getPropertyValue('padding-top')) || 0;
@@ -296,7 +295,7 @@ export class LayoutEngine {
     }
 
     // Padding
-    const [top, right, bottom, left] = this.getPadding(element);
+    const [top, right, bottom, left] = this.getPadding(style);
     if (top || right || bottom || left) {
       node.setPadding(this.yoga.EDGE_TOP, top);
       node.setPadding(this.yoga.EDGE_RIGHT, right);
@@ -305,7 +304,7 @@ export class LayoutEngine {
     }
 
     // Margin
-    const margin = this.getMargin(element);
+    const margin = this.getMargin(style);
     if (margin[0] || margin[1] || margin[2] || margin[3]) {
       node.setMargin(this.yoga.EDGE_TOP, margin[0]);
       node.setMargin(this.yoga.EDGE_RIGHT, margin[1]);
@@ -428,8 +427,7 @@ export class LayoutEngine {
   /**
    * Get margin from element style (CSS property parsing)
    */
-  private getMargin(element: HTMLElement): [number, number, number, number] {
-    const style = element.style;
+  private getMargin(style: CSSStyleDeclaration): [number, number, number, number] {
     
     // Try individual margin properties first
     const marginTop = parseInt(style.getPropertyValue('margin-top')) || 0;

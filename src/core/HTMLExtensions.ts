@@ -56,12 +56,8 @@ export function initializeHTMLExtensions(window: Window & typeof globalThis): vo
    * This is the main layout API that integrates with Yoga layout engine
    */
   HTMLElement.prototype.getBoundingClientRect = function(this: HTMLElement): DOMRect {
-    // If bounds are already computed, return them
-    if (this[YOGA_BOUNDS]) {
-      return this[YOGA_BOUNDS];
-    }
-    
-    // Trigger layout computation on-demand (like browsers do)
+    // Always trigger layout computation on-demand (like browsers do)
+    // This ensures fresh layout even after style changes
     const document = this.ownerDocument;
     if (document && document.defaultView) {
       // Find the layout engine from the document's window

@@ -9,10 +9,10 @@
   },
   "devDependencies": {
     "@types/bun": "latest",
+    "@types/jsdom": "^21.1.7",
     "typescript": "^5.9.2"
   },
   "dependencies": {
-    "@types/jsdom": "^21.1.7",
     "jsdom": "^26.1.0",
     "yoga-layout": "^3.2.1"
   }
