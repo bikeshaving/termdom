@@ -9,7 +9,7 @@ import { HTMLElement } from '../dom.js';
 import { TTYRuntime } from './TTYRuntime.js';
 import { ScreenBuffer } from '../rendering/ScreenBuffer.js';
 import { LayoutEngine } from '../layout/LayoutEngine.js';
-import { YOGA_BOUNDS } from './HTMLExtensions.js';
+import { ELEMENT_BOUNDS } from './HTMLExtensions.js';
 
 export interface TTYMouseEvent {
   x: number;
@@ -102,7 +102,7 @@ export class TTYRenderer {
    */
   private async _renderElement(element: HTMLElement, x: number, y: number): Promise<void> {
     // Get bounds from Yoga layout (if available)
-    const bounds = element[YOGA_BOUNDS];
+    const bounds = element[ELEMENT_BOUNDS];
     if (!bounds) {
       // No layout computed yet, skip rendering
       return;

@@ -195,10 +195,10 @@ test('layout APIs work with nested elements', () => {
   expect(containerRect.height).toBe(24);
 
   const textRect = span.getBoundingClientRect();
-  expect(textRect.x).toBe(10);
-  expect(textRect.y).toBe(5);
-  expect(textRect.width).toBe(20);
-  expect(textRect.height).toBe(1);
+  expect(textRect.x).toBe(10); // margin-left works on inline elements
+  expect(textRect.y).toBe(0);  // margin-top ignored on inline elements (CSS spec)
+  expect(textRect.width).toBe(1); // width ignored, uses content length (empty span = 1 minimum)
+  expect(textRect.height).toBe(1); // height ignored, uses line height
 
   dispose();
 });

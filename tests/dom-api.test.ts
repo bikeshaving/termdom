@@ -9,7 +9,7 @@
 
 import { test, expect } from 'bun:test';
 import { createTTY, MockTTYRuntime } from '../src/index.js';
-import { YOGA_BOUNDS } from '../src/core/HTMLExtensions.js';
+import { ELEMENT_BOUNDS, ELEMENT_RECTS } from '../src/core/HTMLExtensions.js';
 
 test('document.elementFromPoint() finds element at coordinates', () => {
   const mockRuntime = new MockTTYRuntime();
@@ -65,9 +65,9 @@ test('document.elementFromPoint() finds deepest element', () => {
   container.getBoundingClientRect();
   
   // Test that deepest element is returned (span should be at 0,0 since it's the deepest)
-  const elementAt5_2 = document.elementFromPoint(5, 2);
+  const elementAt5_0 = document.elementFromPoint(5, 0);
   
-  expect(elementAt5_2).toBe(span); // Should return deepest element (span)
+  expect(elementAt5_0).toBe(span); // Should return deepest element (span)
   
   dispose();
 });

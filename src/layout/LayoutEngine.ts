@@ -7,7 +7,7 @@
  */
 
 import { HTMLElement, Element, Node, DOMRect } from '../dom.js';
-import { YOGA_BOUNDS, YOGA_NODE } from '../core/HTMLExtensions.js';
+import { ELEMENT_BOUNDS, ELEMENT_RECTS, YOGA_NODE } from '../core/HTMLExtensions.js';
 import { TextMeasurement } from './TextMeasurement.js';
 import { GreedyTextBreaker, type InlineElement } from '../text/index.js';
 import Yoga from 'yoga-layout';
@@ -139,10 +139,17 @@ export class LayoutEngine {
     let yogaChildIndex = 0;
     for (const child of elementChildren) {
       const computedStyle = child.ownerDocument!.defaultView!.getComputedStyle(child);
-      const display = computedStyle.getPropertyValue('display');
-      if (display === 'inline' || display === 'inline-block') {
-        // Inline/inline-block elements are handled by separate inline layout system
-        // They participate in Yoga as flex children but size themselves
+      let display = computedStyle.getPropertyValue('display') || this.getDefaultDisplay(child.tagName);
+      
+      // Force block/flex children inside inline parents to become inline-block
+      // This prevents unsupported Yoga-in-measureFunc scenarios while preserving block behavior
+      const parentDisplay = element.ownerDocument!.defaultView!.getComputedStyle(element).getPropertyValue('display') || this.getDefaultDisplay(element.tagName);
+      if (parentDisplay === 'inline' && (display === 'block' || display === 'flex')) {
+        display = 'inline-block'; // Convert unsupported block/flex to inline-block
+      }
+      
+      if (display === 'inline-block') {
+        // Inline-block elements participate in Yoga layout as sized units
         this.setupYogaNode(child);
 
         // Set their size based on content + visual chrome before adding to Yoga tree
@@ -151,8 +158,12 @@ export class LayoutEngine {
         child[YOGA_NODE]!.setHeight(visualSize.height);
 
         yogaNode.insertChild(child[YOGA_NODE]!, yogaChildIndex++);
+      } else if (display === 'inline') {
+        // Pure inline elements ignore width/height CSS properties
+        // They do NOT get Yoga nodes - the parent handles them via inline layout
+        // Note: inline layout happens after Yoga computation in extractLayout
       } else {
-        // Flex elements use normal Yoga tree building
+        // Block/flex elements use normal Yoga tree building
         this.buildYogaTree(child);
         yogaNode.insertChild(child[YOGA_NODE]!, yogaChildIndex++);
       }
@@ -169,7 +180,7 @@ export class LayoutEngine {
     const layout = element[YOGA_NODE]!.getComputedLayout();
 
     // Store computed bounds in Symbol property
-    element[YOGA_BOUNDS] = new DOMRect(
+    element[ELEMENT_BOUNDS] = new DOMRect(
       parentX + layout.left,
       parentY + layout.top,
       layout.width,
@@ -181,9 +192,109 @@ export class LayoutEngine {
       child.nodeType === Node.ELEMENT_NODE
     ) as HTMLElement[];
 
-    const bounds = element[YOGA_BOUNDS];
+    const bounds = element[ELEMENT_BOUNDS];
+    
+    // Handle inline layout for inline children
+    this.processInlineLayout(element, children, bounds);
+    
+    // Process children that have Yoga nodes (block/flex/inline-block)
     for (const child of children) {
-      this.extractLayout(child, bounds.x, bounds.y);
+      if (child[YOGA_NODE]) {
+        this.extractLayout(child, bounds.x, bounds.y);
+      }
+    }
+  }
+
+  /**
+   * Process inline layout for inline children
+   * This handles pure inline elements that don't have Yoga nodes
+   */
+  private processInlineLayout(parent: HTMLElement, children: HTMLElement[], parentBounds: DOMRect): void {
+    // Find ALL inline children that need layout (including those with temporary Yoga nodes)
+    const inlineChildren = children.filter(child => {
+      const computedStyle = child.ownerDocument!.defaultView!.getComputedStyle(child);
+      let display = computedStyle.getPropertyValue('display');
+      let defaultDisplay = display || this.getDefaultDisplay(child.tagName);
+      
+      // Force block/flex children inside inline parents to become inline-block
+      // This ensures consistency with buildYogaTree logic
+      const parentDisplay = parent.ownerDocument!.defaultView!.getComputedStyle(parent).getPropertyValue('display') || this.getDefaultDisplay(parent.tagName);
+      if (parentDisplay === 'inline' && (defaultDisplay === 'block' || defaultDisplay === 'flex')) {
+        defaultDisplay = 'inline-block';
+      }
+      
+      // Include inline elements whether they have Yoga nodes or not
+      return defaultDisplay === 'inline';
+    });
+    
+    if (inlineChildren.length === 0) return;
+    
+    // Processing inline layout for parent element
+    
+    // For now, implement simple left-to-right inline layout
+    // TODO: Implement proper text wrapping and multi-line support
+    let currentX = parentBounds.x;
+    let currentY = parentBounds.y;
+    
+    for (const child of inlineChildren) {
+      // Measure the inline element's content
+      const content = child.textContent || '';
+      const width = Math.max(content.length, 1); // At least 1 character wide
+      const height = 1; // Single line for now
+      
+      // Apply horizontal margins (inline elements respect left/right margins)
+      const computedStyle = child.ownerDocument!.defaultView!.getComputedStyle(child);
+      const marginLeft = parseInt(computedStyle.getPropertyValue('margin-left')) || 0;
+      const marginRight = parseInt(computedStyle.getPropertyValue('margin-right')) || 0;
+      
+      // Position element with left margin
+      const elementX = currentX + marginLeft;
+      
+      // Set the element's bounds - this is critical for getBoundingClientRect()
+      child[ELEMENT_BOUNDS] = new DOMRect(elementX, currentY, width, height);
+      
+      // For now, single rect (no wrapping)
+      child[ELEMENT_RECTS] = [child[ELEMENT_BOUNDS]];
+      
+      // Advance x position for next inline element (include margins)
+      currentX += marginLeft + width + marginRight;
+      
+      // Recursively process any nested inline children
+      const nestedChildren = Array.from(child.childNodes).filter(node =>
+        node.nodeType === Node.ELEMENT_NODE
+      ) as HTMLElement[];
+      
+      if (nestedChildren.length > 0) {
+        this.processInlineLayout(child, nestedChildren, child[ELEMENT_BOUNDS]);
+      }
+    }
+  }
+  
+  /**
+   * Get default display value for HTML tag
+   */
+  private getDefaultDisplay(tagName: string): string {
+    switch (tagName.toLowerCase()) {
+      case 'span':
+      case 'a':
+      case 'strong':
+      case 'em':
+      case 'b':
+      case 'i':
+      case 'code':
+        return 'inline';
+      case 'div':
+      case 'p':
+      case 'h1':
+      case 'h2':
+      case 'h3':
+      case 'h4':
+      case 'h5':
+      case 'h6':
+      case 'button':
+        return 'block';
+      default:
+        return 'block';
     }
   }
 

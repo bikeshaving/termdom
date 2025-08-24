@@ -17,7 +17,7 @@
 import { TTYRuntime, detectTTYRuntime } from './TTYRuntime.js';
 import { ScreenBuffer } from '../rendering/ScreenBuffer.js';
 import { LayoutEngine } from '../layout/LayoutEngine.js';
-import { initializeHTMLExtensions, YOGA_NODE } from './HTMLExtensions.js';
+import { initializeHTMLExtensions, YOGA_NODE, ELEMENT_BOUNDS, ELEMENT_RECTS } from './HTMLExtensions.js';
 import { window, HTMLElement } from '../dom.js';
 
 export interface TTYDocumentOptions {
@@ -121,9 +121,12 @@ export function createTTY(options: TTYDocumentOptions = {}): TTYResult {
       
       if (mutation.target instanceof HTMLElement) {
         targetElement = mutation.target;
+      } else if (mutation.type === 'characterData' && mutation.target.nodeType === Node.TEXT_NODE) {
+        // Text content changes target the text node, we need the parent element
+        targetElement = mutation.target.parentElement as HTMLElement;
       }
       
-      if (!targetElement || !targetElement[YOGA_NODE]) continue;
+      if (!targetElement) continue;
       
       if (mutation.type === 'attributes' && mutation.attributeName === 'style') {
         // Style change - only affects this specific element (no inherited layout properties in TUI)
@@ -131,7 +134,14 @@ export function createTTY(options: TTYDocumentOptions = {}): TTYResult {
         markDirtySingle(targetElement);
       } else if (mutation.type === 'childList') {
         // DOM structure change - affects parent's layout (children need to be re-added to Yoga tree)
-        markDirtyWithBubbling(targetElement);
+        // For inline elements, this could be text content changes (textContent setter creates childList mutations)
+        if (!targetElement[YOGA_NODE]) {
+          // Inline element content changed - treat like text change
+          markDirtySingle(targetElement);
+        } else {
+          // Block element structure changed
+          markDirtyWithBubbling(targetElement);
+        }
       } else if (mutation.type === 'characterData') {
         // Text content change - only affects this node (measure function)
         markDirtySingle(targetElement);
@@ -144,7 +154,22 @@ export function createTTY(options: TTYDocumentOptions = {}): TTYResult {
   
   // Mark a single node as dirty (for text changes)
   const markDirtySingle = (element: HTMLElement): void => {
-    if (!element[YOGA_NODE]) return;
+    if (!element[YOGA_NODE]) {
+      // For inline elements without Yoga nodes, mark their parent for re-layout
+      // This will trigger processInlineLayout for the parent container
+      const parent = element.parentElement as HTMLElement;
+      if (parent && parent[YOGA_NODE]) {
+        // Clear cached bounds for the inline element
+        delete element[ELEMENT_BOUNDS];
+        delete element[ELEMENT_RECTS];
+        
+        // Mark parent dirty for re-layout
+        if (!isAncestorDirty(parent)) {
+          dirtyRoots.add(parent);
+        }
+      }
+      return;
+    }
     
     // If this node or an ancestor is already in dirtyRoots, skip
     if (isAncestorDirty(element)) return;

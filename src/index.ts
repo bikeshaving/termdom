@@ -8,7 +8,7 @@
 // === HTML-to-Terminal API ===
 export { createTTY } from './core/createTTYDocument.js';
 export type { TTYDocumentOptions, TTYResult } from './core/createTTYDocument.js';
-export { initializeHTMLExtensions, YOGA_BOUNDS, YOGA_NODE } from './core/HTMLExtensions.js';
+export { initializeHTMLExtensions, ELEMENT_BOUNDS, ELEMENT_RECTS, YOGA_NODE } from './core/HTMLExtensions.js';
 
 // TTY Runtime (terminal-specific functionality)
 export { TTYRuntime, detectTTYRuntime } from './core/TTYRuntime.js';
