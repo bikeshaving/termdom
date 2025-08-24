@@ -5,7 +5,7 @@
  * and ScreenBuffer rendering to efficiently update the terminal through TTYRuntime.
  */
 
-import { HTMLElement } from '../dom.js';
+import type { DOMWindow } from 'jsdom';
 import { TTYRuntime } from './TTYRuntime.js';
 import { ScreenBuffer } from '../rendering/ScreenBuffer.js';
 import { LayoutEngine } from '../layout/LayoutEngine.js';
@@ -36,17 +36,20 @@ export class TTYRenderer {
   private renderScheduled = false;
   private destroyed = false;
   private runtime: TTYRuntime;
+  private window: DOMWindow;
 
 
-  constructor(document: any, runtime: TTYRuntime) {
+  constructor(document: any, runtime: TTYRuntime, window: DOMWindow) {
     this.document = document;
     this.runtime = runtime;
+    this.window = window;
 
     const dimensions = runtime.getTerminalSize();
     this.rootBuffer = new ScreenBuffer({
-      width: dimensions.columns,
-      height: dimensions.rows,
-      runtime: runtime // Pass runtime to ScreenBuffer
+      width: dimensions.width,
+      height: dimensions.height,
+      runtime: runtime,
+      window: window
     });
 
     // this.layoutEngine = new LayoutEngine(); // Temporarily disabled
@@ -65,14 +68,14 @@ export class TTYRenderer {
 
       // Get current terminal size (in case it changed)
       const dimensions = this.runtime.getTerminalSize();
-      if (dimensions.columns !== this.rootBuffer.width ||
-          dimensions.rows !== this.rootBuffer.height) {
-        this.rootBuffer.resize(dimensions.columns, dimensions.rows);
+      if (dimensions.width !== this.rootBuffer.width ||
+          dimensions.height !== this.rootBuffer.height) {
+        this.rootBuffer.resize(dimensions.width, dimensions.height);
       }
 
       // Render document body if it exists
       const body = this.document.body;
-      if (body && body instanceof HTMLElement) {
+      if (body && body instanceof this.window.HTMLElement) {
         await this._renderElement(body, 0, 0);
       }
 
@@ -114,7 +117,7 @@ export class TTYRenderer {
     // Render children
     const children = Array.from(element.children) as HTMLElement[];
     for (const child of children) {
-      if (child instanceof HTMLElement) {
+      if (child instanceof this.window.HTMLElement) {
         await this._renderElement(child, bounds.x, bounds.y);
       }
     }

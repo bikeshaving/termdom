@@ -16,9 +16,9 @@
  * - Terminal resize handling
  */
 
-import { Document, Element, HTMLElement, Event, MouseEvent, KeyboardEvent, FocusEvent, WheelEvent } from '../dom.js';
 import { TTYRuntime } from '../core/TTYRuntime.js';
 import type { TTYDimensions, TTYKeyEvent, TTYMouseEvent } from '../core/TTYRuntime.js';
+import type { DOMWindow } from 'jsdom';
 
 export interface TTYEventTranslatorOptions {
   enableMouseTracking?: boolean;
@@ -29,14 +29,16 @@ export interface TTYEventTranslatorOptions {
 export class TTYEventTranslator {
   private runtime: TTYRuntime;
   private document: Document;
+  private window: DOMWindow;
   private options: Required<TTYEventTranslatorOptions>;
   private currentFocusedElement: Element | null = null;
   private lastMouseElement: Element | null = null;
   private isActive = false;
 
-  constructor(runtime: TTYRuntime, document: Document, options: TTYEventTranslatorOptions = {}) {
+  constructor(runtime: TTYRuntime, window: DOMWindow, options: TTYEventTranslatorOptions = {}) {
     this.runtime = runtime;
-    this.document = document;
+    this.window = window;
+    this.document = window.document;
     this.options = {
       enableMouseTracking: true,
       enableKeyboardNavigation: true,
@@ -116,7 +118,7 @@ export class TTYEventTranslator {
     }
 
     // Create DOM KeyboardEvent
-    const domKeyEvent = new KeyboardEvent('keydown', {
+    const domKeyEvent = new this.window.KeyboardEvent('keydown', {
       bubbles: true,
       cancelable: true,
       key: keyEvent.key,
@@ -133,7 +135,7 @@ export class TTYEventTranslator {
 
     // Also dispatch keypress and keyup for character keys
     if (!domKeyEvent.defaultPrevented && this.isCharacterKey(keyEvent.key)) {
-      const keypressEvent = new KeyboardEvent('keypress', {
+      const keypressEvent = new this.window.KeyboardEvent('keypress', {
         bubbles: true,
         cancelable: true,
         key: keyEvent.key,
@@ -233,7 +235,7 @@ export class TTYEventTranslator {
    */
   private handleResizeEvent(dimensions: TTYDimensions): void {
     // Create and dispatch resize event on window/document
-    const resizeEvent = new Event('resize', {
+    const resizeEvent = new this.window.Event('resize', {
       bubbles: false,
       cancelable: false
     });
@@ -249,7 +251,7 @@ export class TTYEventTranslator {
    */
   private dispatchMouseEvent(type: string, target: Element, mouseEvent: TTYMouseEvent): void {
     // Create proper MouseEvent
-    const domMouseEvent = new MouseEvent(type, {
+    const domMouseEvent = new this.window.MouseEvent(type, {
       bubbles: true,
       cancelable: true,
       clientX: mouseEvent.x,
@@ -285,10 +287,11 @@ export class TTYEventTranslator {
    */
   private dispatchFocusEvent(type: 'focus' | 'blur', target: Element): void {
     // Create proper FocusEvent
-    const focusEvent = new FocusEvent(type, {
+    // Use FocusEvent if available, otherwise fallback to Event
+    const EventConstructor = this.window.FocusEvent || this.window.Event;
+    const focusEvent = new EventConstructor(type, {
       bubbles: false, // Focus events don't bubble
-      cancelable: false,
-      relatedTarget: type === 'focus' ? this.currentFocusedElement : null
+      cancelable: false
     });
 
     target.dispatchEvent(focusEvent);

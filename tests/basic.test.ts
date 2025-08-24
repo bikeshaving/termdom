@@ -79,13 +79,13 @@ test('HTML elements have CSS styling', () => {
 
 test('runtime provides correct terminal dimensions', () => {
   const mockRuntime = new MockTTYRuntime({
-    dimensions: { columns: 100, rows: 50 }
+    dimensions: { width: 100, height: 50 }
   });
   const { runtime, dispose } = createTTY({ runtime: mockRuntime });
   
   const dimensions = runtime.getTerminalSize();
-  expect(dimensions.columns).toBe(100);
-  expect(dimensions.rows).toBe(50);
+  expect(dimensions.width).toBe(100);
+  expect(dimensions.height).toBe(50);
   
   dispose();
 });

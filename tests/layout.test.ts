@@ -6,8 +6,8 @@
  */
 
 import { test, expect } from 'bun:test';
-import { DOMRect } from '../src/dom.js';
-import { createTTY, MockTTYRuntime, YOGA_BOUNDS } from '../src/index.js';
+// DOMRect available from standard DOM types
+import { createTTY, MockTTYRuntime, ELEMENT_BOUNDS } from '../src/index.js';
 
 test('getBoundingClientRect returns DOMRect with element bounds', () => {
   const mockRuntime = new MockTTYRuntime();

@@ -1,4 +1,4 @@
-import type { CSSStyleDeclaration } from '../dom.js';
+// CSSStyleDeclaration is available in standard DOM types
 
 /**
  * Helper function to set multiple CSS properties at once

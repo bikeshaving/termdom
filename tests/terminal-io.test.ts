@@ -18,8 +18,8 @@ test("Bun file abstractions exploration", () => {
   }
   
   // Test process streams
-  console.log("process.stdout.columns:", process.stdout.columns);
-  console.log("process.stdout.rows:", process.stdout.rows);
+  console.log("process.stdout.width:", process.stdout.width);
+  console.log("process.stdout.height:", process.stdout.height);
   console.log("process.stdout.isTTY:", process.stdout.isTTY);
 });
 
@@ -39,8 +39,8 @@ export class MockTerminal {
   private inputIndex = 0;
   
   constructor(options: MockTerminalOptions = {}) {
-    this.columns = options.columns ?? 80;
-    this.rows = options.rows ?? 24;
+    this.width = options.width ?? 80;
+    this.height = options.height ?? 24;
     this.isTTY = options.isTTY ?? true;
   }
   
@@ -108,8 +108,8 @@ test("MockTerminal basic functionality", () => {
   terminal.write("\x1b[31mRed text\x1b[0m");
   
   expect(terminal.getOutput()).toBe("Hello World\x1b[31mRed text\x1b[0m");
-  expect(terminal.columns).toBe(40);
-  expect(terminal.rows).toBe(10);
+  expect(terminal.width).toBe(40);
+  expect(terminal.height).toBe(10);
   
   // Test input
   terminal.setInput(["a", "b", "c"]);

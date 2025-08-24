@@ -6,36 +6,38 @@
  * Works with standard HTML elements enhanced with Symbol properties.
  */
 
-import { HTMLElement, Element, Node, DOMRect } from '../dom.js';
+import type { DOMContext } from '../core/DOMContext.js';
+import type { DOMWindow } from 'jsdom';
 import { ELEMENT_BOUNDS, ELEMENT_RECTS, YOGA_NODE } from '../core/HTMLExtensions.js';
 import { TextMeasurement } from './TextMeasurement.js';
 import { GreedyTextBreaker, type InlineElement, type BreakResult } from '../text/index.js';
 import Yoga from 'yoga-layout';
 import type * as YogaTypes from 'yoga-layout';
 
-// TODO: USE GETCOMPUTEDSTYLE NOT STYLE!!!!!!!!!!!!!!!
 /**
  * Layout Engine using Yoga for flexbox calculations
  */
 export class LayoutEngine {
   private yoga: typeof Yoga;
   private textBreaker: GreedyTextBreaker;
+  private window: DOMWindow;
 
-  constructor() {
+  constructor(window: DOMWindow) {
     this.yoga = Yoga;
     this.textBreaker = new GreedyTextBreaker();
+    this.window = window;
   }
 
   /**
    * Compute layout for an element tree using Yoga
    */
   computeLayout(root: Element, containerWidth: number, containerHeight: number): void {
-    if (!(root instanceof HTMLElement)) {
+    if (!(root instanceof this.window.HTMLElement)) {
       // Skip non-HTML elements (like Document, Text nodes)
       // Convert NodeList to array for iteration
       const children = Array.from(root.childNodes);
       for (const child of children) {
-        if (child.nodeType === Node.ELEMENT_NODE) {
+        if (child.nodeType === this.window.Node.ELEMENT_NODE) {
           this.computeLayout(child as Element, containerWidth, containerHeight);
         }
       }
@@ -44,9 +46,7 @@ export class LayoutEngine {
 
     // Now TypeScript knows root is HTMLElement
     const htmlRoot = root;
-    
-    // Pre-process: convert inline elements with block children to inline-block
-    this.preprocessInlineToInlineBlock(htmlRoot);
+
 
     // Ensure root has a Yoga node
     if (!htmlRoot[YOGA_NODE]) {
@@ -59,20 +59,6 @@ export class LayoutEngine {
     this.extractLayout(htmlRoot, 0, 0);
   }
 
-
-  /**
-   * Pre-process tree - no longer needed since we handle demoting during layout
-   * This is kept for API compatibility but does nothing
-   */
-  private preprocessInlineToInlineBlock(element: HTMLElement): void {
-    // Check all children recursively  
-    const children = Array.from(element.children) as HTMLElement[];
-    for (const child of children) {
-      this.preprocessInlineToInlineBlock(child);
-    }
-    
-    // No style modifications - we handle demoting during layout computation
-  }
 
   /**
    * Get padding from element style (CSS property parsing)
@@ -113,7 +99,7 @@ export class LayoutEngine {
   /**
    * Setup Yoga node for element
    */
-  private setupYogaNode(element: HTMLElement): void {
+  private setupYogaNode(element: Element): void {
     if (!element[YOGA_NODE]) {
       const yogaNode = this.yoga.Node.create();
       element[YOGA_NODE] = yogaNode;
@@ -126,16 +112,16 @@ export class LayoutEngine {
   /**
    * Build Yoga tree recursively, handling inline elements specially
    */
-  private buildYogaTree(element: HTMLElement): void {
+  private buildYogaTree(element: Element): void {
     this.setupYogaNode(element);
 
     // Get all children (elements + text nodes)
     const children = Array.from(element.childNodes);
     const elementChildren = children.filter(child =>
-      child.nodeType === Node.ELEMENT_NODE
+      child.nodeType === (this.window as any).Node.ELEMENT_NODE
     ) as HTMLElement[];
     const textNodes = children.filter(child =>
-      child.nodeType === Node.TEXT_NODE && child.textContent && child.textContent.trim()
+      child.nodeType === (this.window as any).Node.TEXT_NODE && child.textContent && child.textContent.trim()
     ) as Text[];
 
     // Clear existing children
@@ -157,14 +143,14 @@ export class LayoutEngine {
     for (const child of elementChildren) {
       const computedStyle = child.ownerDocument!.defaultView!.getComputedStyle(child);
       let display = computedStyle.getPropertyValue('display') || this.getDefaultDisplay(child.tagName);
-      
+
       // Demote block/flex children inside inline-ish parents to inline-block
       // This ensures everything flows together in inline layout without modifying CSS
       const parentDisplay = element.ownerDocument!.defaultView!.getComputedStyle(element).getPropertyValue('display') || this.getDefaultDisplay(element.tagName);
       if ((parentDisplay === 'inline' || parentDisplay === 'inline-block') && (display === 'block' || display === 'flex')) {
         display = 'inline-block'; // Treat as inline-block for layout purposes
       }
-      
+
       if (display === 'inline-block' || display === 'inline') {
         // Inline and inline-block elements do NOT get Yoga nodes
         // They are handled by parent's inline layout system via processInlineLayout
@@ -180,14 +166,14 @@ export class LayoutEngine {
   /**
    * Extract computed layout from Yoga
    */
-  private extractLayout(element: HTMLElement, parentX: number, parentY: number): void {
+  private extractLayout(element: Element, parentX: number, parentY: number): void {
     if (!element[YOGA_NODE]) return;
 
     // Get computed layout from Yoga
     const layout = element[YOGA_NODE]!.getComputedLayout();
 
     // Store computed bounds in Symbol property
-    element[ELEMENT_BOUNDS] = new DOMRect(
+    element[ELEMENT_BOUNDS] = new (this.window as any).DOMRect(
       parentX + layout.left,
       parentY + layout.top,
       layout.width,
@@ -196,17 +182,17 @@ export class LayoutEngine {
 
     // Extract layout for children using standard DOM traversal
     const children = Array.from(element.childNodes).filter(child =>
-      child.nodeType === Node.ELEMENT_NODE
-    ) as HTMLElement[];
+      child.nodeType === this.window.Node.ELEMENT_NODE
+    ) as Element[];
 
     const bounds = element[ELEMENT_BOUNDS];
     if (!bounds) {
       throw new Error('Element bounds not set before layout processing');
     }
-    
+
     // Handle inline layout for inline children
     this.processInlineLayout(element, children, bounds);
-    
+
     // Process children that have Yoga nodes (block/flex/inline-block)
     for (const child of children) {
       if (child[YOGA_NODE]) {
@@ -219,37 +205,37 @@ export class LayoutEngine {
    * Process inline layout for inline children with line-wrapping support
    * This handles pure inline elements that don't have Yoga nodes
    */
-  private processInlineLayout(parent: HTMLElement, children: HTMLElement[], parentBounds: DOMRect): void {
+  private processInlineLayout(parent: Element, children: Element[], parentBounds: DOMRect): void {
     // Find ALL inline children that need layout
     const inlineChildren = children.filter(child => {
       const computedStyle = child.ownerDocument!.defaultView!.getComputedStyle(child);
       let display = computedStyle.getPropertyValue('display');
       let defaultDisplay = display || this.getDefaultDisplay(child.tagName);
-      
+
       // Demote block/flex children inside inline-ish parents to inline-block
       const parentDisplay = parent.ownerDocument!.defaultView!.getComputedStyle(parent).getPropertyValue('display') || this.getDefaultDisplay(parent.tagName);
       if ((parentDisplay === 'inline' || parentDisplay === 'inline-block') && (defaultDisplay === 'block' || defaultDisplay === 'flex')) {
         defaultDisplay = 'inline-block';
       }
-      
+
       // Include both inline and inline-block elements (both flow together in inline layout)
       return defaultDisplay === 'inline' || defaultDisplay === 'inline-block';
     });
-    
+
     if (inlineChildren.length === 0) return;
-    
+
     // Check if we need line wrapping at all
     const parentTextContent = this.getDirectTextContent(parent);
     let totalWidth = parentTextContent ? parentTextContent.length : 0;
-    
+
     // Quick check: calculate total width needed
     for (const child of inlineChildren) {
       const computedStyle = child.ownerDocument!.defaultView!.getComputedStyle(child);
       const marginLeft = parseInt(computedStyle.getPropertyValue('margin-left')) || 0;
       const marginRight = parseInt(computedStyle.getPropertyValue('margin-right')) || 0;
-      
+
       totalWidth += marginLeft;
-      
+
       let display = computedStyle.getPropertyValue('display');
       let defaultDisplay = display || this.getDefaultDisplay(child.tagName);
       if (defaultDisplay === 'inline-block') {
@@ -259,44 +245,44 @@ export class LayoutEngine {
         const content = child.textContent || '';
         totalWidth += Math.max(this.getTextWidth(content), 1);
       }
-      
+
       totalWidth += marginRight;
     }
-    
+
     // If everything fits on one line, use simple layout
     if (totalWidth <= parentBounds.width) {
       this.processSimpleInlineLayout(parent, inlineChildren, parentBounds);
       return;
     }
-    
+
     // Build the content for line breaking
     let currentPosition = 0;
     const inlineElements: InlineElement[] = [];
-    
+
     // Account for parent's direct text content first
     if (parentTextContent) {
       currentPosition = parentTextContent.length;
     }
-    
+
     // Convert child elements to InlineElement format for TextBreaker
     for (const child of inlineChildren) {
       const computedStyle = child.ownerDocument!.defaultView!.getComputedStyle(child);
       let display = computedStyle.getPropertyValue('display');
       let defaultDisplay = display || this.getDefaultDisplay(child.tagName);
-      
+
       // Apply horizontal margins
       const marginLeft = parseInt(computedStyle.getPropertyValue('margin-left')) || 0;
       const marginRight = parseInt(computedStyle.getPropertyValue('margin-right')) || 0;
-      
+
       // Add left margin space if needed
       if (marginLeft > 0) {
         currentPosition += marginLeft;
       }
-      
+
       let width: number;
       let height: number;
       let breakable: boolean;
-      
+
       if (defaultDisplay === 'inline-block') {
         // Inline-block: atomic units that cannot break
         const size = this.measureInlineBlockElement(child);
@@ -310,7 +296,7 @@ export class LayoutEngine {
         height = 1;
         breakable = true;
       }
-      
+
       inlineElements.push({
         position: currentPosition,
         width,
@@ -318,29 +304,29 @@ export class LayoutEngine {
         breakable,
         element: child
       });
-      
+
       currentPosition += width + marginRight;
     }
-    
+
     // Build the full text content (parent text + inline text)
     let fullText = parentTextContent || '';
     let textPosition = fullText.length;
-    
+
     // Process elements in order to build the full text
     for (let i = 0; i < inlineElements.length; i++) {
       const inlineEl = inlineElements[i];
-      const child = inlineEl.element as HTMLElement;
+      const child = inlineEl.element as Element;
       const childText = child.textContent || '';
-      
+
       // Pad with spaces to reach the element's position
       while (textPosition < inlineEl.position) {
         fullText += ' ';
         textPosition++;
       }
-      
+
       // Update element position to match actual text position
       inlineEl.position = textPosition;
-      
+
       // For inline elements, insert their text
       // For inline-block, insert placeholder spaces
       if (inlineEl.breakable) {
@@ -352,53 +338,53 @@ export class LayoutEngine {
         textPosition += inlineEl.width;
       }
     }
-    
+
     // Use TextBreaker to compute line breaks
     const breakResult = this.textBreaker.breakText(fullText, {
       maxWidth: parentBounds.width,
       breakWords: true,
       inlineElements
     });
-    
+
     // Apply the computed layout to elements
     this.applyLineBreaksToElements(inlineChildren, breakResult, parentBounds, inlineElements);
   }
-  
+
   /**
    * Process simple inline layout when everything fits on one line
    */
-  private processSimpleInlineLayout(parent: HTMLElement, children: HTMLElement[], parentBounds: DOMRect): void {
+  private processSimpleInlineLayout(parent: Element, children: Element[], parentBounds: DOMRect): void {
     let currentX = parentBounds.x;
     let currentY = parentBounds.y;
-    
+
     // Account for parent's own text content before inline children
     const parentTextContent = this.getDirectTextContent(parent);
     if (parentTextContent) {
       currentX += parentTextContent.length;
     }
-    
+
     for (const child of children) {
       const computedStyle = child.ownerDocument!.defaultView!.getComputedStyle(child);
       let display = computedStyle.getPropertyValue('display');
       let defaultDisplay = display || this.getDefaultDisplay(child.tagName);
-      
+
       // Demote block/flex children inside inline-ish parents to inline-block
       const parentDisplay = parent.ownerDocument!.defaultView!.getComputedStyle(parent).getPropertyValue('display') || this.getDefaultDisplay(parent.tagName);
       if ((parentDisplay === 'inline' || parentDisplay === 'inline-block') && (defaultDisplay === 'block' || defaultDisplay === 'flex')) {
         defaultDisplay = 'inline-block';
       }
-      
+
       // Apply horizontal margins
       const marginLeft = parseInt(computedStyle.getPropertyValue('margin-left')) || 0;
       const marginRight = parseInt(computedStyle.getPropertyValue('margin-right')) || 0;
-      
+
       // Position element with left margin
       currentX += marginLeft;
-      
+
       // Size element based on its display type
       let width: number;
       let height: number;
-      
+
       if (defaultDisplay === 'inline-block') {
         // Inline-block elements use intrinsic sizing
         const size = this.measureInlineBlockElement(child);
@@ -410,20 +396,20 @@ export class LayoutEngine {
         width = Math.max(this.getTextWidth(content), 1);
         height = 1;
       }
-      
+
       // Set the element's bounds
-      const childBounds = new DOMRect(currentX, currentY, width, height);
+      const childBounds = new this.window.DOMRect(currentX, currentY, width, height);
       child[ELEMENT_BOUNDS] = childBounds;
       child[ELEMENT_RECTS] = [childBounds];
-      
+
       // Advance x position for next inline element
       currentX += width + marginRight;
-      
+
       // Recursively process any nested inline children
       const nestedChildren = Array.from(child.childNodes).filter(node =>
-        node.nodeType === Node.ELEMENT_NODE
-      ) as HTMLElement[];
-      
+        node.nodeType === this.window.Node.ELEMENT_NODE
+      ) as Element[];
+
       if (nestedChildren.length > 0) {
         const childBounds = child[ELEMENT_BOUNDS];
         if (!childBounds) {
@@ -433,22 +419,22 @@ export class LayoutEngine {
       }
     }
   }
-  
+
   /**
    * Apply line break results to inline elements with multi-rect support
    */
-  private applyLineBreaksToElements(elements: HTMLElement[], breakResult: BreakResult, parentBounds: DOMRect, inlineElements: InlineElement[]): void {
+  private applyLineBreaksToElements(elements: Element[], breakResult: BreakResult, parentBounds: DOMRect, inlineElements: InlineElement[]): void {
     // Create a map of elements to their positions from the inlineElements array
-    const elementPositions = new Map<HTMLElement, {
+    const elementPositions = new Map<Element, {
       startPos: number;
       endPos: number;
       width: number;
       isInlineBlock: boolean;
     }>();
-    
+
     // Use the positions from inlineElements that we passed to TextBreaker
     for (const inlineEl of inlineElements) {
-      const element = inlineEl.element as HTMLElement;
+      const element = inlineEl.element as Element;
       elementPositions.set(element, {
         startPos: inlineEl.position,
         endPos: inlineEl.position + inlineEl.width,
@@ -456,27 +442,27 @@ export class LayoutEngine {
         isInlineBlock: !inlineEl.breakable
       });
     }
-    
+
     // Track multiple rectangles for elements that span multiple lines
-    const elementRects = new Map<HTMLElement, DOMRect[]>();
-    
+    const elementRects = new Map<Element, DOMRect[]>();
+
     // Position elements based on which lines they overlap with
     let currentY = parentBounds.y;
-    
+
     for (let lineIndex = 0; lineIndex < breakResult.lines.length; lineIndex++) {
       const line = breakResult.lines[lineIndex];
-      
+
       // Check which elements overlap with this line's text range
       for (const [element, elemPos] of elementPositions) {
         // Check if element overlaps with this line
         const overlapsLine = elemPos.startPos < line.endIndex && elemPos.endPos > line.startIndex;
-        
+
         if (overlapsLine) {
           if (elemPos.isInlineBlock) {
             // Inline-block: atomic, position only once on the line where it starts
             if (!elementRects.has(element) && elemPos.startPos >= line.startIndex && elemPos.startPos < line.endIndex) {
               const lineX = parentBounds.x + (elemPos.startPos - line.startIndex);
-              const rect = new DOMRect(lineX, currentY, elemPos.width, 1);
+              const rect = new this.window.DOMRect(lineX, currentY, elemPos.width, 1);
               elementRects.set(element, [rect]);
             }
           } else {
@@ -484,32 +470,32 @@ export class LayoutEngine {
             if (!elementRects.has(element)) {
               elementRects.set(element, []);
             }
-            
+
             // Calculate this line's fragment of the element
             const fragmentStartPos = Math.max(elemPos.startPos, line.startIndex);
             const fragmentEndPos = Math.min(elemPos.endPos, line.endIndex);
-            
+
             if (fragmentStartPos < fragmentEndPos) {
               const lineX = parentBounds.x + (fragmentStartPos - line.startIndex);
               const fragmentWidth = fragmentEndPos - fragmentStartPos;
-              const rect = new DOMRect(lineX, currentY, fragmentWidth, 1);
-              
+              const rect = new this.window.DOMRect(lineX, currentY, fragmentWidth, 1);
+
               elementRects.get(element)!.push(rect);
             }
           }
         }
       }
-      
+
       // Move to next line
       currentY += 1;
     }
-    
+
     // Apply computed rectangles to elements
     for (const [element, rects] of elementRects) {
       if (rects.length > 0) {
         // Set ELEMENT_RECTS to all rectangles
         element[ELEMENT_RECTS] = rects;
-        
+
         // Set ELEMENT_BOUNDS to bounding rectangle of all rects
         if (rects.length === 1) {
           element[ELEMENT_BOUNDS] = rects[0];
@@ -519,85 +505,85 @@ export class LayoutEngine {
           const maxX = Math.max(...rects.map(r => r.x + r.width));
           const minY = Math.min(...rects.map(r => r.y));
           const maxY = Math.max(...rects.map(r => r.y + r.height));
-          
-          element[ELEMENT_BOUNDS] = new DOMRect(minX, minY, maxX - minX, maxY - minY);
+
+          element[ELEMENT_BOUNDS] = new this.window.DOMRect(minX, minY, maxX - minX, maxY - minY);
         }
-        
+
         // Recursively process nested inline children with proper bounds
         const nestedChildren = Array.from(element.childNodes).filter(node =>
-          node.nodeType === Node.ELEMENT_NODE
-        ) as HTMLElement[];
-        
+          node.nodeType === this.window.Node.ELEMENT_NODE
+        ) as Element[];
+
         if (nestedChildren.length > 0) {
           // For nested elements in multi-line inline parents, we need special handling
           this.processNestedInlineLayout(element, nestedChildren, rects, elementPositions);
         }
       }
     }
-    
+
     // Ensure all elements have bounds set (fallback for elements not positioned)
     for (const element of elements) {
       if (!element[ELEMENT_BOUNDS]) {
         // Set a default position
-        const defaultBounds = new DOMRect(parentBounds.x, parentBounds.y, 1, 1);
+        const defaultBounds = new this.window.DOMRect(parentBounds.x, parentBounds.y, 1, 1);
         element[ELEMENT_BOUNDS] = defaultBounds;
         element[ELEMENT_RECTS] = [defaultBounds];
       }
     }
   }
-  
+
   /**
    * Process nested inline layout for elements whose parent spans multiple lines
    * This handles complex cases where nested inline elements need positioning within
    * the context of their parent's multiple rectangles
    */
   private processNestedInlineLayout(
-    parent: HTMLElement, 
-    children: HTMLElement[], 
-    parentRects: DOMRect[], 
-    elementPositions: Map<HTMLElement, { startPos: number; endPos: number; width: number; isInlineBlock: boolean; }>
+    parent: Element,
+    children: Element[],
+    parentRects: DOMRect[],
+    elementPositions: Map<Element, { startPos: number; endPos: number; width: number; isInlineBlock: boolean; }>
   ): void {
     // For now, use a simplified approach: position nested elements relative to the first parent rectangle
     // This handles most common cases while being predictable
-    
+
     if (parentRects.length === 0) return;
-    
+
     // Use the first rectangle as the base for nested layout
     const baseRect = parentRects[0];
-    
+
     // Get parent's direct text content to offset nested elements properly
     const parentTextContent = this.getDirectTextContent(parent);
     let baseX = baseRect.x;
-    
+
     // Account for parent's text content before inline children
     if (parentTextContent) {
       baseX += parentTextContent.length;
     }
-    
+
     // Position nested inline children sequentially
     let currentX = baseX;
     const currentY = baseRect.y;
-    
+
     for (const child of children) {
       const computedStyle = child.ownerDocument!.defaultView!.getComputedStyle(child);
       let display = computedStyle.getPropertyValue('display') || this.getDefaultDisplay(child.tagName);
-      
+
       // Apply demoting logic
       const parentDisplay = parent.ownerDocument!.defaultView!.getComputedStyle(parent).getPropertyValue('display') || this.getDefaultDisplay(parent.tagName);
       if ((parentDisplay === 'inline' || parentDisplay === 'inline-block') && (display === 'block' || display === 'flex')) {
         display = 'inline-block';
       }
-      
+
       // Apply horizontal margins
       const marginLeft = parseInt(computedStyle.getPropertyValue('margin-left')) || 0;
       const marginRight = parseInt(computedStyle.getPropertyValue('margin-right')) || 0;
-      
+
       currentX += marginLeft;
-      
+
       // Size and position the nested element
       let width: number;
       let height: number;
-      
+
       if (display === 'inline-block') {
         const size = this.measureInlineBlockElement(child);
         width = size.width;
@@ -607,19 +593,19 @@ export class LayoutEngine {
         width = Math.max(this.getTextWidth(content), 1);
         height = 1;
       }
-      
+
       // Set bounds for the nested element
-      const nestedChildBounds = new DOMRect(currentX, currentY, width, height);
+      const nestedChildBounds = new this.window.DOMRect(currentX, currentY, width, height);
       child[ELEMENT_BOUNDS] = nestedChildBounds;
       child[ELEMENT_RECTS] = [nestedChildBounds];
-      
+
       currentX += width + marginRight;
-      
+
       // Recursively handle further nesting
       const grandChildren = Array.from(child.childNodes).filter(node =>
-        node.nodeType === Node.ELEMENT_NODE
-      ) as HTMLElement[];
-      
+        node.nodeType === this.window.Node.ELEMENT_NODE
+      ) as Element[];
+
       if (grandChildren.length > 0) {
         const childBounds = child[ELEMENT_BOUNDS];
         if (!childBounds) {
@@ -629,20 +615,20 @@ export class LayoutEngine {
       }
     }
   }
-  
+
   /**
    * Get direct text content of an element (only immediate text nodes, not nested elements)
    */
-  private getDirectTextContent(element: HTMLElement): string {
+  private getDirectTextContent(element: Element): string {
     let directText = '';
     for (const child of element.childNodes) {
-      if (child.nodeType === Node.TEXT_NODE) {
+      if (child.nodeType === this.window.Node.TEXT_NODE) {
         directText += child.textContent || '';
       }
     }
     return directText;
   }
-  
+
   /**
    * Get default display value for HTML tag
    */
@@ -674,7 +660,7 @@ export class LayoutEngine {
   /**
    * Map CSS styles to Yoga properties
    */
-  private applyStylesToYoga(element: HTMLElement): void {
+  private applyStylesToYoga(element: Element): void {
     if (!element[YOGA_NODE]) return;
 
     // Use computed style for proper CSS cascade
@@ -737,7 +723,7 @@ export class LayoutEngine {
     // Dimensions
     const widthStr = style.getPropertyValue('width');
     const heightStr = style.getPropertyValue('height');
-    
+
     // Parse width - handle ch units
     let width = NaN;
     if (widthStr) {
@@ -749,8 +735,8 @@ export class LayoutEngine {
         width = parseInt(widthStr);
       }
     }
-    
-    // Parse height - handle ch units  
+
+    // Parse height - handle ch units
     let height = NaN;
     if (heightStr) {
       if (heightStr.endsWith('ch')) {
@@ -824,7 +810,7 @@ export class LayoutEngine {
   /**
    * Measure inline element size based on text content only (no chrome)
    */
-  private measureInlineElement(element: HTMLElement): { width: number; height: number } {
+  private measureInlineElement(element: Element): { width: number; height: number } {
     const content = element.textContent || '';
 
     if (!content) {
@@ -872,7 +858,7 @@ export class LayoutEngine {
   /**
    * Measure inline-block element size with full visual dimensions
    */
-  private measureInlineBlockElement(element: HTMLElement): { width: number; height: number } {
+  private measureInlineBlockElement(element: Element): { width: number; height: number } {
     const computedStyle = element.ownerDocument!.defaultView!.getComputedStyle(element);
     const style = computedStyle;
 
@@ -922,7 +908,7 @@ export class LayoutEngine {
   /**
    * Get border width from element style
    */
-  private getBorderWidth(element: HTMLElement): number {
+  private getBorderWidth(element: Element): number {
     const computedStyle = element.ownerDocument!.defaultView!.getComputedStyle(element);
     const style = computedStyle;
     const borderWidth = style.getPropertyValue('border-width');

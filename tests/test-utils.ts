@@ -61,7 +61,7 @@ export async function createSizedSnapshot(
   height: number,
   setupFn: (document: Document) => void
 ): Promise<string> {
-  const runtime = new MockTTYRuntime({ columns: width, rows: height });
+  const runtime = new MockTTYRuntime({ dimensions: { width, height } });
   const { document, dispose } = createTTY({ runtime, width, height });
   
   // Apply the test setup

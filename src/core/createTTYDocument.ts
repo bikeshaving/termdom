@@ -14,11 +14,12 @@
  * ```
  */
 
+import type { DOMWindow } from 'jsdom';
 import { TTYRuntime, detectTTYRuntime } from './TTYRuntime.js';
 import { ScreenBuffer } from '../rendering/ScreenBuffer.js';
 import { LayoutEngine } from '../layout/LayoutEngine.js';
 import { initializeHTMLExtensions, YOGA_NODE, ELEMENT_BOUNDS, ELEMENT_RECTS } from './HTMLExtensions.js';
-import { window, HTMLElement } from '../dom.js';
+import { DOMContext } from './DOMContext.js';
 
 export interface TTYDocumentOptions {
   runtime?: TTYRuntime;
@@ -30,7 +31,7 @@ export interface TTYDocumentOptions {
 
 export interface TTYResult {
   document: Document;
-  window: Window;
+  window: DOMWindow;
   runtime: TTYRuntime;
   dispose: () => void;
   /** Switch to fullscreen TUI mode */
@@ -47,29 +48,28 @@ export function createTTY(options: TTYDocumentOptions = {}): TTYResult {
   // Auto-detect runtime if not provided
   const runtime = options.runtime || detectTTYRuntime();
 
-  // Use singleton window and reset its document
-  const document = window.document;
+  // Create isolated DOM instance for this TTY instance
+  const domContext = new DOMContext();
+  const { window, document } = domContext;
 
-  // Clear the document for a fresh start
-  document.documentElement.innerHTML = '<head></head><body></body>';
-
-  // Initialize HTML extensions with the JSDOM window
+  // Initialize HTML extensions with this context's window
   initializeHTMLExtensions(window as any);
 
   // Initialize rendering mode (default to flow for CLI-like behavior)
   const renderMode = options.mode || 'flow';
   const termSize = runtime.getTerminalSize();
 
-  // Create ScreenBuffer with mode support
+  // Create ScreenBuffer with mode support and window
   const screenBuffer = new ScreenBuffer({
-    width: options.width || termSize.columns,
-    height: options.height || termSize.rows,
+    width: options.width || termSize.width,
+    height: options.height || termSize.height,
     mode: renderMode,
-    runtime
+    runtime,
+    window
   });
 
-  // Initialize layout engine
-  const layoutEngine = new LayoutEngine();
+  // Initialize layout engine with window
+  const layoutEngine = new LayoutEngine(window);
 
   // Make layout engine and terminal size available for on-demand layout computation
   // (use the imported window object, not document.defaultView)
@@ -79,23 +79,23 @@ export function createTTY(options: TTYDocumentOptions = {}): TTYResult {
   // Set CSSOM-compliant window dimensions to match terminal viewport
   // These are read-only properties that reflect the actual terminal size
   Object.defineProperty(window, 'innerWidth', {
-    value: termSize.columns,
+    value: termSize.width,
     writable: false,
     configurable: true
   });
   Object.defineProperty(window, 'innerHeight', {
-    value: termSize.rows,
+    value: termSize.height,
     writable: false,
     configurable: true
   });
   // In terminals, outer dimensions are the same as inner dimensions
   Object.defineProperty(window, 'outerWidth', {
-    value: termSize.columns,
+    value: termSize.width,
     writable: false,
     configurable: true
   });
   Object.defineProperty(window, 'outerHeight', {
-    value: termSize.rows,
+    value: termSize.height,
     writable: false,
     configurable: true
   });
@@ -143,9 +143,9 @@ export function createTTY(options: TTYDocumentOptions = {}): TTYResult {
     for (const mutation of mutations) {
       let targetElement: HTMLElement | null = null;
       
-      if (mutation.target instanceof HTMLElement) {
+      if (mutation.target instanceof window.HTMLElement) {
         targetElement = mutation.target;
-      } else if (mutation.type === 'characterData' && mutation.target.nodeType === Node.TEXT_NODE) {
+      } else if (mutation.type === 'characterData' && mutation.target.nodeType === window.Node.TEXT_NODE) {
         // Text content changes target the text node, we need the parent element
         targetElement = mutation.target.parentElement as HTMLElement;
       }
@@ -293,7 +293,7 @@ export function createTTY(options: TTYDocumentOptions = {}): TTYResult {
   };
 
   // Set up MutationObserver for automatic rendering (like browsers)
-  observer = new window.MutationObserver(async (mutations) => {
+  observer = new window.MutationObserver(async (mutations: MutationRecord[]) => {
     // Process mutations and render
     await internalRender();
   });
@@ -316,10 +316,8 @@ export function createTTY(options: TTYDocumentOptions = {}): TTYResult {
       screenBuffer.dispose();
       runtime.exit(0);
 
-      // Reset the singleton DOM to clean state
-      document.documentElement.innerHTML = '<head></head><body></body>';
-
-      // Note: Don't close the window since it's a singleton
+      // Dispose the DOM context to free resources
+      domContext.dispose();
     } catch (error) {
       console.error('TTY dispose error:', error);
     }
@@ -333,45 +331,44 @@ export function createTTY(options: TTYDocumentOptions = {}): TTYResult {
 
   // Handle terminal resize (CSSOM-compliant)
   runtime.addEventListener('resize', (event: any) => {
-    const newDimensions = event.detail as { columns: number; rows: number };
+    const newDimensions = event.detail as { width: number; height: number };
     handleTerminalResize(newDimensions);
   });
 
   // CSSOM-compliant resize handler
-  const handleTerminalResize = (newSize: { columns: number; rows: number }): void => {
-    console.log('handleTerminalResize called with:', newSize);
+  const handleTerminalResize = (newSize: { width: number; height: number }): void => {
     // Temporarily disconnect observer to prevent mutations during resize
     observer.disconnect();
 
     // 1. Update ScreenBuffer dimensions
-    screenBuffer.resize(newSize.columns, newSize.rows);
+    screenBuffer.resize(newSize.width, newSize.height);
 
     // 2. Update CSSOM window properties (redefine since they're not writable)
     Object.defineProperty(window, 'innerWidth', {
-      value: newSize.columns,
+      value: newSize.width,
       writable: false,
       configurable: true
     });
     Object.defineProperty(window, 'innerHeight', {
-      value: newSize.rows,
+      value: newSize.height,
       writable: false,
       configurable: true
     });
     Object.defineProperty(window, 'outerWidth', {
-      value: newSize.columns,
+      value: newSize.width,
       writable: false,
       configurable: true
     });
     Object.defineProperty(window, 'outerHeight', {
-      value: newSize.rows,
+      value: newSize.height,
       writable: false,
       configurable: true
     });
 
     // 3. Update document root styles to match new terminal size
-    document.documentElement.style.setProperty('width', `${newSize.columns}ch`);
+    document.documentElement.style.setProperty('width', `${newSize.width}ch`);
     if (renderMode === 'fullscreen') {
-      document.documentElement.style.setProperty('height', `${newSize.rows}ch`);
+      document.documentElement.style.setProperty('height', `${newSize.height}ch`);
     }
 
     // 4. Store new terminal size
@@ -384,21 +381,18 @@ export function createTTY(options: TTYDocumentOptions = {}): TTYResult {
     initialLayoutComputed = false;
 
     // 6. Fire standard DOM resize event on window (after updates are complete)
-    const resizeEvent = new Event('resize', {
+    const resizeEvent = new (window as any).Event('resize', {
       bubbles: false,
       cancelable: false
     });
-    console.log('Dispatching DOM resize event on window:', window === window.window);
-    console.log('Window dispatchEvent function:', typeof window.dispatchEvent);
-    const result = window.dispatchEvent(resizeEvent);
-    console.log('Event dispatch result:', result);
+    window.dispatchEvent(resizeEvent);
 
     // 7. Force immediate layout recomputation with new dimensions
     // We need to compute layout synchronously before any rendering can happen
     layoutEngine.computeLayout(
       document.documentElement,
-      newSize.columns,
-      newSize.rows
+      newSize.width,
+      newSize.height
     );
     dirtyRoots.clear();
     initialLayoutComputed = true;

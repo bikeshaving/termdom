@@ -8,8 +8,8 @@ import { Writable, Readable } from "stream";
 // Mock stdout that captures output
 class MockStdout extends Writable {
   public output: string = '';
-  public columns: number = 80;
-  public rows: number = 24;
+  public width: number = 80;
+  public height: number = 24;
   public isTTY: boolean = true;
 
   override _write(chunk: any, encoding: any, callback: any) {
@@ -30,9 +30,9 @@ class MockStdout extends Writable {
   }
 
   // Add methods to simulate terminal resize
-  resize(columns: number, rows: number): void {
-    this.columns = columns;
-    this.rows = rows;
+  resize(width: number, height: number): void {
+    this.width = width;
+    this.height = height;
     this.emit('resize');
   }
 }
@@ -96,8 +96,8 @@ test("Mock stdout captures output", () => {
   mockOut.write("\x1b[31mRed Text\x1b[0m");
   
   expect(mockOut.getOutput()).toBe("Hello World\x1b[31mRed Text\x1b[0m");
-  expect(mockOut.columns).toBe(80);
-  expect(mockOut.rows).toBe(24);
+  expect(mockOut.width).toBe(80);
+  expect(mockOut.height).toBe(24);
   expect(mockOut.isTTY).toBe(true);
 });
 
@@ -141,8 +141,8 @@ test("Using mocks with actual components", () => {
   // This is how we'd use it with ScreenBuffer
   // const screenBuffer = new ScreenBuffer({
   //   output: mockOut,
-  //   width: mockOut.columns,
-  //   height: mockOut.rows
+  //   width: mockOut.width,
+  //   height: mockOut.height
   // });
   
   // Test that our mock behaves like real streams
@@ -181,7 +181,7 @@ test("Mock terminal replacement", () => {
     process.stdout.write("Test output");
     
     expect(mockOut.getOutput()).toBe("Test output");
-    expect(process.stdout.columns).toBe(80);
+    expect(process.stdout.width).toBe(80);
     
     return "success";
   });

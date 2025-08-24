@@ -3,19 +3,25 @@
  */
 
 import { test, expect } from "bun:test";
-import { DOMRect } from '../src/dom.js';
+// DOMRect available from standard DOM types in JSDOM
 import { ScreenBuffer } from '../src/rendering/ScreenBuffer.js';
 import { MockTTYRuntime } from '../src/runtime/MockTTYRuntime.js';
+import { createTTY } from '../src/core/createTTYDocument.js';
 
 // Helper to create MockTTYRuntime with testing utilities
 function createTestRuntime(width = 80, height = 24) {
   const mockRuntime = new MockTTYRuntime({
-    dimensions: { columns: width, rows: height },
+    dimensions: { width, height },
     capabilities: { isTTY: true, colorDepth: 24, hasColors: true, supportsUnicode: true }
   });
 
+  // Get a window instance for ScreenBuffer
+  const { window, dispose } = createTTY({ runtime: mockRuntime });
+
   return {
     runtime: mockRuntime,
+    window,
+    dispose,
     getOutput: () => mockRuntime.getStdoutOutput(),
     getPlainText: () => {
       // Strip ANSI escape sequences for plain text comparison  
@@ -51,7 +57,8 @@ test("ScreenBuffer basic construction", () => {
   const buffer = new ScreenBuffer({
     width: 10,
     height: 5,
-    runtime: testEnv.runtime
+    runtime: testEnv.runtime,
+    window: testEnv.window
   });
 
   expect(buffer.width).toBe(10);
@@ -60,7 +67,7 @@ test("ScreenBuffer basic construction", () => {
 
 test("ScreenBuffer construction with defaults", () => {
   const testEnv = createTestRuntime(80, 24);
-  const buffer = new ScreenBuffer({ runtime: testEnv.runtime });
+  const buffer = new ScreenBuffer({ runtime: testEnv.runtime, window: testEnv.window });
 
   expect(buffer.width).toBe(80);
   expect(buffer.height).toBe(24);
@@ -73,7 +80,8 @@ test("ScreenBuffer construction with offset", () => {
     height: 5,
     x: 5,
     y: 3,
-    runtime: testEnv.runtime
+    runtime: testEnv.runtime,
+    window: testEnv.window
   });
 
   expect(buffer.x).toBe(5);
@@ -85,7 +93,8 @@ test("ScreenBuffer put single character", async () => {
   const buffer = new ScreenBuffer({
     width: 10,
     height: 5,
-    runtime: testEnv.runtime
+    runtime: testEnv.runtime,
+    window: testEnv.window
   });
 
   buffer.put(2, 1, 'A');
@@ -100,7 +109,8 @@ test("ScreenBuffer put string", async () => {
   const buffer = new ScreenBuffer({
     width: 20,
     height: 5,
-    runtime: testEnv.runtime
+    runtime: testEnv.runtime,
+    window: testEnv.window
   });
 
   buffer.put(0, 0, 'Hello World');
@@ -115,7 +125,8 @@ test("ScreenBuffer with colors", async () => {
   const buffer = new ScreenBuffer({
     width: 10,
     height: 5,
-    runtime: testEnv.runtime
+    runtime: testEnv.runtime,
+    window: testEnv.window
   });
 
   buffer.put(0, 0, 'Red Text', { fgColor: 'red' });
@@ -134,7 +145,8 @@ test("ScreenBuffer with background color", async () => {
   const buffer = new ScreenBuffer({
     width: 10,
     height: 5,
-    runtime: testEnv.runtime
+    runtime: testEnv.runtime,
+    window: testEnv.window
   });
 
   buffer.put(0, 0, 'Text', { bgColor: 'blue', fgColor: 'white' });
@@ -153,7 +165,8 @@ test("ScreenBuffer text clipping", async () => {
   const buffer = new ScreenBuffer({
     width: 5,
     height: 1,
-    runtime: testEnv.runtime
+    runtime: testEnv.runtime,
+    window: testEnv.window
   });
 
   buffer.put(0, 0, 'This text is too long');
@@ -170,7 +183,8 @@ test("ScreenBuffer clear", async () => {
   const buffer = new ScreenBuffer({
     width: 10,
     height: 5,
-    runtime: testEnv.runtime
+    runtime: testEnv.runtime,
+    window: testEnv.window
   });
 
   // Put some text
@@ -188,10 +202,11 @@ test("ScreenBuffer fill region", async () => {
   const buffer = new ScreenBuffer({
     width: 10,
     height: 5,
-    runtime: testEnv.runtime
+    runtime: testEnv.runtime,
+    window: testEnv.window
   });
 
-  const region = new DOMRect(2, 1, 4, 2);
+  const region = new testEnv.window.DOMRect(2, 1, 4, 2);
   buffer.fill(region, '#', { fgColor: 'red' });
   await buffer.render();
 
@@ -208,7 +223,8 @@ test("ScreenBuffer delta rendering", async () => {
   const buffer = new ScreenBuffer({
     width: 10,
     height: 5,
-    runtime: testEnv.runtime
+    runtime: testEnv.runtime,
+    window: testEnv.window
   });
 
   // First render
@@ -236,7 +252,8 @@ test("ScreenBuffer Unicode handling", async () => {
   const buffer = new ScreenBuffer({
     width: 20,
     height: 5,
-    runtime: testEnv.runtime
+    runtime: testEnv.runtime,
+    window: testEnv.window
   });
 
   buffer.put(0, 0, '👋 Hello 🌍');
@@ -253,7 +270,8 @@ test("ScreenBuffer style inheritance", async () => {
   const buffer = new ScreenBuffer({
     width: 20,
     height: 5,
-    runtime: testEnv.runtime
+    runtime: testEnv.runtime,
+    window: testEnv.window
   });
 
   buffer.put(0, 0, 'Bold', { bold: true, fgColor: 'red' });
@@ -270,7 +288,8 @@ test("ScreenBuffer multiple lines", async () => {
   const buffer = new ScreenBuffer({
     width: 10,
     height: 5,
-    runtime: testEnv.runtime
+    runtime: testEnv.runtime,
+    window: testEnv.window
   });
 
   buffer.put(0, 0, 'Line 1');
@@ -291,7 +310,8 @@ test("ScreenBuffer positioned rendering", async () => {
     height: 5,
     x: 10,
     y: 5,
-    runtime: testEnv.runtime
+    runtime: testEnv.runtime,
+    window: testEnv.window
   });
 
   buffer.put(0, 0, 'Positioned');

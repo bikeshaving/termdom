@@ -16,7 +16,7 @@
 
 import { Readable, Writable } from 'node:stream';
 import * as tty from 'tty';
-import { CustomEvent } from '../dom.js';
+// CustomEvent is available globally in modern environments
 import { TTYRuntime, type TTYDimensions, type TTYCapabilities, type TTYKeyEvent, type TTYMouseEvent, type CellStyleOptions } from '../core/TTYRuntime.js';
 
 export class BunTTYRuntime extends TTYRuntime {
@@ -69,9 +69,10 @@ export class BunTTYRuntime extends TTYRuntime {
 
   // === Terminal Capabilities ===
   getTerminalSize(): TTYDimensions {
+    // Convert terminal's columns/rows to our consistent width/height interface
     return {
-      columns: process.stdout.columns || 80,
-      rows: process.stdout.rows || 24
+      width: process.stdout.columns || 80,
+      height: process.stdout.rows || 24
     };
   }
 

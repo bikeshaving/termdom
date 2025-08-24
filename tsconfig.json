@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     // Environment setup & latest features
-    "lib": ["es2022", "es2022.intl"],
+    "lib": ["es2022", "es2022.intl", "dom"],
     "target": "es2022",
     "module": "esnext",
     "moduleDetection": "force",

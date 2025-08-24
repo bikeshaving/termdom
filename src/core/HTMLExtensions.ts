@@ -1,15 +1,15 @@
 /**
  * HTML Extensions - Monkey-patch HTMLElement with Yoga layout capabilities
- * 
+ *
  * This module extends HappyDOM's HTMLElement with terminal layout APIs,
  * enabling standard HTML elements to work seamlessly with Yoga layout engine.
- * 
+ *
  * Following HappyDOM's pattern of using Symbol properties for private data.
  */
 
 // JSDOM provides standard DOM types that are compatible with lib.dom.d.ts
 import type * as Yoga from 'yoga-layout';
-import { HTMLElement as DOMHTMLElement } from '../dom.js';
+import type { DOMWindow } from 'jsdom';
 import { RectUtils } from '../layout/RectUtils.js';
 
 // Use ReturnType to match Element's getClientRects return type
@@ -29,11 +29,11 @@ export interface LayoutElement extends HTMLElement {
 
 // Augment global DOM types with our extensions
 declare global {
-  interface HTMLElement {
+	interface Element {
     [ELEMENT_BOUNDS]?: DOMRect;
     [ELEMENT_RECTS]?: DOMRect[];
     [YOGA_NODE]?: Yoga.Node;
-  }
+	}
 
   // Document already has elementFromPoint, but JSDOM returns null by default
   // We'll override it with our layout-powered implementation
@@ -43,7 +43,7 @@ declare global {
  * Initialize HTML extensions by monkey-patching HTMLElement prototype
  * This should be called once at module initialization
  */
-export function initializeHTMLExtensions(window: Window & typeof globalThis): void {
+export function initializeHTMLExtensions(window: DOMWindow): void {
   const { HTMLElement, Document, DOMRect } = window;
   // Prevent double initialization
   if ((HTMLElement.prototype as any)._ttyomExtended) {
@@ -57,7 +57,7 @@ export function initializeHTMLExtensions(window: Window & typeof globalThis): vo
 
   /**
    * Get element bounds as DOMRect
-   * For elements with multiple rects (inline elements spanning lines), 
+   * For elements with multiple rects (inline elements spanning lines),
    * returns the bounding box that encompasses all rects.
    */
   HTMLElement.prototype.getBoundingClientRect = function(this: HTMLElement): DOMRect {
@@ -65,32 +65,30 @@ export function initializeHTMLExtensions(window: Window & typeof globalThis): vo
     if (!this.isConnected) {
       return new DOMRect(0, 0, 0, 0);
     }
-    
+
     // Process any pending mutations first (like browsers do)
-    const document = this.ownerDocument!;
-    const window = document.defaultView!;
     const processPendingMutations = (window as any)._processPendingMutations;
     const computeLayoutIfNeeded = (window as any)._computeLayoutIfNeeded;
-    
+
     if (processPendingMutations) {
       processPendingMutations();
     }
-    
+
     // Now compute layout only if there are dirty nodes
     if (computeLayoutIfNeeded) {
       computeLayoutIfNeeded();
     }
-    
+
     // Check for multiple rects first (inline elements)
     if (this[ELEMENT_RECTS] && this[ELEMENT_RECTS].length > 0) {
       return RectUtils.computeBoundingRect(this[ELEMENT_RECTS]);
     }
-    
+
     // Fall back to single rect (block/flex elements)
     if (!this[ELEMENT_BOUNDS]) {
       throw new Error('Layout computation did not set ELEMENT_BOUNDS for element');
     }
-    
+
     return this[ELEMENT_BOUNDS];
   };
 
@@ -104,37 +102,35 @@ export function initializeHTMLExtensions(window: Window & typeof globalThis): vo
     if (!this.isConnected) {
       return RectUtils.createDOMRectList([]) as ClientRectsReturnType;
     }
-    
+
     // Process mutations and compute layout (same as getBoundingClientRect)
-    const document = this.ownerDocument!;
-    const window = document.defaultView!;
     const processPendingMutations = (window as any)._processPendingMutations;
     const computeLayoutIfNeeded = (window as any)._computeLayoutIfNeeded;
-    
+
     if (processPendingMutations) {
       processPendingMutations();
     }
-    
+
     if (computeLayoutIfNeeded) {
       computeLayoutIfNeeded();
     }
-    
+
     // Return multiple rects if available (inline elements)
     if (this[ELEMENT_RECTS] && this[ELEMENT_RECTS].length > 0) {
       return RectUtils.createDOMRectList(this[ELEMENT_RECTS]) as ClientRectsReturnType;
     }
-    
-    // Fall back to single rect (block/flex elements) 
+
+    // Fall back to single rect (block/flex elements)
     if (this[ELEMENT_BOUNDS]) {
       return RectUtils.createDOMRectList([this[ELEMENT_BOUNDS]]) as ClientRectsReturnType;
     }
-    
+
     // No layout computed yet
     throw new Error('Layout computation did not set element bounds');
   };
 
   // === Offset Properties ===
-  
+
   Object.defineProperty(HTMLElement.prototype, 'offsetLeft', {
     get: function(this: HTMLElement) {
       if (!this.isConnected) return 0;
@@ -172,7 +168,7 @@ export function initializeHTMLExtensions(window: Window & typeof globalThis): vo
   });
 
   // === Client Properties ===
-  
+
   Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
     get: function(this: HTMLElement) {
       if (!this.isConnected) return 0;
@@ -212,7 +208,7 @@ export function initializeHTMLExtensions(window: Window & typeof globalThis): vo
   });
 
   // === Scroll Properties ===
-  
+
   Object.defineProperty(HTMLElement.prototype, 'scrollWidth', {
     get: function(this: HTMLElement) {
       // TODO: Return actual content width when scrolling is implemented
@@ -224,7 +220,7 @@ export function initializeHTMLExtensions(window: Window & typeof globalThis): vo
 
   Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
     get: function(this: HTMLElement) {
-      // TODO: Return actual content height when scrolling is implemented  
+      // TODO: Return actual content height when scrolling is implemented
       return this.clientHeight;
     },
     enumerable: true,
@@ -256,7 +252,7 @@ export function initializeHTMLExtensions(window: Window & typeof globalThis): vo
   });
 
   // === Document API Extensions ===
-  
+
   /**
    * elementFromPoint - Find element at specific coordinates using Yoga layout
    * This is the core API that TTYEventTranslator will use for hit testing
@@ -266,27 +262,27 @@ export function initializeHTMLExtensions(window: Window & typeof globalThis): vo
     const window = this.defaultView!;
     const processPendingMutations = (window as any)._processPendingMutations;
     const computeLayoutIfNeeded = (window as any)._computeLayoutIfNeeded;
-    
+
     if (processPendingMutations) {
       processPendingMutations();
     }
-    
+
     // Now compute layout only if there are dirty nodes
     if (computeLayoutIfNeeded) {
       computeLayoutIfNeeded();
     }
-    
+
     return findElementAtPoint(this.documentElement, x, y);
   };
 
   // === Element Navigation APIs ===
-  
+
   /**
    * Check if this element contains another element
    */
   HTMLElement.prototype.contains = function(other: Node | null): boolean {
     if (!other || other === this) return other === this;
-    
+
     let current: Node | null = other;
     while (current && current !== this) {
       current = current.parentNode;
@@ -300,10 +296,10 @@ export function initializeHTMLExtensions(window: Window & typeof globalThis): vo
    */
   HTMLElement.prototype.closest = function(selector: string): Element | null {
     let current: Element | null = this;
-    
+
     // Simple tag name matching (can be enhanced later)
     const tagName = selector.toUpperCase();
-    
+
     while (current) {
       if (current.tagName === tagName) {
         return current;
@@ -324,8 +320,8 @@ function findElementAtPoint(element: Element, x: number, y: number): Element | n
     return null;
   }
 
-  const htmlElement = element as HTMLElement;
-  
+  const htmlElement = element;
+
   // Use getClientRects for accurate hit-testing (handles multi-rect inline elements)
   try {
     const rects = htmlElement.getClientRects();

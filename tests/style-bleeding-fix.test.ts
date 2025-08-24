@@ -8,16 +8,22 @@
 import { test, expect } from "bun:test";
 import { ScreenBuffer } from '../src/rendering/ScreenBuffer.js';
 import { MockTTYRuntime } from '../src/runtime/MockTTYRuntime.js';
+import { createTTY } from '../src/core/createTTYDocument.js';
 
 // Helper to create MockTTYRuntime with testing utilities for style bleeding tests
 function createTestRuntime(width = 80, height = 24) {
   const mockRuntime = new MockTTYRuntime({
-    dimensions: { columns: width, rows: height },
+    dimensions: { width, height },
     capabilities: { isTTY: true, colorDepth: 24, hasColors: true, supportsUnicode: true }
   });
 
+  // Get a window instance for ScreenBuffer
+  const { window, dispose } = createTTY({ runtime: mockRuntime });
+
   return {
     runtime: mockRuntime,
+    window,
+    dispose,
     getOutput: () => mockRuntime.getStdoutOutput(),
     clearOutput: () => mockRuntime.clearOutput(),
     
@@ -46,7 +52,8 @@ test("ScreenBuffer generates reset codes with TTYRuntime", async () => {
   const buffer = new ScreenBuffer({
     width: 10,
     height: 3,
-    runtime: testEnv.runtime
+    runtime: testEnv.runtime,
+    window: testEnv.window
   });
 
   // Put text with background color
@@ -73,7 +80,8 @@ test("ScreenBuffer prevents background color bleeding with TTYRuntime", async ()
   const buffer = new ScreenBuffer({
     width: 10,
     height: 5,
-    runtime: testEnv.runtime
+    runtime: testEnv.runtime,
+    window: testEnv.window
   });
 
   // Row 1: Blue background
@@ -104,7 +112,8 @@ test("ScreenBuffer delta rendering with TTYRuntime", async () => {
   const buffer = new ScreenBuffer({
     width: 10,
     height: 3,
-    runtime: testEnv.runtime
+    runtime: testEnv.runtime,
+    window: testEnv.window
   });
 
   // First render

@@ -6,7 +6,8 @@
  * Adapted from terminal-kit's MIT-licensed ScreenBuffer implementation.
  */
 
-import { Node, DOMRect, Element } from '../dom.js';
+import type { DOMContext } from '../core/DOMContext.js';
+import type { DOMWindow } from 'jsdom';
 
 export interface Cell {
   char: string;
@@ -28,6 +29,8 @@ export interface ScreenBufferOptions {
   runtime?: import('../core/TTYRuntime.js').TTYRuntime;
   /** Render mode: 'flow' for inline CLI output, 'fullscreen' for TUI apps */
   mode?: 'flow' | 'fullscreen';
+  /** Window instance from the isolated DOM context */
+  window: DOMWindow;
 }
 
 /**
@@ -43,25 +46,27 @@ export class ScreenBuffer {
   private cells: Cell[][];
   private lastFrame?: Cell[][];
   private runtime?: import('../core/TTYRuntime.js').TTYRuntime;
+  private window: DOMWindow;
   private cursorX = 0;
   private cursorY = 0;
   private mode: 'flow' | 'fullscreen';
   private contentStartLine = 0; // Track where our content started in flow mode
 
-  constructor(options: ScreenBufferOptions = {}) {
+  constructor(options: ScreenBufferOptions) {
     this.runtime = options.runtime;
+    this.window = options.window;
     this.mode = options.mode ?? 'fullscreen';
     this.isFullscreen = this.mode === 'fullscreen';
 
     if (this.runtime) {
       const dimensions = this.runtime.getTerminalSize();
-      this.width = options.width ?? dimensions.columns;
+      this.width = options.width ?? dimensions.width;
       if (this.mode === 'flow') {
         // Flow mode: dynamic height based on content, start with reasonable default
         this.height = options.height ?? 100; // Will grow as needed
       } else {
         // Fullscreen mode: fixed height matching terminal
-        this.height = options.height ?? dimensions.rows;
+        this.height = options.height ?? dimensions.height;
       }
     } else {
       // Fallback for backward compatibility
@@ -543,10 +548,10 @@ export class ScreenBuffer {
    * Walk the DOM tree and render each node appropriately
    */
   private _walkDOMTree(node: Node): void {
-    // Handle different node types using Node constants
-    if (node.nodeType === Node.TEXT_NODE) {
+    // Handle different node types using Node constants from our window
+    if (node.nodeType === this.window.Node.TEXT_NODE) {
       this._renderTextNode(node as Text);
-    } else if (node.nodeType === Node.ELEMENT_NODE) {
+    } else if (node.nodeType === this.window.Node.ELEMENT_NODE) {
       this._renderElementNode(node as Element);
     }
     

@@ -5,7 +5,7 @@
  * multiple rects into bounding rectangles and hit-testing operations.
  */
 
-import { DOMRect, DOMRectList } from '../dom.js';
+// TODO: Update to use DOMContext - temporarily using global DOM classes
 
 /**
  * Utility class for DOMRect operations

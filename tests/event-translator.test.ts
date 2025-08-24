@@ -6,14 +6,14 @@
  */
 
 import { test, expect } from 'bun:test';
-import { Event, MouseEvent, KeyboardEvent } from '../src/dom.js';
+// Event, MouseEvent, KeyboardEvent available from standard DOM types
 import { createTTY, MockTTYRuntime } from '../src/index.js';
 import { TTYEventTranslator } from '../src/events/TTYEventTranslator.js';
-import { YOGA_BOUNDS } from '../src/core/HTMLExtensions.js';
+import { ELEMENT_BOUNDS } from '../src/core/HTMLExtensions.js';
 
 test('TTYEventTranslator translates mouse events using elementFromPoint', async () => {
   const mockRuntime = new MockTTYRuntime();
-  const { document, render, dispose } = createTTY({ runtime: mockRuntime });
+  const { document, window, dispose } = createTTY({ runtime: mockRuntime });
   
   // Create test elements with layout bounds
   const button = document.createElement('button');
@@ -29,7 +29,7 @@ test('TTYEventTranslator translates mouse events using elementFromPoint', async 
   await new Promise(resolve => setTimeout(resolve));
   
   // Create event translator
-  const translator = new TTYEventTranslator(mockRuntime, document);
+  const translator = new TTYEventTranslator(mockRuntime, window);
   translator.start();
   
   // Track DOM events
@@ -60,7 +60,7 @@ test('TTYEventTranslator translates mouse events using elementFromPoint', async 
   expect(events[2].type).toBe('click');
   
   // Events should be MouseEvent instances with mouse data
-  expect(events[0]).toBeInstanceOf(MouseEvent);
+  expect(events[0]).toBeInstanceOf(window.MouseEvent);
   expect((events[0] as MouseEvent).clientX).toBe(10);
   expect((events[0] as MouseEvent).clientY).toBe(1);
   
@@ -70,7 +70,7 @@ test('TTYEventTranslator translates mouse events using elementFromPoint', async 
 
 test('TTYEventTranslator handles keyboard navigation with Tab', async () => {
   const mockRuntime = new MockTTYRuntime();
-  const { document, render, dispose } = createTTY({ runtime: mockRuntime });
+  const { document, window, dispose } = createTTY({ runtime: mockRuntime });
   
   // Create focusable elements
   const button1 = document.createElement('button');
@@ -81,7 +81,7 @@ test('TTYEventTranslator handles keyboard navigation with Tab', async () => {
   document.body.appendChild(button1);
   document.body.appendChild(button2);
   
-  const translator = new TTYEventTranslator(mockRuntime, document);
+  const translator = new TTYEventTranslator(mockRuntime, window);
   
   // For now, let's just test that the translator can be created and basic functionality works
   // Focus management is complex and should be tested separately
@@ -94,13 +94,13 @@ test('TTYEventTranslator handles keyboard navigation with Tab', async () => {
 
 test('TTYEventTranslator dispatches keyboard events to focused element', async () => {
   const mockRuntime = new MockTTYRuntime();
-  const { document, render, dispose } = createTTY({ runtime: mockRuntime });
+  const { document, window, dispose } = createTTY({ runtime: mockRuntime });
   
   const input = document.createElement('input');
   input.type = 'text';
   document.body.appendChild(input);
   
-  const translator = new TTYEventTranslator(mockRuntime, document);
+  const translator = new TTYEventTranslator(mockRuntime, window);
   translator.start();
   
   // Focus the input by simulating Tab
@@ -130,7 +130,7 @@ test('TTYEventTranslator dispatches keyboard events to focused element', async (
 
 test('TTYEventTranslator handles mouse outside element bounds', async () => {
   const mockRuntime = new MockTTYRuntime();
-  const { document, render, dispose } = createTTY({ runtime: mockRuntime });
+  const { document, window, dispose } = createTTY({ runtime: mockRuntime });
   
   const button = document.createElement('button');
   button.textContent = 'Button';
@@ -143,7 +143,7 @@ test('TTYEventTranslator handles mouse outside element bounds', async () => {
   // Wait for MutationObserver to process DOM changes
   await new Promise(resolve => setTimeout(resolve));
   
-  const translator = new TTYEventTranslator(mockRuntime, document);
+  const translator = new TTYEventTranslator(mockRuntime, window);
   translator.start();
   
   let buttonClicked = false;
@@ -173,9 +173,9 @@ test('TTYEventTranslator handles mouse outside element bounds', async () => {
 
 test('TTYEventTranslator handles terminal resize events', async () => {
   const mockRuntime = new MockTTYRuntime();
-  const { document, render, dispose } = createTTY({ runtime: mockRuntime });
+  const { document, window, dispose } = createTTY({ runtime: mockRuntime });
   
-  const translator = new TTYEventTranslator(mockRuntime, document);
+  const translator = new TTYEventTranslator(mockRuntime, window);
   translator.start();
   
   // Track resize events
@@ -188,7 +188,7 @@ test('TTYEventTranslator handles terminal resize events', async () => {
   // Should receive resize event
   expect(resizeEvent).not.toBeNull();
   expect(resizeEvent!.type).toBe('resize');
-  expect((resizeEvent as any).detail).toEqual({ columns: 100, rows: 30 });
+  expect((resizeEvent as any).detail).toEqual({ width: 100, height: 30 });
   
   translator.stop();
   dispose();

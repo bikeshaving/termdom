@@ -13,7 +13,7 @@
  * - No actual terminal I/O or process control
  */
 
-import { CustomEvent } from '../dom.js';
+// CustomEvent is available globally in modern environments
 import { TTYRuntime, type TTYDimensions, type TTYCapabilities, type TTYKeyEvent, type TTYMouseEvent, type CellStyleOptions } from '../core/TTYRuntime.js';
 
 interface MockTTYRuntimeOptions {
@@ -43,7 +43,7 @@ export class MockTTYRuntime extends TTYRuntime {
   constructor(options: MockTTYRuntimeOptions = {}) {
     super();
     
-    this._dimensions = options.dimensions || { columns: 80, rows: 24 };
+    this._dimensions = options.dimensions || { width: 80, height: 24 };
     this._capabilities = {
       isTTY: true,
       colorDepth: 24,
@@ -383,8 +383,8 @@ export class MockTTYRuntime extends TTYRuntime {
   /**
    * Simulate terminal resize
    */
-  simulateResize(columns: number, rows: number): void {
-    this._dimensions = { columns, rows };
+  simulateResize(width: number, height: number): void {
+    this._dimensions = { width, height };
     this.dispatchEvent(new CustomEvent('resize', { 
       detail: this.getTerminalSize() 
     }));

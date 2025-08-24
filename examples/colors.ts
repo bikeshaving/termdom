@@ -17,7 +17,7 @@ async function main() {
   
   // Debug: Check terminal size
   const termSize = runtime.getTerminalSize();
-  console.log(`Terminal size: ${termSize.columns}x${termSize.rows}\n`);
+  console.log(`Terminal size: ${termSize.width}x${termSize.height}\n`);
 
   // Create container
   const container = document.createElement('div');

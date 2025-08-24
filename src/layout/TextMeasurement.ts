@@ -5,7 +5,7 @@
  * using Yoga's measurement API for proper text flow.
  */
 
-import { HTMLElement } from '../dom.js';
+import type { DOMWindow } from 'jsdom';
 import Yoga from 'yoga-layout';
 import type * as YogaTypes from 'yoga-layout';
 
@@ -23,7 +23,7 @@ export class TextMeasurement {
    * This is the core measurement function called by Yoga
    */
   static measureText(
-    element: HTMLElement,
+    element: Element,
     width: number,
     widthMode: YogaTypes.MeasureMode,
     height: number,
@@ -34,9 +34,8 @@ export class TextMeasurement {
       return { width: 0, height: 0 };
     }
 
-    const style = element.style;
-    const wordWrap = style.wordWrap || 'normal';
-    const whiteSpace = style.whiteSpace || 'normal';
+    const wordWrap = (element as any).style?.wordWrap || 'normal';
+    const whiteSpace = (element as any).style?.whiteSpace || 'normal';
     
     // Handle no-wrap cases
     if (wordWrap === 'nowrap' || whiteSpace === 'nowrap' || whiteSpace === 'pre') {
@@ -52,6 +51,7 @@ export class TextMeasurement {
     }
     
     // Wrap text to fit within width constraint
+    const style = { wordWrap, whiteSpace };
     const wrappedLines = this.wrapText(content, width, style);
     const actualWidth = Math.max(...wrappedLines.map(line => this.getTextWidth(line)));
     
@@ -178,7 +178,7 @@ export class TextMeasurement {
   /**
    * Create a Yoga measurement function for an element
    */
-  static createMeasureFunction(element: HTMLElement): YogaTypes.MeasureFunction {
+  static createMeasureFunction(element: Element): YogaTypes.MeasureFunction {
     return (
       width: number,
       widthMode: YogaTypes.MeasureMode,

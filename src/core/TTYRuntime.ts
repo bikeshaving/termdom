@@ -1,4 +1,4 @@
-import { EventTarget } from '../dom.js';
+// EventTarget is available globally in modern environments
 
 /**
  * TTYRuntime - Abstract runtime interface for TTY Object Model
@@ -15,8 +15,8 @@ import { EventTarget } from '../dom.js';
  */
 
 export interface TTYDimensions {
-  columns: number;
-  rows: number;
+  width: number;
+  height: number;
 }
 
 export interface TTYCapabilities {
@@ -183,8 +183,8 @@ export abstract class TTYRuntime extends EventTarget {
    * Get current terminal dimensions as CSS-style object
    */
   getViewportSize(): { width: number; height: number } {
-    const { columns, rows } = this.getTerminalSize();
-    return { width: columns, height: rows };
+    const { width, height } = this.getTerminalSize();
+    return { width, height };
   }
 }
 
