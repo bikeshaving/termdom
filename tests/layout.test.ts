@@ -6,25 +6,32 @@
  */
 
 import { test, expect } from 'bun:test';
-import { DOMRect } from 'happy-dom';
-import { createTTYDocument, MockTTYRuntime, YOGA_BOUNDS } from '../src/index.js';
+import { DOMRect } from '../src/dom.js';
+import { createTTY, MockTTYRuntime, YOGA_BOUNDS } from '../src/index.js';
 
-test('getBoundingClientRect returns DOMRect with element bounds', () => {
+test('getBoundingClientRect returns DOMRect with element bounds', async () => {
   const mockRuntime = new MockTTYRuntime();
-  const { document, dispose } = createTTYDocument({ runtime: mockRuntime });
+  const { document, dispose } = createTTY({ runtime: mockRuntime });
   
   const element = document.createElement('div');
+  document.body.appendChild(element);
   
   // Initially bounds should be zeros
-  const rect = element.getBoundingClientRect();
+  let rect = element.getBoundingClientRect();
   expect(rect).toBeInstanceOf(DOMRect);
   expect(rect.x).toBe(0);
   expect(rect.y).toBe(0);
   expect(rect.width).toBe(0);
   expect(rect.height).toBe(0);
   
-  // Manually set bounds via Symbol property to test the API
-  element[YOGA_BOUNDS] = new DOMRect(10, 20, 100, 50);
+  // Set dimensions via CSS and compute layout
+  element.style.setProperty('width', '100ch');
+  element.style.setProperty('height', '50ch');
+  element.style.setProperty('margin-left', '10ch');
+  element.style.setProperty('margin-top', '20ch');
+  
+  // Wait for MutationObserver to process DOM changes
+  await new Promise(resolve => setTimeout(resolve));
   
   const updatedRect = element.getBoundingClientRect();
   expect(updatedRect.x).toBe(10);
@@ -39,12 +46,19 @@ test('getBoundingClientRect returns DOMRect with element bounds', () => {
   dispose();
 });
 
-test('offset properties return element position and dimensions', () => {
+test('offset properties return element position and dimensions', async () => {
   const mockRuntime = new MockTTYRuntime();
-  const { document, dispose } = createTTYDocument({ runtime: mockRuntime });
+  const { document, dispose } = createTTY({ runtime: mockRuntime });
   
   const element = document.createElement('div');
-  element[YOGA_BOUNDS] = new DOMRect(15, 25, 200, 100);
+  element.style.setProperty('width', '200ch');
+  element.style.setProperty('height', '100ch');
+  element.style.setProperty('margin-left', '15ch');
+  element.style.setProperty('margin-top', '25ch');
+  document.body.appendChild(element);
+  
+  // Wait for MutationObserver to process DOM changes
+  await new Promise(resolve => setTimeout(resolve));
   
   expect(element.offsetLeft).toBe(15);
   expect(element.offsetTop).toBe(25);
@@ -54,12 +68,19 @@ test('offset properties return element position and dimensions', () => {
   dispose();
 });
 
-test('client properties return content area dimensions', () => {
+test('client properties return content area dimensions', async () => {
   const mockRuntime = new MockTTYRuntime();
-  const { document, dispose } = createTTYDocument({ runtime: mockRuntime });
+  const { document, dispose } = createTTY({ runtime: mockRuntime });
   
   const element = document.createElement('div');
-  element[YOGA_BOUNDS] = new DOMRect(5, 10, 150, 80);
+  element.style.setProperty('width', '150ch');
+  element.style.setProperty('height', '80ch');
+  element.style.setProperty('margin-left', '5ch');
+  element.style.setProperty('margin-top', '10ch');
+  document.body.appendChild(element);
+  
+  // Wait for MutationObserver to process DOM changes
+  await new Promise(resolve => setTimeout(resolve));
   
   // For HTML elements, client dimensions are same as offset (no borders)
   expect(element.clientWidth).toBe(150);
@@ -68,12 +89,17 @@ test('client properties return content area dimensions', () => {
   dispose();
 });
 
-test('scroll properties return scrollable dimensions', () => {
+test('scroll properties return scrollable dimensions', async () => {
   const mockRuntime = new MockTTYRuntime();
-  const { document, dispose } = createTTYDocument({ runtime: mockRuntime });
+  const { document, dispose } = createTTY({ runtime: mockRuntime });
   
   const element = document.createElement('div');
-  element[YOGA_BOUNDS] = new DOMRect(0, 0, 120, 60);
+  element.style.setProperty('width', '120ch');
+  element.style.setProperty('height', '60ch');
+  document.body.appendChild(element);
+  
+  // Wait for MutationObserver to process DOM changes
+  await new Promise(resolve => setTimeout(resolve));
   
   // Currently same as client dimensions (no scrolling yet)
   expect(element.scrollWidth).toBe(120);
@@ -82,12 +108,19 @@ test('scroll properties return scrollable dimensions', () => {
   dispose();
 });
 
-test('getClientRects returns single rect for block elements', () => {
+test('getClientRects returns single rect for block elements', async () => {
   const mockRuntime = new MockTTYRuntime();
-  const { document, dispose } = createTTYDocument({ runtime: mockRuntime });
+  const { document, dispose } = createTTY({ runtime: mockRuntime });
   
   const element = document.createElement('div');
-  element[YOGA_BOUNDS] = new DOMRect(30, 40, 80, 20);
+  element.style.setProperty('width', '80ch');
+  element.style.setProperty('height', '20ch');
+  element.style.setProperty('margin-left', '30ch');
+  element.style.setProperty('margin-top', '40ch');
+  document.body.appendChild(element);
+  
+  // Wait for MutationObserver to process DOM changes
+  await new Promise(resolve => setTimeout(resolve));
   
   const rects = element.getClientRects();
   expect(rects.length).toBe(1);
@@ -110,13 +143,21 @@ test('getClientRects returns single rect for block elements', () => {
   dispose();
 });
 
-test('layout APIs work with text elements', () => {
+test('layout APIs work with text elements', async () => {
   const mockRuntime = new MockTTYRuntime();
-  const { document, dispose } = createTTYDocument({ runtime: mockRuntime });
+  const { document, dispose } = createTTY({ runtime: mockRuntime });
   
   const span = document.createElement('span');
   span.textContent = 'Hello World';
-  span[YOGA_BOUNDS] = new DOMRect(5, 8, 11, 1);
+  span.style.setProperty('display', 'inline-block');
+  span.style.setProperty('width', '11ch');
+  span.style.setProperty('height', '1ch');
+  span.style.setProperty('margin-left', '5ch');
+  span.style.setProperty('margin-top', '8ch');
+  document.body.appendChild(span);
+  
+  // Wait for MutationObserver to process DOM changes
+  await new Promise(resolve => setTimeout(resolve));
   
   const rect = span.getBoundingClientRect();
   expect(rect.width).toBe(11);
@@ -130,19 +171,30 @@ test('layout APIs work with text elements', () => {
   dispose();
 });
 
-test('layout APIs work with nested elements', () => {
+test('layout APIs work with nested elements', async () => {
   const mockRuntime = new MockTTYRuntime();
-  const { document, dispose } = createTTYDocument({ runtime: mockRuntime });
+  const { document, dispose } = createTTY({ runtime: mockRuntime });
   
   const container = document.createElement('div');
   const span = document.createElement('span');
   
+  // Set up container layout
+  container.style.setProperty('width', '80ch');
+  container.style.setProperty('height', '24ch');
+  container.style.setProperty('display', 'flex');
+  container.style.setProperty('flex-direction', 'column');
+  
+  // Set up span layout 
+  span.style.setProperty('width', '20ch');
+  span.style.setProperty('height', '1ch');
+  span.style.setProperty('margin-left', '10ch');
+  span.style.setProperty('margin-top', '5ch');
+  
   container.appendChild(span);
   document.body.appendChild(container);
   
-  // Set bounds manually for testing
-  container[YOGA_BOUNDS] = new DOMRect(0, 0, 80, 24);
-  span[YOGA_BOUNDS] = new DOMRect(10, 5, 20, 1);
+  // Wait for MutationObserver to process DOM changes
+  await new Promise(resolve => setTimeout(resolve));
   
   // Both elements should report their individual bounds
   const containerRect = container.getBoundingClientRect();
@@ -158,12 +210,19 @@ test('layout APIs work with nested elements', () => {
   dispose();
 });
 
-test('DOMRect properties are correctly calculated', () => {
+test('DOMRect properties are correctly calculated', async () => {
   const mockRuntime = new MockTTYRuntime();
-  const { document, dispose } = createTTYDocument({ runtime: mockRuntime });
+  const { document, dispose } = createTTY({ runtime: mockRuntime });
   
   const element = document.createElement('div');
-  element[YOGA_BOUNDS] = new DOMRect(10, 15, 50, 30);
+  element.style.setProperty('width', '50ch');
+  element.style.setProperty('height', '30ch');
+  element.style.setProperty('margin-left', '10ch');
+  element.style.setProperty('margin-top', '15ch');
+  document.body.appendChild(element);
+  
+  // Wait for MutationObserver to process DOM changes
+  await new Promise(resolve => setTimeout(resolve));
   
   const rect = element.getBoundingClientRect();
   

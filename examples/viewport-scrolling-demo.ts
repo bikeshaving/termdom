@@ -10,18 +10,14 @@
  * - Ctrl+C to exit
  */
 
-import { createTTYWindow } from '../src/index.js';
+import { createTTY, BunTTYRuntime } from '../src/index.js';
 
 async function main() {
-  using tty = createTTYWindow({
-    viewport: {
-      height: 10, // Fixed viewport height of 10 lines
-      overflow: 'scroll'
-    }
-  });
+  const runtime = new BunTTYRuntime();
+  using { document, dispose } = createTTY({ runtime });
 
   // Create content that exceeds viewport height
-  const container = tty.document.createElement('container');
+  const container = document.createElement('container');
   container.style.display = 'flex';
   container.style.flexDirection = 'column';
   container.style.padding = '1';
@@ -29,42 +25,33 @@ async function main() {
   
   // Add many items to create scrollable content
   for (let i = 1; i <= 30; i++) {
-    const item = tty.document.createElement('container');
-    item.style.display = 'flex';
-    item.style.padding = '1';
-    item.style.margin = '0 0 1 0';
-    item.style.backgroundColor = i % 2 === 0 ? 'green' : 'yellow';
-    item.style.color = i % 2 === 0 ? 'white' : 'black';
+    const item = document.createElement('container');
+    item.style.setProperty('display', 'flex');
+    item.style.setProperty('padding', '1');
+    item.style.setProperty('margin', '0 0 1 0');
+    item.style.setProperty('background-color', i % 2 === 0 ? 'green' : 'yellow');
+    item.style.setProperty('color', i % 2 === 0 ? 'white' : 'black');
     item.textContent = `Item ${i} - This is scrollable content that extends beyond the viewport`;
     container.appendChild(item);
   }
 
-  tty.document.body.appendChild(container);
+  document.body.appendChild(container);
 
   // Add instructions at the top
-  const instructions = tty.document.createElement('container');
-  instructions.style.display = 'flex';
-  instructions.style.padding = '1';
-  instructions.style.backgroundColor = 'cyan';
-  instructions.style.color = 'black';
+  const instructions = document.createElement('container');
+  instructions.style.setProperty('display', 'flex');
+  instructions.style.setProperty('padding', '1');
+  instructions.style.setProperty('background-color', 'cyan');
+  instructions.style.setProperty('color', 'black');
   instructions.textContent = '🚀 Use Arrow Keys, Page Up/Down, Mouse Wheel, Ctrl+Home/End to scroll. Ctrl+C to exit.';
   
   // Insert instructions at the beginning
-  tty.document.body.insertBefore(instructions, container);
+  document.body.insertBefore(instructions, container);
   
-  tty.document.render();
 
-  // Add scroll position indicator
+  // Simplified demo without viewport scrolling APIs
   function updateScrollIndicator() {
-    if (tty.viewport) {
-      const doc = tty.viewport.getDocument();
-      const viewport = tty.viewport.getViewport();
-      const percentage = doc.height > viewport.height ? 
-        Math.round((doc.scrollTop / (doc.height - viewport.height)) * 100) : 0;
-      
-      instructions.textContent = `🚀 Scroll: ${doc.scrollTop}/${doc.height - viewport.height} (${percentage}%) | Arrow Keys, PgUp/PgDn, Mouse Wheel, Ctrl+Home/End, Ctrl+C`;
-      tty.document.render();
-    }
+    instructions.textContent = `🚀 TTY Modern API Demo - Content extends beyond screen | Arrow Keys, PgUp/PgDn, Mouse Wheel, Ctrl+Home/End, Ctrl+C`;
   }
 
   // Update scroll indicator periodically

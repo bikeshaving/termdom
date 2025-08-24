@@ -14,86 +14,136 @@
  * ```
  */
 
-import { Window, Document, MutationObserver } from 'happy-dom';
 import { TTYRuntime, detectTTYRuntime } from './TTYRuntime.js';
 import { ScreenBuffer } from '../rendering/ScreenBuffer.js';
+import { FlowRenderer } from '../rendering/FlowRenderer.js';
 import { LayoutEngine } from '../layout/LayoutEngine.js';
 import { initializeHTMLExtensions } from './HTMLExtensions.js';
+import { window } from '../dom.js';
 
 export interface TTYDocumentOptions {
   runtime?: TTYRuntime;
   width?: number;
   height?: number;
+  /** Render mode: 'flow' for inline CLI output, 'fullscreen' for TUI apps */
+  mode?: 'flow' | 'fullscreen';
 }
 
-export interface TTYDocumentResult {
+export interface TTYResult {
   document: Document;
+  window: Window;
   runtime: TTYRuntime;
-  render: () => Promise<void>;
   dispose: () => void;
+  /** Switch to fullscreen TUI mode */
+  requestFullScreen?: () => void;
 }
 
 /**
- * Create a TTY-enabled HTML document
+ * Create a TTY-enabled HTML document with automatic rendering
  * 
- * Returns a standard HappyDOM document that can render to terminal output.
- * Elements created with document.createElement() will have full layout APIs.
+ * Returns a standard HappyDOM document that automatically renders to terminal
+ * when the DOM changes (just like a real browser). No manual render() calls needed.
  */
-export function createTTYDocument(options: TTYDocumentOptions = {}): TTYDocumentResult {
-  // Initialize HTML extensions once
-  initializeHTMLExtensions();
-  
+export function createTTY(options: TTYDocumentOptions = {}): TTYResult {
   // Auto-detect runtime if not provided
   const runtime = options.runtime || detectTTYRuntime();
   
-  // Create standard HappyDOM window and document
-  const window = new Window({
-    url: 'tty://terminal',
-    width: options.width || 1024,
-    height: options.height || 768
-  });
+  // Use singleton window and reset its document
   const document = window.document;
   
-  // Initialize terminal dimensions
+  // Clear the document for a fresh start
+  document.documentElement.innerHTML = '<head></head><body></body>';
+  
+  // Initialize HTML extensions with the JSDOM window
+  initializeHTMLExtensions(window);
+  
+  // Initialize rendering mode (default to flow for CLI-like behavior)
+  const renderMode = options.mode || 'flow';
   const termSize = runtime.getTerminalSize();
+  
+  // Create ScreenBuffer with mode support
   const screenBuffer = new ScreenBuffer({
     width: options.width || termSize.columns,
     height: options.height || termSize.rows,
+    mode: renderMode,
     runtime
   });
   
   // Initialize layout engine
   const layoutEngine = new LayoutEngine();
   
-  // Render function that handles layout and terminal output
-  const render = async (): Promise<void> => {
+  // Make layout engine and terminal size available for on-demand layout computation
+  // (use the imported window object, not document.defaultView)
+  (window as any)._layoutEngine = layoutEngine;
+  (window as any)._terminalSize = termSize;
+  
+  // Both modes use flexbox layout (required for Yoga engine)
+  document.documentElement.style.setProperty('display', 'flex');
+  document.documentElement.style.setProperty('flex-direction', 'column');
+  document.body.style.setProperty('display', 'flex');
+  document.body.style.setProperty('flex-direction', 'column');
+  
+  if (renderMode === 'flow') {
+    // Flow mode: flexible dimensions, content-driven size
+    document.documentElement.style.setProperty('width', `${screenBuffer.width}ch`);
+    // No fixed height - let content determine height
+    document.body.style.setProperty('flex', '1');
+  } else {
+    // Fullscreen mode: fixed dimensions matching terminal
+    document.documentElement.style.setProperty('width', `${screenBuffer.width}ch`);
+    document.documentElement.style.setProperty('height', `${screenBuffer.height}ch`);
+    document.body.style.setProperty('flex', '1');
+  }
+  
+  // Internal render function for MutationObserver
+  const internalRender = async (): Promise<void> => {
     try {
-      // 1. Compute layout using Yoga
+      // Always use LayoutEngine to compute layout (respects existing architecture)
       layoutEngine.computeLayout(
         document.documentElement, 
         screenBuffer.width, 
         screenBuffer.height
       );
       
-      // 2. Clear screen buffer
+      // Clear screen buffer and render DOM tree
       screenBuffer.clear();
-      
-      // 3. Render DOM tree to screen buffer
       screenBuffer.renderTree(document.documentElement);
       
-      // 4. Send delta changes to terminal
+      // Render using mode-appropriate strategy
       await screenBuffer.renderDelta();
     } catch (error) {
       console.error('TTY render error:', error);
     }
   };
   
+  // Set up MutationObserver for automatic rendering (like browsers)
+  const observer = new window.MutationObserver(async (mutations) => {
+    console.log(`🔄 JSDOM render triggered: ${mutations.length} mutations`);
+    await internalRender();
+  });
+  
+  observer.observe(document.documentElement, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    characterData: true
+  });
+  
   // Cleanup function
   const dispose = (): void => {
     try {
+      // Disconnect and clear MutationObserver
+      observer.disconnect();
+      // Clear any pending mutation records
+      observer.takeRecords();
+      
       screenBuffer.dispose();
       runtime.exit(0);
-      window.close();
+      
+      // Reset the singleton DOM to clean state
+      document.documentElement.innerHTML = '<head></head><body></body>';
+      
+      // Note: Don't close the window since it's a singleton
     } catch (error) {
       console.error('TTY dispose error:', error);
     }
@@ -110,38 +160,29 @@ export function createTTYDocument(options: TTYDocumentOptions = {}): TTYDocument
     dispose();
   });
   
+  // Function to switch to fullscreen mode
+  const requestFullScreen = () => {
+    if (screenBuffer.isFullscreen) return; // Already in fullscreen mode
+    
+    screenBuffer.setFullscreenMode(true);
+    
+    // Update document layout for fullscreen
+    document.documentElement.style.setProperty('display', 'flex');
+    document.documentElement.style.setProperty('flex-direction', 'column');
+    document.documentElement.style.setProperty('width', `${screenBuffer.width}ch`);
+    document.documentElement.style.setProperty('height', `${screenBuffer.height}ch`);
+    
+    document.body.style.setProperty('display', 'flex');
+    document.body.style.setProperty('flex-direction', 'column');
+    document.body.style.setProperty('flex', '1');
+  };
+  
   return {
     document,
+    window,
     runtime,
-    render,
-    dispose
+    dispose,
+    requestFullScreen: !screenBuffer.isFullscreen ? requestFullScreen : undefined
   };
 }
 
-/**
- * Convenience function that also sets up auto-rendering via MutationObserver
- */
-export function createTTYDocumentWithAutoRender(options: TTYDocumentOptions = {}): TTYDocumentResult {
-  const result = createTTYDocument(options);
-  
-  // Set up MutationObserver for automatic rendering
-  const observer = new MutationObserver(async () => {
-    await result.render();
-  });
-  
-  observer.observe(result.document.documentElement, {
-    childList: true,
-    subtree: true,
-    attributes: true,
-    characterData: true
-  });
-  
-  // Extend dispose to cleanup observer
-  const originalDispose = result.dispose;
-  result.dispose = () => {
-    observer.disconnect();
-    originalDispose();
-  };
-  
-  return result;
-}

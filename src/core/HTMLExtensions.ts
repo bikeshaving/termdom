@@ -7,10 +7,9 @@
  * Following HappyDOM's pattern of using Symbol properties for private data.
  */
 
-import { HTMLElement, DOMRect, Element, Document, Node } from 'happy-dom';
-// @ts-ignore - DOMRectList not exported from main module, but we can import it directly
-import DOMRectList from 'happy-dom/lib/dom/DOMRectList.js';
+// JSDOM provides standard DOM types that are compatible with lib.dom.d.ts
 import type * as Yoga from 'yoga-layout';
+import { HTMLElement as DOMHTMLElement } from '../dom.js';
 
 // Use ReturnType to match Element's getClientRects return type
 type ClientRectsReturnType = ReturnType<Element['getClientRects']>;
@@ -25,14 +24,14 @@ export interface YogaElement extends HTMLElement {
   [YOGA_NODE]?: Yoga.Node;
 }
 
-// Augment HappyDOM's HTMLElement and Document with our extensions
-declare module 'happy-dom' {
+// Augment global DOM types with our extensions
+declare global {
   interface HTMLElement {
     [YOGA_BOUNDS]?: DOMRect;
     [YOGA_NODE]?: Yoga.Node;
   }
 
-  // Document already has elementFromPoint, but it's a stub that returns null
+  // Document already has elementFromPoint, but JSDOM returns null by default
   // We'll override it with our Yoga-powered implementation
 }
 
@@ -40,7 +39,8 @@ declare module 'happy-dom' {
  * Initialize HTML extensions by monkey-patching HTMLElement prototype
  * This should be called once at module initialization
  */
-export function initializeHTMLExtensions(): void {
+export function initializeHTMLExtensions(window: Window & typeof globalThis): void {
+  const { HTMLElement, Document, DOMRect } = window;
   // Prevent double initialization
   if ((HTMLElement.prototype as any)._ttyomExtended) {
     return;
@@ -56,6 +56,23 @@ export function initializeHTMLExtensions(): void {
    * This is the main layout API that integrates with Yoga layout engine
    */
   HTMLElement.prototype.getBoundingClientRect = function(this: HTMLElement): DOMRect {
+    // If bounds are already computed, return them
+    if (this[YOGA_BOUNDS]) {
+      return this[YOGA_BOUNDS];
+    }
+    
+    // Trigger layout computation on-demand (like browsers do)
+    const document = this.ownerDocument;
+    if (document && document.defaultView) {
+      // Find the layout engine from the document's window
+      const layoutEngine = (document.defaultView as any)._layoutEngine;
+      if (layoutEngine) {
+        // Compute layout from root element (document.documentElement)
+        const termSize = (document.defaultView as any)._terminalSize || { columns: 80, rows: 24 };
+        layoutEngine.computeLayout(document.documentElement, termSize.columns, termSize.rows);
+      }
+    }
+    
     return this[YOGA_BOUNDS] || new DOMRect(0, 0, 0, 0);
   };
 
@@ -238,7 +255,7 @@ export function initializeHTMLExtensions(): void {
  * Performs depth-first search to find the deepest element at coordinates
  */
 function findElementAtPoint(element: Element, x: number, y: number): Element | null {
-  if (!(element instanceof HTMLElement)) {
+  if (!(element instanceof DOMHTMLElement)) {
     return null;
   }
 

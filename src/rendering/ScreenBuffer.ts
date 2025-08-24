@@ -6,7 +6,7 @@
  * Adapted from terminal-kit's MIT-licensed ScreenBuffer implementation.
  */
 
-import { Node, DOMRect, Element, Text } from 'happy-dom';
+import { Node, DOMRect, Element } from '../dom.js';
 
 export interface Cell {
   char: string;
@@ -26,6 +26,8 @@ export interface ScreenBufferOptions {
   x?: number;
   y?: number;
   runtime?: import('../core/TTYRuntime.js').TTYRuntime;
+  /** Render mode: 'flow' for inline CLI output, 'fullscreen' for TUI apps */
+  mode?: 'flow' | 'fullscreen';
 }
 
 /**
@@ -36,24 +38,35 @@ export class ScreenBuffer {
   public readonly height: number;
   public readonly x: number;
   public readonly y: number;
+  public readonly isFullscreen: boolean;
 
   private cells: Cell[][];
   private lastFrame?: Cell[][];
   private runtime?: import('../core/TTYRuntime.js').TTYRuntime;
   private cursorX = 0;
   private cursorY = 0;
+  private mode: 'flow' | 'fullscreen';
+  private contentStartLine = 0; // Track where our content started in flow mode
 
   constructor(options: ScreenBufferOptions = {}) {
     this.runtime = options.runtime;
+    this.mode = options.mode ?? 'fullscreen';
+    this.isFullscreen = this.mode === 'fullscreen';
 
     if (this.runtime) {
       const dimensions = this.runtime.getTerminalSize();
       this.width = options.width ?? dimensions.columns;
-      this.height = options.height ?? dimensions.rows;
+      if (this.mode === 'flow') {
+        // Flow mode: dynamic height based on content, start with reasonable default
+        this.height = options.height ?? 100; // Will grow as needed
+      } else {
+        // Fullscreen mode: fixed height matching terminal
+        this.height = options.height ?? dimensions.rows;
+      }
     } else {
       // Fallback for backward compatibility
       this.width = options.width ?? process.stdout.columns ?? 80;
-      this.height = options.height ?? process.stdout.rows ?? 24;
+      this.height = options.height ?? (this.mode === 'flow' ? 100 : 24);
     }
 
     this.x = options.x ?? 0;
@@ -194,9 +207,94 @@ export class ScreenBuffer {
     }
 
     if (!this.lastFrame) {
-      await this.render();
+      if (this.mode === 'flow') {
+        await this.renderFlow();
+      } else {
+        await this.render();
+      }
       return;
     }
+
+    if (this.mode === 'flow') {
+      await this.renderFlowDelta();
+    } else {
+      await this.renderFullscreenDelta();
+    }
+  }
+
+  /**
+   * Render in flow mode (sequential output, no absolute positioning)
+   */
+  private async renderFlow(): Promise<void> {
+    if (!this.runtime) return;
+
+    let currentOutputStyle: Partial<Cell> = {};
+
+    // Find the actual content bounds (non-empty cells)
+    let minY = this.height;
+    let maxY = -1;
+    for (let y = 0; y < this.height; y++) {
+      for (let x = 0; x < this.width; x++) {
+        if (this.cells[y][x].char !== ' ' && this.cells[y][x].char !== '') {
+          minY = Math.min(minY, y);
+          maxY = Math.max(maxY, y);
+        }
+      }
+    }
+
+    if (maxY === -1) {
+      // No content
+      this.lastFrame = this.copyFrame(this.cells);
+      return;
+    }
+
+    // Render content sequentially, line by line
+    for (let y = minY; y <= maxY; y++) {
+      let lineHasContent = false;
+      let lineContent = '';
+      let currentLineStyle: Partial<Cell> = {};
+
+      for (let x = 0; x < this.width; x++) {
+        const cell = this.cells[y][x];
+        if (cell.char !== ' ' || lineHasContent) {
+          if (this.styleChanged(currentLineStyle, cell)) {
+            // Reset previous style and apply new style
+            if (lineHasContent) {
+              this.runtime.resetStyle();
+            }
+            this.applyStyleToRuntime(cell);
+            currentLineStyle = { ...cell };
+          }
+          lineContent += cell.char;
+          lineHasContent = true;
+        }
+      }
+
+      if (lineHasContent) {
+        await this.runtime.writeStdout(lineContent.trimEnd());
+        this.runtime.resetStyle();
+        await this.runtime.writeStdout('\n');
+      }
+    }
+
+    this.runtime.resetStyle();
+    this.lastFrame = this.copyFrame(this.cells);
+  }
+
+  /**
+   * Render delta changes in flow mode
+   */
+  private async renderFlowDelta(): Promise<void> {
+    // For now, just re-render everything in flow mode
+    // TODO: Implement proper flow delta updates using relative cursor positioning
+    await this.renderFlow();
+  }
+
+  /**
+   * Render delta changes in fullscreen mode (original behavior)
+   */
+  private async renderFullscreenDelta(): Promise<void> {
+    if (!this.runtime || !this.lastFrame) return;
 
     let hasChanges = false;
     let currentOutputStyle: Partial<Cell> = {};
@@ -209,7 +307,7 @@ export class ScreenBuffer {
         if (!this.cellsEqual(current, last)) {
           hasChanges = true;
 
-          // Move cursor to changed cell position
+          // Move cursor to changed cell position (absolute positioning)
           await this.runtime.cursorTo(this.x + x, this.y + y);
 
           // Only apply style if style actually changed
@@ -334,6 +432,26 @@ export class ScreenBuffer {
    */
   getCursor(): { x: number; y: number } {
     return { x: this.cursorX, y: this.cursorY };
+  }
+
+  /**
+   * Switch to fullscreen mode (for requestFullScreen())
+   */
+  setFullscreenMode(fullscreen: boolean): void {
+    if (fullscreen === this.isFullscreen) return;
+    
+    (this as any).isFullscreen = fullscreen;
+    this.mode = fullscreen ? 'fullscreen' : 'flow';
+    
+    if (fullscreen) {
+      // Switch to fullscreen: clear screen and enable absolute positioning
+      if (this.runtime) {
+        this.runtime.writeStdout('\x1b[2J\x1b[H'); // Clear screen and move to top
+      }
+    } else {
+      // Switch to flow: just continue with current content
+      this.contentStartLine = 0; // Reset content tracking
+    }
   }
 
   /**

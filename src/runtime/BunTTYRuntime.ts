@@ -16,6 +16,7 @@
 
 import { Readable, Writable } from 'node:stream';
 import * as tty from 'tty';
+import { CustomEvent } from '../dom.js';
 import { TTYRuntime, type TTYDimensions, type TTYCapabilities, type TTYKeyEvent, type TTYMouseEvent, type CellStyleOptions } from '../core/TTYRuntime.js';
 
 export class BunTTYRuntime extends TTYRuntime {

@@ -5,16 +5,17 @@
  * by leaving their final state visible in terminal history after exit.
  */
 
-import { createTTYWindow } from '../src/index.js';
+import { createTTY, BunTTYRuntime } from '../src/index.js';
 
 async function preserveStateDemo() {
   console.log('🎯 TTY Preserve State Demo');
   console.log('📊 This will show a data dashboard and preserve it after exit\n');
   
-  using tty = createTTYWindow();
+  const runtime = new BunTTYRuntime();
+  using { document, dispose } = createTTY({ runtime });
   
   // Create a data dashboard
-  const dashboard = tty.document.createElement('container');
+  const dashboard = document.createElement('container');
   dashboard.style = {
     backgroundColor: '#1a1a2e',
     padding: 2,
@@ -23,7 +24,7 @@ async function preserveStateDemo() {
   };
   
   // Title
-  const title = tty.document.createElement('text');
+  const title = document.createElement('text');
   title.textContent = '📊 System Dashboard - Final State';
   title.style = {
     color: '#4cc9f0',
@@ -32,14 +33,14 @@ async function preserveStateDemo() {
   };
   
   // Data section
-  const dataContainer = tty.document.createElement('container');
+  const dataContainer = document.createElement('container');
   dataContainer.style = {
     flexDirection: 'row',
     gap: 2
   };
   
   // CPU info
-  const cpuBox = tty.document.createElement('container');
+  const cpuBox = document.createElement('container');
   cpuBox.style = {
     backgroundColor: '#0f1c2e',
     padding: 1,
@@ -48,11 +49,11 @@ async function preserveStateDemo() {
     flex: 1
   };
   
-  const cpuTitle = tty.document.createElement('text');
+  const cpuTitle = document.createElement('text');
   cpuTitle.textContent = '🖥️  CPU Usage';
   cpuTitle.style = { color: '#7209b7', marginBottom: 1 };
   
-  const cpuValue = tty.document.createElement('text');
+  const cpuValue = document.createElement('text');
   cpuValue.textContent = '▓▓▓▓▓▓▓░░░ 67%';
   cpuValue.style = { color: '#f72585' };
   
@@ -60,7 +61,7 @@ async function preserveStateDemo() {
   cpuBox.appendChild(cpuValue);
   
   // Memory info
-  const memBox = tty.document.createElement('container');
+  const memBox = document.createElement('container');
   memBox.style = {
     backgroundColor: '#0f1c2e',
     padding: 1,
@@ -69,11 +70,11 @@ async function preserveStateDemo() {
     flex: 1
   };
   
-  const memTitle = tty.document.createElement('text');
+  const memTitle = document.createElement('text');
   memTitle.textContent = '💾 Memory';
   memTitle.style = { color: '#7209b7', marginBottom: 1 };
   
-  const memValue = tty.document.createElement('text');
+  const memValue = document.createElement('text');
   memValue.textContent = '▓▓▓▓▓░░░░░ 52%';
   memValue.style = { color: '#4cc9f0' };
   
@@ -81,7 +82,7 @@ async function preserveStateDemo() {
   memBox.appendChild(memValue);
   
   // Status message
-  const status = tty.document.createElement('text');
+  const status = document.createElement('text');
   status.textContent = '✅ All systems operational';
   status.style = {
     color: '#4cc9f0',
@@ -97,10 +98,9 @@ async function preserveStateDemo() {
   dashboard.appendChild(dataContainer);
   dashboard.appendChild(status);
   
-  tty.document.body.appendChild(dashboard);
+  document.body.appendChild(dashboard);
   
   // Initial render
-  tty.document.render();
   
   // Show the dashboard for a moment
   await new Promise(resolve => setTimeout(resolve, 2000));

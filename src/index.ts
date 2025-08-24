@@ -5,15 +5,19 @@
  * Write standard HTML elements with CSS styling, render to ANSI terminal output.
  */
 
-// === New HTML-to-Terminal API ===
-export { createTTYDocument, createTTYDocumentWithAutoRender } from './core/createTTYDocument.js';
-export type { TTYDocumentOptions, TTYDocumentResult } from './core/createTTYDocument.js';
+// === HTML-to-Terminal API ===
+export { createTTY } from './core/createTTYDocument.js';
+export type { TTYDocumentOptions, TTYResult } from './core/createTTYDocument.js';
 export { initializeHTMLExtensions, YOGA_BOUNDS, YOGA_NODE } from './core/HTMLExtensions.js';
 
 // TTY Runtime (terminal-specific functionality)
 export { TTYRuntime, detectTTYRuntime } from './core/TTYRuntime.js';
 export { BunTTYRuntime } from './runtime/BunTTYRuntime.js';
 export { MockTTYRuntime } from './runtime/MockTTYRuntime.js';
+
+// Event System
+export { TTYEventTranslator } from './events/TTYEventTranslator.js';
+export type { TTYEventTranslatorOptions } from './events/TTYEventTranslator.js';
 
 // Rendering Pipeline
 export { ScreenBuffer } from './rendering/ScreenBuffer.js';
@@ -30,34 +34,5 @@ export type {
   TTYMouseEvent 
 } from './core/TTYRuntime.js';
 
-// === Backwards Compatibility (DEPRECATED) ===
-// Legacy API - use createTTYDocument() for new projects
-
-import { createTTYDocument } from './core/createTTYDocument.js';
-
-// Temporary stub for backwards compatibility
-// TODO: Remove in next major version
-export function createTTY(options: any = {}): any {
-  console.warn('DEPRECATED: createTTY() is deprecated. Use createTTYDocument() instead for HTML-based terminal UIs.');
-  
-  // For now, delegate to new API but this will be removed
-  const { document, runtime, render, dispose } = createTTYDocument(options);
-  
-  return {
-    document,
-    runtime,
-    render,
-    dispose,
-    // Legacy compatibility methods
-    createElement: (tagName: string) => document.createElement(tagName),
-    appendChild: (child: any) => document.body.appendChild(child),
-    [Symbol.dispose]: dispose
-  };
-}
-
-// Another alias for backwards compatibility
-export function createTTYWindow(options: any = {}): any {
-  console.warn('DEPRECATED: createTTYWindow() is deprecated. Use createTTYDocument() instead for HTML-based terminal UIs.');
-  return createTTY(options);
-}
+// No backwards compatibility - clean modern API only
 

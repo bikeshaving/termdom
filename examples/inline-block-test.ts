@@ -4,20 +4,21 @@
  * Test inline-block elements specifically
  */
 
-import { createTTYWindow } from '../src/index.js';
+import { createTTY, BunTTYRuntime } from '../src/index.js';
 
-const tty = createTTYWindow();
+const runtime = new BunTTYRuntime();
+const { document, dispose } = createTTY({ runtime });
 
 // Simple container with inline-block button
-const container = tty.document.createElement('container');
+const container = document.createElement('container');
 container.style.backgroundColor = 'blue';
 container.style.padding = [1, 2, 1, 2];
 
 // Add text before button
-container.appendChild(tty.document.createTextNode('Before '));
+container.appendChild(document.createTextNode('Before '));
 
 // Add inline-block button
-const button = tty.document.createElement('button');
+const button = document.createElement('button');
 button.textContent = 'CLICK';
 button.style.backgroundColor = 'red';
 button.style.color = 'white';
@@ -32,10 +33,9 @@ console.log('  childNodes.length:', button.childNodes.length);
 container.appendChild(button);
 
 // Add text after button
-container.appendChild(tty.document.createTextNode(' After'));
+container.appendChild(document.createTextNode(' After'));
 
-tty.document.body.appendChild(container);
-tty.document.render();
+document.body.appendChild(container);
 
 // Debug actual layout after render
 console.log('\n=== Layout Debug ===');
@@ -56,5 +56,5 @@ console.log('Expected "After" x position:', contentArea.x + Bun.stringWidth(befo
 console.log('"After" text starts with:', afterText.slice(0, 3));
 
 setTimeout(() => {
-  tty[Symbol.dispose]();
+  dispose();
 }, 3000);

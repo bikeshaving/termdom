@@ -5,13 +5,14 @@
  * Write standard HTML/CSS → Render to beautiful terminal output!
  */
 
-import { createTTYDocument } from '../src/index.js';
+import { createTTY, BunTTYRuntime } from '../src/index.js';
 
 async function helloWorld() {
   console.log('🚀 HTML-to-Terminal Hello World!\n');
   
   // Create a TTY document (like a browser, but for terminals)
-  const { document, render, dispose } = createTTYDocument();
+  const runtime = new BunTTYRuntime();
+  const { document, dispose } = createTTY({ runtime });
   
   // Create standard HTML elements with CSS styling!
   const container = document.createElement('div');
@@ -33,16 +34,17 @@ async function helloWorld() {
   console.log('📝 Container tag:', container.tagName);
   console.log('🎨 Background color:', container.style.getPropertyValue('background-color'));
   
-  // Render HTML to terminal with Yoga layout + ANSI output
-  await render();
-  
-  // Show layout information
-  const rect = container.getBoundingClientRect();
-  console.log('\n📐 Layout computed:');
-  console.log(`   Size: ${rect.width} x ${rect.height}`);
-  console.log(`   Position: (${rect.x}, ${rect.y})`);
-  
-  console.log('\n🎉 HTML-to-Terminal rendering complete!');
+  // Rendering happens automatically via MutationObserver!
+  // Wait for layout to compute
+  setTimeout(() => {
+    // Show layout information
+    const rect = container.getBoundingClientRect();
+    console.log('\n📐 Layout computed:');
+    console.log(`   Size: ${rect.width} x ${rect.height}`);
+    console.log(`   Position: (${rect.x}, ${rect.y})`);
+    
+    console.log('\n🎉 HTML-to-Terminal rendering complete!');
+  }, 100);
   
   // Clean up
   setTimeout(() => {

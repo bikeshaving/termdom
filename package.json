@@ -12,7 +12,8 @@
     "typescript": "^5.9.2"
   },
   "dependencies": {
-    "happy-dom": "^18.0.1",
+    "@types/jsdom": "^21.1.7",
+    "jsdom": "^26.1.0",
     "yoga-layout": "^3.2.1"
   }
 }

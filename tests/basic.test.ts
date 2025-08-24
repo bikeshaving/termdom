@@ -3,15 +3,14 @@
  */
 
 import { test, expect } from 'bun:test';
-import { createTTYDocument, MockTTYRuntime } from '../src/index.js';
+import { createTTY, MockTTYRuntime } from '../src/index.js';
 
-test('createTTYDocument provides HTML document with terminal capabilities', () => {
+test('createTTY provides HTML document with terminal capabilities', () => {
   const mockRuntime = new MockTTYRuntime();
-  const { document, runtime, render, dispose } = createTTYDocument({ runtime: mockRuntime });
+  const { document, runtime, dispose } = createTTY({ runtime: mockRuntime });
   
   expect(document).toBeDefined();
   expect(document.createElement).toBeDefined();
-  expect(render).toBeDefined();
   expect(runtime).toBeDefined();
   expect(typeof dispose).toBe('function');
   
@@ -20,7 +19,7 @@ test('createTTYDocument provides HTML document with terminal capabilities', () =
 
 test('can create standard HTML elements', () => {
   const mockRuntime = new MockTTYRuntime();
-  const { document, dispose } = createTTYDocument({ runtime: mockRuntime });
+  const { document, dispose } = createTTY({ runtime: mockRuntime });
   
   const div = document.createElement('div');
   const span = document.createElement('span');
@@ -35,7 +34,7 @@ test('can create standard HTML elements', () => {
 
 test('can build HTML DOM tree', () => {
   const mockRuntime = new MockTTYRuntime();
-  const { document, dispose } = createTTYDocument({ runtime: mockRuntime });
+  const { document, dispose } = createTTY({ runtime: mockRuntime });
   
   const container = document.createElement('div');
   const span = document.createElement('span');
@@ -55,7 +54,7 @@ test('can build HTML DOM tree', () => {
 
 test('HTML elements have CSS styling', () => {
   const mockRuntime = new MockTTYRuntime();
-  const { document, dispose } = createTTYDocument({ runtime: mockRuntime });
+  const { document, dispose } = createTTY({ runtime: mockRuntime });
   
   const element = document.createElement('div');
   
@@ -82,7 +81,7 @@ test('runtime provides correct terminal dimensions', () => {
   const mockRuntime = new MockTTYRuntime({
     dimensions: { columns: 100, rows: 50 }
   });
-  const { runtime, dispose } = createTTYDocument({ runtime: mockRuntime });
+  const { runtime, dispose } = createTTY({ runtime: mockRuntime });
   
   const dimensions = runtime.getTerminalSize();
   expect(dimensions.columns).toBe(100);
@@ -93,7 +92,7 @@ test('runtime provides correct terminal dimensions', () => {
 
 test('HTML elements support layout APIs', () => {
   const mockRuntime = new MockTTYRuntime();
-  const { document, dispose } = createTTYDocument({ runtime: mockRuntime });
+  const { document, dispose } = createTTY({ runtime: mockRuntime });
   
   // Test that standard HTML elements have layout APIs
   const div = document.createElement('div');
@@ -115,7 +114,7 @@ test('HTML elements support layout APIs', () => {
 
 test('can render HTML to terminal without errors', async () => {
   const mockRuntime = new MockTTYRuntime();
-  const { document, render, dispose } = createTTYDocument({ runtime: mockRuntime });
+  const { document, dispose } = createTTY({ runtime: mockRuntime });
   
   const div = document.createElement('div');
   div.textContent = 'Test content';
@@ -123,7 +122,7 @@ test('can render HTML to terminal without errors', async () => {
   document.body.appendChild(div);
   
   // Should render without throwing errors
-  await expect(render()).resolves.toBeUndefined();
-  
+  // DOM automatically re-renders via MutationObserver
+  await new Promise(resolve => setTimeout(resolve));  
   dispose();
 });

@@ -5,7 +5,7 @@
  * and ScreenBuffer rendering to efficiently update the terminal through TTYRuntime.
  */
 
-import { HTMLElement } from 'happy-dom';
+import { HTMLElement } from '../dom.js';
 import { TTYRuntime } from './TTYRuntime.js';
 import { ScreenBuffer } from '../rendering/ScreenBuffer.js';
 import { LayoutEngine } from '../layout/LayoutEngine.js';

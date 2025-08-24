@@ -5,17 +5,18 @@
  * ensuring proper terminal cleanup even if exceptions occur or the process exits unexpectedly.
  */
 
-import { createTTYWindow } from '../src/index.js';
+import { createTTY, BunTTYRuntime } from '../src/index.js';
 
 async function usingDemo() {
   console.log('🎯 Demonstrating automatic resource management with `using`');
   
   // Using the new 'using' syntax ensures automatic cleanup
-  using tty = createTTYWindow();
+  const runtime = new BunTTYRuntime();
+  using { document, dispose } = createTTY({ runtime });
   
   try {
     // Create a simple UI
-    const container = tty.document.createElement('container');
+    const container = document.createElement('container');
     container.style = {
       backgroundColor: '#1a1a1a',
       padding: 2,
@@ -24,8 +25,7 @@ async function usingDemo() {
     };
     container.textContent = 'This demo uses automatic resource management!';
     
-    tty.document.body.appendChild(container);
-    tty.document.render();
+    document.body.appendChild(container);
     
     console.log('✅ TTY UI rendered with automatic cleanup');
     console.log('💡 Terminal mouse tracking and styling will be cleaned up automatically');
@@ -51,10 +51,11 @@ async function usingDemo() {
 async function manualDemo() {
   console.log('\n🔧 For comparison - manual cleanup approach:');
   
-  const tty = createTTYWindow();
+  const runtime = new BunTTYRuntime();
+  const { document, dispose } = createTTY({ runtime });
   
   try {
-    const container = tty.document.createElement('container');
+    const container = document.createElement('container');
     container.style = {
       backgroundColor: '#2a2a2a',
       padding: 1,
@@ -63,14 +64,13 @@ async function manualDemo() {
     };
     container.textContent = 'This demo requires manual cleanup';
     
-    tty.document.body.appendChild(container);
-    tty.document.render();
+    document.body.appendChild(container);
     
     await new Promise(resolve => setTimeout(resolve, 1000));
     
   } finally {
     // Must remember to manually call [Symbol.dispose]()
-    tty[Symbol.dispose]();
+    dispose();
     console.log('🧹 Manually cleaned up');
   }
 }

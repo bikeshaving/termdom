@@ -1,4 +1,4 @@
-import type { CSSStyleDeclaration } from 'happy-dom';
+import type { CSSStyleDeclaration } from '../dom.js';
 
 /**
  * Helper function to set multiple CSS properties at once

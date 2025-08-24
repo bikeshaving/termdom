@@ -1,3 +1,5 @@
+import { EventTarget } from '../dom.js';
+
 /**
  * TTYRuntime - Abstract runtime interface for TTY Object Model
  *

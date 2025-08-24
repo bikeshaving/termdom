@@ -6,7 +6,7 @@
  * Works with standard HTML elements enhanced with Symbol properties.
  */
 
-import { HTMLElement, DOMRect, Node, Element } from 'happy-dom';
+import { HTMLElement, Element, Node, DOMRect } from '../dom.js';
 import { YOGA_BOUNDS, YOGA_NODE } from '../core/HTMLExtensions.js';
 import { TextMeasurement } from './TextMeasurement.js';
 import { GreedyTextBreaker, type InlineElement } from '../text/index.js';
@@ -42,7 +42,7 @@ export class LayoutEngine {
     }
 
     // Now TypeScript knows root is HTMLElement
-    const htmlRoot = root as HTMLElement;
+    const htmlRoot = root;
 
     // Ensure root has a Yoga node
     if (!htmlRoot[YOGA_NODE]) {
@@ -112,10 +112,14 @@ export class LayoutEngine {
   private buildYogaTree(element: HTMLElement): void {
     this.setupYogaNode(element);
     
-    // Get element children using standard DOM traversal
-    const children = Array.from(element.childNodes).filter(child => 
+    // Get all children (elements + text nodes)
+    const children = Array.from(element.childNodes);
+    const elementChildren = children.filter(child => 
       child.nodeType === Node.ELEMENT_NODE
     ) as HTMLElement[];
+    const textNodes = children.filter(child => 
+      child.nodeType === Node.TEXT_NODE && child.textContent && child.textContent.trim()
+    ) as Text[];
     
     // Clear existing children
     const yogaNode = element[YOGA_NODE]!;
@@ -123,9 +127,17 @@ export class LayoutEngine {
       yogaNode.removeChild(yogaNode.getChild(0));
     }
     
-    // Add children to Yoga tree, but handle inline/inline-block elements specially
+    // If this element has text content but no element children, it's a leaf node
+    // Set up measurement function for intrinsic sizing
+    if (textNodes.length > 0 && elementChildren.length === 0) {
+      const measureFunc = TextMeasurement.createMeasureFunction(element);
+      yogaNode.setMeasureFunc(measureFunc);
+      return; // Leaf nodes don't have Yoga children
+    }
+    
+    // Add element children to Yoga tree
     let yogaChildIndex = 0;
-    for (const child of children) {
+    for (const child of elementChildren) {
       const display = child.style.getPropertyValue('display');
       if (display === 'inline' || display === 'inline-block') {
         // Inline/inline-block elements are handled by separate inline layout system
@@ -180,7 +192,9 @@ export class LayoutEngine {
   private applyStylesToYoga(element: HTMLElement): void {
     if (!element[YOGA_NODE]) return;
 
-    const style = element.style;
+    // Use computed style for proper CSS cascade
+    const computedStyle = element.ownerDocument?.defaultView?.getComputedStyle(element);
+    const style = computedStyle || element.style;
     const node = element[YOGA_NODE]!;
 
     // Display type
@@ -249,12 +263,37 @@ export class LayoutEngine {
     if (!isNaN(minHeight)) node.setMinHeight(minHeight);
     if (!isNaN(maxWidth)) node.setMaxWidth(maxWidth);
     if (!isNaN(maxHeight)) node.setMaxHeight(maxHeight);
+    
 
     // Flex properties
     const flexGrow = parseFloat(style.getPropertyValue('flex-grow'));
     const flexShrink = parseFloat(style.getPropertyValue('flex-shrink'));
     if (!isNaN(flexGrow)) node.setFlexGrow(flexGrow);
     if (!isNaN(flexShrink)) node.setFlexShrink(flexShrink);
+
+    // Position type and offset values
+    const position = style.getPropertyValue('position');
+    if (position === 'relative') {
+      node.setPositionType(this.yoga.POSITION_TYPE_RELATIVE);
+    } else if (position === 'absolute') {
+      node.setPositionType(this.yoga.POSITION_TYPE_ABSOLUTE);
+    } else {
+      // 'static' or unspecified - use default
+      node.setPositionType(this.yoga.POSITION_TYPE_STATIC);
+    }
+
+    // Position offset values (top, right, bottom, left)
+    if (position === 'relative' || position === 'absolute') {
+      const top = parseInt(style.getPropertyValue('top'));
+      const right = parseInt(style.getPropertyValue('right'));
+      const bottom = parseInt(style.getPropertyValue('bottom'));
+      const left = parseInt(style.getPropertyValue('left'));
+
+      if (!isNaN(top)) node.setPosition(this.yoga.EDGE_TOP, top);
+      if (!isNaN(right)) node.setPosition(this.yoga.EDGE_RIGHT, right);
+      if (!isNaN(bottom)) node.setPosition(this.yoga.EDGE_BOTTOM, bottom);
+      if (!isNaN(left)) node.setPosition(this.yoga.EDGE_LEFT, left);
+    }
 
     // Padding
     const [top, right, bottom, left] = this.getPadding(element);

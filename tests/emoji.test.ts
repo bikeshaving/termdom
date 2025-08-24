@@ -8,18 +8,19 @@
  */
 
 import { test, expect } from 'bun:test';
-import { createTTYDocument, MockTTYRuntime } from '../src/index.js';
+import { createTTY, MockTTYRuntime } from '../src/index.js';
 import { expectSnapshot } from '../src/testing/snapshotUtils.js';
 
 test('renders single emoji correctly', async () => {
   const mockRuntime = new MockTTYRuntime();
-  const { document, render, dispose } = createTTYDocument({ runtime: mockRuntime });
+  const { document, dispose } = createTTY({ runtime: mockRuntime });
   
   const span = document.createElement('span');
   span.textContent = '🚀';
   document.body.appendChild(span);
   
-  await render();
+  // Wait for MutationObserver to process DOM changes
+  await new Promise(resolve => setTimeout(resolve));
   
   expectSnapshot('single-emoji', mockRuntime, { updateSnapshots: true });
   dispose();
@@ -27,13 +28,14 @@ test('renders single emoji correctly', async () => {
 
 test('renders emoji with text correctly', async () => {
   const mockRuntime = new MockTTYRuntime();
-  const { document, render, dispose } = createTTYDocument({ runtime: mockRuntime });
+  const { document, dispose } = createTTY({ runtime: mockRuntime });
   
   const span = document.createElement('span');
   span.textContent = 'Hello 🌍 World!';
   document.body.appendChild(span);
   
-  await render();
+  // Wait for MutationObserver to process DOM changes
+  await new Promise(resolve => setTimeout(resolve));
   
   expectSnapshot('emoji-with-text', mockRuntime, { updateSnapshots: true });
   dispose();
@@ -41,7 +43,7 @@ test('renders emoji with text correctly', async () => {
 
 test('renders multiple emojis correctly', async () => {
   const mockRuntime = new MockTTYRuntime();
-  const { document, render, dispose } = createTTYDocument({ runtime: mockRuntime });
+  const { document, dispose } = createTTY({ runtime: mockRuntime });
   
   const container = document.createElement('div');
   container.style.setProperty('display', 'flex');
@@ -64,7 +66,8 @@ test('renders multiple emojis correctly', async () => {
   
   document.body.appendChild(container);
   
-  await render();
+  // Wait for MutationObserver to process DOM changes
+  await new Promise(resolve => setTimeout(resolve));
   
   expectSnapshot('multiple-emojis', mockRuntime, { updateSnapshots: true });
   dispose();
@@ -72,7 +75,7 @@ test('renders multiple emojis correctly', async () => {
 
 test('renders emoji with colors correctly', async () => {
   const mockRuntime = new MockTTYRuntime();
-  const { document, render, dispose } = createTTYDocument({ runtime: mockRuntime });
+  const { document, dispose } = createTTY({ runtime: mockRuntime });
   
   const container = document.createElement('div');
   container.style.setProperty('display', 'flex');
@@ -87,7 +90,8 @@ test('renders emoji with colors correctly', async () => {
   container.appendChild(emojiSpan);
   document.body.appendChild(container);
   
-  await render();
+  // Wait for MutationObserver to process DOM changes
+  await new Promise(resolve => setTimeout(resolve));
   
   expectSnapshot('emoji-with-colors', mockRuntime, { updateSnapshots: true });
   dispose();
@@ -95,7 +99,7 @@ test('renders emoji with colors correctly', async () => {
 
 test('handles emoji width calculation', async () => {
   const mockRuntime = new MockTTYRuntime();
-  const { document, render, dispose } = createTTYDocument({ runtime: mockRuntime });
+  const { document, dispose } = createTTY({ runtime: mockRuntime });
   
   // Test that emojis are properly calculated for layout
   const container = document.createElement('div');
@@ -117,7 +121,8 @@ test('handles emoji width calculation', async () => {
   container.appendChild(moreText);
   document.body.appendChild(container);
   
-  await render();
+  // Wait for MutationObserver to process DOM changes
+  await new Promise(resolve => setTimeout(resolve));
   
   expectSnapshot('emoji-width-layout', mockRuntime, { updateSnapshots: true });
   dispose();

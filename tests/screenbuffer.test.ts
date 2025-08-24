@@ -3,6 +3,7 @@
  */
 
 import { test, expect } from "bun:test";
+import { DOMRect } from '../src/dom.js';
 import { ScreenBuffer } from '../src/rendering/ScreenBuffer.js';
 import { MockTTYRuntime } from '../src/runtime/MockTTYRuntime.js';
 
@@ -190,7 +191,7 @@ test("ScreenBuffer fill region", async () => {
     runtime: testEnv.runtime
   });
 
-  const region = { x: 2, y: 1, width: 4, height: 2 };
+  const region = new DOMRect(2, 1, 4, 2);
   buffer.fill(region, '#', { fgColor: 'red' });
   await buffer.render();
 

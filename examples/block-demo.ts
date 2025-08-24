@@ -4,9 +4,10 @@
  * Test display: 'block' implementation
  */
 
-import { createTTYDocument } from '../src/index.js';
+import { createTTY, BunTTYRuntime } from '../src/index.js';
 
-const { document, render, dispose } = createTTYDocument();
+const runtime = new BunTTYRuntime();
+const { document, dispose } = createTTY({ runtime });
 
 // Create a block container
 const blockContainer = document.createElement('div');
@@ -42,7 +43,7 @@ console.log('- Container should use flex column layout (vertical stack)');
 console.log('- Children should stretch to full width');
 console.log('- Should look like traditional CSS block layout');
 
-render();
+// Layout renders automatically via MutationObserver!
 
 setTimeout(() => {
   dispose();

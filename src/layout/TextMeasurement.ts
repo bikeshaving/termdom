@@ -5,7 +5,7 @@
  * using Yoga's measurement API for proper text flow.
  */
 
-import { HTMLElement } from 'happy-dom';
+import { HTMLElement } from '../dom.js';
 
 export interface TextMeasureResult {
   width: number;

@@ -13,6 +13,7 @@
  * - No actual terminal I/O or process control
  */
 
+import { CustomEvent } from '../dom.js';
 import { TTYRuntime, type TTYDimensions, type TTYCapabilities, type TTYKeyEvent, type TTYMouseEvent, type CellStyleOptions } from '../core/TTYRuntime.js';
 
 interface MockTTYRuntimeOptions {

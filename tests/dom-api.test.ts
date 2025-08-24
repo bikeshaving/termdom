@@ -8,44 +8,40 @@
  */
 
 import { test, expect } from 'bun:test';
-import { createTTYDocument, MockTTYRuntime } from '../src/index.js';
+import { createTTY, MockTTYRuntime } from '../src/index.js';
 import { YOGA_BOUNDS } from '../src/core/HTMLExtensions.js';
 
 test('document.elementFromPoint() finds element at coordinates', async () => {
   const mockRuntime = new MockTTYRuntime();
-  const { document, render, dispose } = createTTYDocument({ runtime: mockRuntime });
+  const { document, dispose } = createTTY({ runtime: mockRuntime });
   
-  // Create a button with known layout
+  // Create a button with known dimensions
   const button = document.createElement('button');
   button.textContent = 'Test Button';
-  button.style.setProperty('position', 'absolute');
-  button.style.setProperty('left', '10px');
-  button.style.setProperty('top', '5px');
   button.style.setProperty('width', '20px');
   button.style.setProperty('height', '3px');
   document.body.appendChild(button);
   
-  // Manually set bounds for testing (normally set by layout engine)
-  // We need to set bounds for HTML, body, and button elements
-  (document.documentElement as any)[YOGA_BOUNDS] = new (document.defaultView as any).DOMRect(0, 0, 80, 25);
-  (document.body as any)[YOGA_BOUNDS] = new (document.defaultView as any).DOMRect(0, 0, 80, 25);
-  (button as any)[YOGA_BOUNDS] = new (document.defaultView as any).DOMRect(10, 5, 20, 3);
+  // Compute layout (this sets YOGA_BOUNDS internally)
+  // Wait for MutationObserver to process DOM changes and compute layout
+  await new Promise(resolve => setTimeout(resolve, 10));
   
-  // Test hit detection
-  const elementAt12_6 = document.elementFromPoint(12, 6);
-  const elementAt5_6 = document.elementFromPoint(5, 6); // Outside button
-  const elementAt35_6 = document.elementFromPoint(35, 6); // Outside button
+  // Test hit detection within computed bounds
+  // Button should be at (0,0) with size 20x3
+  const elementAt10_1 = document.elementFromPoint(10, 1); // Inside button
+  const elementAt25_1 = document.elementFromPoint(25, 1); // Outside button width
+  const elementAt10_5 = document.elementFromPoint(10, 5); // Outside button height
   
-  expect(elementAt12_6).toBe(button); // Should hit button
-  expect(elementAt5_6).toBe(document.body); // Should hit body (parent)  
-  expect(elementAt35_6).toBe(document.body); // Should hit body (parent)
+  expect(elementAt10_1).toBe(button); // Should hit button
+  expect(elementAt25_1).toBe(document.body); // Should hit body (outside button, inside body)
+  expect(elementAt10_5).toBe(document.body); // Should hit body (outside button, inside body)
   
   dispose();
 });
 
 test('document.elementFromPoint() finds deepest element', async () => {
   const mockRuntime = new MockTTYRuntime();
-  const { document, render, dispose } = createTTYDocument({ runtime: mockRuntime });
+  const { document, dispose } = createTTY({ runtime: mockRuntime });
   
   // Create nested elements
   const container = document.createElement('div');
@@ -57,25 +53,29 @@ test('document.elementFromPoint() finds deepest element', async () => {
   container.appendChild(button);
   document.body.appendChild(container);
   
-  // Set up nested bounds (span inside button inside container)
-  // We need to set bounds for HTML, body, and all nested elements
-  (document.documentElement as any)[YOGA_BOUNDS] = new (document.defaultView as any).DOMRect(0, 0, 80, 25);
-  (document.body as any)[YOGA_BOUNDS] = new (document.defaultView as any).DOMRect(0, 0, 80, 25);
-  (container as any)[YOGA_BOUNDS] = new (document.defaultView as any).DOMRect(0, 0, 50, 10);
-  (button as any)[YOGA_BOUNDS] = new (document.defaultView as any).DOMRect(10, 2, 30, 6);
-  (span as any)[YOGA_BOUNDS] = new (document.defaultView as any).DOMRect(12, 3, 26, 4);
+  // Set dimensions so we have predictable layout
+  container.style.setProperty('width', '50px');
+  container.style.setProperty('height', '10px');
+  button.style.setProperty('width', '30px');  
+  button.style.setProperty('height', '6px');
+  span.style.setProperty('width', '26px');
+  span.style.setProperty('height', '4px');
   
-  // Test that deepest element is returned
-  const elementAt15_4 = document.elementFromPoint(15, 4);
+  // Compute layout
+  // Wait for MutationObserver to process DOM changes and compute layout
+  await new Promise(resolve => setTimeout(resolve, 10));
   
-  expect(elementAt15_4).toBe(span); // Should return deepest element (span)
+  // Test that deepest element is returned (span should be at 0,0 since it's the deepest)
+  const elementAt5_2 = document.elementFromPoint(5, 2);
+  
+  expect(elementAt5_2).toBe(span); // Should return deepest element (span)
   
   dispose();
 });
 
 test('element.contains() works correctly', () => {
   const mockRuntime = new MockTTYRuntime();
-  const { document, dispose } = createTTYDocument({ runtime: mockRuntime });
+  const { document, dispose } = createTTY({ runtime: mockRuntime });
   
   const container = document.createElement('div');
   const button = document.createElement('button');
@@ -98,7 +98,7 @@ test('element.contains() works correctly', () => {
 
 test('element.closest() finds ancestor by tag name', () => {
   const mockRuntime = new MockTTYRuntime();
-  const { document, dispose } = createTTYDocument({ runtime: mockRuntime });
+  const { document, dispose } = createTTY({ runtime: mockRuntime });
   
   const form = document.createElement('form');
   const div = document.createElement('div');
@@ -124,19 +124,24 @@ test('element.closest() finds ancestor by tag name', () => {
   dispose();
 });
 
-test('elementFromPoint returns null for coordinates outside any element', () => {
+test('elementFromPoint returns null for coordinates outside document bounds', async () => {
   const mockRuntime = new MockTTYRuntime();
-  const { document, dispose } = createTTYDocument({ runtime: mockRuntime });
+  const { document, dispose } = createTTY({ runtime: mockRuntime });
   
-  // Add a button with specific bounds but no body bounds
+  // Add a small button
   const button = document.createElement('button');
-  (button as any)[YOGA_BOUNDS] = new (document.defaultView as any).DOMRect(10, 10, 5, 3);
+  button.style.setProperty('width', '5px');
+  button.style.setProperty('height', '3px');
   document.body.appendChild(button);
   
-  // Body has no bounds set, so should return null for any coordinates
-  expect(document.elementFromPoint(12, 12)).toBe(null); // Even inside button bounds
-  expect(document.elementFromPoint(0, 0)).toBe(null);
-  expect(document.elementFromPoint(100, 100)).toBe(null);
+  // Compute layout
+  // Wait for MutationObserver to process DOM changes and compute layout
+  await new Promise(resolve => setTimeout(resolve, 10));
+  
+  // Test coordinates outside terminal bounds (documentElement is 80x24)
+  expect(document.elementFromPoint(100, 100)).toBe(null); // Outside document bounds
+  expect(document.elementFromPoint(-1, -1)).toBe(null); // Negative coordinates
+  expect(document.elementFromPoint(90, 30)).toBe(null); // Beyond terminal size
   
   dispose();
 });

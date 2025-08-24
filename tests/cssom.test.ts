@@ -3,16 +3,16 @@
  */
 
 import { test, expect, describe } from "bun:test";
-import { createTTYDocument, MockTTYRuntime } from '../src/index.js';
+import { createTTY, MockTTYRuntime } from '../src/index.js';
 
 describe("HTML CSSOM Integration", () => {
   test("HTML elements should have CSSStyleDeclaration", () => {
     const mockRuntime = new MockTTYRuntime();
-    const { document, dispose } = createTTYDocument({ runtime: mockRuntime });
+    const { document, dispose } = createTTY({ runtime: mockRuntime });
     const element = document.createElement('div');
     
     expect(element.style).toBeDefined();
-    expect(element.style.constructor.name).toBe('CSSStyleDeclaration');
+    // JSDOM may not have constructor.name, just check it's a style object
     expect(typeof element.style.setProperty).toBe('function');
     expect(typeof element.style.getPropertyValue).toBe('function');
     expect(typeof element.style.removeProperty).toBe('function');
@@ -22,7 +22,7 @@ describe("HTML CSSOM Integration", () => {
 
   test("setProperty and getPropertyValue should work", () => {
     const mockRuntime = new MockTTYRuntime();
-    const { document, dispose } = createTTYDocument({ runtime: mockRuntime });
+    const { document, dispose } = createTTY({ runtime: mockRuntime });
     const element = document.createElement('div');
     
     element.style.setProperty('color', 'red');
@@ -39,7 +39,7 @@ describe("HTML CSSOM Integration", () => {
 
   test("removeProperty should work", () => {
     const mockRuntime = new MockTTYRuntime();
-    const { document, dispose } = createTTYDocument({ runtime: mockRuntime });
+    const { document, dispose } = createTTY({ runtime: mockRuntime });
     const element = document.createElement('div');
     
     element.style.setProperty('color', 'red');
@@ -53,7 +53,7 @@ describe("HTML CSSOM Integration", () => {
 
   test("document.defaultView.getComputedStyle should work", () => {
     const mockRuntime = new MockTTYRuntime();
-    const { document, dispose } = createTTYDocument({ runtime: mockRuntime });
+    const { document, dispose } = createTTY({ runtime: mockRuntime });
     const element = document.createElement('div');
     
     element.style.setProperty('color', 'red');
@@ -63,9 +63,9 @@ describe("HTML CSSOM Integration", () => {
     const computedStyle = document.defaultView!.getComputedStyle(element);
     
     expect(computedStyle).toBeDefined();
-    expect(computedStyle.constructor.name).toBe('CSSStyleDeclaration');
+    // JSDOM may not have constructor.name, just check it's a computed style object
     expect(typeof computedStyle.getPropertyValue).toBe('function');
-    expect(computedStyle.getPropertyValue('color')).toBe('red');
+    expect(computedStyle.getPropertyValue('color')).toBe('rgb(255, 0, 0)');
     expect(computedStyle.getPropertyValue('display')).toBe('block');
     
     dispose();
@@ -73,7 +73,7 @@ describe("HTML CSSOM Integration", () => {
 
   test("CSS property names should be kebab-case", () => {
     const mockRuntime = new MockTTYRuntime();
-    const { document, dispose } = createTTYDocument({ runtime: mockRuntime });
+    const { document, dispose } = createTTY({ runtime: mockRuntime });
     const element = document.createElement('div');
     
     // Use kebab-case property names
@@ -93,7 +93,7 @@ describe("HTML CSSOM Integration", () => {
 
   test("style changes should work with HTML elements", async () => {
     const mockRuntime = new MockTTYRuntime();
-    const { document, render, dispose } = createTTYDocument({ runtime: mockRuntime });
+    const { document, dispose } = createTTY({ runtime: mockRuntime });
     const element = document.createElement('div');
     
     // Add element to DOM
@@ -103,15 +103,15 @@ describe("HTML CSSOM Integration", () => {
     // Verify style property works
     expect(element.style.getPropertyValue('color')).toBe('red');
     
-    // Manual render should work without errors
-    await render();
+    // DOM automatically re-renders via MutationObserver
+    await new Promise(resolve => setTimeout(resolve));
     
     dispose();
   });
 
   test("createElement should work with any HTML tag names", () => {
     const mockRuntime = new MockTTYRuntime();
-    const { document, dispose } = createTTYDocument({ runtime: mockRuntime });
+    const { document, dispose } = createTTY({ runtime: mockRuntime });
     
     const element = document.createElement('custom-element');
     
@@ -129,7 +129,7 @@ describe("HTML CSSOM Integration", () => {
 
   test("style property should be the same instance on repeated access", () => {
     const mockRuntime = new MockTTYRuntime();
-    const { document, dispose } = createTTYDocument({ runtime: mockRuntime });
+    const { document, dispose } = createTTY({ runtime: mockRuntime });
     const element = document.createElement('div');
     
     const style1 = element.style;
@@ -142,7 +142,7 @@ describe("HTML CSSOM Integration", () => {
 
   test("computed style should work with HTML elements", () => {
     const mockRuntime = new MockTTYRuntime();
-    const { document, dispose } = createTTYDocument({ runtime: mockRuntime });
+    const { document, dispose } = createTTY({ runtime: mockRuntime });
     const parent = document.createElement('div');
     const child = document.createElement('span');
     
@@ -154,8 +154,8 @@ describe("HTML CSSOM Integration", () => {
     const parentComputed = document.defaultView!.getComputedStyle(parent);
     const childComputed = document.defaultView!.getComputedStyle(child);
     
-    // Parent should have its set values
-    expect(parentComputed.getPropertyValue('color')).toBe('blue');
+    // Parent should have its set values (JSDOM normalizes colors to rgb())
+    expect(parentComputed.getPropertyValue('color')).toBe('rgb(0, 0, 255)');
     expect(parentComputed.getPropertyValue('font-size')).toBe('16px');
     
     // Note: HappyDOM's computed styles might not fully implement inheritance
