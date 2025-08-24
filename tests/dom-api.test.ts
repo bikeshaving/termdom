@@ -11,7 +11,7 @@ import { test, expect } from 'bun:test';
 import { createTTY, MockTTYRuntime } from '../src/index.js';
 import { YOGA_BOUNDS } from '../src/core/HTMLExtensions.js';
 
-test('document.elementFromPoint() finds element at coordinates', async () => {
+test('document.elementFromPoint() finds element at coordinates', () => {
   const mockRuntime = new MockTTYRuntime();
   const { document, dispose } = createTTY({ runtime: mockRuntime });
   
@@ -23,8 +23,8 @@ test('document.elementFromPoint() finds element at coordinates', async () => {
   document.body.appendChild(button);
   
   // Compute layout (this sets YOGA_BOUNDS internally)
-  // Wait for MutationObserver to process DOM changes and compute layout
-  await new Promise(resolve => setTimeout(resolve, 10));
+  // Trigger layout computation by calling getBoundingClientRect
+  button.getBoundingClientRect();
   
   // Test hit detection within computed bounds
   // Button should be at (0,0) with size 20x3
@@ -39,7 +39,7 @@ test('document.elementFromPoint() finds element at coordinates', async () => {
   dispose();
 });
 
-test('document.elementFromPoint() finds deepest element', async () => {
+test('document.elementFromPoint() finds deepest element', () => {
   const mockRuntime = new MockTTYRuntime();
   const { document, dispose } = createTTY({ runtime: mockRuntime });
   
@@ -61,9 +61,8 @@ test('document.elementFromPoint() finds deepest element', async () => {
   span.style.setProperty('width', '26px');
   span.style.setProperty('height', '4px');
   
-  // Compute layout
-  // Wait for MutationObserver to process DOM changes and compute layout
-  await new Promise(resolve => setTimeout(resolve, 10));
+  // Trigger layout computation by calling getBoundingClientRect on container
+  container.getBoundingClientRect();
   
   // Test that deepest element is returned (span should be at 0,0 since it's the deepest)
   const elementAt5_2 = document.elementFromPoint(5, 2);
@@ -124,7 +123,7 @@ test('element.closest() finds ancestor by tag name', () => {
   dispose();
 });
 
-test('elementFromPoint returns null for coordinates outside document bounds', async () => {
+test('elementFromPoint returns null for coordinates outside document bounds', () => {
   const mockRuntime = new MockTTYRuntime();
   const { document, dispose } = createTTY({ runtime: mockRuntime });
   
@@ -134,9 +133,8 @@ test('elementFromPoint returns null for coordinates outside document bounds', as
   button.style.setProperty('height', '3px');
   document.body.appendChild(button);
   
-  // Compute layout
-  // Wait for MutationObserver to process DOM changes and compute layout
-  await new Promise(resolve => setTimeout(resolve, 10));
+  // Trigger layout computation by calling getBoundingClientRect on button
+  button.getBoundingClientRect();
   
   // Test coordinates outside terminal bounds (documentElement is 80x24)
   expect(document.elementFromPoint(100, 100)).toBe(null); // Outside document bounds

@@ -56,20 +56,27 @@ export function initializeHTMLExtensions(window: Window & typeof globalThis): vo
    * This is the main layout API that integrates with Yoga layout engine
    */
   HTMLElement.prototype.getBoundingClientRect = function(this: HTMLElement): DOMRect {
-    // Always trigger layout computation on-demand (like browsers do)
-    // This ensures fresh layout even after style changes
-    const document = this.ownerDocument;
-    if (document && document.defaultView) {
-      // Find the layout engine from the document's window
-      const layoutEngine = (document.defaultView as any)._layoutEngine;
-      if (layoutEngine) {
-        // Compute layout from root element (document.documentElement)
-        const termSize = (document.defaultView as any)._terminalSize || { columns: 80, rows: 24 };
-        layoutEngine.computeLayout(document.documentElement, termSize.columns, termSize.rows);
-      }
+    // Process any pending mutations first (like browsers do)
+    const document = this.ownerDocument!;
+    const window = document.defaultView!;
+    const processPendingMutations = (window as any)._processPendingMutations;
+    const computeLayoutIfNeeded = (window as any)._computeLayoutIfNeeded;
+    
+    if (processPendingMutations) {
+      processPendingMutations();
     }
     
-    return this[YOGA_BOUNDS] || new DOMRect(0, 0, 0, 0);
+    // Now compute layout only if there are dirty nodes
+    if (computeLayoutIfNeeded) {
+      computeLayoutIfNeeded();
+    }
+    
+    // After layout computation, YOGA_BOUNDS should be set
+    if (!this[YOGA_BOUNDS]) {
+      throw new Error('Layout computation did not set YOGA_BOUNDS for element');
+    }
+    
+    return this[YOGA_BOUNDS];
   };
 
   /**
@@ -208,6 +215,20 @@ export function initializeHTMLExtensions(window: Window & typeof globalThis): vo
    * This is the core API that TTYEventTranslator will use for hit testing
    */
   Document.prototype.elementFromPoint = function(x: number, y: number): Element | null {
+    // Process any pending mutations first (like browsers do)
+    const window = this.defaultView!;
+    const processPendingMutations = (window as any)._processPendingMutations;
+    const computeLayoutIfNeeded = (window as any)._computeLayoutIfNeeded;
+    
+    if (processPendingMutations) {
+      processPendingMutations();
+    }
+    
+    // Now compute layout only if there are dirty nodes
+    if (computeLayoutIfNeeded) {
+      computeLayoutIfNeeded();
+    }
+    
     return findElementAtPoint(this.documentElement, x, y);
   };
 
@@ -251,17 +272,19 @@ export function initializeHTMLExtensions(window: Window & typeof globalThis): vo
  * Performs depth-first search to find the deepest element at coordinates
  */
 function findElementAtPoint(element: Element, x: number, y: number): Element | null {
-  if (!(element instanceof DOMHTMLElement)) {
+  // Skip non-HTMLElements (text nodes, etc.)
+  if (element.nodeType !== 1) {
     return null;
   }
 
-  const bounds = element[YOGA_BOUNDS];
+  const htmlElement = element as DOMHTMLElement;
+  const bounds = htmlElement[YOGA_BOUNDS];
   if (!bounds || !isPointInRect(x, y, bounds)) {
     return null;
   }
 
   // Check children first (deepest first)
-  const children = Array.from(element.children) as HTMLElement[];
+  const children = Array.from(element.children);
   for (const child of children) {
     const result = findElementAtPoint(child, x, y);
     if (result) {

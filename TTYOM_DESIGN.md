@@ -10,7 +10,7 @@ const { document, render } = createTTYDocument();
 
 const div = document.createElement('div');
 div.style.setProperty('background-color', 'blue');
-div.style.setProperty('color', 'white');  
+div.style.setProperty('color', 'white');
 div.style.setProperty('padding', '2');
 div.textContent = 'Hello Terminal!';
 
@@ -23,7 +23,7 @@ await render(); // → Beautiful ANSI output! 🎨
 **HTML + CSS + Yoga Layout → ANSI Terminal Output**
 
 TTYOM treats the terminal like a browser:
-- **Document**: Standard `HTMLDocument` from HappyDOM
+- **Document**: Standard `HTMLDocument` from JSDOM
 - **Elements**: Regular `div`, `span`, `table`, `input`, `button` elements
 - **Styling**: CSS properties via `element.style`
 - **Layout**: Yoga flexbox engine computes positions
@@ -97,39 +97,39 @@ TTYOM treats the terminal like a browser:
 ┌─────────────────────────────────────────────────────┐
 │                HTML/CSS Input                       │
 │  document.createElement('div')                      │
-│  element.style.setProperty('color', 'blue')        │
+│  element.style.setProperty('color', 'blue')         │
 └─────────────────────────────────────────────────────┘
-                            │
+                          ↓
 ┌─────────────────────────────────────────────────────┐
-│              HappyDOM Layer                         │
-│  ┌─────────────────┐  ┌─────────────────────────────┐ │
-│  │ HTMLDocument    │  │    HTML Elements           │ │
-│  │ (DOM Tree)      │  │  (div, span, table, etc)   │ │
-│  └─────────────────┘  └─────────────────────────────┘ │
+│              JSDOM Layer                            │
+│  ┌─────────────────┐  ┌─────────────────────────────┐
+│  │ HTMLDocument    │  │    HTML Elements            │
+│  │ (DOM Tree)      │  │  (div, span, table, etc)    │
+│  └─────────────────┘  └─────────────────────────────┘
 └─────────────────────────────────────────────────────┘
-                            │
+                          ↓
 ┌─────────────────────────────────────────────────────┐
 │              Layout Layer                           │
-│  ┌─────────────────┐  ┌─────────────────────────────┐ │
-│  │ Symbol Props    │  │     Yoga Engine            │ │
-│  │ (YOGA_BOUNDS,   │  │   (Flexbox Layout)         │ │
-│  │  YOGA_NODE)     │  │                            │ │
-│  └─────────────────┘  └─────────────────────────────┘ │
+│  ┌─────────────────┐  ┌─────────────────────────────┐
+│  │ Symbol Props    │  │     Yoga Engine             │
+│  │ (YOGA_BOUNDS,   │  │   (Flexbox Layout)          │
+│  │  YOGA_NODE)     │  │                             │
+│  └─────────────────┘  └─────────────────────────────┘
 └─────────────────────────────────────────────────────┘
-                            │
+                          ↓
 ┌─────────────────────────────────────────────────────┐
 │             Rendering Layer                         │
-│  ┌─────────────────┐  ┌─────────────────────────────┐ │
-│  │  ScreenBuffer   │  │      ANSI Generator        │ │
-│  │  (Compositing)  │  │   (Colors, Styling)        │ │
-│  └─────────────────┘  └─────────────────────────────┘ │
+│  ┌─────────────────┐  ┌─────────────────────────────┐
+│  │  ScreenBuffer   │  │      ANSI Generator         │
+│  │  (Compositing)  │  │   (Colors, Styling)         │
+│  └─────────────────┘  └─────────────────────────────┘
 └─────────────────────────────────────────────────────┘
-                            │
+                          ↓
 ┌─────────────────────────────────────────────────────┐
 │                Terminal Output                      │
-│  Beautiful ANSI escape sequences with:             │
-│  • Colors & backgrounds • Layout & positioning     │
-│  • Text styling        • Interactive elements      │
+│  Beautiful ANSI escape sequences with:              │
+│  • Colors & backgrounds • Layout & positioning      │
+│  • Text styling        • Interactive elements       │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -151,7 +151,7 @@ HTMLElement.prototype.getBoundingClientRect = function() {
 
 // All the familiar properties work!
 element.offsetWidth   // → width from Yoga layout
-element.clientHeight  // → height from Yoga layout  
+element.clientHeight  // → height from Yoga layout
 element.getClientRects() // → DOMRectList
 ```
 
@@ -209,7 +209,7 @@ const { document, render } = createTTYDocument();
 // Create a beautiful header
 const header = document.createElement('h1');
 header.style.setProperty('color', 'blue');
-header.style.setProperty('font-weight', 'bold');  
+header.style.setProperty('font-weight', 'bold');
 header.textContent = '🚀 TTYOM Demo';
 
 // Create a container with flexbox layout
@@ -265,7 +265,7 @@ table.style.setProperty('border', '1px solid white');
 const header = document.createElement('tr');
 const nameHeader = document.createElement('th');
 nameHeader.textContent = 'Name';
-const ageHeader = document.createElement('th'); 
+const ageHeader = document.createElement('th');
 ageHeader.textContent = 'Age';
 header.appendChild(nameHeader);
 header.appendChild(ageHeader);
@@ -324,11 +324,11 @@ TTYOM works with any framework that can target DOM:
 ```jsx
 function App() {
   const [count, setCount] = useState(0);
-  
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
       <h1 style={{ color: 'blue' }}>Count: {count}</h1>
-      <button 
+      <button
         style={{ backgroundColor: 'green', color: 'white' }}
         onClick={() => setCount(count + 1)}
       >
@@ -347,11 +347,11 @@ ReactDOM.render(<App />, terminalDocument.body);
 <template>
   <div style="display: flex; flex-direction: column">
     <h1 :style="{ color: 'blue' }">Count: {{ count }}</h1>
-    <button 
+    <button
       @click="increment"
       style="background-color: green; color: white"
     >
-      Increment  
+      Increment
     </button>
   </div>
 </template>
@@ -365,33 +365,102 @@ ReactDOM.render(<App />, terminalDocument.body);
 - **Memory Usage**: ~1MB base + ~10KB per 100 elements
 - **Startup Time**: ~10ms (HTML extensions patch)
 
-## Development Roadmap
+## Development Roadmap & Current Status
 
-### ✅ Phase 1: HTML Foundation (DONE)
-- [x] HTML element monkey-patching
-- [x] CSS style property support
-- [x] Yoga layout integration
-- [x] ANSI rendering pipeline
-- [x] Basic elements (div, span, text content)
+### ✅ Phase 1: Core Foundation (COMPLETE!)
+- [x] 🎉 HTML element monkey-patching with Symbol properties
+- [x] 🎨 CSS style property parsing and application
+- [x] 🔧 Yoga flexbox layout integration
+- [x] 🖥️ ANSI rendering pipeline with ScreenBuffer
+- [x] 📱 Smart layout invalidation system
+- [x] 🎯 Element hit testing (elementFromPoint)
+- [x] 🔄 Automatic rendering with MutationObserver
+- [x] 📐 Complete layout APIs (getBoundingClientRect, offset/client properties)
+- [x] 🖱️ Mouse and keyboard event system
+- [x] 🌈 ANSI color and styling support
 
-### 🎯 Phase 2: Rich Elements (In Progress) 
-- [ ] Form elements (`<input>`, `<button>`, `<select>`)
-- [ ] Table elements (`<table>`, `<tr>`, `<td>`)
-- [ ] List elements (`<ul>`, `<ol>`, `<li>`)
-- [ ] Interactive event handling
+### 🎯 Phase 2: Visual & Interaction (HIGH PRIORITY)
 
-### 🚀 Phase 3: Advanced Features
-- [ ] CSS animations and transitions
-- [ ] Responsive design (media queries)
-- [ ] Advanced layout (CSS Grid?)
-- [ ] Accessibility support
-- [ ] DevTools integration
+#### 🔴 Critical Missing Features
+- [ ] 🎨 **Border rendering** (layout implemented, visual TODO)
+- [ ] 📚 **Z-index layering** for modals/dropdowns/tooltips
+- [ ] 🖱️ **Focus management** system for keyboard navigation
+- [ ] 📝 **Input elements** (text, password, button, checkbox)
+- [ ] 📜 **Overflow & scrolling** support
+- [ ] 📊 **Table layout** engine (table, tr, td, th)
 
-### 🌟 Phase 4: Ecosystem
-- [ ] React/Vue/Svelte renderers
-- [ ] Component library
-- [ ] VSCode extension
-- [ ] Online playground
+#### 🟡 Enhanced UX Features
+- [ ] 🎨 **Text alignment** (text-align: center/right/justify)
+- [ ] 📏 **Text properties** (line-height, text-decoration, white-space)
+- [ ] 🔄 **Resize detection** (ResizeObserver for terminal size changes)
+- [ ] 📋 **Selection & Range APIs** for text editing
+- [ ] 🎭 **Advanced styling** (text-shadow, gradients)
+
+### 🚀 Phase 3: Advanced Layout & Animation
+- [ ] 🔲 **CSS Grid** layout system
+- [ ] 🎬 **CSS animations and transitions**
+- [ ] 📱 **Responsive design** (media queries)
+- [ ] ♿ **Accessibility support** (ARIA, screen readers)
+- [ ] 🛠️ **DevTools integration**
+
+### 🌟 Phase 4: Framework Ecosystem
+- [ ] ⚛️ **React renderer** for TTYOM
+- [ ] 💚 **Vue renderer** for TTYOM
+- [ ] 🔥 **Svelte renderer** for TTYOM
+- [ ] 📦 **Component library** (TTY UI Kit)
+- [ ] 🎮 **VSCode extension** for TTYOM development
+- [ ] 🌐 **Online playground** and documentation
+
+---
+
+## 📊 Implementation Status Checklist
+
+### ✅ **FULLY IMPLEMENTED**
+- ✅ **Core DOM APIs**: createElement, appendChild, removeChild, querySelector
+- ✅ **Layout System**: Flexbox with Yoga (row/column, justify-content, align-items)
+- ✅ **CSS Properties**: display, width/height, margin/padding, position, colors
+- ✅ **Layout APIs**: getBoundingClientRect, offset/client properties, elementFromPoint
+- ✅ **Event System**: Mouse events, keyboard events, bubbling/capturing
+- ✅ **Smart Invalidation**: Efficient layout recomputation on changes
+- ✅ **Rendering Pipeline**: ScreenBuffer → ANSI output with delta updates
+- ✅ **Text Handling**: Unicode support with Intl.Segmenter
+- ✅ **Positioning**: Static/relative/absolute positioning support
+
+### 🔶 **PARTIALLY IMPLEMENTED**
+- 🔶 **Borders**: Layout/sizing ✅, visual rendering ❌
+- 🔶 **Scrolling**: Event infrastructure ✅, APIs stubbed ❌
+- 🔶 **Typography**: Basic support ✅, advanced properties ❌
+
+### ❌ **NOT IMPLEMENTED**
+- ❌ **Z-index stacking**: No layering/depth support
+- ❌ **Form controls**: No input/button/select elements
+- ❌ **Tables**: No table layout engine
+- ❌ **Focus system**: No keyboard navigation
+- ❌ **Overflow handling**: No scrollable containers
+- ❌ **CSS Grid**: Only flexbox supported
+- ❌ **Animations**: No transition/animation support
+- ❌ **Advanced text**: No text-align, line-height, etc.
+
+---
+
+## 🎯 **Next Development Priorities**
+
+### **Immediate (Next 1-2 weeks)**
+1. 🎨 **Border visual rendering** - Complete the existing layout implementation
+2. 📚 **Z-index support** - Enable layered UI elements (modals, dropdowns)
+3. 🖱️ **Focus management** - Keyboard navigation system
+
+### **Short-term (Next month)**
+4. 📝 **Basic input elements** - Text input, buttons for forms
+5. 📜 **Overflow scrolling** - Handle content larger than viewport
+6. 📊 **Table layout** - Essential for data display in TUIs
+
+### **Medium-term (2-3 months)**
+7. 🎨 **Advanced styling** - Text alignment, typography improvements
+8. 📱 **Responsive features** - Terminal resize handling
+9. ⚛️ **Framework integration** - React/Vue renderers
+
+This roadmap would make TTYOM the **most complete HTML-to-Terminal solution** ever built! 🚀
 
 ## Why This is Revolutionary
 
@@ -407,7 +476,7 @@ const box = blessed.box({
 screen.append(box);
 ```
 
-### With TTYOM  
+### With TTYOM
 ```typescript
 // HTML-to-Terminal - use what you know!
 const div = document.createElement('div');
