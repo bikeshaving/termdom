@@ -18,12 +18,19 @@ type ClientRectsReturnType = ReturnType<Element['getClientRects']>;
 // Symbol properties for storing layout data (following HappyDOM's pattern)
 export const ELEMENT_BOUNDS = Symbol('elementBounds'); // Single bounding rect for all elements
 export const ELEMENT_RECTS = Symbol('elementRects');   // Multiple rects for inline elements spanning lines
+export const ELEMENT_TEXT_RECTS = Symbol('elementTextRects'); // Text content for each rect in ELEMENT_RECTS
 export const YOGA_NODE = Symbol('yogaNode');           // Yoga layout node (block/flex elements only)
+
+// Interface for text rectangles with content
+export interface TextRect extends DOMRect {
+  text: string; // The text content for this line fragment
+}
 
 // Type for elements with layout properties
 export interface LayoutElement extends HTMLElement {
   [ELEMENT_BOUNDS]?: DOMRect;
   [ELEMENT_RECTS]?: DOMRect[];
+  [ELEMENT_TEXT_RECTS]?: TextRect[];
   [YOGA_NODE]?: Yoga.Node;
 }
 
@@ -32,6 +39,7 @@ declare global {
 	interface Element {
     [ELEMENT_BOUNDS]?: DOMRect;
     [ELEMENT_RECTS]?: DOMRect[];
+    [ELEMENT_TEXT_RECTS]?: TextRect[];
     [YOGA_NODE]?: Yoga.Node;
 	}
 

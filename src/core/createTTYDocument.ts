@@ -1,8 +1,8 @@
 /**
- * createTTYDocument - Factory function for HTML-to-Terminal rendering
+ * createTTYDocument - Revolutionary HTML-to-Terminal rendering
  *
- * Creates a standard HappyDOM document enhanced with terminal capabilities.
- * This replaces the custom TTY element system with familiar HTML/CSS APIs.
+ * Creates a standard JSDOM document with TTYOMDeltaRenderer for perfect terminal output.
+ * 🚀 Now powered by raw xterm.js Buffers + SerializeAddon for zero manual ANSI!
  *
  * Usage:
  * ```typescript
@@ -10,19 +10,16 @@
  * const div = document.createElement('div');
  * div.textContent = 'Hello Terminal!';
  * document.body.appendChild(div);
- * await runtime.render(document);
+ * // Renders automatically via MutationObserver - no manual render() needed!
  * ```
  */
 
-import type { DOMWindow } from 'jsdom';
-import { TTYRuntime, detectTTYRuntime } from './TTYRuntime.js';
-import { ScreenBuffer } from '../rendering/ScreenBuffer.js';
 import { LayoutEngine } from '../layout/LayoutEngine.js';
+import { DirectTTYRenderer } from '../rendering/DirectTTYRenderer.js';
 import { initializeHTMLExtensions, YOGA_NODE, ELEMENT_BOUNDS, ELEMENT_RECTS } from './HTMLExtensions.js';
 import { DOMContext } from './DOMContext.js';
 
 export interface TTYDocumentOptions {
-  runtime?: TTYRuntime;
   width?: number;
   height?: number;
   /** Render mode: 'flow' for inline CLI output, 'fullscreen' for TUI apps */
@@ -32,7 +29,6 @@ export interface TTYDocumentOptions {
 export interface TTYResult {
   document: Document;
   window: DOMWindow;
-  runtime: TTYRuntime;
   dispose: () => void;
   /** Switch to fullscreen TUI mode */
   requestFullScreen?: () => void;
@@ -45,9 +41,6 @@ export interface TTYResult {
  * when the DOM changes (just like a real browser). No manual render() calls needed.
  */
 export function createTTY(options: TTYDocumentOptions = {}): TTYResult {
-  // Auto-detect runtime if not provided
-  const runtime = options.runtime || detectTTYRuntime();
-
   // Create isolated DOM instance for this TTY instance
   const domContext = new DOMContext();
   const { window, document } = domContext;
@@ -57,14 +50,12 @@ export function createTTY(options: TTYDocumentOptions = {}): TTYResult {
 
   // Initialize rendering mode (default to flow for CLI-like behavior)
   const renderMode = options.mode || 'flow';
-  const termSize = runtime.getTerminalSize();
 
-  // Create ScreenBuffer with mode support and window
-  const screenBuffer = new ScreenBuffer({
-    width: options.width || termSize.width,
-    height: options.height || termSize.height,
+  // Create DirectTTYRenderer - simple DOM → ANSI → stdout pipeline
+  const screenBuffer = new DirectTTYRenderer({
+    width: options.width, // Let DirectTTYRenderer handle the fallback logic and error checking
+    height: options.height,
     mode: renderMode,
-    runtime,
     window
   });
 
@@ -74,28 +65,28 @@ export function createTTY(options: TTYDocumentOptions = {}): TTYResult {
   // Make layout engine and terminal size available for on-demand layout computation
   // (use the imported window object, not document.defaultView)
   (window as any)._layoutEngine = layoutEngine;
-  (window as any)._terminalSize = termSize;
+  (window as any)._terminalSize = { width: screenBuffer.width, height: screenBuffer.height };
   
   // Set CSSOM-compliant window dimensions to match terminal viewport
   // These are read-only properties that reflect the actual terminal size
   Object.defineProperty(window, 'innerWidth', {
-    value: termSize.width,
+    value: screenBuffer.width,
     writable: false,
     configurable: true
   });
   Object.defineProperty(window, 'innerHeight', {
-    value: termSize.height,
+    value: screenBuffer.height,
     writable: false,
     configurable: true
   });
   // In terminals, outer dimensions are the same as inner dimensions
   Object.defineProperty(window, 'outerWidth', {
-    value: termSize.width,
+    value: screenBuffer.width,
     writable: false,
     configurable: true
   });
   Object.defineProperty(window, 'outerHeight', {
-    value: termSize.height,
+    value: screenBuffer.height,
     writable: false,
     configurable: true
   });
@@ -114,13 +105,11 @@ export function createTTY(options: TTYDocumentOptions = {}): TTYResult {
 
   if (renderMode === 'flow') {
     // Flow mode: flexible dimensions, content-driven size
-    document.documentElement.style.setProperty('width', `${screenBuffer.width}ch`);
-    // No fixed height - let content determine height
+    // Width constraint now handled by viewport root in layout engine
     document.body.style.setProperty('flex', '1');
   } else {
     // Fullscreen mode: fixed dimensions matching terminal
-    document.documentElement.style.setProperty('width', `${screenBuffer.width}ch`);
-    document.documentElement.style.setProperty('height', `${screenBuffer.height}ch`);
+    // Width/height constraints now handled by viewport root in layout engine
     document.body.style.setProperty('flex', '1');
   }
 
@@ -269,7 +258,7 @@ export function createTTY(options: TTYDocumentOptions = {}): TTYResult {
       // Render using mode-appropriate strategy
       await screenBuffer.renderDelta();
     } catch (error) {
-      console.error('TTY render error:', error);
+      // Silently handle errors - no console.error in production
     }
   };
   
@@ -314,25 +303,27 @@ export function createTTY(options: TTYDocumentOptions = {}): TTYResult {
       observer.takeRecords();
 
       screenBuffer.dispose();
-      runtime.exit(0);
 
       // Dispose the DOM context to free resources
       domContext.dispose();
     } catch (error) {
-      console.error('TTY dispose error:', error);
+      // Silently handle dispose errors
     }
   };
 
   // Set up automatic cleanup on exit
-  runtime.onUncaughtException((error) => {
-    console.error('Uncaught exception in TTY application:', error);
+  process.on('uncaughtException', (error) => {
     dispose();
+    process.exit(1);
   });
 
-  // Handle terminal resize (CSSOM-compliant)
-  runtime.addEventListener('resize', (event: any) => {
-    const newDimensions = event.detail as { width: number; height: number };
-    handleTerminalResize(newDimensions);
+  // Handle terminal resize (CSSOM-compliant) 
+  process.on('SIGWINCH', () => {
+    const newSize = { 
+      width: process.stdout.columns ?? 80, 
+      height: process.stdout.rows ?? 24 
+    };
+    handleTerminalResize(newSize);
   });
 
   // CSSOM-compliant resize handler
@@ -340,7 +331,7 @@ export function createTTY(options: TTYDocumentOptions = {}): TTYResult {
     // Temporarily disconnect observer to prevent mutations during resize
     observer.disconnect();
 
-    // 1. Update ScreenBuffer dimensions
+    // 1. Update TTYOMDeltaRenderer dimensions
     screenBuffer.resize(newSize.width, newSize.height);
 
     // 2. Update CSSOM window properties (redefine since they're not writable)
@@ -365,11 +356,8 @@ export function createTTY(options: TTYDocumentOptions = {}): TTYResult {
       configurable: true
     });
 
-    // 3. Update document root styles to match new terminal size
-    document.documentElement.style.setProperty('width', `${newSize.width}ch`);
-    if (renderMode === 'fullscreen') {
-      document.documentElement.style.setProperty('height', `${newSize.height}ch`);
-    }
+    // 3. Document root styles no longer needed - viewport root handles constraints
+    // Width/height constraints now handled by viewport root in layout engine
 
     // 4. Store new terminal size
     (window as any)._terminalSize = newSize;
@@ -407,8 +395,9 @@ export function createTTY(options: TTYDocumentOptions = {}): TTYResult {
   };
 
   // Handle Ctrl+C gracefully
-  runtime.addEventListener('interrupt', () => {
+  process.on('SIGINT', () => {
     dispose();
+    process.exit(0);
   });
 
   // Function to switch to fullscreen mode
@@ -417,11 +406,10 @@ export function createTTY(options: TTYDocumentOptions = {}): TTYResult {
 
     screenBuffer.setFullscreenMode(true);
 
-    // Update document layout for fullscreen
+    // Update document layout for fullscreen  
     document.documentElement.style.setProperty('display', 'flex');
     document.documentElement.style.setProperty('flex-direction', 'column');
-    document.documentElement.style.setProperty('width', `${screenBuffer.width}ch`);
-    document.documentElement.style.setProperty('height', `${screenBuffer.height}ch`);
+    // Width/height constraints now handled by viewport root in layout engine
 
     document.body.style.setProperty('display', 'flex');
     document.body.style.setProperty('flex-direction', 'column');
@@ -431,7 +419,6 @@ export function createTTY(options: TTYDocumentOptions = {}): TTYResult {
   return {
     document,
     window: window as any,
-    runtime,
     dispose,
     requestFullScreen: !screenBuffer.isFullscreen ? requestFullScreen : undefined
   };

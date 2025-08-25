@@ -1,13 +1,14 @@
 /**
  * TTYRenderer - Orchestrates layout calculation and terminal rendering
  *
- * Coordinates between HappyDOM's tree structure, Yoga layout engine,
- * and ScreenBuffer rendering to efficiently update the terminal through TTYRuntime.
+ * Coordinates between JSDOM's tree structure, Yoga layout engine,
+ * and TTYOMDeltaRenderer (raw xterm.js Buffers + SerializeAddon) for 
+ * revolutionary terminal rendering with zero manual ANSI sequences.
  */
 
 import type { DOMWindow } from 'jsdom';
 import { TTYRuntime } from './TTYRuntime.js';
-import { ScreenBuffer } from '../rendering/ScreenBuffer.js';
+import { TTYOMDeltaRenderer } from '../rendering/TTYOMDeltaRenderer.js';
 import { LayoutEngine } from '../layout/LayoutEngine.js';
 import { ELEMENT_BOUNDS } from './HTMLExtensions.js';
 
@@ -32,7 +33,7 @@ export interface TTYKeyboardEvent {
  */
 export class TTYRenderer {
   private document: any; // TTYDocument reference
-  private rootBuffer: ScreenBuffer;
+  private rootBuffer: TTYOMDeltaRenderer;
   private renderScheduled = false;
   private destroyed = false;
   private runtime: TTYRuntime;
@@ -45,7 +46,7 @@ export class TTYRenderer {
     this.window = window;
 
     const dimensions = runtime.getTerminalSize();
-    this.rootBuffer = new ScreenBuffer({
+    this.rootBuffer = new TTYOMDeltaRenderer({
       width: dimensions.width,
       height: dimensions.height,
       runtime: runtime,
@@ -111,8 +112,8 @@ export class TTYRenderer {
       return;
     }
 
-    // Render using ScreenBuffer's compositeElement method
-    this.rootBuffer.compositeElement(element);
+    // Render using TTYOMDeltaRenderer's DOM rendering
+    this.rootBuffer.renderTree(element);
 
     // Render children
     const children = Array.from(element.children) as HTMLElement[];

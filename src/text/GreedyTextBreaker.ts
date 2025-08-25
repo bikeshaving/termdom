@@ -46,12 +46,14 @@ export class GreedyTextBreaker extends TextBreaker {
           
           lines.push(this.createLineBreak(lineText, lineStartIndex, lineContent));
           
-          // Continue with remaining content
-          currentLineContent = this.getRemainingContent(currentLineContent, breakPoint);
+          // Continue with remaining content + current item
+          const remainingContent = this.getRemainingContent(currentLineContent, breakPoint);
+          currentLineContent = [...remainingContent, item]; // Add the current item that caused the overflow
+          
           currentLineWidth = this.calculateContentWidth(currentLineContent);
           lineStartIndex = breakPoint.textIndex;
           
-          // Don't increment i, we need to process the current item again
+          // Continue to next iteration - we've already processed the current item
           continue;
         } else {
           // No good break point found, force break

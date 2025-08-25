@@ -22,12 +22,28 @@ export class SimpleGreedyTextBreaker extends TextBreaker {
       };
     }
     
+    // Debug log for the flexDirection issue
+    if (text.includes('flexDirection')) {
+      console.log('DEBUG TextBreaker: Input text contains flexDirection');
+      console.log('  maxWidth:', maxWidth);
+    }
+    
     // For now, ignore inline elements and focus on text breaking
     // This can be enhanced later
     const lines: LineBreak[] = [];
     
     // Split text into words, preserving spaces
     const words = this.splitIntoWords(text);
+    
+    if (text.includes('flexDirection')) {
+      console.log('DEBUG TextBreaker: All words around flexDirection:');
+      words.forEach((word, i) => {
+        if (i >= Math.max(0, words.findIndex(w => w.text.includes('flexDirection')) - 2) &&
+            i <= words.findIndex(w => w.text.includes('flexDirection')) + 2) {
+          console.log(`  Word ${i}: "${word.text}" at index ${word.startIndex}`);
+        }
+      });
+    }
     
     let currentLine = '';
     let currentLineWidth = 0;
@@ -37,8 +53,23 @@ export class SimpleGreedyTextBreaker extends TextBreaker {
       const word = words[i];
       const wordWidth = this.getTextWidth(word.text);
       
+      // Debug log for flexDirection issue
+      if (text.includes('flexDirection') && word.text.includes('flex')) {
+        console.log(`DEBUG: Processing word "${word.text}" at index ${word.startIndex}`);
+        console.log(`  currentLine: "${currentLine}"`);
+        console.log(`  currentLineWidth: ${currentLineWidth}, wordWidth: ${wordWidth}, maxWidth: ${maxWidth}`);
+        console.log(`  would exceed: ${currentLineWidth > 0 && currentLineWidth + wordWidth > maxWidth}`);
+      }
+      
       // Check if adding this word would exceed the line width
       if (currentLineWidth > 0 && currentLineWidth + wordWidth > maxWidth) {
+        // Debug log for line breaking
+        if (text.includes('flexDirection') && word.text.includes('flex')) {
+          console.log(`DEBUG: Breaking line before "${word.text}"`);
+          console.log(`  finishing line: "${currentLine}"`);
+          console.log(`  new line will start with: "${word.text}"`);
+        }
+        
         // Finish current line
         lines.push({
           text: currentLine,

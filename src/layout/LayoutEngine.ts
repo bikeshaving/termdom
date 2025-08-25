@@ -8,7 +8,7 @@
 
 import type { DOMContext } from '../core/DOMContext.js';
 import type { DOMWindow } from 'jsdom';
-import { ELEMENT_BOUNDS, ELEMENT_RECTS, YOGA_NODE } from '../core/HTMLExtensions.js';
+import { ELEMENT_BOUNDS, ELEMENT_RECTS, ELEMENT_TEXT_RECTS, YOGA_NODE, type TextRect } from '../core/HTMLExtensions.js';
 import { TextMeasurement } from './TextMeasurement.js';
 import { GreedyTextBreaker, type InlineElement, type BreakResult } from '../text/index.js';
 import Yoga from 'yoga-layout';
@@ -47,6 +47,14 @@ export class LayoutEngine {
     // Now TypeScript knows root is HTMLElement
     const htmlRoot = root;
 
+    // Create a viewport root node that represents the terminal bounds
+    const viewportRoot = this.yoga.Node.create();
+    viewportRoot.setWidth(containerWidth);
+    viewportRoot.setHeight(containerHeight);
+    viewportRoot.setOverflow(this.yoga.OVERFLOW_HIDDEN); // Clip children at viewport bounds
+    viewportRoot.setDisplay(this.yoga.DISPLAY_FLEX);
+    
+    // Viewport root created with overflow:hidden for layout bounds
 
     // Ensure root has a Yoga node
     if (!htmlRoot[YOGA_NODE]) {
@@ -55,8 +63,31 @@ export class LayoutEngine {
 
     // Build Yoga tree and compute layout
     this.buildYogaTree(htmlRoot);
-    htmlRoot[YOGA_NODE]!.calculateLayout(containerWidth, containerHeight);
+    
+    // Make document.documentElement a child of the viewport root
+    const htmlRootYoga = htmlRoot[YOGA_NODE]!;
+    
+    // Remove from any existing parent first
+    const existingParent = htmlRootYoga.getParent();
+    if (existingParent) {
+      console.log(`DEBUG: Removing htmlRoot from existing parent`);
+      existingParent.removeChild(htmlRootYoga);
+    }
+    
+    viewportRoot.insertChild(htmlRootYoga, 0);
+
+    // Compute layout from the viewport root
+    viewportRoot.calculateLayout(containerWidth, containerHeight);
+    
+    // Debug: Check what layout was calculated for document.documentElement
+    const htmlLayout = htmlRootYoga.getComputedLayout();
+    // Document element layout computed
+    
+    // Extract layout starting from document.documentElement (skip viewport root in DOM)
     this.extractLayout(htmlRoot, 0, 0);
+    
+    // Clean up the viewport root node
+    viewportRoot.freeRecursive();
   }
 
 
@@ -103,6 +134,10 @@ export class LayoutEngine {
     if (!element[YOGA_NODE]) {
       const yogaNode = this.yoga.Node.create();
       element[YOGA_NODE] = yogaNode;
+      
+      // Only set the critical CSS default that fixes the overflow issue
+      yogaNode.setFlexShrink(1); // CSS default: 1 (Yoga default: 0) - allows shrinking
+      // Note: Other defaults left as Yoga's defaults to avoid breaking existing layouts
     }
 
     // Always apply styles to Yoga node (styles may have changed)
@@ -172,12 +207,31 @@ export class LayoutEngine {
     // Get computed layout from Yoga
     const layout = element[YOGA_NODE]!.getComputedLayout();
 
+    // Debug the conversion from Yoga layout to DOM bounds
+    const finalX = parentX + layout.left;
+    const finalY = parentY + layout.top;
+    const tagName = (element as any).tagName || 'UNKNOWN';
+    
+    // Debug overflow only if it occurs
+    if (finalX + layout.width > 105) { // Terminal width
+      console.log(`❌ LAYOUT OVERFLOW [${tagName}]: right=${finalX + layout.width} exceeds terminal width 105`);
+    }
+
+    // Convert floating-point Yoga coordinates to integer terminal positions
+    // Use Math.floor to ensure we never exceed container bounds
+    const intX = Math.floor(finalX);
+    const intY = Math.floor(finalY);
+    const intWidth = Math.floor(layout.width);
+    const intHeight = Math.floor(layout.height);
+    
+    // Rounding debug removed for cleaner output
+
     // Store computed bounds in Symbol property
     element[ELEMENT_BOUNDS] = new (this.window as any).DOMRect(
-      parentX + layout.left,
-      parentY + layout.top,
-      layout.width,
-      layout.height
+      intX,
+      intY,
+      intWidth,
+      intHeight
     );
 
     // Extract layout for children using standard DOM traversal
@@ -193,10 +247,89 @@ export class LayoutEngine {
     // Handle inline layout for inline children
     this.processInlineLayout(element, children, bounds);
 
+    // Process Text node children that need text wrapping
+    this.processTextNodeLayout(element, bounds);
+
     // Process children that have Yoga nodes (block/flex/inline-block)
     for (const child of children) {
       if (child[YOGA_NODE]) {
-        this.extractLayout(child, bounds.x, bounds.y);
+        // Calculate inner content area by accounting for parent's padding
+        // Child elements are positioned relative to parent's content area, not outer bounds
+        const style = this.window.getComputedStyle(element);
+        const paddingLeft = this.parseValue(style.getPropertyValue('padding-left'), 0);
+        const paddingTop = this.parseValue(style.getPropertyValue('padding-top'), 0);
+        
+        const innerX = bounds.x + paddingLeft;
+        const innerY = bounds.y + paddingTop;
+        
+        // Parent content area debug removed for cleaner output
+        
+        this.extractLayout(child, innerX, innerY);
+      }
+    }
+  }
+
+  /**
+   * Process Text node children that need text wrapping within block elements
+   */
+  private processTextNodeLayout(element: Element, parentBounds: DOMRect): void {
+    // Find direct Text node children
+    const textNodes = Array.from(element.childNodes).filter(child =>
+      child.nodeType === this.window.Node.TEXT_NODE
+    ) as Text[];
+
+    if (textNodes.length === 0) return;
+
+    let currentY = parentBounds.y;
+
+    for (const textNode of textNodes) {
+      const text = textNode.textContent;
+      if (!text || !text.trim()) continue;
+
+      // Use TextBreaker to break text into lines
+      const breakResult = this.textBreaker.breakText(text, {
+        maxWidth: parentBounds.width,
+        breakWords: true
+      });
+
+      if (breakResult.lines.length > 0) {
+        const textRects: TextRect[] = [];
+
+        // Create TextRect for each line
+        for (let i = 0; i < breakResult.lines.length; i++) {
+          const line = breakResult.lines[i];
+          
+          // Create proper DOMRect using constructor
+          const domRect = new this.window.DOMRect(parentBounds.x, currentY, line.width, 1);
+          
+          
+          // Add text property to make it a TextRect
+          const rect: TextRect = Object.assign(domRect, {
+            text: line.text.trim()
+          });
+
+          textRects.push(rect);
+          currentY += 1;
+        }
+
+        // Store text rectangles on the Text node
+        (textNode as any)[ELEMENT_TEXT_RECTS] = textRects;
+        
+        // Also create a bounding rectangle
+        if (textRects.length === 1) {
+          (textNode as any)[ELEMENT_BOUNDS] = textRects[0];
+        } else {
+          const minY = Math.min(...textRects.map(r => r.y));
+          const maxY = Math.max(...textRects.map(r => r.y + r.height));
+          const maxWidth = Math.max(...textRects.map(r => r.width));
+          
+          (textNode as any)[ELEMENT_BOUNDS] = new this.window.DOMRect(
+            parentBounds.x, 
+            minY, 
+            maxWidth, 
+            maxY - minY
+          );
+        }
       }
     }
   }
@@ -445,6 +578,7 @@ export class LayoutEngine {
 
     // Track multiple rectangles for elements that span multiple lines
     const elementRects = new Map<Element, DOMRect[]>();
+    const elementTextRects = new Map<Element, TextRect[]>();
 
     // Position elements based on which lines they overlap with
     let currentY = parentBounds.y;
@@ -469,6 +603,7 @@ export class LayoutEngine {
             // Inline element: can span multiple lines, create rect for each line fragment
             if (!elementRects.has(element)) {
               elementRects.set(element, []);
+              elementTextRects.set(element, []);
             }
 
             // Calculate this line's fragment of the element
@@ -480,7 +615,24 @@ export class LayoutEngine {
               const fragmentWidth = fragmentEndPos - fragmentStartPos;
               const rect = new this.window.DOMRect(lineX, currentY, fragmentWidth, 1);
 
+              // Extract the text content for this fragment
+              const elementText = element.textContent || '';
+              const fragmentText = elementText.slice(
+                fragmentStartPos - elemPos.startPos, 
+                fragmentEndPos - elemPos.startPos
+              );
+
+              // Create TextRect with both position and content
+              const textRect: TextRect = Object.assign(Object.create(this.window.DOMRect.prototype), {
+                x: rect.x,
+                y: rect.y, 
+                width: rect.width,
+                height: rect.height,
+                text: fragmentText
+              });
+
               elementRects.get(element)!.push(rect);
+              elementTextRects.get(element)!.push(textRect);
             }
           }
         }
@@ -495,6 +647,12 @@ export class LayoutEngine {
       if (rects.length > 0) {
         // Set ELEMENT_RECTS to all rectangles
         element[ELEMENT_RECTS] = rects;
+        
+        // Set ELEMENT_TEXT_RECTS to text rectangles with content
+        const textRects = elementTextRects.get(element);
+        if (textRects) {
+          element[ELEMENT_TEXT_RECTS] = textRects;
+        }
 
         // Set ELEMENT_BOUNDS to bounding rectangle of all rects
         if (rects.length === 1) {
@@ -734,6 +892,11 @@ export class LayoutEngine {
       } else {
         width = parseInt(widthStr);
       }
+      
+      // Debug width parsing
+      if (!isNaN(width)) {
+        console.log(`DEBUG Yoga: Setting width on ${(element as any).tagName || 'UNKNOWN'}: widthStr="${widthStr}", width=${width}`);
+      }
     }
 
     // Parse height - handle ch units
@@ -758,22 +921,26 @@ export class LayoutEngine {
     if (!isNaN(maxHeight)) node.setMaxHeight(maxHeight);
 
 
-    // Flex properties
+    // Flex properties (CSS defaults already set in setupYogaNode)
     const flexGrow = parseFloat(style.getPropertyValue('flex-grow'));
     const flexShrink = parseFloat(style.getPropertyValue('flex-shrink'));
+    
+    // Only override defaults if explicitly specified in CSS
     if (!isNaN(flexGrow)) node.setFlexGrow(flexGrow);
     if (!isNaN(flexShrink)) node.setFlexShrink(flexShrink);
+    
+    // TODO: Add flex-basis support for complete CSS compatibility
 
-    // Position type and offset values
+    // Position type (CSS default: static already set in setupYogaNode)
     const position = style.getPropertyValue('position');
     if (position === 'relative') {
       node.setPositionType(this.yoga.POSITION_TYPE_RELATIVE);
     } else if (position === 'absolute') {
       node.setPositionType(this.yoga.POSITION_TYPE_ABSOLUTE);
-    } else {
-      // 'static' or unspecified - use default
+    } else if (position === 'static') {
       node.setPositionType(this.yoga.POSITION_TYPE_STATIC);
     }
+    // If unspecified, keep the CSS default (static) set in setupYogaNode
 
     // Position offset values (top, right, bottom, left)
     if (position === 'relative' || position === 'absolute') {

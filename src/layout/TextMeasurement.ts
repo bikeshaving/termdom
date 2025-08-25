@@ -40,25 +40,38 @@ export class TextMeasurement {
     // Handle no-wrap cases
     if (wordWrap === 'nowrap' || whiteSpace === 'nowrap' || whiteSpace === 'pre') {
       const textWidth = this.getTextWidth(content);
+      if (widthMode === 1) { // EXACTLY mode
+        return { width: width, height: 1 }; // Use exact width given by Yoga
+      }
       return { width: textWidth, height: 1 };
     }
     
-    // For undefined width, measure natural text width
-    if (widthMode === Yoga.MEASURE_MODE_UNDEFINED) {
-      const lines = content.split('\n');
-      const maxWidth = Math.max(...lines.map((line: string) => this.getTextWidth(line)));
-      return { width: maxWidth, height: lines.length };
+    // Calculate natural text size
+    const lines = content.split('\n');
+    const naturalWidth = Math.max(...lines.map((line: string) => this.getTextWidth(line)));
+    
+    if (widthMode === 0) { // UNDEFINED mode - return max-content size
+      return { width: naturalWidth, height: lines.length };
+    } else if (widthMode === 1) { // EXACTLY mode - must use exact width
+      // Yoga is allocating exactly this width - use it all
+      const wrappedLines = this.wrapText(content, width, { wordWrap, whiteSpace });
+      return {
+        width: width, // Use the exact width Yoga allocated
+        height: wrappedLines.length
+      };
+    } else { // AT_MOST mode - fit-content sizing
+      if (naturalWidth <= width) {
+        // Natural size fits within constraint
+        return { width: naturalWidth, height: lines.length };
+      } else {
+        // Need to wrap text within constraint
+        const wrappedLines = this.wrapText(content, width, { wordWrap, whiteSpace });
+        return {
+          width: width, // Use full constraint width when wrapping
+          height: wrappedLines.length
+        };
+      }
     }
-    
-    // Wrap text to fit within width constraint
-    const style = { wordWrap, whiteSpace };
-    const wrappedLines = this.wrapText(content, width, style);
-    const actualWidth = Math.max(...wrappedLines.map(line => this.getTextWidth(line)));
-    
-    return {
-      width: Math.min(actualWidth, width),
-      height: wrappedLines.length
-    };
   }
 
   /**
