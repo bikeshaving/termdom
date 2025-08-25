@@ -1122,4 +1122,15 @@ export class LayoutEngine {
       default: return [0, 0, 0, 0];
     }
   }
+
+  /**
+   * Parse CSS value and convert to pixels
+   */
+  private parseValue(value: string, defaultValue: number): number {
+    if (!value || value === 'auto') return defaultValue;
+    
+    // Remove units and parse as integer
+    const numericValue = parseInt(value);
+    return isNaN(numericValue) ? defaultValue : numericValue;
+  }
 }

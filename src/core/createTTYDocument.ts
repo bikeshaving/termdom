@@ -1,12 +1,11 @@
 /**
- * createTTYDocument - Revolutionary HTML-to-Terminal rendering
+ * createTTYDocument - HTML-to-Terminal rendering
  *
- * Creates a standard JSDOM document with TTYOMDeltaRenderer for perfect terminal output.
- * 🚀 Now powered by raw xterm.js Buffers + SerializeAddon for zero manual ANSI!
+ * Creates a standard JSDOM document with ScreenBuffer for terminal output.
  *
  * Usage:
  * ```typescript
- * const { document, runtime } = createTTYDocument();
+ * const { document, window } = createTTY();
  * const div = document.createElement('div');
  * div.textContent = 'Hello Terminal!';
  * document.body.appendChild(div);
@@ -15,20 +14,24 @@
  */
 
 import { LayoutEngine } from '../layout/LayoutEngine.js';
-import { DirectTTYRenderer } from '../rendering/DirectTTYRenderer.js';
+import { ScreenBuffer } from '../rendering/ScreenBuffer.js';
 import { initializeHTMLExtensions, YOGA_NODE, ELEMENT_BOUNDS, ELEMENT_RECTS } from './HTMLExtensions.js';
 import { DOMContext } from './DOMContext.js';
+
+import { TTYRuntime } from './TTYRuntime.js';
 
 export interface TTYDocumentOptions {
   width?: number;
   height?: number;
   /** Render mode: 'flow' for inline CLI output, 'fullscreen' for TUI apps */
   mode?: 'flow' | 'fullscreen';
+  /** TTY runtime implementation to use */
+  runtime?: TTYRuntime;
 }
 
 export interface TTYResult {
   document: Document;
-  window: DOMWindow;
+  window: Window;
   dispose: () => void;
   /** Switch to fullscreen TUI mode */
   requestFullScreen?: () => void;
@@ -51,11 +54,12 @@ export function createTTY(options: TTYDocumentOptions = {}): TTYResult {
   // Initialize rendering mode (default to flow for CLI-like behavior)
   const renderMode = options.mode || 'flow';
 
-  // Create DirectTTYRenderer - simple DOM → ANSI → stdout pipeline
-  const screenBuffer = new DirectTTYRenderer({
-    width: options.width, // Let DirectTTYRenderer handle the fallback logic and error checking
-    height: options.height,
+  // Create ScreenBuffer for terminal rendering
+  const screenBuffer = new ScreenBuffer({
+    width: options.width || process.stdout.columns || 80,
+    height: options.height || process.stdout.rows || 24,
     mode: renderMode,
+    runtime: options.runtime,
     window
   });
 
@@ -331,7 +335,7 @@ export function createTTY(options: TTYDocumentOptions = {}): TTYResult {
     // Temporarily disconnect observer to prevent mutations during resize
     observer.disconnect();
 
-    // 1. Update TTYOMDeltaRenderer dimensions
+    // 1. Update ScreenBuffer dimensions
     screenBuffer.resize(newSize.width, newSize.height);
 
     // 2. Update CSSOM window properties (redefine since they're not writable)

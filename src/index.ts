@@ -17,12 +17,18 @@ export { initializeHTMLExtensions, ELEMENT_BOUNDS, ELEMENT_RECTS, YOGA_NODE } fr
 export { TTYEventTranslator } from './events/TTYEventTranslator.js';
 export type { TTYEventTranslatorOptions } from './events/TTYEventTranslator.js';
 
-// 🚀 Direct ANSI Rendering Pipeline
-export { DirectTTYRenderer } from './rendering/DirectTTYRenderer.js';
+// 🚀 Direct ANSI Rendering Pipeline (deprecated - use ScreenBuffer)
+// export { DirectTTYRenderer } from './rendering/DirectTTYRenderer.js';
 
-// Legacy ScreenBuffer (for backwards compatibility - will be deprecated)
+// ScreenBuffer - Terminal rendering engine
 export { ScreenBuffer } from './rendering/ScreenBuffer.js';
 export type { Cell, ScreenBufferOptions } from './rendering/ScreenBuffer.js';
 
 // Layout Engine  
 export { LayoutEngine } from './layout/LayoutEngine.js';
+
+// Runtime Implementations
+export { BunTTYRuntime } from './runtime/BunTTYRuntime.js';
+export { MockTTYRuntime } from './runtime/MockTTYRuntime.js';
+export { TTYRuntime } from './core/TTYRuntime.js';
+export type { TTYDimensions, TTYCapabilities, TTYKeyEvent, TTYMouseEvent, CellStyleOptions } from './core/TTYRuntime.js';

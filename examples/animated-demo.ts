@@ -11,8 +11,8 @@
 import { createTTY, BunTTYRuntime } from '../src/index.js';
 
 async function animatedDemo() {
-  console.log('🎬 Starting Animated TOM Demo...');
-  console.log('⏰ Will auto-exit in 15 seconds (Ctrl+C to quit early)\n');
+  //console.log('🎬 Starting Animated TOM Demo...');
+  //console.log('⏰ Will auto-exit in 15 seconds (Ctrl+C to quit early)\n');
 
   const runtime = new BunTTYRuntime();
   const { document, dispose } = createTTY({ runtime });
@@ -21,13 +21,13 @@ async function animatedDemo() {
 
   // Set up timeout to auto-exit
   const timeout = setTimeout(() => {
-    console.log('\n⏰ Demo completed - exiting...');
+    //console.log('\n⏰ Demo completed - exiting...');
     cleanup();
   }, 15000);
 
   // Handle Ctrl+C gracefully
   process.on('SIGINT', () => {
-    console.log('\n👋 Caught Ctrl+C - exiting gracefully...');
+    //console.log('\n👋 Caught Ctrl+C - exiting gracefully...');
     cleanup();
   });
 
@@ -40,7 +40,7 @@ async function animatedDemo() {
     clearInterval(animationLoop);
     dispose();
 
-    console.log('✅ Demo cleaned up');
+    //console.log('✅ Demo cleaned up');
     process.exit(0);
   }
 
