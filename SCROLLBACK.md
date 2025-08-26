@@ -94,13 +94,106 @@ class ManagedRenderer {
 }
 ## Rendering Model
 
+### Progressive Buffer Control
+
+The system starts by controlling only the terminal from the cursor position downward, gradually expanding control as content grows:
+
+```typescript
+class ProgressiveRenderer {
+  private buffer: CellBuffer;
+  private controlledStartRow: number; // First row we control (1-based)
+  private cursorStartPosition: { row: number; col: number };
+  private terminalHeight: number;
+  private terminalWidth: number;
+  
+  async initialize() {
+    // Enter raw mode immediately
+    process.stdin.setRawMode(true);
+    
+    // Get initial cursor position once
+    this.cursorStartPosition = await this.requestCursorPosition();
+    this.controlledStartRow = this.cursorStartPosition.row;
+    
+    // Create full terminal-sized buffer
+    const termSize = await this.getTerminalSize();
+    this.buffer = createBuffer(termSize.rows, termSize.cols);
+    this.terminalHeight = termSize.rows;
+    this.terminalWidth = termSize.cols;
+    
+    // Set up resize handling
+    process.on('SIGWINCH', () => this.handleResize());
+  }
+  
+  render() {
+    // Save cursor position
+    let output = '\x1b[s';
+    
+    // Calculate rows we control
+    const controlledRows = this.terminalHeight - this.controlledStartRow + 1;
+    
+    // Only render the portion we control
+    const startIdx = this.controlledStartRow - 1;
+    const endIdx = Math.min(this.buffer.length, this.terminalHeight);
+    const visibleBuffer = this.buffer.slice(startIdx, endIdx);
+    
+    // Move to start of controlled area
+    output += `\x1b[${this.controlledStartRow};1H`;
+    
+    // Render our controlled content
+    output += this.serialize(visibleBuffer);
+    
+    // Restore cursor position
+    output += '\x1b[u';
+    
+    process.stdout.write(output);
+  }
+  
+  addContent(newRows: number) {
+    const availableRows = this.terminalHeight - this.controlledStartRow + 1;
+    const totalContentRows = this.getContentHeight();
+    
+    if (totalContentRows > availableRows) {
+      // Terminal will scroll!
+      const scrollAmount = totalContentRows - availableRows;
+      
+      // We now control more rows (terminal scrolled up)
+      this.controlledStartRow = Math.max(1, this.controlledStartRow - scrollAmount);
+      
+      if (this.controlledStartRow === 1) {
+        // We now control the entire screen
+        this.transitionToVirtualScrollback();
+      } else {
+        // Shift our buffer content up to match terminal scroll
+        this.shiftBufferUp(scrollAmount);
+      }
+    }
+  }
+  
+  private transitionToVirtualScrollback() {
+    // We now control the full screen - can implement virtual scrolling
+    this.mode = 'virtual-scrollback';
+    // Buffer can now grow beyond terminal height
+  }
+}
+```
+
 ### Anchored Mode (Normal Screen)
 
-Content flows naturally and grows beyond viewport while remaining fully mutable:
+Once the progressive buffer controls the full screen, it transitions to virtual scrollback while staying on the normal screen:
 
 ```typescript
 class AnchoredRenderer {
   render(domTree: Element) {
+    if (this.controlledStartRow > 1) {
+      // Still in progressive mode
+      this.progressiveRender(domTree);
+    } else {
+      // Full control - use virtual scrollback
+      this.virtualScrollbackRender(domTree);
+    }
+  }
+  
+  private virtualScrollbackRender(domTree: Element) {
     // 1. Update entire virtual buffer with DOM content
     this.updateVirtualBuffer(domTree);
     
@@ -113,28 +206,29 @@ class AnchoredRenderer {
     // 3. Serialize only the visible slice
     const viewportAnsi = this.serializeAddon.serialize(viewportRange);
     
-    // 4. Position to viewport start and render
-    const viewportTop = Math.max(1, this.terminalRows - this.viewport.height + 1);
-    process.stdout.write(`\x1b[${viewportTop};1H`);
-    process.stdout.write(viewportAnsi);
+    // 4. Save cursor, render, restore cursor
+    const output = '\x1b[s\x1b[1;1H' + viewportAnsi + '\x1b[u';
+    process.stdout.write(output);
   }
   
   scroll(delta: number) {
-    // Scroll within virtual buffer, not terminal scrollback
-    this.viewport.scrollOffset = Math.max(0, 
-      Math.min(this.virtualBuffer.length - this.viewport.height,
-        this.viewport.scrollOffset + delta));
-    this.render(this.currentDOM);
+    // Only available once we have full control
+    if (this.controlledStartRow === 1) {
+      this.viewport.scrollOffset = Math.max(0, 
+        Math.min(this.virtualBuffer.length - this.viewport.height,
+          this.viewport.scrollOffset + delta));
+      this.render(this.currentDOM);
+    }
   }
 }
 ```
 
 **Characteristics:**
-- ✅ All content remains mutable in virtual buffer
-- ✅ Natural command-like flow in terminal
-- ✅ Scrolling operates on virtual buffer
-- ✅ No reliance on native terminal scrollback
-- ✅ Works with any content size
+- ✅ Respects existing terminal content above cursor
+- ✅ Natural progressive takeover as content grows
+- ✅ No flicker - cursor save/restore for all rendering
+- ✅ Smooth transition to virtual scrollback
+- ✅ All content remains mutable in buffer
 
 ### Managed Mode (Alternate Screen)
 

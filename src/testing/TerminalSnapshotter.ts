@@ -6,6 +6,7 @@
  */
 
 import { Terminal } from '@xterm/headless';
+import { SerializeAddon } from '@xterm/addon-serialize';
 
 export interface TerminalSnapshotterOptions {
   width?: number;
@@ -14,10 +15,26 @@ export interface TerminalSnapshotterOptions {
 
 export class TerminalSnapshotter {
   private terminal: Terminal;
+  private serializeAddon: SerializeAddon;
   private reader: ReadableStreamDefaultReader<string> | null = null;
   private streamConsumptionPromise: Promise<void> | null = null;
   private width: number;
   private height: number;
+  
+  /**
+   * Create a snapshotter from ANSI strings
+   */
+  static fromAnsi(ansiStrings: string[], options: TerminalSnapshotterOptions = {}): TerminalSnapshotter {
+    const stream = new ReadableStream<string>({
+      start(controller) {
+        for (const ansi of ansiStrings) {
+          controller.enqueue(ansi);
+        }
+        controller.close();
+      }
+    });
+    return new TerminalSnapshotter(stream, options);
+  }
 
   constructor(
     stream: ReadableStream<string>,
@@ -32,6 +49,10 @@ export class TerminalSnapshotter {
       rows: this.height,
       allowProposedApi: true
     });
+    
+    // Add serialize addon for getting terminal content
+    this.serializeAddon = new SerializeAddon();
+    this.terminal.loadAddon(this.serializeAddon);
 
     // Start consuming the stream
     this.reader = stream.getReader();
@@ -49,7 +70,10 @@ export class TerminalSnapshotter {
         const { done, value } = await this.reader.read();
         if (done) break;
         if (value) {
-          this.terminal.write(value);
+          // terminal.write uses callback API
+          await new Promise<void>((resolve) => {
+            this.terminal.write(value, resolve);
+          });
         }
       }
     } catch (error) {
@@ -82,20 +106,38 @@ export class TerminalSnapshotter {
       await this.streamConsumptionPromise;
     }
     
-    const buffer = this.terminal.buffer.active;
-    let result = '';
+    // Use serialize addon to get the content
+    const serialized = this.serializeAddon.serialize({
+      excludeAltBuffer: true,
+      excludeModes: true,
+      onlySelection: false
+    });
     
-    for (let row = 0; row < buffer.length; row++) {
-      const line = buffer.getLine(row);
-      if (line) {
-        const lineText = line.translateToString(true).trimEnd();
-        if (lineText || row === 0) { // Include first line even if empty
-          result += lineText + '\n';
-        }
-      }
+    // Parse ANSI to get plain text
+    // Remove all ANSI escape sequences (including cursor movements and other controls)
+    const plainText = serialized
+      .replace(/\x1b\[[0-9;]*[A-Za-z]/g, '') // Remove CSI sequences
+      .replace(/\x1b[PX^_].*?\x1b\\/g, '')   // Remove DCS/SOS/PM/APC sequences
+      .replace(/\x1b\][^\x07]*\x07/g, '')    // Remove OSC sequences
+      .replace(/\x1b[>=\[?]?[0-9;]*[A-Za-z]/g, '') // Remove other escape sequences
+      .replace(/[\x00-\x08\x0B-\x1F\x7F]/g, ''); // Remove control characters except \t and \n
+    
+    // Handle empty result
+    if (!plainText.trim()) {
+      return '\n';
     }
     
-    return result.trimEnd() + '\n';
+    // Split into lines and preserve spacing
+    const lines = plainText.split('\n');
+    
+    // Find last non-empty line
+    let lastNonEmpty = lines.length - 1;
+    while (lastNonEmpty > 0 && lines[lastNonEmpty].trim() === '') {
+      lastNonEmpty--;
+    }
+    
+    // Return up to last non-empty line
+    return lines.slice(0, lastNonEmpty + 1).join('\n') + '\n';
   }
 
   /**
@@ -106,74 +148,11 @@ export class TerminalSnapshotter {
       await this.streamConsumptionPromise;
     }
     
-    const buffer = this.terminal.buffer.active;
-    let result = '';
-    
-    for (let row = 0; row < buffer.length; row++) {
-      const line = buffer.getLine(row);
-      if (line) {
-        // Get the line with styling information
-        let lineText = '';
-        let prevStyle = { fg: -1, bg: -1, bold: false, italic: false, underline: false };
-        
-        for (let col = 0; col < line.length; col++) {
-          const cell = line.getCell(col);
-          if (cell) {
-            const char = cell.getChars();
-            const fg = cell.getFgColor();
-            const bg = cell.getBgColor();
-            const bold = cell.isBold();
-            const italic = cell.isItalic();
-            const underline = cell.isUnderline();
-            
-            // Add ANSI codes for style changes
-            if (fg !== prevStyle.fg || bg !== prevStyle.bg || 
-                bold !== prevStyle.bold || italic !== prevStyle.italic || 
-                underline !== prevStyle.underline) {
-              
-              lineText += '\x1b[0m'; // Reset
-              
-              if (fg !== -1) {
-                if (fg < 256) {
-                  lineText += `\x1b[38;5;${fg}m`;
-                } else {
-                  // RGB color
-                  const r = (fg >> 16) & 0xff;
-                  const g = (fg >> 8) & 0xff;
-                  const b = fg & 0xff;
-                  lineText += `\x1b[38;2;${r};${g};${b}m`;
-                }
-              }
-              
-              if (bg !== -1) {
-                if (bg < 256) {
-                  lineText += `\x1b[48;5;${bg}m`;
-                } else {
-                  // RGB color
-                  const r = (bg >> 16) & 0xff;
-                  const g = (bg >> 8) & 0xff;
-                  const b = bg & 0xff;
-                  lineText += `\x1b[48;2;${r};${g};${b}m`;
-                }
-              }
-              
-              if (bold) lineText += '\x1b[1m';
-              if (italic) lineText += '\x1b[3m';
-              if (underline) lineText += '\x1b[4m';
-              
-              prevStyle = { fg, bg, bold, italic, underline };
-            }
-            
-            lineText += char || ' ';
-          }
-        }
-        
-        if (lineText.trim() || row === 0) {
-          result += lineText.trimEnd() + '\x1b[0m\n';
-        }
-      }
-    }
-    
-    return result;
+    // Use serialize addon to get the content with styles
+    return this.serializeAddon.serialize({
+      excludeAltBuffer: true,
+      excludeModes: true,
+      onlySelection: false
+    });
   }
 }

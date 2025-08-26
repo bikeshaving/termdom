@@ -1,15 +1,5 @@
-/**
- * TTY Object Model (TTYOM) - Revolutionary HTML-to-Terminal Renderer
- *
- * 🚀 BREAKTHROUGH: Now powered by raw xterm.js Buffers + SerializeAddon!
- * - Zero manual ANSI escape sequences
- * - Perfect terminal compatibility via battle-tested xterm.js
- * - 38%+ delta rendering efficiency gains
- * - Write HTML/CSS, get flawless terminal output!
- */
-
 // === HTML-to-Terminal API ===
-export { createTTY } from './core/createTTYDocument.js';
+export { TermDOM } from './core/createTTYDocument.js';
 export type { TTYDocumentOptions, TTYResult } from './core/createTTYDocument.js';
 export { initializeHTMLExtensions, ELEMENT_BOUNDS, ELEMENT_RECTS, YOGA_NODE } from './core/HTMLExtensions.js';
 
@@ -27,7 +17,20 @@ export type { Cell, ScreenBufferOptions } from './rendering/ScreenBuffer.js';
 // DirectBuffer - Virtual scrollback buffer implementation
 export { DirectBuffer } from './rendering/DirectBuffer.js';
 
-// Layout Engine  
+// Renderer - Efficient delta rendering without xterm.js
+export { Renderer } from './rendering/Renderer.js';
+export type { CellStyle } from './rendering/Renderer.js';
+export { ANSIGenerator } from './rendering/ANSIGenerator.js';
+export type { ColorDepth } from './rendering/ANSIGenerator.js';
+
+// Cell buffer utilities
+export { 
+  createBuffer, createNullCell, isCellEmpty,
+  getCellChar, getCellWidth, setCellChar, setCellFg, setCellBg,
+  type Cell, type CellBuffer
+} from './rendering/CellBuffer.js';
+
+// Layout Engine
 export { LayoutEngine } from './layout/LayoutEngine.js';
 
 // Runtime Implementations
