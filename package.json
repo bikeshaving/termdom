@@ -1,10 +1,8 @@
 {
   "name": "@b9g/tom",
-  "module": "index.ts",
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "typecheck:examples": "tsc --noEmit examples/**/*.ts",
     "test": "bun test"
   },
   "devDependencies": {
@@ -13,6 +11,8 @@
     "typescript": "^5.9.2"
   },
   "dependencies": {
+    "@xterm/addon-serialize": "^0.13.0",
+    "@xterm/headless": "^5.5.0",
     "jsdom": "^26.1.0",
     "yoga-layout": "^3.2.1"
   }

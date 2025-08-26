@@ -8,7 +8,7 @@
 import type { DOMWindow } from 'jsdom';
 import { GreedyTextBreaker } from '../text/index.js';
 import { ELEMENT_BOUNDS, ELEMENT_RECTS, ELEMENT_TEXT_RECTS, type TextRect } from '../core/HTMLExtensions.js';
-import { Attributes, FgFlags, BgFlags } from '../../xterm.js/src/common/buffer/Constants.js';
+import { Attributes, FgFlags, BgFlags } from '../../vendor/xterm.js/src/common/buffer/Constants.js';
 
 // xterm.js CellData-compatible cell representation
 interface Cell {

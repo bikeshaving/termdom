@@ -24,6 +24,9 @@ export type { TTYEventTranslatorOptions } from './events/TTYEventTranslator.js';
 export { ScreenBuffer } from './rendering/ScreenBuffer.js';
 export type { Cell, ScreenBufferOptions } from './rendering/ScreenBuffer.js';
 
+// DirectBuffer - Virtual scrollback buffer implementation
+export { DirectBuffer } from './rendering/DirectBuffer.js';
+
 // Layout Engine  
 export { LayoutEngine } from './layout/LayoutEngine.js';
 
