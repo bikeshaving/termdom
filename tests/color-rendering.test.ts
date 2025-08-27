@@ -6,19 +6,25 @@
  */
 
 import { test, expect } from 'bun:test';
-import { createLayoutSnapshot, saveSnapshot } from './test-utils.js';
+import { TermDOM } from '../src/index.js';
+import { TestTerminal } from './test-utils.js';
 
 test('foreground colors render correctly', async () => {
-  const snapshot = await createLayoutSnapshot('foreground-colors', (document) => {
-    const colors = ['red', 'green', 'blue', 'yellow', 'magenta', 'cyan', 'white'];
-    
-    for (const color of colors) {
-      const div = document.createElement('div');
-      div.textContent = `Text in ${color}`;
-      div.style.color = color;
-      document.body.appendChild(div);
-    }
-  });
+  const terminal = new TestTerminal();
+  const dom = new TermDOM({ process: terminal });
+  const { document } = dom;
+  
+  const colors = ['red', 'green', 'blue', 'yellow', 'magenta', 'cyan', 'white'];
+  
+  for (const color of colors) {
+    const div = document.createElement('div');
+    div.textContent = `Text in ${color}`;
+    div.style.color = color;
+    document.body.appendChild(div);
+  }
+  
+  await dom.waitForRender();
+  const snapshot = terminal.getScreenContents();
   
   // Verify ANSI codes are present (either 16-color or 24-bit)
   expect(snapshot).toMatch(/\x1b\[(31|38;2;255;0;0)m/); // red
@@ -26,17 +32,23 @@ test('foreground colors render correctly', async () => {
   expect(snapshot).toMatch(/\x1b\[(34|38;2;0;0;255)m/); // blue
   
   expect(snapshot).toMatchSnapshot();
-  saveSnapshot('foreground-colors', snapshot);
+  
+  dom.dispose();
 });
 
 test('background colors fill full width', async () => {
-  const snapshot = await createLayoutSnapshot('background-colors-full-width', (document) => {
-    const div = document.createElement('div');
-    div.textContent = 'Short text';
-    div.style.backgroundColor = 'red';
-    div.style.display = 'block';
-    document.body.appendChild(div);
-  });
+  const terminal = new TestTerminal();
+  const dom = new TermDOM({ process: terminal });
+  const { document } = dom;
+  
+  const div = document.createElement('div');
+  div.textContent = 'Short text';
+  div.style.backgroundColor = 'red';
+  div.style.display = 'block';
+  document.body.appendChild(div);
+  
+  await dom.waitForRender();
+  const snapshot = terminal.getScreenContents();
   
   // Background should fill the entire line (80 chars)
   const lines = snapshot.split('\n');
@@ -50,30 +62,36 @@ test('background colors fill full width', async () => {
   expect(visibleContent.length).toBeGreaterThan('Short text'.length);
   
   expect(snapshot).toMatchSnapshot();
-  saveSnapshot('background-colors-full-width', snapshot);
+  
+  dom.dispose();
 });
 
 test('background colors do not bleed between lines', async () => {
-  const snapshot = await createLayoutSnapshot('no-background-bleed', (document) => {
-    // First div with red background
-    const div1 = document.createElement('div');
-    div1.textContent = 'Red background';
-    div1.style.backgroundColor = 'red';
-    div1.style.display = 'block';
-    document.body.appendChild(div1);
-    
-    // Second div with green background
-    const div2 = document.createElement('div');
-    div2.textContent = 'Green background';
-    div2.style.backgroundColor = 'green';
-    div2.style.display = 'block';
-    document.body.appendChild(div2);
-    
-    // Third div with no background
-    const div3 = document.createElement('div');
-    div3.textContent = 'No background';
-    document.body.appendChild(div3);
-  });
+  const terminal = new TestTerminal();
+  const dom = new TermDOM({ process: terminal });
+  const { document } = dom;
+  
+  // First div with red background
+  const div1 = document.createElement('div');
+  div1.textContent = 'Red background';
+  div1.style.backgroundColor = 'red';
+  div1.style.display = 'block';
+  document.body.appendChild(div1);
+  
+  // Second div with green background
+  const div2 = document.createElement('div');
+  div2.textContent = 'Green background';
+  div2.style.backgroundColor = 'green';
+  div2.style.display = 'block';
+  document.body.appendChild(div2);
+  
+  // Third div with no background
+  const div3 = document.createElement('div');
+  div3.textContent = 'No background';
+  document.body.appendChild(div3);
+  
+  await dom.waitForRender();
+  const snapshot = terminal.getScreenContents();
   
   const lines = snapshot.split('\n');
   
@@ -90,47 +108,59 @@ test('background colors do not bleed between lines', async () => {
   expect(noBackgroundLine).not.toContain('\x1b[48;');
   
   expect(snapshot).toMatchSnapshot();
-  saveSnapshot('no-background-bleed', snapshot);
+  
+  dom.dispose();
 });
 
 test('mixed foreground and background colors', async () => {
-  const snapshot = await createLayoutSnapshot('mixed-colors', (document) => {
-    const div = document.createElement('div');
-    div.textContent = 'Yellow text on blue background';
-    div.style.color = 'yellow';
-    div.style.backgroundColor = 'blue';
-    div.style.display = 'block';
-    document.body.appendChild(div);
-  });
+  const terminal = new TestTerminal();
+  const dom = new TermDOM({ process: terminal });
+  const { document } = dom;
+  
+  const div = document.createElement('div');
+  div.textContent = 'Yellow text on blue background';
+  div.style.color = 'yellow';
+  div.style.backgroundColor = 'blue';
+  div.style.display = 'block';
+  document.body.appendChild(div);
+  
+  await dom.waitForRender();
+  const snapshot = terminal.getScreenContents();
   
   // Should have both foreground and background codes
   expect(snapshot).toMatch(/\x1b\[(33|38;2;255;255;0)m/); // yellow foreground
   expect(snapshot).toMatch(/\x1b\[(44|48;2;0;0;255)m/); // blue background
   
   expect(snapshot).toMatchSnapshot();
-  saveSnapshot('mixed-colors', snapshot);
+  
+  dom.dispose();
 });
 
 test('CSS color formats are handled correctly', async () => {
-  const snapshot = await createLayoutSnapshot('css-color-formats', (document) => {
-    // RGB format
-    const div1 = document.createElement('div');
-    div1.textContent = 'RGB color';
-    div1.style.color = 'rgb(255, 0, 0)';
-    document.body.appendChild(div1);
-    
-    // Hex format
-    const div2 = document.createElement('div');
-    div2.textContent = 'Hex color';
-    div2.style.color = '#00ff00';
-    document.body.appendChild(div2);
-    
-    // Named color
-    const div3 = document.createElement('div');
-    div3.textContent = 'Named color';
-    div3.style.color = 'blue';
-    document.body.appendChild(div3);
-  });
+  const terminal = new TestTerminal();
+  const dom = new TermDOM({ process: terminal });
+  const { document } = dom;
+  
+  // RGB format
+  const div1 = document.createElement('div');
+  div1.textContent = 'RGB color';
+  div1.style.color = 'rgb(255, 0, 0)';
+  document.body.appendChild(div1);
+  
+  // Hex format
+  const div2 = document.createElement('div');
+  div2.textContent = 'Hex color';
+  div2.style.color = '#00ff00';
+  document.body.appendChild(div2);
+  
+  // Named color
+  const div3 = document.createElement('div');
+  div3.textContent = 'Named color';
+  div3.style.color = 'blue';
+  document.body.appendChild(div3);
+  
+  await dom.waitForRender();
+  const snapshot = terminal.getScreenContents();
   
   // All should produce color codes (16-color or 24-bit)
   expect(snapshot).toMatch(/\x1b\[(31|38;2;255;0;0)m/); // rgb(255, 0, 0)
@@ -138,19 +168,25 @@ test('CSS color formats are handled correctly', async () => {
   expect(snapshot).toMatch(/\x1b\[(34|38;2;0;0;255)m/); // blue
   
   expect(snapshot).toMatchSnapshot();
-  saveSnapshot('css-color-formats', snapshot);
+  
+  dom.dispose();
 });
 
 test('style combinations work correctly', async () => {
-  const snapshot = await createLayoutSnapshot('style-combinations', (document) => {
-    const div = document.createElement('div');
-    div.textContent = 'Bold red text on yellow background';
-    div.style.color = 'red';
-    div.style.backgroundColor = 'yellow';
-    div.style.fontWeight = 'bold';
-    div.style.display = 'block';
-    document.body.appendChild(div);
-  });
+  const terminal = new TestTerminal();
+  const dom = new TermDOM({ process: terminal });
+  const { document } = dom;
+  
+  const div = document.createElement('div');
+  div.textContent = 'Bold red text on yellow background';
+  div.style.color = 'red';
+  div.style.backgroundColor = 'yellow';
+  div.style.fontWeight = 'bold';
+  div.style.display = 'block';
+  document.body.appendChild(div);
+  
+  await dom.waitForRender();
+  const snapshot = terminal.getScreenContents();
   
   // Should have all three style codes
   expect(snapshot).toContain('\x1b[1m'); // bold
@@ -158,16 +194,22 @@ test('style combinations work correctly', async () => {
   expect(snapshot).toMatch(/\x1b\[(43|48;2;255;255;0)m/); // yellow background
   
   expect(snapshot).toMatchSnapshot();
-  saveSnapshot('style-combinations', snapshot);
+  
+  dom.dispose();
 });
 
 test('inline elements do not extend background', async () => {
-  const snapshot = await createLayoutSnapshot('inline-no-extend', (document) => {
-    const span = document.createElement('span');
-    span.textContent = 'Inline text';
-    span.style.backgroundColor = 'green';
-    document.body.appendChild(span);
-  });
+  const terminal = new TestTerminal();
+  const dom = new TermDOM({ process: terminal });
+  const { document } = dom;
+  
+  const span = document.createElement('span');
+  span.textContent = 'Inline text';
+  span.style.backgroundColor = 'green';
+  document.body.appendChild(span);
+  
+  await dom.waitForRender();
+  const snapshot = terminal.getScreenContents();
   
   // Inline elements should not fill the full width
   const lines = snapshot.split('\n');
@@ -178,56 +220,62 @@ test('inline elements do not extend background', async () => {
   expect(visibleContent.trim()).toBe('Inline text');
   
   expect(snapshot).toMatchSnapshot();
-  saveSnapshot('inline-no-extend', snapshot);
+  
+  dom.dispose();
 });
 
 test('nested centered elements with decreasing widths', async () => {
-  const snapshot = await createLayoutSnapshot('nested-centered-colors', (document) => {
-    // Create container with full width
-    const container = document.createElement('div');
-    container.style.display = 'flex';
-    container.style.flexDirection = 'column';
-    container.style.alignItems = 'center';
-    container.style.width = '100%';
-    container.style.backgroundColor = 'red';
-    document.body.appendChild(container);
-    
-    // First nested element - 60 chars wide
-    const div1 = document.createElement('div');
-    div1.textContent = 'First level - 60 chars';
-    div1.style.width = '60ch';
-    div1.style.backgroundColor = 'green';
-    div1.style.textAlign = 'center';
-    div1.style.display = 'block';
-    container.appendChild(div1);
-    
-    // Second nested element - 40 chars wide
-    const div2 = document.createElement('div');
-    div2.textContent = 'Second - 40 chars';
-    div2.style.width = '40ch';
-    div2.style.backgroundColor = 'blue';
-    div2.style.textAlign = 'center';
-    div2.style.display = 'block';
-    container.appendChild(div2);
-    
-    // Third nested element - 20 chars wide
-    const div3 = document.createElement('div');
-    div3.textContent = 'Third - 20';
-    div3.style.width = '20ch';
-    div3.style.backgroundColor = 'yellow';
-    div3.style.textAlign = 'center';
-    div3.style.display = 'block';
-    container.appendChild(div3);
-    
-    // Fourth nested element - 10 chars wide
-    const div4 = document.createElement('div');
-    div4.textContent = 'Tiny';
-    div4.style.width = '10ch';
-    div4.style.backgroundColor = 'magenta';
-    div4.style.textAlign = 'center';
-    div4.style.display = 'block';
-    container.appendChild(div4);
-  });
+  const terminal = new TestTerminal();
+  const dom = new TermDOM({ process: terminal });
+  const { document } = dom;
+  
+  // Create container with full width
+  const container = document.createElement('div');
+  container.style.display = 'flex';
+  container.style.flexDirection = 'column';
+  container.style.alignItems = 'center';
+  container.style.width = '100%';
+  container.style.backgroundColor = 'red';
+  document.body.appendChild(container);
+  
+  // First nested element - 60 chars wide
+  const div1 = document.createElement('div');
+  div1.textContent = 'First level - 60 chars';
+  div1.style.width = '60ch';
+  div1.style.backgroundColor = 'green';
+  div1.style.textAlign = 'center';
+  div1.style.display = 'block';
+  container.appendChild(div1);
+  
+  // Second nested element - 40 chars wide
+  const div2 = document.createElement('div');
+  div2.textContent = 'Second - 40 chars';
+  div2.style.width = '40ch';
+  div2.style.backgroundColor = 'blue';
+  div2.style.textAlign = 'center';
+  div2.style.display = 'block';
+  container.appendChild(div2);
+  
+  // Third nested element - 20 chars wide
+  const div3 = document.createElement('div');
+  div3.textContent = 'Third - 20';
+  div3.style.width = '20ch';
+  div3.style.backgroundColor = 'yellow';
+  div3.style.textAlign = 'center';
+  div3.style.display = 'block';
+  container.appendChild(div3);
+  
+  // Fourth nested element - 10 chars wide
+  const div4 = document.createElement('div');
+  div4.textContent = 'Tiny';
+  div4.style.width = '10ch';
+  div4.style.backgroundColor = 'magenta';
+  div4.style.textAlign = 'center';
+  div4.style.display = 'block';
+  container.appendChild(div4);
+  
+  await dom.waitForRender();
+  const snapshot = terminal.getScreenContents();
   
   // Verify the structure shows centered elements with different widths
   const lines = snapshot.split('\n').filter(line => line.trim());
@@ -244,35 +292,41 @@ test('nested centered elements with decreasing widths', async () => {
   expect(snapshot).toMatch(/\x1b\[(45|48;2;255;0;255)m/); // magenta
   
   expect(snapshot).toMatchSnapshot();
-  saveSnapshot('nested-centered-colors', snapshot);
+  
+  dom.dispose();
 });
 
 test('concentric rectangles with different colors', async () => {
-  const snapshot = await createLayoutSnapshot('concentric-colors', (document) => {
-    // Create a series of nested divs with decreasing padding
-    const outer = document.createElement('div');
-    outer.style.backgroundColor = 'red';
-    outer.style.padding = '2ch';
-    outer.style.display = 'block';
-    document.body.appendChild(outer);
-    
-    const middle1 = document.createElement('div');
-    middle1.style.backgroundColor = 'green';
-    middle1.style.padding = '2ch';
-    outer.appendChild(middle1);
-    
-    const middle2 = document.createElement('div');
-    middle2.style.backgroundColor = 'blue';
-    middle2.style.padding = '2ch';
-    middle1.appendChild(middle2);
-    
-    const inner = document.createElement('div');
-    inner.textContent = 'Center';
-    inner.style.backgroundColor = 'yellow';
-    inner.style.padding = '1ch';
-    inner.style.textAlign = 'center';
-    middle2.appendChild(inner);
-  });
+  const terminal = new TestTerminal();
+  const dom = new TermDOM({ process: terminal });
+  const { document } = dom;
+  
+  // Create a series of nested divs with decreasing padding
+  const outer = document.createElement('div');
+  outer.style.backgroundColor = 'red';
+  outer.style.padding = '2ch';
+  outer.style.display = 'block';
+  document.body.appendChild(outer);
+  
+  const middle1 = document.createElement('div');
+  middle1.style.backgroundColor = 'green';
+  middle1.style.padding = '2ch';
+  outer.appendChild(middle1);
+  
+  const middle2 = document.createElement('div');
+  middle2.style.backgroundColor = 'blue';
+  middle2.style.padding = '2ch';
+  middle1.appendChild(middle2);
+  
+  const inner = document.createElement('div');
+  inner.textContent = 'Center';
+  inner.style.backgroundColor = 'yellow';
+  inner.style.padding = '1ch';
+  inner.style.textAlign = 'center';
+  middle2.appendChild(inner);
+  
+  await dom.waitForRender();
+  const snapshot = terminal.getScreenContents();
   
   // This should create a pattern like:
   // RRRRRRRRRRRRRRRRRRRRRRRRRRRR...
@@ -284,5 +338,6 @@ test('concentric rectangles with different colors', async () => {
   // RRRRRRRRRRRRRRRRRRRRRRRRRRRR...
   
   expect(snapshot).toMatchSnapshot();
-  saveSnapshot('concentric-colors', snapshot);
+  
+  dom.dispose();
 });

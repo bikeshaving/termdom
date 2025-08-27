@@ -10,11 +10,11 @@
  * - Ctrl+C to exit
  */
 
-import { createTTY, BunTTYRuntime } from '../src/index.js';
+import { TermDOM } from '../src/index.js';
 
 async function main() {
-  const runtime = new BunTTYRuntime();
-  using { document, dispose } = createTTY({ runtime });
+  
+  using { document, dispose } = TermDOM({ runtime });
 
   // Create content that exceeds viewport height
   const container = document.createElement('container');

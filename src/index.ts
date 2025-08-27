@@ -1,21 +1,9 @@
 // === HTML-to-Terminal API ===
-export { TermDOM } from './core/createTTYDocument.js';
-export type { TTYDocumentOptions, TTYResult } from './core/createTTYDocument.js';
-export { initializeHTMLExtensions, ELEMENT_BOUNDS, ELEMENT_RECTS, YOGA_NODE } from './core/HTMLExtensions.js';
+export { TermDOM } from './core/TermDOM.js';
+export type { TermDOMOptions, ProcessLike, TTYWriteStream, TTYReadStream, TextRect, LayoutElement } from './core/TermDOM.js';
+export { ELEMENT_BOUNDS, ELEMENT_RECTS, ELEMENT_TEXT_RECTS, YOGA_NODE } from './core/TermDOM.js';
 
-// Event System
-export { TTYEventTranslator } from './events/TTYEventTranslator.js';
-export type { TTYEventTranslatorOptions } from './events/TTYEventTranslator.js';
-
-// 🚀 Direct ANSI Rendering Pipeline (deprecated - use ScreenBuffer)
-// export { DirectTTYRenderer } from './rendering/DirectTTYRenderer.js';
-
-// ScreenBuffer - Terminal rendering engine
-export { ScreenBuffer } from './rendering/ScreenBuffer.js';
-export type { Cell, ScreenBufferOptions } from './rendering/ScreenBuffer.js';
-
-// DirectBuffer - Virtual scrollback buffer implementation
-export { DirectBuffer } from './rendering/DirectBuffer.js';
+// Clean rendering pipeline with new Renderer
 
 // Renderer - Efficient delta rendering without xterm.js
 export { Renderer } from './rendering/Renderer.js';
@@ -33,8 +21,3 @@ export {
 // Layout Engine
 export { LayoutEngine } from './layout/LayoutEngine.js';
 
-// Runtime Implementations
-export { BunTTYRuntime } from './runtime/BunTTYRuntime.js';
-export { MockTTYRuntime } from './runtime/MockTTYRuntime.js';
-export { TTYRuntime } from './core/TTYRuntime.js';
-export type { TTYDimensions, TTYCapabilities, TTYKeyEvent, TTYMouseEvent, CellStyleOptions } from './core/TTYRuntime.js';

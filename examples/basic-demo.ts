@@ -5,19 +5,18 @@
  * containing containers, text, and buttons.
  */
 
-import { createTTY, BunTTYRuntime } from '../src/index.js';
+import { TermDOM } from '../src/index.js';
 
 async function basicDemo() {
   console.log('🚀 Starting TTY Basic Demo...');
   
   try {
     // Create TTY interface
-    const runtime = new BunTTYRuntime();
-    const { document, dispose } = createTTY({ runtime });
+    const dom = new TermDOM();
+    const { document } = dom;
 
     console.log('📱 TTY Document created successfully');
-    const { width, height } = runtime.getTerminalSize();
-    console.log(`Terminal size: ${width}x${height}`);
+    console.log(`Terminal size: ${process.stdout.columns || 80}x${process.stdout.rows || 24}`);
 
     // Create main container
     const container = document.createElement('container');
@@ -87,7 +86,7 @@ async function basicDemo() {
     // Setup exit handler
     process.on('SIGINT', () => {
       console.log('\n👋 Shutting down TTY demo...');
-      dispose();
+      dom.dispose();
       process.exit(0);
     });
 

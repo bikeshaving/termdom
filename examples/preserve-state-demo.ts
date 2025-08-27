@@ -5,14 +5,14 @@
  * by leaving their final state visible in terminal history after exit.
  */
 
-import { createTTY, BunTTYRuntime } from '../src/index.js';
+import { TermDOM } from '../src/index.js';
 
 async function preserveStateDemo() {
   console.log('🎯 TTY Preserve State Demo');
   console.log('📊 This will show a data dashboard and preserve it after exit\n');
   
-  const runtime = new BunTTYRuntime();
-  using { document, dispose } = createTTY({ runtime });
+  
+  using { document, dispose } = TermDOM({ runtime });
   
   // Create a data dashboard
   const dashboard = document.createElement('container');

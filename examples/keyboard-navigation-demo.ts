@@ -9,15 +9,15 @@
  * - Safe exit with timeout and Ctrl+C
  */
 
-import { createTTY, BunTTYRuntime } from '../src/index.js';
+import { TermDOM } from '../src/index.js';
 
 function keyboardNavigationDemo() {
   console.log('⌨️  Starting Keyboard Navigation Demo...');
   console.log('🎮 Controls: Tab/↓ = next, ↑ = previous, Enter = click, Q = quit');
   console.log('⏰ Auto-exits in 30 seconds\n');
   
-  const runtime = new BunTTYRuntime();
-  const { document, dispose } = createTTY({ runtime });
+  
+  const { document, dispose } = TermDOM({ runtime });
   let isRunning = true;
   
   // Set up timeout to auto-exit
@@ -38,8 +38,8 @@ function keyboardNavigationDemo() {
     isRunning = false;
     
     clearTimeout(timeout);
-    // Runtime cleanup handled by dispose()
-    dispose();
+    // Runtime cleanup handled by dom.dispose()
+    dom.dom.dispose();
     
     // Restore terminal
     process.stdout.write('\x1b[?25h'); // Show cursor

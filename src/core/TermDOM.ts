@@ -1,0 +1,808 @@
+/**
+ * TermDOM - JSDOM-style terminal DOM implementation
+ *
+ * Usage:
+ * ```typescript
+ * const dom = new TermDOM({ width: 80, height: 24 });
+ * const div = dom.document.createElement('div');
+ * div.textContent = 'Hello Terminal!';
+ * dom.document.body.appendChild(div);
+ * // Renders automatically via MutationObserver
+ * ```
+ */
+
+import { LayoutEngine } from '../layout/LayoutEngine.js';
+import { Renderer } from '../rendering/Renderer.js';
+import { ColorDepth } from '../rendering/ANSIGenerator.js';
+import { EventEmitter } from 'events';
+import { JSDOM } from 'jsdom';
+import type { DOMWindow } from 'jsdom';
+import type * as Yoga from 'yoga-layout';
+import { RectUtils } from '../layout/RectUtils.js';
+// Use ReturnType to match Element's getClientRects return type
+type ClientRectsReturnType = ReturnType<Element['getClientRects']>;
+
+// Symbol properties for storing layout data (following HappyDOM's pattern)
+export const ELEMENT_BOUNDS = Symbol('elementBounds'); // Single bounding rect for all elements
+export const ELEMENT_RECTS = Symbol('elementRects');   // Multiple rects for inline elements spanning lines
+export const ELEMENT_TEXT_RECTS = Symbol('elementTextRects'); // Text content for each rect in ELEMENT_RECTS
+export const YOGA_NODE = Symbol('yogaNode');           // Yoga layout node (block/flex elements only)
+
+// Interface for text rectangles with content
+export interface TextRect extends DOMRect {
+  text: string; // The text content for this line fragment
+}
+
+// Type for elements with layout properties
+export interface LayoutElement extends HTMLElement {
+  [ELEMENT_BOUNDS]?: DOMRect;
+  [ELEMENT_RECTS]?: DOMRect[];
+  [ELEMENT_TEXT_RECTS]?: TextRect[];
+  [YOGA_NODE]?: Yoga.Node;
+}
+
+// Augment global DOM types with our extensions
+declare global {
+	interface Element {
+    [ELEMENT_BOUNDS]?: DOMRect;
+    [ELEMENT_RECTS]?: DOMRect[];
+    [ELEMENT_TEXT_RECTS]?: TextRect[];
+    [YOGA_NODE]?: Yoga.Node;
+	}
+
+  // Document already has elementFromPoint, but JSDOM returns null by default
+  // We'll override it with our layout-powered implementation
+}
+
+/**
+ * Minimal TTY-like interface for what TermDOM actually needs
+ */
+export interface TTYWriteStream extends EventEmitter {
+  write(chunk: any, encoding?: BufferEncoding | ((error?: Error) => void), callback?: (error?: Error) => void): boolean;
+  columns: number;
+  rows: number;
+  isTTY: boolean;
+}
+
+export interface TTYReadStream extends EventEmitter {
+  isTTY: boolean;
+  setRawMode?(mode: boolean): this;
+}
+
+/**
+ * Process-like interface for dependency injection
+ */
+export interface ProcessLike extends EventEmitter {
+  stdout: TTYWriteStream;
+  stdin?: TTYReadStream;
+  stderr?: TTYWriteStream;
+  exit(code?: number): never;
+}
+
+export interface TermDOMOptions {
+  width?: number;
+  height?: number;
+  /** Color depth for ANSI output */
+  colorDepth?: ColorDepth;
+  /** Render mode: 'flow' for inline CLI output, 'fullscreen' for TUI apps */
+  mode?: 'flow' | 'fullscreen';
+  /** Process object for dependency injection (defaults to global process) */
+  process?: ProcessLike;
+}
+
+/**
+ * TermDOM - Terminal Document Object Model
+ *
+ * Provides a JSDOM-like API for creating HTML documents that render to terminals
+ */
+export class TermDOM {
+  public readonly document: Document;
+  public readonly window: DOMWindow;
+
+  private readonly renderer: Renderer;
+  private readonly layoutEngine: LayoutEngine;
+  private readonly jsdom: JSDOM;
+  private readonly observer: MutationObserver;
+
+  private readonly width: number;
+  private readonly height: number;
+  private readonly mode: 'flow' | 'fullscreen';
+  private readonly process: ProcessLike;
+
+  // Dirty tracking for efficient layout updates
+  private readonly dirtyRoots = new Set<HTMLElement>();
+  private initialLayoutComputed = false;
+
+  // Render completion callbacks for waitForRender
+  private renderCompleteCallbacks: Array<() => void> = [];
+
+  constructor(options: TermDOMOptions = {}) {
+    // Set up process (defaults to global process)
+    this.process = options.process || process;
+
+    // Set up dimensions
+    this.width = options.width || this.process.stdout.columns || 80;
+    this.height = options.height || this.process.stdout.rows || 24;
+    this.mode = options.mode || 'flow';
+
+    // Create JSDOM instance
+    this.jsdom = new JSDOM('<!DOCTYPE html><html><head></head><body></body></html>', {
+      pretendToBeVisual: true,
+      resources: 'usable'
+    });
+
+    // Extract window and document
+    this.document = this.jsdom.window.document;
+    this.window = this.jsdom.window;
+
+    // Setup cleaner console representation for DOM elements
+    this.setupDOMInspector();
+
+    // Initialize HTML extensions
+    this.initializeHTMLExtensions();
+
+    // Create renderer with our new clean implementation
+    this.renderer = new Renderer(
+      this.height,
+      this.width,
+      options.colorDepth || 'rgb'
+    );
+
+    // Create layout engine
+    this.layoutEngine = new LayoutEngine(this.jsdom.window);
+
+    // Set up window properties and DOM
+    this.initializeWindow();
+    this.initializeDocument();
+
+    // Set up automatic rendering via MutationObserver
+    this.observer = this.setupMutationObserver();
+
+    // Set up process handlers
+    this.setupProcessHandlers();
+  }
+
+  private initializeWindow(): void {
+    const window = this.window as any;
+
+    // Make layout engine and terminal size available
+    window._layoutEngine = this.layoutEngine;
+    window._terminalSize = { width: this.width, height: this.height };
+
+    // Set CSSOM-compliant window dimensions
+    Object.defineProperty(window, 'innerWidth', {
+      value: this.width,
+      writable: false,
+      configurable: true
+    });
+    Object.defineProperty(window, 'innerHeight', {
+      value: this.height,
+      writable: false,
+      configurable: true
+    });
+    Object.defineProperty(window, 'outerWidth', {
+      value: this.width,
+      writable: false,
+      configurable: true
+    });
+    Object.defineProperty(window, 'outerHeight', {
+      value: this.height,
+      writable: false,
+      configurable: true
+    });
+
+    // Expose internal methods for layout system
+    window._processPendingMutations = this.processPendingMutations.bind(this);
+    window._dirtyRoots = this.dirtyRoots;
+    window._computeLayoutIfNeeded = this.computeLayoutIfNeeded.bind(this);
+  }
+
+  private initializeDocument(): void {
+    const document = this.document;
+
+    // Reset default browser styles for consistent terminal behavior
+    document.documentElement.style.setProperty('margin', '0');
+    document.documentElement.style.setProperty('padding', '0');
+    document.body.style.setProperty('margin', '0');
+    document.body.style.setProperty('padding', '0');
+
+    // Use flexbox layout (required for Yoga engine)
+    document.documentElement.style.setProperty('display', 'flex');
+    document.documentElement.style.setProperty('flex-direction', 'column');
+    document.body.style.setProperty('display', 'flex');
+    document.body.style.setProperty('flex-direction', 'column');
+    document.body.style.setProperty('flex', '1');
+  }
+
+  private setupMutationObserver(): MutationObserver {
+    const observer = new this.window.MutationObserver((mutations: MutationRecord[]) => {
+      this.handleMutations(mutations);
+    });
+
+    observer.observe(this.document.documentElement, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      characterData: true
+    });
+
+    return observer;
+  }
+
+  private async handleMutations(mutations: MutationRecord[]): Promise<void> {
+    // Process the mutations and render
+    await this.render();
+    // Note: renderCompleteCallbacks are now called from the write callback in render()
+  }
+
+  private setupProcessHandlers(): void {
+    const cleanup = () => this.dispose();
+
+    this.process.on('uncaughtException', () => {
+      cleanup();
+      this.process.exit(1);
+    });
+
+    this.process.on('SIGINT', () => {
+      cleanup();
+      this.process.exit(0);
+    });
+
+    this.process.on('SIGWINCH', () => {
+      this.handleResize();
+    });
+  }
+
+  private async render(): Promise<void> {
+    // Process pending mutations to mark dirty nodes
+    this.processPendingMutations();
+
+    // Compute layout if needed
+    this.computeLayoutIfNeeded();
+
+    // Begin new frame
+    this.renderer.beginFrame();
+
+    // Render DOM tree to cells
+    this.renderElement(this.document.documentElement as HTMLElement, 0, 0);
+
+    // Generate ANSI output and write to terminal
+    const ansiOutput = this.renderer.render();
+    if (ansiOutput) {
+      await new Promise<void>((resolve, reject) => {
+        this.process.stdout.write(ansiOutput, 'utf8', (error) => {
+          if (error) {
+            reject(error);
+          } else {
+            resolve();
+            
+            // Notify any waiting callbacks that rendering is truly complete
+            const callbacks = this.renderCompleteCallbacks.splice(0);
+            callbacks.forEach(callback => callback());
+          }
+        });
+      });
+    } else {
+      // No output to write, but still notify callbacks
+      const callbacks = this.renderCompleteCallbacks.splice(0);
+      callbacks.forEach(callback => callback());
+    }
+  }
+
+  private renderElement(element: HTMLElement, x: number, y: number): void {
+    // Get computed layout bounds
+    const bounds = element[ELEMENT_BOUNDS];
+    if (!bounds) return;
+
+    // Get background color and text styling
+    const computedStyle = (this.window as any).getComputedStyle(element);
+    const color = computedStyle.color;
+    const backgroundColor = computedStyle.backgroundColor;
+    const bold = computedStyle.fontWeight === 'bold' || parseInt(computedStyle.fontWeight) >= 600;
+    const italic = computedStyle.fontStyle === 'italic';
+    const underline = computedStyle.textDecoration?.includes('underline');
+
+    const style = {
+      fg: color && color !== 'initial' ? color : undefined,
+      bg: backgroundColor && backgroundColor !== 'initial' ? backgroundColor : undefined,
+      bold,
+      italic,
+      underline
+    };
+
+    // First, fill the entire element's bounding box with background color (if any)
+    if (style.bg) {
+      this.renderer.fillRect(
+        x + bounds.left,
+        y + bounds.top,
+        bounds.width,
+        bounds.height,
+        { bg: style.bg }
+      );
+    }
+
+    // Then render text content on top, using proper Unicode width calculation
+    const textContent = this.getTextContent(element);
+    if (textContent) {
+      const lines = textContent.split('\n');
+      for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+        const line = lines[lineIdx];
+        const renderY = y + bounds.top + lineIdx;
+        const renderX = x + bounds.left;
+
+        // Use the high-level setText method with automatic wide character handling
+        this.renderer.setText(renderX, renderY, line, style);
+      }
+    }
+
+    // Recursively render children
+    for (const child of element.children) {
+      if (child instanceof (this.window as any).HTMLElement) {
+        this.renderElement(child, x, y);
+      }
+    }
+  }
+
+  private getTextContent(element: HTMLElement): string {
+    // Get direct text content, not including children
+    let text = '';
+    for (const node of element.childNodes) {
+      if (node.nodeType === (this.window as any).Node.TEXT_NODE) {
+        text += node.textContent || '';
+      }
+    }
+    return text;
+  }
+
+  private computeLayoutIfNeeded(): void {
+    if (!this.initialLayoutComputed || this.dirtyRoots.size > 0) {
+      this.layoutEngine.computeLayout(
+        this.document.documentElement,
+        this.width,
+        this.height
+      );
+      this.dirtyRoots.clear();
+      this.initialLayoutComputed = true;
+    }
+  }
+
+  private processPendingMutations(): void {
+    const mutations = this.observer.takeRecords();
+    if (mutations.length === 0) return;
+
+    // Process mutations to find dirty nodes
+    for (const mutation of mutations) {
+      let targetElement: HTMLElement | null = null;
+
+      if (mutation.target instanceof (this.window as any).HTMLElement) {
+        targetElement = mutation.target;
+      } else if (mutation.type === 'characterData' && mutation.target.nodeType === (this.window as any).Node.TEXT_NODE) {
+        targetElement = mutation.target.parentElement as HTMLElement;
+      }
+
+      if (!targetElement) continue;
+
+      if (mutation.type === 'attributes' && mutation.attributeName === 'style') {
+        this.markDirtySingle(targetElement);
+      } else if (mutation.type === 'childList') {
+        if (!targetElement[YOGA_NODE]) {
+          this.markDirtySingle(targetElement);
+        } else {
+          this.markDirtyWithBubbling(targetElement);
+        }
+      } else if (mutation.type === 'characterData') {
+        this.markDirtySingle(targetElement);
+      }
+    }
+
+    this.pruneRedundantDirtyRoots();
+  }
+
+  private markDirtySingle(element: HTMLElement): void {
+    if (!element[YOGA_NODE]) {
+      const parent = element.parentElement as HTMLElement;
+      if (parent && parent[YOGA_NODE]) {
+        delete element[ELEMENT_BOUNDS];
+        delete element[ELEMENT_RECTS];
+        if (!this.isAncestorDirty(parent)) {
+          this.dirtyRoots.add(parent);
+        }
+      }
+      return;
+    }
+
+    if (this.isAncestorDirty(element)) return;
+    this.dirtyRoots.add(element);
+  }
+
+  private markDirtyWithBubbling(element: HTMLElement): void {
+    let current: HTMLElement | null = element;
+
+    while (current && current[YOGA_NODE]) {
+      if (this.dirtyRoots.has(current)) break;
+      this.dirtyRoots.add(current);
+      current = current.parentElement;
+    }
+  }
+
+  private isAncestorDirty(element: HTMLElement): boolean {
+    let current: HTMLElement | null = element.parentElement;
+    while (current) {
+      if (this.dirtyRoots.has(current)) return true;
+      current = current.parentElement;
+    }
+    return false;
+  }
+
+  private pruneRedundantDirtyRoots(): void {
+    const toRemove = new Set<HTMLElement>();
+
+    for (const root of this.dirtyRoots) {
+      if (this.isAncestorDirty(root)) {
+        toRemove.add(root);
+      }
+    }
+
+    for (const element of toRemove) {
+      this.dirtyRoots.delete(element);
+    }
+  }
+
+  private handleResize(): void {
+    // For now, just re-render with current dimensions
+    // TODO: Implement proper resize handling
+    this.render();
+  }
+
+  /**
+   * Initialize HTML extensions by monkey-patching HTMLElement prototype
+   * This should be called once at module initialization
+   */
+  private initializeHTMLExtensions(): void {
+    const { HTMLElement, Document, DOMRect } = this.window;
+
+    // Prevent double initialization
+    if ((HTMLElement.prototype as any)._ttyomExtended) {
+      return;
+    }
+
+    // Mark as extended to prevent double patching
+    (HTMLElement.prototype as any)._ttyomExtended = true;
+
+    // Store reference to TermDOM instance for methods that need it
+    const termdom = this;
+
+    // === DOM Layout APIs (Yoga-powered) ===
+
+    /**
+     * Get element bounds as DOMRect
+     * For elements with multiple rects (inline elements spanning lines),
+     * returns the bounding box that encompasses all rects.
+     */
+    HTMLElement.prototype.getBoundingClientRect = function(this: HTMLElement): DOMRect {
+      // If element is not in document, return empty rect (like browsers do)
+      if (!this.isConnected) {
+        return new DOMRect(0, 0, 0, 0);
+      }
+
+      // Process any pending mutations first (like browsers do)
+      const processPendingMutations = (termdom.window as any)._processPendingMutations;
+      const computeLayoutIfNeeded = (termdom.window as any)._computeLayoutIfNeeded;
+
+      if (processPendingMutations) {
+        processPendingMutations();
+      }
+
+      // Now compute layout only if there are dirty nodes
+      if (computeLayoutIfNeeded) {
+        computeLayoutIfNeeded();
+      }
+
+      // Check for multiple rects first (inline elements)
+      if (this[ELEMENT_RECTS] && this[ELEMENT_RECTS].length > 0) {
+        return RectUtils.computeBoundingRect(this[ELEMENT_RECTS], termdom.window);
+      }
+
+      // Fall back to single rect (block/flex elements)
+      if (!this[ELEMENT_BOUNDS]) {
+        throw new Error('Layout computation did not set ELEMENT_BOUNDS for element');
+      }
+
+      return this[ELEMENT_BOUNDS];
+    };
+
+    /**
+     * Get all client rectangles for this element
+     * For inline elements spanning multiple lines, returns multiple rects.
+     * For block elements, returns single rect.
+     */
+    HTMLElement.prototype.getClientRects = function(): ClientRectsReturnType {
+      // If element is not in document, return empty list
+      if (!this.isConnected) {
+        return RectUtils.createDOMRectList([]) as ClientRectsReturnType;
+      }
+
+      // Process mutations and compute layout (same as getBoundingClientRect)
+      const processPendingMutations = (termdom.window as any)._processPendingMutations;
+      const computeLayoutIfNeeded = (termdom.window as any)._computeLayoutIfNeeded;
+
+      if (processPendingMutations) {
+        processPendingMutations();
+      }
+
+      if (computeLayoutIfNeeded) {
+        computeLayoutIfNeeded();
+      }
+
+      // Return multiple rects if available (inline elements)
+      if (this[ELEMENT_RECTS] && this[ELEMENT_RECTS].length > 0) {
+        return RectUtils.createDOMRectList(this[ELEMENT_RECTS]) as ClientRectsReturnType;
+      }
+
+      // Fall back to single rect (block/flex elements)
+      if (this[ELEMENT_BOUNDS]) {
+        return RectUtils.createDOMRectList([this[ELEMENT_BOUNDS]]) as ClientRectsReturnType;
+      }
+
+      // No layout computed yet
+      throw new Error('Layout computation did not set element bounds');
+    };
+
+    // === Offset Properties ===
+
+    Object.defineProperty(HTMLElement.prototype, 'offsetLeft', {
+      get: function(this: HTMLElement) {
+        if (!this.isConnected) return 0;
+        return this.getBoundingClientRect().x;
+      },
+      enumerable: true,
+      configurable: true
+    });
+
+    Object.defineProperty(HTMLElement.prototype, 'offsetTop', {
+      get: function(this: HTMLElement) {
+        if (!this.isConnected) return 0;
+        return this.getBoundingClientRect().y;
+      },
+      enumerable: true,
+      configurable: true
+    });
+
+    Object.defineProperty(HTMLElement.prototype, 'offsetWidth', {
+      get: function(this: HTMLElement) {
+        if (!this.isConnected) return 0;
+        return this.getBoundingClientRect().width;
+      },
+      enumerable: true,
+      configurable: true
+    });
+
+    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
+      get: function(this: HTMLElement) {
+        if (!this.isConnected) return 0;
+        return this.getBoundingClientRect().height;
+      },
+      enumerable: true,
+      configurable: true
+    });
+
+    // === Client Properties ===
+
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+      get: function(this: HTMLElement) {
+        if (!this.isConnected) return 0;
+        // For terminals, client area is same as offset (no borders/scrollbars)
+        return this.getBoundingClientRect().width;
+      },
+      enumerable: true,
+      configurable: true
+    });
+
+    Object.defineProperty(HTMLElement.prototype, 'clientHeight', {
+      get: function(this: HTMLElement) {
+        if (!this.isConnected) return 0;
+        // For terminals, client area is same as offset (no borders/scrollbars)
+        return this.getBoundingClientRect().height;
+      },
+      enumerable: true,
+      configurable: true
+    });
+
+    Object.defineProperty(HTMLElement.prototype, 'clientLeft', {
+      get: function(this: HTMLElement) {
+        // No borders in terminal context
+        return 0;
+      },
+      enumerable: true,
+      configurable: true
+    });
+
+    Object.defineProperty(HTMLElement.prototype, 'clientTop', {
+      get: function(this: HTMLElement) {
+        // No borders in terminal context
+        return 0;
+      },
+      enumerable: true,
+      configurable: true
+    });
+
+    // === Scroll Properties ===
+
+    Object.defineProperty(HTMLElement.prototype, 'scrollWidth', {
+      get: function(this: HTMLElement) {
+        // TODO: Return actual content width when scrolling is implemented
+        return this.clientWidth;
+      },
+      enumerable: true,
+      configurable: true
+    });
+
+    Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
+      get: function(this: HTMLElement) {
+        // TODO: Return actual content height when scrolling is implemented
+        return this.clientHeight;
+      },
+      enumerable: true,
+      configurable: true
+    });
+
+    Object.defineProperty(HTMLElement.prototype, 'scrollLeft', {
+      get: function(this: HTMLElement) {
+        // TODO: Implement when we add scrolling
+        return 0;
+      },
+      set: function(this: HTMLElement, _value: number) {
+        // TODO: Implement when we add scrolling
+      },
+      enumerable: true,
+      configurable: true
+    });
+
+    Object.defineProperty(HTMLElement.prototype, 'scrollTop', {
+      get: function(this: HTMLElement) {
+        // TODO: Implement when we add scrolling
+        return 0;
+      },
+      set: function(this: HTMLElement, _value: number) {
+        // TODO: Implement when we add scrolling
+      },
+      enumerable: true,
+      configurable: true
+    });
+
+    // === Document API Extensions ===
+
+    /**
+     * elementFromPoint - Find element at specific coordinates using Yoga layout
+     * This provides hit testing for mouse interaction with elements
+     */
+    Document.prototype.elementFromPoint = function(x: number, y: number): Element | null {
+      // Process any pending mutations first (like browsers do)
+      const processPendingMutations = (termdom.window as any)._processPendingMutations;
+      const computeLayoutIfNeeded = (termdom.window as any)._computeLayoutIfNeeded;
+
+      if (processPendingMutations) {
+        processPendingMutations();
+      }
+
+      // Now compute layout only if there are dirty nodes
+      if (computeLayoutIfNeeded) {
+        computeLayoutIfNeeded();
+      }
+
+      return findElementAtPoint(this.documentElement, x, y);
+    };
+
+    // === Element Navigation APIs ===
+
+    /**
+     * Check if this element contains another element
+     */
+    HTMLElement.prototype.contains = function(other: Node | null): boolean {
+      if (!other || other === this) return other === this;
+
+      let current: Node | null = other;
+      while (current && current !== this) {
+        current = current.parentNode;
+      }
+      return current === this;
+    };
+
+    /**
+     * Find closest ancestor matching selector
+     * For now, just supports simple tag name selectors
+     */
+    HTMLElement.prototype.closest = function(selector: string): Element | null {
+      let current: Element | null = this;
+
+      // Simple tag name matching (can be enhanced later)
+      const tagName = selector.toUpperCase();
+
+      while (current) {
+        if (current.tagName === tagName) {
+          return current;
+        }
+        current = current.parentElement;
+      }
+      return null;
+    };
+  }
+
+  /**
+   * Setup cleaner console representation for DOM elements in tests
+   */
+  private setupDOMInspector(): void {
+    const inspect = Symbol.for('nodejs.util.inspect.custom');
+    
+    this.window.HTMLElement.prototype[inspect] = function() {
+      const tag = this.tagName?.toLowerCase() || 'element';
+      const attrs = Array.from(this.attributes || [])
+        .map(attr => `${attr.name}="${attr.value}"`)
+        .join(' ');
+      return attrs ? `<${tag} ${attrs}>` : `<${tag}>`;
+    };
+  }
+
+  public dispose(): void {
+    try {
+      this.observer.disconnect();
+      this.observer.takeRecords();
+      this.renderer.dispose();
+      this.jsdom.window.close();
+    } catch (error) {
+      // Silently handle dispose errors
+    }
+  }
+
+  /** Switch to fullscreen TUI mode */
+  public requestFullScreen(): void {
+    throw new Error("TODO: Implement fullscreen mode switching");
+  }
+
+  /**
+   * Wait for the next render cycle to complete
+   * Useful for testing to ensure DOM mutations have been processed
+   */
+  public async waitForRender(): Promise<void> {
+    return new Promise((resolve) => {
+      // Add callback to be notified when the next render completes
+      this.renderCompleteCallbacks.push(resolve);
+    });
+  }
+}
+
+/**
+ * Helper function to find element at specific point using getClientRects
+ * Performs depth-first search to find the deepest element at coordinates
+ */
+function findElementAtPoint(element: Element, x: number, y: number): Element | null {
+  // Skip non-HTMLElements (text nodes, etc.)
+  if (element.nodeType !== 1) {
+    return null;
+  }
+
+  const htmlElement = element;
+
+  // Use getClientRects for accurate hit-testing (handles multi-rect inline elements)
+  try {
+    const rects = htmlElement.getClientRects();
+    if (!RectUtils.isPointInAnyRect(x, y, rects)) {
+      return null;
+    }
+  } catch (error) {
+    // Element doesn't have layout computed yet, skip it
+    return null;
+  }
+
+  // Check children first (deepest first)
+  const children = Array.from(element.children);
+  for (const child of children) {
+    const result = findElementAtPoint(child, x, y);
+    if (result) {
+      return result;
+    }
+  }
+
+  // If no child contains the point, this element is the target
+  return element;
+}

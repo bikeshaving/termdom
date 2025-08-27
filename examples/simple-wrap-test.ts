@@ -4,10 +4,10 @@
  * Simple text wrapping test
  */
 
-import { createTTY, BunTTYRuntime } from '../src/index.js';
+import { TermDOM } from '../src/index.js';
 
-const runtime = new BunTTYRuntime();
-const { document, dispose } = createTTY({ runtime });
+
+const { document, dispose } = TermDOM({ runtime });
 
 // Simple container with text that should wrap
 const container = document.createElement('container');
@@ -29,5 +29,5 @@ console.log(`Should break into multiple lines.`);
 
 
 setTimeout(() => {
-  dispose();
+  dom.dom.dispose();
 }, 3000);

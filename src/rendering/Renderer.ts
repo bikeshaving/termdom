@@ -8,7 +8,7 @@ import {
   setCellChar, setCellFg, setCellBg,
   CELL_CHAR, CELL_FG, CELL_BG, CELL_STYLE,
   STYLE_BOLD, STYLE_ITALIC, STYLE_UNDERLINE, STYLE_STRIKETHROUGH,
-  STYLE_INVERSE, STYLE_DIM, STYLE_BLINK, STYLE_OVERLINE,
+  STYLE_INVERSE, STYLE_DIM, STYLE_BLINK, STYLE_OVERLINE, STYLE_WIDE,
   isCellEmpty
 } from './CellBuffer.js';
 import { ANSIGenerator, ColorDepth } from './ANSIGenerator.js';
@@ -24,6 +24,7 @@ export interface CellStyle {
   dim?: boolean;
   blink?: boolean;
   overline?: boolean;
+  wide?: boolean;
 }
 
 export class Renderer {
@@ -48,7 +49,7 @@ export class Renderer {
   }
   
   /**
-   * Set a cell with character and style
+   * Set a cell with character and style (low-level API)
    */
   setCell(row: number, col: number, char: string, style?: CellStyle): void {
     if (row < 0 || row >= this.rows || col < 0 || col >= this.cols) return;
@@ -83,6 +84,111 @@ export class Renderer {
     if (style?.blink) cell[CELL_STYLE] |= STYLE_BLINK;
     if (style?.dim) cell[CELL_STYLE] |= STYLE_DIM;
     if (style?.overline) cell[CELL_STYLE] |= STYLE_OVERLINE;
+    if (style?.wide) cell[CELL_STYLE] |= STYLE_WIDE;
+  }
+
+  /**
+   * Fill a rectangular area with background color (high-level API)
+   */
+  fillRect(x: number, y: number, width: number, height: number, style?: CellStyle): void {
+    for (let row = y; row < y + height; row++) {
+      for (let col = x; col < x + width; col++) {
+        if (row >= 0 && row < this.rows && col >= 0 && col < this.cols) {
+          this.setCell(row, col, ' ', style);
+        }
+      }
+    }
+  }
+
+  /**
+   * Clear a rectangular area (high-level API)
+   */
+  clearRect(x: number, y: number, width: number, height: number): void {
+    for (let row = y; row < y + height; row++) {
+      for (let col = x; col < x + width; col++) {
+        if (row >= 0 && row < this.rows && col >= 0 && col < this.cols) {
+          const cell = this.currentBuffer[row][col];
+          setCellChar(cell, '');
+          setCellFg(cell, 0);
+          setCellBg(cell, 0);
+          cell[CELL_STYLE] = 0;
+        }
+      }
+    }
+  }
+
+  /**
+   * Write text with automatic wide character handling (high-level API)
+   */
+  setText(x: number, y: number, text: string, style?: CellStyle): number {
+    if (y < 0 || y >= this.rows) return x;
+    
+    let currentX = x;
+    const segmenter = new Intl.Segmenter('en', { granularity: 'grapheme' });
+    const segments = Array.from(segmenter.segment(text));
+    
+    for (const segment of segments) {
+      const char = segment.segment;
+      const width = Bun.stringWidth(char);
+      
+      // Stop if we're going out of bounds
+      if (currentX + width > this.cols) break;
+      
+      // Set the wide flag for multi-column characters
+      const cellStyle = {
+        ...style,
+        wide: width === 2
+      };
+      
+      this.setCell(y, currentX, char, cellStyle);
+      currentX += width;
+    }
+    
+    return currentX;
+  }
+
+  /**
+   * Write text with wrapping support (high-level API)
+   */
+  setTextWrapped(x: number, y: number, text: string, style?: CellStyle, maxWidth?: number): { endX: number, endY: number } {
+    const wrapWidth = maxWidth || (this.cols - x);
+    let currentX = x;
+    let currentY = y;
+    
+    const segmenter = new Intl.Segmenter('en', { granularity: 'grapheme' });
+    const segments = Array.from(segmenter.segment(text));
+    
+    for (const segment of segments) {
+      const char = segment.segment;
+      const width = Bun.stringWidth(char);
+      
+      // Handle newlines
+      if (char === '\n') {
+        currentX = x;
+        currentY++;
+        continue;
+      }
+      
+      // Wrap if needed
+      if (currentX + width > x + wrapWidth) {
+        currentX = x;
+        currentY++;
+      }
+      
+      // Stop if we're going out of bounds vertically
+      if (currentY >= this.rows) break;
+      
+      // Set the wide flag for multi-column characters
+      const cellStyle = {
+        ...style,
+        wide: width === 2
+      };
+      
+      this.setCell(currentY, currentX, char, cellStyle);
+      currentX += width;
+    }
+    
+    return { endX: currentX, endY: currentY };
   }
   
   /**

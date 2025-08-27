@@ -3,11 +3,10 @@
  */
 
 import { test, expect } from "bun:test";
-import { SimpleGreedyTextBreaker } from '../src/text/SimpleGreedyTextBreaker.js';
-import { GreedyTextBreaker } from '../src/text/GreedyTextBreaker.js';
+import { TextBreaker } from '../src/text/TextBreaker.js';
 
-test("SimpleGreedyTextBreaker - basic word wrapping", () => {
-  const breaker = new SimpleGreedyTextBreaker();
+test("TextBreaker - basic word wrapping", () => {
+  const breaker = new TextBreaker();
   const text = "Hello world this is a test";
   const result = breaker.breakText(text, { maxWidth: 10 });
   
@@ -17,8 +16,8 @@ test("SimpleGreedyTextBreaker - basic word wrapping", () => {
   expect(result.lines[2].text).toBe(" is a test");
 });
 
-test("SimpleGreedyTextBreaker - exact width fit", () => {
-  const breaker = new SimpleGreedyTextBreaker();
+test("TextBreaker - exact width fit", () => {
+  const breaker = new TextBreaker();
   const text = "Fits exactly";
   const result = breaker.breakText(text, { maxWidth: 12 });
   
@@ -27,8 +26,8 @@ test("SimpleGreedyTextBreaker - exact width fit", () => {
   expect(result.lines[0].width).toBe(12);
 });
 
-test("SimpleGreedyTextBreaker - long word breaking", () => {
-  const breaker = new SimpleGreedyTextBreaker();
+test("TextBreaker - long word breaking", () => {
+  const breaker = new TextBreaker();
   const text = "supercalifragilisticexpialidocious";
   const result = breaker.breakText(text, { maxWidth: 10, breakWords: true });
   
@@ -42,8 +41,8 @@ test("SimpleGreedyTextBreaker - long word breaking", () => {
   expect(reconstructed).toBe(text);
 });
 
-test("SimpleGreedyTextBreaker - no word breaking when disabled", () => {
-  const breaker = new SimpleGreedyTextBreaker();
+test("TextBreaker - no word breaking when disabled", () => {
+  const breaker = new TextBreaker();
   const text = "verylongword short";
   const result = breaker.breakText(text, { maxWidth: 10, breakWords: false });
   
@@ -53,8 +52,8 @@ test("SimpleGreedyTextBreaker - no word breaking when disabled", () => {
   expect(result.lines[1].text).toBe(" short");
 });
 
-test("SimpleGreedyTextBreaker - empty text", () => {
-  const breaker = new SimpleGreedyTextBreaker();
+test("TextBreaker - empty text", () => {
+  const breaker = new TextBreaker();
   const result = breaker.breakText("", { maxWidth: 10 });
   
   expect(result.lines.length).toBe(0);
@@ -62,8 +61,8 @@ test("SimpleGreedyTextBreaker - empty text", () => {
   expect(result.maxLineWidth).toBe(0);
 });
 
-test("SimpleGreedyTextBreaker - single character", () => {
-  const breaker = new SimpleGreedyTextBreaker();
+test("TextBreaker - single character", () => {
+  const breaker = new TextBreaker();
   const result = breaker.breakText("A", { maxWidth: 1 });
   
   expect(result.lines.length).toBe(1);
@@ -71,8 +70,8 @@ test("SimpleGreedyTextBreaker - single character", () => {
   expect(result.lines[0].width).toBe(1);
 });
 
-test("SimpleGreedyTextBreaker - multiple spaces", () => {
-  const breaker = new SimpleGreedyTextBreaker();
+test("TextBreaker - multiple spaces", () => {
+  const breaker = new TextBreaker();
   const text = "Hello    world"; // Multiple spaces
   const result = breaker.breakText(text, { maxWidth: 20 });
   
@@ -80,8 +79,8 @@ test("SimpleGreedyTextBreaker - multiple spaces", () => {
   expect(result.lines[0].text).toBe("Hello    world");
 });
 
-test("SimpleGreedyTextBreaker - trailing spaces", () => {
-  const breaker = new SimpleGreedyTextBreaker();
+test("TextBreaker - trailing spaces", () => {
+  const breaker = new TextBreaker();
   const text = "Hello world   ";
   const result = breaker.breakText(text, { maxWidth: 20 });
   
@@ -89,8 +88,8 @@ test("SimpleGreedyTextBreaker - trailing spaces", () => {
   expect(result.lines[0].text).toBe("Hello world   ");
 });
 
-test("SimpleGreedyTextBreaker - text indices", () => {
-  const breaker = new SimpleGreedyTextBreaker();
+test("TextBreaker - text indices", () => {
+  const breaker = new TextBreaker();
   const text = "First line second line";
   const result = breaker.breakText(text, { maxWidth: 10 });
   
@@ -101,8 +100,8 @@ test("SimpleGreedyTextBreaker - text indices", () => {
   });
 });
 
-test("SimpleGreedyTextBreaker - unicode handling", () => {
-  const breaker = new SimpleGreedyTextBreaker();
+test("TextBreaker - unicode handling", () => {
+  const breaker = new TextBreaker();
   const text = "Hello 👋 World 🌍 Test";
   const result = breaker.breakText(text, { maxWidth: 15 });
   
@@ -113,8 +112,8 @@ test("SimpleGreedyTextBreaker - unicode handling", () => {
   });
 });
 
-test("SimpleGreedyTextBreaker - CJK characters", () => {
-  const breaker = new SimpleGreedyTextBreaker();
+test("TextBreaker - CJK characters", () => {
+  const breaker = new TextBreaker();
   const text = "你好世界 Hello"; // CJK chars are typically width 2
   const result = breaker.breakText(text, { maxWidth: 10 });
   
@@ -123,8 +122,8 @@ test("SimpleGreedyTextBreaker - CJK characters", () => {
   expect(result.lines[1].width).toBeLessThanOrEqual(10);
 });
 
-test("SimpleGreedyTextBreaker - real world example", () => {
-  const breaker = new SimpleGreedyTextBreaker();
+test("TextBreaker - real world example", () => {
+  const breaker = new TextBreaker();
   const text = "This is a long line that should wrap to multiple lines.";
   const result = breaker.breakText(text, { maxWidth: 18 });
   
@@ -140,8 +139,8 @@ test("SimpleGreedyTextBreaker - real world example", () => {
   });
 });
 
-test("SimpleGreedyTextBreaker - preserve line structure", () => {
-  const breaker = new SimpleGreedyTextBreaker();
+test("TextBreaker - preserve line structure", () => {
+  const breaker = new TextBreaker();
   const text = "First line second line third line";
   const result = breaker.breakText(text, { maxWidth: 12 });
   
@@ -153,8 +152,8 @@ test("SimpleGreedyTextBreaker - preserve line structure", () => {
   expect(reconstructed.length).toBe(text.length);
 });
 
-test("SimpleGreedyTextBreaker - single long word", () => {
-  const breaker = new SimpleGreedyTextBreaker();
+test("TextBreaker - single long word", () => {
+  const breaker = new TextBreaker();
   const text = "averylongwordthatdoesnotfit";
   const result = breaker.breakText(text, { maxWidth: 10, breakWords: true });
   
@@ -171,8 +170,8 @@ test("SimpleGreedyTextBreaker - single long word", () => {
   expect(reconstructed).toBe(text);
 });
 
-test("SimpleGreedyTextBreaker - mixed content simulation", () => {
-  const breaker = new SimpleGreedyTextBreaker();
+test("TextBreaker - mixed content simulation", () => {
+  const breaker = new TextBreaker();
   // Simulate text with inline elements by using placeholder
   const text = "Before [BUTTON] after text";
   const result = breaker.breakText(text, { maxWidth: 15 });

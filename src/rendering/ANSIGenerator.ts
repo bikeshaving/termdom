@@ -7,7 +7,7 @@ import {
   Cell, CellBuffer,
   CELL_CHAR, CELL_FG, CELL_BG, CELL_STYLE,
   STYLE_INVERSE, STYLE_BOLD, STYLE_UNDERLINE, STYLE_BLINK, 
-  STYLE_INVISIBLE, STYLE_STRIKETHROUGH, STYLE_ITALIC, STYLE_DIM, STYLE_OVERLINE,
+  STYLE_INVISIBLE, STYLE_STRIKETHROUGH, STYLE_ITALIC, STYLE_DIM, STYLE_OVERLINE, STYLE_WIDE,
   getCellChar, getCellWidth, isCellEmpty, createNullCell
 } from './CellBuffer.js';
 
@@ -51,8 +51,17 @@ export class ANSIGenerator {
       }
     }
     
-    // Process cells in order
+    // Process cells in order, skipping positions occupied by wide characters
+    let skipNextCol: number | null = null;
+    
     for (const { row, col, cell } of nonEmptyCells) {
+      // Skip this cell if it's the second column of a wide character
+      if (skipNextCol !== null && row === this._cursorRow && col === skipNextCol) {
+        skipNextCol = null;
+        continue;
+      }
+      skipNextCol = null;
+      
       // Move cursor if needed
       if (row !== this._cursorRow || col !== this._cursorCol) {
         output += this._moveCursor(row, col);
@@ -67,7 +76,15 @@ export class ANSIGenerator {
       
       // Write character
       output += getCellChar(cell);
-      this._cursorCol += getCellWidth(cell);
+      
+      // Handle wide characters - they occupy 2 columns
+      const cellWidth = getCellWidth(cell);
+      this._cursorCol += cellWidth;
+      
+      // If this is a wide character, skip the next column position
+      if ((cell[CELL_STYLE] & STYLE_WIDE) && cellWidth === 2) {
+        skipNextCol = col + 1;
+      }
     }
     
     return output;

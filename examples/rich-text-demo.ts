@@ -4,13 +4,14 @@
  * Rich Text Demo - Showcasing unified flex + inline layout
  */
 
-import { createTTY, BunTTYRuntime } from '../src/index.js';
+import { TermDOM } from '../src/index.js';
 
 console.clear();
 console.log('🎨 Rich Text Demo - Mixed Content & Inline\n');
 
-const runtime = new BunTTYRuntime();
-const { document, dispose } = createTTY({ runtime });
+
+const dom = new TermDOM();
+const { document } = dom;
 
 // Main container
 const main = document.createElement('container');
@@ -143,7 +144,7 @@ document.addEventListener('keydown', (e: any) => {
     console.log('- ✅ Style inheritance and text styling');
     console.log('- ✅ Interactive inline components');
     console.log('- ✅ Proper DOM architecture');
-    dispose();
+    dom.dom.dispose();
     process.exit(0);
   }
 });

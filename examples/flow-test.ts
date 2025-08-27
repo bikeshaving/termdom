@@ -7,13 +7,13 @@
  * 3. No extra lines are added to the terminal
  */
 
-import { createTTY, BunTTYRuntime } from '../src/index.js';
+import { TermDOM } from '../src/index.js';
 
 async function flowTest() {
   // NO CONSOLE OUTPUT - pure TTYOM rendering only
 
-  const runtime = new BunTTYRuntime();
-  const { document, dispose } = createTTY({ runtime });
+  
+  const { document, dispose } = TermDOM({ runtime });
 
   // Create simple test content - NO BACKGROUND COLORS to avoid line wrapping
   const container = document.createElement('div');
@@ -43,7 +43,7 @@ async function flowTest() {
     }
   }
 
-  dispose();
+  dom.dom.dispose();
 }
 
 flowTest().catch(console.error);

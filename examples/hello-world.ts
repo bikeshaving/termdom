@@ -5,14 +5,14 @@
  * Write standard HTML/CSS → Render to beautiful terminal output!
  */
 
-import { createTTY, BunTTYRuntime } from '../src/index.js';
+import { TermDOM } from '../src/index.js';
 
 async function helloWorld() {
   console.log('🚀 HTML-to-Terminal Hello World!\n');
   
-  // Create a TTY document (like a browser, but for terminals)
-  const runtime = new BunTTYRuntime();
-  const { document, dispose } = createTTY({ runtime });
+  // Create a TermDOM instance (like JSDOM, but for terminals)
+  const dom = new TermDOM();
+  const { document } = dom;
   
   // Create standard HTML elements with CSS styling!
   const container = document.createElement('div');
@@ -48,7 +48,7 @@ async function helloWorld() {
   
   // Clean up
   setTimeout(() => {
-    dispose();
+    dom.dispose();
   }, 2000);
 }
 

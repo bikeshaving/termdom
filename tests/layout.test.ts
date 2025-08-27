@@ -7,11 +7,11 @@
 
 import { test, expect } from 'bun:test';
 // DOMRect available from standard DOM types
-import { createTTY, MockTTYRuntime, ELEMENT_BOUNDS } from '../src/index.js';
+import { TermDOM, ELEMENT_BOUNDS } from '../src/index.js';
 
 test('getBoundingClientRect returns DOMRect with element bounds', () => {
-  const mockRuntime = new MockTTYRuntime();
-  const { document, window, dispose } = createTTY({ runtime: mockRuntime });
+  const dom = new TermDOM();
+  const { document, window } = dom;
 
   const element = document.createElement('div');
   document.body.appendChild(element);
@@ -31,7 +31,6 @@ test('getBoundingClientRect returns DOMRect with element bounds', () => {
   element.style.setProperty('margin-top', '20ch');
 
   // getBoundingClientRect triggers layout computation synchronously
-
   const updatedRect = element.getBoundingClientRect();
   expect(updatedRect.x).toBe(10);
   expect(updatedRect.y).toBe(20);
@@ -42,12 +41,12 @@ test('getBoundingClientRect returns DOMRect with element bounds', () => {
   expect(updatedRect.right).toBe(110);
   expect(updatedRect.bottom).toBe(70);
 
-  dispose();
+  dom.dispose();
 });
 
 test('offset properties return element position and dimensions', () => {
-  const mockRuntime = new MockTTYRuntime();
-  const { document, dispose } = createTTY({ runtime: mockRuntime });
+  const dom = new TermDOM();
+  const { document } = dom;
 
   const element = document.createElement('div');
   element.style.setProperty('width', '200ch');
@@ -63,12 +62,12 @@ test('offset properties return element position and dimensions', () => {
   expect(element.offsetWidth).toBe(200);
   expect(element.offsetHeight).toBe(100);
 
-  dispose();
+  dom.dispose();
 });
 
 test('client properties return content area dimensions', () => {
-  const mockRuntime = new MockTTYRuntime();
-  const { document, dispose } = createTTY({ runtime: mockRuntime });
+  const dom = new TermDOM();
+  const { document } = dom;
 
   const element = document.createElement('div');
   element.style.setProperty('width', '150ch');
@@ -83,12 +82,12 @@ test('client properties return content area dimensions', () => {
   expect(element.clientWidth).toBe(150);
   expect(element.clientHeight).toBe(80);
 
-  dispose();
+  dom.dispose();
 });
 
 test('scroll properties return scrollable dimensions', () => {
-  const mockRuntime = new MockTTYRuntime();
-  const { document, dispose } = createTTY({ runtime: mockRuntime });
+  const dom = new TermDOM();
+  const { document } = dom;
 
   const element = document.createElement('div');
   element.style.setProperty('width', '120ch');
@@ -101,12 +100,12 @@ test('scroll properties return scrollable dimensions', () => {
   expect(element.scrollWidth).toBe(120);
   expect(element.scrollHeight).toBe(60);
 
-  dispose();
+  dom.dispose();
 });
 
 test('getClientRects returns single rect for block elements', () => {
-  const mockRuntime = new MockTTYRuntime();
-  const { document, dispose } = createTTY({ runtime: mockRuntime });
+  const dom = new TermDOM();
+  const { document } = dom;
 
   const element = document.createElement('div');
   element.style.setProperty('width', '80ch');
@@ -135,12 +134,12 @@ test('getClientRects returns single rect for block elements', () => {
   // Test indexed access
   expect(rects[0].x).toBe(30);
 
-  dispose();
+  dom.dispose();
 });
 
 test('layout APIs work with text elements', () => {
-  const mockRuntime = new MockTTYRuntime();
-  const { document, dispose } = createTTY({ runtime: mockRuntime });
+  const dom = new TermDOM();
+  const { document } = dom;
 
   const span = document.createElement('span');
   span.textContent = 'Hello World';
@@ -162,12 +161,12 @@ test('layout APIs work with text elements', () => {
   expect(span.clientWidth).toBe(11);
   expect(span.clientHeight).toBe(1);
 
-  dispose();
+  dom.dispose();
 });
 
 test('layout APIs work with nested elements', () => {
-  const mockRuntime = new MockTTYRuntime();
-  const { document, dispose } = createTTY({ runtime: mockRuntime });
+  const dom = new TermDOM();
+  const { document } = dom;
 
   const container = document.createElement('div');
   const span = document.createElement('span');
@@ -200,12 +199,12 @@ test('layout APIs work with nested elements', () => {
   expect(textRect.width).toBe(1); // width ignored, uses content length (empty span = 1 minimum)
   expect(textRect.height).toBe(1); // height ignored, uses line height
 
-  dispose();
+  dom.dispose();
 });
 
 test('DOMRect properties are correctly calculated', () => {
-  const mockRuntime = new MockTTYRuntime();
-  const { document, dispose } = createTTY({ runtime: mockRuntime });
+  const dom = new TermDOM();
+  const { document } = dom;
 
   const element = document.createElement('div');
   element.style.setProperty('width', '50ch');
@@ -228,5 +227,5 @@ test('DOMRect properties are correctly calculated', () => {
   expect(rect.right).toBe(60); // x + width
   expect(rect.bottom).toBe(45); // y + height
 
-  dispose();
+  dom.dispose();
 });

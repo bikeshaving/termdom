@@ -19,6 +19,7 @@ export const STYLE_BLINK = 1 << 5;
 export const STYLE_DIM = 1 << 6;
 export const STYLE_INVISIBLE = 1 << 7;
 export const STYLE_OVERLINE = 1 << 8;
+export const STYLE_WIDE = 1 << 9;
 
 export type Cell = [string, number, number, number];
 export type CellBuffer = Cell[][];

@@ -3,23 +3,22 @@
  */
 
 import { test, expect } from 'bun:test';
-import { createTTY, MockTTYRuntime } from '../src/index.js';
+import { TermDOM } from '../src/index.js';
 
-test('createTTY provides HTML document with terminal capabilities', () => {
-  const mockRuntime = new MockTTYRuntime();
-  const { document, runtime, dispose } = createTTY({ runtime: mockRuntime });
+test('TermDOM provides HTML document with terminal capabilities', () => {
+  const dom = new TermDOM();
+  const { document } = dom;
   
   expect(document).toBeDefined();
   expect(document.createElement).toBeDefined();
-  expect(runtime).toBeDefined();
-  expect(typeof dispose).toBe('function');
+  expect(typeof dom.dispose).toBe('function');
   
-  dispose();
+  dom.dispose();
 });
 
 test('can create standard HTML elements', () => {
-  const mockRuntime = new MockTTYRuntime();
-  const { document, dispose } = createTTY({ runtime: mockRuntime });
+  const dom = new TermDOM();
+  const { document } = dom;
   
   const div = document.createElement('div');
   const span = document.createElement('span');
@@ -29,12 +28,12 @@ test('can create standard HTML elements', () => {
   expect(span.tagName).toBe('SPAN');
   expect(button.tagName).toBe('BUTTON');
   
-  dispose();
+  dom.dispose();
 });
 
 test('can build HTML DOM tree', () => {
-  const mockRuntime = new MockTTYRuntime();
-  const { document, dispose } = createTTY({ runtime: mockRuntime });
+  const dom = new TermDOM();
+  const { document } = dom;
   
   const container = document.createElement('div');
   const span = document.createElement('span');
@@ -49,12 +48,12 @@ test('can build HTML DOM tree', () => {
   expect(document.body.children.length).toBe(1);
   expect(document.body.children[0]).toBe(container);
   
-  dispose();
+  dom.dispose();
 });
 
 test('HTML elements have CSS styling', () => {
-  const mockRuntime = new MockTTYRuntime();
-  const { document, dispose } = createTTY({ runtime: mockRuntime });
+  const dom = new TermDOM();
+  const { document } = dom;
   
   const element = document.createElement('div');
   
@@ -74,25 +73,25 @@ test('HTML elements have CSS styling', () => {
   expect(element.style.getPropertyValue('color')).toBe('white');
   expect(element.style.getPropertyValue('padding')).toBe('10px');
   
-  dispose();
+  dom.dispose();
 });
 
-test('runtime provides correct terminal dimensions', () => {
-  const mockRuntime = new MockTTYRuntime({
-    dimensions: { width: 100, height: 50 }
+test('TermDOM provides correct terminal dimensions', () => {
+  const dom = new TermDOM({
+    width: 100,
+    height: 50
   });
-  const { runtime, dispose } = createTTY({ runtime: mockRuntime });
   
-  const dimensions = runtime.getTerminalSize();
-  expect(dimensions.width).toBe(100);
-  expect(dimensions.height).toBe(50);
+  // Access the internal dimensions via the dom instance
+  expect((dom as any).width).toBe(100);
+  expect((dom as any).height).toBe(50);
   
-  dispose();
+  dom.dispose();
 });
 
 test('HTML elements support layout APIs', () => {
-  const mockRuntime = new MockTTYRuntime();
-  const { document, dispose } = createTTY({ runtime: mockRuntime });
+  const dom = new TermDOM();
+  const { document } = dom;
   
   // Test that standard HTML elements have layout APIs
   const div = document.createElement('div');
@@ -109,12 +108,12 @@ test('HTML elements support layout APIs', () => {
   expect(span.offsetWidth).toBe(0);
   expect(p.clientHeight).toBe(0);
   
-  dispose();
+  dom.dispose();
 });
 
 test('can render HTML to terminal without errors', async () => {
-  const mockRuntime = new MockTTYRuntime();
-  const { document, dispose } = createTTY({ runtime: mockRuntime });
+  const dom = new TermDOM();
+  const { document } = dom;
   
   const div = document.createElement('div');
   div.textContent = 'Test content';
@@ -124,5 +123,5 @@ test('can render HTML to terminal without errors', async () => {
   // Should render without throwing errors
   // DOM automatically re-renders via MutationObserver
   await new Promise(resolve => setTimeout(resolve));  
-  dispose();
+  dom.dispose();
 });

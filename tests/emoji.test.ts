@@ -8,44 +8,58 @@
  */
 
 import { test, expect } from 'bun:test';
-import { createTTY, MockTTYRuntime } from '../src/index.js';
-import { expectSnapshot } from '../src/testing/snapshotUtils.js';
+import { TestTerminal } from './test-utils.js';
+import { TermDOM } from '../src/index.js';
+import { writeFileSync, mkdirSync, existsSync } from 'fs';
+import { join } from 'path';
 
 test('renders single emoji correctly', async () => {
-  const mockRuntime = new MockTTYRuntime();
-  const { document, dispose } = createTTY({ runtime: mockRuntime });
+  const terminal = new TestTerminal();
+  const dom = new TermDOM({ process: terminal });
   
-  const span = document.createElement('span');
+  const span = dom.document.createElement('span');
   span.textContent = '🚀';
-  document.body.appendChild(span);
+  dom.document.body.appendChild(span);
   
-  // Wait for MutationObserver to process DOM changes
-  await new Promise(resolve => setTimeout(resolve));
+  await dom.waitForRender();
   
-  expectSnapshot('single-emoji', mockRuntime, { updateSnapshots: true });
-  dispose();
+  const output = terminal.getVisibleText();
+  expect(output).toContain('🚀');
+  expect(output).toMatchSnapshot();
+  
+  // Save ANSI snapshot for visual inspection
+  const snapshotsDir = join(process.cwd(), 'tests', 'snapshots');
+  if (!existsSync(snapshotsDir)) mkdirSync(snapshotsDir, { recursive: true });
+  writeFileSync(join(snapshotsDir, 'single-emoji.ansi'), terminal.getScreenContents());
+  dom.dispose();
 });
 
 test('renders emoji with text correctly', async () => {
-  const mockRuntime = new MockTTYRuntime();
-  const { document, dispose } = createTTY({ runtime: mockRuntime });
+  const terminal = new TestTerminal();
+  const dom = new TermDOM({ process: terminal });
   
-  const span = document.createElement('span');
+  const span = dom.document.createElement('span');
   span.textContent = 'Hello 🌍 World!';
-  document.body.appendChild(span);
+  dom.document.body.appendChild(span);
   
-  // Wait for MutationObserver to process DOM changes
-  await new Promise(resolve => setTimeout(resolve));
+  await dom.waitForRender();
   
-  expectSnapshot('emoji-with-text', mockRuntime, { updateSnapshots: true });
-  dispose();
+  const output = terminal.getVisibleText();
+  expect(output).toContain('Hello 🌍 World!');
+  expect(output).toMatchSnapshot();
+  
+  // Save ANSI snapshot for visual inspection
+  const snapshotsDir = join(process.cwd(), 'tests', 'snapshots');
+  if (!existsSync(snapshotsDir)) mkdirSync(snapshotsDir, { recursive: true });
+  writeFileSync(join(snapshotsDir, 'emoji-with-text.ansi'), terminal.getScreenContents());
+  dom.dispose();
 });
 
 test('renders multiple emojis correctly', async () => {
-  const mockRuntime = new MockTTYRuntime();
-  const { document, dispose } = createTTY({ runtime: mockRuntime });
+  const terminal = new TestTerminal();
+  const dom = new TermDOM({ process: terminal });
   
-  const container = document.createElement('div');
+  const container = dom.document.createElement('div');
   container.style.setProperty('display', 'flex');
   container.style.setProperty('flex-direction', 'column');
   
@@ -58,74 +72,97 @@ test('renders multiple emojis correctly', async () => {
   ];
   
   testCases.forEach(text => {
-    const span = document.createElement('span');
+    const span = dom.document.createElement('span');
     span.textContent = text;
     span.style.setProperty('padding', '2px');
     container.appendChild(span);
   });
   
-  document.body.appendChild(container);
+  dom.document.body.appendChild(container);
   
-  // Wait for MutationObserver to process DOM changes
-  await new Promise(resolve => setTimeout(resolve));
+  await dom.waitForRender();
   
-  // Test snapshot generation
+  const output = terminal.getVisibleText();
+  // Test that emojis are rendered
+  expect(output).toContain('🚀');
+  expect(output).toContain('🎯');
+  expect(output).toContain('Party');
+  expect(output).toMatchSnapshot();
   
-  expectSnapshot('multiple-emojis', mockRuntime, { updateSnapshots: true });
-  dispose();
+  // Save ANSI snapshot for visual inspection
+  const snapshotsDir = join(process.cwd(), 'tests', 'snapshots');
+  if (!existsSync(snapshotsDir)) mkdirSync(snapshotsDir, { recursive: true });
+  writeFileSync(join(snapshotsDir, 'multiple-emojis.ansi'), terminal.getScreenContents());
+  dom.dispose();
 });
 
 test('renders emoji with colors correctly', async () => {
-  const mockRuntime = new MockTTYRuntime();
-  const { document, dispose } = createTTY({ runtime: mockRuntime });
+  const terminal = new TestTerminal();
+  const dom = new TermDOM({ process: terminal });
   
-  const container = document.createElement('div');
+  const container = dom.document.createElement('div');
   container.style.setProperty('display', 'flex');
   container.style.setProperty('flex-direction', 'column');
   
-  const emojiSpan = document.createElement('span');
+  const emojiSpan = dom.document.createElement('span');
   emojiSpan.textContent = '🎨 Colorful Text 🌈';
   emojiSpan.style.setProperty('color', 'magenta');
   emojiSpan.style.setProperty('background-color', 'yellow');
   emojiSpan.style.setProperty('padding', '1px 2px');
   
   container.appendChild(emojiSpan);
-  document.body.appendChild(container);
+  dom.document.body.appendChild(container);
   
-  // Wait for MutationObserver to process DOM changes
-  await new Promise(resolve => setTimeout(resolve));
+  await dom.waitForRender();
   
-  expectSnapshot('emoji-with-colors', mockRuntime, { updateSnapshots: true });
-  dispose();
+  const output = terminal.getVisibleText();
+  expect(output).toContain('🎨');
+  expect(output).toContain('🌈');
+  expect(output).toContain('Colorful Text');
+  expect(output).toMatchSnapshot();
+  
+  // Save ANSI snapshot for visual inspection
+  const snapshotsDir = join(process.cwd(), 'tests', 'snapshots');
+  if (!existsSync(snapshotsDir)) mkdirSync(snapshotsDir, { recursive: true });
+  writeFileSync(join(snapshotsDir, 'emoji-with-colors.ansi'), terminal.getScreenContents());
+  dom.dispose();
 });
 
 test('handles emoji width calculation', async () => {
-  const mockRuntime = new MockTTYRuntime();
-  const { document, dispose } = createTTY({ runtime: mockRuntime });
+  const terminal = new TestTerminal();
+  const dom = new TermDOM({ process: terminal });
   
   // Test that emojis are properly calculated for layout
-  const container = document.createElement('div');
+  const container = dom.document.createElement('div');
   container.style.setProperty('display', 'flex');
   container.style.setProperty('flex-direction', 'row');
   container.style.setProperty('width', '20px'); // Constrained width
   
-  const textSpan = document.createElement('span');
+  const textSpan = dom.document.createElement('span');
   textSpan.textContent = 'Text ';
   
-  const emojiSpan = document.createElement('span');
+  const emojiSpan = dom.document.createElement('span');
   emojiSpan.textContent = '🚀';
   
-  const moreText = document.createElement('span');  
+  const moreText = dom.document.createElement('span');  
   moreText.textContent = ' More';
   
   container.appendChild(textSpan);
   container.appendChild(emojiSpan);
   container.appendChild(moreText);
-  document.body.appendChild(container);
+  dom.document.body.appendChild(container);
   
-  // Wait for MutationObserver to process DOM changes
-  await new Promise(resolve => setTimeout(resolve));
+  await dom.waitForRender();
   
-  expectSnapshot('emoji-width-layout', mockRuntime, { updateSnapshots: true });
-  dispose();
+  const output = terminal.getVisibleText();
+  expect(output).toContain('Text');
+  expect(output).toContain('🚀');
+  expect(output).toContain('More');
+  expect(output).toMatchSnapshot();
+  
+  // Save ANSI snapshot for visual inspection
+  const snapshotsDir = join(process.cwd(), 'tests', 'snapshots');
+  if (!existsSync(snapshotsDir)) mkdirSync(snapshotsDir, { recursive: true });
+  writeFileSync(join(snapshotsDir, 'emoji-width-layout.ansi'), terminal.getScreenContents());
+  dom.dispose();
 });

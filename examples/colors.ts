@@ -7,17 +7,13 @@
  * that they're properly converted to ANSI escape sequences.
  */
 
-import { createTTY, BunTTYRuntime } from '../src/index.js';
+import { TermDOM } from '../src/index.js';
 
 async function main() {
-  const runtime = new BunTTYRuntime();
-  const { document, dispose } = createTTY({ runtime });
+  const dom = new TermDOM();
+  const { document } = dom;
 
   console.log('🎨 Testing CSS Colors in Terminal\n');
-  
-  // Debug: Check terminal size
-  const termSize = runtime.getTerminalSize();
-  console.log(`Terminal size: ${termSize.width}x${termSize.height}\n`);
 
   // Create container
   const container = document.createElement('div');
@@ -69,7 +65,7 @@ async function main() {
   console.log('\nIf you see colored text above, the color system is working!');
   console.log('If you see plain text, there may be an issue with color conversion.');
 
-  dispose();
+  dom.dispose();
 }
 
 if (import.meta.main) {

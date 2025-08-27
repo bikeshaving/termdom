@@ -5,14 +5,14 @@
  * ensuring proper terminal cleanup even if exceptions occur or the process exits unexpectedly.
  */
 
-import { createTTY, BunTTYRuntime } from '../src/index.js';
+import { TermDOM } from '../src/index.js';
 
 async function usingDemo() {
   console.log('🎯 Demonstrating automatic resource management with `using`');
   
   // Using the new 'using' syntax ensures automatic cleanup
-  const runtime = new BunTTYRuntime();
-  using { document, dispose } = createTTY({ runtime });
+  
+  using { document, dispose } = TermDOM({ runtime });
   
   try {
     // Create a simple UI
@@ -51,8 +51,8 @@ async function usingDemo() {
 async function manualDemo() {
   console.log('\n🔧 For comparison - manual cleanup approach:');
   
-  const runtime = new BunTTYRuntime();
-  const { document, dispose } = createTTY({ runtime });
+  
+  const { document, dispose } = TermDOM({ runtime });
   
   try {
     const container = document.createElement('container');
@@ -70,7 +70,7 @@ async function manualDemo() {
     
   } finally {
     // Must remember to manually call [Symbol.dispose]()
-    dispose();
+    dom.dom.dispose();
     console.log('🧹 Manually cleaned up');
   }
 }

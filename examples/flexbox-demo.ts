@@ -5,14 +5,14 @@
  * demonstrating various flexbox properties and nested layouts.
  */
 
-import { createTTY, BunTTYRuntime } from '../src/index.js';
+import { TermDOM } from '../src/index.js';
 
 function flexboxDemo() {
   //console.log('🎯 Starting TTY Flexbox Layout Demo...\n');
 
   // Create TTY document
-  const runtime = new BunTTYRuntime();
-  const { document, dispose } = createTTY({ runtime });
+  
+  const { document, dispose } = TermDOM({ runtime });
 
   // Create main container with column layout
   const mainContainer = document.createElement('container');
@@ -162,7 +162,7 @@ function flexboxDemo() {
 
   // Clean up
   setTimeout(() => {
-    dispose();
+    dom.dom.dispose();
     //console.log('\n🧹 Demo cleaned up');
   }, 100);
 }

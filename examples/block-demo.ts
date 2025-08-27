@@ -4,10 +4,10 @@
  * Test display: 'block' implementation
  */
 
-import { createTTY, BunTTYRuntime } from '../src/index.js';
+import { TermDOM } from '../src/index.js';
 
-const runtime = new BunTTYRuntime();
-const { document, dispose } = createTTY({ runtime });
+
+const { document, dispose } = TermDOM({ runtime });
 
 // Create a block container
 const blockContainer = document.createElement('div');
@@ -46,5 +46,5 @@ console.log('- Should look like traditional CSS block layout');
 // Layout renders automatically via MutationObserver!
 
 setTimeout(() => {
-  dispose();
+  dom.dom.dispose();
 }, 3000);

@@ -8,12 +8,12 @@
  */
 
 import { test, expect } from 'bun:test';
-import { createTTY, MockTTYRuntime } from '../src/index.js';
-import { ELEMENT_BOUNDS, ELEMENT_RECTS } from '../src/core/HTMLExtensions.js';
+import { TermDOM } from '../src/index.js';
+import { ELEMENT_BOUNDS, ELEMENT_RECTS } from '../src/core/TermDOM.js';
 
 test('document.elementFromPoint() finds element at coordinates', () => {
-  const mockRuntime = new MockTTYRuntime();
-  const { document, dispose } = createTTY({ runtime: mockRuntime });
+  const dom = new TermDOM();
+  const { document } = dom;
   
   // Create a button with known dimensions
   const button = document.createElement('button');
@@ -36,12 +36,12 @@ test('document.elementFromPoint() finds element at coordinates', () => {
   expect(elementAt25_1).toBe(document.body); // Should hit body (outside button, inside body)
   expect(elementAt10_5).toBe(document.body); // Should hit body (outside button, inside body)
   
-  dispose();
+  dom.dispose();
 });
 
 test('document.elementFromPoint() finds deepest element', () => {
-  const mockRuntime = new MockTTYRuntime();
-  const { document, dispose } = createTTY({ runtime: mockRuntime });
+  const dom = new TermDOM();
+  const { document } = dom;
   
   // Create nested elements
   const container = document.createElement('div');
@@ -69,12 +69,12 @@ test('document.elementFromPoint() finds deepest element', () => {
   
   expect(elementAt5_0).toBe(span); // Should return deepest element (span)
   
-  dispose();
+  dom.dispose();
 });
 
 test('element.contains() works correctly', () => {
-  const mockRuntime = new MockTTYRuntime();
-  const { document, dispose } = createTTY({ runtime: mockRuntime });
+  const dom = new TermDOM();
+  const { document } = dom;
   
   const container = document.createElement('div');
   const button = document.createElement('button');
@@ -92,12 +92,12 @@ test('element.contains() works correctly', () => {
   expect(span.contains(button)).toBe(false);
   expect(container.contains(container)).toBe(true); // Element contains itself
   
-  dispose();
+  dom.dispose();
 });
 
 test('element.closest() finds ancestor by tag name', () => {
-  const mockRuntime = new MockTTYRuntime();
-  const { document, dispose } = createTTY({ runtime: mockRuntime });
+  const dom = new TermDOM();
+  const { document } = dom;
   
   const form = document.createElement('form');
   const div = document.createElement('div');
@@ -120,12 +120,12 @@ test('element.closest() finds ancestor by tag name', () => {
   expect(span.closest('BUTTON')?.tagName).toBe('BUTTON');
   expect(span.closest('Button')?.tagName).toBe('BUTTON');
   
-  dispose();
+  dom.dispose();
 });
 
 test('elementFromPoint returns null for coordinates outside document bounds', () => {
-  const mockRuntime = new MockTTYRuntime();
-  const { document, dispose } = createTTY({ runtime: mockRuntime });
+  const dom = new TermDOM();
+  const { document } = dom;
   
   // Add a small button
   const button = document.createElement('button');
@@ -141,5 +141,5 @@ test('elementFromPoint returns null for coordinates outside document bounds', ()
   expect(document.elementFromPoint(-1, -1)).toBe(null); // Negative coordinates
   expect(document.elementFromPoint(90, 30)).toBe(null); // Beyond terminal size
   
-  dispose();
+  dom.dispose();
 });

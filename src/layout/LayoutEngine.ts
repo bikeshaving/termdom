@@ -6,11 +6,10 @@
  * Works with standard HTML elements enhanced with Symbol properties.
  */
 
-import type { DOMContext } from '../core/DOMContext.js';
 import type { DOMWindow } from 'jsdom';
-import { ELEMENT_BOUNDS, ELEMENT_RECTS, ELEMENT_TEXT_RECTS, YOGA_NODE, type TextRect } from '../core/HTMLExtensions.js';
+import { ELEMENT_BOUNDS, ELEMENT_RECTS, ELEMENT_TEXT_RECTS, YOGA_NODE, type TextRect } from '../core/TermDOM.js';
 import { TextMeasurement } from './TextMeasurement.js';
-import { GreedyTextBreaker, type InlineElement, type BreakResult } from '../text/index.js';
+import { TextBreaker, type InlineElement, type BreakResult } from '../text/index.js';
 import Yoga from 'yoga-layout';
 import type * as YogaTypes from 'yoga-layout';
 
@@ -19,19 +18,28 @@ import type * as YogaTypes from 'yoga-layout';
  */
 export class LayoutEngine {
   private yoga: typeof Yoga;
-  private textBreaker: GreedyTextBreaker;
+  private textBreaker: TextBreaker;
   private window: DOMWindow;
 
   constructor(window: DOMWindow) {
     this.yoga = Yoga;
-    this.textBreaker = new GreedyTextBreaker();
+    this.textBreaker = new TextBreaker();
     this.window = window;
   }
 
+  private computingLayout = false;
+  
   /**
    * Compute layout for an element tree using Yoga
    */
   computeLayout(root: Element, containerWidth: number, containerHeight: number): void {
+    if (this.computingLayout) {
+      return;
+    }
+    
+    this.computingLayout = true;
+    this.buildingYogaTreeFor.clear(); // Clear any previous state
+    
     if (!(root instanceof this.window.HTMLElement)) {
       // Skip non-HTML elements (like Document, Text nodes)
       // Convert NodeList to array for iteration
@@ -41,6 +49,7 @@ export class LayoutEngine {
           this.computeLayout(child as Element, containerWidth, containerHeight);
         }
       }
+      this.computingLayout = false;
       return;
     }
 
@@ -70,7 +79,6 @@ export class LayoutEngine {
     // Remove from any existing parent first
     const existingParent = htmlRootYoga.getParent();
     if (existingParent) {
-      console.log(`DEBUG: Removing htmlRoot from existing parent`);
       existingParent.removeChild(htmlRootYoga);
     }
     
@@ -86,21 +94,46 @@ export class LayoutEngine {
     // Extract layout starting from document.documentElement (skip viewport root in DOM)
     this.extractLayout(htmlRoot, 0, 0);
     
+    // Clean up all Symbol properties before freeing to prevent WASM corruption
+    this.clearYogaNodes(htmlRoot);
+    
     // Clean up the viewport root node
     viewportRoot.freeRecursive();
+    
+    this.computingLayout = false;
   }
 
+
+  /**
+   * Clear all YOGA_NODE Symbol properties recursively to prevent WASM corruption
+   * This must be called before freeRecursive() to avoid dangling WASM references
+   */
+  private clearYogaNodes(element: Element): void {
+    // Clear this element's yoga node reference
+    if (element[YOGA_NODE]) {
+      delete element[YOGA_NODE];
+    }
+    
+    // Clear children recursively
+    const children = Array.from(element.childNodes).filter(child => 
+      child.nodeType === this.window.Node.ELEMENT_NODE
+    ) as Element[];
+    
+    for (const child of children) {
+      this.clearYogaNodes(child);
+    }
+  }
 
   /**
    * Get padding from element style (CSS property parsing)
    */
   private getPadding(style: CSSStyleDeclaration): [number, number, number, number] {
 
-    // Try individual padding properties first
-    const paddingTop = parseInt(style.getPropertyValue('padding-top')) || 0;
-    const paddingRight = parseInt(style.getPropertyValue('padding-right')) || 0;
-    const paddingBottom = parseInt(style.getPropertyValue('padding-bottom')) || 0;
-    const paddingLeft = parseInt(style.getPropertyValue('padding-left')) || 0;
+    // Try individual padding properties first - handle ch units
+    const paddingTop = this.parseValue(style.getPropertyValue('padding-top'), 0);
+    const paddingRight = this.parseValue(style.getPropertyValue('padding-right'), 0);
+    const paddingBottom = this.parseValue(style.getPropertyValue('padding-bottom'), 0);
+    const paddingLeft = this.parseValue(style.getPropertyValue('padding-left'), 0);
 
     // If any individual properties are set, use them
     if (paddingTop || paddingRight || paddingBottom || paddingLeft) {
@@ -144,10 +177,19 @@ export class LayoutEngine {
     this.applyStylesToYoga(element);
   }
 
+  private buildingYogaTreeFor = new Set<Element>();
+  
   /**
    * Build Yoga tree recursively, handling inline elements specially
    */
   private buildYogaTree(element: Element): void {
+    const tagName = (element as any).tagName;
+    
+    if (this.buildingYogaTreeFor.has(element)) {
+      return;
+    }
+    
+    this.buildingYogaTreeFor.add(element);
     this.setupYogaNode(element);
 
     // Get all children (elements + text nodes)
@@ -161,6 +203,10 @@ export class LayoutEngine {
 
     // Clear existing children
     const yogaNode = element[YOGA_NODE]!;
+    if (!yogaNode) {
+      return;
+    }
+    
     while (yogaNode.getChildCount() > 0) {
       yogaNode.removeChild(yogaNode.getChild(0));
     }
@@ -170,6 +216,7 @@ export class LayoutEngine {
     if (textNodes.length > 0 && elementChildren.length === 0) {
       const measureFunc = TextMeasurement.createMeasureFunction(element);
       yogaNode.setMeasureFunc(measureFunc);
+      this.buildingYogaTreeFor.delete(element);
       return; // Leaf nodes don't have Yoga children
     }
 
@@ -196,6 +243,8 @@ export class LayoutEngine {
         yogaNode.insertChild(child[YOGA_NODE]!, yogaChildIndex++);
       }
     }
+    
+    this.buildingYogaTreeFor.delete(element);
   }
 
   /**
@@ -212,10 +261,6 @@ export class LayoutEngine {
     const finalY = parentY + layout.top;
     const tagName = (element as any).tagName || 'UNKNOWN';
     
-    // Debug overflow only if it occurs
-    if (finalX + layout.width > 105) { // Terminal width
-      console.log(`❌ LAYOUT OVERFLOW [${tagName}]: right=${finalX + layout.width} exceeds terminal width 105`);
-    }
 
     // Convert floating-point Yoga coordinates to integer terminal positions
     // Use Math.floor to ensure we never exceed container bounds
@@ -825,6 +870,7 @@ export class LayoutEngine {
     const computedStyle = element.ownerDocument!.defaultView!.getComputedStyle(element);
     const style = computedStyle;
     const node = element[YOGA_NODE]!;
+    
 
     // Display type
     const display = style.getPropertyValue('display');
@@ -893,10 +939,6 @@ export class LayoutEngine {
         width = parseInt(widthStr);
       }
       
-      // Debug width parsing
-      if (!isNaN(width)) {
-        console.log(`DEBUG Yoga: Setting width on ${(element as any).tagName || 'UNKNOWN'}: widthStr="${widthStr}", width=${width}`);
-      }
     }
 
     // Parse height - handle ch units
@@ -1094,11 +1136,14 @@ export class LayoutEngine {
    */
   private getMargin(style: CSSStyleDeclaration): [number, number, number, number] {
 
-    // Try individual margin properties first
-    const marginTop = parseInt(style.getPropertyValue('margin-top')) || 0;
-    const marginRight = parseInt(style.getPropertyValue('margin-right')) || 0;
-    const marginBottom = parseInt(style.getPropertyValue('margin-bottom')) || 0;
-    const marginLeft = parseInt(style.getPropertyValue('margin-left')) || 0;
+    // Try individual margin properties first - handle ch units
+    const marginTop = this.parseValue(style.getPropertyValue('margin-top'), 0);
+    const marginRight = this.parseValue(style.getPropertyValue('margin-right'), 0);
+    const marginBottom = this.parseValue(style.getPropertyValue('margin-bottom'), 0);
+    const marginLeft = this.parseValue(style.getPropertyValue('margin-left'), 0);
+    
+    
+    
 
     // If any individual properties are set, use them
     if (marginTop || marginRight || marginBottom || marginLeft) {

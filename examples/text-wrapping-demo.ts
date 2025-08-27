@@ -4,10 +4,10 @@
  * Test text wrapping implementation
  */
 
-import { createTTY, BunTTYRuntime } from '../src/index.js';
+import { TermDOM } from '../src/index.js';
 
-const runtime = new BunTTYRuntime();
-const { document, dispose } = createTTY({ runtime });
+
+const { document, dispose } = TermDOM({ runtime });
 
 // Test 1: Simple text wrapping in a narrow container
 const container1 = document.createElement('container');
@@ -66,5 +66,5 @@ console.log('3. Yellow container: Text should not wrap (may overflow)');
 
 
 setTimeout(() => {
-  dispose();
+  dom.dom.dispose();
 }, 5000);

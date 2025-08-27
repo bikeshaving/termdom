@@ -8,14 +8,14 @@
  * - Safe cleanup on Ctrl+C
  */
 
-import { createTTY, BunTTYRuntime } from '../src/index.js';
+import { TermDOM } from '../src/index.js';
 
 async function animatedDemo() {
   //console.log('🎬 Starting Animated TOM Demo...');
   //console.log('⏰ Will auto-exit in 15 seconds (Ctrl+C to quit early)\n');
 
-  const runtime = new BunTTYRuntime();
-  const { document, dispose } = createTTY({ runtime });
+  
+  const { document, dispose } = TermDOM({ runtime });
   let isRunning = true;
   let frame = 0;
 
@@ -38,7 +38,7 @@ async function animatedDemo() {
 
     clearTimeout(timeout);
     clearInterval(animationLoop);
-    dispose();
+    dom.dom.dispose();
 
     //console.log('✅ Demo cleaned up');
     process.exit(0);

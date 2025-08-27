@@ -1,64 +1,46 @@
 // Bun Snapshot v1, https://bun.sh/docs/test/snapshots
 
 exports[`foreground colors render correctly 1`] = `
-"\x1B[31mText in red\x1B[0m
-\x1B[38;2;0;135;0mText in green\x1B[0m
-\x1B[34mText in blue\x1B[0m
-\x1B[33mText in yellow\x1B[0m
-\x1B[35mText in magenta\x1B[0m
-\x1B[36mText in cyan\x1B[0m
-\x1B[37mText in white\x1B[0m
-"
+"\x1B[38;2;255;0;0mText in red\x1B[0m                                                                     
+\x1B[38;2;0;128;0mText in green\x1B[0m                                                                   
+\x1B[38;2;0;0;255mText in blue\x1B[0m                                                                    
+\x1B[38;2;255;255;0mText in yellow\x1B[0m                                                                  
+\x1B[38;2;255;0;255mText in magenta\x1B[0m                                                                 
+\x1B[38;2;0;255;255mText in cyan\x1B[0m                                                                    
+\x1B[38;2;255;255;255mText in white\x1B[0m                                                                   "
 `;
 
-exports[`background colors fill full width 1`] = `
-"\x1B[41mShort text                                                                      \x1B[0m
-"
-`;
-
-exports[`background colors do not bleed between lines 1`] = `
-"\x1B[41mRed background                                                                  \x1B[0m
-
-\x1B[48;2;0;135;0mGreen background                                                                \x1B[0m
-
-No background
-"
-`;
-
-exports[`mixed foreground and background colors 1`] = `
-"\x1B[33m\x1B[44mYellow text on blue background\x1B[44m                                                  \x1B[0m
-"
-`;
+exports[`background colors fill full width 1`] = `"\x1B[48;2;255;0;0mShort text                                                                      "`;
 
 exports[`CSS color formats are handled correctly 1`] = `
-"\x1B[31mRGB color\x1B[0m
-\x1B[32mHex color\x1B[0m
-\x1B[34mNamed color\x1B[0m
-"
+"\x1B[38;2;255;0;0mRGB color\x1B[0m                                                                       
+\x1B[38;2;0;255;0mHex color\x1B[0m                                                                       
+\x1B[38;2;0;0;255mNamed color\x1B[0m                                                                     "
 `;
 
-exports[`style combinations work correctly 1`] = `
-"\x1B[1m\x1B[31m\x1B[43mBold red text on yellow background\x1B[43m                                              \x1B[0m
-"
-`;
-
-exports[`inline elements do not extend background 1`] = `
-"\x1B[48;2;0;135;0mInline text\x1B[0m
-"
-`;
+exports[`inline elements do not extend background 1`] = `"\x1B[48;2;0;128;0mInline text"`;
 
 exports[`nested centered elements with decreasing widths 1`] = `
-"\x1B[41m          \x1B[48;2;0;135;0mFirst level - 60 chars                                      \x1B[41m          \x1B[0m
-
-\x1B[41m                    \x1B[44mSecond - 40 chars                       \x1B[41m                    \x1B[0m
-
-\x1B[41m                              \x1B[43mThird - 20          \x1B[41m                              \x1B[0m
-
-\x1B[41m                                   \x1B[45mTiny      \x1B[41m                                   \x1B[0m
-"
+"\x1B[48;2;255;0;0m          \x1B[48;2;0;128;0mFirst level - 60 chars                                      \x1B[48;2;255;0;0m          
+                    \x1B[48;2;0;0;255mSecond - 40 chars                       \x1B[48;2;255;0;0m                    
+                              \x1B[48;2;255;255;0mThird - 20          \x1B[48;2;255;0;0m                              
+                                   \x1B[48;2;255;0;255mTiny      \x1B[48;2;255;0;0m                                   "
 `;
 
 exports[`concentric rectangles with different colors 1`] = `
-"\x1B[41m  \x1B[48;2;0;135;0m  \x1B[44m  \x1B[43mCenter                                                              \x1B[44m  \x1B[48;2;0;135;0m  \x1B[41m  \x1B[0m
-"
+"\x1B[48;2;255;0;0m                                                                                
+                                                                                
+                                                                                
+                                                                                
+    \x1B[48;2;0;128;0m                                                                            
+\x1B[48;2;255;0;0m    \x1B[48;2;0;128;0m                                                                            
+\x1B[48;2;255;0;0m    \x1B[48;2;0;128;0m                                                                            
+\x1B[48;2;255;0;0m    \x1B[48;2;0;128;0m                                                                            
+\x1B[48;2;255;0;0m    \x1B[48;2;0;128;0m    \x1B[48;2;0;0;255m                                                                        
+\x1B[48;2;255;0;0m    \x1B[48;2;0;128;0m    \x1B[48;2;0;0;255m                                                                        
+\x1B[48;2;255;0;0m    \x1B[48;2;0;128;0m    \x1B[48;2;0;0;255m                                                                        
+\x1B[48;2;255;0;0m    \x1B[48;2;0;128;0m    \x1B[48;2;0;0;255m                                                                        
+\x1B[48;2;255;0;0m    \x1B[48;2;0;128;0m    \x1B[48;2;0;0;255m    \x1B[48;2;255;255;0mCenter                                                              
+\x1B[48;2;255;0;0m    \x1B[48;2;0;128;0m    \x1B[48;2;0;0;255m    \x1B[48;2;255;255;0m                                                                    
+\x1B[48;2;255;0;0m    \x1B[48;2;0;128;0m    \x1B[48;2;0;0;255m    \x1B[48;2;255;255;0m                                                                    "
 `;

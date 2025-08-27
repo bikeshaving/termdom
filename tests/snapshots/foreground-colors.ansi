@@ -1,7 +1,7 @@
-[31mText in red[0m
-[38;2;0;135;0mText in green[0m
-[34mText in blue[0m
-[33mText in yellow[0m
-[35mText in magenta[0m
-[36mText in cyan[0m
-[37mText in white[0m
+[38;2;255;0;0mText in red[0m                                                                     
+[38;2;0;128;0mText in green[0m                                                                   
+[38;2;0;0;255mText in blue[0m                                                                    
+[38;2;255;255;0mText in yellow[0m                                                                  
+[38;2;255;0;255mText in magenta[0m                                                                 
+[38;2;0;255;255mText in cyan[0m                                                                    
+[38;2;255;255;255mText in white[0m                                                                   

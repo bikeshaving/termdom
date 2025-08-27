@@ -4,14 +4,14 @@
  * Demonstrate different viewport modes in TTY
  */
 
-import { createTTY, BunTTYRuntime } from '../src/index.js';
+import { TermDOM } from '../src/index.js';
 
 // Example 1: Inline rendering demo
 console.log('=== TTY Inline Demo ===');
 console.log('This renders inline with your terminal content:\n');
 
 const runtime1 = new BunTTYRuntime();
-const { document: doc1, dispose: dispose1 } = createTTY({ runtime: runtime1 });
+const { document: doc1, dispose: dispose1 } = TermDOM({ runtime: runtime1 });
 
 const progressBar = doc1.createElement('container');
 progressBar.style.backgroundColor = 'green';
@@ -34,7 +34,7 @@ setTimeout(() => {
   console.log('This creates a fixed-height window:\n');
   
   const runtime2 = new BunTTYRuntime();
-  const { document: doc2, dispose: dispose2 } = createTTY({ runtime: runtime2 });
+  const { document: doc2, dispose: dispose2 } = TermDOM({ runtime: runtime2 });
   
   const window = doc2.createElement('container');
   window.style.backgroundColor = 'blue';
@@ -68,7 +68,7 @@ setTimeout(() => {
       process.stdin.setRawMode(false);
       
       const runtime3 = new BunTTYRuntime();
-      const { document: doc3, dispose: dispose3 } = createTTY({ runtime: runtime3 });
+      const { document: doc3, dispose: dispose3 } = TermDOM({ runtime: runtime3 });
       
       const app = doc3.createElement('container');
       app.style.backgroundColor = 'darkblue';

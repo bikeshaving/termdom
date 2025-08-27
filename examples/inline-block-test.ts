@@ -4,10 +4,10 @@
  * Test inline-block elements specifically
  */
 
-import { createTTY, BunTTYRuntime } from '../src/index.js';
+import { TermDOM } from '../src/index.js';
 
-const runtime = new BunTTYRuntime();
-const { document, dispose } = createTTY({ runtime });
+
+const { document, dispose } = TermDOM({ runtime });
 
 // Simple container with inline-block button
 const container = document.createElement('container');
@@ -56,5 +56,5 @@ console.log('Expected "After" x position:', contentArea.x + Bun.stringWidth(befo
 console.log('"After" text starts with:', afterText.slice(0, 3));
 
 setTimeout(() => {
-  dispose();
+  dom.dom.dispose();
 }, 3000);
