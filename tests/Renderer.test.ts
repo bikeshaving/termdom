@@ -32,9 +32,9 @@ describe("Renderer", () => {
 			const renderer = new Renderer(1, 3);
 
 			renderer.beginFrame();
-			renderer.setCell(0, 0, "A", {fg: "red"});
+			renderer.setCell(0, 0, "A", {fg: Bun.color("red", "number")!});
 			renderer.setCell(0, 1, "B", {bold: true});
-			renderer.setCell(0, 2, "C", {bg: "blue"});
+			renderer.setCell(0, 2, "C", {bg: Bun.color("blue", "number")!});
 
 			const output = renderer.render();
 			expect(output).toContain("A");
@@ -143,7 +143,7 @@ describe("Renderer", () => {
 			const renderer = new Renderer(1, 1);
 
 			renderer.beginFrame();
-			renderer.setCell(0, 0, "X", {fg: "red"});
+			renderer.setCell(0, 0, "X", {fg: Bun.color("red", "number")!});
 
 			const output = renderer.render();
 			expect(output).toContain("\x1b[38;2;255;0;0m");
@@ -180,14 +180,14 @@ describe("Renderer", () => {
 
 			// Frame 1
 			renderer.beginFrame();
-			renderer.setCell(0, 0, "A", {fg: "red"});
-			renderer.setCell(0, 1, "B", {fg: "blue"});
+			renderer.setCell(0, 0, "A", {fg: Bun.color("red", "number")!});
+			renderer.setCell(0, 1, "B", {fg: Bun.color("blue", "number")!});
 			renderer.render();
 
 			// Frame 2 - swap colors
 			renderer.beginFrame();
-			renderer.setCell(0, 0, "A", {fg: "blue"});
-			renderer.setCell(0, 1, "B", {fg: "red"});
+			renderer.setCell(0, 0, "A", {fg: Bun.color("blue", "number")!});
+			renderer.setCell(0, 1, "B", {fg: Bun.color("red", "number")!});
 
 			const output = renderer.render();
 			// Should re-render both cells with new colors
@@ -251,12 +251,12 @@ describe("Renderer", () => {
 		});
 
 		test("handles unicode characters", () => {
-			const renderer = new Renderer(1, 3);
+			const renderer = new Renderer(1, 6);
 
 			renderer.beginFrame();
-			renderer.setCell(0, 0, "🔥");
-			renderer.setCell(0, 1, "💧");
-			renderer.setCell(0, 2, "🌍");
+			renderer.setCell(0, 0, "🔥");  // columns 0-1
+			renderer.setCell(0, 2, "💧");  // columns 2-3
+			renderer.setCell(0, 4, "🌍");  // columns 4-5
 
 			const output = renderer.render();
 			expect(output).toContain("🔥");
@@ -441,7 +441,7 @@ describe("Renderer", () => {
 				// Moving wave pattern
 				for (let col = 0; col < 80; col++) {
 					const row = Math.floor(10 + 5 * Math.sin((col + frame) * 0.1));
-					renderer.setCell(row, col, "~", {fg: "blue"});
+					renderer.setCell(row, col, "~", {fg: Bun.color("blue", "number")!});
 				}
 
 				renderer.render();
@@ -466,14 +466,14 @@ describe("Renderer", () => {
 
 			// Title bar
 			for (let col = 0; col < 80; col++) {
-				renderer.setCell(0, col, "─", {fg: "white"});
+				renderer.setCell(0, col, "─", {fg: Bun.color("white", "number")!});
 			}
 			renderer.setCell(0, 0, "┌");
 			renderer.setCell(0, 79, "┐");
 
 			// Status bar
 			for (let col = 0; col < 80; col++) {
-				renderer.setCell(23, col, "─", {fg: "white"});
+				renderer.setCell(23, col, "─", {fg: Bun.color("white", "number")!});
 			}
 
 			renderer.render();
@@ -488,8 +488,8 @@ describe("Renderer", () => {
 
 				// Redraw UI elements
 				for (let col = 0; col < 80; col++) {
-					renderer.setCell(0, col, "─", {fg: "white"});
-					renderer.setCell(23, col, "─", {fg: "white"});
+					renderer.setCell(0, col, "─", {fg: Bun.color("white", "number")!});
+					renderer.setCell(23, col, "─", {fg: Bun.color("white", "number")!});
 				}
 
 				// Add typed text
@@ -498,7 +498,7 @@ describe("Renderer", () => {
 				}
 
 				// Cursor
-				renderer.setCell(10, 10 + idx + 1, "█", {fg: "white"});
+				renderer.setCell(10, 10 + idx + 1, "█", {fg: Bun.color("white", "number")!});
 
 				renderer.render();
 				keypresses.push(performance.now() - start);

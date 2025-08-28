@@ -18,22 +18,15 @@ export {
 
 // Renderer - Efficient delta rendering without xterm.js
 export {Renderer} from "./rendering/Renderer.js";
-export type {CellStyle} from "./rendering/Renderer.js";
 export {ANSIGenerator} from "./rendering/ANSIGenerator.js";
 export type {ColorDepth} from "./rendering/ANSIGenerator.js";
 
 // Cell buffer utilities
 export {
 	createBuffer,
-	createNullCell,
-	isCellEmpty,
-	getCellChar,
-	getCellWidth,
-	setCellChar,
-	setCellFg,
-	setCellBg,
-	type Cell,
+	Cell,
 	type CellBuffer,
+	type CellStyle,
 } from "./rendering/CellBuffer.js";
 
 // Layout Engine

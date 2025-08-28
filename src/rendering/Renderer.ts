@@ -1,37 +1,13 @@
-/**
- * Minimal delta renderer using extracted cell buffer and serializer
- */
-
 import {
 	type CellBuffer,
-	type Cell,
+	Cell,
 	createBuffer,
-	createNullCell,
-	copyCell,
-	cellsEqual,
-	setCellChar,
-	setCellFg,
-	setCellBg,
-	CELL_CHAR,
-	CELL_FG,
-	CELL_BG,
-	CELL_STYLE,
-	STYLE_BOLD,
-	STYLE_ITALIC,
-	STYLE_UNDERLINE,
-	STYLE_STRIKETHROUGH,
-	STYLE_INVERSE,
-	STYLE_DIM,
-	STYLE_BLINK,
-	STYLE_OVERLINE,
-	STYLE_WIDE,
-	isCellEmpty,
 } from "./CellBuffer.js";
 import {ANSIGenerator, type ColorDepth} from "./ANSIGenerator.js";
 
 export interface CellStyle {
-	fg?: string | number;
-	bg?: string | number;
+	fg?: number;
+	bg?: number;
 	bold?: boolean;
 	italic?: boolean;
 	underline?: boolean;
@@ -40,7 +16,6 @@ export interface CellStyle {
 	dim?: boolean;
 	blink?: boolean;
 	overline?: boolean;
-	wide?: boolean;
 }
 
 export class Renderer {
@@ -70,35 +45,9 @@ export class Renderer {
 	setCell(row: number, col: number, char: string, style?: CellStyle): void {
 		if (row < 0 || row >= this.rows || col < 0 || col >= this.cols) return;
 
-		const cell = this.currentBuffer[row][col];
-
-		// Set character
-		setCellChar(cell, char);
-
-		// Set foreground color
-		if (style?.fg !== undefined) {
-			const fgColor =
-				typeof style.fg === "string" ? Bun.color(style.fg, "number") : style.fg;
-			setCellFg(cell, fgColor);
-		}
-
-		// Set background color
-		if (style?.bg !== undefined) {
-			const bgColor =
-				typeof style.bg === "string" ? Bun.color(style.bg, "number") : style.bg;
-			setCellBg(cell, bgColor);
-		}
-
-		// Apply style flags (all in one field now!)
-		if (style?.bold) cell[CELL_STYLE] |= STYLE_BOLD;
-		if (style?.italic) cell[CELL_STYLE] |= STYLE_ITALIC;
-		if (style?.underline) cell[CELL_STYLE] |= STYLE_UNDERLINE;
-		if (style?.strikethrough) cell[CELL_STYLE] |= STYLE_STRIKETHROUGH;
-		if (style?.inverse) cell[CELL_STYLE] |= STYLE_INVERSE;
-		if (style?.blink) cell[CELL_STYLE] |= STYLE_BLINK;
-		if (style?.dim) cell[CELL_STYLE] |= STYLE_DIM;
-		if (style?.overline) cell[CELL_STYLE] |= STYLE_OVERLINE;
-		if (style?.wide) cell[CELL_STYLE] |= STYLE_WIDE;
+		// Create new cell and assign it to the buffer
+		const newCell = new Cell(char, style);
+		this.currentBuffer[row][col] = newCell;
 	}
 
 	/**
@@ -127,11 +76,7 @@ export class Renderer {
 		for (let row = y; row < y + height; row++) {
 			for (let col = x; col < x + width; col++) {
 				if (row >= 0 && row < this.rows && col >= 0 && col < this.cols) {
-					const cell = this.currentBuffer[row][col];
-					setCellChar(cell, "");
-					setCellFg(cell, 0);
-					setCellBg(cell, 0);
-					cell[CELL_STYLE] = 0;
+					this.currentBuffer[row][col] = Cell.createNull();
 				}
 			}
 		}
@@ -154,13 +99,7 @@ export class Renderer {
 			// Stop if we're going out of bounds
 			if (currentX + width > this.cols) break;
 
-			// Set the wide flag for multi-column characters
-			const cellStyle = {
-				...style,
-				wide: width === 2,
-			};
-
-			this.setCell(y, currentX, char, cellStyle);
+			this.setCell(y, currentX, char, style);
 			currentX += width;
 		}
 
@@ -204,13 +143,7 @@ export class Renderer {
 			// Stop if we're going out of bounds vertically
 			if (currentY >= this.rows) break;
 
-			// Set the wide flag for multi-column characters
-			const cellStyle = {
-				...style,
-				wide: width === 2,
-			};
-
-			this.setCell(currentY, currentX, char, cellStyle);
+			this.setCell(currentY, currentX, char, style);
 			currentX += width;
 		}
 
@@ -228,7 +161,7 @@ export class Renderer {
 			// First frame - everything is new
 			for (let row = 0; row < this.rows; row++) {
 				for (let col = 0; col < this.cols; col++) {
-					copyCell(this.currentBuffer[row][col], diffBuffer[row][col]);
+					diffBuffer[row][col] = this.currentBuffer[row][col].copy();
 				}
 			}
 		} else {
@@ -238,23 +171,22 @@ export class Renderer {
 					const prevCell = this.previousBuffer[row][col];
 					const currCell = this.currentBuffer[row][col];
 
-					if (!cellsEqual(prevCell, currCell)) {
+					if (!prevCell.equals(currCell)) {
 						// If previous cell had content but current doesn't, we need to clear it
-						const prevEmpty = isCellEmpty(prevCell);
-						const currEmpty = isCellEmpty(currCell);
+						const prevEmpty = prevCell.isEmpty();
+						const currEmpty = currCell.isEmpty();
 
 						if (!prevEmpty && currEmpty) {
-							// Create a space character to clear the cell
-							const clearCell = createNullCell();
-							setCellChar(clearCell, " ");
-							// Copy style from current cell (in case background changed)
-							clearCell[CELL_FG] = currCell[CELL_FG];
-							clearCell[CELL_BG] = currCell[CELL_BG];
-							clearCell[CELL_STYLE] = currCell[CELL_STYLE];
-							copyCell(clearCell, diffBuffer[row][col]);
+							// Create a space character to clear the cell with current cell's style
+							const clearCell = new Cell(" ", {
+								fg: currCell.fg || undefined,
+								bg: currCell.bg || undefined,
+								...currCell.getStyleFlags()
+							});
+							diffBuffer[row][col] = clearCell;
 						} else {
 							// Normal change, copy current cell
-							copyCell(currCell, diffBuffer[row][col]);
+							diffBuffer[row][col] = currCell.copy();
 						}
 					}
 				}

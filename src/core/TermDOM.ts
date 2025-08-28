@@ -285,6 +285,20 @@ export class TermDOM {
 		}
 	}
 
+	/**
+	 * Convert CSS color value to terminal color number
+	 */
+	private cssColorToNumber(cssColor: string): number {
+		// Handle transparent/empty colors
+		if (!cssColor || cssColor === 'transparent' || cssColor === 'none') {
+			return 0;
+		}
+
+		// Use Bun.color to convert CSS color string to number
+		const colorNumber = Bun.color(cssColor, "number");
+		return typeof colorNumber === 'number' ? colorNumber : 0;
+	}
+
 	private renderElement(element: Element, x: number, y: number): void {
 		// Get computed layout bounds
 		const bounds = element[ELEMENT_BOUNDS];
@@ -304,8 +318,8 @@ export class TermDOM {
 		const effectiveBg = this.getEffectiveBackgroundColor(element);
 
 		const style = {
-			fg: color && color !== "initial" ? color : undefined,
-			bg: effectiveBg && effectiveBg !== "initial" ? effectiveBg : undefined,
+			fg: color && color !== "initial" ? this.cssColorToNumber(color) : undefined,
+			bg: effectiveBg && effectiveBg !== "initial" ? this.cssColorToNumber(effectiveBg) : undefined,
 			bold,
 			italic,
 			underline,

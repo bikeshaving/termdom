@@ -1,32 +1,25 @@
 /**
  * Clean cell buffer implementation
- * Each cell is represented as [char, fg, bg, style]
+ * Each cell is represented as a Cell class instance
  */
 
-// Cell array indices
-export const CELL_CHAR = 0;
-export const CELL_FG = 1;
-export const CELL_BG = 2;
-export const CELL_STYLE = 3;
 
-// Style flags (all in one field)
-export const STYLE_BOLD = 1 << 0;
-export const STYLE_ITALIC = 1 << 1;
-export const STYLE_UNDERLINE = 1 << 2;
-export const STYLE_STRIKETHROUGH = 1 << 3;
-export const STYLE_INVERSE = 1 << 4;
-export const STYLE_BLINK = 1 << 5;
-export const STYLE_DIM = 1 << 6;
-export const STYLE_INVISIBLE = 1 << 7;
-export const STYLE_OVERLINE = 1 << 8;
-export const STYLE_WIDE = 1 << 9;
+// Style flags (internal implementation)
+const STYLE_BOLD = 1 << 0;
+const STYLE_ITALIC = 1 << 1;
+const STYLE_UNDERLINE = 1 << 2;
+const STYLE_STRIKETHROUGH = 1 << 3;
+const STYLE_INVERSE = 1 << 4;
+const STYLE_BLINK = 1 << 5;
+const STYLE_DIM = 1 << 6;
+const STYLE_INVISIBLE = 1 << 7;
+const STYLE_OVERLINE = 1 << 8;
 
-export type Cell = [string, number, number, number];
 export type CellBuffer = Cell[][];
 
 export interface CellStyle {
-	fg?: string | number;
-	bg?: string | number;
+	fg?: number;
+	bg?: number;
 	bold?: boolean;
 	italic?: boolean;
 	underline?: boolean;
@@ -35,24 +28,110 @@ export interface CellStyle {
 	dim?: boolean;
 	blink?: boolean;
 	overline?: boolean;
-	wide?: boolean;
 }
 
-// TODO: Switch to a class so we don’t have to export so many constants
-export class Cell1 {
-	declare grapheme: string;
-	declare fg: number;
-	declare bg: number;
-	declare extra: number;
+export class Cell {
+	grapheme: string;
+	fg: number;
+	bg: number;
+	style: number;
 
-	constructor(grapheme: string, style?: CellStyle) {
+	constructor(grapheme: string = "", cellStyle?: CellStyle) {
 		this.grapheme = grapheme;
+		this.fg = cellStyle?.fg ?? 0;
+		this.bg = cellStyle?.bg ?? 0;
+		
+		// Convert boolean flags to bit flags
+		let styleFlags = 0;
+		if (cellStyle?.bold) styleFlags |= STYLE_BOLD;
+		if (cellStyle?.italic) styleFlags |= STYLE_ITALIC;
+		if (cellStyle?.underline) styleFlags |= STYLE_UNDERLINE;
+		if (cellStyle?.strikethrough) styleFlags |= STYLE_STRIKETHROUGH;
+		if (cellStyle?.inverse) styleFlags |= STYLE_INVERSE;
+		if (cellStyle?.blink) styleFlags |= STYLE_BLINK;
+		if (cellStyle?.dim) styleFlags |= STYLE_DIM;
+		if (cellStyle?.overline) styleFlags |= STYLE_OVERLINE;
+		this.style = styleFlags;
 	}
 
-	equals() {}
+	/**
+	 * Check if this cell equals another (including character)
+	 */
+	equals(other: Cell): boolean {
+		return (
+			this.grapheme === other.grapheme &&
+			this.fg === other.fg &&
+			this.bg === other.bg &&
+			this.style === other.style
+		);
+	}
 
-	static createNull() {
-		return new Cell1("");
+	/**
+	 * Check if this cell has the same style as another (ignoring character)
+	 * Useful for identifying runs of text with the same formatting
+	 */
+	styleEquals(other: Cell): boolean {
+		return (
+			this.fg === other.fg &&
+			this.bg === other.bg &&
+			this.style === other.style
+		);
+	}
+
+	/**
+	 * Create a copy of this cell
+	 */
+	copy(): Cell {
+		const copy = new Cell();
+		copy.grapheme = this.grapheme;
+		copy.fg = this.fg;
+		copy.bg = this.bg;
+		copy.style = this.style;
+		return copy;
+	}
+
+	/**
+	 * Check if this cell is empty (no character)
+	 */
+	isEmpty(): boolean {
+		return this.grapheme === "";
+	}
+
+	/**
+	 * Check if this cell represents a wide character (occupies 2 columns)
+	 */
+	get isWide(): boolean {
+		return this.grapheme ? Bun.stringWidth(this.grapheme) > 1 : false;
+	}
+
+	/**
+	 * Get the display width of this cell
+	 */
+	get width(): number {
+		return this.grapheme ? Bun.stringWidth(this.grapheme) : 0;
+	}
+
+	/**
+	 * Get the cell's style flags as boolean properties
+	 */
+	getStyleFlags() {
+		return {
+			bold: (this.style & STYLE_BOLD) !== 0,
+			italic: (this.style & STYLE_ITALIC) !== 0,
+			underline: (this.style & STYLE_UNDERLINE) !== 0,
+			strikethrough: (this.style & STYLE_STRIKETHROUGH) !== 0,
+			inverse: (this.style & STYLE_INVERSE) !== 0,
+			blink: (this.style & STYLE_BLINK) !== 0,
+			dim: (this.style & STYLE_DIM) !== 0,
+			overline: (this.style & STYLE_OVERLINE) !== 0,
+		};
+	}
+
+	/**
+	 * Create an empty cell
+	 */
+	static createNull(): Cell {
+		return new Cell();
 	}
 }
 
@@ -64,80 +143,10 @@ export function createBuffer(rows: number, cols: number): CellBuffer {
 	for (let row = 0; row < rows; row++) {
 		const line: Cell[] = [];
 		for (let col = 0; col < cols; col++) {
-			line.push(createNullCell());
+			line.push(Cell.createNull());
 		}
 		buffer.push(line);
 	}
 	return buffer;
 }
 
-/**
- * Create a null (empty) cell
- */
-export function createNullCell(): Cell {
-	return ["", 0, 0, 0];
-}
-
-/**
- * Check if a cell is empty
- */
-export function isCellEmpty(cell: Cell): boolean {
-	return cell[CELL_CHAR] === "";
-}
-
-/**
- * Get character from cell
- */
-export function getCellChar(cell: Cell): string {
-	return cell[CELL_CHAR];
-}
-
-/**
- * Get cell width (using Bun.stringWidth)
- */
-export function getCellWidth(cell: Cell): number {
-	return cell[CELL_CHAR] ? Bun.stringWidth(cell[CELL_CHAR]) : 0;
-}
-
-/**
- * Set cell character
- */
-export function setCellChar(cell: Cell, char: string): void {
-	cell[CELL_CHAR] = char;
-}
-
-/**
- * Set cell foreground color (24-bit RGB)
- */
-export function setCellFg(cell: Cell, color: number): void {
-	cell[CELL_FG] = color & 0xffffff;
-}
-
-/**
- * Set cell background color (24-bit RGB)
- */
-export function setCellBg(cell: Cell, color: number): void {
-	cell[CELL_BG] = color & 0xffffff;
-}
-
-/**
- * Copy cell data
- */
-export function copyCell(src: Cell, dest: Cell): void {
-	dest[CELL_CHAR] = src[CELL_CHAR];
-	dest[CELL_FG] = src[CELL_FG];
-	dest[CELL_BG] = src[CELL_BG];
-	dest[CELL_STYLE] = src[CELL_STYLE];
-}
-
-/**
- * Check if two cells are equal
- */
-export function cellsEqual(cell1: Cell, cell2: Cell): boolean {
-	return (
-		cell1[CELL_CHAR] === cell2[CELL_CHAR] &&
-		cell1[CELL_FG] === cell2[CELL_FG] &&
-		cell1[CELL_BG] === cell2[CELL_BG] &&
-		cell1[CELL_STYLE] === cell2[CELL_STYLE]
-	);
-}
