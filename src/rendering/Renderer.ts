@@ -24,11 +24,28 @@ export class Renderer {
 	private currentBuffer: CellBuffer;
 
 	constructor(
-		private readonly rows: number,
-		private readonly cols: number,
+		private rows: number,
+		private cols: number,
 		private readonly colorDepth: ColorDepth = "rgb",
 	) {
 		this.currentBuffer = createBuffer(rows, cols);
+	}
+
+	/**
+	 * Resize the renderer dimensions
+	 * Next beginFrame() will use new dimensions
+	 */
+	resize(rows: number, cols: number): void {
+		this.rows = rows;
+		this.cols = cols;
+	}
+
+	/**
+	 * Clear previous buffer to force full re-render
+	 * Useful after terminal resize to ensure complete redraw
+	 */
+	clearPreviousBuffer(): void {
+		this.previousBuffer = null;
 	}
 
 	/**
@@ -165,10 +182,16 @@ export class Renderer {
 				}
 			}
 		} else {
-			// Compare buffers and create diff
+			// Compare buffers and create diff - handle different dimensions
+			const prevRows = this.previousBuffer.length;
+			const prevCols = this.previousBuffer[0]?.length || 0;
+			
 			for (let row = 0; row < this.rows; row++) {
 				for (let col = 0; col < this.cols; col++) {
-					const prevCell = this.previousBuffer[row][col];
+					// Get previous cell if it exists in old buffer bounds
+					const prevCell = (row < prevRows && col < prevCols) 
+						? this.previousBuffer[row][col] 
+						: null;
 					const currCell = this.currentBuffer[row][col];
 
 					// Handle null cases
@@ -230,6 +253,28 @@ export function generateANSI(
 	let cursorRow = 0;
 	let cursorCol = 0;
 	let previousCell: Cell | null = null;
+	let hasContent = false;
+	
+	// Check if there's any content to render first
+	for (let row = 0; row < rows; row++) {
+		for (let col = 0; col < cols; col++) {
+			if (buffer[row][col] !== null) {
+				hasContent = true;
+				break;
+			}
+		}
+		if (hasContent) break;
+	}
+	
+	// Only add wrapper sequences if there's content to render
+	if (hasContent) {
+		// Robust terminal rendering setup - synchronized output prevents tearing
+		// Enable synchronized output to batch all updates
+		output += "\x1b[?2026h"; // Enable synchronized output (prevents screen tearing)
+		output += "\x1b[?25l";   // Hide cursor to prevent flicker during rendering
+		output += "\x1b[s";      // Save current cursor position  
+		output += "\x1b[H";      // Move cursor to home position (0,0)
+	}
 
 	// Helper functions
 	const moveCursor = (targetRow: number, targetCol: number): string => {
@@ -417,6 +462,7 @@ export function generateANSI(
 
 	for (let row = 0; row < rows; row++) {
 		let rowHasContent = false;
+		let rowHasAnsi = false;
 
 		for (let col = 0; col < cols; col++) {
 			const cell = buffer[row][col];
@@ -444,6 +490,7 @@ export function generateANSI(
 			const styleSeq = getStyleDiff(cell, previousCell);
 			if (styleSeq.length > 0) {
 				output += `\x1b[${styleSeq.join(";")}m`;
+				rowHasAnsi = true;
 			}
 
 			// Write character
@@ -459,14 +506,25 @@ export function generateANSI(
 			}
 		}
 
-		// Reset at end of each line that has content to prevent style bleeding on truncation
-		if (rowHasContent) {
+		// Reset at end of each line that has content AND ANSI sequences to prevent style bleeding on truncation
+		if (rowHasContent && rowHasAnsi) {
 			output += "\x1b[0m";
 			// Reset previousCell at line boundaries so next line starts fresh
 			previousCell = null;
 			// Important: cursor position stays the same after reset, so keep cursor tracking accurate
+		} else if (rowHasContent) {
+			// Plain text line - still reset previousCell for next line but no ANSI reset needed
+			previousCell = null;
 		}
 	}
 
+	// Only add closing wrapper sequences if we added opening ones
+	if (hasContent) {
+		// Restore cursor to original position and show cursor
+		output += "\x1b[u";      // Restore cursor position
+		output += "\x1b[?25h";   // Show cursor
+		output += "\x1b[?2026l"; // Disable synchronized output (commit all updates)
+	}
+	
 	return output;
 }

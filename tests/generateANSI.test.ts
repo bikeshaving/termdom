@@ -25,7 +25,7 @@ describe("generateANSI", () => {
 			buffer[0][0] = Cell.create("A");
 			
 			const result = generateANSI(buffer);
-			expect(result).toBe("A\x1b[0m");
+			expect(result).toBe("A");
 		});
 
 		test("outputs consecutive characters without cursor movement", () => {
@@ -35,7 +35,7 @@ describe("generateANSI", () => {
 			buffer[0][2] = Cell.create("C");
 			
 			const result = generateANSI(buffer);
-			expect(result).toBe("ABC\x1b[0m");
+			expect(result).toBe("ABC");
 		});
 
 		test("moves cursor for gaps", () => {
@@ -44,7 +44,7 @@ describe("generateANSI", () => {
 			buffer[0][3] = Cell.create("B");
 			
 			const result = generateANSI(buffer);
-			expect(result).toBe("A\x1b[2CB\x1b[0m");
+			expect(result).toBe("A\x1b[2CB");
 		});
 	});
 
@@ -56,7 +56,7 @@ describe("generateANSI", () => {
 			buffer[2][0] = Cell.create("C");
 			
 			const result = generateANSI(buffer);
-			expect(result).toBe("\x1b[1CA\x1b[0m\r\nB\x1b[0m\r\nC\x1b[0m");
+			expect(result).toBe("\x1b[1CA\r\nB\r\nC");
 		});
 
 		test("moves down with correct offsets", () => {
@@ -67,7 +67,7 @@ describe("generateANSI", () => {
 			const result = generateANSI(buffer);
 			// After A at (0,0), cursor is at (0,1). To get to (2,2):
 			// Move down 2 rows with newlines, carriage return, then move right 2
-			expect(result).toBe("A\x1b[0m\r\n\r\n\x1b[2CB\x1b[0m");
+			expect(result).toBe("A\r\n\r\n\x1b[2CB");
 		});
 
 		test("moves up when processing in order", () => {
@@ -77,7 +77,7 @@ describe("generateANSI", () => {
 			buffer[2][0] = Cell.create("C");
 			
 			const result = generateANSI(buffer);
-			expect(result).toBe("A\x1b[0m\r\nB\x1b[0m\r\nC\x1b[0m");
+			expect(result).toBe("A\r\nB\r\nC");
 		});
 
 		test("uses \\r for column 0", () => {
@@ -88,7 +88,7 @@ describe("generateANSI", () => {
 			const result = generateANSI(buffer);
 			// Processing happens left-to-right, so B first at (0,0), then A at (0,3)
 			// After B, cursor is at (0,1). To get to A at (0,3), move right 2 columns
-			expect(result).toBe("B\x1b[2CA\x1b[0m");
+			expect(result).toBe("B\x1b[2CA");
 		});
 	});
 
@@ -248,12 +248,12 @@ describe("generateANSI", () => {
 			
 			const result = generateANSI(buffer);
 			// Should not generate extra cursor movement
-			expect(result).toBe("你A\x1b[0m");
+			expect(result).toBe("你A");
 		});
 	});
 
 	describe("line resets for truncation robustness", () => {
-		test("resets at end of single line", () => {
+		test("resets at end of styled line", () => {
 			const buffer = createBuffer(1, 3);
 			buffer[0][0] = Cell.create("A", {fg: 0xff0000});
 			buffer[0][1] = Cell.create("B", {fg: 0xff0000});
@@ -261,6 +261,16 @@ describe("generateANSI", () => {
 			
 			const result = generateANSI(buffer);
 			expect(result).toBe("\x1b[38;2;255;0;0mABC\x1b[0m");
+		});
+
+		test("no reset for plain text line", () => {
+			const buffer = createBuffer(1, 3);
+			buffer[0][0] = Cell.create("A");
+			buffer[0][1] = Cell.create("B");
+			buffer[0][2] = Cell.create("C");
+			
+			const result = generateANSI(buffer);
+			expect(result).toBe("ABC");
 		});
 
 		test("resets at end of each line", () => {
@@ -278,16 +288,16 @@ describe("generateANSI", () => {
 			expect(result).toContain("E\x1b[0m");
 		});
 
-		test("doesn't reset empty lines", () => {
+		test("doesn't reset empty lines or plain text lines", () => {
 			const buffer = createBuffer(3, 2);
-			buffer[0][0] = Cell.create("A");
-			// Row 1 is empty
-			buffer[2][0] = Cell.create("B");
+			buffer[0][0] = Cell.create("A", {fg: 0xff0000}); // Styled line - gets reset
+			// Row 1 is empty - no reset
+			buffer[2][0] = Cell.create("B"); // Plain text line - no reset
 			
 			const result = generateANSI(buffer);
-			// Should only have reset after lines with content
+			// Should only reset the styled line
 			const resetCount = (result.match(/\x1b\[0m/g) || []).length;
-			expect(resetCount).toBe(2); // One for each line with content
+			expect(resetCount).toBe(1); // Only the styled line
 		});
 
 		test("resets prevent style bleeding across lines", () => {
@@ -298,8 +308,9 @@ describe("generateANSI", () => {
 			const result = generateANSI(buffer);
 			// First line should have bold red A with reset
 			expect(result).toMatch(/\x1b\[38;2;255;0;0;1mA\x1b\[0m/);
-			// Second line should start fresh without needing explicit style changes
-			expect(result).toContain("B\x1b[0m");
+			// Second line is plain text, so no reset
+			expect(result).toContain("B");
+			expect(result).not.toMatch(/B\x1b\[0m/);
 		});
 
 		test("handles mixed styled and unstyled content", () => {
@@ -310,8 +321,11 @@ describe("generateANSI", () => {
 			buffer[1][0] = Cell.create("D"); // New line, no style
 			
 			const result = generateANSI(buffer);
+			// First line has styles so gets reset
 			expect(result).toMatch(/A\x1b\[0mB\x1b\[1mC\x1b\[0m/);
-			expect(result).toContain("D\x1b[0m");
+			// Second line is plain text so no reset
+			expect(result).toContain("D");
+			expect(result).not.toMatch(/D\x1b\[0m/);
 		});
 	});
 
@@ -388,7 +402,7 @@ describe("generateANSI", () => {
 			buffer[4][4] = Cell.create("X");
 			
 			const result = generateANSI(buffer);
-			expect(result).toBe("\r\n\r\n\r\n\r\n\x1b[4CX\x1b[0m");
+			expect(result).toBe("\r\n\r\n\r\n\r\n\x1b[4CX");
 		});
 
 		test("handles sparse patterns efficiently", () => {
@@ -402,9 +416,9 @@ describe("generateANSI", () => {
 			expect(result).toContain("A");
 			expect(result).toContain("B");  
 			expect(result).toContain("C");
-			// Should have resets for each line
+			// Plain text lines don't get resets with conditional line reset policy
 			const resetCount = (result.match(/\x1b\[0m/g) || []).length;
-			expect(resetCount).toBe(3);
+			expect(resetCount).toBe(0);
 		});
 
 		test("handles space characters vs empty cells", () => {
@@ -415,7 +429,7 @@ describe("generateANSI", () => {
 			// buffer[0][1] is empty (default)
 			
 			const result = generateANSI(buffer);
-			expect(result).toBe("A B\x1b[0m"); // Space should be included, line should reset
+			expect(result).toBe("A B"); // Space should be included, line should reset
 		});
 	});
 });

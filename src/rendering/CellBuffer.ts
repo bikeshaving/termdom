@@ -124,7 +124,11 @@ export class Cell {
 	 * Factory method for creating cells with automatic interning
 	 * This is the preferred way to create Cell instances
 	 */
-	static create(grapheme: string, cellStyle?: CellStyle): Cell {
+	static create(grapheme: string, cellStyle?: CellStyle): Cell | null {
+		// Empty string means null cell (for clearing)
+		if (grapheme === "") {
+			return null;
+		}
 		// Create cache key from grapheme and style properties
 		const fg = cellStyle?.fg ?? 0;
 		const bg = cellStyle?.bg ?? 0;

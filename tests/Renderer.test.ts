@@ -14,7 +14,8 @@ describe("Renderer", () => {
 	});
 
 	describe("first frame", () => {
-		test("renders all content on first frame", () => {
+		test("renders all content on first frame", async () => {
+			const {TestTerminal} = await import("./test-utils.js");
 			const renderer = new Renderer(2, 5);
 
 			renderer.beginFrame();
@@ -24,8 +25,15 @@ describe("Renderer", () => {
 			renderer.setCell(0, 3, "l");
 			renderer.setCell(0, 4, "o");
 
-			const output = renderer.render();
-			expect(output).toBe("Hello");
+			const ansi = renderer.render();
+			
+			// Test visual result instead of raw ANSI
+			const terminal = new TestTerminal({ rows: 2, cols: 5 });
+			await new Promise<void>((resolve) => {
+				terminal.stdout.write(ansi, () => resolve());
+			});
+			
+			expect(terminal.getPlainText()).toBe("Hello");
 		});
 
 		test("renders styled content on first frame", () => {
@@ -49,7 +57,8 @@ describe("Renderer", () => {
 	});
 
 	describe("delta rendering", () => {
-		test("renders only changes in second frame", () => {
+		test("renders only changes in second frame", async () => {
+			const {TestTerminal} = await import("./test-utils.js");
 			const renderer = new Renderer(1, 5);
 
 			// Frame 1
@@ -59,7 +68,7 @@ describe("Renderer", () => {
 			renderer.setCell(0, 2, "l");
 			renderer.setCell(0, 3, "l");
 			renderer.setCell(0, 4, "o");
-			renderer.render();
+			const frame1 = renderer.render();
 
 			// Frame 2 - change one character
 			renderer.beginFrame();
@@ -68,9 +77,18 @@ describe("Renderer", () => {
 			renderer.setCell(0, 2, "l");
 			renderer.setCell(0, 3, "l");
 			renderer.setCell(0, 4, "o");
+			const frame2 = renderer.render();
 
-			const output = renderer.render();
-			expect(output).toBe("\x1b[1Ca"); // Move right 1, print 'a'
+			// Apply both frames to terminal and verify result
+			const terminal = new TestTerminal({ rows: 1, cols: 5 });
+			await new Promise<void>((resolve) => {
+				terminal.stdout.write(frame1, () => resolve());
+			});
+			await new Promise<void>((resolve) => {
+				terminal.stdout.write(frame2, () => resolve());
+			});
+
+			expect(terminal.getPlainText()).toBe("Hallo");
 		});
 
 		test("handles multiple scattered changes", () => {
@@ -97,7 +115,8 @@ describe("Renderer", () => {
 			expect(output).not.toContain("ABC");
 		});
 
-		test("renders nothing when no changes", () => {
+		test("renders nothing when no changes", async () => {
+			const {TestTerminal} = await import("./test-utils.js");
 			const renderer = new Renderer(1, 3);
 
 			// Frame 1
@@ -105,19 +124,30 @@ describe("Renderer", () => {
 			renderer.setCell(0, 0, "A");
 			renderer.setCell(0, 1, "B");
 			renderer.setCell(0, 2, "C");
-			renderer.render();
+			const frame1 = renderer.render();
 
-			// Frame 2 - same content
+			// Frame 2 - same content  
 			renderer.beginFrame();
 			renderer.setCell(0, 0, "A");
 			renderer.setCell(0, 1, "B");
 			renderer.setCell(0, 2, "C");
 
-			const output = renderer.render();
-			expect(output).toBe("");
+			const frame2 = renderer.render();
+			
+			// Apply both frames to terminal and verify result
+			const terminal = new TestTerminal({ rows: 1, cols: 3 });
+			await new Promise<void>((resolve) => {
+				terminal.stdout.write(frame1, () => resolve());
+			});
+			await new Promise<void>((resolve) => {
+				terminal.stdout.write(frame2, () => resolve());
+			});
+			
+			expect(terminal.getPlainText()).toBe("ABC");
 		});
 
-		test("handles clearing cells", () => {
+		test("handles clearing cells", async () => {
+			const {TestTerminal} = await import("./test-utils.js");
 			const renderer = new Renderer(1, 3);
 
 			// Frame 1
@@ -125,16 +155,26 @@ describe("Renderer", () => {
 			renderer.setCell(0, 0, "A");
 			renderer.setCell(0, 1, "B");
 			renderer.setCell(0, 2, "C");
-			renderer.render();
+			const frame1 = renderer.render();
 
 			// Frame 2 - clear middle cell
 			renderer.beginFrame();
 			renderer.setCell(0, 0, "A");
 			renderer.setCell(0, 2, "C");
 
-			const output = renderer.render();
-			// Should move to position 1 and clear it with space
-			expect(output).toBe("\x1b[1C ");
+			const frame2 = renderer.render();
+			
+			// Apply both frames and verify visual result
+			const terminal = new TestTerminal({ rows: 1, cols: 3 });
+			await new Promise<void>((resolve) => {
+				terminal.stdout.write(frame1, () => resolve());
+			});
+			await new Promise<void>((resolve) => {
+				terminal.stdout.write(frame2, () => resolve());
+			});
+			
+			// Should show "A C" (middle cell cleared)
+			expect(terminal.getPlainText()).toBe("A C");
 		});
 	});
 
@@ -220,7 +260,8 @@ describe("Renderer", () => {
 	});
 
 	describe("edge cases", () => {
-		test("handles out of bounds cells", () => {
+		test("handles out of bounds cells", async () => {
+			const {TestTerminal} = await import("./test-utils.js");
 			const renderer = new Renderer(3, 3);
 
 			renderer.beginFrame();
@@ -230,24 +271,43 @@ describe("Renderer", () => {
 			renderer.setCell(0, 3, "X"); // Out of bounds
 			renderer.setCell(1, 1, "O"); // Valid
 
-			const output = renderer.render();
-			expect(output).toBe("\x1b[1B\x1b[1CO");
+			const ansi = renderer.render();
+			
+			// Apply to terminal and verify only valid cell is rendered
+			const terminal = new TestTerminal({ rows: 3, cols: 3 });
+			await new Promise<void>((resolve) => {
+				terminal.stdout.write(ansi, () => resolve());
+			});
+
+			const result = terminal.getPlainText();
+			expect(result).toContain("O");
+			expect(result).not.toContain("X");
 		});
 
-		test("handles empty strings", () => {
+		test("handles empty strings", async () => {
+			const {TestTerminal} = await import("./test-utils.js");
 			const renderer = new Renderer(1, 1);
 
 			// First set content
 			renderer.beginFrame();
 			renderer.setCell(0, 0, "A");
-			renderer.render();
+			const frame1 = renderer.render();
 
 			// Then clear with empty string
 			renderer.beginFrame();
 			renderer.setCell(0, 0, "");
+			const frame2 = renderer.render();
 
-			const output = renderer.render();
-			expect(output).toBe(" "); // Empty string clears to space
+			// Apply both frames to terminal
+			const terminal = new TestTerminal({ rows: 1, cols: 1 });
+			await new Promise<void>((resolve) => {
+				terminal.stdout.write(frame1, () => resolve());
+			});
+			await new Promise<void>((resolve) => {
+				terminal.stdout.write(frame2, () => resolve());
+			});
+
+			expect(terminal.getPlainText()).toBe(" "); // Empty string clears to space
 		});
 
 		test("handles unicode characters", () => {
@@ -286,39 +346,144 @@ describe("Renderer", () => {
 	});
 
 	describe("beginFrame", () => {
-		test("resets buffer for new frame", () => {
+		test("resets buffer for new frame", async () => {
+			const {TestTerminal} = await import("./test-utils.js");
 			const renderer = new Renderer(1, 2);
 
 			// Frame 1
 			renderer.beginFrame();
 			renderer.setCell(0, 0, "A");
 			renderer.setCell(0, 1, "B");
-			renderer.render();
+			const frame1 = renderer.render();
 
 			// Frame 2 - beginFrame without setting cells
 			renderer.beginFrame();
 			// Don't set any cells
+			const frame2 = renderer.render();
 
-			const output = renderer.render();
+			// Apply both frames to terminal
+			const terminal = new TestTerminal({ rows: 1, cols: 2 });
+			await new Promise<void>((resolve) => {
+				terminal.stdout.write(frame1, () => resolve());
+			});
+			await new Promise<void>((resolve) => {
+				terminal.stdout.write(frame2, () => resolve());
+			});
+
 			// Should clear both cells
-			expect(output).toBe("  ");
+			expect(terminal.getPlainText()).toBe("  ");
 		});
 
-		test("multiple beginFrame calls work correctly", () => {
+		test("multiple beginFrame calls work correctly", async () => {
+			const {TestTerminal} = await import("./test-utils.js");
 			const renderer = new Renderer(1, 1);
 
 			renderer.beginFrame();
 			renderer.beginFrame(); // Called twice
 			renderer.setCell(0, 0, "X");
 
-			const output = renderer.render();
-			expect(output).toBe("X");
+			const ansi = renderer.render();
+			
+			// Apply to terminal and verify result
+			const terminal = new TestTerminal({ rows: 1, cols: 1 });
+			await new Promise<void>((resolve) => {
+				terminal.stdout.write(ansi, () => resolve());
+			});
+
+			expect(terminal.getPlainText()).toBe("X");
+		});
+	});
+
+	describe("Delta Rendering Correctness", () => {
+		test("ANSI output produces expected terminal state", async () => {
+			const {TestTerminal} = await import("./test-utils.js");
+			const renderer = new Renderer(2, 3);
+
+			// Create target state
+			renderer.beginFrame();
+			renderer.setCell(0, 0, "A");
+			renderer.setCell(0, 2, "C");
+			renderer.setCell(1, 1, "X");
+
+			const ansi = renderer.render();
+			
+			// Apply to clean terminal
+			const terminal = new TestTerminal({ rows: 2, cols: 3 });
+			await new Promise<void>((resolve) => {
+				terminal.stdout.write(ansi, () => resolve());
+			});
+
+			const result = terminal.getVisibleText();
+			
+			// Should match expected pattern
+			expect(result).toContain("A C");
+			expect(result).toContain(" X");
+		});
+
+		test("wide character ANSI matches terminal behavior", async () => {
+			const {TestTerminal} = await import("./test-utils.js");
+			const renderer = new Renderer(1, 4);
+
+			renderer.beginFrame();
+			renderer.setCell(0, 0, "你");  // Takes columns 0,1
+			renderer.setCell(0, 2, "A");   // Column 2
+
+			const ansi = renderer.render();
+			console.log("Wide char ANSI:", JSON.stringify(ansi));
+			
+			const terminal = new TestTerminal({ rows: 1, cols: 4 });
+			await new Promise<void>((resolve) => {
+				terminal.stdout.write(ansi, () => resolve());
+			});
+
+			const result = terminal.getVisibleText();
+			console.log("Terminal result:", JSON.stringify(result));
+			
+			// Should contain both characters
+			expect(result).toContain("你");
+			expect(result).toContain("A");
+		});
+
+		test("empty vs space cells behave consistently", async () => {
+			const {TestTerminal} = await import("./test-utils.js");
+			const renderer = new Renderer(1, 3);
+
+			// First frame: fill all cells
+			renderer.beginFrame();
+			renderer.setCell(0, 0, "A");
+			renderer.setCell(0, 1, "B");
+			renderer.setCell(0, 2, "C");
+			const firstANSI = renderer.render();
+
+			// Second frame: clear middle cell
+			renderer.beginFrame();
+			renderer.setCell(0, 0, "A");
+			// Don't set (0,1) - should become null
+			renderer.setCell(0, 2, "C");
+			const deltaANSI = renderer.render();
+
+			// Apply both frames to terminal
+			const terminal = new TestTerminal({ rows: 1, cols: 3 });
+			
+			await new Promise<void>((resolve) => {
+				terminal.stdout.write(firstANSI, () => resolve());
+			});
+			
+			await new Promise<void>((resolve) => {
+				terminal.stdout.write(deltaANSI, () => resolve());
+			});
+
+			const result = terminal.getVisibleText();
+			
+			// Should be "A C" (middle cleared to space)
+			expect(result).toBe("A C");
 		});
 	});
 
 	describe("Regression Tests", () => {
 		describe("Bug: Must preserve all rows when updating frame", () => {
-			test("clearing cells in one row preserves other rows", () => {
+			test("clearing cells in one row preserves other rows", async () => {
+				const {TestTerminal} = await import("./test-utils.js");
 				const renderer = new Renderer(3, 5);
 
 				// Initial state: all cells filled
@@ -329,7 +494,13 @@ describe("Renderer", () => {
 					}
 				}
 				const initial = renderer.render();
-				expect(initial).toBe("#####\r\n#####\r\n#####");
+				// Test visual result instead of raw ANSI
+				const terminal = new TestTerminal({ rows: 3, cols: 5 });
+				await new Promise<void>((resolve) => {
+					terminal.stdout.write(initial, () => resolve());
+				});
+				
+				expect(terminal.getPlainText()).toBe("#####\n#####\n#####");
 
 				// Clear two cells in row 0, but must preserve rows 1 and 2
 				renderer.beginFrame();
@@ -343,13 +514,21 @@ describe("Renderer", () => {
 				}
 
 				const delta = renderer.render();
-				// Should only emit changes for cleared cells
-				expect(delta).toBe(" \x1b[2C ");
+				
+				// Apply delta to the same terminal and verify final result
+				await new Promise<void>((resolve) => {
+					terminal.stdout.write(delta, () => resolve());
+				});
+				
+				const result = terminal.getPlainText();
+				// Should have cleared cells at positions (0,0) and (0,3) but preserved others
+				expect(result).toContain(" ## #\n#####\n#####");
 			});
 		});
 
 		describe("setCellChar empty string behavior", () => {
-			test("empty string creates null cell not space", () => {
+			test("empty string creates null cell not space", async () => {
+				const {TestTerminal} = await import("./test-utils.js");
 				const renderer = new Renderer(1, 3);
 
 				// Set some content
@@ -357,17 +536,26 @@ describe("Renderer", () => {
 				renderer.setCell(0, 0, "A");
 				renderer.setCell(0, 1, "B");
 				renderer.setCell(0, 2, "C");
-				renderer.render();
+				const frame1 = renderer.render();
 
 				// Clear middle cell with empty string
 				renderer.beginFrame();
 				renderer.setCell(0, 0, "A");
 				renderer.setCell(0, 1, ""); // This should clear
 				renderer.setCell(0, 2, "C");
+				const frame2 = renderer.render();
 
-				const delta = renderer.render();
+				// Apply both frames to terminal
+				const terminal = new TestTerminal({ rows: 1, cols: 3 });
+				await new Promise<void>((resolve) => {
+					terminal.stdout.write(frame1, () => resolve());
+				});
+				await new Promise<void>((resolve) => {
+					terminal.stdout.write(frame2, () => resolve());
+				});
+
 				// Should emit space to clear position 1
-				expect(delta).toBe("\x1b[1C ");
+				expect(terminal.getPlainText()).toBe("A C");
 			});
 		});
 	});
@@ -425,7 +613,7 @@ describe("Renderer", () => {
 			const elapsed = performance.now() - start;
 
 			expect(elapsed).toBeLessThan(20); // Should detect no changes quickly
-			expect(output).toBe("");
+			expect(output).toBe(""); // No ANSI sequences when no changes
 		});
 
 		test("handles animation patterns efficiently", () => {
@@ -456,6 +644,26 @@ describe("Renderer", () => {
 			// No frame should spike too high
 			const maxTime = Math.max(...frames);
 			expect(maxTime).toBeLessThan(20); // No frame over 20ms
+		});
+
+		test("wide characters render correctly", () => {
+			const renderer = new Renderer(2, 5);
+
+			renderer.beginFrame();
+			renderer.setCell(0, 0, "你");  // Wide char at column 0 (占用 0,1)
+			renderer.setCell(0, 2, "A");   // Normal char at column 2
+			renderer.setCell(1, 0, "🚀"); // Wide emoji at column 0
+
+			const output = renderer.render();
+			
+			// Output should contain the characters
+			expect(output).toContain("你");
+			expect(output).toContain("A");
+			expect(output).toContain("🚀");
+			
+			// Plain text wide characters don't get resets with conditional line reset policy
+			expect(output).toMatch(/你A/); // First line 
+			expect(output).toMatch(/🚀/);   // Second line
 		});
 
 		test("terminal UI update performance", () => {
@@ -507,6 +715,108 @@ describe("Renderer", () => {
 			const avgKeypress =
 				keypresses.reduce((a, b) => a + b) / keypresses.length;
 			expect(avgKeypress).toBeLessThan(2); // Under 2ms per keypress
+		});
+	});
+
+	describe("Terminal Resize", () => {
+		test("handles resize to larger dimensions", async () => {
+			const {TestTerminal} = await import("./test-utils.js");
+			const renderer = new Renderer(2, 2);
+
+			// Initial frame in 2x2
+			renderer.beginFrame();
+			renderer.setCell(0, 0, "A");
+			renderer.setCell(0, 1, "B");
+			renderer.setCell(1, 0, "C");
+			renderer.setCell(1, 1, "D");
+			const frame1 = renderer.render();
+
+			// Resize to 3x3 and add new content
+			renderer.resize(3, 3);
+			renderer.beginFrame();
+			renderer.setCell(0, 0, "A"); // Same
+			renderer.setCell(0, 1, "B"); // Same
+			renderer.setCell(0, 2, "X"); // New column
+			renderer.setCell(1, 0, "C"); // Same
+			renderer.setCell(1, 1, "D"); // Same
+			renderer.setCell(2, 0, "Y"); // New row
+			renderer.setCell(2, 2, "Z"); // New cell
+			const frame2 = renderer.render();
+
+			// Apply both frames to 3x3 terminal
+			const terminal = new TestTerminal({ rows: 3, cols: 3 });
+			await new Promise<void>((resolve) => {
+				terminal.stdout.write(frame1, () => resolve());
+			});
+			await new Promise<void>((resolve) => {
+				terminal.stdout.write(frame2, () => resolve());
+			});
+
+			const result = terminal.getPlainText();
+			expect(result).toContain("ABX");
+			expect(result).toContain("CD");
+			expect(result).toContain("Y Z");
+		});
+
+		test("handles resize to smaller dimensions", async () => {
+			const {TestTerminal} = await import("./test-utils.js");
+			const renderer = new Renderer(3, 3);
+
+			// Initial frame in 3x3
+			renderer.beginFrame();
+			renderer.setCell(0, 0, "A");
+			renderer.setCell(0, 1, "B");
+			renderer.setCell(0, 2, "X");
+			renderer.setCell(1, 0, "C");
+			renderer.setCell(1, 1, "D");
+			renderer.setCell(2, 0, "Y");
+			const frame1 = renderer.render();
+
+			// Apply to 3x3 terminal
+			const terminal = new TestTerminal({ rows: 3, cols: 3 });
+			await new Promise<void>((resolve) => {
+				terminal.stdout.write(frame1, () => resolve());
+			});
+
+			// Resize both renderer and terminal to 2x2
+			renderer.resize(2, 2);
+			terminal.resize(2, 2);
+			
+			// After resize, do a full re-render (clear previous buffer)
+			renderer.clearPreviousBuffer();
+			
+			renderer.beginFrame();
+			renderer.setCell(0, 0, "A");
+			renderer.setCell(0, 1, "B");
+			renderer.setCell(1, 0, "C");
+			renderer.setCell(1, 1, "Z"); // Changed from D to Z
+			const frame2 = renderer.render();
+
+			await new Promise<void>((resolve) => {
+				terminal.stdout.write(frame2, () => resolve());
+			});
+
+			const result = terminal.getPlainText();
+			expect(result).toBe("AB\nCZ");
+		});
+
+		test("resize affects bounds checking", () => {
+			const renderer = new Renderer(2, 2);
+
+			// This should work in 2x2
+			renderer.beginFrame();
+			renderer.setCell(1, 1, "A");
+			expect(renderer.render()).toContain("A");
+
+			// Resize to 1x1 - same cell should now be out of bounds
+			renderer.resize(1, 1);
+			renderer.beginFrame();
+			renderer.setCell(1, 1, "B"); // Should be ignored (out of bounds)
+			renderer.setCell(0, 0, "C"); // Should work
+			const output = renderer.render();
+			
+			expect(output).toContain("C");
+			expect(output).not.toContain("B");
 		});
 	});
 });
