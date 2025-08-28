@@ -3,6 +3,8 @@
  * Each cell is represented as a Cell class instance
  */
 
+import LRUCache from "../lru.js";
+
 
 // Style flags (internal implementation)
 const STYLE_BOLD = 1 << 0;
@@ -15,7 +17,7 @@ const STYLE_DIM = 1 << 6;
 const STYLE_INVISIBLE = 1 << 7;
 const STYLE_OVERLINE = 1 << 8;
 
-export type CellBuffer = Cell[][];
+export type CellBuffer = (Cell | null)[][];
 
 export interface CellStyle {
 	fg?: number;
@@ -36,7 +38,14 @@ export class Cell {
 	bg: number;
 	style: number;
 
-	constructor(grapheme: string = "", cellStyle?: CellStyle) {
+	// LRU cache for Cell interning (matrix rain proof!)
+	private static cache = new LRUCache<string, Cell>(4096);
+
+	constructor(grapheme: string, cellStyle?: CellStyle) {
+		if (grapheme === "") {
+			throw new Error("Cell grapheme cannot be empty - use null for empty cells");
+		}
+		
 		this.grapheme = grapheme;
 		this.fg = cellStyle?.fg ?? 0;
 		this.bg = cellStyle?.bg ?? 0;
@@ -52,6 +61,42 @@ export class Cell {
 		if (cellStyle?.dim) styleFlags |= STYLE_DIM;
 		if (cellStyle?.overline) styleFlags |= STYLE_OVERLINE;
 		this.style = styleFlags;
+		
+		// Freeze for immutability - crucial for interning!
+		Object.freeze(this);
+	}
+
+	/**
+	 * Factory method for creating cells with automatic interning
+	 * This is the preferred way to create Cell instances
+	 */
+	static create(grapheme: string, cellStyle?: CellStyle): Cell {
+		// Create cache key from grapheme and style properties
+		const fg = cellStyle?.fg ?? 0;
+		const bg = cellStyle?.bg ?? 0;
+		
+		let styleFlags = 0;
+		if (cellStyle?.bold) styleFlags |= STYLE_BOLD;
+		if (cellStyle?.italic) styleFlags |= STYLE_ITALIC;
+		if (cellStyle?.underline) styleFlags |= STYLE_UNDERLINE;
+		if (cellStyle?.strikethrough) styleFlags |= STYLE_STRIKETHROUGH;
+		if (cellStyle?.inverse) styleFlags |= STYLE_INVERSE;
+		if (cellStyle?.blink) styleFlags |= STYLE_BLINK;
+		if (cellStyle?.dim) styleFlags |= STYLE_DIM;
+		if (cellStyle?.overline) styleFlags |= STYLE_OVERLINE;
+		
+		const cacheKey = `${grapheme}:${fg}:${bg}:${styleFlags}`;
+		
+		// Check cache first
+		const cached = this.cache.get(cacheKey);
+		if (cached) {
+			return cached;
+		}
+		
+		// Create new instance and cache it
+		const cell = new Cell(grapheme, cellStyle);
+		this.cache.set(cacheKey, cell);
+		return cell;
 	}
 
 	/**
@@ -78,24 +123,7 @@ export class Cell {
 		);
 	}
 
-	/**
-	 * Create a copy of this cell
-	 */
-	copy(): Cell {
-		const copy = new Cell();
-		copy.grapheme = this.grapheme;
-		copy.fg = this.fg;
-		copy.bg = this.bg;
-		copy.style = this.style;
-		return copy;
-	}
 
-	/**
-	 * Check if this cell is empty (no character)
-	 */
-	isEmpty(): boolean {
-		return this.grapheme === "";
-	}
 
 	/**
 	 * Check if this cell represents a wide character (occupies 2 columns)
@@ -127,12 +155,6 @@ export class Cell {
 		};
 	}
 
-	/**
-	 * Create an empty cell
-	 */
-	static createNull(): Cell {
-		return new Cell();
-	}
 }
 
 /**
@@ -141,9 +163,9 @@ export class Cell {
 export function createBuffer(rows: number, cols: number): CellBuffer {
 	const buffer: CellBuffer = [];
 	for (let row = 0; row < rows; row++) {
-		const line: Cell[] = [];
+		const line: (Cell | null)[] = [];
 		for (let col = 0; col < cols; col++) {
-			line.push(Cell.createNull());
+			line.push(null);
 		}
 		buffer.push(line);
 	}

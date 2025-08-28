@@ -17,9 +17,8 @@ export {
 // Clean rendering pipeline with new Renderer
 
 // Renderer - Efficient delta rendering without xterm.js
-export {Renderer} from "./rendering/Renderer.js";
-export {ANSIGenerator} from "./rendering/ANSIGenerator.js";
-export type {ColorDepth} from "./rendering/ANSIGenerator.js";
+export {Renderer, generateANSI} from "./rendering/Renderer.js";
+export type {ColorDepth} from "./rendering/Renderer.js";
 
 // Cell buffer utilities
 export {
