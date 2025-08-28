@@ -22,6 +22,7 @@ import {
 } from "../text/TextBreaker.js";
 import Yoga from "yoga-layout";
 import type * as YogaTypes from "yoga-layout";
+import { getResolvedStyle } from "../css.js";
 
 /**
  * Layout Engine using Yoga for flexbox calculations
@@ -59,6 +60,8 @@ export class LayoutEngine {
 		}
 
 		this.computingLayout = true;
+		console.log('\n>>> COMPUTE LAYOUT CALLED <<<');
+		console.log(`Computing layout for ${(root as any).tagName || 'non-HTML'}`);
 		this.buildingYogaTreeFor.clear(); // Clear any previous state
 
 		if (!(root instanceof this.window.HTMLElement)) {
@@ -94,6 +97,9 @@ export class LayoutEngine {
 		// Only ensure root has a node (for initial setup)
 		if (!htmlRoot[YOGA_NODE]) {
 			this.setupYogaNode(htmlRoot);
+		} else {
+			// Reapply styles since they might have changed
+			this.reapplyStylesRecursively(htmlRoot);
 		}
 
 		// Make document.documentElement a child of the viewport root
@@ -130,8 +136,7 @@ export class LayoutEngine {
 	 */
 	createYogaNodeForElement(element: HTMLElement, parent: HTMLElement): void {
 		// Only create Yoga nodes for elements that need them (block/flex elements)
-		const computedStyle = this.window.getComputedStyle(element);
-		const display = computedStyle.display;
+		const display = getResolvedStyle(element, "display");
 
 		if (display === "inline" || display === "inline-block") {
 			// Inline elements don't get Yoga nodes - they're handled by text layout
@@ -218,53 +223,21 @@ export class LayoutEngine {
 	/**
 	 * Get padding from element style (CSS property parsing)
 	 */
-	private getPadding(
-		style: CSSStyleDeclaration,
-	): [number, number, number, number] {
-		// Try individual padding properties first - handle ch units
-		const paddingTop = this.parseValue(
-			style.getPropertyValue("padding-top"),
-			0,
-		);
-		const paddingRight = this.parseValue(
-			style.getPropertyValue("padding-right"),
-			0,
-		);
-		const paddingBottom = this.parseValue(
-			style.getPropertyValue("padding-bottom"),
-			0,
-		);
-		const paddingLeft = this.parseValue(
-			style.getPropertyValue("padding-left"),
-			0,
-		);
+	private getPadding(element: Element): [number, number, number, number] {
+		// Try individual padding properties first
+		const paddingTop = this.parseValue(getResolvedStyle(element, "padding-top"), 0);
+		const paddingRight = this.parseValue(getResolvedStyle(element, "padding-right"), 0);
+		const paddingBottom = this.parseValue(getResolvedStyle(element, "padding-bottom"), 0);
+		const paddingLeft = this.parseValue(getResolvedStyle(element, "padding-left"), 0);
 
 		// If any individual properties are set, use them
 		if (paddingTop || paddingRight || paddingBottom || paddingLeft) {
 			return [paddingTop, paddingRight, paddingBottom, paddingLeft];
 		}
 
-		// Otherwise, parse shorthand padding property
-		const padding = style.getPropertyValue("padding");
-		if (!padding) {
-			return [0, 0, 0, 0];
-		}
-
-		// Parse CSS padding shorthand (e.g., "10px" or "10px 5px")
-		const values = padding.split(/\s+/).map((v) => parseInt(v) || 0);
-
-		switch (values.length) {
-			case 1:
-				return [values[0], values[0], values[0], values[0]];
-			case 2:
-				return [values[0], values[1], values[0], values[1]];
-			case 3:
-				return [values[0], values[1], values[2], values[1]];
-			case 4:
-				return [values[0], values[1], values[2], values[3]];
-			default:
-				return [0, 0, 0, 0];
-		}
+		// Return all zeros if no individual properties were set
+		// (JSDOM should have expanded any shorthand properties to individual ones)
+		return [0, 0, 0, 0];
 	}
 
 	/**
@@ -285,6 +258,21 @@ export class LayoutEngine {
 
 		// Set up measure function if this element has text content or inline children
 		this.setupMeasureFunction(element);
+	}
+	
+	/**
+	 * Reapply styles to existing Yoga nodes recursively
+	 */
+	private reapplyStylesRecursively(element: Element): void {
+		if (element[YOGA_NODE]) {
+			this.applyStylesToYoga(element);
+		}
+		
+		// Process children
+		const children = Array.from(element.children);
+		for (const child of children) {
+			this.reapplyStylesRecursively(child);
+		}
 	}
 
 	/**
@@ -310,9 +298,7 @@ export class LayoutEngine {
 		// Check if this element should have a measure function
 		// Elements that contain only inline content (text nodes and/or inline elements) need measure functions
 		const hasBlockChildren = elementChildren.some((child) => {
-			const computedStyle =
-				child.ownerDocument!.defaultView!.getComputedStyle(child);
-			const display = computedStyle.getPropertyValue("display");
+			const display = getResolvedStyle(child, "display");
 			return (
 				display !== "inline" && display !== "inline-block" && display !== ""
 			);
@@ -377,9 +363,7 @@ export class LayoutEngine {
 		// Check if this element should have a measure function
 		// Elements that contain only inline content (text nodes and/or inline elements) need measure functions
 		const hasBlockChildren = elementChildren.some((child) => {
-			const computedStyle =
-				child.ownerDocument!.defaultView!.getComputedStyle(child);
-			const display = computedStyle.getPropertyValue("display");
+			const display = getResolvedStyle(child, "display");
 			return (
 				display !== "inline" && display !== "inline-block" && display !== ""
 			);
@@ -399,15 +383,11 @@ export class LayoutEngine {
 		// Add element children to Yoga tree
 		let yogaChildIndex = 0;
 		for (const child of elementChildren) {
-			const computedStyle =
-				child.ownerDocument!.defaultView!.getComputedStyle(child);
-			let display = computedStyle.getPropertyValue("display");
+			let display = getResolvedStyle(child, "display");
 
 			// Demote block/flex children inside inline-ish parents to inline-block
 			// This ensures everything flows together in inline layout without modifying CSS
-			const parentDisplay = element
-				.ownerDocument!.defaultView!.getComputedStyle(element)
-				.getPropertyValue("display");
+			const parentDisplay = getResolvedStyle(element, "display");
 			if (
 				(parentDisplay === "inline" || parentDisplay === "inline-block") &&
 				(display === "block" || display === "flex")
@@ -447,6 +427,23 @@ export class LayoutEngine {
 		const finalX = parentX + layout.left;
 		const finalY = parentY + layout.top;
 		const tagName = (element as any).tagName || "UNKNOWN";
+		
+		// Debug margin values
+		const yogaNode = element[YOGA_NODE]!;
+		const marginLeft = yogaNode.getMargin(this.yoga.EDGE_LEFT);
+		const marginTop = yogaNode.getMargin(this.yoga.EDGE_TOP);
+		const setWidth = yogaNode.getWidth();
+		const setHeight = yogaNode.getHeight();
+		
+		if (tagName === "DIV" || tagName === "BODY") {
+			console.log(`${tagName} layout:`, {
+				parentX, parentY,
+				layout: { left: layout.left, top: layout.top, width: layout.width, height: layout.height },
+				setDimensions: { width: setWidth.value, height: setHeight.value },
+				margins: { left: marginLeft, top: marginTop },
+				final: { x: finalX, y: finalY }
+			});
+		}
 
 		// Layout engine sets bounds correctly for block elements
 
@@ -1293,14 +1290,12 @@ export class LayoutEngine {
 	private applyStylesToYoga(element: Element): void {
 		if (!element[YOGA_NODE]) return;
 
-		// Use computed style for proper CSS cascade
-		const computedStyle =
-			element.ownerDocument!.defaultView!.getComputedStyle(element);
-		const style = computedStyle;
 		const node = element[YOGA_NODE]!;
+		
+		console.log(`\n=== applyStylesToYoga for ${(element as any).tagName} ===`);
 
 		// Display type
-		const display = style.getPropertyValue("display");
+		const display = getResolvedStyle(element, "display");
 		if (display === "none") {
 			node.setDisplay(this.yoga.DISPLAY_NONE);
 			return;
@@ -1315,7 +1310,7 @@ export class LayoutEngine {
 		// inline elements use measurement functions, no special display setting needed
 
 		// Flex direction (not allowed for block display)
-		const flexDirection = style.getPropertyValue("flex-direction");
+		const flexDirection = getResolvedStyle(element, "flex-direction");
 		if (flexDirection && display !== "block") {
 			const flexDir = {
 				row: this.yoga.FLEX_DIRECTION_ROW,
@@ -1327,7 +1322,7 @@ export class LayoutEngine {
 		}
 
 		// Justify content
-		const justifyContent = style.getPropertyValue("justify-content");
+		const justifyContent = getResolvedStyle(element, "justify-content");
 		if (justifyContent) {
 			const justify = {
 				"flex-start": this.yoga.JUSTIFY_FLEX_START,
@@ -1340,7 +1335,7 @@ export class LayoutEngine {
 		}
 
 		// Align items (not allowed for block display)
-		const alignItems = style.getPropertyValue("align-items");
+		const alignItems = getResolvedStyle(element, "align-items");
 		if (alignItems && display !== "block") {
 			const align = {
 				stretch: this.yoga.ALIGN_STRETCH,
@@ -1352,8 +1347,8 @@ export class LayoutEngine {
 		}
 
 		// Dimensions
-		const widthStr = style.getPropertyValue("width");
-		const heightStr = style.getPropertyValue("height");
+		const widthStr = getResolvedStyle(element, "width");
+		const heightStr = getResolvedStyle(element, "height");
 
 		// Parse width - handle ch units
 		let width = NaN;
@@ -1376,10 +1371,12 @@ export class LayoutEngine {
 				height = parseInt(heightStr);
 			}
 		}
-		const minWidth = parseInt(style.getPropertyValue("min-width"));
-		const minHeight = parseInt(style.getPropertyValue("min-height"));
-		const maxWidth = parseInt(style.getPropertyValue("max-width"));
-		const maxHeight = parseInt(style.getPropertyValue("max-height"));
+		const minWidth = parseInt(getResolvedStyle(element, "min-width"));
+		const minHeight = parseInt(getResolvedStyle(element, "min-height"));
+		const maxWidth = parseInt(getResolvedStyle(element, "max-width"));
+		const maxHeight = parseInt(getResolvedStyle(element, "max-height"));
+
+		console.log(`Setting dimensions for ${(element as any).tagName}: widthStr="${widthStr}", heightStr="${heightStr}", width=${width}, height=${height}`);
 
 		if (!isNaN(width)) node.setWidth(width);
 		if (!isNaN(height)) node.setHeight(height);
@@ -1389,8 +1386,8 @@ export class LayoutEngine {
 		if (!isNaN(maxHeight)) node.setMaxHeight(maxHeight);
 
 		// Flex properties (CSS defaults already set in setupYogaNode)
-		const flexGrow = parseFloat(style.getPropertyValue("flex-grow"));
-		const flexShrink = parseFloat(style.getPropertyValue("flex-shrink"));
+		const flexGrow = parseFloat(getResolvedStyle(element, "flex-grow"));
+		const flexShrink = parseFloat(getResolvedStyle(element, "flex-shrink"));
 
 		// Only override defaults if explicitly specified in CSS
 		if (!isNaN(flexGrow)) node.setFlexGrow(flexGrow);
@@ -1399,7 +1396,7 @@ export class LayoutEngine {
 		// TODO: Add flex-basis support for complete CSS compatibility
 
 		// Position type (CSS default: static already set in setupYogaNode)
-		const position = style.getPropertyValue("position");
+		const position = getResolvedStyle(element, "position");
 		if (position === "relative") {
 			node.setPositionType(this.yoga.POSITION_TYPE_RELATIVE);
 		} else if (position === "absolute") {
@@ -1411,10 +1408,10 @@ export class LayoutEngine {
 
 		// Position offset values (top, right, bottom, left)
 		if (position === "relative" || position === "absolute") {
-			const top = parseInt(style.getPropertyValue("top"));
-			const right = parseInt(style.getPropertyValue("right"));
-			const bottom = parseInt(style.getPropertyValue("bottom"));
-			const left = parseInt(style.getPropertyValue("left"));
+			const top = parseInt(getResolvedStyle(element, "top"));
+			const right = parseInt(getResolvedStyle(element, "right"));
+			const bottom = parseInt(getResolvedStyle(element, "bottom"));
+			const left = parseInt(getResolvedStyle(element, "left"));
 
 			if (!isNaN(top)) node.setPosition(this.yoga.EDGE_TOP, top);
 			if (!isNaN(right)) node.setPosition(this.yoga.EDGE_RIGHT, right);
@@ -1423,7 +1420,7 @@ export class LayoutEngine {
 		}
 
 		// Padding
-		const [top, right, bottom, left] = this.getPadding(style);
+		const [top, right, bottom, left] = this.getPadding(element);
 		if (top || right || bottom || left) {
 			node.setPadding(this.yoga.EDGE_TOP, top);
 			node.setPadding(this.yoga.EDGE_RIGHT, right);
@@ -1432,7 +1429,8 @@ export class LayoutEngine {
 		}
 
 		// Margin
-		const margin = this.getMargin(style);
+		const margin = this.getMargin(element);
+		console.log(`Applying margins for ${(element as any).tagName}:`, margin);
 		if (margin[0] || margin[1] || margin[2] || margin[3]) {
 			node.setMargin(this.yoga.EDGE_TOP, margin[0]);
 			node.setMargin(this.yoga.EDGE_RIGHT, margin[1]);
@@ -1576,50 +1574,21 @@ export class LayoutEngine {
 	/**
 	 * Get margin from element style (CSS property parsing)
 	 */
-	private getMargin(
-		style: CSSStyleDeclaration,
-	): [number, number, number, number] {
-		// Try individual margin properties first - handle ch units
-		const marginTop = this.parseValue(style.getPropertyValue("margin-top"), 0);
-		const marginRight = this.parseValue(
-			style.getPropertyValue("margin-right"),
-			0,
-		);
-		const marginBottom = this.parseValue(
-			style.getPropertyValue("margin-bottom"),
-			0,
-		);
-		const marginLeft = this.parseValue(
-			style.getPropertyValue("margin-left"),
-			0,
-		);
+	private getMargin(element: Element): [number, number, number, number] {
+		// Get individual margin properties using getResolvedStyle
+		const marginTop = this.parseValue(getResolvedStyle(element, "margin-top"), 0);
+		const marginRight = this.parseValue(getResolvedStyle(element, "margin-right"), 0);
+		const marginBottom = this.parseValue(getResolvedStyle(element, "margin-bottom"), 0);
+		const marginLeft = this.parseValue(getResolvedStyle(element, "margin-left"), 0);
 
 		// If any individual properties are set, use them
 		if (marginTop || marginRight || marginBottom || marginLeft) {
 			return [marginTop, marginRight, marginBottom, marginLeft];
 		}
 
-		// Otherwise, parse shorthand margin property
-		const margin = style.getPropertyValue("margin");
-		if (!margin) {
-			return [0, 0, 0, 0];
-		}
-
-		// Parse CSS margin shorthand (e.g., "10px" or "10px 5px")
-		const values = margin.split(/\s+/).map((v) => parseInt(v) || 0);
-
-		switch (values.length) {
-			case 1:
-				return [values[0], values[0], values[0], values[0]];
-			case 2:
-				return [values[0], values[1], values[0], values[1]];
-			case 3:
-				return [values[0], values[1], values[2], values[1]];
-			case 4:
-				return [values[0], values[1], values[2], values[3]];
-			default:
-				return [0, 0, 0, 0];
-		}
+		// Return all zeros if no individual properties were set
+		// (JSDOM should have expanded any shorthand properties to individual ones)
+		return [0, 0, 0, 0];
 	}
 
 	/**
@@ -1628,8 +1597,12 @@ export class LayoutEngine {
 	private parseValue(value: string, defaultValue: number): number {
 		if (!value || value === "auto") return defaultValue;
 
+		console.log(`Parsing CSS value: "${value}"`);
+		
 		// Remove units and parse as integer
 		const numericValue = parseInt(value);
+		console.log(`Parsed numeric value: ${numericValue}`);
+		
 		return isNaN(numericValue) ? defaultValue : numericValue;
 	}
 }
