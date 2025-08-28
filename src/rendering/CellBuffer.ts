@@ -32,24 +32,24 @@ export interface CellStyle {
 	overline?: boolean;
 }
 
+const cache = new LRUCache<string, Cell>(2 ** 12);
+
 export class Cell {
-	grapheme: string;
-	fg: number;
-	bg: number;
-	style: number;
+	declare grapheme: string;
+	declare fg: number;
+	declare bg: number;
+	declare style: number;
 
 	// LRU cache for Cell interning (matrix rain proof!)
-	private static cache = new LRUCache<string, Cell>(4096);
-
 	constructor(grapheme: string, cellStyle?: CellStyle) {
 		if (grapheme === "") {
 			throw new Error("Cell grapheme cannot be empty - use null for empty cells");
 		}
-		
+
 		this.grapheme = grapheme;
 		this.fg = cellStyle?.fg ?? 0;
 		this.bg = cellStyle?.bg ?? 0;
-		
+
 		// Convert boolean flags to bit flags
 		let styleFlags = 0;
 		if (cellStyle?.bold) styleFlags |= STYLE_BOLD;
@@ -61,42 +61,9 @@ export class Cell {
 		if (cellStyle?.dim) styleFlags |= STYLE_DIM;
 		if (cellStyle?.overline) styleFlags |= STYLE_OVERLINE;
 		this.style = styleFlags;
-		
+
 		// Freeze for immutability - crucial for interning!
 		Object.freeze(this);
-	}
-
-	/**
-	 * Factory method for creating cells with automatic interning
-	 * This is the preferred way to create Cell instances
-	 */
-	static create(grapheme: string, cellStyle?: CellStyle): Cell {
-		// Create cache key from grapheme and style properties
-		const fg = cellStyle?.fg ?? 0;
-		const bg = cellStyle?.bg ?? 0;
-		
-		let styleFlags = 0;
-		if (cellStyle?.bold) styleFlags |= STYLE_BOLD;
-		if (cellStyle?.italic) styleFlags |= STYLE_ITALIC;
-		if (cellStyle?.underline) styleFlags |= STYLE_UNDERLINE;
-		if (cellStyle?.strikethrough) styleFlags |= STYLE_STRIKETHROUGH;
-		if (cellStyle?.inverse) styleFlags |= STYLE_INVERSE;
-		if (cellStyle?.blink) styleFlags |= STYLE_BLINK;
-		if (cellStyle?.dim) styleFlags |= STYLE_DIM;
-		if (cellStyle?.overline) styleFlags |= STYLE_OVERLINE;
-		
-		const cacheKey = `${grapheme}:${fg}:${bg}:${styleFlags}`;
-		
-		// Check cache first
-		const cached = this.cache.get(cacheKey);
-		if (cached) {
-			return cached;
-		}
-		
-		// Create new instance and cache it
-		const cell = new Cell(grapheme, cellStyle);
-		this.cache.set(cacheKey, cell);
-		return cell;
 	}
 
 	/**
@@ -122,8 +89,6 @@ export class Cell {
 			this.style === other.style
 		);
 	}
-
-
 
 	/**
 	 * Check if this cell represents a wide character (occupies 2 columns)
@@ -155,6 +120,38 @@ export class Cell {
 		};
 	}
 
+	/**
+	 * Factory method for creating cells with automatic interning
+	 * This is the preferred way to create Cell instances
+	 */
+	static create(grapheme: string, cellStyle?: CellStyle): Cell {
+		// Create cache key from grapheme and style properties
+		const fg = cellStyle?.fg ?? 0;
+		const bg = cellStyle?.bg ?? 0;
+
+		let styleFlags = 0;
+		if (cellStyle?.bold) styleFlags |= STYLE_BOLD;
+		if (cellStyle?.italic) styleFlags |= STYLE_ITALIC;
+		if (cellStyle?.underline) styleFlags |= STYLE_UNDERLINE;
+		if (cellStyle?.strikethrough) styleFlags |= STYLE_STRIKETHROUGH;
+		if (cellStyle?.inverse) styleFlags |= STYLE_INVERSE;
+		if (cellStyle?.blink) styleFlags |= STYLE_BLINK;
+		if (cellStyle?.dim) styleFlags |= STYLE_DIM;
+		if (cellStyle?.overline) styleFlags |= STYLE_OVERLINE;
+
+		const cacheKey = `${grapheme}:${fg}:${bg}:${styleFlags}`;
+
+		// Check cache first
+		const cached = cache.get(cacheKey);
+		if (cached) {
+			return cached;
+		}
+
+		// Create new instance and cache it
+		const cell = new Cell(grapheme, cellStyle);
+		cache.set(cacheKey, cell);
+		return cell;
+	}
 }
 
 /**
