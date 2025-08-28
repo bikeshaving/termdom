@@ -17,5 +17,6 @@
     "skipLibCheck": true,
     "noFallthroughCasesInSwitch": true,
     "noImplicitOverride": true
-  }
+  },
+	"include": ["src", "tests"]
 }

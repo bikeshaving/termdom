@@ -1,16 +1,22 @@
 {
-  "name": "@b9g/tom",
+  "name": "@b9g/termdom",
   "type": "module",
   "scripts": {
-    "typecheck": "tsc --noEmit",
-    "test": "bun test"
+    "lint": "eslint --ext .js,.jsx,.ts,.tsx .",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@types/bun": "^1.2.21",
     "@types/jsdom": "^21.1.7",
+    "@typescript-eslint/eslint-plugin": "^8.29.1",
+    "@typescript-eslint/parser": "^8.29.1",
     "@xterm/addon-serialize": "^0.13.0",
     "@xterm/headless": "^5.5.0",
     "fast-check": "^4.2.0",
+    "eslint": "^8.57.1",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-prettier": "^5.2.6",
     "typescript": "^5.9.2"
   },
   "dependencies": {

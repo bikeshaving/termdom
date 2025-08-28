@@ -1,114 +1,101 @@
 /**
  * Basic TTY Demo
- * 
+ *
  * Demonstrates the core TTY functionality with a simple UI
  * containing containers, text, and buttons.
  */
 
-import { TermDOM } from '../src/index.js';
+import {TermDOM} from "../src/index.js";
 
 async function basicDemo() {
-  console.log('🚀 Starting TTY Basic Demo...');
-  
-  try {
-    // Create TTY interface
-    const dom = new TermDOM();
-    const { document } = dom;
+	try {
+		// Create TTY interface
+		const dom = new TermDOM();
+		const {document} = dom;
 
-    console.log('📱 TTY Document created successfully');
-    console.log(`Terminal size: ${process.stdout.columns || 80}x${process.stdout.rows || 24}`);
+		// Create main container
+		const container = document.createElement("container");
+		container.style.setProperty("display", "flex");
+		container.style.setProperty("flex-direction", "column");
+		container.style.setProperty("background-color", "#1a1a1a");
+		container.style.setProperty("padding", "2");
+		container.style.setProperty("border", "1");
+		container.style.setProperty("border-color", "#333");
 
-    // Create main container
-    const container = document.createElement('container');
-    container.style.setProperty('display', 'flex');
-    container.style.setProperty('flex-direction', 'column');
-    container.style.setProperty('background-color', '#1a1a1a');
-    container.style.setProperty('padding', '2');
-    container.style.setProperty('border', '1');
-    container.style.setProperty('border-color', '#333');
+		// Create title
+		const title = document.createElement("text");
+		title.textContent = "🎯 Terminal Typewriter Demo";
+		title.style.setProperty("color", "#00ff00");
+		title.style.setProperty("font-weight", "bold");
+		title.style.setProperty("text-align", "center");
 
-    // Create title
-    const title = document.createElement('text');
-    title.textContent = '🎯 Terminal Typewriter Demo';
-    title.style.setProperty('color', '#00ff00');
-    title.style.setProperty('font-weight', 'bold');
-    title.style.setProperty('text-align', 'center');
+		// Create description
+		const description = document.createElement("text");
+		description.textContent =
+			"Welcome to TTY - bringing DOM APIs to the terminal!";
+		description.style.setProperty("color", "#888");
+		description.style.setProperty("text-align", "center");
 
-    // Create description
-    const description = document.createElement('text');
-    description.textContent = 'Welcome to TTY - bringing DOM APIs to the terminal!';
-    description.style.setProperty('color', '#888');
-    description.style.setProperty('text-align', 'center');
+		// Create button container
+		const buttonContainer = document.createElement("container");
+		buttonContainer.style.setProperty("display", "flex");
+		buttonContainer.style.setProperty("flex-direction", "row");
+		buttonContainer.style.setProperty("justify-content", "center");
 
-    // Create button container
-    const buttonContainer = document.createElement('container');
-    buttonContainer.style.setProperty('display', 'flex');
-    buttonContainer.style.setProperty('flex-direction', 'row');
-    buttonContainer.style.setProperty('justify-content', 'center');
+		// Create buttons
+		const button1 = document.createElement("button");
+		button1.textContent = "Click Me!";
+		button1.style.setProperty("background-color", "#0066cc");
+		button1.style.setProperty("color", "white");
 
-    // Create buttons
-    const button1 = document.createElement('button');
-    button1.textContent = 'Click Me!';
-    button1.style.setProperty('background-color', '#0066cc');
-    button1.style.setProperty('color', 'white');
+		const button2 = document.createElement("button");
+		button2.textContent = "Or Me!";
+		button2.style.setProperty("background-color", "#cc6600");
+		button2.style.setProperty("color", "white");
 
-    const button2 = document.createElement('button');
-    button2.textContent = 'Or Me!';
-    button2.style.setProperty('background-color', '#cc6600');
-    button2.style.setProperty('color', 'white');
+		// Add click handlers
+		button1.addEventListener("click", () => {
+			title.textContent = "🎉 Button 1 clicked!";
+			title.style.setProperty("color", "#ff6600");
+		});
 
-    // Add click handlers
-    button1.addEventListener('click', () => {
-      title.textContent = '🎉 Button 1 clicked!';
-      title.style.setProperty('color', '#ff6600');
-    });
+		button2.addEventListener("click", () => {
+			title.textContent = "✨ Button 2 clicked!";
+			title.style.setProperty("color", "#6600ff");
+		});
 
-    button2.addEventListener('click', () => {
-      title.textContent = '✨ Button 2 clicked!';
-      title.style.setProperty('color', '#6600ff');
-    });
+		// Build the DOM tree
+		buttonContainer.appendChild(button1);
+		buttonContainer.appendChild(button2);
 
-    // Build the DOM tree
-    buttonContainer.appendChild(button1);
-    buttonContainer.appendChild(button2);
-    
-    container.appendChild(title);
-    container.appendChild(description);
-    container.appendChild(buttonContainer);
-    
-    document.body.appendChild(container);
+		container.appendChild(title);
+		container.appendChild(description);
+		container.appendChild(buttonContainer);
 
-    console.log('🏗️  DOM tree constructed');
+		document.body.appendChild(container);
 
-    // Initial render
-    console.log('🎨 Initial render complete');
+		// Wait for rendering to complete
+		await dom.waitForRender();
 
-    // Setup exit handler
-    process.on('SIGINT', () => {
-      console.log('\n👋 Shutting down TTY demo...');
-      dom.dispose();
-      process.exit(0);
-    });
-
-    console.log('\n✅ Demo running! Press Ctrl+C to exit.');
-    console.log('💡 Try clicking the buttons or using keyboard navigation.');
-
-  } catch (error) {
-    console.error('❌ Demo failed:', error);
-    process.exit(1);
-  }
+		// Setup exit handler
+		process.on("SIGINT", () => {
+			dom.dispose();
+			process.exit(0);
+		});
+	} catch (error) {
+		console.error("Demo error:", error);
+		process.exit(1);
+	}
 }
 
 // Handle unhandled errors
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
-  process.exit(1);
+process.on("unhandledRejection", () => {
+	process.exit(1);
 });
 
-process.on('uncaughtException', (error) => {
-  console.error('Uncaught Exception:', error);
-  process.exit(1);
+process.on("uncaughtException", () => {
+	process.exit(1);
 });
 
 // Run the demo
-basicDemo().catch(console.error);
+basicDemo();

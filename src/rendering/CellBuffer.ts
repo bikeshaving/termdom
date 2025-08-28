@@ -24,86 +24,120 @@ export const STYLE_WIDE = 1 << 9;
 export type Cell = [string, number, number, number];
 export type CellBuffer = Cell[][];
 
+export interface CellStyle {
+	fg?: string | number;
+	bg?: string | number;
+	bold?: boolean;
+	italic?: boolean;
+	underline?: boolean;
+	strikethrough?: boolean;
+	inverse?: boolean;
+	dim?: boolean;
+	blink?: boolean;
+	overline?: boolean;
+	wide?: boolean;
+}
+
+// TODO: Switch to a class so we don’t have to export so many constants
+export class Cell1 {
+	declare grapheme: string;
+	declare fg: number;
+	declare bg: number;
+	declare extra: number;
+
+	constructor(grapheme: string, style?: CellStyle) {
+		this.grapheme = grapheme;
+	}
+
+	equals() {}
+
+	static createNull() {
+		return new Cell1("");
+	}
+}
+
 /**
  * Create an empty cell buffer
  */
 export function createBuffer(rows: number, cols: number): CellBuffer {
-  const buffer: CellBuffer = [];
-  for (let row = 0; row < rows; row++) {
-    const line: Cell[] = [];
-    for (let col = 0; col < cols; col++) {
-      line.push(createNullCell());
-    }
-    buffer.push(line);
-  }
-  return buffer;
+	const buffer: CellBuffer = [];
+	for (let row = 0; row < rows; row++) {
+		const line: Cell[] = [];
+		for (let col = 0; col < cols; col++) {
+			line.push(createNullCell());
+		}
+		buffer.push(line);
+	}
+	return buffer;
 }
 
 /**
  * Create a null (empty) cell
  */
 export function createNullCell(): Cell {
-  return ['', 0, 0, 0];
+	return ["", 0, 0, 0];
 }
 
 /**
  * Check if a cell is empty
  */
 export function isCellEmpty(cell: Cell): boolean {
-  return cell[CELL_CHAR] === '';
+	return cell[CELL_CHAR] === "";
 }
 
 /**
  * Get character from cell
  */
 export function getCellChar(cell: Cell): string {
-  return cell[CELL_CHAR];
+	return cell[CELL_CHAR];
 }
 
 /**
  * Get cell width (using Bun.stringWidth)
  */
 export function getCellWidth(cell: Cell): number {
-  return cell[CELL_CHAR] ? Bun.stringWidth(cell[CELL_CHAR]) : 0;
+	return cell[CELL_CHAR] ? Bun.stringWidth(cell[CELL_CHAR]) : 0;
 }
 
 /**
  * Set cell character
  */
 export function setCellChar(cell: Cell, char: string): void {
-  cell[CELL_CHAR] = char;
+	cell[CELL_CHAR] = char;
 }
 
 /**
  * Set cell foreground color (24-bit RGB)
  */
 export function setCellFg(cell: Cell, color: number): void {
-  cell[CELL_FG] = color & 0xFFFFFF;
+	cell[CELL_FG] = color & 0xffffff;
 }
 
 /**
  * Set cell background color (24-bit RGB)
  */
 export function setCellBg(cell: Cell, color: number): void {
-  cell[CELL_BG] = color & 0xFFFFFF;
+	cell[CELL_BG] = color & 0xffffff;
 }
 
 /**
  * Copy cell data
  */
 export function copyCell(src: Cell, dest: Cell): void {
-  dest[CELL_CHAR] = src[CELL_CHAR];
-  dest[CELL_FG] = src[CELL_FG];
-  dest[CELL_BG] = src[CELL_BG];
-  dest[CELL_STYLE] = src[CELL_STYLE];
+	dest[CELL_CHAR] = src[CELL_CHAR];
+	dest[CELL_FG] = src[CELL_FG];
+	dest[CELL_BG] = src[CELL_BG];
+	dest[CELL_STYLE] = src[CELL_STYLE];
 }
 
 /**
  * Check if two cells are equal
  */
 export function cellsEqual(cell1: Cell, cell2: Cell): boolean {
-  return cell1[CELL_CHAR] === cell2[CELL_CHAR] &&
-         cell1[CELL_FG] === cell2[CELL_FG] &&
-         cell1[CELL_BG] === cell2[CELL_BG] &&
-         cell1[CELL_STYLE] === cell2[CELL_STYLE];
+	return (
+		cell1[CELL_CHAR] === cell2[CELL_CHAR] &&
+		cell1[CELL_FG] === cell2[CELL_FG] &&
+		cell1[CELL_BG] === cell2[CELL_BG] &&
+		cell1[CELL_STYLE] === cell2[CELL_STYLE]
+	);
 }

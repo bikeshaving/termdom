@@ -5,166 +5,177 @@
  * demonstrating various flexbox properties and nested layouts.
  */
 
-import { TermDOM } from '../src/index.js';
+import {TermDOM} from "../src/index.js";
 
-function flexboxDemo() {
-  //console.log('🎯 Starting TTY Flexbox Layout Demo...\n');
+async function flexboxDemo() {
+	//console.log('🎯 Starting TTY Flexbox Layout Demo...\n');
 
-  // Create TTY document
-  
-  const { document, dispose } = TermDOM({ runtime });
+	// Create TTY document
 
-  // Create main container with column layout
-  const mainContainer = document.createElement('container');
-  mainContainer.style.flexDirection = 'column';
-  mainContainer.style.padding = "1 2 1 2"; // top, right, bottom, left
-  mainContainer.style.backgroundColor = 'blue';
-  document.body.appendChild(mainContainer);
+	const dom = new TermDOM();
+	const {document} = dom;
 
-  // Header section
-  const header = document.createElement('container');
-  header.style.flexDirection = 'row';
-  header.style.backgroundColor = 'cyan';
-  header.style.padding = "1 1 1 1";
-  mainContainer.appendChild(header);
+	// Create main container with column layout
+	const mainContainer = document.createElement("div");
+	mainContainer.style.display = "flex";
+	mainContainer.style.flexDirection = "column";
+	mainContainer.style.padding = "1px 2px 1px 2px"; // top, right, bottom, left
+	mainContainer.style.backgroundColor = "blue";
+	document.body.appendChild(mainContainer);
 
-  const headerTitle = document.createElement('text');
-  headerTitle.textContent = '🚀 TTY Flexbox Demo';
-  headerTitle.style.textAlign = 'center';
-  headerTitle.style.color = 'black';
-  header.appendChild(headerTitle);
+	// Header section
+	const header = document.createElement("div");
+	header.style.display = "flex";
+	header.style.flexDirection = "row";
+	header.style.backgroundColor = "cyan";
+	header.style.padding = "1px 1px 1px 1px";
+	mainContainer.appendChild(header);
 
-  const headerSubtitle = document.createElement('text');
-  headerSubtitle.textContent = 'Terminal Object Model';
-  headerSubtitle.style.textAlign = 'right';
-  headerSubtitle.style.color = 'gray';
-  header.appendChild(headerSubtitle);
+	const headerTitle = document.createElement("span");
+	headerTitle.textContent = "🚀 TTY Flexbox Demo";
+	headerTitle.style.textAlign = "center";
+	headerTitle.style.color = "black";
+	header.appendChild(headerTitle);
 
-  // Content area with horizontal layout
-  const contentArea = document.createElement('container');
-  contentArea.style.flexDirection = 'row';
-  contentArea.style.padding = "1 0 0 0";
-  mainContainer.appendChild(contentArea);
+	const headerSubtitle = document.createElement("span");
+	headerSubtitle.textContent = "Terminal Object Model";
+	headerSubtitle.style.textAlign = "right";
+	headerSubtitle.style.color = "gray";
+	header.appendChild(headerSubtitle);
 
-  // Left sidebar
-  const sidebar = document.createElement('container');
-  sidebar.style.flexDirection = 'column';
-  sidebar.style.backgroundColor = 'green';
-  sidebar.style.padding = "1 1 1 1";
-  contentArea.appendChild(sidebar);
+	// Content area with horizontal layout
+	const contentArea = document.createElement("div");
+	contentArea.style.display = "flex";
+	contentArea.style.flexDirection = "row";
+	contentArea.style.padding = "1px 0px 0px 0px";
+	mainContainer.appendChild(contentArea);
 
-  const sidebarTitle = document.createElement('text');
-  sidebarTitle.textContent = '📋 Navigation';
-  sidebarTitle.style.color = 'white';
-  sidebarTitle.style.textAlign = 'center';
-  sidebar.appendChild(sidebarTitle);
+	// Left sidebar
+	const sidebar = document.createElement("div");
+	sidebar.style.display = "flex";
+	sidebar.style.flexDirection = "column";
+	sidebar.style.backgroundColor = "green";
+	sidebar.style.padding = "1px 1px 1px 1px";
+	contentArea.appendChild(sidebar);
 
-  const menuItems = ['• Home', '• About', '• Services', '• Contact'];
-  for (const item of menuItems) {
-    const menuItem = document.createElement('text');
-    menuItem.textContent = item;
-    menuItem.style.color = 'lightGreen';
-    menuItem.style.padding = "0 1 0 1";
-    sidebar.appendChild(menuItem);
-  }
+	const sidebarTitle = document.createElement("span");
+	sidebarTitle.textContent = "📋 Navigation";
+	sidebarTitle.style.color = "white";
+	sidebarTitle.style.textAlign = "center";
+	sidebar.appendChild(sidebarTitle);
 
-  // Main content area
-  const mainContent = document.createElement('container');
-  mainContent.style.flexDirection = 'column';
-  mainContent.style.backgroundColor = 'white';
-  mainContent.style.padding = "1 2 1 2";
-  contentArea.appendChild(mainContent);
+	const menuItems = ["• Home", "• About", "• Services", "• Contact"];
+	for (const item of menuItems) {
+		const menuItem = document.createElement("span");
+		menuItem.textContent = item;
+		menuItem.style.color = "lightGreen";
+		menuItem.style.padding = "0px 1px 0px 1px";
+		sidebar.appendChild(menuItem);
+	}
 
-  const contentTitle = document.createElement('text');
-  contentTitle.textContent = '📄 Main Content Area';
-  contentTitle.style.color = 'black';
-  contentTitle.style.textAlign = 'center';
-  mainContent.appendChild(contentTitle);
+	// Main content area
+	const mainContent = document.createElement("div");
+	mainContent.style.display = "flex";
+	mainContent.style.flexDirection = "column";
+	mainContent.style.backgroundColor = "white";
+	mainContent.style.padding = "1px 2px 1px 2px";
+	contentArea.appendChild(mainContent);
 
-  const contentText = document.createElement('text');
-  contentText.textContent = 'This demonstrates flexbox layout with nested containers. The layout automatically adjusts based on flexDirection properties: column for vertical stacking, row for horizontal arrangement.';
-  contentText.style.color = 'darkGray';
-  contentText.style.padding = "1 0 1 0";
-  mainContent.appendChild(contentText);
+	const contentTitle = document.createElement("span");
+	contentTitle.textContent = "📄 Main Content Area";
+	contentTitle.style.color = "black";
+	contentTitle.style.textAlign = "center";
+	mainContent.appendChild(contentTitle);
 
-  // Feature showcase area
-  const featuresContainer = document.createElement('container');
-  featuresContainer.style.flexDirection = 'row';
-  featuresContainer.style.padding = "1 0 0 0";
-  mainContent.appendChild(featuresContainer);
+	const contentText = document.createElement("span");
+	contentText.textContent =
+		"This demonstrates flexbox layout with nested containers. The layout automatically adjusts based on flexDirection properties: column for vertical stacking, row for horizontal arrangement.";
+	contentText.style.color = "darkGray";
+	contentText.style.padding = "1px 0px 1px 0px";
+	mainContent.appendChild(contentText);
 
-  const features = [
-    { title: '🎨 Styling', desc: 'Rich terminal colors and formatting' },
-    { title: '📐 Layout', desc: 'Flexbox-based positioning system' },
-    { title: '⚡ Performance', desc: 'Efficient ScreenBuffer rendering' }
-  ];
+	// Feature showcase area
+	const featuresContainer = document.createElement("div");
+	featuresContainer.style.display = "flex";
+	featuresContainer.style.flexDirection = "row";
+	featuresContainer.style.padding = "1px 0px 0px 0px";
+	mainContent.appendChild(featuresContainer);
 
-  for (const feature of features) {
-    const featureCard = document.createElement('container');
-    featureCard.style.flexDirection = 'column';
-    featureCard.style.backgroundColor = 'lightBlue';
-    featureCard.style.padding = "1 1 1 1";
-    featuresContainer.appendChild(featureCard);
+	const features = [
+		{title: "🎨 Styling", desc: "Rich terminal colors and formatting"},
+		{title: "📐 Layout", desc: "Flexbox-based positioning system"},
+		{title: "⚡ Performance", desc: "Efficient ScreenBuffer rendering"},
+	];
 
-    const featureTitle = document.createElement('text');
-    featureTitle.textContent = feature.title;
-    featureTitle.style.color = 'blue';
-    featureTitle.style.textAlign = 'center';
-    featureCard.appendChild(featureTitle);
+	for (const feature of features) {
+		const featureCard = document.createElement("div");
+		featureCard.style.display = "flex";
+		featureCard.style.flexDirection = "column";
+		featureCard.style.backgroundColor = "lightBlue";
+		featureCard.style.padding = "1px 1px 1px 1px";
+		featureCard.style.flex = "1"; // Make cards flexible to share available width equally
+		featuresContainer.appendChild(featureCard);
 
-    const featureDesc = document.createElement('text');
-    featureDesc.textContent = feature.desc;
-    featureDesc.style.color = 'darkBlue';
-    featureDesc.style.textAlign = 'center';
-    featureCard.appendChild(featureDesc);
-  }
+		const featureTitle = document.createElement("span");
+		featureTitle.textContent = feature.title;
+		featureTitle.style.color = "blue";
+		featureTitle.style.textAlign = "center";
+		featureCard.appendChild(featureTitle);
 
-  // Footer with reverse row layout
-  const footer = document.createElement('container');
-  footer.style.flexDirection = 'row-reverse';
-  footer.style.backgroundColor = 'magenta';
-  footer.style.padding = "1 2 1 2";
-  mainContainer.appendChild(footer);
+		const featureDesc = document.createElement("span");
+		featureDesc.textContent = feature.desc;
+		featureDesc.style.color = "darkBlue";
+		featureDesc.style.textAlign = "center";
+		featureCard.appendChild(featureDesc);
+	}
 
-  const footerText = document.createElement('text');
-  footerText.textContent = '© 2024 Terminal Object Model';
-  footerText.style.color = 'white';
-  footer.appendChild(footerText);
+	// Footer with reverse row layout
+	const footer = document.createElement("div");
+	footer.style.display = "flex";
+	footer.style.flexDirection = "row-reverse";
+	footer.style.backgroundColor = "magenta";
+	footer.style.padding = "1px 2px 1px 2px";
+	mainContainer.appendChild(footer);
 
-  const footerVersion = document.createElement('text');
-  footerVersion.textContent = 'v1.0.0';
-  footerVersion.style.color = 'lightMagenta';
-  footer.appendChild(footerVersion);
+	const footerText = document.createElement("span");
+	footerText.textContent = "© 2024 Terminal Object Model";
+	footerText.style.color = "white";
+	footer.appendChild(footerText);
 
-  // Log layout structure
-  //console.log('📐 Layout Structure:');
-  //console.log('├── Main Container (column)');
-  //console.log('│   ├── Header (row)');
-  //console.log('│   │   ├── Title + Subtitle');
-  //console.log('│   ├── Content Area (row)');
-  //console.log('│   │   ├── Sidebar (column)');
-  //console.log('│   │   │   ├── Navigation items');
-  //console.log('│   │   ├── Main Content (column)');
-  //console.log('│   │   │   ├── Features (row)');
-  //console.log('│   │   │   │   ├── Feature cards (column)');
-  //console.log('│   ├── Footer (row-reverse)');
-  //console.log('');
-  //
-  // Layout renders automatically via MutationObserver!
-  //console.log('🎨 Flexbox layout rendered automatically!\n');
-  //
-  //console.log('\n✨ Flexbox demo complete!');
-  //console.log('🔍 Notice how elements are automatically positioned using flexbox rules:');
-  //console.log('   • Column layout stacks vertically');
-  //console.log('   • Row layout arranges horizontally');
-  //console.log('   • Row-reverse layout arranges horizontally in reverse order');
-  //console.log('   • Nested containers create complex layouts');
+	const footerVersion = document.createElement("span");
+	footerVersion.textContent = "v1.0.0";
+	footerVersion.style.color = "lightMagenta";
+	footer.appendChild(footerVersion);
 
-  // Clean up
-  setTimeout(() => {
-    dom.dom.dispose();
-    //console.log('\n🧹 Demo cleaned up');
-  }, 100);
+	// Wait for rendering to complete
+	await dom.waitForRender();
+
+	// Log layout structure
+	//console.log('📐 Layout Structure:');
+	//console.log('├── Main Container (column)');
+	//console.log('│   ├── Header (row)');
+	//console.log('│   │   ├── Title + Subtitle');
+	//console.log('│   ├── Content Area (row)');
+	//console.log('│   │   ├── Sidebar (column)');
+	//console.log('│   │   │   ├── Navigation items');
+	//console.log('│   │   ├── Main Content (column)');
+	//console.log('│   │   │   ├── Features (row)');
+	//console.log('│   │   │   │   ├── Feature cards (column)');
+	//console.log('│   ├── Footer (row-reverse)');
+	//console.log('');
+	//
+	// Layout renders automatically via MutationObserver!
+	//console.log('🎨 Flexbox layout rendered automatically!\n');
+	//
+	//console.log('\n✨ Flexbox demo complete!');
+	//console.log('🔍 Notice how elements are automatically positioned using flexbox rules:');
+	//console.log('   • Column layout stacks vertically');
+	//console.log('   • Row layout arranges horizontally');
+	//console.log('   • Row-reverse layout arranges horizontally in reverse order');
+	//console.log('   • Nested containers create complex layouts');
+
+	// Clean up
+	dom.dispose();
 }
 
 flexboxDemo();
