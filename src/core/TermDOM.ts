@@ -1,11 +1,11 @@
 import {LayoutEngine} from "../layout/LayoutEngine.js";
-import {Renderer} from "../rendering/Renderer.js";
-import {type ColorDepth} from "../rendering/ANSIGenerator.js";
+import {Renderer, type ColorDepth} from "../rendering/Renderer.js";
 import {EventEmitter} from "events";
 import {JSDOM} from "jsdom";
 import type {DOMWindow} from "jsdom";
 import type * as Yoga from "yoga-layout";
 import {RectUtils} from "../layout/RectUtils.js";
+import {getResolvedStyle} from "../css.js";
 
 // Symbol properties for storing layout data
 export const ELEMENT_BOUNDS = Symbol("elementBounds"); // Single bounding rect for all elements
@@ -83,8 +83,8 @@ export class TermDOM {
 	private readonly jsdom: JSDOM;
 	private readonly observer: MutationObserver;
 
-	private readonly width: number;
-	private readonly height: number;
+	private width: number;
+	private height: number;
 	private readonly mode: "flow" | "fullscreen";
 	private readonly process: ProcessLike;
 
@@ -96,6 +96,11 @@ export class TermDOM {
 	private renderCompleteCallbacks: Array<() => void> = [];
 	// Track processed elements to prevent duplicates
 	private processedElements = new WeakSet<HTMLElement>();
+
+	// Scrollback tracking
+	private commandStart: number = 0;
+	private commandHeight: number = 0;
+	private renderStartRow: number = 0;
 
 	constructor(options: TermDOMOptions = {}) {
 		// Set up process (defaults to global process)
@@ -137,7 +142,7 @@ export class TermDOM {
 
 		// Set up window properties and DOM
 		this.initializeWindow();
-		this.initializeDocument();
+		// CSS defaults are now handled by the css.ts module
 
 		// Set up automatic rendering via MutationObserver
 		this.observer = this.setupMutationObserver();
@@ -184,22 +189,6 @@ export class TermDOM {
 		window._computeLayoutIfNeeded = this.computeLayoutIfNeeded.bind(this);
 	}
 
-	private initializeDocument(): void {
-		const document = this.document;
-
-		// Reset default browser styles for consistent terminal behavior
-		document.documentElement.style.setProperty("margin", "0");
-		document.documentElement.style.setProperty("padding", "0");
-		document.body.style.setProperty("margin", "0");
-		document.body.style.setProperty("padding", "0");
-
-		// Use flexbox layout (required for Yoga engine)
-		document.documentElement.style.setProperty("display", "flex");
-		document.documentElement.style.setProperty("flex-direction", "column");
-		document.body.style.setProperty("display", "flex");
-		document.body.style.setProperty("flex-direction", "column");
-		document.body.style.setProperty("flex", "1");
-	}
 
 	private setupMutationObserver(): MutationObserver {
 		const observer = new this.window.MutationObserver(
@@ -247,6 +236,93 @@ export class TermDOM {
 		this.process.on("SIGWINCH", () => {
 			this.handleResize();
 		});
+
+		// Set up raw mode for full terminal control
+		if (this.process.stdin?.isTTY) {
+			const stdin = this.process.stdin as TTYReadStream;
+			stdin.setRawMode?.(true);
+			stdin.resume();
+
+			// Set up input handling
+			stdin.on('data', (data: Buffer) => {
+				// Handle Ctrl+C gracefully
+				if (data[0] === 0x03) {
+					this.dispose();
+					this.process.exit(0);
+				}
+				// TODO: Handle other input events
+			});
+		}
+
+		// Initialize cursor position (async)
+		this.initializeCursorPosition();
+	}
+
+	/**
+	 * Get cursor position to determine commandStart
+	 */
+	private async getCursorPosition(): Promise<{ row: number; col: number }> {
+		return new Promise((resolve, reject) => {
+			// Check if we have TTY capabilities
+			if (!this.process.stdin?.isTTY) {
+				// Default to top of screen if not in TTY
+				resolve({ row: 1, col: 1 });
+				return;
+			}
+
+			// Set raw mode to capture escape sequences
+			const stdin = this.process.stdin as TTYReadStream;
+			const originalRawMode = (stdin as any).isRaw || false;
+			stdin.setRawMode?.(true);
+			stdin.resume();
+
+			let response = '';
+			const timeout = setTimeout(() => {
+				cleanup();
+				// Default to reasonable position if timeout
+				resolve({ row: 1, col: 1 });
+			}, 100);
+
+			const onData = (data: Buffer) => {
+				response += data.toString();
+
+				// Look for cursor position response: \x1b[{row};{col}R
+				const match = response.match(/\x1b\[(\d+);(\d+)R/);
+				if (match) {
+					cleanup();
+					clearTimeout(timeout);
+					const row = parseInt(match[1], 10);
+					const col = parseInt(match[2], 10);
+					resolve({ row, col });
+				}
+			};
+
+			const cleanup = () => {
+				stdin.removeListener('data', onData);
+				stdin.setRawMode?.(originalRawMode);
+				if (!originalRawMode) stdin.pause();
+			};
+
+			stdin.on('data', onData);
+
+			// Query cursor position
+			this.process.stdout.write('\x1b[6n');
+		});
+	}
+
+	/**
+	 * Initialize cursor position and command height
+	 */
+	private async initializeCursorPosition(): Promise<void> {
+		try {
+			const pos = await this.getCursorPosition();
+			this.commandStart = pos.row - 1; // Convert to 0-based
+			this.commandHeight = this.height - this.commandStart;
+		} catch (e) {
+			// Default to full screen if detection fails
+			this.commandStart = 0;
+			this.commandHeight = this.height;
+		}
 	}
 
 	private async render(): Promise<void> {
@@ -256,17 +332,30 @@ export class TermDOM {
 		// Compute layout if needed
 		this.computeLayoutIfNeeded();
 
+		// Calculate content height and render start row
+		const contentHeight = this.calculateContentHeight();
+		this.renderStartRow = Math.max(0, this.commandStart - (contentHeight - this.commandHeight));
+
 		// Begin new frame
 		this.renderer.beginFrame();
 
-		// Render DOM tree to cells
-		this.renderElement(this.document.documentElement, 0, 0);
+		// Render DOM tree to cells with coordinate transformation
+		this.renderElement(this.document.documentElement, 0, -this.renderStartRow);
 
-		// Generate ANSI output and write to terminal
+		// Generate ANSI output
 		const ansiOutput = this.renderer.render();
-		if (ansiOutput) {
+
+		// Calculate expansion newlines if needed
+		const expansionNewlines = contentHeight > this.commandHeight
+			? '\n'.repeat(contentHeight - this.commandHeight)
+			: '';
+
+		// Combine positioning, content, and expansion
+		const fullOutput = ansiOutput + expansionNewlines;
+
+		if (fullOutput) {
 			await new Promise<void>((resolve, reject) => {
-				this.process.stdout.write(ansiOutput, "utf8", (error) => {
+				this.process.stdout.write(fullOutput, "utf8", (error) => {
 					if (error) {
 						reject(error);
 					} else {
@@ -283,6 +372,22 @@ export class TermDOM {
 			const callbacks = this.renderCompleteCallbacks.splice(0);
 			callbacks.forEach((callback) => callback());
 		}
+	}
+
+	/**
+	 * Calculate total content height from layout
+	 */
+	private calculateContentHeight(): number {
+		const body = this.document.body;
+		if (!body) return 0;
+
+		// Get the bounds of the body element which should contain all content
+		const bounds = body[ELEMENT_BOUNDS];
+		if (!bounds) return 0;
+
+		// Content height is the bottom of the bounding box
+		// Add 1 because bounds are 0-indexed but we need row count
+		return Math.ceil(bounds.bottom) + 1;
 	}
 
 	/**
@@ -332,7 +437,7 @@ export class TermDOM {
 				y + bounds.top,
 				bounds.width,
 				bounds.height,
-				{bg: style.bg},
+				style.bg,
 			);
 		}
 
@@ -393,6 +498,7 @@ export class TermDOM {
 		}
 	}
 
+	// TODO: this is no longer needed with our renderer logic
 	/**
 	 * Walk up the DOM tree to find the effective background color
 	 * Mimics CSS background inheritance behavior
@@ -469,6 +575,7 @@ export class TermDOM {
 				mutation.type === "attributes" &&
 				mutation.attributeName === "style"
 			) {
+				console.log(`Style mutation detected on ${targetElement.tagName}`);
 				this.markDirtySingle(targetElement);
 			} else if (mutation.type === "childList") {
 				// Handle removed nodes first - clean up old parent relationships
@@ -508,11 +615,11 @@ export class TermDOM {
 		this.processedElements.add(element);
 
 		// Determine if this element should have a Yoga node
-		const computedStyle = this.window.getComputedStyle(element);
-		const display = computedStyle.display;
+		// Use getResolvedStyle from our CSS system to respect terminal defaults
+		const display = getResolvedStyle(element, "display");
 
-		if (display === "inline" || display === "inline-block" || display === "") {
-			// Inline elements don't get Yoga nodes - handled by text layout
+		if (display === "inline" || display === "inline-block" || display === "" || display === "none") {
+			// Inline elements and display:none don't get Yoga nodes
 			return;
 		}
 
@@ -630,8 +737,37 @@ export class TermDOM {
 	}
 
 	private handleResize(): void {
-		// For now, just re-render with current dimensions
-		// TODO: Implement proper resize handling
+		// Update dimensions from current terminal size
+		const newWidth = this.process.stdout.columns || 80;
+		const newHeight = this.process.stdout.rows || 24;
+
+		// Update internal dimensions
+		this.width = newWidth;
+		this.height = newHeight;
+
+		// Update window properties
+		Object.defineProperty(this.window, "innerWidth", {
+			value: newWidth,
+			writable: false,
+			configurable: true,
+		});
+		Object.defineProperty(this.window, "innerHeight", {
+			value: newHeight,
+			writable: false,
+			configurable: true,
+		});
+		this.window._terminalSize = {width: newWidth, height: newHeight};
+
+		// Resize renderer
+		this.renderer.resize(newHeight, newWidth);
+
+		// Clear previous buffer to force full redraw
+		this.renderer.clearPreviousBuffer();
+
+		// Update command height based on new terminal size
+		this.commandHeight = newHeight - this.commandStart;
+
+		// Re-render with new dimensions
 		this.render();
 	}
 
@@ -935,6 +1071,13 @@ export class TermDOM {
 	}
 
 	public dispose(): void {
+		// Restore cooked mode before cleanup
+		if (this.process.stdin?.isTTY) {
+			const stdin = this.process.stdin as TTYReadStream;
+			stdin.setRawMode?.(false);
+			stdin.pause();
+		}
+
 		this.observer.disconnect();
 		this.renderer.dispose();
 		this.layoutEngine.dispose();

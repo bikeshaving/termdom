@@ -209,6 +209,14 @@ const TERMINAL_ELEMENT_DEFAULTS: Record<string, Record<string, string>> = {
     'padding': '0',
   },
   
+  // Metadata elements - never rendered in terminal
+  'head': { 'display': 'none' },
+  'style': { 'display': 'none' },
+  'script': { 'display': 'none' },
+  'meta': { 'display': 'none' },
+  'title': { 'display': 'none' },
+  'link': { 'display': 'none' },
+  
   // Block elements  
   'html': { 'display': 'block' },
   'body': { 'display': 'block' },

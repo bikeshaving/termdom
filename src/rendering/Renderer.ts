@@ -4,11 +4,11 @@ import {
 	createBuffer,
 } from "./CellBuffer.js";
 
-export type ColorDepth = "ansi" | "256" | "rgb";
+ export type ColorDepth = "ansi" | "256" | "rgb";
 
 export interface CellStyle {
-	fg?: number;
-	bg?: number;
+	fg?: number | null;
+	bg?: number | null;
 	bold?: boolean;
 	italic?: boolean;
 	underline?: boolean;
@@ -53,7 +53,7 @@ export class Renderer {
 	// TODO:    - Border styles (single, double, rounded)
 	// TODO:    - Smart corner/intersection handling
 	// TODO:    - Background preservation (borders inherit background)
-	
+
 	/**
 	 * Begin a new frame - creates fresh buffer
 	 */
@@ -69,7 +69,7 @@ export class Renderer {
 
 		// Preserve existing background if new style doesn't specify one
 		let finalStyle = style;
-		if (style && style.bg === undefined) {
+		if (style && style.bg == null) {
 			const existingCell = this.currentBuffer[row][col];
 			if (existingCell && existingCell.bg !== 0) {
 				finalStyle = { ...style, bg: existingCell.bg };
@@ -89,12 +89,15 @@ export class Renderer {
 		y: number,
 		width: number,
 		height: number,
-		style?: CellStyle,
+		bgColor?: number | null,
 	): void {
-		// Skip if no style or transparent background (null/undefined bg means don't overwrite)
-		if (!style || (style.bg === null || style.bg === undefined)) {
+		// Skip if background color is null/undefined (means don't overwrite)
+		if (bgColor == null) {
 			return;
 		}
+
+		// bg: 0 is valid (default background color)
+		const style: CellStyle = { bg: bgColor };
 
 		for (let row = y; row < y + height; row++) {
 			for (let col = x; col < x + width; col++) {
@@ -150,12 +153,12 @@ export class Renderer {
 			// Compare buffers and create diff - handle different dimensions
 			const prevRows = this.previousBuffer.length;
 			const prevCols = this.previousBuffer[0]?.length || 0;
-			
+
 			for (let row = 0; row < this.rows; row++) {
 				for (let col = 0; col < this.cols; col++) {
 					// Get previous cell if it exists in old buffer bounds
-					const prevCell = (row < prevRows && col < prevCols) 
-						? this.previousBuffer[row][col] 
+					const prevCell = (row < prevRows && col < prevCols)
+						? this.previousBuffer[row][col]
 						: null;
 					const currCell = this.currentBuffer[row][col];
 
@@ -164,19 +167,19 @@ export class Renderer {
 						// Both null, no change
 						continue;
 					}
-					
+
 					if (prevCell === null && currCell !== null) {
 						// New content
 						diffBuffer[row][col] = currCell; // Cells are immutable, can reference directly
 						continue;
 					}
-					
+
 					if (prevCell !== null && currCell === null) {
 						// Content removed, need to clear with space
 						diffBuffer[row][col] = Cell.create(" ");
 						continue;
 					}
-					
+
 					// Both non-null, compare normally
 					if (!prevCell!.equals(currCell!)) {
 						// Normal change, reference current cell directly
@@ -213,13 +216,13 @@ export function generateANSI(
 ): string {
 	const rows = buffer.length;
 	const cols = buffer[0]?.length || 0;
-	
+
 	let output = "";
 	let cursorRow = 0;
 	let cursorCol = 0;
 	let previousCell: Cell | null = null;
 	let hasContent = false;
-	
+
 	// Check if there's any content to render first
 	for (let row = 0; row < rows; row++) {
 		for (let col = 0; col < cols; col++) {
@@ -230,14 +233,14 @@ export function generateANSI(
 		}
 		if (hasContent) break;
 	}
-	
+
 	// Only add wrapper sequences if there's content to render
 	if (hasContent) {
 		// Robust terminal rendering setup - synchronized output prevents tearing
 		// Enable synchronized output to batch all updates
 		output += "\x1b[?2026h"; // Enable synchronized output (prevents screen tearing)
+		output += "\x1b[s";      // Save current cursor position
 		output += "\x1b[?25l";   // Hide cursor to prevent flicker during rendering
-		output += "\x1b[s";      // Save current cursor position  
 		output += "\x1b[H";      // Move cursor to home position (0,0)
 	}
 
@@ -335,7 +338,7 @@ export function generateANSI(
 		// Convert to basic 8 colors using thresholds
 		let ansiColor = 0;
 		if (r > 127) ansiColor |= 1; // red
-		if (g > 127) ansiColor |= 2; // green  
+		if (g > 127) ansiColor |= 2; // green
 		if (b > 127) ansiColor |= 4; // blue
 		return ansiColor;
 	};
@@ -344,7 +347,7 @@ export function generateANSI(
 		if (!prev) {
 			// First cell - emit all styles
 			const seq: number[] = [];
-			
+
 			// Handle colors
 			if (cell.fg !== 0) {
 				seq.push(...emitColor(cell.fg, true));
@@ -352,7 +355,7 @@ export function generateANSI(
 			if (cell.bg !== 0) {
 				seq.push(...emitColor(cell.bg, false));
 			}
-			
+
 			// Handle style flags
 			const flags = cell.getStyleFlags();
 			if (flags.bold) seq.push(1);
@@ -363,7 +366,7 @@ export function generateANSI(
 			if (flags.inverse) seq.push(7);
 			if (flags.strikethrough) seq.push(9);
 			if (flags.overline) seq.push(53);
-			
+
 			return seq;
 		}
 
@@ -431,7 +434,7 @@ export function generateANSI(
 
 		for (let col = 0; col < cols; col++) {
 			const cell = buffer[row][col];
-			
+
 			// Skip null cells (empty Cell objects no longer exist)
 			if (cell === null) {
 				continue;
@@ -472,14 +475,11 @@ export function generateANSI(
 		}
 
 		// Reset at end of each line that has content AND ANSI sequences to prevent style bleeding on truncation
-		if (rowHasContent && rowHasAnsi) {
-			output += "\x1b[0m";
-			// Reset previousCell at line boundaries so next line starts fresh
+		if (rowHasContent) {
 			previousCell = null;
-			// Important: cursor position stays the same after reset, so keep cursor tracking accurate
-		} else if (rowHasContent) {
-			// Plain text line - still reset previousCell for next line but no ANSI reset needed
-			previousCell = null;
+			if (rowHasAnsi) {
+				output += "\x1b[0m";
+			}
 		}
 	}
 
@@ -490,6 +490,6 @@ export function generateANSI(
 		output += "\x1b[?25h";   // Show cursor
 		output += "\x1b[?2026l"; // Disable synchronized output (commit all updates)
 	}
-	
+
 	return output;
 }

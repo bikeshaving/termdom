@@ -44,3 +44,9 @@ exports[`concentric rectangles with different colors 1`] = `
 \x1B[48;2;255;0;0m    \x1B[48;2;0;128;0m    \x1B[48;2;0;0;255m    \x1B[48;2;255;255;0m                                                                    
 \x1B[48;2;255;0;0m    \x1B[48;2;0;128;0m    \x1B[48;2;0;0;255m    \x1B[48;2;255;255;0m                                                                    "
 `;
+
+exports[`background colors do not bleed between lines 1`] = `
+"\x1B[29m\x1B[48;5;16711680mRed background                                                                  \x1B[0m
+\x1B[29m\x1B[48;5;32768mGreen background                                                                \x1B[0m
+No background"
+`;

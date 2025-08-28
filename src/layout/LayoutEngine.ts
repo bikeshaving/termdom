@@ -30,7 +30,7 @@ import { getResolvedStyle } from "../css.js";
 export class LayoutEngine {
 	private yoga: typeof Yoga;
 	private window: DOMWindow;
-	private viewportRoot: YogaTypes.Node | null = null;
+	// Viewport root removed - documentElement is now the direct Yoga root
 	private yogaConfig: YogaTypes.Config;
 
 	textBreaker: TextBreaker;
@@ -39,9 +39,10 @@ export class LayoutEngine {
 		this.textBreaker = new TextBreaker();
 		this.window = window;
 
-		// Create Yoga config optimized for discrete character grid layout
+		// Create Yoga config optimized for web-compatible terminal layout
 		this.yogaConfig = this.yoga.Config.create();
 		this.yogaConfig.setPointScaleFactor(1.0); // Force integer calculations for character grid
+		this.yogaConfig.setUseWebDefaults(true); // Use web-compatible defaults for flex-direction, align-content, flex-shrink
 	}
 
 	private computingLayout = false;
@@ -80,19 +81,6 @@ export class LayoutEngine {
 		// Now TypeScript knows root is HTMLElement
 		const htmlRoot = root;
 
-		// Create viewport root node if it doesn't exist, or update its dimensions
-		if (!this.viewportRoot) {
-			this.viewportRoot = this.yoga.Node.createWithConfig(this.yogaConfig);
-			this.viewportRoot.setOverflow(this.yoga.OVERFLOW_HIDDEN); // Clip children at viewport bounds
-			this.viewportRoot.setDisplay(this.yoga.DISPLAY_FLEX);
-		}
-
-		// Update dimensions (may change on terminal resize)
-		this.viewportRoot.setWidth(containerWidth);
-		this.viewportRoot.setHeight(containerHeight);
-
-		// Viewport root created with overflow:hidden for layout bounds
-
 		// Yoga tree should already be built by MutationObserver
 		// Only ensure root has a node (for initial setup)
 		if (!htmlRoot[YOGA_NODE]) {
@@ -102,31 +90,21 @@ export class LayoutEngine {
 			this.reapplyStylesRecursively(htmlRoot);
 		}
 
-		// Make document.documentElement a child of the viewport root
+		// documentElement is now the direct Yoga root
 		const htmlRootYoga = htmlRoot[YOGA_NODE]!;
+		
+		// CRITICAL: Set the HTML element to fill the terminal dimensions
+		// Without this, HTML has auto dimensions and won't constrain children properly
+		htmlRootYoga.setWidth(containerWidth);
+		htmlRootYoga.setHeight(containerHeight);
 
-		// Only add to viewport root if not already a child
-		if (htmlRootYoga.getParent() !== this.viewportRoot) {
-			// Remove from any existing parent first
-			const existingParent = htmlRootYoga.getParent();
-			if (existingParent) {
-				existingParent.removeChild(htmlRootYoga);
-			}
+		// Compute layout directly from documentElement with container dimensions
+		htmlRootYoga.calculateLayout(containerWidth, containerHeight);
 
-			this.viewportRoot.insertChild(htmlRootYoga, 0);
-		}
-
-		// Compute layout from the viewport root
-		this.viewportRoot.calculateLayout(containerWidth, containerHeight);
-
-		// Debug: Check what layout was calculated for document.documentElement
-		const htmlLayout = htmlRootYoga.getComputedLayout();
-		// Document element layout computed
-
-		// Extract layout starting from document.documentElement (skip viewport root in DOM)
+		// Extract layout starting from document.documentElement at (0, 0)
 		this.extractLayout(htmlRoot, 0, 0);
 
-		// Keep viewport root persistent for dirty tracking - don't free it
+		// Layout complete
 
 		this.computingLayout = false;
 	}
@@ -188,12 +166,6 @@ export class LayoutEngine {
 	 * Dispose of the layout engine and clean up all Yoga nodes
 	 */
 	dispose(): void {
-		// Free the persistent viewport root when disposing TermDOM
-		if (this.viewportRoot) {
-			this.viewportRoot.free();
-			this.viewportRoot = null;
-		}
-
 		// Free the Yoga config
 		if (this.yogaConfig) {
 			this.yogaConfig.free();
@@ -248,9 +220,7 @@ export class LayoutEngine {
 			const yogaNode = this.yoga.Node.createWithConfig(this.yogaConfig);
 			element[YOGA_NODE] = yogaNode;
 
-			// Only set the critical CSS default that fixes the overflow issue
-			yogaNode.setFlexShrink(1); // CSS default: 1 (Yoga default: 0) - allows shrinking
-			// Note: Other defaults left as Yoga's defaults to avoid breaking existing layouts
+			// Note: Flex defaults are handled in applyStylesToYoga based on parent display type
 		}
 
 		// Always apply styles to Yoga node (styles may have changed)
@@ -304,11 +274,9 @@ export class LayoutEngine {
 			);
 		});
 
-		// Set measure function if element has text/inline content but no block children
-		if (
-			(textNodes.length > 0 || elementChildren.length > 0) &&
-			!hasBlockChildren
-		) {
+		// Set measure function ONLY for leaf elements with text content
+		// Yoga constraint: nodes with measure functions cannot have ANY children
+		if (textNodes.length > 0 && elementChildren.length === 0) {
 			const measureFunc = TextMeasurement.createMeasureFunction(element);
 			yogaNode.setMeasureFunc(measureFunc);
 		}
@@ -369,11 +337,9 @@ export class LayoutEngine {
 			);
 		});
 
-		// Set measure function if element has text/inline content but no block children
-		if (
-			(textNodes.length > 0 || elementChildren.length > 0) &&
-			!hasBlockChildren
-		) {
+		// Set measure function ONLY for leaf elements with text content
+		// Yoga constraint: nodes with measure functions cannot have ANY children
+		if (textNodes.length > 0 && elementChildren.length === 0) {
 			const measureFunc = TextMeasurement.createMeasureFunction(element);
 			yogaNode.setMeasureFunc(measureFunc);
 			this.buildingYogaTreeFor.delete(element);
@@ -419,6 +385,12 @@ export class LayoutEngine {
 		parentY: number,
 	): void {
 		if (!element[YOGA_NODE]) return;
+		
+		// Skip elements with display: none - they and their children shouldn't have bounds
+		const display = getResolvedStyle(element, "display");
+		if (display === "none") {
+			return;
+		}
 
 		// Get computed layout from Yoga
 		const layout = element[YOGA_NODE]!.getComputedLayout();
@@ -483,20 +455,11 @@ export class LayoutEngine {
 			if (child[YOGA_NODE]) {
 				// Calculate inner content area by accounting for parent's padding
 				// Child elements are positioned relative to parent's content area, not outer bounds
-				const style = this.window.getComputedStyle(element);
-				const paddingLeft = this.parseValue(
-					style.getPropertyValue("padding-left"),
-					0,
-				);
-				const paddingTop = this.parseValue(
-					style.getPropertyValue("padding-top"),
-					0,
-				);
+				const paddingLeft = this.parseValue(getResolvedStyle(element, "padding-left"), 0);
+				const paddingTop = this.parseValue(getResolvedStyle(element, "padding-top"), 0);
 
 				const innerX = bounds.x + paddingLeft;
 				const innerY = bounds.y + paddingTop;
-
-				// Parent content area debug removed for cleaner output
 
 				this.extractLayout(child, innerX, innerY);
 			}
@@ -807,15 +770,11 @@ export class LayoutEngine {
 				defaultDisplay = "inline-block";
 			}
 
-			// Apply margins based on layout direction
-			const marginLeft =
-				parseInt(computedStyle.getPropertyValue("margin-left")) || 0;
-			const marginRight =
-				parseInt(computedStyle.getPropertyValue("margin-right")) || 0;
-			const marginTop =
-				parseInt(computedStyle.getPropertyValue("margin-top")) || 0;
-			const marginBottom =
-				parseInt(computedStyle.getPropertyValue("margin-bottom")) || 0;
+			// Apply margins based on layout direction - use getResolvedStyle for proper unit handling
+			const marginLeft = this.parseValue(getResolvedStyle(child, "margin-left"), 0);
+			const marginRight = this.parseValue(getResolvedStyle(child, "margin-right"), 0);
+			const marginTop = this.parseValue(getResolvedStyle(child, "margin-top"), 0);
+			const marginBottom = this.parseValue(getResolvedStyle(child, "margin-bottom"), 0);
 
 			// Position element with margin
 			if (isColumn) {
@@ -1306,6 +1265,8 @@ export class LayoutEngine {
 			node.setDisplay(this.yoga.DISPLAY_FLEX);
 			node.setFlexDirection(this.yoga.FLEX_DIRECTION_COLUMN);
 			node.setAlignItems(this.yoga.ALIGN_STRETCH);
+			// Ensure children start at top, not centered
+			node.setJustifyContent(this.yoga.JUSTIFY_FLEX_START);
 		}
 		// inline elements use measurement functions, no special display setting needed
 
@@ -1385,13 +1346,27 @@ export class LayoutEngine {
 		if (!isNaN(maxWidth)) node.setMaxWidth(maxWidth);
 		if (!isNaN(maxHeight)) node.setMaxHeight(maxHeight);
 
-		// Flex properties (CSS defaults already set in setupYogaNode)
-		const flexGrow = parseFloat(getResolvedStyle(element, "flex-grow"));
-		const flexShrink = parseFloat(getResolvedStyle(element, "flex-shrink"));
-
-		// Only override defaults if explicitly specified in CSS
-		if (!isNaN(flexGrow)) node.setFlexGrow(flexGrow);
-		if (!isNaN(flexShrink)) node.setFlexShrink(flexShrink);
+		// Flex properties - special handling for children of block elements
+		const parent = (element as HTMLElement).parentElement;
+		const parentDisplay = parent ? getResolvedStyle(parent, "display") : "";
+		const isChildOfBlock = parentDisplay === "block";
+		
+		// For children of block elements, we need specific flex properties
+		// to emulate traditional block behavior
+		if (isChildOfBlock) {
+			// Block children don't grow or shrink - they have intrinsic height
+			node.setFlexGrow(0);
+			node.setFlexShrink(0);
+			// TODO: node.setFlexBasis('auto') when supported
+		} else {
+			// For other elements, respect CSS values
+			const flexGrow = parseFloat(getResolvedStyle(element, "flex-grow"));
+			const flexShrink = parseFloat(getResolvedStyle(element, "flex-shrink"));
+			
+			// Only override defaults if explicitly specified in CSS
+			if (!isNaN(flexGrow)) node.setFlexGrow(flexGrow);
+			if (!isNaN(flexShrink)) node.setFlexShrink(flexShrink);
+		}
 
 		// TODO: Add flex-basis support for complete CSS compatibility
 
