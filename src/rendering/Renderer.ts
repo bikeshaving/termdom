@@ -235,35 +235,32 @@ export function generateANSI(
 	const moveCursor = (targetRow: number, targetCol: number): string => {
 		let moveOutput = "";
 		const rowDiff = targetRow - cursorRow;
-		const colDiff = targetCol - cursorCol;
 
-		// Handle row movement
-		if (rowDiff > 0) {
-			// Moving down
-			if (targetCol === 0 && cursorCol > 0) {
-				// Use \r\n for efficiency when moving to start of next lines
-				moveOutput += "\r\n".repeat(rowDiff);
-				cursorRow = targetRow;
-				cursorCol = 0;
-				return moveOutput;
-			} else {
-				moveOutput += `\x1b[${rowDiff}B`;
-			}
-		} else if (rowDiff < 0) {
-			moveOutput += `\x1b[${-rowDiff}A`;
+		// Should never move up or left in sparse buffer processing
+		if (rowDiff < 0) {
+			throw new Error(`Trying to move up from row ${cursorRow} to ${targetRow} - this should never happen in row-major processing`);
+		}
+		if (targetCol < cursorCol && rowDiff === 0) {
+			throw new Error(`Trying to move left from col ${cursorCol} to ${targetCol} in row ${cursorRow} - this should never happen`);
 		}
 
-		// Handle column movement
-		if (targetCol !== cursorCol || rowDiff !== 0) {
+		// Handle movement
+		if (rowDiff > 0) {
+			if (targetCol === 0) {
+				// Moving down to column 0 - use idiomatic \r\n
+				moveOutput += "\r\n".repeat(rowDiff);
+			} else {
+				// Moving down to non-zero column - use \r\n then move right
+				moveOutput += "\r\n".repeat(rowDiff);
+				moveOutput += `\x1b[${targetCol}C`;
+			}
+		} else if (targetCol !== cursorCol) {
+			// Same row - handle column movement
 			if (targetCol === 0) {
 				moveOutput += "\r";
-			} else if (targetCol > cursorCol) {
+			} else {
+				// Same row - move right
 				moveOutput += `\x1b[${targetCol - cursorCol}C`;
-			} else if (targetCol < cursorCol) {
-				moveOutput += `\x1b[${cursorCol - targetCol}D`;
-			} else if (rowDiff !== 0) {
-				// Row changed but column same - need to set absolute position
-				moveOutput += `\x1b[${targetCol}G`;
 			}
 		}
 
@@ -419,6 +416,8 @@ export function generateANSI(
 	let skipNextCol: number | null = null;
 
 	for (let row = 0; row < rows; row++) {
+		let rowHasContent = false;
+
 		for (let col = 0; col < cols; col++) {
 			const cell = buffer[row][col];
 			
@@ -426,6 +425,8 @@ export function generateANSI(
 			if (cell === null) {
 				continue;
 			}
+
+			rowHasContent = true;
 
 			// Skip this cell if it's the second column of a wide character
 			if (skipNextCol !== null && row === cursorRow && col === skipNextCol) {
@@ -450,12 +451,20 @@ export function generateANSI(
 
 			// Update cursor position and track previous cell
 			cursorCol += cell.width;
-			previousCell = cell; // No cloning needed!
+			previousCell = cell;
 
 			// If this is a wide character, skip the next column position
 			if (cell.width === 2) {
 				skipNextCol = col + 1;
 			}
+		}
+
+		// Reset at end of each line that has content to prevent style bleeding on truncation
+		if (rowHasContent) {
+			output += "\x1b[0m";
+			// Reset previousCell at line boundaries so next line starts fresh
+			previousCell = null;
+			// Important: cursor position stays the same after reset, so keep cursor tracking accurate
 		}
 	}
 
