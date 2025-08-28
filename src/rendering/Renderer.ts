@@ -48,6 +48,12 @@ export class Renderer {
 		this.previousBuffer = null;
 	}
 
+	// TODO: Add drawBorder(x, y, width, height, options) for border rendering with:
+	// TODO:    - Box drawing characters (┌─┐│└┘├┤┬┴┼ etc.)
+	// TODO:    - Border styles (single, double, rounded)
+	// TODO:    - Smart corner/intersection handling
+	// TODO:    - Background preservation (borders inherit background)
+	
 	/**
 	 * Begin a new frame - creates fresh buffer
 	 */
@@ -56,13 +62,22 @@ export class Renderer {
 	}
 
 	/**
-	 * Set a cell with character and style (low-level API)
+	 * Set a cell with character and style (private low-level API)
 	 */
-	setCell(row: number, col: number, char: string, style?: CellStyle): void {
+	private setCell(row: number, col: number, char: string, style?: CellStyle): void {
 		if (row < 0 || row >= this.rows || col < 0 || col >= this.cols) return;
 
+		// Preserve existing background if new style doesn't specify one
+		let finalStyle = style;
+		if (style && style.bg === undefined) {
+			const existingCell = this.currentBuffer[row][col];
+			if (existingCell && existingCell.bg !== 0) {
+				finalStyle = { ...style, bg: existingCell.bg };
+			}
+		}
+
 		// Create new cell and assign it to the buffer
-		const newCell = Cell.create(char, style);
+		const newCell = Cell.create(char, finalStyle);
 		this.currentBuffer[row][col] = newCell;
 	}
 
@@ -76,6 +91,11 @@ export class Renderer {
 		height: number,
 		style?: CellStyle,
 	): void {
+		// Skip if no style or transparent background (null/undefined bg means don't overwrite)
+		if (!style || (style.bg === null || style.bg === undefined)) {
+			return;
+		}
+
 		for (let row = y; row < y + height; row++) {
 			for (let col = x; col < x + width; col++) {
 				if (row >= 0 && row < this.rows && col >= 0 && col < this.cols) {
@@ -85,18 +105,6 @@ export class Renderer {
 		}
 	}
 
-	/**
-	 * Clear a rectangular area (high-level API)
-	 */
-	clearRect(x: number, y: number, width: number, height: number): void {
-		for (let row = y; row < y + height; row++) {
-			for (let col = x; col < x + width; col++) {
-				if (row >= 0 && row < this.rows && col >= 0 && col < this.cols) {
-					this.currentBuffer[row][col] = null;
-				}
-			}
-		}
-	}
 
 	/**
 	 * Write text with automatic wide character handling (high-level API)
@@ -122,49 +130,6 @@ export class Renderer {
 		return currentX;
 	}
 
-	/**
-	 * Write text with wrapping support (high-level API)
-	 */
-	setTextWrapped(
-		x: number,
-		y: number,
-		text: string,
-		style?: CellStyle,
-		maxWidth?: number,
-	): {endX: number; endY: number} {
-		const wrapWidth = maxWidth || this.cols - x;
-		let currentX = x;
-		let currentY = y;
-
-		const segmenter = new Intl.Segmenter("en", {granularity: "grapheme"});
-		const segments = Array.from(segmenter.segment(text));
-
-		for (const segment of segments) {
-			const char = segment.segment;
-			const width = Bun.stringWidth(char);
-
-			// Handle newlines
-			if (char === "\n") {
-				currentX = x;
-				currentY++;
-				continue;
-			}
-
-			// Wrap if needed
-			if (currentX + width > x + wrapWidth) {
-				currentX = x;
-				currentY++;
-			}
-
-			// Stop if we're going out of bounds vertically
-			if (currentY >= this.rows) break;
-
-			this.setCell(currentY, currentX, char, style);
-			currentX += width;
-		}
-
-		return {endX: currentX, endY: currentY};
-	}
 
 	/**
 	 * Render the current frame and return ANSI diff
