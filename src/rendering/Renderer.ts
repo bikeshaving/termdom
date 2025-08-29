@@ -197,13 +197,6 @@ export class Renderer {
 
 		return output;
 	}
-
-	/**
-	 * Clean up
-	 */
-	dispose(): void {
-		// Nothing to dispose with simple arrays
-	}
 }
 
 /**

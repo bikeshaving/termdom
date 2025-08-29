@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "jsdom": "^26.1.0",
+    "linebreak": "^1.1.0",
     "yoga-layout": "^3.2.1"
   }
 }

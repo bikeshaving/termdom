@@ -7,6 +7,7 @@
 
 import type {DOMWindow} from "jsdom";
 
+// TODO: Rather than using a class with static methods, let’s make these functions.
 /**
  * Utility class for DOMRect operations
  */
