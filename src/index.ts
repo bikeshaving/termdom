@@ -5,13 +5,6 @@ export type {
 	ProcessLike,
 	TTYWriteStream,
 	TTYReadStream,
-	TextRect,
-} from "./core/TermDOM.js";
-export {
-	ELEMENT_BOUNDS,
-	ELEMENT_RECTS,
-	ELEMENT_TEXT_RECTS,
-	YOGA_NODE,
 } from "./core/TermDOM.js";
 
 // Clean rendering pipeline with new Renderer
@@ -30,3 +23,4 @@ export {
 
 // Layout Engine
 export {LayoutEngine} from "./layout/LayoutEngine.js";
+export type {TextLayout} from "./layout/LayoutEngine.js";

@@ -20,27 +20,27 @@ async function flexboxDemo() {
 	mainContainer.style.display = "flex";
 	mainContainer.style.flexDirection = "column";
 	mainContainer.style.padding = "1px 2px 1px 2px"; // top, right, bottom, left
-	mainContainer.style.backgroundColor = "blue";
+	mainContainer.style.backgroundColor = "darkblue";
 	document.body.appendChild(mainContainer);
 
 	// Header section
 	const header = document.createElement("div");
 	header.style.display = "flex";
 	header.style.flexDirection = "row";
-	header.style.backgroundColor = "cyan";
+	header.style.backgroundColor = "magenta";
 	header.style.padding = "1px 1px 1px 1px";
 	mainContainer.appendChild(header);
 
 	const headerTitle = document.createElement("span");
 	headerTitle.textContent = "🚀 TTY Flexbox Demo";
 	headerTitle.style.textAlign = "center";
-	headerTitle.style.color = "black";
+	headerTitle.style.color = "white";
 	header.appendChild(headerTitle);
 
 	const headerSubtitle = document.createElement("span");
 	headerSubtitle.textContent = "Terminal Object Model";
 	headerSubtitle.style.textAlign = "right";
-	headerSubtitle.style.color = "gray";
+	headerSubtitle.style.color = "white";
 	header.appendChild(headerSubtitle);
 
 	// Content area with horizontal layout
@@ -54,7 +54,7 @@ async function flexboxDemo() {
 	const sidebar = document.createElement("div");
 	sidebar.style.display = "flex";
 	sidebar.style.flexDirection = "column";
-	sidebar.style.backgroundColor = "green";
+	sidebar.style.backgroundColor = "darkgreen";
 	sidebar.style.padding = "1px 1px 1px 1px";
 	contentArea.appendChild(sidebar);
 
@@ -68,7 +68,7 @@ async function flexboxDemo() {
 	for (const item of menuItems) {
 		const menuItem = document.createElement("span");
 		menuItem.textContent = item;
-		menuItem.style.color = "lightGreen";
+		menuItem.style.color = "white";
 		menuItem.style.padding = "0px 1px 0px 1px";
 		sidebar.appendChild(menuItem);
 	}
@@ -77,20 +77,20 @@ async function flexboxDemo() {
 	const mainContent = document.createElement("div");
 	mainContent.style.display = "flex";
 	mainContent.style.flexDirection = "column";
-	mainContent.style.backgroundColor = "white";
+	mainContent.style.backgroundColor = "darkgray";
 	mainContent.style.padding = "1px 2px 1px 2px";
 	contentArea.appendChild(mainContent);
 
 	const contentTitle = document.createElement("span");
 	contentTitle.textContent = "📄 Main Content Area";
-	contentTitle.style.color = "black";
+	contentTitle.style.color = "white";
 	contentTitle.style.textAlign = "center";
 	mainContent.appendChild(contentTitle);
 
 	const contentText = document.createElement("span");
 	contentText.textContent =
 		"This demonstrates flexbox layout with nested containers. The layout automatically adjusts based on flexDirection properties: column for vertical stacking, row for horizontal arrangement.";
-	contentText.style.color = "darkGray";
+	contentText.style.color = "white";
 	contentText.style.padding = "1px 0px 1px 0px";
 	mainContent.appendChild(contentText);
 
@@ -111,20 +111,20 @@ async function flexboxDemo() {
 		const featureCard = document.createElement("div");
 		featureCard.style.display = "flex";
 		featureCard.style.flexDirection = "column";
-		featureCard.style.backgroundColor = "lightBlue";
+		featureCard.style.backgroundColor = "darkcyan";
 		featureCard.style.padding = "1px 1px 1px 1px";
 		featureCard.style.flex = "1"; // Make cards flexible to share available width equally
 		featuresContainer.appendChild(featureCard);
 
 		const featureTitle = document.createElement("span");
 		featureTitle.textContent = feature.title;
-		featureTitle.style.color = "blue";
+		featureTitle.style.color = "white";
 		featureTitle.style.textAlign = "center";
 		featureCard.appendChild(featureTitle);
 
 		const featureDesc = document.createElement("span");
 		featureDesc.textContent = feature.desc;
-		featureDesc.style.color = "darkBlue";
+		featureDesc.style.color = "white";
 		featureDesc.style.textAlign = "center";
 		featureCard.appendChild(featureDesc);
 	}
@@ -133,7 +133,7 @@ async function flexboxDemo() {
 	const footer = document.createElement("div");
 	footer.style.display = "flex";
 	footer.style.flexDirection = "row-reverse";
-	footer.style.backgroundColor = "magenta";
+	footer.style.backgroundColor = "darkred";
 	footer.style.padding = "1px 2px 1px 2px";
 	mainContainer.appendChild(footer);
 
@@ -144,7 +144,7 @@ async function flexboxDemo() {
 
 	const footerVersion = document.createElement("span");
 	footerVersion.textContent = "v1.0.0";
-	footerVersion.style.color = "lightMagenta";
+	footerVersion.style.color = "white";
 	footer.appendChild(footerVersion);
 
 	// Wait for rendering to complete
