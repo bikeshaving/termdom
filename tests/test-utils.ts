@@ -106,22 +106,22 @@ export class TestTerminal extends EventEmitter implements ProcessLike {
 	getPlainText(): string {
 		const buffer = this.terminal.buffer.active;
 		const lines: string[] = [];
-		
+
 		for (let row = 0; row < this.terminal.rows; row++) {
 			const line = buffer.getLine(row);
 			if (line) {
 				lines.push(line.translateToString(true)); // true = trim right
 			} else {
-				lines.push('');
+				lines.push("");
 			}
 		}
-		
+
 		// Remove trailing empty lines like bufferToVisibleText does
-		while (lines.length > 0 && lines[lines.length - 1] === '') {
+		while (lines.length > 0 && lines[lines.length - 1] === "") {
 			lines.pop();
 		}
-		
-		return lines.join('\n');
+
+		return lines.join("\n");
 	}
 
 	/**
@@ -130,53 +130,54 @@ export class TestTerminal extends EventEmitter implements ProcessLike {
 	getStaticANSI(): string {
 		const buffer = this.terminal.buffer.active;
 		const lines: string[] = [];
-		
+
 		for (let row = 0; row < this.terminal.rows; row++) {
 			const line = buffer.getLine(row);
 			if (!line) {
-				lines.push('');
+				lines.push("");
 				continue;
 			}
-			
-			let lineOutput = '';
+
+			let lineOutput = "";
 			let lastFg = -1;
 			let lastBg = -1;
 			let lastFlags = 0;
-			
+
 			for (let col = 0; col < this.terminal.cols; col++) {
 				const cell = line.getCell(col);
 				if (!cell) {
-					lineOutput += ' ';
+					lineOutput += " ";
 					continue;
 				}
-				
+
 				const fg = cell.getFgColor();
 				const bg = cell.getBgColor();
-				const flags = (cell.isBold() ? 1 : 0) | 
-							  (cell.isItalic() ? 2 : 0) | 
-							  (cell.isUnderline() ? 4 : 0);
-				
+				const flags =
+					(cell.isBold() ? 1 : 0) |
+					(cell.isItalic() ? 2 : 0) |
+					(cell.isUnderline() ? 4 : 0);
+
 				// Emit style changes only when needed
-				let styleChange = '';
-				
+				let styleChange = "";
+
 				if (fg !== lastFg || bg !== lastBg || flags !== lastFlags) {
 					// Reset if needed
 					if (lastFg !== -1 || lastBg !== -1 || lastFlags !== 0) {
-						styleChange += '\x1b[0m';
+						styleChange += "\x1b[0m";
 					}
-					
+
 					// Set new styles
-					if (flags & 1) styleChange += '\x1b[1m'; // bold
-					if (flags & 2) styleChange += '\x1b[3m'; // italic  
-					if (flags & 4) styleChange += '\x1b[4m'; // underline
-					
+					if (flags & 1) styleChange += "\x1b[1m"; // bold
+					if (flags & 2) styleChange += "\x1b[3m"; // italic
+					if (flags & 4) styleChange += "\x1b[4m"; // underline
+
 					// Foreground color
 					if (fg !== 0) {
-						if ((fg & 0xFF000000) === 0x02000000) {
+						if ((fg & 0xff000000) === 0x02000000) {
 							// RGB mode
-							const r = (fg >> 16) & 0xFF;
-							const g = (fg >> 8) & 0xFF;
-							const b = fg & 0xFF;
+							const r = (fg >> 16) & 0xff;
+							const g = (fg >> 8) & 0xff;
+							const b = fg & 0xff;
 							styleChange += `\x1b[38;2;${r};${g};${b}m`;
 						} else if (fg < 16) {
 							// Basic colors
@@ -186,13 +187,13 @@ export class TestTerminal extends EventEmitter implements ProcessLike {
 							styleChange += `\x1b[38;5;${fg}m`;
 						}
 					}
-					
-					// Background color  
+
+					// Background color
 					if (bg !== 0) {
-						if ((bg & 0xFF000000) === 0x02000000) {
-							const r = (bg >> 16) & 0xFF;
-							const g = (bg >> 8) & 0xFF;
-							const b = bg & 0xFF;
+						if ((bg & 0xff000000) === 0x02000000) {
+							const r = (bg >> 16) & 0xff;
+							const g = (bg >> 8) & 0xff;
+							const b = bg & 0xff;
 							styleChange += `\x1b[48;2;${r};${g};${b}m`;
 						} else if (bg < 16) {
 							styleChange += `\x1b[${bg < 8 ? 40 + bg : 100 + bg - 8}m`;
@@ -200,29 +201,29 @@ export class TestTerminal extends EventEmitter implements ProcessLike {
 							styleChange += `\x1b[48;5;${bg}m`;
 						}
 					}
-					
+
 					lastFg = fg;
 					lastBg = bg;
 					lastFlags = flags;
 				}
-				
-				lineOutput += styleChange + (cell.getChars() || ' ');
+
+				lineOutput += styleChange + (cell.getChars() || " ");
 			}
-			
+
 			// Reset at end of line if we had styling
 			if (lastFg !== -1 || lastBg !== -1 || lastFlags !== 0) {
-				lineOutput += '\x1b[0m';
+				lineOutput += "\x1b[0m";
 			}
-			
+
 			lines.push(lineOutput.trimEnd());
 		}
-		
+
 		// Remove trailing empty lines
-		while (lines.length > 0 && lines[lines.length - 1] === '') {
+		while (lines.length > 0 && lines[lines.length - 1] === "") {
 			lines.pop();
 		}
-		
-		return lines.join('\n');
+
+		return lines.join("\n");
 	}
 
 	/**

@@ -7,6 +7,7 @@
  * 3. Force breaks mid-word if necessary
  * 4. Handles inline elements as fixed-width content
  */
+// TODO: use UAX #14 algorithm
 
 export interface BreakOptions {
 	/** Maximum width for each line */
@@ -102,7 +103,7 @@ export class TextBreaker {
 
 		for (let i = 0; i < words.length; i++) {
 			const word = words[i];
-			const wordWidth = this.getTextWidth(word.text);
+			const wordWidth = Bun.stringWidth(word.text);
 
 			// Check if adding this word would exceed the line width
 			if (currentLineWidth > 0 && currentLineWidth + wordWidth > maxWidth) {
@@ -127,7 +128,7 @@ export class TextBreaker {
 				const pieces = this.breakLongWord(word.text, maxWidth);
 				for (let j = 0; j < pieces.length; j++) {
 					const piece = pieces[j];
-					const pieceWidth = this.getTextWidth(piece);
+					const pieceWidth = Bun.stringWidth(piece);
 
 					if (currentLineWidth + pieceWidth > maxWidth && currentLine) {
 						// Finish current line first
@@ -170,13 +171,6 @@ export class TextBreaker {
 			totalHeight: lines.length,
 			maxLineWidth: Math.max(...lines.map((line) => line.width), 0),
 		};
-	}
-
-	/**
-	 * Get visual width of text (handles Unicode, emojis, etc.)
-	 */
-	private getTextWidth(text: string): number {
-		return Bun.stringWidth(text);
 	}
 
 	/**
@@ -243,7 +237,7 @@ export class TextBreaker {
 			let cutPoint = remaining.length;
 			while (
 				cutPoint > 0 &&
-				this.getTextWidth(remaining.slice(0, cutPoint)) > maxWidth
+				Bun.stringWidth(remaining.slice(0, cutPoint)) > maxWidth
 			) {
 				cutPoint--;
 			}
@@ -425,7 +419,7 @@ export class TextBreaker {
 	 */
 	private getItemWidth(item: MixedContentItem): number {
 		if (item.type === "text" && item.char) {
-			return this.getTextWidth(item.char);
+			return Bun.stringWidth(item.char);
 		} else if (item.type === "element" && item.element) {
 			return item.element.width;
 		}
@@ -601,7 +595,7 @@ export class TextBreaker {
 			startIndex,
 			endIndex: startIndex + text.length,
 			width:
-				this.getTextWidth(text) +
+				Bun.stringWidth(text) +
 				inlineElements.reduce((w, el) => w + el.width, 0),
 			inlineElements,
 		};

@@ -1,10 +1,6 @@
-import {
-	type CellBuffer,
-	Cell,
-	createBuffer,
-} from "./CellBuffer.js";
+import {type CellBuffer, Cell, createBuffer} from "./CellBuffer.js";
 
- export type ColorDepth = "ansi" | "256" | "rgb";
+export type ColorDepth = "ansi" | "256" | "rgb";
 
 export interface CellStyle {
 	fg?: number | null;
@@ -64,7 +60,12 @@ export class Renderer {
 	/**
 	 * Set a cell with character and style (private low-level API)
 	 */
-	private setCell(row: number, col: number, char: string, style?: CellStyle): void {
+	private setCell(
+		row: number,
+		col: number,
+		char: string,
+		style?: CellStyle,
+	): void {
 		if (row < 0 || row >= this.rows || col < 0 || col >= this.cols) return;
 
 		// Preserve existing background if new style doesn't specify one
@@ -72,7 +73,7 @@ export class Renderer {
 		if (style && style.bg == null) {
 			const existingCell = this.currentBuffer[row][col];
 			if (existingCell && existingCell.bg !== 0) {
-				finalStyle = { ...style, bg: existingCell.bg };
+				finalStyle = {...style, bg: existingCell.bg};
 			}
 		}
 
@@ -97,7 +98,7 @@ export class Renderer {
 		}
 
 		// bg: 0 is valid (default background color)
-		const style: CellStyle = { bg: bgColor };
+		const style: CellStyle = {bg: bgColor};
 
 		for (let row = y; row < y + height; row++) {
 			for (let col = x; col < x + width; col++) {
@@ -107,7 +108,6 @@ export class Renderer {
 			}
 		}
 	}
-
 
 	/**
 	 * Write text with automatic wide character handling (high-level API)
@@ -133,7 +133,6 @@ export class Renderer {
 		return currentX;
 	}
 
-
 	/**
 	 * Render the current frame and return ANSI diff
 	 */
@@ -157,9 +156,10 @@ export class Renderer {
 			for (let row = 0; row < this.rows; row++) {
 				for (let col = 0; col < this.cols; col++) {
 					// Get previous cell if it exists in old buffer bounds
-					const prevCell = (row < prevRows && col < prevCols)
-						? this.previousBuffer[row][col]
-						: null;
+					const prevCell =
+						row < prevRows && col < prevCols
+							? this.previousBuffer[row][col]
+							: null;
 					const currCell = this.currentBuffer[row][col];
 
 					// Handle null cases
@@ -205,7 +205,7 @@ export class Renderer {
  */
 export function generateANSI(
 	buffer: CellBuffer,
-	colorDepth: ColorDepth = "rgb"
+	colorDepth: ColorDepth = "rgb",
 ): string {
 	const rows = buffer.length;
 	const cols = buffer[0]?.length || 0;
@@ -232,9 +232,9 @@ export function generateANSI(
 		// Robust terminal rendering setup - synchronized output prevents tearing
 		// Enable synchronized output to batch all updates
 		output += "\x1b[?2026h"; // Enable synchronized output (prevents screen tearing)
-		output += "\x1b[s";      // Save current cursor position
-		output += "\x1b[?25l";   // Hide cursor to prevent flicker during rendering
-		output += "\x1b[H";      // Move cursor to home position (0,0)
+		output += "\x1b[s"; // Save current cursor position
+		output += "\x1b[?25l"; // Hide cursor to prevent flicker during rendering
+		output += "\x1b[H"; // Move cursor to home position (0,0)
 	}
 
 	// Helper functions
@@ -244,10 +244,14 @@ export function generateANSI(
 
 		// Should never move up or left in sparse buffer processing
 		if (rowDiff < 0) {
-			throw new Error(`Trying to move up from row ${cursorRow} to ${targetRow} - this should never happen in row-major processing`);
+			throw new Error(
+				`Trying to move up from row ${cursorRow} to ${targetRow} - this should never happen in row-major processing`,
+			);
 		}
 		if (targetCol < cursorCol && rowDiff === 0) {
-			throw new Error(`Trying to move left from col ${cursorCol} to ${targetCol} in row ${cursorRow} - this should never happen`);
+			throw new Error(
+				`Trying to move left from col ${cursorCol} to ${targetCol} in row ${cursorRow} - this should never happen`,
+			);
 		}
 
 		// Handle movement
@@ -282,9 +286,9 @@ export function generateANSI(
 		switch (colorDepth) {
 			case "rgb":
 				// Extract RGB components from color integer
-				const r = (color >> 16) & 0xFF;
-				const g = (color >> 8) & 0xFF;
-				const b = color & 0xFF;
+				const r = (color >> 16) & 0xff;
+				const g = (color >> 8) & 0xff;
+				const b = color & 0xff;
 				seq.push(prefix, 2, r, g, b);
 				break;
 
@@ -304,9 +308,9 @@ export function generateANSI(
 	};
 
 	const rgbTo256 = (color: number): number => {
-		const r = (color >> 16) & 0xFF;
-		const g = (color >> 8) & 0xFF;
-		const b = color & 0xFF;
+		const r = (color >> 16) & 0xff;
+		const g = (color >> 8) & 0xff;
+		const b = color & 0xff;
 
 		// Standard colors (0-15)
 		if (r === g && g === b) {
@@ -317,16 +321,16 @@ export function generateANSI(
 		}
 
 		// 216 color cube (16-231)
-		const r6 = Math.round(r / 255 * 5);
-		const g6 = Math.round(g / 255 * 5);
-		const b6 = Math.round(b / 255 * 5);
-		return 16 + (36 * r6) + (6 * g6) + b6;
+		const r6 = Math.round((r / 255) * 5);
+		const g6 = Math.round((g / 255) * 5);
+		const b6 = Math.round((b / 255) * 5);
+		return 16 + 36 * r6 + 6 * g6 + b6;
 	};
 
 	const rgbToBasic8 = (color: number): number => {
-		const r = (color >> 16) & 0xFF;
-		const g = (color >> 8) & 0xFF;
-		const b = color & 0xFF;
+		const r = (color >> 16) & 0xff;
+		const g = (color >> 8) & 0xff;
+		const b = color & 0xff;
 
 		// Convert to basic 8 colors using thresholds
 		let ansiColor = 0;
@@ -399,7 +403,12 @@ export function generateANSI(
 			const cellFlags = cell.getStyleFlags();
 			const prevFlags = prev.getStyleFlags();
 
-			const diffFlag = (current: boolean, old: boolean, on: number, off: number) => {
+			const diffFlag = (
+				current: boolean,
+				old: boolean,
+				on: number,
+				off: number,
+			) => {
 				if (current !== old) {
 					seq.push(current ? on : off);
 				}
@@ -479,8 +488,8 @@ export function generateANSI(
 	// Only add closing wrapper sequences if we added opening ones
 	if (hasContent) {
 		// Restore cursor to original position and show cursor
-		output += "\x1b[u";      // Restore cursor position
-		output += "\x1b[?25h";   // Show cursor
+		output += "\x1b[u"; // Restore cursor position
+		output += "\x1b[?25h"; // Show cursor
 		output += "\x1b[?2026l"; // Disable synchronized output (commit all updates)
 	}
 

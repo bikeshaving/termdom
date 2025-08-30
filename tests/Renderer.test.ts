@@ -26,13 +26,13 @@ describe("Renderer", () => {
 			renderer.setCell(0, 4, "o");
 
 			const ansi = renderer.render();
-			
+
 			// Test visual result instead of raw ANSI
-			const terminal = new TestTerminal({ rows: 2, cols: 5 });
+			const terminal = new TestTerminal({rows: 2, cols: 5});
 			await new Promise<void>((resolve) => {
 				terminal.stdout.write(ansi, () => resolve());
 			});
-			
+
 			expect(terminal.getPlainText()).toBe("Hello");
 		});
 
@@ -80,7 +80,7 @@ describe("Renderer", () => {
 			const frame2 = renderer.render();
 
 			// Apply both frames to terminal and verify result
-			const terminal = new TestTerminal({ rows: 1, cols: 5 });
+			const terminal = new TestTerminal({rows: 1, cols: 5});
 			await new Promise<void>((resolve) => {
 				terminal.stdout.write(frame1, () => resolve());
 			});
@@ -126,23 +126,23 @@ describe("Renderer", () => {
 			renderer.setCell(0, 2, "C");
 			const frame1 = renderer.render();
 
-			// Frame 2 - same content  
+			// Frame 2 - same content
 			renderer.beginFrame();
 			renderer.setCell(0, 0, "A");
 			renderer.setCell(0, 1, "B");
 			renderer.setCell(0, 2, "C");
 
 			const frame2 = renderer.render();
-			
+
 			// Apply both frames to terminal and verify result
-			const terminal = new TestTerminal({ rows: 1, cols: 3 });
+			const terminal = new TestTerminal({rows: 1, cols: 3});
 			await new Promise<void>((resolve) => {
 				terminal.stdout.write(frame1, () => resolve());
 			});
 			await new Promise<void>((resolve) => {
 				terminal.stdout.write(frame2, () => resolve());
 			});
-			
+
 			expect(terminal.getPlainText()).toBe("ABC");
 		});
 
@@ -163,16 +163,16 @@ describe("Renderer", () => {
 			renderer.setCell(0, 2, "C");
 
 			const frame2 = renderer.render();
-			
+
 			// Apply both frames and verify visual result
-			const terminal = new TestTerminal({ rows: 1, cols: 3 });
+			const terminal = new TestTerminal({rows: 1, cols: 3});
 			await new Promise<void>((resolve) => {
 				terminal.stdout.write(frame1, () => resolve());
 			});
 			await new Promise<void>((resolve) => {
 				terminal.stdout.write(frame2, () => resolve());
 			});
-			
+
 			// Should show "A C" (middle cell cleared)
 			expect(terminal.getPlainText()).toBe("A C");
 		});
@@ -272,9 +272,9 @@ describe("Renderer", () => {
 			renderer.setCell(1, 1, "O"); // Valid
 
 			const ansi = renderer.render();
-			
+
 			// Apply to terminal and verify only valid cell is rendered
-			const terminal = new TestTerminal({ rows: 3, cols: 3 });
+			const terminal = new TestTerminal({rows: 3, cols: 3});
 			await new Promise<void>((resolve) => {
 				terminal.stdout.write(ansi, () => resolve());
 			});
@@ -299,7 +299,7 @@ describe("Renderer", () => {
 			const frame2 = renderer.render();
 
 			// Apply both frames to terminal
-			const terminal = new TestTerminal({ rows: 1, cols: 1 });
+			const terminal = new TestTerminal({rows: 1, cols: 1});
 			await new Promise<void>((resolve) => {
 				terminal.stdout.write(frame1, () => resolve());
 			});
@@ -314,9 +314,9 @@ describe("Renderer", () => {
 			const renderer = new Renderer(1, 6);
 
 			renderer.beginFrame();
-			renderer.setCell(0, 0, "🔥");  // columns 0-1
-			renderer.setCell(0, 2, "💧");  // columns 2-3
-			renderer.setCell(0, 4, "🌍");  // columns 4-5
+			renderer.setCell(0, 0, "🔥"); // columns 0-1
+			renderer.setCell(0, 2, "💧"); // columns 2-3
+			renderer.setCell(0, 4, "🌍"); // columns 4-5
 
 			const output = renderer.render();
 			expect(output).toContain("🔥");
@@ -362,7 +362,7 @@ describe("Renderer", () => {
 			const frame2 = renderer.render();
 
 			// Apply both frames to terminal
-			const terminal = new TestTerminal({ rows: 1, cols: 2 });
+			const terminal = new TestTerminal({rows: 1, cols: 2});
 			await new Promise<void>((resolve) => {
 				terminal.stdout.write(frame1, () => resolve());
 			});
@@ -383,9 +383,9 @@ describe("Renderer", () => {
 			renderer.setCell(0, 0, "X");
 
 			const ansi = renderer.render();
-			
+
 			// Apply to terminal and verify result
-			const terminal = new TestTerminal({ rows: 1, cols: 1 });
+			const terminal = new TestTerminal({rows: 1, cols: 1});
 			await new Promise<void>((resolve) => {
 				terminal.stdout.write(ansi, () => resolve());
 			});
@@ -406,15 +406,15 @@ describe("Renderer", () => {
 			renderer.setCell(1, 1, "X");
 
 			const ansi = renderer.render();
-			
+
 			// Apply to clean terminal
-			const terminal = new TestTerminal({ rows: 2, cols: 3 });
+			const terminal = new TestTerminal({rows: 2, cols: 3});
 			await new Promise<void>((resolve) => {
 				terminal.stdout.write(ansi, () => resolve());
 			});
 
 			const result = terminal.getVisibleText();
-			
+
 			// Should match expected pattern
 			expect(result).toContain("A C");
 			expect(result).toContain(" X");
@@ -425,20 +425,20 @@ describe("Renderer", () => {
 			const renderer = new Renderer(1, 4);
 
 			renderer.beginFrame();
-			renderer.setCell(0, 0, "你");  // Takes columns 0,1
-			renderer.setCell(0, 2, "A");   // Column 2
+			renderer.setCell(0, 0, "你"); // Takes columns 0,1
+			renderer.setCell(0, 2, "A"); // Column 2
 
 			const ansi = renderer.render();
 			console.log("Wide char ANSI:", JSON.stringify(ansi));
-			
-			const terminal = new TestTerminal({ rows: 1, cols: 4 });
+
+			const terminal = new TestTerminal({rows: 1, cols: 4});
 			await new Promise<void>((resolve) => {
 				terminal.stdout.write(ansi, () => resolve());
 			});
 
 			const result = terminal.getVisibleText();
 			console.log("Terminal result:", JSON.stringify(result));
-			
+
 			// Should contain both characters
 			expect(result).toContain("你");
 			expect(result).toContain("A");
@@ -463,18 +463,18 @@ describe("Renderer", () => {
 			const deltaANSI = renderer.render();
 
 			// Apply both frames to terminal
-			const terminal = new TestTerminal({ rows: 1, cols: 3 });
-			
+			const terminal = new TestTerminal({rows: 1, cols: 3});
+
 			await new Promise<void>((resolve) => {
 				terminal.stdout.write(firstANSI, () => resolve());
 			});
-			
+
 			await new Promise<void>((resolve) => {
 				terminal.stdout.write(deltaANSI, () => resolve());
 			});
 
 			const result = terminal.getVisibleText();
-			
+
 			// Should be "A C" (middle cleared to space)
 			expect(result).toBe("A C");
 		});
@@ -495,11 +495,11 @@ describe("Renderer", () => {
 				}
 				const initial = renderer.render();
 				// Test visual result instead of raw ANSI
-				const terminal = new TestTerminal({ rows: 3, cols: 5 });
+				const terminal = new TestTerminal({rows: 3, cols: 5});
 				await new Promise<void>((resolve) => {
 					terminal.stdout.write(initial, () => resolve());
 				});
-				
+
 				expect(terminal.getPlainText()).toBe("#####\n#####\n#####");
 
 				// Clear two cells in row 0, but must preserve rows 1 and 2
@@ -514,12 +514,12 @@ describe("Renderer", () => {
 				}
 
 				const delta = renderer.render();
-				
+
 				// Apply delta to the same terminal and verify final result
 				await new Promise<void>((resolve) => {
 					terminal.stdout.write(delta, () => resolve());
 				});
-				
+
 				const result = terminal.getPlainText();
 				// Should have cleared cells at positions (0,0) and (0,3) but preserved others
 				expect(result).toContain(" ## #\n#####\n#####");
@@ -546,7 +546,7 @@ describe("Renderer", () => {
 				const frame2 = renderer.render();
 
 				// Apply both frames to terminal
-				const terminal = new TestTerminal({ rows: 1, cols: 3 });
+				const terminal = new TestTerminal({rows: 1, cols: 3});
 				await new Promise<void>((resolve) => {
 					terminal.stdout.write(frame1, () => resolve());
 				});
@@ -650,20 +650,20 @@ describe("Renderer", () => {
 			const renderer = new Renderer(2, 5);
 
 			renderer.beginFrame();
-			renderer.setCell(0, 0, "你");  // Wide char at column 0 (占用 0,1)
-			renderer.setCell(0, 2, "A");   // Normal char at column 2
+			renderer.setCell(0, 0, "你"); // Wide char at column 0 (占用 0,1)
+			renderer.setCell(0, 2, "A"); // Normal char at column 2
 			renderer.setCell(1, 0, "🚀"); // Wide emoji at column 0
 
 			const output = renderer.render();
-			
+
 			// Output should contain the characters
 			expect(output).toContain("你");
 			expect(output).toContain("A");
 			expect(output).toContain("🚀");
-			
+
 			// Plain text wide characters don't get resets with conditional line reset policy
-			expect(output).toMatch(/你A/); // First line 
-			expect(output).toMatch(/🚀/);   // Second line
+			expect(output).toMatch(/你A/); // First line
+			expect(output).toMatch(/🚀/); // Second line
 		});
 
 		test("terminal UI update performance", () => {
@@ -706,7 +706,9 @@ describe("Renderer", () => {
 				}
 
 				// Cursor
-				renderer.setCell(10, 10 + idx + 1, "█", {fg: Bun.color("white", "number")!});
+				renderer.setCell(10, 10 + idx + 1, "█", {
+					fg: Bun.color("white", "number")!,
+				});
 
 				renderer.render();
 				keypresses.push(performance.now() - start);
@@ -744,7 +746,7 @@ describe("Renderer", () => {
 			const frame2 = renderer.render();
 
 			// Apply both frames to 3x3 terminal
-			const terminal = new TestTerminal({ rows: 3, cols: 3 });
+			const terminal = new TestTerminal({rows: 3, cols: 3});
 			await new Promise<void>((resolve) => {
 				terminal.stdout.write(frame1, () => resolve());
 			});
@@ -773,7 +775,7 @@ describe("Renderer", () => {
 			const frame1 = renderer.render();
 
 			// Apply to 3x3 terminal
-			const terminal = new TestTerminal({ rows: 3, cols: 3 });
+			const terminal = new TestTerminal({rows: 3, cols: 3});
 			await new Promise<void>((resolve) => {
 				terminal.stdout.write(frame1, () => resolve());
 			});
@@ -781,10 +783,10 @@ describe("Renderer", () => {
 			// Resize both renderer and terminal to 2x2
 			renderer.resize(2, 2);
 			terminal.resize(2, 2);
-			
+
 			// After resize, do a full re-render (clear previous buffer)
 			renderer.clearPreviousBuffer();
-			
+
 			renderer.beginFrame();
 			renderer.setCell(0, 0, "A");
 			renderer.setCell(0, 1, "B");
@@ -814,7 +816,7 @@ describe("Renderer", () => {
 			renderer.setCell(1, 1, "B"); // Should be ignored (out of bounds)
 			renderer.setCell(0, 0, "C"); // Should work
 			const output = renderer.render();
-			
+
 			expect(output).toContain("C");
 			expect(output).not.toContain("B");
 		});

@@ -3,12 +3,8 @@ import {Renderer, type ColorDepth} from "../rendering/Renderer.js";
 import {EventEmitter} from "events";
 import {JSDOM} from "jsdom";
 import type {DOMWindow} from "jsdom";
-import type * as Yoga from "yoga-layout";
 import {RectUtils} from "../layout/RectUtils.js";
-import {getResolvedStyle} from "../css.js";
-
-// Layout data is now managed internally by LayoutEngine
-// No more global Element extensions or exported symbols
+import {resolvePropertyValue} from "../css.js";
 
 export interface TTYWriteStream {
 	write(
@@ -30,7 +26,9 @@ export interface TTYReadStream extends EventEmitter {
 }
 
 /**
- * Process-like interface for dependency injection
+ * This interface attempts to document the minimum of what we need from the
+ * runtime process object to implement a terminal renderer, so that we can mock
+ * it for tests.
  */
 export interface ProcessLike extends EventEmitter {
 	stdout: TTYWriteStream;
@@ -82,7 +80,6 @@ export class TermDOM {
 		// Set up dimensions
 		this.width = options.width || this.process.stdout.columns || 80;
 		this.height = options.height || this.process.stdout.rows || 24;
-		// TODO: mode should be set when any element calls requestFullscreen so we probably don’t need to pass it as an option.
 		this.mode = "flow";
 
 		// Create JSDOM instance
@@ -108,9 +105,8 @@ export class TermDOM {
 			options.colorDepth || "rgb",
 		);
 
-		this.layoutEngine = new LayoutEngine(this.jsdom.window.DOMRect);
+		this.layoutEngine = new LayoutEngine(this.jsdom.window);
 		this.layoutEngine.resize(this.width, this.height);
-		this.layoutEngine.setRootElement(this.document.documentElement);
 
 		// Set up window properties and DOM
 		this.initializeWindow();
@@ -151,13 +147,10 @@ export class TermDOM {
 		});
 	}
 
-
 	private setupMutationObserver(): MutationObserver {
 		const observer = new this.window.MutationObserver(
 			(mutations: MutationRecord[]) => {
-				// Store mutations and mark for rendering - don't process immediately
-				// Processing happens in render() or when getBoundingClientRect is called
-				this.render();
+				this.render(mutations);
 			},
 		);
 
@@ -195,7 +188,7 @@ export class TermDOM {
 			stdin.resume();
 
 			// Set up input handling
-			stdin.on('data', (data: Buffer) => {
+			stdin.on("data", (data: Buffer) => {
 				// Handle Ctrl+C gracefully
 				if (data[0] === 0x03) {
 					this.dispose();
@@ -212,12 +205,12 @@ export class TermDOM {
 	/**
 	 * Get cursor position to determine commandStart
 	 */
-	private async getCursorPosition(): Promise<{ row: number; col: number }> {
+	private async getCursorPosition(): Promise<{row: number; col: number}> {
 		return new Promise((resolve, reject) => {
 			// Check if we have TTY capabilities
 			if (!this.process.stdin?.isTTY) {
 				// Default to top of screen if not in TTY
-				resolve({ row: 1, col: 1 });
+				resolve({row: 1, col: 1});
 				return;
 			}
 
@@ -227,11 +220,11 @@ export class TermDOM {
 			stdin.setRawMode?.(true);
 			stdin.resume();
 
-			let response = '';
+			let response = "";
 			const timeout = setTimeout(() => {
 				cleanup();
 				// Default to reasonable position if timeout
-				resolve({ row: 1, col: 1 });
+				resolve({row: 1, col: 1});
 			}, 100);
 
 			const onData = (data: Buffer) => {
@@ -244,20 +237,20 @@ export class TermDOM {
 					clearTimeout(timeout);
 					const row = parseInt(match[1], 10);
 					const col = parseInt(match[2], 10);
-					resolve({ row, col });
+					resolve({row, col});
 				}
 			};
 
 			const cleanup = () => {
-				stdin.removeListener('data', onData);
+				stdin.removeListener("data", onData);
 				stdin.setRawMode?.(originalRawMode);
 				if (!originalRawMode) stdin.pause();
 			};
 
-			stdin.on('data', onData);
+			stdin.on("data", onData);
 
 			// Query cursor position
-			this.process.stdout.write('\x1b[6n');
+			this.process.stdout.write("\x1b[6n");
 		});
 	}
 
@@ -279,12 +272,15 @@ export class TermDOM {
 	private async render(mutations = this.observer.takeRecords()): Promise<void> {
 		// Process mutations and update layout
 		if (mutations.length > 0) {
-			this.layoutEngine.handleMutations(mutations);
+			this.layoutEngine.calculateLayout();
 		}
 
 		// Calculate content height and render start row
 		const contentHeight = this.calculateContentHeight();
-		this.renderStartRow = Math.max(0, this.commandStart - (contentHeight - this.commandHeight));
+		this.renderStartRow = Math.max(
+			0,
+			this.commandStart - (contentHeight - this.commandHeight),
+		);
 
 		// Begin new frame
 		this.renderer.beginFrame();
@@ -296,9 +292,10 @@ export class TermDOM {
 		const ansiOutput = this.renderer.render();
 
 		// Calculate expansion newlines if needed
-		const expansionNewlines = contentHeight > this.commandHeight
-			? '\n'.repeat(contentHeight - this.commandHeight)
-			: '';
+		const expansionNewlines =
+			contentHeight > this.commandHeight
+				? "\n".repeat(contentHeight - this.commandHeight)
+				: "";
 
 		// Combine positioning, content, and expansion
 		const fullOutput = ansiOutput + expansionNewlines;
@@ -345,32 +342,38 @@ export class TermDOM {
 	 */
 	private cssColorToNumber(cssColor: string): number {
 		// Handle transparent/empty colors
-		if (!cssColor || cssColor === 'transparent' || cssColor === 'none') {
+		if (!cssColor || cssColor === "transparent" || cssColor === "none") {
 			return 0;
 		}
 
 		// Use Bun.color to convert CSS color string to number
 		const colorNumber = Bun.color(cssColor, "number");
-		return typeof colorNumber === 'number' ? colorNumber : 0;
+		return typeof colorNumber === "number" ? colorNumber : 0;
 	}
 
-	private renderElement(element: Element, x: number, y: number): void {
+	private renderElement(element: Element): void {
 		// Get computed layout rect from layout engine
 		const rect = this.layoutEngine.getRect(element);
 		if (!rect) return;
 
 		// Get background color and text styling
-		const color = getResolvedStyle(element, "color");
-		const backgroundColor = getResolvedStyle(element, "background-color");
+		const color = resolvePropertyValue(element, "color");
+		const backgroundColor = resolvePropertyValue(element, "background-color");
 		// TODO: handle numeric font-weights?
-		const bold = getResolvedStyle(element, "font-weight") === "bold";
-		const italic = getResolvedStyle(element, "font-style") === "italic";
-		const underline = getResolvedStyle(element, "text-decoration").includes("underline");
+		const bold = resolvePropertyValue(element, "font-weight") === "bold";
+		const italic = resolvePropertyValue(element, "font-style") === "italic";
+		const underline = resolvePropertyValue(element, "text-decoration").includes(
+			"underline",
+		);
 
 		const style = {
 			// TODO: what about inherit?
-			fg: color && color !== "initial" ? this.cssColorToNumber(color) : undefined,
-			bg:  backgroundColor && backgroundColor !== "initial" ? this.cssColorToNumber(backgroundColor) : undefined,
+			fg:
+				color && color !== "initial" ? this.cssColorToNumber(color) : undefined,
+			bg:
+				backgroundColor && backgroundColor !== "initial"
+					? this.cssColorToNumber(backgroundColor)
+					: undefined,
 			bold,
 			italic,
 			underline,
@@ -380,29 +383,43 @@ export class TermDOM {
 		// First, fill the entire element's rect with background color (if any)
 		if (style.bg) {
 			this.renderer.fillRect(
-				x + rect.left,
-				y + rect.top,
+				rect.left,
+				rect.top,
 				rect.width,
 				rect.height,
 				style.bg,
 			);
 		}
 
-		// Get pre-calculated text layouts from layout engine
-		const textLayouts = this.layoutEngine.getTextLayouts(element);
-		for (const layout of textLayouts) {
-			this.renderer.setText(
-				x + layout.rect.x,
-				y + layout.rect.y,
-				layout.text,
-				style,
-			);
-		}
+		// Recursively render all child nodes in document order
+		for (const childNode of element.childNodes) {
+			if (childNode.nodeType === childNode.ELEMENT_NODE) {
+				// Render child element
+				const childElement = childNode as Element;
+				if (childElement instanceof (this.window as any).HTMLElement) {
+					this.renderElement(childElement);
+				}
+			} else if (childNode.nodeType === childNode.TEXT_NODE) {
+				// Render text node using its associated layouts
+				const textNode = childNode as Text;
+				// TODO:
+				//const textLayouts = this.layoutEngine.getTextNodeLayouts(textNode);
 
-		// Recursively render children
-		for (const child of element.children) {
-			if (child instanceof (this.window as any).HTMLElement) {
-				this.renderElement(child, x, y);
+				//for (const layout of textLayouts) {
+				//	debugger;
+				//	//console.log({
+				//	//	x: layout.rect.x,
+				//	//	y: layout.rect.y,
+				//	//	width: layout.rect.width,
+				//	//	height: layout.rect.height,
+				//	//});
+				//	this.renderer.setText(
+				//		x + layout.rect.x,
+				//		y + layout.rect.y,
+				//		layout.text,
+				//		style,
+				//	);
+				//}
 			}
 		}
 	}

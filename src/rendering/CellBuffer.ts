@@ -5,7 +5,6 @@
 
 import LRUCache from "../lru.js";
 
-
 // Style flags (internal implementation)
 const STYLE_BOLD = 1 << 0;
 const STYLE_ITALIC = 1 << 1;
@@ -43,7 +42,9 @@ export class Cell {
 	// LRU cache for Cell interning (matrix rain proof!)
 	constructor(grapheme: string, cellStyle?: CellStyle) {
 		if (grapheme === "") {
-			throw new Error("Cell grapheme cannot be empty - use null for empty cells");
+			throw new Error(
+				"Cell grapheme cannot be empty - use null for empty cells",
+			);
 		}
 
 		this.grapheme = grapheme;
@@ -84,9 +85,7 @@ export class Cell {
 	 */
 	styleEquals(other: Cell): boolean {
 		return (
-			this.fg === other.fg &&
-			this.bg === other.bg &&
-			this.style === other.style
+			this.fg === other.fg && this.bg === other.bg && this.style === other.style
 		);
 	}
 
@@ -172,4 +171,3 @@ export function createBuffer(rows: number, cols: number): CellBuffer {
 	}
 	return buffer;
 }
-

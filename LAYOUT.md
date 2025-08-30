@@ -186,33 +186,149 @@ function processChildren(parent: Element, parentYogaNode: YogaNode) {
 }
 ```
 
-## Text Measurement
+## Text Measurement Architecture
 
-* Text nodes get measure functions using `Bun.stringWidth()`.
-* Greedy line breaking is used by default.
-* Wrapping occurs on whitespace or using UAX-14 Unicode line-breaking rules.
+### Core Principle: Recursive Measurement for Inline Content
+
+**Every leaf node in the layout tree gets a measure function**. This includes:
+- Anonymous text runs (contiguous text nodes)
+- Individual elements with only text content
+- Inline elements that become layout leaves
+
+### Measure Function Assignment Rules
 
 ```typescript
-function createTextMeasureFunc(element: Node): MeasureFunc {
-  return (width, widthMode, height, heightMode) => {
-    const text = element.textContent || '';
-    const textWidth = getTextWidth(text);
+// Rule 1: Anonymous boxes always get measure functions
+function createAnonymousBox(textRun: Node[]) {
+  const yogaNode = yoga.Node.create();
+  yogaNode.setMeasureFunc(createRecursiveMeasureFunction(textRun));
+  return yogaNode;
+}
 
-    if (widthMode === MeasureMode.Exactly) {
-      const lines = textWidth <= width ? 1 : Math.ceil(textWidth / width);
-      return { width, height: lines };
-    } else if (widthMode === MeasureMode.AtMost) {
-      const actualWidth = Math.min(textWidth, width);
-      const lines = textWidth <= width ? 1 : Math.ceil(textWidth / width);
-      return { width: actualWidth, height: lines };
-    } else {
-      return { width: textWidth, height: 1 };
-    }
-  };
+// Rule 2: Elements get measure functions if they are text leaves
+function buildYogaTree(element: Element) {
+  if (isTextLeafNode(element)) {
+    // Element contains only text content - make it measurable
+    yogaNode.setMeasureFunc(createElementMeasureFunction(element));
+  } else {
+    // Element has child elements - process children
+    processChildren(element, yogaNode);
+  }
+}
+
+function isTextLeafNode(element: Element): boolean {
+  const children = Array.from(element.childNodes);
+  
+  // No children = not a text leaf
+  if (children.length === 0) return false;
+  
+  // Has element children = not a text leaf (unless inline→block promotion)
+  const hasElementChildren = children.some(child => 
+    child.nodeType === ELEMENT_NODE && 
+    getComputedStyle(child).display !== 'none'
+  );
+  
+  const hasTextContent = children.some(child => 
+    child.nodeType === TEXT_NODE && child.textContent?.trim()
+  );
+  
+  // Text leaf if: has text AND no element children
+  return hasTextContent && !hasElementChildren;
 }
 ```
 
-We should investigate using https://github.com/foliojs/linebreak as a dependency.
+### Recursive Measurement Algorithm
+
+For complex inline content like `<span>Hello <strong>bold</strong> world</span>`, the measure function recursively walks the tree:
+
+```typescript
+function createRecursiveMeasureFunction(rootNodes: Node[]) {
+  return (width: number, widthMode: YogaMode, height: number, heightMode: YogaMode) => {
+    const inlineRun = new InlineRunBuilder();
+    
+    for (const node of rootNodes) {
+      inlineRun.addContent(measureNodeRecursively(node, width));
+    }
+    
+    return inlineRun.calculateDimensions(width, widthMode);
+  };
+}
+
+function measureNodeRecursively(node: Node, maxWidth: number): InlineContent {
+  if (node.nodeType === TEXT_NODE) {
+    return measureTextNode(node, getInheritedStyle(node.parentElement));
+  } else if (node.nodeType === ELEMENT_NODE) {
+    const element = node as Element;
+    const elementStyle = getComputedStyle(element);
+    
+    if (isInlineElement(element)) {
+      // Recursively measure inline children
+      const childContent: InlineContent[] = [];
+      for (const child of element.childNodes) {
+        childContent.push(measureNodeRecursively(child, maxWidth));
+      }
+      return combineInlineContent(childContent, elementStyle);
+    } else {
+      // Block elements shouldn't appear in inline runs (CSS error case)
+      throw new Error(`Block element ${element.tagName} in inline context`);
+    }
+  }
+}
+```
+
+### Text Layout Preservation
+
+The recursive measurement preserves the DOM tree structure while calculating flattened layout:
+
+```typescript
+interface InlineContent {
+  text: string;           // Flattened text for line breaking
+  width: number;          // Calculated width
+  styles: CSSStyle[];     // Style runs for rendering
+  elements: Element[];    // Source elements for event handling
+}
+
+// Example: <span>Hello <strong>bold</strong> world</span>
+// Results in:
+// {
+//   text: "Hello bold world",
+//   width: 15,
+//   styles: [
+//     {start: 0, end: 6, color: "white"},      // "Hello "
+//     {start: 6, end: 10, color: "white", bold: true}, // "bold"
+//     {start: 10, end: 15, color: "white"}     // " world"
+//   ],
+//   elements: [span, strong]
+// }
+```
+
+### Line Breaking Across Element Boundaries
+
+Line breaking must respect element boundaries for proper styling:
+
+```typescript
+function breakInlineContent(content: InlineContent, maxWidth: number): LineBreak[] {
+  const breaker = linebreak(content.text);
+  const lines: LineBreak[] = [];
+  
+  for (const bk of breaker) {
+    const lineText = content.text.slice(lastBreak, bk.position);
+    
+    // Map character positions back to style runs and elements
+    const lineStyles = mapPositionsToStyles(lastBreak, bk.position, content.styles);
+    const lineElements = mapPositionsToElements(lastBreak, bk.position, content.elements);
+    
+    lines.push({
+      text: lineText,
+      width: measureStyledText(lineText, lineStyles),
+      styles: lineStyles,
+      elements: lineElements
+    });
+  }
+  
+  return lines;
+}
+```
 
 ## Layout Process
 
@@ -225,11 +341,77 @@ Refer to https://www.yogalayout.dev/docs/advanced/incremental-layout for how to 
 
 ## Edge Cases
 
-* **Empty elements**: height collapses unless `min-height`.
-* **Pure text**: wrapped in anonymous inline block.
-* **Mixed content**: inline groups split around block elements.
-* **Nested inline**: single anonymous block contains all inline nodes.
-* **br elements**: forced line breaks.
+### 1. Empty Elements
+```html
+<span></span>  <!-- No text content, no children -->
+```
+- **Behavior**: Not a text leaf node, becomes empty container
+- **Result**: Collapses to zero dimensions unless `min-width`/`min-height`
+
+### 2. Inline→Block Promotion
+```html
+<span>
+  <div>Block content</div>  <!-- Block child promotes span -->
+</span>
+```
+- **CSS Rule**: Inline elements with block children are promoted to block
+- **Implementation**: Check child display types in `isTextLeafNode()`
+- **Result**: Span becomes block container, not text leaf
+
+### 3. Deeply Nested Inline Content
+```html
+<span>Text <em>nested <strong>deep</strong> content</em> more</span>
+```
+- **Challenge**: Recursive measurement depth
+- **Solution**: Recursive tree walking preserves styling context
+- **Performance**: Consider memoization for repeated measurements
+
+### 4. Mixed Content Scenarios
+```html
+<div>
+  Text content
+  <span>inline element</span>
+  More text
+  <div>Block element</div>
+  Final text
+</div>
+```
+- **Grouping**: Creates separate anonymous boxes around block elements
+- **Text runs**: "Text content inline element More text" → anonymous box
+- **Block break**: `<div>Block element</div>` → individual Yoga node  
+- **Final run**: "Final text" → separate anonymous box
+
+### 5. Line Breaking Edge Cases
+```html
+<span>Very long text that needs <strong>to break across</strong> multiple lines</span>
+```
+- **Challenge**: Line breaks can occur within styled runs
+- **Solution**: Character position mapping back to elements
+- **Requirement**: Preserve styling across line boundaries
+
+### 6. Empty Inline Elements in Runs
+```html
+<div>Text <span></span> more text</div>
+```
+- **Behavior**: Empty spans contribute no content but may affect styling/events
+- **Implementation**: Include in recursive measurement but contribute zero width
+- **Preservation**: Maintain element references for event handling
+
+### 7. Whitespace Handling
+```html
+<span>Word1 <em>   Word2   </em> Word3</span>
+```
+- **CSS Rules**: Whitespace collapsing depends on `white-space` property
+- **Implementation**: Apply whitespace rules during recursive measurement
+- **Context**: Each element may have different `white-space` values
+
+### 8. Replaced Elements in Inline Context
+```html
+<span>Text <img width="10" height="5"> more text</span>
+```
+- **Challenge**: Non-text content with intrinsic dimensions
+- **Solution**: Measure replaced elements separately, compose with text
+- **Line breaking**: Treat as atomic unit (doesn't break across lines)
 
 ## Why This Architecture?
 

@@ -147,8 +147,8 @@ async function flexboxDemo() {
 	footerVersion.style.color = "white";
 	footer.appendChild(footerVersion);
 
-	// Wait for rendering to complete
-	await dom.waitForRender();
+	// Trigger layout calculation
+	document.body.getBoundingClientRect();
 
 	// Log layout structure
 	//console.log('📐 Layout Structure:');

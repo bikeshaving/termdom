@@ -1,915 +1,823 @@
-import type { DOMWindow, Element, Node } from "jsdom";
+import type {DOMWindow} from "jsdom";
 import Yoga from "yoga-layout";
 import type * as YogaTypes from "yoga-layout";
-import linebreak from "linebreak";
-import { TextBreaker, type LineBreak } from "../text/TextBreaker.js";
-import { getResolvedStyle } from "../css.js";
+import {resolvePropertyValue} from "../css.js";
 
-/**
- * Interface for text with positioning - composition over inheritance
- */
+// TODO: UAX #14 linebreaks
+//import linebreak from "linebreak";
+import {TextBreaker, type LineBreak} from "../text/TextBreaker.js";
+
 export interface TextLayout {
 	rect: DOMRect;
 	text: string;
 }
 
-/**
- * Unified Layout Engine based on LAYOUT.md architecture
- * 
- * Key principles:
- * - Block elements get individual Yoga nodes with flex-direction: column  
- * - Inline runs (consecutive inline content) get anonymous Yoga nodes with flex-direction: row
- * - Individual inline elements/text nodes don't get separate Yoga nodes
- * - Anonymous boxes use measure functions to handle entire inline runs
- */
+const yogaConfig = Yoga.Config.create();
+yogaConfig.setUseWebDefaults(true);
+yogaConfig.setPointScaleFactor(1.0);
+
 export class LayoutEngine {
-	private yoga: typeof Yoga;
-	private yogaConfig: YogaTypes.Config;
-	private textBreaker: TextBreaker;
-	private DOMRect: typeof DOMRect;
-	
-	// Internal storage - no DOM pollution
-	private elementRects = new WeakMap<Element, DOMRect>();
-	private elementMultiRects = new WeakMap<Element, DOMRect[]>();
-	private elementTextLayouts = new WeakMap<Element, TextLayout[]>();
-	private elementYogaNodes = new WeakMap<Element, YogaTypes.Node>();
-	private anonymousBoxes = new WeakMap<Element, YogaTypes.Node[]>(); // Track anonymous boxes for each parent
-	
 	// Layout state
-	private rootElement: Element | null = null;
-	private terminalWidth: number = 80;
-	private terminalHeight: number = 24;
+	declare DOMRect: typeof DOMRect;
+	declare rootElement: Element;
+	declare observer: MutationObserver;
 
-	constructor(DOMRect: typeof DOMRect) {
-		this.yoga = Yoga;
-		this.DOMRect = DOMRect;
+	// TODO: the terminal width and height should be defined and updated on the window
+	declare terminalWidth: number;
+	declare terminalHeight: number;
+	declare nodeMap: WeakMap<Node, YogaTypes.Node>;
+	declare textBreaker: TextBreaker;
+
+	constructor(window: DOMWindow) {
+		this.DOMRect = window.DOMRect;
+		this.rootElement = window.document.documentElement;
+		this.nodeMap = new WeakMap<Node, YogaTypes.Node>();
 		this.textBreaker = new TextBreaker();
+		this.observer = new window.MutationObserver((mutations) => {
+			this.handleMutationRecords(mutations);
+		});
 
-		// Create Yoga config with web defaults for terminal compatibility
-		this.yogaConfig = this.yoga.Config.create();
-		this.yogaConfig.setUseWebDefaults(true);
-		this.yogaConfig.setPointScaleFactor(1.0); // Character grid alignment
+		this.observer.observe(this.rootElement, {
+			childList: true,
+			subtree: true,
+			attributes: true,
+			characterData: true,
+		});
+		addNode(this.rootElement, this.nodeMap);
 	}
 
-	/**
-	 * Update terminal dimensions
-	 */
 	resize(width: number, height: number): void {
 		this.terminalWidth = width;
 		this.terminalHeight = height;
-		
-		// If we have a root, recompute layout with new dimensions
-		if (this.rootElement) {
-			this.rebuildAndCalculateLayout();
+
+		// Set root element dimensions to match viewport
+		const rootYogaNode = this.nodeMap.get(this.rootElement);
+		if (rootYogaNode) {
+			rootYogaNode.setWidth(width);
+			rootYogaNode.setHeight(height);
+			rootYogaNode.calculateLayout(width, height);
 		}
 	}
 
-	/**
-	 * Handle DOM mutations - rebuild affected parts of Yoga tree
-	 */
-	handleMutations(mutations: MutationRecord[]): void {
-		// For now, do a full rebuild on any mutation
-		// TODO: Implement incremental updates using Yoga's dirty node system
-		if (mutations.length > 0) {
-			this.rebuildAndCalculateLayout();
+	calculateLayout() {
+		const records = this.observer.takeRecords();
+		this.handleMutationRecords(records);
+	}
+
+	private handleMutationRecords(mutations: MutationRecord[]): void {
+		let needsLayout = false;
+		for (let i = 0; i < mutations.length; i++) {
+			const record = mutations[i];
+
+			// Handle attribute changes (style modifications)
+			if (record.type === "attributes" && record.attributeName === "style") {
+				const element = record.target as Element;
+				const yogaNode = this.nodeMap.get(element);
+				if (yogaNode) {
+					styleYogaNode(element, yogaNode);
+					needsLayout = true;
+				}
+			}
+
+			// Handle added nodes
+			for (let j = 0; j < record.addedNodes.length; j++) {
+				const node = record.addedNodes[j];
+				const parentYogaNode = this.nodeMap.get(record.target as Element);
+				if (!parentYogaNode) {
+					throw new Error(
+						`No parent Yoga node found for added node ${node.nodeName} under ${(record.target as Element).tagName}`,
+					);
+				}
+				addNode(node, this.nodeMap, parentYogaNode);
+				needsLayout = true;
+			}
+
+			// Handle removed nodes
+			for (let j = 0; j < record.removedNodes.length; j++) {
+				const node = record.removedNodes[j];
+				const yogaNode = this.nodeMap.get(node);
+				if (yogaNode) {
+					// Remove from parent and free
+					const parent = this.nodeMap.get(record.target as Element);
+					if (parent) {
+						parent.removeChild(yogaNode);
+					}
+					yogaNode.freeRecursive();
+					this.nodeMap.delete(node);
+					needsLayout = true;
+				}
+			}
+		}
+
+		// Recalculate layout if anything changed
+		if (needsLayout) {
+			const rootYogaNode = this.nodeMap.get(this.rootElement);
+			if (rootYogaNode) {
+				rootYogaNode.calculateLayout(this.terminalWidth, this.terminalHeight);
+			}
 		}
 	}
 
-	/**
-	 * Get single bounding rectangle for element
-	 */
 	getRect(element: Element): DOMRect | null {
-		return this.elementRects.get(element) || null;
-	}
-
-	/**
-	 * Get array of rectangles for element (for multi-line inline elements)
-	 */
-	getRects(element: Element): DOMRect[] {
-		// Try multi-rects first (for wrapped inline elements)
-		const multiRects = this.elementMultiRects.get(element);
-		if (multiRects && multiRects.length > 0) {
-			return multiRects;
-		}
-		
-		// Fall back to single rect
-		const singleRect = this.elementRects.get(element);
-		return singleRect ? [singleRect] : [];
-	}
-
-	/**
-	 * Get text layouts (positioned text content) for element
-	 */
-	getTextLayouts(element: Element): TextLayout[] {
-		return this.elementTextLayouts.get(element) || [];
-	}
-
-	/**
-	 * Dispose of layout engine and clean up Yoga resources
-	 */
-	dispose(): void {
-		// Note: WeakMaps don't provide iteration methods, so we can't manually free Yoga nodes
-		// They will be garbage collected when the elements they're keyed by are collected
-		// For explicit cleanup, we'd need to track nodes separately
-
-		// Clear all WeakMaps
-		this.elementRects = new WeakMap();
-		this.elementMultiRects = new WeakMap();
-		this.elementTextLayouts = new WeakMap();
-		this.elementYogaNodes = new WeakMap();
-		this.anonymousBoxes = new WeakMap();
-
-		// Free Yoga config
-		if (this.yogaConfig) {
-			this.yogaConfig.free();
-		}
-		
-		this.rootElement = null;
-	}
-
-	/**
-	 * Rebuild Yoga tree and calculate layout
-	 */
-	private rebuildAndCalculateLayout(): void {
-		if (!this.rootElement) return;
-		
-		// Clear existing layout data
-		this.clearLayoutData();
-		
-		// Build Yoga tree using anonymous box algorithm
-		const rootYogaNode = this.buildYogaTree(this.rootElement);
-		if (!rootYogaNode) return;
-		
-		// Set root constraints to terminal dimensions
-		rootYogaNode.setWidth(this.terminalWidth);
-		rootYogaNode.setHeight(this.terminalHeight);
-		
-		// Calculate layout
-		rootYogaNode.calculateLayout(this.terminalWidth, this.terminalHeight);
-		
-		// Extract layout data back to WeakMaps
-		this.extractLayoutData(this.rootElement, 0, 0);
-	}
-
-	/**
-	 * Set the root element for layout calculations
-	 */
-	setRootElement(element: Element): void {
-		this.rootElement = element;
-	}
-
-	/**
-	 * Clear all layout data
-	 */
-	private clearLayoutData(): void {
-		// Note: WeakMaps don't have iteration methods, so we can't free individual nodes
-		// The nodes will be garbage collected when elements are removed
-		// For now, we just clear the maps
-		this.elementRects = new WeakMap();
-		this.elementMultiRects = new WeakMap();
-		this.elementTextLayouts = new WeakMap();
-		this.elementYogaNodes = new WeakMap();
-		this.anonymousBoxes = new WeakMap();
-	}
-
-	/**
-	 * Build Yoga tree for element using anonymous box algorithm
-	 */
-	private buildYogaTree(element: Element): YogaTypes.Node | null {
-		const display = getResolvedStyle(element, "display");
-		
-		// Skip display:none elements
-		if (display === "none") {
+		const yogaNode = this.nodeMap.get(element);
+		if (!yogaNode) {
 			return null;
 		}
 
-		// Create Yoga node for this element
-		const yogaNode = this.createYogaNodeForElement(element);
-		this.elementYogaNodes.set(element, yogaNode);
-
-		// Process children using anonymous box algorithm
-		this.processChildrenWithAnonymousBoxes(element, yogaNode);
-
-		return yogaNode;
+		return new this.DOMRect(
+			yogaNode.getComputedLeft(),
+			yogaNode.getComputedTop(),
+			yogaNode.getComputedWidth(),
+			yogaNode.getComputedHeight(),
+		);
 	}
 
-	/**
-	 * Create Yoga node for a specific element
-	 */
-	private createYogaNodeForElement(element: Element): YogaTypes.Node {
-		const yogaNode = this.yoga.Node.createWithConfig(this.yogaConfig);
-		const display = getResolvedStyle(element, "display");
+	getRects(element: Element): DOMRect[] {
+		throw new Error("TODO");
+	}
 
-		// Configure based on display type
-		if (display === "flex") {
-			yogaNode.setDisplay(this.yoga.DISPLAY_FLEX);
-			const flexDirection = getResolvedStyle(element, "flex-direction");
-			yogaNode.setFlexDirection(
-				flexDirection === "row" ? this.yoga.FLEX_DIRECTION_ROW :
-				flexDirection === "row-reverse" ? this.yoga.FLEX_DIRECTION_ROW_REVERSE :
-				flexDirection === "column-reverse" ? this.yoga.FLEX_DIRECTION_COLUMN_REVERSE :
-				this.yoga.FLEX_DIRECTION_COLUMN
-			);
-		} else if (display === "inline-block") {
-			// Inline-block elements get their own atomic nodes
-			yogaNode.setDisplay(this.yoga.DISPLAY_FLEX);
-			yogaNode.setFlexDirection(this.yoga.FLEX_DIRECTION_ROW);
+	dispose(): void {}
+}
+
+/**
+ * Parse unit from CSS string and return value or percentage info
+ * Examples: "10px" → {value: 10}, "50%" → {percentage: 50}, "auto" → null
+ */
+function parseUnitValue(value: string): number | {percentage: number} | null {
+	if (!value || !/^\d/.test(value)) {
+		return null;
+	}
+
+	// Handle percentage units
+	if (value.endsWith("%")) {
+		const num = parseFloat(value.slice(0, -1));
+		if (isNaN(num)) return null;
+		// If we have parentSize, return the calculated value, otherwise return percentage object
+		return {percentage: num};
+	}
+
+	const num = parseFloat(value);
+	return isNaN(num) ? null : num;
+
+	// TODO: vw/vh units
+}
+
+interface EnumMap {
+	align: YogaTypes.Align;
+	justify: YogaTypes.Justify;
+	wrap: YogaTypes.Wrap;
+}
+
+function getYogaConstant<TEnumName extends keyof EnumMap>(
+	enumName: TEnumName,
+	propertyName: string,
+): EnumMap[TEnumName] | null {
+	const name =
+		enumName.toUpperCase() + "_" + propertyName.replace("-", "_").toUpperCase();
+	return (Yoga as any)[name] || null;
+}
+
+/**
+ * Apply CSS properties to Yoga node
+ */
+function styleYogaNode(element: Element, yogaNode: YogaTypes.Node): void {
+	const width = parseUnitValue(resolvePropertyValue(element, "width", false));
+	if (typeof width === "number") {
+		yogaNode.setWidth(width);
+	} else if (width && "percentage" in width) {
+		yogaNode.setWidthPercent(width.percentage);
+	} else {
+		yogaNode.setWidthAuto();
+	}
+
+	const height = parseUnitValue(resolvePropertyValue(element, "height", false));
+	if (typeof height === "number") {
+		yogaNode.setHeight(height);
+	} else if (height && "percentage" in height) {
+		yogaNode.setHeightPercent(height.percentage);
+	} else {
+		yogaNode.setHeightAuto();
+	}
+
+	const minWidth = parseUnitValue(
+		resolvePropertyValue(element, "min-width", false),
+	);
+	if (typeof minWidth === "number") {
+		yogaNode.setMinWidth(minWidth);
+	} else if (minWidth && "percentage" in minWidth) {
+		yogaNode.setMinWidthPercent(minWidth.percentage);
+	} else {
+		yogaNode.setMinWidth(undefined);
+	}
+
+	// min-height: <length> | <percentage> | auto | max-content | min-content | fit-content
+	// Keywords: auto (default), max-content, min-content, fit-content, inherit, initial, unset
+	// Support: <length>, <percentage> (Yoga defaults to 0 for auto)
+	const minHeight = parseUnitValue(
+		resolvePropertyValue(element, "min-height", false),
+	);
+	if (typeof minHeight === "number") {
+		yogaNode.setMinHeight(minHeight);
+	} else if (minHeight && "percentage" in minHeight) {
+		yogaNode.setMinHeightPercent(minHeight.percentage);
+	} else {
+		yogaNode.setMinHeight(undefined);
+	}
+
+	const maxWidth = parseUnitValue(
+		resolvePropertyValue(element, "max-width", false),
+	);
+	if (typeof maxWidth === "number") {
+		yogaNode.setMaxWidth(maxWidth);
+	} else if (maxWidth && "percentage" in maxWidth) {
+		yogaNode.setMaxWidthPercent(maxWidth.percentage);
+	} else {
+		yogaNode.setMaxWidth(undefined);
+	}
+
+	const maxHeight = parseUnitValue(
+		resolvePropertyValue(element, "max-height", false),
+	);
+	if (typeof maxHeight === "number") {
+		yogaNode.setMaxHeight(maxHeight);
+	} else if (maxHeight && "percentage" in maxHeight) {
+		yogaNode.setMaxHeightPercent(maxHeight.percentage);
+	} else {
+		yogaNode.setMaxHeight(undefined);
+	}
+
+	// === MARGINS ===
+
+	// margin-top: <length> | <percentage> | auto
+	// Keywords: auto (for centering/distribution), inherit, initial, unset
+	// Support: <length>, <percentage>, auto
+	const marginTop = parseUnitValue(
+		resolvePropertyValue(element, "margin-top", false),
+	);
+	if (typeof marginTop === "number") {
+		yogaNode.setMargin(Yoga.EDGE_TOP, marginTop);
+	} else if (marginTop && "percentage" in marginTop) {
+		yogaNode.setMarginPercent(Yoga.EDGE_TOP, marginTop.percentage);
+	} else {
+		// Check if original value was 'auto'
+		const originalValue = resolvePropertyValue(element, "margin-top", false);
+		if (originalValue === "auto") {
+			yogaNode.setMarginAuto(Yoga.EDGE_TOP);
 		} else {
-			// Block elements default to column layout
-			yogaNode.setDisplay(this.yoga.DISPLAY_FLEX);
-			yogaNode.setFlexDirection(this.yoga.FLEX_DIRECTION_COLUMN);
-			yogaNode.setAlignItems(this.yoga.ALIGN_STRETCH);
-			yogaNode.setJustifyContent(this.yoga.JUSTIFY_FLEX_START);
+			yogaNode.setMargin(Yoga.EDGE_TOP, undefined);
 		}
-
-		// Apply CSS properties to Yoga node
-		this.applyCSSPropertiesToYogaNode(element, yogaNode);
-
-		return yogaNode;
 	}
 
-	/**
-	 * Process children using correct algorithm from LAYOUT.md
-	 * Flex containers and normal flow use different algorithms
-	 */
-	private processChildrenWithAnonymousBoxes(parent: Element, parentYogaNode: YogaTypes.Node): void {
-		const children = Array.from(parent.childNodes);
-		const parentDisplay = getResolvedStyle(parent, "display");
-		const isFlexContainer = parentDisplay === "flex";
-
-		if (isFlexContainer) {
-			// CSS Flexbox: group into flex items (elements + text runs)
-			this.processFlexChildren(children, parent, parentYogaNode);
+	// margin-right: <length> | <percentage> | auto
+	// Keywords: auto (for centering/distribution), inherit, initial, unset
+	// Support: <length>, <percentage>, auto
+	const marginRight = parseUnitValue(
+		resolvePropertyValue(element, "margin-right", false),
+	);
+	if (typeof marginRight === "number") {
+		yogaNode.setMargin(Yoga.EDGE_RIGHT, marginRight);
+	} else if (marginRight && "percentage" in marginRight) {
+		yogaNode.setMarginPercent(Yoga.EDGE_RIGHT, marginRight.percentage);
+	} else {
+		const originalValue = resolvePropertyValue(element, "margin-right", false);
+		if (originalValue === "auto") {
+			yogaNode.setMarginAuto(Yoga.EDGE_RIGHT);
 		} else {
-			// Standard flow: use anonymous box algorithm
-			this.processStandardChildren(children, parent, parentYogaNode);
+			yogaNode.setMargin(Yoga.EDGE_RIGHT, undefined);
 		}
 	}
 
-	/**
-	 * Process children in flex containers following CSS flexbox spec:
-	 * - Elements become individual flex items
-	 * - Adjacent text nodes combine into anonymous flex items
-	 */
-	private processFlexChildren(children: Node[], parent: Element, parentYogaNode: YogaTypes.Node): void {
-		const flexItems = this.groupFlexItems(children);
-		const anonymousBoxesForParent: YogaTypes.Node[] = [];
-
-		for (const item of flexItems) {
-			if (item.type === 'element') {
-				// Each element gets its own Yoga node (even inline elements become flex items)
-				const childYogaNode = this.buildYogaTree(item.element);
-				if (childYogaNode) {
-					parentYogaNode.insertChild(childYogaNode, parentYogaNode.getChildCount());
-				}
-			} else if (item.type === 'text-run') {
-				// Text runs get anonymous flex items with measure functions
-				const anonymousBox = this.createAnonymousBoxForTextRun(item.textNodes, parent);
-				anonymousBoxesForParent.push(anonymousBox);
-				parentYogaNode.insertChild(anonymousBox, parentYogaNode.getChildCount());
-			}
-		}
-
-		if (anonymousBoxesForParent.length > 0) {
-			this.anonymousBoxes.set(parent, anonymousBoxesForParent);
+	// margin-bottom: <length> | <percentage> | auto
+	// Keywords: auto (for centering/distribution), inherit, initial, unset
+	// Support: <length>, <percentage>, auto
+	const marginBottom = parseUnitValue(
+		resolvePropertyValue(element, "margin-bottom", false),
+	);
+	if (typeof marginBottom === "number") {
+		yogaNode.setMargin(Yoga.EDGE_BOTTOM, marginBottom);
+	} else if (marginBottom && "percentage" in marginBottom) {
+		yogaNode.setMarginPercent(Yoga.EDGE_BOTTOM, marginBottom.percentage);
+	} else {
+		const originalValue = resolvePropertyValue(element, "margin-bottom", false);
+		if (originalValue === "auto") {
+			yogaNode.setMarginAuto(Yoga.EDGE_BOTTOM);
+		} else {
+			yogaNode.setMargin(Yoga.EDGE_BOTTOM, undefined);
 		}
 	}
 
-	/**
-	 * Group children into flex items following CSS spec:
-	 * "each contiguous run of text directly contained inside a flex container 
-	 *  is wrapped in an anonymous flex item"
-	 */
-	private groupFlexItems(children: Node[]): Array<{ type: 'element' | 'text-run', element?: Element, textNodes?: Node[] }> {
-		const items: Array<{ type: 'element' | 'text-run', element?: Element, textNodes?: Node[] }> = [];
-		let currentTextRun: Node[] = [];
-
-		for (const child of children) {
-			if (child.nodeType === child.ELEMENT_NODE) {
-				// Flush any pending text run
-				if (currentTextRun.length > 0) {
-					items.push({ type: 'text-run', textNodes: [...currentTextRun] });
-					currentTextRun = [];
-				}
-
-				// Add element if not display:none
-				const element = child as Element;
-				const display = getResolvedStyle(element, "display");
-				if (display !== "none") {
-					items.push({ type: 'element', element });
-				}
-			} else if (child.nodeType === child.TEXT_NODE) {
-				// Add to current text run if it has content
-				const text = child.textContent?.trim();
-				if (text) {
-					currentTextRun.push(child);
-				}
-			}
+	// margin-left: <length> | <percentage> | auto
+	// Keywords: auto (for centering/distribution), inherit, initial, unset
+	// Support: <length>, <percentage>, auto
+	const marginLeft = parseUnitValue(
+		resolvePropertyValue(element, "margin-left", false),
+	);
+	if (typeof marginLeft === "number") {
+		yogaNode.setMargin(Yoga.EDGE_LEFT, marginLeft);
+	} else if (marginLeft && "percentage" in marginLeft) {
+		yogaNode.setMarginPercent(Yoga.EDGE_LEFT, marginLeft.percentage);
+	} else {
+		const originalValue = resolvePropertyValue(element, "margin-left", false);
+		if (originalValue === "auto") {
+			yogaNode.setMarginAuto(Yoga.EDGE_LEFT);
+		} else {
+			yogaNode.setMargin(Yoga.EDGE_LEFT, undefined);
 		}
-
-		// Flush final text run
-		if (currentTextRun.length > 0) {
-			items.push({ type: 'text-run', textNodes: currentTextRun });
-		}
-
-		return items;
 	}
 
-	/**
-	 * Process children using standard anonymous box algorithm (non-flex containers)
-	 */
-	private processStandardChildren(children: Node[], parent: Element, parentYogaNode: YogaTypes.Node): void {
-		const groups = this.groupChildNodes(children);
-		const anonymousBoxesForParent: YogaTypes.Node[] = [];
+	// === PADDING ===
 
-		for (const group of groups) {
-			if (group.type === 'block') {
-				// Single block element - gets its own Yoga node
-				const blockElement = group.nodes[0] as Element;
-				const childYogaNode = this.buildYogaTree(blockElement);
-				if (childYogaNode) {
-					parentYogaNode.insertChild(childYogaNode, parentYogaNode.getChildCount());
-				}
+	// padding-top: <length> | <percentage>
+	// Keywords: inherit, initial, unset (no auto for padding)
+	// Support: <length>, <percentage> (defaults to 0)
+	const paddingTop = parseUnitValue(
+		resolvePropertyValue(element, "padding-top", false),
+	);
+	if (typeof paddingTop === "number") {
+		yogaNode.setPadding(Yoga.EDGE_TOP, paddingTop);
+	} else if (paddingTop && "percentage" in paddingTop) {
+		yogaNode.setPaddingPercent(Yoga.EDGE_TOP, paddingTop.percentage);
+	} else {
+		yogaNode.setPadding(Yoga.EDGE_TOP, undefined);
+	}
+
+	// padding-right: <length> | <percentage>
+	// Keywords: inherit, initial, unset (no auto for padding)
+	// Support: <length>, <percentage> (defaults to 0)
+	const paddingRight = parseUnitValue(
+		resolvePropertyValue(element, "padding-right", false),
+	);
+	if (typeof paddingRight === "number") {
+		yogaNode.setPadding(Yoga.EDGE_RIGHT, paddingRight);
+	} else if (paddingRight && "percentage" in paddingRight) {
+		yogaNode.setPaddingPercent(Yoga.EDGE_RIGHT, paddingRight.percentage);
+	} else {
+		yogaNode.setPadding(Yoga.EDGE_RIGHT, undefined);
+	}
+
+	// padding-bottom: <length> | <percentage>
+	// Keywords: inherit, initial, unset (no auto for padding)
+	// Support: <length>, <percentage> (defaults to 0)
+	const paddingBottom = parseUnitValue(
+		resolvePropertyValue(element, "padding-bottom", false),
+	);
+	if (typeof paddingBottom === "number") {
+		yogaNode.setPadding(Yoga.EDGE_BOTTOM, paddingBottom);
+	} else if (paddingBottom && "percentage" in paddingBottom) {
+		yogaNode.setPaddingPercent(Yoga.EDGE_BOTTOM, paddingBottom.percentage);
+	} else {
+		yogaNode.setPadding(Yoga.EDGE_BOTTOM, undefined);
+	}
+
+	// padding-left: <length> | <percentage>
+	// Keywords: inherit, initial, unset (no auto for padding)
+	// Support: <length>, <percentage> (defaults to 0)
+	const paddingLeft = parseUnitValue(
+		resolvePropertyValue(element, "padding-left", false),
+	);
+	if (typeof paddingLeft === "number") {
+		yogaNode.setPadding(Yoga.EDGE_LEFT, paddingLeft);
+	} else if (paddingLeft && "percentage" in paddingLeft) {
+		yogaNode.setPaddingPercent(Yoga.EDGE_LEFT, paddingLeft.percentage);
+	} else {
+		yogaNode.setPadding(Yoga.EDGE_LEFT, undefined);
+	}
+
+	// === FLEXBOX ITEM PROPERTIES ===
+
+	// Special case: block layout children shouldn't flex
+	if (
+		element.parentElement &&
+		resolvePropertyValue(element.parentElement, "display") === "block"
+	) {
+		// Block children don't participate in flexbox behavior
+		yogaNode.setFlexGrow(0);
+		yogaNode.setFlexShrink(0);
+		yogaNode.setFlexBasisAuto();
+		yogaNode.setAlignSelf(Yoga.ALIGN_AUTO);
+	} else {
+		const flexGrow = resolvePropertyValue(element, "flex-grow", false);
+		const growValue = parseFloat(flexGrow);
+		if (!isNaN(growValue) && growValue >= 0) {
+			yogaNode.setFlexGrow(growValue);
+		} else {
+			yogaNode.setFlexGrow(undefined);
+		}
+
+		const flexShrink = resolvePropertyValue(element, "flex-shrink", false);
+		const shrinkValue = parseFloat(flexShrink);
+		if (!isNaN(shrinkValue) && shrinkValue >= 0) {
+			yogaNode.setFlexShrink(shrinkValue);
+		} else {
+			yogaNode.setFlexShrink(undefined);
+		}
+
+		const flexBasis = parseUnitValue(
+			resolvePropertyValue(element, "flex-basis", false),
+		);
+		if (typeof flexBasis === "number") {
+			yogaNode.setFlexBasis(flexBasis);
+		} else if (flexBasis && "percentage" in flexBasis) {
+			yogaNode.setFlexBasisPercent(flexBasis.percentage);
+		} else {
+			// Check if original value was 'auto'
+			const originalValue = resolvePropertyValue(element, "flex-basis", false);
+			if (originalValue === "auto") {
+				yogaNode.setFlexBasisAuto();
 			} else {
-				// Inline run - create anonymous box
-				const anonymousBox = this.createAnonymousBoxForInlineRun(group.nodes, parent);
-				anonymousBoxesForParent.push(anonymousBox);
-				parentYogaNode.insertChild(anonymousBox, parentYogaNode.getChildCount());
+				yogaNode.setFlexBasis(undefined);
 			}
 		}
 
-		if (anonymousBoxesForParent.length > 0) {
-			this.anonymousBoxes.set(parent, anonymousBoxesForParent);
-		}
-	}
-
-	/**
-	 * Group child nodes into block elements vs inline runs
-	 */
-	private groupChildNodes(nodes: Node[]): Array<{ type: 'block' | 'inline', nodes: Node[] }> {
-		const groups: Array<{ type: 'block' | 'inline', nodes: Node[] }> = [];
-		let currentInlineGroup: Node[] = [];
-
-		for (const node of nodes) {
-			if (node.nodeType === node.ELEMENT_NODE) {
-				const element = node as Element;
-				const display = getResolvedStyle(element, "display");
-
-				if (this.isBlockLevelDisplay(display)) {
-					// Block element - flush inline group first
-					if (currentInlineGroup.length > 0) {
-						groups.push({ type: 'inline', nodes: [...currentInlineGroup] });
-						currentInlineGroup = [];
-					}
-					
-					// Add block element (skip display:none)
-					if (display !== "none") {
-						groups.push({ type: 'block', nodes: [element] });
-					}
-				} else {
-					// Inline element - add to current inline group
-					if (display !== "none") {
-						currentInlineGroup.push(node);
-					}
-				}
-			} else if (node.nodeType === node.TEXT_NODE) {
-				// Text node - add to inline group if it has content
-				const text = node.textContent?.trim();
-				if (text) {
-					currentInlineGroup.push(node);
-				}
-			}
-		}
-
-		// Flush remaining inline group
-		if (currentInlineGroup.length > 0) {
-			groups.push({ type: 'inline', nodes: currentInlineGroup });
-		}
-
-		return groups;
-	}
-
-	/**
-	 * Check if display value is block-level
-	 */
-	private isBlockLevelDisplay(display: string): boolean {
-		return display === "block" || 
-			   display === "flex" || 
-			   display === "inline-block" ||
-			   display === "none";
-	}
-
-	/**
-	 * Create anonymous box for inline run with measure function
-	 */
-	private createAnonymousBoxForInlineRun(nodes: Node[], parent: Element): YogaTypes.Node {
-		const anonymousBox = this.yoga.Node.createWithConfig(this.yogaConfig);
-		
-		// Anonymous boxes are horizontal flex containers
-		anonymousBox.setDisplay(this.yoga.DISPLAY_FLEX);
-		anonymousBox.setFlexDirection(this.yoga.FLEX_DIRECTION_ROW);
-		anonymousBox.setFlexWrap(this.yoga.WRAP_WRAP);
-
-		// Set measure function that handles all content in this inline run
-		const measureFunc = this.createMeasureFunctionForInlineRun(nodes, parent);
-		anonymousBox.setMeasureFunc(measureFunc);
-
-		return anonymousBox;
-	}
-
-	/**
-	 * Create anonymous box for text run (flex container text runs)
-	 * Uses wholeText for semantic content while preserving individual nodes
-	 */
-	private createAnonymousBoxForTextRun(textNodes: Node[], parent: Element): YogaTypes.Node {
-		const anonymousBox = this.yoga.Node.createWithConfig(this.yogaConfig);
-		
-		// Text run anonymous boxes are flex items that contain text
-		anonymousBox.setDisplay(this.yoga.DISPLAY_FLEX);
-		// In flex containers, text runs are treated as single items (no wrapping needed)
-		anonymousBox.setFlexDirection(this.yoga.FLEX_DIRECTION_ROW);
-
-		// Use wholeText from first text node to get complete semantic content
-		const firstTextNode = textNodes[0] as Text;
-		const fullText = firstTextNode.wholeText || firstTextNode.textContent || '';
-
-		// Create measure function for the complete text content
-		const measureFunc = this.createTextRunMeasureFunction(fullText.trim(), textNodes, parent);
-		anonymousBox.setMeasureFunc(measureFunc);
-
-		return anonymousBox;
-	}
-
-	/**
-	 * Apply CSS properties to Yoga node
-	 */
-	private applyCSSPropertiesToYogaNode(element: Element, yogaNode: YogaTypes.Node): void {
-		// === DIMENSIONS ===
-		const width = getResolvedStyle(element, "width");
-		const height = getResolvedStyle(element, "height");
-		const minWidth = getResolvedStyle(element, "min-width");
-		const minHeight = getResolvedStyle(element, "min-height");
-		const maxWidth = getResolvedStyle(element, "max-width");
-		const maxHeight = getResolvedStyle(element, "max-height");
-
-		if (width && width !== "auto") {
-			const widthValue = this.parsePixelValue(width);
-			if (widthValue !== null) {
-				yogaNode.setWidth(widthValue);
-			}
-		}
-
-		if (height && height !== "auto") {
-			const heightValue = this.parsePixelValue(height);
-			if (heightValue !== null) {
-				yogaNode.setHeight(heightValue);
-			}
-		}
-
-		if (minWidth && minWidth !== "auto") {
-			const minWidthValue = this.parsePixelValue(minWidth);
-			if (minWidthValue !== null) {
-				yogaNode.setMinWidth(minWidthValue);
-			}
-		}
-
-		if (minHeight && minHeight !== "auto") {
-			const minHeightValue = this.parsePixelValue(minHeight);
-			if (minHeightValue !== null) {
-				yogaNode.setMinHeight(minHeightValue);
-			}
-		}
-
-		if (maxWidth && maxWidth !== "none") {
-			const maxWidthValue = this.parsePixelValue(maxWidth);
-			if (maxWidthValue !== null) {
-				yogaNode.setMaxWidth(maxWidthValue);
-			}
-		}
-
-		if (maxHeight && maxHeight !== "none") {
-			const maxHeightValue = this.parsePixelValue(maxHeight);
-			if (maxHeightValue !== null) {
-				yogaNode.setMaxHeight(maxHeightValue);
-			}
-		}
-
-		// === MARGINS ===
-		const marginTop = getResolvedStyle(element, "margin-top");
-		const marginRight = getResolvedStyle(element, "margin-right");
-		const marginBottom = getResolvedStyle(element, "margin-bottom");
-		const marginLeft = getResolvedStyle(element, "margin-left");
-
-		if (marginTop && marginTop !== "auto") {
-			const value = this.parsePixelValue(marginTop);
-			if (value !== null) {
-				yogaNode.setMargin(this.yoga.EDGE_TOP, value);
-			}
-		}
-
-		if (marginRight && marginRight !== "auto") {
-			const value = this.parsePixelValue(marginRight);
-			if (value !== null) {
-				yogaNode.setMargin(this.yoga.EDGE_RIGHT, value);
-			}
-		}
-
-		if (marginBottom && marginBottom !== "auto") {
-			const value = this.parsePixelValue(marginBottom);
-			if (value !== null) {
-				yogaNode.setMargin(this.yoga.EDGE_BOTTOM, value);
-			}
-		}
-
-		if (marginLeft && marginLeft !== "auto") {
-			const value = this.parsePixelValue(marginLeft);
-			if (value !== null) {
-				yogaNode.setMargin(this.yoga.EDGE_LEFT, value);
-			}
-		}
-
-		// === PADDING ===
-		const paddingTop = getResolvedStyle(element, "padding-top");
-		const paddingRight = getResolvedStyle(element, "padding-right");
-		const paddingBottom = getResolvedStyle(element, "padding-bottom");
-		const paddingLeft = getResolvedStyle(element, "padding-left");
-
-		if (paddingTop) {
-			const value = this.parsePixelValue(paddingTop);
-			if (value !== null) {
-				yogaNode.setPadding(this.yoga.EDGE_TOP, value);
-			}
-		}
-
-		if (paddingRight) {
-			const value = this.parsePixelValue(paddingRight);
-			if (value !== null) {
-				yogaNode.setPadding(this.yoga.EDGE_RIGHT, value);
-			}
-		}
-
-		if (paddingBottom) {
-			const value = this.parsePixelValue(paddingBottom);
-			if (value !== null) {
-				yogaNode.setPadding(this.yoga.EDGE_BOTTOM, value);
-			}
-		}
-
-		if (paddingLeft) {
-			const value = this.parsePixelValue(paddingLeft);
-			if (value !== null) {
-				yogaNode.setPadding(this.yoga.EDGE_LEFT, value);
-			}
-		}
-
-		// === FLEXBOX PROPERTIES ===
-		const flexGrow = getResolvedStyle(element, "flex-grow");
-		const flexShrink = getResolvedStyle(element, "flex-shrink");
-		const flexBasis = getResolvedStyle(element, "flex-basis");
-		const alignSelf = getResolvedStyle(element, "align-self");
-
-		if (flexGrow && flexGrow !== "0") {
-			const growValue = parseFloat(flexGrow);
-			if (!isNaN(growValue)) {
-				yogaNode.setFlexGrow(growValue);
-			}
-		}
-
-		if (flexShrink && flexShrink !== "1") {
-			const shrinkValue = parseFloat(flexShrink);
-			if (!isNaN(shrinkValue)) {
-				yogaNode.setFlexShrink(shrinkValue);
-			}
-		}
-
-		if (flexBasis && flexBasis !== "auto") {
-			const basisValue = this.parsePixelValue(flexBasis);
-			if (basisValue !== null) {
-				yogaNode.setFlexBasis(basisValue);
-			}
-		}
-
-		if (alignSelf && alignSelf !== "auto") {
-			const alignValue = this.mapAlignSelf(alignSelf);
+		const alignSelf = resolvePropertyValue(element, "align-self", false);
+		if (alignSelf === "auto") {
+			yogaNode.setAlignSelf(Yoga.ALIGN_AUTO);
+		} else {
+			const alignValue = getYogaConstant("align", alignSelf);
 			if (alignValue !== null) {
 				yogaNode.setAlignSelf(alignValue);
+			} else {
+				yogaNode.setAlignSelf(undefined);
+			}
+		}
+	}
+
+	// === FLEX CONTAINER PROPERTIES ===
+
+	// display: none | flex | block | inline | inline-block | ...
+	// Keywords: block, flex, none, inline, inline-block, inherit, initial, unset
+	// Support: flex, block, none (others treated as block)
+	const display = resolvePropertyValue(element, "display");
+
+	if (display === "none") {
+		yogaNode.setDisplay(Yoga.DISPLAY_NONE);
+	} else if (display === "flex") {
+		yogaNode.setDisplay(Yoga.DISPLAY_FLEX);
+
+		// flex-direction: row | row-reverse | column | column-reverse
+		// Keywords: row (default), row-reverse, column, column-reverse, inherit, initial, unset
+		// Support: all standard values
+		const flexDirection = resolvePropertyValue(element, "flex-direction");
+		if (
+			flexDirection &&
+			flexDirection !== "row" &&
+			flexDirection !== "initial" &&
+			flexDirection !== "inherit" &&
+			flexDirection !== "unset"
+		) {
+			switch (flexDirection) {
+				case "column":
+					yogaNode.setFlexDirection(Yoga.FLEX_DIRECTION_COLUMN);
+					break;
+				case "row-reverse":
+					yogaNode.setFlexDirection(Yoga.FLEX_DIRECTION_ROW_REVERSE);
+					break;
+				case "column-reverse":
+					yogaNode.setFlexDirection(Yoga.FLEX_DIRECTION_COLUMN_REVERSE);
+					break;
 			}
 		}
 
-		// === FLEX CONTAINER PROPERTIES ===
-		const display = getResolvedStyle(element, "display");
-		if (display === "flex") {
-			const justifyContent = getResolvedStyle(element, "justify-content");
-			const alignItems = getResolvedStyle(element, "align-items");
-			const flexWrap = getResolvedStyle(element, "flex-wrap");
+		// flex-wrap: nowrap | wrap | wrap-reverse
+		// Keywords: nowrap (default), wrap, wrap-reverse, inherit, initial, unset
+		// Support: all standard values
+		const flexWrap = resolvePropertyValue(element, "flex-wrap");
+		if (
+			flexWrap &&
+			flexWrap !== "nowrap" &&
+			flexWrap !== "initial" &&
+			flexWrap !== "inherit" &&
+			flexWrap !== "unset"
+		) {
+			const wrapValue = getYogaConstant("wrap", flexWrap);
+			if (wrapValue !== null) {
+				yogaNode.setFlexWrap(wrapValue);
+			}
+		}
 
-			if (justifyContent) {
-				const justifyValue = this.mapJustifyContent(justifyContent);
-				if (justifyValue !== null) {
-					yogaNode.setJustifyContent(justifyValue);
+		// justify-content: flex-start | flex-end | center | space-between | space-around | space-evenly
+		// Keywords: flex-start (default), flex-end, center, space-between, space-around, space-evenly, inherit, initial, unset
+		// Support: all standard values
+		const justifyContent = resolvePropertyValue(element, "justify-content");
+		if (
+			justifyContent &&
+			justifyContent !== "flex-start" &&
+			justifyContent !== "initial" &&
+			justifyContent !== "inherit" &&
+			justifyContent !== "unset"
+		) {
+			const justifyValue = getYogaConstant("justify", justifyContent);
+			if (justifyValue !== null) {
+				yogaNode.setJustifyContent(justifyValue);
+			}
+		}
+
+		// align-items: stretch | flex-start | flex-end | center | baseline
+		// Keywords: stretch (default), flex-start, flex-end, center, baseline, inherit, initial, unset
+		// Support: all standard values
+		const alignItems = resolvePropertyValue(element, "align-items");
+		if (
+			alignItems &&
+			alignItems !== "stretch" &&
+			alignItems !== "initial" &&
+			alignItems !== "inherit" &&
+			alignItems !== "unset"
+		) {
+			const alignValue = getYogaConstant("align", alignItems);
+			if (alignValue !== null) {
+				yogaNode.setAlignItems(alignValue);
+			}
+		}
+
+		// align-content: stretch | flex-start | flex-end | center | space-between | space-around
+		// Keywords: stretch (default), flex-start, flex-end, center, space-between, space-around, inherit, initial, unset
+		// Support: all standard values (for multi-line flex containers)
+		const alignContent = resolvePropertyValue(element, "align-content");
+		if (
+			alignContent &&
+			alignContent !== "stretch" &&
+			alignContent !== "initial" &&
+			alignContent !== "inherit" &&
+			alignContent !== "unset"
+		) {
+			const alignValue = getYogaConstant("align", alignContent);
+			if (alignValue !== null) {
+				yogaNode.setAlignContent(alignValue);
+			}
+		}
+	} else if (display === "block" || display === "inline-block" || !display) {
+		// Simulate block layout using flexbox
+		yogaNode.setDisplay(Yoga.DISPLAY_FLEX);
+		yogaNode.setFlexDirection(Yoga.FLEX_DIRECTION_COLUMN);
+		yogaNode.setAlignItems(Yoga.ALIGN_STRETCH);
+	}
+}
+
+function isBlockLevelDisplay(display: string): boolean {
+	// TODO: there are more block-level displays
+	return (
+		display === "block" ||
+		display === "flex" ||
+		display === "inline-block" ||
+		display === "none"
+	);
+}
+
+function addNode(
+	node: Node,
+	map: WeakMap<Node, YogaTypes.Node>,
+	parentYogaNode: YogaTypes.Node | null = null,
+): void {
+	if (node.nodeType === node.ELEMENT_NODE) {
+		addElement(node as Element, map, parentYogaNode);
+	} else if (node.nodeType === node.TEXT_NODE) {
+		addTextNode(node as Text, map, parentYogaNode);
+	}
+}
+
+function addElement(
+	element: Element,
+	map: WeakMap<Node, YogaTypes.Node>,
+	parentYogaNode: YogaTypes.Node | null = null,
+	yogaIndex: number = getYogaIndex(element, map),
+): void {
+	const display = resolvePropertyValue(element, "display", false);
+
+	// Check if this inline element should join an existing inline run
+	if (display === "inline" || display === "inline-block") {
+		if (element.parentElement === null) {
+			throw new Error("inline/inline-block element with no parent");
+		}
+
+		const parentDisplay = resolvePropertyValue(
+			element.parentElement,
+			"display",
+			false,
+		);
+
+		// Return early (join existing inline run) if:
+		// - parent is block AND has previous sibling that's inline content
+		if (
+			parentDisplay !== "flex" &&
+			element.previousSibling !== null &&
+			(element.previousSibling.nodeType === element.TEXT_NODE ||
+				(element.previousSibling.nodeType === element.ELEMENT_NODE &&
+					(resolvePropertyValue(
+						element.previousSibling as Element,
+						"display",
+						false,
+					) === "inline" ||
+						resolvePropertyValue(
+							element.previousSibling as Element,
+							"display",
+							false,
+						) === "inline-block")))
+		) {
+			console.log(`${element.tagName} joining existing inline run`);
+			return; // Join existing inline run
+		}
+	}
+
+	let yogaNode = map.get(element);
+	if (!yogaNode) {
+		yogaNode = Yoga.Node.createWithConfig(yogaConfig);
+		map.set(element, yogaNode);
+	}
+
+	// Apply CSS properties including display
+	styleYogaNode(element, yogaNode);
+
+	// Skip processing children if display: none, but keep the node in tree
+	if (display === "none") {
+		yogaNode.setDisplay(Yoga.DISPLAY_NONE);
+		// Early return - don't process children
+		if (yogaNode && parentYogaNode) {
+			parentYogaNode.insertChild(yogaNode, yogaIndex);
+		}
+	} else if (display === "inline" || display === "inline-block") {
+		// TODO: if it's an inline element, we need to traverse to previous siblings to find the head node or create one if it doesn't exist
+		if (yogaNode && parentYogaNode) {
+			parentYogaNode.insertChild(yogaNode, yogaIndex);
+		}
+
+		return;
+	}
+
+	let inlineRunNode: YogaTypes.Node | null = null;
+	for (let i = 0; i < element.childNodes.length; i++) {
+		const child = element.childNodes[i];
+		if (child.nodeType === child.ELEMENT_NODE) {
+			const childDisplay = resolvePropertyValue(child as Element, "display");
+			if (childDisplay === "inline" || childDisplay === "inline-block") {
+				if (display === "flex") {
+					// each child of a flex node is flexed
+					console.log(
+						`  SKIPPING inline child ${(child as Element).tagName} in flex container`,
+					);
+				} else if (inlineRunNode) {
+					// The inline run node is handling this
+					console.log(
+						`  SKIPPING inline child ${(child as Element).tagName} - inline run handling`,
+					);
+				} else {
+					addElement(child as Element, map, yogaNode);
 				}
-			}
-
-			if (alignItems) {
-				const alignValue = this.mapAlignItems(alignItems);
-				if (alignValue !== null) {
-					yogaNode.setAlignItems(alignValue);
+			} else {
+				if (inlineRunNode) {
+					inlineRunNode = null;
 				}
+
+				addElement(child as Element, map, yogaNode);
+			}
+		} else if (child.nodeType === child.TEXT_NODE) {
+			if (inlineRunNode) {
+				console.log(`  SKIPPING text node - inline run handling`);
+				continue;
 			}
 
-			if (flexWrap && flexWrap !== "nowrap") {
-				const wrapValue = this.mapFlexWrap(flexWrap);
-				if (wrapValue !== null) {
-					yogaNode.setFlexWrap(wrapValue);
-				}
+			console.log(`  SKIPPING text node - addTextNode unimplemented`);
+			// addTextNode(child as Text, map, yogaNode);
+		}
+	}
+
+	if (yogaNode && parentYogaNode && yogaNode.getParent() === null) {
+		try {
+			console.log(
+				`Inserting ${element.tagName} at index ${yogaIndex}, parent has ${parentYogaNode.getChildCount()} children`,
+			);
+			parentYogaNode.insertChild(yogaNode, yogaIndex);
+		} catch (err) {
+			console.log(
+				"Error:",
+				element.tagName,
+				`yogaIndex: ${yogaIndex}`,
+				`parent children: ${parentYogaNode.getChildCount()}`,
+				err.message,
+			);
+		}
+	}
+}
+
+function addTextNode(
+	text: Text,
+	map: WeakMap<Node, YogaTypes.Node>,
+	parentNode: YogaTypes.Node | null = null,
+): void {
+	// TODO:
+}
+
+/**
+ * Check if an element is the head of an inline run (first inline element in sequence)
+ */
+function isInlineRunHead(element: Element): boolean {
+	const display = resolvePropertyValue(element, "display", false);
+	if (display !== "inline" && display !== "inline-block") {
+		return false;
+	}
+
+	const parentDisplay = element.parentElement
+		? resolvePropertyValue(element.parentElement, "display", false)
+		: "block";
+
+	// In flex containers, all inline elements are heads (flex items)
+	if (parentDisplay === "flex") {
+		return true;
+	}
+
+	// In block containers, check if there's any previous inline content
+	let prevSibling = element.previousSibling;
+	while (prevSibling) {
+		if (prevSibling.nodeType === prevSibling.ELEMENT_NODE) {
+			const prevDisplay = resolvePropertyValue(
+				prevSibling as Element,
+				"display",
+				false,
+			);
+			if (prevDisplay === "inline" || prevDisplay === "inline-block") {
+				return false; // Not head - previous inline element exists
+			} else {
+				return true; // Head - previous sibling is block
 			}
-		}
-	}
-
-	/**
-	 * Parse pixel value from CSS string (e.g., "10px" → 10, "2ch" → 2)
-	 */
-	private parsePixelValue(value: string): number | null {
-		if (!value || value === "auto" || value === "none") {
-			return null;
-		}
-
-		// Handle ch units (character width) - in terminal context, 1ch = 1 cell
-		if (value.endsWith("ch")) {
-			const num = parseFloat(value.slice(0, -2));
-			return isNaN(num) ? null : num;
-		}
-
-		// Handle px units
-		if (value.endsWith("px")) {
-			const num = parseFloat(value.slice(0, -2));
-			return isNaN(num) ? null : num;
-		}
-
-		// Handle unitless numbers
-		const num = parseFloat(value);
-		return isNaN(num) ? null : num;
-	}
-
-	/**
-	 * Map CSS align-self values to Yoga constants
-	 */
-	private mapAlignSelf(alignSelf: string): YogaTypes.Align | null {
-		switch (alignSelf) {
-			case "flex-start": return this.yoga.ALIGN_FLEX_START;
-			case "flex-end": return this.yoga.ALIGN_FLEX_END;
-			case "center": return this.yoga.ALIGN_CENTER;
-			case "baseline": return this.yoga.ALIGN_BASELINE;
-			case "stretch": return this.yoga.ALIGN_STRETCH;
-			default: return null;
-		}
-	}
-
-	/**
-	 * Map CSS justify-content values to Yoga constants
-	 */
-	private mapJustifyContent(justifyContent: string): YogaTypes.Justify | null {
-		switch (justifyContent) {
-			case "flex-start": return this.yoga.JUSTIFY_FLEX_START;
-			case "flex-end": return this.yoga.JUSTIFY_FLEX_END;
-			case "center": return this.yoga.JUSTIFY_CENTER;
-			case "space-between": return this.yoga.JUSTIFY_SPACE_BETWEEN;
-			case "space-around": return this.yoga.JUSTIFY_SPACE_AROUND;
-			case "space-evenly": return this.yoga.JUSTIFY_SPACE_EVENLY;
-			default: return null;
-		}
-	}
-
-	/**
-	 * Map CSS align-items values to Yoga constants
-	 */
-	private mapAlignItems(alignItems: string): YogaTypes.Align | null {
-		switch (alignItems) {
-			case "flex-start": return this.yoga.ALIGN_FLEX_START;
-			case "flex-end": return this.yoga.ALIGN_FLEX_END;
-			case "center": return this.yoga.ALIGN_CENTER;
-			case "baseline": return this.yoga.ALIGN_BASELINE;
-			case "stretch": return this.yoga.ALIGN_STRETCH;
-			default: return null;
-		}
-	}
-
-	/**
-	 * Map CSS flex-wrap values to Yoga constants
-	 */
-	private mapFlexWrap(flexWrap: string): YogaTypes.Wrap | null {
-		switch (flexWrap) {
-			case "nowrap": return this.yoga.WRAP_NO_WRAP;
-			case "wrap": return this.yoga.WRAP_WRAP;
-			case "wrap-reverse": return this.yoga.WRAP_WRAP_REVERSE;
-			default: return null;
-		}
-	}
-
-	/**
-	 * Create measure function for text runs in flex containers
-	 * Uses complete text content but preserves node references
-	 */
-	private createTextRunMeasureFunction(text: string, textNodes: Node[], parent: Element) {
-		return (
-			width: number,
-			widthMode: YogaTypes.MeasureMode,
-			height: number,
-			heightMode: YogaTypes.MeasureMode
-		) => {
-			if (!text.trim()) {
-				return { width: 0, height: 0 };
+		} else if (prevSibling.nodeType === prevSibling.TEXT_NODE) {
+			if (prevSibling.textContent?.trim()) {
+				return false; // Not head - previous text content exists
 			}
-
-			// Use TextBreaker for proper line breaking with width constraints
-			const breakResult = this.textBreaker.breakText(text, { maxWidth: width });
-			
-			// Calculate actual width and height
-			const maxLineWidth = breakResult.maxLineWidth;
-			const actualWidth = widthMode === this.yoga.MEASURE_MODE_EXACTLY 
-				? width 
-				: Math.min(maxLineWidth, width);
-			const actualHeight = breakResult.totalHeight;
-
-			// Store text layouts for rendering (associate with parent element)
-			this.createTextLayoutsForTextRun(textNodes, parent, breakResult.lines, actualWidth);
-
-			return { 
-				width: actualWidth, 
-				height: actualHeight 
-			};
-		};
-	}
-
-	/**
-	 * Create measure function for inline run using linebreak library
-	 */
-	private createMeasureFunctionForInlineRun(nodes: Node[], parent: Element) {
-		return (
-			width: number,
-			widthMode: YogaTypes.MeasureMode,
-			height: number,
-			heightMode: YogaTypes.MeasureMode
-		) => {
-			// Extract all text content from the inline run
-			const textContent = this.extractTextFromInlineRun(nodes);
-			if (!textContent.trim()) {
-				return { width: 0, height: 0 };
-			}
-
-			// Use TextBreaker for proper line breaking with width constraints
-			const breakResult = this.textBreaker.breakText(textContent, { maxWidth: width });
-			
-			// Calculate actual width and height
-			const maxLineWidth = breakResult.maxLineWidth;
-
-			const actualWidth = widthMode === this.yoga.MEASURE_MODE_EXACTLY 
-				? width 
-				: Math.min(maxLineWidth, width);
-			
-			const actualHeight = breakResult.totalHeight;
-
-			// Store text layouts for rendering
-			this.createTextLayoutsForInlineRun(nodes, parent, breakResult.lines, actualWidth);
-
-			return { 
-				width: actualWidth, 
-				height: actualHeight 
-			};
-		};
-	}
-
-	/**
-	 * Extract text content from an inline run of nodes
-	 */
-	private extractTextFromInlineRun(nodes: Node[]): string {
-		let text = '';
-		
-		for (const node of nodes) {
-			if (node.nodeType === node.TEXT_NODE) {
-				text += node.textContent || '';
-			} else if (node.nodeType === node.ELEMENT_NODE) {
-				// For inline elements, recursively extract their text content
-				text += (node as Element).textContent || '';
-			}
+			// Skip whitespace text nodes
 		}
-		
-		return text;
+		prevSibling = prevSibling.previousSibling;
 	}
 
+	return true; // Head - no previous inline content
+}
 
-	/**
-	 * Create text layouts for text runs in flex containers
-	 */
-	private createTextLayoutsForTextRun(
-		textNodes: Node[], 
-		parent: Element, 
-		lines: LineBreak[], 
-		containerWidth: number
-	): void {
-		// Convert TextBreaker LineBreak objects to TextLayout objects
-		const textLayouts: TextLayout[] = [];
-		
-		for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
-			const line = lines[lineIndex];
-			if (line.text.trim()) {
-				textLayouts.push({
-					rect: new this.DOMRect(0, lineIndex, line.width, 1),
-					text: line.text
-				});
-			}
-		}
-		
-		// Store text layouts for the parent element
-		// The textNodes array preserves the original DOM structure for potential future use
-		const existingLayouts = this.elementTextLayouts.get(parent) || [];
-		this.elementTextLayouts.set(parent, [...existingLayouts, ...textLayouts]);
+/**
+ * Find the head element of an inline run that contains the given element
+ */
+function findInlineRunHead(element: Element): Element | null {
+	const display = resolvePropertyValue(element, "display", false);
+	if (display !== "inline" && display !== "inline-block") {
+		return null; // Not an inline element
 	}
 
-	/**
-	 * Create text layouts for inline run nodes with line positioning
-	 */
-	private createTextLayoutsForInlineRun(
-		nodes: Node[], 
-		parent: Element, 
-		lines: LineBreak[], 
-		containerWidth: number
-	): void {
-		// Convert TextBreaker LineBreak objects to TextLayout objects
-		const textLayouts: TextLayout[] = [];
-		
-		for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
-			const line = lines[lineIndex];
-			if (line.text.trim()) {
-				textLayouts.push({
-					rect: new this.DOMRect(0, lineIndex, line.width, 1),
-					text: line.text
-				});
-			}
-		}
-		
-		// Store text layouts for the parent element
-		// In a more sophisticated implementation, we'd distribute these among the individual nodes
-		this.elementTextLayouts.set(parent, textLayouts);
+	const parentDisplay = element.parentElement
+		? resolvePropertyValue(element.parentElement, "display", false)
+		: "block";
+
+	// In flex containers, each inline element is its own head
+	if (parentDisplay === "flex") {
+		return element;
 	}
 
-	/**
-	 * Extract layout data from Yoga tree and populate WeakMaps
-	 */
-	private extractLayoutData(element: Element, parentX: number, parentY: number): void {
-		// Get the Yoga node for this element
-		const yogaNode = this.elementYogaNodes.get(element);
-		if (!yogaNode) return;
+	// In block containers, traverse backwards to find the head
+	let current = element;
+	while (current.previousSibling) {
+		const prevSibling = current.previousSibling;
 
-		// Extract computed layout from Yoga
-		const x = parentX + yogaNode.getComputedLeft();
-		const y = parentY + yogaNode.getComputedTop();
-		const width = yogaNode.getComputedWidth();
-		const height = yogaNode.getComputedHeight();
-
-		// Store the element's bounding rect
-		const rect = new this.DOMRect(x, y, width, height);
-		this.elementRects.set(element, rect);
-
-		// Process children recursively
-		for (const child of element.children) {
-			if (child.nodeType === child.ELEMENT_NODE) {
-				this.extractLayoutData(child as Element, x, y);
+		if (prevSibling.nodeType === prevSibling.ELEMENT_NODE) {
+			const prevDisplay = resolvePropertyValue(
+				prevSibling as Element,
+				"display",
+				false,
+			);
+			if (prevDisplay === "inline" || prevDisplay === "inline-block") {
+				current = prevSibling as Element; // Continue backwards
+			} else {
+				break; // Block element - current is the head
 			}
+		} else if (prevSibling.nodeType === prevSibling.TEXT_NODE) {
+			if (prevSibling.textContent?.trim()) {
+				// Text content - need to keep looking for the element head
+				current = current; // Stay at current element
+			}
+			// Skip whitespace and continue backwards
 		}
 
-		// Handle anonymous boxes for this element
-		const anonymousBoxes = this.anonymousBoxes.get(element);
-		if (anonymousBoxes) {
-			for (let i = 0; i < anonymousBoxes.length; i++) {
-				const boxNode = anonymousBoxes[i];
-				
-				// Anonymous boxes store their text layouts during measure function execution
-				// The text layouts are already positioned relative to the anonymous box
-				// We need to adjust them to be relative to the document
-				const existingLayouts = this.elementTextLayouts.get(element) || [];
-				const adjustedLayouts: TextLayout[] = [];
-				
-				const boxX = x + boxNode.getComputedLeft();
-				const boxY = y + boxNode.getComputedTop();
-				
-				for (const layout of existingLayouts) {
-					adjustedLayouts.push({
-						rect: new this.DOMRect(
-							boxX + layout.rect.x,
-							boxY + layout.rect.y,
-							layout.rect.width,
-							layout.rect.height
-						),
-						text: layout.text
-					});
-				}
-				
-				// Update with document-relative positions
-				if (adjustedLayouts.length > 0) {
-					this.elementTextLayouts.set(element, adjustedLayouts);
-				}
-			}
+		// Move to previous sibling (handled by the while condition)
+	}
+
+	return current;
+}
+
+function getYogaIndex(node: Node, map: WeakMap<Node, YogaTypes.Node>): number {
+	console.log("getYogaIndex called", (node as any).outerHTML);
+	if (!node.parentNode) return 0;
+
+	const parent = node.parentNode;
+	const parentYogaNode = map.get(parent);
+	if (!parentYogaNode) return 0;
+
+	// Count how many previous siblings have Yoga nodes
+	let yogaIndex = 0;
+	for (
+		let sibling = parent.firstChild;
+		sibling && sibling !== node;
+		sibling = sibling.nextSibling
+	) {
+		if (map.has(sibling)) {
+			yogaIndex++;
 		}
 	}
+
+	// Ensure index doesn't exceed parent's child count
+	return yogaIndex;
 }
