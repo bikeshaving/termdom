@@ -8,6 +8,7 @@
  * 4. Handles inline elements as fixed-width content
  */
 // TODO: use UAX #14 algorithm
+//import linebreak from "linebreak";
 
 export interface BreakOptions {
 	/** Maximum width for each line */

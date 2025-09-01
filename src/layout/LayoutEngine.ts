@@ -2,9 +2,6 @@ import type {DOMWindow} from "jsdom";
 import Yoga from "yoga-layout";
 import type * as YogaTypes from "yoga-layout";
 import {resolvePropertyValue} from "../css.js";
-
-// TODO: UAX #14 linebreaks
-//import linebreak from "linebreak";
 import {TextBreaker, type LineBreak} from "../text/TextBreaker.js";
 
 export interface TextLayout {
@@ -703,29 +700,79 @@ function addTextNode(
 	map: WeakMap<Node, YogaTypes.Node>,
 	parentNode: YogaTypes.Node | null = null,
 ): void {
-	// TODO:
+	// Check if this text node is the head of an inline run
+	if (!isInlineRunHead(text)) {
+		console.log(`Text node joining existing inline run`);
+		return; // Join existing inline run
+	}
+
+	// This text node starts an inline run - create Yoga node
+	let yogaNode = map.get(text);
+	if (!yogaNode) {
+		yogaNode = Yoga.Node.createWithConfig(yogaConfig);
+		map.set(text, yogaNode);
+		console.log(`Created Yoga node for text head: "${text.textContent}"`);
+
+		// TODO: Set up measure function for text sizing
+		// yogaNode.setMeasureFunc(...);
+	}
+
+	if (yogaNode && parentNode && yogaNode.getParent() === null) {
+		const yogaIndex = getYogaIndex(text, map);
+		parentNode.insertChild(yogaNode, yogaIndex);
+	}
 }
 
 /**
- * Check if an element is the head of an inline run (first inline element in sequence)
+ * Check if a node is the head of an inline run (first inline content in sequence)
  */
-function isInlineRunHead(element: Element): boolean {
-	const display = resolvePropertyValue(element, "display", false);
-	if (display !== "inline" && display !== "inline-block") {
-		return false;
-	}
+export function isInlineRunHead(node: Node): boolean {
+	// Only elements and text nodes can be inline
+	if (node.nodeType === node.ELEMENT_NODE) {
+		const element = node as Element;
+		const display = resolvePropertyValue(element, "display", false);
+		if (display !== "inline" && display !== "inline-block") {
+			return false;
+		}
 
-	const parentDisplay = element.parentElement
-		? resolvePropertyValue(element.parentElement, "display", false)
-		: "block";
+		const parentDisplay = element.parentElement
+			? resolvePropertyValue(element.parentElement, "display", false)
+			: "block";
 
-	// In flex containers, all inline elements are heads (flex items)
-	if (parentDisplay === "flex") {
-		return true;
+		// In flex containers, all inline elements are heads (flex items)
+		if (parentDisplay === "flex") {
+			return true;
+		}
+	} else if (node.nodeType === node.TEXT_NODE) {
+		// Text nodes are always inline content
+		// In flex containers, text nodes only form runs with other text nodes
+		if (node.parentElement) {
+			const parentDisplay = resolvePropertyValue(node.parentElement, "display", false);
+			if (parentDisplay === "flex") {
+				// In flex containers, only adjacent text nodes can form runs
+				// Any element between text nodes breaks the run
+				let prevSibling = node.previousSibling;
+				while (prevSibling) {
+					if (prevSibling.nodeType === prevSibling.TEXT_NODE) {
+						if (prevSibling.textContent) {
+							return false; // Adjacent text content exists
+						}
+						// Skip empty text nodes and continue
+					} else {
+						// Any element breaks text runs in flex containers
+						return true; // This text is head of new run
+					}
+					prevSibling = prevSibling.previousSibling;
+				}
+				return true; // No previous content in flex container
+			}
+		}
+	} else {
+		return false; // Other node types are not inline
 	}
 
 	// In block containers, check if there's any previous inline content
-	let prevSibling = element.previousSibling;
+	let prevSibling = node.previousSibling;
 	while (prevSibling) {
 		if (prevSibling.nodeType === prevSibling.ELEMENT_NODE) {
 			const prevDisplay = resolvePropertyValue(
@@ -739,10 +786,10 @@ function isInlineRunHead(element: Element): boolean {
 				return true; // Head - previous sibling is block
 			}
 		} else if (prevSibling.nodeType === prevSibling.TEXT_NODE) {
-			if (prevSibling.textContent?.trim()) {
+			if (prevSibling.textContent) {
 				return false; // Not head - previous text content exists
 			}
-			// Skip whitespace text nodes
+			// Skip empty text nodes
 		}
 		prevSibling = prevSibling.previousSibling;
 	}
@@ -751,48 +798,87 @@ function isInlineRunHead(element: Element): boolean {
 }
 
 /**
- * Find the head element of an inline run that contains the given element
+ * Find the head node of an inline run that contains the given node
  */
-function findInlineRunHead(element: Element): Element | null {
-	const display = resolvePropertyValue(element, "display", false);
-	if (display !== "inline" && display !== "inline-block") {
-		return null; // Not an inline element
+export function findInlineRunHead(node: Node): Node | null {
+	// Only elements and text nodes can be in inline runs
+	if (node.nodeType === node.ELEMENT_NODE) {
+		const element = node as Element;
+		const display = resolvePropertyValue(element, "display", false);
+		if (display !== "inline" && display !== "inline-block") {
+			return null; // Not an inline element
+		}
+	} else if (node.nodeType !== node.TEXT_NODE) {
+		return null; // Not inline content
 	}
 
-	const parentDisplay = element.parentElement
-		? resolvePropertyValue(element.parentElement, "display", false)
-		: "block";
-
-	// In flex containers, each inline element is its own head
-	if (parentDisplay === "flex") {
-		return element;
+	// For inline elements, first traverse up to find the outermost inline ancestor
+	let startNode = node;
+	if (node.nodeType === node.ELEMENT_NODE) {
+		const element = node as Element;
+		
+		// Traverse up to find the outermost inline ancestor
+		let current = element;
+		while (current.parentElement) {
+			const parentDisplay = resolvePropertyValue(current.parentElement, "display", false);
+			
+			// If parent is flex, each child is its own item
+			if (parentDisplay === "flex") {
+				return current; // In flex, return this element as its own head
+			}
+			
+			// If parent is inline, continue up
+			if (parentDisplay === "inline" || parentDisplay === "inline-block") {
+				current = current.parentElement;
+				startNode = current;
+			} else {
+				// Parent is block-like, current is the outermost inline
+				startNode = current;
+				break;
+			}
+		}
 	}
 
-	// In block containers, traverse backwards to find the head
-	let current = element;
+	// For text nodes in flex containers, only consider other text nodes
+	if (node.nodeType === node.TEXT_NODE && node.parentElement) {
+		const parentDisplay = resolvePropertyValue(node.parentElement, "display", false);
+		if (parentDisplay === "flex") {
+			let current = node;
+			while (current.previousSibling) {
+				const prevSibling = current.previousSibling;
+				if (prevSibling.nodeType === prevSibling.TEXT_NODE) {
+					if (prevSibling.textContent) {
+						current = prevSibling;
+					} else {
+						// Skip empty text nodes
+					}
+				} else {
+					break; // Stop at non-text nodes in flex containers
+				}
+			}
+			return current;
+		}
+	}
+
+	// Now traverse backwards from the outermost inline to find the head
+	let current = startNode;
 	while (current.previousSibling) {
 		const prevSibling = current.previousSibling;
 
 		if (prevSibling.nodeType === prevSibling.ELEMENT_NODE) {
-			const prevDisplay = resolvePropertyValue(
-				prevSibling as Element,
-				"display",
-				false,
-			);
+			const prevElement = prevSibling as Element;
+			const prevDisplay = resolvePropertyValue(prevElement, "display", false);
 			if (prevDisplay === "inline" || prevDisplay === "inline-block") {
-				current = prevSibling as Element; // Continue backwards
+				current = prevElement; // Continue backwards
 			} else {
 				break; // Block element - current is the head
 			}
 		} else if (prevSibling.nodeType === prevSibling.TEXT_NODE) {
-			if (prevSibling.textContent?.trim()) {
-				// Text content - need to keep looking for the element head
-				current = current; // Stay at current element
-			}
-			// Skip whitespace and continue backwards
+			// Text nodes are part of inline runs - continue backwards
+			current = prevSibling;
+		} else {
+			break; // Other node type breaks inline run
 		}
-
-		// Move to previous sibling (handled by the while condition)
 	}
 
 	return current;
