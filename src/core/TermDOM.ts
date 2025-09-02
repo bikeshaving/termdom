@@ -286,7 +286,7 @@ export class TermDOM {
 		this.renderer.beginFrame();
 
 		// Render DOM tree to cells with coordinate transformation
-		this.renderElement(this.document.documentElement, 0, -this.renderStartRow);
+		this.renderElement(this.document.documentElement);
 
 		// Generate ANSI output
 		const ansiOutput = this.renderer.render();
@@ -354,8 +354,7 @@ export class TermDOM {
 	private renderElement(element: Element): void {
 		// Get computed layout rect from layout engine
 		const rect = this.layoutEngine.getRect(element);
-		if (!rect) return;
-
+		
 		// Get background color and text styling
 		const color = resolvePropertyValue(element, "color");
 		const backgroundColor = resolvePropertyValue(element, "background-color");
@@ -371,7 +370,7 @@ export class TermDOM {
 			fg:
 				color && color !== "initial" ? this.cssColorToNumber(color) : undefined,
 			bg:
-				backgroundColor && backgroundColor !== "initial"
+				backgroundColor && backgroundColor !== "initial" && backgroundColor !== "transparent"
 					? this.cssColorToNumber(backgroundColor)
 					: undefined,
 			bold,
@@ -381,7 +380,7 @@ export class TermDOM {
 		};
 
 		// First, fill the entire element's rect with background color (if any)
-		if (style.bg) {
+		if (rect && style.bg != null) {
 			this.renderer.fillRect(
 				rect.left,
 				rect.top,
@@ -400,26 +399,26 @@ export class TermDOM {
 					this.renderElement(childElement);
 				}
 			} else if (childNode.nodeType === childNode.TEXT_NODE) {
-				// Render text node using its associated layouts
+				// Render text node using rects from inline layout
 				const textNode = childNode as Text;
-				// TODO:
-				//const textLayouts = this.layoutEngine.getTextNodeLayouts(textNode);
-
-				//for (const layout of textLayouts) {
-				//	debugger;
-				//	//console.log({
-				//	//	x: layout.rect.x,
-				//	//	y: layout.rect.y,
-				//	//	width: layout.rect.width,
-				//	//	height: layout.rect.height,
-				//	//});
-				//	this.renderer.setText(
-				//		x + layout.rect.x,
-				//		y + layout.rect.y,
-				//		layout.text,
-				//		style,
-				//	);
-				//}
+				const textContent = textNode.textContent;
+				if (!textContent) continue;
+				
+				// Get rects for this text node
+				const rects = this.layoutEngine.getRects(textNode) as Array<DOMRect & {text?: string}>;
+				if (rects.length > 0) {
+					// Render each text segment
+					for (const textRect of rects) {
+						if (textRect.text) {
+							this.renderer.setText(
+								Math.round(textRect.x),
+								Math.round(textRect.y),
+								textRect.text,
+								style,
+							);
+						}
+					}
+				}
 			}
 		}
 	}

@@ -1,624 +1,462 @@
-/**
- * TextBreaker - Direct text line breaking implementation
- *
- * Simple greedy line breaking algorithm that:
- * 1. Fills each line as much as possible
- * 2. Breaks at word boundaries when possible
- * 3. Force breaks mid-word if necessary
- * 4. Handles inline elements as fixed-width content
- */
-// TODO: use UAX #14 algorithm
-//import linebreak from "linebreak";
+import LineBreaker from "linebreak";
 
+// TODO: Can this type be a mapped type over the lib.dom.d.ts types?
 export interface BreakOptions {
-	/** Maximum width for each line */
 	maxWidth: number;
-
-	/** Whether to break words if they exceed line width */
-	breakWords?: boolean;
-
-	/** Preserve whitespace and don't collapse spaces */
-	preserveWhitespace?: boolean;
-
-	/** Handle inline elements (for mixed text + element content) */
-	inlineElements?: InlineElement[];
+	whiteSpace?: "normal" | "nowrap" | "pre" | "pre-wrap" | "pre-line";
+	wordBreak?: "normal" | "break-all" | "break-word" | "keep-all";
+	overflowWrap?: "normal" | "anywhere" | "break-word";
 }
 
-export interface InlineElement {
-	/** Position in the text where this element appears */
-	position: number;
+export interface InlineBlockLeaf {
+	type: "inline-block";
+	node: Element;
+	width: number; // for inline-block
+	height: number; // for inline-block (can be > 1)
+}
 
-	/** Width the element occupies */
-	width: number;
+export interface TextLeaf {
+	type: "text";
+	node: Text;
+	content: string;
+}
 
-	/** Height the element occupies */
-	height: number;
+export interface BRLeaf {
+	type: "br";
+	node: HTMLBRElement;
+}
 
-	/** Whether the element can be broken across lines */
-	breakable: boolean;
+export type Leaf = InlineBlockLeaf | TextLeaf | BRLeaf;
 
-	/** The actual element reference for positioning */
-	element: any;
+export interface LineResult {
+	segments: Array<{
+		leaf: Leaf;
+		start: number; // char position within text node
+		end: number; // char position within text node
+		x: number; // x position on line
+		width: number; // width of this segment
+	}>;
+	y: number;
+	width: number; // total line width
+	height: number; // max height of nodes on this line
 }
 
 export interface BreakResult {
-	/** Array of line content */
-	lines: LineBreak[];
-
-	/** Total height required for all lines */
-	totalHeight: number;
-
-	/** Maximum width used by any line */
+	lines: Array<LineResult>;
 	maxLineWidth: number;
+	totalHeight: number;
 }
 
-export interface LineBreak {
-	/** Text content of the line */
-	text: string;
-
-	/** Start position in original text */
-	startIndex: number;
-
-	/** End position in original text */
-	endIndex: number;
-
-	/** Visual width of the line */
-	width: number;
-
-	/** Inline elements that appear on this line */
-	inlineElements: InlineElement[];
-}
-
-/**
- * TextBreaker - Direct implementation of greedy text breaking
- */
-export class TextBreaker {
-	breakText(text: string, options: BreakOptions): BreakResult {
-		const {
-			maxWidth,
-			breakWords = true,
-			preserveWhitespace = false,
-			inlineElements = [],
-		} = options;
-
-		if (!text && inlineElements.length === 0) {
-			return {
-				lines: [],
-				totalHeight: 0,
-				maxLineWidth: 0,
-			};
-		}
-
-		// Handle inline elements if present - use complex mixed content approach
-		if (inlineElements.length > 0) {
-			return this.breakTextWithInlineElements(text, options);
-		}
-
-		// For simple text without inline elements, use word-based approach
-		const lines: LineBreak[] = [];
-		const words = this.splitIntoWords(text);
-
-		let currentLine = "";
-		let currentLineWidth = 0;
-		let currentLineStartIndex = 0;
-
-		for (let i = 0; i < words.length; i++) {
-			const word = words[i];
-			const wordWidth = Bun.stringWidth(word.text);
-
-			// Check if adding this word would exceed the line width
-			if (currentLineWidth > 0 && currentLineWidth + wordWidth > maxWidth) {
-				// Finish current line
-				lines.push({
-					text: currentLine,
-					startIndex: currentLineStartIndex,
-					endIndex: word.startIndex,
-					width: currentLineWidth,
-					inlineElements: [],
-				});
-
-				// Start new line
-				currentLine = "";
-				currentLineWidth = 0;
-				currentLineStartIndex = word.startIndex;
-			}
-
-			// Check if word is too long for any line
-			if (wordWidth > maxWidth && breakWords && !/\s/.test(word.text)) {
-				// Break the long word into pieces
-				const pieces = this.breakLongWord(word.text, maxWidth);
-				for (let j = 0; j < pieces.length; j++) {
-					const piece = pieces[j];
-					const pieceWidth = Bun.stringWidth(piece);
-
-					if (currentLineWidth + pieceWidth > maxWidth && currentLine) {
-						// Finish current line first
-						lines.push({
-							text: currentLine,
-							startIndex: currentLineStartIndex,
-							endIndex: word.startIndex,
-							width: currentLineWidth,
-							inlineElements: [],
-						});
-
-						currentLine = piece;
-						currentLineWidth = pieceWidth;
-						currentLineStartIndex = word.startIndex;
-					} else {
-						currentLine += piece;
-						currentLineWidth += pieceWidth;
-					}
-				}
-			} else {
-				// Add word to current line (even if it exceeds width when breakWords is false)
-				currentLine += word.text;
-				currentLineWidth += wordWidth;
-			}
-		}
-
-		// Add final line if there's remaining content
-		if (currentLine) {
-			lines.push({
-				text: currentLine,
-				startIndex: currentLineStartIndex,
-				endIndex: text.length,
-				width: currentLineWidth,
-				inlineElements: [],
-			});
-		}
-
-		return {
-			lines,
-			totalHeight: lines.length,
-			maxLineWidth: Math.max(...lines.map((line) => line.width), 0),
-		};
-	}
-
-	/**
-	 * Check if character is breakable whitespace
-	 */
-	private isBreakableSpace(char: string): boolean {
-		return /\s/.test(char);
-	}
-
-	/**
-	 * Split text into words, preserving spaces
-	 */
-	private splitIntoWords(
-		text: string,
-	): Array<{text: string; startIndex: number}> {
-		const words: Array<{text: string; startIndex: number}> = [];
-		let currentWord = "";
-		let wordStartIndex = 0;
-		let inWord = false;
-
-		for (let i = 0; i < text.length; i++) {
-			const char = text[i];
-			const isSpace = /\s/.test(char);
-
-			if (!inWord && !isSpace) {
-				// Starting a new word
-				inWord = true;
-				wordStartIndex = i;
-				currentWord = char;
-			} else if (inWord && isSpace) {
-				// Ending a word
-				words.push({text: currentWord, startIndex: wordStartIndex});
-				inWord = false;
-				currentWord = "";
-
-				// Add the space as a separate "word"
-				words.push({text: char, startIndex: i});
-			} else if (inWord) {
-				// Continuing a word
-				currentWord += char;
-			} else {
-				// Multiple spaces
-				words.push({text: char, startIndex: i});
-			}
-		}
-
-		// Add final word if exists
-		if (currentWord) {
-			words.push({text: currentWord, startIndex: wordStartIndex});
-		}
-
-		return words;
-	}
-
-	/**
-	 * Break a long word into pieces that fit the max width
-	 */
-	private breakLongWord(word: string, maxWidth: number): string[] {
-		const pieces: string[] = [];
-		let remaining = word;
-
-		while (remaining) {
-			// Find the longest prefix that fits
-			let cutPoint = remaining.length;
-			while (
-				cutPoint > 0 &&
-				Bun.stringWidth(remaining.slice(0, cutPoint)) > maxWidth
-			) {
-				cutPoint--;
-			}
-
-			if (cutPoint === 0) {
-				// Even a single character doesn't fit, force it
-				cutPoint = 1;
-			}
-
-			pieces.push(remaining.slice(0, cutPoint));
-			remaining = remaining.slice(cutPoint);
-		}
-
-		return pieces;
-	}
-
-	/**
-	 * Handle text breaking with inline elements (complex case)
-	 */
-	private breakTextWithInlineElements(
-		text: string,
-		options: BreakOptions,
-	): BreakResult {
-		const {
-			maxWidth,
-			breakWords = true,
-			preserveWhitespace = false,
-			inlineElements = [],
-		} = options;
-
-		// Create a mixed content array with text and inline elements
-		const content = this.createMixedContent(text, inlineElements);
-
-		const lines: LineBreak[] = [];
-		let currentLineContent: MixedContentItem[] = [];
-		let currentLineWidth = 0;
-		let lineStartIndex = 0;
-
-		for (let i = 0; i < content.length; i++) {
-			const item = content[i];
-			const itemWidth = this.getItemWidth(item);
-
-			// Check if adding this item would exceed line width
-			if (
-				currentLineWidth + itemWidth > maxWidth &&
-				currentLineContent.length > 0
-			) {
-				// Try to break at a better position
-				const breakPoint = this.findBestBreakPoint(
-					currentLineContent,
-					maxWidth,
-					breakWords,
-				);
-
-				if (breakPoint !== null) {
-					// Break at the found position
-					const lineContent = currentLineContent.slice(0, breakPoint.itemIndex);
-					const lineText = this.extractTextFromContent(
-						lineContent,
-						breakPoint.charIndex,
-					);
-
-					lines.push(
-						this.createLineBreak(lineText, lineStartIndex, lineContent),
-					);
-
-					// Continue with remaining content + current item
-					const remainingContent = this.getRemainingContent(
-						currentLineContent,
-						breakPoint,
-					);
-					currentLineContent = [...remainingContent, item]; // Add the current item that caused the overflow
-
-					currentLineWidth = this.calculateContentWidth(currentLineContent);
-					lineStartIndex = breakPoint.textIndex;
-
-					// Continue to next iteration - we've already processed the current item
-					continue;
-				} else {
-					// No good break point found, force break
-					lines.push(
-						this.createLineBreak(
-							this.extractTextFromContent(currentLineContent),
-							lineStartIndex,
-							currentLineContent,
-						),
-					);
-
-					currentLineContent = [];
-					currentLineWidth = 0;
-					lineStartIndex =
-						item.type === "text" ? item.startIndex : item.startIndex;
-				}
-			}
-
-			// Add current item to line
-			currentLineContent.push(item);
-			currentLineWidth += itemWidth;
-		}
-
-		// Add final line if there's remaining content
-		if (currentLineContent.length > 0) {
-			lines.push(
-				this.createLineBreak(
-					this.extractTextFromContent(currentLineContent),
-					lineStartIndex,
-					currentLineContent,
-				),
-			);
-		}
-
-		return {
-			lines,
-			totalHeight: lines.length,
-			maxLineWidth: Math.max(...lines.map((line) => line.width), 0),
-		};
-	}
-
-	/**
-	 * Create mixed content array from text and inline elements
-	 */
-	private createMixedContent(
-		text: string,
-		inlineElements: InlineElement[],
-	): MixedContentItem[] {
-		const content: MixedContentItem[] = [];
-		let textIndex = 0;
-
-		// Sort inline elements by position
-		const sortedElements = [...inlineElements].sort(
-			(a, b) => a.position - b.position,
-		);
-
-		for (const element of sortedElements) {
-			// Add text before this element
-			if (textIndex < element.position) {
-				const textChunk = text.slice(textIndex, element.position);
-
-				// Split text into characters for fine-grained control
-				for (let i = 0; i < textChunk.length; i++) {
-					content.push({
-						type: "text",
-						char: textChunk[i],
-						startIndex: textIndex + i,
-						endIndex: textIndex + i + 1,
-					});
-				}
-			}
-
-			// Add the inline element
-			content.push({
-				type: "element",
-				element,
-				startIndex: element.position,
-				endIndex: element.position,
-			});
-
-			textIndex = element.position;
-		}
-
-		// Add remaining text
-		if (textIndex < text.length) {
-			const remainingText = text.slice(textIndex);
-			for (let i = 0; i < remainingText.length; i++) {
-				content.push({
-					type: "text",
-					char: remainingText[i],
-					startIndex: textIndex + i,
-					endIndex: textIndex + i + 1,
-				});
-			}
-		}
-
-		return content;
-	}
-
-	/**
-	 * Get width of a content item
-	 */
-	private getItemWidth(item: MixedContentItem): number {
-		if (item.type === "text" && item.char) {
-			return Bun.stringWidth(item.char);
-		} else if (item.type === "element" && item.element) {
-			return item.element.width;
-		}
-		return 0;
-	}
-
-	/**
-	 * Find the best break point in current line content
-	 */
-	private findBestBreakPoint(
-		content: MixedContentItem[],
-		maxWidth: number,
-		breakWords: boolean,
-	): BreakPoint | null {
-		let bestBreakPoint: BreakPoint | null = null;
-		let currentWidth = 0;
-
-		for (let i = 0; i < content.length; i++) {
-			const item = content[i];
-			const itemWidth = this.getItemWidth(item);
-
-			if (currentWidth + itemWidth > maxWidth) {
-				break;
-			}
-
-			// Check if this is a good break point
-			if (this.isGoodBreakPoint(content, i)) {
-				bestBreakPoint = {
-					itemIndex: i + 1,
-					charIndex: item.type === "text" ? item.endIndex : item.startIndex,
-					textIndex: item.endIndex,
-				};
-			}
-
-			currentWidth += itemWidth;
-		}
-
-		// If no good break point found, try different strategies
-		if (!bestBreakPoint && content.length > 0) {
-			// First, try to find the last space that fits
-			let lastSpaceIndex = -1;
-			let fitWidth = 0;
-
-			for (let i = 0; i < content.length; i++) {
-				const item = content[i];
-				const itemWidth = this.getItemWidth(item);
-
-				if (fitWidth + itemWidth > maxWidth) {
-					// We've exceeded the width
-					if (lastSpaceIndex > 0) {
-						// Use the last space we found
-						const spaceItem = content[lastSpaceIndex];
-						bestBreakPoint = {
-							itemIndex: lastSpaceIndex + 1,
-							charIndex:
-								spaceItem.type === "text"
-									? spaceItem.endIndex
-									: spaceItem.startIndex,
-							textIndex: spaceItem.endIndex,
-						};
-					} else if (breakWords && i > 0) {
-						// No space found, break at the last character that fits
-						const item = content[i - 1];
-						bestBreakPoint = {
-							itemIndex: i,
-							charIndex: item.type === "text" ? item.endIndex : item.startIndex,
-							textIndex: item.endIndex,
-						};
-					}
-					break;
-				}
-
-				// Track last space position
-				if (
-					item.type === "text" &&
-					item.char &&
-					this.isBreakableSpace(item.char)
-				) {
-					lastSpaceIndex = i;
-				}
-
-				fitWidth += itemWidth;
-			}
-		}
-
-		return bestBreakPoint;
-	}
-
-	/**
-	 * Check if a position is a good break point
-	 */
-	private isGoodBreakPoint(
-		content: MixedContentItem[],
-		index: number,
-	): boolean {
-		if (index >= content.length - 1) return true;
-
-		const currentItem = content[index];
-		const nextItem = content[index + 1];
-
-		// Can always break after inline elements
-		if (currentItem.type === "element") {
-			return true;
-		}
-
-		// For text, check if it's a word boundary (space followed by non-space)
-		if (currentItem.type === "text" && currentItem.char) {
-			// Break after spaces
-			if (this.isBreakableSpace(currentItem.char)) {
-				return true;
-			}
-
-			// Also check if next item is an element (break before elements)
-			if (nextItem?.type === "element") {
-				return true;
-			}
-		}
-
-		return false;
-	}
-
-	/**
-	 * Extract text content from mixed content array
-	 */
-	private extractTextFromContent(
-		content: MixedContentItem[],
-		maxCharIndex?: number,
-	): string {
-		let text = "";
-
-		for (const item of content) {
-			if (item.type === "text") {
-				if (maxCharIndex === undefined || item.startIndex < maxCharIndex) {
-					text += item.char;
-				}
-			}
-		}
-
-		return text;
-	}
-
-	/**
-	 * Get remaining content after a break point
-	 */
-	private getRemainingContent(
-		content: MixedContentItem[],
-		breakPoint: BreakPoint,
-	): MixedContentItem[] {
-		return content.slice(breakPoint.itemIndex);
-	}
-
-	/**
-	 * Calculate total width of content array
-	 */
-	private calculateContentWidth(content: MixedContentItem[]): number {
-		return content.reduce((width, item) => width + this.getItemWidth(item), 0);
-	}
-
-	/**
-	 * Create a LineBreak object from content
-	 */
-	private createLineBreak(
-		text: string,
-		startIndex: number,
-		content: MixedContentItem[],
-	): LineBreak {
-		const inlineElements = content
-			.filter((item) => item.type === "element")
-			.map((item) => (item as MixedElementItem).element);
-
-		return {
-			text,
-			startIndex,
-			endIndex: startIndex + text.length,
-			width:
-				Bun.stringWidth(text) +
-				inlineElements.reduce((w, el) => w + el.width, 0),
-			inlineElements,
-		};
-	}
-}
-
-// Helper interfaces for mixed content processing
-interface MixedContentItem {
-	type: "text" | "element";
-	startIndex: number;
-	endIndex: number;
-	char?: string; // For text items
-	element?: InlineElement; // For element items
-}
-
-interface MixedElementItem extends MixedContentItem {
-	type: "element";
-	element: InlineElement;
+interface ProcessedContent {
+	// TODO: should this be segments too?
+	items: Array<{
+		leafNode: Leaf;
+		start: number; // position in processed text
+		end: number; // position in processed text
+		processedContent?: string; // the processed text for this node
+	}>;
+	text: string; // flattened text for linebreak library
 }
 
 interface BreakPoint {
-	itemIndex: number;
-	charIndex: number;
-	textIndex: number;
+	position: number;
+	required: boolean;
+}
+
+export function breakNodes(leafNodes: Leaf[], options: BreakOptions): BreakResult {
+	const { maxWidth, whiteSpace = "normal" } = options;
+
+	// Handle nowrap case
+	if (whiteSpace === "nowrap") {
+		return noWrapLayout(leafNodes);
+	}
+
+	// Build flattened content with whitespace handling
+	const processedContent = processWhitespace(leafNodes, whiteSpace);
+
+	// Use linebreak library for UAX #14 support
+	const breaks = findBreakPoints(processedContent, options);
+
+	// Build lines from break points
+	const lines = buildLines(processedContent, breaks, maxWidth);
+
+	return {
+		lines,
+		totalHeight: lines.reduce((sum, line) => sum + line.height, 0),
+		maxLineWidth: Math.max(...lines.map(l => l.width), 0),
+	};
+}
+
+function processWhitespace(
+	leafNodes: Leaf[],
+	whiteSpace: string
+): ProcessedContent {
+		const items: ProcessedContent["items"] = [];
+		let text = "";
+		let lastWasSpace = false;
+
+		for (const leaf of leafNodes) {
+			const start = text.length;
+
+			if (leaf.type === "text" && leaf.content) {
+				let processed = "";
+				const mapping: Array<number> = []; // maps processed position to original position
+
+				// Apply whitespace rules
+				if (whiteSpace === "normal" || whiteSpace === "nowrap") {
+					// Process character by character for proper space collapsing
+					for (let i = 0; i < leaf.content.length; i++) {
+						const char = leaf.content[i];
+						if (/\s/.test(char)) {
+							// For normal/nowrap, convert ALL whitespace (including newlines) to spaces
+							// BR elements are handled separately and will add their own newlines
+							const atStart = text.length === 0 && processed.length === 0;
+							const afterNewline = text.length > 0 && text[text.length - 1] === "\n";
+							if (!atStart && !lastWasSpace && !afterNewline) {
+								processed += " ";
+								mapping.push(i);
+								lastWasSpace = true;
+							}
+						} else {
+							processed += char;
+							mapping.push(i);
+							lastWasSpace = false;
+						}
+					}
+				} else if (whiteSpace === "pre-line") {
+					// Collapse spaces but preserve newlines
+					let temp = "";
+					for (let i = 0; i < leaf.content.length; i++) {
+						const char = leaf.content[i];
+						if (char === '\n') {
+							temp += char;
+							mapping.push(i);
+							lastWasSpace = false;
+						} else if (/\s/.test(char)) {
+							// For pre-line: collapse consecutive spaces, but keep one
+							// Don't add space at start of line (after newline)
+							const atLineStart = temp.length === 0 || temp[temp.length - 1] === '\n';
+							if (!lastWasSpace && !atLineStart) {
+								temp += " ";
+								mapping.push(i);
+								lastWasSpace = true;
+							}
+						} else {
+							temp += char;
+							mapping.push(i);
+							lastWasSpace = false;
+						}
+					}
+					processed = temp;
+				} else {
+					// pre and pre-wrap preserve everything
+					processed = leaf.content;
+					for (let i = 0; i < leaf.content.length; i++) {
+						mapping.push(i);
+					}
+					lastWasSpace = false;
+				}
+
+				text += processed;
+
+				// Store the item with processed content
+				items.push({
+					leafNode: leaf,
+					start,
+					end: text.length,
+					processedContent: processed,
+				});
+			} else if (leaf.type === "br") {
+				text += "\n";
+				lastWasSpace = false; // Reset space tracking after newline
+				items.push({
+					leafNode: leaf,
+					start,
+					end: text.length,
+				});
+			} else if (leaf.type === "inline-block") {
+				// Use object replacement character
+				text += "\uFFFC";
+				lastWasSpace = false;
+				items.push({
+					leafNode: leaf,
+					start,
+					end: text.length,
+				});
+			}
+		}
+
+		// Trim trailing space for normal/nowrap/pre-line
+		if ((whiteSpace === "normal" || whiteSpace === "nowrap" || whiteSpace === "pre-line") && text.endsWith(" ")) {
+			text = text.slice(0, -1);
+			// Adjust last item's end and processed content
+			for (let i = items.length - 1; i >= 0; i--) {
+				if (items[i].end > text.length) {
+					items[i].end = text.length;
+					// Also trim the processed content if it's a text node
+					const item = items[i];
+					if (item.leafNode.type === "text" && item.processedContent) {
+						const trimAmount = item.processedContent.length - (item.end - item.start);
+						if (trimAmount > 0) {
+							item.processedContent = item.processedContent.slice(0, -trimAmount);
+						}
+					}
+				}
+			}
+		}
+
+		return { items, text };
+	}
+
+function findBreakPoints(
+	content: ProcessedContent,
+	options: BreakOptions
+): BreakPoint[] {
+		// Use linebreak library for proper UAX #14 breaking
+		const breaker = new LineBreaker(content.text);
+		const breaks: Array<BreakPoint> = [];
+
+		let lastPos = 0;
+		let bk;
+		while ((bk = breaker.nextBreak())) {
+			// Handle forced breaks (newlines, <br>)
+			let required = bk.required || false;
+
+			// Check if this is a forced break from white-space CSS
+			const { whiteSpace = "normal" } = options;
+			if (whiteSpace === "pre" || whiteSpace === "pre-wrap" || whiteSpace === "pre-line") {
+				// Check if there's a newline in this segment
+				const segment = content.text.slice(lastPos, bk.position);
+				if (segment.includes("\n")) {
+					required = true;
+				}
+			}
+
+			breaks.push({
+				position: bk.position,
+				required
+			});
+			lastPos = bk.position;
+		}
+
+		return breaks;
+	}
+
+function buildLines(
+	content: ProcessedContent,
+	breaks: Array<BreakPoint>,
+	maxWidth: number
+): Array<LineResult> {
+		const lines: Array<LineResult> = [];
+		let currentY = 0;
+		let lineStart = 0;
+
+		// Greedy line breaking algorithm
+		while (lineStart < content.text.length) {
+			let bestBreak = lineStart;
+			let bestBreakWidth = 0;
+
+			// Find the best break position that fits
+			for (const breakPoint of breaks) {
+				if (breakPoint.position <= lineStart) continue;
+
+				const width = measureText(
+					content.text,
+					content.items,
+					lineStart,
+					breakPoint.position
+				);
+
+				if (width <= maxWidth) {
+					bestBreak = breakPoint.position;
+					bestBreakWidth = width;
+				} else {
+					// This break is too far, stop looking
+					break;
+				}
+
+				// If this is a required break, use it
+				if (breakPoint.required) {
+					bestBreak = breakPoint.position;
+					bestBreakWidth = width;
+					break;
+				}
+			}
+
+			// If no break found, force break at maxWidth or next char
+			if (bestBreak === lineStart) {
+			// Find position that fits
+			let pos = lineStart + 1;
+			while (pos <= content.text.length) {
+				const width = measureText(
+					content.text,
+					content.items,
+					lineStart,
+					pos
+				);
+				if (width > maxWidth && pos > lineStart + 1) {
+					pos--;
+					break;
+				}
+				pos++;
+			}
+			bestBreak = Math.min(pos, content.text.length);
+			bestBreakWidth = measureText(
+				content.text,
+				content.items,
+				lineStart,
+				bestBreak
+			);
+			}
+
+			// Create line
+			const lineNodes = getNodesInRange(
+				content.items,
+				lineStart,
+				bestBreak,
+			);
+
+			if (lineNodes.length > 0) {
+				const lineHeight = Math.max(
+					...lineNodes.map(n => n.leaf.type === 'inline-block' ? n.leaf.height : 1),
+					1
+				);
+
+				lines.push({
+					segments: lineNodes,
+					y: currentY,
+					height: lineHeight,
+					width: bestBreakWidth
+				});
+
+				currentY += lineHeight;
+			}
+
+			lineStart = bestBreak;
+
+			// Skip whitespace at start of next line (for normal white-space mode)
+			// This is handled by processWhitespace but we might need to adjust lineStart
+		}
+
+		return lines;
+	}
+
+function measureText(
+	text: string,
+	items: ProcessedContent["items"],
+	start: number,
+	end: number
+): number {
+		let width = 0;
+
+		// Find items in this range
+		for (const item of items) {
+			if (item.start >= end || item.end <= start) continue;
+
+			const itemStart = Math.max(item.start, start);
+			const itemEnd = Math.min(item.end, end);
+
+			if (item.leafNode.type === "text") {
+				// Measure text portion
+				const portion = text.slice(itemStart, itemEnd);
+				width += Bun.stringWidth(portion);
+			} else if (item.leafNode.type === "inline-block") {
+				// Use pre-calculated width
+				width += item.leafNode.width;
+			}
+		}
+
+		return width;
+	}
+
+function getNodesInRange(
+	items: ProcessedContent["items"],
+	start: number,
+	end: number,
+): LineResult["segments"] {
+		const nodes: LineResult["segments"] = [];
+		let x = 0;
+
+		for (const item of items) {
+			if (item.start >= end || item.end <= start) continue;
+
+			const itemStart = Math.max(item.start, start);
+			const itemEnd = Math.min(item.end, end);
+
+			if (itemStart < itemEnd) {
+				let width = 0;
+				if (item.leafNode.type === "text" && item.processedContent) {
+					// Calculate positions within the processed content
+					const relativeStart = itemStart - item.start;
+					const relativeEnd = itemEnd - item.start;
+					const portion = item.processedContent.slice(relativeStart, relativeEnd);
+					width = Bun.stringWidth(portion);
+
+					nodes.push({
+						leaf: item.leafNode,
+						start: relativeStart,
+						end: relativeEnd,
+						x,
+						width
+					});
+				} else if (item.leafNode.type === "inline-block") {
+					width = item.leafNode.width;
+					nodes.push({
+						leaf: item.leafNode,
+						start: 0,
+						end: 0,
+						x,
+						width
+					});
+				} else if (item.leafNode.type === "br") {
+					// BR elements don't have visual width
+					nodes.push({
+						leaf: item.leafNode,
+						start: 0,
+						end: 0,
+						x,
+						width: 0
+					});
+				}
+
+				x += width;
+			}
+		}
+
+		return nodes;
+	}
+
+function noWrapLayout(segments: Array<Leaf>): BreakResult {
+	// Single line with all content
+	const content = processWhitespace(segments, "nowrap");
+	const lineNodes = getNodesInRange(
+		content.items,
+		0,
+		content.text.length,
+	);
+
+	const width = measureText(
+		content.text,
+		content.items,
+		0,
+		content.text.length
+	);
+
+	const height = Math.max(
+		...segments.map(n => n.type === "inline-block" ? n.height : 1),
+		1
+	);
+
+	const lines: Array<LineResult> = [{
+		segments: lineNodes,
+		y: 0,
+		height,
+		width
+	}];
+
+	return {
+		lines,
+		totalHeight: height,
+		maxLineWidth: width
+	};
 }

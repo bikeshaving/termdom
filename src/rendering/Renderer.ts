@@ -72,7 +72,7 @@ export class Renderer {
 		let finalStyle = style;
 		if (style && style.bg == null) {
 			const existingCell = this.currentBuffer[row][col];
-			if (existingCell && existingCell.bg !== 0) {
+			if (existingCell) {
 				finalStyle = {...style, bg: existingCell.bg};
 			}
 		}

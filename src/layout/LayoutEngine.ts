@@ -2,7 +2,7 @@ import type {DOMWindow} from "jsdom";
 import Yoga from "yoga-layout";
 import type * as YogaTypes from "yoga-layout";
 import {resolvePropertyValue} from "../css.js";
-import {TextBreaker, type LineBreak} from "../text/TextBreaker.js";
+import {breakNodes, type Leaf, type BreakResult} from "../text/TextBreaker.js";
 
 export interface TextLayout {
 	rect: DOMRect;
@@ -23,13 +23,13 @@ export class LayoutEngine {
 	declare terminalWidth: number;
 	declare terminalHeight: number;
 	declare nodeMap: WeakMap<Node, YogaTypes.Node>;
-	declare textBreaker: TextBreaker;
+	declare nodeRects: WeakMap<Node, Array<DOMRect & {text?: string}>>;
 
 	constructor(window: DOMWindow) {
 		this.DOMRect = window.DOMRect;
 		this.rootElement = window.document.documentElement;
 		this.nodeMap = new WeakMap<Node, YogaTypes.Node>();
-		this.textBreaker = new TextBreaker();
+		this.nodeRects = new WeakMap<Node, Array<DOMRect & {text?: string}>>();
 		this.observer = new window.MutationObserver((mutations) => {
 			this.handleMutationRecords(mutations);
 		});
@@ -40,7 +40,7 @@ export class LayoutEngine {
 			attributes: true,
 			characterData: true,
 		});
-		addNode(this.rootElement, this.nodeMap);
+		this.addNode(this.rootElement, null);
 	}
 
 	resize(width: number, height: number): void {
@@ -53,6 +53,8 @@ export class LayoutEngine {
 			rootYogaNode.setWidth(width);
 			rootYogaNode.setHeight(height);
 			rootYogaNode.calculateLayout(width, height);
+			// Process inline runs after layout calculation
+			this.processInlineRuns(this.rootElement);
 		}
 	}
 
@@ -85,7 +87,7 @@ export class LayoutEngine {
 						`No parent Yoga node found for added node ${node.nodeName} under ${(record.target as Element).tagName}`,
 					);
 				}
-				addNode(node, this.nodeMap, parentYogaNode);
+				this.addNode(node, parentYogaNode);
 				needsLayout = true;
 			}
 
@@ -111,6 +113,8 @@ export class LayoutEngine {
 			const rootYogaNode = this.nodeMap.get(this.rootElement);
 			if (rootYogaNode) {
 				rootYogaNode.calculateLayout(this.terminalWidth, this.terminalHeight);
+				// Process inline runs after layout calculation
+				this.processInlineRuns(this.rootElement);
 			}
 		}
 	}
@@ -129,11 +133,396 @@ export class LayoutEngine {
 		);
 	}
 
-	getRects(element: Element): DOMRect[] {
-		throw new Error("TODO");
+	/**
+	 * Process inline runs after Yoga layout calculation
+	 */
+	private processInlineRuns(element: Element): void {
+		// Check if this is an inline run head
+		const display = resolvePropertyValue(element, "display");
+		if ((display === "inline" || display === "inline-block") && isInlineRunHead(element)) {
+			const yogaNode = this.nodeMap.get(element);
+			if (yogaNode) {
+				const x = yogaNode.getComputedLeft();
+				const y = yogaNode.getComputedTop();
+				const width = yogaNode.getComputedWidth();
+				this.layoutInlineRun(element, x, y, width);
+			}
+		}
+
+		// Process children
+		for (let i = 0; i < element.childNodes.length; i++) {
+			const child = element.childNodes[i];
+			if (child.nodeType === child.ELEMENT_NODE) {
+				this.processInlineRuns(child as Element);
+			}
+		}
 	}
 
+	getRects(node: Node): DOMRect[] {
+		// Return cached rects if available
+		return this.nodeRects.get(node) || [];
+	}
+
+	// TODO:
 	dispose(): void {}
+
+	/**
+	 * Collect all leaf nodes (text and inline-block) from an inline formatting context
+	 */
+	private collectLeafNodes(element: Element): Leaf[] {
+		const leafNodes: Leaf[] = [];
+
+		// If this is an inline run head, collect from all elements in the run
+		if (isInlineRunHead(element)) {
+			// Start from the head and collect all inline siblings
+			let current: Node | null = element;
+			while (current) {
+				if (current.nodeType === current.ELEMENT_NODE) {
+					const el = current as Element;
+					const display = resolvePropertyValue(el, "display");
+					if (display !== "inline" && display !== "inline-block") {
+						break; // Hit a block element, stop
+					}
+				}
+
+				// Traverse this node
+				this.traverseNode(current, leafNodes);
+
+				// Move to next sibling
+				current = current.nextSibling;
+			}
+		} else {
+			// Not an inline run head, just traverse this element
+			this.traverseNode(element, leafNodes);
+		}
+
+		return leafNodes;
+	}
+
+	private traverseNode(node: Node, leafNodes: Leaf[]): void {
+		const traverse = (node: Node) => {
+			if (node.nodeType === node.TEXT_NODE) {
+				const text = node as Text;
+				if (text.textContent && text.textContent.trim()) {
+					leafNodes.push({
+						type: "text",
+						node: text,
+						content: text.textContent
+					});
+				}
+			} else if (node.nodeType === node.ELEMENT_NODE) {
+				const el = node as Element;
+				const display = resolvePropertyValue(el, "display");
+
+				if (display === "inline-block") {
+					// Measure inline-block element
+					const size = this.measureInlineBlock(el);
+					leafNodes.push({
+						type: "inline-block",
+						node: el,
+						width: size.width,
+						height: size.height
+					});
+				} else if (display === "inline") {
+					// Traverse inline elements to find their text/inline-block children
+					for (let i = 0; i < el.childNodes.length; i++) {
+						traverse(el.childNodes[i]);
+					}
+				} else if (el.tagName === "BR") {
+					leafNodes.push({
+						type: "br",
+						node: el as HTMLBRElement
+					});
+				}
+			}
+		};
+
+		// Start traversal from the node
+		traverse(node);
+	}
+
+	/**
+	 * Measure an inline-block element to get its intrinsic size
+	 */
+	private measureInlineBlock(element: Element): { width: number; height: number } {
+		// TODO: We need to iterate through the children to find newlines, but
+		// we don't do natural line breaks
+		// TODO: We need to use width/height from CSS if set
+		// TODO: imgs?
+		const textContent = element.textContent || "";
+		return {
+			width: Bun.stringWidth(textContent),
+			height: 1
+		};
+	}
+
+	/**
+	 * Measure an inline run (inline formatting context) and set its dimensions
+	 */
+	private measureInlineRun(
+		element: Element,
+		width: number,
+		widthMode: YogaTypes.MeasureMode,
+		height: number,
+		heightMode: YogaTypes.MeasureMode
+	): { width: number; height: number } {
+		// Use width as maxWidth for text breaking
+		const maxWidth = widthMode === Yoga.MEASURE_MODE_UNDEFINED ? Number.MAX_SAFE_INTEGER : width;
+		// Collect all leaf nodes
+		const leafNodes = this.collectLeafNodes(element);
+
+		// Get CSS properties for text breaking
+		const whiteSpace = resolvePropertyValue(element, "white-space") as any;
+		const wordBreak = resolvePropertyValue(element, "word-break") as any;
+		const overflowWrap = resolvePropertyValue(element, "overflow-wrap") as any;
+
+		// Use TextBreaker to break the content into lines
+		const breakResult = breakNodes(leafNodes, {
+			maxWidth,
+			whiteSpace: whiteSpace || "normal",
+			wordBreak: wordBreak || "normal",
+			overflowWrap: overflowWrap || "normal"
+		});
+
+		const result = {
+			width: breakResult.maxLineWidth,
+			height: breakResult.totalHeight
+		};
+		return result;
+	}
+
+	/**
+	 * Layout an inline run and distribute rects to all nodes
+	 */
+	private layoutInlineRun(element: Element, x: number, y: number, maxWidth: number): void {
+		// Collect all leaf nodes
+		const leafNodes = this.collectLeafNodes(element);
+
+		// Get CSS properties
+		const whiteSpace = resolvePropertyValue(element, "white-space") as any;
+		const wordBreak = resolvePropertyValue(element, "word-break") as any;
+		const overflowWrap = resolvePropertyValue(element, "overflow-wrap") as any;
+
+		// Break content into lines
+		const breakResult = breakNodes(leafNodes, {
+			maxWidth,
+			whiteSpace: whiteSpace || "normal",
+			wordBreak: wordBreak || "normal",
+			overflowWrap: overflowWrap || "normal"
+		});
+
+		// Distribute rects to all nodes
+		this.distributeRects(breakResult, element, x, y);
+	}
+
+	/**
+	 * Distribute rects from line breaking results to DOM nodes
+	 */
+	private distributeRects(breakResult: BreakResult, rootElement: Element, startX: number, startY: number): void {
+		// Clear existing rects
+		const clearRects = (node: Node) => {
+			this.nodeRects.delete(node);
+			if (node.nodeType === node.ELEMENT_NODE) {
+				const el = node as Element;
+				for (let i = 0; i < el.childNodes.length; i++) {
+					clearRects(el.childNodes[i]);
+				}
+			}
+		};
+		clearRects(rootElement);
+
+		// Create rects for each line segment
+		for (const line of breakResult.lines) {
+			for (const segment of line.segments) {
+				const rect = new this.DOMRect(
+					startX + segment.x,
+					startY + line.y,
+					segment.width,
+					line.height
+				) as DOMRect & {text?: string};
+
+				// Add text content for text segments
+				if (segment.leaf.type === "text" && segment.leaf.content) {
+					rect.text = segment.leaf.content.slice(segment.start, segment.end);
+				}
+
+				// Add rect to the leaf node
+				this.addRectToNode(segment.leaf.node, rect);
+
+				// Propagate rect to all inline ancestors
+				let parent = segment.leaf.node.parentElement;
+				while (parent && parent !== rootElement.parentElement) {
+					const display = resolvePropertyValue(parent, "display");
+					if (display === "inline" || display === "inline-block") {
+						this.addRectToNode(parent, rect);
+					} else {
+						break; // Stop at block boundaries
+					}
+					parent = parent.parentElement;
+				}
+			}
+		}
+	}
+
+	/**
+	 * Add a rect to a node's rect collection
+	 */
+	private addRectToNode(node: Node, rect: DOMRect & {text?: string}): void {
+		const rects = this.nodeRects.get(node) || [];
+		rects.push(rect);
+		this.nodeRects.set(node, rects);
+	}
+
+	/**
+	 * Add a node to the layout tree
+	 */
+	private addNode(
+		node: Node,
+		parentYogaNode: YogaTypes.Node | null = null,
+	): void {
+		// Skip if this node already has a Yoga node
+		if (this.nodeMap.has(node)) {
+			return;
+		}
+
+		if (node.nodeType === node.ELEMENT_NODE) {
+			this.addElement(node as Element, parentYogaNode);
+		} else if (node.nodeType === node.TEXT_NODE) {
+			this.addTextNode(node as Text, parentYogaNode);
+		}
+	}
+
+	/**
+	 * Add an element to the layout tree
+	 */
+	private addElement(
+		element: Element,
+		parentYogaNode: YogaTypes.Node | null = null,
+		yogaIndex: number = this.getYogaIndex(element),
+	): void {
+		const display = resolvePropertyValue(element, "display", false);
+
+		// Check if this inline element is part of an inline run
+		if (display === "inline" || display === "inline-block") {
+			if (!isInlineRunHead(element)) {
+				return; // Not the head, don't create a Yoga node
+			}
+			// This is an inline run head - continue to create Yoga node and set measure function
+		}
+
+		let yogaNode = this.nodeMap.get(element);
+		if (!yogaNode) {
+			yogaNode = Yoga.Node.createWithConfig(yogaConfig);
+			this.nodeMap.set(element, yogaNode);
+		}
+
+		// Apply CSS properties including display
+		styleYogaNode(element, yogaNode);
+
+		// Skip processing children if display: none, but keep the node in tree
+		if (display === "none") {
+			yogaNode.setDisplay(Yoga.DISPLAY_NONE);
+			// Early return - don't process children
+			if (yogaNode && parentYogaNode) {
+				parentYogaNode.insertChild(yogaNode, yogaIndex);
+			}
+			return;
+		} else if (display === "inline" || display === "inline-block") {
+			// This is an inline run head - set measure function
+			yogaNode.setMeasureFunc((width, widthMode, height, heightMode) => {
+				return this.measureInlineRun(element, width, widthMode, height, heightMode);
+			});
+
+			if (yogaNode && parentYogaNode) {
+				parentYogaNode.insertChild(yogaNode, yogaIndex);
+			}
+
+			// Don't process children - they're part of the inline run
+			return;
+		}
+
+		// Process children
+		for (let i = 0; i < element.childNodes.length; i++) {
+			const child = element.childNodes[i];
+			if (child.nodeType === child.ELEMENT_NODE) {
+				const childDisplay = resolvePropertyValue(child as Element, "display");
+				if (childDisplay === "inline" || childDisplay === "inline-block") {
+					if (display === "flex") {
+						// Inline elements in flex containers become flex items
+						this.addElement(child as Element, yogaNode);
+					} else {
+						// Regular inline elements - only process if they're inline run heads
+						this.addElement(child as Element, yogaNode);
+					}
+				} else {
+					// Block-level child
+					this.addElement(child as Element, yogaNode);
+				}
+			} else if (child.nodeType === child.TEXT_NODE) {
+				// Text nodes are handled during inline run measurement
+			}
+		}
+
+		if (yogaNode && parentYogaNode) {
+			try {
+				parentYogaNode.insertChild(yogaNode, yogaIndex);
+			} catch (err) {
+				// Silently handle insertion errors
+			}
+		}
+	}
+
+	/**
+	 * Add a text node to the layout tree
+	 */
+	private addTextNode(
+		text: Text,
+		parentYogaNode: YogaTypes.Node | null = null,
+	): void {
+		if (!text.textContent || !text.textContent.trim()) {
+			return;
+		}
+
+		if (!parentYogaNode) {
+			return;
+		}
+
+		// Text nodes need special handling - they should be part of an inline formatting context
+		// For now, we'll skip them and handle them during inline layout
+	}
+
+	/**
+	 * Get the Yoga index for an element based on its position among siblings
+	 */
+	private getYogaIndex(element: Element): number {
+		if (!element.parentElement) {
+			return 0;
+		}
+
+		let yogaIndex = 0;
+		for (let i = 0; i < element.parentElement.childNodes.length; i++) {
+			const sibling = element.parentElement.childNodes[i];
+			if (sibling === element) {
+				break;
+			}
+			if (sibling.nodeType === sibling.ELEMENT_NODE) {
+				const siblingElement = sibling as Element;
+				const siblingDisplay = resolvePropertyValue(siblingElement, "display");
+
+				// Skip inline elements that are not run heads
+				if ((siblingDisplay === "inline" || siblingDisplay === "inline-block") && !isInlineRunHead(siblingElement)) {
+					continue;
+				}
+
+				// Count this sibling if it should have a yoga node
+				const siblingYogaNode = this.nodeMap.get(siblingElement);
+				if (siblingYogaNode) {
+					yogaIndex++;
+				}
+			}
+		}
+		return yogaIndex;
+	}
 }
 
 /**
@@ -434,7 +823,7 @@ function styleYogaNode(element: Element, yogaNode: YogaTypes.Node): void {
 			if (alignValue !== null) {
 				yogaNode.setAlignSelf(alignValue);
 			} else {
-				yogaNode.setAlignSelf(undefined);
+				yogaNode.setAlignSelf(Yoga.ALIGN_AUTO);
 			}
 		}
 	}
@@ -550,179 +939,6 @@ function styleYogaNode(element: Element, yogaNode: YogaTypes.Node): void {
 	}
 }
 
-function isBlockLevelDisplay(display: string): boolean {
-	// TODO: there are more block-level displays
-	return (
-		display === "block" ||
-		display === "flex" ||
-		display === "inline-block" ||
-		display === "none"
-	);
-}
-
-function addNode(
-	node: Node,
-	map: WeakMap<Node, YogaTypes.Node>,
-	parentYogaNode: YogaTypes.Node | null = null,
-): void {
-	if (node.nodeType === node.ELEMENT_NODE) {
-		addElement(node as Element, map, parentYogaNode);
-	} else if (node.nodeType === node.TEXT_NODE) {
-		addTextNode(node as Text, map, parentYogaNode);
-	}
-}
-
-function addElement(
-	element: Element,
-	map: WeakMap<Node, YogaTypes.Node>,
-	parentYogaNode: YogaTypes.Node | null = null,
-	yogaIndex: number = getYogaIndex(element, map),
-): void {
-	const display = resolvePropertyValue(element, "display", false);
-
-	// Check if this inline element should join an existing inline run
-	if (display === "inline" || display === "inline-block") {
-		if (element.parentElement === null) {
-			throw new Error("inline/inline-block element with no parent");
-		}
-
-		const parentDisplay = resolvePropertyValue(
-			element.parentElement,
-			"display",
-			false,
-		);
-
-		// Return early (join existing inline run) if:
-		// - parent is block AND has previous sibling that's inline content
-		if (
-			parentDisplay !== "flex" &&
-			element.previousSibling !== null &&
-			(element.previousSibling.nodeType === element.TEXT_NODE ||
-				(element.previousSibling.nodeType === element.ELEMENT_NODE &&
-					(resolvePropertyValue(
-						element.previousSibling as Element,
-						"display",
-						false,
-					) === "inline" ||
-						resolvePropertyValue(
-							element.previousSibling as Element,
-							"display",
-							false,
-						) === "inline-block")))
-		) {
-			console.log(`${element.tagName} joining existing inline run`);
-			return; // Join existing inline run
-		}
-	}
-
-	let yogaNode = map.get(element);
-	if (!yogaNode) {
-		yogaNode = Yoga.Node.createWithConfig(yogaConfig);
-		map.set(element, yogaNode);
-	}
-
-	// Apply CSS properties including display
-	styleYogaNode(element, yogaNode);
-
-	// Skip processing children if display: none, but keep the node in tree
-	if (display === "none") {
-		yogaNode.setDisplay(Yoga.DISPLAY_NONE);
-		// Early return - don't process children
-		if (yogaNode && parentYogaNode) {
-			parentYogaNode.insertChild(yogaNode, yogaIndex);
-		}
-	} else if (display === "inline" || display === "inline-block") {
-		// TODO: if it's an inline element, we need to traverse to previous siblings to find the head node or create one if it doesn't exist
-		if (yogaNode && parentYogaNode) {
-			parentYogaNode.insertChild(yogaNode, yogaIndex);
-		}
-
-		return;
-	}
-
-	let inlineRunNode: YogaTypes.Node | null = null;
-	for (let i = 0; i < element.childNodes.length; i++) {
-		const child = element.childNodes[i];
-		if (child.nodeType === child.ELEMENT_NODE) {
-			const childDisplay = resolvePropertyValue(child as Element, "display");
-			if (childDisplay === "inline" || childDisplay === "inline-block") {
-				if (display === "flex") {
-					// each child of a flex node is flexed
-					console.log(
-						`  SKIPPING inline child ${(child as Element).tagName} in flex container`,
-					);
-				} else if (inlineRunNode) {
-					// The inline run node is handling this
-					console.log(
-						`  SKIPPING inline child ${(child as Element).tagName} - inline run handling`,
-					);
-				} else {
-					addElement(child as Element, map, yogaNode);
-				}
-			} else {
-				if (inlineRunNode) {
-					inlineRunNode = null;
-				}
-
-				addElement(child as Element, map, yogaNode);
-			}
-		} else if (child.nodeType === child.TEXT_NODE) {
-			if (inlineRunNode) {
-				console.log(`  SKIPPING text node - inline run handling`);
-				continue;
-			}
-
-			console.log(`  SKIPPING text node - addTextNode unimplemented`);
-			// addTextNode(child as Text, map, yogaNode);
-		}
-	}
-
-	if (yogaNode && parentYogaNode && yogaNode.getParent() === null) {
-		try {
-			console.log(
-				`Inserting ${element.tagName} at index ${yogaIndex}, parent has ${parentYogaNode.getChildCount()} children`,
-			);
-			parentYogaNode.insertChild(yogaNode, yogaIndex);
-		} catch (err) {
-			console.log(
-				"Error:",
-				element.tagName,
-				`yogaIndex: ${yogaIndex}`,
-				`parent children: ${parentYogaNode.getChildCount()}`,
-				err.message,
-			);
-		}
-	}
-}
-
-function addTextNode(
-	text: Text,
-	map: WeakMap<Node, YogaTypes.Node>,
-	parentNode: YogaTypes.Node | null = null,
-): void {
-	// Check if this text node is the head of an inline run
-	if (!isInlineRunHead(text)) {
-		console.log(`Text node joining existing inline run`);
-		return; // Join existing inline run
-	}
-
-	// This text node starts an inline run - create Yoga node
-	let yogaNode = map.get(text);
-	if (!yogaNode) {
-		yogaNode = Yoga.Node.createWithConfig(yogaConfig);
-		map.set(text, yogaNode);
-		console.log(`Created Yoga node for text head: "${text.textContent}"`);
-
-		// TODO: Set up measure function for text sizing
-		// yogaNode.setMeasureFunc(...);
-	}
-
-	if (yogaNode && parentNode && yogaNode.getParent() === null) {
-		const yogaIndex = getYogaIndex(text, map);
-		parentNode.insertChild(yogaNode, yogaIndex);
-	}
-}
-
 /**
  * Check if a node is the head of an inline run (first inline content in sequence)
  */
@@ -816,17 +1032,17 @@ export function findInlineRunHead(node: Node): Node | null {
 	let startNode = node;
 	if (node.nodeType === node.ELEMENT_NODE) {
 		const element = node as Element;
-		
+
 		// Traverse up to find the outermost inline ancestor
 		let current = element;
 		while (current.parentElement) {
 			const parentDisplay = resolvePropertyValue(current.parentElement, "display", false);
-			
+
 			// If parent is flex, each child is its own item
 			if (parentDisplay === "flex") {
 				return current; // In flex, return this element as its own head
 			}
-			
+
 			// If parent is inline, continue up
 			if (parentDisplay === "inline" || parentDisplay === "inline-block") {
 				current = current.parentElement;
@@ -882,28 +1098,4 @@ export function findInlineRunHead(node: Node): Node | null {
 	}
 
 	return current;
-}
-
-function getYogaIndex(node: Node, map: WeakMap<Node, YogaTypes.Node>): number {
-	console.log("getYogaIndex called", (node as any).outerHTML);
-	if (!node.parentNode) return 0;
-
-	const parent = node.parentNode;
-	const parentYogaNode = map.get(parent);
-	if (!parentYogaNode) return 0;
-
-	// Count how many previous siblings have Yoga nodes
-	let yogaIndex = 0;
-	for (
-		let sibling = parent.firstChild;
-		sibling && sibling !== node;
-		sibling = sibling.nextSibling
-	) {
-		if (map.has(sibling)) {
-			yogaIndex++;
-		}
-	}
-
-	// Ensure index doesn't exceed parent's child count
-	return yogaIndex;
 }
