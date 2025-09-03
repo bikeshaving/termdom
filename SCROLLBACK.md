@@ -8,6 +8,8 @@ TermDOM applications should behave exactly like normal terminal commands, except
 - Output flows downward, scrolling the terminal naturally as needed
 - Unlike regular commands, TermDOM can update/change any of that output
 
+The `git diff` command is exactly the UX I want to emulate.
+
 ## Buffer Architecture
 
 ### Viewport Buffer
