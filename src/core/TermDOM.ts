@@ -1,8 +1,8 @@
 import {LayoutEngine} from "../layout/LayoutEngine.js";
 import {Renderer, type ColorDepth} from "../rendering/Renderer.js";
-import {EventEmitter} from "events";
+import {type EventEmitter} from "events";
 import {JSDOM} from "jsdom";
-import type {DOMWindow} from "jsdom";
+import {type DOMWindow} from "jsdom";
 import {RectUtils} from "../layout/RectUtils.js";
 import {resolvePropertyValue} from "../css.js";
 
@@ -26,9 +26,8 @@ export interface TTYReadStream extends EventEmitter {
 }
 
 /**
- * This interface attempts to document the minimum of what we need from the
- * runtime process object to implement a terminal renderer, so that we can mock
- * it for tests.
+ * This interface attempts to document the minimal API needed from the process
+ * object to implement a terminal renderer, so that we can mock it for tests.
  */
 export interface ProcessLike extends EventEmitter {
 	stdout: TTYWriteStream;
@@ -67,7 +66,6 @@ export class TermDOM {
 
 	// Render completion callbacks for waitForRender
 	private renderCompleteCallbacks: Array<() => void> = [];
-
 
 	constructor(options: TermDOMOptions = {}) {
 		// Set up process (defaults to global process)
@@ -144,12 +142,7 @@ export class TermDOM {
 	}
 
 	private setupMutationObserver(): MutationObserver {
-		const observer = new this.window.MutationObserver(
-			(mutations: MutationRecord[]) => {
-				this.render(mutations);
-			},
-		);
-
+		const observer = new this.window.MutationObserver(() => this.render());
 		observer.observe(this.document.documentElement, {
 			childList: true,
 			subtree: true,
@@ -193,11 +186,9 @@ export class TermDOM {
 				// TODO: Handle other input events
 			});
 		}
-
 	}
 
-
-	private async render(mutations = this.observer.takeRecords()): Promise<void> {
+	private async render(): Promise<void> {
 		// Always calculate layout to ensure it's up to date
 		this.layoutEngine.calculateLayout();
 
@@ -234,7 +225,6 @@ export class TermDOM {
 		}
 	}
 
-
 	/**
 	 * Convert CSS color value to terminal color number
 	 */
@@ -252,7 +242,7 @@ export class TermDOM {
 	private renderElement(element: Element): void {
 		// Get computed layout rect from layout engine
 		const rect = this.layoutEngine.getRect(element);
-		
+
 		// Get background color and text styling
 		const color = resolvePropertyValue(element, "color");
 		const backgroundColor = resolvePropertyValue(element, "background-color");
@@ -264,11 +254,12 @@ export class TermDOM {
 		);
 
 		const style = {
-			// TODO: what about inherit?
 			fg:
 				color && color !== "initial" ? this.cssColorToNumber(color) : undefined,
 			bg:
-				backgroundColor && backgroundColor !== "initial" && backgroundColor !== "transparent"
+				backgroundColor &&
+				backgroundColor !== "initial" &&
+				backgroundColor !== "transparent"
 					? this.cssColorToNumber(backgroundColor)
 					: undefined,
 			bold,
@@ -301,29 +292,45 @@ export class TermDOM {
 				const textNode = childNode as Text;
 				const textContent = textNode.textContent;
 				if (!textContent) continue;
-				
+
 				// Get style from the text node's parent element
 				const parentElement = textNode.parentElement;
 				if (!parentElement) continue;
-				
+
 				const textColor = resolvePropertyValue(parentElement, "color");
-				const textBgColor = resolvePropertyValue(parentElement, "background-color");
-				const textBold = resolvePropertyValue(parentElement, "font-weight") === "bold";
-				const textItalic = resolvePropertyValue(parentElement, "font-style") === "italic";
-				const textUnderline = resolvePropertyValue(parentElement, "text-decoration").includes("underline");
-				
+				const textBgColor = resolvePropertyValue(
+					parentElement,
+					"background-color",
+				);
+				const textBold =
+					resolvePropertyValue(parentElement, "font-weight") === "bold";
+				const textItalic =
+					resolvePropertyValue(parentElement, "font-style") === "italic";
+				const textUnderline = resolvePropertyValue(
+					parentElement,
+					"text-decoration",
+				).includes("underline");
+
 				const textStyle = {
-					fg: textColor && textColor !== "initial" ? this.cssColorToNumber(textColor) : undefined,
-					bg: textBgColor && textBgColor !== "initial" && textBgColor !== "transparent"
-						? this.cssColorToNumber(textBgColor)
-						: undefined,
+					fg:
+						textColor && textColor !== "initial"
+							? this.cssColorToNumber(textColor)
+							: undefined,
+					bg:
+						textBgColor &&
+						textBgColor !== "initial" &&
+						textBgColor !== "transparent"
+							? this.cssColorToNumber(textBgColor)
+							: undefined,
 					bold: textBold,
 					italic: textItalic,
 					underline: textUnderline,
 				};
-				
+
 				// Get rects for this text node
-				const rects = this.layoutEngine.getRects(textNode) as Array<DOMRect & {text?: string}>;
+				const rects = this.layoutEngine.getRects(textNode) as Array<
+					DOMRect & {text?: string}
+				>;
 				if (rects.length > 0) {
 					// Render each text segment
 					for (const textRect of rects) {
@@ -348,7 +355,7 @@ export class TermDOM {
 	private processPendingMutationsAndRender(): boolean {
 		const pendingMutations = this.observer.takeRecords();
 		if (pendingMutations.length > 0) {
-			this.render(pendingMutations);
+			this.render();
 			return true;
 		}
 		return false;
@@ -381,7 +388,6 @@ export class TermDOM {
 
 		// Clear previous buffer to force full redraw
 		this.renderer.clearPreviousBuffer();
-
 
 		// Notify layout engine of size change
 		this.layoutEngine.resize(newWidth, newHeight);
@@ -454,7 +460,6 @@ export class TermDOM {
 		): Element | null {
 			// Process any pending mutations and render if needed (like browsers do)
 			termDOM.processPendingMutationsAndRender();
-
 			return findElementAtPoint(this.documentElement, x, y);
 		};
 	}
@@ -462,7 +467,7 @@ export class TermDOM {
 	/**
 	 * Setup cleaner console representation for DOM elements in tests
 	 */
-	private setupDOMInspector(): void {
+	setupDOMInspector(): void {
 		const inspect = Symbol.for("nodejs.util.inspect.custom");
 
 		(this.window.Element.prototype as any)[inspect] = function (this: Element) {
@@ -474,7 +479,7 @@ export class TermDOM {
 		};
 	}
 
-	public dispose(): void {
+	dispose(): void {
 		// Restore cooked mode before cleanup
 		if (this.process.stdin?.isTTY) {
 			const stdin = this.process.stdin as TTYReadStream;
@@ -488,7 +493,7 @@ export class TermDOM {
 	}
 
 	/** Switch to fullscreen TUI mode */
-	public requestFullScreen(): void {
+	requestFullScreen(): void {
 		throw new Error("TODO: Implement fullscreen mode switching");
 	}
 
@@ -496,7 +501,7 @@ export class TermDOM {
 	 * Wait for the next render cycle to complete
 	 * Useful for testing to ensure DOM mutations have been processed
 	 */
-	public async waitForRender(): Promise<void> {
+	async waitForRender(): Promise<void> {
 		return new Promise((resolve) => {
 			// Process mutations and render if needed
 			const didRender = this.processPendingMutationsAndRender();

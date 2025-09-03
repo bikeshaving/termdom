@@ -48,9 +48,11 @@ export class Cell {
 		}
 
 		this.grapheme = grapheme;
+		// TODO: transparent should be null
 		this.fg = cellStyle?.fg ?? 0;
 		this.bg = cellStyle?.bg ?? 0;
 
+		// TODO: deduplicate
 		// Convert boolean flags to bit flags
 		let styleFlags = 0;
 		if (cellStyle?.bold) styleFlags |= STYLE_BOLD;
@@ -132,6 +134,7 @@ export class Cell {
 		const fg = cellStyle?.fg ?? 0;
 		const bg = cellStyle?.bg ?? 0;
 
+		// TODO: deduplicate
 		let styleFlags = 0;
 		if (cellStyle?.bold) styleFlags |= STYLE_BOLD;
 		if (cellStyle?.italic) styleFlags |= STYLE_ITALIC;
