@@ -19,6 +19,7 @@
     "typescript": "^5.9.2"
   },
   "dependencies": {
+    "@tanstack/table-core": "^8.21.3",
     "jsdom": "^26.1.0",
     "linebreak": "^1.1.0",
     "yoga-layout": "^3.2.1"

@@ -3,7 +3,7 @@
  */
 
 import {test, expect} from "bun:test";
-import {TermDOM} from "../src/index.js";
+import {TermDOM} from "../src/termdom.js";
 
 test("TermDOM provides HTML document with terminal capabilities", () => {
 	const dom = new TermDOM();

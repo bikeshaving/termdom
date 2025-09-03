@@ -4,9 +4,11 @@
  * Shared utilities for terminal testing with unified TestTerminal class
  */
 
-import {type ProcessLike, type TTYWriteStream} from "../src/index.js";
+import {type ProcessLike, type TTYWriteStream} from "../src/termdom.js";
 import {EventEmitter} from "events";
 import {Terminal} from "@xterm/headless";
+import {type CellBuffer, Cell, createBuffer} from "../src/ansi.js";
+import {generateANSI, type ColorDepth} from "../src/ansi.js";
 
 /**
  * Unified test terminal that handles process mocking and output capture
@@ -50,13 +52,20 @@ class MockWriteStream extends EventEmitter implements TTYWriteStream {
 
 export class TestTerminal extends EventEmitter implements ProcessLike {
 	stdout: MockWriteStream;
+	env: Record<string, string | undefined>;
 	private terminal: Terminal;
 
-	constructor(options: {cols?: number; rows?: number} = {}) {
+	constructor(options: {cols?: number; rows?: number; env?: Record<string, string | undefined>} = {}) {
 		super();
 
 		const cols = options.cols || 80;
 		const rows = options.rows || 24;
+		
+		// Set up environment for testing (defaults to 24-bit color support)
+		this.env = options.env || {
+			COLORTERM: "truecolor",
+			TERM: "xterm-256color",
+		};
 
 		// Create headless xterm instance
 		this.terminal = new Terminal({
@@ -125,105 +134,62 @@ export class TestTerminal extends EventEmitter implements ProcessLike {
 	}
 
 	/**
-	 * Get static ANSI content (styling preserved, no cursor movements)
+	 * Convert xterm buffer to our CellBuffer format
 	 */
-	getStaticANSI(): string {
+	private xtermToCellBuffer(): CellBuffer {
 		const buffer = this.terminal.buffer.active;
-		const lines: string[] = [];
+		const cellBuffer = createBuffer(this.terminal.rows, this.terminal.cols);
 
 		for (let row = 0; row < this.terminal.rows; row++) {
 			const line = buffer.getLine(row);
-			if (!line) {
-				lines.push("");
-				continue;
-			}
-
-			let lineOutput = "";
-			let lastFg = -1;
-			let lastBg = -1;
-			let lastFlags = 0;
+			if (!line) continue;
 
 			for (let col = 0; col < this.terminal.cols; col++) {
 				const cell = line.getCell(col);
-				if (!cell) {
-					lineOutput += " ";
-					continue;
-				}
+				if (!cell) continue;
 
+				const chars = cell.getChars();
+				if (!chars) continue;
+				// Don't skip spaces - they're important for text layout
+
+				// Convert xterm style to our format
 				const fg = cell.getFgColor();
 				const bg = cell.getBgColor();
-				const flags =
-					(cell.isBold() ? 1 : 0) |
-					(cell.isItalic() ? 2 : 0) |
-					(cell.isUnderline() ? 4 : 0);
+				
+				const cellStyle = {
+					fg: fg !== 0 ? fg : undefined,
+					bg: bg !== 0 ? bg : undefined,
+					bold: cell.isBold(),
+					italic: cell.isItalic(), 
+					underline: cell.isUnderline(),
+					strikethrough: false, // xterm doesn't expose this directly
+					inverse: cell.isInverse(),
+					dim: cell.isDim(),
+					blink: cell.isBlink(),
+					overline: false, // xterm doesn't expose this directly
+				};
 
-				// Emit style changes only when needed
-				let styleChange = "";
-
-				if (fg !== lastFg || bg !== lastBg || flags !== lastFlags) {
-					// Reset if needed
-					if (lastFg !== -1 || lastBg !== -1 || lastFlags !== 0) {
-						styleChange += "\x1b[0m";
-					}
-
-					// Set new styles
-					if (flags & 1) styleChange += "\x1b[1m"; // bold
-					if (flags & 2) styleChange += "\x1b[3m"; // italic
-					if (flags & 4) styleChange += "\x1b[4m"; // underline
-
-					// Foreground color
-					if (fg !== 0) {
-						if ((fg & 0xff000000) === 0x02000000) {
-							// RGB mode
-							const r = (fg >> 16) & 0xff;
-							const g = (fg >> 8) & 0xff;
-							const b = fg & 0xff;
-							styleChange += `\x1b[38;2;${r};${g};${b}m`;
-						} else if (fg < 16) {
-							// Basic colors
-							styleChange += `\x1b[${fg < 8 ? 30 + fg : 90 + fg - 8}m`;
-						} else {
-							// 256-color mode
-							styleChange += `\x1b[38;5;${fg}m`;
-						}
-					}
-
-					// Background color
-					if (bg !== 0) {
-						if ((bg & 0xff000000) === 0x02000000) {
-							const r = (bg >> 16) & 0xff;
-							const g = (bg >> 8) & 0xff;
-							const b = bg & 0xff;
-							styleChange += `\x1b[48;2;${r};${g};${b}m`;
-						} else if (bg < 16) {
-							styleChange += `\x1b[${bg < 8 ? 40 + bg : 100 + bg - 8}m`;
-						} else {
-							styleChange += `\x1b[48;5;${bg}m`;
-						}
-					}
-
-					lastFg = fg;
-					lastBg = bg;
-					lastFlags = flags;
-				}
-
-				lineOutput += styleChange + (cell.getChars() || " ");
+				cellBuffer[row][col] = Cell.create(chars, cellStyle);
 			}
-
-			// Reset at end of line if we had styling
-			if (lastFg !== -1 || lastBg !== -1 || lastFlags !== 0) {
-				lineOutput += "\x1b[0m";
-			}
-
-			lines.push(lineOutput.trimEnd());
 		}
 
-		// Remove trailing empty lines
-		while (lines.length > 0 && lines[lines.length - 1] === "") {
-			lines.pop();
-		}
+		return cellBuffer;
+	}
 
-		return lines.join("\n");
+	/**
+	 * Get static ANSI content using Renderer's generateANSI (no cursor movements)
+	 */
+	getStaticANSI(): string {
+		const cellBuffer = this.xtermToCellBuffer();
+		// Use RGB color depth to match our test environment
+		const fullOutput = generateANSI(cellBuffer, "rgb");
+		
+		// Strip terminal control sequences for cleaner test output
+		return fullOutput
+			.replace(/\x1b\[\?2026[hl]/g, "") // Remove sync start/end
+			.replace(/\x1b\[\?25[hl]/g, "")   // Remove cursor hide/show  
+			.replace(/\x1b\[H/g, "")          // Remove home cursor
+			.replace(/\x1b\[\d+C/g, "");      // Remove cursor forward
 	}
 
 	/**

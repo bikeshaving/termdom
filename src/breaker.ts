@@ -1,6 +1,5 @@
 import LineBreaker from "linebreak";
 
-// TODO: Can this type be a mapped type over the lib.dom.d.ts types?
 export interface BreakOptions {
 	maxWidth: number;
 	whiteSpace?: "normal" | "nowrap" | "pre" | "pre-wrap" | "pre-line";
@@ -11,8 +10,8 @@ export interface BreakOptions {
 export interface InlineBlockLeaf {
 	type: "inline-block";
 	node: Element;
-	width: number; // for inline-block
-	height: number; // for inline-block (can be > 1)
+	width: number;
+	height: number;
 }
 
 export interface TextLeaf {
@@ -31,14 +30,14 @@ export type Leaf = InlineBlockLeaf | TextLeaf | BRLeaf;
 export interface LineResult {
 	segments: Array<{
 		leaf: Leaf;
-		start: number; // char position within text node
-		end: number; // char position within text node
-		x: number; // x position on line
-		width: number; // width of this segment
+		start: number;
+		end: number;
+		x: number;
+		width: number;
 	}>;
 	y: number;
-	width: number; // total line width
-	height: number; // max height of nodes on this line
+	width: number;
+	height: number;
 }
 
 export interface BreakResult {
@@ -53,18 +52,14 @@ export function breakNodes(
 ): BreakResult {
 	const {maxWidth, whiteSpace = "normal"} = options;
 
-	// Handle nowrap case
 	if (whiteSpace === "nowrap") {
 		return noWrapLayout(leafNodes);
 	}
 
-	// Build flattened content with whitespace handling
 	const processedContent = processWhitespace(leafNodes, whiteSpace);
 
-	// Use linebreak library for UAX #14 support
 	const breaks = findBreakPoints(processedContent, options);
 
-	// Build lines from break points
 	const lines = buildLines(processedContent, breaks, maxWidth);
 
 	return {
@@ -75,14 +70,13 @@ export function breakNodes(
 }
 
 interface ProcessedContent {
-	// TODO: should this be segments too?
 	items: Array<{
 		leafNode: Leaf;
-		start: number; // position in processed text
-		end: number; // position in processed text
-		processedContent?: string; // the processed text for this node
+		start: number;
+		end: number;
+		processedContent?: string;
 	}>;
-	text: string; // flattened text for linebreak library
+	text: string;
 }
 
 function processWhitespace(
@@ -98,16 +92,12 @@ function processWhitespace(
 
 		if (leaf.type === "text" && leaf.content) {
 			let processed = "";
-			const mapping: Array<number> = []; // maps processed position to original position
+			const mapping: Array<number> = [];
 
-			// Apply whitespace rules
 			if (whiteSpace === "normal" || whiteSpace === "nowrap") {
-				// Process character by character for proper space collapsing
 				for (let i = 0; i < leaf.content.length; i++) {
 					const char = leaf.content[i];
 					if (/\s/.test(char)) {
-						// For normal/nowrap, convert ALL whitespace (including newlines) to spaces
-						// BR elements are handled separately and will add their own newlines
 						const atStart = text.length === 0 && processed.length === 0;
 						const afterNewline =
 							text.length > 0 && text[text.length - 1] === "\n";
@@ -123,7 +113,6 @@ function processWhitespace(
 					}
 				}
 			} else if (whiteSpace === "pre-line") {
-				// Collapse spaces but preserve newlines
 				let temp = "";
 				for (let i = 0; i < leaf.content.length; i++) {
 					const char = leaf.content[i];
@@ -132,8 +121,6 @@ function processWhitespace(
 						mapping.push(i);
 						lastWasSpace = false;
 					} else if (/\s/.test(char)) {
-						// For pre-line: collapse consecutive spaces, but keep one
-						// Don't add space at start of line (after newline)
 						const atLineStart =
 							temp.length === 0 || temp[temp.length - 1] === "\n";
 						if (!lastWasSpace && !atLineStart) {
@@ -149,7 +136,6 @@ function processWhitespace(
 				}
 				processed = temp;
 			} else {
-				// pre and pre-wrap preserve everything
 				processed = leaf.content;
 				for (let i = 0; i < leaf.content.length; i++) {
 					mapping.push(i);
@@ -159,7 +145,6 @@ function processWhitespace(
 
 			text += processed;
 
-			// Store the item with processed content
 			items.push({
 				leafNode: leaf,
 				start,
@@ -168,14 +153,13 @@ function processWhitespace(
 			});
 		} else if (leaf.type === "br") {
 			text += "\n";
-			lastWasSpace = false; // Reset space tracking after newline
+			lastWasSpace = false;
 			items.push({
 				leafNode: leaf,
 				start,
 				end: text.length,
 			});
 		} else if (leaf.type === "inline-block") {
-			// Use object replacement character
 			text += "\uFFFC";
 			lastWasSpace = false;
 			items.push({
@@ -186,7 +170,6 @@ function processWhitespace(
 		}
 	}
 
-	// Trim trailing space for normal/nowrap/pre-line
 	if (
 		(whiteSpace === "normal" ||
 			whiteSpace === "nowrap" ||
@@ -194,11 +177,9 @@ function processWhitespace(
 		text.endsWith(" ")
 	) {
 		text = text.slice(0, -1);
-		// Adjust last item's end and processed content
 		for (let i = items.length - 1; i >= 0; i--) {
 			if (items[i].end > text.length) {
 				items[i].end = text.length;
-				// Also trim the processed content if it's a text node
 				const item = items[i];
 				if (item.leafNode.type === "text" && item.processedContent) {
 					const trimAmount =
@@ -223,24 +204,20 @@ function findBreakPoints(
 	content: ProcessedContent,
 	options: BreakOptions,
 ): Array<BreakPoint> {
-	// Use linebreak library for proper UAX #14 breaking
 	const breaker = new LineBreaker(content.text);
 	const breaks: Array<BreakPoint> = [];
 
 	let lastPos = 0;
 	let bk;
 	while ((bk = breaker.nextBreak())) {
-		// Handle forced breaks (newlines, <br>)
 		let required = bk.required || false;
 
-		// Check if this is a forced break from white-space CSS
 		const {whiteSpace = "normal"} = options;
 		if (
 			whiteSpace === "pre" ||
 			whiteSpace === "pre-wrap" ||
 			whiteSpace === "pre-line"
 		) {
-			// Check if there's a newline in this segment
 			const segment = content.text.slice(lastPos, bk.position);
 			if (segment.includes("\n")) {
 				required = true;
@@ -266,12 +243,10 @@ function buildLines(
 	let currentY = 0;
 	let lineStart = 0;
 
-	// Greedy line breaking algorithm
 	while (lineStart < content.text.length) {
 		let bestBreak = lineStart;
 		let bestBreakWidth = 0;
 
-		// Find the best break position that fits
 		for (const breakPoint of breaks) {
 			if (breakPoint.position <= lineStart) continue;
 
@@ -286,11 +261,9 @@ function buildLines(
 				bestBreak = breakPoint.position;
 				bestBreakWidth = width;
 			} else {
-				// This break is too far, stop looking
 				break;
 			}
 
-			// If this is a required break, use it
 			if (breakPoint.required) {
 				bestBreak = breakPoint.position;
 				bestBreakWidth = width;
@@ -298,9 +271,7 @@ function buildLines(
 			}
 		}
 
-		// If no break found, force break at maxWidth or next char
 		if (bestBreak === lineStart) {
-			// Find position that fits
 			let pos = lineStart + 1;
 			while (pos <= content.text.length) {
 				const width = measureText(content.text, content.items, lineStart, pos);
@@ -319,7 +290,6 @@ function buildLines(
 			);
 		}
 
-		// Create line
 		const lineNodes = getNodesInRange(content.items, lineStart, bestBreak);
 
 		if (lineNodes.length > 0) {
@@ -341,9 +311,6 @@ function buildLines(
 		}
 
 		lineStart = bestBreak;
-
-		// Skip whitespace at start of next line (for normal white-space mode)
-		// This is handled by processWhitespace but we might need to adjust lineStart
 	}
 
 	return lines;
@@ -357,7 +324,6 @@ function measureText(
 ): number {
 	let width = 0;
 
-	// Find items in this range
 	for (const item of items) {
 		if (item.start >= end || item.end <= start) continue;
 
@@ -365,11 +331,9 @@ function measureText(
 		const itemEnd = Math.min(item.end, end);
 
 		if (item.leafNode.type === "text") {
-			// Measure text portion
 			const portion = text.slice(itemStart, itemEnd);
 			width += Bun.stringWidth(portion);
 		} else if (item.leafNode.type === "inline-block") {
-			// Use pre-calculated width
 			width += item.leafNode.width;
 		}
 	}
@@ -394,7 +358,6 @@ function getNodesInRange(
 		if (itemStart < itemEnd) {
 			let width = 0;
 			if (item.leafNode.type === "text" && item.processedContent) {
-				// Calculate positions within the processed content
 				const relativeStart = itemStart - item.start;
 				const relativeEnd = itemEnd - item.start;
 				const portion = item.processedContent.slice(relativeStart, relativeEnd);
@@ -417,7 +380,6 @@ function getNodesInRange(
 					width,
 				});
 			} else if (item.leafNode.type === "br") {
-				// BR elements don't have visual width
 				nodes.push({
 					leaf: item.leafNode,
 					start: 0,
@@ -435,7 +397,6 @@ function getNodesInRange(
 }
 
 function noWrapLayout(segments: Array<Leaf>): BreakResult {
-	// Single line with all content
 	const content = processWhitespace(segments, "nowrap");
 	const lineNodes = getNodesInRange(content.items, 0, content.text.length);
 

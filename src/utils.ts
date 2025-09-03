@@ -1,4 +1,8 @@
 /**
+ * Utility functions and data structures
+ */
+
+/**
  * Every other LRU cache in the JavaScript ecosystem is insane.
  */
 export default class LRUCache<TKey, TValue> {

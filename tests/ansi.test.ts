@@ -3,7 +3,10 @@ import {
 	Cell,
 	type CellStyle,
 	createBuffer,
-} from "../src/rendering/CellBuffer.js";
+	Renderer,
+	generateANSI,
+	type ColorDepth,
+} from "../src/ansi.js";
 
 describe("Cell", () => {
 	describe("constructor", () => {
@@ -262,5 +265,246 @@ describe("createBuffer", () => {
 		// Zero dimensions should still work
 		const empty = createBuffer(0, 0);
 		expect(empty.length).toBe(0);
+	});
+});
+
+describe("Renderer", () => {
+	describe("initialization", () => {
+		test("creates renderer with specified dimensions", () => {
+			const renderer = new Renderer(5, 10);
+			renderer.beginFrame();
+			renderer.setText(0, 0, "X");
+			const output = renderer.render();
+			expect(output).toContain("X");
+		});
+	});
+
+	describe("first frame", () => {
+		test("renders all content on first frame", async () => {
+			const {TestTerminal} = await import("./test-utils.js");
+			const renderer = new Renderer(2, 5);
+
+			renderer.beginFrame();
+			renderer.setText(0, 0, "Hello");
+
+			const ansi = renderer.render();
+
+			const terminal = new TestTerminal({rows: 2, cols: 5});
+			await new Promise<void>((resolve) => {
+				terminal.stdout.write(ansi, () => resolve());
+			});
+
+			expect(terminal.getPlainText()).toBe("Hello");
+		});
+	});
+
+	describe("delta rendering", () => {
+		test("renders only changes in second frame", async () => {
+			const {TestTerminal} = await import("./test-utils.js");
+			const renderer = new Renderer(1, 5);
+
+			renderer.beginFrame();
+			renderer.setText(0, 0, "Hello");
+			const frame1 = renderer.render();
+
+			renderer.beginFrame();
+			renderer.setText(0, 0, "Hallo");
+			const frame2 = renderer.render();
+
+			const terminal = new TestTerminal({rows: 1, cols: 5});
+			await new Promise<void>((resolve) => {
+				terminal.stdout.write(frame1, () => resolve());
+			});
+			await new Promise<void>((resolve) => {
+				terminal.stdout.write(frame2, () => resolve());
+			});
+
+			expect(terminal.getPlainText()).toBe("Hallo");
+		});
+	});
+
+	describe("Terminal Resize", () => {
+		test("handles resize to smaller dimensions", async () => {
+			const {TestTerminal} = await import("./test-utils.js");
+			const renderer = new Renderer(2, 4);
+
+			renderer.beginFrame();
+			renderer.setText(0, 0, "AB");
+			renderer.setText(1, 0, "CD");
+			const frame1 = renderer.render();
+
+			const terminal = new TestTerminal({rows: 2, cols: 4});
+			await new Promise<void>((resolve) => {
+				terminal.stdout.write(frame1, () => resolve());
+			});
+
+			const result = terminal.getPlainText();
+			expect(result).toContain("A");
+			expect(result).toContain("C");
+		});
+	});
+});
+
+describe("generateANSI", () => {
+	describe("empty buffers", () => {
+		test("returns empty string for empty buffer", () => {
+			const buffer = createBuffer(3, 5);
+			const result = generateANSI(buffer, "rgb", true);
+			expect(result).toBe("");
+		});
+
+		test("ignores null cells", () => {
+			const buffer = createBuffer(2, 3);
+			const result = generateANSI(buffer, "rgb", true);
+			expect(result).toBe("");
+		});
+	});
+
+	describe("basic character output", () => {
+		test("outputs single character at origin", () => {
+			const buffer = createBuffer(1, 1);
+			buffer[0][0] = Cell.create("A");
+
+			const result = generateANSI(buffer, "rgb", true);
+			expect(result).toBe("A");
+		});
+
+		test("outputs consecutive characters without cursor movement", () => {
+			const buffer = createBuffer(1, 3);
+			buffer[0][0] = Cell.create("A");
+			buffer[0][1] = Cell.create("B");
+			buffer[0][2] = Cell.create("C");
+
+			const result = generateANSI(buffer, "rgb", true);
+			expect(result).toBe("ABC");
+		});
+
+		test("moves cursor for gaps", () => {
+			const buffer = createBuffer(1, 5);
+			buffer[0][0] = Cell.create("A");
+			buffer[0][3] = Cell.create("B");
+
+			const result = generateANSI(buffer, "rgb", true);
+			expect(result).toBe("A\x1b[2CB");
+		});
+	});
+
+	describe("line movement", () => {
+		test("moves to next line correctly", () => {
+			const buffer = createBuffer(2, 3);
+			buffer[0][0] = Cell.create("A");
+			buffer[1][0] = Cell.create("B");
+
+			const result = generateANSI(buffer, "rgb", true);
+			expect(result).toBe("A\r\nB");
+		});
+
+		test("moves to next line with horizontal offset", () => {
+			const buffer = createBuffer(2, 5);
+			buffer[0][0] = Cell.create("A");
+			buffer[1][2] = Cell.create("B");
+
+			const result = generateANSI(buffer, "rgb", true);
+			expect(result).toBe("A\r\n\x1b[2CB");
+		});
+	});
+
+	describe("RGB color output", () => {
+		test("outputs RGB foreground color", () => {
+			const buffer = createBuffer(1, 1);
+			buffer[0][0] = Cell.create("A", {fg: 0xff0000});
+
+			const result = generateANSI(buffer, "rgb", true);
+			expect(result).toBe("\x1b[38;2;255;0;0mA\x1b[0m");
+		});
+
+		test("outputs RGB background color", () => {
+			const buffer = createBuffer(1, 1);
+			buffer[0][0] = Cell.create("A", {bg: 0x00ff00});
+
+			const result = generateANSI(buffer, "rgb", true);
+			expect(result).toBe("\x1b[48;2;0;255;0mA\x1b[0m");
+		});
+
+		test("outputs both foreground and background", () => {
+			const buffer = createBuffer(1, 1);
+			buffer[0][0] = Cell.create("A", {fg: 0xff0000, bg: 0xffff00});
+
+			const result = generateANSI(buffer, "rgb", true);
+			expect(result).toBe("\x1b[38;2;255;0;0;48;2;255;255;0mA\x1b[0m");
+		});
+	});
+
+	describe("color depth modes", () => {
+		test("RGB mode uses 24-bit colors", () => {
+			const buffer = createBuffer(1, 1);
+			buffer[0][0] = Cell.create("A", {fg: 0x123456});
+
+			const result = generateANSI(buffer, "rgb", true);
+			expect(result).toContain("38;2;18;52;86");
+		});
+
+		test("256-color mode converts to palette", () => {
+			const buffer = createBuffer(1, 1);
+			buffer[0][0] = Cell.create("A", {fg: 0xff0000});
+
+			const result = generateANSI(buffer, "256", true);
+			expect(result).toContain("38;5;");
+		});
+
+		test("ANSI mode uses basic colors", () => {
+			const buffer = createBuffer(1, 1);
+			buffer[0][0] = Cell.create("A", {fg: 0xff0000});
+
+			const result = generateANSI(buffer, "ansi", true);
+			expect(result).toMatch(/\x1b\[3\dm/);
+		});
+	});
+
+	describe("style flags", () => {
+		test("outputs all style flags", () => {
+			const buffer = createBuffer(1, 1);
+			buffer[0][0] = Cell.create("A", {
+				bold: true,
+				dim: true,
+				italic: true,
+				underline: true,
+				blink: true,
+				inverse: true,
+				strikethrough: true,
+				overline: true,
+			});
+
+			const result = generateANSI(buffer, "rgb", true);
+			expect(result).toContain("1");
+			expect(result).toContain(";2");
+			expect(result).toContain(";3");
+			expect(result).toContain(";4");
+			expect(result).toContain(";5");
+			expect(result).toContain(";7");
+			expect(result).toContain(";9");
+			expect(result).toContain(";53");
+		});
+	});
+
+	describe("wide characters", () => {
+		test("handles wide characters correctly", () => {
+			const buffer = createBuffer(1, 4);
+			buffer[0][0] = Cell.create("你");
+			buffer[0][2] = Cell.create("好");
+
+			const result = generateANSI(buffer, "rgb", true);
+			expect(result).toContain("你");
+			expect(result).toContain("好");
+		});
+
+		test("skips second column of wide characters", () => {
+			const buffer = createBuffer(1, 3);
+			buffer[0][0] = Cell.create("你");
+			buffer[0][2] = Cell.create("A");
+
+			const result = generateANSI(buffer, "rgb", true);
+			expect(result).toBe("你A");
+		});
 	});
 });

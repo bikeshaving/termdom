@@ -1,26 +1,20 @@
-// === HTML-to-Terminal API ===
-export {TermDOM} from "./core/TermDOM.js";
+export {TermDOM} from "./termdom.js";
 export type {
 	TermDOMOptions,
 	ProcessLike,
 	TTYWriteStream,
 	TTYReadStream,
-} from "./core/TermDOM.js";
+} from "./termdom.js";
 
-// Clean rendering pipeline with new Renderer
+export {Renderer, generateANSI} from "./ansi.js";
+export type {ColorDepth} from "./ansi.js";
 
-// Renderer - Efficient delta rendering without xterm.js
-export {Renderer, generateANSI} from "./rendering/Renderer.js";
-export type {ColorDepth} from "./rendering/Renderer.js";
-
-// Cell buffer utilities
 export {
 	createBuffer,
 	Cell,
 	type CellBuffer,
 	type CellStyle,
-} from "./rendering/CellBuffer.js";
+} from "./ansi.js";
 
-// Layout Engine
-export {LayoutEngine} from "./layout/LayoutEngine.js";
-export type {TextLayout} from "./layout/LayoutEngine.js";
+export {LayoutEngine} from "./layout.js";
+export type {TextLayout} from "./layout.js";
