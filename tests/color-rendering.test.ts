@@ -22,7 +22,7 @@ test("red foreground color renders correctly", async () => {
 	await dom.waitForRender();
 	const snapshot = terminal.getScreenContents();
 
-	// Verify red RGB color code  
+	// Verify red RGB color code
 	expect(snapshot).toMatch(/\x1b\[38;2;255;0;0/); // Red RGB
 	expect(snapshot).toContain("Red text");
 
@@ -49,7 +49,7 @@ test("background colors fill full width", async () => {
 	const lines = snapshot.split("\n");
 	const coloredLine = lines.find((line) => line.includes("Short text"));
 
-	// Count the background color codes - should extend beyond text  
+	// Count the background color codes - should extend beyond text
 	expect(coloredLine).toMatch(/48;2;255;0;0/); // red background
 
 	// The line should contain the text (full width filling is a TODO)
@@ -175,5 +175,5 @@ test("inline elements do not extend background", async () => {
 	dom.dispose();
 });
 
-// Skip complex layout tests due to positioning issues  
+// Skip complex layout tests due to positioning issues
 // TODO: Re-enable when block layout stacking is fixed

@@ -18,6 +18,14 @@
     "eslint:recommended",
     "plugin:prettier/recommended"
   ],
+  "overrides": [
+    {
+      "files": ["examples/**/*.ts"],
+      "rules": {
+        "no-console": "off"
+      }
+    }
+  ],
   "rules": {
     "no-console": [
       "error",
@@ -47,6 +55,7 @@
         "bracketSpacing": false
       }
     ],
-    "linebreak-style": ["error", "unix"]
+    "linebreak-style": ["error", "unix"],
+    "no-control-regex": "off"
   }
 }

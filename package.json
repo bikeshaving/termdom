@@ -2,7 +2,7 @@
   "name": "@b9g/termdom",
   "type": "module",
   "scripts": {
-    "lint": "eslint --ext .js,.jsx,.ts,.tsx",
+    "lint": "eslint --ext .js,.jsx,.ts,.tsx .",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },

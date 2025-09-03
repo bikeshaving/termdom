@@ -8,7 +8,7 @@ import {type ProcessLike, type TTYWriteStream} from "../src/termdom.js";
 import {EventEmitter} from "events";
 import {Terminal} from "@xterm/headless";
 import {type CellBuffer, Cell, createBuffer} from "../src/ansi.js";
-import {generateANSI, type ColorDepth} from "../src/ansi.js";
+import {generateANSI} from "../src/ansi.js";
 
 /**
  * Unified test terminal that handles process mocking and output capture
@@ -55,12 +55,18 @@ export class TestTerminal extends EventEmitter implements ProcessLike {
 	env: Record<string, string | undefined>;
 	private terminal: Terminal;
 
-	constructor(options: {cols?: number; rows?: number; env?: Record<string, string | undefined>} = {}) {
+	constructor(
+		options: {
+			cols?: number;
+			rows?: number;
+			env?: Record<string, string | undefined>;
+		} = {},
+	) {
 		super();
 
 		const cols = options.cols || 80;
 		const rows = options.rows || 24;
-		
+
 		// Set up environment for testing (defaults to 24-bit color support)
 		this.env = options.env || {
 			COLORTERM: "truecolor",
@@ -92,7 +98,7 @@ export class TestTerminal extends EventEmitter implements ProcessLike {
 	getScreenContents(): string {
 		const content = this.getStaticANSI();
 		// Ensure trailing newline for clean snapshot output
-		return content.endsWith('\n') ? content : content + '\n';
+		return content.endsWith("\n") ? content : content + "\n";
 	}
 
 	/**
@@ -133,8 +139,8 @@ export class TestTerminal extends EventEmitter implements ProcessLike {
 		}
 
 		const result = lines.join("\n");
-		// Ensure trailing newline for clean terminal output  
-		return result && !result.endsWith('\n') ? result + '\n' : result;
+		// Ensure trailing newline for clean terminal output
+		return result && !result.endsWith("\n") ? result + "\n" : result;
 	}
 
 	/**
@@ -159,12 +165,12 @@ export class TestTerminal extends EventEmitter implements ProcessLike {
 				// Convert xterm style to our format
 				const fg = cell.getFgColor();
 				const bg = cell.getBgColor();
-				
+
 				const cellStyle = {
 					fg: fg !== 0 ? fg : undefined,
 					bg: bg !== 0 ? bg : undefined,
 					bold: !!cell.isBold(),
-					italic: !!cell.isItalic(), 
+					italic: !!cell.isItalic(),
 					underline: !!cell.isUnderline(),
 					strikethrough: false, // xterm doesn't expose this directly
 					inverse: !!cell.isInverse(),
@@ -187,13 +193,13 @@ export class TestTerminal extends EventEmitter implements ProcessLike {
 		const cellBuffer = this.xtermToCellBuffer();
 		// Use RGB color depth to match our test environment
 		const fullOutput = generateANSI(cellBuffer, "rgb");
-		
+
 		// Strip terminal control sequences for cleaner test output
 		return fullOutput
 			.replace(/\x1b\[\?2026[hl]/g, "") // Remove sync start/end
-			.replace(/\x1b\[\?25[hl]/g, "")   // Remove cursor hide/show  
-			.replace(/\x1b\[H/g, "")          // Remove home cursor
-			.replace(/\x1b\[\d+C/g, "");      // Remove cursor forward
+			.replace(/\x1b\[\?25[hl]/g, "") // Remove cursor hide/show
+			.replace(/\x1b\[H/g, "") // Remove home cursor
+			.replace(/\x1b\[\d+C/g, ""); // Remove cursor forward
 	}
 
 	/**

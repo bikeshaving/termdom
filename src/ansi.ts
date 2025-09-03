@@ -14,7 +14,7 @@ const STYLE_STRIKETHROUGH = 1 << 3;
 const STYLE_INVERSE = 1 << 4;
 const STYLE_BLINK = 1 << 5;
 const STYLE_DIM = 1 << 6;
-const STYLE_INVISIBLE = 1 << 7;
+const _STYLE_INVISIBLE = 1 << 7;
 const STYLE_OVERLINE = 1 << 8;
 
 export type CellBuffer = (Cell | null)[][];
@@ -199,18 +199,20 @@ export class Renderer {
 		}
 
 		// Convert RendererCellStyle to CellStyle by filtering out null values
-		const cellStyle: CellStyle | undefined = finalStyle ? {
-			fg: finalStyle.fg ?? undefined,
-			bg: finalStyle.bg ?? undefined,
-			bold: finalStyle.bold,
-			italic: finalStyle.italic,
-			underline: finalStyle.underline,
-			strikethrough: finalStyle.strikethrough,
-			inverse: finalStyle.inverse,
-			dim: finalStyle.dim,
-			blink: finalStyle.blink,
-			overline: finalStyle.overline,
-		} : undefined;
+		const cellStyle: CellStyle | undefined = finalStyle
+			? {
+					fg: finalStyle.fg ?? undefined,
+					bg: finalStyle.bg ?? undefined,
+					bold: finalStyle.bold,
+					italic: finalStyle.italic,
+					underline: finalStyle.underline,
+					strikethrough: finalStyle.strikethrough,
+					inverse: finalStyle.inverse,
+					dim: finalStyle.dim,
+					blink: finalStyle.blink,
+					overline: finalStyle.overline,
+				}
+			: undefined;
 
 		const newCell = Cell.create(char, cellStyle);
 		this.currentBuffer[row][col] = newCell;
@@ -238,7 +240,12 @@ export class Renderer {
 		}
 	}
 
-	setText(x: number, y: number, text: string, style?: RendererCellStyle): number {
+	setText(
+		x: number,
+		y: number,
+		text: string,
+		style?: RendererCellStyle,
+	): number {
 		if (y < 0 || y >= this.rows) return x;
 
 		let currentX = x;
@@ -332,9 +339,9 @@ export function generateANSI(
 	}
 
 	if (hasContent && !clean) {
-		output += "\x1b[?2026h"; 
-		output += "\x1b[?25l"; 
-		output += "\x1b[H"; 
+		output += "\x1b[?2026h";
+		output += "\x1b[?25l";
+		output += "\x1b[H";
 	}
 
 	const moveCursor = (targetRow: number, targetCol: number): string => {
@@ -377,20 +384,23 @@ export function generateANSI(
 		const seq: number[] = [];
 
 		switch (colorDepth) {
-			case "rgb":
+			case "rgb": {
 				const r = (color >> 16) & 0xff;
 				const g = (color >> 8) & 0xff;
 				const b = color & 0xff;
 				seq.push(prefix, 2, r, g, b);
 				break;
-			case "256":
+			}
+			case "256": {
 				const colorIndex = rgbTo256(color);
 				seq.push(prefix, 5, colorIndex);
 				break;
-			case "ansi":
+			}
+			case "ansi": {
 				const basicColor = rgbToBasic8(color);
 				seq.push((isFg ? 30 : 40) + basicColor);
 				break;
+			}
 		}
 		return seq;
 	};
@@ -560,8 +570,8 @@ export function generateANSI(
 	}
 
 	// Always end with newline for proper terminal output
-	if (hasContent && !output.endsWith('\n')) {
-		output += '\n';
+	if (hasContent && !output.endsWith("\n")) {
+		output += "\n";
 	}
 
 	return output;

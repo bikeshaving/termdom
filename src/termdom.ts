@@ -11,16 +11,16 @@ function detectColorDepth(process: ProcessLike): ColorDepth {
 	if (colorterm === "truecolor" || colorterm === "24bit") {
 		return "rgb";
 	}
-	
+
 	const term = process.env.TERM || "";
 	if (term.includes("256color") || term.includes("256")) {
 		return "256";
 	}
-	
+
 	if (term.includes("color")) {
 		return "ansi";
 	}
-	
+
 	return "ansi";
 }
 

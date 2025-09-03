@@ -29,7 +29,9 @@ export class LayoutEngine {
 		this.rootElement = window.document.documentElement;
 		this.nodeMap = new WeakMap<Node, YogaTypes.Node>();
 		this.nodeRects = new WeakMap<Node, Array<DOMRect & {text?: string}>>();
-		this.observer = new window.MutationObserver((mutations) => this.handleMutationRecords(mutations));
+		this.observer = new window.MutationObserver((mutations) =>
+			this.handleMutationRecords(mutations),
+		);
 
 		this.observer.observe(this.rootElement, {
 			childList: true,
@@ -104,7 +106,7 @@ export class LayoutEngine {
 	dispose(): void {}
 
 	private handleMutationRecords(mutations: MutationRecord[]): void {
-		let needsLayout = false;
+		let _needsLayout = false;
 		for (let i = 0; i < mutations.length; i++) {
 			const record = mutations[i];
 
@@ -113,7 +115,7 @@ export class LayoutEngine {
 				const yogaNode = this.nodeMap.get(element);
 				if (yogaNode) {
 					styleYogaNode(element, yogaNode);
-					needsLayout = true;
+					_needsLayout = true;
 				}
 			}
 
@@ -126,7 +128,7 @@ export class LayoutEngine {
 					);
 				}
 				this.addNode(node, parentYogaNode);
-				needsLayout = true;
+				_needsLayout = true;
 			}
 
 			for (let j = 0; j < record.removedNodes.length; j++) {
@@ -139,7 +141,7 @@ export class LayoutEngine {
 					}
 					yogaNode.freeRecursive();
 					this.nodeMap.delete(node);
-					needsLayout = true;
+					_needsLayout = true;
 				}
 			}
 		}
@@ -271,6 +273,7 @@ export class LayoutEngine {
 					this.addElement(child as Element, yogaNode);
 				}
 			} else if (child.nodeType === child.TEXT_NODE) {
+				// Text nodes are handled during rendering
 			}
 		}
 
@@ -278,6 +281,7 @@ export class LayoutEngine {
 			try {
 				parentYogaNode.insertChild(yogaNode, yogaIndex);
 			} catch (err) {
+				// Yoga error when inserting child - ignore
 			}
 		}
 	}
@@ -301,14 +305,22 @@ export class LayoutEngine {
 				this.nodeMap.set(text, yogaNode);
 			}
 
-			yogaNode.setMeasureFunc((
-				widthMode: YogaTypes.MeasureMode,
-				width: number,
-				heightMode: YogaTypes.MeasureMode,
-				height: number,
-			) => {
-				return this.measureInlineRun(text.parentElement!, widthMode, width, heightMode, height);
-			});
+			yogaNode.setMeasureFunc(
+				(
+					widthMode: YogaTypes.MeasureMode,
+					width: number,
+					heightMode: YogaTypes.MeasureMode,
+					height: number,
+				) => {
+					return this.measureInlineRun(
+						text.parentElement!,
+						widthMode,
+						width,
+						heightMode,
+						height,
+					);
+				},
+			);
 
 			parentYogaNode.insertChild(yogaNode, parentYogaNode.getChildCount());
 		}
@@ -512,8 +524,8 @@ export class LayoutEngine {
 		element: Element,
 		width: number,
 		widthMode: YogaTypes.MeasureMode,
-		height: number,
-		heightMode: YogaTypes.MeasureMode,
+		_height: number,
+		_heightMode: YogaTypes.MeasureMode,
 	): {width: number; height: number} {
 		const maxWidth =
 			widthMode === Yoga.MEASURE_MODE_UNDEFINED || width === 0
@@ -1087,6 +1099,7 @@ export function findInlineRunHead(node: Node): Node | null {
 					if (prevSibling.textContent) {
 						current = prevSibling;
 					} else {
+						// Empty text node - skip
 					}
 				} else {
 					break;

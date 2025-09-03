@@ -5,7 +5,6 @@ import {
 	createBuffer,
 	Renderer,
 	generateANSI,
-	type ColorDepth,
 } from "../src/ansi.js";
 
 describe("Cell", () => {
@@ -458,7 +457,7 @@ describe("generateANSI", () => {
 			buffer[0][0] = Cell.create("A", {fg: 0xff0000});
 
 			const result = generateANSI(buffer, "ansi", true);
-			expect(result).toMatch(/\x1b\[3\dm/);
+			expect(result).toMatch(/\u001b\[3\dm/);
 		});
 	});
 

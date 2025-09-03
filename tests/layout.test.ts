@@ -147,7 +147,7 @@ test("inline elements join runs correctly", () => {
 	`);
 
 	const container = jsdom.window.document.querySelector("div")!;
-	const spans = Array.from(jsdom.window.document.querySelectorAll("span"));
+	const _spans = Array.from(jsdom.window.document.querySelectorAll("span"));
 
 	// Container should have rect
 	expect(layoutEngine.getRect(container)).not.toBeNull();
@@ -408,7 +408,7 @@ test("inline-block vs inline behavior", () => {
 test("mixed content with line breaks", () => {
 	const dom = createDOM(`<div>Text<br><span>after break</span></div>`);
 	const textNode = getTextNode(dom, "Text");
-	const br = getNode(dom, "br");
+	const _br = getNode(dom, "br");
 	const span = getNode(dom, "span");
 
 	// <br> does NOT break inline runs - it's just inline content with newline
