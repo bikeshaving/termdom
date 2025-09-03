@@ -27,14 +27,6 @@ async function helloWorld() {
 	// Add to document (just like web development!)
 	document.body.appendChild(container);
 	document.body.appendChild(subtitle);
-
-	// Wait for rendering to complete
-	await dom.waitForRender();
-
-	// Clean up
-	setTimeout(() => {
-		dom.dispose();
-	}, 1000);
 }
 
 helloWorld();
