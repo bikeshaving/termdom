@@ -61,6 +61,15 @@ export class LayoutEngine {
 	calculateLayout() {
 		const records = this.observer.takeRecords();
 		this.handleMutationRecords(records);
+		
+		// Run actual layout calculation
+		const rootYogaNode = this.nodeMap.get(this.rootElement);
+		if (rootYogaNode) {
+			rootYogaNode.calculateLayout(this.terminalWidth, this.terminalHeight);
+			
+			// Process inline runs after layout calculation
+			this.processInlineRuns(this.rootElement);
+		}
 	}
 
 	private handleMutationRecords(mutations: MutationRecord[]): void {
@@ -108,15 +117,7 @@ export class LayoutEngine {
 			}
 		}
 
-		// Recalculate layout if anything changed
-		if (needsLayout) {
-			const rootYogaNode = this.nodeMap.get(this.rootElement);
-			if (rootYogaNode) {
-				rootYogaNode.calculateLayout(this.terminalWidth, this.terminalHeight);
-				// Process inline runs after layout calculation
-				this.processInlineRuns(this.rootElement);
-			}
-		}
+		// Layout will be calculated by the caller in calculateLayout()
 	}
 
 	getRect(element: Element): DOMRect | null {
@@ -125,9 +126,29 @@ export class LayoutEngine {
 			return null;
 		}
 
+		// Calculate absolute position by walking up the parent chain
+		let x = 0;
+		let y = 0;
+		let current = element;
+		
+		while (current) {
+			const currentNode = this.nodeMap.get(current);
+			if (currentNode) {
+				x += currentNode.getComputedLeft();
+				y += currentNode.getComputedTop();
+			}
+			
+			// Move to parent element
+			if (current.parentElement && current !== this.rootElement) {
+				current = current.parentElement;
+			} else {
+				break;
+			}
+		}
+
 		return new this.DOMRect(
-			yogaNode.getComputedLeft(),
-			yogaNode.getComputedTop(),
+			x,
+			y,
 			yogaNode.getComputedWidth(),
 			yogaNode.getComputedHeight(),
 		);
@@ -136,24 +157,51 @@ export class LayoutEngine {
 	/**
 	 * Process inline runs after Yoga layout calculation
 	 */
-	private processInlineRuns(element: Element): void {
-		// Check if this is an inline run head
+	private processInlineRuns(element: Element, parentX: number = 0, parentY: number = 0): void {
+		const yogaNode = this.nodeMap.get(element);
+		let elementX = parentX;
+		let elementY = parentY;
+		
+		if (yogaNode) {
+			// Calculate absolute position by adding parent offset
+			elementX = parentX + yogaNode.getComputedLeft();
+			elementY = parentY + yogaNode.getComputedTop();
+		}
+		
+		// Check if this is an inline run head OR a block element with inline content
 		const display = resolvePropertyValue(element, "display");
 		if ((display === "inline" || display === "inline-block") && isInlineRunHead(element)) {
-			const yogaNode = this.nodeMap.get(element);
 			if (yogaNode) {
-				const x = yogaNode.getComputedLeft();
-				const y = yogaNode.getComputedTop();
 				const width = yogaNode.getComputedWidth();
-				this.layoutInlineRun(element, x, y, width);
+				this.layoutInlineRun(element, elementX, elementY, width);
+			}
+		} else if (display === "block" || display === "flex") {
+			// Check if this block element has inline content (text or inline elements)
+			let hasInlineContent = false;
+			for (const child of element.childNodes) {
+				if (child.nodeType === child.TEXT_NODE && child.textContent?.trim()) {
+					hasInlineContent = true;
+					break;
+				} else if (child.nodeType === child.ELEMENT_NODE) {
+					const childDisplay = resolvePropertyValue(child as Element, "display");
+					if (childDisplay === "inline" || childDisplay === "inline-block") {
+						hasInlineContent = true;
+						break;
+					}
+				}
+			}
+			
+			if (hasInlineContent && yogaNode) {
+				const width = yogaNode.getComputedWidth();
+				this.layoutInlineRun(element, elementX, elementY, width);
 			}
 		}
 
-		// Process children
+		// Process children with updated parent position
 		for (let i = 0; i < element.childNodes.length; i++) {
 			const child = element.childNodes[i];
 			if (child.nodeType === child.ELEMENT_NODE) {
-				this.processInlineRuns(child as Element);
+				this.processInlineRuns(child as Element, elementX, elementY);
 			}
 		}
 	}
@@ -172,8 +220,12 @@ export class LayoutEngine {
 	private collectLeafNodes(element: Element): Leaf[] {
 		const leafNodes: Leaf[] = [];
 
-		// If this is an inline run head, collect from all elements in the run
-		if (isInlineRunHead(element)) {
+		// Check if this element is in a flex container
+		const parentDisplay = element.parentElement ? resolvePropertyValue(element.parentElement, "display") : null;
+		const isFlexItem = parentDisplay === "flex";
+
+		// If this is an inline run head AND not a flex item, collect from all elements in the run
+		if (isInlineRunHead(element) && !isFlexItem) {
 			// Start from the head and collect all inline siblings
 			let current: Node | null = element;
 			while (current) {
@@ -192,8 +244,10 @@ export class LayoutEngine {
 				current = current.nextSibling;
 			}
 		} else {
-			// Not an inline run head, just traverse this element
-			this.traverseNode(element, leafNodes);
+			// For flex items or block elements, only collect from this element's children
+			for (let i = 0; i < element.childNodes.length; i++) {
+				this.traverseNode(element.childNodes[i], leafNodes);
+			}
 		}
 
 		return leafNodes;
@@ -267,14 +321,25 @@ export class LayoutEngine {
 		heightMode: YogaTypes.MeasureMode
 	): { width: number; height: number } {
 		// Use width as maxWidth for text breaking
-		const maxWidth = widthMode === Yoga.MEASURE_MODE_UNDEFINED ? Number.MAX_SAFE_INTEGER : width;
+		// If width is 0 or undefined, measure with no wrapping to get preferred width
+		const maxWidth = (widthMode === Yoga.MEASURE_MODE_UNDEFINED || width === 0) 
+			? Number.MAX_SAFE_INTEGER 
+			: width;
 		// Collect all leaf nodes
 		const leafNodes = this.collectLeafNodes(element);
 
 		// Get CSS properties for text breaking
-		const whiteSpace = resolvePropertyValue(element, "white-space") as any;
+		let whiteSpace = resolvePropertyValue(element, "white-space") as any;
 		const wordBreak = resolvePropertyValue(element, "word-break") as any;
 		const overflowWrap = resolvePropertyValue(element, "overflow-wrap") as any;
+		
+		// In flex containers, inline elements should not wrap unless explicitly sized
+		if (element.parentElement && resolvePropertyValue(element.parentElement, "display") === "flex") {
+			// If no explicit width is set, use nowrap behavior
+			if (widthMode === Yoga.MEASURE_MODE_UNDEFINED) {
+				whiteSpace = "nowrap";
+			}
+		}
 
 		// Use TextBreaker to break the content into lines
 		const breakResult = breakNodes(leafNodes, {
@@ -284,6 +349,7 @@ export class LayoutEngine {
 			overflowWrap: overflowWrap || "normal"
 		});
 
+		// Note: Padding is handled by Yoga, so we only return content size
 		const result = {
 			width: breakResult.maxLineWidth,
 			height: breakResult.totalHeight
@@ -299,9 +365,18 @@ export class LayoutEngine {
 		const leafNodes = this.collectLeafNodes(element);
 
 		// Get CSS properties
-		const whiteSpace = resolvePropertyValue(element, "white-space") as any;
+		let whiteSpace = resolvePropertyValue(element, "white-space") as any;
 		const wordBreak = resolvePropertyValue(element, "word-break") as any;
 		const overflowWrap = resolvePropertyValue(element, "overflow-wrap") as any;
+		
+		// In flex containers with row direction, inline elements should not wrap
+		// But in column direction, they should wrap normally
+		if (element.parentElement && resolvePropertyValue(element.parentElement, "display") === "flex") {
+			const flexDirection = resolvePropertyValue(element.parentElement, "flex-direction") || "row";
+			if (flexDirection === "row" || flexDirection === "row-reverse") {
+				whiteSpace = "nowrap";
+			}
+		}
 
 		// Break content into lines
 		const breakResult = breakNodes(leafNodes, {
@@ -310,7 +385,8 @@ export class LayoutEngine {
 			wordBreak: wordBreak || "normal",
 			overflowWrap: overflowWrap || "normal"
 		});
-
+		
+		
 		// Distribute rects to all nodes
 		this.distributeRects(breakResult, element, x, y);
 	}
@@ -418,6 +494,11 @@ export class LayoutEngine {
 
 		// Apply CSS properties including display
 		styleYogaNode(element, yogaNode);
+		
+		// Special handling for BODY element - make it fill the viewport
+		if (element.tagName === "BODY") {
+			yogaNode.setHeightPercent(100);
+		}
 
 		// Skip processing children if display: none, but keep the node in tree
 		if (display === "none") {
@@ -439,6 +520,42 @@ export class LayoutEngine {
 
 			// Don't process children - they're part of the inline run
 			return;
+		}
+		
+		// Check if this is a block element with inline content that needs measurement
+		let hasInlineContent = false;
+		for (const child of element.childNodes) {
+			if (child.nodeType === child.TEXT_NODE && child.textContent?.trim()) {
+				hasInlineContent = true;
+				break;
+			} else if (child.nodeType === child.ELEMENT_NODE) {
+				const childDisplay = resolvePropertyValue(child as Element, "display");
+				if (childDisplay === "inline" || childDisplay === "inline-block") {
+					hasInlineContent = true;
+					break;
+				}
+			}
+		}
+		
+		// If block element has inline content and no explicit height, give it a measure function
+		// But only if it doesn't have block-level children (Yoga restriction)
+		// AND it's not a flex container (flex containers handle their own layout)
+		let hasBlockChildren = false;
+		for (const child of element.childNodes) {
+			if (child.nodeType === child.ELEMENT_NODE) {
+				const childDisplay = resolvePropertyValue(child as Element, "display");
+				if (childDisplay !== "inline" && childDisplay !== "inline-block") {
+					hasBlockChildren = true;
+					break;
+				}
+			}
+		}
+		
+		// Don't add measure function to flex containers - they use flexbox layout
+		if (hasInlineContent && !hasBlockChildren && display !== "flex" && !resolvePropertyValue(element, "height", false)) {
+			yogaNode.setMeasureFunc((width, widthMode, height, heightMode) => {
+				return this.measureInlineRun(element, width, widthMode, height, heightMode);
+			});
 		}
 
 		// Process children
@@ -576,7 +693,8 @@ function styleYogaNode(element: Element, yogaNode: YogaTypes.Node): void {
 		yogaNode.setWidthAuto();
 	}
 
-	const height = parseUnitValue(resolvePropertyValue(element, "height", false));
+	const heightValue = resolvePropertyValue(element, "height", false);
+	const height = parseUnitValue(heightValue);
 	if (typeof height === "number") {
 		yogaNode.setHeight(height);
 	} else if (height && "percentage" in height) {
@@ -955,7 +1073,7 @@ export function isInlineRunHead(node: Node): boolean {
 			? resolvePropertyValue(element.parentElement, "display", false)
 			: "block";
 
-		// In flex containers, all inline elements are heads (flex items)
+		// In flex containers, inline elements are flex items (always run heads)
 		if (parentDisplay === "flex") {
 			return true;
 		}

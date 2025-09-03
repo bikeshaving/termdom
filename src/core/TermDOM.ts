@@ -68,10 +68,6 @@ export class TermDOM {
 	// Render completion callbacks for waitForRender
 	private renderCompleteCallbacks: Array<() => void> = [];
 
-	// Scrollback tracking
-	private commandStart: number = 0;
-	private commandHeight: number = 0;
-	private renderStartRow: number = 0;
 
 	constructor(options: TermDOMOptions = {}) {
 		// Set up process (defaults to global process)
@@ -198,89 +194,12 @@ export class TermDOM {
 			});
 		}
 
-		// Initialize cursor position (async)
-		this.initializeCursorPosition();
 	}
 
-	/**
-	 * Get cursor position to determine commandStart
-	 */
-	private async getCursorPosition(): Promise<{row: number; col: number}> {
-		return new Promise((resolve, reject) => {
-			// Check if we have TTY capabilities
-			if (!this.process.stdin?.isTTY) {
-				// Default to top of screen if not in TTY
-				resolve({row: 1, col: 1});
-				return;
-			}
-
-			// Set raw mode to capture escape sequences
-			const stdin = this.process.stdin as TTYReadStream;
-			const originalRawMode = (stdin as any).isRaw || false;
-			stdin.setRawMode?.(true);
-			stdin.resume();
-
-			let response = "";
-			const timeout = setTimeout(() => {
-				cleanup();
-				// Default to reasonable position if timeout
-				resolve({row: 1, col: 1});
-			}, 100);
-
-			const onData = (data: Buffer) => {
-				response += data.toString();
-
-				// Look for cursor position response: \x1b[{row};{col}R
-				const match = response.match(/\x1b\[(\d+);(\d+)R/);
-				if (match) {
-					cleanup();
-					clearTimeout(timeout);
-					const row = parseInt(match[1], 10);
-					const col = parseInt(match[2], 10);
-					resolve({row, col});
-				}
-			};
-
-			const cleanup = () => {
-				stdin.removeListener("data", onData);
-				stdin.setRawMode?.(originalRawMode);
-				if (!originalRawMode) stdin.pause();
-			};
-
-			stdin.on("data", onData);
-
-			// Query cursor position
-			this.process.stdout.write("\x1b[6n");
-		});
-	}
-
-	/**
-	 * Initialize cursor position and command height
-	 */
-	private async initializeCursorPosition(): Promise<void> {
-		try {
-			const pos = await this.getCursorPosition();
-			this.commandStart = pos.row - 1; // Convert to 0-based
-			this.commandHeight = this.height - this.commandStart;
-		} catch (e) {
-			// Default to full screen if detection fails
-			this.commandStart = 0;
-			this.commandHeight = this.height;
-		}
-	}
 
 	private async render(mutations = this.observer.takeRecords()): Promise<void> {
-		// Process mutations and update layout
-		if (mutations.length > 0) {
-			this.layoutEngine.calculateLayout();
-		}
-
-		// Calculate content height and render start row
-		const contentHeight = this.calculateContentHeight();
-		this.renderStartRow = Math.max(
-			0,
-			this.commandStart - (contentHeight - this.commandHeight),
-		);
+		// Always calculate layout to ensure it's up to date
+		this.layoutEngine.calculateLayout();
 
 		// Begin new frame
 		this.renderer.beginFrame();
@@ -291,14 +210,8 @@ export class TermDOM {
 		// Generate ANSI output
 		const ansiOutput = this.renderer.render();
 
-		// Calculate expansion newlines if needed
-		const expansionNewlines =
-			contentHeight > this.commandHeight
-				? "\n".repeat(contentHeight - this.commandHeight)
-				: "";
-
-		// Combine positioning, content, and expansion
-		const fullOutput = ansiOutput + expansionNewlines;
+		// Output directly without expansion
+		const fullOutput = ansiOutput;
 
 		if (fullOutput) {
 			await new Promise<void>((resolve, reject) => {
@@ -321,21 +234,6 @@ export class TermDOM {
 		}
 	}
 
-	/**
-	 * Calculate total content height from layout
-	 */
-	private calculateContentHeight(): number {
-		const body = this.document.body;
-		if (!body) return 0;
-
-		// Get the rect of the body element which should contain all content
-		const rect = this.layoutEngine.getRect(body);
-		if (!rect) return 0;
-
-		// Content height is the bottom of the rect
-		// Add 1 because rect is 0-indexed but we need row count
-		return Math.ceil(rect.bottom) + 1;
-	}
 
 	/**
 	 * Convert CSS color value to terminal color number
@@ -404,6 +302,26 @@ export class TermDOM {
 				const textContent = textNode.textContent;
 				if (!textContent) continue;
 				
+				// Get style from the text node's parent element
+				const parentElement = textNode.parentElement;
+				if (!parentElement) continue;
+				
+				const textColor = resolvePropertyValue(parentElement, "color");
+				const textBgColor = resolvePropertyValue(parentElement, "background-color");
+				const textBold = resolvePropertyValue(parentElement, "font-weight") === "bold";
+				const textItalic = resolvePropertyValue(parentElement, "font-style") === "italic";
+				const textUnderline = resolvePropertyValue(parentElement, "text-decoration").includes("underline");
+				
+				const textStyle = {
+					fg: textColor && textColor !== "initial" ? this.cssColorToNumber(textColor) : undefined,
+					bg: textBgColor && textBgColor !== "initial" && textBgColor !== "transparent"
+						? this.cssColorToNumber(textBgColor)
+						: undefined,
+					bold: textBold,
+					italic: textItalic,
+					underline: textUnderline,
+				};
+				
 				// Get rects for this text node
 				const rects = this.layoutEngine.getRects(textNode) as Array<DOMRect & {text?: string}>;
 				if (rects.length > 0) {
@@ -414,7 +332,7 @@ export class TermDOM {
 								Math.round(textRect.x),
 								Math.round(textRect.y),
 								textRect.text,
-								style,
+								textStyle,
 							);
 						}
 					}
@@ -464,8 +382,6 @@ export class TermDOM {
 		// Clear previous buffer to force full redraw
 		this.renderer.clearPreviousBuffer();
 
-		// Update command height based on new terminal size
-		this.commandHeight = newHeight - this.commandStart;
 
 		// Notify layout engine of size change
 		this.layoutEngine.resize(newWidth, newHeight);

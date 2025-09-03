@@ -232,7 +232,7 @@ export function generateANSI(
 		// Robust terminal rendering setup - synchronized output prevents tearing
 		// Enable synchronized output to batch all updates
 		output += "\x1b[?2026h"; // Enable synchronized output (prevents screen tearing)
-		output += "\x1b[s"; // Save current cursor position
+		// output += "\x1b[s"; // Don't save cursor - we won't restore it
 		output += "\x1b[?25l"; // Hide cursor to prevent flicker during rendering
 		output += "\x1b[H"; // Move cursor to home position (0,0)
 	}
@@ -487,8 +487,9 @@ export function generateANSI(
 
 	// Only add closing wrapper sequences if we added opening ones
 	if (hasContent) {
-		// Restore cursor to original position and show cursor
-		output += "\x1b[u"; // Restore cursor position
+		// Move cursor to end of content instead of restoring original position
+		// This prevents overwriting our rendered content
+		// output += "\x1b[u"; // Don't restore - stay at end of content
 		output += "\x1b[?25h"; // Show cursor
 		output += "\x1b[?2026l"; // Disable synchronized output (commit all updates)
 	}

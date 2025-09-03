@@ -27,13 +27,13 @@ async function flexboxDemo() {
 	const header = document.createElement("div");
 	header.style.display = "flex";
 	header.style.flexDirection = "row";
+	header.style.justifyContent = "space-between";
 	header.style.backgroundColor = "magenta";
 	header.style.padding = "1px 1px 1px 1px";
 	mainContainer.appendChild(header);
 
 	const headerTitle = document.createElement("span");
 	headerTitle.textContent = "🚀 TTY Flexbox Demo";
-	headerTitle.style.textAlign = "center";
 	headerTitle.style.color = "white";
 	header.appendChild(headerTitle);
 
@@ -56,12 +56,15 @@ async function flexboxDemo() {
 	sidebar.style.flexDirection = "column";
 	sidebar.style.backgroundColor = "darkgreen";
 	sidebar.style.padding = "1px 1px 1px 1px";
+	sidebar.style.flexShrink = "0"; // Don't shrink below content size
+	// Let sidebar size itself based on content (intrinsic sizing)
 	contentArea.appendChild(sidebar);
 
 	const sidebarTitle = document.createElement("span");
 	sidebarTitle.textContent = "📋 Navigation";
 	sidebarTitle.style.color = "white";
 	sidebarTitle.style.textAlign = "center";
+	sidebarTitle.style.whiteSpace = "nowrap"; // Prevent wrapping for cleaner look
 	sidebar.appendChild(sidebarTitle);
 
 	const menuItems = ["• Home", "• About", "• Services", "• Contact"];
