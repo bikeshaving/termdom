@@ -1,8 +1,14 @@
 // Bun Snapshot v1, https://bun.sh/docs/test/snapshots
 
-exports[`renders single emoji correctly 1`] = `"🚀"`;
+exports[`renders single emoji correctly 1`] = `
+"🚀
+"
+`;
 
-exports[`renders emoji with text correctly 1`] = `"Hello 🌍 World!"`;
+exports[`renders emoji with text correctly 1`] = `
+"Hello 🌍 World!
+"
+`;
 
 exports[`renders multiple emojis correctly 1`] = `
 "🚀🎯📄
@@ -25,13 +31,18 @@ exports[`renders multiple emojis correctly 1`] = `
 
 
 
-📱💻⌨️🖱️"
+📱💻⌨️🖱️
+"
 `;
 
 exports[`renders emoji with colors correctly 1`] = `
 "🎨 Colorful Text 🌈                                                             
                                                                                 
-                                                                                "
+                                                                                
+"
 `;
 
-exports[`handles emoji width calculation 1`] = `"Text🚀 Mor"`;
+exports[`handles emoji width calculation 1`] = `
+"Text🚀 Mor
+"
+`;

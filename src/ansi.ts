@@ -198,7 +198,21 @@ export class Renderer {
 			}
 		}
 
-		const newCell = Cell.create(char, finalStyle);
+		// Convert RendererCellStyle to CellStyle by filtering out null values
+		const cellStyle: CellStyle | undefined = finalStyle ? {
+			fg: finalStyle.fg ?? undefined,
+			bg: finalStyle.bg ?? undefined,
+			bold: finalStyle.bold,
+			italic: finalStyle.italic,
+			underline: finalStyle.underline,
+			strikethrough: finalStyle.strikethrough,
+			inverse: finalStyle.inverse,
+			dim: finalStyle.dim,
+			blink: finalStyle.blink,
+			overline: finalStyle.overline,
+		} : undefined;
+
+		const newCell = Cell.create(char, cellStyle);
 		this.currentBuffer[row][col] = newCell;
 	}
 
@@ -543,6 +557,11 @@ export function generateANSI(
 	if (hasContent && !clean) {
 		output += "\x1b[?25h";
 		output += "\x1b[?2026l";
+	}
+
+	// Always end with newline for proper terminal output
+	if (hasContent && !output.endsWith('\n')) {
+		output += '\n';
 	}
 
 	return output;

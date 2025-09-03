@@ -558,7 +558,7 @@ test("flex to block conversion changes run behavior", () => {
 	expect(isInlineRunHead(spans[1])).toBe(true);
 
 	// Change to block display
-	container.style.display = "block";
+	(container as HTMLElement).style.display = "block";
 	layoutEngine.calculateLayout();
 
 	// In block: first is head, second joins run

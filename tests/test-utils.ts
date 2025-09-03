@@ -90,7 +90,9 @@ export class TestTerminal extends EventEmitter implements ProcessLike {
 	 * Get the terminal screen contents as they would appear to a user
 	 */
 	getScreenContents(): string {
-		return this.getStaticANSI();
+		const content = this.getStaticANSI();
+		// Ensure trailing newline for clean snapshot output
+		return content.endsWith('\n') ? content : content + '\n';
 	}
 
 	/**
@@ -130,7 +132,9 @@ export class TestTerminal extends EventEmitter implements ProcessLike {
 			lines.pop();
 		}
 
-		return lines.join("\n");
+		const result = lines.join("\n");
+		// Ensure trailing newline for clean terminal output  
+		return result && !result.endsWith('\n') ? result + '\n' : result;
 	}
 
 	/**
@@ -159,13 +163,13 @@ export class TestTerminal extends EventEmitter implements ProcessLike {
 				const cellStyle = {
 					fg: fg !== 0 ? fg : undefined,
 					bg: bg !== 0 ? bg : undefined,
-					bold: cell.isBold(),
-					italic: cell.isItalic(), 
-					underline: cell.isUnderline(),
+					bold: !!cell.isBold(),
+					italic: !!cell.isItalic(), 
+					underline: !!cell.isUnderline(),
 					strikethrough: false, // xterm doesn't expose this directly
-					inverse: cell.isInverse(),
-					dim: cell.isDim(),
-					blink: cell.isBlink(),
+					inverse: !!cell.isInverse(),
+					dim: !!cell.isDim(),
+					blink: !!cell.isBlink(),
 					overline: false, // xterm doesn't expose this directly
 				};
 

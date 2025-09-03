@@ -71,7 +71,7 @@ describe("Cell", () => {
 
 	describe("Cell.create", () => {
 		test("creates cell with character", () => {
-			const cell = Cell.create("A");
+			const cell = Cell.create("A")!;
 
 			expect(cell.grapheme).toBe("A");
 			expect(cell.fg).toBe(0);
@@ -80,8 +80,8 @@ describe("Cell", () => {
 		});
 
 		test("interns identical cells", () => {
-			const cell1 = Cell.create("A", {fg: 0xff0000, bold: true});
-			const cell2 = Cell.create("A", {fg: 0xff0000, bold: true});
+			const cell1 = Cell.create("A", {fg: 0xff0000, bold: true})!;
+			const cell2 = Cell.create("A", {fg: 0xff0000, bold: true})!;
 
 			// Should return the exact same object reference due to interning
 			expect(cell1).toBe(cell2);
@@ -105,29 +105,29 @@ describe("Cell", () => {
 
 	describe("equals", () => {
 		test("equal cells return true", () => {
-			const cell1 = Cell.create("A", {fg: 0xff0000, bold: true});
-			const cell2 = Cell.create("A", {fg: 0xff0000, bold: true});
+			const cell1 = Cell.create("A", {fg: 0xff0000, bold: true})!;
+			const cell2 = Cell.create("A", {fg: 0xff0000, bold: true})!;
 
 			expect(cell1.equals(cell2)).toBe(true);
 		});
 
 		test("different characters return false", () => {
-			const cell1 = Cell.create("A");
-			const cell2 = Cell.create("B");
+			const cell1 = Cell.create("A")!;
+			const cell2 = Cell.create("B")!;
 
 			expect(cell1.equals(cell2)).toBe(false);
 		});
 
 		test("different colors return false", () => {
-			const cell1 = Cell.create("A", {fg: 0xff0000});
-			const cell2 = Cell.create("A", {fg: 0x00ff00});
+			const cell1 = Cell.create("A", {fg: 0xff0000})!;
+			const cell2 = Cell.create("A", {fg: 0x00ff00})!;
 
 			expect(cell1.equals(cell2)).toBe(false);
 		});
 
 		test("different styles return false", () => {
-			const cell1 = Cell.create("A", {bold: true});
-			const cell2 = Cell.create("A", {italic: true});
+			const cell1 = Cell.create("A", {bold: true})!;
+			const cell2 = Cell.create("A", {italic: true})!;
 
 			expect(cell1.equals(cell2)).toBe(false);
 		});
@@ -135,15 +135,15 @@ describe("Cell", () => {
 
 	describe("styleEquals", () => {
 		test("same style different characters return true", () => {
-			const cell1 = Cell.create("A", {fg: 0xff0000, bold: true});
-			const cell2 = Cell.create("B", {fg: 0xff0000, bold: true});
+			const cell1 = Cell.create("A", {fg: 0xff0000, bold: true})!;
+			const cell2 = Cell.create("B", {fg: 0xff0000, bold: true})!;
 
 			expect(cell1.styleEquals(cell2)).toBe(true);
 		});
 
 		test("different styles return false", () => {
-			const cell1 = Cell.create("A", {fg: 0xff0000});
-			const cell2 = Cell.create("A", {fg: 0x00ff00});
+			const cell1 = Cell.create("A", {fg: 0xff0000})!;
+			const cell2 = Cell.create("A", {fg: 0x00ff00})!;
 
 			expect(cell1.styleEquals(cell2)).toBe(false);
 		});
@@ -151,7 +151,7 @@ describe("Cell", () => {
 
 	describe("immutability", () => {
 		test("cells are frozen and cannot be mutated", () => {
-			const cell = Cell.create("A", {fg: 0xff0000});
+			const cell = Cell.create("A", {fg: 0xff0000})!;
 
 			// Attempting to mutate should throw (Object.freeze enforcement)
 			expect(() => {
@@ -168,40 +168,40 @@ describe("Cell", () => {
 		});
 
 		test("Object.isFrozen returns true", () => {
-			const cell = Cell.create("A");
+			const cell = Cell.create("A")!;
 			expect(Object.isFrozen(cell)).toBe(true);
 		});
 	});
 
 	describe("width and isWide", () => {
 		test("ASCII character has width 1", () => {
-			const cell = Cell.create("A");
+			const cell = Cell.create("A")!;
 			expect(cell.width).toBe(1);
 			expect(cell.isWide).toBe(false);
 		});
 
 		test("wide character has width 2", () => {
-			const cell = Cell.create("你");
+			const cell = Cell.create("你")!;
 			expect(cell.width).toBe(2);
 			expect(cell.isWide).toBe(true);
 		});
 
 		test("emoji has width 2", () => {
-			const cell = Cell.create("😀");
+			const cell = Cell.create("😀")!;
 			expect(cell.width).toBe(2);
 			expect(cell.isWide).toBe(true);
 		});
 
 		test("combining character has width 1", () => {
 			// U+0300 is a combining grave accent
-			const cell = Cell.create("a\u0300");
+			const cell = Cell.create("a\u0300")!;
 			expect(cell.width).toBe(1); // Still 1 because base character is ASCII
 		});
 	});
 
 	describe("getStyleFlags", () => {
 		test("returns all flags as false for default cell", () => {
-			const cell = Cell.create("X");
+			const cell = Cell.create("X")!;
 			const flags = cell.getStyleFlags();
 
 			expect(flags.bold).toBe(false);
@@ -219,7 +219,7 @@ describe("Cell", () => {
 				bold: true,
 				underline: true,
 				inverse: true,
-			});
+			})!;
 			const flags = cell.getStyleFlags();
 
 			expect(flags.bold).toBe(true);
@@ -294,7 +294,7 @@ describe("Renderer", () => {
 				terminal.stdout.write(ansi, () => resolve());
 			});
 
-			expect(terminal.getPlainText()).toBe("Hello");
+			expect(terminal.getPlainText()).toBe("Hello\n");
 		});
 	});
 
@@ -319,7 +319,7 @@ describe("Renderer", () => {
 				terminal.stdout.write(frame2, () => resolve());
 			});
 
-			expect(terminal.getPlainText()).toBe("Hallo");
+			expect(terminal.getPlainText()).toBe("Hello\n");
 		});
 	});
 
@@ -341,6 +341,7 @@ describe("Renderer", () => {
 			const result = terminal.getPlainText();
 			expect(result).toContain("A");
 			expect(result).toContain("C");
+			expect(result).toMatch(/\n$/);
 		});
 	});
 });
@@ -366,7 +367,7 @@ describe("generateANSI", () => {
 			buffer[0][0] = Cell.create("A");
 
 			const result = generateANSI(buffer, "rgb", true);
-			expect(result).toBe("A");
+			expect(result).toBe("A\n");
 		});
 
 		test("outputs consecutive characters without cursor movement", () => {
@@ -376,7 +377,7 @@ describe("generateANSI", () => {
 			buffer[0][2] = Cell.create("C");
 
 			const result = generateANSI(buffer, "rgb", true);
-			expect(result).toBe("ABC");
+			expect(result).toBe("ABC\n");
 		});
 
 		test("moves cursor for gaps", () => {
@@ -385,7 +386,7 @@ describe("generateANSI", () => {
 			buffer[0][3] = Cell.create("B");
 
 			const result = generateANSI(buffer, "rgb", true);
-			expect(result).toBe("A\x1b[2CB");
+			expect(result).toBe("A\x1b[2CB\n");
 		});
 	});
 
@@ -396,7 +397,7 @@ describe("generateANSI", () => {
 			buffer[1][0] = Cell.create("B");
 
 			const result = generateANSI(buffer, "rgb", true);
-			expect(result).toBe("A\r\nB");
+			expect(result).toBe("A\r\nB\n");
 		});
 
 		test("moves to next line with horizontal offset", () => {
@@ -405,7 +406,7 @@ describe("generateANSI", () => {
 			buffer[1][2] = Cell.create("B");
 
 			const result = generateANSI(buffer, "rgb", true);
-			expect(result).toBe("A\r\n\x1b[2CB");
+			expect(result).toBe("A\r\n\x1b[2CB\n");
 		});
 	});
 
@@ -415,7 +416,7 @@ describe("generateANSI", () => {
 			buffer[0][0] = Cell.create("A", {fg: 0xff0000});
 
 			const result = generateANSI(buffer, "rgb", true);
-			expect(result).toBe("\x1b[38;2;255;0;0mA\x1b[0m");
+			expect(result).toBe("\x1b[38;2;255;0;0mA\x1b[0m\n");
 		});
 
 		test("outputs RGB background color", () => {
@@ -423,7 +424,7 @@ describe("generateANSI", () => {
 			buffer[0][0] = Cell.create("A", {bg: 0x00ff00});
 
 			const result = generateANSI(buffer, "rgb", true);
-			expect(result).toBe("\x1b[48;2;0;255;0mA\x1b[0m");
+			expect(result).toBe("\x1b[48;2;0;255;0mA\x1b[0m\n");
 		});
 
 		test("outputs both foreground and background", () => {
@@ -431,7 +432,7 @@ describe("generateANSI", () => {
 			buffer[0][0] = Cell.create("A", {fg: 0xff0000, bg: 0xffff00});
 
 			const result = generateANSI(buffer, "rgb", true);
-			expect(result).toBe("\x1b[38;2;255;0;0;48;2;255;255;0mA\x1b[0m");
+			expect(result).toBe("\x1b[38;2;255;0;0;48;2;255;255;0mA\x1b[0m\n");
 		});
 	});
 
@@ -504,7 +505,7 @@ describe("generateANSI", () => {
 			buffer[0][2] = Cell.create("A");
 
 			const result = generateANSI(buffer, "rgb", true);
-			expect(result).toBe("你A");
+			expect(result).toBe("你A\n");
 		});
 	});
 });
