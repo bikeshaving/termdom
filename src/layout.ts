@@ -12,6 +12,7 @@ export interface TextLayout {
 
 interface TableInstance {
 	element: Element;
+	// TOOD: type this accurately
 	tanstackTable: any;
 	data: any[];
 	columns: any[];
@@ -29,6 +30,7 @@ export class LayoutEngine {
 	declare terminalWidth: number;
 	declare terminalHeight: number;
 
+	// TODO: These should be strong maps
 	declare nodeMap: WeakMap<Node, YogaTypes.Node>;
 	declare nodeRects: WeakMap<Node, Array<DOMRect & {text?: string}>>;
 	declare tableInstances: WeakMap<Element, TableInstance>;
@@ -122,7 +124,7 @@ export class LayoutEngine {
 	private setupTableElement(
 		tableElement: Element,
 		parentYogaNode: YogaTypes.Node | null,
-		yogaIndex: number,
+		yogaIndex: number = this.getYogaIndex(tableElement),
 	): void {
 		// Extract data from DOM table structure
 		const tableData = this.extractTableData(tableElement);
@@ -239,6 +241,7 @@ export class LayoutEngine {
 	): {width: number; height: number} {
 		const tableInstance = this.tableInstances.get(tableElement);
 		if (!tableInstance) {
+			// TODO: Throw if no table instance is found
 			return {width: 40, height: 5};
 		}
 
@@ -246,6 +249,7 @@ export class LayoutEngine {
 		const rowCount = table.getRowModel().rows.length + 1; // +1 for header
 		const colCount = table.getAllColumns().length;
 
+		// TODO: intrinsic cell sizing
 		// Calculate dimensions
 		const calculatedWidth = Math.max(colCount * 12, 40);
 		const calculatedHeight = Math.max(rowCount, 3);
@@ -260,6 +264,35 @@ export class LayoutEngine {
 					? calculatedHeight
 					: Math.min(height, calculatedHeight),
 		};
+	}
+
+	private setupListItem(
+		listItem: Element,
+		parentYogaNode: YogaTypes.Node | null,
+		yogaIndex: number,
+	): void {
+		// Create Yoga node for the list item
+		let yogaNode = this.nodeMap.get(listItem);
+		if (!yogaNode) {
+			yogaNode = Yoga.Node.createWithConfig(yogaConfig);
+			this.nodeMap.set(listItem, yogaNode);
+		}
+
+		// Style the list item container - it's a block element
+		styleYogaNode(listItem, yogaNode);
+		yogaNode.setDisplay(Yoga.DISPLAY_FLEX);
+		yogaNode.setFlexDirection(Yoga.FLEX_DIRECTION_ROW);
+
+		// Add to parent
+		if (parentYogaNode) {
+			parentYogaNode.insertChild(yogaNode, yogaIndex);
+		}
+
+		// Process child nodes normally
+		for (let i = 0; i < listItem.childNodes.length; i++) {
+			const child = listItem.childNodes[i];
+			this.addNode(child, yogaNode);
+		}
 	}
 
 	private handleMutationRecords(mutations: MutationRecord[]): void {
@@ -319,13 +352,13 @@ export class LayoutEngine {
 		}
 
 		if (node.nodeType === node.ELEMENT_NODE) {
-			this.addElement(node as Element, parentYogaNode);
+			this.addElementNode(node as Element, parentYogaNode);
 		} else if (node.nodeType === node.TEXT_NODE) {
 			this.addTextNode(node as Text, parentYogaNode);
 		}
 	}
 
-	private addElement(
+	private addElementNode(
 		element: Element,
 		parentYogaNode: YogaTypes.Node | null = null,
 		yogaIndex: number = this.getYogaIndex(element),
@@ -334,7 +367,7 @@ export class LayoutEngine {
 
 		// Handle table elements with TanStack Table integration
 		if (display === "table") {
-			this.setupTableElement(element, parentYogaNode, yogaIndex);
+			this.setupTableElement(element, parentYogaNode);
 			return;
 		}
 
@@ -347,6 +380,12 @@ export class LayoutEngine {
 			display === "table-cell"
 		) {
 			// These will be handled by the parent table's layout
+			return;
+		}
+
+		// Handle list items - need special layout for marker positioning
+		if (element.tagName === "LI") {
+			this.setupListItem(element, parentYogaNode, yogaIndex);
 			return;
 		}
 
@@ -440,12 +479,12 @@ export class LayoutEngine {
 				const childDisplay = resolvePropertyValue(child as Element, "display");
 				if (childDisplay === "inline" || childDisplay === "inline-block") {
 					if (display === "flex") {
-						this.addElement(child as Element, yogaNode);
+						this.addElementNode(child as Element, yogaNode);
 					} else {
-						this.addElement(child as Element, yogaNode);
+						this.addElementNode(child as Element, yogaNode);
 					}
 				} else {
-					this.addElement(child as Element, yogaNode);
+					this.addElementNode(child as Element, yogaNode);
 				}
 			} else if (child.nodeType === child.TEXT_NODE) {
 				// Text nodes are handled during rendering

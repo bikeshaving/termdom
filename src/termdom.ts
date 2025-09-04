@@ -256,6 +256,12 @@ export class TermDOM {
 			return; // Table handles its own children
 		}
 
+		// Handle list items with markers
+		if (element.tagName === "LI" && rect) {
+			this.renderListItem(element, rect, style);
+			// Continue to render children normally
+		}
+
 		// Handle borders
 		if (rect) {
 			const borderStyles = resolveBorderStyles(element);
@@ -542,6 +548,94 @@ export class TermDOM {
 			(Math.floor(g * (1 - factor)) << 8) |
 			Math.floor(b * (1 - factor))
 		);
+	}
+
+	private renderListItem(element: Element, rect: DOMRect, style: any): void {
+		const listParent = element.parentElement;
+		if (!listParent) return;
+
+		const marker = this.getListMarker(element, listParent);
+		if (!marker) return;
+
+		const {left, top} = rect;
+
+		// Position marker to the left of the content
+		// Account for the parent list's padding-left
+		const markerX = Math.round(left - 2); // 2ch space for marker
+		const markerY = Math.round(top);
+
+		if (markerX >= 0 && markerY >= 0) {
+			this.renderer.setText(markerX, markerY, marker, style);
+		}
+	}
+
+	private getListMarker(listItem: Element, listParent: Element): string {
+		const listType = listParent.tagName.toLowerCase();
+		const listStyleType = resolvePropertyValue(listParent, "list-style-type");
+
+		if (listType === "ol") {
+			// Ordered list - get the item index and format as number
+			const items = Array.from(listParent.querySelectorAll("li"));
+			const index = items.indexOf(listItem as HTMLLIElement);
+			if (index === -1) return "";
+
+			const start = parseInt(listParent.getAttribute("start") || "1", 10);
+			const itemNumber = start + index;
+
+			switch (listStyleType) {
+				case "decimal":
+				default:
+					return `${itemNumber}.`;
+				case "lower-alpha":
+					return `${String.fromCharCode(96 + (itemNumber % 26))}.`;
+				case "upper-alpha":
+					return `${String.fromCharCode(64 + (itemNumber % 26))}.`;
+				case "lower-roman":
+					return `${this.toRoman(itemNumber).toLowerCase()}.`;
+				case "upper-roman":
+					return `${this.toRoman(itemNumber)}.`;
+			}
+		} else if (listType === "ul") {
+			// Unordered list - use bullet characters
+			switch (listStyleType) {
+				case "disc":
+				default:
+					return "•";
+				case "circle":
+					return "◦";
+				case "square":
+					return "▪";
+			}
+		}
+
+		return "";
+	}
+
+	private toRoman(num: number): string {
+		const romanNumerals = [
+			{value: 1000, symbol: "M"},
+			{value: 900, symbol: "CM"},
+			{value: 500, symbol: "D"},
+			{value: 400, symbol: "CD"},
+			{value: 100, symbol: "C"},
+			{value: 90, symbol: "XC"},
+			{value: 50, symbol: "L"},
+			{value: 40, symbol: "XL"},
+			{value: 10, symbol: "X"},
+			{value: 9, symbol: "IX"},
+			{value: 5, symbol: "V"},
+			{value: 4, symbol: "IV"},
+			{value: 1, symbol: "I"},
+		];
+
+		let result = "";
+		for (const {value, symbol} of romanNumerals) {
+			while (num >= value) {
+				result += symbol;
+				num -= value;
+			}
+		}
+		return result;
 	}
 
 	private setBorderCell(
