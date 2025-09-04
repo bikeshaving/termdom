@@ -19,9 +19,17 @@ describe("Cell", () => {
 			const cell = new Cell("A");
 
 			expect(cell.grapheme).toBe("A");
-			expect(cell.fg).toBe(0);
-			expect(cell.bg).toBe(0);
-			expect(cell.style).toBe(0);
+			expect(cell.getFgColor()).toBe(0);
+			expect(cell.getBgColor()).toBe(0);
+			const flags = cell.getStyleFlags();
+			expect(flags.bold).toBe(false);
+			expect(flags.italic).toBe(false);
+			expect(flags.underline).toBe(false);
+			expect(flags.strikethrough).toBe(false);
+			expect(flags.inverse).toBe(false);
+			expect(flags.blink).toBe(false);
+			expect(flags.dim).toBe(false);
+			expect(flags.overline).toBe(false);
 		});
 
 		test("creates cell with character and style", () => {
@@ -31,11 +39,11 @@ describe("Cell", () => {
 				bold: true,
 				italic: true,
 			};
-			const cell = new Cell("A", style);
+			const cell = new Cell({grapheme: "A", ...style});
 
 			expect(cell.grapheme).toBe("A");
-			expect(cell.fg).toBe(0xff0000);
-			expect(cell.bg).toBe(0x00ff00);
+			expect(cell.getFgColor()).toBe(0xff0000);
+			expect(cell.getBgColor()).toBe(0x00ff00);
 
 			const flags = cell.getStyleFlags();
 			expect(flags.bold).toBe(true);
@@ -54,7 +62,7 @@ describe("Cell", () => {
 				dim: true,
 				overline: true,
 			};
-			const cell = new Cell("X", style);
+			const cell = new Cell({grapheme: "X", ...style});
 
 			const flags = cell.getStyleFlags();
 			expect(flags.bold).toBe(true);
@@ -73,22 +81,30 @@ describe("Cell", () => {
 			const cell = Cell.create("A")!;
 
 			expect(cell.grapheme).toBe("A");
-			expect(cell.fg).toBe(0);
-			expect(cell.bg).toBe(0);
-			expect(cell.style).toBe(0);
+			expect(cell.getFgColor()).toBe(0);
+			expect(cell.getBgColor()).toBe(0);
+			const flags = cell.getStyleFlags();
+			expect(flags.bold).toBe(false);
+			expect(flags.italic).toBe(false);
+			expect(flags.underline).toBe(false);
+			expect(flags.strikethrough).toBe(false);
+			expect(flags.inverse).toBe(false);
+			expect(flags.blink).toBe(false);
+			expect(flags.dim).toBe(false);
+			expect(flags.overline).toBe(false);
 		});
 
 		test("interns identical cells", () => {
-			const cell1 = Cell.create("A", {fg: 0xff0000, bold: true})!;
-			const cell2 = Cell.create("A", {fg: 0xff0000, bold: true})!;
+			const cell1 = Cell.create({grapheme: "A", fg: 0xff0000, bold: true})!;
+			const cell2 = Cell.create({grapheme: "A", fg: 0xff0000, bold: true})!;
 
 			// Should return the exact same object reference due to interning
 			expect(cell1).toBe(cell2);
 		});
 
 		test("creates different instances for different styles", () => {
-			const cell1 = Cell.create("A", {fg: 0xff0000});
-			const cell2 = Cell.create("A", {fg: 0x00ff00});
+			const cell1 = Cell.create({grapheme: "A", fg: 0xff0000});
+			const cell2 = Cell.create({grapheme: "A", fg: 0x00ff00});
 
 			// Different styles should create different instances
 			expect(cell1).not.toBe(cell2);
@@ -104,8 +120,8 @@ describe("Cell", () => {
 
 	describe("equals", () => {
 		test("equal cells return true", () => {
-			const cell1 = Cell.create("A", {fg: 0xff0000, bold: true})!;
-			const cell2 = Cell.create("A", {fg: 0xff0000, bold: true})!;
+			const cell1 = Cell.create({grapheme: "A", fg: 0xff0000, bold: true})!;
+			const cell2 = Cell.create({grapheme: "A", fg: 0xff0000, bold: true})!;
 
 			expect(cell1.equals(cell2)).toBe(true);
 		});
@@ -118,15 +134,15 @@ describe("Cell", () => {
 		});
 
 		test("different colors return false", () => {
-			const cell1 = Cell.create("A", {fg: 0xff0000})!;
-			const cell2 = Cell.create("A", {fg: 0x00ff00})!;
+			const cell1 = Cell.create({grapheme: "A", fg: 0xff0000})!;
+			const cell2 = Cell.create({grapheme: "A", fg: 0x00ff00})!;
 
 			expect(cell1.equals(cell2)).toBe(false);
 		});
 
 		test("different styles return false", () => {
-			const cell1 = Cell.create("A", {bold: true})!;
-			const cell2 = Cell.create("A", {italic: true})!;
+			const cell1 = Cell.create({grapheme: "A", bold: true})!;
+			const cell2 = Cell.create({grapheme: "A", italic: true})!;
 
 			expect(cell1.equals(cell2)).toBe(false);
 		});
@@ -134,15 +150,15 @@ describe("Cell", () => {
 
 	describe("styleEquals", () => {
 		test("same style different characters return true", () => {
-			const cell1 = Cell.create("A", {fg: 0xff0000, bold: true})!;
-			const cell2 = Cell.create("B", {fg: 0xff0000, bold: true})!;
+			const cell1 = Cell.create({grapheme: "A", fg: 0xff0000, bold: true})!;
+			const cell2 = Cell.create({grapheme: "B", fg: 0xff0000, bold: true})!;
 
 			expect(cell1.styleEquals(cell2)).toBe(true);
 		});
 
 		test("different styles return false", () => {
-			const cell1 = Cell.create("A", {fg: 0xff0000})!;
-			const cell2 = Cell.create("A", {fg: 0x00ff00})!;
+			const cell1 = Cell.create({grapheme: "A", fg: 0xff0000})!;
+			const cell2 = Cell.create({grapheme: "A", fg: 0x00ff00})!;
 
 			expect(cell1.styleEquals(cell2)).toBe(false);
 		});
@@ -150,7 +166,7 @@ describe("Cell", () => {
 
 	describe("immutability", () => {
 		test("cells are frozen and cannot be mutated", () => {
-			const cell = Cell.create("A", {fg: 0xff0000})!;
+			const cell = Cell.create({grapheme: "A", fg: 0xff0000})!;
 
 			// Attempting to mutate should throw (Object.freeze enforcement)
 			expect(() => {
@@ -214,7 +230,8 @@ describe("Cell", () => {
 		});
 
 		test("returns correct flags for styled cell", () => {
-			const cell = Cell.create("X", {
+			const cell = Cell.create({
+				grapheme: "X",
 				bold: true,
 				underline: true,
 				inverse: true,
@@ -412,7 +429,7 @@ describe("generateANSI", () => {
 	describe("RGB color output", () => {
 		test("outputs RGB foreground color", () => {
 			const buffer = createBuffer(1, 1);
-			buffer[0][0] = Cell.create("A", {fg: 0xff0000});
+			buffer[0][0] = Cell.create({grapheme: "A", fg: 0xff0000});
 
 			const result = generateANSI(buffer, "rgb", true);
 			expect(result).toBe("\x1b[38;2;255;0;0mA\x1b[0m\n");
@@ -420,7 +437,7 @@ describe("generateANSI", () => {
 
 		test("outputs RGB background color", () => {
 			const buffer = createBuffer(1, 1);
-			buffer[0][0] = Cell.create("A", {bg: 0x00ff00});
+			buffer[0][0] = Cell.create({grapheme: "A", bg: 0x00ff00});
 
 			const result = generateANSI(buffer, "rgb", true);
 			expect(result).toBe("\x1b[48;2;0;255;0mA\x1b[0m\n");
@@ -428,7 +445,7 @@ describe("generateANSI", () => {
 
 		test("outputs both foreground and background", () => {
 			const buffer = createBuffer(1, 1);
-			buffer[0][0] = Cell.create("A", {fg: 0xff0000, bg: 0xffff00});
+			buffer[0][0] = Cell.create({grapheme: "A", fg: 0xff0000, bg: 0xffff00});
 
 			const result = generateANSI(buffer, "rgb", true);
 			expect(result).toBe("\x1b[38;2;255;0;0;48;2;255;255;0mA\x1b[0m\n");
@@ -438,7 +455,7 @@ describe("generateANSI", () => {
 	describe("color depth modes", () => {
 		test("RGB mode uses 24-bit colors", () => {
 			const buffer = createBuffer(1, 1);
-			buffer[0][0] = Cell.create("A", {fg: 0x123456});
+			buffer[0][0] = Cell.create({grapheme: "A", fg: 0x123456});
 
 			const result = generateANSI(buffer, "rgb", true);
 			expect(result).toContain("38;2;18;52;86");
@@ -446,7 +463,7 @@ describe("generateANSI", () => {
 
 		test("256-color mode converts to palette", () => {
 			const buffer = createBuffer(1, 1);
-			buffer[0][0] = Cell.create("A", {fg: 0xff0000});
+			buffer[0][0] = Cell.create({grapheme: "A", fg: 0xff0000});
 
 			const result = generateANSI(buffer, "256", true);
 			expect(result).toContain("38;5;");
@@ -454,7 +471,7 @@ describe("generateANSI", () => {
 
 		test("ANSI mode uses basic colors", () => {
 			const buffer = createBuffer(1, 1);
-			buffer[0][0] = Cell.create("A", {fg: 0xff0000});
+			buffer[0][0] = Cell.create({grapheme: "A", fg: 0xff0000});
 
 			const result = generateANSI(buffer, "ansi", true);
 			expect(result).toMatch(/\u001b\[3\dm/);
@@ -464,7 +481,8 @@ describe("generateANSI", () => {
 	describe("style flags", () => {
 		test("outputs all style flags", () => {
 			const buffer = createBuffer(1, 1);
-			buffer[0][0] = Cell.create("A", {
+			buffer[0][0] = Cell.create({
+				grapheme: "A",
 				bold: true,
 				dim: true,
 				italic: true,

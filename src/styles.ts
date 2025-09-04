@@ -27,6 +27,9 @@
  * - Terminal-appropriate default values per element type
  */
 
+import Yoga from "yoga-layout";
+import type * as YogaTypes from "yoga-layout";
+
 // ============================================================================
 // PROPERTY CLASSIFICATION
 // ============================================================================
@@ -75,6 +78,11 @@ export const LAYOUT_PROPERTIES = new Set([
 	"border-right-style",
 	"border-bottom-style",
 	"border-left-style",
+	"border-color",
+	"border-top-color",
+	"border-right-color",
+	"border-bottom-color",
+	"border-left-color",
 
 	// Display and positioning
 	"display",
@@ -189,6 +197,21 @@ const CSS_SPEC_DEFAULTS: Record<string, string> = {
 	"padding-bottom": "0",
 	"padding-left": "0",
 	"border-width": "0",
+	"border-style": "none",
+	"border-color": "currentColor",
+	"border-top-width": "0",
+	"border-right-width": "0", 
+	"border-bottom-width": "0",
+	"border-left-width": "0",
+	"border-top-style": "none",
+	"border-right-style": "none",
+	"border-bottom-style": "none", 
+	"border-left-style": "none",
+	"border-top-color": "currentColor",
+	"border-right-color": "currentColor",
+	"border-bottom-color": "currentColor",
+	"border-left-color": "currentColor",
+	"border-radius": "0",
 	"background-color": "transparent",
 	color: "#000000",
 	"font-size": "1rem",
@@ -397,3 +420,487 @@ function getInitialStyle(element: Element, property: string): string {
 	// Fall back to CSS spec default
 	return CSS_SPEC_DEFAULTS[property] || "";
 }
+
+// ============================================================================
+// YOGA LAYOUT INTEGRATION
+// ============================================================================
+
+interface EnumMap {
+	align: YogaTypes.Align;
+	justify: YogaTypes.Justify;
+	wrap: YogaTypes.Wrap;
+}
+
+function getYogaConstant<TEnumName extends keyof EnumMap>(
+	enumName: TEnumName,
+	propertyName: string,
+): EnumMap[TEnumName] | null {
+	const name =
+		enumName.toUpperCase() + "_" + propertyName.replace("-", "_").toUpperCase();
+	return (Yoga as any)[name] || null;
+}
+
+function parseUnitValue(value: string): number | {percentage: number} | null {
+	if (!value || !/^\d/.test(value)) {
+		return null;
+	}
+
+	if (value.endsWith("%")) {
+		const num = parseFloat(value.slice(0, -1));
+		if (isNaN(num)) return null;
+		return {percentage: num};
+	}
+
+	const num = parseFloat(value);
+	return isNaN(num) ? null : num;
+}
+
+export function styleYogaNode(element: Element, yogaNode: YogaTypes.Node): void {
+	const width = parseUnitValue(resolvePropertyValue(element, "width", false));
+	if (typeof width === "number") {
+		yogaNode.setWidth(width);
+	} else if (width && "percentage" in width) {
+		yogaNode.setWidthPercent(width.percentage);
+	} else {
+		yogaNode.setWidthAuto();
+	}
+
+	const heightValue = resolvePropertyValue(element, "height", false);
+	const height = parseUnitValue(heightValue);
+	if (typeof height === "number") {
+		yogaNode.setHeight(height);
+	} else if (height && "percentage" in height) {
+		yogaNode.setHeightPercent(height.percentage);
+	} else {
+		yogaNode.setHeightAuto();
+	}
+
+	const minWidth = parseUnitValue(
+		resolvePropertyValue(element, "min-width", false),
+	);
+	if (typeof minWidth === "number") {
+		yogaNode.setMinWidth(minWidth);
+	} else if (minWidth && "percentage" in minWidth) {
+		yogaNode.setMinWidthPercent(minWidth.percentage);
+	} else {
+		yogaNode.setMinWidth(undefined);
+	}
+
+	const minHeight = parseUnitValue(
+		resolvePropertyValue(element, "min-height", false),
+	);
+	if (typeof minHeight === "number") {
+		yogaNode.setMinHeight(minHeight);
+	} else if (minHeight && "percentage" in minHeight) {
+		yogaNode.setMinHeightPercent(minHeight.percentage);
+	} else {
+		yogaNode.setMinHeight(undefined);
+	}
+
+	const maxWidth = parseUnitValue(
+		resolvePropertyValue(element, "max-width", false),
+	);
+	if (typeof maxWidth === "number") {
+		yogaNode.setMaxWidth(maxWidth);
+	} else if (maxWidth && "percentage" in maxWidth) {
+		yogaNode.setMaxWidthPercent(maxWidth.percentage);
+	} else {
+		yogaNode.setMaxWidth(undefined);
+	}
+
+	const maxHeight = parseUnitValue(
+		resolvePropertyValue(element, "max-height", false),
+	);
+	if (typeof maxHeight === "number") {
+		yogaNode.setMaxHeight(maxHeight);
+	} else if (maxHeight && "percentage" in maxHeight) {
+		yogaNode.setMaxHeightPercent(maxHeight.percentage);
+	} else {
+		yogaNode.setMaxHeight(undefined);
+	}
+
+	const marginTop = parseUnitValue(
+		resolvePropertyValue(element, "margin-top", false),
+	);
+	if (typeof marginTop === "number") {
+		yogaNode.setMargin(Yoga.EDGE_TOP, marginTop);
+	} else if (marginTop && "percentage" in marginTop) {
+		yogaNode.setMarginPercent(Yoga.EDGE_TOP, marginTop.percentage);
+	} else {
+		const originalValue = resolvePropertyValue(element, "margin-top", false);
+		if (originalValue === "auto") {
+			yogaNode.setMarginAuto(Yoga.EDGE_TOP);
+		} else {
+			yogaNode.setMargin(Yoga.EDGE_TOP, undefined);
+		}
+	}
+	const marginRight = parseUnitValue(
+		resolvePropertyValue(element, "margin-right", false),
+	);
+	if (typeof marginRight === "number") {
+		yogaNode.setMargin(Yoga.EDGE_RIGHT, marginRight);
+	} else if (marginRight && "percentage" in marginRight) {
+		yogaNode.setMarginPercent(Yoga.EDGE_RIGHT, marginRight.percentage);
+	} else {
+		const originalValue = resolvePropertyValue(element, "margin-right", false);
+		if (originalValue === "auto") {
+			yogaNode.setMarginAuto(Yoga.EDGE_RIGHT);
+		} else {
+			yogaNode.setMargin(Yoga.EDGE_RIGHT, undefined);
+		}
+	}
+	const marginBottom = parseUnitValue(
+		resolvePropertyValue(element, "margin-bottom", false),
+	);
+	if (typeof marginBottom === "number") {
+		yogaNode.setMargin(Yoga.EDGE_BOTTOM, marginBottom);
+	} else if (marginBottom && "percentage" in marginBottom) {
+		yogaNode.setMarginPercent(Yoga.EDGE_BOTTOM, marginBottom.percentage);
+	} else {
+		const originalValue = resolvePropertyValue(element, "margin-bottom", false);
+		if (originalValue === "auto") {
+			yogaNode.setMarginAuto(Yoga.EDGE_BOTTOM);
+		} else {
+			yogaNode.setMargin(Yoga.EDGE_BOTTOM, undefined);
+		}
+	}
+
+	const marginLeft = parseUnitValue(
+		resolvePropertyValue(element, "margin-left", false),
+	);
+	if (typeof marginLeft === "number") {
+		yogaNode.setMargin(Yoga.EDGE_LEFT, marginLeft);
+	} else if (marginLeft && "percentage" in marginLeft) {
+		yogaNode.setMarginPercent(Yoga.EDGE_LEFT, marginLeft.percentage);
+	} else {
+		const originalValue = resolvePropertyValue(element, "margin-left", false);
+		if (originalValue === "auto") {
+			yogaNode.setMarginAuto(Yoga.EDGE_LEFT);
+		} else {
+			yogaNode.setMargin(Yoga.EDGE_LEFT, undefined);
+		}
+	}
+
+	const paddingTop = parseUnitValue(
+		resolvePropertyValue(element, "padding-top", false),
+	);
+	if (typeof paddingTop === "number") {
+		yogaNode.setPadding(Yoga.EDGE_TOP, paddingTop);
+	} else if (paddingTop && "percentage" in paddingTop) {
+		yogaNode.setPaddingPercent(Yoga.EDGE_TOP, paddingTop.percentage);
+	} else {
+		yogaNode.setPadding(Yoga.EDGE_TOP, undefined);
+	}
+
+	const paddingRight = parseUnitValue(
+		resolvePropertyValue(element, "padding-right", false),
+	);
+	if (typeof paddingRight === "number") {
+		yogaNode.setPadding(Yoga.EDGE_RIGHT, paddingRight);
+	} else if (paddingRight && "percentage" in paddingRight) {
+		yogaNode.setPaddingPercent(Yoga.EDGE_RIGHT, paddingRight.percentage);
+	} else {
+		yogaNode.setPadding(Yoga.EDGE_RIGHT, undefined);
+	}
+
+	const paddingBottom = parseUnitValue(
+		resolvePropertyValue(element, "padding-bottom", false),
+	);
+	if (typeof paddingBottom === "number") {
+		yogaNode.setPadding(Yoga.EDGE_BOTTOM, paddingBottom);
+	} else if (paddingBottom && "percentage" in paddingBottom) {
+		yogaNode.setPaddingPercent(Yoga.EDGE_BOTTOM, paddingBottom.percentage);
+	} else {
+		yogaNode.setPadding(Yoga.EDGE_BOTTOM, undefined);
+	}
+
+	const paddingLeft = parseUnitValue(
+		resolvePropertyValue(element, "padding-left", false),
+	);
+	if (typeof paddingLeft === "number") {
+		yogaNode.setPadding(Yoga.EDGE_LEFT, paddingLeft);
+	} else if (paddingLeft && "percentage" in paddingLeft) {
+		yogaNode.setPaddingPercent(Yoga.EDGE_LEFT, paddingLeft.percentage);
+	} else {
+		yogaNode.setPadding(Yoga.EDGE_LEFT, undefined);
+	}
+
+	if (
+		element.parentElement &&
+		resolvePropertyValue(element.parentElement, "display") === "block"
+	) {
+		yogaNode.setFlexGrow(0);
+		yogaNode.setFlexShrink(0);
+		yogaNode.setFlexBasisAuto();
+		yogaNode.setAlignSelf(Yoga.ALIGN_AUTO);
+	} else {
+		const flexGrow = resolvePropertyValue(element, "flex-grow", false);
+		const growValue = parseFloat(flexGrow);
+		if (!isNaN(growValue) && growValue >= 0) {
+			yogaNode.setFlexGrow(growValue);
+		} else {
+			yogaNode.setFlexGrow(undefined);
+		}
+
+		const flexShrink = resolvePropertyValue(element, "flex-shrink", false);
+		const shrinkValue = parseFloat(flexShrink);
+		if (!isNaN(shrinkValue) && shrinkValue >= 0) {
+			yogaNode.setFlexShrink(shrinkValue);
+		} else {
+			yogaNode.setFlexShrink(undefined);
+		}
+
+		const flexBasis = parseUnitValue(
+			resolvePropertyValue(element, "flex-basis", false),
+		);
+		if (typeof flexBasis === "number") {
+			yogaNode.setFlexBasis(flexBasis);
+		} else if (flexBasis && "percentage" in flexBasis) {
+			yogaNode.setFlexBasisPercent(flexBasis.percentage);
+		} else {
+			const originalValue = resolvePropertyValue(element, "flex-basis", false);
+			if (originalValue === "auto") {
+				yogaNode.setFlexBasisAuto();
+			} else {
+				yogaNode.setFlexBasis(undefined);
+			}
+		}
+
+		const alignSelf = resolvePropertyValue(element, "align-self", false);
+		if (alignSelf === "auto") {
+			yogaNode.setAlignSelf(Yoga.ALIGN_AUTO);
+		} else {
+			const alignValue = getYogaConstant("align", alignSelf);
+			if (alignValue !== null) {
+				yogaNode.setAlignSelf(alignValue);
+			} else {
+				yogaNode.setAlignSelf(Yoga.ALIGN_AUTO);
+			}
+		}
+	}
+
+	const display = resolvePropertyValue(element, "display");
+	if (display === "none") {
+		yogaNode.setDisplay(Yoga.DISPLAY_NONE);
+	} else if (display === "flex") {
+		yogaNode.setDisplay(Yoga.DISPLAY_FLEX);
+
+		const flexDirection = resolvePropertyValue(element, "flex-direction");
+		if (flexDirection === "row") {
+			yogaNode.setFlexDirection(Yoga.FLEX_DIRECTION_ROW);
+		} else if (flexDirection === "row-reverse") {
+			yogaNode.setFlexDirection(Yoga.FLEX_DIRECTION_ROW_REVERSE);
+		} else if (flexDirection === "column") {
+			yogaNode.setFlexDirection(Yoga.FLEX_DIRECTION_COLUMN);
+		} else if (flexDirection === "column-reverse") {
+			yogaNode.setFlexDirection(Yoga.FLEX_DIRECTION_COLUMN_REVERSE);
+		} else {
+			yogaNode.setFlexDirection(Yoga.FLEX_DIRECTION_ROW);
+		}
+
+		const flexWrap = resolvePropertyValue(element, "flex-wrap");
+		if (flexWrap === "nowrap") {
+			yogaNode.setFlexWrap(Yoga.WRAP_NO_WRAP);
+		} else if (flexWrap === "wrap") {
+			yogaNode.setFlexWrap(Yoga.WRAP_WRAP);
+		} else if (flexWrap === "wrap-reverse") {
+			yogaNode.setFlexWrap(Yoga.WRAP_WRAP_REVERSE);
+		} else {
+			yogaNode.setFlexWrap(Yoga.WRAP_NO_WRAP);
+		}
+
+		const justifyContent = resolvePropertyValue(element, "justify-content");
+		const justifyValue = getYogaConstant("justify", justifyContent);
+		if (justifyValue !== null) {
+			yogaNode.setJustifyContent(justifyValue);
+		} else {
+			yogaNode.setJustifyContent(Yoga.JUSTIFY_FLEX_START);
+		}
+
+		const alignItems = resolvePropertyValue(element, "align-items");
+		const alignValue = getYogaConstant("align", alignItems);
+		if (alignValue !== null) {
+			yogaNode.setAlignItems(alignValue);
+		} else {
+			yogaNode.setAlignItems(Yoga.ALIGN_STRETCH);
+		}
+
+		const alignContent = resolvePropertyValue(element, "align-content");
+		const alignContentValue = getYogaConstant("align", alignContent);
+		if (alignContentValue !== null) {
+			yogaNode.setAlignContent(alignContentValue);
+		} else {
+			yogaNode.setAlignContent(Yoga.ALIGN_FLEX_START);
+		}
+	} else {
+		yogaNode.setDisplay(Yoga.DISPLAY_FLEX);
+		yogaNode.setFlexDirection(Yoga.FLEX_DIRECTION_COLUMN);
+		yogaNode.setAlignItems(Yoga.ALIGN_STRETCH);
+	}
+}
+
+/**
+ * Resolve border styles for an element, including border-radius
+ */
+export function resolveBorderStyles(element: Element): {
+	style: number; // Encoded border flags 
+	hasRadius: boolean;
+} {
+	// Check for any border
+	const borderWidth = parseFloat(resolvePropertyValue(element, "border-width", false));
+	const borderStyle = resolvePropertyValue(element, "border-style", false);
+	
+	// If no border, return empty
+	if (isNaN(borderWidth) || borderWidth <= 0 || !borderStyle || borderStyle === "none") {
+		return { style: 0, hasRadius: false };
+	}
+	
+	// Encode border style
+	let encodedStyle = 0;
+	switch (borderStyle) {
+		case "solid": encodedStyle = 1; break; // BORDER_STYLE_SOLID
+		case "double": encodedStyle = 2; break; // BORDER_STYLE_DOUBLE  
+		case "dashed": encodedStyle = 3; break; // BORDER_STYLE_DASHED
+		case "dotted": encodedStyle = 4; break; // BORDER_STYLE_DOTTED
+		case "groove": encodedStyle = 5; break; // BORDER_STYLE_GROOVE
+		case "ridge": encodedStyle = 6; break; // BORDER_STYLE_RIDGE
+		default: encodedStyle = 1; // Default to solid
+	}
+	
+	// Check for border-radius
+	const borderRadius = parseFloat(resolvePropertyValue(element, "border-radius", false));
+	const hasRadius = !isNaN(borderRadius) && borderRadius > 0;
+	
+	// Add rounded flag if needed
+	if (hasRadius) {
+		encodedStyle |= (1 << 4); // BORDER_ROUNDED
+	}
+	
+	return { style: encodedStyle, hasRadius };
+}
+
+// ============================================================================
+// BOX-DRAWING CHARACTER SETS
+// ============================================================================
+
+interface BoxCharSet {
+	horizontal: string;
+	vertical: string;
+	topLeft: string;
+	topRight: string;
+	bottomLeft: string;
+	bottomRight: string;
+	topTee: string;
+	bottomTee: string;
+	leftTee: string;
+	rightTee: string;
+	cross: string;
+}
+
+export const BOX_DRAWING = {
+	// ASCII fallback for maximum compatibility
+	ascii: {
+		horizontal: "-",
+		vertical: "|",
+		topLeft: "+",
+		topRight: "+",
+		bottomLeft: "+",
+		bottomRight: "+",
+		topTee: "+",
+		bottomTee: "+", 
+		leftTee: "+",
+		rightTee: "+",
+		cross: "+",
+	} as BoxCharSet,
+	
+	// Unicode light box drawing (solid borders)
+	light: {
+		horizontal: "─",
+		vertical: "│",
+		topLeft: "┌",
+		topRight: "┐",
+		bottomLeft: "└",
+		bottomRight: "┘",
+		topTee: "┬",
+		bottomTee: "┴",
+		leftTee: "┤", 
+		rightTee: "├",
+		cross: "┼",
+	} as BoxCharSet,
+	
+	// Unicode heavy box drawing (bold/thick borders)
+	heavy: {
+		horizontal: "━",
+		vertical: "┃",
+		topLeft: "┏",
+		topRight: "┓",
+		bottomLeft: "┗",
+		bottomRight: "┛",
+		topTee: "┳",
+		bottomTee: "┻",
+		leftTee: "┫",
+		rightTee: "┣", 
+		cross: "╋",
+	} as BoxCharSet,
+	
+	// Unicode double-line box drawing
+	double: {
+		horizontal: "═",
+		vertical: "║",
+		topLeft: "╔",
+		topRight: "╗",
+		bottomLeft: "╚",
+		bottomRight: "╝",
+		topTee: "╦",
+		bottomTee: "╩",
+		leftTee: "╣",
+		rightTee: "╠",
+		cross: "╬",
+	} as BoxCharSet,
+	
+	// Unicode dashed borders
+	dashed: {
+		horizontal: "╌",
+		vertical: "┆",
+		topLeft: "┌", // Fall back to light corners
+		topRight: "┐",
+		bottomLeft: "└", 
+		bottomRight: "┘",
+		topTee: "┬",
+		bottomTee: "┴",
+		leftTee: "┤",
+		rightTee: "├",
+		cross: "┼",
+	} as BoxCharSet,
+	
+	// Unicode dotted borders  
+	dotted: {
+		horizontal: "┄",
+		vertical: "┊",
+		topLeft: "┌", // Fall back to light corners
+		topRight: "┐",
+		bottomLeft: "└",
+		bottomRight: "┘", 
+		topTee: "┬",
+		bottomTee: "┴",
+		leftTee: "┤",
+		rightTee: "├",
+		cross: "┼",
+	} as BoxCharSet,
+	
+	// Unicode light rounded corners (border-radius support)
+	lightRounded: {
+		horizontal: "─",
+		vertical: "│",
+		topLeft: "╭",
+		topRight: "╮", 
+		bottomLeft: "╰",
+		bottomRight: "╯",
+		// No rounded T-junctions - fall back to sharp
+		topTee: "┬",
+		bottomTee: "┴",
+		leftTee: "┤",
+		rightTee: "├", 
+		cross: "┼",
+	} as BoxCharSet,
+};

@@ -150,8 +150,7 @@ async function flexboxDemo() {
 	footerVersion.style.color = "white";
 	footer.appendChild(footerVersion);
 
-	// Trigger layout calculation
-	document.body.getBoundingClientRect();
+	// Fixed! No longer needed - TermDOM handles initial render automatically
 
 	// Log layout structure
 	//console.log('📐 Layout Structure:');

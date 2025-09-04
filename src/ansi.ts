@@ -6,20 +6,39 @@ import LRUCache from "./utils.js";
 
 export type ColorDepth = "ansi" | "256" | "rgb";
 
-// Style flags (internal implementation)
-const STYLE_BOLD = 1 << 0;
-const STYLE_ITALIC = 1 << 1;
-const STYLE_UNDERLINE = 1 << 2;
-const STYLE_STRIKETHROUGH = 1 << 3;
-const STYLE_INVERSE = 1 << 4;
-const STYLE_BLINK = 1 << 5;
-const STYLE_DIM = 1 << 6;
-const _STYLE_INVISIBLE = 1 << 7;
-const STYLE_OVERLINE = 1 << 8;
+// Style flags packed into fg field (bits 24-31)
+const FG_STYLE_BOLD = 1 << 24;
+const FG_STYLE_ITALIC = 1 << 25;
+const FG_STYLE_UNDERLINE = 1 << 26;
+const FG_STYLE_STRIKETHROUGH = 1 << 27;
+const FG_STYLE_OVERLINE = 1 << 28;
+
+// Style flags packed into bg field (bits 24-31)
+const BG_STYLE_INVERSE = 1 << 24;
+const BG_STYLE_BLINK = 1 << 25;
+const BG_STYLE_DIM = 1 << 26;
+const BG_STYLE_INVISIBLE = 1 << 27;
+
+// Color masks
+const COLOR_MASK = 0xFFFFFF; // 24-bit RGB color
+
+// Border constants (32-bit field encoding)
+const BORDER_STYLE_NONE = 0;
+const BORDER_STYLE_SOLID = 1;
+const BORDER_STYLE_DOUBLE = 2;
+const BORDER_STYLE_DASHED = 3;
+const BORDER_STYLE_DOTTED = 4;
+const BORDER_STYLE_GROOVE = 5;
+const BORDER_STYLE_RIDGE = 6;
+const BORDER_STYLE_MASK = 7;
+
+const BORDER_COLLAPSE = 1 << 3;
+const BORDER_ROUNDED = 1 << 4;
 
 export type CellBuffer = (Cell | null)[][];
 
 export interface CellStyle {
+	grapheme?: string;
 	fg?: number;
 	bg?: number;
 	bold?: boolean;
@@ -30,17 +49,36 @@ export interface CellStyle {
 	dim?: boolean;
 	blink?: boolean;
 	overline?: boolean;
+	border?: number;
+}
+
+export interface BorderStyle {
+	top?: {width: number; style: "solid" | "double" | "none"; color?: number};
+	right?: {width: number; style: "solid" | "double" | "none"; color?: number};
+	bottom?: {width: number; style: "solid" | "double" | "none"; color?: number};
+	left?: {width: number; style: "solid" | "double" | "none"; color?: number};
 }
 
 const cache = new LRUCache<string, Cell>(2 ** 12);
 
 export class Cell {
 	declare grapheme: string;
-	declare fg: number;
-	declare bg: number;
-	declare style: number;
+	declare fg: number; // RGB color (24-bit) + style flags (8-bit)
+	declare bg: number; // RGB color (24-bit) + style flags (8-bit)  
+	declare border: number;
 
-	constructor(grapheme: string, cellStyle?: CellStyle) {
+	constructor(options: string | CellStyle) {
+		let grapheme: string;
+		let cellStyle: CellStyle | undefined;
+
+		if (typeof options === "string") {
+			grapheme = options;
+			cellStyle = undefined;
+		} else {
+			grapheme = options.grapheme ?? "┼";
+			cellStyle = options;
+		}
+
 		if (grapheme === "") {
 			throw new Error(
 				"Cell grapheme cannot be empty - use null for empty cells",
@@ -48,20 +86,24 @@ export class Cell {
 		}
 
 		this.grapheme = grapheme;
-		this.fg = cellStyle?.fg ?? 0;
-		this.bg = cellStyle?.bg ?? 0;
+		
+		// Pack fg color and style flags into fg field
+		let fg = (cellStyle?.fg ?? 0) & COLOR_MASK;
+		if (cellStyle?.bold) fg |= FG_STYLE_BOLD;
+		if (cellStyle?.italic) fg |= FG_STYLE_ITALIC;
+		if (cellStyle?.underline) fg |= FG_STYLE_UNDERLINE;
+		if (cellStyle?.strikethrough) fg |= FG_STYLE_STRIKETHROUGH;
+		if (cellStyle?.overline) fg |= FG_STYLE_OVERLINE;
+		this.fg = fg;
 
-		// Convert boolean flags to bit flags
-		let styleFlags = 0;
-		if (cellStyle?.bold) styleFlags |= STYLE_BOLD;
-		if (cellStyle?.italic) styleFlags |= STYLE_ITALIC;
-		if (cellStyle?.underline) styleFlags |= STYLE_UNDERLINE;
-		if (cellStyle?.strikethrough) styleFlags |= STYLE_STRIKETHROUGH;
-		if (cellStyle?.inverse) styleFlags |= STYLE_INVERSE;
-		if (cellStyle?.blink) styleFlags |= STYLE_BLINK;
-		if (cellStyle?.dim) styleFlags |= STYLE_DIM;
-		if (cellStyle?.overline) styleFlags |= STYLE_OVERLINE;
-		this.style = styleFlags;
+		// Pack bg color and style flags into bg field
+		let bg = (cellStyle?.bg ?? 0) & COLOR_MASK;
+		if (cellStyle?.inverse) bg |= BG_STYLE_INVERSE;
+		if (cellStyle?.blink) bg |= BG_STYLE_BLINK;
+		if (cellStyle?.dim) bg |= BG_STYLE_DIM;
+		this.bg = bg;
+
+		this.border = cellStyle?.border ?? 0;
 
 		Object.freeze(this);
 	}
@@ -71,13 +113,15 @@ export class Cell {
 			this.grapheme === other.grapheme &&
 			this.fg === other.fg &&
 			this.bg === other.bg &&
-			this.style === other.style
+			this.border === other.border
 		);
 	}
 
 	styleEquals(other: Cell): boolean {
 		return (
-			this.fg === other.fg && this.bg === other.bg && this.style === other.style
+			this.fg === other.fg && 
+			this.bg === other.bg && 
+			this.border === other.border
 		);
 	}
 
@@ -91,42 +135,61 @@ export class Cell {
 
 	getStyleFlags() {
 		return {
-			bold: (this.style & STYLE_BOLD) !== 0,
-			italic: (this.style & STYLE_ITALIC) !== 0,
-			underline: (this.style & STYLE_UNDERLINE) !== 0,
-			strikethrough: (this.style & STYLE_STRIKETHROUGH) !== 0,
-			inverse: (this.style & STYLE_INVERSE) !== 0,
-			blink: (this.style & STYLE_BLINK) !== 0,
-			dim: (this.style & STYLE_DIM) !== 0,
-			overline: (this.style & STYLE_OVERLINE) !== 0,
+			bold: (this.fg & FG_STYLE_BOLD) !== 0,
+			italic: (this.fg & FG_STYLE_ITALIC) !== 0,
+			underline: (this.fg & FG_STYLE_UNDERLINE) !== 0,
+			strikethrough: (this.fg & FG_STYLE_STRIKETHROUGH) !== 0,
+			overline: (this.fg & FG_STYLE_OVERLINE) !== 0,
+			inverse: (this.bg & BG_STYLE_INVERSE) !== 0,
+			blink: (this.bg & BG_STYLE_BLINK) !== 0,
+			dim: (this.bg & BG_STYLE_DIM) !== 0,
 		};
 	}
 
-	static create(grapheme: string, cellStyle?: CellStyle): Cell | null {
-		if (grapheme === "") {
-			return null;
+	getFgColor(): number {
+		return this.fg & COLOR_MASK;
+	}
+
+	getBgColor(): number {
+		return this.bg & COLOR_MASK;
+	}
+
+	static create(options: string | CellStyle): Cell | null {
+		let grapheme: string;
+		let cellStyle: CellStyle | undefined;
+
+		if (typeof options === "string") {
+			if (options === "") return null;
+			grapheme = options;
+			cellStyle = undefined;
+		} else {
+			grapheme = options.grapheme ?? "┼";
+			if (grapheme === "") return null;
+			cellStyle = options;
 		}
-		const fg = cellStyle?.fg ?? 0;
-		const bg = cellStyle?.bg ?? 0;
 
-		let styleFlags = 0;
-		if (cellStyle?.bold) styleFlags |= STYLE_BOLD;
-		if (cellStyle?.italic) styleFlags |= STYLE_ITALIC;
-		if (cellStyle?.underline) styleFlags |= STYLE_UNDERLINE;
-		if (cellStyle?.strikethrough) styleFlags |= STYLE_STRIKETHROUGH;
-		if (cellStyle?.inverse) styleFlags |= STYLE_INVERSE;
-		if (cellStyle?.blink) styleFlags |= STYLE_BLINK;
-		if (cellStyle?.dim) styleFlags |= STYLE_DIM;
-		if (cellStyle?.overline) styleFlags |= STYLE_OVERLINE;
+		// Pack style flags into fg/bg fields for caching
+		let fg = (cellStyle?.fg ?? 0) & COLOR_MASK;
+		if (cellStyle?.bold) fg |= FG_STYLE_BOLD;
+		if (cellStyle?.italic) fg |= FG_STYLE_ITALIC;
+		if (cellStyle?.underline) fg |= FG_STYLE_UNDERLINE;
+		if (cellStyle?.strikethrough) fg |= FG_STYLE_STRIKETHROUGH;
+		if (cellStyle?.overline) fg |= FG_STYLE_OVERLINE;
 
-		const cacheKey = `${grapheme}:${fg}:${bg}:${styleFlags}`;
+		let bg = (cellStyle?.bg ?? 0) & COLOR_MASK;
+		if (cellStyle?.inverse) bg |= BG_STYLE_INVERSE;
+		if (cellStyle?.blink) bg |= BG_STYLE_BLINK;
+		if (cellStyle?.dim) bg |= BG_STYLE_DIM;
+
+		const border = cellStyle?.border ?? 0;
+		const cacheKey = `${grapheme}:${fg}:${bg}:${border}`;
 
 		const cached = cache.get(cacheKey);
 		if (cached) {
 			return cached;
 		}
 
-		const cell = new Cell(grapheme, cellStyle);
+		const cell = new Cell(options);
 		cache.set(cacheKey, cell);
 		return cell;
 	}
@@ -214,7 +277,10 @@ export class Renderer {
 				}
 			: undefined;
 
-		const newCell = Cell.create(char, cellStyle);
+		const newCell = Cell.create({
+			grapheme: char,
+			...cellStyle
+		});
 		this.currentBuffer[row][col] = newCell;
 	}
 
@@ -312,6 +378,80 @@ export class Renderer {
 		this.previousBuffer = this.currentBuffer;
 		return output;
 	}
+}
+
+import {BOX_DRAWING} from "./styles.js";
+
+/**
+ * Generate the appropriate box-drawing character for a cell position
+ * based on border flags and adjacent border context
+ */
+export function getBorderChar(
+	hasTop: boolean,
+	hasRight: boolean, 
+	hasBottom: boolean,
+	hasLeft: boolean,
+	borderStyle: number,
+): string {
+	// Extract style and flags from border encoding
+	const style = borderStyle & 7; // BORDER_STYLE_MASK
+	const isRounded = (borderStyle & (1 << 4)) !== 0; // BORDER_ROUNDED
+	
+	// Choose character set based on style
+	let charSet;
+	switch (style) {
+		case 1: charSet = isRounded ? BOX_DRAWING.lightRounded : BOX_DRAWING.light; break; // solid
+		case 2: charSet = BOX_DRAWING.double; break; // double (can't be rounded)
+		case 3: charSet = BOX_DRAWING.dashed; break; // dashed
+		case 4: charSet = BOX_DRAWING.dotted; break; // dotted
+		case 5: charSet = BOX_DRAWING.heavy; break; // groove (using heavy)
+		case 6: charSet = BOX_DRAWING.light; break; // ridge (using light)
+		default: charSet = BOX_DRAWING.light; break;
+	}
+	
+	// Corner characters
+	if (hasTop && hasLeft && !hasRight && !hasBottom) {
+		return charSet.bottomRight;
+	}
+	if (hasTop && hasRight && !hasLeft && !hasBottom) {
+		return charSet.bottomLeft;
+	}
+	if (hasBottom && hasLeft && !hasTop && !hasRight) {
+		return charSet.topRight;
+	}
+	if (hasBottom && hasRight && !hasTop && !hasLeft) {
+		return charSet.topLeft;
+	}
+	
+	// T-junction characters
+	if (hasTop && hasBottom && hasLeft && !hasRight) {
+		return charSet.leftTee;
+	}
+	if (hasTop && hasBottom && hasRight && !hasLeft) {
+		return charSet.rightTee;
+	}
+	if (hasLeft && hasRight && hasTop && !hasBottom) {
+		return charSet.bottomTee;
+	}
+	if (hasLeft && hasRight && hasBottom && !hasTop) {
+		return charSet.topTee;
+	}
+	
+	// Cross junction
+	if (hasTop && hasRight && hasBottom && hasLeft) {
+		return charSet.cross;
+	}
+	
+	// Straight lines
+	if ((hasTop || hasBottom) && !hasLeft && !hasRight) {
+		return charSet.vertical;
+	}
+	if ((hasLeft || hasRight) && !hasTop && !hasBottom) {
+		return charSet.horizontal;
+	}
+	
+	// Default to space for no borders
+	return " ";
 }
 
 export function generateANSI(
@@ -434,15 +574,30 @@ export function generateANSI(
 		return ansiColor;
 	};
 
+	const getBorderConnectivity = (buffer: CellBuffer, row: number, col: number): {hasTop: boolean, hasRight: boolean, hasBottom: boolean, hasLeft: boolean} => {
+		const rows = buffer.length;
+		const cols = buffer[0]?.length || 0;
+		
+		const hasTop = row > 0 && (buffer[row - 1][col]?.border ?? 0) > 0;
+		const hasRight = col < cols - 1 && (buffer[row][col + 1]?.border ?? 0) > 0;
+		const hasBottom = row < rows - 1 && (buffer[row + 1][col]?.border ?? 0) > 0;
+		const hasLeft = col > 0 && (buffer[row][col - 1]?.border ?? 0) > 0;
+		
+		return {hasTop, hasRight, hasBottom, hasLeft};
+	};
+
 	const getStyleDiff = (cell: Cell, prev: Cell | null): number[] => {
 		if (!prev) {
 			const seq: number[] = [];
 
-			if (cell.fg !== 0) {
-				seq.push(...emitColor(cell.fg, true));
+			const fgColor = cell.getFgColor();
+			const bgColor = cell.getBgColor();
+
+			if (fgColor !== 0) {
+				seq.push(...emitColor(fgColor, true));
 			}
-			if (cell.bg !== 0) {
-				seq.push(...emitColor(cell.bg, false));
+			if (bgColor !== 0) {
+				seq.push(...emitColor(bgColor, false));
 			}
 
 			const flags = cell.getStyleFlags();
@@ -463,8 +618,8 @@ export function generateANSI(
 		}
 
 		const seq: number[] = [];
-		const isDefault = cell.fg === 0 && cell.bg === 0 && cell.style === 0;
-		const wasDefault = prev.fg === 0 && prev.bg === 0 && prev.style === 0;
+		const isDefault = cell.fg === 0 && cell.bg === 0;
+		const wasDefault = prev.fg === 0 && prev.bg === 0;
 
 		if (isDefault && !wasDefault) {
 			seq.push(0);
@@ -472,22 +627,24 @@ export function generateANSI(
 		}
 
 		if (cell.fg !== prev.fg) {
-			if (cell.fg === 0) {
+			const fgColor = cell.getFgColor();
+			if (fgColor === 0) {
 				seq.push(39);
 			} else {
-				seq.push(...emitColor(cell.fg, true));
+				seq.push(...emitColor(fgColor, true));
 			}
 		}
 
 		if (cell.bg !== prev.bg) {
-			if (cell.bg === 0) {
+			const bgColor = cell.getBgColor();
+			if (bgColor === 0) {
 				seq.push(49);
 			} else {
-				seq.push(...emitColor(cell.bg, false));
+				seq.push(...emitColor(bgColor, false));
 			}
 		}
 
-		if (cell.style !== prev.style) {
+		if (cell.fg !== prev.fg || cell.bg !== prev.bg) {
 			const cellFlags = cell.getStyleFlags();
 			const prevFlags = prev.getStyleFlags();
 
@@ -546,7 +703,14 @@ export function generateANSI(
 				rowHasAnsi = true;
 			}
 
-			output += cell.grapheme;
+			// Use border character if cell has border, otherwise use grapheme
+			if (cell.border > 0) {
+				const {hasTop, hasRight, hasBottom, hasLeft} = getBorderConnectivity(buffer, row, col);
+				const borderChar = getBorderChar(hasTop, hasRight, hasBottom, hasLeft, cell.border);
+				output += borderChar;
+			} else {
+				output += cell.grapheme;
+			}
 
 			cursorCol += cell.width;
 			previousCell = cell;

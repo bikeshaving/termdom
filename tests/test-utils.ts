@@ -179,7 +179,7 @@ export class TestTerminal extends EventEmitter implements ProcessLike {
 					overline: false, // xterm doesn't expose this directly
 				};
 
-				cellBuffer[row][col] = Cell.create(chars, cellStyle);
+				cellBuffer[row][col] = Cell.create({grapheme: chars, ...cellStyle});
 			}
 		}
 

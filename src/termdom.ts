@@ -1,10 +1,10 @@
 import {LayoutEngine} from "./layout.js";
-import {Renderer, type ColorDepth} from "./ansi.js";
+import {Renderer, type ColorDepth, Cell} from "./ansi.js";
 import {type EventEmitter} from "events";
 import {JSDOM} from "jsdom";
 import {type DOMWindow} from "jsdom";
 import {RectUtils} from "./layout.js";
-import {resolvePropertyValue} from "./styles.js";
+import {resolvePropertyValue, resolveBorderStyles} from "./styles.js";
 
 function detectColorDepth(process: ProcessLike): ColorDepth {
 	const colorterm = process.env.COLORTERM;
@@ -106,8 +106,6 @@ export class TermDOM {
 		this.observer = this.setupMutationObserver();
 
 		this.setupProcessHandlers();
-
-		setTimeout(() => {}, 0);
 	}
 
 	private initializeWindow(): void {
@@ -251,6 +249,14 @@ export class TermDOM {
 			);
 		}
 
+		// Handle borders
+		if (rect) {
+			const borderStyles = resolveBorderStyles(element);
+			if (borderStyles.style > 0) {
+				this.renderBorders(rect, borderStyles, style);
+			}
+		}
+
 		for (const childNode of element.childNodes) {
 			if (childNode.nodeType === childNode.ELEMENT_NODE) {
 				const childElement = childNode as Element;
@@ -311,6 +317,67 @@ export class TermDOM {
 					}
 				}
 			}
+		}
+	}
+
+	private renderBorders(rect: DOMRect, borderStyles: {style: number, hasRadius: boolean}, cellStyle: any): void {
+		// Only render borders on the outer edge - don't fill the entire rectangle!
+		const {left, top, width, height} = rect;
+		const right = left + width - 1;
+		const bottom = top + height - 1;
+
+		// Use the pre-encoded border style
+		let borderEncoding = borderStyles.style;
+		if (borderStyles.hasRadius) {
+			borderEncoding |= (1 << 4); // BORDER_ROUNDED flag
+		}
+
+		// Use foreground color for borders
+		const borderCellStyle = {
+			fg: cellStyle.fg,
+			bg: cellStyle.bg
+		};
+
+		// Only create border cells on the actual border edges (1-cell wide border)
+		// Top and bottom edges
+		for (let x = left; x <= right; x++) {
+			if (top >= 0) {
+				this.setBorderCell(x, top, borderEncoding, borderCellStyle);
+			}
+			if (bottom < this.height && bottom !== top) {
+				this.setBorderCell(x, bottom, borderEncoding, borderCellStyle);
+			}
+		}
+
+		// Left and right edges (excluding corners already handled)
+		for (let y = top + 1; y < bottom; y++) {
+			if (left >= 0) {
+				this.setBorderCell(left, y, borderEncoding, borderCellStyle);
+			}
+			if (right < this.width && right !== left) {
+				this.setBorderCell(right, y, borderEncoding, borderCellStyle);
+			}
+		}
+	}
+
+	private setBorderCell(x: number, y: number, borderEncoding: number, style: any): void {
+		// Use the renderer's setText method to properly set border cells
+		this.renderer.setText(x, y, "┼", {
+			...style,
+			// We'll need to manually override the border after creation
+		});
+		
+		// Get the cell that was just created and update its border field
+		const buffer = (this.renderer as any).currentBuffer;
+		if (buffer[y] && buffer[y][x]) {
+			const cell = buffer[y][x];
+			// Since Cell is frozen, we need to create a new one with border
+			const newCell = new Cell({
+				grapheme: "┼",
+				...style,
+				border: borderEncoding
+			});
+			buffer[y][x] = newCell;
 		}
 	}
 

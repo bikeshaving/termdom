@@ -47,7 +47,7 @@ export interface BreakResult {
 }
 
 export function breakNodes(
-	leafNodes: Leaf[],
+	leafNodes: Array<Leaf>,
 	options: BreakOptions,
 ): BreakResult {
 	const {maxWidth, whiteSpace = "normal"} = options;
