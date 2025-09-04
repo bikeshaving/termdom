@@ -6,6 +6,9 @@ import LRUCache from "./utils.js";
 
 export type ColorDepth = "ansi" | "256" | "rgb";
 
+// Color masks
+const COLOR_MASK = 0xffffff; // 24-bit RGB color
+
 // Style flags packed into fg field (bits 24-31)
 const FG_STYLE_BOLD = 1 << 24;
 const FG_STYLE_ITALIC = 1 << 25;
@@ -17,10 +20,8 @@ const FG_STYLE_OVERLINE = 1 << 28;
 const BG_STYLE_INVERSE = 1 << 24;
 const BG_STYLE_BLINK = 1 << 25;
 const BG_STYLE_DIM = 1 << 26;
-const BG_STYLE_INVISIBLE = 1 << 27;
-
-// Color masks
-const COLOR_MASK = 0xffffff; // 24-bit RGB color
+// TODO:
+//const BG_STYLE_INVISIBLE = 1 << 27;
 
 // Border constants (32-bit field encoding - 8 bits per edge)
 // Edge positions: [8 bits top][8 bits right][8 bits bottom][8 bits left]
@@ -111,7 +112,7 @@ export function mergeBorderEncodings(
 	return merged;
 }
 
-export type CellBuffer = (Cell | null)[][];
+export type CellBuffer = Array<Array<Cell | null>>;
 
 export interface CellStyle {
 	grapheme?: string;
