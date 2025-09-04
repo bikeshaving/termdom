@@ -28,7 +28,7 @@ function borderShowcase() {
 	title.textContent = "Border Intersection Test";
 	container.appendChild(title);
 
-	// T-Junction Test - Top T (┬)
+	// T-Junction Test - Top T (┬) with negative margins for overlap
 	const topTContainer = document.createElement("div");
 	topTContainer.style.display = "flex";
 	topTContainer.style.flexDirection = "column";
@@ -59,6 +59,7 @@ function borderShowcase() {
 	topCenter.style.padding = "1px";
 	topCenter.style.flexBasis = "33%";
 	topCenter.style.minHeight = "2px";
+	topCenter.style.marginLeft = "-1px"; // Overlap with left element
 	topCenter.textContent = "Double";
 	topTHorizontal.appendChild(topCenter);
 
@@ -69,10 +70,11 @@ function borderShowcase() {
 	topRight.style.padding = "1px";
 	topRight.style.flexBasis = "33%";
 	topRight.style.minHeight = "2px";
+	topRight.style.marginLeft = "-1px"; // Overlap with center element
 	topRight.textContent = "Dashed";
 	topTHorizontal.appendChild(topRight);
 
-	// Bottom connecting element for T-junction
+	// Bottom connecting element for T-junction with negative margin to overlap
 	const bottomT = document.createElement("div");
 	bottomT.style.border = "1px dotted";
 	bottomT.style.backgroundColor = "#2a2a1a";
@@ -81,6 +83,7 @@ function borderShowcase() {
 	bottomT.style.width = "33%";
 	bottomT.style.alignSelf = "center";
 	bottomT.style.minHeight = "3px";
+	bottomT.style.marginTop = "-1px"; // Overlap with top elements to create T-junction
 	bottomT.textContent = "Dotted Stem";
 	topTContainer.appendChild(bottomT);
 
@@ -110,11 +113,12 @@ function borderShowcase() {
 	crossTop.textContent = "Top";
 	crossContainer.appendChild(crossTop);
 
-	// Middle horizontal section
+	// Middle horizontal section with overlaps
 	const crossMiddle = document.createElement("div");
 	crossMiddle.style.display = "flex";
 	crossMiddle.style.flexDirection = "row";
 	crossMiddle.style.gap = "0px";
+	crossMiddle.style.marginTop = "-1px"; // Overlap with top element
 	crossContainer.appendChild(crossMiddle);
 
 	const crossLeft = document.createElement("div");
@@ -134,6 +138,7 @@ function borderShowcase() {
 	crossCenter.style.padding = "1px";
 	crossCenter.style.flexBasis = "20%";
 	crossCenter.style.minHeight = "2px";
+	crossCenter.style.marginLeft = "-1px"; // Overlap with left element
 	crossCenter.textContent = "Cross";
 	crossMiddle.appendChild(crossCenter);
 
@@ -144,10 +149,11 @@ function borderShowcase() {
 	crossRight.style.padding = "1px";
 	crossRight.style.flexBasis = "40%";
 	crossRight.style.minHeight = "2px";
+	crossRight.style.marginLeft = "-1px"; // Overlap with center element
 	crossRight.textContent = "Right";
 	crossMiddle.appendChild(crossRight);
 
-	// Bottom part of cross
+	// Bottom part of cross with overlap
 	const crossBottom = document.createElement("div");
 	crossBottom.style.border = "1px dotted";
 	crossBottom.style.backgroundColor = "#1a2a2a";
@@ -156,6 +162,7 @@ function borderShowcase() {
 	crossBottom.style.width = "20%";
 	crossBottom.style.alignSelf = "center";
 	crossBottom.style.minHeight = "2px";
+	crossBottom.style.marginTop = "-1px"; // Overlap with middle elements
 	crossBottom.textContent = "Bot";
 	crossContainer.appendChild(crossBottom);
 }

@@ -53,6 +53,52 @@ const getEdgeStyle = (edgeValue: number) => edgeValue & BORDER_STYLE_MASK;
 const getEdgePresence = (edgeValue: number) => (edgeValue & BORDER_EDGE_PRESENCE) !== 0;
 const getEdgeRounded = (edgeValue: number) => (edgeValue & BORDER_EDGE_ROUNDED) !== 0;
 
+// Border style precedence for merging (higher number = higher precedence)
+const BORDER_STYLE_PRECEDENCE: Record<number, number> = {
+	[BORDER_STYLE_DOUBLE]: 6,   // Highest precedence
+	[BORDER_STYLE_SOLID]: 5,
+	[BORDER_STYLE_GROOVE]: 4,
+	[BORDER_STYLE_RIDGE]: 3,
+	[BORDER_STYLE_DASHED]: 2,
+	[BORDER_STYLE_DOTTED]: 1,   // Lowest precedence
+	[BORDER_STYLE_NONE]: 0
+};
+
+/**
+ * Merge two border encodings, choosing the higher precedence style for each edge
+ */
+export function mergeBorderEncodings(existing: number, incoming: number): number {
+	let merged = 0;
+	
+	// Process each edge
+	for (const shift of [BORDER_EDGE_TOP_SHIFT, BORDER_EDGE_RIGHT_SHIFT, BORDER_EDGE_BOTTOM_SHIFT, BORDER_EDGE_LEFT_SHIFT]) {
+		const existingEdge = getBorderEdge(existing, shift);
+		const incomingEdge = getBorderEdge(incoming, shift);
+		
+		// If only one has the edge, use it
+		if (!getEdgePresence(existingEdge)) {
+			merged = setBorderEdge(merged, shift, incomingEdge);
+		} else if (!getEdgePresence(incomingEdge)) {
+			merged = setBorderEdge(merged, shift, existingEdge);
+		} else {
+			// Both have the edge - choose based on style precedence
+			const existingStyle = getEdgeStyle(existingEdge);
+			const incomingStyle = getEdgeStyle(incomingEdge);
+			
+			const existingPrecedence = BORDER_STYLE_PRECEDENCE[existingStyle] || 0;
+			const incomingPrecedence = BORDER_STYLE_PRECEDENCE[incomingStyle] || 0;
+			
+			if (incomingPrecedence > existingPrecedence) {
+				merged = setBorderEdge(merged, shift, incomingEdge);
+			} else {
+				merged = setBorderEdge(merged, shift, existingEdge);
+			}
+		}
+	}
+	
+	return merged;
+}
+
 export type CellBuffer = (Cell | null)[][];
 
 export interface CellStyle {

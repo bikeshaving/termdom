@@ -1,5 +1,5 @@
 import {LayoutEngine} from "./layout.js";
-import {Renderer, type ColorDepth, Cell} from "./ansi.js";
+import {Renderer, type ColorDepth, Cell, mergeBorderEncodings} from "./ansi.js";
 import {type EventEmitter} from "events";
 import {JSDOM} from "jsdom";
 import {type DOMWindow} from "jsdom";
@@ -398,19 +398,44 @@ export class TermDOM {
 	}
 
 	private setBorderCell(x: number, y: number, borderEncoding: number, style: any): void {
-		// Create a border cell with proper encoding and let the renderer determine the character
-		const borderCell = new Cell({
-			grapheme: "┼", // Placeholder - renderer will determine correct character
-			...style,
-			border: borderEncoding
-		});
-		
-		// Set the border cell directly in the renderer buffer
+		// Get the renderer buffer
 		const buffer = (this.renderer as any).currentBuffer;
 		if (!buffer[y]) {
 			buffer[y] = [];
 		}
-		buffer[y][x] = borderCell;
+		
+		// Check if there's an existing cell 
+		const existingCell = buffer[y][x];
+		if (existingCell) {
+			if (existingCell.border > 0) {
+				// Merge the border encodings using precedence rules
+				const mergedBorder = mergeBorderEncodings(existingCell.border, borderEncoding);
+				
+				// Create a new cell with merged border
+				const borderCell = new Cell({
+					grapheme: "┼", // Placeholder - renderer will determine correct character
+					...style,
+					border: mergedBorder
+				});
+				buffer[y][x] = borderCell;
+			} else {
+				// Existing cell but no border - just overwrite
+				const borderCell = new Cell({
+					grapheme: "┼", // Placeholder - renderer will determine correct character
+					...style,
+					border: borderEncoding
+				});
+				buffer[y][x] = borderCell;
+			}
+		} else {
+			// No existing cell - create new cell
+			const borderCell = new Cell({
+				grapheme: "┼", // Placeholder - renderer will determine correct character
+				...style,
+				border: borderEncoding
+			});
+			buffer[y][x] = borderCell;
+		}
 	}
 
 	private processPendingMutationsAndRender(): boolean {
