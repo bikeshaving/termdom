@@ -625,6 +625,35 @@ export function styleYogaNode(element: Element, yogaNode: YogaTypes.Node): void 
 		yogaNode.setPadding(Yoga.EDGE_LEFT, undefined);
 	}
 
+	// Border width calculations for layout
+	const borderTopWidth = parseUnitValue(resolvePropertyValue(element, "border-top-width", false));
+	if (typeof borderTopWidth === "number" && borderTopWidth > 0) {
+		yogaNode.setBorder(Yoga.EDGE_TOP, borderTopWidth);
+	} else {
+		yogaNode.setBorder(Yoga.EDGE_TOP, 0);
+	}
+
+	const borderRightWidth = parseUnitValue(resolvePropertyValue(element, "border-right-width", false));
+	if (typeof borderRightWidth === "number" && borderRightWidth > 0) {
+		yogaNode.setBorder(Yoga.EDGE_RIGHT, borderRightWidth);
+	} else {
+		yogaNode.setBorder(Yoga.EDGE_RIGHT, 0);
+	}
+
+	const borderBottomWidth = parseUnitValue(resolvePropertyValue(element, "border-bottom-width", false));
+	if (typeof borderBottomWidth === "number" && borderBottomWidth > 0) {
+		yogaNode.setBorder(Yoga.EDGE_BOTTOM, borderBottomWidth);
+	} else {
+		yogaNode.setBorder(Yoga.EDGE_BOTTOM, 0);
+	}
+
+	const borderLeftWidth = parseUnitValue(resolvePropertyValue(element, "border-left-width", false));
+	if (typeof borderLeftWidth === "number" && borderLeftWidth > 0) {
+		yogaNode.setBorder(Yoga.EDGE_LEFT, borderLeftWidth);
+	} else {
+		yogaNode.setBorder(Yoga.EDGE_LEFT, 0);
+	}
+
 	if (
 		element.parentElement &&
 		resolvePropertyValue(element.parentElement, "display") === "block"
@@ -740,43 +769,74 @@ export function styleYogaNode(element: Element, yogaNode: YogaTypes.Node): void 
 }
 
 /**
- * Resolve border styles for an element, including border-radius
+ * Resolve border styles for an element, returning per-edge encoded data
  */
 export function resolveBorderStyles(element: Element): {
-	style: number; // Encoded border flags 
-	hasRadius: boolean;
+	topEdge: number;
+	rightEdge: number; 
+	bottomEdge: number;
+	leftEdge: number;
+	hasAnyBorder: boolean;
 } {
-	// Check for any border
-	const borderWidth = parseFloat(resolvePropertyValue(element, "border-width", false));
-	const borderStyle = resolvePropertyValue(element, "border-style", false);
+	// Helper to encode individual edge
+	const encodeEdge = (width: string, style: string, isRounded: boolean): number => {
+		const widthValue = parseFloat(width);
+		if (isNaN(widthValue) || widthValue <= 0 || !style || style === "none") {
+			return 0; // No border
+		}
+		
+		// Encode style
+		let encodedStyle = 0;
+		switch (style) {
+			case "solid": encodedStyle = 1; break;
+			case "double": encodedStyle = 2; break;
+			case "dashed": encodedStyle = 3; break;
+			case "dotted": encodedStyle = 4; break;
+			case "groove": encodedStyle = 5; break;
+			case "ridge": encodedStyle = 6; break;
+			default: encodedStyle = 1; // Default to solid
+		}
+		
+		// Add presence and rounded flags
+		let edgeValue = encodedStyle;
+		edgeValue |= (1 << 3); // BORDER_EDGE_PRESENCE
+		if (isRounded) {
+			edgeValue |= (1 << 4); // BORDER_EDGE_ROUNDED
+		}
+		
+		return edgeValue;
+	};
 	
-	// If no border, return empty
-	if (isNaN(borderWidth) || borderWidth <= 0 || !borderStyle || borderStyle === "none") {
-		return { style: 0, hasRadius: false };
-	}
-	
-	// Encode border style
-	let encodedStyle = 0;
-	switch (borderStyle) {
-		case "solid": encodedStyle = 1; break; // BORDER_STYLE_SOLID
-		case "double": encodedStyle = 2; break; // BORDER_STYLE_DOUBLE  
-		case "dashed": encodedStyle = 3; break; // BORDER_STYLE_DASHED
-		case "dotted": encodedStyle = 4; break; // BORDER_STYLE_DOTTED
-		case "groove": encodedStyle = 5; break; // BORDER_STYLE_GROOVE
-		case "ridge": encodedStyle = 6; break; // BORDER_STYLE_RIDGE
-		default: encodedStyle = 1; // Default to solid
-	}
-	
-	// Check for border-radius
+	// Check for border-radius (applies to all corners)
 	const borderRadius = parseFloat(resolvePropertyValue(element, "border-radius", false));
 	const hasRadius = !isNaN(borderRadius) && borderRadius > 0;
 	
-	// Add rounded flag if needed
-	if (hasRadius) {
-		encodedStyle |= (1 << 4); // BORDER_ROUNDED
-	}
+	// Resolve individual edges (check both shorthand and individual properties)
+	const topWidth = resolvePropertyValue(element, "border-top-width", false) || resolvePropertyValue(element, "border-width", false);
+	const topStyle = resolvePropertyValue(element, "border-top-style", false) || resolvePropertyValue(element, "border-style", false);
 	
-	return { style: encodedStyle, hasRadius };
+	const rightWidth = resolvePropertyValue(element, "border-right-width", false) || resolvePropertyValue(element, "border-width", false);
+	const rightStyle = resolvePropertyValue(element, "border-right-style", false) || resolvePropertyValue(element, "border-style", false);
+	
+	const bottomWidth = resolvePropertyValue(element, "border-bottom-width", false) || resolvePropertyValue(element, "border-width", false);
+	const bottomStyle = resolvePropertyValue(element, "border-bottom-style", false) || resolvePropertyValue(element, "border-style", false);
+	
+	const leftWidth = resolvePropertyValue(element, "border-left-width", false) || resolvePropertyValue(element, "border-width", false);
+	const leftStyle = resolvePropertyValue(element, "border-left-style", false) || resolvePropertyValue(element, "border-style", false);
+	
+	// Encode each edge
+	const topEdge = encodeEdge(topWidth, topStyle, hasRadius);
+	const rightEdge = encodeEdge(rightWidth, rightStyle, hasRadius);
+	const bottomEdge = encodeEdge(bottomWidth, bottomStyle, hasRadius);
+	const leftEdge = encodeEdge(leftWidth, leftStyle, hasRadius);
+	
+	return {
+		topEdge,
+		rightEdge,
+		bottomEdge,
+		leftEdge,
+		hasAnyBorder: topEdge > 0 || rightEdge > 0 || bottomEdge > 0 || leftEdge > 0
+	};
 }
 
 // ============================================================================

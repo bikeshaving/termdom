@@ -377,8 +377,19 @@ export class LayoutEngine {
 			isInlineRunHead(element)
 		) {
 			if (yogaNode) {
-				const width = yogaNode.getComputedWidth();
-				this.layoutInlineRun(element, elementX, elementY, width);
+				// Calculate content box coordinates and width for text positioning
+				const borderLeft = yogaNode.getComputedBorder(Yoga.EDGE_LEFT);
+				const borderTop = yogaNode.getComputedBorder(Yoga.EDGE_TOP);
+				const borderRight = yogaNode.getComputedBorder(Yoga.EDGE_RIGHT);
+				const paddingLeft = yogaNode.getComputedPadding(Yoga.EDGE_LEFT);
+				const paddingTop = yogaNode.getComputedPadding(Yoga.EDGE_TOP);
+				const paddingRight = yogaNode.getComputedPadding(Yoga.EDGE_RIGHT);
+				
+				const contentX = elementX + borderLeft + paddingLeft;
+				const contentY = elementY + borderTop + paddingTop;
+				const contentWidth = yogaNode.getComputedWidth() - borderLeft - borderRight - paddingLeft - paddingRight;
+				
+				this.layoutInlineRun(element, contentX, contentY, contentWidth);
 			}
 		} else if (display === "block" || display === "flex") {
 			let hasInlineContent = false;
@@ -399,8 +410,19 @@ export class LayoutEngine {
 			}
 
 			if (hasInlineContent && yogaNode) {
-				const width = yogaNode.getComputedWidth();
-				this.layoutInlineRun(element, elementX, elementY, width);
+				// Calculate content box coordinates and width for text positioning
+				const borderLeft = yogaNode.getComputedBorder(Yoga.EDGE_LEFT);
+				const borderTop = yogaNode.getComputedBorder(Yoga.EDGE_TOP);
+				const borderRight = yogaNode.getComputedBorder(Yoga.EDGE_RIGHT);
+				const paddingLeft = yogaNode.getComputedPadding(Yoga.EDGE_LEFT);
+				const paddingTop = yogaNode.getComputedPadding(Yoga.EDGE_TOP);
+				const paddingRight = yogaNode.getComputedPadding(Yoga.EDGE_RIGHT);
+				
+				const contentX = elementX + borderLeft + paddingLeft;
+				const contentY = elementY + borderTop + paddingTop;
+				const contentWidth = yogaNode.getComputedWidth() - borderLeft - borderRight - paddingLeft - paddingRight;
+				
+				this.layoutInlineRun(element, contentX, contentY, contentWidth);
 			}
 		}
 

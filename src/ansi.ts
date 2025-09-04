@@ -22,7 +22,14 @@ const BG_STYLE_INVISIBLE = 1 << 27;
 // Color masks
 const COLOR_MASK = 0xFFFFFF; // 24-bit RGB color
 
-// Border constants (32-bit field encoding)
+// Border constants (32-bit field encoding - 8 bits per edge)
+// Edge positions: [8 bits top][8 bits right][8 bits bottom][8 bits left]
+const BORDER_EDGE_TOP_SHIFT = 24;
+const BORDER_EDGE_RIGHT_SHIFT = 16;
+const BORDER_EDGE_BOTTOM_SHIFT = 8;
+const BORDER_EDGE_LEFT_SHIFT = 0;
+
+// Per-edge 8-bit encoding: [3 bits style][1 bit presence][1 bit rounded][3 bits reserved]
 const BORDER_STYLE_NONE = 0;
 const BORDER_STYLE_SOLID = 1;
 const BORDER_STYLE_DOUBLE = 2;
@@ -32,8 +39,19 @@ const BORDER_STYLE_GROOVE = 5;
 const BORDER_STYLE_RIDGE = 6;
 const BORDER_STYLE_MASK = 7;
 
-const BORDER_COLLAPSE = 1 << 3;
-const BORDER_ROUNDED = 1 << 4;
+const BORDER_EDGE_PRESENCE = 1 << 3;
+const BORDER_EDGE_ROUNDED = 1 << 4;
+const BORDER_EDGE_MASK = 0xFF;
+
+// Edge extraction utilities
+const getBorderEdge = (border: number, shift: number) => (border >> shift) & BORDER_EDGE_MASK;
+const setBorderEdge = (border: number, shift: number, edgeValue: number) => 
+  (border & ~(BORDER_EDGE_MASK << shift)) | ((edgeValue & BORDER_EDGE_MASK) << shift);
+
+// Style extraction from edge
+const getEdgeStyle = (edgeValue: number) => edgeValue & BORDER_STYLE_MASK;
+const getEdgePresence = (edgeValue: number) => (edgeValue & BORDER_EDGE_PRESENCE) !== 0;
+const getEdgeRounded = (edgeValue: number) => (edgeValue & BORDER_EDGE_ROUNDED) !== 0;
 
 export type CellBuffer = (Cell | null)[][];
 
@@ -383,24 +401,46 @@ export class Renderer {
 import {BOX_DRAWING} from "./styles.js";
 
 /**
- * Generate the appropriate box-drawing character for a cell position
- * based on border flags and adjacent border context
+ * Generate the appropriate box-drawing character for a cell based on its border encoding
+ * Uses per-edge encoding to determine proper junction characters
  */
-export function getBorderChar(
-	hasTop: boolean,
-	hasRight: boolean, 
-	hasBottom: boolean,
-	hasLeft: boolean,
-	borderStyle: number,
-): string {
-	// Extract style and flags from border encoding
-	const style = borderStyle & 7; // BORDER_STYLE_MASK
-	const isRounded = (borderStyle & (1 << 4)) !== 0; // BORDER_ROUNDED
+export function getBorderChar(borderEncoding: number): string {
+	// Extract edge information
+	const topEdge = getBorderEdge(borderEncoding, BORDER_EDGE_TOP_SHIFT);
+	const rightEdge = getBorderEdge(borderEncoding, BORDER_EDGE_RIGHT_SHIFT);
+	const bottomEdge = getBorderEdge(borderEncoding, BORDER_EDGE_BOTTOM_SHIFT);
+	const leftEdge = getBorderEdge(borderEncoding, BORDER_EDGE_LEFT_SHIFT);
 	
-	// Choose character set based on style
+	// Check which edges are present
+	const hasTop = getEdgePresence(topEdge);
+	const hasRight = getEdgePresence(rightEdge);
+	const hasBottom = getEdgePresence(bottomEdge);
+	const hasLeft = getEdgePresence(leftEdge);
+	
+	// If no edges, return space
+	if (!hasTop && !hasRight && !hasBottom && !hasLeft) {
+		return " ";
+	}
+	
+	// Determine dominant style for character set selection
+	// Priority: double > solid > groove > ridge > dashed > dotted
+	const styles = [
+		hasTop ? getEdgeStyle(topEdge) : 0,
+		hasRight ? getEdgeStyle(rightEdge) : 0,
+		hasBottom ? getEdgeStyle(bottomEdge) : 0,
+		hasLeft ? getEdgeStyle(leftEdge) : 0
+	].filter(s => s > 0);
+	
+	const dominantStyle = Math.max(...styles);
+	const hasRounded = hasTop && getEdgeRounded(topEdge) || 
+		hasRight && getEdgeRounded(rightEdge) ||
+		hasBottom && getEdgeRounded(bottomEdge) ||
+		hasLeft && getEdgeRounded(leftEdge);
+	
+	// Choose character set based on dominant style
 	let charSet;
-	switch (style) {
-		case 1: charSet = isRounded ? BOX_DRAWING.lightRounded : BOX_DRAWING.light; break; // solid
+	switch (dominantStyle) {
+		case 1: charSet = hasRounded ? BOX_DRAWING.lightRounded : BOX_DRAWING.light; break; // solid
 		case 2: charSet = BOX_DRAWING.double; break; // double (can't be rounded)
 		case 3: charSet = BOX_DRAWING.dashed; break; // dashed
 		case 4: charSet = BOX_DRAWING.dotted; break; // dotted
@@ -411,16 +451,16 @@ export function getBorderChar(
 	
 	// Corner characters
 	if (hasTop && hasLeft && !hasRight && !hasBottom) {
-		return charSet.bottomRight;
+		return charSet.topLeft; // ┌
 	}
 	if (hasTop && hasRight && !hasLeft && !hasBottom) {
-		return charSet.bottomLeft;
+		return charSet.topRight; // ┐
 	}
 	if (hasBottom && hasLeft && !hasTop && !hasRight) {
-		return charSet.topRight;
+		return charSet.bottomLeft; // └
 	}
 	if (hasBottom && hasRight && !hasTop && !hasLeft) {
-		return charSet.topLeft;
+		return charSet.bottomRight; // ┘
 	}
 	
 	// T-junction characters
@@ -444,10 +484,10 @@ export function getBorderChar(
 	
 	// Straight lines
 	if ((hasTop || hasBottom) && !hasLeft && !hasRight) {
-		return charSet.vertical;
+		return charSet.horizontal; // Top/bottom edges use horizontal lines ─
 	}
 	if ((hasLeft || hasRight) && !hasTop && !hasBottom) {
-		return charSet.horizontal;
+		return charSet.vertical; // Left/right edges use vertical lines │
 	}
 	
 	// Default to space for no borders
@@ -574,17 +614,6 @@ export function generateANSI(
 		return ansiColor;
 	};
 
-	const getBorderConnectivity = (buffer: CellBuffer, row: number, col: number): {hasTop: boolean, hasRight: boolean, hasBottom: boolean, hasLeft: boolean} => {
-		const rows = buffer.length;
-		const cols = buffer[0]?.length || 0;
-		
-		const hasTop = row > 0 && (buffer[row - 1][col]?.border ?? 0) > 0;
-		const hasRight = col < cols - 1 && (buffer[row][col + 1]?.border ?? 0) > 0;
-		const hasBottom = row < rows - 1 && (buffer[row + 1][col]?.border ?? 0) > 0;
-		const hasLeft = col > 0 && (buffer[row][col - 1]?.border ?? 0) > 0;
-		
-		return {hasTop, hasRight, hasBottom, hasLeft};
-	};
 
 	const getStyleDiff = (cell: Cell, prev: Cell | null): number[] => {
 		if (!prev) {
@@ -705,8 +734,7 @@ export function generateANSI(
 
 			// Use border character if cell has border, otherwise use grapheme
 			if (cell.border > 0) {
-				const {hasTop, hasRight, hasBottom, hasLeft} = getBorderConnectivity(buffer, row, col);
-				const borderChar = getBorderChar(hasTop, hasRight, hasBottom, hasLeft, cell.border);
+				const borderChar = getBorderChar(cell.border);
 				output += borderChar;
 			} else {
 				output += cell.grapheme;
