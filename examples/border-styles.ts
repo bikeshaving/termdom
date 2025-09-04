@@ -31,7 +31,7 @@ function borderStyles() {
 		{name: "Double", border: "1px double", bg: "#1a2a1a", color: "lightgreen"},
 		{name: "Dashed", border: "1px dashed", bg: "#1a1a2a", color: "lightblue"},
 		{name: "Dotted", border: "1px dotted", bg: "#2a2a1a", color: "yellow"},
-		{name: "Groove", border: "1px groove", bg: "#2a1a2a", color: "magenta"}
+		{name: "Groove", border: "1px groove", bg: "#2a1a2a", color: "magenta"},
 	];
 
 	// Create each border style in its own row
@@ -98,16 +98,17 @@ function borderStyles() {
 		{name: "Top", style: "border-top: 2px solid"},
 		{name: "Right", style: "border-right: 2px double"},
 		{name: "Bottom", style: "border-bottom: 2px dashed"},
-		{name: "Left", style: "border-left: 2px dotted"}
+		{name: "Left", style: "border-left: 2px dotted"},
 	];
 
 	for (const edge of edges) {
 		const edgeBox = document.createElement("div");
 		if (edge.style.includes("top")) edgeBox.style.borderTop = "2px solid";
 		if (edge.style.includes("right")) edgeBox.style.borderRight = "2px double";
-		if (edge.style.includes("bottom")) edgeBox.style.borderBottom = "2px dashed";
+		if (edge.style.includes("bottom"))
+			edgeBox.style.borderBottom = "2px dashed";
 		if (edge.style.includes("left")) edgeBox.style.borderLeft = "2px dotted";
-		
+
 		edgeBox.style.backgroundColor = "#1a1a1a";
 		edgeBox.style.color = "white";
 		edgeBox.style.padding = "1px";

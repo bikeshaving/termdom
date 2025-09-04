@@ -200,12 +200,12 @@ const CSS_SPEC_DEFAULTS: Record<string, string> = {
 	"border-style": "none",
 	"border-color": "currentColor",
 	"border-top-width": "0",
-	"border-right-width": "0", 
+	"border-right-width": "0",
 	"border-bottom-width": "0",
 	"border-left-width": "0",
 	"border-top-style": "none",
 	"border-right-style": "none",
-	"border-bottom-style": "none", 
+	"border-bottom-style": "none",
 	"border-left-style": "none",
 	"border-top-color": "currentColor",
 	"border-right-color": "currentColor",
@@ -455,7 +455,10 @@ function parseUnitValue(value: string): number | {percentage: number} | null {
 	return isNaN(num) ? null : num;
 }
 
-export function styleYogaNode(element: Element, yogaNode: YogaTypes.Node): void {
+export function styleYogaNode(
+	element: Element,
+	yogaNode: YogaTypes.Node,
+): void {
 	const width = parseUnitValue(resolvePropertyValue(element, "width", false));
 	if (typeof width === "number") {
 		yogaNode.setWidth(width);
@@ -626,28 +629,36 @@ export function styleYogaNode(element: Element, yogaNode: YogaTypes.Node): void 
 	}
 
 	// Border width calculations for layout
-	const borderTopWidth = parseUnitValue(resolvePropertyValue(element, "border-top-width", false));
+	const borderTopWidth = parseUnitValue(
+		resolvePropertyValue(element, "border-top-width", false),
+	);
 	if (typeof borderTopWidth === "number" && borderTopWidth > 0) {
 		yogaNode.setBorder(Yoga.EDGE_TOP, borderTopWidth);
 	} else {
 		yogaNode.setBorder(Yoga.EDGE_TOP, 0);
 	}
 
-	const borderRightWidth = parseUnitValue(resolvePropertyValue(element, "border-right-width", false));
+	const borderRightWidth = parseUnitValue(
+		resolvePropertyValue(element, "border-right-width", false),
+	);
 	if (typeof borderRightWidth === "number" && borderRightWidth > 0) {
 		yogaNode.setBorder(Yoga.EDGE_RIGHT, borderRightWidth);
 	} else {
 		yogaNode.setBorder(Yoga.EDGE_RIGHT, 0);
 	}
 
-	const borderBottomWidth = parseUnitValue(resolvePropertyValue(element, "border-bottom-width", false));
+	const borderBottomWidth = parseUnitValue(
+		resolvePropertyValue(element, "border-bottom-width", false),
+	);
 	if (typeof borderBottomWidth === "number" && borderBottomWidth > 0) {
 		yogaNode.setBorder(Yoga.EDGE_BOTTOM, borderBottomWidth);
 	} else {
 		yogaNode.setBorder(Yoga.EDGE_BOTTOM, 0);
 	}
 
-	const borderLeftWidth = parseUnitValue(resolvePropertyValue(element, "border-left-width", false));
+	const borderLeftWidth = parseUnitValue(
+		resolvePropertyValue(element, "border-left-width", false),
+	);
 	if (typeof borderLeftWidth === "number" && borderLeftWidth > 0) {
 		yogaNode.setBorder(Yoga.EDGE_LEFT, borderLeftWidth);
 	} else {
@@ -773,69 +784,105 @@ export function styleYogaNode(element: Element, yogaNode: YogaTypes.Node): void 
  */
 export function resolveBorderStyles(element: Element): {
 	topEdge: number;
-	rightEdge: number; 
+	rightEdge: number;
 	bottomEdge: number;
 	leftEdge: number;
 	hasAnyBorder: boolean;
 } {
 	// Helper to encode individual edge
-	const encodeEdge = (width: string, style: string, isRounded: boolean): number => {
+	const encodeEdge = (
+		width: string,
+		style: string,
+		isRounded: boolean,
+	): number => {
 		const widthValue = parseFloat(width);
 		if (isNaN(widthValue) || widthValue <= 0 || !style || style === "none") {
 			return 0; // No border
 		}
-		
+
 		// Encode style
 		let encodedStyle = 0;
 		switch (style) {
-			case "solid": encodedStyle = 1; break;
-			case "double": encodedStyle = 2; break;
-			case "dashed": encodedStyle = 3; break;
-			case "dotted": encodedStyle = 4; break;
-			case "groove": encodedStyle = 5; break;
-			case "ridge": encodedStyle = 6; break;
-			default: encodedStyle = 1; // Default to solid
+			case "solid":
+				encodedStyle = 1;
+				break;
+			case "double":
+				encodedStyle = 2;
+				break;
+			case "dashed":
+				encodedStyle = 3;
+				break;
+			case "dotted":
+				encodedStyle = 4;
+				break;
+			case "groove":
+				encodedStyle = 5;
+				break;
+			case "ridge":
+				encodedStyle = 6;
+				break;
+			default:
+				encodedStyle = 1; // Default to solid
 		}
-		
+
 		// Add presence and rounded flags
 		let edgeValue = encodedStyle;
-		edgeValue |= (1 << 3); // BORDER_EDGE_PRESENCE
+		edgeValue |= 1 << 3; // BORDER_EDGE_PRESENCE
 		if (isRounded) {
-			edgeValue |= (1 << 4); // BORDER_EDGE_ROUNDED
+			edgeValue |= 1 << 4; // BORDER_EDGE_ROUNDED
 		}
-		
+
 		return edgeValue;
 	};
-	
+
 	// Check for border-radius (applies to all corners)
-	const borderRadius = parseFloat(resolvePropertyValue(element, "border-radius", false));
+	const borderRadius = parseFloat(
+		resolvePropertyValue(element, "border-radius", false),
+	);
 	const hasRadius = !isNaN(borderRadius) && borderRadius > 0;
-	
+
 	// Resolve individual edges (check both shorthand and individual properties)
-	const topWidth = resolvePropertyValue(element, "border-top-width", false) || resolvePropertyValue(element, "border-width", false);
-	const topStyle = resolvePropertyValue(element, "border-top-style", false) || resolvePropertyValue(element, "border-style", false);
-	
-	const rightWidth = resolvePropertyValue(element, "border-right-width", false) || resolvePropertyValue(element, "border-width", false);
-	const rightStyle = resolvePropertyValue(element, "border-right-style", false) || resolvePropertyValue(element, "border-style", false);
-	
-	const bottomWidth = resolvePropertyValue(element, "border-bottom-width", false) || resolvePropertyValue(element, "border-width", false);
-	const bottomStyle = resolvePropertyValue(element, "border-bottom-style", false) || resolvePropertyValue(element, "border-style", false);
-	
-	const leftWidth = resolvePropertyValue(element, "border-left-width", false) || resolvePropertyValue(element, "border-width", false);
-	const leftStyle = resolvePropertyValue(element, "border-left-style", false) || resolvePropertyValue(element, "border-style", false);
-	
+	const topWidth =
+		resolvePropertyValue(element, "border-top-width", false) ||
+		resolvePropertyValue(element, "border-width", false);
+	const topStyle =
+		resolvePropertyValue(element, "border-top-style", false) ||
+		resolvePropertyValue(element, "border-style", false);
+
+	const rightWidth =
+		resolvePropertyValue(element, "border-right-width", false) ||
+		resolvePropertyValue(element, "border-width", false);
+	const rightStyle =
+		resolvePropertyValue(element, "border-right-style", false) ||
+		resolvePropertyValue(element, "border-style", false);
+
+	const bottomWidth =
+		resolvePropertyValue(element, "border-bottom-width", false) ||
+		resolvePropertyValue(element, "border-width", false);
+	const bottomStyle =
+		resolvePropertyValue(element, "border-bottom-style", false) ||
+		resolvePropertyValue(element, "border-style", false);
+
+	const leftWidth =
+		resolvePropertyValue(element, "border-left-width", false) ||
+		resolvePropertyValue(element, "border-width", false);
+	const leftStyle =
+		resolvePropertyValue(element, "border-left-style", false) ||
+		resolvePropertyValue(element, "border-style", false);
+
 	// Encode each edge
 	const topEdge = encodeEdge(topWidth, topStyle, hasRadius);
 	const rightEdge = encodeEdge(rightWidth, rightStyle, hasRadius);
 	const bottomEdge = encodeEdge(bottomWidth, bottomStyle, hasRadius);
 	const leftEdge = encodeEdge(leftWidth, leftStyle, hasRadius);
-	
+
 	return {
 		topEdge,
 		rightEdge,
 		bottomEdge,
 		leftEdge,
-		hasAnyBorder: topEdge > 0 || rightEdge > 0 || bottomEdge > 0 || leftEdge > 0
+		hasAnyBorder:
+			topEdge > 0 || rightEdge > 0 || bottomEdge > 0 || leftEdge > 0,
 	};
 }
 
@@ -867,12 +914,12 @@ export const BOX_DRAWING = {
 		bottomLeft: "+",
 		bottomRight: "+",
 		topTee: "+",
-		bottomTee: "+", 
+		bottomTee: "+",
 		leftTee: "+",
 		rightTee: "+",
 		cross: "+",
 	} as BoxCharSet,
-	
+
 	// Unicode light box drawing (solid borders)
 	light: {
 		horizontal: "─",
@@ -883,11 +930,11 @@ export const BOX_DRAWING = {
 		bottomRight: "┘",
 		topTee: "┬",
 		bottomTee: "┴",
-		leftTee: "┤", 
+		leftTee: "┤",
 		rightTee: "├",
 		cross: "┼",
 	} as BoxCharSet,
-	
+
 	// Unicode heavy box drawing (bold/thick borders)
 	heavy: {
 		horizontal: "━",
@@ -899,10 +946,10 @@ export const BOX_DRAWING = {
 		topTee: "┳",
 		bottomTee: "┻",
 		leftTee: "┫",
-		rightTee: "┣", 
+		rightTee: "┣",
 		cross: "╋",
 	} as BoxCharSet,
-	
+
 	// Unicode double-line box drawing
 	double: {
 		horizontal: "═",
@@ -917,14 +964,14 @@ export const BOX_DRAWING = {
 		rightTee: "╠",
 		cross: "╬",
 	} as BoxCharSet,
-	
+
 	// Unicode dashed borders
 	dashed: {
 		horizontal: "╌",
 		vertical: "┆",
 		topLeft: "┌", // Fall back to light corners
 		topRight: "┐",
-		bottomLeft: "└", 
+		bottomLeft: "└",
 		bottomRight: "┘",
 		topTee: "┬",
 		bottomTee: "┴",
@@ -932,35 +979,35 @@ export const BOX_DRAWING = {
 		rightTee: "├",
 		cross: "┼",
 	} as BoxCharSet,
-	
-	// Unicode dotted borders  
+
+	// Unicode dotted borders
 	dotted: {
 		horizontal: "┄",
 		vertical: "┊",
 		topLeft: "┌", // Fall back to light corners
 		topRight: "┐",
 		bottomLeft: "└",
-		bottomRight: "┘", 
+		bottomRight: "┘",
 		topTee: "┬",
 		bottomTee: "┴",
 		leftTee: "┤",
 		rightTee: "├",
 		cross: "┼",
 	} as BoxCharSet,
-	
+
 	// Unicode light rounded corners (border-radius support)
 	lightRounded: {
 		horizontal: "─",
 		vertical: "│",
 		topLeft: "╭",
-		topRight: "╮", 
+		topRight: "╮",
 		bottomLeft: "╰",
 		bottomRight: "╯",
 		// No rounded T-junctions - fall back to sharp
 		topTee: "┬",
 		bottomTee: "┴",
 		leftTee: "┤",
-		rightTee: "├", 
+		rightTee: "├",
 		cross: "┼",
 	} as BoxCharSet,
 };

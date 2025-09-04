@@ -249,6 +249,13 @@ export class TermDOM {
 			);
 		}
 
+		// Handle tables with TanStack integration
+		const display = resolvePropertyValue(element, "display");
+		if (display === "table" && rect) {
+			this.renderTable(element, rect, style);
+			return; // Table handles its own children
+		}
+
 		// Handle borders
 		if (rect) {
 			const borderStyles = resolveBorderStyles(element);
@@ -320,19 +327,29 @@ export class TermDOM {
 		}
 	}
 
-	private renderBorders(rect: DOMRect, borderStyles: {topEdge: number, rightEdge: number, bottomEdge: number, leftEdge: number, hasAnyBorder: boolean}, cellStyle: any): void {
+	private renderBorders(
+		rect: DOMRect,
+		borderStyles: {
+			topEdge: number;
+			rightEdge: number;
+			bottomEdge: number;
+			leftEdge: number;
+			hasAnyBorder: boolean;
+		},
+		cellStyle: any,
+	): void {
 		const {left, top, width, height} = rect;
-		
+
 		// Don't render if rect is too small
 		if (width < 2 || height < 2) return;
-		
+
 		const right = left + width - 1;
 		const bottom = top + height - 1;
 
 		// Use foreground color for borders, inherit element's background color
 		const borderCellStyle = {
-			fg: cellStyle.fg || 0xFFFFFF, // Default to white if no color
-			bg: cellStyle.bg // Inherit element's background color
+			fg: cellStyle.fg || 0xffffff, // Default to white if no color
+			bg: cellStyle.bg, // Inherit element's background color
 		};
 
 		// Encode borders based on position
@@ -340,20 +357,37 @@ export class TermDOM {
 		if (borderStyles.topEdge > 0) {
 			for (let x = left; x <= right; x++) {
 				if (top >= 0 && top < this.height) {
-					const cornerLeft = (x === left && borderStyles.leftEdge > 0);
-					const cornerRight = (x === right && borderStyles.rightEdge > 0);
-					const edgeEncoding = this.calculateEdgeEncoding(borderStyles, true, cornerRight, false, cornerLeft);
+					const cornerLeft = x === left && borderStyles.leftEdge > 0;
+					const cornerRight = x === right && borderStyles.rightEdge > 0;
+					const edgeEncoding = this.calculateEdgeEncoding(
+						borderStyles,
+						true,
+						cornerRight,
+						false,
+						cornerLeft,
+					);
 					this.setBorderCell(x, top, edgeEncoding, borderCellStyle);
 				}
 			}
 		}
 
 		// Bottom edge
-		if (borderStyles.bottomEdge > 0 && bottom !== top && bottom >= 0 && bottom < this.height) {
+		if (
+			borderStyles.bottomEdge > 0 &&
+			bottom !== top &&
+			bottom >= 0 &&
+			bottom < this.height
+		) {
 			for (let x = left; x <= right; x++) {
-				const cornerLeft = (x === left && borderStyles.leftEdge > 0);
-				const cornerRight = (x === right && borderStyles.rightEdge > 0);
-				const edgeEncoding = this.calculateEdgeEncoding(borderStyles, false, cornerRight, true, cornerLeft);
+				const cornerLeft = x === left && borderStyles.leftEdge > 0;
+				const cornerRight = x === right && borderStyles.rightEdge > 0;
+				const edgeEncoding = this.calculateEdgeEncoding(
+					borderStyles,
+					false,
+					cornerRight,
+					true,
+					cornerLeft,
+				);
 				this.setBorderCell(x, bottom, edgeEncoding, borderCellStyle);
 			}
 		}
@@ -362,60 +396,181 @@ export class TermDOM {
 		if (borderStyles.leftEdge > 0) {
 			for (let y = top + 1; y < bottom; y++) {
 				if (left >= 0 && left < this.width) {
-					const edgeEncoding = this.calculateEdgeEncoding(borderStyles, false, false, false, true);
+					const edgeEncoding = this.calculateEdgeEncoding(
+						borderStyles,
+						false,
+						false,
+						false,
+						true,
+					);
 					this.setBorderCell(left, y, edgeEncoding, borderCellStyle);
 				}
 			}
 		}
 
 		// Right edge (excluding corners)
-		if (borderStyles.rightEdge > 0 && right !== left && right >= 0 && right < this.width) {
+		if (
+			borderStyles.rightEdge > 0 &&
+			right !== left &&
+			right >= 0 &&
+			right < this.width
+		) {
 			for (let y = top + 1; y < bottom; y++) {
-				const edgeEncoding = this.calculateEdgeEncoding(borderStyles, false, true, false, false);
+				const edgeEncoding = this.calculateEdgeEncoding(
+					borderStyles,
+					false,
+					true,
+					false,
+					false,
+				);
 				this.setBorderCell(right, y, edgeEncoding, borderCellStyle);
 			}
 		}
 	}
 
-	private calculateEdgeEncoding(borderStyles: {topEdge: number, rightEdge: number, bottomEdge: number, leftEdge: number}, hasTop: boolean, hasRight: boolean, hasBottom: boolean, hasLeft: boolean): number {
+	private calculateEdgeEncoding(
+		borderStyles: {
+			topEdge: number;
+			rightEdge: number;
+			bottomEdge: number;
+			leftEdge: number;
+		},
+		hasTop: boolean,
+		hasRight: boolean,
+		hasBottom: boolean,
+		hasLeft: boolean,
+	): number {
 		// Encode which edges are present for this specific cell position
 		let encoding = 0;
-		
+
 		if (hasTop && borderStyles.topEdge > 0) {
-			encoding |= (borderStyles.topEdge << 24); // BORDER_EDGE_TOP_SHIFT
+			encoding |= borderStyles.topEdge << 24; // BORDER_EDGE_TOP_SHIFT
 		}
 		if (hasRight && borderStyles.rightEdge > 0) {
-			encoding |= (borderStyles.rightEdge << 16); // BORDER_EDGE_RIGHT_SHIFT  
+			encoding |= borderStyles.rightEdge << 16; // BORDER_EDGE_RIGHT_SHIFT
 		}
 		if (hasBottom && borderStyles.bottomEdge > 0) {
-			encoding |= (borderStyles.bottomEdge << 8); // BORDER_EDGE_BOTTOM_SHIFT
+			encoding |= borderStyles.bottomEdge << 8; // BORDER_EDGE_BOTTOM_SHIFT
 		}
 		if (hasLeft && borderStyles.leftEdge > 0) {
-			encoding |= (borderStyles.leftEdge << 0); // BORDER_EDGE_LEFT_SHIFT
+			encoding |= borderStyles.leftEdge << 0; // BORDER_EDGE_LEFT_SHIFT
 		}
-		
+
 		return encoding;
 	}
 
-	private setBorderCell(x: number, y: number, borderEncoding: number, style: any): void {
+	private renderTable(tableElement: Element, rect: DOMRect, style: any): void {
+		const tableInstance = this.layoutEngine.getTableInstance(tableElement);
+		if (!tableInstance) return;
+
+		const {tanstackTable} = tableInstance;
+		const {left, top, width, height} = rect;
+
+		// Render table using flexbox-like approach but with TanStack data
+		let currentY = Math.round(top);
+
+		// Render headers
+		tanstackTable.getHeaderGroups().forEach((headerGroup: any) => {
+			let currentX = Math.round(left);
+			const colWidth = Math.floor(width / headerGroup.headers.length);
+
+			headerGroup.headers.forEach((header: any, colIndex: number) => {
+				const headerText = header.column.columnDef.header;
+				const cellWidth =
+					colIndex === headerGroup.headers.length - 1
+						? width - (currentX - left) // Last column takes remaining width
+						: colWidth;
+
+				// Render header cell background
+				if (style.bg != null) {
+					this.renderer.fillRect(currentX, currentY, cellWidth, 1, style.bg);
+				}
+
+				// Render header text
+				if (headerText && currentX >= 0 && currentY >= 0) {
+					this.renderer.setText(currentX + 1, currentY, String(headerText), {
+						...style,
+						bold: true,
+					});
+				}
+
+				currentX += cellWidth;
+			});
+			currentY++;
+		});
+
+		// Render data rows
+		tanstackTable.getRowModel().rows.forEach((row: any, rowIndex: number) => {
+			let currentX = Math.round(left);
+			const colWidth = Math.floor(width / row.getVisibleCells().length);
+
+			row.getVisibleCells().forEach((cell: any, colIndex: number) => {
+				const cellValue = String(cell.getValue());
+				const cellWidth =
+					colIndex === row.getVisibleCells().length - 1
+						? width - (currentX - left)
+						: colWidth;
+
+				// Render cell background (alternating rows)
+				const bgColor =
+					rowIndex % 2 === 1 && style.bg
+						? this.darkenColor(style.bg, 0.1)
+						: style.bg;
+
+				if (bgColor != null) {
+					this.renderer.fillRect(currentX, currentY, cellWidth, 1, bgColor);
+				}
+
+				// Render cell text
+				if (cellValue && currentX >= 0 && currentY >= 0) {
+					this.renderer.setText(currentX + 1, currentY, cellValue, style);
+				}
+
+				currentX += cellWidth;
+			});
+			currentY++;
+		});
+	}
+
+	private darkenColor(color: number, factor: number): number {
+		const r = (color >> 16) & 0xff;
+		const g = (color >> 8) & 0xff;
+		const b = color & 0xff;
+
+		return (
+			(Math.floor(r * (1 - factor)) << 16) |
+			(Math.floor(g * (1 - factor)) << 8) |
+			Math.floor(b * (1 - factor))
+		);
+	}
+
+	private setBorderCell(
+		x: number,
+		y: number,
+		borderEncoding: number,
+		style: any,
+	): void {
 		// Get the renderer buffer
 		const buffer = (this.renderer as any).currentBuffer;
 		if (!buffer[y]) {
 			buffer[y] = [];
 		}
-		
-		// Check if there's an existing cell 
+
+		// Check if there's an existing cell
 		const existingCell = buffer[y][x];
 		if (existingCell) {
 			if (existingCell.border > 0) {
 				// Merge the border encodings using precedence rules
-				const mergedBorder = mergeBorderEncodings(existingCell.border, borderEncoding);
-				
+				const mergedBorder = mergeBorderEncodings(
+					existingCell.border,
+					borderEncoding,
+				);
+
 				// Create a new cell with merged border
 				const borderCell = new Cell({
 					grapheme: "┼", // Placeholder - renderer will determine correct character
 					...style,
-					border: mergedBorder
+					border: mergedBorder,
 				});
 				buffer[y][x] = borderCell;
 			} else {
@@ -423,7 +578,7 @@ export class TermDOM {
 				const borderCell = new Cell({
 					grapheme: "┼", // Placeholder - renderer will determine correct character
 					...style,
-					border: borderEncoding
+					border: borderEncoding,
 				});
 				buffer[y][x] = borderCell;
 			}
@@ -432,7 +587,7 @@ export class TermDOM {
 			const borderCell = new Cell({
 				grapheme: "┼", // Placeholder - renderer will determine correct character
 				...style,
-				border: borderEncoding
+				border: borderEncoding,
 			});
 			buffer[y][x] = borderCell;
 		}

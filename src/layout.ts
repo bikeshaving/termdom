@@ -3,10 +3,18 @@ import Yoga from "yoga-layout";
 import type * as YogaTypes from "yoga-layout";
 import {resolvePropertyValue, styleYogaNode} from "./styles.js";
 import {breakNodes, type Leaf, type BreakResult} from "./breaker.js";
+import {createTable, getCoreRowModel} from "@tanstack/table-core";
 
 export interface TextLayout {
 	rect: DOMRect;
 	text: string;
+}
+
+interface TableInstance {
+	element: Element;
+	tanstackTable: any;
+	data: any[];
+	columns: any[];
 }
 
 const yogaConfig = Yoga.Config.create();
@@ -23,12 +31,14 @@ export class LayoutEngine {
 
 	declare nodeMap: WeakMap<Node, YogaTypes.Node>;
 	declare nodeRects: WeakMap<Node, Array<DOMRect & {text?: string}>>;
+	declare tableInstances: WeakMap<Element, TableInstance>;
 
 	constructor(window: DOMWindow) {
 		this.DOMRect = window.DOMRect;
 		this.rootElement = window.document.documentElement;
 		this.nodeMap = new WeakMap<Node, YogaTypes.Node>();
 		this.nodeRects = new WeakMap<Node, Array<DOMRect & {text?: string}>>();
+		this.tableInstances = new WeakMap<Element, TableInstance>();
 		this.observer = new window.MutationObserver((mutations) =>
 			this.handleMutationRecords(mutations),
 		);
@@ -103,7 +113,154 @@ export class LayoutEngine {
 		return this.nodeRects.get(node) || [];
 	}
 
+	getTableInstance(element: Element): TableInstance | undefined {
+		return this.tableInstances.get(element);
+	}
+
 	dispose(): void {}
+
+	private setupTableElement(
+		tableElement: Element,
+		parentYogaNode: YogaTypes.Node | null,
+		yogaIndex: number,
+	): void {
+		// Extract data from DOM table structure
+		const tableData = this.extractTableData(tableElement);
+
+		// Create TanStack Table instance with proper state defaults
+		const tanstackTable = createTable({
+			data: tableData.data,
+			columns: tableData.columns,
+			getCoreRowModel: getCoreRowModel(),
+			state: {
+				columnPinning: {left: [], right: []},
+				columnOrder: [],
+				sorting: [],
+			},
+			onStateChange: () => {},
+		});
+
+		// Store table instance for later updates
+		this.tableInstances.set(tableElement, {
+			element: tableElement,
+			tanstackTable,
+			data: tableData.data,
+			columns: tableData.columns,
+		});
+
+		// Create Yoga node for the table container
+		let yogaNode = this.nodeMap.get(tableElement);
+		if (!yogaNode) {
+			yogaNode = Yoga.Node.createWithConfig(yogaConfig);
+			this.nodeMap.set(tableElement, yogaNode);
+		}
+
+		// Style the table container
+		styleYogaNode(tableElement, yogaNode);
+
+		// Set up table as flex column container
+		yogaNode.setFlexDirection(Yoga.FLEX_DIRECTION_COLUMN);
+		yogaNode.setDisplay(Yoga.DISPLAY_FLEX);
+
+		// Add to parent
+		if (parentYogaNode) {
+			parentYogaNode.insertChild(yogaNode, yogaIndex);
+		}
+
+		// Set up custom measure function for table content
+		yogaNode.setMeasureFunc((width, widthMode, height, heightMode) => {
+			return this.measureTable(
+				tableElement,
+				width,
+				widthMode,
+				height,
+				heightMode,
+			);
+		});
+	}
+
+	private extractTableData(tableElement: Element): {
+		data: any[];
+		columns: any[];
+	} {
+		const data: any[] = [];
+		const columns: any[] = [];
+
+		// Find headers (th elements)
+		const headerCells = Array.from(tableElement.querySelectorAll("th"));
+		const hasHeaders = headerCells.length > 0;
+
+		if (hasHeaders) {
+			headerCells.forEach((th, index) => {
+				columns.push({
+					id: `col_${index}`,
+					header: th.textContent?.trim() || `Column ${index + 1}`,
+					accessorKey: `col_${index}`,
+				});
+			});
+		}
+
+		// Extract data from tbody tr elements
+		const dataRows = Array.from(tableElement.querySelectorAll("tbody tr"));
+
+		dataRows.forEach((row) => {
+			const cells = Array.from(row.querySelectorAll("td"));
+			const rowData: any = {};
+
+			cells.forEach((cell, index) => {
+				rowData[`col_${index}`] = cell.textContent?.trim() || "";
+			});
+
+			if (Object.keys(rowData).length > 0) {
+				data.push(rowData);
+			}
+		});
+
+		// Generate columns if no headers found
+		if (!hasHeaders && data.length > 0) {
+			Object.keys(data[0]).forEach((key, index) => {
+				columns.push({
+					id: key,
+					header: `Column ${index + 1}`,
+					accessorKey: key,
+				});
+			});
+		}
+
+		return {data, columns};
+	}
+
+	private measureTable(
+		tableElement: Element,
+		width: number,
+		widthMode: YogaTypes.MeasureMode,
+		height: number,
+		heightMode: YogaTypes.MeasureMode,
+	): {width: number; height: number} {
+		const tableInstance = this.tableInstances.get(tableElement);
+		if (!tableInstance) {
+			return {width: 40, height: 5};
+		}
+
+		const table = tableInstance.tanstackTable;
+		const rowCount = table.getRowModel().rows.length + 1; // +1 for header
+		const colCount = table.getAllColumns().length;
+
+		// Calculate dimensions
+		const calculatedWidth = Math.max(colCount * 12, 40);
+		const calculatedHeight = Math.max(rowCount, 3);
+
+		return {
+			width:
+				widthMode === Yoga.MEASURE_MODE_UNDEFINED
+					? calculatedWidth
+					: Math.min(width, calculatedWidth),
+			height:
+				heightMode === Yoga.MEASURE_MODE_UNDEFINED
+					? calculatedHeight
+					: Math.min(height, calculatedHeight),
+		};
+	}
 
 	private handleMutationRecords(mutations: MutationRecord[]): void {
 		let _needsLayout = false;
@@ -174,6 +331,24 @@ export class LayoutEngine {
 		yogaIndex: number = this.getYogaIndex(element),
 	): void {
 		const display = resolvePropertyValue(element, "display", false);
+
+		// Handle table elements with TanStack Table integration
+		if (display === "table") {
+			this.setupTableElement(element, parentYogaNode, yogaIndex);
+			return;
+		}
+
+		// Table children handled by table layout
+		if (
+			display === "table-header-group" ||
+			display === "table-row-group" ||
+			display === "table-footer-group" ||
+			display === "table-row" ||
+			display === "table-cell"
+		) {
+			// These will be handled by the parent table's layout
+			return;
+		}
 
 		if (display === "inline" || display === "inline-block") {
 			if (!isInlineRunHead(element)) {
@@ -384,11 +559,16 @@ export class LayoutEngine {
 				const paddingLeft = yogaNode.getComputedPadding(Yoga.EDGE_LEFT);
 				const paddingTop = yogaNode.getComputedPadding(Yoga.EDGE_TOP);
 				const paddingRight = yogaNode.getComputedPadding(Yoga.EDGE_RIGHT);
-				
+
 				const contentX = elementX + borderLeft + paddingLeft;
 				const contentY = elementY + borderTop + paddingTop;
-				const contentWidth = yogaNode.getComputedWidth() - borderLeft - borderRight - paddingLeft - paddingRight;
-				
+				const contentWidth =
+					yogaNode.getComputedWidth() -
+					borderLeft -
+					borderRight -
+					paddingLeft -
+					paddingRight;
+
 				this.layoutInlineRun(element, contentX, contentY, contentWidth);
 			}
 		} else if (display === "block" || display === "flex") {
@@ -417,11 +597,16 @@ export class LayoutEngine {
 				const paddingLeft = yogaNode.getComputedPadding(Yoga.EDGE_LEFT);
 				const paddingTop = yogaNode.getComputedPadding(Yoga.EDGE_TOP);
 				const paddingRight = yogaNode.getComputedPadding(Yoga.EDGE_RIGHT);
-				
+
 				const contentX = elementX + borderLeft + paddingLeft;
 				const contentY = elementY + borderTop + paddingTop;
-				const contentWidth = yogaNode.getComputedWidth() - borderLeft - borderRight - paddingLeft - paddingRight;
-				
+				const contentWidth =
+					yogaNode.getComputedWidth() -
+					borderLeft -
+					borderRight -
+					paddingLeft -
+					paddingRight;
+
 				this.layoutInlineRun(element, contentX, contentY, contentWidth);
 			}
 		}
@@ -661,9 +846,6 @@ export class LayoutEngine {
 		}
 	}
 }
-
-
-
 
 export function isInlineRunHead(node: Node): boolean {
 	if (node.nodeType === node.ELEMENT_NODE) {

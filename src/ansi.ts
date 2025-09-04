@@ -20,7 +20,7 @@ const BG_STYLE_DIM = 1 << 26;
 const BG_STYLE_INVISIBLE = 1 << 27;
 
 // Color masks
-const COLOR_MASK = 0xFFFFFF; // 24-bit RGB color
+const COLOR_MASK = 0xffffff; // 24-bit RGB color
 
 // Border constants (32-bit field encoding - 8 bits per edge)
 // Edge positions: [8 bits top][8 bits right][8 bits bottom][8 bits left]
@@ -41,40 +41,52 @@ const BORDER_STYLE_MASK = 7;
 
 const BORDER_EDGE_PRESENCE = 1 << 3;
 const BORDER_EDGE_ROUNDED = 1 << 4;
-const BORDER_EDGE_MASK = 0xFF;
+const BORDER_EDGE_MASK = 0xff;
 
 // Edge extraction utilities
-const getBorderEdge = (border: number, shift: number) => (border >> shift) & BORDER_EDGE_MASK;
-const setBorderEdge = (border: number, shift: number, edgeValue: number) => 
-  (border & ~(BORDER_EDGE_MASK << shift)) | ((edgeValue & BORDER_EDGE_MASK) << shift);
+const getBorderEdge = (border: number, shift: number) =>
+	(border >> shift) & BORDER_EDGE_MASK;
+const setBorderEdge = (border: number, shift: number, edgeValue: number) =>
+	(border & ~(BORDER_EDGE_MASK << shift)) |
+	((edgeValue & BORDER_EDGE_MASK) << shift);
 
 // Style extraction from edge
 const getEdgeStyle = (edgeValue: number) => edgeValue & BORDER_STYLE_MASK;
-const getEdgePresence = (edgeValue: number) => (edgeValue & BORDER_EDGE_PRESENCE) !== 0;
-const getEdgeRounded = (edgeValue: number) => (edgeValue & BORDER_EDGE_ROUNDED) !== 0;
+const getEdgePresence = (edgeValue: number) =>
+	(edgeValue & BORDER_EDGE_PRESENCE) !== 0;
+const getEdgeRounded = (edgeValue: number) =>
+	(edgeValue & BORDER_EDGE_ROUNDED) !== 0;
 
 // Border style precedence for merging (higher number = higher precedence)
 const BORDER_STYLE_PRECEDENCE: Record<number, number> = {
-	[BORDER_STYLE_DOUBLE]: 6,   // Highest precedence
+	[BORDER_STYLE_DOUBLE]: 6, // Highest precedence
 	[BORDER_STYLE_SOLID]: 5,
 	[BORDER_STYLE_GROOVE]: 4,
 	[BORDER_STYLE_RIDGE]: 3,
 	[BORDER_STYLE_DASHED]: 2,
-	[BORDER_STYLE_DOTTED]: 1,   // Lowest precedence
-	[BORDER_STYLE_NONE]: 0
+	[BORDER_STYLE_DOTTED]: 1, // Lowest precedence
+	[BORDER_STYLE_NONE]: 0,
 };
 
 /**
  * Merge two border encodings, choosing the higher precedence style for each edge
  */
-export function mergeBorderEncodings(existing: number, incoming: number): number {
+export function mergeBorderEncodings(
+	existing: number,
+	incoming: number,
+): number {
 	let merged = 0;
-	
+
 	// Process each edge
-	for (const shift of [BORDER_EDGE_TOP_SHIFT, BORDER_EDGE_RIGHT_SHIFT, BORDER_EDGE_BOTTOM_SHIFT, BORDER_EDGE_LEFT_SHIFT]) {
+	for (const shift of [
+		BORDER_EDGE_TOP_SHIFT,
+		BORDER_EDGE_RIGHT_SHIFT,
+		BORDER_EDGE_BOTTOM_SHIFT,
+		BORDER_EDGE_LEFT_SHIFT,
+	]) {
 		const existingEdge = getBorderEdge(existing, shift);
 		const incomingEdge = getBorderEdge(incoming, shift);
-		
+
 		// If only one has the edge, use it
 		if (!getEdgePresence(existingEdge)) {
 			merged = setBorderEdge(merged, shift, incomingEdge);
@@ -84,10 +96,10 @@ export function mergeBorderEncodings(existing: number, incoming: number): number
 			// Both have the edge - choose based on style precedence
 			const existingStyle = getEdgeStyle(existingEdge);
 			const incomingStyle = getEdgeStyle(incomingEdge);
-			
+
 			const existingPrecedence = BORDER_STYLE_PRECEDENCE[existingStyle] || 0;
 			const incomingPrecedence = BORDER_STYLE_PRECEDENCE[incomingStyle] || 0;
-			
+
 			if (incomingPrecedence > existingPrecedence) {
 				merged = setBorderEdge(merged, shift, incomingEdge);
 			} else {
@@ -95,7 +107,7 @@ export function mergeBorderEncodings(existing: number, incoming: number): number
 			}
 		}
 	}
-	
+
 	return merged;
 }
 
@@ -128,7 +140,7 @@ const cache = new LRUCache<string, Cell>(2 ** 12);
 export class Cell {
 	declare grapheme: string;
 	declare fg: number; // RGB color (24-bit) + style flags (8-bit)
-	declare bg: number; // RGB color (24-bit) + style flags (8-bit)  
+	declare bg: number; // RGB color (24-bit) + style flags (8-bit)
 	declare border: number;
 
 	constructor(options: string | CellStyle) {
@@ -150,7 +162,7 @@ export class Cell {
 		}
 
 		this.grapheme = grapheme;
-		
+
 		// Pack fg color and style flags into fg field
 		let fg = (cellStyle?.fg ?? 0) & COLOR_MASK;
 		if (cellStyle?.bold) fg |= FG_STYLE_BOLD;
@@ -183,8 +195,8 @@ export class Cell {
 
 	styleEquals(other: Cell): boolean {
 		return (
-			this.fg === other.fg && 
-			this.bg === other.bg && 
+			this.fg === other.fg &&
+			this.bg === other.bg &&
 			this.border === other.border
 		);
 	}
@@ -343,7 +355,7 @@ export class Renderer {
 
 		const newCell = Cell.create({
 			grapheme: char,
-			...cellStyle
+			...cellStyle,
 		});
 		this.currentBuffer[row][col] = newCell;
 	}
@@ -456,45 +468,60 @@ export function getBorderChar(borderEncoding: number): string {
 	const rightEdge = getBorderEdge(borderEncoding, BORDER_EDGE_RIGHT_SHIFT);
 	const bottomEdge = getBorderEdge(borderEncoding, BORDER_EDGE_BOTTOM_SHIFT);
 	const leftEdge = getBorderEdge(borderEncoding, BORDER_EDGE_LEFT_SHIFT);
-	
+
 	// Check which edges are present
 	const hasTop = getEdgePresence(topEdge);
 	const hasRight = getEdgePresence(rightEdge);
 	const hasBottom = getEdgePresence(bottomEdge);
 	const hasLeft = getEdgePresence(leftEdge);
-	
+
 	// If no edges, return space
 	if (!hasTop && !hasRight && !hasBottom && !hasLeft) {
 		return " ";
 	}
-	
+
 	// Determine dominant style for character set selection
 	// Priority: double > solid > groove > ridge > dashed > dotted
 	const styles = [
 		hasTop ? getEdgeStyle(topEdge) : 0,
 		hasRight ? getEdgeStyle(rightEdge) : 0,
 		hasBottom ? getEdgeStyle(bottomEdge) : 0,
-		hasLeft ? getEdgeStyle(leftEdge) : 0
-	].filter(s => s > 0);
-	
+		hasLeft ? getEdgeStyle(leftEdge) : 0,
+	].filter((s) => s > 0);
+
 	const dominantStyle = Math.max(...styles);
-	const hasRounded = hasTop && getEdgeRounded(topEdge) || 
-		hasRight && getEdgeRounded(rightEdge) ||
-		hasBottom && getEdgeRounded(bottomEdge) ||
-		hasLeft && getEdgeRounded(leftEdge);
-	
+	const hasRounded =
+		(hasTop && getEdgeRounded(topEdge)) ||
+		(hasRight && getEdgeRounded(rightEdge)) ||
+		(hasBottom && getEdgeRounded(bottomEdge)) ||
+		(hasLeft && getEdgeRounded(leftEdge));
+
 	// Choose character set based on dominant style
 	let charSet;
 	switch (dominantStyle) {
-		case 1: charSet = hasRounded ? BOX_DRAWING.lightRounded : BOX_DRAWING.light; break; // solid
-		case 2: charSet = BOX_DRAWING.double; break; // double (can't be rounded)
-		case 3: charSet = BOX_DRAWING.dashed; break; // dashed
-		case 4: charSet = BOX_DRAWING.dotted; break; // dotted
-		case 5: charSet = BOX_DRAWING.heavy; break; // groove (using heavy)
-		case 6: charSet = BOX_DRAWING.light; break; // ridge (using light)
-		default: charSet = BOX_DRAWING.light; break;
+		case 1:
+			charSet = hasRounded ? BOX_DRAWING.lightRounded : BOX_DRAWING.light;
+			break; // solid
+		case 2:
+			charSet = BOX_DRAWING.double;
+			break; // double (can't be rounded)
+		case 3:
+			charSet = BOX_DRAWING.dashed;
+			break; // dashed
+		case 4:
+			charSet = BOX_DRAWING.dotted;
+			break; // dotted
+		case 5:
+			charSet = BOX_DRAWING.heavy;
+			break; // groove (using heavy)
+		case 6:
+			charSet = BOX_DRAWING.light;
+			break; // ridge (using light)
+		default:
+			charSet = BOX_DRAWING.light;
+			break;
 	}
-	
+
 	// Corner characters
 	if (hasTop && hasLeft && !hasRight && !hasBottom) {
 		return charSet.topLeft; // ┌
@@ -508,7 +535,7 @@ export function getBorderChar(borderEncoding: number): string {
 	if (hasBottom && hasRight && !hasTop && !hasLeft) {
 		return charSet.bottomRight; // ┘
 	}
-	
+
 	// T-junction characters
 	if (hasTop && hasBottom && hasLeft && !hasRight) {
 		return charSet.leftTee;
@@ -522,12 +549,12 @@ export function getBorderChar(borderEncoding: number): string {
 	if (hasLeft && hasRight && hasBottom && !hasTop) {
 		return charSet.topTee;
 	}
-	
+
 	// Cross junction
 	if (hasTop && hasRight && hasBottom && hasLeft) {
 		return charSet.cross;
 	}
-	
+
 	// Straight lines
 	if ((hasTop || hasBottom) && !hasLeft && !hasRight) {
 		return charSet.horizontal; // Top/bottom edges use horizontal lines ─
@@ -535,7 +562,7 @@ export function getBorderChar(borderEncoding: number): string {
 	if ((hasLeft || hasRight) && !hasTop && !hasBottom) {
 		return charSet.vertical; // Left/right edges use vertical lines │
 	}
-	
+
 	// Default to space for no borders
 	return " ";
 }
@@ -659,7 +686,6 @@ export function generateANSI(
 		if (b > 127) ansiColor |= 4;
 		return ansiColor;
 	};
-
 
 	const getStyleDiff = (cell: Cell, prev: Cell | null): number[] => {
 		if (!prev) {
