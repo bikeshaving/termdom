@@ -147,6 +147,11 @@ export class TermDOM {
 			this.process.exit(1);
 		});
 
+		this.process.on("unhandledRejection", () => {
+			cleanup();
+			this.process.exit(1);
+		});
+
 		this.process.on("SIGINT", () => {
 			cleanup();
 			this.process.exit(0);
