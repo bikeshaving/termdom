@@ -6,7 +6,6 @@
  */
 
 import {TermDOM} from "../src/index.js";
-
 const termDOM = new TermDOM();
 const {document} = termDOM;
 
@@ -146,4 +145,3 @@ footerVersion.style.color = "white";
 footer.appendChild(footerVersion);
 
 await termDOM.render();
-throw new Error("HELLO?");
