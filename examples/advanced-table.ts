@@ -216,4 +216,4 @@ controls.innerHTML = `
 `;
 document.body.appendChild(controls);
 
-await termdom.waitForRender();
+await termdom.render();
