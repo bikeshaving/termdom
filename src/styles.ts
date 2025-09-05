@@ -212,6 +212,7 @@ const CSS_SPEC_DEFAULTS: Record<string, string> = {
 	"border-bottom-color": "currentColor",
 	"border-left-color": "currentColor",
 	"border-radius": "0",
+	// TODO: add box-sizing
 	"background-color": "transparent",
 	color: "#000000",
 	"font-size": "1rem",
@@ -841,6 +842,7 @@ export function resolveBorderStyles(element: Element): {
 	);
 	const hasRadius = !isNaN(borderRadius) && borderRadius > 0;
 
+	// I’m pretty sure JSDOM already resolves shorthand to longhand
 	// Resolve individual edges (check both shorthand and individual properties)
 	const topWidth =
 		resolvePropertyValue(element, "border-top-width", false) ||
@@ -904,8 +906,15 @@ interface BoxCharSet {
 	cross: string;
 }
 
-export const BOX_DRAWING = {
-	// ASCII fallback for maximum compatibility
+export const BOX_DRAWING: Record<string, BoxCharSet> = {
+	/**
+	 * Unicode ASCII borders
+	 *
+	 * Provided for maximum compatibility
+	 * +-------+
+	 * | ascii |
+	 * +-------+
+	 */
 	ascii: {
 		horizontal: "-",
 		vertical: "|",
@@ -920,7 +929,12 @@ export const BOX_DRAWING = {
 		cross: "+",
 	} as BoxCharSet,
 
-	// Unicode light box drawing (solid borders)
+	/**
+	 * Unicode light borders
+	 * ┌───────┐
+	 * │ light │
+	 * └───────┘
+	 */
 	light: {
 		horizontal: "─",
 		vertical: "│",
@@ -935,7 +949,12 @@ export const BOX_DRAWING = {
 		cross: "┼",
 	} as BoxCharSet,
 
-	// Unicode heavy box drawing (bold/thick borders)
+	/**
+	 * Unicode heavy borders
+	 * ┏━━━━━━━┓
+	 * ┃ heavy ┃
+	 * ┗━━━━━━━┛
+	 */
 	heavy: {
 		horizontal: "━",
 		vertical: "┃",
@@ -950,7 +969,12 @@ export const BOX_DRAWING = {
 		cross: "╋",
 	} as BoxCharSet,
 
-	// Unicode double-line box drawing
+	/**
+	 * Unicode double borders
+	 * ╔════════╗
+	 * ║ double ║
+	 * ╚════════╝
+	 */
 	double: {
 		horizontal: "═",
 		vertical: "║",
@@ -965,7 +989,12 @@ export const BOX_DRAWING = {
 		cross: "╬",
 	} as BoxCharSet,
 
-	// Unicode dashed borders
+	/**
+	 * Unicode dashed borders
+	 * ┌╌╌╌╌╌╌╌╌┐
+	 * ┆ dashed ┆
+	 * └╌╌╌╌╌╌╌╌┘
+	 */
 	dashed: {
 		horizontal: "╌",
 		vertical: "┆",
@@ -980,7 +1009,12 @@ export const BOX_DRAWING = {
 		cross: "┼",
 	} as BoxCharSet,
 
-	// Unicode dotted borders
+	/**
+	 * Unicode dotted borders
+	 * ┌┄┄┄┄┄┄┄┄┐
+	 * ┊ dotted ┊
+	 * └┄┄┄┄┄┄┄┄┘
+	 */
 	dotted: {
 		horizontal: "┄",
 		vertical: "┊",
@@ -995,7 +1029,13 @@ export const BOX_DRAWING = {
 		cross: "┼",
 	} as BoxCharSet,
 
-	// Unicode light rounded corners (border-radius support)
+	// TODO: rounded corners could be added to BoxCharSet as optional properties
+	/**
+	 * Rounded corners (border-radius support)
+	 * ╭─────────╮
+	 * │ rounded │
+	 * ╰─────────╯
+	 */
 	lightRounded: {
 		horizontal: "─",
 		vertical: "│",
