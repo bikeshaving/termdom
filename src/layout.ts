@@ -303,18 +303,37 @@ export class LayoutEngine {
 		}
 	}
 
+	private getListNestingDepth(listItem: Element): number {
+		let depth = 0;
+		let current = listItem.parentElement;
+
+		while (current) {
+			if (current.tagName === "UL" || current.tagName === "OL") {
+				depth++;
+			}
+			current = current.parentElement;
+		}
+
+		return depth - 1; // Subtract 1 because we want 0-based depth (first level = 0)
+	}
+
 	private handleMutationRecords(mutations: MutationRecord[]): void {
-		let _needsLayout = false;
 		for (let i = 0; i < mutations.length; i++) {
 			const record = mutations[i];
 
-			if (record.type === "attributes" && record.attributeName === "style") {
-				const element = record.target as Element;
-				const yogaNode = this.nodeMap.get(element);
-				if (yogaNode) {
-					styleYogaNode(element, yogaNode);
-					_needsLayout = true;
+			if (record.type === "attributes") {
+				if (record.attributeName === "style") {
+					const element = record.target as Element;
+					const yogaNode = this.nodeMap.get(element);
+					if (yogaNode) {
+						styleYogaNode(element, yogaNode);
+					}
 				}
+				return;
+			} else if (record.type === "characterData") {
+				// TODO: Handle characterData
+				// invalidate run head
+				return;
 			}
 
 			for (let j = 0; j < record.addedNodes.length; j++) {
@@ -326,7 +345,6 @@ export class LayoutEngine {
 					);
 				}
 				this.addNode(node, parentYogaNode);
-				_needsLayout = true;
 			}
 
 			for (let j = 0; j < record.removedNodes.length; j++) {
@@ -339,7 +357,6 @@ export class LayoutEngine {
 					}
 					yogaNode.freeRecursive();
 					this.nodeMap.delete(node);
-					_needsLayout = true;
 				}
 			}
 		}
@@ -1042,13 +1059,14 @@ export function findInlineRunHead(node: Node): Node | null {
 	return current;
 }
 
+// TODO: Just use functions™️
 export class RectUtils {
 	static computeBoundingRect(
-		rects: DOMRect[] | DOMRectList,
+		rects: Array<DOMRect> | DOMRectList,
+		// TODO: DOMRect: typeof globalThis.DOMRect
 		window: DOMWindow,
 	): DOMRect {
-		const rectArray: DOMRect[] = Array.from(rects) as DOMRect[];
-
+		const rectArray: Array<DOMRect> = Array.from(rects);
 		if (rectArray.length === 0) {
 			return new window.DOMRect(0, 0, 0, 0);
 		}

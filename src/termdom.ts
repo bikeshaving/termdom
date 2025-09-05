@@ -1,8 +1,7 @@
-import {LayoutEngine} from "./layout.js";
-import {Renderer, type ColorDepth, Cell, mergeBorderEncodings} from "./ansi.js";
 import {type EventEmitter} from "events";
-import {JSDOM} from "jsdom";
-import {type DOMWindow} from "jsdom";
+import {type DOMWindow, JSDOM} from "jsdom";
+import {LayoutEngine} from "./layout.js";
+import {Cell, type ColorDepth, mergeBorderEncodings, Renderer} from "./ansi.js";
 import {RectUtils} from "./layout.js";
 import {resolvePropertyValue, resolveBorderStyles} from "./styles.js";
 
@@ -17,13 +16,10 @@ function detectColorDepth(process: ProcessLike): ColorDepth {
 		return "256";
 	}
 
-	if (term.includes("color")) {
-		return "ansi";
-	}
-
 	return "ansi";
 }
 
+// TODO: Can we use web streams (WritableStream)
 export interface TTYWriteStream {
 	write(
 		chunk: any,
@@ -35,6 +31,7 @@ export interface TTYWriteStream {
 	isTTY: boolean;
 }
 
+// TODO: Can we use web streams (ReadableStream) or at least track what events we're usinh.
 export interface TTYReadStream extends EventEmitter {
 	isTTY: boolean;
 	setRawMode?(mode: boolean): this;
@@ -43,9 +40,8 @@ export interface TTYReadStream extends EventEmitter {
 }
 
 export interface ProcessLike extends EventEmitter {
-	stdout: TTYWriteStream;
 	stdin?: TTYReadStream;
-	stderr?: TTYWriteStream;
+	stdout: TTYWriteStream;
 	exit(code?: number): never;
 	env: Record<string, string | undefined>;
 }
@@ -70,8 +66,6 @@ export class TermDOM {
 	private height: number;
 	private readonly mode: "flow" | "fullscreen";
 	private readonly process: ProcessLike;
-
-	private renderCompleteCallbacks: Array<() => void> = [];
 
 	constructor(options: TermDOMOptions = {}) {
 		this.process = options.process || process;
@@ -144,6 +138,7 @@ export class TermDOM {
 		return observer;
 	}
 
+	// TODO: This should be put in an event translator abstraction
 	private setupProcessHandlers(): void {
 		const cleanup = () => this.dispose();
 
@@ -162,10 +157,9 @@ export class TermDOM {
 		});
 
 		if (this.process.stdin?.isTTY) {
-			const stdin = this.process.stdin as TTYReadStream;
+			const stdin = this.process.stdin;
 			stdin.setRawMode?.(true);
 			stdin.resume();
-
 			stdin.on("data", (data: Buffer) => {
 				if (data[0] === 0x03) {
 					this.dispose();
@@ -175,36 +169,25 @@ export class TermDOM {
 		}
 	}
 
-	private async render(): Promise<void> {
+	async render(): Promise<void> {
 		this.layoutEngine.calculateLayout();
-
 		this.renderer.beginFrame();
-
 		this.renderElement(this.document.documentElement);
-
-		const ansiOutput = this.renderer.render();
-
-		const fullOutput = ansiOutput;
-
-		if (fullOutput) {
+		const ansi = this.renderer.render();
+		if (ansi) {
 			await new Promise<void>((resolve, reject) => {
-				this.process.stdout.write(fullOutput, "utf8", (error) => {
+				this.process.stdout.write(ansi, "utf8", (error) => {
 					if (error) {
 						reject(error);
 					} else {
 						resolve();
-
-						const callbacks = this.renderCompleteCallbacks.splice(0);
-						callbacks.forEach((callback) => callback());
 					}
 				});
 			});
-		} else {
-			const callbacks = this.renderCompleteCallbacks.splice(0);
-			callbacks.forEach((callback) => callback());
 		}
 	}
 
+	// TODO: move this to styles.ts
 	private cssColorToNumber(cssColor: string): number {
 		if (!cssColor || cssColor === "transparent" || cssColor === "none") {
 			return 0;
@@ -214,6 +197,7 @@ export class TermDOM {
 		return typeof colorNumber === "number" ? colorNumber : 0;
 	}
 
+	// TODO: many of the following methods do not belong on the TermDOM class
 	private renderElement(element: Element): void {
 		const rect = this.layoutEngine.getRect(element);
 
@@ -538,6 +522,7 @@ export class TermDOM {
 		});
 	}
 
+	// TODO: move this to styles.ts
 	private darkenColor(color: number, factor: number): number {
 		const r = (color >> 16) & 0xff;
 		const g = (color >> 8) & 0xff;
@@ -550,6 +535,7 @@ export class TermDOM {
 		);
 	}
 
+	// TODO: move this to layout?
 	private renderListItem(element: Element, rect: DOMRect, style: any): void {
 		const listParent = element.parentElement;
 		if (!listParent) return;
@@ -571,6 +557,7 @@ export class TermDOM {
 		}
 	}
 
+	// TODO: move this to layout.ts?
 	private getListNestingDepth(listItem: Element): number {
 		let depth = 0;
 		let current = listItem.parentElement;
@@ -634,6 +621,7 @@ export class TermDOM {
 		return "";
 	}
 
+	// TODO: move this to styles.ts
 	private toRoman(num: number): string {
 		const romanNumerals = [
 			{value: 1000, symbol: "M"},
@@ -661,6 +649,7 @@ export class TermDOM {
 		return result;
 	}
 
+	// TODO: move this to ansi.ts
 	private setBorderCell(
 		x: number,
 		y: number,
@@ -673,6 +662,7 @@ export class TermDOM {
 			buffer[y] = [];
 		}
 
+		// TODO: Should exclusively using Cell.create
 		// Check if there's an existing cell
 		const existingCell = buffer[y][x];
 		if (existingCell) {
@@ -682,9 +672,10 @@ export class TermDOM {
 					existingCell.border,
 					borderEncoding,
 				);
-
 				// Create a new cell with merged border
 				const borderCell = new Cell({
+					// TODO: should the grapheme just be the final rendered grapheme?
+					// TODO: maybe placeholders could be " " or ""?
 					grapheme: "┼", // Placeholder - renderer will determine correct character
 					...style,
 					border: mergedBorder,
@@ -747,6 +738,7 @@ export class TermDOM {
 		this.render();
 	}
 
+	// TODO: Move these somewhere?
 	private initializeConstructorExtensions(): void {
 		const {Element, Document, DOMRect} = this.window;
 
@@ -785,7 +777,7 @@ export class TermDOM {
 		};
 	}
 
-	setupDOMInspector(): void {
+	private setupDOMInspector(): void {
 		const inspect = Symbol.for("nodejs.util.inspect.custom");
 
 		(this.window.Element.prototype as any)[inspect] = function (this: Element) {
@@ -807,22 +799,6 @@ export class TermDOM {
 		this.observer.disconnect();
 		this.layoutEngine.dispose();
 		this.jsdom.window.close();
-	}
-
-	requestFullScreen(): void {
-		throw new Error("TODO: Implement fullscreen mode switching");
-	}
-
-	async waitForRender(): Promise<void> {
-		return new Promise((resolve) => {
-			const didRender = this.processPendingMutationsAndRender();
-
-			if (didRender) {
-				this.renderCompleteCallbacks.push(resolve);
-			} else {
-				resolve();
-			}
-		});
 	}
 }
 
