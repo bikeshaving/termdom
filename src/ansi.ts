@@ -4,7 +4,7 @@
 
 import LRUCache from "./utils.js";
 
-export type ColorDepth = "ansi" | "256" | "rgb";
+export type ColorDepth = "ansi" | "rgb" | "256";
 
 // Color masks
 const COLOR_MASK = 0xffffff; // 24-bit RGB color
