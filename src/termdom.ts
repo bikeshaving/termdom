@@ -141,17 +141,6 @@ export class TermDOM {
 	// TODO: This should be put in an event translator abstraction
 	private setupProcessHandlers(): void {
 		const cleanup = () => this.dispose();
-
-		this.process.on("uncaughtException", () => {
-			cleanup();
-			this.process.exit(1);
-		});
-
-		this.process.on("unhandledRejection", () => {
-			cleanup();
-			this.process.exit(1);
-		});
-
 		this.process.on("SIGINT", () => {
 			cleanup();
 			this.process.exit(0);
