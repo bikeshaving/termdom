@@ -5,9 +5,27 @@ import {resolvePropertyValue, styleYogaNode} from "./styles.js";
 import {breakNodes, type Leaf, type BreakResult} from "./breaker.js";
 import {createTable, getCoreRowModel} from "@tanstack/table-core";
 
-export interface TextLayout {
+class DOMRectList extends Array<DOMRect> implements globalThis.DOMRectList {
+	item(index: number): globalThis.DOMRect | null {
+		if (index < 0 || index >= this.length) {
+			return null;
+		}
+		return this[index];
+	}
+}
+
+Object.defineProperty(DOMRectList.prototype, Symbol.toStringTag, {
+	value: "DOMRectList",
+	configurable: true,
+});
+
+/**
+ * A rectangle with an associated text length, used for text layout.
+ * Multiple RectLength objects may be needed for a single text node due to line wrapping.
+ */
+export interface RectLength {
 	rect: DOMRect;
-	text: string;
+	textLength: number; // Number of UTF-16 code units in this rect
 }
 
 interface TableInstance {
@@ -23,23 +41,24 @@ yogaConfig.setUseWebDefaults(true);
 yogaConfig.setPointScaleFactor(1.0);
 
 export class LayoutEngine {
-	declare DOMRect: typeof DOMRect;
+	declare DOMRect: typeof globalThis.DOMRect;
 	declare rootElement: Element;
 	declare observer: MutationObserver;
 
+	// TODO:
 	declare terminalWidth: number;
 	declare terminalHeight: number;
 
 	// TODO: These should be strong maps
 	declare nodeMap: WeakMap<Node, YogaTypes.Node>;
-	declare nodeRects: WeakMap<Node, Array<DOMRect & {text?: string}>>;
+	declare rectLengthsMap: WeakMap<Node, RectLength[]>;
 	declare tableInstances: WeakMap<Element, TableInstance>;
 
 	constructor(window: DOMWindow) {
 		this.DOMRect = window.DOMRect;
 		this.rootElement = window.document.documentElement;
 		this.nodeMap = new WeakMap<Node, YogaTypes.Node>();
-		this.nodeRects = new WeakMap<Node, Array<DOMRect & {text?: string}>>();
+		this.rectLengthsMap = new WeakMap<Node, RectLength[]>();
 		this.tableInstances = new WeakMap<Element, TableInstance>();
 		this.observer = new window.MutationObserver((mutations) =>
 			this.handleMutationRecords(mutations),
@@ -111,8 +130,25 @@ export class LayoutEngine {
 		);
 	}
 
-	getRects(node: Node): DOMRect[] {
-		return this.nodeRects.get(node) || [];
+	getRectLengths(node: Node): RectLength[] {
+		return this.rectLengthsMap.get(node) || [];
+	}
+
+	createDOMRectList(rects?: globalThis.DOMRect[]): globalThis.DOMRectList {
+		const list = new DOMRectList();
+		if (rects) {
+			list.push(...rects);
+		}
+		return list;
+	}
+
+	createDOMRect(
+		x: number = 0,
+		y: number = 0,
+		width: number = 0,
+		height: number = 0,
+	): globalThis.DOMRect {
+		return new this.DOMRect(x, y, width, height);
 	}
 
 	getTableInstance(element: Element): TableInstance | undefined {
@@ -362,10 +398,10 @@ export class LayoutEngine {
 		}
 	}
 
-	private addRectToNode(node: Node, rect: DOMRect & {text?: string}): void {
-		const rects = this.nodeRects.get(node) || [];
-		rects.push(rect);
-		this.nodeRects.set(node, rects);
+	private addRectLength(node: Node, rectLength: RectLength): void {
+		const rectLengths = this.rectLengthsMap.get(node) || [];
+		rectLengths.push(rectLength);
+		this.rectLengthsMap.set(node, rectLengths);
 	}
 
 	private addNode(
@@ -871,7 +907,7 @@ export class LayoutEngine {
 		startY: number,
 	): void {
 		const clearRects = (node: Node) => {
-			this.nodeRects.delete(node);
+			this.rectLengthsMap.delete(node);
 			if (node.nodeType === node.ELEMENT_NODE) {
 				const el = node as Element;
 				for (let i = 0; i < el.childNodes.length; i++) {
@@ -883,24 +919,25 @@ export class LayoutEngine {
 
 		for (const line of breakResult.lines) {
 			for (const segment of line.segments) {
-				const rect = new this.DOMRect(
+				const domRect = new this.DOMRect(
 					startX + segment.x,
 					startY + line.y,
 					segment.width,
 					line.height,
-				) as DOMRect & {text?: string};
+				);
 
-				if (segment.leaf.type === "text" && segment.leaf.content) {
-					rect.text = segment.leaf.content.slice(segment.start, segment.end);
-				}
+				const rectLength: RectLength = {
+					rect: domRect,
+					textLength: segment.end - segment.start,
+				};
 
-				this.addRectToNode(segment.leaf.node, rect);
+				this.addRectLength(segment.leaf.node, rectLength);
 
 				let parent = segment.leaf.node.parentElement;
 				while (parent && parent !== rootElement.parentElement) {
 					const display = resolvePropertyValue(parent, "display");
 					if (display === "inline" || display === "inline-block") {
-						this.addRectToNode(parent, rect);
+						this.addRectLength(parent, rectLength);
 					} else {
 						break;
 					}
@@ -1059,67 +1096,50 @@ export function findInlineRunHead(node: Node): Node | null {
 	return current;
 }
 
-// TODO: Just use functions™️
-export class RectUtils {
-	static computeBoundingRect(
-		rects: Array<DOMRect> | DOMRectList,
-		// TODO: DOMRect: typeof globalThis.DOMRect
-		window: DOMWindow,
-	): DOMRect {
-		const rectArray: Array<DOMRect> = Array.from(rects);
-		if (rectArray.length === 0) {
-			return new window.DOMRect(0, 0, 0, 0);
-		}
-
-		if (rectArray.length === 1) {
-			return rectArray[0];
-		}
-
-		let minLeft = Infinity;
-		let minTop = Infinity;
-		let maxRight = -Infinity;
-		let maxBottom = -Infinity;
-
-		for (const rect of rectArray) {
-			minLeft = Math.min(minLeft, rect.left);
-			minTop = Math.min(minTop, rect.top);
-			maxRight = Math.max(maxRight, rect.right);
-			maxBottom = Math.max(maxBottom, rect.bottom);
-		}
-
-		return new window.DOMRect(
-			minLeft,
-			minTop,
-			maxRight - minLeft,
-			maxBottom - minTop,
-		);
+export function computeBoundingRect(
+	DOMRect: typeof globalThis.DOMRect,
+	rects: Array<DOMRect> | DOMRectList,
+): DOMRect {
+	const rectArray: Array<DOMRect> = Array.from(rects);
+	if (rectArray.length === 0) {
+		return new DOMRect(0, 0, 0, 0);
 	}
 
-	static isPointInAnyRect(
-		x: number,
-		y: number,
-		rects: DOMRect[] | DOMRectList,
-	): boolean {
-		const rectArray: DOMRect[] = Array.from(rects) as DOMRect[];
-		return rectArray.some((rect) => this.isPointInRect(x, y, rect));
+	if (rectArray.length === 1) {
+		return rectArray[0];
 	}
 
-	static isPointInRect(x: number, y: number, rect: DOMRect): boolean {
+	let minLeft = Infinity;
+	let minTop = Infinity;
+	let maxRight = -Infinity;
+	let maxBottom = -Infinity;
+
+	for (const rect of rectArray) {
+		minLeft = Math.min(minLeft, rect.left);
+		minTop = Math.min(minTop, rect.top);
+		maxRight = Math.max(maxRight, rect.right);
+		maxBottom = Math.max(maxBottom, rect.bottom);
+	}
+
+	return new DOMRect(minLeft, minTop, maxRight - minLeft, maxBottom - minTop);
+}
+
+export function isPointInRects(
+	x: number,
+	y: number,
+	...rects: (DOMRect | DOMRect[] | DOMRectList)[]
+): boolean {
+	const allRects = rects.flat();
+	return allRects.some((rect) => {
+		if (Array.isArray(rect) || rect instanceof DOMRectList) {
+			// Handle nested arrays/lists
+			return isPointInRects(x, y, ...rect);
+		}
 		return (
 			x >= rect.x &&
 			x < rect.x + rect.width &&
 			y >= rect.y &&
 			y < rect.y + rect.height
 		);
-	}
-
-	static createDOMRectList(rects: DOMRect[]): DOMRectList {
-		const rectList = rects.slice();
-
-		(rectList as any).item = (index: number): DOMRect | null => {
-			return index >= 0 && index < rectList.length ? rectList[index] : null;
-		};
-
-		return rectList as any as DOMRectList;
-	}
+	});
 }

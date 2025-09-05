@@ -1,8 +1,7 @@
 import {type EventEmitter} from "events";
 import {type DOMWindow, JSDOM} from "jsdom";
-import {LayoutEngine} from "./layout.js";
+import {LayoutEngine, isPointInRects} from "./layout.js";
 import {Cell, type ColorDepth, mergeBorderEncodings, Renderer} from "./ansi.js";
-import {RectUtils} from "./layout.js";
 import {resolvePropertyValue, resolveBorderStyles} from "./styles.js";
 
 function detectColorDepth(process: ProcessLike): ColorDepth {
@@ -292,18 +291,22 @@ export class TermDOM {
 					underline: textUnderline,
 				};
 
-				const rects = this.layoutEngine.getRects(textNode) as Array<
-					DOMRect & {text?: string}
-				>;
-				if (rects.length > 0) {
-					for (const textRect of rects) {
-						if (textRect.text) {
+				const rectLengths = this.layoutEngine.getRectLengths(textNode);
+				if (rectLengths.length > 0 && textContent) {
+					let offset = 0;
+					for (const rectLength of rectLengths) {
+						if (rectLength.textLength > 0) {
+							const text = textContent.slice(
+								offset,
+								offset + rectLength.textLength,
+							);
 							this.renderer.setText(
-								Math.round(textRect.x),
-								Math.round(textRect.y),
-								textRect.text,
+								Math.round(rectLength.rect.x),
+								Math.round(rectLength.rect.y),
+								text,
 								textStyle,
 							);
+							offset += rectLength.textLength;
 						}
 					}
 				}
@@ -734,32 +737,32 @@ export class TermDOM {
 
 	// TODO: Move these somewhere?
 	private initializeConstructorExtensions(): void {
-		const {Element, Document, DOMRect} = this.window;
-
+		const {Element, Document} = this.window;
 		const termDOM = this;
 
 		Element.prototype.getBoundingClientRect = function (
 			this: Element,
 		): DOMRect {
 			if (!this.isConnected) {
-				return new DOMRect(0, 0, 0, 0);
+				return termDOM.layoutEngine.createDOMRect(0, 0, 0, 0);
 			}
 
 			termDOM.processPendingMutationsAndRender();
 
 			const rect = termDOM.layoutEngine.getRect(this);
-			return rect || new DOMRect(0, 0, 0, 0);
+			return rect || termDOM.layoutEngine.createDOMRect(0, 0, 0, 0);
 		};
 
 		Element.prototype.getClientRects = function (): DOMRectList {
 			if (!this.isConnected) {
-				return RectUtils.createDOMRectList([]);
+				return termDOM.layoutEngine.createDOMRectList();
 			}
 
 			termDOM.processPendingMutationsAndRender();
 
-			const rects = termDOM.layoutEngine.getRects(this);
-			return RectUtils.createDOMRectList(rects);
+			const rectLengths = termDOM.layoutEngine.getRectLengths(this);
+			const rects = Array.from(rectLengths, (rectLength) => rectLength.rect);
+			return termDOM.layoutEngine.createDOMRectList(rects);
 		};
 
 		Document.prototype.elementFromPoint = function (
@@ -807,7 +810,7 @@ function findElementAtPoint(
 
 	try {
 		const rects = element.getClientRects();
-		if (!RectUtils.isPointInAnyRect(x, y, rects)) {
+		if (!isPointInRects(x, y, rects)) {
 			return null;
 		}
 	} catch (error) {
