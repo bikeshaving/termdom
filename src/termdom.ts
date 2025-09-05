@@ -558,20 +558,38 @@ export class TermDOM {
 		if (!marker) return;
 
 		const {left, top} = rect;
+		const nestingDepth = this.getListNestingDepth(element);
 
-		// Position marker to the left of the content
-		// Account for the parent list's padding-left
-		const markerX = Math.round(left - 2); // 2ch space for marker
+		// Position marker in the padding area reserved for it
+		// The list item has left padding that includes nesting indent + marker space
+		const nestingIndent = nestingDepth * 2;
+		const markerX = Math.round(left + nestingIndent); // Position marker in the reserved space
 		const markerY = Math.round(top);
 
-		if (markerX >= 0 && markerY >= 0) {
+		if (markerX >= 0 && markerY >= 0 && markerX < this.width) {
 			this.renderer.setText(markerX, markerY, marker, style);
 		}
 	}
 
+	private getListNestingDepth(listItem: Element): number {
+		let depth = 0;
+		let current = listItem.parentElement;
+
+		while (current) {
+			if (current.tagName === "UL" || current.tagName === "OL") {
+				depth++;
+			}
+			current = current.parentElement;
+		}
+
+		return depth - 1; // Subtract 1 because we want 0-based depth (first level = 0)
+	}
+
+	// TODO: move this to styles.ts
 	private getListMarker(listItem: Element, listParent: Element): string {
 		const listType = listParent.tagName.toLowerCase();
 		const listStyleType = resolvePropertyValue(listParent, "list-style-type");
+		const nestingDepth = this.getListNestingDepth(listItem);
 
 		if (listType === "ol") {
 			// Ordered list - get the item index and format as number
@@ -596,10 +614,15 @@ export class TermDOM {
 					return `${this.toRoman(itemNumber)}.`;
 			}
 		} else if (listType === "ul") {
-			// Unordered list - use bullet characters
+			// Unordered list - use bullet characters based on nesting depth if no explicit style
+			if (listStyleType === "disc" || !listStyleType) {
+				// Auto-select bullet based on nesting level
+				const bullets = ["•", "◦", "▪", "▫"];
+				return bullets[nestingDepth % bullets.length];
+			}
+
 			switch (listStyleType) {
 				case "disc":
-				default:
 					return "•";
 				case "circle":
 					return "◦";

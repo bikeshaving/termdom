@@ -281,7 +281,15 @@ export class LayoutEngine {
 		// Style the list item container - it's a block element
 		styleYogaNode(listItem, yogaNode);
 		yogaNode.setDisplay(Yoga.DISPLAY_FLEX);
-		yogaNode.setFlexDirection(Yoga.FLEX_DIRECTION_ROW);
+		yogaNode.setFlexDirection(Yoga.FLEX_DIRECTION_COLUMN);
+
+		// Calculate nesting depth and apply indentation via padding
+		// This reserves space for the marker and any nesting indentation
+		const nestingDepth = this.getListNestingDepth(listItem);
+		const markerSpace = 2; // Space for marker (• or 1.)
+		const nestingIndent = nestingDepth * 2; // 2 chars per nesting level
+		const totalLeftPadding = nestingIndent + markerSpace;
+		yogaNode.setPadding(Yoga.EDGE_LEFT, totalLeftPadding);
 
 		// Add to parent
 		if (parentYogaNode) {
