@@ -314,10 +314,8 @@ export class LayoutEngine {
 			this.nodeMap.set(listItem, yogaNode);
 		}
 
-		// Style the list item container - it's a block element
+		// Style the list item container
 		styleYogaNode(listItem, yogaNode);
-		yogaNode.setDisplay(Yoga.DISPLAY_FLEX);
-		yogaNode.setFlexDirection(Yoga.FLEX_DIRECTION_COLUMN);
 
 		// Calculate nesting depth and apply indentation via padding
 		// This reserves space for the marker and any nesting indentation
@@ -332,10 +330,50 @@ export class LayoutEngine {
 			parentYogaNode.insertChild(yogaNode, yogaIndex);
 		}
 
-		// Process child nodes normally
+		// Handle mixed content: separate text nodes from block elements
+		const textNodes: Node[] = [];
+		const blockElements: Node[] = [];
+
 		for (let i = 0; i < listItem.childNodes.length; i++) {
 			const child = listItem.childNodes[i];
-			this.addNode(child, yogaNode);
+			if (child.nodeType === child.TEXT_NODE) {
+				textNodes.push(child);
+			} else if (child.nodeType === child.ELEMENT_NODE) {
+				const display = resolvePropertyValue(child as Element, "display");
+				if (display === "block") {
+					blockElements.push(child);
+				} else {
+					textNodes.push(child); // Treat inline elements with text
+				}
+			}
+		}
+
+		// Process text nodes first (they'll be positioned at the top)
+		for (const textNode of textNodes) {
+			this.addNode(textNode, yogaNode);
+		}
+
+		// Process block elements after text with spacing
+		for (const blockElement of blockElements) {
+			// Ensure block elements start on a new line by adding margin-top
+			if (
+				textNodes.length > 0 &&
+				blockElement.nodeType === blockElement.ELEMENT_NODE
+			) {
+				const blockYogaNode = this.nodeMap.get(blockElement);
+				if (blockYogaNode) {
+					blockYogaNode.setMargin(Yoga.EDGE_TOP, 1); // Force 1 line spacing
+				} else {
+					// If node doesn't exist yet, add it first then set margin
+					this.addNode(blockElement, yogaNode);
+					const newBlockYogaNode = this.nodeMap.get(blockElement);
+					if (newBlockYogaNode) {
+						newBlockYogaNode.setMargin(Yoga.EDGE_TOP, 1);
+					}
+					continue; // Skip the addNode below since we already added it
+				}
+			}
+			this.addNode(blockElement, yogaNode);
 		}
 	}
 
@@ -769,6 +807,14 @@ export class LayoutEngine {
 						current = current.nextSibling;
 					}
 				} else {
+					// Don't traverse into block elements during inline processing
+					if (child.nodeType === child.ELEMENT_NODE) {
+						const el = child as Element;
+						const display = resolvePropertyValue(el, "display");
+						if (display !== "inline" && display !== "inline-block") {
+							continue; // Skip block elements
+						}
+					}
 					this.traverseNode(child, leafNodes);
 				}
 			}

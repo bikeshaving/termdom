@@ -446,12 +446,14 @@ export class TermDOM {
 		return encoding;
 	}
 
+	// TODO: move this to tables.ts? or layout.ts
 	private renderTable(tableElement: Element, rect: DOMRect, style: any): void {
 		const tableInstance = this.layoutEngine.getTableInstance(tableElement);
 		if (!tableInstance) return;
 
 		const {tanstackTable} = tableInstance;
-		const {left, top, width, height} = rect;
+		// TODO: Use height?
+		const {left, top, width, height: _} = rect;
 
 		// Render table using flexbox-like approach but with TanStack data
 		let currentY = Math.round(top);
@@ -532,7 +534,7 @@ export class TermDOM {
 		);
 	}
 
-	// TODO: move this to layout?
+	// TODO: move this to layout.ts or maybe lists.ts
 	private renderListItem(element: Element, rect: DOMRect, style: any): void {
 		const listParent = element.parentElement;
 		if (!listParent) return;
