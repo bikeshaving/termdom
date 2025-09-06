@@ -21,7 +21,7 @@ test("renders single emoji correctly", async () => {
 	span.textContent = "🚀";
 	dom.document.body.appendChild(span);
 
-	await dom.waitForRender();
+	await dom.render();
 
 	const output = terminal.getVisibleText();
 	expect(output).toContain("🚀");
@@ -45,7 +45,7 @@ test("renders emoji with text correctly", async () => {
 	span.textContent = "Hello 🌍 World!";
 	dom.document.body.appendChild(span);
 
-	await dom.waitForRender();
+	await dom.render();
 
 	const output = terminal.getVisibleText();
 	expect(output).toContain("Hello 🌍 World!");
@@ -86,7 +86,7 @@ test("renders multiple emojis correctly", async () => {
 
 	dom.document.body.appendChild(container);
 
-	await dom.waitForRender();
+	await dom.render();
 
 	const output = terminal.getVisibleText();
 	// Test that emojis are rendered
@@ -122,7 +122,7 @@ test("renders emoji with colors correctly", async () => {
 	container.appendChild(emojiSpan);
 	dom.document.body.appendChild(container);
 
-	await dom.waitForRender();
+	await dom.render();
 
 	const output = terminal.getVisibleText();
 	expect(output).toContain("🎨");
@@ -164,7 +164,7 @@ test("handles emoji width calculation", async () => {
 	container.appendChild(moreText);
 	dom.document.body.appendChild(container);
 
-	await dom.waitForRender();
+	await dom.render();
 
 	const output = terminal.getVisibleText();
 	expect(output).toContain("Text");

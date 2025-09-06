@@ -11,33 +11,35 @@ exports[`renders emoji with text correctly 1`] = `
 `;
 
 exports[`renders multiple emojis correctly 1`] = `
-"🚀🎯📄
+"
+
+  🚀🎯📄
 
 
 
 
-🎉 Party 🎊
+  🎉 Party 🎊
 
 
 
 
-👨‍💻
+  👨‍💻
 
 
 
 
-🌈🦄✨
+  🌈🦄✨
 
 
 
 
-📱💻⌨️🖱️
+  📱💻⌨️🖱️
 "
 `;
 
 exports[`renders emoji with colors correctly 1`] = `
-"🎨 Colorful Text 🌈                                                             
-                                                                                
+"                                                                                
+  🎨 Colorful Text 🌈                                                           
                                                                                 
 "
 `;

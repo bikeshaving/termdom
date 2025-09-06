@@ -19,7 +19,7 @@ test("red foreground color renders correctly", async () => {
 	div.style.color = "red";
 	document.body.appendChild(div);
 
-	await dom.waitForRender();
+	await dom.render();
 	const snapshot = terminal.getScreenContents();
 
 	// Verify red RGB color code
@@ -42,7 +42,7 @@ test("background colors fill full width", async () => {
 	div.style.display = "block";
 	document.body.appendChild(div);
 
-	await dom.waitForRender();
+	await dom.render();
 	const snapshot = terminal.getScreenContents();
 
 	// Background should fill the entire line (80 chars)
@@ -76,7 +76,7 @@ test("mixed foreground and background colors", async () => {
 	div.style.display = "block";
 	document.body.appendChild(div);
 
-	await dom.waitForRender();
+	await dom.render();
 	const snapshot = terminal.getScreenContents();
 
 	// Should have combined foreground and background codes
@@ -111,7 +111,7 @@ test("CSS color formats are handled correctly", async () => {
 	div3.style.color = "blue";
 	document.body.appendChild(div3);
 
-	await dom.waitForRender();
+	await dom.render();
 	const snapshot = terminal.getScreenContents();
 
 	// Should produce blue RGB code
@@ -136,7 +136,7 @@ test("style combinations work correctly", async () => {
 	div.style.display = "block";
 	document.body.appendChild(div);
 
-	await dom.waitForRender();
+	await dom.render();
 	const snapshot = terminal.getScreenContents();
 
 	// Should have combined style codes
@@ -159,7 +159,7 @@ test("inline elements do not extend background", async () => {
 	span.style.backgroundColor = "green";
 	document.body.appendChild(span);
 
-	await dom.waitForRender();
+	await dom.render();
 	const snapshot = terminal.getScreenContents();
 
 	// Inline elements should not fill the full width
