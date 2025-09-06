@@ -545,10 +545,9 @@ export class TermDOM {
 		const {left, top} = rect;
 		const nestingDepth = this.getListNestingDepth(element);
 
-		// Position marker in the padding area reserved for it
-		// The list item has left padding that includes nesting indent + marker space
-		const nestingIndent = nestingDepth * 2;
-		const markerX = Math.round(left + nestingIndent); // Position marker in the reserved space
+		// Position marker in the padding area reserved by the ul/ol element
+		// Now that nesting is handled by ul/ol margin, marker goes at the left edge of content
+		const markerX = Math.round(left); // Marker positioned at start of content area
 		const markerY = Math.round(top);
 
 		if (markerX >= 0 && markerY >= 0 && markerX < this.width) {
@@ -579,7 +578,8 @@ export class TermDOM {
 
 		if (listType === "ol") {
 			// Ordered list - get the item index and format as number
-			const items = Array.from(listParent.querySelectorAll("li"));
+			// Only count direct children, not nested li elements
+			const items = Array.from(listParent.children).filter(child => child.tagName === "LI");
 			const index = items.indexOf(listItem as HTMLLIElement);
 			if (index === -1) return "";
 

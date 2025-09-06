@@ -300,7 +300,6 @@ export interface RendererCellStyle {
 export class Renderer {
 	private previousBuffer: CellBuffer | null = null;
 	private currentBuffer: CellBuffer;
-	private writtenLines: Set<number> = new Set();
 
 	constructor(
 		private rows: number,
@@ -329,7 +328,6 @@ export class Renderer {
 
 	beginFrame(): void {
 		this.currentBuffer = createBuffer(this.rows, this.cols);
-		this.writtenLines = new Set();
 	}
 
 	private setCell(
@@ -400,12 +398,6 @@ export class Renderer {
 		style?: RendererCellStyle,
 	): number {
 		if (y < 0 || y >= this.rows) return x;
-
-		// Clear the line on first write to prevent text overlap
-		if (!this.writtenLines.has(y)) {
-			this.clearLine(y);
-			this.writtenLines.add(y);
-		}
 
 		let currentX = x;
 		const segmenter = new Intl.Segmenter("en", {granularity: "grapheme"});
