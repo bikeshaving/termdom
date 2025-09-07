@@ -6,39 +6,50 @@ export type ColorDepth = "ansi" | "rgb" | "256";
 const COLOR_MASK = 0xffffff; // 24-bit RGB color
 
 // Style flags packed into fg field (bits 24-31)
-const FG_STYLE_BOLD = 1 << 24;
-const FG_STYLE_ITALIC = 1 << 25;
-const FG_STYLE_UNDERLINE = 1 << 26;
-const FG_STYLE_STRIKETHROUGH = 1 << 27;
-const FG_STYLE_OVERLINE = 1 << 28;
+const FG_STYLE_BOLD = 0b00000001 << 24;
+const FG_STYLE_ITALIC = 0b00000010 << 24;
+const FG_STYLE_UNDERLINE = 0b00000100 << 24;
+const FG_STYLE_STRIKETHROUGH = 0b00001000 << 24;
+const FG_STYLE_OVERLINE = 0b00010000 << 24;
 
 // Style flags packed into bg field (bits 24-31)
-const BG_STYLE_INVERSE = 1 << 24;
-const BG_STYLE_BLINK = 1 << 25;
-const BG_STYLE_DIM = 1 << 26;
+const BG_STYLE_INVERSE = 0b00000001 << 24;
+const BG_STYLE_BLINK = 0b00000010 << 24;
+const BG_STYLE_DIM = 0b00000100 << 24;
 // TODO:
 //const BG_STYLE_INVISIBLE = 1 << 27;
 
 // Border constants (32-bit field encoding - 8 bits per edge)
 // Edge positions: [8 bits top][8 bits right][8 bits bottom][8 bits left]
+// 32-bit edge masks (each edge occupies 8 bits)
+const BORDER_EDGE_TOP_MASK    = 0xff000000; // bits 31-24
+const BORDER_EDGE_RIGHT_MASK  = 0x00ff0000; // bits 23-16
+const BORDER_EDGE_BOTTOM_MASK = 0x0000ff00; // bits 15-8
+const BORDER_EDGE_LEFT_MASK   = 0x000000ff; // bits 7-0
+
+// Edge styles (3-bit in bits 7–5)
+const BORDER_STYLE_NONE   = 0x00; // 00000000
+const BORDER_STYLE_SOLID  = 0x20; // 00100000
+const BORDER_STYLE_DOUBLE = 0x40; // 01000000
+const BORDER_STYLE_DASHED = 0x60; // 01100000
+const BORDER_STYLE_DOTTED = 0x80; // 10000000
+const BORDER_STYLE_GROOVE = 0xa0; // 10100000
+const BORDER_STYLE_RIDGE  = 0xc0; // 11000000
+const BORDER_STYLE_MASK   = 0xe0; // 11100000 (mask to extract style bits)
+
+// Edge flags (8-bit, keep binary for clarity)
+const BORDER_EDGE_PRESENCE = 0b00001000; // bit 3
+const BORDER_EDGE_ROUNDED  = 0b00010000; // bit 4
+const BORDER_EDGE_MASK     = 0xff;       // full 8-bit mask
+
+// Example per-edge values
+// const EDGE_NONE                 = BORDER_STYLE_NONE;                               // 0x00
+// const EDGE_SOLID_PRESENT        = BORDER_STYLE_SOLID | BORDER_EDGE_PRESENCE;       // 0x28
+// const EDGE_SOLID_PRESENT_ROUNDED = BORDER_STYLE_SOLID | BORDER_EDGE_PRESENCE | BORDER_EDGE_ROUNDED; // 0x38
 const BORDER_EDGE_TOP_SHIFT = 24;
 const BORDER_EDGE_RIGHT_SHIFT = 16;
 const BORDER_EDGE_BOTTOM_SHIFT = 8;
 const BORDER_EDGE_LEFT_SHIFT = 0;
-
-// Per-edge 8-bit encoding: [3 bits style][1 bit presence][1 bit rounded][3 bits reserved]
-const BORDER_STYLE_NONE = 0;
-const BORDER_STYLE_SOLID = 1;
-const BORDER_STYLE_DOUBLE = 2;
-const BORDER_STYLE_DASHED = 3;
-const BORDER_STYLE_DOTTED = 4;
-const BORDER_STYLE_GROOVE = 5;
-const BORDER_STYLE_RIDGE = 6;
-const BORDER_STYLE_MASK = 7;
-
-const BORDER_EDGE_PRESENCE = 1 << 3;
-const BORDER_EDGE_ROUNDED = 1 << 4;
-const BORDER_EDGE_MASK = 0xff;
 
 // Edge extraction utilities
 const getBorderEdge = (border: number, shift: number) =>
