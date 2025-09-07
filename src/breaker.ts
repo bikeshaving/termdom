@@ -41,13 +41,13 @@ export interface LineResult {
 }
 
 export interface BreakResult {
-	lines: Array<LineResult>;
+	lines: LineResult[];
 	maxLineWidth: number;
 	totalHeight: number;
 }
 
 export function breakNodes(
-	leafNodes: Array<Leaf>,
+	leafNodes: Leaf[],
 	options: BreakOptions,
 ): BreakResult {
 	const {maxWidth, whiteSpace = "normal"} = options;
@@ -92,7 +92,7 @@ function processWhitespace(
 
 		if (leaf.type === "text" && leaf.content) {
 			let processed = "";
-			const mapping: Array<number> = [];
+			const mapping: number[] = [];
 
 			if (whiteSpace === "normal" || whiteSpace === "nowrap") {
 				for (let i = 0; i < leaf.content.length; i++) {
@@ -203,9 +203,9 @@ interface BreakPoint {
 function findBreakPoints(
 	content: ProcessedContent,
 	options: BreakOptions,
-): Array<BreakPoint> {
+): BreakPoint[] {
 	const breaker = new LineBreaker(content.text);
-	const breaks: Array<BreakPoint> = [];
+	const breaks: BreakPoint[] = [];
 
 	let lastPos = 0;
 	let bk;
@@ -236,10 +236,10 @@ function findBreakPoints(
 
 function buildLines(
 	content: ProcessedContent,
-	breaks: Array<BreakPoint>,
+	breaks: BreakPoint[],
 	maxWidth: number,
-): Array<LineResult> {
-	const lines: Array<LineResult> = [];
+): LineResult[] {
+	const lines: LineResult[] = [];
 	let currentY = 0;
 	let lineStart = 0;
 
@@ -396,7 +396,7 @@ function getNodesInRange(
 	return nodes;
 }
 
-function noWrapLayout(segments: Array<Leaf>): BreakResult {
+function noWrapLayout(segments: Leaf[]): BreakResult {
 	const content = processWhitespace(segments, "nowrap");
 	const lineNodes = getNodesInRange(content.items, 0, content.text.length);
 
@@ -412,7 +412,7 @@ function noWrapLayout(segments: Array<Leaf>): BreakResult {
 		1,
 	);
 
-	const lines: Array<LineResult> = [
+	const lines: LineResult[] = [
 		{
 			segments: lineNodes,
 			y: 0,

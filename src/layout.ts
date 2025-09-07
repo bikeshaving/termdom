@@ -318,17 +318,21 @@ export class LayoutEngine {
 
 		// Check if this is a nested list (parent is LI)
 		const parentIsListItem = listElement.parentElement?.tagName === "LI";
-		
+
 		// Calculate marker width for this list
-		const firstListItem = Array.from(listElement.children).find(child => child.tagName === "LI") as Element;
-		const markerWidth = firstListItem ? this.calculateListMarkerWidth(firstListItem) : 2;
-		
+		const firstListItem = Array.from(listElement.children).find(
+			(child) => child.tagName === "LI",
+		) as Element;
+		const markerWidth = firstListItem
+			? this.calculateListMarkerWidth(firstListItem)
+			: 2;
+
 		if (parentIsListItem) {
 			// Nested list: use margin instead of padding for positioning
 			// Find the parent list item to align with its text
 			const parentLI = listElement.parentElement as Element;
 			const parentMarkerWidth = this.calculateListMarkerWidth(parentLI);
-			
+
 			yogaNode.setMargin(Yoga.EDGE_LEFT, parentMarkerWidth);
 			yogaNode.setPadding(Yoga.EDGE_LEFT, markerWidth);
 		} else {
@@ -403,9 +407,12 @@ export class LayoutEngine {
 		for (let i = 0; i < blockElements.length; i++) {
 			const blockElement = blockElements[i];
 			this.addNode(blockElement, yogaNode);
-			
+
 			// Add spacing only if there's text content before AND this isn't the last element
-			if (textNodes.length > 0 && blockElement.nodeType === blockElement.ELEMENT_NODE) {
+			if (
+				textNodes.length > 0 &&
+				blockElement.nodeType === blockElement.ELEMENT_NODE
+			) {
 				const blockYogaNode = this.nodeMap.get(blockElement);
 				if (blockYogaNode) {
 					// Add top padding to separate from preceding text
@@ -434,43 +441,47 @@ export class LayoutEngine {
 		if (!listParent) return 2; // Default fallback
 
 		const listType = listParent.tagName.toLowerCase();
-		
+
 		if (listType === "ul") {
 			// Unordered lists use single-char markers (•, ◦, ▪) + space = 2 chars
 			return 2;
 		} else if (listType === "ol") {
 			// For ordered lists, calculate the width of the longest marker in this list
-			const items = Array.from(listParent.children).filter(child => child.tagName === "LI");
+			const items = Array.from(listParent.children).filter(
+				(child) => child.tagName === "LI",
+			);
 			const start = parseInt(listParent.getAttribute("start") || "1", 10);
 			const maxNumber = start + items.length - 1;
-			
+
 			const listStyleType = resolvePropertyValue(listParent, "list-style-type");
 			let maxMarkerWidth = 2; // Minimum width
-			
+
 			// Calculate width based on list style type and max number
 			switch (listStyleType) {
 				case "decimal":
 					maxMarkerWidth = Math.max(2, maxNumber.toString().length + 1); // +1 for the dot
 					break;
 				case "lower-alpha":
-				case "upper-alpha":
+				case "upper-alpha": {
 					// Calculate width for alphabetical markers (a., b., ... z., aa., ab., ...)
 					const alphaWidth = this.getAlphaMarkerWidth(maxNumber) + 1; // +1 for dot
 					maxMarkerWidth = Math.max(2, alphaWidth);
 					break;
+				}
 				case "lower-roman":
-				case "upper-roman":
+				case "upper-roman": {
 					// Calculate width for Roman numerals
 					const romanWidth = this.getRomanMarkerWidth(maxNumber) + 1; // +1 for dot
 					maxMarkerWidth = Math.max(2, romanWidth);
 					break;
+				}
 				default:
 					maxMarkerWidth = Math.max(2, maxNumber.toString().length + 1);
 			}
-			
+
 			return maxMarkerWidth + 1; // +1 for spacing after marker
 		}
-		
+
 		return 2; // Default fallback
 	}
 
@@ -489,11 +500,21 @@ export class LayoutEngine {
 	private getRomanMarkerWidth(number: number): number {
 		// Calculate Roman numeral width (rough estimation)
 		const romanNumerals = [
-			[1000, "m"], [900, "cm"], [500, "d"], [400, "cd"],
-			[100, "c"], [90, "xc"], [50, "l"], [40, "xl"],
-			[10, "x"], [9, "ix"], [5, "v"], [4, "iv"], [1, "i"]
+			[1000, "m"],
+			[900, "cm"],
+			[500, "d"],
+			[400, "cd"],
+			[100, "c"],
+			[90, "xc"],
+			[50, "l"],
+			[40, "xl"],
+			[10, "x"],
+			[9, "ix"],
+			[5, "v"],
+			[4, "iv"],
+			[1, "i"],
 		];
-		
+
 		let result = "";
 		let n = number;
 		for (const [value, numeral] of romanNumerals) {
@@ -508,18 +529,20 @@ export class LayoutEngine {
 	private calculateNestingIndent(listItem: Element): number {
 		// Find the first parent list item to align with
 		let current = listItem.parentElement; // Start with immediate parent (should be ul/ol)
-		
+
 		// Walk up to find the parent list item
 		while (current) {
 			if (current.tagName === "LI") {
 				// Found parent list item - we want to align with its marker width
 				// This gives us minimal nesting that aligns with the parent's text content
-				const parentMarkerWidth = this.calculateListMarkerWidth(current as Element);
+				const parentMarkerWidth = this.calculateListMarkerWidth(
+					current as Element,
+				);
 				return parentMarkerWidth;
 			}
 			current = current.parentElement;
 		}
-		
+
 		return 0; // No nesting found
 	}
 
@@ -1283,9 +1306,9 @@ export function findInlineRunHead(node: Node): Node | null {
 
 export function computeBoundingRect(
 	DOMRect: typeof globalThis.DOMRect,
-	rects: Array<DOMRect> | DOMRectList,
+	rects: DOMRect[] | DOMRectList,
 ): DOMRect {
-	const rectArray: Array<DOMRect> = Array.from(rects);
+	const rectArray: DOMRect[] = Array.from(rects);
 	if (rectArray.length === 0) {
 		return new DOMRect(0, 0, 0, 0);
 	}
@@ -1312,7 +1335,7 @@ export function computeBoundingRect(
 export function isPointInRects(
 	x: number,
 	y: number,
-	...rects: (DOMRect | DOMRect[] | DOMRectList)[]
+	...rects: Array<DOMRect | DOMRect[] | DOMRectList>
 ): boolean {
 	const allRects = rects.flat();
 	return allRects.some((rect) => {

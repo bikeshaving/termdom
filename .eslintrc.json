@@ -56,6 +56,7 @@
       }
     ],
     "linebreak-style": ["error", "unix"],
-    "no-control-regex": "off"
+    "no-control-regex": "off",
+    "@typescript-eslint/array-type": ["error", {"default": "array-simple"}]
   }
 }

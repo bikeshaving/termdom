@@ -1,11 +1,7 @@
-/**
- * ANSI terminal rendering and cell buffer management
- */
-
 import LRUCache from "./utils.js";
+import {BOX_DRAWING} from "./styles.js";
 
 export type ColorDepth = "ansi" | "rgb" | "256";
-
 // Color masks
 const COLOR_MASK = 0xffffff; // 24-bit RGB color
 
@@ -275,7 +271,7 @@ export class Cell {
 export function createBuffer(rows: number, cols: number): CellBuffer {
 	const buffer: CellBuffer = [];
 	for (let row = 0; row < rows; row++) {
-		const line: (Cell | null)[] = [];
+		const line: Array<Cell | null> = [];
 		for (let col = 0; col < cols; col++) {
 			line.push(null);
 		}
@@ -465,8 +461,6 @@ export class Renderer {
 	}
 }
 
-import {BOX_DRAWING} from "./styles.js";
-
 /**
  * Generate the appropriate box-drawing character for a cell based on its border encoding
  * Uses per-edge encoding to determine proper junction characters
@@ -601,9 +595,9 @@ export function generateANSI(
 	}
 
 	if (hasContent && !clean) {
-		output += "\x1b[?2026h";
-		output += "\x1b[?25l";
-		output += "\x1b[H";
+		output += "\x1b[?2026h"; // Synchronized output mode
+		output += "\x1b[?25l"; // Hide cursor by default
+		output += "\x1b[H"; // Move cursor to home
 	}
 
 	const moveCursor = (targetRow: number, targetCol: number): string => {
@@ -838,8 +832,8 @@ export function generateANSI(
 	}
 
 	if (hasContent && !clean) {
-		output += "\x1b[?25h";
-		output += "\x1b[?2026l";
+		output += "\x1b[?25h"; // Restore cursor
+		output += "\x1b[?2026l"; // Exit synchronized output mode
 	}
 
 	// Always end with newline for proper terminal output

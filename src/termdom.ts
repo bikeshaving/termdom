@@ -3,6 +3,7 @@ import {type DOMWindow, JSDOM} from "jsdom";
 import {LayoutEngine, isPointInRects} from "./layout.js";
 import {Cell, type ColorDepth, mergeBorderEncodings, Renderer} from "./ansi.js";
 import {resolvePropertyValue, resolveBorderStyles} from "./styles.js";
+import {FullscreenManager} from "./fullscreen.js";
 
 function detectColorDepth(process: ProcessLike): ColorDepth {
 	const colorterm = process.env.COLORTERM;
@@ -60,9 +61,11 @@ export class TermDOM {
 	private readonly layoutEngine: LayoutEngine;
 	private readonly jsdom: JSDOM;
 	private readonly observer: MutationObserver;
+	private readonly fullscreenManager: FullscreenManager;
 
 	private width: number;
 	private height: number;
+	// TODO: use this
 	private readonly mode: "flow" | "fullscreen";
 	private readonly process: ProcessLike;
 
@@ -93,6 +96,7 @@ export class TermDOM {
 
 		this.layoutEngine = new LayoutEngine(this.jsdom.window);
 		this.layoutEngine.resize(this.width, this.height);
+		this.fullscreenManager = new FullscreenManager(this.process);
 
 		this.initializeWindow();
 
@@ -157,6 +161,10 @@ export class TermDOM {
 				if (data[0] === 0x03) {
 					this.dispose();
 					this.process.exit(0);
+				}
+				// Dispatch keyboard events globally when not in fullscreen
+				if (!this.fullscreenManager.isFullscreen) {
+					this.dispatchGlobalKeyboardEvent(data);
 				}
 			});
 		}
@@ -579,7 +587,9 @@ export class TermDOM {
 		if (listType === "ol") {
 			// Ordered list - get the item index and format as number
 			// Only count direct children, not nested li elements
-			const items = Array.from(listParent.children).filter(child => child.tagName === "LI");
+			const items = Array.from(listParent.children).filter(
+				(child) => child.tagName === "LI",
+			);
 			const index = items.indexOf(listItem as HTMLLIElement);
 			if (index === -1) return "";
 
@@ -726,6 +736,7 @@ export class TermDOM {
 			writable: false,
 			configurable: true,
 		});
+
 		this.window._terminalSize = {width: newWidth, height: newHeight};
 
 		this.renderer.resize(newHeight, newWidth);
@@ -767,6 +778,27 @@ export class TermDOM {
 			return termDOM.layoutEngine.createDOMRectList(rects);
 		};
 
+		// Fullscreen API methods
+		Element.prototype.requestFullscreen = function (
+			this: Element,
+			options?: FullscreenOptions,
+		): Promise<void> {
+			return termDOM.fullscreenManager.requestFullscreen(this, options);
+		};
+
+		Document.prototype.exitFullscreen = function (
+			this: Document,
+		): Promise<void> {
+			return termDOM.fullscreenManager.exitFullscreen();
+		};
+
+		Object.defineProperty(Document.prototype, "fullscreenElement", {
+			get: function (this: Document) {
+				return termDOM.fullscreenManager.fullscreenElement;
+			},
+			configurable: true,
+		});
+
 		Document.prototype.elementFromPoint = function (
 			x: number,
 			y: number,
@@ -776,6 +808,7 @@ export class TermDOM {
 		};
 	}
 
+	// TODO: better inspectors for DOMRect, Text, etc.
 	private setupDOMInspector(): void {
 		const inspect = Symbol.for("nodejs.util.inspect.custom");
 
@@ -788,6 +821,115 @@ export class TermDOM {
 		};
 	}
 
+	// TODO: move this to events.ts
+	private dispatchGlobalKeyboardEvent(chunk: Buffer): void {
+		const key = chunk.toString("utf8");
+
+		// Find the focused element or use document.body
+		let targetElement = this.document.activeElement || this.document.body;
+
+		// Map common key codes (reuse logic from fullscreen manager)
+		let keyName = key;
+		let keyCode = 0;
+		let charCode = key.charCodeAt(0);
+
+		// Handle special keys
+		switch (key) {
+			case "\r":
+			case "\n":
+				keyName = "Enter";
+				keyCode = 13;
+				charCode = 13;
+				break;
+			case "\t":
+				keyName = "Tab";
+				keyCode = 9;
+				charCode = 9;
+				break;
+			case "\x7f":
+				keyName = "Backspace";
+				keyCode = 8;
+				charCode = 8;
+				break;
+			case "\x1b[A":
+				keyName = "ArrowUp";
+				keyCode = 38;
+				charCode = 0;
+				break;
+			case "\x1b[B":
+				keyName = "ArrowDown";
+				keyCode = 40;
+				charCode = 0;
+				break;
+			case "\x1b[C":
+				keyName = "ArrowRight";
+				keyCode = 39;
+				charCode = 0;
+				break;
+			case "\x1b[D":
+				keyName = "ArrowLeft";
+				keyCode = 37;
+				charCode = 0;
+				break;
+			default:
+				// For regular characters, keyCode is often the uppercase charCode
+				if (key.length === 1) {
+					keyCode = key.toUpperCase().charCodeAt(0);
+				}
+		}
+
+		// Create and dispatch keydown event
+		const keydownEvent = new this.window.KeyboardEvent("keydown", {
+			key: keyName,
+			code: `Key${keyName.toUpperCase()}`,
+			keyCode: keyCode,
+			charCode: 0,
+			which: keyCode,
+			ctrlKey: false,
+			shiftKey: false,
+			altKey: false,
+			metaKey: false,
+			bubbles: true,
+			cancelable: true,
+		});
+
+		const notCanceled = targetElement.dispatchEvent(keydownEvent);
+
+		// If keydown wasn't canceled and it's a printable character, dispatch keypress
+		if (notCanceled && key.length === 1 && charCode >= 32 && charCode < 127) {
+			const keypressEvent = new this.window.KeyboardEvent("keypress", {
+				key: key,
+				code: `Key${key.toUpperCase()}`,
+				keyCode: charCode,
+				charCode: charCode,
+				which: charCode,
+				ctrlKey: false,
+				shiftKey: false,
+				altKey: false,
+				metaKey: false,
+				bubbles: true,
+				cancelable: true,
+			});
+			targetElement.dispatchEvent(keypressEvent);
+		}
+
+		// Always dispatch keyup
+		const keyupEvent = new this.window.KeyboardEvent("keyup", {
+			key: keyName,
+			code: `Key${keyName.toUpperCase()}`,
+			keyCode: keyCode,
+			charCode: 0,
+			which: keyCode,
+			ctrlKey: false,
+			shiftKey: false,
+			altKey: false,
+			metaKey: false,
+			bubbles: true,
+			cancelable: true,
+		});
+		targetElement.dispatchEvent(keyupEvent);
+	}
+
 	dispose(): void {
 		if (this.process.stdin?.isTTY) {
 			const stdin = this.process.stdin as TTYReadStream;
@@ -797,6 +939,7 @@ export class TermDOM {
 
 		this.observer.disconnect();
 		this.layoutEngine.dispose();
+		this.fullscreenManager.dispose();
 		this.jsdom.window.close();
 	}
 }
@@ -811,7 +954,7 @@ function findElementAtPoint(
 	}
 
 	try {
-		const rects = element.getClientRects();
+		const rects = Array.from(element.getClientRects());
 		if (!isPointInRects(x, y, rects)) {
 			return null;
 		}
