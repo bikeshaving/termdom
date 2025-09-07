@@ -631,7 +631,7 @@ export class LayoutEngine {
 
 	private getRomanMarkerWidth(number: number): number {
 		// Calculate Roman numeral width (rough estimation)
-		const romanNumerals: [number, string][] = [
+		const romanNumerals: Array<[number, string]> = [
 			[1000, "m"],
 			[900, "cm"],
 			[500, "d"],

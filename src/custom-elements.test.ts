@@ -235,7 +235,10 @@ test("light DOM changes after initial render", () => {
 		}
 	}
 
-	termdom.window.customElements.define("dynamic-wrapper", DynamicWrapper as any);
+	termdom.window.customElements.define(
+		"dynamic-wrapper",
+		DynamicWrapper as any,
+	);
 	const element = document.createElement("dynamic-wrapper") as any;
 
 	// Initial state - should use fallback
@@ -293,7 +296,10 @@ test("shadow DOM structure changes", () => {
 		}
 	}
 
-	termdom.window.customElements.define("modifiable-shadow", ModifiableShadow as any);
+	termdom.window.customElements.define(
+		"modifiable-shadow",
+		ModifiableShadow as any,
+	);
 	const element = document.createElement("modifiable-shadow") as any;
 
 	// Add light DOM content
