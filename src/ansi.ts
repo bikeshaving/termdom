@@ -20,12 +20,12 @@ const BG_STYLE_DIM = 0b00000100 << 24;
 //const BG_STYLE_INVISIBLE = 1 << 27;
 
 // Border constants (32-bit field encoding - 8 bits per edge)
-// Edge positions: [8 bits top][8 bits right][8 bits bottom][8 bits left]
+// Edge positions: [8 bits left][8 bits bottom][8 bits right][8 bits top]
 // 32-bit edge masks (each edge occupies 8 bits)
-const BORDER_EDGE_TOP_MASK    = 0xff000000; // bits 31-24
-const BORDER_EDGE_RIGHT_MASK  = 0x00ff0000; // bits 23-16
-const BORDER_EDGE_BOTTOM_MASK = 0x0000ff00; // bits 15-8
-const BORDER_EDGE_LEFT_MASK   = 0x000000ff; // bits 7-0
+const BORDER_EDGE_TOP_MASK    = 0x000000ff; // bits 7-0
+const BORDER_EDGE_RIGHT_MASK  = 0x0000ff00; // bits 15-8
+const BORDER_EDGE_BOTTOM_MASK = 0x00ff0000; // bits 23-16
+const BORDER_EDGE_LEFT_MASK   = 0xff000000; // bits 31-24
 
 // Edge styles (3-bit in bits 7–5)
 const BORDER_STYLE_NONE   = 0x00; // 00000000
@@ -46,10 +46,10 @@ const BORDER_EDGE_MASK     = 0xff;       // full 8-bit mask
 // const EDGE_NONE                 = BORDER_STYLE_NONE;                               // 0x00
 // const EDGE_SOLID_PRESENT        = BORDER_STYLE_SOLID | BORDER_EDGE_PRESENCE;       // 0x28
 // const EDGE_SOLID_PRESENT_ROUNDED = BORDER_STYLE_SOLID | BORDER_EDGE_PRESENCE | BORDER_EDGE_ROUNDED; // 0x38
-const BORDER_EDGE_TOP_SHIFT = 24;
-const BORDER_EDGE_RIGHT_SHIFT = 16;
-const BORDER_EDGE_BOTTOM_SHIFT = 8;
-const BORDER_EDGE_LEFT_SHIFT = 0;
+const BORDER_EDGE_TOP_SHIFT = 0;
+const BORDER_EDGE_RIGHT_SHIFT = 8;
+const BORDER_EDGE_BOTTOM_SHIFT = 16;
+const BORDER_EDGE_LEFT_SHIFT = 24;
 
 // Edge extraction utilities
 const getBorderEdge = (border: number, shift: number) =>
