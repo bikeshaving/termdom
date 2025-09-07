@@ -3,8 +3,6 @@
 // First test: Simple HTML table without TanStack
 import {TermDOM} from "../src/termdom.js";
 
-console.log("Testing basic table support...");
-
 const termdom = new TermDOM();
 const {document} = termdom;
 

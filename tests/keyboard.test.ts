@@ -221,7 +221,6 @@ test("keyboard events bubble up the DOM", async () => {
 	expect(bodyEvents.length).toBe(1);
 });
 
-
 test("can create keyboard event manually", () => {
 	const termdom = new TermDOM();
 	const {document, window} = termdom;

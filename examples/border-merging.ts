@@ -8,9 +8,6 @@ function borderMerging() {
 	const dom = new TermDOM();
 	const {document} = dom;
 
-	console.log("🔗 Border Merging Showcase");
-	console.log("==========================");
-
 	// Main container
 	const container = document.createElement("div");
 	container.style.padding = "2px";

@@ -8,9 +8,6 @@ function borderStyles() {
 	const dom = new TermDOM();
 	const {document} = dom;
 
-	console.log("🎨 Border Styles Showcase");
-	console.log("=========================");
-
 	// Main container
 	const container = document.createElement("div");
 	container.style.padding = "2px";

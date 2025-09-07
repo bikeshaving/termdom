@@ -8,9 +8,6 @@ function borderShowcase() {
 	const dom = new TermDOM();
 	const {document} = dom;
 
-	console.log("🎨 Border Intersection Showcase");
-	console.log("================================");
-
 	// Create main container
 	const container = document.createElement("div");
 	container.style.display = "flex";

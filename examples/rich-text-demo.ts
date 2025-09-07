@@ -6,9 +6,6 @@
 
 import {TermDOM} from "../src/index.js";
 
-console.clear();
-console.log("🎨 Rich Text Demo - Mixed Content & Inline\n");
-
 const dom = new TermDOM();
 const {document} = dom;
 
@@ -130,29 +127,18 @@ document.body.appendChild(main);
 
 // Add click handlers
 boldBtn.addEventListener("click", () => {
-	console.log("Bold button clicked!");
 	boldBtn.style.backgroundColor =
 		boldBtn.style.backgroundColor === "darkred" ? "red" : "darkred";
 });
 
 italicBtn.addEventListener("click", () => {
-	console.log("Italic button clicked!");
 	italicBtn.style.backgroundColor =
 		italicBtn.style.backgroundColor === "darkgreen" ? "green" : "darkgreen";
 });
 
 document.addEventListener("keydown", (e: any) => {
 	if (e.key?.toLowerCase() === "q") {
-		console.log("\n🎉 Rich text demo completed!");
-		console.log("Features demonstrated:");
-		console.log("- ✅ Text nodes and elements mixed in DOM");
-		console.log("- ✅ Inline-flex containers within text flow");
-		console.log("- ✅ Style inheritance and text styling");
-		console.log("- ✅ Interactive inline components");
-		console.log("- ✅ Proper DOM architecture");
 		dom.dom.dispose();
 		process.exit(0);
 	}
 });
-
-console.log("🎮 Click buttons or press Q to exit");

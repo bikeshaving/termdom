@@ -83,7 +83,6 @@ async function basicDemo() {
 			process.exit(0);
 		});
 	} catch (error) {
-		console.error("Demo error:", error);
 		process.exit(1);
 	}
 }

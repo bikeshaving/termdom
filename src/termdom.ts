@@ -4,6 +4,7 @@ import {LayoutEngine, isPointInRects} from "./layout.js";
 import {Cell, type ColorDepth, mergeBorderEncodings, Renderer} from "./ansi.js";
 import {resolvePropertyValue, resolveBorderStyles} from "./styles.js";
 import {FullscreenManager} from "./fullscreen.js";
+import {setupInspectMethods} from "./inspector.js";
 
 function detectColorDepth(process: ProcessLike): ColorDepth {
 	const colorterm = process.env.COLORTERM;
@@ -86,7 +87,8 @@ export class TermDOM {
 		this.window = this.jsdom.window;
 		this.document = this.jsdom.window.document;
 
-		this.setupDOMInspector();
+		// Setup DOM inspector
+		setupInspectMethods(this.window);
 		this.initializeConstructorExtensions();
 		this.renderer = new Renderer(
 			this.height,
@@ -805,19 +807,6 @@ export class TermDOM {
 		): Element | null {
 			termDOM.processPendingMutationsAndRender();
 			return findElementAtPoint(this.documentElement, x, y);
-		};
-	}
-
-	// TODO: better inspectors for DOMRect, Text, etc.
-	private setupDOMInspector(): void {
-		const inspect = Symbol.for("nodejs.util.inspect.custom");
-
-		(this.window.Element.prototype as any)[inspect] = function (this: Element) {
-			const tag = this.tagName?.toLowerCase() || "element";
-			const attrs = Array.from(this.attributes || [])
-				.map((attr) => `${attr.name}="${attr.value}"`)
-				.join(" ");
-			return attrs ? `<${tag} ${attrs}>` : `<${tag}>`;
 		};
 	}
 
