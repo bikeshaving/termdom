@@ -387,6 +387,178 @@ export class Renderer {
 		}
 	}
 
+	drawBorder(
+		x: number,
+		y: number,
+		width: number,
+		height: number,
+		borderStyles: {
+			topEdge: number;
+			rightEdge: number;
+			bottomEdge: number;
+			leftEdge: number;
+			hasAnyBorder: boolean;
+		},
+		style?: RendererCellStyle,
+	): void {
+		// Don't render if rect is too small
+		if (width < 2 || height < 2 || !borderStyles.hasAnyBorder) return;
+
+		const right = x + width - 1;
+		const bottom = y + height - 1;
+
+		// Top edge
+		if (borderStyles.topEdge > 0 && y >= 0 && y < this.rows) {
+			for (let col = x; col <= right; col++) {
+				if (col >= 0 && col < this.cols) {
+					const cornerLeft = col === x && borderStyles.leftEdge > 0;
+					const cornerRight = col === right && borderStyles.rightEdge > 0;
+					const encoding = this.calculateEdgeEncoding(
+						borderStyles,
+						true, // hasTop
+						cornerRight,
+						false, // hasBottom
+						cornerLeft,
+					);
+					this.setBorderCell(col, y, encoding, style);
+				}
+			}
+		}
+
+		// Bottom edge
+		if (borderStyles.bottomEdge > 0 && bottom !== y && bottom >= 0 && bottom < this.rows) {
+			for (let col = x; col <= right; col++) {
+				if (col >= 0 && col < this.cols) {
+					const cornerLeft = col === x && borderStyles.leftEdge > 0;
+					const cornerRight = col === right && borderStyles.rightEdge > 0;
+					const encoding = this.calculateEdgeEncoding(
+						borderStyles,
+						false, // hasTop
+						cornerRight,
+						true, // hasBottom
+						cornerLeft,
+					);
+					this.setBorderCell(col, bottom, encoding, style);
+				}
+			}
+		}
+
+		// Left edge (excluding corners)
+		if (borderStyles.leftEdge > 0 && x >= 0 && x < this.cols) {
+			for (let row = y + 1; row < bottom; row++) {
+				if (row >= 0 && row < this.rows) {
+					const encoding = this.calculateEdgeEncoding(
+						borderStyles,
+						false, // hasTop
+						false, // hasRight
+						false, // hasBottom
+						true, // hasLeft
+					);
+					this.setBorderCell(x, row, encoding, style);
+				}
+			}
+		}
+
+		// Right edge (excluding corners)
+		if (borderStyles.rightEdge > 0 && right !== x && right >= 0 && right < this.cols) {
+			for (let row = y + 1; row < bottom; row++) {
+				if (row >= 0 && row < this.rows) {
+					const encoding = this.calculateEdgeEncoding(
+						borderStyles,
+						false, // hasTop
+						true, // hasRight
+						false, // hasBottom
+						false, // hasLeft
+					);
+					this.setBorderCell(right, row, encoding, style);
+				}
+			}
+		}
+	}
+
+	private calculateEdgeEncoding(
+		borderStyles: {
+			topEdge: number;
+			rightEdge: number;
+			bottomEdge: number;
+			leftEdge: number;
+		},
+		hasTop: boolean,
+		hasRight: boolean,
+		hasBottom: boolean,
+		hasLeft: boolean,
+	): number {
+		// Encode which edges are present for this specific cell position
+		let encoding = 0;
+
+		if (hasTop && borderStyles.topEdge > 0) {
+			encoding |= borderStyles.topEdge << BORDER_EDGE_TOP_SHIFT;
+		}
+		if (hasRight && borderStyles.rightEdge > 0) {
+			encoding |= borderStyles.rightEdge << BORDER_EDGE_RIGHT_SHIFT;
+		}
+		if (hasBottom && borderStyles.bottomEdge > 0) {
+			encoding |= borderStyles.bottomEdge << BORDER_EDGE_BOTTOM_SHIFT;
+		}
+		if (hasLeft && borderStyles.leftEdge > 0) {
+			encoding |= borderStyles.leftEdge << BORDER_EDGE_LEFT_SHIFT;
+		}
+
+		return encoding;
+	}
+
+	private setBorderCell(
+		x: number,
+		y: number,
+		borderEncoding: number,
+		style?: RendererCellStyle,
+	): void {
+		if (y < 0 || y >= this.rows || x < 0 || x >= this.cols) {
+			return;
+		}
+
+		const buffer = this.currentBuffer;
+		const existingCell = buffer[y][x];
+		
+		if (existingCell && existingCell.border > 0) {
+			// Merge the border encodings using precedence rules
+			const mergedBorder = mergeBorderEncodings(
+				existingCell.border,
+				borderEncoding,
+			);
+			buffer[y][x] = new Cell({
+				grapheme: " ", // Space placeholder - renderer will determine correct character
+				fg: style?.fg ?? undefined,
+				bg: style?.bg ?? undefined,
+				bold: style?.bold,
+				italic: style?.italic,
+				underline: style?.underline,
+				strikethrough: style?.strikethrough,
+				inverse: style?.inverse,
+				dim: style?.dim,
+				blink: style?.blink,
+				overline: style?.overline,
+				border: mergedBorder,
+			});
+		} else {
+			// No existing border - just set the new one
+			buffer[y][x] = new Cell({
+				grapheme: " ", // Space placeholder - renderer will determine correct character
+				fg: style?.fg ?? undefined,
+				bg: style?.bg ?? undefined,
+				bold: style?.bold,
+				italic: style?.italic,
+				underline: style?.underline,
+				strikethrough: style?.strikethrough,
+				inverse: style?.inverse,
+				dim: style?.dim,
+				blink: style?.blink,
+				overline: style?.overline,
+				border: borderEncoding,
+			});
+		}
+	}
+
 	setText(
 		x: number,
 		y: number,

@@ -1,8 +1,15 @@
 import {type EventEmitter} from "events";
 import {type DOMWindow, JSDOM} from "jsdom";
 import {LayoutEngine, isPointInRects} from "./layout.js";
-import {Cell, type ColorDepth, mergeBorderEncodings, Renderer} from "./ansi.js";
-import {resolvePropertyValue, resolveBorderStyles} from "./styles.js";
+import {type ColorDepth, Renderer} from "./ansi.js";
+import {
+	resolvePropertyValue,
+	resolveBorderStyles,
+	cssColorToNumber,
+	darkenColor,
+	getListMarker,
+	getListNestingDepth,
+} from "./styles.js";
 import {FullscreenManager} from "./fullscreen.js";
 import {setupInspectMethods} from "./inspector.js";
 
@@ -60,6 +67,7 @@ export class TermDOM {
 
 	private readonly renderer: Renderer;
 	private readonly layoutEngine: LayoutEngine;
+	// TODO: Should we expose the JSDOM instance?
 	private readonly jsdom: JSDOM;
 	private readonly observer: MutationObserver;
 	private readonly fullscreenManager: FullscreenManager;
@@ -190,15 +198,6 @@ export class TermDOM {
 		}
 	}
 
-	// TODO: move this to styles.ts
-	private cssColorToNumber(cssColor: string): number {
-		if (!cssColor || cssColor === "transparent" || cssColor === "none") {
-			return 0;
-		}
-
-		const colorNumber = Bun.color(cssColor, "number");
-		return typeof colorNumber === "number" ? colorNumber : 0;
-	}
 
 	// TODO: many of the following methods do not belong on the TermDOM class
 	private renderElement(element: Element): void {
@@ -214,12 +213,12 @@ export class TermDOM {
 
 		const style = {
 			fg:
-				color && color !== "initial" ? this.cssColorToNumber(color) : undefined,
+				color && color !== "initial" ? cssColorToNumber(color) : undefined,
 			bg:
 				backgroundColor &&
 				backgroundColor !== "initial" &&
 				backgroundColor !== "transparent"
-					? this.cssColorToNumber(backgroundColor)
+					? cssColorToNumber(backgroundColor)
 					: undefined,
 			bold,
 			italic,
@@ -253,7 +252,19 @@ export class TermDOM {
 		if (rect) {
 			const borderStyles = resolveBorderStyles(element);
 			if (borderStyles.hasAnyBorder) {
-				this.renderBorders(rect, borderStyles, style);
+				// Use foreground color for borders, inherit element's background color
+				const borderCellStyle = {
+					fg: style.fg || 0xffffff, // Default to white if no color
+					bg: style.bg, // Inherit element's background color
+				};
+				this.renderer.drawBorder(
+					Math.round(rect.left),
+					Math.round(rect.top),
+					Math.round(rect.width),
+					Math.round(rect.height),
+					borderStyles,
+					borderCellStyle,
+				);
 			}
 		}
 
@@ -288,13 +299,13 @@ export class TermDOM {
 				const textStyle = {
 					fg:
 						textColor && textColor !== "initial"
-							? this.cssColorToNumber(textColor)
+							? cssColorToNumber(textColor)
 							: undefined,
 					bg:
 						textBgColor &&
 						textBgColor !== "initial" &&
 						textBgColor !== "transparent"
-							? this.cssColorToNumber(textBgColor)
+							? cssColorToNumber(textBgColor)
 							: undefined,
 					bold: textBold,
 					italic: textItalic,
@@ -324,137 +335,7 @@ export class TermDOM {
 		}
 	}
 
-	private renderBorders(
-		rect: DOMRect,
-		borderStyles: {
-			topEdge: number;
-			rightEdge: number;
-			bottomEdge: number;
-			leftEdge: number;
-			hasAnyBorder: boolean;
-		},
-		cellStyle: any,
-	): void {
-		const {left, top, width, height} = rect;
 
-		// Don't render if rect is too small
-		if (width < 2 || height < 2) return;
-
-		const right = left + width - 1;
-		const bottom = top + height - 1;
-
-		// Use foreground color for borders, inherit element's background color
-		const borderCellStyle = {
-			fg: cellStyle.fg || 0xffffff, // Default to white if no color
-			bg: cellStyle.bg, // Inherit element's background color
-		};
-
-		// Encode borders based on position
-		// Top edge
-		if (borderStyles.topEdge > 0) {
-			for (let x = left; x <= right; x++) {
-				if (top >= 0 && top < this.height) {
-					const cornerLeft = x === left && borderStyles.leftEdge > 0;
-					const cornerRight = x === right && borderStyles.rightEdge > 0;
-					const edgeEncoding = this.calculateEdgeEncoding(
-						borderStyles,
-						true,
-						cornerRight,
-						false,
-						cornerLeft,
-					);
-					this.setBorderCell(x, top, edgeEncoding, borderCellStyle);
-				}
-			}
-		}
-
-		// Bottom edge
-		if (
-			borderStyles.bottomEdge > 0 &&
-			bottom !== top &&
-			bottom >= 0 &&
-			bottom < this.height
-		) {
-			for (let x = left; x <= right; x++) {
-				const cornerLeft = x === left && borderStyles.leftEdge > 0;
-				const cornerRight = x === right && borderStyles.rightEdge > 0;
-				const edgeEncoding = this.calculateEdgeEncoding(
-					borderStyles,
-					false,
-					cornerRight,
-					true,
-					cornerLeft,
-				);
-				this.setBorderCell(x, bottom, edgeEncoding, borderCellStyle);
-			}
-		}
-
-		// Left edge (excluding corners)
-		if (borderStyles.leftEdge > 0) {
-			for (let y = top + 1; y < bottom; y++) {
-				if (left >= 0 && left < this.width) {
-					const edgeEncoding = this.calculateEdgeEncoding(
-						borderStyles,
-						false,
-						false,
-						false,
-						true,
-					);
-					this.setBorderCell(left, y, edgeEncoding, borderCellStyle);
-				}
-			}
-		}
-
-		// Right edge (excluding corners)
-		if (
-			borderStyles.rightEdge > 0 &&
-			right !== left &&
-			right >= 0 &&
-			right < this.width
-		) {
-			for (let y = top + 1; y < bottom; y++) {
-				const edgeEncoding = this.calculateEdgeEncoding(
-					borderStyles,
-					false,
-					true,
-					false,
-					false,
-				);
-				this.setBorderCell(right, y, edgeEncoding, borderCellStyle);
-			}
-		}
-	}
-
-	private calculateEdgeEncoding(
-		borderStyles: {
-			topEdge: number;
-			rightEdge: number;
-			bottomEdge: number;
-			leftEdge: number;
-		},
-		hasTop: boolean,
-		hasRight: boolean,
-		hasBottom: boolean,
-		hasLeft: boolean,
-	): number {
-		// Encode which edges are present for this specific cell position
-		let encoding = 0;
-
-		if (hasTop && borderStyles.topEdge > 0) {
-			encoding |= borderStyles.topEdge << 24; // BORDER_EDGE_TOP_SHIFT
-		}
-		if (hasRight && borderStyles.rightEdge > 0) {
-			encoding |= borderStyles.rightEdge << 16; // BORDER_EDGE_RIGHT_SHIFT
-		}
-		if (hasBottom && borderStyles.bottomEdge > 0) {
-			encoding |= borderStyles.bottomEdge << 8; // BORDER_EDGE_BOTTOM_SHIFT
-		}
-		if (hasLeft && borderStyles.leftEdge > 0) {
-			encoding |= borderStyles.leftEdge << 0; // BORDER_EDGE_LEFT_SHIFT
-		}
-
-		return encoding;
-	}
 
 	// TODO: move this to tables.ts? or layout.ts
 	private renderTable(tableElement: Element, rect: DOMRect, style: any): void {
@@ -513,7 +394,7 @@ export class TermDOM {
 				// Render cell background (alternating rows)
 				const bgColor =
 					rowIndex % 2 === 1 && style.bg
-						? this.darkenColor(style.bg, 0.1)
+						? darkenColor(style.bg, 0.1)
 						: style.bg;
 
 				if (bgColor != null) {
@@ -531,29 +412,17 @@ export class TermDOM {
 		});
 	}
 
-	// TODO: move this to styles.ts
-	private darkenColor(color: number, factor: number): number {
-		const r = (color >> 16) & 0xff;
-		const g = (color >> 8) & 0xff;
-		const b = color & 0xff;
-
-		return (
-			(Math.floor(r * (1 - factor)) << 16) |
-			(Math.floor(g * (1 - factor)) << 8) |
-			Math.floor(b * (1 - factor))
-		);
-	}
 
 	// TODO: move this to layout.ts or maybe lists.ts
 	private renderListItem(element: Element, rect: DOMRect, style: any): void {
 		const listParent = element.parentElement;
 		if (!listParent) return;
 
-		const marker = this.getListMarker(element, listParent);
+		const marker = getListMarker(element, listParent);
 		if (!marker) return;
 
 		const {left, top} = rect;
-		const nestingDepth = this.getListNestingDepth(element);
+		const nestingDepth = getListNestingDepth(element);
 
 		// Position marker in the padding area reserved by the ul/ol element
 		// Now that nesting is handled by ul/ol margin, marker goes at the left edge of content
@@ -562,153 +431,6 @@ export class TermDOM {
 
 		if (markerX >= 0 && markerY >= 0 && markerX < this.width) {
 			this.renderer.setText(markerX, markerY, marker, style);
-		}
-	}
-
-	// TODO: move this to layout.ts?
-	private getListNestingDepth(listItem: Element): number {
-		let depth = 0;
-		let current = listItem.parentElement;
-
-		while (current) {
-			if (current.tagName === "UL" || current.tagName === "OL") {
-				depth++;
-			}
-			current = current.parentElement;
-		}
-
-		return depth - 1; // Subtract 1 because we want 0-based depth (first level = 0)
-	}
-
-	// TODO: move this to styles.ts
-	private getListMarker(listItem: Element, listParent: Element): string {
-		const listType = listParent.tagName.toLowerCase();
-		const listStyleType = resolvePropertyValue(listParent, "list-style-type");
-		const nestingDepth = this.getListNestingDepth(listItem);
-
-		if (listType === "ol") {
-			// Ordered list - get the item index and format as number
-			// Only count direct children, not nested li elements
-			const items = Array.from(listParent.children).filter(
-				(child) => child.tagName === "LI",
-			);
-			const index = items.indexOf(listItem as HTMLLIElement);
-			if (index === -1) return "";
-
-			const start = parseInt(listParent.getAttribute("start") || "1", 10);
-			const itemNumber = start + index;
-
-			switch (listStyleType) {
-				case "decimal":
-				default:
-					return `${itemNumber}.`;
-				case "lower-alpha":
-					return `${String.fromCharCode(96 + (itemNumber % 26))}.`;
-				case "upper-alpha":
-					return `${String.fromCharCode(64 + (itemNumber % 26))}.`;
-				case "lower-roman":
-					return `${this.toRoman(itemNumber).toLowerCase()}.`;
-				case "upper-roman":
-					return `${this.toRoman(itemNumber)}.`;
-			}
-		} else if (listType === "ul") {
-			// Unordered list - use bullet characters based on nesting depth if no explicit style
-			if (listStyleType === "disc" || !listStyleType) {
-				// Auto-select bullet based on nesting level
-				const bullets = ["•", "◦", "▪", "▫"];
-				return bullets[nestingDepth % bullets.length];
-			}
-
-			switch (listStyleType) {
-				case "disc":
-					return "•";
-				case "circle":
-					return "◦";
-				case "square":
-					return "▪";
-			}
-		}
-
-		return "";
-	}
-
-	// TODO: move this to styles.ts
-	private toRoman(num: number): string {
-		const romanNumerals = [
-			{value: 1000, symbol: "M"},
-			{value: 900, symbol: "CM"},
-			{value: 500, symbol: "D"},
-			{value: 400, symbol: "CD"},
-			{value: 100, symbol: "C"},
-			{value: 90, symbol: "XC"},
-			{value: 50, symbol: "L"},
-			{value: 40, symbol: "XL"},
-			{value: 10, symbol: "X"},
-			{value: 9, symbol: "IX"},
-			{value: 5, symbol: "V"},
-			{value: 4, symbol: "IV"},
-			{value: 1, symbol: "I"},
-		];
-
-		let result = "";
-		for (const {value, symbol} of romanNumerals) {
-			while (num >= value) {
-				result += symbol;
-				num -= value;
-			}
-		}
-		return result;
-	}
-
-	// TODO: move this to ansi.ts
-	private setBorderCell(
-		x: number,
-		y: number,
-		borderEncoding: number,
-		style: any,
-	): void {
-		// Get the renderer buffer
-		const buffer = (this.renderer as any).currentBuffer;
-		if (!buffer[y]) {
-			buffer[y] = [];
-		}
-
-		// TODO: Should exclusively using Cell.create
-		// Check if there's an existing cell
-		const existingCell = buffer[y][x];
-		if (existingCell) {
-			if (existingCell.border > 0) {
-				// Merge the border encodings using precedence rules
-				const mergedBorder = mergeBorderEncodings(
-					existingCell.border,
-					borderEncoding,
-				);
-				// Create a new cell with merged border
-				const borderCell = new Cell({
-					// TODO: should the grapheme just be the final rendered grapheme?
-					// TODO: maybe placeholders could be " " or ""?
-					grapheme: "┼", // Placeholder - renderer will determine correct character
-					...style,
-					border: mergedBorder,
-				});
-				buffer[y][x] = borderCell;
-			} else {
-				// Existing cell but no border - just overwrite
-				const borderCell = new Cell({
-					grapheme: "┼", // Placeholder - renderer will determine correct character
-					...style,
-					border: borderEncoding,
-				});
-				buffer[y][x] = borderCell;
-			}
-		} else {
-			// No existing cell - create new cell
-			const borderCell = new Cell({
-				grapheme: "┼", // Placeholder - renderer will determine correct character
-				...style,
-				border: borderEncoding,
-			});
-			buffer[y][x] = borderCell;
 		}
 	}
 

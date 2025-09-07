@@ -906,6 +906,154 @@ interface BoxCharSet {
 	cross: string;
 }
 
+// ============================================================================
+// COLOR UTILITIES
+// ============================================================================
+
+/**
+ * Convert CSS color string to numeric color value
+ * @param cssColor - CSS color value (hex, named, rgb(), etc.)
+ * @returns Numeric color value or 0 for transparent/invalid colors
+ */
+export function cssColorToNumber(cssColor: string): number {
+	if (!cssColor || cssColor === "transparent" || cssColor === "none") {
+		return 0;
+	}
+
+	const colorNumber = Bun.color(cssColor, "number");
+	return typeof colorNumber === "number" ? colorNumber : 0;
+}
+
+/**
+ * Darken a color by a given factor
+ * @param color - Numeric color value (0xRRGGBB)
+ * @param factor - Darkening factor (0.0 to 1.0, where 1.0 = black)
+ * @returns Darkened color as numeric value
+ */
+export function darkenColor(color: number, factor: number): number {
+	const r = (color >> 16) & 0xff;
+	const g = (color >> 8) & 0xff;
+	const b = color & 0xff;
+
+	return (
+		(Math.floor(r * (1 - factor)) << 16) |
+		(Math.floor(g * (1 - factor)) << 8) |
+		Math.floor(b * (1 - factor))
+	);
+}
+
+// ============================================================================
+// LIST UTILITIES
+// ============================================================================
+
+/**
+ * Convert a number to Roman numeral representation
+ * @param num - Number to convert
+ * @returns Roman numeral string
+ */
+export function toRoman(num: number): string {
+	const romanNumerals = [
+		{value: 1000, symbol: "M"},
+		{value: 900, symbol: "CM"},
+		{value: 500, symbol: "D"},
+		{value: 400, symbol: "CD"},
+		{value: 100, symbol: "C"},
+		{value: 90, symbol: "XC"},
+		{value: 50, symbol: "L"},
+		{value: 40, symbol: "XL"},
+		{value: 10, symbol: "X"},
+		{value: 9, symbol: "IX"},
+		{value: 5, symbol: "V"},
+		{value: 4, symbol: "IV"},
+		{value: 1, symbol: "I"},
+	];
+
+	let result = "";
+	for (const {value, symbol} of romanNumerals) {
+		while (num >= value) {
+			result += symbol;
+			num -= value;
+		}
+	}
+	return result;
+}
+
+/**
+ * Calculate nesting depth of a list item
+ * @param listItem - The li element
+ * @returns Zero-based nesting depth (0 for first level)
+ */
+export function getListNestingDepth(listItem: Element): number {
+	let depth = 0;
+	let current = listItem.parentElement;
+
+	while (current) {
+		if (current.tagName === "UL" || current.tagName === "OL") {
+			depth++;
+		}
+		current = current.parentElement;
+	}
+
+	return depth - 1; // Subtract 1 because we want 0-based depth (first level = 0)
+}
+
+/**
+ * Generate appropriate list marker for a list item
+ * @param listItem - The li element
+ * @param listParent - The parent ul or ol element
+ * @returns Marker string (e.g., "1.", "•", "a.")
+ */
+export function getListMarker(listItem: Element, listParent: Element): string {
+	const listType = listParent.tagName.toLowerCase();
+	const listStyleType = resolvePropertyValue(listParent, "list-style-type");
+	const nestingDepth = getListNestingDepth(listItem);
+
+	if (listType === "ol") {
+		// Ordered list - get the item index and format as number
+		// Only count direct children, not nested li elements
+		const items = Array.from(listParent.children).filter(
+			(child) => child.tagName === "LI",
+		);
+		const index = items.indexOf(listItem as HTMLLIElement);
+		if (index === -1) return "";
+
+		const start = parseInt(listParent.getAttribute("start") || "1", 10);
+		const itemNumber = start + index;
+
+		switch (listStyleType) {
+			case "decimal":
+			default:
+				return `${itemNumber}.`;
+			case "lower-alpha":
+				return `${String.fromCharCode(96 + (itemNumber % 26))}.`;
+			case "upper-alpha":
+				return `${String.fromCharCode(64 + (itemNumber % 26))}.`;
+			case "lower-roman":
+				return `${toRoman(itemNumber).toLowerCase()}.`;
+			case "upper-roman":
+				return `${toRoman(itemNumber)}.`;
+		}
+	} else if (listType === "ul") {
+		// Unordered list - use bullet characters based on nesting depth if no explicit style
+		if (listStyleType === "disc" || !listStyleType) {
+			// Auto-select bullet based on nesting level
+			const bullets = ["•", "◦", "▪", "▫"];
+			return bullets[nestingDepth % bullets.length];
+		}
+
+		switch (listStyleType) {
+			case "disc":
+				return "•";
+			case "circle":
+				return "◦";
+			case "square":
+				return "▪";
+		}
+	}
+
+	return "";
+}
+
 export const BOX_DRAWING: Record<string, BoxCharSet> = {
 	/**
 	 * Unicode ASCII borders
