@@ -102,10 +102,10 @@ export class TermDOM {
 
 		// Setup DOM inspector
 		setupInspectMethods(this.window);
-		
+
 		// Setup shadow DOM support
 		this.setupShadowDOMSupport();
-		
+
 		this.initializeConstructorExtensions();
 		this.renderer = new Renderer(
 			this.height,
@@ -116,7 +116,7 @@ export class TermDOM {
 		this.layoutEngine = new LayoutEngine(
 			this.jsdom.window,
 			(element) => this.getShadowRoot(element),
-			(element) => this.getMergedTree(element)
+			(element) => this.getMergedTree(element),
 		);
 		this.layoutEngine.resize(this.width, this.height);
 		this.fullscreenManager = new FullscreenManager(this.process);
@@ -134,21 +134,21 @@ export class TermDOM {
 	private setupShadowDOMSupport(): void {
 		// Store original method
 		this.originalAttachShadow = this.window.Element.prototype.attachShadow;
-		
+
 		const shadowMap = this.shadowMap;
 		const originalAttachShadow = this.originalAttachShadow;
-		
+
 		// Monkey-patch attachShadow to cache shadow roots
-		this.window.Element.prototype.attachShadow = function(
+		this.window.Element.prototype.attachShadow = function (
 			this: Element,
 			options: ShadowRootInit,
 		): ShadowRoot {
 			// Call original method
 			const shadowRoot = originalAttachShadow.call(this, options);
-			
+
 			// Cache the shadow root in our WeakMap
 			shadowMap.set(this, shadowRoot);
-			
+
 			return shadowRoot;
 		};
 	}
@@ -178,22 +178,25 @@ export class TermDOM {
 	 * Resolve slot assignments for shadow DOM content projection
 	 * Supports both named slots and anonymous/default slots
 	 */
-	private resolveSlotAssignments(shadowRoot: ShadowRoot, lightDOMElement: Element): Map<Element, Node[]> {
+	private resolveSlotAssignments(
+		shadowRoot: ShadowRoot,
+		lightDOMElement: Element,
+	): Map<Element, Node[]> {
 		const slotAssignments = new Map<Element, Node[]>();
-		
+
 		// Find all slots in shadow DOM
-		const slots = shadowRoot.querySelectorAll('slot');
-		
+		const slots = shadowRoot.querySelectorAll("slot");
+
 		for (const slot of slots) {
-			const slotName = slot.getAttribute('name');
+			const slotName = slot.getAttribute("name");
 			const assignedContent: Node[] = [];
-			
+
 			if (slotName) {
 				// Named slot - find light DOM children with matching slot attribute
 				for (const childNode of lightDOMElement.childNodes) {
 					if (childNode.nodeType === childNode.ELEMENT_NODE) {
 						const childElement = childNode as Element;
-						if (childElement.getAttribute('slot') === slotName) {
+						if (childElement.getAttribute("slot") === slotName) {
 							assignedContent.push(childNode);
 						}
 					}
@@ -202,20 +205,20 @@ export class TermDOM {
 				// Anonymous slot - collect content without slot attributes
 				for (const childNode of lightDOMElement.childNodes) {
 					let shouldAssign = false;
-					
+
 					if (childNode.nodeType === childNode.ELEMENT_NODE) {
 						const childElement = childNode as Element;
-						shouldAssign = !childElement.hasAttribute('slot');
+						shouldAssign = !childElement.hasAttribute("slot");
 					} else if (childNode.nodeType === childNode.TEXT_NODE) {
 						shouldAssign = true;
 					}
-					
+
 					if (shouldAssign) {
 						assignedContent.push(childNode);
 					}
 				}
 			}
-			
+
 			if (assignedContent.length > 0) {
 				slotAssignments.set(slot, assignedContent);
 			} else {
@@ -223,7 +226,7 @@ export class TermDOM {
 				slotAssignments.set(slot, Array.from(slot.childNodes));
 			}
 		}
-		
+
 		return slotAssignments;
 	}
 
@@ -232,7 +235,7 @@ export class TermDOM {
 	 */
 	private findAnonymousSlot(shadowRoot: ShadowRoot): Element | null {
 		// Query for slot elements without a name attribute
-		return shadowRoot.querySelector('slot:not([name])');
+		return shadowRoot.querySelector("slot:not([name])");
 	}
 
 	private initializeWindow(): void {
@@ -318,7 +321,6 @@ export class TermDOM {
 		}
 	}
 
-
 	// TODO: many of the following methods do not belong on the TermDOM class
 	private renderElement(element: Element): void {
 		const rect = this.layoutEngine.getRect(element);
@@ -332,8 +334,7 @@ export class TermDOM {
 		);
 
 		const style = {
-			fg:
-				color && color !== "initial" ? cssColorToNumber(color) : undefined,
+			fg: color && color !== "initial" ? cssColorToNumber(color) : undefined,
 			bg:
 				backgroundColor &&
 				backgroundColor !== "initial" &&
@@ -413,11 +414,14 @@ export class TermDOM {
 	/**
 	 * Render shadow DOM with slot content projection using cached merged DOM tree
 	 */
-	private renderShadowDOM(shadowRoot: ShadowRoot, lightDOMElement: Element): void {
+	private renderShadowDOM(
+		shadowRoot: ShadowRoot,
+		lightDOMElement: Element,
+	): void {
 		// Refresh the merged tree cache on each render
 		const mergedTree = this.createMergedDOMTree(shadowRoot, lightDOMElement);
 		this.mergedTreeCache.set(lightDOMElement, mergedTree);
-		
+
 		// Render the cached merged tree (layout can reuse cached rects)
 		for (const childNode of mergedTree.childNodes) {
 			if (childNode.nodeType === childNode.ELEMENT_NODE) {
@@ -435,12 +439,18 @@ export class TermDOM {
 	/**
 	 * Create a merged DOM tree by cloning shadow DOM and replacing slots with light DOM content
 	 */
-	private createMergedDOMTree(shadowRoot: ShadowRoot, lightDOMElement: Element): DocumentFragment {
+	private createMergedDOMTree(
+		shadowRoot: ShadowRoot,
+		lightDOMElement: Element,
+	): DocumentFragment {
 		const mergedTree = this.document.createDocumentFragment();
-		
+
 		// Clone all shadow DOM children
 		for (const childNode of shadowRoot.childNodes) {
-			const clonedChild = this.cloneNodeWithSlotSubstitution(childNode, lightDOMElement);
+			const clonedChild = this.cloneNodeWithSlotSubstitution(
+				childNode,
+				lightDOMElement,
+			);
 			if (clonedChild) {
 				if (clonedChild.nodeType === clonedChild.DOCUMENT_FRAGMENT_NODE) {
 					// If it's a fragment (from slot substitution), append all its children
@@ -452,28 +462,31 @@ export class TermDOM {
 				}
 			}
 		}
-		
+
 		return mergedTree;
 	}
 
 	/**
 	 * Clone a shadow DOM node, replacing slots with cloned light DOM content
 	 */
-	private cloneNodeWithSlotSubstitution(node: Node, lightDOMElement: Element): Node | null {
+	private cloneNodeWithSlotSubstitution(
+		node: Node,
+		lightDOMElement: Element,
+	): Node | null {
 		if (node.nodeType === node.ELEMENT_NODE) {
 			const element = node as Element;
-			
+
 			// If this is a slot element, replace with cloned light DOM content
-			if (element.tagName === 'SLOT') {
-				const slotName = element.getAttribute('name');
+			if (element.tagName === "SLOT") {
+				const slotName = element.getAttribute("name");
 				const container = this.document.createDocumentFragment();
-				
+
 				if (slotName) {
 					// Named slot - find light DOM children with matching slot attribute
 					for (const lightChild of lightDOMElement.childNodes) {
 						if (lightChild.nodeType === lightChild.ELEMENT_NODE) {
 							const lightElement = lightChild as Element;
-							if (lightElement.getAttribute('slot') === slotName) {
+							if (lightElement.getAttribute("slot") === slotName) {
 								const clonedLight = lightChild.cloneNode(true);
 								container.appendChild(clonedLight);
 							}
@@ -483,23 +496,23 @@ export class TermDOM {
 					// Anonymous slot - take all light DOM children without slot attribute
 					for (const lightChild of lightDOMElement.childNodes) {
 						let shouldSlot = false;
-						
+
 						if (lightChild.nodeType === lightChild.ELEMENT_NODE) {
 							const lightElement = lightChild as Element;
 							// Only slot if no slot attribute (anonymous content)
-							shouldSlot = !lightElement.hasAttribute('slot');
+							shouldSlot = !lightElement.hasAttribute("slot");
 						} else if (lightChild.nodeType === lightChild.TEXT_NODE) {
 							// All text nodes go to anonymous slot (including whitespace)
 							shouldSlot = true;
 						}
-						
+
 						if (shouldSlot) {
 							const clonedLight = lightChild.cloneNode(true);
 							container.appendChild(clonedLight);
 						}
 					}
 				}
-				
+
 				// If no light DOM content was slotted, use slot's fallback content
 				if (!container.hasChildNodes()) {
 					for (const fallbackChild of element.childNodes) {
@@ -507,15 +520,18 @@ export class TermDOM {
 						container.appendChild(clonedFallback);
 					}
 				}
-				
+
 				return container; // Return the entire container with all children
 			} else {
 				// Regular element - clone and recursively process children
 				const clonedElement = element.cloneNode(false) as Element;
-				
+
 				// Process children with slot substitution
 				for (const childNode of element.childNodes) {
-					const clonedChild = this.cloneNodeWithSlotSubstitution(childNode, lightDOMElement);
+					const clonedChild = this.cloneNodeWithSlotSubstitution(
+						childNode,
+						lightDOMElement,
+					);
 					if (clonedChild) {
 						if (clonedChild.nodeType === clonedChild.DOCUMENT_FRAGMENT_NODE) {
 							// If it's a fragment (from slot substitution), append all its children
@@ -527,7 +543,7 @@ export class TermDOM {
 						}
 					}
 				}
-				
+
 				return clonedElement;
 			}
 		} else {
@@ -539,15 +555,18 @@ export class TermDOM {
 	/**
 	 * Render a shadow DOM node, handling slot substitution
 	 */
-	private renderShadowNode(node: Node, slotAssignments: Map<Element, Node[]>): void {
+	private renderShadowNode(
+		node: Node,
+		slotAssignments: Map<Element, Node[]>,
+	): void {
 		if (node.nodeType === node.ELEMENT_NODE) {
 			const element = node as Element;
-			
+
 			// Check if this is a slot element
-			if (element.tagName === 'SLOT') {
+			if (element.tagName === "SLOT") {
 				// Render the assigned content instead of the slot
 				const assignedContent = slotAssignments.get(element) || [];
-				
+
 				for (const assignedNode of assignedContent) {
 					if (assignedNode.nodeType === assignedNode.ELEMENT_NODE) {
 						const assignedElement = assignedNode as Element;
@@ -575,7 +594,10 @@ export class TermDOM {
 	/**
 	 * Render an element, recursively handling any slot elements in its descendants
 	 */
-	private renderElementWithSlotSubstitution(element: Element, slotAssignments: Map<Element, Node[]>): void {
+	private renderElementWithSlotSubstitution(
+		element: Element,
+		slotAssignments: Map<Element, Node[]>,
+	): void {
 		// Get the element's rect and styling like normal rendering
 		const rect = this.layoutEngine.getRect(element);
 
@@ -583,12 +605,18 @@ export class TermDOM {
 		const backgroundColor = resolvePropertyValue(element, "background-color");
 		const bold = resolvePropertyValue(element, "font-weight") === "bold";
 		const italic = resolvePropertyValue(element, "font-style") === "italic";
-		const underline = resolvePropertyValue(element, "text-decoration").includes("underline");
+		const underline = resolvePropertyValue(element, "text-decoration").includes(
+			"underline",
+		);
 
 		const style = {
 			fg: color && color !== "initial" ? cssColorToNumber(color) : undefined,
-			bg: backgroundColor && backgroundColor !== "initial" && backgroundColor !== "transparent"
-				? cssColorToNumber(backgroundColor) : undefined,
+			bg:
+				backgroundColor &&
+				backgroundColor !== "initial" &&
+				backgroundColor !== "transparent"
+					? cssColorToNumber(backgroundColor)
+					: undefined,
 			bold,
 			italic,
 			underline,
@@ -596,7 +624,13 @@ export class TermDOM {
 
 		// Background fill
 		if (rect && style.bg != null) {
-			this.renderer.fillRect(rect.left, rect.top, rect.width, rect.height, style.bg);
+			this.renderer.fillRect(
+				rect.left,
+				rect.top,
+				rect.width,
+				rect.height,
+				style.bg,
+			);
 		}
 
 		// Handle borders
@@ -608,9 +642,12 @@ export class TermDOM {
 					bg: style.bg,
 				};
 				this.renderer.drawBorder(
-					Math.round(rect.left), Math.round(rect.top),
-					Math.round(rect.width), Math.round(rect.height),
-					borderStyles, borderCellStyle
+					Math.round(rect.left),
+					Math.round(rect.top),
+					Math.round(rect.width),
+					Math.round(rect.height),
+					borderStyles,
+					borderCellStyle,
 				);
 			}
 		}
@@ -632,10 +669,7 @@ export class TermDOM {
 		if (!parentElement) return;
 
 		const textColor = resolvePropertyValue(parentElement, "color");
-		const textBgColor = resolvePropertyValue(
-			parentElement,
-			"background-color",
-		);
+		const textBgColor = resolvePropertyValue(parentElement, "background-color");
 		const textBold =
 			resolvePropertyValue(parentElement, "font-weight") === "bold";
 		const textItalic =
@@ -757,7 +791,6 @@ export class TermDOM {
 		});
 	}
 
-
 	// TODO: move this to layout.ts or maybe lists.ts
 	private renderListItem(element: Element, rect: DOMRect, style: any): void {
 		const listParent = element.parentElement;
@@ -767,7 +800,7 @@ export class TermDOM {
 		if (!marker) return;
 
 		const {left, top} = rect;
-		const nestingDepth = getListNestingDepth(element);
+		const _nestingDepth = getListNestingDepth(element);
 
 		// Position marker in the padding area reserved by the ul/ol element
 		// Now that nesting is handled by ul/ol margin, marker goes at the left edge of content

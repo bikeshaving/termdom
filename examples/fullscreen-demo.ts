@@ -40,7 +40,7 @@ document.addEventListener("fullscreenchange", async () => {
 	await termdom.render(); // Re-render when fullscreen changes
 });
 
-document.addEventListener("fullscreenerror", (event: any) => {});
+document.addEventListener("fullscreenerror", (_event: any) => {});
 
 // Setup keyboard event handlers
 container.addEventListener("keydown", async (event: KeyboardEvent) => {
@@ -56,7 +56,9 @@ container.addEventListener("keydown", async (event: KeyboardEvent) => {
 				await container.requestFullscreen();
 			}
 			await termdom.render(); // Re-render after fullscreen change
-		} catch (error) {}
+		} catch {
+			// Ignore fullscreen errors
+		}
 	}
 });
 

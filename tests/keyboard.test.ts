@@ -12,7 +12,7 @@ class MockTTYStream extends EventEmitter {
 		super();
 	}
 
-	setRawMode(mode: boolean) {
+	setRawMode(_mode: boolean) {
 		return this;
 	}
 
@@ -65,7 +65,7 @@ class MockProcess extends EventEmitter {
 		COLORTERM: "truecolor",
 	};
 
-	exit(code?: number): never {
+	exit(_code?: number): never {
 		throw new Error("Process exit");
 	}
 }
@@ -223,7 +223,7 @@ test("keyboard events bubble up the DOM", async () => {
 
 test("can create keyboard event manually", () => {
 	const termdom = new TermDOM();
-	const {document, window} = termdom;
+	const {document: _document, window} = termdom;
 
 	// Test that we can create KeyboardEvent
 	const event = new window.KeyboardEvent("keydown", {
@@ -246,7 +246,7 @@ test("manual event dispatch works", () => {
 	document.body.appendChild(element);
 
 	let eventReceived = false;
-	element.addEventListener("keydown", (event) => {
+	element.addEventListener("keydown", (_event) => {
 		eventReceived = true;
 	});
 

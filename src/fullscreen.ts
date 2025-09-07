@@ -96,7 +96,7 @@ export class FullscreenManager {
 	private async enterFullscreenMode(): Promise<void> {
 		// Save original TTY mode
 		if (this.stdin && this.stdin.setRawMode) {
-			this.originalTtyMode = this.stdin.isRaw || false;
+			this.originalTtyMode = (this.stdin as any).isRaw || false;
 		}
 
 		// Enter alternate screen buffer
@@ -200,7 +200,7 @@ export class FullscreenManager {
 	private dispatchKeyboardEvent(
 		element: Element,
 		key: string,
-		chunk: Buffer,
+		_chunk: Buffer,
 	): void {
 		const window = this.getWindow(element);
 		if (!window) return;

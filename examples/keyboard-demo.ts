@@ -110,11 +110,11 @@ document.body.addEventListener("keyup", (event: KeyboardEvent) => {
 await termdom.render();
 
 // Add global error handler
-process.on("uncaughtException", (error) => {
+process.on("uncaughtException", (_error) => {
 	process.exit(1);
 });
 
-process.on("unhandledRejection", (reason) => {
+process.on("unhandledRejection", (_reason) => {
 	process.exit(1);
 });
 

@@ -1,5 +1,9 @@
 import {JSDOM} from "jsdom";
-import {inspectElement, inspectDocument, setupInspectMethods} from "../src/inspector.js";
+import {
+	inspectElement,
+	inspectDocument,
+	setupInspectMethods,
+} from "../src/inspector.js";
 
 // Create a JSDOM instance
 const dom = new JSDOM(`
@@ -57,39 +61,45 @@ const main = document.querySelector("main");
 
 // 1. Basic element inspection (no colors for clarity)
 console.log("1️⃣  Basic Element Inspection (no styles):");
-console.log(inspectElement(header!, { colorize: false, maxDepth: 1 }));
+console.log(inspectElement(header!, {colorize: false, maxDepth: 1}));
 
 // 2. With ANSI colors
 console.log("\n2️⃣  With ANSI Colors:");
-console.log(inspectElement(header!, { colorize: true, maxDepth: 1 }));
+console.log(inspectElement(header!, {colorize: true, maxDepth: 1}));
 
 // 3. Showing style attributes
 console.log("\n3️⃣  Showing Style Attributes:");
-console.log(inspectElement(button!, { colorize: true, showStyles: true }));
+console.log(inspectElement(button!, {colorize: true, showStyles: true}));
 
 // 4. Compact mode
 console.log("\n4️⃣  Compact Mode:");
-console.log(inspectElement(nav!, { colorize: true, compact: true }));
+console.log(inspectElement(nav!, {colorize: true, compact: true}));
 
 // 5. Deep inspection
 console.log("\n5️⃣  Deep Inspection (maxDepth: 3):");
-console.log(inspectElement(app!, { colorize: true, maxDepth: 3, showStyles: false }));
+console.log(
+	inspectElement(app!, {colorize: true, maxDepth: 3, showStyles: false}),
+);
 
 // 6. Show all attributes
 console.log("\n6️⃣  Show All Attributes:");
 const link = document.querySelector("a");
 link?.setAttribute("data-page", "home");
 link?.setAttribute("aria-current", "page");
-console.log(inspectElement(link!, { colorize: true, showAll: true }));
+console.log(inspectElement(link!, {colorize: true, showAll: true}));
 
 // 7. Document inspection
 console.log("\n7️⃣  Document Inspection:");
-console.log(inspectDocument(document, { colorize: true, maxDepth: 2 }));
+console.log(inspectDocument(document, {colorize: true, maxDepth: 2}));
 
 // 8. Using Node.js util.inspect
 const util = require("util");
 console.log("\n8️⃣  Node.js util.inspect Integration:");
-console.log(util.inspect(main, { colors: true, depth: 2 }));
+console.log(util.inspect(main, {colors: true, depth: 2}));
 
-console.log("\n💡 The inspector provides pure functions that work with any JSDOM instance!");
-console.log("💡 Use inspectElement(), inspectDocument(), or inspectNode() directly.");
+console.log(
+	"\n💡 The inspector provides pure functions that work with any JSDOM instance!",
+);
+console.log(
+	"💡 Use inspectElement(), inspectDocument(), or inspectNode() directly.",
+);

@@ -61,7 +61,7 @@ export class LayoutEngine {
 	constructor(
 		window: DOMWindow,
 		getShadowRoot?: (element: Element) => ShadowRoot | null,
-		getMergedTree?: (element: Element) => DocumentFragment | null
+		getMergedTree?: (element: Element) => DocumentFragment | null,
 	) {
 		this.DOMRect = window.DOMRect;
 		this.rootElement = window.document.documentElement;
@@ -193,28 +193,38 @@ export class LayoutEngine {
 	/**
 	 * Resolve slot assignments and return the effective children with slot content projected
 	 */
-	private resolveSlottedChildren(shadowRoot: ShadowRoot, lightDOMElement: Element): Node[] {
+	private resolveSlottedChildren(
+		shadowRoot: ShadowRoot,
+		lightDOMElement: Element,
+	): Node[] {
 		const effectiveChildren: Node[] = [];
-		
+
 		// Find anonymous slot and its assignments
-		const slotAssignments = this.resolveAnonymousSlot(shadowRoot, lightDOMElement);
-		
+		const slotAssignments = this.resolveAnonymousSlot(
+			shadowRoot,
+			lightDOMElement,
+		);
+
 		// Traverse shadow DOM and substitute slots with their content
 		for (const childNode of shadowRoot.childNodes) {
 			this.expandSlottedNode(childNode, slotAssignments, effectiveChildren);
 		}
-		
+
 		return effectiveChildren;
 	}
 
 	/**
 	 * Expand a shadow DOM node, replacing slots with their assigned content
 	 */
-	private expandSlottedNode(node: Node, slotAssignments: Map<Element, Node[]>, result: Node[]): void {
+	private expandSlottedNode(
+		node: Node,
+		slotAssignments: Map<Element, Node[]>,
+		result: Node[],
+	): void {
 		if (node.nodeType === node.ELEMENT_NODE) {
 			const element = node as Element;
-			
-			if (element.tagName === 'SLOT') {
+
+			if (element.tagName === "SLOT") {
 				// Replace slot with assigned content
 				const assignedContent = slotAssignments.get(element) || [];
 				result.push(...assignedContent);
@@ -231,32 +241,41 @@ export class LayoutEngine {
 	/**
 	 * Resolve anonymous slot assignments (simplified for anonymous slots only)
 	 */
-	private resolveAnonymousSlot(shadowRoot: ShadowRoot, lightDOMElement: Element): Map<Element, Node[]> {
+	private resolveAnonymousSlot(
+		shadowRoot: ShadowRoot,
+		lightDOMElement: Element,
+	): Map<Element, Node[]> {
 		const slotAssignments = new Map<Element, Node[]>();
-		
+
 		// Find the anonymous slot using DOM query
 		const anonymousSlot = this.findAnonymousSlot(shadowRoot);
-		
+
 		if (anonymousSlot) {
 			// Collect all light DOM content
 			const lightContent: Node[] = [];
-			
+
 			for (const childNode of lightDOMElement.childNodes) {
-				if (childNode.nodeType === childNode.ELEMENT_NODE ||
-					(childNode.nodeType === childNode.TEXT_NODE && childNode.textContent?.trim())) {
+				if (
+					childNode.nodeType === childNode.ELEMENT_NODE ||
+					(childNode.nodeType === childNode.TEXT_NODE &&
+						childNode.textContent?.trim())
+				) {
 					lightContent.push(childNode);
 				}
 			}
-			
+
 			if (lightContent.length > 0) {
 				// Assign all light DOM content to the anonymous slot
 				slotAssignments.set(anonymousSlot, lightContent);
 			} else {
 				// No light DOM content - use slot's fallback content
-				slotAssignments.set(anonymousSlot, Array.from(anonymousSlot.childNodes));
+				slotAssignments.set(
+					anonymousSlot,
+					Array.from(anonymousSlot.childNodes),
+				);
 			}
 		}
-		
+
 		return slotAssignments;
 	}
 
@@ -264,7 +283,7 @@ export class LayoutEngine {
 	 * Find the anonymous slot in a shadow root using DOM query
 	 */
 	private findAnonymousSlot(shadowRoot: ShadowRoot): Element | null {
-		return shadowRoot.querySelector('slot:not([name])');
+		return shadowRoot.querySelector("slot:not([name])");
 	}
 
 	private setupTableElement(
@@ -280,6 +299,7 @@ export class LayoutEngine {
 			data: tableData.data,
 			columns: tableData.columns,
 			getCoreRowModel: getCoreRowModel(),
+			renderFallbackValue: null,
 			state: {
 				columnPinning: {left: [], right: []},
 				columnOrder: [],
@@ -611,7 +631,7 @@ export class LayoutEngine {
 
 	private getRomanMarkerWidth(number: number): number {
 		// Calculate Roman numeral width (rough estimation)
-		const romanNumerals = [
+		const romanNumerals: [number, string][] = [
 			[1000, "m"],
 			[900, "cm"],
 			[500, "d"],

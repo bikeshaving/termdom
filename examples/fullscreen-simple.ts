@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import {TermDOM} from "../src/termdom.js";
 
-async function main() {
+async function _main() {
 	const termdom = new TermDOM();
 	const {document} = termdom;
 
@@ -38,3 +38,5 @@ async function main() {
 		process.exit(1);
 	}
 }
+
+_main();

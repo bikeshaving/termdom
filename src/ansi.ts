@@ -426,7 +426,12 @@ export class Renderer {
 		}
 
 		// Bottom edge
-		if (borderStyles.bottomEdge > 0 && bottom !== y && bottom >= 0 && bottom < this.rows) {
+		if (
+			borderStyles.bottomEdge > 0 &&
+			bottom !== y &&
+			bottom >= 0 &&
+			bottom < this.rows
+		) {
 			for (let col = x; col <= right; col++) {
 				if (col >= 0 && col < this.cols) {
 					const cornerLeft = col === x && borderStyles.leftEdge > 0;
@@ -460,7 +465,12 @@ export class Renderer {
 		}
 
 		// Right edge (excluding corners)
-		if (borderStyles.rightEdge > 0 && right !== x && right >= 0 && right < this.cols) {
+		if (
+			borderStyles.rightEdge > 0 &&
+			right !== x &&
+			right >= 0 &&
+			right < this.cols
+		) {
 			for (let row = y + 1; row < bottom; row++) {
 				if (row >= 0 && row < this.rows) {
 					const encoding = this.calculateEdgeEncoding(
@@ -519,7 +529,7 @@ export class Renderer {
 
 		const buffer = this.currentBuffer;
 		const existingCell = buffer[y][x];
-		
+
 		if (existingCell && existingCell.border > 0) {
 			// Merge the border encodings using precedence rules
 			const mergedBorder = mergeBorderEncodings(
