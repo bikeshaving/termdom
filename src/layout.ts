@@ -54,12 +54,22 @@ export class LayoutEngine {
 	declare rectLengthsMap: WeakMap<Node, RectLength[]>;
 	declare tableInstances: WeakMap<Element, TableInstance>;
 
-	constructor(window: DOMWindow) {
+	// Shadow DOM support
+	private getShadowRoot?: (element: Element) => ShadowRoot | null;
+	private getMergedTree?: (element: Element) => DocumentFragment | null;
+
+	constructor(
+		window: DOMWindow,
+		getShadowRoot?: (element: Element) => ShadowRoot | null,
+		getMergedTree?: (element: Element) => DocumentFragment | null
+	) {
 		this.DOMRect = window.DOMRect;
 		this.rootElement = window.document.documentElement;
 		this.nodeMap = new WeakMap<Node, YogaTypes.Node>();
 		this.rectLengthsMap = new WeakMap<Node, RectLength[]>();
 		this.tableInstances = new WeakMap<Element, TableInstance>();
+		this.getShadowRoot = getShadowRoot;
+		this.getMergedTree = getMergedTree;
 		this.observer = new window.MutationObserver((mutations) =>
 			this.handleMutationRecords(mutations),
 		);
@@ -156,6 +166,106 @@ export class LayoutEngine {
 	}
 
 	dispose(): void {}
+
+	/**
+	 * Get the children to traverse for layout - merged tree if available, otherwise light DOM
+	 */
+	private getChildrenForLayout(element: Element): NodeListOf<ChildNode> {
+		const mergedTree = this.getMergedTree?.(element);
+		if (mergedTree) {
+			return mergedTree.childNodes;
+		}
+		return element.childNodes;
+	}
+
+	/**
+	 * Get the effective children for layout, using merged tree when available
+	 */
+	private getEffectiveChildrenForLayout(element: Element): Node[] {
+		const mergedTree = this.getMergedTree?.(element);
+		if (mergedTree) {
+			// For shadow DOM with merged tree, use the merged children directly
+			return Array.from(mergedTree.childNodes);
+		}
+		return Array.from(element.childNodes);
+	}
+
+	/**
+	 * Resolve slot assignments and return the effective children with slot content projected
+	 */
+	private resolveSlottedChildren(shadowRoot: ShadowRoot, lightDOMElement: Element): Node[] {
+		const effectiveChildren: Node[] = [];
+		
+		// Find anonymous slot and its assignments
+		const slotAssignments = this.resolveAnonymousSlot(shadowRoot, lightDOMElement);
+		
+		// Traverse shadow DOM and substitute slots with their content
+		for (const childNode of shadowRoot.childNodes) {
+			this.expandSlottedNode(childNode, slotAssignments, effectiveChildren);
+		}
+		
+		return effectiveChildren;
+	}
+
+	/**
+	 * Expand a shadow DOM node, replacing slots with their assigned content
+	 */
+	private expandSlottedNode(node: Node, slotAssignments: Map<Element, Node[]>, result: Node[]): void {
+		if (node.nodeType === node.ELEMENT_NODE) {
+			const element = node as Element;
+			
+			if (element.tagName === 'SLOT') {
+				// Replace slot with assigned content
+				const assignedContent = slotAssignments.get(element) || [];
+				result.push(...assignedContent);
+			} else {
+				// Regular element - add it directly
+				result.push(node);
+			}
+		} else {
+			// Text nodes and other nodes - add directly
+			result.push(node);
+		}
+	}
+
+	/**
+	 * Resolve anonymous slot assignments (simplified for anonymous slots only)
+	 */
+	private resolveAnonymousSlot(shadowRoot: ShadowRoot, lightDOMElement: Element): Map<Element, Node[]> {
+		const slotAssignments = new Map<Element, Node[]>();
+		
+		// Find the anonymous slot using DOM query
+		const anonymousSlot = this.findAnonymousSlot(shadowRoot);
+		
+		if (anonymousSlot) {
+			// Collect all light DOM content
+			const lightContent: Node[] = [];
+			
+			for (const childNode of lightDOMElement.childNodes) {
+				if (childNode.nodeType === childNode.ELEMENT_NODE ||
+					(childNode.nodeType === childNode.TEXT_NODE && childNode.textContent?.trim())) {
+					lightContent.push(childNode);
+				}
+			}
+			
+			if (lightContent.length > 0) {
+				// Assign all light DOM content to the anonymous slot
+				slotAssignments.set(anonymousSlot, lightContent);
+			} else {
+				// No light DOM content - use slot's fallback content
+				slotAssignments.set(anonymousSlot, Array.from(anonymousSlot.childNodes));
+			}
+		}
+		
+		return slotAssignments;
+	}
+
+	/**
+	 * Find the anonymous slot in a shadow root using DOM query
+	 */
+	private findAnonymousSlot(shadowRoot: ShadowRoot): Element | null {
+		return shadowRoot.querySelector('slot:not([name])');
+	}
 
 	private setupTableElement(
 		tableElement: Element,
@@ -346,8 +456,9 @@ export class LayoutEngine {
 		}
 
 		// Process children normally
-		for (let i = 0; i < listElement.childNodes.length; i++) {
-			const child = listElement.childNodes[i];
+		const listElementChildren = this.getChildrenForLayout(listElement);
+		for (let i = 0; i < listElementChildren.length; i++) {
+			const child = listElementChildren[i];
 			if (child.nodeType === child.ELEMENT_NODE) {
 				this.addElementNode(child as Element, yogaNode);
 			} else if (child.nodeType === child.TEXT_NODE) {
@@ -384,8 +495,9 @@ export class LayoutEngine {
 		const textNodes: Node[] = [];
 		const blockElements: Node[] = [];
 
-		for (let i = 0; i < listItem.childNodes.length; i++) {
-			const child = listItem.childNodes[i];
+		const childNodes = this.getChildrenForLayout(listItem);
+		for (let i = 0; i < childNodes.length; i++) {
+			const child = childNodes[i];
 			if (child.nodeType === child.TEXT_NODE) {
 				textNodes.push(child);
 			} else if (child.nodeType === child.ELEMENT_NODE) {
@@ -692,7 +804,8 @@ export class LayoutEngine {
 		}
 
 		let hasInlineContent = false;
-		for (const child of element.childNodes) {
+		const effectiveChildren = this.getEffectiveChildrenForLayout(element);
+		for (const child of effectiveChildren) {
 			if (child.nodeType === child.TEXT_NODE && child.textContent?.trim()) {
 				hasInlineContent = true;
 				break;
@@ -706,7 +819,7 @@ export class LayoutEngine {
 		}
 
 		let hasBlockChildren = false;
-		for (const child of element.childNodes) {
+		for (const child of effectiveChildren) {
 			if (child.nodeType === child.ELEMENT_NODE) {
 				const childDisplay = resolvePropertyValue(child as Element, "display");
 				if (childDisplay !== "inline" && childDisplay !== "inline-block") {
@@ -733,8 +846,9 @@ export class LayoutEngine {
 			});
 		}
 
-		for (let i = 0; i < element.childNodes.length; i++) {
-			const child = element.childNodes[i];
+		const measuredChildNodes = this.getChildrenForLayout(element);
+		for (let i = 0; i < measuredChildNodes.length; i++) {
+			const child = measuredChildNodes[i];
 			if (child.nodeType === child.ELEMENT_NODE) {
 				const childDisplay = resolvePropertyValue(child as Element, "display");
 				if (childDisplay === "inline" || childDisplay === "inline-block") {
@@ -873,7 +987,8 @@ export class LayoutEngine {
 			}
 		} else if (display === "block" || display === "flex") {
 			let hasInlineContent = false;
-			for (const child of element.childNodes) {
+			const elementChildNodes = this.getChildrenForLayout(element);
+			for (const child of elementChildNodes) {
 				if (child.nodeType === child.TEXT_NODE && child.textContent?.trim()) {
 					hasInlineContent = true;
 					break;
@@ -911,8 +1026,9 @@ export class LayoutEngine {
 			}
 		}
 
-		for (let i = 0; i < element.childNodes.length; i++) {
-			const child = element.childNodes[i];
+		const inlineProcessChildNodes = this.getChildrenForLayout(element);
+		for (let i = 0; i < inlineProcessChildNodes.length; i++) {
+			const child = inlineProcessChildNodes[i];
 			if (child.nodeType === child.ELEMENT_NODE) {
 				this.processInlineRuns(child as Element, elementX, elementY);
 			}
@@ -944,9 +1060,10 @@ export class LayoutEngine {
 			}
 		} else {
 			const processedNodes = new Set<Node>();
+			const collectChildNodes = this.getChildrenForLayout(element);
 
-			for (let i = 0; i < element.childNodes.length; i++) {
-				const child = element.childNodes[i];
+			for (let i = 0; i < collectChildNodes.length; i++) {
+				const child = collectChildNodes[i];
 
 				if (processedNodes.has(child)) {
 					continue;
