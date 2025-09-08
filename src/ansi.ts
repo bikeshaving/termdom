@@ -1,80 +1,77 @@
 import LRUCache from "./utils.js";
-import {BOX_DRAWING} from "./styles.js";
+import {BOX_DRAWING, BorderEdgeStyle} from "./styles.js";
 
 export type ColorDepth = "ansi" | "rgb" | "256";
-// Color masks
-const COLOR_MASK = 0xffffff; // 24-bit RGB color
 
-// Style flags packed into fg field (bits 24-31)
-const FG_STYLE_BOLD = 0b00000001 << 24;
-const FG_STYLE_ITALIC = 0b00000010 << 24;
-const FG_STYLE_UNDERLINE = 0b00000100 << 24;
-const FG_STYLE_STRIKETHROUGH = 0b00001000 << 24;
-const FG_STYLE_OVERLINE = 0b00010000 << 24;
+const enum Color {
+	Mask = 0xffffff,
+}
 
-// Style flags packed into bg field (bits 24-31)
-const BG_STYLE_INVERSE = 0b00000001 << 24;
-const BG_STYLE_BLINK = 0b00000010 << 24;
-const BG_STYLE_DIM = 0b00000100 << 24;
-// TODO:
-//const BG_STYLE_INVISIBLE = 1 << 27;
+const enum FGStyle {
+	Bold = 0b00000001 << 24,
+	Italic = 0b00000010 << 24,
+	Underline = 0b00000100 << 24,
+	Strikethrough = 0b00001000 << 24,
+	Overline = 0b00010000 << 24,
+}
 
-// Border constants (32-bit field encoding - 8 bits per edge)
-// Edge positions: [8 bits left][8 bits bottom][8 bits right][8 bits top]
-// 32-bit edge masks (each edge occupies 8 bits)
-const BORDER_EDGE_TOP_MASK    = 0x000000ff; // bits 7-0
-const BORDER_EDGE_RIGHT_MASK  = 0x0000ff00; // bits 15-8
-const BORDER_EDGE_BOTTOM_MASK = 0x00ff0000; // bits 23-16
-const BORDER_EDGE_LEFT_MASK   = 0xff000000; // bits 31-24
+const enum BGStyle {
+	Inverse = 0b00000001 << 24,
+	Blink = 0b00000010 << 24,
+	Dim = 0b00000100 << 24,
+}
 
-// Edge styles (3-bit in bits 7–5)
-const BORDER_STYLE_NONE   = 0x00; // 00000000
-const BORDER_STYLE_SOLID  = 0x20; // 00100000
-const BORDER_STYLE_DOUBLE = 0x40; // 01000000
-const BORDER_STYLE_DASHED = 0x60; // 01100000
-const BORDER_STYLE_DOTTED = 0x80; // 10000000
-const BORDER_STYLE_GROOVE = 0xa0; // 10100000
-const BORDER_STYLE_RIDGE  = 0xc0; // 11000000
-const BORDER_STYLE_MASK   = 0xe0; // 11100000 (mask to extract style bits)
+const enum BorderMask {
+	Top = 0x000000ff,
+	Right = 0x0000ff00,
+	Bottom = 0x00ff0000,
+	Left = 0xff000000,
+	Edge = 0xff,
+	Style = 0b00001111,
+}
 
-// Edge flags (8-bit, keep binary for clarity)
-const BORDER_EDGE_PRESENCE = 0b00001000; // bit 3
-const BORDER_EDGE_ROUNDED  = 0b00010000; // bit 4
-const BORDER_EDGE_MASK     = 0xff;       // full 8-bit mask
+const enum BorderShift {
+	Top = 0,
+	Right = 8,
+	Bottom = 16,
+	Left = 24,
+}
+
 
 // Example per-edge values
-// const EDGE_NONE                 = BORDER_STYLE_NONE;                               // 0x00
-// const EDGE_SOLID_PRESENT        = BORDER_STYLE_SOLID | BORDER_EDGE_PRESENCE;       // 0x28
-// const EDGE_SOLID_PRESENT_ROUNDED = BORDER_STYLE_SOLID | BORDER_EDGE_PRESENCE | BORDER_EDGE_ROUNDED; // 0x38
-const BORDER_EDGE_TOP_SHIFT = 0;
-const BORDER_EDGE_RIGHT_SHIFT = 8;
-const BORDER_EDGE_BOTTOM_SHIFT = 16;
-const BORDER_EDGE_LEFT_SHIFT = 24;
+// const EDGE_NONE = BorderEdgeStyle.None;
+// const EDGE_SOLID = BorderEdgeStyle.Solid;
+// const EDGE_SOLID_ROUNDED = BorderEdgeStyle.Solid | BorderEdgeStyle.Rounded;
+const BORDER_EDGE_MASKS = [
+	{shift: BorderShift.Top, mask: BorderMask.Top},
+	{shift: BorderShift.Right, mask: BorderMask.Right},
+	{shift: BorderShift.Bottom, mask: BorderMask.Bottom},
+	{shift: BorderShift.Left, mask: BorderMask.Left},
+];
 
 // Edge extraction utilities
-const getBorderEdge = (border: number, shift: number) =>
-	(border >> shift) & BORDER_EDGE_MASK;
-const setBorderEdge = (border: number, shift: number, edgeValue: number) =>
-	(border & ~(BORDER_EDGE_MASK << shift)) |
-	((edgeValue & BORDER_EDGE_MASK) << shift);
+const getBorderEdge = (border: number, mask: number) => {
+	// Find which byte position this mask represents
+	const shift = Math.log2(mask & -mask); // Get position of lowest set bit
+	return (border & mask) >> shift;
+};
+const setBorderEdge = (border: number, mask: number, edgeValue: number) => {
+	// Find which byte position this mask represents
+	const shift = Math.log2(mask & -mask); // Get position of lowest set bit
+	return (border & ~mask) | ((edgeValue << shift) & mask);
+};
 
 // Style extraction from edge
-const getEdgeStyle = (edgeValue: number) => edgeValue & BORDER_STYLE_MASK;
-const getEdgePresence = (edgeValue: number) =>
-	(edgeValue & BORDER_EDGE_PRESENCE) !== 0;
-const getEdgeRounded = (edgeValue: number) =>
-	(edgeValue & BORDER_EDGE_ROUNDED) !== 0;
-
-// Border style precedence for merging (higher number = higher precedence)
-const BORDER_STYLE_PRECEDENCE: Record<number, number> = {
-	[BORDER_STYLE_DOUBLE]: 6, // Highest precedence
-	[BORDER_STYLE_SOLID]: 5,
-	[BORDER_STYLE_GROOVE]: 4,
-	[BORDER_STYLE_RIDGE]: 3,
-	[BORDER_STYLE_DASHED]: 2,
-	[BORDER_STYLE_DOTTED]: 1, // Lowest precedence
-	[BORDER_STYLE_NONE]: 0,
+const getEdgeStyle = (edgeValue: number) => edgeValue & BorderMask.Style;
+const getEdgePresence = (edgeValue: number) => {
+	const style = edgeValue & BorderMask.Style;
+	return style !== BorderEdgeStyle.None && style !== BorderEdgeStyle.Hidden;
 };
+const getEdgeRounded = (edgeValue: number) =>
+	(edgeValue & BorderEdgeStyle.Rounded) !== 0;
+
+// Border style precedence is now based on bit position
+// No need for a precedence map - higher value = higher priority!
 
 /**
  * Merge two border encodings, choosing the higher precedence style for each edge
@@ -86,32 +83,25 @@ export function mergeBorderEncodings(
 	let merged = 0;
 
 	// Process each edge
-	for (const shift of [
-		BORDER_EDGE_TOP_SHIFT,
-		BORDER_EDGE_RIGHT_SHIFT,
-		BORDER_EDGE_BOTTOM_SHIFT,
-		BORDER_EDGE_LEFT_SHIFT,
-	]) {
-		const existingEdge = getBorderEdge(existing, shift);
-		const incomingEdge = getBorderEdge(incoming, shift);
+	for (const {mask} of BORDER_EDGE_MASKS) {
+		const existingEdge = getBorderEdge(existing, mask);
+		const incomingEdge = getBorderEdge(incoming, mask);
 
 		// If only one has the edge, use it
 		if (!getEdgePresence(existingEdge)) {
-			merged = setBorderEdge(merged, shift, incomingEdge);
+			merged = setBorderEdge(merged, mask, incomingEdge);
 		} else if (!getEdgePresence(incomingEdge)) {
-			merged = setBorderEdge(merged, shift, existingEdge);
+			merged = setBorderEdge(merged, mask, existingEdge);
 		} else {
-			// Both have the edge - choose based on style precedence
+			// Both have the edge - choose based on style priority (bit value)
 			const existingStyle = getEdgeStyle(existingEdge);
 			const incomingStyle = getEdgeStyle(incomingEdge);
 
-			const existingPrecedence = BORDER_STYLE_PRECEDENCE[existingStyle] || 0;
-			const incomingPrecedence = BORDER_STYLE_PRECEDENCE[incomingStyle] || 0;
-
-			if (incomingPrecedence > existingPrecedence) {
-				merged = setBorderEdge(merged, shift, incomingEdge);
+			// Direct comparison - higher bit value = higher priority
+			if (incomingStyle > existingStyle) {
+				merged = setBorderEdge(merged, mask, incomingEdge);
 			} else {
-				merged = setBorderEdge(merged, shift, existingEdge);
+				merged = setBorderEdge(merged, mask, existingEdge);
 			}
 		}
 	}
@@ -172,19 +162,19 @@ export class Cell {
 		this.grapheme = grapheme;
 
 		// Pack fg color and style flags into fg field
-		let fg = (cellStyle?.fg ?? 0) & COLOR_MASK;
-		if (cellStyle?.bold) fg |= FG_STYLE_BOLD;
-		if (cellStyle?.italic) fg |= FG_STYLE_ITALIC;
-		if (cellStyle?.underline) fg |= FG_STYLE_UNDERLINE;
-		if (cellStyle?.strikethrough) fg |= FG_STYLE_STRIKETHROUGH;
-		if (cellStyle?.overline) fg |= FG_STYLE_OVERLINE;
+		let fg = (cellStyle?.fg ?? 0) & Color.Mask;
+		if (cellStyle?.bold) fg |= FGStyle.Bold;
+		if (cellStyle?.italic) fg |= FGStyle.Italic;
+		if (cellStyle?.underline) fg |= FGStyle.Underline;
+		if (cellStyle?.strikethrough) fg |= FGStyle.Strikethrough;
+		if (cellStyle?.overline) fg |= FGStyle.Overline;
 		this.fg = fg;
 
 		// Pack bg color and style flags into bg field
-		let bg = (cellStyle?.bg ?? 0) & COLOR_MASK;
-		if (cellStyle?.inverse) bg |= BG_STYLE_INVERSE;
-		if (cellStyle?.blink) bg |= BG_STYLE_BLINK;
-		if (cellStyle?.dim) bg |= BG_STYLE_DIM;
+		let bg = (cellStyle?.bg ?? 0) & Color.Mask;
+		if (cellStyle?.inverse) bg |= BGStyle.Inverse;
+		if (cellStyle?.blink) bg |= BGStyle.Blink;
+		if (cellStyle?.dim) bg |= BGStyle.Dim;
 		this.bg = bg;
 
 		this.border = cellStyle?.border ?? 0;
@@ -219,23 +209,23 @@ export class Cell {
 
 	getStyleFlags() {
 		return {
-			bold: (this.fg & FG_STYLE_BOLD) !== 0,
-			italic: (this.fg & FG_STYLE_ITALIC) !== 0,
-			underline: (this.fg & FG_STYLE_UNDERLINE) !== 0,
-			strikethrough: (this.fg & FG_STYLE_STRIKETHROUGH) !== 0,
-			overline: (this.fg & FG_STYLE_OVERLINE) !== 0,
-			inverse: (this.bg & BG_STYLE_INVERSE) !== 0,
-			blink: (this.bg & BG_STYLE_BLINK) !== 0,
-			dim: (this.bg & BG_STYLE_DIM) !== 0,
+			bold: (this.fg & FGStyle.Bold) !== 0,
+			italic: (this.fg & FGStyle.Italic) !== 0,
+			underline: (this.fg & FGStyle.Underline) !== 0,
+			strikethrough: (this.fg & FGStyle.Strikethrough) !== 0,
+			overline: (this.fg & FGStyle.Overline) !== 0,
+			inverse: (this.bg & BGStyle.Inverse) !== 0,
+			blink: (this.bg & BGStyle.Blink) !== 0,
+			dim: (this.bg & BGStyle.Dim) !== 0,
 		};
 	}
 
 	getFgColor(): number {
-		return this.fg & COLOR_MASK;
+		return this.fg & Color.Mask;
 	}
 
 	getBgColor(): number {
-		return this.bg & COLOR_MASK;
+		return this.bg & Color.Mask;
 	}
 
 	static create(options: string | CellStyle): Cell | null {
@@ -253,17 +243,17 @@ export class Cell {
 		}
 
 		// Pack style flags into fg/bg fields for caching
-		let fg = (cellStyle?.fg ?? 0) & COLOR_MASK;
-		if (cellStyle?.bold) fg |= FG_STYLE_BOLD;
-		if (cellStyle?.italic) fg |= FG_STYLE_ITALIC;
-		if (cellStyle?.underline) fg |= FG_STYLE_UNDERLINE;
-		if (cellStyle?.strikethrough) fg |= FG_STYLE_STRIKETHROUGH;
-		if (cellStyle?.overline) fg |= FG_STYLE_OVERLINE;
+		let fg = (cellStyle?.fg ?? 0) & Color.Mask;
+		if (cellStyle?.bold) fg |= FGStyle.Bold;
+		if (cellStyle?.italic) fg |= FGStyle.Italic;
+		if (cellStyle?.underline) fg |= FGStyle.Underline;
+		if (cellStyle?.strikethrough) fg |= FGStyle.Strikethrough;
+		if (cellStyle?.overline) fg |= FGStyle.Overline;
 
-		let bg = (cellStyle?.bg ?? 0) & COLOR_MASK;
-		if (cellStyle?.inverse) bg |= BG_STYLE_INVERSE;
-		if (cellStyle?.blink) bg |= BG_STYLE_BLINK;
-		if (cellStyle?.dim) bg |= BG_STYLE_DIM;
+		let bg = (cellStyle?.bg ?? 0) & Color.Mask;
+		if (cellStyle?.inverse) bg |= BGStyle.Inverse;
+		if (cellStyle?.blink) bg |= BGStyle.Blink;
+		if (cellStyle?.dim) bg |= BGStyle.Dim;
 
 		const border = cellStyle?.border ?? 0;
 		const cacheKey = `${grapheme}:${fg}:${bg}:${border}`;
@@ -513,16 +503,16 @@ export class Renderer {
 		let encoding = 0;
 
 		if (hasTop && borderStyles.topEdge > 0) {
-			encoding |= borderStyles.topEdge << BORDER_EDGE_TOP_SHIFT;
+			encoding |= borderStyles.topEdge << BorderShift.Top;
 		}
 		if (hasRight && borderStyles.rightEdge > 0) {
-			encoding |= borderStyles.rightEdge << BORDER_EDGE_RIGHT_SHIFT;
+			encoding |= borderStyles.rightEdge << BorderShift.Right;
 		}
 		if (hasBottom && borderStyles.bottomEdge > 0) {
-			encoding |= borderStyles.bottomEdge << BORDER_EDGE_BOTTOM_SHIFT;
+			encoding |= borderStyles.bottomEdge << BorderShift.Bottom;
 		}
 		if (hasLeft && borderStyles.leftEdge > 0) {
-			encoding |= borderStyles.leftEdge << BORDER_EDGE_LEFT_SHIFT;
+			encoding |= borderStyles.leftEdge << BorderShift.Left;
 		}
 
 		return encoding;
@@ -660,12 +650,12 @@ export class Renderer {
  */
 export function getBorderChar(borderEncoding: number): string {
 	// Extract edge information
-	const topEdge = getBorderEdge(borderEncoding, BORDER_EDGE_TOP_SHIFT);
-	const rightEdge = getBorderEdge(borderEncoding, BORDER_EDGE_RIGHT_SHIFT);
-	const bottomEdge = getBorderEdge(borderEncoding, BORDER_EDGE_BOTTOM_SHIFT);
-	const leftEdge = getBorderEdge(borderEncoding, BORDER_EDGE_LEFT_SHIFT);
+	const topEdge = getBorderEdge(borderEncoding, BorderMask.Top);
+	const rightEdge = getBorderEdge(borderEncoding, BorderMask.Right);
+	const bottomEdge = getBorderEdge(borderEncoding, BorderMask.Bottom);
+	const leftEdge = getBorderEdge(borderEncoding, BorderMask.Left);
 
-	// Check which edges are present
+	// Check which edges are present (have non-zero style)
 	const hasTop = getEdgePresence(topEdge);
 	const hasRight = getEdgePresence(rightEdge);
 	const hasBottom = getEdgePresence(bottomEdge);
@@ -692,27 +682,33 @@ export function getBorderChar(borderEncoding: number): string {
 		(hasBottom && getEdgeRounded(bottomEdge)) ||
 		(hasLeft && getEdgeRounded(leftEdge));
 
-	// Choose character set based on dominant style
 	let charSet;
 	switch (dominantStyle) {
-		case 1:
+		case BorderEdgeStyle.Solid:
 			charSet = hasRounded ? BOX_DRAWING.lightRounded : BOX_DRAWING.light;
-			break; // solid
-		case 2:
+			break;
+		case BorderEdgeStyle.Double:
 			charSet = BOX_DRAWING.double;
-			break; // double (can't be rounded)
-		case 3:
+			break;
+		case BorderEdgeStyle.Dashed:
 			charSet = BOX_DRAWING.dashed;
-			break; // dashed
-		case 4:
+			break;
+		case BorderEdgeStyle.Dotted:
 			charSet = BOX_DRAWING.dotted;
-			break; // dotted
-		case 5:
+			break;
+		case BorderEdgeStyle.Groove:
 			charSet = BOX_DRAWING.heavy;
-			break; // groove (using heavy)
-		case 6:
+			break;
+		case BorderEdgeStyle.Ridge:
 			charSet = BOX_DRAWING.light;
-			break; // ridge (using light)
+			break;
+		case BorderEdgeStyle.Inset:
+		case BorderEdgeStyle.Outset:
+			charSet = hasRounded ? BOX_DRAWING.lightRounded : BOX_DRAWING.light;
+			break;
+		case BorderEdgeStyle.Hidden:
+		case BorderEdgeStyle.None:
+			return " ";
 		default:
 			charSet = BOX_DRAWING.light;
 			break;

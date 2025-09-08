@@ -801,36 +801,41 @@ export function resolveBorderStyles(element: Element): {
 			return 0; // No border
 		}
 
-		// Encode style
-		let encodedStyle = 0;
+		let edgeValue = 0;
 		switch (style) {
 			case "solid":
-				encodedStyle = 1;
+				edgeValue = BorderEdgeStyle.Solid;
 				break;
 			case "double":
-				encodedStyle = 2;
+				edgeValue = BorderEdgeStyle.Double;
 				break;
 			case "dashed":
-				encodedStyle = 3;
+				edgeValue = BorderEdgeStyle.Dashed;
 				break;
 			case "dotted":
-				encodedStyle = 4;
+				edgeValue = BorderEdgeStyle.Dotted;
 				break;
 			case "groove":
-				encodedStyle = 5;
+				edgeValue = BorderEdgeStyle.Groove;
 				break;
 			case "ridge":
-				encodedStyle = 6;
+				edgeValue = BorderEdgeStyle.Ridge;
+				break;
+			case "inset":
+				edgeValue = BorderEdgeStyle.Inset;
+				break;
+			case "outset":
+				edgeValue = BorderEdgeStyle.Outset;
+				break;
+			case "hidden":
+				edgeValue = BorderEdgeStyle.Hidden;
 				break;
 			default:
-				encodedStyle = 1; // Default to solid
+				edgeValue = BorderEdgeStyle.Solid;
 		}
 
-		// Add presence and rounded flags
-		let edgeValue = encodedStyle;
-		edgeValue |= 1 << 3; // BORDER_EDGE_PRESENCE
 		if (isRounded) {
-			edgeValue |= 1 << 4; // BORDER_EDGE_ROUNDED
+			edgeValue |= BorderEdgeStyle.Rounded;
 		}
 
 		return edgeValue;
@@ -1052,6 +1057,23 @@ export function getListMarker(listItem: Element, listParent: Element): string {
 	}
 
 	return "";
+}
+
+export enum BorderEdgeStyle {
+	// Style values (bits 3-0)
+	None = 0b0000,
+	Dotted = 0b0001,
+	Dashed = 0b0010,
+	Solid = 0b0011,
+	Groove = 0b0100,
+	Ridge = 0b0101,
+	Inset = 0b0110,
+	Outset = 0b0111,
+	Double = 0b1000,
+	Hidden = 0b1111,
+
+	// Flags (bit 4+)
+	Rounded = 0b00010000,
 }
 
 export const BOX_DRAWING: Record<string, BoxCharSet> = {
