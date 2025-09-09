@@ -57,11 +57,13 @@ export class LayoutEngine {
 	// Shadow DOM support
 	private getShadowRoot?: (element: Element) => ShadowRoot | null;
 	private getMergedTree?: (element: Element) => DocumentFragment | null;
+	private getOriginalNode?: (node: Node) => Node | null;
 
 	constructor(
 		window: DOMWindow,
 		getShadowRoot?: (element: Element) => ShadowRoot | null,
 		getMergedTree?: (element: Element) => DocumentFragment | null,
+		getOriginalNode?: (node: Node) => Node | null,
 	) {
 		this.DOMRect = window.DOMRect;
 		this.rootElement = window.document.documentElement;
@@ -70,6 +72,7 @@ export class LayoutEngine {
 		this.tableInstances = new WeakMap<Element, TableInstance>();
 		this.getShadowRoot = getShadowRoot;
 		this.getMergedTree = getMergedTree;
+		this.getOriginalNode = getOriginalNode;
 		this.observer = new window.MutationObserver((mutations) =>
 			this.handleMutationRecords(mutations),
 		);
@@ -109,7 +112,17 @@ export class LayoutEngine {
 	}
 
 	getRect(element: Element): DOMRect | null {
-		const yogaNode = this.nodeMap.get(element);
+		let yogaNode = this.nodeMap.get(element);
+		
+		// If this is a cloned element and we don't have layout data for it,
+		// try to use the original element's layout data
+		if (!yogaNode && this.getOriginalNode) {
+			const originalNode = this.getOriginalNode(element);
+			if (originalNode && originalNode.nodeType === originalNode.ELEMENT_NODE) {
+				yogaNode = this.nodeMap.get(originalNode);
+			}
+		}
+		
 		if (!yogaNode) {
 			return null;
 		}
@@ -141,7 +154,18 @@ export class LayoutEngine {
 	}
 
 	getRectLengths(node: Node): RectLength[] {
-		return this.rectLengthsMap.get(node) || [];
+		let rectLengths = this.rectLengthsMap.get(node);
+		
+		// If this is a cloned node and we don't have layout data for it,
+		// try to use the original node's layout data
+		if (!rectLengths && this.getOriginalNode) {
+			const originalNode = this.getOriginalNode(node);
+			if (originalNode) {
+				rectLengths = this.rectLengthsMap.get(originalNode);
+			}
+		}
+		
+		return rectLengths || [];
 	}
 
 	createDOMRectList(rects?: globalThis.DOMRect[]): globalThis.DOMRectList {
@@ -432,251 +456,8 @@ export class LayoutEngine {
 		};
 	}
 
-	private setupListElement(
-		listElement: Element,
-		parentYogaNode: YogaTypes.Node | null = null,
-		yogaIndex: number = this.getYogaIndex(listElement),
-	): void {
-		let yogaNode = this.nodeMap.get(listElement);
-		if (!yogaNode) {
-			yogaNode = Yoga.Node.createWithConfig(yogaConfig);
-			this.nodeMap.set(listElement, yogaNode);
-		}
 
-		// Apply normal styling first
-		styleYogaNode(listElement, yogaNode);
 
-		// Check if this is a nested list (parent is LI)
-		const parentIsListItem = listElement.parentElement?.tagName === "LI";
-
-		// Calculate marker width for this list
-		const firstListItem = Array.from(listElement.children).find(
-			(child) => child.tagName === "LI",
-		) as Element;
-		const markerWidth = firstListItem
-			? this.calculateListMarkerWidth(firstListItem)
-			: 2;
-
-		if (parentIsListItem) {
-			// Nested list: use margin instead of padding for positioning
-			// Find the parent list item to align with its text
-			const parentLI = listElement.parentElement as Element;
-			const parentMarkerWidth = this.calculateListMarkerWidth(parentLI);
-
-			yogaNode.setMargin(Yoga.EDGE_LEFT, parentMarkerWidth);
-			yogaNode.setPadding(Yoga.EDGE_LEFT, markerWidth);
-		} else {
-			// Top-level list: use calculated marker width for padding
-			yogaNode.setPadding(Yoga.EDGE_LEFT, markerWidth);
-		}
-
-		// Add to parent
-		if (parentYogaNode) {
-			parentYogaNode.insertChild(yogaNode, yogaIndex);
-		}
-
-		// Process children normally
-		const listElementChildren = this.getChildrenForLayout(listElement);
-		for (let i = 0; i < listElementChildren.length; i++) {
-			const child = listElementChildren[i];
-			if (child.nodeType === child.ELEMENT_NODE) {
-				this.addElementNode(child as Element, yogaNode);
-			} else if (child.nodeType === child.TEXT_NODE) {
-				this.addTextNode(child as Text, yogaNode);
-			}
-		}
-	}
-
-	private setupListItem(
-		listItem: Element,
-		parentYogaNode: YogaTypes.Node | null,
-		yogaIndex: number,
-	): void {
-		// Create Yoga node for the list item
-		let yogaNode = this.nodeMap.get(listItem);
-		if (!yogaNode) {
-			yogaNode = Yoga.Node.createWithConfig(yogaConfig);
-			this.nodeMap.set(listItem, yogaNode);
-		}
-
-		// Style the list item container
-		styleYogaNode(listItem, yogaNode);
-
-		// List items need padding for their own markers
-		const markerSpace = this.calculateListMarkerWidth(listItem);
-		yogaNode.setPadding(Yoga.EDGE_LEFT, markerSpace);
-
-		// Add to parent
-		if (parentYogaNode) {
-			parentYogaNode.insertChild(yogaNode, yogaIndex);
-		}
-
-		// Handle mixed content: separate text nodes from block elements
-		const textNodes: Node[] = [];
-		const blockElements: Node[] = [];
-
-		const childNodes = this.getChildrenForLayout(listItem);
-		for (let i = 0; i < childNodes.length; i++) {
-			const child = childNodes[i];
-			if (child.nodeType === child.TEXT_NODE) {
-				textNodes.push(child);
-			} else if (child.nodeType === child.ELEMENT_NODE) {
-				const display = resolvePropertyValue(child as Element, "display");
-				if (display === "block") {
-					blockElements.push(child);
-				} else {
-					textNodes.push(child); // Treat inline elements with text
-				}
-			}
-		}
-
-		// Process text nodes first (they'll be positioned at the top)
-		for (const textNode of textNodes) {
-			this.addNode(textNode, yogaNode);
-		}
-
-		// Process block elements after text with smart spacing
-		for (let i = 0; i < blockElements.length; i++) {
-			const blockElement = blockElements[i];
-			this.addNode(blockElement, yogaNode);
-
-			// Add spacing only if there's text content before AND this isn't the last element
-			if (
-				textNodes.length > 0 &&
-				blockElement.nodeType === blockElement.ELEMENT_NODE
-			) {
-				const blockYogaNode = this.nodeMap.get(blockElement);
-				if (blockYogaNode) {
-					// Add top padding to separate from preceding text
-					blockYogaNode.setPadding(Yoga.EDGE_TOP, 1);
-				}
-			}
-		}
-	}
-
-	private getListNestingDepth(listItem: Element): number {
-		let depth = 0;
-		let current = listItem.parentElement;
-
-		while (current) {
-			if (current.tagName === "UL" || current.tagName === "OL") {
-				depth++;
-			}
-			current = current.parentElement;
-		}
-
-		return depth - 1; // Subtract 1 because we want 0-based depth (first level = 0)
-	}
-
-	private calculateListMarkerWidth(listItem: Element): number {
-		const listParent = listItem.parentElement;
-		if (!listParent) return 2; // Default fallback
-
-		const listType = listParent.tagName.toLowerCase();
-
-		if (listType === "ul") {
-			// Unordered lists use single-char markers (•, ◦, ▪) + space = 2 chars
-			return 2;
-		} else if (listType === "ol") {
-			// For ordered lists, calculate the width of the longest marker in this list
-			const items = Array.from(listParent.children).filter(
-				(child) => child.tagName === "LI",
-			);
-			const start = parseInt(listParent.getAttribute("start") || "1", 10);
-			const maxNumber = start + items.length - 1;
-
-			const listStyleType = resolvePropertyValue(listParent, "list-style-type");
-			let maxMarkerWidth = 2; // Minimum width
-
-			// Calculate width based on list style type and max number
-			switch (listStyleType) {
-				case "decimal":
-					maxMarkerWidth = Math.max(2, maxNumber.toString().length + 1); // +1 for the dot
-					break;
-				case "lower-alpha":
-				case "upper-alpha": {
-					// Calculate width for alphabetical markers (a., b., ... z., aa., ab., ...)
-					const alphaWidth = this.getAlphaMarkerWidth(maxNumber) + 1; // +1 for dot
-					maxMarkerWidth = Math.max(2, alphaWidth);
-					break;
-				}
-				case "lower-roman":
-				case "upper-roman": {
-					// Calculate width for Roman numerals
-					const romanWidth = this.getRomanMarkerWidth(maxNumber) + 1; // +1 for dot
-					maxMarkerWidth = Math.max(2, romanWidth);
-					break;
-				}
-				default:
-					maxMarkerWidth = Math.max(2, maxNumber.toString().length + 1);
-			}
-
-			return maxMarkerWidth + 1; // +1 for spacing after marker
-		}
-
-		return 2; // Default fallback
-	}
-
-	private getAlphaMarkerWidth(number: number): number {
-		// Convert number to alpha (1=a, 2=b, ..., 26=z, 27=aa, etc.)
-		let result = "";
-		let n = number;
-		while (n > 0) {
-			n--; // Make it 0-based
-			result = String.fromCharCode(97 + (n % 26)) + result;
-			n = Math.floor(n / 26);
-		}
-		return result.length;
-	}
-
-	private getRomanMarkerWidth(number: number): number {
-		// Calculate Roman numeral width (rough estimation)
-		const romanNumerals: Array<[number, string]> = [
-			[1000, "m"],
-			[900, "cm"],
-			[500, "d"],
-			[400, "cd"],
-			[100, "c"],
-			[90, "xc"],
-			[50, "l"],
-			[40, "xl"],
-			[10, "x"],
-			[9, "ix"],
-			[5, "v"],
-			[4, "iv"],
-			[1, "i"],
-		];
-
-		let result = "";
-		let n = number;
-		for (const [value, numeral] of romanNumerals) {
-			while (n >= value) {
-				result += numeral;
-				n -= value;
-			}
-		}
-		return result.length;
-	}
-
-	private calculateNestingIndent(listItem: Element): number {
-		// Find the first parent list item to align with
-		let current = listItem.parentElement; // Start with immediate parent (should be ul/ol)
-
-		// Walk up to find the parent list item
-		while (current) {
-			if (current.tagName === "LI") {
-				// Found parent list item - we want to align with its marker width
-				// This gives us minimal nesting that aligns with the parent's text content
-				const parentMarkerWidth = this.calculateListMarkerWidth(
-					current as Element,
-				);
-				return parentMarkerWidth;
-			}
-			current = current.parentElement;
-		}
-
-		return 0; // No nesting found
-	}
 
 	private handleMutationRecords(mutations: MutationRecord[]): void {
 		for (let i = 0; i < mutations.length; i++) {
@@ -769,15 +550,22 @@ export class LayoutEngine {
 			return;
 		}
 
-		// Handle list items - need special layout for marker positioning
-		if (element.tagName === "LI") {
-			this.setupListItem(element, parentYogaNode, yogaIndex);
-			return;
-		}
-
-		// Handle ul/ol lists - nested lists use positioning instead of padding
-		if (element.tagName === "UL" || element.tagName === "OL") {
-			this.setupListElement(element, parentYogaNode, yogaIndex);
+		// List elements now handle themselves via Shadow DOM
+		if (element.tagName === "LI" || element.tagName === "UL" || element.tagName === "OL") {
+			// Create yoga node and let Shadow DOM handle the styling
+			const yogaNode = Yoga.Node.createDefault();
+			this.nodeMap.set(element, yogaNode);
+			styleYogaNode(element, yogaNode);
+			
+			if (parentYogaNode) {
+				parentYogaNode.insertChild(yogaNode, yogaIndex);
+			}
+			
+			// Process children normally
+			const children = this.getChildrenForLayout(element);
+			for (let i = 0; i < children.length; i++) {
+				this.addNode(children[i], yogaNode);
+			}
 			return;
 		}
 

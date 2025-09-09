@@ -7,11 +7,10 @@ import {
 	resolveBorderStyles,
 	cssColorToNumber,
 	darkenColor,
-	getListMarker,
-	getListNestingDepth,
 } from "./styles.js";
 import {FullscreenManager} from "./fullscreen.js";
 import {setupInspectMethods} from "./inspector.js";
+import {registerListElements} from "./elements/lists.js";
 
 function detectColorDepth(process: ProcessLike): ColorDepth {
 	const colorterm = process.env.COLORTERM;
@@ -75,7 +74,9 @@ export class TermDOM {
 	// Shadow DOM support
 	private readonly shadowMap = new WeakMap<Element, ShadowRoot>();
 	private readonly mergedTreeCache = new WeakMap<Element, DocumentFragment>();
+	private readonly cloneToOriginalMap = new WeakMap<Node, Node>();
 	private originalAttachShadow!: typeof Element.prototype.attachShadow;
+	private upgradeListElements!: (root?: Element | Document) => void;
 
 	private width: number;
 	private height: number;
@@ -106,6 +107,10 @@ export class TermDOM {
 		// Setup shadow DOM support
 		this.setupShadowDOMSupport();
 
+		// Register custom list elements
+		const listEnhancer = registerListElements(this.window);
+		this.upgradeListElements = listEnhancer.enhanceListElement;
+
 		this.initializeConstructorExtensions();
 		this.renderer = new Renderer(
 			this.height,
@@ -117,6 +122,7 @@ export class TermDOM {
 			this.jsdom.window,
 			(element) => this.getShadowRoot(element),
 			(element) => this.getMergedTree(element),
+			(node) => this.cloneToOriginalMap.get(node) || null,
 		);
 		this.layoutEngine.resize(this.width, this.height);
 		this.fullscreenManager = new FullscreenManager(this.process);
@@ -143,8 +149,50 @@ export class TermDOM {
 			this: Element,
 			options: ShadowRootInit,
 		): ShadowRoot {
-			// Call original method
-			const shadowRoot = originalAttachShadow.call(this, options);
+			let shadowRoot: ShadowRoot;
+			
+			try {
+				// Call original method
+				shadowRoot = originalAttachShadow.call(this, options);
+			} catch (e) {
+				// JSDOM doesn't support attachShadow on built-in elements
+				// Create a mock shadow root for testing/compatibility  
+				const childNodes: Node[] = [];
+				const children: Element[] = [];
+				
+				shadowRoot = {
+					mode: options.mode,
+					get childNodes() { return childNodes; },
+					get children() { return children; },
+					get firstChild() { return childNodes[0] || null; },
+					get lastChild() { return childNodes[childNodes.length - 1] || null; },
+					appendChild: function(node: Node) {
+						childNodes.push(node);
+						if (node.nodeType === 1) children.push(node as Element);
+						return node;
+					},
+					querySelector: function(selector: string) {
+						return children.find((child: Element) => {
+							if (selector === 'style' && child.tagName === 'STYLE') return child;
+							if (selector === 'slot' && child.tagName === 'SLOT') return child;
+							if (selector.startsWith('.') && child.className && child.className.includes(selector.slice(1))) return child;
+							return null;
+						}) || null;
+					},
+					querySelectorAll: function(selector: string) {
+						return children.filter((child: Element) => {
+							if (selector === 'style' && child.tagName === 'STYLE') return true;
+							if (selector === 'slot' && child.tagName === 'SLOT') return true;
+							if (selector.startsWith('.') && child.className && child.className.includes(selector.slice(1))) return true;
+							return false;
+						});
+					},
+					// Make it iterable
+					[Symbol.iterator]: function*() {
+						yield* childNodes;
+					}
+				} as any;
+			}
 
 			// Cache the shadow root in our WeakMap
 			shadowMap.set(this, shadowRoot);
@@ -162,9 +210,19 @@ export class TermDOM {
 
 	/**
 	 * Get cached merged DOM tree for an element with shadow DOM
+	 * Creates the merged tree on-demand if element has shadow DOM but no cached tree
 	 */
 	getMergedTree(element: Element): DocumentFragment | null {
-		return this.mergedTreeCache.get(element) || null;
+		let mergedTree = this.mergedTreeCache.get(element);
+		if (!mergedTree) {
+			// Check if element has shadow DOM and create merged tree on-demand
+			const shadowRoot = this.getShadowRoot(element);
+			if (shadowRoot) {
+				mergedTree = this.createMergedDOMTree(shadowRoot, element);
+				this.mergedTreeCache.set(element, mergedTree);
+			}
+		}
+		return mergedTree || null;
 	}
 
 	/**
@@ -236,6 +294,105 @@ export class TermDOM {
 	private findAnonymousSlot(shadowRoot: ShadowRoot): Element | null {
 		// Query for slot elements without a name attribute
 		return shadowRoot.querySelector("slot:not([name])");
+	}
+
+	/**
+	 * Recursively map cloned nodes to their originals for layout calculations
+	 */
+	private mapClonedTree(clonedNode: Node, originalNode: Node): void {
+		// Map the nodes
+		this.cloneToOriginalMap.set(clonedNode, originalNode);
+		
+		// Recursively map children
+		if (clonedNode.childNodes.length === originalNode.childNodes.length) {
+			for (let i = 0; i < clonedNode.childNodes.length; i++) {
+				this.mapClonedTree(clonedNode.childNodes[i], originalNode.childNodes[i]);
+			}
+		}
+	}
+
+	/**
+	 * Transform a cloned LI element to include its shadow DOM marker structure
+	 */
+	private applyLIShadowDOMTransform(clonedLI: Element, originalLI: Element): void {
+		// Get the parent list to determine marker type
+		const parentList = originalLI.parentElement;
+		if (!parentList || (parentList.tagName !== 'UL' && parentList.tagName !== 'OL')) {
+			return;
+		}
+		
+		// Store the original text content
+		const textContent = clonedLI.textContent || '';
+		
+		// Clear the cloned LI's content
+		clonedLI.textContent = '';
+		
+		// Create marker element
+		const markerElement = this.document.createElement('span');
+		markerElement.style.setProperty('position', 'absolute');
+		markerElement.style.setProperty('top', '0');
+		markerElement.style.setProperty('text-align', 'right');
+		
+		// Generate marker content based on parent list type
+		if (parentList.tagName === 'UL') {
+			markerElement.textContent = '•';
+			markerElement.style.setProperty('left', '-2ch');
+			markerElement.style.setProperty('width', '2ch');
+		} else if (parentList.tagName === 'OL') {
+			const items = Array.from(parentList.children).filter((child: Element) => child.tagName === 'LI');
+			const index = items.indexOf(originalLI);
+			if (index !== -1) {
+				const start = parseInt(parentList.getAttribute('start') || '1', 10);
+				const itemNumber = start + index;
+				markerElement.textContent = `${itemNumber}.`;
+				
+				// Calculate marker width for proper alignment
+				const maxNumber = start + items.length - 1;
+				const markerWidth = maxNumber.toString().length + 1;
+				markerElement.style.setProperty('left', `-${markerWidth}ch`);
+				markerElement.style.setProperty('width', `${markerWidth}ch`);
+			}
+		}
+		
+		// Create content wrapper
+		const contentWrapper = this.document.createElement('div');
+		contentWrapper.style.setProperty('display', 'block');
+		contentWrapper.textContent = textContent;
+		
+		// Set positioning styles on the LI
+		(clonedLI as HTMLElement).style.setProperty('display', 'block');
+		(clonedLI as HTMLElement).style.setProperty('position', 'relative');
+		
+		// Add marker and content to the cloned LI
+		clonedLI.appendChild(markerElement);
+		clonedLI.appendChild(contentWrapper);
+	}
+
+	/**
+	 * Apply shadow DOM styles from <style> elements to the host element
+	 * This is a simplified implementation for list elements
+	 */
+	private applyShadowDOMStyles(element: Element, shadowRoot: ShadowRoot): void {
+		if (element.tagName === 'UL') {
+			// Apply UL shadow DOM styles
+			(element as HTMLElement).style.setProperty('display', 'block');
+			(element as HTMLElement).style.setProperty('padding-left', '2ch');
+			(element as HTMLElement).style.setProperty('margin', '0');
+			(element as HTMLElement).style.setProperty('list-style', 'none');
+		} else if (element.tagName === 'OL') {
+			// Apply OL shadow DOM styles with dynamic padding
+			const items = Array.from(element.children).filter(child => child.tagName === 'LI');
+			const start = parseInt(element.getAttribute('start') || '1', 10);
+			const maxNumber = start + items.length - 1;
+			const markerWidth = maxNumber.toString().length + 1;
+			
+			(element as HTMLElement).style.setProperty('display', 'block');
+			(element as HTMLElement).style.setProperty('padding-left', `${markerWidth}ch`);
+			(element as HTMLElement).style.setProperty('margin', '0');
+			(element as HTMLElement).style.setProperty('list-style', 'none');
+		}
+		// Note: LI elements in merged tree don't need styles applied here
+		// since they're already properly slotted and should render their text content
 	}
 
 	private initializeWindow(): void {
@@ -363,11 +520,6 @@ export class TermDOM {
 			return; // Table handles its own children
 		}
 
-		// Handle list items with markers
-		if (element.tagName === "LI" && rect) {
-			this.renderListItem(element, rect, style);
-			// Continue to render children normally
-		}
 
 		// Handle borders
 		if (rect) {
@@ -389,9 +541,21 @@ export class TermDOM {
 			}
 		}
 
+		// Ensure list elements are initialized with shadow DOM
+		// Only initialize if this element is in the original DOM tree, not in merged trees
+		if ((element.tagName === 'UL' || element.tagName === 'OL' || element.tagName === 'LI') && 
+		    element.isConnected && 
+		    element.ownerDocument === this.document) {
+			if ((element as any).connectedCallback && !this.getShadowRoot(element)) {
+				(element as any).connectedCallback();
+			}
+		}
+
 		// Check for shadow root first - if present, render shadow DOM with slot projection
 		const shadowRoot = this.getShadowRoot(element);
 		if (shadowRoot) {
+			// Apply shadow DOM styles manually for list elements
+			this.applyShadowDOMStyles(element, shadowRoot);
 			this.renderShadowDOM(shadowRoot, element);
 			// Don't render light DOM children when shadow DOM is present
 			return;
@@ -488,6 +652,10 @@ export class TermDOM {
 							const lightElement = lightChild as Element;
 							if (lightElement.getAttribute("slot") === slotName) {
 								const clonedLight = lightChild.cloneNode(true);
+								// Track the relationship between cloned and original nodes (including text nodes)
+								this.mapClonedTree(clonedLight, lightChild);
+								
+								
 								container.appendChild(clonedLight);
 							}
 						}
@@ -508,6 +676,10 @@ export class TermDOM {
 
 						if (shouldSlot) {
 							const clonedLight = lightChild.cloneNode(true);
+							// Track the relationship between cloned and original nodes (including text nodes)
+							this.mapClonedTree(clonedLight, lightChild);
+							
+							
 							container.appendChild(clonedLight);
 						}
 					}
@@ -791,26 +963,6 @@ export class TermDOM {
 		});
 	}
 
-	// TODO: move this to layout.ts or maybe lists.ts
-	private renderListItem(element: Element, rect: DOMRect, style: any): void {
-		const listParent = element.parentElement;
-		if (!listParent) return;
-
-		const marker = getListMarker(element, listParent);
-		if (!marker) return;
-
-		const {left, top} = rect;
-		const _nestingDepth = getListNestingDepth(element);
-
-		// Position marker in the padding area reserved by the ul/ol element
-		// Now that nesting is handled by ul/ol margin, marker goes at the left edge of content
-		const markerX = Math.round(left); // Marker positioned at start of content area
-		const markerY = Math.round(top);
-
-		if (markerX >= 0 && markerY >= 0 && markerX < this.width) {
-			this.renderer.setText(markerX, markerY, marker, style);
-		}
-	}
 
 	private processPendingMutationsAndRender(): boolean {
 		const pendingMutations = this.observer.takeRecords();
