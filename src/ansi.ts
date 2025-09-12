@@ -37,7 +37,6 @@ const enum BorderShift {
 	Left = 24,
 }
 
-
 // Example per-edge values
 // const EDGE_NONE = BorderEdgeStyle.None;
 // const EDGE_SOLID = BorderEdgeStyle.Solid;
@@ -129,7 +128,11 @@ export interface CellStyle {
 export interface BorderStyle {
 	top?: {width: number; style: "solid" | "double" | "none"; color?: number};
 	right?: {width: number; style: "solid" | "double" | "none"; color?: number};
-	bottom?: {width: number; style: "solid" | "double" | "none"; color?: number};
+	bottom?: {
+		width: number;
+		style: "solid" | "double" | "none";
+		color?: number;
+	};
 	left?: {width: number; style: "solid" | "double" | "none"; color?: number};
 }
 

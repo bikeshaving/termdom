@@ -13,11 +13,13 @@ The `git diff` command is exactly the UX I want to emulate.
 ## Buffer Architecture
 
 ### Viewport Buffer
+
 - **CellBuffer dimensions**: Always `terminalHeight × terminalWidth`
 - **Purpose**: Represents exactly what's visible on screen
 - **Content**: A rendering window into the DOM tree
 
 ### DOM Tree
+
 - **Scope**: Holds all application content (visible + scrolled off-screen)
 - **Mutability**: Any DOM element can be updated at any time
 - **Layout**: Drives what content appears in the viewport buffer
@@ -25,6 +27,7 @@ The `git diff` command is exactly the UX I want to emulate.
 ## Rendering Model
 
 ### Initial Rendering
+
 Commands begin at `commandStart` row and render DOM content downward:
 
 ```
@@ -38,6 +41,7 @@ Commands begin at `commandStart` row and render DOM content downward:
 ```
 
 ### Growth Pattern
+
 When DOM content exceeds available space, emit newlines to push `commandStart` upward:
 
 ```
@@ -51,6 +55,7 @@ When DOM content exceeds available space, emit newlines to push `commandStart` u
 ```
 
 ### Full Terminal Usage
+
 Eventually content can use the entire terminal height:
 
 ```
@@ -65,21 +70,24 @@ Eventually content can use the entire terminal height:
 ## Mathematical Model
 
 ### Variables
+
 - `terminalHeight` = total terminal rows (viewport height)
 - `commandStart` = initial command start row
 - `contentHeight` = total DOM content height in rows
 - `commandHeight` = `terminalHeight - commandStart` (initial available space)
 
 ### Rendering Formula
+
 ```javascript
 if (contentHeight <= commandHeight) {
-    renderStartRow = commandStart;
+  renderStartRow = commandStart;
 } else {
-    renderStartRow = Math.max(0, commandStart - (contentHeight - commandHeight));
+  renderStartRow = Math.max(0, commandStart - (contentHeight - commandHeight));
 }
 ```
 
 ### Buffer Population
+
 1. Always create buffer with `terminalHeight` rows
 2. Render DOM content starting from `renderStartRow`
 3. Fill downward until terminal bottom or content ends
@@ -89,14 +97,18 @@ if (contentHeight <= commandHeight) {
 ## ANSI Generation
 
 ### Scrolling Optimization
+
 When content changes, prefer ANSI scrolling sequences over full redraws:
+
 - `\x1b[S` - Scroll up (insert blank line at bottom)
 - `\x1b[T` - Scroll down (insert blank line at top)
 - `\x1b[L` - Insert line at cursor
 - `\x1b[M` - Delete line at cursor
 
 ### Linear Processing
+
 Since buffer represents fixed viewport:
+
 - Process cells left-to-right, top-to-bottom
 - No absolute positioning needed
 - Emit characters and styles sequentially
@@ -105,12 +117,15 @@ Since buffer represents fixed viewport:
 ## Future Enhancements
 
 ### Native Scrollback Integration
+
 Potential hybrid approach:
+
 - Hand-off to native scrollback when reaching top of DOM content
 - Take-over when scrolling back into TermDOM managed region
 - Requires terminal capability detection and state synchronization
 
 ### Advanced Scrolling
+
 - Element-level `overflow-y` (beyond window level)
 - Horizontal overflow handling (`overflow-x`)
 - Text truncation with ellipses ("...")

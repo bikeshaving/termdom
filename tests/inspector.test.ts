@@ -156,7 +156,10 @@ test("showStyles option includes style attribute", () => {
 	);
 	const div = dom.window.document.querySelector("div");
 
-	const withStyles = inspectElement(div!, {colorize: false, showStyles: true});
+	const withStyles = inspectElement(div!, {
+		colorize: false,
+		showStyles: true,
+	});
 	expect(withStyles).toContain('style="color: red; background: blue;"');
 
 	const withoutStyles = inspectElement(div!, {

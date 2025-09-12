@@ -1,8 +1,368 @@
 import type {DOMWindow} from "jsdom";
 import Yoga from "yoga-layout";
 import type * as YogaTypes from "yoga-layout";
-import {resolvePropertyValue, styleYogaNode} from "./styles.js";
 import {breakNodes, type Leaf, type BreakResult} from "./breaker.js";
+
+// ============================================================================
+// YOGA LAYOUT INTEGRATION
+// ============================================================================
+
+interface EnumMap {
+	align: YogaTypes.Align;
+	justify: YogaTypes.Justify;
+	wrap: YogaTypes.Wrap;
+}
+
+function getYogaConstant<TEnumName extends keyof EnumMap>(
+	enumName: TEnumName,
+	propertyName: string,
+): EnumMap[TEnumName] | null {
+	const name =
+		enumName.toUpperCase() + "_" + propertyName.replace("-", "_").toUpperCase();
+	return (Yoga as any)[name] || null;
+}
+
+function parseUnitValue(value: string): number | {percentage: number} | null {
+	if (!value || !/^\d/.test(value)) {
+		return null;
+	}
+
+	if (value.endsWith("%")) {
+		const num = parseFloat(value.slice(0, -1));
+		if (isNaN(num)) return null;
+		return {percentage: num};
+	}
+
+	const num = parseFloat(value);
+	return isNaN(num) ? null : num;
+}
+
+function styleYogaNode(element: Element, yogaNode: YogaTypes.Node): void {
+	const window = element.ownerDocument?.defaultView;
+	if (!window) {
+		throw new Error("Element must have an ownerDocument with defaultView");
+	}
+	const computedStyle = window.getComputedStyle(element);
+
+	const width = parseUnitValue(computedStyle.getPropertyValue("width"));
+	if (typeof width === "number") {
+		yogaNode.setWidth(width);
+	} else if (width && "percentage" in width) {
+		yogaNode.setWidthPercent(width.percentage);
+	} else {
+		yogaNode.setWidthAuto();
+	}
+
+	const height = parseUnitValue(computedStyle.getPropertyValue("height"));
+	if (typeof height === "number") {
+		yogaNode.setHeight(height);
+	} else if (height && "percentage" in height) {
+		yogaNode.setHeightPercent(height.percentage);
+	} else {
+		yogaNode.setHeightAuto();
+	}
+
+	const minWidth = parseUnitValue(computedStyle.getPropertyValue("min-width"));
+	if (typeof minWidth === "number") {
+		yogaNode.setMinWidth(minWidth);
+	} else if (minWidth && "percentage" in minWidth) {
+		yogaNode.setMinWidthPercent(minWidth.percentage);
+	} else {
+		yogaNode.setMinWidth(undefined);
+	}
+
+	const minHeight = parseUnitValue(
+		computedStyle.getPropertyValue("min-height"),
+	);
+	if (typeof minHeight === "number") {
+		yogaNode.setMinHeight(minHeight);
+	} else if (minHeight && "percentage" in minHeight) {
+		yogaNode.setMinHeightPercent(minHeight.percentage);
+	} else {
+		yogaNode.setMinHeight(undefined);
+	}
+
+	const maxWidth = parseUnitValue(computedStyle.getPropertyValue("max-width"));
+	if (typeof maxWidth === "number") {
+		yogaNode.setMaxWidth(maxWidth);
+	} else if (maxWidth && "percentage" in maxWidth) {
+		yogaNode.setMaxWidthPercent(maxWidth.percentage);
+	} else {
+		yogaNode.setMaxWidth(undefined);
+	}
+
+	const maxHeight = parseUnitValue(
+		computedStyle.getPropertyValue("max-height"),
+	);
+	if (typeof maxHeight === "number") {
+		yogaNode.setMaxHeight(maxHeight);
+	} else if (maxHeight && "percentage" in maxHeight) {
+		yogaNode.setMaxHeightPercent(maxHeight.percentage);
+	} else {
+		yogaNode.setMaxHeight(undefined);
+	}
+
+	// Margins
+	const marginTop = parseUnitValue(
+		computedStyle.getPropertyValue("margin-top"),
+	);
+	if (typeof marginTop === "number") {
+		yogaNode.setMargin(Yoga.EDGE_TOP, marginTop);
+	} else if (marginTop && "percentage" in marginTop) {
+		yogaNode.setMarginPercent(Yoga.EDGE_TOP, marginTop.percentage);
+	} else {
+		const originalValue = computedStyle.getPropertyValue("margin-top");
+		if (originalValue === "auto") {
+			yogaNode.setMarginAuto(Yoga.EDGE_TOP);
+		} else {
+			yogaNode.setMargin(Yoga.EDGE_TOP, undefined);
+		}
+	}
+
+	const marginRight = parseUnitValue(
+		computedStyle.getPropertyValue("margin-right"),
+	);
+	if (typeof marginRight === "number") {
+		yogaNode.setMargin(Yoga.EDGE_RIGHT, marginRight);
+	} else if (marginRight && "percentage" in marginRight) {
+		yogaNode.setMarginPercent(Yoga.EDGE_RIGHT, marginRight.percentage);
+	} else {
+		const originalValue = computedStyle.getPropertyValue("margin-right");
+		if (originalValue === "auto") {
+			yogaNode.setMarginAuto(Yoga.EDGE_RIGHT);
+		} else {
+			yogaNode.setMargin(Yoga.EDGE_RIGHT, undefined);
+		}
+	}
+
+	const marginBottom = parseUnitValue(
+		computedStyle.getPropertyValue("margin-bottom"),
+	);
+	if (typeof marginBottom === "number") {
+		yogaNode.setMargin(Yoga.EDGE_BOTTOM, marginBottom);
+	} else if (marginBottom && "percentage" in marginBottom) {
+		yogaNode.setMarginPercent(Yoga.EDGE_BOTTOM, marginBottom.percentage);
+	} else {
+		const originalValue = computedStyle.getPropertyValue("margin-bottom");
+		if (originalValue === "auto") {
+			yogaNode.setMarginAuto(Yoga.EDGE_BOTTOM);
+		} else {
+			yogaNode.setMargin(Yoga.EDGE_BOTTOM, undefined);
+		}
+	}
+
+	const marginLeft = parseUnitValue(
+		computedStyle.getPropertyValue("margin-left"),
+	);
+	if (typeof marginLeft === "number") {
+		yogaNode.setMargin(Yoga.EDGE_LEFT, marginLeft);
+	} else if (marginLeft && "percentage" in marginLeft) {
+		yogaNode.setMarginPercent(Yoga.EDGE_LEFT, marginLeft.percentage);
+	} else {
+		const originalValue = computedStyle.getPropertyValue("margin-left");
+		if (originalValue === "auto") {
+			yogaNode.setMarginAuto(Yoga.EDGE_LEFT);
+		} else {
+			yogaNode.setMargin(Yoga.EDGE_LEFT, undefined);
+		}
+	}
+
+	// Paddings
+	const paddingTop = parseUnitValue(
+		computedStyle.getPropertyValue("padding-top"),
+	);
+	if (typeof paddingTop === "number") {
+		yogaNode.setPadding(Yoga.EDGE_TOP, paddingTop);
+	} else if (paddingTop && "percentage" in paddingTop) {
+		yogaNode.setPaddingPercent(Yoga.EDGE_TOP, paddingTop.percentage);
+	} else {
+		yogaNode.setPadding(Yoga.EDGE_TOP, undefined);
+	}
+
+	const paddingRight = parseUnitValue(
+		computedStyle.getPropertyValue("padding-right"),
+	);
+	if (typeof paddingRight === "number") {
+		yogaNode.setPadding(Yoga.EDGE_RIGHT, paddingRight);
+	} else if (paddingRight && "percentage" in paddingRight) {
+		yogaNode.setPaddingPercent(Yoga.EDGE_RIGHT, paddingRight.percentage);
+	} else {
+		yogaNode.setPadding(Yoga.EDGE_RIGHT, undefined);
+	}
+
+	const paddingBottom = parseUnitValue(
+		computedStyle.getPropertyValue("padding-bottom"),
+	);
+	if (typeof paddingBottom === "number") {
+		yogaNode.setPadding(Yoga.EDGE_BOTTOM, paddingBottom);
+	} else if (paddingBottom && "percentage" in paddingBottom) {
+		yogaNode.setPaddingPercent(Yoga.EDGE_BOTTOM, paddingBottom.percentage);
+	} else {
+		yogaNode.setPadding(Yoga.EDGE_BOTTOM, undefined);
+	}
+
+	const paddingLeft = parseUnitValue(
+		computedStyle.getPropertyValue("padding-left"),
+	);
+	if (typeof paddingLeft === "number") {
+		yogaNode.setPadding(Yoga.EDGE_LEFT, paddingLeft);
+	} else if (paddingLeft && "percentage" in paddingLeft) {
+		yogaNode.setPaddingPercent(Yoga.EDGE_LEFT, paddingLeft.percentage);
+	} else {
+		yogaNode.setPadding(Yoga.EDGE_LEFT, undefined);
+	}
+
+	// Border widths
+	const borderTopWidth = parseUnitValue(
+		computedStyle.getPropertyValue("border-top-width"),
+	);
+	if (typeof borderTopWidth === "number" && borderTopWidth > 0) {
+		yogaNode.setBorder(Yoga.EDGE_TOP, borderTopWidth);
+	} else {
+		yogaNode.setBorder(Yoga.EDGE_TOP, 0);
+	}
+
+	const borderRightWidth = parseUnitValue(
+		computedStyle.getPropertyValue("border-right-width"),
+	);
+	if (typeof borderRightWidth === "number" && borderRightWidth > 0) {
+		yogaNode.setBorder(Yoga.EDGE_RIGHT, borderRightWidth);
+	} else {
+		yogaNode.setBorder(Yoga.EDGE_RIGHT, 0);
+	}
+
+	const borderBottomWidth = parseUnitValue(
+		computedStyle.getPropertyValue("border-bottom-width"),
+	);
+	if (typeof borderBottomWidth === "number" && borderBottomWidth > 0) {
+		yogaNode.setBorder(Yoga.EDGE_BOTTOM, borderBottomWidth);
+	} else {
+		yogaNode.setBorder(Yoga.EDGE_BOTTOM, 0);
+	}
+
+	const borderLeftWidth = parseUnitValue(
+		computedStyle.getPropertyValue("border-left-width"),
+	);
+	if (typeof borderLeftWidth === "number" && borderLeftWidth > 0) {
+		yogaNode.setBorder(Yoga.EDGE_LEFT, borderLeftWidth);
+	} else {
+		yogaNode.setBorder(Yoga.EDGE_LEFT, 0);
+	}
+
+	// Flexbox properties
+	if (
+		element.parentElement &&
+		computedStyle.getPropertyValue("display") === "block"
+	) {
+		yogaNode.setFlexGrow(0);
+		yogaNode.setFlexShrink(0);
+		yogaNode.setFlexBasisAuto();
+		yogaNode.setAlignSelf(Yoga.ALIGN_AUTO);
+	} else {
+		const flexGrow = computedStyle.getPropertyValue("flex-grow");
+		const growValue = parseFloat(flexGrow);
+		if (!isNaN(growValue) && growValue >= 0) {
+			yogaNode.setFlexGrow(growValue);
+		} else {
+			yogaNode.setFlexGrow(undefined);
+		}
+
+		const flexShrink = computedStyle.getPropertyValue("flex-shrink");
+		const shrinkValue = parseFloat(flexShrink);
+		if (!isNaN(shrinkValue) && shrinkValue >= 0) {
+			yogaNode.setFlexShrink(shrinkValue);
+		} else {
+			yogaNode.setFlexShrink(undefined);
+		}
+
+		const flexBasis = parseUnitValue(
+			computedStyle.getPropertyValue("flex-basis"),
+		);
+		if (typeof flexBasis === "number") {
+			yogaNode.setFlexBasis(flexBasis);
+		} else if (flexBasis && "percentage" in flexBasis) {
+			yogaNode.setFlexBasisPercent(flexBasis.percentage);
+		} else {
+			const originalValue = computedStyle.getPropertyValue("flex-basis");
+			if (originalValue === "auto") {
+				yogaNode.setFlexBasisAuto();
+			} else {
+				yogaNode.setFlexBasis(undefined);
+			}
+		}
+
+		const alignSelf = computedStyle.getPropertyValue("align-self");
+		if (alignSelf === "auto") {
+			yogaNode.setAlignSelf(Yoga.ALIGN_AUTO);
+		} else {
+			const alignValue = getYogaConstant("align", alignSelf);
+			if (alignValue !== null) {
+				yogaNode.setAlignSelf(alignValue);
+			} else {
+				yogaNode.setAlignSelf(Yoga.ALIGN_AUTO);
+			}
+		}
+	}
+
+	const display = computedStyle.getPropertyValue("display");
+	if (display === "none") {
+		yogaNode.setDisplay(Yoga.DISPLAY_NONE);
+	} else if (display === "flex") {
+		yogaNode.setDisplay(Yoga.DISPLAY_FLEX);
+
+		const flexDirection = computedStyle.getPropertyValue("flex-direction");
+		if (flexDirection === "row") {
+			yogaNode.setFlexDirection(Yoga.FLEX_DIRECTION_ROW);
+		} else if (flexDirection === "row-reverse") {
+			yogaNode.setFlexDirection(Yoga.FLEX_DIRECTION_ROW_REVERSE);
+		} else if (flexDirection === "column") {
+			yogaNode.setFlexDirection(Yoga.FLEX_DIRECTION_COLUMN);
+		} else if (flexDirection === "column-reverse") {
+			yogaNode.setFlexDirection(Yoga.FLEX_DIRECTION_COLUMN_REVERSE);
+		} else {
+			yogaNode.setFlexDirection(Yoga.FLEX_DIRECTION_ROW);
+		}
+
+		const flexWrap = computedStyle.getPropertyValue("flex-wrap");
+		if (flexWrap === "nowrap") {
+			yogaNode.setFlexWrap(Yoga.WRAP_NO_WRAP);
+		} else if (flexWrap === "wrap") {
+			yogaNode.setFlexWrap(Yoga.WRAP_WRAP);
+		} else if (flexWrap === "wrap-reverse") {
+			yogaNode.setFlexWrap(Yoga.WRAP_WRAP_REVERSE);
+		} else {
+			yogaNode.setFlexWrap(Yoga.WRAP_NO_WRAP);
+		}
+
+		const justifyContent = computedStyle.getPropertyValue("justify-content");
+		const justifyValue = getYogaConstant("justify", justifyContent);
+		if (justifyValue !== null) {
+			yogaNode.setJustifyContent(justifyValue);
+		} else {
+			yogaNode.setJustifyContent(Yoga.JUSTIFY_FLEX_START);
+		}
+
+		const alignItems = computedStyle.getPropertyValue("align-items");
+		const alignValue = getYogaConstant("align", alignItems);
+		if (alignValue !== null) {
+			yogaNode.setAlignItems(alignValue);
+		} else {
+			yogaNode.setAlignItems(Yoga.ALIGN_STRETCH);
+		}
+
+		const alignContent = computedStyle.getPropertyValue("align-content");
+		const alignContentValue = getYogaConstant("align", alignContent);
+		if (alignContentValue !== null) {
+			yogaNode.setAlignContent(alignContentValue);
+		} else {
+			yogaNode.setAlignContent(Yoga.ALIGN_FLEX_START);
+		}
+	} else {
+		yogaNode.setDisplay(Yoga.DISPLAY_FLEX);
+		yogaNode.setFlexDirection(Yoga.FLEX_DIRECTION_COLUMN);
+		yogaNode.setAlignItems(Yoga.ALIGN_STRETCH);
+	}
+}
 
 class DOMRectList extends Array<DOMRect> implements globalThis.DOMRectList {
 	item(index: number): globalThis.DOMRect | null {
@@ -35,6 +395,7 @@ export class LayoutEngine {
 	declare DOMRect: typeof DOMRect;
 	declare rootElement: Element;
 	declare observer: MutationObserver;
+	declare window: DOMWindow;
 
 	// TODO:
 	declare terminalWidth: number;
@@ -55,6 +416,7 @@ export class LayoutEngine {
 		getMergedTree?: (element: Element) => DocumentFragment | null,
 		getOriginalNode?: (node: Node) => Node | null,
 	) {
+		this.window = window;
 		this.DOMRect = window.DOMRect;
 		this.rootElement = window.document.documentElement;
 		this.nodeMap = new WeakMap<Node, YogaTypes.Node>();
@@ -176,6 +538,20 @@ export class LayoutEngine {
 
 	dispose(): void {}
 
+	/**
+	 * Get computed style for an element using our terminal-specific getComputedStyle
+	 */
+	private getComputedStyle(element: Element): CSSStyleDeclaration {
+		return this.window.getComputedStyle(element);
+	}
+
+	/**
+	 * Get a specific CSS property value from computed styles
+	 */
+	private getPropertyValue(element: Element, property: string): string {
+		return this.getComputedStyle(element).getPropertyValue(property);
+	}
+
 	// TODO: delete these terrible functions
 	/**
 	 * Get the children to traverse for layout - merged tree if available, otherwise light DOM
@@ -271,9 +647,9 @@ export class LayoutEngine {
 		parentYogaNode: YogaTypes.Node | null = null,
 		yogaIndex: number = this.getYogaIndex(element),
 	): void {
-		const display = resolvePropertyValue(element, "display", false);
+		const display = this.getPropertyValue(element, "display");
 		if (display === "inline" || display === "inline-block") {
-			if (!isInlineRunHead(element)) {
+			if (!this.isInlineRunHead(element)) {
 				return;
 			}
 		}
@@ -314,54 +690,14 @@ export class LayoutEngine {
 			return;
 		}
 
-		let hasInlineContent = false;
-		const effectiveChildren = this.getEffectiveChildrenForLayout(element);
-		for (const child of effectiveChildren) {
-			if (child.nodeType === child.TEXT_NODE && child.textContent?.trim()) {
-				hasInlineContent = true;
-				break;
-			} else if (child.nodeType === child.ELEMENT_NODE) {
-				const childDisplay = resolvePropertyValue(child as Element, "display");
-				if (childDisplay === "inline" || childDisplay === "inline-block") {
-					hasInlineContent = true;
-					break;
-				}
-			}
-		}
-
-		let hasBlockChildren = false;
-		for (const child of effectiveChildren) {
-			if (child.nodeType === child.ELEMENT_NODE) {
-				const childDisplay = resolvePropertyValue(child as Element, "display");
-				if (childDisplay !== "inline" && childDisplay !== "inline-block") {
-					hasBlockChildren = true;
-					break;
-				}
-			}
-		}
-
-		if (
-			hasInlineContent &&
-			!hasBlockChildren &&
-			display !== "flex" &&
-			!resolvePropertyValue(element, "height", false)
-		) {
-			yogaNode.setMeasureFunc((width, widthMode, height, heightMode) => {
-				return this.measureInlineRun(
-					element,
-					width,
-					widthMode,
-					height,
-					heightMode,
-				);
-			});
-		}
+		// Block elements should NOT get measure functions - only their inline children do.
+		// This prevents Yoga constraint violations (nodes with measure functions cannot have children)
 
 		const measuredChildNodes = this.getChildrenForLayout(element);
 		for (let i = 0; i < measuredChildNodes.length; i++) {
 			const child = measuredChildNodes[i];
 			if (child.nodeType === child.ELEMENT_NODE) {
-				const childDisplay = resolvePropertyValue(child as Element, "display");
+				const childDisplay = this.getPropertyValue(child as Element, "display");
 				if (childDisplay === "inline" || childDisplay === "inline-block") {
 					if (display === "flex") {
 						this.addElementNode(child as Element, yogaNode);
@@ -378,11 +714,7 @@ export class LayoutEngine {
 		}
 
 		if (yogaNode && parentYogaNode) {
-			try {
-				parentYogaNode.insertChild(yogaNode, yogaIndex);
-			} catch (err) {
-				// Yoga error when inserting child - ignore
-			}
+			parentYogaNode.insertChild(yogaNode, yogaIndex);
 		}
 	}
 
@@ -399,7 +731,7 @@ export class LayoutEngine {
 			return;
 		}
 
-		if (isInlineRunHead(text)) {
+		if (this.isInlineRunHead(text)) {
 			let yogaNode = this.nodeMap.get(text);
 			if (!yogaNode) {
 				yogaNode = Yoga.Node.createWithConfig(yogaConfig);
@@ -440,11 +772,11 @@ export class LayoutEngine {
 			}
 			if (sibling.nodeType === sibling.ELEMENT_NODE) {
 				const siblingElement = sibling as Element;
-				const siblingDisplay = resolvePropertyValue(siblingElement, "display");
+				const siblingDisplay = this.getPropertyValue(siblingElement, "display");
 
 				if (
 					(siblingDisplay === "inline" || siblingDisplay === "inline-block") &&
-					!isInlineRunHead(siblingElement)
+					!this.isInlineRunHead(siblingElement)
 				) {
 					continue;
 				}
@@ -472,10 +804,10 @@ export class LayoutEngine {
 			elementY = parentY + yogaNode.getComputedTop();
 		}
 
-		const display = resolvePropertyValue(element, "display");
+		const display = this.getPropertyValue(element, "display");
 		if (
 			(display === "inline" || display === "inline-block") &&
-			isInlineRunHead(element)
+			this.isInlineRunHead(element)
 		) {
 			if (yogaNode) {
 				// Calculate content box coordinates and width for text positioning
@@ -505,7 +837,7 @@ export class LayoutEngine {
 					hasInlineContent = true;
 					break;
 				} else if (child.nodeType === child.ELEMENT_NODE) {
-					const childDisplay = resolvePropertyValue(
+					const childDisplay = this.getPropertyValue(
 						child as Element,
 						"display",
 					);
@@ -551,16 +883,16 @@ export class LayoutEngine {
 		const leafNodes: Leaf[] = [];
 
 		const parentDisplay = element.parentElement
-			? resolvePropertyValue(element.parentElement, "display")
+			? this.getPropertyValue(element.parentElement, "display")
 			: null;
 		const isFlexItem = parentDisplay === "flex";
 
-		if (isInlineRunHead(element) && !isFlexItem) {
+		if (this.isInlineRunHead(element) && !isFlexItem) {
 			let current: Node | null = element;
 			while (current) {
 				if (current.nodeType === current.ELEMENT_NODE) {
 					const el = current as Element;
-					const display = resolvePropertyValue(el, "display");
+					const display = this.getPropertyValue(el, "display");
 					if (display !== "inline" && display !== "inline-block") {
 						break;
 					}
@@ -581,12 +913,12 @@ export class LayoutEngine {
 					continue;
 				}
 
-				if (isInlineRunHead(child)) {
+				if (this.isInlineRunHead(child)) {
 					let current: Node | null = child;
 					while (current) {
 						if (current.nodeType === current.ELEMENT_NODE) {
 							const el = current as Element;
-							const display = resolvePropertyValue(el, "display");
+							const display = this.getPropertyValue(el, "display");
 							if (display !== "inline" && display !== "inline-block") {
 								break;
 							}
@@ -601,7 +933,7 @@ export class LayoutEngine {
 					// Don't traverse into block elements during inline processing
 					if (child.nodeType === child.ELEMENT_NODE) {
 						const el = child as Element;
-						const display = resolvePropertyValue(el, "display");
+						const display = this.getPropertyValue(el, "display");
 						if (display !== "inline" && display !== "inline-block") {
 							continue; // Skip block elements
 						}
@@ -627,7 +959,7 @@ export class LayoutEngine {
 				}
 			} else if (node.nodeType === node.ELEMENT_NODE) {
 				const el = node as Element;
-				const display = resolvePropertyValue(el, "display");
+				const display = this.getPropertyValue(el, "display");
 
 				if (display === "inline-block") {
 					const size = this.measureInlineBlock(el);
@@ -677,13 +1009,13 @@ export class LayoutEngine {
 				: width;
 		const leafNodes = this.collectLeafNodes(element);
 
-		let whiteSpace = resolvePropertyValue(element, "white-space") as any;
-		const wordBreak = resolvePropertyValue(element, "word-break") as any;
-		const overflowWrap = resolvePropertyValue(element, "overflow-wrap") as any;
+		let whiteSpace = this.getPropertyValue(element, "white-space") as any;
+		const wordBreak = this.getPropertyValue(element, "word-break") as any;
+		const overflowWrap = this.getPropertyValue(element, "overflow-wrap") as any;
 
 		if (
 			element.parentElement &&
-			resolvePropertyValue(element.parentElement, "display") === "flex"
+			this.getPropertyValue(element.parentElement, "display") === "flex"
 		) {
 			if (widthMode === Yoga.MEASURE_MODE_UNDEFINED) {
 				whiteSpace = "nowrap";
@@ -712,16 +1044,16 @@ export class LayoutEngine {
 	): void {
 		const leafNodes = this.collectLeafNodes(element);
 
-		let whiteSpace = resolvePropertyValue(element, "white-space") as any;
-		const wordBreak = resolvePropertyValue(element, "word-break") as any;
-		const overflowWrap = resolvePropertyValue(element, "overflow-wrap") as any;
+		let whiteSpace = this.getPropertyValue(element, "white-space") as any;
+		const wordBreak = this.getPropertyValue(element, "word-break") as any;
+		const overflowWrap = this.getPropertyValue(element, "overflow-wrap") as any;
 
 		if (
 			element.parentElement &&
-			resolvePropertyValue(element.parentElement, "display") === "flex"
+			this.getPropertyValue(element.parentElement, "display") === "flex"
 		) {
 			const flexDirection =
-				resolvePropertyValue(element.parentElement, "flex-direction") || "row";
+				this.getPropertyValue(element.parentElement, "flex-direction") || "row";
 			if (flexDirection === "row" || flexDirection === "row-reverse") {
 				whiteSpace = "nowrap";
 			}
@@ -772,7 +1104,7 @@ export class LayoutEngine {
 
 				let parent = segment.leaf.node.parentElement;
 				while (parent && parent !== rootElement.parentElement) {
-					const display = resolvePropertyValue(parent, "display");
+					const display = this.getPropertyValue(parent, "display");
 					if (display === "inline" || display === "inline-block") {
 						this.addRectLength(parent, rectLength);
 					} else {
@@ -783,154 +1115,150 @@ export class LayoutEngine {
 			}
 		}
 	}
-}
 
-export function isInlineRunHead(node: Node): boolean {
-	if (node.nodeType === node.ELEMENT_NODE) {
-		const element = node as Element;
-		const display = resolvePropertyValue(element, "display", false);
-		if (display !== "inline" && display !== "inline-block") {
+	public isInlineRunHead(node: Node): boolean {
+		if (node.nodeType === node.ELEMENT_NODE) {
+			const element = node as Element;
+			const display = this.getPropertyValue(element, "display");
+			if (display !== "inline" && display !== "inline-block") {
+				return false;
+			}
+
+			const parentDisplay = element.parentElement
+				? this.getPropertyValue(element.parentElement, "display")
+				: "block";
+
+			if (parentDisplay === "flex") {
+				return true;
+			}
+		} else if (node.nodeType === node.TEXT_NODE) {
+			if (node.parentElement) {
+				const parentDisplay = this.getPropertyValue(
+					node.parentElement,
+					"display",
+				);
+				if (parentDisplay === "flex") {
+					let prevSibling = node.previousSibling;
+					while (prevSibling) {
+						if (prevSibling.nodeType === prevSibling.TEXT_NODE) {
+							if (prevSibling.textContent) {
+								return false;
+							}
+						} else {
+							return true;
+						}
+						prevSibling = prevSibling.previousSibling;
+					}
+					return true;
+				}
+			}
+		} else {
 			return false;
 		}
 
-		const parentDisplay = element.parentElement
-			? resolvePropertyValue(element.parentElement, "display", false)
-			: "block";
-
-		if (parentDisplay === "flex") {
-			return true;
-		}
-	} else if (node.nodeType === node.TEXT_NODE) {
-		if (node.parentElement) {
-			const parentDisplay = resolvePropertyValue(
-				node.parentElement,
-				"display",
-				false,
-			);
-			if (parentDisplay === "flex") {
-				let prevSibling = node.previousSibling;
-				while (prevSibling) {
-					if (prevSibling.nodeType === prevSibling.TEXT_NODE) {
-						if (prevSibling.textContent) {
-							return false;
-						}
-					} else {
-						return true;
-					}
-					prevSibling = prevSibling.previousSibling;
+		let prevSibling = node.previousSibling;
+		while (prevSibling) {
+			if (prevSibling.nodeType === prevSibling.ELEMENT_NODE) {
+				const prevDisplay = this.getPropertyValue(
+					prevSibling as Element,
+					"display",
+				);
+				if (prevDisplay === "inline" || prevDisplay === "inline-block") {
+					return false;
+				} else {
+					return true;
 				}
-				return true;
+			} else if (prevSibling.nodeType === prevSibling.TEXT_NODE) {
+				if (prevSibling.textContent) {
+					return false;
+				}
 			}
+			prevSibling = prevSibling.previousSibling;
 		}
-	} else {
-		return false;
+
+		return true;
 	}
 
-	let prevSibling = node.previousSibling;
-	while (prevSibling) {
-		if (prevSibling.nodeType === prevSibling.ELEMENT_NODE) {
-			const prevDisplay = resolvePropertyValue(
-				prevSibling as Element,
-				"display",
-				false,
-			);
-			if (prevDisplay === "inline" || prevDisplay === "inline-block") {
-				return false;
-			} else {
-				return true;
+	public findInlineRunHead(node: Node): Node | null {
+		if (node.nodeType === node.ELEMENT_NODE) {
+			const element = node as Element;
+			const display = this.getPropertyValue(element, "display");
+			if (display !== "inline" && display !== "inline-block") {
+				return null;
 			}
-		} else if (prevSibling.nodeType === prevSibling.TEXT_NODE) {
-			if (prevSibling.textContent) {
-				return false;
-			}
-		}
-		prevSibling = prevSibling.previousSibling;
-	}
-
-	return true;
-}
-
-export function findInlineRunHead(node: Node): Node | null {
-	if (node.nodeType === node.ELEMENT_NODE) {
-		const element = node as Element;
-		const display = resolvePropertyValue(element, "display", false);
-		if (display !== "inline" && display !== "inline-block") {
+		} else if (node.nodeType !== node.TEXT_NODE) {
 			return null;
 		}
-	} else if (node.nodeType !== node.TEXT_NODE) {
-		return null;
-	}
 
-	let startNode = node;
-	if (node.nodeType === node.ELEMENT_NODE) {
-		const element = node as Element;
+		let startNode = node;
+		if (node.nodeType === node.ELEMENT_NODE) {
+			const element = node as Element;
 
-		let current = element;
-		while (current.parentElement) {
-			const parentDisplay = resolvePropertyValue(
-				current.parentElement,
-				"display",
-				false,
-			);
+			let current = element;
+			while (current.parentElement) {
+				const parentDisplay = this.getPropertyValue(
+					current.parentElement,
+					"display",
+				);
 
-			if (parentDisplay === "flex") {
-				return current;
-			}
+				if (parentDisplay === "flex") {
+					return current;
+				}
 
-			if (parentDisplay === "inline" || parentDisplay === "inline-block") {
-				current = current.parentElement;
-				startNode = current;
-			} else {
-				startNode = current;
-				break;
-			}
-		}
-	}
-
-	if (node.nodeType === node.TEXT_NODE && node.parentElement) {
-		const parentDisplay = resolvePropertyValue(
-			node.parentElement,
-			"display",
-			false,
-		);
-		if (parentDisplay === "flex") {
-			let current = node;
-			while (current.previousSibling) {
-				const prevSibling = current.previousSibling;
-				if (prevSibling.nodeType === prevSibling.TEXT_NODE) {
-					if (prevSibling.textContent) {
-						current = prevSibling;
-					} else {
-						// Empty text node - skip
-					}
+				if (parentDisplay === "inline" || parentDisplay === "inline-block") {
+					current = current.parentElement;
+					startNode = current;
 				} else {
+					startNode = current;
 					break;
 				}
 			}
-			return current;
 		}
-	}
 
-	let current = startNode;
-	while (current.previousSibling) {
-		const prevSibling = current.previousSibling;
+		if (node.nodeType === node.TEXT_NODE && node.parentElement) {
+			const parentDisplay = this.getPropertyValue(
+				node.parentElement,
+				"display",
+			);
+			if (parentDisplay === "flex") {
+				let current = node;
+				while (current.previousSibling) {
+					const prevSibling = current.previousSibling;
+					if (prevSibling.nodeType === prevSibling.TEXT_NODE) {
+						if (prevSibling.textContent) {
+							current = prevSibling;
+						} else {
+							// Empty text node - skip
+						}
+					} else {
+						break;
+					}
+				}
+				return current;
+			}
+		}
 
-		if (prevSibling.nodeType === prevSibling.ELEMENT_NODE) {
-			const prevElement = prevSibling as Element;
-			const prevDisplay = resolvePropertyValue(prevElement, "display", false);
-			if (prevDisplay === "inline" || prevDisplay === "inline-block") {
-				current = prevElement;
+		let current = startNode;
+		while (current.previousSibling) {
+			const prevSibling = current.previousSibling;
+
+			if (prevSibling.nodeType === prevSibling.ELEMENT_NODE) {
+				const prevElement = prevSibling as Element;
+				const prevDisplay = this.getPropertyValue(prevElement, "display");
+				if (prevDisplay === "inline" || prevDisplay === "inline-block") {
+					current = prevElement;
+				} else {
+					break;
+				}
+			} else if (prevSibling.nodeType === prevSibling.TEXT_NODE) {
+				current = prevSibling;
 			} else {
 				break;
 			}
-		} else if (prevSibling.nodeType === prevSibling.TEXT_NODE) {
-			current = prevSibling;
-		} else {
-			break;
 		}
-	}
 
-	return current;
+		return current;
+	}
 }
 
 export function computeBoundingRect(

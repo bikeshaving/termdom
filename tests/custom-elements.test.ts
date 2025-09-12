@@ -1,5 +1,5 @@
 import {test, expect} from "bun:test";
-import {TermDOM} from "./termdom.js";
+import {TermDOM} from "../src/termdom.js";
 
 test("custom element with anonymous slot", () => {
 	const termdom = new TermDOM();

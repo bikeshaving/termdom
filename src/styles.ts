@@ -1,188 +1,18 @@
 /**
- * Terminal CSS System
+ * CSS System for Terminal DOM
  *
- * This module provides CSS property resolution and classification specifically
- * designed for terminal UIs.
- *
- * WHY WE DON'T SUPPORT STYLESHEETS/SELECTORS:
- * 1. JSDOM's cascade implementation is incomplete:
- *    - No CSS specificity calculation (uses source order only)
- *    - No proper !important handling
- *    - Incomplete inheritance support
- * 2. Terminal UIs are typically built programmatically with inline styles
- * 3. Avoiding cascade complexity makes the system more predictable and
- *   debuggable
- *
- * WHY WE DON'T USE getComputedStyle():
- * 1. Real browsers resolve units to pixels ("10ch" → "80px") - we want
- *   semantic units
- * 2. JSDOM's getComputedStyle() has broken cascade resolution which would
- *   work, but we don't want to rely on non-compliant behavior
- * 3. We need predictable behavior across environments
- *
- * WHAT THIS MODULE PROVIDES:
- * - Inline style resolution with proper inheritance
- * - some CSS keyword handling (inherit, initial, unset)
- * - Preservation of semantic units (ch, em, %, etc.)
- * - Terminal-appropriate default values per element type
+ * This module provides a way to override window.getComputedStyle() with terminal-appropriate
+ * CSS property resolution. The core TermDOM class uses this to provide a custom CSS implementation.
  */
 
-import Yoga from "yoga-layout";
-import type * as YogaTypes from "yoga-layout";
+import {CSSStyleDeclaration} from "cssstyle";
 
 // ============================================================================
-// PROPERTY CLASSIFICATION
-// ============================================================================
-
-/**
- * Layout properties that affect element positioning, sizing, or text flow.
- * These properties CANNOT use CSS keywords (inherit, initial, unset) to keep
- * layout invalidation simple and predictable.
- *
- * When these properties change, only the specific element needs re-layout.
- */
-export const LAYOUT_PROPERTIES = new Set([
-	// Box dimensions
-	"width",
-	"height",
-	"min-width",
-	"min-height",
-	"max-width",
-	"max-height",
-
-	// Spacing
-	"margin",
-	"margin-top",
-	"margin-right",
-	"margin-bottom",
-	"margin-left",
-	"padding",
-	"padding-top",
-	"padding-right",
-	"padding-bottom",
-	"padding-left",
-
-	// Borders (affect terminal cell layout through box-drawing characters)
-	"border",
-	"border-width",
-	"border-style",
-	"border-top",
-	"border-right",
-	"border-bottom",
-	"border-left",
-	"border-top-width",
-	"border-right-width",
-	"border-bottom-width",
-	"border-left-width",
-	"border-top-style",
-	"border-right-style",
-	"border-bottom-style",
-	"border-left-style",
-	"border-color",
-	"border-top-color",
-	"border-right-color",
-	"border-bottom-color",
-	"border-left-color",
-
-	// Display and positioning
-	"display",
-	"position",
-	"top",
-	"right",
-	"bottom",
-	"left",
-	"overflow",
-	"overflow-x",
-	"overflow-y",
-	"z-index",
-
-	// Flexbox layout
-	"flex-direction",
-	"flex-wrap",
-	"justify-content",
-	"align-items",
-	"align-content",
-	"flex",
-	"flex-grow",
-	"flex-shrink",
-	"flex-basis",
-	"align-self",
-	"order",
-
-	// Text layout properties that affect positioning/wrapping
-	"text-align",
-	"white-space",
-]);
-
-/**
- * Visual properties that affect appearance but not layout.
- * These properties CAN use CSS keywords and inherit normally.
- *
- * When these properties change, only the rendering of the specific element
- * needs to be updated (no layout recalculation needed).
- */
-export const VISUAL_PROPERTIES = new Set([
-	// Text and background colors
-	"color",
-	"background-color",
-	"background", // shorthand
-
-	// Border colors (border width/style affect layout, but color is purely visual)
-	"border-color",
-	"border-top-color",
-	"border-right-color",
-	"border-bottom-color",
-	"border-left-color",
-]);
-
-/**
- * All supported CSS properties in Terminal DOM.
- * Any property not in this set is ignored entirely.
- */
-export const SUPPORTED_PROPERTIES = new Set([
-	...LAYOUT_PROPERTIES,
-	...VISUAL_PROPERTIES,
-]);
-
-// ============================================================================
-// INHERITANCE CLASSIFICATION
-// ============================================================================
-
-/**
- * CSS properties that inherit from parent by default
- * Based on CSS spec: https://www.w3.org/TR/CSS21/propidx.html
- */
-const INHERITED_PROPERTIES = new Set([
-	"color",
-	"font-family",
-	"font-size",
-	"font-style",
-	"font-variant",
-	"font-weight",
-	"line-height",
-	"text-align",
-	"text-decoration",
-	"text-indent",
-	"text-transform",
-	"white-space",
-	"word-spacing",
-	"letter-spacing",
-	"visibility",
-	"cursor",
-	"quotes",
-	"list-style",
-	"list-style-image",
-	"list-style-position",
-	"list-style-type",
-]);
-
-// ============================================================================
-// DEFAULT VALUES
+// CSS DEFAULTS FOR TERMINAL ELEMENTS
 // ============================================================================
 
 /**
  * CSS specification defaults for properties
- * These apply when no other value is found
  */
 const CSS_SPEC_DEFAULTS: Record<string, string> = {
 	display: "inline",
@@ -212,7 +42,6 @@ const CSS_SPEC_DEFAULTS: Record<string, string> = {
 	"border-bottom-color": "currentColor",
 	"border-left-color": "currentColor",
 	"border-radius": "0",
-	// TODO: add box-sizing
 	"background-color": "transparent",
 	color: "#000000",
 	"font-size": "1rem",
@@ -228,7 +57,6 @@ const CSS_SPEC_DEFAULTS: Record<string, string> = {
 
 /**
  * Terminal-specific defaults per element type
- * These override CSS spec defaults to be appropriate for terminal UIs
  */
 const TERMINAL_ELEMENT_DEFAULTS: Record<string, Record<string, string>> = {
 	// Metadata elements - never rendered in terminal
@@ -261,7 +89,7 @@ const TERMINAL_ELEMENT_DEFAULTS: Record<string, Record<string, string>> = {
 	pre: {display: "block", "white-space": "pre"},
 	ul: {display: "block", "padding-left": "2ch"},
 	ol: {display: "block", "padding-left": "2ch"},
-	li: {display: "block"},
+	li: {display: "list-item"},
 	dl: {display: "block"},
 	dt: {display: "block"},
 	dd: {display: "block"},
@@ -338,6 +166,33 @@ const TERMINAL_ELEMENT_DEFAULTS: Record<string, Record<string, string>> = {
 	},
 };
 
+/**
+ * Properties that inherit by default
+ */
+const INHERITED_PROPERTIES = new Set([
+	"color",
+	"font-family",
+	"font-size",
+	"font-style",
+	"font-variant",
+	"font-weight",
+	"line-height",
+	"text-align",
+	"text-decoration",
+	"text-indent",
+	"text-transform",
+	"white-space",
+	"word-spacing",
+	"letter-spacing",
+	"visibility",
+	"cursor",
+	"quotes",
+	"list-style",
+	"list-style-image",
+	"list-style-position",
+	"list-style-type",
+]);
+
 const INITIAL_KEYWORDS = new Set([
 	"initial",
 	"unset",
@@ -346,25 +201,17 @@ const INITIAL_KEYWORDS = new Set([
 ]);
 
 /**
- * Get the resolved value for a CSS property on an element.
- * Resolution order:
- * 1. Inline style value (if not a keyword)
- * 2. Handles some CSS keywords (inherit, initial, unset)
- * 3. Fall back to element-specific defaults
- * 4. Fall back to CSS spec defaults
- *
- * @param element - The DOM element
- * @param property - The CSS property name (kebab-case, e.g. 'margin-left')
- * @returns The resolved value with original units preserved (e.g. '10ch', '50%')
+ * Get the resolved value for a CSS property on an element
+ * Used internally by TerminalComputedStyle
  */
-export function resolvePropertyValue(
+function resolvePropertyValue(
 	element: Element,
 	property: string,
 	followInheritance = true,
 ): string {
 	const style = (element as HTMLElement).style;
 	if (!style) {
-		return "";
+		return getInitialStyle(element, property);
 	}
 
 	const inlineValue = style.getPropertyValue(property).trim();
@@ -388,20 +235,14 @@ export function resolvePropertyValue(
 
 		return getInitialStyle(element, property);
 	} else if (inlineValue) {
-		// If we have a concrete value, use it
 		return inlineValue;
 	}
 
-	// Fall back to defaults
 	return getInitialStyle(element, property);
 }
 
 /**
- * Get the initial/default value for a property on an element.
- *
- * @param element - The DOM element
- * @param property - The CSS property name
- * @returns The initial value for this element type and property
+ * Get the initial/default value for a property on an element
  */
 function getInitialStyle(element: Element, property: string): string {
 	const tagName = element.tagName.toLowerCase();
@@ -423,362 +264,281 @@ function getInitialStyle(element: Element, property: string): string {
 }
 
 // ============================================================================
-// YOGA LAYOUT INTEGRATION
+// COMPUTED STYLE CLASS
 // ============================================================================
 
-interface EnumMap {
-	align: YogaTypes.Align;
-	justify: YogaTypes.Justify;
-	wrap: YogaTypes.Wrap;
-}
+/**
+ * Custom computed style that implements the DOM CSSStyleDeclaration interface
+ * This provides a 1-to-1 interface with the browser's getComputedStyle result
+ */
+class TerminalComputedStyle extends CSSStyleDeclaration {
+	constructor(private element: Element) {
+		// Initialize with no onChange callback since this is read-only computed style
+		super();
 
-function getYogaConstant<TEnumName extends keyof EnumMap>(
-	enumName: TEnumName,
-	propertyName: string,
-): EnumMap[TEnumName] | null {
-	const name =
-		enumName.toUpperCase() + "_" + propertyName.replace("-", "_").toUpperCase();
-	return (Yoga as any)[name] || null;
-}
-
-function parseUnitValue(value: string): number | {percentage: number} | null {
-	if (!value || !/^\d/.test(value)) {
-		return null;
+		// Pre-populate with all our resolved values
+		this.populateDeclaration();
 	}
 
-	if (value.endsWith("%")) {
-		const num = parseFloat(value.slice(0, -1));
-		if (isNaN(num)) return null;
-		return {percentage: num};
-	}
+	private populateDeclaration(): void {
+		// Get all CSS properties we might need to resolve
+		const properties = [
+			// Layout properties
+			"display",
+			"position",
+			"top",
+			"right",
+			"bottom",
+			"left",
+			"width",
+			"height",
+			"min-width",
+			"min-height",
+			"max-width",
+			"max-height",
+			"margin",
+			"margin-top",
+			"margin-right",
+			"margin-bottom",
+			"margin-left",
+			"padding",
+			"padding-top",
+			"padding-right",
+			"padding-bottom",
+			"padding-left",
+			"border-width",
+			"border-style",
+			"border-color",
+			"border-radius",
+			"border-top-width",
+			"border-right-width",
+			"border-bottom-width",
+			"border-left-width",
+			"border-top-style",
+			"border-right-style",
+			"border-bottom-style",
+			"border-left-style",
+			"border-top-color",
+			"border-right-color",
+			"border-bottom-color",
+			"border-left-color",
+			"overflow",
+			"overflow-x",
+			"overflow-y",
+			"z-index",
 
-	const num = parseFloat(value);
-	return isNaN(num) ? null : num;
-}
+			// Flexbox
+			"flex-direction",
+			"flex-wrap",
+			"justify-content",
+			"align-items",
+			"align-content",
+			"flex",
+			"flex-grow",
+			"flex-shrink",
+			"flex-basis",
+			"align-self",
+			"order",
 
-export function styleYogaNode(
-	element: Element,
-	yogaNode: YogaTypes.Node,
-): void {
-	const width = parseUnitValue(resolvePropertyValue(element, "width", false));
-	if (typeof width === "number") {
-		yogaNode.setWidth(width);
-	} else if (width && "percentage" in width) {
-		yogaNode.setWidthPercent(width.percentage);
-	} else {
-		yogaNode.setWidthAuto();
-	}
+			// Text and visual
+			"color",
+			"background-color",
+			"font-size",
+			"font-weight",
+			"font-style",
+			"text-decoration",
+			"text-align",
+			"white-space",
+			"word-break",
+			"overflow-wrap",
+			"list-style",
+			"list-style-type",
+			"list-style-position",
+			"list-style-image",
+		];
 
-	const heightValue = resolvePropertyValue(element, "height", false);
-	const height = parseUnitValue(heightValue);
-	if (typeof height === "number") {
-		yogaNode.setHeight(height);
-	} else if (height && "percentage" in height) {
-		yogaNode.setHeightPercent(height.percentage);
-	} else {
-		yogaNode.setHeightAuto();
-	}
-
-	const minWidth = parseUnitValue(
-		resolvePropertyValue(element, "min-width", false),
-	);
-	if (typeof minWidth === "number") {
-		yogaNode.setMinWidth(minWidth);
-	} else if (minWidth && "percentage" in minWidth) {
-		yogaNode.setMinWidthPercent(minWidth.percentage);
-	} else {
-		yogaNode.setMinWidth(undefined);
-	}
-
-	const minHeight = parseUnitValue(
-		resolvePropertyValue(element, "min-height", false),
-	);
-	if (typeof minHeight === "number") {
-		yogaNode.setMinHeight(minHeight);
-	} else if (minHeight && "percentage" in minHeight) {
-		yogaNode.setMinHeightPercent(minHeight.percentage);
-	} else {
-		yogaNode.setMinHeight(undefined);
-	}
-
-	const maxWidth = parseUnitValue(
-		resolvePropertyValue(element, "max-width", false),
-	);
-	if (typeof maxWidth === "number") {
-		yogaNode.setMaxWidth(maxWidth);
-	} else if (maxWidth && "percentage" in maxWidth) {
-		yogaNode.setMaxWidthPercent(maxWidth.percentage);
-	} else {
-		yogaNode.setMaxWidth(undefined);
-	}
-
-	const maxHeight = parseUnitValue(
-		resolvePropertyValue(element, "max-height", false),
-	);
-	if (typeof maxHeight === "number") {
-		yogaNode.setMaxHeight(maxHeight);
-	} else if (maxHeight && "percentage" in maxHeight) {
-		yogaNode.setMaxHeightPercent(maxHeight.percentage);
-	} else {
-		yogaNode.setMaxHeight(undefined);
-	}
-
-	const marginTop = parseUnitValue(
-		resolvePropertyValue(element, "margin-top", false),
-	);
-	if (typeof marginTop === "number") {
-		yogaNode.setMargin(Yoga.EDGE_TOP, marginTop);
-	} else if (marginTop && "percentage" in marginTop) {
-		yogaNode.setMarginPercent(Yoga.EDGE_TOP, marginTop.percentage);
-	} else {
-		const originalValue = resolvePropertyValue(element, "margin-top", false);
-		if (originalValue === "auto") {
-			yogaNode.setMarginAuto(Yoga.EDGE_TOP);
-		} else {
-			yogaNode.setMargin(Yoga.EDGE_TOP, undefined);
-		}
-	}
-	const marginRight = parseUnitValue(
-		resolvePropertyValue(element, "margin-right", false),
-	);
-	if (typeof marginRight === "number") {
-		yogaNode.setMargin(Yoga.EDGE_RIGHT, marginRight);
-	} else if (marginRight && "percentage" in marginRight) {
-		yogaNode.setMarginPercent(Yoga.EDGE_RIGHT, marginRight.percentage);
-	} else {
-		const originalValue = resolvePropertyValue(element, "margin-right", false);
-		if (originalValue === "auto") {
-			yogaNode.setMarginAuto(Yoga.EDGE_RIGHT);
-		} else {
-			yogaNode.setMargin(Yoga.EDGE_RIGHT, undefined);
-		}
-	}
-	const marginBottom = parseUnitValue(
-		resolvePropertyValue(element, "margin-bottom", false),
-	);
-	if (typeof marginBottom === "number") {
-		yogaNode.setMargin(Yoga.EDGE_BOTTOM, marginBottom);
-	} else if (marginBottom && "percentage" in marginBottom) {
-		yogaNode.setMarginPercent(Yoga.EDGE_BOTTOM, marginBottom.percentage);
-	} else {
-		const originalValue = resolvePropertyValue(element, "margin-bottom", false);
-		if (originalValue === "auto") {
-			yogaNode.setMarginAuto(Yoga.EDGE_BOTTOM);
-		} else {
-			yogaNode.setMargin(Yoga.EDGE_BOTTOM, undefined);
-		}
-	}
-
-	const marginLeft = parseUnitValue(
-		resolvePropertyValue(element, "margin-left", false),
-	);
-	if (typeof marginLeft === "number") {
-		yogaNode.setMargin(Yoga.EDGE_LEFT, marginLeft);
-	} else if (marginLeft && "percentage" in marginLeft) {
-		yogaNode.setMarginPercent(Yoga.EDGE_LEFT, marginLeft.percentage);
-	} else {
-		const originalValue = resolvePropertyValue(element, "margin-left", false);
-		if (originalValue === "auto") {
-			yogaNode.setMarginAuto(Yoga.EDGE_LEFT);
-		} else {
-			yogaNode.setMargin(Yoga.EDGE_LEFT, undefined);
-		}
-	}
-
-	const paddingTop = parseUnitValue(
-		resolvePropertyValue(element, "padding-top", false),
-	);
-	if (typeof paddingTop === "number") {
-		yogaNode.setPadding(Yoga.EDGE_TOP, paddingTop);
-	} else if (paddingTop && "percentage" in paddingTop) {
-		yogaNode.setPaddingPercent(Yoga.EDGE_TOP, paddingTop.percentage);
-	} else {
-		yogaNode.setPadding(Yoga.EDGE_TOP, undefined);
-	}
-
-	const paddingRight = parseUnitValue(
-		resolvePropertyValue(element, "padding-right", false),
-	);
-	if (typeof paddingRight === "number") {
-		yogaNode.setPadding(Yoga.EDGE_RIGHT, paddingRight);
-	} else if (paddingRight && "percentage" in paddingRight) {
-		yogaNode.setPaddingPercent(Yoga.EDGE_RIGHT, paddingRight.percentage);
-	} else {
-		yogaNode.setPadding(Yoga.EDGE_RIGHT, undefined);
-	}
-
-	const paddingBottom = parseUnitValue(
-		resolvePropertyValue(element, "padding-bottom", false),
-	);
-	if (typeof paddingBottom === "number") {
-		yogaNode.setPadding(Yoga.EDGE_BOTTOM, paddingBottom);
-	} else if (paddingBottom && "percentage" in paddingBottom) {
-		yogaNode.setPaddingPercent(Yoga.EDGE_BOTTOM, paddingBottom.percentage);
-	} else {
-		yogaNode.setPadding(Yoga.EDGE_BOTTOM, undefined);
-	}
-
-	const paddingLeft = parseUnitValue(
-		resolvePropertyValue(element, "padding-left", false),
-	);
-	if (typeof paddingLeft === "number") {
-		yogaNode.setPadding(Yoga.EDGE_LEFT, paddingLeft);
-	} else if (paddingLeft && "percentage" in paddingLeft) {
-		yogaNode.setPaddingPercent(Yoga.EDGE_LEFT, paddingLeft.percentage);
-	} else {
-		yogaNode.setPadding(Yoga.EDGE_LEFT, undefined);
-	}
-
-	// Border width calculations for layout
-	const borderTopWidth = parseUnitValue(
-		resolvePropertyValue(element, "border-top-width", false),
-	);
-	if (typeof borderTopWidth === "number" && borderTopWidth > 0) {
-		yogaNode.setBorder(Yoga.EDGE_TOP, borderTopWidth);
-	} else {
-		yogaNode.setBorder(Yoga.EDGE_TOP, 0);
-	}
-
-	const borderRightWidth = parseUnitValue(
-		resolvePropertyValue(element, "border-right-width", false),
-	);
-	if (typeof borderRightWidth === "number" && borderRightWidth > 0) {
-		yogaNode.setBorder(Yoga.EDGE_RIGHT, borderRightWidth);
-	} else {
-		yogaNode.setBorder(Yoga.EDGE_RIGHT, 0);
-	}
-
-	const borderBottomWidth = parseUnitValue(
-		resolvePropertyValue(element, "border-bottom-width", false),
-	);
-	if (typeof borderBottomWidth === "number" && borderBottomWidth > 0) {
-		yogaNode.setBorder(Yoga.EDGE_BOTTOM, borderBottomWidth);
-	} else {
-		yogaNode.setBorder(Yoga.EDGE_BOTTOM, 0);
-	}
-
-	const borderLeftWidth = parseUnitValue(
-		resolvePropertyValue(element, "border-left-width", false),
-	);
-	if (typeof borderLeftWidth === "number" && borderLeftWidth > 0) {
-		yogaNode.setBorder(Yoga.EDGE_LEFT, borderLeftWidth);
-	} else {
-		yogaNode.setBorder(Yoga.EDGE_LEFT, 0);
-	}
-
-	if (
-		element.parentElement &&
-		resolvePropertyValue(element.parentElement, "display") === "block"
-	) {
-		yogaNode.setFlexGrow(0);
-		yogaNode.setFlexShrink(0);
-		yogaNode.setFlexBasisAuto();
-		yogaNode.setAlignSelf(Yoga.ALIGN_AUTO);
-	} else {
-		const flexGrow = resolvePropertyValue(element, "flex-grow", false);
-		const growValue = parseFloat(flexGrow);
-		if (!isNaN(growValue) && growValue >= 0) {
-			yogaNode.setFlexGrow(growValue);
-		} else {
-			yogaNode.setFlexGrow(undefined);
-		}
-
-		const flexShrink = resolvePropertyValue(element, "flex-shrink", false);
-		const shrinkValue = parseFloat(flexShrink);
-		if (!isNaN(shrinkValue) && shrinkValue >= 0) {
-			yogaNode.setFlexShrink(shrinkValue);
-		} else {
-			yogaNode.setFlexShrink(undefined);
-		}
-
-		const flexBasis = parseUnitValue(
-			resolvePropertyValue(element, "flex-basis", false),
-		);
-		if (typeof flexBasis === "number") {
-			yogaNode.setFlexBasis(flexBasis);
-		} else if (flexBasis && "percentage" in flexBasis) {
-			yogaNode.setFlexBasisPercent(flexBasis.percentage);
-		} else {
-			const originalValue = resolvePropertyValue(element, "flex-basis", false);
-			if (originalValue === "auto") {
-				yogaNode.setFlexBasisAuto();
-			} else {
-				yogaNode.setFlexBasis(undefined);
-			}
-		}
-
-		const alignSelf = resolvePropertyValue(element, "align-self", false);
-		if (alignSelf === "auto") {
-			yogaNode.setAlignSelf(Yoga.ALIGN_AUTO);
-		} else {
-			const alignValue = getYogaConstant("align", alignSelf);
-			if (alignValue !== null) {
-				yogaNode.setAlignSelf(alignValue);
-			} else {
-				yogaNode.setAlignSelf(Yoga.ALIGN_AUTO);
+		// Resolve each property and set it in the declaration
+		for (const property of properties) {
+			const value = resolvePropertyValue(this.element, property);
+			if (value) {
+				super.setProperty(property, value);
 			}
 		}
 	}
 
-	const display = resolvePropertyValue(element, "display");
-	if (display === "none") {
-		yogaNode.setDisplay(Yoga.DISPLAY_NONE);
-	} else if (display === "flex") {
-		yogaNode.setDisplay(Yoga.DISPLAY_FLEX);
-
-		const flexDirection = resolvePropertyValue(element, "flex-direction");
-		if (flexDirection === "row") {
-			yogaNode.setFlexDirection(Yoga.FLEX_DIRECTION_ROW);
-		} else if (flexDirection === "row-reverse") {
-			yogaNode.setFlexDirection(Yoga.FLEX_DIRECTION_ROW_REVERSE);
-		} else if (flexDirection === "column") {
-			yogaNode.setFlexDirection(Yoga.FLEX_DIRECTION_COLUMN);
-		} else if (flexDirection === "column-reverse") {
-			yogaNode.setFlexDirection(Yoga.FLEX_DIRECTION_COLUMN_REVERSE);
-		} else {
-			yogaNode.setFlexDirection(Yoga.FLEX_DIRECTION_ROW);
+	// Override getPropertyValue to use our terminal-specific resolution
+	override getPropertyValue(property: string): string {
+		// First check if we have a cached value from populateDeclaration
+		const cachedValue = super.getPropertyValue(property);
+		if (cachedValue) {
+			return this.normalizeForTerminal(property, cachedValue);
 		}
 
-		const flexWrap = resolvePropertyValue(element, "flex-wrap");
-		if (flexWrap === "nowrap") {
-			yogaNode.setFlexWrap(Yoga.WRAP_NO_WRAP);
-		} else if (flexWrap === "wrap") {
-			yogaNode.setFlexWrap(Yoga.WRAP_WRAP);
-		} else if (flexWrap === "wrap-reverse") {
-			yogaNode.setFlexWrap(Yoga.WRAP_WRAP_REVERSE);
-		} else {
-			yogaNode.setFlexWrap(Yoga.WRAP_NO_WRAP);
-		}
+		// If not in our pre-populated cache, resolve it fresh
+		// (This handles properties not in our common list)
+		const freshValue = resolvePropertyValue(this.element, property);
+		return this.normalizeForTerminal(property, freshValue);
+	}
 
-		const justifyContent = resolvePropertyValue(element, "justify-content");
-		const justifyValue = getYogaConstant("justify", justifyContent);
-		if (justifyValue !== null) {
-			yogaNode.setJustifyContent(justifyValue);
-		} else {
-			yogaNode.setJustifyContent(Yoga.JUSTIFY_FLEX_START);
-		}
+	/**
+	 * Apply terminal-specific normalization to computed values
+	 * This allows us to override cssstyle's default normalization
+	 */
+	private normalizeForTerminal(property: string, value: string): string {
+		if (!value) return value;
 
-		const alignItems = resolvePropertyValue(element, "align-items");
-		const alignValue = getYogaConstant("align", alignItems);
-		if (alignValue !== null) {
-			yogaNode.setAlignItems(alignValue);
-		} else {
-			yogaNode.setAlignItems(Yoga.ALIGN_STRETCH);
-		}
+		// Example: Convert pixel measurements to character units for terminals
+		// if (property === 'width' || property === 'height') {
+		// 	// Convert px to ch (assuming 1ch = 8px for typical monospace)
+		// 	if (value.endsWith('px')) {
+		// 		const pixels = parseFloat(value);
+		// 		const chars = Math.round(pixels / 8);
+		// 		return `${chars}ch`;
+		// 	}
+		// }
 
-		const alignContent = resolvePropertyValue(element, "align-content");
-		const alignContentValue = getYogaConstant("align", alignContent);
-		if (alignContentValue !== null) {
-			yogaNode.setAlignContent(alignContentValue);
-		} else {
-			yogaNode.setAlignContent(Yoga.ALIGN_FLEX_START);
-		}
-	} else {
-		yogaNode.setDisplay(Yoga.DISPLAY_FLEX);
-		yogaNode.setFlexDirection(Yoga.FLEX_DIRECTION_COLUMN);
-		yogaNode.setAlignItems(Yoga.ALIGN_STRETCH);
+		// Example: Prevent shorthand expansion for certain properties
+		// if (property === 'margin') {
+		// 	// Keep original shorthand instead of expanded form
+		// 	const original = resolvePropertyValue(this.element, property);
+		// 	if (original && original !== '0') {
+		// 		return original; // Return original shorthand
+		// 	}
+		// }
+
+		// For now, return the value as-is (cssstyle normalization)
+		return value;
 	}
 }
+
+// ============================================================================
+// BORDER UTILITIES
+// ============================================================================
+
+export enum BorderEdgeStyle {
+	// Style values (bits 3-0)
+	None = 0b0000,
+	Dotted = 0b0001,
+	Dashed = 0b0010,
+	Solid = 0b0011,
+	Groove = 0b0100,
+	Ridge = 0b0101,
+	Inset = 0b0110,
+	Outset = 0b0111,
+	Double = 0b1000,
+	Hidden = 0b1111,
+
+	// Flags (bit 4+)
+	Rounded = 0b00010000,
+}
+
+interface BoxCharSet {
+	horizontal: string;
+	vertical: string;
+	topLeft: string;
+	topRight: string;
+	bottomLeft: string;
+	bottomRight: string;
+	topTee: string;
+	bottomTee: string;
+	leftTee: string;
+	rightTee: string;
+	cross: string;
+}
+
+export const BOX_DRAWING: Record<string, BoxCharSet> = {
+	ascii: {
+		horizontal: "-",
+		vertical: "|",
+		topLeft: "+",
+		topRight: "+",
+		bottomLeft: "+",
+		bottomRight: "+",
+		topTee: "+",
+		bottomTee: "+",
+		leftTee: "+",
+		rightTee: "+",
+		cross: "+",
+	},
+	light: {
+		horizontal: "─",
+		vertical: "│",
+		topLeft: "┌",
+		topRight: "┐",
+		bottomLeft: "└",
+		bottomRight: "┘",
+		topTee: "┬",
+		bottomTee: "┴",
+		leftTee: "┤",
+		rightTee: "├",
+		cross: "┼",
+	},
+	heavy: {
+		horizontal: "━",
+		vertical: "┃",
+		topLeft: "┏",
+		topRight: "┓",
+		bottomLeft: "┗",
+		bottomRight: "┛",
+		topTee: "┳",
+		bottomTee: "┻",
+		leftTee: "┫",
+		rightTee: "┣",
+		cross: "╋",
+	},
+	double: {
+		horizontal: "═",
+		vertical: "║",
+		topLeft: "╔",
+		topRight: "╗",
+		bottomLeft: "╚",
+		bottomRight: "╝",
+		topTee: "╦",
+		bottomTee: "╩",
+		leftTee: "╣",
+		rightTee: "╠",
+		cross: "╬",
+	},
+	dashed: {
+		horizontal: "╌",
+		vertical: "┆",
+		topLeft: "┌",
+		topRight: "┐",
+		bottomLeft: "└",
+		bottomRight: "┘",
+		topTee: "┬",
+		bottomTee: "┴",
+		leftTee: "┤",
+		rightTee: "├",
+		cross: "┼",
+	},
+	dotted: {
+		horizontal: "┄",
+		vertical: "┊",
+		topLeft: "┌",
+		topRight: "┐",
+		bottomLeft: "└",
+		bottomRight: "┘",
+		topTee: "┬",
+		bottomTee: "┴",
+		leftTee: "┤",
+		rightTee: "├",
+		cross: "┼",
+	},
+	lightRounded: {
+		horizontal: "─",
+		vertical: "│",
+		topLeft: "╭",
+		topRight: "╮",
+		bottomLeft: "╰",
+		bottomRight: "╯",
+		topTee: "┬",
+		bottomTee: "┴",
+		leftTee: "┤",
+		rightTee: "├",
+		cross: "┼",
+	},
+};
 
 /**
  * Resolve border styles for an element, returning per-edge encoded data
@@ -790,6 +550,8 @@ export function resolveBorderStyles(element: Element): {
 	leftEdge: number;
 	hasAnyBorder: boolean;
 } {
+	const computedStyle = new TerminalComputedStyle(element);
+
 	// Helper to encode individual edge
 	const encodeEdge = (
 		width: string,
@@ -798,7 +560,7 @@ export function resolveBorderStyles(element: Element): {
 	): number => {
 		const widthValue = parseFloat(width);
 		if (isNaN(widthValue) || widthValue <= 0 || !style || style === "none") {
-			return 0; // No border
+			return 0;
 		}
 
 		let edgeValue = 0;
@@ -843,39 +605,38 @@ export function resolveBorderStyles(element: Element): {
 
 	// Check for border-radius (applies to all corners)
 	const borderRadius = parseFloat(
-		resolvePropertyValue(element, "border-radius", false),
+		computedStyle.getPropertyValue("border-radius"),
 	);
 	const hasRadius = !isNaN(borderRadius) && borderRadius > 0;
 
-	// I’m pretty sure JSDOM already resolves shorthand to longhand
-	// Resolve individual edges (check both shorthand and individual properties)
+	// Resolve individual edges
 	const topWidth =
-		resolvePropertyValue(element, "border-top-width", false) ||
-		resolvePropertyValue(element, "border-width", false);
+		computedStyle.getPropertyValue("border-top-width") ||
+		computedStyle.getPropertyValue("border-width");
 	const topStyle =
-		resolvePropertyValue(element, "border-top-style", false) ||
-		resolvePropertyValue(element, "border-style", false);
+		computedStyle.getPropertyValue("border-top-style") ||
+		computedStyle.getPropertyValue("border-style");
 
 	const rightWidth =
-		resolvePropertyValue(element, "border-right-width", false) ||
-		resolvePropertyValue(element, "border-width", false);
+		computedStyle.getPropertyValue("border-right-width") ||
+		computedStyle.getPropertyValue("border-width");
 	const rightStyle =
-		resolvePropertyValue(element, "border-right-style", false) ||
-		resolvePropertyValue(element, "border-style", false);
+		computedStyle.getPropertyValue("border-right-style") ||
+		computedStyle.getPropertyValue("border-style");
 
 	const bottomWidth =
-		resolvePropertyValue(element, "border-bottom-width", false) ||
-		resolvePropertyValue(element, "border-width", false);
+		computedStyle.getPropertyValue("border-bottom-width") ||
+		computedStyle.getPropertyValue("border-width");
 	const bottomStyle =
-		resolvePropertyValue(element, "border-bottom-style", false) ||
-		resolvePropertyValue(element, "border-style", false);
+		computedStyle.getPropertyValue("border-bottom-style") ||
+		computedStyle.getPropertyValue("border-style");
 
 	const leftWidth =
-		resolvePropertyValue(element, "border-left-width", false) ||
-		resolvePropertyValue(element, "border-width", false);
+		computedStyle.getPropertyValue("border-left-width") ||
+		computedStyle.getPropertyValue("border-width");
 	const leftStyle =
-		resolvePropertyValue(element, "border-left-style", false) ||
-		resolvePropertyValue(element, "border-style", false);
+		computedStyle.getPropertyValue("border-left-style") ||
+		computedStyle.getPropertyValue("border-style");
 
 	// Encode each edge
 	const topEdge = encodeEdge(topWidth, topStyle, hasRadius);
@@ -894,31 +655,11 @@ export function resolveBorderStyles(element: Element): {
 }
 
 // ============================================================================
-// BOX-DRAWING CHARACTER SETS
-// ============================================================================
-
-interface BoxCharSet {
-	horizontal: string;
-	vertical: string;
-	topLeft: string;
-	topRight: string;
-	bottomLeft: string;
-	bottomRight: string;
-	topTee: string;
-	bottomTee: string;
-	leftTee: string;
-	rightTee: string;
-	cross: string;
-}
-
-// ============================================================================
 // COLOR UTILITIES
 // ============================================================================
 
 /**
  * Convert CSS color string to numeric color value
- * @param cssColor - CSS color value (hex, named, rgb(), etc.)
- * @returns Numeric color value or 0 for transparent/invalid colors
  */
 export function cssColorToNumber(cssColor: string): number {
 	if (!cssColor || cssColor === "transparent" || cssColor === "none") {
@@ -931,9 +672,6 @@ export function cssColorToNumber(cssColor: string): number {
 
 /**
  * Darken a color by a given factor
- * @param color - Numeric color value (0xRRGGBB)
- * @param factor - Darkening factor (0.0 to 1.0, where 1.0 = black)
- * @returns Darkened color as numeric value
  */
 export function darkenColor(color: number, factor: number): number {
 	const r = (color >> 16) & 0xff;
@@ -953,8 +691,6 @@ export function darkenColor(color: number, factor: number): number {
 
 /**
  * Convert a number to Roman numeral representation
- * @param num - Number to convert
- * @returns Roman numeral string
  */
 export function toRoman(num: number): string {
 	const romanNumerals = [
@@ -985,8 +721,6 @@ export function toRoman(num: number): string {
 
 /**
  * Calculate nesting depth of a list item
- * @param listItem - The li element
- * @returns Zero-based nesting depth (0 for first level)
  */
 export function getListNestingDepth(listItem: Element): number {
 	let depth = 0;
@@ -999,23 +733,21 @@ export function getListNestingDepth(listItem: Element): number {
 		current = current.parentElement;
 	}
 
-	return depth - 1; // Subtract 1 because we want 0-based depth (first level = 0)
+	return depth - 1; // Zero-based depth (first level = 0)
 }
 
 /**
  * Generate appropriate list marker for a list item
- * @param listItem - The li element
- * @param listParent - The parent ul or ol element
- * @returns Marker string (e.g., "1.", "•", "a.")
  */
 export function getListMarker(listItem: Element, listParent: Element): string {
 	const listType = listParent.tagName.toLowerCase();
-	const listStyleType = resolvePropertyValue(listParent, "list-style-type");
+	const listStyleType = new TerminalComputedStyle(listParent).getPropertyValue(
+		"list-style-type",
+	);
 	const nestingDepth = getListNestingDepth(listItem);
 
 	if (listType === "ol") {
 		// Ordered list - get the item index and format as number
-		// Only count direct children, not nested li elements
 		const items = Array.from(listParent.children).filter(
 			(child) => child.tagName === "LI",
 		);
@@ -1059,165 +791,27 @@ export function getListMarker(listItem: Element, listParent: Element): string {
 	return "";
 }
 
-export enum BorderEdgeStyle {
-	// Style values (bits 3-0)
-	None = 0b0000,
-	Dotted = 0b0001,
-	Dashed = 0b0010,
-	Solid = 0b0011,
-	Groove = 0b0100,
-	Ridge = 0b0101,
-	Inset = 0b0110,
-	Outset = 0b0111,
-	Double = 0b1000,
-	Hidden = 0b1111,
+// ============================================================================
+// COMPUTED STYLE OVERRIDE
+// ============================================================================
 
-	// Flags (bit 4+)
-	Rounded = 0b00010000,
+/**
+ * Create a custom getComputedStyle function for terminal DOM
+ */
+export function createGetComputedStyle(): (
+	element: Element,
+	pseudoElt?: string | null,
+) => globalThis.CSSStyleDeclaration {
+	return function getComputedStyle(
+		element: Element,
+		_pseudoElt?: string | null,
+	): globalThis.CSSStyleDeclaration {
+		// For now, we ignore pseudoElt parameter (could be ::before, ::after, etc.)
+
+		// TEMPORARILY DISABLED: Caching was preventing style updates from being reflected
+		// Create new instance each time to ensure fresh computed values
+		return new TerminalComputedStyle(
+			element,
+		) as unknown as globalThis.CSSStyleDeclaration;
+	};
 }
-
-export const BOX_DRAWING: Record<string, BoxCharSet> = {
-	/**
-	 * Unicode ASCII borders
-	 *
-	 * Provided for maximum compatibility
-	 * +-------+
-	 * | ascii |
-	 * +-------+
-	 */
-	ascii: {
-		horizontal: "-",
-		vertical: "|",
-		topLeft: "+",
-		topRight: "+",
-		bottomLeft: "+",
-		bottomRight: "+",
-		topTee: "+",
-		bottomTee: "+",
-		leftTee: "+",
-		rightTee: "+",
-		cross: "+",
-	} as BoxCharSet,
-
-	/**
-	 * Unicode light borders
-	 * ┌───────┐
-	 * │ light │
-	 * └───────┘
-	 */
-	light: {
-		horizontal: "─",
-		vertical: "│",
-		topLeft: "┌",
-		topRight: "┐",
-		bottomLeft: "└",
-		bottomRight: "┘",
-		topTee: "┬",
-		bottomTee: "┴",
-		leftTee: "┤",
-		rightTee: "├",
-		cross: "┼",
-	} as BoxCharSet,
-
-	/**
-	 * Unicode heavy borders
-	 * ┏━━━━━━━┓
-	 * ┃ heavy ┃
-	 * ┗━━━━━━━┛
-	 */
-	heavy: {
-		horizontal: "━",
-		vertical: "┃",
-		topLeft: "┏",
-		topRight: "┓",
-		bottomLeft: "┗",
-		bottomRight: "┛",
-		topTee: "┳",
-		bottomTee: "┻",
-		leftTee: "┫",
-		rightTee: "┣",
-		cross: "╋",
-	} as BoxCharSet,
-
-	/**
-	 * Unicode double borders
-	 * ╔════════╗
-	 * ║ double ║
-	 * ╚════════╝
-	 */
-	double: {
-		horizontal: "═",
-		vertical: "║",
-		topLeft: "╔",
-		topRight: "╗",
-		bottomLeft: "╚",
-		bottomRight: "╝",
-		topTee: "╦",
-		bottomTee: "╩",
-		leftTee: "╣",
-		rightTee: "╠",
-		cross: "╬",
-	} as BoxCharSet,
-
-	/**
-	 * Unicode dashed borders
-	 * ┌╌╌╌╌╌╌╌╌┐
-	 * ┆ dashed ┆
-	 * └╌╌╌╌╌╌╌╌┘
-	 */
-	dashed: {
-		horizontal: "╌",
-		vertical: "┆",
-		topLeft: "┌", // Fall back to light corners
-		topRight: "┐",
-		bottomLeft: "└",
-		bottomRight: "┘",
-		topTee: "┬",
-		bottomTee: "┴",
-		leftTee: "┤",
-		rightTee: "├",
-		cross: "┼",
-	} as BoxCharSet,
-
-	/**
-	 * Unicode dotted borders
-	 * ┌┄┄┄┄┄┄┄┄┐
-	 * ┊ dotted ┊
-	 * └┄┄┄┄┄┄┄┄┘
-	 */
-	dotted: {
-		horizontal: "┄",
-		vertical: "┊",
-		topLeft: "┌", // Fall back to light corners
-		topRight: "┐",
-		bottomLeft: "└",
-		bottomRight: "┘",
-		topTee: "┬",
-		bottomTee: "┴",
-		leftTee: "┤",
-		rightTee: "├",
-		cross: "┼",
-	} as BoxCharSet,
-
-	// TODO: rounded corners could be added to BoxCharSet as optional properties
-	/**
-	 * Rounded corners (border-radius support)
-	 * ╭─────────╮
-	 * │ rounded │
-	 * ╰─────────╯
-	 */
-	lightRounded: {
-		horizontal: "─",
-		vertical: "│",
-		topLeft: "╭",
-		topRight: "╮",
-		bottomLeft: "╰",
-		bottomRight: "╯",
-		// No rounded T-junctions - fall back to sharp
-		topTee: "┬",
-		bottomTee: "┴",
-		leftTee: "┤",
-		rightTee: "├",
-		cross: "┼",
-	} as BoxCharSet,
-};

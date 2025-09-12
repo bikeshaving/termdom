@@ -198,7 +198,9 @@ function renderTable() {
 
 			// Use custom cell renderer if available
 			const cellValue = cell.column.columnDef.cell
-				? (cell.column.columnDef.cell as any)({getValue: () => cell.getValue()})
+				? (cell.column.columnDef.cell as any)({
+						getValue: () => cell.getValue(),
+					})
 				: String(cell.getValue());
 
 			cellDiv.textContent = cellValue;

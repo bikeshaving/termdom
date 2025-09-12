@@ -10,14 +10,8 @@
     "sourceType": "module",
     "createDefaultProgram": true
   },
-  "plugins": [
-    "@typescript-eslint",
-    "prettier"
-  ],
-  "extends": [
-    "eslint:recommended",
-    "plugin:prettier/recommended"
-  ],
+  "plugins": ["@typescript-eslint", "prettier"],
+  "extends": ["eslint:recommended", "plugin:prettier/recommended"],
   "overrides": [
     {
       "files": ["examples/**/*.ts"],
@@ -57,6 +51,6 @@
     ],
     "linebreak-style": ["error", "unix"],
     "no-control-regex": "off",
-    "@typescript-eslint/array-type": ["error", {"default": "array-simple"}]
+    "@typescript-eslint/array-type": ["error", { "default": "array-simple" }]
   }
 }

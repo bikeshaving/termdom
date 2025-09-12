@@ -25,7 +25,12 @@ function borderStyles() {
 	// Border styles to showcase
 	const styles = [
 		{name: "Solid", border: "1px solid", bg: "#2a1a1a", color: "white"},
-		{name: "Double", border: "1px double", bg: "#1a2a1a", color: "lightgreen"},
+		{
+			name: "Double",
+			border: "1px double",
+			bg: "#1a2a1a",
+			color: "lightgreen",
+		},
 		{name: "Dashed", border: "1px dashed", bg: "#1a1a2a", color: "lightblue"},
 		{name: "Dotted", border: "1px dotted", bg: "#2a2a1a", color: "yellow"},
 		{name: "Groove", border: "1px groove", bg: "#2a1a2a", color: "magenta"},

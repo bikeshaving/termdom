@@ -10,15 +10,15 @@ TermDOM is available on npm as
 [`@b9g/termdom`](https://www.npmjs.com/package/@b9g/termdom).
 
 ```ts
-import {TermDOM} from '@b9g/termdom';
+import { TermDOM } from "@b9g/termdom";
 const termDOM = new TermDOM();
 const document = termDOM.document;
 
-const div = document.createElement('div');
-div.style.backgroundColor = 'blue';
-div.style.color = 'white';
-div.style.padding = '2';
-div.textContent = 'Hello Terminal!';
+const div = document.createElement("div");
+div.style.backgroundColor = "blue";
+div.style.color = "white";
+div.style.padding = "2";
+div.textContent = "Hello Terminal!";
 
 document.body.appendChild(div);
 termDOM.render(); // Flush to terminal
@@ -51,15 +51,16 @@ TermDOM solves this by leveraging familiar web concepts:
   TTY and non-TTY use cases.
 
 ## Quickstart
+
 ```ts
-import {TermDOM} from '@b9g/termdom';
+import { TermDOM } from "@b9g/termdom";
 
 const term = new TermDOM();
 const doc = term.document;
 
-const header = doc.createElement('div');
-header.textContent = 'TermDOM Demo';
-header.style.color = 'green';
+const header = doc.createElement("div");
+header.textContent = "TermDOM Demo";
+header.style.color = "green";
 doc.body.appendChild(header);
 
 term.render(); // Flush to terminal

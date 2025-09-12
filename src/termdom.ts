@@ -3,14 +3,13 @@ import {type DOMWindow, JSDOM} from "jsdom";
 import {LayoutEngine, isPointInRects} from "./layout.js";
 import {type ColorDepth, Renderer} from "./ansi.js";
 import {
-	resolvePropertyValue,
+	createGetComputedStyle,
 	resolveBorderStyles,
 	cssColorToNumber,
-	darkenColor,
 } from "./styles.js";
 import {FullscreenManager} from "./fullscreen.js";
 import {setupInspectMethods} from "./inspector.js";
-import {registerListElements} from "./elements/lists.js";
+// import {registerListElements} from "./elements/lists.js";
 
 function detectColorDepth(process: ProcessLike): ColorDepth {
 	const colorterm = process.env.COLORTERM;
@@ -76,7 +75,7 @@ export class TermDOM {
 	private readonly mergedTreeCache = new WeakMap<Element, DocumentFragment>();
 	private readonly cloneToOriginalMap = new WeakMap<Node, Node>();
 	private originalAttachShadow!: typeof Element.prototype.attachShadow;
-	private upgradeListElements!: (root?: Element | Document) => void;
+	// private upgradeListElements!: (root?: Element | Document) => void;
 
 	private width: number;
 	private height: number;
@@ -101,6 +100,9 @@ export class TermDOM {
 		this.window = this.jsdom.window;
 		this.document = this.jsdom.window.document;
 
+		// Setup terminal-specific getComputedStyle
+		this.window.getComputedStyle = createGetComputedStyle();
+
 		// Setup DOM inspector
 		setupInspectMethods(this.window);
 
@@ -108,8 +110,8 @@ export class TermDOM {
 		this.setupShadowDOMSupport();
 
 		// Register custom list elements
-		const listEnhancer = registerListElements(this.window);
-		this.upgradeListElements = listEnhancer.enhanceListElement;
+		// const listEnhancer = registerListElements(this.window);
+		// this.upgradeListElements = listEnhancer.enhanceListElement;
 
 		this.initializeConstructorExtensions();
 		this.renderer = new Renderer(
@@ -150,47 +152,70 @@ export class TermDOM {
 			options: ShadowRootInit,
 		): ShadowRoot {
 			let shadowRoot: ShadowRoot;
-			
+
 			try {
 				// Call original method
 				shadowRoot = originalAttachShadow.call(this, options);
 			} catch (e) {
 				// JSDOM doesn't support attachShadow on built-in elements
-				// Create a mock shadow root for testing/compatibility  
+				// Create a mock shadow root for testing/compatibility
 				const childNodes: Node[] = [];
 				const children: Element[] = [];
-				
+
 				shadowRoot = {
 					mode: options.mode,
-					get childNodes() { return childNodes; },
-					get children() { return children; },
-					get firstChild() { return childNodes[0] || null; },
-					get lastChild() { return childNodes[childNodes.length - 1] || null; },
-					appendChild: function(node: Node) {
+					get childNodes() {
+						return childNodes;
+					},
+					get children() {
+						return children;
+					},
+					get firstChild() {
+						return childNodes[0] || null;
+					},
+					get lastChild() {
+						return childNodes[childNodes.length - 1] || null;
+					},
+					appendChild: function (node: Node) {
 						childNodes.push(node);
 						if (node.nodeType === 1) children.push(node as Element);
 						return node;
 					},
-					querySelector: function(selector: string) {
-						return children.find((child: Element) => {
-							if (selector === 'style' && child.tagName === 'STYLE') return child;
-							if (selector === 'slot' && child.tagName === 'SLOT') return child;
-							if (selector.startsWith('.') && child.className && child.className.includes(selector.slice(1))) return child;
-							return null;
-						}) || null;
+					querySelector: function (selector: string) {
+						return (
+							children.find((child: Element) => {
+								if (selector === "style" && child.tagName === "STYLE")
+									return child;
+								if (selector === "slot" && child.tagName === "SLOT")
+									return child;
+								if (
+									selector.startsWith(".") &&
+									child.className &&
+									child.className.includes(selector.slice(1))
+								)
+									return child;
+								return null;
+							}) || null
+						);
 					},
-					querySelectorAll: function(selector: string) {
+					querySelectorAll: function (selector: string) {
 						return children.filter((child: Element) => {
-							if (selector === 'style' && child.tagName === 'STYLE') return true;
-							if (selector === 'slot' && child.tagName === 'SLOT') return true;
-							if (selector.startsWith('.') && child.className && child.className.includes(selector.slice(1))) return true;
+							if (selector === "style" && child.tagName === "STYLE")
+								return true;
+							if (selector === "slot" && child.tagName === "SLOT") return true;
+							if (
+								selector.startsWith(".") &&
+								child.className &&
+								child.className.includes(selector.slice(1))
+							)
+								return true;
 							return false;
 						});
 					},
 					// Make it iterable
-					[Symbol.iterator]: function*() {
+					[Symbol.iterator]: function* () {
 						yield* childNodes;
-					}
+					},
 				} as any;
 			}
 
@@ -302,11 +327,14 @@ export class TermDOM {
 	private mapClonedTree(clonedNode: Node, originalNode: Node): void {
 		// Map the nodes
 		this.cloneToOriginalMap.set(clonedNode, originalNode);
-		
+
 		// Recursively map children
 		if (clonedNode.childNodes.length === originalNode.childNodes.length) {
 			for (let i = 0; i < clonedNode.childNodes.length; i++) {
-				this.mapClonedTree(clonedNode.childNodes[i], originalNode.childNodes[i]);
+				this.mapClonedTree(
+					clonedNode.childNodes[i],
+					originalNode.childNodes[i],
+				);
 			}
 		}
 	}
@@ -314,55 +342,63 @@ export class TermDOM {
 	/**
 	 * Transform a cloned LI element to include its shadow DOM marker structure
 	 */
-	private applyLIShadowDOMTransform(clonedLI: Element, originalLI: Element): void {
+	private applyLIShadowDOMTransform(
+		clonedLI: Element,
+		originalLI: Element,
+	): void {
 		// Get the parent list to determine marker type
 		const parentList = originalLI.parentElement;
-		if (!parentList || (parentList.tagName !== 'UL' && parentList.tagName !== 'OL')) {
+		if (
+			!parentList ||
+			(parentList.tagName !== "UL" && parentList.tagName !== "OL")
+		) {
 			return;
 		}
-		
+
 		// Store the original text content
-		const textContent = clonedLI.textContent || '';
-		
+		const textContent = clonedLI.textContent || "";
+
 		// Clear the cloned LI's content
-		clonedLI.textContent = '';
-		
+		clonedLI.textContent = "";
+
 		// Create marker element
-		const markerElement = this.document.createElement('span');
-		markerElement.style.setProperty('position', 'absolute');
-		markerElement.style.setProperty('top', '0');
-		markerElement.style.setProperty('text-align', 'right');
-		
+		const markerElement = this.document.createElement("span");
+		markerElement.style.setProperty("position", "absolute");
+		markerElement.style.setProperty("top", "0");
+		markerElement.style.setProperty("text-align", "right");
+
 		// Generate marker content based on parent list type
-		if (parentList.tagName === 'UL') {
-			markerElement.textContent = '•';
-			markerElement.style.setProperty('left', '-2ch');
-			markerElement.style.setProperty('width', '2ch');
-		} else if (parentList.tagName === 'OL') {
-			const items = Array.from(parentList.children).filter((child: Element) => child.tagName === 'LI');
+		if (parentList.tagName === "UL") {
+			markerElement.textContent = "•";
+			markerElement.style.setProperty("left", "-2ch");
+			markerElement.style.setProperty("width", "2ch");
+		} else if (parentList.tagName === "OL") {
+			const items = Array.from(parentList.children).filter(
+				(child: Element) => child.tagName === "LI",
+			);
 			const index = items.indexOf(originalLI);
 			if (index !== -1) {
-				const start = parseInt(parentList.getAttribute('start') || '1', 10);
+				const start = parseInt(parentList.getAttribute("start") || "1", 10);
 				const itemNumber = start + index;
 				markerElement.textContent = `${itemNumber}.`;
-				
+
 				// Calculate marker width for proper alignment
 				const maxNumber = start + items.length - 1;
 				const markerWidth = maxNumber.toString().length + 1;
-				markerElement.style.setProperty('left', `-${markerWidth}ch`);
-				markerElement.style.setProperty('width', `${markerWidth}ch`);
+				markerElement.style.setProperty("left", `-${markerWidth}ch`);
+				markerElement.style.setProperty("width", `${markerWidth}ch`);
 			}
 		}
-		
+
 		// Create content wrapper
-		const contentWrapper = this.document.createElement('div');
-		contentWrapper.style.setProperty('display', 'block');
+		const contentWrapper = this.document.createElement("div");
+		contentWrapper.style.setProperty("display", "block");
 		contentWrapper.textContent = textContent;
-		
+
 		// Set positioning styles on the LI
-		(clonedLI as HTMLElement).style.setProperty('display', 'block');
-		(clonedLI as HTMLElement).style.setProperty('position', 'relative');
-		
+		(clonedLI as HTMLElement).style.setProperty("display", "block");
+		(clonedLI as HTMLElement).style.setProperty("position", "relative");
+
 		// Add marker and content to the cloned LI
 		clonedLI.appendChild(markerElement);
 		clonedLI.appendChild(contentWrapper);
@@ -372,24 +408,32 @@ export class TermDOM {
 	 * Apply shadow DOM styles from <style> elements to the host element
 	 * This is a simplified implementation for list elements
 	 */
-	private applyShadowDOMStyles(element: Element, shadowRoot: ShadowRoot): void {
-		if (element.tagName === 'UL') {
+	private applyShadowDOMStyles(
+		element: Element,
+		_shadowRoot: ShadowRoot,
+	): void {
+		if (element.tagName === "UL") {
 			// Apply UL shadow DOM styles
-			(element as HTMLElement).style.setProperty('display', 'block');
-			(element as HTMLElement).style.setProperty('padding-left', '2ch');
-			(element as HTMLElement).style.setProperty('margin', '0');
-			(element as HTMLElement).style.setProperty('list-style', 'none');
-		} else if (element.tagName === 'OL') {
+			(element as HTMLElement).style.setProperty("display", "block");
+			(element as HTMLElement).style.setProperty("padding-left", "2ch");
+			(element as HTMLElement).style.setProperty("margin", "0");
+			(element as HTMLElement).style.setProperty("list-style", "none");
+		} else if (element.tagName === "OL") {
 			// Apply OL shadow DOM styles with dynamic padding
-			const items = Array.from(element.children).filter(child => child.tagName === 'LI');
-			const start = parseInt(element.getAttribute('start') || '1', 10);
+			const items = Array.from(element.children).filter(
+				(child) => child.tagName === "LI",
+			);
+			const start = parseInt(element.getAttribute("start") || "1", 10);
 			const maxNumber = start + items.length - 1;
 			const markerWidth = maxNumber.toString().length + 1;
-			
-			(element as HTMLElement).style.setProperty('display', 'block');
-			(element as HTMLElement).style.setProperty('padding-left', `${markerWidth}ch`);
-			(element as HTMLElement).style.setProperty('margin', '0');
-			(element as HTMLElement).style.setProperty('list-style', 'none');
+
+			(element as HTMLElement).style.setProperty("display", "block");
+			(element as HTMLElement).style.setProperty(
+				"padding-left",
+				`${markerWidth}ch`,
+			);
+			(element as HTMLElement).style.setProperty("margin", "0");
+			(element as HTMLElement).style.setProperty("list-style", "none");
 		}
 		// Note: LI elements in merged tree don't need styles applied here
 		// since they're already properly slotted and should render their text content
@@ -482,13 +526,22 @@ export class TermDOM {
 	private renderElement(element: Element): void {
 		const rect = this.layoutEngine.getRect(element);
 
-		const color = resolvePropertyValue(element, "color");
-		const backgroundColor = resolvePropertyValue(element, "background-color");
-		const bold = resolvePropertyValue(element, "font-weight") === "bold";
-		const italic = resolvePropertyValue(element, "font-style") === "italic";
-		const underline = resolvePropertyValue(element, "text-decoration").includes(
-			"underline",
-		);
+		const color = this.window
+			.getComputedStyle(element)
+			.getPropertyValue("color");
+		const backgroundColor = this.window
+			.getComputedStyle(element)
+			.getPropertyValue("background-color");
+		const bold =
+			this.window.getComputedStyle(element).getPropertyValue("font-weight") ===
+			"bold";
+		const italic =
+			this.window.getComputedStyle(element).getPropertyValue("font-style") ===
+			"italic";
+		const underline = this.window
+			.getComputedStyle(element)
+			.getPropertyValue("text-decoration")
+			.includes("underline");
 
 		const style = {
 			fg: color && color !== "initial" ? cssColorToNumber(color) : undefined,
@@ -514,12 +567,13 @@ export class TermDOM {
 		}
 
 		// Handle tables with TanStack integration
-		const display = resolvePropertyValue(element, "display");
+		const display = this.window
+			.getComputedStyle(element)
+			.getPropertyValue("display");
 		if (display === "table" && rect) {
 			this.renderTable(element, rect, style);
 			return; // Table handles its own children
 		}
-
 
 		// Handle borders
 		if (rect) {
@@ -543,9 +597,13 @@ export class TermDOM {
 
 		// Ensure list elements are initialized with shadow DOM
 		// Only initialize if this element is in the original DOM tree, not in merged trees
-		if ((element.tagName === 'UL' || element.tagName === 'OL' || element.tagName === 'LI') && 
-		    element.isConnected && 
-		    element.ownerDocument === this.document) {
+		if (
+			(element.tagName === "UL" ||
+				element.tagName === "OL" ||
+				element.tagName === "LI") &&
+			element.isConnected &&
+			element.ownerDocument === this.document
+		) {
 			if ((element as any).connectedCallback && !this.getShadowRoot(element)) {
 				(element as any).connectedCallback();
 			}
@@ -654,8 +712,7 @@ export class TermDOM {
 								const clonedLight = lightChild.cloneNode(true);
 								// Track the relationship between cloned and original nodes (including text nodes)
 								this.mapClonedTree(clonedLight, lightChild);
-								
-								
+
 								container.appendChild(clonedLight);
 							}
 						}
@@ -678,8 +735,7 @@ export class TermDOM {
 							const clonedLight = lightChild.cloneNode(true);
 							// Track the relationship between cloned and original nodes (including text nodes)
 							this.mapClonedTree(clonedLight, lightChild);
-							
-							
+
 							container.appendChild(clonedLight);
 						}
 					}
@@ -773,13 +829,22 @@ export class TermDOM {
 		// Get the element's rect and styling like normal rendering
 		const rect = this.layoutEngine.getRect(element);
 
-		const color = resolvePropertyValue(element, "color");
-		const backgroundColor = resolvePropertyValue(element, "background-color");
-		const bold = resolvePropertyValue(element, "font-weight") === "bold";
-		const italic = resolvePropertyValue(element, "font-style") === "italic";
-		const underline = resolvePropertyValue(element, "text-decoration").includes(
-			"underline",
-		);
+		const color = this.window
+			.getComputedStyle(element)
+			.getPropertyValue("color");
+		const backgroundColor = this.window
+			.getComputedStyle(element)
+			.getPropertyValue("background-color");
+		const bold =
+			this.window.getComputedStyle(element).getPropertyValue("font-weight") ===
+			"bold";
+		const italic =
+			this.window.getComputedStyle(element).getPropertyValue("font-style") ===
+			"italic";
+		const underline = this.window
+			.getComputedStyle(element)
+			.getPropertyValue("text-decoration")
+			.includes("underline");
 
 		const style = {
 			fg: color && color !== "initial" ? cssColorToNumber(color) : undefined,
@@ -840,16 +905,24 @@ export class TermDOM {
 		const parentElement = textNode.parentElement;
 		if (!parentElement) return;
 
-		const textColor = resolvePropertyValue(parentElement, "color");
-		const textBgColor = resolvePropertyValue(parentElement, "background-color");
+		const textColor = this.window
+			.getComputedStyle(parentElement)
+			.getPropertyValue("color");
+		const textBgColor = this.window
+			.getComputedStyle(parentElement)
+			.getPropertyValue("background-color");
 		const textBold =
-			resolvePropertyValue(parentElement, "font-weight") === "bold";
+			this.window
+				.getComputedStyle(parentElement)
+				.getPropertyValue("font-weight") === "bold";
 		const textItalic =
-			resolvePropertyValue(parentElement, "font-style") === "italic";
-		const textUnderline = resolvePropertyValue(
-			parentElement,
-			"text-decoration",
-		).includes("underline");
+			this.window
+				.getComputedStyle(parentElement)
+				.getPropertyValue("font-style") === "italic";
+		const textUnderline = this.window
+			.getComputedStyle(parentElement)
+			.getPropertyValue("text-decoration")
+			.includes("underline");
 
 		const textStyle = {
 			fg:
@@ -889,10 +962,17 @@ export class TermDOM {
 	}
 
 	// TODO: move this to tables.ts? or layout.ts
-	private renderTable(tableElement: Element, rect: DOMRect, style: any): void {
-		const tableInstance = this.layoutEngine.getTableInstance(tableElement);
-		if (!tableInstance) return;
+	private renderTable(
+		_tableElement: Element,
+		_rect: DOMRect,
+		_style: any,
+	): void {
+		// TODO: Re-implement table rendering - getTableInstance method doesn't exist
+		// const tableInstance = this.layoutEngine.getTableInstance(tableElement);
+		// if (!tableInstance) return;
+		return;
 
+		/*
 		const {tanstackTable} = tableInstance;
 		// TODO: Use height?
 		const {left, top, width, height: _} = rect;
@@ -961,8 +1041,8 @@ export class TermDOM {
 			});
 			currentY++;
 		});
+		*/
 	}
-
 
 	private processPendingMutationsAndRender(): boolean {
 		const pendingMutations = this.observer.takeRecords();

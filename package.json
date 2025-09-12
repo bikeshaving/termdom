@@ -8,6 +8,7 @@
   },
   "devDependencies": {
     "@types/bun": "^1.2.21",
+    "@types/cssstyle": "^2.2.4",
     "@types/jsdom": "^21.1.7",
     "@typescript-eslint/eslint-plugin": "^8.29.1",
     "@typescript-eslint/parser": "^8.29.1",
@@ -20,6 +21,7 @@
   },
   "dependencies": {
     "@tanstack/table-core": "^8.21.3",
+    "cssstyle": "^5.2.1",
     "jsdom": "^26.1.0",
     "linebreak": "^1.1.0",
     "yoga-layout": "^3.2.1"
