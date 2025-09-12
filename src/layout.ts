@@ -3,7 +3,6 @@ import Yoga from "yoga-layout";
 import type * as YogaTypes from "yoga-layout";
 import {resolvePropertyValue, styleYogaNode} from "./styles.js";
 import {breakNodes, type Leaf, type BreakResult} from "./breaker.js";
-import {createTable, getCoreRowModel} from "@tanstack/table-core";
 
 class DOMRectList extends Array<DOMRect> implements globalThis.DOMRectList {
 	item(index: number): globalThis.DOMRect | null {
@@ -28,20 +27,12 @@ export interface RectLength {
 	textLength: number; // Number of UTF-16 code units in this rect
 }
 
-interface TableInstance {
-	element: Element;
-	// TOOD: type this accurately
-	tanstackTable: any;
-	data: any[];
-	columns: any[];
-}
-
 const yogaConfig = Yoga.Config.create();
 yogaConfig.setUseWebDefaults(true);
 yogaConfig.setPointScaleFactor(1.0);
 
 export class LayoutEngine {
-	declare DOMRect: typeof globalThis.DOMRect;
+	declare DOMRect: typeof DOMRect;
 	declare rootElement: Element;
 	declare observer: MutationObserver;
 
@@ -52,7 +43,6 @@ export class LayoutEngine {
 	// TODO: These should be strong maps
 	declare nodeMap: WeakMap<Node, YogaTypes.Node>;
 	declare rectLengthsMap: WeakMap<Node, RectLength[]>;
-	declare tableInstances: WeakMap<Element, TableInstance>;
 
 	// Shadow DOM support
 	private getShadowRoot?: (element: Element) => ShadowRoot | null;
@@ -69,7 +59,6 @@ export class LayoutEngine {
 		this.rootElement = window.document.documentElement;
 		this.nodeMap = new WeakMap<Node, YogaTypes.Node>();
 		this.rectLengthsMap = new WeakMap<Node, RectLength[]>();
-		this.tableInstances = new WeakMap<Element, TableInstance>();
 		this.getShadowRoot = getShadowRoot;
 		this.getMergedTree = getMergedTree;
 		this.getOriginalNode = getOriginalNode;
@@ -113,7 +102,7 @@ export class LayoutEngine {
 
 	getRect(element: Element): DOMRect | null {
 		let yogaNode = this.nodeMap.get(element);
-		
+
 		// If this is a cloned element and we don't have layout data for it,
 		// try to use the original element's layout data
 		if (!yogaNode && this.getOriginalNode) {
@@ -122,7 +111,7 @@ export class LayoutEngine {
 				yogaNode = this.nodeMap.get(originalNode);
 			}
 		}
-		
+
 		if (!yogaNode) {
 			return null;
 		}
@@ -155,7 +144,7 @@ export class LayoutEngine {
 
 	getRectLengths(node: Node): RectLength[] {
 		let rectLengths = this.rectLengthsMap.get(node);
-		
+
 		// If this is a cloned node and we don't have layout data for it,
 		// try to use the original node's layout data
 		if (!rectLengths && this.getOriginalNode) {
@@ -164,7 +153,7 @@ export class LayoutEngine {
 				rectLengths = this.rectLengthsMap.get(originalNode);
 			}
 		}
-		
+
 		return rectLengths || [];
 	}
 
@@ -185,12 +174,9 @@ export class LayoutEngine {
 		return new this.DOMRect(x, y, width, height);
 	}
 
-	getTableInstance(element: Element): TableInstance | undefined {
-		return this.tableInstances.get(element);
-	}
-
 	dispose(): void {}
 
+	// TODO: delete these terrible functions
 	/**
 	 * Get the children to traverse for layout - merged tree if available, otherwise light DOM
 	 */
@@ -213,251 +199,6 @@ export class LayoutEngine {
 		}
 		return Array.from(element.childNodes);
 	}
-
-	/**
-	 * Resolve slot assignments and return the effective children with slot content projected
-	 */
-	private resolveSlottedChildren(
-		shadowRoot: ShadowRoot,
-		lightDOMElement: Element,
-	): Node[] {
-		const effectiveChildren: Node[] = [];
-
-		// Find anonymous slot and its assignments
-		const slotAssignments = this.resolveAnonymousSlot(
-			shadowRoot,
-			lightDOMElement,
-		);
-
-		// Traverse shadow DOM and substitute slots with their content
-		for (const childNode of shadowRoot.childNodes) {
-			this.expandSlottedNode(childNode, slotAssignments, effectiveChildren);
-		}
-
-		return effectiveChildren;
-	}
-
-	/**
-	 * Expand a shadow DOM node, replacing slots with their assigned content
-	 */
-	private expandSlottedNode(
-		node: Node,
-		slotAssignments: Map<Element, Node[]>,
-		result: Node[],
-	): void {
-		if (node.nodeType === node.ELEMENT_NODE) {
-			const element = node as Element;
-
-			if (element.tagName === "SLOT") {
-				// Replace slot with assigned content
-				const assignedContent = slotAssignments.get(element) || [];
-				result.push(...assignedContent);
-			} else {
-				// Regular element - add it directly
-				result.push(node);
-			}
-		} else {
-			// Text nodes and other nodes - add directly
-			result.push(node);
-		}
-	}
-
-	/**
-	 * Resolve anonymous slot assignments (simplified for anonymous slots only)
-	 */
-	private resolveAnonymousSlot(
-		shadowRoot: ShadowRoot,
-		lightDOMElement: Element,
-	): Map<Element, Node[]> {
-		const slotAssignments = new Map<Element, Node[]>();
-
-		// Find the anonymous slot using DOM query
-		const anonymousSlot = this.findAnonymousSlot(shadowRoot);
-
-		if (anonymousSlot) {
-			// Collect all light DOM content
-			const lightContent: Node[] = [];
-
-			for (const childNode of lightDOMElement.childNodes) {
-				if (
-					childNode.nodeType === childNode.ELEMENT_NODE ||
-					(childNode.nodeType === childNode.TEXT_NODE &&
-						childNode.textContent?.trim())
-				) {
-					lightContent.push(childNode);
-				}
-			}
-
-			if (lightContent.length > 0) {
-				// Assign all light DOM content to the anonymous slot
-				slotAssignments.set(anonymousSlot, lightContent);
-			} else {
-				// No light DOM content - use slot's fallback content
-				slotAssignments.set(
-					anonymousSlot,
-					Array.from(anonymousSlot.childNodes),
-				);
-			}
-		}
-
-		return slotAssignments;
-	}
-
-	/**
-	 * Find the anonymous slot in a shadow root using DOM query
-	 */
-	private findAnonymousSlot(shadowRoot: ShadowRoot): Element | null {
-		return shadowRoot.querySelector("slot:not([name])");
-	}
-
-	private setupTableElement(
-		tableElement: Element,
-		parentYogaNode: YogaTypes.Node | null,
-		yogaIndex: number = this.getYogaIndex(tableElement),
-	): void {
-		// Extract data from DOM table structure
-		const tableData = this.extractTableData(tableElement);
-
-		// Create TanStack Table instance with proper state defaults
-		const tanstackTable = createTable({
-			data: tableData.data,
-			columns: tableData.columns,
-			getCoreRowModel: getCoreRowModel(),
-			renderFallbackValue: null,
-			state: {
-				columnPinning: {left: [], right: []},
-				columnOrder: [],
-				sorting: [],
-			},
-			onStateChange: () => {},
-		});
-
-		// Store table instance for later updates
-		this.tableInstances.set(tableElement, {
-			element: tableElement,
-			tanstackTable,
-			data: tableData.data,
-			columns: tableData.columns,
-		});
-
-		// Create Yoga node for the table container
-		let yogaNode = this.nodeMap.get(tableElement);
-		if (!yogaNode) {
-			yogaNode = Yoga.Node.createWithConfig(yogaConfig);
-			this.nodeMap.set(tableElement, yogaNode);
-		}
-
-		// Style the table container
-		styleYogaNode(tableElement, yogaNode);
-
-		// Set up table as flex column container
-		yogaNode.setFlexDirection(Yoga.FLEX_DIRECTION_COLUMN);
-		yogaNode.setDisplay(Yoga.DISPLAY_FLEX);
-
-		// Add to parent
-		if (parentYogaNode) {
-			parentYogaNode.insertChild(yogaNode, yogaIndex);
-		}
-
-		// Set up custom measure function for table content
-		yogaNode.setMeasureFunc((width, widthMode, height, heightMode) => {
-			return this.measureTable(
-				tableElement,
-				width,
-				widthMode,
-				height,
-				heightMode,
-			);
-		});
-	}
-
-	private extractTableData(tableElement: Element): {
-		data: any[];
-		columns: any[];
-	} {
-		const data: any[] = [];
-		const columns: any[] = [];
-
-		// Find headers (th elements)
-		const headerCells = Array.from(tableElement.querySelectorAll("th"));
-		const hasHeaders = headerCells.length > 0;
-
-		if (hasHeaders) {
-			headerCells.forEach((th, index) => {
-				columns.push({
-					id: `col_${index}`,
-					header: th.textContent?.trim() || `Column ${index + 1}`,
-					accessorKey: `col_${index}`,
-				});
-			});
-		}
-
-		// Extract data from tbody tr elements
-		const dataRows = Array.from(tableElement.querySelectorAll("tbody tr"));
-
-		dataRows.forEach((row) => {
-			const cells = Array.from(row.querySelectorAll("td"));
-			const rowData: any = {};
-
-			cells.forEach((cell, index) => {
-				rowData[`col_${index}`] = cell.textContent?.trim() || "";
-			});
-
-			if (Object.keys(rowData).length > 0) {
-				data.push(rowData);
-			}
-		});
-
-		// Generate columns if no headers found
-		if (!hasHeaders && data.length > 0) {
-			Object.keys(data[0]).forEach((key, index) => {
-				columns.push({
-					id: key,
-					header: `Column ${index + 1}`,
-					accessorKey: key,
-				});
-			});
-		}
-
-		return {data, columns};
-	}
-
-	private measureTable(
-		tableElement: Element,
-		width: number,
-		widthMode: YogaTypes.MeasureMode,
-		height: number,
-		heightMode: YogaTypes.MeasureMode,
-	): {width: number; height: number} {
-		const tableInstance = this.tableInstances.get(tableElement);
-		if (!tableInstance) {
-			// TODO: Throw if no table instance is found
-			return {width: 40, height: 5};
-		}
-
-		const table = tableInstance.tanstackTable;
-		const rowCount = table.getRowModel().rows.length + 1; // +1 for header
-		const colCount = table.getAllColumns().length;
-
-		// TODO: intrinsic cell sizing
-		// Calculate dimensions
-		const calculatedWidth = Math.max(colCount * 12, 40);
-		const calculatedHeight = Math.max(rowCount, 3);
-
-		return {
-			width:
-				widthMode === Yoga.MEASURE_MODE_UNDEFINED
-					? calculatedWidth
-					: Math.min(width, calculatedWidth),
-			height:
-				heightMode === Yoga.MEASURE_MODE_UNDEFINED
-					? calculatedHeight
-					: Math.min(height, calculatedHeight),
-		};
-	}
-
-
-
 
 	private handleMutationRecords(mutations: MutationRecord[]): void {
 		for (let i = 0; i < mutations.length; i++) {
@@ -531,44 +272,6 @@ export class LayoutEngine {
 		yogaIndex: number = this.getYogaIndex(element),
 	): void {
 		const display = resolvePropertyValue(element, "display", false);
-
-		// Handle table elements with TanStack Table integration
-		if (display === "table") {
-			this.setupTableElement(element, parentYogaNode);
-			return;
-		}
-
-		// Table children handled by table layout
-		if (
-			display === "table-header-group" ||
-			display === "table-row-group" ||
-			display === "table-footer-group" ||
-			display === "table-row" ||
-			display === "table-cell"
-		) {
-			// These will be handled by the parent table's layout
-			return;
-		}
-
-		// List elements now handle themselves via Shadow DOM
-		if (element.tagName === "LI" || element.tagName === "UL" || element.tagName === "OL") {
-			// Create yoga node and let Shadow DOM handle the styling
-			const yogaNode = Yoga.Node.createDefault();
-			this.nodeMap.set(element, yogaNode);
-			styleYogaNode(element, yogaNode);
-			
-			if (parentYogaNode) {
-				parentYogaNode.insertChild(yogaNode, yogaIndex);
-			}
-			
-			// Process children normally
-			const children = this.getChildrenForLayout(element);
-			for (let i = 0; i < children.length; i++) {
-				this.addNode(children[i], yogaNode);
-			}
-			return;
-		}
-
 		if (display === "inline" || display === "inline-block") {
 			if (!isInlineRunHead(element)) {
 				return;
@@ -687,6 +390,7 @@ export class LayoutEngine {
 		text: Text,
 		parentYogaNode: YogaTypes.Node | null = null,
 	): void {
+		// TODO: WTF CLAUDE???
 		if (!text.textContent || !text.textContent.trim()) {
 			return;
 		}
