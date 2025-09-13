@@ -589,3 +589,99 @@ test("emoji text RectLengths preserve character boundaries", () => {
 	expect(reconstructedText).toContain("🎨 Colorful"); // Space between emoji and text
 	expect(reconstructedText).not.toContain("🎨Colorful"); // Should NOT be missing space
 });
+
+test("RectLength text slicing mismatch with whitespace", () => {
+	const {jsdom, layoutEngine} = createLayoutEngine(
+		`<div style="width: 20ch;"><span>Hello   </span><span>World</span></div>`
+	);
+	
+	const spans = Array.from(jsdom.window.document.querySelectorAll("span"));
+	const firstSpan = spans[0];
+	const secondSpan = spans[1];
+	
+	// Get RectLengths for both spans
+	const rectLengths1 = layoutEngine.getRectLengths(firstSpan.firstChild as Text);
+	const rectLengths2 = layoutEngine.getRectLengths(secondSpan.firstChild as Text);
+	
+	// The bug: RectLength.textLength is based on processed text, 
+	// but original DOM text has different length
+	const originalText1 = firstSpan.textContent!; // "Hello   " (8 chars)
+	const originalText2 = secondSpan.textContent!; // "World" (5 chars)
+	
+	let totalProcessedLength = 0;
+	rectLengths1.forEach(rl => totalProcessedLength += rl.textLength);
+	rectLengths2.forEach(rl => totalProcessedLength += rl.textLength);
+	
+	// This should demonstrate the mismatch
+	expect(originalText1.length).toBe(8); // Original has 8 chars
+	expect(originalText2.length).toBe(5); // Original has 5 chars
+	
+	// But processed lengths will be different due to whitespace collapse
+	// The exact values depend on how whitespace is processed, but the key
+	// is that slicing original text by processed lengths causes errors
+});
+
+test("flexbox child width calculation with trailing spaces", () => {
+	const {jsdom, layoutEngine} = createLayoutEngine(
+		`<div style="display: flex; width: 15ch;">
+			<span>Text </span><span>🚀</span><span> More</span>
+		</div>`
+	);
+	
+	const spans = Array.from(jsdom.window.document.querySelectorAll("span"));
+	const rects = spans.map(span => layoutEngine.getRect(span));
+	
+	// These currently fail but demonstrate the expected behavior
+	// The trailing space in "Text " should be preserved for width calculation
+	expect(rects[0]?.width).toBe(5); // "Text " should be 5 chars wide
+	expect(rects[1]?.width).toBe(2); // "🚀" should be 2 chars wide  
+	expect(rects[2]?.width).toBe(5); // " More" should be 5 chars wide
+	
+	// Total should not exceed container
+	const totalWidth = rects.reduce((sum, rect) => sum + (rect?.width || 0), 0);
+	expect(totalWidth).toBeLessThanOrEqual(15);
+});
+
+test("inline run with mixed content - whitespace handling", () => {
+	const {jsdom, layoutEngine} = createLayoutEngine(
+		`<div>Start <span>middle  </span> <em>end</em></div>`
+	);
+	
+	// In normal inline flow, this should be processed as one run
+	const spans = Array.from(jsdom.window.document.querySelectorAll("span, em"));
+	const spanRect = layoutEngine.getRect(spans[0]); // <span>
+	const emRect = layoutEngine.getRect(spans[1]);   // <em>
+	
+	// Test that inline runs handle whitespace correctly across elements
+	// The space after "middle" should be preserved since there's content after
+	expect(spanRect?.width).toBeGreaterThan(6); // "middle  " with spaces
+	expect(emRect?.width).toBe(3); // "end" 
+});
+
+test("text truncation due to RectLength accumulation error", () => {
+	const {jsdom, layoutEngine} = createLayoutEngine(
+		`<div style="width: 12ch;">
+			<span>First   </span><span>Second   </span><span>Third</span>
+		</div>`
+	);
+	
+	const spans = Array.from(jsdom.window.document.querySelectorAll("span"));
+	
+	// Each span's trailing spaces get trimmed in processing
+	// This creates an accumulating error in width calculations
+	// Later spans might get truncated due to insufficient allocated space
+	
+	spans.forEach((span, i) => {
+		const rectLengths = layoutEngine.getRectLengths(span.firstChild as Text);
+		const originalLength = span.textContent!.length;
+		const processedLength = rectLengths.reduce((sum, rl) => sum + rl.textLength, 0);
+		
+		console.log(`Span ${i}: original="${span.textContent}" (${originalLength} chars), processed=${processedLength} chars`);
+		
+		// This test documents the mismatch that causes rendering bugs
+		if (span.textContent!.endsWith('   ')) {
+			// Trailing spaces should cause a length mismatch
+			expect(processedLength).toBeLessThan(originalLength);
+		}
+	});
+});

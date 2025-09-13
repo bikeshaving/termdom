@@ -163,6 +163,7 @@ export class TermDOM {
 				const childNodes: Node[] = [];
 				const children: Element[] = [];
 
+				// TODO: WTF?
 				shadowRoot = {
 					mode: options.mode,
 					get childNodes() {

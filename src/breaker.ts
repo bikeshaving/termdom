@@ -160,6 +160,7 @@ function processWhitespace(
 				end: text.length,
 			});
 		} else if (leaf.type === "inline-block") {
+			// TODO: explain
 			text += "\uFFFC";
 			lastWasSpace = false;
 			items.push({
@@ -170,6 +171,7 @@ function processWhitespace(
 		}
 	}
 
+	// TODO: This is wrong
 	if (
 		(whiteSpace === "normal" ||
 			whiteSpace === "nowrap" ||
