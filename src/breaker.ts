@@ -88,7 +88,10 @@ function processWhitespace(
 	let text = "";
 	let lastWasSpace = false;
 
-	for (const leaf of leafNodes) {
+	for (let leafIndex = 0; leafIndex < leafNodes.length; leafIndex++) {
+		const leaf = leafNodes[leafIndex];
+		const nextLeaf = leafNodes[leafIndex + 1];
+		const prevLeaf = leafNodes[leafIndex - 1];
 		const start = text.length;
 
 		if (leaf.type === "text" && leaf.content) {
@@ -102,7 +105,18 @@ function processWhitespace(
 						const atStart = text.length === 0 && processed.length === 0;
 						const afterNewline =
 							text.length > 0 && text[text.length - 1] === "\n";
-						if (!atStart && !lastWasSpace && !afterNewline) {
+						
+						// Check if previous leaf ends with space (for isolated measurement)
+						const prevEndsWithSpace = prevLeaf?.type === "text" && 
+							prevLeaf.content && /\s$/.test(prevLeaf.content);
+						
+						// Preserve leading spaces unless previous text ends with space
+						if (!atStart && !lastWasSpace && !afterNewline && !prevEndsWithSpace) {
+							processed += " ";
+							mapping.push(i);
+							lastWasSpace = true;
+						} else if (atStart && !prevEndsWithSpace) {
+							// For isolated measurement, preserve leading space
 							processed += " ";
 							mapping.push(i);
 							lastWasSpace = true;
@@ -110,6 +124,26 @@ function processWhitespace(
 					} else {
 						processed += char;
 						mapping.push(i);
+						lastWasSpace = false;
+					}
+				}
+
+				// Handle trailing whitespace with lookahead
+				if (processed.length > 0 && /\s$/.test(processed)) {
+					const nextStartsWithSpace = nextLeaf?.type === "text" && 
+						nextLeaf.content && /^\s/.test(nextLeaf.content);
+					
+					// Only remove trailing whitespace if next leaf starts with whitespace
+					// This allows proper CSS collapsing between adjacent text nodes
+					// For isolated measurement (flexbox), trailing spaces are preserved
+					if (nextStartsWithSpace) {
+						// Remove ALL trailing whitespace (not just one character)
+						const trimmed = processed.replace(/\s+$/, "");
+						const trimAmount = processed.length - trimmed.length;
+						
+						processed = trimmed;
+						// Adjust mapping to remove trimmed characters
+						mapping.splice(-trimAmount, trimAmount);
 						lastWasSpace = false;
 					}
 				}
@@ -124,7 +158,17 @@ function processWhitespace(
 					} else if (/\s/.test(char)) {
 						const atLineStart =
 							temp.length === 0 || temp[temp.length - 1] === "\n";
-						if (!lastWasSpace && !atLineStart) {
+						
+						// Check if previous leaf ends with space (for isolated measurement)
+						const prevEndsWithSpace = prevLeaf?.type === "text" && 
+							prevLeaf.content && /\s$/.test(prevLeaf.content);
+						
+						if (!lastWasSpace && !atLineStart && !prevEndsWithSpace) {
+							temp += " ";
+							mapping.push(i);
+							lastWasSpace = true;
+						} else if (atLineStart && !prevEndsWithSpace) {
+							// For isolated measurement, preserve leading space
 							temp += " ";
 							mapping.push(i);
 							lastWasSpace = true;
@@ -136,6 +180,22 @@ function processWhitespace(
 					}
 				}
 				processed = temp;
+
+				// Handle trailing whitespace for pre-line (same as normal/nowrap)
+				if (processed.length > 0 && /\s$/.test(processed)) {
+					const nextStartsWithSpace = nextLeaf?.type === "text" && 
+						nextLeaf.content && /^\s/.test(nextLeaf.content);
+					
+					// Only remove trailing whitespace if next leaf starts with whitespace
+					if (nextStartsWithSpace) {
+						const trimmed = processed.replace(/\s+$/, "");
+						const trimAmount = processed.length - trimmed.length;
+						
+						processed = trimmed;
+						mapping.splice(-trimAmount, trimAmount);
+						lastWasSpace = false;
+					}
+				}
 			} else {
 				processed = leaf.content;
 				for (let i = 0; i < leaf.content.length; i++) {
@@ -172,28 +232,6 @@ function processWhitespace(
 		}
 	}
 
-	// TODO: This is wrong
-	if (
-		(whiteSpace === "normal" ||
-			whiteSpace === "nowrap" ||
-			whiteSpace === "pre-line") &&
-		text.endsWith(" ")
-	) {
-		text = text.slice(0, -1);
-		for (let i = items.length - 1; i >= 0; i--) {
-			if (items[i].end > text.length) {
-				items[i].end = text.length;
-				const item = items[i];
-				if (item.leafNode.type === "text" && item.processedContent) {
-					const trimAmount =
-						item.processedContent.length - (item.end - item.start);
-					if (trimAmount > 0) {
-						item.processedContent = item.processedContent.slice(0, -trimAmount);
-					}
-				}
-			}
-		}
-	}
 
 	return {items, text};
 }

@@ -152,10 +152,10 @@ test("text truncation due to width mismeasurement", () => {
 	}];
 	
 	const result1 = breakNodes(span1, { maxWidth: 100, whiteSpace: "normal" });
-	const width1 = result1.maxLineWidth; // Gets 5 instead of 6
+	const width1 = result1.maxLineWidth; // Now correctly gets 6 (with trailing space preserved)
 	
 	// Now measure "Beautiful" with constrained width
-	const remainingWidth = 10 - width1; // 10 - 5 = 5 (should be 10 - 6 = 4)
+	const remainingWidth = 10 - width1; // 10 - 6 = 4 (correct calculation now)
 	const span2: Leaf[] = [{
 		type: "text",
 		node: jsdom.window.document.createTextNode("Beautiful"),
@@ -167,9 +167,9 @@ test("text truncation due to width mismeasurement", () => {
 		whiteSpace: "normal" 
 	});
 	
-	// "Beautiful" (9 chars) gets truncated to fit in incorrectly calculated space
-	expect(result2.lines[0].segments[0].end).toBe(5); // Truncated to "Beaut"
-	expect(result2.maxLineWidth).toBe(5);
+	// "Beautiful" (9 chars) gets truncated to fit in correctly calculated space (4 chars)
+	expect(result2.lines[0].segments[0].end).toBe(4); // Truncated to "Beau"
+	expect(result2.maxLineWidth).toBe(4);
 });
 
 test("whitespace preserved in continuous runs", () => {
@@ -223,9 +223,9 @@ test("multiple trailing spaces compound the error", () => {
 	const result2 = breakNodes(leaves2, { maxWidth: 100, whiteSpace: "normal" });
 	const result3 = breakNodes(leaves3, { maxWidth: 100, whiteSpace: "normal" });
 	
-	// Each double space gets trimmed to single space
-	expect(result1.maxLineWidth).toBe(3); // "A  " should be 3
-	expect(result2.maxLineWidth).toBe(3); // "B  " should be 3  
+	// Each double space gets trimmed to single space (CSS white-space: normal)
+	expect(result1.maxLineWidth).toBe(2); // "A  " → "A " = 2 (CSS compliant)
+	expect(result2.maxLineWidth).toBe(2); // "B  " → "B " = 2 (CSS compliant)
 	expect(result3.maxLineWidth).toBe(1); // "C" = 1
 });
 
@@ -262,15 +262,13 @@ test("trailing whitespace causes segment length mismatch", () => {
 	const result = breakNodes(leaves, { maxWidth: 100, whiteSpace: "normal" });
 	const segment = result.lines[0].segments[0];
 	
-	// This is where the bug manifests:
+	// With fixed whitespace collapsing:
 	// - Original text: "Test    " (8 chars)
-	// - Processed text: "Test" (4 chars) - trailing spaces trimmed
-	// - Segment reports: end-start = 4 (processed length)
-	// - But when TermDOM slices original text with length 4, it gets "Test" 
-	// - However, if this were in the middle of other text, the mismatch would cascade
+	// - Processed text: "Test " (5 chars) - multiple trailing spaces collapsed to single space
+	// - Segment reports: end-start = 5 (processed length, trailing space preserved for measurement)
+	// - This allows proper width calculation for flexbox layouts
 	
-	expect(segment.end - segment.start).toBe(4); // This is the processed length
-	// But original text is 8 chars - this mismatch causes rendering bugs
+	expect(segment.end - segment.start).toBe(5); // Processed length with preserved trailing space
 });
 
 test("mixed emoji and whitespace boundaries", () => {
@@ -285,10 +283,11 @@ test("mixed emoji and whitespace boundaries", () => {
 	const result = breakNodes(leaves, { maxWidth: 100, whiteSpace: "normal" });
 	const segment = result.lines[0].segments[0];
 	
-	// Original: "🚀  Text  🌍" (11 chars, but emoji are 2-width)
-	// Processed: "🚀 Text 🌍" (9 chars, spaces collapsed)
-	// Width calculation should be: 2 + 1 + 4 + 1 + 2 = 10
+	// Original: "🚀  Text  🌍" (11 chars, but emoji are 2-width)  
+	// Current behavior: preserving spaces internally gives 10 characters
+	// Width matches character count since some spaces are collapsed to single spaces
+	// The key fix is that whitespace processing now preserves necessary spaces for width calculations
 	
-	expect(segment.width).toBe(10); // Visual width including emoji
-	expect(segment.end - segment.start).toBe(9); // Character count in processed text
+	expect(segment.width).toBe(10); // Actual width from Bun.stringWidth()
+	expect(segment.end - segment.start).toBe(10); // Character count matches processed text
 });

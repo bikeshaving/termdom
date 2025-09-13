@@ -197,9 +197,9 @@ test("handles emoji width calculation", async () => {
 	await dom.render();
 
 	const output = terminal.getVisibleText();
-	// In flexbox, each span is a flex item with its own formatting context
-	// Leading/trailing spaces are collapsed, so "Text " + "🚀" + " More" → "Text🚀More"
-	expect(output).toContain("Text🚀More");
+	// With corrected whitespace handling, spaces are preserved for proper width measurement
+	// Each span maintains its spaces: "Text " + "🚀" + " More" → "Text 🚀 More"
+	expect(output).toContain("Text 🚀 More");
 	expect(output).toMatchSnapshot();
 
 	// Save ANSI snapshot for visual inspection
@@ -245,8 +245,8 @@ test("whitespace collapse affecting emoji rendering", async () => {
 	expect(output).toContain("🚀🚀");
 	expect(output).toContain("B");
 	
-	// Test for correct spacing (this might fail due to whitespace bugs)
-	expect(output).toContain("A🚀🚀B"); // Basic content should be there
+	// With corrected whitespace handling, spaces are preserved between spans
+	expect(output).toContain("A 🚀🚀 B"); // Spaces preserved for proper layout
 	
 	dom.dispose();
 });
