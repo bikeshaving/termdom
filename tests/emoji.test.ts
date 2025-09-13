@@ -10,8 +10,6 @@
 import {test, expect} from "bun:test";
 import {TestTerminal} from "./test-utils.js";
 import {TermDOM} from "../src/termdom.js";
-import {writeFileSync, mkdirSync, existsSync} from "fs";
-import {join} from "path";
 
 test("renders single emoji correctly", async () => {
 	const terminal = new TestTerminal();
@@ -25,19 +23,9 @@ test("renders single emoji correctly", async () => {
 
 	const output = terminal.getVisibleText();
 	expect(output).toContain("🚀");
-	expect(output).toMatchSnapshot();
 
-	// Inline assertion: verify emoji renders correctly in ANSI output
-	const ansiOutput = terminal.getStaticANSI();
-	expect(ansiOutput).toContain("🚀"); // Emoji should be present in ANSI output
-
-	// Save ANSI snapshot for visual inspection
-	const snapshotsDir = join(process.cwd(), "tests", "__snapshots__");
-	if (!existsSync(snapshotsDir)) mkdirSync(snapshotsDir, {recursive: true});
-	writeFileSync(
-		join(snapshotsDir, "single-emoji.ansi"),
-		terminal.getScreenContents(),
-	);
+	expect(terminal.getStaticANSI()).toMatchSnapshot();
+	terminal.writeANSI("single-emoji");
 	dom.dispose();
 });
 
@@ -53,20 +41,14 @@ test("renders emoji with text correctly", async () => {
 
 	const output = terminal.getVisibleText();
 	expect(output).toContain("Hello 🌍 World!");
-	expect(output).toMatchSnapshot();
 
 	// Inline assertion: verify spaces after emojis are preserved
 	const ansiOutput = terminal.getStaticANSI();
 	expect(ansiOutput).toContain("Hello 🌍 World!"); // Space after emoji should be preserved
 	expect(ansiOutput).not.toMatch(/🌍(?! )/); // Should not have emoji without following space
 
-	// Save ANSI snapshot for visual inspection
-	const snapshotsDir = join(process.cwd(), "tests", "__snapshots__");
-	if (!existsSync(snapshotsDir)) mkdirSync(snapshotsDir, {recursive: true});
-	writeFileSync(
-		join(snapshotsDir, "emoji-with-text.ansi"),
-		terminal.getScreenContents(),
-	);
+	expect(terminal.getStaticANSI()).toMatchSnapshot();
+	terminal.writeANSI("emoji-with-text");
 	dom.dispose();
 });
 
@@ -102,15 +84,9 @@ test("renders multiple emojis correctly", async () => {
 	expect(output).toContain("🚀");
 	expect(output).toContain("🎯");
 	expect(output).toContain("Party");
-	expect(output).toMatchSnapshot();
 
-	// Save ANSI snapshot for visual inspection
-	const snapshotsDir = join(process.cwd(), "tests", "__snapshots__");
-	if (!existsSync(snapshotsDir)) mkdirSync(snapshotsDir, {recursive: true});
-	writeFileSync(
-		join(snapshotsDir, "multiple-emojis.ansi"),
-		terminal.getScreenContents(),
-	);
+	expect(terminal.getStaticANSI()).toMatchSnapshot();
+	terminal.writeANSI("multiple-emojis");
 	dom.dispose();
 });
 
@@ -137,15 +113,9 @@ test("renders emoji with colors correctly", async () => {
 	expect(output).toContain("🎨");
 	expect(output).toContain("🌈");
 	expect(output).toContain("Colorful Text");
-	expect(output).toMatchSnapshot();
 
-	// Save ANSI snapshot for visual inspection
-	const snapshotsDir = join(process.cwd(), "tests", "__snapshots__");
-	if (!existsSync(snapshotsDir)) mkdirSync(snapshotsDir, {recursive: true});
-	writeFileSync(
-		join(snapshotsDir, "emoji-with-colors.ansi"),
-		terminal.getScreenContents(),
-	);
+	expect(terminal.getStaticANSI()).toMatchSnapshot();
+	terminal.writeANSI("emoji-with-colors");
 	dom.dispose();
 });
 
@@ -200,15 +170,9 @@ test("handles emoji width calculation", async () => {
 	// With corrected whitespace handling, spaces are preserved for proper width measurement
 	// Each span maintains its spaces: "Text " + "🚀" + " More" → "Text 🚀 More"
 	expect(output).toContain("Text 🚀 More");
-	expect(output).toMatchSnapshot();
 
-	// Save ANSI snapshot for visual inspection
-	const snapshotsDir = join(process.cwd(), "tests", "__snapshots__");
-	if (!existsSync(snapshotsDir)) mkdirSync(snapshotsDir, {recursive: true});
-	writeFileSync(
-		join(snapshotsDir, "emoji-width-layout.ansi"),
-		terminal.getScreenContents(),
-	);
+	expect(terminal.getStaticANSI()).toMatchSnapshot();
+	terminal.writeANSI("emoji-width-layout");
 	dom.dispose();
 });
 

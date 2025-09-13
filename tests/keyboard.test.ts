@@ -1,6 +1,7 @@
 import {test, expect} from "bun:test";
 import {TermDOM} from "../src/termdom.js";
 import {EventEmitter} from "events";
+import {TestTerminal} from "./test-utils";
 
 // Mock TTY stream that simulates a real terminal
 class MockTTYStream extends EventEmitter {
@@ -71,7 +72,8 @@ class MockProcess extends EventEmitter {
 }
 
 test("keyboard events are dispatched to elements", async () => {
-	const termdom = new TermDOM();
+	const terminal = new TestTerminal();
+	const termdom = new TermDOM({process: terminal});
 	const {document} = termdom;
 
 	// Create a test element
@@ -120,7 +122,8 @@ test("keyboard events are dispatched to elements", async () => {
 });
 
 test("special keys are mapped correctly", async () => {
-	const termdom = new TermDOM();
+	const terminal = new TestTerminal();
+	const termdom = new TermDOM({process: terminal});
 	const {document} = termdom;
 
 	const container = document.createElement("div");
@@ -152,7 +155,8 @@ test("special keys are mapped correctly", async () => {
 });
 
 test("arrow keys are parsed correctly", async () => {
-	const termdom = new TermDOM();
+	const terminal = new TestTerminal();
+	const termdom = new TermDOM({process: terminal});
 	const {document} = termdom;
 
 	const container = document.createElement("div");
@@ -192,7 +196,8 @@ test("arrow keys are parsed correctly", async () => {
 });
 
 test("keyboard events bubble up the DOM", async () => {
-	const termdom = new TermDOM();
+	const terminal = new TestTerminal();
+	const termdom = new TermDOM({process: terminal});
 	const {document} = termdom;
 
 	const parent = document.createElement("div");
@@ -222,7 +227,8 @@ test("keyboard events bubble up the DOM", async () => {
 });
 
 test("can create keyboard event manually", () => {
-	const termdom = new TermDOM();
+	const terminal = new TestTerminal();
+	const termdom = new TermDOM({process: terminal});
 	const {document: _document, window} = termdom;
 
 	// Test that we can create KeyboardEvent
@@ -239,7 +245,8 @@ test("can create keyboard event manually", () => {
 });
 
 test("manual event dispatch works", () => {
-	const termdom = new TermDOM();
+	const terminal = new TestTerminal();
+	const termdom = new TermDOM({process: terminal});
 	const {document, window} = termdom;
 
 	const element = document.createElement("div");

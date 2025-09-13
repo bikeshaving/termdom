@@ -10,6 +10,8 @@ import {Terminal} from "@xterm/headless";
 import {SerializeAddon} from "@xterm/addon-serialize";
 import {type CellBuffer, Cell, createBuffer} from "../src/ansi.js";
 import {generateANSI} from "../src/ansi.js";
+import {writeFileSync, mkdirSync, existsSync} from "fs";
+import {join} from "path";
 
 /**
  * Unified test terminal that handles process mocking and output capture
@@ -245,9 +247,15 @@ export class TestTerminal extends EventEmitter implements ProcessLike {
 	}
 
 	/**
-	 * Get access to the underlying xterm terminal for advanced operations
+	 * Write ANSI output to .ansi file after test passes
 	 */
-	getTerminal(): Terminal {
-		return this.terminal;
+	writeANSI(testName: string): void {
+		const ansiOutput = this.getStaticANSI();
+		const snapshotsDir = join(import.meta.dir, "__snapshots__");
+		if (!existsSync(snapshotsDir)) {
+			mkdirSync(snapshotsDir, {recursive: true});
+		}
+		const ansiFilename = `${testName}.ansi`;
+		writeFileSync(join(snapshotsDir, ansiFilename), ansiOutput);
 	}
 }

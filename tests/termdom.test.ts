@@ -4,9 +4,11 @@
 
 import {test, expect} from "bun:test";
 import {TermDOM} from "../src/termdom.js";
+import {TestTerminal} from "./test-utils";
 
 test("TermDOM provides HTML document with terminal capabilities", () => {
-	const dom = new TermDOM();
+	const terminal = new TestTerminal();
+	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 
 	expect(document).toBeDefined();
@@ -17,7 +19,8 @@ test("TermDOM provides HTML document with terminal capabilities", () => {
 });
 
 test("can create standard HTML elements", () => {
-	const dom = new TermDOM();
+	const terminal = new TestTerminal();
+	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 
 	const div = document.createElement("div");
@@ -32,7 +35,8 @@ test("can create standard HTML elements", () => {
 });
 
 test("can build HTML DOM tree", () => {
-	const dom = new TermDOM();
+	const terminal = new TestTerminal();
+	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 
 	const container = document.createElement("div");
@@ -52,7 +56,8 @@ test("can build HTML DOM tree", () => {
 });
 
 test("HTML elements have CSS styling", () => {
-	const dom = new TermDOM();
+	const terminal = new TestTerminal();
+	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 
 	const element = document.createElement("div");
@@ -77,7 +82,9 @@ test("HTML elements have CSS styling", () => {
 });
 
 test("TermDOM provides correct terminal dimensions", () => {
+	const terminal = new TestTerminal({cols: 100, rows: 50});
 	const dom = new TermDOM({
+		process: terminal,
 		width: 100,
 		height: 50,
 	});
@@ -90,7 +97,8 @@ test("TermDOM provides correct terminal dimensions", () => {
 });
 
 test("HTML elements support layout APIs", () => {
-	const dom = new TermDOM();
+	const terminal = new TestTerminal();
+	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 
 	// Test that standard HTML elements have layout APIs
@@ -112,7 +120,8 @@ test("HTML elements support layout APIs", () => {
 });
 
 test("can render HTML to terminal without errors", async () => {
-	const dom = new TermDOM();
+	const terminal = new TestTerminal();
+	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 
 	const div = document.createElement("div");

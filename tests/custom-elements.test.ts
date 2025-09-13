@@ -1,8 +1,10 @@
 import {test, expect} from "bun:test";
 import {TermDOM} from "../src/termdom.js";
+import {TestTerminal} from "./test-utils";
 
 test("custom element with anonymous slot", () => {
-	const termdom = new TermDOM();
+	const terminal = new TestTerminal();
+	const termdom = new TermDOM({process: terminal});
 	const {document} = termdom;
 
 	// Define a custom element with shadow DOM and anonymous slot
@@ -61,7 +63,8 @@ test("custom element with anonymous slot", () => {
 });
 
 test("custom element with named slots", () => {
-	const termdom = new TermDOM();
+	const terminal = new TestTerminal();
+	const termdom = new TermDOM({process: terminal});
 	const {document} = termdom;
 
 	// Define a custom element with named slots
@@ -176,7 +179,8 @@ test("custom element with named slots", () => {
 });
 
 test("custom element fallback content when no light DOM", () => {
-	const termdom = new TermDOM();
+	const terminal = new TestTerminal();
+	const termdom = new TermDOM({process: terminal});
 	const {document} = termdom;
 
 	// Define a custom element with fallback content
@@ -216,7 +220,8 @@ test("custom element fallback content when no light DOM", () => {
 // Edge Cases and Mutation Tests
 
 test("light DOM changes after initial render", () => {
-	const termdom = new TermDOM();
+	const terminal = new TestTerminal();
+	const termdom = new TermDOM({process: terminal});
 	const {document} = termdom;
 
 	class DynamicWrapper extends (termdom.window as any).HTMLElement {
@@ -279,7 +284,8 @@ test("light DOM changes after initial render", () => {
 });
 
 test("shadow DOM structure changes", () => {
-	const termdom = new TermDOM();
+	const terminal = new TestTerminal();
+	const termdom = new TermDOM({process: terminal});
 	const {document} = termdom;
 
 	class ModifiableShadow extends (termdom.window as any).HTMLElement {
@@ -346,7 +352,8 @@ test("shadow DOM structure changes", () => {
 });
 
 test("slot attribute changes on light DOM", () => {
-	const termdom = new TermDOM();
+	const terminal = new TestTerminal();
+	const termdom = new TermDOM({process: terminal});
 	const {document} = termdom;
 
 	class SlotSwitcher extends (termdom.window as any).HTMLElement {
@@ -419,7 +426,8 @@ test("slot attribute changes on light DOM", () => {
 });
 
 test("multiple elements with same slot name", () => {
-	const termdom = new TermDOM();
+	const terminal = new TestTerminal();
+	const termdom = new TermDOM({process: terminal});
 	const {document} = termdom;
 
 	class MultiSlot extends (termdom.window as any).HTMLElement {
@@ -471,7 +479,8 @@ test("multiple elements with same slot name", () => {
 });
 
 test("empty slots and edge cases", () => {
-	const termdom = new TermDOM();
+	const terminal = new TestTerminal();
+	const termdom = new TermDOM({process: terminal});
 	const {document} = termdom;
 
 	class EdgeCase extends (termdom.window as any).HTMLElement {
@@ -523,7 +532,8 @@ test("empty slots and edge cases", () => {
 });
 
 test("text nodes vs elements in slots", () => {
-	const termdom = new TermDOM();
+	const terminal = new TestTerminal();
+	const termdom = new TermDOM({process: terminal});
 	const {document} = termdom;
 
 	class MixedContent extends (termdom.window as any).HTMLElement {
