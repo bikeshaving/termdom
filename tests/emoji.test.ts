@@ -197,7 +197,9 @@ test("handles emoji width calculation", async () => {
 	await dom.render();
 
 	const output = terminal.getVisibleText();
-	expect(output).toContain("Text 🚀 More");
+	// In flexbox, each span is a flex item with its own formatting context
+	// Leading/trailing spaces are collapsed, so "Text " + "🚀" + " More" → "Text🚀More"
+	expect(output).toContain("Text🚀More");
 	expect(output).toMatchSnapshot();
 
 	// Save ANSI snapshot for visual inspection

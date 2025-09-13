@@ -34,6 +34,7 @@ export interface LineResult {
 		end: number;
 		x: number;
 		width: number;
+		processedText: string;
 	}>;
 	y: number;
 	width: number;
@@ -371,6 +372,7 @@ function getNodesInRange(
 					end: relativeEnd,
 					x,
 					width,
+					processedText: portion,
 				});
 			} else if (item.leafNode.type === "inline-block") {
 				width = item.leafNode.width;
@@ -380,6 +382,7 @@ function getNodesInRange(
 					end: 0,
 					x,
 					width,
+					processedText: "",
 				});
 			} else if (item.leafNode.type === "br") {
 				nodes.push({
@@ -388,6 +391,7 @@ function getNodesInRange(
 					end: 0,
 					x,
 					width: 0,
+					processedText: "",
 				});
 			}
 

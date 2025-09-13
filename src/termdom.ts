@@ -942,22 +942,16 @@ export class TermDOM {
 			underline: textUnderline,
 		};
 
-		const rectLengths = this.layoutEngine.getRectLengths(textNode);
-		if (rectLengths.length > 0 && textContent) {
-			let offset = 0;
-			for (const rectLength of rectLengths) {
-				if (rectLength.textLength > 0) {
-					const text = textContent.slice(
-						offset,
-						offset + rectLength.textLength,
-					);
+		const rectTexts = this.layoutEngine.getRectTexts(textNode);
+		if (rectTexts.length > 0) {
+			for (const rectText of rectTexts) {
+				if (rectText.text.length > 0) {
 					this.renderer.setText(
-						Math.round(rectLength.rect.x),
-						Math.round(rectLength.rect.y),
-						text,
+						Math.round(rectText.rect.x),
+						Math.round(rectText.rect.y),
+						rectText.text,
 						textStyle,
 					);
-					offset += rectLength.textLength;
 				}
 			}
 		}

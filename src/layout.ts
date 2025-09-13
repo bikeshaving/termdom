@@ -387,6 +387,11 @@ export interface RectLength {
 	textLength: number; // Number of UTF-16 code units in this rect
 }
 
+export interface RectText {
+	rect: DOMRect;
+	text: string; // Processed text to render (replaces textLength)
+}
+
 const yogaConfig = Yoga.Config.create();
 yogaConfig.setUseWebDefaults(true);
 yogaConfig.setPointScaleFactor(1.0);
@@ -404,6 +409,7 @@ export class LayoutEngine {
 	// TODO: These should be strong maps
 	declare nodeMap: WeakMap<Node, YogaTypes.Node>;
 	declare rectLengthsMap: WeakMap<Node, RectLength[]>;
+	declare rectTextsMap: WeakMap<Node, RectText[]>;
 
 	// Shadow DOM support
 	private getShadowRoot?: (element: Element) => ShadowRoot | null;
@@ -421,6 +427,7 @@ export class LayoutEngine {
 		this.rootElement = window.document.documentElement;
 		this.nodeMap = new WeakMap<Node, YogaTypes.Node>();
 		this.rectLengthsMap = new WeakMap<Node, RectLength[]>();
+		this.rectTextsMap = new WeakMap<Node, RectText[]>();
 		this.getShadowRoot = getShadowRoot;
 		this.getMergedTree = getMergedTree;
 		this.getOriginalNode = getOriginalNode;
@@ -517,6 +524,21 @@ export class LayoutEngine {
 		}
 
 		return rectLengths || [];
+	}
+
+	getRectTexts(node: Node): RectText[] {
+		let rectTexts = this.rectTextsMap.get(node);
+
+		// If this is a cloned node and we don't have layout data for it,
+		// try to use the original node's layout data
+		if (!rectTexts && this.getOriginalNode) {
+			const originalNode = this.getOriginalNode(node);
+			if (originalNode) {
+				rectTexts = this.rectTextsMap.get(originalNode);
+			}
+		}
+
+		return rectTexts || [];
 	}
 
 	createDOMRectList(rects?: globalThis.DOMRect[]): globalThis.DOMRectList {
@@ -625,6 +647,12 @@ export class LayoutEngine {
 		const rectLengths = this.rectLengthsMap.get(node) || [];
 		rectLengths.push(rectLength);
 		this.rectLengthsMap.set(node, rectLengths);
+	}
+
+	private addRectText(node: Node, rectText: RectText): void {
+		const rectTexts = this.rectTextsMap.get(node) || [];
+		rectTexts.push(rectText);
+		this.rectTextsMap.set(node, rectTexts);
 	}
 
 	private addNode(
@@ -1081,6 +1109,7 @@ export class LayoutEngine {
 	): void {
 		const clearRects = (node: Node) => {
 			this.rectLengthsMap.delete(node);
+			this.rectTextsMap.delete(node);
 			if (node.nodeType === node.ELEMENT_NODE) {
 				const el = node as Element;
 				for (let i = 0; i < el.childNodes.length; i++) {
@@ -1104,13 +1133,20 @@ export class LayoutEngine {
 					textLength: segment.end - segment.start,
 				};
 
+				const rectText: RectText = {
+					rect: domRect,
+					text: segment.processedText,
+				};
+
 				this.addRectLength(segment.leaf.node, rectLength);
+				this.addRectText(segment.leaf.node, rectText);
 
 				let parent = segment.leaf.node.parentElement;
 				while (parent && parent !== rootElement.parentElement) {
 					const display = this.getPropertyValue(parent, "display");
 					if (display === "inline" || display === "inline-block") {
 						this.addRectLength(parent, rectLength);
+						this.addRectText(parent, rectText);
 					} else {
 						break;
 					}
