@@ -367,6 +367,9 @@ export class Renderer {
 			...cellStyle,
 		});
 		this.currentBuffer[row][col] = newCell;
+
+		// Wide character handling is done by the ANSI renderer's skipNextCol logic
+		// Leave continuation positions as null - the terminal handles emoji width automatically
 	}
 
 	fillRect(
@@ -581,6 +584,7 @@ export class Renderer {
 	): number {
 		if (y < 0 || y >= this.rows) return x;
 
+
 		let currentX = x;
 		const segmenter = new Intl.Segmenter("en", {granularity: "grapheme"});
 		const segments = Array.from(segmenter.segment(text));
@@ -589,8 +593,11 @@ export class Renderer {
 			const char = segment.segment;
 			const width = Bun.stringWidth(char);
 
-			if (currentX + width > this.cols) break;
+			if (currentX + width > this.cols) {
+				break;
+			}
 
+			
 			this.setCell(y, currentX, char, style);
 			currentX += width;
 		}
@@ -640,6 +647,7 @@ export class Renderer {
 				}
 			}
 		}
+
 
 		const output = generateANSI(diffBuffer, this.colorDepth);
 		this.previousBuffer = this.currentBuffer;
@@ -974,6 +982,7 @@ export function generateANSI(
 		let rowHasContent = false;
 		let rowHasAnsi = false;
 
+
 		for (let col = 0; col < cols; col++) {
 			const cell = buffer[row][col];
 
@@ -987,10 +996,12 @@ export function generateANSI(
 				skipNextCol = null;
 				continue;
 			}
+			
 			skipNextCol = null;
 
 			if (row !== cursorRow || col !== cursorCol) {
-				output += moveCursor(row, col);
+				const moveSeq = moveCursor(row, col);
+				output += moveSeq;
 			}
 
 			const styleSeq = getStyleDiff(cell, previousCell);
@@ -1000,13 +1011,14 @@ export function generateANSI(
 			}
 
 			// Use border character if cell has border, otherwise use grapheme
+			let charToOutput;
 			if (cell.border > 0) {
-				const borderChar = getBorderChar(cell.border);
-				output += borderChar;
+				charToOutput = getBorderChar(cell.border);
 			} else {
-				output += cell.grapheme;
+				charToOutput = cell.grapheme;
 			}
-
+			
+			output += charToOutput;
 			cursorCol += cell.width;
 			previousCell = cell;
 

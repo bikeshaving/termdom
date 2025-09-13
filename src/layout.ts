@@ -722,10 +722,8 @@ export class LayoutEngine {
 		text: Text,
 		parentYogaNode: YogaTypes.Node | null = null,
 	): void {
-		// TODO: WTF CLAUDE???
-		if (!text.textContent || !text.textContent.trim()) {
-			return;
-		}
+		// Process all text nodes, even if they appear empty
+		// (they might contain whitespace that's significant for layout)
 
 		if (!parentYogaNode) {
 			return;
@@ -833,7 +831,7 @@ export class LayoutEngine {
 			let hasInlineContent = false;
 			const elementChildNodes = this.getChildrenForLayout(element);
 			for (const child of elementChildNodes) {
-				if (child.nodeType === child.TEXT_NODE && child.textContent?.trim()) {
+				if (child.nodeType === child.TEXT_NODE) {
 					hasInlineContent = true;
 					break;
 				} else if (child.nodeType === child.ELEMENT_NODE) {
@@ -950,11 +948,11 @@ export class LayoutEngine {
 		const traverse = (node: Node) => {
 			if (node.nodeType === node.TEXT_NODE) {
 				const text = node as Text;
-				if (text.textContent && text.textContent.trim()) {
+				if (text.data && text.data.trim()) {
 					leafNodes.push({
 						type: "text",
 						node: text,
-						content: text.textContent,
+						content: text.data,
 					});
 				}
 			} else if (node.nodeType === node.ELEMENT_NODE) {
@@ -989,9 +987,15 @@ export class LayoutEngine {
 		width: number;
 		height: number;
 	} {
-		const textContent = element.textContent || "";
+		// For inline block measurement, get actual text data from child text nodes
+		let totalText = "";
+		for (const child of element.childNodes) {
+			if (child.nodeType === child.TEXT_NODE) {
+				totalText += (child as Text).data || "";
+			}
+		}
 		return {
-			width: Bun.stringWidth(textContent),
+			width: Bun.stringWidth(totalText),
 			height: 1,
 		};
 	}
@@ -1141,9 +1145,8 @@ export class LayoutEngine {
 					let prevSibling = node.previousSibling;
 					while (prevSibling) {
 						if (prevSibling.nodeType === prevSibling.TEXT_NODE) {
-							if (prevSibling.textContent) {
-								return false;
-							}
+							// Any text node (even empty) affects inline layout
+							return false;
 						} else {
 							return true;
 						}
@@ -1169,9 +1172,8 @@ export class LayoutEngine {
 					return true;
 				}
 			} else if (prevSibling.nodeType === prevSibling.TEXT_NODE) {
-				if (prevSibling.textContent) {
-					return false;
-				}
+				// Any text node (even empty) affects inline layout
+				return false;
 			}
 			prevSibling = prevSibling.previousSibling;
 		}
@@ -1225,11 +1227,8 @@ export class LayoutEngine {
 				while (current.previousSibling) {
 					const prevSibling = current.previousSibling;
 					if (prevSibling.nodeType === prevSibling.TEXT_NODE) {
-						if (prevSibling.textContent) {
-							current = prevSibling;
-						} else {
-							// Empty text node - skip
-						}
+						// Include all text nodes in traversal
+						current = prevSibling;
 					} else {
 						break;
 					}

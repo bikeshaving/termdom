@@ -1,12 +1,12 @@
 import {test, expect} from "bun:test";
 import {JSDOM} from "jsdom";
 import {LayoutEngine} from "../src/layout.js";
-import {createGetComputedStyle} from "../src/styles.js";
+import {StyleManager} from "../src/styles.js";
 
 function createLayoutEngine(html: string = "<div></div>") {
 	const jsdom = new JSDOM(`<!DOCTYPE html><html><body>${html}</body></html>`);
 	// Setup terminal-specific getComputedStyle
-	jsdom.window.getComputedStyle = createGetComputedStyle();
+	new StyleManager(jsdom.window);
 
 	const layoutEngine = new LayoutEngine(jsdom.window);
 	// Set initial size and calculate layout
@@ -542,4 +542,50 @@ test("inline head deletion promotes next element", () => {
 	expect(layoutEngine.isInlineRunHead(spans[1])).toBe(true);
 	expect(layoutEngine.isInlineRunHead(spans[2])).toBe(false);
 	expect(layoutEngine.findInlineRunHead(spans[2])).toBe(spans[1]);
+});
+
+test("emoji text RectLengths preserve character boundaries", () => {
+	const {jsdom, layoutEngine} = createLayoutEngine(
+		`<span>🎨 Colorful Text 🌈</span>`
+	);
+	
+	const span = jsdom.window.document.querySelector("span")!;
+	const textNode = span.firstChild as Text;
+	const originalText = textNode.textContent!;
+	
+	console.log('Layout test - original text:', JSON.stringify(originalText));
+	console.log('Layout test - original text length:', originalText.length);
+	
+	// Get the RectLengths for the text node
+	const rectLengths = layoutEngine.getRectLengths(textNode);
+	console.log('Layout test - rectLengths count:', rectLengths.length);
+	
+	// Test that slicing the original text using rectLength boundaries 
+	// produces the correct text
+	let reconstructedText = "";
+	let offset = 0;
+	
+	for (const rectLength of rectLengths) {
+		console.log('Layout test - rectLength:', {
+			textLength: rectLength.textLength,
+			offset: offset,
+			sliceStart: offset,
+			sliceEnd: offset + rectLength.textLength
+		});
+		
+		const slicedText = originalText.slice(offset, offset + rectLength.textLength);
+		console.log('Layout test - sliced text:', JSON.stringify(slicedText));
+		
+		reconstructedText += slicedText;
+		offset += rectLength.textLength;
+	}
+	
+	console.log('Layout test - reconstructed text:', JSON.stringify(reconstructedText));
+	
+	// The reconstructed text should match the original
+	expect(reconstructedText).toBe(originalText);
+	
+	// Specifically check that the space after the first emoji is preserved
+	expect(reconstructedText).toContain("🎨 Colorful"); // Space between emoji and text
+	expect(reconstructedText).not.toContain("🎨Colorful"); // Should NOT be missing space
 });

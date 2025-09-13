@@ -360,6 +360,37 @@ describe("Renderer", () => {
 			expect(result).toMatch(/\n$/);
 		});
 	});
+
+	describe("emoji text rendering", () => {
+		test("renders emoji text with spaces correctly", async () => {
+			const {TestTerminal} = await import("./test-utils.js");
+			const renderer = new Renderer(3, 25); // 3 rows, 25 cols
+			
+			renderer.beginFrame();
+			
+			// Test the exact same text from the failing emoji test
+			renderer.setText(1, 2, "🎨 Colorful Text 🌈", {
+				fg: 0xff00ff, // magenta
+				bg: 0xffff00, // yellow
+			});
+			
+			const ansi = renderer.render();
+			
+			const terminal = new TestTerminal({rows: 3, cols: 25});
+			await new Promise<void>((resolve) => {
+				terminal.stdout.write(ansi, () => resolve());
+			});
+			
+			const visibleText = terminal.getPlainText();
+			console.log('Direct renderer test - visible text:', JSON.stringify(visibleText));
+			console.log('Direct renderer test - ANSI:', JSON.stringify(ansi));
+			
+			// Check that the space after the first emoji is preserved
+			expect(visibleText).toContain("🎨 Colorful"); // Space between emoji and text
+			expect(visibleText).toContain("Text 🌈"); // Space before second emoji
+			expect(visibleText).not.toContain("🎨Colorful"); // Should NOT be missing space
+		});
+	});
 });
 
 describe("generateANSI", () => {

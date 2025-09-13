@@ -1,15 +1,15 @@
 import {test, expect, describe} from "bun:test";
 import {JSDOM} from "jsdom";
-import {createGetComputedStyle} from "../src/styles.js";
+import {StyleManager} from "../src/styles.js";
 
 describe("getComputedStyle - What We Support", () => {
 	test("CSS spec defaults", () => {
 		const dom = new JSDOM(
 			`<!DOCTYPE html><html><body><div id="test"></div></body></html>`,
 		);
-		const getComputedStyle = createGetComputedStyle();
+		new StyleManager(dom.window);
 		const element = dom.window.document.getElementById("test")!;
-		const styles = getComputedStyle(element);
+		const styles = dom.window.getComputedStyle(element);
 
 		// Test basic CSS spec defaults (computed values)
 		expect(styles.getPropertyValue("margin")).toBe("0px 0px 0px 0px");
@@ -39,57 +39,57 @@ describe("getComputedStyle - What We Support", () => {
 				</body>
 			</html>
 		`);
-		const getComputedStyle = createGetComputedStyle();
+		new StyleManager(dom.window);
 
 		// Block elements
 		expect(
-			getComputedStyle(
+			dom.window.getComputedStyle(
 				dom.window.document.getElementById("div")!,
 			).getPropertyValue("display"),
 		).toBe("block");
 
 		// Inline elements
 		expect(
-			getComputedStyle(
+			dom.window.getComputedStyle(
 				dom.window.document.getElementById("span")!,
 			).getPropertyValue("display"),
 		).toBe("inline");
 		expect(
-			getComputedStyle(
+			dom.window.getComputedStyle(
 				dom.window.document.getElementById("strong")!,
 			).getPropertyValue("font-weight"),
 		).toBe("bold");
 
 		// List elements
 		expect(
-			getComputedStyle(
+			dom.window.getComputedStyle(
 				dom.window.document.getElementById("ul")!,
 			).getPropertyValue("display"),
 		).toBe("block");
 		expect(
-			getComputedStyle(
+			dom.window.getComputedStyle(
 				dom.window.document.getElementById("ul")!,
 			).getPropertyValue("padding-left"),
 		).toBe("2ch");
 		expect(
-			getComputedStyle(
+			dom.window.getComputedStyle(
 				dom.window.document.getElementById("li")!,
 			).getPropertyValue("display"),
 		).toBe("list-item");
 
 		// Special elements
 		expect(
-			getComputedStyle(
+			dom.window.getComputedStyle(
 				dom.window.document.getElementById("pre")!,
 			).getPropertyValue("white-space"),
 		).toBe("pre");
 		expect(
-			getComputedStyle(
+			dom.window.getComputedStyle(
 				dom.window.document.getElementById("button")!,
 			).getPropertyValue("display"),
 		).toBe("inline-block");
 		expect(
-			getComputedStyle(
+			dom.window.getComputedStyle(
 				dom.window.document.getElementById("button")!,
 			).getPropertyValue("border"),
 		).toBe("1px solid");
@@ -103,9 +103,9 @@ describe("getComputedStyle - What We Support", () => {
 				</body>
 			</html>
 		`);
-		const getComputedStyle = createGetComputedStyle();
+		new StyleManager(dom.window);
 		const element = dom.window.document.getElementById("test")!;
-		const styles = getComputedStyle(element);
+		const styles = dom.window.getComputedStyle(element);
 
 		expect(styles.getPropertyValue("color")).toBe("red");
 		expect(styles.getPropertyValue("margin")).toBe("10px 10px 10px 10px");
@@ -122,9 +122,9 @@ describe("getComputedStyle - What We Support", () => {
 				</body>
 			</html>
 		`);
-		const getComputedStyle = createGetComputedStyle();
+		new StyleManager(dom.window);
 		const element = dom.window.document.getElementById("test")!;
-		const styles = getComputedStyle(element);
+		const styles = dom.window.getComputedStyle(element);
 
 		// Should resolve to CSS spec defaults (computed values)
 		expect(styles.getPropertyValue("color")).toBe("rgb(0, 0, 0)");
@@ -139,9 +139,9 @@ describe("getComputedStyle - What We Support", () => {
 				</body>
 			</html>
 		`);
-		const getComputedStyle = createGetComputedStyle();
+		new StyleManager(dom.window);
 		const element = dom.window.document.getElementById("test")!;
-		const styles = getComputedStyle(element);
+		const styles = dom.window.getComputedStyle(element);
 
 		// Should resolve to defaults (we treat these the same as initial for now)
 		expect(styles.getPropertyValue("color")).toBe("rgb(0, 0, 0)");
@@ -160,10 +160,10 @@ describe("getComputedStyle - What We Support", () => {
 				</body>
 			</html>
 		`);
-		const getComputedStyle = createGetComputedStyle();
+		new StyleManager(dom.window);
 
 		const child = dom.window.document.getElementById("child")!;
-		const childStyles = getComputedStyle(child);
+		const childStyles = dom.window.getComputedStyle(child);
 
 		// Inherited properties should inherit from parent
 		expect(childStyles.getPropertyValue("color")).toBe("blue");
@@ -173,7 +173,7 @@ describe("getComputedStyle - What We Support", () => {
 
 		const childWithInherit =
 			dom.window.document.getElementById("child-with-inherit")!;
-		const childWithInheritStyles = getComputedStyle(childWithInherit);
+		const childWithInheritStyles = dom.window.getComputedStyle(childWithInherit);
 
 		// Explicit inherit should work
 		expect(childWithInheritStyles.getPropertyValue("color")).toBe("blue");
@@ -188,9 +188,9 @@ describe("getComputedStyle - What We Support", () => {
 				</body>
 			</html>
 		`);
-		const getComputedStyle = createGetComputedStyle();
+		new StyleManager(dom.window);
 		const element = dom.window.document.getElementById("test")!;
-		const styles = getComputedStyle(element);
+		const styles = dom.window.getComputedStyle(element);
 
 		// Should provide CSSStyleDeclaration-compatible interface
 		expect(styles).toBeTruthy();
@@ -219,9 +219,9 @@ describe("getComputedStyle - What We Support", () => {
 				</body>
 			</html>
 		`);
-		const getComputedStyle = createGetComputedStyle();
+		new StyleManager(dom.window);
 		const element = dom.window.document.getElementById("test")!;
-		const styles = getComputedStyle(element);
+		const styles = dom.window.getComputedStyle(element);
 
 		expect(styles.getPropertyValue("margin")).toBe("5px 10px 15px 20px");
 		expect(styles.getPropertyValue("padding")).toBe("1px 2px 3px 4px");
@@ -247,9 +247,9 @@ describe("getComputedStyle - What We Don't Support (Failing Tests)", () => {
 				</body>
 			</html>
 		`);
-		const getComputedStyle = createGetComputedStyle();
+		new StyleManager(dom.window);
 		const element = dom.window.document.getElementById("test")!;
-		const styles = getComputedStyle(element);
+		const styles = dom.window.getComputedStyle(element);
 
 		// Should resolve to inline style (highest specificity)
 		expect(styles.getPropertyValue("color")).toBe("yellow");
@@ -288,9 +288,9 @@ describe("getComputedStyle - What We Don't Support (Failing Tests)", () => {
 				</body>
 			</html>
 		`);
-		const getComputedStyle = createGetComputedStyle();
+		new StyleManager(dom.window);
 		const element = dom.window.document.getElementById("test")!;
-		const styles = getComputedStyle(element);
+		const styles = dom.window.getComputedStyle(element);
 
 		// Should apply styles from <style> element
 		expect(styles.getPropertyValue("color")).toBe("red");
@@ -316,9 +316,9 @@ describe("getComputedStyle - What We Don't Support (Failing Tests)", () => {
 				</body>
 			</html>
 		`);
-		const getComputedStyle = createGetComputedStyle();
+		new StyleManager(dom.window);
 		const element = dom.window.document.getElementById("test")!;
-		const styles = getComputedStyle(element);
+		const styles = dom.window.getComputedStyle(element);
 
 		// Later stylesheet should win for same specificity
 		expect(styles.getPropertyValue("color")).toBe("blue");
@@ -341,9 +341,9 @@ describe("getComputedStyle - What We Don't Support (Failing Tests)", () => {
 				</body>
 			</html>
 		`);
-		const getComputedStyle = createGetComputedStyle();
+		new StyleManager(dom.window);
 		const element = dom.window.document.getElementById("test")!;
-		const styles = getComputedStyle(element);
+		const styles = dom.window.getComputedStyle(element);
 
 		// !important should override everything except inline !important
 		expect(styles.getPropertyValue("color")).toBe("red");
@@ -370,25 +370,25 @@ describe("getComputedStyle - What We Don't Support (Failing Tests)", () => {
 				</body>
 			</html>
 		`);
-		const getComputedStyle = createGetComputedStyle();
+		new StyleManager(dom.window);
 
 		// Descendant selector
 		const child = dom.window.document.querySelector(".child")!;
-		expect(getComputedStyle(child).getPropertyValue("color")).toBe("red");
+		expect(dom.window.getComputedStyle(child).getPropertyValue("color")).toBe("red");
 
 		// Child selector
 		const directChild = dom.window.document.querySelector("div > span")!;
-		expect(getComputedStyle(directChild).getPropertyValue("font-size")).toBe(
+		expect(dom.window.getComputedStyle(directChild).getPropertyValue("font-size")).toBe(
 			"16px",
 		);
 
 		// Adjacent sibling
 		const sibling = dom.window.document.querySelector(".sibling")!;
-		expect(getComputedStyle(sibling).getPropertyValue("margin")).toBe("20px");
+		expect(dom.window.getComputedStyle(sibling).getPropertyValue("margin")).toBe("20px");
 
 		// Pseudo-class
 		const firstDiv = dom.window.document.querySelector("div:first-child")!;
-		expect(getComputedStyle(firstDiv).getPropertyValue("padding")).toBe("10px");
+		expect(dom.window.getComputedStyle(firstDiv).getPropertyValue("padding")).toBe("10px");
 	});
 
 	test.todo("external stylesheets", () => {
@@ -403,9 +403,9 @@ describe("getComputedStyle - What We Don't Support (Failing Tests)", () => {
 				</body>
 			</html>
 		`);
-		const getComputedStyle = createGetComputedStyle();
+		new StyleManager(dom.window);
 		const element = dom.window.document.getElementById("test")!;
-		const styles = getComputedStyle(element);
+		const styles = dom.window.getComputedStyle(element);
 
 		// Should load and apply external stylesheet
 		// This test would need mock file system or HTTP support
@@ -429,9 +429,9 @@ describe("getComputedStyle - What We Don't Support (Failing Tests)", () => {
 				</body>
 			</html>
 		`);
-		const getComputedStyle = createGetComputedStyle();
+		new StyleManager(dom.window);
 		const element = dom.window.document.getElementById("test")!;
-		const styles = getComputedStyle(element);
+		const styles = dom.window.getComputedStyle(element);
 
 		// Shorthand should expand to individual properties
 		expect(styles.getPropertyValue("margin-top")).toBe("10px");
@@ -465,9 +465,9 @@ describe("getComputedStyle - What We Don't Support (Failing Tests)", () => {
 				</body>
 			</html>
 		`);
-		const getComputedStyle = createGetComputedStyle();
+		new StyleManager(dom.window);
 		const element = dom.window.document.getElementById("test")!;
-		const styles = getComputedStyle(element);
+		const styles = dom.window.getComputedStyle(element);
 
 		// Should apply media query based on viewport size
 		// This would need viewport size simulation
@@ -494,9 +494,9 @@ describe("getComputedStyle - What We Don't Support (Failing Tests)", () => {
 				</body>
 			</html>
 		`);
-		const getComputedStyle = createGetComputedStyle();
+		new StyleManager(dom.window);
 		const element = dom.window.document.getElementById("test")!;
-		const styles = getComputedStyle(element);
+		const styles = dom.window.getComputedStyle(element);
 
 		// Should resolve CSS custom properties
 		expect(styles.getPropertyValue("color")).toBe("blue");

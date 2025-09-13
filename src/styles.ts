@@ -6,6 +6,7 @@
  */
 
 import {CSSStyleDeclaration} from "cssstyle";
+import type {DOMWindow} from "jsdom";
 
 // ============================================================================
 // CSS DEFAULTS FOR TERMINAL ELEMENTS
@@ -796,22 +797,128 @@ export function getListMarker(listItem: Element, listParent: Element): string {
 // ============================================================================
 
 /**
- * Create a custom getComputedStyle function for terminal DOM
+ * CSS Style Manager
+ * Handles computed style caching and invalidation for terminal DOM
  */
-export function createGetComputedStyle(): (
-	element: Element,
-	pseudoElt?: string | null,
-) => globalThis.CSSStyleDeclaration {
-	return function getComputedStyle(
+export class StyleManager {
+	private computedStyleCache = new WeakMap<Element, TerminalComputedStyle>();
+
+	constructor(private window: DOMWindow) {
+		// Override window.getComputedStyle with our cached version
+		window.getComputedStyle = this.getComputedStyle.bind(this);
+		
+		// Hook into methods that should invalidate cached styles
+		this.setupInvalidationHooks();
+	}
+
+	private getComputedStyle(
 		element: Element,
-		_pseudoElt?: string | null,
+		_pseudoElt?: string | null
 	): globalThis.CSSStyleDeclaration {
 		// For now, we ignore pseudoElt parameter (could be ::before, ::after, etc.)
 
-		// TEMPORARILY DISABLED: Caching was preventing style updates from being reflected
-		// Create new instance each time to ensure fresh computed values
-		return new TerminalComputedStyle(
-			element,
-		) as unknown as globalThis.CSSStyleDeclaration;
-	};
+		// Check cache first
+		let computedStyle = this.computedStyleCache.get(element);
+		if (!computedStyle) {
+			// Create new instance and cache it
+			computedStyle = new TerminalComputedStyle(element);
+			this.computedStyleCache.set(element, computedStyle);
+		}
+
+		return computedStyle as unknown as globalThis.CSSStyleDeclaration;
+	}
+
+	private setupInvalidationHooks(): void {
+		const styleManager = this;
+		const Element = this.window.Element;
+		const originalSetAttribute = Element.prototype.setAttribute;
+		const originalRemoveAttribute = Element.prototype.removeAttribute;
+
+		// Hook setAttribute to catch style attribute changes
+		Element.prototype.setAttribute = function(name: string, value: string) {
+			const result = originalSetAttribute.call(this, name, value);
+			
+			// Only invalidate for direct style attribute changes
+			// (When we add stylesheet support, we'll need smarter invalidation)
+			if (name === 'style') {
+				styleManager.invalidateElement(this);
+			}
+			
+			return result;
+		};
+
+		// Hook removeAttribute to catch style attribute removal
+		Element.prototype.removeAttribute = function(name: string) {
+			const result = originalRemoveAttribute.call(this, name);
+			
+			// Only invalidate for direct style attribute removal
+			if (name === 'style') {
+				styleManager.invalidateElement(this);
+			}
+			
+			return result;
+		};
+
+		// Store wrapped styles to avoid double-wrapping
+		const wrappedStyles = new WeakSet();
+		
+		// Find where the style property is defined in the prototype chain
+		let stylePropertyOwner = null;
+		let proto = this.window.HTMLElement.prototype;
+		while (proto) {
+			if (Object.prototype.hasOwnProperty.call(proto, 'style')) {
+				stylePropertyOwner = proto;
+				break;
+			}
+			proto = Object.getPrototypeOf(proto);
+		}
+		
+		if (stylePropertyOwner) {
+			const originalStyleGetter = Object.getOwnPropertyDescriptor(stylePropertyOwner, 'style')?.get;
+			
+			if (originalStyleGetter) {
+				Object.defineProperty(stylePropertyOwner, 'style', {
+					get() {
+						const style = originalStyleGetter.call(this);
+						
+						// Wrap the onChange callback if not already wrapped
+						if (style && !wrappedStyles.has(style)) {
+							wrappedStyles.add(style);
+							
+							// Save reference to element for the callback
+							const element = this;
+							
+							// Wrap the existing onChange callback
+							const originalOnChange = style._onChange;
+							style._onChange = function(cssText: string) {
+								// Call original onChange first (which updates the style attribute)
+								if (originalOnChange) {
+									originalOnChange.call(this, cssText);
+								}
+								// Then invalidate our cache
+								styleManager.invalidateElement(element);
+							};
+						}
+						
+						return style;
+					},
+					configurable: true
+				});
+			}
+		}
+	}
+
+	/**
+	 * Invalidate cached computed style for an element
+	 */
+	invalidateElement(element: Element): void {
+		this.computedStyleCache.delete(element);
+	}
+
+	/**
+	 * Clear all cached computed styles (nuclear option)
+	 */
+	clearCache(): void {
+		this.computedStyleCache = new WeakMap();
+	}
 }

@@ -3,7 +3,7 @@ import {type DOMWindow, JSDOM} from "jsdom";
 import {LayoutEngine, isPointInRects} from "./layout.js";
 import {type ColorDepth, Renderer} from "./ansi.js";
 import {
-	createGetComputedStyle,
+	StyleManager,
 	resolveBorderStyles,
 	cssColorToNumber,
 } from "./styles.js";
@@ -69,6 +69,7 @@ export class TermDOM {
 	private readonly jsdom: JSDOM;
 	private readonly observer: MutationObserver;
 	private readonly fullscreenManager: FullscreenManager;
+	private readonly styleManager: StyleManager;
 
 	// Shadow DOM support
 	private readonly shadowMap = new WeakMap<Element, ShadowRoot>();
@@ -100,8 +101,8 @@ export class TermDOM {
 		this.window = this.jsdom.window;
 		this.document = this.jsdom.window.document;
 
-		// Setup terminal-specific getComputedStyle
-		this.window.getComputedStyle = createGetComputedStyle();
+		// Setup style management with caching
+		this.styleManager = new StyleManager(this.window);
 
 		// Setup DOM inspector
 		setupInspectMethods(this.window);
@@ -899,7 +900,7 @@ export class TermDOM {
 	 * Render a text node with proper styling from its parent element
 	 */
 	private renderTextNode(textNode: Text): void {
-		const textContent = textNode.textContent;
+		const textContent = textNode.data;
 		if (!textContent) return;
 
 		const parentElement = textNode.parentElement;
