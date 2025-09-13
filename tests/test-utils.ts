@@ -7,6 +7,7 @@
 import {type ProcessLike, type TTYWriteStream} from "../src/termdom.js";
 import {EventEmitter} from "events";
 import {Terminal} from "@xterm/headless";
+import {SerializeAddon} from "@xterm/addon-serialize";
 import {type CellBuffer, Cell, createBuffer} from "../src/ansi.js";
 import {generateANSI} from "../src/ansi.js";
 
@@ -54,6 +55,7 @@ export class TestTerminal extends EventEmitter implements ProcessLike {
 	stdout: MockWriteStream;
 	env: Record<string, string | undefined>;
 	private terminal: Terminal;
+	private serializeAddon: SerializeAddon;
 
 	constructor(
 		options: {
@@ -80,7 +82,9 @@ export class TestTerminal extends EventEmitter implements ProcessLike {
 			allowProposedApi: true,
 		});
 
-		// No need for serialize addon - we use direct buffer access
+		// Add serialize addon for getting actual terminal content
+		this.serializeAddon = new SerializeAddon();
+		this.terminal.loadAddon(this.serializeAddon);
 
 		this.stdout = new MockWriteStream(this.terminal, cols, rows);
 	}
@@ -154,9 +158,17 @@ export class TestTerminal extends EventEmitter implements ProcessLike {
 			const line = buffer.getLine(row);
 			if (!line) continue;
 
-			for (let col = 0; col < this.terminal.cols; col++) {
-				const cell = line.getCell(col);
+			let outputCol = 0; // Track output column separately from xterm column
+			
+			for (let xtermCol = 0; xtermCol < this.terminal.cols && outputCol < this.terminal.cols; xtermCol++) {
+				const cell = line.getCell(xtermCol);
 				if (!cell) continue;
+
+				// Skip width-0 cells (continuation cells for wide characters like emojis)
+				// This is exactly how the serialize addon handles it
+				if (cell.getWidth() === 0) {
+					continue;
+				}
 
 				const chars = cell.getChars();
 				if (!chars) continue;
@@ -179,7 +191,16 @@ export class TestTerminal extends EventEmitter implements ProcessLike {
 					overline: false, // xterm doesn't expose this directly
 				};
 
-				cellBuffer[row][col] = Cell.create({grapheme: chars, ...cellStyle});
+				// Create the cell at the output position
+				cellBuffer[row][outputCol] = Cell.create({grapheme: chars, ...cellStyle});
+				outputCol++;
+				
+				// If this is a wide character, create a continuation cell at the next output position
+				const actualWidth = Bun.stringWidth(chars);
+				if (actualWidth === 2 && outputCol < this.terminal.cols) {
+					cellBuffer[row][outputCol] = null; // Continuation cell
+					outputCol++;
+				}
 			}
 		}
 
@@ -207,6 +228,13 @@ export class TestTerminal extends EventEmitter implements ProcessLike {
 	 */
 	clear(): void {
 		this.terminal.clear();
+	}
+
+	/**
+	 * Get serialized content directly from xterm (what the terminal actually displays)
+	 */
+	getSerializedContent(): string {
+		return this.serializeAddon.serialize();
 	}
 
 	/**

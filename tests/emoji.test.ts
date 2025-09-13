@@ -26,6 +26,10 @@ test("renders single emoji correctly", async () => {
 	const output = terminal.getVisibleText();
 	expect(output).toContain("🚀");
 	expect(output).toMatchSnapshot();
+	
+	// Inline assertion: verify emoji renders correctly in ANSI output  
+	const ansiOutput = terminal.getStaticANSI();
+	expect(ansiOutput).toContain("🚀"); // Emoji should be present in ANSI output
 
 	// Save ANSI snapshot for visual inspection
 	const snapshotsDir = join(process.cwd(), "tests", "__snapshots__");
@@ -50,6 +54,11 @@ test("renders emoji with text correctly", async () => {
 	const output = terminal.getVisibleText();
 	expect(output).toContain("Hello 🌍 World!");
 	expect(output).toMatchSnapshot();
+	
+	// Inline assertion: verify spaces after emojis are preserved
+	const ansiOutput = terminal.getStaticANSI();
+	expect(ansiOutput).toContain("Hello 🌍 World!"); // Space after emoji should be preserved
+	expect(ansiOutput).not.toMatch(/🌍(?! )/); // Should not have emoji without following space
 
 	// Save ANSI snapshot for visual inspection
 	const snapshotsDir = join(process.cwd(), "tests", "__snapshots__");
@@ -137,6 +146,27 @@ test("renders emoji with colors correctly", async () => {
 		join(snapshotsDir, "emoji-with-colors.ansi"),
 		terminal.getScreenContents(),
 	);
+	dom.dispose();
+});
+
+test("preserves spaces after emojis", async () => {
+	const terminal = new TestTerminal();
+	const dom = new TermDOM({process: terminal});
+
+	const span = dom.document.createElement("span");
+	span.textContent = "A🌍B"; // Pattern that was failing before
+	dom.document.body.appendChild(span);
+
+	await dom.render();
+
+	const output = terminal.getVisibleText();
+	expect(output).toContain("A🌍B");
+	
+	// Critical inline assertions for the exact pattern that was broken
+	const ansiOutput = terminal.getStaticANSI();
+	expect(ansiOutput).toContain("A🌍B"); // All characters should be preserved
+	expect(ansiOutput).not.toMatch(/A🌍(?!B)/); // Should not have emoji without the following "B"
+	
 	dom.dispose();
 });
 
