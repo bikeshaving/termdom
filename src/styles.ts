@@ -806,14 +806,14 @@ export class StyleManager {
 	constructor(private window: DOMWindow) {
 		// Override window.getComputedStyle with our cached version
 		window.getComputedStyle = this.getComputedStyle.bind(this);
-		
+
 		// Hook into methods that should invalidate cached styles
 		this.setupInvalidationHooks();
 	}
 
 	private getComputedStyle(
 		element: Element,
-		_pseudoElt?: string | null
+		_pseudoElt?: string | null,
 	): globalThis.CSSStyleDeclaration {
 		// For now, we ignore pseudoElt parameter (could be ::before, ::after, etc.)
 
@@ -835,62 +835,65 @@ export class StyleManager {
 		const originalRemoveAttribute = Element.prototype.removeAttribute;
 
 		// Hook setAttribute to catch style attribute changes
-		Element.prototype.setAttribute = function(name: string, value: string) {
+		Element.prototype.setAttribute = function (name: string, value: string) {
 			const result = originalSetAttribute.call(this, name, value);
-			
+
 			// Only invalidate for direct style attribute changes
 			// (When we add stylesheet support, we'll need smarter invalidation)
-			if (name === 'style') {
+			if (name === "style") {
 				styleManager.invalidateElement(this);
 			}
-			
+
 			return result;
 		};
 
 		// Hook removeAttribute to catch style attribute removal
-		Element.prototype.removeAttribute = function(name: string) {
+		Element.prototype.removeAttribute = function (name: string) {
 			const result = originalRemoveAttribute.call(this, name);
-			
+
 			// Only invalidate for direct style attribute removal
-			if (name === 'style') {
+			if (name === "style") {
 				styleManager.invalidateElement(this);
 			}
-			
+
 			return result;
 		};
 
 		// Store wrapped styles to avoid double-wrapping
 		const wrappedStyles = new WeakSet();
-		
+
 		// Find where the style property is defined in the prototype chain
 		let stylePropertyOwner = null;
 		let proto = this.window.HTMLElement.prototype;
 		while (proto) {
-			if (Object.prototype.hasOwnProperty.call(proto, 'style')) {
+			if (Object.prototype.hasOwnProperty.call(proto, "style")) {
 				stylePropertyOwner = proto;
 				break;
 			}
 			proto = Object.getPrototypeOf(proto);
 		}
-		
+
 		if (stylePropertyOwner) {
-			const originalStyleGetter = Object.getOwnPropertyDescriptor(stylePropertyOwner, 'style')?.get;
-			
+			const originalStyleGetter = Object.getOwnPropertyDescriptor(
+				stylePropertyOwner,
+				"style",
+			)?.get;
+
 			if (originalStyleGetter) {
-				Object.defineProperty(stylePropertyOwner, 'style', {
+				Object.defineProperty(stylePropertyOwner, "style", {
 					get() {
 						const style = originalStyleGetter.call(this);
-						
+
 						// Wrap the onChange callback if not already wrapped
 						if (style && !wrappedStyles.has(style)) {
 							wrappedStyles.add(style);
-							
+
 							// Save reference to element for the callback
 							const element = this;
-							
+
 							// Wrap the existing onChange callback
 							const originalOnChange = style._onChange;
-							style._onChange = function(cssText: string) {
+							style._onChange = function (cssText: string) {
 								// Call original onChange first (which updates the style attribute)
 								if (originalOnChange) {
 									originalOnChange.call(this, cssText);
@@ -899,10 +902,10 @@ export class StyleManager {
 								styleManager.invalidateElement(element);
 							};
 						}
-						
+
 						return style;
 					},
-					configurable: true
+					configurable: true,
 				});
 			}
 		}

@@ -239,15 +239,15 @@ test("whitespace collapse affecting emoji rendering", async () => {
 	await dom.render();
 
 	const output = terminal.getVisibleText();
-	
+
 	// This should contain all content without truncation
 	expect(output).toContain("A");
 	expect(output).toContain("🚀🚀");
 	expect(output).toContain("B");
-	
+
 	// With corrected whitespace handling, spaces are preserved between spans
 	expect(output).toContain("A 🚀🚀 B"); // Spaces preserved for proper layout
-	
+
 	dom.dispose();
 });
 
@@ -277,12 +277,12 @@ test("text after emoji gets truncated", async () => {
 	await dom.render();
 
 	const output = terminal.getVisibleText();
-	
+
 	// The critical test: "More" should not be truncated to "Mor"
 	expect(output).toContain("More"); // Full word should be present
 	expect(output).not.toContain("Mor\n"); // Should not be truncated
 	expect(output).not.toMatch(/Mor(?!e)/); // "Mor" not followed by "e"
-	
+
 	dom.dispose();
 });
 
@@ -292,19 +292,19 @@ test("emoji spacing with complex whitespace patterns", async () => {
 
 	// Test various whitespace patterns around emojis
 	const testCases = [
-		"🚀 text",     // Space after emoji
-		"text 🚀",     // Space before emoji  
-		"🚀  text",    // Multiple spaces after emoji
-		"text  🚀",    // Multiple spaces before emoji
-		"🚀\ttext",    // Tab after emoji
-		"text\t🚀",    // Tab before emoji
+		"🚀 text", // Space after emoji
+		"text 🚀", // Space before emoji
+		"🚀  text", // Multiple spaces after emoji
+		"text  🚀", // Multiple spaces before emoji
+		"🚀\ttext", // Tab after emoji
+		"text\t🚀", // Tab before emoji
 	];
 
 	const container = dom.document.createElement("div");
 	container.style.setProperty("display", "flex");
 	container.style.setProperty("flex-direction", "column");
 
-	testCases.forEach(testCase => {
+	testCases.forEach((testCase) => {
 		const span = dom.document.createElement("span");
 		span.textContent = testCase;
 		container.appendChild(span);
@@ -314,11 +314,11 @@ test("emoji spacing with complex whitespace patterns", async () => {
 	await dom.render();
 
 	const output = terminal.getVisibleText();
-	
+
 	// All emojis should be rendered
 	expect(output.match(/🚀/g)?.length).toBe(testCases.length);
-	
-	// All "text" instances should be rendered (not truncated)  
+
+	// All "text" instances should be rendered (not truncated)
 	expect(output.match(/text/g)?.length).toBe(testCases.length);
 
 	dom.dispose();

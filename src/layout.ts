@@ -378,15 +378,6 @@ Object.defineProperty(DOMRectList.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-/**
- * A rectangle with an associated text length, used for text layout.
- * Multiple RectLength objects may be needed for a single text node due to line wrapping.
- */
-export interface RectLength {
-	rect: DOMRect;
-	textLength: number; // Number of UTF-16 code units in this rect
-}
-
 export interface RectText {
 	rect: DOMRect;
 	text: string; // Processed text to render (replaces textLength)
@@ -408,7 +399,6 @@ export class LayoutEngine {
 
 	// TODO: These should be strong maps
 	declare nodeMap: WeakMap<Node, YogaTypes.Node>;
-	declare rectLengthsMap: WeakMap<Node, RectLength[]>;
 	declare rectTextsMap: WeakMap<Node, RectText[]>;
 
 	// Shadow DOM support
@@ -426,7 +416,6 @@ export class LayoutEngine {
 		this.DOMRect = window.DOMRect;
 		this.rootElement = window.document.documentElement;
 		this.nodeMap = new WeakMap<Node, YogaTypes.Node>();
-		this.rectLengthsMap = new WeakMap<Node, RectLength[]>();
 		this.rectTextsMap = new WeakMap<Node, RectText[]>();
 		this.getShadowRoot = getShadowRoot;
 		this.getMergedTree = getMergedTree;
@@ -470,6 +459,28 @@ export class LayoutEngine {
 	}
 
 	getRect(element: Element): DOMRect | null {
+		// First check if this element has rectTexts (inline/inline-block elements)
+		// This ensures inline elements get their individual dimensions, not the whole run
+		const rectTexts = this.getRectTexts(element);
+		if (rectTexts.length > 0) {
+			// Calculate bounding box from all rectTexts
+			let minX = Infinity;
+			let minY = Infinity;
+			let maxX = -Infinity;
+			let maxY = -Infinity;
+
+			for (const rectText of rectTexts) {
+				const rect = rectText.rect;
+				minX = Math.min(minX, rect.x);
+				minY = Math.min(minY, rect.y);
+				maxX = Math.max(maxX, rect.x + rect.width);
+				maxY = Math.max(maxY, rect.y + rect.height);
+			}
+
+			return new this.DOMRect(minX, minY, maxX - minX, maxY - minY);
+		}
+
+		// Fall back to Yoga node for block elements and containers
 		let yogaNode = this.nodeMap.get(element);
 
 		// If this is a cloned element and we don't have layout data for it,
@@ -511,21 +522,6 @@ export class LayoutEngine {
 		);
 	}
 
-	getRectLengths(node: Node): RectLength[] {
-		let rectLengths = this.rectLengthsMap.get(node);
-
-		// If this is a cloned node and we don't have layout data for it,
-		// try to use the original node's layout data
-		if (!rectLengths && this.getOriginalNode) {
-			const originalNode = this.getOriginalNode(node);
-			if (originalNode) {
-				rectLengths = this.rectLengthsMap.get(originalNode);
-			}
-		}
-
-		return rectLengths || [];
-	}
-
 	getRectTexts(node: Node): RectText[] {
 		let rectTexts = this.rectTextsMap.get(node);
 
@@ -558,7 +554,9 @@ export class LayoutEngine {
 		return new this.DOMRect(x, y, width, height);
 	}
 
-	dispose(): void {}
+	dispose(): void {
+		this.observer.disconnect();
+	}
 
 	/**
 	 * Get computed style for an element using our terminal-specific getComputedStyle
@@ -639,20 +637,30 @@ export class LayoutEngine {
 					yogaNode.freeRecursive();
 					this.nodeMap.delete(node);
 				}
+
+				// Also clean up rectTexts for removed nodes
+				this.cleanupRectTexts(node);
 			}
 		}
-	}
-
-	private addRectLength(node: Node, rectLength: RectLength): void {
-		const rectLengths = this.rectLengthsMap.get(node) || [];
-		rectLengths.push(rectLength);
-		this.rectLengthsMap.set(node, rectLengths);
 	}
 
 	private addRectText(node: Node, rectText: RectText): void {
 		const rectTexts = this.rectTextsMap.get(node) || [];
 		rectTexts.push(rectText);
 		this.rectTextsMap.set(node, rectTexts);
+	}
+
+	private cleanupRectTexts(node: Node): void {
+		// Clean up rectTexts for this node
+		this.rectTextsMap.delete(node);
+
+		// Recursively clean up child nodes
+		if (node.nodeType === node.ELEMENT_NODE) {
+			const element = node as Element;
+			for (let i = 0; i < element.childNodes.length; i++) {
+				this.cleanupRectTexts(element.childNodes[i]);
+			}
+		}
 	}
 
 	private addNode(
@@ -1061,6 +1069,15 @@ export class LayoutEngine {
 			overflowWrap: overflowWrap || "normal",
 		});
 
+		// During measurement, distribute rects to inline-block elements in the run
+		// We need to get the element's position from its Yoga node
+		const yogaNode = this.nodeMap.get(element);
+		if (yogaNode) {
+			const elementX = yogaNode.getComputedLeft();
+			const elementY = yogaNode.getComputedTop();
+			this.distributeRects(breakResult, element, elementX, elementY);
+		}
+
 		const result = {
 			width: breakResult.maxLineWidth,
 			height: breakResult.totalHeight,
@@ -1108,7 +1125,6 @@ export class LayoutEngine {
 		startY: number,
 	): void {
 		const clearRects = (node: Node) => {
-			this.rectLengthsMap.delete(node);
 			this.rectTextsMap.delete(node);
 			if (node.nodeType === node.ELEMENT_NODE) {
 				const el = node as Element;
@@ -1128,24 +1144,17 @@ export class LayoutEngine {
 					line.height,
 				);
 
-				const rectLength: RectLength = {
-					rect: domRect,
-					textLength: segment.end - segment.start,
-				};
-
 				const rectText: RectText = {
 					rect: domRect,
 					text: segment.processedText,
 				};
 
-				this.addRectLength(segment.leaf.node, rectLength);
 				this.addRectText(segment.leaf.node, rectText);
 
 				let parent = segment.leaf.node.parentElement;
 				while (parent && parent !== rootElement.parentElement) {
 					const display = this.getPropertyValue(parent, "display");
 					if (display === "inline" || display === "inline-block") {
-						this.addRectLength(parent, rectLength);
 						this.addRectText(parent, rectText);
 					} else {
 						break;
@@ -1183,8 +1192,6 @@ export class LayoutEngine {
 						if (prevSibling.nodeType === prevSibling.TEXT_NODE) {
 							// Any text node (even empty) affects inline layout
 							return false;
-						} else {
-							return true;
 						}
 						prevSibling = prevSibling.previousSibling;
 					}

@@ -105,13 +105,20 @@ function processWhitespace(
 						const atStart = text.length === 0 && processed.length === 0;
 						const afterNewline =
 							text.length > 0 && text[text.length - 1] === "\n";
-						
+
 						// Check if previous leaf ends with space (for isolated measurement)
-						const prevEndsWithSpace = prevLeaf?.type === "text" && 
-							prevLeaf.content && /\s$/.test(prevLeaf.content);
-						
+						const prevEndsWithSpace =
+							prevLeaf?.type === "text" &&
+							prevLeaf.content &&
+							/\s$/.test(prevLeaf.content);
+
 						// Preserve leading spaces unless previous text ends with space
-						if (!atStart && !lastWasSpace && !afterNewline && !prevEndsWithSpace) {
+						if (
+							!atStart &&
+							!lastWasSpace &&
+							!afterNewline &&
+							!prevEndsWithSpace
+						) {
 							processed += " ";
 							mapping.push(i);
 							lastWasSpace = true;
@@ -130,9 +137,11 @@ function processWhitespace(
 
 				// Handle trailing whitespace with lookahead
 				if (processed.length > 0 && /\s$/.test(processed)) {
-					const nextStartsWithSpace = nextLeaf?.type === "text" && 
-						nextLeaf.content && /^\s/.test(nextLeaf.content);
-					
+					const nextStartsWithSpace =
+						nextLeaf?.type === "text" &&
+						nextLeaf.content &&
+						/^\s/.test(nextLeaf.content);
+
 					// Only remove trailing whitespace if next leaf starts with whitespace
 					// This allows proper CSS collapsing between adjacent text nodes
 					// For isolated measurement (flexbox), trailing spaces are preserved
@@ -140,7 +149,7 @@ function processWhitespace(
 						// Remove ALL trailing whitespace (not just one character)
 						const trimmed = processed.replace(/\s+$/, "");
 						const trimAmount = processed.length - trimmed.length;
-						
+
 						processed = trimmed;
 						// Adjust mapping to remove trimmed characters
 						mapping.splice(-trimAmount, trimAmount);
@@ -158,11 +167,13 @@ function processWhitespace(
 					} else if (/\s/.test(char)) {
 						const atLineStart =
 							temp.length === 0 || temp[temp.length - 1] === "\n";
-						
+
 						// Check if previous leaf ends with space (for isolated measurement)
-						const prevEndsWithSpace = prevLeaf?.type === "text" && 
-							prevLeaf.content && /\s$/.test(prevLeaf.content);
-						
+						const prevEndsWithSpace =
+							prevLeaf?.type === "text" &&
+							prevLeaf.content &&
+							/\s$/.test(prevLeaf.content);
+
 						if (!lastWasSpace && !atLineStart && !prevEndsWithSpace) {
 							temp += " ";
 							mapping.push(i);
@@ -183,14 +194,16 @@ function processWhitespace(
 
 				// Handle trailing whitespace for pre-line (same as normal/nowrap)
 				if (processed.length > 0 && /\s$/.test(processed)) {
-					const nextStartsWithSpace = nextLeaf?.type === "text" && 
-						nextLeaf.content && /^\s/.test(nextLeaf.content);
-					
+					const nextStartsWithSpace =
+						nextLeaf?.type === "text" &&
+						nextLeaf.content &&
+						/^\s/.test(nextLeaf.content);
+
 					// Only remove trailing whitespace if next leaf starts with whitespace
 					if (nextStartsWithSpace) {
 						const trimmed = processed.replace(/\s+$/, "");
 						const trimAmount = processed.length - trimmed.length;
-						
+
 						processed = trimmed;
 						mapping.splice(-trimAmount, trimAmount);
 						lastWasSpace = false;
@@ -231,7 +244,6 @@ function processWhitespace(
 			});
 		}
 	}
-
 
 	return {items, text};
 }

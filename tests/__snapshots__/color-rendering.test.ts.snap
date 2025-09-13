@@ -28,6 +28,6 @@ exports[`style combinations work correctly 1`] = `
 `;
 
 exports[`inline elements do not extend background 1`] = `
-"\x1B[38;2;255;255;255;48;2;0;128;0mInline text                                                                     \x1B[0m
+"\x1B[38;2;255;255;255;48;2;0;128;0mInline text\x1B[0m
 "
 `;

@@ -2,11 +2,7 @@ import {type EventEmitter} from "events";
 import {type DOMWindow, JSDOM} from "jsdom";
 import {LayoutEngine, isPointInRects} from "./layout.js";
 import {type ColorDepth, Renderer} from "./ansi.js";
-import {
-	StyleManager,
-	resolveBorderStyles,
-	cssColorToNumber,
-} from "./styles.js";
+import {StyleManager, resolveBorderStyles, cssColorToNumber} from "./styles.js";
 import {FullscreenManager} from "./fullscreen.js";
 import {setupInspectMethods} from "./inspector.js";
 // import {registerListElements} from "./elements/lists.js";
@@ -1103,8 +1099,8 @@ export class TermDOM {
 
 			termDOM.processPendingMutationsAndRender();
 
-			const rectLengths = termDOM.layoutEngine.getRectLengths(this);
-			const rects = Array.from(rectLengths, (rectLength) => rectLength.rect);
+			const rectTexts = termDOM.layoutEngine.getRectTexts(this);
+			const rects = Array.from(rectTexts, (rectText) => rectText.rect);
 			return termDOM.layoutEngine.createDOMRectList(rects);
 		};
 

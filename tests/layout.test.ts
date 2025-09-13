@@ -546,45 +546,26 @@ test("inline head deletion promotes next element", () => {
 
 test("emoji text RectLengths preserve character boundaries", () => {
 	const {jsdom, layoutEngine} = createLayoutEngine(
-		`<span>🎨 Colorful Text 🌈</span>`
+		`<span>🎨 Colorful Text 🌈</span>`,
 	);
-	
+
 	const span = jsdom.window.document.querySelector("span")!;
 	const textNode = span.firstChild as Text;
 	const originalText = textNode.textContent!;
-	
-	console.log('Layout test - original text:', JSON.stringify(originalText));
-	console.log('Layout test - original text length:', originalText.length);
-	
-	// Get the RectLengths for the text node
-	const rectLengths = layoutEngine.getRectLengths(textNode);
-	console.log('Layout test - rectLengths count:', rectLengths.length);
-	
-	// Test that slicing the original text using rectLength boundaries 
-	// produces the correct text
+
+	// Get the RectTexts for the text node
+	const rectTexts = layoutEngine.getRectTexts(textNode);
+
+	// Test that the processed text matches the original
 	let reconstructedText = "";
-	let offset = 0;
-	
-	for (const rectLength of rectLengths) {
-		console.log('Layout test - rectLength:', {
-			textLength: rectLength.textLength,
-			offset: offset,
-			sliceStart: offset,
-			sliceEnd: offset + rectLength.textLength
-		});
-		
-		const slicedText = originalText.slice(offset, offset + rectLength.textLength);
-		console.log('Layout test - sliced text:', JSON.stringify(slicedText));
-		
-		reconstructedText += slicedText;
-		offset += rectLength.textLength;
+
+	for (const rectText of rectTexts) {
+		reconstructedText += rectText.text;
 	}
-	
-	console.log('Layout test - reconstructed text:', JSON.stringify(reconstructedText));
-	
+
 	// The reconstructed text should match the original
 	expect(reconstructedText).toBe(originalText);
-	
+
 	// Specifically check that the space after the first emoji is preserved
 	expect(reconstructedText).toContain("🎨 Colorful"); // Space between emoji and text
 	expect(reconstructedText).not.toContain("🎨Colorful"); // Should NOT be missing space
@@ -592,33 +573,31 @@ test("emoji text RectLengths preserve character boundaries", () => {
 
 test("RectLength text slicing mismatch with whitespace", () => {
 	const {jsdom, layoutEngine} = createLayoutEngine(
-		`<div style="width: 20ch;"><span>Hello   </span><span>World</span></div>`
+		`<div style="width: 20ch;"><span>Hello   </span><span>World</span></div>`,
 	);
-	
+
 	const spans = Array.from(jsdom.window.document.querySelectorAll("span"));
 	const firstSpan = spans[0];
 	const secondSpan = spans[1];
-	
-	// Get RectLengths for both spans
-	const rectLengths1 = layoutEngine.getRectLengths(firstSpan.firstChild as Text);
-	const rectLengths2 = layoutEngine.getRectLengths(secondSpan.firstChild as Text);
-	
-	// The bug: RectLength.textLength is based on processed text, 
-	// but original DOM text has different length
+
+	// Get RectTexts for both spans
+	const rectTexts1 = layoutEngine.getRectTexts(firstSpan.firstChild as Text);
+	const rectTexts2 = layoutEngine.getRectTexts(secondSpan.firstChild as Text);
+
+	// The original DOM text vs processed text difference
 	const originalText1 = firstSpan.textContent!; // "Hello   " (8 chars)
 	const originalText2 = secondSpan.textContent!; // "World" (5 chars)
-	
+
 	let totalProcessedLength = 0;
-	rectLengths1.forEach(rl => totalProcessedLength += rl.textLength);
-	rectLengths2.forEach(rl => totalProcessedLength += rl.textLength);
-	
-	// This should demonstrate the mismatch
+	rectTexts1.forEach((rt) => (totalProcessedLength += rt.text.length));
+	rectTexts2.forEach((rt) => (totalProcessedLength += rt.text.length));
+
+	// This demonstrates how whitespace processing affects text length
 	expect(originalText1.length).toBe(8); // Original has 8 chars
 	expect(originalText2.length).toBe(5); // Original has 5 chars
-	
-	// But processed lengths will be different due to whitespace collapse
-	// The exact values depend on how whitespace is processed, but the key
-	// is that slicing original text by processed lengths causes errors
+
+	// Processed text will be different due to whitespace collapse
+	// With RectText, we use the processed text directly for rendering
 });
 
 test("whitespace processing produces correct measurements", () => {
@@ -629,58 +608,105 @@ test("whitespace processing produces correct measurements", () => {
 			<span>Text </span>
 			<span>🚀</span>
 			<span> More</span>
-		</div>`
+		</div>`,
 	);
-	
+
 	// The container should have a valid rect since it contains the inline content
 	const container = jsdom.window.document.querySelector("div")!;
 	const containerRect = layoutEngine.getRect(container);
-	
+
 	// The inline content should be measured correctly by our fixed whitespace processing
-	// We don't test individual span rects (they're part of inline flow), 
+	// We don't test individual span rects (they're part of inline flow),
 	// but the container size should reflect correct measurements
 	expect(containerRect).not.toBeNull();
 	expect(containerRect!.width).toBeGreaterThan(0);
 });
 
-test("inline run with mixed content - whitespace handling", () => {
+test("inline-block elements should get individual rects", () => {
 	const {jsdom, layoutEngine} = createLayoutEngine(
-		`<div>Start <span>middle  </span> <em>end</em></div>`
+		`<div>
+			<div style="display: inline-block;">Block1</div>
+			<div style="display: inline-block;">Block2</div>
+		</div>`,
 	);
-	
+
+	const container = jsdom.window.document.querySelector("div")!;
+	const inlineBlocks = Array.from(
+		jsdom.window.document.querySelectorAll("div"),
+	).slice(1);
+
+	// Container should have a rect
+	expect(layoutEngine.getRect(container)).not.toBeNull();
+
+	// Each inline-block should also have its own rect (unlike regular inline elements)
+	expect(layoutEngine.getRect(inlineBlocks[0])).not.toBeNull();
+	expect(layoutEngine.getRect(inlineBlocks[1])).not.toBeNull();
+
+	// Both elements should have width equal to their content (6 chars each)
+	const rect1 = layoutEngine.getRect(inlineBlocks[0]);
+	const rect2 = layoutEngine.getRect(inlineBlocks[1]);
+	expect(rect1!.width).toBe(6); // "Block1" = 6 chars
+	expect(rect2!.width).toBe(6); // "Block2" = 6 chars
+});
+
+test("inline head element gets incorrect rect from yoga node", () => {
+	const {jsdom, layoutEngine} = createLayoutEngine(
+		`<div><span>Head</span><span>Tail</span></div>`,
+	);
+
+	const spans = Array.from(jsdom.window.document.querySelectorAll("span"));
+
+	// The head should report width of just its content (4), not the entire run (8)
+	// But currently it reports the width of the entire run because it uses the Yoga node
+	const headRect = layoutEngine.getRect(spans[0]);
+	const tailRect = layoutEngine.getRect(spans[1]);
+
+	// This test demonstrates the bug: head element reports container width instead of content width
+	// Expected: head should report width 4 ("Head"), tail should report width 4 ("Tail")
+	// Actual: head reports width 300 (container width), tail correctly reports width 4
+	expect(headRect!.width).toBe(4); // "Head" = 4 chars, should NOT be container width (300)
+	expect(tailRect!.width).toBe(4); // "Tail" = 4 chars (this works correctly)
+});
+
+test("inline run with mixed content - whitespace handling", () => {
+	const {jsdom, layoutEngine: _layoutEngine} = createLayoutEngine(
+		`<div>Start <span>middle  </span> <em>end</em></div>`,
+	);
+
 	// In normal inline flow, this should be processed as one run
-	// The debug output shows our whitespace processing is working:
+	// This tests that our whitespace processing works correctly with mixed content
 	// "Start middle   end" gets processed with proper whitespace collapsing
-	
+
 	// Test passes if no errors are thrown during layout calculation
-	// The measurement function is called and returns a valid width (15)
 	// This demonstrates that the whitespace processing integration works
-	expect(true).toBe(true); // Layout calculation completed successfully
+	const container = jsdom.window.document.querySelector("div")!;
+	expect(container).not.toBeNull(); // Layout calculation completed successfully
 });
 
 test("text truncation due to RectLength accumulation error", () => {
 	const {jsdom, layoutEngine} = createLayoutEngine(
 		`<div style="width: 12ch;">
 			<span>First   </span><span>Second   </span><span>Third</span>
-		</div>`
+		</div>`,
 	);
-	
+
 	const spans = Array.from(jsdom.window.document.querySelectorAll("span"));
-	
+
 	// Each span's trailing spaces get trimmed in processing
 	// This creates an accumulating error in width calculations
 	// Later spans might get truncated due to insufficient allocated space
-	
-	spans.forEach((span, i) => {
-		const rectLengths = layoutEngine.getRectLengths(span.firstChild as Text);
+
+	spans.forEach((span, _i) => {
+		const rectTexts = layoutEngine.getRectTexts(span.firstChild as Text);
 		const originalLength = span.textContent!.length;
-		const processedLength = rectLengths.reduce((sum, rl) => sum + rl.textLength, 0);
-		
-		console.log(`Span ${i}: original="${span.textContent}" (${originalLength} chars), processed=${processedLength} chars`);
-		
-		// This test documents the mismatch that causes rendering bugs
-		if (span.textContent!.endsWith('   ')) {
-			// Trailing spaces should cause a length mismatch
+		const processedLength = rectTexts.reduce(
+			(sum, rt) => sum + rt.text.length,
+			0,
+		);
+
+		// This test documents how whitespace processing works with RectText
+		if (span.textContent!.endsWith("   ")) {
+			// Trailing spaces get collapsed
 			expect(processedLength).toBeLessThan(originalLength);
 		}
 	});

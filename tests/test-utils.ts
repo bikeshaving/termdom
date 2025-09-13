@@ -159,8 +159,12 @@ export class TestTerminal extends EventEmitter implements ProcessLike {
 			if (!line) continue;
 
 			let outputCol = 0; // Track output column separately from xterm column
-			
-			for (let xtermCol = 0; xtermCol < this.terminal.cols && outputCol < this.terminal.cols; xtermCol++) {
+
+			for (
+				let xtermCol = 0;
+				xtermCol < this.terminal.cols && outputCol < this.terminal.cols;
+				xtermCol++
+			) {
 				const cell = line.getCell(xtermCol);
 				if (!cell) continue;
 
@@ -192,9 +196,12 @@ export class TestTerminal extends EventEmitter implements ProcessLike {
 				};
 
 				// Create the cell at the output position
-				cellBuffer[row][outputCol] = Cell.create({grapheme: chars, ...cellStyle});
+				cellBuffer[row][outputCol] = Cell.create({
+					grapheme: chars,
+					...cellStyle,
+				});
 				outputCol++;
-				
+
 				// If this is a wide character, create a continuation cell at the next output position
 				const actualWidth = Bun.stringWidth(chars);
 				if (actualWidth === 2 && outputCol < this.terminal.cols) {

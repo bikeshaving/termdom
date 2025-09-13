@@ -37,9 +37,8 @@ exports[`renders multiple emojis correctly 1`] = `
 `;
 
 exports[`renders emoji with colors correctly 1`] = `
-"                                                                                
-  🎨 Colorful Text 🌈                                                           
-                                                                                
+"
+  🎨 Colorful Text 🌈
 "
 `;
 

@@ -43,55 +43,55 @@ describe("getComputedStyle - What We Support", () => {
 
 		// Block elements
 		expect(
-			dom.window.getComputedStyle(
-				dom.window.document.getElementById("div")!,
-			).getPropertyValue("display"),
+			dom.window
+				.getComputedStyle(dom.window.document.getElementById("div")!)
+				.getPropertyValue("display"),
 		).toBe("block");
 
 		// Inline elements
 		expect(
-			dom.window.getComputedStyle(
-				dom.window.document.getElementById("span")!,
-			).getPropertyValue("display"),
+			dom.window
+				.getComputedStyle(dom.window.document.getElementById("span")!)
+				.getPropertyValue("display"),
 		).toBe("inline");
 		expect(
-			dom.window.getComputedStyle(
-				dom.window.document.getElementById("strong")!,
-			).getPropertyValue("font-weight"),
+			dom.window
+				.getComputedStyle(dom.window.document.getElementById("strong")!)
+				.getPropertyValue("font-weight"),
 		).toBe("bold");
 
 		// List elements
 		expect(
-			dom.window.getComputedStyle(
-				dom.window.document.getElementById("ul")!,
-			).getPropertyValue("display"),
+			dom.window
+				.getComputedStyle(dom.window.document.getElementById("ul")!)
+				.getPropertyValue("display"),
 		).toBe("block");
 		expect(
-			dom.window.getComputedStyle(
-				dom.window.document.getElementById("ul")!,
-			).getPropertyValue("padding-left"),
+			dom.window
+				.getComputedStyle(dom.window.document.getElementById("ul")!)
+				.getPropertyValue("padding-left"),
 		).toBe("2ch");
 		expect(
-			dom.window.getComputedStyle(
-				dom.window.document.getElementById("li")!,
-			).getPropertyValue("display"),
+			dom.window
+				.getComputedStyle(dom.window.document.getElementById("li")!)
+				.getPropertyValue("display"),
 		).toBe("list-item");
 
 		// Special elements
 		expect(
-			dom.window.getComputedStyle(
-				dom.window.document.getElementById("pre")!,
-			).getPropertyValue("white-space"),
+			dom.window
+				.getComputedStyle(dom.window.document.getElementById("pre")!)
+				.getPropertyValue("white-space"),
 		).toBe("pre");
 		expect(
-			dom.window.getComputedStyle(
-				dom.window.document.getElementById("button")!,
-			).getPropertyValue("display"),
+			dom.window
+				.getComputedStyle(dom.window.document.getElementById("button")!)
+				.getPropertyValue("display"),
 		).toBe("inline-block");
 		expect(
-			dom.window.getComputedStyle(
-				dom.window.document.getElementById("button")!,
-			).getPropertyValue("border"),
+			dom.window
+				.getComputedStyle(dom.window.document.getElementById("button")!)
+				.getPropertyValue("border"),
 		).toBe("1px solid");
 	});
 
@@ -173,7 +173,8 @@ describe("getComputedStyle - What We Support", () => {
 
 		const childWithInherit =
 			dom.window.document.getElementById("child-with-inherit")!;
-		const childWithInheritStyles = dom.window.getComputedStyle(childWithInherit);
+		const childWithInheritStyles =
+			dom.window.getComputedStyle(childWithInherit);
 
 		// Explicit inherit should work
 		expect(childWithInheritStyles.getPropertyValue("color")).toBe("blue");
@@ -374,21 +375,27 @@ describe("getComputedStyle - What We Don't Support (Failing Tests)", () => {
 
 		// Descendant selector
 		const child = dom.window.document.querySelector(".child")!;
-		expect(dom.window.getComputedStyle(child).getPropertyValue("color")).toBe("red");
+		expect(dom.window.getComputedStyle(child).getPropertyValue("color")).toBe(
+			"red",
+		);
 
 		// Child selector
 		const directChild = dom.window.document.querySelector("div > span")!;
-		expect(dom.window.getComputedStyle(directChild).getPropertyValue("font-size")).toBe(
-			"16px",
-		);
+		expect(
+			dom.window.getComputedStyle(directChild).getPropertyValue("font-size"),
+		).toBe("16px");
 
 		// Adjacent sibling
 		const sibling = dom.window.document.querySelector(".sibling")!;
-		expect(dom.window.getComputedStyle(sibling).getPropertyValue("margin")).toBe("20px");
+		expect(
+			dom.window.getComputedStyle(sibling).getPropertyValue("margin"),
+		).toBe("20px");
 
 		// Pseudo-class
 		const firstDiv = dom.window.document.querySelector("div:first-child")!;
-		expect(dom.window.getComputedStyle(firstDiv).getPropertyValue("padding")).toBe("10px");
+		expect(
+			dom.window.getComputedStyle(firstDiv).getPropertyValue("padding"),
+		).toBe("10px");
 	});
 
 	test.todo("external stylesheets", () => {
