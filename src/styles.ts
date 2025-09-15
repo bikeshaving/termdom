@@ -62,15 +62,15 @@ const CSS_SPEC_DEFAULTS: Record<string, string> = {
 	"justify-content": "flex-start",
 	"align-items": "stretch",
 	"align-content": "flex-start",
-	"gap": "0",
+	gap: "0",
 	"row-gap": "0",
 	"column-gap": "0",
 	// Item properties
 	"flex-grow": "0",
-	"flex-shrink": "0",
+	"flex-shrink": "1",
 	"flex-basis": "auto",
 	"align-self": "auto",
-	"order": "0",
+	order: "0",
 };
 
 /**

@@ -11,34 +11,16 @@ exports[`renders emoji with text correctly 1`] = `
 `;
 
 exports[`renders multiple emojis correctly 1`] = `
-"
-
-\x1B[38;2;255;255;255;48;2;255;255;255m🚀🎯📄\x1B[0m
-
-
-
+"\x1B[38;2;255;255;255;48;2;255;255;255m🚀🎯📄\x1B[0m
 \x1B[38;2;255;255;255;48;2;255;255;255m🎉 Party 🎊\x1B[0m
-
-
-
-
 \x1B[38;2;255;255;255;48;2;255;255;255m👨‍💻\x1B[0m
-
-
-
-
 \x1B[38;2;255;255;255;48;2;255;255;255m🌈🦄✨\x1B[0m
-
-
-
-
 \x1B[38;2;255;255;255;48;2;255;255;255m📱💻⌨️🖱️\x1B[0m
 "
 `;
 
 exports[`renders emoji with colors correctly 1`] = `
-"
-\x1B[38;2;255;0;255;48;2;255;255;0m🎨 Colorful Text 🌈\x1B[0m
+"\x1B[38;2;255;0;255;48;2;255;255;0m🎨 Colorful Text 🌈\x1B[0m
 "
 `;
 

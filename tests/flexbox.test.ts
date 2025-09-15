@@ -92,7 +92,6 @@ test("flexbox-demo layout renders correctly", async () => {
 	contentText.textContent =
 		"This demonstrates flexbox layout with nested containers. The layout automatically adjusts based on flexDirection properties: column for vertical stacking, row for horizontal arrangement.";
 	contentText.style.color = "white";
-	contentText.style.padding = "1px 0px 1px 0px";
 	mainContent.appendChild(contentText);
 
 	// Feature cards
@@ -264,7 +263,7 @@ test("flexbox with flex-grow", async () => {
 	item2.textContent = "This item grows to fill available space";
 	item2.style.backgroundColor = "green";
 	item2.style.color = "white";
-	item2.style.flex = "1";
+	item2.style.flex = "1 1 auto";
 	item2.style.padding = "1px";
 	container.appendChild(item2);
 
@@ -461,6 +460,71 @@ test("flexbox column with mixed content", async () => {
 
 	expect(terminal.getStaticANSI()).toMatchSnapshot();
 	terminal.writeANSI("flexbox-dashboard");
+
+	dom.dispose();
+});
+
+test("flexbox column children should have different Y positions", async () => {
+	const terminal = new TestTerminal({cols: 20, rows: 10});
+	const dom = new TermDOM({process: terminal});
+	const {document} = dom;
+
+	// Create tight constraints that trigger the bug
+	const outerContainer = document.createElement("div");
+	outerContainer.style.display = "flex";
+	outerContainer.style.flexDirection = "column";
+	outerContainer.style.height = "8px";
+	outerContainer.style.padding = "1px";
+	document.body.appendChild(outerContainer);
+
+	// Add header to consume space
+	const header = document.createElement("div");
+	header.textContent = "Header";
+	header.style.padding = "1px";
+	outerContainer.appendChild(header);
+
+	// Create row container
+	const rowContainer = document.createElement("div");
+	rowContainer.style.display = "flex";
+	rowContainer.style.flexDirection = "row";
+	rowContainer.style.flex = "1";
+	outerContainer.appendChild(rowContainer);
+
+	// Create the problematic flexbox column card
+	const card = document.createElement("div");
+	card.style.display = "flex";
+	card.style.flexDirection = "column";
+	card.style.flex = "1";
+	card.style.padding = "1px";
+	rowContainer.appendChild(card);
+
+	const title = document.createElement("span");
+	title.textContent = "Title";
+	title.style.textAlign = "center";
+	card.appendChild(title);
+
+	const description = document.createElement("span");
+	description.textContent = "Description";
+	description.style.textAlign = "center";
+	card.appendChild(description);
+
+	await dom.render();
+
+	// Test the bug: title and description should have different Y positions
+	const titleRect = title.getBoundingClientRect();
+	const descRect = description.getBoundingClientRect();
+
+	// Debug info: In flex column, title and description should be at different Y positions
+	// Currently both are at Y=5, which suggests they're positioned horizontally instead of vertically
+
+	// The main assertion: title and description should NOT be at same Y position
+	expect(titleRect.y).not.toBe(descRect.y);
+
+	// Description should be positioned after title
+	expect(descRect.y).toBeGreaterThan(titleRect.y);
+
+	// There should be no gap larger than title height between them
+	expect(descRect.y).toBeLessThanOrEqual(titleRect.y + titleRect.height);
 
 	dom.dispose();
 });

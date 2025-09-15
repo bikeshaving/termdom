@@ -626,7 +626,7 @@ export class TermDOM {
 				}
 			} else if (childNode.nodeType === childNode.TEXT_NODE) {
 				const textNode = childNode as Text;
-				this.renderTextNode(textNode);
+				this.renderText(textNode);
 			}
 		}
 	}
@@ -651,7 +651,7 @@ export class TermDOM {
 				}
 			} else if (childNode.nodeType === childNode.TEXT_NODE) {
 				const textNode = childNode as Text;
-				this.renderTextNode(textNode);
+				this.renderText(textNode);
 			}
 		}
 	}
@@ -801,7 +801,7 @@ export class TermDOM {
 						}
 					} else if (assignedNode.nodeType === assignedNode.TEXT_NODE) {
 						const assignedTextNode = assignedNode as Text;
-						this.renderTextNode(assignedTextNode);
+						this.renderText(assignedTextNode);
 					}
 				}
 			} else {
@@ -813,7 +813,7 @@ export class TermDOM {
 			}
 		} else if (node.nodeType === node.TEXT_NODE) {
 			const textNode = node as Text;
-			this.renderTextNode(textNode);
+			this.renderText(textNode);
 		}
 	}
 
@@ -896,7 +896,7 @@ export class TermDOM {
 	/**
 	 * Render a text node with proper styling from its parent element
 	 */
-	private renderTextNode(textNode: Text): void {
+	private renderText(textNode: Text): void {
 		const textContent = textNode.data;
 		if (!textContent) return;
 
@@ -1099,8 +1099,7 @@ export class TermDOM {
 
 			termDOM.processPendingMutationsAndRender();
 
-			const rectTexts = termDOM.layoutEngine.getRectTexts(this);
-			const rects = Array.from(rectTexts, (rectText) => rectText.rect);
+			const rects = termDOM.layoutEngine.getRects(this);
 			return termDOM.layoutEngine.createDOMRectList(rects);
 		};
 

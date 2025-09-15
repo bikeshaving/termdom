@@ -544,6 +544,240 @@ test("inline head deletion promotes next element", () => {
 	expect(layoutEngine.findInlineRunHead(spans[2])).toBe(spans[1]);
 });
 
+test("findInlineRunHead - text node inside inline element should find element", () => {
+	const {jsdom, layoutEngine} = createLayoutEngine(`<span>🚀</span>`);
+
+	const span = jsdom.window.document.querySelector("span")!;
+	const textNode = span.firstChild as Text;
+
+	// The text node should find the SPAN as its run head, not itself
+	expect(layoutEngine.findInlineRunHead(textNode)).toBe(span);
+
+	// The SPAN should find itself as the run head
+	expect(layoutEngine.findInlineRunHead(span)).toBe(span);
+});
+
+// === COMPREHENSIVE EDGE CASE TESTS FOR findInlineRunHead ===
+
+test("findInlineRunHead - nested inline elements", () => {
+	const {jsdom, layoutEngine} = createLayoutEngine(
+		`<span>outer <em>nested <strong>deep</strong></em> text</span>`,
+	);
+
+	const span = jsdom.window.document.querySelector("span")!;
+	const em = jsdom.window.document.querySelector("em")!;
+	const strong = jsdom.window.document.querySelector("strong")!;
+
+	// All nested inline elements should find the outermost span as run head
+	expect(layoutEngine.findInlineRunHead(span)).toBe(span);
+	expect(layoutEngine.findInlineRunHead(em)).toBe(span);
+	expect(layoutEngine.findInlineRunHead(strong)).toBe(span);
+
+	// Text nodes inside nested elements should also find the outermost span
+	const deepText = strong.firstChild as Text;
+	expect(layoutEngine.findInlineRunHead(deepText)).toBe(span);
+});
+
+test("findInlineRunHead - text nodes after br elements", () => {
+	const {jsdom, layoutEngine} = createLayoutEngine(
+		`<div>Start<br>After break</div>`,
+	);
+
+	const walker = jsdom.window.document.createTreeWalker(
+		jsdom.window.document.body,
+		jsdom.window.NodeFilter.SHOW_TEXT,
+	);
+
+	let startText: Text | null = null;
+	let afterText: Text | null = null;
+	let node;
+	while ((node = walker.nextNode())) {
+		if (node.textContent?.includes("Start")) {
+			startText = node as Text;
+		}
+		if (node.textContent?.includes("After break")) {
+			afterText = node as Text;
+		}
+	}
+
+	// br doesn't break inline runs - both text nodes should be in same run
+	expect(layoutEngine.findInlineRunHead(startText!)).toBe(startText);
+	expect(layoutEngine.findInlineRunHead(afterText!)).toBe(startText);
+});
+
+test("findInlineRunHead - inline elements in flex container", () => {
+	const {jsdom, layoutEngine} = createLayoutEngine(
+		`<div style="display: flex"><span>first</span><span>second</span><em>third</em></div>`,
+	);
+
+	const spans = Array.from(jsdom.window.document.querySelectorAll("span"));
+	const em = jsdom.window.document.querySelector("em")!;
+
+	// In flex containers, each inline element is its own run head
+	expect(layoutEngine.findInlineRunHead(spans[0])).toBe(spans[0]);
+	expect(layoutEngine.findInlineRunHead(spans[1])).toBe(spans[1]);
+	expect(layoutEngine.findInlineRunHead(em)).toBe(em);
+
+	// Text nodes inside should find their parent element as run head
+	const firstText = spans[0].firstChild as Text;
+	const thirdText = em.firstChild as Text;
+	expect(layoutEngine.findInlineRunHead(firstText)).toBe(spans[0]);
+	expect(layoutEngine.findInlineRunHead(thirdText)).toBe(em);
+});
+
+test("findInlineRunHead - mixed text and inline elements in flex", () => {
+	const {jsdom, layoutEngine} = createLayoutEngine(
+		`<div style="display: flex">Text node<span>element</span>More text</div>`,
+	);
+
+	const span = jsdom.window.document.querySelector("span")!;
+	const walker = jsdom.window.document.createTreeWalker(
+		jsdom.window.document.body,
+		jsdom.window.NodeFilter.SHOW_TEXT,
+	);
+
+	let textNode: Text | null = null;
+	let moreText: Text | null = null;
+	let node;
+	while ((node = walker.nextNode())) {
+		if (node.textContent?.includes("Text node")) {
+			textNode = node as Text;
+		}
+		if (node.textContent?.includes("More text")) {
+			moreText = node as Text;
+		}
+	}
+
+	// In flex: text nodes group with adjacent text nodes only, elements are separate
+	expect(layoutEngine.findInlineRunHead(span)).toBe(span);
+	expect(layoutEngine.findInlineRunHead(textNode!)).toBe(textNode);
+	expect(layoutEngine.findInlineRunHead(moreText!)).toBe(moreText); // Separated by span, so it's its own head
+});
+
+test("findInlineRunHead - inline-block elements", () => {
+	const {jsdom, layoutEngine} = createLayoutEngine(
+		`<div><span style="display: inline-block">block1</span><span style="display: inline-block">block2</span></div>`,
+	);
+
+	const spans = Array.from(jsdom.window.document.querySelectorAll("span"));
+
+	// First inline-block is run head, second joins the run
+	expect(layoutEngine.findInlineRunHead(spans[0])).toBe(spans[0]);
+	expect(layoutEngine.findInlineRunHead(spans[1])).toBe(spans[0]);
+
+	// Text nodes inside should find the run head (first span)
+	const text1 = spans[0].firstChild as Text;
+	const text2 = spans[1].firstChild as Text;
+	expect(layoutEngine.findInlineRunHead(text1)).toBe(spans[0]);
+	expect(layoutEngine.findInlineRunHead(text2)).toBe(spans[0]);
+});
+
+test("findInlineRunHead - empty text nodes and whitespace", () => {
+	const {jsdom, layoutEngine} = createLayoutEngine(
+		`<div><span>content</span>   <em>more</em></div>`,
+	);
+
+	const span = jsdom.window.document.querySelector("span")!;
+	const em = jsdom.window.document.querySelector("em")!;
+	const whitespaceNode = span.nextSibling as Text; // The "   " between spans
+
+	// Whitespace text nodes should find the run head
+	expect(layoutEngine.findInlineRunHead(span)).toBe(span);
+	expect(layoutEngine.findInlineRunHead(whitespaceNode)).toBe(span);
+	expect(layoutEngine.findInlineRunHead(em)).toBe(span);
+});
+
+test("findInlineRunHead - block elements return null", () => {
+	const {jsdom, layoutEngine} = createLayoutEngine(
+		`<div><p>paragraph</p><h1>heading</h1></div>`,
+	);
+
+	const p = jsdom.window.document.querySelector("p")!;
+	const h1 = jsdom.window.document.querySelector("h1")!;
+	const div = jsdom.window.document.querySelector("div")!;
+
+	// Block elements should return null
+	expect(layoutEngine.findInlineRunHead(p)).toBe(null);
+	expect(layoutEngine.findInlineRunHead(h1)).toBe(null);
+	expect(layoutEngine.findInlineRunHead(div)).toBe(null);
+});
+
+test("findInlineRunHead - inline elements after block elements", () => {
+	const {jsdom, layoutEngine} = createLayoutEngine(
+		`<div><span>first run</span><p>block breaks run</p><span>second run</span><em>continues second</em></div>`,
+	);
+
+	const spans = Array.from(jsdom.window.document.querySelectorAll("span"));
+	const em = jsdom.window.document.querySelector("em")!;
+
+	// First span is its own run head
+	expect(layoutEngine.findInlineRunHead(spans[0])).toBe(spans[0]);
+
+	// After block element, second span starts new run
+	expect(layoutEngine.findInlineRunHead(spans[1])).toBe(spans[1]);
+	expect(layoutEngine.findInlineRunHead(em)).toBe(spans[1]);
+});
+
+test("findInlineRunHead - deeply nested inline elements", () => {
+	const {jsdom, layoutEngine} = createLayoutEngine(
+		`<div><span><em><strong><code>deeply nested</code></strong></em></span></div>`,
+	);
+
+	const span = jsdom.window.document.querySelector("span")!;
+	const em = jsdom.window.document.querySelector("em")!;
+	const strong = jsdom.window.document.querySelector("strong")!;
+	const code = jsdom.window.document.querySelector("code")!;
+
+	// All should find the outermost span as run head
+	expect(layoutEngine.findInlineRunHead(span)).toBe(span);
+	expect(layoutEngine.findInlineRunHead(em)).toBe(span);
+	expect(layoutEngine.findInlineRunHead(strong)).toBe(span);
+	expect(layoutEngine.findInlineRunHead(code)).toBe(span);
+
+	// Text node in deepest element should also find span
+	const deepText = code.firstChild as Text;
+	expect(layoutEngine.findInlineRunHead(deepText)).toBe(span);
+});
+
+test("findInlineRunHead - text node orphan (no parent)", () => {
+	const {jsdom, layoutEngine} = createLayoutEngine(`<div></div>`);
+
+	// Create orphaned text node
+	const textNode = jsdom.window.document.createTextNode("orphan");
+
+	// Orphaned text node should return null (not connected to document)
+	expect(layoutEngine.findInlineRunHead(textNode)).toBe(null);
+});
+
+test("findInlineRunHead - comment nodes and other node types", () => {
+	const {jsdom, layoutEngine} = createLayoutEngine(
+		`<div><!-- comment --></div>`,
+	);
+
+	const comment = jsdom.window.document.querySelector("div")!.firstChild!;
+
+	// Comment nodes should return null (not text or element)
+	expect(layoutEngine.findInlineRunHead(comment)).toBe(null);
+});
+
+test("findInlineRunHead - whitespace behavior (expected: finds whitespace text node)", () => {
+	// This demonstrates that whitespace text nodes are correctly found as run heads
+	const {jsdom, layoutEngine} = createLayoutEngine(`
+		<div>
+			<span style="display: inline-block">block1</span>
+		</div>
+	`);
+
+	const span = jsdom.window.document.querySelector("span")!;
+	const result = layoutEngine.findInlineRunHead(span);
+
+	// Should find the whitespace text node before the span
+	expect(result?.nodeType).toBe(3); // TEXT_NODE
+	expect(result?.textContent).toBe("\n\t\t\t");
+
+	// The whitespace text node is the correct run head for this layout
+});
+
 test("emoji text RectLengths preserve character boundaries", () => {
 	const {jsdom, layoutEngine} = createLayoutEngine(
 		`<span>🎨 Colorful Text 🌈</span>`,
