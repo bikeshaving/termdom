@@ -54,6 +54,23 @@ const CSS_SPEC_DEFAULTS: Record<string, string> = {
 	position: "static",
 	width: "auto",
 	height: "auto",
+	"box-sizing": "border-box",
+	// Terminal-optimized flexbox defaults
+	// Container properties
+	"flex-direction": "row",
+	"flex-wrap": "nowrap",
+	"justify-content": "flex-start",
+	"align-items": "stretch",
+	"align-content": "flex-start",
+	"gap": "0",
+	"row-gap": "0",
+	"column-gap": "0",
+	// Item properties
+	"flex-grow": "0",
+	"flex-shrink": "0",
+	"flex-basis": "auto",
+	"align-self": "auto",
+	"order": "0",
 };
 
 /**
