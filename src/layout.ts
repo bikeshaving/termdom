@@ -998,16 +998,23 @@ export class LayoutEngine {
 		return yogaIndex;
 	}
 
-	private collectLeafNodes(element: Element): Leaf[] {
+	private collectLeafNodes(runHead: Node): Leaf[] {
 		const leafNodes: Leaf[] = [];
 
-		const parentDisplay = element.parentElement
-			? this.getPropertyValue(element.parentElement, "display")
+		// Determine parent element for flex detection
+		const parentElement =
+			runHead.nodeType === runHead.ELEMENT_NODE
+				? (runHead as Element).parentElement
+				: runHead.parentElement;
+
+		const parentDisplay = parentElement
+			? this.getPropertyValue(parentElement, "display")
 			: null;
 		const isFlexItem = parentDisplay === "flex";
 
-		if (this.isInlineRunHead(element) && !isFlexItem) {
-			let current: Node | null = element;
+		if (this.isInlineRunHead(runHead) && !isFlexItem) {
+			// Traverse from the run head to collect all nodes in the inline run
+			let current: Node | null = runHead;
 			while (current) {
 				if (current.nodeType === current.ELEMENT_NODE) {
 					const el = current as Element;
@@ -1021,7 +1028,9 @@ export class LayoutEngine {
 
 				current = current.nextSibling;
 			}
-		} else {
+		} else if (runHead.nodeType === runHead.ELEMENT_NODE) {
+			// Original logic for element run heads that aren't inline run heads
+			const element = runHead as Element;
 			const processedNodes = new Set<Node>();
 			const collectChildNodes = this.getChildrenForLayout(element);
 
@@ -1134,17 +1143,8 @@ export class LayoutEngine {
 				? Number.MAX_SAFE_INTEGER
 				: width;
 
-		// For text nodes, create a proper Leaf object; for elements, collect leaf nodes
-		const leafNodes =
-			node.nodeType === node.TEXT_NODE
-				? [
-						{
-							type: "text" as const,
-							node: node as Text,
-							content: (node as Text).data,
-						},
-					]
-				: this.collectLeafNodes(node as Element);
+		// Collect leaf nodes from the run head (whether text node or element)
+		const leafNodes = this.collectLeafNodes(node);
 
 		// For text nodes, get styles from parent; for elements, use the element itself
 		const styleElement =
