@@ -3,6 +3,111 @@ import {getPropertyValue} from "./styles.js";
 import Yoga from "yoga-layout";
 import type * as YogaTypes from "yoga-layout";
 
+interface InlineBlockBoxModel {
+	width?: number;
+	height?: number;
+	paddingTop: number;
+	paddingRight: number;
+	paddingBottom: number;
+	paddingLeft: number;
+	marginTop: number;
+	marginRight: number;
+	marginBottom: number;
+	marginLeft: number;
+	borderTopWidth: number;
+	borderRightWidth: number;
+	borderBottomWidth: number;
+	borderLeftWidth: number;
+}
+
+function parseUnitValue(value: string): number | {percentage: number} | null {
+	if (!value || !/^\d/.test(value)) {
+		return null;
+	}
+
+	if (value.endsWith("%")) {
+		const num = parseFloat(value.slice(0, -1));
+		if (isNaN(num)) return null;
+		return {percentage: num};
+	}
+
+	const num = parseFloat(value);
+	return isNaN(num) ? null : num;
+}
+
+function getInlineBlockBoxModel(element: Element): InlineBlockBoxModel {
+	const window = element.ownerDocument?.defaultView;
+	if (!window) {
+		throw new Error("Element does not have an associated window");
+	}
+	const computedStyle = window.getComputedStyle(element);
+
+	// Parse explicit width/height
+	const widthValue = parseUnitValue(computedStyle.getPropertyValue("width"));
+	const heightValue = parseUnitValue(computedStyle.getPropertyValue("height"));
+
+	// Parse padding
+	const paddingTop = parseUnitValue(
+		computedStyle.getPropertyValue("padding-top"),
+	);
+	const paddingRight = parseUnitValue(
+		computedStyle.getPropertyValue("padding-right"),
+	);
+	const paddingBottom = parseUnitValue(
+		computedStyle.getPropertyValue("padding-bottom"),
+	);
+	const paddingLeft = parseUnitValue(
+		computedStyle.getPropertyValue("padding-left"),
+	);
+
+	// Parse margin
+	const marginTop = parseUnitValue(
+		computedStyle.getPropertyValue("margin-top"),
+	);
+	const marginRight = parseUnitValue(
+		computedStyle.getPropertyValue("margin-right"),
+	);
+	const marginBottom = parseUnitValue(
+		computedStyle.getPropertyValue("margin-bottom"),
+	);
+	const marginLeft = parseUnitValue(
+		computedStyle.getPropertyValue("margin-left"),
+	);
+
+	// Parse border
+	const borderTopWidth = parseUnitValue(
+		computedStyle.getPropertyValue("border-top-width"),
+	);
+	const borderRightWidth = parseUnitValue(
+		computedStyle.getPropertyValue("border-right-width"),
+	);
+	const borderBottomWidth = parseUnitValue(
+		computedStyle.getPropertyValue("border-bottom-width"),
+	);
+	const borderLeftWidth = parseUnitValue(
+		computedStyle.getPropertyValue("border-left-width"),
+	);
+
+	return {
+		width: typeof widthValue === "number" ? widthValue : undefined,
+		height: typeof heightValue === "number" ? heightValue : undefined,
+		paddingTop: typeof paddingTop === "number" ? paddingTop : 0,
+		paddingRight: typeof paddingRight === "number" ? paddingRight : 0,
+		paddingBottom: typeof paddingBottom === "number" ? paddingBottom : 0,
+		paddingLeft: typeof paddingLeft === "number" ? paddingLeft : 0,
+		marginTop: typeof marginTop === "number" ? marginTop : 0,
+		marginRight: typeof marginRight === "number" ? marginRight : 0,
+		marginBottom: typeof marginBottom === "number" ? marginBottom : 0,
+		marginLeft: typeof marginLeft === "number" ? marginLeft : 0,
+		borderTopWidth: typeof borderTopWidth === "number" ? borderTopWidth : 0,
+		borderRightWidth:
+			typeof borderRightWidth === "number" ? borderRightWidth : 0,
+		borderBottomWidth:
+			typeof borderBottomWidth === "number" ? borderBottomWidth : 0,
+		borderLeftWidth: typeof borderLeftWidth === "number" ? borderLeftWidth : 0,
+	};
+}
+
 export interface BreakOptions {
 	maxWidth: number;
 	whiteSpace?: "normal" | "nowrap" | "pre" | "pre-wrap" | "pre-line";
@@ -14,6 +119,9 @@ export interface InlineBlockLeaf {
 	type: "inline-block";
 	node: Element;
 	breakResult?: BreakResult;
+	boxModel: InlineBlockBoxModel;
+	contentWidth: number;
+	contentHeight: number;
 }
 
 export interface TextLeaf {
@@ -102,21 +210,68 @@ function collectLeafNodes(runHead: Node): Leaf[] {
 				// Continue with normal traversal
 				if (!walker.nextNode()) break;
 			} else if (display === "inline-block") {
-				// Recursively measure inline-block content if it has children
+				// Parse CSS box model properties
+				const boxModel = getInlineBlockBoxModel(element);
+
+				// Calculate available content dimensions
+				const horizontalBoxSpace =
+					boxModel.paddingLeft +
+					boxModel.paddingRight +
+					boxModel.borderLeftWidth +
+					boxModel.borderRightWidth;
+				const verticalBoxSpace =
+					boxModel.paddingTop +
+					boxModel.paddingBottom +
+					boxModel.borderTopWidth +
+					boxModel.borderBottomWidth;
+
+				// Determine content constraints
+				let contentWidth = Number.MAX_SAFE_INTEGER;
+				let contentHeight = Number.MAX_SAFE_INTEGER;
+				let contentWidthMode = Yoga.MEASURE_MODE_UNDEFINED;
+				let contentHeightMode = Yoga.MEASURE_MODE_UNDEFINED;
+
+				if (boxModel.width !== undefined) {
+					contentWidth = Math.max(0, boxModel.width - horizontalBoxSpace);
+					contentWidthMode = Yoga.MEASURE_MODE_EXACTLY;
+				}
+
+				if (boxModel.height !== undefined) {
+					contentHeight = Math.max(0, boxModel.height - verticalBoxSpace);
+					contentHeightMode = Yoga.MEASURE_MODE_EXACTLY;
+				}
+
+				// Recursively measure inline-block content with constraints
 				let inlineBlockResult: BreakResult | undefined;
 				if (element.firstChild) {
 					inlineBlockResult = breakNodes(
 						element.firstChild,
-						Number.MAX_SAFE_INTEGER,
-						Yoga.MEASURE_MODE_UNDEFINED,
-						Number.MAX_SAFE_INTEGER,
-						Yoga.MEASURE_MODE_UNDEFINED,
+						contentWidth,
+						contentWidthMode,
+						contentHeight,
+						contentHeightMode,
 					);
 				}
+
+				// Calculate final content dimensions
+				let finalContentWidth = inlineBlockResult?.maxLineWidth ?? 0;
+				let finalContentHeight = inlineBlockResult?.totalHeight ?? 0;
+
+				// If explicit dimensions were set, use those instead of measured content
+				if (boxModel.width !== undefined) {
+					finalContentWidth = Math.max(0, boxModel.width - horizontalBoxSpace);
+				}
+				if (boxModel.height !== undefined) {
+					finalContentHeight = Math.max(0, boxModel.height - verticalBoxSpace);
+				}
+
 				leafNodes.push({
 					type: "inline-block",
 					node: element,
 					breakResult: inlineBlockResult,
+					boxModel,
+					contentWidth: finalContentWidth,
+					contentHeight: finalContentHeight,
 				});
 				// Skip children by going to next sibling
 				if (!walker.nextSibling()) break;
@@ -479,7 +634,11 @@ function buildLines(
 			const lineHeight = Math.max(
 				...lineNodes.map((n) =>
 					n.leaf.type === "inline-block"
-						? (n.leaf.breakResult?.totalHeight ?? 1)
+						? n.leaf.contentHeight +
+							n.leaf.boxModel.paddingTop +
+							n.leaf.boxModel.paddingBottom +
+							n.leaf.boxModel.borderTopWidth +
+							n.leaf.boxModel.borderBottomWidth
 						: 1,
 				),
 				1,
@@ -521,7 +680,12 @@ function measureText(
 		} else if (item.leafNode.type === "inline-block") {
 			// Only count inline-block width if we're measuring its full range
 			if (itemStart === item.start && itemEnd === item.end) {
-				const blockWidth = item.leafNode.breakResult?.maxLineWidth ?? 0;
+				const blockWidth =
+					item.leafNode.contentWidth +
+					item.leafNode.boxModel.paddingLeft +
+					item.leafNode.boxModel.paddingRight +
+					item.leafNode.boxModel.borderLeftWidth +
+					item.leafNode.boxModel.borderRightWidth;
 				width += blockWidth;
 			} else {
 				// Partial inline-block measurement not supported
@@ -563,7 +727,12 @@ function getNodesInRange(
 					processedText: portion,
 				});
 			} else if (item.leafNode.type === "inline-block") {
-				width = item.leafNode.breakResult?.maxLineWidth ?? 0;
+				width =
+					item.leafNode.contentWidth +
+					item.leafNode.boxModel.paddingLeft +
+					item.leafNode.boxModel.paddingRight +
+					item.leafNode.boxModel.borderLeftWidth +
+					item.leafNode.boxModel.borderRightWidth;
 				// Extract text content from the inline-block's breakResult
 				let processedText = "";
 				if (item.leafNode.breakResult) {
