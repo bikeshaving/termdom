@@ -4,6 +4,19 @@ import type * as YogaTypes from "yoga-layout";
 import {breakNodes, type BreakResult} from "./breaker.js";
 import {getPropertyValue} from "./styles.js";
 
+function getAbsolutePosition(yogaNode: YogaTypes.Node): {x: number; y: number} {
+	let x = 0;
+	let y = 0;
+	let current: YogaTypes.Node | null = yogaNode;
+
+	for (; current; current = current.getParent()) {
+		x += current.getComputedLeft();
+		y += current.getComputedTop();
+	}
+
+	return {x, y};
+}
+
 interface EnumMap {
 	align: YogaTypes.Align;
 	justify: YogaTypes.Justify;
@@ -534,23 +547,7 @@ export class LayoutEngine {
 			return null;
 		}
 
-		let x = 0;
-		let y = 0;
-		let current = element;
-
-		while (current) {
-			const currentNode = this.nodeMap.get(current);
-			if (currentNode) {
-				x += currentNode.getComputedLeft();
-				y += currentNode.getComputedTop();
-			}
-
-			if (current.parentElement && current !== this.rootElement) {
-				current = current.parentElement;
-			} else {
-				break;
-			}
-		}
+		const {x, y} = getAbsolutePosition(yogaNode);
 
 		return new this.DOMRect(
 			x,
@@ -567,7 +564,6 @@ export class LayoutEngine {
 			const display = getPropertyValue(element, "display");
 
 			if (display !== "inline" && display !== "inline-block") {
-				// Block element - no inline text layout
 				return [];
 			}
 		}
@@ -588,40 +584,32 @@ export class LayoutEngine {
 		const yogaNode = this.nodeMap.get(runHead);
 		if (!yogaNode) return [];
 
-		let containerX = 0;
-		let containerY = 0;
-		let current = runHead;
-		while (current) {
-			const currentNode = this.nodeMap.get(current);
-			if (currentNode) {
-				containerX += currentNode.getComputedLeft();
-				containerY += currentNode.getComputedTop();
-			}
-			if (current.parentElement && current !== this.rootElement) {
-				current = current.parentElement;
-			} else {
-				break;
-			}
-		}
+		let {x: containerX, y: containerY} = getAbsolutePosition(yogaNode);
 
 		// If this node is inside an inline-block element, we need to get the breakResult
 		// from the inline-block element instead of the run head
 		let targetNode = node;
+
 		if (node.nodeType === node.TEXT_NODE) {
 			// For text nodes, check if parent is inline-block
 			const parentElement = (node as Text).parentElement;
+
 			if (
 				parentElement &&
 				getPropertyValue(parentElement, "display") === "inline-block"
 			) {
 				targetNode = parentElement;
+
 				// Find the inline-block leaf in the main run's breakResult to get its internal breakResult
+				let foundInlineBlock = false;
+
 				for (const line of breakResult.lines) {
 					for (const segment of line.segments) {
 						if (
 							segment.leaf.type === "inline-block" &&
 							segment.leaf.node === parentElement
 						) {
+							foundInlineBlock = true;
 							// Use the inline-block's internal breakResult with position offset
 							if (segment.leaf.breakResult) {
 								breakResult = segment.leaf.breakResult;
@@ -631,6 +619,7 @@ export class LayoutEngine {
 							break;
 						}
 					}
+					if (foundInlineBlock) break;
 				}
 			}
 		}

@@ -166,19 +166,28 @@ function collectLeafNodes(runHead: Node): Leaf[] {
 		return leafNodes;
 	}
 
-	// Always create walker
+	// Inline run heads should always have a parent element
+	if (!runHead.parentElement) {
+		throw new Error("Inline run head must have a parent element");
+	}
+
+	// Determine the appropriate traversal root based on parent display type
+	const parentDisplay = getPropertyValue(runHead.parentElement, "display");
+
+	let traversalRoot: Node;
+	if (parentDisplay === "flex" && runHead.nodeType === runHead.ELEMENT_NODE) {
+		// For flex items that are elements, traverse only within that element
+		traversalRoot = runHead;
+	} else {
+		// For all other cases, use the parent as the boundary
+		traversalRoot = runHead.parentElement;
+	}
+
 	const walker = window.document.createTreeWalker(
-		runHead.ownerDocument || window.document,
+		traversalRoot,
 		window.NodeFilter.SHOW_ELEMENT | window.NodeFilter.SHOW_TEXT,
 		null,
 	);
-
-	// Check if we should limit traversal scope
-	const parentDisplay = runHead.parentElement
-		? getPropertyValue(runHead.parentElement, "display")
-		: null;
-	const shouldLimitScope =
-		parentDisplay === "flex" || parentDisplay === "inline-block";
 
 	// Unified traversal: simple loop with smart next-node decisions
 	walker.currentNode = runHead;
@@ -285,11 +294,6 @@ function collectLeafNodes(runHead: Node): Leaf[] {
 		} else {
 			// Unknown node type - continue
 			if (!walker.nextNode()) break;
-		}
-
-		// Apply scope limiting if needed
-		if (shouldLimitScope && !runHead.contains(walker.currentNode)) {
-			break;
 		}
 	}
 
