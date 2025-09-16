@@ -43,68 +43,85 @@ function styleYogaNode(element: Element, yogaNode: YogaTypes.Node): void {
 
 	// Skip box model properties for inline elements (not inline-block)
 	const display = computedStyle.getPropertyValue("display");
-	const isInline = display === "inline";
-
-	const width = parseUnitValue(computedStyle.getPropertyValue("width"));
-	if (typeof width === "number") {
-		yogaNode.setWidth(width);
-	} else if (width && "percentage" in width) {
-		yogaNode.setWidthPercent(width.percentage);
-	} else {
+	// Handle width/height based on display type
+	if (display === "inline" || display === "inline-block") {
+		// For inline/inline-block elements, unset any previously set dimensions
+		// since they handle dimensions in their measure function
 		yogaNode.setWidthAuto();
-	}
-
-	const height = parseUnitValue(computedStyle.getPropertyValue("height"));
-	if (typeof height === "number") {
-		yogaNode.setHeight(height);
-	} else if (height && "percentage" in height) {
-		yogaNode.setHeightPercent(height.percentage);
-	} else {
 		yogaNode.setHeightAuto();
-	}
-
-	const minWidth = parseUnitValue(computedStyle.getPropertyValue("min-width"));
-	if (typeof minWidth === "number") {
-		yogaNode.setMinWidth(minWidth);
-	} else if (minWidth && "percentage" in minWidth) {
-		yogaNode.setMinWidthPercent(minWidth.percentage);
-	} else {
-		yogaNode.setMinWidth(1);
-	}
-
-	const minHeight = parseUnitValue(
-		computedStyle.getPropertyValue("min-height"),
-	);
-	if (typeof minHeight === "number") {
-		yogaNode.setMinHeight(minHeight);
-	} else if (minHeight && "percentage" in minHeight) {
-		yogaNode.setMinHeightPercent(minHeight.percentage);
-	} else {
-		yogaNode.setMinHeight(1);
-	}
-
-	const maxWidth = parseUnitValue(computedStyle.getPropertyValue("max-width"));
-	if (typeof maxWidth === "number") {
-		yogaNode.setMaxWidth(maxWidth);
-	} else if (maxWidth && "percentage" in maxWidth) {
-		yogaNode.setMaxWidthPercent(maxWidth.percentage);
-	} else {
+		// Also unset min/max constraints to ensure measure function is called
+		yogaNode.setMinWidth(undefined);
+		yogaNode.setMinHeight(undefined);
 		yogaNode.setMaxWidth(undefined);
-	}
-
-	const maxHeight = parseUnitValue(
-		computedStyle.getPropertyValue("max-height"),
-	);
-	if (typeof maxHeight === "number") {
-		yogaNode.setMaxHeight(maxHeight);
-	} else if (maxHeight && "percentage" in maxHeight) {
-		yogaNode.setMaxHeightPercent(maxHeight.percentage);
-	} else {
 		yogaNode.setMaxHeight(undefined);
+	} else {
+		// For block elements, apply explicit dimensions normally
+		const width = parseUnitValue(computedStyle.getPropertyValue("width"));
+		if (typeof width === "number") {
+			yogaNode.setWidth(width);
+		} else if (width && "percentage" in width) {
+			yogaNode.setWidthPercent(width.percentage);
+		} else {
+			yogaNode.setWidthAuto();
+		}
+
+		const height = parseUnitValue(computedStyle.getPropertyValue("height"));
+		if (typeof height === "number") {
+			yogaNode.setHeight(height);
+		} else if (height && "percentage" in height) {
+			yogaNode.setHeightPercent(height.percentage);
+		} else {
+			yogaNode.setHeightAuto();
+		}
+
+		// Apply min/max constraints for block elements
+		const minWidth = parseUnitValue(
+			computedStyle.getPropertyValue("min-width"),
+		);
+		if (typeof minWidth === "number") {
+			yogaNode.setMinWidth(minWidth);
+		} else if (minWidth && "percentage" in minWidth) {
+			yogaNode.setMinWidthPercent(minWidth.percentage);
+		} else {
+			yogaNode.setMinWidth(1);
+		}
+
+		const minHeight = parseUnitValue(
+			computedStyle.getPropertyValue("min-height"),
+		);
+		if (typeof minHeight === "number") {
+			yogaNode.setMinHeight(minHeight);
+		} else if (minHeight && "percentage" in minHeight) {
+			yogaNode.setMinHeightPercent(minHeight.percentage);
+		} else {
+			yogaNode.setMinHeight(1);
+		}
+
+		const maxWidth = parseUnitValue(
+			computedStyle.getPropertyValue("max-width"),
+		);
+		if (typeof maxWidth === "number") {
+			yogaNode.setMaxWidth(maxWidth);
+		} else if (maxWidth && "percentage" in maxWidth) {
+			yogaNode.setMaxWidthPercent(maxWidth.percentage);
+		} else {
+			yogaNode.setMaxWidth(undefined);
+		}
+
+		const maxHeight = parseUnitValue(
+			computedStyle.getPropertyValue("max-height"),
+		);
+		if (typeof maxHeight === "number") {
+			yogaNode.setMaxHeight(maxHeight);
+		} else if (maxHeight && "percentage" in maxHeight) {
+			yogaNode.setMaxHeightPercent(maxHeight.percentage);
+		} else {
+			yogaNode.setMaxHeight(undefined);
+		}
 	}
 
 	// Box model properties: clear for inline elements, apply for block/inline-block
-	if (isInline) {
+	if (display === "inline") {
 		// Clear all box model properties for inline elements
 		yogaNode.setMargin(Yoga.EDGE_TOP, 0);
 		yogaNode.setMargin(Yoga.EDGE_RIGHT, 0);
@@ -271,11 +288,14 @@ function styleYogaNode(element: Element, yogaNode: YogaTypes.Node): void {
 		}
 	}
 
-	// Flexbox properties
 	if (
-		element.parentElement &&
-		computedStyle.getPropertyValue("display") === "block"
+		element.parentElement
+			? getPropertyValue(element.parentElement, "display")
+			: null
 	) {
+		// We emulate display: block with yoga, but this means we need the children
+		// to not have configurable flex properties, or surprising layout behavior
+		// might occur.
 		yogaNode.setFlexGrow(0);
 		yogaNode.setFlexShrink(1);
 		yogaNode.setFlexBasisAuto();
