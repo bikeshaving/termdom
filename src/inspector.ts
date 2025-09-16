@@ -462,6 +462,30 @@ export function inspectCSSStyleDeclaration(
 }
 
 /**
+ * Inspect a DOMRect - much more concise than default
+ */
+export function inspectDOMRect(
+	rect: any,
+	options: InspectorOptions = {},
+): string {
+	const {colorize = true} = options;
+	const c = colorize
+		? colors
+		: {
+				tag: "",
+				attr: "",
+				value: "",
+				text: "",
+				comment: "",
+				reset: "",
+				dim: "",
+				bold: "",
+			};
+
+	return `${c.comment}DOMRect${c.reset} { ${c.attr}x${c.reset}: ${c.value}${rect.x}${c.reset}, ${c.attr}y${c.reset}: ${c.value}${rect.y}${c.reset}, ${c.attr}width${c.reset}: ${c.value}${rect.width}${c.reset}, ${c.attr}height${c.reset}: ${c.value}${rect.height}${c.reset} }`;
+}
+
+/**
  * Inspect a NodeList/HTMLCollection - more concise than default
  */
 export function inspectNodeList(
@@ -657,6 +681,19 @@ export function setupInspectMethods(window: any): void {
 				maxDepth: depth,
 				colorize: options.colors !== false,
 				compact: explicitlyCompact || (isNested && hasBreakLength),
+			});
+		};
+	}
+
+	// DOMRect - Make much more concise
+	if (window.DOMRect && !window.DOMRect.prototype[inspect]) {
+		window.DOMRect.prototype[inspect] = function (
+			this: any,
+			depth: number,
+			options: any,
+		) {
+			return inspectDOMRect(this, {
+				colorize: options.colors !== false,
 			});
 		};
 	}

@@ -1,7 +1,8 @@
 import type {DOMWindow} from "jsdom";
 import Yoga from "yoga-layout";
 import type * as YogaTypes from "yoga-layout";
-import {breakNodes, type Leaf, type BreakResult} from "./breaker.js";
+import {breakNodes, type BreakResult} from "./breaker.js";
+import {getPropertyValue} from "./styles.js";
 
 interface EnumMap {
 	align: YogaTypes.Align;
@@ -539,26 +540,33 @@ export class LayoutEngine {
 		);
 	}
 
-	private getInlineRunData(node: Node): {
-		breakResult: BreakResult;
-		containerX: number;
-		containerY: number;
-	} | null {
+	getRectTexts(node: Node): RectText[] {
+		// For block elements, return empty array (no inline text layout)
+		if (node.nodeType === node.ELEMENT_NODE) {
+			const element = node as Element;
+			const display = getPropertyValue(element, "display");
+
+			if (display !== "inline" && display !== "inline-block") {
+				// Block element - no inline text layout
+				return [];
+			}
+		}
+
 		// Find the inline run head for this node
 		const runHead = this.findInlineRunHead(node);
 		if (!runHead) {
-			return null;
+			return [];
 		}
 
 		// Get stored BreakResult for the run head
-		const breakResult = this.breakResultMap.get(runHead);
+		let breakResult = this.breakResultMap.get(runHead);
 		if (!breakResult) {
-			return null;
+			return [];
 		}
 
 		// Get run head's absolute position by accumulating parent positions
 		const yogaNode = this.nodeMap.get(runHead);
-		if (!yogaNode) return null;
+		if (!yogaNode) return [];
 
 		let containerX = 0;
 		let containerY = 0;
@@ -576,27 +584,36 @@ export class LayoutEngine {
 			}
 		}
 
-		return {breakResult, containerX, containerY};
-	}
-
-	getRectTexts(node: Node): RectText[] {
-		// For block elements, return empty array (no inline text layout)
-		if (node.nodeType === node.ELEMENT_NODE) {
-			const element = node as Element;
-			const display = this.getPropertyValue(element, "display");
-
-			if (display !== "inline" && display !== "inline-block") {
-				// Block element - no inline text layout
-				return [];
+		// If this node is inside an inline-block element, we need to get the breakResult
+		// from the inline-block element instead of the run head
+		let targetNode = node;
+		if (node.nodeType === node.TEXT_NODE) {
+			// For text nodes, check if parent is inline-block
+			const parentElement = (node as Text).parentElement;
+			if (
+				parentElement &&
+				getPropertyValue(parentElement, "display") === "inline-block"
+			) {
+				targetNode = parentElement;
+				// Find the inline-block leaf in the main run's breakResult to get its internal breakResult
+				for (const line of breakResult.lines) {
+					for (const segment of line.segments) {
+						if (
+							segment.leaf.type === "inline-block" &&
+							segment.leaf.node === parentElement
+						) {
+							// Use the inline-block's internal breakResult with position offset
+							if (segment.leaf.breakResult) {
+								breakResult = segment.leaf.breakResult;
+								containerX += segment.x;
+								containerY += line.y;
+							}
+							break;
+						}
+					}
+				}
 			}
 		}
-
-		const runData = this.getInlineRunData(node);
-		if (!runData) {
-			return [];
-		}
-
-		const {breakResult, containerX, containerY} = runData;
 		const rectTexts: RectText[] = [];
 
 		// Merge segments per line that belong to this node
@@ -606,9 +623,12 @@ export class LayoutEngine {
 			let hasSegments = false;
 			let concatenatedText = "";
 
-			// Find the extent of segments on this line that belong to our node
+			// Find the extent of segments on this line that belong to our target node
 			for (const segment of line.segments) {
-				if (node.contains(segment.leaf.node) || node === segment.leaf.node) {
+				if (
+					targetNode.contains(segment.leaf.node) ||
+					targetNode === segment.leaf.node
+				) {
 					minX = Math.min(minX, segment.x);
 					maxX = Math.max(maxX, segment.x + segment.width);
 					concatenatedText += segment.processedText;
@@ -637,7 +657,7 @@ export class LayoutEngine {
 		// For block elements, just return getBoundingClientRect in an array
 		if (node.nodeType === node.ELEMENT_NODE) {
 			const element = node as Element;
-			const display = this.getPropertyValue(element, "display");
+			const display = getPropertyValue(element, "display");
 
 			if (display !== "inline" && display !== "inline-block") {
 				// Block element - use standard getBoundingClientRect
@@ -648,10 +668,6 @@ export class LayoutEngine {
 
 		// For inline elements, use getRectTexts and extract just the rects
 		return this.getRectTexts(node).map((rectText) => rectText.rect);
-	}
-
-	getBreakResult(runHead: Node): BreakResult | null {
-		return this.breakResultMap.get(runHead) || null;
 	}
 
 	createDOMRectList(rects?: globalThis.DOMRect[]): globalThis.DOMRectList {
@@ -687,7 +703,7 @@ export class LayoutEngine {
 
 		if (node.nodeType === node.ELEMENT_NODE) {
 			const element = node as Element;
-			const display = this.getPropertyValue(element, "display");
+			const display = getPropertyValue(element, "display");
 			if (display !== "inline" && display !== "inline-block") {
 				return null;
 			}
@@ -711,7 +727,7 @@ export class LayoutEngine {
 			const parent = walker.currentNode;
 			if (parent.nodeType !== parent.ELEMENT_NODE) continue;
 
-			const parentDisplay = this.getPropertyValue(parent as Element, "display");
+			const parentDisplay = getPropertyValue(parent as Element, "display");
 
 			if (parentDisplay === "inline" || parentDisplay === "inline-block") {
 				current = parent;
@@ -724,7 +740,7 @@ export class LayoutEngine {
 		walker.currentNode = current;
 		const isInFlex =
 			current.parentElement &&
-			this.getPropertyValue(current.parentElement, "display") === "flex";
+			getPropertyValue(current.parentElement, "display") === "flex";
 
 		if (isInFlex) {
 			// 5a. Flex container traversal
@@ -748,7 +764,7 @@ export class LayoutEngine {
 
 				if (prev.nodeType === prev.ELEMENT_NODE) {
 					const prevElement = prev as Element;
-					const prevDisplay = this.getPropertyValue(prevElement, "display");
+					const prevDisplay = getPropertyValue(prevElement, "display");
 					if (prevDisplay === "inline" || prevDisplay === "inline-block") {
 						current = prevElement;
 					} else {
@@ -762,10 +778,6 @@ export class LayoutEngine {
 		}
 
 		return current;
-	}
-
-	private getPropertyValue(element: Element, property: string): string {
-		return this.window.getComputedStyle(element).getPropertyValue(property);
 	}
 
 	// TODO: delete these terrible functions
@@ -857,7 +869,7 @@ export class LayoutEngine {
 		parentYogaNode: YogaTypes.Node | null = null,
 		yogaIndex: number = this.getYogaIndex(element),
 	): void {
-		const display = this.getPropertyValue(element, "display");
+		const display = getPropertyValue(element, "display");
 		if (display === "inline" || display === "inline-block") {
 			if (!this.isInlineRunHead(element)) {
 				return;
@@ -907,7 +919,7 @@ export class LayoutEngine {
 		for (let i = 0; i < measuredChildNodes.length; i++) {
 			const child = measuredChildNodes[i];
 			if (child.nodeType === child.ELEMENT_NODE) {
-				const childDisplay = this.getPropertyValue(child as Element, "display");
+				const childDisplay = getPropertyValue(child as Element, "display");
 				if (childDisplay === "inline" || childDisplay === "inline-block") {
 					if (display === "flex") {
 						this.addElementNode(child as Element, yogaNode);
@@ -980,7 +992,7 @@ export class LayoutEngine {
 			}
 			if (sibling.nodeType === sibling.ELEMENT_NODE) {
 				const siblingElement = sibling as Element;
-				const siblingDisplay = this.getPropertyValue(siblingElement, "display");
+				const siblingDisplay = getPropertyValue(siblingElement, "display");
 
 				if (
 					(siblingDisplay === "inline" || siblingDisplay === "inline-block") &&
@@ -998,185 +1010,16 @@ export class LayoutEngine {
 		return yogaIndex;
 	}
 
-	private collectLeafNodes(runHead: Node): Leaf[] {
-		const leafNodes: Leaf[] = [];
-
-		// Determine parent element for flex detection
-		const parentElement =
-			runHead.nodeType === runHead.ELEMENT_NODE
-				? (runHead as Element).parentElement
-				: runHead.parentElement;
-
-		const parentDisplay = parentElement
-			? this.getPropertyValue(parentElement, "display")
-			: null;
-		const isFlexItem = parentDisplay === "flex";
-
-		if (this.isInlineRunHead(runHead) && !isFlexItem) {
-			// Traverse from the run head to collect all nodes in the inline run
-			let current: Node | null = runHead;
-			while (current) {
-				if (current.nodeType === current.ELEMENT_NODE) {
-					const el = current as Element;
-					const display = this.getPropertyValue(el, "display");
-					if (display !== "inline" && display !== "inline-block") {
-						break;
-					}
-				}
-
-				this.traverseNode(current, leafNodes);
-
-				current = current.nextSibling;
-			}
-		} else if (runHead.nodeType === runHead.ELEMENT_NODE) {
-			// Original logic for element run heads that aren't inline run heads
-			const element = runHead as Element;
-			const processedNodes = new Set<Node>();
-			const collectChildNodes = this.getChildrenForLayout(element);
-
-			for (let i = 0; i < collectChildNodes.length; i++) {
-				const child = collectChildNodes[i];
-
-				if (processedNodes.has(child)) {
-					continue;
-				}
-
-				if (this.isInlineRunHead(child)) {
-					let current: Node | null = child;
-					while (current) {
-						if (current.nodeType === current.ELEMENT_NODE) {
-							const el = current as Element;
-							const display = this.getPropertyValue(el, "display");
-							if (display !== "inline" && display !== "inline-block") {
-								break;
-							}
-						}
-
-						this.traverseNode(current, leafNodes);
-						processedNodes.add(current);
-
-						current = current.nextSibling;
-					}
-				} else {
-					// Don't traverse into block elements during inline processing
-					if (child.nodeType === child.ELEMENT_NODE) {
-						const el = child as Element;
-						const display = this.getPropertyValue(el, "display");
-						if (display !== "inline" && display !== "inline-block") {
-							continue; // Skip block elements
-						}
-					}
-					this.traverseNode(child, leafNodes);
-				}
-			}
-		}
-
-		return leafNodes;
-	}
-
-	private traverseNode(node: Node, leafNodes: Leaf[]): void {
-		const traverse = (node: Node) => {
-			if (node.nodeType === node.TEXT_NODE) {
-				const text = node as Text;
-				if (text.data && text.data.trim()) {
-					leafNodes.push({
-						type: "text",
-						node: text,
-						content: text.data,
-					});
-				}
-			} else if (node.nodeType === node.ELEMENT_NODE) {
-				const el = node as Element;
-				const display = this.getPropertyValue(el, "display");
-
-				if (display === "inline-block") {
-					const size = this.measureInlineBlock(el);
-					leafNodes.push({
-						type: "inline-block",
-						node: el,
-						width: size.width,
-						height: size.height,
-					});
-				} else if (display === "inline") {
-					for (let i = 0; i < el.childNodes.length; i++) {
-						traverse(el.childNodes[i]);
-					}
-				} else if (el.tagName === "BR") {
-					leafNodes.push({
-						type: "br",
-						node: el as HTMLBRElement,
-					});
-				}
-			}
-		};
-
-		traverse(node);
-	}
-
-	// TODO: Handle br/newlines and explicit width and height
-	private measureInlineBlock(element: Element): {
-		width: number;
-		height: number;
-	} {
-		// For inline block measurement, get actual text data from child text nodes
-		let totalText = "";
-		for (const child of element.childNodes) {
-			if (child.nodeType === child.TEXT_NODE) {
-				totalText += (child as Text).data || "";
-			}
-		}
-		return {
-			width: Bun.stringWidth(totalText),
-			height: 1,
-		};
-	}
-
 	private measureInlineRun(
 		node: Node,
 		width: number,
 		widthMode: YogaTypes.MeasureMode,
-		_height: number,
-		_heightMode: YogaTypes.MeasureMode,
+		height: number,
+		heightMode: YogaTypes.MeasureMode,
 	): {width: number; height: number} {
-		const maxWidth =
-			widthMode === Yoga.MEASURE_MODE_UNDEFINED || width === 0
-				? Number.MAX_SAFE_INTEGER
-				: width;
+		const breakResult = breakNodes(node, width, widthMode, height, heightMode);
 
-		// Collect leaf nodes from the run head (whether text node or element)
-		const leafNodes = this.collectLeafNodes(node);
-
-		// For text nodes, get styles from parent; for elements, use the element itself
-		const styleElement =
-			node.nodeType === node.TEXT_NODE
-				? node.parentElement!
-				: (node as Element);
-
-		let whiteSpace = this.getPropertyValue(styleElement, "white-space") as any;
-		const wordBreak = this.getPropertyValue(styleElement, "word-break") as any;
-		const overflowWrap = this.getPropertyValue(
-			styleElement,
-			"overflow-wrap",
-		) as any;
-
-		if (
-			styleElement.parentElement &&
-			this.getPropertyValue(styleElement.parentElement, "display") === "flex"
-		) {
-			if (widthMode === Yoga.MEASURE_MODE_UNDEFINED) {
-				whiteSpace = "nowrap";
-			}
-		}
-
-		const breakResult = breakNodes(leafNodes, {
-			maxWidth,
-			whiteSpace: whiteSpace || "normal",
-			wordBreak: wordBreak || "normal",
-			overflowWrap: overflowWrap || "normal",
-		});
-
-		// Store the BreakResult for later use by getRects() and getBreakResult()
-		// This avoids double text breaking - measurement stores, rendering reuses
+		// Store the BreakResult for later use by getRects()
 		this.breakResultMap.set(node, breakResult);
 
 		const result = {

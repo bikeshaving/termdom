@@ -1,4 +1,7 @@
 import LineBreaker from "linebreak";
+import {getPropertyValue} from "./styles.js";
+import Yoga from "yoga-layout";
+import type * as YogaTypes from "yoga-layout";
 
 export interface BreakOptions {
 	maxWidth: number;
@@ -10,8 +13,7 @@ export interface BreakOptions {
 export interface InlineBlockLeaf {
 	type: "inline-block";
 	node: Element;
-	width: number;
-	height: number;
+	breakResult?: BreakResult;
 }
 
 export interface TextLeaf {
@@ -47,20 +49,148 @@ export interface BreakResult {
 	totalHeight: number;
 }
 
-export function breakNodes(
-	leafNodes: Leaf[],
-	options: BreakOptions,
-): BreakResult {
-	const {maxWidth, whiteSpace = "normal"} = options;
+function collectLeafNodes(runHead: Node): Leaf[] {
+	const leafNodes: Leaf[] = [];
 
-	if (whiteSpace === "nowrap") {
-		return noWrapLayout(leafNodes);
+	// Get the window for the TreeWalker
+	const window = runHead.ownerDocument?.defaultView;
+	if (!window) {
+		return leafNodes;
 	}
 
-	const processedContent = processWhitespace(leafNodes, whiteSpace);
+	// Always create walker
+	const walker = window.document.createTreeWalker(
+		runHead.ownerDocument || window.document,
+		window.NodeFilter.SHOW_ELEMENT | window.NodeFilter.SHOW_TEXT,
+		null,
+	);
 
-	const breaks = findBreakPoints(processedContent, options);
+	// Check if we should limit traversal scope
+	const parentDisplay = runHead.parentElement
+		? getPropertyValue(runHead.parentElement, "display")
+		: null;
+	const shouldLimitScope =
+		parentDisplay === "flex" || parentDisplay === "inline-block";
 
+	// Unified traversal: simple loop with smart next-node decisions
+	walker.currentNode = runHead;
+
+	while (walker.currentNode) {
+		const node = walker.currentNode;
+
+		if (node.nodeType === node.TEXT_NODE) {
+			// Text node - add as leaf
+			const textNode = node as Text;
+			if (textNode.textContent) {
+				leafNodes.push({
+					type: "text",
+					node: textNode,
+					content: textNode.textContent,
+				});
+			}
+			// Continue with normal traversal
+			if (!walker.nextNode()) break;
+		} else if (node.nodeType === node.ELEMENT_NODE) {
+			const element = node as Element;
+			const display = getPropertyValue(element, "display");
+
+			if (element.tagName === "BR") {
+				leafNodes.push({
+					type: "br",
+					node: element as HTMLBRElement,
+				});
+				// Continue with normal traversal
+				if (!walker.nextNode()) break;
+			} else if (display === "inline-block") {
+				// Recursively measure inline-block content if it has children
+				let inlineBlockResult: BreakResult | undefined;
+				if (element.firstChild) {
+					inlineBlockResult = breakNodes(
+						element.firstChild,
+						Number.MAX_SAFE_INTEGER,
+						Yoga.MEASURE_MODE_UNDEFINED,
+						Number.MAX_SAFE_INTEGER,
+						Yoga.MEASURE_MODE_UNDEFINED,
+					);
+				}
+				leafNodes.push({
+					type: "inline-block",
+					node: element,
+					breakResult: inlineBlockResult,
+				});
+				// Skip children by going to next sibling
+				if (!walker.nextSibling()) break;
+			} else if (display === "inline") {
+				// Inline element - traverse into its children
+				if (!walker.nextNode()) break;
+			} else {
+				// Block element - stop traversal
+				break;
+			}
+		} else {
+			// Unknown node type - continue
+			if (!walker.nextNode()) break;
+		}
+
+		// Apply scope limiting if needed
+		if (shouldLimitScope && !runHead.contains(walker.currentNode)) {
+			break;
+		}
+	}
+
+	return leafNodes;
+}
+
+export function breakNodes(
+	runHead: Node,
+	width: number,
+	widthMode: YogaTypes.MeasureMode,
+	_height: number,
+	_heightMode: YogaTypes.MeasureMode,
+): BreakResult {
+	// Collect leaf nodes from the run head
+	const leafNodes = collectLeafNodes(runHead);
+
+	// Handle empty case
+	if (leafNodes.length === 0) {
+		return {lines: [], totalHeight: 0, maxLineWidth: 0};
+	}
+
+	// Get CSS properties from the appropriate element
+	const styleElement =
+		runHead.nodeType === runHead.TEXT_NODE
+			? runHead.parentElement!
+			: (runHead as Element);
+
+	// Get CSS text layout properties
+	let whiteSpace = getPropertyValue(styleElement, "white-space") as any;
+	const wordBreak = getPropertyValue(styleElement, "word-break") as any;
+	const overflowWrap = getPropertyValue(styleElement, "overflow-wrap") as any;
+
+	// Special handling for flex containers
+	if (
+		styleElement.parentElement &&
+		getPropertyValue(styleElement.parentElement, "display") === "flex"
+	) {
+		if (widthMode === Yoga.MEASURE_MODE_UNDEFINED) {
+			whiteSpace = "nowrap";
+		}
+	}
+
+	// Determine maxWidth based on width and widthMode
+	const maxWidth =
+		widthMode === Yoga.MEASURE_MODE_UNDEFINED || width === 0
+			? Number.MAX_SAFE_INTEGER
+			: width;
+
+	// Process and break the content
+	const processedContent = processWhitespace(leafNodes, whiteSpace || "normal");
+	const breaks = findBreakPoints(processedContent, {
+		maxWidth,
+		whiteSpace: whiteSpace || "normal",
+		wordBreak: wordBreak || "normal",
+		overflowWrap: overflowWrap || "normal",
+	});
 	const lines = buildLines(processedContent, breaks, maxWidth);
 
 	return {
@@ -348,7 +478,9 @@ function buildLines(
 		if (lineNodes.length > 0) {
 			const lineHeight = Math.max(
 				...lineNodes.map((n) =>
-					n.leaf.type === "inline-block" ? n.leaf.height : 1,
+					n.leaf.type === "inline-block"
+						? (n.leaf.breakResult?.totalHeight ?? 1)
+						: 1,
 				),
 				1,
 			);
@@ -387,7 +519,13 @@ function measureText(
 			const portion = text.slice(itemStart, itemEnd);
 			width += Bun.stringWidth(portion);
 		} else if (item.leafNode.type === "inline-block") {
-			width += item.leafNode.width;
+			// Only count inline-block width if we're measuring its full range
+			if (itemStart === item.start && itemEnd === item.end) {
+				const blockWidth = item.leafNode.breakResult?.maxLineWidth ?? 0;
+				width += blockWidth;
+			} else {
+				// Partial inline-block measurement not supported
+			}
 		}
 	}
 
@@ -425,14 +563,23 @@ function getNodesInRange(
 					processedText: portion,
 				});
 			} else if (item.leafNode.type === "inline-block") {
-				width = item.leafNode.width;
+				width = item.leafNode.breakResult?.maxLineWidth ?? 0;
+				// Extract text content from the inline-block's breakResult
+				let processedText = "";
+				if (item.leafNode.breakResult) {
+					for (const line of item.leafNode.breakResult.lines) {
+						for (const segment of line.segments) {
+							processedText += segment.processedText;
+						}
+					}
+				}
 				nodes.push({
 					leaf: item.leafNode,
 					start: 0,
 					end: 0,
 					x,
 					width,
-					processedText: "",
+					processedText,
 				});
 			} else if (item.leafNode.type === "br") {
 				nodes.push({
@@ -450,36 +597,4 @@ function getNodesInRange(
 	}
 
 	return nodes;
-}
-
-function noWrapLayout(segments: Leaf[]): BreakResult {
-	const content = processWhitespace(segments, "nowrap");
-	const lineNodes = getNodesInRange(content.items, 0, content.text.length);
-
-	const width = measureText(
-		content.text,
-		content.items,
-		0,
-		content.text.length,
-	);
-
-	const height = Math.max(
-		...segments.map((n) => (n.type === "inline-block" ? n.height : 1)),
-		1,
-	);
-
-	const lines: LineResult[] = [
-		{
-			segments: lineNodes,
-			y: 0,
-			height,
-			width,
-		},
-	];
-
-	return {
-		lines,
-		totalHeight: height,
-		maxLineWidth: width,
-	};
 }

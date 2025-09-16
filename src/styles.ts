@@ -8,6 +8,18 @@
 import {CSSStyleDeclaration} from "cssstyle";
 import type {DOMWindow} from "jsdom";
 
+/**
+ * Helper to get computed style property value for an element.
+ * Works with both regular DOM and JSDOM environments.
+ */
+export function getPropertyValue(element: Element, property: string): string {
+	const window = element.ownerDocument?.defaultView;
+	if (!window) {
+		throw new Error("Element does not have an associated window");
+	}
+	return window.getComputedStyle(element).getPropertyValue(property);
+}
+
 // ============================================================================
 // CSS DEFAULTS FOR TERMINAL ELEMENTS
 // ============================================================================

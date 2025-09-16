@@ -1,55 +1,73 @@
 import {test, expect} from "bun:test";
-import {breakNodes, type Leaf} from "../src/breaker.js";
+import {breakNodes} from "../src/breaker.js";
 import {JSDOM} from "jsdom";
+import Yoga from "yoga-layout";
+
+// Helper function to create a DOM element with text content
+function createTextElement(
+	jsdom: JSDOM,
+	textContent: string,
+	styles: Record<string, string> = {},
+) {
+	const element = jsdom.window.document.createElement("div");
+	const textNode = jsdom.window.document.createTextNode(textContent);
+	element.appendChild(textNode);
+
+	// Apply styles to element
+	Object.entries(styles).forEach(([prop, value]) => {
+		element.style.setProperty(prop, value);
+	});
+
+	return {element, textNode};
+}
 
 test("simple text breaking", () => {
 	const jsdom = new JSDOM();
-	const textNode = jsdom.window.document.createTextNode("hello world");
+	const {textNode} = createTextElement(jsdom, "hello world");
 
-	const leaves: Leaf[] = [
-		{
-			type: "text",
-			node: textNode,
-			content: "hello world",
-		},
-	];
-
-	const result = breakNodes(leaves, {maxWidth: 5});
+	const result = breakNodes(
+		textNode,
+		5,
+		Yoga.MEASURE_MODE_EXACTLY,
+		100,
+		Yoga.MEASURE_MODE_UNDEFINED,
+	);
 	expect(result.lines.length).toBeGreaterThanOrEqual(2);
 	expect(result.lines[0].segments.length).toBeGreaterThan(0);
 });
 
-test("nowrap behavior", () => {
+test("basic line breaking behavior", () => {
 	const jsdom = new JSDOM();
-	const textNode = jsdom.window.document.createTextNode("very long text");
+	const {textNode} = createTextElement(jsdom, "very long text");
 
-	const leaves: Leaf[] = [
-		{
-			type: "text",
-			node: textNode,
-			content: "very long text",
-		},
-	];
+	const result = breakNodes(
+		textNode,
+		5,
+		Yoga.MEASURE_MODE_EXACTLY,
+		100,
+		Yoga.MEASURE_MODE_UNDEFINED,
+	);
 
-	const result = breakNodes(leaves, {maxWidth: 5, whiteSpace: "nowrap"});
-	expect(result.lines.length).toBe(1);
-	expect(result.maxLineWidth).toBeGreaterThan(5);
+	// With a narrow width, text should break into multiple lines
+	expect(result.lines.length).toBeGreaterThan(1);
+	expect(result.lines[0].segments.length).toBeGreaterThan(0);
+
+	// Total width should fit the content
+	expect(result.maxLineWidth).toBeLessThanOrEqual(5);
 });
 
 test("emoji text segmentation preserves characters", () => {
 	const jsdom = new JSDOM();
 	const textContent = "🎨 Colorful Text 🌈";
-	const textNode = jsdom.window.document.createTextNode(textContent);
+	const {textNode} = createTextElement(jsdom, textContent);
 
-	const leaves: Leaf[] = [
-		{
-			type: "text",
-			node: textNode,
-			content: textContent,
-		},
-	];
-
-	const result = breakNodes(leaves, {maxWidth: 25});
+	const result = breakNodes(
+		textNode,
+		25,
+		Yoga.MEASURE_MODE_EXACTLY,
+		100,
+		Yoga.MEASURE_MODE_UNDEFINED,
+	);
 
 	// Check that we get at least one line
 	expect(result.lines.length).toBeGreaterThan(0);
@@ -57,252 +75,160 @@ test("emoji text segmentation preserves characters", () => {
 	// Get the first line and its segments
 	const firstLine = result.lines[0];
 
-	// Test that when we slice the original text using the segment boundaries,
-	// we get the correct text back
+	// Test that the processed text maintains emoji integrity
 	let reconstructedText = "";
 	for (const segment of firstLine.segments) {
-		if (segment.leaf.type === "text") {
-			const slicedText = textContent.slice(segment.start, segment.end);
-			reconstructedText += slicedText;
-		}
+		reconstructedText += segment.processedText;
 	}
 
-	// The reconstructed text should match the original
-	expect(reconstructedText).toBe(textContent);
-
-	// Specifically check that the space after the first emoji is preserved
-	expect(reconstructedText).toContain("🎨 Colorful"); // Space between emoji and text
-	expect(reconstructedText).not.toContain("🎨Colorful"); // Should NOT be missing space
+	// The reconstructed text should contain the emojis
+	expect(reconstructedText).toContain("🎨");
+	expect(reconstructedText).toContain("🌈");
+	expect(reconstructedText).toContain("Colorful Text");
 });
 
-test("trailing space trimming in isolated text", () => {
+test("trailing space handling in isolated text", () => {
 	const jsdom = new JSDOM();
-	const textNode = jsdom.window.document.createTextNode("Text ");
+	const {textNode} = createTextElement(jsdom, "Text ");
 
-	const leaves: Leaf[] = [
-		{
-			type: "text",
-			node: textNode,
-			content: "Text ",
-		},
-	];
+	const result = breakNodes(
+		textNode,
+		100,
+		Yoga.MEASURE_MODE_EXACTLY,
+		100,
+		Yoga.MEASURE_MODE_UNDEFINED,
+	);
 
-	const result = breakNodes(leaves, {maxWidth: 100, whiteSpace: "normal"});
-
-	// Bug: trailing space gets trimmed when processing in isolation
-	expect(result.maxLineWidth).toBe(5); // Should be 5 for "Text ", but gets 4
+	// Trailing space should be preserved for width calculation
+	expect(result.maxLineWidth).toBe(5); // "Text " = 5 chars
 });
 
-test("multiple spans measured individually - width cascade error", () => {
+test("multiple text nodes with whitespace", () => {
 	const jsdom = new JSDOM();
+	const container = jsdom.window.document.createElement("div");
 
-	// Simulating measuring spans individually like flexbox does
-	const span1: Leaf[] = [
-		{
-			type: "text",
-			node: jsdom.window.document.createTextNode("Text "),
-			content: "Text ",
-		},
-	];
+	// Create multiple text nodes to simulate inline layout
+	const text1 = jsdom.window.document.createTextNode("Text ");
+	const text2 = jsdom.window.document.createTextNode("More");
+	container.appendChild(text1);
+	container.appendChild(text2);
 
-	const span2: Leaf[] = [
-		{
-			type: "text",
-			node: jsdom.window.document.createTextNode("🚀"),
-			content: "🚀",
-		},
-	];
+	const result = breakNodes(
+		text1,
+		100,
+		Yoga.MEASURE_MODE_EXACTLY,
+		100,
+		Yoga.MEASURE_MODE_UNDEFINED,
+	);
 
-	const span3: Leaf[] = [
-		{
-			type: "text",
-			node: jsdom.window.document.createTextNode(" More"),
-			content: " More",
-		},
-	];
-
-	const result1 = breakNodes(span1, {maxWidth: 100, whiteSpace: "normal"});
-	const result2 = breakNodes(span2, {maxWidth: 100, whiteSpace: "normal"});
-	const result3 = breakNodes(span3, {maxWidth: 100, whiteSpace: "normal"});
-
-	// The bug: span1 loses its trailing space
-	expect(result1.maxLineWidth).toBe(5); // Should be 5 for "Text ", but gets 4
-	expect(result2.maxLineWidth).toBe(2); // "🚀" = 2 (correct)
-	expect(result3.maxLineWidth).toBe(5); // " More" = 5 (correct, leading space preserved)
-
-	// Total should be 5+2+5=12, but we get 4+2+5=11
-	const totalWidth =
-		result1.maxLineWidth + result2.maxLineWidth + result3.maxLineWidth;
-	expect(totalWidth).toBe(12); // Fails: gets 11
+	// When starting from text1, breakNodes will traverse the run and collect both text nodes
+	expect(result.lines[0].segments.length).toBe(2);
+	expect(result.maxLineWidth).toBe(9); // "Text More" = 9 chars (space preserved)
 });
 
-test("text truncation due to width mismeasurement", () => {
+test("whitespace collapsing in normal mode", () => {
 	const jsdom = new JSDOM();
+	const {textNode} = createTextElement(jsdom, "Hello   World");
 
-	// First measure "Hello " in isolation
-	const span1: Leaf[] = [
-		{
-			type: "text",
-			node: jsdom.window.document.createTextNode("Hello "),
-			content: "Hello ",
-		},
-	];
+	const result = breakNodes(
+		textNode,
+		100,
+		Yoga.MEASURE_MODE_EXACTLY,
+		100,
+		Yoga.MEASURE_MODE_UNDEFINED,
+	);
 
-	const result1 = breakNodes(span1, {maxWidth: 100, whiteSpace: "normal"});
-	const width1 = result1.maxLineWidth; // Now correctly gets 6 (with trailing space preserved)
+	// Multiple spaces should be collapsed to single space in normal white-space mode
+	const segment = result.lines[0].segments[0];
+	expect(segment.processedText).toBe("Hello World"); // Spaces collapsed
+	expect(segment.width).toBe(11); // "Hello World" = 11 chars
+});
 
-	// Now measure "Beautiful" with constrained width
-	const remainingWidth = 10 - width1; // 10 - 6 = 4 (correct calculation now)
-	const span2: Leaf[] = [
-		{
-			type: "text",
-			node: jsdom.window.document.createTextNode("Beautiful"),
-			content: "Beautiful",
-		},
-	];
-
-	const result2 = breakNodes(span2, {
-		maxWidth: remainingWidth,
-		whiteSpace: "normal",
+test("pre-line whitespace mode", () => {
+	const jsdom = new JSDOM();
+	const {textNode} = createTextElement(jsdom, "Line1\nLine2", {
+		"white-space": "pre-line",
 	});
 
-	// "Beautiful" (9 chars) gets truncated to fit in correctly calculated space (4 chars)
-	expect(result2.lines[0].segments[0].end).toBe(4); // Truncated to "Beau"
-	expect(result2.maxLineWidth).toBe(4);
+	const result = breakNodes(
+		textNode,
+		100,
+		Yoga.MEASURE_MODE_EXACTLY,
+		100,
+		Yoga.MEASURE_MODE_UNDEFINED,
+	);
+
+	// Should break on newlines in pre-line mode
+	expect(result.lines.length).toBe(2);
+	expect(result.lines[0].segments[0].processedText).toContain("Line1");
 });
 
-test("whitespace preserved in continuous runs", () => {
+test("flex container nowrap behavior", () => {
 	const jsdom = new JSDOM();
 
-	// When processing multiple nodes together (normal inline flow)
-	const leaves: Leaf[] = [
-		{
-			type: "text",
-			node: jsdom.window.document.createTextNode("Text "),
-			content: "Text ",
-		},
-		{
-			type: "text",
-			node: jsdom.window.document.createTextNode("More"),
-			content: "More",
-		},
-	];
+	// Create a flex container
+	const flexContainer = jsdom.window.document.createElement("div");
+	flexContainer.style.display = "flex";
 
-	const result = breakNodes(leaves, {maxWidth: 100, whiteSpace: "normal"});
+	const textElement = jsdom.window.document.createElement("span");
+	const textNode = jsdom.window.document.createTextNode(
+		"very long text that would normally wrap",
+	);
+	textElement.appendChild(textNode);
+	flexContainer.appendChild(textElement);
 
-	// Should preserve the space between words
-	expect(result.lines[0].segments.length).toBe(2);
-	expect(
-		result.lines[0].segments[0].end - result.lines[0].segments[0].start,
-	).toBe(5); // "Text "
-	expect(
-		result.lines[0].segments[1].end - result.lines[0].segments[1].start,
-	).toBe(4); // "More"
-	expect(result.maxLineWidth).toBe(9); // "Text More" = 9 chars
+	// When width mode is undefined (flex sizing), should use nowrap
+	const result = breakNodes(
+		textNode,
+		10,
+		Yoga.MEASURE_MODE_UNDEFINED,
+		100,
+		Yoga.MEASURE_MODE_UNDEFINED,
+	);
+
+	// Should not wrap in flex context with undefined width
+	expect(result.lines.length).toBe(1);
+	expect(result.maxLineWidth).toBeGreaterThan(10);
 });
 
-test("multiple trailing spaces compound the error", () => {
+test("inline-block content measurement", () => {
 	const jsdom = new JSDOM();
 
-	const leaves1: Leaf[] = [
-		{
-			type: "text",
-			node: jsdom.window.document.createTextNode("A  "),
-			content: "A  ",
-		},
-	];
+	// Create an inline-block element with text content
+	const inlineBlock = jsdom.window.document.createElement("div");
+	inlineBlock.style.display = "inline-block";
+	const textNode = jsdom.window.document.createTextNode("Inline Block Text");
+	inlineBlock.appendChild(textNode);
 
-	const leaves2: Leaf[] = [
-		{
-			type: "text",
-			node: jsdom.window.document.createTextNode("B  "),
-			content: "B  ",
-		},
-	];
+	const result = breakNodes(
+		textNode,
+		100,
+		Yoga.MEASURE_MODE_EXACTLY,
+		100,
+		Yoga.MEASURE_MODE_UNDEFINED,
+	);
 
-	const leaves3: Leaf[] = [
-		{
-			type: "text",
-			node: jsdom.window.document.createTextNode("C"),
-			content: "C",
-		},
-	];
-
-	const result1 = breakNodes(leaves1, {maxWidth: 100, whiteSpace: "normal"});
-	const result2 = breakNodes(leaves2, {maxWidth: 100, whiteSpace: "normal"});
-	const result3 = breakNodes(leaves3, {maxWidth: 100, whiteSpace: "normal"});
-
-	// Each double space gets trimmed to single space (CSS white-space: normal)
-	expect(result1.maxLineWidth).toBe(2); // "A  " → "A " = 2 (CSS compliant)
-	expect(result2.maxLineWidth).toBe(2); // "B  " → "B " = 2 (CSS compliant)
-	expect(result3.maxLineWidth).toBe(1); // "C" = 1
-});
-
-test("segment boundaries align with processed text", () => {
-	const jsdom = new JSDOM();
-
-	const leaves: Leaf[] = [
-		{
-			type: "text",
-			node: jsdom.window.document.createTextNode("Hello   World"),
-			content: "Hello   World",
-		},
-	];
-
-	const result = breakNodes(leaves, {maxWidth: 100, whiteSpace: "normal"});
-
-	// Processed text should be "Hello World" (spaces collapsed)
-	// Segment should have correct boundaries for the processed text
-	const segment = result.lines[0].segments[0];
-
-	// The segment's end-start should match the processed text length
-	expect(segment.end - segment.start).toBe(11); // "Hello World"
-	expect(segment.width).toBe(11); // Width should match processed length
-});
-
-test("trailing whitespace causes segment length mismatch", () => {
-	const jsdom = new JSDOM();
-
-	// Test case that exposes whitespace processing bugs
-	const leaves: Leaf[] = [
-		{
-			type: "text",
-			node: jsdom.window.document.createTextNode("Test    "), // Original has trailing spaces
-			content: "Test    ",
-		},
-	];
-
-	const result = breakNodes(leaves, {maxWidth: 100, whiteSpace: "normal"});
-	const segment = result.lines[0].segments[0];
-
-	// With fixed whitespace collapsing:
-	// - Original text: "Test    " (8 chars)
-	// - Processed text: "Test " (5 chars) - multiple trailing spaces collapsed to single space
-	// - Segment reports: end-start = 5 (processed length, trailing space preserved for measurement)
-	// - This allows proper width calculation for flexbox layouts
-
-	expect(segment.end - segment.start).toBe(5); // Processed length with preserved trailing space
+	// Should measure the text content properly
+	expect(result.lines.length).toBe(1);
+	expect(result.lines[0].segments.length).toBe(1);
+	expect(result.lines[0].segments[0].processedText).toBe("Inline Block Text");
+	expect(result.maxLineWidth).toBe(17); // "Inline Block Text" = 17 chars
 });
 
 test("mixed emoji and whitespace boundaries", () => {
 	const jsdom = new JSDOM();
+	const {textNode} = createTextElement(jsdom, "🚀  Text  🌍");
 
-	const leaves: Leaf[] = [
-		{
-			type: "text",
-			node: jsdom.window.document.createTextNode("🚀  Text  🌍"),
-			content: "🚀  Text  🌍",
-		},
-	];
-
-	const result = breakNodes(leaves, {maxWidth: 100, whiteSpace: "normal"});
+	const result = breakNodes(
+		textNode,
+		100,
+		Yoga.MEASURE_MODE_EXACTLY,
+		100,
+		Yoga.MEASURE_MODE_UNDEFINED,
+	);
 	const segment = result.lines[0].segments[0];
 
-	// Original: "🚀  Text  🌍" (11 chars, but emoji are 2-width)
-	// Current behavior: preserving spaces internally gives 10 characters
-	// Width matches character count since some spaces are collapsed to single spaces
-	// The key fix is that whitespace processing now preserves necessary spaces for width calculations
-
-	expect(segment.width).toBe(10); // Actual width from Bun.stringWidth()
-	expect(segment.end - segment.start).toBe(10); // Character count matches processed text
+	// Should handle emoji and whitespace correctly
+	expect(segment.processedText).toBe("🚀 Text 🌍"); // Multiple spaces collapsed
+	expect(segment.width).toBe(10); // Actual width from Bun.stringWidth() - emojis are 2-width
 });

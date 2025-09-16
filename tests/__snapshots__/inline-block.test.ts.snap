@@ -1,0 +1,28 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`inline-block with explicit width 1`] = `
+"\x1B[38;2;255;255;255;48;2;0;128;0m     Fixed\x1B[0m
+\x1B[38;2;255;255;255;48;2;0;0;255m    Auto\x1B[0m
+"
+`;
+
+exports[`inline-block elements wrapping to multiple lines 1`] = `
+"\x1B[38;2;255;255;255;48;2;0;0;139mFirstSecondThird\x1B[0m
+\x1B[38;2;255;255;255;48;2;0;0;139mFourthFifth\x1B[0m
+"
+`;
+
+exports[`inline-block elements render side by side 1`] = `
+"\x1B[38;2;255;255;255;48;2;255;0;0mBlock1\x1B[48;2;0;0;255mBlock2\x1B[0m
+"
+`;
+
+exports[`inline-block elements with margins 1`] = `
+"\x1B[38;2;255;255;255;48;2;255;0;0mFirst\x1B[48;2;0;0;255mSecond\x1B[0m
+"
+`;
+
+exports[`mixed inline and inline-block elements 1`] = `
+"\x1B[38;2;255;255;0;48;2;255;255;255mRegular \x1B[38;2;255;255;255;48;2;128;0;128minline-block\x1B[38;2;0;255;255;48;2;255;255;255m text\x1B[0m
+"
+`;
