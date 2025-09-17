@@ -2,7 +2,7 @@ import type {DOMWindow} from "jsdom";
 import Yoga from "yoga-layout";
 import type * as YogaTypes from "yoga-layout";
 import {breakNodes, type BreakResult} from "./breaker.js";
-import {getPropertyValue} from "./styles.js";
+import {getPropertyValue, parseUnitValue} from "./styles.js";
 
 function getAbsolutePosition(yogaNode: YogaTypes.Node): {x: number; y: number} {
 	let x = 0;
@@ -32,21 +32,6 @@ function getYogaConstant<TEnumName extends keyof EnumMap>(
 	return (Yoga as any)[name] || null;
 }
 
-function parseUnitValue(value: string): number | {percentage: number} | null {
-	if (!value || !/^\d/.test(value)) {
-		return null;
-	}
-
-	if (value.endsWith("%")) {
-		const num = parseFloat(value.slice(0, -1));
-		if (isNaN(num)) return null;
-		return {percentage: num};
-	}
-
-	const num = parseFloat(value);
-	return isNaN(num) ? null : num;
-}
-
 function styleYogaNode(element: Element, yogaNode: YogaTypes.Node): void {
 	const window = element.ownerDocument?.defaultView;
 	if (!window) {
@@ -57,16 +42,65 @@ function styleYogaNode(element: Element, yogaNode: YogaTypes.Node): void {
 	// Skip box model properties for inline elements (not inline-block)
 	const display = computedStyle.getPropertyValue("display");
 	// Handle width/height based on display type
-	if (display === "inline" || display === "inline-block") {
-		// For inline/inline-block elements, unset any previously set dimensions
-		// since they handle dimensions in their measure function
+	if (display === "inline") {
+		// For pure inline elements, unset dimensions since they handle dimensions in their measure function
 		yogaNode.setWidthAuto();
 		yogaNode.setHeightAuto();
-		// Also unset min/max constraints to ensure measure function is called
+		// Also unset min/max constraints for pure inline elements
 		yogaNode.setMinWidth(undefined);
 		yogaNode.setMinHeight(undefined);
 		yogaNode.setMaxWidth(undefined);
 		yogaNode.setMaxHeight(undefined);
+	} else if (display === "inline-block") {
+		// For inline-block elements, unset width/height but preserve min/max constraints
+		// This allows the measure function to work while still respecting CSS constraints
+		yogaNode.setWidthAuto();
+		yogaNode.setHeightAuto();
+
+		// Apply min/max constraints for inline-block elements (like block elements)
+		const minWidth = parseUnitValue(
+			computedStyle.getPropertyValue("min-width"),
+		);
+		if (typeof minWidth === "number") {
+			yogaNode.setMinWidth(minWidth);
+		} else if (minWidth && "percentage" in minWidth) {
+			yogaNode.setMinWidthPercent(minWidth.percentage);
+		} else {
+			yogaNode.setMinWidth(0);
+		}
+
+		const minHeight = parseUnitValue(
+			computedStyle.getPropertyValue("min-height"),
+		);
+		if (typeof minHeight === "number") {
+			yogaNode.setMinHeight(minHeight);
+		} else if (minHeight && "percentage" in minHeight) {
+			yogaNode.setMinHeightPercent(minHeight.percentage);
+		} else {
+			yogaNode.setMinHeight(0);
+		}
+
+		const maxWidth = parseUnitValue(
+			computedStyle.getPropertyValue("max-width"),
+		);
+		if (typeof maxWidth === "number") {
+			yogaNode.setMaxWidth(maxWidth);
+		} else if (maxWidth && "percentage" in maxWidth) {
+			yogaNode.setMaxWidthPercent(maxWidth.percentage);
+		} else {
+			yogaNode.setMaxWidth(undefined);
+		}
+
+		const maxHeight = parseUnitValue(
+			computedStyle.getPropertyValue("max-height"),
+		);
+		if (typeof maxHeight === "number") {
+			yogaNode.setMaxHeight(maxHeight);
+		} else if (maxHeight && "percentage" in maxHeight) {
+			yogaNode.setMaxHeightPercent(maxHeight.percentage);
+		} else {
+			yogaNode.setMaxHeight(undefined);
+		}
 	} else {
 		// For block elements, apply explicit dimensions normally
 		const width = parseUnitValue(computedStyle.getPropertyValue("width"));
@@ -96,7 +130,7 @@ function styleYogaNode(element: Element, yogaNode: YogaTypes.Node): void {
 		} else if (minWidth && "percentage" in minWidth) {
 			yogaNode.setMinWidthPercent(minWidth.percentage);
 		} else {
-			yogaNode.setMinWidth(1);
+			yogaNode.setMinWidth(0);
 		}
 
 		const minHeight = parseUnitValue(
@@ -107,7 +141,7 @@ function styleYogaNode(element: Element, yogaNode: YogaTypes.Node): void {
 		} else if (minHeight && "percentage" in minHeight) {
 			yogaNode.setMinHeightPercent(minHeight.percentage);
 		} else {
-			yogaNode.setMinHeight(1);
+			yogaNode.setMinHeight(0);
 		}
 
 		const maxWidth = parseUnitValue(
@@ -1023,6 +1057,8 @@ export class LayoutEngine {
 				);
 			});
 
+			// Note: Automatic minimum size for flex items is now handled in measureInlineRun
+
 			if (yogaNode && parentYogaNode) {
 				parentYogaNode.insertChild(yogaNode, yogaIndex);
 			}
@@ -1093,6 +1129,8 @@ export class LayoutEngine {
 				},
 			);
 
+			// Note: Automatic minimum size for flex items is now handled in measureInlineRun
+
 			parentYogaNode.insertChild(yogaNode, parentYogaNode.getChildCount());
 		}
 	}
@@ -1144,6 +1182,7 @@ export class LayoutEngine {
 			width: breakResult.maxLineWidth,
 			height: breakResult.totalHeight,
 		};
+
 		return result;
 	}
 }

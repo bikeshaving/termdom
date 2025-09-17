@@ -20,6 +20,23 @@ export function getPropertyValue(element: Element, property: string): string {
 	return window.getComputedStyle(element).getPropertyValue(property);
 }
 
+export function parseUnitValue(
+	value: string,
+): number | {percentage: number} | null {
+	if (!value || !/^\d/.test(value)) {
+		return null;
+	}
+
+	if (value.endsWith("%")) {
+		const num = parseFloat(value.slice(0, -1));
+		if (isNaN(num)) return null;
+		return {percentage: num};
+	}
+
+	const num = parseFloat(value);
+	return isNaN(num) ? null : num;
+}
+
 // ============================================================================
 // CSS DEFAULTS FOR TERMINAL ELEMENTS
 // ============================================================================

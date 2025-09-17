@@ -1,5 +1,5 @@
 import LineBreaker from "linebreak";
-import {getPropertyValue} from "./styles.js";
+import {getPropertyValue, parseUnitValue} from "./styles.js";
 import Yoga from "yoga-layout";
 import type * as YogaTypes from "yoga-layout";
 
@@ -18,21 +18,6 @@ interface InlineBlockBoxModel {
 	borderRightWidth: number;
 	borderBottomWidth: number;
 	borderLeftWidth: number;
-}
-
-function parseUnitValue(value: string): number | {percentage: number} | null {
-	if (!value || !/^\d/.test(value)) {
-		return null;
-	}
-
-	if (value.endsWith("%")) {
-		const num = parseFloat(value.slice(0, -1));
-		if (isNaN(num)) return null;
-		return {percentage: num};
-	}
-
-	const num = parseFloat(value);
-	return isNaN(num) ? null : num;
 }
 
 function getInlineBlockBoxModel(element: Element): InlineBlockBoxModel {
@@ -189,9 +174,7 @@ function collectLeafNodes(runHead: Node): Leaf[] {
 		null,
 	);
 
-	// Unified traversal: simple loop with smart next-node decisions
 	walker.currentNode = runHead;
-
 	while (walker.currentNode) {
 		const node = walker.currentNode;
 
@@ -321,35 +304,26 @@ export function breakNodes(
 			? runHead.parentElement!
 			: (runHead as Element);
 
-	// Get CSS text layout properties
+	// Get default CSS properties from the run head element
 	let whiteSpace = getPropertyValue(styleElement, "white-space");
+
 	const wordBreak = getPropertyValue(styleElement, "word-break");
 	const overflowWrap = getPropertyValue(styleElement, "overflow-wrap");
 
-	// Special handling for flex containers
-	if (
-		styleElement.parentElement &&
-		getPropertyValue(styleElement.parentElement, "display") === "flex"
-	) {
-		if (widthMode === Yoga.MEASURE_MODE_UNDEFINED) {
-			whiteSpace = "nowrap";
-		}
-	}
+	// Note: Automatic minimum size for flex containers is now handled in measureInlineRun
 
 	// Determine maxWidth based on width and widthMode
-	// For nowrap, always use infinite width to prevent breaking
 	const maxWidth =
-		widthMode === Yoga.MEASURE_MODE_UNDEFINED ||
-		width === 0 ||
-		whiteSpace === "nowrap"
+		widthMode === Yoga.MEASURE_MODE_UNDEFINED || width === 0
 			? Number.MAX_SAFE_INTEGER
 			: width;
 
-	// Process and break the content
-	const processedContent = processWhitespace(leafNodes, whiteSpace || "normal");
+	// Process and break the content with dynamic per-element styling
+	const processedContent = processWhitespace(leafNodes);
 	const breaks = findBreakPoints(processedContent, {
 		maxWidth,
-		whiteSpace: whiteSpace || "normal",
+		// Note: findBreakPoints now needs to handle per-element styling too
+		whiteSpace: whiteSpace || "normal", // fallback for run head
 		wordBreak: wordBreak || "normal",
 		overflowWrap: overflowWrap || "normal",
 	});
@@ -372,168 +346,117 @@ interface ProcessedContent {
 	text: string;
 }
 
-function processWhitespace(
-	leafNodes: Leaf[],
-	whiteSpace: string,
-): ProcessedContent {
+// Helper to collapse whitespace according to CSS rules
+function collapseWhitespace(text: string, whiteSpace: string): string {
+	if (whiteSpace === "pre" || whiteSpace === "pre-wrap") {
+		// Preserve all whitespace exactly as-is
+		return text;
+	}
+
+	if (whiteSpace === "pre-line") {
+		// Preserve newlines, collapse other whitespace to single spaces
+		return text
+			.split("\n")
+			.map((line) => line.replace(/[ \t\r\f]+/g, " "))
+			.join("\n");
+	}
+
+	// For "normal" and "nowrap": collapse all whitespace sequences to single space
+	// This includes spaces, tabs, newlines, etc.
+	return text.replace(/\s+/g, " ");
+}
+
+function processWhitespace(leafNodes: Leaf[]): ProcessedContent {
 	const items: ProcessedContent["items"] = [];
 	let text = "";
-	let lastWasSpace = false;
 
 	for (let leafIndex = 0; leafIndex < leafNodes.length; leafIndex++) {
 		const leaf = leafNodes[leafIndex];
-		const nextLeaf = leafNodes[leafIndex + 1];
-		const prevLeaf = leafNodes[leafIndex - 1];
 		const start = text.length;
 
 		if (leaf.type === "text" && leaf.content) {
-			let processed = "";
-			const mapping: number[] = [];
+			// Get the white-space property for this specific leaf's parent element
+			const leafWhiteSpace = leaf.node.parentElement
+				? getPropertyValue(leaf.node.parentElement, "white-space")
+				: "normal";
 
-			if (whiteSpace === "normal" || whiteSpace === "nowrap") {
-				for (let i = 0; i < leaf.content.length; i++) {
-					const char = leaf.content[i];
-					if (/\s/.test(char)) {
-						const atStart = text.length === 0 && processed.length === 0;
-						const afterNewline =
-							text.length > 0 && text[text.length - 1] === "\n";
+			// Process the text content according to its white-space property
+			let processed = collapseWhitespace(leaf.content, leafWhiteSpace);
 
-						// Check if previous leaf ends with space (for isolated measurement)
-						const prevEndsWithSpace =
-							prevLeaf?.type === "text" &&
-							prevLeaf.content &&
-							/\s$/.test(prevLeaf.content);
+			// Handle boundary whitespace between adjacent text nodes
+			if (leafIndex > 0 && processed.length > 0) {
+				const prevItem = items[items.length - 1];
+				if (prevItem && prevItem.leafNode.type === "text") {
+					// Check if we have adjacent spaces at the boundary
+					const prevEndsWithSpace =
+						text.length > 0 && text[text.length - 1] === " ";
+					const thisStartsWithSpace = processed[0] === " ";
 
-						// Preserve leading spaces unless previous text ends with space
-						if (
-							!atStart &&
-							!lastWasSpace &&
-							!afterNewline &&
-							!prevEndsWithSpace
-						) {
-							processed += " ";
-							mapping.push(i);
-							lastWasSpace = true;
-						} else if (atStart && !prevEndsWithSpace) {
-							// For isolated measurement, preserve leading space
-							processed += " ";
-							mapping.push(i);
-							lastWasSpace = true;
-						}
-					} else {
-						processed += char;
-						mapping.push(i);
-						lastWasSpace = false;
+					if (prevEndsWithSpace && thisStartsWithSpace) {
+						// Remove the leading space to avoid double spaces at boundaries
+						processed = processed.substring(1);
 					}
 				}
-
-				// Handle trailing whitespace with lookahead
-				if (processed.length > 0 && /\s$/.test(processed)) {
-					const nextStartsWithSpace =
-						nextLeaf?.type === "text" &&
-						nextLeaf.content &&
-						/^\s/.test(nextLeaf.content);
-
-					// Only remove trailing whitespace if next leaf starts with whitespace
-					// This allows proper CSS collapsing between adjacent text nodes
-					// For isolated measurement (flexbox), trailing spaces are preserved
-					if (nextStartsWithSpace) {
-						// Remove ALL trailing whitespace (not just one character)
-						const trimmed = processed.replace(/\s+$/, "");
-						const trimAmount = processed.length - trimmed.length;
-
-						processed = trimmed;
-						// Adjust mapping to remove trimmed characters
-						mapping.splice(-trimAmount, trimAmount);
-						lastWasSpace = false;
-					}
-				}
-			} else if (whiteSpace === "pre-line") {
-				let temp = "";
-				for (let i = 0; i < leaf.content.length; i++) {
-					const char = leaf.content[i];
-					if (char === "\n") {
-						temp += char;
-						mapping.push(i);
-						lastWasSpace = false;
-					} else if (/\s/.test(char)) {
-						const atLineStart =
-							temp.length === 0 || temp[temp.length - 1] === "\n";
-
-						// Check if previous leaf ends with space (for isolated measurement)
-						const prevEndsWithSpace =
-							prevLeaf?.type === "text" &&
-							prevLeaf.content &&
-							/\s$/.test(prevLeaf.content);
-
-						if (!lastWasSpace && !atLineStart && !prevEndsWithSpace) {
-							temp += " ";
-							mapping.push(i);
-							lastWasSpace = true;
-						} else if (atLineStart && !prevEndsWithSpace) {
-							// For isolated measurement, preserve leading space
-							temp += " ";
-							mapping.push(i);
-							lastWasSpace = true;
-						}
-					} else {
-						temp += char;
-						mapping.push(i);
-						lastWasSpace = false;
-					}
-				}
-				processed = temp;
-
-				// Handle trailing whitespace for pre-line (same as normal/nowrap)
-				if (processed.length > 0 && /\s$/.test(processed)) {
-					const nextStartsWithSpace =
-						nextLeaf?.type === "text" &&
-						nextLeaf.content &&
-						/^\s/.test(nextLeaf.content);
-
-					// Only remove trailing whitespace if next leaf starts with whitespace
-					if (nextStartsWithSpace) {
-						const trimmed = processed.replace(/\s+$/, "");
-						const trimAmount = processed.length - trimmed.length;
-
-						processed = trimmed;
-						mapping.splice(-trimAmount, trimAmount);
-						lastWasSpace = false;
-					}
-				}
-			} else {
-				processed = leaf.content;
-				for (let i = 0; i < leaf.content.length; i++) {
-					mapping.push(i);
-				}
-				lastWasSpace = false;
 			}
 
 			text += processed;
 
 			items.push({
 				leafNode: leaf,
-				start,
+				start: start,
 				end: text.length,
 				processedContent: processed,
 			});
 		} else if (leaf.type === "br") {
+			// BR elements always create a line break
 			text += "\n";
-			lastWasSpace = false;
 			items.push({
 				leafNode: leaf,
 				start,
 				end: text.length,
 			});
 		} else if (leaf.type === "inline-block") {
-			// TODO: explain
-			text += "\uFFFC";
-			lastWasSpace = false;
+			// Inline-block elements are treated as a single unit
+			// Add a placeholder character for measurement
+			text += "\uFFFC"; // Object replacement character
 			items.push({
 				leafNode: leaf,
 				start,
 				end: text.length,
 			});
+		}
+	}
+
+	// Final cleanup: trim leading/trailing spaces from the entire run
+	// But preserve them for pre text or isolated measurement scenarios
+	if (text.length > 0) {
+		// Check if any leaf has pre-style whitespace that should be preserved
+		const hasPreWhitespace = leafNodes.some((leaf) => {
+			if (leaf.type === "text" && leaf.node.parentElement) {
+				const ws = getPropertyValue(leaf.node.parentElement, "white-space");
+				return ws === "pre" || ws === "pre-wrap" || ws === "pre-line";
+			}
+			return false;
+		});
+
+		// Only trim if we don't have pre whitespace and we have multiple leaf nodes
+		// For isolated text (single leaf), preserve trailing spaces for measurement
+		const shouldTrim = !hasPreWhitespace && leafNodes.length > 1;
+
+		if (shouldTrim) {
+			const trimStart = text.match(/^\s*/)?.[0].length || 0;
+			const trimEnd = text.match(/\s*$/)?.[0].length || 0;
+
+			if (trimStart > 0 || trimEnd > 0) {
+				// Adjust text
+				text = text.trim();
+
+				// Adjust item positions
+				for (const item of items) {
+					item.start = Math.max(0, item.start - trimStart);
+					item.end = Math.max(0, item.end - trimStart);
+				}
+			}
 		}
 	}
 
@@ -551,8 +474,20 @@ function findBreakPoints(
 ): BreakPoint[] {
 	const {whiteSpace = "normal"} = options;
 
+	// Check if ANY leaf node has white-space: nowrap
+	const hasNowrap = content.items.some((item) => {
+		if (item.leafNode.type === "text" && item.leafNode.node.parentElement) {
+			const leafWhiteSpace = getPropertyValue(
+				item.leafNode.node.parentElement,
+				"white-space",
+			);
+			return leafWhiteSpace === "nowrap";
+		}
+		return false;
+	});
+
 	// For nowrap, only allow breaking at the very end
-	if (whiteSpace === "nowrap") {
+	if (whiteSpace === "nowrap" || hasNowrap) {
 		return [
 			{
 				position: content.text.length,
@@ -613,6 +548,13 @@ function buildLines(
 				lineStart,
 				breakPoint.position,
 			);
+
+			// For nowrap (single break point at end), always use it regardless of width
+			if (breaks.length === 1 && breakPoint.position === content.text.length) {
+				bestBreak = breakPoint.position;
+				bestBreakWidth = width;
+				break;
+			}
 
 			if (width <= maxWidth) {
 				bestBreak = breakPoint.position;

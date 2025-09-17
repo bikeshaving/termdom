@@ -50,15 +50,13 @@ sidebar.style.display = "flex";
 sidebar.style.flexDirection = "column";
 sidebar.style.backgroundColor = "darkgreen";
 sidebar.style.padding = "1px";
-sidebar.style.flexShrink = "0"; // Don't shrink below content size
-// Let sidebar size itself based on content (intrinsic sizing)
+sidebar.style.whiteSpace = "nowrap";
 contentArea.appendChild(sidebar);
 
 const sidebarTitle = document.createElement("span");
 sidebarTitle.textContent = "📋 Navigation";
 sidebarTitle.style.color = "white";
 sidebarTitle.style.textAlign = "center";
-sidebarTitle.style.whiteSpace = "nowrap"; // Prevent wrapping for cleaner look
 sidebar.appendChild(sidebarTitle);
 
 const menuItems = ["• Home", "• About", "• Services", "• Contact"];
