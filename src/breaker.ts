@@ -108,11 +108,11 @@ function getInlineBlockBoxModel(element: Element): InlineBlockBoxModel {
 	};
 }
 
-export interface BreakOptions {
+interface BreakOptions {
 	maxWidth: number;
-	whiteSpace?: "normal" | "nowrap" | "pre" | "pre-wrap" | "pre-line";
-	wordBreak?: "normal" | "break-all" | "break-word" | "keep-all";
-	overflowWrap?: "normal" | "anywhere" | "break-word";
+	whiteSpace?: string;
+	wordBreak?: string;
+	overflowWrap?: string;
 }
 
 export interface InlineBlockLeaf {
@@ -322,9 +322,9 @@ export function breakNodes(
 			: (runHead as Element);
 
 	// Get CSS text layout properties
-	let whiteSpace = getPropertyValue(styleElement, "white-space") as any;
-	const wordBreak = getPropertyValue(styleElement, "word-break") as any;
-	const overflowWrap = getPropertyValue(styleElement, "overflow-wrap") as any;
+	let whiteSpace = getPropertyValue(styleElement, "white-space");
+	const wordBreak = getPropertyValue(styleElement, "word-break");
+	const overflowWrap = getPropertyValue(styleElement, "overflow-wrap");
 
 	// Special handling for flex containers
 	if (
@@ -337,8 +337,11 @@ export function breakNodes(
 	}
 
 	// Determine maxWidth based on width and widthMode
+	// For nowrap, always use infinite width to prevent breaking
 	const maxWidth =
-		widthMode === Yoga.MEASURE_MODE_UNDEFINED || width === 0
+		widthMode === Yoga.MEASURE_MODE_UNDEFINED ||
+		width === 0 ||
+		whiteSpace === "nowrap"
 			? Number.MAX_SAFE_INTEGER
 			: width;
 
@@ -546,6 +549,18 @@ function findBreakPoints(
 	content: ProcessedContent,
 	options: BreakOptions,
 ): BreakPoint[] {
+	const {whiteSpace = "normal"} = options;
+
+	// For nowrap, only allow breaking at the very end
+	if (whiteSpace === "nowrap") {
+		return [
+			{
+				position: content.text.length,
+				required: false,
+			},
+		];
+	}
+
 	const breaker = new LineBreaker(content.text);
 	const breaks: BreakPoint[] = [];
 
