@@ -945,3 +945,198 @@ test("text truncation due to RectLength accumulation error", () => {
 		}
 	});
 });
+
+// === GETRECTEXTS WITH INLINE-BLOCK TESTS ===
+
+test("getRectTexts - regular inline element (baseline)", () => {
+	const {jsdom, layoutEngine} = createLayoutEngine(
+		`<div><span>RegularInline</span></div>`,
+	);
+
+	const span = jsdom.window.document.querySelector("span")!;
+	const rectTexts = layoutEngine.getRectTexts(span);
+
+	// Regular inline elements should work
+	expect(rectTexts).toHaveLength(1);
+	expect(rectTexts[0].text).toBe("RegularInline");
+	expect(rectTexts[0].rect.width).toBe(13); // "RegularInline" = 13 chars
+});
+
+test("getRectTexts - text node in regular inline element", () => {
+	const {jsdom, layoutEngine} = createLayoutEngine(
+		`<div><span>TextContent</span></div>`,
+	);
+
+	const span = jsdom.window.document.querySelector("span")!;
+	const textNode = span.firstChild as Text;
+	const rectTexts = layoutEngine.getRectTexts(textNode);
+
+	// Text nodes should work
+	expect(rectTexts).toHaveLength(1);
+	expect(rectTexts[0].text).toBe("TextContent");
+});
+
+test("getRectTexts - element inside inline-block container", () => {
+	const {jsdom, layoutEngine} = createLayoutEngine(
+		`<div><div style="display: inline-block;"><span>InsideBlock</span></div></div>`,
+	);
+
+	const span = jsdom.window.document.querySelector("span")!;
+	const rectTexts = layoutEngine.getRectTexts(span);
+
+	// This was the main broken case - should now work
+	expect(rectTexts).toHaveLength(1);
+	expect(rectTexts[0].text).toBe("InsideBlock");
+	expect(rectTexts[0].rect.width).toBe(11); // "InsideBlock" = 11 chars
+});
+
+test("getRectTexts - text node inside inline-block container", () => {
+	const {jsdom, layoutEngine} = createLayoutEngine(
+		`<div><div style="display: inline-block;"><span>BlockText</span></div></div>`,
+	);
+
+	const span = jsdom.window.document.querySelector("span")!;
+	const textNode = span.firstChild as Text;
+	const rectTexts = layoutEngine.getRectTexts(textNode);
+
+	// Text nodes inside inline-blocks should work
+	expect(rectTexts).toHaveLength(1);
+	expect(rectTexts[0].text).toBe("BlockText");
+});
+
+test("getRectTexts - nested elements inside inline-block", () => {
+	const {jsdom, layoutEngine} = createLayoutEngine(
+		`<div><div style="display: inline-block;"><span><em>Nested</em></span></div></div>`,
+	);
+
+	const em = jsdom.window.document.querySelector("em")!;
+	const rectTexts = layoutEngine.getRectTexts(em);
+
+	// Nested elements inside inline-blocks should work
+	expect(rectTexts).toHaveLength(1);
+	expect(rectTexts[0].text).toBe("Nested");
+});
+
+test("getRectTexts - multiple children in inline-block", () => {
+	const {jsdom, layoutEngine} = createLayoutEngine(
+		`<div><div style="display: inline-block;"><span>First</span><span>Second</span></div></div>`,
+	);
+
+	const spans = Array.from(jsdom.window.document.querySelectorAll("span"));
+	const firstRects = layoutEngine.getRectTexts(spans[0]);
+	const secondRects = layoutEngine.getRectTexts(spans[1]);
+
+	// Both children should work independently
+	expect(firstRects).toHaveLength(1);
+	expect(firstRects[0].text).toBe("First");
+	expect(secondRects).toHaveLength(1);
+	expect(secondRects[0].text).toBe("Second");
+});
+
+test("getRectTexts - deeply nested inline-block", () => {
+	const {jsdom, layoutEngine} = createLayoutEngine(
+		`<div>
+			<div style="display: inline-block;">
+				<div><span><em>DeepNested</em></span></div>
+			</div>
+		</div>`,
+	);
+
+	const em = jsdom.window.document.querySelector("em")!;
+	const rectTexts = layoutEngine.getRectTexts(em);
+
+	// Deep nesting should work
+	expect(rectTexts).toHaveLength(1);
+	expect(rectTexts[0].text).toBe("DeepNested");
+});
+
+test("getRectTexts - inline-block with mixed content", () => {
+	const {jsdom, layoutEngine} = createLayoutEngine(
+		`<div>
+			<div style="display: inline-block;">
+				Text <span>element</span> more text
+			</div>
+		</div>`,
+	);
+
+	const span = jsdom.window.document.querySelector("span")!;
+	const rectTexts = layoutEngine.getRectTexts(span);
+
+	// Element in mixed content should work
+	expect(rectTexts).toHaveLength(1);
+	expect(rectTexts[0].text).toBe("element");
+});
+
+test("getRectTexts - multiple inline-blocks", () => {
+	const {jsdom, layoutEngine} = createLayoutEngine(
+		`<div>
+			<div style="display: inline-block;"><span>Block1</span></div>
+			<div style="display: inline-block;"><span>Block2</span></div>
+		</div>`,
+	);
+
+	const spans = Array.from(jsdom.window.document.querySelectorAll("span"));
+	const rects1 = layoutEngine.getRectTexts(spans[0]);
+	const rects2 = layoutEngine.getRectTexts(spans[1]);
+
+	// Elements in separate inline-blocks should work
+	expect(rects1).toHaveLength(1);
+	expect(rects1[0].text).toBe("Block1");
+	expect(rects2).toHaveLength(1);
+	expect(rects2[0].text).toBe("Block2");
+});
+
+test("getRectTexts - inline-block container element itself", () => {
+	const {jsdom, layoutEngine} = createLayoutEngine(
+		`<div><div style="display: inline-block;">Container</div></div>`,
+	);
+
+	const inlineBlock = jsdom.window.document.querySelector("div[style]")!;
+	const rectTexts = layoutEngine.getRectTexts(inlineBlock);
+
+	// Inline-block container itself should work (all its text content)
+	expect(rectTexts).toHaveLength(1);
+	expect(rectTexts[0].text).toBe("Container");
+});
+
+test("getRectTexts - position accuracy in inline-block", () => {
+	const {jsdom, layoutEngine} = createLayoutEngine(
+		`<div>
+			<div style="display: inline-block; padding: 2px;">
+				<span>Padded</span>
+			</div>
+		</div>`,
+	);
+
+	const span = jsdom.window.document.querySelector("span")!;
+	const rectTexts = layoutEngine.getRectTexts(span);
+
+	// Should work and have reasonable position (accounting for padding)
+	expect(rectTexts).toHaveLength(1);
+	expect(rectTexts[0].text).toBe("Padded");
+	expect(rectTexts[0].rect.x).toBeGreaterThanOrEqual(2); // Should account for padding
+	expect(rectTexts[0].rect.y).toBeGreaterThanOrEqual(2);
+});
+
+test("getRectTexts - maintains backward compatibility", () => {
+	const {jsdom, layoutEngine} = createLayoutEngine(
+		`<div>
+			<span>Regular</span>
+			<div style="display: inline-block;"><span>InBlock</span></div>
+			<span>Normal</span>
+		</div>`,
+	);
+
+	const spans = Array.from(jsdom.window.document.querySelectorAll("span"));
+	const regularRects = layoutEngine.getRectTexts(spans[0]); // Regular inline
+	const blockRects = layoutEngine.getRectTexts(spans[1]); // Inside inline-block
+	const normalRects = layoutEngine.getRectTexts(spans[2]); // Regular inline
+
+	// All should work correctly
+	expect(regularRects).toHaveLength(1);
+	expect(regularRects[0].text).toBe("Regular");
+	expect(blockRects).toHaveLength(1);
+	expect(blockRects[0].text).toBe("InBlock");
+	expect(normalRects).toHaveLength(1);
+	expect(normalRects[0].text).toBe("Normal");
+});

@@ -62,6 +62,11 @@ function styleYogaNode(element: Element, yogaNode: YogaTypes.Node): void {
 		// since they handle dimensions in their measure function
 		yogaNode.setWidthAuto();
 		yogaNode.setHeightAuto();
+		// Also unset min/max constraints to ensure measure function is called
+		yogaNode.setMinWidth(undefined);
+		yogaNode.setMinHeight(undefined);
+		yogaNode.setMaxWidth(undefined);
+		yogaNode.setMaxHeight(undefined);
 	} else {
 		// For block elements, apply explicit dimensions normally
 		const width = parseUnitValue(computedStyle.getPropertyValue("width"));
@@ -81,47 +86,51 @@ function styleYogaNode(element: Element, yogaNode: YogaTypes.Node): void {
 		} else {
 			yogaNode.setHeightAuto();
 		}
-	}
 
-	// Apply min/max constraints for all elements
-	const minWidth = parseUnitValue(computedStyle.getPropertyValue("min-width"));
-	if (typeof minWidth === "number") {
-		yogaNode.setMinWidth(minWidth);
-	} else if (minWidth && "percentage" in minWidth) {
-		yogaNode.setMinWidthPercent(minWidth.percentage);
-	} else {
-		yogaNode.setMinWidth(1);
-	}
+		// Apply min/max constraints for block elements
+		const minWidth = parseUnitValue(
+			computedStyle.getPropertyValue("min-width"),
+		);
+		if (typeof minWidth === "number") {
+			yogaNode.setMinWidth(minWidth);
+		} else if (minWidth && "percentage" in minWidth) {
+			yogaNode.setMinWidthPercent(minWidth.percentage);
+		} else {
+			yogaNode.setMinWidth(1);
+		}
 
-	const minHeight = parseUnitValue(
-		computedStyle.getPropertyValue("min-height"),
-	);
-	if (typeof minHeight === "number") {
-		yogaNode.setMinHeight(minHeight);
-	} else if (minHeight && "percentage" in minHeight) {
-		yogaNode.setMinHeightPercent(minHeight.percentage);
-	} else {
-		yogaNode.setMinHeight(1);
-	}
+		const minHeight = parseUnitValue(
+			computedStyle.getPropertyValue("min-height"),
+		);
+		if (typeof minHeight === "number") {
+			yogaNode.setMinHeight(minHeight);
+		} else if (minHeight && "percentage" in minHeight) {
+			yogaNode.setMinHeightPercent(minHeight.percentage);
+		} else {
+			yogaNode.setMinHeight(1);
+		}
 
-	const maxWidth = parseUnitValue(computedStyle.getPropertyValue("max-width"));
-	if (typeof maxWidth === "number") {
-		yogaNode.setMaxWidth(maxWidth);
-	} else if (maxWidth && "percentage" in maxWidth) {
-		yogaNode.setMaxWidthPercent(maxWidth.percentage);
-	} else {
-		yogaNode.setMaxWidth(undefined);
-	}
+		const maxWidth = parseUnitValue(
+			computedStyle.getPropertyValue("max-width"),
+		);
+		if (typeof maxWidth === "number") {
+			yogaNode.setMaxWidth(maxWidth);
+		} else if (maxWidth && "percentage" in maxWidth) {
+			yogaNode.setMaxWidthPercent(maxWidth.percentage);
+		} else {
+			yogaNode.setMaxWidth(undefined);
+		}
 
-	const maxHeight = parseUnitValue(
-		computedStyle.getPropertyValue("max-height"),
-	);
-	if (typeof maxHeight === "number") {
-		yogaNode.setMaxHeight(maxHeight);
-	} else if (maxHeight && "percentage" in maxHeight) {
-		yogaNode.setMaxHeightPercent(maxHeight.percentage);
-	} else {
-		yogaNode.setMaxHeight(undefined);
+		const maxHeight = parseUnitValue(
+			computedStyle.getPropertyValue("max-height"),
+		);
+		if (typeof maxHeight === "number") {
+			yogaNode.setMaxHeight(maxHeight);
+		} else if (maxHeight && "percentage" in maxHeight) {
+			yogaNode.setMaxHeightPercent(maxHeight.percentage);
+		} else {
+			yogaNode.setMaxHeight(undefined);
+		}
 	}
 
 	// Box model properties: clear for inline elements, apply for block/inline-block
@@ -501,25 +510,62 @@ export class LayoutEngine {
 	}
 
 	getRect(element: Element): DOMRect | null {
-		// First check if this element has rectTexts (inline/inline-block elements)
-		// This ensures inline elements get their individual dimensions, not the whole run
-		const rectTexts = this.getRectTexts(element);
-		if (rectTexts.length > 0) {
-			// Calculate bounding box from all rectTexts
-			let minX = Infinity;
-			let minY = Infinity;
-			let maxX = -Infinity;
-			let maxY = -Infinity;
+		const display = getPropertyValue(element, "display");
 
-			for (const rectText of rectTexts) {
-				const rect = rectText.rect;
-				minX = Math.min(minX, rect.x);
-				minY = Math.min(minY, rect.y);
-				maxX = Math.max(maxX, rect.x + rect.width);
-				maxY = Math.max(maxY, rect.y + rect.height);
+		// For inline/inline-block elements, check if they appear in breakResults
+		if (display === "inline" || display === "inline-block") {
+			// For inline-block elements, search through all breakResults to find this element
+			if (display === "inline-block") {
+				// Find the inline run head that contains this element
+				const runHead = this.findInlineRunHead(element);
+				if (runHead) {
+					const breakResult = this.breakResultMap.get(runHead);
+					if (breakResult) {
+						for (const line of breakResult.lines) {
+							for (const segment of line.segments) {
+								if (
+									segment.leaf.type === "inline-block" &&
+									segment.leaf.node === element
+								) {
+									// Get absolute position of the inline-block element
+									const yogaNode = this.nodeMap.get(element);
+									if (!yogaNode) {
+										// Fallback to relative position if no yoga node
+										return new this.DOMRect(
+											segment.x,
+											line.y,
+											segment.width,
+											line.height,
+										);
+									}
+									const {x, y} = getAbsolutePosition(yogaNode);
+									return new this.DOMRect(x, y, segment.width, line.height);
+								}
+							}
+						}
+					}
+				}
 			}
 
-			return new this.DOMRect(minX, minY, maxX - minX, maxY - minY);
+			// For inline elements, use getRectTexts
+			const rectTexts = this.getRectTexts(element);
+			if (rectTexts.length > 0) {
+				// Calculate bounding box from all rectTexts
+				let minX = Infinity;
+				let minY = Infinity;
+				let maxX = -Infinity;
+				let maxY = -Infinity;
+
+				for (const rectText of rectTexts) {
+					const rect = rectText.rect;
+					minX = Math.min(minX, rect.x);
+					minY = Math.min(minY, rect.y);
+					maxX = Math.max(maxX, rect.x + rect.width);
+					maxY = Math.max(maxY, rect.y + rect.height);
+				}
+
+				return new this.DOMRect(minX, minY, maxX - minX, maxY - minY);
+			}
 		}
 
 		// Fall back to Yoga node for block elements and containers
@@ -549,13 +595,61 @@ export class LayoutEngine {
 	}
 
 	getRectTexts(node: Node): RectText[] {
-		// For block elements, return empty array (no inline text layout)
+		// This method handles two main scenarios:
+		// 1. Direct calls on inline-block elements (special case below)
+		// 2. Calls on elements/text inside inline-blocks (general walk-up logic)
+
+		// Handle element nodes
 		if (node.nodeType === node.ELEMENT_NODE) {
 			const element = node as Element;
 			const display = getPropertyValue(element, "display");
 
+			// For block elements, return empty array (no inline text layout)
 			if (display !== "inline" && display !== "inline-block") {
 				return [];
+			}
+
+			// Special case: inline-block element called directly (e.g., getRectTexts(inlineBlockDiv))
+			// The element's breakResult contains itself as an inline-block segment with nested content
+			if (display === "inline-block" && this.isInlineRunHead(element)) {
+				const breakResult = this.breakResultMap.get(element);
+				if (breakResult) {
+					// The breakResult contains this inline-block as a segment with nested content
+					const rectTexts: RectText[] = [];
+					const yogaNode = this.nodeMap.get(element);
+					if (!yogaNode) return [];
+
+					const {x: containerX, y: containerY} = getAbsolutePosition(yogaNode);
+
+					for (const line of breakResult.lines) {
+						for (const segment of line.segments) {
+							if (
+								segment.leaf.type === "inline-block" &&
+								segment.leaf.node === element &&
+								segment.leaf.breakResult
+							) {
+								// Extract text from the nested breakResult
+								const nestedBreakResult = segment.leaf.breakResult;
+								for (const nestedLine of nestedBreakResult.lines) {
+									for (const nestedSegment of nestedLine.segments) {
+										if (nestedSegment.leaf.type === "text") {
+											rectTexts.push({
+												text: nestedSegment.processedText,
+												rect: new this.DOMRect(
+													containerX + segment.x + nestedSegment.x,
+													containerY + line.y + nestedLine.y,
+													nestedSegment.width,
+													nestedLine.height,
+												),
+											});
+										}
+									}
+								}
+							}
+						}
+					}
+					return rectTexts;
+				}
 			}
 		}
 
@@ -577,43 +671,67 @@ export class LayoutEngine {
 
 		let {x: containerX, y: containerY} = getAbsolutePosition(yogaNode);
 
-		// If this node is inside an inline-block element, we need to get the breakResult
-		// from the inline-block element instead of the run head
-		let targetNode = node;
+		// Walk from target node up to runHead, handling nested inline-blocks
+		// This handles the case where getRectTexts is called on elements/text inside inline-blocks
+		let currentBreakResult = breakResult;
+		let accumulatedOffsetX = 0;
+		let accumulatedOffsetY = 0;
+		let currentNode = node;
 
-		if (node.nodeType === node.TEXT_NODE) {
-			// For text nodes, check if parent is inline-block
-			const parentElement = (node as Text).parentElement;
+		while (currentNode !== runHead && currentNode.parentElement) {
+			const parent = currentNode.parentElement;
 
-			if (
-				parentElement &&
-				getPropertyValue(parentElement, "display") === "inline-block"
-			) {
-				targetNode = parentElement;
-
-				// Find the inline-block leaf in the main run's breakResult to get its internal breakResult
-				let foundInlineBlock = false;
-
-				for (const line of breakResult.lines) {
+			if (getPropertyValue(parent, "display") === "inline-block") {
+				// Find this inline-block in current breakResult
+				let found = false;
+				for (const line of currentBreakResult.lines) {
 					for (const segment of line.segments) {
 						if (
 							segment.leaf.type === "inline-block" &&
-							segment.leaf.node === parentElement
+							segment.leaf.node === parent
 						) {
-							foundInlineBlock = true;
-							// Use the inline-block's internal breakResult with position offset
+							// Accumulate offset and switch to internal breakResult
+							accumulatedOffsetX += segment.x;
+							accumulatedOffsetY += line.y;
 							if (segment.leaf.breakResult) {
-								breakResult = segment.leaf.breakResult;
-								containerX += segment.x;
-								containerY += line.y;
+								currentBreakResult = segment.leaf.breakResult;
 							}
+							found = true;
 							break;
 						}
 					}
-					if (foundInlineBlock) break;
+					if (found) break;
 				}
 			}
+			currentNode = parent;
 		}
+
+		// Apply accumulated offsets
+		containerX += accumulatedOffsetX;
+		containerY += accumulatedOffsetY;
+		breakResult = currentBreakResult;
+
+		// Collect target text nodes based on node type
+		let targetTextNodes: Set<Text>;
+
+		if (node.nodeType === node.TEXT_NODE) {
+			targetTextNodes = new Set([node as Text]);
+		} else {
+			// For element nodes, collect all descendant text nodes
+			targetTextNodes = new Set<Text>();
+			const window = (node as Element).ownerDocument!.defaultView!;
+			const walker = window.document.createTreeWalker(
+				node,
+				window.NodeFilter.SHOW_TEXT,
+				null,
+			);
+
+			let textNode;
+			while ((textNode = walker.nextNode())) {
+				targetTextNodes.add(textNode as Text);
+			}
+		}
+
 		const rectTexts: RectText[] = [];
 
 		// Merge segments per line that belong to this node
@@ -626,8 +744,8 @@ export class LayoutEngine {
 			// Find the extent of segments on this line that belong to our target node
 			for (const segment of line.segments) {
 				if (
-					targetNode.contains(segment.leaf.node) ||
-					targetNode === segment.leaf.node
+					segment.leaf.type === "text" &&
+					targetTextNodes.has(segment.leaf.node as Text)
 				) {
 					minX = Math.min(minX, segment.x);
 					maxX = Math.max(maxX, segment.x + segment.width);
