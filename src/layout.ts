@@ -682,6 +682,44 @@ export class LayoutEngine {
 													nestedLine.height,
 												),
 											});
+										} else if (
+											nestedSegment.leaf.type === "inline-block" &&
+											nestedSegment.leaf.breakResult
+										) {
+											// Recursively extract text from nested inline-block
+											const nestedInlineBlock = nestedSegment.leaf;
+											const nestedPaddingLeft =
+												nestedInlineBlock.boxModel.paddingLeft;
+											const nestedPaddingTop =
+												nestedInlineBlock.boxModel.paddingTop;
+
+											for (const innerLine of nestedInlineBlock.breakResult!
+												.lines) {
+												for (const innerSegment of innerLine.segments) {
+													if (innerSegment.leaf.type === "text") {
+														rectTexts.push({
+															text: innerSegment.processedText,
+															rect: new this.DOMRect(
+																containerX +
+																	segment.x +
+																	paddingLeft +
+																	nestedSegment.x +
+																	nestedPaddingLeft +
+																	innerSegment.x,
+																containerY +
+																	line.y +
+																	paddingTop +
+																	nestedLine.y +
+																	nestedPaddingTop +
+																	innerLine.y,
+																innerSegment.width,
+																innerLine.height,
+															),
+														});
+													}
+													// Could add more nesting levels here if needed
+												}
+											}
 										}
 									}
 								}
@@ -775,27 +813,61 @@ export class LayoutEngine {
 
 		const rectTexts: RectText[] = [];
 
-		// Merge segments per line that belong to this node
-		for (const line of breakResult.lines) {
-			let minX = Infinity;
-			let maxX = -Infinity;
-			let hasSegments = false;
-			let concatenatedText = "";
-
-			// Find the extent of segments on this line that belong to our target node
-			for (const segment of line.segments) {
+		// Helper function to recursively find target text nodes in segments
+		const findTargetTextInSegments = (
+			segments: any[],
+			baseX: number,
+			baseY: number,
+		): Array<{x: number; width: number; text: string}> => {
+			const results: Array<{x: number; width: number; text: string}> = [];
+			
+			for (const segment of segments) {
 				if (
 					segment.leaf.type === "text" &&
 					targetTextNodes.has(segment.leaf.node as Text)
 				) {
-					minX = Math.min(minX, segment.x);
-					maxX = Math.max(maxX, segment.x + segment.width);
-					concatenatedText += segment.processedText;
-					hasSegments = true;
+					results.push({
+						x: baseX + segment.x,
+						width: segment.width,
+						text: segment.processedText,
+					});
+				} else if (
+					segment.leaf.type === "inline-block" &&
+					segment.leaf.breakResult
+				) {
+					// Recursively search within nested inline-block
+					const paddingLeft = segment.leaf.boxModel.paddingLeft;
+					const paddingTop = segment.leaf.boxModel.paddingTop;
+					
+					for (const nestedLine of segment.leaf.breakResult.lines) {
+						const nestedResults = findTargetTextInSegments(
+							nestedLine.segments,
+							baseX + segment.x + paddingLeft,
+							baseY + paddingTop + nestedLine.y,
+						);
+						results.push(...nestedResults);
+					}
 				}
 			}
+			
+			return results;
+		};
 
-			if (hasSegments) {
+		// Merge segments per line that belong to this node
+		for (const line of breakResult.lines) {
+			const targetTexts = findTargetTextInSegments(line.segments, 0, line.y);
+			
+			if (targetTexts.length > 0) {
+				let minX = Infinity;
+				let maxX = -Infinity;
+				let concatenatedText = "";
+				
+				for (const targetText of targetTexts) {
+					minX = Math.min(minX, targetText.x);
+					maxX = Math.max(maxX, targetText.x + targetText.width);
+					concatenatedText += targetText.text;
+				}
+
 				const rect = new this.DOMRect(
 					containerX + minX,
 					containerY + line.y,
@@ -888,8 +960,22 @@ export class LayoutEngine {
 
 			const parentDisplay = getPropertyValue(parent as Element, "display");
 
-			if (parentDisplay === "inline" || parentDisplay === "inline-block") {
+			if (parentDisplay === "inline") {
 				current = parent;
+			} else if (parentDisplay === "inline-block") {
+				// Only walk up through inline-block if current node is inline (not inline-block)
+				if (node.nodeType === node.ELEMENT_NODE) {
+					const nodeDisplay = getPropertyValue(node as Element, "display");
+					if (nodeDisplay === "inline") {
+						current = parent;
+					} else {
+						// Current node is inline-block, stop here
+						break;
+					}
+				} else {
+					// Current node is text, can walk up through inline-block
+					current = parent;
+				}
 			} else {
 				break;
 			}
@@ -984,10 +1070,18 @@ export class LayoutEngine {
 
 			for (let j = 0; j < record.addedNodes.length; j++) {
 				const node = record.addedNodes[j];
-				const parentYogaNode = this.nodeMap.get(record.target as Element);
+				const parentElement = record.target as Element;
+				const parentYogaNode = this.nodeMap.get(parentElement);
+				
+				// Skip adding children if parent is inline-block (it uses measure function and cannot have children)
+				const parentDisplay = getPropertyValue(parentElement, "display");
+				if (parentDisplay === "inline-block") {
+					continue;
+				}
+				
 				if (!parentYogaNode) {
 					throw new Error(
-						`No parent Yoga node found for added node ${node.nodeName} under ${(record.target as Element).tagName}`,
+						`No parent Yoga node found for added node ${node.nodeName} under ${parentElement.tagName}`,
 					);
 				}
 				this.addNode(node, parentYogaNode);
@@ -1075,6 +1169,11 @@ export class LayoutEngine {
 
 		// Block elements should NOT get measure functions - only their inline children do.
 		// This prevents Yoga constraint violations (nodes with measure functions cannot have children)
+		
+		// Inline-block elements cannot have children in the Yoga tree because they use measure functions
+		if (display === "inline-block") {
+			return;
+		}
 
 		const measuredChildNodes = this.getChildrenForLayout(element);
 		for (let i = 0; i < measuredChildNodes.length; i++) {

@@ -33,3 +33,10 @@ exports[`inline-block elements with padding 1`] = `
 \x1B[38;2;255;255;255;48;2;0;128;0m          \x1B[0m
 "
 `;
+
+exports[`nested inline-block elements 1`] = `
+"\x1B[38;2;255;255;255;48;2;0;0;128m                \x1B[0m
+\x1B[38;2;255;255;255;48;2;0;0;128m Nested  \x1B[48;2;255;0;0mblock\x1B[48;2;0;0;128m  \x1B[0m
+\x1B[38;2;255;255;255;48;2;0;0;128m                \x1B[0m
+"
+`;
