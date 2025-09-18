@@ -223,6 +223,17 @@ export function breakNodes(
 	// Note: Automatic minimum size for flex containers is now handled in measureInlineRun
 
 	// Determine maxWidth based on width and widthMode
+	//
+	// The `|| width === 0` check handles a Yoga layout engine quirk in nested flex containers.
+	// When flex containers are nested, Yoga creates circular dependencies where the outer
+	// container needs the inner container's width, but the inner container needs its
+	// available width to measure children. Yoga resolves this by passing minimal constraint
+	// widths (0px or 1px) during measurement phases.
+	//
+	// See: https://github.com/facebook/yoga/issues/999 - AT_MOST mode creates too narrow layouts
+	// See: https://github.com/facebook/yoga/issues/160 - Custom measure functions can't distinguish exact vs max width
+	//
+	// This check treats minimal constraints as unlimited width scenarios.
 	const maxWidth =
 		widthMode === Yoga.MEASURE_MODE_UNDEFINED || width === 0
 			? Number.MAX_SAFE_INTEGER
