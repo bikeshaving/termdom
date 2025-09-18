@@ -82,7 +82,6 @@ export class TestTerminal extends EventEmitter implements ProcessLike {
 			allowProposedApi: true,
 		});
 
-
 		this.stdout = new MockWriteStream(this.terminal, cols, rows);
 	}
 
@@ -233,7 +232,6 @@ export class TestTerminal extends EventEmitter implements ProcessLike {
 	clear(): void {
 		this.terminal.clear();
 	}
-
 
 	/**
 	 * Write ANSI output to .ansi file after test passes

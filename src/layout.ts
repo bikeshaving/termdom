@@ -820,7 +820,7 @@ export class LayoutEngine {
 			baseY: number,
 		): Array<{x: number; width: number; text: string}> => {
 			const results: Array<{x: number; width: number; text: string}> = [];
-			
+
 			for (const segment of segments) {
 				if (
 					segment.leaf.type === "text" &&
@@ -838,7 +838,7 @@ export class LayoutEngine {
 					// Recursively search within nested inline-block
 					const paddingLeft = segment.leaf.boxModel.paddingLeft;
 					const paddingTop = segment.leaf.boxModel.paddingTop;
-					
+
 					for (const nestedLine of segment.leaf.breakResult.lines) {
 						const nestedResults = findTargetTextInSegments(
 							nestedLine.segments,
@@ -849,19 +849,19 @@ export class LayoutEngine {
 					}
 				}
 			}
-			
+
 			return results;
 		};
 
 		// Merge segments per line that belong to this node
 		for (const line of breakResult.lines) {
 			const targetTexts = findTargetTextInSegments(line.segments, 0, line.y);
-			
+
 			if (targetTexts.length > 0) {
 				let minX = Infinity;
 				let maxX = -Infinity;
 				let concatenatedText = "";
-				
+
 				for (const targetText of targetTexts) {
 					minX = Math.min(minX, targetText.x);
 					maxX = Math.max(maxX, targetText.x + targetText.width);
@@ -1072,13 +1072,13 @@ export class LayoutEngine {
 				const node = record.addedNodes[j];
 				const parentElement = record.target as Element;
 				const parentYogaNode = this.nodeMap.get(parentElement);
-				
+
 				// Skip adding children if parent is inline-block (it uses measure function and cannot have children)
 				const parentDisplay = getPropertyValue(parentElement, "display");
 				if (parentDisplay === "inline-block") {
 					continue;
 				}
-				
+
 				if (!parentYogaNode) {
 					throw new Error(
 						`No parent Yoga node found for added node ${node.nodeName} under ${parentElement.tagName}`,
@@ -1169,7 +1169,7 @@ export class LayoutEngine {
 
 		// Block elements should NOT get measure functions - only their inline children do.
 		// This prevents Yoga constraint violations (nodes with measure functions cannot have children)
-		
+
 		// Inline-block elements cannot have children in the Yoga tree because they use measure functions
 		if (display === "inline-block") {
 			return;

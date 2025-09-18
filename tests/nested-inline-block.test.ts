@@ -23,7 +23,7 @@ test("findInlineRunHead should find outer inline-block for nested text nodes", a
 	outer.appendChild(span);
 
 	const inner = document.createElement("div");
-	inner.style.display = "inline-block"; 
+	inner.style.display = "inline-block";
 	inner.style.backgroundColor = "red";
 	inner.textContent = "block";
 	outer.appendChild(inner);
@@ -161,7 +161,7 @@ test("deeply nested inline-blocks should work", async () => {
 	// Test getRectTexts on the deepest text node
 	const innerTextNode = inner.firstChild as Text;
 	const innerRects = layoutEngine.getRectTexts(innerTextNode);
-	
+
 	expect(innerRects).toHaveLength(1);
 	expect(innerRects[0].text).toBe("Inner");
 

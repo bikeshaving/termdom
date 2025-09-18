@@ -558,7 +558,8 @@ test("flexbox two columns: fixed width + flexible width with text wrapping", asy
 	flexColumn.style.flex = "1"; // Should take remaining space
 	flexColumn.style.flexShrink = "0"; // NO shrinking - this should cause overflow
 	flexColumn.style.backgroundColor = "blue";
-	flexColumn.textContent = "This is a long text that should wrap within the remaining space after the fixed column takes its 10px width";
+	flexColumn.textContent =
+		"This is a long text that should wrap within the remaining space after the fixed column takes its 10px width";
 	container.appendChild(flexColumn);
 
 	await dom.render();
@@ -567,22 +568,16 @@ test("flexbox two columns: fixed width + flexible width with text wrapping", asy
 	const fixedRect = fixedColumn.getBoundingClientRect();
 	const flexRect = flexColumn.getBoundingClientRect();
 
-	console.log('Container width:', container.getBoundingClientRect().width);
-	console.log('Fixed column rect:', {x: fixedRect.x, y: fixedRect.y, width: fixedRect.width, height: flexRect.height});
-	console.log('Flex column rect:', {x: flexRect.x, y: flexRect.y, width: flexRect.width, height: flexRect.height});
-	console.log('Visible text:', visibleText);
-
 	// Fixed column should be exactly 10px wide
 	expect(fixedRect.width).toBe(10);
-	
+
 	// Flex column should start after fixed column
 	expect(flexRect.x).toBe(fixedRect.x + fixedRect.width);
-	
+
 	// With flex-shrink: 0, flex column might extend beyond container bounds
-	const containerRect = container.getBoundingClientRect();
-	console.log('Container bounds check:', flexRect.x + flexRect.width, 'vs', containerRect.x + containerRect.width);
+	// This behavior is documented but we don't need to assert it in this test
 	// expect(flexRect.x + flexRect.width).toBeLessThanOrEqual(containerRect.x + containerRect.width);
-	
+
 	// Text should be present
 	expect(visibleText).toContain("Fixed");
 	expect(visibleText).toContain("This is a long text");

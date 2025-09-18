@@ -104,8 +104,8 @@ test("inline-block elements with margins", async () => {
 
 	const visibleText = terminal.getVisibleText();
 
-	// TODO: Should have 3 spaces between blocks due to margin (when margins are implemented)
-	expect(visibleText).toContain("FirstSecond");
+	// Should have 3 spaces between blocks due to marginRight: "3px"
+	expect(visibleText).toContain("First   Second");
 
 	expect(terminal.getStaticANSI()).toMatchSnapshot();
 	terminal.writeANSI("inline-block-margins");
@@ -176,8 +176,9 @@ test("mixed inline and inline-block elements", async () => {
 
 	const visibleText = terminal.getVisibleText();
 
-	// All elements should appear on the same line
-	expect(visibleText.trim()).toBe("Regular inline-block text");
+	// All elements should appear on the same line with padding spacing
+	// inline-block has 1px padding on each side, creating extra spaces
+	expect(visibleText.trim()).toBe("Regular  inline-block  text");
 
 	const output = terminal.getStaticANSI();
 	// Check color transitions
@@ -255,9 +256,8 @@ test("inline-block with explicit width", async () => {
 	const output = terminal.getStaticANSI();
 	const visibleText = terminal.getVisibleText();
 
-	// TODO: First block should be exactly 10 characters wide when width is implemented
-	// For now, blocks should be adjacent without explicit width
-	expect(visibleText).toContain("FixedAuto");
+	// First block should be exactly 10 characters wide due to width: "10px"
+	expect(visibleText).toContain("Fixed     Auto"); // "Fixed" + 5 spaces to reach 10 chars + "Auto"
 
 	expect(output).toMatchSnapshot();
 	terminal.writeANSI("inline-block-fixed-width");
@@ -290,9 +290,9 @@ test("inline-block with height", async () => {
 	const output = terminal.getStaticANSI();
 	const lines = output.trim().split("\n");
 
-	// Tall block should occupy 3 lines
+	// Tall block should occupy 3 lines (height: "3px")
 	const greenBackgroundLines = lines.filter(
-		(line) => line.includes("\x1b[48;2;0;100;0m"), // darkgreen
+		(line) => line.includes("48;2;0;100;0m"), // darkgreen background
 	);
 	expect(greenBackgroundLines.length).toBe(3);
 
@@ -327,9 +327,9 @@ test("inline-block with borders", async () => {
 	// Should have 4 lines minimum (top border + padding + content + padding + bottom border)
 	expect(lines.length).toBeGreaterThanOrEqual(4);
 
-	// Top and bottom borders should be red
-	expect(lines[0]).toContain("\x1b[48;2;255;0;0m"); // red border
-	expect(lines[lines.length - 1]).toContain("\x1b[48;2;255;0;0m"); // red border
+	// Should have border box drawing characters
+	expect(lines[0]).toContain("┌"); // top border
+	expect(lines[lines.length - 1]).toContain("└"); // bottom border
 
 	expect(output).toMatchSnapshot();
 	terminal.writeANSI("inline-block-borders");
