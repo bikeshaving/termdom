@@ -7,7 +7,6 @@
 import {type ProcessLike, type TTYWriteStream} from "../src/termdom.js";
 import {EventEmitter} from "events";
 import {Terminal} from "@xterm/headless";
-import {SerializeAddon} from "@xterm/addon-serialize";
 import {type CellBuffer, Cell, createBuffer} from "../src/ansi.js";
 import {generateANSI} from "../src/ansi.js";
 import {writeFileSync, mkdirSync, existsSync} from "fs";
@@ -57,7 +56,6 @@ export class TestTerminal extends EventEmitter implements ProcessLike {
 	stdout: MockWriteStream;
 	env: Record<string, string | undefined>;
 	private terminal: Terminal;
-	private serializeAddon: SerializeAddon;
 
 	constructor(
 		options: {
@@ -84,9 +82,6 @@ export class TestTerminal extends EventEmitter implements ProcessLike {
 			allowProposedApi: true,
 		});
 
-		// Add serialize addon for getting actual terminal content
-		this.serializeAddon = new SerializeAddon();
-		this.terminal.loadAddon(this.serializeAddon);
 
 		this.stdout = new MockWriteStream(this.terminal, cols, rows);
 	}
@@ -239,12 +234,6 @@ export class TestTerminal extends EventEmitter implements ProcessLike {
 		this.terminal.clear();
 	}
 
-	/**
-	 * Get serialized content directly from xterm (what the terminal actually displays)
-	 */
-	getSerializedContent(): string {
-		return this.serializeAddon.serialize();
-	}
 
 	/**
 	 * Write ANSI output to .ansi file after test passes
