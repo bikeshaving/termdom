@@ -154,7 +154,7 @@ test("white-space: nowrap vs normal text wrapping comparison", async () => {
 	const lines = visibleText.split("\n");
 
 	// Normal text should be broken across multiple lines
-	let normalTextSpansLines = false;
+	let _normalTextSpansLines = false;
 	let normalLineCount = 0;
 
 	for (const line of lines) {
@@ -172,19 +172,19 @@ test("white-space: nowrap vs normal text wrapping comparison", async () => {
 	expect(normalLineCount).toBeGreaterThan(1);
 
 	// Nowrap text should appear as one unit (either on one line or overflow)
-	let nowrapLineCount = 0;
+	let _nowrapLineCount = 0;
 	let foundFullNowrap = false;
 
 	for (const line of lines) {
 		if (line.includes("This text should not wrap")) {
-			nowrapLineCount++;
+			_nowrapLineCount++;
 			foundFullNowrap = true;
 		} else if (
 			line.includes("This text should not") ||
 			line.includes("text should not") ||
 			line.includes("should not wrap")
 		) {
-			nowrapLineCount++;
+			_nowrapLineCount++;
 		}
 	}
 

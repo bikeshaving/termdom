@@ -335,11 +335,11 @@ function styleYogaNode(element: Element, yogaNode: YogaTypes.Node): void {
 		}
 	}
 
-	if (
-		element.parentElement
-			? getPropertyValue(element.parentElement, "display")
-			: null
-	) {
+	const parentDisplay = element.parentElement
+		? getPropertyValue(element.parentElement, "display")
+		: null;
+		
+	if (parentDisplay === "block") {
 		// We emulate display: block with yoga, but this means we need the children
 		// to not have configurable flex properties, or surprising layout behavior
 		// might occur.

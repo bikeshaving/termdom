@@ -51,6 +51,7 @@ sidebar.style.flexDirection = "column";
 sidebar.style.backgroundColor = "darkgreen";
 sidebar.style.padding = "1px";
 sidebar.style.whiteSpace = "nowrap";
+sidebar.style.flexShrink = "0"; // Prevent shrinking to preserve content
 contentArea.appendChild(sidebar);
 
 const sidebarTitle = document.createElement("span");
