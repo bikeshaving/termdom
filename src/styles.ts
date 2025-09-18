@@ -37,6 +37,102 @@ export function parseUnitValue(
 	return isNaN(num) ? null : num;
 }
 
+/**
+ * CSS Box Model representation for layout calculations
+ */
+export interface BoxModel {
+	width?: number;
+	height?: number;
+	paddingTop: number;
+	paddingRight: number;
+	paddingBottom: number;
+	paddingLeft: number;
+	marginTop: number;
+	marginRight: number;
+	marginBottom: number;
+	marginLeft: number;
+	borderTopWidth: number;
+	borderRightWidth: number;
+	borderBottomWidth: number;
+	borderLeftWidth: number;
+}
+
+/**
+ * Parse CSS box model properties from an element's computed style
+ */
+export function getBoxModel(element: Element): BoxModel {
+	const window = element.ownerDocument?.defaultView;
+	if (!window) {
+		throw new Error("Element does not have an associated window");
+	}
+	const computedStyle = window.getComputedStyle(element);
+
+	// Parse explicit width/height
+	const widthValue = parseUnitValue(computedStyle.getPropertyValue("width"));
+	const heightValue = parseUnitValue(computedStyle.getPropertyValue("height"));
+
+	// Parse padding
+	const paddingTop = parseUnitValue(
+		computedStyle.getPropertyValue("padding-top"),
+	);
+	const paddingRight = parseUnitValue(
+		computedStyle.getPropertyValue("padding-right"),
+	);
+	const paddingBottom = parseUnitValue(
+		computedStyle.getPropertyValue("padding-bottom"),
+	);
+	const paddingLeft = parseUnitValue(
+		computedStyle.getPropertyValue("padding-left"),
+	);
+
+	// Parse margin
+	const marginTop = parseUnitValue(
+		computedStyle.getPropertyValue("margin-top"),
+	);
+	const marginRight = parseUnitValue(
+		computedStyle.getPropertyValue("margin-right"),
+	);
+	const marginBottom = parseUnitValue(
+		computedStyle.getPropertyValue("margin-bottom"),
+	);
+	const marginLeft = parseUnitValue(
+		computedStyle.getPropertyValue("margin-left"),
+	);
+
+	// Parse border
+	const borderTopWidth = parseUnitValue(
+		computedStyle.getPropertyValue("border-top-width"),
+	);
+	const borderRightWidth = parseUnitValue(
+		computedStyle.getPropertyValue("border-right-width"),
+	);
+	const borderBottomWidth = parseUnitValue(
+		computedStyle.getPropertyValue("border-bottom-width"),
+	);
+	const borderLeftWidth = parseUnitValue(
+		computedStyle.getPropertyValue("border-left-width"),
+	);
+
+	return {
+		width: typeof widthValue === "number" ? widthValue : undefined,
+		height: typeof heightValue === "number" ? heightValue : undefined,
+		paddingTop: typeof paddingTop === "number" ? paddingTop : 0,
+		paddingRight: typeof paddingRight === "number" ? paddingRight : 0,
+		paddingBottom: typeof paddingBottom === "number" ? paddingBottom : 0,
+		paddingLeft: typeof paddingLeft === "number" ? paddingLeft : 0,
+		marginTop: typeof marginTop === "number" ? marginTop : 0,
+		marginRight: typeof marginRight === "number" ? marginRight : 0,
+		marginBottom: typeof marginBottom === "number" ? marginBottom : 0,
+		marginLeft: typeof marginLeft === "number" ? marginLeft : 0,
+		borderTopWidth: typeof borderTopWidth === "number" ? borderTopWidth : 0,
+		borderRightWidth:
+			typeof borderRightWidth === "number" ? borderRightWidth : 0,
+		borderBottomWidth:
+			typeof borderBottomWidth === "number" ? borderBottomWidth : 0,
+		borderLeftWidth: typeof borderLeftWidth === "number" ? borderLeftWidth : 0,
+	};
+}
+
 // ============================================================================
 // CSS DEFAULTS FOR TERMINAL ELEMENTS
 // ============================================================================

@@ -26,3 +26,10 @@ exports[`mixed inline and inline-block elements 1`] = `
 "\x1B[38;2;255;255;0;48;2;255;255;255mRegular \x1B[38;2;255;255;255;48;2;128;0;128minline-block\x1B[38;2;0;255;255;48;2;255;255;255m text\x1B[0m
 "
 `;
+
+exports[`inline-block elements with padding 1`] = `
+"\x1B[38;2;255;255;255;48;2;0;128;0m          \x1B[0m
+\x1B[38;2;255;255;255;48;2;0;128;0m  Padded  \x1B[0m
+\x1B[38;2;255;255;255;48;2;0;128;0m          \x1B[0m
+"
+`;

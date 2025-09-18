@@ -338,7 +338,7 @@ function styleYogaNode(element: Element, yogaNode: YogaTypes.Node): void {
 	const parentDisplay = element.parentElement
 		? getPropertyValue(element.parentElement, "display")
 		: null;
-		
+
 	if (parentDisplay === "block") {
 		// We emulate display: block with yoga, but this means we need the children
 		// to not have configurable flex properties, or surprising layout behavior
@@ -664,14 +664,20 @@ export class LayoutEngine {
 							) {
 								// Extract text from the nested breakResult
 								const nestedBreakResult = segment.leaf.breakResult;
+								// Get padding offsets for text positioning
+								const paddingLeft = segment.leaf.boxModel.paddingLeft;
+								const paddingTop = segment.leaf.boxModel.paddingTop;
 								for (const nestedLine of nestedBreakResult.lines) {
 									for (const nestedSegment of nestedLine.segments) {
 										if (nestedSegment.leaf.type === "text") {
 											rectTexts.push({
 												text: nestedSegment.processedText,
 												rect: new this.DOMRect(
-													containerX + segment.x + nestedSegment.x,
-													containerY + line.y + nestedLine.y,
+													containerX +
+														segment.x +
+														paddingLeft +
+														nestedSegment.x,
+													containerY + line.y + paddingTop + nestedLine.y,
 													nestedSegment.width,
 													nestedLine.height,
 												),
@@ -724,9 +730,10 @@ export class LayoutEngine {
 							segment.leaf.type === "inline-block" &&
 							segment.leaf.node === parent
 						) {
-							// Accumulate offset and switch to internal breakResult
-							accumulatedOffsetX += segment.x;
-							accumulatedOffsetY += line.y;
+							// Accumulate offset including padding and switch to internal breakResult
+							accumulatedOffsetX +=
+								segment.x + segment.leaf.boxModel.paddingLeft;
+							accumulatedOffsetY += line.y + segment.leaf.boxModel.paddingTop;
 							if (segment.leaf.breakResult) {
 								currentBreakResult = segment.leaf.breakResult;
 							}

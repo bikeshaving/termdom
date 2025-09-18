@@ -1,97 +1,7 @@
 import LineBreaker from "linebreak";
-import {getPropertyValue, parseUnitValue} from "./styles.js";
+import {getPropertyValue, getBoxModel, type BoxModel} from "./styles.js";
 import Yoga from "yoga-layout";
 import type * as YogaTypes from "yoga-layout";
-
-interface InlineBlockBoxModel {
-	width?: number;
-	height?: number;
-	paddingTop: number;
-	paddingRight: number;
-	paddingBottom: number;
-	paddingLeft: number;
-	marginTop: number;
-	marginRight: number;
-	marginBottom: number;
-	marginLeft: number;
-	borderTopWidth: number;
-	borderRightWidth: number;
-	borderBottomWidth: number;
-	borderLeftWidth: number;
-}
-
-function getInlineBlockBoxModel(element: Element): InlineBlockBoxModel {
-	const window = element.ownerDocument?.defaultView;
-	if (!window) {
-		throw new Error("Element does not have an associated window");
-	}
-	const computedStyle = window.getComputedStyle(element);
-
-	// Parse explicit width/height
-	const widthValue = parseUnitValue(computedStyle.getPropertyValue("width"));
-	const heightValue = parseUnitValue(computedStyle.getPropertyValue("height"));
-
-	// Parse padding
-	const paddingTop = parseUnitValue(
-		computedStyle.getPropertyValue("padding-top"),
-	);
-	const paddingRight = parseUnitValue(
-		computedStyle.getPropertyValue("padding-right"),
-	);
-	const paddingBottom = parseUnitValue(
-		computedStyle.getPropertyValue("padding-bottom"),
-	);
-	const paddingLeft = parseUnitValue(
-		computedStyle.getPropertyValue("padding-left"),
-	);
-
-	// Parse margin
-	const marginTop = parseUnitValue(
-		computedStyle.getPropertyValue("margin-top"),
-	);
-	const marginRight = parseUnitValue(
-		computedStyle.getPropertyValue("margin-right"),
-	);
-	const marginBottom = parseUnitValue(
-		computedStyle.getPropertyValue("margin-bottom"),
-	);
-	const marginLeft = parseUnitValue(
-		computedStyle.getPropertyValue("margin-left"),
-	);
-
-	// Parse border
-	const borderTopWidth = parseUnitValue(
-		computedStyle.getPropertyValue("border-top-width"),
-	);
-	const borderRightWidth = parseUnitValue(
-		computedStyle.getPropertyValue("border-right-width"),
-	);
-	const borderBottomWidth = parseUnitValue(
-		computedStyle.getPropertyValue("border-bottom-width"),
-	);
-	const borderLeftWidth = parseUnitValue(
-		computedStyle.getPropertyValue("border-left-width"),
-	);
-
-	return {
-		width: typeof widthValue === "number" ? widthValue : undefined,
-		height: typeof heightValue === "number" ? heightValue : undefined,
-		paddingTop: typeof paddingTop === "number" ? paddingTop : 0,
-		paddingRight: typeof paddingRight === "number" ? paddingRight : 0,
-		paddingBottom: typeof paddingBottom === "number" ? paddingBottom : 0,
-		paddingLeft: typeof paddingLeft === "number" ? paddingLeft : 0,
-		marginTop: typeof marginTop === "number" ? marginTop : 0,
-		marginRight: typeof marginRight === "number" ? marginRight : 0,
-		marginBottom: typeof marginBottom === "number" ? marginBottom : 0,
-		marginLeft: typeof marginLeft === "number" ? marginLeft : 0,
-		borderTopWidth: typeof borderTopWidth === "number" ? borderTopWidth : 0,
-		borderRightWidth:
-			typeof borderRightWidth === "number" ? borderRightWidth : 0,
-		borderBottomWidth:
-			typeof borderBottomWidth === "number" ? borderBottomWidth : 0,
-		borderLeftWidth: typeof borderLeftWidth === "number" ? borderLeftWidth : 0,
-	};
-}
 
 interface BreakOptions {
 	maxWidth: number;
@@ -104,7 +14,7 @@ export interface InlineBlockLeaf {
 	type: "inline-block";
 	node: Element;
 	breakResult?: BreakResult;
-	boxModel: InlineBlockBoxModel;
+	boxModel: BoxModel;
 	contentWidth: number;
 	contentHeight: number;
 }
@@ -203,7 +113,7 @@ function collectLeafNodes(runHead: Node): Leaf[] {
 				if (!walker.nextNode()) break;
 			} else if (display === "inline-block") {
 				// Parse CSS box model properties
-				const boxModel = getInlineBlockBoxModel(element);
+				const boxModel = getBoxModel(element);
 
 				// Calculate available content dimensions
 				const horizontalBoxSpace =
@@ -573,6 +483,23 @@ function buildLines(
 		if (bestBreak === lineStart) {
 			let pos = lineStart + 1;
 			while (pos <= content.text.length) {
+				// Check if we would break within an inline-block element
+				let crossesInlineBlock = false;
+				for (const item of content.items) {
+					if (item.leafNode.type === "inline-block") {
+						// If our position would split this inline-block, skip to its end
+						if (pos > item.start && pos < item.end) {
+							pos = item.end;
+							crossesInlineBlock = true;
+							break;
+						}
+					}
+				}
+
+				if (crossesInlineBlock) {
+					continue; // Try again with the new position
+				}
+
 				const width = measureText(content.text, content.items, lineStart, pos);
 				if (width > maxWidth && pos > lineStart + 1) {
 					pos--;
@@ -646,7 +573,9 @@ function measureText(
 					item.leafNode.boxModel.paddingLeft +
 					item.leafNode.boxModel.paddingRight +
 					item.leafNode.boxModel.borderLeftWidth +
-					item.leafNode.boxModel.borderRightWidth;
+					item.leafNode.boxModel.borderRightWidth +
+					item.leafNode.boxModel.marginLeft +
+					item.leafNode.boxModel.marginRight;
 				width += blockWidth;
 			} else {
 				// Partial inline-block measurement not supported
@@ -693,7 +622,9 @@ function getNodesInRange(
 					item.leafNode.boxModel.paddingLeft +
 					item.leafNode.boxModel.paddingRight +
 					item.leafNode.boxModel.borderLeftWidth +
-					item.leafNode.boxModel.borderRightWidth;
+					item.leafNode.boxModel.borderRightWidth +
+					item.leafNode.boxModel.marginLeft +
+					item.leafNode.boxModel.marginRight;
 				// Extract text content from the inline-block's breakResult
 				let processedText = "";
 				if (item.leafNode.breakResult) {
