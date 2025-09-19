@@ -7,6 +7,7 @@
 
 import {CSSStyleDeclaration} from "cssstyle";
 import type {DOMWindow} from "jsdom";
+import {attachPseudoElement} from "./composition.js";
 
 /**
  * Helper to get computed style property value for an element.
@@ -415,7 +416,10 @@ function getInitialStyle(element: Element, property: string): string {
  * This provides a 1-to-1 interface with the browser's getComputedStyle result
  */
 class TerminalComputedStyle extends CSSStyleDeclaration {
-	constructor(private element: Element) {
+	constructor(
+		private element: Element,
+		private cssRules: ParsedCSSRule[] = [],
+	) {
 		// Initialize with no onChange callback since this is read-only computed style
 		super();
 
@@ -502,11 +506,39 @@ class TerminalComputedStyle extends CSSStyleDeclaration {
 
 		// Resolve each property and set it in the declaration
 		for (const property of properties) {
-			const value = resolvePropertyValue(this.element, property);
+			const value = this.resolvePropertyValue(property);
 			if (value) {
 				super.setProperty(property, value);
 			}
 		}
+	}
+
+	/**
+	 * Resolve property value applying CSS cascade: inline styles > CSS rules > defaults
+	 */
+	private resolvePropertyValue(property: string): string {
+		// 1. Check inline style first (highest specificity)
+		const style = (this.element as HTMLElement).style;
+		if (style) {
+			const inlineValue = style.getPropertyValue(property).trim();
+			if (inlineValue && !INITIAL_KEYWORDS.has(inlineValue)) {
+				return inlineValue;
+			}
+		}
+
+		// 2. Apply CSS rules from stylesheets (in specificity order - highest last)
+		let ruleValue = null;
+		for (const rule of this.cssRules) {
+			if (rule.declarations[property]) {
+				ruleValue = rule.declarations[property];
+			}
+		}
+		if (ruleValue) {
+			return ruleValue;
+		}
+
+		// 3. Fallback to inheritance and defaults
+		return resolvePropertyValue(this.element, property, true);
 	}
 
 	// Override getPropertyValue to use our terminal-specific resolution
@@ -519,7 +551,7 @@ class TerminalComputedStyle extends CSSStyleDeclaration {
 
 		// If not in our pre-populated cache, resolve it fresh
 		// (This handles properties not in our common list)
-		const freshValue = resolvePropertyValue(this.element, property);
+		const freshValue = this.resolvePropertyValue(property);
 		return this.normalizeForTerminal(property, freshValue);
 	}
 
@@ -938,12 +970,25 @@ export function getListMarker(listItem: Element, listParent: Element): string {
 // COMPUTED STYLE OVERRIDE
 // ============================================================================
 
+// CSS Rule interfaces for internal use
+interface ParsedCSSRule {
+	selector: string;
+	declarations: Record<string, string>;
+	specificity: string; // Zero-padded string for lexicographic comparison
+	pseudoElement?: string;
+}
+
 /**
  * CSS Style Manager
- * Handles computed style caching and invalidation for terminal DOM
+ * Handles computed style caching, stylesheet parsing, and pseudo-element support
  */
 export class StyleManager {
 	private computedStyleCache = new WeakMap<Element, TerminalComputedStyle>();
+	private pseudoElementStyleCache = new WeakMap<
+		Element,
+		Map<string, Record<string, string>>
+	>();
+	private parsedRules: ParsedCSSRule[] = [];
 
 	constructor(private window: DOMWindow) {
 		// Override window.getComputedStyle with our cached version
@@ -951,23 +996,367 @@ export class StyleManager {
 
 		// Hook into methods that should invalidate cached styles
 		this.setupInvalidationHooks();
+
+		// Parse initial stylesheets (may be empty at construction time)
+		this.parseStylesheets();
 	}
 
 	private getComputedStyle(
 		element: Element,
-		_pseudoElt?: string | null,
+		pseudoElt?: string | null,
 	): globalThis.CSSStyleDeclaration {
-		// For now, we ignore pseudoElt parameter (could be ::before, ::after, etc.)
+		// Handle pseudo-element styles
+		if (pseudoElt) {
+			return this.getPseudoElementComputedStyle(element, pseudoElt);
+		}
 
-		// Check cache first
+		// Check cache first for regular element styles
 		let computedStyle = this.computedStyleCache.get(element);
 		if (!computedStyle) {
-			// Create new instance and cache it
-			computedStyle = new TerminalComputedStyle(element);
+			// Create new instance with stylesheet rules applied
+			computedStyle = new TerminalComputedStyle(
+				element,
+				this.getMatchingRules(element),
+			);
 			this.computedStyleCache.set(element, computedStyle);
 		}
 
 		return computedStyle as unknown as globalThis.CSSStyleDeclaration;
+	}
+
+	/**
+	 * Parse all stylesheets in the document and extract rules
+	 */
+	private parseStylesheets(): void {
+		const document = this.window.document;
+		this.parsedRules = [];
+
+		// Parse all stylesheets
+		for (let i = 0; i < document.styleSheets.length; i++) {
+			const stylesheet = document.styleSheets[i] as CSSStyleSheet;
+			if (stylesheet.cssRules) {
+				this.parseStyleSheet(stylesheet);
+			}
+		}
+
+		// Sort rules by specificity for cascade resolution
+		this.parsedRules.sort((a, b) => {
+			if (a.specificity !== b.specificity) {
+				return a.specificity < b.specificity ? -1 : 1;
+			}
+			// Use array index as source order tie-breaker
+			return this.parsedRules.indexOf(a) - this.parsedRules.indexOf(b);
+		});
+	}
+
+	/**
+	 * Parse a single stylesheet and add rules to parsedRules
+	 */
+	private parseStyleSheet(stylesheet: CSSStyleSheet): void {
+		for (let i = 0; i < stylesheet.cssRules.length; i++) {
+			const rule = stylesheet.cssRules[i];
+			if (rule.type === 1) {
+				// CSSRule.STYLE_RULE
+				const styleRule = rule as CSSStyleRule;
+				this.parseStyleRule(styleRule);
+			}
+		}
+	}
+
+	/**
+	 * Parse a single style rule and extract selector/declarations
+	 */
+	private parseStyleRule(styleRule: CSSStyleRule): void {
+		const selector = styleRule.selectorText;
+		const declarations = this.parseDeclarations(styleRule.style);
+		const specificity = this.calculateSpecificity(selector);
+
+		// Check if this is a pseudo-element rule
+		const pseudoMatch = selector.match(
+			/^(.+)(::(?:before|after|marker|first-line|first-letter))(.*)$/,
+		);
+
+		if (pseudoMatch) {
+			const [, baseSelector, pseudoElement] = pseudoMatch;
+			this.parsedRules.push({
+				selector: baseSelector.trim(),
+				declarations,
+				specificity,
+				pseudoElement,
+			});
+		} else {
+			this.parsedRules.push({
+				selector,
+				declarations,
+				specificity,
+			});
+		}
+	}
+
+	/**
+	 * Parse CSSStyleDeclaration into a plain object
+	 */
+	private parseDeclarations(style: any): Record<string, string> {
+		const declarations: Record<string, string> = {};
+		for (let i = 0; i < style.length; i++) {
+			const property = style[i];
+			declarations[property] = style.getPropertyValue(property);
+		}
+		return declarations;
+	}
+
+	/**
+	 * Calculate CSS specificity for a selector as zero-padded string
+	 * Format: "000-000-000" (ids-classes-elements) for lexicographic comparison
+	 */
+	private calculateSpecificity(selector: string): string {
+		// Remove pseudo-elements first to avoid counting them as pseudo-classes
+		const withoutPseudoElements = selector.replace(/::[^\s+>~.#[]+/g, "");
+
+		// Count IDs
+		const ids = (selector.match(/#[^\s+>~.:[]+/g) || []).length;
+
+		// Count classes (handle chained classes like .class.other)
+		const classMatches = selector.match(/\.[a-zA-Z][\w-]*/g) || [];
+		const classes = classMatches.length;
+
+		// Count attributes
+		const attributes = (selector.match(/\[[^\]]+\]/g) || []).length;
+
+		// Count pseudo-classes (but not pseudo-elements)
+		const pseudoClasses = (
+			withoutPseudoElements.match(/:(?!:)[a-zA-Z][\w-]*/g) || []
+		).length;
+
+		const classTotal = classes + attributes + pseudoClasses;
+
+		// Count elements
+		const elements = (selector.match(/(?:^|[\s+>~])[a-zA-Z][\w-]*/g) || [])
+			.length;
+
+		// Count pseudo-elements
+		const pseudoElements = (selector.match(/::[a-zA-Z][\w-]*/g) || []).length;
+
+		const elementTotal = elements + pseudoElements;
+
+		// Format as zero-padded string: "001-005-002"
+		return `${ids.toString().padStart(3, "0")}-${classTotal.toString().padStart(3, "0")}-${elementTotal.toString().padStart(3, "0")}`;
+	}
+
+	/**
+	 * Get matching CSS rules for an element
+	 */
+	private getMatchingRules(element: Element): ParsedCSSRule[] {
+		return this.parsedRules.filter((rule) => {
+			if (rule.pseudoElement) return false; // Skip pseudo-element rules for regular elements
+			try {
+				return element.matches(rule.selector);
+			} catch (e) {
+				// Fallback for unsupported selectors
+				return false;
+			}
+		});
+	}
+
+	/**
+	 * Get computed style for pseudo-elements
+	 */
+	private getPseudoElementComputedStyle(
+		element: Element,
+		pseudoElt: string,
+	): globalThis.CSSStyleDeclaration {
+		// Check cache first
+		let elementCache = this.pseudoElementStyleCache.get(element);
+		if (!elementCache) {
+			elementCache = new Map();
+			this.pseudoElementStyleCache.set(element, elementCache);
+		}
+
+		let pseudoStyle = elementCache.get(pseudoElt);
+		if (!pseudoStyle) {
+			// Compute pseudo-element style
+			pseudoStyle = this.computePseudoElementStyle(element, pseudoElt);
+			elementCache.set(pseudoElt, pseudoStyle);
+		}
+
+		// Create a CSSStyleDeclaration-like object
+		return this.createPseudoStyleDeclaration(pseudoStyle);
+	}
+
+	/**
+	 * Compute style properties for a pseudo-element
+	 */
+	private computePseudoElementStyle(
+		element: Element,
+		pseudoElt: string,
+	): Record<string, string> {
+		const matchingRules = this.parsedRules.filter((rule) => {
+			if (rule.pseudoElement !== pseudoElt) return false;
+			try {
+				return element.matches(rule.selector);
+			} catch (e) {
+				return false;
+			}
+		});
+
+		// Apply rules in cascade order
+		const computedStyle: Record<string, string> = {};
+		for (const rule of matchingRules) {
+			Object.assign(computedStyle, rule.declarations);
+		}
+
+		return computedStyle;
+	}
+
+	/**
+	 * Create a CSSStyleDeclaration-like object for pseudo-element styles
+	 */
+	private createPseudoStyleDeclaration(
+		styleProps: Record<string, string>,
+	): globalThis.CSSStyleDeclaration {
+		const styleDeclaration = new (this.window as any).CSSStyleDeclaration();
+
+		// Set all properties
+		for (const [property, value] of Object.entries(styleProps)) {
+			styleDeclaration.setProperty(property, value);
+		}
+
+		return styleDeclaration;
+	}
+
+	/**
+	 * Get pseudo-element styles for use by ExpandedTreeWalker
+	 */
+	getPseudoElementStyles(
+		element: Element,
+		pseudoType: string,
+	): Record<string, string> {
+		return this.computePseudoElementStyle(element, pseudoType);
+	}
+
+	/**
+	 * Create pseudo-element node with CSS content applied
+	 * This integrates with ExpandedTreeWalker for automatic pseudo-element creation
+	 */
+	createPseudoElementNode(
+		hostElement: Element,
+		pseudoType: string,
+	): Text | null {
+		const styles = this.computePseudoElementStyle(hostElement, pseudoType);
+		const content = styles.content;
+
+		// Only create pseudo-element if it has content
+		if (!content || content === "none" || content === "normal") {
+			return null;
+		}
+
+		// Remove quotes from content string
+		let textContent = content;
+		if (
+			(textContent.startsWith('"') && textContent.endsWith('"')) ||
+			(textContent.startsWith("'") && textContent.endsWith("'"))
+		) {
+			textContent = textContent.slice(1, -1);
+		}
+
+		// Create text node with the content
+		const doc = hostElement.ownerDocument;
+		const textNode = doc.createTextNode(textContent);
+
+		// Store metadata for ExpandedTreeWalker
+		(textNode as any).pseudoMetadata = {
+			pseudoType,
+			hostElement,
+			styles,
+		};
+
+		return textNode;
+	}
+
+	/**
+	 * Check if element should have a pseudo-element based on CSS rules
+	 */
+	shouldCreatePseudoElement(element: Element, pseudoType: string): boolean {
+		const styles = this.computePseudoElementStyle(element, pseudoType);
+		const content = styles.content;
+		return !!(content && content !== "none" && content !== "normal");
+	}
+
+	/**
+	 * Refresh stylesheet parsing (call when stylesheets change)
+	 */
+	refreshStylesheets(): void {
+		this.parseStylesheets();
+		this.clearCache();
+
+		// After parsing rules, attach pseudo-elements to matching elements
+		this.attachPseudoElementsToDocument();
+	}
+
+	/**
+	 * Scan document and attach pseudo-element nodes to elements that have pseudo-element rules
+	 */
+	private attachPseudoElementsToDocument(): void {
+		// Get all elements in the document
+		const walker = this.window.document.createTreeWalker(
+			this.window.document.documentElement,
+			this.window.NodeFilter.SHOW_ELEMENT,
+			null,
+		);
+
+		const elements: Element[] = [];
+		let element = walker.nextNode() as Element;
+		while (element) {
+			elements.push(element);
+			element = walker.nextNode() as Element;
+		}
+
+		// Attach pseudo-elements to each element
+		for (const element of elements) {
+			this.attachPseudoElementsToElement(element);
+		}
+	}
+
+	/**
+	 * Attach pseudo-element nodes to a specific element if it has matching pseudo-element rules
+	 */
+	attachPseudoElementsToElement(element: Element): void {
+		const pseudoTypes = ["::before", "::after", "::marker"];
+
+		for (const pseudoType of pseudoTypes) {
+			// Skip ::marker for non-list items
+			if (pseudoType === "::marker" && element.tagName !== "LI") {
+				continue;
+			}
+
+			// Check if element should have this pseudo-element
+			if (this.shouldCreatePseudoElement(element, pseudoType)) {
+				const pseudoNode = this.createPseudoElementNode(element, pseudoType);
+				if (pseudoNode) {
+					// Attach pseudo-element to the element
+					this.attachPseudoElementToElement(element, pseudoNode, pseudoType);
+				}
+			}
+		}
+	}
+
+	/**
+	 * Attach a pseudo-element node to an element
+	 */
+	private attachPseudoElementToElement(
+		element: Element,
+		pseudoNode: Text,
+		pseudoType: string,
+	): void {
+		// Use composition system to attach pseudo-element
+		attachPseudoElement(element, pseudoNode, pseudoType);
+
+		// Add CSS-specific metadata
+		const existingMetadata = (pseudoNode as any).pseudoMetadata || {};
+		(pseudoNode as any).pseudoMetadata = {
+			...existingMetadata,
+			styles: this.computePseudoElementStyle(element, pseudoType),
+		};
 	}
 
 	private setupInvalidationHooks(): void {
@@ -980,9 +1369,12 @@ export class StyleManager {
 		Element.prototype.setAttribute = function (name: string, value: string) {
 			const result = originalSetAttribute.call(this, name, value);
 
-			// Only invalidate for direct style attribute changes
-			// (When we add stylesheet support, we'll need smarter invalidation)
+			// Invalidate for style attribute changes
 			if (name === "style") {
+				styleManager.invalidateElement(this);
+			}
+			// Invalidate for class/id changes that might affect CSS rules
+			else if (name === "class" || name === "id") {
 				styleManager.invalidateElement(this);
 			}
 
@@ -993,8 +1385,12 @@ export class StyleManager {
 		Element.prototype.removeAttribute = function (name: string) {
 			const result = originalRemoveAttribute.call(this, name);
 
-			// Only invalidate for direct style attribute removal
+			// Invalidate for style attribute removal
 			if (name === "style") {
+				styleManager.invalidateElement(this);
+			}
+			// Invalidate for class/id changes that might affect CSS rules
+			else if (name === "class" || name === "id") {
 				styleManager.invalidateElement(this);
 			}
 
@@ -1058,6 +1454,7 @@ export class StyleManager {
 	 */
 	invalidateElement(element: Element): void {
 		this.computedStyleCache.delete(element);
+		this.pseudoElementStyleCache.delete(element);
 	}
 
 	/**
@@ -1065,5 +1462,6 @@ export class StyleManager {
 	 */
 	clearCache(): void {
 		this.computedStyleCache = new WeakMap();
+		this.pseudoElementStyleCache = new WeakMap();
 	}
 }
