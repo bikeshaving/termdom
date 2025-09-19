@@ -2,6 +2,8 @@ import {test, expect} from "bun:test";
 import {JSDOM} from "jsdom";
 import {LayoutEngine} from "../src/layout.js";
 import {StyleManager} from "../src/styles.js";
+import {TermDOM} from "../src/termdom.js";
+import {TestTerminal} from "./test-utils.js";
 
 function createLayoutEngine(html: string = "<div></div>") {
 	const jsdom = new JSDOM(`<!DOCTYPE html><html><body>${html}</body></html>`);
@@ -1139,4 +1141,283 @@ test("getRectTexts - maintains backward compatibility", () => {
 	expect(blockRects[0].text).toBe("InBlock");
 	expect(normalRects).toHaveLength(1);
 	expect(normalRects[0].text).toBe("Normal");
+});
+
+// Dynamic Inline Run Management Tests
+// These tests verify that the layout engine properly handles DOM mutations
+// that affect inline runs, including run head changes and cache invalidation
+
+test("Inline run head changes - text to element", async () => {
+	const terminal = new TestTerminal({cols: 40, rows: 10});
+	const termdom = new TermDOM({
+		width: 40,
+		height: 10,
+		process: terminal as any,
+	});
+
+	const div = termdom.document.createElement("div");
+	div.innerHTML = "Initial text content";
+	termdom.document.body.appendChild(div);
+
+	// Initial render
+	await termdom.render();
+	const _initialOutput = terminal.getPlainText();
+
+	// Change run head from text to span element
+	div.innerHTML = "<span>New span content</span>";
+
+	// Re-render and verify layout updates
+	await termdom.render();
+	const updatedOutput = terminal.getPlainText();
+
+	expect(updatedOutput).toContain("New span content");
+	expect(updatedOutput).not.toContain("Initial text");
+});
+
+test("Inline run head changes - element to text", async () => {
+	const terminal = new TestTerminal({cols: 40, rows: 10});
+	const termdom = new TermDOM({
+		width: 40,
+		height: 10,
+		process: terminal as any,
+	});
+
+	const div = termdom.document.createElement("div");
+	div.innerHTML = "<span>Initial span</span>";
+	termdom.document.body.appendChild(div);
+
+	// Initial render
+	await termdom.render();
+	const _initialOutput = terminal.getPlainText();
+
+	// Change run head from span to text
+	div.innerHTML = "New text content";
+
+	// Re-render and verify layout updates
+	await termdom.render();
+	const updatedOutput = terminal.getPlainText();
+
+	expect(updatedOutput).toContain("New text content");
+	expect(updatedOutput).not.toContain("Initial span");
+});
+
+test("Adding inline elements to existing run", async () => {
+	const terminal = new TestTerminal({cols: 40, rows: 10});
+	const termdom = new TermDOM({
+		width: 40,
+		height: 10,
+		process: terminal as any,
+	});
+
+	const div = termdom.document.createElement("div");
+	div.innerHTML = "Start ";
+	termdom.document.body.appendChild(div);
+
+	// Initial render
+	await termdom.render();
+
+	// Add inline elements dynamically
+	const span1 = termdom.document.createElement("span");
+	span1.textContent = "middle ";
+	div.appendChild(span1);
+
+	const span2 = termdom.document.createElement("strong");
+	span2.textContent = "end";
+	div.appendChild(span2);
+
+	// Re-render and verify all content appears on same line
+	await termdom.render();
+	const output = terminal.getPlainText();
+
+	expect(output).toContain("Start middle end");
+	// Verify they're on the same line (no unexpected line breaks)
+	const lines = output.split("\n").filter((line) => line.trim());
+	expect(lines[0]).toContain("Start middle end");
+});
+
+test("Removing inline elements from run", async () => {
+	const terminal = new TestTerminal({cols: 40, rows: 10});
+	const termdom = new TermDOM({
+		width: 40,
+		height: 10,
+		process: terminal as any,
+	});
+
+	const div = termdom.document.createElement("div");
+	div.innerHTML = 'Start <span id="remove">REMOVE</span> end';
+	termdom.document.body.appendChild(div);
+
+	// Initial render
+	await termdom.render();
+	const _initialOutput = terminal.getPlainText();
+	expect(_initialOutput).toContain("Start REMOVE end");
+
+	// Remove the middle element
+	const elementToRemove = termdom.document.getElementById("remove")!;
+	elementToRemove.remove();
+
+	// Re-render and verify element is gone, run is updated
+	await termdom.render();
+	const updatedOutput = terminal.getPlainText();
+
+	expect(updatedOutput).toContain("Start end");
+	expect(updatedOutput).not.toContain("REMOVE");
+});
+
+test("Inline-block elements affecting run layout", async () => {
+	const terminal = new TestTerminal({cols: 40, rows: 10});
+	const termdom = new TermDOM({
+		width: 40,
+		height: 10,
+		process: terminal as any,
+	});
+
+	const div = termdom.document.createElement("div");
+	div.innerHTML = "Text before ";
+	termdom.document.body.appendChild(div);
+
+	// Add inline-block element
+	const inlineBlock = termdom.document.createElement("span");
+	inlineBlock.style.display = "inline-block";
+	inlineBlock.style.width = "10ch";
+	inlineBlock.style.height = "2";
+	inlineBlock.textContent = "Block";
+	div.appendChild(inlineBlock);
+
+	const textAfter = termdom.document.createTextNode(" text after");
+	div.appendChild(textAfter);
+
+	// Render and verify inline-block is treated as atomic unit
+	await termdom.render();
+	const output = terminal.getPlainText();
+
+	expect(output).toContain("Text before");
+	expect(output).toContain("Block");
+	expect(output).toContain("text after");
+});
+
+test("Rapid DOM changes stress test", async () => {
+	const terminal = new TestTerminal({cols: 40, rows: 10});
+	const termdom = new TermDOM({
+		width: 40,
+		height: 10,
+		process: terminal as any,
+	});
+
+	const container = termdom.document.createElement("div");
+	container.innerHTML = "Base content";
+	termdom.document.body.appendChild(container);
+
+	// Perform rapid changes
+	for (let i = 0; i < 5; i++) {
+		// Add element
+		const span = termdom.document.createElement("span");
+		span.textContent = ` item${i}`;
+		span.id = `item${i}`;
+		container.appendChild(span);
+
+		// Render after each change
+		await termdom.render();
+
+		// Verify content is present
+		const output = terminal.getPlainText();
+		expect(output).toContain(`item${i}`);
+	}
+
+	// Remove elements rapidly
+	for (let i = 4; i >= 0; i--) {
+		const element = termdom.document.getElementById(`item${i}`)!;
+		element.remove();
+
+		await termdom.render();
+
+		// Verify element is gone
+		const output = terminal.getPlainText();
+		expect(output).not.toContain(`item${i}`);
+	}
+
+	// Final check - only base content should remain
+	const finalOutput = terminal.getPlainText();
+	expect(finalOutput.trim()).toBe("Base content");
+});
+
+test("Text node splitting and merging", async () => {
+	const terminal = new TestTerminal({cols: 40, rows: 10});
+	const termdom = new TermDOM({
+		width: 40,
+		height: 10,
+		process: terminal as any,
+	});
+
+	const div = termdom.document.createElement("div");
+	const textNode = termdom.document.createTextNode("This is a long text node");
+	div.appendChild(textNode);
+	termdom.document.body.appendChild(div);
+
+	// Initial render
+	await termdom.render();
+
+	// Split the text node
+	textNode.splitText(10); // Split at "This is a "
+
+	// Re-render and verify layout handles split text
+	await termdom.render();
+	const splitOutput = terminal.getPlainText();
+	expect(splitOutput).toContain("This is a long text node");
+
+	// Insert element between text nodes
+	const span = termdom.document.createElement("span");
+	span.textContent = "[INSERTED]";
+	div.insertBefore(span, div.childNodes[1]);
+
+	// Final render
+	await termdom.render();
+	const finalOutput = terminal.getPlainText();
+	expect(finalOutput).toContain("This is a [INSERTED]long text node");
+});
+
+test("White-space handling in dynamic inline runs", async () => {
+	const terminal = new TestTerminal({cols: 40, rows: 10});
+	const termdom = new TermDOM({
+		width: 40,
+		height: 10,
+		process: terminal as any,
+	});
+
+	const div = termdom.document.createElement("div");
+	div.innerHTML = "Word1    <span>   Word2   </span>    Word3";
+	termdom.document.body.appendChild(div);
+
+	// Initial render
+	await termdom.render();
+	const _initialOutput = terminal.getPlainText();
+
+	// Remove the span
+	const span = div.querySelector("span")!;
+	span.remove();
+
+	// Re-render and verify whitespace is handled correctly
+	await termdom.render();
+	const updatedOutput = terminal.getPlainText();
+
+	// Should collapse whitespace appropriately
+	expect(updatedOutput).toContain("Word1");
+	expect(updatedOutput).toContain("Word3");
+	expect(updatedOutput).not.toContain("Word2");
+});
+
+// TODO tests for more complex scenarios that need additional fixes
+test.todo("Block element interrupting inline run", async () => {
+	// This test reveals issues with block element insertion splitting inline runs
+	// Requires additional work on run boundary detection
+});
+
+test.todo("Nested inline element changes", async () => {
+	// This test reveals issues with mutation handling for nested inline elements
+	// The error occurs when changing content of elements that don't have their own Yoga nodes
+});
+
+test.todo("Complex inline run with mixed content types", async () => {
+	// Similar to nested inline element changes - needs better handling of
+	// mutations within elements that are part of inline runs but don't have Yoga nodes
 });

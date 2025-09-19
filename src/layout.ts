@@ -1095,6 +1095,85 @@ export class LayoutEngine {
 		return current;
 	}
 
+	// Cache invalidation methods for dynamic inline run head detection
+
+	/**
+	 * Clear break result cache for a node and its inline run
+	 */
+	private clearBreakResultCache(node: Node): void {
+		// Find the run head for this node
+		const runHead = this.findInlineRunHead(node);
+		if (runHead) {
+			this.breakResultMap.delete(runHead);
+		}
+	}
+
+	/**
+	 * Invalidate an entire inline run when structure changes
+	 */
+	private invalidateInlineRun(node: Node): void {
+		const runHead = this.findInlineRunHead(node);
+		if (runHead) {
+			// Clear cached break results
+			this.breakResultMap.delete(runHead);
+
+			// Mark the yoga node dirty for re-measurement
+			const yogaNode = this.nodeMap.get(runHead);
+			if (yogaNode) {
+				yogaNode.markDirty();
+			}
+		}
+	}
+
+	/**
+	 * Mark all yoga nodes in an inline run as dirty
+	 */
+	private markInlineRunDirty(node: Node): void {
+		const runHead = this.findInlineRunHead(node);
+		if (runHead) {
+			// Get all nodes in the run
+			const runNodes = this.getRunExtent(runHead);
+
+			// Mark each node's yoga node as dirty
+			for (const runNode of runNodes) {
+				const yogaNode = this.nodeMap.get(runNode);
+				if (yogaNode) {
+					yogaNode.markDirty();
+				}
+			}
+		}
+	}
+
+	/**
+	 * Get all nodes that belong to the same inline run as the given run head
+	 */
+	private getRunExtent(runHead: Node): Node[] {
+		const nodes = [runHead];
+		let current = runHead.nextSibling;
+
+		while (current && this.isInlineLevel(current)) {
+			nodes.push(current);
+			current = current.nextSibling;
+		}
+
+		return nodes;
+	}
+
+	/**
+	 * Check if a node is inline-level (text or inline/inline-block element)
+	 */
+	private isInlineLevel(node: Node): boolean {
+		if (node.nodeType === this.window.Node.TEXT_NODE) return true;
+
+		if (node.nodeType === this.window.Node.ELEMENT_NODE) {
+			const element = node as Element;
+			const display = getPropertyValue(element, "display");
+			return display === "inline" || display === "inline-block";
+		}
+
+		return false;
+	}
+
 	private handleMutationRecords(mutations: MutationRecord[]): void {
 		for (let i = 0; i < mutations.length; i++) {
 			const record = mutations[i];
@@ -1105,15 +1184,19 @@ export class LayoutEngine {
 					const yogaNode = this.nodeMap.get(element);
 					if (yogaNode) {
 						styleYogaNode(element, yogaNode);
+						// Invalidate inline runs if style changes might affect layout
+						this.invalidateInlineRun(element);
 					}
 				}
 				return;
 			} else if (record.type === "characterData") {
-				// TODO: Handle characterData
-				// invalidate run head
+				const textNode = record.target as Text;
+				// Invalidate the inline run containing this text node
+				this.invalidateInlineRun(textNode);
 				return;
 			}
 
+			// Handle added nodes
 			for (let j = 0; j < record.addedNodes.length; j++) {
 				const node = record.addedNodes[j];
 				const parentElement = record.target as Element;
@@ -1130,12 +1213,76 @@ export class LayoutEngine {
 						`No parent Yoga node found for added node ${node.nodeName} under ${parentElement.tagName}`,
 					);
 				}
+
+				// Add the node to Yoga layout
 				this.addNode(node, parentYogaNode);
+
+				// Invalidate inline runs that might be affected by this addition
+				if (this.isInlineLevel(node)) {
+					// If adding an inline node, invalidate the run it joins
+					this.invalidateInlineRun(node);
+
+					// Also check if this changes the run head of existing runs
+					const nextSibling = node.nextSibling;
+					if (nextSibling && this.isInlineLevel(nextSibling)) {
+						this.invalidateInlineRun(nextSibling);
+					}
+
+					const prevSibling = node.previousSibling;
+					if (prevSibling && this.isInlineLevel(prevSibling)) {
+						this.invalidateInlineRun(prevSibling);
+					}
+				} else {
+					// Block element added - might split inline runs
+					const nextSibling = node.nextSibling;
+					if (nextSibling && this.isInlineLevel(nextSibling)) {
+						this.invalidateInlineRun(nextSibling);
+					}
+
+					const prevSibling = node.previousSibling;
+					if (prevSibling && this.isInlineLevel(prevSibling)) {
+						this.invalidateInlineRun(prevSibling);
+					}
+				}
 			}
 
+			// Handle removed nodes
 			for (let j = 0; j < record.removedNodes.length; j++) {
 				const node = record.removedNodes[j];
 				const yogaNode = this.nodeMap.get(node);
+
+				// Invalidate inline runs before removing the node
+				if (this.isInlineLevel(node)) {
+					// Check siblings that might now become the new run head
+					const parent = record.target as Element;
+					const siblings = Array.from(parent.childNodes);
+					const nodeIndex =
+						record.removedNodes.length > 1
+							? -1
+							: siblings.findIndex((n) => n === node);
+
+					// Find adjacent inline siblings that need invalidation
+					if (nodeIndex >= 0) {
+						const nextSibling = siblings[nodeIndex + 1];
+						if (nextSibling && this.isInlineLevel(nextSibling)) {
+							this.invalidateInlineRun(nextSibling);
+						}
+
+						const prevSibling = siblings[nodeIndex - 1];
+						if (prevSibling && this.isInlineLevel(prevSibling)) {
+							this.invalidateInlineRun(prevSibling);
+						}
+					} else {
+						// If we can't determine position, invalidate all inline siblings
+						for (const sibling of siblings) {
+							if (sibling !== node && this.isInlineLevel(sibling)) {
+								this.invalidateInlineRun(sibling);
+							}
+						}
+					}
+				}
+
+				// Remove from Yoga layout
 				if (yogaNode) {
 					const parent = this.nodeMap.get(record.target as Element);
 					if (parent) {
@@ -1144,6 +1291,9 @@ export class LayoutEngine {
 					yogaNode.freeRecursive();
 					this.nodeMap.delete(node);
 				}
+
+				// Clear any cached break results for this node
+				this.clearBreakResultCache(node);
 			}
 		}
 	}
@@ -1169,10 +1319,21 @@ export class LayoutEngine {
 		yogaIndex: number = this.getYogaIndex(element),
 	): void {
 		const display = getPropertyValue(element, "display");
+
+		// For inline elements, we need to find or create the run head
 		if (display === "inline" || display === "inline-block") {
-			if (!this.isInlineRunHead(element)) {
+			const runHead = this.findInlineRunHead(element);
+			if (runHead && runHead !== element) {
+				// This element is part of an existing run - the run head will handle it
+				// Clear any cached results for the run head to force re-measurement
+				this.clearBreakResultCache(runHead);
+				const runHeadYogaNode = this.nodeMap.get(runHead);
+				if (runHeadYogaNode) {
+					runHeadYogaNode.markDirty();
+				}
 				return;
 			}
+			// If runHead === element, this is the run head - proceed to create Yoga node
 		}
 
 		let yogaNode = this.nodeMap.get(element);
@@ -1268,34 +1429,46 @@ export class LayoutEngine {
 			return;
 		}
 
-		if (this.isInlineRunHead(text)) {
-			let yogaNode = this.nodeMap.get(text);
-			if (!yogaNode) {
-				yogaNode = Yoga.Node.createWithConfig(yogaConfig);
-				this.nodeMap.set(text, yogaNode);
+		// For text nodes, find the inline run head
+		const runHead = this.findInlineRunHead(text);
+		if (runHead && runHead !== text) {
+			// This text node is part of an existing run - the run head will handle it
+			// Clear any cached results for the run head to force re-measurement
+			this.clearBreakResultCache(runHead);
+			const runHeadYogaNode = this.nodeMap.get(runHead);
+			if (runHeadYogaNode) {
+				runHeadYogaNode.markDirty();
 			}
-
-			yogaNode.setMeasureFunc(
-				(
-					width: number,
-					widthMode: YogaTypes.MeasureMode,
-					height: number,
-					heightMode: YogaTypes.MeasureMode,
-				) => {
-					return this.measureInlineRun(
-						text,
-						width,
-						widthMode,
-						height,
-						heightMode,
-					);
-				},
-			);
-
-			// Note: Automatic minimum size for flex items is now handled in measureInlineRun
-
-			parentYogaNode.insertChild(yogaNode, parentYogaNode.getChildCount());
+			return;
 		}
+
+		// This text node is the run head - create a Yoga node for it
+		let yogaNode = this.nodeMap.get(text);
+		if (!yogaNode) {
+			yogaNode = Yoga.Node.createWithConfig(yogaConfig);
+			this.nodeMap.set(text, yogaNode);
+		}
+
+		yogaNode.setMeasureFunc(
+			(
+				width: number,
+				widthMode: YogaTypes.MeasureMode,
+				height: number,
+				heightMode: YogaTypes.MeasureMode,
+			) => {
+				return this.measureInlineRun(
+					text,
+					width,
+					widthMode,
+					height,
+					heightMode,
+				);
+			},
+		);
+
+		// Note: Automatic minimum size for flex items is now handled in measureInlineRun
+
+		parentYogaNode.insertChild(yogaNode, parentYogaNode.getChildCount());
 	}
 
 	private getYogaIndex(element: Element): number {
