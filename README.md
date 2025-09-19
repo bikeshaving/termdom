@@ -1,16 +1,20 @@
 # TermDOM
 
-**HTML/CSS for the Terminal**
+**HTML/CSS/JavaScript/DOM for Terminal Emulators**
 
 TermDOM brings the familiar web development model — HTML, CSS, JavaScript, the
 DOM interface, and layout — to terminal applications. Build complex,
 interactive terminal interfaces declaratively, without learning a new API.
 
-TermDOM is available on npm as
+TermDOM is available on NPM as
 [`@b9g/termdom`](https://www.npmjs.com/package/@b9g/termdom).
+```bash
+bun add @b9g/termdom
+```
 
+Raw DOM manipulation to create
 ```ts
-import { TermDOM } from "@b9g/termdom";
+import {TermDOM} from "@b9g/termdom";
 const termDOM = new TermDOM();
 const document = termDOM.document;
 
@@ -24,22 +28,22 @@ document.body.appendChild(div);
 termDOM.render(); // Flush to terminal
 ```
 
-## Why HTML in the Terminal?
+## Why use web technologies in the terminal?
 
-Terminals are powerful, but building rich interfaces is often tedious:
+Terminal emulators provide a simple, interface for CLI applications. However,
+building CLI applciations can be tedious:
 
-- Raw terminal libraries require low-level cursor and ANSI management.
-- Frameworks like React-Ink or Bubble Tea introduce new paradigms, requiring
-  developers to learn a separate mental model.
+- Raw terminal libraries require low-level ANSI escape sequences and cursor
+  management.
 - Complex layouts, inline styling, and reusable components are cumbersome to
   implement.
 
 TermDOM solves this by leveraging familiar web concepts:
 
-- **Declarative UI:** Use `createElement`, `appendChild`, and `style` just like
-  in the browser.
-- **Rich Layout:** Block/inline/flex layout from the browser supported via
-  Yoga.
+- **Declarative UI:** Use APIs `document.createElement()`, `document.appendChild()`,
+  and `style="color: red;"` just like in the browser.
+- **Rich Layout:** `block` / `inline` / `flex` layout from the browser supported
+  via Yoga.
 - **Framework Agnostic:** Any web framework that can render to the DOM can use
   TermDOM. TermDOM’s DOM interface is just the battle-tested JSDOM under the
   hood.
@@ -53,7 +57,7 @@ TermDOM solves this by leveraging familiar web concepts:
 ## Quickstart
 
 ```ts
-import { TermDOM } from "@b9g/termdom";
+import {TermDOM} from "@b9g/termdom";
 
 const term = new TermDOM();
 const doc = term.document;
