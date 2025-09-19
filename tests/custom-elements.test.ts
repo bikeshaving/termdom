@@ -44,10 +44,7 @@ test("custom element with anonymous slot", () => {
 
 	// Test the merged DOM tree creation
 	const shadowRoot = myWrapper.shadowRoot;
-	const mergedTree = (termdom as any).createMergedDOMTree(
-		shadowRoot,
-		myWrapper,
-	);
+	const mergedTree = termdom.getMergedTree(myWrapper);
 
 	// Should have one child (the wrapper div)
 	expect(mergedTree.childNodes.length).toBe(1);
@@ -137,7 +134,7 @@ test("custom element with named slots", () => {
 
 	// Test the merged DOM tree creation
 	const shadowRoot = myCard.shadowRoot;
-	const mergedTree = (termdom as any).createMergedDOMTree(shadowRoot, myCard);
+	const mergedTree = termdom.getMergedTree(myCard);
 
 	// Should have one child (the card div)
 	expect(mergedTree.childNodes.length).toBe(1);
@@ -209,7 +206,7 @@ test("custom element fallback content when no light DOM", () => {
 
 	// Test the merged DOM tree creation
 	const shadowRoot = myButton.shadowRoot;
-	const mergedTree = (termdom as any).createMergedDOMTree(shadowRoot, myButton);
+	const mergedTree = termdom.getMergedTree(myButton);
 
 	const mergedButton = mergedTree.firstChild as Element;
 	expect(mergedButton.childNodes.length).toBe(2); // "Button: " + fallback text
@@ -247,10 +244,7 @@ test("light DOM changes after initial render", () => {
 	const element = document.createElement("dynamic-wrapper") as any;
 
 	// Initial state - should use fallback
-	let mergedTree = (termdom as any).createMergedDOMTree(
-		element.shadowRoot,
-		element,
-	);
+	let mergedTree = termdom.getMergedTree(element);
 	let wrapper = mergedTree.firstChild as Element;
 	expect(wrapper.childNodes.length).toBe(2); // "Content: " + fallback
 	expect(wrapper.childNodes[1].textContent).toBe("Empty");
@@ -260,11 +254,9 @@ test("light DOM changes after initial render", () => {
 	newContent.textContent = "Added content";
 	element.appendChild(newContent);
 
-	// Re-create merged tree (simulating render refresh)
-	mergedTree = (termdom as any).createMergedDOMTree(
-		element.shadowRoot,
-		element,
-	);
+	// Clear cache and re-create merged tree (simulating render refresh)
+	termdom.clearShadowDOMCache();
+	mergedTree = termdom.getMergedTree(element);
 	wrapper = mergedTree.firstChild as Element;
 	expect(wrapper.childNodes.length).toBe(2); // "Content: " + new content
 	expect(wrapper.childNodes[1].textContent).toBe("Added content");
@@ -273,11 +265,9 @@ test("light DOM changes after initial render", () => {
 	// Remove light DOM content
 	element.removeChild(newContent);
 
-	// Should revert to fallback
-	mergedTree = (termdom as any).createMergedDOMTree(
-		element.shadowRoot,
-		element,
-	);
+	// Clear cache and should revert to fallback
+	termdom.clearShadowDOMCache();
+	mergedTree = termdom.getMergedTree(element);
 	wrapper = mergedTree.firstChild as Element;
 	expect(wrapper.childNodes.length).toBe(2);
 	expect(wrapper.childNodes[1].textContent).toBe("Empty"); // Back to fallback
@@ -314,10 +304,7 @@ test("shadow DOM structure changes", () => {
 	element.appendChild(content);
 
 	// Initial merged tree
-	let mergedTree = (termdom as any).createMergedDOMTree(
-		element.shadowRoot,
-		element,
-	);
+	let mergedTree = termdom.getMergedTree(element);
 	let container = mergedTree.firstChild as Element;
 	expect(container.childNodes[0].textContent).toBe("Original: ");
 	expect(container.childNodes[1].textContent).toBe("Light content");
@@ -326,11 +313,9 @@ test("shadow DOM structure changes", () => {
 	const shadowContainer = element.shadowRoot.firstChild as Element;
 	shadowContainer.childNodes[0].textContent = "Modified: "; // Change text
 
-	// Re-create merged tree
-	mergedTree = (termdom as any).createMergedDOMTree(
-		element.shadowRoot,
-		element,
-	);
+	// Clear cache and re-create merged tree
+	termdom.clearShadowDOMCache();
+	mergedTree = termdom.getMergedTree(element);
 	container = mergedTree.firstChild as Element;
 	expect(container.childNodes[0].textContent).toBe("Modified: ");
 	expect(container.childNodes[1].textContent).toBe("Light content");
@@ -341,11 +326,9 @@ test("shadow DOM structure changes", () => {
 	newSlot.textContent = "Extra fallback";
 	shadowContainer.appendChild(newSlot);
 
-	// Should now have the new slot with fallback content
-	mergedTree = (termdom as any).createMergedDOMTree(
-		element.shadowRoot,
-		element,
-	);
+	// Clear cache and should now have the new slot with fallback content
+	termdom.clearShadowDOMCache();
+	mergedTree = termdom.getMergedTree(element);
 	container = mergedTree.firstChild as Element;
 	expect(container.childNodes.length).toBe(3); // text + anonymous slot + named slot
 	expect(container.childNodes[2].textContent).toBe("Extra fallback");
@@ -388,10 +371,7 @@ test("slot attribute changes on light DOM", () => {
 	element.appendChild(content);
 
 	// Initially no slot attribute - should go to anonymous slot (main)
-	let mergedTree = (termdom as any).createMergedDOMTree(
-		element.shadowRoot,
-		element,
-	);
+	let mergedTree = termdom.getMergedTree(element);
 	let headerDiv = mergedTree.childNodes[0] as Element;
 	let mainDiv = mergedTree.childNodes[1] as Element;
 
@@ -401,10 +381,8 @@ test("slot attribute changes on light DOM", () => {
 	// Change to header slot
 	content.setAttribute("slot", "header");
 
-	mergedTree = (termdom as any).createMergedDOMTree(
-		element.shadowRoot,
-		element,
-	);
+	termdom.clearShadowDOMCache();
+	mergedTree = termdom.getMergedTree(element);
 	headerDiv = mergedTree.childNodes[0] as Element;
 	mainDiv = mergedTree.childNodes[1] as Element;
 
@@ -414,10 +392,8 @@ test("slot attribute changes on light DOM", () => {
 	// Remove slot attribute - should go back to anonymous
 	content.removeAttribute("slot");
 
-	mergedTree = (termdom as any).createMergedDOMTree(
-		element.shadowRoot,
-		element,
-	);
+	termdom.clearShadowDOMCache();
+	mergedTree = termdom.getMergedTree(element);
 	headerDiv = mergedTree.childNodes[0] as Element;
 	mainDiv = mergedTree.childNodes[1] as Element;
 
@@ -465,10 +441,7 @@ test("multiple elements with same slot name", () => {
 	element.appendChild(item3);
 
 	// All should be slotted into the same named slot
-	const mergedTree = (termdom as any).createMergedDOMTree(
-		element.shadowRoot,
-		element,
-	);
+	const mergedTree = termdom.getMergedTree(element);
 	const container = mergedTree.firstChild as Element;
 
 	expect(container.childNodes.length).toBe(4); // "Items: " + 3 items
@@ -513,10 +486,7 @@ test("empty slots and edge cases", () => {
 	const textNode = document.createTextNode("Text node content");
 	element.appendChild(textNode);
 
-	const mergedTree = (termdom as any).createMergedDOMTree(
-		element.shadowRoot,
-		element,
-	);
+	const mergedTree = termdom.getMergedTree(element);
 
 	// Should have 2 children - empty slot disappears, whitespace slot + anonymous slot remain
 	expect(mergedTree.childNodes.length).toBe(2);
@@ -559,10 +529,7 @@ test("text nodes vs elements in slots", () => {
 	element.appendChild(document.createTextNode(" end"));
 	element.appendChild(document.createTextNode("\n")); // whitespace-only
 
-	const mergedTree = (termdom as any).createMergedDOMTree(
-		element.shadowRoot,
-		element,
-	);
+	const mergedTree = termdom.getMergedTree(element);
 
 	// Should have all content slotted
 	expect(mergedTree.childNodes.length).toBe(4); // 3 meaningful + 1 whitespace
