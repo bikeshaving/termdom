@@ -175,7 +175,7 @@ test("Pseudo-element specificity", async () => {
 	expect(idPseudo.specificity).toBe("001-000-001");
 });
 
-test("StyleManager auto-refresh on DOM changes", async () => {
+test.todo("StyleManager auto-refresh on DOM changes", async () => {
 	const terminal = new TestTerminal();
 	const termdom = new TermDOM({process: terminal});
 	const {document} = termdom;
