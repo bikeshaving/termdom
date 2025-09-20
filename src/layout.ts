@@ -1209,9 +1209,18 @@ export class LayoutEngine {
 				}
 
 				if (!parentYogaNode) {
-					throw new Error(
-						`No parent Yoga node found for added node ${node.nodeName} under ${parentElement.tagName}`,
-					);
+					// If parent has no Yoga node, it might be an inline element that's part of a run
+					// Instead of adding to Yoga tree, just invalidate the inline run
+					if (this.isInlineLevel(node)) {
+						this.invalidateInlineRun(node);
+						this.invalidateInlineRun(parentElement); // Also invalidate parent's run
+						continue; // Skip normal Yoga tree addition
+					} else {
+						// Block elements should have parents with Yoga nodes
+						throw new Error(
+							`No parent Yoga node found for added node ${node.nodeName} under ${parentElement.tagName}`,
+						);
+					}
 				}
 
 				// Add the node to Yoga layout

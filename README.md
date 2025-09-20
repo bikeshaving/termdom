@@ -2,17 +2,20 @@
 
 **HTML/CSS/JavaScript/DOM for Terminal Emulators**
 
-TermDOM brings the familiar web development model — HTML, CSS, JavaScript, the
-DOM interface, and layout — to terminal applications. Build complex,
-interactive terminal interfaces declaratively, without learning a new API.
+TermDOM brings the familiar web development model — HTML, CSS, JavaScript and
+the DOM interface — to terminal applications. Build complex, interactive
+terminal interfaces just as you would a web application, without learning a new
+API.
 
-TermDOM is available on NPM as
+TermDOM is available on NPM as:
 [`@b9g/termdom`](https://www.npmjs.com/package/@b9g/termdom).
+
 ```bash
 bun add @b9g/termdom
 ```
 
-Raw DOM manipulation to create
+Vanilla DOM example
+
 ```ts
 import {TermDOM} from "@b9g/termdom";
 const termDOM = new TermDOM();
@@ -28,9 +31,9 @@ document.body.appendChild(div);
 termDOM.render(); // Flush to terminal
 ```
 
-## Why use web technologies in the terminal?
+## Why Use Web Technologies in the Terminal?
 
-Terminal emulators provide a simple, interface for CLI applications. However,
+Terminal emulators provide a simple interface for CLI applications. However,
 building CLI applciations can be tedious:
 
 - Raw terminal libraries require low-level ANSI escape sequences and cursor
@@ -40,13 +43,12 @@ building CLI applciations can be tedious:
 
 TermDOM solves this by leveraging familiar web concepts:
 
-- **Declarative UI:** Use APIs `document.createElement()`, `document.appendChild()`,
-  and `style="color: red;"` just like in the browser.
-- **Rich Layout:** `block` / `inline` / `flex` layout from the browser supported
-  via Yoga.
-- **Framework Agnostic:** Any web framework that can render to the DOM can use
-  TermDOM. TermDOM’s DOM interface is just the battle-tested JSDOM under the
-  hood.
+- **Declarative UI:** Use APIs like `document.createElement()`,
+  `document.appendChild()`, and `style="color: red;"` just like in the browser.
+- **Rich Layout:** `block` / `inline` / `flex` layout from the browser
+  supported.
+- **Framework Agnostic:** Any web framework that can render to the DOM can be
+  used with TermDOM.
 - **Composability:** Build reusable terminal components using web components,
   or whatever UI framework you desire.
 - **Live Updates:** TermDOM implements auto-rerendering like the browser, so

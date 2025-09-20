@@ -1406,15 +1406,109 @@ test("White-space handling in dynamic inline runs", async () => {
 	expect(updatedOutput).not.toContain("Word2");
 });
 
+test.todo("Direct textContent changes in inline runs", async () => {
+	const terminal = new TestTerminal({cols: 40, rows: 10});
+	const termdom = new TermDOM({
+		width: 40,
+		height: 10,
+		process: terminal as any,
+	});
+
+	const div = termdom.document.createElement("div");
+	div.innerHTML = "Before <span>original</span> after";
+	termdom.document.body.appendChild(div);
+
+	// Initial render
+	await termdom.render();
+	const initialOutput = terminal.getPlainText();
+	expect(initialOutput).toContain("Before original after");
+
+	// Change textContent directly (triggers characterData mutation)
+	const span = div.querySelector("span")!;
+	span.textContent = "MODIFIED";
+
+	// Re-render and verify textContent change is reflected
+	await termdom.render();
+	const updatedOutput = terminal.getPlainText();
+
+	expect(updatedOutput).toContain("Before MODIFIED after");
+	expect(updatedOutput).not.toContain("original");
+});
+
+test.todo("Text node data changes (characterData mutations)", async () => {
+	const terminal = new TestTerminal({cols: 40, rows: 10});
+	const termdom = new TermDOM({
+		width: 40,
+		height: 10,
+		process: terminal as any,
+	});
+
+	const div = termdom.document.createElement("div");
+	const textNode = termdom.document.createTextNode("Initial text content");
+	div.appendChild(textNode);
+	termdom.document.body.appendChild(div);
+
+	// Initial render
+	await termdom.render();
+	const initialOutput = terminal.getPlainText();
+	expect(initialOutput).toContain("Initial text content");
+
+	// Change text node data directly (characterData mutation)
+	textNode.data = "Changed text content";
+
+	// Re-render and verify change is reflected
+	await termdom.render();
+	const updatedOutput = terminal.getPlainText();
+
+	expect(updatedOutput).toContain("Changed text content");
+	expect(updatedOutput).not.toContain("Initial text");
+});
+
 // TODO tests for more complex scenarios that need additional fixes
+test("Direct textContent changes in inline runs", async () => {
+	const terminal = new TestTerminal({cols: 40, rows: 10});
+	const termdom = new TermDOM({
+		width: 40,
+		height: 10,
+		process: terminal as any,
+	});
+
+	const div = termdom.document.createElement("div");
+	div.innerHTML = "Before <span>original</span> after";
+	termdom.document.body.appendChild(div);
+
+	// Initial render
+	await termdom.render();
+	const initialOutput = terminal.getPlainText();
+	expect(initialOutput).toContain("Before original after");
+
+	// Change textContent directly (should trigger our new fix)
+	const span = div.querySelector("span")!;
+	span.textContent = "MODIFIED";
+
+	// Re-render and verify textContent change is reflected
+	await termdom.render();
+	const updatedOutput = terminal.getPlainText();
+
+	expect(updatedOutput).toContain("Before MODIFIED after");
+	expect(updatedOutput).not.toContain("original");
+});
+
+test.todo("Text node data changes (characterData mutations)", async () => {
+	// Direct textNode.data changes should work but reveal similar issues
+	// when the text node is inside elements that are part of inline runs
+	// but don't have their own Yoga nodes
+});
+
 test.todo("Block element interrupting inline run", async () => {
 	// This test reveals issues with block element insertion splitting inline runs
 	// Requires additional work on run boundary detection
 });
 
 test.todo("Nested inline element changes", async () => {
-	// This test reveals issues with mutation handling for nested inline elements
+	// This test reveals issues with mutation handling for nested inline elements  
 	// The error occurs when changing content of elements that don't have their own Yoga nodes
+	// Same root cause as textContent changes above
 });
 
 test.todo("Complex inline run with mixed content types", async () => {
