@@ -1500,13 +1500,112 @@ test.todo("Text node data changes (characterData mutations)", async () => {
 	// but don't have their own Yoga nodes
 });
 
-test.todo("Block element interrupting inline run", async () => {
-	// This test reveals issues with block element insertion splitting inline runs
-	// Requires additional work on run boundary detection
+test("Block element interrupting inline run", async () => {
+	const terminal = new TestTerminal({cols: 40, rows: 10});
+	const termdom = new TermDOM({
+		width: 40,
+		height: 10,
+		process: terminal as any,
+	});
+
+	const container = termdom.document.createElement("div");
+	container.innerHTML = 'Before <span id="inline">inline</span> after';
+	termdom.document.body.appendChild(container);
+
+	// Initial render - should be on one line
+	await termdom.render();
+	const initialOutput = terminal.getPlainText();
+	console.log("Initial:", JSON.stringify(initialOutput));
+
+	// Insert block element in the middle
+	const blockDiv = termdom.document.createElement("div");
+	blockDiv.textContent = "BLOCK ELEMENT";
+	blockDiv.style.display = "block";
+
+	const inlineSpan = termdom.document.getElementById("inline")!;
+	container.insertBefore(blockDiv, inlineSpan);
+
+	// Re-render and verify block element creates line breaks
+	await termdom.render();
+	const updatedOutput = terminal.getPlainText();
+	const lines = updatedOutput.split("\n").filter((line) => line.trim());
+
+	// Should have multiple lines now
+	expect(lines.length).toBeGreaterThan(1);
+	expect(updatedOutput).toContain("Before");
+	expect(updatedOutput).toContain("BLOCK ELEMENT");
+	expect(updatedOutput).toContain("inline after");
+});
+
+test("Block element removal merging inline runs", async () => {
+	const terminal = new TestTerminal({cols: 40, rows: 10});
+	const termdom = new TermDOM({
+		width: 40,
+		height: 10,
+		process: terminal as any,
+	});
+
+	const container = termdom.document.createElement("div");
+	container.innerHTML =
+		'Before <div id="block">BLOCK</div><span>inline</span> after';
+	termdom.document.body.appendChild(container);
+
+	// Initial render - should have multiple lines due to block element
+	await termdom.render();
+	const initialOutput = terminal.getPlainText();
+	let initialLines = initialOutput.split("\n").filter((line) => line.trim());
+	expect(initialLines.length).toBeGreaterThan(1); // Should be split by block
+
+	// Remove the block element
+	const blockElement = termdom.document.getElementById("block")!;
+	blockElement.remove();
+
+	// Re-render and verify inline runs merge back into one line
+	await termdom.render();
+	const updatedOutput = terminal.getPlainText();
+
+	// Should now be on one line (or at least fewer lines)
+	expect(updatedOutput).toContain("Before");
+	expect(updatedOutput).toContain("inline");
+	expect(updatedOutput).toContain("after");
+	expect(updatedOutput).not.toContain("BLOCK");
+
+	// The content should flow together
+	expect(updatedOutput).toContain("Before inline after");
+});
+
+test("Block element removal properly cleans up former run head Yoga nodes", async () => {
+	const terminal = new TestTerminal({cols: 40, rows: 10});
+	const termdom = new TermDOM({
+		width: 40,
+		height: 10,
+		process: terminal as any,
+	});
+
+	const container = termdom.document.createElement("div");
+	container.innerHTML = 'Before <div id="block">BLOCK</div><span id="span">inline</span> after';
+	termdom.document.body.appendChild(container);
+
+	// Initial render - span should be a run head with Yoga node
+	await termdom.render();
+	const layoutEngine = (termdom as any).layoutEngine;
+	const span = termdom.document.getElementById("span")!;
+	
+	// Remove the block element  
+	const blockElement = termdom.document.getElementById("block")!;
+	blockElement.remove();
+
+	// Re-render to trigger mutation processing and cleanup
+	await termdom.render();
+	const updatedOutput = terminal.getPlainText();
+	expect(updatedOutput).toContain("Before inline after");
+	
+	// Verify the span no longer has a Yoga node (was cleaned up)
+	expect(layoutEngine.nodeMap.has(span)).toBe(false);
 });
 
 test.todo("Nested inline element changes", async () => {
-	// This test reveals issues with mutation handling for nested inline elements  
+	// This test reveals issues with mutation handling for nested inline elements
 	// The error occurs when changing content of elements that don't have their own Yoga nodes
 	// Same root cause as textContent changes above
 });

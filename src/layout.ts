@@ -1110,6 +1110,7 @@ export class LayoutEngine {
 
 	/**
 	 * Invalidate an entire inline run when structure changes
+	 * Also handles Yoga node cleanup and creation for run head changes
 	 */
 	private invalidateInlineRun(node: Node): void {
 		const runHead = this.findInlineRunHead(node);
@@ -1117,10 +1118,43 @@ export class LayoutEngine {
 			// Clear cached break results
 			this.breakResultMap.delete(runHead);
 
-			// Mark the yoga node dirty for re-measurement
-			const yogaNode = this.nodeMap.get(runHead);
-			if (yogaNode) {
-				yogaNode.markDirty();
+			// If this node has a Yoga node but is NOT the run head, clean it up
+			if (runHead !== node && this.nodeMap.has(node)) {
+				const yogaNode = this.nodeMap.get(node);
+				if (yogaNode) {
+					// Remove from parent
+					const parent = node.parentElement;
+					if (parent) {
+						const parentYogaNode = this.nodeMap.get(parent);
+						if (parentYogaNode) {
+							parentYogaNode.removeChild(yogaNode);
+						}
+					}
+					// Free and remove from map
+					yogaNode.freeRecursive();
+					this.nodeMap.delete(node);
+				}
+			}
+
+			// Ensure the actual run head has a Yoga node
+			if (!this.nodeMap.has(runHead)) {
+				// Find the parent that should contain this run head's Yoga node
+				let parent = runHead.parentElement;
+				while (parent) {
+					const parentYogaNode = this.nodeMap.get(parent);
+					if (parentYogaNode) {
+						// Add the run head to the layout tree
+						this.addNode(runHead, parentYogaNode);
+						break;
+					}
+					parent = parent.parentElement;
+				}
+			} else {
+				// Run head already has Yoga node, just mark it dirty
+				const yogaNode = this.nodeMap.get(runHead);
+				if (yogaNode) {
+					yogaNode.markDirty();
+				}
 			}
 		}
 	}
@@ -1173,6 +1207,7 @@ export class LayoutEngine {
 
 		return false;
 	}
+
 
 	private handleMutationRecords(mutations: MutationRecord[]): void {
 		for (let i = 0; i < mutations.length; i++) {
@@ -1287,6 +1322,17 @@ export class LayoutEngine {
 							if (sibling !== node && this.isInlineLevel(sibling)) {
 								this.invalidateInlineRun(sibling);
 							}
+						}
+					}
+				} else {
+					// Block element removed - might merge previously separate inline runs
+					const parent = record.target as Element;
+					const siblings = Array.from(parent.childNodes);
+
+					// Process all inline siblings to handle run merging
+					for (const sibling of siblings) {
+						if (this.isInlineLevel(sibling)) {
+							this.invalidateInlineRun(sibling);
 						}
 					}
 				}
