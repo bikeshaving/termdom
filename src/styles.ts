@@ -1673,11 +1673,45 @@ export class StyleManager {
 	 * Increment a counter by a specific amount
 	 */
 	private incrementCounter(scope: CounterScope, counterName: string, increment: number): void {
-		// Get current counter value from parent scopes
-		const currentValue = this.getCounterValueFromScope(scope.parent, counterName);
+		// For list-item counters, we need to check previous siblings for the most recent value
+		if (counterName === "list-item" && scope.element.tagName === "LI") {
+			const currentValue = this.getListItemCounterValue(scope.element);
+			scope.counters[counterName] = currentValue + increment;
+		} else {
+			// For other counters, get value from parent scopes
+			const currentValue = this.getCounterValueFromScope(scope.parent, counterName);
+			scope.counters[counterName] = currentValue + increment;
+		}
+	}
+
+	/**
+	 * Get the current list-item counter value by checking previous siblings
+	 */
+	private getListItemCounterValue(element: Element): number {
+		// Find the parent OL/UL that establishes the counter scope
+		let parent = element.parentElement;
+		while (parent && parent.tagName !== "OL" && parent.tagName !== "UL") {
+			parent = parent.parentElement;
+		}
 		
-		// Set the new incremented value in the current scope
-		scope.counters[counterName] = currentValue + increment;
+		if (!parent) return 0;
+		
+		// Get the reset value from the OL/UL
+		const parentScope = this.counterScopes.get(parent);
+		let currentValue = parentScope?.counters["list-item"] ?? 0;
+		
+		// Add increments from all previous LI siblings
+		const siblings = Array.from(parent.children);
+		const currentIndex = siblings.indexOf(element);
+		
+		for (let i = 0; i < currentIndex; i++) {
+			const sibling = siblings[i];
+			if (sibling.tagName === "LI") {
+				currentValue += 1; // Each LI increments by 1
+			}
+		}
+		
+		return currentValue;
 	}
 
 	/**
