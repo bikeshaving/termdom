@@ -502,7 +502,7 @@ class TerminalComputedStyle extends CSSStyleDeclaration {
 			"list-style-type",
 			"list-style-position",
 			"list-style-image",
-			
+
 			// CSS Counters
 			"counter-reset",
 			"counter-increment",
@@ -1005,7 +1005,7 @@ export class StyleManager {
 		Map<string, Record<string, string>>
 	>();
 	private parsedRules: ParsedCSSRule[] = [];
-	
+
 	// CSS Counter support
 	private counterScopes = new WeakMap<Element, CounterScope>();
 
@@ -1272,12 +1272,15 @@ export class StyleManager {
 			const display = this.window
 				.getComputedStyle(hostElement)
 				.getPropertyValue("display");
-			
+
 			if (display === "list-item") {
 				// If no explicit CSS content, generate default marker using counters
 				if (!content || content === "none" || content === "normal") {
 					const listParent = hostElement.parentElement;
-					if (listParent && (listParent.tagName === "UL" || listParent.tagName === "OL")) {
+					if (
+						listParent &&
+						(listParent.tagName === "UL" || listParent.tagName === "OL")
+					) {
 						// Use CSS counter system for proper numbering
 						if (listParent.tagName === "OL") {
 							// For ordered lists, use counter(list-item)
@@ -1338,7 +1341,7 @@ export class StyleManager {
 				return true; // Always create markers for list items
 			}
 		}
-		
+
 		const styles = this.computePseudoElementStyle(element, pseudoType);
 		const content = styles.content;
 		return !!(content && content !== "none" && content !== "normal");
@@ -1601,12 +1604,15 @@ export class StyleManager {
 
 		const computedStyle = this.window.getComputedStyle(element);
 		const counterReset = computedStyle.getPropertyValue("counter-reset");
-		const counterIncrement = computedStyle.getPropertyValue("counter-increment");
+		const counterIncrement =
+			computedStyle.getPropertyValue("counter-increment");
 
 		// Get parent scope if parent exists (but don't recursively initialize parents)
 		const parentElement = element.parentElement;
-		const parentScope = parentElement ? this.counterScopes.get(parentElement) : undefined;
-		
+		const parentScope = parentElement
+			? this.counterScopes.get(parentElement)
+			: undefined;
+
 		// Create counter scope for this element
 		const scope: CounterScope = {
 			element,
@@ -1622,9 +1628,10 @@ export class StyleManager {
 
 		// Handle automatic list-item counter for ol/ul elements
 		if (element.tagName === "OL" || element.tagName === "UL") {
-			const startValue = element.tagName === "OL" 
-				? parseInt(element.getAttribute("start") || "1", 10) 
-				: 0;
+			const startValue =
+				element.tagName === "OL"
+					? parseInt(element.getAttribute("start") || "1", 10)
+					: 0;
 			scope.counters["list-item"] = startValue - 1; // Reset to start-1 so first increment gives start
 		}
 
@@ -1657,7 +1664,10 @@ export class StyleManager {
 	/**
 	 * Parse counter-increment CSS property
 	 */
-	private parseCounterIncrement(scope: CounterScope, counterIncrement: string): void {
+	private parseCounterIncrement(
+		scope: CounterScope,
+		counterIncrement: string,
+	): void {
 		// Parse "counter1 increment1 counter2 increment2" format
 		const tokens = counterIncrement.trim().split(/\s+/);
 		for (let i = 0; i < tokens.length; i += 2) {
@@ -1672,14 +1682,21 @@ export class StyleManager {
 	/**
 	 * Increment a counter by a specific amount
 	 */
-	private incrementCounter(scope: CounterScope, counterName: string, increment: number): void {
+	private incrementCounter(
+		scope: CounterScope,
+		counterName: string,
+		increment: number,
+	): void {
 		// For list-item counters, we need to check previous siblings for the most recent value
 		if (counterName === "list-item" && scope.element.tagName === "LI") {
 			const currentValue = this.getListItemCounterValue(scope.element);
 			scope.counters[counterName] = currentValue + increment;
 		} else {
 			// For other counters, get value from parent scopes
-			const currentValue = this.getCounterValueFromScope(scope.parent, counterName);
+			const currentValue = this.getCounterValueFromScope(
+				scope.parent,
+				counterName,
+			);
 			scope.counters[counterName] = currentValue + increment;
 		}
 	}
@@ -1693,31 +1710,34 @@ export class StyleManager {
 		while (parent && parent.tagName !== "OL" && parent.tagName !== "UL") {
 			parent = parent.parentElement;
 		}
-		
+
 		if (!parent) return 0;
-		
+
 		// Get the reset value from the OL/UL
 		const parentScope = this.counterScopes.get(parent);
 		let currentValue = parentScope?.counters["list-item"] ?? 0;
-		
+
 		// Add increments from all previous LI siblings
 		const siblings = Array.from(parent.children);
 		const currentIndex = siblings.indexOf(element);
-		
+
 		for (let i = 0; i < currentIndex; i++) {
 			const sibling = siblings[i];
 			if (sibling.tagName === "LI") {
 				currentValue += 1; // Each LI increments by 1
 			}
 		}
-		
+
 		return currentValue;
 	}
 
 	/**
 	 * Get counter value from a specific scope (without current scope)
 	 */
-	private getCounterValueFromScope(scope: CounterScope | undefined, counterName: string): number {
+	private getCounterValueFromScope(
+		scope: CounterScope | undefined,
+		counterName: string,
+	): number {
 		// Look for counter in current scope or parent scopes
 		let currentScope = scope;
 		while (currentScope) {
@@ -1754,13 +1774,14 @@ export class StyleManager {
 	 */
 	resolveCounterFunction(element: Element, content: string): string {
 		// Replace all counter() functions in the content
-		return content.replace(/counter\s*\(\s*([^,)]+)(?:\s*,\s*([^)]+))?\s*\)/g, 
+		return content.replace(
+			/counter\s*\(\s*([^,)]+)(?:\s*,\s*([^)]+))?\s*\)/g,
 			(match, counterName, style) => {
 				const trimmedName = counterName.trim();
 				const trimmedStyle = style?.trim() || "decimal";
 				const value = this.getCounterValue(element, trimmedName);
 				return this.formatCounterValue(value, trimmedStyle);
-			}
+			},
 		);
 	}
 

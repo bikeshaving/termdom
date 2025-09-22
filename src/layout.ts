@@ -1408,7 +1408,7 @@ export class LayoutEngine {
 					if (parent) {
 						parent.removeChild(yogaNode);
 					}
-					
+
 					// Check if node was actually removed vs just moved
 					if (!node.isConnected) {
 						// Node was truly removed from DOM - free it
