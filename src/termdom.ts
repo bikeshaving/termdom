@@ -425,6 +425,9 @@ export class TermDOM {
 			// TODO: Add proper change detection to StyleManager
 			// For now, skip redundant refreshStylesheets calls during render
 
+			// Attach pseudo-elements to all elements before layout calculation
+			this.styleManager.attachPseudoElementsToDocument();
+
 			this.layoutEngine.calculateLayout();
 
 			this.renderer.beginFrame();
