@@ -293,9 +293,9 @@ export class ExpandedTreeWalker {
 
 		const element = node as Element;
 
-		// Check for ::marker pseudo-element first (document order, only on list items)
+		// Check for ::marker pseudo-element first (document order, only on elements with display: list-item)
 		if (this.whatToShow & NodeFilterExtended.SHOW_PSEUDO_ELEMENTS) {
-			if (element.nodeName === "LI") {
+			if (this.#hasListItemDisplay(element)) {
 				const markerElement = this.#getPseudoElement(element, "::marker");
 				if (markerElement) {
 					return markerElement;
@@ -448,7 +448,30 @@ export class ExpandedTreeWalker {
 			return nextSibling;
 		}
 
-		// ::after transitions are now handled in the main nextNode() traversal logic
+		// Handle transition from regular content to ::after pseudo element
+		// This happens when we've reached the end of regular siblings
+		const parent = this.#getParent(node);
+		if (parent && parent.nodeType === parent.ELEMENT_NODE) {
+			const parentElement = parent as Element;
+
+			// Check if this node is the last regular child and we need ::after
+			if (this.whatToShow & NodeFilterExtended.SHOW_PSEUDO_ELEMENTS) {
+				const afterElement = this.#getPseudoElement(parentElement, "::after");
+				if (afterElement) {
+					// Only transition to ::after if this is truly the last content
+					// Check if this node is the last non-pseudo child
+					let lastChild = parent.lastChild;
+					while (lastChild && this.#getPseudoMetadata(lastChild)) {
+						// Skip over any pseudo elements to find the last real child
+						lastChild = lastChild.previousSibling;
+					}
+
+					if (node === lastChild) {
+						return afterElement;
+					}
+				}
+			}
+		}
 
 		return null;
 	}
@@ -479,8 +502,8 @@ export class ExpandedTreeWalker {
 			}
 
 			if (pseudoMeta.pseudoType === "::before") {
-				// ::before -> ::marker (if it exists on list items)
-				if (hostElement.nodeName === "LI") {
+				// ::before -> ::marker (if it exists on elements with display: list-item)
+				if (this.#hasListItemDisplay(hostElement)) {
 					const markerElement = this.#getPseudoElement(hostElement, "::marker");
 					if (markerElement) {
 						return markerElement;
@@ -511,8 +534,8 @@ export class ExpandedTreeWalker {
 				if (beforeElement) {
 					return beforeElement;
 				}
-				// If no ::before, try ::marker (only on list items)
-				if (parentElement.nodeName === "LI") {
+				// If no ::before, try ::marker (only on elements with display: list-item)
+				if (this.#hasListItemDisplay(parentElement)) {
 					const markerElement = this.#getPseudoElement(
 						parentElement,
 						"::marker",
@@ -642,6 +665,16 @@ export class ExpandedTreeWalker {
 		node: Node,
 	): {pseudoType: string; hostElement: Element} | null {
 		return (node as any)[PSEUDO_METADATA_SYMBOL] || null;
+	}
+
+	/**
+	 * Check if an element has display: list-item
+	 */
+	#hasListItemDisplay(element: Element): boolean {
+		const display = this.#window
+			.getComputedStyle(element)
+			.getPropertyValue("display");
+		return display === "list-item";
 	}
 
 	/**

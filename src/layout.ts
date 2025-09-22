@@ -874,7 +874,8 @@ export class LayoutEngine {
 			const walker = createExpandedTreeWalker(
 				this.window,
 				node,
-				this.window.NodeFilter.SHOW_TEXT,
+				this.window.NodeFilter.SHOW_TEXT |
+					NodeFilterExtended.SHOW_PSEUDO_ELEMENTS,
 				null,
 			);
 
@@ -995,6 +996,27 @@ export class LayoutEngine {
 		this.observer.disconnect();
 	}
 
+	/**
+	 * A "run head" is the first node in a contiguous run of inline-level
+	 * elements. This is a TermDOM implementation detail for mapping CSS inline
+	 * layout to Yoga.
+	 *
+	 * The run head node:
+	 * - Gets the Yoga layout node for the entire run
+	 * - Gets the breakResult entry for text measurement
+	 * - Other nodes in the run delegate their layout to this head
+	 *
+	 * Examples:
+	 * - "Hello" + <span>world</span>: "Hello" text node is run head
+	 * - <em>text</em> + "more": <em> element is run head
+	 * - <div>"text"</div>: "text" is run head (block creates new context)
+	 * - In flex containers: each flex item gets its own run head
+	 * - Block interruption: <span>text</span><div>block</div><span>more</span>
+	 *   creates separate runs with separate heads
+	 *
+	 * Note: Pseudo-elements (::before, ::marker, ::after) are treated as
+	 * text nodes and can participate in inline runs.
+	 */
 	isInlineRunHead(node: Node): boolean {
 		return this.findInlineRunHead(node) === node;
 	}
@@ -1002,7 +1024,11 @@ export class LayoutEngine {
 	findInlineRunHead(node: Node): Node | null {
 		// 1. Validate input
 		if (!node.isConnected) {
-			return null;
+			// For pseudo elements, check if the host element is connected
+			const pseudoMetadata = getPseudoMetadata(node);
+			if (!pseudoMetadata || !pseudoMetadata.hostElement.isConnected) {
+				return null;
+			}
 		}
 
 		if (node.nodeType === node.ELEMENT_NODE) {
@@ -1115,7 +1141,34 @@ export class LayoutEngine {
 	}
 
 	/**
-	 * Invalidate an entire inline run when structure changes
+	 * Invalidate a node, handling both block and inline elements appropriately
+	 * For inline elements, invalidates the entire inline run
+	 * For block elements, invalidates their layout by removing from nodeMap
+	 */
+	invalidate(node: Node): void {
+		// If it's an inline-level node, invalidate the entire run
+		if (this.isInlineLevel(node)) {
+			this.invalidateInlineRun(node);
+		} else if (node.nodeType === node.ELEMENT_NODE) {
+			// For block-level elements, remove from nodeMap to force recreation
+			// We can't call markDirty() on container nodes as Yoga only allows
+			// leaf nodes with measure functions to be marked dirty
+			const yogaNode = this.nodeMap.get(node);
+			if (yogaNode) {
+				// Get parent before removing from map
+				const parent = yogaNode.getParent();
+				if (parent) {
+					parent.removeChild(yogaNode);
+				}
+				yogaNode.freeRecursive();
+				this.nodeMap.delete(node);
+				// The node will be recreated on next layout calculation
+			}
+		}
+	}
+
+	/**
+	 * Internal: Invalidate an entire inline run when structure changes
 	 * Also handles Yoga node cleanup and creation for run head changes
 	 */
 	private invalidateInlineRun(node: Node): void {
@@ -1137,6 +1190,10 @@ export class LayoutEngine {
 						}
 					}
 					// Free and remove from map
+					const pseudoMeta = getPseudoMetadata(node);
+					if (pseudoMeta) {
+						// Removing pseudo element from nodeMap during invalidateInlineRun cleanup
+					}
 					yogaNode.freeRecursive();
 					this.nodeMap.delete(node);
 				}
@@ -1350,6 +1407,10 @@ export class LayoutEngine {
 					const parent = this.nodeMap.get(record.target as Element);
 					if (parent) {
 						parent.removeChild(yogaNode);
+					}
+					const pseudoMeta = getPseudoMetadata(node);
+					if (pseudoMeta) {
+						// Removing pseudo element from nodeMap during mutation removal
 					}
 					yogaNode.freeRecursive();
 					this.nodeMap.delete(node);

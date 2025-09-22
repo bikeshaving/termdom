@@ -4,6 +4,7 @@ import {LayoutEngine} from "../src/layout.js";
 import {StyleManager} from "../src/styles.js";
 import {TermDOM} from "../src/termdom.js";
 import {TestTerminal} from "./test-utils.js";
+import {setPseudoElement, createPseudoNode} from "../src/composition.js";
 
 function createLayoutEngine(html: string = "<div></div>") {
 	const jsdom = new JSDOM(`<!DOCTYPE html><html><body>${html}</body></html>`);
@@ -1612,4 +1613,94 @@ test.todo("Nested inline element changes", async () => {
 test.todo("Complex inline run with mixed content types", async () => {
 	// Similar to nested inline element changes - needs better handling of
 	// mutations within elements that are part of inline runs but don't have Yoga nodes
+});
+
+// === PSEUDO ELEMENT INLINE RUN HEAD TESTS ===
+// These tests verify how pseudo elements interact with inline run head detection
+
+function createLayoutEngineWithPseudos(html: string = "<div></div>") {
+	const jsdom = new JSDOM(`<!DOCTYPE html><html><body>${html}</body></html>`);
+
+	const layoutEngine = new LayoutEngine(jsdom.window);
+	const styleManager = new StyleManager(jsdom.window, layoutEngine);
+
+	layoutEngine.resize(300, 200);
+	layoutEngine.calculateLayout();
+
+	return {jsdom, layoutEngine, styleManager};
+}
+
+test("::before pseudo element becomes run head", () => {
+	const {jsdom, layoutEngine} = createLayoutEngineWithPseudos(
+		`<div class="quote">Hello World</div>`,
+	);
+
+	const quote = jsdom.window.document.querySelector(".quote")!;
+
+	// Add ::before pseudo element
+	const beforeNode = createPseudoNode(quote, "::before", '"');
+	setPseudoElement(quote, "::before", beforeNode);
+
+	// ::before should be treated as the first child and become run head
+	expect(layoutEngine.isInlineRunHead(beforeNode)).toBe(true);
+
+	// The original text node should no longer be a run head
+	const textNode = quote.firstChild as Text;
+	expect(layoutEngine.isInlineRunHead(textNode)).toBe(false);
+	expect(layoutEngine.findInlineRunHead(textNode)).toBe(beforeNode);
+});
+
+test("::marker appears before ::before in run head order", () => {
+	const {jsdom, layoutEngine} = createLayoutEngineWithPseudos(
+		`<ul><li class="decorated">Item text</li></ul>`,
+	);
+
+	const listItem = jsdom.window.document.querySelector(".decorated")!;
+	const textNode = listItem.firstChild as Text;
+
+	// Add all pseudo element types (CSS order: ::marker, ::before, content, ::after)
+	const markerNode = createPseudoNode(listItem, "::marker", "• ");
+	const beforeNode = createPseudoNode(listItem, "::before", "[");
+	const afterNode = createPseudoNode(listItem, "::after", "]");
+
+	setPseudoElement(listItem, "::marker", markerNode);
+	setPseudoElement(listItem, "::before", beforeNode);
+	setPseudoElement(listItem, "::after", afterNode);
+
+	// ::marker should be the run head (first in document order)
+	expect(layoutEngine.isInlineRunHead(markerNode)).toBe(true);
+
+	// All others should join the run with ::marker as head
+	expect(layoutEngine.isInlineRunHead(beforeNode)).toBe(false);
+	expect(layoutEngine.isInlineRunHead(textNode)).toBe(false);
+	expect(layoutEngine.isInlineRunHead(afterNode)).toBe(false);
+
+	expect(layoutEngine.findInlineRunHead(beforeNode)).toBe(markerNode);
+	expect(layoutEngine.findInlineRunHead(textNode)).toBe(markerNode);
+	expect(layoutEngine.findInlineRunHead(afterNode)).toBe(markerNode);
+});
+
+test("Dynamic pseudo element addition affects run heads", () => {
+	const {jsdom, layoutEngine} = createLayoutEngineWithPseudos(
+		`<span class="dynamic">Text</span>`,
+	);
+
+	const span = jsdom.window.document.querySelector(".dynamic")!;
+	const textNode = span.firstChild as Text;
+
+	// Initially, text node should be run head
+	expect(layoutEngine.isInlineRunHead(textNode)).toBe(true);
+
+	// Add ::before pseudo element
+	const beforeNode = createPseudoNode(span, "::before", "→ ");
+	setPseudoElement(span, "::before", beforeNode);
+
+	// Invalidate to force recalculation
+	(layoutEngine as any).invalidateInlineRun(span);
+	layoutEngine.calculateLayout();
+
+	// Now ::before should be run head
+	expect(layoutEngine.isInlineRunHead(beforeNode)).toBe(true);
+	expect(layoutEngine.isInlineRunHead(textNode)).toBe(false);
+	expect(layoutEngine.findInlineRunHead(textNode)).toBe(beforeNode);
 });

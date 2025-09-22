@@ -1,8 +1,9 @@
 import {test, expect} from "bun:test";
 import {TermDOM} from "../src/termdom.js";
 import {TestTerminal} from "./test-utils.js";
+import {getPseudoElement} from "../src/composition.js";
 
-test.todo("::before and ::after content rendering integration", async () => {
+test("::before and ::after content rendering integration", async () => {
 	const terminal = new TestTerminal();
 	const termdom = new TermDOM({process: terminal});
 	const {document} = termdom;
@@ -52,6 +53,13 @@ test.todo("::before and ::after content rendering integration", async () => {
 	decorated.textContent = "Achievement Unlocked";
 	document.body.appendChild(decorated);
 
+	// Trigger stylesheet refresh to attach pseudo elements
+	termdom.styleManager.refreshStylesheets();
+
+	// Check the actual attached pseudo elements using the composition API
+	const beforeQuoteNode = getPseudoElement(quote, "::before");
+	const afterQuoteNode = getPseudoElement(quote, "::after");
+
 	// Render to terminal
 	await termdom.render();
 	const output = terminal.getPlainText();
@@ -62,20 +70,13 @@ test.todo("::before and ::after content rendering integration", async () => {
 	expect(output).toContain("🎯 Achievement Unlocked ✨"); // Emoji decoration
 
 	// Verify StyleManager is creating pseudo-element nodes
-	const styleManager = termdom.styleManager;
-
-	const beforeQuoteNode = styleManager.createPseudoElementNode(
-		quote,
-		"::before",
-	);
 	expect(beforeQuoteNode).not.toBeNull();
 	expect(beforeQuoteNode!.textContent).toBe('"');
 
-	const afterQuoteNode = styleManager.createPseudoElementNode(quote, "::after");
 	expect(afterQuoteNode).not.toBeNull();
 	expect(afterQuoteNode!.textContent).toBe('"');
 
-	const beforePrefixNode = styleManager.createPseudoElementNode(
+	const beforePrefixNode = termdom.styleManager.createPseudoElementNode(
 		note,
 		"::before",
 	);

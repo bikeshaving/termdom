@@ -7,7 +7,7 @@
 
 import {CSSStyleDeclaration} from "cssstyle";
 import type {DOMWindow} from "jsdom";
-import {attachPseudoElement} from "./composition.js";
+import {attachPseudoElement, clearPseudoElements} from "./composition.js";
 
 /**
  * Helper to get computed style property value for an element.
@@ -990,7 +990,10 @@ export class StyleManager {
 	>();
 	private parsedRules: ParsedCSSRule[] = [];
 
-	constructor(private window: DOMWindow) {
+	constructor(
+		private window: DOMWindow,
+		private layoutEngine?: any,
+	) {
 		// Override window.getComputedStyle with our cached version
 		window.getComputedStyle = this.getComputedStyle.bind(this);
 
@@ -1289,8 +1292,32 @@ export class StyleManager {
 		this.parseStylesheets();
 		this.clearCache();
 
+		// TODO: Implement more granular pseudo-element invalidation
+		// Currently we clear ALL pseudo-elements on any stylesheet change,
+		// but we could be smarter and only clear/update affected elements
+		// by diffing the old vs new pseudo-element rules
+
+		// Clear all existing pseudo-elements before reattaching
+		this.clearAllPseudoElements();
+
 		// After parsing rules, attach pseudo-elements to matching elements
 		this.attachPseudoElementsToDocument();
+	}
+
+	/**
+	 * Clear all pseudo-elements from the document
+	 */
+	private clearAllPseudoElements(): void {
+		const walker = this.window.document.createTreeWalker(
+			this.window.document.documentElement,
+			this.window.NodeFilter.SHOW_ELEMENT,
+			null,
+		);
+		let element = walker.nextNode() as Element;
+		while (element) {
+			clearPseudoElements(element);
+			element = walker.nextNode() as Element;
+		}
 	}
 
 	/**
@@ -1324,9 +1351,14 @@ export class StyleManager {
 		const pseudoTypes = ["::before", "::after", "::marker"];
 
 		for (const pseudoType of pseudoTypes) {
-			// Skip ::marker for non-list items
-			if (pseudoType === "::marker" && element.tagName !== "LI") {
-				continue;
+			// Skip ::marker for elements without display: list-item
+			if (pseudoType === "::marker") {
+				const display = this.window
+					.getComputedStyle(element)
+					.getPropertyValue("display");
+				if (display !== "list-item") {
+					continue;
+				}
 			}
 
 			// Check if element should have this pseudo-element
@@ -1357,6 +1389,31 @@ export class StyleManager {
 			...existingMetadata,
 			styles: this.computePseudoElementStyle(element, pseudoType),
 		};
+
+		// Invalidate the element in layout engine to rediscover pseudo elements
+		if (this.layoutEngine?.invalidate) {
+			this.layoutEngine.invalidate(element);
+		}
+	}
+
+	/**
+	 * Clean up pseudo-elements when an element is removed from the DOM
+	 */
+	cleanupPseudoElementsForRemovedElement(element: Element): void {
+		// Clean up pseudo-elements for this element
+		clearPseudoElements(element);
+
+		// Also clean up pseudo-elements for any descendant elements
+		const walker = this.window.document.createTreeWalker(
+			element,
+			this.window.NodeFilter.SHOW_ELEMENT,
+			null,
+		);
+		let descendant = walker.nextNode() as Element;
+		while (descendant) {
+			clearPseudoElements(descendant);
+			descendant = walker.nextNode() as Element;
+		}
 	}
 
 	private setupInvalidationHooks(): void {

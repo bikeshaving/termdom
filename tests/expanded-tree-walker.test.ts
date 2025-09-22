@@ -1163,6 +1163,67 @@ test("Pure JSDOM - ExpandedTreeWalker parentNode respects root boundary", () => 
 	expect((walker.currentNode as any).className).toBe("paragraph");
 });
 
+test("FAILING - ExpandedTreeWalker ::after elements in layout engine pattern", () => {
+	const dom = new JSDOM("<!DOCTYPE html><html><body></body></html>");
+	const window = dom.window;
+	const document = window.document;
+
+	// Create structure that matches our failing test: div.quote with ::before and ::after
+	const quote = document.createElement("div");
+	quote.className = "quote";
+	quote.textContent = "Hello World";
+	document.body.appendChild(quote);
+
+	// Set up pseudo-elements using StyleManager pattern
+	const beforeNode = createPseudoNode(quote, "::before", '"');
+	const afterNode = createPseudoNode(quote, "::after", '"');
+
+	setPseudoElement(quote, "::before", beforeNode);
+	setPseudoElement(quote, "::after", afterNode);
+
+	// Create walker that matches layout engine usage: start from quote element
+	const walker = createExpandedTreeWalker(
+		window as any,
+		quote, // Start from the element itself (like addElementNode does)
+		window.NodeFilter.SHOW_ELEMENT |
+			window.NodeFilter.SHOW_TEXT |
+			NodeFilterExtended.SHOW_PSEUDO_ELEMENTS,
+		null,
+	);
+
+	// Simulate layout engine traversal: walker.firstChild() then walker.nextSibling()
+	const foundNodes: Array<{
+		type: string;
+		content: string;
+		pseudoType?: string;
+	}> = [];
+
+	let child = walker.firstChild();
+	while (child) {
+		const pseudoMeta = getPseudoMetadata(child);
+		foundNodes.push({
+			type: child.nodeType === child.TEXT_NODE ? "TEXT" : "ELEMENT",
+			content: child.textContent || "",
+			pseudoType: pseudoMeta?.pseudoType,
+		});
+		child = walker.nextSibling();
+	}
+
+	// Should find both ::before and ::after
+	expect(foundNodes.some((n) => n.pseudoType === "::before")).toBe(true);
+	expect(foundNodes.some((n) => n.pseudoType === "::after")).toBe(true);
+
+	// Should find them in correct order: ::before, regular text, ::after
+	const beforeIndex = foundNodes.findIndex((n) => n.pseudoType === "::before");
+	const afterIndex = foundNodes.findIndex((n) => n.pseudoType === "::after");
+	const textIndex = foundNodes.findIndex(
+		(n) => n.content === "Hello World" && !n.pseudoType,
+	);
+
+	expect(beforeIndex).toBeLessThan(textIndex);
+	expect(textIndex).toBeLessThan(afterIndex);
+});
+
 test("Pure JSDOM - ExpandedTreeWalker manual currentNode setting respects root", () => {
 	const dom = new JSDOM("<!DOCTYPE html><html><body></body></html>");
 	const window = dom.window;
@@ -1196,4 +1257,266 @@ test("Pure JSDOM - ExpandedTreeWalker manual currentNode setting respects root",
 	walker.currentNode = div;
 	const validNext = walker.nextNode();
 	expect(validNext?.nodeName).toBe("P");
+});
+
+// CSS-specific tests for ::marker pseudo-elements
+
+test("TermDOM - ::marker pseudo-elements with display: list-item", () => {
+	const terminal = new TestTerminal();
+	const termdom = new TermDOM({process: terminal});
+	const {document} = termdom;
+
+	// Add CSS with ::marker pseudo-element content
+	const style = document.createElement("style");
+	style.textContent = `
+		.marker-test::marker { 
+			content: '★ '; 
+		}
+		.list-item {
+			display: list-item;
+		}
+	`;
+	document.head.appendChild(style);
+
+	// Test 1: Regular LI element (should work with default display: list-item)
+	const li = document.createElement("li");
+	li.className = "marker-test";
+	li.textContent = "List item";
+	document.body.appendChild(li);
+
+	// Test 2: DIV with display: list-item (should work)
+	const divListItem = document.createElement("div");
+	divListItem.className = "marker-test list-item";
+	divListItem.textContent = "Div as list item";
+	document.body.appendChild(divListItem);
+
+	// Test 3: Regular DIV without display: list-item (should NOT work)
+	const regularDiv = document.createElement("div");
+	regularDiv.className = "marker-test";
+	regularDiv.textContent = "Regular div";
+	document.body.appendChild(regularDiv);
+
+	// Trigger stylesheet refresh to attach pseudo elements
+	termdom.styleManager.refreshStylesheets();
+
+	// Check that pseudo elements were created correctly
+	expect(getPseudoElement(li, "::marker")?.textContent).toBe("★ ");
+	expect(getPseudoElement(divListItem, "::marker")?.textContent).toBe("★ ");
+	expect(getPseudoElement(regularDiv, "::marker")).toBe(null);
+
+	// Verify computed display values
+	expect(termdom.window.getComputedStyle(li).getPropertyValue("display")).toBe(
+		"list-item",
+	);
+	expect(
+		termdom.window.getComputedStyle(divListItem).getPropertyValue("display"),
+	).toBe("list-item");
+	expect(
+		termdom.window.getComputedStyle(regularDiv).getPropertyValue("display"),
+	).toBe("block");
+});
+
+test("TermDOM - ::marker appears before ::before pseudo-elements", () => {
+	const terminal = new TestTerminal();
+	const termdom = new TermDOM({process: terminal});
+	const {document} = termdom;
+
+	// Add CSS with both ::marker and ::before pseudo-elements
+	const style = document.createElement("style");
+	style.textContent = `
+		.test::marker { 
+			content: '★ '; 
+		}
+		.test::before { 
+			content: '['; 
+		}
+		.test::after { 
+			content: ']'; 
+		}
+		.list-item {
+			display: list-item;
+		}
+	`;
+	document.head.appendChild(style);
+
+	// Test with DIV that has display: list-item
+	const div = document.createElement("div");
+	div.className = "test list-item";
+	div.textContent = "Content";
+	document.body.appendChild(div);
+
+	// Trigger stylesheet refresh
+	termdom.styleManager.refreshStylesheets();
+
+	// Verify all pseudo elements exist
+	expect(getPseudoElement(div, "::marker")?.textContent).toBe("★ ");
+	expect(getPseudoElement(div, "::before")?.textContent).toBe("[");
+	expect(getPseudoElement(div, "::after")?.textContent).toBe("]");
+
+	// Use ExpandedTreeWalker to verify order
+	const walker = termdom.createExpandedTreeWalker(
+		div,
+		termdom.window.NodeFilter.SHOW_ELEMENT |
+			termdom.window.NodeFilter.SHOW_TEXT |
+			NodeFilterExtended.SHOW_PSEUDO_ELEMENTS,
+		null,
+	);
+
+	const foundNodes: Array<{
+		type: string;
+		content: string;
+		pseudoType?: string;
+	}> = [];
+
+	let childNode = walker.firstChild();
+	while (childNode && foundNodes.length < 10) {
+		const pseudoMeta = getPseudoMetadata(childNode);
+		foundNodes.push({
+			type: childNode.nodeType === childNode.TEXT_NODE ? "TEXT" : "ELEMENT",
+			content: childNode.textContent || "",
+			pseudoType: pseudoMeta?.pseudoType,
+		});
+		childNode = walker.nextSibling();
+	}
+
+	// Should find all pseudo elements and content in correct order
+	expect(foundNodes).toHaveLength(4);
+
+	const markerIndex = foundNodes.findIndex((n) => n.pseudoType === "::marker");
+	const beforeIndex = foundNodes.findIndex((n) => n.pseudoType === "::before");
+	const contentIndex = foundNodes.findIndex(
+		(n) => n.content === "Content" && !n.pseudoType,
+	);
+	const afterIndex = foundNodes.findIndex((n) => n.pseudoType === "::after");
+
+	// Verify CSS specification order: ::marker → ::before → content → ::after
+	expect(markerIndex).toBe(0);
+	expect(beforeIndex).toBe(1);
+	expect(contentIndex).toBe(2);
+	expect(afterIndex).toBe(3);
+
+	expect(foundNodes[0].content).toBe("★ ");
+	expect(foundNodes[1].content).toBe("[");
+	expect(foundNodes[2].content).toBe("Content");
+	expect(foundNodes[3].content).toBe("]");
+});
+
+test("TermDOM - ::marker only on elements with display: list-item in walker traversal", () => {
+	const terminal = new TestTerminal();
+	const termdom = new TermDOM({process: terminal});
+	const {document} = termdom;
+
+	// Add CSS
+	const style = document.createElement("style");
+	style.textContent = `
+		.test::marker { content: '• '; }
+		.list-item { display: list-item; }
+		.block { display: block; }
+	`;
+	document.head.appendChild(style);
+
+	// Create different elements
+	const li = document.createElement("li"); // Default display: list-item
+	li.className = "test";
+	li.textContent = "LI";
+
+	const divList = document.createElement("div"); // display: list-item via CSS
+	divList.className = "test list-item";
+	divList.textContent = "DIV-LIST";
+
+	const divBlock = document.createElement("div"); // display: block via CSS
+	divBlock.className = "test block";
+	divBlock.textContent = "DIV-BLOCK";
+
+	const container = document.createElement("div");
+	container.appendChild(li);
+	container.appendChild(divList);
+	container.appendChild(divBlock);
+	document.body.appendChild(container);
+
+	// Trigger stylesheet refresh
+	termdom.styleManager.refreshStylesheets();
+
+	// Use walker to traverse and find ::marker elements
+	const walker = termdom.createExpandedTreeWalker(
+		container,
+		termdom.window.NodeFilter.SHOW_ELEMENT |
+			termdom.window.NodeFilter.SHOW_TEXT |
+			NodeFilterExtended.SHOW_PSEUDO_ELEMENTS,
+		null,
+	);
+
+	const markerNodes: Array<{parentTag: string; content: string}> = [];
+	let node = walker.nextNode();
+	while (node) {
+		const pseudoMeta = getPseudoMetadata(node);
+		if (pseudoMeta?.pseudoType === "::marker") {
+			markerNodes.push({
+				parentTag: pseudoMeta.hostElement.tagName,
+				content: node.textContent || "",
+			});
+		}
+		node = walker.nextNode();
+	}
+
+	// Should find ::marker for LI and DIV with display: list-item, but not regular DIV
+	expect(markerNodes).toHaveLength(2);
+	expect(markerNodes.find((m) => m.parentTag === "LI")).toBeDefined();
+	expect(
+		markerNodes.find((m) => m.parentTag === "DIV" && m.content === "• "),
+	).toBeDefined();
+
+	// All markers should have the expected content
+	markerNodes.forEach((marker) => {
+		expect(marker.content).toBe("• ");
+	});
+
+	// Verify display values of host elements
+	const liDisplay = termdom.window
+		.getComputedStyle(li)
+		.getPropertyValue("display");
+	const divListDisplay = termdom.window
+		.getComputedStyle(divList)
+		.getPropertyValue("display");
+	const divBlockDisplay = termdom.window
+		.getComputedStyle(divBlock)
+		.getPropertyValue("display");
+
+	expect(liDisplay).toBe("list-item");
+	expect(divListDisplay).toBe("list-item");
+	expect(divBlockDisplay).toBe("block");
+});
+
+test("TermDOM - ::marker rendering integration test", async () => {
+	const terminal = new TestTerminal();
+	const termdom = new TermDOM({process: terminal});
+	const {document} = termdom;
+
+	// Add CSS with ::marker and other pseudo-elements
+	const style = document.createElement("style");
+	style.textContent = `
+		.test::marker { content: '▶ '; }
+		.test::before { content: '['; }
+		.test::after { content: ']'; }
+		.list-item { display: list-item; }
+	`;
+	document.head.appendChild(style);
+
+	// Create test element
+	const div = document.createElement("div");
+	div.className = "test list-item";
+	div.textContent = "Content";
+	document.body.appendChild(div);
+
+	// Trigger stylesheet refresh and render
+	termdom.styleManager.refreshStylesheets();
+	await termdom.render();
+
+	// Check terminal output contains all pseudo-element content in correct order
+	const output = terminal.getPlainText();
+	expect(output).toContain("▶ [Content]");
+
+	// Verify the exact order appears in output
+	const expectedPattern = "▶ [Content]";
+	expect(output.includes(expectedPattern)).toBe(true);
 });

@@ -11,6 +11,7 @@ import {
 	getShadowRoot,
 	hasShadowRoot,
 	initializeShadowDOM,
+	getPseudoMetadata,
 } from "./composition.js";
 // import {registerListElements} from "./elements/lists.js";
 
@@ -74,6 +75,9 @@ export class TermDOM {
 	private readonly fullscreenManager: FullscreenManager;
 	public readonly styleManager: StyleManager;
 
+	// Guard against re-entrant rendering
+	private isRendering = false;
+
 	// private upgradeListElements!: (root?: Element | Document) => void;
 
 	private width: number;
@@ -99,9 +103,6 @@ export class TermDOM {
 		this.window = this.jsdom.window;
 		this.document = this.jsdom.window.document;
 
-		// Setup style management with caching
-		this.styleManager = new StyleManager(this.window);
-
 		// Setup DOM inspector
 		setupInspectMethods(this.window);
 
@@ -125,6 +126,9 @@ export class TermDOM {
 			undefined, // getOriginalNode not needed anymore
 		);
 		this.layoutEngine.resize(this.width, this.height);
+
+		// Setup style management with caching (after layout engine)
+		this.styleManager = new StyleManager(this.window, this.layoutEngine);
 		this.fullscreenManager = new FullscreenManager(this.process);
 
 		this.initializeWindow();
@@ -348,6 +352,9 @@ export class TermDOM {
 								shouldRefreshStyles = true;
 								break;
 							}
+
+							// Clean up pseudo-elements for removed elements
+							this.styleManager.cleanupPseudoElementsForRemovedElement(element);
 						}
 					}
 				}
@@ -407,22 +414,36 @@ export class TermDOM {
 	}
 
 	async render(): Promise<void> {
-		// Ensure pseudo elements are attached before layout calculation
-		this.styleManager.refreshStylesheets();
-		this.layoutEngine.calculateLayout();
-		this.renderer.beginFrame();
-		this.renderElement(this.document.documentElement);
-		const ansi = this.renderer.render();
-		if (ansi) {
-			await new Promise<void>((resolve, reject) => {
-				this.process.stdout.write(ansi, "utf8", (error) => {
-					if (error) {
-						reject(error);
-					} else {
-						resolve();
-					}
+		// Prevent re-entrant rendering
+		if (this.isRendering) {
+			return;
+		}
+
+		this.isRendering = true;
+		try {
+			// Only refresh stylesheets if they've actually changed
+			// TODO: Add proper change detection to StyleManager
+			// For now, skip redundant refreshStylesheets calls during render
+
+			this.layoutEngine.calculateLayout();
+
+			this.renderer.beginFrame();
+
+			this.renderElement(this.document.body);
+			const ansi = this.renderer.render();
+			if (ansi) {
+				await new Promise<void>((resolve, reject) => {
+					this.process.stdout.write(ansi, "utf8", (error) => {
+						if (error) {
+							reject(error);
+						} else {
+							resolve();
+						}
+					});
 				});
-			});
+			}
+		} finally {
+			this.isRendering = false;
 		}
 	}
 
@@ -541,11 +562,15 @@ export class TermDOM {
 		const textContent = textNode.data;
 		if (!textContent) return;
 
-		const parentElement = textNode.parentElement;
+		// Check if this is a pseudo-element node
+		const pseudoMetadata = getPseudoMetadata(textNode);
+
+		// For pseudo elements, we don't have a parentElement, but we have hostElement
+		const parentElement = pseudoMetadata
+			? pseudoMetadata.hostElement
+			: textNode.parentElement;
 		if (!parentElement) return;
 
-		// Check if this is a pseudo-element node
-		const pseudoMetadata = (textNode as any).pseudoMetadata;
 		let computedStyle: CSSStyleDeclaration;
 
 		if (pseudoMetadata) {
