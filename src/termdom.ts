@@ -407,6 +407,8 @@ export class TermDOM {
 	}
 
 	async render(): Promise<void> {
+		// Ensure pseudo elements are attached before layout calculation
+		this.styleManager.refreshStylesheets();
 		this.layoutEngine.calculateLayout();
 		this.renderer.beginFrame();
 		this.renderElement(this.document.documentElement);

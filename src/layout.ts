@@ -4,7 +4,11 @@ import type * as YogaTypes from "yoga-layout";
 import LineBreaker from "linebreak";
 import {getBoxModel, type BoxModel} from "./styles.js";
 import {getPropertyValue, parseUnitValue} from "./styles.js";
-import {createExpandedTreeWalker, NodeFilterExtended} from "./composition.js";
+import {
+	createExpandedTreeWalker,
+	NodeFilterExtended,
+	getPseudoMetadata,
+} from "./composition.js";
 
 function getAbsolutePosition(yogaNode: YogaTypes.Node): {
 	x: number;
@@ -1015,7 +1019,9 @@ export class LayoutEngine {
 		const walker = createExpandedTreeWalker(
 			this.window,
 			node.ownerDocument || this.window.document,
-			this.window.NodeFilter.SHOW_ELEMENT | this.window.NodeFilter.SHOW_TEXT,
+			this.window.NodeFilter.SHOW_ELEMENT |
+				this.window.NodeFilter.SHOW_TEXT |
+				NodeFilterExtended.SHOW_PSEUDO_ELEMENTS,
 			null,
 		);
 
@@ -1194,12 +1200,15 @@ export class LayoutEngine {
 	}
 
 	/**
-	 * Check if a node is inline-level (text or inline/inline-block element)
+	 * Check if a node is inline-level (text, pseudo-element, or inline/inline-block element)
 	 */
 	private isInlineLevel(node: Node): boolean {
-		if (node.nodeType === this.window.Node.TEXT_NODE) return true;
+		if (node.nodeType === node.TEXT_NODE) {
+			// Regular text nodes and pseudo-element text nodes are inline-level
+			return true;
+		}
 
-		if (node.nodeType === this.window.Node.ELEMENT_NODE) {
+		if (node.nodeType === node.ELEMENT_NODE) {
 			const element = node as Element;
 			const display = getPropertyValue(element, "display");
 			return display === "inline" || display === "inline-block";
@@ -1207,7 +1216,6 @@ export class LayoutEngine {
 
 		return false;
 	}
-
 
 	private handleMutationRecords(mutations: MutationRecord[]): void {
 		for (let i = 0; i < mutations.length; i++) {
@@ -1588,13 +1596,19 @@ export class LayoutEngine {
 	private collectLeafNodes(runHead: Node): Leaf[] {
 		const leafNodes: Leaf[] = [];
 
+		// For pseudo elements, use the host element as the parent
+		const pseudoMetadata = getPseudoMetadata(runHead);
+		const parentElement = pseudoMetadata
+			? pseudoMetadata.hostElement
+			: runHead.parentElement;
+
 		// Inline run heads should always have a parent element
-		if (!runHead.parentElement) {
+		if (!parentElement) {
 			throw new Error("Inline run head must have a parent element");
 		}
 
 		// Determine the appropriate traversal root based on parent display type
-		const parentDisplay = getPropertyValue(runHead.parentElement, "display");
+		const parentDisplay = getPropertyValue(parentElement, "display");
 
 		let traversalRoot: Node;
 		if (parentDisplay === "flex" && runHead.nodeType === runHead.ELEMENT_NODE) {
@@ -1602,14 +1616,16 @@ export class LayoutEngine {
 			traversalRoot = runHead;
 		} else {
 			// For all other cases, use the parent as the boundary
-			traversalRoot = runHead.parentElement;
+			traversalRoot = parentElement;
 		}
 
 		// Use ExpandedTreeWalker for traversal
 		const walker = createExpandedTreeWalker(
 			this.window,
 			traversalRoot,
-			this.window.NodeFilter.SHOW_ELEMENT | this.window.NodeFilter.SHOW_TEXT,
+			this.window.NodeFilter.SHOW_ELEMENT |
+				this.window.NodeFilter.SHOW_TEXT |
+				NodeFilterExtended.SHOW_PSEUDO_ELEMENTS,
 			null,
 		);
 
@@ -1744,8 +1760,11 @@ export class LayoutEngine {
 		}
 
 		// Get CSS properties from the appropriate element
-		const styleElement =
-			runHead.nodeType === runHead.TEXT_NODE
+		// For pseudo elements, use the host element, otherwise use parent for text nodes
+		const pseudoMetadata = getPseudoMetadata(runHead);
+		const styleElement = pseudoMetadata
+			? pseudoMetadata.hostElement
+			: runHead.nodeType === runHead.TEXT_NODE
 				? runHead.parentElement!
 				: (runHead as Element);
 

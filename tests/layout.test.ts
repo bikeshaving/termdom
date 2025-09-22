@@ -1514,8 +1514,6 @@ test("Block element interrupting inline run", async () => {
 
 	// Initial render - should be on one line
 	await termdom.render();
-	const initialOutput = terminal.getPlainText();
-	console.log("Initial:", JSON.stringify(initialOutput));
 
 	// Insert block element in the middle
 	const blockDiv = termdom.document.createElement("div");
@@ -1583,15 +1581,16 @@ test("Block element removal properly cleans up former run head Yoga nodes", asyn
 	});
 
 	const container = termdom.document.createElement("div");
-	container.innerHTML = 'Before <div id="block">BLOCK</div><span id="span">inline</span> after';
+	container.innerHTML =
+		'Before <div id="block">BLOCK</div><span id="span">inline</span> after';
 	termdom.document.body.appendChild(container);
 
 	// Initial render - span should be a run head with Yoga node
 	await termdom.render();
 	const layoutEngine = (termdom as any).layoutEngine;
 	const span = termdom.document.getElementById("span")!;
-	
-	// Remove the block element  
+
+	// Remove the block element
 	const blockElement = termdom.document.getElementById("block")!;
 	blockElement.remove();
 
@@ -1599,7 +1598,7 @@ test("Block element removal properly cleans up former run head Yoga nodes", asyn
 	await termdom.render();
 	const updatedOutput = terminal.getPlainText();
 	expect(updatedOutput).toContain("Before inline after");
-	
+
 	// Verify the span no longer has a Yoga node (was cleaned up)
 	expect(layoutEngine.nodeMap.has(span)).toBe(false);
 });
