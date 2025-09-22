@@ -1408,12 +1408,19 @@ export class LayoutEngine {
 					if (parent) {
 						parent.removeChild(yogaNode);
 					}
-					const pseudoMeta = getPseudoMetadata(node);
-					if (pseudoMeta) {
-						// Removing pseudo element from nodeMap during mutation removal
+					
+					// Check if node was actually removed vs just moved
+					if (!node.isConnected) {
+						// Node was truly removed from DOM - free it
+						const pseudoMeta = getPseudoMetadata(node);
+						if (pseudoMeta) {
+							// Removing pseudo element from nodeMap during mutation removal
+						}
+						yogaNode.freeRecursive();
+						this.nodeMap.delete(node);
 					}
-					yogaNode.freeRecursive();
-					this.nodeMap.delete(node);
+					// If node.isConnected is true, node was moved - keep Yoga node and nodeMap entry
+					// It will be re-added to the new parent when that mutation is processed
 				}
 
 				// Clear any cached break results for this node
@@ -1427,6 +1434,21 @@ export class LayoutEngine {
 		parentYogaNode: YogaTypes.Node | null = null,
 	): void {
 		if (this.nodeMap.has(node)) {
+			// Node already exists - this might be a moved node that needs reparenting
+			const existingYogaNode = this.nodeMap.get(node);
+			if (existingYogaNode && parentYogaNode) {
+				// Check if it's already a child of the correct parent
+				const currentParent = existingYogaNode.getParent();
+				if (currentParent !== parentYogaNode) {
+					// Remove from current parent first (if any)
+					if (currentParent) {
+						currentParent.removeChild(existingYogaNode);
+					}
+					// Add to new parent
+					const yogaIndex = this.getYogaIndex(node as Element);
+					parentYogaNode.insertChild(existingYogaNode, yogaIndex);
+				}
+			}
 			return;
 		}
 
@@ -1523,16 +1545,16 @@ export class LayoutEngine {
 				const childDisplay = getPropertyValue(child as Element, "display");
 				if (childDisplay === "inline" || childDisplay === "inline-block") {
 					if (display === "flex") {
-						this.addElementNode(child as Element, yogaNode);
+						this.addNode(child, yogaNode);
 					} else {
-						this.addElementNode(child as Element, yogaNode);
+						this.addNode(child, yogaNode);
 					}
 				} else {
-					this.addElementNode(child as Element, yogaNode);
+					this.addNode(child, yogaNode);
 				}
 			} else if (child.nodeType === child.TEXT_NODE) {
 				// Text nodes need to be added to the layout tree
-				this.addTextNode(child as Text, yogaNode);
+				this.addNode(child, yogaNode);
 			}
 			child = walker.nextSibling();
 		}

@@ -502,6 +502,11 @@ class TerminalComputedStyle extends CSSStyleDeclaration {
 			"list-style-type",
 			"list-style-position",
 			"list-style-image",
+			
+			// CSS Counters
+			"counter-reset",
+			"counter-increment",
+			"content",
 		];
 
 		// Resolve each property and set it in the declaration
@@ -978,6 +983,17 @@ interface ParsedCSSRule {
 	pseudoElement?: string;
 }
 
+// CSS Counter interfaces
+interface CounterState {
+	[counterName: string]: number;
+}
+
+interface CounterScope {
+	element: Element;
+	counters: CounterState;
+	parent?: CounterScope;
+}
+
 /**
  * CSS Style Manager
  * Handles computed style caching, stylesheet parsing, and pseudo-element support
@@ -989,6 +1005,9 @@ export class StyleManager {
 		Map<string, Record<string, string>>
 	>();
 	private parsedRules: ParsedCSSRule[] = [];
+	
+	// CSS Counter support
+	private counterScopes = new WeakMap<Element, CounterScope>();
 
 	constructor(
 		private window: DOMWindow,
@@ -1246,7 +1265,34 @@ export class StyleManager {
 		pseudoType: string,
 	): Text | null {
 		const styles = this.computePseudoElementStyle(hostElement, pseudoType);
-		const content = styles.content;
+		let content = styles.content;
+
+		// For ::marker pseudo-elements, generate default content if none specified
+		if (pseudoType === "::marker") {
+			const display = this.window
+				.getComputedStyle(hostElement)
+				.getPropertyValue("display");
+			
+			if (display === "list-item") {
+				// If no explicit CSS content, generate default marker using counters
+				if (!content || content === "none" || content === "normal") {
+					const listParent = hostElement.parentElement;
+					if (listParent && (listParent.tagName === "UL" || listParent.tagName === "OL")) {
+						// Use CSS counter system for proper numbering
+						if (listParent.tagName === "OL") {
+							// For ordered lists, use counter(list-item)
+							content = `"counter(list-item) "`;
+						} else {
+							// For unordered lists, use default bullet marker
+							const bullets = ["•", "◦", "▪", "▫"];
+							const nestingDepth = getListNestingDepth(hostElement);
+							const bullet = bullets[nestingDepth % bullets.length];
+							content = `"${bullet} "`;
+						}
+					}
+				}
+			}
+		}
 
 		// Only create pseudo-element if it has content
 		if (!content || content === "none" || content === "normal") {
@@ -1261,6 +1307,9 @@ export class StyleManager {
 		) {
 			textContent = textContent.slice(1, -1);
 		}
+
+		// Resolve counter() functions in the content
+		textContent = this.resolveCounterFunction(hostElement, textContent);
 
 		// Create text node with the content
 		const doc = hostElement.ownerDocument;
@@ -1280,6 +1329,16 @@ export class StyleManager {
 	 * Check if element should have a pseudo-element based on CSS rules
 	 */
 	shouldCreatePseudoElement(element: Element, pseudoType: string): boolean {
+		// For ::marker pseudo-elements, always create them for list-item elements
+		if (pseudoType === "::marker") {
+			const display = this.window
+				.getComputedStyle(element)
+				.getPropertyValue("display");
+			if (display === "list-item") {
+				return true; // Always create markers for list items
+			}
+		}
+		
 		const styles = this.computePseudoElementStyle(element, pseudoType);
 		const content = styles.content;
 		return !!(content && content !== "none" && content !== "normal");
@@ -1348,6 +1407,9 @@ export class StyleManager {
 	 * Attach pseudo-element nodes to a specific element if it has matching pseudo-element rules
 	 */
 	attachPseudoElementsToElement(element: Element): void {
+		// Initialize counters for this element first
+		this.initializeCounters(element);
+
 		const pseudoTypes = ["::before", "::after", "::marker"];
 
 		for (const pseudoType of pseudoTypes) {
@@ -1520,5 +1582,176 @@ export class StyleManager {
 	clearCache(): void {
 		this.computedStyleCache = new WeakMap();
 		this.pseudoElementStyleCache = new WeakMap();
+		this.counterScopes = new WeakMap();
+	}
+
+	// ============================================================================
+	// CSS COUNTER SUPPORT
+	// ============================================================================
+
+	/**
+	 * Initialize counters for an element based on CSS properties
+	 * Non-recursive approach to avoid memory issues
+	 */
+	initializeCounters(element: Element): void {
+		// Skip if already initialized
+		if (this.counterScopes.has(element)) {
+			return;
+		}
+
+		const computedStyle = this.window.getComputedStyle(element);
+		const counterReset = computedStyle.getPropertyValue("counter-reset");
+		const counterIncrement = computedStyle.getPropertyValue("counter-increment");
+
+		// Get parent scope if parent exists (but don't recursively initialize parents)
+		const parentElement = element.parentElement;
+		const parentScope = parentElement ? this.counterScopes.get(parentElement) : undefined;
+		
+		// Create counter scope for this element
+		const scope: CounterScope = {
+			element,
+			counters: {},
+			parent: parentScope,
+		};
+		this.counterScopes.set(element, scope);
+
+		// Handle counter-reset first
+		if (counterReset && counterReset !== "none") {
+			this.parseCounterReset(scope, counterReset);
+		}
+
+		// Handle automatic list-item counter for ol/ul elements
+		if (element.tagName === "OL" || element.tagName === "UL") {
+			const startValue = element.tagName === "OL" 
+				? parseInt(element.getAttribute("start") || "1", 10) 
+				: 0;
+			scope.counters["list-item"] = startValue - 1; // Reset to start-1 so first increment gives start
+		}
+
+		// Handle counter-increment after reset
+		if (counterIncrement && counterIncrement !== "none") {
+			this.parseCounterIncrement(scope, counterIncrement);
+		}
+
+		// Handle automatic list-item increment for li elements
+		if (element.tagName === "LI") {
+			this.incrementCounter(scope, "list-item", 1);
+		}
+	}
+
+	/**
+	 * Parse counter-reset CSS property
+	 */
+	private parseCounterReset(scope: CounterScope, counterReset: string): void {
+		// Parse "counter1 value1 counter2 value2" format
+		const tokens = counterReset.trim().split(/\s+/);
+		for (let i = 0; i < tokens.length; i += 2) {
+			const counterName = tokens[i];
+			const value = tokens[i + 1] ? parseInt(tokens[i + 1], 10) : 0;
+			if (counterName && !isNaN(value)) {
+				scope.counters[counterName] = value;
+			}
+		}
+	}
+
+	/**
+	 * Parse counter-increment CSS property
+	 */
+	private parseCounterIncrement(scope: CounterScope, counterIncrement: string): void {
+		// Parse "counter1 increment1 counter2 increment2" format
+		const tokens = counterIncrement.trim().split(/\s+/);
+		for (let i = 0; i < tokens.length; i += 2) {
+			const counterName = tokens[i];
+			const increment = tokens[i + 1] ? parseInt(tokens[i + 1], 10) : 1;
+			if (counterName && !isNaN(increment)) {
+				this.incrementCounter(scope, counterName, increment);
+			}
+		}
+	}
+
+	/**
+	 * Increment a counter by a specific amount
+	 */
+	private incrementCounter(scope: CounterScope, counterName: string, increment: number): void {
+		// Get current counter value from parent scopes
+		const currentValue = this.getCounterValueFromScope(scope.parent, counterName);
+		
+		// Set the new incremented value in the current scope
+		scope.counters[counterName] = currentValue + increment;
+	}
+
+	/**
+	 * Get counter value from a specific scope (without current scope)
+	 */
+	private getCounterValueFromScope(scope: CounterScope | undefined, counterName: string): number {
+		// Look for counter in current scope or parent scopes
+		let currentScope = scope;
+		while (currentScope) {
+			if (counterName in currentScope.counters) {
+				return currentScope.counters[counterName];
+			}
+			currentScope = currentScope.parent;
+		}
+		return 0; // Counter not found
+	}
+
+	/**
+	 * Get current value of a counter for an element
+	 */
+	getCounterValue(element: Element, counterName: string): number {
+		const scope = this.counterScopes.get(element);
+		if (!scope) return 0;
+
+		// Look for counter in current scope or parent scopes
+		let currentScope: CounterScope | undefined = scope;
+		while (currentScope) {
+			if (counterName in currentScope.counters) {
+				return currentScope.counters[counterName];
+			}
+			currentScope = currentScope.parent;
+		}
+
+		return 0; // Counter not found
+	}
+
+	/**
+	 * Resolve counter() function in CSS content
+	 * Supports: counter(name), counter(name, style)
+	 */
+	resolveCounterFunction(element: Element, content: string): string {
+		// Replace all counter() functions in the content
+		return content.replace(/counter\s*\(\s*([^,)]+)(?:\s*,\s*([^)]+))?\s*\)/g, 
+			(match, counterName, style) => {
+				const trimmedName = counterName.trim();
+				const trimmedStyle = style?.trim() || "decimal";
+				const value = this.getCounterValue(element, trimmedName);
+				return this.formatCounterValue(value, trimmedStyle);
+			}
+		);
+	}
+
+	/**
+	 * Format counter value according to style
+	 */
+	private formatCounterValue(value: number, style: string): string {
+		switch (style) {
+			case "decimal":
+			default:
+				return value.toString();
+			case "lower-alpha":
+				return String.fromCharCode(96 + ((value - 1) % 26) + 1);
+			case "upper-alpha":
+				return String.fromCharCode(64 + ((value - 1) % 26) + 1);
+			case "lower-roman":
+				return toRoman(value).toLowerCase();
+			case "upper-roman":
+				return toRoman(value);
+			case "disc":
+				return "•";
+			case "circle":
+				return "◦";
+			case "square":
+				return "▪";
+		}
 	}
 }
