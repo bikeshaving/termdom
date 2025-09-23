@@ -4,7 +4,11 @@
  * Shared utilities for terminal testing with unified TestTerminal class
  */
 
-import {type ProcessLike, type TTYWriteStream} from "../src/termdom.js";
+import {
+	type ProcessLike,
+	type TTYWriteStream,
+	type TTYReadStream,
+} from "../src/termdom.js";
 import {EventEmitter} from "events";
 import {Terminal} from "@xterm/headless";
 import {type CellBuffer, Cell, createBuffer} from "../src/ansi.js";
@@ -23,12 +27,25 @@ class MockWriteStream extends EventEmitter implements TTYWriteStream {
 	rows: number;
 	isTTY = true;
 	private terminal: Terminal;
+	private stdin: MockReadStream;
 
-	constructor(terminal: Terminal, cols: number = 80, rows: number = 24) {
+	constructor(
+		terminal: Terminal,
+		stdin: MockReadStream,
+		cols: number = 80,
+		rows: number = 24,
+	) {
 		super();
 		this.terminal = terminal;
+		this.stdin = stdin;
 		this.columns = cols;
 		this.rows = rows;
+
+		// Set up xterm to respond to cursor position queries
+		this.terminal.onData((data) => {
+			// Forward any responses from xterm (like cursor position) to stdin
+			this.stdin.simulateResponse(data);
+		});
 	}
 
 	write(
@@ -45,15 +62,36 @@ class MockWriteStream extends EventEmitter implements TTYWriteStream {
 		const data =
 			typeof chunk === "string" ? chunk : chunk.toString(encoding || "utf8");
 
-		// Use xterm's write callback to know when processing is complete
+		// Feed data to xterm terminal - it will handle cursor queries automatically
 		this.terminal.write(data, callback);
 
 		return true;
 	}
 }
 
+class MockReadStream extends EventEmitter implements TTYReadStream {
+	isTTY = true;
+
+	setRawMode(_mode: boolean): this {
+		return this;
+	}
+
+	resume(): this {
+		return this;
+	}
+
+	pause(): this {
+		return this;
+	}
+
+	simulateResponse(data: string): void {
+		this.emit("data", Buffer.from(data));
+	}
+}
+
 export class TestTerminal extends EventEmitter implements ProcessLike {
 	stdout: MockWriteStream;
+	stdin: MockReadStream;
 	env: Record<string, string | undefined>;
 	private terminal: Terminal;
 
@@ -82,7 +120,8 @@ export class TestTerminal extends EventEmitter implements ProcessLike {
 			allowProposedApi: true,
 		});
 
-		this.stdout = new MockWriteStream(this.terminal, cols, rows);
+		this.stdin = new MockReadStream();
+		this.stdout = new MockWriteStream(this.terminal, this.stdin, cols, rows);
 	}
 
 	/**

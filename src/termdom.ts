@@ -78,6 +78,9 @@ export class TermDOM {
 	// Guard against re-entrant rendering
 	private isRendering = false;
 
+	// Track command start position for incremental rendering
+	public commandStartRow?: number;
+
 	// private upgradeListElements!: (root?: Element | Document) => void;
 
 	private width: number;
@@ -917,6 +920,55 @@ export class TermDOM {
 			cancelable: true,
 		});
 		targetElement.dispatchEvent(keyupEvent);
+	}
+
+	/**
+	 * Detect current cursor position to establish command start row
+	 * Sends \x1b[6n and waits for response \x1b[row;colR
+	 */
+	async detectCommandStart(): Promise<number> {
+		return new Promise<number>((resolve, reject) => {
+			if (!this.process.stdin?.isTTY) {
+				reject(new Error("Cannot detect cursor position: stdin is not a TTY"));
+				return;
+			}
+
+			const stdin = this.process.stdin;
+			let responseBuffer = "";
+
+			// Handler for cursor position response
+			const handleData = (data: Buffer) => {
+				responseBuffer += data.toString();
+
+				// Look for cursor position response pattern: \x1b[row;colR
+				const match = responseBuffer.match(/\x1b\[(\d+);(\d+)R/);
+				if (match) {
+					// Cleanup
+					stdin.removeListener("data", handleData);
+
+					const row = parseInt(match[1], 10);
+					this.commandStartRow = row;
+					resolve(row);
+				}
+			};
+
+			// Set up listener for response
+			stdin.on("data", handleData);
+
+			// Send cursor position query
+			this.process.stdout.write("\x1b[6n", (error) => {
+				if (error) {
+					stdin.removeListener("data", handleData);
+					reject(error);
+				}
+			});
+
+			// Timeout after 1 second
+			setTimeout(() => {
+				stdin.removeListener("data", handleData);
+				reject(new Error("Timeout waiting for cursor position response"));
+			}, 1000);
+		});
 	}
 
 	dispose(): void {
