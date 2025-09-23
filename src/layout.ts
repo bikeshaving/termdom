@@ -1282,6 +1282,64 @@ export class LayoutEngine {
 		return false;
 	}
 
+	/**
+	 * Determines if a whitespace-only text node should be collapsed to nothing
+	 * according to CSS whitespace collapsing rules in block formatting contexts
+	 */
+	private shouldCollapseWhitespaceTextNode(textNode: Text): boolean {
+		// Only collapse whitespace-only text nodes
+		if (!textNode.textContent || !/^\s*$/.test(textNode.textContent)) {
+			return false;
+		}
+
+		// Get parent element
+		const parent = textNode.parentElement;
+		if (!parent) {
+			return false;
+		}
+
+		// Check parent's display type - only collapse in block formatting contexts
+		const parentDisplay = getPropertyValue(parent, "display");
+		if (parentDisplay === "inline" || parentDisplay === "inline-block") {
+			// In inline contexts, preserve whitespace as spaces
+			return false;
+		}
+
+		// Check if this whitespace is between block-level elements
+		const prevSibling = textNode.previousSibling;
+		const nextSibling = textNode.nextSibling;
+
+		// Helper to check if a node is block-level
+		const isBlockLevel = (node: Node | null): boolean => {
+			if (!node || node.nodeType !== node.ELEMENT_NODE) {
+				return false;
+			}
+			const display = getPropertyValue(node as Element, "display");
+			return display !== "inline" && display !== "inline-block";
+		};
+
+		// If whitespace is between two block elements, collapse it
+		if (isBlockLevel(prevSibling) && isBlockLevel(nextSibling)) {
+			return true;
+		}
+
+		// If whitespace is at the start/end of a block container next to a block element, collapse it
+		if (isBlockLevel(prevSibling) && !nextSibling) {
+			return true; // End of container after block element
+		}
+
+		if (!prevSibling && isBlockLevel(nextSibling)) {
+			return true; // Start of container before block element
+		}
+
+		// If whitespace is the only content at start/end of block container, collapse it
+		if (!prevSibling && !nextSibling) {
+			return true; // Only content in block container
+		}
+
+		return false;
+	}
+
 	private handleMutationRecords(mutations: MutationRecord[]): void {
 		for (let i = 0; i < mutations.length; i++) {
 			const record = mutations[i];
@@ -1741,7 +1799,20 @@ export class LayoutEngine {
 			if (node.nodeType === node.TEXT_NODE) {
 				// Text node - add as leaf
 				const textNode = node as Text;
+
 				if (textNode.textContent) {
+					// Check if this is a whitespace-only text node between block elements
+					const isWhitespaceOnly = /^\s*$/.test(textNode.textContent);
+
+					if (
+						isWhitespaceOnly &&
+						this.shouldCollapseWhitespaceTextNode(textNode)
+					) {
+						// Skip this whitespace text node - it should be collapsed to nothing
+						if (!walker.nextNode()) break;
+						continue;
+					}
+
 					leafNodes.push({
 						type: "text",
 						node: textNode,

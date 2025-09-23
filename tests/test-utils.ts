@@ -127,7 +127,8 @@ export class TestTerminal extends EventEmitter implements ProcessLike {
 		for (let row = 0; row < this.terminal.rows; row++) {
 			const line = buffer.getLine(row);
 			if (line) {
-				lines.push(line.translateToString(true)); // true = trim right
+				const lineText = line.translateToString(true); // true = trim right
+				lines.push(lineText);
 			} else {
 				lines.push("");
 			}
@@ -171,16 +172,22 @@ export class TestTerminal extends EventEmitter implements ProcessLike {
 				}
 
 				const chars = cell.getChars();
-				if (!chars) continue;
+				// Handle empty chars as spaces (this happens with leading indentation)
+				const actualChars = chars || " ";
 				// Don't skip spaces - they're important for text layout
 
 				// Convert xterm style to our format
 				const fg = cell.getFgColor();
 				const bg = cell.getBgColor();
 
+				// Check if cell has explicit color styling - XTerm returns theme colors for default cells
+				// For default cells, we want undefined colors to use the terminal's own defaults
+				const hasExplicitFg = cell.getFgColorMode() !== 0; // 0 = default color mode
+				const hasExplicitBg = cell.getBgColorMode() !== 0; // 0 = default color mode
+
 				const cellStyle = {
-					fg: fg !== 0 ? fg : undefined,
-					bg: bg !== 0 ? bg : undefined,
+					fg: hasExplicitFg ? fg : undefined,
+					bg: hasExplicitBg ? bg : undefined,
 					bold: !!cell.isBold(),
 					italic: !!cell.isItalic(),
 					underline: !!cell.isUnderline(),
@@ -193,13 +200,13 @@ export class TestTerminal extends EventEmitter implements ProcessLike {
 
 				// Create the cell at the output position
 				cellBuffer[row][outputCol] = Cell.create({
-					grapheme: chars,
+					grapheme: actualChars,
 					...cellStyle,
 				});
 				outputCol++;
 
 				// If this is a wide character, create a continuation cell at the next output position
-				const actualWidth = Bun.stringWidth(chars);
+				const actualWidth = Bun.stringWidth(actualChars);
 				if (actualWidth === 2 && outputCol < this.terminal.cols) {
 					cellBuffer[row][outputCol] = null; // Continuation cell
 					outputCol++;
@@ -238,11 +245,11 @@ export class TestTerminal extends EventEmitter implements ProcessLike {
 	 */
 	writeANSI(testName: string): void {
 		const ansiOutput = this.getStaticANSI();
-		const snapshotsDir = join(import.meta.dir, "__snapshots__");
-		if (!existsSync(snapshotsDir)) {
-			mkdirSync(snapshotsDir, {recursive: true});
+		const ansiDir = join(import.meta.dir, "__snapshots__", "ansi");
+		if (!existsSync(ansiDir)) {
+			mkdirSync(ansiDir, {recursive: true});
 		}
 		const ansiFilename = `${testName}.ansi`;
-		writeFileSync(join(snapshotsDir, ansiFilename), ansiOutput);
+		writeFileSync(join(ansiDir, ansiFilename), ansiOutput);
 	}
 }

@@ -1,30 +1,141 @@
 // Bun Snapshot v1, https://bun.sh/docs/test/snapshots
 
 exports[`renders single emoji correctly 1`] = `
-"\x1B[38;2;255;255;255;48;2;255;255;255m🚀\x1B[0m
+"🚀                                                                              
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
 "
 `;
 
 exports[`renders emoji with text correctly 1`] = `
-"\x1B[38;2;255;255;255;48;2;255;255;255mHello 🌍 World!\x1B[0m
+"Hello 🌍 World!                                                                 
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
 "
 `;
 
 exports[`renders multiple emojis correctly 1`] = `
-"\x1B[38;2;255;255;255;48;2;255;255;255m🚀🎯📄\x1B[0m
-\x1B[38;2;255;255;255;48;2;255;255;255m🎉 Party 🎊\x1B[0m
-\x1B[38;2;255;255;255;48;2;255;255;255m👨‍💻\x1B[0m
-\x1B[38;2;255;255;255;48;2;255;255;255m🌈🦄✨\x1B[0m
-\x1B[38;2;255;255;255;48;2;255;255;255m📱💻⌨️🖱️\x1B[0m
+"🚀🎯📄                                                                          
+🎉 Party 🎊                                                                     
+👨‍💻                                                                            
+🌈🦄✨                                                                          
+📱💻⌨️🖱️                                                                        
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
 "
 `;
 
 exports[`renders emoji with colors correctly 1`] = `
-"\x1B[38;2;255;0;255;48;2;255;255;0m🎨 Colorful Text 🌈\x1B[0m
+"\x1B[38;2;255;0;255;48;2;255;255;0m🎨 Colorful Text 🌈\x1B[0m                                                             \x1B[0m
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
 "
 `;
 
 exports[`handles emoji width calculation 1`] = `
-"\x1B[38;2;255;255;255;48;2;255;255;255mText 🚀 More\x1B[0m
+"Text 🚀 More                                                                    
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
 "
 `;

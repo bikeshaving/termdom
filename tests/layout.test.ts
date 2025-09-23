@@ -1955,3 +1955,174 @@ test("Block children have flex-shrink: 0 to prevent content clipping", () => {
 		expect(yoga.getFlexShrink()).toBe(0);
 	});
 });
+
+// =============================================================================
+// WHITESPACE COLLAPSING TESTS (CURRENTLY FAILING)
+// These tests document the phantom line issue and should pass once we implement
+// proper CSS whitespace collapsing in block contexts
+// =============================================================================
+
+test("whitespace between block elements should be collapsed", async () => {
+	const terminal = new TestTerminal({cols: 40, rows: 10});
+	const dom = new TermDOM({process: terminal});
+	const {document} = dom;
+
+	// HTML with significant whitespace between block elements
+	// According to CSS spec, this whitespace should be collapsed in block context
+	const container = document.createElement("div");
+	container.innerHTML = `
+		<div>Block 1</div>
+		
+		<div>Block 2</div>
+		
+		
+		<div>Block 3</div>
+	`;
+	document.body.appendChild(container);
+
+	await dom.render();
+
+	// Get the raw terminal buffer to check for phantom lines
+	const buffer = (terminal as any).terminal.buffer.active;
+	let phantomLines = 0;
+
+	for (let row = 0; row < terminal.stdout.rows; row++) {
+		const line = buffer.getLine(row);
+		if (line) {
+			const text = line.translateToString(true);
+			// Phantom line = whitespace-only content (not truly empty)
+			const isPhantom = text.trim() === "" && text.length > 0;
+			if (isPhantom) phantomLines++;
+		}
+	}
+
+	// EXPECTED: Whitespace between block elements should be collapsed, no phantom lines
+	// CURRENT: Creates phantom lines because we process whitespace text nodes as content
+	expect(phantomLines).toBe(0);
+
+	dom.dispose();
+});
+
+test("whitespace in nested lists should be collapsed", async () => {
+	const terminal = new TestTerminal({cols: 40, rows: 12});
+	const dom = new TermDOM({process: terminal});
+	const {document} = dom;
+
+	// Nested list with formatted HTML (the original phantom line case)
+	const container = document.createElement("div");
+	container.innerHTML = `
+		<ul>
+			<li>Top level item 1</li>
+			<li>Top level item 2
+				<ul>
+					<li>Second level A</li>
+					<li>Second level B</li>
+				</ul>
+			</li>
+			<li>Top level item 3</li>
+		</ul>
+	`;
+	document.body.appendChild(container);
+
+	await dom.render();
+
+	// Count phantom lines in terminal buffer
+	const buffer = (terminal as any).terminal.buffer.active;
+	let phantomLineCount = 0;
+
+	for (let row = 0; row < terminal.stdout.rows; row++) {
+		const line = buffer.getLine(row);
+		if (line) {
+			const text = line.translateToString(true);
+			const isPhantom = text.trim() === "" && text.length > 0;
+			if (isPhantom) phantomLineCount++;
+		}
+	}
+
+	// EXPECTED: Whitespace between list elements should be collapsed per CSS rules
+	// CURRENT: Creates multiple phantom lines from inter-element whitespace
+	expect(phantomLineCount).toBe(0);
+
+	dom.dispose();
+});
+
+test("programmatic DOM creation should not have phantom lines", async () => {
+	const terminal = new TestTerminal({cols: 40, rows: 8});
+	const dom = new TermDOM({process: terminal});
+	const {document} = dom;
+
+	// Programmatic creation (no whitespace text nodes)
+	const container = document.createElement("div");
+	const ul = document.createElement("ul");
+
+	const li1 = document.createElement("li");
+	li1.textContent = "Item 1";
+	ul.appendChild(li1);
+
+	const li2 = document.createElement("li");
+	li2.textContent = "Item 2";
+
+	// Nested list
+	const nestedUl = document.createElement("ul");
+	const nestedLi = document.createElement("li");
+	nestedLi.textContent = "Sub item";
+	nestedUl.appendChild(nestedLi);
+	li2.appendChild(nestedUl);
+
+	ul.appendChild(li2);
+	container.appendChild(ul);
+	document.body.appendChild(container);
+
+	await dom.render();
+
+	// Even programmatic creation currently creates phantom lines
+	// This suggests the issue is deeper than just innerHTML whitespace
+	const buffer = (terminal as any).terminal.buffer.active;
+	let phantomLineCount = 0;
+
+	for (let row = 0; row < terminal.stdout.rows; row++) {
+		const line = buffer.getLine(row);
+		if (line) {
+			const text = line.translateToString(true);
+			const isPhantom = text.trim() === "" && text.length > 0;
+			if (isPhantom) phantomLineCount++;
+		}
+	}
+
+	// EXPECTED: No phantom lines since no whitespace text nodes were created
+	// CURRENT: Still creates phantom lines, indicating layout engine issue
+	expect(phantomLineCount).toBe(0);
+
+	dom.dispose();
+});
+
+test("compact HTML should not have phantom lines", async () => {
+	const terminal = new TestTerminal({cols: 40, rows: 8});
+	const dom = new TermDOM({process: terminal});
+	const {document} = dom;
+
+	// HTML without any whitespace between elements
+	const container = document.createElement("div");
+	container.innerHTML = `<ul><li>Item 1</li><li>Item 2<ul><li>Sub item</li></ul></li></ul>`;
+	document.body.appendChild(container);
+
+	await dom.render();
+
+	const buffer = (terminal as any).terminal.buffer.active;
+	let phantomLineCount = 0;
+
+	for (let row = 0; row < terminal.stdout.rows; row++) {
+		const line = buffer.getLine(row);
+		if (line) {
+			const text = line.translateToString(true);
+			const isPhantom = text.trim() === "" && text.length > 0;
+			if (isPhantom) phantomLineCount++;
+		}
+	}
+
+	// EXPECTED: No phantom lines when there's no inter-element whitespace
+	// This test should already pass and demonstrates the desired behavior
+	expect(phantomLineCount).toBe(0);
+
+	dom.dispose();
+});

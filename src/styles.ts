@@ -1011,7 +1011,7 @@ interface CounterScope {
  * Handles computed style caching, stylesheet parsing, and pseudo-element support
  */
 export class StyleManager {
-	private computedStyleCache = new WeakMap<Element, TerminalComputedStyle>();
+	private computedStyleCache = new WeakMap<Element, CSSStyleDeclaration>();
 	private pseudoElementStyleCache = new WeakMap<
 		Element,
 		Map<string, Record<string, string>>
@@ -1286,23 +1286,17 @@ export class StyleManager {
 				.getPropertyValue("display");
 
 			if (display === "list-item") {
-				// If no explicit CSS content, generate default marker using counters
+				// If no explicit CSS content, generate default marker using list-style-type
 				if (!content || content === "none" || content === "normal") {
 					const listParent = hostElement.parentElement;
 					if (
 						listParent &&
 						(listParent.tagName === "UL" || listParent.tagName === "OL")
 					) {
-						// Use CSS counter system for proper numbering
-						if (listParent.tagName === "OL") {
-							// For ordered lists, use counter(list-item)
-							content = `"counter(list-item) "`;
-						} else {
-							// For unordered lists, use default bullet marker
-							const bullets = ["•", "◦", "▪", "▫"];
-							const nestingDepth = getListNestingDepth(hostElement);
-							const bullet = bullets[nestingDepth % bullets.length];
-							content = `"${bullet} "`;
+						// Use getListMarker function to handle all list-style-type values
+						const marker = getListMarker(hostElement, listParent);
+						if (marker) {
+							content = `"${marker} "`;
 						}
 					}
 				}

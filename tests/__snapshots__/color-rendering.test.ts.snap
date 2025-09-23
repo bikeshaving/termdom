@@ -1,33 +1,169 @@
 // Bun Snapshot v1, https://bun.sh/docs/test/snapshots
 
 exports[`red foreground color renders correctly 1`] = `
-"\x1B[38;2;255;0;0;48;2;255;255;255mRed text\x1B[0m
+"\x1B[38;2;255;0;0mRed text\x1B[0m                                                                        \x1B[0m
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
 "
 `;
 
 exports[`background colors fill full width 1`] = `
-"\x1B[38;2;255;255;255;48;2;255;0;0mShort text                                                                      \x1B[0m
+"\x1B[48;2;255;0;0mShort text                                                                      \x1B[0m
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
 "
 `;
 
 exports[`mixed foreground and background colors 1`] = `
-"\x1B[38;2;255;255;0;48;2;0;0;255mYellow text on blue background\x1B[38;2;255;255;255m                                                  \x1B[0m
+"\x1B[38;2;255;255;0;48;2;0;0;255mYellow text on blue background\x1B[39m                                                  \x1B[0m
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
 "
 `;
 
 exports[`CSS color formats are handled correctly 1`] = `
-"\x1B[38;2;255;0;0;48;2;255;255;255mRGB color\x1B[0m
-\x1B[38;2;0;255;0;48;2;255;255;255mHex color\x1B[0m
-\x1B[38;2;0;0;255;48;2;255;255;255mNamed color\x1B[0m
+"\x1B[38;2;255;0;0mRGB color\x1B[0m                                                                       \x1B[0m
+\x1B[38;2;0;255;0mHex color\x1B[0m                                                                       \x1B[0m
+\x1B[38;2;0;0;255mNamed color\x1B[0m                                                                     \x1B[0m
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
 "
 `;
 
 exports[`style combinations work correctly 1`] = `
-"\x1B[38;2;255;0;0;48;2;255;255;0;1mBold red text on yellow background\x1B[38;2;255;255;255;22m                                              \x1B[0m
+"\x1B[38;2;255;0;0;48;2;255;255;0;1mBold red text on yellow background\x1B[39;22m                                              \x1B[0m
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
 "
 `;
 
 exports[`inline elements do not extend background 1`] = `
-"\x1B[38;2;255;255;255;48;2;0;128;0mInline text\x1B[0m
+"\x1B[48;2;0;128;0mInline text\x1B[0m                                                                     \x1B[0m
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
 "
 `;
