@@ -1160,9 +1160,17 @@ export class LayoutEngine {
 				if (parent) {
 					parent.removeChild(yogaNode);
 				}
-				yogaNode.freeRecursive();
-				this.nodeMap.delete(node);
-				// The node will be recreated on next layout calculation
+				
+				// Check if node was actually removed vs just being invalidated (e.g., for pseudo-elements)
+				if (!node.isConnected) {
+					// Node was truly removed from DOM - free it
+					yogaNode.freeRecursive();
+					this.nodeMap.delete(node);
+				} else {
+					// Node is still connected - just remove from parent but keep Yoga node for reuse
+					// This happens during pseudo-element attachment invalidation
+					// Don't free the node - it will be reattached during layout calculation
+				}
 			}
 		}
 	}

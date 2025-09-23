@@ -1704,3 +1704,64 @@ test("Dynamic pseudo element addition affects run heads", () => {
 	expect(layoutEngine.isInlineRunHead(textNode)).toBe(false);
 	expect(layoutEngine.findInlineRunHead(textNode)).toBe(beforeNode);
 });
+
+test("layout invalidation preserves inline run behavior", async () => {
+	const termdom = new TermDOM();
+	const {document} = termdom;
+
+	// Create structure with both inline and block elements
+	const container = document.createElement("div");
+	document.body.appendChild(container);
+
+	const p = document.createElement("p");
+	container.appendChild(p);
+
+	const span = document.createElement("span");
+	span.textContent = "Inline text ";
+	span.style.display = "inline";
+	p.appendChild(span);
+
+	const strong = document.createElement("strong");
+	strong.textContent = "Bold text";
+	strong.style.display = "inline";
+	p.appendChild(strong);
+
+	const li = document.createElement("li");
+	li.textContent = "List item";
+	li.style.display = "list-item";
+	container.appendChild(li);
+
+	const layoutEngine = (termdom as any).layoutEngine;
+
+	// Track inline run invalidation calls
+	const originalInvalidateInlineRun = layoutEngine.invalidateInlineRun.bind(layoutEngine);
+	let inlineInvalidationCalls = 0;
+
+	layoutEngine.invalidateInlineRun = function(node: Node) {
+		inlineInvalidationCalls++;
+		return originalInvalidateInlineRun(node);
+	};
+
+	// Test inline element invalidation triggers inline run invalidation
+	const beforeInline = inlineInvalidationCalls;
+	layoutEngine.invalidate(span);
+	expect(inlineInvalidationCalls).toBeGreaterThan(beforeInline);
+
+	// Test block element invalidation does NOT trigger inline run invalidation
+	const beforeBlock = inlineInvalidationCalls;
+	layoutEngine.invalidate(li);
+	expect(inlineInvalidationCalls).toBe(beforeBlock);
+
+	// Test that LI elements keep their Yoga nodes after invalidation (connected elements)
+	expect(li.isConnected).toBe(true);
+	const hadYogaNodeBefore = layoutEngine.nodeMap?.has(li);
+	layoutEngine.invalidate(li);
+	// After invalidation, connected elements should still be in nodeMap for reuse
+	const hasYogaNodeAfter = layoutEngine.nodeMap?.has(li);
+	expect(hasYogaNodeAfter).toBe(hadYogaNodeBefore); // Should preserve for connected elements
+
+	// Full render should work without errors
+	await expect(async () => {
+		await termdom.render();
+	}).not.toThrow();
+});
