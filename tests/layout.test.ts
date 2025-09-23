@@ -3,8 +3,8 @@ import {JSDOM} from "jsdom";
 import {LayoutEngine} from "../src/layout.js";
 import {StyleManager} from "../src/styles.js";
 import {TermDOM} from "../src/termdom.js";
-import {TestTerminal} from "./test-utils.js";
 import {setPseudoElement, createPseudoNode} from "../src/composition.js";
+import {TestTerminal} from "./test-utils.js";
 
 function createLayoutEngine(html: string = "<div></div>") {
 	const jsdom = new JSDOM(`<!DOCTYPE html><html><body>${html}</body></html>`);
@@ -1682,24 +1682,24 @@ test("::marker appears before ::before in run head order", () => {
 
 test("Dynamic pseudo element addition affects run heads", () => {
 	const {jsdom, layoutEngine} = createLayoutEngineWithPseudos(
-		`<span class="dynamic">Text</span>`,
+		`<div class="dynamic">Text</div>`,
 	);
 
-	const span = jsdom.window.document.querySelector(".dynamic")!;
-	const textNode = span.firstChild as Text;
+	const div = jsdom.window.document.querySelector(".dynamic")!;
+	const textNode = div.firstChild as Text;
 
-	// Initially, text node should be run head
+	// Initially, text node should be run head (div is block, not inline)
+	expect(layoutEngine.isInlineRunHead(div)).toBe(false);
 	expect(layoutEngine.isInlineRunHead(textNode)).toBe(true);
 
 	// Add ::before pseudo element
-	const beforeNode = createPseudoNode(span, "::before", "→ ");
-	setPseudoElement(span, "::before", beforeNode);
+	const beforeNode = createPseudoNode(div, "::before", "→ ");
+	setPseudoElement(div, "::before", beforeNode);
 
-	// Invalidate to force recalculation
-	(layoutEngine as any).invalidateInlineRun(span);
+	// Force recalculation
 	layoutEngine.calculateLayout();
 
-	// Now ::before should be run head
+	// Now ::before should be run head (first inline content)
 	expect(layoutEngine.isInlineRunHead(beforeNode)).toBe(true);
 	expect(layoutEngine.isInlineRunHead(textNode)).toBe(false);
 	expect(layoutEngine.findInlineRunHead(textNode)).toBe(beforeNode);
