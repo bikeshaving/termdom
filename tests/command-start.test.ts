@@ -389,3 +389,33 @@ test("content clipped to terminal boundaries", async () => {
 	// Lines beyond terminal height should be empty/clipped
 	expect(lines.length).toBeLessThanOrEqual(5); // Terminal is only 5 rows
 });
+
+test("content larger than terminal height (edge case)", async () => {
+	const terminal = new TestTerminal({rows: 5, cols: 30});
+
+	// Position cursor at row 3
+	await new Promise<void>((resolve) => {
+		terminal.stdout.write("\x1b[3;1H", () => resolve());
+	});
+
+	const dom = new TermDOM({process: terminal});
+	await dom.detectCommandStart();
+	expect(dom.window.screenTop).toBe(2); // Row 3 -> 0-based = 2
+
+	// Add content that needs 8 lines (exceeds 5-row terminal)
+	const contentLines = Array.from(
+		{length: 8},
+		(_, i) => `<div>Line ${i + 1}</div>`,
+	);
+	dom.document.body.innerHTML = contentLines.join("\n");
+
+	await dom.render();
+
+	// Push-up should go to terminal top, but content will still overflow
+	expect(dom.window.screenTop).toBe(0); // Pushed to top
+
+	// TODO: Need to handle content overflow - should we:
+	// 1. Clip content to terminal height?
+	// 2. Show error/warning?
+	// 3. Enable scrolling/paging?
+});
