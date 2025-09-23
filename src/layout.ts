@@ -1626,12 +1626,20 @@ export class LayoutEngine {
 			return 0;
 		}
 
+		// Use the same expanded tree walker as addElementNode to ensure consistency
+		const walker = createExpandedTreeWalker(
+			this.window,
+			element.parentElement,
+			this.window.NodeFilter.SHOW_ELEMENT |
+				this.window.NodeFilter.SHOW_TEXT |
+				NodeFilterExtended.SHOW_PSEUDO_ELEMENTS,
+			null,
+		);
+
 		let yogaIndex = 0;
-		for (let i = 0; i < element.parentElement.childNodes.length; i++) {
-			const sibling = element.parentElement.childNodes[i];
-			if (sibling === element) {
-				break;
-			}
+		let sibling = walker.firstChild();
+
+		while (sibling && sibling !== element) {
 			if (sibling.nodeType === sibling.ELEMENT_NODE) {
 				const siblingElement = sibling as Element;
 				const siblingDisplay = getPropertyValue(siblingElement, "display");
@@ -1640,15 +1648,25 @@ export class LayoutEngine {
 					(siblingDisplay === "inline" || siblingDisplay === "inline-block") &&
 					!this.isInlineRunHead(siblingElement)
 				) {
-					continue;
+					// Skip inline elements that aren't run heads
+				} else {
+					const siblingYogaNode = this.nodeMap.get(siblingElement);
+					if (siblingYogaNode) {
+						yogaIndex++;
+					}
 				}
-
-				const siblingYogaNode = this.nodeMap.get(siblingElement);
+			} else if (sibling.nodeType === sibling.TEXT_NODE) {
+				// Count text nodes that will be added to Yoga tree
+				const siblingYogaNode = this.nodeMap.get(sibling);
 				if (siblingYogaNode) {
 					yogaIndex++;
 				}
 			}
+			// Note: Pseudo-elements will also be counted if they have Yoga nodes
+
+			sibling = walker.nextSibling();
 		}
+
 		return yogaIndex;
 	}
 

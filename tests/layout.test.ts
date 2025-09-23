@@ -1766,3 +1766,90 @@ test("layout invalidation preserves inline run behavior", async () => {
 		await termdom.render();
 	}).not.toThrow();
 });
+
+// Tests for fundamental layout positioning bug
+// These tests document the core issue affecting nested lists and other content
+
+test("Block child positioned after parent text content", () => {
+	const {layoutEngine} = createLayoutEngine(
+		`<div>Parent text<div>Child content</div></div>`,
+	);
+
+	layoutEngine.calculateLayout();
+
+	const parent = layoutEngine.window.document.querySelector("div")!;
+	const child = parent.querySelector("div")!;
+	const textNode = parent.firstChild!;
+
+	const parentYoga = layoutEngine.nodeMap.get(parent);
+	const childYoga = layoutEngine.nodeMap.get(child);
+	const textYoga = layoutEngine.nodeMap.get(textNode);
+
+	const parentLayout = parentYoga!.getComputedLayout();
+	const childLayout = childYoga!.getComputedLayout();
+	const textLayout = textYoga!.getComputedLayout();
+
+	// Parent should have height for text + child
+	expect(parentLayout.height).toBe(2);
+
+	// Text should be positioned first (at parent origin)
+	expect(textLayout.top).toBe(0);
+	expect(textLayout.height).toBe(1);
+
+	// Child should be positioned after text
+	expect(childLayout.top).toBe(1);
+	expect(childLayout.height).toBe(1);
+});
+
+test.todo(
+	"Multiple block children positioned sequentially after parent text",
+	() => {
+		const {layoutEngine} = createLayoutEngine(
+			`<div>Parent text<div>Child 1</div><div>Child 2</div></div>`,
+		);
+
+		layoutEngine.calculateLayout();
+
+		const parent = layoutEngine.window.document.querySelector("div")!;
+		const children = Array.from(parent.querySelectorAll("div"));
+
+		const parentYoga = layoutEngine.nodeMap.get(parent);
+		const parentLayout = parentYoga!.getComputedLayout();
+
+		// Parent should have height for text + 2 children
+		expect(parentLayout.height).toBe(3);
+
+		// FAILING: Children should be positioned sequentially after parent text
+		const child1Yoga = layoutEngine.nodeMap.get(children[0]);
+		const child2Yoga = layoutEngine.nodeMap.get(children[1]);
+
+		const child1Layout = child1Yoga!.getComputedLayout();
+		const child2Layout = child2Yoga!.getComputedLayout();
+
+		expect(child1Layout.top).toBe(1); // Currently fails: at y=0
+		expect(child2Layout.top).toBe(2); // Currently fails: at y=1
+	},
+);
+
+test.todo("Inline children do not affect block child positioning", () => {
+	const {layoutEngine} = createLayoutEngine(
+		`<div>Parent <span>inline</span> text<div>Block child</div></div>`,
+	);
+
+	layoutEngine.calculateLayout();
+
+	const parent = layoutEngine.window.document.querySelector("div")!;
+	const blockChild = parent.querySelector("div")!;
+
+	const parentYoga = layoutEngine.nodeMap.get(parent);
+	const blockChildYoga = layoutEngine.nodeMap.get(blockChild);
+
+	const parentLayout = parentYoga!.getComputedLayout();
+	const blockChildLayout = blockChildYoga!.getComputedLayout();
+
+	// Parent should account for inline content + block child
+	expect(parentLayout.height).toBe(2);
+
+	// FAILING: Block child should be positioned after all parent content
+	expect(blockChildLayout.top).toBe(1); // Currently fails: at y=0
+});
