@@ -459,6 +459,87 @@ function styleYogaNode(element: Element, yogaNode: YogaTypes.Node): void {
 		yogaNode.setFlexDirection(Yoga.FLEX_DIRECTION_COLUMN);
 		yogaNode.setAlignItems(Yoga.ALIGN_STRETCH);
 	}
+
+	// Handle positioning properties
+	const position = computedStyle.getPropertyValue("position");
+	if (position === "absolute") {
+		yogaNode.setPositionType(Yoga.POSITION_TYPE_ABSOLUTE);
+
+		// Handle left positioning
+		const left = parseUnitValue(computedStyle.getPropertyValue("left"));
+		if (typeof left === "number") {
+			yogaNode.setPosition(Yoga.EDGE_LEFT, left);
+		} else if (left && "percentage" in left) {
+			yogaNode.setPositionPercent(Yoga.EDGE_LEFT, left.percentage);
+		} else {
+			const originalLeft = computedStyle.getPropertyValue("left");
+			if (originalLeft === "auto" || !originalLeft) {
+				yogaNode.setPositionAuto(Yoga.EDGE_LEFT);
+			}
+		}
+
+		// Handle top positioning
+		const top = parseUnitValue(computedStyle.getPropertyValue("top"));
+		if (typeof top === "number") {
+			yogaNode.setPosition(Yoga.EDGE_TOP, top);
+		} else if (top && "percentage" in top) {
+			yogaNode.setPositionPercent(Yoga.EDGE_TOP, top.percentage);
+		} else {
+			const originalTop = computedStyle.getPropertyValue("top");
+			if (originalTop === "auto" || !originalTop) {
+				yogaNode.setPositionAuto(Yoga.EDGE_TOP);
+			}
+		}
+
+		// Handle right positioning
+		const right = parseUnitValue(computedStyle.getPropertyValue("right"));
+		if (typeof right === "number") {
+			yogaNode.setPosition(Yoga.EDGE_RIGHT, right);
+		} else if (right && "percentage" in right) {
+			yogaNode.setPositionPercent(Yoga.EDGE_RIGHT, right.percentage);
+		} else {
+			const originalRight = computedStyle.getPropertyValue("right");
+			if (originalRight === "auto" || !originalRight) {
+				yogaNode.setPositionAuto(Yoga.EDGE_RIGHT);
+			}
+		}
+
+		// Handle bottom positioning
+		const bottom = parseUnitValue(computedStyle.getPropertyValue("bottom"));
+		if (typeof bottom === "number") {
+			yogaNode.setPosition(Yoga.EDGE_BOTTOM, bottom);
+		} else if (bottom && "percentage" in bottom) {
+			yogaNode.setPositionPercent(Yoga.EDGE_BOTTOM, bottom.percentage);
+		} else {
+			const originalBottom = computedStyle.getPropertyValue("bottom");
+			if (originalBottom === "auto" || !originalBottom) {
+				yogaNode.setPositionAuto(Yoga.EDGE_BOTTOM);
+			}
+		}
+	} else if (position === "relative") {
+		yogaNode.setPositionType(Yoga.POSITION_TYPE_RELATIVE);
+		// For relative positioning, also apply left/top/right/bottom offsets
+		// (same pattern as absolute, but with relative position type)
+		const left = parseUnitValue(computedStyle.getPropertyValue("left"));
+		if (typeof left === "number") {
+			yogaNode.setPosition(Yoga.EDGE_LEFT, left);
+		} else if (left && "percentage" in left) {
+			yogaNode.setPositionPercent(Yoga.EDGE_LEFT, left.percentage);
+		}
+
+		const top = parseUnitValue(computedStyle.getPropertyValue("top"));
+		if (typeof top === "number") {
+			yogaNode.setPosition(Yoga.EDGE_TOP, top);
+		} else if (top && "percentage" in top) {
+			yogaNode.setPositionPercent(Yoga.EDGE_TOP, top.percentage);
+		}
+	} else if (position === "static") {
+		yogaNode.setPositionType(Yoga.POSITION_TYPE_STATIC);
+		// Static positioning ignores left/top/right/bottom properties
+	} else {
+		// Default to static positioning for any unrecognized values
+		yogaNode.setPositionType(Yoga.POSITION_TYPE_STATIC);
+	}
 }
 
 class DOMRectList extends Array<DOMRect> implements globalThis.DOMRectList {
@@ -559,6 +640,9 @@ export class LayoutEngine {
 	declare terminalWidth: number;
 	declare terminalHeight: number;
 
+	// Viewport root node - represents terminal dimensions, no DOM element associated
+	declare viewportRootNode: YogaTypes.Node;
+
 	// TODO: These should be strong maps
 	declare nodeMap: WeakMap<Node, YogaTypes.Node>;
 	declare breakResultMap: WeakMap<Node, BreakResult>;
@@ -583,38 +667,58 @@ export class LayoutEngine {
 			this.handleMutationRecords(mutations),
 		);
 
+		// Create viewport root node (no DOM element associated)
+		this.viewportRootNode = Yoga.Node.create();
+		this.viewportRootNode.setFlexDirection(Yoga.FLEX_DIRECTION_COLUMN);
+		this.viewportRootNode.setAlignItems(Yoga.ALIGN_STRETCH);
+
 		this.observer.observe(this.rootElement, {
 			childList: true,
 			subtree: true,
 			attributes: true,
 			characterData: true,
 		});
-		this.addNode(this.rootElement, null);
+		// Attach HTML element to viewport root instead of null
+		this.addNode(this.rootElement, this.viewportRootNode);
 	}
 
 	resize(width: number, height: number): void {
 		this.terminalWidth = width;
 		this.terminalHeight = height;
 
-		const rootYogaNode = this.nodeMap.get(this.rootElement);
-		if (rootYogaNode) {
-			rootYogaNode.setWidth(width);
-			rootYogaNode.setHeight(height);
-			rootYogaNode.calculateLayout(width, height);
-		}
+		// Set dimensions on the viewport root node (terminal dimensions)
+		this.viewportRootNode.setWidth(width);
+		this.viewportRootNode.setHeight(height);
+
+		// Force recalculation of all layout after size change
+		this.calculateLayout();
 	}
 
 	calculateLayout() {
 		const records = this.observer.takeRecords();
 		this.handleMutationRecords(records);
 
-		const rootYogaNode = this.nodeMap.get(this.rootElement);
-		if (rootYogaNode) {
-			// Always use auto height to get natural content height
-			// This allows for proper scrolling behavior and content measurement
-			rootYogaNode.setHeightAuto();
-			rootYogaNode.calculateLayout(this.terminalWidth, undefined);
+		// Calculate layout using viewport root node (terminal dimensions)
+		// The HTML element can now have auto height and reference viewport via percentages
+		this.viewportRootNode.calculateLayout(this.terminalWidth, this.terminalHeight);
+	}
+
+	/**
+	 * Clean up yoga nodes and resources
+	 */
+	dispose(): void {
+		// Clean up all DOM-associated yoga nodes
+		for (const yogaNode of this.nodeMap.values()) {
+			yogaNode.freeRecursive();
 		}
+		this.nodeMap = new WeakMap();
+		this.breakResultMap = new WeakMap();
+
+		// Clean up viewport root node
+		this.viewportRootNode.freeRecursive();
+
+		// Disconnect observer
+		this.observer.disconnect();
 	}
 
 	/**

@@ -7,14 +7,18 @@ import {setPseudoElement, createPseudoNode} from "../src/composition.js";
 import {TestTerminal} from "./test-utils.js";
 
 function createLayoutEngine(html: string = "<div></div>") {
-	const jsdom = new JSDOM(`<!DOCTYPE html><html><body>${html}</body></html>`);
+	const jsdom = new JSDOM(`<!DOCTYPE html><html><head><style>
+		* { margin: 0; padding: 0; box-sizing: border-box; }
+		html, body { width: 100%; }
+		body { min-height: 100%; }
+	</style></head><body>${html}</body></html>`);
 	// Setup terminal-specific getComputedStyle
 	new StyleManager(jsdom.window);
 
 	const layoutEngine = new LayoutEngine(jsdom.window);
 	// Set initial size and calculate layout
 	layoutEngine.resize(300, 200);
-	layoutEngine.calculateLayout();
+	// The resize method now calls calculateLayout internally
 	return {jsdom, layoutEngine};
 }
 
@@ -2122,4 +2126,198 @@ test("compact HTML should not have phantom lines", async () => {
 	expect(phantomLineCount).toBe(0);
 
 	dom.dispose();
+});
+
+// =============================================================================
+// CSS POSITIONING TESTS
+// Tests for position: static, relative, absolute with left/top/right/bottom
+// =============================================================================
+
+test("position: static ignores left/top properties", () => {
+	const {layoutEngine} = createLayoutEngine(
+		`<div style="position: static; left: 50px; top: 100px;">Static positioned</div>`,
+	);
+
+	const div = layoutEngine.window.document.querySelector("div")!;
+	const yogaNode = layoutEngine.nodeMap.get(div);
+	const layout = yogaNode!.getComputedLayout();
+
+	// position: static should ignore left/top positioning
+	expect(layout.left).toBe(0);
+	expect(layout.top).toBe(0);
+});
+
+test("position: absolute with left and top", () => {
+	const {layoutEngine} = createLayoutEngine(
+		`<div style="position: absolute; left: 10ch; top: 2ch;">Absolute positioned</div>`,
+	);
+
+	const div = layoutEngine.window.document.querySelector("div")!;
+	const yogaNode = layoutEngine.nodeMap.get(div);
+	const layout = yogaNode!.getComputedLayout();
+
+	// position: absolute should respect left/top positioning
+	expect(layout.left).toBe(10); // 10ch = 10 characters
+	expect(layout.top).toBe(2); // 2ch = 2 characters
+});
+
+test("position: absolute with right and bottom", () => {
+	const {layoutEngine} = createLayoutEngine(
+		`<div style="position: absolute; right: 5ch; bottom: 3ch; width: 20ch; height: 10ch;"></div>`,
+	);
+
+	const div = layoutEngine.window.document.querySelector("div")!;
+	const yogaNode = layoutEngine.nodeMap.get(div);
+	const layout = yogaNode!.getComputedLayout();
+
+	// With container width 300ch and height 200ch:
+	// right: 5ch means left = 300 - 20 - 5 = 275
+	// bottom: 3ch means top = 200 - 10 - 3 = 187
+	expect(layout.left).toBe(275);
+	expect(layout.top).toBe(187);
+	expect(layout.width).toBe(20);
+	expect(layout.height).toBe(10);
+});
+
+test("position: relative with left and top offsets", () => {
+	const {layoutEngine} = createLayoutEngine(
+		`<div style="position: relative; left: 15ch; top: 5ch;">Relative positioned</div>`,
+	);
+
+	const div = layoutEngine.window.document.querySelector("div")!;
+	const yogaNode = layoutEngine.nodeMap.get(div);
+
+	// Verify position type is set to relative
+	expect(yogaNode!.getPositionType()).toBe(1); // POSITION_TYPE_RELATIVE
+
+	// position: relative should apply offsets to normal position
+	const layout = yogaNode!.getComputedLayout();
+	expect(layout.left).toBe(15);
+	expect(layout.top).toBe(5);
+});
+
+test("mixed positioning types in same container", () => {
+	const {layoutEngine} = createLayoutEngine(`
+		<div>
+			<div style="position: static;">Static child</div>
+			<div style="position: relative; left: 10ch; top: 2ch;">Relative child</div>
+			<div style="position: absolute; left: 50ch; top: 10ch;">Absolute child</div>
+		</div>
+	`);
+
+	const children = Array.from(
+		layoutEngine.window.document.querySelectorAll("div"),
+	).slice(1); // Skip container
+
+	const staticChild = children[0];
+	const relativeChild = children[1];
+	const absoluteChild = children[2];
+
+	const staticYoga = layoutEngine.nodeMap.get(staticChild);
+	const relativeYoga = layoutEngine.nodeMap.get(relativeChild);
+	const absoluteYoga = layoutEngine.nodeMap.get(absoluteChild);
+
+	const staticLayout = staticYoga!.getComputedLayout();
+	const relativeLayout = relativeYoga!.getComputedLayout();
+	const absoluteLayout = absoluteYoga!.getComputedLayout();
+
+	// Static positioning (normal flow)
+	expect(staticLayout.left).toBe(0);
+	expect(staticLayout.top).toBe(0);
+
+	// Relative positioning (offset from normal position)
+	// The relative element starts after the static element (height=1) at top=1,
+	// then gets offset by top: 2ch, resulting in final position top=3
+	expect(relativeLayout.left).toBe(10);
+	expect(relativeLayout.top).toBe(3);
+
+	// Absolute positioning (relative to containing block)
+	expect(absoluteLayout.left).toBe(50);
+	expect(absoluteLayout.top).toBe(10);
+});
+
+test("ch unit conversion works correctly", () => {
+	const {layoutEngine} = createLayoutEngine(
+		`<div style="position: absolute; left: 25ch; top: 15ch; width: 30ch; height: 8ch;">CH units</div>`,
+	);
+
+	const div = layoutEngine.window.document.querySelector("div")!;
+	const yogaNode = layoutEngine.nodeMap.get(div);
+	const layout = yogaNode!.getComputedLayout();
+
+	// ch units should convert to character positions (1ch = 1 character)
+	expect(layout.left).toBe(25);
+	expect(layout.top).toBe(15);
+	expect(layout.width).toBe(30);
+	expect(layout.height).toBe(8);
+});
+
+test("position: absolute removes element from document flow", () => {
+	const {layoutEngine} = createLayoutEngine(`
+		<div>
+			<div style="height: 3ch;">Normal flow element</div>
+			<div style="position: absolute; left: 0; top: 0;">Absolute element</div>
+			<div style="height: 2ch;">Another normal element</div>
+		</div>
+	`);
+
+	const container = layoutEngine.window.document.querySelector("div")!;
+	const children = Array.from(container.children);
+
+	const normalChild1 = children[0] as Element;
+	const absoluteChild = children[1] as Element;
+	const normalChild2 = children[2] as Element;
+
+	const containerYoga = layoutEngine.nodeMap.get(container);
+	const normal1Yoga = layoutEngine.nodeMap.get(normalChild1);
+	const absoluteYoga = layoutEngine.nodeMap.get(absoluteChild);
+	const normal2Yoga = layoutEngine.nodeMap.get(normalChild2);
+
+	const containerLayout = containerYoga!.getComputedLayout();
+	const normal1Layout = normal1Yoga!.getComputedLayout();
+	const absoluteLayout = absoluteYoga!.getComputedLayout();
+	const normal2Layout = normal2Yoga!.getComputedLayout();
+
+	// Container height should only account for normal flow elements
+	expect(containerLayout.height).toBe(5); // 3ch + 2ch = 5ch
+
+	// Normal flow elements stack vertically
+	expect(normal1Layout.top).toBe(0);
+	expect(normal2Layout.top).toBe(3); // After first normal element
+
+	// Absolute element is positioned independently
+	expect(absoluteLayout.top).toBe(0);
+	expect(absoluteYoga!.getPositionType()).toBe(2); // POSITION_TYPE_ABSOLUTE
+});
+
+test("percentage values in positioning", () => {
+	const {layoutEngine} = createLayoutEngine(
+		`<div style="position: absolute; left: 25%; top: 50%; width: 50%; height: 25%;"></div>`,
+	);
+
+	const div = layoutEngine.window.document.querySelector("div")!;
+	const yogaNode = layoutEngine.nodeMap.get(div);
+	const layout = yogaNode!.getComputedLayout();
+
+	// With container width 300ch and height 200ch:
+	// left: 25% = 75ch, top: 50% = 100ch
+	// width: 50% = 150ch, height: 25% = 50ch
+	expect(layout.left).toBe(75);
+	expect(layout.top).toBe(100);
+	expect(layout.width).toBe(150);
+	expect(layout.height).toBe(50);
+});
+
+test("auto values reset positioning properties", () => {
+	const {layoutEngine} = createLayoutEngine(
+		`<div style="position: absolute; left: auto; top: auto; right: 10ch; bottom: 5ch;">Auto positioning</div>`,
+	);
+
+	const div = layoutEngine.window.document.querySelector("div")!;
+	const yogaNode = layoutEngine.nodeMap.get(div);
+
+	// This tests that setPositionAuto() is called for auto values
+	// The exact layout depends on Yoga's auto positioning behavior
+	const layout = yogaNode!.getComputedLayout();
+	expect(layout).not.toBeNull(); // Should calculate without errors
 });

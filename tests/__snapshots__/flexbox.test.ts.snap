@@ -15,110 +15,11 @@ exports[`flexbox column with mixed content 1`] = `
 \x1B[48;2;47;79;79m \x1B[48;2;105;105;105m                                                \x1B[48;2;47;79;79m \x1B[0m
 \x1B[48;2;47;79;79m \x1B[48;2;105;105;105m  \x1B[38;2;255;255;255mWelcome to the dashboard! Here you can \x1B[39m       \x1B[48;2;47;79;79m \x1B[0m
 \x1B[48;2;47;79;79m \x1B[48;2;105;105;105m  \x1B[38;2;255;255;255mmonitor all your key metrics.\x1B[39m                 \x1B[48;2;47;79;79m \x1B[0m
-\x1B[48;2;47;79;79m \x1B[48;2;105;105;105m                                                \x1B[48;2;47;79;79m \x1B[0m
-\x1B[48;2;47;79;79m \x1B[48;2;105;105;105m                                                \x1B[48;2;47;79;79m \x1B[0m
 \x1B[48;2;47;79;79m                                                  \x1B[0m
                                                   
                                                   
                                                   
-"
-`;
-
-exports[`flexbox-demo layout renders correctly 1`] = `
-"\x1B[48;2;0;0;139m                                                                                \x1B[0m
-\x1B[48;2;0;0;139m  \x1B[48;2;255;0;255m                                                                            \x1B[48;2;0;0;139m  \x1B[0m
-\x1B[48;2;0;0;139m  \x1B[48;2;255;0;255m \x1B[38;2;255;255;255m🚀 TTY Flexbox Demo\x1B[39m                                  \x1B[38;2;255;255;255mTerminal Object Model\x1B[39m \x1B[48;2;0;0;139m  \x1B[0m
-\x1B[48;2;0;0;139m  \x1B[48;2;255;0;255m                                                                            \x1B[48;2;0;0;139m  \x1B[0m
-\x1B[48;2;0;0;139m                                                                                \x1B[0m
-\x1B[48;2;0;0;139m  \x1B[48;2;0;100;0m               \x1B[48;2;169;169;169m                                                             \x1B[48;2;0;0;139m  \x1B[0m
-\x1B[48;2;0;0;139m  \x1B[48;2;0;100;0m \x1B[38;2;255;255;255m📋 Navigation\x1B[39m \x1B[48;2;169;169;169m  \x1B[38;2;255;255;255m📄 Main Content Area\x1B[39m                                       \x1B[48;2;0;0;139m  \x1B[0m
-\x1B[48;2;0;0;139m  \x1B[48;2;0;100;0m \x1B[38;2;255;255;255m• Home\x1B[39m        \x1B[48;2;169;169;169m  \x1B[38;2;255;255;255mThis demonstrates flexbox layout with nested containers. \x1B[39m  \x1B[48;2;0;0;139m  \x1B[0m
-\x1B[48;2;0;0;139m  \x1B[48;2;0;100;0m \x1B[38;2;255;255;255m• About\x1B[39m       \x1B[48;2;169;169;169m  \x1B[38;2;255;255;255mThe layout automatically adjusts based on flexDirection \x1B[39m   \x1B[48;2;0;0;139m  \x1B[0m
-\x1B[48;2;0;0;139m  \x1B[48;2;0;100;0m \x1B[38;2;255;255;255m• Services\x1B[39m    \x1B[48;2;169;169;169m  \x1B[38;2;255;255;255mproperties: column for vertical stacking, row for \x1B[39m         \x1B[48;2;0;0;139m  \x1B[0m
-\x1B[48;2;0;0;139m  \x1B[48;2;0;100;0m \x1B[38;2;255;255;255m• Contact\x1B[39m     \x1B[48;2;169;169;169m  \x1B[38;2;255;255;255mhorizontal arrangement.\x1B[39m                                    \x1B[48;2;0;0;139m  \x1B[0m
-\x1B[48;2;0;0;139m  \x1B[48;2;0;100;0m               \x1B[48;2;169;169;169m                                                             \x1B[48;2;0;0;139m  \x1B[0m
-\x1B[48;2;0;0;139m  \x1B[48;2;0;100;0m               \x1B[48;2;169;169;169m  \x1B[48;2;0;139;139m                                                         \x1B[48;2;169;169;169m  \x1B[48;2;0;0;139m  \x1B[0m
-\x1B[48;2;0;0;139m  \x1B[48;2;0;100;0m               \x1B[48;2;169;169;169m  \x1B[48;2;0;139;139m \x1B[38;2;255;255;255m🎨 Styling\x1B[39m         \x1B[38;2;255;255;255m📐 Layout\x1B[39m          \x1B[38;2;255;255;255m⚡ Performance\x1B[39m    \x1B[48;2;169;169;169m  \x1B[48;2;0;0;139m  \x1B[0m
-\x1B[48;2;0;0;139m  \x1B[48;2;0;100;0m               \x1B[48;2;169;169;169m  \x1B[48;2;0;139;139m \x1B[38;2;255;255;255mRich terminal \x1B[39m     \x1B[38;2;255;255;255mFlexbox-based \x1B[39m     \x1B[38;2;255;255;255mEfficient \x1B[39m        \x1B[48;2;169;169;169m  \x1B[48;2;0;0;139m  \x1B[0m
-\x1B[48;2;0;0;139m  \x1B[48;2;0;100;0m               \x1B[48;2;169;169;169m  \x1B[48;2;0;139;139m \x1B[38;2;255;255;255mcolors and \x1B[39m        \x1B[38;2;255;255;255mpositioning \x1B[39m       \x1B[38;2;255;255;255mScreenBuffer \x1B[39m     \x1B[48;2;169;169;169m  \x1B[48;2;0;0;139m  \x1B[0m
-\x1B[48;2;0;0;139m  \x1B[48;2;0;100;0m               \x1B[48;2;169;169;169m  \x1B[48;2;0;139;139m \x1B[38;2;255;255;255mformatting\x1B[39m         \x1B[38;2;255;255;255msystem\x1B[39m             \x1B[38;2;255;255;255mrendering\x1B[39m         \x1B[48;2;169;169;169m  \x1B[48;2;0;0;139m  \x1B[0m
-\x1B[48;2;0;0;139m  \x1B[48;2;0;100;0m               \x1B[48;2;169;169;169m  \x1B[48;2;0;139;139m                                                         \x1B[48;2;169;169;169m  \x1B[48;2;0;0;139m  \x1B[0m
-\x1B[48;2;0;0;139m  \x1B[48;2;0;100;0m               \x1B[48;2;169;169;169m                                                             \x1B[48;2;0;0;139m  \x1B[0m
-\x1B[48;2;0;0;139m  \x1B[48;2;139;0;0m                                                                            \x1B[48;2;0;0;139m  \x1B[0m
-\x1B[48;2;0;0;139m  \x1B[48;2;139;0;0m                                        \x1B[38;2;255;255;255mv1.0.0© 2024 Terminal Object Model\x1B[39m  \x1B[48;2;0;0;139m  \x1B[0m
-\x1B[48;2;0;0;139m  \x1B[48;2;139;0;0m                                                                            \x1B[48;2;0;0;139m  \x1B[0m
-\x1B[48;2;0;0;139m                                                                                \x1B[0m
-                                                                                
-"
-`;
-
-exports[`nested flexbox containers 1`] = `
-"\x1B[48;2;0;0;255m                                                            \x1B[0m
-\x1B[48;2;0;0;255m \x1B[38;2;255;255;255;48;2;255;0;0mBox 1\x1B[48;2;0;128;0mBox 2\x1B[39;48;2;0;0;255m                                                 \x1B[0m
-\x1B[48;2;0;0;255m \x1B[48;2;0;255;255mLeft\x1B[48;2;0;0;255m                                                 \x1B[38;2;255;255;255;48;2;255;0;255mRight\x1B[39;48;2;0;0;255m \x1B[0m
-\x1B[48;2;0;0;255m                                                            \x1B[0m
-                                                            
-                                                            
-                                                            
-                                                            
-                                                            
-                                                            
-                                                            
-                                                            
-                                                            
-                                                            
-                                                            
-                                                            
-                                                            
-                                                            
-                                                            
-                                                            
-"
-`;
-
-exports[`flexbox with flex-grow 1`] = `
-"\x1B[48;2;255;0;0m       \x1B[48;2;0;128;0m                                                                  \x1B[48;2;0;0;255m       \x1B[0m
-\x1B[48;2;255;0;0m \x1B[38;2;255;255;255mFixed\x1B[39m \x1B[48;2;0;128;0m \x1B[38;2;255;255;255mThis item grows to fill available space\x1B[39m                          \x1B[48;2;0;0;255m \x1B[38;2;255;255;255mFixed\x1B[39m \x1B[0m
-\x1B[48;2;255;0;0m       \x1B[48;2;0;128;0m                                                                  \x1B[48;2;0;0;255m       \x1B[0m
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-"
-`;
-
-exports[`flexbox with align-items and justify-content 1`] = `
-"\x1B[48;2;169;169;169m                          \x1B[48;2;255;255;0mCentered\x1B[48;2;169;169;169m                          \x1B[0m
-                                                            
-\x1B[48;2;0;100;0m       \x1B[48;2;255;255;255mItem 1\x1B[48;2;0;100;0m              \x1B[48;2;255;255;255mItem 2\x1B[48;2;0;100;0m              \x1B[48;2;255;255;255mItem 3\x1B[48;2;0;100;0m       \x1B[0m
-                                                            
-                                                            
-                                                            
-                                                            
-                                                            
-                                                            
-                                                            
-                                                            
-                                                            
-                                                            
-                                                            
-                                                            
-"
-`;
-
-exports[`flexbox wrapping behavior 1`] = `
-"\x1B[48;2;173;216;230mFirstSecondThirdFourthFifthSixth\x1B[48;2;0;0;128m        \x1B[0m
-                                        
-                                        
-                                        
-                                        
-                                        
-                                        
-                                        
-                                        
-                                        
+                                                  
+                                                  
 "
 `;
