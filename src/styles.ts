@@ -24,7 +24,12 @@ export function getPropertyValue(element: Element, property: string): string {
 export function parseUnitValue(
 	value: string,
 ): number | {percentage: number} | null {
-	if (!value || !/^\d/.test(value)) {
+	if (!value) {
+		return null;
+	}
+
+	// Handle values that start with a digit or are "0" variants
+	if (!/^[\d.]/.test(value)) {
 		return null;
 	}
 
@@ -213,7 +218,14 @@ const TERMINAL_ELEMENT_DEFAULTS: Record<string, Record<string, string>> = {
 
 	// Block elements
 	html: {display: "block"},
-	body: {display: "block"},
+	body: {
+		display: "block",
+		margin: "0",
+		"margin-top": "0",
+		"margin-right": "0",
+		"margin-bottom": "0",
+		"margin-left": "0",
+	},
 	div: {display: "block"},
 	section: {display: "block"},
 	article: {display: "block"},
@@ -1385,7 +1397,7 @@ export class StyleManager {
 	/**
 	 * Scan document and attach pseudo-element nodes to elements that have pseudo-element rules
 	 */
-	private attachPseudoElementsToDocument(): void {
+	attachPseudoElementsToDocument(): void {
 		// Get all elements in the document
 		const walker = this.window.document.createTreeWalker(
 			this.window.document.documentElement,

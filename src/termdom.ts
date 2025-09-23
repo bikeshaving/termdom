@@ -120,6 +120,9 @@ export class TermDOM {
 			options.colorDepth || detectColorDepth(this.process),
 		);
 
+		// Setup style management first to ensure CSS defaults are applied
+		this.styleManager = new StyleManager(this.window);
+
 		this.layoutEngine = new LayoutEngine(
 			this.jsdom.window,
 			getShadowRoot,
@@ -127,8 +130,8 @@ export class TermDOM {
 		);
 		this.layoutEngine.resize(this.width, this.height);
 
-		// Setup style management with caching (after layout engine)
-		this.styleManager = new StyleManager(this.window, this.layoutEngine);
+		// Connect StyleManager to LayoutEngine after both are created
+		(this.styleManager as any).layoutEngine = this.layoutEngine;
 		this.fullscreenManager = new FullscreenManager(this.process);
 
 		this.initializeWindow();

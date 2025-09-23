@@ -1160,7 +1160,7 @@ export class LayoutEngine {
 				if (parent) {
 					parent.removeChild(yogaNode);
 				}
-				
+
 				// Check if node was actually removed vs just being invalidated (e.g., for pseudo-elements)
 				if (!node.isConnected) {
 					// Node was truly removed from DOM - free it
@@ -1497,10 +1497,6 @@ export class LayoutEngine {
 		}
 
 		styleYogaNode(element, yogaNode);
-
-		if (element.tagName === "BODY") {
-			yogaNode.setHeightPercent(100);
-		}
 
 		if (display === "none") {
 			yogaNode.setDisplay(Yoga.DISPLAY_NONE);

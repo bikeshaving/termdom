@@ -1734,10 +1734,11 @@ test("layout invalidation preserves inline run behavior", async () => {
 	const layoutEngine = (termdom as any).layoutEngine;
 
 	// Track inline run invalidation calls
-	const originalInvalidateInlineRun = layoutEngine.invalidateInlineRun.bind(layoutEngine);
+	const originalInvalidateInlineRun =
+		layoutEngine.invalidateInlineRun.bind(layoutEngine);
 	let inlineInvalidationCalls = 0;
 
-	layoutEngine.invalidateInlineRun = function(node: Node) {
+	layoutEngine.invalidateInlineRun = function (node: Node) {
 		inlineInvalidationCalls++;
 		return originalInvalidateInlineRun(node);
 	};
