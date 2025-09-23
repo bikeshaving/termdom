@@ -3,6 +3,20 @@ import type {DOMWindow} from "jsdom";
 /**
  * Manages terminal scrolling behavior with standard DOM APIs
  * Keeps window.scrollY, document.scrollTop, and window.screenTop in sync
+ *
+ * TermDOM scrollTop semantics:
+ *
+ * TermDOM scrollTop | Meaning                                              | DOM equivalent
+ * ------------------|------------------------------------------------------|---------------
+ * 0                 | Content starts flush with the top of the viewport   | scrollTop = 0
+ * >0                | Content has moved up above the viewport top          | scrollTop > 0
+ * <0                | Content starts below the viewport top               | Not possible in DOM
+ *                   | (e.g., leaving blank space to preserve scrollback)  |
+ *
+ * Conceptually:
+ * - Positive values behave exactly like document.documentElement.scrollTop
+ * - Negative values are an extension to support overscroll/top padding, which the DOM does not allow
+ * - It's really just a signed extension of the normal scrollTop coordinate system
  */
 export class ScrollingManager {
 	private scrollTop = 0;
@@ -27,23 +41,26 @@ export class ScrollingManager {
 		});
 
 		// window.scrollY (readonly, reflects document scroll position)
+		// Bounded to 0 like standard DOM - use screenTop for content positioning
 		Object.defineProperty(this.window, "scrollY", {
-			get: () => this.scrollTop,
+			get: () => Math.max(0, this.scrollTop),
 			configurable: true,
 			enumerable: true,
 		});
 
 		// window.pageYOffset (readonly alias for scrollY)
 		Object.defineProperty(this.window, "pageYOffset", {
-			get: () => this.scrollTop,
+			get: () => Math.max(0, this.scrollTop),
 			configurable: true,
 			enumerable: true,
 		});
 
 		// document.documentElement.scrollTop (writable, standard property)
 		Object.defineProperty(this.document.documentElement, "scrollTop", {
-			get: () => this.scrollTop,
+			get: () => Math.max(0, this.scrollTop),
 			set: (value: number) => {
+				// No-op when in command start mode (content below viewport top)
+				if (this.scrollTop < 0) return;
 				this.scrollTop = value;
 			},
 			configurable: true,
@@ -52,8 +69,10 @@ export class ScrollingManager {
 
 		// document.body.scrollTop (writable, compatibility - keeps in sync with documentElement)
 		Object.defineProperty(this.document.body, "scrollTop", {
-			get: () => this.scrollTop,
+			get: () => Math.max(0, this.scrollTop),
 			set: (value: number) => {
+				// No-op when in command start mode (content below viewport top)
+				if (this.scrollTop < 0) return;
 				this.scrollTop = value;
 			},
 			configurable: true,
@@ -65,6 +84,9 @@ export class ScrollingManager {
 			xOrOptions?: number | ScrollToOptions,
 			y?: number,
 		) => {
+			// No-op when in command start mode (content below viewport top)
+			if (this.scrollTop < 0) return;
+
 			if (typeof xOrOptions === "number") {
 				this.scrollTop = y || 0;
 			} else if (xOrOptions && typeof xOrOptions === "object") {
@@ -76,6 +98,9 @@ export class ScrollingManager {
 			xOrOptions?: number | ScrollToOptions,
 			y?: number,
 		) => {
+			// No-op when in command start mode (content below viewport top)
+			if (this.scrollTop < 0) return;
+
 			if (typeof xOrOptions === "number") {
 				this.scrollTop = y || 0;
 			} else if (xOrOptions && typeof xOrOptions === "object") {
@@ -115,26 +140,27 @@ export class ScrollingManager {
 
 	/**
 	 * Get effective viewport offset for rendering
-	 * Positive = content shifted up, negative = content shifted down
+	 * Returns the row where content should start rendering (0-based)
 	 */
 	getViewportOffset(): number {
-		return this.scrollTop;
+		return -this.scrollTop;
 	}
 
 	/**
 	 * Scroll the document by a relative amount
 	 */
-	scrollBy(deltaY: number): void {
+	scrollBy(deltaY: number, internal: boolean = false): void {
+		// No-op when in command start mode (content below viewport top), unless internal
+		if (this.scrollTop < 0 && !internal) return;
+
 		this.scrollTop += deltaY;
-		// Ensure we don't scroll above 0
-		this.scrollTop = Math.max(0, this.scrollTop);
 	}
 
 	/**
 	 * Set scroll position to show content from command start position
 	 */
 	scrollToCommandStart(): void {
-		this.scrollTop = this.screenTop;
+		this.scrollTop = -this.screenTop;
 	}
 
 	/**

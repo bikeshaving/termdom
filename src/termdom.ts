@@ -984,11 +984,12 @@ export class TermDOM {
 		// Use standard DOM property for content height
 		const documentHeight = this.document.body.scrollHeight;
 
-		// Calculate current viewport position from scrolling manager
-		const currentRow = this.scrollingManager.getScrollTop() + 1; // Convert 0-based to 1-based
+		// Calculate current viewport position from scrolling manager (0-based)
+		// When scrollTop is negative, content starts below terminal top
+		const currentRow = -this.scrollingManager.getScrollTop();
 
 		// Calculate available space from current position to bottom of terminal
-		const availableSpace = this.height - currentRow + 1;
+		const availableSpace = this.height - currentRow;
 
 		// If content fits in available space, no push-up needed
 		if (documentHeight <= availableSpace) {
@@ -998,9 +999,9 @@ export class TermDOM {
 		// Calculate how much to push up
 		const pushUpAmount = documentHeight - availableSpace;
 
-		// Update scrollTop to push content up (browser behavior: increase scrollTop)
-		// Increase scrollTop by pushUpAmount to shift content further up
-		this.scrollingManager.scrollBy(pushUpAmount);
+		// Update scrollTop to push content up (make scrollTop less negative)
+		// Increase scrollTop by pushUpAmount to shift content start position up
+		this.scrollingManager.scrollBy(pushUpAmount, true);
 	}
 
 	/**

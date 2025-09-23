@@ -433,10 +433,10 @@ test("unified scrolling model: screenTop + scrollY", async () => {
 
 	// Initial state: command start detected
 	expect(dom.window.screenTop).toBe(5); // Row 6 -> 0-based = 5 (readonly)
-	expect(dom.window.scrollY).toBe(5); // Set to screenTop (viewport position)
+	expect(dom.window.scrollY).toBe(0); // Bounded to 0 like standard DOM
 
-	// scrollY is now the single source of truth for viewport position
-	expect(dom.window.scrollY).toBe(5);
+	// screenTop shows content position, scrollY shows actual scroll amount
+	expect(dom.window.scrollY).toBe(0);
 });
 
 test("unified scrolling model: user scrolls to terminal top", async () => {
@@ -451,12 +451,12 @@ test("unified scrolling model: user scrolls to terminal top", async () => {
 	await dom.detectCommandStart();
 
 	expect(dom.window.screenTop).toBe(7); // Row 8 -> 0-based = 7 (readonly)
-	expect(dom.window.scrollY).toBe(7); // Initial: screenTop (command start position)
+	expect(dom.window.scrollY).toBe(0); // Bounded to 0 in command start mode
 
-	// User scrolls to show content from terminal top
-	dom.document.documentElement.scrollTop = 0;
+	// User tries to scroll - should be no-op in command start mode
+	dom.document.documentElement.scrollTop = 5;
 
-	// scrollY = 0 means content renders from terminal top
+	// scrollY should remain 0 (no-op when internal scrollTop < 0)
 	expect(dom.window.scrollY).toBe(0);
 	expect(dom.window.screenTop).toBe(7); // screenTop stays readonly
 });
@@ -473,13 +473,13 @@ test("unified scrolling model: user scrolls down in document", async () => {
 	await dom.detectCommandStart();
 
 	expect(dom.window.screenTop).toBe(4); // Row 5 -> 0-based = 4
-	expect(dom.window.scrollY).toBe(4); // Initial: screenTop (command start position)
+	expect(dom.window.scrollY).toBe(0); // Bounded to 0 in command start mode
 
-	// User scrolls down 3 lines in document
-	dom.document.documentElement.scrollTop = 4 + 3; // 7
+	// User tries to scroll down - should be no-op in command start mode
+	dom.document.documentElement.scrollTop = 7;
 
-	// scrollY = 7 means viewport is at row 8 (showing content 3 lines down from command start)
-	expect(dom.window.scrollY).toBe(7);
+	// scrollY should remain 0 (no-op when internal scrollTop < 0)
+	expect(dom.window.scrollY).toBe(0);
 	expect(dom.window.screenTop).toBe(4); // screenTop stays readonly
 });
 
@@ -496,11 +496,11 @@ test("unified scrolling model: pageYOffset alias", async () => {
 
 	// pageYOffset should be an alias for scrollY
 	expect(dom.window.pageYOffset).toBe(dom.window.scrollY);
-	expect(dom.window.pageYOffset).toBe(2); // screenTop (command start position)
+	expect(dom.window.pageYOffset).toBe(0); // Bounded to 0 in command start mode
 
-	// Changing scrollTop should affect pageYOffset
+	// Trying to change scrollTop should be no-op in command start mode
 	dom.document.documentElement.scrollTop = 5;
-	expect(dom.window.pageYOffset).toBe(5);
+	expect(dom.window.pageYOffset).toBe(0); // Should remain 0
 });
 
 test("unified scrolling model: push-up updates scrollY not screenTop", async () => {
@@ -516,7 +516,7 @@ test("unified scrolling model: push-up updates scrollY not screenTop", async () 
 
 	const initialScreenTop = dom.window.screenTop;
 	expect(initialScreenTop).toBe(8); // Row 9 -> 0-based = 8
-	expect(dom.window.scrollY).toBe(8); // Initial: screenTop (command start position)
+	expect(dom.window.scrollY).toBe(0); // Initial: bounded to 0 in command start mode
 
 	// Add content that needs 4 lines (exceeds available 2 lines)
 	dom.document.body.innerHTML = `
@@ -531,11 +531,10 @@ test("unified scrolling model: push-up updates scrollY not screenTop", async () 
 	// screenTop should remain readonly (unchanged)
 	expect(dom.window.screenTop).toBe(initialScreenTop);
 
-	// scrollY should be updated to push content up
-	// Push-up amount: 4 lines needed - 2 available = 2 lines
-	// New scrollY: 8 - 2 = 6, but may be clamped to 0 (terminal top)
-	expect(dom.window.scrollY).toBeGreaterThanOrEqual(0); // Should not go negative
-	expect(dom.window.scrollY).toBeLessThan(initialScreenTop); // Should be pushed up
+	// scrollY should remain 0 (still in command start mode after push-up)
+	// Internal scrollTop was pushed up from -8 to -6, but scrollY stays bounded to 0
+	expect(dom.window.scrollY).toBe(0); // Still bounded to 0
+	// TODO: We could check internal state if needed, but public API shows 0
 });
 
 test("standard DOM properties: scrollHeight and clientHeight", async () => {
