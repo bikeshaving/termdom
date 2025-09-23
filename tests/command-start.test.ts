@@ -419,3 +419,152 @@ test("content larger than terminal height (edge case)", async () => {
 	// 2. Show error/warning?
 	// 3. Enable scrolling/paging?
 });
+
+test("unified scrolling model: screenTop + scrollY", async () => {
+	const terminal = new TestTerminal({rows: 10, cols: 40});
+
+	// Position cursor at row 6
+	await new Promise<void>((resolve) => {
+		terminal.stdout.write("\x1b[6;1H", () => resolve());
+	});
+
+	const dom = new TermDOM({process: terminal});
+	await dom.detectCommandStart();
+
+	// Initial state: command start detected
+	expect(dom.window.screenTop).toBe(5); // Row 6 -> 0-based = 5 (readonly)
+	expect(dom.window.scrollY).toBe(5); // Set to screenTop (viewport position)
+
+	// scrollY is now the single source of truth for viewport position
+	expect(dom.window.scrollY).toBe(5);
+});
+
+test("unified scrolling model: user scrolls to terminal top", async () => {
+	const terminal = new TestTerminal({rows: 10, cols: 40});
+
+	// Position cursor at row 8
+	await new Promise<void>((resolve) => {
+		terminal.stdout.write("\x1b[8;1H", () => resolve());
+	});
+
+	const dom = new TermDOM({process: terminal});
+	await dom.detectCommandStart();
+
+	expect(dom.window.screenTop).toBe(7); // Row 8 -> 0-based = 7 (readonly)
+	expect(dom.window.scrollY).toBe(7); // Initial: screenTop (command start position)
+
+	// User scrolls to show content from terminal top
+	dom.document.documentElement.scrollTop = 0;
+
+	// scrollY = 0 means content renders from terminal top
+	expect(dom.window.scrollY).toBe(0);
+	expect(dom.window.screenTop).toBe(7); // screenTop stays readonly
+});
+
+test("unified scrolling model: user scrolls down in document", async () => {
+	const terminal = new TestTerminal({rows: 10, cols: 40});
+
+	// Position cursor at row 5
+	await new Promise<void>((resolve) => {
+		terminal.stdout.write("\x1b[5;1H", () => resolve());
+	});
+
+	const dom = new TermDOM({process: terminal});
+	await dom.detectCommandStart();
+
+	expect(dom.window.screenTop).toBe(4); // Row 5 -> 0-based = 4
+	expect(dom.window.scrollY).toBe(4); // Initial: screenTop (command start position)
+
+	// User scrolls down 3 lines in document
+	dom.document.documentElement.scrollTop = 4 + 3; // 7
+
+	// scrollY = 7 means viewport is at row 8 (showing content 3 lines down from command start)
+	expect(dom.window.scrollY).toBe(7);
+	expect(dom.window.screenTop).toBe(4); // screenTop stays readonly
+});
+
+test("unified scrolling model: pageYOffset alias", async () => {
+	const terminal = new TestTerminal({rows: 10, cols: 40});
+
+	// Position cursor at row 3
+	await new Promise<void>((resolve) => {
+		terminal.stdout.write("\x1b[3;1H", () => resolve());
+	});
+
+	const dom = new TermDOM({process: terminal});
+	await dom.detectCommandStart();
+
+	// pageYOffset should be an alias for scrollY
+	expect(dom.window.pageYOffset).toBe(dom.window.scrollY);
+	expect(dom.window.pageYOffset).toBe(2); // screenTop (command start position)
+
+	// Changing scrollTop should affect pageYOffset
+	dom.document.documentElement.scrollTop = 5;
+	expect(dom.window.pageYOffset).toBe(5);
+});
+
+test("unified scrolling model: push-up updates scrollY not screenTop", async () => {
+	const terminal = new TestTerminal({rows: 10, cols: 40});
+
+	// Position cursor at row 9 (only 2 lines available)
+	await new Promise<void>((resolve) => {
+		terminal.stdout.write("\x1b[9;1H", () => resolve());
+	});
+
+	const dom = new TermDOM({process: terminal});
+	await dom.detectCommandStart();
+
+	const initialScreenTop = dom.window.screenTop;
+	expect(initialScreenTop).toBe(8); // Row 9 -> 0-based = 8
+	expect(dom.window.scrollY).toBe(8); // Initial: screenTop (command start position)
+
+	// Add content that needs 4 lines (exceeds available 2 lines)
+	dom.document.body.innerHTML = `
+		<div>Line 1</div>
+		<div>Line 2</div>
+		<div>Line 3</div>
+		<div>Line 4</div>
+	`;
+
+	await dom.render();
+
+	// screenTop should remain readonly (unchanged)
+	expect(dom.window.screenTop).toBe(initialScreenTop);
+
+	// scrollY should be updated to push content up
+	// Push-up amount: 4 lines needed - 2 available = 2 lines
+	// New scrollY: 8 - 2 = 6, but may be clamped to 0 (terminal top)
+	expect(dom.window.scrollY).toBeGreaterThanOrEqual(0); // Should not go negative
+	expect(dom.window.scrollY).toBeLessThan(initialScreenTop); // Should be pushed up
+});
+
+test("standard DOM properties: scrollHeight and clientHeight", async () => {
+	const terminal = new TestTerminal({rows: 10, cols: 40});
+
+	const dom = new TermDOM({process: terminal});
+
+	// Add content with known height
+	dom.document.body.innerHTML = `
+		<div>Line 1</div>
+		<div>Line 2</div>
+		<div>Line 3</div>
+	`;
+
+	await dom.render();
+
+	// Verify standard DOM properties are implemented
+	expect(typeof dom.document.body.scrollHeight).toBe("number");
+	expect(typeof dom.document.body.clientHeight).toBe("number");
+	expect(typeof dom.document.documentElement.scrollHeight).toBe("number");
+	expect(typeof dom.document.documentElement.clientHeight).toBe("number");
+
+	// clientHeight should be terminal height
+	expect(dom.document.body.clientHeight).toBe(10);
+	expect(dom.document.documentElement.clientHeight).toBe(10);
+
+	// scrollHeight should be content height (should be >= clientHeight)
+	expect(dom.document.body.scrollHeight).toBeGreaterThanOrEqual(3); // At least 3 lines
+	expect(dom.document.documentElement.scrollHeight).toBe(
+		dom.document.body.scrollHeight,
+	);
+});

@@ -610,8 +610,23 @@ export class LayoutEngine {
 
 		const rootYogaNode = this.nodeMap.get(this.rootElement);
 		if (rootYogaNode) {
-			rootYogaNode.calculateLayout(this.terminalWidth, this.terminalHeight);
+			// Always use auto height to get natural content height
+			// This allows for proper scrolling behavior and content measurement
+			rootYogaNode.setHeightAuto();
+			rootYogaNode.calculateLayout(this.terminalWidth, undefined);
 		}
+	}
+
+	/**
+	 * Get the actual height of the document content after layout calculation
+	 * Used for implementing standard DOM scrollHeight property
+	 */
+	getContentHeight(): number {
+		const bodyRect = this.getRect(this.rootElement.ownerDocument?.body);
+		if (bodyRect) {
+			return Math.ceil(bodyRect.height);
+		}
+		return 0;
 	}
 
 	getRect(element: Element): DOMRect | null {

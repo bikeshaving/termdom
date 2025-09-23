@@ -5,6 +5,7 @@ import {type ColorDepth, Renderer} from "./ansi.js";
 import {StyleManager, resolveBorderStyles, cssColorToNumber} from "./styles.js";
 import {FullscreenManager} from "./fullscreen.js";
 import {setupInspectMethods} from "./inspector.js";
+import {ScrollingManager} from "./scrolling.js";
 import {
 	createExpandedTreeWalker,
 	NodeFilterExtended,
@@ -74,12 +75,10 @@ export class TermDOM {
 	private readonly observer: MutationObserver;
 	private readonly fullscreenManager: FullscreenManager;
 	public readonly styleManager: StyleManager;
+	private readonly scrollingManager: ScrollingManager;
 
 	// Guard against re-entrant rendering
 	private isRendering = false;
-
-	// Track document dimensions for push-up calculations
-	private documentHeight: number = 0;
 
 	// Track whether command start was explicitly detected (even if at row 1)
 	private hasDetectedCommandStart: boolean = false;
@@ -141,6 +140,9 @@ export class TermDOM {
 		this.fullscreenManager = new FullscreenManager(this.process);
 
 		this.initializeWindow();
+
+		// Initialize scrolling management after window setup
+		this.scrollingManager = new ScrollingManager(this.window, this.document);
 
 		this.observer = this.setupMutationObserver();
 
@@ -321,6 +323,41 @@ export class TermDOM {
 			configurable: true,
 			enumerable: true,
 		});
+
+		// Implement standard DOM scrollHeight properties
+		const termDOM = this;
+		Object.defineProperty(this.document.body, "scrollHeight", {
+			get() {
+				return termDOM.layoutEngine.getContentHeight();
+			},
+			configurable: true,
+			enumerable: true,
+		});
+
+		Object.defineProperty(this.document.documentElement, "scrollHeight", {
+			get() {
+				return termDOM.layoutEngine.getContentHeight();
+			},
+			configurable: true,
+			enumerable: true,
+		});
+
+		// clientHeight is the viewport height (terminal height)
+		Object.defineProperty(this.document.body, "clientHeight", {
+			get() {
+				return termDOM.height;
+			},
+			configurable: true,
+			enumerable: true,
+		});
+
+		Object.defineProperty(this.document.documentElement, "clientHeight", {
+			get() {
+				return termDOM.height;
+			},
+			configurable: true,
+			enumerable: true,
+		});
 	}
 
 	private setupMutationObserver(): MutationObserver {
@@ -445,14 +482,11 @@ export class TermDOM {
 			// Attach pseudo-elements to all elements before layout calculation
 			this.styleManager.attachPseudoElementsToDocument();
 
-			// Use auto height mode when window.screenTop indicates we're not at top of terminal
-			// Also use auto height if screenTop was explicitly set via detectCommandStart
-			const useAutoHeight =
-				this.window.screenTop > 0 || this.hasDetectedCommandStart;
-			this.layoutEngine.calculateLayout(useAutoHeight);
+			// Always use auto height for natural content sizing and scrolling
+			this.layoutEngine.calculateLayout();
 
-			// Calculate push-up offset if in auto height mode
-			if (useAutoHeight) {
+			// Calculate push-up offset if command start was detected
+			if (this.hasDetectedCommandStart) {
 				this.calculatePushUpOffset();
 			}
 
@@ -511,10 +545,13 @@ export class TermDOM {
 		};
 
 		if (rect && style.bg != null) {
-			const {x, y} = this.transformCoordinates(rect.left, rect.top);
-			if (x >= 0 && y >= 0) {
-				this.renderer.fillRect(x, y, rect.width, rect.height, style.bg);
-			}
+			this.renderer.fillRect(
+				rect.left,
+				rect.top,
+				rect.width,
+				rect.height,
+				style.bg,
+			);
 		}
 
 		// Handle tables with TanStack integration
@@ -941,52 +978,29 @@ export class TermDOM {
 
 	/**
 	 * Calculate push-up offset when content exceeds available terminal space
+	 * Updates scrollY to position content to fit in terminal
 	 */
 	private calculatePushUpOffset(): void {
-		// Get actual document height after layout calculation
-		this.documentHeight = this.layoutEngine.getDocumentHeight();
+		// Use standard DOM property for content height
+		const documentHeight = this.document.body.scrollHeight;
 
-		// Calculate command start row from window.screenTop (convert 0-based to 1-based)
-		const commandStartRow = this.window.screenTop + 1;
+		// Calculate current viewport position from scrolling manager
+		const currentRow = this.scrollingManager.getScrollTop() + 1; // Convert 0-based to 1-based
 
-		// Calculate available space from command start to bottom of terminal
-		const availableSpace = this.height - commandStartRow + 1;
+		// Calculate available space from current position to bottom of terminal
+		const availableSpace = this.height - currentRow + 1;
 
 		// If content fits in available space, no push-up needed
-		if (this.documentHeight <= availableSpace) {
+		if (documentHeight <= availableSpace) {
 			return;
 		}
 
 		// Calculate how much to push up
-		const pushUpOffset = this.documentHeight - availableSpace;
+		const pushUpAmount = documentHeight - availableSpace;
 
-		// Update window.screenTop (push viewport upward)
-		const newCommandStartRow = Math.max(1, commandStartRow - pushUpOffset);
-		const newScreenTop = newCommandStartRow - 1; // Convert back to 0-based
-		Object.defineProperty(this.window, "screenTop", {
-			value: newScreenTop,
-			writable: false,
-			configurable: true,
-			enumerable: true,
-		});
-	}
-
-	/**
-	 * Transform layout coordinates to terminal coordinates based on viewport position
-	 */
-	private transformCoordinates(
-		layoutX: number,
-		layoutY: number,
-	): {x: number; y: number} {
-		// Apply window.screenTop offset to layout coordinates
-		const terminalY = layoutY + this.window.screenTop;
-
-		// Clip to terminal boundaries
-		if (terminalY < 0 || terminalY >= this.height) {
-			return {x: -1, y: -1}; // Signal to skip rendering
-		}
-
-		return {x: layoutX, y: terminalY};
+		// Update scrollTop to push content up (browser behavior: increase scrollTop)
+		// Increase scrollTop by pushUpAmount to shift content further up
+		this.scrollingManager.scrollBy(pushUpAmount);
 	}
 
 	/**
@@ -1016,12 +1030,12 @@ export class TermDOM {
 					const row = parseInt(match[1], 10);
 					// Set window.screenTop (convert 1-based terminal row to 0-based)
 					const screenTop = row - 1;
-					Object.defineProperty(this.window, "screenTop", {
-						value: screenTop,
-						writable: false,
-						configurable: true,
-						enumerable: true,
-					});
+					this.scrollingManager.setScreenTop(screenTop);
+
+					// Set scrollTop to command start position (browser behavior)
+					// For command start, we want content to shift up to terminal top
+					this.scrollingManager.scrollToCommandStart();
+
 					this.hasDetectedCommandStart = true;
 					resolve(row);
 				}
