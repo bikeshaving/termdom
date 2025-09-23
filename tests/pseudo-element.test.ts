@@ -3,7 +3,7 @@ import {TermDOM} from "../src/termdom.js";
 import {TestTerminal} from "./test-utils.js";
 import {getPseudoElement} from "../src/composition.js";
 
-test("::before and ::after content rendering integration", async () => {
+test("::before and ::after content rendering", async () => {
 	const terminal = new TestTerminal();
 	const termdom = new TermDOM({process: terminal});
 	const {document} = termdom;
@@ -84,7 +84,7 @@ test("::before and ::after content rendering integration", async () => {
 	expect(beforePrefixNode!.textContent).toBe("Note: ");
 });
 
-test.todo("::marker pseudo-element integration with lists", async () => {
+test("::marker pseudo-element with lists", async () => {
 	const terminal = new TestTerminal();
 	const termdom = new TermDOM({process: terminal});
 	const {document} = termdom;
@@ -156,7 +156,7 @@ test.todo("::marker pseudo-element integration with lists", async () => {
 	expect(emojiMarkerNode!.textContent).toBe("🔥 ");
 });
 
-test.todo("Pseudo-element cascade and specificity in rendering", async () => {
+test("Pseudo-element cascade and specificity in rendering", async () => {
 	const terminal = new TestTerminal();
 	const termdom = new TermDOM({process: terminal});
 	const {document} = termdom;
@@ -263,7 +263,7 @@ test.todo(
 	},
 );
 
-test.todo("Pseudo-elements with inline styles override", async () => {
+test("Pseudo-elements with inline styles override", async () => {
 	const terminal = new TestTerminal();
 	const termdom = new TermDOM({process: terminal});
 	const {document} = termdom;

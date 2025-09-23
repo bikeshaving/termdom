@@ -119,7 +119,7 @@ test("addNode - text nodes", () => {
 	expect(rect).not.toBeNull();
 });
 
-// Inline run integration tests
+// Inline run tests
 test("inline elements join runs correctly", () => {
 	const {jsdom, layoutEngine} = createLayoutEngine(`
 		<div>
@@ -915,7 +915,7 @@ test("inline run with mixed content - whitespace handling", () => {
 	// "Start middle   end" gets processed with proper whitespace collapsing
 
 	// Test passes if no errors are thrown during layout calculation
-	// This demonstrates that the whitespace processing integration works
+	// This demonstrates that the whitespace processing works correctly
 	const container = jsdom.window.document.querySelector("div")!;
 	expect(container).not.toBeNull(); // Layout calculation completed successfully
 });
@@ -1801,7 +1801,7 @@ test("Block child positioned after parent text content", () => {
 	expect(childLayout.height).toBe(1);
 });
 
-test.todo(
+test(
 	"Multiple block children positioned sequentially after parent text",
 	() => {
 		const {layoutEngine} = createLayoutEngine(
@@ -1831,7 +1831,7 @@ test.todo(
 	},
 );
 
-test.todo("Inline children do not affect block child positioning", () => {
+test("Inline children do not affect block child positioning", () => {
 	const {layoutEngine} = createLayoutEngine(
 		`<div>Parent <span>inline</span> text<div>Block child</div></div>`,
 	);

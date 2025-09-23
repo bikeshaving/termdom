@@ -356,7 +356,7 @@ test("list performance with many items", async () => {
 	dom.dispose();
 });
 
-// Test list layout integration with flexbox
+// Test list layout with flexbox
 test("lists in flexbox containers", async () => {
 	const terminal = new TestTerminal({cols: 80, rows: 20});
 	const dom = new TermDOM({process: terminal});

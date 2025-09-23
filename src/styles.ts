@@ -742,7 +742,7 @@ export function resolveBorderStyles(element: Element): {
 	leftEdge: number;
 	hasAnyBorder: boolean;
 } {
-	const computedStyle = new TerminalComputedStyle(element);
+	const computedStyle = element.ownerDocument.defaultView!.getComputedStyle(element);
 
 	// Helper to encode individual edge
 	const encodeEdge = (
@@ -933,7 +933,7 @@ export function getListNestingDepth(listItem: Element): number {
  */
 export function getListMarker(listItem: Element, listParent: Element): string {
 	const listType = listParent.tagName.toLowerCase();
-	const listStyleType = new TerminalComputedStyle(listParent).getPropertyValue(
+	const listStyleType = listParent.ownerDocument.defaultView!.getComputedStyle(listParent).getPropertyValue(
 		"list-style-type",
 	);
 	const nestingDepth = getListNestingDepth(listItem);

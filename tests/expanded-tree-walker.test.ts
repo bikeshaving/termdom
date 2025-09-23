@@ -1487,7 +1487,7 @@ test("TermDOM - ::marker only on elements with display: list-item in walker trav
 	expect(divBlockDisplay).toBe("block");
 });
 
-test("TermDOM - ::marker rendering integration test", async () => {
+test("TermDOM - ::marker rendering test", async () => {
 	const terminal = new TestTerminal();
 	const termdom = new TermDOM({process: terminal});
 	const {document} = termdom;
