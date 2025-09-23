@@ -1853,3 +1853,105 @@ test.todo("Inline children do not affect block child positioning", () => {
 	// FAILING: Block child should be positioned after all parent content
 	expect(blockChildLayout.top).toBe(1); // Currently fails: at y=0
 });
+
+// Tests for block emulation with flexbox behavior
+test("Block display is emulated with flexbox and proper flex-shrink behavior", () => {
+	const {layoutEngine} = createLayoutEngine(`
+		<div id="container" style="height: 10px; display: block;">
+			<div id="child1" style="height: 5px;">Child 1</div>
+			<div id="child2" style="height: 5px;">Child 2</div>
+			<ul id="list" style="height: 8px;">
+				<li>List item 1</li>
+				<li>List item 2</li>
+			</ul>
+		</div>
+	`);
+
+	layoutEngine.calculateLayout();
+
+	const container = layoutEngine.window.document.getElementById("container")!;
+	const child1 = layoutEngine.window.document.getElementById("child1")!;
+	const child2 = layoutEngine.window.document.getElementById("child2")!;
+	const list = layoutEngine.window.document.getElementById("list")!;
+
+	const containerYoga = layoutEngine.nodeMap.get(container);
+	const child1Yoga = layoutEngine.nodeMap.get(child1);
+	const child2Yoga = layoutEngine.nodeMap.get(child2);
+	const listYoga = layoutEngine.nodeMap.get(list);
+
+	const containerLayout = containerYoga!.getComputedLayout();
+	const child1Layout = child1Yoga!.getComputedLayout();
+	const child2Layout = child2Yoga!.getComputedLayout();
+	const listLayout = listYoga!.getComputedLayout();
+
+	// Block containers use flexbox with flex-direction: column
+	expect(containerYoga!.getFlexDirection()).toBe(0); // FLEX_DIRECTION_COLUMN value
+
+	// Children are stacked vertically (block behavior)
+	expect(child1Layout.top).toBe(0);
+	expect(child2Layout.top).toBe(5); // After child1 (height 5)
+	expect(listLayout.top).toBe(10); // After child1 + child2 (height 5 + 5)
+
+	// CRITICAL: Children maintain their specified heights (flex-shrink: 0)
+	// This prevents content clipping in constrained containers
+	expect(child1Layout.height).toBe(5); // Maintains requested height
+	expect(child2Layout.height).toBe(5); // Maintains requested height
+	expect(listLayout.height).toBe(8); // Maintains requested height
+
+	// Total content height exceeds container height, but children don't shrink
+	const totalChildrenHeight =
+		child1Layout.height + child2Layout.height + listLayout.height;
+	expect(totalChildrenHeight).toBe(18); // 5 + 5 + 8 = 18
+	expect(containerLayout.height).toBe(10); // Container height constraint
+	expect(totalChildrenHeight).toBeGreaterThan(containerLayout.height);
+
+	// This behavior allows content to overflow rather than clip,
+	// which is the correct behavior for terminal layouts
+});
+
+test("Block children have flex-shrink: 0 to prevent content clipping", () => {
+	const {layoutEngine} = createLayoutEngine(`
+		<div style="height: 3px; display: block;">
+			<div style="height: 2px;">Block child 1</div>
+			<div style="height: 2px;">Block child 2</div>
+		</div>
+	`);
+
+	layoutEngine.calculateLayout();
+
+	const container = layoutEngine.window.document.querySelector("div")!;
+	const children = Array.from(
+		layoutEngine.window.document.querySelectorAll("div"),
+	).slice(1); // Skip container
+
+	const containerYoga = layoutEngine.nodeMap.get(container);
+	const childYogaNodes = children.map(
+		(child) => layoutEngine.nodeMap.get(child)!,
+	);
+
+	const containerLayout = containerYoga!.getComputedLayout();
+	const childLayouts = childYogaNodes.map((yoga) => yoga.getComputedLayout());
+
+	// Container has constrained height (3px)
+	expect(containerLayout.height).toBe(3);
+
+	// CRITICAL: Children maintain their requested heights despite container constraint
+	// This is because they have flex-shrink: 0 in block containers
+	expect(childLayouts[0].height).toBe(2); // Child 1 maintains height
+	expect(childLayouts[1].height).toBe(2); // Child 2 maintains height
+
+	// Children are positioned vertically (block stacking)
+	expect(childLayouts[0].top).toBe(0);
+	expect(childLayouts[1].top).toBe(2); // After first child
+
+	// Total children height exceeds container, but they don't shrink
+	const totalChildrenHeight = childLayouts[0].height + childLayouts[1].height;
+	expect(totalChildrenHeight).toBe(4); // 2 + 2 = 4
+	expect(totalChildrenHeight).toBeGreaterThan(containerLayout.height); // 4 > 3
+
+	// Verify children have flex-shrink: 0 (indirectly via maintained heights)
+	// If flex-shrink were 1, children would shrink to fit the 3px container
+	childYogaNodes.forEach((yoga) => {
+		expect(yoga.getFlexShrink()).toBe(0);
+	});
+});

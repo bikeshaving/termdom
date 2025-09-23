@@ -353,7 +353,7 @@ function styleYogaNode(element: Element, yogaNode: YogaTypes.Node): void {
 		// to not have configurable flex properties, or surprising layout behavior
 		// might occur.
 		yogaNode.setFlexGrow(0);
-		yogaNode.setFlexShrink(1);
+		yogaNode.setFlexShrink(0); // Prevent shrinking in block containers
 		yogaNode.setFlexBasisAuto();
 		yogaNode.setAlignSelf(Yoga.ALIGN_AUTO);
 	} else {
