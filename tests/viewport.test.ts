@@ -224,10 +224,11 @@ test("coordinate transformation from layout space to terminal space", async () =
 
 	expect(dom.window.screenTop).toBe(4); // Row 5 -> 0-based = 4
 
-	// FAILING: Layout coordinates should be offset by commandStartRow
-	// Layout (0,0) should map to terminal row 5
+	// Layout coordinates should be offset by viewport offset
+	// Layout (0,0) should map to terminal row 4 (0-based), showing at line 4
 	expect(lines[4]).toBe("First"); // Row 5 (0-based index 4)
-	// Layout (1,10) should map to terminal row 6, col 10
+
+	// Layout (1ch,10ch) should map to terminal row 5, col 10
 	expect(lines[5].substring(10, 16)).toBe("Second"); // Row 6, starting at col 10
 });
 
@@ -318,7 +319,7 @@ test("push-up offset calculation when content exceeds available space", async ()
 	expect(lines[9]).toBe("Line 4"); // Row 10
 
 	// Initial command start should be updated
-	expect(dom.window.screenTop).toBe(7); // Should be pushed up from 9 to 7
+	expect(dom.window.screenTop).toBe(6); // Should be pushed up from 8 to 6 (0-based)
 });
 
 test("content positioning with different terminal sizes", async () => {

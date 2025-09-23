@@ -302,6 +302,9 @@ export class Renderer {
 	private currentBuffer: CellBuffer;
 	// Track which lines have been rendered to clear them on first use
 	private renderedLines: Set<number> = new Set();
+	// Track viewport offset for scroll command generation
+	private currentViewportOffset: number = 0;
+	private previousViewportOffset: number = 0;
 
 	constructor(
 		private rows: number,
@@ -318,6 +321,8 @@ export class Renderer {
 
 	clearPreviousBuffer(): void {
 		this.previousBuffer = null;
+		this.currentViewportOffset = 0;
+		this.previousViewportOffset = 0;
 	}
 
 	private clearLine(y: number): void {
@@ -328,7 +333,9 @@ export class Renderer {
 		}
 	}
 
-	beginFrame(): void {
+	beginFrame(viewportOffset: number = 0): void {
+		this.previousViewportOffset = this.currentViewportOffset;
+		this.currentViewportOffset = viewportOffset;
 		this.currentBuffer = createBuffer(this.rows, this.cols);
 	}
 
@@ -338,7 +345,19 @@ export class Renderer {
 		char: string,
 		style?: RendererCellStyle,
 	): void {
-		if (row < 0 || row >= this.rows || col < 0 || col >= this.cols) return;
+		// Apply viewport offset to transform layout coordinates to terminal coordinates
+		const terminalRow = row + this.currentViewportOffset;
+
+		// Clip to terminal bounds - only render visible cells
+		if (
+			terminalRow < 0 ||
+			terminalRow >= this.rows ||
+			col < 0 ||
+			col >= this.cols
+		)
+			return;
+
+		row = terminalRow;
 
 		let finalStyle = style;
 		if (style && style.bg == null) {
@@ -389,9 +408,8 @@ export class Renderer {
 
 		for (let row = y; row < y + height; row++) {
 			for (let col = x; col < x + width; col++) {
-				if (row >= 0 && row < this.rows && col >= 0 && col < this.cols) {
-					this.setCell(row, col, " ", style);
-				}
+				// setCell will handle viewport offset transformation and clipping
+				this.setCell(row, col, " ", style);
 			}
 		}
 	}
@@ -532,9 +550,15 @@ export class Renderer {
 		borderEncoding: number,
 		style?: RendererCellStyle,
 	): void {
-		if (y < 0 || y >= this.rows || x < 0 || x >= this.cols) {
+		// Apply viewport offset to transform layout coordinates to terminal coordinates
+		const terminalY = y + this.currentViewportOffset;
+
+		// Clip to terminal bounds
+		if (terminalY < 0 || terminalY >= this.rows || x < 0 || x >= this.cols) {
 			return;
 		}
+
+		y = terminalY;
 
 		const buffer = this.currentBuffer;
 		const existingCell = buffer[y][x];
@@ -584,8 +608,6 @@ export class Renderer {
 		text: string,
 		style?: RendererCellStyle,
 	): number {
-		if (y < 0 || y >= this.rows) return x;
-
 		let currentX = x;
 		const segmenter = new Intl.Segmenter("en", {granularity: "grapheme"});
 		const segments = Array.from(segmenter.segment(text));
@@ -605,7 +627,120 @@ export class Renderer {
 		return currentX;
 	}
 
+	/**
+	 * Generate ANSI scroll commands based on viewport offset changes
+	 */
+	private generateScrollCommands(): string {
+		// Don't generate scroll commands if there's no previous buffer (first frame)
+		if (!this.previousBuffer) {
+			return "";
+		}
+
+		const offsetDelta =
+			this.currentViewportOffset - this.previousViewportOffset;
+
+		// No change, no scroll needed
+		if (offsetDelta === 0) {
+			return "";
+		}
+
+		// Positive offset means content moved down (viewport scrolled down)
+		// Use scroll down command \x1b[nS
+		if (offsetDelta > 0) {
+			return `\x1b[${offsetDelta}S`;
+		}
+
+		// Negative offset means content moved up (viewport scrolled up)
+		// Use scroll up command \x1b[nT
+		else {
+			return `\x1b[${Math.abs(offsetDelta)}T`;
+		}
+	}
+
+	/**
+	 * Transform the previous buffer to mirror terminal scroll behavior
+	 * This optimizes diffs by only showing actual content changes
+	 */
+	private transformBufferForScroll(): void {
+		if (!this.previousBuffer) return;
+
+		const offsetDelta =
+			this.currentViewportOffset - this.previousViewportOffset;
+		if (offsetDelta === 0) return;
+
+		// Create new buffer with same dimensions
+		const transformedBuffer = createBuffer(this.rows, this.cols);
+
+		if (offsetDelta > 0) {
+			// Scrolling down: move content up (shift rows up)
+			this.scrollBufferUp(this.previousBuffer, transformedBuffer, offsetDelta);
+		} else {
+			// Scrolling up: move content down (shift rows down)
+			this.scrollBufferDown(
+				this.previousBuffer,
+				transformedBuffer,
+				Math.abs(offsetDelta),
+			);
+		}
+
+		this.previousBuffer = transformedBuffer;
+	}
+
+	/**
+	 * Scroll buffer content up by shifting rows upward and clearing bottom rows
+	 */
+	private scrollBufferUp(
+		source: CellBuffer,
+		dest: CellBuffer,
+		lines: number,
+	): void {
+		// Copy rows shifted up
+		for (let row = 0; row < this.rows; row++) {
+			const sourceRow = row + lines;
+			if (sourceRow < this.rows) {
+				// Copy existing row shifted up
+				for (let col = 0; col < this.cols; col++) {
+					dest[row][col] = source[sourceRow][col];
+				}
+			} else {
+				// Bottom rows become null (cleared)
+				for (let col = 0; col < this.cols; col++) {
+					dest[row][col] = null;
+				}
+			}
+		}
+	}
+
+	/**
+	 * Scroll buffer content down by shifting rows downward and clearing top rows
+	 */
+	private scrollBufferDown(
+		source: CellBuffer,
+		dest: CellBuffer,
+		lines: number,
+	): void {
+		// Copy rows shifted down
+		for (let row = this.rows - 1; row >= 0; row--) {
+			const sourceRow = row - lines;
+			if (sourceRow >= 0) {
+				// Copy existing row shifted down
+				for (let col = 0; col < this.cols; col++) {
+					dest[row][col] = source[sourceRow][col];
+				}
+			} else {
+				// Top rows become null (cleared)
+				for (let col = 0; col < this.cols; col++) {
+					dest[row][col] = null;
+				}
+			}
+		}
+	}
+
 	render(): string {
+		// Transform previous buffer to mirror terminal scroll behavior
+		// This must happen before diffing to optimize output
+		this.transformBufferForScroll();
+
 		const diffBuffer = createBuffer(this.rows, this.cols);
 
 		if (!this.previousBuffer) {
@@ -648,11 +783,15 @@ export class Renderer {
 			}
 		}
 
+		// Generate scroll commands based on viewport offset changes
+		const scrollCommands = this.generateScrollCommands();
+
 		const output = generateANSI(
 			diffBuffer,
 			this.colorDepth,
 			false, // clean
 			this.renderedLines,
+			scrollCommands,
 		);
 		this.previousBuffer = this.currentBuffer;
 		return output;
@@ -779,6 +918,7 @@ export function generateANSI(
 	colorDepth: ColorDepth = "rgb",
 	clean: boolean = false,
 	renderedLines?: Set<number>,
+	scrollCommands?: string,
 ): string {
 	const rows = buffer.length;
 	const cols = buffer[0]?.length || 0;
@@ -803,6 +943,11 @@ export function generateANSI(
 		output += "\x1b[?2026h"; // Synchronized output mode
 		output += "\x1b[?25l"; // Hide cursor by default
 		output += "\x1b[H"; // Move cursor to home
+
+		// Add scroll commands if provided
+		if (scrollCommands) {
+			output += scrollCommands;
+		}
 	}
 
 	const moveCursor = (targetRow: number, targetCol: number): string => {

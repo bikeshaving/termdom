@@ -490,7 +490,9 @@ export class TermDOM {
 				this.calculatePushUpOffset();
 			}
 
-			this.renderer.beginFrame();
+			// Get viewport offset from raw internal scrollTop
+			const viewportOffset = -this.scrollingManager.getScrollTop();
+			this.renderer.beginFrame(viewportOffset);
 
 			this.renderElement(this.document.body);
 			const ansi = this.renderer.render();
@@ -998,6 +1000,10 @@ export class TermDOM {
 
 		// Calculate how much to push up
 		const pushUpAmount = documentHeight - availableSpace;
+
+		// Update screenTop to reflect new terminal cursor position
+		const newScreenTop = this.scrollingManager.getScreenTop() - pushUpAmount;
+		this.scrollingManager.setScreenTop(Math.max(0, newScreenTop));
 
 		// Update scrollTop to push content up (make scrollTop less negative)
 		// Increase scrollTop by pushUpAmount to shift content start position up
