@@ -1801,35 +1801,32 @@ test("Block child positioned after parent text content", () => {
 	expect(childLayout.height).toBe(1);
 });
 
-test(
-	"Multiple block children positioned sequentially after parent text",
-	() => {
-		const {layoutEngine} = createLayoutEngine(
-			`<div>Parent text<div>Child 1</div><div>Child 2</div></div>`,
-		);
+test("Multiple block children positioned sequentially after parent text", () => {
+	const {layoutEngine} = createLayoutEngine(
+		`<div>Parent text<div>Child 1</div><div>Child 2</div></div>`,
+	);
 
-		layoutEngine.calculateLayout();
+	layoutEngine.calculateLayout();
 
-		const parent = layoutEngine.window.document.querySelector("div")!;
-		const children = Array.from(parent.querySelectorAll("div"));
+	const parent = layoutEngine.window.document.querySelector("div")!;
+	const children = Array.from(parent.querySelectorAll("div"));
 
-		const parentYoga = layoutEngine.nodeMap.get(parent);
-		const parentLayout = parentYoga!.getComputedLayout();
+	const parentYoga = layoutEngine.nodeMap.get(parent);
+	const parentLayout = parentYoga!.getComputedLayout();
 
-		// Parent should have height for text + 2 children
-		expect(parentLayout.height).toBe(3);
+	// Parent should have height for text + 2 children
+	expect(parentLayout.height).toBe(3);
 
-		// FAILING: Children should be positioned sequentially after parent text
-		const child1Yoga = layoutEngine.nodeMap.get(children[0]);
-		const child2Yoga = layoutEngine.nodeMap.get(children[1]);
+	// FAILING: Children should be positioned sequentially after parent text
+	const child1Yoga = layoutEngine.nodeMap.get(children[0]);
+	const child2Yoga = layoutEngine.nodeMap.get(children[1]);
 
-		const child1Layout = child1Yoga!.getComputedLayout();
-		const child2Layout = child2Yoga!.getComputedLayout();
+	const child1Layout = child1Yoga!.getComputedLayout();
+	const child2Layout = child2Yoga!.getComputedLayout();
 
-		expect(child1Layout.top).toBe(1); // Currently fails: at y=0
-		expect(child2Layout.top).toBe(2); // Currently fails: at y=1
-	},
-);
+	expect(child1Layout.top).toBe(1); // Currently fails: at y=0
+	expect(child2Layout.top).toBe(2); // Currently fails: at y=1
+});
 
 test("Inline children do not affect block child positioning", () => {
 	const {layoutEngine} = createLayoutEngine(

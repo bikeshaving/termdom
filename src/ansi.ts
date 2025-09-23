@@ -300,6 +300,8 @@ export interface RendererCellStyle {
 export class Renderer {
 	private previousBuffer: CellBuffer | null = null;
 	private currentBuffer: CellBuffer;
+	// Track which lines have been rendered to clear them on first use
+	private renderedLines: Set<number> = new Set();
 
 	constructor(
 		private rows: number,
@@ -646,7 +648,12 @@ export class Renderer {
 			}
 		}
 
-		const output = generateANSI(diffBuffer, this.colorDepth);
+		const output = generateANSI(
+			diffBuffer,
+			this.colorDepth,
+			false, // clean
+			this.renderedLines,
+		);
 		this.previousBuffer = this.currentBuffer;
 		return output;
 	}
@@ -771,6 +778,7 @@ export function generateANSI(
 	buffer: CellBuffer,
 	colorDepth: ColorDepth = "rgb",
 	clean: boolean = false,
+	renderedLines?: Set<number>,
 ): string {
 	const rows = buffer.length;
 	const cols = buffer[0]?.length || 0;
@@ -978,6 +986,23 @@ export function generateANSI(
 	for (let row = 0; row < rows; row++) {
 		let rowHasContent = false;
 		let rowHasAnsi = false;
+		let isFirstRenderOfLine = false;
+
+		// Check if this line has any content to determine if we need to process it
+		for (let col = 0; col < cols; col++) {
+			if (buffer[row][col] !== null) {
+				rowHasContent = true;
+				break;
+			}
+		}
+
+		// If this line has content and we're tracking rendered lines
+		if (rowHasContent && renderedLines) {
+			isFirstRenderOfLine = !renderedLines.has(row);
+			if (isFirstRenderOfLine) {
+				renderedLines.add(row);
+			}
+		}
 
 		for (let col = 0; col < cols; col++) {
 			const cell = buffer[row][col];
@@ -985,8 +1010,6 @@ export function generateANSI(
 			if (cell === null) {
 				continue;
 			}
-
-			rowHasContent = true;
 
 			if (skipNextCol !== null && row === cursorRow && col === skipNextCol) {
 				skipNextCol = null;
@@ -998,6 +1021,18 @@ export function generateANSI(
 			if (row !== cursorRow || col !== cursorCol) {
 				const moveSeq = moveCursor(row, col);
 				output += moveSeq;
+			}
+
+			// Clear line on first render for interactive terminal behavior
+			if (isFirstRenderOfLine) {
+				// Move to column 0 and clear entire line
+				output += "\r\x1b[K";
+				// Move back to where we need to be
+				if (col > 0) {
+					output += `\x1b[${col}C`;
+				}
+				cursorCol = col; // Update cursor tracking
+				isFirstRenderOfLine = false; // Prevent clearing again on this row
 			}
 
 			const styleSeq = getStyleDiff(cell, previousCell);
