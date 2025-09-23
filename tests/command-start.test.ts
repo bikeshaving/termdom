@@ -2,7 +2,7 @@ import {test, expect} from "bun:test";
 import {TermDOM} from "../src/index.js";
 import {TestTerminal} from "./test-utils.js";
 
-test("detectCommandStart queries and parses cursor position", async () => {
+test("detectCommandStart queries and sets window.screenTop", async () => {
 	const terminal = new TestTerminal();
 
 	// Position cursor at row 15 using raw ANSI (1-based coordinates)
@@ -12,10 +12,10 @@ test("detectCommandStart queries and parses cursor position", async () => {
 
 	const dom = new TermDOM({process: terminal});
 
-	// This should detect we're at row 15
+	// This should detect we're at row 15 and set window.screenTop to 14 (0-based)
 	const row = await dom.detectCommandStart();
 	expect(row).toBe(15);
-	expect(dom.commandStartRow).toBe(15);
+	expect(dom.window.screenTop).toBe(14);
 });
 
 test("detectCommandStart handles different cursor positions", async () => {
@@ -30,7 +30,7 @@ test("detectCommandStart handles different cursor positions", async () => {
 
 	const row = await dom.detectCommandStart();
 	expect(row).toBe(23);
-	expect(dom.commandStartRow).toBe(23);
+	expect(dom.window.screenTop).toBe(22);
 });
 
 test("detectCommandStart handles row 1 (top of terminal)", async () => {
@@ -45,7 +45,7 @@ test("detectCommandStart handles row 1 (top of terminal)", async () => {
 
 	const row = await dom.detectCommandStart();
 	expect(row).toBe(1);
-	expect(dom.commandStartRow).toBe(1);
+	expect(dom.window.screenTop).toBe(0);
 });
 
 test("rendering small content from command start (fits in available space)", async () => {
@@ -63,44 +63,121 @@ test("rendering small content from command start (fits in available space)", asy
 	dom.document.body.innerHTML = `<div>Content Line</div>`;
 
 	await dom.render();
-	const lines = terminal.getPlainText().split('\n');
+	const lines = terminal.getPlainText().split("\n");
 
 	// Content should render starting at row 8 (command start)
-	expect(dom.commandStartRow).toBe(8);
-	
+	expect(dom.window.screenTop).toBe(7); // Row 8 -> 0-based = 7
+
 	// FAILING: Currently renders at top, should render at row 8
 	expect(lines[7]).toBe("Content Line"); // Row 8 (0-based index 7)
 	expect(lines[0]).toBe(""); // Top should be empty
 });
 
-test("rendering large content that exceeds available space (should push up)", async () => {
-	const terminal = new TestTerminal({rows: 24, cols: 80});
+test("push-up calculation when content exceeds available space", async () => {
+	const terminal = new TestTerminal({rows: 10, cols: 40});
 
-	// Position cursor at row 22 (leaving only 2 lines available)
+	// Position cursor at row 8 (leaving 3 lines available: 8, 9, 10)
 	await new Promise<void>((resolve) => {
-		terminal.stdout.write("\x1b[22;1H", () => resolve());
+		terminal.stdout.write("\x1b[8;1H", () => resolve());
+	});
+
+	const dom = new TermDOM({process: terminal});
+	await dom.detectCommandStart();
+	expect(dom.window.screenTop).toBe(7); // Row 8 -> 0-based = 7
+
+	// Add content that needs 5 lines (exceeds available 3 lines by 2)
+	dom.document.body.innerHTML = `
+		<div>Line 1</div>
+		<div>Line 2</div>
+		<div>Line 3</div>
+		<div>Line 4</div>
+		<div>Line 5</div>
+	`;
+
+	await dom.render();
+
+	// window.screenTop should be pushed up by 2 lines (from 7 to 5)
+	// This accommodates all 5 lines of content in the 10-row terminal
+	expect(dom.window.screenTop).toBe(5); // Row 6 -> 0-based = 5
+});
+
+test("no push-up when content fits in available space", async () => {
+	const terminal = new TestTerminal({rows: 10, cols: 40});
+
+	// Position cursor at row 7 (leaving 4 lines available: 7, 8, 9, 10)
+	await new Promise<void>((resolve) => {
+		terminal.stdout.write("\x1b[7;1H", () => resolve());
+	});
+
+	const dom = new TermDOM({process: terminal});
+	await dom.detectCommandStart();
+	expect(dom.window.screenTop).toBe(6); // Row 7 -> 0-based = 6
+
+	// Add content that needs exactly 3 lines (fits in available 4 lines)
+	dom.document.body.innerHTML = `
+		<div>Line 1</div>
+		<div>Line 2</div>
+		<div>Line 3</div>
+	`;
+
+	await dom.render();
+
+	// window.screenTop should NOT be pushed up - content fits
+	expect(dom.window.screenTop).toBe(6);
+});
+
+test("push-up to terminal top when content is very large", async () => {
+	const terminal = new TestTerminal({rows: 5, cols: 30});
+
+	// Position cursor at row 4 (leaving 2 lines available: 4, 5)
+	await new Promise<void>((resolve) => {
+		terminal.stdout.write("\x1b[4;1H", () => resolve());
+	});
+
+	const dom = new TermDOM({process: terminal});
+	await dom.detectCommandStart();
+	expect(dom.window.screenTop).toBe(3); // Row 4 -> 0-based = 3
+
+	// Add content that needs all 5 terminal lines
+	dom.document.body.innerHTML = `
+		<div>Line 1</div>
+		<div>Line 2</div>
+		<div>Line 3</div>
+		<div>Line 4</div>
+		<div>Line 5</div>
+	`;
+
+	await dom.render();
+
+	// window.screenTop should be pushed all the way to 0 (row 1)
+	expect(dom.window.screenTop).toBe(0);
+});
+
+test("document height calculation with auto layout", async () => {
+	const terminal = new TestTerminal({rows: 20, cols: 60});
+
+	// Position cursor at row 10
+	await new Promise<void>((resolve) => {
+		terminal.stdout.write("\x1b[10;1H", () => resolve());
 	});
 
 	const dom = new TermDOM({process: terminal});
 	await dom.detectCommandStart();
 
-	// Add content that needs 6 lines (exceeds available 2 lines)
+	// Add content with known height (3 lines)
 	dom.document.body.innerHTML = `
-		<div>Line 1: This is the first line of content</div>
-		<div>Line 2: This is the second line of content</div>
-		<div>Line 3: This is the third line of content</div>
-		<div>Line 4: This is the fourth line of content</div>
-		<div>Line 5: This is the fifth line of content</div>
-		<div>Line 6: This is the sixth line of content</div>
+		<div>Line 1</div>
+		<div>Line 2</div>
+		<div>Line 3</div>
 	`;
 
 	await dom.render();
 
-	// TODO: When push-up is implemented, verify:
-	// 1. commandStartRow gets updated to accommodate all content
-	// 2. Content renders from the new pushed-up position
-	// 3. Terminal scrolls content upward as needed
-	expect(dom.commandStartRow).toBe(22); // Initial position before push-up logic
+	// Verify document height was calculated and used for push-up logic
+	// Available space: 20 - 10 + 1 = 11 lines
+	// Content needs: 3 lines
+	// No push-up needed since 3 <= 11
+	expect(dom.window.screenTop).toBe(9); // Row 10 -> 0-based = 9, should remain unchanged
 });
 
 test("rendering at top of terminal (row 1) with large content", async () => {
@@ -116,12 +193,12 @@ test("rendering at top of terminal (row 1) with large content", async () => {
 
 	// Add content that exactly fills terminal height
 	const lines = Array.from({length: 10}, (_, i) => `<div>Line ${i + 1}</div>`);
-	dom.document.body.innerHTML = lines.join('\n');
+	dom.document.body.innerHTML = lines.join("\n");
 
 	await dom.render();
 
 	// Content should render from top without needing push-up
-	expect(dom.commandStartRow).toBe(1);
+	expect(dom.window.screenTop).toBe(0); // Row 1 -> 0-based = 0
 	// TODO: Verify all content fits and renders correctly when coordinate transformation is implemented
 });
 
@@ -143,10 +220,10 @@ test("coordinate transformation from layout space to terminal space", async () =
 	`;
 
 	await dom.render();
-	const lines = terminal.getPlainText().split('\n');
+	const lines = terminal.getPlainText().split("\n");
 
-	expect(dom.commandStartRow).toBe(5);
-	
+	expect(dom.window.screenTop).toBe(4); // Row 5 -> 0-based = 4
+
 	// FAILING: Layout coordinates should be offset by commandStartRow
 	// Layout (0,0) should map to terminal row 5
 	expect(lines[4]).toBe("First"); // Row 5 (0-based index 4)
@@ -180,7 +257,7 @@ test("handling content that would exceed terminal bottom", async () => {
 	// 1. Terminal scrolls existing content upward
 	// 2. Command start gets repositioned to accommodate all content
 	// 3. All content fits within terminal height
-	expect(dom.commandStartRow).toBe(8); // Initial position before push-up
+	expect(dom.window.screenTop).toBe(7); // Row 8 -> 0-based = 7, initial position before push-up
 });
 
 test("maximum layout height calculation", async () => {
@@ -188,10 +265,10 @@ test("maximum layout height calculation", async () => {
 
 	// Test different command start positions
 	const testCases = [
-		{commandStart: 1, expectedMaxHeight: 20},   // Full terminal available
-		{commandStart: 10, expectedMaxHeight: 11},  // Half terminal available
-		{commandStart: 19, expectedMaxHeight: 2},   // Almost at bottom
-		{commandStart: 20, expectedMaxHeight: 1},   // At bottom
+		{commandStart: 1, expectedMaxHeight: 20}, // Full terminal available
+		{commandStart: 10, expectedMaxHeight: 11}, // Half terminal available
+		{commandStart: 19, expectedMaxHeight: 2}, // Almost at bottom
+		{commandStart: 20, expectedMaxHeight: 1}, // At bottom
 	];
 
 	for (const {commandStart, expectedMaxHeight} of testCases) {
@@ -204,7 +281,7 @@ test("maximum layout height calculation", async () => {
 
 		// TODO: When maxLayoutHeight property is added, verify calculation:
 		// maxLayoutHeight = terminalHeight - commandStartRow + 1
-		expect(dom.commandStartRow).toBe(commandStart);
+		expect(dom.window.screenTop).toBe(commandStart - 1); // Convert 1-based to 0-based
 		const calculatedMaxHeight = terminal.stdout.rows - commandStart + 1;
 		expect(calculatedMaxHeight).toBe(expectedMaxHeight);
 	}
@@ -230,18 +307,18 @@ test("push-up offset calculation when content exceeds available space", async ()
 	`;
 
 	await dom.render();
-	const lines = terminal.getPlainText().split('\n');
+	const lines = terminal.getPlainText().split("\n");
 
 	// FAILING: Should push up by 2 lines to accommodate all content
 	// New commandStartRow should be 9 - 2 = 7
 	// Content should render from row 7 to row 10
 	expect(lines[6]).toBe("Line 1"); // Row 7 (0-based index 6)
 	expect(lines[7]).toBe("Line 2"); // Row 8
-	expect(lines[8]).toBe("Line 3"); // Row 9  
+	expect(lines[8]).toBe("Line 3"); // Row 9
 	expect(lines[9]).toBe("Line 4"); // Row 10
 
 	// Initial command start should be updated
-	expect(dom.commandStartRow).toBe(7); // Should be pushed up from 9 to 7
+	expect(dom.window.screenTop).toBe(7); // Should be pushed up from 9 to 7
 });
 
 test("content positioning with different terminal sizes", async () => {
@@ -274,8 +351,8 @@ test("content positioning with different terminal sizes", async () => {
 	await largeDom.render();
 
 	// Verify cursor positions are detected correctly
-	expect(smallDom.commandStartRow).toBe(3);
-	expect(largeDom.commandStartRow).toBe(25);
+	expect(smallDom.window.screenTop).toBe(2); // Row 3 -> 0-based = 2
+	expect(largeDom.window.screenTop).toBe(24); // Row 25 -> 0-based = 24
 
 	// TODO: When coordinate transformation is implemented, verify content
 	// appears at correct terminal positions relative to commandStartRow
@@ -300,15 +377,15 @@ test("content clipped to terminal boundaries", async () => {
 	`;
 
 	await dom.render();
-	const lines = terminal.getPlainText().split('\n');
+	const lines = terminal.getPlainText().split("\n");
 
-	expect(dom.commandStartRow).toBe(4);
-	
+	expect(dom.window.screenTop).toBe(3); // Row 4 -> 0-based = 3
+
 	// FAILING: Content should be clipped to terminal boundaries
 	// Only first 2 lines should render, starting at row 4
 	expect(lines[3]).toBe("Visible line 1"); // Row 4 (0-based index 3)
 	expect(lines[4]).toBe("Visible line 2"); // Row 5 (0-based index 4)
-	
+
 	// Lines beyond terminal height should be empty/clipped
 	expect(lines.length).toBeLessThanOrEqual(5); // Terminal is only 5 rows
 });

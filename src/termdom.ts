@@ -78,8 +78,11 @@ export class TermDOM {
 	// Guard against re-entrant rendering
 	private isRendering = false;
 
-	// Track command start position for incremental rendering
-	public commandStartRow?: number;
+	// Track document dimensions for push-up calculations
+	private documentHeight: number = 0;
+
+	// Track whether command start was explicitly detected (even if at row 1)
+	private hasDetectedCommandStart: boolean = false;
 
 	// private upgradeListElements!: (root?: Element | Document) => void;
 
@@ -310,6 +313,14 @@ export class TermDOM {
 			writable: false,
 			configurable: true,
 		});
+
+		// Initialize screenTop for terminal viewport positioning (readonly like browsers)
+		Object.defineProperty(window, "screenTop", {
+			value: 0,
+			writable: false,
+			configurable: true,
+			enumerable: true,
+		});
 	}
 
 	private setupMutationObserver(): MutationObserver {
@@ -434,7 +445,16 @@ export class TermDOM {
 			// Attach pseudo-elements to all elements before layout calculation
 			this.styleManager.attachPseudoElementsToDocument();
 
-			this.layoutEngine.calculateLayout();
+			// Use auto height mode when window.screenTop indicates we're not at top of terminal
+			// Also use auto height if screenTop was explicitly set via detectCommandStart
+			const useAutoHeight =
+				this.window.screenTop > 0 || this.hasDetectedCommandStart;
+			this.layoutEngine.calculateLayout(useAutoHeight);
+
+			// Calculate push-up offset if in auto height mode
+			if (useAutoHeight) {
+				this.calculatePushUpOffset();
+			}
 
 			this.renderer.beginFrame();
 
@@ -491,13 +511,10 @@ export class TermDOM {
 		};
 
 		if (rect && style.bg != null) {
-			this.renderer.fillRect(
-				rect.left,
-				rect.top,
-				rect.width,
-				rect.height,
-				style.bg,
-			);
+			const {x, y} = this.transformCoordinates(rect.left, rect.top);
+			if (x >= 0 && y >= 0) {
+				this.renderer.fillRect(x, y, rect.width, rect.height, style.bg);
+			}
 		}
 
 		// Handle tables with TanStack integration
@@ -923,7 +940,57 @@ export class TermDOM {
 	}
 
 	/**
-	 * Detect current cursor position to establish command start row
+	 * Calculate push-up offset when content exceeds available terminal space
+	 */
+	private calculatePushUpOffset(): void {
+		// Get actual document height after layout calculation
+		this.documentHeight = this.layoutEngine.getDocumentHeight();
+
+		// Calculate command start row from window.screenTop (convert 0-based to 1-based)
+		const commandStartRow = this.window.screenTop + 1;
+
+		// Calculate available space from command start to bottom of terminal
+		const availableSpace = this.height - commandStartRow + 1;
+
+		// If content fits in available space, no push-up needed
+		if (this.documentHeight <= availableSpace) {
+			return;
+		}
+
+		// Calculate how much to push up
+		const pushUpOffset = this.documentHeight - availableSpace;
+
+		// Update window.screenTop (push viewport upward)
+		const newCommandStartRow = Math.max(1, commandStartRow - pushUpOffset);
+		const newScreenTop = newCommandStartRow - 1; // Convert back to 0-based
+		Object.defineProperty(this.window, "screenTop", {
+			value: newScreenTop,
+			writable: false,
+			configurable: true,
+			enumerable: true,
+		});
+	}
+
+	/**
+	 * Transform layout coordinates to terminal coordinates based on viewport position
+	 */
+	private transformCoordinates(
+		layoutX: number,
+		layoutY: number,
+	): {x: number; y: number} {
+		// Apply window.screenTop offset to layout coordinates
+		const terminalY = layoutY + this.window.screenTop;
+
+		// Clip to terminal boundaries
+		if (terminalY < 0 || terminalY >= this.height) {
+			return {x: -1, y: -1}; // Signal to skip rendering
+		}
+
+		return {x: layoutX, y: terminalY};
+	}
+
+	/**
+	 * Detect current cursor position and set window.screenTop
 	 * Sends \x1b[6n and waits for response \x1b[row;colR
 	 */
 	async detectCommandStart(): Promise<number> {
@@ -947,7 +1014,15 @@ export class TermDOM {
 					stdin.removeListener("data", handleData);
 
 					const row = parseInt(match[1], 10);
-					this.commandStartRow = row;
+					// Set window.screenTop (convert 1-based terminal row to 0-based)
+					const screenTop = row - 1;
+					Object.defineProperty(this.window, "screenTop", {
+						value: screenTop,
+						writable: false,
+						configurable: true,
+						enumerable: true,
+					});
+					this.hasDetectedCommandStart = true;
 					resolve(row);
 				}
 			};
