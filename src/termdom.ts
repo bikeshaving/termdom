@@ -97,9 +97,7 @@ export class TermDOM {
 
 		this.jsdom = new JSDOM(
 			"<!DOCTYPE html><html><head></head><body></body></html>",
-			{
-				pretendToBeVisual: true,
-			},
+			{pretendToBeVisual: true},
 		);
 
 		this.window = this.jsdom.window;
@@ -252,7 +250,7 @@ export class TermDOM {
 							// Attach pseudo-elements to newly added elements
 							this.styleManager.attachPseudoElementsToElement(element);
 
-							// Also attach pseudo-elements to any descendant elements  
+							// Also attach pseudo-elements to any descendant elements
 							// TODO: Performance optimization - walks all descendants when element is added.
 							// Could use more targeted approach or batch process multiple additions.
 							const walker = this.window.document.createTreeWalker(
@@ -347,11 +345,11 @@ export class TermDOM {
 
 		this.isRendering = true;
 		try {
-			// Only refresh stylesheets if they've actually changed
-			// TODO: Add proper change detection to StyleManager
-			// For now, skip redundant refreshStylesheets calls during render
+			// CRITICAL FIX: Refresh stylesheets BEFORE attaching pseudo-elements
+			// This ensures CSS content is available when pseudo-elements are created
+			this.styleManager.refreshStylesheets();
 
-			// Attach pseudo-elements to all elements before layout calculation
+			// Attach pseudo-elements to all elements after CSS is parsed
 			this.styleManager.attachPseudoElementsToDocument();
 
 			// Always use auto height for natural content sizing and scrolling

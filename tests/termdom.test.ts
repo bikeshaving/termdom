@@ -134,3 +134,102 @@ test("can render HTML to terminal without errors", async () => {
 	await new Promise((resolve) => setTimeout(resolve));
 	dom.dispose();
 });
+
+test("pseudo-element CSS content is available immediately after render", async () => {
+	// Test the observable behavior: pseudo-element content should work on first render
+	// This was broken before the render pipeline fix - content would be empty until second render
+
+	const termDOM = new TermDOM();
+
+	// Set up HTML with pseudo-element CSS
+	termDOM.document.body.innerHTML = `
+		<style>
+			li::marker { content: "🎯 "; color: red; }
+			li::before { content: "PREFIX: "; color: blue; }
+		</style>
+		<ul>
+			<li>Test item</li>
+		</ul>
+	`;
+
+	// Call render once
+	await termDOM.render();
+
+	// Test that pseudo-element styles are immediately available
+	const li = termDOM.document.querySelector("li")!;
+	const markerStyle = termDOM.window.getComputedStyle(li, "::marker");
+	const beforeStyle = termDOM.window.getComputedStyle(li, "::before");
+
+	// These should have content immediately, not be empty
+	expect(markerStyle.getPropertyValue("content")).toBe('"🎯 "');
+	expect(markerStyle.getPropertyValue("color")).toBe("red");
+	expect(beforeStyle.getPropertyValue("content")).toBe('"PREFIX: "');
+	expect(beforeStyle.getPropertyValue("color")).toBe("blue");
+
+	termDOM.dispose();
+});
+
+test("lists render correctly without requiring double-rendering", async () => {
+	// Test the actual user-facing behavior that was broken:
+	// Lists should render with proper markers on the first render
+
+	const termDOM = new TermDOM();
+
+	// Set up a list with custom markers
+	termDOM.document.body.innerHTML = `
+		<style>
+			ul { list-style: none; }
+			li::marker { content: "→ "; color: green; }
+		</style>
+		<ul>
+			<li>First item</li>
+			<li>Second item</li>
+		</ul>
+	`;
+
+	// Render once and verify markers are present
+	await termDOM.render();
+
+	// Check that markers are available immediately
+	const items = termDOM.document.querySelectorAll("li");
+	for (const item of items) {
+		const markerStyle = termDOM.window.getComputedStyle(item, "::marker");
+		expect(markerStyle.getPropertyValue("content")).toBe('"→ "');
+		expect(markerStyle.getPropertyValue("color")).toBe("green");
+	}
+
+	termDOM.dispose();
+});
+
+test("pseudo-elements work on programmatic render without MutationObserver", async () => {
+	// This test specifically prevents MutationObserver from triggering the "accidental fix"
+	// and tests if pseudo-elements work on the first programmatic render call
+
+	const termDOM = new TermDOM();
+
+	// Disconnect MutationObserver to prevent accidental double-rendering
+	(termDOM as any).observer.disconnect();
+
+	// Set up HTML with pseudo-element CSS programmatically (not via innerHTML)
+	const style = termDOM.document.createElement("style");
+	style.textContent = 'li::marker { content: "★ "; color: purple; }';
+	termDOM.document.head.appendChild(style);
+
+	const ul = termDOM.document.createElement("ul");
+	const li = termDOM.document.createElement("li");
+	li.textContent = "Manual item";
+	ul.appendChild(li);
+	termDOM.document.body.appendChild(ul);
+
+	// Call render once without MutationObserver interference
+	await termDOM.render();
+
+	// Test that pseudo-element content is available immediately
+	const markerStyle = termDOM.window.getComputedStyle(li, "::marker");
+
+	// With the broken pipeline, this should fail because CSS wasn't parsed before pseudo-element attachment
+	expect(markerStyle.getPropertyValue("content")).toBe('"★ "');
+	expect(markerStyle.getPropertyValue("color")).toBe("purple");
+
+	termDOM.dispose();
+});
