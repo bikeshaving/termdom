@@ -573,11 +573,10 @@ describe("Buffer Transformation", () => {
 		expect(output1).toContain("Line2");
 		expect(output1).toContain("Line3");
 		
-		// Frame 2: Scroll down 1 line - content shifts up, new line at bottom
+		// Frame 2: Scroll down 1 line - buffer transformation shifts existing content automatically
+		// With viewport offset 1, only need to add NEW content, not re-set shifted content
 		renderer.beginFrame(1);
-		renderer.setText(0, 0, "Line2", {fg: 0xffffff}); // Previous Line2 moves to row 0
-		renderer.setText(0, 1, "Line3", {fg: 0xffffff}); // Previous Line3 moves to row 1
-		renderer.setText(0, 2, "Line4", {fg: 0xffffff}); // New content at row 2
+		renderer.setText(0, 2, "Line4", {fg: 0xffffff}); // Only new content needed
 		const output2 = renderer.render();
 		
 		// Should contain scroll command
@@ -602,14 +601,10 @@ describe("Buffer Transformation", () => {
 		renderer.setText(0, 3, "Line4", {fg: 0xffffff});
 		const output1 = renderer.render();
 		
-		// Frame 2: Scroll up 1 line - existing content shifts down, clear top
-		// After scroll transform: [clear, clear, Line2, Line3] (Line4 falls off)
-		// Then add new content at top
+		// Frame 2: Scroll up 1 line - buffer transformation shifts existing content automatically  
+		// With viewport offset -1, layout row 1 maps to terminal row 0 (visible top)
 		renderer.beginFrame(-1);
-		renderer.setText(0, 0, "Line1", {fg: 0xffffff}); // New content at cleared top row
-		renderer.setText(0, 2, "Line2", {fg: 0xffffff}); // Line2 now at row 2 (shifted down)
-		renderer.setText(0, 3, "Line3", {fg: 0xffffff}); // Line3 now at row 3 (shifted down)
-		// Line4 is gone (scrolled off bottom)
+		renderer.setText(0, 1, "Line1", {fg: 0xffffff}); // New content at layout row 1 → terminal row 0
 		const output2 = renderer.render();
 		
 		// Should contain scroll up command
@@ -633,13 +628,12 @@ describe("Buffer Transformation", () => {
 		renderer.setText(0, 4, "E", {fg: 0xffffff});
 		renderer.render();
 		
-		// Frame 2: Scroll down 3 lines
+		// Frame 2: Scroll down 3 lines - content shifts automatically, add new content
+		// With viewport offset 3, layout coordinates map to terminal coordinates + 3
 		renderer.beginFrame(3);
-		renderer.setText(0, 0, "D", {fg: 0xffffff}); // A,B,C disappear
-		renderer.setText(0, 1, "E", {fg: 0xffffff}); // D,E shift up
-		renderer.setText(0, 2, "F", {fg: 0xffffff}); // New content
-		renderer.setText(0, 3, "G", {fg: 0xffffff}); // New content
-		renderer.setText(0, 4, "H", {fg: 0xffffff}); // New content
+		renderer.setText(0, -1, "F", {fg: 0xffffff}); // Layout row -1 → terminal row 2
+		renderer.setText(0, 0, "G", {fg: 0xffffff}); // Layout row 0 → terminal row 3  
+		renderer.setText(0, 1, "H", {fg: 0xffffff}); // Layout row 1 → terminal row 4
 		const output2 = renderer.render();
 		
 		// Should contain scroll down 3 command
@@ -688,10 +682,11 @@ describe("Buffer Transformation", () => {
 		renderer.render();
 		
 		// Frame 2: Scroll down by full buffer height (complete refresh)
+		// With viewport offset 3, place content at layout rows that map to terminal rows 0-2
 		renderer.beginFrame(3);
-		renderer.setText(0, 0, "X", {fg: 0xffffff});
-		renderer.setText(0, 1, "Y", {fg: 0xffffff});
-		renderer.setText(0, 2, "Z", {fg: 0xffffff});
+		renderer.setText(0, -3, "X", {fg: 0xffffff}); // Layout row -3 → terminal row 0
+		renderer.setText(0, -2, "Y", {fg: 0xffffff}); // Layout row -2 → terminal row 1
+		renderer.setText(0, -1, "Z", {fg: 0xffffff}); // Layout row -1 → terminal row 2
 		const output2 = renderer.render();
 		
 		// Should contain scroll command
@@ -759,10 +754,13 @@ describe("Renderer Viewport", () => {
 	test("generates scroll down command for positive viewport offset", () => {
 		const renderer = new Renderer(10, 40, "rgb");
 		
-		// Begin frame with viewport offset 3 (content starts below terminal top)
-		renderer.beginFrame(3);
+		// Frame 1: Initial content at offset 0
+		renderer.beginFrame(0);
+		renderer.setText(0, 0, "Initial", {fg: 0xffffff});
+		renderer.render();
 		
-		// Add some content
+		// Frame 2: Begin frame with viewport offset 3 (content starts below terminal top)
+		renderer.beginFrame(3);
 		renderer.setText(0, 0, "Hello", {fg: 0xffffff});
 		
 		const output = renderer.render();
@@ -776,11 +774,14 @@ describe("Renderer Viewport", () => {
 	test("generates scroll up command for negative viewport offset", () => {
 		const renderer = new Renderer(10, 40, "rgb");
 		
-		// Begin frame with negative viewport offset (content shifted up)
-		renderer.beginFrame(-2);
+		// Frame 1: Initial content at offset 0
+		renderer.beginFrame(0);
+		renderer.setText(0, 0, "Initial", {fg: 0xffffff});
+		renderer.render();
 		
-		// Add some content
-		renderer.setText(0, 0, "Content", {fg: 0xffffff});
+		// Frame 2: Begin frame with negative viewport offset (content shifted up)
+		renderer.beginFrame(-2);
+		renderer.setText(0, 2, "Content", {fg: 0xffffff}); // Layout row 2 → terminal row 0
 		
 		const output = renderer.render();
 		
@@ -810,20 +811,25 @@ describe("Renderer Viewport", () => {
 	test("optimizes repeated viewport offsets (no redundant scrolling)", () => {
 		const renderer = new Renderer(10, 40, "rgb");
 		
-		// First frame with offset 3
+		// Frame 1: Initial frame at offset 0
+		renderer.beginFrame(0);
+		renderer.setText(0, 0, "Initial", {fg: 0xffffff});
+		renderer.render();
+		
+		// Frame 2: First change to offset 3
 		renderer.beginFrame(3);
 		renderer.setText(0, 0, "Frame1", {fg: 0xffffff});
 		const output1 = renderer.render();
 		
-		// Second frame with same offset 3 
+		// Frame 3: Same offset 3 (no viewport change)
 		renderer.beginFrame(3);
 		renderer.setText(0, 1, "Frame2", {fg: 0xffffff});
 		const output2 = renderer.render();
 		
-		// First frame should scroll to position
+		// Frame 2 should scroll to position
 		expect(output1).toContain("\x1b[3S");
 		
-		// Second frame should NOT repeat scroll command (already positioned)
+		// Frame 3 should NOT repeat scroll command (already positioned)
 		expect(output2).not.toContain("\x1b[3S");
 		expect(output2).toContain("Frame2");
 	});
@@ -831,53 +837,68 @@ describe("Renderer Viewport", () => {
 	test("generates incremental scroll commands when viewport changes", () => {
 		const renderer = new Renderer(10, 40, "rgb");
 		
-		// First frame with offset 2
+		// Frame 1: Initial frame at offset 0
+		renderer.beginFrame(0);
+		renderer.setText(0, 0, "Initial", {fg: 0xffffff});
+		renderer.render();
+		
+		// Frame 2: First change to offset 2
 		renderer.beginFrame(2);
 		renderer.setText(0, 0, "Frame1", {fg: 0xffffff});
 		const output1 = renderer.render();
 		
-		// Second frame with offset 5 (moved down by 3)
+		// Frame 3: Change to offset 5 (moved down by 3)
 		renderer.beginFrame(5);
 		renderer.setText(0, 0, "Frame2", {fg: 0xffffff});
 		const output2 = renderer.render();
 		
-		// First frame: scroll down 2
+		// Frame 2: scroll down 2
 		expect(output1).toContain("\x1b[2S");
 		
-		// Second frame: additional scroll down 3 (5-2=3)
+		// Frame 3: additional scroll down 3 (5-2=3)
 		expect(output2).toContain("\x1b[3S");
 	});
 
 	test("generates scroll up when viewport moves toward terminal top", () => {
 		const renderer = new Renderer(10, 40, "rgb");
 		
-		// First frame with offset 5
+		// Frame 1: Initial frame at offset 0
+		renderer.beginFrame(0);
+		renderer.setText(0, 0, "Initial", {fg: 0xffffff});
+		renderer.render();
+		
+		// Frame 2: First change to offset 5
 		renderer.beginFrame(5);
 		renderer.setText(0, 0, "Frame1", {fg: 0xffffff});
 		const output1 = renderer.render();
 		
-		// Second frame with offset 2 (moved up by 3)
+		// Frame 3: Change to offset 2 (moved up by 3)
 		renderer.beginFrame(2);
 		renderer.setText(0, 0, "Frame2", {fg: 0xffffff});
 		const output2 = renderer.render();
 		
-		// First frame: scroll down 5
+		// Frame 2: scroll down 5
 		expect(output1).toContain("\x1b[5S");
 		
-		// Second frame: scroll up 3 (5-2=3)
+		// Frame 3: scroll up 3 (5-2=3)
 		expect(output2).toContain("\x1b[3T");
 	});
 
 	test("clips content outside viewport bounds", () => {
 		const renderer = new Renderer(5, 20, "rgb"); // Small terminal
 		
-		// Viewport at offset 2, terminal height 5
+		// Frame 1: Initial frame at offset 0
+		renderer.beginFrame(0);
+		renderer.setText(0, 0, "Initial", {fg: 0xffffff});
+		renderer.render();
+		
+		// Frame 2: Viewport at offset 2, terminal height 5
 		renderer.beginFrame(2);
 		
 		// Try to render content that would exceed terminal bounds
-		renderer.setText(0, 0, "Visible", {fg: 0xffffff});    // Should appear
-		renderer.setText(0, 4, "LastLine", {fg: 0xffffff});   // Should appear (row 4 is last)
-		renderer.setText(0, 5, "Clipped", {fg: 0xffffff});    // Should be clipped (row 5 exceeds terminal)
+		renderer.setText(0, 0, "Visible", {fg: 0xffffff});    // Layout row 0 → terminal row 2 (appears)
+		renderer.setText(0, 2, "LastLine", {fg: 0xffffff});   // Layout row 2 → terminal row 4 (last visible row)
+		renderer.setText(0, 3, "Clipped", {fg: 0xffffff});    // Layout row 3 → terminal row 5 (clipped)
 		
 		const output = renderer.render();
 		
@@ -893,20 +914,30 @@ describe("Renderer Viewport", () => {
 	test("handles viewport offset with minimal ANSI output", () => {
 		const renderer = new Renderer(10, 40, "rgb");
 		
-		// Test that viewport scrolling produces minimal output
+		// Frame 1: Initial frame at offset 0
+		renderer.beginFrame(0);
+		renderer.setText(0, 0, "Initial", {fg: 0xffffff});
+		renderer.render();
+		
+		// Frame 2: Test that viewport scrolling produces minimal output
 		renderer.beginFrame(3);
-		renderer.setText(0, 0, "Text", {fg: 0xffffff});
+		renderer.setText(0, -3, "Text", {fg: 0xffffff}); // Layout row -3 → terminal row 0
 		
 		const output = renderer.render();
 		
 		// Should be concise: scroll command + positioning + content + cleanup
-		expect(output).toMatch(/^\x1b\[\?2026h\x1b\[\?25l\x1b\[H\x1b\[3S\r\x1b\[K.*Text.*\x1b\[\?25h\x1b\[\?2026l\n$/);
+		expect(output).toMatch(/^\x1b\[\?2026h\x1b\[\?25l\x1b\[H\x1b\[3S.*Text.*\x1b\[\?25h\x1b\[\?2026l\n$/);
 	});
 
 	test("maintains cursor position correctly with viewport offset", () => {
 		const renderer = new Renderer(10, 40, "rgb");
 		
-		// Viewport offset should not affect relative cursor movements
+		// Frame 1: Initial frame at offset 0
+		renderer.beginFrame(0);
+		renderer.setText(0, 0, "Initial", {fg: 0xffffff});
+		renderer.render();
+		
+		// Frame 2: Viewport offset should not affect relative cursor movements
 		renderer.beginFrame(4);
 		renderer.setText(0, 0, "First", {fg: 0xffffff});
 		renderer.setText(5, 1, "Second", {fg: 0xffffff});  // Row 1, Col 5
