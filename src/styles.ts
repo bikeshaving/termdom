@@ -1390,26 +1390,56 @@ export class StyleManager {
 	}
 
 	/**
-	 * Scan document and attach pseudo-element nodes to elements that have pseudo-element rules
+	 * Efficiently scan document and attach pseudo-element nodes to elements that have matching pseudo-element rules
+	 * Uses CSS rules to find matching elements rather than checking every element
 	 */
 	attachPseudoElementsToDocument(): void {
-		// Get all elements in the document
-		const walker = this.window.document.createTreeWalker(
-			this.window.document.documentElement,
-			this.window.NodeFilter.SHOW_ELEMENT,
-			null,
-		);
+		// Group pseudo-element rules by pseudo-type for efficient processing
+		const pseudoRulesByType = new Map<string, ParsedCSSRule[]>();
 
-		const elements: Element[] = [];
-		let element = walker.nextNode() as Element;
-		while (element) {
-			elements.push(element);
-			element = walker.nextNode() as Element;
+		for (const rule of this.parsedRules) {
+			if (rule.pseudoElement) {
+				const rules = pseudoRulesByType.get(rule.pseudoElement) || [];
+				rules.push(rule);
+				pseudoRulesByType.set(rule.pseudoElement, rules);
+			}
 		}
 
-		// Attach pseudo-elements to each element
-		for (const element of elements) {
-			this.attachPseudoElementsToElement(element);
+		// Process each pseudo-element type
+		for (const [pseudoType, rules] of pseudoRulesByType) {
+			// Collect all matching elements for this pseudo-type
+			const matchingElements = new Set<Element>();
+
+			for (const rule of rules) {
+				try {
+					// Find all elements matching this rule's selector
+					const elements = this.window.document.querySelectorAll(rule.selector);
+					for (const element of elements) {
+						matchingElements.add(element);
+					}
+				} catch (e) {
+					// Skip invalid selectors
+					continue;
+				}
+			}
+
+			// Attach pseudo-elements to matching elements
+			for (const element of matchingElements) {
+				this.attachPseudoElementToElementForType(element, pseudoType);
+			}
+		}
+
+		// Handle special case: ::marker for list-item elements (always created regardless of CSS rules)
+		const listItems = this.window.document.querySelectorAll(
+			'[style*="list-item"], li',
+		);
+		for (const element of listItems) {
+			const display = this.window
+				.getComputedStyle(element)
+				.getPropertyValue("display");
+			if (display === "list-item") {
+				this.attachPseudoElementToElementForType(element, "::marker");
+			}
 		}
 	}
 
@@ -1423,23 +1453,36 @@ export class StyleManager {
 		const pseudoTypes = ["::before", "::after", "::marker"];
 
 		for (const pseudoType of pseudoTypes) {
-			// Skip ::marker for elements without display: list-item
-			if (pseudoType === "::marker") {
-				const display = this.window
-					.getComputedStyle(element)
-					.getPropertyValue("display");
-				if (display !== "list-item") {
-					continue;
-				}
-			}
+			this.attachPseudoElementToElementForType(element, pseudoType);
+		}
+	}
 
-			// Check if element should have this pseudo-element
-			if (this.shouldCreatePseudoElement(element, pseudoType)) {
-				const pseudoNode = this.createPseudoElementNode(element, pseudoType);
-				if (pseudoNode) {
-					// Attach pseudo-element to the element
-					this.attachPseudoElementToElement(element, pseudoNode, pseudoType);
-				}
+	/**
+	 * Attach a specific pseudo-element type to an element if it should have one
+	 */
+	private attachPseudoElementToElementForType(
+		element: Element,
+		pseudoType: string,
+	): void {
+		// Initialize counters for this element first (needed for counter() functions)
+		this.initializeCounters(element);
+
+		// Skip ::marker for elements without display: list-item
+		if (pseudoType === "::marker") {
+			const display = this.window
+				.getComputedStyle(element)
+				.getPropertyValue("display");
+			if (display !== "list-item") {
+				return;
+			}
+		}
+
+		// Check if element should have this pseudo-element
+		if (this.shouldCreatePseudoElement(element, pseudoType)) {
+			const pseudoNode = this.createPseudoElementNode(element, pseudoType);
+			if (pseudoNode) {
+				// Attach pseudo-element to the element
+				this.attachPseudoElementToElement(element, pseudoNode, pseudoType);
 			}
 		}
 	}
