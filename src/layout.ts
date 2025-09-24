@@ -647,22 +647,12 @@ export class LayoutEngine {
 	declare nodeMap: WeakMap<Node, YogaTypes.Node>;
 	declare breakResultMap: WeakMap<Node, BreakResult>;
 
-	// Shadow DOM support
-	private getShadowRoot?: (element: Element) => ShadowRoot | null;
-	private getOriginalNode?: (node: Node) => Node | null;
-
-	constructor(
-		window: DOMWindow,
-		getShadowRoot?: (element: Element) => ShadowRoot | null,
-		getOriginalNode?: (node: Node) => Node | null,
-	) {
+	constructor(window: DOMWindow) {
 		this.window = window;
 		this.DOMRect = window.DOMRect;
 		this.rootElement = window.document.documentElement;
 		this.nodeMap = new WeakMap<Node, YogaTypes.Node>();
 		this.breakResultMap = new WeakMap<Node, BreakResult>();
-		this.getShadowRoot = getShadowRoot;
-		this.getOriginalNode = getOriginalNode;
 		this.observer = new window.MutationObserver((mutations) =>
 			this.handleMutationRecords(mutations),
 		);
@@ -700,22 +690,22 @@ export class LayoutEngine {
 
 		// Calculate layout using viewport root node (terminal dimensions)
 		// The HTML element can now have auto height and reference viewport via percentages
-		this.viewportRootNode.calculateLayout(this.terminalWidth, this.terminalHeight);
+		this.viewportRootNode.calculateLayout(
+			this.terminalWidth,
+			this.terminalHeight,
+		);
 	}
 
 	/**
 	 * Clean up yoga nodes and resources
 	 */
 	dispose(): void {
-		// Clean up all DOM-associated yoga nodes
-		for (const yogaNode of this.nodeMap.values()) {
-			yogaNode.freeRecursive();
-		}
+		// Clean up viewport root node (this will recursively free all child yoga nodes)
+		this.viewportRootNode.freeRecursive();
+
+		// Clear the maps (WeakMap doesn't support iteration, but the nodes are freed above)
 		this.nodeMap = new WeakMap();
 		this.breakResultMap = new WeakMap();
-
-		// Clean up viewport root node
-		this.viewportRootNode.freeRecursive();
 
 		// Disconnect observer
 		this.observer.disconnect();
@@ -794,15 +784,6 @@ export class LayoutEngine {
 
 		// Fall back to Yoga node for block elements and containers
 		let yogaNode = this.nodeMap.get(element);
-
-		// If this is a cloned element and we don't have layout data for it,
-		// try to use the original element's layout data
-		if (!yogaNode && this.getOriginalNode) {
-			const originalNode = this.getOriginalNode(element);
-			if (originalNode && originalNode.nodeType === originalNode.ELEMENT_NODE) {
-				yogaNode = this.nodeMap.get(originalNode);
-			}
-		}
 
 		if (!yogaNode) {
 			return null;
@@ -1109,10 +1090,6 @@ export class LayoutEngine {
 		height: number = 0,
 	): globalThis.DOMRect {
 		return new this.DOMRect(x, y, width, height);
-	}
-
-	dispose(): void {
-		this.observer.disconnect();
 	}
 
 	/**

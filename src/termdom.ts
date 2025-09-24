@@ -14,7 +14,6 @@ import {
 	initializeShadowDOM,
 	getPseudoMetadata,
 } from "./composition.js";
-// import {registerListElements} from "./elements/lists.js";
 
 function detectColorDepth(process: ProcessLike): ColorDepth {
 	const colorterm = process.env.COLORTERM;
@@ -83,8 +82,6 @@ export class TermDOM {
 	// Track whether command start was explicitly detected (even if at row 1)
 	private hasDetectedCommandStart: boolean = false;
 
-	// private upgradeListElements!: (root?: Element | Document) => void;
-
 	private width: number;
 	private height: number;
 	// TODO: use this
@@ -114,10 +111,6 @@ export class TermDOM {
 		// Setup shadow DOM support
 		initializeShadowDOM(this.window);
 
-		// Register custom list elements
-		// const listEnhancer = registerListElements(this.window);
-		// this.upgradeListElements = listEnhancer.enhanceListElement;
-
 		this.initializeConstructorExtensions();
 		this.renderer = new Renderer(
 			this.height,
@@ -128,11 +121,7 @@ export class TermDOM {
 		// Setup style management first to ensure CSS defaults are applied
 		this.styleManager = new StyleManager(this.window);
 
-		this.layoutEngine = new LayoutEngine(
-			this.jsdom.window,
-			getShadowRoot,
-			undefined, // getOriginalNode not needed anymore
-		);
+		this.layoutEngine = new LayoutEngine(this.jsdom.window);
 		this.layoutEngine.resize(this.width, this.height);
 
 		// Connect StyleManager to LayoutEngine after both are created
@@ -172,125 +161,6 @@ export class TermDOM {
 		filter: ((node: Node) => number) | null = null,
 	): TreeWalker {
 		return createExpandedTreeWalker(this.window, root, whatToShow, filter);
-	}
-
-	/**
-	 * Recursively map cloned nodes to their originals for layout calculations
-	 */
-	private mapClonedTree(clonedNode: Node, originalNode: Node): void {
-		// Map the nodes
-		// TODO: Update this to use shadowDOM.getOriginalNode() instead
-		// this.cloneToOriginalMap.set(clonedNode, originalNode);
-
-		// Recursively map children
-		if (clonedNode.childNodes.length === originalNode.childNodes.length) {
-			for (let i = 0; i < clonedNode.childNodes.length; i++) {
-				this.mapClonedTree(
-					clonedNode.childNodes[i],
-					originalNode.childNodes[i],
-				);
-			}
-		}
-	}
-
-	/**
-	 * Transform a cloned LI element to include its shadow DOM marker structure
-	 */
-	private applyLIShadowDOMTransform(
-		clonedLI: Element,
-		originalLI: Element,
-	): void {
-		// Get the parent list to determine marker type
-		const parentList = originalLI.parentElement;
-		if (
-			!parentList ||
-			(parentList.tagName !== "UL" && parentList.tagName !== "OL")
-		) {
-			return;
-		}
-
-		// Store the original text content
-		const textContent = clonedLI.textContent || "";
-
-		// Clear the cloned LI's content
-		clonedLI.textContent = "";
-
-		// Create marker element
-		const markerElement = this.document.createElement("span");
-		markerElement.style.setProperty("position", "absolute");
-		markerElement.style.setProperty("top", "0");
-		markerElement.style.setProperty("text-align", "right");
-
-		// Generate marker content based on parent list type
-		if (parentList.tagName === "UL") {
-			markerElement.textContent = "•";
-			markerElement.style.setProperty("left", "-2ch");
-			markerElement.style.setProperty("width", "2ch");
-		} else if (parentList.tagName === "OL") {
-			const items = Array.from(parentList.children).filter(
-				(child: Element) => child.tagName === "LI",
-			);
-			const index = items.indexOf(originalLI);
-			if (index !== -1) {
-				const start = parseInt(parentList.getAttribute("start") || "1", 10);
-				const itemNumber = start + index;
-				markerElement.textContent = `${itemNumber}.`;
-
-				// Calculate marker width for proper alignment
-				const maxNumber = start + items.length - 1;
-				const markerWidth = maxNumber.toString().length + 1;
-				markerElement.style.setProperty("left", `-${markerWidth}ch`);
-				markerElement.style.setProperty("width", `${markerWidth}ch`);
-			}
-		}
-
-		// Create content wrapper
-		const contentWrapper = this.document.createElement("div");
-		contentWrapper.style.setProperty("display", "block");
-		contentWrapper.textContent = textContent;
-
-		// Set positioning styles on the LI
-		(clonedLI as HTMLElement).style.setProperty("display", "block");
-		(clonedLI as HTMLElement).style.setProperty("position", "relative");
-
-		// Add marker and content to the cloned LI
-		clonedLI.appendChild(markerElement);
-		clonedLI.appendChild(contentWrapper);
-	}
-
-	/**
-	 * Apply shadow DOM styles from <style> elements to the host element
-	 * This is a simplified implementation for list elements
-	 */
-	private applyShadowDOMStyles(
-		element: Element,
-		_shadowRoot: ShadowRoot,
-	): void {
-		if (element.tagName === "UL") {
-			// Apply UL shadow DOM styles
-			(element as HTMLElement).style.setProperty("display", "block");
-			(element as HTMLElement).style.setProperty("padding-left", "2ch");
-			(element as HTMLElement).style.setProperty("margin", "0");
-			(element as HTMLElement).style.setProperty("list-style", "none");
-		} else if (element.tagName === "OL") {
-			// Apply OL shadow DOM styles with dynamic padding
-			const items = Array.from(element.children).filter(
-				(child) => child.tagName === "LI",
-			);
-			const start = parseInt(element.getAttribute("start") || "1", 10);
-			const maxNumber = start + items.length - 1;
-			const markerWidth = maxNumber.toString().length + 1;
-
-			(element as HTMLElement).style.setProperty("display", "block");
-			(element as HTMLElement).style.setProperty(
-				"padding-left",
-				`${markerWidth}ch`,
-			);
-			(element as HTMLElement).style.setProperty("margin", "0");
-			(element as HTMLElement).style.setProperty("list-style", "none");
-		}
-		// Note: LI elements in merged tree don't need styles applied here
-		// since they're already properly slotted and should render their text content
 	}
 
 	private initializeWindow(): void {
@@ -588,12 +458,6 @@ export class TermDOM {
 		// Note: JSDOM automatically calls connectedCallback() when elements are added to DOM
 		// No manual lifecycle management needed
 
-		// Apply shadow DOM styles manually for list elements if needed
-		const shadowRoot = this.getShadowRoot(element);
-		if (shadowRoot) {
-			this.applyShadowDOMStyles(element, shadowRoot);
-		}
-
 		// Use ExpandedTreeWalker to render all children including pseudo-elements and shadow DOM
 		const walker = this.createExpandedTreeWalker(
 			element,
@@ -696,80 +560,7 @@ export class TermDOM {
 		_style: any,
 	): void {
 		// TODO: Re-implement table rendering - getTableInstance method doesn't exist
-		// const tableInstance = this.layoutEngine.getTableInstance(tableElement);
-		// if (!tableInstance) return;
 		return;
-
-		/*
-		const {tanstackTable} = tableInstance;
-		// TODO: Use height?
-		const {left, top, width, height: _} = rect;
-
-		// Render table using flexbox-like approach but with TanStack data
-		let currentY = Math.round(top);
-
-		// Render headers
-		tanstackTable.getHeaderGroups().forEach((headerGroup: any) => {
-			let currentX = Math.round(left);
-			const colWidth = Math.floor(width / headerGroup.headers.length);
-
-			headerGroup.headers.forEach((header: any, colIndex: number) => {
-				const headerText = header.column.columnDef.header;
-				const cellWidth =
-					colIndex === headerGroup.headers.length - 1
-						? width - (currentX - left) // Last column takes remaining width
-						: colWidth;
-
-				// Render header cell background
-				if (style.bg != null) {
-					this.renderer.fillRect(currentX, currentY, cellWidth, 1, style.bg);
-				}
-
-				// Render header text
-				if (headerText && currentX >= 0 && currentY >= 0) {
-					this.renderer.setText(currentX + 1, currentY, String(headerText), {
-						...style,
-						bold: true,
-					});
-				}
-
-				currentX += cellWidth;
-			});
-			currentY++;
-		});
-
-		// Render data rows
-		tanstackTable.getRowModel().rows.forEach((row: any, rowIndex: number) => {
-			let currentX = Math.round(left);
-			const colWidth = Math.floor(width / row.getVisibleCells().length);
-
-			row.getVisibleCells().forEach((cell: any, colIndex: number) => {
-				const cellValue = String(cell.getValue());
-				const cellWidth =
-					colIndex === row.getVisibleCells().length - 1
-						? width - (currentX - left)
-						: colWidth;
-
-				// Render cell background (alternating rows)
-				const bgColor =
-					rowIndex % 2 === 1 && style.bg
-						? darkenColor(style.bg, 0.1)
-						: style.bg;
-
-				if (bgColor != null) {
-					this.renderer.fillRect(currentX, currentY, cellWidth, 1, bgColor);
-				}
-
-				// Render cell text
-				if (cellValue && currentX >= 0 && currentY >= 0) {
-					this.renderer.setText(currentX + 1, currentY, cellValue, style);
-				}
-
-				currentX += cellWidth;
-			});
-			currentY++;
-		});
-		*/
 	}
 
 	private processPendingMutationsAndRender(): boolean {

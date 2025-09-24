@@ -357,7 +357,7 @@ test("content positioning with different terminal sizes", async () => {
 	// Small terminal: cursor at row 3 (screenTop=2), content needs 3 lines but only 2 available
 	// Push-up by 1 line: cursor moves from row 3 to row 2 (screenTop=1)
 	expect(smallDom.window.screenTop).toBe(1);
-	
+
 	// Large terminal: cursor at row 25 (screenTop=24), enough space so no push-up
 	expect(largeDom.window.screenTop).toBe(24);
 
@@ -534,7 +534,7 @@ test("unified scrolling model: push-up updates scrollY not screenTop", async () 
 
 	await dom.render();
 
-	// Push-up behavior: cursor at row 9 (screenTop=8), content needs 4 lines but only 1 available  
+	// Push-up behavior: cursor at row 9 (screenTop=8), content needs 4 lines but only 1 available
 	// Push-up by 3 lines: cursor moves from row 9 to row 6 (screenTop=5)
 	// Note: actual value is 6, need to verify push-up calculation
 	expect(dom.window.screenTop).toBe(6);
