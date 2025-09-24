@@ -252,7 +252,9 @@ export class TermDOM {
 							// Attach pseudo-elements to newly added elements
 							this.styleManager.attachPseudoElementsToElement(element);
 
-							// Also attach pseudo-elements to any descendant elements
+							// Also attach pseudo-elements to any descendant elements  
+							// TODO: Performance optimization - walks all descendants when element is added.
+							// Could use more targeted approach or batch process multiple additions.
 							const walker = this.window.document.createTreeWalker(
 								element,
 								this.window.NodeFilter.SHOW_ELEMENT,

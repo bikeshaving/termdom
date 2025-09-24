@@ -1375,6 +1375,9 @@ export class StyleManager {
 
 	/**
 	 * Clear all pseudo-elements from the document
+	 * TODO: Performance optimization - this walks every element in the DOM when stylesheets change.
+	 * Could track elements with pseudo-elements in a WeakSet and only clear those.
+	 * Low priority since stylesheet changes are rare.
 	 */
 	private clearAllPseudoElements(): void {
 		const walker = this.window.document.createTreeWalker(
@@ -1519,6 +1522,8 @@ export class StyleManager {
 		clearPseudoElements(element);
 
 		// Also clean up pseudo-elements for any descendant elements
+		// TODO: Performance optimization - walks all descendants when element is removed.
+		// Could track which descendants have pseudo-elements to avoid full traversal.
 		const walker = this.window.document.createTreeWalker(
 			element,
 			this.window.NodeFilter.SHOW_ELEMENT,
