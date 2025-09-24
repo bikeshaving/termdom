@@ -346,6 +346,7 @@ export class Renderer {
 		style?: RendererCellStyle,
 	): void {
 		// Apply viewport offset to transform layout coordinates to terminal coordinates
+		// layoutRow + viewportOffset = terminalRow
 		const terminalRow = row + this.currentViewportOffset;
 
 		// Clip to terminal bounds - only render visible cells
@@ -550,8 +551,9 @@ export class Renderer {
 		borderEncoding: number,
 		style?: RendererCellStyle,
 	): void {
-		// Apply viewport offset to transform layout coordinates to terminal coordinates
-		const terminalY = y + this.currentViewportOffset;
+		// Note: viewport offset is already applied via initial cursor positioning
+		// Content coordinates are relative to that initial position
+		const terminalY = y;
 
 		// Clip to terminal bounds
 		if (terminalY < 0 || terminalY >= this.rows || x < 0 || x >= this.cols) {
@@ -792,6 +794,7 @@ export class Renderer {
 			false, // clean
 			this.renderedLines,
 			scrollCommands,
+			this.currentViewportOffset,
 		);
 		this.previousBuffer = this.currentBuffer;
 		return output;
@@ -919,6 +922,7 @@ export function generateANSI(
 	clean: boolean = false,
 	renderedLines?: Set<number>,
 	scrollCommands?: string,
+	viewportOffset: number = 0,
 ): string {
 	const rows = buffer.length;
 	const cols = buffer[0]?.length || 0;
@@ -942,12 +946,22 @@ export function generateANSI(
 	if (hasContent && !clean) {
 		output += "\x1b[?2026h"; // Synchronized output mode
 		output += "\x1b[?25l"; // Hide cursor by default
-		output += "\x1b[H"; // Move cursor to home
 
 		// Add scroll commands if provided
 		if (scrollCommands) {
 			output += scrollCommands;
 		}
+
+		// Position cursor based on viewport offset
+		if (viewportOffset > 0) {
+			output += `\x1b[${viewportOffset + 1};1H`; // Move to viewport offset row (1-based)
+		} else if (viewportOffset === 0) {
+			output += "\x1b[H"; // Move cursor to home position
+		}
+		// For negative viewport offset, don't move cursor (assume it's already positioned)
+
+		// Note: cursorRow/cursorCol remain at 0 because they track layout coordinates,
+		// while the actual terminal cursor is positioned at viewportOffset
 	}
 
 	const moveCursor = (targetRow: number, targetCol: number): string => {

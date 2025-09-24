@@ -42,6 +42,7 @@ class MockWriteStream extends EventEmitter implements TTYWriteStream {
 		this.rows = rows;
 
 		// Set up xterm to respond to cursor position queries
+		// xterm.js automatically handles cursor position queries and responds via onData
 		this.terminal.onData((data) => {
 			// Forward any responses from xterm (like cursor position) to stdin
 			this.stdin.simulateResponse(data);
@@ -81,6 +82,10 @@ class MockReadStream extends EventEmitter implements TTYReadStream {
 	}
 
 	pause(): this {
+		return this;
+	}
+
+	setEncoding(_encoding: string): this {
 		return this;
 	}
 

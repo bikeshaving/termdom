@@ -47,6 +47,7 @@ export interface TTYReadStream extends EventEmitter {
 	setRawMode?(mode: boolean): this;
 	resume(): this;
 	pause(): this;
+	setEncoding?(encoding?: string): this;
 }
 
 export interface ProcessLike extends EventEmitter {
@@ -81,6 +82,12 @@ export class TermDOM {
 
 	// Track whether command start was explicitly detected (even if at row 1)
 	private hasDetectedCommandStart: boolean = false;
+
+	// Unified stdin handling
+	private cursorDetectionHandler: ((data: string) => void) | null = null;
+
+	// Promise that resolves when cursor detection completes (or times out)
+	private cursorDetectionPromise: Promise<void> | null = null;
 
 	private width: number;
 	private height: number;
@@ -134,6 +141,9 @@ export class TermDOM {
 		this.observer = this.setupMutationObserver();
 
 		this.setupProcessHandlers();
+
+		// Initialize cursor position detection if in a TTY environment
+		this.initializeCursorDetection();
 	}
 
 	/**
@@ -321,26 +331,57 @@ export class TermDOM {
 		});
 
 		if (this.process.stdin?.isTTY) {
-			const stdin = this.process.stdin;
-			stdin.setRawMode?.(true);
-			stdin.resume();
-			stdin.on("data", (data: Buffer) => {
-				if (data[0] === 0x03) {
-					this.dispose();
-					this.process.exit(0);
-				}
-				// Dispatch keyboard events globally when not in fullscreen
-				if (!this.fullscreenManager.isFullscreen) {
-					this.dispatchGlobalKeyboardEvent(data);
-				}
-			});
+			this.setupUnifiedStdinHandler();
 		}
+	}
+
+	/**
+	 * Set up unified stdin handler that routes different input types appropriately
+	 */
+	private setupUnifiedStdinHandler(): void {
+		const stdin = this.process.stdin;
+		if (!stdin) return;
+
+		// Configure terminal for proper input handling (once)
+		stdin.setRawMode?.(true);
+		stdin.resume();
+		stdin.setEncoding?.("utf8");
+
+		// Single unified handler for all stdin data
+		stdin.on("data", (chunk: string | Buffer) => {
+			// Ensure we have both string and buffer representations
+			const data = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, "utf8");
+			const dataStr = data.toString("utf8");
+
+			// Route 1: Cursor position responses (highest priority)
+			if (this.cursorDetectionHandler && dataStr.match(/\x1b\[\d+;\d+R/)) {
+				this.cursorDetectionHandler(dataStr);
+				return;
+			}
+
+			// Route 2: Ctrl-C handling (high priority) - check raw bytes
+			if (data.length > 0 && data[0] === 0x03) {
+				this.dispose();
+				this.process.exit(0);
+				return;
+			}
+
+			// Route 3: General keyboard events (when not in fullscreen)
+			if (!this.fullscreenManager.isFullscreen) {
+				this.dispatchGlobalKeyboardEvent(data);
+			}
+		});
 	}
 
 	async render(): Promise<void> {
 		// Prevent re-entrant rendering
 		if (this.isRendering) {
 			return;
+		}
+
+		// Wait for cursor detection to complete before first render
+		if (this.cursorDetectionPromise) {
+			await this.cursorDetectionPromise;
 		}
 
 		this.isRendering = true;
@@ -351,7 +392,6 @@ export class TermDOM {
 
 			// Attach pseudo-elements to all elements after CSS is parsed
 			this.styleManager.attachPseudoElementsToDocument();
-
 			// Always use auto height for natural content sizing and scrolling
 			this.layoutEngine.calculateLayout();
 
@@ -802,6 +842,39 @@ export class TermDOM {
 	}
 
 	/**
+	 * Initialize cursor position detection for TTY environments
+	 * This runs asynchronously during construction to set up proper viewport positioning
+	 */
+	private initializeCursorDetection(): void {
+		// TEMPORARILY DISABLED FOR DEBUGGING - Always skip cursor detection
+		this.cursorDetectionPromise = null;
+
+		// // Only detect cursor position in TTY environments
+		// if (this.process.stdin?.isTTY) {
+		// 	// Set up cursor detection promise that render() will wait for
+		// 	this.cursorDetectionPromise = Promise.race([
+		// 		this.detectCommandStart(),
+		// 		// Fallback: if cursor detection takes too long, proceed without it
+		// 		new Promise<void>((resolve) => setTimeout(resolve, 1000)),
+		// 	])
+		// 		.then(() => {
+		// 			// Either cursor detection succeeded or we timed out
+		// 		})
+		// 		.catch((_error) => {
+		// 			// If cursor detection fails, continue without it
+		// 			// This is expected in non-interactive environments (tests, CI, etc.)
+		// 		})
+		// 		.finally(() => {
+		// 			// Clear the promise so subsequent renders don't wait
+		// 			this.cursorDetectionPromise = null;
+		// 		});
+		// } else {
+		// 	// In non-TTY environments, don't set up cursor detection at all
+		// 	this.cursorDetectionPromise = null;
+		// }
+	}
+
+	/**
 	 * Detect current cursor position and set window.screenTop
 	 * Sends \x1b[6n and waits for response \x1b[row;colR
 	 */
@@ -812,18 +885,17 @@ export class TermDOM {
 				return;
 			}
 
-			const stdin = this.process.stdin;
 			let responseBuffer = "";
 
-			// Handler for cursor position response
-			const handleData = (data: Buffer) => {
-				responseBuffer += data.toString();
+			// Set up cursor detection handler for unified stdin
+			this.cursorDetectionHandler = (dataStr: string) => {
+				responseBuffer += dataStr;
 
 				// Look for cursor position response pattern: \x1b[row;colR
 				const match = responseBuffer.match(/\x1b\[(\d+);(\d+)R/);
 				if (match) {
 					// Cleanup
-					stdin.removeListener("data", handleData);
+					this.cursorDetectionHandler = null;
 
 					const row = parseInt(match[1], 10);
 					// Set window.screenTop (convert 1-based terminal row to 0-based)
@@ -839,21 +911,20 @@ export class TermDOM {
 				}
 			};
 
-			// Set up listener for response
-			stdin.on("data", handleData);
+			// Send cursor position query with proper flushing
+			this.process.stdout.write("\x1b[6n");
 
-			// Send cursor position query
-			this.process.stdout.write("\x1b[6n", (error) => {
-				if (error) {
-					stdin.removeListener("data", handleData);
-					reject(error);
-				}
-			});
+			// Force flush the output buffer (critical for cursor queries)
+			if (typeof (this.process.stdout as any)._flush === "function") {
+				(this.process.stdout as any)._flush();
+			}
 
-			// Timeout after 1 second
+			// Timeout after 1000ms (reasonable balance for reliability)
 			setTimeout(() => {
-				stdin.removeListener("data", handleData);
-				reject(new Error("Timeout waiting for cursor position response"));
+				if (this.cursorDetectionHandler) {
+					this.cursorDetectionHandler = null;
+					reject(new Error("Timeout waiting for cursor position response"));
+				}
 			}, 1000);
 		});
 	}

@@ -927,7 +927,7 @@ describe("Renderer Viewport", () => {
 
 		// Should be concise: scroll command + positioning + content + cleanup
 		expect(output).toMatch(
-			/^\x1b\[\?2026h\x1b\[\?25l\x1b\[H\x1b\[3S.*Text.*\x1b\[\?25h\x1b\[\?2026l\n$/,
+			/^\x1b\[\?2026h\x1b\[\?25l\x1b\[3S\x1b\[4;1H.*Text.*\x1b\[\?25h\x1b\[\?2026l\n$/,
 		);
 	});
 
