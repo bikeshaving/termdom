@@ -6,8 +6,9 @@
  */
 
 import {CSSStyleDeclaration} from "cssstyle";
-import type {DOMWindow} from "jsdom";
+import {type DOMWindow} from "jsdom";
 import {attachPseudoElement, clearPseudoElements} from "./composition.js";
+import {type LayoutEngine} from "./layout.js";
 
 /**
  * Helper to get computed style property value for an element.
@@ -1024,7 +1025,7 @@ export class StyleManager {
 
 	constructor(
 		private window: DOMWindow,
-		private layoutEngine?: any,
+		private layoutEngine: LayoutEngine,
 	) {
 		// Override window.getComputedStyle with our cached version
 		window.getComputedStyle = this.getComputedStyle.bind(this);
@@ -1042,7 +1043,26 @@ export class StyleManager {
 	): globalThis.CSSStyleDeclaration {
 		// Handle pseudo-element styles
 		if (pseudoElt) {
-			return this.getPseudoElementComputedStyle(element, pseudoElt);
+			// Check cache first
+			let elementCache = this.pseudoElementStyleCache.get(element);
+			if (!elementCache) {
+				elementCache = new Map();
+				this.pseudoElementStyleCache.set(element, elementCache);
+			}
+
+			let pseudoStyle = elementCache.get(pseudoElt);
+			if (!pseudoStyle) {
+				// Compute pseudo-element style
+				pseudoStyle = this.computePseudoElementStyle(element, pseudoElt);
+				elementCache.set(pseudoElt, pseudoStyle);
+			}
+
+			// Create a CSSStyleDeclaration-like object - inline createPseudoStyleDeclaration
+			const declaration = new CSSStyleDeclaration();
+			for (const [property, value] of Object.entries(pseudoStyle)) {
+				declaration.setProperty(property, value);
+			}
+			return declaration;
 		}
 
 		// Check cache first for regular element styles
@@ -1090,6 +1110,7 @@ export class StyleManager {
 	private parseStyleSheet(stylesheet: CSSStyleSheet): void {
 		for (let i = 0; i < stylesheet.cssRules.length; i++) {
 			const rule = stylesheet.cssRules[i];
+			// TODO: use constructor.name
 			if (rule.type === 1) {
 				// CSSRule.STYLE_RULE
 				const styleRule = rule as CSSStyleRule;
@@ -1194,31 +1215,6 @@ export class StyleManager {
 	}
 
 	/**
-	 * Get computed style for pseudo-elements
-	 */
-	private getPseudoElementComputedStyle(
-		element: Element,
-		pseudoElt: string,
-	): globalThis.CSSStyleDeclaration {
-		// Check cache first
-		let elementCache = this.pseudoElementStyleCache.get(element);
-		if (!elementCache) {
-			elementCache = new Map();
-			this.pseudoElementStyleCache.set(element, elementCache);
-		}
-
-		let pseudoStyle = elementCache.get(pseudoElt);
-		if (!pseudoStyle) {
-			// Compute pseudo-element style
-			pseudoStyle = this.computePseudoElementStyle(element, pseudoElt);
-			elementCache.set(pseudoElt, pseudoStyle);
-		}
-
-		// Create a CSSStyleDeclaration-like object
-		return this.createPseudoStyleDeclaration(pseudoStyle);
-	}
-
-	/**
 	 * Compute style properties for a pseudo-element
 	 */
 	private computePseudoElementStyle(
@@ -1241,22 +1237,6 @@ export class StyleManager {
 		}
 
 		return computedStyle;
-	}
-
-	/**
-	 * Create a CSSStyleDeclaration-like object for pseudo-element styles
-	 */
-	private createPseudoStyleDeclaration(
-		styleProps: Record<string, string>,
-	): globalThis.CSSStyleDeclaration {
-		const styleDeclaration = new (this.window as any).CSSStyleDeclaration();
-
-		// Set all properties
-		for (const [property, value] of Object.entries(styleProps)) {
-			styleDeclaration.setProperty(property, value);
-		}
-
-		return styleDeclaration;
 	}
 
 	/**
@@ -1367,19 +1347,8 @@ export class StyleManager {
 		// by diffing the old vs new pseudo-element rules
 
 		// Clear all existing pseudo-elements before reattaching
-		this.clearAllPseudoElements();
-
-		// After parsing rules, attach pseudo-elements to matching elements
-		this.attachPseudoElementsToDocument();
-	}
-
-	/**
-	 * Clear all pseudo-elements from the document
-	 * TODO: Performance optimization - this walks every element in the DOM when stylesheets change.
-	 * Could track elements with pseudo-elements in a WeakSet and only clear those.
-	 * Low priority since stylesheet changes are rare.
-	 */
-	private clearAllPseudoElements(): void {
+		// TODO: Performance optimization - this walks every element in the DOM when stylesheets change.
+		// Could track elements with pseudo-elements in a WeakSet and only clear those.
 		const walker = this.window.document.createTreeWalker(
 			this.window.document.documentElement,
 			this.window.NodeFilter.SHOW_ELEMENT,
@@ -1390,6 +1359,9 @@ export class StyleManager {
 			clearPseudoElements(element);
 			element = walker.nextNode() as Element;
 		}
+
+		// After parsing rules, attach pseudo-elements to matching elements
+		this.attachPseudoElementsToDocument();
 	}
 
 	/**
@@ -1485,32 +1457,19 @@ export class StyleManager {
 			const pseudoNode = this.createPseudoElementNode(element, pseudoType);
 			if (pseudoNode) {
 				// Attach pseudo-element to the element
-				this.attachPseudoElementToElement(element, pseudoNode, pseudoType);
+				// Use composition system to attach pseudo-element
+				attachPseudoElement(element, pseudoNode, pseudoType);
+
+				// Add CSS-specific metadata
+				const existingMetadata = (pseudoNode as any).pseudoMetadata || {};
+				(pseudoNode as any).pseudoMetadata = {
+					...existingMetadata,
+					styles: this.computePseudoElementStyle(element, pseudoType),
+				};
+
+				// Invalidate the element in layout engine to rediscover pseudo elements
+				this.layoutEngine.invalidate(element);
 			}
-		}
-	}
-
-	/**
-	 * Attach a pseudo-element node to an element
-	 */
-	private attachPseudoElementToElement(
-		element: Element,
-		pseudoNode: Text,
-		pseudoType: string,
-	): void {
-		// Use composition system to attach pseudo-element
-		attachPseudoElement(element, pseudoNode, pseudoType);
-
-		// Add CSS-specific metadata
-		const existingMetadata = (pseudoNode as any).pseudoMetadata || {};
-		(pseudoNode as any).pseudoMetadata = {
-			...existingMetadata,
-			styles: this.computePseudoElementStyle(element, pseudoType),
-		};
-
-		// Invalidate the element in layout engine to rediscover pseudo elements
-		if (this.layoutEngine?.invalidate) {
-			this.layoutEngine.invalidate(element);
 		}
 	}
 
