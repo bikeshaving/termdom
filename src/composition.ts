@@ -11,9 +11,9 @@
 import type {DOMWindow} from "jsdom";
 
 // Symbols for storing pseudo-elements and shadow roots on nodes
-export const SHADOW_ROOT_SYMBOL = Symbol("shadowRoot");
-export const PSEUDO_ELEMENTS_SYMBOL = Symbol("pseudoElements");
-export const PSEUDO_METADATA_SYMBOL = Symbol("pseudoMetadata");
+export const SHADOW_ROOT_SYMBOL = Symbol.for("TermDOM.shadowRoot");
+export const PSEUDO_ELEMENTS_SYMBOL = Symbol.for("TermDOM.pseudoElements");
+export const PSEUDO_METADATA_SYMBOL = Symbol.for("TermDOM.pseudoMetadata");
 
 // Extended NodeFilter constants
 export const NodeFilterExtended = {
