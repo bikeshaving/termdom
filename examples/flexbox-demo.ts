@@ -143,4 +143,4 @@ footerVersion.textContent = "v1.0.0";
 footerVersion.style.color = "white";
 footer.appendChild(footerVersion);
 
-await termDOM.render();
+//await termDOM.render();

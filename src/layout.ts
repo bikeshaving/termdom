@@ -1439,7 +1439,6 @@ export class LayoutEngine {
 	private handleMutationRecords(mutations: MutationRecord[]): void {
 		for (let i = 0; i < mutations.length; i++) {
 			const record = mutations[i];
-
 			if (record.type === "attributes") {
 				if (record.attributeName === "style") {
 					const element = record.target as Element;
@@ -1726,9 +1725,6 @@ export class LayoutEngine {
 		text: Text,
 		parentYogaNode: YogaTypes.Node | null = null,
 	): void {
-		// Process all text nodes, even if they appear empty
-		// (they might contain whitespace that's significant for layout)
-
 		if (!parentYogaNode) {
 			return;
 		}

@@ -41,7 +41,7 @@ export interface TTYWriteStream {
 	isTTY: boolean;
 }
 
-// TODO: Can we use web streams (ReadableStream) or at least track what events we're usinh.
+// TODO: Can we use web streams (ReadableStream) or at least track what events we're using?
 export interface TTYReadStream extends EventEmitter {
 	isTTY: boolean;
 	setRawMode?(mode: boolean): this;
@@ -257,22 +257,7 @@ export class TermDOM {
 								break;
 							}
 
-							// Attach pseudo-elements to newly added elements
-							this.styleManager.attachPseudoElementsToElement(element);
-
-							// Also attach pseudo-elements to any descendant elements
-							// TODO: Performance optimization - walks all descendants when element is added.
-							// Could use more targeted approach or batch process multiple additions.
-							const walker = this.window.document.createTreeWalker(
-								element,
-								this.window.NodeFilter.SHOW_ELEMENT,
-								null,
-							);
-							let descendant = walker.nextNode() as Element;
-							while (descendant) {
-								this.styleManager.attachPseudoElementsToElement(descendant);
-								descendant = walker.nextNode() as Element;
-							}
+							// StyleManager will handle pseudo-elements during render pipeline
 						}
 					}
 					for (const node of mutation.removedNodes) {
@@ -287,8 +272,7 @@ export class TermDOM {
 								break;
 							}
 
-							// Clean up pseudo-elements for removed elements
-							this.styleManager.cleanupPseudoElementsForRemovedElement(element);
+							// StyleManager will handle cleanup during render pipeline
 						}
 					}
 				}
@@ -331,46 +315,41 @@ export class TermDOM {
 		});
 
 		if (this.process.stdin?.isTTY) {
-			this.setupUnifiedStdinHandler();
+			const stdin = this.process.stdin;
+			if (!stdin) return;
+
+			// Configure terminal for proper input handling (once)
+			stdin.setRawMode?.(true);
+			stdin.resume();
+			stdin.setEncoding?.("utf8");
+
+			// Single unified handler for all stdin data
+			stdin.on("data", (chunk: string | Buffer) => {
+				// Ensure we have both string and buffer representations
+				const data = Buffer.isBuffer(chunk)
+					? chunk
+					: Buffer.from(chunk, "utf8");
+				const dataStr = data.toString("utf8");
+
+				// Route 1: Cursor position responses (highest priority)
+				if (this.cursorDetectionHandler && dataStr.match(/\x1b\[\d+;\d+R/)) {
+					this.cursorDetectionHandler(dataStr);
+					return;
+				}
+
+				// Route 2: Ctrl-C handling (high priority) - check raw bytes
+				if (data.length > 0 && data[0] === 0x03) {
+					this.dispose();
+					return this.process.exit(0);
+				}
+
+				// TODO: Why does this filter on fullscreen????
+				// Route 3: General keyboard events (when not in fullscreen)
+				if (!this.fullscreenManager.isFullscreen) {
+					this.dispatchGlobalKeyboardEvent(data);
+				}
+			});
 		}
-	}
-
-	/**
-	 * Set up unified stdin handler that routes different input types appropriately
-	 */
-	private setupUnifiedStdinHandler(): void {
-		const stdin = this.process.stdin;
-		if (!stdin) return;
-
-		// Configure terminal for proper input handling (once)
-		stdin.setRawMode?.(true);
-		stdin.resume();
-		stdin.setEncoding?.("utf8");
-
-		// Single unified handler for all stdin data
-		stdin.on("data", (chunk: string | Buffer) => {
-			// Ensure we have both string and buffer representations
-			const data = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, "utf8");
-			const dataStr = data.toString("utf8");
-
-			// Route 1: Cursor position responses (highest priority)
-			if (this.cursorDetectionHandler && dataStr.match(/\x1b\[\d+;\d+R/)) {
-				this.cursorDetectionHandler(dataStr);
-				return;
-			}
-
-			// Route 2: Ctrl-C handling (high priority) - check raw bytes
-			if (data.length > 0 && data[0] === 0x03) {
-				this.dispose();
-				this.process.exit(0);
-				return;
-			}
-
-			// Route 3: General keyboard events (when not in fullscreen)
-			if (!this.fullscreenManager.isFullscreen) {
-				this.dispatchGlobalKeyboardEvent(data);
-			}
-		});
 	}
 
 	async render(): Promise<void> {
@@ -378,48 +357,43 @@ export class TermDOM {
 		if (this.isRendering) {
 			return;
 		}
-
 		// Wait for cursor detection to complete before first render
 		if (this.cursorDetectionPromise) {
-			await this.cursorDetectionPromise;
+			//await this.cursorDetectionPromise;
 		}
 
 		this.isRendering = true;
-		try {
-			// CRITICAL FIX: Refresh stylesheets BEFORE attaching pseudo-elements
-			// This ensures CSS content is available when pseudo-elements are created
-			this.styleManager.refreshStylesheets();
+		// CRITICAL FIX: Refresh stylesheets which also handles pseudo-element attachment
+		// This ensures CSS content is available when pseudo-elements are created
+		this.styleManager.refreshStylesheets();
 
-			// Attach pseudo-elements to all elements after CSS is parsed
-			this.styleManager.attachPseudoElementsToDocument();
-			// Always use auto height for natural content sizing and scrolling
-			this.layoutEngine.calculateLayout();
+		// Always use auto height for natural content sizing and scrolling
+		this.layoutEngine.calculateLayout();
 
-			// Calculate push-up offset if command start was detected
-			if (this.hasDetectedCommandStart) {
-				this.calculatePushUpOffset();
-			}
-
-			// Get viewport offset from raw internal scrollTop
-			const viewportOffset = -this.scrollingManager.getScrollTop();
-			this.renderer.beginFrame(viewportOffset);
-
-			this.renderElement(this.document.body);
-			const ansi = this.renderer.render();
-			if (ansi) {
-				await new Promise<void>((resolve, reject) => {
-					this.process.stdout.write(ansi, "utf8", (error) => {
-						if (error) {
-							reject(error);
-						} else {
-							resolve();
-						}
-					});
-				});
-			}
-		} finally {
-			this.isRendering = false;
+		// Calculate push-up offset if command start was detected
+		if (this.hasDetectedCommandStart) {
+			this.calculatePushUpOffset();
 		}
+		// Get viewport offset from raw internal scrollTop
+		const viewportOffset = -this.scrollingManager.getScrollTop();
+		this.renderer.beginFrame(viewportOffset);
+
+		this.renderElement(this.document.body);
+		const ansi = this.renderer.render();
+
+		if (ansi) {
+			await new Promise<void>((resolve, reject) => {
+				this.process.stdout.write(ansi, "utf8", (error) => {
+					if (error) {
+						reject(error);
+					} else {
+						resolve();
+					}
+				});
+			});
+		}
+
+		this.isRendering = false;
 	}
 
 	// TODO: many of the following methods do not belong on the TermDOM class
@@ -846,39 +820,30 @@ export class TermDOM {
 	 * This runs asynchronously during construction to set up proper viewport positioning
 	 */
 	private initializeCursorDetection(): void {
-		// TEMPORARILY DISABLED FOR DEBUGGING - Always skip cursor detection
 		this.cursorDetectionPromise = null;
-
-		// // Only detect cursor position in TTY environments
-		// if (this.process.stdin?.isTTY) {
-		// 	// Set up cursor detection promise that render() will wait for
-		// 	this.cursorDetectionPromise = Promise.race([
-		// 		this.detectCommandStart(),
-		// 		// Fallback: if cursor detection takes too long, proceed without it
-		// 		new Promise<void>((resolve) => setTimeout(resolve, 1000)),
-		// 	])
-		// 		.then(() => {
-		// 			// Either cursor detection succeeded or we timed out
-		// 		})
-		// 		.catch((_error) => {
-		// 			// If cursor detection fails, continue without it
-		// 			// This is expected in non-interactive environments (tests, CI, etc.)
-		// 		})
-		// 		.finally(() => {
-		// 			// Clear the promise so subsequent renders don't wait
-		// 			this.cursorDetectionPromise = null;
-		// 		});
-		// } else {
-		// 	// In non-TTY environments, don't set up cursor detection at all
-		// 	this.cursorDetectionPromise = null;
-		// }
+		//return;
+		// Only detect cursor position in TTY environments
+		if (this.process.stdin?.isTTY) {
+			// Set up cursor detection promise that render() will wait for
+			this.cursorDetectionPromise = Promise.race([
+				this.detectCommandStart(),
+				// Fallback: if cursor detection takes too long, proceed without it
+				new Promise<void>((resolve) => setTimeout(resolve, 1000)),
+			]).finally(() => {
+				// Clear the promise so subsequent renders don't wait
+				this.cursorDetectionPromise = null;
+			});
+		} else {
+			// In non-TTY environments, don't set up cursor detection at all
+			this.cursorDetectionPromise = null;
+		}
 	}
 
 	/**
 	 * Detect current cursor position and set window.screenTop
 	 * Sends \x1b[6n and waits for response \x1b[row;colR
 	 */
-	async detectCommandStart(): Promise<number> {
+	detectCommandStart(): Promise<number> {
 		return new Promise<number>((resolve, reject) => {
 			if (!this.process.stdin?.isTTY) {
 				reject(new Error("Cannot detect cursor position: stdin is not a TTY"));
