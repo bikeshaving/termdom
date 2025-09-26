@@ -654,7 +654,7 @@ export class LayoutEngine {
 		this.nodeMap = new WeakMap<Node, YogaTypes.Node>();
 		this.breakResultMap = new WeakMap<Node, BreakResult>();
 		this.observer = new window.MutationObserver((mutations) =>
-			this.handleMutationRecords(mutations),
+			this.#handleMutationRecords(mutations),
 		);
 
 		// Create viewport root node (no DOM element associated)
@@ -669,7 +669,7 @@ export class LayoutEngine {
 			characterData: true,
 		});
 		// Attach HTML element to viewport root instead of null
-		this.addNode(this.rootElement, this.viewportRootNode);
+		this.#addNode(this.rootElement, this.viewportRootNode);
 	}
 
 	resize(width: number, height: number): void {
@@ -686,7 +686,7 @@ export class LayoutEngine {
 
 	calculateLayout() {
 		const records = this.observer.takeRecords();
-		this.handleMutationRecords(records);
+		this.#handleMutationRecords(records);
 
 		// Calculate layout using viewport root node (terminal dimensions)
 		// The HTML element can now have auto height and reference viewport via percentages
@@ -1094,18 +1094,18 @@ export class LayoutEngine {
 
 	/**
 	 * A "run head" is the first node in a contiguous run of inline-level
-	 * elements. This is a TermDOM implementation detail for mapping CSS inline
-	 * layout to Yoga.
+	 * elements. This is a TermDOM implementation detail for implementing CSS
+	 * inline layout with Yoga measurement functions.
 	 *
 	 * The run head node:
-	 * - Gets the Yoga layout node for the entire run
-	 * - Gets the breakResult entry for text measurement
-	 * - Other nodes in the run delegate their layout to this head
+	 * - Gets the Yoga node with a measure function
+	 * - Assigns a breakResult entry
+	 * - Other inline nodes in the run delegate their layout to this head
 	 *
 	 * Examples:
 	 * - "Hello" + <span>world</span>: "Hello" text node is run head
 	 * - <em>text</em> + "more": <em> element is run head
-	 * - <div>"text"</div>: "text" is run head (block creates new context)
+	 * - <div>text</div>: "text" is run head (block creates new context)
 	 * - In flex containers: each flex item gets its own run head
 	 * - Block interruption: <span>text</span><div>block</div><span>more</span>
 	 *   creates separate runs with separate heads
@@ -1113,10 +1113,6 @@ export class LayoutEngine {
 	 * Note: Pseudo-elements (::before, ::marker, ::after) are treated as
 	 * text nodes and can participate in inline runs.
 	 */
-	isInlineRunHead(node: Node): boolean {
-		return this.findInlineRunHead(node) === node;
-	}
-
 	findInlineRunHead(node: Node): Node | null {
 		// 1. Validate input
 		if (!node.isConnected) {
@@ -1223,17 +1219,8 @@ export class LayoutEngine {
 		return current;
 	}
 
-	// Cache invalidation methods for dynamic inline run head detection
-
-	/**
-	 * Clear break result cache for a node and its inline run
-	 */
-	private clearBreakResultCache(node: Node): void {
-		// Find the run head for this node
-		const runHead = this.findInlineRunHead(node);
-		if (runHead) {
-			this.breakResultMap.delete(runHead);
-		}
+	isInlineRunHead(node: Node): boolean {
+		return this.findInlineRunHead(node) === node;
 	}
 
 	/**
@@ -1243,8 +1230,8 @@ export class LayoutEngine {
 	 */
 	invalidate(node: Node): void {
 		// If it's an inline-level node, invalidate the entire run
-		if (this.isInlineLevel(node)) {
-			this.invalidateInlineRun(node);
+		if (this.#isInlineLevel(node)) {
+			this.#invalidateInlineRun(node);
 		} else if (node.nodeType === node.ELEMENT_NODE) {
 			// For block-level elements, remove from nodeMap to force recreation
 			// We can't call markDirty() on container nodes as Yoga only allows
@@ -1271,11 +1258,15 @@ export class LayoutEngine {
 		}
 	}
 
-	/**
-	 * Internal: Invalidate an entire inline run when structure changes
-	 * Also handles Yoga node cleanup and creation for run head changes
-	 */
-	private invalidateInlineRun(node: Node): void {
+	#clearBreakResultCache(node: Node): void {
+		// Find the run head for this node
+		const runHead = this.findInlineRunHead(node);
+		if (runHead) {
+			this.breakResultMap.delete(runHead);
+		}
+	}
+
+	#invalidateInlineRun(node: Node): void {
 		const runHead = this.findInlineRunHead(node);
 		if (runHead) {
 			// Clear cached break results
@@ -1311,7 +1302,7 @@ export class LayoutEngine {
 					const parentYogaNode = this.nodeMap.get(parent);
 					if (parentYogaNode) {
 						// Add the run head to the layout tree
-						this.addNode(runHead, parentYogaNode);
+						this.#addNode(runHead, parentYogaNode);
 						break;
 					}
 					parent = parent.parentElement;
@@ -1326,44 +1317,7 @@ export class LayoutEngine {
 		}
 	}
 
-	/**
-	 * Mark all yoga nodes in an inline run as dirty
-	 */
-	private markInlineRunDirty(node: Node): void {
-		const runHead = this.findInlineRunHead(node);
-		if (runHead) {
-			// Get all nodes in the run
-			const runNodes = this.getRunExtent(runHead);
-
-			// Mark each node's yoga node as dirty
-			for (const runNode of runNodes) {
-				const yogaNode = this.nodeMap.get(runNode);
-				if (yogaNode) {
-					yogaNode.markDirty();
-				}
-			}
-		}
-	}
-
-	/**
-	 * Get all nodes that belong to the same inline run as the given run head
-	 */
-	private getRunExtent(runHead: Node): Node[] {
-		const nodes = [runHead];
-		let current = runHead.nextSibling;
-
-		while (current && this.isInlineLevel(current)) {
-			nodes.push(current);
-			current = current.nextSibling;
-		}
-
-		return nodes;
-	}
-
-	/**
-	 * Check if a node is inline-level (text, pseudo-element, or inline/inline-block element)
-	 */
-	private isInlineLevel(node: Node): boolean {
+	#isInlineLevel(node: Node): boolean {
 		if (node.nodeType === node.TEXT_NODE) {
 			// Regular text nodes and pseudo-element text nodes are inline-level
 			return true;
@@ -1382,7 +1336,7 @@ export class LayoutEngine {
 	 * Determines if a whitespace-only text node should be collapsed to nothing
 	 * according to CSS whitespace collapsing rules in block formatting contexts
 	 */
-	private shouldCollapseWhitespaceTextNode(textNode: Text): boolean {
+	#shouldCollapseWhitespaceTextNode(textNode: Text): boolean {
 		// Only collapse whitespace-only text nodes
 		if (!textNode.textContent || !/^\s*$/.test(textNode.textContent)) {
 			return false;
@@ -1436,7 +1390,7 @@ export class LayoutEngine {
 		return false;
 	}
 
-	private handleMutationRecords(mutations: MutationRecord[]): void {
+	#handleMutationRecords(mutations: MutationRecord[]): void {
 		for (let i = 0; i < mutations.length; i++) {
 			const record = mutations[i];
 			if (record.type === "attributes") {
@@ -1446,14 +1400,14 @@ export class LayoutEngine {
 					if (yogaNode) {
 						styleYogaNode(element, yogaNode);
 						// Invalidate inline runs if style changes might affect layout
-						this.invalidateInlineRun(element);
+						this.#invalidateInlineRun(element);
 					}
 				}
 				return;
 			} else if (record.type === "characterData") {
 				const textNode = record.target as Text;
 				// Invalidate the inline run containing this text node
-				this.invalidateInlineRun(textNode);
+				this.#invalidateInlineRun(textNode);
 				return;
 			}
 
@@ -1472,9 +1426,9 @@ export class LayoutEngine {
 				if (!parentYogaNode) {
 					// If parent has no Yoga node, it might be an inline element that's part of a run
 					// Instead of adding to Yoga tree, just invalidate the inline run
-					if (this.isInlineLevel(node)) {
-						this.invalidateInlineRun(node);
-						this.invalidateInlineRun(parentElement); // Also invalidate parent's run
+					if (this.#isInlineLevel(node)) {
+						this.#invalidateInlineRun(node);
+						this.#invalidateInlineRun(parentElement); // Also invalidate parent's run
 						continue; // Skip normal Yoga tree addition
 					} else {
 						// Block elements should have parents with Yoga nodes
@@ -1485,33 +1439,33 @@ export class LayoutEngine {
 				}
 
 				// Add the node to Yoga layout
-				this.addNode(node, parentYogaNode);
+				this.#addNode(node, parentYogaNode);
 
 				// Invalidate inline runs that might be affected by this addition
-				if (this.isInlineLevel(node)) {
+				if (this.#isInlineLevel(node)) {
 					// If adding an inline node, invalidate the run it joins
-					this.invalidateInlineRun(node);
+					this.#invalidateInlineRun(node);
 
 					// Also check if this changes the run head of existing runs
 					const nextSibling = node.nextSibling;
-					if (nextSibling && this.isInlineLevel(nextSibling)) {
-						this.invalidateInlineRun(nextSibling);
+					if (nextSibling && this.#isInlineLevel(nextSibling)) {
+						this.#invalidateInlineRun(nextSibling);
 					}
 
 					const prevSibling = node.previousSibling;
-					if (prevSibling && this.isInlineLevel(prevSibling)) {
-						this.invalidateInlineRun(prevSibling);
+					if (prevSibling && this.#isInlineLevel(prevSibling)) {
+						this.#invalidateInlineRun(prevSibling);
 					}
 				} else {
 					// Block element added - might split inline runs
 					const nextSibling = node.nextSibling;
-					if (nextSibling && this.isInlineLevel(nextSibling)) {
-						this.invalidateInlineRun(nextSibling);
+					if (nextSibling && this.#isInlineLevel(nextSibling)) {
+						this.#invalidateInlineRun(nextSibling);
 					}
 
 					const prevSibling = node.previousSibling;
-					if (prevSibling && this.isInlineLevel(prevSibling)) {
-						this.invalidateInlineRun(prevSibling);
+					if (prevSibling && this.#isInlineLevel(prevSibling)) {
+						this.#invalidateInlineRun(prevSibling);
 					}
 				}
 			}
@@ -1522,7 +1476,7 @@ export class LayoutEngine {
 				const yogaNode = this.nodeMap.get(node);
 
 				// Invalidate inline runs before removing the node
-				if (this.isInlineLevel(node)) {
+				if (this.#isInlineLevel(node)) {
 					// Check siblings that might now become the new run head
 					const parent = record.target as Element;
 					const siblings = Array.from(parent.childNodes);
@@ -1534,19 +1488,19 @@ export class LayoutEngine {
 					// Find adjacent inline siblings that need invalidation
 					if (nodeIndex >= 0) {
 						const nextSibling = siblings[nodeIndex + 1];
-						if (nextSibling && this.isInlineLevel(nextSibling)) {
-							this.invalidateInlineRun(nextSibling);
+						if (nextSibling && this.#isInlineLevel(nextSibling)) {
+							this.#invalidateInlineRun(nextSibling);
 						}
 
 						const prevSibling = siblings[nodeIndex - 1];
-						if (prevSibling && this.isInlineLevel(prevSibling)) {
-							this.invalidateInlineRun(prevSibling);
+						if (prevSibling && this.#isInlineLevel(prevSibling)) {
+							this.#invalidateInlineRun(prevSibling);
 						}
 					} else {
 						// If we can't determine position, invalidate all inline siblings
 						for (const sibling of siblings) {
-							if (sibling !== node && this.isInlineLevel(sibling)) {
-								this.invalidateInlineRun(sibling);
+							if (sibling !== node && this.#isInlineLevel(sibling)) {
+								this.#invalidateInlineRun(sibling);
 							}
 						}
 					}
@@ -1557,8 +1511,8 @@ export class LayoutEngine {
 
 					// Process all inline siblings to handle run merging
 					for (const sibling of siblings) {
-						if (this.isInlineLevel(sibling)) {
-							this.invalidateInlineRun(sibling);
+						if (this.#isInlineLevel(sibling)) {
+							this.#invalidateInlineRun(sibling);
 						}
 					}
 				}
@@ -1585,15 +1539,12 @@ export class LayoutEngine {
 				}
 
 				// Clear any cached break results for this node
-				this.clearBreakResultCache(node);
+				this.#clearBreakResultCache(node);
 			}
 		}
 	}
 
-	private addNode(
-		node: Node,
-		parentYogaNode: YogaTypes.Node | null = null,
-	): void {
+	#addNode(node: Node, parentYogaNode: YogaTypes.Node | null = null): void {
 		if (this.nodeMap.has(node)) {
 			// Node already exists - this might be a moved node that needs reparenting
 			const existingYogaNode = this.nodeMap.get(node);
@@ -1606,7 +1557,7 @@ export class LayoutEngine {
 						currentParent.removeChild(existingYogaNode);
 					}
 					// Add to new parent
-					const yogaIndex = this.getYogaIndex(node as Element);
+					const yogaIndex = this.#getYogaIndex(node as Element);
 					parentYogaNode.insertChild(existingYogaNode, yogaIndex);
 				}
 			}
@@ -1614,17 +1565,17 @@ export class LayoutEngine {
 		}
 
 		if (node.nodeType === node.ELEMENT_NODE) {
-			this.addElementNode(node as Element, parentYogaNode);
+			this.#addElementNode(node as Element, parentYogaNode);
 		} else if (node.nodeType === node.TEXT_NODE) {
-			this.addTextNode(node as Text, parentYogaNode);
+			this.#addTextNode(node as Text, parentYogaNode);
 		}
 	}
 
-	private addElementNode(
+	#addElementNode(
 		element: Element,
 		parentYogaNode: YogaTypes.Node | null = null,
-		yogaIndex: number = this.getYogaIndex(element),
 	): void {
+		const yogaIndex = this.#getYogaIndex(element);
 		const display = getPropertyValue(element, "display");
 
 		// For inline elements, we need to find or create the run head
@@ -1633,7 +1584,7 @@ export class LayoutEngine {
 			if (runHead && runHead !== element) {
 				// This element is part of an existing run - the run head will handle it
 				// Clear any cached results for the run head to force re-measurement
-				this.clearBreakResultCache(runHead);
+				this.#clearBreakResultCache(runHead);
 				const runHeadYogaNode = this.nodeMap.get(runHead);
 				if (runHeadYogaNode) {
 					runHeadYogaNode.markDirty();
@@ -1659,7 +1610,7 @@ export class LayoutEngine {
 			return;
 		} else if (display === "inline" || display === "inline-block") {
 			yogaNode.setMeasureFunc((width, widthMode, height, heightMode) => {
-				return this.measureInlineRun(
+				return this.#measureInlineRun(
 					element,
 					width,
 					widthMode,
@@ -1702,16 +1653,16 @@ export class LayoutEngine {
 				const childDisplay = getPropertyValue(child as Element, "display");
 				if (childDisplay === "inline" || childDisplay === "inline-block") {
 					if (display === "flex") {
-						this.addNode(child, yogaNode);
+						this.#addNode(child, yogaNode);
 					} else {
-						this.addNode(child, yogaNode);
+						this.#addNode(child, yogaNode);
 					}
 				} else {
-					this.addNode(child, yogaNode);
+					this.#addNode(child, yogaNode);
 				}
 			} else if (child.nodeType === child.TEXT_NODE) {
 				// Text nodes need to be added to the layout tree
-				this.addNode(child, yogaNode);
+				this.#addNode(child, yogaNode);
 			}
 			child = walker.nextSibling();
 		}
@@ -1721,10 +1672,7 @@ export class LayoutEngine {
 		}
 	}
 
-	private addTextNode(
-		text: Text,
-		parentYogaNode: YogaTypes.Node | null = null,
-	): void {
+	#addTextNode(text: Text, parentYogaNode: YogaTypes.Node | null = null): void {
 		if (!parentYogaNode) {
 			return;
 		}
@@ -1734,7 +1682,7 @@ export class LayoutEngine {
 		if (runHead && runHead !== text) {
 			// This text node is part of an existing run - the run head will handle it
 			// Clear any cached results for the run head to force re-measurement
-			this.clearBreakResultCache(runHead);
+			this.#clearBreakResultCache(runHead);
 			const runHeadYogaNode = this.nodeMap.get(runHead);
 			if (runHeadYogaNode) {
 				runHeadYogaNode.markDirty();
@@ -1756,7 +1704,7 @@ export class LayoutEngine {
 				height: number,
 				heightMode: YogaTypes.MeasureMode,
 			) => {
-				return this.measureInlineRun(
+				return this.#measureInlineRun(
 					text,
 					width,
 					widthMode,
@@ -1771,7 +1719,7 @@ export class LayoutEngine {
 		parentYogaNode.insertChild(yogaNode, parentYogaNode.getChildCount());
 	}
 
-	private getYogaIndex(element: Element): number {
+	#getYogaIndex(element: Element): number {
 		if (!element.parentElement) {
 			return 0;
 		}
@@ -1820,14 +1768,14 @@ export class LayoutEngine {
 		return yogaIndex;
 	}
 
-	private measureInlineRun(
+	#measureInlineRun(
 		node: Node,
 		width: number,
 		widthMode: YogaTypes.MeasureMode,
 		height: number,
 		heightMode: YogaTypes.MeasureMode,
 	): {width: number; height: number} {
-		const breakResult = this.breakNodes(
+		const breakResult = this.#breakNodes(
 			node,
 			width,
 			widthMode,
@@ -1847,8 +1795,8 @@ export class LayoutEngine {
 	}
 
 	// Inline layout methods (moved from breaker.ts)
-
-	private collectLeafNodes(runHead: Node): Leaf[] {
+	// TODO: Many of these methods could be regular functions
+	#collectLeafNodes(runHead: Node): Leaf[] {
 		const leafNodes: Leaf[] = [];
 
 		// For pseudo elements, use the host element as the parent
@@ -1898,7 +1846,7 @@ export class LayoutEngine {
 
 					if (
 						isWhitespaceOnly &&
-						this.shouldCollapseWhitespaceTextNode(textNode)
+						this.#shouldCollapseWhitespaceTextNode(textNode)
 					) {
 						// Skip this whitespace text node - it should be collapsed to nothing
 						if (!walker.nextNode()) break;
@@ -1959,7 +1907,7 @@ export class LayoutEngine {
 					// Recursively measure inline-block content with constraints
 					let inlineBlockResult: BreakResult | undefined;
 					if (element.firstChild) {
-						inlineBlockResult = this.breakNodes(
+						inlineBlockResult = this.#breakNodes(
 							element.firstChild,
 							contentWidth,
 							contentWidthMode,
@@ -2012,7 +1960,7 @@ export class LayoutEngine {
 		return leafNodes;
 	}
 
-	private breakNodes(
+	#breakNodes(
 		runHead: Node,
 		width: number,
 		widthMode: YogaTypes.MeasureMode,
@@ -2020,7 +1968,7 @@ export class LayoutEngine {
 		_heightMode: YogaTypes.MeasureMode,
 	): BreakResult {
 		// Collect leaf nodes from the run head
-		const leafNodes = this.collectLeafNodes(runHead);
+		const leafNodes = this.#collectLeafNodes(runHead);
 
 		// Handle empty case
 		if (leafNodes.length === 0) {
@@ -2048,14 +1996,14 @@ export class LayoutEngine {
 				: width;
 
 		// Process and break the content with dynamic per-element styling
-		const processedContent = this.processWhitespace(leafNodes);
-		const breaks = this.findBreakPoints(processedContent, {
+		const processedContent = this.#processWhitespace(leafNodes);
+		const breaks = this.#findBreakPoints(processedContent, {
 			maxWidth,
 			whiteSpace: whiteSpace || "normal",
 			wordBreak: wordBreak || "normal",
 			overflowWrap: overflowWrap || "normal",
 		});
-		const lines = this.buildLines(processedContent, breaks, maxWidth);
+		const lines = this.#buildLines(processedContent, breaks, maxWidth);
 
 		return {
 			lines,
@@ -2064,7 +2012,7 @@ export class LayoutEngine {
 		};
 	}
 
-	private collapseWhitespace(text: string, whiteSpace: string): string {
+	#collapseWhitespace(text: string, whiteSpace: string): string {
 		if (whiteSpace === "pre" || whiteSpace === "pre-wrap") {
 			// Preserve all whitespace exactly as-is
 			return text;
@@ -2083,7 +2031,7 @@ export class LayoutEngine {
 		return text.replace(/\s+/g, " ");
 	}
 
-	private processWhitespace(leafNodes: Leaf[]): ProcessedContent {
+	#processWhitespace(leafNodes: Leaf[]): ProcessedContent {
 		const items: ProcessedContent["items"] = [];
 		let text = "";
 
@@ -2098,7 +2046,7 @@ export class LayoutEngine {
 					: "normal";
 
 				// Process the text content according to its white-space property
-				let processed = this.collapseWhitespace(leaf.content, leafWhiteSpace);
+				let processed = this.#collapseWhitespace(leaf.content, leafWhiteSpace);
 
 				// Handle boundary whitespace between adjacent text nodes
 				if (leafIndex > 0 && processed.length > 0) {
@@ -2180,7 +2128,7 @@ export class LayoutEngine {
 		return {items, text};
 	}
 
-	private findBreakPoints(
+	#findBreakPoints(
 		content: ProcessedContent,
 		options: BreakOptions,
 	): BreakPoint[] {
@@ -2238,7 +2186,7 @@ export class LayoutEngine {
 		return breaks;
 	}
 
-	private buildLines(
+	#buildLines(
 		content: ProcessedContent,
 		breaks: BreakPoint[],
 		maxWidth: number,
@@ -2254,7 +2202,7 @@ export class LayoutEngine {
 			for (const breakPoint of breaks) {
 				if (breakPoint.position <= lineStart) continue;
 
-				const width = this.measureText(
+				const width = this.#measureText(
 					content.text,
 					content.items,
 					lineStart,
@@ -2305,7 +2253,7 @@ export class LayoutEngine {
 						continue; // Try again with the new position
 					}
 
-					const width = this.measureText(
+					const width = this.#measureText(
 						content.text,
 						content.items,
 						lineStart,
@@ -2318,7 +2266,7 @@ export class LayoutEngine {
 					pos++;
 				}
 				bestBreak = Math.min(pos, content.text.length);
-				bestBreakWidth = this.measureText(
+				bestBreakWidth = this.#measureText(
 					content.text,
 					content.items,
 					lineStart,
@@ -2326,7 +2274,7 @@ export class LayoutEngine {
 				);
 			}
 
-			const lineNodes = this.getNodesInRange(
+			const lineNodes = this.#getNodesInRange(
 				content.items,
 				lineStart,
 				bestBreak,
@@ -2362,7 +2310,7 @@ export class LayoutEngine {
 		return lines;
 	}
 
-	private measureText(
+	#measureText(
 		text: string,
 		items: ProcessedContent["items"],
 		start: number,
@@ -2400,7 +2348,7 @@ export class LayoutEngine {
 		return width;
 	}
 
-	private getNodesInRange(
+	#getNodesInRange(
 		items: ProcessedContent["items"],
 		start: number,
 		end: number,
