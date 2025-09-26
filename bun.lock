@@ -11,6 +11,7 @@
         "yoga-layout": "^3.2.1",
       },
       "devDependencies": {
+        "@b9g/crank": "^0.7.1",
         "@types/bun": "^1.2.21",
         "@types/cssstyle": "^2.2.4",
         "@types/jsdom": "^21.1.7",
@@ -27,6 +28,8 @@
   },
   "packages": {
     "@asamuzakjp/css-color": ["@asamuzakjp/css-color@4.0.4", "", { "dependencies": { "@csstools/css-calc": "^2.1.4", "@csstools/css-color-parser": "^3.0.10", "@csstools/css-parser-algorithms": "^3.0.5", "@csstools/css-tokenizer": "^3.0.4", "lru-cache": "^11.1.0" } }, "sha512-cKjSKvWGmAziQWbCouOsFwb14mp1betm8Y7Fn+yglDMUUu3r9DCbJ9iJbeFDenLMqFbIMC0pQP8K+B8LAxX3OQ=="],
+
+    "@b9g/crank": ["@b9g/crank@0.7.1", "", {}, "sha512-PVl9T1wVgkTkmhIs5qWhRMBj4vnAGR/0e4wJf3UxBZq+NNKLc1FGCeHgSjMB+gv0jYEJ80LC4wZmBNCsvQPOaw=="],
 
     "@csstools/color-helpers": ["@csstools/color-helpers@5.1.0", "", {}, "sha512-S11EXWJyy0Mz5SYvRmY8nJYTFFd1LCNV+7cXyAgQtOOuzb4EsgfqDufL+9esx72/eLhsRdGZwaldu/h+E4t4BA=="],
 
