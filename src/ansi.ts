@@ -158,7 +158,7 @@ export class Cell {
 
 		if (grapheme === "") {
 			throw new Error(
-				"Cell grapheme cannot be empty - use null for empty cells",
+				"Cell grapheme cannot be empty. Use null instead.",
 			);
 		}
 

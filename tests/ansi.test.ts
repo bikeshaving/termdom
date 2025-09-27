@@ -1,17 +1,17 @@
-import {test, expect, describe} from "bun:test";
+import {describe, expect, test} from "bun:test";
 import {
 	Cell,
 	type CellStyle,
 	createBuffer,
-	Renderer,
 	generateANSI,
+	Renderer,
 } from "../src/ansi.js";
 
 describe("Cell", () => {
 	describe("constructor", () => {
 		test("throws on empty grapheme", () => {
 			expect(() => new Cell("")).toThrow(
-				"Cell grapheme cannot be empty - use null for empty cells",
+				"Cell grapheme cannot be empty. Use null instead.",
 			);
 		});
 
