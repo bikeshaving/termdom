@@ -11,7 +11,7 @@ import {
 } from "../src/termdom.js";
 import {EventEmitter} from "events";
 import {Terminal} from "@xterm/headless";
-import {type CellBuffer, Cell, createBuffer} from "../src/ansi.js";
+import {type CellBuffer, Cell, createBuffer, type ColorDepth} from "../src/ansi.js";
 import {generateANSI} from "../src/ansi.js";
 import {writeFileSync, mkdirSync, existsSync} from "fs";
 import {join} from "path";
@@ -118,12 +118,36 @@ export class TestTerminal extends EventEmitter implements ProcessLike {
 			TERM: "xterm-256color",
 		};
 
-		// Create headless xterm instance
+		// Create headless xterm instance with standard color theme
 		this.terminal = new Terminal({
 			cols,
 			rows,
 			allowProposedApi: true,
+			theme: {
+				// Standard ANSI colors that match typical terminal expectations
+				black: '#000000',
+				red: '#ff0000',
+				green: '#00ff00', 
+				yellow: '#ffff00',
+				blue: '#0000ff',
+				magenta: '#ff00ff',
+				cyan: '#00ffff',
+				white: '#ffffff',
+				brightBlack: '#808080',
+				brightRed: '#ff8080',
+				brightGreen: '#80ff80',
+				brightYellow: '#ffff80',
+				brightBlue: '#8080ff',
+				brightMagenta: '#ff80ff',
+				brightCyan: '#80ffff',
+				brightWhite: '#ffffff',
+				foreground: '#ffffff',
+				background: '#000000'
+			}
 		});
+
+		// For headless mode, we need to manually initialize the terminal buffer
+		// The terminal should be ready to receive data without needing DOM
 
 		this.stdin = new MockReadStream();
 		this.stdout = new MockWriteStream(this.terminal, this.stdin, cols, rows);
@@ -266,15 +290,27 @@ export class TestTerminal extends EventEmitter implements ProcessLike {
 	 */
 	getStaticANSI(): string {
 		const cellBuffer = this.xtermToCellBuffer();
-		// Use RGB color depth to match our test environment
-		const fullOutput = generateANSI(cellBuffer, "rgb");
+		// Use same color depth detection logic as TermDOM
+		const colorDepth = this.detectColorDepth();
+		const fullOutput = generateANSI(cellBuffer, colorDepth);
+		return stripControlCodes(fullOutput);
+	}
 
-		// Strip terminal control sequences for cleaner test output
-		return fullOutput
-			.replace(/\x1b\[\?2026[hl]/g, "") // Remove sync start/end
-			.replace(/\x1b\[\?25[hl]/g, "") // Remove cursor hide/show
-			.replace(/\x1b\[H/g, "") // Remove home cursor
-			.replace(/\x1b\[\d+C/g, ""); // Remove cursor forward
+	/**
+	 * Detect color depth from environment (same logic as TermDOM)
+	 */
+	private detectColorDepth(): ColorDepth {
+		const colorterm = this.env.COLORTERM;
+		if (colorterm === "truecolor" || colorterm === "24bit") {
+			return "rgb";
+		}
+
+		const term = this.env.TERM || "";
+		if (term.includes("256color") || term.includes("256")) {
+			return "256";
+		}
+
+		return "ansi";
 	}
 
 	/**
@@ -296,4 +332,15 @@ export class TestTerminal extends EventEmitter implements ProcessLike {
 		const ansiFilename = `${testName}.ansi`;
 		writeFileSync(join(ansiDir, ansiFilename), ansiOutput);
 	}
+}
+
+export function stripControlCodes(ansi: string): string {
+	return ansi
+		.replace(/\x1b\[\?2026[hl]/g, "") // Remove sync start/end
+		.replace(/\x1b\[\?25[hl]/g, "") // Remove cursor hide/show
+		.replace(/\x1b\[H/g, "") // Remove home cursor
+		.replace(/\x1b\[(\d+)C/g, (_, count) => " ".repeat(parseInt(count))) // Replace cursor forward with spaces
+		.replace(/\x1b\[K/g, "") // Remove clear line sequences
+		.replace(/\x1b\[[0-9;]*H/g, "") // Remove cursor positioning
+		.replace(/\r(?!\n)/g, ""); // Remove standalone carriage returns
 }

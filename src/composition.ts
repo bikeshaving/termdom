@@ -15,6 +15,7 @@ export const SHADOW_ROOT_SYMBOL = Symbol.for("TermDOM.shadowRoot");
 export const PSEUDO_ELEMENTS_SYMBOL = Symbol.for("TermDOM.pseudoElements");
 export const PSEUDO_METADATA_SYMBOL = Symbol.for("TermDOM.pseudoMetadata");
 
+// TODO: delete this and walk the expanded DOM by default
 // Extended NodeFilter constants
 export const NodeFilterExtended = {
 	SHOW_SHADOW_DOM: 0x80000000, // Bit 31
@@ -31,11 +32,10 @@ export class ExpandedTreeWalker {
 	declare readonly root: Node;
 	declare readonly whatToShow: number;
 	declare readonly filter: NodeFilter | null;
-	declare currentNode: Node;
-
-	// Private fields (defined in constructor)
+	currentNode: Node;
 	#window!: DOMWindow;
 
+	// Private fields (defined in constructor)
 	constructor(
 		window: DOMWindow,
 		root: Node,
@@ -70,7 +70,6 @@ export class ExpandedTreeWalker {
 	nextNode(): Node | null {
 		let node = this.currentNode;
 
-		// eslint-disable-next-line no-constant-condition
 		while (true) {
 			// Try to get first child (including extended children)
 			const firstChild = this.#getFirstChild(node);
@@ -103,10 +102,7 @@ export class ExpandedTreeWalker {
 			let parent = this.#getParent(node);
 			while (parent && parent !== this.root) {
 				// Before trying parent's next sibling, check if parent element has ::after
-				if (
-					parent.nodeType === parent.ELEMENT_NODE &&
-					this.whatToShow & NodeFilterExtended.SHOW_PSEUDO_ELEMENTS
-				) {
+				if (parent.nodeType === parent.ELEMENT_NODE) {
 					const afterElement = this.#getPseudoElement(
 						parent as Element,
 						"::after",
@@ -294,40 +290,28 @@ export class ExpandedTreeWalker {
 		const element = node as Element;
 
 		// Check for ::marker pseudo-element first (document order, only on elements with display: list-item)
-		if (this.whatToShow & NodeFilterExtended.SHOW_PSEUDO_ELEMENTS) {
-			if (this.#hasListItemDisplay(element)) {
-				const markerElement = this.#getPseudoElement(element, "::marker");
-				if (markerElement) {
-					return markerElement;
-				}
+		if (this.#hasListItemDisplay(element)) {
+			const markerElement = this.#getPseudoElement(element, "::marker");
+			if (markerElement) {
+				return markerElement;
 			}
 		}
 
-		// Check for ::before pseudo-element (after ::marker)
-		if (this.whatToShow & NodeFilterExtended.SHOW_PSEUDO_ELEMENTS) {
-			const beforeElement = this.#getPseudoElement(element, "::before");
-			if (beforeElement) {
-				return beforeElement;
-			}
+		const beforeElement = this.#getPseudoElement(element, "::before");
+		if (beforeElement) {
+			return beforeElement;
 		}
 
 		// Check for shadow DOM content
-		if (this.whatToShow & NodeFilterExtended.SHOW_SHADOW_DOM) {
-			const shadowRoot = this.#getShadowRoot(element);
-			if (shadowRoot && shadowRoot.firstChild) {
-				return shadowRoot.firstChild;
-			}
+		const shadowRoot = this.#getShadowRoot(element);
+		if (shadowRoot && shadowRoot.firstChild) {
+			return shadowRoot.firstChild;
 		}
 
 		// Handle slot assigned content as virtual children (stateless approach)
-		if (
-			element.nodeName === "SLOT" &&
-			this.whatToShow & NodeFilterExtended.SHOW_SLOTS
-		) {
-			const slotContent = this.#getSlotContent(element as HTMLSlotElement);
-			if (slotContent.length > 0) {
-				return slotContent[0];
-			}
+		const slotContent = this.#getSlotContent(element as HTMLSlotElement);
+		if (slotContent.length > 0) {
+			return slotContent[0];
 		}
 
 		// Regular first child
@@ -345,18 +329,13 @@ export class ExpandedTreeWalker {
 		const element = node as Element;
 
 		// Check for ::after pseudo-element first (reverse document order)
-		if (this.whatToShow & NodeFilterExtended.SHOW_PSEUDO_ELEMENTS) {
-			const afterElement = this.#getPseudoElement(element, "::after");
-			if (afterElement) {
-				return afterElement;
-			}
+		const afterNode = this.#getPseudoElement(element, "::after");
+		if (afterNode) {
+			return afterNode;
 		}
 
 		// Handle slot assigned content as virtual children (stateless approach)
-		if (
-			element.nodeName === "SLOT" &&
-			this.whatToShow & NodeFilterExtended.SHOW_SLOTS
-		) {
+		if (element.nodeName === "SLOT") {
 			const slotContent = this.#getSlotContent(element as HTMLSlotElement);
 			if (slotContent.length > 0) {
 				return slotContent[slotContent.length - 1];
@@ -370,11 +349,9 @@ export class ExpandedTreeWalker {
 		}
 
 		// Check for shadow DOM content
-		if (this.whatToShow & NodeFilterExtended.SHOW_SHADOW_DOM) {
-			const shadowRoot = this.#getShadowRoot(element);
-			if (shadowRoot && shadowRoot.lastChild) {
-				return shadowRoot.lastChild;
-			}
+		const shadowRoot = this.#getShadowRoot(element);
+		if (shadowRoot && shadowRoot.lastChild) {
+			return shadowRoot.lastChild;
 		}
 
 		return null;
@@ -396,22 +373,19 @@ export class ExpandedTreeWalker {
 					return beforeElement;
 				}
 				// ::marker -> first regular child or shadow content (if no ::before)
-				if (this.whatToShow & NodeFilterExtended.SHOW_SHADOW_DOM) {
-					const shadowRoot = this.#getShadowRoot(hostElement);
-					if (shadowRoot && shadowRoot.firstChild) {
-						return shadowRoot.firstChild;
-					}
+				const shadowRoot = this.#getShadowRoot(hostElement);
+				if (shadowRoot && shadowRoot.firstChild) {
+					return shadowRoot.firstChild;
 				}
+
 				return hostElement.firstChild;
 			}
 
 			if (pseudoMeta.pseudoType === "::before") {
 				// ::before -> first regular child or shadow content
-				if (this.whatToShow & NodeFilterExtended.SHOW_SHADOW_DOM) {
-					const shadowRoot = this.#getShadowRoot(hostElement);
-					if (shadowRoot && shadowRoot.firstChild) {
-						return shadowRoot.firstChild;
-					}
+				const shadowRoot = this.#getShadowRoot(hostElement);
+				if (shadowRoot && shadowRoot.firstChild) {
+					return shadowRoot.firstChild;
 				}
 
 				return hostElement.firstChild;
@@ -453,22 +427,18 @@ export class ExpandedTreeWalker {
 		const parent = this.#getParent(node);
 		if (parent && parent.nodeType === parent.ELEMENT_NODE) {
 			const parentElement = parent as Element;
+			const afterElement = this.#getPseudoElement(parentElement, "::after");
+			if (afterElement) {
+				// Only transition to ::after if this is truly the last content
+				// Check if this node is the last non-pseudo child
+				let lastChild = parent.lastChild;
+				while (lastChild && this.#getPseudoMetadata(lastChild)) {
+					// Skip over any pseudo elements to find the last real child
+					lastChild = lastChild.previousSibling;
+				}
 
-			// Check if this node is the last regular child and we need ::after
-			if (this.whatToShow & NodeFilterExtended.SHOW_PSEUDO_ELEMENTS) {
-				const afterElement = this.#getPseudoElement(parentElement, "::after");
-				if (afterElement) {
-					// Only transition to ::after if this is truly the last content
-					// Check if this node is the last non-pseudo child
-					let lastChild = parent.lastChild;
-					while (lastChild && this.#getPseudoMetadata(lastChild)) {
-						// Skip over any pseudo elements to find the last real child
-						lastChild = lastChild.previousSibling;
-					}
-
-					if (node === lastChild) {
-						return afterElement;
-					}
+				if (node === lastChild) {
+					return afterElement;
 				}
 			}
 		}
@@ -491,11 +461,9 @@ export class ExpandedTreeWalker {
 					return hostElement.lastChild;
 				}
 
-				if (this.whatToShow & NodeFilterExtended.SHOW_SHADOW_DOM) {
-					const shadowRoot = this.#getShadowRoot(hostElement);
-					if (shadowRoot && shadowRoot.lastChild) {
-						return shadowRoot.lastChild;
-					}
+				const shadowRoot = this.#getShadowRoot(hostElement);
+				if (shadowRoot && shadowRoot.lastChild) {
+					return shadowRoot.lastChild;
 				}
 
 				return null;
@@ -525,10 +493,7 @@ export class ExpandedTreeWalker {
 			const parentElement = parent as Element;
 
 			// Check if this was the first child and we need pseudo-elements
-			if (
-				node === parent.firstChild &&
-				this.whatToShow & NodeFilterExtended.SHOW_PSEUDO_ELEMENTS
-			) {
+			if (node === parent.firstChild) {
 				// Try ::before first
 				const beforeElement = this.#getPseudoElement(parentElement, "::before");
 				if (beforeElement) {
@@ -655,7 +620,7 @@ export class ExpandedTreeWalker {
 		const pseudos = (element as any)[PSEUDO_ELEMENTS_SYMBOL] as
 			| Record<string, Node>
 			| undefined;
-		return pseudos?.[pseudoType] || null;
+		return pseudos?.[pseudoType] ?? null;
 	}
 
 	/**
@@ -725,11 +690,9 @@ export class ExpandedTreeWalker {
 		}
 
 		// Check for shadow DOM content (but not ::after)
-		if (this.whatToShow & NodeFilterExtended.SHOW_SHADOW_DOM) {
-			const shadowRoot = this.#getShadowRoot(element);
-			if (shadowRoot && shadowRoot.lastChild) {
-				return shadowRoot.lastChild;
-			}
+		const shadowRoot = this.#getShadowRoot(element);
+		if (shadowRoot && shadowRoot.lastChild) {
+			return shadowRoot.lastChild;
 		}
 
 		return null;
@@ -867,9 +830,7 @@ export function initializeShadowDOM(window: DOMWindow): void {
 			shadowRoot = createShadowRoot(window, this, options);
 		}
 
-		// Cache the shadow root using symbol key
 		setShadowRoot(this, shadowRoot);
-
 		return shadowRoot;
 	};
 }
@@ -893,7 +854,6 @@ function createShadowRoot(
 		delegatesFocus: {value: !!options.delegatesFocus, writable: false},
 	});
 
-	// Initialize as a DocumentFragment
 	Object.setPrototypeOf(shadowRoot, ShadowRootConstructor.prototype);
 
 	return shadowRoot;

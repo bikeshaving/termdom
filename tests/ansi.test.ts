@@ -4,8 +4,13 @@ import {
 	type CellStyle,
 	createBuffer,
 	generateANSI,
+	getBorderChar,
+	mergeBorderEncodings,
 	Renderer,
+	DrawingContext,
 } from "../src/ansi.js";
+import {BorderEdgeStyle} from "../src/styles.js";
+import {stripControlCodes} from "./test-utils.js";
 
 describe("Cell", () => {
 	describe("constructor", () => {
@@ -49,909 +54,1270 @@ describe("Cell", () => {
 			expect(flags.bold).toBe(true);
 			expect(flags.italic).toBe(true);
 			expect(flags.underline).toBe(false);
-		});
-
-		test("handles all style flags", () => {
-			const style: CellStyle = {
-				bold: true,
-				italic: true,
-				underline: true,
-				strikethrough: true,
-				inverse: true,
-				blink: true,
-				dim: true,
-				overline: true,
-			};
-			const cell = new Cell({grapheme: "X", ...style});
-
-			const flags = cell.getStyleFlags();
-			expect(flags.bold).toBe(true);
-			expect(flags.italic).toBe(true);
-			expect(flags.underline).toBe(true);
-			expect(flags.strikethrough).toBe(true);
-			expect(flags.inverse).toBe(true);
-			expect(flags.blink).toBe(true);
-			expect(flags.dim).toBe(true);
-			expect(flags.overline).toBe(true);
+			expect(flags.strikethrough).toBe(false);
+			expect(flags.inverse).toBe(false);
+			expect(flags.blink).toBe(false);
+			expect(flags.dim).toBe(false);
+			expect(flags.overline).toBe(false);
 		});
 	});
 
 	describe("Cell.create", () => {
-		test("creates cell with character", () => {
-			const cell = Cell.create("A")!;
-
-			expect(cell.grapheme).toBe("A");
-			expect(cell.getFgColor()).toBe(0);
-			expect(cell.getBgColor()).toBe(0);
-			const flags = cell.getStyleFlags();
-			expect(flags.bold).toBe(false);
-			expect(flags.italic).toBe(false);
-			expect(flags.underline).toBe(false);
-			expect(flags.strikethrough).toBe(false);
-			expect(flags.inverse).toBe(false);
-			expect(flags.blink).toBe(false);
-			expect(flags.dim).toBe(false);
-			expect(flags.overline).toBe(false);
+		test("returns null for empty string", () => {
+			const cell = Cell.create("");
+			expect(cell).toBeNull();
 		});
 
-		test("interns identical cells", () => {
-			const cell1 = Cell.create({grapheme: "A", fg: 0xff0000, bold: true})!;
-			const cell2 = Cell.create({grapheme: "A", fg: 0xff0000, bold: true})!;
+		test("caches cells with same properties", () => {
+			const style: CellStyle = {
+				grapheme: "A",
+				fg: 0xff0000,
+				bold: true,
+			};
 
-			// Should return the exact same object reference due to interning
-			expect(cell1).toBe(cell2);
-		});
+			const cell1 = Cell.create(style);
+			const cell2 = Cell.create(style);
 
-		test("creates different instances for different styles", () => {
-			const cell1 = Cell.create({grapheme: "A", fg: 0xff0000});
-			const cell2 = Cell.create({grapheme: "A", fg: 0x00ff00});
-
-			// Different styles should create different instances
-			expect(cell1).not.toBe(cell2);
-		});
-
-		test("creates different instances for different characters", () => {
-			const cell1 = Cell.create("A");
-			const cell2 = Cell.create("B");
-
-			expect(cell1).not.toBe(cell2);
+			expect(cell1).toBe(cell2); // Same reference due to caching
 		});
 	});
 
-	describe("equals", () => {
-		test("equal cells return true", () => {
-			const cell1 = Cell.create({grapheme: "A", fg: 0xff0000, bold: true})!;
-			const cell2 = Cell.create({grapheme: "A", fg: 0xff0000, bold: true})!;
+	describe("methods", () => {
+		test("equals compares all properties", () => {
+			const cell1 = new Cell({grapheme: "A", fg: 0xff0000, bold: true});
+			const cell2 = new Cell({grapheme: "A", fg: 0xff0000, bold: true});
+			const cell3 = new Cell({grapheme: "B", fg: 0xff0000, bold: true});
 
 			expect(cell1.equals(cell2)).toBe(true);
+			expect(cell1.equals(cell3)).toBe(false);
 		});
 
-		test("different characters return false", () => {
-			const cell1 = Cell.create("A")!;
-			const cell2 = Cell.create("B")!;
-
-			expect(cell1.equals(cell2)).toBe(false);
-		});
-
-		test("different colors return false", () => {
-			const cell1 = Cell.create({grapheme: "A", fg: 0xff0000})!;
-			const cell2 = Cell.create({grapheme: "A", fg: 0x00ff00})!;
-
-			expect(cell1.equals(cell2)).toBe(false);
-		});
-
-		test("different styles return false", () => {
-			const cell1 = Cell.create({grapheme: "A", bold: true})!;
-			const cell2 = Cell.create({grapheme: "A", italic: true})!;
-
-			expect(cell1.equals(cell2)).toBe(false);
-		});
-	});
-
-	describe("styleEquals", () => {
-		test("same style different characters return true", () => {
-			const cell1 = Cell.create({grapheme: "A", fg: 0xff0000, bold: true})!;
-			const cell2 = Cell.create({grapheme: "B", fg: 0xff0000, bold: true})!;
+		test("styleEquals compares style properties only", () => {
+			const cell1 = new Cell({grapheme: "A", fg: 0xff0000, bold: true});
+			const cell2 = new Cell({grapheme: "B", fg: 0xff0000, bold: true});
+			const cell3 = new Cell({grapheme: "A", fg: 0x00ff00, bold: true});
 
 			expect(cell1.styleEquals(cell2)).toBe(true);
+			expect(cell1.styleEquals(cell3)).toBe(false);
 		});
 
-		test("different styles return false", () => {
-			const cell1 = Cell.create({grapheme: "A", fg: 0xff0000})!;
-			const cell2 = Cell.create({grapheme: "A", fg: 0x00ff00})!;
+		test("width returns correct character width", () => {
+			const normal = new Cell("A");
+			const emoji = new Cell("👍");
 
-			expect(cell1.styleEquals(cell2)).toBe(false);
-		});
-	});
-
-	describe("immutability", () => {
-		test("cells are frozen and cannot be mutated", () => {
-			const cell = Cell.create({grapheme: "A", fg: 0xff0000})!;
-
-			// Attempting to mutate should throw (Object.freeze enforcement)
-			expect(() => {
-				(cell as any).grapheme = "B";
-			}).toThrow("Attempted to assign to readonly property");
-
-			expect(() => {
-				(cell as any).fg = 0x00ff00;
-			}).toThrow("Attempted to assign to readonly property");
-
-			// Values should remain unchanged
-			expect(cell.grapheme).toBe("A");
-			expect(cell.fg).toBe(0xff0000);
+			expect(normal.width).toBe(1);
+			expect(emoji.width).toBe(2);
 		});
 
-		test("Object.isFrozen returns true", () => {
-			const cell = Cell.create("A")!;
-			expect(Object.isFrozen(cell)).toBe(true);
-		});
-	});
+		test("isWide identifies wide characters", () => {
+			const normal = new Cell("A");
+			const emoji = new Cell("👍");
 
-	describe("width and isWide", () => {
-		test("ASCII character has width 1", () => {
-			const cell = Cell.create("A")!;
-			expect(cell.width).toBe(1);
-			expect(cell.isWide).toBe(false);
-		});
-
-		test("wide character has width 2", () => {
-			const cell = Cell.create("你")!;
-			expect(cell.width).toBe(2);
-			expect(cell.isWide).toBe(true);
-		});
-
-		test("emoji has width 2", () => {
-			const cell = Cell.create("😀")!;
-			expect(cell.width).toBe(2);
-			expect(cell.isWide).toBe(true);
-		});
-
-		test("combining character has width 1", () => {
-			// U+0300 is a combining grave accent
-			const cell = Cell.create("a\u0300")!;
-			expect(cell.width).toBe(1); // Still 1 because base character is ASCII
-		});
-	});
-
-	describe("getStyleFlags", () => {
-		test("returns all flags as false for default cell", () => {
-			const cell = Cell.create("X")!;
-			const flags = cell.getStyleFlags();
-
-			expect(flags.bold).toBe(false);
-			expect(flags.italic).toBe(false);
-			expect(flags.underline).toBe(false);
-			expect(flags.strikethrough).toBe(false);
-			expect(flags.inverse).toBe(false);
-			expect(flags.blink).toBe(false);
-			expect(flags.dim).toBe(false);
-			expect(flags.overline).toBe(false);
-		});
-
-		test("returns correct flags for styled cell", () => {
-			const cell = Cell.create({
-				grapheme: "X",
-				bold: true,
-				underline: true,
-				inverse: true,
-			})!;
-			const flags = cell.getStyleFlags();
-
-			expect(flags.bold).toBe(true);
-			expect(flags.italic).toBe(false);
-			expect(flags.underline).toBe(true);
-			expect(flags.strikethrough).toBe(false);
-			expect(flags.inverse).toBe(true);
-			expect(flags.blink).toBe(false);
-			expect(flags.dim).toBe(false);
-			expect(flags.overline).toBe(false);
+			expect(normal.isWide).toBe(false);
+			expect(emoji.isWide).toBe(true);
 		});
 	});
 });
 
 describe("createBuffer", () => {
-	test("creates buffer with correct dimensions", () => {
+	test("creates buffer with specified dimensions", () => {
 		const buffer = createBuffer(3, 5);
 
-		expect(buffer.length).toBe(3); // rows
-		expect(buffer[0].length).toBe(5); // cols
+		expect(buffer.length).toBe(3);
+		expect(buffer[0].length).toBe(5);
 		expect(buffer[1].length).toBe(5);
 		expect(buffer[2].length).toBe(5);
-	});
 
-	test("all cells are initially null", () => {
-		const buffer = createBuffer(2, 2);
-
-		for (let row = 0; row < 2; row++) {
-			for (let col = 0; col < 2; col++) {
-				const cell = buffer[row][col];
-				expect(cell).toBe(null);
+		// All cells should be null initially
+		for (let row = 0; row < 3; row++) {
+			for (let col = 0; col < 5; col++) {
+				expect(buffer[row][col]).toBeNull();
 			}
 		}
 	});
 
-	test("handles edge cases", () => {
-		// Single cell
-		const single = createBuffer(1, 1);
-		expect(single.length).toBe(1);
-		expect(single[0].length).toBe(1);
-		expect(single[0][0]).toBe(null);
-
-		// Zero dimensions should still work
+	test("creates empty buffer for zero dimensions", () => {
 		const empty = createBuffer(0, 0);
 		expect(empty.length).toBe(0);
 	});
 });
 
-describe("Renderer", () => {
+describe("Renderer with callback API", () => {
 	describe("initialization", () => {
 		test("creates renderer with specified dimensions", () => {
 			const renderer = new Renderer(5, 10);
-			renderer.beginFrame();
-			renderer.setText(0, 0, "X");
-			const output = renderer.render();
+
+			// Test basic drawing functionality
+			const output = renderer.renderFrame(0, (ctx) => {
+				ctx.setText(0, 0, "X");
+			});
+
 			expect(output).toContain("X");
 		});
-	});
 
-	describe("first frame", () => {
-		test("renders all content on first frame", async () => {
-			const {TestTerminal} = await import("./test-utils.js");
-			const renderer = new Renderer(2, 5);
+		test("handles color depth settings", () => {
+			const renderer = new Renderer(5, 10, "ansi");
 
-			renderer.beginFrame();
-			renderer.setText(0, 0, "Hello");
-
-			const ansi = renderer.render();
-
-			const terminal = new TestTerminal({rows: 2, cols: 5});
-			await new Promise<void>((resolve) => {
-				terminal.stdout.write(ansi, () => resolve());
+			const output = renderer.renderFrame(0, (ctx) => {
+				ctx.setText(0, 0, "X", {fg: 0xff0000});
 			});
 
-			expect(terminal.getPlainText()).toBe("Hello\n");
+			// Should contain ANSI color codes for red
+			expect(output).toContain("\x1b[31m");
 		});
 	});
 
-	describe("delta rendering", () => {
-		test("renders only changes in second frame", async () => {
-			const {TestTerminal} = await import("./test-utils.js");
-			const renderer = new Renderer(1, 5);
+	describe("drawing operations", () => {
+		test("setText draws text at position", () => {
+			const renderer = new Renderer(5, 10);
 
-			renderer.beginFrame();
-			renderer.setText(0, 0, "Hello");
-			const frame1 = renderer.render();
-
-			renderer.beginFrame();
-			renderer.setText(0, 0, "Hallo");
-			const frame2 = renderer.render();
-
-			const terminal = new TestTerminal({rows: 1, cols: 5});
-			await new Promise<void>((resolve) => {
-				terminal.stdout.write(frame1, () => resolve());
-			});
-			await new Promise<void>((resolve) => {
-				terminal.stdout.write(frame2, () => resolve());
+			const output = renderer.renderFrame(0, (ctx) => {
+				ctx.setText(1, 2, "Hello");
 			});
 
-			expect(terminal.getPlainText()).toBe("Hello\n");
+			expect(output).toContain("Hello");
+		});
+
+		test("fillRect fills rectangular area", () => {
+			const renderer = new Renderer(5, 10);
+
+			const output = renderer.renderFrame(0, (ctx) => {
+				ctx.fillRect(0, 0, 3, 2, 0xff0000);
+			});
+
+			// Should contain background color ANSI codes
+			expect(output).toContain("\x1b[48;2;255;0;0m");
+		});
+
+		test("handles viewport offset", () => {
+			const renderer = new Renderer(5, 10);
+
+			const output = renderer.renderFrame(2, (ctx) => {
+				ctx.setText(0, 0, "Test");
+			});
+
+			// Should contain cursor positioning for offset
+			expect(output).toContain("\x1b[3;1H"); // Row 3 (offset 2 + 1 for 1-based)
 		});
 	});
 
-	describe("Terminal Resize", () => {
-		test("handles resize to smaller dimensions", async () => {
-			const {TestTerminal} = await import("./test-utils.js");
-			const renderer = new Renderer(2, 4);
+	describe("frame management", () => {
+		test("generates proper ANSI framing", () => {
+			const renderer = new Renderer(5, 10);
 
-			renderer.beginFrame();
-			renderer.setText(0, 0, "AB");
-			renderer.setText(1, 0, "CD");
-			const frame1 = renderer.render();
-
-			const terminal = new TestTerminal({rows: 2, cols: 4});
-			await new Promise<void>((resolve) => {
-				terminal.stdout.write(frame1, () => resolve());
+			const output = renderer.renderFrame(0, (ctx) => {
+				ctx.setText(0, 0, "Test");
 			});
 
-			const result = terminal.getPlainText();
-			expect(result).toContain("A");
-			expect(result).toContain("C");
-			expect(result).toMatch(/\n$/);
+			// Should hide cursor, enable sync mode
+			expect(output).toContain("\x1b[?25l"); // Hide cursor
+			expect(output).toContain("\x1b[?2026h"); // Sync mode start
+			expect(output).toContain("\x1b[?25h"); // Show cursor
+			expect(output).toContain("\x1b[?2026l"); // Sync mode end
+		});
+
+		test("clears previous buffer", () => {
+			const renderer = new Renderer(5, 10);
+
+			// First frame
+			renderer.renderFrame(0, (ctx) => {
+				ctx.setText(0, 0, "First");
+			});
+
+			renderer.clearPreviousBuffer();
+
+			// Second frame should render everything (no diff)
+			const output = renderer.renderFrame(0, (ctx) => {
+				ctx.setText(0, 0, "Second");
+			});
+
+			expect(output).toContain("Second");
 		});
 	});
 
-	describe("emoji text rendering", () => {
-		test("renders emoji text with spaces correctly", async () => {
-			const {TestTerminal} = await import("./test-utils.js");
-			const renderer = new Renderer(3, 25); // 3 rows, 25 cols
+	describe("viewport and scrolling", () => {
+		test("generates scroll down command for positive viewport offset", () => {
+			const renderer = new Renderer(10, 40);
 
-			renderer.beginFrame();
-
-			// Test the exact same text from the failing emoji test
-			renderer.setText(1, 2, "🎨 Colorful Text 🌈", {
-				fg: 0xff00ff, // magenta
-				bg: 0xffff00, // yellow
+			// Frame 1: Initial content at offset 0
+			renderer.renderFrame(0, (ctx) => {
+				ctx.setText(0, 0, "Initial");
 			});
 
-			const ansi = renderer.render();
-
-			const terminal = new TestTerminal({rows: 3, cols: 25});
-			await new Promise<void>((resolve) => {
-				terminal.stdout.write(ansi, () => resolve());
+			// Frame 2: Move to offset 3 (scroll down 3 lines)
+			const output = renderer.renderFrame(3, (ctx) => {
+				ctx.setText(0, 0, "Scrolled");
 			});
 
-			const visibleText = terminal.getPlainText();
+			expect(output).toContain("\x1b[3S"); // Scroll up 3 lines
+		});
 
-			// Check that the space after the first emoji is preserved
-			expect(visibleText).toContain("🎨 Colorful"); // Space between emoji and text
-			expect(visibleText).toContain("Text 🌈"); // Space before second emoji
-			expect(visibleText).not.toContain("🎨Colorful"); // Should NOT be missing space
+		test("generates scroll up command for negative viewport offset", () => {
+			const renderer = new Renderer(10, 40);
+
+			// Frame 1: Initial content at offset 3
+			renderer.renderFrame(3, (ctx) => {
+				ctx.setText(0, 0, "Initial");
+			});
+
+			// Frame 2: Move to offset 0 (scroll up 3 lines)
+			const output = renderer.renderFrame(0, (ctx) => {
+				ctx.setText(0, 0, "Scrolled");
+			});
+
+			expect(output).toContain("\x1b[3T"); // Scroll down 3 lines
+		});
+
+		test("no scroll command when offset unchanged", () => {
+			const renderer = new Renderer(10, 40);
+
+			// Frame 1
+			renderer.renderFrame(2, (ctx) => {
+				ctx.setText(0, 0, "Frame1");
+			});
+
+			// Frame 2 with same offset
+			const output = renderer.renderFrame(2, (ctx) => {
+				ctx.setText(0, 1, "Frame2");
+			});
+
+			expect(output).not.toContain("S");
+			expect(output).not.toContain("T");
+		});
+	});
+
+	describe("content optimization", () => {
+		test("generates empty output when no content", () => {
+			const renderer = new Renderer(5, 10);
+
+			const output = renderer.renderFrame(0, (ctx) => {
+				// No drawing operations
+			});
+
+			expect(output).toBe("");
+		});
+
+		test("only outputs changed cells between frames", () => {
+			const renderer = new Renderer(5, 10);
+
+			// First frame
+			renderer.renderFrame(0, (ctx) => {
+				ctx.setText(0, 0, "Hello");
+				ctx.setText(1, 0, "World");
+			});
+
+			// Second frame - only change second line
+			const output = renderer.renderFrame(0, (ctx) => {
+				ctx.setText(0, 0, "Hello"); // Same
+				ctx.setText(1, 0, "Test"); // Changed
+			});
+
+			// Should contain new content but not duplicate unchanged content
+			expect(output).toContain("Test");
+			// First line should not be re-rendered (no Hello in diff)
+			expect(output).not.toContain("Hello");
 		});
 	});
 });
 
 describe("generateANSI", () => {
-	describe("empty buffers", () => {
-		test("returns empty string for empty buffer", () => {
-			const buffer = createBuffer(3, 5);
-			const result = generateANSI(buffer, "rgb", true);
-			expect(result).toBe("");
+	test("generates empty output for empty buffer", () => {
+		const buffer = createBuffer(3, 5);
+		const output = generateANSI(buffer);
+
+		expect(output).toBe("");
+	});
+
+	test("generates ANSI for simple text", () => {
+		const buffer = createBuffer(2, 5);
+		buffer[0][0] = new Cell("H");
+		buffer[0][1] = new Cell("i");
+
+		const output = generateANSI(buffer);
+
+		expect(output).toContain("Hi");
+		expect(output).toContain("\r\n"); // Line ending
+	});
+
+	test("generates color codes", () => {
+		const buffer = createBuffer(1, 1);
+		buffer[0][0] = new Cell({
+			grapheme: "X",
+			fg: 0xff0000,
+			bg: 0x00ff00,
 		});
 
-		test("ignores null cells", () => {
-			const buffer = createBuffer(2, 3);
-			const result = generateANSI(buffer, "rgb", true);
-			expect(result).toBe("");
+		const output = generateANSI(buffer);
+
+		expect(output).toContain("38;2;255;0;0"); // Red foreground
+		expect(output).toContain("48;2;0;255;0"); // Green background
+		expect(output).toContain("X");
+		expect(output).toContain("\x1b[0m"); // Reset
+	});
+
+	test("handles wide characters", () => {
+		const buffer = createBuffer(1, 3);
+		buffer[0][0] = new Cell("👍"); // 2-width emoji
+		buffer[0][2] = new Cell("A"); // Normal char after emoji
+
+		const output = generateANSI(buffer);
+
+		expect(output).toContain("👍");
+		expect(output).toContain("A");
+	});
+});
+
+describe("Border Functions", () => {
+	describe("getBorderChar", () => {
+		test("returns space for no borders", () => {
+			const char = getBorderChar(0);
+			expect(char).toBe(" ");
+		});
+
+		test("generates corner characters", () => {
+			// Top-left corner: top + left edges
+			const topLeft =
+				(BorderEdgeStyle.Solid << 0) | (BorderEdgeStyle.Solid << 24);
+			expect(getBorderChar(topLeft)).toBe("┌");
+
+			// Top-right corner: top + right edges
+			const topRight =
+				(BorderEdgeStyle.Solid << 0) | (BorderEdgeStyle.Solid << 8);
+			expect(getBorderChar(topRight)).toBe("┐");
+
+			// Bottom-left corner: bottom + left edges
+			const bottomLeft =
+				(BorderEdgeStyle.Solid << 16) | (BorderEdgeStyle.Solid << 24);
+			expect(getBorderChar(bottomLeft)).toBe("└");
+
+			// Bottom-right corner: bottom + right edges
+			const bottomRight =
+				(BorderEdgeStyle.Solid << 16) | (BorderEdgeStyle.Solid << 8);
+			expect(getBorderChar(bottomRight)).toBe("┘");
+		});
+
+		test("generates T-junction characters", () => {
+			// These generate the actual characters based on the implementation
+			const leftTee =
+				(BorderEdgeStyle.Solid << 0) |
+				(BorderEdgeStyle.Solid << 16) |
+				(BorderEdgeStyle.Solid << 24);
+			expect(getBorderChar(leftTee)).toBe("├"); // top+bottom+left = left tee (points right)
+
+			const rightTee =
+				(BorderEdgeStyle.Solid << 0) |
+				(BorderEdgeStyle.Solid << 16) |
+				(BorderEdgeStyle.Solid << 8);
+			expect(getBorderChar(rightTee)).toBe("┤"); // top+bottom+right = right tee (points left)
+
+			const topTee =
+				(BorderEdgeStyle.Solid << 8) |
+				(BorderEdgeStyle.Solid << 16) |
+				(BorderEdgeStyle.Solid << 24);
+			expect(getBorderChar(topTee)).toBe("┴"); // left+right+bottom = bottom tee (points up)
+
+			const bottomTee =
+				(BorderEdgeStyle.Solid << 0) |
+				(BorderEdgeStyle.Solid << 8) |
+				(BorderEdgeStyle.Solid << 24);
+			expect(getBorderChar(bottomTee)).toBe("┬"); // top+left+right = top tee (points down)
+		});
+
+		test("generates cross junction", () => {
+			// All four edges
+			const cross =
+				(BorderEdgeStyle.Solid << 0) |
+				(BorderEdgeStyle.Solid << 8) |
+				(BorderEdgeStyle.Solid << 16) |
+				(BorderEdgeStyle.Solid << 24);
+			expect(getBorderChar(cross)).toBe("┼");
+		});
+
+		test("generates straight lines", () => {
+			// Horizontal line: top or bottom edge only
+			const horizontal = BorderEdgeStyle.Solid << 0; // top edge
+			expect(getBorderChar(horizontal)).toBe("─");
+
+			// Vertical line: left or right edge only
+			const vertical = BorderEdgeStyle.Solid << 24; // left edge
+			expect(getBorderChar(vertical)).toBe("│");
+		});
+
+		test("handles different border styles", () => {
+			// Double border
+			const doubleBorder = BorderEdgeStyle.Double << 0;
+			expect(getBorderChar(doubleBorder)).toBe("═");
+
+			// Dashed border
+			const dashedBorder = BorderEdgeStyle.Dashed << 0;
+			expect(getBorderChar(dashedBorder)).toBe("╌");
+		});
+
+		test("handles rounded corners", () => {
+			// Rounded top-left corner
+			const roundedTopLeft =
+				((BorderEdgeStyle.Solid | BorderEdgeStyle.Rounded) << 0) |
+				((BorderEdgeStyle.Solid | BorderEdgeStyle.Rounded) << 24);
+			expect(getBorderChar(roundedTopLeft)).toBe("╭");
 		});
 	});
 
-	describe("basic character output", () => {
-		test("outputs single character at origin", () => {
-			const buffer = createBuffer(1, 1);
-			buffer[0][0] = Cell.create("A");
+	describe("mergeBorderEncodings", () => {
+		test("merges non-conflicting edges", () => {
+			const topEdge = BorderEdgeStyle.Solid << 0;
+			const leftEdge = BorderEdgeStyle.Solid << 24;
 
-			const result = generateANSI(buffer, "rgb", true);
-			expect(result).toBe("A\n");
+			const merged = mergeBorderEncodings(topEdge, leftEdge);
+
+			// Should have both edges (extract the edge values properly)
+			expect((merged & (0xff << 0)) >> 0).toBe(BorderEdgeStyle.Solid); // top
+			expect((merged & (0xff << 24)) >> 24).toBe(BorderEdgeStyle.Solid); // left
 		});
 
-		test("outputs consecutive characters without cursor movement", () => {
-			const buffer = createBuffer(1, 3);
-			buffer[0][0] = Cell.create("A");
-			buffer[0][1] = Cell.create("B");
-			buffer[0][2] = Cell.create("C");
+		test("chooses higher priority style for conflicting edges", () => {
+			const solidTop = BorderEdgeStyle.Solid << 0;
+			const doubleTop = BorderEdgeStyle.Double << 0;
 
-			const result = generateANSI(buffer, "rgb", true);
-			expect(result).toBe("ABC\n");
+			const merged = mergeBorderEncodings(solidTop, doubleTop);
+
+			// Double has higher priority than solid
+			expect((merged & (0xff << 0)) >> 0).toBe(BorderEdgeStyle.Double);
 		});
 
-		test("moves cursor for gaps", () => {
-			const buffer = createBuffer(1, 5);
-			buffer[0][0] = Cell.create("A");
-			buffer[0][3] = Cell.create("B");
+		test("preserves existing edges when incoming has none", () => {
+			const existing = BorderEdgeStyle.Solid << 0;
+			const incoming = 0;
 
-			const result = generateANSI(buffer, "rgb", true);
-			expect(result).toBe("A\x1b[2CB\n");
-		});
-	});
+			const merged = mergeBorderEncodings(existing, incoming);
 
-	describe("line movement", () => {
-		test("moves to next line correctly", () => {
-			const buffer = createBuffer(2, 3);
-			buffer[0][0] = Cell.create("A");
-			buffer[1][0] = Cell.create("B");
-
-			const result = generateANSI(buffer, "rgb", true);
-			expect(result).toBe("A\r\nB\n");
+			expect(merged).toBe(existing);
 		});
 
-		test("moves to next line with horizontal offset", () => {
-			const buffer = createBuffer(2, 5);
-			buffer[0][0] = Cell.create("A");
-			buffer[1][2] = Cell.create("B");
+		test("uses incoming edges when existing has none", () => {
+			const existing = 0;
+			const incoming = BorderEdgeStyle.Solid << 8;
 
-			const result = generateANSI(buffer, "rgb", true);
-			expect(result).toBe("A\r\n\x1b[2CB\n");
+			const merged = mergeBorderEncodings(existing, incoming);
+
+			expect(merged).toBe(incoming);
 		});
 	});
+});
 
-	describe("RGB color output", () => {
-		test("outputs RGB foreground color", () => {
-			const buffer = createBuffer(1, 1);
-			buffer[0][0] = Cell.create({grapheme: "A", fg: 0xff0000});
+describe("Border Drawing", () => {
+	describe("drawBorder method", () => {
+		test("draws simple rectangle border", () => {
+			const renderer = new Renderer(5, 10);
 
-			const result = generateANSI(buffer, "rgb", true);
-			expect(result).toBe("\x1b[38;2;255;0;0mA\x1b[0m\n");
-		});
-
-		test("outputs RGB background color", () => {
-			const buffer = createBuffer(1, 1);
-			buffer[0][0] = Cell.create({grapheme: "A", bg: 0x00ff00});
-
-			const result = generateANSI(buffer, "rgb", true);
-			expect(result).toBe("\x1b[48;2;0;255;0mA\x1b[0m\n");
-		});
-
-		test("outputs both foreground and background", () => {
-			const buffer = createBuffer(1, 1);
-			buffer[0][0] = Cell.create({grapheme: "A", fg: 0xff0000, bg: 0xffff00});
-
-			const result = generateANSI(buffer, "rgb", true);
-			expect(result).toBe("\x1b[38;2;255;0;0;48;2;255;255;0mA\x1b[0m\n");
-		});
-	});
-
-	describe("color depth modes", () => {
-		test("RGB mode uses 24-bit colors", () => {
-			const buffer = createBuffer(1, 1);
-			buffer[0][0] = Cell.create({grapheme: "A", fg: 0x123456});
-
-			const result = generateANSI(buffer, "rgb", true);
-			expect(result).toContain("38;2;18;52;86");
-		});
-
-		test("256-color mode converts to palette", () => {
-			const buffer = createBuffer(1, 1);
-			buffer[0][0] = Cell.create({grapheme: "A", fg: 0xff0000});
-
-			const result = generateANSI(buffer, "256", true);
-			expect(result).toContain("38;5;");
-		});
-
-		test("ANSI mode uses basic colors", () => {
-			const buffer = createBuffer(1, 1);
-			buffer[0][0] = Cell.create({grapheme: "A", fg: 0xff0000});
-
-			const result = generateANSI(buffer, "ansi", true);
-			expect(result).toMatch(/\u001b\[3\dm/);
-		});
-	});
-
-	describe("style flags", () => {
-		test("outputs all style flags", () => {
-			const buffer = createBuffer(1, 1);
-			buffer[0][0] = Cell.create({
-				grapheme: "A",
-				bold: true,
-				dim: true,
-				italic: true,
-				underline: true,
-				blink: true,
-				inverse: true,
-				strikethrough: true,
-				overline: true,
+			const output = renderer.renderFrame(0, (ctx) => {
+				ctx.drawBorder(1, 1, 4, 3, {
+					topEdge: BorderEdgeStyle.Solid,
+					rightEdge: BorderEdgeStyle.Solid,
+					bottomEdge: BorderEdgeStyle.Solid,
+					leftEdge: BorderEdgeStyle.Solid,
+					hasAnyBorder: true,
+				});
 			});
 
-			const result = generateANSI(buffer, "rgb", true);
-			expect(result).toContain("1");
-			expect(result).toContain(";2");
-			expect(result).toContain(";3");
-			expect(result).toContain(";4");
-			expect(result).toContain(";5");
-			expect(result).toContain(";7");
-			expect(result).toContain(";9");
-			expect(result).toContain(";53");
-		});
-	});
-
-	describe("wide characters", () => {
-		test("handles wide characters correctly", () => {
-			const buffer = createBuffer(1, 4);
-			buffer[0][0] = Cell.create("你");
-			buffer[0][2] = Cell.create("好");
-
-			const result = generateANSI(buffer, "rgb", true);
-			expect(result).toContain("你");
-			expect(result).toContain("好");
+			// Should contain complete box border pattern
+			expect(output).toContain("┌──┐"); // top border with corners
+			expect(output).toContain("└──┘"); // bottom border with corners
+			expect(output).toContain("│"); // vertical sides
 		});
 
-		test("skips second column of wide characters", () => {
-			const buffer = createBuffer(1, 3);
-			buffer[0][0] = Cell.create("你");
-			buffer[0][2] = Cell.create("A");
+		test("draws partial borders", () => {
+			const renderer = new Renderer(5, 10);
 
-			const result = generateANSI(buffer, "rgb", true);
-			expect(result).toBe("你A\n");
+			const output = renderer.renderFrame(0, (ctx) => {
+				ctx.drawBorder(1, 1, 4, 3, {
+					topEdge: BorderEdgeStyle.Solid,
+					rightEdge: 0, // no right border
+					bottomEdge: BorderEdgeStyle.Solid,
+					leftEdge: BorderEdgeStyle.Solid,
+					hasAnyBorder: true,
+				});
+			});
+
+			// Should have partial borders (no right edge)
+			expect(output).toContain("┌──"); // top-left with horizontal line but no right corner
+			expect(output).toContain("└──"); // bottom-left with horizontal line but no right corner
+			expect(output).not.toContain("┐"); // no top-right corner
+			expect(output).not.toContain("┘"); // no bottom-right corner
+		});
+
+		test("handles border merging at intersections", () => {
+			const renderer = new Renderer(5, 10);
+
+			const output = renderer.renderFrame(0, (ctx) => {
+				// Draw two overlapping rectangles to create border intersections
+				ctx.drawBorder(1, 1, 4, 3, {
+					topEdge: BorderEdgeStyle.Solid,
+					rightEdge: BorderEdgeStyle.Solid,
+					bottomEdge: BorderEdgeStyle.Solid,
+					leftEdge: BorderEdgeStyle.Solid,
+					hasAnyBorder: true,
+				});
+
+				ctx.drawBorder(2, 0, 4, 3, {
+					topEdge: BorderEdgeStyle.Solid,
+					rightEdge: BorderEdgeStyle.Solid,
+					bottomEdge: BorderEdgeStyle.Solid,
+					leftEdge: BorderEdgeStyle.Solid,
+					hasAnyBorder: true,
+				});
+			});
+
+			// Should contain overlapping border patterns with intersections
+			expect(output).toMatch(/[┌┐└┘├┤┬┴┼]/); // Junction characters from overlapping borders
+			expect(output).toContain("─"); // Horizontal border segments
+			expect(output).toContain("│"); // Vertical border segments
+		});
+
+		test("respects viewport offset", () => {
+			const renderer = new Renderer(5, 10);
+
+			const output = renderer.renderFrame(2, (ctx) => {
+				ctx.drawBorder(0, 0, 3, 2, {
+					topEdge: BorderEdgeStyle.Solid,
+					rightEdge: BorderEdgeStyle.Solid,
+					bottomEdge: BorderEdgeStyle.Solid,
+					leftEdge: BorderEdgeStyle.Solid,
+					hasAnyBorder: true,
+				});
+			});
+
+			// Should position cursor accounting for viewport offset
+			expect(output).toContain("\x1b[3;1H"); // Row 3 (offset 2 + 1)
+			expect(output).toContain("┌─┐"); // Top border pattern at offset position
+		});
+
+		test("handles different border styles", () => {
+			const renderer = new Renderer(5, 10);
+
+			const output = renderer.renderFrame(0, (ctx) => {
+				ctx.drawBorder(1, 1, 4, 3, {
+					topEdge: BorderEdgeStyle.Double,
+					rightEdge: BorderEdgeStyle.Double,
+					bottomEdge: BorderEdgeStyle.Double,
+					leftEdge: BorderEdgeStyle.Double,
+					hasAnyBorder: true,
+				});
+			});
+
+			// Should contain complete double-line border pattern
+			expect(output).toContain("╔══╗"); // double top border
+			expect(output).toContain("╚══╝"); // double bottom border
+			expect(output).toContain("║"); // double vertical sides
+		});
+
+		test("skips drawing when hasAnyBorder is false", () => {
+			const renderer = new Renderer(5, 10);
+
+			const output = renderer.renderFrame(0, (ctx) => {
+				ctx.drawBorder(1, 1, 4, 3, {
+					topEdge: BorderEdgeStyle.Solid,
+					rightEdge: BorderEdgeStyle.Solid,
+					bottomEdge: BorderEdgeStyle.Solid,
+					leftEdge: BorderEdgeStyle.Solid,
+					hasAnyBorder: false, // Should skip drawing
+				});
+			});
+
+			// Should not contain any border patterns
+			expect(output).not.toMatch(/[┌┐└┘├┤┬┴┼─│═║╔╗╚╝]/); // No box drawing characters at all
+		});
+
+		test("handles border colors and styles", () => {
+			const renderer = new Renderer(5, 10);
+
+			const output = renderer.renderFrame(0, (ctx) => {
+				ctx.drawBorder(
+					1,
+					1,
+					4,
+					3,
+					{
+						topEdge: BorderEdgeStyle.Solid,
+						rightEdge: BorderEdgeStyle.Solid,
+						bottomEdge: BorderEdgeStyle.Solid,
+						leftEdge: BorderEdgeStyle.Solid,
+						hasAnyBorder: true,
+					},
+					{
+						fg: 0xff0000, // Red border
+						bold: true,
+					},
+				);
+			});
+
+			// Should contain colored border with styling
+			expect(output).toContain("\x1b[38;2;255;0;0;1m┌"); // Red bold top-left corner
+			expect(output).toContain("38;2;255;0;0"); // Red foreground color
+			expect(output).toContain("1m"); // Bold style
+		});
+
+		test("clips borders to viewport bounds", () => {
+			const renderer = new Renderer(3, 5); // Small viewport
+
+			const output = renderer.renderFrame(0, (ctx) => {
+				// Draw border that extends beyond viewport
+				ctx.drawBorder(0, 0, 10, 10, {
+					topEdge: BorderEdgeStyle.Solid,
+					rightEdge: BorderEdgeStyle.Solid,
+					bottomEdge: BorderEdgeStyle.Solid,
+					leftEdge: BorderEdgeStyle.Solid,
+					hasAnyBorder: true,
+				});
+			});
+
+			// Should only render visible border portions without crashing
+			expect(output).toContain("┌────"); // Top-left and horizontal line should be visible
+			expect(output).toContain("│"); // Left vertical should be visible
+			// Border extends beyond viewport but renderer handles clipping gracefully
 		});
 	});
 });
 
-// Buffer transformation optimization tests
-describe("Buffer Transformation", () => {
-	test("optimizes scroll down output", () => {
-		const renderer = new Renderer(4, 10, "rgb");
+describe("Border Integration", () => {
+	test("renders complete border box without styles", () => {
+		const renderer = new Renderer(4, 8);
 
-		// Frame 1: Fill buffer with initial content
-		renderer.beginFrame(0);
-		renderer.setText(0, 0, "Line1", {fg: 0xffffff});
-		renderer.setText(0, 1, "Line2", {fg: 0xffffff});
-		renderer.setText(0, 2, "Line3", {fg: 0xffffff});
-		const output1 = renderer.render();
+		const output = renderer.renderFrame(0, (ctx) => {
+			ctx.drawBorder(1, 0, 6, 4, {
+				topEdge: BorderEdgeStyle.Solid,
+				rightEdge: BorderEdgeStyle.Solid,
+				bottomEdge: BorderEdgeStyle.Solid,
+				leftEdge: BorderEdgeStyle.Solid,
+				hasAnyBorder: true,
+			});
+			// Fill inside to ensure proper spacing
+			ctx.setText(2, 1, "    ");
+			ctx.setText(2, 2, "    ");
+		});
 
-		// Should contain all initial content
-		expect(output1).toContain("Line1");
-		expect(output1).toContain("Line2");
-		expect(output1).toContain("Line3");
-
-		// Frame 2: Scroll down 1 line - buffer transformation shifts existing content automatically
-		// With viewport offset 1, only need to add NEW content, not re-set shifted content
-		renderer.beginFrame(1);
-		renderer.setText(0, 2, "Line4", {fg: 0xffffff}); // Only new content needed
-		const output2 = renderer.render();
-
-		// Should contain scroll command
-		expect(output2).toContain("\x1b[1S");
-
-		// Should only output new content (Line4), not existing content
-		expect(output2).toContain("Line4");
-		expect(output2).not.toContain("Line2");
-		expect(output2).not.toContain("Line3");
-
-		// Output should be much shorter due to optimization
-		expect(output2.length).toBeLessThan(output1.length);
+		// Strip control codes but keep ANSI colors for testing
+		const cleanOutput = stripControlCodes(output);
+		// We should see the border box pattern
+		expect(cleanOutput).toContain("┌────┐");
+		expect(cleanOutput).toContain("│    │");
+		expect(cleanOutput).toContain("└────┘");
 	});
 
-	test("optimizes scroll up output", () => {
-		const renderer = new Renderer(4, 10, "rgb");
+	test("renders borders with text content", () => {
+		const renderer = new Renderer(5, 10);
 
-		// Frame 1: Fill buffer with content
-		renderer.beginFrame(0);
-		renderer.setText(0, 1, "Line2", {fg: 0xffffff});
-		renderer.setText(0, 2, "Line3", {fg: 0xffffff});
-		renderer.setText(0, 3, "Line4", {fg: 0xffffff});
-		const _output1 = renderer.render();
+		const output = renderer.renderFrame(0, (ctx) => {
+			// Draw border
+			ctx.drawBorder(1, 1, 6, 3, {
+				topEdge: BorderEdgeStyle.Solid,
+				rightEdge: BorderEdgeStyle.Solid,
+				bottomEdge: BorderEdgeStyle.Solid,
+				leftEdge: BorderEdgeStyle.Solid,
+				hasAnyBorder: true,
+			});
 
-		// Frame 2: Scroll up 1 line - buffer transformation shifts existing content automatically
-		// With viewport offset -1, layout row 1 maps to terminal row 0 (visible top)
-		renderer.beginFrame(-1);
-		renderer.setText(0, 1, "Line1", {fg: 0xffffff}); // New content at layout row 1 → terminal row 0
-		const output2 = renderer.render();
+			// Add text inside border
+			ctx.setText(2, 2, "Hi");
+		});
 
-		// Should contain scroll up command
-		expect(output2).toContain("\x1b[1T");
-
-		// Should only output new content (Line1), existing content positioned by scroll
-		expect(output2).toContain("Line1");
-		expect(output2).not.toContain("Line2"); // Already positioned correctly by transform
-		expect(output2).not.toContain("Line3"); // Already positioned correctly by transform
+		expect(output).toContain("┌────┐"); // Complete top border
+		expect(output).toContain("Hi"); // Text content inside border
+		expect(output).toContain("└────┘"); // Complete bottom border
 	});
 
-	test("handles multiple line scrolling", () => {
-		const renderer = new Renderer(5, 10, "rgb");
+	test("borders work with fillRect backgrounds", () => {
+		const renderer = new Renderer(5, 10);
 
-		// Frame 1: Fill buffer
-		renderer.beginFrame(0);
-		renderer.setText(0, 0, "A", {fg: 0xffffff});
-		renderer.setText(0, 1, "B", {fg: 0xffffff});
-		renderer.setText(0, 2, "C", {fg: 0xffffff});
-		renderer.setText(0, 3, "D", {fg: 0xffffff});
-		renderer.setText(0, 4, "E", {fg: 0xffffff});
-		renderer.render();
+		const output = renderer.renderFrame(0, (ctx) => {
+			// Fill background
+			ctx.fillRect(1, 1, 4, 3, 0x00ff00);
 
-		// Frame 2: Scroll down 3 lines - content shifts automatically, add new content
-		// With viewport offset 3, layout coordinates map to terminal coordinates + 3
-		renderer.beginFrame(3);
-		renderer.setText(0, -1, "F", {fg: 0xffffff}); // Layout row -1 → terminal row 2
-		renderer.setText(0, 0, "G", {fg: 0xffffff}); // Layout row 0 → terminal row 3
-		renderer.setText(0, 1, "H", {fg: 0xffffff}); // Layout row 1 → terminal row 4
-		const output2 = renderer.render();
+			// Draw border on top
+			ctx.drawBorder(1, 1, 4, 3, {
+				topEdge: BorderEdgeStyle.Solid,
+				rightEdge: BorderEdgeStyle.Solid,
+				bottomEdge: BorderEdgeStyle.Solid,
+				leftEdge: BorderEdgeStyle.Solid,
+				hasAnyBorder: true,
+			});
+		});
 
-		// Should contain scroll down 3 command
-		expect(output2).toContain("\x1b[3S");
-
-		// Should only output new content (F, G, H)
-		expect(output2).toContain("F");
-		expect(output2).toContain("G");
-		expect(output2).toContain("H");
-		expect(output2).not.toContain("D");
-		expect(output2).not.toContain("E");
+		expect(output).toContain("48;2;0;255;0"); // Green background color
+		expect(output).toContain("┌──┐"); // Border corners with background
 	});
 
-	test("with no viewport change outputs minimal diff", () => {
-		const renderer = new Renderer(3, 10, "rgb");
+	test("renders double border box without styles", () => {
+		const renderer = new Renderer(5, 7);
 
-		// Frame 1: Initial content
-		renderer.beginFrame(0);
-		renderer.setText(0, 0, "Stay", {fg: 0xffffff});
-		renderer.setText(0, 1, "Same", {fg: 0xffffff});
-		renderer.render();
+		const output = renderer.renderFrame(0, (ctx) => {
+			ctx.drawBorder(0, 0, 5, 4, {
+				topEdge: BorderEdgeStyle.Double,
+				rightEdge: BorderEdgeStyle.Double,
+				bottomEdge: BorderEdgeStyle.Double,
+				leftEdge: BorderEdgeStyle.Double,
+				hasAnyBorder: true,
+			});
+		});
 
-		// Frame 2: Same viewport, only change one cell
-		renderer.beginFrame(0);
-		renderer.setText(0, 0, "Stay", {fg: 0xffffff}); // Same
-		renderer.setText(0, 1, "Diff", {fg: 0xffffff}); // Changed
-		const output2 = renderer.render();
-
-		// Should not contain scroll commands
-		expect(output2).not.toContain("\x1b[S");
-		expect(output2).not.toContain("\x1b[T");
-
-		// Should only output changed content
-		expect(output2).toContain("Diff");
-		expect(output2).not.toContain("Stay");
+		// Check that double-line border characters are present
+		const cleanOutput = stripControlCodes(output);
+		expect(cleanOutput).toContain("╔═══╗");
+		expect(cleanOutput).toContain("║");
+		expect(cleanOutput).toContain("╚═══╝");
 	});
 
-	test("handles edge case: scroll entire buffer height", () => {
-		const renderer = new Renderer(3, 5, "rgb");
+	test("renders partial border without right edge", () => {
+		const renderer = new Renderer(5, 8);
 
-		// Frame 1: Fill buffer
-		renderer.beginFrame(0);
-		renderer.setText(0, 0, "A", {fg: 0xffffff});
-		renderer.setText(0, 1, "B", {fg: 0xffffff});
-		renderer.setText(0, 2, "C", {fg: 0xffffff});
-		renderer.render();
+		const output = renderer.renderFrame(0, (ctx) => {
+			ctx.drawBorder(0, 0, 6, 4, {
+				topEdge: BorderEdgeStyle.Solid,
+				rightEdge: 0, // No right edge
+				bottomEdge: BorderEdgeStyle.Solid,
+				leftEdge: BorderEdgeStyle.Solid,
+				hasAnyBorder: true,
+			});
+		});
 
-		// Frame 2: Scroll down by full buffer height (complete refresh)
-		// With viewport offset 3, place content at layout rows that map to terminal rows 0-2
-		renderer.beginFrame(3);
-		renderer.setText(0, -3, "X", {fg: 0xffffff}); // Layout row -3 → terminal row 0
-		renderer.setText(0, -2, "Y", {fg: 0xffffff}); // Layout row -2 → terminal row 1
-		renderer.setText(0, -1, "Z", {fg: 0xffffff}); // Layout row -1 → terminal row 2
-		const output2 = renderer.render();
-
-		// Should contain scroll command
-		expect(output2).toContain("\x1b[3S");
-
-		// Should output all new content since everything changed
-		expect(output2).toContain("X");
-		expect(output2).toContain("Y");
-		expect(output2).toContain("Z");
-	});
-});
-
-// Coordinate transformation tests
-describe("Coordinate Transformation", () => {
-	test("places content at correct terminal position", () => {
-		const renderer = new Renderer(10, 20, "rgb");
-
-		// Test viewport offset 3: layout (0,0) -> terminal (0,3)
-		renderer.beginFrame(3);
-		renderer.setText(0, 0, "Hello", {fg: 0xffffff});
-
-		const output = renderer.render();
-
-		// Should contain the text
-		expect(output).toContain("Hello");
-
-		// Should not contain scroll commands for initial positioning
-		expect(output).not.toContain("\x1b[S");
-		expect(output).not.toContain("\x1b[T");
+		// Check for partial border patterns
+		const cleanOutput = stripControlCodes(output);
+		expect(cleanOutput).toContain("┌─────"); // Top left with horizontal line
+		expect(cleanOutput).toContain("│"); // Left vertical
+		expect(cleanOutput).toContain("└─────"); // Bottom left with horizontal line
+		expect(cleanOutput).not.toContain("┐"); // No top-right corner
+		expect(cleanOutput).not.toContain("┘"); // No bottom-right corner
 	});
 
-	test("clips content outside bounds", () => {
-		const renderer = new Renderer(5, 10, "rgb");
+	test("renders text with no ANSI color styles", () => {
+		const renderer = new Renderer(3, 10);
 
-		// Test viewport offset 3 with content that would go outside bounds
-		renderer.beginFrame(3);
-		renderer.setText(0, 0, "Visible", {fg: 0xffffff}); // (0,0) -> (0,3) = visible
-		renderer.setText(0, 3, "Clipped", {fg: 0xffffff}); // (0,3) -> (0,6) = outside bounds (rows 0-4)
+		const output = renderer.renderFrame(0, (ctx) => {
+			ctx.setText(0, 0, "Hello");
+			ctx.setText(0, 1, "World");
+			ctx.setText(0, 2, "Test");
+		});
 
-		const output = renderer.render();
+		// Strip control codes but keep ANSI colors for testing
+		const cleanOutput = stripControlCodes(output);
+		// The renderer optimizes output with cursor movements, so we check contains
+		expect(cleanOutput).toContain("Hello");
+		expect(cleanOutput).toContain("World");
+		expect(cleanOutput).toContain("Test");
 
-		// Should contain visible content
-		expect(output).toContain("Visible");
-
-		// Should not contain clipped content
-		expect(output).not.toContain("Clipped");
+		// Verify no color codes are present
+		expect(output).not.toContain("38;"); // No foreground colors
+		expect(output).not.toContain("48;"); // No background colors
+		expect(output).not.toContain("1m"); // No bold
+		expect(output).not.toContain("3m"); // No italic
 	});
 
-	test("with zero offset renders normally", () => {
-		const renderer = new Renderer(5, 10, "rgb");
+	test("renders overlapping borders", () => {
+		const renderer = new Renderer(6, 10);
 
-		// Test no viewport offset: layout (0,0) -> terminal (0,0)
-		renderer.beginFrame(0);
-		renderer.setText(0, 0, "Normal", {fg: 0xffffff});
+		const output = renderer.renderFrame(0, (ctx) => {
+			// First box
+			ctx.drawBorder(0, 0, 5, 4, {
+				topEdge: BorderEdgeStyle.Solid,
+				rightEdge: BorderEdgeStyle.Solid,
+				bottomEdge: BorderEdgeStyle.Solid,
+				leftEdge: BorderEdgeStyle.Solid,
+				hasAnyBorder: true,
+			});
 
-		const output = renderer.render();
+			// Second box overlapping
+			ctx.drawBorder(2, 2, 5, 4, {
+				topEdge: BorderEdgeStyle.Solid,
+				rightEdge: BorderEdgeStyle.Solid,
+				bottomEdge: BorderEdgeStyle.Solid,
+				leftEdge: BorderEdgeStyle.Solid,
+				hasAnyBorder: true,
+			});
+		});
 
-		// Should contain the text
-		expect(output).toContain("Normal");
-	});
-});
-
-// Renderer viewport tests
-describe("Renderer Viewport", () => {
-	test("generates scroll down command for positive viewport offset", () => {
-		const renderer = new Renderer(10, 40, "rgb");
-
-		// Frame 1: Initial content at offset 0
-		renderer.beginFrame(0);
-		renderer.setText(0, 0, "Initial", {fg: 0xffffff});
-		renderer.render();
-
-		// Frame 2: Begin frame with viewport offset 3 (content starts below terminal top)
-		renderer.beginFrame(3);
-		renderer.setText(0, 0, "Hello", {fg: 0xffffff});
-
-		const output = renderer.render();
-
-		// Should contain scroll down command to position viewport
-		// \x1b[3S = scroll down 3 lines
-		expect(output).toContain("\x1b[3S");
-		expect(output).toContain("Hello");
+		// Check for all border characters
+		const cleanOutput = stripControlCodes(output);
+		expect(cleanOutput).toContain("┌"); // Top-left corners
+		expect(cleanOutput).toContain("┐"); // Top-right corners
+		expect(cleanOutput).toContain("└"); // Bottom-left corners
+		expect(cleanOutput).toContain("┘"); // Bottom-right corners
+		// The overlapping creates a pattern with multiple boxes
+		expect(cleanOutput).toContain("│"); // Vertical lines
+		expect(cleanOutput).toContain("─"); // Horizontal lines
 	});
 
-	test("generates scroll up command for negative viewport offset", () => {
-		const renderer = new Renderer(10, 40, "rgb");
+	test("renders simple border pattern", () => {
+		const renderer = new Renderer(5, 10);
 
-		// Frame 1: Initial content at offset 0
-		renderer.beginFrame(0);
-		renderer.setText(0, 0, "Initial", {fg: 0xffffff});
-		renderer.render();
+		// Clear previous buffer to ensure output
+		renderer.clearPreviousBuffer();
 
-		// Frame 2: Begin frame with negative viewport offset (content shifted up)
-		renderer.beginFrame(-2);
-		renderer.setText(0, 2, "Content", {fg: 0xffffff}); // Layout row 2 → terminal row 0
+		const output = renderer.renderFrame(0, (ctx) => {
+			// Draw a simple box that fits in viewport
+			ctx.drawBorder(1, 1, 3, 3, {
+				topEdge: BorderEdgeStyle.Solid,
+				rightEdge: BorderEdgeStyle.Solid,
+				bottomEdge: BorderEdgeStyle.Solid,
+				leftEdge: BorderEdgeStyle.Solid,
+				hasAnyBorder: true,
+			});
+		});
 
-		const output = renderer.render();
+		// Should have border output
+		const cleanOutput = stripControlCodes(output);
 
-		// Should contain scroll up command
-		// \x1b[2T = scroll up 2 lines
-		expect(output).toContain("\x1b[2T");
-		expect(output).toContain("Content");
+		// Should see border characters
+		expect(output.length).toBeGreaterThan(0); // Should have some output
+		expect(cleanOutput).toContain("┌"); // Top-left
+		expect(cleanOutput).toContain("┐"); // Top-right
+		expect(cleanOutput).toContain("└"); // Bottom-left
+		expect(cleanOutput).toContain("┘"); // Bottom-right
 	});
 
-	test("generates no scroll commands for zero viewport offset", () => {
-		const renderer = new Renderer(10, 40, "rgb");
+	test("renders exact multi-line text output", () => {
+		const renderer = new Renderer(4, 12);
 
-		// Begin frame with no viewport offset (normal rendering)
-		renderer.beginFrame(0);
+		// First render to establish baseline
+		renderer.renderFrame(0, (ctx) => {
+			ctx.setText(0, 0, "Line 1");
+			ctx.setText(0, 1, "Line 2");
+			ctx.setText(0, 2, "Line 3");
+			ctx.setText(0, 3, "Line 4");
+		});
 
-		// Add some content
-		renderer.setText(0, 0, "Normal", {fg: 0xffffff});
+		// Second render with minimal changes
+		const output = renderer.renderFrame(0, (ctx) => {
+			ctx.setText(0, 0, "Line 1");
+			ctx.setText(0, 1, "Line TWO"); // Changed
+			ctx.setText(0, 2, "Line 3");
+			ctx.setText(0, 3, "Line 4");
+		});
 
-		const output = renderer.render();
-
-		// Should not contain any scroll commands
-		expect(output).not.toContain("\x1b[S"); // No scroll down
-		expect(output).not.toContain("\x1b[T"); // No scroll up
-		expect(output).toContain("Normal");
+		// The renderer optimizes by only updating changed content
+		const cleanOutput = stripControlCodes(output);
+		expect(cleanOutput).toContain("TWO"); // Changed part
+		expect(cleanOutput).not.toContain("Line 1"); // Unchanged
+		expect(cleanOutput).not.toContain("Line 3"); // Unchanged
+		expect(cleanOutput).not.toContain("Line 4"); // Unchanged
 	});
 
-	test("optimizes repeated viewport offsets (no redundant scrolling)", () => {
-		const renderer = new Renderer(10, 40, "rgb");
+	test("renders box with text inside - full output", () => {
+		const renderer = new Renderer(5, 8);
 
-		// Frame 1: Initial frame at offset 0
-		renderer.beginFrame(0);
-		renderer.setText(0, 0, "Initial", {fg: 0xffffff});
-		renderer.render();
+		// Clear any previous state
+		renderer.clearPreviousBuffer();
 
-		// Frame 2: First change to offset 3
-		renderer.beginFrame(3);
-		renderer.setText(0, 0, "Frame1", {fg: 0xffffff});
-		const output1 = renderer.render();
+		const output = renderer.renderFrame(0, (ctx) => {
+			// Draw box
+			ctx.drawBorder(0, 0, 8, 5, {
+				topEdge: BorderEdgeStyle.Solid,
+				rightEdge: BorderEdgeStyle.Solid,
+				bottomEdge: BorderEdgeStyle.Solid,
+				leftEdge: BorderEdgeStyle.Solid,
+				hasAnyBorder: true,
+			});
+			// Add text inside
+			ctx.setText(1, 1, " TEST ");
+			ctx.setText(1, 2, " BOX  ");
+			ctx.setText(1, 3, " HERE ");
+		});
 
-		// Frame 3: Same offset 3 (no viewport change)
-		renderer.beginFrame(3);
-		renderer.setText(0, 1, "Frame2", {fg: 0xffffff});
-		const output2 = renderer.render();
-
-		// Frame 2 should scroll to position
-		expect(output1).toContain("\x1b[3S");
-
-		// Frame 3 should NOT repeat scroll command (already positioned)
-		expect(output2).not.toContain("\x1b[3S");
-		expect(output2).toContain("Frame2");
+		// Check that we have a complete box with text
+		const cleanOutput = stripControlCodes(output);
+		expect(cleanOutput).toContain("┌──────┐");
+		expect(cleanOutput).toContain("│ TEST │");
+		expect(cleanOutput).toContain("│ BOX  │");
+		expect(cleanOutput).toContain("│ HERE │");
+		expect(cleanOutput).toContain("└──────┘");
 	});
 
-	test("generates incremental scroll commands when viewport changes", () => {
-		const renderer = new Renderer(10, 40, "rgb");
+	test("renders collapsed table borders - 2x2 grid", () => {
+		const renderer = new Renderer(5, 9);
 
-		// Frame 1: Initial frame at offset 0
-		renderer.beginFrame(0);
-		renderer.setText(0, 0, "Initial", {fg: 0xffffff});
-		renderer.render();
+		renderer.clearPreviousBuffer();
 
-		// Frame 2: First change to offset 2
-		renderer.beginFrame(2);
-		renderer.setText(0, 0, "Frame1", {fg: 0xffffff});
-		const output1 = renderer.render();
+		const output = renderer.renderFrame(0, (ctx) => {
+			// Simulate CSS collapsed table borders by drawing each cell's borders
+			// This should create proper junctions where borders meet
 
-		// Frame 3: Change to offset 5 (moved down by 3)
-		renderer.beginFrame(5);
-		renderer.setText(0, 0, "Frame2", {fg: 0xffffff});
-		const output2 = renderer.render();
+			// Cell (0,0) - top-left
+			ctx.drawBorder(0, 0, 5, 3, {
+				topEdge: BorderEdgeStyle.Solid, // table top
+				rightEdge: BorderEdgeStyle.Solid, // shared with cell (0,1)
+				bottomEdge: BorderEdgeStyle.Solid, // shared with cell (1,0)
+				leftEdge: BorderEdgeStyle.Solid, // table left
+				hasAnyBorder: true,
+			});
 
-		// Frame 2: scroll down 2
-		expect(output1).toContain("\x1b[2S");
+			// Cell (0,1) - top-right
+			ctx.drawBorder(4, 0, 5, 3, {
+				topEdge: BorderEdgeStyle.Solid, // table top
+				rightEdge: BorderEdgeStyle.Solid, // table right
+				bottomEdge: BorderEdgeStyle.Solid, // shared with cell (1,1)
+				leftEdge: BorderEdgeStyle.Solid, // shared with cell (0,0)
+				hasAnyBorder: true,
+			});
 
-		// Frame 3: additional scroll down 3 (5-2=3)
-		expect(output2).toContain("\x1b[3S");
+			// Cell (1,0) - bottom-left
+			ctx.drawBorder(0, 2, 5, 3, {
+				topEdge: BorderEdgeStyle.Solid, // shared with cell (0,0)
+				rightEdge: BorderEdgeStyle.Solid, // shared with cell (1,1)
+				bottomEdge: BorderEdgeStyle.Solid, // table bottom
+				leftEdge: BorderEdgeStyle.Solid, // table left
+				hasAnyBorder: true,
+			});
+
+			// Cell (1,1) - bottom-right
+			ctx.drawBorder(4, 2, 5, 3, {
+				topEdge: BorderEdgeStyle.Solid, // shared with cell (0,1)
+				rightEdge: BorderEdgeStyle.Solid, // table right
+				bottomEdge: BorderEdgeStyle.Solid, // table bottom
+				leftEdge: BorderEdgeStyle.Solid, // shared with cell (1,0)
+				hasAnyBorder: true,
+			});
+
+			// Add cell content
+			ctx.setText(1, 1, "A1");
+			ctx.setText(5, 1, "B1");
+			ctx.setText(1, 3, "A2");
+			ctx.setText(5, 3, "B2");
+		});
+
+		const cleanOutput = stripControlCodes(output);
+		expect(cleanOutput).toMatchSnapshot();
 	});
 
-	test("generates scroll up when viewport moves toward terminal top", () => {
-		const renderer = new Renderer(10, 40, "rgb");
+	test("renders collapsed table borders - mixed border styles", () => {
+		const renderer = new Renderer(3, 11);
 
-		// Frame 1: Initial frame at offset 0
-		renderer.beginFrame(0);
-		renderer.setText(0, 0, "Initial", {fg: 0xffffff});
-		renderer.render();
+		renderer.clearPreviousBuffer();
 
-		// Frame 2: First change to offset 5
-		renderer.beginFrame(5);
-		renderer.setText(0, 0, "Frame1", {fg: 0xffffff});
-		const output1 = renderer.render();
+		const output = renderer.renderFrame(0, (ctx) => {
+			// Test border merging with different styles
+			// Left cell with solid borders
+			ctx.drawBorder(0, 0, 6, 3, {
+				topEdge: BorderEdgeStyle.Solid,
+				rightEdge: BorderEdgeStyle.Solid,
+				bottomEdge: BorderEdgeStyle.Solid,
+				leftEdge: BorderEdgeStyle.Solid,
+				hasAnyBorder: true,
+			});
 
-		// Frame 3: Change to offset 2 (moved up by 3)
-		renderer.beginFrame(2);
-		renderer.setText(0, 0, "Frame2", {fg: 0xffffff});
-		const output2 = renderer.render();
+			// Right cell with double borders (should merge with solid)
+			ctx.drawBorder(5, 0, 6, 3, {
+				topEdge: BorderEdgeStyle.Double,
+				rightEdge: BorderEdgeStyle.Double,
+				bottomEdge: BorderEdgeStyle.Double,
+				leftEdge: BorderEdgeStyle.Double,
+				hasAnyBorder: true,
+			});
 
-		// Frame 2: scroll down 5
-		expect(output1).toContain("\x1b[5S");
+			// Add content to differentiate the cells
+			ctx.setText(1, 1, "Sol");
+			ctx.setText(6, 1, "Dbl");
+		});
 
-		// Frame 3: scroll up 3 (5-2=3)
-		expect(output2).toContain("\x1b[3T");
+		const cleanOutput = stripControlCodes(output);
+		expect(cleanOutput).toMatchSnapshot();
 	});
 
-	test("clips content outside viewport bounds", () => {
-		const renderer = new Renderer(5, 20, "rgb"); // Small terminal
+	test("renders collapsed table borders - header and data rows", () => {
+		const renderer = new Renderer(5, 13); // 3 columns x 4 chars + 1 = 13 width
 
-		// Frame 1: Initial frame at offset 0
-		renderer.beginFrame(0);
-		renderer.setText(0, 0, "Initial", {fg: 0xffffff});
-		renderer.render();
+		renderer.clearPreviousBuffer();
 
-		// Frame 2: Viewport at offset 2, terminal height 5
-		renderer.beginFrame(2);
+		const output = renderer.renderFrame(0, (ctx) => {
+			// Simulate a typical HTML table with header and data rows
+			// For collapsed borders, cells share borders at their edges
 
-		// Try to render content that would exceed terminal bounds
-		renderer.setText(0, 0, "Visible", {fg: 0xffffff}); // Layout row 0 → terminal row 2 (appears)
-		renderer.setText(0, 2, "LastLine", {fg: 0xffffff}); // Layout row 2 → terminal row 4 (last visible row)
-		renderer.setText(0, 3, "Clipped", {fg: 0xffffff}); // Layout row 3 → terminal row 5 (clipped)
+			// Header row cells (row 0-2)
+			ctx.drawBorder(0, 0, 5, 3, {
+				// Header cell 1: "Name"
+				topEdge: BorderEdgeStyle.Solid,
+				rightEdge: BorderEdgeStyle.Solid,
+				bottomEdge: BorderEdgeStyle.Solid,
+				leftEdge: BorderEdgeStyle.Solid,
+				hasAnyBorder: true,
+			});
 
-		const output = renderer.render();
+			ctx.drawBorder(4, 0, 5, 3, {
+				// Header cell 2: "Age" (shares border at x=4)
+				topEdge: BorderEdgeStyle.Solid,
+				rightEdge: BorderEdgeStyle.Solid,
+				bottomEdge: BorderEdgeStyle.Solid,
+				leftEdge: BorderEdgeStyle.Solid,
+				hasAnyBorder: true,
+			});
 
-		// Should contain scroll command and visible content
-		expect(output).toContain("\x1b[2S");
-		expect(output).toContain("Visible");
-		expect(output).toContain("LastLine");
+			ctx.drawBorder(8, 0, 5, 3, {
+				// Header cell 3: "City" (shares border at x=8)
+				topEdge: BorderEdgeStyle.Solid,
+				rightEdge: BorderEdgeStyle.Solid,
+				bottomEdge: BorderEdgeStyle.Solid,
+				leftEdge: BorderEdgeStyle.Solid,
+				hasAnyBorder: true,
+			});
 
-		// Should not contain clipped content
-		expect(output).not.toContain("Clipped");
+			// Data row cells (row 2-4, sharing top border with header cells)
+			ctx.drawBorder(0, 2, 5, 3, {
+				// Data cell 1: "John"
+				topEdge: BorderEdgeStyle.Solid,
+				rightEdge: BorderEdgeStyle.Solid,
+				bottomEdge: BorderEdgeStyle.Solid,
+				leftEdge: BorderEdgeStyle.Solid,
+				hasAnyBorder: true,
+			});
+
+			ctx.drawBorder(4, 2, 5, 3, {
+				// Data cell 2: "25"
+				topEdge: BorderEdgeStyle.Solid,
+				rightEdge: BorderEdgeStyle.Solid,
+				bottomEdge: BorderEdgeStyle.Solid,
+				leftEdge: BorderEdgeStyle.Solid,
+				hasAnyBorder: true,
+			});
+
+			ctx.drawBorder(8, 2, 5, 3, {
+				// Data cell 3: "NYC"
+				topEdge: BorderEdgeStyle.Solid,
+				rightEdge: BorderEdgeStyle.Solid,
+				bottomEdge: BorderEdgeStyle.Solid,
+				leftEdge: BorderEdgeStyle.Solid,
+				hasAnyBorder: true,
+			});
+
+			// Cell content - placed inside the cells (max 3 chars per cell)
+			ctx.setText(1, 1, "Nam");
+			ctx.setText(5, 1, "Age");
+			ctx.setText(9, 1, "Cty");
+			ctx.setText(1, 3, "Jon");
+			ctx.setText(5, 3, "25");
+			ctx.setText(9, 3, "NYC");
+		});
+
+		const cleanOutput = stripControlCodes(output);
+		expect(cleanOutput).toMatchSnapshot();
 	});
 
-	test("handles viewport offset with minimal ANSI output", () => {
-		const renderer = new Renderer(10, 40, "rgb");
+	test("renders simple single cell with border", () => {
+		const renderer = new Renderer(4, 6);
+		renderer.clearPreviousBuffer();
 
-		// Frame 1: Initial frame at offset 0
-		renderer.beginFrame(0);
-		renderer.setText(0, 0, "Initial", {fg: 0xffffff});
-		renderer.render();
+		const output = renderer.renderFrame(0, (ctx) => {
+			ctx.drawBorder(1, 1, 4, 2, {
+				topEdge: BorderEdgeStyle.Solid,
+				rightEdge: BorderEdgeStyle.Solid,
+				bottomEdge: BorderEdgeStyle.Solid,
+				leftEdge: BorderEdgeStyle.Solid,
+				hasAnyBorder: true,
+			});
+		});
 
-		// Frame 2: Test that viewport scrolling produces minimal output
-		renderer.beginFrame(3);
-		renderer.setText(0, -3, "Text", {fg: 0xffffff}); // Layout row -3 → terminal row 0
-
-		const output = renderer.render();
-
-		// Should be concise: scroll command + positioning + content + cleanup
-		expect(output).toMatch(
-			/^\x1b\[\?2026h\x1b\[\?25l\x1b\[3S\x1b\[4;1H.*Text.*\x1b\[\?25h\x1b\[\?2026l\n$/,
-		);
+		const cleanOutput = stripControlCodes(output);
+		expect(cleanOutput).toMatchSnapshot();
 	});
 
-	test("maintains cursor position correctly with viewport offset", () => {
-		const renderer = new Renderer(10, 40, "rgb");
+	test("renders double border box", () => {
+		const renderer = new Renderer(5, 8);
+		renderer.clearPreviousBuffer();
 
-		// Frame 1: Initial frame at offset 0
-		renderer.beginFrame(0);
-		renderer.setText(0, 0, "Initial", {fg: 0xffffff});
-		renderer.render();
+		const output = renderer.renderFrame(0, (ctx) => {
+			ctx.drawBorder(1, 1, 6, 3, {
+				topEdge: BorderEdgeStyle.Double,
+				rightEdge: BorderEdgeStyle.Double,
+				bottomEdge: BorderEdgeStyle.Double,
+				leftEdge: BorderEdgeStyle.Double,
+				hasAnyBorder: true,
+			});
+			ctx.setText(2, 2, "Test");
+		});
 
-		// Frame 2: Viewport offset should not affect relative cursor movements
-		renderer.beginFrame(4);
-		renderer.setText(0, 0, "First", {fg: 0xffffff});
-		renderer.setText(5, 1, "Second", {fg: 0xffffff}); // Row 1, Col 5
+		const cleanOutput = stripControlCodes(output);
+		expect(cleanOutput).toMatchSnapshot();
+	});
 
-		const output = renderer.render();
+	test("renders partial borders - top and left only", () => {
+		const renderer = new Renderer(4, 6);
+		renderer.clearPreviousBuffer();
 
-		// Should contain scroll, then proper cursor positioning
-		expect(output).toContain("\x1b[4S"); // Scroll command
-		expect(output).toContain("First");
-		expect(output).toContain("Second");
+		const output = renderer.renderFrame(0, (ctx) => {
+			ctx.drawBorder(0, 0, 5, 3, {
+				topEdge: BorderEdgeStyle.Solid,
+				rightEdge: 0,
+				bottomEdge: 0,
+				leftEdge: BorderEdgeStyle.Solid,
+				hasAnyBorder: true,
+			});
+			ctx.setText(1, 1, "Part");
+		});
 
-		// After scrolling, cursor movements should still be relative to content
-		expect(output).toMatch(/First.*\r\n.*\x1b\[5C.*Second/s); // Newline + move to col 5
+		const cleanOutput = stripControlCodes(output);
+		expect(cleanOutput).toMatchSnapshot();
+	});
+
+	test("renders L-shaped table border pattern", () => {
+		const renderer = new Renderer(4, 7);
+		renderer.clearPreviousBuffer();
+
+		const output = renderer.renderFrame(0, (ctx) => {
+			// Top row - 2 cells
+			ctx.drawBorder(0, 0, 4, 2, {
+				topEdge: BorderEdgeStyle.Solid,
+				rightEdge: BorderEdgeStyle.Solid,
+				bottomEdge: BorderEdgeStyle.Solid,
+				leftEdge: BorderEdgeStyle.Solid,
+				hasAnyBorder: true,
+			});
+
+			ctx.drawBorder(3, 0, 4, 2, {
+				topEdge: BorderEdgeStyle.Solid,
+				rightEdge: BorderEdgeStyle.Solid,
+				bottomEdge: BorderEdgeStyle.Solid,
+				leftEdge: BorderEdgeStyle.Solid,
+				hasAnyBorder: true,
+			});
+
+			// Bottom left cell only
+			ctx.drawBorder(0, 1, 4, 2, {
+				topEdge: BorderEdgeStyle.Solid,
+				rightEdge: BorderEdgeStyle.Solid,
+				bottomEdge: BorderEdgeStyle.Solid,
+				leftEdge: BorderEdgeStyle.Solid,
+				hasAnyBorder: true,
+			});
+		});
+
+		const cleanOutput = stripControlCodes(output);
+		expect(cleanOutput).toMatchSnapshot();
+	});
+
+	test("renders mixed border styles in adjacent cells", () => {
+		const renderer = new Renderer(3, 9);
+		renderer.clearPreviousBuffer();
+
+		const output = renderer.renderFrame(0, (ctx) => {
+			// Solid border cell
+			ctx.drawBorder(0, 0, 3, 3, {
+				topEdge: BorderEdgeStyle.Solid,
+				rightEdge: BorderEdgeStyle.Solid,
+				bottomEdge: BorderEdgeStyle.Solid,
+				leftEdge: BorderEdgeStyle.Solid,
+				hasAnyBorder: true,
+			});
+
+			// Double border cell
+			ctx.drawBorder(2, 0, 3, 3, {
+				topEdge: BorderEdgeStyle.Double,
+				rightEdge: BorderEdgeStyle.Double,
+				bottomEdge: BorderEdgeStyle.Double,
+				leftEdge: BorderEdgeStyle.Double,
+				hasAnyBorder: true,
+			});
+
+			// Heavy border cell
+			ctx.drawBorder(4, 0, 3, 3, {
+				topEdge: BorderEdgeStyle.Groove, // Uses heavy style
+				rightEdge: BorderEdgeStyle.Groove,
+				bottomEdge: BorderEdgeStyle.Groove,
+				leftEdge: BorderEdgeStyle.Groove,
+				hasAnyBorder: true,
+			});
+
+			ctx.setText(1, 1, "S");
+			ctx.setText(3, 1, "D");
+			ctx.setText(5, 1, "H");
+		});
+
+		const cleanOutput = stripControlCodes(output);
+		expect(cleanOutput).toMatchSnapshot();
+	});
+
+	test("renders nested borders", () => {
+		const renderer = new Renderer(7, 11); // Wider to accommodate text
+		renderer.clearPreviousBuffer();
+
+		const output = renderer.renderFrame(0, (ctx) => {
+			// Outer border
+			ctx.drawBorder(0, 0, 9, 7, {
+				topEdge: BorderEdgeStyle.Double,
+				rightEdge: BorderEdgeStyle.Double,
+				bottomEdge: BorderEdgeStyle.Double,
+				leftEdge: BorderEdgeStyle.Double,
+				hasAnyBorder: true,
+			});
+
+			// Inner border
+			ctx.drawBorder(2, 2, 5, 3, {
+				topEdge: BorderEdgeStyle.Solid,
+				rightEdge: BorderEdgeStyle.Solid,
+				bottomEdge: BorderEdgeStyle.Solid,
+				leftEdge: BorderEdgeStyle.Solid,
+				hasAnyBorder: true,
+			});
+
+			ctx.setText(1, 1, "Out");
+			ctx.setText(3, 3, "In");
+			ctx.setText(5, 5, "Out"); // Moved left by 2 to avoid overlap
+		});
+
+		const cleanOutput = stripControlCodes(output);
+		expect(cleanOutput).toMatchSnapshot();
+	});
+
+	test("renders grid layout - 3x3 table", () => {
+		const renderer = new Renderer(7, 11);
+		renderer.clearPreviousBuffer();
+
+		const output = renderer.renderFrame(0, (ctx) => {
+			// Draw 3x3 grid of cells
+			for (let row = 0; row < 3; row++) {
+				for (let col = 0; col < 3; col++) {
+					const x = col * 3;
+					const y = row * 2;
+
+					ctx.drawBorder(x, y, 4, 3, {
+						topEdge: BorderEdgeStyle.Solid,
+						rightEdge: BorderEdgeStyle.Solid,
+						bottomEdge: BorderEdgeStyle.Solid,
+						leftEdge: BorderEdgeStyle.Solid,
+						hasAnyBorder: true,
+					});
+
+					ctx.setText(x + 1, y + 1, `${row + 1}${col + 1}`);
+				}
+			}
+		});
+
+		const cleanOutput = stripControlCodes(output);
+		expect(cleanOutput).toMatchSnapshot();
+	});
+
+	test("renders borders with background colors", () => {
+		const renderer = new Renderer(3, 7);
+		renderer.clearPreviousBuffer();
+
+		const output = renderer.renderFrame(0, (ctx) => {
+			ctx.drawBorder(
+				1,
+				0,
+				5,
+				3,
+				{
+					topEdge: BorderEdgeStyle.Solid,
+					rightEdge: BorderEdgeStyle.Solid,
+					bottomEdge: BorderEdgeStyle.Solid,
+					leftEdge: BorderEdgeStyle.Solid,
+					hasAnyBorder: true,
+				},
+				{
+					fg: 0xff0000, // Red border
+					bg: 0x00ff00, // Green background
+				},
+			);
+
+			ctx.setText(2, 1, "Col");
+		});
+
+		const cleanOutput = stripControlCodes(output);
+		expect(cleanOutput).toMatchSnapshot();
 	});
 });

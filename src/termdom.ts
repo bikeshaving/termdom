@@ -375,15 +375,25 @@ export class TermDOM {
 			this.calculatePushUpOffset();
 		}
 		// Get viewport offset from raw internal scrollTop
-		const viewportOffset = -this.scrollingManager.getScrollTop();
-		this.renderer.beginFrame(viewportOffset);
+		// When cursor was detected, content should render from buffer[0] with cursor positioning to detected row
+		const viewportOffset = this.hasDetectedCommandStart 
+			? 0 
+			: -this.scrollingManager.getScrollTop();
 
-		this.renderElement(this.document.body);
-		const ansi = this.renderer.render();
+		const ansi = this.renderer.renderFrame(viewportOffset, (ctx) => {
+			this.renderElement(this.document.body, ctx);
+		});
 
-		if (ansi) {
+		// When cursor was detected, replace home positioning with detected cursor position
+		let finalAnsi = ansi;
+		if (ansi && this.hasDetectedCommandStart) {
+			const screenTop = this.scrollingManager.getScreenTop();
+			finalAnsi = ansi.replace(/\x1b\[H/, `\x1b[${screenTop + 1};1H`);
+		}
+
+		if (finalAnsi) {
 			await new Promise<void>((resolve, reject) => {
-				this.process.stdout.write(ansi, "utf8", (error) => {
+				this.process.stdout.write(finalAnsi, "utf8", (error) => {
 					if (error) {
 						reject(error);
 					} else {
@@ -397,7 +407,7 @@ export class TermDOM {
 	}
 
 	// TODO: many of the following methods do not belong on the TermDOM class
-	private renderElement(element: Element): void {
+	private renderElement(element: Element, ctx: import("./ansi.js").DrawingContext): void {
 		const rect = this.layoutEngine.getRect(element);
 
 		const color = this.window
@@ -431,7 +441,7 @@ export class TermDOM {
 		};
 
 		if (rect && style.bg != null) {
-			this.renderer.fillRect(
+			ctx.fillRect(
 				rect.left,
 				rect.top,
 				rect.width,
@@ -458,7 +468,7 @@ export class TermDOM {
 					fg: style.fg || 0xffffff, // Default to white if no color
 					bg: style.bg, // Inherit element's background color
 				};
-				this.renderer.drawBorder(
+				ctx.drawBorder(
 					Math.round(rect.left),
 					Math.round(rect.top),
 					Math.round(rect.width),
@@ -488,11 +498,11 @@ export class TermDOM {
 			if (childNode.nodeType === childNode.ELEMENT_NODE) {
 				const childElement = childNode as Element;
 				if (childElement instanceof (this.window as any).HTMLElement) {
-					this.renderElement(childElement);
+					this.renderElement(childElement, ctx);
 				}
 			} else if (childNode.nodeType === childNode.TEXT_NODE) {
 				const textNode = childNode as Text;
-				this.renderText(textNode);
+				this.renderText(textNode, ctx);
 			}
 			childNode = walker.nextSibling();
 		}
@@ -501,7 +511,7 @@ export class TermDOM {
 	/**
 	 * Render a text node with proper styling from its parent element or pseudo-element
 	 */
-	private renderText(textNode: Text): void {
+	private renderText(textNode: Text, ctx: import("./ansi.js").DrawingContext): void {
 		const textContent = textNode.data;
 		if (!textContent) return;
 
@@ -556,7 +566,7 @@ export class TermDOM {
 		if (rectTexts.length > 0) {
 			for (const rectText of rectTexts) {
 				if (rectText.text.length > 0) {
-					this.renderer.setText(
+					ctx.setText(
 						Math.round(rectText.rect.x),
 						Math.round(rectText.rect.y),
 						rectText.text,
@@ -829,7 +839,10 @@ export class TermDOM {
 				this.detectCommandStart(),
 				// Fallback: if cursor detection takes too long, proceed without it
 				new Promise<void>((resolve) => setTimeout(resolve, 1000)),
-			]).finally(() => {
+			]).catch(() => {
+				// If cursor detection fails, continue without it
+				this.hasDetectedCommandStart = false;
+			}).finally(() => {
 				// Clear the promise so subsequent renders don't wait
 				this.cursorDetectionPromise = null;
 			});

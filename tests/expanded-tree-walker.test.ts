@@ -14,9 +14,6 @@ import {
 	getPseudoElement,
 } from "../src/composition.js";
 
-// Utility constant for tests
-const _SHOW_EXTENDED_ALL = 0xffffffff;
-
 // Pure JSDOM Tests (no TermDOM dependency)
 
 test("Pure JSDOM - ExpandedTreeWalker basic functionality", () => {
@@ -250,67 +247,6 @@ test("Pure JSDOM - ExpandedTreeWalker slot content traversal", () => {
 	// Should find slotted content
 	expect(nodes.some((n) => n.className === "light-content")).toBe(true);
 	expect(nodes.some((n) => n.content === "Light DOM content")).toBe(true);
-});
-
-test("Pure JSDOM - ExpandedTreeWalker options control", () => {
-	const dom = new JSDOM("<!DOCTYPE html><html><body></body></html>");
-	const window = dom.window;
-	const document = window.document;
-
-	const div = document.createElement("div");
-	div.textContent = "Content";
-	document.body.appendChild(div);
-
-	// Add pseudo-elements
-	setPseudoElement(
-		div,
-		"::before",
-		createPseudoNode(div, "::before", "Before"),
-	);
-
-	// Add shadow root
-	const shadowRoot = {
-		firstChild: document.createTextNode("Shadow"),
-		nodeType: 11,
-	} as any;
-	setShadowRoot(div, shadowRoot);
-
-	// Test with all extended options disabled (just regular DOM traversal)
-	// Use a mask that includes standard flags but excludes our extended flags
-	const standardFlags =
-		window.NodeFilter.SHOW_ALL &
-		~(
-			NodeFilterExtended.SHOW_SHADOW_DOM |
-			NodeFilterExtended.SHOW_PSEUDO_ELEMENTS |
-			NodeFilterExtended.SHOW_SLOTS
-		);
-	const walkerDisabled = createExpandedTreeWalker(
-		window as any,
-		document.body,
-		standardFlags, // Only standard flags, no extended flags
-		null,
-	);
-
-	const nodesDisabled: Array<{
-		content: string;
-		isPseudo: boolean;
-		nodeName: string;
-	}> = [];
-	let node = walkerDisabled.nextNode();
-	while (node && nodesDisabled.length < 10) {
-		nodesDisabled.push({
-			content: node.textContent || "",
-			isPseudo: isPseudoNode(node),
-			nodeName: node.nodeName,
-		});
-		node = walkerDisabled.nextNode();
-	}
-
-	// Should only find regular content
-	expect(nodesDisabled.some((n) => n.content === "Content")).toBe(true);
-	expect(nodesDisabled.some((n) => n.content === "Before")).toBe(false);
-	expect(nodesDisabled.some((n) => n.content === "Shadow")).toBe(false);
-	expect(nodesDisabled.some((n) => n.isPseudo)).toBe(false);
 });
 
 test("Pure JSDOM - ExpandedTreeWalker utility functions", () => {
@@ -1269,8 +1205,8 @@ test("TermDOM - ::marker pseudo-elements with display: list-item", () => {
 	// Add CSS with ::marker pseudo-element content
 	const style = document.createElement("style");
 	style.textContent = `
-		.marker-test::marker { 
-			content: '★ '; 
+		.marker-test::marker {
+			content: '★ ';
 		}
 		.list-item {
 			display: list-item;
@@ -1324,14 +1260,14 @@ test("TermDOM - ::marker appears before ::before pseudo-elements", () => {
 	// Add CSS with both ::marker and ::before pseudo-elements
 	const style = document.createElement("style");
 	style.textContent = `
-		.test::marker { 
-			content: '★ '; 
+		.test::marker {
+			content: '★ ';
 		}
-		.test::before { 
-			content: '['; 
+		.test::before {
+			content: '[';
 		}
-		.test::after { 
-			content: ']'; 
+		.test::after {
+			content: ']';
 		}
 		.list-item {
 			display: list-item;
