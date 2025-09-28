@@ -11,7 +11,12 @@ import {
 } from "../src/termdom.js";
 import {EventEmitter} from "events";
 import {Terminal} from "@xterm/headless";
-import {type CellBuffer, Cell, createBuffer, type ColorDepth} from "../src/ansi.js";
+import {
+	type CellBuffer,
+	Cell,
+	createBuffer,
+	type ColorDepth,
+} from "../src/ansi.js";
 import {generateANSI} from "../src/ansi.js";
 import {writeFileSync, mkdirSync, existsSync} from "fs";
 import {join} from "path";
@@ -125,25 +130,25 @@ export class TestTerminal extends EventEmitter implements ProcessLike {
 			allowProposedApi: true,
 			theme: {
 				// Standard ANSI colors that match typical terminal expectations
-				black: '#000000',
-				red: '#ff0000',
-				green: '#00ff00', 
-				yellow: '#ffff00',
-				blue: '#0000ff',
-				magenta: '#ff00ff',
-				cyan: '#00ffff',
-				white: '#ffffff',
-				brightBlack: '#808080',
-				brightRed: '#ff8080',
-				brightGreen: '#80ff80',
-				brightYellow: '#ffff80',
-				brightBlue: '#8080ff',
-				brightMagenta: '#ff80ff',
-				brightCyan: '#80ffff',
-				brightWhite: '#ffffff',
-				foreground: '#ffffff',
-				background: '#000000'
-			}
+				black: "#000000",
+				red: "#ff0000",
+				green: "#00ff00",
+				yellow: "#ffff00",
+				blue: "#0000ff",
+				magenta: "#ff00ff",
+				cyan: "#00ffff",
+				white: "#ffffff",
+				brightBlack: "#808080",
+				brightRed: "#ff8080",
+				brightGreen: "#80ff80",
+				brightYellow: "#ffff80",
+				brightBlue: "#8080ff",
+				brightMagenta: "#ff80ff",
+				brightCyan: "#80ffff",
+				brightWhite: "#ffffff",
+				foreground: "#ffffff",
+				background: "#000000",
+			},
 		});
 
 		// For headless mode, we need to manually initialize the terminal buffer

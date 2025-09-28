@@ -727,12 +727,7 @@ export class DrawingContext {
 		}
 	}
 
-	setText(
-		x: number,
-		y: number,
-		text: string,
-		style?: CellStyle,
-	): number {
+	setText(x: number, y: number, text: string, style?: CellStyle): number {
 		let currentX = x;
 		const segmenter = new Intl.Segmenter("en", {granularity: "grapheme"});
 		const segments = Array.from(segmenter.segment(text));
@@ -850,12 +845,7 @@ export class DrawingContext {
 		}
 	}
 
-	#setCell(
-		row: number,
-		col: number,
-		char: string,
-		style?: CellStyle,
-	): void {
+	#setCell(row: number, col: number, char: string, style?: CellStyle): void {
 		const terminalRow = row + this.viewportOffset;
 
 		if (

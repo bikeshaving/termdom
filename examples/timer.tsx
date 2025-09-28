@@ -6,7 +6,7 @@ const termDOM = new TermDOM();
 function* Timer() {
 	let seconds = 0;
 	const interval = setInterval(() => this.refresh(() => seconds++), 1000);
-	for ({} of this) {
+	for (const _props of this) {
 		yield (
 			<div>
 				{seconds} second{seconds !== 1 && "s"}

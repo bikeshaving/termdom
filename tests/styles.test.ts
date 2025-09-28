@@ -1,13 +1,16 @@
 import {test, expect, describe} from "bun:test";
 import {JSDOM} from "jsdom";
 import {StyleManager} from "../src/styles.js";
+import {LayoutEngine} from "../src/layout.js";
 
 describe("getComputedStyle - What We Support", () => {
 	test("CSS spec defaults", () => {
 		const dom = new JSDOM(
 			`<!DOCTYPE html><html><body><div id="test"></div></body></html>`,
 		);
-		new StyleManager(dom.window);
+		const styleManager = new StyleManager(dom.window);
+		const layoutEngine = new LayoutEngine(dom.window);
+		styleManager.setLayoutEngine(layoutEngine);
 		const element = dom.window.document.getElementById("test")!;
 		const styles = dom.window.getComputedStyle(element);
 
@@ -39,7 +42,9 @@ describe("getComputedStyle - What We Support", () => {
 				</body>
 			</html>
 		`);
-		new StyleManager(dom.window);
+		const styleManager = new StyleManager(dom.window);
+		const layoutEngine = new LayoutEngine(dom.window);
+		styleManager.setLayoutEngine(layoutEngine);
 
 		// Block elements
 		expect(
@@ -103,7 +108,9 @@ describe("getComputedStyle - What We Support", () => {
 				</body>
 			</html>
 		`);
-		new StyleManager(dom.window);
+		const styleManager = new StyleManager(dom.window);
+		const layoutEngine = new LayoutEngine(dom.window);
+		styleManager.setLayoutEngine(layoutEngine);
 		const element = dom.window.document.getElementById("test")!;
 		const styles = dom.window.getComputedStyle(element);
 
@@ -122,7 +129,9 @@ describe("getComputedStyle - What We Support", () => {
 				</body>
 			</html>
 		`);
-		new StyleManager(dom.window);
+		const styleManager = new StyleManager(dom.window);
+		const layoutEngine = new LayoutEngine(dom.window);
+		styleManager.setLayoutEngine(layoutEngine);
 		const element = dom.window.document.getElementById("test")!;
 		const styles = dom.window.getComputedStyle(element);
 
@@ -139,7 +148,9 @@ describe("getComputedStyle - What We Support", () => {
 				</body>
 			</html>
 		`);
-		new StyleManager(dom.window);
+		const styleManager = new StyleManager(dom.window);
+		const layoutEngine = new LayoutEngine(dom.window);
+		styleManager.setLayoutEngine(layoutEngine);
 		const element = dom.window.document.getElementById("test")!;
 		const styles = dom.window.getComputedStyle(element);
 
@@ -160,7 +171,9 @@ describe("getComputedStyle - What We Support", () => {
 				</body>
 			</html>
 		`);
-		new StyleManager(dom.window);
+		const styleManager = new StyleManager(dom.window);
+		const layoutEngine = new LayoutEngine(dom.window);
+		styleManager.setLayoutEngine(layoutEngine);
 
 		const child = dom.window.document.getElementById("child")!;
 		const childStyles = dom.window.getComputedStyle(child);
@@ -189,7 +202,9 @@ describe("getComputedStyle - What We Support", () => {
 				</body>
 			</html>
 		`);
-		new StyleManager(dom.window);
+		const styleManager = new StyleManager(dom.window);
+		const layoutEngine = new LayoutEngine(dom.window);
+		styleManager.setLayoutEngine(layoutEngine);
 		const element = dom.window.document.getElementById("test")!;
 		const styles = dom.window.getComputedStyle(element);
 
@@ -220,7 +235,9 @@ describe("getComputedStyle - What We Support", () => {
 				</body>
 			</html>
 		`);
-		new StyleManager(dom.window);
+		const styleManager = new StyleManager(dom.window);
+		const layoutEngine = new LayoutEngine(dom.window);
+		styleManager.setLayoutEngine(layoutEngine);
 		const element = dom.window.document.getElementById("test")!;
 		const styles = dom.window.getComputedStyle(element);
 
@@ -248,7 +265,9 @@ describe("getComputedStyle - What We Don't Support (Failing Tests)", () => {
 				</body>
 			</html>
 		`);
-		new StyleManager(dom.window);
+		const styleManager = new StyleManager(dom.window);
+		const layoutEngine = new LayoutEngine(dom.window);
+		styleManager.setLayoutEngine(layoutEngine);
 		const element = dom.window.document.getElementById("test")!;
 		const styles = dom.window.getComputedStyle(element);
 
@@ -289,7 +308,9 @@ describe("getComputedStyle - What We Don't Support (Failing Tests)", () => {
 				</body>
 			</html>
 		`);
-		new StyleManager(dom.window);
+		const styleManager = new StyleManager(dom.window);
+		const layoutEngine = new LayoutEngine(dom.window);
+		styleManager.setLayoutEngine(layoutEngine);
 		const element = dom.window.document.getElementById("test")!;
 		const styles = dom.window.getComputedStyle(element);
 
@@ -317,7 +338,9 @@ describe("getComputedStyle - What We Don't Support (Failing Tests)", () => {
 				</body>
 			</html>
 		`);
-		new StyleManager(dom.window);
+		const styleManager = new StyleManager(dom.window);
+		const layoutEngine = new LayoutEngine(dom.window);
+		styleManager.setLayoutEngine(layoutEngine);
 		const element = dom.window.document.getElementById("test")!;
 		const styles = dom.window.getComputedStyle(element);
 
@@ -342,7 +365,9 @@ describe("getComputedStyle - What We Don't Support (Failing Tests)", () => {
 				</body>
 			</html>
 		`);
-		new StyleManager(dom.window);
+		const styleManager = new StyleManager(dom.window);
+		const layoutEngine = new LayoutEngine(dom.window);
+		styleManager.setLayoutEngine(layoutEngine);
 		const element = dom.window.document.getElementById("test")!;
 		const styles = dom.window.getComputedStyle(element);
 
@@ -371,7 +396,9 @@ describe("getComputedStyle - What We Don't Support (Failing Tests)", () => {
 				</body>
 			</html>
 		`);
-		new StyleManager(dom.window);
+		const styleManager = new StyleManager(dom.window);
+		const layoutEngine = new LayoutEngine(dom.window);
+		styleManager.setLayoutEngine(layoutEngine);
 
 		// Descendant selector
 		const child = dom.window.document.querySelector(".child")!;
@@ -410,7 +437,9 @@ describe("getComputedStyle - What We Don't Support (Failing Tests)", () => {
 				</body>
 			</html>
 		`);
-		new StyleManager(dom.window);
+		const styleManager = new StyleManager(dom.window);
+		const layoutEngine = new LayoutEngine(dom.window);
+		styleManager.setLayoutEngine(layoutEngine);
 		const element = dom.window.document.getElementById("test")!;
 		const styles = dom.window.getComputedStyle(element);
 
@@ -436,7 +465,9 @@ describe("getComputedStyle - What We Don't Support (Failing Tests)", () => {
 				</body>
 			</html>
 		`);
-		new StyleManager(dom.window);
+		const styleManager = new StyleManager(dom.window);
+		const layoutEngine = new LayoutEngine(dom.window);
+		styleManager.setLayoutEngine(layoutEngine);
 		const element = dom.window.document.getElementById("test")!;
 		const styles = dom.window.getComputedStyle(element);
 
@@ -472,7 +503,9 @@ describe("getComputedStyle - What We Don't Support (Failing Tests)", () => {
 				</body>
 			</html>
 		`);
-		new StyleManager(dom.window);
+		const styleManager = new StyleManager(dom.window);
+		const layoutEngine = new LayoutEngine(dom.window);
+		styleManager.setLayoutEngine(layoutEngine);
 		const element = dom.window.document.getElementById("test")!;
 		const styles = dom.window.getComputedStyle(element);
 
@@ -501,7 +534,9 @@ describe("getComputedStyle - What We Don't Support (Failing Tests)", () => {
 				</body>
 			</html>
 		`);
-		new StyleManager(dom.window);
+		const styleManager = new StyleManager(dom.window);
+		const layoutEngine = new LayoutEngine(dom.window);
+		styleManager.setLayoutEngine(layoutEngine);
 		const element = dom.window.document.getElementById("test")!;
 		const styles = dom.window.getComputedStyle(element);
 

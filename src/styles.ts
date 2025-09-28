@@ -1025,13 +1025,17 @@ export class StyleManager {
 
 	constructor(
 		private window: DOMWindow,
-		private layoutEngine: LayoutEngine,
+		private layoutEngine?: LayoutEngine,
 	) {
 		// Override window.getComputedStyle with our cached version
 		window.getComputedStyle = this.getComputedStyle.bind(this);
 
 		// Hook into methods that should invalidate cached styles
 		this.setupInvalidationHooks();
+	}
+
+	setLayoutEngine(layoutEngine: LayoutEngine): void {
+		this.layoutEngine = layoutEngine;
 
 		// Parse initial stylesheets (may be empty at construction time)
 		this.parseStylesheets();
@@ -1062,7 +1066,7 @@ export class StyleManager {
 			for (const [property, value] of Object.entries(pseudoStyle)) {
 				declaration.setProperty(property, value);
 			}
-			return declaration;
+			return declaration as unknown as globalThis.CSSStyleDeclaration;
 		}
 
 		// Check cache first for regular element styles
@@ -1468,7 +1472,7 @@ export class StyleManager {
 				};
 
 				// Invalidate the element in layout engine to rediscover pseudo elements
-				this.layoutEngine.invalidate(element);
+				this.layoutEngine?.invalidate(element);
 			}
 		}
 	}

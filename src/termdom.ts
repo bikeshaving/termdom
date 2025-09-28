@@ -127,6 +127,7 @@ export class TermDOM {
 		this.styleManager = new StyleManager(this.window);
 
 		this.layoutEngine = new LayoutEngine(this.jsdom.window);
+		this.styleManager.setLayoutEngine(this.layoutEngine);
 		this.layoutEngine.resize(this.width, this.height);
 
 		// Connect StyleManager to LayoutEngine after both are created
@@ -376,8 +377,8 @@ export class TermDOM {
 		}
 		// Get viewport offset from raw internal scrollTop
 		// When cursor was detected, content should render from buffer[0] with cursor positioning to detected row
-		const viewportOffset = this.hasDetectedCommandStart 
-			? 0 
+		const viewportOffset = this.hasDetectedCommandStart
+			? 0
 			: -this.scrollingManager.getScrollTop();
 
 		const ansi = this.renderer.renderFrame(viewportOffset, (ctx) => {
@@ -407,7 +408,10 @@ export class TermDOM {
 	}
 
 	// TODO: many of the following methods do not belong on the TermDOM class
-	private renderElement(element: Element, ctx: import("./ansi.js").DrawingContext): void {
+	private renderElement(
+		element: Element,
+		ctx: import("./ansi.js").DrawingContext,
+	): void {
 		const rect = this.layoutEngine.getRect(element);
 
 		const color = this.window
@@ -441,13 +445,7 @@ export class TermDOM {
 		};
 
 		if (rect && style.bg != null) {
-			ctx.fillRect(
-				rect.left,
-				rect.top,
-				rect.width,
-				rect.height,
-				style.bg,
-			);
+			ctx.fillRect(rect.left, rect.top, rect.width, rect.height, style.bg);
 		}
 
 		// Handle tables with TanStack integration
@@ -511,7 +509,10 @@ export class TermDOM {
 	/**
 	 * Render a text node with proper styling from its parent element or pseudo-element
 	 */
-	private renderText(textNode: Text, ctx: import("./ansi.js").DrawingContext): void {
+	private renderText(
+		textNode: Text,
+		ctx: import("./ansi.js").DrawingContext,
+	): void {
 		const textContent = textNode.data;
 		if (!textContent) return;
 
@@ -836,16 +837,18 @@ export class TermDOM {
 		if (this.process.stdin?.isTTY) {
 			// Set up cursor detection promise that render() will wait for
 			this.cursorDetectionPromise = Promise.race([
-				this.detectCommandStart(),
+				this.detectCommandStart().then(() => {}),
 				// Fallback: if cursor detection takes too long, proceed without it
 				new Promise<void>((resolve) => setTimeout(resolve, 1000)),
-			]).catch(() => {
-				// If cursor detection fails, continue without it
-				this.hasDetectedCommandStart = false;
-			}).finally(() => {
-				// Clear the promise so subsequent renders don't wait
-				this.cursorDetectionPromise = null;
-			});
+			])
+				.catch(() => {
+					// If cursor detection fails, continue without it
+					this.hasDetectedCommandStart = false;
+				})
+				.finally(() => {
+					// Clear the promise so subsequent renders don't wait
+					this.cursorDetectionPromise = null;
+				});
 		} else {
 			// In non-TTY environments, don't set up cursor detection at all
 			this.cursorDetectionPromise = null;

@@ -1,6 +1,6 @@
 /**
  * Test Utils Tests
- * 
+ *
  * Comprehensive tests for the TestTerminal and related test utilities
  * to ensure proper TTY simulation and cursor query handling
  */
@@ -32,7 +32,7 @@ describe("TestTerminal", () => {
 		test("provides plain text output", async () => {
 			terminal.stdout.write("Hello\r\nWorld");
 			// Give xterm a moment to process the data
-			await new Promise(resolve => setTimeout(resolve, 10));
+			await new Promise((resolve) => setTimeout(resolve, 10));
 			const text = terminal.getPlainText();
 			expect(text).toContain("Hello");
 			expect(text).toContain("World");
@@ -40,7 +40,7 @@ describe("TestTerminal", () => {
 
 		test("provides screen contents with ANSI", async () => {
 			await new Promise<void>((resolve) => {
-				terminal.stdout.write("\x1b[31mRed Text\x1b[0m", resolve);
+				terminal.stdout.write("\x1b[31mRed Text\x1b[0m", () => resolve());
 			});
 			const contents = terminal.getScreenContents();
 			expect(contents).toContain("Red Text");
@@ -63,19 +63,19 @@ describe("TestTerminal", () => {
 
 			// First write some content to establish cursor position
 			await new Promise<void>((resolve) => {
-				terminal.stdout.write("Hello", resolve);
+				terminal.stdout.write("Hello", () => resolve());
 			});
 
 			// Send cursor position query
 			await new Promise<void>((resolve) => {
-				terminal.stdout.write("\x1b[6n", resolve);
+				terminal.stdout.write("\x1b[6n", () => resolve());
 			});
 
 			// Wait a bit for xterm to process and respond
-			await new Promise(resolve => setTimeout(resolve, 100));
+			await new Promise((resolve) => setTimeout(resolve, 100));
 
-			console.log("Response received:", JSON.stringify(response));
-			console.log("Terminal buffer content:", terminal.getPlainText());
+			// console.log("Response received:", JSON.stringify(response));
+			// console.log("Terminal buffer content:", terminal.getPlainText());
 
 			// Should receive cursor position response
 			expect(response).toMatch(/\x1b\[\d+;\d+R/);
@@ -104,7 +104,7 @@ describe("TestTerminal", () => {
 			terminal.stdout.write("\x1b[6n");
 			terminal.stdout.write("\x1b[6n");
 
-			await new Promise(resolve => setTimeout(resolve, 100));
+			await new Promise((resolve) => setTimeout(resolve, 100));
 
 			// Should get responses for both queries
 			expect(responses.length).toBeGreaterThan(0);
@@ -121,33 +121,33 @@ describe("TestTerminal", () => {
 
 		test("TermDOM cursor detection completes", async () => {
 			const dom = new TermDOM({process: terminal});
-			
+
 			// Should be able to call detectCommandStart without timeout
 			const startTime = Date.now();
 			try {
 				await Promise.race([
 					dom.detectCommandStart(),
-					new Promise((_, reject) => 
-						setTimeout(() => reject(new Error("Timeout")), 500)
-					)
+					new Promise((_, reject) =>
+						setTimeout(() => reject(new Error("Timeout")), 500),
+					),
 				]);
 			} catch (error) {
 				const elapsed = Date.now() - startTime;
 				// If it times out, it should be our 500ms timeout, not the 1000ms TermDOM timeout
-				if (error.message === "Timeout") {
+				if (error instanceof Error && error.message === "Timeout") {
 					expect(elapsed).toBeLessThan(600); // Our timeout
 				} else {
 					// Unexpected error
 					throw error;
 				}
 			}
-			
+
 			dom.dispose();
 		});
 
 		test("TermDOM render works without cursor timeout", async () => {
 			const dom = new TermDOM({process: terminal});
-			
+
 			const span = dom.document.createElement("span");
 			span.textContent = "Test Content";
 			dom.document.body.appendChild(span);
@@ -156,13 +156,13 @@ describe("TestTerminal", () => {
 			const startTime = Date.now();
 			await dom.render();
 			const elapsed = Date.now() - startTime;
-			
+
 			// Should complete quickly, not take 1000ms timeout
 			expect(elapsed).toBeLessThan(500);
-			
+
 			const output = terminal.getPlainText();
 			expect(output).toContain("Test Content");
-			
+
 			dom.dispose();
 		});
 	});
@@ -171,12 +171,12 @@ describe("TestTerminal", () => {
 		test("xterm processes ANSI sequences", async () => {
 			// Write colored text
 			await new Promise<void>((resolve) => {
-				terminal.stdout.write("\x1b[31mRed\x1b[0m", resolve);
+				terminal.stdout.write("\x1b[31mRed\x1b[0m", () => resolve());
 			});
-			
+
 			const plainText = terminal.getPlainText();
 			expect(plainText).toContain("Red");
-			
+
 			const ansiOutput = terminal.getScreenContents();
 			// xterm.js converts basic colors to RGB format in truecolor mode
 			expect(ansiOutput).toMatch(/\x1b\[38;2;[0-9;]+mRed/);
@@ -184,9 +184,9 @@ describe("TestTerminal", () => {
 
 		test("xterm handles cursor movements", async () => {
 			await new Promise<void>((resolve) => {
-				terminal.stdout.write("Line 1\r\nLine 2", resolve);
+				terminal.stdout.write("Line 1\r\nLine 2", () => resolve());
 			});
-			
+
 			const plainText = terminal.getPlainText();
 			expect(plainText).toContain("Line 1");
 			expect(plainText).toContain("Line 2");
@@ -195,14 +195,14 @@ describe("TestTerminal", () => {
 		test("xterm buffer conversion works", async () => {
 			// Write initial text
 			await new Promise<void>((resolve) => {
-				terminal.stdout.write("ABC", resolve);
+				terminal.stdout.write("ABC", () => resolve());
 			});
-			
+
 			// Move cursor to home and overwrite
 			await new Promise<void>((resolve) => {
-				terminal.stdout.write("\x1b[1;1HX", resolve);
+				terminal.stdout.write("\x1b[1;1HX", () => resolve());
 			});
-			
+
 			const plainText = terminal.getPlainText();
 			expect(plainText).toContain("XBC");
 		});
@@ -253,7 +253,8 @@ describe("stripControlCodes", () => {
 	});
 
 	test("handles complex mixed sequences", () => {
-		const input = "\x1b[?25l\x1b[?2026h\x1b[H\x1b[5CHello\x1b[K\x1b[?25h\x1b[?2026l";
+		const input =
+			"\x1b[?25l\x1b[?2026h\x1b[H\x1b[5CHello\x1b[K\x1b[?25h\x1b[?2026l";
 		const output = stripControlCodes(input);
 		expect(output).toBe("     Hello");
 	});

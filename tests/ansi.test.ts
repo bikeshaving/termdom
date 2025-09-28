@@ -7,7 +7,6 @@ import {
 	getBorderChar,
 	mergeBorderEncodings,
 	Renderer,
-	DrawingContext,
 } from "../src/ansi.js";
 import {BorderEdgeStyle} from "../src/styles.js";
 import {stripControlCodes} from "./test-utils.js";
@@ -290,7 +289,7 @@ describe("Renderer with callback API", () => {
 		test("generates empty output when no content", () => {
 			const renderer = new Renderer(5, 10);
 
-			const output = renderer.renderFrame(0, (ctx) => {
+			const output = renderer.renderFrame(0, (_ctx) => {
 				// No drawing operations
 			});
 

@@ -70,6 +70,7 @@ export class ExpandedTreeWalker {
 	nextNode(): Node | null {
 		let node = this.currentNode;
 
+		// eslint-disable-next-line no-constant-condition
 		while (true) {
 			// Try to get first child (including extended children)
 			const firstChild = this.#getFirstChild(node);

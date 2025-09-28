@@ -13,9 +13,9 @@ function createLayoutEngine(html: string = "<div></div>") {
 		body { min-height: 100%; }
 	</style></head><body>${html}</body></html>`);
 	// Setup terminal-specific getComputedStyle
-	new StyleManager(jsdom.window);
-
+	const styleManager = new StyleManager(jsdom.window);
 	const layoutEngine = new LayoutEngine(jsdom.window);
+	styleManager.setLayoutEngine(layoutEngine);
 	// Set initial size and calculate layout
 	layoutEngine.resize(300, 200);
 	// The resize method now calls calculateLayout internally
