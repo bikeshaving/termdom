@@ -4,11 +4,11 @@
  */
 
 import {test, expect} from "bun:test";
-import {TestTerminal} from "./test-utils";
+import {MockProcess} from "./test-utils";
 import {TermDOM} from "../src/termdom";
 
 test("findInlineRunHead should find outer inline-block for nested text nodes", async () => {
-	const terminal = new TestTerminal({cols: 50, rows: 10});
+	const terminal = new MockProcess({cols: 50, rows: 10});
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 
@@ -48,7 +48,7 @@ test("findInlineRunHead should find outer inline-block for nested text nodes", a
 });
 
 test("getRectTexts should work for text nodes in nested inline-blocks", async () => {
-	const terminal = new TestTerminal({cols: 50, rows: 10});
+	const terminal = new MockProcess({cols: 50, rows: 10});
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 
@@ -90,7 +90,7 @@ test("getRectTexts should work for text nodes in nested inline-blocks", async ()
 });
 
 test("nested inline-block should render both texts", async () => {
-	const terminal = new TestTerminal({cols: 50, rows: 10});
+	const terminal = new MockProcess({cols: 50, rows: 10});
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 
@@ -130,7 +130,7 @@ test("nested inline-block should render both texts", async () => {
 });
 
 test("deeply nested inline-blocks should work", async () => {
-	const terminal = new TestTerminal({cols: 50, rows: 10});
+	const terminal = new MockProcess({cols: 50, rows: 10});
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 
@@ -169,7 +169,7 @@ test("deeply nested inline-blocks should work", async () => {
 });
 
 test("mixed content in nested inline-blocks", async () => {
-	const terminal = new TestTerminal({cols: 50, rows: 10});
+	const terminal = new MockProcess({cols: 50, rows: 10});
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 

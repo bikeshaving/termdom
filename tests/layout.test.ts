@@ -4,7 +4,7 @@ import {LayoutEngine} from "../src/layout.js";
 import {StyleManager} from "../src/styles.js";
 import {TermDOM} from "../src/termdom.js";
 import {setPseudoElement, createPseudoNode} from "../src/composition.js";
-import {TestTerminal} from "./test-utils.js";
+import {MockProcess} from "./test-utils.js";
 
 function createLayoutEngine(html: string = "<div></div>") {
 	const jsdom = new JSDOM(`<!DOCTYPE html><html><head><style>
@@ -1153,7 +1153,7 @@ test("getRectTexts - maintains backward compatibility", () => {
 // that affect inline runs, including run head changes and cache invalidation
 
 test("Inline run head changes - text to element", async () => {
-	const terminal = new TestTerminal({cols: 40, rows: 10});
+	const terminal = new MockProcess({cols: 40, rows: 10});
 	const termdom = new TermDOM({
 		width: 40,
 		height: 10,
@@ -1179,7 +1179,7 @@ test("Inline run head changes - text to element", async () => {
 });
 
 test("Inline run head changes - element to text", async () => {
-	const terminal = new TestTerminal({cols: 40, rows: 10});
+	const terminal = new MockProcess({cols: 40, rows: 10});
 	const termdom = new TermDOM({
 		width: 40,
 		height: 10,
@@ -1206,7 +1206,7 @@ test("Inline run head changes - element to text", async () => {
 });
 
 test("Adding inline elements to existing run", async () => {
-	const terminal = new TestTerminal({cols: 40, rows: 10});
+	const terminal = new MockProcess({cols: 40, rows: 10});
 	const termdom = new TermDOM({
 		width: 40,
 		height: 10,
@@ -1240,7 +1240,7 @@ test("Adding inline elements to existing run", async () => {
 });
 
 test("Removing inline elements from run", async () => {
-	const terminal = new TestTerminal({cols: 40, rows: 10});
+	const terminal = new MockProcess({cols: 40, rows: 10});
 	const termdom = new TermDOM({
 		width: 40,
 		height: 10,
@@ -1269,7 +1269,7 @@ test("Removing inline elements from run", async () => {
 });
 
 test("Inline-block elements affecting run layout", async () => {
-	const terminal = new TestTerminal({cols: 40, rows: 10});
+	const terminal = new MockProcess({cols: 40, rows: 10});
 	const termdom = new TermDOM({
 		width: 40,
 		height: 10,
@@ -1301,7 +1301,7 @@ test("Inline-block elements affecting run layout", async () => {
 });
 
 test("Rapid DOM changes stress test", async () => {
-	const terminal = new TestTerminal({cols: 40, rows: 10});
+	const terminal = new MockProcess({cols: 40, rows: 10});
 	const termdom = new TermDOM({
 		width: 40,
 		height: 10,
@@ -1346,7 +1346,7 @@ test("Rapid DOM changes stress test", async () => {
 });
 
 test("Text node splitting and merging", async () => {
-	const terminal = new TestTerminal({cols: 40, rows: 10});
+	const terminal = new MockProcess({cols: 40, rows: 10});
 	const termdom = new TermDOM({
 		width: 40,
 		height: 10,
@@ -1381,7 +1381,7 @@ test("Text node splitting and merging", async () => {
 });
 
 test("White-space handling in dynamic inline runs", async () => {
-	const terminal = new TestTerminal({cols: 40, rows: 10});
+	const terminal = new MockProcess({cols: 40, rows: 10});
 	const termdom = new TermDOM({
 		width: 40,
 		height: 10,
@@ -1411,7 +1411,7 @@ test("White-space handling in dynamic inline runs", async () => {
 });
 
 test.todo("Direct textContent changes in inline runs", async () => {
-	const terminal = new TestTerminal({cols: 40, rows: 10});
+	const terminal = new MockProcess({cols: 40, rows: 10});
 	const termdom = new TermDOM({
 		width: 40,
 		height: 10,
@@ -1440,7 +1440,7 @@ test.todo("Direct textContent changes in inline runs", async () => {
 });
 
 test.todo("Text node data changes (characterData mutations)", async () => {
-	const terminal = new TestTerminal({cols: 40, rows: 10});
+	const terminal = new MockProcess({cols: 40, rows: 10});
 	const termdom = new TermDOM({
 		width: 40,
 		height: 10,
@@ -1470,7 +1470,7 @@ test.todo("Text node data changes (characterData mutations)", async () => {
 
 // TODO tests for more complex scenarios that need additional fixes
 test("Direct textContent changes in inline runs", async () => {
-	const terminal = new TestTerminal({cols: 40, rows: 10});
+	const terminal = new MockProcess({cols: 40, rows: 10});
 	const termdom = new TermDOM({
 		width: 40,
 		height: 10,
@@ -1505,7 +1505,7 @@ test.todo("Text node data changes (characterData mutations)", async () => {
 });
 
 test("Block element interrupting inline run", async () => {
-	const terminal = new TestTerminal({cols: 40, rows: 10});
+	const terminal = new MockProcess({cols: 40, rows: 10});
 	const termdom = new TermDOM({
 		width: 40,
 		height: 10,
@@ -1540,7 +1540,7 @@ test("Block element interrupting inline run", async () => {
 });
 
 test("Block element removal merging inline runs", async () => {
-	const terminal = new TestTerminal({cols: 40, rows: 10});
+	const terminal = new MockProcess({cols: 40, rows: 10});
 	const termdom = new TermDOM({
 		width: 40,
 		height: 10,
@@ -1577,7 +1577,7 @@ test("Block element removal merging inline runs", async () => {
 });
 
 test("Block element removal properly cleans up former run head Yoga nodes", async () => {
-	const terminal = new TestTerminal({cols: 40, rows: 10});
+	const terminal = new MockProcess({cols: 40, rows: 10});
 	const termdom = new TermDOM({
 		width: 40,
 		height: 10,
@@ -1957,7 +1957,7 @@ test("Block children have flex-shrink: 0 to prevent content clipping", () => {
 });
 
 test("whitespace between block elements should be collapsed", async () => {
-	const terminal = new TestTerminal({cols: 40, rows: 10});
+	const terminal = new MockProcess({cols: 40, rows: 10});
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 
@@ -1998,7 +1998,7 @@ test("whitespace between block elements should be collapsed", async () => {
 });
 
 test("whitespace in nested lists should be collapsed", async () => {
-	const terminal = new TestTerminal({cols: 40, rows: 12});
+	const terminal = new MockProcess({cols: 40, rows: 12});
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 
@@ -2041,7 +2041,7 @@ test("whitespace in nested lists should be collapsed", async () => {
 });
 
 test("programmatic DOM creation should not have phantom lines", async () => {
-	const terminal = new TestTerminal({cols: 40, rows: 8});
+	const terminal = new MockProcess({cols: 40, rows: 8});
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 
@@ -2091,7 +2091,7 @@ test("programmatic DOM creation should not have phantom lines", async () => {
 });
 
 test("compact HTML should not have phantom lines", async () => {
-	const terminal = new TestTerminal({cols: 40, rows: 8});
+	const terminal = new MockProcess({cols: 40, rows: 8});
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 

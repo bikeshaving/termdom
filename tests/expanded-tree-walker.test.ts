@@ -1,7 +1,7 @@
 import {test, expect} from "bun:test";
 import {JSDOM} from "jsdom";
 import {TermDOM} from "../src/termdom.js";
-import {TestTerminal} from "./test-utils.js";
+import {MockProcess} from "./test-utils.js";
 import {
 	createExpandedTreeWalker,
 	NodeFilterExtended,
@@ -718,7 +718,7 @@ test("Pure JSDOM - ExpandedTreeWalker complex nested scenario with pseudo-elemen
 // TermDOM Integration Tests
 
 test("TermDOM - ExpandedTreeWalker basic functionality", () => {
-	const terminal = new TestTerminal();
+	const terminal = new MockProcess();
 	const termdom = new TermDOM({process: terminal});
 	const {document} = termdom;
 
@@ -744,7 +744,7 @@ test("TermDOM - ExpandedTreeWalker basic functionality", () => {
 });
 
 test("TermDOM - ExpandedTreeWalker with shadow DOM", () => {
-	const terminal = new TestTerminal();
+	const terminal = new MockProcess();
 	const termdom = new TermDOM({process: terminal});
 	const {document} = termdom;
 
@@ -797,7 +797,7 @@ test("TermDOM - ExpandedTreeWalker with shadow DOM", () => {
 });
 
 test("TermDOM - ExpandedTreeWalker filter and whatToShow", () => {
-	const terminal = new TestTerminal();
+	const terminal = new MockProcess();
 	const termdom = new TermDOM({process: terminal});
 	const {document} = termdom;
 
@@ -1198,7 +1198,7 @@ test("Pure JSDOM - ExpandedTreeWalker manual currentNode setting respects root",
 // CSS-specific tests for ::marker pseudo-elements
 
 test("TermDOM - ::marker pseudo-elements with display: list-item", () => {
-	const terminal = new TestTerminal();
+	const terminal = new MockProcess();
 	const termdom = new TermDOM({process: terminal});
 	const {document} = termdom;
 
@@ -1253,7 +1253,7 @@ test("TermDOM - ::marker pseudo-elements with display: list-item", () => {
 });
 
 test("TermDOM - ::marker appears before ::before pseudo-elements", () => {
-	const terminal = new TestTerminal();
+	const terminal = new MockProcess();
 	const termdom = new TermDOM({process: terminal});
 	const {document} = termdom;
 
@@ -1338,7 +1338,7 @@ test("TermDOM - ::marker appears before ::before pseudo-elements", () => {
 });
 
 test("TermDOM - ::marker only on elements with display: list-item in walker traversal", () => {
-	const terminal = new TestTerminal();
+	const terminal = new MockProcess();
 	const termdom = new TermDOM({process: terminal});
 	const {document} = termdom;
 
@@ -1424,7 +1424,7 @@ test("TermDOM - ::marker only on elements with display: list-item in walker trav
 });
 
 test("TermDOM - ::marker rendering test", async () => {
-	const terminal = new TestTerminal();
+	const terminal = new MockProcess();
 	const termdom = new TermDOM({process: terminal});
 	const {document} = termdom;
 

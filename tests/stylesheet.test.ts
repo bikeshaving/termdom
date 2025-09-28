@@ -1,9 +1,9 @@
 import {test, expect} from "bun:test";
 import {TermDOM} from "../src/termdom.js";
-import {TestTerminal} from "./test-utils.js";
+import {MockProcess} from "./test-utils.js";
 
 test("CSS specificity calculation", async () => {
-	const terminal = new TestTerminal();
+	const terminal = new MockProcess();
 	const termdom = new TermDOM({process: terminal});
 	const {document} = termdom;
 
@@ -56,7 +56,7 @@ test("CSS specificity calculation", async () => {
 });
 
 test("CSS cascade resolution", async () => {
-	const terminal = new TestTerminal();
+	const terminal = new MockProcess();
 	const termdom = new TermDOM({process: terminal});
 	const {document} = termdom;
 
@@ -88,7 +88,7 @@ test("CSS cascade resolution", async () => {
 });
 
 test("Pseudo-element CSS support", async () => {
-	const terminal = new TestTerminal();
+	const terminal = new MockProcess();
 	const termdom = new TermDOM({process: terminal});
 	const {document} = termdom;
 
@@ -132,7 +132,7 @@ test("Pseudo-element CSS support", async () => {
 });
 
 test("Pseudo-element specificity", async () => {
-	const terminal = new TestTerminal();
+	const terminal = new MockProcess();
 	const termdom = new TermDOM({process: terminal});
 	const {document} = termdom;
 
@@ -176,7 +176,7 @@ test("Pseudo-element specificity", async () => {
 });
 
 test.todo("StyleManager auto-refresh on DOM changes", async () => {
-	const terminal = new TestTerminal();
+	const terminal = new MockProcess();
 	const termdom = new TermDOM({process: terminal});
 	const {document} = termdom;
 
@@ -212,7 +212,7 @@ test.todo("StyleManager auto-refresh on DOM changes", async () => {
 });
 
 test("StyleManager createPseudoElementNode", async () => {
-	const terminal = new TestTerminal();
+	const terminal = new MockProcess();
 	const termdom = new TermDOM({process: terminal});
 	const {document} = termdom;
 

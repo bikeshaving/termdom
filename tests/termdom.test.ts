@@ -4,10 +4,10 @@
 
 import {test, expect} from "bun:test";
 import {TermDOM} from "../src/termdom.js";
-import {TestTerminal} from "./test-utils";
+import {MockProcess} from "./test-utils";
 
 test("TermDOM provides HTML document with terminal capabilities", () => {
-	const terminal = new TestTerminal();
+	const terminal = new MockProcess();
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 
@@ -19,7 +19,7 @@ test("TermDOM provides HTML document with terminal capabilities", () => {
 });
 
 test("can create standard HTML elements", () => {
-	const terminal = new TestTerminal();
+	const terminal = new MockProcess();
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 
@@ -35,7 +35,7 @@ test("can create standard HTML elements", () => {
 });
 
 test("can build HTML DOM tree", () => {
-	const terminal = new TestTerminal();
+	const terminal = new MockProcess();
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 
@@ -56,7 +56,7 @@ test("can build HTML DOM tree", () => {
 });
 
 test("HTML elements have CSS styling", () => {
-	const terminal = new TestTerminal();
+	const terminal = new MockProcess();
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 
@@ -82,7 +82,7 @@ test("HTML elements have CSS styling", () => {
 });
 
 test("TermDOM provides correct terminal dimensions", () => {
-	const terminal = new TestTerminal({cols: 100, rows: 50});
+	const terminal = new MockProcess({cols: 100, rows: 50});
 	const dom = new TermDOM({
 		process: terminal,
 		width: 100,
@@ -97,7 +97,7 @@ test("TermDOM provides correct terminal dimensions", () => {
 });
 
 test("HTML elements support layout APIs", () => {
-	const terminal = new TestTerminal();
+	const terminal = new MockProcess();
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 
@@ -120,7 +120,7 @@ test("HTML elements support layout APIs", () => {
 });
 
 test("can render HTML to terminal without errors", async () => {
-	const terminal = new TestTerminal();
+	const terminal = new MockProcess();
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 

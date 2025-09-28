@@ -12,13 +12,13 @@
  */
 
 import {test, expect} from "bun:test";
-import {TestTerminal} from "./test-utils";
+import {MockProcess} from "./test-utils";
 import {TermDOM} from "../src/termdom";
 
 // ===== NOWRAP TESTS =====
 
 test("white-space: nowrap in non-flex context should not wrap", async () => {
-	const terminal = new TestTerminal({cols: 60, rows: 10});
+	const terminal = new MockProcess({cols: 60, rows: 10});
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 
@@ -51,7 +51,7 @@ test("white-space: nowrap in non-flex context should not wrap", async () => {
 });
 
 test("white-space: nowrap in flex context - content should determine container size", async () => {
-	const terminal = new TestTerminal({cols: 80, rows: 10});
+	const terminal = new MockProcess({cols: 80, rows: 10});
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 
@@ -112,7 +112,7 @@ test("white-space: nowrap in flex context - content should determine container s
 });
 
 test("white-space: nowrap vs normal text wrapping comparison", async () => {
-	const terminal = new TestTerminal({cols: 30, rows: 15});
+	const terminal = new MockProcess({cols: 30, rows: 15});
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 
@@ -197,7 +197,7 @@ test("white-space: nowrap vs normal text wrapping comparison", async () => {
 });
 
 test("white-space: nowrap with emoji and unicode", async () => {
-	const terminal = new TestTerminal({cols: 15, rows: 5});
+	const terminal = new MockProcess({cols: 15, rows: 5});
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 
@@ -227,7 +227,7 @@ test("white-space: nowrap with emoji and unicode", async () => {
 });
 
 test("flexShrink 0 with white-space: nowrap should prevent shrinking entirely", async () => {
-	const terminal = new TestTerminal({cols: 50, rows: 8});
+	const terminal = new MockProcess({cols: 50, rows: 8});
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 
@@ -293,7 +293,7 @@ test("flexShrink 0 with white-space: nowrap should prevent shrinking entirely", 
 // ===== MIXED WHITE-SPACE PROPERTY TESTS =====
 
 test("mixed white-space properties in single inline run", async () => {
-	const terminal = new TestTerminal({cols: 60, rows: 5});
+	const terminal = new MockProcess({cols: 60, rows: 5});
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 
@@ -344,7 +344,7 @@ test("mixed white-space properties in single inline run", async () => {
 });
 
 test("alternating white-space properties in inline run", async () => {
-	const terminal = new TestTerminal({cols: 40, rows: 6});
+	const terminal = new MockProcess({cols: 40, rows: 6});
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 
@@ -380,7 +380,7 @@ test("alternating white-space properties in inline run", async () => {
 });
 
 test("nested elements with different white-space properties", async () => {
-	const terminal = new TestTerminal({cols: 50, rows: 4});
+	const terminal = new MockProcess({cols: 50, rows: 4});
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 
@@ -418,7 +418,7 @@ test("nested elements with different white-space properties", async () => {
 });
 
 test("pre and nowrap interaction in same run", async () => {
-	const terminal = new TestTerminal({cols: 40, rows: 5});
+	const terminal = new MockProcess({cols: 40, rows: 5});
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 
@@ -454,7 +454,7 @@ test("pre and nowrap interaction in same run", async () => {
 });
 
 test("white-space inheritance and override", async () => {
-	const terminal = new TestTerminal({cols: 50, rows: 4});
+	const terminal = new MockProcess({cols: 50, rows: 4});
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 
@@ -495,7 +495,7 @@ test("white-space inheritance and override", async () => {
 });
 
 test("complex mixed white-space with word-break properties", async () => {
-	const terminal = new TestTerminal({cols: 50, rows: 6});
+	const terminal = new MockProcess({cols: 50, rows: 6});
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 

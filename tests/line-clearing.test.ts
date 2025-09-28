@@ -1,10 +1,10 @@
 import {test, expect} from "bun:test";
 import {TermDOM} from "../src/index.js";
-import {TestTerminal} from "./test-utils.js";
+import {MockProcess} from "./test-utils.js";
 
 test("line clearing removes terminal artifacts from previous commands", async () => {
 	// Create a test terminal to simulate artifacts
-	const terminal = new TestTerminal({cols: 40, rows: 10});
+	const terminal = new MockProcess({cols: 40, rows: 10});
 
 	// Simulate artifacts from previous commands by writing to stdout asynchronously
 	await new Promise<void>((resolve) => {
@@ -63,7 +63,7 @@ test("line clearing removes terminal artifacts from previous commands", async ()
 
 test("indented content clears entire line including leading columns", async () => {
 	// Create a test terminal with artifacts in the indented area
-	const terminal = new TestTerminal({cols: 40, rows: 5});
+	const terminal = new MockProcess({cols: 40, rows: 5});
 
 	// Simulate artifacts that would interfere with indented content
 	await new Promise<void>((resolve) => {
@@ -101,7 +101,7 @@ test("indented content clears entire line including leading columns", async () =
 
 test("first render includes line clear sequences", async () => {
 	// This test verifies that clear sequences are present in the raw output
-	const terminal = new TestTerminal({cols: 40, rows: 5});
+	const terminal = new MockProcess({cols: 40, rows: 5});
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 

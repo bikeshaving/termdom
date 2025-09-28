@@ -1,7 +1,6 @@
 import {test, expect} from "bun:test";
 import {TermDOM} from "../src/termdom.js";
 import {EventEmitter} from "events";
-import {TestTerminal} from "./test-utils";
 
 // Mock TTY stream that simulates a real terminal
 class MockTTYStream extends EventEmitter {
@@ -43,7 +42,7 @@ class MockTTYStream extends EventEmitter {
 }
 
 // Mock process that has a TTY
-class MockProcess extends EventEmitter {
+class MockKeyboardProcess extends EventEmitter {
 	stdout = {
 		isTTY: true,
 		columns: 80,
@@ -72,7 +71,7 @@ class MockProcess extends EventEmitter {
 }
 
 test("keyboard events are dispatched to elements", async () => {
-	const terminal = new TestTerminal();
+	const terminal = new MockKeyboardProcess();
 	const termdom = new TermDOM({process: terminal});
 	const {document} = termdom;
 
@@ -122,7 +121,7 @@ test("keyboard events are dispatched to elements", async () => {
 });
 
 test("special keys are mapped correctly", async () => {
-	const terminal = new TestTerminal();
+	const terminal = new MockKeyboardProcess();
 	const termdom = new TermDOM({process: terminal});
 	const {document} = termdom;
 
@@ -155,7 +154,7 @@ test("special keys are mapped correctly", async () => {
 });
 
 test("arrow keys are parsed correctly", async () => {
-	const terminal = new TestTerminal();
+	const terminal = new MockKeyboardProcess();
 	const termdom = new TermDOM({process: terminal});
 	const {document} = termdom;
 
@@ -196,7 +195,7 @@ test("arrow keys are parsed correctly", async () => {
 });
 
 test("keyboard events bubble up the DOM", async () => {
-	const terminal = new TestTerminal();
+	const terminal = new MockKeyboardProcess();
 	const termdom = new TermDOM({process: terminal});
 	const {document} = termdom;
 
@@ -227,7 +226,7 @@ test("keyboard events bubble up the DOM", async () => {
 });
 
 test("can create keyboard event manually", () => {
-	const terminal = new TestTerminal();
+	const terminal = new MockKeyboardProcess();
 	const termdom = new TermDOM({process: terminal});
 	const {document: _document, window} = termdom;
 
@@ -245,7 +244,7 @@ test("can create keyboard event manually", () => {
 });
 
 test("manual event dispatch works", () => {
-	const terminal = new TestTerminal();
+	const terminal = new MockKeyboardProcess();
 	const termdom = new TermDOM({process: terminal});
 	const {document, window} = termdom;
 
@@ -270,7 +269,7 @@ test("manual event dispatch works", () => {
 });
 
 test("keyboard system works with mock TTY", async () => {
-	const mockProcess = new MockProcess();
+	const mockProcess = new MockKeyboardProcess();
 
 	// Create TermDOM with our mock process
 	const termdom = new TermDOM({
@@ -349,7 +348,7 @@ test("keyboard system works with mock TTY", async () => {
 });
 
 test("TTY detection works correctly", () => {
-	const mockProcess = new MockProcess();
+	const mockProcess = new MockKeyboardProcess();
 
 	// Test that our mock process reports TTY correctly
 	expect(mockProcess.stdin.isTTY).toBe(true);

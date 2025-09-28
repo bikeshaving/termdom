@@ -99,7 +99,7 @@ class MockReadStream extends EventEmitter implements TTYReadStream {
 	}
 }
 
-export class TestTerminal extends EventEmitter implements ProcessLike {
+export class MockProcess extends EventEmitter implements ProcessLike {
 	stdout: MockWriteStream;
 	stdin: MockReadStream;
 	env: Record<string, string | undefined>;

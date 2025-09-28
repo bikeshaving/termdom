@@ -7,10 +7,10 @@
 
 import {test, expect} from "bun:test";
 import {TermDOM} from "../src/termdom.js";
-import {TestTerminal} from "./test-utils.js";
+import {MockProcess} from "./test-utils.js";
 
 test("red foreground color renders correctly", async () => {
-	const terminal = new TestTerminal();
+	const terminal = new MockProcess();
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 
@@ -32,7 +32,7 @@ test("red foreground color renders correctly", async () => {
 });
 
 test("background colors fill full width", async () => {
-	const terminal = new TestTerminal();
+	const terminal = new MockProcess();
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 
@@ -65,7 +65,7 @@ test("background colors fill full width", async () => {
 // TODO: Re-enable when block layout stacking is fixed
 
 test("mixed foreground and background colors", async () => {
-	const terminal = new TestTerminal();
+	const terminal = new MockProcess();
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 
@@ -89,7 +89,7 @@ test("mixed foreground and background colors", async () => {
 });
 
 test("CSS color formats are handled correctly", async () => {
-	const terminal = new TestTerminal();
+	const terminal = new MockProcess();
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 
@@ -124,7 +124,7 @@ test("CSS color formats are handled correctly", async () => {
 });
 
 test("style combinations work correctly", async () => {
-	const terminal = new TestTerminal();
+	const terminal = new MockProcess();
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 
@@ -150,7 +150,7 @@ test("style combinations work correctly", async () => {
 });
 
 test("inline elements do not extend background", async () => {
-	const terminal = new TestTerminal();
+	const terminal = new MockProcess();
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 

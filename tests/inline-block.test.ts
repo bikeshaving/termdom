@@ -5,11 +5,11 @@
  */
 
 import {test, expect} from "bun:test";
-import {TestTerminal} from "./test-utils";
+import {MockProcess} from "./test-utils";
 import {TermDOM} from "../src/termdom";
 
 test("inline-block elements render side by side", async () => {
-	const terminal = new TestTerminal({cols: 40, rows: 10});
+	const terminal = new MockProcess({cols: 40, rows: 10});
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 
@@ -49,7 +49,7 @@ test("inline-block elements render side by side", async () => {
 });
 
 test("inline-block elements with padding", async () => {
-	const terminal = new TestTerminal({cols: 40, rows: 10});
+	const terminal = new MockProcess({cols: 40, rows: 10});
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 
@@ -83,7 +83,7 @@ test("inline-block elements with padding", async () => {
 });
 
 test("inline-block elements with margins", async () => {
-	const terminal = new TestTerminal({cols: 40, rows: 10});
+	const terminal = new MockProcess({cols: 40, rows: 10});
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 
@@ -116,7 +116,7 @@ test("inline-block elements with margins", async () => {
 });
 
 test("inline-block elements wrapping to multiple lines", async () => {
-	const terminal = new TestTerminal({cols: 20, rows: 10});
+	const terminal = new MockProcess({cols: 20, rows: 10});
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 
@@ -152,7 +152,7 @@ test("inline-block elements wrapping to multiple lines", async () => {
 });
 
 test("mixed inline and inline-block elements", async () => {
-	const terminal = new TestTerminal({cols: 50, rows: 10});
+	const terminal = new MockProcess({cols: 50, rows: 10});
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 
@@ -195,7 +195,7 @@ test("mixed inline and inline-block elements", async () => {
 });
 
 test("nested inline-block elements", async () => {
-	const terminal = new TestTerminal({cols: 50, rows: 10});
+	const terminal = new MockProcess({cols: 50, rows: 10});
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 
@@ -233,7 +233,7 @@ test("nested inline-block elements", async () => {
 });
 
 test("inline-block with explicit width", async () => {
-	const terminal = new TestTerminal({cols: 40, rows: 10});
+	const terminal = new MockProcess({cols: 40, rows: 10});
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 
@@ -268,7 +268,7 @@ test("inline-block with explicit width", async () => {
 });
 
 test("inline-block with height", async () => {
-	const terminal = new TestTerminal({cols: 40, rows: 10});
+	const terminal = new MockProcess({cols: 40, rows: 10});
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 
@@ -305,7 +305,7 @@ test("inline-block with height", async () => {
 });
 
 test("inline-block with borders", async () => {
-	const terminal = new TestTerminal({cols: 40, rows: 10});
+	const terminal = new MockProcess({cols: 40, rows: 10});
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 

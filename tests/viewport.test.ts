@@ -1,9 +1,9 @@
 import {test, expect} from "bun:test";
 import {TermDOM} from "../src/index.js";
-import {TestTerminal} from "./test-utils.js";
+import {MockProcess} from "./test-utils.js";
 
 test("detectCommandStart queries and sets window.screenTop", async () => {
-	const terminal = new TestTerminal();
+	const terminal = new MockProcess();
 
 	// Position cursor at row 15 using raw ANSI (1-based coordinates)
 	await new Promise<void>((resolve) => {
@@ -19,7 +19,7 @@ test("detectCommandStart queries and sets window.screenTop", async () => {
 });
 
 test("detectCommandStart handles different cursor positions", async () => {
-	const terminal = new TestTerminal();
+	const terminal = new MockProcess();
 
 	// Position cursor at row 23
 	await new Promise<void>((resolve) => {
@@ -34,7 +34,7 @@ test("detectCommandStart handles different cursor positions", async () => {
 });
 
 test("detectCommandStart handles row 1 (top of terminal)", async () => {
-	const terminal = new TestTerminal();
+	const terminal = new MockProcess();
 
 	// Position cursor at top of terminal
 	await new Promise<void>((resolve) => {
@@ -49,7 +49,7 @@ test("detectCommandStart handles row 1 (top of terminal)", async () => {
 });
 
 test("rendering small content from command start (fits in available space)", async () => {
-	const terminal = new TestTerminal({rows: 10, cols: 40});
+	const terminal = new MockProcess({rows: 10, cols: 40});
 
 	// Position cursor at row 8 (leaving 2 lines available)
 	await new Promise<void>((resolve) => {
@@ -74,7 +74,7 @@ test("rendering small content from command start (fits in available space)", asy
 });
 
 test("push-up calculation when content exceeds available space", async () => {
-	const terminal = new TestTerminal({rows: 10, cols: 40});
+	const terminal = new MockProcess({rows: 10, cols: 40});
 
 	// Position cursor at row 8 (leaving 3 lines available: 8, 9, 10)
 	await new Promise<void>((resolve) => {
@@ -102,7 +102,7 @@ test("push-up calculation when content exceeds available space", async () => {
 });
 
 test("no push-up when content fits in available space", async () => {
-	const terminal = new TestTerminal({rows: 10, cols: 40});
+	const terminal = new MockProcess({rows: 10, cols: 40});
 
 	// Position cursor at row 7 (leaving 4 lines available: 7, 8, 9, 10)
 	await new Promise<void>((resolve) => {
@@ -127,7 +127,7 @@ test("no push-up when content fits in available space", async () => {
 });
 
 test("push-up to terminal top when content is very large", async () => {
-	const terminal = new TestTerminal({rows: 5, cols: 30});
+	const terminal = new MockProcess({rows: 5, cols: 30});
 
 	// Position cursor at row 4 (leaving 2 lines available: 4, 5)
 	await new Promise<void>((resolve) => {
@@ -154,7 +154,7 @@ test("push-up to terminal top when content is very large", async () => {
 });
 
 test("document height calculation with auto layout", async () => {
-	const terminal = new TestTerminal({rows: 20, cols: 60});
+	const terminal = new MockProcess({rows: 20, cols: 60});
 
 	// Position cursor at row 10
 	await new Promise<void>((resolve) => {
@@ -181,7 +181,7 @@ test("document height calculation with auto layout", async () => {
 });
 
 test("rendering at top of terminal (row 1) with large content", async () => {
-	const terminal = new TestTerminal({rows: 10, cols: 40});
+	const terminal = new MockProcess({rows: 10, cols: 40});
 
 	// Position cursor at row 1 (full terminal available)
 	await new Promise<void>((resolve) => {
@@ -203,7 +203,7 @@ test("rendering at top of terminal (row 1) with large content", async () => {
 });
 
 test("coordinate transformation from layout space to terminal space", async () => {
-	const terminal = new TestTerminal({rows: 10, cols: 40});
+	const terminal = new MockProcess({rows: 10, cols: 40});
 
 	// Position cursor at row 5
 	await new Promise<void>((resolve) => {
@@ -233,7 +233,7 @@ test("coordinate transformation from layout space to terminal space", async () =
 });
 
 test("handling content that would exceed terminal bottom", async () => {
-	const terminal = new TestTerminal({rows: 10, cols: 40});
+	const terminal = new MockProcess({rows: 10, cols: 40});
 
 	// Position cursor near bottom (row 8, leaving only 2 lines)
 	await new Promise<void>((resolve) => {
@@ -264,7 +264,7 @@ test("handling content that would exceed terminal bottom", async () => {
 });
 
 test("maximum layout height calculation", async () => {
-	const terminal = new TestTerminal({rows: 20, cols: 60});
+	const terminal = new MockProcess({rows: 20, cols: 60});
 
 	// Test different command start positions
 	const testCases = [
@@ -291,7 +291,7 @@ test("maximum layout height calculation", async () => {
 });
 
 test("push-up offset calculation when content exceeds available space", async () => {
-	const terminal = new TestTerminal({rows: 10, cols: 40});
+	const terminal = new MockProcess({rows: 10, cols: 40});
 
 	// Position cursor at row 9 (2 lines available)
 	await new Promise<void>((resolve) => {
@@ -325,8 +325,8 @@ test("push-up offset calculation when content exceeds available space", async ()
 });
 
 test("content positioning with different terminal sizes", async () => {
-	const smallTerminal = new TestTerminal({rows: 5, cols: 20});
-	const largeTerminal = new TestTerminal({rows: 50, cols: 120});
+	const smallTerminal = new MockProcess({rows: 5, cols: 20});
+	const largeTerminal = new MockProcess({rows: 50, cols: 120});
 
 	// Test same content on different terminal sizes
 	const content = `
@@ -366,7 +366,7 @@ test("content positioning with different terminal sizes", async () => {
 });
 
 test("content clipped to terminal boundaries", async () => {
-	const terminal = new TestTerminal({rows: 5, cols: 20});
+	const terminal = new MockProcess({rows: 5, cols: 20});
 
 	// Position cursor at row 4 (only 2 lines available)
 	await new Promise<void>((resolve) => {
@@ -397,7 +397,7 @@ test("content clipped to terminal boundaries", async () => {
 });
 
 test("content larger than terminal height (edge case)", async () => {
-	const terminal = new TestTerminal({rows: 5, cols: 30});
+	const terminal = new MockProcess({rows: 5, cols: 30});
 
 	// Position cursor at row 3
 	await new Promise<void>((resolve) => {
@@ -427,7 +427,7 @@ test("content larger than terminal height (edge case)", async () => {
 });
 
 test("unified scrolling model: screenTop + scrollY", async () => {
-	const terminal = new TestTerminal({rows: 10, cols: 40});
+	const terminal = new MockProcess({rows: 10, cols: 40});
 
 	// Position cursor at row 6
 	await new Promise<void>((resolve) => {
@@ -446,7 +446,7 @@ test("unified scrolling model: screenTop + scrollY", async () => {
 });
 
 test("unified scrolling model: user scrolls to terminal top", async () => {
-	const terminal = new TestTerminal({rows: 10, cols: 40});
+	const terminal = new MockProcess({rows: 10, cols: 40});
 
 	// Position cursor at row 8
 	await new Promise<void>((resolve) => {
@@ -468,7 +468,7 @@ test("unified scrolling model: user scrolls to terminal top", async () => {
 });
 
 test("unified scrolling model: user scrolls down in document", async () => {
-	const terminal = new TestTerminal({rows: 10, cols: 40});
+	const terminal = new MockProcess({rows: 10, cols: 40});
 
 	// Position cursor at row 5
 	await new Promise<void>((resolve) => {
@@ -490,7 +490,7 @@ test("unified scrolling model: user scrolls down in document", async () => {
 });
 
 test("unified scrolling model: pageYOffset alias", async () => {
-	const terminal = new TestTerminal({rows: 10, cols: 40});
+	const terminal = new MockProcess({rows: 10, cols: 40});
 
 	// Position cursor at row 3
 	await new Promise<void>((resolve) => {
@@ -510,7 +510,7 @@ test("unified scrolling model: pageYOffset alias", async () => {
 });
 
 test("unified scrolling model: push-up updates scrollY not screenTop", async () => {
-	const terminal = new TestTerminal({rows: 10, cols: 40});
+	const terminal = new MockProcess({rows: 10, cols: 40});
 
 	// Position cursor at row 9 (only 2 lines available)
 	await new Promise<void>((resolve) => {
@@ -546,7 +546,7 @@ test("unified scrolling model: push-up updates scrollY not screenTop", async () 
 });
 
 test("standard DOM properties: scrollHeight and clientHeight", async () => {
-	const terminal = new TestTerminal({rows: 10, cols: 40});
+	const terminal = new MockProcess({rows: 10, cols: 40});
 
 	const dom = new TermDOM({process: terminal});
 

@@ -1,19 +1,19 @@
 /**
  * Test Utils Tests
  *
- * Comprehensive tests for the TestTerminal and related test utilities
+ * Comprehensive tests for the MockProcess and related test utilities
  * to ensure proper TTY simulation and cursor query handling
  */
 
 import {describe, test, expect, beforeEach} from "bun:test";
-import {TestTerminal, stripControlCodes} from "./test-utils.js";
+import {MockProcess, stripControlCodes} from "./test-utils.js";
 import {TermDOM} from "../src/termdom.js";
 
-describe("TestTerminal", () => {
-	let terminal: TestTerminal;
+describe("MockProcess", () => {
+	let terminal: MockProcess;
 
 	beforeEach(() => {
-		terminal = new TestTerminal({cols: 80, rows: 24});
+		terminal = new MockProcess({cols: 80, rows: 24});
 	});
 
 	describe("basic functionality", () => {

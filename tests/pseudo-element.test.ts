@@ -1,10 +1,10 @@
 import {test, expect} from "bun:test";
 import {TermDOM} from "../src/termdom.js";
-import {TestTerminal} from "./test-utils.js";
+import {MockProcess} from "./test-utils.js";
 import {getPseudoElement} from "../src/composition.js";
 
 test("::before and ::after content rendering", async () => {
-	const terminal = new TestTerminal();
+	const terminal = new MockProcess();
 	const termdom = new TermDOM({process: terminal});
 	const {document} = termdom;
 
@@ -85,7 +85,7 @@ test("::before and ::after content rendering", async () => {
 });
 
 test("::marker pseudo-element with lists", async () => {
-	const terminal = new TestTerminal();
+	const terminal = new MockProcess();
 	const termdom = new TermDOM({process: terminal});
 	const {document} = termdom;
 
@@ -157,7 +157,7 @@ test("::marker pseudo-element with lists", async () => {
 });
 
 test("Pseudo-element cascade and specificity in rendering", async () => {
-	const terminal = new TestTerminal();
+	const terminal = new MockProcess();
 	const termdom = new TermDOM({process: terminal});
 	const {document} = termdom;
 
@@ -197,7 +197,7 @@ test("Pseudo-element cascade and specificity in rendering", async () => {
 test.todo(
 	"Complex pseudo-element content with special characters",
 	async () => {
-		const terminal = new TestTerminal();
+		const terminal = new MockProcess();
 		const termdom = new TermDOM({process: terminal});
 		const {document} = termdom;
 
@@ -264,7 +264,7 @@ test.todo(
 );
 
 test("Pseudo-elements with inline styles override", async () => {
-	const terminal = new TestTerminal();
+	const terminal = new MockProcess();
 	const termdom = new TermDOM({process: terminal});
 	const {document} = termdom;
 
@@ -303,7 +303,7 @@ test("Pseudo-elements with inline styles override", async () => {
 test.todo(
 	"ExpandedTreeWalker traverses pseudo-elements in document order",
 	async () => {
-		const terminal = new TestTerminal();
+		const terminal = new MockProcess();
 		const termdom = new TermDOM({process: terminal});
 		const {document} = termdom;
 

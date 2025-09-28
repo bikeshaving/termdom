@@ -6,11 +6,11 @@
  */
 
 import {test, expect} from "bun:test";
-import {TestTerminal} from "./test-utils";
+import {MockProcess} from "./test-utils";
 import {TermDOM} from "../src/termdom";
 
 test("flexbox-demo layout renders correctly", async () => {
-	const terminal = new TestTerminal({cols: 80, rows: 24});
+	const terminal = new MockProcess({cols: 80, rows: 24});
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 
@@ -178,7 +178,7 @@ test("flexbox-demo layout renders correctly", async () => {
 });
 
 test("nested flexbox containers", async () => {
-	const terminal = new TestTerminal({cols: 60, rows: 20});
+	const terminal = new MockProcess({cols: 60, rows: 20});
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 
@@ -242,7 +242,7 @@ test("nested flexbox containers", async () => {
 });
 
 test("flexbox with flex-grow", async () => {
-	const terminal = new TestTerminal({cols: 80, rows: 10});
+	const terminal = new MockProcess({cols: 80, rows: 10});
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 
@@ -287,7 +287,7 @@ test("flexbox with flex-grow", async () => {
 });
 
 test("flexbox with align-items and justify-content", async () => {
-	const terminal = new TestTerminal({cols: 60, rows: 15});
+	const terminal = new MockProcess({cols: 60, rows: 15});
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 
@@ -338,7 +338,7 @@ test("flexbox with align-items and justify-content", async () => {
 });
 
 test("flexbox wrapping behavior", async () => {
-	const terminal = new TestTerminal({cols: 40, rows: 10});
+	const terminal = new MockProcess({cols: 40, rows: 10});
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 
@@ -379,7 +379,7 @@ test("flexbox wrapping behavior", async () => {
 });
 
 test("flexbox column with mixed content", async () => {
-	const terminal = new TestTerminal({cols: 50, rows: 20});
+	const terminal = new MockProcess({cols: 50, rows: 20});
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 
@@ -465,7 +465,7 @@ test("flexbox column with mixed content", async () => {
 });
 
 test("flexbox column children should have different Y positions", async () => {
-	const terminal = new TestTerminal({cols: 20, rows: 10});
+	const terminal = new MockProcess({cols: 20, rows: 10});
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 
@@ -532,7 +532,7 @@ test("flexbox column children should have different Y positions", async () => {
 });
 
 test("flexbox two columns: fixed width + flexible width with text wrapping", async () => {
-	const terminal = new TestTerminal({cols: 40, rows: 10});
+	const terminal = new MockProcess({cols: 40, rows: 10});
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 
