@@ -63,8 +63,8 @@ describe("Viewport Integration Tests", () => {
 
 		const output = mock.getOutput();
 
-		// Should contain ANSI sequence for home position
-		expect(output).toContain("\x1b[H"); // Home cursor position
+		// Should NOT contain home cursor position on first render (cursor already at home)
+		expect(output).not.toContain("\x1b[H"); // No home cursor position needed
 		expect(output).toContain("Hello World"); // Content
 		expect(output).toContain("\x1b[?2026h"); // Synchronized mode start
 		expect(output).toContain("\x1b[?2026l"); // Synchronized mode end

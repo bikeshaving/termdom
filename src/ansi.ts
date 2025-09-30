@@ -999,6 +999,7 @@ export class Renderer {
 	renderFrame(
 		offset: number,
 		drawCallback: (ctx: DrawingContext) => void,
+		cursorPosition?: number,
 	): string {
 		// Setup: Create new frame buffer
 		const nextBuffer = createBuffer(this.#rows, this.#cols);
@@ -1083,10 +1084,15 @@ export class Renderer {
 				prefix += scrollCommands;
 			}
 
-			// Add cursor positioning based on viewport offset
-			if (offset > 0) {
+			// Add cursor positioning
+			if (cursorPosition !== undefined) {
+				// Explicit cursor position provided (e.g., from cursor detection)
+				prefix += `\x1b[${cursorPosition + 1};1H`; // CUP - Cursor Position (row;col)
+			} else if (offset > 0) {
+				// Position based on viewport offset
 				prefix += `\x1b[${offset + 1};1H`; // CUP - Cursor Position (row;col)
-			} else if (offset === 0) {
+			} else if (offset === 0 && this.#prevBuffer !== null) {
+				// Home position for subsequent renders
 				prefix += "\x1b[H"; // CUP - Cursor Home Position
 			}
 

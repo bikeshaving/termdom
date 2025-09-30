@@ -405,3 +405,58 @@ test("lists in flexbox containers", async () => {
 	terminal.writeANSI("lists-layout-flexbox-containers");
 	dom.dispose();
 });
+
+test("list rerendering maintains correct layout", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 20});
+	// Override isTTY to prevent cursor detection which interferes with the test
+	(terminal.stdin as any).isTTY = false;
+	const dom = new TermDOM({process: terminal});
+	const {document} = dom;
+
+	// Initial list
+	document.body.innerHTML = `
+		<h3>Dynamic List</h3>
+		<ul>
+			<li>Item 1</li>
+			<li>Item 2</li>
+		</ul>
+	`;
+
+	// First render
+	await dom.render();
+	const firstOutput = terminal.getPlainText();
+
+	expect(firstOutput).toContain("Dynamic List");
+	expect(firstOutput).toContain("• Item 1");
+	expect(firstOutput).toContain("• Item 2");
+
+	// Clear terminal for second render
+	//terminal.clear();
+	// Also clear TermDOM's renderer buffer to stay in sync
+	//(dom as any).renderer.clearPreviousBuffer();
+
+	// Modify the list
+	const ul = document.querySelector("ul")!;
+	ul.innerHTML = `
+		<li>Modified Item 1</li>
+		<li>Modified Item 2</li>
+		<li>New Item 3</li>
+	`;
+
+	// Second render
+	await dom.render();
+	const secondOutput = terminal.getPlainText();
+
+	expect(secondOutput).toContain("Dynamic List");
+	expect(secondOutput).toContain("• Modified Item 1");
+	expect(secondOutput).toContain("• Modified Item 2");
+	expect(secondOutput).toContain("• New Item 3");
+
+	// Verify layout integrity - text should not be garbled
+	const lines = secondOutput.split("\n");
+	const dynamicListLine = lines.find((line) => line.includes("Dynamic List"));
+	expect(dynamicListLine).toBeDefined();
+	expect(dynamicListLine!.trim()).toBe("Dynamic List");
+
+	dom.dispose();
+});

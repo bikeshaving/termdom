@@ -143,6 +143,9 @@ export class TermDOM {
 
 		this.setupProcessHandlers();
 
+		// Create pseudo-elements for any existing elements in the DOM
+		this.styleManager.attachPseudoElementsToDocument();
+
 		// Initialize cursor position detection if in a TTY environment
 		this.initializeCursorDetection();
 	}
@@ -243,7 +246,7 @@ export class TermDOM {
 		const observer = new this.window.MutationObserver((mutations) => {
 			let shouldRefreshStyles = false;
 
-			// Check for stylesheet changes
+			// Check for stylesheet changes and new DOM elements
 			for (const mutation of mutations) {
 				if (mutation.type === "childList") {
 					for (const node of mutation.addedNodes) {
@@ -257,8 +260,6 @@ export class TermDOM {
 								shouldRefreshStyles = true;
 								break;
 							}
-
-							// StyleManager will handle pseudo-elements during render pipeline
 						}
 					}
 					for (const node of mutation.removedNodes) {
@@ -364,9 +365,7 @@ export class TermDOM {
 		}
 
 		this.isRendering = true;
-		// CRITICAL FIX: Refresh stylesheets which also handles pseudo-element attachment
-		// This ensures CSS content is available when pseudo-elements are created
-		this.styleManager.refreshStylesheets();
+		// Note: refreshStylesheets() is called by mutation observer when stylesheets change
 
 		// Always use auto height for natural content sizing and scrolling
 		this.layoutEngine.calculateLayout();
@@ -376,25 +375,27 @@ export class TermDOM {
 			this.calculatePushUpOffset();
 		}
 		// Get viewport offset from raw internal scrollTop
-		// When cursor was detected, content should render from buffer[0] with cursor positioning to detected row
+		// When cursor is detected, content starts at buffer row 0 (cursor positioning handles terminal placement)
 		const viewportOffset = this.hasDetectedCommandStart
 			? 0
 			: -this.scrollingManager.getScrollTop();
 
-		const ansi = this.renderer.renderFrame(viewportOffset, (ctx) => {
-			this.renderElement(this.document.body, ctx);
-		});
+		// When cursor is detected, pass the cursor position explicitly
+		const cursorPosition = this.hasDetectedCommandStart
+			? this.scrollingManager.getScreenTop()
+			: undefined;
 
-		// When cursor was detected, replace home positioning with detected cursor position
-		let finalAnsi = ansi;
-		if (ansi && this.hasDetectedCommandStart) {
-			const screenTop = this.scrollingManager.getScreenTop();
-			finalAnsi = ansi.replace(/\x1b\[H/, `\x1b[${screenTop + 1};1H`);
-		}
+		const ansi = this.renderer.renderFrame(
+			viewportOffset,
+			(ctx) => {
+				this.renderElement(this.document.body, ctx);
+			},
+			cursorPosition,
+		);
 
-		if (finalAnsi) {
+		if (ansi) {
 			await new Promise<void>((resolve, reject) => {
-				this.process.stdout.write(finalAnsi, "utf8", (error) => {
+				this.process.stdout.write(ansi, "utf8", (error) => {
 					if (error) {
 						reject(error);
 					} else {

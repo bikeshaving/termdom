@@ -3,20 +3,6 @@ import type {DOMWindow} from "jsdom";
 /**
  * Manages terminal scrolling behavior with standard DOM APIs
  * Keeps window.scrollY, document.scrollTop, and window.screenTop in sync
- *
- * TermDOM scrollTop semantics:
- *
- * TermDOM scrollTop | Meaning                                              | DOM equivalent
- * ------------------|------------------------------------------------------|---------------
- * 0                 | Content starts flush with the top of the viewport   | scrollTop = 0
- * >0                | Content has moved up above the viewport top          | scrollTop > 0
- * <0                | Content starts below the viewport top               | Not possible in DOM
- *                   | (e.g., leaving blank space to preserve scrollback)  |
- *
- * Conceptually:
- * - Positive values behave exactly like document.documentElement.scrollTop
- * - Negative values are an extension to support overscroll/top padding, which the DOM does not allow
- * - It's really just a signed extension of the normal scrollTop coordinate system
  */
 export class ScrollingManager {
 	private scrollTop = 0;

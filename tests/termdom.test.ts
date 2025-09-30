@@ -139,7 +139,8 @@ test("pseudo-element CSS content is available immediately after render", async (
 	// Test the observable behavior: pseudo-element content should work on first render
 	// This was broken before the render pipeline fix - content would be empty until second render
 
-	const termDOM = new TermDOM();
+	const terminal = new MockProcess();
+	const termDOM = new TermDOM({process: terminal});
 
 	// Set up HTML with pseudo-element CSS
 	termDOM.document.body.innerHTML = `
@@ -173,7 +174,8 @@ test("lists render correctly without requiring double-rendering", async () => {
 	// Test the actual user-facing behavior that was broken:
 	// Lists should render with proper markers on the first render
 
-	const termDOM = new TermDOM();
+	const terminal = new MockProcess();
+	const termDOM = new TermDOM({process: terminal});
 
 	// Set up a list with custom markers
 	termDOM.document.body.innerHTML = `
@@ -205,7 +207,8 @@ test("pseudo-elements work on programmatic render without MutationObserver", asy
 	// This test specifically prevents MutationObserver from triggering the "accidental fix"
 	// and tests if pseudo-elements work on the first programmatic render call
 
-	const termDOM = new TermDOM();
+	const terminal = new MockProcess();
+	const termDOM = new TermDOM({process: terminal});
 
 	// Disconnect MutationObserver to prevent accidental double-rendering
 	(termDOM as any).observer.disconnect();

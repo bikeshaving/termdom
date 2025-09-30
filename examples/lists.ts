@@ -244,3 +244,6 @@ container.appendChild(mixedSection);
 document.body.appendChild(container);
 
 await termdom.render();
+await termdom.render();
+
+process.exit(0);
