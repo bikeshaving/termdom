@@ -4,7 +4,6 @@ import {TermDOM} from "../src/termdom.js";
 import {MockProcess} from "./test-utils.js";
 import {
 	createExpandedTreeWalker,
-	NodeFilterExtended,
 	setShadowRoot,
 	setPseudoElement,
 	createPseudoNode,
@@ -25,12 +24,7 @@ test("Pure JSDOM - ExpandedTreeWalker basic functionality", () => {
 	div.textContent = "Hello World";
 	document.body.appendChild(div);
 
-	const walker = createExpandedTreeWalker(
-		window as any,
-		document.body,
-		0xffffffff | NodeFilterExtended.SHOW_SHADOW_DOM,
-		null,
-	);
+	const walker = createExpandedTreeWalker(window as any, document.body);
 
 	expect(walker).toBeDefined();
 	expect(walker.root).toBe(document.body);
@@ -61,12 +55,7 @@ test("Pure JSDOM - ExpandedTreeWalker pseudo-element traversal", () => {
 	setPseudoElement(div, "::before", beforeNode);
 	setPseudoElement(div, "::after", afterNode);
 
-	const walker = createExpandedTreeWalker(
-		window as any,
-		document.body,
-		0xffffffff | NodeFilterExtended.SHOW_PSEUDO_ELEMENTS,
-		null,
-	);
+	const walker = createExpandedTreeWalker(window as any, document.body);
 
 	const nodes: Array<{
 		name: string;
@@ -147,12 +136,7 @@ test("Pure JSDOM - ExpandedTreeWalker shadow DOM traversal", () => {
 
 	setShadowRoot(host, shadowRoot);
 
-	const walker = createExpandedTreeWalker(
-		window as any,
-		document.body,
-		0xffffffff | NodeFilterExtended.SHOW_SHADOW_DOM,
-		null,
-	);
+	const walker = createExpandedTreeWalker(window as any, document.body);
 
 	const nodes: Array<{name: string; content: string; className?: string}> = [];
 
@@ -217,14 +201,7 @@ test("Pure JSDOM - ExpandedTreeWalker slot content traversal", () => {
 
 	setShadowRoot(host, shadowRoot);
 
-	const walker = createExpandedTreeWalker(
-		window as any,
-		document.body,
-		0xffffffff |
-			NodeFilterExtended.SHOW_SHADOW_DOM |
-			NodeFilterExtended.SHOW_SLOTS,
-		null,
-	);
+	const walker = createExpandedTreeWalker(window as any, document.body);
 
 	const nodes: Array<{name: string; content: string; className?: string}> = [];
 
@@ -298,12 +275,7 @@ test("Pure JSDOM - ExpandedTreeWalker ::marker pseudo-element traversal", () => 
 	setPseudoElement(li, "::before", beforeNode);
 	setPseudoElement(li, "::after", afterNode);
 
-	const walker = createExpandedTreeWalker(
-		window as any,
-		ul,
-		0xffffffff | NodeFilterExtended.SHOW_PSEUDO_ELEMENTS,
-		null,
-	);
+	const walker = createExpandedTreeWalker(window as any, ul);
 
 	const nodes: Array<{
 		name: string;
@@ -414,12 +386,7 @@ test("Pure JSDOM - ExpandedTreeWalker nested shadow roots", () => {
 	setShadowRoot(outerHost, outerShadowRoot);
 	setShadowRoot(innerHost, innerShadowRoot);
 
-	const walker = createExpandedTreeWalker(
-		window as any,
-		document.body,
-		0xffffffff | NodeFilterExtended.SHOW_SHADOW_DOM,
-		null,
-	);
+	const walker = createExpandedTreeWalker(window as any, document.body);
 
 	const nodes: Array<{name: string; className?: string; content: string}> = [];
 
@@ -521,14 +488,7 @@ test("Pure JSDOM - ExpandedTreeWalker shadow roots in slot assigned nodes", () =
 
 	setShadowRoot(host, hostShadowRoot);
 
-	const walker = createExpandedTreeWalker(
-		window as any,
-		document.body,
-		0xffffffff |
-			NodeFilterExtended.SHOW_SHADOW_DOM |
-			NodeFilterExtended.SHOW_SLOTS,
-		null,
-	);
+	const walker = createExpandedTreeWalker(window as any, document.body);
 
 	const nodes: Array<{name: string; className?: string; content: string}> = [];
 
@@ -655,15 +615,7 @@ test("Pure JSDOM - ExpandedTreeWalker complex nested scenario with pseudo-elemen
 
 	document.body.appendChild(li);
 
-	const walker = createExpandedTreeWalker(
-		window as any,
-		document.body,
-		0xffffffff |
-			NodeFilterExtended.SHOW_PSEUDO_ELEMENTS |
-			NodeFilterExtended.SHOW_SHADOW_DOM |
-			NodeFilterExtended.SHOW_SLOTS,
-		null,
-	);
+	const walker = createExpandedTreeWalker(window as any, document.body);
 
 	const nodes: Array<{
 		name: string;
@@ -726,10 +678,7 @@ test("TermDOM - ExpandedTreeWalker basic functionality", () => {
 	div.textContent = "Hello World";
 	document.body.appendChild(div);
 
-	const expandedWalker = termdom.createExpandedTreeWalker(
-		document.body,
-		termdom.window.NodeFilter.SHOW_ALL,
-	);
+	const expandedWalker = termdom.createExpandedTreeWalker(document.body);
 
 	expect(expandedWalker).toBeDefined();
 	expect(expandedWalker.root).toBe(document.body);
@@ -768,11 +717,7 @@ test("TermDOM - ExpandedTreeWalker with shadow DOM", () => {
 	testEl.textContent = "Light content";
 	document.body.appendChild(testEl);
 
-	const walker = termdom.createExpandedTreeWalker(
-		document.body,
-		termdom.window.NodeFilter.SHOW_ALL | NodeFilterExtended.SHOW_SHADOW_DOM,
-		null,
-	);
+	const walker = termdom.createExpandedTreeWalker(document.body);
 
 	const nodes: Array<{name: string; content: string; className?: string}> = [];
 
@@ -796,7 +741,7 @@ test("TermDOM - ExpandedTreeWalker with shadow DOM", () => {
 	expect(nodes.some((n) => n.className === "shadow-wrapper")).toBe(true);
 });
 
-test("TermDOM - ExpandedTreeWalker filter and whatToShow", () => {
+test("TermDOM - ExpandedTreeWalker basic traversal", () => {
 	const terminal = new MockProcess();
 	const termdom = new TermDOM({process: terminal});
 	const {document} = termdom;
@@ -805,27 +750,15 @@ test("TermDOM - ExpandedTreeWalker filter and whatToShow", () => {
 	div.textContent = "Hello";
 	document.body.appendChild(div);
 
-	// Test with text nodes only
-	const textOnlyWalker = termdom.createExpandedTreeWalker(
-		document.body,
-		termdom.window.NodeFilter.SHOW_TEXT,
-	);
+	// Test basic walker creation and traversal
+	const walker = termdom.createExpandedTreeWalker(document.body);
 
-	expect(textOnlyWalker.whatToShow).toBe(termdom.window.NodeFilter.SHOW_TEXT);
+	expect(walker.root).toBe(document.body);
+	expect(walker.currentNode).toBe(document.body);
 
-	// Test with custom filter
-	const filteredWalker = termdom.createExpandedTreeWalker(
-		document.body,
-		termdom.window.NodeFilter.SHOW_ALL,
-		(node) => {
-			if (node.nodeName === "DIV") {
-				return termdom.window.NodeFilter.FILTER_ACCEPT;
-			}
-			return termdom.window.NodeFilter.FILTER_SKIP;
-		},
-	);
-
-	expect(filteredWalker.filter).toBeDefined();
+	// Test basic traversal
+	const nextNode = walker.nextNode();
+	expect(nextNode).toBe(div);
 });
 
 test("ExpandedTreeWalker supports named slots and multiple assigned elements", () => {
@@ -916,14 +849,7 @@ test("ExpandedTreeWalker supports named slots and multiple assigned elements", (
 
 	setShadowRoot(host, shadowRoot);
 
-	const walker = createExpandedTreeWalker(
-		window as any,
-		document.body,
-		0xffffffff |
-			NodeFilterExtended.SHOW_SHADOW_DOM |
-			NodeFilterExtended.SHOW_SLOTS,
-		null,
-	);
+	const walker = createExpandedTreeWalker(window as any, document.body);
 
 	const nodes: Array<{name: string; className?: string; slotName?: string}> =
 		[];
@@ -977,8 +903,6 @@ test("Pure JSDOM - ExpandedTreeWalker respects root boundary", () => {
 	const walker = createExpandedTreeWalker(
 		window as any,
 		p, // Root is the paragraph
-		0xffffffff,
-		null,
 	);
 
 	const nodes: Array<{name: string; className?: string; content: string}> = [];
@@ -1024,7 +948,7 @@ test("Pure JSDOM - ExpandedTreeWalker previousNode respects root boundary", () =
 	document.body.appendChild(div);
 
 	// Walker rooted at div
-	const walker = createExpandedTreeWalker(window as any, div, 0xffffffff, null);
+	const walker = createExpandedTreeWalker(window as any, div);
 
 	// Navigate to the span (deepest node)
 	walker.nextNode(); // p
@@ -1077,8 +1001,6 @@ test("Pure JSDOM - ExpandedTreeWalker parentNode respects root boundary", () => 
 	const walker = createExpandedTreeWalker(
 		window as any,
 		p, // Root is paragraph
-		0xffffffff,
-		null,
 	);
 
 	// Navigate to span
@@ -1121,10 +1043,6 @@ test("FAILING - ExpandedTreeWalker ::after elements in layout engine pattern", (
 	const walker = createExpandedTreeWalker(
 		window as any,
 		quote, // Start from the element itself (like addElementNode does)
-		window.NodeFilter.SHOW_ELEMENT |
-			window.NodeFilter.SHOW_TEXT |
-			NodeFilterExtended.SHOW_PSEUDO_ELEMENTS,
-		null,
 	);
 
 	// Simulate layout engine traversal: walker.firstChild() then walker.nextSibling()
@@ -1177,7 +1095,7 @@ test("Pure JSDOM - ExpandedTreeWalker manual currentNode setting respects root",
 	document.body.appendChild(div);
 
 	// Walker rooted at div
-	const walker = createExpandedTreeWalker(window as any, div, 0xffffffff, null);
+	const walker = createExpandedTreeWalker(window as any, div);
 
 	// Try to manually set currentNode to body (outside root)
 	walker.currentNode = document.body;
@@ -1290,13 +1208,7 @@ test("TermDOM - ::marker appears before ::before pseudo-elements", () => {
 	expect(getPseudoElement(div, "::after")?.textContent).toBe("]");
 
 	// Use ExpandedTreeWalker to verify order
-	const walker = termdom.createExpandedTreeWalker(
-		div,
-		termdom.window.NodeFilter.SHOW_ELEMENT |
-			termdom.window.NodeFilter.SHOW_TEXT |
-			NodeFilterExtended.SHOW_PSEUDO_ELEMENTS,
-		null,
-	);
+	const walker = termdom.createExpandedTreeWalker(div);
 
 	const foundNodes: Array<{
 		type: string;
@@ -1374,13 +1286,7 @@ test("TermDOM - ::marker only on elements with display: list-item in walker trav
 	termdom.styleManager.refreshStylesheets();
 
 	// Use walker to traverse and find ::marker elements
-	const walker = termdom.createExpandedTreeWalker(
-		container,
-		termdom.window.NodeFilter.SHOW_ELEMENT |
-			termdom.window.NodeFilter.SHOW_TEXT |
-			NodeFilterExtended.SHOW_PSEUDO_ELEMENTS,
-		null,
-	);
+	const walker = termdom.createExpandedTreeWalker(container);
 
 	const markerNodes: Array<{parentTag: string; content: string}> = [];
 	let node = walker.nextNode();

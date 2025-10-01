@@ -15,14 +15,6 @@ export const SHADOW_ROOT_SYMBOL = Symbol.for("TermDOM.shadowRoot");
 export const PSEUDO_ELEMENTS_SYMBOL = Symbol.for("TermDOM.pseudoElements");
 export const PSEUDO_METADATA_SYMBOL = Symbol.for("TermDOM.pseudoMetadata");
 
-// TODO: delete this and walk the expanded DOM by default
-// Extended NodeFilter constants
-export const NodeFilterExtended = {
-	SHOW_SHADOW_DOM: 0x80000000, // Bit 31
-	SHOW_PSEUDO_ELEMENTS: 0x40000000, // Bit 30
-	SHOW_SLOTS: 0x20000000, // Bit 29
-} as const;
-
 /**
  * Extended TreeWalker implementation based on W3C spec with support for
  * pseudo-elements, shadow DOM, and slot content traversal
@@ -30,31 +22,14 @@ export const NodeFilterExtended = {
 export class ExpandedTreeWalker {
 	// TypeScript declarations only
 	declare readonly root: Node;
-	declare readonly whatToShow: number;
-	declare readonly filter: NodeFilter | null;
 	currentNode: Node;
 	#window!: DOMWindow;
 
 	// Private fields (defined in constructor)
-	constructor(
-		window: DOMWindow,
-		root: Node,
-		whatToShow: number,
-		filter: NodeFilter | null = null,
-	) {
+	constructor(window: DOMWindow, root: Node) {
 		// Define readonly properties
 		Object.defineProperty(this, "root", {
 			value: root,
-			writable: false,
-			enumerable: true,
-		});
-		Object.defineProperty(this, "whatToShow", {
-			value: whatToShow,
-			writable: false,
-			enumerable: true,
-		});
-		Object.defineProperty(this, "filter", {
-			value: filter,
 			writable: false,
 			enumerable: true,
 		});
@@ -74,27 +49,22 @@ export class ExpandedTreeWalker {
 		while (true) {
 			// Try to get first child (including extended children)
 			const firstChild = this.#getFirstChild(node);
+			if (firstChild && this.#acceptNode(firstChild)) {
+				this.currentNode = firstChild;
+				return firstChild;
+			}
 			if (firstChild) {
-				if (
-					this.#acceptNode(firstChild) === this.#window.NodeFilter.FILTER_ACCEPT
-				) {
-					this.currentNode = firstChild;
-					return firstChild;
-				}
 				node = firstChild;
 				continue;
 			}
 
 			// Try to get next sibling (including extended siblings)
 			const nextSibling = this.#getNextSibling(node);
+			if (nextSibling && this.#acceptNode(nextSibling)) {
+				this.currentNode = nextSibling;
+				return nextSibling;
+			}
 			if (nextSibling) {
-				if (
-					this.#acceptNode(nextSibling) ===
-					this.#window.NodeFilter.FILTER_ACCEPT
-				) {
-					this.currentNode = nextSibling;
-					return nextSibling;
-				}
 				node = nextSibling;
 				continue;
 			}
@@ -111,10 +81,7 @@ export class ExpandedTreeWalker {
 					if (afterElement) {
 						// Check if we're at the end of parent's extended content
 						if (this.#isLastExtendedChild(node, parent as Element)) {
-							if (
-								this.#acceptNode(afterElement) ===
-								this.#window.NodeFilter.FILTER_ACCEPT
-							) {
+							if (this.#acceptNode(afterElement)) {
 								this.currentNode = afterElement;
 								return afterElement;
 							}
@@ -126,10 +93,7 @@ export class ExpandedTreeWalker {
 
 				const parentNextSibling = this.#getNextSibling(parent);
 				if (parentNextSibling) {
-					if (
-						this.#acceptNode(parentNextSibling) ===
-						this.#window.NodeFilter.FILTER_ACCEPT
-					) {
+					if (this.#acceptNode(parentNextSibling)) {
 						this.currentNode = parentNextSibling;
 						return parentNextSibling;
 					}
@@ -164,10 +128,7 @@ export class ExpandedTreeWalker {
 			if (previousSibling) {
 				// Get the last descendant of the previous sibling
 				let lastDescendant = this.#getLastDescendant(previousSibling);
-				if (
-					this.#acceptNode(lastDescendant) ===
-					this.#window.NodeFilter.FILTER_ACCEPT
-				) {
+				if (this.#acceptNode(lastDescendant)) {
 					this.currentNode = lastDescendant;
 					return lastDescendant;
 				}
@@ -178,9 +139,7 @@ export class ExpandedTreeWalker {
 			// Move to parent
 			const parent = this.#getParent(node);
 			if (parent) {
-				if (
-					this.#acceptNode(parent) === this.#window.NodeFilter.FILTER_ACCEPT
-				) {
+				if (this.#acceptNode(parent)) {
 					this.currentNode = parent;
 					return parent;
 				}
@@ -204,10 +163,7 @@ export class ExpandedTreeWalker {
 
 		while (node && node !== this.root) {
 			const parent = this.#getParent(node);
-			if (
-				parent &&
-				this.#acceptNode(parent) === this.#window.NodeFilter.FILTER_ACCEPT
-			) {
+			if (parent && this.#acceptNode(parent)) {
 				this.currentNode = parent;
 				return parent;
 			}
@@ -222,10 +178,7 @@ export class ExpandedTreeWalker {
 	 */
 	firstChild(): Node | null {
 		const firstChild = this.#getFirstChild(this.currentNode);
-		if (
-			firstChild &&
-			this.#acceptNode(firstChild) === this.#window.NodeFilter.FILTER_ACCEPT
-		) {
+		if (firstChild && this.#acceptNode(firstChild)) {
 			this.currentNode = firstChild;
 			return firstChild;
 		}
@@ -237,10 +190,7 @@ export class ExpandedTreeWalker {
 	 */
 	lastChild(): Node | null {
 		const lastChild = this.#getLastChild(this.currentNode);
-		if (
-			lastChild &&
-			this.#acceptNode(lastChild) === this.#window.NodeFilter.FILTER_ACCEPT
-		) {
+		if (lastChild && this.#acceptNode(lastChild)) {
 			this.currentNode = lastChild;
 			return lastChild;
 		}
@@ -252,10 +202,7 @@ export class ExpandedTreeWalker {
 	 */
 	nextSibling(): Node | null {
 		const nextSibling = this.#getNextSibling(this.currentNode);
-		if (
-			nextSibling &&
-			this.#acceptNode(nextSibling) === this.#window.NodeFilter.FILTER_ACCEPT
-		) {
+		if (nextSibling && this.#acceptNode(nextSibling)) {
 			this.currentNode = nextSibling;
 			return nextSibling;
 		}
@@ -267,11 +214,7 @@ export class ExpandedTreeWalker {
 	 */
 	previousSibling(): Node | null {
 		const previousSibling = this.#getPreviousSibling(this.currentNode);
-		if (
-			previousSibling &&
-			this.#acceptNode(previousSibling) ===
-				this.#window.NodeFilter.FILTER_ACCEPT
-		) {
+		if (previousSibling && this.#acceptNode(previousSibling)) {
 			this.currentNode = previousSibling;
 			return previousSibling;
 		}
@@ -573,33 +516,13 @@ export class ExpandedTreeWalker {
 	}
 
 	/**
-	 * Apply node filter and whatToShow mask
+	 * Accept node - always traverses elements and text nodes (including pseudo-elements)
 	 */
-	#acceptNode(node: Node): number {
-		// Apply whatToShow filter (excluding extended flags)
-		const standardWhatToShow =
-			this.whatToShow &
-			~(
-				NodeFilterExtended.SHOW_SHADOW_DOM |
-				NodeFilterExtended.SHOW_PSEUDO_ELEMENTS |
-				NodeFilterExtended.SHOW_SLOTS
-			);
-		const nodeTypeMask = 1 << (node.nodeType - 1);
-
-		if (!(standardWhatToShow & nodeTypeMask)) {
-			return this.#window.NodeFilter.FILTER_SKIP;
-		}
-
-		// Apply custom filter if present
-		if (this.filter) {
-			if (typeof this.filter === "function") {
-				return this.filter(node);
-			} else {
-				return this.filter.acceptNode(node);
-			}
-		}
-
-		return this.#window.NodeFilter.FILTER_ACCEPT;
+	#acceptNode(node: Node): boolean {
+		// Accept element nodes and text nodes (including pseudo-element text nodes)
+		return (
+			node.nodeType === node.ELEMENT_NODE || node.nodeType === node.TEXT_NODE
+		);
 	}
 
 	// Utility methods for extended content access
@@ -868,10 +791,8 @@ function createShadowRoot(
 export function createExpandedTreeWalker(
 	window: DOMWindow,
 	root: Node,
-	whatToShow: number,
-	filter: NodeFilter | null = null,
 ): ExpandedTreeWalker {
-	return new ExpandedTreeWalker(window, root, whatToShow, filter);
+	return new ExpandedTreeWalker(window, root);
 }
 
 /**

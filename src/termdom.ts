@@ -8,7 +8,7 @@ import {setupInspectMethods} from "./inspector.js";
 import {ScrollingManager} from "./scrolling.js";
 import {
 	createExpandedTreeWalker,
-	NodeFilterExtended,
+	type ExpandedTreeWalker,
 	getShadowRoot,
 	hasShadowRoot,
 	initializeShadowDOM,
@@ -167,12 +167,8 @@ export class TermDOM {
 	/**
 	 * Create an ExpandedTreeWalker that can traverse pseudo-elements, shadow DOM, and slot content
 	 */
-	createExpandedTreeWalker(
-		root: Node,
-		whatToShow: number = 0xffffffff,
-		filter: ((node: Node) => number) | null = null,
-	): TreeWalker {
-		return createExpandedTreeWalker(this.window, root, whatToShow, filter);
+	createExpandedTreeWalker(root: Node): ExpandedTreeWalker {
+		return createExpandedTreeWalker(this.window, root);
 	}
 
 	private initializeWindow(): void {
@@ -482,14 +478,7 @@ export class TermDOM {
 		// No manual lifecycle management needed
 
 		// Use ExpandedTreeWalker to render all children including pseudo-elements and shadow DOM
-		const walker = this.createExpandedTreeWalker(
-			element,
-			this.window.NodeFilter.SHOW_ELEMENT |
-				this.window.NodeFilter.SHOW_TEXT |
-				NodeFilterExtended.SHOW_PSEUDO_ELEMENTS |
-				NodeFilterExtended.SHOW_SHADOW_DOM,
-			null,
-		);
+		const walker = this.createExpandedTreeWalker(element);
 
 		// Skip the current element and start with first child
 		let childNode = walker.firstChild();
@@ -947,11 +936,7 @@ function findElementAtPoint(
 	}
 
 	// Use ExpandedTreeWalker to traverse children (including shadow DOM)
-	const walker = termDOM.createExpandedTreeWalker(
-		element,
-		termDOM.window.NodeFilter.SHOW_ELEMENT,
-		null,
-	);
+	const walker = termDOM.createExpandedTreeWalker(element);
 
 	let child = walker.nextNode() as Element;
 	while (child) {

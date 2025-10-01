@@ -150,15 +150,7 @@ export function getBoxModel(element: Element): BoxModel {
 const CSS_SPEC_DEFAULTS: Record<string, string> = {
 	display: "inline",
 	margin: "0",
-	"margin-top": "0",
-	"margin-right": "0",
-	"margin-bottom": "0",
-	"margin-left": "0",
 	padding: "0",
-	"padding-top": "0",
-	"padding-right": "0",
-	"padding-bottom": "0",
-	"padding-left": "0",
 	"border-width": "0",
 	"border-style": "none",
 	"border-color": "currentColor",
@@ -219,14 +211,7 @@ const TERMINAL_ELEMENT_DEFAULTS: Record<string, Record<string, string>> = {
 
 	// Block elements
 	html: {display: "block"},
-	body: {
-		display: "block",
-		margin: "0",
-		"margin-top": "0",
-		"margin-right": "0",
-		"margin-bottom": "0",
-		"margin-left": "0",
-	},
+	body: {display: "block"},
 	div: {display: "block"},
 	section: {display: "block"},
 	article: {display: "block"},
@@ -420,15 +405,7 @@ function getInitialStyle(element: Element, property: string): string {
 	return CSS_SPEC_DEFAULTS[property] || "";
 }
 
-// ============================================================================
-// COMPUTED STYLE CLASS
-// ============================================================================
-
-/**
- * Custom computed style that implements the DOM CSSStyleDeclaration interface
- * This provides a 1-to-1 interface with the browser's getComputedStyle result
- */
-class TerminalComputedStyle extends CSSStyleDeclaration {
+export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 	constructor(
 		private element: Element,
 		private cssRules: ParsedCSSRule[] = [],
@@ -848,10 +825,6 @@ export function resolveBorderStyles(element: Element): {
 	};
 }
 
-// ============================================================================
-// COLOR UTILITIES
-// ============================================================================
-
 /**
  * Convert CSS color string to numeric color value
  */
@@ -879,14 +852,7 @@ export function darkenColor(color: number, factor: number): number {
 	);
 }
 
-// ============================================================================
-// LIST UTILITIES
-// ============================================================================
-
-/**
- * Convert a number to Roman numeral representation
- */
-export function toRoman(num: number): string {
+function toRoman(num: number): string {
 	const romanNumerals = [
 		{value: 1000, symbol: "M"},
 		{value: 900, symbol: "CM"},
@@ -913,13 +879,10 @@ export function toRoman(num: number): string {
 	return result;
 }
 
-/**
- * Calculate nesting depth of a list item
- */
-export function getListNestingDepth(listItem: Element): number {
+// TODO: Use walker
+function getListNestingDepth(listItem: Element): number {
 	let depth = 0;
 	let current = listItem.parentElement;
-
 	while (current) {
 		if (current.tagName === "UL" || current.tagName === "OL") {
 			depth++;
@@ -930,10 +893,7 @@ export function getListNestingDepth(listItem: Element): number {
 	return depth - 1; // Zero-based depth (first level = 0)
 }
 
-/**
- * Generate appropriate list marker for a list item
- */
-export function getListMarker(listItem: Element, listParent: Element): string {
+function getListMarker(listItem: Element, listParent: Element): string {
 	const listType = listParent.tagName.toLowerCase();
 	const listStyleType = listParent.ownerDocument
 		.defaultView!.getComputedStyle(listParent)
@@ -985,10 +945,6 @@ export function getListMarker(listItem: Element, listParent: Element): string {
 	return "";
 }
 
-// ============================================================================
-// COMPUTED STYLE OVERRIDE
-// ============================================================================
-
 // CSS Rule interfaces for internal use
 interface ParsedCSSRule {
 	selector: string;
@@ -1008,10 +964,6 @@ interface CounterScope {
 	parent?: CounterScope;
 }
 
-/**
- * CSS Style Manager
- * Handles computed style caching, stylesheet parsing, and pseudo-element support
- */
 export class StyleManager {
 	private computedStyleCache = new WeakMap<Element, CSSStyleDeclaration>();
 	private pseudoElementStyleCache = new WeakMap<
@@ -1073,7 +1025,7 @@ export class StyleManager {
 		let computedStyle = this.computedStyleCache.get(element);
 		if (!computedStyle) {
 			// Create new instance with stylesheet rules applied
-			computedStyle = new TerminalComputedStyle(
+			computedStyle = new ComputedStyleDeclaration(
 				element,
 				this.getMatchingRules(element),
 			);
@@ -1223,13 +1175,13 @@ export class StyleManager {
 	 */
 	private computePseudoElementStyle(
 		element: Element,
-		pseudoElt: string,
+		pseudoElement: string,
 	): Record<string, string> {
 		const matchingRules = this.parsedRules.filter((rule) => {
-			if (rule.pseudoElement !== pseudoElt) return false;
+			if (rule.pseudoElement !== pseudoElement) return false;
 			try {
 				return element.matches(rule.selector);
-			} catch (e) {
+			} catch (err) {
 				return false;
 			}
 		});
@@ -1609,7 +1561,6 @@ export class StyleManager {
 	// ============================================================================
 	// CSS COUNTER SUPPORT
 	// ============================================================================
-
 	/**
 	 * Initialize counters for an element based on CSS properties
 	 * Non-recursive approach to avoid memory issues
@@ -1767,9 +1718,6 @@ export class StyleManager {
 		return 0; // Counter not found
 	}
 
-	/**
-	 * Get current value of a counter for an element
-	 */
 	getCounterValue(element: Element, counterName: string): number {
 		const scope = this.counterScopes.get(element);
 		if (!scope) return 0;
@@ -1794,37 +1742,34 @@ export class StyleManager {
 		// Replace all counter() functions in the content
 		return content.replace(
 			/counter\s*\(\s*([^,)]+)(?:\s*,\s*([^)]+))?\s*\)/g,
-			(match, counterName, style) => {
+			(_match, counterName, style) => {
 				const trimmedName = counterName.trim();
 				const trimmedStyle = style?.trim() || "decimal";
 				const value = this.getCounterValue(element, trimmedName);
-				return this.formatCounterValue(value, trimmedStyle);
+				return formatCounterValue(value, trimmedStyle);
 			},
 		);
 	}
+}
 
-	/**
-	 * Format counter value according to style
-	 */
-	private formatCounterValue(value: number, style: string): string {
-		switch (style) {
-			case "decimal":
-			default:
-				return value.toString();
-			case "lower-alpha":
-				return String.fromCharCode(96 + ((value - 1) % 26) + 1);
-			case "upper-alpha":
-				return String.fromCharCode(64 + ((value - 1) % 26) + 1);
-			case "lower-roman":
-				return toRoman(value).toLowerCase();
-			case "upper-roman":
-				return toRoman(value);
-			case "disc":
-				return "•";
-			case "circle":
-				return "◦";
-			case "square":
-				return "▪";
-		}
+function formatCounterValue(value: number, style: string): string {
+	switch (style) {
+		case "decimal":
+		default:
+			return value.toString();
+		case "lower-alpha":
+			return String.fromCharCode(96 + ((value - 1) % 26) + 1);
+		case "upper-alpha":
+			return String.fromCharCode(64 + ((value - 1) % 26) + 1);
+		case "lower-roman":
+			return toRoman(value).toLowerCase();
+		case "upper-roman":
+			return toRoman(value);
+		case "disc":
+			return "•";
+		case "circle":
+			return "◦";
+		case "square":
+			return "▪";
 	}
 }

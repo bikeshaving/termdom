@@ -336,11 +336,7 @@ test.todo(
 		list.appendChild(listItem);
 
 		// Use ExpandedTreeWalker to traverse and collect all content
-		const walker = termdom.createExpandedTreeWalker(
-			container,
-			termdom.window.NodeFilter.SHOW_ALL,
-			null,
-		);
+		const walker = termdom.createExpandedTreeWalker(container);
 
 		const traversedContent: string[] = [];
 		let currentNode = walker.nextNode();

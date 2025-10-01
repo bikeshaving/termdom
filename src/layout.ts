@@ -4,11 +4,7 @@ import type * as YogaTypes from "yoga-layout";
 import LineBreaker from "linebreak";
 import {getBoxModel, type BoxModel} from "./styles.js";
 import {getPropertyValue, parseUnitValue} from "./styles.js";
-import {
-	createExpandedTreeWalker,
-	NodeFilterExtended,
-	getPseudoMetadata,
-} from "./composition.js";
+import {createExpandedTreeWalker, getPseudoMetadata} from "./composition.js";
 
 function getAbsolutePosition(yogaNode: YogaTypes.Node): {
 	x: number;
@@ -643,16 +639,16 @@ export class LayoutEngine {
 	// Viewport root node - represents terminal dimensions, no DOM element associated
 	declare viewportRootNode: YogaTypes.Node;
 
-	// TODO: These should be strong maps
-	declare nodeMap: WeakMap<Node, YogaTypes.Node>;
-	declare breakResultMap: WeakMap<Node, BreakResult>;
+	// Public Maps for debugging
+	public nodeMap: Map<Node, YogaTypes.Node>;
+	public breakResultMap: Map<Node, BreakResult>;
 
 	constructor(window: DOMWindow) {
 		this.window = window;
 		this.DOMRect = window.DOMRect;
 		this.rootElement = window.document.documentElement;
-		this.nodeMap = new WeakMap<Node, YogaTypes.Node>();
-		this.breakResultMap = new WeakMap<Node, BreakResult>();
+		this.nodeMap = new Map<Node, YogaTypes.Node>();
+		this.breakResultMap = new Map<Node, BreakResult>();
 		this.observer = new window.MutationObserver((mutations) =>
 			this.#handleMutationRecords(mutations),
 		);
@@ -703,9 +699,9 @@ export class LayoutEngine {
 		// Clean up viewport root node (this will recursively free all child yoga nodes)
 		this.viewportRootNode.freeRecursive();
 
-		// Clear the maps (WeakMap doesn't support iteration, but the nodes are freed above)
-		this.nodeMap = new WeakMap();
-		this.breakResultMap = new WeakMap();
+		// Clear the maps (now regular Maps for debugging)
+		this.nodeMap = new Map();
+		this.breakResultMap = new Map();
 
 		// Disconnect observer
 		this.observer.disconnect();
@@ -971,13 +967,7 @@ export class LayoutEngine {
 			targetTextNodes = new Set<Text>();
 
 			// Use ExpandedTreeWalker for traversal
-			const walker = createExpandedTreeWalker(
-				this.window,
-				node,
-				this.window.NodeFilter.SHOW_TEXT |
-					NodeFilterExtended.SHOW_PSEUDO_ELEMENTS,
-				null,
-			);
+			const walker = createExpandedTreeWalker(this.window, node);
 
 			let textNode;
 			while ((textNode = walker.nextNode())) {
@@ -1137,10 +1127,6 @@ export class LayoutEngine {
 		const walker = createExpandedTreeWalker(
 			this.window,
 			node.ownerDocument || this.window.document,
-			this.window.NodeFilter.SHOW_ELEMENT |
-				this.window.NodeFilter.SHOW_TEXT |
-				NodeFilterExtended.SHOW_PSEUDO_ELEMENTS,
-			null,
 		);
 
 		// Position walker at starting node
@@ -1255,6 +1241,22 @@ export class LayoutEngine {
 					// Don't free the node - it will be reattached during layout calculation
 				}
 			}
+
+			// Recursively invalidate all children (including inline runs within this block element)
+			this.#invalidateNodeChildren(node as Element);
+		}
+	}
+
+	/**
+	 * Recursively invalidate all children of an element
+	 */
+	#invalidateNodeChildren(element: Element): void {
+		const walker = createExpandedTreeWalker(this.window, element);
+		let child = walker.firstChild();
+
+		while (child) {
+			this.invalidate(child);
+			child = walker.nextSibling();
 		}
 	}
 
@@ -1266,10 +1268,64 @@ export class LayoutEngine {
 		}
 	}
 
+	/**
+	 * Clear all break results for nodes that are part of the same inline run as the given node.
+	 * This handles the case where run structure changes and old break results become orphaned.
+	 */
+	#clearAllBreakResultsInRun(node: Node): void {
+		// Find the container element for this inline run
+		const container = this.#findInlineRunContainer(node);
+		if (!container) return;
+
+		// Find all inline-level nodes in the container
+		const inlineNodes: Node[] = [];
+		const walker = createExpandedTreeWalker(this.window, container);
+
+		let child = walker.firstChild();
+		while (child) {
+			if (this.#isInlineLevel(child)) {
+				inlineNodes.push(child);
+			}
+			child = walker.nextSibling();
+		}
+
+		// Delete break results for any of these nodes that have them
+		for (const inlineNode of inlineNodes) {
+			if (this.breakResultMap.has(inlineNode)) {
+				this.breakResultMap.delete(inlineNode);
+			}
+		}
+	}
+
+	/**
+	 * Find the container element that holds the inline run containing the given node
+	 */
+	#findInlineRunContainer(node: Node): Element | null {
+		let current =
+			node.nodeType === node.ELEMENT_NODE
+				? (node as Element)
+				: node.parentElement;
+
+		while (current) {
+			const display = getPropertyValue(current, "display");
+			// Stop at block-level containers that can contain inline runs
+			if (display !== "inline" && display !== "inline-block") {
+				return current;
+			}
+			current = current.parentElement;
+		}
+
+		return null;
+	}
+
 	#invalidateInlineRun(node: Node): void {
 		const runHead = this.findInlineRunHead(node);
 		if (runHead) {
-			// Clear cached break results
+			// Clear ALL break results for nodes in this inline run
+			// This handles the case where run head changes and old break results become orphaned
+			this.#clearAllBreakResultsInRun(node);
+
+			// Also clear the current run head's break result
 			this.breakResultMap.delete(runHead);
 
 			// If this node has a Yoga node but is NOT the run head, clean it up
@@ -1637,14 +1693,7 @@ export class LayoutEngine {
 		}
 
 		// Use ExpandedTreeWalker to traverse children including pseudo-elements
-		const walker = createExpandedTreeWalker(
-			this.window,
-			element,
-			this.window.NodeFilter.SHOW_ELEMENT |
-				this.window.NodeFilter.SHOW_TEXT |
-				NodeFilterExtended.SHOW_PSEUDO_ELEMENTS,
-			null,
-		);
+		const walker = createExpandedTreeWalker(this.window, element);
 
 		// Start with first child (skip the element itself)
 		let child = walker.firstChild();
@@ -1725,14 +1774,7 @@ export class LayoutEngine {
 		}
 
 		// Use the same expanded tree walker as addElementNode to ensure consistency
-		const walker = createExpandedTreeWalker(
-			this.window,
-			element.parentElement,
-			this.window.NodeFilter.SHOW_ELEMENT |
-				this.window.NodeFilter.SHOW_TEXT |
-				NodeFilterExtended.SHOW_PSEUDO_ELEMENTS,
-			null,
-		);
+		const walker = createExpandedTreeWalker(this.window, element.parentElement);
 
 		let yogaIndex = 0;
 		let sibling = walker.firstChild();
@@ -1823,14 +1865,7 @@ export class LayoutEngine {
 		}
 
 		// Use ExpandedTreeWalker for traversal
-		const walker = createExpandedTreeWalker(
-			this.window,
-			traversalRoot,
-			this.window.NodeFilter.SHOW_ELEMENT |
-				this.window.NodeFilter.SHOW_TEXT |
-				NodeFilterExtended.SHOW_PSEUDO_ELEMENTS,
-			null,
-		);
+		const walker = createExpandedTreeWalker(this.window, traversalRoot);
 
 		walker.currentNode = runHead;
 		while (walker.currentNode) {
