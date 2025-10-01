@@ -1264,7 +1264,7 @@ test("Removing inline elements from run", async () => {
 	await termdom.render();
 	const updatedOutput = terminal.getPlainText();
 
-	expect(updatedOutput).toContain("Start end");
+	expect(updatedOutput).toContain("Start end"); // Proper whitespace collapse after span removal
 	expect(updatedOutput).not.toContain("REMOVE");
 });
 
@@ -2314,3 +2314,295 @@ test("auto values reset positioning properties", () => {
 	const layout = yogaNode!.getComputedLayout();
 	expect(layout).not.toBeNull(); // Should calculate without errors
 });
+
+// === LAYOUT INVALIDATION TESTS ===
+
+// These tests verify that DOM mutations are properly handled by the MutationObserver,
+// which automatically triggers layout invalidation when elements are added/removed.
+
+function createTermDOM(html: string = "<div></div>") {
+	const termdom = new TermDOM({process: new MockProcess()});
+	const {document} = termdom;
+
+	// Clear default body content and add test HTML
+	document.body.innerHTML = html;
+
+	return {termdom, document, layoutEngine: (termdom as any).layoutEngine};
+}
+
+function getPosition(layoutEngine: any, element: Element): number {
+	try {
+		const rects = layoutEngine.getRectTexts(element);
+		return rects[0]?.rect.x ?? -1;
+	} catch {
+		return -1;
+	}
+}
+
+test("inline element removal preserves positioning", async () => {
+	const {termdom, document, layoutEngine} = createTermDOM();
+
+	// Create inline run: A B C
+	const container = document.createElement("div");
+	const span1 = document.createElement("span");
+	const span2 = document.createElement("span");
+	const span3 = document.createElement("span");
+
+	span1.textContent = "A";
+	span2.textContent = "B";
+	span3.textContent = "C";
+
+	container.appendChild(span1);
+	container.appendChild(span2);
+	container.appendChild(span3);
+	document.body.appendChild(container);
+
+	// Initial render
+	await termdom.render();
+	expect(getPosition(layoutEngine, span1)).toBe(0); // A at x=0
+	expect(getPosition(layoutEngine, span2)).toBe(1); // B at x=1
+	expect(getPosition(layoutEngine, span3)).toBe(2); // C at x=2
+
+	// Remove middle element
+	container.removeChild(span2);
+	await termdom.render();
+	expect(getPosition(layoutEngine, span1)).toBe(0); // A at x=0
+	expect(getPosition(layoutEngine, span3)).toBe(1); // C at x=1 (moved left)
+
+	// Re-add at end
+	container.appendChild(span2);
+	await termdom.render();
+	expect(getPosition(layoutEngine, span1)).toBe(0); // A at x=0
+	expect(getPosition(layoutEngine, span3)).toBe(1); // C at x=1
+	expect(getPosition(layoutEngine, span2)).toBe(2); // B at x=2 (at end)
+});
+
+test("inline element removal in same position preserves layout", async () => {
+	const {termdom, document, layoutEngine} = createTermDOM();
+
+	// Create inline run: A B C
+	const container = document.createElement("div");
+	const span1 = document.createElement("span");
+	const span2 = document.createElement("span");
+	const span3 = document.createElement("span");
+
+	span1.textContent = "A";
+	span2.textContent = "B";
+	span3.textContent = "C";
+
+	container.appendChild(span1);
+	container.appendChild(span2);
+	container.appendChild(span3);
+	document.body.appendChild(container);
+
+	// Initial render
+	await termdom.render();
+	const initialPositions = [
+		getPosition(layoutEngine, span1),
+		getPosition(layoutEngine, span2),
+		getPosition(layoutEngine, span3),
+	];
+
+	// Remove middle element and re-add in exact same position
+	const nextSibling = span2.nextSibling;
+	container.removeChild(span2);
+	await termdom.render();
+
+	container.insertBefore(span2, nextSibling);
+	await termdom.render();
+
+	// Positions should be identical to initial state
+	expect(getPosition(layoutEngine, span1)).toBe(initialPositions[0]);
+	expect(getPosition(layoutEngine, span2)).toBe(initialPositions[1]);
+	expect(getPosition(layoutEngine, span3)).toBe(initialPositions[2]);
+});
+
+test("run head removal transfers to next inline element", async () => {
+	const {termdom, document, layoutEngine} = createTermDOM();
+
+	// Create inline run where first element is run head
+	const container = document.createElement("div");
+	const span1 = document.createElement("span");
+	const span2 = document.createElement("span");
+
+	span1.textContent = "FIRST";
+	span2.textContent = "SECOND";
+
+	container.appendChild(span1);
+	container.appendChild(span2);
+	document.body.appendChild(container);
+
+	await termdom.render();
+
+	// Verify span1 is the run head initially
+	expect(layoutEngine.findInlineRunHead(span1)).toBe(span1);
+	expect(layoutEngine.findInlineRunHead(span2)).toBe(span1);
+
+	// Remove the run head
+	container.removeChild(span1);
+	await termdom.render();
+
+	// span2 should become the new run head and have correct position
+	expect(layoutEngine.findInlineRunHead(span2)).toBe(span2);
+	const rects = layoutEngine.getRectTexts(span2);
+	expect(rects.length).toBeGreaterThan(0);
+	expect(rects[0].text).toBe("SECOND");
+	expect(rects[0].rect.x).toBe(0); // Should start at position 0
+
+	// Re-add original run head at beginning
+	container.insertBefore(span1, span2);
+	await termdom.render();
+
+	// span1 should become run head again with both elements correctly positioned
+	expect(layoutEngine.findInlineRunHead(span1)).toBe(span1);
+	expect(layoutEngine.findInlineRunHead(span2)).toBe(span1);
+
+	const rects1 = layoutEngine.getRectTexts(span1);
+	const rects2 = layoutEngine.getRectTexts(span2);
+
+	expect(rects1[0].rect.x).toBe(0); // FIRST at x=0
+	expect(rects2[0].rect.x).toBe(5); // SECOND at x=5 (after "FIRST")
+});
+
+test("block element removal merges adjacent inline runs", async () => {
+	const {termdom, document, layoutEngine} = createTermDOM();
+
+	// Create: span1 - div - span2 (separate inline runs)
+	const container = document.createElement("div");
+	const span1 = document.createElement("span");
+	const blockDiv = document.createElement("div");
+	const span2 = document.createElement("span");
+
+	span1.textContent = "A";
+	blockDiv.textContent = "BLOCK";
+	span2.textContent = "B";
+
+	container.appendChild(span1);
+	container.appendChild(blockDiv);
+	container.appendChild(span2);
+	document.body.appendChild(container);
+
+	await termdom.render();
+
+	// Initially span1 and span2 should have different run heads
+	const runHead1 = layoutEngine.findInlineRunHead(span1);
+	const runHead2 = layoutEngine.findInlineRunHead(span2);
+	expect(runHead1).toBe(span1);
+	expect(runHead2).toBe(span2);
+
+	// Remove block element
+	container.removeChild(blockDiv);
+	await termdom.render();
+
+	// Now span1 and span2 should share the same run head (span1)
+	expect(layoutEngine.findInlineRunHead(span1)).toBe(span1);
+	expect(layoutEngine.findInlineRunHead(span2)).toBe(span1);
+
+	// Both should be positioned correctly in the merged run
+	expect(getPosition(layoutEngine, span1)).toBe(0); // A at x=0
+	expect(getPosition(layoutEngine, span2)).toBe(1); // B at x=1
+});
+
+test("text node removal invalidates inline runs", async () => {
+	const {termdom, document, layoutEngine} = createTermDOM();
+
+	// Create inline run with text node
+	const container = document.createElement("div");
+	const span = document.createElement("span");
+	const textNode = document.createTextNode("TEXT");
+
+	span.textContent = "SPAN";
+
+	container.appendChild(span);
+	container.appendChild(textNode);
+	document.body.appendChild(container);
+
+	await termdom.render();
+
+	// Both should be positioned correctly
+	expect(getPosition(layoutEngine, span)).toBe(0);
+	const spanRects = layoutEngine.getRectTexts(span);
+	expect(spanRects[0].text).toBe("SPAN");
+
+	// Remove text node
+	container.removeChild(textNode);
+	await termdom.render();
+
+	// Span should still work correctly
+	expect(getPosition(layoutEngine, span)).toBe(0);
+	const newSpanRects = layoutEngine.getRectTexts(span);
+	expect(newSpanRects[0].text).toBe("SPAN");
+});
+
+test("multiple element removal handles invalidation correctly", async () => {
+	const {termdom, document, layoutEngine} = createTermDOM();
+
+	// Create inline run: A B C D E
+	const container = document.createElement("div");
+	const spans = [];
+	for (let i = 0; i < 5; i++) {
+		const span = document.createElement("span");
+		span.textContent = String.fromCharCode(65 + i); // A, B, C, D, E
+		spans.push(span);
+		container.appendChild(span);
+	}
+	document.body.appendChild(container);
+
+	await termdom.render();
+
+	// Verify initial positions
+	spans.forEach((span, i) => {
+		expect(getPosition(layoutEngine, span)).toBe(i);
+	});
+
+	// Remove multiple elements (B and D)
+	container.removeChild(spans[1]); // Remove B
+	container.removeChild(spans[3]); // Remove D
+	await termdom.render();
+
+	// Remaining elements should be positioned correctly: A C E
+	expect(getPosition(layoutEngine, spans[0])).toBe(0); // A at x=0
+	expect(getPosition(layoutEngine, spans[2])).toBe(1); // C at x=1
+	expect(getPosition(layoutEngine, spans[4])).toBe(2); // E at x=2
+});
+
+test("break result cleanup prevents orphaned entries", async () => {
+	const {termdom, document, layoutEngine} = createTermDOM();
+
+	// Create inline run
+	const container = document.createElement("div");
+	const span1 = document.createElement("span");
+	const span2 = document.createElement("span");
+
+	span1.textContent = "A";
+	span2.textContent = "B";
+
+	container.appendChild(span1);
+	container.appendChild(span2);
+	document.body.appendChild(container);
+
+	await termdom.render();
+
+	const initialBreakResults = layoutEngine.breakResultMap.size;
+
+	// Remove element
+	container.removeChild(span2);
+	await termdom.render();
+
+	// Break result count should remain consistent (no orphaned entries)
+	expect(layoutEngine.breakResultMap.size).toBeLessThanOrEqual(
+		initialBreakResults,
+	);
+
+	// Re-add element
+	container.appendChild(span2);
+	await termdom.render();
+
+	// Should still be able to get correct positions
+	expect(getPosition(layoutEngine, span1)).toBe(0);
+	expect(getPosition(layoutEngine, span2)).toBe(1);
+});
+
+// These tests verify that the layout invalidation logic works correctly.
+// DOM mutations automatically trigger MutationObserver -> #removeNode -> #invalidateInlineRun
+// ensuring that break results are properly cleared and runs are recalculated.

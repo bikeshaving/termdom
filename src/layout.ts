@@ -1529,73 +1529,21 @@ export class LayoutEngine {
 			// Handle removed nodes
 			for (let j = 0; j < record.removedNodes.length; j++) {
 				const node = record.removedNodes[j];
-				const yogaNode = this.nodeMap.get(node);
+				const parent = record.target as Element;
 
-				// Invalidate inline runs before removing the node
-				if (this.#isInlineLevel(node)) {
-					// Check siblings that might now become the new run head
-					const parent = record.target as Element;
-					const siblings = Array.from(parent.childNodes);
-					const nodeIndex =
-						record.removedNodes.length > 1
-							? -1
-							: siblings.findIndex((n) => n === node);
-
-					// Find adjacent inline siblings that need invalidation
-					if (nodeIndex >= 0) {
-						const nextSibling = siblings[nodeIndex + 1];
-						if (nextSibling && this.#isInlineLevel(nextSibling)) {
-							this.#invalidateInlineRun(nextSibling);
-						}
-
-						const prevSibling = siblings[nodeIndex - 1];
-						if (prevSibling && this.#isInlineLevel(prevSibling)) {
-							this.#invalidateInlineRun(prevSibling);
-						}
-					} else {
-						// If we can't determine position, invalidate all inline siblings
-						for (const sibling of siblings) {
-							if (sibling !== node && this.#isInlineLevel(sibling)) {
-								this.#invalidateInlineRun(sibling);
-							}
-						}
-					}
-				} else {
-					// Block element removed - might merge previously separate inline runs
-					const parent = record.target as Element;
-					const siblings = Array.from(parent.childNodes);
-
-					// Process all inline siblings to handle run merging
-					for (const sibling of siblings) {
-						if (this.#isInlineLevel(sibling)) {
-							this.#invalidateInlineRun(sibling);
-						}
-					}
+				// Invalidate inline runs that might be affected by the removal
+				// Use MutationRecord siblings since the removed node is disconnected
+				if (
+					record.previousSibling &&
+					this.#isInlineLevel(record.previousSibling)
+				) {
+					this.#invalidateInlineRun(record.previousSibling);
+				}
+				if (record.nextSibling && this.#isInlineLevel(record.nextSibling)) {
+					this.#invalidateInlineRun(record.nextSibling);
 				}
 
-				// Remove from Yoga layout
-				if (yogaNode) {
-					const parent = this.nodeMap.get(record.target as Element);
-					if (parent) {
-						parent.removeChild(yogaNode);
-					}
-
-					// Check if node was actually removed vs just moved
-					if (!node.isConnected) {
-						// Node was truly removed from DOM - free it
-						const pseudoMeta = getPseudoMetadata(node);
-						if (pseudoMeta) {
-							// Removing pseudo element from nodeMap during mutation removal
-						}
-						yogaNode.freeRecursive();
-						this.nodeMap.delete(node);
-					}
-					// If node.isConnected is true, node was moved - keep Yoga node and nodeMap entry
-					// It will be re-added to the new parent when that mutation is processed
-				}
-
-				// Clear any cached break results for this node
-				this.#clearBreakResultCache(node);
+				this.#removeNode(node, parent);
 			}
 		}
 	}
@@ -1766,6 +1714,107 @@ export class LayoutEngine {
 		// Note: Automatic minimum size for flex items is now handled in measureInlineRun
 
 		parentYogaNode.insertChild(yogaNode, parentYogaNode.getChildCount());
+	}
+
+	/**
+	 * Remove a node from the layout tree, handling both elements and text nodes
+	 */
+	#removeNode(node: Node, parent: Element): void {
+		if (node.nodeType === node.ELEMENT_NODE) {
+			this.#removeElement(node as Element, parent);
+		} else if (node.nodeType === node.TEXT_NODE) {
+			this.#removeText(node as Text, parent);
+		}
+	}
+
+	/**
+	 * Remove an element node from the layout tree
+	 */
+	#removeElement(element: Element, parent: Element): void {
+		// Invalidate inline runs before removing the element
+		if (this.#isInlineLevel(element)) {
+			this.#invalidateInlineRemoval(element);
+		} else {
+			this.#invalidateBlockRemoval(parent);
+		}
+
+		// Remove from Yoga layout
+		const yogaNode = this.nodeMap.get(element);
+		if (yogaNode) {
+			const parentYogaNode = this.nodeMap.get(parent);
+			if (parentYogaNode) {
+				parentYogaNode.removeChild(yogaNode);
+			}
+
+			// Check if element was actually removed vs just moved
+			if (!element.isConnected) {
+				// Element was truly removed from DOM - free it
+				const pseudoMeta = getPseudoMetadata(element);
+				if (pseudoMeta) {
+					// Removing pseudo element from nodeMap during mutation removal
+				}
+				yogaNode.freeRecursive();
+				this.nodeMap.delete(element);
+			}
+			// If element.isConnected is true, element was moved - keep Yoga node and nodeMap entry
+			// It will be re-added to the new parent when that mutation is processed
+		}
+
+		// Clear any cached break results for this element
+		this.#clearBreakResultCache(element);
+	}
+
+	/**
+	 * Remove a text node from the layout tree
+	 */
+	#removeText(text: Text, parent: Element): void {
+		// Text nodes are always inline-level
+		this.#invalidateInlineRemoval(text);
+
+		// Remove from Yoga layout (if it has a yoga node as run head)
+		const yogaNode = this.nodeMap.get(text);
+		if (yogaNode) {
+			const parentYogaNode = this.nodeMap.get(parent);
+			if (parentYogaNode) {
+				parentYogaNode.removeChild(yogaNode);
+			}
+
+			// Check if text was actually removed vs just moved
+			if (!text.isConnected) {
+				// Text was truly removed from DOM - free it
+				yogaNode.freeRecursive();
+				this.nodeMap.delete(text);
+			}
+		}
+
+		// Clear any cached break results for this text node
+		this.#clearBreakResultCache(text);
+	}
+
+	/**
+	 * Invalidate inline runs affected by removing an inline-level node
+	 */
+	#invalidateInlineRemoval(node: Node): void {
+		// Note: Invalidation is now handled at the MutationRecord level using previousSibling/nextSibling
+		// This method is kept for compatibility but the real work happens in #handleMutationRecords
+		// Just clear any cached break results for the removed node itself
+		this.#clearBreakResultCache(node);
+	}
+
+	/**
+	 * Invalidate inline runs when a block element is removed (might merge previously separate runs)
+	 */
+	#invalidateBlockRemoval(parent: Element): void {
+		// Use tree walker to find all inline children that need invalidation
+		const walker = createExpandedTreeWalker(this.window, parent);
+		let child = walker.firstChild();
+
+		while (child) {
+			if (this.#isInlineLevel(child)) {
+				this.#invalidateInlineRun(child);
+			}
+			child = walker.nextSibling();
+		}
 	}
 
 	#getYogaIndex(element: Element): number {
