@@ -974,6 +974,9 @@ export class StyleManager {
 
 	// CSS Counter support
 	private counterScopes = new WeakMap<Element, CounterScope>();
+	
+	// MutationObserver for handling DOM changes before LayoutEngine
+	private observer: MutationObserver;
 
 	constructor(
 		private window: DOMWindow,
@@ -981,6 +984,19 @@ export class StyleManager {
 	) {
 		// Override window.getComputedStyle with our cached version
 		window.getComputedStyle = this.getComputedStyle.bind(this);
+
+		// Setup MutationObserver for style invalidation
+		this.observer = new window.MutationObserver((mutations) => {
+			this.handleMutations(mutations);
+		});
+		
+		// Start observing DOM changes
+		this.observer.observe(window.document.documentElement, {
+			childList: true,
+			subtree: true,
+			attributes: true,
+			characterData: true
+		});
 
 		// Hook into methods that should invalidate cached styles
 		this.setupInvalidationHooks();
@@ -991,6 +1007,76 @@ export class StyleManager {
 
 		// Parse initial stylesheets (may be empty at construction time)
 		this.parseStylesheets();
+	}
+
+	/**
+	 * Handle DOM mutations using invalidation approach
+	 */
+	private handleMutations(mutations: MutationRecord[]): void {
+		const Node = this.window.Node;
+		let shouldRefreshStylesheets = false;
+		
+		for (const mutation of mutations) {
+			if (mutation.type === 'childList') {
+				// Check for stylesheet changes
+				for (const node of mutation.addedNodes) {
+					if (node.nodeType === Node.ELEMENT_NODE) {
+						const element = node as Element;
+						if (element.tagName === 'STYLE' || 
+							(element.tagName === 'LINK' && element.getAttribute('rel') === 'stylesheet')) {
+							shouldRefreshStylesheets = true;
+						} else {
+							// Invalidate caches for new elements
+							this.invalidateElementCaches(element);
+							// Process pseudo-elements for new elements
+							this.attachPseudoElementsToElement(element);
+							
+							// Also handle any child elements
+							const childElements = element.querySelectorAll('*');
+							for (const childElement of childElements) {
+								this.invalidateElementCaches(childElement);
+								this.attachPseudoElementsToElement(childElement);
+							}
+						}
+					}
+				}
+				
+				// Check for removed stylesheets
+				for (const node of mutation.removedNodes) {
+					if (node.nodeType === Node.ELEMENT_NODE) {
+						const element = node as Element;
+						if (element.tagName === 'STYLE' || 
+							(element.tagName === 'LINK' && element.getAttribute('rel') === 'stylesheet')) {
+							shouldRefreshStylesheets = true;
+						}
+					}
+				}
+			} else if (mutation.type === 'attributes') {
+				// Invalidate caches for attribute changes (over-invalidation approach)
+				const element = mutation.target as Element;
+				this.invalidateElementCaches(element);
+				this.attachPseudoElementsToElement(element);
+			} else if (mutation.type === 'characterData') {
+				// Check for changes to <style> element content
+				if (mutation.target.parentElement?.tagName === 'STYLE') {
+					shouldRefreshStylesheets = true;
+				}
+			}
+		}
+		
+		// If stylesheets changed, refresh everything
+		if (shouldRefreshStylesheets) {
+			this.refreshStylesheets();
+		}
+	}
+	
+	/**
+	 * Invalidate cached styles for an element (invalidation approach)
+	 */
+	private invalidateElementCaches(element: Element): void {
+		this.computedStyleCache.delete(element);
+		this.pseudoElementStyleCache.delete(element);
+		this.counterScopes.delete(element);
 	}
 
 	private getComputedStyle(
@@ -1749,6 +1835,92 @@ export class StyleManager {
 				return formatCounterValue(value, trimmedStyle);
 			},
 		);
+	}
+
+	/**
+	 * Create a pseudo-element node for testing/compatibility
+	 */
+	createPseudoElementNode(element: Element, pseudoType: string): Text | null {
+		// Find matching rules for this pseudo-element
+		const matchingRules = this.parsedRules.filter(rule => {
+			if (rule.pseudoElement !== pseudoType) return false;
+			try {
+				return element.matches(rule.selector);
+			} catch (e) {
+				return false;
+			}
+		});
+
+		if (matchingRules.length === 0) {
+			// For ::marker, check if this is a list item
+			if (pseudoType === '::marker' && this.getComputedStyle(element).getPropertyValue('display') === 'list-item') {
+				const parent = element.parentElement;
+				let defaultMarker = '• '; // Default bullet
+				
+				if (parent) {
+					if (parent.tagName === 'OL') {
+						const siblings = Array.from(parent.children);
+						const index = siblings.indexOf(element);
+						defaultMarker = `${index + 1}. `;
+					} else if (parent.tagName === 'UL') {
+						defaultMarker = '• ';
+					}
+				}
+				
+				return this.window.document.createTextNode(defaultMarker);
+			}
+			return null;
+		}
+
+		// Use the highest specificity rule
+		const rule = matchingRules[matchingRules.length - 1];
+		const content = rule.declarations.content;
+		
+		if (!content || content === 'none' || content === 'normal') {
+			return null;
+		}
+
+		// Remove quotes from content value
+		const textContent = content.replace(/^["']|["']$/g, '');
+		
+		// Create text node for pseudo-element
+		return this.window.document.createTextNode(textContent);
+	}
+
+	/**
+	 * Check if a pseudo-element should be created for testing/compatibility
+	 */
+	shouldCreatePseudoElement(element: Element, pseudoType: string): boolean {
+		// For ::marker pseudo-elements, always create them for list-item elements
+		if (pseudoType === '::marker') {
+			const display = this.getComputedStyle(element).getPropertyValue('display');
+			return display === 'list-item';
+		}
+
+		// For other pseudo-elements, check if there are matching rules
+		const matchingRules = this.parsedRules.filter(rule => {
+			if (rule.pseudoElement !== pseudoType) return false;
+			try {
+				return element.matches(rule.selector);
+			} catch (e) {
+				return false;
+			}
+		});
+		
+		return matchingRules.length > 0 && matchingRules.some(rule => {
+			const content = rule.declarations.content;
+			return content && content !== 'none' && content !== 'normal';
+		});
+	}
+
+	/**
+	 * Clean up resources and disconnect MutationObserver
+	 */
+	dispose(): void {
+		this.observer.disconnect();
+		this.computedStyleCache = new WeakMap();
+		this.pseudoElementStyleCache = new WeakMap();
+		this.counterScopes = new WeakMap();
 	}
 }
 

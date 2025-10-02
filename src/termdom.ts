@@ -123,15 +123,13 @@ export class TermDOM {
 			options.colorDepth || detectColorDepth(this.process),
 		);
 
-		// Setup style management first to ensure CSS defaults are applied
+		// Setup style management FIRST to override getComputedStyle before LayoutEngine uses it
 		this.styleManager = new StyleManager(this.window);
-
+		
+		// Create layout engine after StyleManager overrides getComputedStyle
 		this.layoutEngine = new LayoutEngine(this.jsdom.window);
 		this.styleManager.setLayoutEngine(this.layoutEngine);
 		this.layoutEngine.resize(this.width, this.height);
-
-		// Connect StyleManager to LayoutEngine after both are created
-		(this.styleManager as any).layoutEngine = this.layoutEngine;
 		this.fullscreenManager = new FullscreenManager(this.process);
 
 		this.initializeWindow();
@@ -143,8 +141,7 @@ export class TermDOM {
 
 		this.setupProcessHandlers();
 
-		// Create pseudo-elements for any existing elements in the DOM
-		this.styleManager.attachPseudoElementsToDocument();
+		// Initial processing of all elements is handled by StyleManager's constructor
 
 		// Initialize cursor position detection if in a TTY environment
 		this.initializeCursorDetection();
@@ -240,53 +237,7 @@ export class TermDOM {
 
 	private setupMutationObserver(): MutationObserver {
 		const observer = new this.window.MutationObserver((mutations) => {
-			let shouldRefreshStyles = false;
-
-			// Check for stylesheet changes and new DOM elements
-			for (const mutation of mutations) {
-				if (mutation.type === "childList") {
-					for (const node of mutation.addedNodes) {
-						if (node.nodeType === node.ELEMENT_NODE) {
-							const element = node as Element;
-							if (
-								element.tagName === "STYLE" ||
-								(element.tagName === "LINK" &&
-									element.getAttribute("rel") === "stylesheet")
-							) {
-								shouldRefreshStyles = true;
-								break;
-							}
-						}
-					}
-					for (const node of mutation.removedNodes) {
-						if (node.nodeType === node.ELEMENT_NODE) {
-							const element = node as Element;
-							if (
-								element.tagName === "STYLE" ||
-								(element.tagName === "LINK" &&
-									element.getAttribute("rel") === "stylesheet")
-							) {
-								shouldRefreshStyles = true;
-								break;
-							}
-
-							// StyleManager will handle cleanup during render pipeline
-						}
-					}
-				}
-				// Check for changes to <style> element content
-				else if (
-					mutation.type === "characterData" &&
-					mutation.target.parentElement?.tagName === "STYLE"
-				) {
-					shouldRefreshStyles = true;
-				}
-			}
-
-			if (shouldRefreshStyles) {
-				this.styleManager.refreshStylesheets();
-			}
-
+			// Only trigger render - StyleManager handles all style-related mutations
 			this.render();
 		});
 
@@ -910,6 +861,7 @@ export class TermDOM {
 		// Shadow DOM cleanup is automatic with symbol-based storage
 
 		this.observer.disconnect();
+		this.styleManager.dispose();
 		this.layoutEngine.dispose();
 		this.fullscreenManager.dispose();
 		this.jsdom.window.close();
