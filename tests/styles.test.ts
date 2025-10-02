@@ -448,13 +448,52 @@ describe("getComputedStyle - What We Don't Support (Failing Tests)", () => {
 		expect(styles.getPropertyValue("color")).toBe("from-external-css");
 	});
 
-	test.todo("shorthand property expansion", () => {
+	test("shorthand property expansion - margin and padding", () => {
 		const dom = new JSDOM(`<!DOCTYPE html>
 			<html>
 				<head>
 					<style>
 						div { 
 							margin: 10px 20px;
+							padding: 5px 15px 25px;
+						}
+					</style>
+				</head>
+				<body>
+					<div id="test"></div>
+				</body>
+			</html>
+		`);
+		const styleManager = new StyleManager(dom.window);
+		const layoutEngine = new LayoutEngine(dom.window);
+		styleManager.setLayoutEngine(layoutEngine);
+		const element = dom.window.document.getElementById("test")!;
+		const styles = dom.window.getComputedStyle(element);
+
+		// Margin shorthand should expand to individual properties
+		expect(styles.getPropertyValue("margin-top")).toBe("10px");
+		expect(styles.getPropertyValue("margin-right")).toBe("20px");
+		expect(styles.getPropertyValue("margin-bottom")).toBe("10px");
+		expect(styles.getPropertyValue("margin-left")).toBe("20px");
+
+		// Padding shorthand should expand to individual properties
+		expect(styles.getPropertyValue("padding-top")).toBe("5px");
+		expect(styles.getPropertyValue("padding-right")).toBe("15px");
+		expect(styles.getPropertyValue("padding-bottom")).toBe("25px");
+		expect(styles.getPropertyValue("padding-left")).toBe("15px");
+
+		// And the shorthand properties should return the expanded form
+		expect(styles.getPropertyValue("margin")).toBe("10px 20px 10px 20px");
+		expect(styles.getPropertyValue("padding")).toBe("5px 15px 25px 15px");
+	});
+
+	test.todo("shorthand property expansion - border and background", () => {
+		// TODO: Implement border and background shorthand expansion
+		const dom = new JSDOM(`<!DOCTYPE html>
+			<html>
+				<head>
+					<style>
+						div { 
 							border: 2px solid red;
 							background: #fff url(bg.png) no-repeat center;
 						}
@@ -470,12 +509,6 @@ describe("getComputedStyle - What We Don't Support (Failing Tests)", () => {
 		styleManager.setLayoutEngine(layoutEngine);
 		const element = dom.window.document.getElementById("test")!;
 		const styles = dom.window.getComputedStyle(element);
-
-		// Shorthand should expand to individual properties
-		expect(styles.getPropertyValue("margin-top")).toBe("10px");
-		expect(styles.getPropertyValue("margin-right")).toBe("20px");
-		expect(styles.getPropertyValue("margin-bottom")).toBe("10px");
-		expect(styles.getPropertyValue("margin-left")).toBe("20px");
 
 		expect(styles.getPropertyValue("border-width")).toBe("2px");
 		expect(styles.getPropertyValue("border-style")).toBe("solid");

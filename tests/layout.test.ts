@@ -1434,7 +1434,7 @@ test("White-space handling in dynamic inline runs", async () => {
 	expect(updatedOutput).not.toContain("Word2");
 });
 
-test.todo("Direct textContent changes in inline runs", async () => {
+test("Direct textContent changes in inline runs", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
 	const termdom = new TermDOM({
 		width: 40,
@@ -1463,7 +1463,7 @@ test.todo("Direct textContent changes in inline runs", async () => {
 	expect(updatedOutput).not.toContain("original");
 });
 
-test.todo("Text node data changes (characterData mutations)", async () => {
+test("Text node data changes (characterData mutations)", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
 	const termdom = new TermDOM({
 		width: 40,
