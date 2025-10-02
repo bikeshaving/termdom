@@ -237,8 +237,10 @@ export class TermDOM {
 
 	private setupMutationObserver(): MutationObserver {
 		const observer = new this.window.MutationObserver((mutations) => {
-			// Only trigger render - StyleManager handles all style-related mutations
-			this.render();
+			// Process mutations in correct order to avoid race conditions
+			this.styleManager.handleMutations(mutations);  // First: attach pseudo-elements, invalidate caches
+			this.layoutEngine.handleMutations(mutations);  // Second: process DOM changes for layout
+			this.render();  // Finally: render with fully processed DOM
 		});
 
 		observer.observe(this.document.documentElement, {

@@ -629,7 +629,6 @@ yogaConfig.setPointScaleFactor(1.0);
 export class LayoutEngine {
 	declare DOMRect: typeof DOMRect;
 	declare rootElement: Element;
-	declare observer: MutationObserver;
 	declare window: DOMWindow;
 
 	// TODO:
@@ -643,27 +642,22 @@ export class LayoutEngine {
 	public nodeMap: Map<Node, YogaTypes.Node>;
 	public breakResultMap: Map<Node, BreakResult>;
 
+	// Track nodes that were invalidated and need re-adding during calculateLayout
+	private invalidatedNodes: Set<Node>;
+
 	constructor(window: DOMWindow) {
 		this.window = window;
 		this.DOMRect = window.DOMRect;
 		this.rootElement = window.document.documentElement;
 		this.nodeMap = new Map<Node, YogaTypes.Node>();
 		this.breakResultMap = new Map<Node, BreakResult>();
-		this.observer = new window.MutationObserver((mutations) =>
-			this.#handleMutationRecords(mutations),
-		);
+		this.invalidatedNodes = new Set<Node>();
 
 		// Create viewport root node (no DOM element associated)
 		this.viewportRootNode = Yoga.Node.create();
 		this.viewportRootNode.setFlexDirection(Yoga.FLEX_DIRECTION_COLUMN);
 		this.viewportRootNode.setAlignItems(Yoga.ALIGN_STRETCH);
 
-		this.observer.observe(this.rootElement, {
-			childList: true,
-			subtree: true,
-			attributes: true,
-			characterData: true,
-		});
 		// Attach HTML element to viewport root instead of null
 		this.#addNode(this.rootElement, this.viewportRootNode);
 	}
@@ -681,8 +675,22 @@ export class LayoutEngine {
 	}
 
 	calculateLayout() {
-		const records = this.observer.takeRecords();
-		this.#handleMutationRecords(records);
+		// Re-add invalidated nodes that are still connected to DOM
+		for (const node of this.invalidatedNodes) {
+			if (node.isConnected) {
+				// Find parent that has a Yoga node to attach to
+				let parent = node.parentElement;
+				while (parent) {
+					const parentYogaNode = this.nodeMap.get(parent);
+					if (parentYogaNode) {
+						this.#addNode(node, parentYogaNode);
+						break;
+					}
+					parent = parent.parentElement;
+				}
+			}
+		}
+		this.invalidatedNodes.clear();
 
 		// Calculate layout using viewport root node (terminal dimensions)
 		// The HTML element can now have auto height and reference viewport via percentages
@@ -702,9 +710,7 @@ export class LayoutEngine {
 		// Clear the maps (now regular Maps for debugging)
 		this.nodeMap = new Map();
 		this.breakResultMap = new Map();
-
-		// Disconnect observer
-		this.observer.disconnect();
+		this.invalidatedNodes = new Set();
 	}
 
 	/**
@@ -1215,6 +1221,9 @@ export class LayoutEngine {
 	 * For block elements, invalidates their layout by removing from nodeMap
 	 */
 	invalidate(node: Node): void {
+		// Track this node for re-adding during calculateLayout
+		this.invalidatedNodes.add(node);
+		
 		// If it's an inline-level node, invalidate the entire run
 		if (this.#isInlineLevel(node)) {
 			this.#invalidateInlineRun(node);
@@ -1444,6 +1453,10 @@ export class LayoutEngine {
 		}
 
 		return false;
+	}
+
+	public handleMutations(mutations: MutationRecord[]): void {
+		this.#handleMutationRecords(mutations);
 	}
 
 	#handleMutationRecords(mutations: MutationRecord[]): void {

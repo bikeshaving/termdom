@@ -974,9 +974,6 @@ export class StyleManager {
 
 	// CSS Counter support
 	private counterScopes = new WeakMap<Element, CounterScope>();
-	
-	// MutationObserver for handling DOM changes before LayoutEngine
-	private observer: MutationObserver;
 
 	constructor(
 		private window: DOMWindow,
@@ -984,19 +981,6 @@ export class StyleManager {
 	) {
 		// Override window.getComputedStyle with our cached version
 		window.getComputedStyle = this.getComputedStyle.bind(this);
-
-		// Setup MutationObserver for style invalidation
-		this.observer = new window.MutationObserver((mutations) => {
-			this.handleMutations(mutations);
-		});
-		
-		// Start observing DOM changes
-		this.observer.observe(window.document.documentElement, {
-			childList: true,
-			subtree: true,
-			attributes: true,
-			characterData: true
-		});
 
 		// Hook into methods that should invalidate cached styles
 		this.setupInvalidationHooks();
@@ -1012,7 +996,7 @@ export class StyleManager {
 	/**
 	 * Handle DOM mutations using invalidation approach
 	 */
-	private handleMutations(mutations: MutationRecord[]): void {
+	public handleMutations(mutations: MutationRecord[]): void {
 		const Node = this.window.Node;
 		let shouldRefreshStylesheets = false;
 		
@@ -1914,10 +1898,9 @@ export class StyleManager {
 	}
 
 	/**
-	 * Clean up resources and disconnect MutationObserver
+	 * Clean up resources
 	 */
 	dispose(): void {
-		this.observer.disconnect();
 		this.computedStyleCache = new WeakMap();
 		this.pseudoElementStyleCache = new WeakMap();
 		this.counterScopes = new WeakMap();
