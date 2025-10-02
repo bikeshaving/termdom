@@ -557,24 +557,22 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 	private normalizeForTerminal(property: string, value: string): string {
 		if (!value) return value;
 
-		// Example: Convert pixel measurements to character units for terminals
-		// if (property === 'width' || property === 'height') {
-		// 	// Convert px to ch (assuming 1ch = 8px for typical monospace)
-		// 	if (value.endsWith('px')) {
-		// 		const pixels = parseFloat(value);
-		// 		const chars = Math.round(pixels / 8);
-		// 		return `${chars}ch`;
-		// 	}
-		// }
+		// Handle shorthand property expansion
+		if (property === "margin") {
+			const top = super.getPropertyValue("margin-top") || "0px";
+			const right = super.getPropertyValue("margin-right") || "0px";
+			const bottom = super.getPropertyValue("margin-bottom") || "0px";
+			const left = super.getPropertyValue("margin-left") || "0px";
+			return `${top} ${right} ${bottom} ${left}`;
+		}
 
-		// Example: Prevent shorthand expansion for certain properties
-		// if (property === 'margin') {
-		// 	// Keep original shorthand instead of expanded form
-		// 	const original = resolvePropertyValue(this.element, property);
-		// 	if (original && original !== '0') {
-		// 		return original; // Return original shorthand
-		// 	}
-		// }
+		if (property === "padding") {
+			const top = super.getPropertyValue("padding-top") || "0px";
+			const right = super.getPropertyValue("padding-right") || "0px";
+			const bottom = super.getPropertyValue("padding-bottom") || "0px";
+			const left = super.getPropertyValue("padding-left") || "0px";
+			return `${top} ${right} ${bottom} ${left}`;
+		}
 
 		// For now, return the value as-is (cssstyle normalization)
 		return value;
@@ -999,24 +997,27 @@ export class StyleManager {
 	public handleMutations(mutations: MutationRecord[]): void {
 		const Node = this.window.Node;
 		let shouldRefreshStylesheets = false;
-		
+
 		for (const mutation of mutations) {
-			if (mutation.type === 'childList') {
+			if (mutation.type === "childList") {
 				// Check for stylesheet changes
 				for (const node of mutation.addedNodes) {
 					if (node.nodeType === Node.ELEMENT_NODE) {
 						const element = node as Element;
-						if (element.tagName === 'STYLE' || 
-							(element.tagName === 'LINK' && element.getAttribute('rel') === 'stylesheet')) {
+						if (
+							element.tagName === "STYLE" ||
+							(element.tagName === "LINK" &&
+								element.getAttribute("rel") === "stylesheet")
+						) {
 							shouldRefreshStylesheets = true;
 						} else {
 							// Invalidate caches for new elements
 							this.invalidateElementCaches(element);
 							// Process pseudo-elements for new elements
 							this.attachPseudoElementsToElement(element);
-							
+
 							// Also handle any child elements
-							const childElements = element.querySelectorAll('*');
+							const childElements = element.querySelectorAll("*");
 							for (const childElement of childElements) {
 								this.invalidateElementCaches(childElement);
 								this.attachPseudoElementsToElement(childElement);
@@ -1024,36 +1025,39 @@ export class StyleManager {
 						}
 					}
 				}
-				
+
 				// Check for removed stylesheets
 				for (const node of mutation.removedNodes) {
 					if (node.nodeType === Node.ELEMENT_NODE) {
 						const element = node as Element;
-						if (element.tagName === 'STYLE' || 
-							(element.tagName === 'LINK' && element.getAttribute('rel') === 'stylesheet')) {
+						if (
+							element.tagName === "STYLE" ||
+							(element.tagName === "LINK" &&
+								element.getAttribute("rel") === "stylesheet")
+						) {
 							shouldRefreshStylesheets = true;
 						}
 					}
 				}
-			} else if (mutation.type === 'attributes') {
+			} else if (mutation.type === "attributes") {
 				// Invalidate caches for attribute changes (over-invalidation approach)
 				const element = mutation.target as Element;
 				this.invalidateElementCaches(element);
 				this.attachPseudoElementsToElement(element);
-			} else if (mutation.type === 'characterData') {
+			} else if (mutation.type === "characterData") {
 				// Check for changes to <style> element content
-				if (mutation.target.parentElement?.tagName === 'STYLE') {
+				if (mutation.target.parentElement?.tagName === "STYLE") {
 					shouldRefreshStylesheets = true;
 				}
 			}
 		}
-		
+
 		// If stylesheets changed, refresh everything
 		if (shouldRefreshStylesheets) {
 			this.refreshStylesheets();
 		}
 	}
-	
+
 	/**
 	 * Invalidate cached styles for an element (invalidation approach)
 	 */
@@ -1067,6 +1071,10 @@ export class StyleManager {
 		element: Element,
 		pseudoElt?: string | null,
 	): globalThis.CSSStyleDeclaration {
+		// Ensure stylesheets are parsed if this is the first time we're computing styles
+		if (this.parsedRules.length === 0) {
+			this.parseStylesheets();
+		}
 		// Handle pseudo-element styles
 		if (pseudoElt) {
 			// Check cache first
@@ -1819,82 +1827,6 @@ export class StyleManager {
 				return formatCounterValue(value, trimmedStyle);
 			},
 		);
-	}
-
-	/**
-	 * Create a pseudo-element node for testing/compatibility
-	 */
-	createPseudoElementNode(element: Element, pseudoType: string): Text | null {
-		// Find matching rules for this pseudo-element
-		const matchingRules = this.parsedRules.filter(rule => {
-			if (rule.pseudoElement !== pseudoType) return false;
-			try {
-				return element.matches(rule.selector);
-			} catch (e) {
-				return false;
-			}
-		});
-
-		if (matchingRules.length === 0) {
-			// For ::marker, check if this is a list item
-			if (pseudoType === '::marker' && this.getComputedStyle(element).getPropertyValue('display') === 'list-item') {
-				const parent = element.parentElement;
-				let defaultMarker = '• '; // Default bullet
-				
-				if (parent) {
-					if (parent.tagName === 'OL') {
-						const siblings = Array.from(parent.children);
-						const index = siblings.indexOf(element);
-						defaultMarker = `${index + 1}. `;
-					} else if (parent.tagName === 'UL') {
-						defaultMarker = '• ';
-					}
-				}
-				
-				return this.window.document.createTextNode(defaultMarker);
-			}
-			return null;
-		}
-
-		// Use the highest specificity rule
-		const rule = matchingRules[matchingRules.length - 1];
-		const content = rule.declarations.content;
-		
-		if (!content || content === 'none' || content === 'normal') {
-			return null;
-		}
-
-		// Remove quotes from content value
-		const textContent = content.replace(/^["']|["']$/g, '');
-		
-		// Create text node for pseudo-element
-		return this.window.document.createTextNode(textContent);
-	}
-
-	/**
-	 * Check if a pseudo-element should be created for testing/compatibility
-	 */
-	shouldCreatePseudoElement(element: Element, pseudoType: string): boolean {
-		// For ::marker pseudo-elements, always create them for list-item elements
-		if (pseudoType === '::marker') {
-			const display = this.getComputedStyle(element).getPropertyValue('display');
-			return display === 'list-item';
-		}
-
-		// For other pseudo-elements, check if there are matching rules
-		const matchingRules = this.parsedRules.filter(rule => {
-			if (rule.pseudoElement !== pseudoType) return false;
-			try {
-				return element.matches(rule.selector);
-			} catch (e) {
-				return false;
-			}
-		});
-		
-		return matchingRules.length > 0 && matchingRules.some(rule => {
-			const content = rule.declarations.content;
-			return content && content !== 'none' && content !== 'normal';
-		});
 	}
 
 	/**

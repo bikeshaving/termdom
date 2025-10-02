@@ -16,10 +16,34 @@ function createLayoutEngine(html: string = "<div></div>") {
 	const styleManager = new StyleManager(jsdom.window);
 	const layoutEngine = new LayoutEngine(jsdom.window);
 	styleManager.setLayoutEngine(layoutEngine);
+
+	// Setup MutationObserver to simulate TermDOM behavior
+	const observer = new jsdom.window.MutationObserver((mutations) => {
+		styleManager.handleMutations(mutations);
+		layoutEngine.handleMutations(mutations);
+	});
+
+	observer.observe(jsdom.window.document.documentElement, {
+		childList: true,
+		subtree: true,
+		attributes: true,
+		characterData: true,
+	});
+
 	// Set initial size and calculate layout
 	layoutEngine.resize(300, 200);
-	// The resize method now calls calculateLayout internally
-	return {jsdom, layoutEngine};
+
+	// Helper function to process pending mutations and calculate layout
+	const processMutationsAndLayout = () => {
+		const pendingMutations = observer.takeRecords();
+		if (pendingMutations.length > 0) {
+			styleManager.handleMutations(pendingMutations);
+			layoutEngine.handleMutations(pendingMutations);
+		}
+		layoutEngine.calculateLayout();
+	};
+
+	return {jsdom, layoutEngine, observer, processMutationsAndLayout};
 }
 
 // CSS-to-Yoga property mapping tests
@@ -81,12 +105,12 @@ test("styleYogaNode - flexbox container", () => {
 
 // Tree construction tests
 test("addNode - basic element creation", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine();
+	const {jsdom, layoutEngine, processMutationsAndLayout} = createLayoutEngine();
 	const div = jsdom.window.document.createElement("div");
 	jsdom.window.document.body.appendChild(div);
 
 	// Process mutations and calculate layout
-	layoutEngine.calculateLayout();
+	processMutationsAndLayout();
 
 	// Should create rect after mutation
 	const rect = layoutEngine.getRect(div);
@@ -94,7 +118,7 @@ test("addNode - basic element creation", () => {
 });
 
 test("addNode - nested elements", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine();
+	const {jsdom, layoutEngine, processMutationsAndLayout} = createLayoutEngine();
 	const parent = jsdom.window.document.createElement("div");
 	const child = jsdom.window.document.createElement("span");
 
@@ -102,7 +126,7 @@ test("addNode - nested elements", () => {
 	jsdom.window.document.body.appendChild(parent);
 
 	// Process mutations and calculate layout
-	layoutEngine.calculateLayout();
+	processMutationsAndLayout();
 
 	// Both should have rects
 	expect(layoutEngine.getRect(parent)).not.toBeNull();
@@ -110,13 +134,13 @@ test("addNode - nested elements", () => {
 });
 
 test("addNode - text nodes", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine();
+	const {jsdom, layoutEngine, processMutationsAndLayout} = createLayoutEngine();
 	const div = jsdom.window.document.createElement("div");
 	div.textContent = "Hello world";
 	jsdom.window.document.body.appendChild(div);
 
 	// Process mutations and calculate layout
-	layoutEngine.calculateLayout();
+	processMutationsAndLayout();
 
 	// Text nodes don't get rects directly, but the container should
 	const rect = layoutEngine.getRect(div);
@@ -159,7 +183,7 @@ test("block elements have separate yoga nodes", () => {
 
 // Mutation handling tests
 test("style changes trigger layout updates", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {jsdom, layoutEngine, processMutationsAndLayout} = createLayoutEngine(
 		`<div style="width: 100px;"></div>`,
 	);
 	const div = jsdom.window.document.querySelector("div")!;
@@ -170,7 +194,7 @@ test("style changes trigger layout updates", () => {
 
 	// Change style
 	div.style.width = "200px";
-	layoutEngine.calculateLayout(); // Process mutations
+	processMutationsAndLayout(); // Process mutations
 
 	// Updated rect
 	rect = layoutEngine.getRect(div);
@@ -178,7 +202,7 @@ test("style changes trigger layout updates", () => {
 });
 
 test("element removal cleans up yoga nodes", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {jsdom, layoutEngine, processMutationsAndLayout} = createLayoutEngine(
 		`<div><span>test</span></div>`,
 	);
 	const div = jsdom.window.document.querySelector("div")!;
@@ -190,7 +214,7 @@ test("element removal cleans up yoga nodes", () => {
 
 	// Remove span
 	span.remove();
-	layoutEngine.calculateLayout(); // Process mutations
+	processMutationsAndLayout(); // Process mutations
 
 	// Span should no longer have rect
 	expect(layoutEngine.getRect(span)).toBeNull();

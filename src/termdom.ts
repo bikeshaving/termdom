@@ -125,7 +125,7 @@ export class TermDOM {
 
 		// Setup style management FIRST to override getComputedStyle before LayoutEngine uses it
 		this.styleManager = new StyleManager(this.window);
-		
+
 		// Create layout engine after StyleManager overrides getComputedStyle
 		this.layoutEngine = new LayoutEngine(this.jsdom.window);
 		this.styleManager.setLayoutEngine(this.layoutEngine);
@@ -238,9 +238,9 @@ export class TermDOM {
 	private setupMutationObserver(): MutationObserver {
 		const observer = new this.window.MutationObserver((mutations) => {
 			// Process mutations in correct order to avoid race conditions
-			this.styleManager.handleMutations(mutations);  // First: attach pseudo-elements, invalidate caches
-			this.layoutEngine.handleMutations(mutations);  // Second: process DOM changes for layout
-			this.render();  // Finally: render with fully processed DOM
+			this.styleManager.handleMutations(mutations); // First: attach pseudo-elements, invalidate caches
+			this.layoutEngine.handleMutations(mutations); // Second: process DOM changes for layout
+			this.render(); // Finally: render with fully processed DOM
 		});
 
 		observer.observe(this.document.documentElement, {
@@ -311,6 +311,13 @@ export class TermDOM {
 		// Wait for cursor detection to complete before first render
 		if (this.cursorDetectionPromise) {
 			//await this.cursorDetectionPromise;
+		}
+
+		// Process any pending mutations first (for direct render() calls)
+		const pendingMutations = this.observer.takeRecords();
+		if (pendingMutations.length > 0) {
+			this.styleManager.handleMutations(pendingMutations);
+			this.layoutEngine.handleMutations(pendingMutations);
 		}
 
 		this.isRendering = true;
@@ -534,6 +541,9 @@ export class TermDOM {
 	private processPendingMutationsAndRender(): boolean {
 		const pendingMutations = this.observer.takeRecords();
 		if (pendingMutations.length > 0) {
+			// Process mutations in the same order as MutationObserver callback
+			this.styleManager.handleMutations(pendingMutations);
+			this.layoutEngine.handleMutations(pendingMutations);
 			this.render();
 			return true;
 		}

@@ -1223,7 +1223,7 @@ export class LayoutEngine {
 	invalidate(node: Node): void {
 		// Track this node for re-adding during calculateLayout
 		this.invalidatedNodes.add(node);
-		
+
 		// If it's an inline-level node, invalidate the entire run
 		if (this.#isInlineLevel(node)) {
 			this.#invalidateInlineRun(node);
