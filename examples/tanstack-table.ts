@@ -45,11 +45,25 @@ const columns = [
 	{id: "score", header: "Score", accessorKey: "score"},
 ];
 
-// Create TanStack table instance
+// Create TanStack table instance with proper state initialization
 const table = createTable({
 	data,
 	columns,
 	getCoreRowModel: getCoreRowModel(),
+	// Initialize all required state properties
+	state: {
+		columnOrder: [],
+		columnPinning: { left: [], right: [] },
+		columnVisibility: {},
+		columnSizing: {},
+		grouping: [],
+		sorting: [],
+		pagination: {
+			pageIndex: 0,
+			pageSize: 10,
+		}
+	},
+	onStateChange: () => {},
 });
 
 // Create flexbox-based table using TanStack data
@@ -123,4 +137,4 @@ Rows: ${table.getRowModel().rows.length} | Columns: ${table.getAllColumns().leng
 `;
 document.body.appendChild(stats);
 
-await termdom.waitForRender();
+await termdom.render();

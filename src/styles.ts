@@ -7,7 +7,7 @@
 
 import {CSSStyleDeclaration} from "cssstyle";
 import {type DOMWindow} from "jsdom";
-import {attachPseudoElement, clearPseudoElements} from "./composition.js";
+import {attachPseudoElement, clearPseudoElements, removePseudoElement} from "./composition.js";
 import {type LayoutEngine} from "./layout.js";
 
 /**
@@ -38,6 +38,13 @@ export function parseUnitValue(
 		const num = parseFloat(value.slice(0, -1));
 		if (isNaN(num)) return null;
 		return {percentage: num};
+	}
+
+	// Handle "ch" units (character width) - treat as character units
+	if (value.endsWith("ch")) {
+		const num = parseFloat(value.slice(0, -2));
+		if (isNaN(num)) return null;
+		return num; // In TermDOM, 1ch = 1 character
 	}
 
 	const num = parseFloat(value);
@@ -1284,6 +1291,60 @@ export class StyleManager {
 	}
 
 	/**
+	 * Get marker content for outside positioning
+	 * This is separate from createPseudoElementNode to handle outside markers
+	 */
+	getMarkerContent(hostElement: Element): string | null {
+		if (!hostElement || hostElement.nodeType !== hostElement.ELEMENT_NODE) {
+			return null;
+		}
+
+		const computedStyle = this.window.getComputedStyle(hostElement);
+		const display = computedStyle.getPropertyValue("display");
+		
+		if (display !== "list-item") {
+			return null;
+		}
+
+		const styles = this.computePseudoElementStyle(hostElement, "::marker");
+		let content = styles.content;
+
+		// If no explicit CSS content, generate default marker using list-style-type
+		if (!content || content === "none" || content === "normal") {
+			const listParent = hostElement.parentElement;
+			if (
+				listParent &&
+				(listParent.tagName === "UL" || listParent.tagName === "OL")
+			) {
+				// Use getListMarker function to handle all list-style-type values
+				const marker = getListMarker(hostElement, listParent);
+				if (marker) {
+					content = `"${marker} "`;
+				}
+			}
+		}
+
+		// Only return marker if it has content
+		if (!content || content === "none" || content === "normal") {
+			return null;
+		}
+
+		// Remove quotes from content string
+		let textContent = content;
+		if (
+			(textContent.startsWith('"') && textContent.endsWith('"')) ||
+			(textContent.startsWith("'") && textContent.endsWith("'"))
+		) {
+			textContent = textContent.slice(1, -1);
+		}
+
+		// Resolve counter() functions in the content
+		textContent = this.resolveCounterFunction(hostElement, textContent);
+
+		return textContent;
+	}
+
+	/**
 	 * Create pseudo-element node with CSS content applied
 	 * This integrates with ExpandedTreeWalker for automatic pseudo-element creation
 	 */
@@ -1296,11 +1357,18 @@ export class StyleManager {
 
 		// For ::marker pseudo-elements, generate default content if none specified
 		if (pseudoType === "::marker") {
-			const display = this.window
-				.getComputedStyle(hostElement)
-				.getPropertyValue("display");
+			const computedStyle = this.window.getComputedStyle(hostElement);
+			const display = computedStyle.getPropertyValue("display");
 
 			if (display === "list-item") {
+				// Check if explicitly set to outside positioning
+				const listStylePosition = computedStyle.getPropertyValue("list-style-position");
+				
+				// Only skip inline marker creation if explicitly set to "outside"
+				if (listStylePosition === "outside") {
+					return null;
+				}
+
 				// If no explicit CSS content, generate default marker using list-style-type
 				if (!content || content === "none" || content === "normal") {
 					const listParent = hostElement.parentElement;
@@ -1353,13 +1421,14 @@ export class StyleManager {
 	 * Check if element should have a pseudo-element based on CSS rules
 	 */
 	shouldCreatePseudoElement(element: Element, pseudoType: string): boolean {
-		// For ::marker pseudo-elements, always create them for list-item elements
+		// For ::marker pseudo-elements, only create them for inside positioning
 		if (pseudoType === "::marker") {
-			const display = this.window
-				.getComputedStyle(element)
-				.getPropertyValue("display");
-			if (display === "list-item") {
-				return true; // Always create markers for list items
+			const computedStyle = this.window.getComputedStyle(element);
+			const display = computedStyle.getPropertyValue("display");
+			const listStylePosition = computedStyle.getPropertyValue("list-style-position");
+			
+			if (display === "list-item" && listStylePosition !== "outside") {
+				return true; // Only create inline markers for inside positioning
 			}
 		}
 
@@ -1438,15 +1507,17 @@ export class StyleManager {
 			}
 		}
 
-		// Handle special case: ::marker for list-item elements (always created regardless of CSS rules)
+		// Handle special case: ::marker for list-item elements (only for inside positioning)
 		const listItems = this.window.document.querySelectorAll(
 			'[style*="list-item"], li',
 		);
 		for (const element of listItems) {
-			const display = this.window
-				.getComputedStyle(element)
-				.getPropertyValue("display");
-			if (display === "list-item") {
+			const computedStyle = this.window.getComputedStyle(element);
+			const display = computedStyle.getPropertyValue("display");
+			const listStylePosition = computedStyle.getPropertyValue("list-style-position");
+			
+			// Only create inline markers for inside positioning
+			if (display === "list-item" && listStylePosition !== "outside") {
 				this.attachPseudoElementToElementForType(element, "::marker");
 			}
 		}
@@ -1476,12 +1547,19 @@ export class StyleManager {
 		// Initialize counters for this element first (needed for counter() functions)
 		this.initializeCounters(element);
 
-		// Skip ::marker for elements without display: list-item
+		// Skip ::marker for elements without display: list-item or with outside positioning
 		if (pseudoType === "::marker") {
-			const display = this.window
-				.getComputedStyle(element)
-				.getPropertyValue("display");
+			const computedStyle = this.window.getComputedStyle(element);
+			const display = computedStyle.getPropertyValue("display");
+			const listStylePosition = computedStyle.getPropertyValue("list-style-position");
+			
 			if (display !== "list-item") {
+				return;
+			}
+			
+			// Remove inline markers for outside positioning
+			if (listStylePosition === "outside") {
+				removePseudoElement(element, "::marker");
 				return;
 			}
 		}

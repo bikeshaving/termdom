@@ -2,7 +2,7 @@ import {type EventEmitter} from "events";
 import {type DOMWindow, JSDOM} from "jsdom";
 import {LayoutEngine, isPointInRects} from "./layout.js";
 import {type ColorDepth, Renderer} from "./ansi.js";
-import {StyleManager, resolveBorderStyles, cssColorToNumber} from "./styles.js";
+import {StyleManager, resolveBorderStyles, cssColorToNumber, getBoxModel} from "./styles.js";
 import {FullscreenManager} from "./fullscreen.js";
 import {setupInspectMethods} from "./inspector.js";
 import {ScrollingManager} from "./scrolling.js";
@@ -321,6 +321,9 @@ export class TermDOM {
 		}
 
 		this.isRendering = true;
+		// Clear the rendered markers set for this frame
+		this.renderedOutsideMarkers = new WeakSet<Element>();
+		
 		// Note: refreshStylesheets() is called by mutation observer when stylesheets change
 
 		// Always use auto height for natural content sizing and scrolling
@@ -411,7 +414,7 @@ export class TermDOM {
 			.getPropertyValue("display");
 		if (display === "table" && rect) {
 			this.renderTable(element, rect, style);
-			return; // Table handles its own children
+			// Continue with normal child rendering
 		}
 
 		// Handle borders
@@ -433,6 +436,9 @@ export class TermDOM {
 				);
 			}
 		}
+
+		// Handle list-style-position: outside markers
+		this.renderOutsideMarker(element, ctx);
 
 		// Note: JSDOM automatically calls connectedCallback() when elements are added to DOM
 		// No manual lifecycle management needed
@@ -457,6 +463,106 @@ export class TermDOM {
 	}
 
 	/**
+	 * Render outside positioned markers for list items
+	 */
+	private renderedOutsideMarkers = new WeakSet<Element>();
+
+	private renderOutsideMarker(
+		element: Element,
+		ctx: import("./ansi.js").DrawingContext,
+	): void {
+		const computedStyle = this.window.getComputedStyle(element);
+		const display = computedStyle.getPropertyValue("display");
+		
+		// Only handle list items
+		if (display !== "list-item") {
+			return;
+		}
+
+		const listStylePosition = computedStyle.getPropertyValue("list-style-position") || "outside";
+		
+		// Only handle outside positioning
+		if (listStylePosition !== "outside") {
+			return;
+		}
+
+		// Prevent duplicate rendering in the same frame
+		if (this.renderedOutsideMarkers.has(element)) {
+			return;
+		}
+		this.renderedOutsideMarkers.add(element);
+
+		// Get marker content from StyleManager
+		const markerContent = this.styleManager.getMarkerContent(element);
+		if (!markerContent) {
+			return;
+		}
+
+		const rect = this.layoutEngine.getRect(element);
+		if (!rect) {
+			return;
+		}
+
+		// Calculate available space for marker (margin + border + padding)
+		const boxModel = getBoxModel(element);
+		const availableSpace = (boxModel.marginLeft || 0) + (boxModel.borderLeftWidth || 0) + (boxModel.paddingLeft || 0);
+		
+		// Calculate marker width (approximate - 1 character per character)
+		const markerWidth = markerContent.length;
+		
+		// Get marker styles
+		const markerStyle = this.window.getComputedStyle(element, "::marker");
+		const markerColor = markerStyle.getPropertyValue("color");
+		const markerBold = markerStyle.getPropertyValue("font-weight") === "bold";
+		const markerItalic = markerStyle.getPropertyValue("font-style") === "italic";
+		const markerUnderline = markerStyle.getPropertyValue("text-decoration").includes("underline");
+
+		const markerTextStyle = {
+			fg: markerColor && markerColor !== "initial" ? cssColorToNumber(markerColor) : undefined,
+			bold: markerBold,
+			italic: markerItalic,
+			underline: markerUnderline,
+		};
+
+		// Position marker at absolute left edge (outside positioning)
+		const markerX = 0; // Always at absolute position 0 for outside positioning
+		const markerY = Math.round(rect.top);
+
+		// Handle marker overflow by adding spaces to content if needed  
+		if (markerWidth > availableSpace) {
+			const shortage = markerWidth - availableSpace;
+			this.addLeadingSpacesToListItem(element, shortage);
+		}
+
+		// Render the marker
+		ctx.setText(markerX, markerY, markerContent, markerTextStyle);
+	}
+
+	/**
+	 * Add non-breaking spaces to the beginning of list item content to prevent marker overlap
+	 */
+	private addLeadingSpacesToListItem(element: Element, spaceCount: number): void {
+		// Find the first text node in the element's content
+		const walker = this.createExpandedTreeWalker(element);
+		let node = walker.firstChild();
+		
+		while (node) {
+			if (node.nodeType === node.TEXT_NODE) {
+				const textNode = node as Text;
+				// Don't modify pseudo-element text nodes
+				const pseudoMetadata = getPseudoMetadata(textNode);
+				if (!pseudoMetadata) {
+					// Add non-breaking spaces to the beginning
+					const spaces = '\u00A0'.repeat(spaceCount); // Non-breaking spaces
+					textNode.data = spaces + textNode.data;
+					break;
+				}
+			}
+			node = walker.nextNode();
+		}
+	}
+
+	/**
 	 * Render a text node with proper styling from its parent element or pseudo-element
 	 */
 	private renderText(
@@ -468,6 +574,7 @@ export class TermDOM {
 
 		// Check if this is a pseudo-element node
 		const pseudoMetadata = getPseudoMetadata(textNode);
+
 
 		// For pseudo elements, we don't have a parentElement, but we have hostElement
 		const parentElement = pseudoMetadata
@@ -530,12 +637,51 @@ export class TermDOM {
 
 	// TODO: move this to tables.ts? or layout.ts
 	private renderTable(
-		_tableElement: Element,
-		_rect: DOMRect,
-		_style: any,
+		tableElement: Element,
+		rect: DOMRect,
+		style: any,
 	): void {
-		// TODO: Re-implement table rendering - getTableInstance method doesn't exist
-		return;
+		// For now, let's fall back to normal rendering and let CSS handle table layout
+		// The layout engine should already handle display: table properly
+		// TODO: Implement table-specific optimizations like borders between cells
+		
+		// Check if we have proper table children, if not, render as normal element
+		const hasTableStructure = this.hasTableStructure(tableElement);
+		if (!hasTableStructure) {
+			// Render children normally
+			return;
+		}
+		
+		// For tables with proper structure, add table-specific border rendering
+		this.renderTableBorders(tableElement, rect, style);
+	}
+
+	private hasTableStructure(tableElement: Element): boolean {
+		// Check if element has table-like children (thead, tbody, tr, etc.)
+		const tableElements = ['thead', 'tbody', 'tfoot', 'tr', 'th', 'td'];
+		return Array.from(tableElement.children).some(child => 
+			tableElements.includes(child.tagName?.toLowerCase() || '')
+		);
+	}
+
+	private renderTableBorders(
+		tableElement: Element,
+		rect: DOMRect,
+		style: any,
+	): void {
+		// Add borders between table cells
+		// This could be enhanced to draw proper table borders
+		// For now, this is a placeholder for table-specific rendering
+		
+		// Check if border-collapse is set
+		const borderCollapse = this.window
+			.getComputedStyle(tableElement)
+			.getPropertyValue('border-collapse');
+			
+		if (borderCollapse === 'collapse') {
+			// TODO: Implement collapsed border model
+			// This would require drawing borders between cells
+		}
 	}
 
 	private processPendingMutationsAndRender(): boolean {

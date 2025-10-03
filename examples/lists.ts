@@ -3,6 +3,13 @@ import {TermDOM} from "../src/termdom.js";
 
 const termdom = new TermDOM();
 const {document} = termdom;
+const style = document.createElement("style");
+style.textContent = `
+ul {
+	list-style-position: outside !important;
+}
+`;
+document.body.appendChild(style);
 
 // Create a comprehensive lists demo
 const container = document.createElement("div");

@@ -96,4 +96,4 @@ table.appendChild(tbody);
 
 document.body.appendChild(table);
 
-await termdom.waitForRender();
+await termdom.render();

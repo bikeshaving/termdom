@@ -402,7 +402,35 @@ function styleYogaNode(element: Element, yogaNode: YogaTypes.Node): void {
 		yogaNode.setDisplay(Yoga.DISPLAY_NONE);
 	} else if (display === "flex") {
 		yogaNode.setDisplay(Yoga.DISPLAY_FLEX);
+	} else if (display === "table" || display === "table-row-group" || display === "table-header-group" || display === "table-footer-group") {
+		// Treat table containers as flex containers for now
+		// TODO: Implement proper table layout algorithm
+		yogaNode.setDisplay(Yoga.DISPLAY_FLEX);
+		yogaNode.setFlexDirection(Yoga.FLEX_DIRECTION_COLUMN);
+	} else if (display === "table-row") {
+		// Table rows are horizontal flex containers
+		yogaNode.setDisplay(Yoga.DISPLAY_FLEX);
+		yogaNode.setFlexDirection(Yoga.FLEX_DIRECTION_ROW);
+	} else if (display === "table-cell") {
+		// Table cells behave like flex items with equal flex and padding
+		yogaNode.setDisplay(Yoga.DISPLAY_FLEX);
+		yogaNode.setFlexGrow(1);
+		yogaNode.setFlexShrink(1);
+		yogaNode.setFlexBasis("0%");
+		
+		// Add default padding for table cells if not explicitly set
+		const paddingLeft = computedStyle.getPropertyValue("padding-left");
+		const paddingRight = computedStyle.getPropertyValue("padding-right");
+		if (!paddingLeft || paddingLeft === "0px") {
+			yogaNode.setPadding(Yoga.EDGE_LEFT, 1); // 1 character padding
+		}
+		if (!paddingRight || paddingRight === "0px") {
+			yogaNode.setPadding(Yoga.EDGE_RIGHT, 1); // 1 character padding
+		}
+	}
 
+	// Handle flex direction for flex containers (not table-row which has fixed direction)
+	if (display === "flex") {
 		const flexDirection = computedStyle.getPropertyValue("flex-direction");
 		if (flexDirection === "row") {
 			yogaNode.setFlexDirection(Yoga.FLEX_DIRECTION_ROW);
