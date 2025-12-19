@@ -950,7 +950,7 @@ function getListMarker(listItem: Element, listParent: Element): string {
 	return "";
 }
 
-// CSS Rule interfaces for internal use
+// TODO: Just use the CSSOM CSSRule interface from the DOM
 interface ParsedCSSRule {
 	selector: string;
 	declarations: Record<string, string>;
@@ -1301,7 +1301,7 @@ export class StyleManager {
 
 		const computedStyle = this.window.getComputedStyle(hostElement);
 		const display = computedStyle.getPropertyValue("display");
-		
+
 		if (display !== "list-item") {
 			return null;
 		}
@@ -1363,7 +1363,7 @@ export class StyleManager {
 			if (display === "list-item") {
 				// Check if explicitly set to outside positioning
 				const listStylePosition = computedStyle.getPropertyValue("list-style-position");
-				
+
 				// Only skip inline marker creation if explicitly set to "outside"
 				if (listStylePosition === "outside") {
 					return null;
@@ -1426,7 +1426,7 @@ export class StyleManager {
 			const computedStyle = this.window.getComputedStyle(element);
 			const display = computedStyle.getPropertyValue("display");
 			const listStylePosition = computedStyle.getPropertyValue("list-style-position");
-			
+
 			if (display === "list-item" && listStylePosition !== "outside") {
 				return true; // Only create inline markers for inside positioning
 			}
@@ -1515,7 +1515,7 @@ export class StyleManager {
 			const computedStyle = this.window.getComputedStyle(element);
 			const display = computedStyle.getPropertyValue("display");
 			const listStylePosition = computedStyle.getPropertyValue("list-style-position");
-			
+
 			// Only create inline markers for inside positioning
 			if (display === "list-item" && listStylePosition !== "outside") {
 				this.attachPseudoElementToElementForType(element, "::marker");
@@ -1552,11 +1552,11 @@ export class StyleManager {
 			const computedStyle = this.window.getComputedStyle(element);
 			const display = computedStyle.getPropertyValue("display");
 			const listStylePosition = computedStyle.getPropertyValue("list-style-position");
-			
+
 			if (display !== "list-item") {
 				return;
 			}
-			
+
 			// Remove inline markers for outside positioning
 			if (listStylePosition === "outside") {
 				removePseudoElement(element, "::marker");

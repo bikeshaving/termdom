@@ -412,8 +412,9 @@ function styleYogaNode(element: Element, yogaNode: YogaTypes.Node): void {
 		yogaNode.setDisplay(Yoga.DISPLAY_FLEX);
 		yogaNode.setFlexDirection(Yoga.FLEX_DIRECTION_ROW);
 	} else if (display === "table-cell") {
-		// Table cells behave like flex items with equal flex and padding
-		yogaNode.setDisplay(Yoga.DISPLAY_FLEX);
+		// Table cells are block-level flex items in the row's flex layout
+		// They should NOT be flex containers themselves - explicitly set to block
+		// Note: Yoga needs explicit display type for proper flex item behavior
 		yogaNode.setFlexGrow(1);
 		yogaNode.setFlexShrink(1);
 		yogaNode.setFlexBasis("0%");
