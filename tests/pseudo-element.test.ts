@@ -136,24 +136,23 @@ test("::marker pseudo-element with lists", async () => {
 	await termdom.render();
 	const output = terminal.getPlainText();
 
-	// Verify custom markers appear in output
-	expect(output).toContain("→ First item");
-	expect(output).toContain("→ Second item");
-	expect(output).toContain("🔥 Fire item");
+	// Verify custom markers appear in output (outside positioning is the default)
+	expect(output).toContain("→");
+	expect(output).toContain("First item");
+	expect(output).toContain("Second item");
+	expect(output).toContain("🔥");
+	expect(output).toContain("Fire item");
 
-	// Verify StyleManager recognizes marker pseudo-elements
+	// Verify StyleManager can get marker content for outside positioning
 	const styleManager = termdom.styleManager;
 
-	const markerNode = styleManager.createPseudoElementNode(item1, "::marker");
-	expect(markerNode).not.toBeNull();
-	expect(markerNode!.textContent).toBe("→ ");
+	const markerContent = styleManager.getMarkerContent(item1);
+	expect(markerContent).not.toBeNull();
+	expect(markerContent).toBe("→ ");
 
-	const emojiMarkerNode = styleManager.createPseudoElementNode(
-		emojiItem,
-		"::marker",
-	);
-	expect(emojiMarkerNode).not.toBeNull();
-	expect(emojiMarkerNode!.textContent).toBe("🔥 ");
+	const emojiMarkerContent = styleManager.getMarkerContent(emojiItem);
+	expect(emojiMarkerContent).not.toBeNull();
+	expect(emojiMarkerContent).toBe("🔥 ");
 });
 
 test("Pseudo-element cascade and specificity in rendering", async () => {

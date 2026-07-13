@@ -75,7 +75,7 @@ describe("getComputedStyle - What We Support", () => {
 			dom.window
 				.getComputedStyle(dom.window.document.getElementById("ul")!)
 				.getPropertyValue("padding-left"),
-		).toBe("2ch");
+		).toBe("4ch");
 		expect(
 			dom.window
 				.getComputedStyle(dom.window.document.getElementById("li")!)

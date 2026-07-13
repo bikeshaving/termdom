@@ -1,5 +1,6 @@
 import LRUCache from "./utils.js";
 import {BOX_DRAWING, BorderEdgeStyle} from "./styles.js";
+import {stringWidth as runtimeStringWidth} from "./runtime.js";
 
 export type ColorDepth = "ansi" | "rgb" | "256";
 
@@ -186,11 +187,11 @@ export class Cell {
 	}
 
 	get isWide(): boolean {
-		return this.grapheme ? Bun.stringWidth(this.grapheme) > 1 : false;
+		return this.grapheme ? runtimeStringWidth(this.grapheme) > 1 : false;
 	}
 
 	get width(): number {
-		return this.grapheme ? Bun.stringWidth(this.grapheme) : 0;
+		return this.grapheme ? runtimeStringWidth(this.grapheme) : 0;
 	}
 
 	getStyleFlags() {
@@ -734,7 +735,7 @@ export class DrawingContext {
 
 		for (const segment of segments) {
 			const char = segment.segment;
-			const width = Bun.stringWidth(char);
+			const width = runtimeStringWidth(char);
 
 			if (currentX + width > this.cols) {
 				break;
@@ -976,6 +977,9 @@ export class Renderer {
 	#prevBuffer: CellBuffer | null = null;
 	#renderedLines: Set<number> = new Set();
 	#prevOffset: number = 0;
+	#prevContentHeight: number = 0;
+	#hasSavedCursor: boolean = false;
+	#needsFullClear: boolean = false;
 	#rows: number;
 	#cols: number;
 	#colorDepth: ColorDepth;
@@ -994,6 +998,13 @@ export class Renderer {
 	clearPreviousBuffer(): void {
 		this.#prevBuffer = null;
 		this.#prevOffset = 0;
+		this.#prevContentHeight = 0;
+		this.#needsFullClear = true;
+		this.#renderedLines.clear();
+	}
+
+	get hasSavedCursor(): boolean {
+		return this.#hasSavedCursor;
 	}
 
 	renderFrame(
@@ -1088,12 +1099,27 @@ export class Renderer {
 			if (cursorPosition !== undefined) {
 				// Explicit cursor position provided (e.g., from cursor detection)
 				prefix += `\x1b[${cursorPosition + 1};1H`; // CUP - Cursor Position (row;col)
+				// Save cursor at content start so DECRC-based cleanup works correctly
+				prefix += "\x1b7"; // DECSC
+				this.#hasSavedCursor = true;
 			} else if (offset > 0) {
 				// Position based on viewport offset
 				prefix += `\x1b[${offset + 1};1H`; // CUP - Cursor Position (row;col)
-			} else if (offset === 0 && this.#prevBuffer !== null) {
-				// Home position for subsequent renders
-				prefix += "\x1b[H"; // CUP - Cursor Home Position
+			} else if (this.#hasSavedCursor) {
+				// Restore cursor to content start (DECRC), then save again (DECSC)
+				prefix += "\x1b8\x1b7"; // Restore + Save
+			} else {
+				// First render: save cursor at content start (DECSC)
+				prefix += "\x1b7"; // Save
+				this.#hasSavedCursor = true;
+			}
+
+			// After resize, clear everything from content start down.
+			// Terminal reflow makes it impossible to know where old content ended up,
+			// so we erase the entire area before redrawing.
+			if (this.#needsFullClear) {
+				prefix += "\x1b[J"; // ED0 - Erase from cursor to end of screen
+				this.#needsFullClear = false;
 			}
 
 			suffix += "\x1b[?25h"; // DECTCEM - Show cursor
@@ -1101,17 +1127,46 @@ export class Renderer {
 		}
 
 		// Generate ANSI and finalize
-		const output = generateANSI(
+		let output = generateANSI(
 			diffBuffer,
 			this.#colorDepth,
 			this.#renderedLines,
 		);
 
+		// Strip trailing \r\n from generateANSI — in Renderer-managed mode,
+		// the trailing newline would scroll the terminal on each re-render,
+		// progressively pushing the command line into scrollback.
+		if (output.endsWith("\r\n")) {
+			output = output.slice(0, -2);
+		}
+
+		// Calculate current content height (highest rendered row + 1)
+		let contentHeight = 0;
+		for (const row of this.#renderedLines) {
+			if (row + 1 > contentHeight) contentHeight = row + 1;
+		}
+
+		// Clear stale content below the rendered area.
+		// Only needed when content shrank (previous render was taller).
+		let staleOutput = "";
+		if (this.#hasSavedCursor && this.#prevContentHeight > contentHeight) {
+			// Content shrank — clear the lines that are no longer used.
+			// Position to content start, then move past current content,
+			// then erase to end of screen.
+			staleOutput += "\x1b8"; // DECRC - restore to content start
+			if (contentHeight > 0) {
+				staleOutput += `\x1b[${contentHeight}B`; // CUD - Cursor Down
+			}
+			staleOutput += "\r"; // CR - column 0
+			staleOutput += "\x1b[J"; // ED0 - Erase from cursor to end of screen
+		}
+
 		// Update state for next frame
 		this.#prevBuffer = nextBuffer;
 		this.#prevOffset = offset;
+		this.#prevContentHeight = contentHeight;
 
-		return prefix + output + suffix;
+		return prefix + output + staleOutput + suffix;
 	}
 
 	#generateScrollCommands(nextOffset: number): string {

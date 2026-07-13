@@ -53,7 +53,7 @@ const table = createTable({
 	// Initialize all required state properties
 	state: {
 		columnOrder: [],
-		columnPinning: { left: [], right: [] },
+		columnPinning: {left: [], right: []},
 		columnVisibility: {},
 		columnSizing: {},
 		grouping: [],
@@ -61,7 +61,7 @@ const table = createTable({
 		pagination: {
 			pageIndex: 0,
 			pageSize: 10,
-		}
+		},
 	},
 	onStateChange: () => {},
 });

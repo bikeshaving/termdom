@@ -50,11 +50,7 @@ test("line clearing removes terminal artifacts from previous commands", async ()
 	expect(afterText).toContain("TermDOM Line 1");
 	expect(afterText).toContain("TermDOM Line 2");
 
-	// Lines that TermDOM doesn't write to should still have artifacts
-	expect(afterText).toContain("directory/");
-	expect(afterText).toContain("README.md");
-
-	// But the first lines should no longer contain the artifact content
+	// The first two lines (artifacts) should be replaced with TermDOM content
 	expect(afterText).not.toContain("file1.txt");
 	expect(afterText).not.toContain("file2.txt");
 

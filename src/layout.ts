@@ -5,6 +5,7 @@ import LineBreaker from "linebreak";
 import {getBoxModel, type BoxModel} from "./styles.js";
 import {getPropertyValue, parseUnitValue} from "./styles.js";
 import {createExpandedTreeWalker, getPseudoMetadata} from "./composition.js";
+import {stringWidth as runtimeStringWidth} from "./runtime.js";
 
 function getAbsolutePosition(yogaNode: YogaTypes.Node): {
 	x: number;
@@ -35,6 +36,38 @@ function getYogaConstant<TEnumName extends keyof EnumMap>(
 	const name =
 		enumName.toUpperCase() + "_" + propertyName.replace("-", "_").toUpperCase();
 	return (Yoga as any)[name] || null;
+}
+
+/**
+ * Check if an element's ancestor table uses border-collapse: collapse
+ */
+function isTableCollapsed(element: Element): boolean {
+	let current = element.parentElement;
+	while (current) {
+		const display = getPropertyValue(current, "display");
+		if (display === "table") {
+			return getPropertyValue(current, "border-collapse") === "collapse";
+		}
+		current = current.parentElement;
+	}
+	return false;
+}
+
+/**
+ * Get the previous sibling with a specific display type (for table layout)
+ */
+function getPreviousTableSibling(
+	element: Element,
+	displayType: string,
+): Element | null {
+	let sibling = element.previousElementSibling;
+	while (sibling) {
+		if (getPropertyValue(sibling, "display") === displayType) {
+			return sibling;
+		}
+		sibling = sibling.previousElementSibling;
+	}
+	return null;
 }
 
 function styleYogaNode(element: Element, yogaNode: YogaTypes.Node): void {
@@ -402,23 +435,47 @@ function styleYogaNode(element: Element, yogaNode: YogaTypes.Node): void {
 		yogaNode.setDisplay(Yoga.DISPLAY_NONE);
 	} else if (display === "flex") {
 		yogaNode.setDisplay(Yoga.DISPLAY_FLEX);
-	} else if (display === "table" || display === "table-row-group" || display === "table-header-group" || display === "table-footer-group") {
-		// Treat table containers as flex containers for now
-		// TODO: Implement proper table layout algorithm
+	} else if (display === "table") {
 		yogaNode.setDisplay(Yoga.DISPLAY_FLEX);
 		yogaNode.setFlexDirection(Yoga.FLEX_DIRECTION_COLUMN);
+	} else if (
+		display === "table-row-group" ||
+		display === "table-header-group" ||
+		display === "table-footer-group"
+	) {
+		yogaNode.setDisplay(Yoga.DISPLAY_FLEX);
+		yogaNode.setFlexDirection(Yoga.FLEX_DIRECTION_COLUMN);
+
+		// For border-collapse, overlap row groups so borders merge between sections
+		if (isTableCollapsed(element) && element.previousElementSibling) {
+			yogaNode.setMargin(Yoga.EDGE_TOP, -1);
+		}
 	} else if (display === "table-row") {
 		// Table rows are horizontal flex containers
 		yogaNode.setDisplay(Yoga.DISPLAY_FLEX);
 		yogaNode.setFlexDirection(Yoga.FLEX_DIRECTION_ROW);
+
+		// For border-collapse: collapse, overlap rows by 1 so borders merge
+		if (isTableCollapsed(element)) {
+			const prevRow = getPreviousTableSibling(element, "table-row");
+			if (prevRow) {
+				yogaNode.setMargin(Yoga.EDGE_TOP, -1);
+			}
+		}
 	} else if (display === "table-cell") {
 		// Table cells are block-level flex items in the row's flex layout
-		// They should NOT be flex containers themselves - explicitly set to block
-		// Note: Yoga needs explicit display type for proper flex item behavior
 		yogaNode.setFlexGrow(1);
 		yogaNode.setFlexShrink(1);
 		yogaNode.setFlexBasis("0%");
-		
+
+		// For border-collapse: collapse, overlap cells by 1 so borders merge
+		if (isTableCollapsed(element)) {
+			const prevCell = getPreviousTableSibling(element, "table-cell");
+			if (prevCell) {
+				yogaNode.setMargin(Yoga.EDGE_LEFT, -1);
+			}
+		}
+
 		// Add default padding for table cells if not explicitly set
 		const paddingLeft = computedStyle.getPropertyValue("padding-left");
 		const paddingRight = computedStyle.getPropertyValue("padding-right");
@@ -479,7 +536,15 @@ function styleYogaNode(element: Element, yogaNode: YogaTypes.Node): void {
 		} else {
 			yogaNode.setAlignContent(Yoga.ALIGN_FLEX_START);
 		}
-	} else {
+	} else if (
+		display !== "table" &&
+		display !== "table-row-group" &&
+		display !== "table-header-group" &&
+		display !== "table-footer-group" &&
+		display !== "table-row" &&
+		display !== "table-cell"
+	) {
+		// Default block layout (not table elements, which are handled above)
 		yogaNode.setDisplay(Yoga.DISPLAY_FLEX);
 		yogaNode.setFlexDirection(Yoga.FLEX_DIRECTION_COLUMN);
 		yogaNode.setAlignItems(Yoga.ALIGN_STRETCH);
@@ -558,11 +623,42 @@ function styleYogaNode(element: Element, yogaNode: YogaTypes.Node): void {
 		} else if (top && "percentage" in top) {
 			yogaNode.setPositionPercent(Yoga.EDGE_TOP, top.percentage);
 		}
+	} else if (position === "fixed") {
+		// In terminal context, fixed positioning is treated like absolute
+		// positioning relative to the root element (the viewport).
+		// Yoga doesn't have a fixed position type, so we use absolute.
+		yogaNode.setPositionType(Yoga.POSITION_TYPE_ABSOLUTE);
+
+		const left = parseUnitValue(computedStyle.getPropertyValue("left"));
+		if (typeof left === "number") {
+			yogaNode.setPosition(Yoga.EDGE_LEFT, left);
+		} else if (left && "percentage" in left) {
+			yogaNode.setPositionPercent(Yoga.EDGE_LEFT, left.percentage);
+		}
+
+		const top = parseUnitValue(computedStyle.getPropertyValue("top"));
+		if (typeof top === "number") {
+			yogaNode.setPosition(Yoga.EDGE_TOP, top);
+		} else if (top && "percentage" in top) {
+			yogaNode.setPositionPercent(Yoga.EDGE_TOP, top.percentage);
+		}
+
+		const right = parseUnitValue(computedStyle.getPropertyValue("right"));
+		if (typeof right === "number") {
+			yogaNode.setPosition(Yoga.EDGE_RIGHT, right);
+		} else if (right && "percentage" in right) {
+			yogaNode.setPositionPercent(Yoga.EDGE_RIGHT, right.percentage);
+		}
+
+		const bottom = parseUnitValue(computedStyle.getPropertyValue("bottom"));
+		if (typeof bottom === "number") {
+			yogaNode.setPosition(Yoga.EDGE_BOTTOM, bottom);
+		} else if (bottom && "percentage" in bottom) {
+			yogaNode.setPositionPercent(Yoga.EDGE_BOTTOM, bottom.percentage);
+		}
 	} else if (position === "static") {
 		yogaNode.setPositionType(Yoga.POSITION_TYPE_STATIC);
-		// Static positioning ignores left/top/right/bottom properties
 	} else {
-		// Default to static positioning for any unrecognized values
 		yogaNode.setPositionType(Yoga.POSITION_TYPE_STATIC);
 	}
 }
@@ -674,6 +770,9 @@ export class LayoutEngine {
 	// Track nodes that were invalidated and need re-adding during calculateLayout
 	private invalidatedNodes: Set<Node>;
 
+	// Track Yoga nodes that have measure functions (for resize invalidation)
+	private measureNodes: Set<YogaTypes.Node>;
+
 	constructor(window: DOMWindow) {
 		this.window = window;
 		this.DOMRect = window.DOMRect;
@@ -681,6 +780,7 @@ export class LayoutEngine {
 		this.nodeMap = new Map<Node, YogaTypes.Node>();
 		this.breakResultMap = new Map<Node, BreakResult>();
 		this.invalidatedNodes = new Set<Node>();
+		this.measureNodes = new Set<YogaTypes.Node>();
 
 		// Create viewport root node (no DOM element associated)
 		this.viewportRootNode = Yoga.Node.create();
@@ -698,6 +798,15 @@ export class LayoutEngine {
 		// Set dimensions on the viewport root node (terminal dimensions)
 		this.viewportRootNode.setWidth(width);
 		this.viewportRootNode.setHeight(height);
+
+		// Clear all cached break results so text re-wraps at new width
+		this.breakResultMap.clear();
+
+		// Mark all leaf nodes (those with measure functions) as dirty
+		// so Yoga re-invokes their measure functions with the new available width
+		for (const yogaNode of this.measureNodes) {
+			yogaNode.markDirty();
+		}
 
 		// Force recalculation of all layout after size change
 		this.calculateLayout();
@@ -740,6 +849,7 @@ export class LayoutEngine {
 		this.nodeMap = new Map();
 		this.breakResultMap = new Map();
 		this.invalidatedNodes = new Set();
+		this.measureNodes = new Set();
 	}
 
 	/**
@@ -1271,6 +1381,7 @@ export class LayoutEngine {
 				// Check if node was actually removed vs just being invalidated (e.g., for pseudo-elements)
 				if (!node.isConnected) {
 					// Node was truly removed from DOM - free it
+					this.measureNodes.delete(yogaNode);
 					yogaNode.freeRecursive();
 					this.nodeMap.delete(node);
 				} else {
@@ -1383,6 +1494,7 @@ export class LayoutEngine {
 					if (pseudoMeta) {
 						// Removing pseudo element from nodeMap during invalidateInlineRun cleanup
 					}
+					this.measureNodes.delete(yogaNode);
 					yogaNode.freeRecursive();
 					this.nodeMap.delete(node);
 				}
@@ -1664,6 +1776,7 @@ export class LayoutEngine {
 					heightMode,
 				);
 			});
+			this.measureNodes.add(yogaNode);
 
 			// Note: Automatic minimum size for flex items is now handled in measureInlineRun
 
@@ -1752,6 +1865,7 @@ export class LayoutEngine {
 				);
 			},
 		);
+		this.measureNodes.add(yogaNode);
 
 		// Note: Automatic minimum size for flex items is now handled in measureInlineRun
 
@@ -1795,6 +1909,7 @@ export class LayoutEngine {
 				if (pseudoMeta) {
 					// Removing pseudo element from nodeMap during mutation removal
 				}
+				this.measureNodes.delete(yogaNode);
 				yogaNode.freeRecursive();
 				this.nodeMap.delete(element);
 			}
@@ -1824,6 +1939,7 @@ export class LayoutEngine {
 			// Check if text was actually removed vs just moved
 			if (!text.isConnected) {
 				// Text was truly removed from DOM - free it
+				this.measureNodes.delete(yogaNode);
 				yogaNode.freeRecursive();
 				this.nodeMap.delete(text);
 			}
@@ -2045,6 +2161,11 @@ export class LayoutEngine {
 					// Calculate final content dimensions
 					let finalContentWidth = inlineBlockResult?.maxLineWidth ?? 0;
 					let finalContentHeight = inlineBlockResult?.totalHeight ?? 0;
+
+					// Void elements (input, br, etc.) with no children get a minimum height of 1
+					if (!element.firstChild && finalContentHeight === 0) {
+						finalContentHeight = 1;
+					}
 
 					// If explicit dimensions were set, use those instead of measured content
 					if (boxModel.width !== undefined) {
@@ -2452,7 +2573,7 @@ export class LayoutEngine {
 
 			if (item.leafNode.type === "text") {
 				const portion = text.slice(itemStart, itemEnd);
-				width += Bun.stringWidth(portion);
+				width += runtimeStringWidth(portion);
 			} else if (item.leafNode.type === "inline-block") {
 				// Only count inline-block width if we're measuring its full range
 				if (itemStart === item.start && itemEnd === item.end) {
@@ -2497,7 +2618,7 @@ export class LayoutEngine {
 						relativeStart,
 						relativeEnd,
 					);
-					width = Bun.stringWidth(portion);
+					width = runtimeStringWidth(portion);
 
 					nodes.push({
 						leaf: item.leafNode,

@@ -13,3 +13,10 @@ export {createBuffer, Cell, type CellBuffer, type CellStyle} from "./ansi.js";
 
 export {LayoutEngine} from "./layout.js";
 export type {RectText} from "./layout.js";
+
+export {
+	stringWidth,
+	cssColorToNumber as parseColor,
+	isBun,
+	isDeno,
+} from "./runtime.js";
