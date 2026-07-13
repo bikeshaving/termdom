@@ -1,6 +1,6 @@
 import type {DOMWindow} from "jsdom";
-import Yoga from "yoga-layout";
-import type * as YogaTypes from "yoga-layout";
+import Yoga from "./flex.js";
+import type * as YogaTypes from "./flex.js";
 import LineBreaker from "linebreak";
 import {getBoxModel, type BoxModel} from "./styles.js";
 import {getPropertyValue, parseUnitValue} from "./styles.js";
@@ -813,6 +813,13 @@ export class LayoutEngine {
 	}
 
 	calculateLayout() {
+		// Drop nodes whose DOM node is gone. Callers may invoke calculateLayout()
+		// synchronously after a DOM removal, before the MutationObserver microtask
+		// has run, which would otherwise leave the removed node attached here and
+		// get it measured -- and measuring a detached run head has no parent to
+		// collect leaves from.
+		this.#pruneDisconnectedNodes();
+
 		// Re-add invalidated nodes that are still connected to DOM
 		for (const node of this.invalidatedNodes) {
 			if (node.isConnected) {
@@ -836,6 +843,35 @@ export class LayoutEngine {
 			this.terminalWidth,
 			this.terminalHeight,
 		);
+	}
+
+	/**
+	 * A node is live if it is still in the document, or -- for pseudo-elements,
+	 * which are never "connected" themselves -- if its host element is.
+	 */
+	#isNodeLive(node: Node): boolean {
+		if (node.isConnected) return true;
+		const pseudoMetadata = getPseudoMetadata(node);
+		return Boolean(pseudoMetadata?.hostElement.isConnected);
+	}
+
+	#pruneDisconnectedNodes(): void {
+		for (const [node, layoutNode] of this.nodeMap) {
+			if (node === this.rootElement || this.#isNodeLive(node)) {
+				continue;
+			}
+
+			const parent = layoutNode.getParent();
+			if (parent) {
+				parent.removeChild(layoutNode);
+			}
+
+			this.measureNodes.delete(layoutNode);
+			layoutNode.freeRecursive();
+			this.nodeMap.delete(node);
+			this.breakResultMap.delete(node);
+			this.invalidatedNodes.delete(node);
+		}
 	}
 
 	/**
