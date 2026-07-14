@@ -50,6 +50,13 @@ export const FLEX_DIRECTION_ROW_REVERSE = 3;
 export const DISPLAY_FLEX = 0;
 export const DISPLAY_NONE = 1;
 export const DISPLAY_CONTENTS = 2;
+export const DISPLAY_TABLE = 3;
+export const DISPLAY_TABLE_ROW_GROUP = 4;
+export const DISPLAY_TABLE_HEADER_GROUP = 5;
+export const DISPLAY_TABLE_FOOTER_GROUP = 6;
+export const DISPLAY_TABLE_ROW = 7;
+export const DISPLAY_TABLE_CELL = 8;
+export const DISPLAY_TABLE_CAPTION = 9;
 
 export const POSITION_TYPE_STATIC = 0;
 export const POSITION_TYPE_RELATIVE = 1;
@@ -220,6 +227,12 @@ interface Style {
 	flexWrap: Wrap;
 	display: Display;
 
+	/** Table cell spans. 1 unless set; only meaningful on a table-cell. */
+	colSpan: number;
+	rowSpan: number;
+	/** Set on the table itself; collapsed cells share their borders. */
+	borderCollapse: boolean;
+
 	flexGrow: number;
 	flexShrink: number;
 	flexBasis: Value;
@@ -264,6 +277,10 @@ function createStyle(webDefaults: boolean): Style {
 		positionType: POSITION_TYPE_RELATIVE,
 		flexWrap: WRAP_NO_WRAP,
 		display: DISPLAY_FLEX,
+
+		colSpan: 1,
+		rowSpan: 1,
+		borderCollapse: false,
 
 		flexGrow: NaN,
 		flexShrink: NaN,
@@ -442,6 +459,21 @@ export class Node {
 		this.style.flexWrap = v;
 		this.markDirty();
 	}
+	setColSpan(v: number): void {
+		this.style.colSpan = Math.max(1, Math.floor(v) || 1);
+		this.markDirty();
+	}
+
+	setRowSpan(v: number): void {
+		this.style.rowSpan = Math.max(1, Math.floor(v) || 1);
+		this.markDirty();
+	}
+
+	setBorderCollapse(v: boolean): void {
+		this.style.borderCollapse = v;
+		this.markDirty();
+	}
+
 	setDisplay(v: Display): void {
 		this.style.display = v;
 		this.markDirty();
@@ -2232,6 +2264,547 @@ function zeroLayout(node: Node): void {
 }
 
 /** Dispatch: measure leaf, empty container, or full flexbox. */
+// ---------------------------------------------------------------------------
+// Table layout (CSS 2.1 §17, automatic table layout)
+//
+// A table is NOT flexbox. Its defining property is that columns are shared: a
+// column's width is decided by every cell in it, across every row. Emulating
+// that with a flex row per <tr> cannot work -- each row would size its cells
+// independently -- so `display: table` is its own layout mode here.
+// ---------------------------------------------------------------------------
+
+interface TableCell {
+	node: Node;
+	row: number;
+	column: number;
+	colSpan: number;
+	rowSpan: number;
+	minWidth: number;
+	maxWidth: number;
+}
+
+interface TableRow {
+	node: Node;
+	group: Node | null;
+}
+
+/**
+ * Collect the table's rows in *visual* order.
+ *
+ * Header groups come first and footer groups last, however they were written --
+ * a <tfoot> before <tbody> in the source still renders at the bottom.
+ */
+function collectTableRows(table: Node): {
+	rows: TableRow[];
+	captions: Node[];
+	groups: Node[];
+} {
+	const captions: Node[] = [];
+	const groups: Node[] = [];
+	const header: TableRow[] = [];
+	const body: TableRow[] = [];
+	const footer: TableRow[] = [];
+
+	const collectGroup = (group: Node, into: TableRow[]) => {
+		groups.push(group);
+		for (const child of group.children) {
+			if (child.style.display === DISPLAY_TABLE_ROW) {
+				into.push({node: child, group});
+			} else {
+				zeroLayout(child);
+			}
+		}
+	};
+
+	for (const child of table.children) {
+		if (
+			child.style.display === DISPLAY_NONE ||
+			child.style.positionType === POSITION_TYPE_ABSOLUTE
+		) {
+			zeroLayout(child);
+			continue;
+		}
+
+		switch (child.style.display) {
+			case DISPLAY_TABLE_CAPTION:
+				captions.push(child);
+				break;
+			case DISPLAY_TABLE_HEADER_GROUP:
+				collectGroup(child, header);
+				break;
+			case DISPLAY_TABLE_FOOTER_GROUP:
+				collectGroup(child, footer);
+				break;
+			case DISPLAY_TABLE_ROW_GROUP:
+				collectGroup(child, body);
+				break;
+			case DISPLAY_TABLE_ROW:
+				body.push({node: child, group: null});
+				break;
+			default:
+				// colgroup/col and anything else generate no box of their own.
+				zeroLayout(child);
+				break;
+		}
+	}
+
+	return {rows: [...header, ...body, ...footer], captions, groups};
+}
+
+/**
+ * Place cells on the grid, honouring colspan and rowspan.
+ *
+ * A cell with rowspan reserves its slots in the rows below, so the next row's
+ * cells flow past them rather than under them.
+ */
+function buildTableGrid(rows: TableRow[]): {
+	cells: TableCell[];
+	columnCount: number;
+} {
+	const cells: TableCell[] = [];
+	const occupied = new Set<string>();
+	let columnCount = 0;
+
+	rows.forEach((row, rowIndex) => {
+		let column = 0;
+
+		for (const node of row.node.children) {
+			if (node.style.display !== DISPLAY_TABLE_CELL) {
+				zeroLayout(node);
+				continue;
+			}
+
+			while (occupied.has(`${rowIndex}:${column}`)) column++;
+
+			const colSpan = Math.max(1, node.style.colSpan);
+			const rowSpan = Math.max(1, node.style.rowSpan);
+
+			for (let dr = 0; dr < rowSpan; dr++) {
+				for (let dc = 0; dc < colSpan; dc++) {
+					occupied.add(`${rowIndex + dr}:${column + dc}`);
+				}
+			}
+
+			cells.push({
+				node,
+				row: rowIndex,
+				column,
+				colSpan,
+				rowSpan,
+				minWidth: 0,
+				maxWidth: 0,
+			});
+
+			column += colSpan;
+			columnCount = Math.max(columnCount, column);
+		}
+	});
+
+	return {cells, columnCount};
+}
+
+/**
+ * A cell's intrinsic width.
+ *
+ * min-content is the width it cannot go below -- its longest unbreakable word --
+ * obtained by offering it no room at all and letting it wrap everywhere it can.
+ * max-content is what it would take if never wrapped.
+ */
+function intrinsicCellWidth(
+	cell: Node,
+	minContent: boolean,
+	ownerWidth: number,
+	ownerHeight: number,
+): number {
+	layoutNode(
+		cell,
+		minContent ? 0 : NaN,
+		NaN,
+		minContent ? MEASURE_MODE_AT_MOST : MEASURE_MODE_UNDEFINED,
+		MEASURE_MODE_UNDEFINED,
+		ownerWidth,
+		ownerHeight,
+		false,
+	);
+	return cell.layout.width;
+}
+
+/** Spread `extra` over `count` columns, giving the remainder to the earlier ones. */
+function distributeAcross(
+	widths: number[],
+	from: number,
+	count: number,
+	extra: number,
+): void {
+	if (extra <= 0) return;
+	const share = extra / count;
+	for (let i = 0; i < count; i++) {
+		widths[from + i] += share;
+	}
+}
+
+/**
+ * Resolve one set of column widths for the whole table (CSS 2.1 §17.5.2.2).
+ *
+ * `available` is the width the columns have to fill, already including the cells
+ * that collapsed borders will overlap away.
+ */
+function resolveColumnWidths(
+	cells: TableCell[],
+	columnCount: number,
+	available: number,
+	widthIsDefinite: boolean,
+	ownerWidth: number,
+	ownerHeight: number,
+): number[] {
+	const mins = new Array<number>(columnCount).fill(0);
+	const maxs = new Array<number>(columnCount).fill(0);
+	// A column whose cell specifies a width is fixed: surplus space goes to the
+	// auto columns instead, otherwise `<td style="width:8ch">` would be inflated
+	// by the very slack it was meant to give away.
+	const fixed = new Array<boolean>(columnCount).fill(false);
+
+	for (const cell of cells) {
+		const styleWidth = resolveValue(cell.node.style.width, ownerWidth);
+		if (isDefined(styleWidth)) {
+			// An explicit width is both the floor and the preference.
+			cell.minWidth = styleWidth;
+			cell.maxWidth = styleWidth;
+			if (cell.colSpan === 1) fixed[cell.column] = true;
+		} else {
+			cell.minWidth = intrinsicCellWidth(
+				cell.node,
+				true,
+				ownerWidth,
+				ownerHeight,
+			);
+			cell.maxWidth = intrinsicCellWidth(
+				cell.node,
+				false,
+				ownerWidth,
+				ownerHeight,
+			);
+		}
+
+		if (cell.colSpan === 1) {
+			mins[cell.column] = Math.max(mins[cell.column], cell.minWidth);
+			maxs[cell.column] = Math.max(maxs[cell.column], cell.maxWidth);
+		}
+	}
+
+	// A spanning cell only widens its columns by whatever it needs beyond what
+	// they already provide between them.
+	for (const cell of cells) {
+		if (cell.colSpan === 1) continue;
+
+		let spanMin = 0;
+		let spanMax = 0;
+		for (let i = 0; i < cell.colSpan; i++) {
+			spanMin += mins[cell.column + i];
+			spanMax += maxs[cell.column + i];
+		}
+
+		distributeAcross(mins, cell.column, cell.colSpan, cell.minWidth - spanMin);
+		distributeAcross(maxs, cell.column, cell.colSpan, cell.maxWidth - spanMax);
+	}
+
+	for (let i = 0; i < columnCount; i++) {
+		maxs[i] = Math.max(maxs[i], mins[i]);
+	}
+
+	const totalMin = mins.reduce((sum, w) => sum + w, 0);
+	const totalMax = maxs.reduce((sum, w) => sum + w, 0);
+
+	// A table with an indefinite width shrink-wraps to its content rather than
+	// filling its container, which is why `<table>` in a browser is only as wide
+	// as it needs to be.
+	const target = widthIsDefinite
+		? available
+		: Math.min(
+				Math.max(totalMin, isDefined(available) ? available : totalMax),
+				totalMax,
+			);
+
+	const widths = new Array<number>(columnCount).fill(0);
+
+	if (columnCount === 0) return widths;
+
+	if (target <= totalMin || totalMax === totalMin) {
+		// Cannot fit: every column takes its minimum and the table overflows.
+		for (let i = 0; i < columnCount; i++) widths[i] = mins[i];
+		if (target > totalMin && totalMax === totalMin && totalMin > 0) {
+			// Definite width larger than the content wants: share the slack out.
+			const extra = target - totalMin;
+			for (let i = 0; i < columnCount; i++) {
+				widths[i] += (extra * mins[i]) / totalMin;
+			}
+		} else if (target > totalMin && totalMin === 0) {
+			for (let i = 0; i < columnCount; i++) widths[i] = target / columnCount;
+		}
+	} else if (target >= totalMax) {
+		// Room to spare: every column gets what it wants, and the surplus goes to
+		// the auto columns -- a column with an explicit width keeps it.
+		for (let i = 0; i < columnCount; i++) widths[i] = maxs[i];
+
+		const extra = target - totalMax;
+		const autoColumns = [];
+		for (let i = 0; i < columnCount; i++) {
+			if (!fixed[i]) autoColumns.push(i);
+		}
+
+		// If every column is fixed there is nobody to give it to, so spread it out
+		// rather than leaving the table short of the width it was told to be.
+		const receivers =
+			autoColumns.length > 0
+				? autoColumns
+				: Array.from({length: columnCount}, (_, i) => i);
+
+		let weight = 0;
+		for (const i of receivers) weight += maxs[i];
+
+		for (const i of receivers) {
+			widths[i] +=
+				weight > 0 ? (extra * maxs[i]) / weight : extra / receivers.length;
+		}
+	} else {
+		// In between: interpolate each column from its min toward its max.
+		const ratio = (target - totalMin) / (totalMax - totalMin);
+		for (let i = 0; i < columnCount; i++) {
+			widths[i] = mins[i] + (maxs[i] - mins[i]) * ratio;
+		}
+	}
+
+	// Snap to whole cells by rounding the column *edges*, so the columns tile the
+	// table exactly instead of drifting by a cell.
+	const snapped = new Array<number>(columnCount).fill(0);
+	let edge = 0;
+	for (let i = 0; i < columnCount; i++) {
+		const next = edge + widths[i];
+		snapped[i] = Math.round(next) - Math.round(edge);
+		edge = next;
+	}
+
+	return snapped;
+}
+
+function layoutTable(
+	node: Node,
+	availableWidth: number,
+	availableHeight: number,
+	widthMode: MeasureMode,
+	heightMode: MeasureMode,
+	ownerWidth: number,
+	ownerHeight: number,
+	performLayout: boolean,
+): void {
+	const paddingBorderRow = paddingAndBorderForAxis(
+		node,
+		FLEX_DIRECTION_ROW,
+		ownerWidth,
+	);
+	const paddingBorderColumn = paddingAndBorderForAxis(
+		node,
+		FLEX_DIRECTION_COLUMN,
+		ownerWidth,
+	);
+	const marginRow = marginForAxis(node, FLEX_DIRECTION_ROW, ownerWidth);
+	const marginColumn = marginForAxis(node, FLEX_DIRECTION_COLUMN, ownerWidth);
+
+	const leftPaddingBorder = paddingAndBorderForEdge(
+		node,
+		EDGE_LEFT,
+		ownerWidth,
+	);
+	const topPaddingBorder = paddingAndBorderForEdge(node, EDGE_TOP, ownerWidth);
+
+	const {rows, captions, groups} = collectTableRows(node);
+	const {cells, columnCount} = buildTableGrid(rows);
+
+	// Collapsed borders are shared: each cell after the first overlaps its
+	// neighbour by exactly the one cell they both draw a border in.
+	const overlap = node.style.borderCollapse ? 1 : 0;
+	const columnOverlap = overlap * Math.max(0, columnCount - 1);
+
+	const innerWidth = isDefined(availableWidth)
+		? Math.max(0, availableWidth - marginRow - paddingBorderRow)
+		: NaN;
+
+	const widthIsDefinite =
+		widthMode === MEASURE_MODE_EXACTLY && isDefined(innerWidth);
+
+	const columnWidths = resolveColumnWidths(
+		cells,
+		columnCount,
+		isDefined(innerWidth) ? innerWidth + columnOverlap : NaN,
+		widthIsDefinite,
+		ownerWidth,
+		ownerHeight,
+	);
+
+	const columnEdges = new Array<number>(columnCount + 1).fill(0);
+	for (let i = 0; i < columnCount; i++) {
+		columnEdges[i + 1] = columnEdges[i] + columnWidths[i];
+	}
+
+	/** Where column `index` starts, once the shared borders are folded away. */
+	const columnStart = (index: number) => columnEdges[index] - overlap * index;
+	/** Width of a cell spanning `span` columns from `index`. */
+	const spanWidth = (index: number, span: number) =>
+		columnEdges[index + span] - columnEdges[index] - overlap * (span - 1);
+
+	const contentWidth = Math.max(0, columnEdges[columnCount] - columnOverlap);
+
+	// -- captions ----------------------------------------------------------
+	// A caption is not part of the grid: it sits above the table, as wide as it.
+	let captionHeight = 0;
+	for (const caption of captions) {
+		layoutNode(
+			caption,
+			contentWidth,
+			NaN,
+			MEASURE_MODE_EXACTLY,
+			MEASURE_MODE_UNDEFINED,
+			ownerWidth,
+			ownerHeight,
+			performLayout,
+		);
+		caption.layout.left = leftPaddingBorder;
+		caption.layout.top = topPaddingBorder + captionHeight;
+		captionHeight += caption.layout.height;
+	}
+
+	// -- row heights -------------------------------------------------------
+	// Lay each cell out at its resolved column width to find how tall it is; the
+	// row is as tall as its tallest cell.
+	const rowHeights = new Array<number>(rows.length).fill(0);
+
+	for (const cell of cells) {
+		const width = spanWidth(cell.column, cell.colSpan);
+		layoutNode(
+			cell.node,
+			width,
+			NaN,
+			MEASURE_MODE_EXACTLY,
+			MEASURE_MODE_UNDEFINED,
+			ownerWidth,
+			ownerHeight,
+			performLayout,
+		);
+
+		if (cell.rowSpan === 1) {
+			rowHeights[cell.row] = Math.max(
+				rowHeights[cell.row],
+				cell.node.layout.height,
+			);
+		}
+	}
+
+	// A row-spanning cell only makes rows taller if the rows it covers cannot
+	// already hold it.
+	for (const cell of cells) {
+		if (cell.rowSpan === 1) continue;
+
+		let covered = -overlap * (cell.rowSpan - 1);
+		for (let i = 0; i < cell.rowSpan && cell.row + i < rows.length; i++) {
+			covered += rowHeights[cell.row + i];
+		}
+
+		const deficit = cell.node.layout.height - covered;
+		if (deficit > 0) {
+			const last = Math.min(cell.row + cell.rowSpan - 1, rows.length - 1);
+			rowHeights[last] += deficit;
+		}
+	}
+
+	// Stack the rows, folding away the border each one shares with the row above.
+	// A zero-height row -- an empty <tr> -- has no border to share, so it must not
+	// consume an overlap: doing so pulls every row after it up by one and lands
+	// their text on top of the row above.
+	const rowTops = new Array<number>(rows.length).fill(0);
+	let cursor = 0;
+	let previousVisible = false;
+
+	for (let i = 0; i < rows.length; i++) {
+		if (rowHeights[i] <= 0) {
+			rowTops[i] = cursor;
+			continue;
+		}
+		if (previousVisible) cursor -= overlap;
+		rowTops[i] = cursor;
+		cursor += rowHeights[i];
+		previousVisible = true;
+	}
+
+	const rowStart = (index: number) => rowTops[index];
+	const spanHeight = (index: number, span: number) => {
+		const last = Math.min(index + span, rows.length) - 1;
+		return rowTops[last] + rowHeights[last] - rowTops[index];
+	};
+
+	const gridHeight = Math.max(0, cursor);
+	const contentHeight = captionHeight + gridHeight;
+
+	// -- table box ---------------------------------------------------------
+	const width =
+		widthMode === MEASURE_MODE_EXACTLY
+			? availableWidth - marginRow
+			: contentWidth + paddingBorderRow;
+	const height =
+		heightMode === MEASURE_MODE_EXACTLY
+			? availableHeight - marginColumn
+			: contentHeight + paddingBorderColumn;
+
+	setMeasuredDimensions(node, width, height, ownerWidth, ownerHeight);
+
+	if (!performLayout) return;
+
+	// -- placement ---------------------------------------------------------
+	// Children are positioned relative to their own parent's border box, so a
+	// cell is placed within its row, and a row within its group.
+	const gridTop = topPaddingBorder + captionHeight;
+
+	for (const group of groups) {
+		group.layout.left = leftPaddingBorder;
+		group.layout.width = contentWidth;
+		group.layout.top = gridTop;
+		group.layout.height = gridHeight;
+	}
+
+	rows.forEach((row, index) => {
+		// A row inside a group is positioned relative to that group's border box,
+		// and every group's box starts at gridTop, so the two cancel out.
+		row.node.layout.left = row.group ? 0 : leftPaddingBorder;
+		row.node.layout.top = row.group
+			? rowStart(index)
+			: gridTop + rowStart(index);
+		row.node.layout.width = contentWidth;
+		row.node.layout.height = rowHeights[index];
+	});
+
+	for (const cell of cells) {
+		const cellWidth = spanWidth(cell.column, cell.colSpan);
+		const cellHeight = spanHeight(cell.row, cell.rowSpan);
+
+		// Re-lay the cell at its final size. This has to be the *last* measure of
+		// its text: the measure function records the line breaks the renderer will
+		// draw, so an earlier intrinsic pass must not be what the renderer sees.
+		layoutNode(
+			cell.node,
+			cellWidth,
+			cellHeight,
+			MEASURE_MODE_EXACTLY,
+			MEASURE_MODE_EXACTLY,
+			ownerWidth,
+			ownerHeight,
+			true,
+		);
+
+		// Relative to the cell's own row, which already sits at the right y.
+		cell.node.layout.left = columnStart(cell.column);
+		cell.node.layout.top = 0;
+	}
+}
+
 function layoutNode(
 	node: Node,
 	availableWidth: number,
@@ -2283,6 +2856,20 @@ function layoutNode(
 			heightMode,
 			ownerWidth,
 			ownerHeight,
+		);
+		return;
+	}
+
+	if (node.style.display === DISPLAY_TABLE) {
+		layoutTable(
+			node,
+			availableWidth,
+			availableHeight,
+			widthMode,
+			heightMode,
+			ownerWidth,
+			ownerHeight,
+			performLayout,
 		);
 		return;
 	}
@@ -2435,6 +3022,13 @@ const Flex = {
 	DISPLAY_FLEX,
 	DISPLAY_NONE,
 	DISPLAY_CONTENTS,
+	DISPLAY_TABLE,
+	DISPLAY_TABLE_ROW_GROUP,
+	DISPLAY_TABLE_HEADER_GROUP,
+	DISPLAY_TABLE_FOOTER_GROUP,
+	DISPLAY_TABLE_ROW,
+	DISPLAY_TABLE_CELL,
+	DISPLAY_TABLE_CAPTION,
 
 	POSITION_TYPE_STATIC,
 	POSITION_TYPE_RELATIVE,

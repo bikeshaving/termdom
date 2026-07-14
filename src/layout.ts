@@ -38,36 +38,12 @@ function getFlexConstant<TEnumName extends keyof EnumMap>(
 	return (Flex as any)[name] || null;
 }
 
-/**
- * Check if an element's ancestor table uses border-collapse: collapse
- */
-function isTableCollapsed(element: Element): boolean {
-	let current = element.parentElement;
-	while (current) {
-		const display = getPropertyValue(current, "display");
-		if (display === "table") {
-			return getPropertyValue(current, "border-collapse") === "collapse";
-		}
-		current = current.parentElement;
-	}
-	return false;
-}
-
-/**
- * Get the previous sibling with a specific display type (for table layout)
- */
-function getPreviousTableSibling(
-	element: Element,
-	displayType: string,
-): Element | null {
-	let sibling = element.previousElementSibling;
-	while (sibling) {
-		if (getPropertyValue(sibling, "display") === displayType) {
-			return sibling;
-		}
-		sibling = sibling.previousElementSibling;
-	}
-	return null;
+/** A colspan/rowspan attribute, defaulting to 1 when absent or nonsense. */
+function parseSpanAttribute(element: Element, name: string): number {
+	const raw = element.getAttribute(name);
+	if (!raw) return 1;
+	const span = parseInt(raw, 10);
+	return Number.isFinite(span) && span > 0 ? span : 1;
 }
 
 function styleFlexNode(element: Element, flexNode: FlexTypes.Node): void {
@@ -436,45 +412,43 @@ function styleFlexNode(element: Element, flexNode: FlexTypes.Node): void {
 	} else if (display === "flex") {
 		flexNode.setDisplay(Flex.DISPLAY_FLEX);
 	} else if (display === "table") {
-		flexNode.setDisplay(Flex.DISPLAY_FLEX);
-		flexNode.setFlexDirection(Flex.FLEX_DIRECTION_COLUMN);
-	} else if (
-		display === "table-row-group" ||
-		display === "table-header-group" ||
-		display === "table-footer-group"
-	) {
-		flexNode.setDisplay(Flex.DISPLAY_FLEX);
-		flexNode.setFlexDirection(Flex.FLEX_DIRECTION_COLUMN);
+		// A real table layout mode, not a flex column: columns are shared across
+		// rows, which a flex row per <tr> structurally cannot express.
+		flexNode.setDisplay(Flex.DISPLAY_TABLE);
+		flexNode.setBorderCollapse(
+			computedStyle.getPropertyValue("border-collapse") === "collapse",
+		);
 
-		// For border-collapse, overlap row groups so borders merge between sections
-		if (isTableCollapsed(element) && element.previousElementSibling) {
-			flexNode.setMargin(Flex.EDGE_TOP, -1);
+		// A table shrink-wraps to its content instead of filling its container.
+		// Block layout here is a flex column with align-items: stretch, which would
+		// otherwise stretch the table to the full terminal width, so opt it out --
+		// unless the author aligned it themselves.
+		if (computedStyle.getPropertyValue("align-self") === "auto") {
+			flexNode.setAlignSelf(Flex.ALIGN_FLEX_START);
 		}
+	} else if (display === "table-header-group") {
+		flexNode.setDisplay(Flex.DISPLAY_TABLE_HEADER_GROUP);
+	} else if (display === "table-footer-group") {
+		flexNode.setDisplay(Flex.DISPLAY_TABLE_FOOTER_GROUP);
+	} else if (display === "table-row-group") {
+		flexNode.setDisplay(Flex.DISPLAY_TABLE_ROW_GROUP);
+	} else if (display === "table-caption") {
+		flexNode.setDisplay(Flex.DISPLAY_TABLE_CAPTION);
+		// The caption's own content is laid out as a block.
+		flexNode.setFlexDirection(Flex.FLEX_DIRECTION_COLUMN);
+		flexNode.setAlignItems(Flex.ALIGN_STRETCH);
+	} else if (display === "table-column" || display === "table-column-group") {
+		// Columns carry style, not a box of their own.
+		flexNode.setDisplay(Flex.DISPLAY_NONE);
 	} else if (display === "table-row") {
-		// Table rows are horizontal flex containers
-		flexNode.setDisplay(Flex.DISPLAY_FLEX);
-		flexNode.setFlexDirection(Flex.FLEX_DIRECTION_ROW);
-
-		// For border-collapse: collapse, overlap rows by 1 so borders merge
-		if (isTableCollapsed(element)) {
-			const prevRow = getPreviousTableSibling(element, "table-row");
-			if (prevRow) {
-				flexNode.setMargin(Flex.EDGE_TOP, -1);
-			}
-		}
+		flexNode.setDisplay(Flex.DISPLAY_TABLE_ROW);
 	} else if (display === "table-cell") {
-		// Table cells are block-level flex items in the row's flex layout
-		flexNode.setFlexGrow(1);
-		flexNode.setFlexShrink(1);
-		flexNode.setFlexBasis("0%");
-
-		// For border-collapse: collapse, overlap cells by 1 so borders merge
-		if (isTableCollapsed(element)) {
-			const prevCell = getPreviousTableSibling(element, "table-cell");
-			if (prevCell) {
-				flexNode.setMargin(Flex.EDGE_LEFT, -1);
-			}
-		}
+		flexNode.setDisplay(Flex.DISPLAY_TABLE_CELL);
+		flexNode.setColSpan(parseSpanAttribute(element, "colspan"));
+		flexNode.setRowSpan(parseSpanAttribute(element, "rowspan"));
+		// A cell establishes a block formatting context for its own content.
+		flexNode.setFlexDirection(Flex.FLEX_DIRECTION_COLUMN);
+		flexNode.setAlignItems(Flex.ALIGN_STRETCH);
 
 		// Add default padding for table cells if not explicitly set
 		const paddingLeft = computedStyle.getPropertyValue("padding-left");
@@ -536,15 +510,11 @@ function styleFlexNode(element: Element, flexNode: FlexTypes.Node): void {
 		} else {
 			flexNode.setAlignContent(Flex.ALIGN_FLEX_START);
 		}
-	} else if (
-		display !== "table" &&
-		display !== "table-row-group" &&
-		display !== "table-header-group" &&
-		display !== "table-footer-group" &&
-		display !== "table-row" &&
-		display !== "table-cell"
-	) {
-		// Default block layout (not table elements, which are handled above)
+	} else if (!display.startsWith("table")) {
+		// Default block layout. Table displays are set above and must not be
+		// overwritten here -- listing them out by hand meant table-caption was
+		// missed, and its display was silently reset to flex, which is why the
+		// table could never find its own caption.
 		flexNode.setDisplay(Flex.DISPLAY_FLEX);
 		flexNode.setFlexDirection(Flex.FLEX_DIRECTION_COLUMN);
 		flexNode.setAlignItems(Flex.ALIGN_STRETCH);

@@ -319,6 +319,9 @@ const TERMINAL_ELEMENT_DEFAULTS: Record<string, Record<string, string>> = {
 	tbody: {display: "table-row-group"},
 	tfoot: {display: "table-footer-group"},
 	tr: {display: "table-row"},
+	caption: {display: "table-caption"},
+	colgroup: {display: "table-column-group"},
+	col: {display: "table-column"},
 	td: {
 		display: "table-cell",
 		"border-top-width": "1px",
