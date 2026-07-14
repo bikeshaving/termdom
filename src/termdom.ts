@@ -113,8 +113,26 @@ export class TermDOM {
 
 	private width: number;
 	private height: number;
-	// TODO: use this
-	private readonly mode: "flow" | "fullscreen";
+	/**
+	 * How the document scrolls.
+	 *
+	 * - `flow`: the document accumulates. Rows that scroll off the top are committed
+	 *   to the terminal's scrollback, frozen and unaddressable. This is what an
+	 *   ordinary command does.
+	 * - `document`: the document is a fixed thing the user moves a camera over. We
+	 *   own a region of the screen and repaint a window of the document into it.
+	 *   Nothing is committed, so nothing is frozen: the whole document stays
+	 *   mutable.
+	 *
+	 * This is *not* the same axis as whether we occupy the whole screen.
+	 * requestFullscreen() is about screen ownership -- a user-facing experience --
+	 * and the alternate buffer is one way to implement it. Document mode still
+	 * starts at the command height and still respects what came before it.
+	 */
+	private viewportMode: "flow" | "document" = "flow";
+
+	/** Which document row sits at the top of our region, in document mode. */
+	private documentScrollTop = 0;
 	private readonly process: ProcessLike;
 
 	private readonly detectCursorEnabled: boolean;
@@ -133,7 +151,6 @@ export class TermDOM {
 
 		this.width = options.width || this.process.stdout.columns || 80;
 		this.height = options.height || this.process.stdout.rows || 24;
-		this.mode = "flow";
 
 		this.jsdom = new JSDOM(
 			"<!DOCTYPE html><html><head></head><body></body></html>",
@@ -343,7 +360,12 @@ export class TermDOM {
 		}
 
 		if (!this.interactive) {
-			this.renderStatic();
+			await this.renderStatic();
+			return;
+		}
+
+		if (this.viewportMode === "document") {
+			await this.renderDocumentMode();
 			return;
 		}
 
@@ -1336,7 +1358,7 @@ export class TermDOM {
 	 * document is simply printed. Every hard problem in this file is a consequence
 	 * of having a viewport, and a pipe does not have one.
 	 */
-	private renderStatic(): void {
+	private async renderStatic(): Promise<void> {
 		this.isRendering = true;
 		try {
 			const pending = this.observer.takeRecords();
@@ -1355,7 +1377,7 @@ export class TermDOM {
 				},
 			);
 
-			if (output) this.process.stdout.write(output);
+			if (output) await this.write(output);
 		} finally {
 			this.isRendering = false;
 		}
@@ -1374,6 +1396,111 @@ export class TermDOM {
 	 * See SCROLLBACK.md. Without this, content past the bottom of the terminal is
 	 * never drawn at all.
 	 */
+	/** Write to stdout and wait for it to be flushed. */
+	private write(output: string): Promise<void> {
+		return new Promise<void>((resolve, reject) => {
+			this.process.stdout.write(output, "utf8", (error) => {
+				if (error) reject(error);
+				else resolve();
+			});
+		});
+	}
+
+	/**
+	 * Render a window of the document into a region we own.
+	 *
+	 * Document mode still starts at the command height: it does not seize the whole
+	 * terminal, and it does not paint over what was on screen before us. If it needs
+	 * more rows than are left below the command start, it *scrolls* the earlier
+	 * content away into the scrollback, where it survives and the user can still
+	 * reach it.
+	 *
+	 * Nothing of ours is committed. The document stays a single mutable thing that we
+	 * repaint a window of -- so unlike flow mode, content that scrolls out of view is
+	 * not frozen, and reflow anywhere is free.
+	 */
+	private async renderDocumentMode(): Promise<void> {
+		this.isRendering = true;
+		try {
+			const pending = this.observer.takeRecords();
+			if (pending.length > 0) {
+				this.styleManager.handleMutations(pending);
+				this.layoutEngine.handleMutations(pending);
+			}
+
+			this.renderedOutsideMarkers = new WeakSet<Element>();
+			this.layoutEngine.calculateLayout();
+
+			const contentHeight = this.document.body.scrollHeight;
+			const regionHeight = Math.min(contentHeight, this.height);
+
+			// Take the room we need by pushing earlier output up, never over it.
+			const top = this.reserveRows(regionHeight);
+
+			// The camera cannot run off the end of the document.
+			const maxScroll = Math.max(0, contentHeight - regionHeight);
+			this.documentScrollTop = Math.min(this.documentScrollTop, maxScroll);
+
+			const ansi = this.renderer.renderFrame(
+				-this.documentScrollTop,
+				(ctx) => {
+					this.renderElement(this.document.body, ctx);
+				},
+				top,
+				top + regionHeight,
+			);
+
+			if (ansi) await this.write(ansi);
+		} finally {
+			this.isRendering = false;
+		}
+	}
+
+	/**
+	 * Choose how the document scrolls. See `viewportMode`.
+	 */
+	setViewportMode(mode: "flow" | "document"): void {
+		if (mode === this.viewportMode) return;
+		this.viewportMode = mode;
+		this.documentScrollTop = 0;
+		this.renderer.clearPreviousBuffer();
+	}
+
+	/** Move the camera, in document mode. Ignored in flow mode. */
+	scrollDocumentBy(rows: number): void {
+		if (this.viewportMode !== "document") return;
+		this.documentScrollTop = Math.max(0, this.documentScrollTop + rows);
+	}
+
+	/**
+	 * Make room for `rows` rows below the command start, *without painting over
+	 * anything that was already on screen*.
+	 *
+	 * If there is not enough room between the command start and the bottom of the
+	 * terminal, we scroll the terminal -- by printing newlines at the bottom margin,
+	 * which pushes the rows above into the scrollback, where they are preserved and
+	 * the user can still reach them. Overwriting them in place would destroy the
+	 * output of whatever ran before us; scrolling them away is what an ordinary
+	 * command does when it prints.
+	 *
+	 * Returns the screen row our region now starts at.
+	 */
+	private reserveRows(rows: number): number {
+		const top = this.scrollingManager.getScreenTop();
+		const overflow = top + rows - this.height;
+
+		if (overflow <= 0) return top;
+
+		const push = Math.min(overflow, top);
+		if (push > 0) {
+			this.process.stdout.write(`\x1b[${this.height};1H` + "\n".repeat(push));
+			this.renderer.commitScroll(push);
+			this.scrollingManager.setScreenTop(top - push);
+		}
+
+		return this.scrollingManager.getScreenTop();
+	}
+
 	/**
 	 * Has the document reflowed above the fold?
 	 *

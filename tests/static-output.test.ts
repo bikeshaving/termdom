@@ -21,8 +21,15 @@ async function renderPiped(html: string, cols = 40): Promise<string> {
 	(terminal.stdout as any).isTTY = false;
 
 	const written: string[] = [];
-	(terminal.stdout as any).write = (chunk: unknown) => {
+	(terminal.stdout as any).write = (
+		chunk: unknown,
+		encoding?: unknown,
+		callback?: (error?: Error) => void,
+	) => {
 		written.push(String(chunk));
+		// A real stdout invokes the callback once flushed, and TermDOM waits for it.
+		const done = typeof encoding === "function" ? encoding : callback;
+		if (typeof done === "function") (done as () => void)();
 		return true;
 	};
 
