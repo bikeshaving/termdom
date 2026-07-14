@@ -247,3 +247,36 @@ test("cells tile the table exactly, with no gap or overlap", async () => {
 	expect(third.left + third.width).toBe(table.left + table.width);
 	dom.dispose();
 });
+
+test("border junctions reflect where lines actually continue", async () => {
+	// A colspan above two columns, a rowspan beside them, and a colspan below.
+	// Each boundary must render the junction for the lines that meet there --
+	// not a cross, which is what edge-membership border bits always produced.
+	const {rows, dom} = await render(
+		`<table style="border-collapse:collapse; width:44ch">
+			<tbody>
+				<tr><td colspan="3">Quarterly Report</td></tr>
+				<tr><td rowspan="2">Region</td><td>North</td><td>120</td></tr>
+				<tr><td>South</td><td>90</td></tr>
+				<tr><td>Total</td><td colspan="2">210</td></tr>
+			</tbody>
+		</table>`,
+		50,
+	);
+
+	const junctions = rows.filter((row) => /[┬┴┼├┤]/.test(row));
+
+	// Below the full-width colspan the columns begin: the line runs left-right
+	// and turns down, so ┬ -- there is nothing above it to join.
+	expect(junctions[0]).toContain("┬");
+	expect(junctions[0]).not.toContain("┼");
+
+	// At the rowspan's boundary the vertical continues past a horizontal that
+	// only arrives from the right: ├.
+	expect(junctions[1]).toContain("├");
+
+	// Above the colspan at the bottom, two columns merge into one: ┴.
+	expect(junctions[2]).toContain("┴");
+
+	dom.dispose();
+});

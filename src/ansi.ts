@@ -332,46 +332,30 @@ export function getBorderChar(borderEncoding: number): string {
 			break;
 	}
 
-	// Corner characters
-	if (hasTop && hasLeft && !hasRight && !hasBottom) {
-		return charSet.topLeft;
-	}
-	if (hasTop && hasRight && !hasLeft && !hasBottom) {
-		return charSet.topRight;
-	}
-	if (hasBottom && hasLeft && !hasTop && !hasRight) {
-		return charSet.bottomLeft;
-	}
-	if (hasBottom && hasRight && !hasTop && !hasLeft) {
-		return charSet.bottomRight;
+	// The bits say which way a line leaves this cell, so the glyph follows
+	// directly from how many ways it goes and which.
+	const count =
+		(hasTop ? 1 : 0) +
+		(hasRight ? 1 : 0) +
+		(hasBottom ? 1 : 0) +
+		(hasLeft ? 1 : 0);
+
+	if (count === 4) return charSet.cross; // ┼
+
+	if (count === 3) {
+		if (!hasTop) return charSet.topTee; // ┬
+		if (!hasBottom) return charSet.bottomTee; // ┴
+		if (!hasLeft) return charSet.rightTee; // ├
+		return charSet.leftTee; // ┤
 	}
 
-	// T-junction characters
-	if (hasTop && hasBottom && hasLeft && !hasRight) {
-		return charSet.rightTee;
-	}
-	if (hasTop && hasBottom && hasRight && !hasLeft) {
-		return charSet.leftTee;
-	}
-	if (hasLeft && hasRight && hasTop && !hasBottom) {
-		return charSet.topTee;
-	}
-	if (hasLeft && hasRight && hasBottom && !hasTop) {
-		return charSet.bottomTee;
-	}
+	if (hasRight && hasBottom) return charSet.topLeft; // ┌
+	if (hasLeft && hasBottom) return charSet.topRight; // ┐
+	if (hasRight && hasTop) return charSet.bottomLeft; // └
+	if (hasLeft && hasTop) return charSet.bottomRight; // ┘
 
-	// Cross junction
-	if (hasTop && hasRight && hasBottom && hasLeft) {
-		return charSet.cross;
-	}
-
-	// Straight lines
-	if ((hasTop || hasBottom) && !hasLeft && !hasRight) {
-		return charSet.horizontal;
-	}
-	if ((hasLeft || hasRight) && !hasTop && !hasBottom) {
-		return charSet.vertical;
-	}
+	if (hasLeft || hasRight) return charSet.horizontal; // ─
+	if (hasTop || hasBottom) return charSet.vertical; // │
 
 	return " ";
 }
@@ -767,81 +751,72 @@ export class DrawingContext {
 		const right = x + width - 1;
 		const bottom = y + height - 1;
 
-		// Top edge
-		if (borderStyles.topEdge > 0 && y >= 0 && y < this.rows) {
+		const {topEdge, rightEdge, bottomEdge, leftEdge} = borderStyles;
+		const hasTop = topEdge > 0;
+		const hasRight = rightEdge > 0;
+		const hasBottom = bottomEdge > 0;
+		const hasLeft = leftEdge > 0;
+
+		// Each cell records which way a line *leaves* it, not which edge of this
+		// box it belongs to. Two boxes sharing a cell then merge by simple union
+		// and land on the right glyph: a horizontal run (left+right) meeting two
+		// corners that both turn downward (left+down and right+down) becomes
+		// left+right+down -- a tee. Edge-membership bits gave a cross there,
+		// which is what made every colspan and rowspan boundary render as ┼.
+		const encode = (
+			up: number,
+			toRight: number,
+			down: number,
+			toLeft: number,
+		) =>
+			(up > 0 ? up << BorderShift.Top : 0) |
+			(toRight > 0 ? toRight << BorderShift.Right : 0) |
+			(down > 0 ? down << BorderShift.Bottom : 0) |
+			(toLeft > 0 ? toLeft << BorderShift.Left : 0);
+
+		const put = (col: number, row: number, encoding: number) => {
+			if (col < 0 || col >= this.cols || row < 0 || row >= this.rows) return;
+			this.#setBorderCell(col, row, encoding, style);
+		};
+
+		// Top edge: a horizontal run that turns down at whichever corners exist.
+		if (hasTop) {
 			for (let col = x; col <= right; col++) {
-				if (col >= 0 && col < this.cols) {
-					const cornerLeft = col === x && borderStyles.leftEdge > 0;
-					const cornerRight = col === right && borderStyles.rightEdge > 0;
-					const encoding = this.#calculateEdgeEncoding(
-						borderStyles,
-						true, // hasTop
-						cornerRight,
-						false, // hasBottom
-						cornerLeft,
-					);
-					this.#setBorderCell(col, y, encoding, style);
-				}
+				const atLeft = col === x && hasLeft;
+				const atRight = col === right && hasRight;
+				const down = atLeft ? leftEdge : atRight ? rightEdge : 0;
+				put(
+					col,
+					y,
+					encode(0, atRight ? 0 : topEdge, down, atLeft ? 0 : topEdge),
+				);
 			}
 		}
 
-		// Bottom edge
-		if (
-			borderStyles.bottomEdge > 0 &&
-			bottom !== y &&
-			bottom >= 0 &&
-			bottom < this.rows
-		) {
+		// Bottom edge: the same run, turning up at its corners.
+		if (hasBottom && bottom !== y) {
 			for (let col = x; col <= right; col++) {
-				if (col >= 0 && col < this.cols) {
-					const cornerLeft = col === x && borderStyles.leftEdge > 0;
-					const cornerRight = col === right && borderStyles.rightEdge > 0;
-					const encoding = this.#calculateEdgeEncoding(
-						borderStyles,
-						false, // hasTop
-						cornerRight,
-						true, // hasBottom
-						cornerLeft,
-					);
-					this.#setBorderCell(col, bottom, encoding, style);
-				}
+				const atLeft = col === x && hasLeft;
+				const atRight = col === right && hasRight;
+				const up = atLeft ? leftEdge : atRight ? rightEdge : 0;
+				put(
+					col,
+					bottom,
+					encode(up, atRight ? 0 : bottomEdge, 0, atLeft ? 0 : bottomEdge),
+				);
 			}
 		}
 
-		// Left edge (excluding corners)
-		if (borderStyles.leftEdge > 0 && x >= 0 && x < this.cols) {
+		// The sides are vertical runs between the corners.
+		if (hasLeft) {
 			for (let row = y + 1; row < bottom; row++) {
-				if (row >= 0 && row < this.rows) {
-					const encoding = this.#calculateEdgeEncoding(
-						borderStyles,
-						false, // hasTop
-						false, // hasRight
-						false, // hasBottom
-						true, // hasLeft
-					);
-					this.#setBorderCell(x, row, encoding, style);
-				}
+				put(x, row, encode(leftEdge, 0, leftEdge, 0));
 			}
 		}
 
-		// Right edge (excluding corners)
-		if (
-			borderStyles.rightEdge > 0 &&
-			right !== x &&
-			right >= 0 &&
-			right < this.cols
-		) {
+		if (hasRight && right !== x) {
 			for (let row = y + 1; row < bottom; row++) {
-				if (row >= 0 && row < this.rows) {
-					const encoding = this.#calculateEdgeEncoding(
-						borderStyles,
-						false, // hasTop
-						true, // hasRight
-						false, // hasBottom
-						false, // hasLeft
-					);
-					this.#setBorderCell(right, row, encoding, style);
-				}
+				put(right, row, encode(rightEdge, 0, rightEdge, 0));
 			}
 		}
 	}

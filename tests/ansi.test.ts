@@ -373,90 +373,71 @@ describe("Border Functions", () => {
 			expect(char).toBe(" ");
 		});
 
+		// The four bits say which way a line LEAVES the cell -- up, right, down,
+		// left -- which is what a box-drawing glyph actually encodes.
+		//
+		// They used to mean "which edge of a box this cell sits on", and these
+		// tests asserted that: a lone `top` bit rendered a horizontal line, and
+		// top+bottom+left rendered ├. That reading is self-contradictory (a line
+		// running up, down and left cannot point right), and it only survived
+		// because for a single box the two happen to coincide. It broke as soon
+		// as two boxes shared a cell: a collapsed table's colspan boundary merged
+		// a horizontal run with two downward corners and produced ┼ instead of ┬.
+		const UP = BorderEdgeStyle.Solid << 0;
+		const RIGHT = BorderEdgeStyle.Solid << 8;
+		const DOWN = BorderEdgeStyle.Solid << 16;
+		const LEFT = BorderEdgeStyle.Solid << 24;
+
 		test("generates corner characters", () => {
-			// Top-left corner: top + left edges
-			const topLeft =
-				(BorderEdgeStyle.Solid << 0) | (BorderEdgeStyle.Solid << 24);
-			expect(getBorderChar(topLeft)).toBe("┌");
-
-			// Top-right corner: top + right edges
-			const topRight =
-				(BorderEdgeStyle.Solid << 0) | (BorderEdgeStyle.Solid << 8);
-			expect(getBorderChar(topRight)).toBe("┐");
-
-			// Bottom-left corner: bottom + left edges
-			const bottomLeft =
-				(BorderEdgeStyle.Solid << 16) | (BorderEdgeStyle.Solid << 24);
-			expect(getBorderChar(bottomLeft)).toBe("└");
-
-			// Bottom-right corner: bottom + right edges
-			const bottomRight =
-				(BorderEdgeStyle.Solid << 16) | (BorderEdgeStyle.Solid << 8);
-			expect(getBorderChar(bottomRight)).toBe("┘");
+			// ┌ turns from rightward to downward.
+			expect(getBorderChar(RIGHT | DOWN)).toBe("┌");
+			// ┐ arrives from the left and turns down.
+			expect(getBorderChar(LEFT | DOWN)).toBe("┐");
+			// └ comes up and turns right.
+			expect(getBorderChar(UP | RIGHT)).toBe("└");
+			// ┘ comes up and turns left.
+			expect(getBorderChar(UP | LEFT)).toBe("┘");
 		});
 
 		test("generates T-junction characters", () => {
-			// These generate the actual characters based on the implementation
-			const leftTee =
-				(BorderEdgeStyle.Solid << 0) |
-				(BorderEdgeStyle.Solid << 16) |
-				(BorderEdgeStyle.Solid << 24);
-			expect(getBorderChar(leftTee)).toBe("├"); // top+bottom+left = left tee (points right)
-
-			const rightTee =
-				(BorderEdgeStyle.Solid << 0) |
-				(BorderEdgeStyle.Solid << 16) |
-				(BorderEdgeStyle.Solid << 8);
-			expect(getBorderChar(rightTee)).toBe("┤"); // top+bottom+right = right tee (points left)
-
-			const topTee =
-				(BorderEdgeStyle.Solid << 8) |
-				(BorderEdgeStyle.Solid << 16) |
-				(BorderEdgeStyle.Solid << 24);
-			expect(getBorderChar(topTee)).toBe("┴"); // left+right+bottom = bottom tee (points up)
-
-			const bottomTee =
-				(BorderEdgeStyle.Solid << 0) |
-				(BorderEdgeStyle.Solid << 8) |
-				(BorderEdgeStyle.Solid << 24);
-			expect(getBorderChar(bottomTee)).toBe("┬"); // top+left+right = top tee (points down)
+			// A tee points the way the fourth arm is missing.
+			expect(getBorderChar(LEFT | RIGHT | DOWN)).toBe("┬");
+			expect(getBorderChar(LEFT | RIGHT | UP)).toBe("┴");
+			expect(getBorderChar(UP | DOWN | RIGHT)).toBe("├");
+			expect(getBorderChar(UP | DOWN | LEFT)).toBe("┤");
 		});
 
 		test("generates cross junction", () => {
-			// All four edges
-			const cross =
-				(BorderEdgeStyle.Solid << 0) |
-				(BorderEdgeStyle.Solid << 8) |
-				(BorderEdgeStyle.Solid << 16) |
-				(BorderEdgeStyle.Solid << 24);
-			expect(getBorderChar(cross)).toBe("┼");
+			expect(getBorderChar(UP | RIGHT | DOWN | LEFT)).toBe("┼");
 		});
 
 		test("generates straight lines", () => {
-			// Horizontal line: top or bottom edge only
-			const horizontal = BorderEdgeStyle.Solid << 0; // top edge
-			expect(getBorderChar(horizontal)).toBe("─");
+			// A line that leaves left and right is horizontal.
+			expect(getBorderChar(LEFT | RIGHT)).toBe("─");
+			// A line that leaves up and down is vertical.
+			expect(getBorderChar(UP | DOWN)).toBe("│");
+		});
 
-			// Vertical line: left or right edge only
-			const vertical = BorderEdgeStyle.Solid << 24; // left edge
-			expect(getBorderChar(vertical)).toBe("│");
+		test("a single stub still draws its line", () => {
+			// The end of a run: only one direction is set, but it is still a line.
+			expect(getBorderChar(BorderEdgeStyle.Solid << 8)).toBe("─"); // right
+			expect(getBorderChar(BorderEdgeStyle.Solid << 0)).toBe("│"); // up
 		});
 
 		test("handles different border styles", () => {
-			// Double border
-			const doubleBorder = BorderEdgeStyle.Double << 0;
-			expect(getBorderChar(doubleBorder)).toBe("═");
+			const doubleHorizontal =
+				(BorderEdgeStyle.Double << 8) | (BorderEdgeStyle.Double << 24);
+			expect(getBorderChar(doubleHorizontal)).toBe("═");
 
-			// Dashed border
-			const dashedBorder = BorderEdgeStyle.Dashed << 0;
-			expect(getBorderChar(dashedBorder)).toBe("╌");
+			const dashedHorizontal =
+				(BorderEdgeStyle.Dashed << 8) | (BorderEdgeStyle.Dashed << 24);
+			expect(getBorderChar(dashedHorizontal)).toBe("╌");
 		});
 
 		test("handles rounded corners", () => {
-			// Rounded top-left corner
-			const roundedTopLeft =
-				((BorderEdgeStyle.Solid | BorderEdgeStyle.Rounded) << 0) |
-				((BorderEdgeStyle.Solid | BorderEdgeStyle.Rounded) << 24);
+			const rounded = BorderEdgeStyle.Solid | BorderEdgeStyle.Rounded;
+			// ╭ is the rounded ┌: rightward and downward.
+			const roundedTopLeft = (rounded << 8) | (rounded << 16);
 			expect(getBorderChar(roundedTopLeft)).toBe("╭");
 		});
 	});
