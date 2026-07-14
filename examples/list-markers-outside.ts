@@ -66,7 +66,8 @@ async function runDemo() {
 	outsideList.appendChild(outsideItem1);
 
 	const outsideItem2 = document.createElement("li");
-	outsideItem2.textContent = "Outside: wrapped lines align with content start, not marker";
+	outsideItem2.textContent =
+		"Outside: wrapped lines align with content start, not marker";
 	outsideList.appendChild(outsideItem2);
 
 	// Inside positioning for comparison
@@ -126,7 +127,8 @@ async function runDemo() {
 	document.body.appendChild(multilineList);
 
 	const multilineItem = document.createElement("li");
-	multilineItem.textContent = "This is a very long list item that should wrap to multiple lines to demonstrate how outside positioning affects text alignment and wrapping behavior";
+	multilineItem.textContent =
+		"This is a very long list item that should wrap to multiple lines to demonstrate how outside positioning affects text alignment and wrapping behavior";
 	multilineList.appendChild(multilineItem);
 
 	await termdom.render();

@@ -7,7 +7,15 @@
 
 import {CSSStyleDeclaration} from "cssstyle";
 import {type DOMWindow} from "jsdom";
-import {attachPseudoElement, clearPseudoElements, removePseudoElement} from "./composition.js";
+import {
+	cssColorToNumber as runtimeCssColorToNumber,
+	stringWidth,
+} from "./runtime.js";
+import {
+	attachPseudoElement,
+	clearPseudoElements,
+	removePseudoElement,
+} from "./composition.js";
 import {type LayoutEngine} from "./layout.js";
 
 /**
@@ -236,8 +244,8 @@ const TERMINAL_ELEMENT_DEFAULTS: Record<string, Record<string, string>> = {
 	p: {display: "block"},
 	blockquote: {display: "block"},
 	pre: {display: "block", "white-space": "pre"},
-	ul: {display: "block", "padding-left": "2ch"},
-	ol: {display: "block", "padding-left": "2ch"},
+	ul: {display: "block", "padding-left": "4ch"},
+	ol: {display: "block", "padding-left": "4ch"},
 	li: {display: "list-item"},
 	dl: {display: "block"},
 	dt: {display: "block"},
@@ -282,8 +290,17 @@ const TERMINAL_ELEMENT_DEFAULTS: Record<string, Record<string, string>> = {
 	},
 	input: {
 		display: "inline-block",
-		border: "1px solid",
-		padding: "0 1ch",
+		width: "20ch",
+		"border-top-width": "1px",
+		"border-right-width": "1px",
+		"border-bottom-width": "1px",
+		"border-left-width": "1px",
+		"border-top-style": "solid",
+		"border-right-style": "solid",
+		"border-bottom-style": "solid",
+		"border-left-style": "solid",
+		"padding-left": "1ch",
+		"padding-right": "1ch",
 	},
 	textarea: {
 		display: "inline-block",
@@ -304,13 +321,29 @@ const TERMINAL_ELEMENT_DEFAULTS: Record<string, Record<string, string>> = {
 	tr: {display: "table-row"},
 	td: {
 		display: "table-cell",
-		border: "1px solid",
-		padding: "0 1ch",
+		"border-top-width": "1px",
+		"border-right-width": "1px",
+		"border-bottom-width": "1px",
+		"border-left-width": "1px",
+		"border-top-style": "solid",
+		"border-right-style": "solid",
+		"border-bottom-style": "solid",
+		"border-left-style": "solid",
+		"padding-left": "1ch",
+		"padding-right": "1ch",
 	},
 	th: {
 		display: "table-cell",
-		border: "1px solid",
-		padding: "0 1ch",
+		"border-top-width": "1px",
+		"border-right-width": "1px",
+		"border-bottom-width": "1px",
+		"border-left-width": "1px",
+		"border-top-style": "solid",
+		"border-right-style": "solid",
+		"border-bottom-style": "solid",
+		"border-left-style": "solid",
+		"padding-left": "1ch",
+		"padding-right": "1ch",
 		"font-weight": "bold",
 	},
 };
@@ -349,45 +382,38 @@ const INITIAL_KEYWORDS = new Set([
 	"revert-layer",
 ]);
 
+/** Minimum gutter a UL/OL reserves for its markers, in cells. */
+const DEFAULT_LIST_GUTTER = 4;
+
+/** Lists currently having their gutter measured, to stop re-entrant computation. */
+const listGutterInProgress = new WeakSet<Element>();
+
 /**
- * Get the resolved value for a CSS property on an element
- * Used internally by TerminalComputedStyle
+ * Width of the gutter a list reserves for `list-style-position: outside` markers.
+ *
+ * Markers are right-aligned against the content edge, so the gutter must fit the
+ * widest marker in the list *including* the space getMarkerContent() appends to
+ * separate it from the item's text. A fixed gutter silently collides with wide
+ * markers -- "iii. Third" renders as "iii.Third" once the marker fills all four
+ * cells -- so size it to the content and keep the default as a floor.
  */
-function resolvePropertyValue(
-	element: Element,
-	property: string,
-	followInheritance = true,
-): string {
-	const style = (element as HTMLElement).style;
-	if (!style) {
-		return getInitialStyle(element, property);
+function getListGutterWidth(listElement: Element): number {
+	if (listGutterInProgress.has(listElement)) {
+		return DEFAULT_LIST_GUTTER;
 	}
-
-	const inlineValue = style.getPropertyValue(property).trim();
-	if (INITIAL_KEYWORDS.has(inlineValue)) {
-		return getInitialStyle(element, property);
-	} else if (
-		followInheritance &&
-		(inlineValue === "inherit" ||
-			(!inlineValue && INHERITED_PROPERTIES.has(property)))
-	) {
-		for (
-			let parentElement = element.parentElement;
-			parentElement !== null;
-			parentElement = parentElement.parentElement
-		) {
-			const parentStyle = (parentElement as HTMLElement).style;
-			if (parentStyle && parentStyle.getPropertyValue(property)) {
-				return resolvePropertyValue(parentElement, property);
-			}
+	listGutterInProgress.add(listElement);
+	try {
+		let widest = 0;
+		for (const child of Array.from(listElement.children)) {
+			if (child.tagName !== "LI") continue;
+			const marker = getListMarker(child, listElement);
+			if (!marker) continue;
+			widest = Math.max(widest, stringWidth(`${marker} `));
 		}
-
-		return getInitialStyle(element, property);
-	} else if (inlineValue) {
-		return inlineValue;
+		return Math.max(DEFAULT_LIST_GUTTER, widest);
+	} finally {
+		listGutterInProgress.delete(listElement);
 	}
-
-	return getInitialStyle(element, property);
 }
 
 /**
@@ -539,8 +565,47 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 			return ruleValue;
 		}
 
-		// 3. Fallback to inheritance and defaults
-		return resolvePropertyValue(this.element, property, true);
+		// 3. Check element-specific UA defaults (e.g., strong { font-weight: bold })
+		// These take priority over inherited values
+		const tagName = this.element.tagName.toLowerCase();
+
+		// A list's marker gutter is sized to its widest marker rather than taken
+		// from the static table, so it has to be resolved before it.
+		if (
+			property === "padding-left" &&
+			(tagName === "ul" || tagName === "ol") &&
+			this.element.ownerDocument?.defaultView
+		) {
+			return `${getListGutterWidth(this.element)}ch`;
+		}
+
+		const elementDefaults = TERMINAL_ELEMENT_DEFAULTS[tagName];
+		if (elementDefaults && elementDefaults[property]) {
+			return elementDefaults[property];
+		}
+
+		// 4. For inherited properties, walk up the DOM using getComputedStyle
+		// which correctly resolves CSS rules on parent elements
+		if (INHERITED_PROPERTIES.has(property)) {
+			const window = this.element.ownerDocument?.defaultView;
+			if (window) {
+				for (
+					let parent = this.element.parentElement;
+					parent !== null;
+					parent = parent.parentElement
+				) {
+					const parentValue = window
+						.getComputedStyle(parent)
+						.getPropertyValue(property);
+					if (parentValue) {
+						return parentValue;
+					}
+				}
+			}
+		}
+
+		// 5. Fallback to universal defaults and CSS spec defaults
+		return getInitialStyle(this.element, property);
 	}
 
 	// Override getPropertyValue to use our terminal-specific resolution
@@ -838,7 +903,7 @@ export function cssColorToNumber(cssColor: string): number {
 		return 0;
 	}
 
-	const colorNumber = Bun.color(cssColor, "number");
+	const colorNumber = runtimeCssColorToNumber(cssColor);
 	return typeof colorNumber === "number" ? colorNumber : 0;
 }
 
@@ -1362,9 +1427,10 @@ export class StyleManager {
 
 			if (display === "list-item") {
 				// Check if explicitly set to outside positioning
-				const listStylePosition = computedStyle.getPropertyValue("list-style-position");
+				const listStylePosition =
+					computedStyle.getPropertyValue("list-style-position") || "outside";
 
-				// Only skip inline marker creation if explicitly set to "outside"
+				// Skip inline marker creation for outside positioning (the default)
 				if (listStylePosition === "outside") {
 					return null;
 				}
@@ -1425,7 +1491,8 @@ export class StyleManager {
 		if (pseudoType === "::marker") {
 			const computedStyle = this.window.getComputedStyle(element);
 			const display = computedStyle.getPropertyValue("display");
-			const listStylePosition = computedStyle.getPropertyValue("list-style-position");
+			const listStylePosition =
+				computedStyle.getPropertyValue("list-style-position") || "outside";
 
 			if (display === "list-item" && listStylePosition !== "outside") {
 				return true; // Only create inline markers for inside positioning
@@ -1514,7 +1581,8 @@ export class StyleManager {
 		for (const element of listItems) {
 			const computedStyle = this.window.getComputedStyle(element);
 			const display = computedStyle.getPropertyValue("display");
-			const listStylePosition = computedStyle.getPropertyValue("list-style-position");
+			const listStylePosition =
+				computedStyle.getPropertyValue("list-style-position") || "outside";
 
 			// Only create inline markers for inside positioning
 			if (display === "list-item" && listStylePosition !== "outside") {
@@ -1551,7 +1619,8 @@ export class StyleManager {
 		if (pseudoType === "::marker") {
 			const computedStyle = this.window.getComputedStyle(element);
 			const display = computedStyle.getPropertyValue("display");
-			const listStylePosition = computedStyle.getPropertyValue("list-style-position");
+			const listStylePosition =
+				computedStyle.getPropertyValue("list-style-position") || "outside";
 
 			if (display !== "list-item") {
 				return;

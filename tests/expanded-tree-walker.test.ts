@@ -1128,6 +1128,10 @@ test("TermDOM - ::marker pseudo-elements with display: list-item", () => {
 		}
 		.list-item {
 			display: list-item;
+			list-style-position: inside;
+		}
+		li {
+			list-style-position: inside;
 		}
 	`;
 	document.head.appendChild(style);
@@ -1189,11 +1193,12 @@ test("TermDOM - ::marker appears before ::before pseudo-elements", () => {
 		}
 		.list-item {
 			display: list-item;
+			list-style-position: inside;
 		}
 	`;
 	document.head.appendChild(style);
 
-	// Test with DIV that has display: list-item
+	// Test with DIV that has display: list-item (inside positioning for inline markers)
 	const div = document.createElement("div");
 	div.className = "test list-item";
 	div.textContent = "Content";
@@ -1258,7 +1263,8 @@ test("TermDOM - ::marker only on elements with display: list-item in walker trav
 	const style = document.createElement("style");
 	style.textContent = `
 		.test::marker { content: '• '; }
-		.list-item { display: list-item; }
+		.list-item { display: list-item; list-style-position: inside; }
+		li { list-style-position: inside; }
 		.block { display: block; }
 	`;
 	document.head.appendChild(style);
@@ -1340,7 +1346,7 @@ test("TermDOM - ::marker rendering test", async () => {
 		.test::marker { content: '▶ '; }
 		.test::before { content: '['; }
 		.test::after { content: ']'; }
-		.list-item { display: list-item; }
+		.list-item { display: list-item; list-style-position: inside; }
 	`;
 	document.head.appendChild(style);
 

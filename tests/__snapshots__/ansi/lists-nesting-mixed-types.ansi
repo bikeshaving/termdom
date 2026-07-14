@@ -1,13 +1,13 @@
 Mixed Nesting                                               
-  1. Setup Process                                          
-    ◦ Install dependencies                                  
-    ◦ Configure environment                                 
-  2. Development                                            
-    ◦ Write code                                            
-    ◦ Test thoroughly                                       
-      1. Unit tests                                         
-      2. Integration tests                                  
-  3. Deploy                                                 
+ 1. Setup Process                                           
+      ◦ Install dependencies                                
+      ◦ Configure environment                               
+ 2. Development                                             
+      ◦ Write code                                          
+      ◦ Test thoroughly                                     
+         1. Unit tests                                      
+         2. Integration tests                               
+ 3. Deploy                                                  
                                                             
                                                             
                                                             

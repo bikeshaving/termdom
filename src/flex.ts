@@ -1,0 +1,2463 @@
+/**
+ * A pure-JS CSS flexbox implementation over an integer cell grid.
+ *
+ * This replaces yoga-layout (WASM/native). It implements CSS Flexible Box
+ * Layout (CSS Box Alignment / css-flexbox-1) directly from the spec, and
+ * exposes the subset of Yoga's node API that LayoutEngine actually calls.
+ *
+ * Deliberately omitted, because termdom does not use them: RTL/bidi, writing
+ * modes, aspect-ratio, gap, baseline alignment, overflow:scroll semantics, and
+ * sub-cell scaling (pointScaleFactor is always 1 -- the grid is integer cells).
+ *
+ * Undefined values are represented as NaN throughout, matching the convention
+ * that "undefined" is a distinct state from 0.
+ */
+
+// ---------------------------------------------------------------------------
+// Constants
+//
+// Names mirror Yoga's because LayoutEngine looks some of them up dynamically by
+// string (e.g. "ALIGN_" + "space-between".toUpperCase()), so the full enum sets
+// must exist, not just the ones referenced statically.
+// ---------------------------------------------------------------------------
+
+export const ALIGN_AUTO = 0;
+export const ALIGN_FLEX_START = 1;
+export const ALIGN_CENTER = 2;
+export const ALIGN_FLEX_END = 3;
+export const ALIGN_STRETCH = 4;
+export const ALIGN_BASELINE = 5;
+export const ALIGN_SPACE_BETWEEN = 6;
+export const ALIGN_SPACE_AROUND = 7;
+export const ALIGN_SPACE_EVENLY = 8;
+
+export const JUSTIFY_FLEX_START = 0;
+export const JUSTIFY_CENTER = 1;
+export const JUSTIFY_FLEX_END = 2;
+export const JUSTIFY_SPACE_BETWEEN = 3;
+export const JUSTIFY_SPACE_AROUND = 4;
+export const JUSTIFY_SPACE_EVENLY = 5;
+
+export const WRAP_NO_WRAP = 0;
+export const WRAP_WRAP = 1;
+export const WRAP_WRAP_REVERSE = 2;
+
+export const FLEX_DIRECTION_COLUMN = 0;
+export const FLEX_DIRECTION_COLUMN_REVERSE = 1;
+export const FLEX_DIRECTION_ROW = 2;
+export const FLEX_DIRECTION_ROW_REVERSE = 3;
+
+export const DISPLAY_FLEX = 0;
+export const DISPLAY_NONE = 1;
+export const DISPLAY_CONTENTS = 2;
+
+export const POSITION_TYPE_STATIC = 0;
+export const POSITION_TYPE_RELATIVE = 1;
+export const POSITION_TYPE_ABSOLUTE = 2;
+
+export const MEASURE_MODE_UNDEFINED = 0;
+export const MEASURE_MODE_EXACTLY = 1;
+export const MEASURE_MODE_AT_MOST = 2;
+
+export const EDGE_LEFT = 0;
+export const EDGE_TOP = 1;
+export const EDGE_RIGHT = 2;
+export const EDGE_BOTTOM = 3;
+export const EDGE_START = 4;
+export const EDGE_END = 5;
+export const EDGE_HORIZONTAL = 6;
+export const EDGE_VERTICAL = 7;
+export const EDGE_ALL = 8;
+
+export const UNIT_UNDEFINED = 0;
+export const UNIT_POINT = 1;
+export const UNIT_PERCENT = 2;
+export const UNIT_AUTO = 3;
+
+export type Align = number;
+export type Justify = number;
+export type Wrap = number;
+export type FlexDirection = number;
+export type Display = number;
+export type PositionType = number;
+export type MeasureMode = number;
+export type Edge = number;
+
+export interface Size {
+	width: number;
+	height: number;
+}
+
+export type MeasureFunction = (
+	width: number,
+	widthMode: MeasureMode,
+	height: number,
+	heightMode: MeasureMode,
+) => Size;
+
+// ---------------------------------------------------------------------------
+// Values
+// ---------------------------------------------------------------------------
+
+interface Value {
+	unit: number;
+	value: number;
+}
+
+const UNDEFINED_VALUE: Value = {unit: UNIT_UNDEFINED, value: NaN};
+const AUTO_VALUE: Value = {unit: UNIT_AUTO, value: NaN};
+
+/**
+ * Coerce a setter argument into a Value. Accepts numbers (points), percent
+ * strings like "50%" or "0%", undefined/NaN (undefined), and "auto".
+ */
+function toValue(input: number | string | undefined | null): Value {
+	if (input === undefined || input === null) return UNDEFINED_VALUE;
+	if (typeof input === "number") {
+		return Number.isNaN(input)
+			? UNDEFINED_VALUE
+			: {unit: UNIT_POINT, value: input};
+	}
+	const trimmed = input.trim();
+	if (trimmed === "auto") return AUTO_VALUE;
+	if (trimmed.endsWith("%")) {
+		const parsed = parseFloat(trimmed.slice(0, -1));
+		return Number.isNaN(parsed)
+			? UNDEFINED_VALUE
+			: {unit: UNIT_PERCENT, value: parsed};
+	}
+	const parsed = parseFloat(trimmed);
+	return Number.isNaN(parsed)
+		? UNDEFINED_VALUE
+		: {unit: UNIT_POINT, value: parsed};
+}
+
+/** Resolve a Value against an owner size. Returns NaN when unresolvable. */
+function resolveValue(value: Value, ownerSize: number): number {
+	switch (value.unit) {
+		case UNIT_POINT:
+			return value.value;
+		case UNIT_PERCENT:
+			return Number.isNaN(ownerSize) ? NaN : (value.value * ownerSize) / 100;
+		default:
+			return NaN;
+	}
+}
+
+function isDefined(n: number): boolean {
+	return !Number.isNaN(n);
+}
+
+/** Resolve a margin Value; `auto` and undefined both contribute 0 of length. */
+function resolveMargin(value: Value, ownerWidth: number): number {
+	if (value.unit === UNIT_AUTO) return 0;
+	const resolved = resolveValue(value, ownerWidth);
+	return isDefined(resolved) ? resolved : 0;
+}
+
+// ---------------------------------------------------------------------------
+// Axis helpers
+// ---------------------------------------------------------------------------
+
+function isRow(axis: FlexDirection): boolean {
+	return axis === FLEX_DIRECTION_ROW || axis === FLEX_DIRECTION_ROW_REVERSE;
+}
+
+function isColumn(axis: FlexDirection): boolean {
+	return (
+		axis === FLEX_DIRECTION_COLUMN || axis === FLEX_DIRECTION_COLUMN_REVERSE
+	);
+}
+
+function isReverse(axis: FlexDirection): boolean {
+	return (
+		axis === FLEX_DIRECTION_ROW_REVERSE ||
+		axis === FLEX_DIRECTION_COLUMN_REVERSE
+	);
+}
+
+function crossAxis(axis: FlexDirection): FlexDirection {
+	return isRow(axis) ? FLEX_DIRECTION_COLUMN : FLEX_DIRECTION_ROW;
+}
+
+function leadingEdge(axis: FlexDirection): Edge {
+	switch (axis) {
+		case FLEX_DIRECTION_ROW:
+			return EDGE_LEFT;
+		case FLEX_DIRECTION_ROW_REVERSE:
+			return EDGE_RIGHT;
+		case FLEX_DIRECTION_COLUMN:
+			return EDGE_TOP;
+		default:
+			return EDGE_BOTTOM;
+	}
+}
+
+function trailingEdge(axis: FlexDirection): Edge {
+	switch (axis) {
+		case FLEX_DIRECTION_ROW:
+			return EDGE_RIGHT;
+		case FLEX_DIRECTION_ROW_REVERSE:
+			return EDGE_LEFT;
+		case FLEX_DIRECTION_COLUMN:
+			return EDGE_BOTTOM;
+		default:
+			return EDGE_TOP;
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Style / Layout records
+// ---------------------------------------------------------------------------
+
+interface Style {
+	flexDirection: FlexDirection;
+	justifyContent: Justify;
+	alignContent: Align;
+	alignItems: Align;
+	alignSelf: Align;
+	positionType: PositionType;
+	flexWrap: Wrap;
+	display: Display;
+
+	flexGrow: number;
+	flexShrink: number;
+	flexBasis: Value;
+
+	margin: Value[];
+	position: Value[];
+	padding: Value[];
+	border: number[];
+
+	width: Value;
+	height: Value;
+	minWidth: Value;
+	minHeight: Value;
+	maxWidth: Value;
+	maxHeight: Value;
+}
+
+interface LayoutResult {
+	left: number;
+	top: number;
+	width: number;
+	height: number;
+	margin: number[];
+	padding: number[];
+	border: number[];
+	computedFlexBasis: number;
+	lineIndex: number;
+}
+
+/**
+ * `useWebDefaults` semantics: flex-direction defaults to row (not column),
+ * align-content to stretch (not flex-start), and flex-shrink to 1 (not 0).
+ * termdom always constructs its config with web defaults on.
+ */
+function createStyle(webDefaults: boolean): Style {
+	return {
+		flexDirection: webDefaults ? FLEX_DIRECTION_ROW : FLEX_DIRECTION_COLUMN,
+		justifyContent: JUSTIFY_FLEX_START,
+		alignContent: webDefaults ? ALIGN_STRETCH : ALIGN_FLEX_START,
+		alignItems: ALIGN_STRETCH,
+		alignSelf: ALIGN_AUTO,
+		positionType: POSITION_TYPE_RELATIVE,
+		flexWrap: WRAP_NO_WRAP,
+		display: DISPLAY_FLEX,
+
+		flexGrow: NaN,
+		flexShrink: NaN,
+		flexBasis: AUTO_VALUE,
+
+		margin: [
+			UNDEFINED_VALUE,
+			UNDEFINED_VALUE,
+			UNDEFINED_VALUE,
+			UNDEFINED_VALUE,
+		],
+		position: [
+			UNDEFINED_VALUE,
+			UNDEFINED_VALUE,
+			UNDEFINED_VALUE,
+			UNDEFINED_VALUE,
+		],
+		padding: [
+			UNDEFINED_VALUE,
+			UNDEFINED_VALUE,
+			UNDEFINED_VALUE,
+			UNDEFINED_VALUE,
+		],
+		border: [0, 0, 0, 0],
+
+		width: AUTO_VALUE,
+		height: AUTO_VALUE,
+		minWidth: UNDEFINED_VALUE,
+		minHeight: UNDEFINED_VALUE,
+		maxWidth: UNDEFINED_VALUE,
+		maxHeight: UNDEFINED_VALUE,
+	};
+}
+
+function createLayout(): LayoutResult {
+	return {
+		left: 0,
+		top: 0,
+		width: NaN,
+		height: NaN,
+		margin: [0, 0, 0, 0],
+		padding: [0, 0, 0, 0],
+		border: [0, 0, 0, 0],
+		computedFlexBasis: NaN,
+		lineIndex: 0,
+	};
+}
+
+// ---------------------------------------------------------------------------
+// Config
+// ---------------------------------------------------------------------------
+
+export class Config {
+	useWebDefaults = false;
+	pointScaleFactor = 1;
+
+	static create(): Config {
+		return new Config();
+	}
+
+	setUseWebDefaults(value: boolean): void {
+		this.useWebDefaults = value;
+	}
+
+	setPointScaleFactor(value: number): void {
+		this.pointScaleFactor = value;
+	}
+}
+
+const defaultConfig = new Config();
+
+// ---------------------------------------------------------------------------
+// Node
+// ---------------------------------------------------------------------------
+
+export class Node {
+	style: Style;
+	layout: LayoutResult;
+	children: Node[] = [];
+	parent: Node | null = null;
+	measureFunc: MeasureFunction | null = null;
+	config: Config;
+	dirty = true;
+
+	constructor(config: Config = defaultConfig) {
+		this.config = config;
+		this.style = createStyle(config.useWebDefaults);
+		this.layout = createLayout();
+	}
+
+	static create(): Node {
+		return new Node(defaultConfig);
+	}
+
+	static createWithConfig(config: Config): Node {
+		return new Node(config);
+	}
+
+	// -- tree ---------------------------------------------------------------
+
+	insertChild(child: Node, index: number): void {
+		child.parent = this;
+		this.children.splice(index, 0, child);
+		this.markDirtyUpward();
+	}
+
+	removeChild(child: Node): void {
+		const index = this.children.indexOf(child);
+		if (index !== -1) {
+			this.children.splice(index, 1);
+			child.parent = null;
+			this.markDirtyUpward();
+		}
+	}
+
+	getParent(): Node | null {
+		return this.parent;
+	}
+
+	getChildCount(): number {
+		return this.children.length;
+	}
+
+	freeRecursive(): void {
+		for (const child of this.children) {
+			child.freeRecursive();
+		}
+		this.children = [];
+		this.parent = null;
+		this.measureFunc = null;
+	}
+
+	markDirty(): void {
+		this.dirty = true;
+		this.markDirtyUpward();
+	}
+
+	private markDirtyUpward(): void {
+		for (let node: Node | null = this; node; node = node.parent) {
+			node.dirty = true;
+		}
+	}
+
+	setMeasureFunc(fn: MeasureFunction | null): void {
+		this.measureFunc = fn;
+		this.markDirty();
+	}
+
+	// -- style setters ------------------------------------------------------
+
+	setFlexDirection(v: FlexDirection): void {
+		this.style.flexDirection = v;
+		this.markDirty();
+	}
+	setJustifyContent(v: Justify): void {
+		this.style.justifyContent = v;
+		this.markDirty();
+	}
+	setAlignContent(v: Align): void {
+		this.style.alignContent = v;
+		this.markDirty();
+	}
+	setAlignItems(v: Align): void {
+		this.style.alignItems = v;
+		this.markDirty();
+	}
+	setAlignSelf(v: Align): void {
+		this.style.alignSelf = v;
+		this.markDirty();
+	}
+	setPositionType(v: PositionType): void {
+		this.style.positionType = v;
+		this.markDirty();
+	}
+	setFlexWrap(v: Wrap): void {
+		this.style.flexWrap = v;
+		this.markDirty();
+	}
+	setDisplay(v: Display): void {
+		this.style.display = v;
+		this.markDirty();
+	}
+
+	setFlexGrow(v: number | undefined): void {
+		this.style.flexGrow = v === undefined ? NaN : v;
+		this.markDirty();
+	}
+	setFlexShrink(v: number | undefined): void {
+		this.style.flexShrink = v === undefined ? NaN : v;
+		this.markDirty();
+	}
+	setFlexBasis(v: number | string | undefined): void {
+		this.style.flexBasis = toValue(v);
+		this.markDirty();
+	}
+	setFlexBasisPercent(v: number | undefined): void {
+		this.style.flexBasis =
+			v === undefined ? UNDEFINED_VALUE : {unit: UNIT_PERCENT, value: v};
+		this.markDirty();
+	}
+	setFlexBasisAuto(): void {
+		this.style.flexBasis = AUTO_VALUE;
+		this.markDirty();
+	}
+
+	setWidth(v: number | string | undefined): void {
+		this.style.width = toValue(v);
+		this.markDirty();
+	}
+	setWidthPercent(v: number): void {
+		this.style.width = {unit: UNIT_PERCENT, value: v};
+		this.markDirty();
+	}
+	setWidthAuto(): void {
+		this.style.width = AUTO_VALUE;
+		this.markDirty();
+	}
+	setHeight(v: number | string | undefined): void {
+		this.style.height = toValue(v);
+		this.markDirty();
+	}
+	setHeightPercent(v: number): void {
+		this.style.height = {unit: UNIT_PERCENT, value: v};
+		this.markDirty();
+	}
+	setHeightAuto(): void {
+		this.style.height = AUTO_VALUE;
+		this.markDirty();
+	}
+
+	setMinWidth(v: number | undefined): void {
+		this.style.minWidth = toValue(v);
+		this.markDirty();
+	}
+	setMinWidthPercent(v: number): void {
+		this.style.minWidth = {unit: UNIT_PERCENT, value: v};
+		this.markDirty();
+	}
+	setMinHeight(v: number | undefined): void {
+		this.style.minHeight = toValue(v);
+		this.markDirty();
+	}
+	setMinHeightPercent(v: number): void {
+		this.style.minHeight = {unit: UNIT_PERCENT, value: v};
+		this.markDirty();
+	}
+	setMaxWidth(v: number | undefined): void {
+		this.style.maxWidth = toValue(v);
+		this.markDirty();
+	}
+	setMaxWidthPercent(v: number): void {
+		this.style.maxWidth = {unit: UNIT_PERCENT, value: v};
+		this.markDirty();
+	}
+	setMaxHeight(v: number | undefined): void {
+		this.style.maxHeight = toValue(v);
+		this.markDirty();
+	}
+	setMaxHeightPercent(v: number): void {
+		this.style.maxHeight = {unit: UNIT_PERCENT, value: v};
+		this.markDirty();
+	}
+
+	setMargin(edge: Edge, v: number | undefined): void {
+		this.setEdges(this.style.margin, edge, toValue(v));
+		this.markDirty();
+	}
+	setMarginPercent(edge: Edge, v: number): void {
+		this.setEdges(this.style.margin, edge, {unit: UNIT_PERCENT, value: v});
+		this.markDirty();
+	}
+	setMarginAuto(edge: Edge): void {
+		this.setEdges(this.style.margin, edge, AUTO_VALUE);
+		this.markDirty();
+	}
+
+	setPadding(edge: Edge, v: number | undefined): void {
+		this.setEdges(this.style.padding, edge, toValue(v));
+		this.markDirty();
+	}
+	setPaddingPercent(edge: Edge, v: number): void {
+		this.setEdges(this.style.padding, edge, {unit: UNIT_PERCENT, value: v});
+		this.markDirty();
+	}
+
+	setBorder(edge: Edge, v: number | undefined): void {
+		const width = v === undefined || Number.isNaN(v) ? 0 : v;
+		for (const index of expandEdge(edge)) {
+			this.style.border[index] = width;
+		}
+		this.markDirty();
+	}
+
+	setPosition(edge: Edge, v: number | undefined): void {
+		this.setEdges(this.style.position, edge, toValue(v));
+		this.markDirty();
+	}
+	setPositionPercent(edge: Edge, v: number): void {
+		this.setEdges(this.style.position, edge, {unit: UNIT_PERCENT, value: v});
+		this.markDirty();
+	}
+	setPositionAuto(edge: Edge): void {
+		this.setEdges(this.style.position, edge, AUTO_VALUE);
+		this.markDirty();
+	}
+
+	private setEdges(target: Value[], edge: Edge, value: Value): void {
+		for (const index of expandEdge(edge)) {
+			target[index] = value;
+		}
+	}
+
+	// -- computed getters ---------------------------------------------------
+
+	getComputedLeft(): number {
+		return this.layout.left;
+	}
+	getComputedTop(): number {
+		return this.layout.top;
+	}
+	getComputedWidth(): number {
+		return isDefined(this.layout.width) ? this.layout.width : 0;
+	}
+	getComputedHeight(): number {
+		return isDefined(this.layout.height) ? this.layout.height : 0;
+	}
+	getComputedRight(): number {
+		return this.layout.left + this.getComputedWidth();
+	}
+	getComputedBottom(): number {
+		return this.layout.top + this.getComputedHeight();
+	}
+
+	getComputedLayout(): {
+		left: number;
+		top: number;
+		right: number;
+		bottom: number;
+		width: number;
+		height: number;
+	} {
+		return {
+			left: this.layout.left,
+			top: this.layout.top,
+			right: this.getComputedRight(),
+			bottom: this.getComputedBottom(),
+			width: this.getComputedWidth(),
+			height: this.getComputedHeight(),
+		};
+	}
+
+	getComputedMargin(edge: Edge): number {
+		return this.layout.margin[expandEdge(edge)[0]] ?? 0;
+	}
+	getComputedPadding(edge: Edge): number {
+		return this.layout.padding[expandEdge(edge)[0]] ?? 0;
+	}
+	getComputedBorder(edge: Edge): number {
+		return this.layout.border[expandEdge(edge)[0]] ?? 0;
+	}
+
+	getFlexDirection(): FlexDirection {
+		return this.style.flexDirection;
+	}
+	getJustifyContent(): Justify {
+		return this.style.justifyContent;
+	}
+	getAlignContent(): Align {
+		return this.style.alignContent;
+	}
+	getAlignItems(): Align {
+		return this.style.alignItems;
+	}
+	getAlignSelf(): Align {
+		return this.style.alignSelf;
+	}
+	getPositionType(): PositionType {
+		return this.style.positionType;
+	}
+	getFlexWrap(): Wrap {
+		return this.style.flexWrap;
+	}
+	getDisplay(): Display {
+		return this.style.display;
+	}
+	getFlexGrow(): number {
+		return resolveFlexGrow(this);
+	}
+	getFlexShrink(): number {
+		return resolveFlexShrink(this);
+	}
+	getChild(index: number): Node {
+		return this.children[index];
+	}
+
+	// -- entry point --------------------------------------------------------
+
+	calculateLayout(ownerWidth: number, ownerHeight: number): void {
+		const width = resolveValue(this.style.width, ownerWidth);
+		const height = resolveValue(this.style.height, ownerHeight);
+
+		const availableWidth = isDefined(width) ? width : ownerWidth;
+		const availableHeight = isDefined(height) ? height : ownerHeight;
+
+		layoutNode(
+			this,
+			availableWidth,
+			availableHeight,
+			isDefined(availableWidth) ? MEASURE_MODE_EXACTLY : MEASURE_MODE_UNDEFINED,
+			isDefined(availableHeight)
+				? MEASURE_MODE_EXACTLY
+				: MEASURE_MODE_UNDEFINED,
+			ownerWidth,
+			ownerHeight,
+			true,
+		);
+
+		roundToGrid(this, 0, 0);
+		this.dirty = false;
+	}
+}
+
+function expandEdge(edge: Edge): number[] {
+	switch (edge) {
+		case EDGE_LEFT:
+		case EDGE_START:
+			return [EDGE_LEFT];
+		case EDGE_TOP:
+			return [EDGE_TOP];
+		case EDGE_RIGHT:
+		case EDGE_END:
+			return [EDGE_RIGHT];
+		case EDGE_BOTTOM:
+			return [EDGE_BOTTOM];
+		case EDGE_HORIZONTAL:
+			return [EDGE_LEFT, EDGE_RIGHT];
+		case EDGE_VERTICAL:
+			return [EDGE_TOP, EDGE_BOTTOM];
+		case EDGE_ALL:
+			return [EDGE_LEFT, EDGE_TOP, EDGE_RIGHT, EDGE_BOTTOM];
+		default:
+			return [];
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Resolved style accessors
+// ---------------------------------------------------------------------------
+
+function resolveFlexGrow(node: Node): number {
+	if (!node.parent) return 0;
+	return isDefined(node.style.flexGrow) ? node.style.flexGrow : 0;
+}
+
+function resolveFlexShrink(node: Node): number {
+	if (!node.parent) return 0;
+	if (isDefined(node.style.flexShrink)) return node.style.flexShrink;
+	return node.config.useWebDefaults ? 1 : 0;
+}
+
+/** flex-basis: auto falls back to the main-axis size property. */
+function resolveFlexBasis(node: Node, mainAxis: FlexDirection): Value {
+	const basis = node.style.flexBasis;
+	if (basis.unit !== UNIT_AUTO && basis.unit !== UNIT_UNDEFINED) {
+		return basis;
+	}
+	return isRow(mainAxis) ? node.style.width : node.style.height;
+}
+
+function alignSelfOf(parent: Node, child: Node): Align {
+	return child.style.alignSelf === ALIGN_AUTO
+		? parent.style.alignItems
+		: child.style.alignSelf;
+}
+
+/**
+ * Distance from a node's border-box cross-start edge to its first baseline.
+ *
+ * A terminal cell has no font metrics, so a text run's baseline is taken to be
+ * the top of its first row -- aligning baselines then means aligning first rows,
+ * which is what "baseline" can mean on a character grid. A box with no text of
+ * its own inherits the baseline of its first in-flow child, per css-flexbox-1
+ * §8.5; a box with no in-flow children synthesizes one from its content edge.
+ *
+ * Note this is NOT the same as flex-start whenever items carry different
+ * leading border or padding: those offsets push the first row down inside the
+ * box, and baseline alignment is precisely what compensates for them.
+ */
+function baselineWithinBorderBox(node: Node, ownerWidth: number): number {
+	const contentTop = paddingAndBorderForEdge(node, EDGE_TOP, ownerWidth);
+
+	for (const child of node.children) {
+		if (child.style.display === DISPLAY_NONE) continue;
+		if (child.style.positionType === POSITION_TYPE_ABSOLUTE) continue;
+		return child.layout.top + baselineWithinBorderBox(child, ownerWidth);
+	}
+
+	return contentTop;
+}
+
+function marginForAxis(
+	node: Node,
+	axis: FlexDirection,
+	ownerWidth: number,
+): number {
+	return (
+		resolveMargin(node.style.margin[leadingEdge(axis)], ownerWidth) +
+		resolveMargin(node.style.margin[trailingEdge(axis)], ownerWidth)
+	);
+}
+
+function paddingAndBorderForEdge(
+	node: Node,
+	edge: Edge,
+	ownerWidth: number,
+): number {
+	const padding = resolveValue(node.style.padding[edge], ownerWidth);
+	return (
+		(isDefined(padding) ? Math.max(padding, 0) : 0) + node.style.border[edge]
+	);
+}
+
+function paddingAndBorderForAxis(
+	node: Node,
+	axis: FlexDirection,
+	ownerWidth: number,
+): number {
+	return (
+		paddingAndBorderForEdge(node, leadingEdge(axis), ownerWidth) +
+		paddingAndBorderForEdge(node, trailingEdge(axis), ownerWidth)
+	);
+}
+
+function styleDimIsDefined(
+	node: Node,
+	axis: FlexDirection,
+	ownerSize: number,
+): boolean {
+	const value = isRow(axis) ? node.style.width : node.style.height;
+	if (value.unit === UNIT_AUTO || value.unit === UNIT_UNDEFINED) return false;
+	if (value.unit === UNIT_POINT && value.value < 0) return false;
+	if (
+		value.unit === UNIT_PERCENT &&
+		(value.value < 0 || Number.isNaN(ownerSize))
+	)
+		return false;
+	return true;
+}
+
+/** Clamp a value to the node's min/max on the given axis. */
+function boundAxisWithinMinMax(
+	node: Node,
+	axis: FlexDirection,
+	value: number,
+	axisSize: number,
+): number {
+	const min = resolveValue(
+		isRow(axis) ? node.style.minWidth : node.style.minHeight,
+		axisSize,
+	);
+	const max = resolveValue(
+		isRow(axis) ? node.style.maxWidth : node.style.maxHeight,
+		axisSize,
+	);
+
+	let bounded = value;
+	if (isDefined(max) && max >= 0 && bounded > max) bounded = max;
+	if (isDefined(min) && min >= 0 && bounded < min) bounded = min;
+	return bounded;
+}
+
+/** Clamp, then floor at the padding+border so a box never goes below its own chrome. */
+function boundAxis(
+	node: Node,
+	axis: FlexDirection,
+	value: number,
+	axisSize: number,
+	ownerWidth: number,
+): number {
+	return Math.max(
+		boundAxisWithinMinMax(node, axis, value, axisSize),
+		paddingAndBorderForAxis(node, axis, ownerWidth),
+	);
+}
+
+/**
+ * Tighten a measure mode against the node's max-size on that axis, so a child
+ * never gets measured against more space than it could ever occupy.
+ */
+function constrainMaxSizeForMode(
+	node: Node,
+	axis: FlexDirection,
+	ownerAxisSize: number,
+	mode: {value: number; mode: MeasureMode},
+): void {
+	const max = resolveValue(
+		isRow(axis) ? node.style.maxWidth : node.style.maxHeight,
+		ownerAxisSize,
+	);
+	if (!isDefined(max)) return;
+
+	if (
+		mode.mode === MEASURE_MODE_EXACTLY ||
+		mode.mode === MEASURE_MODE_AT_MOST
+	) {
+		// A max size caps a size; it does not make it indefinite. Clamping the
+		// value but *keeping* the mode is the whole point: downgrading an EXACTLY
+		// to AT_MOST here tells the box it is being shrink-wrapped, and a box with
+		// no content of its own then collapses to zero instead of taking the size
+		// flex just resolved for it.
+		mode.value = isDefined(mode.value) ? Math.min(mode.value, max) : max;
+	} else {
+		// An indefinite size, on the other hand, is genuinely bounded by the max.
+		mode.value = max;
+		mode.mode = MEASURE_MODE_AT_MOST;
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Layout
+// ---------------------------------------------------------------------------
+
+function setMeasuredDimensions(
+	node: Node,
+	width: number,
+	height: number,
+	ownerWidth: number,
+	ownerHeight: number,
+): void {
+	node.layout.width = boundAxis(
+		node,
+		FLEX_DIRECTION_ROW,
+		width,
+		ownerWidth,
+		ownerWidth,
+	);
+	node.layout.height = boundAxis(
+		node,
+		FLEX_DIRECTION_COLUMN,
+		height,
+		ownerHeight,
+		ownerWidth,
+	);
+}
+
+/** A leaf with a measure function: ask it, within the given constraints. */
+function layoutMeasureNode(
+	node: Node,
+	availableWidth: number,
+	availableHeight: number,
+	widthMode: MeasureMode,
+	heightMode: MeasureMode,
+	ownerWidth: number,
+	ownerHeight: number,
+): void {
+	const paddingBorderRow = paddingAndBorderForAxis(
+		node,
+		FLEX_DIRECTION_ROW,
+		ownerWidth,
+	);
+	const paddingBorderColumn = paddingAndBorderForAxis(
+		node,
+		FLEX_DIRECTION_COLUMN,
+		ownerWidth,
+	);
+	const marginRow = marginForAxis(node, FLEX_DIRECTION_ROW, ownerWidth);
+	const marginColumn = marginForAxis(node, FLEX_DIRECTION_COLUMN, ownerWidth);
+
+	const innerWidth = isDefined(availableWidth)
+		? Math.max(0, availableWidth - marginRow - paddingBorderRow)
+		: NaN;
+	const innerHeight = isDefined(availableHeight)
+		? Math.max(0, availableHeight - marginColumn - paddingBorderColumn)
+		: NaN;
+
+	if (
+		widthMode === MEASURE_MODE_EXACTLY &&
+		heightMode === MEASURE_MODE_EXACTLY
+	) {
+		// Both axes are fully determined; no need to consult the measure function.
+		setMeasuredDimensions(
+			node,
+			availableWidth - marginRow,
+			availableHeight - marginColumn,
+			ownerWidth,
+			ownerHeight,
+		);
+		return;
+	}
+
+	const measured = node.measureFunc!(
+		innerWidth,
+		widthMode,
+		innerHeight,
+		heightMode,
+	);
+
+	const width =
+		widthMode === MEASURE_MODE_EXACTLY
+			? availableWidth - marginRow
+			: measured.width + paddingBorderRow;
+	const height =
+		heightMode === MEASURE_MODE_EXACTLY
+			? availableHeight - marginColumn
+			: measured.height + paddingBorderColumn;
+
+	setMeasuredDimensions(
+		node,
+		widthMode === MEASURE_MODE_AT_MOST
+			? Math.min(width, availableWidth - marginRow)
+			: width,
+		heightMode === MEASURE_MODE_AT_MOST
+			? Math.min(height, availableHeight - marginColumn)
+			: height,
+		ownerWidth,
+		ownerHeight,
+	);
+}
+
+/** A container with no in-flow children collapses to its padding + border. */
+function layoutEmptyContainer(
+	node: Node,
+	availableWidth: number,
+	availableHeight: number,
+	widthMode: MeasureMode,
+	heightMode: MeasureMode,
+	ownerWidth: number,
+	ownerHeight: number,
+): void {
+	const paddingBorderRow = paddingAndBorderForAxis(
+		node,
+		FLEX_DIRECTION_ROW,
+		ownerWidth,
+	);
+	const paddingBorderColumn = paddingAndBorderForAxis(
+		node,
+		FLEX_DIRECTION_COLUMN,
+		ownerWidth,
+	);
+	const marginRow = marginForAxis(node, FLEX_DIRECTION_ROW, ownerWidth);
+	const marginColumn = marginForAxis(node, FLEX_DIRECTION_COLUMN, ownerWidth);
+
+	const width =
+		widthMode === MEASURE_MODE_UNDEFINED || widthMode === MEASURE_MODE_AT_MOST
+			? paddingBorderRow
+			: availableWidth - marginRow;
+	const height =
+		heightMode === MEASURE_MODE_UNDEFINED || heightMode === MEASURE_MODE_AT_MOST
+			? paddingBorderColumn
+			: availableHeight - marginColumn;
+
+	setMeasuredDimensions(node, width, height, ownerWidth, ownerHeight);
+}
+
+/**
+ * Establish a child's flex base size (CSS flexbox 9.2), measuring it against
+ * an indefinite main axis when the basis is `content`.
+ */
+function computeFlexBasisForChild(
+	node: Node,
+	child: Node,
+	width: number,
+	widthMode: MeasureMode,
+	height: number,
+	heightMode: MeasureMode,
+	ownerWidth: number,
+	ownerHeight: number,
+): void {
+	const mainAxis = node.style.flexDirection;
+	const mainIsRow = isRow(mainAxis);
+	const mainAxisSize = mainIsRow ? width : height;
+	const mainAxisOwnerSize = mainIsRow ? ownerWidth : ownerHeight;
+
+	const basis = resolveFlexBasis(child, mainAxis);
+	const resolvedBasis = resolveValue(basis, mainAxisOwnerSize);
+
+	const rowDimDefined = styleDimIsDefined(
+		child,
+		FLEX_DIRECTION_ROW,
+		ownerWidth,
+	);
+	const columnDimDefined = styleDimIsDefined(
+		child,
+		FLEX_DIRECTION_COLUMN,
+		ownerHeight,
+	);
+
+	if (isDefined(resolvedBasis) && isDefined(mainAxisSize)) {
+		child.layout.computedFlexBasis = Math.max(
+			resolvedBasis,
+			paddingAndBorderForAxis(child, mainAxis, ownerWidth),
+		);
+		return;
+	}
+
+	if (mainIsRow && rowDimDefined) {
+		child.layout.computedFlexBasis = Math.max(
+			resolveValue(child.style.width, ownerWidth),
+			paddingAndBorderForAxis(child, FLEX_DIRECTION_ROW, ownerWidth),
+		);
+		return;
+	}
+
+	if (!mainIsRow && columnDimDefined) {
+		child.layout.computedFlexBasis = Math.max(
+			resolveValue(child.style.height, ownerHeight),
+			paddingAndBorderForAxis(child, FLEX_DIRECTION_COLUMN, ownerWidth),
+		);
+		return;
+	}
+
+	// Basis is `content`: measure the child.
+	const childWidth = {value: NaN, mode: MEASURE_MODE_UNDEFINED};
+	const childHeight = {value: NaN, mode: MEASURE_MODE_UNDEFINED};
+
+	const marginRow = marginForAxis(child, FLEX_DIRECTION_ROW, ownerWidth);
+	const marginColumn = marginForAxis(child, FLEX_DIRECTION_COLUMN, ownerWidth);
+
+	if (rowDimDefined) {
+		childWidth.value = resolveValue(child.style.width, ownerWidth) + marginRow;
+		childWidth.mode = MEASURE_MODE_EXACTLY;
+	}
+	if (columnDimDefined) {
+		childHeight.value =
+			resolveValue(child.style.height, ownerHeight) + marginColumn;
+		childHeight.mode = MEASURE_MODE_EXACTLY;
+	}
+
+	if (!isDefined(childWidth.value) && isDefined(width)) {
+		childWidth.value = width;
+		childWidth.mode = MEASURE_MODE_AT_MOST;
+	}
+	if (!isDefined(childHeight.value) && isDefined(height)) {
+		childHeight.value = height;
+		childHeight.mode = MEASURE_MODE_AT_MOST;
+	}
+
+	// A stretched child on a definite cross axis is measured at the full cross size.
+	const stretch = alignSelfOf(node, child) === ALIGN_STRETCH;
+	if (
+		!mainIsRow &&
+		isDefined(width) &&
+		widthMode === MEASURE_MODE_EXACTLY &&
+		stretch &&
+		childWidth.mode !== MEASURE_MODE_EXACTLY
+	) {
+		childWidth.value = width;
+		childWidth.mode = MEASURE_MODE_EXACTLY;
+	}
+	if (
+		mainIsRow &&
+		isDefined(height) &&
+		heightMode === MEASURE_MODE_EXACTLY &&
+		stretch &&
+		childHeight.mode !== MEASURE_MODE_EXACTLY
+	) {
+		childHeight.value = height;
+		childHeight.mode = MEASURE_MODE_EXACTLY;
+	}
+
+	constrainMaxSizeForMode(child, FLEX_DIRECTION_ROW, ownerWidth, childWidth);
+	constrainMaxSizeForMode(
+		child,
+		FLEX_DIRECTION_COLUMN,
+		ownerHeight,
+		childHeight,
+	);
+
+	layoutNode(
+		child,
+		childWidth.value,
+		childHeight.value,
+		childWidth.mode,
+		childHeight.mode,
+		ownerWidth,
+		ownerHeight,
+		false,
+	);
+
+	child.layout.computedFlexBasis = Math.max(
+		mainIsRow ? child.layout.width : child.layout.height,
+		paddingAndBorderForAxis(child, mainAxis, ownerWidth),
+	);
+}
+
+interface FlexLine {
+	items: Node[];
+	sizeConsumed: number;
+	totalGrow: number;
+	totalShrinkScaled: number;
+	crossDim: number;
+	mainDim: number;
+}
+
+/**
+ * The core algorithm. Structure follows CSS flexbox 9.2-9.7: generate flex
+ * items, collect into lines, resolve flexible lengths, then align on both axes.
+ */
+function layoutFlexbox(
+	node: Node,
+	availableWidth: number,
+	availableHeight: number,
+	widthMode: MeasureMode,
+	heightMode: MeasureMode,
+	ownerWidth: number,
+	ownerHeight: number,
+	performLayout: boolean,
+): void {
+	const mainAxis = node.style.flexDirection;
+	const cross = crossAxis(mainAxis);
+	const mainIsRow = isRow(mainAxis);
+	const wrap = node.style.flexWrap !== WRAP_NO_WRAP;
+
+	const paddingBorderRow = paddingAndBorderForAxis(
+		node,
+		FLEX_DIRECTION_ROW,
+		ownerWidth,
+	);
+	const paddingBorderColumn = paddingAndBorderForAxis(
+		node,
+		FLEX_DIRECTION_COLUMN,
+		ownerWidth,
+	);
+	const marginRow = marginForAxis(node, FLEX_DIRECTION_ROW, ownerWidth);
+	const marginColumn = marginForAxis(node, FLEX_DIRECTION_COLUMN, ownerWidth);
+
+	const leadingPaddingBorderMain = paddingAndBorderForEdge(
+		node,
+		leadingEdge(mainAxis),
+		ownerWidth,
+	);
+	const leadingPaddingBorderCross = paddingAndBorderForEdge(
+		node,
+		leadingEdge(cross),
+		ownerWidth,
+	);
+
+	const paddingBorderMain = mainIsRow ? paddingBorderRow : paddingBorderColumn;
+	const paddingBorderCross = mainIsRow ? paddingBorderColumn : paddingBorderRow;
+
+	const innerWidth = isDefined(availableWidth)
+		? Math.max(0, availableWidth - marginRow - paddingBorderRow)
+		: NaN;
+	const innerHeight = isDefined(availableHeight)
+		? Math.max(0, availableHeight - marginColumn - paddingBorderColumn)
+		: NaN;
+
+	const innerMain = mainIsRow ? innerWidth : innerHeight;
+	const innerCross = mainIsRow ? innerHeight : innerWidth;
+	const crossMode = mainIsRow ? heightMode : widthMode;
+	const mainMode = mainIsRow ? widthMode : heightMode;
+
+	// -- 9.2 generate flex items -------------------------------------------
+
+	const inFlow: Node[] = [];
+	for (const child of node.children) {
+		if (child.style.display === DISPLAY_NONE) {
+			zeroLayout(child);
+			continue;
+		}
+		child.layout.margin[EDGE_LEFT] = resolveMargin(
+			child.style.margin[EDGE_LEFT],
+			ownerWidth,
+		);
+		child.layout.margin[EDGE_TOP] = resolveMargin(
+			child.style.margin[EDGE_TOP],
+			ownerWidth,
+		);
+		child.layout.margin[EDGE_RIGHT] = resolveMargin(
+			child.style.margin[EDGE_RIGHT],
+			ownerWidth,
+		);
+		child.layout.margin[EDGE_BOTTOM] = resolveMargin(
+			child.style.margin[EDGE_BOTTOM],
+			ownerWidth,
+		);
+
+		if (child.style.positionType === POSITION_TYPE_ABSOLUTE) continue;
+
+		computeFlexBasisForChild(
+			node,
+			child,
+			innerWidth,
+			widthMode,
+			innerHeight,
+			heightMode,
+			ownerWidth,
+			ownerHeight,
+		);
+		inFlow.push(child);
+	}
+
+	// -- 9.3 collect into lines --------------------------------------------
+
+	const lines: FlexLine[] = [];
+	let index = 0;
+	while (index < inFlow.length) {
+		const line: FlexLine = {
+			items: [],
+			sizeConsumed: 0,
+			totalGrow: 0,
+			totalShrinkScaled: 0,
+			crossDim: 0,
+			mainDim: 0,
+		};
+
+		for (; index < inFlow.length; index++) {
+			const child = inFlow[index];
+			const childMarginMain = marginForAxis(child, mainAxis, ownerWidth);
+			const basis = boundAxisWithinMinMax(
+				child,
+				mainAxis,
+				child.layout.computedFlexBasis,
+				mainIsRow ? ownerWidth : ownerHeight,
+			);
+
+			if (
+				wrap &&
+				isDefined(innerMain) &&
+				line.items.length > 0 &&
+				line.sizeConsumed + basis + childMarginMain > innerMain
+			) {
+				break;
+			}
+
+			line.sizeConsumed += basis + childMarginMain;
+			line.totalGrow += resolveFlexGrow(child);
+			line.totalShrinkScaled += resolveFlexShrink(child) * basis;
+			line.items.push(child);
+			child.layout.lineIndex = lines.length;
+		}
+
+		lines.push(line);
+		if (line.items.length === 0) break;
+	}
+
+	// -- 9.7 resolve flexible lengths, then align --------------------------
+
+	let totalCrossDim = 0;
+	let maxMainDim = 0;
+
+	for (const line of lines) {
+		resolveFlexibleLengths(
+			line,
+			node,
+			innerMain,
+			mainMode,
+			ownerWidth,
+			ownerHeight,
+		);
+
+		// Lay each item out at its resolved main size.
+		for (const child of line.items) {
+			layoutFlexItem(
+				node,
+				child,
+				innerWidth,
+				innerHeight,
+				innerCross,
+				crossMode,
+				ownerWidth,
+				ownerHeight,
+				performLayout,
+			);
+		}
+
+		// Main-axis placement (justify-content + auto margins).
+		positionMainAxis(
+			node,
+			line,
+			innerMain,
+			leadingPaddingBorderMain,
+			ownerWidth,
+			performLayout,
+		);
+
+		// Line cross size is the tallest item (or the definite cross size for a
+		// single-line container).
+		let lineCross = 0;
+		for (const child of line.items) {
+			const childCross =
+				(isRow(cross) ? child.layout.width : child.layout.height) +
+				marginForAxis(child, cross, ownerWidth);
+			lineCross = Math.max(lineCross, childCross);
+		}
+		// A single-line container fills its cross size only when that size is
+		// definite. Under AT_MOST it is an upper bound, and treating it as definite
+		// would make the container report the full available cross size as its
+		// content size -- which then becomes its flex basis in the parent.
+		if (!wrap && isDefined(innerCross) && crossMode === MEASURE_MODE_EXACTLY) {
+			lineCross = Math.max(lineCross, innerCross);
+		}
+		line.crossDim = lineCross;
+
+		totalCrossDim += lineCross;
+		maxMainDim = Math.max(maxMainDim, line.mainDim);
+	}
+
+	// -- measured size ------------------------------------------------------
+
+	const measuredMain = mainIsRow
+		? widthMode === MEASURE_MODE_EXACTLY
+			? availableWidth - marginRow
+			: boundAxis(
+					node,
+					mainAxis,
+					maxMainDim + paddingBorderMain,
+					mainIsRow ? ownerWidth : ownerHeight,
+					ownerWidth,
+				)
+		: heightMode === MEASURE_MODE_EXACTLY
+			? availableHeight - marginColumn
+			: boundAxis(
+					node,
+					mainAxis,
+					maxMainDim + paddingBorderMain,
+					ownerHeight,
+					ownerWidth,
+				);
+
+	const crossIsRow = isRow(cross);
+	const crossExactly = crossIsRow
+		? widthMode === MEASURE_MODE_EXACTLY
+		: heightMode === MEASURE_MODE_EXACTLY;
+	const crossAvailable = crossIsRow
+		? availableWidth - marginRow
+		: availableHeight - marginColumn;
+
+	const measuredCross = crossExactly
+		? crossAvailable
+		: boundAxis(
+				node,
+				cross,
+				totalCrossDim + paddingBorderCross,
+				crossIsRow ? ownerWidth : ownerHeight,
+				ownerWidth,
+			);
+
+	if (mainIsRow) {
+		node.layout.width = measuredMain;
+		node.layout.height = measuredCross;
+	} else {
+		node.layout.height = measuredMain;
+		node.layout.width = measuredCross;
+	}
+
+	if (!performLayout) return;
+
+	// -- cross-axis placement ----------------------------------------------
+
+	const containerInnerCross =
+		(crossIsRow ? node.layout.width : node.layout.height) - paddingBorderCross;
+
+	positionCrossAxis(
+		node,
+		lines,
+		containerInnerCross,
+		totalCrossDim,
+		leadingPaddingBorderCross,
+		ownerWidth,
+		ownerHeight,
+	);
+
+	// Reverse axes place items from the far edge.
+	if (isReverse(mainAxis)) {
+		const containerInnerMain =
+			(mainIsRow ? node.layout.width : node.layout.height) - paddingBorderMain;
+		mirrorWithinContentBox(
+			lines,
+			mainAxis,
+			containerInnerMain,
+			leadingPaddingBorderMain,
+		);
+	}
+	if (node.style.flexWrap === WRAP_WRAP_REVERSE) {
+		mirrorWithinContentBox(
+			lines,
+			cross,
+			containerInnerCross,
+			leadingPaddingBorderCross,
+		);
+	}
+
+	// -- relative offsets ---------------------------------------------------
+	//
+	// `position: relative` shifts a box from its in-flow position without
+	// affecting anything else, so this runs after all flow placement is done.
+	// `position: static` ignores insets entirely.
+
+	const innerWidthFinal = node.layout.width - paddingBorderRow;
+	const innerHeightFinal = node.layout.height - paddingBorderColumn;
+
+	for (const line of lines) {
+		for (const child of line.items) {
+			if (child.style.positionType !== POSITION_TYPE_RELATIVE) continue;
+			child.layout.left += relativeOffset(
+				child,
+				FLEX_DIRECTION_ROW,
+				innerWidthFinal,
+			);
+			child.layout.top += relativeOffset(
+				child,
+				FLEX_DIRECTION_COLUMN,
+				innerHeightFinal,
+			);
+		}
+	}
+
+	// -- absolutely positioned children ------------------------------------
+
+	for (const child of node.children) {
+		if (
+			child.style.positionType !== POSITION_TYPE_ABSOLUTE ||
+			child.style.display === DISPLAY_NONE
+		) {
+			continue;
+		}
+		layoutAbsoluteChild(node, child, ownerWidth, ownerHeight);
+	}
+}
+
+/** A relative box is offset by its leading inset, or pulled back by its trailing one. */
+function relativeOffset(
+	node: Node,
+	axis: FlexDirection,
+	axisSize: number,
+): number {
+	const leading = resolveValue(
+		node.style.position[leadingEdge(axis)],
+		axisSize,
+	);
+	if (isDefined(leading)) return leading;
+
+	const trailing = resolveValue(
+		node.style.position[trailingEdge(axis)],
+		axisSize,
+	);
+	if (isDefined(trailing)) return -trailing;
+
+	return 0;
+}
+
+/**
+ * CSS flexbox 9.7. Distribute free space by grow factor, or take it back by
+ * shrink factor scaled by base size, freezing items that hit min/max and
+ * redistributing what they could not absorb.
+ */
+function resolveFlexibleLengths(
+	line: FlexLine,
+	node: Node,
+	innerMain: number,
+	mainMode: MeasureMode,
+	ownerWidth: number,
+	ownerHeight: number,
+): void {
+	const mainAxis = node.style.flexDirection;
+	const mainOwnerSize = isRow(mainAxis) ? ownerWidth : ownerHeight;
+
+	// The flex base size is what an item wants to be; the hypothetical main size
+	// is that clamped by min/max. The distinction matters throughout the loop
+	// below: free space is always measured against an unfrozen item's *base*
+	// size, never against the size it was last handed, or each pass would count
+	// the space it already took a second time.
+	const base = new Map<Node, number>();
+	const target = new Map<Node, number>();
+	const frozen = new Set<Node>();
+
+	for (const child of line.items) {
+		const flexBase = child.layout.computedFlexBasis;
+		base.set(child, flexBase);
+		target.set(
+			child,
+			boundAxisWithinMinMax(child, mainAxis, flexBase, mainOwnerSize),
+		);
+	}
+
+	const commit = () => {
+		for (const child of line.items) {
+			child.layout.computedFlexBasis = target.get(child)!;
+		}
+	};
+
+	if (!isDefined(innerMain)) {
+		// Indefinite main size: items stay at their hypothetical size.
+		commit();
+		return;
+	}
+
+	const outerMargin = (child: Node) =>
+		marginForAxis(child, mainAxis, ownerWidth);
+
+	// css-flexbox-1 §9.7.3: grow or shrink is decided once, by comparing the sum
+	// of the items' outer hypothetical main sizes against the container.
+	let hypotheticalTotal = 0;
+	for (const child of line.items) {
+		hypotheticalTotal += target.get(child)! + outerMargin(child);
+	}
+	const growing = innerMain - hypotheticalTotal > 0;
+
+	// Items only grow into a *definite* main size. Under AT_MOST the container is
+	// being sized to its content against an upper bound, so there is no free space
+	// to distribute -- the container will shrink-wrap instead. Shrinking still
+	// applies, since content that overflows the bound must be compressed.
+	if (growing && mainMode !== MEASURE_MODE_EXACTLY) {
+		commit();
+		return;
+	}
+
+	const factorOf = (child: Node) =>
+		growing
+			? resolveFlexGrow(child)
+			: resolveFlexShrink(child) * base.get(child)!;
+
+	// §9.7.4.a: freeze the items that cannot flex. An item whose flex base size
+	// already sits on the wrong side of its own clamp can never move in the
+	// direction we are flexing, so it is inflexible from the start.
+	for (const child of line.items) {
+		const flexBase = base.get(child)!;
+		const hypothetical = target.get(child)!;
+		const factor = growing ? resolveFlexGrow(child) : resolveFlexShrink(child);
+
+		if (
+			factor === 0 ||
+			(growing && flexBase > hypothetical) ||
+			(!growing && flexBase < hypothetical)
+		) {
+			frozen.add(child);
+		}
+	}
+
+	// §9.7.4: distribute the free space, clamp, freeze whatever hit a bound, and
+	// go again with the rest. Each pass freezes at least one item, so the line
+	// always terminates.
+	for (let guard = 0; guard <= line.items.length; guard++) {
+		const unfrozen = line.items.filter((child) => !frozen.has(child));
+		if (unfrozen.length === 0) break;
+
+		// §9.7.4.b: frozen items contribute their target size, unfrozen items
+		// their flex base size.
+		let used = 0;
+		for (const child of line.items) {
+			const size = frozen.has(child) ? target.get(child)! : base.get(child)!;
+			used += size + outerMargin(child);
+		}
+		const remaining = innerMain - used;
+
+		let totalFactor = 0;
+		for (const child of unfrozen) {
+			totalFactor += factorOf(child);
+		}
+		if (totalFactor === 0) break;
+
+		// §9.7.4.c-d: each unfrozen item's target is its flex base size plus its
+		// share of the free space, then clamped.
+		let violation = 0;
+		const minViolations: Node[] = [];
+		const maxViolations: Node[] = [];
+
+		for (const child of unfrozen) {
+			const unclamped =
+				base.get(child)! + (remaining * factorOf(child)) / totalFactor;
+			const bounded = boundAxisWithinMinMax(
+				child,
+				mainAxis,
+				unclamped,
+				mainOwnerSize,
+			);
+
+			target.set(child, bounded);
+			violation += bounded - unclamped;
+
+			if (bounded > unclamped) minViolations.push(child);
+			else if (bounded < unclamped) maxViolations.push(child);
+		}
+
+		// §9.7.4.e: freeze by the *sign* of the total violation, not by whoever
+		// happened to clamp. Freezing both directions at once would strand the
+		// space an over-clamped item gave back.
+		if (violation === 0) {
+			for (const child of unfrozen) frozen.add(child);
+			break;
+		} else if (violation > 0) {
+			for (const child of minViolations) frozen.add(child);
+		} else {
+			for (const child of maxViolations) frozen.add(child);
+		}
+	}
+
+	commit();
+}
+
+/** Lay out one flex item at its resolved main size, stretching the cross axis if asked. */
+function layoutFlexItem(
+	node: Node,
+	child: Node,
+	innerWidth: number,
+	innerHeight: number,
+	innerCross: number,
+	crossMode: MeasureMode,
+	ownerWidth: number,
+	ownerHeight: number,
+	performLayout: boolean,
+): void {
+	const mainAxis = node.style.flexDirection;
+	const cross = crossAxis(mainAxis);
+	const mainIsRow = isRow(mainAxis);
+
+	const mainSize = child.layout.computedFlexBasis;
+	const align = alignSelfOf(node, child);
+
+	const crossDimDefined = styleDimIsDefined(
+		child,
+		cross,
+		isRow(cross) ? ownerWidth : ownerHeight,
+	);
+
+	const childWidth = {value: NaN, mode: MEASURE_MODE_UNDEFINED};
+	const childHeight = {value: NaN, mode: MEASURE_MODE_UNDEFINED};
+
+	const marginMainForChild = marginForAxis(child, mainAxis, ownerWidth);
+	const marginCrossForChild = marginForAxis(child, cross, ownerWidth);
+
+	// Main axis is now definite.
+	if (mainIsRow) {
+		childWidth.value = mainSize + marginMainForChild;
+		childWidth.mode = MEASURE_MODE_EXACTLY;
+	} else {
+		childHeight.value = mainSize + marginMainForChild;
+		childHeight.mode = MEASURE_MODE_EXACTLY;
+	}
+
+	// Cross axis: explicit size wins, else stretch to the line, else shrink-to-fit.
+	const crossTarget = crossDimDefined
+		? resolveValue(
+				isRow(cross) ? child.style.width : child.style.height,
+				isRow(cross) ? ownerWidth : ownerHeight,
+			)
+		: NaN;
+
+	if (isDefined(crossTarget)) {
+		if (isRow(cross)) {
+			childWidth.value = crossTarget + marginCrossForChild;
+			childWidth.mode = MEASURE_MODE_EXACTLY;
+		} else {
+			childHeight.value = crossTarget + marginCrossForChild;
+			childHeight.mode = MEASURE_MODE_EXACTLY;
+		}
+	} else if (
+		align === ALIGN_STRETCH &&
+		isDefined(innerCross) &&
+		crossMode === MEASURE_MODE_EXACTLY
+	) {
+		// Only stretch against a *definite* cross size. While the container is
+		// still being measured its cross size is merely an upper bound, and
+		// stretching to it here would make every item report a flex basis of the
+		// full container size. Items that still need stretching are re-laid out
+		// in positionCrossAxis once the container's real cross size is known.
+		if (isRow(cross)) {
+			childWidth.value = innerCross;
+			childWidth.mode = MEASURE_MODE_EXACTLY;
+		} else {
+			childHeight.value = innerCross;
+			childHeight.mode = MEASURE_MODE_EXACTLY;
+		}
+	} else {
+		const available = isRow(cross) ? innerWidth : innerHeight;
+		if (isDefined(available)) {
+			if (isRow(cross)) {
+				childWidth.value = available;
+				childWidth.mode = MEASURE_MODE_AT_MOST;
+			} else {
+				childHeight.value = available;
+				childHeight.mode = MEASURE_MODE_AT_MOST;
+			}
+		}
+	}
+
+	constrainMaxSizeForMode(child, FLEX_DIRECTION_ROW, ownerWidth, childWidth);
+	constrainMaxSizeForMode(
+		child,
+		FLEX_DIRECTION_COLUMN,
+		ownerHeight,
+		childHeight,
+	);
+
+	layoutNode(
+		child,
+		childWidth.value,
+		childHeight.value,
+		childWidth.mode,
+		childHeight.mode,
+		ownerWidth,
+		ownerHeight,
+		performLayout,
+	);
+}
+
+/**
+ * Re-lay out a stretch item now that the line's cross size is definite. During
+ * item layout the container's cross size was still an upper bound, so a
+ * stretched item was only measured to its content.
+ */
+function stretchFlexItem(
+	node: Node,
+	child: Node,
+	targetCross: number,
+	ownerWidth: number,
+	ownerHeight: number,
+): void {
+	const mainAxis = node.style.flexDirection;
+	const cross = crossAxis(mainAxis);
+	const mainIsRow = isRow(mainAxis);
+
+	const mainSize = mainIsRow ? child.layout.width : child.layout.height;
+	const marginMain = marginForAxis(child, mainAxis, ownerWidth);
+	const marginCross = marginForAxis(child, cross, ownerWidth);
+
+	const width = mainIsRow ? mainSize + marginMain : targetCross + marginCross;
+	const height = mainIsRow ? targetCross + marginCross : mainSize + marginMain;
+
+	layoutNode(
+		child,
+		width,
+		height,
+		MEASURE_MODE_EXACTLY,
+		MEASURE_MODE_EXACTLY,
+		ownerWidth,
+		ownerHeight,
+		true,
+	);
+}
+
+/** justify-content, plus auto margins which absorb free space before it does. */
+function positionMainAxis(
+	node: Node,
+	line: FlexLine,
+	innerMain: number,
+	leadingPaddingBorderMain: number,
+	ownerWidth: number,
+	performLayout: boolean,
+): void {
+	const mainAxis = node.style.flexDirection;
+	const mainIsRow = isRow(mainAxis);
+
+	let contentMain = 0;
+	for (const child of line.items) {
+		contentMain +=
+			(mainIsRow ? child.layout.width : child.layout.height) +
+			marginForAxis(child, mainAxis, ownerWidth);
+	}
+
+	const free = isDefined(innerMain) ? innerMain - contentMain : 0;
+
+	// Auto margins on the main axis eat all remaining free space.
+	let autoMarginCount = 0;
+	for (const child of line.items) {
+		if (child.style.margin[leadingEdge(mainAxis)].unit === UNIT_AUTO)
+			autoMarginCount++;
+		if (child.style.margin[trailingEdge(mainAxis)].unit === UNIT_AUTO)
+			autoMarginCount++;
+	}
+
+	let leading = 0;
+	let between = 0;
+
+	if (autoMarginCount > 0 && free > 0) {
+		// Handled per-child below.
+	} else {
+		const count = line.items.length;
+		switch (node.style.justifyContent) {
+			case JUSTIFY_CENTER:
+				leading = free / 2;
+				break;
+			case JUSTIFY_FLEX_END:
+				leading = free;
+				break;
+			case JUSTIFY_SPACE_BETWEEN:
+				if (count > 1) between = Math.max(free, 0) / (count - 1);
+				break;
+			case JUSTIFY_SPACE_AROUND:
+				if (count > 0) {
+					between = Math.max(free, 0) / count;
+					leading = between / 2;
+				}
+				break;
+			case JUSTIFY_SPACE_EVENLY:
+				if (count > 0) {
+					between = Math.max(free, 0) / (count + 1);
+					leading = between;
+				}
+				break;
+			default:
+				leading = 0;
+		}
+	}
+
+	const autoShare =
+		autoMarginCount > 0 && free > 0 ? free / autoMarginCount : 0;
+
+	let cursor = leadingPaddingBorderMain + leading;
+	for (const child of line.items) {
+		const leadingAuto =
+			child.style.margin[leadingEdge(mainAxis)].unit === UNIT_AUTO;
+		const trailingAuto =
+			child.style.margin[trailingEdge(mainAxis)].unit === UNIT_AUTO;
+
+		if (leadingAuto) cursor += autoShare;
+
+		cursor += resolveMargin(
+			child.style.margin[leadingEdge(mainAxis)],
+			ownerWidth,
+		);
+
+		if (performLayout) {
+			if (mainIsRow) {
+				child.layout.left = cursor;
+			} else {
+				child.layout.top = cursor;
+			}
+		}
+
+		cursor += mainIsRow ? child.layout.width : child.layout.height;
+		cursor += resolveMargin(
+			child.style.margin[trailingEdge(mainAxis)],
+			ownerWidth,
+		);
+
+		if (trailingAuto) cursor += autoShare;
+		cursor += between;
+	}
+
+	line.mainDim = contentMain;
+}
+
+/** align-items / align-self within each line, and align-content across lines. */
+function positionCrossAxis(
+	node: Node,
+	lines: FlexLine[],
+	containerInnerCross: number,
+	totalCrossDim: number,
+	leadingPaddingBorderCross: number,
+	ownerWidth: number,
+	ownerHeight: number,
+): void {
+	const mainAxis = node.style.flexDirection;
+	const cross = crossAxis(mainAxis);
+	const crossIsRow = isRow(cross);
+
+	const freeCross = isDefined(containerInnerCross)
+		? containerInnerCross - totalCrossDim
+		: 0;
+
+	let lineLeading = 0;
+	let lineBetween = 0;
+	const lineCount = lines.length;
+
+	switch (node.style.alignContent) {
+		case ALIGN_FLEX_END:
+			lineLeading = freeCross;
+			break;
+		case ALIGN_CENTER:
+			lineLeading = freeCross / 2;
+			break;
+		case ALIGN_SPACE_BETWEEN:
+			if (lineCount > 1) lineBetween = Math.max(freeCross, 0) / (lineCount - 1);
+			break;
+		case ALIGN_SPACE_AROUND:
+			if (lineCount > 0) {
+				lineBetween = Math.max(freeCross, 0) / lineCount;
+				lineLeading = lineBetween / 2;
+			}
+			break;
+		case ALIGN_SPACE_EVENLY:
+			// Equal gaps everywhere, including before the first line and after the
+			// last: n lines make n+1 gaps.
+			if (lineCount > 0) {
+				lineBetween = Math.max(freeCross, 0) / (lineCount + 1);
+				lineLeading = lineBetween;
+			}
+			break;
+		case ALIGN_STRETCH:
+			// Extra space is handed to the lines themselves, below.
+			break;
+		default:
+			lineLeading = 0;
+	}
+
+	// align-content: stretch grows each line to share the free cross space.
+	const stretchPerLine =
+		node.style.alignContent === ALIGN_STRETCH && lineCount > 0 && freeCross > 0
+			? freeCross / lineCount
+			: 0;
+
+	let cursor = leadingPaddingBorderCross + lineLeading;
+
+	for (const line of lines) {
+		const lineCross = line.crossDim + stretchPerLine;
+
+		// Baseline alignment needs the whole line before it can place anything:
+		// the item whose baseline sits furthest from its cross-start margin edge
+		// goes flush against the line, and every other baseline item is pushed
+		// down to meet it. Only meaningful when the cross axis is the block axis
+		// (a row container); in a column container the cross axis is horizontal
+		// and there is nothing to align, so it degenerates to flex-start.
+		let maxBaseline = 0;
+		const lineHasBaseline =
+			!crossIsRow &&
+			line.items.some((child) => alignSelfOf(node, child) === ALIGN_BASELINE);
+		if (lineHasBaseline) {
+			for (const child of line.items) {
+				if (alignSelfOf(node, child) !== ALIGN_BASELINE) continue;
+				const childBaseline =
+					resolveMargin(child.style.margin[leadingEdge(cross)], ownerWidth) +
+					baselineWithinBorderBox(child, ownerWidth);
+				maxBaseline = Math.max(maxBaseline, childBaseline);
+			}
+		}
+
+		for (const child of line.items) {
+			const align = alignSelfOf(node, child);
+			const leadingMargin = resolveMargin(
+				child.style.margin[leadingEdge(cross)],
+				ownerWidth,
+			);
+			const trailingMargin = resolveMargin(
+				child.style.margin[trailingEdge(cross)],
+				ownerWidth,
+			);
+
+			const leadingAuto =
+				child.style.margin[leadingEdge(cross)].unit === UNIT_AUTO;
+			const trailingAuto =
+				child.style.margin[trailingEdge(cross)].unit === UNIT_AUTO;
+
+			// Stretch items now that the line's cross size is definite. Auto
+			// margins opt an item out of stretching -- they absorb the space instead.
+			const crossDimDefined = styleDimIsDefined(
+				child,
+				cross,
+				crossIsRow ? ownerWidth : ownerHeight,
+			);
+			if (
+				align === ALIGN_STRETCH &&
+				!crossDimDefined &&
+				!leadingAuto &&
+				!trailingAuto
+			) {
+				const targetCross = lineCross - leadingMargin - trailingMargin;
+				const currentCross = crossIsRow
+					? child.layout.width
+					: child.layout.height;
+				if (!approximatelyEqual(currentCross, targetCross)) {
+					stretchFlexItem(node, child, targetCross, ownerWidth, ownerHeight);
+				}
+			}
+
+			const childCross = crossIsRow ? child.layout.width : child.layout.height;
+			const availableCross =
+				lineCross - childCross - leadingMargin - trailingMargin;
+
+			let offset: number;
+			if (leadingAuto && trailingAuto) {
+				offset = Math.max(availableCross, 0) / 2;
+			} else if (trailingAuto) {
+				offset = 0;
+			} else if (leadingAuto) {
+				offset = Math.max(availableCross, 0);
+			} else {
+				switch (align) {
+					case ALIGN_CENTER:
+						offset = availableCross / 2;
+						break;
+					case ALIGN_FLEX_END:
+						offset = availableCross;
+						break;
+					case ALIGN_BASELINE:
+						if (crossIsRow) {
+							// Column container: no block axis to align along.
+							offset = 0;
+						} else {
+							const childBaseline =
+								leadingMargin + baselineWithinBorderBox(child, ownerWidth);
+							offset = maxBaseline - childBaseline;
+						}
+						break;
+					default:
+						offset = 0;
+				}
+			}
+
+			const position = cursor + leadingMargin + offset;
+			if (crossIsRow) {
+				child.layout.left = position;
+			} else {
+				child.layout.top = position;
+			}
+		}
+
+		cursor += lineCross + lineBetween;
+	}
+}
+
+/**
+ * Mirror each item within the content box. Positions are relative to the border
+ * box but offset by the *leading* padding, so the mirror has to be taken in
+ * content-box coordinates and then shifted back.
+ */
+function mirrorWithinContentBox(
+	lines: FlexLine[],
+	axis: FlexDirection,
+	innerSize: number,
+	leadingPaddingBorder: number,
+): void {
+	const axisIsRow = isRow(axis);
+
+	for (const line of lines) {
+		for (const child of line.items) {
+			const childSize = axisIsRow ? child.layout.width : child.layout.height;
+			const start = axisIsRow ? child.layout.left : child.layout.top;
+
+			const relative = start - leadingPaddingBorder;
+			const mirrored = innerSize - relative - childSize;
+			const position = leadingPaddingBorder + mirrored;
+
+			if (axisIsRow) {
+				child.layout.left = position;
+			} else {
+				child.layout.top = position;
+			}
+		}
+	}
+}
+
+/** Absolute children: size from style or content, then place against the insets. */
+function layoutAbsoluteChild(
+	node: Node,
+	child: Node,
+	ownerWidth: number,
+	ownerHeight: number,
+): void {
+	const parentWidth = node.layout.width;
+	const parentHeight = node.layout.height;
+
+	const borderLeft = node.style.border[EDGE_LEFT];
+	const borderTop = node.style.border[EDGE_TOP];
+	const borderRight = node.style.border[EDGE_RIGHT];
+	const borderBottom = node.style.border[EDGE_BOTTOM];
+
+	const left = resolveValue(child.style.position[EDGE_LEFT], parentWidth);
+	const top = resolveValue(child.style.position[EDGE_TOP], parentHeight);
+	const right = resolveValue(child.style.position[EDGE_RIGHT], parentWidth);
+	const bottom = resolveValue(child.style.position[EDGE_BOTTOM], parentHeight);
+
+	const marginLeft = resolveMargin(child.style.margin[EDGE_LEFT], parentWidth);
+	const marginTop = resolveMargin(child.style.margin[EDGE_TOP], parentWidth);
+	const marginRight = resolveMargin(
+		child.style.margin[EDGE_RIGHT],
+		parentWidth,
+	);
+	const marginBottom = resolveMargin(
+		child.style.margin[EDGE_BOTTOM],
+		parentWidth,
+	);
+
+	const childWidth = {value: NaN, mode: MEASURE_MODE_UNDEFINED};
+	const childHeight = {value: NaN, mode: MEASURE_MODE_UNDEFINED};
+
+	if (styleDimIsDefined(child, FLEX_DIRECTION_ROW, parentWidth)) {
+		childWidth.value =
+			resolveValue(child.style.width, parentWidth) + marginLeft + marginRight;
+		childWidth.mode = MEASURE_MODE_EXACTLY;
+	} else if (isDefined(left) && isDefined(right)) {
+		// Both insets pin the box, so its width is implied.
+		childWidth.value =
+			parentWidth -
+			borderLeft -
+			borderRight -
+			left -
+			right -
+			marginLeft -
+			marginRight;
+		childWidth.mode = MEASURE_MODE_EXACTLY;
+	} else if (isDefined(parentWidth)) {
+		childWidth.value = parentWidth - borderLeft - borderRight;
+		childWidth.mode = MEASURE_MODE_AT_MOST;
+	}
+
+	if (styleDimIsDefined(child, FLEX_DIRECTION_COLUMN, parentHeight)) {
+		childHeight.value =
+			resolveValue(child.style.height, parentHeight) + marginTop + marginBottom;
+		childHeight.mode = MEASURE_MODE_EXACTLY;
+	} else if (isDefined(top) && isDefined(bottom)) {
+		childHeight.value =
+			parentHeight -
+			borderTop -
+			borderBottom -
+			top -
+			bottom -
+			marginTop -
+			marginBottom;
+		childHeight.mode = MEASURE_MODE_EXACTLY;
+	} else if (isDefined(parentHeight)) {
+		childHeight.value = parentHeight - borderTop - borderBottom;
+		childHeight.mode = MEASURE_MODE_AT_MOST;
+	}
+
+	layoutNode(
+		child,
+		childWidth.value,
+		childHeight.value,
+		childWidth.mode,
+		childHeight.mode,
+		ownerWidth,
+		ownerHeight,
+		true,
+	);
+
+	// Horizontal placement.
+	if (isDefined(left)) {
+		child.layout.left = borderLeft + left + marginLeft;
+	} else if (isDefined(right)) {
+		child.layout.left =
+			parentWidth - borderRight - child.layout.width - right - marginRight;
+	} else {
+		const align = node.style.justifyContent;
+		const free = parentWidth - borderLeft - borderRight - child.layout.width;
+		const isMainRow = isRow(node.style.flexDirection);
+		if (isMainRow && align === JUSTIFY_CENTER) {
+			child.layout.left = borderLeft + free / 2;
+		} else if (isMainRow && align === JUSTIFY_FLEX_END) {
+			child.layout.left = borderLeft + free;
+		} else {
+			child.layout.left = borderLeft + marginLeft;
+		}
+	}
+
+	// Vertical placement.
+	if (isDefined(top)) {
+		child.layout.top = borderTop + top + marginTop;
+	} else if (isDefined(bottom)) {
+		child.layout.top =
+			parentHeight - borderBottom - child.layout.height - bottom - marginBottom;
+	} else {
+		const align = node.style.alignItems;
+		const free = parentHeight - borderTop - borderBottom - child.layout.height;
+		const isMainColumn = isColumn(node.style.flexDirection);
+		if (isMainColumn && align === ALIGN_CENTER) {
+			child.layout.top = borderTop + free / 2;
+		} else if (isMainColumn && align === ALIGN_FLEX_END) {
+			child.layout.top = borderTop + free;
+		} else {
+			child.layout.top = borderTop + marginTop;
+		}
+	}
+}
+
+function zeroLayout(node: Node): void {
+	node.layout.left = 0;
+	node.layout.top = 0;
+	node.layout.width = 0;
+	node.layout.height = 0;
+	node.layout.computedFlexBasis = 0;
+	for (const child of node.children) {
+		zeroLayout(child);
+	}
+}
+
+/** Dispatch: measure leaf, empty container, or full flexbox. */
+function layoutNode(
+	node: Node,
+	availableWidth: number,
+	availableHeight: number,
+	widthMode: MeasureMode,
+	heightMode: MeasureMode,
+	ownerWidth: number,
+	ownerHeight: number,
+	performLayout: boolean,
+): void {
+	node.layout.padding[EDGE_LEFT] = paddingOf(node, EDGE_LEFT, ownerWidth);
+	node.layout.padding[EDGE_TOP] = paddingOf(node, EDGE_TOP, ownerWidth);
+	node.layout.padding[EDGE_RIGHT] = paddingOf(node, EDGE_RIGHT, ownerWidth);
+	node.layout.padding[EDGE_BOTTOM] = paddingOf(node, EDGE_BOTTOM, ownerWidth);
+
+	node.layout.border[EDGE_LEFT] = node.style.border[EDGE_LEFT];
+	node.layout.border[EDGE_TOP] = node.style.border[EDGE_TOP];
+	node.layout.border[EDGE_RIGHT] = node.style.border[EDGE_RIGHT];
+	node.layout.border[EDGE_BOTTOM] = node.style.border[EDGE_BOTTOM];
+
+	node.layout.margin[EDGE_LEFT] = resolveMargin(
+		node.style.margin[EDGE_LEFT],
+		ownerWidth,
+	);
+	node.layout.margin[EDGE_TOP] = resolveMargin(
+		node.style.margin[EDGE_TOP],
+		ownerWidth,
+	);
+	node.layout.margin[EDGE_RIGHT] = resolveMargin(
+		node.style.margin[EDGE_RIGHT],
+		ownerWidth,
+	);
+	node.layout.margin[EDGE_BOTTOM] = resolveMargin(
+		node.style.margin[EDGE_BOTTOM],
+		ownerWidth,
+	);
+
+	if (node.style.display === DISPLAY_NONE) {
+		zeroLayout(node);
+		return;
+	}
+
+	if (node.measureFunc) {
+		layoutMeasureNode(
+			node,
+			availableWidth,
+			availableHeight,
+			widthMode,
+			heightMode,
+			ownerWidth,
+			ownerHeight,
+		);
+		return;
+	}
+
+	const hasInFlowChild = node.children.some(
+		(child) =>
+			child.style.display !== DISPLAY_NONE &&
+			child.style.positionType !== POSITION_TYPE_ABSOLUTE,
+	);
+
+	if (!hasInFlowChild && node.children.length === 0) {
+		layoutEmptyContainer(
+			node,
+			availableWidth,
+			availableHeight,
+			widthMode,
+			heightMode,
+			ownerWidth,
+			ownerHeight,
+		);
+		return;
+	}
+
+	layoutFlexbox(
+		node,
+		availableWidth,
+		availableHeight,
+		widthMode,
+		heightMode,
+		ownerWidth,
+		ownerHeight,
+		performLayout,
+	);
+}
+
+function paddingOf(node: Node, edge: Edge, ownerWidth: number): number {
+	const padding = resolveValue(node.style.padding[edge], ownerWidth);
+	return isDefined(padding) ? Math.max(padding, 0) : 0;
+}
+
+// ---------------------------------------------------------------------------
+// Grid rounding
+// ---------------------------------------------------------------------------
+
+/**
+ * Snap the tree to whole cells.
+ *
+ * Sizes are derived from *rounded absolute edges* rather than by rounding each
+ * width directly: that is what makes adjacent boxes tile without gaps or
+ * overlaps when a flexible size lands on a fraction (e.g. three items across 80
+ * columns). Rounding widths independently would let 26.67 + 26.67 + 26.67 round
+ * to 81 columns of content in an 80 column terminal.
+ *
+ * Leaves with a measure function ceil their trailing edge: text must never be
+ * given less room than it measured, or it would re-wrap.
+ */
+function roundToGrid(
+	node: Node,
+	absoluteLeft: number,
+	absoluteTop: number,
+): void {
+	const nodeLeft = node.layout.left;
+	const nodeTop = node.layout.top;
+	const nodeWidth = isDefined(node.layout.width) ? node.layout.width : 0;
+	const nodeHeight = isDefined(node.layout.height) ? node.layout.height : 0;
+
+	const absLeft = absoluteLeft + nodeLeft;
+	const absTop = absoluteTop + nodeTop;
+	const absRight = absLeft + nodeWidth;
+	const absBottom = absTop + nodeHeight;
+
+	const isText = node.measureFunc !== null;
+
+	node.layout.left = roundValue(nodeLeft, false, isText);
+	node.layout.top = roundValue(nodeTop, false, isText);
+
+	node.layout.width =
+		roundValue(absRight, isText, false) - roundValue(absLeft, isText, false);
+	node.layout.height =
+		roundValue(absBottom, isText, false) - roundValue(absTop, isText, false);
+
+	for (const child of node.children) {
+		roundToGrid(child, absLeft, absTop);
+	}
+}
+
+function roundValue(
+	value: number,
+	forceCeil: boolean,
+	forceFloor: boolean,
+): number {
+	if (!isDefined(value)) return value;
+
+	const fraction = value - Math.floor(value);
+
+	if (approximatelyEqual(fraction, 0)) {
+		return value - fraction;
+	}
+	if (approximatelyEqual(fraction, 1)) {
+		return value - fraction + 1;
+	}
+	if (forceCeil) {
+		return value - fraction + 1;
+	}
+	if (forceFloor) {
+		return value - fraction;
+	}
+	// Round half up.
+	return value - fraction + (fraction >= 0.5 ? 1 : 0);
+}
+
+function approximatelyEqual(a: number, b: number): boolean {
+	return Math.abs(a - b) < 0.0001;
+}
+
+// ---------------------------------------------------------------------------
+// Yoga-compatible default export
+// ---------------------------------------------------------------------------
+
+const Flex = {
+	Node,
+	Config,
+
+	ALIGN_AUTO,
+	ALIGN_FLEX_START,
+	ALIGN_CENTER,
+	ALIGN_FLEX_END,
+	ALIGN_STRETCH,
+	ALIGN_BASELINE,
+	ALIGN_SPACE_BETWEEN,
+	ALIGN_SPACE_AROUND,
+	ALIGN_SPACE_EVENLY,
+
+	JUSTIFY_FLEX_START,
+	JUSTIFY_CENTER,
+	JUSTIFY_FLEX_END,
+	JUSTIFY_SPACE_BETWEEN,
+	JUSTIFY_SPACE_AROUND,
+	JUSTIFY_SPACE_EVENLY,
+
+	WRAP_NO_WRAP,
+	WRAP_WRAP,
+	WRAP_WRAP_REVERSE,
+
+	FLEX_DIRECTION_COLUMN,
+	FLEX_DIRECTION_COLUMN_REVERSE,
+	FLEX_DIRECTION_ROW,
+	FLEX_DIRECTION_ROW_REVERSE,
+
+	DISPLAY_FLEX,
+	DISPLAY_NONE,
+	DISPLAY_CONTENTS,
+
+	POSITION_TYPE_STATIC,
+	POSITION_TYPE_RELATIVE,
+	POSITION_TYPE_ABSOLUTE,
+
+	MEASURE_MODE_UNDEFINED,
+	MEASURE_MODE_EXACTLY,
+	MEASURE_MODE_AT_MOST,
+
+	EDGE_LEFT,
+	EDGE_TOP,
+	EDGE_RIGHT,
+	EDGE_BOTTOM,
+	EDGE_START,
+	EDGE_END,
+	EDGE_HORIZONTAL,
+	EDGE_VERTICAL,
+	EDGE_ALL,
+
+	UNIT_UNDEFINED,
+	UNIT_POINT,
+	UNIT_PERCENT,
+	UNIT_AUTO,
+};
+
+export default Flex;

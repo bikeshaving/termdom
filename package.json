@@ -24,7 +24,6 @@
     "@tanstack/table-core": "^8.21.3",
     "cssstyle": "^5.2.1",
     "jsdom": "^26.1.0",
-    "linebreak": "^1.1.0",
-    "yoga-layout": "^3.2.1"
+    "linebreak": "^1.1.0"
   }
 }
