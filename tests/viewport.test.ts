@@ -668,3 +668,46 @@ test("a document taller than the terminal commits its overflow to scrollback", a
 
 	dom.dispose();
 });
+
+test("growing the terminal does not destroy rows it hands back from scrollback", async () => {
+	// When a terminal grows, it pulls lines back out of its scrollback into the
+	// viewport -- so rows that were frozen a moment ago become addressable again,
+	// and our next frame paints over them.
+	//
+	// The region we draw was keyed on hasDetectedCommandStart, which the resize
+	// path deliberately unsets (so the frame is placed with DECRC rather than CUP).
+	// A resize therefore fell back to a stale scroll offset and painted the tail of
+	// the document over the rows the terminal had just returned. They were gone --
+	// not in the viewport, not in the scrollback, gone.
+	const terminal = new MockProcess({rows: 6, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	await dom.detectCommandStart();
+
+	dom.document.body.innerHTML = Array.from(
+		{length: 10},
+		(_, i) => `<div>row ${i + 1}</div>`,
+	).join("");
+	await dom.render();
+
+	// 10 rows into a 6-row terminal: 4 rows have scrolled off.
+	expect((terminal as any).terminal.buffer.active.baseY).toBe(4);
+
+	// Grow the terminal so the whole document fits again.
+	terminal.resize(40, 10);
+	(terminal as any).emit("SIGWINCH");
+	await new Promise((resolve) => setTimeout(resolve, 60));
+
+	const buffer = (terminal as any).terminal.buffer.active;
+	const everything: string[] = [];
+	for (let i = 0; i < buffer.length; i++) {
+		const line = buffer.getLine(i)?.translateToString(true);
+		if (line) everything.push(line);
+	}
+
+	// Every row of the document is still somewhere in the terminal.
+	for (let i = 1; i <= 10; i++) {
+		expect(everything).toContain(`row ${i}`);
+	}
+
+	dom.dispose();
+});

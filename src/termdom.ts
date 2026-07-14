@@ -372,6 +372,14 @@ export class TermDOM {
 			this.pushUpForOverflow();
 		}
 
+		// Which *region* of the document we draw is a different question from how we
+		// position the cursor to draw it. The resize path deliberately unsets
+		// hasDetectedCommandStart so the frame is placed with DECRC rather than CUP
+		// -- and keying the region on that flag too meant a resize fell back to a
+		// stale scroll offset and painted over rows the terminal had just handed
+		// back to us out of scrollback.
+		const flow = this.interactive;
+
 		// The document rows still ours to draw: everything below what has already
 		// scrolled into the scrollback. On a frame where the content has grown this
 		// region is taller than the terminal, and printing it is what scrolls the
@@ -399,7 +407,7 @@ export class TermDOM {
 		const startRow =
 			this.committedRows > 0 ? 0 : this.scrollingManager.getScreenTop();
 
-		const viewportOffset = this.hasDetectedCommandStart
+		const viewportOffset = flow
 			? -this.committedRows
 			: -this.scrollingManager.getScrollTop();
 
@@ -411,12 +419,12 @@ export class TermDOM {
 				this.renderElement(this.document.body, ctx);
 			},
 			cursorPosition,
-			this.hasDetectedCommandStart ? startRow + regionRows : undefined,
+			flow ? startRow + regionRows : undefined,
 		);
 
 		// Printing past the bottom margin scrolls the terminal, and those rows are
 		// now in its scrollback -- permanently, and beyond our reach.
-		if (this.hasDetectedCommandStart) {
+		if (flow) {
 			const scrolled = Math.max(0, startRow + regionRows - this.height);
 			if (scrolled > 0) {
 				this.committedRows += scrolled;
