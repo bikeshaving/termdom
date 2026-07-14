@@ -578,6 +578,9 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 			"flex-grow",
 			"flex-shrink",
 			"flex-basis",
+			"gap",
+			"row-gap",
+			"column-gap",
 			"align-self",
 			"order",
 
@@ -612,16 +615,16 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 		}
 	}
 
-	/** The author-level `list-style` shorthand, inline first, then stylesheet rules. */
-	private resolveListStyleShorthand(): string | null {
+	/** An author-level shorthand value, inline first, then stylesheet rules. */
+	private resolveShorthand(property: string): string | null {
 		const style = (this.element as HTMLElement).style;
-		const inline = style?.getPropertyValue("list-style").trim();
+		const inline = style?.getPropertyValue(property).trim();
 		if (inline && !INITIAL_KEYWORDS.has(inline)) return inline;
 
 		let ruleValue: string | null = null;
 		for (const rule of this.cssRules) {
-			if (rule.declarations["list-style"]) {
-				ruleValue = rule.declarations["list-style"];
+			if (rule.declarations[property]) {
+				ruleValue = rule.declarations[property];
 			}
 		}
 		return ruleValue;
@@ -651,15 +654,27 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 			return ruleValue;
 		}
 
-		// 2b. Author-level `list-style` shorthand. cssstyle does not expand it, so
-		// `list-style: none` would otherwise leave list-style-type unset and the
-		// marker would still be drawn.
+		// 2b. Author-level shorthands that cssstyle does not expand for us. They are
+		// consulted after the longhands -- an explicit `row-gap` beats the `gap` it
+		// appears with -- but before the defaults, or the default would silently win
+		// over the shorthand.
 		if (LIST_STYLE_LONGHANDS.has(property)) {
-			const shorthand = this.resolveListStyleShorthand();
+			const shorthand = this.resolveShorthand("list-style");
 			if (shorthand) {
 				const expanded =
 					expandListStyle(shorthand)[property as keyof ListStyleParts];
 				if (expanded) return expanded;
+			}
+		}
+
+		if (property === "row-gap" || property === "column-gap") {
+			const shorthand = this.resolveShorthand("gap");
+			if (shorthand) {
+				// `gap: <row> <column>`, with a single value meaning both.
+				const parts = shorthand.trim().split(/\s+/);
+				const value =
+					property === "row-gap" ? parts[0] : (parts[1] ?? parts[0]);
+				if (value) return value;
 			}
 		}
 

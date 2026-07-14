@@ -503,3 +503,87 @@ describe("align-items: baseline (css-flexbox-1 §8.5)", () => {
 		expect(aTextRow).not.toBe(bTextRow);
 	});
 });
+
+describe("gap (css-align-3)", () => {
+	test("column-gap separates items on the main axis", () => {
+		// Three 6-wide items with a 3-cell column gap: 0, 6+3=9, 9+6+3=18.
+		const root = node();
+		root.setWidth(40);
+		root.setHeight(3);
+		root.setGap(Flex.GUTTER_COLUMN, 3);
+
+		const items = [box(root), box(root), box(root)];
+		for (const item of items) {
+			item.setWidth(6);
+			item.setHeight(1);
+			item.setFlexShrink(0);
+		}
+
+		root.calculateLayout(40, 3);
+
+		expect(rect(items[0]).left).toBe(0);
+		expect(rect(items[1]).left).toBe(9);
+		expect(rect(items[2]).left).toBe(18);
+	});
+
+	test("gaps are taken off the top before flexible lengths are resolved", () => {
+		// A 32-wide row, three flex: 1 items, 2-cell gaps. The gaps are not space
+		// the items may grow into: 32 - 2 gaps of 2 = 28 to share three ways.
+		// 28/3 is not whole, so edge rounding gives 9, 10, 9 -- summing to 28, with
+		// the items at 0, 9+2=11, and 11+10+2=23.
+		const root = node();
+		root.setWidth(32);
+		root.setHeight(3);
+		root.setGap(Flex.GUTTER_COLUMN, 2);
+
+		const items = [box(root), box(root), box(root)];
+		for (const item of items) {
+			item.setFlexGrow(1);
+			item.setFlexBasis(0);
+			item.setHeight(1);
+		}
+
+		root.calculateLayout(32, 3);
+
+		const widths = items.map((item) => rect(item).width);
+		expect(widths.reduce((sum, w) => sum + w, 0)).toBe(28);
+		expect(rect(items[0]).left).toBe(0);
+		expect(rect(items[1]).left).toBe(11);
+		expect(rect(items[2]).left).toBe(23);
+	});
+
+	test("a gap counts against the line when deciding where to wrap", () => {
+		// 8 + 2 + 8 = 18 fits in 20, but adding the third would need 28.
+		// The row gap then separates the two lines: line 2 at 1 + 1 = 2.
+		const root = node();
+		root.setWidth(20);
+		root.setHeight(10);
+		root.setFlexWrap(Flex.WRAP_WRAP);
+		root.setAlignContent(Flex.ALIGN_FLEX_START);
+		root.setAlignItems(Flex.ALIGN_FLEX_START);
+		root.setGap(Flex.GUTTER_COLUMN, 2);
+		root.setGap(Flex.GUTTER_ROW, 1);
+
+		const items = [box(root), box(root), box(root)];
+		for (const item of items) {
+			item.setWidth(8);
+			item.setHeight(1);
+			item.setFlexShrink(0);
+		}
+
+		root.calculateLayout(20, 10);
+
+		expect(rect(items[1]).left).toBe(10);
+		expect(rect(items[1]).top).toBe(0);
+		// Wrapped, and pushed down by its own height plus the row gap.
+		expect(rect(items[2]).left).toBe(0);
+		expect(rect(items[2]).top).toBe(2);
+	});
+
+	test("GUTTER_ALL sets both axes", () => {
+		const root = node();
+		root.setGap(Flex.GUTTER_ALL, 4);
+		expect(root.getGap(Flex.GUTTER_ROW)).toBe(4);
+		expect(root.getGap(Flex.GUTTER_COLUMN)).toBe(4);
+	});
+});

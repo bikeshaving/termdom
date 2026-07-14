@@ -47,6 +47,10 @@ export const FLEX_DIRECTION_COLUMN_REVERSE = 1;
 export const FLEX_DIRECTION_ROW = 2;
 export const FLEX_DIRECTION_ROW_REVERSE = 3;
 
+export const GUTTER_COLUMN = 0;
+export const GUTTER_ROW = 1;
+export const GUTTER_ALL = 2;
+
 export const DISPLAY_FLEX = 0;
 export const DISPLAY_NONE = 1;
 export const DISPLAY_CONTENTS = 2;
@@ -227,6 +231,9 @@ interface Style {
 	flexWrap: Wrap;
 	display: Display;
 
+	/** Gaps between items: [column, row]. */
+	gap: number[];
+
 	/** Table cell spans. 1 unless set; only meaningful on a table-cell. */
 	colSpan: number;
 	rowSpan: number;
@@ -277,6 +284,8 @@ function createStyle(webDefaults: boolean): Style {
 		positionType: POSITION_TYPE_RELATIVE,
 		flexWrap: WRAP_NO_WRAP,
 		display: DISPLAY_FLEX,
+
+		gap: [0, 0],
 
 		colSpan: 1,
 		rowSpan: 1,
@@ -459,6 +468,17 @@ export class Node {
 		this.style.flexWrap = v;
 		this.markDirty();
 	}
+	setGap(gutter: number, value: number): void {
+		const gap = Number.isFinite(value) ? Math.max(0, value) : 0;
+		if (gutter === GUTTER_COLUMN || gutter === GUTTER_ALL) {
+			this.style.gap[GUTTER_COLUMN] = gap;
+		}
+		if (gutter === GUTTER_ROW || gutter === GUTTER_ALL) {
+			this.style.gap[GUTTER_ROW] = gap;
+		}
+		this.markDirty();
+	}
+
 	setColSpan(v: number): void {
 		this.style.colSpan = Math.max(1, Math.floor(v) || 1);
 		this.markDirty();
@@ -681,6 +701,12 @@ export class Node {
 	getDisplay(): Display {
 		return this.style.display;
 	}
+	getGap(gutter: number): number {
+		return gutter === GUTTER_ROW
+			? this.style.gap[GUTTER_ROW]
+			: this.style.gap[GUTTER_COLUMN];
+	}
+
 	getFlexGrow(): number {
 		return resolveFlexGrow(this);
 	}
@@ -794,6 +820,19 @@ function baselineWithinBorderBox(node: Node, ownerWidth: number): number {
 	}
 
 	return contentTop;
+}
+
+/**
+ * The gap between two items along an axis.
+ *
+ * The row gap separates rows, so it is the gap along the *column* axis, and vice
+ * versa -- naming them after what they separate rather than the axis they run
+ * along is a reliable way to get this backwards.
+ */
+function gapForAxis(node: Node, axis: FlexDirection): number {
+	return isRow(axis)
+		? node.style.gap[GUTTER_COLUMN]
+		: node.style.gap[GUTTER_ROW];
 }
 
 function marginForAxis(
@@ -1248,6 +1287,9 @@ function layoutFlexbox(
 	const crossMode = mainIsRow ? heightMode : widthMode;
 	const mainMode = mainIsRow ? widthMode : heightMode;
 
+	const mainGap = gapForAxis(node, mainAxis);
+	const crossGap = gapForAxis(node, cross);
+
 	// -- 9.2 generate flex items -------------------------------------------
 
 	const inFlow: Node[] = [];
@@ -1312,16 +1354,20 @@ function layoutFlexbox(
 				mainIsRow ? ownerWidth : ownerHeight,
 			);
 
+			// A gap precedes every item but the first, so it counts against the
+			// line's capacity just like the item's own size.
+			const precedingGap = line.items.length > 0 ? mainGap : 0;
+
 			if (
 				wrap &&
 				isDefined(innerMain) &&
 				line.items.length > 0 &&
-				line.sizeConsumed + basis + childMarginMain > innerMain
+				line.sizeConsumed + precedingGap + basis + childMarginMain > innerMain
 			) {
 				break;
 			}
 
-			line.sizeConsumed += basis + childMarginMain;
+			line.sizeConsumed += precedingGap + basis + childMarginMain;
 			line.totalGrow += resolveFlexGrow(child);
 			line.totalShrinkScaled += resolveFlexShrink(child) * basis;
 			line.items.push(child);
@@ -1338,10 +1384,17 @@ function layoutFlexbox(
 	let maxMainDim = 0;
 
 	for (const line of lines) {
+		// The gaps are not available to the items, so take them off the top before
+		// any of it is distributed.
+		const lineGap = mainGap * Math.max(0, line.items.length - 1);
+		const mainForItems = isDefined(innerMain)
+			? Math.max(0, innerMain - lineGap)
+			: innerMain;
+
 		resolveFlexibleLengths(
 			line,
 			node,
-			innerMain,
+			mainForItems,
 			mainMode,
 			ownerWidth,
 			ownerHeight,
@@ -1366,8 +1419,9 @@ function layoutFlexbox(
 		positionMainAxis(
 			node,
 			line,
-			innerMain,
+			mainForItems,
 			leadingPaddingBorderMain,
+			mainGap,
 			ownerWidth,
 			performLayout,
 		);
@@ -1393,6 +1447,9 @@ function layoutFlexbox(
 		totalCrossDim += lineCross;
 		maxMainDim = Math.max(maxMainDim, line.mainDim);
 	}
+
+	// Gaps between the lines themselves.
+	totalCrossDim += crossGap * Math.max(0, lines.length - 1);
 
 	// -- measured size ------------------------------------------------------
 
@@ -1834,6 +1891,7 @@ function positionMainAxis(
 	line: FlexLine,
 	innerMain: number,
 	leadingPaddingBorderMain: number,
+	mainGap: number,
 	ownerWidth: number,
 	performLayout: boolean,
 ): void {
@@ -1925,9 +1983,12 @@ function positionMainAxis(
 
 		if (trailingAuto) cursor += autoShare;
 		cursor += between;
+		cursor += mainGap;
 	}
 
-	line.mainDim = contentMain;
+	// The gaps are part of how far the line reaches, so the container's
+	// content size has to include them.
+	line.mainDim = contentMain + mainGap * Math.max(0, line.items.length - 1);
 }
 
 /** align-items / align-self within each line, and align-content across lines. */
@@ -1943,6 +2004,7 @@ function positionCrossAxis(
 	const mainAxis = node.style.flexDirection;
 	const cross = crossAxis(mainAxis);
 	const crossIsRow = isRow(cross);
+	const crossGap = gapForAxis(node, cross);
 
 	const freeCross = isDefined(containerInnerCross)
 		? containerInnerCross - totalCrossDim
@@ -2094,7 +2156,7 @@ function positionCrossAxis(
 			}
 		}
 
-		cursor += lineCross + lineBetween;
+		cursor += lineCross + lineBetween + crossGap;
 	}
 }
 
@@ -3018,6 +3080,10 @@ const Flex = {
 	FLEX_DIRECTION_COLUMN_REVERSE,
 	FLEX_DIRECTION_ROW,
 	FLEX_DIRECTION_ROW_REVERSE,
+
+	GUTTER_COLUMN,
+	GUTTER_ROW,
+	GUTTER_ALL,
 
 	DISPLAY_FLEX,
 	DISPLAY_NONE,

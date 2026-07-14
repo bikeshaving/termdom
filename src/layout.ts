@@ -407,6 +407,20 @@ function styleFlexNode(element: Element, flexNode: FlexTypes.Node): void {
 		}
 	}
 
+	// gap. The `gap` shorthand is expanded in the cascade, so reading the
+	// longhands here is enough and gets the precedence right.
+	const rowGap = parseUnitValue(computedStyle.getPropertyValue("row-gap"));
+	if (typeof rowGap === "number") {
+		flexNode.setGap(Flex.GUTTER_ROW, rowGap);
+	}
+
+	const columnGap = parseUnitValue(
+		computedStyle.getPropertyValue("column-gap"),
+	);
+	if (typeof columnGap === "number") {
+		flexNode.setGap(Flex.GUTTER_COLUMN, columnGap);
+	}
+
 	if (display === "none") {
 		flexNode.setDisplay(Flex.DISPLAY_NONE);
 	} else if (display === "flex") {
