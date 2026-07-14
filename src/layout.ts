@@ -1,19 +1,19 @@
 import type {DOMWindow} from "jsdom";
-import Yoga from "./flex.js";
-import type * as YogaTypes from "./flex.js";
+import Flex from "./flex.js";
+import type * as FlexTypes from "./flex.js";
 import LineBreaker from "linebreak";
 import {getBoxModel, type BoxModel} from "./styles.js";
 import {getPropertyValue, parseUnitValue} from "./styles.js";
 import {createExpandedTreeWalker, getPseudoMetadata} from "./composition.js";
 import {stringWidth as runtimeStringWidth} from "./runtime.js";
 
-function getAbsolutePosition(yogaNode: YogaTypes.Node): {
+function getAbsolutePosition(flexNode: FlexTypes.Node): {
 	x: number;
 	y: number;
 } {
 	let x = 0;
 	let y = 0;
-	let current: YogaTypes.Node | null = yogaNode;
+	let current: FlexTypes.Node | null = flexNode;
 
 	for (; current; current = current.getParent()) {
 		x += current.getComputedLeft();
@@ -24,18 +24,18 @@ function getAbsolutePosition(yogaNode: YogaTypes.Node): {
 }
 
 interface EnumMap {
-	align: YogaTypes.Align;
-	justify: YogaTypes.Justify;
-	wrap: YogaTypes.Wrap;
+	align: FlexTypes.Align;
+	justify: FlexTypes.Justify;
+	wrap: FlexTypes.Wrap;
 }
 
-function getYogaConstant<TEnumName extends keyof EnumMap>(
+function getFlexConstant<TEnumName extends keyof EnumMap>(
 	enumName: TEnumName,
 	propertyName: string,
 ): EnumMap[TEnumName] | null {
 	const name =
 		enumName.toUpperCase() + "_" + propertyName.replace("-", "_").toUpperCase();
-	return (Yoga as any)[name] || null;
+	return (Flex as any)[name] || null;
 }
 
 /**
@@ -70,7 +70,7 @@ function getPreviousTableSibling(
 	return null;
 }
 
-function styleYogaNode(element: Element, yogaNode: YogaTypes.Node): void {
+function styleFlexNode(element: Element, flexNode: FlexTypes.Node): void {
 	const window = element.ownerDocument?.defaultView;
 	if (!window) {
 		throw new Error("Element must have an ownerDocument with defaultView");
@@ -82,81 +82,81 @@ function styleYogaNode(element: Element, yogaNode: YogaTypes.Node): void {
 	// Handle width/height based on display type
 	if (display === "inline") {
 		// For pure inline elements, unset dimensions since they handle dimensions in their measure function
-		yogaNode.setWidthAuto();
-		yogaNode.setHeightAuto();
+		flexNode.setWidthAuto();
+		flexNode.setHeightAuto();
 		// Also unset min/max constraints for pure inline elements
-		yogaNode.setMinWidth(undefined);
-		yogaNode.setMinHeight(undefined);
-		yogaNode.setMaxWidth(undefined);
-		yogaNode.setMaxHeight(undefined);
+		flexNode.setMinWidth(undefined);
+		flexNode.setMinHeight(undefined);
+		flexNode.setMaxWidth(undefined);
+		flexNode.setMaxHeight(undefined);
 	} else if (display === "inline-block") {
 		// For inline-block elements, unset width/height but preserve min/max constraints
 		// This allows the measure function to work while still respecting CSS constraints
-		yogaNode.setWidthAuto();
-		yogaNode.setHeightAuto();
+		flexNode.setWidthAuto();
+		flexNode.setHeightAuto();
 
 		// Apply min/max constraints for inline-block elements (like block elements)
 		const minWidth = parseUnitValue(
 			computedStyle.getPropertyValue("min-width"),
 		);
 		if (typeof minWidth === "number") {
-			yogaNode.setMinWidth(minWidth);
+			flexNode.setMinWidth(minWidth);
 		} else if (minWidth && "percentage" in minWidth) {
-			yogaNode.setMinWidthPercent(minWidth.percentage);
+			flexNode.setMinWidthPercent(minWidth.percentage);
 		} else {
-			yogaNode.setMinWidth(0);
+			flexNode.setMinWidth(0);
 		}
 
 		const minHeight = parseUnitValue(
 			computedStyle.getPropertyValue("min-height"),
 		);
 		if (typeof minHeight === "number") {
-			yogaNode.setMinHeight(minHeight);
+			flexNode.setMinHeight(minHeight);
 		} else if (minHeight && "percentage" in minHeight) {
-			yogaNode.setMinHeightPercent(minHeight.percentage);
+			flexNode.setMinHeightPercent(minHeight.percentage);
 		} else {
-			yogaNode.setMinHeight(0);
+			flexNode.setMinHeight(0);
 		}
 
 		const maxWidth = parseUnitValue(
 			computedStyle.getPropertyValue("max-width"),
 		);
 		if (typeof maxWidth === "number") {
-			yogaNode.setMaxWidth(maxWidth);
+			flexNode.setMaxWidth(maxWidth);
 		} else if (maxWidth && "percentage" in maxWidth) {
-			yogaNode.setMaxWidthPercent(maxWidth.percentage);
+			flexNode.setMaxWidthPercent(maxWidth.percentage);
 		} else {
-			yogaNode.setMaxWidth(undefined);
+			flexNode.setMaxWidth(undefined);
 		}
 
 		const maxHeight = parseUnitValue(
 			computedStyle.getPropertyValue("max-height"),
 		);
 		if (typeof maxHeight === "number") {
-			yogaNode.setMaxHeight(maxHeight);
+			flexNode.setMaxHeight(maxHeight);
 		} else if (maxHeight && "percentage" in maxHeight) {
-			yogaNode.setMaxHeightPercent(maxHeight.percentage);
+			flexNode.setMaxHeightPercent(maxHeight.percentage);
 		} else {
-			yogaNode.setMaxHeight(undefined);
+			flexNode.setMaxHeight(undefined);
 		}
 	} else {
 		// For block elements, apply explicit dimensions normally
 		const width = parseUnitValue(computedStyle.getPropertyValue("width"));
 		if (typeof width === "number") {
-			yogaNode.setWidth(width);
+			flexNode.setWidth(width);
 		} else if (width && "percentage" in width) {
-			yogaNode.setWidthPercent(width.percentage);
+			flexNode.setWidthPercent(width.percentage);
 		} else {
-			yogaNode.setWidthAuto();
+			flexNode.setWidthAuto();
 		}
 
 		const height = parseUnitValue(computedStyle.getPropertyValue("height"));
 		if (typeof height === "number") {
-			yogaNode.setHeight(height);
+			flexNode.setHeight(height);
 		} else if (height && "percentage" in height) {
-			yogaNode.setHeightPercent(height.percentage);
+			flexNode.setHeightPercent(height.percentage);
 		} else {
-			yogaNode.setHeightAuto();
+			flexNode.setHeightAuto();
 		}
 
 		// Apply min/max constraints for block elements
@@ -164,64 +164,64 @@ function styleYogaNode(element: Element, yogaNode: YogaTypes.Node): void {
 			computedStyle.getPropertyValue("min-width"),
 		);
 		if (typeof minWidth === "number") {
-			yogaNode.setMinWidth(minWidth);
+			flexNode.setMinWidth(minWidth);
 		} else if (minWidth && "percentage" in minWidth) {
-			yogaNode.setMinWidthPercent(minWidth.percentage);
+			flexNode.setMinWidthPercent(minWidth.percentage);
 		} else {
-			yogaNode.setMinWidth(0);
+			flexNode.setMinWidth(0);
 		}
 
 		const minHeight = parseUnitValue(
 			computedStyle.getPropertyValue("min-height"),
 		);
 		if (typeof minHeight === "number") {
-			yogaNode.setMinHeight(minHeight);
+			flexNode.setMinHeight(minHeight);
 		} else if (minHeight && "percentage" in minHeight) {
-			yogaNode.setMinHeightPercent(minHeight.percentage);
+			flexNode.setMinHeightPercent(minHeight.percentage);
 		} else {
-			yogaNode.setMinHeight(0);
+			flexNode.setMinHeight(0);
 		}
 
 		const maxWidth = parseUnitValue(
 			computedStyle.getPropertyValue("max-width"),
 		);
 		if (typeof maxWidth === "number") {
-			yogaNode.setMaxWidth(maxWidth);
+			flexNode.setMaxWidth(maxWidth);
 		} else if (maxWidth && "percentage" in maxWidth) {
-			yogaNode.setMaxWidthPercent(maxWidth.percentage);
+			flexNode.setMaxWidthPercent(maxWidth.percentage);
 		} else {
-			yogaNode.setMaxWidth(undefined);
+			flexNode.setMaxWidth(undefined);
 		}
 
 		const maxHeight = parseUnitValue(
 			computedStyle.getPropertyValue("max-height"),
 		);
 		if (typeof maxHeight === "number") {
-			yogaNode.setMaxHeight(maxHeight);
+			flexNode.setMaxHeight(maxHeight);
 		} else if (maxHeight && "percentage" in maxHeight) {
-			yogaNode.setMaxHeightPercent(maxHeight.percentage);
+			flexNode.setMaxHeightPercent(maxHeight.percentage);
 		} else {
-			yogaNode.setMaxHeight(undefined);
+			flexNode.setMaxHeight(undefined);
 		}
 	}
 
 	// Box model properties: clear for inline elements, apply for block/inline-block
 	if (display === "inline") {
 		// Clear all box model properties for inline elements
-		yogaNode.setMargin(Yoga.EDGE_TOP, 0);
-		yogaNode.setMargin(Yoga.EDGE_RIGHT, 0);
-		yogaNode.setMargin(Yoga.EDGE_BOTTOM, 0);
-		yogaNode.setMargin(Yoga.EDGE_LEFT, 0);
+		flexNode.setMargin(Flex.EDGE_TOP, 0);
+		flexNode.setMargin(Flex.EDGE_RIGHT, 0);
+		flexNode.setMargin(Flex.EDGE_BOTTOM, 0);
+		flexNode.setMargin(Flex.EDGE_LEFT, 0);
 
-		yogaNode.setPadding(Yoga.EDGE_TOP, 0);
-		yogaNode.setPadding(Yoga.EDGE_RIGHT, 0);
-		yogaNode.setPadding(Yoga.EDGE_BOTTOM, 0);
-		yogaNode.setPadding(Yoga.EDGE_LEFT, 0);
+		flexNode.setPadding(Flex.EDGE_TOP, 0);
+		flexNode.setPadding(Flex.EDGE_RIGHT, 0);
+		flexNode.setPadding(Flex.EDGE_BOTTOM, 0);
+		flexNode.setPadding(Flex.EDGE_LEFT, 0);
 
-		yogaNode.setBorder(Yoga.EDGE_TOP, 0);
-		yogaNode.setBorder(Yoga.EDGE_RIGHT, 0);
-		yogaNode.setBorder(Yoga.EDGE_BOTTOM, 0);
-		yogaNode.setBorder(Yoga.EDGE_LEFT, 0);
+		flexNode.setBorder(Flex.EDGE_TOP, 0);
+		flexNode.setBorder(Flex.EDGE_RIGHT, 0);
+		flexNode.setBorder(Flex.EDGE_BOTTOM, 0);
+		flexNode.setBorder(Flex.EDGE_LEFT, 0);
 	} else {
 		// Apply normal box model properties for block/inline-block elements
 
@@ -230,15 +230,15 @@ function styleYogaNode(element: Element, yogaNode: YogaTypes.Node): void {
 			computedStyle.getPropertyValue("margin-top"),
 		);
 		if (typeof marginTop === "number") {
-			yogaNode.setMargin(Yoga.EDGE_TOP, marginTop);
+			flexNode.setMargin(Flex.EDGE_TOP, marginTop);
 		} else if (marginTop && "percentage" in marginTop) {
-			yogaNode.setMarginPercent(Yoga.EDGE_TOP, marginTop.percentage);
+			flexNode.setMarginPercent(Flex.EDGE_TOP, marginTop.percentage);
 		} else {
 			const originalValue = computedStyle.getPropertyValue("margin-top");
 			if (originalValue === "auto") {
-				yogaNode.setMarginAuto(Yoga.EDGE_TOP);
+				flexNode.setMarginAuto(Flex.EDGE_TOP);
 			} else {
-				yogaNode.setMargin(Yoga.EDGE_TOP, undefined);
+				flexNode.setMargin(Flex.EDGE_TOP, undefined);
 			}
 		}
 
@@ -246,15 +246,15 @@ function styleYogaNode(element: Element, yogaNode: YogaTypes.Node): void {
 			computedStyle.getPropertyValue("margin-right"),
 		);
 		if (typeof marginRight === "number") {
-			yogaNode.setMargin(Yoga.EDGE_RIGHT, marginRight);
+			flexNode.setMargin(Flex.EDGE_RIGHT, marginRight);
 		} else if (marginRight && "percentage" in marginRight) {
-			yogaNode.setMarginPercent(Yoga.EDGE_RIGHT, marginRight.percentage);
+			flexNode.setMarginPercent(Flex.EDGE_RIGHT, marginRight.percentage);
 		} else {
 			const originalValue = computedStyle.getPropertyValue("margin-right");
 			if (originalValue === "auto") {
-				yogaNode.setMarginAuto(Yoga.EDGE_RIGHT);
+				flexNode.setMarginAuto(Flex.EDGE_RIGHT);
 			} else {
-				yogaNode.setMargin(Yoga.EDGE_RIGHT, undefined);
+				flexNode.setMargin(Flex.EDGE_RIGHT, undefined);
 			}
 		}
 
@@ -262,15 +262,15 @@ function styleYogaNode(element: Element, yogaNode: YogaTypes.Node): void {
 			computedStyle.getPropertyValue("margin-bottom"),
 		);
 		if (typeof marginBottom === "number") {
-			yogaNode.setMargin(Yoga.EDGE_BOTTOM, marginBottom);
+			flexNode.setMargin(Flex.EDGE_BOTTOM, marginBottom);
 		} else if (marginBottom && "percentage" in marginBottom) {
-			yogaNode.setMarginPercent(Yoga.EDGE_BOTTOM, marginBottom.percentage);
+			flexNode.setMarginPercent(Flex.EDGE_BOTTOM, marginBottom.percentage);
 		} else {
 			const originalValue = computedStyle.getPropertyValue("margin-bottom");
 			if (originalValue === "auto") {
-				yogaNode.setMarginAuto(Yoga.EDGE_BOTTOM);
+				flexNode.setMarginAuto(Flex.EDGE_BOTTOM);
 			} else {
-				yogaNode.setMargin(Yoga.EDGE_BOTTOM, undefined);
+				flexNode.setMargin(Flex.EDGE_BOTTOM, undefined);
 			}
 		}
 
@@ -278,15 +278,15 @@ function styleYogaNode(element: Element, yogaNode: YogaTypes.Node): void {
 			computedStyle.getPropertyValue("margin-left"),
 		);
 		if (typeof marginLeft === "number") {
-			yogaNode.setMargin(Yoga.EDGE_LEFT, marginLeft);
+			flexNode.setMargin(Flex.EDGE_LEFT, marginLeft);
 		} else if (marginLeft && "percentage" in marginLeft) {
-			yogaNode.setMarginPercent(Yoga.EDGE_LEFT, marginLeft.percentage);
+			flexNode.setMarginPercent(Flex.EDGE_LEFT, marginLeft.percentage);
 		} else {
 			const originalValue = computedStyle.getPropertyValue("margin-left");
 			if (originalValue === "auto") {
-				yogaNode.setMarginAuto(Yoga.EDGE_LEFT);
+				flexNode.setMarginAuto(Flex.EDGE_LEFT);
 			} else {
-				yogaNode.setMargin(Yoga.EDGE_LEFT, undefined);
+				flexNode.setMargin(Flex.EDGE_LEFT, undefined);
 			}
 		}
 
@@ -295,44 +295,44 @@ function styleYogaNode(element: Element, yogaNode: YogaTypes.Node): void {
 			computedStyle.getPropertyValue("padding-top"),
 		);
 		if (typeof paddingTop === "number") {
-			yogaNode.setPadding(Yoga.EDGE_TOP, paddingTop);
+			flexNode.setPadding(Flex.EDGE_TOP, paddingTop);
 		} else if (paddingTop && "percentage" in paddingTop) {
-			yogaNode.setPaddingPercent(Yoga.EDGE_TOP, paddingTop.percentage);
+			flexNode.setPaddingPercent(Flex.EDGE_TOP, paddingTop.percentage);
 		} else {
-			yogaNode.setPadding(Yoga.EDGE_TOP, undefined);
+			flexNode.setPadding(Flex.EDGE_TOP, undefined);
 		}
 
 		const paddingRight = parseUnitValue(
 			computedStyle.getPropertyValue("padding-right"),
 		);
 		if (typeof paddingRight === "number") {
-			yogaNode.setPadding(Yoga.EDGE_RIGHT, paddingRight);
+			flexNode.setPadding(Flex.EDGE_RIGHT, paddingRight);
 		} else if (paddingRight && "percentage" in paddingRight) {
-			yogaNode.setPaddingPercent(Yoga.EDGE_RIGHT, paddingRight.percentage);
+			flexNode.setPaddingPercent(Flex.EDGE_RIGHT, paddingRight.percentage);
 		} else {
-			yogaNode.setPadding(Yoga.EDGE_RIGHT, undefined);
+			flexNode.setPadding(Flex.EDGE_RIGHT, undefined);
 		}
 
 		const paddingBottom = parseUnitValue(
 			computedStyle.getPropertyValue("padding-bottom"),
 		);
 		if (typeof paddingBottom === "number") {
-			yogaNode.setPadding(Yoga.EDGE_BOTTOM, paddingBottom);
+			flexNode.setPadding(Flex.EDGE_BOTTOM, paddingBottom);
 		} else if (paddingBottom && "percentage" in paddingBottom) {
-			yogaNode.setPaddingPercent(Yoga.EDGE_BOTTOM, paddingBottom.percentage);
+			flexNode.setPaddingPercent(Flex.EDGE_BOTTOM, paddingBottom.percentage);
 		} else {
-			yogaNode.setPadding(Yoga.EDGE_BOTTOM, undefined);
+			flexNode.setPadding(Flex.EDGE_BOTTOM, undefined);
 		}
 
 		const paddingLeft = parseUnitValue(
 			computedStyle.getPropertyValue("padding-left"),
 		);
 		if (typeof paddingLeft === "number") {
-			yogaNode.setPadding(Yoga.EDGE_LEFT, paddingLeft);
+			flexNode.setPadding(Flex.EDGE_LEFT, paddingLeft);
 		} else if (paddingLeft && "percentage" in paddingLeft) {
-			yogaNode.setPaddingPercent(Yoga.EDGE_LEFT, paddingLeft.percentage);
+			flexNode.setPaddingPercent(Flex.EDGE_LEFT, paddingLeft.percentage);
 		} else {
-			yogaNode.setPadding(Yoga.EDGE_LEFT, undefined);
+			flexNode.setPadding(Flex.EDGE_LEFT, undefined);
 		}
 
 		// Border widths
@@ -340,36 +340,36 @@ function styleYogaNode(element: Element, yogaNode: YogaTypes.Node): void {
 			computedStyle.getPropertyValue("border-top-width"),
 		);
 		if (typeof borderTopWidth === "number" && borderTopWidth > 0) {
-			yogaNode.setBorder(Yoga.EDGE_TOP, borderTopWidth);
+			flexNode.setBorder(Flex.EDGE_TOP, borderTopWidth);
 		} else {
-			yogaNode.setBorder(Yoga.EDGE_TOP, 0);
+			flexNode.setBorder(Flex.EDGE_TOP, 0);
 		}
 
 		const borderRightWidth = parseUnitValue(
 			computedStyle.getPropertyValue("border-right-width"),
 		);
 		if (typeof borderRightWidth === "number" && borderRightWidth > 0) {
-			yogaNode.setBorder(Yoga.EDGE_RIGHT, borderRightWidth);
+			flexNode.setBorder(Flex.EDGE_RIGHT, borderRightWidth);
 		} else {
-			yogaNode.setBorder(Yoga.EDGE_RIGHT, 0);
+			flexNode.setBorder(Flex.EDGE_RIGHT, 0);
 		}
 
 		const borderBottomWidth = parseUnitValue(
 			computedStyle.getPropertyValue("border-bottom-width"),
 		);
 		if (typeof borderBottomWidth === "number" && borderBottomWidth > 0) {
-			yogaNode.setBorder(Yoga.EDGE_BOTTOM, borderBottomWidth);
+			flexNode.setBorder(Flex.EDGE_BOTTOM, borderBottomWidth);
 		} else {
-			yogaNode.setBorder(Yoga.EDGE_BOTTOM, 0);
+			flexNode.setBorder(Flex.EDGE_BOTTOM, 0);
 		}
 
 		const borderLeftWidth = parseUnitValue(
 			computedStyle.getPropertyValue("border-left-width"),
 		);
 		if (typeof borderLeftWidth === "number" && borderLeftWidth > 0) {
-			yogaNode.setBorder(Yoga.EDGE_LEFT, borderLeftWidth);
+			flexNode.setBorder(Flex.EDGE_LEFT, borderLeftWidth);
 		} else {
-			yogaNode.setBorder(Yoga.EDGE_LEFT, 0);
+			flexNode.setBorder(Flex.EDGE_LEFT, 0);
 		}
 	}
 
@@ -378,101 +378,101 @@ function styleYogaNode(element: Element, yogaNode: YogaTypes.Node): void {
 		: null;
 
 	if (parentDisplay === "block") {
-		// We emulate display: block with yoga, but this means we need the children
+		// We emulate display: block with flexbox, but this means we need the children
 		// to not have configurable flex properties, or surprising layout behavior
 		// might occur.
-		yogaNode.setFlexGrow(0);
-		yogaNode.setFlexShrink(0); // Prevent shrinking in block containers
-		yogaNode.setFlexBasisAuto();
-		yogaNode.setAlignSelf(Yoga.ALIGN_AUTO);
+		flexNode.setFlexGrow(0);
+		flexNode.setFlexShrink(0); // Prevent shrinking in block containers
+		flexNode.setFlexBasisAuto();
+		flexNode.setAlignSelf(Flex.ALIGN_AUTO);
 	} else {
 		const flexGrow = computedStyle.getPropertyValue("flex-grow");
 		const growValue = parseFloat(flexGrow);
 		if (!isNaN(growValue) && growValue >= 0) {
-			yogaNode.setFlexGrow(growValue);
+			flexNode.setFlexGrow(growValue);
 		} else {
-			yogaNode.setFlexGrow(undefined);
+			flexNode.setFlexGrow(undefined);
 		}
 
 		const flexShrink = computedStyle.getPropertyValue("flex-shrink");
 		const shrinkValue = parseFloat(flexShrink);
 		if (!isNaN(shrinkValue) && shrinkValue >= 0) {
-			yogaNode.setFlexShrink(shrinkValue);
+			flexNode.setFlexShrink(shrinkValue);
 		} else {
-			yogaNode.setFlexShrink(undefined);
+			flexNode.setFlexShrink(undefined);
 		}
 
 		const flexBasis = parseUnitValue(
 			computedStyle.getPropertyValue("flex-basis"),
 		);
 		if (typeof flexBasis === "number") {
-			yogaNode.setFlexBasis(flexBasis);
+			flexNode.setFlexBasis(flexBasis);
 		} else if (flexBasis && "percentage" in flexBasis) {
-			yogaNode.setFlexBasisPercent(flexBasis.percentage);
+			flexNode.setFlexBasisPercent(flexBasis.percentage);
 		} else {
 			const originalValue = computedStyle.getPropertyValue("flex-basis");
 			if (originalValue === "auto") {
-				yogaNode.setFlexBasisAuto();
+				flexNode.setFlexBasisAuto();
 			} else {
-				yogaNode.setFlexBasis(undefined);
+				flexNode.setFlexBasis(undefined);
 			}
 		}
 
 		const alignSelf = computedStyle.getPropertyValue("align-self");
 		if (alignSelf === "auto") {
-			yogaNode.setAlignSelf(Yoga.ALIGN_AUTO);
+			flexNode.setAlignSelf(Flex.ALIGN_AUTO);
 		} else {
-			const alignValue = getYogaConstant("align", alignSelf);
+			const alignValue = getFlexConstant("align", alignSelf);
 			if (alignValue !== null) {
-				yogaNode.setAlignSelf(alignValue);
+				flexNode.setAlignSelf(alignValue);
 			} else {
-				yogaNode.setAlignSelf(Yoga.ALIGN_AUTO);
+				flexNode.setAlignSelf(Flex.ALIGN_AUTO);
 			}
 		}
 	}
 
 	if (display === "none") {
-		yogaNode.setDisplay(Yoga.DISPLAY_NONE);
+		flexNode.setDisplay(Flex.DISPLAY_NONE);
 	} else if (display === "flex") {
-		yogaNode.setDisplay(Yoga.DISPLAY_FLEX);
+		flexNode.setDisplay(Flex.DISPLAY_FLEX);
 	} else if (display === "table") {
-		yogaNode.setDisplay(Yoga.DISPLAY_FLEX);
-		yogaNode.setFlexDirection(Yoga.FLEX_DIRECTION_COLUMN);
+		flexNode.setDisplay(Flex.DISPLAY_FLEX);
+		flexNode.setFlexDirection(Flex.FLEX_DIRECTION_COLUMN);
 	} else if (
 		display === "table-row-group" ||
 		display === "table-header-group" ||
 		display === "table-footer-group"
 	) {
-		yogaNode.setDisplay(Yoga.DISPLAY_FLEX);
-		yogaNode.setFlexDirection(Yoga.FLEX_DIRECTION_COLUMN);
+		flexNode.setDisplay(Flex.DISPLAY_FLEX);
+		flexNode.setFlexDirection(Flex.FLEX_DIRECTION_COLUMN);
 
 		// For border-collapse, overlap row groups so borders merge between sections
 		if (isTableCollapsed(element) && element.previousElementSibling) {
-			yogaNode.setMargin(Yoga.EDGE_TOP, -1);
+			flexNode.setMargin(Flex.EDGE_TOP, -1);
 		}
 	} else if (display === "table-row") {
 		// Table rows are horizontal flex containers
-		yogaNode.setDisplay(Yoga.DISPLAY_FLEX);
-		yogaNode.setFlexDirection(Yoga.FLEX_DIRECTION_ROW);
+		flexNode.setDisplay(Flex.DISPLAY_FLEX);
+		flexNode.setFlexDirection(Flex.FLEX_DIRECTION_ROW);
 
 		// For border-collapse: collapse, overlap rows by 1 so borders merge
 		if (isTableCollapsed(element)) {
 			const prevRow = getPreviousTableSibling(element, "table-row");
 			if (prevRow) {
-				yogaNode.setMargin(Yoga.EDGE_TOP, -1);
+				flexNode.setMargin(Flex.EDGE_TOP, -1);
 			}
 		}
 	} else if (display === "table-cell") {
 		// Table cells are block-level flex items in the row's flex layout
-		yogaNode.setFlexGrow(1);
-		yogaNode.setFlexShrink(1);
-		yogaNode.setFlexBasis("0%");
+		flexNode.setFlexGrow(1);
+		flexNode.setFlexShrink(1);
+		flexNode.setFlexBasis("0%");
 
 		// For border-collapse: collapse, overlap cells by 1 so borders merge
 		if (isTableCollapsed(element)) {
 			const prevCell = getPreviousTableSibling(element, "table-cell");
 			if (prevCell) {
-				yogaNode.setMargin(Yoga.EDGE_LEFT, -1);
+				flexNode.setMargin(Flex.EDGE_LEFT, -1);
 			}
 		}
 
@@ -480,10 +480,10 @@ function styleYogaNode(element: Element, yogaNode: YogaTypes.Node): void {
 		const paddingLeft = computedStyle.getPropertyValue("padding-left");
 		const paddingRight = computedStyle.getPropertyValue("padding-right");
 		if (!paddingLeft || paddingLeft === "0px") {
-			yogaNode.setPadding(Yoga.EDGE_LEFT, 1); // 1 character padding
+			flexNode.setPadding(Flex.EDGE_LEFT, 1); // 1 character padding
 		}
 		if (!paddingRight || paddingRight === "0px") {
-			yogaNode.setPadding(Yoga.EDGE_RIGHT, 1); // 1 character padding
+			flexNode.setPadding(Flex.EDGE_RIGHT, 1); // 1 character padding
 		}
 	}
 
@@ -491,50 +491,50 @@ function styleYogaNode(element: Element, yogaNode: YogaTypes.Node): void {
 	if (display === "flex") {
 		const flexDirection = computedStyle.getPropertyValue("flex-direction");
 		if (flexDirection === "row") {
-			yogaNode.setFlexDirection(Yoga.FLEX_DIRECTION_ROW);
+			flexNode.setFlexDirection(Flex.FLEX_DIRECTION_ROW);
 		} else if (flexDirection === "row-reverse") {
-			yogaNode.setFlexDirection(Yoga.FLEX_DIRECTION_ROW_REVERSE);
+			flexNode.setFlexDirection(Flex.FLEX_DIRECTION_ROW_REVERSE);
 		} else if (flexDirection === "column") {
-			yogaNode.setFlexDirection(Yoga.FLEX_DIRECTION_COLUMN);
+			flexNode.setFlexDirection(Flex.FLEX_DIRECTION_COLUMN);
 		} else if (flexDirection === "column-reverse") {
-			yogaNode.setFlexDirection(Yoga.FLEX_DIRECTION_COLUMN_REVERSE);
+			flexNode.setFlexDirection(Flex.FLEX_DIRECTION_COLUMN_REVERSE);
 		} else {
-			yogaNode.setFlexDirection(Yoga.FLEX_DIRECTION_ROW);
+			flexNode.setFlexDirection(Flex.FLEX_DIRECTION_ROW);
 		}
 
 		const flexWrap = computedStyle.getPropertyValue("flex-wrap");
 		if (flexWrap === "nowrap") {
-			yogaNode.setFlexWrap(Yoga.WRAP_NO_WRAP);
+			flexNode.setFlexWrap(Flex.WRAP_NO_WRAP);
 		} else if (flexWrap === "wrap") {
-			yogaNode.setFlexWrap(Yoga.WRAP_WRAP);
+			flexNode.setFlexWrap(Flex.WRAP_WRAP);
 		} else if (flexWrap === "wrap-reverse") {
-			yogaNode.setFlexWrap(Yoga.WRAP_WRAP_REVERSE);
+			flexNode.setFlexWrap(Flex.WRAP_WRAP_REVERSE);
 		} else {
-			yogaNode.setFlexWrap(Yoga.WRAP_NO_WRAP);
+			flexNode.setFlexWrap(Flex.WRAP_NO_WRAP);
 		}
 
 		const justifyContent = computedStyle.getPropertyValue("justify-content");
-		const justifyValue = getYogaConstant("justify", justifyContent);
+		const justifyValue = getFlexConstant("justify", justifyContent);
 		if (justifyValue !== null) {
-			yogaNode.setJustifyContent(justifyValue);
+			flexNode.setJustifyContent(justifyValue);
 		} else {
-			yogaNode.setJustifyContent(Yoga.JUSTIFY_FLEX_START);
+			flexNode.setJustifyContent(Flex.JUSTIFY_FLEX_START);
 		}
 
 		const alignItems = computedStyle.getPropertyValue("align-items");
-		const alignValue = getYogaConstant("align", alignItems);
+		const alignValue = getFlexConstant("align", alignItems);
 		if (alignValue !== null) {
-			yogaNode.setAlignItems(alignValue);
+			flexNode.setAlignItems(alignValue);
 		} else {
-			yogaNode.setAlignItems(Yoga.ALIGN_STRETCH);
+			flexNode.setAlignItems(Flex.ALIGN_STRETCH);
 		}
 
 		const alignContent = computedStyle.getPropertyValue("align-content");
-		const alignContentValue = getYogaConstant("align", alignContent);
+		const alignContentValue = getFlexConstant("align", alignContent);
 		if (alignContentValue !== null) {
-			yogaNode.setAlignContent(alignContentValue);
+			flexNode.setAlignContent(alignContentValue);
 		} else {
-			yogaNode.setAlignContent(Yoga.ALIGN_FLEX_START);
+			flexNode.setAlignContent(Flex.ALIGN_FLEX_START);
 		}
 	} else if (
 		display !== "table" &&
@@ -545,121 +545,121 @@ function styleYogaNode(element: Element, yogaNode: YogaTypes.Node): void {
 		display !== "table-cell"
 	) {
 		// Default block layout (not table elements, which are handled above)
-		yogaNode.setDisplay(Yoga.DISPLAY_FLEX);
-		yogaNode.setFlexDirection(Yoga.FLEX_DIRECTION_COLUMN);
-		yogaNode.setAlignItems(Yoga.ALIGN_STRETCH);
+		flexNode.setDisplay(Flex.DISPLAY_FLEX);
+		flexNode.setFlexDirection(Flex.FLEX_DIRECTION_COLUMN);
+		flexNode.setAlignItems(Flex.ALIGN_STRETCH);
 	}
 
 	// Handle positioning properties
 	const position = computedStyle.getPropertyValue("position");
 	if (position === "absolute") {
-		yogaNode.setPositionType(Yoga.POSITION_TYPE_ABSOLUTE);
+		flexNode.setPositionType(Flex.POSITION_TYPE_ABSOLUTE);
 
 		// Handle left positioning
 		const left = parseUnitValue(computedStyle.getPropertyValue("left"));
 		if (typeof left === "number") {
-			yogaNode.setPosition(Yoga.EDGE_LEFT, left);
+			flexNode.setPosition(Flex.EDGE_LEFT, left);
 		} else if (left && "percentage" in left) {
-			yogaNode.setPositionPercent(Yoga.EDGE_LEFT, left.percentage);
+			flexNode.setPositionPercent(Flex.EDGE_LEFT, left.percentage);
 		} else {
 			const originalLeft = computedStyle.getPropertyValue("left");
 			if (originalLeft === "auto" || !originalLeft) {
-				yogaNode.setPositionAuto(Yoga.EDGE_LEFT);
+				flexNode.setPositionAuto(Flex.EDGE_LEFT);
 			}
 		}
 
 		// Handle top positioning
 		const top = parseUnitValue(computedStyle.getPropertyValue("top"));
 		if (typeof top === "number") {
-			yogaNode.setPosition(Yoga.EDGE_TOP, top);
+			flexNode.setPosition(Flex.EDGE_TOP, top);
 		} else if (top && "percentage" in top) {
-			yogaNode.setPositionPercent(Yoga.EDGE_TOP, top.percentage);
+			flexNode.setPositionPercent(Flex.EDGE_TOP, top.percentage);
 		} else {
 			const originalTop = computedStyle.getPropertyValue("top");
 			if (originalTop === "auto" || !originalTop) {
-				yogaNode.setPositionAuto(Yoga.EDGE_TOP);
+				flexNode.setPositionAuto(Flex.EDGE_TOP);
 			}
 		}
 
 		// Handle right positioning
 		const right = parseUnitValue(computedStyle.getPropertyValue("right"));
 		if (typeof right === "number") {
-			yogaNode.setPosition(Yoga.EDGE_RIGHT, right);
+			flexNode.setPosition(Flex.EDGE_RIGHT, right);
 		} else if (right && "percentage" in right) {
-			yogaNode.setPositionPercent(Yoga.EDGE_RIGHT, right.percentage);
+			flexNode.setPositionPercent(Flex.EDGE_RIGHT, right.percentage);
 		} else {
 			const originalRight = computedStyle.getPropertyValue("right");
 			if (originalRight === "auto" || !originalRight) {
-				yogaNode.setPositionAuto(Yoga.EDGE_RIGHT);
+				flexNode.setPositionAuto(Flex.EDGE_RIGHT);
 			}
 		}
 
 		// Handle bottom positioning
 		const bottom = parseUnitValue(computedStyle.getPropertyValue("bottom"));
 		if (typeof bottom === "number") {
-			yogaNode.setPosition(Yoga.EDGE_BOTTOM, bottom);
+			flexNode.setPosition(Flex.EDGE_BOTTOM, bottom);
 		} else if (bottom && "percentage" in bottom) {
-			yogaNode.setPositionPercent(Yoga.EDGE_BOTTOM, bottom.percentage);
+			flexNode.setPositionPercent(Flex.EDGE_BOTTOM, bottom.percentage);
 		} else {
 			const originalBottom = computedStyle.getPropertyValue("bottom");
 			if (originalBottom === "auto" || !originalBottom) {
-				yogaNode.setPositionAuto(Yoga.EDGE_BOTTOM);
+				flexNode.setPositionAuto(Flex.EDGE_BOTTOM);
 			}
 		}
 	} else if (position === "relative") {
-		yogaNode.setPositionType(Yoga.POSITION_TYPE_RELATIVE);
+		flexNode.setPositionType(Flex.POSITION_TYPE_RELATIVE);
 		// For relative positioning, also apply left/top/right/bottom offsets
 		// (same pattern as absolute, but with relative position type)
 		const left = parseUnitValue(computedStyle.getPropertyValue("left"));
 		if (typeof left === "number") {
-			yogaNode.setPosition(Yoga.EDGE_LEFT, left);
+			flexNode.setPosition(Flex.EDGE_LEFT, left);
 		} else if (left && "percentage" in left) {
-			yogaNode.setPositionPercent(Yoga.EDGE_LEFT, left.percentage);
+			flexNode.setPositionPercent(Flex.EDGE_LEFT, left.percentage);
 		}
 
 		const top = parseUnitValue(computedStyle.getPropertyValue("top"));
 		if (typeof top === "number") {
-			yogaNode.setPosition(Yoga.EDGE_TOP, top);
+			flexNode.setPosition(Flex.EDGE_TOP, top);
 		} else if (top && "percentage" in top) {
-			yogaNode.setPositionPercent(Yoga.EDGE_TOP, top.percentage);
+			flexNode.setPositionPercent(Flex.EDGE_TOP, top.percentage);
 		}
 	} else if (position === "fixed") {
 		// In terminal context, fixed positioning is treated like absolute
 		// positioning relative to the root element (the viewport).
-		// Yoga doesn't have a fixed position type, so we use absolute.
-		yogaNode.setPositionType(Yoga.POSITION_TYPE_ABSOLUTE);
+		// The engine has no fixed position type, so we use absolute.
+		flexNode.setPositionType(Flex.POSITION_TYPE_ABSOLUTE);
 
 		const left = parseUnitValue(computedStyle.getPropertyValue("left"));
 		if (typeof left === "number") {
-			yogaNode.setPosition(Yoga.EDGE_LEFT, left);
+			flexNode.setPosition(Flex.EDGE_LEFT, left);
 		} else if (left && "percentage" in left) {
-			yogaNode.setPositionPercent(Yoga.EDGE_LEFT, left.percentage);
+			flexNode.setPositionPercent(Flex.EDGE_LEFT, left.percentage);
 		}
 
 		const top = parseUnitValue(computedStyle.getPropertyValue("top"));
 		if (typeof top === "number") {
-			yogaNode.setPosition(Yoga.EDGE_TOP, top);
+			flexNode.setPosition(Flex.EDGE_TOP, top);
 		} else if (top && "percentage" in top) {
-			yogaNode.setPositionPercent(Yoga.EDGE_TOP, top.percentage);
+			flexNode.setPositionPercent(Flex.EDGE_TOP, top.percentage);
 		}
 
 		const right = parseUnitValue(computedStyle.getPropertyValue("right"));
 		if (typeof right === "number") {
-			yogaNode.setPosition(Yoga.EDGE_RIGHT, right);
+			flexNode.setPosition(Flex.EDGE_RIGHT, right);
 		} else if (right && "percentage" in right) {
-			yogaNode.setPositionPercent(Yoga.EDGE_RIGHT, right.percentage);
+			flexNode.setPositionPercent(Flex.EDGE_RIGHT, right.percentage);
 		}
 
 		const bottom = parseUnitValue(computedStyle.getPropertyValue("bottom"));
 		if (typeof bottom === "number") {
-			yogaNode.setPosition(Yoga.EDGE_BOTTOM, bottom);
+			flexNode.setPosition(Flex.EDGE_BOTTOM, bottom);
 		} else if (bottom && "percentage" in bottom) {
-			yogaNode.setPositionPercent(Yoga.EDGE_BOTTOM, bottom.percentage);
+			flexNode.setPositionPercent(Flex.EDGE_BOTTOM, bottom.percentage);
 		}
 	} else if (position === "static") {
-		yogaNode.setPositionType(Yoga.POSITION_TYPE_STATIC);
+		flexNode.setPositionType(Flex.POSITION_TYPE_STATIC);
 	} else {
-		yogaNode.setPositionType(Yoga.POSITION_TYPE_STATIC);
+		flexNode.setPositionType(Flex.POSITION_TYPE_STATIC);
 	}
 }
 
@@ -747,9 +747,9 @@ export interface RectText {
 	text: string; // Processed text to render (replaces textLength)
 }
 
-const yogaConfig = Yoga.Config.create();
-yogaConfig.setUseWebDefaults(true);
-yogaConfig.setPointScaleFactor(1.0);
+const flexConfig = Flex.Config.create();
+flexConfig.setUseWebDefaults(true);
+flexConfig.setPointScaleFactor(1.0);
 
 export class LayoutEngine {
 	declare DOMRect: typeof DOMRect;
@@ -761,31 +761,31 @@ export class LayoutEngine {
 	declare terminalHeight: number;
 
 	// Viewport root node - represents terminal dimensions, no DOM element associated
-	declare viewportRootNode: YogaTypes.Node;
+	declare viewportRootNode: FlexTypes.Node;
 
 	// Public Maps for debugging
-	public nodeMap: Map<Node, YogaTypes.Node>;
+	public nodeMap: Map<Node, FlexTypes.Node>;
 	public breakResultMap: Map<Node, BreakResult>;
 
 	// Track nodes that were invalidated and need re-adding during calculateLayout
 	private invalidatedNodes: Set<Node>;
 
-	// Track Yoga nodes that have measure functions (for resize invalidation)
-	private measureNodes: Set<YogaTypes.Node>;
+	// Track layout nodes that have measure functions (for resize invalidation)
+	private measureNodes: Set<FlexTypes.Node>;
 
 	constructor(window: DOMWindow) {
 		this.window = window;
 		this.DOMRect = window.DOMRect;
 		this.rootElement = window.document.documentElement;
-		this.nodeMap = new Map<Node, YogaTypes.Node>();
+		this.nodeMap = new Map<Node, FlexTypes.Node>();
 		this.breakResultMap = new Map<Node, BreakResult>();
 		this.invalidatedNodes = new Set<Node>();
-		this.measureNodes = new Set<YogaTypes.Node>();
+		this.measureNodes = new Set<FlexTypes.Node>();
 
 		// Create viewport root node (no DOM element associated)
-		this.viewportRootNode = Yoga.Node.create();
-		this.viewportRootNode.setFlexDirection(Yoga.FLEX_DIRECTION_COLUMN);
-		this.viewportRootNode.setAlignItems(Yoga.ALIGN_STRETCH);
+		this.viewportRootNode = Flex.Node.create();
+		this.viewportRootNode.setFlexDirection(Flex.FLEX_DIRECTION_COLUMN);
+		this.viewportRootNode.setAlignItems(Flex.ALIGN_STRETCH);
 
 		// Attach HTML element to viewport root instead of null
 		this.#addNode(this.rootElement, this.viewportRootNode);
@@ -803,9 +803,9 @@ export class LayoutEngine {
 		this.breakResultMap.clear();
 
 		// Mark all leaf nodes (those with measure functions) as dirty
-		// so Yoga re-invokes their measure functions with the new available width
-		for (const yogaNode of this.measureNodes) {
-			yogaNode.markDirty();
+		// so the engine re-invokes their measure functions with the new available width
+		for (const flexNode of this.measureNodes) {
+			flexNode.markDirty();
 		}
 
 		// Force recalculation of all layout after size change
@@ -823,12 +823,12 @@ export class LayoutEngine {
 		// Re-add invalidated nodes that are still connected to DOM
 		for (const node of this.invalidatedNodes) {
 			if (node.isConnected) {
-				// Find parent that has a Yoga node to attach to
+				// Find parent that has a layout node to attach to
 				let parent = node.parentElement;
 				while (parent) {
-					const parentYogaNode = this.nodeMap.get(parent);
-					if (parentYogaNode) {
-						this.#addNode(node, parentYogaNode);
+					const parentFlexNode = this.nodeMap.get(parent);
+					if (parentFlexNode) {
+						this.#addNode(node, parentFlexNode);
 						break;
 					}
 					parent = parent.parentElement;
@@ -856,18 +856,18 @@ export class LayoutEngine {
 	}
 
 	#pruneDisconnectedNodes(): void {
-		for (const [node, layoutNode] of this.nodeMap) {
+		for (const [node, flexNode] of this.nodeMap) {
 			if (node === this.rootElement || this.#isNodeLive(node)) {
 				continue;
 			}
 
-			const parent = layoutNode.getParent();
+			const parent = flexNode.getParent();
 			if (parent) {
-				parent.removeChild(layoutNode);
+				parent.removeChild(flexNode);
 			}
 
-			this.measureNodes.delete(layoutNode);
-			layoutNode.freeRecursive();
+			this.measureNodes.delete(flexNode);
+			flexNode.freeRecursive();
 			this.nodeMap.delete(node);
 			this.breakResultMap.delete(node);
 			this.invalidatedNodes.delete(node);
@@ -875,10 +875,10 @@ export class LayoutEngine {
 	}
 
 	/**
-	 * Clean up yoga nodes and resources
+	 * Clean up layout nodes and resources
 	 */
 	dispose(): void {
-		// Clean up viewport root node (this will recursively free all child yoga nodes)
+		// Clean up viewport root node (this will recursively free all child layout nodes)
 		this.viewportRootNode.freeRecursive();
 
 		// Clear the maps (now regular Maps for debugging)
@@ -919,9 +919,9 @@ export class LayoutEngine {
 									segment.leaf.node === element
 								) {
 									// Get absolute position of the inline-block element
-									const yogaNode = this.nodeMap.get(element);
-									if (!yogaNode) {
-										// Fallback to relative position if no yoga node
+									const flexNode = this.nodeMap.get(element);
+									if (!flexNode) {
+										// Fallback to relative position if no layout node
 										return new this.DOMRect(
 											segment.x,
 											line.y,
@@ -929,7 +929,7 @@ export class LayoutEngine {
 											line.height,
 										);
 									}
-									const {x, y} = getAbsolutePosition(yogaNode);
+									const {x, y} = getAbsolutePosition(flexNode);
 									return new this.DOMRect(x, y, segment.width, line.height);
 								}
 							}
@@ -959,20 +959,20 @@ export class LayoutEngine {
 			}
 		}
 
-		// Fall back to Yoga node for block elements and containers
-		let yogaNode = this.nodeMap.get(element);
+		// Fall back to the layout node for block elements and containers
+		let flexNode = this.nodeMap.get(element);
 
-		if (!yogaNode) {
+		if (!flexNode) {
 			return null;
 		}
 
-		const {x, y} = getAbsolutePosition(yogaNode);
+		const {x, y} = getAbsolutePosition(flexNode);
 
 		return new this.DOMRect(
 			x,
 			y,
-			yogaNode.getComputedWidth(),
-			yogaNode.getComputedHeight(),
+			flexNode.getComputedWidth(),
+			flexNode.getComputedHeight(),
 		);
 	}
 
@@ -998,10 +998,10 @@ export class LayoutEngine {
 				if (breakResult) {
 					// The breakResult contains this inline-block as a segment with nested content
 					const rectTexts: RectText[] = [];
-					const yogaNode = this.nodeMap.get(element);
-					if (!yogaNode) return [];
+					const flexNode = this.nodeMap.get(element);
+					if (!flexNode) return [];
 
-					const {x: containerX, y: containerY} = getAbsolutePosition(yogaNode);
+					const {x: containerX, y: containerY} = getAbsolutePosition(flexNode);
 
 					for (const line of breakResult.lines) {
 						for (const segment of line.segments) {
@@ -1092,10 +1092,10 @@ export class LayoutEngine {
 		}
 
 		// Get run head's absolute position by accumulating parent positions
-		const yogaNode = this.nodeMap.get(runHead);
-		if (!yogaNode) return [];
+		const flexNode = this.nodeMap.get(runHead);
+		if (!flexNode) return [];
 
-		let {x: containerX, y: containerY} = getAbsolutePosition(yogaNode);
+		let {x: containerX, y: containerY} = getAbsolutePosition(flexNode);
 
 		// Walk from target node up to runHead, handling nested inline-blocks
 		// This handles the case where getRectTexts is called on elements/text inside inline-blocks
@@ -1266,10 +1266,10 @@ export class LayoutEngine {
 	/**
 	 * A "run head" is the first node in a contiguous run of inline-level
 	 * elements. This is a TermDOM implementation detail for implementing CSS
-	 * inline layout with Yoga measurement functions.
+	 * inline layout with measure functions.
 	 *
 	 * The run head node:
-	 * - Gets the Yoga node with a measure function
+	 * - Gets the layout node with a measure function
 	 * - Assigns a breakResult entry
 	 * - Other inline nodes in the run delegate their layout to this head
 	 *
@@ -1404,24 +1404,24 @@ export class LayoutEngine {
 			this.#invalidateInlineRun(node);
 		} else if (node.nodeType === node.ELEMENT_NODE) {
 			// For block-level elements, remove from nodeMap to force recreation
-			// We can't call markDirty() on container nodes as Yoga only allows
+			// We can't call markDirty() on container nodes as the engine only allows
 			// leaf nodes with measure functions to be marked dirty
-			const yogaNode = this.nodeMap.get(node);
-			if (yogaNode) {
+			const flexNode = this.nodeMap.get(node);
+			if (flexNode) {
 				// Get parent before removing from map
-				const parent = yogaNode.getParent();
+				const parent = flexNode.getParent();
 				if (parent) {
-					parent.removeChild(yogaNode);
+					parent.removeChild(flexNode);
 				}
 
 				// Check if node was actually removed vs just being invalidated (e.g., for pseudo-elements)
 				if (!node.isConnected) {
 					// Node was truly removed from DOM - free it
-					this.measureNodes.delete(yogaNode);
-					yogaNode.freeRecursive();
+					this.measureNodes.delete(flexNode);
+					flexNode.freeRecursive();
 					this.nodeMap.delete(node);
 				} else {
-					// Node is still connected - just remove from parent but keep Yoga node for reuse
+					// Node is still connected - just remove from parent but keep the layout node for reuse
 					// This happens during pseudo-element attachment invalidation
 					// Don't free the node - it will be reattached during layout calculation
 				}
@@ -1513,16 +1513,16 @@ export class LayoutEngine {
 			// Also clear the current run head's break result
 			this.breakResultMap.delete(runHead);
 
-			// If this node has a Yoga node but is NOT the run head, clean it up
+			// If this node has a layout node but is NOT the run head, clean it up
 			if (runHead !== node && this.nodeMap.has(node)) {
-				const yogaNode = this.nodeMap.get(node);
-				if (yogaNode) {
+				const flexNode = this.nodeMap.get(node);
+				if (flexNode) {
 					// Remove from parent
 					const parent = node.parentElement;
 					if (parent) {
-						const parentYogaNode = this.nodeMap.get(parent);
-						if (parentYogaNode) {
-							parentYogaNode.removeChild(yogaNode);
+						const parentFlexNode = this.nodeMap.get(parent);
+						if (parentFlexNode) {
+							parentFlexNode.removeChild(flexNode);
 						}
 					}
 					// Free and remove from map
@@ -1530,30 +1530,30 @@ export class LayoutEngine {
 					if (pseudoMeta) {
 						// Removing pseudo element from nodeMap during invalidateInlineRun cleanup
 					}
-					this.measureNodes.delete(yogaNode);
-					yogaNode.freeRecursive();
+					this.measureNodes.delete(flexNode);
+					flexNode.freeRecursive();
 					this.nodeMap.delete(node);
 				}
 			}
 
-			// Ensure the actual run head has a Yoga node
+			// Ensure the actual run head has a layout node
 			if (!this.nodeMap.has(runHead)) {
-				// Find the parent that should contain this run head's Yoga node
+				// Find the parent that should contain this run head's layout node
 				let parent = runHead.parentElement;
 				while (parent) {
-					const parentYogaNode = this.nodeMap.get(parent);
-					if (parentYogaNode) {
+					const parentFlexNode = this.nodeMap.get(parent);
+					if (parentFlexNode) {
 						// Add the run head to the layout tree
-						this.#addNode(runHead, parentYogaNode);
+						this.#addNode(runHead, parentFlexNode);
 						break;
 					}
 					parent = parent.parentElement;
 				}
 			} else {
-				// Run head already has Yoga node, just mark it dirty
-				const yogaNode = this.nodeMap.get(runHead);
-				if (yogaNode) {
-					yogaNode.markDirty();
+				// Run head already has a layout node, just mark it dirty
+				const flexNode = this.nodeMap.get(runHead);
+				if (flexNode) {
+					flexNode.markDirty();
 				}
 			}
 		}
@@ -1642,9 +1642,9 @@ export class LayoutEngine {
 			if (record.type === "attributes") {
 				if (record.attributeName === "style") {
 					const element = record.target as Element;
-					const yogaNode = this.nodeMap.get(element);
-					if (yogaNode) {
-						styleYogaNode(element, yogaNode);
+					const flexNode = this.nodeMap.get(element);
+					if (flexNode) {
+						styleFlexNode(element, flexNode);
 						// Invalidate inline runs if style changes might affect layout
 						this.#invalidateInlineRun(element);
 					}
@@ -1661,7 +1661,7 @@ export class LayoutEngine {
 			for (let j = 0; j < record.addedNodes.length; j++) {
 				const node = record.addedNodes[j];
 				const parentElement = record.target as Element;
-				const parentYogaNode = this.nodeMap.get(parentElement);
+				const parentFlexNode = this.nodeMap.get(parentElement);
 
 				// Skip adding children if parent is inline-block (it uses measure function and cannot have children)
 				const parentDisplay = getPropertyValue(parentElement, "display");
@@ -1669,23 +1669,23 @@ export class LayoutEngine {
 					continue;
 				}
 
-				if (!parentYogaNode) {
-					// If parent has no Yoga node, it might be an inline element that's part of a run
-					// Instead of adding to Yoga tree, just invalidate the inline run
+				if (!parentFlexNode) {
+					// If parent has no layout node, it might be an inline element that's part of a run
+					// Instead of adding to the layout tree, just invalidate the inline run
 					if (this.#isInlineLevel(node)) {
 						this.#invalidateInlineRun(node);
 						this.#invalidateInlineRun(parentElement); // Also invalidate parent's run
-						continue; // Skip normal Yoga tree addition
+						continue; // Skip normal layout tree addition
 					} else {
-						// Block elements should have parents with Yoga nodes
+						// Block elements should have parents with layout nodes
 						throw new Error(
-							`No parent Yoga node found for added node ${node.nodeName} under ${parentElement.tagName}`,
+							`No parent layout node found for added node ${node.nodeName} under ${parentElement.tagName}`,
 						);
 					}
 				}
 
-				// Add the node to Yoga layout
-				this.#addNode(node, parentYogaNode);
+				// Add the node to Flex layout
+				this.#addNode(node, parentFlexNode);
 
 				// Invalidate inline runs that might be affected by this addition
 				if (this.#isInlineLevel(node)) {
@@ -1738,38 +1738,38 @@ export class LayoutEngine {
 		}
 	}
 
-	#addNode(node: Node, parentYogaNode: YogaTypes.Node | null = null): void {
+	#addNode(node: Node, parentFlexNode: FlexTypes.Node | null = null): void {
 		if (this.nodeMap.has(node)) {
 			// Node already exists - this might be a moved node that needs reparenting
-			const existingYogaNode = this.nodeMap.get(node);
-			if (existingYogaNode && parentYogaNode) {
+			const existingFlexNode = this.nodeMap.get(node);
+			if (existingFlexNode && parentFlexNode) {
 				// Check if it's already a child of the correct parent
-				const currentParent = existingYogaNode.getParent();
-				if (currentParent !== parentYogaNode) {
+				const currentParent = existingFlexNode.getParent();
+				if (currentParent !== parentFlexNode) {
 					// Remove from current parent first (if any)
 					if (currentParent) {
-						currentParent.removeChild(existingYogaNode);
+						currentParent.removeChild(existingFlexNode);
 					}
 					// Add to new parent
-					const yogaIndex = this.#getYogaIndex(node as Element);
-					parentYogaNode.insertChild(existingYogaNode, yogaIndex);
+					const flexIndex = this.#getFlexIndex(node as Element);
+					parentFlexNode.insertChild(existingFlexNode, flexIndex);
 				}
 			}
 			return;
 		}
 
 		if (node.nodeType === node.ELEMENT_NODE) {
-			this.#addElementNode(node as Element, parentYogaNode);
+			this.#addElementNode(node as Element, parentFlexNode);
 		} else if (node.nodeType === node.TEXT_NODE) {
-			this.#addTextNode(node as Text, parentYogaNode);
+			this.#addTextNode(node as Text, parentFlexNode);
 		}
 	}
 
 	#addElementNode(
 		element: Element,
-		parentYogaNode: YogaTypes.Node | null = null,
+		parentFlexNode: FlexTypes.Node | null = null,
 	): void {
-		const yogaIndex = this.#getYogaIndex(element);
+		const flexIndex = this.#getFlexIndex(element);
 		const display = getPropertyValue(element, "display");
 
 		// For inline elements, we need to find or create the run head
@@ -1779,31 +1779,31 @@ export class LayoutEngine {
 				// This element is part of an existing run - the run head will handle it
 				// Clear any cached results for the run head to force re-measurement
 				this.#clearBreakResultCache(runHead);
-				const runHeadYogaNode = this.nodeMap.get(runHead);
-				if (runHeadYogaNode) {
-					runHeadYogaNode.markDirty();
+				const runHeadFlexNode = this.nodeMap.get(runHead);
+				if (runHeadFlexNode) {
+					runHeadFlexNode.markDirty();
 				}
 				return;
 			}
-			// If runHead === element, this is the run head - proceed to create Yoga node
+			// If runHead === element, this is the run head - proceed to create layout node
 		}
 
-		let yogaNode = this.nodeMap.get(element);
-		if (!yogaNode) {
-			yogaNode = Yoga.Node.createWithConfig(yogaConfig);
-			this.nodeMap.set(element, yogaNode);
+		let flexNode = this.nodeMap.get(element);
+		if (!flexNode) {
+			flexNode = Flex.Node.createWithConfig(flexConfig);
+			this.nodeMap.set(element, flexNode);
 		}
 
-		styleYogaNode(element, yogaNode);
+		styleFlexNode(element, flexNode);
 
 		if (display === "none") {
-			yogaNode.setDisplay(Yoga.DISPLAY_NONE);
-			if (yogaNode && parentYogaNode) {
-				parentYogaNode.insertChild(yogaNode, yogaIndex);
+			flexNode.setDisplay(Flex.DISPLAY_NONE);
+			if (flexNode && parentFlexNode) {
+				parentFlexNode.insertChild(flexNode, flexIndex);
 			}
 			return;
 		} else if (display === "inline" || display === "inline-block") {
-			yogaNode.setMeasureFunc((width, widthMode, height, heightMode) => {
+			flexNode.setMeasureFunc((width, widthMode, height, heightMode) => {
 				return this.#measureInlineRun(
 					element,
 					width,
@@ -1812,21 +1812,21 @@ export class LayoutEngine {
 					heightMode,
 				);
 			});
-			this.measureNodes.add(yogaNode);
+			this.measureNodes.add(flexNode);
 
 			// Note: Automatic minimum size for flex items is now handled in measureInlineRun
 
-			if (yogaNode && parentYogaNode) {
-				parentYogaNode.insertChild(yogaNode, yogaIndex);
+			if (flexNode && parentFlexNode) {
+				parentFlexNode.insertChild(flexNode, flexIndex);
 			}
 
 			return;
 		}
 
 		// Block elements should NOT get measure functions - only their inline children do.
-		// This prevents Yoga constraint violations (nodes with measure functions cannot have children)
+		// This prevents Flex constraint violations (nodes with measure functions cannot have children)
 
-		// Inline-block elements cannot have children in the Yoga tree because they use measure functions
+		// Inline-block elements cannot have children in the layout tree because they use measure functions
 		if (display === "inline-block") {
 			return;
 		}
@@ -1841,27 +1841,27 @@ export class LayoutEngine {
 				const childDisplay = getPropertyValue(child as Element, "display");
 				if (childDisplay === "inline" || childDisplay === "inline-block") {
 					if (display === "flex") {
-						this.#addNode(child, yogaNode);
+						this.#addNode(child, flexNode);
 					} else {
-						this.#addNode(child, yogaNode);
+						this.#addNode(child, flexNode);
 					}
 				} else {
-					this.#addNode(child, yogaNode);
+					this.#addNode(child, flexNode);
 				}
 			} else if (child.nodeType === child.TEXT_NODE) {
 				// Text nodes need to be added to the layout tree
-				this.#addNode(child, yogaNode);
+				this.#addNode(child, flexNode);
 			}
 			child = walker.nextSibling();
 		}
 
-		if (yogaNode && parentYogaNode) {
-			parentYogaNode.insertChild(yogaNode, yogaIndex);
+		if (flexNode && parentFlexNode) {
+			parentFlexNode.insertChild(flexNode, flexIndex);
 		}
 	}
 
-	#addTextNode(text: Text, parentYogaNode: YogaTypes.Node | null = null): void {
-		if (!parentYogaNode) {
+	#addTextNode(text: Text, parentFlexNode: FlexTypes.Node | null = null): void {
+		if (!parentFlexNode) {
 			return;
 		}
 
@@ -1871,26 +1871,26 @@ export class LayoutEngine {
 			// This text node is part of an existing run - the run head will handle it
 			// Clear any cached results for the run head to force re-measurement
 			this.#clearBreakResultCache(runHead);
-			const runHeadYogaNode = this.nodeMap.get(runHead);
-			if (runHeadYogaNode) {
-				runHeadYogaNode.markDirty();
+			const runHeadFlexNode = this.nodeMap.get(runHead);
+			if (runHeadFlexNode) {
+				runHeadFlexNode.markDirty();
 			}
 			return;
 		}
 
-		// This text node is the run head - create a Yoga node for it
-		let yogaNode = this.nodeMap.get(text);
-		if (!yogaNode) {
-			yogaNode = Yoga.Node.createWithConfig(yogaConfig);
-			this.nodeMap.set(text, yogaNode);
+		// This text node is the run head - create a layout node for it
+		let flexNode = this.nodeMap.get(text);
+		if (!flexNode) {
+			flexNode = Flex.Node.createWithConfig(flexConfig);
+			this.nodeMap.set(text, flexNode);
 		}
 
-		yogaNode.setMeasureFunc(
+		flexNode.setMeasureFunc(
 			(
 				width: number,
-				widthMode: YogaTypes.MeasureMode,
+				widthMode: FlexTypes.MeasureMode,
 				height: number,
-				heightMode: YogaTypes.MeasureMode,
+				heightMode: FlexTypes.MeasureMode,
 			) => {
 				return this.#measureInlineRun(
 					text,
@@ -1901,11 +1901,11 @@ export class LayoutEngine {
 				);
 			},
 		);
-		this.measureNodes.add(yogaNode);
+		this.measureNodes.add(flexNode);
 
 		// Note: Automatic minimum size for flex items is now handled in measureInlineRun
 
-		parentYogaNode.insertChild(yogaNode, parentYogaNode.getChildCount());
+		parentFlexNode.insertChild(flexNode, parentFlexNode.getChildCount());
 	}
 
 	/**
@@ -1930,12 +1930,12 @@ export class LayoutEngine {
 			this.#invalidateBlockRemoval(parent);
 		}
 
-		// Remove from Yoga layout
-		const yogaNode = this.nodeMap.get(element);
-		if (yogaNode) {
-			const parentYogaNode = this.nodeMap.get(parent);
-			if (parentYogaNode) {
-				parentYogaNode.removeChild(yogaNode);
+		// Remove from Flex layout
+		const flexNode = this.nodeMap.get(element);
+		if (flexNode) {
+			const parentFlexNode = this.nodeMap.get(parent);
+			if (parentFlexNode) {
+				parentFlexNode.removeChild(flexNode);
 			}
 
 			// Check if element was actually removed vs just moved
@@ -1945,11 +1945,11 @@ export class LayoutEngine {
 				if (pseudoMeta) {
 					// Removing pseudo element from nodeMap during mutation removal
 				}
-				this.measureNodes.delete(yogaNode);
-				yogaNode.freeRecursive();
+				this.measureNodes.delete(flexNode);
+				flexNode.freeRecursive();
 				this.nodeMap.delete(element);
 			}
-			// If element.isConnected is true, element was moved - keep Yoga node and nodeMap entry
+			// If element.isConnected is true, element was moved - keep layout node and nodeMap entry
 			// It will be re-added to the new parent when that mutation is processed
 		}
 
@@ -1964,19 +1964,19 @@ export class LayoutEngine {
 		// Text nodes are always inline-level
 		this.#invalidateInlineRemoval(text);
 
-		// Remove from Yoga layout (if it has a yoga node as run head)
-		const yogaNode = this.nodeMap.get(text);
-		if (yogaNode) {
-			const parentYogaNode = this.nodeMap.get(parent);
-			if (parentYogaNode) {
-				parentYogaNode.removeChild(yogaNode);
+		// Remove from the layout tree (if it has a layout node as run head)
+		const flexNode = this.nodeMap.get(text);
+		if (flexNode) {
+			const parentFlexNode = this.nodeMap.get(parent);
+			if (parentFlexNode) {
+				parentFlexNode.removeChild(flexNode);
 			}
 
 			// Check if text was actually removed vs just moved
 			if (!text.isConnected) {
 				// Text was truly removed from DOM - free it
-				this.measureNodes.delete(yogaNode);
-				yogaNode.freeRecursive();
+				this.measureNodes.delete(flexNode);
+				flexNode.freeRecursive();
 				this.nodeMap.delete(text);
 			}
 		}
@@ -2011,7 +2011,7 @@ export class LayoutEngine {
 		}
 	}
 
-	#getYogaIndex(element: Element): number {
+	#getFlexIndex(element: Element): number {
 		if (!element.parentElement) {
 			return 0;
 		}
@@ -2019,7 +2019,7 @@ export class LayoutEngine {
 		// Use the same expanded tree walker as addElementNode to ensure consistency
 		const walker = createExpandedTreeWalker(this.window, element.parentElement);
 
-		let yogaIndex = 0;
+		let flexIndex = 0;
 		let sibling = walker.firstChild();
 
 		while (sibling && sibling !== element) {
@@ -2033,32 +2033,32 @@ export class LayoutEngine {
 				) {
 					// Skip inline elements that aren't run heads
 				} else {
-					const siblingYogaNode = this.nodeMap.get(siblingElement);
-					if (siblingYogaNode) {
-						yogaIndex++;
+					const siblingFlexNode = this.nodeMap.get(siblingElement);
+					if (siblingFlexNode) {
+						flexIndex++;
 					}
 				}
 			} else if (sibling.nodeType === sibling.TEXT_NODE) {
-				// Count text nodes that will be added to Yoga tree
-				const siblingYogaNode = this.nodeMap.get(sibling);
-				if (siblingYogaNode) {
-					yogaIndex++;
+				// Count text nodes that will be added to layout tree
+				const siblingFlexNode = this.nodeMap.get(sibling);
+				if (siblingFlexNode) {
+					flexIndex++;
 				}
 			}
-			// Note: Pseudo-elements will also be counted if they have Yoga nodes
+			// Note: Pseudo-elements will also be counted if they have layout nodes
 
 			sibling = walker.nextSibling();
 		}
 
-		return yogaIndex;
+		return flexIndex;
 	}
 
 	#measureInlineRun(
 		node: Node,
 		width: number,
-		widthMode: YogaTypes.MeasureMode,
+		widthMode: FlexTypes.MeasureMode,
 		height: number,
-		heightMode: YogaTypes.MeasureMode,
+		heightMode: FlexTypes.MeasureMode,
 	): {width: number; height: number} {
 		const breakResult = this.#breakNodes(
 			node,
@@ -2169,17 +2169,17 @@ export class LayoutEngine {
 					// Determine content constraints
 					let contentWidth = Number.MAX_SAFE_INTEGER;
 					let contentHeight = Number.MAX_SAFE_INTEGER;
-					let contentWidthMode = Yoga.MEASURE_MODE_UNDEFINED;
-					let contentHeightMode = Yoga.MEASURE_MODE_UNDEFINED;
+					let contentWidthMode = Flex.MEASURE_MODE_UNDEFINED;
+					let contentHeightMode = Flex.MEASURE_MODE_UNDEFINED;
 
 					if (boxModel.width !== undefined) {
 						contentWidth = Math.max(0, boxModel.width - horizontalBoxSpace);
-						contentWidthMode = Yoga.MEASURE_MODE_EXACTLY;
+						contentWidthMode = Flex.MEASURE_MODE_EXACTLY;
 					}
 
 					if (boxModel.height !== undefined) {
 						contentHeight = Math.max(0, boxModel.height - verticalBoxSpace);
-						contentHeightMode = Yoga.MEASURE_MODE_EXACTLY;
+						contentHeightMode = Flex.MEASURE_MODE_EXACTLY;
 					}
 
 					// Recursively measure inline-block content with constraints
@@ -2246,9 +2246,9 @@ export class LayoutEngine {
 	#breakNodes(
 		runHead: Node,
 		width: number,
-		widthMode: YogaTypes.MeasureMode,
+		widthMode: FlexTypes.MeasureMode,
 		_height: number,
-		_heightMode: YogaTypes.MeasureMode,
+		_heightMode: FlexTypes.MeasureMode,
 	): BreakResult {
 		// Collect leaf nodes from the run head
 		const leafNodes = this.#collectLeafNodes(runHead);
@@ -2274,7 +2274,7 @@ export class LayoutEngine {
 
 		// Determine maxWidth based on width and widthMode
 		const maxWidth =
-			widthMode === Yoga.MEASURE_MODE_UNDEFINED || width === 0
+			widthMode === Flex.MEASURE_MODE_UNDEFINED || width === 0
 				? Number.MAX_SAFE_INTEGER
 				: width;
 
