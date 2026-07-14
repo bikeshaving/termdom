@@ -2,7 +2,10 @@
   "name": "@b9g/termdom",
   "type": "module",
   "scripts": {
+    "build": "tsc --project tsconfig.build.json",
     "lint": "eslint --ext .js,.jsx,.ts,.tsx .",
+    "smoke": "node scripts/smoke.mjs",
+    "smoke:deno": "deno run -A --node-modules-dir=manual scripts/smoke.mjs",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },
