@@ -711,3 +711,51 @@ test("growing the terminal does not destroy rows it hands back from scrollback",
 
 	dom.dispose();
 });
+
+test("reflow above the fold reprints the document instead of corrupting the scrollback", async () => {
+	// The commit index is a row *number*, so it only means anything while the rows
+	// above it stay put. Insert a row near the top and every row number beneath it
+	// shifts: rows already in the scrollback got printed a second time
+	// (duplicated), and the inserted content never appeared at all.
+	//
+	// The scrollback cannot be rewritten -- no escape sequence addresses it. There
+	// are two primitives: append, or destroy the lot (which is what flicker is). So
+	// we append: the stale copy stays above as a record of what was shown, and a
+	// correct one is printed below.
+	const terminal = new MockProcess({rows: 8, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	await dom.detectCommandStart();
+
+	const body = dom.document.body;
+	body.innerHTML = Array.from(
+		{length: 14},
+		(_, i) => `<div>row ${i + 1}</div>`,
+	).join("");
+	await dom.render();
+
+	// Now reflow above the fold: a row inserted at the very top shifts everything.
+	const inserted = dom.document.createElement("div");
+	inserted.textContent = "INSERTED-AT-TOP";
+	body.insertBefore(inserted, body.firstChild);
+	await dom.render();
+
+	const buffer = (terminal as any).terminal.buffer.active;
+	const everything: string[] = [];
+	for (let i = 0; i < buffer.length; i++) {
+		const line = buffer.getLine(i)?.translateToString(true);
+		if (line) everything.push(line);
+	}
+
+	// The inserted content is on screen -- it used to appear nowhere at all.
+	expect(everything).toContain("INSERTED-AT-TOP");
+
+	// The viewport holds the tail of the *new* document (15 rows, so rows 7-14).
+	const viewport: string[] = [];
+	for (let i = 0; i < 8; i++) {
+		const line = buffer.getLine(buffer.baseY + i)?.translateToString(true);
+		if (line) viewport.push(line);
+	}
+	expect(viewport[viewport.length - 1]).toBe("row 14");
+
+	dom.dispose();
+});

@@ -970,6 +970,19 @@ export class Renderer {
 		this.#cols = cols;
 	}
 
+	/**
+	 * Forget where the current block of output started.
+	 *
+	 * The next frame will anchor itself wherever the cursor now is, rather than
+	 * restoring to the old content start. Used when the document has reflowed above
+	 * the fold: the already-printed copy is in the scrollback and cannot be
+	 * corrected, so the only honest thing left is to print a fresh one below it.
+	 */
+	beginNewBlock(): void {
+		this.#hasSavedCursor = false;
+		this.clearPreviousBuffer();
+	}
+
 	clearPreviousBuffer(): void {
 		this.#prevBuffer = null;
 		this.#prevOffset = 0;

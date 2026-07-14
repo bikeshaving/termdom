@@ -173,10 +173,27 @@ An app that reflows above the fold is telling you it belongs in the second mode.
 The library should detect that and either say so or escalate, rather than quietly
 producing a corrupt scrollback.
 
-**This is the open decision.** The options are: ignore it (today's behaviour,
-which corrupts), escalate to the alt buffer automatically, warn in development, or
-reprint the document as a fresh block below the transcript (never rewriting
-history, at the cost of re-emitting everything).
+### What it does now: reprint, never repair
+
+Reflow above the fold is detected by anchoring on the first element still below
+the fold. If the content above it changes height, that element moves, and the
+commit index has stopped meaning what it meant.
+
+When that happens, TermDOM prints the document again, below what is already there.
+
+The scrollback cannot be rewritten -- no escape sequence addresses it. There are
+exactly two primitives:
+
+- **append** (print a line)
+- **destroy** (`\x1b[3J`, clear the scrollback)
+
+Destroying it and re-rendering *is* what flicker is. So we append: the stale copy
+stays above as an honest record of what was shown, and a correct copy is printed
+below it. It costs a duplicate. It never flickers, and it never loses anything.
+
+For a transcript that reflows rarely, that is the right trade. An app that reflows
+*often* would bury the user in copies -- and that is the app telling you it is a
+document, not a transcript, and belongs in the alt buffer.
 
 ## Future Enhancements
 

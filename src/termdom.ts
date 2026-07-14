@@ -95,6 +95,11 @@ export class TermDOM {
 	// Track whether command start was explicitly detected (even if at row 1)
 	private hasDetectedCommandStart: boolean = false;
 
+	// The element that sat at the fold when we last committed, and where it sat.
+	// If the content above the fold changes height, this element moves -- which is
+	// how we notice that the committed rows no longer mean what they meant.
+	private foldAnchor: {element: Element; top: number} | null = null;
+
 	// Document rows that have scrolled off the top into the terminal's scrollback.
 	// The cursor cannot address scrollback, so these are frozen for good: they can
 	// never be redrawn. Everything below them is the live, addressable viewport.
@@ -380,6 +385,15 @@ export class TermDOM {
 		// back to us out of scrollback.
 		const flow = this.interactive;
 
+		// If the document reflowed above the fold, the commit index no longer refers
+		// to the same content: printing from it would duplicate rows into the
+		// scrollback and drop the newly inserted ones. We cannot correct what is
+		// already in the scrollback, so we print the document again below it.
+		if (flow && this.hasReflowedAboveFold()) {
+			await this.reprintAsNewBlock();
+			this.layoutEngine.calculateLayout();
+		}
+
 		// The document rows still ours to draw: everything below what has already
 		// scrolled into the scrollback. On a frame where the content has grown this
 		// region is taller than the terminal, and printing it is what scrolls the
@@ -430,6 +444,7 @@ export class TermDOM {
 				this.committedRows += scrolled;
 				this.scrollingManager.setScreenTop(Math.max(0, startRow - scrolled));
 			}
+			this.updateFoldAnchor();
 		}
 
 		if (ansi) {
@@ -1359,6 +1374,69 @@ export class TermDOM {
 	 * See SCROLLBACK.md. Without this, content past the bottom of the terminal is
 	 * never drawn at all.
 	 */
+	/**
+	 * Has the document reflowed above the fold?
+	 *
+	 * The commit index is a row *number*, so it only means anything while the rows
+	 * above it stay where they are. Insert a row near the top and every row number
+	 * beneath it shifts: rows already in the scrollback get printed again
+	 * (duplicated), and the newly inserted content never appears at all.
+	 *
+	 * The committed rows are beyond our reach, but we can watch the first element
+	 * that is still ours. If it has moved, everything above it changed height.
+	 */
+	private hasReflowedAboveFold(): boolean {
+		if (this.committedRows === 0 || this.foldAnchor === null) return false;
+
+		const {element, top} = this.foldAnchor;
+		if (!element.isConnected) return true;
+
+		const rect = this.layoutEngine.getRect(element);
+		if (!rect) return true;
+
+		return Math.round(rect.top) !== top;
+	}
+
+	/** Remember the first element below the fold, so we can tell if it moves. */
+	private updateFoldAnchor(): void {
+		if (this.committedRows === 0) {
+			this.foldAnchor = null;
+			return;
+		}
+
+		for (const element of Array.from(this.document.body.children)) {
+			const rect = this.layoutEngine.getRect(element);
+			if (!rect) continue;
+			if (rect.top >= this.committedRows) {
+				this.foldAnchor = {element, top: Math.round(rect.top)};
+				return;
+			}
+		}
+
+		this.foldAnchor = null;
+	}
+
+	/**
+	 * Print the document again, below what is already there.
+	 *
+	 * The scrollback cannot be rewritten: no escape sequence addresses it. There
+	 * are exactly two primitives -- append, or destroy the lot with ED3. Destroying
+	 * it and re-rendering is what flicker *is*, so we append. The stale copy stays
+	 * above as a record of what was shown, and a correct one is printed below it.
+	 *
+	 * It costs a duplicate. It never flickers, and it never loses anything.
+	 */
+	private async reprintAsNewBlock(): Promise<void> {
+		this.process.stdout.write("\r\n");
+
+		this.committedRows = 0;
+		this.foldAnchor = null;
+		this.renderer.beginNewBlock();
+
+		// Re-anchor: ask the terminal where the cursor actually is now.
+		await this.detectCommandStart();
+	}
+
 	private pushUpForOverflow(): void {
 		const contentHeight = this.document.body.scrollHeight;
 
