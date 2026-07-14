@@ -467,9 +467,30 @@ export class TermDOM {
 		// Use ExpandedTreeWalker to render all children including pseudo-elements and shadow DOM
 		const walker = this.createExpandedTreeWalker(element);
 
-		// Skip the current element and start with first child
-		let childNode = walker.firstChild();
-		while (childNode) {
+		// Collect the children first, then paint them in z-order. Painting straight
+		// down the tree in document order means nothing can ever sit on top of
+		// anything else, which is why an overlay or a modal was impossible: it
+		// would be painted before the content it is supposed to cover.
+		const children: Array<{node: Node; zIndex: number}> = [];
+		for (
+			let childNode = walker.firstChild();
+			childNode;
+			childNode = walker.nextSibling()
+		) {
+			children.push({
+				node: childNode,
+				zIndex:
+					childNode.nodeType === childNode.ELEMENT_NODE
+						? this.zIndexOf(childNode as Element)
+						: 0,
+			});
+		}
+
+		// A stable sort, so boxes at the same level keep their document order and
+		// only an explicit z-index moves anything.
+		children.sort((a, b) => a.zIndex - b.zIndex);
+
+		for (const {node: childNode} of children) {
 			if (childNode.nodeType === childNode.ELEMENT_NODE) {
 				const childElement = childNode as Element;
 				if (childElement instanceof (this.window as any).HTMLElement) {
@@ -479,8 +500,26 @@ export class TermDOM {
 				const textNode = childNode as Text;
 				this.renderText(textNode, ctx);
 			}
-			childNode = walker.nextSibling();
 		}
+	}
+
+	/**
+	 * The paint order of a box relative to its siblings.
+	 *
+	 * z-index only applies to positioned boxes, so a static one always sits at 0
+	 * and keeps its document order.
+	 */
+	private zIndexOf(element: Element): number {
+		const computedStyle = this.window.getComputedStyle(element);
+
+		const position = computedStyle.getPropertyValue("position");
+		if (!position || position === "static") return 0;
+
+		const zIndex = computedStyle.getPropertyValue("z-index");
+		if (!zIndex || zIndex === "auto") return 0;
+
+		const value = parseInt(zIndex, 10);
+		return Number.isFinite(value) ? value : 0;
 	}
 
 	/**
