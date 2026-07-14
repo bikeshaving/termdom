@@ -114,9 +114,17 @@ export class TermDOM {
 
 	private readonly detectCursorEnabled: boolean;
 
+	// A stdout that is not a terminal -- a pipe, a file, a CI log -- has no
+	// viewport, no cursor, no scrollback and no resize. It cannot interpret cursor
+	// movement either, so the interactive frame would write CUP and DECSC sequences
+	// straight into the file.
+	private readonly interactive: boolean;
+
 	constructor(options: TermDOMOptions = {}) {
 		this.process = options.process || process;
-		this.detectCursorEnabled = options.detectCursor ?? this.process === process;
+		this.interactive = this.process.stdout.isTTY !== false;
+		this.detectCursorEnabled =
+			(options.detectCursor ?? this.process === process) && this.interactive;
 
 		this.width = options.width || this.process.stdout.columns || 80;
 		this.height = options.height || this.process.stdout.rows || 24;
@@ -328,6 +336,12 @@ export class TermDOM {
 		if (this.isRendering) {
 			return;
 		}
+
+		if (!this.interactive) {
+			this.renderStatic();
+			return;
+		}
+
 		// Wait for cursor detection to complete before first render
 		if (this.cursorDetectionPromise) {
 			await this.cursorDetectionPromise;
@@ -889,6 +903,22 @@ export class TermDOM {
 
 		this.layoutEngine.resize(newWidth, newHeight);
 
+		// Resize rewraps the document, so its height in rows changes -- the same
+		// four paragraphs are 8 rows at 40 columns and 12 at 24. The commit index is
+		// counted in rows, so it no longer refers to the same content, and left
+		// alone it hides rows that now fit on screen.
+		//
+		// We cannot repair the scrollback: it holds the old wrapping and always
+		// will. Trying to make it correct is exactly what forces a clear-and-redraw,
+		// and that is the flicker. So we do what an ordinary command does when you
+		// resize the window -- leave the past alone -- and only re-anchor the live
+		// region to what the new geometry can hold.
+		const contentHeight = this.document.body.scrollHeight;
+		this.committedRows = Math.max(
+			0,
+			Math.min(this.committedRows, contentHeight - newHeight),
+		);
+
 		// On resize, use DECRC (not CUP) for cursor positioning.
 		// DECSC/DECRC handles terminal reflow automatically — the terminal
 		// adjusts the saved cursor position when content reflows.
@@ -1274,6 +1304,38 @@ export class TermDOM {
 			cancelable: true,
 		});
 		targetElement.dispatchEvent(keyupEvent);
+	}
+
+	/**
+	 * Render the whole document once, as plain lines, for a non-terminal stdout.
+	 *
+	 * There is no fold here, so there is nothing to commit, freeze or repair: the
+	 * document is simply printed. Every hard problem in this file is a consequence
+	 * of having a viewport, and a pipe does not have one.
+	 */
+	private renderStatic(): void {
+		this.isRendering = true;
+		try {
+			const pending = this.observer.takeRecords();
+			if (pending.length > 0) {
+				this.styleManager.handleMutations(pending);
+				this.layoutEngine.handleMutations(pending);
+			}
+
+			this.renderedOutsideMarkers = new WeakSet<Element>();
+			this.layoutEngine.calculateLayout();
+
+			const output = this.renderer.renderStatic(
+				this.document.body.scrollHeight,
+				(ctx) => {
+					this.renderElement(this.document.body, ctx);
+				},
+			);
+
+			if (output) this.process.stdout.write(output);
+		} finally {
+			this.isRendering = false;
+		}
 	}
 
 	/**

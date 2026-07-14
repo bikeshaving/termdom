@@ -22,7 +22,10 @@ function createSimpleMockProcess(rows: number = 24, cols: number = 80) {
 				},
 				columns: cols,
 				rows: rows,
-				isTTY: false,
+				// These tests assert interactive terminal output (cursor
+				// positioning), so stdout *is* a terminal. Cursor detection is
+				// disabled by stdin.isTTY below, which is what actually governs it.
+				isTTY: true,
 			},
 			stdin: {
 				isTTY: false, // This should prevent cursor detection entirely

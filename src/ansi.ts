@@ -995,6 +995,66 @@ export class Renderer {
 	 * `terminalHeight` of them are kept as the previous frame: they are the only
 	 * part still ours to redraw.
 	 */
+	/**
+	 * Render the whole document as plain lines, for a stdout that is not a
+	 * terminal.
+	 *
+	 * A pipe or a file has no viewport, no cursor, no scrollback and no resize --
+	 * so it has no fold, and none of the problems that come with one. There is
+	 * nothing to commit, nothing to freeze and nothing to repair.
+	 *
+	 * It also has no way to interpret cursor movement. Emitting the interactive
+	 * frame here would write CUP, EL, DECSC and synchronised-output sequences into
+	 * the file. So this emits styled text and newlines, and nothing else: gaps are
+	 * spaces rather than cursor-forward, and rows end with a newline rather than an
+	 * erase-line.
+	 */
+	renderStatic(
+		contentRows: number,
+		drawCallback: (ctx: DrawingContext) => void,
+	): string {
+		const rows = Math.max(0, contentRows);
+		if (rows === 0) return "";
+
+		const buffer = createBuffer(rows, this.#cols);
+		drawCallback(new DrawingContext(buffer, rows, this.#cols, 0));
+
+		const lines: string[] = [];
+		for (let row = 0; row < rows; row++) {
+			// A file should not be padded out to the terminal width, so stop at the
+			// last cell that actually holds something.
+			let lastCol = -1;
+			for (let col = this.#cols - 1; col >= 0; col--) {
+				if (buffer[row][col] !== null) {
+					lastCol = col;
+					break;
+				}
+			}
+
+			let line = "";
+			let previous: Cell | null = null;
+
+			for (let col = 0; col <= lastCol; col++) {
+				const cell = buffer[row][col];
+				if (cell === null) {
+					line += " ";
+					continue;
+				}
+
+				const style = getStyleDiff(cell, previous, this.#colorDepth);
+				if (style.length > 0) line += `\x1b[${style.join(";")}m`;
+
+				line += cell.border > 0 ? getBorderChar(cell.border) : cell.grapheme;
+				previous = cell;
+			}
+
+			if (previous !== null) line += "\x1b[0m";
+			lines.push(line);
+		}
+
+		return lines.join("\n") + "\n";
+	}
+
 	renderFrame(
 		offset: number,
 		drawCallback: (ctx: DrawingContext) => void,
