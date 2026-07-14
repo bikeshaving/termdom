@@ -7,7 +7,10 @@
 
 import {CSSStyleDeclaration} from "cssstyle";
 import {type DOMWindow} from "jsdom";
-import {cssColorToNumber as runtimeCssColorToNumber} from "./runtime.js";
+import {
+	cssColorToNumber as runtimeCssColorToNumber,
+	stringWidth,
+} from "./runtime.js";
 import {
 	attachPseudoElement,
 	clearPseudoElements,
@@ -379,6 +382,40 @@ const INITIAL_KEYWORDS = new Set([
 	"revert-layer",
 ]);
 
+/** Minimum gutter a UL/OL reserves for its markers, in cells. */
+const DEFAULT_LIST_GUTTER = 4;
+
+/** Lists currently having their gutter measured, to stop re-entrant computation. */
+const listGutterInProgress = new WeakSet<Element>();
+
+/**
+ * Width of the gutter a list reserves for `list-style-position: outside` markers.
+ *
+ * Markers are right-aligned against the content edge, so the gutter must fit the
+ * widest marker in the list *including* the space getMarkerContent() appends to
+ * separate it from the item's text. A fixed gutter silently collides with wide
+ * markers -- "iii. Third" renders as "iii.Third" once the marker fills all four
+ * cells -- so size it to the content and keep the default as a floor.
+ */
+function getListGutterWidth(listElement: Element): number {
+	if (listGutterInProgress.has(listElement)) {
+		return DEFAULT_LIST_GUTTER;
+	}
+	listGutterInProgress.add(listElement);
+	try {
+		let widest = 0;
+		for (const child of Array.from(listElement.children)) {
+			if (child.tagName !== "LI") continue;
+			const marker = getListMarker(child, listElement);
+			if (!marker) continue;
+			widest = Math.max(widest, stringWidth(`${marker} `));
+		}
+		return Math.max(DEFAULT_LIST_GUTTER, widest);
+	} finally {
+		listGutterInProgress.delete(listElement);
+	}
+}
+
 /**
  * Get the initial/default value for a property on an element
  */
@@ -531,6 +568,17 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 		// 3. Check element-specific UA defaults (e.g., strong { font-weight: bold })
 		// These take priority over inherited values
 		const tagName = this.element.tagName.toLowerCase();
+
+		// A list's marker gutter is sized to its widest marker rather than taken
+		// from the static table, so it has to be resolved before it.
+		if (
+			property === "padding-left" &&
+			(tagName === "ul" || tagName === "ol") &&
+			this.element.ownerDocument?.defaultView
+		) {
+			return `${getListGutterWidth(this.element)}ch`;
+		}
+
 		const elementDefaults = TERMINAL_ELEMENT_DEFAULTS[tagName];
 		if (elementDefaults && elementDefaults[property]) {
 			return elementDefaults[property];
