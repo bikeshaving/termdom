@@ -8,6 +8,7 @@ import {
 	cssColorToNumber,
 	getBoxModel,
 } from "./styles.js";
+import {stringWidth} from "./runtime.js";
 import {FullscreenManager} from "./fullscreen.js";
 import {setupInspectMethods} from "./inspector.js";
 import {ScrollingManager} from "./scrolling.js";
@@ -524,11 +525,18 @@ export class TermDOM {
 			return;
 		}
 
-		const markerWidth = markerContent.length;
+		// Cells, not code units: a marker like "日本 " is 3 characters but 5 cells
+		// wide, and right-aligning it by its length would paint it over the item's
+		// own text.
+		const markerWidth = stringWidth(markerContent);
 
 		// Get marker styles
 		const markerStyle = this.window.getComputedStyle(element, "::marker");
-		const markerColor = markerStyle.getPropertyValue("color");
+		// ::marker inherits color from its originating element, so fall back to the
+		// list item's own color rather than rendering the marker unstyled.
+		const markerColor =
+			markerStyle.getPropertyValue("color") ||
+			computedStyle.getPropertyValue("color");
 		const markerBold = markerStyle.getPropertyValue("font-weight") === "bold";
 		const markerItalic =
 			markerStyle.getPropertyValue("font-style") === "italic";

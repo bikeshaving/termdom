@@ -389,13 +389,76 @@ const DEFAULT_LIST_GUTTER = 4;
 const listGutterInProgress = new WeakSet<Element>();
 
 /**
+ * The active StyleManager for a window.
+ *
+ * The gutter is resolved deep inside the cascade, which has no StyleManager to
+ * hand, but it has to measure the *resolved* ::marker content -- the same string
+ * the renderer will draw -- and only the StyleManager can produce that.
+ */
+const styleManagers = new WeakMap<object, StyleManager>();
+
+/** A marker is separated from its item's text by one cell. */
+function withMarkerSeparator(marker: string): string {
+	return marker ? `${marker} ` : "";
+}
+
+/**
+ * Strip the quotes from a CSS `content` value.
+ *
+ * A content value is a *sequence* of components -- quoted strings, and functions
+ * like counter() -- so `counter(list-item) ") "` has to yield
+ * `counter(list-item)) ` for the counter pass to expand, not keep its literal
+ * quote characters. Only stripping when the whole value is one quoted string
+ * left `"` and `'` in the rendered marker.
+ */
+function unquoteContent(content: string): string {
+	let out = "";
+	let index = 0;
+
+	while (index < content.length) {
+		const char = content[index];
+
+		if (char === '"' || char === "'") {
+			const close = content.indexOf(char, index + 1);
+			if (close === -1) {
+				out += content.slice(index + 1);
+				break;
+			}
+			out += content.slice(index + 1, close);
+			index = close + 1;
+		} else if (/\s/.test(char)) {
+			// Whitespace *between* components is not rendered.
+			index++;
+		} else {
+			// A function or keyword: copy it verbatim, parens and all.
+			let depth = 0;
+			let end = index;
+			for (; end < content.length; end++) {
+				const c = content[end];
+				if (c === "(") depth++;
+				else if (c === ")") depth--;
+				else if (depth === 0 && /\s/.test(c)) break;
+			}
+			out += content.slice(index, end);
+			index = end;
+		}
+	}
+
+	return out;
+}
+
+/**
  * Width of the gutter a list reserves for `list-style-position: outside` markers.
  *
  * Markers are right-aligned against the content edge, so the gutter must fit the
- * widest marker in the list *including* the space getMarkerContent() appends to
- * separate it from the item's text. A fixed gutter silently collides with wide
- * markers -- "iii. Third" renders as "iii.Third" once the marker fills all four
- * cells -- so size it to the content and keep the default as a floor.
+ * widest marker in the list. A fixed gutter silently collides with wide markers:
+ * "iii. Third" renders as "iii.Third" once the marker fills all four cells.
+ *
+ * This must measure exactly what renderOutsideMarker() will draw -- the resolved
+ * ::marker content, in terminal cells. Measuring the *default* marker instead
+ * lets `::marker { content: ">>>>>> " }` overrun the gutter, and measuring with
+ * String#length instead of stringWidth() lets a wide-character marker like
+ * "日本 " do the same: .length is 3 where the cells occupied are 5.
  */
 function getListGutterWidth(listElement: Element): number {
 	if (listGutterInProgress.has(listElement)) {
@@ -403,12 +466,17 @@ function getListGutterWidth(listElement: Element): number {
 	}
 	listGutterInProgress.add(listElement);
 	try {
+		const window = listElement.ownerDocument.defaultView;
+		const styleManager = window ? styleManagers.get(window) : undefined;
+
 		let widest = 0;
 		for (const child of Array.from(listElement.children)) {
 			if (child.tagName !== "LI") continue;
-			const marker = getListMarker(child, listElement);
+			const marker = styleManager
+				? styleManager.getMarkerContent(child)
+				: withMarkerSeparator(getListMarker(child, listElement));
 			if (!marker) continue;
-			widest = Math.max(widest, stringWidth(`${marker} `));
+			widest = Math.max(widest, stringWidth(marker));
 		}
 		return Math.max(DEFAULT_LIST_GUTTER, widest);
 	} finally {
@@ -541,6 +609,21 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 		}
 	}
 
+	/** The author-level `list-style` shorthand, inline first, then stylesheet rules. */
+	private resolveListStyleShorthand(): string | null {
+		const style = (this.element as HTMLElement).style;
+		const inline = style?.getPropertyValue("list-style").trim();
+		if (inline && !INITIAL_KEYWORDS.has(inline)) return inline;
+
+		let ruleValue: string | null = null;
+		for (const rule of this.cssRules) {
+			if (rule.declarations["list-style"]) {
+				ruleValue = rule.declarations["list-style"];
+			}
+		}
+		return ruleValue;
+	}
+
 	/**
 	 * Resolve property value applying CSS cascade: inline styles > CSS rules > defaults
 	 */
@@ -565,6 +648,18 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 			return ruleValue;
 		}
 
+		// 2b. Author-level `list-style` shorthand. cssstyle does not expand it, so
+		// `list-style: none` would otherwise leave list-style-type unset and the
+		// marker would still be drawn.
+		if (LIST_STYLE_LONGHANDS.has(property)) {
+			const shorthand = this.resolveListStyleShorthand();
+			if (shorthand) {
+				const expanded =
+					expandListStyle(shorthand)[property as keyof ListStyleParts];
+				if (expanded) return expanded;
+			}
+		}
+
 		// 3. Check element-specific UA defaults (e.g., strong { font-weight: bold })
 		// These take priority over inherited values
 		const tagName = this.element.tagName.toLowerCase();
@@ -577,6 +672,21 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 			this.element.ownerDocument?.defaultView
 		) {
 			return `${getListGutterWidth(this.element)}ch`;
+		}
+
+		// The UA default marker type depends on nesting depth, exactly as a browser's
+		// `ul ul { list-style-type: circle }` rules do. Resolving it here rather than
+		// inheriting means an author value on an outer list does not leak into a
+		// nested one, while an author rule that matches the nested list still wins:
+		// it was already returned in step 2.
+		if (
+			property === "list-style-type" &&
+			(tagName === "ul" || tagName === "ol")
+		) {
+			if (tagName === "ol") return "decimal";
+			const bullets = ["disc", "circle", "square"];
+			const depth = listNestingDepth(this.element);
+			return bullets[Math.min(depth, bullets.length - 1)];
 		}
 
 		const elementDefaults = TERMINAL_ELEMENT_DEFAULTS[tagName];
@@ -907,21 +1017,7 @@ export function cssColorToNumber(cssColor: string): number {
 	return typeof colorNumber === "number" ? colorNumber : 0;
 }
 
-/**
- * Darken a color by a given factor
- */
-export function darkenColor(color: number, factor: number): number {
-	const r = (color >> 16) & 0xff;
-	const g = (color >> 8) & 0xff;
-	const b = color & 0xff;
-
-	return (
-		(Math.floor(r * (1 - factor)) << 16) |
-		(Math.floor(g * (1 - factor)) << 8) |
-		Math.floor(b * (1 - factor))
-	);
-}
-
+/** Roman numeral for 1-3999; callers must range-check. */
 function toRoman(num: number): string {
 	const romanNumerals = [
 		{value: 1000, symbol: "M"},
@@ -939,77 +1035,174 @@ function toRoman(num: number): string {
 		{value: 1, symbol: "I"},
 	];
 
+	let remaining = num;
 	let result = "";
 	for (const {value, symbol} of romanNumerals) {
-		while (num >= value) {
+		while (remaining >= value) {
 			result += symbol;
-			num -= value;
+			remaining -= value;
 		}
 	}
 	return result;
 }
 
-// TODO: Use walker
-function getListNestingDepth(listItem: Element): number {
-	let depth = 0;
-	let current = listItem.parentElement;
-	while (current) {
-		if (current.tagName === "UL" || current.tagName === "OL") {
-			depth++;
-		}
-		current = current.parentElement;
-	}
-
-	return depth - 1; // Zero-based depth (first level = 0)
+interface ListStyleParts {
+	"list-style-type"?: string;
+	"list-style-position"?: string;
+	"list-style-image"?: string;
 }
 
-function getListMarker(listItem: Element, listParent: Element): string {
-	const listType = listParent.tagName.toLowerCase();
-	const listStyleType = listParent.ownerDocument
-		.defaultView!.getComputedStyle(listParent)
-		.getPropertyValue("list-style-type");
-	const nestingDepth = getListNestingDepth(listItem);
+const LIST_STYLE_LONGHANDS = new Set([
+	"list-style-type",
+	"list-style-position",
+	"list-style-image",
+]);
 
-	if (listType === "ol") {
-		// Ordered list - get the item index and format as number
+const LIST_STYLE_POSITIONS = new Set(["inside", "outside"]);
+
+/**
+ * Expand the `list-style` shorthand, whose components may appear in any order.
+ *
+ * `none` is ambiguous -- it sets whichever of type/image has not been given --
+ * but for a terminal there are no images, so it always means "no marker".
+ */
+function expandListStyle(value: string): ListStyleParts {
+	const parts: ListStyleParts = {};
+
+	for (const token of value.trim().split(/\s+/)) {
+		if (!token) continue;
+		if (LIST_STYLE_POSITIONS.has(token)) {
+			parts["list-style-position"] = token;
+		} else if (token.startsWith("url(")) {
+			parts["list-style-image"] = token;
+		} else {
+			parts["list-style-type"] = token;
+		}
+	}
+
+	return parts;
+}
+
+/** How many lists this element is nested inside, not counting itself. */
+function listNestingDepth(element: Element): number {
+	let depth = 0;
+	for (
+		let parent = element.parentElement;
+		parent;
+		parent = parent.parentElement
+	) {
+		if (parent.tagName === "UL" || parent.tagName === "OL") depth++;
+	}
+	return depth;
+}
+
+/** Marker glyphs for the bullet list-style-types. */
+const BULLET_MARKERS: Record<string, string> = {
+	disc: "\u2022",
+	circle: "\u25e6",
+	square: "\u25aa",
+};
+
+/** list-style-types that produce a counter, and therefore a trailing "." */
+const COUNTER_STYLES = new Set([
+	"decimal",
+	"decimal-leading-zero",
+	"lower-alpha",
+	"lower-latin",
+	"upper-alpha",
+	"upper-latin",
+	"lower-roman",
+	"upper-roman",
+]);
+
+/** Alphabetic counters are bijective base-26: 26 -> "z", 27 -> "aa". */
+function toAlpha(value: number): string {
+	let n = value;
+	let out = "";
+	while (n > 0) {
+		const digit = (n - 1) % 26;
+		out = String.fromCharCode(97 + digit) + out;
+		n = Math.floor((n - 1) / 26);
+	}
+	return out;
+}
+
+/**
+ * The ordinal of a list item, honouring the HTML list attributes.
+ *
+ * `<ol start>` sets where counting begins, `<ol reversed>` counts down, and a
+ * `<li value>` resets the counter mid-list and carries forward from there.
+ */
+function listItemOrdinal(listItem: Element, listParent: Element): number {
+	const items = Array.from(listParent.children).filter(
+		(child) => child.tagName === "LI",
+	);
+
+	const reversed = listParent.hasAttribute("reversed");
+	const start = parseInt(listParent.getAttribute("start") ?? "", 10);
+
+	let counter = Number.isFinite(start) ? start : reversed ? items.length : 1;
+
+	for (const item of items) {
+		const value = parseInt(item.getAttribute("value") ?? "", 10);
+		if (Number.isFinite(value)) counter = value;
+		if (item === listItem) return counter;
+		counter += reversed ? -1 : 1;
+	}
+
+	return counter;
+}
+
+/** Render an ordinal in a counter style, falling back to decimal out of range. */
+function formatOrdinal(ordinal: number, listStyleType: string): string {
+	switch (listStyleType) {
+		case "decimal-leading-zero":
+			return ordinal >= 0 && ordinal < 10 ? `0${ordinal}` : `${ordinal}`;
+		case "lower-alpha":
+		case "lower-latin":
+			return ordinal > 0 ? toAlpha(ordinal) : `${ordinal}`;
+		case "upper-alpha":
+		case "upper-latin":
+			return ordinal > 0 ? toAlpha(ordinal).toUpperCase() : `${ordinal}`;
+		case "lower-roman":
+			// Roman numerals are undefined outside 1-3999; CSS falls back to decimal.
+			return ordinal > 0 && ordinal < 4000
+				? toRoman(ordinal).toLowerCase()
+				: `${ordinal}`;
+		case "upper-roman":
+			return ordinal > 0 && ordinal < 4000 ? toRoman(ordinal) : `${ordinal}`;
+		default:
+			return `${ordinal}`;
+	}
+}
+
+/**
+ * The default marker text for a list item, e.g. "\u2022" or "iii.".
+ *
+ * Keyed off the *computed* list-style-type, not the parent's tag name: a `ul`
+ * can be `list-style-type: decimal` and an `ol` can be `disc`, and either can be
+ * `none`. Reading the type off the tag made all three impossible, and ignored a
+ * list-style-type set on the `li` itself.
+ */
+function getListMarker(listItem: Element, listParent: Element): string {
+	const window = listItem.ownerDocument.defaultView;
+	if (!window) return "";
+
+	const listStyleType = window
+		.getComputedStyle(listItem)
+		.getPropertyValue("list-style-type");
+
+	if (!listStyleType || listStyleType === "none") return "";
+
+	const bullet = BULLET_MARKERS[listStyleType];
+	if (bullet) return bullet;
+
+	if (COUNTER_STYLES.has(listStyleType)) {
 		const items = Array.from(listParent.children).filter(
 			(child) => child.tagName === "LI",
 		);
-		const index = items.indexOf(listItem as HTMLLIElement);
-		if (index === -1) return "";
-
-		const start = parseInt(listParent.getAttribute("start") || "1", 10);
-		const itemNumber = start + index;
-
-		switch (listStyleType) {
-			case "decimal":
-			default:
-				return `${itemNumber}.`;
-			case "lower-alpha":
-				return `${String.fromCharCode(96 + (itemNumber % 26))}.`;
-			case "upper-alpha":
-				return `${String.fromCharCode(64 + (itemNumber % 26))}.`;
-			case "lower-roman":
-				return `${toRoman(itemNumber).toLowerCase()}.`;
-			case "upper-roman":
-				return `${toRoman(itemNumber)}.`;
-		}
-	} else if (listType === "ul") {
-		// Unordered list - use bullet characters based on nesting depth if no explicit style
-		if (listStyleType === "disc" || !listStyleType) {
-			// Auto-select bullet based on nesting level
-			const bullets = ["•", "◦", "▪", "▫"];
-			return bullets[nestingDepth % bullets.length];
-		}
-
-		switch (listStyleType) {
-			case "disc":
-				return "•";
-			case "circle":
-				return "◦";
-			case "square":
-				return "▪";
-		}
+		if (!items.includes(listItem)) return "";
+		return `${formatOrdinal(listItemOrdinal(listItem, listParent), listStyleType)}.`;
 	}
 
 	return "";
@@ -1049,6 +1242,10 @@ export class StyleManager {
 		private window: DOMWindow,
 		private layoutEngine?: LayoutEngine,
 	) {
+		// The list gutter is resolved inside the cascade, which cannot reach a
+		// StyleManager any other way. See getListGutterWidth().
+		styleManagers.set(window, this);
+
 		// Override window.getComputedStyle with our cached version
 		window.getComputedStyle = this.getComputedStyle.bind(this);
 
@@ -1072,6 +1269,13 @@ export class StyleManager {
 
 		for (const mutation of mutations) {
 			if (mutation.type === "childList") {
+				// A list's marker gutter is derived from its children, so adding or
+				// removing an item invalidates the *list*, not just the item that
+				// moved. Without this the gutter stays at whatever the original items
+				// needed, and a wider marker added later overruns it -- the "iii.Third"
+				// collision, back again after any mutation.
+				this.invalidateEnclosingList(mutation.target);
+
 				// Check for stylesheet changes
 				for (const node of mutation.addedNodes) {
 					if (node.nodeType === Node.ELEMENT_NODE) {
@@ -1137,6 +1341,32 @@ export class StyleManager {
 		this.computedStyleCache.delete(element);
 		this.pseudoElementStyleCache.delete(element);
 		this.counterScopes.delete(element);
+	}
+
+	/**
+	 * Invalidate the nearest enclosing list, and its items, after a child changed.
+	 *
+	 * The list's padding-left is a function of its items' markers, and the items'
+	 * ordinals are a function of their position, so both go stale when the child
+	 * list changes. Only the *nearest* list is affected: a deeper list's items do
+	 * not contribute to an outer list's gutter.
+	 */
+	private invalidateEnclosingList(target: Node): void {
+		let element: Element | null =
+			target.nodeType === this.window.Node.ELEMENT_NODE
+				? (target as Element)
+				: target.parentElement;
+
+		for (; element; element = element.parentElement) {
+			if (element.tagName !== "UL" && element.tagName !== "OL") continue;
+
+			this.invalidateElementCaches(element);
+			this.layoutEngine?.invalidate(element);
+			for (const item of Array.from(element.children)) {
+				this.invalidateElementCaches(item);
+			}
+			return;
+		}
 	}
 
 	private getComputedStyle(
@@ -1384,7 +1614,7 @@ export class StyleManager {
 				// Use getListMarker function to handle all list-style-type values
 				const marker = getListMarker(hostElement, listParent);
 				if (marker) {
-					content = `"${marker} "`;
+					content = `"${withMarkerSeparator(marker)}"`;
 				}
 			}
 		}
@@ -1395,13 +1625,7 @@ export class StyleManager {
 		}
 
 		// Remove quotes from content string
-		let textContent = content;
-		if (
-			(textContent.startsWith('"') && textContent.endsWith('"')) ||
-			(textContent.startsWith("'") && textContent.endsWith("'"))
-		) {
-			textContent = textContent.slice(1, -1);
-		}
+		let textContent = unquoteContent(content);
 
 		// Resolve counter() functions in the content
 		textContent = this.resolveCounterFunction(hostElement, textContent);

@@ -1421,9 +1421,14 @@ export class LayoutEngine {
 					flexNode.freeRecursive();
 					this.nodeMap.delete(node);
 				} else {
-					// Node is still connected - just remove from parent but keep the layout node for reuse
-					// This happens during pseudo-element attachment invalidation
-					// Don't free the node - it will be reattached during layout calculation
+					// Node is still connected - just remove from parent but keep the layout
+					// node for reuse. It will be reattached during layout calculation.
+					//
+					// Re-apply its styles, though: whatever invalidated the element may
+					// have changed them. A list's padding-left is derived from its items'
+					// markers, so appending a wider item changes the parent's computed
+					// padding, and reusing the node as-is would keep the stale gutter.
+					styleFlexNode(node as Element, flexNode);
 				}
 			}
 
