@@ -587,3 +587,88 @@ describe("gap (css-align-3)", () => {
 		expect(root.getGap(Flex.GUTTER_COLUMN)).toBe(4);
 	});
 });
+
+describe("automatic minimum size (css-flexbox-1 §4.5)", () => {
+	// A flex item's min-width/min-height default to `auto`, which floors it at its
+	// min-content size. Without that floor an item shrinks toward nothing while
+	// its text stays as wide as its longest word, and paints straight over
+	// whatever is beside it.
+	//
+	// These use a measure function so the engine can be driven directly: it
+	// reports the longest word when offered no room, and the full string when
+	// offered enough -- which is what a real text run does.
+	function textItem(parent: Node, longest: number, full: number): Node {
+		const item = box(parent);
+		item.setMeasureFunc((width, widthMode) => {
+			if (widthMode === Flex.MEASURE_MODE_UNDEFINED)
+				return {width: full, height: 1};
+			// Wrap into the offered width, but never below the longest single word.
+			const fitted = Math.max(longest, Math.min(full, width));
+			return {width: fitted, height: Math.ceil(full / Math.max(fitted, 1))};
+		});
+		return item;
+	}
+
+	test("an item does not shrink below its min-content size", () => {
+		// 15 + 4 of content in a 12-wide row. Both items are floored at the longest
+		// word they contain, so they overflow the container rather than overlap.
+		const root = node();
+		root.setWidth(12);
+		root.setHeight(3);
+
+		const wide = textItem(root, 15, 15); // one unbreakable 15-cell word
+		const narrow = textItem(root, 4, 4);
+
+		root.calculateLayout(12, 3);
+
+		expect(rect(wide).width).toBe(15);
+		expect(rect(narrow).width).toBe(4);
+		// The second item begins where the first ends: no overlap.
+		expect(rect(narrow).left).toBe(15);
+	});
+
+	test("an item still shrinks down to its min-content size", () => {
+		// The floor is the longest word, not the whole string: text that can wrap
+		// still gives ground.
+		const root = node();
+		root.setWidth(12);
+		root.setHeight(3);
+
+		const wrappable = textItem(root, 5, 16); // longest word 5, full string 16
+		const fixed = textItem(root, 4, 4);
+
+		root.calculateLayout(12, 3);
+
+		expect(rect(wrappable).width).toBeLessThan(16);
+		expect(rect(wrappable).width).toBeGreaterThanOrEqual(5);
+		expect(rect(wrappable).width + rect(fixed).width).toBeLessThanOrEqual(12);
+	});
+
+	test("an explicit min-width overrides the automatic minimum", () => {
+		// min-width: 0 is the standard opt-out, and it has to keep working.
+		const root = node();
+		root.setWidth(12);
+		root.setHeight(3);
+
+		const wide = textItem(root, 15, 15);
+		wide.setMinWidth(0);
+		textItem(root, 4, 4);
+
+		root.calculateLayout(12, 3);
+
+		expect(rect(wide).width).toBeLessThan(15);
+	});
+
+	test("an item that cannot shrink is unaffected", () => {
+		const root = node();
+		root.setWidth(12);
+		root.setHeight(3);
+
+		const wide = textItem(root, 15, 15);
+		wide.setFlexShrink(0);
+
+		root.calculateLayout(12, 3);
+
+		expect(rect(wide).width).toBe(15);
+	});
+});

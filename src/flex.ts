@@ -266,6 +266,8 @@ interface LayoutResult {
 	padding: number[];
 	border: number[];
 	computedFlexBasis: number;
+	/** css-flexbox-1 §4.5 automatic minimum size, along the parent's main axis. */
+	autoMinMain: number;
 	lineIndex: number;
 }
 
@@ -334,6 +336,7 @@ function createLayout(): LayoutResult {
 		padding: [0, 0, 0, 0],
 		border: [0, 0, 0, 0],
 		computedFlexBasis: NaN,
+		autoMinMain: NaN,
 		lineIndex: 0,
 	};
 }
@@ -1041,17 +1044,13 @@ function layoutMeasureNode(
 			? availableHeight - marginColumn
 			: measured.height + paddingBorderColumn;
 
-	setMeasuredDimensions(
-		node,
-		widthMode === MEASURE_MODE_AT_MOST
-			? Math.min(width, availableWidth - marginRow)
-			: width,
-		heightMode === MEASURE_MODE_AT_MOST
-			? Math.min(height, availableHeight - marginColumn)
-			: height,
-		ownerWidth,
-		ownerHeight,
-	);
+	// An AT_MOST bound is an upper bound on the *offer*, not a licence to report a
+	// smaller box than the content needs. The measure function already fits the
+	// content into the offered width wherever it can; when it cannot -- an
+	// unbreakable word -- the content genuinely overflows, and clamping here would
+	// have the box claim a size it does not occupy. That lie is what made
+	// min-content resolve to zero and let a long word paint over its neighbour.
+	setMeasuredDimensions(node, width, height, ownerWidth, ownerHeight);
 }
 
 /** A container with no in-flow children collapses to its padding + border. */
@@ -1316,6 +1315,18 @@ function layoutFlexbox(
 		);
 
 		if (child.style.positionType === POSITION_TYPE_ABSOLUTE) continue;
+
+		// The content-based minimum is measured first: it lays the child out to
+		// find its min-content size, which would otherwise clobber the flex basis
+		// computed below.
+		child.layout.autoMinMain = autoMinimumMainSize(
+			node,
+			child,
+			innerCross,
+			crossMode,
+			ownerWidth,
+			ownerHeight,
+		);
 
 		computeFlexBasisForChild(
 			node,
@@ -1620,13 +1631,24 @@ function resolveFlexibleLengths(
 	const target = new Map<Node, number>();
 	const frozen = new Set<Node>();
 
+	// An item never shrinks below its automatic minimum size, so that floor has to
+	// be applied everywhere the item is clamped -- not just to its hypothetical
+	// size, but to every target the redistribution loop lands on.
+	const clampMain = (child: Node, value: number): number => {
+		const bounded = boundAxisWithinMinMax(
+			child,
+			mainAxis,
+			value,
+			mainOwnerSize,
+		);
+		const floor = child.layout.autoMinMain;
+		return isDefined(floor) ? Math.max(bounded, floor) : bounded;
+	};
+
 	for (const child of line.items) {
 		const flexBase = child.layout.computedFlexBasis;
 		base.set(child, flexBase);
-		target.set(
-			child,
-			boundAxisWithinMinMax(child, mainAxis, flexBase, mainOwnerSize),
-		);
+		target.set(child, clampMain(child, flexBase));
 	}
 
 	const commit = () => {
@@ -1714,12 +1736,7 @@ function resolveFlexibleLengths(
 		for (const child of unfrozen) {
 			const unclamped =
 				base.get(child)! + (remaining * factorOf(child)) / totalFactor;
-			const bounded = boundAxisWithinMinMax(
-				child,
-				mainAxis,
-				unclamped,
-				mainOwnerSize,
-			);
+			const bounded = clampMain(child, unclamped);
 
 			target.set(child, bounded);
 			violation += bounded - unclamped;
@@ -1742,6 +1759,75 @@ function resolveFlexibleLengths(
 	}
 
 	commit();
+}
+
+/**
+ * css-flexbox-1 §4.5: the automatic minimum size of a flex item.
+ *
+ * A flex item's min-width/min-height default to `auto`, which floors it at its
+ * min-content size -- the longest thing in it that cannot be broken. Without
+ * this an item shrinks to nothing and its text simply paints over whatever is
+ * next to it, because the text is still as wide as its longest word however
+ * narrow the box claims to be.
+ *
+ * Returns NaN when the item has a specified minimum (that wins) or cannot
+ * shrink anyway.
+ */
+function autoMinimumMainSize(
+	node: Node,
+	child: Node,
+	innerCross: number,
+	crossMode: MeasureMode,
+	ownerWidth: number,
+	ownerHeight: number,
+): number {
+	const mainAxis = node.style.flexDirection;
+	const mainIsRow = isRow(mainAxis);
+	const mainOwnerSize = mainIsRow ? ownerWidth : ownerHeight;
+
+	const specifiedMin = mainIsRow ? child.style.minWidth : child.style.minHeight;
+	if (specifiedMin.unit !== UNIT_UNDEFINED && specifiedMin.unit !== UNIT_AUTO) {
+		return NaN;
+	}
+
+	if (resolveFlexShrink(child) === 0) return NaN;
+
+	// Offer the item no room along the main axis: what comes back is what it
+	// cannot go below.
+	//
+	// The cross axis has to keep its real size, though. A column item's
+	// min-content *height* depends on how wide it is -- give it unlimited width
+	// and its text collapses onto one line, and the floor comes out a row short of
+	// what the item actually needs.
+	const crossAvailable = isDefined(innerCross) ? innerCross : NaN;
+	const crossMeasureMode = isDefined(innerCross)
+		? crossMode
+		: MEASURE_MODE_UNDEFINED;
+
+	layoutNode(
+		child,
+		mainIsRow ? 0 : crossAvailable,
+		mainIsRow ? crossAvailable : 0,
+		mainIsRow ? MEASURE_MODE_AT_MOST : crossMeasureMode,
+		mainIsRow ? crossMeasureMode : MEASURE_MODE_AT_MOST,
+		ownerWidth,
+		ownerHeight,
+		false,
+	);
+
+	let floor = mainIsRow ? child.layout.width : child.layout.height;
+
+	// The content-based minimum never exceeds a size the author asked for, nor
+	// the item's own maximum.
+	const size = mainIsRow ? child.style.width : child.style.height;
+	const specified = resolveValue(size, mainOwnerSize);
+	if (isDefined(specified)) floor = Math.min(floor, specified);
+
+	const maxSize = mainIsRow ? child.style.maxWidth : child.style.maxHeight;
+	const max = resolveValue(maxSize, mainOwnerSize);
+	if (isDefined(max)) floor = Math.min(floor, max);
+
+	return floor;
 }
 
 /** Lay out one flex item at its resolved main size, stretching the cross axis if asked. */
@@ -2591,25 +2677,16 @@ function resolveColumnWidths(
 
 	if (columnCount === 0) return widths;
 
-	if (target <= totalMin || totalMax === totalMin) {
-		// Cannot fit: every column takes its minimum and the table overflows.
-		for (let i = 0; i < columnCount; i++) widths[i] = mins[i];
-		if (target > totalMin && totalMax === totalMin && totalMin > 0) {
-			// Definite width larger than the content wants: share the slack out.
-			const extra = target - totalMin;
-			for (let i = 0; i < columnCount; i++) {
-				widths[i] += (extra * mins[i]) / totalMin;
-			}
-		} else if (target > totalMin && totalMin === 0) {
-			for (let i = 0; i < columnCount; i++) widths[i] = target / columnCount;
-		}
-	} else if (target >= totalMax) {
+	if (target >= totalMax) {
 		// Room to spare: every column gets what it wants, and the surplus goes to
-		// the auto columns -- a column with an explicit width keeps it.
+		// the auto columns -- a column with an explicit width keeps it. This has to
+		// be tested before the "cannot fit" case below, because when every column
+		// is already at its preferred width (totalMin === totalMax) that case would
+		// otherwise swallow it and hand the surplus to the fixed columns too.
 		for (let i = 0; i < columnCount; i++) widths[i] = maxs[i];
 
 		const extra = target - totalMax;
-		const autoColumns = [];
+		const autoColumns: number[] = [];
 		for (let i = 0; i < columnCount; i++) {
 			if (!fixed[i]) autoColumns.push(i);
 		}
@@ -2628,6 +2705,11 @@ function resolveColumnWidths(
 			widths[i] +=
 				weight > 0 ? (extra * maxs[i]) / weight : extra / receivers.length;
 		}
+	} else if (target <= totalMin) {
+		// Cannot fit: every column takes its minimum and the table overflows. A
+		// column never goes below its min-content width, which is what stops a long
+		// word painting over the cell next to it.
+		for (let i = 0; i < columnCount; i++) widths[i] = mins[i];
 	} else {
 		// In between: interpolate each column from its min toward its max.
 		const ratio = (target - totalMin) / (totalMax - totalMin);

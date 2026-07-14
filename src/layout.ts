@@ -80,7 +80,11 @@ function styleFlexNode(element: Element, flexNode: FlexTypes.Node): void {
 		} else if (minWidth && "percentage" in minWidth) {
 			flexNode.setMinWidthPercent(minWidth.percentage);
 		} else {
-			flexNode.setMinWidth(0);
+			// Leave it unset rather than forcing 0. min-width defaults to `auto`,
+			// which on a flex item means its content-based minimum -- pinning it to
+			// 0 lets the item shrink to nothing while its text stays as wide as its
+			// longest word, and paint straight over whatever is next to it.
+			flexNode.setMinWidth(undefined);
 		}
 
 		const minHeight = parseUnitValue(
@@ -91,7 +95,7 @@ function styleFlexNode(element: Element, flexNode: FlexTypes.Node): void {
 		} else if (minHeight && "percentage" in minHeight) {
 			flexNode.setMinHeightPercent(minHeight.percentage);
 		} else {
-			flexNode.setMinHeight(0);
+			flexNode.setMinHeight(undefined);
 		}
 
 		const maxWidth = parseUnitValue(
@@ -144,7 +148,11 @@ function styleFlexNode(element: Element, flexNode: FlexTypes.Node): void {
 		} else if (minWidth && "percentage" in minWidth) {
 			flexNode.setMinWidthPercent(minWidth.percentage);
 		} else {
-			flexNode.setMinWidth(0);
+			// Leave it unset rather than forcing 0. min-width defaults to `auto`,
+			// which on a flex item means its content-based minimum -- pinning it to
+			// 0 lets the item shrink to nothing while its text stays as wide as its
+			// longest word, and paint straight over whatever is next to it.
+			flexNode.setMinWidth(undefined);
 		}
 
 		const minHeight = parseUnitValue(
@@ -155,7 +163,7 @@ function styleFlexNode(element: Element, flexNode: FlexTypes.Node): void {
 		} else if (minHeight && "percentage" in minHeight) {
 			flexNode.setMinHeightPercent(minHeight.percentage);
 		} else {
-			flexNode.setMinHeight(0);
+			flexNode.setMinHeight(undefined);
 		}
 
 		const maxWidth = parseUnitValue(
@@ -2261,9 +2269,13 @@ export class LayoutEngine {
 		const wordBreak = getPropertyValue(styleElement, "word-break");
 		const overflowWrap = getPropertyValue(styleElement, "overflow-wrap");
 
-		// Determine maxWidth based on width and widthMode
+		// An offered width of 0 is a real constraint, not "unlimited": it asks for
+		// the narrowest the content can be, which is its min-content size -- the
+		// longest word that cannot be broken. Treating it as unlimited returned
+		// max-content instead, so min-content came back as zero everywhere and a
+		// long word had nothing stopping it overflowing its box.
 		const maxWidth =
-			widthMode === Flex.MEASURE_MODE_UNDEFINED || width === 0
+			widthMode === Flex.MEASURE_MODE_UNDEFINED
 				? Number.MAX_SAFE_INTEGER
 				: width;
 

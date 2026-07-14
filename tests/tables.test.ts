@@ -280,3 +280,29 @@ test("border junctions reflect where lines actually continue", async () => {
 
 	dom.dispose();
 });
+
+test("a long word widens its column instead of overflowing into the next cell", async () => {
+	// A column is never narrower than its cells' min-content width -- the longest
+	// word they contain. Without that floor the word simply carried on painting:
+	// it overwrote the cell border and the first characters of its neighbour.
+	const {box, rows, dom} = await render(
+		`<table style="width:20ch">
+			<tr><td>abcdefghijklmno</td><td>x</td></tr>
+			<tr><td>a</td><td>b</td></tr>
+		</table>`,
+		40,
+	);
+
+	const wide = box("td", 0);
+	const narrow = box("td", 1);
+
+	// 15 cells of word, 1 of padding each side, 1 of border each side.
+	expect(wide.width).toBe(19);
+	// The neighbour starts where it ends (sharing one collapsed border), so
+	// nothing is painted over.
+	expect(narrow.left).toBe(wide.left + wide.width - 1);
+
+	// And the word survives intact.
+	expect(rows.some((row) => row.includes("abcdefghijklmno"))).toBe(true);
+	dom.dispose();
+});
