@@ -344,6 +344,15 @@ export class TermDOM {
 		// Always use auto height for natural content sizing and scrolling
 		this.layoutEngine.calculateLayout();
 
+		// Content taller than the room left below the command start has to push the
+		// command start upward, so the overflow scrolls into the terminal's native
+		// scrollback -- exactly as a normal command's output does. Without this the
+		// rows past the bottom of the terminal are simply never drawn, and the
+		// content is silently lost.
+		if (this.hasDetectedCommandStart) {
+			this.pushUpForOverflow();
+		}
+
 		// Get viewport offset from raw internal scrollTop
 		// When cursor is detected, content starts at buffer row 0 (cursor positioning handles terminal placement)
 		const viewportOffset = this.hasDetectedCommandStart
@@ -1227,6 +1236,36 @@ export class TermDOM {
 			cancelable: true,
 		});
 		targetElement.dispatchEvent(keyupEvent);
+	}
+
+	/**
+	 * Scroll the command start upward when the content outgrows the room below it.
+	 *
+	 * A TermDOM app behaves like an ordinary command: its output begins wherever
+	 * the cursor was and flows down, and when it runs past the bottom of the
+	 * terminal the earlier rows scroll off into the terminal's own scrollback.
+	 * Emitting the newlines to make that happen is what keeps the output *in* the
+	 * scrollback -- searchable, selectable, copy-pasteable -- rather than trapped
+	 * in an alternate screen buffer.
+	 *
+	 * See SCROLLBACK.md. Without this, content past the bottom of the terminal is
+	 * never drawn at all.
+	 */
+	private pushUpForOverflow(): void {
+		const contentHeight = this.document.body.scrollHeight;
+
+		// Where the content currently starts, as a terminal row.
+		const startRow = -this.scrollingManager.getScrollTop();
+		const roomBelow = this.height - startRow;
+
+		if (contentHeight <= roomBelow) return;
+
+		const pushUp = contentHeight - roomBelow;
+
+		// The command start moves up by the overflow, and the content with it.
+		const screenTop = this.scrollingManager.getScreenTop();
+		this.scrollingManager.setScreenTop(Math.max(0, screenTop - pushUp));
+		this.scrollingManager.scrollBy(pushUp, true);
 	}
 
 	/**

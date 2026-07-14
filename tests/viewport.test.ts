@@ -584,3 +584,43 @@ test("standard DOM properties: scrollHeight and clientHeight", async () => {
 		dom.document.body.scrollHeight,
 	);
 });
+
+test("content taller than the room below the command start scrolls instead of vanishing", async () => {
+	// A TermDOM app behaves like an ordinary command: output starts where the
+	// cursor was and flows down, and when it outgrows the terminal the earlier
+	// rows scroll off into native scrollback (SCROLLBACK.md).
+	//
+	// The call that does this was removed at some point and the content past the
+	// bottom of the terminal was simply never drawn -- silently truncated.
+	const terminal = new MockProcess({rows: 10, cols: 24});
+
+	// Put the command start at row 7 (0-based 6), leaving 4 rows below it.
+	await new Promise<void>((resolve) => {
+		terminal.stdout.write("\x1b[7;1H", () => resolve());
+	});
+
+	const dom = new TermDOM({process: terminal});
+	await dom.detectCommandStart();
+	expect(dom.window.screenTop).toBe(6);
+
+	// Eight rows of content into four rows of room.
+	dom.document.body.innerHTML = Array.from(
+		{length: 8},
+		(_, i) => `<div>line ${i + 1}</div>`,
+	).join("");
+	await dom.render();
+
+	expect(dom.document.body.scrollHeight).toBe(8);
+
+	const text = terminal.getPlainText();
+
+	// Every line is on screen: the content was pushed up, not cut off.
+	for (let i = 1; i <= 8; i++) {
+		expect(text).toContain(`line ${i}`);
+	}
+
+	// And the command start moved up to make room for it.
+	expect(dom.window.screenTop).toBeLessThan(6);
+
+	dom.dispose();
+});
