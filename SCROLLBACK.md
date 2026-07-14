@@ -125,7 +125,21 @@ That gives flow mode its whole value -- output lands in real scrollback, so it i
 searchable, selectable, copy-pasteable and survives the process exiting -- and it
 costs exactly one thing:
 
-> **Flow mode is sound only while the document is append-only.**
+> **The committed prefix must never change -- neither its text nor its height.
+> Everything in the viewport may do as it likes.**
+
+"Append-only" would be too strong, and wrong. The document is not required to be
+append-only: the viewport is fully addressable, so the live region can mutate,
+reflow, grow, shrink, animate and be interactive on every frame. Only what has
+*already scrolled off* is frozen.
+
+Nor is "only the viewport can be interactive" a restriction this library imposes.
+The terminal delivers no events for content in scrollback and offers no escape
+sequence that addresses it. Committed content is readable -- the user can scroll
+up, select it, copy it -- but it cannot be live. That is what a terminal
+transcript has always been, and it is how every well-behaved CLI already works:
+the history scrolls up and freezes; the prompt, the spinner and the dialogs stay
+at the bottom, in the viewport, changing freely.
 
 Three cases, and they are not equivalent:
 
@@ -134,10 +148,18 @@ Three cases, and they are not equivalent:
 | **A committed row's *content* changes** | Ignored. The screen keeps what was printed; the DOM moves on. No corruption. This is correct: you cannot un-print, and a transcript is a record of what happened. |
 | **The document shrinks or is cleared** | The commit index is clamped and the live viewport re-renders the remaining document. The scrollback keeps the old transcript. Coherent -- like a command that printed, then printed something else. |
 | **The document *reflows* above the fold** (a row inserted or removed near the top) | **Corrupts.** The commit index is a document *row number*, and reflow shifts every row number underneath it. Rows get re-printed into the scrollback (duplicated), and the inserted content never appears. |
+| **The terminal is resized** | **Corrupts, and nobody is at fault.** Wrapping is a function of width, so the same document is 8 rows at 40 columns and 12 at 24. The row count itself changes, and a commit index counted in rows no longer refers to the same content. |
 
-The third case is unsolved. It is not a bug to be patched -- it is the terminal
-telling you that the document is not append-only, and therefore does not belong in
-flow mode.
+Interactivity is not the violator. **Reflow** is, and it has two sources.
+
+The first is the app changing content above the fold, which is avoidable: do not
+rewrite what you have already printed. An app that needs to is telling you it is
+not a transcript.
+
+The second is **terminal resize**, which is not avoidable by anyone. It is why
+Anthropic, having rebuilt Claude Code's renderer from scratch, still reports that
+"resize flickers remain" -- resize invalidates the committed prefix by definition
+for any content that wraps.
 
 ### The two modes are a consequence, not a preference
 
