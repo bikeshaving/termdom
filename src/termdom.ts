@@ -1183,38 +1183,6 @@ export class TermDOM {
 	}
 
 	/**
-	 * Calculate push-up offset when content exceeds available terminal space
-	 * Updates scrollY to position content to fit in terminal
-	 */
-	private calculatePushUpOffset(): void {
-		// Use standard DOM property for content height
-		const documentHeight = this.document.body.scrollHeight;
-
-		// Calculate current viewport position from scrolling manager (0-based)
-		// When scrollTop is negative, content starts below terminal top
-		const currentRow = -this.scrollingManager.getScrollTop();
-
-		// Calculate available space from current position to bottom of terminal
-		const availableSpace = this.height - currentRow;
-
-		// If content fits in available space, no push-up needed
-		if (documentHeight <= availableSpace) {
-			return;
-		}
-
-		// Calculate how much to push up
-		const pushUpAmount = documentHeight - availableSpace;
-
-		// Update screenTop to reflect new terminal cursor position
-		const newScreenTop = this.scrollingManager.getScreenTop() - pushUpAmount;
-		this.scrollingManager.setScreenTop(Math.max(0, newScreenTop));
-
-		// Update scrollTop to push content up (make scrollTop less negative)
-		// Increase scrollTop by pushUpAmount to shift content start position up
-		this.scrollingManager.scrollBy(pushUpAmount, true);
-	}
-
-	/**
 	 * Initialize cursor position detection for TTY environments
 	 * This runs asynchronously during construction to set up proper viewport positioning
 	 */
