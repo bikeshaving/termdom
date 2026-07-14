@@ -176,6 +176,15 @@ css-flexbox-1.
   block's **width** on every edge, including top and bottom, as CSS requires
 - `margin: auto` — absorbs free space on the main axis, ahead of `justify-content`,
   and centres on the cross axis
+- `gap` / `row-gap` / `column-gap`. A gap counts against a line's capacity when
+  deciding where to wrap, and is taken off the top before flexible lengths are
+  resolved — it is not space the items may grow into
+- **Automatic minimum size** (css-flexbox-1 §4.5): `min-width`/`min-height` default
+  to `auto`, which floors a flex item at its min-content size. An item shrinks only
+  as far as its longest unbreakable word, and then its content overflows rather
+  than painting over its neighbour. `min-width: 0` is the opt-out, as in a browser
+- `z-index` on positioned boxes, which decides paint order — so overlays and modals
+  work. The sort is stable, so boxes without a `z-index` keep their document order
 - `position: relative` (offsets the box, leaves siblings alone) and
   `position: absolute` (out of flow, positioned against its containing block)
 - `display: none`
@@ -211,33 +220,12 @@ silently mislaid.
 | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
 | **RTL / `direction`**                | The engine has no writing-direction concept; everything is LTR. Terminal cell coordinates run left-to-right and the renderer assumes it. |
 | **`aspect-ratio`**                   | Cells are not square, so a numeric ratio has no consistent meaning in cells.                                                             |
-| **`gap` / `row-gap` / `column-gap`** | Not implemented. Use margins.                                                                                                           |
 | **Sub-cell scaling**                 | `pointScaleFactor` exists for API compatibility, but only `1` is meaningful. A cell is indivisible.                                      |
 
 ## Undefined behaviour
 
 Where the engine makes a choice CSS does not pin down, or the terminal forces one.
 Worth reading before filing a bug.
-
-### `min-width: auto` is not implemented
-
-This is the largest deviation from the spec. CSS gives flex items an *automatic
-minimum size*: `min-width`/`min-height` default to `auto`, which floors an item at
-its min-content size, so items refuse to shrink below their content and overflow
-instead.
-
-Here they default to `0`. Two items whose content is 40 cells wide, in a 40-cell
-row, compress to 20 each rather than overflowing at 40 each:
-
-```
-                       engine   CSS
-two 40-wide contents
-in a 40-wide row       20, 20   40, 40 (overflowing)
-```
-
-This is why overflowing text compresses instead of forcing its container wider. It
-is a real difference from a browser, and it is deliberate: a terminal has nowhere
-to overflow *to*.
 
 ### Others
 
@@ -298,7 +286,11 @@ that is a rendering change and a human needs to look at it.
 
 ## Future enhancements
 
-1. `min-width: auto` (automatic minimum size of flex items)
-2. `gap`
-3. Text shaping (graphemes)
-4. Explicit line boxes
+1. CSS Grid. No terminal layout engine has it: Chawan's CSS engine omits it, and
+   Textual's `grid` is, by its own documentation, "little in common with
+   browser-based CSS Grid". The engine already has the pieces — shared track
+   sizing from table layout, `fr`-shaped distribution from the flex resolver, and
+   gaps
+2. Text shaping (graphemes)
+3. Explicit line boxes
+4. `overflow` (clipping and scroll containers)

@@ -7,12 +7,8 @@ the DOM interface — to terminal applications. Build complex, interactive
 terminal interfaces just as you would a web application, without learning a new
 API.
 
-TermDOM is available on NPM as:
-[`@b9g/termdom`](https://www.npmjs.com/package/@b9g/termdom).
-
-```bash
-bun add @b9g/termdom
-```
+> **Status: pre-release.** TermDOM is not published to npm yet. To try it, clone
+> the repo and run the examples with `bun examples/flexbox-demo.ts`.
 
 Vanilla DOM example
 
@@ -45,8 +41,13 @@ TermDOM solves this by leveraging familiar web concepts:
 
 - **Declarative UI:** Use APIs like `document.createElement()`,
   `document.appendChild()`, and `style="color: red;"` just like in the browser.
-- **Rich Layout:** `block` / `inline` / `flex` layout from the browser
-  supported.
+- **Real CSS layout:** `block`, `inline`, `inline-block`, **flexbox** (written from
+  the CSS spec, not approximated), **CSS table layout** with shared column widths,
+  `colspan`/`rowspan` and `border-collapse`, lists with markers and counters,
+  borders, `position: relative`/`absolute`, and `z-index` for overlays.
+- **No native or WASM dependency.** The layout engine is pure JavaScript on an
+  integer cell grid, so a TermDOM app compiles to a single executable with
+  `bun build --compile` and runs on Bun, Node and Deno.
 - **Framework Agnostic:** Any web framework that can render to the DOM can be
   used with TermDOM.
 - **Composability:** Build reusable terminal components using web components,
@@ -71,6 +72,30 @@ doc.body.appendChild(header);
 
 term.render(); // Flush to terminal
 ```
+
+## What is not supported
+
+TermDOM implements the parts of CSS that mean something on a character grid. It is
+honest about the rest:
+
+- **CSS Grid** — not yet. Flexbox and table layout are implemented.
+- **RTL / `direction`** and **`aspect-ratio`** — deliberately omitted; neither has a
+  coherent meaning on a cell grid where cells are not square.
+- **`overflow`** — content is not clipped or scrolled by the engine; a box reports
+  its size and the renderer draws what fits.
+- **Sub-cell sizing** — a cell is indivisible. All layout is in whole cells.
+
+See [LAYOUT.md](./LAYOUT.md) for the full supported/unsupported list and the places
+where TermDOM knowingly departs from the CSS spec.
+
+## Runtimes
+
+Bun, Node and Deno. The library has no native or WASM dependency, so it also
+compiles to a single binary with `bun build --compile`.
+
+The *examples* are Bun-only: neither Node nor Deno maps a `.js` import specifier
+onto a `.ts` source file, so off-Bun consumers use the built output (`bun run
+build`).
 
 ## License
 

@@ -1,6 +1,41 @@
 {
   "name": "@b9g/termdom",
+  "description": "HTML, CSS and the DOM for terminal emulators. Real CSS layout, no native or WASM dependency.",
+  "license": "MIT",
+  "author": "Brian Kim",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bikeshaving/termdom.git"
+  },
+  "homepage": "https://github.com/bikeshaving/termdom#readme",
+  "bugs": {
+    "url": "https://github.com/bikeshaving/termdom/issues"
+  },
   "type": "module",
+  "keywords": [
+    "terminal",
+    "tui",
+    "cli",
+    "ansi",
+    "dom",
+    "css",
+    "flexbox",
+    "layout"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "types": "./dist/index.d.ts",
+  "main": "./dist/index.js",
+  "files": [
+    "dist",
+    "README.md",
+    "LAYOUT.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsc --project tsconfig.build.json",
     "lint": "eslint --ext .js,.jsx,.ts,.tsx .",
@@ -8,6 +43,11 @@
     "smoke:deno": "deno run -A --node-modules-dir=manual scripts/smoke.mjs",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "cssstyle": "^5.2.1",
+    "jsdom": "^26.1.0",
+    "linebreak": "^1.1.0"
   },
   "devDependencies": {
     "@b9g/crank": "^0.7.1",
@@ -23,10 +63,5 @@
     "eslint-plugin-prettier": "^5.2.6",
     "fast-check": "^4.2.0",
     "typescript": "^5.9.2"
-  },
-  "dependencies": {
-    "cssstyle": "^5.2.1",
-    "jsdom": "^26.1.0",
-    "linebreak": "^1.1.0"
   }
 }
