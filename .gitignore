@@ -6,6 +6,10 @@ out
 dist
 *.tgz
 
+# bun --compile leaves these in the repo root
+*.bun-build
+.*.bun-build
+
 # code coverage
 coverage
 *.lcov
