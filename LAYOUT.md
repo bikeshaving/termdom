@@ -2,401 +2,264 @@
 
 ## Overview
 
-The Terminal DOM (TermDOM) layout system uses Facebook's Yoga flexbox engine
-exclusively for all layout calculations. This document describes the unified
-approach where block elements, inline elements, and inline-block elements
-participate in a combined layout system, with a specialized inline layout
-engine for runs of inline content.
+The Terminal DOM (TermDOM) layout system runs all layout through a pure-JS
+flexbox engine in `src/flex.ts`, written from the CSS Flexible Box Layout spec
+(css-flexbox-1) and computing directly on an integer grid of character cells.
+There is no native or WebAssembly dependency.
 
-## Core Design Principles
+This document covers two things: how the DOM is mapped onto a layout tree
+(`src/layout.ts`), and what the engine underneath does and does not support
+(`src/flex.ts`).
 
-1. **Yoga-First**: All layout goes through Yoga.
-2. **Anonymous Boxes for Inline Runs**: Consecutive inline content is wrapped in pseudo Yoga nodes.
-3. **Consistent Flexbox**: Block elements are always `flex-direction: column`.
-4. **Single-Pass Layout**: Efficient calculation of the entire DOM tree.
-5. **Terminal Grid**: All measurements in character cells (1ch = 1 cell).
-6. **Yoga APIs**: Must use `useWebDefaults()`, `setPointScaleFactor(1)` for terminal fidelity.
+> **History.** termdom previously used Facebook's Yoga (`yoga-layout`), a
+> WASM/native module that computes in floats which then had to be forced back onto
+> a cell grid. `src/flex.ts` replaced it. The engine implements only what a
+> terminal needs — see [Deliberately unsupported](#deliberately-unsupported).
 
-## Unified Layout Model
+## Core design principles
 
-### Block Elements
+1. **One engine.** All layout goes through `src/flex.ts`.
+2. **Anonymous boxes for inline runs.** Consecutive inline content is wrapped in
+   pseudo layout nodes.
+3. **Consistent flexbox.** Block elements are always `flex-direction: column`.
+4. **Terminal grid.** All measurements are in character cells (`1ch` = 1 cell).
+   No box is ever reported at a fractional size.
+5. **Web defaults.** The engine is configured with `setUseWebDefaults(true)`,
+   which is what makes it behave like CSS rather than like Yoga's own defaults.
+
+### Web defaults are load-bearing
+
+`Config.setUseWebDefaults(true)` flips three defaults to their CSS values:
+
+| Property         | Engine default | Web/CSS default |
+| ---------------- | -------------- | --------------- |
+| `flex-direction` | `column`       | `row`           |
+| `align-content`  | `flex-start`   | `stretch`       |
+| `flex-shrink`    | `0`            | `1`             |
+
+Without it every layout in termdom is subtly wrong. `LayoutEngine` sets it once on
+the shared `Config`, and every node is created from that config.
+
+### The integer grid
+
+The engine rounds **edges**, not sizes. A box's width is derived as
+`round(right) - round(left)` in absolute coordinates, rather than by rounding the
+width directly. That is what makes adjacent boxes tile exactly when a flexible
+size lands on a fraction:
+
+```
+three items with flex: 1 across 80 columns
+  widths  27, 26, 27   (sum exactly 80)
+  lefts    0, 27, 53   (no gap, no overlap)
+```
+
+Rounding each width independently would give `27 + 27 + 27 = 81` and a column of
+overlap. Measured text leaves are the one exception: they round their trailing
+edge **up**, so a text run is never handed less room than it measured and forced
+to re-wrap.
+
+## Unified layout model
+
+### Block elements
 
 - Flex container with `flex-direction: column`.
-- Children of blocks must have appropriate flexing:
-  - `flex-grow`, `flex-shrink`, `align-self` set to defaults.
-- Margins, padding, width, height, and positioning map directly to Yoga APIs.
+- Margin, padding, width, height, and positioning map directly onto engine setters.
+- Examples: `div`, `p`, `section`, `article`, `header`, `footer`.
 
 ```typescript
 function createBlockNode(element: Element) {
-  const node = createYogaNode(element);
-  node.setDisplay(yoga.DISPLAY_FLEX);
-  node.setFlexDirection(yoga.FLEX_DIRECTION_COLUMN);
-  node.setAlignItems(yoga.ALIGN_STRETCH);
-  node.setJustifyContent(yoga.JUSTIFY_FLEX_START);
+  const node = Node.createWithConfig(config);
+  node.setDisplay(Flex.DISPLAY_FLEX);
+  node.setFlexDirection(Flex.FLEX_DIRECTION_COLUMN);
+  node.setAlignItems(Flex.ALIGN_STRETCH);
+  node.setJustifyContent(Flex.JUSTIFY_FLEX_START);
   return node;
 }
-
-function setChildFlex(childNode: YogaNode) {
-  childNode.setFlexGrow(0);
-  childNode.setFlexShrink(1);
-  childNode.setAlignSelf(yoga.ALIGN_AUTO);
-}
 ```
 
-- Examples: `div`, `p`, `section`, `article`, `header`, `footer`.
+### Inline elements
 
-### Inline Elements
+**In normal flow (non-flex containers):**
 
-**In Normal Flow (Non-Flex Containers):**
+- Inline content (text nodes and inline elements) is grouped into **anonymous
+  blocks** with `flex-direction: row`.
+- The first node of a contiguous inline run — the *run head* — owns the pseudo node
+  representing the whole run and carries the measure function.
 
-- Inline content (text nodes and inline elements) is grouped into **anonymous blocks** (pseudo Yoga nodes) with `flex-direction: row`.
-- The **first inline element/text** gets a pseudo Yoga node representing the entire inline run.
-- Each inline node gets a **measure function** for width/height calculations.
+**In flex containers:**
 
-**In Flex Containers:**
+- Inline elements become flex items regardless of their display type.
+- Each inline element gets its own layout node; no anonymous box grouping.
+- Contiguous text runs are wrapped in anonymous flex items, per the flexbox spec:
+  "each contiguous run of text directly contained inside a flex container is
+  wrapped in an anonymous flex item".
 
-- **CRITICAL**: Inline elements become **flex items** regardless of their display type.
-- Each inline element gets its own individual Yoga node (no anonymous box grouping).
-- **Text runs** (contiguous adjacent text nodes) are wrapped in **anonymous flex items**.
-- **Separated text runs** get separate anonymous flex items.
-- This follows CSS flexbox spec: "each contiguous run of text directly contained inside a flex container is wrapped in an anonymous flex item".
+### Inline-block elements
 
-### Inline-Block Elements
+Their own node, intrinsically sized, atomic — cannot break across lines.
+Examples: `button`, `input`, replaced elements.
 
-- Receive their own Yoga node with intrinsic sizing.
-- Atomic: cannot break across lines.
-- Examples: `button`, `input`, replaced elements.
+### `display: none`
 
-### Flex Elements
+Node stays in the tree, skipped by layout.
 
-- Use Yoga nodes with web defaults
-- **Children behavior depends on parent type:**
-  - In flex containers: all children become flex items (individual Yoga nodes)
-  - In normal flow: anonymous box algorithm applies
+## Text measurement
 
-### Display None Elements
+Every leaf in the layout tree gets a measure function: anonymous text runs,
+elements containing only text, and inline elements that become layout leaves. The
+measure function line-breaks the run against the width the engine offers and
+reports a cell size.
 
-- Yoga node with `display: none`.
-- Maintains tree structure but skipped in layout.
+### Measure functions have side effects
 
-## Layout Algorithm (Updated)
+`#measureInlineRun` writes its result into `breakResultMap`, which the **renderer**
+later reads to draw the text. The *last* measure call for a node therefore decides
+what gets rendered.
 
-The layout algorithm has **two distinct modes** depending on the parent container type:
+This is why **there is no measure cache**. A cache would let a stale call be the
+last one, so the renderer could draw text broken for a width the box no longer
+has. Full recomputation keeps the final measure call the layout-pass one, at the
+box's final size. It costs performance, and that is a deliberate trade.
 
-### 1. Flex Container Processing
+Dropping the cache also exposed a latent bug Yoga had been hiding: `LayoutEngine`
+left DOM-removed nodes attached to the layout tree, and Yoga's measure cache
+silently skipped them. Without a cache they get measured and crash, so
+`calculateLayout()` now prunes disconnected nodes before laying out.
 
-```typescript
-function processFlexChildren(parent: Element, children: Node[]) {
-  const flexItems = groupFlexItems(children);
+### Measure modes
 
-  for (const item of flexItems) {
-    if (item.type === "element") {
-      // Each element gets its own Yoga node (even inline elements)
-      const childYogaNode = buildYogaTree(item.element);
-      parentYogaNode.insertChild(childYogaNode);
-    } else if (item.type === "text-run") {
-      // Text runs get anonymous flex items with measure functions
-      const anonymousBox = createAnonymousBoxForTextRun(item.textNodes);
-      parentYogaNode.insertChild(anonymousBox);
-    }
-  }
-}
+The engine offers a box a size with one of three modes, and confusing them is the
+single richest source of layout bugs in this codebase:
 
-function groupFlexItems(children: Node[]): FlexItem[] {
-  const items: FlexItem[] = [];
-  let currentTextRun: Text[] = [];
+| Mode        | Meaning                                              |
+| ----------- | ---------------------------------------------------- |
+| `EXACTLY`   | Definite size. Use it.                               |
+| `AT_MOST`   | **Upper bound only.** The box is being shrink-wrapped. |
+| `UNDEFINED` | Indefinite. Size to content.                         |
 
-  for (const child of children) {
-    if (child.nodeType === ELEMENT_NODE) {
-      // Flush any pending text run
-      if (currentTextRun.length > 0) {
-        items.push({ type: "text-run", textNodes: [...currentTextRun] });
-        currentTextRun = [];
-      }
+**`AT_MOST` is not a definite size.** Items grow into, stretch to, and clamp
+against a size only when it is `EXACTLY`. Treating an `AT_MOST` bound as definite
+has produced four separate bugs here — items reporting the whole container as
+their content size, `flex: 1` children growing to fill a terminal they should have
+shrink-wrapped inside, and a `max-width` collapsing a box to zero because the cap
+was mistaken for "size yourself to content, up to this".
 
-      // Add element if not display:none
-      if (getComputedStyle(child).display !== "none") {
-        items.push({ type: "element", element: child as Element });
-      }
-    } else if (child.nodeType === TEXT_NODE && child.textContent?.trim()) {
-      // Add to current text run (adjacent text nodes combine)
-      currentTextRun.push(child as Text);
-    }
-  }
+## Layout process
 
-  // Flush final text run
-  if (currentTextRun.length > 0) {
-    items.push({ type: "text-run", textNodes: currentTextRun });
-  }
+1. **DOM mutation** — detected via `MutationObserver`.
+2. **Tree update** — rebuild anonymous boxes and block nodes; prune nodes whose DOM
+   node is gone.
+3. **Layout** — `rootNode.calculateLayout(terminalWidth, terminalHeight)`.
+4. **Bounds storage** — recursively extract computed layouts.
 
-  return items;
-}
+## Supported
+
+Covered by `tests/flex.test.ts`, whose expectations are hand-computed from
+css-flexbox-1.
+
+- `flex-direction`: `row`, `row-reverse`, `column`, `column-reverse`
+- `flex-grow`, `flex-shrink`, `flex-basis` — including `auto`, which falls back to
+  the main size property and then to content
+- `flex-wrap`: `nowrap`, `wrap`, `wrap-reverse`
+- `justify-content`: `flex-start`, `center`, `flex-end`, `space-between`,
+  `space-around`, `space-evenly`
+- `align-items` / `align-self`: `flex-start`, `center`, `flex-end`, `stretch`,
+  `baseline`
+- `align-content`: `flex-start`, `center`, `flex-end`, `stretch`, `space-between`,
+  `space-around`, `space-evenly`
+- `min-width` / `max-width` / `min-height` / `max-height`, including their
+  interaction with grow and shrink — the freeze/clamp/redistribute loop of §9.7,
+  which freezes clamped items by the **sign of the total violation** and measures
+  free space against unfrozen items' **flex base** sizes, not the sizes they were
+  last handed
+- `margin`, `padding`, `border` widths. Percentages resolve against the containing
+  block's **width** on every edge, including top and bottom, as CSS requires
+- `margin: auto` — absorbs free space on the main axis, ahead of `justify-content`,
+  and centres on the cross axis
+- `position: relative` (offsets the box, leaves siblings alone) and
+  `position: absolute` (out of flow, positioned against its containing block)
+- `display: none`
+
+### Box sizing
+
+Sizes are **border-box**: an explicit `width` includes padding and border. A box
+with `width: 50` and `padding: 5` occupies 50 cells, 40 of them content.
+
+### Baseline alignment on a cell grid
+
+A terminal has no font metrics, so a text run's baseline is defined as **the top of
+its first row**. `align-items: baseline` therefore aligns items' first text rows. A
+box with no text of its own inherits the baseline of its first in-flow child
+(css-flexbox-1 §8.5); one with no in-flow children synthesizes a baseline at its
+content edge.
+
+This is **not** equivalent to `flex-start`. Whenever items carry different leading
+border, padding, or margin, their first rows sit at different offsets from their
+own edges, and baseline alignment is precisely what compensates.
+
+In a **column** container the cross axis is horizontal, so there is no block axis to
+align along, and `baseline` degenerates to `flex-start`. That is intentional.
+
+## Deliberately unsupported
+
+Omitted because they are meaningless on a character grid, or because termdom does
+not need them and the engine is easier to reason about without them. **None of
+these have setters**, so a stylesheet asking for one is ignored rather than
+silently mislaid.
+
+| Feature                              | Why                                                                                                                                    |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| **RTL / `direction`**                | The engine has no writing-direction concept; everything is LTR. Terminal cell coordinates run left-to-right and the renderer assumes it. |
+| **`aspect-ratio`**                   | Cells are not square, so a numeric ratio has no consistent meaning in cells.                                                             |
+| **`gap` / `row-gap` / `column-gap`** | Not implemented. Use margins.                                                                                                           |
+| **Sub-cell scaling**                 | `pointScaleFactor` exists for API compatibility, but only `1` is meaningful. A cell is indivisible.                                      |
+
+## Undefined behaviour
+
+Where the engine makes a choice CSS does not pin down, or the terminal forces one.
+Worth reading before filing a bug.
+
+### `min-width: auto` is not implemented
+
+This is the largest deviation from the spec. CSS gives flex items an *automatic
+minimum size*: `min-width`/`min-height` default to `auto`, which floors an item at
+its min-content size, so items refuse to shrink below their content and overflow
+instead.
+
+Here they default to `0`. Two items whose content is 40 cells wide, in a 40-cell
+row, compress to 20 each rather than overflowing at 40 each:
+
+```
+                       engine   CSS
+two 40-wide contents
+in a 40-wide row       20, 20   40, 40 (overflowing)
 ```
 
-### 2. Standard Anonymous Box Algorithm (Non-Flex Containers)
+This is why overflowing text compresses instead of forcing its container wider. It
+is a real difference from a browser, and it is deliberate: a terminal has nowhere
+to overflow *to*.
 
-```typescript
-function createAnonymousBoxes(parent: Element) {
-  const children = Array.from(parent.childNodes);
-  const groups: Node[][] = [];
-  let currentInlineGroup: Node[] = [];
+### Others
 
-  for (const child of children) {
-    if (isBlockElement(child)) {
-      if (currentInlineGroup.length > 0) {
-        groups.push(currentInlineGroup);
-        currentInlineGroup = [];
-      }
-      groups.push([child]);
-    } else {
-      currentInlineGroup.push(child);
-    }
-  }
+- **Overflow.** A box whose content exceeds it is neither clipped nor scrolled by
+  the layout engine; it reports its size and the renderer draws what fits. There is
+  no `overflow` property.
+- **Percentage against an indefinite containing block.** Treated as undefined — the
+  item falls back to content sizing — rather than as zero.
+- **Cyclic percentage sizing.** A percentage-sized child of a content-sized parent
+  is not iterated to a fixed point; it resolves against the parent's eventual size
+  in a single pass.
 
-  if (currentInlineGroup.length > 0) {
-    groups.push(currentInlineGroup);
-  }
+## Edge cases
 
-  for (const group of groups) {
-    if (group.length === 1 && isBlockElement(group[0])) {
-      createBlockNode(group[0]);
-    } else {
-      const anonBlock = createAnonymousBlock();
-      anonBlock.setFlexDirection(yoga.FLEX_DIRECTION_ROW);
-      for (const item of group) {
-        const node = createYogaNode(item);
-        node.setMeasureFunc(createTextMeasureFunc(item));
-        anonBlock.insertChild(node);
-      }
-      parent[YOGA_NODE].insertChild(anonBlock);
-    }
-  }
-}
-```
+**Empty elements.** `<span></span>` has no text and no children: not a text leaf,
+so it becomes an empty container and collapses to zero unless given a `min-width`
+or `min-height`.
 
-### Algorithm Selection
+**Inline → block promotion.** An inline element containing a block child is
+promoted to a block container rather than treated as a text leaf.
 
-```typescript
-function processChildren(parent: Element, parentYogaNode: YogaNode) {
-  const parentDisplay = getComputedStyle(parent).display;
-
-  if (parentDisplay === "flex") {
-    processFlexChildren(parent, parent.childNodes);
-  } else {
-    createAnonymousBoxes(parent);
-  }
-}
-```
-
-## Text Measurement Architecture
-
-### Core Principle: Recursive Measurement for Inline Content
-
-**Every leaf node in the layout tree gets a measure function**. This includes:
-
-- Anonymous text runs (contiguous text nodes)
-- Individual elements with only text content
-- Inline elements that become layout leaves
-
-### Measure Function Assignment Rules
-
-```typescript
-// Rule 1: Anonymous boxes always get measure functions
-function createAnonymousBox(textRun: Node[]) {
-  const yogaNode = yoga.Node.create();
-  yogaNode.setMeasureFunc(createRecursiveMeasureFunction(textRun));
-  return yogaNode;
-}
-
-// Rule 2: Elements get measure functions if they are text leaves
-function buildYogaTree(element: Element) {
-  if (isTextLeafNode(element)) {
-    // Element contains only text content - make it measurable
-    yogaNode.setMeasureFunc(createElementMeasureFunction(element));
-  } else {
-    // Element has child elements - process children
-    processChildren(element, yogaNode);
-  }
-}
-
-function isTextLeafNode(element: Element): boolean {
-  const children = Array.from(element.childNodes);
-
-  // No children = not a text leaf
-  if (children.length === 0) return false;
-
-  // Has element children = not a text leaf (unless inline→block promotion)
-  const hasElementChildren = children.some(
-    (child) =>
-      child.nodeType === ELEMENT_NODE &&
-      getComputedStyle(child).display !== "none",
-  );
-
-  const hasTextContent = children.some(
-    (child) => child.nodeType === TEXT_NODE && child.textContent?.trim(),
-  );
-
-  // Text leaf if: has text AND no element children
-  return hasTextContent && !hasElementChildren;
-}
-```
-
-### Recursive Measurement Algorithm
-
-For complex inline content like `<span>Hello <strong>bold</strong> world</span>`, the measure function recursively walks the tree:
-
-```typescript
-function createRecursiveMeasureFunction(rootNodes: Node[]) {
-  return (
-    width: number,
-    widthMode: YogaMode,
-    height: number,
-    heightMode: YogaMode,
-  ) => {
-    const inlineRun = new InlineRunBuilder();
-
-    for (const node of rootNodes) {
-      inlineRun.addContent(measureNodeRecursively(node, width));
-    }
-
-    return inlineRun.calculateDimensions(width, widthMode);
-  };
-}
-
-function measureNodeRecursively(node: Node, maxWidth: number): InlineContent {
-  if (node.nodeType === TEXT_NODE) {
-    return measureTextNode(node, getInheritedStyle(node.parentElement));
-  } else if (node.nodeType === ELEMENT_NODE) {
-    const element = node as Element;
-    const elementStyle = getComputedStyle(element);
-
-    if (isInlineElement(element)) {
-      // Recursively measure inline children
-      const childContent: InlineContent[] = [];
-      for (const child of element.childNodes) {
-        childContent.push(measureNodeRecursively(child, maxWidth));
-      }
-      return combineInlineContent(childContent, elementStyle);
-    } else {
-      // Block elements shouldn't appear in inline runs (CSS error case)
-      throw new Error(`Block element ${element.tagName} in inline context`);
-    }
-  }
-}
-```
-
-### Text Layout Preservation
-
-The recursive measurement preserves the DOM tree structure while calculating flattened layout:
-
-```typescript
-interface InlineContent {
-  text: string; // Flattened text for line breaking
-  width: number; // Calculated width
-  styles: CSSStyle[]; // Style runs for rendering
-  elements: Element[]; // Source elements for event handling
-}
-
-// Example: <span>Hello <strong>bold</strong> world</span>
-// Results in:
-// {
-//   text: "Hello bold world",
-//   width: 15,
-//   styles: [
-//     {start: 0, end: 6, color: "white"},      // "Hello "
-//     {start: 6, end: 10, color: "white", bold: true}, // "bold"
-//     {start: 10, end: 15, color: "white"}     // " world"
-//   ],
-//   elements: [span, strong]
-// }
-```
-
-### Line Breaking Across Element Boundaries
-
-Line breaking must respect element boundaries for proper styling:
-
-```typescript
-function breakInlineContent(
-  content: InlineContent,
-  maxWidth: number,
-): LineBreak[] {
-  const breaker = linebreak(content.text);
-  const lines: LineBreak[] = [];
-
-  for (const bk of breaker) {
-    const lineText = content.text.slice(lastBreak, bk.position);
-
-    // Map character positions back to style runs and elements
-    const lineStyles = mapPositionsToStyles(
-      lastBreak,
-      bk.position,
-      content.styles,
-    );
-    const lineElements = mapPositionsToElements(
-      lastBreak,
-      bk.position,
-      content.elements,
-    );
-
-    lines.push({
-      text: lineText,
-      width: measureStyledText(lineText, lineStyles),
-      styles: lineStyles,
-      elements: lineElements,
-    });
-  }
-
-  return lines;
-}
-```
-
-## Layout Process
-
-1. **DOM Mutation**: Detect changes via MutationObserver.
-2. **Yoga Tree Update**: Rebuild anonymous boxes and block nodes.
-3. **Layout Calculation**: `rootNode.calculateLayout(terminalWidth, terminalHeight)`.
-4. **Bounds Storage**: Recursively extract computed layouts.
-
-Refer to https://www.yogalayout.dev/docs/advanced/incremental-layout for how to do incremental layout.
-
-## Edge Cases
-
-### 1. Empty Elements
-
-```html
-<span></span>
-<!-- No text content, no children -->
-```
-
-- **Behavior**: Not a text leaf node, becomes empty container
-- **Result**: Collapses to zero dimensions unless `min-width`/`min-height`
-
-### 2. Inline→Block Promotion
-
-```html
-<span>
-  <div>Block content</div>
-  <!-- Block child promotes span -->
-</span>
-```
-
-- **CSS Rule**: Inline elements with block children are promoted to block
-- **Implementation**: Check child display types in `isTextLeafNode()`
-- **Result**: Span becomes block container, not text leaf
-
-### 3. Deeply Nested Inline Content
-
-```html
-<span
-  >Text <em>nested <strong>deep</strong> content</em> more</span
->
-```
-
-- **Challenge**: Recursive measurement depth
-- **Solution**: Recursive tree walking preserves styling context
-- **Performance**: Consider memoization for repeated measurements
-
-### 4. Mixed Content Scenarios
+**Mixed content.** In
 
 ```html
 <div>
@@ -408,69 +271,34 @@ Refer to https://www.yogalayout.dev/docs/advanced/incremental-layout for how to 
 </div>
 ```
 
-- **Grouping**: Creates separate anonymous boxes around block elements
-- **Text runs**: "Text content inline element More text" → anonymous box
-- **Block break**: `<div>Block element</div>` → individual Yoga node
-- **Final run**: "Final text" → separate anonymous box
+the two text runs become separate anonymous boxes, split by the block child, which
+gets its own node.
 
-### 5. Line Breaking Edge Cases
+**Whitespace.** Collapsing follows the `white-space` property, applied during
+measurement. Each element in a run may have its own value.
 
-```html
-<span
-  >Very long text that needs <strong>to break across</strong> multiple
-  lines</span
->
-```
+## Testing
 
-- **Challenge**: Line breaks can occur within styled runs
-- **Solution**: Character position mapping back to elements
-- **Requirement**: Preserve styling across line boundaries
+Two suites cover layout, and they are **not** interchangeable.
 
-### 6. Empty Inline Elements in Runs
+- **`tests/__snapshots__/ansi/*.ansi`** — end-to-end ANSI snapshots. They prove the
+  engine reproduces what termdom's own documents happen to exercise. They prove
+  nothing about flexbox in general: every engine bug listed in this document passed
+  all 45 of them.
+- **`tests/flex.test.ts`** — spec tests driven directly against the engine, with
+  expected cell values **hand-computed from css-flexbox-1** and the derivation in a
+  comment beside each.
 
-```html
-<div>Text <span></span> more text</div>
-```
+Expectations in `flex.test.ts` must never be generated by running the
+implementation. A test that reads its answer off the code under test only proves
+the code agrees with itself, and enshrines its bugs as the contract.
 
-- **Behavior**: Empty spans contribute no content but may affect styling/events
-- **Implementation**: Include in recursive measurement but contribute zero width
-- **Preservation**: Maintain element references for event handling
+When you fix a layout bug, add a case with its derivation. If a snapshot changes,
+that is a rendering change and a human needs to look at it.
 
-### 7. Whitespace Handling
+## Future enhancements
 
-```html
-<span>Word1 <em> Word2 </em> Word3</span>
-```
-
-- **CSS Rules**: Whitespace collapsing depends on `white-space` property
-- **Implementation**: Apply whitespace rules during recursive measurement
-- **Context**: Each element may have different `white-space` values
-
-### 8. Replaced Elements in Inline Context
-
-```html
-<span>Text <img width="10" height="5" /> more text</span>
-```
-
-- **Challenge**: Non-text content with intrinsic dimensions
-- **Solution**: Measure replaced elements separately, compose with text
-- **Line breaking**: Treat as atomic unit (doesn't break across lines)
-
-## Why This Architecture?
-
-- Consistency: Everything goes through Yoga.
-- Correctness: Matches browser behavior with anonymous boxes.
-- Performance: Single-pass layout.
-- Flexibility: Easy to extend.
-
-## Future Enhancements
-
-1. Text shaping (graphemes)
-2. Sophisticated inline layout
-3. Explicit line boxes
-4. Vertical text support
-5. Ruby annotations
-
----
-
-**Yoga APIs Required:** `useWebDefaults()`, `setPointScaleFactor(1)` for terminal fidelity and correct scaling.
+1. `min-width: auto` (automatic minimum size of flex items)
+2. `gap`
+3. Text shaping (graphemes)
+4. Explicit line boxes

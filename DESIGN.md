@@ -20,14 +20,14 @@ document.body.appendChild(div);
 
 ## The Big Idea: "Your Terminal is Now a Browser"
 
-**HTML + CSS + Yoga Layout → ANSI Terminal Output**
+**HTML + CSS + Flexbox Layout → ANSI Terminal Output**
 
 TermDOM treats the terminal like a browser:
 
 - **Document**: Standard `HTMLDocument` from JSDOM
 - **Elements**: Regular `div`, `span`, `table`, `input`, `button` elements
 - **Styling**: CSS properties via `element.style`
-- **Layout**: Yoga flexbox engine computes positions
+- **Layout**: pure-JS flexbox engine (`src/flex.ts`) computes positions on the cell grid
 - **Rendering**: XTerm.js converts to ANSI escape sequences
 
 ## Revolutionary Value Proposition
@@ -42,7 +42,7 @@ TermDOM treats the terminal like a browser:
 ### For Terminal UIs
 
 - ✅ **Rich Elements**: `<table>`, `<form>`, `<input>`, `<button>` all work
-- ✅ **Proper Layout**: Yoga flexbox for complex layouts
+- ✅ **Proper Layout**: CSS flexbox for complex layouts
 - ✅ **Beautiful Output**: ANSI colors, styling, and formatting
 - ✅ **Interactive**: Full mouse and keyboard support
 
@@ -105,22 +105,25 @@ TermDOM treats the terminal like a browser:
 
 ### **Fundamental Layout Philosophy**
 
-TermDOM uses a **hybrid layout system** that combines the power of Yoga's
-flexbox engine with custom inline layout algorithms, designed specifically for
-terminal constraints and single-pass efficiency.
+TermDOM uses a **hybrid layout system** that combines a pure-JS CSS flexbox
+engine (`src/flex.ts`) with custom inline layout algorithms, designed
+specifically for terminal constraints and single-pass efficiency.
+
+See [LAYOUT.md](./LAYOUT.md) for the engine's supported feature set, its
+deliberate omissions, and where it departs from the CSS spec.
 
 #### **Key Design Principles:**
 
 1. **Single-Pass Layout** - Avoids iterative settlement like browsers
-2. **Clear Separation** - Block layout (Yoga) vs Inline layout (custom)
+2. **Clear Separation** - Block layout (flexbox) vs Inline layout (custom)
 3. **Deferred Computation** - Layout only computed when needed
 4. **Efficient Invalidation** - Smart dirty tracking with MutationObserver
 
 ### **Layout System Architecture**
 
-#### **Block Layout Elements** (Yoga-powered)
+#### **Block Layout Elements** (flexbox-powered)
 
-Elements that get Yoga nodes and participate in flexbox/block layout:
+Elements that get layout nodes and participate in flexbox/block layout:
 
 - `display: block` - div, p, h1-h6, button (by default)
 - `display: flex` - Explicit flexbox containers
@@ -131,18 +134,18 @@ Elements that get Yoga nodes and participate in flexbox/block layout:
 ```typescript
 // Block display is syntactic sugar for flex column + stretch
 if (display === "block") {
-  node.setDisplay(yoga.DISPLAY_FLEX);
-  node.setFlexDirection(yoga.FLEX_DIRECTION_COLUMN); // Stack children vertically
-  node.setAlignItems(yoga.ALIGN_STRETCH); // Children stretch to full width
+  node.setDisplay(Flex.DISPLAY_FLEX);
+  node.setFlexDirection(Flex.FLEX_DIRECTION_COLUMN); // Stack children vertically
+  node.setAlignItems(Flex.ALIGN_STRETCH); // Children stretch to full width
 } else if (display === "flex") {
-  node.setDisplay(yoga.DISPLAY_FLEX);
+  node.setDisplay(Flex.DISPLAY_FLEX);
   // Use explicit flex-direction, align-items from CSS
 }
 ```
 
 This means **all layout is actually flexbox** - there's no separate "block" layout engine. Traditional block behavior emerges naturally from `flex-direction: column` + `align-items: stretch`.
 
-**Yoga Responsibilities:**
+**Layout Engine Responsibilities:**
 
 - Flexbox layout computation (justify-content, align-items, etc.)
 - Block positioning and sizing
@@ -285,7 +288,7 @@ document.render(); // → calls computeLayoutIfNeeded()
 
 #### **Efficient Dirty Tracking**
 
-- **Block elements** - Delete YOGA_NODE to mark dirty, rebuild Yoga tree
+- **Block elements** - Mark dirty and rebuild the layout tree
 - **Inline elements** - Mark parent container dirty, recompute inline layout
 - **Batched processing** - Multiple mutations processed together
 - **Minimal recomputation** - Only dirty subtrees recalculated
@@ -313,7 +316,7 @@ Private layout data stored in Symbol properties (following HappyDOM pattern):
 ```typescript
 const ELEMENT_BOUNDS = Symbol("elementBounds"); // Single bounding rect
 const ELEMENT_RECTS = Symbol("elementRects"); // Multiple rects for inline
-const YOGA_NODE = Symbol("yogaNode"); // Yoga layout node
+const LAYOUT_NODE = Symbol("layoutNode"); // flexbox layout node
 ```
 
 #### **Lifecycle**
@@ -364,9 +367,9 @@ This architecture provides **80% of browser layout power** with **20% of the com
 ┌─────────────────────────────────────────────────────┐
 │              Layout Layer                           │
 │  ┌─────────────────┐  ┌─────────────────────────────┐
-│  │ Symbol Props    │  │     Yoga Engine             │
-│  │ (YOGA_BOUNDS,   │  │   (Flexbox Layout)          │
-│  │  YOGA_NODE)     │  │                             │
+│  │ Symbol Props    │  │     Flexbox Engine          │
+│  │ (LAYOUT_BOUNDS, │  │   (Flexbox Layout)          │
+│  │  LAYOUT_NODE)   │  │                             │
 │  └─────────────────┘  └─────────────────────────────┘
 └─────────────────────────────────────────────────────┘
                           ↓

@@ -734,13 +734,34 @@ function resolveFlexBasis(node: Node, mainAxis: FlexDirection): Value {
 }
 
 function alignSelfOf(parent: Node, child: Node): Align {
-	const align =
-		child.style.alignSelf === ALIGN_AUTO
-			? parent.style.alignItems
-			: child.style.alignSelf;
-	// baseline is not implemented; treat it as flex-start, which is what it
-	// degenerates to for single-line-height terminal cells anyway.
-	return align === ALIGN_BASELINE ? ALIGN_FLEX_START : align;
+	return child.style.alignSelf === ALIGN_AUTO
+		? parent.style.alignItems
+		: child.style.alignSelf;
+}
+
+/**
+ * Distance from a node's border-box cross-start edge to its first baseline.
+ *
+ * A terminal cell has no font metrics, so a text run's baseline is taken to be
+ * the top of its first row -- aligning baselines then means aligning first rows,
+ * which is what "baseline" can mean on a character grid. A box with no text of
+ * its own inherits the baseline of its first in-flow child, per css-flexbox-1
+ * §8.5; a box with no in-flow children synthesizes one from its content edge.
+ *
+ * Note this is NOT the same as flex-start whenever items carry different
+ * leading border or padding: those offsets push the first row down inside the
+ * box, and baseline alignment is precisely what compensates for them.
+ */
+function baselineWithinBorderBox(node: Node, ownerWidth: number): number {
+	const contentTop = paddingAndBorderForEdge(node, EDGE_TOP, ownerWidth);
+
+	for (const child of node.children) {
+		if (child.style.display === DISPLAY_NONE) continue;
+		if (child.style.positionType === POSITION_TYPE_ABSOLUTE) continue;
+		return child.layout.top + baselineWithinBorderBox(child, ownerWidth);
+	}
+
+	return contentTop;
 }
 
 function marginForAxis(
@@ -848,9 +869,14 @@ function constrainMaxSizeForMode(
 		mode.mode === MEASURE_MODE_EXACTLY ||
 		mode.mode === MEASURE_MODE_AT_MOST
 	) {
+		// A max size caps a size; it does not make it indefinite. Clamping the
+		// value but *keeping* the mode is the whole point: downgrading an EXACTLY
+		// to AT_MOST here tells the box it is being shrink-wrapped, and a box with
+		// no content of its own then collapses to zero instead of taking the size
+		// flex just resolved for it.
 		mode.value = isDefined(mode.value) ? Math.min(mode.value, max) : max;
-		mode.mode = MEASURE_MODE_AT_MOST;
 	} else {
+		// An indefinite size, on the other hand, is genuinely bounded by the max.
 		mode.value = max;
 		mode.mode = MEASURE_MODE_AT_MOST;
 	}
@@ -1496,80 +1522,109 @@ function resolveFlexibleLengths(
 	const mainAxis = node.style.flexDirection;
 	const mainOwnerSize = isRow(mainAxis) ? ownerWidth : ownerHeight;
 
-	const sizes = new Map<Node, number>();
+	// The flex base size is what an item wants to be; the hypothetical main size
+	// is that clamped by min/max. The distinction matters throughout the loop
+	// below: free space is always measured against an unfrozen item's *base*
+	// size, never against the size it was last handed, or each pass would count
+	// the space it already took a second time.
+	const base = new Map<Node, number>();
+	const target = new Map<Node, number>();
 	const frozen = new Set<Node>();
 
 	for (const child of line.items) {
-		const basis = boundAxisWithinMinMax(
+		const flexBase = child.layout.computedFlexBasis;
+		base.set(child, flexBase);
+		target.set(
 			child,
-			mainAxis,
-			child.layout.computedFlexBasis,
-			mainOwnerSize,
+			boundAxisWithinMinMax(child, mainAxis, flexBase, mainOwnerSize),
 		);
-		sizes.set(child, basis);
 	}
 
-	if (!isDefined(innerMain)) {
-		// Indefinite main size: items stay at their base size.
+	const commit = () => {
 		for (const child of line.items) {
-			child.layout.computedFlexBasis = sizes.get(child)!;
+			child.layout.computedFlexBasis = target.get(child)!;
 		}
+	};
+
+	if (!isDefined(innerMain)) {
+		// Indefinite main size: items stay at their hypothetical size.
+		commit();
 		return;
 	}
 
-	const freeSpace = () => {
-		let used = 0;
-		for (const child of line.items) {
-			used += sizes.get(child)! + marginForAxis(child, mainAxis, ownerWidth);
-		}
-		return innerMain - used;
-	};
+	const outerMargin = (child: Node) =>
+		marginForAxis(child, mainAxis, ownerWidth);
 
-	const initialFree = freeSpace();
-	const growing = initialFree > 0;
+	// css-flexbox-1 §9.7.3: grow or shrink is decided once, by comparing the sum
+	// of the items' outer hypothetical main sizes against the container.
+	let hypotheticalTotal = 0;
+	for (const child of line.items) {
+		hypotheticalTotal += target.get(child)! + outerMargin(child);
+	}
+	const growing = innerMain - hypotheticalTotal > 0;
 
 	// Items only grow into a *definite* main size. Under AT_MOST the container is
 	// being sized to its content against an upper bound, so there is no free space
 	// to distribute -- the container will shrink-wrap instead. Shrinking still
 	// applies, since content that overflows the bound must be compressed.
 	if (growing && mainMode !== MEASURE_MODE_EXACTLY) {
-		for (const child of line.items) {
-			child.layout.computedFlexBasis = sizes.get(child)!;
-		}
+		commit();
 		return;
 	}
 
-	// Items with a zero factor are inflexible from the start.
+	const factorOf = (child: Node) =>
+		growing
+			? resolveFlexGrow(child)
+			: resolveFlexShrink(child) * base.get(child)!;
+
+	// §9.7.4.a: freeze the items that cannot flex. An item whose flex base size
+	// already sits on the wrong side of its own clamp can never move in the
+	// direction we are flexing, so it is inflexible from the start.
 	for (const child of line.items) {
+		const flexBase = base.get(child)!;
+		const hypothetical = target.get(child)!;
 		const factor = growing ? resolveFlexGrow(child) : resolveFlexShrink(child);
-		if (factor === 0) frozen.add(child);
+
+		if (
+			factor === 0 ||
+			(growing && flexBase > hypothetical) ||
+			(!growing && flexBase < hypothetical)
+		) {
+			frozen.add(child);
+		}
 	}
 
-	// Loop until every item is frozen. Each pass distributes the remaining free
-	// space, clamps to min/max, and freezes anything that was clamped.
+	// §9.7.4: distribute the free space, clamp, freeze whatever hit a bound, and
+	// go again with the rest. Each pass freezes at least one item, so the line
+	// always terminates.
 	for (let guard = 0; guard <= line.items.length; guard++) {
 		const unfrozen = line.items.filter((child) => !frozen.has(child));
 		if (unfrozen.length === 0) break;
 
-		const remaining = freeSpace();
-		if (remaining === 0) break;
+		// §9.7.4.b: frozen items contribute their target size, unfrozen items
+		// their flex base size.
+		let used = 0;
+		for (const child of line.items) {
+			const size = frozen.has(child) ? target.get(child)! : base.get(child)!;
+			used += size + outerMargin(child);
+		}
+		const remaining = innerMain - used;
 
 		let totalFactor = 0;
 		for (const child of unfrozen) {
-			totalFactor += growing
-				? resolveFlexGrow(child)
-				: resolveFlexShrink(child) * sizes.get(child)!;
+			totalFactor += factorOf(child);
 		}
 		if (totalFactor === 0) break;
 
+		// §9.7.4.c-d: each unfrozen item's target is its flex base size plus its
+		// share of the free space, then clamped.
 		let violation = 0;
-		const clamped = new Set<Node>();
+		const minViolations: Node[] = [];
+		const maxViolations: Node[] = [];
 
 		for (const child of unfrozen) {
-			const factor = growing
-				? resolveFlexGrow(child)
-				: resolveFlexShrink(child) * sizes.get(child)!;
-			const unclamped = sizes.get(child)! + (remaining * factor) / totalFactor;
+			const unclamped =
+				base.get(child)! + (remaining * factorOf(child)) / totalFactor;
 			const bounded = boundAxisWithinMinMax(
 				child,
 				mainAxis,
@@ -1577,28 +1632,27 @@ function resolveFlexibleLengths(
 				mainOwnerSize,
 			);
 
-			if (bounded !== unclamped) {
-				clamped.add(child);
-				violation += bounded - unclamped;
-			}
-			sizes.set(child, bounded);
+			target.set(child, bounded);
+			violation += bounded - unclamped;
+
+			if (bounded > unclamped) minViolations.push(child);
+			else if (bounded < unclamped) maxViolations.push(child);
 		}
 
+		// §9.7.4.e: freeze by the *sign* of the total violation, not by whoever
+		// happened to clamp. Freezing both directions at once would strand the
+		// space an over-clamped item gave back.
 		if (violation === 0) {
-			// Nothing was clamped: the distribution stuck, so we are done.
+			for (const child of unfrozen) frozen.add(child);
 			break;
-		}
-
-		// Freeze the items that hit a bound in the direction of the violation and
-		// let the rest re-absorb the difference next pass.
-		for (const child of clamped) {
-			frozen.add(child);
+		} else if (violation > 0) {
+			for (const child of minViolations) frozen.add(child);
+		} else {
+			for (const child of maxViolations) frozen.add(child);
 		}
 	}
 
-	for (const child of line.items) {
-		child.layout.computedFlexBasis = sizes.get(child)!;
-	}
+	commit();
 }
 
 /** Lay out one flex item at its resolved main size, stretching the cross axis if asked. */
@@ -1882,6 +1936,14 @@ function positionCrossAxis(
 				lineLeading = lineBetween / 2;
 			}
 			break;
+		case ALIGN_SPACE_EVENLY:
+			// Equal gaps everywhere, including before the first line and after the
+			// last: n lines make n+1 gaps.
+			if (lineCount > 0) {
+				lineBetween = Math.max(freeCross, 0) / (lineCount + 1);
+				lineLeading = lineBetween;
+			}
+			break;
 		case ALIGN_STRETCH:
 			// Extra space is handed to the lines themselves, below.
 			break;
@@ -1899,6 +1961,26 @@ function positionCrossAxis(
 
 	for (const line of lines) {
 		const lineCross = line.crossDim + stretchPerLine;
+
+		// Baseline alignment needs the whole line before it can place anything:
+		// the item whose baseline sits furthest from its cross-start margin edge
+		// goes flush against the line, and every other baseline item is pushed
+		// down to meet it. Only meaningful when the cross axis is the block axis
+		// (a row container); in a column container the cross axis is horizontal
+		// and there is nothing to align, so it degenerates to flex-start.
+		let maxBaseline = 0;
+		const lineHasBaseline =
+			!crossIsRow &&
+			line.items.some((child) => alignSelfOf(node, child) === ALIGN_BASELINE);
+		if (lineHasBaseline) {
+			for (const child of line.items) {
+				if (alignSelfOf(node, child) !== ALIGN_BASELINE) continue;
+				const childBaseline =
+					resolveMargin(child.style.margin[leadingEdge(cross)], ownerWidth) +
+					baselineWithinBorderBox(child, ownerWidth);
+				maxBaseline = Math.max(maxBaseline, childBaseline);
+			}
+		}
 
 		for (const child of line.items) {
 			const align = alignSelfOf(node, child);
@@ -1956,6 +2038,16 @@ function positionCrossAxis(
 						break;
 					case ALIGN_FLEX_END:
 						offset = availableCross;
+						break;
+					case ALIGN_BASELINE:
+						if (crossIsRow) {
+							// Column container: no block axis to align along.
+							offset = 0;
+						} else {
+							const childBaseline =
+								leadingMargin + baselineWithinBorderBox(child, ownerWidth);
+							offset = maxBaseline - childBaseline;
+						}
 						break;
 					default:
 						offset = 0;
