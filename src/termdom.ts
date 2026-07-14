@@ -363,6 +363,21 @@ export class TermDOM {
 		// region is taller than the terminal, and printing it is what scrolls the
 		// terminal and commits the overflow to scrollback.
 		const contentHeight = this.document.body.scrollHeight;
+
+		// Flow mode's commit index is a document row number, so it only means
+		// anything while the document is append-only. If the document shrinks below
+		// what has already been committed -- rows removed, or cleared -- the index
+		// points past the end and there is nothing left to draw, which blanked the
+		// screen entirely. Clamp it back to what the document can actually support.
+		//
+		// This is a floor, not a fix: reflow *above* the fold still shifts every row
+		// number underneath the commit index, and the scrollback cannot be rewritten
+		// to match. See the note in SCROLLBACK.md.
+		const maxCommitted = Math.max(0, contentHeight - this.height);
+		if (this.committedRows > maxCommitted) {
+			this.committedRows = maxCommitted;
+		}
+
 		const regionRows = Math.max(0, contentHeight - this.committedRows);
 
 		// Where on screen that region begins. Once anything has been committed the

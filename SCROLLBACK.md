@@ -114,6 +114,48 @@ Since buffer represents fixed viewport:
 - Emit characters and styles sequentially
 - Use `\r\n` for line breaks
 
+
+## The invariant, and where it breaks
+
+Committed rows are **frozen**. The cursor cannot address scrollback, so once a row
+has scrolled off the top it can never be redrawn. Everything below is the live
+viewport, and is ours.
+
+That gives flow mode its whole value -- output lands in real scrollback, so it is
+searchable, selectable, copy-pasteable and survives the process exiting -- and it
+costs exactly one thing:
+
+> **Flow mode is sound only while the document is append-only.**
+
+Three cases, and they are not equivalent:
+
+| Change | Result |
+| --- | --- |
+| **A committed row's *content* changes** | Ignored. The screen keeps what was printed; the DOM moves on. No corruption. This is correct: you cannot un-print, and a transcript is a record of what happened. |
+| **The document shrinks or is cleared** | The commit index is clamped and the live viewport re-renders the remaining document. The scrollback keeps the old transcript. Coherent -- like a command that printed, then printed something else. |
+| **The document *reflows* above the fold** (a row inserted or removed near the top) | **Corrupts.** The commit index is a document *row number*, and reflow shifts every row number underneath it. Rows get re-printed into the scrollback (duplicated), and the inserted content never appears. |
+
+The third case is unsolved. It is not a bug to be patched -- it is the terminal
+telling you that the document is not append-only, and therefore does not belong in
+flow mode.
+
+### The two modes are a consequence, not a preference
+
+- **flow** — for output that accumulates: logs, streaming, diffs, transcripts. The
+  terminal owns the scrollback; you never clear; there is no flicker, ever.
+- **virtualized / alt buffer** — for a document that mutates or that the user
+  navigates: pagers, editors, dashboards. You own the screen. Anything can change.
+  On exit the alt buffer restores, so the user's scrollback is untouched.
+
+An app that reflows above the fold is telling you it belongs in the second mode.
+The library should detect that and either say so or escalate, rather than quietly
+producing a corrupt scrollback.
+
+**This is the open decision.** The options are: ignore it (today's behaviour,
+which corrupts), escalate to the alt buffer automatically, warn in development, or
+reprint the document as a fresh block below the transcript (never rewriting
+history, at the cost of re-emitting everything).
+
 ## Future Enhancements
 
 ### Native Scrollback Integration
