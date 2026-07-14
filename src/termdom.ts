@@ -95,6 +95,11 @@ export class TermDOM {
 	// Track whether command start was explicitly detected (even if at row 1)
 	private hasDetectedCommandStart: boolean = false;
 
+	// Document rows that have scrolled off the top into the terminal's scrollback.
+	// The cursor cannot address scrollback, so these are frozen for good: they can
+	// never be redrawn. Everything below them is the live, addressable viewport.
+	private committedRows = 0;
+
 	// Unified stdin handling
 	private cursorDetectionHandler: ((data: string) => void) | null = null;
 
@@ -353,16 +358,23 @@ export class TermDOM {
 			this.pushUpForOverflow();
 		}
 
-		// Get viewport offset from raw internal scrollTop
-		// When cursor is detected, content starts at buffer row 0 (cursor positioning handles terminal placement)
+		// The document rows still ours to draw: everything below what has already
+		// scrolled into the scrollback. On a frame where the content has grown this
+		// region is taller than the terminal, and printing it is what scrolls the
+		// terminal and commits the overflow to scrollback.
+		const contentHeight = this.document.body.scrollHeight;
+		const regionRows = Math.max(0, contentHeight - this.committedRows);
+
+		// Where on screen that region begins. Once anything has been committed the
+		// content fills the terminal from its top row.
+		const startRow =
+			this.committedRows > 0 ? 0 : this.scrollingManager.getScreenTop();
+
 		const viewportOffset = this.hasDetectedCommandStart
-			? 0
+			? -this.committedRows
 			: -this.scrollingManager.getScrollTop();
 
-		// When cursor is detected, pass the cursor position explicitly
-		const cursorPosition = this.hasDetectedCommandStart
-			? this.scrollingManager.getScreenTop()
-			: undefined;
+		const cursorPosition = this.hasDetectedCommandStart ? startRow : undefined;
 
 		const ansi = this.renderer.renderFrame(
 			viewportOffset,
@@ -370,7 +382,18 @@ export class TermDOM {
 				this.renderElement(this.document.body, ctx);
 			},
 			cursorPosition,
+			this.hasDetectedCommandStart ? startRow + regionRows : undefined,
 		);
+
+		// Printing past the bottom margin scrolls the terminal, and those rows are
+		// now in its scrollback -- permanently, and beyond our reach.
+		if (this.hasDetectedCommandStart) {
+			const scrolled = Math.max(0, startRow + regionRows - this.height);
+			if (scrolled > 0) {
+				this.committedRows += scrolled;
+				this.scrollingManager.setScreenTop(Math.max(0, startRow - scrolled));
+			}
+		}
 
 		if (ansi) {
 			await new Promise<void>((resolve, reject) => {

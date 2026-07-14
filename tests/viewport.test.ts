@@ -624,3 +624,47 @@ test("content taller than the room below the command start scrolls instead of va
 
 	dom.dispose();
 });
+
+test("a document taller than the terminal commits its overflow to scrollback", async () => {
+	// The contract: the terminal shows the last min(contentHeight, terminalHeight)
+	// rows of the document, and everything above is in the terminal's own
+	// scrollback -- frozen, because the cursor cannot address scrollback.
+	//
+	// Previously the frame buffer was locked to the terminal height, so any row
+	// past the bottom had nowhere to go and was simply never drawn. A 14-row
+	// document in an 8-row terminal rendered rows 1-8 and silently dropped the
+	// rest.
+	//
+	// Note this cannot be checked with getPlainText(): that reads absolute buffer
+	// indices, which include scrollback, so it does not show the viewport once the
+	// terminal has scrolled.
+	const terminal = new MockProcess({rows: 8, cols: 30});
+	const dom = new TermDOM({process: terminal});
+	await dom.detectCommandStart();
+
+	dom.document.body.innerHTML = Array.from(
+		{length: 14},
+		(_, i) => `<div>row ${i + 1}</div>`,
+	).join("");
+	await dom.render();
+
+	const buffer = (terminal as any).terminal.buffer.active;
+
+	// 14 rows of content, 8 rows of terminal: 6 rows have scrolled off.
+	expect(buffer.baseY).toBe(6);
+
+	const lineAt = (index: number): string =>
+		buffer.getLine(index)?.translateToString(true) ?? "";
+
+	// The overflow went into the scrollback -- it was printed, not discarded.
+	for (let i = 0; i < 6; i++) {
+		expect(lineAt(i)).toBe(`row ${i + 1}`);
+	}
+
+	// And the viewport holds the tail of the document.
+	for (let i = 0; i < 8; i++) {
+		expect(lineAt(buffer.baseY + i)).toBe(`row ${i + 7}`);
+	}
+
+	dom.dispose();
+});

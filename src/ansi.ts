@@ -982,18 +982,35 @@ export class Renderer {
 		return this.#hasSavedCursor;
 	}
 
+	/**
+	 * Render one frame.
+	 *
+	 * `regionRows` lets the caller render a region *taller than the terminal*. That
+	 * is how content reaches the scrollback: the frame is emitted top to bottom
+	 * with newlines, and printing past the bottom margin is what makes the terminal
+	 * scroll -- and what puts the rows that scroll past into its scrollback, where
+	 * they remain readable. (`CSI n S` scrolls too, but discards them.)
+	 *
+	 * Rows that scroll off can never be addressed again, so only the last
+	 * `terminalHeight` of them are kept as the previous frame: they are the only
+	 * part still ours to redraw.
+	 */
 	renderFrame(
 		offset: number,
 		drawCallback: (ctx: DrawingContext) => void,
 		cursorPosition?: number,
+		regionRows?: number,
 	): string {
+		const frameRows = Math.max(this.#rows, regionRows ?? this.#rows);
+		const overflowing = frameRows > this.#rows;
+
 		// Setup: Create new frame buffer
-		const nextBuffer = createBuffer(this.#rows, this.#cols);
+		const nextBuffer = createBuffer(frameRows, this.#cols);
 
 		// Create drawing context and execute drawing operations
 		const context = new DrawingContext(
 			nextBuffer,
-			this.#rows,
+			frameRows,
 			this.#cols,
 			offset,
 		);
@@ -1002,10 +1019,12 @@ export class Renderer {
 		// Generate output: Transform previous buffer for scroll optimization
 		this.#transformBufferForScroll(offset);
 
-		// Create diff buffer
-		const diffBuffer = createBuffer(this.#rows, this.#cols);
-		if (!this.#prevBuffer) {
-			for (let row = 0; row < this.#rows; row++) {
+		// Create diff buffer. A frame taller than the terminal is a growth frame:
+		// the rows below the fold have never been on screen, so there is nothing to
+		// diff against -- print all of it.
+		const diffBuffer = createBuffer(frameRows, this.#cols);
+		if (!this.#prevBuffer || overflowing) {
+			for (let row = 0; row < frameRows; row++) {
 				for (let col = 0; col < this.#cols; col++) {
 					const currCell = nextBuffer[row][col];
 					diffBuffer[row][col] = currCell;
@@ -1048,7 +1067,7 @@ export class Renderer {
 		const scrollCommands = this.#generateScrollCommands(offset);
 		let hasContent = false;
 
-		for (let row = 0; row < this.#rows; row++) {
+		for (let row = 0; row < frameRows; row++) {
 			for (let col = 0; col < this.#cols; col++) {
 				if (diffBuffer[row][col] !== null) {
 					hasContent = true;
@@ -1136,9 +1155,13 @@ export class Renderer {
 			staleOutput += "\x1b[J"; // ED0 - Erase from cursor to end of screen
 		}
 
-		// Update state for next frame
-		this.#prevBuffer = nextBuffer;
-		this.#prevOffset = offset;
+		// Update state for next frame. Anything above the last terminalHeight rows
+		// has scrolled into the scrollback and is no longer ours to redraw, so it is
+		// not worth remembering.
+		this.#prevBuffer = overflowing
+			? nextBuffer.slice(frameRows - this.#rows)
+			: nextBuffer;
+		this.#prevOffset = overflowing ? offset + (frameRows - this.#rows) : offset;
 		this.#prevContentHeight = contentHeight;
 
 		return prefix + output + staleOutput + suffix;
