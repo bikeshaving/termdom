@@ -244,4 +244,4 @@ function renderTable() {
 // Initial render
 renderTable();
 
-await termdom.waitForRender();
+await termdom.render();

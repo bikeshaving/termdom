@@ -58,7 +58,7 @@ async function main() {
 	container.appendChild(mixed);
 
 	// Wait for rendering to complete
-	await dom.waitForRender();
+	await dom.render();
 
 	dom.dispose();
 }

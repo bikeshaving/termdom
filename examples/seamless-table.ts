@@ -58,4 +58,4 @@ footer.style.color = "green";
 footer.style.marginTop = "1ch";
 document.body.appendChild(footer);
 
-await termdom.waitForRender();
+await termdom.render();

@@ -44,4 +44,4 @@ tableElement.appendChild(tbody);
 
 document.body.appendChild(tableElement);
 
-await termdom.waitForRender();
+await termdom.render();

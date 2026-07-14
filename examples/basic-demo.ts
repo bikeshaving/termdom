@@ -74,8 +74,7 @@ async function basicDemo() {
 
 		document.body.appendChild(container);
 
-		// Wait for rendering to complete
-		await dom.waitForRender();
+		await dom.render();
 
 		// Setup exit handler
 		process.on("SIGINT", () => {

@@ -106,15 +106,42 @@ const columns = [
 // Create TanStack table with advanced features
 let sortingState: any[] = [];
 
+// table-core reads `state` as the whole state, not a patch over the defaults, so
+// a partial one leaves the slices it omits undefined and the table throws on the
+// first feature that reads them.
+const tableState = {
+	columnOrder: [],
+	columnPinning: {left: [], right: []},
+	columnVisibility: {},
+	columnSizing: {},
+	columnSizingInfo: {
+		startOffset: null,
+		startSize: null,
+		deltaOffset: null,
+		deltaPercentage: null,
+		isResizingColumn: false as const,
+		columnSizingStart: [],
+	},
+	columnFilters: [],
+	globalFilter: "",
+	grouping: [],
+	expanded: {},
+	rowSelection: {},
+	rowPinning: {top: [], bottom: []},
+	sorting: sortingState,
+	pagination: {pageIndex: 0, pageSize: 5},
+};
+
 const table = createTable({
 	data,
 	columns,
-	state: {
-		sorting: sortingState,
-	},
+	state: tableState as any,
+	onStateChange: () => {},
+	renderFallbackValue: null,
 	onSortingChange: (updater: any) => {
 		sortingState =
 			typeof updater === "function" ? updater(sortingState) : updater;
+		tableState.sorting = sortingState;
 	},
 	getCoreRowModel: getCoreRowModel(),
 	getSortedRowModel: getSortedRowModel(),
@@ -189,12 +216,12 @@ table.getRowModel().rows.forEach((row, rowIndex) => {
 			cellDiv.style.borderRight = "1px solid #444";
 		}
 
-		// Use custom cell renderer if available
-		const cellValue = column.columnDef.cell
-			? (column.columnDef.cell as any)({getValue: () => cell.getValue()})
-			: String(cell.getValue());
+		// Hand the renderer the cell's real context. A column without an explicit
+		// `cell` gets table-core's default renderer, which calls renderValue() --
+		// a stand-in context with only getValue() makes it throw.
+		const rendered = (column.columnDef.cell as any)(cell.getContext());
 
-		cellDiv.textContent = cellValue;
+		cellDiv.textContent = String(rendered ?? "");
 		dataRow.appendChild(cellDiv);
 	});
 
