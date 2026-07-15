@@ -1040,6 +1040,7 @@ export class Renderer {
 	renderStatic(
 		contentRows: number,
 		drawCallback: (ctx: DrawingContext) => void,
+		lineEnding: "\n" | "\r\n" = "\n",
 	): string {
 		const rows = Math.max(0, contentRows);
 		if (rows === 0) return "";
@@ -1080,7 +1081,10 @@ export class Renderer {
 			lines.push(line);
 		}
 
-		return lines.join("\n") + "\n";
+		// A file wants a bare newline. A terminal wants CRLF: a lone LF moves the
+		// cursor down without returning it to column 0, so the lines would staircase
+		// away across the screen.
+		return lines.join(lineEnding) + lineEnding;
 	}
 
 	renderFrame(

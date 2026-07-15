@@ -108,6 +108,14 @@ export class TermDOM {
 	// Unified stdin handling
 	private cursorDetectionHandler: ((data: string) => void) | null = null;
 
+	// Handles and timers that must be torn down in dispose(), or they keep the
+	// process alive after the app is done -- which, across a test suite, piles up
+	// into a hang.
+	private sigintHandler: (() => void) | null = null;
+	private sigwinchHandler: (() => void) | null = null;
+	private stdinDataHandler: ((chunk: string | Buffer) => void) | null = null;
+	private cursorDetectionTimer: ReturnType<typeof setTimeout> | null = null;
+
 	// Promise that resolves when cursor detection completes (or times out)
 	private cursorDetectionPromise: Promise<void> | null = null;
 
@@ -305,15 +313,14 @@ export class TermDOM {
 
 	// TODO: This should be put in an event translator abstraction
 	private setupProcessHandlers(): void {
-		const cleanup = () => this.dispose();
-		this.process.on("SIGINT", () => {
-			cleanup();
+		this.sigintHandler = () => {
+			this.dispose();
 			this.process.exit(0);
-		});
+		};
+		this.process.on("SIGINT", this.sigintHandler);
 
-		this.process.on("SIGWINCH", () => {
-			this.handleResize();
-		});
+		this.sigwinchHandler = () => this.handleResize();
+		this.process.on("SIGWINCH", this.sigwinchHandler);
 
 		if (this.process.stdin?.isTTY) {
 			const stdin = this.process.stdin;
@@ -325,7 +332,7 @@ export class TermDOM {
 			stdin.setEncoding?.("utf8");
 
 			// Single unified handler for all stdin data
-			stdin.on("data", (chunk: string | Buffer) => {
+			this.stdinDataHandler = (chunk: string | Buffer) => {
 				// Ensure we have both string and buffer representations
 				const data = Buffer.isBuffer(chunk)
 					? chunk
@@ -349,7 +356,8 @@ export class TermDOM {
 				if (!this.fullscreenManager.isFullscreen) {
 					this.dispatchGlobalKeyboardEvent(data);
 				}
-			});
+			};
+			stdin.on("data", this.stdinDataHandler);
 		}
 	}
 
@@ -1396,6 +1404,49 @@ export class TermDOM {
 	 * See SCROLLBACK.md. Without this, content past the bottom of the terminal is
 	 * never drawn at all.
 	 */
+	/**
+	 * Print the whole document to stdout, once, on the way out.
+	 *
+	 * Document mode never commits anything: it paints a window of the document into
+	 * a region it owns and repaints it in place. That is what buys the mutability --
+	 * nothing is frozen, because nothing was printed. But it means that at the
+	 * moment we exit, the terminal has only ever *seen* the last frame.
+	 *
+	 * So we settle up. Erase the region we were painting -- our own viewport rows,
+	 * with ED0; this is not the flicker sin, which is ED3 against the scrollback --
+	 * and then print the document in full. It scrolls into the scrollback exactly as
+	 * an ordinary command's output does, and the terminal ends up holding the whole
+	 * thing: searchable, selectable, and still there tomorrow.
+	 *
+	 * The axis was never "do you get scrollback". It is *when you commit*: flow
+	 * writes uneditable stdout as it goes, and document waits until the end.
+	 *
+	 * The cost of waiting is that a crash takes the output with it -- flow's partial
+	 * output survives, because it was already printed.
+	 */
+	private flushDocument(): void {
+		if (this.viewportMode !== "document" || !this.interactive) return;
+
+		const contentHeight = this.document.body.scrollHeight;
+		if (contentHeight === 0) return;
+
+		const top = this.scrollingManager.getScreenTop();
+
+		// Back to the top of our region, and erase from there down. Only rows we
+		// painted ourselves; the scrollback above is untouched.
+		this.process.stdout.write(`\x1b[${top + 1};1H\x1b[J`);
+
+		const output = this.renderer.renderStatic(
+			contentHeight,
+			(ctx) => {
+				this.renderElement(this.document.body, ctx);
+			},
+			"\r\n",
+		);
+
+		if (output) this.process.stdout.write(output);
+	}
+
 	/** Write to stdout and wait for it to be flushed. */
 	private write(output: string): Promise<void> {
 		return new Promise<void>((resolve, reject) => {
@@ -1622,6 +1673,14 @@ export class TermDOM {
 
 			let responseBuffer = "";
 
+			const finish = () => {
+				this.cursorDetectionHandler = null;
+				if (this.cursorDetectionTimer !== null) {
+					clearTimeout(this.cursorDetectionTimer);
+					this.cursorDetectionTimer = null;
+				}
+			};
+
 			// Set up cursor detection handler for unified stdin
 			this.cursorDetectionHandler = (dataStr: string) => {
 				responseBuffer += dataStr;
@@ -1629,8 +1688,7 @@ export class TermDOM {
 				// Look for cursor position response pattern: \x1b[row;colR
 				const match = responseBuffer.match(/\x1b\[(\d+);(\d+)R/);
 				if (match) {
-					// Cleanup
-					this.cursorDetectionHandler = null;
+					finish();
 
 					const row = parseInt(match[1], 10);
 					// Set window.screenTop (convert 1-based terminal row to 0-based)
@@ -1654,8 +1712,11 @@ export class TermDOM {
 				(this.process.stdout as any)._flush();
 			}
 
-			// Timeout after 1000ms (reasonable balance for reliability)
-			setTimeout(() => {
+			// Timeout after 1000ms (reasonable balance for reliability). The timer is
+			// held so it can be cleared the moment a response arrives -- otherwise it
+			// keeps the event loop alive for a further second after we are done.
+			this.cursorDetectionTimer = setTimeout(() => {
+				this.cursorDetectionTimer = null;
 				if (this.cursorDetectionHandler) {
 					this.cursorDetectionHandler = null;
 					reject(new Error("Timeout waiting for cursor position response"));
@@ -1665,8 +1726,41 @@ export class TermDOM {
 	}
 
 	dispose(): void {
+		// Document mode has been painting a window in place, so nothing it showed
+		// has reached the terminal's scrollback. Pay it all out now.
+		this.flushDocument();
+
+		// Tear down everything that holds the event loop open. Without this a
+		// disposed TermDOM keeps the process alive -- via the process signal
+		// listeners, the stdin data listener, and the cursor-detection timer -- and
+		// across a whole test suite those accumulate until nothing can exit.
+		if (this.cursorDetectionTimer !== null) {
+			clearTimeout(this.cursorDetectionTimer);
+			this.cursorDetectionTimer = null;
+		}
+		this.cursorDetectionHandler = null;
+
+		if (this.sigintHandler) {
+			(this.process as unknown as EventEmitter).removeListener?.(
+				"SIGINT",
+				this.sigintHandler,
+			);
+			this.sigintHandler = null;
+		}
+		if (this.sigwinchHandler) {
+			(this.process as unknown as EventEmitter).removeListener?.(
+				"SIGWINCH",
+				this.sigwinchHandler,
+			);
+			this.sigwinchHandler = null;
+		}
+
 		if (this.process.stdin?.isTTY) {
 			const stdin = this.process.stdin as TTYReadStream;
+			if (this.stdinDataHandler) {
+				stdin.removeListener?.("data", this.stdinDataHandler);
+				this.stdinDataHandler = null;
+			}
 			stdin.setRawMode?.(false);
 			stdin.pause();
 		}
