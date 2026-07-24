@@ -977,32 +977,24 @@ export class TermDOM {
 		this.window._terminalSize = {width: newWidth, height: newHeight};
 
 		this.renderer.resize(newHeight, newWidth);
-
-		this.renderer.clearPreviousBuffer();
-
 		this.layoutEngine.resize(newWidth, newHeight);
 
-		// Resize rewraps the document, so its height in rows changes -- the same
-		// four paragraphs are 8 rows at 40 columns and 12 at 24. The commit index is
-		// counted in rows, so it no longer refers to the same content, and left
-		// alone it hides rows that now fit on screen.
-		//
-		// We cannot repair the scrollback: it holds the old wrapping and always
-		// will. Trying to make it correct is exactly what forces a clear-and-redraw,
-		// and that is the flicker. So we do what an ordinary command does when you
-		// resize the window -- leave the past alone -- and only re-anchor the live
-		// region to what the new geometry can hold.
-		const contentHeight = this.document.body.scrollHeight;
-		this.committedRows = Math.max(
-			0,
-			Math.min(this.committedRows, contentHeight - newHeight),
-		);
+		// A resize rewraps everything on screen, so nothing about the old frame's
+		// position survives -- neither the saved cursor nor our own row bookkeeping
+		// means anything against the reflowed buffer. The one reliable move is to
+		// start over: home the cursor, clear the visible screen, and reprint the
+		// document from the top. The old content the terminal reflowed into
+		// scrollback stays there (that is unavoidable, and is what any command's
+		// output does), but the visible frame is clean rather than the new render
+		// layered over reflowed remnants of the old one.
+		this.committedRows = 0;
+		this.foldAnchor = null;
+		this.scrollingManager.setScreenTop(0);
+		this.scrollingManager.scrollToCommandStart();
+		this.renderer.resetScreen();
 
-		// On resize, use DECRC (not CUP) for cursor positioning.
-		// DECSC/DECRC handles terminal reflow automatically — the terminal
-		// adjusts the saved cursor position when content reflows.
-		// Re-detecting cursor would find it at the END of old content,
-		// causing new content to render below the old content.
+		// The frame is now placed by the screen reset, not by cursor detection, so
+		// draw as an undetected flow render anchored at the top.
 		const wasDetected = this.hasDetectedCommandStart;
 		this.hasDetectedCommandStart = false;
 		this.render().then(() => {

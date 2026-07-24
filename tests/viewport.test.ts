@@ -759,3 +759,49 @@ test("reflow above the fold reprints the document instead of corrupting the scro
 
 	dom.dispose();
 });
+
+test("resizing narrower reprints cleanly instead of layering over reflowed remnants", async () => {
+	// A resize rewraps everything on screen -- including our previous frame -- and
+	// moves the cursor somewhere we can no longer name, so erasing relative to a
+	// saved position (DECRC) lands wrong and the old frame's reflowed remnants
+	// survive above the new render. That was the corruption: a garbled narrow-wrap
+	// of the old content sitting above a clean new one.
+	//
+	// The fix homes the cursor and clears the visible screen before reprinting.
+	// For content that fit on screen, nothing is pushed to scrollback and the
+	// result is a single clean render with no duplication.
+	const terminal = new MockProcess({rows: 12, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	await dom.detectCommandStart();
+
+	dom.document.body.innerHTML =
+		`<div>Header line for the demo application here.</div>` +
+		`<div>A paragraph that wraps when the terminal is narrow.</div>` +
+		`<div>Footer content at the bottom.</div>`;
+	await dom.render();
+
+	terminal.resize(24, 12);
+	(terminal as any).emit("SIGWINCH");
+	await new Promise((resolve) => setTimeout(resolve, 80));
+
+	const buffer = (terminal as any).terminal.buffer.active;
+	const line = (i: number): string =>
+		(buffer.getLine(i)?.translateToString(true) ?? "").replace(/\s+$/, "");
+
+	// Content fit, so nothing scrolled off: no reflowed remnants in scrollback.
+	expect(buffer.baseY).toBe(0);
+
+	// The header appears exactly once -- not once as a reflowed remnant and again
+	// in the new render.
+	const headerRows = [];
+	for (let i = 0; i < buffer.length; i++) {
+		if (line(i).startsWith("Header line")) headerRows.push(i);
+	}
+	expect(headerRows.length).toBe(1);
+
+	// And the render is the clean rewrap at the new width, from the top.
+	expect(line(0)).toBe("Header line for the");
+	expect(line(1)).toBe("demo application here.");
+
+	dom.dispose();
+});

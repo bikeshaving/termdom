@@ -864,36 +864,6 @@ export class DrawingContext {
 		this.buffer[row][col] = newCell;
 	}
 
-	#calculateEdgeEncoding(
-		borderStyles: {
-			topEdge: number;
-			rightEdge: number;
-			bottomEdge: number;
-			leftEdge: number;
-		},
-		hasTop: boolean,
-		hasRight: boolean,
-		hasBottom: boolean,
-		hasLeft: boolean,
-	): number {
-		let encoding = 0;
-
-		if (hasTop && borderStyles.topEdge > 0) {
-			encoding |= borderStyles.topEdge << BorderShift.Top;
-		}
-		if (hasRight && borderStyles.rightEdge > 0) {
-			encoding |= borderStyles.rightEdge << BorderShift.Right;
-		}
-		if (hasBottom && borderStyles.bottomEdge > 0) {
-			encoding |= borderStyles.bottomEdge << BorderShift.Bottom;
-		}
-		if (hasLeft && borderStyles.leftEdge > 0) {
-			encoding |= borderStyles.leftEdge << BorderShift.Left;
-		}
-
-		return encoding;
-	}
-
 	#setBorderCell(
 		x: number,
 		y: number,
@@ -955,6 +925,7 @@ export class Renderer {
 	#prevContentHeight: number = 0;
 	#hasSavedCursor: boolean = false;
 	#needsFullClear: boolean = false;
+	#needsScreenReset: boolean = false;
 	#rows: number;
 	#cols: number;
 	#colorDepth: ColorDepth;
@@ -1004,6 +975,23 @@ export class Renderer {
 		this.#prevContentHeight = 0;
 		this.#needsFullClear = true;
 		this.#renderedLines.clear();
+	}
+
+	/**
+	 * Repaint the whole visible screen from the top on the next frame.
+	 *
+	 * A resize rewraps everything the terminal is showing, including our previous
+	 * frame, and moves the cursor unpredictably -- the saved position DECRC would
+	 * restore no longer points where our content began. So instead of trying to
+	 * erase relative to a position we can no longer trust, we home the cursor and
+	 * clear the visible screen (ED2, not ED3 -- the scrollback is left alone) and
+	 * reprint. The old content the terminal reflowed into scrollback stays there,
+	 * as any command's output would; the visible frame is clean.
+	 */
+	resetScreen(): void {
+		this.#needsScreenReset = true;
+		this.#hasSavedCursor = false;
+		this.clearPreviousBuffer();
 	}
 
 	get hasSavedCursor(): boolean {
@@ -1182,7 +1170,19 @@ export class Renderer {
 			}
 
 			// Add cursor positioning
-			if (cursorPosition !== undefined) {
+			if (this.#needsScreenReset) {
+				// After a resize the terminal has rewrapped everything on screen,
+				// including our previous frame, and moved the cursor to somewhere we
+				// can no longer name. Rather than erase relative to a position we do
+				// not trust, home the cursor and clear the whole visible screen (ED2,
+				// not ED3 -- scrollback is left alone) and reprint from the top.
+				prefix += "\x1b[H"; // CUP - home
+				prefix += "\x1b[2J"; // ED2 - clear the visible screen
+				prefix += "\x1b7"; // DECSC - save the new content start
+				this.#hasSavedCursor = true;
+				this.#needsScreenReset = false;
+				this.#needsFullClear = false;
+			} else if (cursorPosition !== undefined) {
 				// Explicit cursor position provided (e.g., from cursor detection)
 				prefix += `\x1b[${cursorPosition + 1};1H`; // CUP - Cursor Position (row;col)
 				// Save cursor at content start so DECRC-based cleanup works correctly
