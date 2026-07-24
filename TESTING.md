@@ -7,11 +7,32 @@ Measured on the current tree:
 | | peak RSS |
 | --- | --- |
 | full suite (458 tests) | **~700–900 MB** |
-| same suite, plus one more TermDOM-heavy test | **~1.6 GB, does not finish** |
+| same suite, plus one more TermDOM-heavy test | **~1.6 GB, did not finish** |
 
-A single additional test that constructs a `TermDOM`, renders, and disposes added
-roughly **900 MB** and pushed the run into thrashing. It does not fail — it stops
-making progress, and once OOM'd a developer machine outright.
+Adding one test pushed the observed peak from ~700 MB to ~1.6 GB and the run
+stopped making progress; on an earlier occasion an equivalent situation OOM'd a
+developer machine.
+
+### That 1.6 GB figure is peak RSS of the whole process, not one test's cost
+
+This is worth stating plainly, because an earlier version of this note got it
+wrong. Isolated measurement shows:
+
+- One `TermDOM` doing document-mode render + flush, on its own: **~157 MB**
+  (~60 MB over Bun's ~97 MB baseline). No runaway allocation.
+- Undisposed `TermDOM` instances leak **linearly at ~2–3 MB each** — 60 of them
+  add ~135 MB. Modest and steady, no cliff.
+
+So a single test does **not** allocate ~900 MB. Peak RSS is a high-water mark for
+the whole process; adding work to a run already near its ceiling can jump the
+*sampled* peak by far more than that work actually costs, depending on GC timing
+and allocation ordering. The precise mechanism by which one extra test tips a full
+run from "finishes at 900 MB" to "does not finish at 1.6 GB" is **not pinned
+down** — it is neither a runaway allocation nor an individually expensive test.
+Treat the ceiling as real and the exact trigger as not yet understood.
+
+None of this affects a real program: an application has **one** `TermDOM`, which
+is ~2–3 MB. This is entirely a test-hygiene concern.
 
 ### How this shows up
 
@@ -50,17 +71,19 @@ echo "peak: $((PEAK/1024)) MB"
 
 ### The underlying debt
 
-The suite constructs **171 `TermDOM` instances and disposes only 106**. Each holds
-a JSDOM window, so roughly 65 leak per run. That is the bulk of the baseline, and
-it is why there is so little headroom.
+The suite constructs **171 `TermDOM` instances and disposes only 106**, so roughly
+65 leak per run. At ~2–3 MB each that is ~150–200 MB — real, and worth fixing, but
+**not** the bulk of the 700–900 MB baseline. Most of the baseline is simply the
+aggregate working set of running 458 DOM/layout/xterm tests. The leak does not
+dominate; it just removes what little headroom there is.
 
 Disposing the mock's xterm terminals was tried and measured: it made **no
-difference** (732 MB vs 702 MB). The xterm instances are not the hog; the JSDOM
-windows are.
+difference** (732 MB vs 702 MB), so that is not worth repeating.
 
-**The fix is to dispose every `TermDOM` a test creates.** Until then, adding a
-TermDOM-heavy test can tip the suite over, and the failure will look like a hang
-rather than an out-of-memory error.
+**The fix is to dispose every `TermDOM` a test creates.** It reclaims the leaked
+~150–200 MB and restores headroom. Until then, adding a TermDOM-heavy test can tip
+the run over, and the failure looks like a hang rather than an out-of-memory
+error.
 
 ## Known deferred test
 
