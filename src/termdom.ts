@@ -979,22 +979,23 @@ export class TermDOM {
 		this.renderer.resize(newHeight, newWidth);
 		this.layoutEngine.resize(newWidth, newHeight);
 
-		// A resize rewraps everything on screen, so nothing about the old frame's
-		// position survives -- neither the saved cursor nor our own row bookkeeping
-		// means anything against the reflowed buffer. The one reliable move is to
-		// start over: home the cursor, clear the visible screen, and reprint the
-		// document from the top. The old content the terminal reflowed into
-		// scrollback stays there (that is unavoidable, and is what any command's
-		// output does), but the visible frame is clean rather than the new render
-		// layered over reflowed remnants of the old one.
+		// A resize rewraps everything on screen, so the saved cursor DECRC would
+		// restore no longer points where our content began. But the content *above*
+		// us -- a shell prompt, an earlier command -- is short and does not
+		// reflow-grow, so our own record of the command-start row still holds. Redraw
+		// from there: position at the command start, erase to the bottom, reprint.
+		//
+		// This keeps the frame anchored where it has always been, so nothing above is
+		// wiped and nothing scrolls into the scrollback. (Homing to the top of the
+		// screen instead drops a fresh copy of the old frame into scrollback on every
+		// resize.)
+		const startRow = this.scrollingManager.getScreenTop();
 		this.committedRows = 0;
 		this.foldAnchor = null;
-		this.scrollingManager.setScreenTop(0);
 		this.scrollingManager.scrollToCommandStart();
-		this.renderer.resetScreen();
+		this.renderer.resetScreen(startRow);
 
-		// The frame is now placed by the screen reset, not by cursor detection, so
-		// draw as an undetected flow render anchored at the top.
+		// The frame is placed by the screen reset, not by cursor detection.
 		const wasDetected = this.hasDetectedCommandStart;
 		this.hasDetectedCommandStart = false;
 		this.render().then(() => {

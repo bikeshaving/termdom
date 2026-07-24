@@ -926,6 +926,7 @@ export class Renderer {
 	#hasSavedCursor: boolean = false;
 	#needsFullClear: boolean = false;
 	#needsScreenReset: boolean = false;
+	#resetAtRow: number = 0;
 	#rows: number;
 	#cols: number;
 	#colorDepth: ColorDepth;
@@ -988,8 +989,9 @@ export class Renderer {
 	 * reprint. The old content the terminal reflowed into scrollback stays there,
 	 * as any command's output would; the visible frame is clean.
 	 */
-	resetScreen(): void {
+	resetScreen(startRow: number): void {
 		this.#needsScreenReset = true;
+		this.#resetAtRow = Math.max(0, startRow);
 		this.#hasSavedCursor = false;
 		this.clearPreviousBuffer();
 	}
@@ -1173,11 +1175,17 @@ export class Renderer {
 			if (this.#needsScreenReset) {
 				// After a resize the terminal has rewrapped everything on screen,
 				// including our previous frame, and moved the cursor to somewhere we
-				// can no longer name. Rather than erase relative to a position we do
-				// not trust, home the cursor and clear the whole visible screen (ED2,
-				// not ED3 -- scrollback is left alone) and reprint from the top.
-				prefix += "\x1b[H"; // CUP - home
-				prefix += "\x1b[2J"; // ED2 - clear the visible screen
+				// can no longer name via DECRC. But the content above us -- a shell
+				// prompt, an earlier command -- is short and does not reflow-grow, so
+				// our own record of the row our content starts at still holds.
+				//
+				// Position there absolutely and erase from there to the bottom (ED0),
+				// then reprint. We do NOT home to the top of the screen: that would
+				// wipe whatever is above us and, because the redraw then starts a row
+				// or two higher than the content did, scroll the old frame up into the
+				// scrollback -- a fresh copy on every resize.
+				prefix += `\x1b[${this.#resetAtRow + 1};1H`; // CUP - content start
+				prefix += "\x1b[J"; // ED0 - erase from here to the bottom
 				prefix += "\x1b7"; // DECSC - save the new content start
 				this.#hasSavedCursor = true;
 				this.#needsScreenReset = false;
