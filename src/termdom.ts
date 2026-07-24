@@ -72,6 +72,30 @@ export interface TermDOMOptions {
 	detectCursor?: boolean;
 }
 
+// Test-only instance tracking. A test harness that creates many short-lived
+// TermDOMs (and, being tests, does not always dispose them) can turn this on and
+// dispose the leaked ones between tests. Off by default -- the set stays null and
+// every hook below is a no-op -- so production pays nothing.
+let trackedInstances: Set<TermDOM> | null = null;
+
+/** Begin tracking TermDOM instances for later bulk disposal (test harness only). */
+export function __enableInstanceTracking(): void {
+	trackedInstances ??= new Set<TermDOM>();
+}
+
+/** Dispose every tracked, still-live TermDOM instance (test harness only). */
+export function __disposeTrackedInstances(): void {
+	if (!trackedInstances) return;
+	for (const instance of trackedInstances) {
+		try {
+			instance.dispose();
+		} catch {
+			// Already disposed, or mid-teardown; ignore.
+		}
+	}
+	trackedInstances.clear();
+}
+
 export class TermDOM {
 	public readonly document: Document;
 	public readonly window: DOMWindow;
@@ -203,6 +227,8 @@ export class TermDOM {
 
 		// Initialize cursor position detection if in a TTY environment
 		this.initializeCursorDetection();
+
+		trackedInstances?.add(this);
 	}
 
 	/**
@@ -1726,6 +1752,8 @@ export class TermDOM {
 	}
 
 	dispose(): void {
+		trackedInstances?.delete(this);
+
 		// Document mode has been painting a window in place, so nothing it showed
 		// has reached the terminal's scrollback. Pay it all out now.
 		this.flushDocument();

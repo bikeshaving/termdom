@@ -1,0 +1,4 @@
+[test]
+# Dispose leaked TermDOM instances between tests, so their JSDOM windows do not
+# accumulate and starve the run. See tests/setup.ts and TESTING.md.
+preload = "./tests/setup.ts"
