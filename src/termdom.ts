@@ -1640,6 +1640,15 @@ export class TermDOM {
 	 * not frozen, and reflow anywhere is free.
 	 */
 	private async renderDocumentMode(): Promise<void> {
+		// Our region starts at the command-start row, which cursor detection resolves
+		// asynchronously. Render before it lands and the first frame anchors at row 0
+		// while every diff after detection anchors one row lower -- the labels stay,
+		// the values slide down a row. Wait for the anchor to settle first, exactly
+		// as the flow path does.
+		if (this.cursorDetectionPromise) {
+			await this.cursorDetectionPromise;
+		}
+
 		const pending = this.observer.takeRecords();
 		if (pending.length > 0) {
 			this.styleManager.handleMutations(pending);

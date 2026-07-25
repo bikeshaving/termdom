@@ -155,6 +155,47 @@ test("content above the camera stays mutable, unlike flow mode", async () => {
 	dom.dispose();
 });
 
+test("document mode waits for cursor detection so the anchor never shifts", async () => {
+	// The region starts at the command-start row, which cursor detection resolves
+	// asynchronously. If the first frame renders before detection lands it anchors
+	// at row 0, then detection moves the anchor down and every later frame renders
+	// one row lower -- content drawn once (labels) stays put while content rewritten
+	// each frame (values) slides away from it. The fix waits for the anchor first.
+	const terminal = new MockProcess({rows: 10, cols: 30});
+	// Let the prior output land before construction, so the cursor -- and thus the
+	// detection about to run -- sees the command starting at row 2.
+	await new Promise<void>((resolve) => {
+		terminal.stdout.write("PREV-1\r\nPREV-2\r\n", () => resolve());
+	});
+
+	// Construction kicks off auto-detection; its promise is pending right now. We do
+	// NOT await it -- the render must, which is the fix. (detectCursor defaults off
+	// for a non-real process, so enable it to exercise the path.)
+	const dom = new TermDOM({process: terminal, detectCursor: true});
+	dom.setViewportMode("document");
+	dom.document.body.innerHTML = `<div id="a">A-0</div><div id="b">B</div>`;
+	await dom.render();
+
+	// A second frame, well after detection has resolved.
+	dom.document.getElementById("a")!.textContent = "A-1";
+	await dom.render();
+
+	const screen = read(terminal, 10);
+
+	// Prior output is untouched and the anchor settled at row 2.
+	expect(screen.scrollback).toEqual([]);
+	expect(dom.window.screenTop).toBe(2);
+
+	// Both frames anchored at row 2: the updated value sits on the command-start
+	// row, with nothing orphaned at row 0 from a pre-detection first frame.
+	expect(screen.viewport[0]).toBe("PREV-1");
+	expect(screen.viewport[1]).toBe("PREV-2");
+	expect(screen.viewport[2]).toBe("A-1");
+	expect(screen.viewport[3]).toBe("B");
+
+	dom.dispose();
+});
+
 test("a render arriving mid-frame is coalesced, not dropped", async () => {
 	// An animation drives renders through a mutation observer, which can fire again
 	// before the previous frame has finished writing. Dropping that second call
