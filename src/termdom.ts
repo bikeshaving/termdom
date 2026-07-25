@@ -27,6 +27,10 @@ import {
 	getPseudoMetadata,
 } from "./composition.js";
 
+// How long to wait for a resize drag to settle before redrawing. Long enough to
+// coalesce the burst of SIGWINCHes a drag fires, short enough to feel immediate.
+const RESIZE_DEBOUNCE_MS = 40;
+
 function detectColorDepth(process: ProcessLike): ColorDepth {
 	const colorterm = process.env.COLORTERM;
 	if (colorterm === "truecolor" || colorterm === "24bit") {
@@ -149,6 +153,7 @@ export class TermDOM {
 	private sigwinchHandler: (() => void) | null = null;
 	private stdinDataHandler: ((chunk: string | Buffer) => void) | null = null;
 	private cursorDetectionTimer: ReturnType<typeof setTimeout> | null = null;
+	private resizeTimer: ReturnType<typeof setTimeout> | null = null;
 
 	// Promise that resolves when cursor detection completes (or times out)
 	private cursorDetectionPromise: Promise<void> | null = null;
@@ -357,7 +362,7 @@ export class TermDOM {
 		};
 		this.process.on("SIGINT", this.sigintHandler);
 
-		this.sigwinchHandler = () => this.handleResize();
+		this.sigwinchHandler = () => this.scheduleResize();
 		this.process.on("SIGWINCH", this.sigwinchHandler);
 
 		if (this.process.stdin?.isTTY) {
@@ -967,6 +972,23 @@ export class TermDOM {
 			return true;
 		}
 		return false;
+	}
+
+	/**
+	 * Coalesce a burst of resize events into a single redraw.
+	 *
+	 * Dragging a terminal's edge fires a SIGWINCH for every width it passes
+	 * through -- dozens in one drag. Redrawing on each leaves a little reflowed
+	 * crud in the scrollback every time (see handleResize), so the crud grows with
+	 * the length of the drag rather than the fact that it happened. Waiting for the
+	 * drag to settle turns the whole gesture into one redraw, and one lot of crud.
+	 */
+	private scheduleResize(): void {
+		if (this.resizeTimer !== null) clearTimeout(this.resizeTimer);
+		this.resizeTimer = setTimeout(() => {
+			this.resizeTimer = null;
+			this.handleResize();
+		}, RESIZE_DEBOUNCE_MS);
 	}
 
 	private handleResize(): void {
@@ -1866,6 +1888,10 @@ export class TermDOM {
 		if (this.cursorDetectionTimer !== null) {
 			clearTimeout(this.cursorDetectionTimer);
 			this.cursorDetectionTimer = null;
+		}
+		if (this.resizeTimer !== null) {
+			clearTimeout(this.resizeTimer);
+			this.resizeTimer = null;
 		}
 		this.cursorDetectionHandler = null;
 
