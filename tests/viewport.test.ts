@@ -805,3 +805,48 @@ test("resizing narrower reprints cleanly instead of layering over reflowed remna
 
 	dom.dispose();
 });
+
+test("shrinking height re-anchors to the scrolled command start, no orphaned top", async () => {
+	// When the terminal loses rows it scrolls up to keep the cursor -- the bottom
+	// of our content -- on screen, and the command start rides up with it. If we
+	// redraw from the stale (pre-scroll) row, the frame lands one or more rows too
+	// low and the old top is orphaned above the new render: the double-render the
+	// user sees on a vertical shrink.
+	//
+	// The fix computes that scroll from the new layout height and re-anchors, so
+	// the visible viewport shows the frame exactly once.
+	const terminal = new MockProcess({rows: 16, cols: 40});
+	const dom = new TermDOM({process: terminal});
+
+	// Two prompt lines above, so the command start is below the top of the screen.
+	await new Promise<void>((resolve) => {
+		terminal.stdout.write("~/proj % app\r\n~/proj % app2\r\n", () => resolve());
+	});
+	await dom.detectCommandStart();
+
+	dom.document.body.innerHTML = Array.from(
+		{length: 6},
+		(_, i) => `<div>APPLINE ${i + 1}</div>`,
+	).join("");
+	await dom.render();
+
+	// Shrink so the content bottom overflows the new height and the terminal
+	// scrolls the top prompt lines into scrollback.
+	terminal.resize(40, 10);
+	(terminal as any).emit("SIGWINCH");
+	await new Promise((resolve) => setTimeout(resolve, 80));
+
+	const buffer = (terminal as any).terminal.buffer.active;
+	const line = (i: number): string =>
+		(buffer.getLine(i)?.translateToString(true) ?? "").replace(/\s+$/, "");
+
+	// The visible viewport is [baseY, baseY + rows). Within it the first app line
+	// appears exactly once -- not orphaned above a fresh copy.
+	let firstLineHits = 0;
+	for (let i = buffer.baseY; i < buffer.baseY + terminal.stdout.rows; i++) {
+		if (line(i) === "APPLINE 1") firstLineHits++;
+	}
+	expect(firstLineHits).toBe(1);
+
+	dom.dispose();
+});

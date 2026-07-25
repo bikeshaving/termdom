@@ -195,6 +195,32 @@ For a transcript that reflows rarely, that is the right trade. An app that reflo
 *often* would bury the user in copies -- and that is the app telling you it is a
 document, not a transcript, and belongs in the alt buffer.
 
+### Re-anchoring on a vertical resize
+
+A resize moves two things, and only one of them is guessable.
+
+**Horizontal** (width) is the reflow above: a long shell prompt above the frame
+rewraps and shifts where our content begins, by an amount that depends on text we
+do not own. Not computable. This is the residual reprint-a-copy case above.
+
+**Vertical** (height) is computable exactly. When the terminal loses rows it
+scrolls up to keep the cursor -- the bottom of our content -- on screen, and the
+command start rides up with it by the same amount. After laying out at the new
+size we know the content's height, so we know how far its bottom overflowed the
+new height:
+
+```
+scrolledUp = max(0, previousStart + contentHeight - newHeight)
+startRow   = max(0, previousStart - scrolledUp)
+```
+
+Redrawing from `startRow` instead of the stale `previousStart` lands the frame
+where the terminal actually scrolled it to, so the visible viewport shows the
+frame once. Without it, the frame is drawn too low and the old top row is orphaned
+above the new render -- the double-render seen when dragging a window shorter. When
+the content is genuinely taller than the shrunk viewport, the overflow still goes
+into scrollback: that is not corruption, only content that no longer fits.
+
 ## Future Enhancements
 
 ### Native Scrollback Integration

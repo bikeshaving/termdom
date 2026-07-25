@@ -1014,19 +1014,28 @@ export class TermDOM {
 		this.renderer.resize(newHeight, newWidth);
 		this.layoutEngine.resize(newWidth, newHeight);
 
-		// A resize rewraps everything on screen, so the saved cursor DECRC would
-		// restore no longer points where our content began. But the content *above*
-		// us -- a shell prompt, an earlier command -- is short and does not
-		// reflow-grow, so our own record of the command-start row still holds. Redraw
-		// from there: position at the command start, erase to the bottom, reprint.
+		// Where our content begins is our record of the command-start row. On a
+		// resize that row can move, and we redraw from a stale value if we do not
+		// account for it -- which orphans the top of the old frame above the new one.
 		//
-		// This keeps the frame anchored where it has always been, so nothing above is
-		// wiped and nothing scrolls into the scrollback. (Homing to the top of the
-		// screen instead drops a fresh copy of the old frame into scrollback on every
-		// resize.)
-		const startRow = this.scrollingManager.getScreenTop();
+		// The move we *can* compute exactly is the vertical scroll. When the terminal
+		// loses rows it scrolls up to keep the cursor -- the bottom of our content --
+		// on screen, and the command start rides up with it. After a layout at the new
+		// size we know the content's height, so we know how far the bottom overflowed
+		// the new height, and therefore how far everything scrolled.
+		//
+		// (The horizontal case -- a long shell prompt above us rewrapping and shifting
+		// our start -- is not computable this way, and is left as the small residual
+		// documented in SCROLLBACK.md.)
+		this.layoutEngine.calculateLayout();
+		const contentHeight = this.document.body.scrollHeight;
+		const previousStart = this.scrollingManager.getScreenTop();
+		const scrolledUp = Math.max(0, previousStart + contentHeight - newHeight);
+		const startRow = Math.max(0, previousStart - scrolledUp);
+
 		this.committedRows = 0;
 		this.foldAnchor = null;
+		this.scrollingManager.setScreenTop(startRow);
 		this.scrollingManager.scrollToCommandStart();
 		this.renderer.resetScreen(startRow);
 
