@@ -10,6 +10,12 @@ import {
 } from "./styles.js";
 import {stringWidth} from "./runtime.js";
 import {FullscreenManager} from "./fullscreen.js";
+import {
+	ObserverManager,
+	type ObserverHost,
+	ResizeObserver as TermResizeObserver,
+	IntersectionObserver as TermIntersectionObserver,
+} from "./observers.js";
 import {setupInspectMethods} from "./inspector.js";
 import {ScrollingManager} from "./scrolling.js";
 import {
@@ -106,11 +112,15 @@ export class TermDOM {
 	private readonly jsdom: JSDOM;
 	private readonly observer: MutationObserver;
 	private readonly fullscreenManager: FullscreenManager;
+	private readonly observerManager: ObserverManager;
 	public readonly styleManager: StyleManager;
 	private readonly scrollingManager: ScrollingManager;
 
 	// Guard against re-entrant rendering
 	private isRendering = false;
+
+	// Monotonic frame counter, used to timestamp observer entries.
+	private renderCount = 0;
 
 	// Input element state tracking
 	private inputCursorPositions = new WeakMap<Element, number>();
@@ -213,8 +223,10 @@ export class TermDOM {
 		this.styleManager.setLayoutEngine(this.layoutEngine);
 		this.layoutEngine.resize(this.width, this.height);
 		this.fullscreenManager = new FullscreenManager(this.process);
+		this.observerManager = new ObserverManager(this.createObserverHost());
 
 		this.initializeWindow();
+		this.installObservers();
 
 		// Initialize scrolling management after window setup
 		this.scrollingManager = new ScrollingManager(this.window, this.document);
@@ -516,6 +528,7 @@ export class TermDOM {
 		}
 
 		this.isRendering = false;
+		this.afterRender();
 	}
 
 	// TODO: many of the following methods do not belong on the TermDOM class
@@ -1003,6 +1016,99 @@ export class TermDOM {
 		});
 	}
 
+	/** The measurement surface the observers read each frame. See ObserverHost. */
+	private createObserverHost(): ObserverHost {
+		return {
+			getBorderBox: (element) => {
+				const rect = this.layoutEngine.getRect(element);
+				return rect
+					? {
+							top: rect.top,
+							left: rect.left,
+							width: rect.width,
+							height: rect.height,
+						}
+					: null;
+			},
+			getContentBox: (element) => {
+				const rect = this.layoutEngine.getRect(element);
+				if (!rect) return null;
+				const box = getBoxModel(element);
+				const width = Math.max(
+					0,
+					rect.width -
+						(box.paddingLeft || 0) -
+						(box.paddingRight || 0) -
+						(box.borderLeftWidth || 0) -
+						(box.borderRightWidth || 0),
+				);
+				const height = Math.max(
+					0,
+					rect.height -
+						(box.paddingTop || 0) -
+						(box.paddingBottom || 0) -
+						(box.borderTopWidth || 0) -
+						(box.borderBottomWidth || 0),
+				);
+				return {width, height};
+			},
+			getViewportRect: () => {
+				// The visible window over the document, in the document coordinate
+				// space getRect() uses: it begins at the current scroll offset and is
+				// one terminal high.
+				const scrollTop =
+					this.viewportMode === "document"
+						? this.documentScrollTop
+						: Math.max(0, -this.scrollingManager.getScrollTop());
+				return {
+					top: scrollTop,
+					left: 0,
+					width: this.width,
+					height: this.height,
+				};
+			},
+			now: () => this.renderCount,
+		};
+	}
+
+	/**
+	 * Run the observers against the layout just produced.
+	 *
+	 * Called after every render, once isRendering is clear -- a callback that
+	 * mutates the DOM schedules the next frame through the mutation observer, so
+	 * there is no re-entrancy to guard against here.
+	 */
+	private afterRender(): void {
+		this.renderCount++;
+		this.observerManager.flush();
+	}
+
+	/** Install the observer constructors on the window, bound to this instance. */
+	private installObservers(): void {
+		const manager = this.observerManager;
+		const window = this.window as unknown as {
+			ResizeObserver: unknown;
+			IntersectionObserver: unknown;
+		};
+
+		window.ResizeObserver = class extends TermResizeObserver {
+			constructor(
+				callback: ConstructorParameters<typeof TermResizeObserver>[0],
+			) {
+				super(callback, manager);
+			}
+		};
+
+		window.IntersectionObserver = class extends TermIntersectionObserver {
+			constructor(
+				callback: ConstructorParameters<typeof TermIntersectionObserver>[0],
+				init?: ConstructorParameters<typeof TermIntersectionObserver>[2],
+			) {
+				super(callback, manager, init);
+			}
+		};
+	}
+
 	// TODO: Move these somewhere?
 	private initializeConstructorExtensions(): void {
 		const {Element, Document} = this.window;
@@ -1408,6 +1514,7 @@ export class TermDOM {
 		} finally {
 			this.isRendering = false;
 		}
+		this.afterRender();
 	}
 
 	/**
@@ -1524,6 +1631,7 @@ export class TermDOM {
 		} finally {
 			this.isRendering = false;
 		}
+		this.afterRender();
 	}
 
 	/**
@@ -1792,6 +1900,7 @@ export class TermDOM {
 		this.styleManager.dispose();
 		this.layoutEngine.dispose();
 		this.fullscreenManager.dispose();
+		this.observerManager.dispose();
 		this.jsdom.window.close();
 	}
 }
