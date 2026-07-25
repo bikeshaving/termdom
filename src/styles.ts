@@ -1256,10 +1256,20 @@ export class StyleManager {
 	// CSS Counter support
 	private counterScopes = new WeakMap<Element, CounterScope>();
 
+	// The document is fixed for the window's lifetime, so hold it directly rather
+	// than reaching through window.document on every access. JSDOM's window is a
+	// global proxy whose .document getter can transiently resolve to undefined
+	// under a fast async render loop (a mutation-observer-driven animation), which
+	// crashed style computation mid-frame. The Document object itself stays valid,
+	// so a direct reference sidesteps the flaky getter.
+	private readonly document: Document;
+
 	constructor(
 		private window: DOMWindow,
 		private layoutEngine?: LayoutEngine,
 	) {
+		this.document = window.document;
+
 		// The list gutter is resolved inside the cascade, which cannot reach a
 		// StyleManager any other way. See getListGutterWidth().
 		styleManagers.set(window, this);
@@ -1437,7 +1447,7 @@ export class StyleManager {
 	 * Parse all stylesheets in the document and extract rules
 	 */
 	private parseStylesheets(): void {
-		const document = this.window.document;
+		const document = this.document;
 		this.parsedRules = [];
 
 		// Parse all stylesheets
@@ -1761,8 +1771,8 @@ export class StyleManager {
 		// Clear all existing pseudo-elements before reattaching
 		// TODO: Performance optimization - this walks every element in the DOM when stylesheets change.
 		// Could track elements with pseudo-elements in a WeakSet and only clear those.
-		const walker = this.window.document.createTreeWalker(
-			this.window.document.documentElement,
+		const walker = this.document.createTreeWalker(
+			this.document.documentElement,
 			this.window.NodeFilter.SHOW_ELEMENT,
 			null,
 		);
@@ -1800,7 +1810,7 @@ export class StyleManager {
 			for (const rule of rules) {
 				try {
 					// Find all elements matching this rule's selector
-					const elements = this.window.document.querySelectorAll(rule.selector);
+					const elements = this.document.querySelectorAll(rule.selector);
 					for (const element of elements) {
 						matchingElements.add(element);
 					}
@@ -1817,7 +1827,7 @@ export class StyleManager {
 		}
 
 		// Handle special case: ::marker for list-item elements (only for inside positioning)
-		const listItems = this.window.document.querySelectorAll(
+		const listItems = this.document.querySelectorAll(
 			'[style*="list-item"], li',
 		);
 		for (const element of listItems) {
@@ -1906,7 +1916,7 @@ export class StyleManager {
 		// Also clean up pseudo-elements for any descendant elements
 		// TODO: Performance optimization - walks all descendants when element is removed.
 		// Could track which descendants have pseudo-elements to avoid full traversal.
-		const walker = this.window.document.createTreeWalker(
+		const walker = this.document.createTreeWalker(
 			element,
 			this.window.NodeFilter.SHOW_ELEMENT,
 			null,
