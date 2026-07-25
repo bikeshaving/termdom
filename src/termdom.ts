@@ -120,8 +120,10 @@ export class TermDOM {
 	public readonly styleManager: StyleManager;
 	private readonly scrollingManager: ScrollingManager;
 
-	// Guard against re-entrant rendering
+	// Guard against re-entrant rendering. A render() call arriving while one is in
+	// flight sets renderQueued rather than being dropped, so a trailing frame runs.
 	private isRendering = false;
+	private renderQueued = false;
 
 	// Monotonic frame counter, used to timestamp observer entries.
 	private renderCount = 0;
@@ -405,11 +407,28 @@ export class TermDOM {
 	}
 
 	async render(): Promise<void> {
-		// Prevent re-entrant rendering
+		// A render in flight: coalesce, don't drop. Dropping an auto-render (a
+		// mutation observer firing mid-frame) leaves the diff renderer's
+		// previous-buffer out of step with the screen, which shows up as rows drawn
+		// at the wrong place. Instead mark one pending and run a trailing frame when
+		// the current one finishes, folding in whatever mutated in the meantime.
 		if (this.isRendering) {
+			this.renderQueued = true;
 			return;
 		}
 
+		this.isRendering = true;
+		try {
+			do {
+				this.renderQueued = false;
+				await this.renderOnce();
+			} while (this.renderQueued);
+		} finally {
+			this.isRendering = false;
+		}
+	}
+
+	private async renderOnce(): Promise<void> {
 		if (!this.interactive) {
 			await this.renderStatic();
 			return;
@@ -432,7 +451,6 @@ export class TermDOM {
 			this.layoutEngine.handleMutations(pendingMutations);
 		}
 
-		this.isRendering = true;
 		// Clear the rendered markers set for this frame
 		this.renderedOutsideMarkers = new WeakSet<Element>();
 
@@ -532,7 +550,6 @@ export class TermDOM {
 			});
 		}
 
-		this.isRendering = false;
 		this.afterRender();
 	}
 
@@ -1523,28 +1540,23 @@ export class TermDOM {
 	 * of having a viewport, and a pipe does not have one.
 	 */
 	private async renderStatic(): Promise<void> {
-		this.isRendering = true;
-		try {
-			const pending = this.observer.takeRecords();
-			if (pending.length > 0) {
-				this.styleManager.handleMutations(pending);
-				this.layoutEngine.handleMutations(pending);
-			}
-
-			this.renderedOutsideMarkers = new WeakSet<Element>();
-			this.layoutEngine.calculateLayout();
-
-			const output = this.renderer.renderStatic(
-				this.document.body.scrollHeight,
-				(ctx) => {
-					this.renderElement(this.document.body, ctx);
-				},
-			);
-
-			if (output) await this.write(output);
-		} finally {
-			this.isRendering = false;
+		const pending = this.observer.takeRecords();
+		if (pending.length > 0) {
+			this.styleManager.handleMutations(pending);
+			this.layoutEngine.handleMutations(pending);
 		}
+
+		this.renderedOutsideMarkers = new WeakSet<Element>();
+		this.layoutEngine.calculateLayout();
+
+		const output = this.renderer.renderStatic(
+			this.document.body.scrollHeight,
+			(ctx) => {
+				this.renderElement(this.document.body, ctx);
+			},
+		);
+
+		if (output) await this.write(output);
 		this.afterRender();
 	}
 
@@ -1628,40 +1640,35 @@ export class TermDOM {
 	 * not frozen, and reflow anywhere is free.
 	 */
 	private async renderDocumentMode(): Promise<void> {
-		this.isRendering = true;
-		try {
-			const pending = this.observer.takeRecords();
-			if (pending.length > 0) {
-				this.styleManager.handleMutations(pending);
-				this.layoutEngine.handleMutations(pending);
-			}
-
-			this.renderedOutsideMarkers = new WeakSet<Element>();
-			this.layoutEngine.calculateLayout();
-
-			const contentHeight = this.document.body.scrollHeight;
-			const regionHeight = Math.min(contentHeight, this.height);
-
-			// Take the room we need by pushing earlier output up, never over it.
-			const top = this.reserveRows(regionHeight);
-
-			// The camera cannot run off the end of the document.
-			const maxScroll = Math.max(0, contentHeight - regionHeight);
-			this.documentScrollTop = Math.min(this.documentScrollTop, maxScroll);
-
-			const ansi = this.renderer.renderFrame(
-				-this.documentScrollTop,
-				(ctx) => {
-					this.renderElement(this.document.body, ctx);
-				},
-				top,
-				top + regionHeight,
-			);
-
-			if (ansi) await this.write(ansi);
-		} finally {
-			this.isRendering = false;
+		const pending = this.observer.takeRecords();
+		if (pending.length > 0) {
+			this.styleManager.handleMutations(pending);
+			this.layoutEngine.handleMutations(pending);
 		}
+
+		this.renderedOutsideMarkers = new WeakSet<Element>();
+		this.layoutEngine.calculateLayout();
+
+		const contentHeight = this.document.body.scrollHeight;
+		const regionHeight = Math.min(contentHeight, this.height);
+
+		// Take the room we need by pushing earlier output up, never over it.
+		const top = this.reserveRows(regionHeight);
+
+		// The camera cannot run off the end of the document.
+		const maxScroll = Math.max(0, contentHeight - regionHeight);
+		this.documentScrollTop = Math.min(this.documentScrollTop, maxScroll);
+
+		const ansi = this.renderer.renderFrame(
+			-this.documentScrollTop,
+			(ctx) => {
+				this.renderElement(this.document.body, ctx);
+			},
+			top,
+			top + regionHeight,
+		);
+
+		if (ansi) await this.write(ansi);
 		this.afterRender();
 	}
 

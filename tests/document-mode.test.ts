@@ -154,3 +154,38 @@ test("content above the camera stays mutable, unlike flow mode", async () => {
 
 	dom.dispose();
 });
+
+test("a render arriving mid-frame is coalesced, not dropped", async () => {
+	// An animation drives renders through a mutation observer, which can fire again
+	// before the previous frame has finished writing. Dropping that second call
+	// (the old re-entrancy guard) leaves the diff renderer's previous-buffer out of
+	// step with the screen -- rows drawn at the wrong place -- and strands the
+	// latest state unrendered. The guard now defers instead: it runs a trailing
+	// frame that folds in whatever mutated in the meantime.
+	const terminal = new MockProcess({rows: 20, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	dom.setViewportMode("document");
+	dom.document.body.innerHTML =
+		`<div id="dyn">frame 0</div>` +
+		Array.from({length: 8}, (_, i) => `<div>static ${i + 1}</div>`).join("");
+	await dom.render();
+
+	// Two renders where the second starts while the first is still in flight.
+	dom.document.getElementById("dyn")!.textContent = "frame 1";
+	const first = dom.render();
+	dom.document.getElementById("dyn")!.textContent = "frame 2";
+	const second = dom.render();
+	await Promise.all([first, second]);
+
+	const screen = read(terminal, 20);
+
+	// The latest state won -- the dropped-render bug would leave "frame 1".
+	expect(screen.viewport[0]).toBe("frame 2");
+
+	// And the static rows below are intact, not shifted or duplicated.
+	for (let i = 0; i < 8; i++) {
+		expect(screen.viewport[i + 1]).toBe(`static ${i + 1}`);
+	}
+
+	dom.dispose();
+});
