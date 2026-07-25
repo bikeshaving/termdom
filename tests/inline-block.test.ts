@@ -331,3 +331,65 @@ test("inline-block with borders", async () => {
 
 	dom.dispose();
 });
+
+test("an empty inline flex item measures zero, not its next sibling's width", async () => {
+	// An empty inline element that is a flex item was collecting its *next
+	// sibling's* content: the tree walker, when its currentNode was the root and
+	// the root had no children, fell through to the root's next sibling and
+	// escaped the subtree. So an empty <span> before <span>ABC</span> reported
+	// width 3, shoving everything after it -- which is exactly what broke a
+	// progress bar whenever its fill or track emptied (0% and 100%).
+	const terminal = new MockProcess({cols: 40, rows: 4});
+	const dom = new TermDOM({process: terminal});
+	dom.document.body.innerHTML = `<div style="display:flex"><span></span><span>ABC</span><span>XY</span></div>`;
+	await dom.render();
+
+	const spans = [...dom.document.querySelectorAll("span")];
+	const rect = (i: number) => spans[i].getBoundingClientRect();
+
+	// The empty span occupies nothing, and the others pack from the start.
+	expect(rect(0).width).toBe(0);
+	expect(rect(1).left).toBe(0);
+	expect(rect(1).width).toBe(3);
+	expect(rect(2).left).toBe(3);
+	expect(rect(2).width).toBe(2);
+
+	dom.dispose();
+});
+
+test("a progress bar stays intact when its fill or track empties", async () => {
+	// The 0% and 100% frames put an empty span first or in the middle of a flex
+	// row. The fill and track must always tile to a constant width, with the
+	// percent immediately after -- no gap opening up, nothing shoved off.
+	const terminal = new MockProcess({cols: 50, rows: 4});
+	const dom = new TermDOM({process: terminal});
+	dom.document.body.innerHTML =
+		`<div style="display:flex">` +
+		`<span id="fill"></span><span id="track"></span><span id="pct"></span>` +
+		`</div>`;
+	const fill = dom.document.getElementById("fill")!;
+	const track = dom.document.getElementById("track")!;
+	const pct = dom.document.getElementById("pct")!;
+
+	const frame = async (p: number) => {
+		const width = 30;
+		const filled = Math.round((p / 100) * width);
+		fill.textContent = "█".repeat(filled);
+		track.textContent = "░".repeat(width - filled);
+		pct.textContent = `${p}%`;
+		await dom.render();
+	};
+
+	for (const p of [0, 50, 100]) {
+		await frame(p);
+		// fill starts at 0, track directly follows it, percent directly follows the
+		// track -- the bar tiles to exactly 30 cells regardless of where the split is.
+		expect(fill.getBoundingClientRect().left).toBe(0);
+		expect(track.getBoundingClientRect().left).toBe(
+			fill.getBoundingClientRect().width,
+		);
+		expect(pct.getBoundingClientRect().left).toBe(30);
+	}
+
+	dom.dispose();
+});

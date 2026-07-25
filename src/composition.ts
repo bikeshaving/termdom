@@ -58,6 +58,14 @@ export class ExpandedTreeWalker {
 				continue;
 			}
 
+			// A walker rooted at a node never visits that node's siblings. If we are
+			// back at the root with no children to descend into, the subtree is
+			// exhausted -- returning the root's sibling here would escape it, which is
+			// how an empty inline element ended up measuring its next sibling's width.
+			if (node === this.root) {
+				return null;
+			}
+
 			// Try to get next sibling (including extended siblings)
 			const nextSibling = this.#getNextSibling(node);
 			if (nextSibling && this.#acceptNode(nextSibling)) {
