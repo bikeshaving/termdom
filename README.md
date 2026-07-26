@@ -25,7 +25,7 @@ div.style.padding = "2";
 div.textContent = "Hello Terminal!";
 
 document.body.appendChild(div);
-termDOM.render(); // Flush to terminal
+// No render call: mutations paint automatically, like the browser.
 ```
 
 ## Why Use Web Technologies in the Terminal?
@@ -81,8 +81,9 @@ const header = doc.createElement("div");
 header.textContent = "TermDOM Demo";
 header.style.color = "green";
 doc.body.appendChild(header);
-
-term.render(); // Flush to terminal
+// Rendering is automatic on DOM mutation. `await term.render()` is only
+// needed to await a frame, or after changes the DOM cannot observe
+// (e.g. moving the document-mode camera).
 ```
 
 ## Examples

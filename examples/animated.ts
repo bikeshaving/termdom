@@ -187,16 +187,6 @@ document.addEventListener("keydown", (e: Event) => {
 	}
 });
 
-// Auto-render on DOM changes
-const observer = new termdom.window.MutationObserver(async () => {
-	await termdom.render();
-});
-observer.observe(document.body, {
-	childList: true,
-	subtree: true,
-	characterData: true,
-});
-
 // Start animation loop
 const interval = setInterval(updateAnimations, 80);
 updateAnimations();

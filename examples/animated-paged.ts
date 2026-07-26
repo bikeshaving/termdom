@@ -115,15 +115,6 @@ document.addEventListener("keydown", (e: Event) => {
 	}
 });
 
-const observer = new termdom.window.MutationObserver(async () => {
-	await termdom.render();
-});
-observer.observe(document.body, {
-	childList: true,
-	subtree: true,
-	characterData: true,
-});
-
 const interval = setInterval(tick, 80);
 tick();
 await termdom.render();

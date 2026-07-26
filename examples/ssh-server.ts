@@ -136,19 +136,8 @@ function serveSession(proc: ProcessLike, onDone: () => void): () => void {
 			`press keys — the DOM hears them as KeyboardEvents (last: ${JSON.stringify(key)})`;
 	});
 
-	const observer = new termdom.window.MutationObserver(() => {
-		void termdom.render();
-	});
-	observer.observe(document.body, {
-		childList: true,
-		subtree: true,
-		characterData: true,
-	});
-	void termdom.render();
-
 	function cleanup(): void {
 		clearInterval(interval);
-		observer.disconnect();
 		termdom.dispose();
 	}
 	return cleanup;
