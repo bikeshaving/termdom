@@ -1,5 +1,4 @@
 import {type EventEmitter} from "events";
-import {appendFileSync} from "node:fs";
 import {type DOMWindow, JSDOM} from "jsdom";
 import {LayoutEngine, isPointInRects} from "./_layout.js";
 import {type ColorDepth, Renderer} from "./_ansi.js";
@@ -485,7 +484,6 @@ export class TermDOM {
 		// A resize is settling: suppress every render until handleResize issues the
 		// single re-anchored redraw. See resizeInProgress.
 		if (this.resizeInProgress) {
-			this.debugLog("render SUPPRESSED (resizeInProgress)");
 			return;
 		}
 
@@ -599,9 +597,6 @@ export class TermDOM {
 			: -this.scrollingManager.getScrollTop();
 
 		const cursorPosition = this.hasDetectedCommandStart ? startRow : undefined;
-		this.debugLog(
-			`frame start=${startRow} contentH=${contentHeight} committed=${this.committedRows} cursorPos=${cursorPosition ?? "DECRC"} screenTop=${this.scrollingManager.getScreenTop()}`,
-		);
 
 		const ansi = this.renderer.renderFrame(
 			viewportOffset,
@@ -617,9 +612,6 @@ export class TermDOM {
 		if (flow) {
 			const scrolled = Math.max(0, startRow + regionRows - this.height);
 			if (scrolled > 0) {
-				this.debugLog(
-					`COMMIT scrolled=${scrolled} newCommitted=${this.committedRows + scrolled} newScreenTop=${Math.max(0, startRow - scrolled)}`,
-				);
 				this.committedRows += scrolled;
 				this.scrollingManager.setScreenTop(Math.max(0, startRow - scrolled));
 			}
@@ -1139,24 +1131,10 @@ export class TermDOM {
 	 * the length of the drag rather than the fact that it happened. Waiting for the
 	 * drag to settle turns the whole gesture into one redraw, and one lot of crud.
 	 */
-	private debugLog(message: string): void {
-		// Temporary live-debug tap, active only when TERMDOM_DEBUG_LOG names a file.
-		const path = this.process.env?.TERMDOM_DEBUG_LOG;
-		if (!path) return;
-		try {
-			appendFileSync(path, `${Date.now() % 100000} ${message}\n`);
-		} catch {
-			/* ignore */
-		}
-	}
-
 	private scheduleResize(): void {
 		// Suppress renders from the very first SIGWINCH, before the debounce
 		// settles, so a drag's worth of animation ticks cannot paint at the stale
 		// anchor while the terminal is rewrapping under us.
-		this.debugLog(
-			`SIGWINCH -> ${this.process.stdout.columns}x${this.process.stdout.rows} (was ${this.width}x${this.height})`,
-		);
 		this.resizeInProgress = true;
 		this.resizeEpoch++;
 		if (this.resizeTimer !== null) clearTimeout(this.resizeTimer);
@@ -1248,24 +1226,15 @@ export class TermDOM {
 					// A newer resize superseded this one; its handler will redraw.
 					if (epoch !== this.resizeEpoch) return;
 					const startRow = Math.max(0, cursorRow - wrappedRowsAbove);
-					this.debugLog(
-						`handleResize ${newWidth}x${newHeight} DSR row=${cursorRow} rowsAbove=${wrappedRowsAbove} -> startRow=${startRow}`,
-					);
 					redraw(startRow);
 				})
 				.catch(() => {
 					if (epoch !== this.resizeEpoch) return;
 					const startRow = computedReanchor();
-					this.debugLog(
-						`handleResize ${newWidth}x${newHeight} DSR FAILED, computed -> startRow=${startRow}`,
-					);
 					redraw(startRow);
 				});
 		} else {
 			const startRow = computedReanchor();
-			this.debugLog(
-				`handleResize ${newWidth}x${newHeight} computed (no DSR) contentH=${contentHeight} -> startRow=${startRow}`,
-			);
 			redraw(startRow);
 		}
 	}
