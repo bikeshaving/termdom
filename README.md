@@ -7,8 +7,9 @@ the DOM interface — to terminal applications. Build complex, interactive
 terminal interfaces just as you would a web application, without learning a new
 API.
 
-> **Status: pre-release.** TermDOM is not published to npm yet. To try it, clone
-> the repo and run the examples with `bun examples/flexbox-demo.ts`.
+> **Status: beta.** The engine is feature-complete for a first release and
+> extensively tested (480+ tests). Not yet on npm; to try it, clone the repo
+> and run any example, e.g. `bun examples/tree.ts`.
 
 Vanilla DOM example
 
@@ -56,6 +57,17 @@ TermDOM solves this by leveraging familiar web concepts:
   you can update terminal output reactively.
 - **Cross-Context:** Works in interactive terminals or piped output, bridging
   TTY and non-TTY use cases.
+- **Two viewport modes.** *Flow* behaves like an ordinary command: output lands
+  in real scrollback, searchable and permanent, and resizes re-anchor exactly.
+  *Document* mode holds a camera over a mutable document -- pagers, pickers,
+  dashboards -- and never touches your scrollback.
+- **Real text input.** `<input>` elements with focus traversal, `:focus`
+  styling, `input` events -- and the caret is the real terminal cursor, so IME
+  composition (CJK and friends) anchors in the field, measured in cells.
+- **Browser-grade rendering economics.** Incremental layout (a one-line edit
+  relays out its chain, not the document), viewport culling (paint is
+  O(screen), not O(document)), diffed frames, and tokenized input that keeps
+  up with any keyboard repeat rate.
 
 ## Quickstart
 
@@ -72,6 +84,16 @@ doc.body.appendChild(header);
 
 term.render(); // Flush to terminal
 ```
+
+## Examples
+
+| example | shows |
+| --- | --- |
+| `bun examples/tree.ts [dir]` | NERDTree-style interactive file tree: navigation, lazy loading, selection, camera-follow -- in ~200 lines of vanilla DOM |
+| `bun examples/form.ts` | text inputs, Tab focus, `:focus` styling, live preview, IME-correct carets |
+| `bun examples/animated.ts` | flow mode: an animated frame that respects your shell history |
+| `bun examples/animated-paged.ts` | document mode: the same frame under a scrollable camera |
+| `bun examples/todo-app.ts` | a small interactive app |
 
 ## What is not supported
 

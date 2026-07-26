@@ -8,7 +8,7 @@ const {document} = termdom;
 
 // Simple HTML table
 const tableElement = document.createElement("table");
-tableElement.style.border = "1px solid white";
+//tableElement.style.border = "1px solid white";
 
 // Header
 const thead = document.createElement("thead");
