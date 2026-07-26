@@ -368,6 +368,41 @@ const defaultConfig = new Config();
 // Node
 // ---------------------------------------------------------------------------
 
+interface CachedLayout {
+	availableWidth: number;
+	availableHeight: number;
+	widthMode: MeasureMode;
+	heightMode: MeasureMode;
+	ownerWidth: number;
+	ownerHeight: number;
+	width: number;
+	height: number;
+}
+
+/** NaN-safe equality: undefined constraints are NaN, and NaN !== NaN. */
+function sameConstraint(a: number, b: number): boolean {
+	return a === b || (Number.isNaN(a) && Number.isNaN(b));
+}
+
+function constraintsMatch(
+	cache: CachedLayout,
+	availableWidth: number,
+	availableHeight: number,
+	widthMode: MeasureMode,
+	heightMode: MeasureMode,
+	ownerWidth: number,
+	ownerHeight: number,
+): boolean {
+	return (
+		cache.widthMode === widthMode &&
+		cache.heightMode === heightMode &&
+		sameConstraint(cache.availableWidth, availableWidth) &&
+		sameConstraint(cache.availableHeight, availableHeight) &&
+		sameConstraint(cache.ownerWidth, ownerWidth) &&
+		sameConstraint(cache.ownerHeight, ownerHeight)
+	);
+}
+
 export class Node {
 	style: Style;
 	layout: LayoutResult;
@@ -384,6 +419,16 @@ export class Node {
 	// extent. Auto-height boxes -- the normal case -- always contain theirs.)
 	extentTop = 0;
 	extentBottom = 0;
+	// Layout caches: the constraints of the last sizing pass and the last full
+	// layout pass, with the sizes they produced. A clean node asked again under
+	// identical constraints restores its size and skips its whole subtree -- so
+	// a one-line edit relays out its ancestor chain while every clean sibling
+	// returns in O(1). Two slots because flex sizes children twice (a measuring
+	// pass, then the placing pass) with different constraints; one slot would
+	// ping-pong and never hit. Invalidation is the dirty flag, which every
+	// mutation path already sets on the way in.
+	cachedMeasures: CachedLayout[] = [];
+	cachedLayout: CachedLayout | null = null;
 
 	constructor(config: Config = defaultConfig) {
 		this.config = config;
@@ -2973,6 +3018,101 @@ function layoutTable(
 }
 
 function layoutNode(
+	node: Node,
+	availableWidth: number,
+	availableHeight: number,
+	widthMode: MeasureMode,
+	heightMode: MeasureMode,
+	ownerWidth: number,
+	ownerHeight: number,
+	performLayout: boolean,
+): void {
+	// A clean node under constraints it has already answered: restore the size
+	// and skip the whole subtree. Child geometry is parent-relative and was left
+	// exactly as the cached pass computed it, so nothing below needs touching.
+	// A full layout satisfies a sizing query; a sizing result cannot satisfy a
+	// layout query, since it never placed the children.
+	if (!node.dirty) {
+		let hit: CachedLayout | null = null;
+		if (
+			node.cachedLayout &&
+			constraintsMatch(
+				node.cachedLayout,
+				availableWidth,
+				availableHeight,
+				widthMode,
+				heightMode,
+				ownerWidth,
+				ownerHeight,
+			)
+		) {
+			hit = node.cachedLayout;
+		} else if (!performLayout) {
+			for (const cached of node.cachedMeasures) {
+				if (
+					constraintsMatch(
+						cached,
+						availableWidth,
+						availableHeight,
+						widthMode,
+						heightMode,
+						ownerWidth,
+						ownerHeight,
+					)
+				) {
+					hit = cached;
+					break;
+				}
+			}
+		}
+		if (hit) {
+			node.layout.width = hit.width;
+			node.layout.height = hit.height;
+			return;
+		}
+	}
+
+	// Whatever made this node dirty invalidated every cached answer; reset both
+	// slots before recomputing so stale entries cannot answer later queries.
+	if (node.dirty) {
+		node.cachedLayout = null;
+		node.cachedMeasures.length = 0;
+	}
+
+	layoutNodeImpl(
+		node,
+		availableWidth,
+		availableHeight,
+		widthMode,
+		heightMode,
+		ownerWidth,
+		ownerHeight,
+		performLayout,
+	);
+
+	const entry: CachedLayout = {
+		availableWidth,
+		availableHeight,
+		widthMode,
+		heightMode,
+		ownerWidth,
+		ownerHeight,
+		width: node.layout.width,
+		height: node.layout.height,
+	};
+	if (performLayout) {
+		node.cachedLayout = entry;
+	} else {
+		// Flex asks the same node under several constraint pairs per pass (a
+		// measuring probe and a placing probe, sometimes more); keep a small
+		// ring of answers so alternating probes both hit next frame.
+		if (node.cachedMeasures.length >= 4) node.cachedMeasures.shift();
+		node.cachedMeasures.push(entry);
+	}
+	node.dirty = false;
+}
+
+function layoutNodeImpl(
 	node: Node,
 	availableWidth: number,
 	availableHeight: number,
