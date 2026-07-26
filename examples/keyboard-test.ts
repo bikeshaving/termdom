@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import {TermDOM} from "../src/termdom.js";
+import {TermDOM} from "../src/_termdom.js";
 
 if (!process.stdin.isTTY) {
 	process.exit(1);

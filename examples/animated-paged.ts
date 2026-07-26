@@ -5,7 +5,7 @@
 // a resize can never orphan a copy. The cost is the one we decided to stop
 // apologising for: this region is not in the scrollback, so the terminal's own
 // search does not reach it. You page it with the keys below instead.
-import {TermDOM} from "../src/termdom.js";
+import {TermDOM} from "../src/_termdom.js";
 
 const termdom = new TermDOM();
 const {document} = termdom;

@@ -1,5 +1,5 @@
 import {beforeEach, describe, expect, test} from "bun:test";
-import Flex, {Config, Node} from "../src/flex.js";
+import Flex, {Config, Node} from "../src/_flex.js";
 
 /**
  * Spec tests for the layout engine, driven directly rather than through the

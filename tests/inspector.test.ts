@@ -5,7 +5,7 @@ import {
 	inspectDocument,
 	inspectNode,
 	setupInspectMethods,
-} from "../src/inspector.js";
+} from "../src/_inspector.js";
 
 test("inspectElement formats basic elements", () => {
 	const dom = new JSDOM(`<div id="test" class="container">Hello</div>`);

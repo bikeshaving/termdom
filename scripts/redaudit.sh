@@ -10,11 +10,27 @@ run_counts() { # -> "pass fail"
   f=$(echo "$out" | grep -oE "^ *[0-9]+ fail" | grep -oE "[0-9]+" | head -1)
   echo "${p:-0} ${f:-0}"
 }
+# Sources were renamed src/x.ts -> src/_x.ts when the public module shrank to
+# a single entry. Pre-rename fix commits list historical paths; map each to
+# its current location so the pre-fix content lands where HEAD's imports look.
+current_path() {
+  local f="$1"
+  [ -e "$f" ] && { echo "$f"; return; }
+  local mapped="${f%/*}/_${f##*/}"
+  [ -e "$mapped" ] && { echo "$mapped"; return; }
+  echo "$f"
+}
+
 audit() {
   local commit="$1"; shift; local testfile="$1"; shift; local pattern="$1"; shift; local files=("$@")
-  git checkout -q "$commit^" -- "${files[@]}" 2>/dev/null || { echo "SKIP       $pattern (checkout failed)"; return; }
+  local restore=()
+  for f in "${files[@]}"; do
+    local dest; dest=$(current_path "$f")
+    git show "$commit^:$f" > "$dest" 2>/dev/null || { echo "SKIP       $pattern (no $f at $commit^)"; git checkout -q -- "${restore[@]}" 2>/dev/null; return; }
+    restore+=("$dest")
+  done
   read -r rp rf <<< "$(run_counts "$testfile" "$pattern")"
-  git checkout -q HEAD -- "${files[@]}"
+  git checkout -q -- "${restore[@]}"
   read -r gp gf <<< "$(run_counts "$testfile" "$pattern")"
   if [ "$rf" -ge 1 ] && [ "$gf" -eq 0 ] && [ "$gp" -ge 1 ]; then echo "RED/GREEN OK   $pattern"
   elif [ "$rf" -eq 0 ]; then echo "NEVER-RED  !!  $pattern (red run: ${rp}p/${rf}f - passes on broken code)"

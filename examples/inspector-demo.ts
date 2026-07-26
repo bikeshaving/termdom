@@ -3,7 +3,7 @@ import {
 	inspectElement,
 	inspectDocument,
 	setupInspectMethods,
-} from "../src/inspector.js";
+} from "../src/_inspector.js";
 
 // Create a JSDOM instance
 const dom = new JSDOM(`

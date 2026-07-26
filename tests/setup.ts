@@ -2,7 +2,7 @@ import {afterEach} from "bun:test";
 import {
 	__enableInstanceTracking,
 	__disposeTrackedInstances,
-} from "../src/termdom.js";
+} from "../src/_termdom.js";
 
 // Many tests construct a TermDOM and never dispose it. Each holds a JSDOM window,
 // and across the whole suite the leaked instances erode what little memory

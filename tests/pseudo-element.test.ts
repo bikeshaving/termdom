@@ -1,7 +1,7 @@
 import {test, expect} from "bun:test";
-import {TermDOM} from "../src/termdom.js";
+import {TermDOM} from "../src/_termdom.js";
 import {MockProcess} from "./test-utils.js";
-import {getPseudoElement} from "../src/composition.js";
+import {getPseudoElement} from "../src/_composition.js";
 
 test("::before and ::after content rendering", async () => {
 	const terminal = new MockProcess();

@@ -1,6 +1,6 @@
 {
   "name": "@b9g/termdom",
-	"version": "0.1.0",
+  "version": "0.1.0",
   "description": "HTML, CSS and the DOM for terminal emulators. Real CSS layout, no native or WASM dependency.",
   "license": "MIT",
   "author": "Brian Kim",
@@ -38,7 +38,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc --project tsconfig.build.json",
+    "build": "libuild build",
     "lint": "eslint --ext .js,.jsx,.ts,.tsx .",
     "smoke": "node scripts/smoke.mjs",
     "smoke:deno": "deno run -A --node-modules-dir=manual scripts/smoke.mjs",
@@ -52,6 +52,7 @@
   },
   "devDependencies": {
     "@b9g/crank": "^0.7.1",
+    "@b9g/libuild": "^0.2.4",
     "@tanstack/table-core": "^8.21.3",
     "@types/bun": "^1.2.21",
     "@types/cssstyle": "^2.2.4",

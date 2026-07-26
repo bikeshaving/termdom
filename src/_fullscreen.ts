@@ -2,7 +2,7 @@ import {
 	type ProcessLike,
 	type TTYReadStream,
 	type TTYWriteStream,
-} from "./termdom.js";
+} from "./_termdom.js";
 
 export class FullscreenManager {
 	private readonly process: ProcessLike;

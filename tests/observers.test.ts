@@ -6,7 +6,7 @@
  * ships neither observer, so before this they were simply `undefined`.
  */
 import {test, expect} from "bun:test";
-import {TermDOM} from "../src/termdom.js";
+import {TermDOM} from "../src/_termdom.js";
 import {MockProcess} from "./test-utils.js";
 
 function make(rows = 10, cols = 40) {

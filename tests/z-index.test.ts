@@ -8,7 +8,7 @@
  * z-index was parsed and then never read.
  */
 import {test, expect} from "bun:test";
-import {TermDOM} from "../src/termdom.js";
+import {TermDOM} from "../src/_termdom.js";
 import {MockProcess, stripControlCodes} from "./test-utils.js";
 
 async function renderRows(html: string, cols = 30): Promise<string[]> {

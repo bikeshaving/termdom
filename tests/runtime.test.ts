@@ -1,5 +1,5 @@
 import {describe, expect, test} from "bun:test";
-import {stringWidthFallback} from "../src/runtime.js";
+import {stringWidthFallback} from "../src/_runtime.js";
 
 /**
  * termdom uses Bun.stringWidth when it is available and stringWidthFallback

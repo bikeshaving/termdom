@@ -14,7 +14,7 @@
  * expectations come from CSS table semantics, not from the implementation.
  */
 import {test, expect} from "bun:test";
-import {TermDOM} from "../src/termdom.js";
+import {TermDOM} from "../src/_termdom.js";
 import {MockProcess, stripControlCodes} from "./test-utils.js";
 
 interface Box {

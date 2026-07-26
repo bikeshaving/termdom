@@ -1,4 +1,4 @@
-import {TermDOM} from "../src/termdom.js";
+import {TermDOM} from "../src/_termdom.js";
 
 const termDOM = new TermDOM();
 const {document} = termDOM;

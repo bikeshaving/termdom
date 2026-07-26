@@ -9,7 +9,7 @@
 
 import {test, expect} from "bun:test";
 import {MockProcess} from "./test-utils.js";
-import {TermDOM} from "../src/termdom.js";
+import {TermDOM} from "../src/_termdom.js";
 
 test("renders single emoji correctly", async () => {
 	const terminal = new MockProcess();

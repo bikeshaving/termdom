@@ -12,7 +12,7 @@
  * the marker sits immediately before it, separated by exactly one cell.
  */
 import {test, expect} from "bun:test";
-import {TermDOM} from "../src/termdom.js";
+import {TermDOM} from "../src/_termdom.js";
 import {MockProcess} from "./test-utils.js";
 import {stripControlCodes} from "./test-utils.js";
 

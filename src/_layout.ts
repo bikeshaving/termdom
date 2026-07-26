@@ -1,11 +1,11 @@
 import type {DOMWindow} from "jsdom";
-import Flex from "./flex.js";
-import type * as FlexTypes from "./flex.js";
+import Flex from "./_flex.js";
+import type * as FlexTypes from "./_flex.js";
 import LineBreaker from "linebreak";
-import {getBoxModel, type BoxModel} from "./styles.js";
-import {getPropertyValue, parseUnitValue} from "./styles.js";
-import {createExpandedTreeWalker, getPseudoMetadata} from "./composition.js";
-import {stringWidth as runtimeStringWidth} from "./runtime.js";
+import {getBoxModel, type BoxModel} from "./_styles.js";
+import {getPropertyValue, parseUnitValue} from "./_styles.js";
+import {createExpandedTreeWalker, getPseudoMetadata} from "./_composition.js";
+import {stringWidth as runtimeStringWidth} from "./_runtime.js";
 
 function getAbsolutePosition(flexNode: FlexTypes.Node): {
 	x: number;

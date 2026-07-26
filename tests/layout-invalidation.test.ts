@@ -1,5 +1,5 @@
 import {test, expect} from "bun:test";
-import {TermDOM} from "../src/termdom.js";
+import {TermDOM} from "../src/_termdom.js";
 import {MockProcess} from "./test-utils.js";
 
 test("pseudo-elements render correctly after mutation observer fixes", async () => {

@@ -1,9 +1,9 @@
 import {test, expect} from "bun:test";
 import {JSDOM} from "jsdom";
-import {LayoutEngine} from "../src/layout.js";
-import {StyleManager} from "../src/styles.js";
-import {TermDOM} from "../src/termdom.js";
-import {setPseudoElement, createPseudoNode} from "../src/composition.js";
+import {LayoutEngine} from "../src/_layout.js";
+import {StyleManager} from "../src/_styles.js";
+import {TermDOM} from "../src/_termdom.js";
+import {setPseudoElement, createPseudoNode} from "../src/_composition.js";
 import {MockProcess} from "./test-utils.js";
 
 function createLayoutEngine(html: string = "<div></div>") {

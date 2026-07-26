@@ -7,8 +7,8 @@ import {
 	getBorderChar,
 	mergeBorderEncodings,
 	Renderer,
-} from "../src/ansi.js";
-import {BorderEdgeStyle} from "../src/styles.js";
+} from "../src/_ansi.js";
+import {BorderEdgeStyle} from "../src/_styles.js";
 import {stripControlCodes} from "./test-utils.js";
 
 describe("Cell", () => {
