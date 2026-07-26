@@ -10,5 +10,6 @@ const pkg = JSON.parse(await Bun.file(path).text());
 if (Array.isArray(pkg.files) && !pkg.files.includes("internal/")) {
 	pkg.files.push("internal/");
 	await Bun.write(path, JSON.stringify(pkg, null, 2) + "\n");
+	// eslint-disable-next-line no-console
 	console.log("postbuild: added internal/ to dist package files");
 }
