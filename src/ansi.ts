@@ -1116,6 +1116,7 @@ export class Renderer {
 		drawCallback: (ctx: DrawingContext) => void,
 		cursorPosition?: number,
 		regionRows?: number,
+		useScrollCommands = true,
 	): string {
 		const frameRows = Math.max(this.#rows, regionRows ?? this.#rows);
 		const overflowing = frameRows > this.#rows;
@@ -1132,8 +1133,19 @@ export class Renderer {
 		);
 		drawCallback(context);
 
-		// Generate output: Transform previous buffer for scroll optimization
-		this.#transformBufferForScroll(offset);
+		// Scroll-command optimization: emit SU/SD for an offset change and shift
+		// the previous buffer to match. SU and SD move the WHOLE terminal screen,
+		// so this is only sound when the frame owns it all -- a document-mode
+		// region that starts below a shell prompt would drag the prompt and any
+		// stale rows through itself on every camera move (and SU commits rows to
+		// scrollback, which document mode promises never to do). When disabled,
+		// the previous buffer is left where the screen actually is and the diff
+		// repaints whatever the camera shift changed.
+		if (useScrollCommands) {
+			this.#transformBufferForScroll(offset);
+		} else {
+			this.#prevOffset = offset;
+		}
 
 		// Create diff buffer. A frame taller than the terminal is a growth frame:
 		// the rows below the fold have never been on screen, so there is nothing to
@@ -1180,7 +1192,9 @@ export class Renderer {
 		}
 
 		// Generate scroll commands and check for content
-		const scrollCommands = this.#generateScrollCommands(offset);
+		const scrollCommands = useScrollCommands
+			? this.#generateScrollCommands(offset)
+			: "";
 		let hasContent = false;
 
 		for (let row = 0; row < frameRows; row++) {

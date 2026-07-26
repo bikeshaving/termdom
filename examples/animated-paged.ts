@@ -27,8 +27,6 @@ style.textContent = `
   .bar-track { color: #555; display: inline; }
   .bar-fill { color: green; display: inline; }
   .bar-pct { color: white; display: inline; padding-left: 1ch; }
-  .log-title { color: cyan; padding-top: 1; }
-  .log-line { color: #888; }
   .hint { color: #666; padding-top: 1; }
 `;
 document.head.appendChild(style);
@@ -43,36 +41,13 @@ app.innerHTML = `
   <div class="section"><span class="label">Braille:    </span><span class="braille" id="braille"></span></div>
   <div class="section"><span class="label">Clock:      </span><span class="clock" id="clock"></span></div>
   <div class="section"><span class="label">Bounce:     </span><span class="bounce" id="bounce"></span></div>
-  <div class="log-title">Event log — live (j/k scroll pauses follow, G resumes)</div>
 `;
 document.body.appendChild(app);
 
-// A real, growing log: every entry below is an event that actually happened.
-// The document grows while the camera holds still -- unless it is at the tail,
-// where it follows, like a log viewer should.
-const log = document.createElement("div");
-app.appendChild(log);
 const hint = document.createElement("div");
 hint.className = "hint";
 hint.textContent = "↑/↓ or j/k to scroll · g/G top/bottom · q to quit";
 app.appendChild(hint);
-
-let follow = true;
-function logEvent(text: string): void {
-	const now = new Date();
-	const stamp = [now.getHours(), now.getMinutes(), now.getSeconds()]
-		.map((n) => String(n).padStart(2, "0"))
-		.join(":");
-	const line = document.createElement("div");
-	line.className = "log-line";
-	line.textContent = `  [${stamp}] ${text}`;
-	log.appendChild(line);
-	// Keep the transcript bounded; the oldest rows fall off the top.
-	while (log.childElementCount > 200) log.firstElementChild!.remove();
-	if (follow) {
-		termdom.scrollDocumentBy(document.body.scrollHeight);
-	}
-}
 
 const $ = (id: string) => document.getElementById(id)!;
 const spinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -108,11 +83,7 @@ function tick() {
 	$("fill").textContent = "█".repeat(filled);
 	$("track").textContent = "░".repeat(barWidth - filled);
 	$("pct").textContent = `${Math.round(progress)}%`;
-	progress = progress + 0.5;
-	if (progress > 100) {
-		progress = 0;
-		logEvent("progress lap complete");
-	}
+	progress = (progress + 0.5) % 101;
 	$("braille").textContent =
 		brailleFrames[frame % brailleFrames.length] + " Computing...";
 	$("clock").textContent = clockFrames[frame % clockFrames.length];
@@ -121,11 +92,6 @@ function tick() {
 	bouncePos += bounceDir;
 	if (bouncePos >= bounceWidth || bouncePos <= 0) bounceDir *= -1;
 	frame++;
-	if (frame % 75 === 0 && renderCount > 0) {
-		const fps = (renderCount / 6).toFixed(1); // 75 frames at 80ms = ~6s window
-		logEvent(`${fps} fps · slowest frame ${renderPeak.toFixed(1)}ms`);
-		renderCount = 0;
-	}
 }
 
 document.addEventListener("keydown", (e: Event) => {
@@ -135,35 +101,22 @@ document.addEventListener("keydown", (e: Event) => {
 		termdom.dispose();
 		process.exit(0);
 	} else if (key === "ArrowDown" || key === "j") {
-		follow = false;
 		termdom.scrollDocumentBy(1);
 		void termdom.render();
 	} else if (key === "ArrowUp" || key === "k") {
-		follow = false;
 		termdom.scrollDocumentBy(-1);
 		void termdom.render();
 	} else if (key === "g") {
-		follow = false;
 		termdom.scrollDocumentBy(-9999);
 		void termdom.render();
 	} else if (key === "G") {
-		follow = true;
 		termdom.scrollDocumentBy(9999);
 		void termdom.render();
-	} else {
-		logEvent(`key pressed: ${JSON.stringify(key)}`);
 	}
 });
 
-let renderCount = 0;
-let renderPeak = 0;
 const observer = new termdom.window.MutationObserver(async () => {
-	const start = performance.now();
 	await termdom.render();
-	// Most calls coalesce into an in-flight frame and return at once; the peak
-	// is the cost of a frame that actually painted.
-	renderPeak = Math.max(renderPeak, performance.now() - start);
-	renderCount++;
 });
 observer.observe(document.body, {
 	childList: true,
