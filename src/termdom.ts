@@ -416,9 +416,20 @@ export class TermDOM {
 					: Buffer.from(chunk, "utf8");
 				const dataStr = data.toString("utf8");
 
-				// Route 1: Cursor position responses (highest priority)
-				if (this.cursorDetectionHandler && dataStr.match(/\x1b\[\d+;\d+R/)) {
-					this.cursorDetectionHandler(dataStr);
+				// Route 1: Cursor position responses (highest priority). Fast typing
+				// can land in the same chunk as the report -- "jjj\x1b[12;1Rjjj" --
+				// so hand the report to the waiting query and let the rest continue
+				// through the normal routes as keystrokes.
+				const report = dataStr.match(/\x1b\[\d+;\d+R/);
+				if (this.cursorDetectionHandler && report) {
+					this.cursorDetectionHandler(report[0]);
+					const rest =
+						dataStr.slice(0, report.index) +
+						dataStr.slice((report.index ?? 0) + report[0].length);
+					if (rest.length === 0) return;
+					if (this.stdinDataHandler) {
+						this.stdinDataHandler(rest);
+					}
 					return;
 				}
 
@@ -1054,15 +1065,23 @@ export class TermDOM {
 	}
 
 	private processPendingMutationsAndRender(): boolean {
+		// A geometry read (getBoundingClientRect, elementFromPoint) needs fresh
+		// *layout*, not fresh pixels. This used to fire a full render() here, so
+		// every rect read with pending mutations painted a frame -- an app calling
+		// scrollIntoView on each keystroke paid two paints per key, and the rect
+		// could still be stale because the render was not awaited. Flushing
+		// mutations and laying out synchronously gives an exact rect; painting
+		// stays with the caller's own render. The dirty-skip makes this free when
+		// nothing changed.
 		const pendingMutations = this.observer.takeRecords();
-		if (pendingMutations.length > 0) {
+		const hadMutations = pendingMutations.length > 0;
+		if (hadMutations) {
 			// Process mutations in the same order as MutationObserver callback
 			this.styleManager.handleMutations(pendingMutations);
 			this.layoutEngine.handleMutations(pendingMutations);
-			this.render();
-			return true;
 		}
-		return false;
+		this.layoutEngine.calculateLayout();
+		return hadMutations;
 	}
 
 	/**
@@ -1550,14 +1569,62 @@ export class TermDOM {
 		}
 	}
 
+	/**
+	 * Split raw terminal input into key tokens: CSI sequences (ESC [ ... final
+	 * byte), SS3 sequences (ESC O x), and single characters.
+	 *
+	 * Fast input arrives batched -- a held arrow key delivers
+	 * "\x1b[B\x1b[B\x1b[B" in one chunk, and a terminal report can land glued to
+	 * ordinary keystrokes. Anything that treats a chunk as one key swallows
+	 * everything after the first token: a held arrow repeated once per chunk
+	 * instead of once per press, and a stray cursor report ate every key packed
+	 * behind it.
+	 */
+	private *tokenizeInput(input: string): Generator<string> {
+		let i = 0;
+		while (i < input.length) {
+			if (input[i] === "\x1b" && i + 1 < input.length) {
+				if (input[i + 1] === "[") {
+					// CSI: parameter/intermediate bytes end at a final byte 0x40-0x7e.
+					let end = i + 2;
+					while (
+						end < input.length &&
+						!(input.charCodeAt(end) >= 0x40 && input.charCodeAt(end) <= 0x7e)
+					) {
+						end++;
+					}
+					yield input.slice(i, Math.min(end + 1, input.length));
+					i = end + 1;
+					continue;
+				}
+				if (input[i + 1] === "O" && i + 2 < input.length) {
+					yield input.slice(i, i + 3);
+					i += 3;
+					continue;
+				}
+			}
+			yield input[i];
+			i++;
+		}
+	}
+
 	private dispatchGlobalKeyboardEvent(chunk: Buffer): void {
 		const key = chunk.toString("utf8");
 
-		// If chunk contains multiple non-escape characters, dispatch each individually
-		if (key.length > 1 && !key.startsWith("\x1b")) {
-			for (const char of key) {
-				this.dispatchGlobalKeyboardEvent(Buffer.from(char));
+		// Tokenize multi-key chunks and dispatch each token on its own.
+		const tokens = Array.from(this.tokenizeInput(key));
+		if (tokens.length > 1) {
+			for (const token of tokens) {
+				this.dispatchGlobalKeyboardEvent(Buffer.from(token));
 			}
+			return;
+		}
+
+		// A cursor position report is the terminal answering a query, not the
+		// user pressing keys. With no query outstanding (a late or duplicate
+		// answer), it is not a keystroke -- drop it rather than dispatching a
+		// nonsense key event.
+		if (/^\x1b\[\d+;\d+R$/.test(key)) {
 			return;
 		}
 

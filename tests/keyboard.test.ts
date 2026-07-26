@@ -1,5 +1,6 @@
 import {test, expect} from "bun:test";
 import {TermDOM} from "../src/termdom.js";
+import {MockProcess} from "./test-utils.js";
 import {EventEmitter} from "events";
 
 // Mock TTY stream that simulates a real terminal
@@ -384,4 +385,61 @@ test("non-TTY environment doesn't set up keyboard handling", () => {
 	});
 
 	expect(termdom).toBeDefined();
+});
+
+test("a batched chunk of plain keys dispatches one keydown per key", async () => {
+	// Fast key repeat arrives batched -- "jjjjj" in one stdin chunk. Anything
+	// that treats a chunk as one key swallows the rest.
+	const terminal = new MockProcess({rows: 10, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	const keys: string[] = [];
+	dom.document.addEventListener("keydown", (e: Event) =>
+		keys.push((e as KeyboardEvent).key),
+	);
+	(terminal.stdin as any).emit("data", Buffer.from("jjjjj"));
+	expect(keys).toEqual(["j", "j", "j", "j", "j"]);
+	dom.dispose();
+});
+
+test("a batched chunk of arrow sequences dispatches one keydown per arrow", async () => {
+	// A held arrow key delivers "\x1b[B\x1b[B\x1b[B" in one chunk. The old
+	// splitter refused to split anything starting with ESC, so a whole burst of
+	// key repeat collapsed into a single ArrowDown -- the cursor lagging far
+	// behind the keyboard.
+	const terminal = new MockProcess({rows: 10, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	const keys: string[] = [];
+	dom.document.addEventListener("keydown", (e: Event) =>
+		keys.push((e as KeyboardEvent).key),
+	);
+	(terminal.stdin as any).emit("data", Buffer.from("\x1b[B\x1b[B\x1b[B"));
+	expect(keys).toEqual(["ArrowDown", "ArrowDown", "ArrowDown"]);
+	dom.dispose();
+});
+
+test("keys packed behind a stray cursor report still dispatch", async () => {
+	// A late cursor-position report can land glued to fast keystrokes in one
+	// chunk. The report is the terminal talking, not the user typing: it must
+	// be dropped, and every key around it must still arrive.
+	const terminal = new MockProcess({rows: 10, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	const keys: string[] = [];
+	dom.document.addEventListener("keydown", (e: Event) =>
+		keys.push((e as KeyboardEvent).key),
+	);
+	(terminal.stdin as any).emit("data", Buffer.from("jj\x1b[12;1Rjjj"));
+	expect(keys).toEqual(["j", "j", "j", "j", "j"]);
+	dom.dispose();
+});
+
+test("a lone stray cursor report dispatches nothing", async () => {
+	const terminal = new MockProcess({rows: 10, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	const keys: string[] = [];
+	dom.document.addEventListener("keydown", (e: Event) =>
+		keys.push((e as KeyboardEvent).key),
+	);
+	(terminal.stdin as any).emit("data", Buffer.from("\x1b[12;1R"));
+	expect(keys).toEqual([]);
+	dom.dispose();
 });
