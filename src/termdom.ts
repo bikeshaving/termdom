@@ -312,8 +312,30 @@ export class TermDOM {
 			enumerable: true,
 		});
 
-		// Implement standard DOM scrollHeight properties
+		// Standard window scrolling, mapped onto the document-mode camera. In flow
+		// mode scrollY reports how far the content has scrolled; scrollBy only
+		// means something when there is a camera to move.
 		const termDOM = this;
+		Object.defineProperty(window, "scrollY", {
+			get: () =>
+				termDOM.viewportMode === "document"
+					? termDOM.documentScrollTop
+					: Math.max(0, -termDOM.scrollingManager.getScrollTop()),
+			configurable: true,
+			enumerable: true,
+		});
+		window.scrollBy = ((
+			xOrOptions?: number | ScrollToOptions,
+			y?: number,
+		): void => {
+			const dy =
+				typeof xOrOptions === "object" && xOrOptions !== null
+					? (xOrOptions.top ?? 0)
+					: (y ?? 0);
+			termDOM.scrollDocumentBy(dy);
+		}) as typeof window.scrollBy;
+
+		// Implement standard DOM scrollHeight properties
 		Object.defineProperty(this.document.body, "scrollHeight", {
 			get() {
 				return termDOM.layoutEngine.getContentHeight();
@@ -1369,6 +1391,25 @@ export class TermDOM {
 			_arg?: boolean | ScrollIntoViewOptions,
 		) {
 			const rect = this.getBoundingClientRect();
+
+			// In document mode the rect is in document rows and the camera shows
+			// [documentScrollTop, documentScrollTop + region). Move the camera the
+			// minimal amount that brings the element into it -- the standard
+			// block: "nearest" behavior.
+			if (termDOM.viewportMode === "document") {
+				const regionHeight = Math.min(
+					termDOM.height,
+					termDOM.document.body.scrollHeight,
+				);
+				const top = termDOM.documentScrollTop;
+				if (rect.top < top) {
+					termDOM.scrollDocumentBy(rect.top - top);
+				} else if (rect.bottom > top + regionHeight) {
+					termDOM.scrollDocumentBy(rect.bottom - (top + regionHeight));
+				}
+				return;
+			}
+
 			const viewportHeight = termDOM.height;
 			const scrollTop = termDOM.scrollingManager.getScrollTop();
 

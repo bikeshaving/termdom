@@ -678,6 +678,16 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 			}
 		}
 
+		if (property === "background-color") {
+			// The full background shorthand covers images, positions and repeats
+			// that mean nothing in a terminal; honor the everyday
+			// `background: <color>` form and ignore the rest.
+			const shorthand = this.resolveShorthand("background");
+			if (shorthand && !shorthand.includes("url(")) {
+				return shorthand.trim();
+			}
+		}
+
 		// 3. Check element-specific UA defaults (e.g., strong { font-weight: bold })
 		// These take priority over inherited values
 		const tagName = this.element.tagName.toLowerCase();
