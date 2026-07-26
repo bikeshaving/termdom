@@ -38,7 +38,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "libuild build && bun scripts/postbuild.ts",
+    "build": "libuild build",
     "lint": "eslint --ext .js,.jsx,.ts,.tsx .",
     "smoke": "node scripts/smoke.mjs",
     "smoke:deno": "deno run -A --node-modules-dir=manual scripts/smoke.mjs",
@@ -52,7 +52,7 @@
   },
   "devDependencies": {
     "@b9g/crank": "^0.7.1",
-    "@b9g/libuild": "^0.2.4",
+    "@b9g/libuild": "^0.2.5",
     "@tanstack/table-core": "^8.21.3",
     "@types/bun": "^1.2.21",
     "@types/cssstyle": "^2.2.4",
