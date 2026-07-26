@@ -7,9 +7,9 @@ the DOM interface — to terminal applications. Build complex, interactive
 terminal interfaces just as you would a web application, without learning a new
 API.
 
-> **Status: beta.** The engine is feature-complete for a first release and
-> extensively tested (480+ tests). Not yet on npm; to try it, clone the repo
-> and run any example, e.g. `bun examples/tree.ts`.
+```sh
+bun add @b9g/termdom   # or npm install @b9g/termdom
+```
 
 Vanilla DOM example
 
