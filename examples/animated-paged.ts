@@ -121,7 +121,11 @@ function tick() {
 	bouncePos += bounceDir;
 	if (bouncePos >= bounceWidth || bouncePos <= 0) bounceDir *= -1;
 	frame++;
-	if (frame % 75 === 0) logEvent(`heartbeat — frame ${frame}`);
+	if (frame % 75 === 0 && renderCount > 0) {
+		const fps = (renderCount / 6).toFixed(1); // 75 frames at 80ms = ~6s window
+		logEvent(`${fps} fps · slowest frame ${renderPeak.toFixed(1)}ms`);
+		renderCount = 0;
+	}
 }
 
 document.addEventListener("keydown", (e: Event) => {
@@ -151,8 +155,15 @@ document.addEventListener("keydown", (e: Event) => {
 	}
 });
 
+let renderCount = 0;
+let renderPeak = 0;
 const observer = new termdom.window.MutationObserver(async () => {
+	const start = performance.now();
 	await termdom.render();
+	// Most calls coalesce into an in-flight frame and return at once; the peak
+	// is the cost of a frame that actually painted.
+	renderPeak = Math.max(renderPeak, performance.now() - start);
+	renderCount++;
 });
 observer.observe(document.body, {
 	childList: true,
