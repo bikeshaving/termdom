@@ -195,31 +195,45 @@ For a transcript that reflows rarely, that is the right trade. An app that reflo
 *often* would bury the user in copies -- and that is the app telling you it is a
 document, not a transcript, and belongs in the alt buffer.
 
-### Re-anchoring on a vertical resize
+### Re-anchoring on a resize
 
-A resize moves two things, and only one of them is guessable.
+A resize moves our content by an amount that depends on text we do not own: the
+terminal rewraps everything on screen, including the shell prompt above us, and
+scrolls to keep the cursor visible. Guessing the shift from our own bookkeeping
+strands a copy of the old frame wherever the guess is wrong -- the double-render
+seen when dragging a window around.
 
-**Horizontal** (width) is the reflow above: a long shell prompt above the frame
-rewraps and shifts where our content begins, by an amount that depends on text we
-do not own. Not computable. This is the residual reprint-a-copy case above.
+Two invariants make the new position exactly recoverable instead:
 
-**Vertical** (height) is computable exactly. When the terminal loses rows it
-scrolls up to keep the cursor -- the bottom of our content -- on screen, and the
-command start rides up with it by the same amount. After laying out at the new
-size we know the content's height, so we know how far its bottom overflowed the
-new height:
+1. **The cursor is parked on the content's bottom row after every frame.** A raw
+   diff leaves the cursor at the last cell it happened to change; parking makes
+   its resting place deterministic, and the cursor rides its line through the
+   terminal's rewrap.
+2. **Every painted row is a hard line.** Frames are written with explicit
+   positioning, never through the right margin, so the old frame's rewrapped
+   height at the new width is computable from the previous frame's own line
+   lengths: `ceil(len / cols)` per row.
+
+So on resize, ask the terminal where the cursor is (DSR `\x1b[6n`) and subtract:
 
 ```
-scrolledUp = max(0, previousStart + contentHeight - newHeight)
-startRow   = max(0, previousStart - scrolledUp)
+startRow = max(0, cursorRow - (wrappedHeight - 1))
 ```
 
-Redrawing from `startRow` instead of the stale `previousStart` lands the frame
-where the terminal actually scrolled it to, so the visible viewport shows the
-frame once. Without it, the frame is drawn too low and the old top row is orphaned
-above the new render -- the double-render seen when dragging a window shorter. When
-the content is genuinely taller than the shrunk viewport, the overflow still goes
-into scrollback: that is not corruption, only content that no longer fits.
+That is the frame's new top row -- ground truth, immune to how anything above
+reflowed. Renders are suppressed from the first SIGWINCH until this re-anchored
+redraw, so animation ticks cannot paint at a stale anchor while the terminal is
+rewrapping or the query is in flight. If the terminal never answers, the
+fallback is the computed vertical re-anchor
+(`max(0, previousStart + contentHeight - newHeight)` rows up), exact for pure
+height changes.
+
+What still reaches the scrollback is only physics: content genuinely taller
+than the shrunk screen commits, as any command's output would, and a frame that
+balloons past the screen top when narrowed rewraps inside the terminal before
+any process hears about the resize. The visible screen shows the frame exactly
+once in every case.
+
 
 ## Future Enhancements
 

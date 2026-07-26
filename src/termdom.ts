@@ -162,6 +162,10 @@ export class TermDOM {
 	// at the wrong rows and scrolls a stray copy into the scrollback. Only the
 	// final redraw that handleResize issues is allowed through.
 	private resizeInProgress = false;
+	// Bumped on every SIGWINCH. The re-anchor waits on an async cursor query;
+	// if another resize lands while it is in flight, the stale response must not
+	// trigger a redraw at coordinates that no longer mean anything.
+	private resizeEpoch = 0;
 
 	// Promise that resolves when cursor detection completes (or times out)
 	private cursorDetectionPromise: Promise<void> | null = null;
@@ -416,6 +420,7 @@ export class TermDOM {
 		// A resize is settling: suppress every render until handleResize issues the
 		// single re-anchored redraw. See resizeInProgress.
 		if (this.resizeInProgress) {
+			this.debugLog("render SUPPRESSED (resizeInProgress)");
 			return;
 		}
 
@@ -529,6 +534,9 @@ export class TermDOM {
 			: -this.scrollingManager.getScrollTop();
 
 		const cursorPosition = this.hasDetectedCommandStart ? startRow : undefined;
+		this.debugLog(
+			`frame start=${startRow} contentH=${contentHeight} committed=${this.committedRows} cursorPos=${cursorPosition ?? "DECRC"} screenTop=${this.scrollingManager.getScreenTop()}`,
+		);
 
 		const ansi = this.renderer.renderFrame(
 			viewportOffset,
@@ -544,6 +552,9 @@ export class TermDOM {
 		if (flow) {
 			const scrolled = Math.max(0, startRow + regionRows - this.height);
 			if (scrolled > 0) {
+				this.debugLog(
+					`COMMIT scrolled=${scrolled} newCommitted=${this.committedRows + scrolled} newScreenTop=${Math.max(0, startRow - scrolled)}`,
+				);
 				this.committedRows += scrolled;
 				this.scrollingManager.setScreenTop(Math.max(0, startRow - scrolled));
 			}
@@ -1012,11 +1023,27 @@ export class TermDOM {
 	 * the length of the drag rather than the fact that it happened. Waiting for the
 	 * drag to settle turns the whole gesture into one redraw, and one lot of crud.
 	 */
+	private debugLog(message: string): void {
+		// Temporary live-debug tap, active only when TERMDOM_DEBUG_LOG names a file.
+		const path = this.process.env?.TERMDOM_DEBUG_LOG;
+		if (!path) return;
+		try {
+			// eslint-disable-next-line @typescript-eslint/no-require-imports
+			require("fs").appendFileSync(path, `${Date.now() % 100000} ${message}\n`);
+		} catch {
+			/* ignore */
+		}
+	}
+
 	private scheduleResize(): void {
 		// Suppress renders from the very first SIGWINCH, before the debounce
 		// settles, so a drag's worth of animation ticks cannot paint at the stale
 		// anchor while the terminal is rewrapping under us.
+		this.debugLog(
+			`SIGWINCH -> ${this.process.stdout.columns}x${this.process.stdout.rows} (was ${this.width}x${this.height})`,
+		);
 		this.resizeInProgress = true;
+		this.resizeEpoch++;
 		if (this.resizeTimer !== null) clearTimeout(this.resizeTimer);
 		this.resizeTimer = setTimeout(() => {
 			this.resizeTimer = null;
@@ -1047,39 +1074,85 @@ export class TermDOM {
 		this.renderer.resize(newHeight, newWidth);
 		this.layoutEngine.resize(newWidth, newHeight);
 
-		// Where our content begins is our record of the command-start row. On a
-		// resize that row can move, and we redraw from a stale value if we do not
-		// account for it -- which orphans the top of the old frame above the new one.
+		// Re-anchor and redraw. The terminal has already rewrapped everything on
+		// screen -- including our old frame -- and how far our content moved depends
+		// on text above us that we do not own. But two facts make its new position
+		// exactly recoverable:
 		//
-		// The move we *can* compute exactly is the vertical scroll. When the terminal
-		// loses rows it scrolls up to keep the cursor -- the bottom of our content --
-		// on screen, and the command start rides up with it. After a layout at the new
-		// size we know the content's height, so we know how far the bottom overflowed
-		// the new height, and therefore how far everything scrolled.
+		//   1. The cursor is parked on our content's bottom row after every frame,
+		//      and it rides its line through the rewrap (renderFrame parks it).
+		//   2. Every row we paint is a hard line, so the old frame's rewrapped
+		//      height is computable from the previous frame's own line lengths.
 		//
-		// (The horizontal case -- a long shell prompt above us rewrapping and shifting
-		// our start -- is not computable this way, and is left as the small residual
-		// documented in SCROLLBACK.md.)
+		// So: ask the terminal where the cursor is (DSR), subtract the rewrapped
+		// height, and that is our frame's new top row -- ground truth, immune to
+		// whatever the shell prompt above did. Anything that ballooned past the
+		// screen top is in the scrollback, beyond rewriting; the redraw's erase
+		// covers everything from the recovered top down, so the visible screen
+		// carries exactly one copy.
+		//
+		// resizeInProgress has suppressed every animation tick since the first
+		// SIGWINCH, so nothing paints at a stale anchor while the query is in
+		// flight. If the terminal does not answer, fall back to the computed
+		// vertical re-anchor (exact for height changes, approximate for width).
 		this.layoutEngine.calculateLayout();
 		const contentHeight = this.document.body.scrollHeight;
-		const previousStart = this.scrollingManager.getScreenTop();
-		const scrolledUp = Math.max(0, previousStart + contentHeight - newHeight);
-		const startRow = Math.max(0, previousStart - scrolledUp);
+		const wrappedHeight = this.renderer.wrappedContentHeightAt(newWidth);
+		const epoch = this.resizeEpoch;
 
-		this.committedRows = 0;
-		this.foldAnchor = null;
-		this.scrollingManager.setScreenTop(startRow);
-		this.scrollingManager.scrollToCommandStart();
-		this.renderer.resetScreen(startRow);
+		const redraw = (startRow: number) => {
+			this.committedRows = 0;
+			this.foldAnchor = null;
+			this.scrollingManager.setScreenTop(startRow);
+			this.scrollingManager.scrollToCommandStart();
+			this.renderer.resetScreen(startRow);
 
-		// Everything suppressed since the first SIGWINCH may paint again. The frame
-		// is placed by the screen reset, not by cursor detection.
-		this.resizeInProgress = false;
-		const wasDetected = this.hasDetectedCommandStart;
-		this.hasDetectedCommandStart = false;
-		this.render().then(() => {
-			this.hasDetectedCommandStart = wasDetected;
-		});
+			// Everything suppressed since the first SIGWINCH may paint again. The
+			// frame is placed by the screen reset, not by cursor detection.
+			this.resizeInProgress = false;
+			const wasDetected = this.hasDetectedCommandStart;
+			this.hasDetectedCommandStart = false;
+			this.render().then(() => {
+				this.hasDetectedCommandStart = wasDetected;
+			});
+		};
+
+		const computedReanchor = () => {
+			const previousStart = this.scrollingManager.getScreenTop();
+			const scrolledUp = Math.max(0, previousStart + contentHeight - newHeight);
+			return Math.max(0, previousStart - scrolledUp);
+		};
+
+		if (
+			this.detectCursorEnabled &&
+			this.process.stdin?.isTTY &&
+			wrappedHeight !== null
+		) {
+			this.queryCursorRow()
+				.then((cursorRow) => {
+					// A newer resize superseded this one; its handler will redraw.
+					if (epoch !== this.resizeEpoch) return;
+					const startRow = Math.max(0, cursorRow - (wrappedHeight - 1));
+					this.debugLog(
+						`handleResize ${newWidth}x${newHeight} DSR row=${cursorRow} wrappedH=${wrappedHeight} -> startRow=${startRow}`,
+					);
+					redraw(startRow);
+				})
+				.catch(() => {
+					if (epoch !== this.resizeEpoch) return;
+					const startRow = computedReanchor();
+					this.debugLog(
+						`handleResize ${newWidth}x${newHeight} DSR FAILED, computed -> startRow=${startRow}`,
+					);
+					redraw(startRow);
+				});
+		} else {
+			const startRow = computedReanchor();
+			this.debugLog(
+				`handleResize ${newWidth}x${newHeight} computed (no DSR) contentH=${contentHeight} -> startRow=${startRow}`,
+			);
+			redraw(startRow);
+		}
 	}
 
 	/** The measurement surface the observers read each frame. See ObserverHost. */
@@ -1914,6 +1987,56 @@ export class TermDOM {
 					reject(new Error("Timeout waiting for cursor position response"));
 				}
 			}, 1000);
+		});
+	}
+
+	/**
+	 * Ask the terminal where the cursor is (DSR) and resolve with its 0-based row.
+	 *
+	 * Used by the resize re-anchor: the cursor is parked on our content's bottom
+	 * row after every frame, so after a rewrap its position names where the frame
+	 * actually ended up. Rejects on timeout so the caller can fall back to a
+	 * computed anchor.
+	 */
+	private queryCursorRow(): Promise<number> {
+		return new Promise<number>((resolve, reject) => {
+			if (!this.process.stdin?.isTTY) {
+				reject(new Error("stdin is not a TTY"));
+				return;
+			}
+
+			let responseBuffer = "";
+			const finish = () => {
+				this.cursorDetectionHandler = null;
+				if (this.cursorDetectionTimer !== null) {
+					clearTimeout(this.cursorDetectionTimer);
+					this.cursorDetectionTimer = null;
+				}
+			};
+
+			this.cursorDetectionHandler = (dataStr: string) => {
+				responseBuffer += dataStr;
+				const match = responseBuffer.match(/\x1b\[(\d+);(\d+)R/);
+				if (match) {
+					finish();
+					resolve(parseInt(match[1], 10) - 1);
+				}
+			};
+
+			this.process.stdout.write("\x1b[6n");
+			if (typeof (this.process.stdout as any)._flush === "function") {
+				(this.process.stdout as any)._flush();
+			}
+
+			// Short timeout: the redraw should feel immediate, and a terminal that
+			// does not answer promptly falls back to the computed re-anchor.
+			this.cursorDetectionTimer = setTimeout(() => {
+				this.cursorDetectionTimer = null;
+				if (this.cursorDetectionHandler) {
+					this.cursorDetectionHandler = null;
+					reject(new Error("Timeout waiting for cursor position response"));
+				}
+			}, 200);
 		});
 	}
 

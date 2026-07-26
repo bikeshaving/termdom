@@ -882,3 +882,46 @@ test("the cursor parks at the content bottom after every frame", async () => {
 
 	dom.dispose();
 });
+
+test("a width resize re-anchors via the parked cursor, not guesswork", async () => {
+	// A width change makes the terminal rewrap our old frame in place, moving our
+	// content by an amount that depends on text above us that we do not own.
+	// Guessing strands a copy of the old frame wherever the guess is wrong. The
+	// re-anchor instead queries the cursor -- parked on the content's bottom row,
+	// riding its line through the rewrap -- and subtracts the old frame's
+	// computable rewrapped height. See "Re-anchoring on a resize" in SCROLLBACK.md.
+	const terminal = new MockProcess({rows: 20, cols: 60});
+	await new Promise<void>((resolve) => {
+		terminal.stdout.write("PREV-A\r\nPREV-B\r\n", () => resolve());
+	});
+	const dom = new TermDOM({process: terminal, detectCursor: true});
+	dom.document.body.innerHTML =
+		`<div>HEADER LINE THAT IS FAIRLY LONG AND WILL WRAP WHEN NARROW</div>` +
+		`<div>short one</div><div>short two</div><div>short three</div>`;
+	await dom.render();
+	expect(dom.window.screenTop).toBe(2);
+
+	// Narrow enough that the header wraps to two rows.
+	terminal.resize(30, 20);
+	(terminal as any).emit("SIGWINCH");
+	await new Promise((resolve) => setTimeout(resolve, 150));
+
+	const buffer = (terminal as any).terminal.buffer.active;
+	const line = (i: number): string =>
+		(buffer.getLine(i)?.translateToString(true) ?? "").replace(/\s+$/, "");
+
+	// The anchor recovered its true position and the frame appears exactly once.
+	expect(dom.window.screenTop).toBe(2);
+	let headerCopies = 0;
+	for (let i = 0; i < buffer.baseY + 20; i++) {
+		if (line(i).startsWith("HEADER LINE")) headerCopies++;
+	}
+	expect(headerCopies).toBe(1);
+
+	// Prior output is intact above the rewrapped frame.
+	expect(line(0)).toBe("PREV-A");
+	expect(line(1)).toBe("PREV-B");
+	expect(line(2)).toBe("HEADER LINE THAT IS FAIRLY");
+
+	dom.dispose();
+});

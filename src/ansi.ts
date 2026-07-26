@@ -943,6 +943,40 @@ export class Renderer {
 	}
 
 	/**
+	 * How many terminal rows the previously painted frame occupies once the
+	 * terminal rewraps it at `cols` columns.
+	 *
+	 * Every painted row is its own hard line -- frames are written with explicit
+	 * positioning and never through the right margin -- so each rewraps
+	 * independently: an empty row stays one row, and a row whose text spans `len`
+	 * cells becomes ceil(len / cols) rows. Null when nothing has been painted.
+	 *
+	 * Used by the resize re-anchor: the cursor is parked at the frame's bottom,
+	 * so its post-rewrap row minus this height names the frame's new top row
+	 * exactly, no matter how anything above the frame reflowed.
+	 */
+	wrappedContentHeightAt(cols: number): number | null {
+		if (!this.#prevBuffer || this.#prevContentHeight === 0 || cols <= 0) {
+			return null;
+		}
+		const rows = Math.min(this.#prevContentHeight, this.#prevBuffer.length);
+		let wrapped = 0;
+		for (let row = 0; row < rows; row++) {
+			const line = this.#prevBuffer[row];
+			let len = 0;
+			for (let col = line.length - 1; col >= 0; col--) {
+				const cell = line[col];
+				if (cell !== null) {
+					len = col + cell.width;
+					break;
+				}
+			}
+			wrapped += Math.max(1, Math.ceil(len / cols));
+		}
+		return wrapped;
+	}
+
+	/**
 	 * Forget where the current block of output started.
 	 *
 	 * The next frame will anchor itself wherever the cursor now is, rather than
