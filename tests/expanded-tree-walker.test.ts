@@ -1,6 +1,6 @@
 import {test, expect} from "bun:test";
 import {JSDOM} from "jsdom";
-import {TermDOM} from "../src/_termdom.js";
+import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess} from "./test-utils.js";
 import {
 	createExpandedTreeWalker,
@@ -11,7 +11,7 @@ import {
 	getPseudoMetadata,
 	getShadowRoot,
 	getPseudoElement,
-} from "../src/_composition.js";
+} from "../src/internal/composition.js";
 
 // Pure JSDOM Tests (no TermDOM dependency)
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import {TermDOM} from "../src/_termdom.js";
+import {TermDOM} from "../src/internal/termdom.js";
 import {createTable, getCoreRowModel} from "@tanstack/table-core";
 
 const termdom = new TermDOM();

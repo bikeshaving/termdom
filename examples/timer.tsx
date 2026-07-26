@@ -1,4 +1,4 @@
-import {TermDOM} from "../src/_termdom.js";
+import {TermDOM} from "../src/internal/termdom.js";
 import {renderer} from "@b9g/crank/dom";
 
 const termDOM = new TermDOM();

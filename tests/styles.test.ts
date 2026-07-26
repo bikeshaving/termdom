@@ -1,7 +1,7 @@
 import {test, expect, describe} from "bun:test";
 import {JSDOM} from "jsdom";
-import {StyleManager} from "../src/_styles.js";
-import {LayoutEngine} from "../src/_layout.js";
+import {StyleManager} from "../src/internal/styles.js";
+import {LayoutEngine} from "../src/internal/layout.js";
 
 describe("getComputedStyle - What We Support", () => {
 	test("CSS spec defaults", () => {

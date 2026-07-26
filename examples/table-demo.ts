@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
 // First test: Simple HTML table without TanStack
-import {TermDOM} from "../src/_termdom.js";
+import {TermDOM} from "../src/internal/termdom.js";
 
 const termdom = new TermDOM();
 const {document} = termdom;

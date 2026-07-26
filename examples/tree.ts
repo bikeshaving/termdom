@@ -8,7 +8,7 @@
 //
 //   j/k or arrows  move    Enter/l  expand or open    h  collapse or parent
 //   g/G            top/bottom       .  toggle dotfiles    q  quit
-import {TermDOM} from "../src/_termdom.js";
+import {TermDOM} from "../src/internal/termdom.js";
 import {readdirSync} from "node:fs";
 import {join, resolve} from "node:path";
 

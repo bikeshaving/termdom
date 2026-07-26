@@ -7,7 +7,7 @@
 
 import {describe, test, expect, beforeEach} from "bun:test";
 import {MockProcess, stripControlCodes} from "./test-utils.js";
-import {TermDOM} from "../src/_termdom.js";
+import {TermDOM} from "../src/internal/termdom.js";
 
 describe("MockProcess", () => {
 	let terminal: MockProcess;

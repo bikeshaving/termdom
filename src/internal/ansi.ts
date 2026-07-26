@@ -1,6 +1,6 @@
-import LRUCache from "./_utils.js";
-import {BOX_DRAWING, BorderEdgeStyle} from "./_styles.js";
-import {stringWidth as runtimeStringWidth} from "./_runtime.js";
+import LRUCache from "./utils.js";
+import {BOX_DRAWING, BorderEdgeStyle} from "./styles.js";
+import {stringWidth as runtimeStringWidth} from "./runtime.js";
 
 export type ColorDepth = "ansi" | "rgb" | "256";
 

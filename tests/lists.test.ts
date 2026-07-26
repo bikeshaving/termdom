@@ -9,7 +9,7 @@
  */
 
 import {test, expect} from "bun:test";
-import {TermDOM} from "../src/_termdom.js";
+import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess} from "./test-utils.js";
 
 // Test all unordered list style types

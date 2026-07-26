@@ -1,23 +1,23 @@
 import {type EventEmitter} from "events";
 import {type DOMWindow, JSDOM} from "jsdom";
-import {LayoutEngine, isPointInRects} from "./_layout.js";
-import {type ColorDepth, Renderer} from "./_ansi.js";
+import {LayoutEngine, isPointInRects} from "./layout.js";
+import {type ColorDepth, Renderer} from "./ansi.js";
 import {
 	StyleManager,
 	resolveBorderStyles,
 	cssColorToNumber,
 	getBoxModel,
-} from "./_styles.js";
-import {stringWidth} from "./_runtime.js";
-import {FullscreenManager} from "./_fullscreen.js";
+} from "./styles.js";
+import {stringWidth} from "./runtime.js";
+import {FullscreenManager} from "./fullscreen.js";
 import {
 	ObserverManager,
 	type ObserverHost,
 	ResizeObserver as TermResizeObserver,
 	IntersectionObserver as TermIntersectionObserver,
-} from "./_observers.js";
-import {setupInspectMethods} from "./_inspector.js";
-import {ScrollingManager} from "./_scrolling.js";
+} from "./observers.js";
+import {setupInspectMethods} from "./inspector.js";
+import {ScrollingManager} from "./scrolling.js";
 import {
 	createExpandedTreeWalker,
 	type ExpandedTreeWalker,
@@ -25,7 +25,7 @@ import {
 	hasShadowRoot,
 	initializeShadowDOM,
 	getPseudoMetadata,
-} from "./_composition.js";
+} from "./composition.js";
 
 // How long to wait for a resize drag to settle before redrawing. Long enough to
 // coalesce the burst of SIGWINCHes a drag fires, short enough to feel immediate.
@@ -661,7 +661,7 @@ export class TermDOM {
 	// TODO: many of the following methods do not belong on the TermDOM class
 	private renderElement(
 		element: Element,
-		ctx: import("./_ansi.js").DrawingContext,
+		ctx: import("./ansi.js").DrawingContext,
 	): void {
 		// Viewport culling. The buffer only keeps document rows in
 		// [-viewportOffset, -viewportOffset + rows); a subtree whose paint extent
@@ -838,7 +838,7 @@ export class TermDOM {
 
 	private renderOutsideMarker(
 		element: Element,
-		ctx: import("./_ansi.js").DrawingContext,
+		ctx: import("./ansi.js").DrawingContext,
 	): void {
 		const computedStyle = this.window.getComputedStyle(element);
 		const display = computedStyle.getPropertyValue("display");
@@ -923,7 +923,7 @@ export class TermDOM {
 			italic: boolean;
 			underline: boolean;
 		},
-		ctx: import("./_ansi.js").DrawingContext,
+		ctx: import("./ansi.js").DrawingContext,
 	): void {
 		const boxModel = getBoxModel(element);
 		const contentX =
@@ -1011,7 +1011,7 @@ export class TermDOM {
 	 */
 	private renderText(
 		textNode: Text,
-		ctx: import("./_ansi.js").DrawingContext,
+		ctx: import("./ansi.js").DrawingContext,
 	): void {
 		const textContent = textNode.data;
 		if (!textContent) return;

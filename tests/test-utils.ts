@@ -8,7 +8,7 @@ import {
 	type ProcessLike,
 	type TTYWriteStream,
 	type TTYReadStream,
-} from "../src/_termdom.js";
+} from "../src/internal/termdom.js";
 import {EventEmitter} from "events";
 import {Terminal} from "@xterm/headless";
 import {
@@ -16,8 +16,8 @@ import {
 	Cell,
 	createBuffer,
 	type ColorDepth,
-} from "../src/_ansi.js";
-import {generateANSI} from "../src/_ansi.js";
+} from "../src/internal/ansi.js";
+import {generateANSI} from "../src/internal/ansi.js";
 import {writeFileSync, mkdirSync, existsSync} from "fs";
 import {join} from "path";
 

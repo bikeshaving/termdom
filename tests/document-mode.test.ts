@@ -20,7 +20,7 @@
  * document stays a single mutable thing that we repaint a window of.
  */
 import {test, expect} from "bun:test";
-import {TermDOM} from "../src/_termdom.js";
+import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess} from "./test-utils.js";
 
 interface Screen {

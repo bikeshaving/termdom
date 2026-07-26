@@ -5,7 +5,7 @@
 
 import {test, expect} from "bun:test";
 import {MockProcess} from "./test-utils";
-import {TermDOM} from "../src/_termdom.js";
+import {TermDOM} from "../src/internal/termdom.js";
 
 test("findInlineRunHead should find outer inline-block for nested text nodes", async () => {
 	const terminal = new MockProcess({cols: 50, rows: 10});

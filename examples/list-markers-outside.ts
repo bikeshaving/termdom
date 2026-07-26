@@ -1,4 +1,4 @@
-import {TermDOM} from "../src/_termdom.js";
+import {TermDOM} from "../src/internal/termdom.js";
 
 async function runDemo() {
 	console.log("=== List Style Position: Outside Demo ===\n");

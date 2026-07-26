@@ -1,5 +1,5 @@
 import {test, expect, describe} from "bun:test";
-import {TermDOM} from "../src/_termdom.js";
+import {TermDOM} from "../src/internal/termdom.js";
 
 // Simple mock process that captures output
 function createSimpleMockProcess(rows: number = 24, cols: number = 80) {

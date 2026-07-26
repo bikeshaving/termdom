@@ -13,7 +13,7 @@
 
 import {test, expect} from "bun:test";
 import {MockProcess} from "./test-utils";
-import {TermDOM} from "../src/_termdom.js";
+import {TermDOM} from "../src/internal/termdom.js";
 
 // ===== NOWRAP TESTS =====
 

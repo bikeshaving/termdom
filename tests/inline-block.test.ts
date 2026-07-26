@@ -6,7 +6,7 @@
 
 import {test, expect} from "bun:test";
 import {MockProcess} from "./test-utils";
-import {TermDOM} from "../src/_termdom.js";
+import {TermDOM} from "../src/internal/termdom.js";
 
 test("inline-block elements render side by side", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});

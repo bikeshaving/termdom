@@ -38,7 +38,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "libuild build",
+    "build": "libuild build && bun scripts/postbuild.ts",
     "lint": "eslint --ext .js,.jsx,.ts,.tsx .",
     "smoke": "node scripts/smoke.mjs",
     "smoke:deno": "deno run -A --node-modules-dir=manual scripts/smoke.mjs",

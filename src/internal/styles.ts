@@ -10,13 +10,13 @@ import {type DOMWindow} from "jsdom";
 import {
 	cssColorToNumber as runtimeCssColorToNumber,
 	stringWidth,
-} from "./_runtime.js";
+} from "./runtime.js";
 import {
 	attachPseudoElement,
 	clearPseudoElements,
 	removePseudoElement,
-} from "./_composition.js";
-import {type LayoutEngine} from "./_layout.js";
+} from "./composition.js";
+import {type LayoutEngine} from "./layout.js";
 
 /**
  * Helper to get computed style property value for an element.

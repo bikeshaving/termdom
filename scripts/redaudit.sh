@@ -10,13 +10,15 @@ run_counts() { # -> "pass fail"
   f=$(echo "$out" | grep -oE "^ *[0-9]+ fail" | grep -oE "[0-9]+" | head -1)
   echo "${p:-0} ${f:-0}"
 }
-# Sources were renamed src/x.ts -> src/_x.ts when the public module shrank to
-# a single entry. Pre-rename fix commits list historical paths; map each to
-# its current location so the pre-fix content lands where HEAD's imports look.
+# Sources have been renamed twice: src/x.ts -> src/_x.ts (single public
+# module), then src/_x.ts -> src/internal/x.ts (subdirs hide internals).
+# Fix commits list historical paths; map each to its current location so the
+# pre-fix content lands where HEAD's imports look.
 current_path() {
   local f="$1"
   [ -e "$f" ] && { echo "$f"; return; }
-  local mapped="${f%/*}/_${f##*/}"
+  local base="${f##*/}"; base="${base#_}"
+  local mapped="src/internal/$base"
   [ -e "$mapped" ] && { echo "$mapped"; return; }
   echo "$f"
 }
@@ -26,9 +28,10 @@ audit() {
   local restore=()
   for f in "${files[@]}"; do
     local dest; dest=$(current_path "$f")
-    # Pre-rename content imports its siblings by their old names; rewrite the
-    # specifiers so the historical code resolves against today's file names.
-    git show "$commit^:$f" 2>/dev/null | sed -E 's|(["(])\./(ansi\|composition\|flex\|fullscreen\|inspector\|layout\|observers\|runtime\|scrolling\|styles\|termdom\|utils)\.js|\1./_\2.js|g' > "$dest"
+    # Historical content imports siblings by era-specific names. In
+    # src/internal/ the flat "./x.js" form is already correct; only the
+    # underscore era needs mapping back to plain names.
+    git show "$commit^:$f" 2>/dev/null | sed -E 's|(["(])\./_([a-z]+)\.js|\1./\2.js|g' > "$dest"
     [ -s "$dest" ] || { echo "SKIP       $pattern (no $f at $commit^)"; git checkout -q -- "${restore[@]}" "$dest" 2>/dev/null; return; }
     restore+=("$dest")
   done
