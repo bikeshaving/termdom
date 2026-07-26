@@ -164,7 +164,8 @@ function parentOf(row: HTMLElement): HTMLElement | undefined {
 }
 
 async function refresh(): Promise<void> {
-	await termdom.render();
+	// getBoundingClientRect flushes pending mutations itself, so the camera can
+	// be placed before the single paint -- one render per keystroke.
 	rows()[selected]?.scrollIntoView();
 	// At the first row, pull the camera the rest of the way up so the header
 	// shows too -- scrollIntoView alone stops one row short of it.

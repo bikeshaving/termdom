@@ -829,6 +829,15 @@ export class LayoutEngine {
 		}
 		this.invalidatedNodes.clear();
 
+		// Every mutation path marks the flex tree dirty on its way in -- style
+		// setters, child insertion/removal, inline-run invalidation, resize. A
+		// clean root therefore means the previous layout is still exact, and
+		// recomputing it would be pure waste: an animation repainting one span
+		// used to pay a full-tree relayout on every frame.
+		if (!this.viewportRootNode.dirty) {
+			return;
+		}
+
 		// Calculate layout using viewport root node (terminal dimensions)
 		// The HTML element can now have auto height and reference viewport via percentages
 		this.viewportRootNode.calculateLayout(
