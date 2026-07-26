@@ -26,7 +26,10 @@ audit() {
   local restore=()
   for f in "${files[@]}"; do
     local dest; dest=$(current_path "$f")
-    git show "$commit^:$f" > "$dest" 2>/dev/null || { echo "SKIP       $pattern (no $f at $commit^)"; git checkout -q -- "${restore[@]}" 2>/dev/null; return; }
+    # Pre-rename content imports its siblings by their old names; rewrite the
+    # specifiers so the historical code resolves against today's file names.
+    git show "$commit^:$f" 2>/dev/null | sed -E 's|(["(])\./(ansi\|composition\|flex\|fullscreen\|inspector\|layout\|observers\|runtime\|scrolling\|styles\|termdom\|utils)\.js|\1./_\2.js|g' > "$dest"
+    [ -s "$dest" ] || { echo "SKIP       $pattern (no $f at $commit^)"; git checkout -q -- "${restore[@]}" "$dest" 2>/dev/null; return; }
     restore+=("$dest")
   done
   read -r rp rf <<< "$(run_counts "$testfile" "$pattern")"
@@ -40,6 +43,9 @@ audit fc25555 tests/document-mode.test.ts "coalesced, not dropped" src/termdom.t
 audit 49f82f4 tests/layout-invalidation.test.ts "swallow later mutations" src/layout.ts
 audit cafc966 tests/keyboard.test.ts "batched chunk of arrow sequences" src/termdom.ts
 audit cafc966 tests/keyboard.test.ts "packed behind a stray cursor report" src/termdom.ts
+# Expected NEVER-RED: pre-culling code paints everything, so it cannot wrongly
+# cull. This test's true red is an UNSOUND culling implementation (extent = own
+# box, ignoring children) -- verified by sabotage on 2026-07-26.
 audit 057ad8c tests/document-mode.test.ts "absolute child positioned far" src/flex.ts src/layout.ts src/termdom.ts
 audit 730ba9f tests/keyboard.test.ts "parks the real terminal cursor" src/termdom.ts src/ansi.ts
 audit e07b992 tests/keyboard.test.ts "wide characters in an input" src/termdom.ts
