@@ -2005,23 +2005,36 @@ export class TermDOM {
 				return;
 			}
 
+			// Queries can overlap: a drag fires resizes faster than the terminal
+			// answers, and each handleResize issues its own query. The handler and
+			// timer live in shared instance slots (so stdin routing and dispose can
+			// see them), so every cleanup must check identity before clearing --
+			// otherwise a superseded query's cleanup kills its successor's handler
+			// and timeout, and that resize never redraws at all.
 			let responseBuffer = "";
-			const finish = () => {
-				this.cursorDetectionHandler = null;
-				if (this.cursorDetectionTimer !== null) {
-					clearTimeout(this.cursorDetectionTimer);
-					this.cursorDetectionTimer = null;
-				}
-			};
+			let localTimer: ReturnType<typeof setTimeout> | null = null;
 
-			this.cursorDetectionHandler = (dataStr: string) => {
+			const handler = (dataStr: string) => {
 				responseBuffer += dataStr;
 				const match = responseBuffer.match(/\x1b\[(\d+);(\d+)R/);
 				if (match) {
-					finish();
+					if (this.cursorDetectionHandler === handler) {
+						this.cursorDetectionHandler = null;
+					}
+					if (localTimer !== null) {
+						clearTimeout(localTimer);
+						if (this.cursorDetectionTimer === localTimer) {
+							this.cursorDetectionTimer = null;
+						}
+						localTimer = null;
+					}
 					resolve(parseInt(match[1], 10) - 1);
 				}
 			};
+
+			// Replacing a stale handler is fine: its own timeout still fires and
+			// rejects it, and the caller's epoch check discards the stale result.
+			this.cursorDetectionHandler = handler;
 
 			this.process.stdout.write("\x1b[6n");
 			if (typeof (this.process.stdout as any)._flush === "function") {
@@ -2030,13 +2043,17 @@ export class TermDOM {
 
 			// Short timeout: the redraw should feel immediate, and a terminal that
 			// does not answer promptly falls back to the computed re-anchor.
-			this.cursorDetectionTimer = setTimeout(() => {
-				this.cursorDetectionTimer = null;
-				if (this.cursorDetectionHandler) {
+			localTimer = setTimeout(() => {
+				if (this.cursorDetectionHandler === handler) {
 					this.cursorDetectionHandler = null;
-					reject(new Error("Timeout waiting for cursor position response"));
 				}
+				if (this.cursorDetectionTimer === localTimer) {
+					this.cursorDetectionTimer = null;
+				}
+				localTimer = null;
+				reject(new Error("Timeout waiting for cursor position response"));
 			}, 200);
+			this.cursorDetectionTimer = localTimer;
 		});
 	}
 
