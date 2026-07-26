@@ -1646,12 +1646,15 @@ export class LayoutEngine {
 						this.#invalidateInlineRun(element);
 					}
 				}
-				return;
+				// On to the next record -- returning here would silently drop every
+				// remaining mutation in the batch, so a class flip followed by a
+				// sibling's text change lost the text change entirely.
+				continue;
 			} else if (record.type === "characterData") {
 				const textNode = record.target as Text;
 				// Invalidate the inline run containing this text node
 				this.#invalidateInlineRun(textNode);
-				return;
+				continue;
 			}
 
 			// Handle added nodes
