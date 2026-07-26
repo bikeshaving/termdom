@@ -960,16 +960,13 @@ export class TermDOM {
 
 		ctx.setText(contentX, contentY, visibleText, textStyle);
 
-		// Render cursor if focused (inverse video on cursor position)
+		// The caret of a focused input is the REAL terminal cursor, parked there
+		// by the frame -- not an inverse-video imitation. IME composition, screen
+		// readers and the terminal's own cursor style all anchor to the real one.
 		if (isFocused) {
 			const cursorX = contentX + (cursor - scrollOffset);
 			if (cursorX >= contentX && cursorX < contentX + contentWidth) {
-				const cursorChar =
-					cursor < displayText.length ? displayText[cursor] : " ";
-				ctx.setText(cursorX, contentY, cursorChar, {
-					...textStyle,
-					inverse: true,
-				});
+				ctx.setCaret(cursorX, contentY);
 			}
 		}
 	}
@@ -1198,7 +1195,7 @@ export class TermDOM {
 		// vertical re-anchor (exact for height changes, approximate for width).
 		this.layoutEngine.calculateLayout();
 		const contentHeight = this.document.body.scrollHeight;
-		const wrappedHeight = this.renderer.wrappedContentHeightAt(newWidth);
+		const wrappedRowsAbove = this.renderer.wrappedRowsAboveCursorPark(newWidth);
 		const epoch = this.resizeEpoch;
 
 		const redraw = (startRow: number) => {
@@ -1227,15 +1224,15 @@ export class TermDOM {
 		if (
 			this.detectCursorEnabled &&
 			this.process.stdin?.isTTY &&
-			wrappedHeight !== null
+			wrappedRowsAbove !== null
 		) {
 			this.queryCursorRow()
 				.then((cursorRow) => {
 					// A newer resize superseded this one; its handler will redraw.
 					if (epoch !== this.resizeEpoch) return;
-					const startRow = Math.max(0, cursorRow - (wrappedHeight - 1));
+					const startRow = Math.max(0, cursorRow - wrappedRowsAbove);
 					this.debugLog(
-						`handleResize ${newWidth}x${newHeight} DSR row=${cursorRow} wrappedH=${wrappedHeight} -> startRow=${startRow}`,
+						`handleResize ${newWidth}x${newHeight} DSR row=${cursorRow} rowsAbove=${wrappedRowsAbove} -> startRow=${startRow}`,
 					);
 					redraw(startRow);
 				})
@@ -1541,6 +1538,11 @@ export class TermDOM {
 		}
 
 		(focusable[nextIndex] as HTMLElement).focus();
+
+		// Focus is not a DOM mutation, so no observer will schedule a frame -- but
+		// :focus styling and the caret (the real terminal cursor, parked in the
+		// focused field) both need one to move.
+		void this.render();
 	}
 
 	/**

@@ -679,6 +679,11 @@ export class DrawingContext {
 	rows: number;
 	cols: number;
 	viewportOffset: number;
+	// Where the focused text element wants the real terminal cursor, in the
+	// same coordinates setText uses. When set, the frame parks the cursor there
+	// and shows it -- IME composition anchors at the real cursor, so a fake
+	// inverse-cell caret is not enough for text entry.
+	caret: {col: number; row: number} | null = null;
 
 	constructor(
 		buffer: CellBuffer,
@@ -690,6 +695,10 @@ export class DrawingContext {
 		this.rows = rows;
 		this.cols = cols;
 		this.viewportOffset = viewportOffset;
+	}
+
+	setCaret(x: number, y: number): void {
+		this.caret = {col: x, row: y};
 	}
 
 	fillRect(
@@ -923,6 +932,12 @@ export class Renderer {
 	#renderedLines: Set<number> = new Set();
 	#prevOffset: number = 0;
 	#prevContentHeight: number = 0;
+	// Where the last frame parked the cursor, in buffer coordinates. The resize
+	// re-anchor derives the frame's new top row from the cursor's post-rewrap
+	// position minus the wrapped rows above this park point.
+	#parkRow = 0;
+	#parkCol = 0;
+	#lastCaretVisible = false;
 	#hasSavedCursor: boolean = false;
 	#needsFullClear: boolean = false;
 	#needsScreenReset: boolean = false;
@@ -955,6 +970,43 @@ export class Renderer {
 	 * so its post-rewrap row minus this height names the frame's new top row
 	 * exactly, no matter how anything above the frame reflowed.
 	 */
+	/**
+	 * How many terminal rows sit above the parked cursor once the terminal
+	 * rewraps the previously painted frame at `cols` columns.
+	 *
+	 * The resize re-anchor asks the terminal where the cursor is (it rides its
+	 * line through the rewrap) and subtracts this to name the frame's new top
+	 * row. With the default park -- content's last row, column 0 -- this is the
+	 * full wrapped height minus one; with a caret park it is the wrapped rows
+	 * above the caret's line plus the caret's own wrap segment.
+	 */
+	wrappedRowsAboveCursorPark(cols: number): number | null {
+		if (!this.#prevBuffer || this.#prevContentHeight === 0 || cols <= 0) {
+			return null;
+		}
+		const limit = Math.min(
+			this.#parkRow,
+			this.#prevContentHeight,
+			this.#prevBuffer.length,
+		);
+		let wrapped = 0;
+		for (let row = 0; row < limit; row++) {
+			wrapped += Math.max(1, Math.ceil(this.#lineLength(row) / cols));
+		}
+		return wrapped + Math.floor(this.#parkCol / cols);
+	}
+
+	#lineLength(row: number): number {
+		const line = this.#prevBuffer![row];
+		for (let col = line.length - 1; col >= 0; col--) {
+			const cell = line[col];
+			if (cell !== null) {
+				return col + cell.width;
+			}
+		}
+		return 0;
+	}
+
 	wrappedContentHeightAt(cols: number): number | null {
 		if (!this.#prevBuffer || this.#prevContentHeight === 0 || cols <= 0) {
 			return null;
@@ -1207,6 +1259,27 @@ export class Renderer {
 			if (hasContent) break;
 		}
 
+		// A caret appearing, moving, or disappearing must emit a frame even when
+		// no cell changed -- a blurred input leaves no visual diff, but the real
+		// cursor is sitting visible at the stale caret until a frame re-parks it.
+		const caret = context.caret;
+		const caretBufferRow = caret === null ? null : caret.row + offset;
+		const caretVisible =
+			caret !== null &&
+			caretBufferRow !== null &&
+			caretBufferRow >= 0 &&
+			caretBufferRow < this.#rows &&
+			caret.col >= 0 &&
+			caret.col < this.#cols;
+		const caretStateChanged =
+			caretVisible !== this.#lastCaretVisible ||
+			(caretVisible &&
+				(this.#parkRow !== caretBufferRow || this.#parkCol !== caret.col));
+		if (caretStateChanged) {
+			hasContent = true;
+		}
+		this.#lastCaretVisible = caretVisible;
+
 		// Build output with proper framing
 		let prefix = "";
 		let suffix = "";
@@ -1321,28 +1394,49 @@ export class Renderer {
 		this.#prevOffset = overflowing ? offset + (frameRows - this.#rows) : offset;
 		this.#prevContentHeight = contentHeight;
 
-		// Park the cursor on the content's last row before showing it again. A diff
-		// leaves the cursor wherever the last changed cell happened to be -- an
-		// arbitrary row. The terminal preserves the cursor across a resize and
-		// scrolls exactly enough to keep it on screen, so an arbitrary resting row
-		// makes that scroll arbitrary too -- and the resize re-anchor computes the
-		// scroll on the assumption that the cursor sits at the content bottom (see
-		// handleResize). Parking there, where an ordinary program's cursor rests
-		// after printing, makes the terminal's resize behavior deterministic.
+		// Park the cursor before the frame ends. A diff leaves the cursor wherever
+		// the last changed cell happened to be -- an arbitrary row -- and the
+		// terminal preserves the cursor across a resize, scrolling exactly enough
+		// to keep it on screen, so an arbitrary resting place makes that scroll
+		// arbitrary too. The resize re-anchor recovers the frame's position from
+		// wherever the park went (see wrappedRowsAboveCursorPark).
+		//
+		// Two parks:
+		// - A focused text element set a caret: park THERE and show the cursor.
+		//   IME composition anchors at the real terminal cursor, so the caret has
+		//   to be the real cursor, not just an inverse-video cell.
+		// - Otherwise: the content's last row, column 0, hidden -- where an
+		//   ordinary program's cursor rests after printing.
 		let parkOutput = "";
 		if (hasContent && contentHeight > 0) {
-			if (frameStartRow !== undefined) {
-				// 0-based start + height = 1-based last row; the bottom margin caps
-				// it when the content overflows the screen.
-				const lastRow = Math.min(frameStartRow + contentHeight, this.#rows);
-				parkOutput = `\x1b[${lastRow};1H`; // CUP - content bottom
-			} else if (this.#hasSavedCursor) {
-				// No absolute row to name: restore the saved content start, re-save
-				// it, and step down. CUD stops at the bottom margin, which is the
-				// content's visible bottom when it overflows.
-				parkOutput = "\x1b8\x1b7";
-				if (contentHeight > 1) parkOutput += `\x1b[${contentHeight - 1}B`; // CUD
-				parkOutput += "\r";
+			if (caretVisible && caret !== null && caretBufferRow !== null) {
+				this.#parkRow = caretBufferRow;
+				this.#parkCol = caret.col;
+				if (frameStartRow !== undefined) {
+					parkOutput = `\x1b[${frameStartRow + caretBufferRow + 1};${caret.col + 1}H`; // CUP - caret
+				} else if (this.#hasSavedCursor) {
+					parkOutput = "\x1b8\x1b7";
+					if (caretBufferRow > 0) parkOutput += `\x1b[${caretBufferRow}B`; // CUD
+					if (caret.col > 0) parkOutput += `\r\x1b[${caret.col}C`;
+					else parkOutput += "\r";
+				}
+				parkOutput += "\x1b[?25h"; // DECTCEM - the caret is the real cursor
+			} else {
+				this.#parkRow = Math.min(contentHeight, this.#rows) - 1;
+				this.#parkCol = 0;
+				if (frameStartRow !== undefined) {
+					// 0-based start + height = 1-based last row; the bottom margin caps
+					// it when the content overflows the screen.
+					const lastRow = Math.min(frameStartRow + contentHeight, this.#rows);
+					parkOutput = `\x1b[${lastRow};1H`; // CUP - content bottom
+				} else if (this.#hasSavedCursor) {
+					// No absolute row to name: restore the saved content start, re-save
+					// it, and step down. CUD stops at the bottom margin, which is the
+					// content's visible bottom when it overflows.
+					parkOutput = "\x1b8\x1b7";
+					if (contentHeight > 1) parkOutput += `\x1b[${contentHeight - 1}B`; // CUD
+					parkOutput += "\r";
+				}
 			}
 		}
 

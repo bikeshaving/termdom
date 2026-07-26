@@ -443,3 +443,34 @@ test("a lone stray cursor report dispatches nothing", async () => {
 	expect(keys).toEqual([]);
 	dom.dispose();
 });
+
+test("a focused input parks the real terminal cursor at its caret", async () => {
+	// IME composition, screen readers and the terminal's cursor style all anchor
+	// to the real cursor -- an inverse-video cell is not a caret. The frame parks
+	// the cursor at the focused input's caret (and shows it); on blur it returns
+	// to the content bottom, hidden.
+	const terminal = new MockProcess({rows: 12, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	dom.document.body.innerHTML = `<div>title line</div><div><input id="a" type="text"></div>`;
+	const input = dom.document.getElementById("a") as HTMLInputElement;
+	input.focus();
+	await dom.render();
+
+	const buffer = (terminal as any).terminal.buffer.active;
+	const caretRow = buffer.cursorY;
+	const caretCol = buffer.cursorX;
+
+	// Typing advances the real cursor with the caret.
+	(terminal.stdin as any).emit("data", Buffer.from("hey"));
+	await new Promise((resolve) => setTimeout(resolve, 50));
+	expect(buffer.cursorY).toBe(caretRow);
+	expect(buffer.cursorX).toBe(caretCol + 3);
+
+	// Blur re-parks at the content bottom even though no cell changed.
+	input.blur();
+	await dom.render();
+	expect(buffer.cursorY).toBeGreaterThan(caretRow);
+	expect(buffer.cursorX).toBe(0);
+
+	dom.dispose();
+});
