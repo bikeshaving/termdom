@@ -474,3 +474,33 @@ test("a focused input parks the real terminal cursor at its caret", async () => 
 
 	dom.dispose();
 });
+
+test("wide characters in an input measure in cells, not characters", async () => {
+	// CJK glyphs are two cells wide. Character arithmetic put the caret mid-text
+	// -- IME composition then anchored on top of already-typed glyphs, mangling
+	// each committed syllable -- and padEnd by character count pushed the
+	// value's background through the input's right border.
+	const terminal = new MockProcess({rows: 8, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	dom.document.body.innerHTML = `<div><input id="a" type="text" style="width:20ch"></div>`;
+	const input = dom.document.getElementById("a") as HTMLInputElement;
+	input.focus();
+	await dom.render();
+
+	const buffer = (terminal as any).terminal.buffer.active;
+	const line = (i: number): string =>
+		(buffer.getLine(i)?.translateToString(true) ?? "").replace(/\s+$/, "");
+
+	// Commit syllables one at a time, the way an IME delivers them.
+	for (const syllable of ["김", "남", "제"]) {
+		(terminal.stdin as any).emit("data", Buffer.from(syllable));
+		await new Promise((resolve) => setTimeout(resolve, 40));
+	}
+
+	expect(input.value).toBe("김남제");
+	expect(line(1)).toBe("│ 김남제           │"); // border intact, bg contained
+	// Caret sits AFTER six cells of glyphs: contentX (2) + 6.
+	expect(buffer.cursorX).toBe(8);
+
+	dom.dispose();
+});

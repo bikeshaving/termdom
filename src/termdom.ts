@@ -940,23 +940,39 @@ export class TermDOM {
 			displayText = "";
 		}
 
-		// Handle horizontal scrolling
+		// Everything below measures in CELLS, not characters. CJK text is two
+		// cells per glyph, so character arithmetic put the caret mid-text (IME
+		// composition then anchored on top of already-typed glyphs) and padEnd
+		// by character count pushed the value's background straight through the
+		// input's right border.
 		let scrollOffset = this.inputScrollOffsets.get(element) ?? 0;
 		const cursor = this.inputCursorPositions.get(element) ?? value.length;
 
 		if (isFocused) {
-			// Ensure cursor is visible
+			// Keep the caret's CELL offset inside the box.
 			if (cursor < scrollOffset) {
 				scrollOffset = cursor;
-			} else if (cursor >= scrollOffset + contentWidth) {
-				scrollOffset = cursor - contentWidth + 1;
+			}
+			while (
+				scrollOffset < cursor &&
+				stringWidth(displayText.slice(scrollOffset, cursor)) >= contentWidth
+			) {
+				scrollOffset++;
 			}
 			this.inputScrollOffsets.set(element, scrollOffset);
 		}
 
-		const visibleText = displayText
-			.slice(scrollOffset, scrollOffset + contentWidth)
-			.padEnd(contentWidth, " ");
+		// Take characters from the scroll offset until the next one would no
+		// longer fit, then pad with spaces to exactly the content width in cells.
+		let visibleText = "";
+		let usedCells = 0;
+		for (const char of displayText.slice(scrollOffset)) {
+			const charCells = stringWidth(char);
+			if (usedCells + charCells > contentWidth) break;
+			visibleText += char;
+			usedCells += charCells;
+		}
+		visibleText += " ".repeat(Math.max(0, contentWidth - usedCells));
 
 		ctx.setText(contentX, contentY, visibleText, textStyle);
 
@@ -964,7 +980,8 @@ export class TermDOM {
 		// by the frame -- not an inverse-video imitation. IME composition, screen
 		// readers and the terminal's own cursor style all anchor to the real one.
 		if (isFocused) {
-			const cursorX = contentX + (cursor - scrollOffset);
+			const cursorX =
+				contentX + stringWidth(displayText.slice(scrollOffset, cursor));
 			if (cursorX >= contentX && cursorX < contentX + contentWidth) {
 				ctx.setCaret(cursorX, contentY);
 			}
