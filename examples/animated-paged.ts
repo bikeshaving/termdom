@@ -109,6 +109,7 @@ document.addEventListener("keydown", (e: Event) => {
 	const key = (e as KeyboardEvent).key;
 	if (key === "q") {
 		clearInterval(interval);
+		termdom.dispose();
 		process.exit(0);
 	} else if (key === "ArrowDown" || key === "j") {
 		termdom.scrollDocumentBy(1);

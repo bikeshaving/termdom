@@ -1256,7 +1256,10 @@ export class Renderer {
 				this.#needsFullClear = false;
 			}
 
-			suffix += "\x1b[?25h"; // DECTCEM - Show cursor
+			// The cursor stays hidden between frames: it is parked at the content's
+			// bottom-left for resize bookkeeping, and a blinking cursor squatting
+			// there is not UI. Focused inputs paint their own caret as an inverse
+			// cell. dispose() shows the real cursor again on the way out.
 			suffix += "\x1b[?2026l"; // Synchronized output mode (end)
 		}
 

@@ -88,6 +88,30 @@ export interface TermDOMOptions {
 // every hook below is a no-op -- so production pays nothing.
 let trackedInstances: Set<TermDOM> | null = null;
 
+// Frames keep the terminal cursor hidden, and dispose() shows it again -- but
+// an app that calls process.exit() without disposing would strand the user's
+// shell with no cursor. One process-level exit hook restores it for any live
+// interactive instance that skipped dispose. Registered lazily, only for
+// instances driving the real process (never for test mocks).
+const undisposedInteractive = new Set<TermDOM>();
+let exitHookInstalled = false;
+
+function installCursorRestoreOnExit(): void {
+	if (exitHookInstalled) return;
+	exitHookInstalled = true;
+	process.on("exit", () => {
+		for (const instance of undisposedInteractive) {
+			try {
+				(instance as unknown as {process: ProcessLike}).process.stdout.write(
+					"\x1b[?25h",
+				);
+			} catch {
+				// The stream may already be gone; the shell will survive.
+			}
+		}
+	});
+}
+
 /** Begin tracking TermDOM instances for later bulk disposal (test harness only). */
 export function __enableInstanceTracking(): void {
 	trackedInstances ??= new Set<TermDOM>();
@@ -207,6 +231,13 @@ export class TermDOM {
 		this.interactive = this.process.stdout.isTTY !== false;
 		this.detectCursorEnabled =
 			(options.detectCursor ?? this.process === process) && this.interactive;
+
+		// See installCursorRestoreOnExit: if this instance dies without dispose(),
+		// the exit hook hands the user their cursor back.
+		if (this.interactive && this.process === process) {
+			undisposedInteractive.add(this);
+			installCursorRestoreOnExit();
+		}
 
 		this.width = options.width || this.process.stdout.columns || 80;
 		this.height = options.height || this.process.stdout.rows || 24;
@@ -2196,10 +2227,17 @@ export class TermDOM {
 
 	dispose(): void {
 		trackedInstances?.delete(this);
+		undisposedInteractive.delete(this);
 
 		// Document mode has been painting a window in place, so nothing it showed
 		// has reached the terminal's scrollback. Pay it all out now.
 		this.flushDocument();
+
+		// Frames keep the terminal cursor hidden (it is parked for resize
+		// bookkeeping, not UI); hand it back visible on the way out.
+		if (this.interactive) {
+			this.process.stdout.write("\x1b[?25h");
+		}
 
 		// Tear down everything that holds the event loop open. Without this a
 		// disposed TermDOM keeps the process alive -- via the process signal

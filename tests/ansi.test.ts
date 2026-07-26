@@ -208,10 +208,12 @@ describe("Renderer with callback API", () => {
 				ctx.setText(0, 0, "Test");
 			});
 
-			// Should hide cursor, enable sync mode
+			// Should hide cursor and enable sync mode. The cursor stays hidden
+			// between frames -- it is parked for resize bookkeeping, not UI --
+			// and dispose() is what shows it again on the way out.
 			expect(output).toContain("\x1b[?25l"); // Hide cursor
 			expect(output).toContain("\x1b[?2026h"); // Sync mode start
-			expect(output).toContain("\x1b[?25h"); // Show cursor
+			expect(output).not.toContain("\x1b[?25h"); // Cursor stays hidden
 			expect(output).toContain("\x1b[?2026l"); // Sync mode end
 		});
 
