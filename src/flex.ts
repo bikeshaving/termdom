@@ -376,6 +376,14 @@ export class Node {
 	measureFunc: MeasureFunction | null = null;
 	config: Config;
 	dirty = true;
+	// The vertical span this node's subtree can paint, in absolute document
+	// rows -- its own box unioned with every descendant's, which absolutely
+	// positioned children can push outside the parent box. Recomputed by
+	// computePaintExtents after each layout pass; used for viewport culling.
+	// (Text that overflows a fixed-height box is not included: the box is the
+	// extent. Auto-height boxes -- the normal case -- always contain theirs.)
+	extentTop = 0;
+	extentBottom = 0;
 
 	constructor(config: Config = defaultConfig) {
 		this.config = config;
@@ -428,6 +436,20 @@ export class Node {
 	markDirty(): void {
 		this.dirty = true;
 		this.markDirtyUpward();
+	}
+
+	/** Recompute paint extents for this subtree. See extentTop/extentBottom. */
+	computePaintExtents(originTop: number): void {
+		const top = originTop + this.layout.top;
+		let extentTop = top;
+		let extentBottom = top + this.getComputedHeight();
+		for (const child of this.children) {
+			child.computePaintExtents(top);
+			if (child.extentTop < extentTop) extentTop = child.extentTop;
+			if (child.extentBottom > extentBottom) extentBottom = child.extentBottom;
+		}
+		this.extentTop = extentTop;
+		this.extentBottom = extentBottom;
 	}
 
 	private markDirtyUpward(): void {
@@ -743,6 +765,7 @@ export class Node {
 		);
 
 		roundToGrid(this, 0, 0);
+		this.computePaintExtents(0);
 		this.dirty = false;
 	}
 }

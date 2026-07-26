@@ -603,6 +603,22 @@ export class TermDOM {
 		element: Element,
 		ctx: import("./ansi.js").DrawingContext,
 	): void {
+		// Viewport culling. The buffer only keeps document rows in
+		// [-viewportOffset, -viewportOffset + rows); a subtree whose paint extent
+		// lies wholly outside that band would be walked -- styles computed, text
+		// shaped, borders drawn -- and then discarded cell by cell. Skip it here
+		// and the paint costs what is on screen, not what is in the document.
+		const bandTop = -ctx.viewportOffset;
+		if (
+			this.layoutEngine.isSubtreeOutsideBand(
+				element,
+				bandTop,
+				bandTop + ctx.rows,
+			)
+		) {
+			return;
+		}
+
 		const rect = this.layoutEngine.getRect(element);
 
 		const color = this.window
@@ -697,6 +713,19 @@ export class TermDOM {
 			childNode;
 			childNode = walker.nextSibling()
 		) {
+			// Cull before the z-index style read: an off-band child costs one map
+			// lookup instead of a computed-style resolution, which is what keeps a
+			// wide container of mostly off-screen children O(screen).
+			if (
+				childNode.nodeType === childNode.ELEMENT_NODE &&
+				this.layoutEngine.isSubtreeOutsideBand(
+					childNode as Element,
+					bandTop,
+					bandTop + ctx.rows,
+				)
+			) {
+				continue;
+			}
 			children.push({
 				node: childNode,
 				zIndex:

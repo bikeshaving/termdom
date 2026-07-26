@@ -805,6 +805,14 @@ export class LayoutEngine {
 	}
 
 	calculateLayout() {
+		// Nothing marked dirty and nothing awaiting re-add: the previous layout
+		// still holds, and even the pruning sweep below -- O(nodes) isConnected
+		// checks -- is not worth paying. Every mutation path dirties the tree on
+		// its way in, so a clean tree cannot be hiding a disconnection.
+		if (!this.viewportRootNode.dirty && this.invalidatedNodes.size === 0) {
+			return;
+		}
+
 		// Drop nodes whose DOM node is gone. Callers may invoke calculateLayout()
 		// synchronously after a DOM removal, before the MutationObserver microtask
 		// has run, which would otherwise leave the removed node attached here and
@@ -899,6 +907,21 @@ export class LayoutEngine {
 			return Math.ceil(bodyRect.height);
 		}
 		return 0;
+	}
+
+	/**
+	 * True when nothing in the element's subtree can paint inside the document
+	 * rows [top, bottom) -- its cached paint extent (own box unioned with every
+	 * descendant's, absolutes included) lies entirely outside the band.
+	 *
+	 * Conservative: an element without its own layout node is never culled, and
+	 * a stale answer is impossible because extents are recomputed with layout
+	 * and layout is recomputed whenever the tree is dirty.
+	 */
+	isSubtreeOutsideBand(element: Element, top: number, bottom: number): boolean {
+		const node = this.nodeMap.get(element);
+		if (!node) return false;
+		return node.extentBottom <= top || node.extentTop >= bottom;
 	}
 
 	getRect(element: Element): DOMRect | null {

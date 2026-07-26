@@ -230,3 +230,33 @@ test("a render arriving mid-frame is coalesced, not dropped", async () => {
 
 	dom.dispose();
 });
+
+test("culling never drops an absolute child positioned far from its parent", async () => {
+	// Paint is culled by subtree extent, not by the element's own box: an
+	// absolutely positioned child can sit far outside its parent. The extent is
+	// the union of the box with every descendant's, so the parent survives
+	// culling and the deep child paints when the camera reaches it.
+	const terminal = new MockProcess({rows: 10, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	dom.setViewportMode("document");
+	dom.document.body.innerHTML =
+		`<div style="position:relative">top row` +
+		`<div style="position:absolute;top:45ch;left:0">ABS-DEEP</div></div>` +
+		Array.from({length: 58}, (_, i) => `<div>row ${i + 1}</div>`).join("");
+	await dom.render();
+
+	dom.scrollDocumentBy(42);
+	await dom.render();
+
+	const screen = read(terminal, 10);
+	// The absolute child paints at document row 45 -- visible row 3 with the
+	// camera at 42 -- even though its parent's own box is far above the band.
+	expect(screen.viewport[3]).toContain("EP");
+
+	// And scrolling back re-reveals the culled top correctly.
+	dom.scrollDocumentBy(-42);
+	await dom.render();
+	expect(read(terminal, 10).viewport[0]).toBe("top row");
+
+	dom.dispose();
+});
