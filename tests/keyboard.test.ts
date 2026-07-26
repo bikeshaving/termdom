@@ -392,6 +392,7 @@ test("a batched chunk of plain keys dispatches one keydown per key", async () =>
 	// that treats a chunk as one key swallows the rest.
 	const terminal = new MockProcess({rows: 10, cols: 40});
 	const dom = new TermDOM({process: terminal});
+	dom.attach(); // stdin listeners live behind attach(), not the constructor
 	const keys: string[] = [];
 	dom.document.addEventListener("keydown", (e: Event) =>
 		keys.push((e as KeyboardEvent).key),
@@ -408,6 +409,7 @@ test("a batched chunk of arrow sequences dispatches one keydown per arrow", asyn
 	// behind the keyboard.
 	const terminal = new MockProcess({rows: 10, cols: 40});
 	const dom = new TermDOM({process: terminal});
+	dom.attach(); // stdin listeners live behind attach(), not the constructor
 	const keys: string[] = [];
 	dom.document.addEventListener("keydown", (e: Event) =>
 		keys.push((e as KeyboardEvent).key),
@@ -423,6 +425,7 @@ test("keys packed behind a stray cursor report still dispatch", async () => {
 	// be dropped, and every key around it must still arrive.
 	const terminal = new MockProcess({rows: 10, cols: 40});
 	const dom = new TermDOM({process: terminal});
+	dom.attach(); // stdin listeners live behind attach(), not the constructor
 	const keys: string[] = [];
 	dom.document.addEventListener("keydown", (e: Event) =>
 		keys.push((e as KeyboardEvent).key),
@@ -435,6 +438,7 @@ test("keys packed behind a stray cursor report still dispatch", async () => {
 test("a lone stray cursor report dispatches nothing", async () => {
 	const terminal = new MockProcess({rows: 10, cols: 40});
 	const dom = new TermDOM({process: terminal});
+	dom.attach(); // stdin listeners live behind attach(), not the constructor
 	const keys: string[] = [];
 	dom.document.addEventListener("keydown", (e: Event) =>
 		keys.push((e as KeyboardEvent).key),

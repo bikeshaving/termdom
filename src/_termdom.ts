@@ -148,6 +148,7 @@ export class TermDOM {
 	// flight sets renderQueued rather than being dropped, so a trailing frame runs.
 	private isRendering = false;
 	private renderQueued = false;
+	private renderInFlight: Promise<void> | null = null;
 
 	// Monotonic frame counter, used to timestamp observer entries.
 	private renderCount = 0;
@@ -186,6 +187,10 @@ export class TermDOM {
 	// at the wrong rows and scrolls a stray copy into the scrollback. Only the
 	// final redraw that handleResize issues is allowed through.
 	private resizeInProgress = false;
+	// Whether we have taken hold of the terminal: raw mode, signal handlers,
+	// the stdin listener and the cursor query. Construction never touches the
+	// process -- attach() does, lazily on the first render or explicitly.
+	private attached = false;
 	// Bumped on every SIGWINCH. The re-anchor waits on an async cursor query;
 	// if another resize lands while it is in flight, the stale response must not
 	// trigger a redraw at coordinates that no longer mean anything.
@@ -232,13 +237,6 @@ export class TermDOM {
 		this.detectCursorEnabled =
 			(options.detectCursor ?? this.process === process) && this.interactive;
 
-		// See installCursorRestoreOnExit: if this instance dies without dispose(),
-		// the exit hook hands the user their cursor back.
-		if (this.interactive && this.process === process) {
-			undisposedInteractive.add(this);
-			installCursorRestoreOnExit();
-		}
-
 		this.width = options.width || this.process.stdout.columns || 80;
 		this.height = options.height || this.process.stdout.rows || 24;
 
@@ -281,12 +279,7 @@ export class TermDOM {
 
 		this.observer = this.setupMutationObserver();
 
-		this.setupProcessHandlers();
-
 		// Initial processing of all elements is handled by StyleManager's constructor
-
-		// Initialize cursor position detection if in a TTY environment
-		this.initializeCursorDetection();
 
 		trackedInstances?.add(this);
 	}
@@ -419,6 +412,31 @@ export class TermDOM {
 		return observer;
 	}
 
+	/**
+	 * Take hold of the terminal: raw mode, signal handlers, the stdin listener,
+	 * the cursor-position query, and the exit hook that restores the cursor.
+	 *
+	 * Construction is inert -- a constructor has no business writing escape
+	 * sequences to stdout or flipping stdin into raw mode. Attachment happens
+	 * here, invoked lazily by the first render (so the zero-config path still
+	 * just works) or explicitly by callers that want to control the moment the
+	 * terminal changes hands. Idempotent; dispose() reverses it.
+	 */
+	attach(): void {
+		if (this.attached) return;
+		this.attached = true;
+
+		this.setupProcessHandlers();
+		this.initializeCursorDetection();
+
+		// See installCursorRestoreOnExit: if this instance dies without
+		// dispose(), the exit hook hands the user their cursor back.
+		if (this.interactive && this.process === process) {
+			undisposedInteractive.add(this);
+			installCursorRestoreOnExit();
+		}
+	}
+
 	// TODO: This should be put in an event translator abstraction
 	private setupProcessHandlers(): void {
 		this.sigintHandler = () => {
@@ -481,6 +499,8 @@ export class TermDOM {
 	}
 
 	async render(): Promise<void> {
+		this.attach();
+
 		// A resize is settling: suppress every render until handleResize issues the
 		// single re-anchored redraw. See resizeInProgress.
 		if (this.resizeInProgress) {
@@ -490,22 +510,27 @@ export class TermDOM {
 		// A render in flight: coalesce, don't drop. Dropping an auto-render (a
 		// mutation observer firing mid-frame) leaves the diff renderer's
 		// previous-buffer out of step with the screen, which shows up as rows drawn
-		// at the wrong place. Instead mark one pending and run a trailing frame when
-		// the current one finishes, folding in whatever mutated in the meantime.
+		// at the wrong place. Instead mark one pending and hand back the running
+		// loop's promise: it will fold this caller's changes into a trailing frame,
+		// so awaiting render() always means "what I changed is painted".
 		if (this.isRendering) {
 			this.renderQueued = true;
-			return;
+			return this.renderInFlight ?? Promise.resolve();
 		}
 
 		this.isRendering = true;
-		try {
-			do {
-				this.renderQueued = false;
-				await this.renderOnce();
-			} while (this.renderQueued);
-		} finally {
-			this.isRendering = false;
-		}
+		this.renderInFlight = (async () => {
+			try {
+				do {
+					this.renderQueued = false;
+					await this.renderOnce();
+				} while (this.renderQueued);
+			} finally {
+				this.isRendering = false;
+				this.renderInFlight = null;
+			}
+		})();
+		return this.renderInFlight;
 	}
 
 	private async renderOnce(): Promise<void> {
@@ -1946,6 +1971,9 @@ export class TermDOM {
 	scrollDocumentBy(rows: number): void {
 		if (this.viewportMode !== "document") return;
 		this.documentScrollTop = Math.max(0, this.documentScrollTop + rows);
+		// A camera move is invisible to the MutationObserver; schedule the frame
+		// it needs, the same way a DOM mutation would.
+		void this.render();
 	}
 
 	/**
@@ -2096,6 +2124,7 @@ export class TermDOM {
 	 * Sends \x1b[6n and waits for response \x1b[row;colR
 	 */
 	detectCommandStart(): Promise<number> {
+		this.attach();
 		return new Promise<number>((resolve, reject) => {
 			if (!this.process.stdin?.isTTY) {
 				reject(new Error("Cannot detect cursor position: stdin is not a TTY"));
@@ -2226,6 +2255,7 @@ export class TermDOM {
 	dispose(): void {
 		trackedInstances?.delete(this);
 		undisposedInteractive.delete(this);
+		this.attached = false;
 
 		// Document mode has been painting a window in place, so nothing it showed
 		// has reached the terminal's scrollback. Pay it all out now.
