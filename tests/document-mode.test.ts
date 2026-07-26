@@ -260,3 +260,39 @@ test("culling never drops an absolute child positioned far from its parent", asy
 
 	dom.dispose();
 });
+
+test("growing past the prompt keeps the diff aligned with the screen", async () => {
+	// When a document-mode region grows and reserveRows scrolls the prompt away,
+	// the region top moves up by exactly the scrolled amount -- so the previous
+	// buffer's rows, which are relative to the top, refer to the same content as
+	// before. Shifting them (flow-mode commitScroll semantics) desynced the diff
+	// by that amount: it compared against the wrong screen rows and composited
+	// the old frame under the new one. The adversarial case: new content whose
+	// rows equal the shifted model's rows, so a desynced diff paints nothing.
+	const terminal = new MockProcess({rows: 20, cols: 30});
+	await new Promise<void>((resolve) => {
+		terminal.stdout.write("PREV-1\r\nPREV-2\r\n", () => resolve());
+	});
+	const dom = new TermDOM({process: terminal, detectCursor: true});
+	dom.setViewportMode("document");
+	dom.document.body.innerHTML = Array.from(
+		{length: 15},
+		(_, i) => `<div>R${String(i).padStart(2, "0")}</div>`,
+	).join("");
+	await dom.render();
+
+	// Grow so the region needs the prompt's two rows; new row r equals what the
+	// old, wrongly-shifted model would predict at r -- the trap for the diff.
+	dom.document.body.innerHTML = Array.from(
+		{length: 22},
+		(_, i) => `<div>R${String(i + 2).padStart(2, "0")}</div>`,
+	).join("");
+	await dom.render();
+
+	const screen = read(terminal, 20);
+	expect(screen.viewport[0]).toBe("R02");
+	expect(screen.viewport[1]).toBe("R03");
+	expect(screen.viewport[19]).toBe("R21");
+
+	dom.dispose();
+});

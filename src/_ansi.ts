@@ -1045,12 +1045,6 @@ export class Renderer {
 	 * scrollback -- which is the whole point: the rows being pushed away belong to
 	 * whatever ran before us, and must survive.
 	 */
-	commitScroll(rows: number): void {
-		if (!this.#prevBuffer || rows <= 0) return;
-		this.#prevBuffer = scrollBuffer(this.#prevBuffer, rows);
-		this.#prevOffset -= rows;
-	}
-
 	beginNewBlock(): void {
 		this.#hasSavedCursor = false;
 		this.clearPreviousBuffer();

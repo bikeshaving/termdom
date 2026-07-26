@@ -1970,7 +1970,13 @@ export class TermDOM {
 		const push = Math.min(overflow, top);
 		if (push > 0) {
 			this.process.stdout.write(`\x1b[${this.height};1H` + "\n".repeat(push));
-			this.renderer.commitScroll(push);
+			// Do NOT shift the renderer's previous buffer. Its rows are relative to
+			// the region top, and the top moves up by exactly the amount the screen
+			// scrolled -- the two cancel, so buffer coordinates are unchanged.
+			// Shifting it desynced the diff by `push` rows: the model compared
+			// against the wrong screen rows, skipped cells it wrongly believed
+			// unchanged, and composited the old frame under the new one whenever a
+			// document-mode region grew past the space below the shell prompt.
 			this.scrollingManager.setScreenTop(top - push);
 		}
 
