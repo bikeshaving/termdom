@@ -347,5 +347,7 @@ export function stripControlCodes(ansi: string): string {
 		.replace(/\x1b\[(\d+)C/g, (_, count) => " ".repeat(parseInt(count))) // Replace cursor forward with spaces
 		.replace(/\x1b\[K/g, "") // Remove clear line sequences
 		.replace(/\x1b\[[0-9;]*H/g, "") // Remove cursor positioning
+		.replace(/\x1b\[\d*[AB]/g, "") // Remove cursor up/down movement
+		.replace(/\x1b[78]/g, "") // Remove DECSC/DECRC (save/restore cursor)
 		.replace(/\r(?!\n)/g, ""); // Remove standalone carriage returns
 }

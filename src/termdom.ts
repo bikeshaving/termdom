@@ -156,6 +156,12 @@ export class TermDOM {
 	private stdinDataHandler: ((chunk: string | Buffer) => void) | null = null;
 	private cursorDetectionTimer: ReturnType<typeof setTimeout> | null = null;
 	private resizeTimer: ReturnType<typeof setTimeout> | null = null;
+	// True from the first SIGWINCH of a resize until the re-anchored redraw. While
+	// set, render() bails: the terminal has rewrapped the screen and our anchor is
+	// momentarily stale, so an auto-render (an animation tick) painting now lands
+	// at the wrong rows and scrolls a stray copy into the scrollback. Only the
+	// final redraw that handleResize issues is allowed through.
+	private resizeInProgress = false;
 
 	// Promise that resolves when cursor detection completes (or times out)
 	private cursorDetectionPromise: Promise<void> | null = null;
@@ -407,6 +413,12 @@ export class TermDOM {
 	}
 
 	async render(): Promise<void> {
+		// A resize is settling: suppress every render until handleResize issues the
+		// single re-anchored redraw. See resizeInProgress.
+		if (this.resizeInProgress) {
+			return;
+		}
+
 		// A render in flight: coalesce, don't drop. Dropping an auto-render (a
 		// mutation observer firing mid-frame) leaves the diff renderer's
 		// previous-buffer out of step with the screen, which shows up as rows drawn
@@ -1001,6 +1013,10 @@ export class TermDOM {
 	 * drag to settle turns the whole gesture into one redraw, and one lot of crud.
 	 */
 	private scheduleResize(): void {
+		// Suppress renders from the very first SIGWINCH, before the debounce
+		// settles, so a drag's worth of animation ticks cannot paint at the stale
+		// anchor while the terminal is rewrapping under us.
+		this.resizeInProgress = true;
 		if (this.resizeTimer !== null) clearTimeout(this.resizeTimer);
 		this.resizeTimer = setTimeout(() => {
 			this.resizeTimer = null;
@@ -1056,7 +1072,9 @@ export class TermDOM {
 		this.scrollingManager.scrollToCommandStart();
 		this.renderer.resetScreen(startRow);
 
-		// The frame is placed by the screen reset, not by cursor detection.
+		// Everything suppressed since the first SIGWINCH may paint again. The frame
+		// is placed by the screen reset, not by cursor detection.
+		this.resizeInProgress = false;
 		const wasDetected = this.hasDetectedCommandStart;
 		this.hasDetectedCommandStart = false;
 		this.render().then(() => {

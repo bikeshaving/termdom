@@ -850,3 +850,35 @@ test("shrinking height re-anchors to the scrolled command start, no orphaned top
 
 	dom.dispose();
 });
+
+test("the cursor parks at the content bottom after every frame", async () => {
+	// A diff leaves the cursor wherever the last changed cell happened to be -- an
+	// arbitrary row. The terminal preserves the cursor across a resize and scrolls
+	// exactly enough to keep it on screen, so an arbitrary resting row makes that
+	// scroll arbitrary too -- and the resize re-anchor computes the scroll assuming
+	// the cursor sits at the content bottom. With the prompt near the bottom of the
+	// screen, that mismatch stranded a copy of the frame above the re-anchored one
+	// on a height shrink. The renderer now parks the cursor on the content's last
+	// row at the end of every frame.
+	const terminal = new MockProcess({rows: 20, cols: 40});
+	await new Promise<void>((resolve) => {
+		terminal.stdout.write("PREV-1\r\nPREV-2\r\n", () => resolve());
+	});
+	const dom = new TermDOM({process: terminal, detectCursor: true});
+	dom.document.body.innerHTML = `<div id="a">alpha</div><div>beta</div><div>gamma</div><div>delta</div>`;
+	await dom.render();
+
+	const buffer = (terminal as any).terminal.buffer.active;
+	const contentBottom = dom.window.screenTop + 4 - 1;
+
+	// After a full render the cursor rests at the content bottom.
+	expect(buffer.cursorY).toBe(contentBottom);
+
+	// After a diff that touches only the TOP row, the cursor must still park at
+	// the bottom -- not at the changed cell, where the raw diff leaves it.
+	dom.document.getElementById("a")!.textContent = "ALPHA-CHANGED";
+	await dom.render();
+	expect(buffer.cursorY).toBe(contentBottom);
+
+	dom.dispose();
+});

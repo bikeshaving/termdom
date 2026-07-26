@@ -1162,6 +1162,9 @@ export class Renderer {
 		// Build output with proper framing
 		let prefix = "";
 		let suffix = "";
+		// The frame's on-screen start row, when a positioning branch names one
+		// absolutely. Used to park the cursor at the content bottom after painting.
+		let frameStartRow: number | undefined;
 		if (hasContent) {
 			prefix += "\x1b[?25l"; // DECTCEM - Hide cursor
 			prefix += "\x1b[?2026h"; // Synchronized output mode (start)
@@ -1190,15 +1193,18 @@ export class Renderer {
 				this.#hasSavedCursor = true;
 				this.#needsScreenReset = false;
 				this.#needsFullClear = false;
+				frameStartRow = this.#resetAtRow;
 			} else if (cursorPosition !== undefined) {
 				// Explicit cursor position provided (e.g., from cursor detection)
 				prefix += `\x1b[${cursorPosition + 1};1H`; // CUP - Cursor Position (row;col)
 				// Save cursor at content start so DECRC-based cleanup works correctly
 				prefix += "\x1b7"; // DECSC
 				this.#hasSavedCursor = true;
+				frameStartRow = cursorPosition;
 			} else if (offset > 0) {
 				// Position based on viewport offset
 				prefix += `\x1b[${offset + 1};1H`; // CUP - Cursor Position (row;col)
+				frameStartRow = offset;
 			} else if (this.#hasSavedCursor) {
 				// Restore cursor to content start (DECRC), then save again (DECSC)
 				prefix += "\x1b8\x1b7"; // Restore + Save
@@ -1264,7 +1270,32 @@ export class Renderer {
 		this.#prevOffset = overflowing ? offset + (frameRows - this.#rows) : offset;
 		this.#prevContentHeight = contentHeight;
 
-		return prefix + output + staleOutput + suffix;
+		// Park the cursor on the content's last row before showing it again. A diff
+		// leaves the cursor wherever the last changed cell happened to be -- an
+		// arbitrary row. The terminal preserves the cursor across a resize and
+		// scrolls exactly enough to keep it on screen, so an arbitrary resting row
+		// makes that scroll arbitrary too -- and the resize re-anchor computes the
+		// scroll on the assumption that the cursor sits at the content bottom (see
+		// handleResize). Parking there, where an ordinary program's cursor rests
+		// after printing, makes the terminal's resize behavior deterministic.
+		let parkOutput = "";
+		if (hasContent && contentHeight > 0) {
+			if (frameStartRow !== undefined) {
+				// 0-based start + height = 1-based last row; the bottom margin caps
+				// it when the content overflows the screen.
+				const lastRow = Math.min(frameStartRow + contentHeight, this.#rows);
+				parkOutput = `\x1b[${lastRow};1H`; // CUP - content bottom
+			} else if (this.#hasSavedCursor) {
+				// No absolute row to name: restore the saved content start, re-save
+				// it, and step down. CUD stops at the bottom margin, which is the
+				// content's visible bottom when it overflows.
+				parkOutput = "\x1b8\x1b7";
+				if (contentHeight > 1) parkOutput += `\x1b[${contentHeight - 1}B`; // CUD
+				parkOutput += "\r";
+			}
+		}
+
+		return prefix + output + staleOutput + parkOutput + suffix;
 	}
 
 	#generateScrollCommands(nextOffset: number): string {
