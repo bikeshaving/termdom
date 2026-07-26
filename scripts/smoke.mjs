@@ -15,8 +15,16 @@
  *   bun run build && node scripts/smoke.mjs
  *   bun run build && deno run -A --node-modules-dir=manual scripts/smoke.mjs
  */
-import {TermDOM} from "../dist/index.js";
-import {stringWidth, cssColorToNumber, isBun, isDeno} from "../dist/runtime.js";
+// Everything comes through the single public module -- the same file a
+// consumer loads. There is no dist/runtime.js anymore; the internals are
+// bundled, and the helpers under test are public exports.
+import {
+	TermDOM,
+	stringWidth,
+	parseColor as cssColorToNumber,
+	isBun,
+	isDeno,
+} from "../dist/index.js";
 
 const runtime = isDeno ? "Deno" : isBun ? "Bun" : "Node";
 const failures = [];
