@@ -233,10 +233,16 @@ export class TermDOM {
 	private mouseReportingEnabled = false;
 	// Scroll chaining yielded the mouse back to the terminal: the camera hit
 	// the document top and the user kept scrolling up, so the wheel now
-	// belongs to the terminal's own scrollback. Cleared by the next keystroke
-	// -- terminals snap to the live screen on input, which is exactly the
-	// moment the wheel should become ours again.
+	// belongs to the terminal's own scrollback. The yield only has to outlast
+	// the gesture that is escaping: terminals report the mouse against the
+	// live screen only, so once the view is scrolled back, re-armed capture
+	// changes nothing -- the wheel keeps scrolling the history natively, and
+	// the first tick after the view returns to the bottom is ours again,
+	// which is exactly where the document should take over. Hence the timer.
+	// A keystroke reclaims immediately (terminals snap to the live screen on
+	// input).
 	private mouseCaptureYielded = false;
+	private mouseRearmTimer: ReturnType<typeof setTimeout> | null = null;
 	// Where the last mousedown landed, so a mouseup on the same element
 	// becomes a click. (Browsers dispatch click at the nearest common
 	// ancestor; the same-element case is the one that matters on a cell grid.)
@@ -558,9 +564,13 @@ export class TermDOM {
 				if (keyInput.length === 0) return;
 
 				// A keystroke means the user is back at the live screen (terminals
-				// snap to the bottom on input): reclaim the mouse if scroll
-				// chaining yielded it.
+				// snap to the bottom on input): reclaim the mouse immediately if
+				// scroll chaining yielded it, ahead of the re-arm timer.
 				if (this.mouseCaptureYielded) {
+					if (this.mouseRearmTimer !== null) {
+						clearTimeout(this.mouseRearmTimer);
+						this.mouseRearmTimer = null;
+					}
 					this.mouseCaptureYielded = false;
 					this.updateMouseReporting();
 				}
@@ -1812,11 +1822,21 @@ export class TermDOM {
 					// Scroll chaining, the browser default: the camera is at the
 					// document top, so the scroll escapes to the parent scroller --
 					// here, the terminal's own scrollback. Yield the mouse so the
-					// next wheel tick scrolls the shell history natively; the next
-					// keystroke reclaims it. An app opts out the same way it would
-					// in a browser: preventDefault on the wheel event.
+					// next wheel tick scrolls the shell history natively, then
+					// re-arm shortly after (see mouseCaptureYielded for why that is
+					// safe while the user is still away in the scrollback). An app
+					// opts out the same way it would in a browser: preventDefault
+					// on the wheel event.
 					this.mouseCaptureYielded = true;
 					this.updateMouseReporting();
+					if (this.mouseRearmTimer !== null) {
+						clearTimeout(this.mouseRearmTimer);
+					}
+					this.mouseRearmTimer = setTimeout(() => {
+						this.mouseRearmTimer = null;
+						this.mouseCaptureYielded = false;
+						this.updateMouseReporting();
+					}, 300);
 				} else {
 					this.scrollDocumentBy(deltaY);
 				}
@@ -2504,6 +2524,10 @@ export class TermDOM {
 		if (this.resizeTimer !== null) {
 			clearTimeout(this.resizeTimer);
 			this.resizeTimer = null;
+		}
+		if (this.mouseRearmTimer !== null) {
+			clearTimeout(this.mouseRearmTimer);
+			this.mouseRearmTimer = null;
 		}
 		this.cursorDetectionHandler = null;
 

@@ -173,8 +173,30 @@ test("wheel at the document top chains to the terminal; a keystroke reclaims", a
 	proc.stdin.send("\x1b[<64;5;3M");
 	expect(disables()).toBe(1);
 
-	// A keystroke reclaims it.
+	// A keystroke reclaims it immediately, ahead of the re-arm timer.
 	proc.stdin.send("j");
+	expect(enables()).toBe(2);
+	termdom.dispose();
+});
+
+test("capture re-arms on its own after the escaping gesture, without a keystroke", async () => {
+	const {proc, termdom} = makeDocumentModeApp();
+	await termdom.render();
+	const enables = () =>
+		proc.output.filter((chunk) => chunk.includes(ENABLE)).length;
+	const disables = () =>
+		proc.output.filter((chunk) => chunk.includes(DISABLE)).length;
+
+	// Wheel up at the top yields the mouse to the scrollback.
+	proc.stdin.send("\x1b[<64;5;3M");
+	expect(disables()).toBe(1);
+	expect(enables()).toBe(1);
+
+	// The yield only outlasts the gesture; capture comes back on its own, so
+	// the wheel takes over the instant the view returns to the live screen --
+	// no keystroke needed. (This is what the user hit as a bug: scroll into
+	// history, scroll back, and the document would not take the wheel again.)
+	await new Promise((resolve) => setTimeout(resolve, 350));
 	expect(enables()).toBe(2);
 	termdom.dispose();
 });
