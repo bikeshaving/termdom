@@ -1254,19 +1254,21 @@ export class LayoutEngine {
 	}
 
 	getRects(node: Node): DOMRect[] {
-		// For block elements, just return getBoundingClientRect in an array
+		// Everything except true inline content is an atomic box with one rect.
+		// That includes inline-block: it participates in a line, but it is a
+		// box, not a run of text -- an <input> or <button> has no text runs at
+		// all, and returning none made it invisible to elementFromPoint.
 		if (node.nodeType === node.ELEMENT_NODE) {
 			const element = node as Element;
 			const display = getPropertyValue(element, "display");
 
-			if (display !== "inline" && display !== "inline-block") {
-				// Block element - use standard getBoundingClientRect
+			if (display !== "inline") {
 				const rect = this.getRect(element);
 				return rect ? [rect] : [];
 			}
 		}
 
-		// For inline elements, use getRectTexts and extract just the rects
+		// Inline content is one rect per text run, one per line it spans.
 		return this.getRectTexts(node).map((rectText) => rectText.rect);
 	}
 

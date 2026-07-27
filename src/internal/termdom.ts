@@ -96,14 +96,20 @@ let trackedInstances: Set<TermDOM> | null = null;
 const undisposedInteractive = new Set<TermDOM>();
 let exitHookInstalled = false;
 
+// What Tab traverses and what a mousedown focuses -- one definition of
+// "focusable" for both.
+const FOCUSABLE_SELECTOR =
+	'input:not([disabled]), button:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
 function installCursorRestoreOnExit(): void {
 	if (exitHookInstalled) return;
 	exitHookInstalled = true;
 	process.on("exit", () => {
 		for (const instance of undisposedInteractive) {
 			try {
+				// Mouse capture off (a no-op if it was never on), cursor back on.
 				(instance as unknown as {process: ProcessLike}).process.stdout.write(
-					"\x1b[?25h",
+					"\x1b[?1006l\x1b[?1002l\x1b[?25h",
 				);
 			} catch {
 				// The stream may already be gone; the shell will survive.
@@ -221,6 +227,14 @@ export class TermDOM {
 
 	/** Which document row sits at the top of our region, in document mode. */
 	private documentScrollTop = 0;
+
+	// Whether the terminal is currently reporting mouse events to us. See
+	// updateMouseReporting for when capture is on.
+	private mouseReportingEnabled = false;
+	// Where the last mousedown landed, so a mouseup on the same element
+	// becomes a click. (Browsers dispatch click at the nearest common
+	// ancestor; the same-element case is the one that matters on a cell grid.)
+	private mouseDownTarget: Element | null = null;
 	private readonly process: ProcessLike;
 
 	private readonly detectCursorEnabled: boolean;
@@ -427,6 +441,7 @@ export class TermDOM {
 		this.attached = true;
 
 		this.setupProcessHandlers();
+		this.updateMouseReporting();
 		this.initializeCursorDetection();
 
 		// See installCursorRestoreOnExit: if this instance dies without
@@ -435,6 +450,32 @@ export class TermDOM {
 			undisposedInteractive.add(this);
 			installCursorRestoreOnExit();
 		}
+	}
+
+	/**
+	 * The mouse is captured exactly when the document owns the camera: document
+	 * mode and fullscreen, where wheel-to-scroll is the default action, the same
+	 * as a browser. Flow mode leaves the mouse native -- there the terminal owns
+	 * scrolling (that is the mode's point), and capture would take the user's
+	 * scrollback and selection in exchange for nothing.
+	 *
+	 * Idempotent; call it whenever attachment, viewport mode, or fullscreen
+	 * changes.
+	 */
+	private updateMouseReporting(): void {
+		const wanted =
+			this.attached &&
+			this.interactive &&
+			Boolean(this.process.stdin?.isTTY) &&
+			(this.viewportMode === "document" || this.fullscreenManager.isFullscreen);
+		if (wanted === this.mouseReportingEnabled) return;
+		this.mouseReportingEnabled = wanted;
+		// 1002: button presses, releases, wheel, and drag motion (no move flood
+		// while nothing is pressed). 1006: SGR encoding, the only one that is
+		// unambiguous past column 223.
+		this.process.stdout.write(
+			wanted ? "\x1b[?1002h\x1b[?1006h" : "\x1b[?1006l\x1b[?1002l",
+		);
 	}
 
 	// TODO: This should be put in an event translator abstraction
@@ -488,10 +529,31 @@ export class TermDOM {
 					return this.process.exit(0);
 				}
 
+				// Route 3: SGR mouse reports. Peeled off token by token so a report
+				// glued to fast keystrokes ("jj\x1b[<65;4;7Mjj") eats neither side,
+				// and BEFORE the fullscreen filter below -- fullscreen is a
+				// mouse-capturing mode, so its reports must not be dropped with the
+				// keyboard events.
+				let keyInput = "";
+				for (const token of this.tokenizeInput(dataStr)) {
+					const mouse = token.match(/^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/);
+					if (mouse) {
+						this.handleMouseReport(
+							parseInt(mouse[1]),
+							parseInt(mouse[2]),
+							parseInt(mouse[3]),
+							mouse[4] === "m",
+						);
+					} else {
+						keyInput += token;
+					}
+				}
+				if (keyInput.length === 0) return;
+
 				// TODO: Why does this filter on fullscreen????
-				// Route 3: General keyboard events (when not in fullscreen)
+				// Route 4: General keyboard events (when not in fullscreen)
 				if (!this.fullscreenManager.isFullscreen) {
-					this.dispatchGlobalKeyboardEvent(data);
+					this.dispatchGlobalKeyboardEvent(Buffer.from(keyInput));
 				}
 			};
 			stdin.on("data", this.stdinDataHandler);
@@ -1391,13 +1453,17 @@ export class TermDOM {
 			this: Element,
 			options?: FullscreenOptions,
 		): Promise<void> {
-			return termDOM.fullscreenManager.requestFullscreen(this, options);
+			return termDOM.fullscreenManager
+				.requestFullscreen(this, options)
+				.then(() => termDOM.updateMouseReporting());
 		};
 
 		Document.prototype.exitFullscreen = function (
 			this: Document,
 		): Promise<void> {
-			return termDOM.fullscreenManager.exitFullscreen();
+			return termDOM.fullscreenManager
+				.exitFullscreen()
+				.then(() => termDOM.updateMouseReporting());
 		};
 
 		Object.defineProperty(Document.prototype, "fullscreenElement", {
@@ -1516,9 +1582,9 @@ export class TermDOM {
 	 * Get all focusable elements in tab order
 	 */
 	private getFocusableElements(): Element[] {
-		const selectors =
-			'input:not([disabled]), button:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
-		const elements = Array.from(this.document.querySelectorAll(selectors));
+		const elements = Array.from(
+			this.document.querySelectorAll(FOCUSABLE_SELECTOR),
+		);
 		return elements.sort((a, b) => {
 			const aTab = parseInt(a.getAttribute("tabindex") || "0", 10);
 			const bTab = parseInt(b.getAttribute("tabindex") || "0", 10);
@@ -1650,6 +1716,132 @@ export class TermDOM {
 			yield input[i];
 			i++;
 		}
+	}
+
+	/**
+	 * Where a screen cell lands in the document, given who owns the camera.
+	 * Returns null for cells above our region (a shell prompt is not part of
+	 * the document).
+	 */
+	private screenToDocumentPoint(
+		x: number,
+		row: number,
+	): {x: number; y: number} | null {
+		if (this.fullscreenManager.isFullscreen) {
+			return {x, y: row + this.scrollingManager.getScrollTop()};
+		}
+		if (this.viewportMode === "document") {
+			const y =
+				row - this.scrollingManager.getScreenTop() + this.documentScrollTop;
+			return y < 0 ? null : {x, y};
+		}
+		// Flow mode: rows above the region belong to committed content or the
+		// shell. (Capture is off in flow mode, so this is for completeness.)
+		const start =
+			this.committedRows > 0 ? 0 : this.scrollingManager.getScreenTop();
+		const y = row - start + this.committedRows;
+		return y < 0 ? null : {x, y};
+	}
+
+	/**
+	 * A mouse report from the terminal (SGR encoding: `CSI < code ; col ; row M/m`).
+	 * These only arrive while capture is on -- see updateMouseReporting.
+	 *
+	 * Reports become the DOM's own mouse events, dispatched at the element
+	 * under the cell (document.elementFromPoint is layout-true), with the
+	 * browser's default actions: wheel scrolls the camera, mousedown moves
+	 * focus, mouseup on the mousedown target is a click.
+	 */
+	private handleMouseReport(
+		code: number,
+		col: number,
+		row: number,
+		isRelease: boolean,
+	): void {
+		const shiftKey = (code & 4) !== 0;
+		const altKey = (code & 8) !== 0;
+		const ctrlKey = (code & 16) !== 0;
+		const isMotion = (code & 32) !== 0;
+		const base = code & ~(4 | 8 | 16 | 32);
+
+		const point = this.screenToDocumentPoint(col - 1, row - 1);
+		const x = point?.x ?? col - 1;
+		const y = point?.y ?? 0;
+		const target =
+			(point && this.document.elementFromPoint(x, y)) || this.document.body;
+
+		// Wheel: 64 = up, 65 = down. One notch is three rows, the browser's
+		// line-mode convention, and DOM_DELTA_LINE is literally true here.
+		if (base === 64 || base === 65) {
+			const deltaY = base === 64 ? -3 : 3;
+			const notCanceled = target.dispatchEvent(
+				new this.window.WheelEvent("wheel", {
+					deltaY,
+					deltaMode: 1, // DOM_DELTA_LINE
+					clientX: x,
+					clientY: y,
+					shiftKey,
+					altKey,
+					ctrlKey,
+					bubbles: true,
+					cancelable: true,
+				}),
+			);
+			if (notCanceled) {
+				this.scrollDocumentBy(deltaY);
+			}
+			return;
+		}
+
+		// Buttons: 0/1/2 = left/middle/right. 3 is "no button" in the legacy
+		// encoding; SGR names the button even on release, so 3 carries nothing.
+		if (base > 2) return;
+		const eventInit = {
+			button: base === 1 ? 1 : base === 2 ? 2 : 0,
+			buttons: isRelease ? 0 : base === 1 ? 4 : base === 2 ? 2 : 1,
+			clientX: x,
+			clientY: y,
+			shiftKey,
+			altKey,
+			ctrlKey,
+			bubbles: true,
+			cancelable: true,
+		};
+
+		if (isMotion) {
+			target.dispatchEvent(new this.window.MouseEvent("mousemove", eventInit));
+			return;
+		}
+
+		if (!isRelease) {
+			this.mouseDownTarget = target;
+			const notCanceled = target.dispatchEvent(
+				new this.window.MouseEvent("mousedown", eventInit),
+			);
+			// Default action: mousedown moves focus, exactly as in a browser --
+			// to the nearest focusable ancestor, or away from the active element
+			// when the click lands on nothing focusable.
+			if (notCanceled) {
+				const focusable = (target as Element).closest?.(FOCUSABLE_SELECTOR);
+				const active = this.document.activeElement;
+				if (focusable && focusable !== active) {
+					(focusable as HTMLElement).focus();
+					void this.render();
+				} else if (!focusable && active && active !== this.document.body) {
+					(active as HTMLElement).blur();
+					void this.render();
+				}
+			}
+			return;
+		}
+
+		target.dispatchEvent(new this.window.MouseEvent("mouseup", eventInit));
+		if (this.mouseDownTarget === target) {
+			target.dispatchEvent(
+				new this.window.MouseEvent("click", {...eventInit, buttons: 0}),
+			);
+		}
+		this.mouseDownTarget = null;
 	}
 
 	private dispatchGlobalKeyboardEvent(chunk: Buffer): void {
@@ -1961,6 +2153,7 @@ export class TermDOM {
 		this.viewportMode = mode;
 		this.documentScrollTop = 0;
 		this.renderer.clearPreviousBuffer();
+		this.updateMouseReporting();
 	}
 
 	/** Move the camera, in document mode. Ignored in flow mode. */
@@ -2258,7 +2451,12 @@ export class TermDOM {
 		this.flushDocument();
 
 		// Frames keep the terminal cursor hidden (it is parked for resize
-		// bookkeeping, not UI); hand it back visible on the way out.
+		// bookkeeping, not UI); hand it back visible on the way out. The mouse
+		// goes back to the terminal the same way.
+		if (this.mouseReportingEnabled) {
+			this.process.stdout.write("\x1b[?1006l\x1b[?1002l");
+			this.mouseReportingEnabled = false;
+		}
 		if (this.interactive) {
 			this.process.stdout.write("\x1b[?25h");
 		}

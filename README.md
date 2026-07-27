@@ -64,6 +64,10 @@ TermDOM solves this by leveraging familiar web concepts:
 - **Real text input.** `<input>` elements with focus traversal, `:focus`
   styling, `input` events -- and the caret is the real terminal cursor, so IME
   composition (CJK and friends) anchors in the field, measured in cells.
+- **Real mouse events.** In document mode and fullscreen the mouse is captured
+  and dispatched as DOM events at the element under the cell -- `wheel` scrolls
+  the camera, `mousedown` moves focus, `click` is a click. Flow mode leaves the
+  mouse native, so your scrollback and selection stay yours.
 - **Browser-grade rendering economics.** Incremental layout (a one-line edit
   relays out its chain, not the document), viewport culling (paint is
   O(screen), not O(document)), diffed frames, and tokenized input that keeps
