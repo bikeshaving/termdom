@@ -43,6 +43,7 @@
     "smoke": "node scripts/smoke.mjs",
     "smoke:deno": "deno run -A --node-modules-dir=manual scripts/smoke.mjs",
     "test": "bun test",
+    "test:ci": "bash scripts/test.sh",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

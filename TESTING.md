@@ -81,9 +81,17 @@ Disposing the mock's xterm terminals was tried and measured: it made **no
 difference** (732 MB vs 702 MB), so that is not worth repeating.
 
 **The fix is to dispose every `TermDOM` a test creates.** It reclaims the leaked
-~150–200 MB and restores headroom. Until then, adding a TermDOM-heavy test can tip
-the run over, and the failure looks like a hang rather than an out-of-memory
-error.
+~150–200 MB and restores headroom.
+
+### CI does not run the suite in one process
+
+Because the ceiling is real and its exact trigger is not pinned down, CI does not
+rely on the whole suite fitting under it. `bun run test:ci` (`scripts/test.sh`)
+runs the files in small batches, each in its own `bun test` process, so peak RSS
+is bounded by one batch's working set rather than the whole suite's. A batch that
+fails to print a summary is treated as killed, so the memory ceiling surfaces as a
+red build instead of a mysterious hang. Plain `bun test` still works for targeted,
+single-file runs; it is the *full* single-process run that is unsafe.
 
 ## Known deferred test
 
