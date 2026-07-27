@@ -419,27 +419,6 @@ function emitColor(
 	return seq;
 }
 
-function scrollBuffer(
-	source: CellBuffer,
-	scroll: number, // positive = scroll down, negative = scroll up
-): CellBuffer {
-	const rows = source.length;
-	const cols = source[0]?.length || 0;
-	const dest = createBuffer(rows, cols);
-
-	for (let row = 0; row < rows; row++) {
-		const sourceRow = row + scroll;
-		if (sourceRow >= 0 && sourceRow < rows) {
-			for (let col = 0; col < cols; col++) {
-				dest[row][col] = source[sourceRow][col];
-			}
-		}
-		// Cells outside bounds remain null (createBuffer default)
-	}
-
-	return dest;
-}
-
 function getStyleDiff(
 	cell: Cell,
 	prev: Cell | null,
@@ -930,7 +909,6 @@ export class DrawingContext {
 export class Renderer {
 	#prevBuffer: CellBuffer | null = null;
 	#renderedLines: Set<number> = new Set();
-	#prevOffset: number = 0;
 	#prevContentHeight: number = 0;
 	// Where the last frame parked the cursor, in buffer coordinates. The resize
 	// re-anchor derives the frame's new top row from the cursor's post-rewrap
@@ -1052,7 +1030,6 @@ export class Renderer {
 
 	clearPreviousBuffer(): void {
 		this.#prevBuffer = null;
-		this.#prevOffset = 0;
 		this.#prevContentHeight = 0;
 		this.#needsFullClear = true;
 		this.#renderedLines.clear();
@@ -1162,7 +1139,6 @@ export class Renderer {
 		drawCallback: (ctx: DrawingContext) => void,
 		cursorPosition?: number,
 		regionRows?: number,
-		useScrollCommands = true,
 	): string {
 		const frameRows = Math.max(this.#rows, regionRows ?? this.#rows);
 		const overflowing = frameRows > this.#rows;
@@ -1179,19 +1155,13 @@ export class Renderer {
 		);
 		drawCallback(context);
 
-		// Scroll-command optimization: emit SU/SD for an offset change and shift
-		// the previous buffer to match. SU and SD move the WHOLE terminal screen,
-		// so this is only sound when the frame owns it all -- a document-mode
-		// region that starts below a shell prompt would drag the prompt and any
-		// stale rows through itself on every camera move (and SU commits rows to
-		// scrollback, which document mode promises never to do). When disabled,
-		// the previous buffer is left where the screen actually is and the diff
-		// repaints whatever the camera shift changed.
-		if (useScrollCommands) {
-			this.#transformBufferForScroll(offset);
-		} else {
-			this.#prevOffset = offset;
-		}
+		// An offset change is rendered by repainting cells, never by SU/SD scroll
+		// commands. SU and SD move the WHOLE terminal screen -- a region that
+		// starts below a shell prompt would drag the prompt and any stale rows
+		// through itself on every camera move, and SU commits rows to scrollback,
+		// which document mode promises never to do. They also require a second
+		// model of where the screen is (a shifted previous buffer) that has to
+		// stay in lockstep with the diff model. Diffs are fast; one model wins.
 
 		// Create diff buffer. A frame taller than the terminal is a growth frame:
 		// the rows below the fold have never been on screen, so there is nothing to
@@ -1237,10 +1207,7 @@ export class Renderer {
 			}
 		}
 
-		// Generate scroll commands and check for content
-		const scrollCommands = useScrollCommands
-			? this.#generateScrollCommands(offset)
-			: "";
+		// Check for content
 		let hasContent = false;
 
 		for (let row = 0; row < frameRows; row++) {
@@ -1283,11 +1250,6 @@ export class Renderer {
 		if (hasContent) {
 			prefix += "\x1b[?25l"; // DECTCEM - Hide cursor
 			prefix += "\x1b[?2026h"; // Synchronized output mode (start)
-
-			// Add scroll commands if provided
-			if (scrollCommands) {
-				prefix += scrollCommands;
-			}
 
 			// Add cursor positioning
 			if (this.#needsScreenReset) {
@@ -1385,7 +1347,6 @@ export class Renderer {
 		this.#prevBuffer = overflowing
 			? nextBuffer.slice(frameRows - this.#rows)
 			: nextBuffer;
-		this.#prevOffset = overflowing ? offset + (frameRows - this.#rows) : offset;
 		this.#prevContentHeight = contentHeight;
 
 		// Park the cursor before the frame ends. A diff leaves the cursor wherever
@@ -1435,32 +1396,5 @@ export class Renderer {
 		}
 
 		return prefix + output + staleOutput + parkOutput + suffix;
-	}
-
-	#generateScrollCommands(nextOffset: number): string {
-		if (!this.#prevBuffer) {
-			return "";
-		}
-
-		const offsetDelta = nextOffset - this.#prevOffset;
-
-		if (offsetDelta === 0) {
-			return "";
-		}
-
-		if (offsetDelta > 0) {
-			return `\x1b[${offsetDelta}S`; // SU - Scroll Up n lines
-		} else {
-			return `\x1b[${Math.abs(offsetDelta)}T`; // SD - Scroll Down n lines
-		}
-	}
-
-	#transformBufferForScroll(nextOffset: number): void {
-		if (!this.#prevBuffer) return;
-
-		const offsetDelta = nextOffset - this.#prevOffset;
-		if (offsetDelta === 0) return;
-
-		this.#prevBuffer = scrollBuffer(this.#prevBuffer, offsetDelta);
 	}
 }

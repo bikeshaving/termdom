@@ -237,36 +237,40 @@ describe("Renderer with callback API", () => {
 	});
 
 	describe("viewport and scrolling", () => {
-		test("generates scroll down command for positive viewport offset", () => {
+		// Offset changes are rendered by repainting cells. SU/SD move the whole
+		// terminal screen -- they would drag a shell prompt above the region
+		// through the frame, and SU commits rows to the scrollback, which
+		// document mode promises never to do.
+		test("increasing the offset repaints; it never emits SU", () => {
 			const renderer = new Renderer(10, 40);
 
-			// Frame 1: Initial content at offset 0
 			renderer.renderFrame(0, (ctx) => {
 				ctx.setText(0, 0, "Initial");
 			});
 
-			// Frame 2: Move to offset 3 (scroll down 3 lines)
 			const output = renderer.renderFrame(3, (ctx) => {
 				ctx.setText(0, 0, "Scrolled");
 			});
 
-			expect(output).toContain("\x1b[3S"); // Scroll up 3 lines
+			expect(output).not.toContain("\x1b[3S");
+			expect(output).toContain("Scrolled"); // painted at the new offset
+			expect(output).toContain("       "); // old row blanked by the diff
 		});
 
-		test("generates scroll up command for negative viewport offset", () => {
+		test("decreasing the offset repaints; it never emits SD", () => {
 			const renderer = new Renderer(10, 40);
 
-			// Frame 1: Initial content at offset 3
 			renderer.renderFrame(3, (ctx) => {
 				ctx.setText(0, 0, "Initial");
 			});
 
-			// Frame 2: Move to offset 0 (scroll up 3 lines)
 			const output = renderer.renderFrame(0, (ctx) => {
 				ctx.setText(0, 0, "Scrolled");
 			});
 
-			expect(output).toContain("\x1b[3T"); // Scroll down 3 lines
+			expect(output).not.toContain("\x1b[3T");
+			expect(output).toContain("Scrolled");
+			expect(output).toContain("       ");
 		});
 
 		test("no scroll command when offset unchanged", () => {

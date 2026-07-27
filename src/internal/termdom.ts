@@ -1947,10 +1947,6 @@ export class TermDOM {
 			},
 			top,
 			top + regionHeight,
-			// No SU/SD scroll shortcuts: they move the whole terminal screen, and
-			// this region may sit below a shell prompt that must not move -- and
-			// nothing in document mode may ever reach the scrollback.
-			false,
 		);
 
 		if (ansi) await this.write(ansi);
