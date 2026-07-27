@@ -1,8 +1,8 @@
 /**
- * Flexbox Layout Demo - Showcasing TOM's flexbox capabilities
+ * Flexbox layout: nested containers, direction, gap, and alignment,
+ * all driven by ordinary CSS on an integer cell grid.
  *
- * This demo creates a sophisticated layout with multiple containers,
- * demonstrating various flexbox properties and nested layouts.
+ *   bun examples/flexbox-demo.ts
  */
 
 import {TermDOM} from "../src/index.js";

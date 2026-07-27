@@ -7,7 +7,7 @@
 //   bun examples/form.ts
 //
 //   Tab/Shift+Tab  next/previous field    Enter  submit    Ctrl+C  quit
-import {TermDOM} from "../src/internal/termdom.js";
+import {TermDOM} from "../src/index.js";
 
 const termdom = new TermDOM();
 const {document} = termdom;

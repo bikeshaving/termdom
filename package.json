@@ -64,7 +64,6 @@
     "eslint": "^8.57.1",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-prettier": "^5.2.6",
-    "fast-check": "^4.2.0",
     "ssh2": "^1.17.0",
     "typescript": "^5.9.2"
   }

@@ -1,8 +1,7 @@
 /**
- * Hello World - HTML-to-Terminal Demo 🚀
+ * Hello world: build a DOM, style it with CSS, render it to the terminal.
  *
- * This demonstrates the revolutionary new approach:
- * Write standard HTML/CSS → Render to beautiful terminal output!
+ *   bun examples/hello-world.ts
  */
 
 import {TermDOM} from "../src/index.js";

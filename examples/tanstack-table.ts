@@ -1,5 +1,9 @@
 #!/usr/bin/env bun
-import {TermDOM} from "../src/internal/termdom.js";
+// TanStack Table driving a real <table> element. termdom doesn't know
+// TanStack exists -- the library targets the DOM, and the DOM is real.
+//
+//   bun examples/tanstack-table.ts
+import {TermDOM} from "../src/index.js";
 import {createTable, getCoreRowModel} from "@tanstack/table-core";
 
 const termdom = new TermDOM();
@@ -50,6 +54,7 @@ const table = createTable({
 	data,
 	columns,
 	getCoreRowModel: getCoreRowModel(),
+	renderFallbackValue: null,
 	// Initialize all required state properties
 	state: {
 		columnOrder: [],

@@ -95,6 +95,13 @@ doc.body.appendChild(header);
 | `bun examples/animated.ts` | flow mode: an animated frame that respects your shell history |
 | `bun examples/animated-paged.ts` | document mode: the same frame under a scrollable camera |
 | `bun examples/todo-app.ts` | a small interactive app |
+| `bun examples/ssh-server.ts` | the whole library behind an SSH server; every connection gets its own DOM |
+| `bun examples/tanstack-table.ts` | TanStack Table driving a real `<table>` -- DOM libraries work unchanged |
+| `bun examples/timer.tsx` | a Crank component rendered to the terminal -- DOM frameworks work unchanged |
+| `bun examples/hello-world.ts`, `flexbox-demo`, `borders`, `lists`, `fullscreen-demo` | focused showcases of layout features |
+
+Examples import the library's TypeScript source directly, so they run under Bun.
+Node and Deno consumers use the built package (`npm install @b9g/termdom`).
 
 ## What is not supported
 

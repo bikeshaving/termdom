@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import {TermDOM} from "../src/internal/termdom.js";
+import {TermDOM} from "../src/index.js";
 
 const termdom = new TermDOM();
 const {document} = termdom;
