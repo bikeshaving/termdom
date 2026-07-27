@@ -8,6 +8,7 @@
 //
 //   j/k or arrows  move    Enter/l  expand or open    h  collapse or parent
 //   g/G            top/bottom       .  toggle dotfiles    q  quit
+//   mouse          wheel scrolls the camera; click selects, click a dir toggles
 import {TermDOM} from "../src/index.js";
 import {readdirSync} from "node:fs";
 import {join, resolve} from "node:path";
@@ -39,7 +40,8 @@ header.textContent = ` ${root}`;
 const tree = document.createElement("div");
 const hint = document.createElement("div");
 hint.className = "hint";
-hint.textContent = " j/k move · enter open · h up · . dotfiles · q quit";
+hint.textContent =
+	" j/k move · enter open · h up · . dotfiles · q quit · mouse works";
 document.body.append(header, tree, hint);
 
 let showDotfiles = false;
@@ -212,6 +214,20 @@ document.addEventListener("keydown", (event: Event) => {
 		return;
 	}
 	void refresh();
+});
+
+// The whole mouse story: the wheel scrolls the camera on its own (a
+// document-mode default action, chaining to the shell's scrollback at the
+// top), and a click is an ordinary DOM event. The mutations select() and
+// expand() make paint themselves, so there is nothing to render here.
+document.addEventListener("click", (event: Event) => {
+	const row = (event.target as Element).closest(".row") as HTMLElement | null;
+	if (!row) return;
+	select(rows().indexOf(row));
+	if (row.dataset.kind === "dir") {
+		if (row.dataset.open === "true") collapse(row);
+		else expand(row);
+	}
 });
 
 rebuild();

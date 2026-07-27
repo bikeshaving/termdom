@@ -151,6 +151,47 @@ test("mouse reports never leak into keyboard events", async () => {
 	termdom.dispose();
 });
 
+test("wheel at the document top chains to the terminal; a keystroke reclaims", async () => {
+	const {proc, termdom} = makeDocumentModeApp();
+	await termdom.render();
+
+	const disables = () =>
+		proc.output.filter((chunk) => chunk.includes(DISABLE)).length;
+	const enables = () =>
+		proc.output.filter((chunk) => chunk.includes(ENABLE)).length;
+	expect(enables()).toBe(1);
+
+	// Scrolled down, wheel up consumes normally -- no chaining mid-document.
+	proc.stdin.send("\x1b[<65;5;3M");
+	expect((termdom as any).documentScrollTop).toBe(3);
+	proc.stdin.send("\x1b[<64;5;3M");
+	expect((termdom as any).documentScrollTop).toBe(0);
+	expect(disables()).toBe(0);
+
+	// Wheel up AT the top: the scroll escapes to the terminal's scrollback,
+	// so the mouse is handed back.
+	proc.stdin.send("\x1b[<64;5;3M");
+	expect(disables()).toBe(1);
+
+	// A keystroke reclaims it.
+	proc.stdin.send("j");
+	expect(enables()).toBe(2);
+	termdom.dispose();
+});
+
+test("preventDefault on wheel opts out of scroll chaining", async () => {
+	const {proc, termdom, document} = makeDocumentModeApp();
+	await termdom.render();
+
+	document.body.addEventListener("wheel", (event: any) => {
+		event.preventDefault();
+	});
+
+	proc.stdin.send("\x1b[<64;5;3M"); // wheel up at the top
+	expect(proc.output.filter((c) => c.includes(DISABLE)).length).toBe(0);
+	termdom.dispose();
+});
+
 test("click dispatches at the element under the cell and focuses inputs", async () => {
 	const proc = new MockMouseProcess();
 	const termdom = new TermDOM({process: proc as any, detectCursor: false});

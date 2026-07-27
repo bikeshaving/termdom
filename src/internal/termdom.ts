@@ -231,6 +231,12 @@ export class TermDOM {
 	// Whether the terminal is currently reporting mouse events to us. See
 	// updateMouseReporting for when capture is on.
 	private mouseReportingEnabled = false;
+	// Scroll chaining yielded the mouse back to the terminal: the camera hit
+	// the document top and the user kept scrolling up, so the wheel now
+	// belongs to the terminal's own scrollback. Cleared by the next keystroke
+	// -- terminals snap to the live screen on input, which is exactly the
+	// moment the wheel should become ours again.
+	private mouseCaptureYielded = false;
 	// Where the last mousedown landed, so a mouseup on the same element
 	// becomes a click. (Browsers dispatch click at the nearest common
 	// ancestor; the same-element case is the one that matters on a cell grid.)
@@ -467,6 +473,7 @@ export class TermDOM {
 			this.attached &&
 			this.interactive &&
 			Boolean(this.process.stdin?.isTTY) &&
+			!this.mouseCaptureYielded &&
 			(this.viewportMode === "document" || this.fullscreenManager.isFullscreen);
 		if (wanted === this.mouseReportingEnabled) return;
 		this.mouseReportingEnabled = wanted;
@@ -549,6 +556,14 @@ export class TermDOM {
 					}
 				}
 				if (keyInput.length === 0) return;
+
+				// A keystroke means the user is back at the live screen (terminals
+				// snap to the bottom on input): reclaim the mouse if scroll
+				// chaining yielded it.
+				if (this.mouseCaptureYielded) {
+					this.mouseCaptureYielded = false;
+					this.updateMouseReporting();
+				}
 
 				// TODO: Why does this filter on fullscreen????
 				// Route 4: General keyboard events (when not in fullscreen)
@@ -1788,7 +1803,23 @@ export class TermDOM {
 				}),
 			);
 			if (notCanceled) {
-				this.scrollDocumentBy(deltaY);
+				if (
+					deltaY < 0 &&
+					this.documentScrollTop === 0 &&
+					this.viewportMode === "document" &&
+					!this.fullscreenManager.isFullscreen
+				) {
+					// Scroll chaining, the browser default: the camera is at the
+					// document top, so the scroll escapes to the parent scroller --
+					// here, the terminal's own scrollback. Yield the mouse so the
+					// next wheel tick scrolls the shell history natively; the next
+					// keystroke reclaims it. An app opts out the same way it would
+					// in a browser: preventDefault on the wheel event.
+					this.mouseCaptureYielded = true;
+					this.updateMouseReporting();
+				} else {
+					this.scrollDocumentBy(deltaY);
+				}
 			}
 			return;
 		}
@@ -2153,6 +2184,7 @@ export class TermDOM {
 		this.viewportMode = mode;
 		this.documentScrollTop = 0;
 		this.renderer.clearPreviousBuffer();
+		this.mouseCaptureYielded = false;
 		this.updateMouseReporting();
 	}
 
