@@ -375,6 +375,38 @@ export class TermDOM {
 			termDOM.#scrollCamera(dy);
 		}) as typeof window.scrollBy;
 
+		// scrollTo/scroll set the camera to an absolute position -- the same
+		// state scrollY reads and scrollBy moves relatively. document.
+		// documentElement/body.scrollTop are the same value again, standard DOM
+		// (window.scrollY === document.documentElement.scrollTop always): one
+		// camera, four ways to read or move it, matching the "unified scrolling
+		// model" the viewport tests already name it after.
+		const scrollToCamera = (
+			xOrOptions?: number | ScrollToOptions,
+			y?: number,
+		): void => {
+			const targetY =
+				typeof xOrOptions === "object" && xOrOptions !== null
+					? (xOrOptions.top ?? termDOM.#documentScrollTop)
+					: (y ?? 0);
+			termDOM.#documentScrollTop = Math.max(0, targetY);
+			void termDOM.#render();
+		};
+		window.scrollTo = scrollToCamera as typeof window.scrollTo;
+		window.scroll = scrollToCamera as typeof window.scroll;
+
+		for (const root of [this.document.documentElement, this.document.body]) {
+			Object.defineProperty(root, "scrollTop", {
+				get: () => termDOM.#documentScrollTop,
+				set: (value: number) => {
+					termDOM.#documentScrollTop = Math.max(0, value);
+					void termDOM.#render();
+				},
+				configurable: true,
+				enumerable: true,
+			});
+		}
+
 		// requestAnimationFrame is the only way to await a painted frame -- render()
 		// is private. jsdom's pretendToBeVisual rAF is a bare timer, decoupled from
 		// our (async) paint, so a callback could fire before the frame is written.
