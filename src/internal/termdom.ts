@@ -120,7 +120,7 @@ export class TermDOM {
 	private readonly observer: MutationObserver;
 	private readonly fullscreenManager: FullscreenManager;
 	private readonly observerManager: ObserverManager;
-	public readonly styleManager: StyleManager;
+	#styleManager: StyleManager;
 	private readonly scrollingManager: ScrollingManager;
 
 	// Guard against re-entrant rendering. A render() call arriving while one is in
@@ -234,11 +234,11 @@ export class TermDOM {
 		);
 
 		// Setup style management FIRST to override getComputedStyle before LayoutEngine uses it
-		this.styleManager = new StyleManager(this.window);
+		this.#styleManager = new StyleManager(this.window);
 
 		// Create layout engine after StyleManager overrides getComputedStyle
 		this.layoutEngine = new LayoutEngine(this.jsdom.window);
-		this.styleManager.setLayoutEngine(this.layoutEngine);
+		this.#styleManager.setLayoutEngine(this.layoutEngine);
 		this.layoutEngine.resize(this.width, this.height);
 		this.fullscreenManager = new FullscreenManager(this.process);
 		this.observerManager = new ObserverManager(this.createObserverHost());
@@ -371,7 +371,7 @@ export class TermDOM {
 	private setupMutationObserver(): MutationObserver {
 		const observer = new this.window.MutationObserver((mutations) => {
 			// Process mutations in correct order to avoid race conditions
-			this.styleManager.handleMutations(mutations); // First: attach pseudo-elements, invalidate caches
+			this.#styleManager.handleMutations(mutations); // First: attach pseudo-elements, invalidate caches
 			this.layoutEngine.handleMutations(mutations); // Second: process DOM changes for layout
 			this.#render(); // Finally: render with fully processed DOM
 		});
@@ -787,7 +787,7 @@ export class TermDOM {
 		this.renderedOutsideMarkers.add(element);
 
 		// Get marker content from StyleManager
-		const markerContent = this.styleManager.getMarkerContent(element);
+		const markerContent = this.#styleManager.getMarkerContent(element);
 		if (!markerContent) {
 			return;
 		}
@@ -1064,7 +1064,7 @@ export class TermDOM {
 		const hadMutations = pendingMutations.length > 0;
 		if (hadMutations) {
 			// Process mutations in the same order as MutationObserver callback
-			this.styleManager.handleMutations(pendingMutations);
+			this.#styleManager.handleMutations(pendingMutations);
 			this.layoutEngine.handleMutations(pendingMutations);
 		}
 		this.layoutEngine.calculateLayout();
@@ -1854,7 +1854,7 @@ export class TermDOM {
 	private async renderStatic(): Promise<void> {
 		const pending = this.observer.takeRecords();
 		if (pending.length > 0) {
-			this.styleManager.handleMutations(pending);
+			this.#styleManager.handleMutations(pending);
 			this.layoutEngine.handleMutations(pending);
 		}
 
@@ -1973,7 +1973,7 @@ export class TermDOM {
 
 		const pending = this.observer.takeRecords();
 		if (pending.length > 0) {
-			this.styleManager.handleMutations(pending);
+			this.#styleManager.handleMutations(pending);
 			this.layoutEngine.handleMutations(pending);
 		}
 
@@ -2273,7 +2273,7 @@ export class TermDOM {
 		// Shadow DOM cleanup is automatic with symbol-based storage
 
 		this.observer.disconnect();
-		this.styleManager.dispose();
+		this.#styleManager.dispose();
 		this.layoutEngine.dispose();
 		this.fullscreenManager.dispose();
 		this.observerManager.dispose();

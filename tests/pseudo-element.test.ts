@@ -1,6 +1,6 @@
 import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
-import {MockProcess, nextFrame} from "./test-utils.js";
+import {MockProcess, nextFrame, styleManagerFor} from "./test-utils.js";
 import {
 	getPseudoElement,
 	createExpandedTreeWalker,
@@ -57,7 +57,7 @@ test("::before and ::after content rendering", async () => {
 	document.body.appendChild(decorated);
 
 	// Trigger stylesheet refresh to attach pseudo elements
-	termdom.styleManager.refreshStylesheets();
+	styleManagerFor(termdom).refreshStylesheets();
 
 	// Check the actual attached pseudo elements using the composition API
 	const beforeQuoteNode = getPseudoElement(quote, "::before");
@@ -79,7 +79,7 @@ test("::before and ::after content rendering", async () => {
 	expect(afterQuoteNode).not.toBeNull();
 	expect(afterQuoteNode!.textContent).toBe('"');
 
-	const beforePrefixNode = termdom.styleManager.createPseudoElementNode(
+	const beforePrefixNode = styleManagerFor(termdom).createPseudoElementNode(
 		note,
 		"::before",
 	);
@@ -147,7 +147,7 @@ test("::marker pseudo-element with lists", async () => {
 	expect(output).toContain("Fire item");
 
 	// Verify StyleManager can get marker content for outside positioning
-	const styleManager = termdom.styleManager;
+	const styleManager = styleManagerFor(termdom);
 
 	const markerContent = styleManager.getMarkerContent(item1);
 	expect(markerContent).not.toBeNull();
@@ -191,7 +191,6 @@ test("Pseudo-element cascade and specificity in rendering", async () => {
 	expect(output).not.toContain("content: Test message");
 
 	// Verify StyleManager cascade resolution
-	const _styleManager = termdom.styleManager;
 	const beforeStyle = termdom.window.getComputedStyle(element, "::before");
 	expect(beforeStyle.getPropertyValue("content")).toBe('"special: "');
 });
@@ -248,7 +247,7 @@ test.todo(
 		expect(output).toContain("★ Important");
 
 		// Verify empty/none/normal don't create pseudo-elements
-		const styleManager = termdom.styleManager;
+		const styleManager = styleManagerFor(termdom);
 
 		expect(styleManager.shouldCreatePseudoElement(emptyEl, "::before")).toBe(
 			false,

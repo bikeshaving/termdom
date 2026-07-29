@@ -1,6 +1,6 @@
 import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
-import {MockProcess} from "./test-utils.js";
+import {MockProcess, styleManagerFor} from "./test-utils.js";
 
 test("CSS specificity calculation", async () => {
 	const terminal = new MockProcess();
@@ -23,7 +23,7 @@ test("CSS specificity calculation", async () => {
 	await new Promise((resolve) => setTimeout(resolve, 10));
 
 	// Get parsed rules to verify specificity ordering
-	const styleManager = termdom.styleManager;
+	const styleManager = styleManagerFor(termdom);
 	const parsedRules = (styleManager as any).parsedRules;
 
 	// Find specific rules to test specificity values
@@ -157,7 +157,7 @@ test("Pseudo-element specificity", async () => {
 	expect(beforeStyle.getPropertyValue("color")).toBe("blue");
 
 	// Verify specificity strings for pseudo-elements
-	const styleManager = termdom.styleManager;
+	const styleManager = styleManagerFor(termdom);
 	const parsedRules = (styleManager as any).parsedRules;
 
 	const divPseudo = parsedRules.find(
@@ -226,7 +226,7 @@ test("StyleManager createPseudoElementNode", async () => {
 
 	await new Promise((resolve) => setTimeout(resolve, 10));
 
-	const styleManager = termdom.styleManager;
+	const styleManager = styleManagerFor(termdom);
 
 	// Test element with content
 	const testDiv = document.createElement("div");

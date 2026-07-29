@@ -1,7 +1,7 @@
 import {test, expect} from "@b9g/libuild/test";
 import {JSDOM} from "jsdom";
 import {TermDOM} from "../src/internal/termdom.js";
-import {MockProcess, nextFrame} from "./test-utils.js";
+import {MockProcess, nextFrame, styleManagerFor} from "./test-utils.js";
 import {
 	createExpandedTreeWalker,
 	setShadowRoot,
@@ -1158,7 +1158,7 @@ test("TermDOM - ::marker pseudo-elements with display: list-item", () => {
 	document.body.appendChild(regularDiv);
 
 	// Trigger stylesheet refresh to attach pseudo elements
-	termdom.styleManager.refreshStylesheets();
+	styleManagerFor(termdom).refreshStylesheets();
 
 	// Check that pseudo elements were created correctly
 	expect(getPseudoElement(li, "::marker")?.textContent).toBe("★ ");
@@ -1208,7 +1208,7 @@ test("TermDOM - ::marker appears before ::before pseudo-elements", () => {
 	document.body.appendChild(div);
 
 	// Trigger stylesheet refresh
-	termdom.styleManager.refreshStylesheets();
+	styleManagerFor(termdom).refreshStylesheets();
 
 	// Verify all pseudo elements exist
 	expect(getPseudoElement(div, "::marker")?.textContent).toBe("★ ");
@@ -1292,7 +1292,7 @@ test("TermDOM - ::marker only on elements with display: list-item in walker trav
 	document.body.appendChild(container);
 
 	// Trigger stylesheet refresh
-	termdom.styleManager.refreshStylesheets();
+	styleManagerFor(termdom).refreshStylesheets();
 
 	// Use walker to traverse and find ::marker elements
 	const walker = createExpandedTreeWalker(termdom.window as any, container);
@@ -1360,7 +1360,7 @@ test("TermDOM - ::marker rendering test", async () => {
 	document.body.appendChild(div);
 
 	// Trigger stylesheet refresh and render
-	termdom.styleManager.refreshStylesheets();
+	styleManagerFor(termdom).refreshStylesheets();
 	await nextFrame(termdom);
 
 	// Check terminal output contains all pseudo-element content in correct order

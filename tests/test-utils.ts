@@ -21,6 +21,8 @@ import {
 } from "../src/internal/ansi.js";
 import {generateANSI} from "../src/internal/ansi.js";
 import {stringWidth} from "../src/internal/runtime.js";
+import {StyleManager} from "../src/internal/styles.js";
+import {LayoutEngine} from "../src/internal/layout.js";
 import {writeFileSync, mkdirSync, existsSync} from "fs";
 import {join} from "path";
 
@@ -354,6 +356,19 @@ export function nextFrame(dom: {
 	return new Promise((resolve) =>
 		dom.window.requestAnimationFrame(() => resolve()),
 	);
+}
+
+/**
+ * A StyleManager wired to a TermDOM's window, for the handful of tests that
+ * inspect CSS parsing or pseudo-element resolution directly. styleManager is
+ * #private on TermDOM; this re-parses the same document's stylesheets, so it
+ * resolves the same rules.
+ */
+export function styleManagerFor(dom: {window: any}): StyleManager {
+	const sm = new StyleManager(dom.window);
+	sm.setLayoutEngine(new LayoutEngine(dom.window));
+	sm.refreshStylesheets();
+	return sm;
 }
 
 export function stripControlCodes(ansi: string): string {
