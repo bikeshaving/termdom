@@ -22,7 +22,6 @@ let config: Config;
 
 beforeEach(() => {
 	config = Config.create();
-	config.setUseWebDefaults(true);
 	config.setPointScaleFactor(1);
 });
 

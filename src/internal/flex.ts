@@ -272,15 +272,15 @@ interface LayoutResult {
 }
 
 /**
- * `useWebDefaults` semantics: flex-direction defaults to row (not column),
- * align-content to stretch (not flex-start), and flex-shrink to 1 (not 0).
- * termdom always constructs its config with web defaults on.
+ * Web (browser) flex defaults, always: flex-direction row, align-content
+ * stretch, flex-shrink 1. Yoga's non-web defaults (column, flex-shrink 0) are
+ * React Native's; a DOM renderer never wants them.
  */
-function createStyle(webDefaults: boolean): Style {
+function createStyle(): Style {
 	return {
-		flexDirection: webDefaults ? FLEX_DIRECTION_ROW : FLEX_DIRECTION_COLUMN,
+		flexDirection: FLEX_DIRECTION_ROW,
 		justifyContent: JUSTIFY_FLEX_START,
-		alignContent: webDefaults ? ALIGN_STRETCH : ALIGN_FLEX_START,
+		alignContent: ALIGN_STRETCH,
 		alignItems: ALIGN_STRETCH,
 		alignSelf: ALIGN_AUTO,
 		positionType: POSITION_TYPE_RELATIVE,
@@ -346,15 +346,10 @@ function createLayout(): LayoutResult {
 // ---------------------------------------------------------------------------
 
 export class Config {
-	useWebDefaults = false;
 	pointScaleFactor = 1;
 
 	static create(): Config {
 		return new Config();
-	}
-
-	setUseWebDefaults(value: boolean): void {
-		this.useWebDefaults = value;
 	}
 
 	setPointScaleFactor(value: number): void {
@@ -432,7 +427,7 @@ export class Node {
 
 	constructor(config: Config = defaultConfig) {
 		this.config = config;
-		this.style = createStyle(config.useWebDefaults);
+		this.style = createStyle();
 		this.layout = createLayout();
 	}
 
@@ -850,7 +845,7 @@ function resolveFlexGrow(node: Node): number {
 function resolveFlexShrink(node: Node): number {
 	if (!node.parent) return 0;
 	if (isDefined(node.style.flexShrink)) return node.style.flexShrink;
-	return node.config.useWebDefaults ? 1 : 0;
+	return 1; // web default
 }
 
 /** flex-basis: auto falls back to the main-axis size property. */

@@ -740,7 +740,6 @@ export interface RectText {
 }
 
 const flexConfig = Flex.Config.create();
-flexConfig.setUseWebDefaults(true);
 flexConfig.setPointScaleFactor(1.0);
 
 // Symbol-keyed so the invalidation test can spy on it (a #private method's
