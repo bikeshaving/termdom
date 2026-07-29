@@ -116,16 +116,12 @@ const kObserver = Symbol("observer");
 const kScrollingManager = Symbol("scrollingManager");
 const kCursorDetectionPromise = Symbol("cursorDetectionPromise");
 const kHasDetectedCommandStart = Symbol("hasDetectedCommandStart");
-const kWidth = Symbol("width");
-const kHeight = Symbol("height");
 export {
 	kLayoutEngine,
 	kObserver,
 	kScrollingManager,
 	kCursorDetectionPromise,
 	kHasDetectedCommandStart,
-	kWidth,
-	kHeight,
 };
 
 export class TermDOM {
@@ -194,8 +190,8 @@ export class TermDOM {
 	// Promise that resolves when cursor detection completes (or times out)
 	[kCursorDetectionPromise]: Promise<void> | null = null;
 
-	[kWidth]: number;
-	[kHeight]: number;
+	#width: number;
+	#height: number;
 	/** Which document row sits at the top of the camera. */
 	#documentScrollTop = 0;
 
@@ -228,8 +224,8 @@ export class TermDOM {
 		this.#detectCursorEnabled =
 			(options.detectCursor ?? this.#process === process) && this.#interactive;
 
-		this[kWidth] = options.width || this.#process.stdout.columns || 80;
-		this[kHeight] = options.height || this.#process.stdout.rows || 24;
+		this.#width = options.width || this.#process.stdout.columns || 80;
+		this.#height = options.height || this.#process.stdout.rows || 24;
 
 		this.#jsdom = new JSDOM(
 			"<!DOCTYPE html><html><head></head><body></body></html>",
@@ -247,8 +243,8 @@ export class TermDOM {
 
 		this.#initializeConstructorExtensions();
 		this.#renderer = new Renderer(
-			this[kHeight],
-			this[kWidth],
+			this.#height,
+			this.#width,
 			options.colorDepth || detectColorDepth(this.#process),
 		);
 
@@ -258,7 +254,7 @@ export class TermDOM {
 		// Create layout engine after StyleManager overrides getComputedStyle
 		this[kLayoutEngine] = new LayoutEngine(this.#jsdom.window);
 		this.#styleManager.setLayoutEngine(this[kLayoutEngine]);
-		this[kLayoutEngine].resize(this[kWidth], this[kHeight]);
+		this[kLayoutEngine].resize(this.#width, this.#height);
 		this.#fullscreenManager = new FullscreenManager(this.#process);
 		this.#observerManager = new ObserverManager(this.#createObserverHost());
 
@@ -276,22 +272,22 @@ export class TermDOM {
 	#initializeWindow(): void {
 		const window = this.window;
 		Object.defineProperty(window, "innerWidth", {
-			value: this[kWidth],
+			value: this.#width,
 			writable: false,
 			configurable: true,
 		});
 		Object.defineProperty(window, "innerHeight", {
-			value: this[kHeight],
+			value: this.#height,
 			writable: false,
 			configurable: true,
 		});
 		Object.defineProperty(window, "outerWidth", {
-			value: this[kWidth],
+			value: this.#width,
 			writable: false,
 			configurable: true,
 		});
 		Object.defineProperty(window, "outerHeight", {
-			value: this[kHeight],
+			value: this.#height,
 			writable: false,
 			configurable: true,
 		});
@@ -377,7 +373,7 @@ export class TermDOM {
 		// clientHeight is the viewport height (terminal height)
 		Object.defineProperty(this.document.body, "clientHeight", {
 			get() {
-				return termDOM[kHeight];
+				return termDOM.#height;
 			},
 			configurable: true,
 			enumerable: true,
@@ -385,7 +381,7 @@ export class TermDOM {
 
 		Object.defineProperty(this.document.documentElement, "clientHeight", {
 			get() {
-				return termDOM[kHeight];
+				return termDOM.#height;
 			},
 			configurable: true,
 			enumerable: true,
@@ -1114,8 +1110,8 @@ export class TermDOM {
 		const newWidth = this.#process.stdout.columns || 80;
 		const newHeight = this.#process.stdout.rows || 24;
 
-		this[kWidth] = newWidth;
-		this[kHeight] = newHeight;
+		this.#width = newWidth;
+		this.#height = newHeight;
 
 		Object.defineProperty(this.window, "innerWidth", {
 			value: newWidth,
@@ -1248,8 +1244,8 @@ export class TermDOM {
 				return {
 					top: scrollTop,
 					left: 0,
-					width: this[kWidth],
-					height: this[kHeight],
+					width: this.#width,
+					height: this.#height,
 				};
 			},
 			now: () => this.#renderCount,
@@ -1425,7 +1421,7 @@ export class TermDOM {
 			// minimal amount that brings the element into it -- the standard
 			// block: "nearest" behavior.
 			const regionHeight = Math.min(
-				termDOM[kHeight],
+				termDOM.#height,
 				termDOM.document.body.scrollHeight,
 			);
 			const top = termDOM.#documentScrollTop;
@@ -2003,7 +1999,7 @@ export class TermDOM {
 		this[kLayoutEngine].calculateLayout();
 
 		const contentHeight = this.document.body.scrollHeight;
-		const regionHeight = Math.min(contentHeight, this[kHeight]);
+		const regionHeight = Math.min(contentHeight, this.#height);
 
 		// Take the room we need by pushing earlier output up, never over it.
 		const top = this.#reserveRows(regionHeight);
@@ -2048,15 +2044,13 @@ export class TermDOM {
 	 */
 	#reserveRows(rows: number): number {
 		const top = this[kScrollingManager].getScreenTop();
-		const overflow = top + rows - this[kHeight];
+		const overflow = top + rows - this.#height;
 
 		if (overflow <= 0) return top;
 
 		const push = Math.min(overflow, top);
 		if (push > 0) {
-			this.#process.stdout.write(
-				`\x1b[${this[kHeight]};1H` + "\n".repeat(push),
-			);
+			this.#process.stdout.write(`\x1b[${this.#height};1H` + "\n".repeat(push));
 			// Do NOT shift the renderer's previous buffer. Its rows are relative to
 			// the region top, and the top moves up by exactly the amount the screen
 			// scrolled -- the two cancel, so buffer coordinates are unchanged.

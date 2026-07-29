@@ -3,7 +3,7 @@
  */
 
 import {test, expect} from "@b9g/libuild/test";
-import {TermDOM, kWidth, kHeight, kObserver} from "../src/internal/termdom.js";
+import {TermDOM, kObserver} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils";
 
 test("TermDOM provides HTML document with terminal capabilities", () => {
@@ -89,9 +89,8 @@ test("TermDOM provides correct terminal dimensions", () => {
 		height: 50,
 	});
 
-	// Access the internal dimensions via the dom instance
-	expect(dom[kWidth]).toBe(100);
-	expect(dom[kHeight]).toBe(50);
+	expect(dom.window.innerWidth).toBe(100);
+	expect(dom.window.innerHeight).toBe(50);
 
 	dom.dispose();
 });
