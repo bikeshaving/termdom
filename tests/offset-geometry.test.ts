@@ -131,3 +131,28 @@ test("body's own clientHeight/scrollHeight (viewport height, real content height
 	expect(dom.document.body.scrollHeight).toBe(2);
 	dom.dispose();
 });
+
+test("offsetWidth/Height and clientWidth/Height stay mechanically consistent with border width", async () => {
+	// offsetWidth/Height, clientWidth/Height, and offsetTop/Left are all
+	// derived from the same #layoutRectOf/#contentBoxOf internals in
+	// termdom.ts, not independently written formulas -- so this identity can't
+	// silently drift out of sync across an edit to just one of them the way
+	// duplicated code could.
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const dom = new TermDOM({process: terminal});
+	dom.document.body.innerHTML = `
+		<div id="a" style="width:14px; height:6px; border:2px solid; padding:1px"></div>
+		<div id="b" style="width:9px; height:5px"></div>
+	`;
+	await nextFrame(dom);
+
+	// "a" has a 2px border on every side (4 total per axis); "b" has none.
+	const expectedBorderTotal: Record<string, number> = {a: 4, b: 0};
+	for (const id of ["a", "b"]) {
+		const el = dom.document.getElementById(id)!;
+		// clientWidth is offsetWidth with the border removed, by construction.
+		expect(el.offsetWidth - el.clientWidth).toBe(expectedBorderTotal[id]);
+		expect(el.offsetHeight - el.clientHeight).toBe(expectedBorderTotal[id]);
+	}
+	dom.dispose();
+});

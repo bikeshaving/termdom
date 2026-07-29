@@ -1435,15 +1435,29 @@ export class TermDOM {
 			return termDOM[kLayoutEngine].createDOMRectList(rects);
 		};
 
-		// offsetWidth/offsetHeight/offsetTop/offsetLeft/offsetParent -- the most
-		// commonly reached-for measurement API, and previously entirely
-		// unimplemented (always 0/null via jsdom's defaults). Border-box
-		// dimensions and position, from the same layout rect getBoundingClientRect
-		// already uses -- rounded to whole cells, since that's what actually
-		// paints. offsetTop/Left are relative to offsetParent's own border-box
-		// origin (not its padding edge, which the spec technically uses): a
-		// simplification that only differs when offsetParent itself has a
-		// border, and is off by exactly that border's width when it does.
+		// offsetWidth/offsetHeight/offsetTop/offsetLeft/offsetParent/clientWidth/
+		// clientHeight/scrollWidth/scrollHeight -- the most commonly reached-for
+		// measurement APIs, and previously entirely unimplemented (always
+		// 0/null via jsdom's defaults). Every one of them is derived from
+		// #layoutRectOf, the single place that decides "is this element
+		// connected, has layout settled, what is its border-box rect" -- so
+		// offsetWidth and clientWidth can never quietly disagree about which
+		// rect they mean, and a future change to that decision (e.g. how
+		// isConnected or render-flushing is handled) only has one place to make.
+		//
+		// #layoutRectOf returns the same rect getBoundingClientRect uses,
+		// unrounded (each getter below rounds for its own purpose -- offsetTop
+		// rounds the *difference* of two rects, not each rect independently, so
+		// rounding here first would double-round and drift by a cell).
+		const layoutRectOf = (element: Element): DOMRect | null => {
+			if (!element.isConnected) return null;
+			termDOM.#processPendingMutationsAndRender();
+			return termDOM[kLayoutEngine].getRect(element);
+		};
+
+		// offsetParent walks the live DOM tree, not layout -- a separate concern
+		// from #layoutRectOf, reused by offsetParent itself and by offsetTop/Left
+		// to find what they're relative to.
 		const offsetParentOf = (element: Element): HTMLElement | null => {
 			for (
 				let ancestor = element.parentElement;
@@ -1460,11 +1474,25 @@ export class TermDOM {
 			return termDOM.document.body === element ? null : termDOM.document.body;
 		};
 
+		// The content+padding box (border-box rect minus border widths), which
+		// both clientWidth/Height and (for now) scrollWidth/Height report -- see
+		// their definition below for why scroll* is an alias of client* rather
+		// than the element's true unclamped content size.
+		const contentBoxOf = (
+			element: Element,
+		): {width: number; height: number} | null => {
+			const rect = layoutRectOf(element);
+			if (!rect) return null;
+			const box = getBoxModel(element);
+			return {
+				width: rect.width - box.borderLeftWidth - box.borderRightWidth,
+				height: rect.height - box.borderTopWidth - box.borderBottomWidth,
+			};
+		};
+
 		Object.defineProperty(this.window.HTMLElement.prototype, "offsetWidth", {
 			get(this: Element) {
-				if (!this.isConnected) return 0;
-				termDOM.#processPendingMutationsAndRender();
-				return Math.round(termDOM[kLayoutEngine].getRect(this)?.width ?? 0);
+				return Math.round(layoutRectOf(this)?.width ?? 0);
 			},
 			configurable: true,
 			enumerable: true,
@@ -1472,9 +1500,7 @@ export class TermDOM {
 
 		Object.defineProperty(this.window.HTMLElement.prototype, "offsetHeight", {
 			get(this: Element) {
-				if (!this.isConnected) return 0;
-				termDOM.#processPendingMutationsAndRender();
-				return Math.round(termDOM[kLayoutEngine].getRect(this)?.height ?? 0);
+				return Math.round(layoutRectOf(this)?.height ?? 0);
 			},
 			configurable: true,
 			enumerable: true,
@@ -1482,23 +1508,22 @@ export class TermDOM {
 
 		Object.defineProperty(this.window.HTMLElement.prototype, "offsetParent", {
 			get(this: Element) {
-				if (!this.isConnected) return null;
-				return offsetParentOf(this);
+				return this.isConnected ? offsetParentOf(this) : null;
 			},
 			configurable: true,
 			enumerable: true,
 		});
 
+		// offsetTop/Left are relative to offsetParent's own border-box origin
+		// (not its padding edge, which the spec technically uses): a
+		// simplification that only differs when offsetParent itself has a
+		// border, and is off by exactly that border's width when it does.
 		Object.defineProperty(this.window.HTMLElement.prototype, "offsetTop", {
 			get(this: Element) {
-				if (!this.isConnected) return 0;
-				termDOM.#processPendingMutationsAndRender();
-				const rect = termDOM[kLayoutEngine].getRect(this);
+				const rect = layoutRectOf(this);
 				if (!rect) return 0;
 				const parent = offsetParentOf(this);
-				const parentRect = parent
-					? termDOM[kLayoutEngine].getRect(parent)
-					: null;
+				const parentRect = parent ? layoutRectOf(parent) : null;
 				return Math.round(rect.top - (parentRect?.top ?? 0));
 			},
 			configurable: true,
@@ -1507,14 +1532,10 @@ export class TermDOM {
 
 		Object.defineProperty(this.window.HTMLElement.prototype, "offsetLeft", {
 			get(this: Element) {
-				if (!this.isConnected) return 0;
-				termDOM.#processPendingMutationsAndRender();
-				const rect = termDOM[kLayoutEngine].getRect(this);
+				const rect = layoutRectOf(this);
 				if (!rect) return 0;
 				const parent = offsetParentOf(this);
-				const parentRect = parent
-					? termDOM[kLayoutEngine].getRect(parent)
-					: null;
+				const parentRect = parent ? layoutRectOf(parent) : null;
 				return Math.round(rect.left - (parentRect?.left ?? 0));
 			},
 			configurable: true,
@@ -1524,8 +1545,7 @@ export class TermDOM {
 		// clientWidth/clientHeight/scrollWidth/scrollHeight, generalized from the
 		// html/body-only instance properties defined above (which still win: an
 		// own-property shadows a prototype getter, so document.body's viewport-
-		// height special case is untouched). client* is the content+padding box
-		// (border-box rect minus border widths).
+		// height special case is untouched).
 		//
 		// scroll* is set equal to client* here rather than the element's true
 		// unclamped content size, matching the same limitation the paint-extent
@@ -1536,24 +1556,10 @@ export class TermDOM {
 		// under-report for a box with both an explicit size *and* overflowing
 		// normal-flow content -- the one case a real browser's scrollWidth/Height
 		// would exceed clientWidth/Height.
-		const contentBoxSize = (
-			element: Element,
-		): {width: number; height: number} | null => {
-			const rect = termDOM[kLayoutEngine].getRect(element);
-			if (!rect) return null;
-			const box = getBoxModel(element);
-			return {
-				width: rect.width - box.borderLeftWidth - box.borderRightWidth,
-				height: rect.height - box.borderTopWidth - box.borderBottomWidth,
-			};
-		};
-
 		for (const prop of ["clientWidth", "scrollWidth"] as const) {
 			Object.defineProperty(this.window.HTMLElement.prototype, prop, {
 				get(this: Element) {
-					if (!this.isConnected) return 0;
-					termDOM.#processPendingMutationsAndRender();
-					return Math.round(contentBoxSize(this)?.width ?? 0);
+					return Math.round(contentBoxOf(this)?.width ?? 0);
 				},
 				configurable: true,
 				enumerable: true,
@@ -1563,9 +1569,7 @@ export class TermDOM {
 		for (const prop of ["clientHeight", "scrollHeight"] as const) {
 			Object.defineProperty(this.window.HTMLElement.prototype, prop, {
 				get(this: Element) {
-					if (!this.isConnected) return 0;
-					termDOM.#processPendingMutationsAndRender();
-					return Math.round(contentBoxSize(this)?.height ?? 0);
+					return Math.round(contentBoxOf(this)?.height ?? 0);
 				},
 				configurable: true,
 				enumerable: true,
