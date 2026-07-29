@@ -663,6 +663,17 @@ export class DrawingContext {
 	// and shows it -- IME composition anchors at the real cursor, so a fake
 	// inverse-cell caret is not enough for text entry.
 	caret: {col: number; row: number} | null = null;
+	// The active overflow:hidden clip, in the same document-space (row, col)
+	// coordinates as every draw call below -- set/restored by the renderer
+	// around a clipping element's children. An edge is +-Infinity when that
+	// axis isn't clipped (e.g. overflow-x:hidden;overflow-y:visible only
+	// bounds left/right). null means no clip is active at all.
+	clipRect: {
+		left: number;
+		top: number;
+		right: number;
+		bottom: number;
+	} | null = null;
 
 	constructor(
 		buffer: CellBuffer,
@@ -809,6 +820,12 @@ export class DrawingContext {
 		}
 	}
 
+	#inClip(row: number, col: number): boolean {
+		if (!this.clipRect) return true;
+		const {left, top, right, bottom} = this.clipRect;
+		return col >= left && col < right && row >= top && row < bottom;
+	}
+
 	#setCell(row: number, col: number, char: string, style?: CellStyle): void {
 		const terminalRow = row + this.viewportOffset;
 
@@ -819,6 +836,8 @@ export class DrawingContext {
 			col >= this.cols
 		)
 			return;
+
+		if (this.clipRect && !this.#inClip(row, col)) return;
 
 		row = terminalRow;
 
@@ -863,6 +882,7 @@ export class DrawingContext {
 		if (terminalY < 0 || terminalY >= this.rows || x < 0 || x >= this.cols) {
 			return;
 		}
+		if (!this.#inClip(y, x)) return;
 
 		y = terminalY;
 

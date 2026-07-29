@@ -195,6 +195,56 @@ test("css: visibility:visible on a descendant re-shows inside a hidden ancestor"
 	expect(text).not.toContain("gone");
 });
 
+// overflow:hidden clips descendant paint to the box, independent of whether the
+// box is scrollable -- termdom has no scrollable containers, only the document
+// camera, so this is purely "don't paint outside this rect", not scroll-into-view.
+test("css: overflow:hidden clips content taller than the box", async () => {
+	const {text} = await renderFixture({
+		name: "overflow-hidden-vertical",
+		cols: 20,
+		rows: 6,
+		html: `<div style="overflow:hidden; width:20px; height:2px"><div>line1</div><div>line2</div><div>line3</div><div>line4</div></div>`,
+	});
+	expect(text).toBe("line1\nline2\n");
+});
+
+test("css: overflow:hidden clips a child's border that sticks out past the box", async () => {
+	const {text} = await renderFixture({
+		name: "overflow-hidden-border",
+		cols: 20,
+		rows: 6,
+		html: `<div style="overflow:hidden; width:8px; height:3px"><div style="border:1px solid; width:20px; height:5px">x</div></div>`,
+	});
+	const lines = text.split("\n").filter(Boolean);
+	// The border's right/bottom edges would land at col 19/row 4 -- well outside
+	// the 8x3 clip -- so only the top-left corner of the box survives.
+	expect(lines).toEqual(["┌───────", "│x", "│"]);
+});
+
+test("css: overflow-x:hidden alone does not clip vertical overflow", async () => {
+	const {text} = await renderFixture({
+		name: "overflow-x-only",
+		cols: 20,
+		rows: 6,
+		html: `<div style="overflow-x:hidden; width:6px; height:1px">aa bb cc dd ee</div>`,
+	});
+	// height:1px is not clipped because only overflow-x, not overflow-y, is
+	// hidden -- all three wrapped lines still show, just narrowed to 6 columns.
+	expect(text).toBe("aa bb \ncc dd \nee\n");
+});
+
+test("css: nested overflow:hidden clips intersect", async () => {
+	const {text} = await renderFixture({
+		name: "overflow-hidden-nested",
+		cols: 20,
+		rows: 8,
+		html: `<div style="overflow:hidden; width:20px; height:1px"><div style="overflow:hidden; width:5px; height:5px">nested clip here abc</div></div>`,
+	});
+	// The inner box wraps to 5 lines on its own, but the outer's height:1px
+	// clips the intersection down to just the first.
+	expect(text).toBe("neste\n");
+});
+
 // text-align: assert actual horizontal position, not just presence -- a
 // liveness-only check can't tell "centered" from "left-aligned but present".
 // justify is intentionally not covered: it isn't implemented (see

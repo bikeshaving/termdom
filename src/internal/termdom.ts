@@ -28,6 +28,43 @@ import {
 // coalesce the burst of SIGWINCHes a drag fires, short enough to feel immediate.
 const RESIZE_DEBOUNCE_MS = 40;
 
+type ClipRect = {left: number; top: number; right: number; bottom: number};
+
+/**
+ * The clip an overflow:hidden (or overflow-x/-y:hidden) element imposes on its
+ * own children, intersected with whatever clip was already active from an
+ * ancestor. overflow:auto/scroll/visible impose no clip on that axis -- there
+ * are no scrollable containers, only the document camera, so "auto/scroll"
+ * degrades to "visible" rather than clipping content nobody can scroll to see.
+ * An axis that isn't hidden stays unbounded (+-Infinity), not just "this
+ * element's own edge", so overflow-x:hidden;overflow-y:visible only bounds
+ * columns, matching CSS's independent per-axis overflow.
+ */
+function overflowClipRect(
+	rect: {left: number; top: number; width: number; height: number} | null,
+	overflowX: string,
+	overflowY: string,
+	parent: ClipRect | null,
+): ClipRect | null {
+	if (!rect) return parent;
+	const hiddenX = overflowX === "hidden";
+	const hiddenY = overflowY === "hidden";
+	if (!hiddenX && !hiddenY) return parent;
+
+	const left = hiddenX ? rect.left : -Infinity;
+	const right = hiddenX ? rect.left + rect.width : Infinity;
+	const top = hiddenY ? rect.top : -Infinity;
+	const bottom = hiddenY ? rect.top + rect.height : Infinity;
+
+	if (!parent) return {left, top, right, bottom};
+	return {
+		left: Math.max(parent.left, left),
+		top: Math.max(parent.top, top),
+		right: Math.min(parent.right, right),
+		bottom: Math.min(parent.bottom, bottom),
+	};
+}
+
 /**
  * Apply CSS `text-transform` at paint time, not layout time. Every character
  * occupies the same cell width regardless of case in a terminal, so unlike a
@@ -766,16 +803,35 @@ export class TermDOM {
 		// only an explicit z-index moves anything.
 		children.sort((a, b) => a.zIndex - b.zIndex);
 
-		for (const {node: childNode} of children) {
-			if (childNode.nodeType === childNode.ELEMENT_NODE) {
-				const childElement = childNode as Element;
-				if (childElement instanceof (this.window as any).HTMLElement) {
-					this.#renderElement(childElement, ctx);
+		// overflow:hidden clips *descendants* to this element's own box -- never
+		// the element's own border/background painted above, which is why this is
+		// scoped to just the children, not the whole function.
+		const overflow = this.window
+			.getComputedStyle(element)
+			.getPropertyValue("overflow");
+		const overflowX =
+			this.window.getComputedStyle(element).getPropertyValue("overflow-x") ||
+			overflow;
+		const overflowY =
+			this.window.getComputedStyle(element).getPropertyValue("overflow-y") ||
+			overflow;
+		const previousClip = ctx.clipRect;
+		ctx.clipRect = overflowClipRect(rect, overflowX, overflowY, previousClip);
+
+		try {
+			for (const {node: childNode} of children) {
+				if (childNode.nodeType === childNode.ELEMENT_NODE) {
+					const childElement = childNode as Element;
+					if (childElement instanceof (this.window as any).HTMLElement) {
+						this.#renderElement(childElement, ctx);
+					}
+				} else if (childNode.nodeType === childNode.TEXT_NODE) {
+					const textNode = childNode as Text;
+					this.#renderText(textNode, ctx);
 				}
-			} else if (childNode.nodeType === childNode.TEXT_NODE) {
-				const textNode = childNode as Text;
-				this.#renderText(textNode, ctx);
 			}
+		} finally {
+			ctx.clipRect = previousClip;
 		}
 	}
 
