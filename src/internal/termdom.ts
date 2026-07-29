@@ -118,7 +118,6 @@ const kCursorDetectionPromise = Symbol("cursorDetectionPromise");
 const kHasDetectedCommandStart = Symbol("hasDetectedCommandStart");
 const kWidth = Symbol("width");
 const kHeight = Symbol("height");
-const kDispatchGlobalKeyboardEvent = Symbol("dispatchGlobalKeyboardEvent");
 export {
 	kLayoutEngine,
 	kObserver,
@@ -127,7 +126,6 @@ export {
 	kHasDetectedCommandStart,
 	kWidth,
 	kHeight,
-	kDispatchGlobalKeyboardEvent,
 };
 
 export class TermDOM {
@@ -547,7 +545,7 @@ export class TermDOM {
 				// TODO: Why does this filter on fullscreen????
 				// Route 4: General keyboard events (when not in fullscreen)
 				if (!this.#fullscreenManager.isFullscreen) {
-					this[kDispatchGlobalKeyboardEvent](Buffer.from(keyInput));
+					this.#dispatchGlobalKeyboardEvent(Buffer.from(keyInput));
 				}
 			};
 			stdin.on("data", this.#stdinDataHandler);
@@ -1712,14 +1710,14 @@ export class TermDOM {
 		this.#mouseDownTarget = null;
 	}
 
-	[kDispatchGlobalKeyboardEvent](chunk: Buffer): void {
+	#dispatchGlobalKeyboardEvent(chunk: Buffer): void {
 		const key = chunk.toString("utf8");
 
 		// Tokenize multi-key chunks and dispatch each token on its own.
 		const tokens = Array.from(this.#tokenizeInput(key));
 		if (tokens.length > 1) {
 			for (const token of tokens) {
-				this[kDispatchGlobalKeyboardEvent](Buffer.from(token));
+				this.#dispatchGlobalKeyboardEvent(Buffer.from(token));
 			}
 			return;
 		}
