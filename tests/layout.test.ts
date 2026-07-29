@@ -1,8 +1,8 @@
 import {test, expect} from "@b9g/libuild/test";
 import {JSDOM} from "jsdom";
-import {LayoutEngine} from "../src/internal/layout.js";
+import {LayoutEngine, kInvalidateInlineRun} from "../src/internal/layout.js";
 import {StyleManager} from "../src/internal/styles.js";
-import {TermDOM} from "../src/internal/termdom.js";
+import {TermDOM, kLayoutEngine} from "../src/internal/termdom.js";
 import {
 	setPseudoElement,
 	createPseudoNode,
@@ -1618,7 +1618,7 @@ test("Block element removal properly cleans up former run head Yoga nodes", asyn
 
 	// Initial render - span should be a run head with Yoga node
 	await nextFrame(termdom);
-	const layoutEngine = (termdom as any).layoutEngine;
+	const layoutEngine = termdom[kLayoutEngine];
 	const span = termdom.document.getElementById("span")!;
 
 	// Remove the block element
@@ -1761,14 +1761,14 @@ test.skip("layout invalidation preserves inline run behavior", async () => {
 	li.style.display = "list-item";
 	container.appendChild(li);
 
-	const layoutEngine = (termdom as any).layoutEngine;
+	const layoutEngine = termdom[kLayoutEngine];
 
 	// Track inline run invalidation calls
 	const originalInvalidateInlineRun =
-		layoutEngine.invalidateInlineRun.bind(layoutEngine);
+		layoutEngine[kInvalidateInlineRun].bind(layoutEngine);
 	let inlineInvalidationCalls = 0;
 
-	layoutEngine.invalidateInlineRun = function (node: Node) {
+	layoutEngine[kInvalidateInlineRun] = function (node: Node) {
 		inlineInvalidationCalls++;
 		return originalInvalidateInlineRun(node);
 	};
@@ -2354,7 +2354,7 @@ function createTermDOM(html: string = "<div></div>") {
 	// Clear default body content and add test HTML
 	document.body.innerHTML = html;
 
-	return {termdom, document, layoutEngine: (termdom as any).layoutEngine};
+	return {termdom, document, layoutEngine: termdom[kLayoutEngine]};
 }
 
 function getPosition(layoutEngine: any, element: Element): number {

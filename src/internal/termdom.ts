@@ -84,7 +84,7 @@ export interface TermDOMOptions {
 // shell with no cursor. One process-level exit hook restores it for any live
 // interactive instance that skipped dispose. Registered lazily, only for
 // instances driving the real process (never for test mocks).
-const undisposedInteractive = new Set<TermDOM>();
+const undisposedInteractive = new Set<ProcessLike>();
 let exitHookInstalled = false;
 
 // What Tab traverses and what a mousedown focuses -- one definition of
@@ -96,12 +96,10 @@ function installCursorRestoreOnExit(): void {
 	if (exitHookInstalled) return;
 	exitHookInstalled = true;
 	process.on("exit", () => {
-		for (const instance of undisposedInteractive) {
+		for (const proc of undisposedInteractive) {
 			try {
 				// Mouse capture off (a no-op if it was never on), cursor back on.
-				(instance as unknown as {process: ProcessLike}).process.stdout.write(
-					"\x1b[?1006l\x1b[?1002l\x1b[?25h",
-				);
+				proc.stdout.write("\x1b[?1006l\x1b[?1002l\x1b[?25h");
 			} catch {
 				// The stream may already be gone; the shell will survive.
 			}
@@ -109,23 +107,48 @@ function installCursorRestoreOnExit(): void {
 	});
 }
 
-export class TermDOM {
-	public readonly document: Document;
-	public readonly window: DOMWindow;
+// Symbol-keyed handles for the internals the test suite must reach (the layout
+// engine, input injection, anchor state). These are deliberately not #private so
+// a test can import the key and read them -- but they are off the public API:
+// index.ts does not re-export these symbols, so a consumer cannot name them.
+const kLayoutEngine = Symbol("layoutEngine");
+const kObserver = Symbol("observer");
+const kScrollingManager = Symbol("scrollingManager");
+const kCursorDetectionPromise = Symbol("cursorDetectionPromise");
+const kHasDetectedCommandStart = Symbol("hasDetectedCommandStart");
+const kWidth = Symbol("width");
+const kHeight = Symbol("height");
+const kDispatchGlobalKeyboardEvent = Symbol("dispatchGlobalKeyboardEvent");
+const kDocumentScrollTop = Symbol("documentScrollTop");
+export {
+	kLayoutEngine,
+	kObserver,
+	kScrollingManager,
+	kCursorDetectionPromise,
+	kHasDetectedCommandStart,
+	kWidth,
+	kHeight,
+	kDispatchGlobalKeyboardEvent,
+	kDocumentScrollTop,
+};
 
-	private readonly renderer: Renderer;
-	private readonly layoutEngine: LayoutEngine;
+export class TermDOM {
+	readonly document: Document;
+	readonly window: DOMWindow;
+
+	#renderer: Renderer;
+	[kLayoutEngine]: LayoutEngine;
 	// TODO: Should we expose the JSDOM instance?
-	private readonly jsdom: JSDOM;
-	private readonly observer: MutationObserver;
-	private readonly fullscreenManager: FullscreenManager;
-	private readonly observerManager: ObserverManager;
+	#jsdom: JSDOM;
+	[kObserver]: MutationObserver;
+	#fullscreenManager: FullscreenManager;
+	#observerManager: ObserverManager;
 	#styleManager: StyleManager;
-	private readonly scrollingManager: ScrollingManager;
+	[kScrollingManager]: ScrollingManager;
 
 	// Guard against re-entrant rendering. A render() call arriving while one is in
 	// flight sets renderQueued rather than being dropped, so a trailing frame runs.
-	private isRendering = false;
+	#isRendering = false;
 	// Callbacks registered via window.requestAnimationFrame, fired once the frame
 	// that includes their pending mutations has actually been written.
 	#frameCallbacks: FrameRequestCallback[] = [];
@@ -133,92 +156,92 @@ export class TermDOM {
 	// document.close() sealed the current document into scrollback; the next
 	// mutation starts a fresh document below it.
 	#sealed = false;
-	private renderQueued = false;
-	private renderInFlight: Promise<void> | null = null;
+	#renderQueued = false;
+	#renderInFlight: Promise<void> | null = null;
 
 	// Monotonic frame counter, used to timestamp observer entries.
-	private renderCount = 0;
+	#renderCount = 0;
 
 	// Input element state tracking
-	private inputCursorPositions = new WeakMap<Element, number>();
-	private inputScrollOffsets = new WeakMap<Element, number>();
+	#inputCursorPositions = new WeakMap<Element, number>();
+	#inputScrollOffsets = new WeakMap<Element, number>();
 
 	// Track whether command start was explicitly detected (even if at row 1)
-	private hasDetectedCommandStart: boolean = false;
+	[kHasDetectedCommandStart]: boolean = false;
 
 	// Unified stdin handling
-	private cursorDetectionHandler: ((data: string) => void) | null = null;
+	#cursorDetectionHandler: ((data: string) => void) | null = null;
 
 	// Handles and timers that must be torn down in dispose(), or they keep the
 	// process alive after the app is done -- which, across a test suite, piles up
 	// into a hang.
-	private sigintHandler: (() => void) | null = null;
-	private sigwinchHandler: (() => void) | null = null;
-	private stdinDataHandler: ((chunk: string | Buffer) => void) | null = null;
-	private cursorDetectionTimer: ReturnType<typeof setTimeout> | null = null;
-	private resizeTimer: ReturnType<typeof setTimeout> | null = null;
+	#sigintHandler: (() => void) | null = null;
+	#sigwinchHandler: (() => void) | null = null;
+	#stdinDataHandler: ((chunk: string | Buffer) => void) | null = null;
+	#cursorDetectionTimer: ReturnType<typeof setTimeout> | null = null;
+	#resizeTimer: ReturnType<typeof setTimeout> | null = null;
 	// True from the first SIGWINCH of a resize until the re-anchored redraw. While
 	// set, render() bails: the terminal has rewrapped the screen and our anchor is
 	// momentarily stale, so an auto-render (an animation tick) painting now lands
 	// at the wrong rows and scrolls a stray copy into the scrollback. Only the
 	// final redraw that handleResize issues is allowed through.
-	private resizeInProgress = false;
+	#resizeInProgress = false;
 	// Whether we have taken hold of the terminal: raw mode, signal handlers,
 	// the stdin listener and the cursor query. Construction never touches the
 	// process -- attach() does, lazily on the first render or explicitly.
-	private attached = false;
+	#attached = false;
 	// Bumped on every SIGWINCH. The re-anchor waits on an async cursor query;
 	// if another resize lands while it is in flight, the stale response must not
 	// trigger a redraw at coordinates that no longer mean anything.
-	private resizeEpoch = 0;
+	#resizeEpoch = 0;
 
 	// Promise that resolves when cursor detection completes (or times out)
-	private cursorDetectionPromise: Promise<void> | null = null;
+	[kCursorDetectionPromise]: Promise<void> | null = null;
 
-	private width: number;
-	private height: number;
+	[kWidth]: number;
+	[kHeight]: number;
 	/** Which document row sits at the top of the camera. */
-	private documentScrollTop = 0;
+	[kDocumentScrollTop] = 0;
 
 	// Whether the terminal is currently reporting mouse events to us. See
 	// updateMouseReporting for when capture is on.
-	private mouseReportingEnabled = false;
+	#mouseReportingEnabled = false;
 	// Scroll chaining yielded the mouse back to the terminal: the camera hit
 	// the document top and the user kept scrolling up, so the wheel now
 	// belongs to the terminal's own scrollback. Cleared by the next keystroke
 	// -- terminals snap to the live screen on input, which is exactly the
 	// moment the wheel should become ours again.
-	private mouseCaptureYielded = false;
+	#mouseCaptureYielded = false;
 	// Where the last mousedown landed, so a mouseup on the same element
 	// becomes a click. (Browsers dispatch click at the nearest common
 	// ancestor; the same-element case is the one that matters on a cell grid.)
-	private mouseDownTarget: Element | null = null;
-	private readonly process: ProcessLike;
+	#mouseDownTarget: Element | null = null;
+	#process: ProcessLike;
 
-	private readonly detectCursorEnabled: boolean;
+	#detectCursorEnabled: boolean;
 
 	// A stdout that is not a terminal -- a pipe, a file, a CI log -- has no
 	// viewport, no cursor, no scrollback and no resize. It cannot interpret cursor
 	// movement either, so the interactive frame would write CUP and DECSC sequences
 	// straight into the file.
-	private readonly interactive: boolean;
+	#interactive: boolean;
 
 	constructor(options: TermDOMOptions = {}) {
-		this.process = options.process || process;
-		this.interactive = this.process.stdout.isTTY !== false;
-		this.detectCursorEnabled =
-			(options.detectCursor ?? this.process === process) && this.interactive;
+		this.#process = options.process || process;
+		this.#interactive = this.#process.stdout.isTTY !== false;
+		this.#detectCursorEnabled =
+			(options.detectCursor ?? this.#process === process) && this.#interactive;
 
-		this.width = options.width || this.process.stdout.columns || 80;
-		this.height = options.height || this.process.stdout.rows || 24;
+		this[kWidth] = options.width || this.#process.stdout.columns || 80;
+		this[kHeight] = options.height || this.#process.stdout.rows || 24;
 
-		this.jsdom = new JSDOM(
+		this.#jsdom = new JSDOM(
 			"<!DOCTYPE html><html><head></head><body></body></html>",
 			{pretendToBeVisual: true},
 		);
 
-		this.window = this.jsdom.window;
-		this.document = this.jsdom.window.document;
+		this.window = this.#jsdom.window;
+		this.document = this.#jsdom.window.document;
 
 		// Setup DOM inspector
 		setupInspectMethods(this.window);
@@ -226,53 +249,53 @@ export class TermDOM {
 		// Setup shadow DOM support
 		initializeShadowDOM(this.window);
 
-		this.initializeConstructorExtensions();
-		this.renderer = new Renderer(
-			this.height,
-			this.width,
-			options.colorDepth || detectColorDepth(this.process),
+		this.#initializeConstructorExtensions();
+		this.#renderer = new Renderer(
+			this[kHeight],
+			this[kWidth],
+			options.colorDepth || detectColorDepth(this.#process),
 		);
 
 		// Setup style management FIRST to override getComputedStyle before LayoutEngine uses it
 		this.#styleManager = new StyleManager(this.window);
 
 		// Create layout engine after StyleManager overrides getComputedStyle
-		this.layoutEngine = new LayoutEngine(this.jsdom.window);
-		this.#styleManager.setLayoutEngine(this.layoutEngine);
-		this.layoutEngine.resize(this.width, this.height);
-		this.fullscreenManager = new FullscreenManager(this.process);
-		this.observerManager = new ObserverManager(this.createObserverHost());
+		this[kLayoutEngine] = new LayoutEngine(this.#jsdom.window);
+		this.#styleManager.setLayoutEngine(this[kLayoutEngine]);
+		this[kLayoutEngine].resize(this[kWidth], this[kHeight]);
+		this.#fullscreenManager = new FullscreenManager(this.#process);
+		this.#observerManager = new ObserverManager(this.#createObserverHost());
 
-		this.initializeWindow();
-		this.installObservers();
+		this.#initializeWindow();
+		this.#installObservers();
 
 		// Initialize scrolling management after window setup
-		this.scrollingManager = new ScrollingManager(this.window, this.document);
+		this[kScrollingManager] = new ScrollingManager(this.window, this.document);
 
-		this.observer = this.setupMutationObserver();
+		this[kObserver] = this.#setupMutationObserver();
 
 		// Initial processing of all elements is handled by StyleManager's constructor
 	}
 
-	private initializeWindow(): void {
+	#initializeWindow(): void {
 		const window = this.window;
 		Object.defineProperty(window, "innerWidth", {
-			value: this.width,
+			value: this[kWidth],
 			writable: false,
 			configurable: true,
 		});
 		Object.defineProperty(window, "innerHeight", {
-			value: this.height,
+			value: this[kHeight],
 			writable: false,
 			configurable: true,
 		});
 		Object.defineProperty(window, "outerWidth", {
-			value: this.width,
+			value: this[kWidth],
 			writable: false,
 			configurable: true,
 		});
 		Object.defineProperty(window, "outerHeight", {
-			value: this.height,
+			value: this[kHeight],
 			writable: false,
 			configurable: true,
 		});
@@ -289,7 +312,7 @@ export class TermDOM {
 		// camera has moved down the document, scrollBy moves it.
 		const termDOM = this;
 		Object.defineProperty(window, "scrollY", {
-			get: () => termDOM.documentScrollTop,
+			get: () => termDOM[kDocumentScrollTop],
 			configurable: true,
 			enumerable: true,
 		});
@@ -327,8 +350,8 @@ export class TermDOM {
 			// dispose() tears down via jsdom's window.close(), which calls
 			// document.close() -- but it has already set attached=false, so we skip
 			// the seal there. A real seal is a close() from a live, painted session.
-			if (termDOM.attached && termDOM.renderCount > 0) {
-				termDOM.flushDocument();
+			if (termDOM.#attached && termDOM.#renderCount > 0) {
+				termDOM.#flushDocument();
 				termDOM.#sealed = true;
 			}
 		};
@@ -336,7 +359,7 @@ export class TermDOM {
 		// Implement standard DOM scrollHeight properties
 		Object.defineProperty(this.document.body, "scrollHeight", {
 			get() {
-				return termDOM.layoutEngine.getContentHeight();
+				return termDOM[kLayoutEngine].getContentHeight();
 			},
 			configurable: true,
 			enumerable: true,
@@ -344,7 +367,7 @@ export class TermDOM {
 
 		Object.defineProperty(this.document.documentElement, "scrollHeight", {
 			get() {
-				return termDOM.layoutEngine.getContentHeight();
+				return termDOM[kLayoutEngine].getContentHeight();
 			},
 			configurable: true,
 			enumerable: true,
@@ -353,7 +376,7 @@ export class TermDOM {
 		// clientHeight is the viewport height (terminal height)
 		Object.defineProperty(this.document.body, "clientHeight", {
 			get() {
-				return termDOM.height;
+				return termDOM[kHeight];
 			},
 			configurable: true,
 			enumerable: true,
@@ -361,18 +384,18 @@ export class TermDOM {
 
 		Object.defineProperty(this.document.documentElement, "clientHeight", {
 			get() {
-				return termDOM.height;
+				return termDOM[kHeight];
 			},
 			configurable: true,
 			enumerable: true,
 		});
 	}
 
-	private setupMutationObserver(): MutationObserver {
+	#setupMutationObserver(): MutationObserver {
 		const observer = new this.window.MutationObserver((mutations) => {
 			// Process mutations in correct order to avoid race conditions
 			this.#styleManager.handleMutations(mutations); // First: attach pseudo-elements, invalidate caches
-			this.layoutEngine.handleMutations(mutations); // Second: process DOM changes for layout
+			this[kLayoutEngine].handleMutations(mutations); // Second: process DOM changes for layout
 			this.#render(); // Finally: render with fully processed DOM
 		});
 
@@ -397,17 +420,17 @@ export class TermDOM {
 	 * terminal changes hands. Idempotent; dispose() reverses it.
 	 */
 	attach(): void {
-		if (this.attached) return;
-		this.attached = true;
+		if (this.#attached) return;
+		this.#attached = true;
 
-		this.setupProcessHandlers();
-		this.updateMouseReporting();
-		this.initializeCursorDetection();
+		this.#setupProcessHandlers();
+		this.#updateMouseReporting();
+		this.#initializeCursorDetection();
 
 		// See installCursorRestoreOnExit: if this instance dies without
 		// dispose(), the exit hook hands the user their cursor back.
-		if (this.interactive && this.process === process) {
-			undisposedInteractive.add(this);
+		if (this.#interactive && this.#process === process) {
+			undisposedInteractive.add(this.#process);
 			installCursorRestoreOnExit();
 		}
 	}
@@ -422,35 +445,35 @@ export class TermDOM {
 	 * Idempotent; call it whenever attachment, viewport mode, or fullscreen
 	 * changes.
 	 */
-	private updateMouseReporting(): void {
+	#updateMouseReporting(): void {
 		const wanted =
-			this.attached &&
-			this.interactive &&
-			Boolean(this.process.stdin?.isTTY) &&
-			!this.mouseCaptureYielded;
-		if (wanted === this.mouseReportingEnabled) return;
-		this.mouseReportingEnabled = wanted;
+			this.#attached &&
+			this.#interactive &&
+			Boolean(this.#process.stdin?.isTTY) &&
+			!this.#mouseCaptureYielded;
+		if (wanted === this.#mouseReportingEnabled) return;
+		this.#mouseReportingEnabled = wanted;
 		// 1002: button presses, releases, wheel, and drag motion (no move flood
 		// while nothing is pressed). 1006: SGR encoding, the only one that is
 		// unambiguous past column 223.
-		this.process.stdout.write(
+		this.#process.stdout.write(
 			wanted ? "\x1b[?1002h\x1b[?1006h" : "\x1b[?1006l\x1b[?1002l",
 		);
 	}
 
 	// TODO: This should be put in an event translator abstraction
-	private setupProcessHandlers(): void {
-		this.sigintHandler = () => {
+	#setupProcessHandlers(): void {
+		this.#sigintHandler = () => {
 			this.dispose();
-			this.process.exit(0);
+			this.#process.exit(0);
 		};
-		this.process.on("SIGINT", this.sigintHandler);
+		this.#process.on("SIGINT", this.#sigintHandler);
 
-		this.sigwinchHandler = () => this.scheduleResize();
-		this.process.on("SIGWINCH", this.sigwinchHandler);
+		this.#sigwinchHandler = () => this.#scheduleResize();
+		this.#process.on("SIGWINCH", this.#sigwinchHandler);
 
-		if (this.process.stdin?.isTTY) {
-			const stdin = this.process.stdin;
+		if (this.#process.stdin?.isTTY) {
+			const stdin = this.#process.stdin;
 			if (!stdin) return;
 
 			// Configure terminal for proper input handling (once)
@@ -459,7 +482,7 @@ export class TermDOM {
 			stdin.setEncoding?.("utf8");
 
 			// Single unified handler for all stdin data
-			this.stdinDataHandler = (chunk: string | Buffer) => {
+			this.#stdinDataHandler = (chunk: string | Buffer) => {
 				// Ensure we have both string and buffer representations
 				const data = Buffer.isBuffer(chunk)
 					? chunk
@@ -471,14 +494,14 @@ export class TermDOM {
 				// so hand the report to the waiting query and let the rest continue
 				// through the normal routes as keystrokes.
 				const report = dataStr.match(/\x1b\[\d+;\d+R/);
-				if (this.cursorDetectionHandler && report) {
-					this.cursorDetectionHandler(report[0]);
+				if (this.#cursorDetectionHandler && report) {
+					this.#cursorDetectionHandler(report[0]);
 					const rest =
 						dataStr.slice(0, report.index) +
 						dataStr.slice((report.index ?? 0) + report[0].length);
 					if (rest.length === 0) return;
-					if (this.stdinDataHandler) {
-						this.stdinDataHandler(rest);
+					if (this.#stdinDataHandler) {
+						this.#stdinDataHandler(rest);
 					}
 					return;
 				}
@@ -486,7 +509,7 @@ export class TermDOM {
 				// Route 2: Ctrl-C handling (high priority) - check raw bytes
 				if (data.length > 0 && data[0] === 0x03) {
 					this.dispose();
-					return this.process.exit(0);
+					return this.#process.exit(0);
 				}
 
 				// Route 3: SGR mouse reports. Peeled off token by token so a report
@@ -495,10 +518,10 @@ export class TermDOM {
 				// mouse-capturing mode, so its reports must not be dropped with the
 				// keyboard events.
 				let keyInput = "";
-				for (const token of this.tokenizeInput(dataStr)) {
+				for (const token of this.#tokenizeInput(dataStr)) {
 					const mouse = token.match(/^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/);
 					if (mouse) {
-						this.handleMouseReport(
+						this.#handleMouseReport(
 							parseInt(mouse[1]),
 							parseInt(mouse[2]),
 							parseInt(mouse[3]),
@@ -513,18 +536,18 @@ export class TermDOM {
 				// A keystroke means the user is back at the live screen (terminals
 				// snap to the bottom on input): reclaim the mouse if scroll
 				// chaining yielded it.
-				if (this.mouseCaptureYielded) {
-					this.mouseCaptureYielded = false;
-					this.updateMouseReporting();
+				if (this.#mouseCaptureYielded) {
+					this.#mouseCaptureYielded = false;
+					this.#updateMouseReporting();
 				}
 
 				// TODO: Why does this filter on fullscreen????
 				// Route 4: General keyboard events (when not in fullscreen)
-				if (!this.fullscreenManager.isFullscreen) {
-					this.dispatchGlobalKeyboardEvent(Buffer.from(keyInput));
+				if (!this.#fullscreenManager.isFullscreen) {
+					this[kDispatchGlobalKeyboardEvent](Buffer.from(keyInput));
 				}
 			};
-			stdin.on("data", this.stdinDataHandler);
+			stdin.on("data", this.#stdinDataHandler);
 		}
 	}
 
@@ -533,7 +556,7 @@ export class TermDOM {
 
 		// A resize is settling: suppress every render until handleResize issues the
 		// single re-anchored redraw. See resizeInProgress.
-		if (this.resizeInProgress) {
+		if (this.#resizeInProgress) {
 			return;
 		}
 
@@ -543,26 +566,26 @@ export class TermDOM {
 		// at the wrong place. Instead mark one pending and hand back the running
 		// loop's promise: it will fold this caller's changes into a trailing frame,
 		// so awaiting render() always means "what I changed is painted".
-		if (this.isRendering) {
-			this.renderQueued = true;
-			return this.renderInFlight ?? Promise.resolve();
+		if (this.#isRendering) {
+			this.#renderQueued = true;
+			return this.#renderInFlight ?? Promise.resolve();
 		}
 
-		this.isRendering = true;
-		this.renderInFlight = (async () => {
+		this.#isRendering = true;
+		this.#renderInFlight = (async () => {
 			try {
 				do {
-					this.renderQueued = false;
-					await this.renderOnce();
-				} while (this.renderQueued);
+					this.#renderQueued = false;
+					await this.#renderOnce();
+				} while (this.#renderQueued);
 				// The frame(s) are written; wake anything awaiting requestAnimationFrame.
 				this.#drainFrameCallbacks();
 			} finally {
-				this.isRendering = false;
-				this.renderInFlight = null;
+				this.#isRendering = false;
+				this.#renderInFlight = null;
 			}
 		})();
-		return this.renderInFlight;
+		return this.#renderInFlight;
 	}
 
 	#drainFrameCallbacks(): void {
@@ -573,17 +596,17 @@ export class TermDOM {
 		for (const cb of callbacks) cb(now);
 	}
 
-	private async renderOnce(): Promise<void> {
-		if (!this.interactive) {
-			await this.renderStatic();
+	async #renderOnce(): Promise<void> {
+		if (!this.#interactive) {
+			await this.#renderStatic();
 			return;
 		}
 
-		await this.renderInteractive();
+		await this.#renderInteractive();
 	}
 
 	// TODO: many of the following methods do not belong on the TermDOM class
-	private renderElement(
+	#renderElement(
 		element: Element,
 		ctx: import("./ansi.js").DrawingContext,
 	): void {
@@ -594,7 +617,7 @@ export class TermDOM {
 		// and the paint costs what is on screen, not what is in the document.
 		const bandTop = -ctx.viewportOffset;
 		if (
-			this.layoutEngine.isSubtreeOutsideBand(
+			this[kLayoutEngine].isSubtreeOutsideBand(
 				element,
 				bandTop,
 				bandTop + ctx.rows,
@@ -603,7 +626,7 @@ export class TermDOM {
 			return;
 		}
 
-		const rect = this.layoutEngine.getRect(element);
+		const rect = this[kLayoutEngine].getRect(element);
 
 		const color = this.window
 			.getComputedStyle(element)
@@ -644,7 +667,7 @@ export class TermDOM {
 			.getComputedStyle(element)
 			.getPropertyValue("display");
 		if (display === "table" && rect) {
-			this.renderTable(element, rect, style);
+			this.#renderTable(element, rect, style);
 			// Continue with normal child rendering
 		}
 
@@ -669,7 +692,7 @@ export class TermDOM {
 		}
 
 		// Handle list-style-position: outside markers
-		this.renderOutsideMarker(element, ctx);
+		this.#renderOutsideMarker(element, ctx);
 
 		// Render input elements (void elements with no children)
 		if (
@@ -677,7 +700,7 @@ export class TermDOM {
 			rect &&
 			(element as HTMLInputElement).type !== "hidden"
 		) {
-			this.renderInputElement(element as HTMLInputElement, rect, style, ctx);
+			this.#renderInputElement(element as HTMLInputElement, rect, style, ctx);
 			return; // Input elements have no children to render
 		}
 
@@ -702,7 +725,7 @@ export class TermDOM {
 			// wide container of mostly off-screen children O(screen).
 			if (
 				childNode.nodeType === childNode.ELEMENT_NODE &&
-				this.layoutEngine.isSubtreeOutsideBand(
+				this[kLayoutEngine].isSubtreeOutsideBand(
 					childNode as Element,
 					bandTop,
 					bandTop + ctx.rows,
@@ -714,7 +737,7 @@ export class TermDOM {
 				node: childNode,
 				zIndex:
 					childNode.nodeType === childNode.ELEMENT_NODE
-						? this.zIndexOf(childNode as Element)
+						? this.#zIndexOf(childNode as Element)
 						: 0,
 			});
 		}
@@ -727,11 +750,11 @@ export class TermDOM {
 			if (childNode.nodeType === childNode.ELEMENT_NODE) {
 				const childElement = childNode as Element;
 				if (childElement instanceof (this.window as any).HTMLElement) {
-					this.renderElement(childElement, ctx);
+					this.#renderElement(childElement, ctx);
 				}
 			} else if (childNode.nodeType === childNode.TEXT_NODE) {
 				const textNode = childNode as Text;
-				this.renderText(textNode, ctx);
+				this.#renderText(textNode, ctx);
 			}
 		}
 	}
@@ -742,7 +765,7 @@ export class TermDOM {
 	 * z-index only applies to positioned boxes, so a static one always sits at 0
 	 * and keeps its document order.
 	 */
-	private zIndexOf(element: Element): number {
+	#zIndexOf(element: Element): number {
 		const computedStyle = this.window.getComputedStyle(element);
 
 		const position = computedStyle.getPropertyValue("position");
@@ -758,9 +781,9 @@ export class TermDOM {
 	/**
 	 * Render outside positioned markers for list items
 	 */
-	private renderedOutsideMarkers = new WeakSet<Element>();
+	#renderedOutsideMarkers = new WeakSet<Element>();
 
-	private renderOutsideMarker(
+	#renderOutsideMarker(
 		element: Element,
 		ctx: import("./ansi.js").DrawingContext,
 	): void {
@@ -781,10 +804,10 @@ export class TermDOM {
 		}
 
 		// Prevent duplicate rendering in the same frame
-		if (this.renderedOutsideMarkers.has(element)) {
+		if (this.#renderedOutsideMarkers.has(element)) {
 			return;
 		}
-		this.renderedOutsideMarkers.add(element);
+		this.#renderedOutsideMarkers.add(element);
 
 		// Get marker content from StyleManager
 		const markerContent = this.#styleManager.getMarkerContent(element);
@@ -792,7 +815,7 @@ export class TermDOM {
 			return;
 		}
 
-		const rect = this.layoutEngine.getRect(element);
+		const rect = this[kLayoutEngine].getRect(element);
 		if (!rect) {
 			return;
 		}
@@ -837,7 +860,7 @@ export class TermDOM {
 	/**
 	 * Render an input element with its value and cursor
 	 */
-	private renderInputElement(
+	#renderInputElement(
 		element: HTMLInputElement,
 		rect: DOMRect,
 		style: {
@@ -887,8 +910,8 @@ export class TermDOM {
 		// composition then anchored on top of already-typed glyphs) and padEnd
 		// by character count pushed the value's background straight through the
 		// input's right border.
-		let scrollOffset = this.inputScrollOffsets.get(element) ?? 0;
-		const cursor = this.inputCursorPositions.get(element) ?? value.length;
+		let scrollOffset = this.#inputScrollOffsets.get(element) ?? 0;
+		const cursor = this.#inputCursorPositions.get(element) ?? value.length;
 
 		if (isFocused) {
 			// Keep the caret's CELL offset inside the box.
@@ -901,7 +924,7 @@ export class TermDOM {
 			) {
 				scrollOffset++;
 			}
-			this.inputScrollOffsets.set(element, scrollOffset);
+			this.#inputScrollOffsets.set(element, scrollOffset);
 		}
 
 		// Take characters from the scroll offset until the next one would no
@@ -933,10 +956,7 @@ export class TermDOM {
 	/**
 	 * Render a text node with proper styling from its parent element or pseudo-element
 	 */
-	private renderText(
-		textNode: Text,
-		ctx: import("./ansi.js").DrawingContext,
-	): void {
+	#renderText(textNode: Text, ctx: import("./ansi.js").DrawingContext): void {
 		const textContent = textNode.data;
 		if (!textContent) return;
 
@@ -987,7 +1007,7 @@ export class TermDOM {
 			underline: textUnderline,
 		};
 
-		const rectTexts = this.layoutEngine.getRectTexts(textNode);
+		const rectTexts = this[kLayoutEngine].getRectTexts(textNode);
 		if (rectTexts.length > 0) {
 			for (const rectText of rectTexts) {
 				if (rectText.text.length > 0) {
@@ -1003,27 +1023,23 @@ export class TermDOM {
 	}
 
 	// TODO: move this to tables.ts? or layout.ts
-	private renderTable(
-		tableElement: Element,
-		_rect: DOMRect,
-		_style: any,
-	): void {
+	#renderTable(tableElement: Element, _rect: DOMRect, _style: any): void {
 		// For now, let's fall back to normal rendering and let CSS handle table layout
 		// The layout engine should already handle display: table properly
 		// TODO: Implement table-specific optimizations like borders between cells
 
 		// Check if we have proper table children, if not, render as normal element
-		const hasTableStructure = this.hasTableStructure(tableElement);
+		const hasTableStructure = this.#hasTableStructure(tableElement);
 		if (!hasTableStructure) {
 			// Render children normally
 			return;
 		}
 
 		// For tables with proper structure, add table-specific border rendering
-		this.renderTableBorders(tableElement, _rect, _style);
+		this.#renderTableBorders(tableElement, _rect, _style);
 	}
 
-	private hasTableStructure(tableElement: Element): boolean {
+	#hasTableStructure(tableElement: Element): boolean {
 		// Check if element has table-like children (thead, tbody, tr, etc.)
 		const tableElements = ["thead", "tbody", "tfoot", "tr", "th", "td"];
 		return Array.from(tableElement.children).some((child) =>
@@ -1031,7 +1047,7 @@ export class TermDOM {
 		);
 	}
 
-	private renderTableBorders(
+	#renderTableBorders(
 		tableElement: Element,
 		_rect: DOMRect,
 		_style: any,
@@ -1051,7 +1067,7 @@ export class TermDOM {
 		}
 	}
 
-	private processPendingMutationsAndRender(): boolean {
+	#processPendingMutationsAndRender(): boolean {
 		// A geometry read (getBoundingClientRect, elementFromPoint) needs fresh
 		// *layout*, not fresh pixels. This used to fire a full render() here, so
 		// every rect read with pending mutations painted a frame -- an app calling
@@ -1060,14 +1076,14 @@ export class TermDOM {
 		// mutations and laying out synchronously gives an exact rect; painting
 		// stays with the caller's own render. The dirty-skip makes this free when
 		// nothing changed.
-		const pendingMutations = this.observer.takeRecords();
+		const pendingMutations = this[kObserver].takeRecords();
 		const hadMutations = pendingMutations.length > 0;
 		if (hadMutations) {
 			// Process mutations in the same order as MutationObserver callback
 			this.#styleManager.handleMutations(pendingMutations);
-			this.layoutEngine.handleMutations(pendingMutations);
+			this[kLayoutEngine].handleMutations(pendingMutations);
 		}
-		this.layoutEngine.calculateLayout();
+		this[kLayoutEngine].calculateLayout();
 		return hadMutations;
 	}
 
@@ -1080,25 +1096,25 @@ export class TermDOM {
 	 * the length of the drag rather than the fact that it happened. Waiting for the
 	 * drag to settle turns the whole gesture into one redraw, and one lot of crud.
 	 */
-	private scheduleResize(): void {
+	#scheduleResize(): void {
 		// Suppress renders from the very first SIGWINCH, before the debounce
 		// settles, so a drag's worth of animation ticks cannot paint at the stale
 		// anchor while the terminal is rewrapping under us.
-		this.resizeInProgress = true;
-		this.resizeEpoch++;
-		if (this.resizeTimer !== null) clearTimeout(this.resizeTimer);
-		this.resizeTimer = setTimeout(() => {
-			this.resizeTimer = null;
-			this.handleResize();
+		this.#resizeInProgress = true;
+		this.#resizeEpoch++;
+		if (this.#resizeTimer !== null) clearTimeout(this.#resizeTimer);
+		this.#resizeTimer = setTimeout(() => {
+			this.#resizeTimer = null;
+			this.#handleResize();
 		}, RESIZE_DEBOUNCE_MS);
 	}
 
-	private handleResize(): void {
-		const newWidth = this.process.stdout.columns || 80;
-		const newHeight = this.process.stdout.rows || 24;
+	#handleResize(): void {
+		const newWidth = this.#process.stdout.columns || 80;
+		const newHeight = this.#process.stdout.rows || 24;
 
-		this.width = newWidth;
-		this.height = newHeight;
+		this[kWidth] = newWidth;
+		this[kHeight] = newHeight;
 
 		Object.defineProperty(this.window, "innerWidth", {
 			value: newWidth,
@@ -1113,8 +1129,8 @@ export class TermDOM {
 
 		this.window._terminalSize = {width: newWidth, height: newHeight};
 
-		this.renderer.resize(newHeight, newWidth);
-		this.layoutEngine.resize(newWidth, newHeight);
+		this.#renderer.resize(newHeight, newWidth);
+		this[kLayoutEngine].resize(newWidth, newHeight);
 
 		// Re-anchor and redraw. The terminal has already rewrapped everything on
 		// screen -- including our old frame -- and how far our content moved depends
@@ -1137,46 +1153,47 @@ export class TermDOM {
 		// SIGWINCH, so nothing paints at a stale anchor while the query is in
 		// flight. If the terminal does not answer, fall back to the computed
 		// vertical re-anchor (exact for height changes, approximate for width).
-		this.layoutEngine.calculateLayout();
+		this[kLayoutEngine].calculateLayout();
 		const contentHeight = this.document.body.scrollHeight;
-		const wrappedRowsAbove = this.renderer.wrappedRowsAboveCursorPark(newWidth);
-		const epoch = this.resizeEpoch;
+		const wrappedRowsAbove =
+			this.#renderer.wrappedRowsAboveCursorPark(newWidth);
+		const epoch = this.#resizeEpoch;
 
 		const redraw = (startRow: number) => {
-			this.scrollingManager.setScreenTop(startRow);
-			this.scrollingManager.scrollToCommandStart();
-			this.renderer.resetScreen(startRow);
+			this[kScrollingManager].setScreenTop(startRow);
+			this[kScrollingManager].scrollToCommandStart();
+			this.#renderer.resetScreen(startRow);
 
 			// Everything suppressed since the first SIGWINCH may paint again. The
 			// frame is placed by the screen reset, not by cursor detection.
-			this.resizeInProgress = false;
-			const wasDetected = this.hasDetectedCommandStart;
-			this.hasDetectedCommandStart = false;
+			this.#resizeInProgress = false;
+			const wasDetected = this[kHasDetectedCommandStart];
+			this[kHasDetectedCommandStart] = false;
 			this.#render().then(() => {
-				this.hasDetectedCommandStart = wasDetected;
+				this[kHasDetectedCommandStart] = wasDetected;
 			});
 		};
 
 		const computedReanchor = () => {
-			const previousStart = this.scrollingManager.getScreenTop();
+			const previousStart = this[kScrollingManager].getScreenTop();
 			const scrolledUp = Math.max(0, previousStart + contentHeight - newHeight);
 			return Math.max(0, previousStart - scrolledUp);
 		};
 
 		if (
-			this.detectCursorEnabled &&
-			this.process.stdin?.isTTY &&
+			this.#detectCursorEnabled &&
+			this.#process.stdin?.isTTY &&
 			wrappedRowsAbove !== null
 		) {
-			this.queryCursorRow()
+			this.#queryCursorRow()
 				.then((cursorRow) => {
 					// A newer resize superseded this one; its handler will redraw.
-					if (epoch !== this.resizeEpoch) return;
+					if (epoch !== this.#resizeEpoch) return;
 					const startRow = Math.max(0, cursorRow - wrappedRowsAbove);
 					redraw(startRow);
 				})
 				.catch(() => {
-					if (epoch !== this.resizeEpoch) return;
+					if (epoch !== this.#resizeEpoch) return;
 					const startRow = computedReanchor();
 					redraw(startRow);
 				});
@@ -1187,10 +1204,10 @@ export class TermDOM {
 	}
 
 	/** The measurement surface the observers read each frame. See ObserverHost. */
-	private createObserverHost(): ObserverHost {
+	#createObserverHost(): ObserverHost {
 		return {
 			getBorderBox: (element) => {
-				const rect = this.layoutEngine.getRect(element);
+				const rect = this[kLayoutEngine].getRect(element);
 				return rect
 					? {
 							top: rect.top,
@@ -1201,7 +1218,7 @@ export class TermDOM {
 					: null;
 			},
 			getContentBox: (element) => {
-				const rect = this.layoutEngine.getRect(element);
+				const rect = this[kLayoutEngine].getRect(element);
 				if (!rect) return null;
 				const box = getBoxModel(element);
 				const width = Math.max(
@@ -1226,15 +1243,15 @@ export class TermDOM {
 				// The visible window over the document, in the document coordinate
 				// space getRect() uses: it begins at the current scroll offset and is
 				// one terminal high.
-				const scrollTop = this.documentScrollTop;
+				const scrollTop = this[kDocumentScrollTop];
 				return {
 					top: scrollTop,
 					left: 0,
-					width: this.width,
-					height: this.height,
+					width: this[kWidth],
+					height: this[kHeight],
 				};
 			},
-			now: () => this.renderCount,
+			now: () => this.#renderCount,
 		};
 	}
 
@@ -1245,14 +1262,14 @@ export class TermDOM {
 	 * mutates the DOM schedules the next frame through the mutation observer, so
 	 * there is no re-entrancy to guard against here.
 	 */
-	private afterRender(): void {
-		this.renderCount++;
-		this.observerManager.flush();
+	#afterRender(): void {
+		this.#renderCount++;
+		this.#observerManager.flush();
 	}
 
 	/** Install the observer constructors on the window, bound to this instance. */
-	private installObservers(): void {
-		const manager = this.observerManager;
+	#installObservers(): void {
+		const manager = this.#observerManager;
 		const window = this.window as unknown as {
 			ResizeObserver: unknown;
 			IntersectionObserver: unknown;
@@ -1277,7 +1294,7 @@ export class TermDOM {
 	}
 
 	// TODO: Move these somewhere?
-	private initializeConstructorExtensions(): void {
+	#initializeConstructorExtensions(): void {
 		const {Element, Document} = this.window;
 		const termDOM = this;
 
@@ -1285,24 +1302,24 @@ export class TermDOM {
 			this: Element,
 		): DOMRect {
 			if (!this.isConnected) {
-				return termDOM.layoutEngine.createDOMRect(0, 0, 0, 0);
+				return termDOM[kLayoutEngine].createDOMRect(0, 0, 0, 0);
 			}
 
-			termDOM.processPendingMutationsAndRender();
+			termDOM.#processPendingMutationsAndRender();
 
-			const rect = termDOM.layoutEngine.getRect(this);
-			return rect || termDOM.layoutEngine.createDOMRect(0, 0, 0, 0);
+			const rect = termDOM[kLayoutEngine].getRect(this);
+			return rect || termDOM[kLayoutEngine].createDOMRect(0, 0, 0, 0);
 		};
 
 		Element.prototype.getClientRects = function (): DOMRectList {
 			if (!this.isConnected) {
-				return termDOM.layoutEngine.createDOMRectList();
+				return termDOM[kLayoutEngine].createDOMRectList();
 			}
 
-			termDOM.processPendingMutationsAndRender();
+			termDOM.#processPendingMutationsAndRender();
 
-			const rects = termDOM.layoutEngine.getRects(this);
-			return termDOM.layoutEngine.createDOMRectList(rects);
+			const rects = termDOM[kLayoutEngine].getRects(this);
+			return termDOM[kLayoutEngine].createDOMRectList(rects);
 		};
 
 		// Fullscreen API methods
@@ -1310,22 +1327,22 @@ export class TermDOM {
 			this: Element,
 			options?: FullscreenOptions,
 		): Promise<void> {
-			return termDOM.fullscreenManager
+			return termDOM.#fullscreenManager
 				.requestFullscreen(this, options)
-				.then(() => termDOM.updateMouseReporting());
+				.then(() => termDOM.#updateMouseReporting());
 		};
 
 		Document.prototype.exitFullscreen = function (
 			this: Document,
 		): Promise<void> {
-			return termDOM.fullscreenManager
+			return termDOM.#fullscreenManager
 				.exitFullscreen()
-				.then(() => termDOM.updateMouseReporting());
+				.then(() => termDOM.#updateMouseReporting());
 		};
 
 		Object.defineProperty(Document.prototype, "fullscreenElement", {
 			get: function (this: Document) {
-				return termDOM.fullscreenManager.fullscreenElement;
+				return termDOM.#fullscreenManager.fullscreenElement;
 			},
 			configurable: true,
 		});
@@ -1334,7 +1351,7 @@ export class TermDOM {
 			x: number,
 			y: number,
 		): Element | null {
-			termDOM.processPendingMutationsAndRender();
+			termDOM.#processPendingMutationsAndRender();
 			return findElementAtPoint(termDOM, this.documentElement, x, y);
 		};
 
@@ -1407,10 +1424,10 @@ export class TermDOM {
 			// minimal amount that brings the element into it -- the standard
 			// block: "nearest" behavior.
 			const regionHeight = Math.min(
-				termDOM.height,
+				termDOM[kHeight],
 				termDOM.document.body.scrollHeight,
 			);
-			const top = termDOM.documentScrollTop;
+			const top = termDOM[kDocumentScrollTop];
 			if (rect.top < top) {
 				termDOM.#scrollCamera(rect.top - top);
 			} else if (rect.bottom > top + regionHeight) {
@@ -1422,7 +1439,7 @@ export class TermDOM {
 	/**
 	 * Get all focusable elements in tab order
 	 */
-	private getFocusableElements(): Element[] {
+	#getFocusableElements(): Element[] {
 		const elements = Array.from(
 			this.document.querySelectorAll(FOCUSABLE_SELECTOR),
 		);
@@ -1441,8 +1458,8 @@ export class TermDOM {
 	/**
 	 * Focus the next or previous focusable element
 	 */
-	private moveFocus(reverse: boolean): void {
-		const focusable = this.getFocusableElements();
+	#moveFocus(reverse: boolean): void {
+		const focusable = this.#getFocusableElements();
 		if (focusable.length === 0) return;
 
 		const current = this.document.activeElement;
@@ -1466,13 +1483,13 @@ export class TermDOM {
 	/**
 	 * Handle input element default actions (character insertion, deletion, navigation)
 	 */
-	private handleInputAction(
+	#handleInputAction(
 		element: HTMLInputElement,
 		keyName: string,
 		key: string,
 	): void {
 		const value = element.value;
-		const cursor = this.inputCursorPositions.get(element) ?? value.length;
+		const cursor = this.#inputCursorPositions.get(element) ?? value.length;
 
 		let newValue = value;
 		let newCursor = cursor;
@@ -1504,7 +1521,7 @@ export class TermDOM {
 
 		if (newValue !== value) {
 			element.value = newValue;
-			this.inputCursorPositions.set(element, newCursor);
+			this.#inputCursorPositions.set(element, newCursor);
 
 			// Dispatch input event
 			element.dispatchEvent(
@@ -1514,7 +1531,7 @@ export class TermDOM {
 			// Trigger re-render since .value changes don't trigger MutationObserver
 			this.#render();
 		} else if (newCursor !== cursor) {
-			this.inputCursorPositions.set(element, newCursor);
+			this.#inputCursorPositions.set(element, newCursor);
 			// Cursor moved - re-render to update cursor position
 			this.#render();
 		}
@@ -1531,7 +1548,7 @@ export class TermDOM {
 	 * instead of once per press, and a stray cursor report ate every key packed
 	 * behind it.
 	 */
-	private *tokenizeInput(input: string): Generator<string> {
+	*#tokenizeInput(input: string): Generator<string> {
 		let i = 0;
 		while (i < input.length) {
 			if (input[i] === "\x1b" && i + 1 < input.length) {
@@ -1564,15 +1581,15 @@ export class TermDOM {
 	 * Returns null for cells above our region (a shell prompt is not part of
 	 * the document).
 	 */
-	private screenToDocumentPoint(
+	#screenToDocumentPoint(
 		x: number,
 		row: number,
 	): {x: number; y: number} | null {
-		if (this.fullscreenManager.isFullscreen) {
-			return {x, y: row + this.scrollingManager.getScrollTop()};
+		if (this.#fullscreenManager.isFullscreen) {
+			return {x, y: row + this[kScrollingManager].getScrollTop()};
 		}
 		const y =
-			row - this.scrollingManager.getScreenTop() + this.documentScrollTop;
+			row - this[kScrollingManager].getScreenTop() + this[kDocumentScrollTop];
 		return y < 0 ? null : {x, y};
 	}
 
@@ -1585,7 +1602,7 @@ export class TermDOM {
 	 * browser's default actions: wheel scrolls the camera, mousedown moves
 	 * focus, mouseup on the mousedown target is a click.
 	 */
-	private handleMouseReport(
+	#handleMouseReport(
 		code: number,
 		col: number,
 		row: number,
@@ -1597,7 +1614,7 @@ export class TermDOM {
 		const isMotion = (code & 32) !== 0;
 		const base = code & ~(4 | 8 | 16 | 32);
 
-		const point = this.screenToDocumentPoint(col - 1, row - 1);
+		const point = this.#screenToDocumentPoint(col - 1, row - 1);
 		const x = point?.x ?? col - 1;
 		const y = point?.y ?? 0;
 		const target =
@@ -1623,8 +1640,8 @@ export class TermDOM {
 			if (notCanceled) {
 				if (
 					deltaY < 0 &&
-					this.documentScrollTop === 0 &&
-					!this.fullscreenManager.isFullscreen
+					this[kDocumentScrollTop] === 0 &&
+					!this.#fullscreenManager.isFullscreen
 				) {
 					// Scroll chaining, the browser default: the camera is at the
 					// document top, so the scroll escapes to the parent scroller --
@@ -1632,8 +1649,8 @@ export class TermDOM {
 					// next wheel tick scrolls the shell history natively; the next
 					// keystroke reclaims it. An app opts out the same way it would
 					// in a browser: preventDefault on the wheel event.
-					this.mouseCaptureYielded = true;
-					this.updateMouseReporting();
+					this.#mouseCaptureYielded = true;
+					this.#updateMouseReporting();
 				} else {
 					this.#scrollCamera(deltaY);
 				}
@@ -1662,7 +1679,7 @@ export class TermDOM {
 		}
 
 		if (!isRelease) {
-			this.mouseDownTarget = target;
+			this.#mouseDownTarget = target;
 			const notCanceled = target.dispatchEvent(
 				new this.window.MouseEvent("mousedown", eventInit),
 			);
@@ -1684,22 +1701,22 @@ export class TermDOM {
 		}
 
 		target.dispatchEvent(new this.window.MouseEvent("mouseup", eventInit));
-		if (this.mouseDownTarget === target) {
+		if (this.#mouseDownTarget === target) {
 			target.dispatchEvent(
 				new this.window.MouseEvent("click", {...eventInit, buttons: 0}),
 			);
 		}
-		this.mouseDownTarget = null;
+		this.#mouseDownTarget = null;
 	}
 
-	private dispatchGlobalKeyboardEvent(chunk: Buffer): void {
+	[kDispatchGlobalKeyboardEvent](chunk: Buffer): void {
 		const key = chunk.toString("utf8");
 
 		// Tokenize multi-key chunks and dispatch each token on its own.
-		const tokens = Array.from(this.tokenizeInput(key));
+		const tokens = Array.from(this.#tokenizeInput(key));
 		if (tokens.length > 1) {
 			for (const token of tokens) {
-				this.dispatchGlobalKeyboardEvent(Buffer.from(token));
+				this[kDispatchGlobalKeyboardEvent](Buffer.from(token));
 			}
 			return;
 		}
@@ -1796,7 +1813,7 @@ export class TermDOM {
 		if (notCanceled) {
 			// Tab navigation
 			if (keyName === "Tab") {
-				this.moveFocus(shiftKey);
+				this.#moveFocus(shiftKey);
 			}
 
 			// Input element default actions
@@ -1805,7 +1822,11 @@ export class TermDOM {
 				(targetElement as HTMLInputElement).type !== "submit" &&
 				(targetElement as HTMLInputElement).type !== "button"
 			) {
-				this.handleInputAction(targetElement as HTMLInputElement, keyName, key);
+				this.#handleInputAction(
+					targetElement as HTMLInputElement,
+					keyName,
+					key,
+				);
 			}
 		}
 
@@ -1851,25 +1872,25 @@ export class TermDOM {
 	 * document is simply printed. Every hard problem in this file is a consequence
 	 * of having a viewport, and a pipe does not have one.
 	 */
-	private async renderStatic(): Promise<void> {
-		const pending = this.observer.takeRecords();
+	async #renderStatic(): Promise<void> {
+		const pending = this[kObserver].takeRecords();
 		if (pending.length > 0) {
 			this.#styleManager.handleMutations(pending);
-			this.layoutEngine.handleMutations(pending);
+			this[kLayoutEngine].handleMutations(pending);
 		}
 
-		this.renderedOutsideMarkers = new WeakSet<Element>();
-		this.layoutEngine.calculateLayout();
+		this.#renderedOutsideMarkers = new WeakSet<Element>();
+		this[kLayoutEngine].calculateLayout();
 
-		const output = this.renderer.renderStatic(
+		const output = this.#renderer.renderStatic(
 			this.document.body.scrollHeight,
 			(ctx) => {
-				this.renderElement(this.document.body, ctx);
+				this.#renderElement(this.document.body, ctx);
 			},
 		);
 
-		if (output) await this.write(output);
-		this.afterRender();
+		if (output) await this.#write(output);
+		this.#afterRender();
 	}
 
 	/**
@@ -1905,33 +1926,33 @@ export class TermDOM {
 	 * The cost of waiting is that a crash takes the output with it -- flow's partial
 	 * output survives, because it was already printed.
 	 */
-	private flushDocument(): void {
-		if (!this.interactive) return;
+	#flushDocument(): void {
+		if (!this.#interactive) return;
 
 		const contentHeight = this.document.body.scrollHeight;
 		if (contentHeight === 0) return;
 
-		const top = this.scrollingManager.getScreenTop();
+		const top = this[kScrollingManager].getScreenTop();
 
 		// Back to the top of our region, and erase from there down. Only rows we
 		// painted ourselves; the scrollback above is untouched.
-		this.process.stdout.write(`\x1b[${top + 1};1H\x1b[J`);
+		this.#process.stdout.write(`\x1b[${top + 1};1H\x1b[J`);
 
-		const output = this.renderer.renderStatic(
+		const output = this.#renderer.renderStatic(
 			contentHeight,
 			(ctx) => {
-				this.renderElement(this.document.body, ctx);
+				this.#renderElement(this.document.body, ctx);
 			},
 			"\r\n",
 		);
 
-		if (output) this.process.stdout.write(output);
+		if (output) this.#process.stdout.write(output);
 	}
 
 	/** Write to stdout and wait for it to be flushed. */
-	private write(output: string): Promise<void> {
+	#write(output: string): Promise<void> {
 		return new Promise<void>((resolve, reject) => {
-			this.process.stdout.write(output, "utf8", (error) => {
+			this.#process.stdout.write(output, "utf8", (error) => {
 				if (error) reject(error);
 				else resolve();
 			});
@@ -1951,15 +1972,15 @@ export class TermDOM {
 	 * repaint a window of -- so unlike flow mode, content that scrolls out of view is
 	 * not frozen, and reflow anywhere is free.
 	 */
-	private async renderInteractive(): Promise<void> {
+	async #renderInteractive(): Promise<void> {
 		// The previous document was sealed to scrollback by close(). Start a fresh
 		// one below it: re-anchor to where the cursor now sits and reset the diff so
 		// nothing composites over the frozen block.
 		if (this.#sealed) {
 			this.#sealed = false;
-			this.documentScrollTop = 0;
-			this.renderer.clearPreviousBuffer();
-			if (this.process.stdin?.isTTY) await this.#detectCommandStart();
+			this[kDocumentScrollTop] = 0;
+			this.#renderer.clearPreviousBuffer();
+			if (this.#process.stdin?.isTTY) await this.#detectCommandStart();
 		}
 
 		// Our region starts at the command-start row, which cursor detection resolves
@@ -1967,45 +1988,45 @@ export class TermDOM {
 		// while every diff after detection anchors one row lower -- the labels stay,
 		// the values slide down a row. Wait for the anchor to settle first, exactly
 		// as the flow path does.
-		if (this.cursorDetectionPromise) {
-			await this.cursorDetectionPromise;
+		if (this[kCursorDetectionPromise]) {
+			await this[kCursorDetectionPromise];
 		}
 
-		const pending = this.observer.takeRecords();
+		const pending = this[kObserver].takeRecords();
 		if (pending.length > 0) {
 			this.#styleManager.handleMutations(pending);
-			this.layoutEngine.handleMutations(pending);
+			this[kLayoutEngine].handleMutations(pending);
 		}
 
-		this.renderedOutsideMarkers = new WeakSet<Element>();
-		this.layoutEngine.calculateLayout();
+		this.#renderedOutsideMarkers = new WeakSet<Element>();
+		this[kLayoutEngine].calculateLayout();
 
 		const contentHeight = this.document.body.scrollHeight;
-		const regionHeight = Math.min(contentHeight, this.height);
+		const regionHeight = Math.min(contentHeight, this[kHeight]);
 
 		// Take the room we need by pushing earlier output up, never over it.
-		const top = this.reserveRows(regionHeight);
+		const top = this.#reserveRows(regionHeight);
 
 		// The camera cannot run off the end of the document.
 		const maxScroll = Math.max(0, contentHeight - regionHeight);
-		this.documentScrollTop = Math.min(this.documentScrollTop, maxScroll);
+		this[kDocumentScrollTop] = Math.min(this[kDocumentScrollTop], maxScroll);
 
-		const ansi = this.renderer.renderFrame(
-			-this.documentScrollTop,
+		const ansi = this.#renderer.renderFrame(
+			-this[kDocumentScrollTop],
 			(ctx) => {
-				this.renderElement(this.document.body, ctx);
+				this.#renderElement(this.document.body, ctx);
 			},
 			top,
 			top + regionHeight,
 		);
 
-		if (ansi) await this.write(ansi);
-		this.afterRender();
+		if (ansi) await this.#write(ansi);
+		this.#afterRender();
 	}
 
 	/** Move the camera over the document. */
 	#scrollCamera(rows: number): void {
-		this.documentScrollTop = Math.max(0, this.documentScrollTop + rows);
+		this[kDocumentScrollTop] = Math.max(0, this[kDocumentScrollTop] + rows);
 		// A camera move is invisible to the MutationObserver; schedule the frame
 		// it needs, the same way a DOM mutation would.
 		void this.#render();
@@ -2024,15 +2045,17 @@ export class TermDOM {
 	 *
 	 * Returns the screen row our region now starts at.
 	 */
-	private reserveRows(rows: number): number {
-		const top = this.scrollingManager.getScreenTop();
-		const overflow = top + rows - this.height;
+	#reserveRows(rows: number): number {
+		const top = this[kScrollingManager].getScreenTop();
+		const overflow = top + rows - this[kHeight];
 
 		if (overflow <= 0) return top;
 
 		const push = Math.min(overflow, top);
 		if (push > 0) {
-			this.process.stdout.write(`\x1b[${this.height};1H` + "\n".repeat(push));
+			this.#process.stdout.write(
+				`\x1b[${this[kHeight]};1H` + "\n".repeat(push),
+			);
 			// Do NOT shift the renderer's previous buffer. Its rows are relative to
 			// the region top, and the top moves up by exactly the amount the screen
 			// scrolled -- the two cancel, so buffer coordinates are unchanged.
@@ -2040,37 +2063,37 @@ export class TermDOM {
 			// against the wrong screen rows, skipped cells it wrongly believed
 			// unchanged, and composited the old frame under the new one whenever a
 			// document-mode region grew past the space below the shell prompt.
-			this.scrollingManager.setScreenTop(top - push);
+			this[kScrollingManager].setScreenTop(top - push);
 		}
 
-		return this.scrollingManager.getScreenTop();
+		return this[kScrollingManager].getScreenTop();
 	}
 
 	/**
 	 * Initialize cursor position detection for TTY environments
 	 * This runs asynchronously during construction to set up proper viewport positioning
 	 */
-	private initializeCursorDetection(): void {
-		this.cursorDetectionPromise = null;
+	#initializeCursorDetection(): void {
+		this[kCursorDetectionPromise] = null;
 		// Only detect cursor position in TTY environments when enabled
-		if (this.detectCursorEnabled && this.process.stdin?.isTTY) {
+		if (this.#detectCursorEnabled && this.#process.stdin?.isTTY) {
 			// Set up cursor detection promise that render() will wait for
-			this.cursorDetectionPromise = Promise.race([
+			this[kCursorDetectionPromise] = Promise.race([
 				this.#detectCommandStart().then(() => {}),
 				// Fallback: if cursor detection takes too long, proceed without it
 				new Promise<void>((resolve) => setTimeout(resolve, 1000)),
 			])
 				.catch(() => {
 					// If cursor detection fails, continue without it
-					this.hasDetectedCommandStart = false;
+					this[kHasDetectedCommandStart] = false;
 				})
 				.finally(() => {
 					// Clear the promise so subsequent renders don't wait
-					this.cursorDetectionPromise = null;
+					this[kCursorDetectionPromise] = null;
 				});
 		} else {
 			// In non-TTY environments, don't set up cursor detection at all
-			this.cursorDetectionPromise = null;
+			this[kCursorDetectionPromise] = null;
 		}
 	}
 
@@ -2081,7 +2104,7 @@ export class TermDOM {
 	#detectCommandStart(): Promise<number> {
 		this.attach();
 		return new Promise<number>((resolve, reject) => {
-			if (!this.process.stdin?.isTTY) {
+			if (!this.#process.stdin?.isTTY) {
 				reject(new Error("Cannot detect cursor position: stdin is not a TTY"));
 				return;
 			}
@@ -2089,15 +2112,15 @@ export class TermDOM {
 			let responseBuffer = "";
 
 			const finish = () => {
-				this.cursorDetectionHandler = null;
-				if (this.cursorDetectionTimer !== null) {
-					clearTimeout(this.cursorDetectionTimer);
-					this.cursorDetectionTimer = null;
+				this.#cursorDetectionHandler = null;
+				if (this.#cursorDetectionTimer !== null) {
+					clearTimeout(this.#cursorDetectionTimer);
+					this.#cursorDetectionTimer = null;
 				}
 			};
 
 			// Set up cursor detection handler for unified stdin
-			this.cursorDetectionHandler = (dataStr: string) => {
+			this.#cursorDetectionHandler = (dataStr: string) => {
 				responseBuffer += dataStr;
 
 				// Look for cursor position response pattern: \x1b[row;colR
@@ -2108,32 +2131,32 @@ export class TermDOM {
 					const row = parseInt(match[1], 10);
 					// Set window.screenTop (convert 1-based terminal row to 0-based)
 					const screenTop = row - 1;
-					this.scrollingManager.setScreenTop(screenTop);
+					this[kScrollingManager].setScreenTop(screenTop);
 
 					// Set scrollTop to command start position (browser behavior)
 					// For command start, we want content to shift up to terminal top
-					this.scrollingManager.scrollToCommandStart();
+					this[kScrollingManager].scrollToCommandStart();
 
-					this.hasDetectedCommandStart = true;
+					this[kHasDetectedCommandStart] = true;
 					resolve(row);
 				}
 			};
 
 			// Send cursor position query with proper flushing
-			this.process.stdout.write("\x1b[6n");
+			this.#process.stdout.write("\x1b[6n");
 
 			// Force flush the output buffer (critical for cursor queries)
-			if (typeof (this.process.stdout as any)._flush === "function") {
-				(this.process.stdout as any)._flush();
+			if (typeof (this.#process.stdout as any)._flush === "function") {
+				(this.#process.stdout as any)._flush();
 			}
 
 			// Timeout after 1000ms (reasonable balance for reliability). The timer is
 			// held so it can be cleared the moment a response arrives -- otherwise it
 			// keeps the event loop alive for a further second after we are done.
-			this.cursorDetectionTimer = setTimeout(() => {
-				this.cursorDetectionTimer = null;
-				if (this.cursorDetectionHandler) {
-					this.cursorDetectionHandler = null;
+			this.#cursorDetectionTimer = setTimeout(() => {
+				this.#cursorDetectionTimer = null;
+				if (this.#cursorDetectionHandler) {
+					this.#cursorDetectionHandler = null;
 					reject(new Error("Timeout waiting for cursor position response"));
 				}
 			}, 1000);
@@ -2148,9 +2171,9 @@ export class TermDOM {
 	 * actually ended up. Rejects on timeout so the caller can fall back to a
 	 * computed anchor.
 	 */
-	private queryCursorRow(): Promise<number> {
+	#queryCursorRow(): Promise<number> {
 		return new Promise<number>((resolve, reject) => {
-			if (!this.process.stdin?.isTTY) {
+			if (!this.#process.stdin?.isTTY) {
 				reject(new Error("stdin is not a TTY"));
 				return;
 			}
@@ -2168,13 +2191,13 @@ export class TermDOM {
 				responseBuffer += dataStr;
 				const match = responseBuffer.match(/\x1b\[(\d+);(\d+)R/);
 				if (match) {
-					if (this.cursorDetectionHandler === handler) {
-						this.cursorDetectionHandler = null;
+					if (this.#cursorDetectionHandler === handler) {
+						this.#cursorDetectionHandler = null;
 					}
 					if (localTimer !== null) {
 						clearTimeout(localTimer);
-						if (this.cursorDetectionTimer === localTimer) {
-							this.cursorDetectionTimer = null;
+						if (this.#cursorDetectionTimer === localTimer) {
+							this.#cursorDetectionTimer = null;
 						}
 						localTimer = null;
 					}
@@ -2184,26 +2207,26 @@ export class TermDOM {
 
 			// Replacing a stale handler is fine: its own timeout still fires and
 			// rejects it, and the caller's epoch check discards the stale result.
-			this.cursorDetectionHandler = handler;
+			this.#cursorDetectionHandler = handler;
 
-			this.process.stdout.write("\x1b[6n");
-			if (typeof (this.process.stdout as any)._flush === "function") {
-				(this.process.stdout as any)._flush();
+			this.#process.stdout.write("\x1b[6n");
+			if (typeof (this.#process.stdout as any)._flush === "function") {
+				(this.#process.stdout as any)._flush();
 			}
 
 			// Short timeout: the redraw should feel immediate, and a terminal that
 			// does not answer promptly falls back to the computed re-anchor.
 			localTimer = setTimeout(() => {
-				if (this.cursorDetectionHandler === handler) {
-					this.cursorDetectionHandler = null;
+				if (this.#cursorDetectionHandler === handler) {
+					this.#cursorDetectionHandler = null;
 				}
-				if (this.cursorDetectionTimer === localTimer) {
-					this.cursorDetectionTimer = null;
+				if (this.#cursorDetectionTimer === localTimer) {
+					this.#cursorDetectionTimer = null;
 				}
 				localTimer = null;
 				reject(new Error("Timeout waiting for cursor position response"));
 			}, 200);
-			this.cursorDetectionTimer = localTimer;
+			this.#cursorDetectionTimer = localTimer;
 		});
 	}
 
@@ -2213,58 +2236,58 @@ export class TermDOM {
 	}
 
 	dispose(): void {
-		undisposedInteractive.delete(this);
-		this.attached = false;
+		undisposedInteractive.delete(this.#process);
+		this.#attached = false;
 
 		// Document mode has been painting a window in place, so nothing it showed
 		// has reached the terminal's scrollback. Pay it all out now.
-		this.flushDocument();
+		this.#flushDocument();
 
 		// Frames keep the terminal cursor hidden (it is parked for resize
 		// bookkeeping, not UI); hand it back visible on the way out. The mouse
 		// goes back to the terminal the same way.
-		if (this.mouseReportingEnabled) {
-			this.process.stdout.write("\x1b[?1006l\x1b[?1002l");
-			this.mouseReportingEnabled = false;
+		if (this.#mouseReportingEnabled) {
+			this.#process.stdout.write("\x1b[?1006l\x1b[?1002l");
+			this.#mouseReportingEnabled = false;
 		}
-		if (this.interactive) {
-			this.process.stdout.write("\x1b[?25h");
+		if (this.#interactive) {
+			this.#process.stdout.write("\x1b[?25h");
 		}
 
 		// Tear down everything that holds the event loop open. Without this a
 		// disposed TermDOM keeps the process alive -- via the process signal
 		// listeners, the stdin data listener, and the cursor-detection timer -- and
 		// across a whole test suite those accumulate until nothing can exit.
-		if (this.cursorDetectionTimer !== null) {
-			clearTimeout(this.cursorDetectionTimer);
-			this.cursorDetectionTimer = null;
+		if (this.#cursorDetectionTimer !== null) {
+			clearTimeout(this.#cursorDetectionTimer);
+			this.#cursorDetectionTimer = null;
 		}
-		if (this.resizeTimer !== null) {
-			clearTimeout(this.resizeTimer);
-			this.resizeTimer = null;
+		if (this.#resizeTimer !== null) {
+			clearTimeout(this.#resizeTimer);
+			this.#resizeTimer = null;
 		}
-		this.cursorDetectionHandler = null;
+		this.#cursorDetectionHandler = null;
 
-		if (this.sigintHandler) {
-			(this.process as unknown as EventEmitter).removeListener?.(
+		if (this.#sigintHandler) {
+			(this.#process as unknown as EventEmitter).removeListener?.(
 				"SIGINT",
-				this.sigintHandler,
+				this.#sigintHandler,
 			);
-			this.sigintHandler = null;
+			this.#sigintHandler = null;
 		}
-		if (this.sigwinchHandler) {
-			(this.process as unknown as EventEmitter).removeListener?.(
+		if (this.#sigwinchHandler) {
+			(this.#process as unknown as EventEmitter).removeListener?.(
 				"SIGWINCH",
-				this.sigwinchHandler,
+				this.#sigwinchHandler,
 			);
-			this.sigwinchHandler = null;
+			this.#sigwinchHandler = null;
 		}
 
-		if (this.process.stdin?.isTTY) {
-			const stdin = this.process.stdin as TTYReadStream;
-			if (this.stdinDataHandler) {
-				stdin.removeListener?.("data", this.stdinDataHandler);
-				this.stdinDataHandler = null;
+		if (this.#process.stdin?.isTTY) {
+			const stdin = this.#process.stdin as TTYReadStream;
+			if (this.#stdinDataHandler) {
+				stdin.removeListener?.("data", this.#stdinDataHandler);
+				this.#stdinDataHandler = null;
 			}
 			stdin.setRawMode?.(false);
 			stdin.pause();
@@ -2272,12 +2295,12 @@ export class TermDOM {
 
 		// Shadow DOM cleanup is automatic with symbol-based storage
 
-		this.observer.disconnect();
+		this[kObserver].disconnect();
 		this.#styleManager.dispose();
-		this.layoutEngine.dispose();
-		this.fullscreenManager.dispose();
-		this.observerManager.dispose();
-		this.jsdom.window.close();
+		this[kLayoutEngine].dispose();
+		this.#fullscreenManager.dispose();
+		this.#observerManager.dispose();
+		this.#jsdom.window.close();
 	}
 }
 

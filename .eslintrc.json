@@ -51,6 +51,17 @@
     ],
     "linebreak-style": ["error", "unix"],
     "no-control-regex": "off",
-    "@typescript-eslint/array-type": ["error", { "default": "array-simple" }]
+    "@typescript-eslint/array-type": ["error", { "default": "array-simple" }],
+    "no-restricted-syntax": [
+      "error",
+      {
+        "selector": "TSParameterProperty",
+        "message": "Parameter properties are banned. Declare a #private field and assign it in the constructor."
+      },
+      {
+        "selector": ":matches(PropertyDefinition, MethodDefinition, TSAbstractPropertyDefinition, TSAbstractMethodDefinition)[accessibility]",
+        "message": "TypeScript access modifiers (public/private/protected) are banned. Use #private for internals, or omit the modifier for public members."
+      }
+    ]
   }
 }

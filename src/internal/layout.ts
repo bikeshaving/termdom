@@ -743,6 +743,12 @@ const flexConfig = Flex.Config.create();
 flexConfig.setUseWebDefaults(true);
 flexConfig.setPointScaleFactor(1.0);
 
+// Symbol-keyed so the invalidation test can spy on it (a #private method's
+// internal calls are invisible to a spy). Not on the public LayoutEngine type;
+// index.ts does not re-export it.
+const kInvalidateInlineRun = Symbol("invalidateInlineRun");
+export {kInvalidateInlineRun};
+
 export class LayoutEngine {
 	declare DOMRect: typeof DOMRect;
 	declare rootElement: Element;
@@ -1427,7 +1433,7 @@ export class LayoutEngine {
 
 		// If it's an inline-level node, invalidate the entire run
 		if (this.#isInlineLevel(node)) {
-			this.#invalidateInlineRun(node);
+			this[kInvalidateInlineRun](node);
 		} else if (node.nodeType === node.ELEMENT_NODE) {
 			// For block-level elements, remove from nodeMap to force recreation
 			// We can't call markDirty() on container nodes as the engine only allows
@@ -1534,7 +1540,7 @@ export class LayoutEngine {
 		return null;
 	}
 
-	#invalidateInlineRun(node: Node): void {
+	[kInvalidateInlineRun](node: Node): void {
 		const runHead = this.findInlineRunHead(node);
 		if (runHead) {
 			// Clear ALL break results for nodes in this inline run
@@ -1677,7 +1683,7 @@ export class LayoutEngine {
 					if (flexNode) {
 						styleFlexNode(element, flexNode);
 						// Invalidate inline runs if style changes might affect layout
-						this.#invalidateInlineRun(element);
+						this[kInvalidateInlineRun](element);
 					}
 				}
 				// On to the next record -- returning here would silently drop every
@@ -1687,7 +1693,7 @@ export class LayoutEngine {
 			} else if (record.type === "characterData") {
 				const textNode = record.target as Text;
 				// Invalidate the inline run containing this text node
-				this.#invalidateInlineRun(textNode);
+				this[kInvalidateInlineRun](textNode);
 				continue;
 			}
 
@@ -1707,8 +1713,8 @@ export class LayoutEngine {
 					// If parent has no layout node, it might be an inline element that's part of a run
 					// Instead of adding to the layout tree, just invalidate the inline run
 					if (this.#isInlineLevel(node)) {
-						this.#invalidateInlineRun(node);
-						this.#invalidateInlineRun(parentElement); // Also invalidate parent's run
+						this[kInvalidateInlineRun](node);
+						this[kInvalidateInlineRun](parentElement); // Also invalidate parent's run
 						continue; // Skip normal layout tree addition
 					} else {
 						// Block elements should have parents with layout nodes
@@ -1724,28 +1730,28 @@ export class LayoutEngine {
 				// Invalidate inline runs that might be affected by this addition
 				if (this.#isInlineLevel(node)) {
 					// If adding an inline node, invalidate the run it joins
-					this.#invalidateInlineRun(node);
+					this[kInvalidateInlineRun](node);
 
 					// Also check if this changes the run head of existing runs
 					const nextSibling = node.nextSibling;
 					if (nextSibling && this.#isInlineLevel(nextSibling)) {
-						this.#invalidateInlineRun(nextSibling);
+						this[kInvalidateInlineRun](nextSibling);
 					}
 
 					const prevSibling = node.previousSibling;
 					if (prevSibling && this.#isInlineLevel(prevSibling)) {
-						this.#invalidateInlineRun(prevSibling);
+						this[kInvalidateInlineRun](prevSibling);
 					}
 				} else {
 					// Block element added - might split inline runs
 					const nextSibling = node.nextSibling;
 					if (nextSibling && this.#isInlineLevel(nextSibling)) {
-						this.#invalidateInlineRun(nextSibling);
+						this[kInvalidateInlineRun](nextSibling);
 					}
 
 					const prevSibling = node.previousSibling;
 					if (prevSibling && this.#isInlineLevel(prevSibling)) {
-						this.#invalidateInlineRun(prevSibling);
+						this[kInvalidateInlineRun](prevSibling);
 					}
 				}
 			}
@@ -1761,10 +1767,10 @@ export class LayoutEngine {
 					record.previousSibling &&
 					this.#isInlineLevel(record.previousSibling)
 				) {
-					this.#invalidateInlineRun(record.previousSibling);
+					this[kInvalidateInlineRun](record.previousSibling);
 				}
 				if (record.nextSibling && this.#isInlineLevel(record.nextSibling)) {
-					this.#invalidateInlineRun(record.nextSibling);
+					this[kInvalidateInlineRun](record.nextSibling);
 				}
 
 				this.#removeNode(node, parent);
@@ -2039,7 +2045,7 @@ export class LayoutEngine {
 
 		while (child) {
 			if (this.#isInlineLevel(child)) {
-				this.#invalidateInlineRun(child);
+				this[kInvalidateInlineRun](child);
 			}
 			child = walker.nextSibling();
 		}

@@ -3,7 +3,7 @@
  */
 
 import {test, expect} from "@b9g/libuild/test";
-import {TermDOM} from "../src/internal/termdom.js";
+import {TermDOM, kWidth, kHeight, kObserver} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils";
 
 test("TermDOM provides HTML document with terminal capabilities", () => {
@@ -90,8 +90,8 @@ test("TermDOM provides correct terminal dimensions", () => {
 	});
 
 	// Access the internal dimensions via the dom instance
-	expect((dom as any).width).toBe(100);
-	expect((dom as any).height).toBe(50);
+	expect(dom[kWidth]).toBe(100);
+	expect(dom[kHeight]).toBe(50);
 
 	dom.dispose();
 });
@@ -211,7 +211,7 @@ test("pseudo-elements work on programmatic render without MutationObserver", asy
 	const termDOM = new TermDOM({process: terminal});
 
 	// Disconnect MutationObserver to prevent accidental double-rendering
-	(termDOM as any).observer.disconnect();
+	termDOM[kObserver].disconnect();
 
 	// Set up HTML with pseudo-element CSS programmatically (not via innerHTML)
 	const style = termDOM.document.createElement("style");

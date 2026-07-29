@@ -1,5 +1,8 @@
 import {test, expect} from "@b9g/libuild/test";
-import {TermDOM} from "../src/internal/termdom.js";
+import {
+	TermDOM,
+	kDispatchGlobalKeyboardEvent,
+} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 import {EventEmitter} from "events";
 
@@ -113,7 +116,7 @@ test("keyboard events are dispatched to elements", async () => {
 
 	// Simulate keyboard input by calling the internal method directly
 	const chunk = Buffer.from("a");
-	(termdom as any).dispatchGlobalKeyboardEvent(chunk);
+	termdom[kDispatchGlobalKeyboardEvent](chunk);
 
 	// Check events were fired
 	expect(events.length).toBeGreaterThan(0);
@@ -138,17 +141,17 @@ test("special keys are mapped correctly", async () => {
 	});
 
 	// Test Enter key
-	(termdom as any).dispatchGlobalKeyboardEvent(Buffer.from("\r"));
+	termdom[kDispatchGlobalKeyboardEvent](Buffer.from("\r"));
 	expect(events.some((e) => e.key === "Enter" && e.keyCode === 13)).toBe(true);
 
 	// Test Tab key
 	events.length = 0;
-	(termdom as any).dispatchGlobalKeyboardEvent(Buffer.from("\t"));
+	termdom[kDispatchGlobalKeyboardEvent](Buffer.from("\t"));
 	expect(events.some((e) => e.key === "Tab" && e.keyCode === 9)).toBe(true);
 
 	// Test Backspace
 	events.length = 0;
-	(termdom as any).dispatchGlobalKeyboardEvent(Buffer.from("\x7f"));
+	termdom[kDispatchGlobalKeyboardEvent](Buffer.from("\x7f"));
 	expect(events.some((e) => e.key === "Backspace" && e.keyCode === 8)).toBe(
 		true,
 	);
@@ -171,25 +174,25 @@ test("arrow keys are parsed correctly", async () => {
 	});
 
 	// Test arrow keys (ANSI sequences)
-	(termdom as any).dispatchGlobalKeyboardEvent(Buffer.from("\x1b[A"));
+	termdom[kDispatchGlobalKeyboardEvent](Buffer.from("\x1b[A"));
 	expect(events.some((e) => e.key === "ArrowUp" && e.keyCode === 38)).toBe(
 		true,
 	);
 
 	events.length = 0;
-	(termdom as any).dispatchGlobalKeyboardEvent(Buffer.from("\x1b[B"));
+	termdom[kDispatchGlobalKeyboardEvent](Buffer.from("\x1b[B"));
 	expect(events.some((e) => e.key === "ArrowDown" && e.keyCode === 40)).toBe(
 		true,
 	);
 
 	events.length = 0;
-	(termdom as any).dispatchGlobalKeyboardEvent(Buffer.from("\x1b[C"));
+	termdom[kDispatchGlobalKeyboardEvent](Buffer.from("\x1b[C"));
 	expect(events.some((e) => e.key === "ArrowRight" && e.keyCode === 39)).toBe(
 		true,
 	);
 
 	events.length = 0;
-	(termdom as any).dispatchGlobalKeyboardEvent(Buffer.from("\x1b[D"));
+	termdom[kDispatchGlobalKeyboardEvent](Buffer.from("\x1b[D"));
 	expect(events.some((e) => e.key === "ArrowLeft" && e.keyCode === 37)).toBe(
 		true,
 	);
@@ -212,7 +215,7 @@ test("keyboard events bubble up the DOM", async () => {
 	child.addEventListener("keydown", () => childEvents.push("child"));
 
 	// Simulate keydown on child
-	(termdom as any).dispatchGlobalKeyboardEvent(Buffer.from("a"));
+	termdom[kDispatchGlobalKeyboardEvent](Buffer.from("a"));
 
 	// Events should bubble from child to parent
 	expect(childEvents.length).toBe(0); // No direct events on child since we target document.body
@@ -222,7 +225,7 @@ test("keyboard events bubble up the DOM", async () => {
 	const bodyEvents: string[] = [];
 	document.body.addEventListener("keydown", () => bodyEvents.push("body"));
 
-	(termdom as any).dispatchGlobalKeyboardEvent(Buffer.from("b"));
+	termdom[kDispatchGlobalKeyboardEvent](Buffer.from("b"));
 	expect(bodyEvents.length).toBe(1);
 });
 

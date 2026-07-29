@@ -36,8 +36,8 @@ class MockWriteStream extends EventEmitter implements TTYWriteStream {
 	columns: number;
 	rows: number;
 	isTTY = true;
-	private terminal: Terminal;
-	private stdin: MockReadStream;
+	terminal: Terminal;
+	#stdin: MockReadStream;
 
 	constructor(
 		terminal: Terminal,
@@ -47,7 +47,7 @@ class MockWriteStream extends EventEmitter implements TTYWriteStream {
 	) {
 		super();
 		this.terminal = terminal;
-		this.stdin = stdin;
+		this.#stdin = stdin;
 		this.columns = cols;
 		this.rows = rows;
 
@@ -55,7 +55,7 @@ class MockWriteStream extends EventEmitter implements TTYWriteStream {
 		// xterm.js automatically handles cursor position queries and responds via onData
 		this.terminal.onData((data) => {
 			// Forward any responses from xterm (like cursor position) to stdin
-			this.stdin.simulateResponse(data);
+			this.#stdin.simulateResponse(data);
 		});
 	}
 
@@ -108,7 +108,7 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 	stdout: MockWriteStream;
 	stdin: MockReadStream;
 	env: Record<string, string | undefined>;
-	private terminal: Terminal;
+	terminal: Terminal;
 
 	constructor(
 		options: {
@@ -225,7 +225,7 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 	/**
 	 * Convert xterm buffer to our CellBuffer format
 	 */
-	private xtermToCellBuffer(): CellBuffer {
+	#xtermToCellBuffer(): CellBuffer {
 		const buffer = this.terminal.buffer.active;
 		const cellBuffer = createBuffer(this.terminal.rows, this.terminal.cols);
 
@@ -299,9 +299,9 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 	 * Get static ANSI content using Renderer's generateANSI (no cursor movements)
 	 */
 	getStaticANSI(): string {
-		const cellBuffer = this.xtermToCellBuffer();
+		const cellBuffer = this.#xtermToCellBuffer();
 		// Use same color depth detection logic as TermDOM
-		const colorDepth = this.detectColorDepth();
+		const colorDepth = this.#detectColorDepth();
 		const fullOutput = generateANSI(cellBuffer, colorDepth);
 		return stripControlCodes(fullOutput);
 	}
@@ -309,7 +309,7 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 	/**
 	 * Detect color depth from environment (same logic as TermDOM)
 	 */
-	private detectColorDepth(): ColorDepth {
+	#detectColorDepth(): ColorDepth {
 		const colorterm = this.env.COLORTERM;
 		if (colorterm === "truecolor" || colorterm === "24bit") {
 			return "rgb";

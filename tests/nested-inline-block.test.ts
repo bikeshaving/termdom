@@ -5,7 +5,7 @@
 
 import {test, expect} from "@b9g/libuild/test";
 import {MockProcess, nextFrame} from "./test-utils";
-import {TermDOM} from "../src/internal/termdom.js";
+import {TermDOM, kLayoutEngine} from "../src/internal/termdom.js";
 
 test("findInlineRunHead should find outer inline-block for nested text nodes", async () => {
 	const terminal = new MockProcess({cols: 50, rows: 10});
@@ -31,7 +31,7 @@ test("findInlineRunHead should find outer inline-block for nested text nodes", a
 	await nextFrame(dom);
 
 	// Access layout engine internals for testing
-	const layoutEngine = (dom as any).layoutEngine;
+	const layoutEngine = dom[kLayoutEngine];
 
 	// Test findInlineRunHead for different nodes
 	const spanTextNode = span.firstChild as Text;
@@ -67,7 +67,7 @@ test("getRectTexts should work for text nodes in nested inline-blocks", async ()
 
 	await nextFrame(dom);
 
-	const layoutEngine = (dom as any).layoutEngine;
+	const layoutEngine = dom[kLayoutEngine];
 
 	// Test getRectTexts on individual text nodes
 	const spanTextNode = span.firstChild as Text;
@@ -151,7 +151,7 @@ test("deeply nested inline-blocks should work", async () => {
 
 	await nextFrame(dom);
 
-	const layoutEngine = (dom as any).layoutEngine;
+	const layoutEngine = dom[kLayoutEngine];
 	const visibleText = terminal.getVisibleText();
 
 	// All text should be present

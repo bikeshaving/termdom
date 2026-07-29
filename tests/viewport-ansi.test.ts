@@ -1,5 +1,10 @@
 import {test, expect, describe} from "@b9g/libuild/test";
-import {TermDOM} from "../src/internal/termdom.js";
+import {
+	TermDOM,
+	kCursorDetectionPromise,
+	kScrollingManager,
+	kHasDetectedCommandStart,
+} from "../src/internal/termdom.js";
 import {nextFrame} from "./test-utils.js";
 
 // Simple mock process that captures output
@@ -57,7 +62,7 @@ describe("Viewport Integration Tests", () => {
 		const termdom = new TermDOM({process: mock.process as any});
 
 		// Skip cursor detection for predictable testing
-		(termdom as any).cursorDetectionPromise = null;
+		termdom[kCursorDetectionPromise] = null;
 
 		const div = termdom.document.createElement("div");
 		div.textContent = "Hello World";
@@ -79,12 +84,12 @@ describe("Viewport Integration Tests", () => {
 		const termdom = new TermDOM({process: mock.process as any});
 
 		// Skip cursor detection
-		(termdom as any).cursorDetectionPromise = null;
+		termdom[kCursorDetectionPromise] = null;
 
 		// Manually simulate cursor at row 5 (0-based = 4)
-		(termdom as any).scrollingManager.setScreenTop(4);
-		(termdom as any).scrollingManager.scrollToCommandStart();
-		(termdom as any).hasDetectedCommandStart = true;
+		termdom[kScrollingManager].setScreenTop(4);
+		termdom[kScrollingManager].scrollToCommandStart();
+		termdom[kHasDetectedCommandStart] = true;
 
 		const div = termdom.document.createElement("div");
 		div.textContent = "Positioned content";
@@ -106,12 +111,12 @@ describe("Viewport Integration Tests", () => {
 		const mock = createSimpleMockProcess(24, 80);
 		const termdom = new TermDOM({process: mock.process as any});
 
-		(termdom as any).cursorDetectionPromise = null;
+		termdom[kCursorDetectionPromise] = null;
 
 		// Simulate cursor at row 8
-		(termdom as any).scrollingManager.setScreenTop(7); // 0-based
-		(termdom as any).scrollingManager.scrollToCommandStart();
-		(termdom as any).hasDetectedCommandStart = true;
+		termdom[kScrollingManager].setScreenTop(7); // 0-based
+		termdom[kScrollingManager].scrollToCommandStart();
+		termdom[kHasDetectedCommandStart] = true;
 
 		const div = termdom.document.createElement("div");
 		div.textContent = "No double offset";
@@ -133,7 +138,7 @@ describe("Viewport Integration Tests", () => {
 		const mock = createSimpleMockProcess(24, 80);
 		const termdom = new TermDOM({process: mock.process as any});
 
-		(termdom as any).cursorDetectionPromise = null;
+		termdom[kCursorDetectionPromise] = null;
 
 		// No content added
 		await nextFrame(termdom);
@@ -148,12 +153,12 @@ describe("Viewport Integration Tests", () => {
 		const mock = createSimpleMockProcess(5, 40); // Small terminal
 		const termdom = new TermDOM({process: mock.process as any});
 
-		(termdom as any).cursorDetectionPromise = null;
+		termdom[kCursorDetectionPromise] = null;
 
 		// Cursor at row 4 (0-based = 3), only 2 lines available
-		(termdom as any).scrollingManager.setScreenTop(3);
-		(termdom as any).scrollingManager.scrollToCommandStart();
-		(termdom as any).hasDetectedCommandStart = true;
+		termdom[kScrollingManager].setScreenTop(3);
+		termdom[kScrollingManager].scrollToCommandStart();
+		termdom[kHasDetectedCommandStart] = true;
 
 		// Add content that needs 4 lines (exceeds 2 available)
 		const container = termdom.document.createElement("div");
