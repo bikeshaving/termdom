@@ -1959,7 +1959,7 @@ export class TermDOM {
 			this.#sealed = false;
 			this.documentScrollTop = 0;
 			this.renderer.clearPreviousBuffer();
-			if (this.process.stdin?.isTTY) await this.detectCommandStart();
+			if (this.process.stdin?.isTTY) await this.#detectCommandStart();
 		}
 
 		// Our region starts at the command-start row, which cursor detection resolves
@@ -2056,7 +2056,7 @@ export class TermDOM {
 		if (this.detectCursorEnabled && this.process.stdin?.isTTY) {
 			// Set up cursor detection promise that render() will wait for
 			this.cursorDetectionPromise = Promise.race([
-				this.detectCommandStart().then(() => {}),
+				this.#detectCommandStart().then(() => {}),
 				// Fallback: if cursor detection takes too long, proceed without it
 				new Promise<void>((resolve) => setTimeout(resolve, 1000)),
 			])
@@ -2078,7 +2078,7 @@ export class TermDOM {
 	 * Detect current cursor position and set window.screenTop
 	 * Sends \x1b[6n and waits for response \x1b[row;colR
 	 */
-	detectCommandStart(): Promise<number> {
+	#detectCommandStart(): Promise<number> {
 		this.attach();
 		return new Promise<number>((resolve, reject) => {
 			if (!this.process.stdin?.isTTY) {

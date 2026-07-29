@@ -2,49 +2,45 @@ import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/index.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
-test("detectCommandStart queries and sets window.screenTop", async () => {
+test("cursor detection sets window.screenTop from the command-start row", async () => {
 	const terminal = new MockProcess();
 
-	// Position cursor at row 15 using raw ANSI (1-based coordinates)
+	// Position cursor at row 15 (1-based) before construction.
 	await new Promise<void>((resolve) => {
 		terminal.stdout.write("\x1b[15;1H", () => resolve());
 	});
 
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({process: terminal, detectCursor: true});
 
-	// This should detect we're at row 15 and set window.screenTop to 14 (0-based)
-	const row = await dom.detectCommandStart();
-	expect(row).toBe(15);
+	// Construction auto-detects the anchor; a frame settles it. Row 15 (1-based)
+	// is screenTop 14 (0-based).
+	await nextFrame(dom);
 	expect(dom.window.screenTop).toBe(14);
 });
 
-test("detectCommandStart handles different cursor positions", async () => {
+test("cursor detection handles a different row", async () => {
 	const terminal = new MockProcess();
 
-	// Position cursor at row 23
 	await new Promise<void>((resolve) => {
 		terminal.stdout.write("\x1b[23;1H", () => resolve());
 	});
 
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({process: terminal, detectCursor: true});
 
-	const row = await dom.detectCommandStart();
-	expect(row).toBe(23);
+	await nextFrame(dom);
 	expect(dom.window.screenTop).toBe(22);
 });
 
-test("detectCommandStart handles row 1 (top of terminal)", async () => {
+test("cursor detection handles row 1 (top of terminal)", async () => {
 	const terminal = new MockProcess();
 
-	// Position cursor at top of terminal
 	await new Promise<void>((resolve) => {
 		terminal.stdout.write("\x1b[1;1H", () => resolve());
 	});
 
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({process: terminal, detectCursor: true});
 
-	const row = await dom.detectCommandStart();
-	expect(row).toBe(1);
+	await nextFrame(dom);
 	expect(dom.window.screenTop).toBe(0);
 });
 
@@ -56,8 +52,8 @@ test("rendering small content from command start (fits in available space)", asy
 		terminal.stdout.write("\x1b[8;1H", () => resolve());
 	});
 
-	const dom = new TermDOM({process: terminal});
-	await dom.detectCommandStart();
+	const dom = new TermDOM({process: terminal, detectCursor: true});
+	await nextFrame(dom);
 
 	// Add small content that fits in available space
 	dom.document.body.innerHTML = `<div>Content Line</div>`;
@@ -83,8 +79,8 @@ test.todo(
 			terminal.stdout.write("\x1b[8;1H", () => resolve());
 		});
 
-		const dom = new TermDOM({process: terminal});
-		await dom.detectCommandStart();
+		const dom = new TermDOM({process: terminal, detectCursor: true});
+		await nextFrame(dom);
 		expect(dom.window.screenTop).toBe(7); // Row 8 -> 0-based = 7
 
 		// Add content that needs 5 lines (exceeds available 3 lines by 2)
@@ -112,8 +108,8 @@ test("no push-up when content fits in available space", async () => {
 		terminal.stdout.write("\x1b[7;1H", () => resolve());
 	});
 
-	const dom = new TermDOM({process: terminal});
-	await dom.detectCommandStart();
+	const dom = new TermDOM({process: terminal, detectCursor: true});
+	await nextFrame(dom);
 	expect(dom.window.screenTop).toBe(6); // Row 7 -> 0-based = 6
 
 	// Add content that needs exactly 3 lines (fits in available 4 lines)
@@ -137,8 +133,8 @@ test.todo("push-up to terminal top when content is very large", async () => {
 		terminal.stdout.write("\x1b[4;1H", () => resolve());
 	});
 
-	const dom = new TermDOM({process: terminal});
-	await dom.detectCommandStart();
+	const dom = new TermDOM({process: terminal, detectCursor: true});
+	await nextFrame(dom);
 	expect(dom.window.screenTop).toBe(3); // Row 4 -> 0-based = 3
 
 	// Add content that needs all 5 terminal lines
@@ -164,8 +160,8 @@ test("document height calculation with auto layout", async () => {
 		terminal.stdout.write("\x1b[10;1H", () => resolve());
 	});
 
-	const dom = new TermDOM({process: terminal});
-	await dom.detectCommandStart();
+	const dom = new TermDOM({process: terminal, detectCursor: true});
+	await nextFrame(dom);
 
 	// Add content with known height (3 lines)
 	dom.document.body.innerHTML = `
@@ -191,8 +187,8 @@ test("rendering at top of terminal (row 1) with large content", async () => {
 		terminal.stdout.write("\x1b[1;1H", () => resolve());
 	});
 
-	const dom = new TermDOM({process: terminal});
-	await dom.detectCommandStart();
+	const dom = new TermDOM({process: terminal, detectCursor: true});
+	await nextFrame(dom);
 
 	// Add content that exactly fills terminal height
 	const lines = Array.from({length: 10}, (_, i) => `<div>Line ${i + 1}</div>`);
@@ -213,8 +209,8 @@ test("coordinate transformation from layout space to terminal space", async () =
 		terminal.stdout.write("\x1b[5;1H", () => resolve());
 	});
 
-	const dom = new TermDOM({process: terminal});
-	await dom.detectCommandStart();
+	const dom = new TermDOM({process: terminal, detectCursor: true});
+	await nextFrame(dom);
 
 	// Add content with known layout coordinates
 	dom.document.body.innerHTML = `
@@ -243,8 +239,8 @@ test.todo("handling content that would exceed terminal bottom", async () => {
 		terminal.stdout.write("\x1b[8;1H", () => resolve());
 	});
 
-	const dom = new TermDOM({process: terminal});
-	await dom.detectCommandStart();
+	const dom = new TermDOM({process: terminal, detectCursor: true});
+	await nextFrame(dom);
 
 	// Add content that needs 5 lines (exceeds remaining 2 lines)
 	dom.document.body.innerHTML = `
@@ -282,8 +278,8 @@ test("maximum layout height calculation", async () => {
 			terminal.stdout.write(`\x1b[${commandStart};1H`, () => resolve());
 		});
 
-		const dom = new TermDOM({process: terminal});
-		await dom.detectCommandStart();
+		const dom = new TermDOM({process: terminal, detectCursor: true});
+		await nextFrame(dom);
 
 		// TODO: When maxLayoutHeight property is added, verify calculation:
 		// maxLayoutHeight = terminalHeight - commandStartRow + 1
@@ -303,8 +299,8 @@ test.todo(
 			terminal.stdout.write("\x1b[9;1H", () => resolve());
 		});
 
-		const dom = new TermDOM({process: terminal});
-		await dom.detectCommandStart();
+		const dom = new TermDOM({process: terminal, detectCursor: true});
+		await nextFrame(dom);
 
 		// Add content that needs 4 lines (exceeds available 2 lines by 2)
 		dom.document.body.innerHTML = `
@@ -346,7 +342,7 @@ test.todo("content positioning with different terminal sizes", async () => {
 		smallTerminal.stdout.write("\x1b[3;1H", () => resolve());
 	});
 	const smallDom = new TermDOM({process: smallTerminal});
-	await smallDom.detectCommandStart();
+	await nextFrame(smallDom);
 	smallDom.document.body.innerHTML = content;
 	await nextFrame(smallDom);
 
@@ -355,7 +351,7 @@ test.todo("content positioning with different terminal sizes", async () => {
 		largeTerminal.stdout.write("\x1b[25;1H", () => resolve());
 	});
 	const largeDom = new TermDOM({process: largeTerminal});
-	await largeDom.detectCommandStart();
+	await nextFrame(largeDom);
 	largeDom.document.body.innerHTML = content;
 	await nextFrame(largeDom);
 
@@ -379,8 +375,8 @@ test.todo("content clipped to terminal boundaries", async () => {
 		terminal.stdout.write("\x1b[4;1H", () => resolve());
 	});
 
-	const dom = new TermDOM({process: terminal});
-	await dom.detectCommandStart();
+	const dom = new TermDOM({process: terminal, detectCursor: true});
+	await nextFrame(dom);
 
 	// Add content that would extend beyond terminal
 	dom.document.body.innerHTML = `
@@ -410,8 +406,8 @@ test.todo("content larger than terminal height (edge case)", async () => {
 		terminal.stdout.write("\x1b[3;1H", () => resolve());
 	});
 
-	const dom = new TermDOM({process: terminal});
-	await dom.detectCommandStart();
+	const dom = new TermDOM({process: terminal, detectCursor: true});
+	await nextFrame(dom);
 	expect(dom.window.screenTop).toBe(2); // Row 3 -> 0-based = 2
 
 	// Add content that needs 8 lines (exceeds 5-row terminal)
@@ -440,8 +436,8 @@ test("unified scrolling model: screenTop + scrollY", async () => {
 		terminal.stdout.write("\x1b[6;1H", () => resolve());
 	});
 
-	const dom = new TermDOM({process: terminal});
-	await dom.detectCommandStart();
+	const dom = new TermDOM({process: terminal, detectCursor: true});
+	await nextFrame(dom);
 
 	// Initial state: command start detected
 	expect(dom.window.screenTop).toBe(5); // Row 6 -> 0-based = 5 (readonly)
@@ -459,8 +455,8 @@ test("unified scrolling model: user scrolls to terminal top", async () => {
 		terminal.stdout.write("\x1b[8;1H", () => resolve());
 	});
 
-	const dom = new TermDOM({process: terminal});
-	await dom.detectCommandStart();
+	const dom = new TermDOM({process: terminal, detectCursor: true});
+	await nextFrame(dom);
 
 	expect(dom.window.screenTop).toBe(7); // Row 8 -> 0-based = 7 (readonly)
 	expect(dom.window.scrollY).toBe(0); // Bounded to 0 in command start mode
@@ -481,8 +477,8 @@ test("unified scrolling model: user scrolls down in document", async () => {
 		terminal.stdout.write("\x1b[5;1H", () => resolve());
 	});
 
-	const dom = new TermDOM({process: terminal});
-	await dom.detectCommandStart();
+	const dom = new TermDOM({process: terminal, detectCursor: true});
+	await nextFrame(dom);
 
 	expect(dom.window.screenTop).toBe(4); // Row 5 -> 0-based = 4
 	expect(dom.window.scrollY).toBe(0); // Bounded to 0 in command start mode
@@ -503,8 +499,8 @@ test("unified scrolling model: pageYOffset alias", async () => {
 		terminal.stdout.write("\x1b[3;1H", () => resolve());
 	});
 
-	const dom = new TermDOM({process: terminal});
-	await dom.detectCommandStart();
+	const dom = new TermDOM({process: terminal, detectCursor: true});
+	await nextFrame(dom);
 
 	// pageYOffset should be an alias for scrollY
 	expect(dom.window.pageYOffset).toBe(dom.window.scrollY);
@@ -525,8 +521,8 @@ test.todo(
 			terminal.stdout.write("\x1b[9;1H", () => resolve());
 		});
 
-		const dom = new TermDOM({process: terminal});
-		await dom.detectCommandStart();
+		const dom = new TermDOM({process: terminal, detectCursor: true});
+		await nextFrame(dom);
 
 		const initialScreenTop = dom.window.screenTop;
 		expect(initialScreenTop).toBe(8); // Row 9 -> 0-based = 8
@@ -557,7 +553,7 @@ test.todo(
 test("standard DOM properties: scrollHeight and clientHeight", async () => {
 	const terminal = new MockProcess({rows: 10, cols: 40});
 
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({process: terminal, detectCursor: true});
 
 	// Add content with known height
 	dom.document.body.innerHTML = `
@@ -596,8 +592,8 @@ test("resizing narrower reprints cleanly instead of layering over reflowed remna
 	// For content that fit on screen, nothing is pushed to scrollback and the
 	// result is a single clean render with no duplication.
 	const terminal = new MockProcess({rows: 12, cols: 40});
-	const dom = new TermDOM({process: terminal});
-	await dom.detectCommandStart();
+	const dom = new TermDOM({process: terminal, detectCursor: true});
+	await nextFrame(dom);
 
 	dom.document.body.innerHTML =
 		`<div>Header line for the demo application here.</div>` +
@@ -641,13 +637,13 @@ test("shrinking height re-anchors to the scrolled command start, no orphaned top
 	// The fix computes that scroll from the new layout height and re-anchors, so
 	// the visible viewport shows the frame exactly once.
 	const terminal = new MockProcess({rows: 16, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({process: terminal, detectCursor: true});
 
 	// Two prompt lines above, so the command start is below the top of the screen.
 	await new Promise<void>((resolve) => {
 		terminal.stdout.write("~/proj % app\r\n~/proj % app2\r\n", () => resolve());
 	});
-	await dom.detectCommandStart();
+	await nextFrame(dom);
 
 	dom.document.body.innerHTML = Array.from(
 		{length: 6},

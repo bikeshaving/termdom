@@ -48,8 +48,8 @@ async function withPriorOutput(rows = 10) {
 	const terminal = new MockProcess({rows, cols: 30});
 	terminal.stdout.write("PREV-1\r\nPREV-2\r\nPREV-3\r\nPREV-4\r\n");
 
-	const dom = new TermDOM({process: terminal});
-	await dom.detectCommandStart();
+	const dom = new TermDOM({process: terminal, detectCursor: true});
+	await nextFrame(dom);
 
 	return {terminal, dom};
 }
@@ -199,7 +199,7 @@ test("a render arriving mid-frame is coalesced, not dropped", async () => {
 	// latest state unrendered. The guard now defers instead: it runs a trailing
 	// frame that folds in whatever mutated in the meantime.
 	const terminal = new MockProcess({rows: 20, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({process: terminal, detectCursor: true});
 	dom.document.body.innerHTML =
 		`<div id="dyn">frame 0</div>` +
 		Array.from({length: 8}, (_, i) => `<div>static ${i + 1}</div>`).join("");
@@ -230,7 +230,7 @@ test("culling never drops an absolute child positioned far from its parent", asy
 	// the union of the box with every descendant's, so the parent survives
 	// culling and the deep child paints when the camera reaches it.
 	const terminal = new MockProcess({rows: 10, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({process: terminal, detectCursor: true});
 	dom.document.body.innerHTML =
 		`<div style="position:relative">top row` +
 		`<div style="position:absolute;top:45ch;left:0">ABS-DEEP</div></div>` +
@@ -313,7 +313,7 @@ test("close() seals the document into scrollback; a later mutation starts a fres
 
 test("[Symbol.dispose] tears down, so `using` works", () => {
 	const terminal = new MockProcess({rows: 10, cols: 30});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({process: terminal, detectCursor: true});
 	dom.document.body.innerHTML = "<div>hi</div>";
 
 	// The explicit-resource-management hook delegates to dispose().
