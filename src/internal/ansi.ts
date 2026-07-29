@@ -1014,20 +1014,6 @@ export class Renderer {
 	 * the fold: the already-printed copy is in the scrollback and cannot be
 	 * corrected, so the only honest thing left is to print a fresh one below it.
 	 */
-	/**
-	 * Record that `rows` lines were scrolled off the top by newlines the caller
-	 * already emitted, so our picture of the screen matches the terminal's.
-	 *
-	 * Newlines are used rather than SU (`CSI n S`) because SU *discards* what it
-	 * scrolls past, while a newline at the bottom margin commits it to the
-	 * scrollback -- which is the whole point: the rows being pushed away belong to
-	 * whatever ran before us, and must survive.
-	 */
-	beginNewBlock(): void {
-		this.#hasSavedCursor = false;
-		this.clearPreviousBuffer();
-	}
-
 	clearPreviousBuffer(): void {
 		this.#prevBuffer = null;
 		this.#prevContentHeight = 0;

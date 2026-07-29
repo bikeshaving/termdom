@@ -20,9 +20,6 @@ import {setupInspectMethods} from "./inspector.js";
 import {ScrollingManager} from "./scrolling.js";
 import {
 	createExpandedTreeWalker,
-	type ExpandedTreeWalker,
-	getShadowRoot,
-	hasShadowRoot,
 	initializeShadowDOM,
 	getPseudoMetadata,
 } from "./composition.js";
@@ -82,12 +79,6 @@ export interface TermDOMOptions {
 	detectCursor?: boolean;
 }
 
-// Test-only instance tracking. A test harness that creates many short-lived
-// TermDOMs (and, being tests, does not always dispose them) can turn this on and
-// dispose the leaked ones between tests. Off by default -- the set stays null and
-// every hook below is a no-op -- so production pays nothing.
-let trackedInstances: Set<TermDOM> | null = null;
-
 // Frames keep the terminal cursor hidden, and dispose() shows it again -- but
 // an app that calls process.exit() without disposing would strand the user's
 // shell with no cursor. One process-level exit hook restores it for any live
@@ -118,24 +109,6 @@ function installCursorRestoreOnExit(): void {
 	});
 }
 
-/** Begin tracking TermDOM instances for later bulk disposal (test harness only). */
-export function __enableInstanceTracking(): void {
-	trackedInstances ??= new Set<TermDOM>();
-}
-
-/** Dispose every tracked, still-live TermDOM instance (test harness only). */
-export function __disposeTrackedInstances(): void {
-	if (!trackedInstances) return;
-	for (const instance of trackedInstances) {
-		try {
-			instance.dispose();
-		} catch {
-			// Already disposed, or mid-teardown; ignore.
-		}
-	}
-	trackedInstances.clear();
-}
-
 export class TermDOM {
 	public readonly document: Document;
 	public readonly window: DOMWindow;
@@ -153,6 +126,13 @@ export class TermDOM {
 	// Guard against re-entrant rendering. A render() call arriving while one is in
 	// flight sets renderQueued rather than being dropped, so a trailing frame runs.
 	private isRendering = false;
+	// Callbacks registered via window.requestAnimationFrame, fired once the frame
+	// that includes their pending mutations has actually been written.
+	#frameCallbacks: FrameRequestCallback[] = [];
+	#nextRafId = 1;
+	// document.close() sealed the current document into scrollback; the next
+	// mutation starts a fresh document below it.
+	#sealed = false;
 	private renderQueued = false;
 	private renderInFlight: Promise<void> | null = null;
 
@@ -165,16 +145,6 @@ export class TermDOM {
 
 	// Track whether command start was explicitly detected (even if at row 1)
 	private hasDetectedCommandStart: boolean = false;
-
-	// The element that sat at the fold when we last committed, and where it sat.
-	// If the content above the fold changes height, this element moves -- which is
-	// how we notice that the committed rows no longer mean what they meant.
-	private foldAnchor: {element: Element; top: number} | null = null;
-
-	// Document rows that have scrolled off the top into the terminal's scrollback.
-	// The cursor cannot address scrollback, so these are frozen for good: they can
-	// never be redrawn. Everything below them is the live, addressable viewport.
-	private committedRows = 0;
 
 	// Unified stdin handling
 	private cursorDetectionHandler: ((data: string) => void) | null = null;
@@ -207,25 +177,7 @@ export class TermDOM {
 
 	private width: number;
 	private height: number;
-	/**
-	 * How the document scrolls.
-	 *
-	 * - `flow`: the document accumulates. Rows that scroll off the top are committed
-	 *   to the terminal's scrollback, frozen and unaddressable. This is what an
-	 *   ordinary command does.
-	 * - `document`: the document is a fixed thing the user moves a camera over. We
-	 *   own a region of the screen and repaint a window of the document into it.
-	 *   Nothing is committed, so nothing is frozen: the whole document stays
-	 *   mutable.
-	 *
-	 * This is *not* the same axis as whether we occupy the whole screen.
-	 * requestFullscreen() is about screen ownership -- a user-facing experience --
-	 * and the alternate buffer is one way to implement it. Document mode still
-	 * starts at the command height and still respects what came before it.
-	 */
-	private viewportMode: "flow" | "document" = "flow";
-
-	/** Which document row sits at the top of our region, in document mode. */
+	/** Which document row sits at the top of the camera. */
 	private documentScrollTop = 0;
 
 	// Whether the terminal is currently reporting mouse events to us. See
@@ -300,29 +252,6 @@ export class TermDOM {
 		this.observer = this.setupMutationObserver();
 
 		// Initial processing of all elements is handled by StyleManager's constructor
-
-		trackedInstances?.add(this);
-	}
-
-	/**
-	 * Get cached shadow root for an element (works with both open and closed shadows)
-	 */
-	getShadowRoot(element: Element): ShadowRoot | null {
-		return getShadowRoot(element);
-	}
-
-	/**
-	 * Check if an element has a shadow root
-	 */
-	hasShadowRoot(element: Element): boolean {
-		return hasShadowRoot(element);
-	}
-
-	/**
-	 * Create an ExpandedTreeWalker that can traverse pseudo-elements, shadow DOM, and slot content
-	 */
-	createExpandedTreeWalker(root: Node): ExpandedTreeWalker {
-		return createExpandedTreeWalker(this.window, root);
 	}
 
 	private initializeWindow(): void {
@@ -356,15 +285,11 @@ export class TermDOM {
 			enumerable: true,
 		});
 
-		// Standard window scrolling, mapped onto the document-mode camera. In flow
-		// mode scrollY reports how far the content has scrolled; scrollBy only
-		// means something when there is a camera to move.
+		// Standard window scrolling, mapped onto the camera: scrollY is how far the
+		// camera has moved down the document, scrollBy moves it.
 		const termDOM = this;
 		Object.defineProperty(window, "scrollY", {
-			get: () =>
-				termDOM.viewportMode === "document"
-					? termDOM.documentScrollTop
-					: Math.max(0, -termDOM.scrollingManager.getScrollTop()),
+			get: () => termDOM.documentScrollTop,
 			configurable: true,
 			enumerable: true,
 		});
@@ -376,8 +301,37 @@ export class TermDOM {
 				typeof xOrOptions === "object" && xOrOptions !== null
 					? (xOrOptions.top ?? 0)
 					: (y ?? 0);
-			termDOM.scrollDocumentBy(dy);
+			termDOM.#scrollCamera(dy);
 		}) as typeof window.scrollBy;
+
+		// requestAnimationFrame is the only way to await a painted frame -- render()
+		// is private. jsdom's pretendToBeVisual rAF is a bare timer, decoupled from
+		// our (async) paint, so a callback could fire before the frame is written.
+		// Route it through the render loop: schedule a render and fire the callback
+		// once it completes, so "await a frame" always means the frame that includes
+		// your pending mutations has landed.
+		window.requestAnimationFrame = ((cb: FrameRequestCallback): number => {
+			const id = termDOM.#nextRafId++;
+			termDOM.#frameCallbacks.push(cb);
+			void termDOM.#render();
+			return id;
+		}) as typeof window.requestAnimationFrame;
+
+		// document.close() finalizes the document: flush the live region into the
+		// terminal's scrollback and seal it -- the SSR res.end() of the terminal.
+		// A later DOM mutation starts a fresh document below the sealed block. This
+		// is the "print rich output and stop" seam: write(), then close().
+		const nativeDocumentClose = termDOM.document.close.bind(termDOM.document);
+		termDOM.document.close = () => {
+			nativeDocumentClose();
+			// dispose() tears down via jsdom's window.close(), which calls
+			// document.close() -- but it has already set attached=false, so we skip
+			// the seal there. A real seal is a close() from a live, painted session.
+			if (termDOM.attached && termDOM.renderCount > 0) {
+				termDOM.flushDocument();
+				termDOM.#sealed = true;
+			}
+		};
 
 		// Implement standard DOM scrollHeight properties
 		Object.defineProperty(this.document.body, "scrollHeight", {
@@ -419,7 +373,7 @@ export class TermDOM {
 			// Process mutations in correct order to avoid race conditions
 			this.styleManager.handleMutations(mutations); // First: attach pseudo-elements, invalidate caches
 			this.layoutEngine.handleMutations(mutations); // Second: process DOM changes for layout
-			this.render(); // Finally: render with fully processed DOM
+			this.#render(); // Finally: render with fully processed DOM
 		});
 
 		observer.observe(this.document.documentElement, {
@@ -473,8 +427,7 @@ export class TermDOM {
 			this.attached &&
 			this.interactive &&
 			Boolean(this.process.stdin?.isTTY) &&
-			!this.mouseCaptureYielded &&
-			(this.viewportMode === "document" || this.fullscreenManager.isFullscreen);
+			!this.mouseCaptureYielded;
 		if (wanted === this.mouseReportingEnabled) return;
 		this.mouseReportingEnabled = wanted;
 		// 1002: button presses, releases, wheel, and drag motion (no move flood
@@ -575,7 +528,7 @@ export class TermDOM {
 		}
 	}
 
-	async render(): Promise<void> {
+	async #render(): Promise<void> {
 		this.attach();
 
 		// A resize is settling: suppress every render until handleResize issues the
@@ -602,6 +555,8 @@ export class TermDOM {
 					this.renderQueued = false;
 					await this.renderOnce();
 				} while (this.renderQueued);
+				// The frame(s) are written; wake anything awaiting requestAnimationFrame.
+				this.#drainFrameCallbacks();
 			} finally {
 				this.isRendering = false;
 				this.renderInFlight = null;
@@ -610,129 +565,21 @@ export class TermDOM {
 		return this.renderInFlight;
 	}
 
+	#drainFrameCallbacks(): void {
+		if (this.#frameCallbacks.length === 0) return;
+		const callbacks = this.#frameCallbacks;
+		this.#frameCallbacks = [];
+		const now = performance.now();
+		for (const cb of callbacks) cb(now);
+	}
+
 	private async renderOnce(): Promise<void> {
 		if (!this.interactive) {
 			await this.renderStatic();
 			return;
 		}
 
-		if (this.viewportMode === "document") {
-			await this.renderDocumentMode();
-			return;
-		}
-
-		// Wait for cursor detection to complete before first render
-		if (this.cursorDetectionPromise) {
-			await this.cursorDetectionPromise;
-		}
-
-		// Process any pending mutations first (for direct render() calls)
-		const pendingMutations = this.observer.takeRecords();
-		if (pendingMutations.length > 0) {
-			this.styleManager.handleMutations(pendingMutations);
-			this.layoutEngine.handleMutations(pendingMutations);
-		}
-
-		// Clear the rendered markers set for this frame
-		this.renderedOutsideMarkers = new WeakSet<Element>();
-
-		// Note: refreshStylesheets() is called by mutation observer when stylesheets change
-
-		// Always use auto height for natural content sizing and scrolling
-		this.layoutEngine.calculateLayout();
-
-		// Content taller than the room left below the command start has to push the
-		// command start upward, so the overflow scrolls into the terminal's native
-		// scrollback -- exactly as a normal command's output does. Without this the
-		// rows past the bottom of the terminal are simply never drawn, and the
-		// content is silently lost.
-		if (this.hasDetectedCommandStart) {
-			this.pushUpForOverflow();
-		}
-
-		// Which *region* of the document we draw is a different question from how we
-		// position the cursor to draw it. The resize path deliberately unsets
-		// hasDetectedCommandStart so the frame is placed with DECRC rather than CUP
-		// -- and keying the region on that flag too meant a resize fell back to a
-		// stale scroll offset and painted over rows the terminal had just handed
-		// back to us out of scrollback.
-		const flow = this.interactive;
-
-		// If the document reflowed above the fold, the commit index no longer refers
-		// to the same content: printing from it would duplicate rows into the
-		// scrollback and drop the newly inserted ones. We cannot correct what is
-		// already in the scrollback, so we print the document again below it.
-		if (flow && this.hasReflowedAboveFold()) {
-			await this.reprintAsNewBlock();
-			this.layoutEngine.calculateLayout();
-		}
-
-		// The document rows still ours to draw: everything below what has already
-		// scrolled into the scrollback. On a frame where the content has grown this
-		// region is taller than the terminal, and printing it is what scrolls the
-		// terminal and commits the overflow to scrollback.
-		const contentHeight = this.document.body.scrollHeight;
-
-		// Flow mode's commit index is a document row number, so it only means
-		// anything while the document is append-only. If the document shrinks below
-		// what has already been committed -- rows removed, or cleared -- the index
-		// points past the end and there is nothing left to draw, which blanked the
-		// screen entirely. Clamp it back to what the document can actually support.
-		//
-		// This is a floor, not a fix: reflow *above* the fold still shifts every row
-		// number underneath the commit index, and the scrollback cannot be rewritten
-		// to match. See the note in SCROLLBACK.md.
-		const maxCommitted = Math.max(0, contentHeight - this.height);
-		if (this.committedRows > maxCommitted) {
-			this.committedRows = maxCommitted;
-		}
-
-		const regionRows = Math.max(0, contentHeight - this.committedRows);
-
-		// Where on screen that region begins. Once anything has been committed the
-		// content fills the terminal from its top row.
-		const startRow =
-			this.committedRows > 0 ? 0 : this.scrollingManager.getScreenTop();
-
-		const viewportOffset = flow
-			? -this.committedRows
-			: -this.scrollingManager.getScrollTop();
-
-		const cursorPosition = this.hasDetectedCommandStart ? startRow : undefined;
-
-		const ansi = this.renderer.renderFrame(
-			viewportOffset,
-			(ctx) => {
-				this.renderElement(this.document.body, ctx);
-			},
-			cursorPosition,
-			flow ? startRow + regionRows : undefined,
-		);
-
-		// Printing past the bottom margin scrolls the terminal, and those rows are
-		// now in its scrollback -- permanently, and beyond our reach.
-		if (flow) {
-			const scrolled = Math.max(0, startRow + regionRows - this.height);
-			if (scrolled > 0) {
-				this.committedRows += scrolled;
-				this.scrollingManager.setScreenTop(Math.max(0, startRow - scrolled));
-			}
-			this.updateFoldAnchor();
-		}
-
-		if (ansi) {
-			await new Promise<void>((resolve, reject) => {
-				this.process.stdout.write(ansi, "utf8", (error) => {
-					if (error) {
-						reject(error);
-					} else {
-						resolve();
-					}
-				});
-			});
-		}
-
-		this.afterRender();
+		await this.renderInteractive();
 	}
 
 	// TODO: many of the following methods do not belong on the TermDOM class
@@ -838,7 +685,7 @@ export class TermDOM {
 		// No manual lifecycle management needed
 
 		// Use ExpandedTreeWalker to render all children including pseudo-elements and shadow DOM
-		const walker = this.createExpandedTreeWalker(element);
+		const walker = createExpandedTreeWalker(this.window, element);
 
 		// Collect the children first, then paint them in z-order. Painting straight
 		// down the tree in document order means nothing can ever sit on top of
@@ -1296,8 +1143,6 @@ export class TermDOM {
 		const epoch = this.resizeEpoch;
 
 		const redraw = (startRow: number) => {
-			this.committedRows = 0;
-			this.foldAnchor = null;
 			this.scrollingManager.setScreenTop(startRow);
 			this.scrollingManager.scrollToCommandStart();
 			this.renderer.resetScreen(startRow);
@@ -1307,7 +1152,7 @@ export class TermDOM {
 			this.resizeInProgress = false;
 			const wasDetected = this.hasDetectedCommandStart;
 			this.hasDetectedCommandStart = false;
-			this.render().then(() => {
+			this.#render().then(() => {
 				this.hasDetectedCommandStart = wasDetected;
 			});
 		};
@@ -1381,10 +1226,7 @@ export class TermDOM {
 				// The visible window over the document, in the document coordinate
 				// space getRect() uses: it begins at the current scroll offset and is
 				// one terminal high.
-				const scrollTop =
-					this.viewportMode === "document"
-						? this.documentScrollTop
-						: Math.max(0, -this.scrollingManager.getScrollTop());
+				const scrollTop = this.documentScrollTop;
 				return {
 					top: scrollTop,
 					left: 0,
@@ -1560,35 +1402,19 @@ export class TermDOM {
 		) {
 			const rect = this.getBoundingClientRect();
 
-			// In document mode the rect is in document rows and the camera shows
+			// The rect is in document rows and the camera shows
 			// [documentScrollTop, documentScrollTop + region). Move the camera the
 			// minimal amount that brings the element into it -- the standard
 			// block: "nearest" behavior.
-			if (termDOM.viewportMode === "document") {
-				const regionHeight = Math.min(
-					termDOM.height,
-					termDOM.document.body.scrollHeight,
-				);
-				const top = termDOM.documentScrollTop;
-				if (rect.top < top) {
-					termDOM.scrollDocumentBy(rect.top - top);
-				} else if (rect.bottom > top + regionHeight) {
-					termDOM.scrollDocumentBy(rect.bottom - (top + regionHeight));
-				}
-				return;
-			}
-
-			const viewportHeight = termDOM.height;
-			const scrollTop = termDOM.scrollingManager.getScrollTop();
-
-			if (rect.top < 0) {
-				// Element is above viewport - scroll up
-				termDOM.scrollingManager.setScrollTop(scrollTop + rect.top);
-			} else if (rect.bottom > viewportHeight) {
-				// Element is below viewport - scroll down
-				termDOM.scrollingManager.setScrollTop(
-					scrollTop + (rect.bottom - viewportHeight),
-				);
+			const regionHeight = Math.min(
+				termDOM.height,
+				termDOM.document.body.scrollHeight,
+			);
+			const top = termDOM.documentScrollTop;
+			if (rect.top < top) {
+				termDOM.#scrollCamera(rect.top - top);
+			} else if (rect.bottom > top + regionHeight) {
+				termDOM.#scrollCamera(rect.bottom - (top + regionHeight));
 			}
 		};
 	}
@@ -1634,7 +1460,7 @@ export class TermDOM {
 		// Focus is not a DOM mutation, so no observer will schedule a frame -- but
 		// :focus styling and the caret (the real terminal cursor, parked in the
 		// focused field) both need one to move.
-		void this.render();
+		void this.#render();
 	}
 
 	/**
@@ -1686,11 +1512,11 @@ export class TermDOM {
 			);
 
 			// Trigger re-render since .value changes don't trigger MutationObserver
-			this.render();
+			this.#render();
 		} else if (newCursor !== cursor) {
 			this.inputCursorPositions.set(element, newCursor);
 			// Cursor moved - re-render to update cursor position
-			this.render();
+			this.#render();
 		}
 	}
 
@@ -1745,16 +1571,8 @@ export class TermDOM {
 		if (this.fullscreenManager.isFullscreen) {
 			return {x, y: row + this.scrollingManager.getScrollTop()};
 		}
-		if (this.viewportMode === "document") {
-			const y =
-				row - this.scrollingManager.getScreenTop() + this.documentScrollTop;
-			return y < 0 ? null : {x, y};
-		}
-		// Flow mode: rows above the region belong to committed content or the
-		// shell. (Capture is off in flow mode, so this is for completeness.)
-		const start =
-			this.committedRows > 0 ? 0 : this.scrollingManager.getScreenTop();
-		const y = row - start + this.committedRows;
+		const y =
+			row - this.scrollingManager.getScreenTop() + this.documentScrollTop;
 		return y < 0 ? null : {x, y};
 	}
 
@@ -1806,7 +1624,6 @@ export class TermDOM {
 				if (
 					deltaY < 0 &&
 					this.documentScrollTop === 0 &&
-					this.viewportMode === "document" &&
 					!this.fullscreenManager.isFullscreen
 				) {
 					// Scroll chaining, the browser default: the camera is at the
@@ -1818,7 +1635,7 @@ export class TermDOM {
 					this.mouseCaptureYielded = true;
 					this.updateMouseReporting();
 				} else {
-					this.scrollDocumentBy(deltaY);
+					this.#scrollCamera(deltaY);
 				}
 			}
 			return;
@@ -1857,10 +1674,10 @@ export class TermDOM {
 				const active = this.document.activeElement;
 				if (focusable && focusable !== active) {
 					(focusable as HTMLElement).focus();
-					void this.render();
+					void this.#render();
 				} else if (!focusable && active && active !== this.document.body) {
 					(active as HTMLElement).blur();
-					void this.render();
+					void this.#render();
 				}
 			}
 			return;
@@ -2089,7 +1906,7 @@ export class TermDOM {
 	 * output survives, because it was already printed.
 	 */
 	private flushDocument(): void {
-		if (this.viewportMode !== "document" || !this.interactive) return;
+		if (!this.interactive) return;
 
 		const contentHeight = this.document.body.scrollHeight;
 		if (contentHeight === 0) return;
@@ -2134,7 +1951,17 @@ export class TermDOM {
 	 * repaint a window of -- so unlike flow mode, content that scrolls out of view is
 	 * not frozen, and reflow anywhere is free.
 	 */
-	private async renderDocumentMode(): Promise<void> {
+	private async renderInteractive(): Promise<void> {
+		// The previous document was sealed to scrollback by close(). Start a fresh
+		// one below it: re-anchor to where the cursor now sits and reset the diff so
+		// nothing composites over the frozen block.
+		if (this.#sealed) {
+			this.#sealed = false;
+			this.documentScrollTop = 0;
+			this.renderer.clearPreviousBuffer();
+			if (this.process.stdin?.isTTY) await this.detectCommandStart();
+		}
+
 		// Our region starts at the command-start row, which cursor detection resolves
 		// asynchronously. Render before it lands and the first frame anchors at row 0
 		// while every diff after detection anchors one row lower -- the labels stay,
@@ -2176,25 +2003,12 @@ export class TermDOM {
 		this.afterRender();
 	}
 
-	/**
-	 * Choose how the document scrolls. See `viewportMode`.
-	 */
-	setViewportMode(mode: "flow" | "document"): void {
-		if (mode === this.viewportMode) return;
-		this.viewportMode = mode;
-		this.documentScrollTop = 0;
-		this.renderer.clearPreviousBuffer();
-		this.mouseCaptureYielded = false;
-		this.updateMouseReporting();
-	}
-
-	/** Move the camera, in document mode. Ignored in flow mode. */
-	scrollDocumentBy(rows: number): void {
-		if (this.viewportMode !== "document") return;
+	/** Move the camera over the document. */
+	#scrollCamera(rows: number): void {
 		this.documentScrollTop = Math.max(0, this.documentScrollTop + rows);
 		// A camera move is invisible to the MutationObserver; schedule the frame
 		// it needs, the same way a DOM mutation would.
-		void this.render();
+		void this.#render();
 	}
 
 	/**
@@ -2230,86 +2044,6 @@ export class TermDOM {
 		}
 
 		return this.scrollingManager.getScreenTop();
-	}
-
-	/**
-	 * Has the document reflowed above the fold?
-	 *
-	 * The commit index is a row *number*, so it only means anything while the rows
-	 * above it stay where they are. Insert a row near the top and every row number
-	 * beneath it shifts: rows already in the scrollback get printed again
-	 * (duplicated), and the newly inserted content never appears at all.
-	 *
-	 * The committed rows are beyond our reach, but we can watch the first element
-	 * that is still ours. If it has moved, everything above it changed height.
-	 */
-	private hasReflowedAboveFold(): boolean {
-		if (this.committedRows === 0 || this.foldAnchor === null) return false;
-
-		const {element, top} = this.foldAnchor;
-		if (!element.isConnected) return true;
-
-		const rect = this.layoutEngine.getRect(element);
-		if (!rect) return true;
-
-		return Math.round(rect.top) !== top;
-	}
-
-	/** Remember the first element below the fold, so we can tell if it moves. */
-	private updateFoldAnchor(): void {
-		if (this.committedRows === 0) {
-			this.foldAnchor = null;
-			return;
-		}
-
-		for (const element of Array.from(this.document.body.children)) {
-			const rect = this.layoutEngine.getRect(element);
-			if (!rect) continue;
-			if (rect.top >= this.committedRows) {
-				this.foldAnchor = {element, top: Math.round(rect.top)};
-				return;
-			}
-		}
-
-		this.foldAnchor = null;
-	}
-
-	/**
-	 * Print the document again, below what is already there.
-	 *
-	 * The scrollback cannot be rewritten: no escape sequence addresses it. There
-	 * are exactly two primitives -- append, or destroy the lot with ED3. Destroying
-	 * it and re-rendering is what flicker *is*, so we append. The stale copy stays
-	 * above as a record of what was shown, and a correct one is printed below it.
-	 *
-	 * It costs a duplicate. It never flickers, and it never loses anything.
-	 */
-	private async reprintAsNewBlock(): Promise<void> {
-		this.process.stdout.write("\r\n");
-
-		this.committedRows = 0;
-		this.foldAnchor = null;
-		this.renderer.beginNewBlock();
-
-		// Re-anchor: ask the terminal where the cursor actually is now.
-		await this.detectCommandStart();
-	}
-
-	private pushUpForOverflow(): void {
-		const contentHeight = this.document.body.scrollHeight;
-
-		// Where the content currently starts, as a terminal row.
-		const startRow = -this.scrollingManager.getScrollTop();
-		const roomBelow = this.height - startRow;
-
-		if (contentHeight <= roomBelow) return;
-
-		const pushUp = contentHeight - roomBelow;
-
-		// The command start moves up by the overflow, and the content with it.
-		const screenTop = this.scrollingManager.getScreenTop();
-		this.scrollingManager.setScreenTop(Math.max(0, screenTop - pushUp));
-		this.scrollingManager.scrollBy(pushUp, true);
 	}
 
 	/**
@@ -2473,8 +2207,12 @@ export class TermDOM {
 		});
 	}
 
+	/** Explicit resource management: `using dom = new TermDOM()` tears down on scope exit. */
+	[Symbol.dispose](): void {
+		this.dispose();
+	}
+
 	dispose(): void {
-		trackedInstances?.delete(this);
 		undisposedInteractive.delete(this);
 		this.attached = false;
 
@@ -2563,7 +2301,7 @@ function findElementAtPoint(
 	}
 
 	// Use ExpandedTreeWalker to traverse children (including shadow DOM)
-	const walker = termDOM.createExpandedTreeWalker(element);
+	const walker = createExpandedTreeWalker(termDOM.window, element);
 
 	let child = walker.nextNode() as Element;
 	while (child) {
