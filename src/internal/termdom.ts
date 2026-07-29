@@ -1489,6 +1489,57 @@ export class TermDOM {
 			enumerable: true,
 		});
 
+		// clientWidth/clientHeight/scrollWidth/scrollHeight, generalized from the
+		// html/body-only instance properties defined above (which still win: an
+		// own-property shadows a prototype getter, so document.body's viewport-
+		// height special case is untouched). client* is the content+padding box
+		// (border-box rect minus border widths).
+		//
+		// scroll* is set equal to client* here rather than the element's true
+		// unclamped content size, matching the same limitation the paint-extent
+		// culling above already documents for the same reason: nothing in the
+		// layout engine measures a subtree's natural size separately from
+		// whatever box it was actually constrained into. That makes scroll* exact
+		// for the common case (auto-sized boxes, no overflow) and an honest
+		// under-report for a box with both an explicit size *and* overflowing
+		// normal-flow content -- the one case a real browser's scrollWidth/Height
+		// would exceed clientWidth/Height.
+		const contentBoxSize = (
+			element: Element,
+		): {width: number; height: number} | null => {
+			const rect = termDOM[kLayoutEngine].getRect(element);
+			if (!rect) return null;
+			const box = getBoxModel(element);
+			return {
+				width: rect.width - box.borderLeftWidth - box.borderRightWidth,
+				height: rect.height - box.borderTopWidth - box.borderBottomWidth,
+			};
+		};
+
+		for (const prop of ["clientWidth", "scrollWidth"] as const) {
+			Object.defineProperty(this.window.HTMLElement.prototype, prop, {
+				get(this: Element) {
+					if (!this.isConnected) return 0;
+					termDOM.#processPendingMutationsAndRender();
+					return Math.round(contentBoxSize(this)?.width ?? 0);
+				},
+				configurable: true,
+				enumerable: true,
+			});
+		}
+
+		for (const prop of ["clientHeight", "scrollHeight"] as const) {
+			Object.defineProperty(this.window.HTMLElement.prototype, prop, {
+				get(this: Element) {
+					if (!this.isConnected) return 0;
+					termDOM.#processPendingMutationsAndRender();
+					return Math.round(contentBoxSize(this)?.height ?? 0);
+				},
+				configurable: true,
+				enumerable: true,
+			});
+		}
+
 		// Fullscreen API methods
 		Element.prototype.requestFullscreen = function (
 			this: Element,

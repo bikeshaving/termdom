@@ -88,3 +88,46 @@ test("offsetTop/offsetLeft are relative to offsetParent's own box, including mar
 	expect(inner.offsetLeft).toBe(2);
 	dom.dispose();
 });
+
+test("clientWidth/clientHeight exclude border but include padding, for any element", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const dom = new TermDOM({process: terminal});
+	dom.document.body.innerHTML = `<div id="bordered" style="width:10px; height:4px; border:1px solid; padding:1px"></div>`;
+	await nextFrame(dom);
+
+	const bordered = dom.document.getElementById("bordered")!;
+	expect(bordered.offsetWidth).toBe(10);
+	expect(bordered.offsetHeight).toBe(4);
+	// 1px border on each side: 10-2=8, 4-2=2. Padding stays inside clientWidth.
+	expect(bordered.clientWidth).toBe(8);
+	expect(bordered.clientHeight).toBe(2);
+	dom.dispose();
+});
+
+test("scrollWidth/scrollHeight equal clientWidth/clientHeight when content doesn't overflow", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const dom = new TermDOM({process: terminal});
+	dom.document.body.innerHTML = `<div id="box" style="width:8px; height:3px"></div>`;
+	await nextFrame(dom);
+
+	const box = dom.document.getElementById("box")!;
+	expect(box.scrollWidth).toBe(box.clientWidth);
+	expect(box.scrollHeight).toBe(box.clientHeight);
+	dom.dispose();
+});
+
+test("body's own clientHeight/scrollHeight (viewport height, real content height) are not shadowed", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const dom = new TermDOM({process: terminal});
+	dom.document.body.innerHTML = `<div>one</div><div>two</div>`;
+	await nextFrame(dom);
+
+	// clientHeight is the terminal's own height, unrelated to content.
+	expect(dom.document.body.clientHeight).toBe(10);
+	// scrollHeight is the document's real content height (2 lines here), which
+	// the general contentBoxSize() fallback -- had it applied to body -- would
+	// get wrong, since body has no explicit height for a border-box rect to
+	// report; the existing instance-level override must still be winning.
+	expect(dom.document.body.scrollHeight).toBe(2);
+	dom.dispose();
+});
