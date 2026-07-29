@@ -1305,7 +1305,7 @@ export class StyleManager {
 	/**
 	 * Handle DOM mutations using invalidation approach
 	 */
-handleMutations(mutations: MutationRecord[]): void {
+	handleMutations(mutations: MutationRecord[]): void {
 		const Node = this.#window.Node;
 		let shouldRefreshStylesheets = false;
 
@@ -2124,10 +2124,7 @@ handleMutations(mutations: MutationRecord[]): void {
 	/**
 	 * Parse counter-increment CSS property
 	 */
-	#parseCounterIncrement(
-		scope: CounterScope,
-		counterIncrement: string,
-	): void {
+	#parseCounterIncrement(scope: CounterScope, counterIncrement: string): void {
 		// Parse "counter1 increment1 counter2 increment2" format
 		const tokens = counterIncrement.trim().split(/\s+/);
 		for (let i = 0; i < tokens.length; i += 2) {

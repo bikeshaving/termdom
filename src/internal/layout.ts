@@ -756,8 +756,8 @@ export class LayoutEngine {
 	declare viewportRootNode: FlexTypes.Node;
 
 	// Public Maps for debugging
-nodeMap: Map<Node, FlexTypes.Node>;
-breakResultMap: Map<Node, BreakResult>;
+	nodeMap: Map<Node, FlexTypes.Node>;
+	breakResultMap: Map<Node, BreakResult>;
 
 	// Track nodes that were invalidated and need re-adding during calculateLayout
 	#invalidatedNodes: Set<Node>;
@@ -1663,7 +1663,7 @@ breakResultMap: Map<Node, BreakResult>;
 		return false;
 	}
 
-handleMutations(mutations: MutationRecord[]): void {
+	handleMutations(mutations: MutationRecord[]): void {
 		this.#handleMutationRecords(mutations);
 	}
 

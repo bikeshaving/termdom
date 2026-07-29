@@ -197,11 +197,7 @@ export class FullscreenManager {
 		return targetElement?.ownerDocument?.defaultView;
 	}
 
-	#dispatchKeyboardEvent(
-		element: Element,
-		key: string,
-		_chunk: Buffer,
-	): void {
+	#dispatchKeyboardEvent(element: Element, key: string, _chunk: Buffer): void {
 		const window = this.#getWindow(element);
 		if (!window) return;
 
