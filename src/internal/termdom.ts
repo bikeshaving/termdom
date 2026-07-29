@@ -260,10 +260,14 @@ export class TermDOM {
 	// activity produces literally no signal (that's the entire mechanism --
 	// the terminal is handling it, not us), so there's no way to reset this on
 	// continued scrolling the way a real debounce would. It's a flat window
-	// from the moment of yielding, not "N ms since the last wheel tick".
-	// Picked to comfortably outlast a glance at the scrollback above and
-	// reclaim before the user tries the wheel again, while still being short
-	// enough that forgetting to press a key doesn't strand the mouse for long.
+	// from the moment of yielding, not "N ms since the last wheel tick" --
+	// which is exactly why this can't be too short: a real wheel/trackpad
+	// doesn't tick perfectly continuously, and any gap between ticks longer
+	// than this window re-enables capture mid-scroll, which the very next
+	// tick immediately re-yields -- a disable/enable toggle on every gap for
+	// as long as the user keeps scrolling, not just a one-time early
+	// re-enable. Tried 1000ms live; it was short enough to hit that toggle
+	// and felt like lag. 3000ms tested flawless.
 	static readonly #SCROLL_CHAIN_TIMEOUT_MS = 3000;
 	#scrollChainTimer: ReturnType<typeof setTimeout> | null = null;
 	// Where the last mousedown landed, so a mouseup on the same element
