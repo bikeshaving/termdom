@@ -202,8 +202,15 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 		const buffer = this.terminal.buffer.active;
 		const lines: string[] = [];
 
+		// buffer.getLine(y) is an absolute index into the whole scrollback
+		// buffer (0 = the first line ever written), not "row 0 of what's
+		// currently on screen" -- viewportY is the offset that gets you there.
+		// This only diverges from 0 once real scrollback exists, which nothing
+		// previously exercised: every existing render path avoided triggering
+		// it, so this returned the right answer by coincidence until push-up's
+		// scroll made it observable.
 		for (let row = 0; row < this.terminal.rows; row++) {
-			const line = buffer.getLine(row);
+			const line = buffer.getLine(buffer.viewportY + row);
 			if (line) {
 				const lineText = line.translateToString(true); // true = trim right
 				lines.push(lineText);
@@ -230,7 +237,7 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 		const cellBuffer = createBuffer(this.terminal.rows, this.terminal.cols);
 
 		for (let row = 0; row < this.terminal.rows; row++) {
-			const line = buffer.getLine(row);
+			const line = buffer.getLine(buffer.viewportY + row);
 			if (!line) continue;
 
 			let outputCol = 0; // Track output column separately from xterm column

@@ -2338,11 +2338,27 @@ export class TermDOM {
 	 * anything that was already on screen*.
 	 *
 	 * If there is not enough room between the command start and the bottom of the
-	 * terminal, we scroll the terminal -- by printing newlines at the bottom margin,
-	 * which pushes the rows above into the scrollback, where they are preserved and
-	 * the user can still reach them. Overwriting them in place would destroy the
-	 * output of whatever ran before us; scrolling them away is what an ordinary
-	 * command does when it prints.
+	 * terminal, we scroll the terminal -- pushing the rows above into the
+	 * scrollback, where they are preserved and the user can still reach them.
+	 * Overwriting them in place would destroy the output of whatever ran before
+	 * us; scrolling them away is what an ordinary command does when it prints.
+	 *
+	 * This positions the cursor at the bottom row (CUP) and sends IND (ESC D,
+	 * Index -- "move down a line, scrolling if already at the bottom margin")
+	 * `push` times. Two things this is deliberately NOT:
+	 *
+	 * - Not "print bare newlines at the bottom margin". Verified directly (a
+	 *   real terminal via tmux, and the xterm-headless mock the test suite
+	 *   runs against) that a bare LF only triggers a scroll when the cursor
+	 *   reaches the bottom row through ordinary sequential output --
+	 *   teleporting there with an absolute CUP first and then sending LF
+	 *   leaves the screen completely unchanged in both.
+	 * - Not CSI n S (Scroll Up), which scrolls the visible screen correctly in
+	 *   both but -- verified directly -- does not add the scrolled-off rows to
+	 *   xterm-headless's own scrollback history the way real terminal
+	 *   scrolling does, which would make the "scrolled away, not destroyed"
+	 *   half of this behavior untestable. IND scrolls identically but goes
+	 *   through the same internal path as natural overflow, so it does.
 	 *
 	 * Returns the screen row our region now starts at.
 	 */
@@ -2354,7 +2370,9 @@ export class TermDOM {
 
 		const push = Math.min(overflow, top);
 		if (push > 0) {
-			this.#process.stdout.write(`\x1b[${this.#height};1H` + "\n".repeat(push));
+			this.#process.stdout.write(
+				`\x1b[${this.#height};1H` + "\x1bD".repeat(push),
+			);
 			// Do NOT shift the renderer's previous buffer. Its rows are relative to
 			// the region top, and the top moves up by exactly the amount the screen
 			// scrolled -- the two cancel, so buffer coordinates are unchanged.

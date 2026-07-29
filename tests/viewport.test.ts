@@ -69,22 +69,20 @@ test("rendering small content from command start (fits in available space)", asy
 	expect(lines[0]).toBe(""); // Top should be empty
 });
 
-test.todo(
-	"push-up calculation when content exceeds available space",
-	async () => {
-		const terminal = new MockProcess({rows: 10, cols: 40});
+test("push-up calculation when content exceeds available space", async () => {
+	const terminal = new MockProcess({rows: 10, cols: 40});
 
-		// Position cursor at row 8 (leaving 3 lines available: 8, 9, 10)
-		await new Promise<void>((resolve) => {
-			terminal.stdout.write("\x1b[8;1H", () => resolve());
-		});
+	// Position cursor at row 8 (leaving 3 lines available: 8, 9, 10)
+	await new Promise<void>((resolve) => {
+		terminal.stdout.write("\x1b[8;1H", () => resolve());
+	});
 
-		const dom = new TermDOM({process: terminal, detectCursor: true});
-		await nextFrame(dom);
-		expect(dom.window.screenTop).toBe(7); // Row 8 -> 0-based = 7
+	const dom = new TermDOM({process: terminal, detectCursor: true});
+	await nextFrame(dom);
+	expect(dom.window.screenTop).toBe(7); // Row 8 -> 0-based = 7
 
-		// Add content that needs 5 lines (exceeds available 3 lines by 2)
-		dom.document.body.innerHTML = `
+	// Add content that needs 5 lines (exceeds available 3 lines by 2)
+	dom.document.body.innerHTML = `
 		<div>Line 1</div>
 		<div>Line 2</div>
 		<div>Line 3</div>
@@ -92,13 +90,12 @@ test.todo(
 		<div>Line 5</div>
 	`;
 
-		await nextFrame(dom);
+	await nextFrame(dom);
 
-		// window.screenTop should be pushed up by 2 lines (from 7 to 5)
-		// This accommodates all 5 lines of content in the 10-row terminal
-		expect(dom.window.screenTop).toBe(5); // Row 6 -> 0-based = 5
-	},
-);
+	// window.screenTop should be pushed up by 2 lines (from 7 to 5)
+	// This accommodates all 5 lines of content in the 10-row terminal
+	expect(dom.window.screenTop).toBe(5); // Row 6 -> 0-based = 5
+});
 
 test("no push-up when content fits in available space", async () => {
 	const terminal = new MockProcess({rows: 10, cols: 40});
@@ -125,7 +122,7 @@ test("no push-up when content fits in available space", async () => {
 	expect(dom.window.screenTop).toBe(6);
 });
 
-test.todo("push-up to terminal top when content is very large", async () => {
+test("push-up to terminal top when content is very large", async () => {
 	const terminal = new MockProcess({rows: 5, cols: 30});
 
 	// Position cursor at row 4 (leaving 2 lines available: 4, 5)
@@ -231,10 +228,10 @@ test("coordinate transformation from layout space to terminal space", async () =
 	expect(lines[5].substring(10, 16)).toBe("Second"); // Row 6, starting at col 10
 });
 
-test.todo("handling content that would exceed terminal bottom", async () => {
+test("handling content that would exceed terminal bottom", async () => {
 	const terminal = new MockProcess({rows: 10, cols: 40});
 
-	// Position cursor near bottom (row 8, leaving only 2 lines)
+	// Position cursor near bottom (row 8, leaving only 3 lines: 8, 9, 10)
 	await new Promise<void>((resolve) => {
 		terminal.stdout.write("\x1b[8;1H", () => resolve());
 	});
@@ -242,7 +239,7 @@ test.todo("handling content that would exceed terminal bottom", async () => {
 	const dom = new TermDOM({process: terminal, detectCursor: true});
 	await nextFrame(dom);
 
-	// Add content that needs 5 lines (exceeds remaining 2 lines)
+	// Add content that needs 5 lines (exceeds the 3 available by 2)
 	dom.document.body.innerHTML = `
 		<div>Content line 1</div>
 		<div>Content line 2</div>
@@ -253,13 +250,18 @@ test.todo("handling content that would exceed terminal bottom", async () => {
 
 	await nextFrame(dom);
 
-	// TODO: When push-up behavior is implemented, verify:
-	// 1. Terminal scrolls existing content upward
-	// 2. Command start gets repositioned to accommodate all content
-	// 3. All content fits within terminal height
-	// Push-up behavior: cursor was at row 8 (screenTop=7), content needs 5 lines but only 2 available
-	// System pushes up by 3 lines: cursor moves from row 8 to row 6 (screenTop=5)
+	// The terminal scrolls the earlier content up into scrollback, the anchor
+	// moves from row 8 (screenTop=7) up by 2 to row 6 (screenTop=5), and all 5
+	// lines now fit below it.
 	expect(dom.window.screenTop).toBe(5);
+	const lines = terminal.getPlainText().split("\n").filter(Boolean);
+	expect(lines).toEqual([
+		"Content line 1",
+		"Content line 2",
+		"Content line 3",
+		"Content line 4",
+		"Content line 5",
+	]);
 });
 
 test("maximum layout height calculation", async () => {
@@ -289,44 +291,40 @@ test("maximum layout height calculation", async () => {
 	}
 });
 
-test.todo(
-	"push-up offset calculation when content exceeds available space",
-	async () => {
-		const terminal = new MockProcess({rows: 10, cols: 40});
+test("push-up offset calculation when content exceeds available space", async () => {
+	const terminal = new MockProcess({rows: 10, cols: 40});
 
-		// Position cursor at row 9 (2 lines available)
-		await new Promise<void>((resolve) => {
-			terminal.stdout.write("\x1b[9;1H", () => resolve());
-		});
+	// Position cursor at row 9 (2 lines available: 9, 10)
+	await new Promise<void>((resolve) => {
+		terminal.stdout.write("\x1b[9;1H", () => resolve());
+	});
 
-		const dom = new TermDOM({process: terminal, detectCursor: true});
-		await nextFrame(dom);
+	const dom = new TermDOM({process: terminal, detectCursor: true});
+	await nextFrame(dom);
 
-		// Add content that needs 4 lines (exceeds available 2 lines by 2)
-		dom.document.body.innerHTML = `
+	// Add content that needs 4 lines (exceeds available 2 lines by 2)
+	dom.document.body.innerHTML = `
 		<div>Line 1</div>
 		<div>Line 2</div>
 		<div>Line 3</div>
 		<div>Line 4</div>
 	`;
 
-		await nextFrame(dom);
-		const lines = terminal.getPlainText().split("\n");
+	await nextFrame(dom);
+	const lines = terminal.getPlainText().split("\n");
 
-		// FAILING: Should push up by 2 lines to accommodate all content
-		// New commandStartRow should be 9 - 2 = 7
-		// Content should render from row 7 to row 10
-		expect(lines[6]).toBe("Line 1"); // Row 7 (0-based index 6)
-		expect(lines[7]).toBe("Line 2"); // Row 8
-		expect(lines[8]).toBe("Line 3"); // Row 9
-		expect(lines[9]).toBe("Line 4"); // Row 10
+	// Pushed up by 2 lines to accommodate all content: new screenTop is 8-2=6
+	// (0-based), content renders from row 7 (1-based) through row 10.
+	expect(lines[6]).toBe("Line 1"); // Row 7 (0-based index 6)
+	expect(lines[7]).toBe("Line 2"); // Row 8
+	expect(lines[8]).toBe("Line 3"); // Row 9
+	expect(lines[9]).toBe("Line 4"); // Row 10
 
-		// Initial command start should be updated
-		expect(dom.window.screenTop).toBe(6); // Should be pushed up from 8 to 6 (0-based)
-	},
-);
+	// Initial command start should be updated
+	expect(dom.window.screenTop).toBe(6); // Should be pushed up from 8 to 6 (0-based)
+});
 
-test.todo("content positioning with different terminal sizes", async () => {
+test("content positioning with different terminal sizes", async () => {
 	const smallTerminal = new MockProcess({rows: 5, cols: 20});
 	const largeTerminal = new MockProcess({rows: 50, cols: 120});
 
@@ -337,11 +335,13 @@ test.todo("content positioning with different terminal sizes", async () => {
 		<div>Third line content</div>
 	`;
 
-	// Small terminal test
+	// Small terminal test. detectCursor:true is required for cursor detection
+	// (and therefore push-up) to run at all -- without it, screenTop stays 0
+	// regardless of content, which is not what this test is about.
 	await new Promise<void>((resolve) => {
 		smallTerminal.stdout.write("\x1b[3;1H", () => resolve());
 	});
-	const smallDom = new TermDOM({process: smallTerminal});
+	const smallDom = new TermDOM({process: smallTerminal, detectCursor: true});
 	await nextFrame(smallDom);
 	smallDom.document.body.innerHTML = content;
 	await nextFrame(smallDom);
@@ -350,27 +350,26 @@ test.todo("content positioning with different terminal sizes", async () => {
 	await new Promise<void>((resolve) => {
 		largeTerminal.stdout.write("\x1b[25;1H", () => resolve());
 	});
-	const largeDom = new TermDOM({process: largeTerminal});
+	const largeDom = new TermDOM({process: largeTerminal, detectCursor: true});
 	await nextFrame(largeDom);
 	largeDom.document.body.innerHTML = content;
 	await nextFrame(largeDom);
 
-	// Verify cursor positions after push-up behavior
-	// Small terminal: cursor at row 3 (screenTop=2), content needs 3 lines but only 2 available
-	// Push-up by 1 line: cursor moves from row 3 to row 2 (screenTop=1)
+	// Small terminal: cursor at row 3 (screenTop=2), only 3 rows below (rows
+	// 3-5). At 20 columns, "First line of content" wraps into two lines, so
+	// the content is really 4 rows -- one more than fits. Push up by 1: from
+	// screenTop=2 to 1.
 	expect(smallDom.window.screenTop).toBe(1);
 
-	// Large terminal: cursor at row 25 (screenTop=24), enough space so no push-up
+	// Large terminal: cursor at row 25 (screenTop=24), 120 columns is wide
+	// enough that nothing wraps and all 3 lines fit easily -- no push-up.
 	expect(largeDom.window.screenTop).toBe(24);
-
-	// TODO: When coordinate transformation is implemented, verify content
-	// appears at correct terminal positions relative to commandStartRow
 });
 
-test.todo("content clipped to terminal boundaries", async () => {
+test("push-up prevents content from being clipped, when it still fits the terminal", async () => {
 	const terminal = new MockProcess({rows: 5, cols: 20});
 
-	// Position cursor at row 4 (only 2 lines available)
+	// Position cursor at row 4 (only 2 lines available: 4, 5)
 	await new Promise<void>((resolve) => {
 		terminal.stdout.write("\x1b[4;1H", () => resolve());
 	});
@@ -378,27 +377,29 @@ test.todo("content clipped to terminal boundaries", async () => {
 	const dom = new TermDOM({process: terminal, detectCursor: true});
 	await nextFrame(dom);
 
-	// Add content that would extend beyond terminal
+	// 3 lines of content, only 2 rows available below the cursor -- but the
+	// terminal has 5 rows total, so push-up can make room for all of it.
 	dom.document.body.innerHTML = `
 		<div>Visible line 1</div>
 		<div>Visible line 2</div>
-		<div>Should not appear</div>
+		<div>Should also appear</div>
 	`;
 
 	await nextFrame(dom);
 	const lines = terminal.getPlainText().split("\n");
 
-	// Push-up behavior: cursor at row 4 (screenTop=3), content needs 3 lines but only 1 available
-	// Push-up by 2 lines: cursor moves from row 4 to row 3 (screenTop=2)
+	// Cursor at row 4 (screenTop=3), content needs 3 lines but only 2 are
+	// available -- pushed up by 1 line, to screenTop=2.
 	expect(dom.window.screenTop).toBe(2);
 
-	// Content should be clipped to terminal boundaries
-	// With updated screenTop, content appears 1 row higher
+	// All three lines fit and render -- nothing is clipped, since the
+	// terminal's 5 total rows are enough once the anchor moves.
 	expect(lines[2]).toBe("Visible line 1"); // Row 3 (0-based index 2)
-	expect(lines[3]).toBe("Visible line 2"); // Row 4 (0-based index 3)
+	expect(lines[3]).toBe("Visible line 2"); // Row 4
+	expect(lines[4]).toBe("Should also appear"); // Row 5
 });
 
-test.todo("content larger than terminal height (edge case)", async () => {
+test("content larger than terminal height (edge case)", async () => {
 	const terminal = new MockProcess({rows: 5, cols: 30});
 
 	// Position cursor at row 3
@@ -410,7 +411,8 @@ test.todo("content larger than terminal height (edge case)", async () => {
 	await nextFrame(dom);
 	expect(dom.window.screenTop).toBe(2); // Row 3 -> 0-based = 2
 
-	// Add content that needs 8 lines (exceeds 5-row terminal)
+	// Add content that needs 8 lines -- more than the 5-row terminal could
+	// ever show at once, regardless of push-up.
 	const contentLines = Array.from(
 		{length: 8},
 		(_, i) => `<div>Line ${i + 1}</div>`,
@@ -419,13 +421,14 @@ test.todo("content larger than terminal height (edge case)", async () => {
 
 	await nextFrame(dom);
 
-	// Push-up should go to terminal top, but content will still overflow
+	// Push-up goes as far as it can (to the terminal's own top) but that still
+	// isn't enough room for 8 lines in a 5-row terminal. The answer to "what
+	// happens to the rest": it clips to what fits, showing the first 5
+	// lines -- the same clip-to-viewport behavior any other overflowing
+	// content gets, not an error or an auto-scroll/paging mode.
 	expect(dom.window.screenTop).toBe(0); // Pushed to top
-
-	// TODO: Need to handle content overflow - should we:
-	// 1. Clip content to terminal height?
-	// 2. Show error/warning?
-	// 3. Enable scrolling/paging?
+	const lines = terminal.getPlainText().split("\n").filter(Boolean);
+	expect(lines).toEqual(["Line 1", "Line 2", "Line 3", "Line 4", "Line 5"]);
 });
 
 test("unified scrolling model: screenTop + scrollY", async () => {
@@ -511,44 +514,39 @@ test("unified scrolling model: pageYOffset alias", async () => {
 	expect(dom.window.pageYOffset).toBe(0); // Should remain 0
 });
 
-test.todo(
-	"unified scrolling model: push-up updates scrollY not screenTop",
-	async () => {
-		const terminal = new MockProcess({rows: 10, cols: 40});
+test("unified scrolling model: push-up moves screenTop, not scrollY", async () => {
+	const terminal = new MockProcess({rows: 10, cols: 40});
 
-		// Position cursor at row 9 (only 2 lines available)
-		await new Promise<void>((resolve) => {
-			terminal.stdout.write("\x1b[9;1H", () => resolve());
-		});
+	// Position cursor at row 9 (only 2 lines available: 9, 10)
+	await new Promise<void>((resolve) => {
+		terminal.stdout.write("\x1b[9;1H", () => resolve());
+	});
 
-		const dom = new TermDOM({process: terminal, detectCursor: true});
-		await nextFrame(dom);
+	const dom = new TermDOM({process: terminal, detectCursor: true});
+	await nextFrame(dom);
 
-		const initialScreenTop = dom.window.screenTop;
-		expect(initialScreenTop).toBe(8); // Row 9 -> 0-based = 8
-		expect(dom.window.scrollY).toBe(0); // Initial: bounded to 0 in command start mode
+	const initialScreenTop = dom.window.screenTop;
+	expect(initialScreenTop).toBe(8); // Row 9 -> 0-based = 8
+	expect(dom.window.scrollY).toBe(0); // Initial: bounded to 0 in command start mode
 
-		// Add content that needs 4 lines (exceeds available 2 lines)
-		dom.document.body.innerHTML = `
+	// Add content that needs 4 lines (exceeds the 2 available by 2)
+	dom.document.body.innerHTML = `
 		<div>Line 1</div>
 		<div>Line 2</div>
 		<div>Line 3</div>
 		<div>Line 4</div>
 	`;
 
-		await nextFrame(dom);
+	await nextFrame(dom);
 
-		// Push-up behavior: cursor at row 9 (screenTop=8), content needs 4 lines but only 1 available
-		// Push-up by 3 lines: cursor moves from row 9 to row 6 (screenTop=5)
-		// Note: actual value is 6, need to verify push-up calculation
-		expect(dom.window.screenTop).toBe(6);
+	// Push-up moves the anchor (screenTop), from 8 to 6.
+	expect(dom.window.screenTop).toBe(6);
 
-		// scrollY should remain 0 (still in command start mode after push-up)
-		// Internal scrollTop was pushed up from -8 to -6, but scrollY stays bounded to 0
-		expect(dom.window.scrollY).toBe(0); // Still bounded to 0
-		// TODO: We could check internal state if needed, but public API shows 0
-	},
-);
+	// scrollY is the document camera, a different axis from the anchor --
+	// push-up making room below the anchor doesn't move the camera, so it
+	// stays exactly where it was (0, bounded in command-start mode).
+	expect(dom.window.scrollY).toBe(0);
+});
 
 test("standard DOM properties: scrollHeight and clientHeight", async () => {
 	const terminal = new MockProcess({rows: 10, cols: 40});
