@@ -2,12 +2,45 @@ import {test, expect, describe} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
-// These tests exercise the interactive render path's cursor positioning by
-// observing where content actually lands in the terminal buffer. Content
-// appearing at row N proves the renderer emitted the ANSI to move there, so we
-// assert the observable result rather than grepping escape codes -- and drive
-// the anchor through real cursor detection (park the cursor, let TermDOM detect
-// it) rather than poking internal state.
+// A raw-capture mock: it keeps the exact bytes TermDOM writes, so tests can
+// assert the wire protocol (synchronized-output wrappers, no redundant cursor
+// homing, nothing at all when empty). stdin.isTTY:false disables cursor
+// detection entirely, so these tests render from the terminal home row without
+// any anchor setup.
+function createRawMockProcess(rows: number = 24, cols: number = 80) {
+	let capturedOutput = "";
+	return {
+		process: {
+			stdout: {
+				write: (chunk: any, encoding?: any, callback?: any) => {
+					capturedOutput += chunk;
+					if (typeof encoding === "function") callback = encoding;
+					if (callback) setImmediate(() => callback());
+					return true;
+				},
+				columns: cols,
+				rows,
+				isTTY: true,
+			},
+			stdin: {
+				isTTY: false, // disables cursor detection
+				setRawMode: () => {},
+				resume: () => {},
+				pause: () => {},
+				setEncoding: () => {},
+				on: () => {},
+				off: () => {},
+			},
+			exit: () => {},
+			env: {},
+			on: () => {},
+			emit: () => false,
+			removeListener: () => {},
+			removeAllListeners: () => {},
+		},
+		getOutput: () => capturedOutput,
+	};
+}
 
 /** Park the terminal cursor at a 1-based row before construction. */
 async function parkCursor(terminal: MockProcess, row: number): Promise<void> {
@@ -17,18 +50,34 @@ async function parkCursor(terminal: MockProcess, row: number): Promise<void> {
 }
 
 describe("Viewport Integration Tests", () => {
-	test("content renders from the home row when the cursor starts at home", async () => {
-		const terminal = new MockProcess({rows: 24, cols: 80});
-		const dom = new TermDOM({process: terminal});
+	// --- Raw wire-protocol checks (no anchor, cursor at home) -----------------
 
-		dom.document.body.innerHTML = "<div>Hello World</div>";
-		await nextFrame(dom);
+	test("content renders from home without a redundant cursor-home escape", async () => {
+		const mock = createRawMockProcess(24, 80);
+		const termdom = new TermDOM({process: mock.process as any});
 
-		// Cursor at home -> content lands on the top row, no offset.
-		expect(dom.window.screenTop).toBe(0);
-		const lines = terminal.getPlainText().split("\n");
-		expect(lines[0]).toBe("Hello World");
+		const div = termdom.document.createElement("div");
+		div.textContent = "Hello World";
+		termdom.document.body.appendChild(div);
+		await nextFrame(termdom);
+
+		const output = mock.getOutput();
+		expect(output).toContain("Hello World");
+		expect(output).not.toContain("\x1b[H"); // cursor already at home
+		expect(output).toContain("\x1b[?2026h"); // synchronized output start
+		expect(output).toContain("\x1b[?2026l"); // synchronized output end
 	});
+
+	test("empty content writes nothing (hasContent optimization)", async () => {
+		const mock = createRawMockProcess(24, 80);
+		const termdom = new TermDOM({process: mock.process as any});
+
+		await nextFrame(termdom); // no content added
+
+		expect(mock.getOutput()).toBe("");
+	});
+
+	// --- Anchor placement, driven by real cursor detection --------------------
 
 	test("content renders from the detected command-start row", async () => {
 		const terminal = new MockProcess({rows: 24, cols: 80});
@@ -39,6 +88,7 @@ describe("Viewport Integration Tests", () => {
 		dom.document.body.innerHTML = "<div>Positioned content</div>";
 		await nextFrame(dom);
 
+		// Content landing on row 5 proves the row-5 positioning ANSI was emitted.
 		expect(dom.window.screenTop).toBe(4);
 		const lines = terminal.getPlainText().split("\n");
 		expect(lines[4]).toBe("Positioned content");
@@ -57,16 +107,35 @@ describe("Viewport Integration Tests", () => {
 		expect(dom.window.screenTop).toBe(7);
 		const lines = terminal.getPlainText().split("\n");
 		expect(lines[7]).toBe("No double offset"); // row 8: offset applied once
-		// If the anchor were applied twice it would land near row 15 instead.
+		// A doubled offset would land it near row 15 instead.
 		expect(lines.filter((l) => l === "No double offset").length).toBe(1);
 	});
 
-	test("empty content produces an empty frame", async () => {
-		const terminal = new MockProcess({rows: 24, cols: 80});
-		const dom = new TermDOM({process: terminal});
+	// Push-up (moving the anchor up so overflowing content fits) is not yet
+	// implemented -- see the matching test.todo in viewport.test.ts. Kept here so
+	// the ANSI-path version of the gap stays recorded.
+	test.todo(
+		"content overflowing the space below the anchor pushes up to fit",
+		async () => {
+			const terminal = new MockProcess({rows: 5, cols: 40});
+			await parkCursor(terminal, 4); // screenTop 3, only 2 rows below
+			const dom = new TermDOM({process: terminal, detectCursor: true});
+			await nextFrame(dom);
 
-		await nextFrame(dom);
+			const container = dom.document.createElement("div");
+			for (let i = 1; i <= 4; i++) {
+				const line = dom.document.createElement("div");
+				line.textContent = `Line ${i}`;
+				container.appendChild(line);
+			}
+			dom.document.body.appendChild(container);
+			await nextFrame(dom);
 
-		expect(terminal.getPlainText()).toBe("");
-	});
+			const text = terminal.getPlainText();
+			expect(text).toContain("Line 1");
+			expect(text).toContain("Line 2");
+			expect(text).toContain("Line 3");
+			expect(text).toContain("Line 4");
+		},
+	);
 });
