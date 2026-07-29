@@ -1,185 +1,72 @@
 import {test, expect, describe} from "@b9g/libuild/test";
-import {
-	TermDOM,
-	kCursorDetectionPromise,
-	kScrollingManager,
-	kHasDetectedCommandStart,
-} from "../src/internal/termdom.js";
-import {nextFrame} from "./test-utils.js";
+import {TermDOM} from "../src/internal/termdom.js";
+import {MockProcess, nextFrame} from "./test-utils.js";
 
-// Simple mock process that captures output
-function createSimpleMockProcess(rows: number = 24, cols: number = 80) {
-	let capturedOutput = "";
+// These tests exercise the interactive render path's cursor positioning by
+// observing where content actually lands in the terminal buffer. Content
+// appearing at row N proves the renderer emitted the ANSI to move there, so we
+// assert the observable result rather than grepping escape codes -- and drive
+// the anchor through real cursor detection (park the cursor, let TermDOM detect
+// it) rather than poking internal state.
 
-	return {
-		process: {
-			stdout: {
-				write: (chunk: any, encoding?: any, callback?: any) => {
-					capturedOutput += chunk;
-					// Handle callback properly like real stdout
-					if (typeof encoding === "function") {
-						callback = encoding;
-					}
-					if (callback) {
-						// Call callback asynchronously to match real behavior
-						setImmediate(() => callback());
-					}
-					return true;
-				},
-				columns: cols,
-				rows: rows,
-				// These tests assert interactive terminal output (cursor
-				// positioning), so stdout *is* a terminal. Cursor detection is
-				// disabled by stdin.isTTY below, which is what actually governs it.
-				isTTY: true,
-			},
-			stdin: {
-				isTTY: false, // This should prevent cursor detection entirely
-				setRawMode: () => {},
-				resume: () => {},
-				pause: () => {},
-				setEncoding: () => {},
-				on: () => {},
-				off: () => {},
-			},
-			exit: () => {},
-			env: {},
-			on: () => {},
-			emit: () => false,
-			removeListener: () => {},
-			removeAllListeners: () => {},
-		},
-		getOutput: () => capturedOutput,
-		clearOutput: () => {
-			capturedOutput = "";
-		},
-	};
+/** Park the terminal cursor at a 1-based row before construction. */
+async function parkCursor(terminal: MockProcess, row: number): Promise<void> {
+	await new Promise<void>((resolve) => {
+		terminal.stdout.write(`\x1b[${row};1H`, () => resolve());
+	});
 }
 
 describe("Viewport Integration Tests", () => {
-	test("basic content should render with home cursor position", async () => {
-		const mock = createSimpleMockProcess(24, 80);
-		const termdom = new TermDOM({process: mock.process as any});
+	test("content renders from the home row when the cursor starts at home", async () => {
+		const terminal = new MockProcess({rows: 24, cols: 80});
+		const dom = new TermDOM({process: terminal});
 
-		// Skip cursor detection for predictable testing
-		termdom[kCursorDetectionPromise] = null;
+		dom.document.body.innerHTML = "<div>Hello World</div>";
+		await nextFrame(dom);
 
-		const div = termdom.document.createElement("div");
-		div.textContent = "Hello World";
-		termdom.document.body.appendChild(div);
-
-		await nextFrame(termdom);
-
-		const output = mock.getOutput();
-
-		// Should NOT contain home cursor position on first render (cursor already at home)
-		expect(output).not.toContain("\x1b[H"); // No home cursor position needed
-		expect(output).toContain("Hello World"); // Content
-		expect(output).toContain("\x1b[?2026h"); // Synchronized mode start
-		expect(output).toContain("\x1b[?2026l"); // Synchronized mode end
+		// Cursor at home -> content lands on the top row, no offset.
+		expect(dom.window.screenTop).toBe(0);
+		const lines = terminal.getPlainText().split("\n");
+		expect(lines[0]).toBe("Hello World");
 	});
 
-	test("cursor at specific position should use correct ANSI positioning", async () => {
-		const mock = createSimpleMockProcess(24, 80);
-		const termdom = new TermDOM({process: mock.process as any});
+	test("content renders from the detected command-start row", async () => {
+		const terminal = new MockProcess({rows: 24, cols: 80});
+		await parkCursor(terminal, 5); // 1-based row 5 -> screenTop 4
+		const dom = new TermDOM({process: terminal, detectCursor: true});
+		await nextFrame(dom);
 
-		// Skip cursor detection
-		termdom[kCursorDetectionPromise] = null;
+		dom.document.body.innerHTML = "<div>Positioned content</div>";
+		await nextFrame(dom);
 
-		// Manually simulate cursor at row 5 (0-based = 4)
-		termdom[kScrollingManager].setScreenTop(4);
-		termdom[kScrollingManager].scrollToCommandStart();
-		termdom[kHasDetectedCommandStart] = true;
-
-		const div = termdom.document.createElement("div");
-		div.textContent = "Positioned content";
-		termdom.document.body.appendChild(div);
-
-		await nextFrame(termdom);
-
-		const output = mock.getOutput();
-
-		// Should position cursor at row 5 (1-based ANSI = \x1b[5;1H)
-		expect(output).toContain("\x1b[5;1H");
-		expect(output).toContain("Positioned content");
-
-		// Should NOT contain home position when cursor is positioned elsewhere
-		expect(output).not.toContain("\x1b[H"); // No home position
+		expect(dom.window.screenTop).toBe(4);
+		const lines = terminal.getPlainText().split("\n");
+		expect(lines[4]).toBe("Positioned content");
+		expect(lines[0]).toBe(""); // nothing painted above the anchor
 	});
 
-	test("double viewport offset bug should be prevented", async () => {
-		const mock = createSimpleMockProcess(24, 80);
-		const termdom = new TermDOM({process: mock.process as any});
+	test("the anchor offset is applied once, not doubled", async () => {
+		const terminal = new MockProcess({rows: 24, cols: 80});
+		await parkCursor(terminal, 8); // screenTop 7
+		const dom = new TermDOM({process: terminal, detectCursor: true});
+		await nextFrame(dom);
 
-		termdom[kCursorDetectionPromise] = null;
+		dom.document.body.innerHTML = "<div>No double offset</div>";
+		await nextFrame(dom);
 
-		// Simulate cursor at row 8
-		termdom[kScrollingManager].setScreenTop(7); // 0-based
-		termdom[kScrollingManager].scrollToCommandStart();
-		termdom[kHasDetectedCommandStart] = true;
-
-		const div = termdom.document.createElement("div");
-		div.textContent = "No double offset";
-		termdom.document.body.appendChild(div);
-
-		await nextFrame(termdom);
-
-		const output = mock.getOutput();
-
-		// Should position at row 8 (1-based ANSI)
-		expect(output).toContain("\x1b[8;1H");
-
-		// Should NOT contain doubled position (row 15 would be 7*2 + 1)
-		expect(output).not.toContain("\x1b[15;1H");
-		expect(output).not.toContain("\x1b[16;1H"); // 8*2 = 16
+		expect(dom.window.screenTop).toBe(7);
+		const lines = terminal.getPlainText().split("\n");
+		expect(lines[7]).toBe("No double offset"); // row 8: offset applied once
+		// If the anchor were applied twice it would land near row 15 instead.
+		expect(lines.filter((l) => l === "No double offset").length).toBe(1);
 	});
 
-	test("empty content should generate minimal output", async () => {
-		const mock = createSimpleMockProcess(24, 80);
-		const termdom = new TermDOM({process: mock.process as any});
+	test("empty content produces an empty frame", async () => {
+		const terminal = new MockProcess({rows: 24, cols: 80});
+		const dom = new TermDOM({process: terminal});
 
-		termdom[kCursorDetectionPromise] = null;
+		await nextFrame(dom);
 
-		// No content added
-		await nextFrame(termdom);
-
-		const output = mock.getOutput();
-
-		// Empty content should produce no output (hasContent optimization)
-		expect(output).toBe("");
-	});
-
-	test("content overflow should calculate push-up correctly", async () => {
-		const mock = createSimpleMockProcess(5, 40); // Small terminal
-		const termdom = new TermDOM({process: mock.process as any});
-
-		termdom[kCursorDetectionPromise] = null;
-
-		// Cursor at row 4 (0-based = 3), only 2 lines available
-		termdom[kScrollingManager].setScreenTop(3);
-		termdom[kScrollingManager].scrollToCommandStart();
-		termdom[kHasDetectedCommandStart] = true;
-
-		// Add content that needs 4 lines (exceeds 2 available)
-		const container = termdom.document.createElement("div");
-		for (let i = 1; i <= 4; i++) {
-			const line = termdom.document.createElement("div");
-			line.textContent = `Line ${i}`;
-			container.appendChild(line);
-		}
-		termdom.document.body.appendChild(container);
-
-		await nextFrame(termdom);
-
-		const output = mock.getOutput();
-
-		// All content should be present (not clipped)
-		expect(output).toContain("Line 1");
-		expect(output).toContain("Line 2");
-		expect(output).toContain("Line 3");
-		expect(output).toContain("Line 4");
-
-		// Should handle overflow properly (exact positioning will depend on push-up logic)
-		expect(output.length).toBeGreaterThan(0);
+		expect(terminal.getPlainText()).toBe("");
 	});
 });

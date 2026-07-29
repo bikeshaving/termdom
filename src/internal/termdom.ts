@@ -113,16 +113,7 @@ function installCursorRestoreOnExit(): void {
 // index.ts does not re-export these symbols, so a consumer cannot name them.
 const kLayoutEngine = Symbol("layoutEngine");
 const kObserver = Symbol("observer");
-const kScrollingManager = Symbol("scrollingManager");
-const kCursorDetectionPromise = Symbol("cursorDetectionPromise");
-const kHasDetectedCommandStart = Symbol("hasDetectedCommandStart");
-export {
-	kLayoutEngine,
-	kObserver,
-	kScrollingManager,
-	kCursorDetectionPromise,
-	kHasDetectedCommandStart,
-};
+export {kLayoutEngine, kObserver};
 
 export class TermDOM {
 	readonly document: Document;
@@ -136,7 +127,7 @@ export class TermDOM {
 	#fullscreenManager: FullscreenManager;
 	#observerManager: ObserverManager;
 	#styleManager: StyleManager;
-	[kScrollingManager]: ScrollingManager;
+	#scrollingManager: ScrollingManager;
 
 	// Guard against re-entrant rendering. A render() call arriving while one is in
 	// flight sets renderQueued rather than being dropped, so a trailing frame runs.
@@ -159,7 +150,7 @@ export class TermDOM {
 	#inputScrollOffsets = new WeakMap<Element, number>();
 
 	// Track whether command start was explicitly detected (even if at row 1)
-	[kHasDetectedCommandStart]: boolean = false;
+	#hasDetectedCommandStart: boolean = false;
 
 	// Unified stdin handling
 	#cursorDetectionHandler: ((data: string) => void) | null = null;
@@ -188,7 +179,7 @@ export class TermDOM {
 	#resizeEpoch = 0;
 
 	// Promise that resolves when cursor detection completes (or times out)
-	[kCursorDetectionPromise]: Promise<void> | null = null;
+	#cursorDetectionPromise: Promise<void> | null = null;
 
 	#width: number;
 	#height: number;
@@ -262,7 +253,7 @@ export class TermDOM {
 		this.#installObservers();
 
 		// Initialize scrolling management after window setup
-		this[kScrollingManager] = new ScrollingManager(this.window, this.document);
+		this.#scrollingManager = new ScrollingManager(this.window, this.document);
 
 		this[kObserver] = this.#setupMutationObserver();
 
@@ -1157,22 +1148,22 @@ export class TermDOM {
 		const epoch = this.#resizeEpoch;
 
 		const redraw = (startRow: number) => {
-			this[kScrollingManager].setScreenTop(startRow);
-			this[kScrollingManager].scrollToCommandStart();
+			this.#scrollingManager.setScreenTop(startRow);
+			this.#scrollingManager.scrollToCommandStart();
 			this.#renderer.resetScreen(startRow);
 
 			// Everything suppressed since the first SIGWINCH may paint again. The
 			// frame is placed by the screen reset, not by cursor detection.
 			this.#resizeInProgress = false;
-			const wasDetected = this[kHasDetectedCommandStart];
-			this[kHasDetectedCommandStart] = false;
+			const wasDetected = this.#hasDetectedCommandStart;
+			this.#hasDetectedCommandStart = false;
 			this.#render().then(() => {
-				this[kHasDetectedCommandStart] = wasDetected;
+				this.#hasDetectedCommandStart = wasDetected;
 			});
 		};
 
 		const computedReanchor = () => {
-			const previousStart = this[kScrollingManager].getScreenTop();
+			const previousStart = this.#scrollingManager.getScreenTop();
 			const scrolledUp = Math.max(0, previousStart + contentHeight - newHeight);
 			return Math.max(0, previousStart - scrolledUp);
 		};
@@ -1583,10 +1574,10 @@ export class TermDOM {
 		row: number,
 	): {x: number; y: number} | null {
 		if (this.#fullscreenManager.isFullscreen) {
-			return {x, y: row + this[kScrollingManager].getScrollTop()};
+			return {x, y: row + this.#scrollingManager.getScrollTop()};
 		}
 		const y =
-			row - this[kScrollingManager].getScreenTop() + this.#documentScrollTop;
+			row - this.#scrollingManager.getScreenTop() + this.#documentScrollTop;
 		return y < 0 ? null : {x, y};
 	}
 
@@ -1929,7 +1920,7 @@ export class TermDOM {
 		const contentHeight = this.document.body.scrollHeight;
 		if (contentHeight === 0) return;
 
-		const top = this[kScrollingManager].getScreenTop();
+		const top = this.#scrollingManager.getScreenTop();
 
 		// Back to the top of our region, and erase from there down. Only rows we
 		// painted ourselves; the scrollback above is untouched.
@@ -1985,8 +1976,8 @@ export class TermDOM {
 		// while every diff after detection anchors one row lower -- the labels stay,
 		// the values slide down a row. Wait for the anchor to settle first, exactly
 		// as the flow path does.
-		if (this[kCursorDetectionPromise]) {
-			await this[kCursorDetectionPromise];
+		if (this.#cursorDetectionPromise) {
+			await this.#cursorDetectionPromise;
 		}
 
 		const pending = this[kObserver].takeRecords();
@@ -2043,7 +2034,7 @@ export class TermDOM {
 	 * Returns the screen row our region now starts at.
 	 */
 	#reserveRows(rows: number): number {
-		const top = this[kScrollingManager].getScreenTop();
+		const top = this.#scrollingManager.getScreenTop();
 		const overflow = top + rows - this.#height;
 
 		if (overflow <= 0) return top;
@@ -2058,10 +2049,10 @@ export class TermDOM {
 			// against the wrong screen rows, skipped cells it wrongly believed
 			// unchanged, and composited the old frame under the new one whenever a
 			// document-mode region grew past the space below the shell prompt.
-			this[kScrollingManager].setScreenTop(top - push);
+			this.#scrollingManager.setScreenTop(top - push);
 		}
 
-		return this[kScrollingManager].getScreenTop();
+		return this.#scrollingManager.getScreenTop();
 	}
 
 	/**
@@ -2069,26 +2060,26 @@ export class TermDOM {
 	 * This runs asynchronously during construction to set up proper viewport positioning
 	 */
 	#initializeCursorDetection(): void {
-		this[kCursorDetectionPromise] = null;
+		this.#cursorDetectionPromise = null;
 		// Only detect cursor position in TTY environments when enabled
 		if (this.#detectCursorEnabled && this.#process.stdin?.isTTY) {
 			// Set up cursor detection promise that render() will wait for
-			this[kCursorDetectionPromise] = Promise.race([
+			this.#cursorDetectionPromise = Promise.race([
 				this.#detectCommandStart().then(() => {}),
 				// Fallback: if cursor detection takes too long, proceed without it
 				new Promise<void>((resolve) => setTimeout(resolve, 1000)),
 			])
 				.catch(() => {
 					// If cursor detection fails, continue without it
-					this[kHasDetectedCommandStart] = false;
+					this.#hasDetectedCommandStart = false;
 				})
 				.finally(() => {
 					// Clear the promise so subsequent renders don't wait
-					this[kCursorDetectionPromise] = null;
+					this.#cursorDetectionPromise = null;
 				});
 		} else {
 			// In non-TTY environments, don't set up cursor detection at all
-			this[kCursorDetectionPromise] = null;
+			this.#cursorDetectionPromise = null;
 		}
 	}
 
@@ -2126,13 +2117,13 @@ export class TermDOM {
 					const row = parseInt(match[1], 10);
 					// Set window.screenTop (convert 1-based terminal row to 0-based)
 					const screenTop = row - 1;
-					this[kScrollingManager].setScreenTop(screenTop);
+					this.#scrollingManager.setScreenTop(screenTop);
 
 					// Set scrollTop to command start position (browser behavior)
 					// For command start, we want content to shift up to terminal top
-					this[kScrollingManager].scrollToCommandStart();
+					this.#scrollingManager.scrollToCommandStart();
 
-					this[kHasDetectedCommandStart] = true;
+					this.#hasDetectedCommandStart = true;
 					resolve(row);
 				}
 			};
