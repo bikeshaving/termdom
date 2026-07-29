@@ -1,5 +1,5 @@
 import {test, expect} from "@b9g/libuild/test";
-import {TermDOM, kDocumentScrollTop} from "../src/internal/termdom.js";
+import {TermDOM} from "../src/internal/termdom.js";
 import {nextFrame} from "./test-utils.js";
 import {EventEmitter} from "events";
 
@@ -88,10 +88,10 @@ test("wheel scrolls the document camera", async () => {
 	await nextFrame(termdom);
 
 	proc.stdin.send("\x1b[<65;5;3M"); // wheel down at col 5, row 3
-	expect(termdom[kDocumentScrollTop]).toBe(3);
+	expect(termdom.window.scrollY).toBe(3);
 
 	proc.stdin.send("\x1b[<64;5;3M"); // wheel up
-	expect(termdom[kDocumentScrollTop]).toBe(0);
+	expect(termdom.window.scrollY).toBe(0);
 	termdom.dispose();
 });
 
@@ -107,7 +107,7 @@ test("wheel dispatches a cancelable WheelEvent; preventDefault stops the camera"
 
 	proc.stdin.send("\x1b[<65;5;3M");
 	expect(seen).toEqual([{deltaY: 3, deltaMode: 1}]);
-	expect(termdom[kDocumentScrollTop]).toBe(0); // canceled
+	expect(termdom.window.scrollY).toBe(0); // canceled
 	termdom.dispose();
 });
 
@@ -123,7 +123,7 @@ test("mouse reports never leak into keyboard events", async () => {
 	// A report glued to fast keystrokes: both keys arrive, the report does not.
 	proc.stdin.send("j\x1b[<65;4;7Mj");
 	expect(keys).toEqual(["j", "j"]);
-	expect(termdom[kDocumentScrollTop]).toBe(3);
+	expect(termdom.window.scrollY).toBe(3);
 
 	// Clicks and drag motion are swallowed too.
 	proc.stdin.send("\x1b[<0;2;2M\x1b[<32;3;2M\x1b[<0;3;2m");
@@ -143,9 +143,9 @@ test("wheel at the document top chains to the terminal; a keystroke reclaims", a
 
 	// Scrolled down, wheel up consumes normally -- no chaining mid-document.
 	proc.stdin.send("\x1b[<65;5;3M");
-	expect(termdom[kDocumentScrollTop]).toBe(3);
+	expect(termdom.window.scrollY).toBe(3);
 	proc.stdin.send("\x1b[<64;5;3M");
-	expect(termdom[kDocumentScrollTop]).toBe(0);
+	expect(termdom.window.scrollY).toBe(0);
 	expect(disables()).toBe(0);
 
 	// Wheel up AT the top: the scroll escapes to the terminal's scrollback,

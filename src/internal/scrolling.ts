@@ -1,8 +1,10 @@
 import type {DOMWindow} from "jsdom";
 
 /**
- * Manages terminal scrolling behavior with standard DOM APIs
- * Keeps window.scrollY, document.scrollTop, and window.screenTop in sync
+ * Manages the command-start anchor: window.screenTop (the row the document
+ * starts on) plus the writable document.scrollTop / scrollTo knobs. The camera
+ * position -- window.scrollY / pageYOffset / scrollBy -- is owned by TermDOM
+ * itself (it maps to the camera offset), so this manager must not bind those.
  */
 export class ScrollingManager {
 	#scrollTop = 0;
@@ -27,20 +29,8 @@ export class ScrollingManager {
 			enumerable: true,
 		});
 
-		// window.scrollY (readonly, reflects document scroll position)
-		// Bounded to 0 like standard DOM - use screenTop for content positioning
-		Object.defineProperty(this.#window, "scrollY", {
-			get: () => Math.max(0, this.#scrollTop),
-			configurable: true,
-			enumerable: true,
-		});
-
-		// window.pageYOffset (readonly alias for scrollY)
-		Object.defineProperty(this.#window, "pageYOffset", {
-			get: () => Math.max(0, this.#scrollTop),
-			configurable: true,
-			enumerable: true,
-		});
+		// window.scrollY / pageYOffset are the camera position and are owned by
+		// TermDOM (see #initializeWindow); this manager must not bind them.
 
 		// document.documentElement.scrollTop (writable, standard property)
 		Object.defineProperty(this.#document.documentElement, "scrollTop", {

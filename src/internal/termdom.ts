@@ -119,7 +119,6 @@ const kHasDetectedCommandStart = Symbol("hasDetectedCommandStart");
 const kWidth = Symbol("width");
 const kHeight = Symbol("height");
 const kDispatchGlobalKeyboardEvent = Symbol("dispatchGlobalKeyboardEvent");
-const kDocumentScrollTop = Symbol("documentScrollTop");
 export {
 	kLayoutEngine,
 	kObserver,
@@ -129,7 +128,6 @@ export {
 	kWidth,
 	kHeight,
 	kDispatchGlobalKeyboardEvent,
-	kDocumentScrollTop,
 };
 
 export class TermDOM {
@@ -201,7 +199,7 @@ export class TermDOM {
 	[kWidth]: number;
 	[kHeight]: number;
 	/** Which document row sits at the top of the camera. */
-	[kDocumentScrollTop] = 0;
+	#documentScrollTop = 0;
 
 	// Whether the terminal is currently reporting mouse events to us. See
 	// updateMouseReporting for when capture is on.
@@ -312,7 +310,12 @@ export class TermDOM {
 		// camera has moved down the document, scrollBy moves it.
 		const termDOM = this;
 		Object.defineProperty(window, "scrollY", {
-			get: () => termDOM[kDocumentScrollTop],
+			get: () => termDOM.#documentScrollTop,
+			configurable: true,
+			enumerable: true,
+		});
+		Object.defineProperty(window, "pageYOffset", {
+			get: () => termDOM.#documentScrollTop,
 			configurable: true,
 			enumerable: true,
 		});
@@ -1243,7 +1246,7 @@ export class TermDOM {
 				// The visible window over the document, in the document coordinate
 				// space getRect() uses: it begins at the current scroll offset and is
 				// one terminal high.
-				const scrollTop = this[kDocumentScrollTop];
+				const scrollTop = this.#documentScrollTop;
 				return {
 					top: scrollTop,
 					left: 0,
@@ -1427,7 +1430,7 @@ export class TermDOM {
 				termDOM[kHeight],
 				termDOM.document.body.scrollHeight,
 			);
-			const top = termDOM[kDocumentScrollTop];
+			const top = termDOM.#documentScrollTop;
 			if (rect.top < top) {
 				termDOM.#scrollCamera(rect.top - top);
 			} else if (rect.bottom > top + regionHeight) {
@@ -1589,7 +1592,7 @@ export class TermDOM {
 			return {x, y: row + this[kScrollingManager].getScrollTop()};
 		}
 		const y =
-			row - this[kScrollingManager].getScreenTop() + this[kDocumentScrollTop];
+			row - this[kScrollingManager].getScreenTop() + this.#documentScrollTop;
 		return y < 0 ? null : {x, y};
 	}
 
@@ -1640,7 +1643,7 @@ export class TermDOM {
 			if (notCanceled) {
 				if (
 					deltaY < 0 &&
-					this[kDocumentScrollTop] === 0 &&
+					this.#documentScrollTop === 0 &&
 					!this.#fullscreenManager.isFullscreen
 				) {
 					// Scroll chaining, the browser default: the camera is at the
@@ -1978,7 +1981,7 @@ export class TermDOM {
 		// nothing composites over the frozen block.
 		if (this.#sealed) {
 			this.#sealed = false;
-			this[kDocumentScrollTop] = 0;
+			this.#documentScrollTop = 0;
 			this.#renderer.clearPreviousBuffer();
 			if (this.#process.stdin?.isTTY) await this.#detectCommandStart();
 		}
@@ -2009,10 +2012,10 @@ export class TermDOM {
 
 		// The camera cannot run off the end of the document.
 		const maxScroll = Math.max(0, contentHeight - regionHeight);
-		this[kDocumentScrollTop] = Math.min(this[kDocumentScrollTop], maxScroll);
+		this.#documentScrollTop = Math.min(this.#documentScrollTop, maxScroll);
 
 		const ansi = this.#renderer.renderFrame(
-			-this[kDocumentScrollTop],
+			-this.#documentScrollTop,
 			(ctx) => {
 				this.#renderElement(this.document.body, ctx);
 			},
@@ -2026,7 +2029,7 @@ export class TermDOM {
 
 	/** Move the camera over the document. */
 	#scrollCamera(rows: number): void {
-		this[kDocumentScrollTop] = Math.max(0, this[kDocumentScrollTop] + rows);
+		this.#documentScrollTop = Math.max(0, this.#documentScrollTop + rows);
 		// A camera move is invisible to the MutationObserver; schedule the frame
 		// it needs, the same way a DOM mutation would.
 		void this.#render();
