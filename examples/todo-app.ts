@@ -163,7 +163,9 @@ document.addEventListener("keydown", (e: Event) => {
 
 // Auto-render on DOM changes
 const observer = new termdom.window.MutationObserver(async () => {
-	await termdom.render();
+	await new Promise<void>((r) =>
+		termdom.window.requestAnimationFrame(() => r()),
+	);
 });
 observer.observe(document.body, {
 	childList: true,
@@ -171,4 +173,4 @@ observer.observe(document.body, {
 	characterData: true,
 });
 
-await termdom.render();
+await new Promise<void>((r) => termdom.window.requestAnimationFrame(() => r()));

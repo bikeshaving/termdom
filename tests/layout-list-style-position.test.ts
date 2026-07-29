@@ -1,6 +1,6 @@
-import {test, expect} from "bun:test";
+import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
-import {MockProcess} from "./test-utils.js";
+import {MockProcess, nextFrame} from "./test-utils.js";
 
 test("list-style-position: inside (current behavior)", async () => {
 	const terminal = new MockProcess();
@@ -34,7 +34,7 @@ test("list-style-position: inside (current behavior)", async () => {
 		"This is a very long item that should wrap to multiple lines to test inside positioning behavior";
 	ul.appendChild(li2);
 
-	await termdom.render();
+	await nextFrame(termdom);
 	const output = terminal.getPlainText();
 
 	// With inside positioning, wrapped lines should align with marker position
@@ -82,7 +82,7 @@ test("list-style-position: inside with wide marker", async () => {
 		"Content that should wrap and align with marker position when using inside positioning";
 	ul.appendChild(li);
 
-	await termdom.render();
+	await nextFrame(termdom);
 	const output = terminal.getPlainText();
 
 	// Marker should be present
@@ -109,7 +109,7 @@ test("default list behavior is inside positioning", async () => {
 	li.textContent = "Default behavior item";
 	ul.appendChild(li);
 
-	await termdom.render();
+	await nextFrame(termdom);
 	const output = terminal.getPlainText();
 
 	// Should have default marker
@@ -149,7 +149,7 @@ test("list-style-position: outside with adequate space", async () => {
 		"Content should start at padding position with marker outside";
 	ul.appendChild(li);
 
-	await termdom.render();
+	await nextFrame(termdom);
 	const output = terminal.getPlainText();
 
 	const lines = output.split("\n").filter((line) => line.trim());
@@ -189,7 +189,7 @@ test("list-style-position: outside with marker overflow", async () => {
 	li.textContent = "Content should be pushed to avoid marker overlap";
 	ul.appendChild(li);
 
-	await termdom.render();
+	await nextFrame(termdom);
 	const output = terminal.getPlainText();
 
 	const lines = output.split("\n").filter((line) => line.trim());
@@ -228,7 +228,7 @@ test("list-style-position: outside multi-line alignment", async () => {
 		"This is a very long line that should wrap to multiple lines and test outside positioning alignment behavior";
 	ul.appendChild(li);
 
-	await termdom.render();
+	await nextFrame(termdom);
 	const output = terminal.getPlainText();
 
 	const lines = output.split("\n").filter((line) => line.trim());
@@ -271,7 +271,7 @@ test("list-style-position: outside markers should not duplicate", async () => {
 	li.textContent = "Single marker test";
 	ul.appendChild(li);
 
-	await termdom.render();
+	await nextFrame(termdom);
 	const output = terminal.getPlainText();
 
 	// Should only have one arrow marker, not duplicated
@@ -307,7 +307,7 @@ test("list-style-position: outside with custom content should not duplicate", as
 	li.textContent = "Custom marker test";
 	ul.appendChild(li);
 
-	await termdom.render();
+	await nextFrame(termdom);
 	const output = terminal.getPlainText();
 
 	// Should have custom marker content (may be clipped due to overflow)
@@ -340,7 +340,7 @@ test("list-style-position: outside default bullet should not duplicate", async (
 	li.textContent = "Default bullet test";
 	ul.appendChild(li);
 
-	await termdom.render();
+	await nextFrame(termdom);
 	const output = terminal.getPlainText();
 
 	// Should only have one bullet marker

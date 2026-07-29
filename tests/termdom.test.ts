@@ -2,9 +2,9 @@
  * Basic HTML-to-Terminal Tests
  */
 
-import {test, expect} from "bun:test";
+import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
-import {MockProcess} from "./test-utils";
+import {MockProcess, nextFrame} from "./test-utils";
 
 test("TermDOM provides HTML document with terminal capabilities", () => {
 	const terminal = new MockProcess();
@@ -154,7 +154,7 @@ test("pseudo-element CSS content is available immediately after render", async (
 	`;
 
 	// Call render once
-	await termDOM.render();
+	await nextFrame(termDOM);
 
 	// Test that pseudo-element styles are immediately available
 	const li = termDOM.document.querySelector("li")!;
@@ -190,7 +190,7 @@ test("lists render correctly without requiring double-rendering", async () => {
 	`;
 
 	// Render once and verify markers are present
-	await termDOM.render();
+	await nextFrame(termDOM);
 
 	// Check that markers are available immediately
 	const items = termDOM.document.querySelectorAll("li");
@@ -225,7 +225,7 @@ test("pseudo-elements work on programmatic render without MutationObserver", asy
 	termDOM.document.body.appendChild(ul);
 
 	// Call render once without MutationObserver interference
-	await termDOM.render();
+	await nextFrame(termDOM);
 
 	// Test that pseudo-element content is available immediately
 	const markerStyle = termDOM.window.getComputedStyle(li, "::marker");

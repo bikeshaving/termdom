@@ -1,6 +1,6 @@
-import {test, expect} from "bun:test";
+import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
-import {MockProcess} from "./test-utils.js";
+import {MockProcess, nextFrame} from "./test-utils.js";
 import {EventEmitter} from "events";
 
 // Mock TTY stream that simulates a real terminal
@@ -308,7 +308,7 @@ test("keyboard system works with mock TTY", async () => {
 	});
 
 	// Initial render
-	await termdom.render();
+	await nextFrame(termdom);
 
 	// Test letter key
 	mockProcess.stdin.simulateKeypress("a");
@@ -458,7 +458,7 @@ test("a focused input parks the real terminal cursor at its caret", async () => 
 	dom.document.body.innerHTML = `<div>title line</div><div><input id="a" type="text"></div>`;
 	const input = dom.document.getElementById("a") as HTMLInputElement;
 	input.focus();
-	await dom.render();
+	await nextFrame(dom);
 
 	const buffer = (terminal as any).terminal.buffer.active;
 	const caretRow = buffer.cursorY;
@@ -472,7 +472,7 @@ test("a focused input parks the real terminal cursor at its caret", async () => 
 
 	// Blur re-parks at the content bottom even though no cell changed.
 	input.blur();
-	await dom.render();
+	await nextFrame(dom);
 	expect(buffer.cursorY).toBeGreaterThan(caretRow);
 	expect(buffer.cursorX).toBe(0);
 
@@ -489,7 +489,7 @@ test("wide characters in an input measure in cells, not characters", async () =>
 	dom.document.body.innerHTML = `<div><input id="a" type="text" style="width:20ch"></div>`;
 	const input = dom.document.getElementById("a") as HTMLInputElement;
 	input.focus();
-	await dom.render();
+	await nextFrame(dom);
 
 	const buffer = (terminal as any).terminal.buffer.active;
 	const line = (i: number): string =>

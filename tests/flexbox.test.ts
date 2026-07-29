@@ -5,8 +5,8 @@
  * to work correctly, especially the examples/flexbox-demo.ts
  */
 
-import {test, expect} from "bun:test";
-import {MockProcess} from "./test-utils";
+import {test, expect} from "@b9g/libuild/test";
+import {MockProcess, nextFrame} from "./test-utils";
 import {TermDOM} from "../src/internal/termdom.js";
 
 test("flexbox-demo layout renders correctly", async () => {
@@ -147,7 +147,7 @@ test("flexbox-demo layout renders correctly", async () => {
 	footerVersion.style.color = "white";
 	footer.appendChild(footerVersion);
 
-	await dom.render();
+	await nextFrame(dom);
 
 	// Test content expectations
 	const visibleText = terminal.getVisibleText();
@@ -171,7 +171,10 @@ test("flexbox-demo layout renders correctly", async () => {
 		expect(line.length).toBeLessThanOrEqual(80);
 	}
 
-	expect(terminal.getStaticANSI()).toMatchSnapshot();
+	if (typeof Bun !== "undefined")
+		(
+			expect(terminal.getStaticANSI()) as {toMatchSnapshot(): void}
+		).toMatchSnapshot();
 	terminal.writeANSI("flexbox-demo-full");
 
 	dom.dispose();
@@ -227,7 +230,7 @@ test("nested flexbox containers", async () => {
 	box4.style.color = "white";
 	row2.appendChild(box4);
 
-	await dom.render();
+	await nextFrame(dom);
 
 	const visibleText = terminal.getVisibleText();
 	expect(visibleText).toContain("Box 1");
@@ -235,7 +238,10 @@ test("nested flexbox containers", async () => {
 	expect(visibleText).toContain("Left");
 	expect(visibleText).toContain("Right");
 
-	expect(terminal.getStaticANSI()).toMatchSnapshot();
+	if (typeof Bun !== "undefined")
+		(
+			expect(terminal.getStaticANSI()) as {toMatchSnapshot(): void}
+		).toMatchSnapshot();
 	terminal.writeANSI("nested-flexbox");
 
 	dom.dispose();
@@ -274,13 +280,16 @@ test("flexbox with flex-grow", async () => {
 	item3.style.padding = "1px";
 	container.appendChild(item3);
 
-	await dom.render();
+	await nextFrame(dom);
 
 	const visibleText = terminal.getVisibleText();
 	expect(visibleText).toContain("Fixed");
 	expect(visibleText).toContain("This item grows to fill available space");
 
-	expect(terminal.getStaticANSI()).toMatchSnapshot();
+	if (typeof Bun !== "undefined")
+		(
+			expect(terminal.getStaticANSI()) as {toMatchSnapshot(): void}
+		).toMatchSnapshot();
 	terminal.writeANSI("flexbox-grow");
 
 	dom.dispose();
@@ -323,7 +332,7 @@ test("flexbox with align-items and justify-content", async () => {
 		spaceContainer.appendChild(item);
 	}
 
-	await dom.render();
+	await nextFrame(dom);
 
 	const visibleText = terminal.getVisibleText();
 	expect(visibleText).toContain("Centered");
@@ -331,7 +340,10 @@ test("flexbox with align-items and justify-content", async () => {
 	expect(visibleText).toContain("Item 2");
 	expect(visibleText).toContain("Item 3");
 
-	expect(terminal.getStaticANSI()).toMatchSnapshot();
+	if (typeof Bun !== "undefined")
+		(
+			expect(terminal.getStaticANSI()) as {toMatchSnapshot(): void}
+		).toMatchSnapshot();
 	terminal.writeANSI("flexbox-alignment");
 
 	dom.dispose();
@@ -359,7 +371,7 @@ test("flexbox wrapping behavior", async () => {
 		container.appendChild(item);
 	}
 
-	await dom.render();
+	await nextFrame(dom);
 
 	const visibleText = terminal.getVisibleText();
 	for (const item of items) {
@@ -372,7 +384,10 @@ test("flexbox wrapping behavior", async () => {
 		expect(line.length).toBeLessThanOrEqual(40);
 	}
 
-	expect(terminal.getStaticANSI()).toMatchSnapshot();
+	if (typeof Bun !== "undefined")
+		(
+			expect(terminal.getStaticANSI()) as {toMatchSnapshot(): void}
+		).toMatchSnapshot();
 	terminal.writeANSI("flexbox-wrap");
 
 	dom.dispose();
@@ -446,7 +461,7 @@ test("flexbox column with mixed content", async () => {
 	content.style.flex = "1";
 	container.appendChild(content);
 
-	await dom.render();
+	await nextFrame(dom);
 
 	const visibleText = terminal.getVisibleText();
 	expect(visibleText).toContain("📊 Dashboard");
@@ -458,7 +473,10 @@ test("flexbox column with mixed content", async () => {
 	expect(visibleText).toContain("+12%");
 	expect(visibleText).toContain("Welcome to the dashboard");
 
-	expect(terminal.getStaticANSI()).toMatchSnapshot();
+	if (typeof Bun !== "undefined")
+		(
+			expect(terminal.getStaticANSI()) as {toMatchSnapshot(): void}
+		).toMatchSnapshot();
 	terminal.writeANSI("flexbox-dashboard");
 
 	dom.dispose();
@@ -510,7 +528,7 @@ test("flexbox column children should have different Y positions", async () => {
 	description.style.flexShrink = "0";
 	card.appendChild(description);
 
-	await dom.render();
+	await nextFrame(dom);
 
 	// Test the bug: title and description should have different Y positions
 	const titleRect = title.getBoundingClientRect();
@@ -562,7 +580,7 @@ test("flexbox two columns: fixed width + flexible width with text wrapping", asy
 		"This is a long text that should wrap within the remaining space after the fixed column takes its 10px width";
 	container.appendChild(flexColumn);
 
-	await dom.render();
+	await nextFrame(dom);
 
 	const visibleText = terminal.getVisibleText();
 	const fixedRect = fixedColumn.getBoundingClientRect();

@@ -7,15 +7,15 @@
  *
  * z-index was parsed and then never read.
  */
-import {test, expect} from "bun:test";
+import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
-import {MockProcess, stripControlCodes} from "./test-utils.js";
+import {MockProcess, stripControlCodes, nextFrame} from "./test-utils.js";
 
 async function renderRows(html: string, cols = 30): Promise<string[]> {
 	const terminal = new MockProcess({cols, rows: 8});
 	const dom = new TermDOM({process: terminal});
 	dom.document.body.innerHTML = html;
-	await dom.render();
+	await nextFrame(dom);
 	const rows = stripControlCodes(terminal.getStaticANSI())
 		.split("\n")
 		.map((line) => line.replace(/\s+$/, ""))

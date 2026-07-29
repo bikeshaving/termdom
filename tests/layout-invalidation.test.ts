@@ -1,6 +1,6 @@
-import {test, expect} from "bun:test";
+import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
-import {MockProcess} from "./test-utils.js";
+import {MockProcess, nextFrame} from "./test-utils.js";
 
 test("pseudo-elements render correctly after mutation observer fixes", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
@@ -15,7 +15,7 @@ test("pseudo-elements render correctly after mutation observer fixes", async () 
 	ul.appendChild(li);
 	document.body.appendChild(ul);
 
-	await dom.render();
+	await nextFrame(dom);
 
 	// Wait for async writes to complete
 	await new Promise((resolve) => setTimeout(resolve, 50));
@@ -51,7 +51,7 @@ test("multiple list items render correctly", async () => {
 	ul.appendChild(li2);
 	document.body.appendChild(ul);
 
-	await dom.render();
+	await nextFrame(dom);
 	await new Promise((resolve) => setTimeout(resolve, 50));
 
 	const output = terminal.getPlainText();
@@ -81,12 +81,12 @@ test("a class change does not swallow later mutations in the same batch", async 
 	const row = document.createElement("div");
 	row.textContent = "row one";
 	document.body.append(header, row);
-	await dom.render();
+	await nextFrame(dom);
 
 	// The breaking order: attribute mutation first, then the text replacement.
 	row.className = "selected";
 	header.textContent = "HEADER v2";
-	await dom.render();
+	await nextFrame(dom);
 
 	const buffer = (terminal as any).terminal.buffer.active;
 	const line = (i: number): string =>

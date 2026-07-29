@@ -142,4 +142,4 @@ Rows: ${table.getRowModel().rows.length} | Columns: ${table.getAllColumns().leng
 `;
 document.body.appendChild(stats);
 
-await termdom.render();
+await new Promise<void>((r) => termdom.window.requestAnimationFrame(() => r()));

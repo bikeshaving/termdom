@@ -10,7 +10,9 @@ import {
 	type TTYReadStream,
 } from "../src/internal/termdom.js";
 import {EventEmitter} from "events";
-import {Terminal} from "@xterm/headless";
+import xtermPkg from "@xterm/headless";
+const {Terminal} = xtermPkg;
+type Terminal = InstanceType<typeof Terminal>;
 import {
 	type CellBuffer,
 	Cell,
@@ -18,6 +20,7 @@ import {
 	type ColorDepth,
 } from "../src/internal/ansi.js";
 import {generateANSI} from "../src/internal/ansi.js";
+import {stringWidth} from "../src/internal/runtime.js";
 import {writeFileSync, mkdirSync, existsSync} from "fs";
 import {join} from "path";
 
@@ -279,7 +282,7 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 				outputCol++;
 
 				// If this is a wide character, create a continuation cell at the next output position
-				const actualWidth = Bun.stringWidth(actualChars);
+				const actualWidth = stringWidth(actualChars);
 				if (actualWidth === 2 && outputCol < this.terminal.cols) {
 					cellBuffer[row][outputCol] = null; // Continuation cell
 					outputCol++;
@@ -330,13 +333,27 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 	 */
 	writeANSI(testName: string): void {
 		const ansiOutput = this.getStaticANSI();
-		const ansiDir = join(import.meta.dir, "__snapshots__", "ansi");
+		const ansiDir = join(process.cwd(), "tests", "__snapshots__", "ansi");
 		if (!existsSync(ansiDir)) {
 			mkdirSync(ansiDir, {recursive: true});
 		}
 		const ansiFilename = `${testName}.ansi`;
 		writeFileSync(join(ansiDir, ansiFilename), ansiOutput);
 	}
+}
+
+/**
+ * Await the next painted frame. Rendering is automatic (the MutationObserver
+ * drives it), so a test mutates the DOM and then awaits a frame -- exactly what a
+ * page does with requestAnimationFrame, and the reason TermDOM has no public
+ * render(). jsdom provides rAF via pretendToBeVisual.
+ */
+export function nextFrame(dom: {
+	window: {requestAnimationFrame(cb: () => void): number};
+}): Promise<void> {
+	return new Promise((resolve) =>
+		dom.window.requestAnimationFrame(() => resolve()),
+	);
 }
 
 export function stripControlCodes(ansi: string): string {

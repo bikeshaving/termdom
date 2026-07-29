@@ -1,7 +1,7 @@
-import {test, expect} from "bun:test";
+import {test, expect} from "@b9g/libuild/test";
 import {JSDOM} from "jsdom";
 import {TermDOM} from "../src/internal/termdom.js";
-import {MockProcess} from "./test-utils.js";
+import {MockProcess, nextFrame} from "./test-utils.js";
 import {
 	createExpandedTreeWalker,
 	setShadowRoot,
@@ -678,7 +678,10 @@ test("TermDOM - ExpandedTreeWalker basic functionality", () => {
 	div.textContent = "Hello World";
 	document.body.appendChild(div);
 
-	const expandedWalker = termdom.createExpandedTreeWalker(document.body);
+	const expandedWalker = createExpandedTreeWalker(
+		termdom.window as any,
+		document.body,
+	);
 
 	expect(expandedWalker).toBeDefined();
 	expect(expandedWalker.root).toBe(document.body);
@@ -717,7 +720,7 @@ test("TermDOM - ExpandedTreeWalker with shadow DOM", () => {
 	testEl.textContent = "Light content";
 	document.body.appendChild(testEl);
 
-	const walker = termdom.createExpandedTreeWalker(document.body);
+	const walker = createExpandedTreeWalker(termdom.window as any, document.body);
 
 	const nodes: Array<{name: string; content: string; className?: string}> = [];
 
@@ -751,7 +754,7 @@ test("TermDOM - ExpandedTreeWalker basic traversal", () => {
 	document.body.appendChild(div);
 
 	// Test basic walker creation and traversal
-	const walker = termdom.createExpandedTreeWalker(document.body);
+	const walker = createExpandedTreeWalker(termdom.window as any, document.body);
 
 	expect(walker.root).toBe(document.body);
 	expect(walker.currentNode).toBe(document.body);
@@ -1213,7 +1216,7 @@ test("TermDOM - ::marker appears before ::before pseudo-elements", () => {
 	expect(getPseudoElement(div, "::after")?.textContent).toBe("]");
 
 	// Use ExpandedTreeWalker to verify order
-	const walker = termdom.createExpandedTreeWalker(div);
+	const walker = createExpandedTreeWalker(termdom.window as any, div);
 
 	const foundNodes: Array<{
 		type: string;
@@ -1292,7 +1295,7 @@ test("TermDOM - ::marker only on elements with display: list-item in walker trav
 	termdom.styleManager.refreshStylesheets();
 
 	// Use walker to traverse and find ::marker elements
-	const walker = termdom.createExpandedTreeWalker(container);
+	const walker = createExpandedTreeWalker(termdom.window as any, container);
 
 	const markerNodes: Array<{parentTag: string; content: string}> = [];
 	let node = walker.nextNode();
@@ -1358,7 +1361,7 @@ test("TermDOM - ::marker rendering test", async () => {
 
 	// Trigger stylesheet refresh and render
 	termdom.styleManager.refreshStylesheets();
-	await termdom.render();
+	await nextFrame(termdom);
 
 	// Check terminal output contains all pseudo-element content in correct order
 	const output = terminal.getPlainText();

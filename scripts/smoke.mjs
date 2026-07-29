@@ -69,7 +69,7 @@ document.body.innerHTML = `
 		<div style="flex:1">MIDDLE</div>
 		<div style="width:5ch">right</div>
 	</div>`;
-term.render();
+await new Promise((r) => term.window.requestAnimationFrame(() => r()));
 
 const items = [...document.querySelectorAll("div div")];
 const boxes = items.map((el) => el.getBoundingClientRect());

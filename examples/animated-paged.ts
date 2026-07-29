@@ -9,7 +9,6 @@ import {TermDOM} from "../src/index.js";
 
 const termdom = new TermDOM();
 const {document} = termdom;
-termdom.setViewportMode("document");
 
 const style = document.createElement("style");
 style.textContent = `
@@ -101,20 +100,16 @@ document.addEventListener("keydown", (e: Event) => {
 		termdom.dispose();
 		process.exit(0);
 	} else if (key === "ArrowDown" || key === "j") {
-		termdom.scrollDocumentBy(1);
-		void termdom.render();
+		termdom.window.scrollBy(0, 1);
 	} else if (key === "ArrowUp" || key === "k") {
-		termdom.scrollDocumentBy(-1);
-		void termdom.render();
+		termdom.window.scrollBy(0, -1);
 	} else if (key === "g") {
-		termdom.scrollDocumentBy(-9999);
-		void termdom.render();
+		termdom.window.scrollBy(0, -9999);
 	} else if (key === "G") {
-		termdom.scrollDocumentBy(9999);
-		void termdom.render();
+		termdom.window.scrollBy(0, 9999);
 	}
 });
 
 const interval = setInterval(tick, 80);
 tick();
-await termdom.render();
+await new Promise<void>((r) => termdom.window.requestAnimationFrame(() => r()));

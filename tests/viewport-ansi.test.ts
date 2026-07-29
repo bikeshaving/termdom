@@ -1,5 +1,6 @@
-import {test, expect, describe} from "bun:test";
+import {test, expect, describe} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
+import {nextFrame} from "./test-utils.js";
 
 // Simple mock process that captures output
 function createSimpleMockProcess(rows: number = 24, cols: number = 80) {
@@ -62,7 +63,7 @@ describe("Viewport Integration Tests", () => {
 		div.textContent = "Hello World";
 		termdom.document.body.appendChild(div);
 
-		await termdom.render();
+		await nextFrame(termdom);
 
 		const output = mock.getOutput();
 
@@ -89,7 +90,7 @@ describe("Viewport Integration Tests", () => {
 		div.textContent = "Positioned content";
 		termdom.document.body.appendChild(div);
 
-		await termdom.render();
+		await nextFrame(termdom);
 
 		const output = mock.getOutput();
 
@@ -116,7 +117,7 @@ describe("Viewport Integration Tests", () => {
 		div.textContent = "No double offset";
 		termdom.document.body.appendChild(div);
 
-		await termdom.render();
+		await nextFrame(termdom);
 
 		const output = mock.getOutput();
 
@@ -135,7 +136,7 @@ describe("Viewport Integration Tests", () => {
 		(termdom as any).cursorDetectionPromise = null;
 
 		// No content added
-		await termdom.render();
+		await nextFrame(termdom);
 
 		const output = mock.getOutput();
 
@@ -163,7 +164,7 @@ describe("Viewport Integration Tests", () => {
 		}
 		termdom.document.body.appendChild(container);
 
-		await termdom.render();
+		await nextFrame(termdom);
 
 		const output = mock.getOutput();
 

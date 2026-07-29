@@ -13,9 +13,9 @@
  * These tests assert that property and the things that follow from it. The
  * expectations come from CSS table semantics, not from the implementation.
  */
-import {test, expect} from "bun:test";
+import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
-import {MockProcess, stripControlCodes} from "./test-utils.js";
+import {MockProcess, stripControlCodes, nextFrame} from "./test-utils.js";
 
 interface Box {
 	left: number;
@@ -28,7 +28,7 @@ async function render(html: string, cols = 60) {
 	const terminal = new MockProcess({cols, rows: 20});
 	const dom = new TermDOM({process: terminal});
 	dom.document.body.innerHTML = html;
-	await dom.render();
+	await nextFrame(dom);
 
 	const box = (selector: string, index = 0): Box => {
 		const element = dom.document.querySelectorAll(selector)[index];

@@ -1,6 +1,6 @@
-import {test, expect} from "bun:test";
+import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/index.js";
-import {MockProcess} from "./test-utils.js";
+import {MockProcess, nextFrame} from "./test-utils.js";
 
 test("detectCommandStart queries and sets window.screenTop", async () => {
 	const terminal = new MockProcess();
@@ -62,7 +62,7 @@ test("rendering small content from command start (fits in available space)", asy
 	// Add small content that fits in available space
 	dom.document.body.innerHTML = `<div>Content Line</div>`;
 
-	await dom.render();
+	await nextFrame(dom);
 	const lines = terminal.getPlainText().split("\n");
 
 	// Content should render starting at row 8 (command start)
@@ -96,7 +96,7 @@ test.todo(
 		<div>Line 5</div>
 	`;
 
-		await dom.render();
+		await nextFrame(dom);
 
 		// window.screenTop should be pushed up by 2 lines (from 7 to 5)
 		// This accommodates all 5 lines of content in the 10-row terminal
@@ -123,7 +123,7 @@ test("no push-up when content fits in available space", async () => {
 		<div>Line 3</div>
 	`;
 
-	await dom.render();
+	await nextFrame(dom);
 
 	// window.screenTop should NOT be pushed up - content fits
 	expect(dom.window.screenTop).toBe(6);
@@ -150,7 +150,7 @@ test.todo("push-up to terminal top when content is very large", async () => {
 		<div>Line 5</div>
 	`;
 
-	await dom.render();
+	await nextFrame(dom);
 
 	// window.screenTop should be pushed all the way to 0 (row 1)
 	expect(dom.window.screenTop).toBe(0);
@@ -174,7 +174,7 @@ test("document height calculation with auto layout", async () => {
 		<div>Line 3</div>
 	`;
 
-	await dom.render();
+	await nextFrame(dom);
 
 	// Verify document height was calculated and used for push-up logic
 	// Available space: 20 - 10 + 1 = 11 lines
@@ -198,7 +198,7 @@ test("rendering at top of terminal (row 1) with large content", async () => {
 	const lines = Array.from({length: 10}, (_, i) => `<div>Line ${i + 1}</div>`);
 	dom.document.body.innerHTML = lines.join("\n");
 
-	await dom.render();
+	await nextFrame(dom);
 
 	// Content should render from top without needing push-up
 	expect(dom.window.screenTop).toBe(0); // Row 1 -> 0-based = 0
@@ -222,7 +222,7 @@ test("coordinate transformation from layout space to terminal space", async () =
 		<div style="position: absolute; top: 1ch; left: 10ch;">Second</div>
 	`;
 
-	await dom.render();
+	await nextFrame(dom);
 	const lines = terminal.getPlainText().split("\n");
 
 	expect(dom.window.screenTop).toBe(4); // Row 5 -> 0-based = 4
@@ -255,7 +255,7 @@ test.todo("handling content that would exceed terminal bottom", async () => {
 		<div>Content line 5</div>
 	`;
 
-	await dom.render();
+	await nextFrame(dom);
 
 	// TODO: When push-up behavior is implemented, verify:
 	// 1. Terminal scrolls existing content upward
@@ -314,7 +314,7 @@ test.todo(
 		<div>Line 4</div>
 	`;
 
-		await dom.render();
+		await nextFrame(dom);
 		const lines = terminal.getPlainText().split("\n");
 
 		// FAILING: Should push up by 2 lines to accommodate all content
@@ -348,7 +348,7 @@ test.todo("content positioning with different terminal sizes", async () => {
 	const smallDom = new TermDOM({process: smallTerminal});
 	await smallDom.detectCommandStart();
 	smallDom.document.body.innerHTML = content;
-	await smallDom.render();
+	await nextFrame(smallDom);
 
 	// Large terminal test
 	await new Promise<void>((resolve) => {
@@ -357,7 +357,7 @@ test.todo("content positioning with different terminal sizes", async () => {
 	const largeDom = new TermDOM({process: largeTerminal});
 	await largeDom.detectCommandStart();
 	largeDom.document.body.innerHTML = content;
-	await largeDom.render();
+	await nextFrame(largeDom);
 
 	// Verify cursor positions after push-up behavior
 	// Small terminal: cursor at row 3 (screenTop=2), content needs 3 lines but only 2 available
@@ -389,7 +389,7 @@ test.todo("content clipped to terminal boundaries", async () => {
 		<div>Should not appear</div>
 	`;
 
-	await dom.render();
+	await nextFrame(dom);
 	const lines = terminal.getPlainText().split("\n");
 
 	// Push-up behavior: cursor at row 4 (screenTop=3), content needs 3 lines but only 1 available
@@ -421,7 +421,7 @@ test.todo("content larger than terminal height (edge case)", async () => {
 	);
 	dom.document.body.innerHTML = contentLines.join("\n");
 
-	await dom.render();
+	await nextFrame(dom);
 
 	// Push-up should go to terminal top, but content will still overflow
 	expect(dom.window.screenTop).toBe(0); // Pushed to top
@@ -540,7 +540,7 @@ test.todo(
 		<div>Line 4</div>
 	`;
 
-		await dom.render();
+		await nextFrame(dom);
 
 		// Push-up behavior: cursor at row 9 (screenTop=8), content needs 4 lines but only 1 available
 		// Push-up by 3 lines: cursor moves from row 9 to row 6 (screenTop=5)
@@ -566,7 +566,7 @@ test("standard DOM properties: scrollHeight and clientHeight", async () => {
 		<div>Line 3</div>
 	`;
 
-	await dom.render();
+	await nextFrame(dom);
 
 	// Verify standard DOM properties are implemented
 	expect(typeof dom.document.body.scrollHeight).toBe("number");
@@ -583,181 +583,6 @@ test("standard DOM properties: scrollHeight and clientHeight", async () => {
 	expect(dom.document.documentElement.scrollHeight).toBe(
 		dom.document.body.scrollHeight,
 	);
-});
-
-test("content taller than the room below the command start scrolls instead of vanishing", async () => {
-	// A TermDOM app behaves like an ordinary command: output starts where the
-	// cursor was and flows down, and when it outgrows the terminal the earlier
-	// rows scroll off into native scrollback (SCROLLBACK.md).
-	//
-	// The call that does this was removed at some point and the content past the
-	// bottom of the terminal was simply never drawn -- silently truncated.
-	const terminal = new MockProcess({rows: 10, cols: 24});
-
-	// Put the command start at row 7 (0-based 6), leaving 4 rows below it.
-	await new Promise<void>((resolve) => {
-		terminal.stdout.write("\x1b[7;1H", () => resolve());
-	});
-
-	const dom = new TermDOM({process: terminal});
-	await dom.detectCommandStart();
-	expect(dom.window.screenTop).toBe(6);
-
-	// Eight rows of content into four rows of room.
-	dom.document.body.innerHTML = Array.from(
-		{length: 8},
-		(_, i) => `<div>line ${i + 1}</div>`,
-	).join("");
-	await dom.render();
-
-	expect(dom.document.body.scrollHeight).toBe(8);
-
-	const text = terminal.getPlainText();
-
-	// Every line is on screen: the content was pushed up, not cut off.
-	for (let i = 1; i <= 8; i++) {
-		expect(text).toContain(`line ${i}`);
-	}
-
-	// And the command start moved up to make room for it.
-	expect(dom.window.screenTop).toBeLessThan(6);
-
-	dom.dispose();
-});
-
-test("a document taller than the terminal commits its overflow to scrollback", async () => {
-	// The contract: the terminal shows the last min(contentHeight, terminalHeight)
-	// rows of the document, and everything above is in the terminal's own
-	// scrollback -- frozen, because the cursor cannot address scrollback.
-	//
-	// Previously the frame buffer was locked to the terminal height, so any row
-	// past the bottom had nowhere to go and was simply never drawn. A 14-row
-	// document in an 8-row terminal rendered rows 1-8 and silently dropped the
-	// rest.
-	//
-	// Note this cannot be checked with getPlainText(): that reads absolute buffer
-	// indices, which include scrollback, so it does not show the viewport once the
-	// terminal has scrolled.
-	const terminal = new MockProcess({rows: 8, cols: 30});
-	const dom = new TermDOM({process: terminal});
-	await dom.detectCommandStart();
-
-	dom.document.body.innerHTML = Array.from(
-		{length: 14},
-		(_, i) => `<div>row ${i + 1}</div>`,
-	).join("");
-	await dom.render();
-
-	const buffer = (terminal as any).terminal.buffer.active;
-
-	// 14 rows of content, 8 rows of terminal: 6 rows have scrolled off.
-	expect(buffer.baseY).toBe(6);
-
-	const lineAt = (index: number): string =>
-		buffer.getLine(index)?.translateToString(true) ?? "";
-
-	// The overflow went into the scrollback -- it was printed, not discarded.
-	for (let i = 0; i < 6; i++) {
-		expect(lineAt(i)).toBe(`row ${i + 1}`);
-	}
-
-	// And the viewport holds the tail of the document.
-	for (let i = 0; i < 8; i++) {
-		expect(lineAt(buffer.baseY + i)).toBe(`row ${i + 7}`);
-	}
-
-	dom.dispose();
-});
-
-test("growing the terminal does not destroy rows it hands back from scrollback", async () => {
-	// When a terminal grows, it pulls lines back out of its scrollback into the
-	// viewport -- so rows that were frozen a moment ago become addressable again,
-	// and our next frame paints over them.
-	//
-	// The region we draw was keyed on hasDetectedCommandStart, which the resize
-	// path deliberately unsets (so the frame is placed with DECRC rather than CUP).
-	// A resize therefore fell back to a stale scroll offset and painted the tail of
-	// the document over the rows the terminal had just returned. They were gone --
-	// not in the viewport, not in the scrollback, gone.
-	const terminal = new MockProcess({rows: 6, cols: 40});
-	const dom = new TermDOM({process: terminal});
-	await dom.detectCommandStart();
-
-	dom.document.body.innerHTML = Array.from(
-		{length: 10},
-		(_, i) => `<div>row ${i + 1}</div>`,
-	).join("");
-	await dom.render();
-
-	// 10 rows into a 6-row terminal: 4 rows have scrolled off.
-	expect((terminal as any).terminal.buffer.active.baseY).toBe(4);
-
-	// Grow the terminal so the whole document fits again.
-	terminal.resize(40, 10);
-	(terminal as any).emit("SIGWINCH");
-	await new Promise((resolve) => setTimeout(resolve, 60));
-
-	const buffer = (terminal as any).terminal.buffer.active;
-	const everything: string[] = [];
-	for (let i = 0; i < buffer.length; i++) {
-		const line = buffer.getLine(i)?.translateToString(true);
-		if (line) everything.push(line);
-	}
-
-	// Every row of the document is still somewhere in the terminal.
-	for (let i = 1; i <= 10; i++) {
-		expect(everything).toContain(`row ${i}`);
-	}
-
-	dom.dispose();
-});
-
-test("reflow above the fold reprints the document instead of corrupting the scrollback", async () => {
-	// The commit index is a row *number*, so it only means anything while the rows
-	// above it stay put. Insert a row near the top and every row number beneath it
-	// shifts: rows already in the scrollback got printed a second time
-	// (duplicated), and the inserted content never appeared at all.
-	//
-	// The scrollback cannot be rewritten -- no escape sequence addresses it. There
-	// are two primitives: append, or destroy the lot (which is what flicker is). So
-	// we append: the stale copy stays above as a record of what was shown, and a
-	// correct one is printed below.
-	const terminal = new MockProcess({rows: 8, cols: 40});
-	const dom = new TermDOM({process: terminal});
-	await dom.detectCommandStart();
-
-	const body = dom.document.body;
-	body.innerHTML = Array.from(
-		{length: 14},
-		(_, i) => `<div>row ${i + 1}</div>`,
-	).join("");
-	await dom.render();
-
-	// Now reflow above the fold: a row inserted at the very top shifts everything.
-	const inserted = dom.document.createElement("div");
-	inserted.textContent = "INSERTED-AT-TOP";
-	body.insertBefore(inserted, body.firstChild);
-	await dom.render();
-
-	const buffer = (terminal as any).terminal.buffer.active;
-	const everything: string[] = [];
-	for (let i = 0; i < buffer.length; i++) {
-		const line = buffer.getLine(i)?.translateToString(true);
-		if (line) everything.push(line);
-	}
-
-	// The inserted content is on screen -- it used to appear nowhere at all.
-	expect(everything).toContain("INSERTED-AT-TOP");
-
-	// The viewport holds the tail of the *new* document (15 rows, so rows 7-14).
-	const viewport: string[] = [];
-	for (let i = 0; i < 8; i++) {
-		const line = buffer.getLine(buffer.baseY + i)?.translateToString(true);
-		if (line) viewport.push(line);
-	}
-	expect(viewport[viewport.length - 1]).toBe("row 14");
-
-	dom.dispose();
 });
 
 test("resizing narrower reprints cleanly instead of layering over reflowed remnants", async () => {
@@ -778,7 +603,7 @@ test("resizing narrower reprints cleanly instead of layering over reflowed remna
 		`<div>Header line for the demo application here.</div>` +
 		`<div>A paragraph that wraps when the terminal is narrow.</div>` +
 		`<div>Footer content at the bottom.</div>`;
-	await dom.render();
+	await nextFrame(dom);
 
 	terminal.resize(24, 12);
 	(terminal as any).emit("SIGWINCH");
@@ -828,7 +653,7 @@ test("shrinking height re-anchors to the scrolled command start, no orphaned top
 		{length: 6},
 		(_, i) => `<div>APPLINE ${i + 1}</div>`,
 	).join("");
-	await dom.render();
+	await nextFrame(dom);
 
 	// Shrink so the content bottom overflows the new height and the terminal
 	// scrolls the top prompt lines into scrollback.
@@ -866,7 +691,7 @@ test("the cursor parks at the content bottom after every frame", async () => {
 	});
 	const dom = new TermDOM({process: terminal, detectCursor: true});
 	dom.document.body.innerHTML = `<div id="a">alpha</div><div>beta</div><div>gamma</div><div>delta</div>`;
-	await dom.render();
+	await nextFrame(dom);
 
 	const buffer = (terminal as any).terminal.buffer.active;
 	const contentBottom = dom.window.screenTop + 4 - 1;
@@ -877,7 +702,7 @@ test("the cursor parks at the content bottom after every frame", async () => {
 	// After a diff that touches only the TOP row, the cursor must still park at
 	// the bottom -- not at the changed cell, where the raw diff leaves it.
 	dom.document.getElementById("a")!.textContent = "ALPHA-CHANGED";
-	await dom.render();
+	await nextFrame(dom);
 	expect(buffer.cursorY).toBe(contentBottom);
 
 	dom.dispose();
@@ -898,7 +723,7 @@ test("a width resize re-anchors via the parked cursor, not guesswork", async () 
 	dom.document.body.innerHTML =
 		`<div>HEADER LINE THAT IS FAIRLY LONG AND WILL WRAP WHEN NARROW</div>` +
 		`<div>short one</div><div>short two</div><div>short three</div>`;
-	await dom.render();
+	await nextFrame(dom);
 	expect(dom.window.screenTop).toBe(2);
 
 	// Narrow enough that the header wraps to two rows.

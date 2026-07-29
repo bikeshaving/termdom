@@ -88,7 +88,6 @@ function channelProcess(
 function serveSession(proc: ProcessLike, onDone: () => void): () => void {
 	const termdom = new TermDOM({process: proc, detectCursor: false});
 	const {document} = termdom;
-	termdom.setViewportMode("document");
 
 	const style = document.createElement("style");
 	style.textContent = `

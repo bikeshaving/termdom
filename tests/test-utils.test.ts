@@ -5,8 +5,8 @@
  * to ensure proper TTY simulation and cursor query handling
  */
 
-import {describe, test, expect, beforeEach} from "bun:test";
-import {MockProcess, stripControlCodes} from "./test-utils.js";
+import {describe, test, expect, beforeEach} from "@b9g/libuild/test";
+import {MockProcess, stripControlCodes, nextFrame} from "./test-utils.js";
 import {TermDOM} from "../src/internal/termdom.js";
 
 describe("MockProcess", () => {
@@ -154,7 +154,7 @@ describe("MockProcess", () => {
 
 			// Should render without timing out
 			const startTime = Date.now();
-			await dom.render();
+			await nextFrame(dom);
 			const elapsed = Date.now() - startTime;
 
 			// Should complete quickly, not take 1000ms timeout

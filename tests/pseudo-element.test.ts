@@ -1,7 +1,10 @@
-import {test, expect} from "bun:test";
+import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
-import {MockProcess} from "./test-utils.js";
-import {getPseudoElement} from "../src/internal/composition.js";
+import {MockProcess, nextFrame} from "./test-utils.js";
+import {
+	getPseudoElement,
+	createExpandedTreeWalker,
+} from "../src/internal/composition.js";
 
 test("::before and ::after content rendering", async () => {
 	const terminal = new MockProcess();
@@ -61,7 +64,7 @@ test("::before and ::after content rendering", async () => {
 	const afterQuoteNode = getPseudoElement(quote, "::after");
 
 	// Render to terminal
-	await termdom.render();
+	await nextFrame(termdom);
 	const output = terminal.getPlainText();
 
 	// Verify that pseudo-element content appears in the rendered output
@@ -133,7 +136,7 @@ test("::marker pseudo-element with lists", async () => {
 	document.body.appendChild(emojiList);
 
 	// Render to terminal
-	await termdom.render();
+	await nextFrame(termdom);
 	const output = terminal.getPlainText();
 
 	// Verify custom markers appear in output (outside positioning is the default)
@@ -179,7 +182,7 @@ test("Pseudo-element cascade and specificity in rendering", async () => {
 	document.body.appendChild(element);
 
 	// Render to terminal
-	await termdom.render();
+	await nextFrame(termdom);
 	const output = terminal.getPlainText();
 
 	// Should use highest specificity rule (ID selector)
@@ -237,7 +240,7 @@ test.todo(
 		document.body.appendChild(noneEl);
 
 		// Render to terminal
-		await termdom.render();
+		await nextFrame(termdom);
 		const output = terminal.getPlainText();
 
 		// Verify complex content rendering
@@ -283,7 +286,7 @@ test("Pseudo-elements with inline styles override", async () => {
 	document.body.appendChild(element);
 
 	// Render to terminal
-	await termdom.render();
+	await nextFrame(termdom);
 	const output = terminal.getPlainText();
 
 	// Should contain pseudo-element content
@@ -335,7 +338,7 @@ test.todo(
 		list.appendChild(listItem);
 
 		// Use ExpandedTreeWalker to traverse and collect all content
-		const walker = termdom.createExpandedTreeWalker(container);
+		const walker = createExpandedTreeWalker(termdom.window as any, container);
 
 		const traversedContent: string[] = [];
 		let currentNode = walker.nextNode();
@@ -359,7 +362,7 @@ test.todo(
 		expect(allContent).toContain("AFTER");
 
 		// Render and verify final output
-		await termdom.render();
+		await nextFrame(termdom);
 		const output = terminal.getPlainText();
 
 		// The output should contain pseudo-element content in proper document order

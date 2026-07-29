@@ -1,4 +1,4 @@
-import {test, expect} from "bun:test";
+import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess} from "./test-utils.js";
 

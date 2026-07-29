@@ -3,8 +3,8 @@
  * Specifically testing findInlineRunHead and getRectTexts logic
  */
 
-import {test, expect} from "bun:test";
-import {MockProcess} from "./test-utils";
+import {test, expect} from "@b9g/libuild/test";
+import {MockProcess, nextFrame} from "./test-utils";
 import {TermDOM} from "../src/internal/termdom.js";
 
 test("findInlineRunHead should find outer inline-block for nested text nodes", async () => {
@@ -28,7 +28,7 @@ test("findInlineRunHead should find outer inline-block for nested text nodes", a
 	inner.textContent = "block";
 	outer.appendChild(inner);
 
-	await dom.render();
+	await nextFrame(dom);
 
 	// Access layout engine internals for testing
 	const layoutEngine = (dom as any).layoutEngine;
@@ -65,7 +65,7 @@ test("getRectTexts should work for text nodes in nested inline-blocks", async ()
 	inner.textContent = "Second";
 	outer.appendChild(inner);
 
-	await dom.render();
+	await nextFrame(dom);
 
 	const layoutEngine = (dom as any).layoutEngine;
 
@@ -113,7 +113,7 @@ test("nested inline-block should render both texts", async () => {
 	inner.textContent = "block";
 	outer.appendChild(inner);
 
-	await dom.render();
+	await nextFrame(dom);
 
 	const output = terminal.getStaticANSI();
 	const visibleText = terminal.getVisibleText();
@@ -149,7 +149,7 @@ test("deeply nested inline-blocks should work", async () => {
 	inner.textContent = "Inner";
 	middle.appendChild(inner);
 
-	await dom.render();
+	await nextFrame(dom);
 
 	const layoutEngine = (dom as any).layoutEngine;
 	const visibleText = terminal.getVisibleText();
@@ -196,7 +196,7 @@ test("mixed content in nested inline-blocks", async () => {
 	const text2 = document.createTextNode(" End");
 	container.appendChild(text2);
 
-	await dom.render();
+	await nextFrame(dom);
 
 	const visibleText = terminal.getVisibleText();
 

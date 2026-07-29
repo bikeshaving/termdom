@@ -1,5 +1,6 @@
-import {test, expect} from "bun:test";
+import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
+import {nextFrame} from "./test-utils.js";
 import {EventEmitter} from "events";
 
 // A TTY-shaped process that records everything written to stdout, so tests
@@ -64,7 +65,6 @@ const DISABLE = "\x1b[?1006l\x1b[?1002l";
 function makeDocumentModeApp(lines = 30) {
 	const proc = new MockMouseProcess();
 	const termdom = new TermDOM({process: proc as any, detectCursor: false});
-	termdom.setViewportMode("document");
 	const {document} = termdom;
 	for (let i = 0; i < lines; i++) {
 		const div = document.createElement("div");
@@ -74,38 +74,18 @@ function makeDocumentModeApp(lines = 30) {
 	return {proc, termdom, document};
 }
 
-test("document mode captures the mouse; flow mode leaves it native", async () => {
+test("an interactive app captures the mouse; dispose releases it", async () => {
 	const {proc, termdom} = makeDocumentModeApp();
-	await termdom.render();
+	await nextFrame(termdom);
 	expect(proc.written).toContain(ENABLE);
 
 	termdom.dispose();
 	expect(proc.written).toContain(DISABLE);
-
-	const flowProc = new MockMouseProcess();
-	const flow = new TermDOM({process: flowProc as any, detectCursor: false});
-	const div = flow.document.createElement("div");
-	div.textContent = "flow content";
-	flow.document.body.appendChild(div);
-	await flow.render();
-	expect(flowProc.written).not.toContain(ENABLE);
-	flow.dispose();
-});
-
-test("switching viewport mode toggles capture", async () => {
-	const {proc, termdom} = makeDocumentModeApp();
-	await termdom.render();
-	expect(proc.written).toContain(ENABLE);
-	expect(proc.written).not.toContain(DISABLE);
-
-	termdom.setViewportMode("flow");
-	expect(proc.written).toContain(DISABLE);
-	termdom.dispose();
 });
 
 test("wheel scrolls the document camera", async () => {
 	const {proc, termdom} = makeDocumentModeApp();
-	await termdom.render();
+	await nextFrame(termdom);
 
 	proc.stdin.send("\x1b[<65;5;3M"); // wheel down at col 5, row 3
 	expect((termdom as any).documentScrollTop).toBe(3);
@@ -117,7 +97,7 @@ test("wheel scrolls the document camera", async () => {
 
 test("wheel dispatches a cancelable WheelEvent; preventDefault stops the camera", async () => {
 	const {proc, termdom, document} = makeDocumentModeApp();
-	await termdom.render();
+	await nextFrame(termdom);
 
 	const seen: Array<{deltaY: number; deltaMode: number}> = [];
 	document.body.addEventListener("wheel", (event: any) => {
@@ -133,7 +113,7 @@ test("wheel dispatches a cancelable WheelEvent; preventDefault stops the camera"
 
 test("mouse reports never leak into keyboard events", async () => {
 	const {proc, termdom, document} = makeDocumentModeApp();
-	await termdom.render();
+	await nextFrame(termdom);
 
 	const keys: string[] = [];
 	document.body.addEventListener("keydown", (event: any) => {
@@ -153,7 +133,7 @@ test("mouse reports never leak into keyboard events", async () => {
 
 test("wheel at the document top chains to the terminal; a keystroke reclaims", async () => {
 	const {proc, termdom} = makeDocumentModeApp();
-	await termdom.render();
+	await nextFrame(termdom);
 
 	const disables = () =>
 		proc.output.filter((chunk) => chunk.includes(DISABLE)).length;
@@ -181,7 +161,7 @@ test("wheel at the document top chains to the terminal; a keystroke reclaims", a
 
 test("preventDefault on wheel opts out of scroll chaining", async () => {
 	const {proc, termdom, document} = makeDocumentModeApp();
-	await termdom.render();
+	await nextFrame(termdom);
 
 	document.body.addEventListener("wheel", (event: any) => {
 		event.preventDefault();
@@ -195,7 +175,6 @@ test("preventDefault on wheel opts out of scroll chaining", async () => {
 test("click dispatches at the element under the cell and focuses inputs", async () => {
 	const proc = new MockMouseProcess();
 	const termdom = new TermDOM({process: proc as any, detectCursor: false});
-	termdom.setViewportMode("document");
 	const {document} = termdom;
 
 	const input = document.createElement("input");
@@ -204,7 +183,7 @@ test("click dispatches at the element under the cell and focuses inputs", async 
 	const below = document.createElement("div");
 	below.textContent = "not focusable";
 	document.body.appendChild(below);
-	await termdom.render();
+	await nextFrame(termdom);
 
 	const events: Array<{type: string; target: string}> = [];
 	for (const type of ["mousedown", "mouseup", "click"]) {

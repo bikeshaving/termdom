@@ -11,9 +11,9 @@
  * is what used to happen: nothing checked stdout.isTTY, while the README promised
  * TermDOM "works in interactive terminals or piped output".
  */
-import {test, expect} from "bun:test";
+import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
-import {MockProcess} from "./test-utils.js";
+import {MockProcess, nextFrame} from "./test-utils.js";
 
 /** Render to a non-terminal stdout and return exactly what was written. */
 async function renderPiped(html: string, cols = 40): Promise<string> {
@@ -35,7 +35,7 @@ async function renderPiped(html: string, cols = 40): Promise<string> {
 
 	const dom = new TermDOM({process: terminal});
 	dom.document.body.innerHTML = html;
-	await dom.render();
+	await nextFrame(dom);
 	dom.dispose();
 
 	return written.join("");
