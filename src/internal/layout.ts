@@ -44,6 +44,28 @@ function lineAlignOffset(
 	return 0;
 }
 
+/**
+ * text-indent shifts only a block's first formatted line. Simplification: this
+ * is added on top of whatever text-align already offsets the line by, rather
+ * than shrinking the line box the way a browser would -- indent's overwhelming
+ * real use (indenting the first line of a left-aligned paragraph) is unaffected
+ * by that difference; indent combined with center/right is rare enough not to
+ * be worth the extra bookkeeping.
+ */
+function lineIndent(
+	isFirstLine: boolean,
+	container: Element | null,
+	containerWidth: number | undefined,
+): number {
+	if (!isFirstLine || !container) return 0;
+	const parsed = parseUnitValue(getPropertyValue(container, "text-indent"));
+	if (parsed === null) return 0;
+	if (typeof parsed === "number") return parsed;
+	return containerWidth === undefined
+		? 0
+		: (parsed.percentage / 100) * containerWidth;
+}
+
 interface EnumMap {
 	align: FlexTypes.Align;
 	justify: FlexTypes.Justify;
@@ -1281,9 +1303,14 @@ export class LayoutEngine {
 					currentBreakResult.containerWidth,
 					line.width,
 				);
+				const indent = lineIndent(
+					line === currentBreakResult.lines[0],
+					alignContainer,
+					currentBreakResult.containerWidth,
+				);
 
 				const rect = new this.DOMRect(
-					containerX + minX + alignOffset,
+					containerX + minX + alignOffset + indent,
 					containerY + line.y,
 					maxX - minX,
 					line.height,

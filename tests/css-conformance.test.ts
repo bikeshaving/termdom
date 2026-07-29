@@ -289,6 +289,36 @@ test("css: text-align:center re-centers each wrapped line independently", async 
 	expect(lines).toEqual([" aa bb cc dd ee ff ", "  gg hh ii jj kk ll"]);
 });
 
+// text-indent shifts only a block's first formatted line.
+test("css: text-indent shifts the first line", async () => {
+	const {text} = await renderFixture({
+		name: "text-indent-basic",
+		cols: 20,
+		html: `<div style="text-indent:3px; width:20px">hi</div>`,
+	});
+	expect(text.split("\n")[0]).toBe("   hi");
+});
+
+test("css: text-indent affects only the first wrapped line, not later ones", async () => {
+	const {text} = await renderFixture({
+		name: "text-indent-wrap",
+		cols: 20,
+		rows: 6,
+		html: `<div style="text-indent:3px; width:10px">aa bb cc dd ee</div>`,
+	});
+	const lines = text.split("\n").filter(Boolean);
+	expect(lines).toEqual(["   aa bb cc ", "dd ee"]);
+});
+
+test("css: text-indent resolves a percentage against the container width", async () => {
+	const {text} = await renderFixture({
+		name: "text-indent-percent",
+		cols: 20,
+		html: `<div style="text-indent:25%; width:20px">hi</div>`,
+	});
+	expect(text.split("\n")[0]).toBe("     hi");
+});
+
 // Known-broken fixtures: filed as gaps, not silent failures. Each documents a
 // confirmed conformance bug (verified against real output, not assumed). Move a
 // fixture up into FIXTURES once its property/at-rule is implemented.
