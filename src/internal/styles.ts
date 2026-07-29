@@ -510,18 +510,21 @@ function getInitialStyle(element: Element, property: string): string {
 }
 
 export class ComputedStyleDeclaration extends CSSStyleDeclaration {
-	constructor(
-		private element: Element,
-		private cssRules: ParsedCSSRule[] = [],
-	) {
+	#element: Element;
+	#cssRules: ParsedCSSRule[];
+
+	constructor(element: Element, cssRules: ParsedCSSRule[] = []) {
 		// Initialize with no onChange callback since this is read-only computed style
 		super();
 
+		this.#element = element;
+		this.#cssRules = cssRules;
+
 		// Pre-populate with all our resolved values
-		this.populateDeclaration();
+		this.#populateDeclaration();
 	}
 
-	private populateDeclaration(): void {
+	#populateDeclaration(): void {
 		// Get all CSS properties we might need to resolve
 		const properties = [
 			// Layout properties
@@ -608,7 +611,7 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 
 		// Resolve each property and set it in the declaration
 		for (const property of properties) {
-			const value = this.resolvePropertyValue(property);
+			const value = this.#resolvePropertyValue(property);
 			if (value) {
 				super.setProperty(property, value);
 			}
@@ -616,13 +619,13 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 	}
 
 	/** An author-level shorthand value, inline first, then stylesheet rules. */
-	private resolveShorthand(property: string): string | null {
-		const style = (this.element as HTMLElement).style;
+	#resolveShorthand(property: string): string | null {
+		const style = (this.#element as HTMLElement).style;
 		const inline = style?.getPropertyValue(property).trim();
 		if (inline && !INITIAL_KEYWORDS.has(inline)) return inline;
 
 		let ruleValue: string | null = null;
-		for (const rule of this.cssRules) {
+		for (const rule of this.#cssRules) {
 			if (rule.declarations[property]) {
 				ruleValue = rule.declarations[property];
 			}
@@ -633,9 +636,9 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 	/**
 	 * Resolve property value applying CSS cascade: inline styles > CSS rules > defaults
 	 */
-	private resolvePropertyValue(property: string): string {
+	#resolvePropertyValue(property: string): string {
 		// 1. Check inline style first (highest specificity)
-		const style = (this.element as HTMLElement).style;
+		const style = (this.#element as HTMLElement).style;
 		if (style) {
 			const inlineValue = style.getPropertyValue(property).trim();
 			if (inlineValue && !INITIAL_KEYWORDS.has(inlineValue)) {
@@ -645,7 +648,7 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 
 		// 2. Apply CSS rules from stylesheets (in specificity order - highest last)
 		let ruleValue = null;
-		for (const rule of this.cssRules) {
+		for (const rule of this.#cssRules) {
 			if (rule.declarations[property]) {
 				ruleValue = rule.declarations[property];
 			}
@@ -659,7 +662,7 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 		// appears with -- but before the defaults, or the default would silently win
 		// over the shorthand.
 		if (LIST_STYLE_LONGHANDS.has(property)) {
-			const shorthand = this.resolveShorthand("list-style");
+			const shorthand = this.#resolveShorthand("list-style");
 			if (shorthand) {
 				const expanded =
 					expandListStyle(shorthand)[property as keyof ListStyleParts];
@@ -668,7 +671,7 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 		}
 
 		if (property === "row-gap" || property === "column-gap") {
-			const shorthand = this.resolveShorthand("gap");
+			const shorthand = this.#resolveShorthand("gap");
 			if (shorthand) {
 				// `gap: <row> <column>`, with a single value meaning both.
 				const parts = shorthand.trim().split(/\s+/);
@@ -682,7 +685,7 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 			// The full background shorthand covers images, positions and repeats
 			// that mean nothing in a terminal; honor the everyday
 			// `background: <color>` form and ignore the rest.
-			const shorthand = this.resolveShorthand("background");
+			const shorthand = this.#resolveShorthand("background");
 			if (shorthand && !shorthand.includes("url(")) {
 				return shorthand.trim();
 			}
@@ -690,16 +693,16 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 
 		// 3. Check element-specific UA defaults (e.g., strong { font-weight: bold })
 		// These take priority over inherited values
-		const tagName = this.element.tagName.toLowerCase();
+		const tagName = this.#element.tagName.toLowerCase();
 
 		// A list's marker gutter is sized to its widest marker rather than taken
 		// from the static table, so it has to be resolved before it.
 		if (
 			property === "padding-left" &&
 			(tagName === "ul" || tagName === "ol") &&
-			this.element.ownerDocument?.defaultView
+			this.#element.ownerDocument?.defaultView
 		) {
-			return `${getListGutterWidth(this.element)}ch`;
+			return `${getListGutterWidth(this.#element)}ch`;
 		}
 
 		// The UA default marker type depends on nesting depth, exactly as a browser's
@@ -713,7 +716,7 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 		) {
 			if (tagName === "ol") return "decimal";
 			const bullets = ["disc", "circle", "square"];
-			const depth = listNestingDepth(this.element);
+			const depth = listNestingDepth(this.#element);
 			return bullets[Math.min(depth, bullets.length - 1)];
 		}
 
@@ -725,10 +728,10 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 		// 4. For inherited properties, walk up the DOM using getComputedStyle
 		// which correctly resolves CSS rules on parent elements
 		if (INHERITED_PROPERTIES.has(property)) {
-			const window = this.element.ownerDocument?.defaultView;
+			const window = this.#element.ownerDocument?.defaultView;
 			if (window) {
 				for (
-					let parent = this.element.parentElement;
+					let parent = this.#element.parentElement;
 					parent !== null;
 					parent = parent.parentElement
 				) {
@@ -743,7 +746,7 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 		}
 
 		// 5. Fallback to universal defaults and CSS spec defaults
-		return getInitialStyle(this.element, property);
+		return getInitialStyle(this.#element, property);
 	}
 
 	// Override getPropertyValue to use our terminal-specific resolution
@@ -751,20 +754,20 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 		// First check if we have a cached value from populateDeclaration
 		const cachedValue = super.getPropertyValue(property);
 		if (cachedValue) {
-			return this.normalizeForTerminal(property, cachedValue);
+			return this.#normalizeForTerminal(property, cachedValue);
 		}
 
 		// If not in our pre-populated cache, resolve it fresh
 		// (This handles properties not in our common list)
-		const freshValue = this.resolvePropertyValue(property);
-		return this.normalizeForTerminal(property, freshValue);
+		const freshValue = this.#resolvePropertyValue(property);
+		return this.#normalizeForTerminal(property, freshValue);
 	}
 
 	/**
 	 * Apply terminal-specific normalization to computed values
 	 * This allows us to override cssstyle's default normalization
 	 */
-	private normalizeForTerminal(property: string, value: string): string {
+	#normalizeForTerminal(property: string, value: string): string {
 		if (!value) return value;
 
 		// Handle shorthand property expansion
@@ -1256,15 +1259,15 @@ interface CounterScope {
 }
 
 export class StyleManager {
-	private computedStyleCache = new WeakMap<Element, CSSStyleDeclaration>();
-	private pseudoElementStyleCache = new WeakMap<
+	#computedStyleCache = new WeakMap<Element, CSSStyleDeclaration>();
+	#pseudoElementStyleCache = new WeakMap<
 		Element,
 		Map<string, Record<string, string>>
 	>();
-	private parsedRules: ParsedCSSRule[] = [];
+	#parsedRules: ParsedCSSRule[] = [];
 
 	// CSS Counter support
-	private counterScopes = new WeakMap<Element, CounterScope>();
+	#counterScopes = new WeakMap<Element, CounterScope>();
 
 	// The document is fixed for the window's lifetime, so hold it directly rather
 	// than reaching through window.document on every access. JSDOM's window is a
@@ -1272,37 +1275,38 @@ export class StyleManager {
 	// under a fast async render loop (a mutation-observer-driven animation), which
 	// crashed style computation mid-frame. The Document object itself stays valid,
 	// so a direct reference sidesteps the flaky getter.
-	private readonly document: Document;
+	#document: Document;
+	#window: DOMWindow;
+	#layoutEngine?: LayoutEngine;
 
-	constructor(
-		private window: DOMWindow,
-		private layoutEngine?: LayoutEngine,
-	) {
-		this.document = window.document;
+	constructor(window: DOMWindow, layoutEngine?: LayoutEngine) {
+		this.#window = window;
+		this.#layoutEngine = layoutEngine;
+		this.#document = window.document;
 
 		// The list gutter is resolved inside the cascade, which cannot reach a
 		// StyleManager any other way. See getListGutterWidth().
 		styleManagers.set(window, this);
 
 		// Override window.getComputedStyle with our cached version
-		window.getComputedStyle = this.getComputedStyle.bind(this);
+		window.getComputedStyle = this.#getComputedStyle.bind(this);
 
 		// Hook into methods that should invalidate cached styles
-		this.setupInvalidationHooks();
+		this.#setupInvalidationHooks();
 	}
 
 	setLayoutEngine(layoutEngine: LayoutEngine): void {
-		this.layoutEngine = layoutEngine;
+		this.#layoutEngine = layoutEngine;
 
 		// Parse initial stylesheets (may be empty at construction time)
-		this.parseStylesheets();
+		this.#parseStylesheets();
 	}
 
 	/**
 	 * Handle DOM mutations using invalidation approach
 	 */
-	public handleMutations(mutations: MutationRecord[]): void {
-		const Node = this.window.Node;
+handleMutations(mutations: MutationRecord[]): void {
+		const Node = this.#window.Node;
 		let shouldRefreshStylesheets = false;
 
 		for (const mutation of mutations) {
@@ -1312,7 +1316,7 @@ export class StyleManager {
 				// moved. Without this the gutter stays at whatever the original items
 				// needed, and a wider marker added later overruns it -- the "iii.Third"
 				// collision, back again after any mutation.
-				this.invalidateEnclosingList(mutation.target);
+				this.#invalidateEnclosingList(mutation.target);
 
 				// Check for stylesheet changes
 				for (const node of mutation.addedNodes) {
@@ -1326,14 +1330,14 @@ export class StyleManager {
 							shouldRefreshStylesheets = true;
 						} else {
 							// Invalidate caches for new elements
-							this.invalidateElementCaches(element);
+							this.#invalidateElementCaches(element);
 							// Process pseudo-elements for new elements
 							this.attachPseudoElementsToElement(element);
 
 							// Also handle any child elements
 							const childElements = element.querySelectorAll("*");
 							for (const childElement of childElements) {
-								this.invalidateElementCaches(childElement);
+								this.#invalidateElementCaches(childElement);
 								this.attachPseudoElementsToElement(childElement);
 							}
 						}
@@ -1356,7 +1360,7 @@ export class StyleManager {
 			} else if (mutation.type === "attributes") {
 				// Invalidate caches for attribute changes (over-invalidation approach)
 				const element = mutation.target as Element;
-				this.invalidateElementCaches(element);
+				this.#invalidateElementCaches(element);
 				this.attachPseudoElementsToElement(element);
 			} else if (mutation.type === "characterData") {
 				// Check for changes to <style> element content
@@ -1375,10 +1379,10 @@ export class StyleManager {
 	/**
 	 * Invalidate cached styles for an element (invalidation approach)
 	 */
-	private invalidateElementCaches(element: Element): void {
-		this.computedStyleCache.delete(element);
-		this.pseudoElementStyleCache.delete(element);
-		this.counterScopes.delete(element);
+	#invalidateElementCaches(element: Element): void {
+		this.#computedStyleCache.delete(element);
+		this.#pseudoElementStyleCache.delete(element);
+		this.#counterScopes.delete(element);
 	}
 
 	/**
@@ -1389,45 +1393,45 @@ export class StyleManager {
 	 * list changes. Only the *nearest* list is affected: a deeper list's items do
 	 * not contribute to an outer list's gutter.
 	 */
-	private invalidateEnclosingList(target: Node): void {
+	#invalidateEnclosingList(target: Node): void {
 		let element: Element | null =
-			target.nodeType === this.window.Node.ELEMENT_NODE
+			target.nodeType === this.#window.Node.ELEMENT_NODE
 				? (target as Element)
 				: target.parentElement;
 
 		for (; element; element = element.parentElement) {
 			if (element.tagName !== "UL" && element.tagName !== "OL") continue;
 
-			this.invalidateElementCaches(element);
-			this.layoutEngine?.invalidate(element);
+			this.#invalidateElementCaches(element);
+			this.#layoutEngine?.invalidate(element);
 			for (const item of Array.from(element.children)) {
-				this.invalidateElementCaches(item);
+				this.#invalidateElementCaches(item);
 			}
 			return;
 		}
 	}
 
-	private getComputedStyle(
+	#getComputedStyle(
 		element: Element,
 		pseudoElt?: string | null,
 	): globalThis.CSSStyleDeclaration {
 		// Ensure stylesheets are parsed if this is the first time we're computing styles
-		if (this.parsedRules.length === 0) {
-			this.parseStylesheets();
+		if (this.#parsedRules.length === 0) {
+			this.#parseStylesheets();
 		}
 		// Handle pseudo-element styles
 		if (pseudoElt) {
 			// Check cache first
-			let elementCache = this.pseudoElementStyleCache.get(element);
+			let elementCache = this.#pseudoElementStyleCache.get(element);
 			if (!elementCache) {
 				elementCache = new Map();
-				this.pseudoElementStyleCache.set(element, elementCache);
+				this.#pseudoElementStyleCache.set(element, elementCache);
 			}
 
 			let pseudoStyle = elementCache.get(pseudoElt);
 			if (!pseudoStyle) {
 				// Compute pseudo-element style
-				pseudoStyle = this.computePseudoElementStyle(element, pseudoElt);
+				pseudoStyle = this.#computePseudoElementStyle(element, pseudoElt);
 				elementCache.set(pseudoElt, pseudoStyle);
 			}
 
@@ -1440,14 +1444,14 @@ export class StyleManager {
 		}
 
 		// Check cache first for regular element styles
-		let computedStyle = this.computedStyleCache.get(element);
+		let computedStyle = this.#computedStyleCache.get(element);
 		if (!computedStyle) {
 			// Create new instance with stylesheet rules applied
 			computedStyle = new ComputedStyleDeclaration(
 				element,
-				this.getMatchingRules(element),
+				this.#getMatchingRules(element),
 			);
-			this.computedStyleCache.set(element, computedStyle);
+			this.#computedStyleCache.set(element, computedStyle);
 		}
 
 		return computedStyle as unknown as globalThis.CSSStyleDeclaration;
@@ -1456,39 +1460,39 @@ export class StyleManager {
 	/**
 	 * Parse all stylesheets in the document and extract rules
 	 */
-	private parseStylesheets(): void {
-		const document = this.document;
-		this.parsedRules = [];
+	#parseStylesheets(): void {
+		const document = this.#document;
+		this.#parsedRules = [];
 
 		// Parse all stylesheets
 		for (let i = 0; i < document.styleSheets.length; i++) {
 			const stylesheet = document.styleSheets[i] as CSSStyleSheet;
 			if (stylesheet.cssRules) {
-				this.parseStyleSheet(stylesheet);
+				this.#parseStyleSheet(stylesheet);
 			}
 		}
 
 		// Sort rules by specificity for cascade resolution
-		this.parsedRules.sort((a, b) => {
+		this.#parsedRules.sort((a, b) => {
 			if (a.specificity !== b.specificity) {
 				return a.specificity < b.specificity ? -1 : 1;
 			}
 			// Use array index as source order tie-breaker
-			return this.parsedRules.indexOf(a) - this.parsedRules.indexOf(b);
+			return this.#parsedRules.indexOf(a) - this.#parsedRules.indexOf(b);
 		});
 	}
 
 	/**
 	 * Parse a single stylesheet and add rules to parsedRules
 	 */
-	private parseStyleSheet(stylesheet: CSSStyleSheet): void {
+	#parseStyleSheet(stylesheet: CSSStyleSheet): void {
 		for (let i = 0; i < stylesheet.cssRules.length; i++) {
 			const rule = stylesheet.cssRules[i];
 			// TODO: use constructor.name
 			if (rule.type === 1) {
 				// CSSRule.STYLE_RULE
 				const styleRule = rule as CSSStyleRule;
-				this.parseStyleRule(styleRule);
+				this.#parseStyleRule(styleRule);
 			}
 		}
 	}
@@ -1496,10 +1500,10 @@ export class StyleManager {
 	/**
 	 * Parse a single style rule and extract selector/declarations
 	 */
-	private parseStyleRule(styleRule: CSSStyleRule): void {
+	#parseStyleRule(styleRule: CSSStyleRule): void {
 		const selector = styleRule.selectorText;
-		const declarations = this.parseDeclarations(styleRule.style);
-		const specificity = this.calculateSpecificity(selector);
+		const declarations = this.#parseDeclarations(styleRule.style);
+		const specificity = this.#calculateSpecificity(selector);
 
 		// Check if this is a pseudo-element rule
 		const pseudoMatch = selector.match(
@@ -1508,14 +1512,14 @@ export class StyleManager {
 
 		if (pseudoMatch) {
 			const [, baseSelector, pseudoElement] = pseudoMatch;
-			this.parsedRules.push({
+			this.#parsedRules.push({
 				selector: baseSelector.trim(),
 				declarations,
 				specificity,
 				pseudoElement,
 			});
 		} else {
-			this.parsedRules.push({
+			this.#parsedRules.push({
 				selector,
 				declarations,
 				specificity,
@@ -1526,7 +1530,7 @@ export class StyleManager {
 	/**
 	 * Parse CSSStyleDeclaration into a plain object
 	 */
-	private parseDeclarations(style: any): Record<string, string> {
+	#parseDeclarations(style: any): Record<string, string> {
 		const declarations: Record<string, string> = {};
 		for (let i = 0; i < style.length; i++) {
 			const property = style[i];
@@ -1539,7 +1543,7 @@ export class StyleManager {
 	 * Calculate CSS specificity for a selector as zero-padded string
 	 * Format: "000-000-000" (ids-classes-elements) for lexicographic comparison
 	 */
-	private calculateSpecificity(selector: string): string {
+	#calculateSpecificity(selector: string): string {
 		// Remove pseudo-elements first to avoid counting them as pseudo-classes
 		const withoutPseudoElements = selector.replace(/::[^\s+>~.#[]+/g, "");
 
@@ -1576,8 +1580,8 @@ export class StyleManager {
 	/**
 	 * Get matching CSS rules for an element
 	 */
-	private getMatchingRules(element: Element): ParsedCSSRule[] {
-		return this.parsedRules.filter((rule) => {
+	#getMatchingRules(element: Element): ParsedCSSRule[] {
+		return this.#parsedRules.filter((rule) => {
 			if (rule.pseudoElement) return false; // Skip pseudo-element rules for regular elements
 			try {
 				return element.matches(rule.selector);
@@ -1591,11 +1595,11 @@ export class StyleManager {
 	/**
 	 * Compute style properties for a pseudo-element
 	 */
-	private computePseudoElementStyle(
+	#computePseudoElementStyle(
 		element: Element,
 		pseudoElement: string,
 	): Record<string, string> {
-		const matchingRules = this.parsedRules.filter((rule) => {
+		const matchingRules = this.#parsedRules.filter((rule) => {
 			if (rule.pseudoElement !== pseudoElement) return false;
 			try {
 				return element.matches(rule.selector);
@@ -1620,7 +1624,7 @@ export class StyleManager {
 		element: Element,
 		pseudoType: string,
 	): Record<string, string> {
-		return this.computePseudoElementStyle(element, pseudoType);
+		return this.#computePseudoElementStyle(element, pseudoType);
 	}
 
 	/**
@@ -1632,14 +1636,14 @@ export class StyleManager {
 			return null;
 		}
 
-		const computedStyle = this.window.getComputedStyle(hostElement);
+		const computedStyle = this.#window.getComputedStyle(hostElement);
 		const display = computedStyle.getPropertyValue("display");
 
 		if (display !== "list-item") {
 			return null;
 		}
 
-		const styles = this.computePseudoElementStyle(hostElement, "::marker");
+		const styles = this.#computePseudoElementStyle(hostElement, "::marker");
 		let content = styles.content;
 
 		// If no explicit CSS content, generate default marker using list-style-type
@@ -1679,12 +1683,12 @@ export class StyleManager {
 		hostElement: Element,
 		pseudoType: string,
 	): Text | null {
-		const styles = this.computePseudoElementStyle(hostElement, pseudoType);
+		const styles = this.#computePseudoElementStyle(hostElement, pseudoType);
 		let content = styles.content;
 
 		// For ::marker pseudo-elements, generate default content if none specified
 		if (pseudoType === "::marker") {
-			const computedStyle = this.window.getComputedStyle(hostElement);
+			const computedStyle = this.#window.getComputedStyle(hostElement);
 			const display = computedStyle.getPropertyValue("display");
 
 			if (display === "list-item") {
@@ -1751,7 +1755,7 @@ export class StyleManager {
 	shouldCreatePseudoElement(element: Element, pseudoType: string): boolean {
 		// For ::marker pseudo-elements, only create them for inside positioning
 		if (pseudoType === "::marker") {
-			const computedStyle = this.window.getComputedStyle(element);
+			const computedStyle = this.#window.getComputedStyle(element);
 			const display = computedStyle.getPropertyValue("display");
 			const listStylePosition =
 				computedStyle.getPropertyValue("list-style-position") || "outside";
@@ -1761,7 +1765,7 @@ export class StyleManager {
 			}
 		}
 
-		const styles = this.computePseudoElementStyle(element, pseudoType);
+		const styles = this.#computePseudoElementStyle(element, pseudoType);
 		const content = styles.content;
 		return !!(content && content !== "none" && content !== "normal");
 	}
@@ -1770,7 +1774,7 @@ export class StyleManager {
 	 * Refresh stylesheet parsing (call when stylesheets change)
 	 */
 	refreshStylesheets(): void {
-		this.parseStylesheets();
+		this.#parseStylesheets();
 		this.clearCache();
 
 		// TODO: Implement more granular pseudo-element invalidation
@@ -1781,9 +1785,9 @@ export class StyleManager {
 		// Clear all existing pseudo-elements before reattaching
 		// TODO: Performance optimization - this walks every element in the DOM when stylesheets change.
 		// Could track elements with pseudo-elements in a WeakSet and only clear those.
-		const walker = this.document.createTreeWalker(
-			this.document.documentElement,
-			this.window.NodeFilter.SHOW_ELEMENT,
+		const walker = this.#document.createTreeWalker(
+			this.#document.documentElement,
+			this.#window.NodeFilter.SHOW_ELEMENT,
 			null,
 		);
 		let element = walker.nextNode() as Element;
@@ -1804,7 +1808,7 @@ export class StyleManager {
 		// Group pseudo-element rules by pseudo-type for efficient processing
 		const pseudoRulesByType = new Map<string, ParsedCSSRule[]>();
 
-		for (const rule of this.parsedRules) {
+		for (const rule of this.#parsedRules) {
 			if (rule.pseudoElement) {
 				const rules = pseudoRulesByType.get(rule.pseudoElement) || [];
 				rules.push(rule);
@@ -1820,7 +1824,7 @@ export class StyleManager {
 			for (const rule of rules) {
 				try {
 					// Find all elements matching this rule's selector
-					const elements = this.document.querySelectorAll(rule.selector);
+					const elements = this.#document.querySelectorAll(rule.selector);
 					for (const element of elements) {
 						matchingElements.add(element);
 					}
@@ -1832,23 +1836,23 @@ export class StyleManager {
 
 			// Attach pseudo-elements to matching elements
 			for (const element of matchingElements) {
-				this.attachPseudoElementToElementForType(element, pseudoType);
+				this.#attachPseudoElementToElementForType(element, pseudoType);
 			}
 		}
 
 		// Handle special case: ::marker for list-item elements (only for inside positioning)
-		const listItems = this.document.querySelectorAll(
+		const listItems = this.#document.querySelectorAll(
 			'[style*="list-item"], li',
 		);
 		for (const element of listItems) {
-			const computedStyle = this.window.getComputedStyle(element);
+			const computedStyle = this.#window.getComputedStyle(element);
 			const display = computedStyle.getPropertyValue("display");
 			const listStylePosition =
 				computedStyle.getPropertyValue("list-style-position") || "outside";
 
 			// Only create inline markers for inside positioning
 			if (display === "list-item" && listStylePosition !== "outside") {
-				this.attachPseudoElementToElementForType(element, "::marker");
+				this.#attachPseudoElementToElementForType(element, "::marker");
 			}
 		}
 	}
@@ -1863,14 +1867,14 @@ export class StyleManager {
 		const pseudoTypes = ["::before", "::after", "::marker"];
 
 		for (const pseudoType of pseudoTypes) {
-			this.attachPseudoElementToElementForType(element, pseudoType);
+			this.#attachPseudoElementToElementForType(element, pseudoType);
 		}
 	}
 
 	/**
 	 * Attach a specific pseudo-element type to an element if it should have one
 	 */
-	private attachPseudoElementToElementForType(
+	#attachPseudoElementToElementForType(
 		element: Element,
 		pseudoType: string,
 	): void {
@@ -1879,7 +1883,7 @@ export class StyleManager {
 
 		// Skip ::marker for elements without display: list-item or with outside positioning
 		if (pseudoType === "::marker") {
-			const computedStyle = this.window.getComputedStyle(element);
+			const computedStyle = this.#window.getComputedStyle(element);
 			const display = computedStyle.getPropertyValue("display");
 			const listStylePosition =
 				computedStyle.getPropertyValue("list-style-position") || "outside";
@@ -1907,11 +1911,11 @@ export class StyleManager {
 				const existingMetadata = (pseudoNode as any).pseudoMetadata || {};
 				(pseudoNode as any).pseudoMetadata = {
 					...existingMetadata,
-					styles: this.computePseudoElementStyle(element, pseudoType),
+					styles: this.#computePseudoElementStyle(element, pseudoType),
 				};
 
 				// Invalidate the element in layout engine to rediscover pseudo elements
-				this.layoutEngine?.invalidate(element);
+				this.#layoutEngine?.invalidate(element);
 			}
 		}
 	}
@@ -1926,9 +1930,9 @@ export class StyleManager {
 		// Also clean up pseudo-elements for any descendant elements
 		// TODO: Performance optimization - walks all descendants when element is removed.
 		// Could track which descendants have pseudo-elements to avoid full traversal.
-		const walker = this.document.createTreeWalker(
+		const walker = this.#document.createTreeWalker(
 			element,
-			this.window.NodeFilter.SHOW_ELEMENT,
+			this.#window.NodeFilter.SHOW_ELEMENT,
 			null,
 		);
 		let descendant = walker.nextNode() as Element;
@@ -1938,9 +1942,9 @@ export class StyleManager {
 		}
 	}
 
-	private setupInvalidationHooks(): void {
+	#setupInvalidationHooks(): void {
 		const styleManager = this;
-		const Element = this.window.Element;
+		const Element = this.#window.Element;
 		const originalSetAttribute = Element.prototype.setAttribute;
 		const originalRemoveAttribute = Element.prototype.removeAttribute;
 
@@ -1981,7 +1985,7 @@ export class StyleManager {
 
 		// Find where the style property is defined in the prototype chain
 		let stylePropertyOwner = null;
-		let proto = this.window.HTMLElement.prototype;
+		let proto = this.#window.HTMLElement.prototype;
 		while (proto) {
 			if (Object.prototype.hasOwnProperty.call(proto, "style")) {
 				stylePropertyOwner = proto;
@@ -2032,17 +2036,17 @@ export class StyleManager {
 	 * Invalidate cached computed style for an element
 	 */
 	invalidateElement(element: Element): void {
-		this.computedStyleCache.delete(element);
-		this.pseudoElementStyleCache.delete(element);
+		this.#computedStyleCache.delete(element);
+		this.#pseudoElementStyleCache.delete(element);
 	}
 
 	/**
 	 * Clear all cached computed styles (nuclear option)
 	 */
 	clearCache(): void {
-		this.computedStyleCache = new WeakMap();
-		this.pseudoElementStyleCache = new WeakMap();
-		this.counterScopes = new WeakMap();
+		this.#computedStyleCache = new WeakMap();
+		this.#pseudoElementStyleCache = new WeakMap();
+		this.#counterScopes = new WeakMap();
 	}
 
 	// ============================================================================
@@ -2054,11 +2058,11 @@ export class StyleManager {
 	 */
 	initializeCounters(element: Element): void {
 		// Skip if already initialized
-		if (this.counterScopes.has(element)) {
+		if (this.#counterScopes.has(element)) {
 			return;
 		}
 
-		const computedStyle = this.window.getComputedStyle(element);
+		const computedStyle = this.#window.getComputedStyle(element);
 		const counterReset = computedStyle.getPropertyValue("counter-reset");
 		const counterIncrement =
 			computedStyle.getPropertyValue("counter-increment");
@@ -2066,7 +2070,7 @@ export class StyleManager {
 		// Get parent scope if parent exists (but don't recursively initialize parents)
 		const parentElement = element.parentElement;
 		const parentScope = parentElement
-			? this.counterScopes.get(parentElement)
+			? this.#counterScopes.get(parentElement)
 			: undefined;
 
 		// Create counter scope for this element
@@ -2075,11 +2079,11 @@ export class StyleManager {
 			counters: {},
 			parent: parentScope,
 		};
-		this.counterScopes.set(element, scope);
+		this.#counterScopes.set(element, scope);
 
 		// Handle counter-reset first
 		if (counterReset && counterReset !== "none") {
-			this.parseCounterReset(scope, counterReset);
+			this.#parseCounterReset(scope, counterReset);
 		}
 
 		// Handle automatic list-item counter for ol/ul elements
@@ -2093,19 +2097,19 @@ export class StyleManager {
 
 		// Handle counter-increment after reset
 		if (counterIncrement && counterIncrement !== "none") {
-			this.parseCounterIncrement(scope, counterIncrement);
+			this.#parseCounterIncrement(scope, counterIncrement);
 		}
 
 		// Handle automatic list-item increment for li elements
 		if (element.tagName === "LI") {
-			this.incrementCounter(scope, "list-item", 1);
+			this.#incrementCounter(scope, "list-item", 1);
 		}
 	}
 
 	/**
 	 * Parse counter-reset CSS property
 	 */
-	private parseCounterReset(scope: CounterScope, counterReset: string): void {
+	#parseCounterReset(scope: CounterScope, counterReset: string): void {
 		// Parse "counter1 value1 counter2 value2" format
 		const tokens = counterReset.trim().split(/\s+/);
 		for (let i = 0; i < tokens.length; i += 2) {
@@ -2120,7 +2124,7 @@ export class StyleManager {
 	/**
 	 * Parse counter-increment CSS property
 	 */
-	private parseCounterIncrement(
+	#parseCounterIncrement(
 		scope: CounterScope,
 		counterIncrement: string,
 	): void {
@@ -2130,7 +2134,7 @@ export class StyleManager {
 			const counterName = tokens[i];
 			const increment = tokens[i + 1] ? parseInt(tokens[i + 1], 10) : 1;
 			if (counterName && !isNaN(increment)) {
-				this.incrementCounter(scope, counterName, increment);
+				this.#incrementCounter(scope, counterName, increment);
 			}
 		}
 	}
@@ -2138,18 +2142,18 @@ export class StyleManager {
 	/**
 	 * Increment a counter by a specific amount
 	 */
-	private incrementCounter(
+	#incrementCounter(
 		scope: CounterScope,
 		counterName: string,
 		increment: number,
 	): void {
 		// For list-item counters, we need to check previous siblings for the most recent value
 		if (counterName === "list-item" && scope.element.tagName === "LI") {
-			const currentValue = this.getListItemCounterValue(scope.element);
+			const currentValue = this.#getListItemCounterValue(scope.element);
 			scope.counters[counterName] = currentValue + increment;
 		} else {
 			// For other counters, get value from parent scopes
-			const currentValue = this.getCounterValueFromScope(
+			const currentValue = this.#getCounterValueFromScope(
 				scope.parent,
 				counterName,
 			);
@@ -2160,7 +2164,7 @@ export class StyleManager {
 	/**
 	 * Get the current list-item counter value by checking previous siblings
 	 */
-	private getListItemCounterValue(element: Element): number {
+	#getListItemCounterValue(element: Element): number {
 		// Find the parent OL/UL that establishes the counter scope
 		let parent = element.parentElement;
 		while (parent && parent.tagName !== "OL" && parent.tagName !== "UL") {
@@ -2170,7 +2174,7 @@ export class StyleManager {
 		if (!parent) return 0;
 
 		// Get the reset value from the OL/UL
-		const parentScope = this.counterScopes.get(parent);
+		const parentScope = this.#counterScopes.get(parent);
 		let currentValue = parentScope?.counters["list-item"] ?? 0;
 
 		// Add increments from all previous LI siblings
@@ -2190,7 +2194,7 @@ export class StyleManager {
 	/**
 	 * Get counter value from a specific scope (without current scope)
 	 */
-	private getCounterValueFromScope(
+	#getCounterValueFromScope(
 		scope: CounterScope | undefined,
 		counterName: string,
 	): number {
@@ -2206,7 +2210,7 @@ export class StyleManager {
 	}
 
 	getCounterValue(element: Element, counterName: string): number {
-		const scope = this.counterScopes.get(element);
+		const scope = this.#counterScopes.get(element);
 		if (!scope) return 0;
 
 		// Look for counter in current scope or parent scopes
@@ -2242,9 +2246,9 @@ export class StyleManager {
 	 * Clean up resources
 	 */
 	dispose(): void {
-		this.computedStyleCache = new WeakMap();
-		this.pseudoElementStyleCache = new WeakMap();
-		this.counterScopes = new WeakMap();
+		this.#computedStyleCache = new WeakMap();
+		this.#pseudoElementStyleCache = new WeakMap();
+		this.#counterScopes = new WeakMap();
 	}
 }
 
