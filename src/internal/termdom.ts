@@ -253,8 +253,19 @@ export class TermDOM {
 	// the document top and the user kept scrolling up, so the wheel now
 	// belongs to the terminal's own scrollback. Cleared by the next keystroke
 	// -- terminals snap to the live screen on input, which is exactly the
-	// moment the wheel should become ours again.
+	// moment the wheel should become ours again -- or, failing that, by
+	// #SCROLL_CHAIN_TIMEOUT_MS of silence (see #scrollChainTimer).
 	#mouseCaptureYielded = false;
+	// Self-heals a yield that a keystroke never reclaims: while yielded, wheel
+	// activity produces literally no signal (that's the entire mechanism --
+	// the terminal is handling it, not us), so there's no way to reset this on
+	// continued scrolling the way a real debounce would. It's a flat window
+	// from the moment of yielding, not "N ms since the last wheel tick".
+	// Picked to comfortably outlast a glance at the scrollback above and
+	// reclaim before the user tries the wheel again, while still being short
+	// enough that forgetting to press a key doesn't strand the mouse for long.
+	static readonly #SCROLL_CHAIN_TIMEOUT_MS = 3000;
+	#scrollChainTimer: ReturnType<typeof setTimeout> | null = null;
 	// Where the last mousedown landed, so a mouseup on the same element
 	// becomes a click. (Browsers dispatch click at the nearest common
 	// ancestor; the same-element case is the one that matters on a cell grid.)
@@ -541,6 +552,23 @@ export class TermDOM {
 		);
 	}
 
+	/**
+	 * End a scroll-chaining yield, from whichever of the two triggers reaches
+	 * it first -- a keystroke (the common case) or the fallback timer (see
+	 * #scrollChainTimer). Both need the same cleanup, so this is the one place
+	 * that does it: clear the pending timer (the other trigger firing later
+	 * would be a harmless no-op via #updateMouseReporting's own idempotence,
+	 * but there is no reason to let it) and restore mouse capture.
+	 */
+	#reclaimMouseCapture(): void {
+		if (this.#scrollChainTimer !== null) {
+			clearTimeout(this.#scrollChainTimer);
+			this.#scrollChainTimer = null;
+		}
+		this.#mouseCaptureYielded = false;
+		this.#updateMouseReporting();
+	}
+
 	// TODO: This should be put in an event translator abstraction
 	#setupProcessHandlers(): void {
 		this.#sigintHandler = () => {
@@ -617,8 +645,7 @@ export class TermDOM {
 				// snap to the bottom on input): reclaim the mouse if scroll
 				// chaining yielded it.
 				if (this.#mouseCaptureYielded) {
-					this.#mouseCaptureYielded = false;
-					this.#updateMouseReporting();
+					this.#reclaimMouseCapture();
 				}
 
 				// TODO: Why does this filter on fullscreen????
@@ -1948,10 +1975,21 @@ export class TermDOM {
 					// document top, so the scroll escapes to the parent scroller --
 					// here, the terminal's own scrollback. Yield the mouse so the
 					// next wheel tick scrolls the shell history natively; the next
-					// keystroke reclaims it. An app opts out the same way it would
-					// in a browser: preventDefault on the wheel event.
+					// keystroke reclaims it, and #SCROLL_CHAIN_TIMEOUT_MS of silence
+					// reclaims it too, in case the user scrolls back down without
+					// ever pressing a key -- wheel activity while yielded produces no
+					// signal we could otherwise catch that on. An app opts out the
+					// same way it would in a browser: preventDefault on the wheel
+					// event.
 					this.#mouseCaptureYielded = true;
 					this.#updateMouseReporting();
+					if (this.#scrollChainTimer !== null) {
+						clearTimeout(this.#scrollChainTimer);
+					}
+					this.#scrollChainTimer = setTimeout(() => {
+						this.#scrollChainTimer = null;
+						this.#reclaimMouseCapture();
+					}, TermDOM.#SCROLL_CHAIN_TIMEOUT_MS);
 				} else {
 					this.#scrollCamera(deltaY);
 				}
@@ -2582,6 +2620,10 @@ export class TermDOM {
 		if (this.#resizeTimer !== null) {
 			clearTimeout(this.#resizeTimer);
 			this.#resizeTimer = null;
+		}
+		if (this.#scrollChainTimer !== null) {
+			clearTimeout(this.#scrollChainTimer);
+			this.#scrollChainTimer = null;
 		}
 		this.#cursorDetectionHandler = null;
 

@@ -159,6 +159,34 @@ test("wheel at the document top chains to the terminal; a keystroke reclaims", a
 	termdom.dispose();
 });
 
+test("a yielded wheel self-heals after the chain timeout, with no keystroke", async () => {
+	const {proc, termdom} = makeDocumentModeApp();
+	await nextFrame(termdom);
+
+	const disables = () =>
+		proc.output.filter((chunk) => chunk.includes(DISABLE)).length;
+	const enables = () =>
+		proc.output.filter((chunk) => chunk.includes(ENABLE)).length;
+	expect(enables()).toBe(1);
+
+	// Wheel up at the top yields the mouse -- same as the keystroke-reclaim
+	// test, but here nothing ever types a key. Real timeout, not a shortened
+	// test-only one: wheel activity produces no signal while yielded (that's
+	// the entire mechanism), so there's nothing to fake-clock advance against;
+	// this exercises the actual production constant.
+	proc.stdin.send("\x1b[<64;5;3M");
+	expect(disables()).toBe(1);
+	expect(enables()).toBe(1); // still yielded
+
+	await new Promise((resolve) => setTimeout(resolve, 3200));
+	expect(enables()).toBe(2); // self-healed without any keystroke
+
+	// And scrolling actually works again -- not just the escape sequence.
+	proc.stdin.send("\x1b[<65;5;3M"); // wheel down
+	expect(termdom.window.scrollY).toBe(3);
+	termdom.dispose();
+});
+
 test("preventDefault on wheel opts out of scroll chaining", async () => {
 	const {proc, termdom, document} = makeDocumentModeApp();
 	await nextFrame(termdom);
