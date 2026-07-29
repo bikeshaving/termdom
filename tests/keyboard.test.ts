@@ -156,6 +156,86 @@ test("special keys are mapped correctly", async () => {
 	);
 });
 
+test("Ctrl+letter decodes as the letter with ctrlKey, not a control character", async () => {
+	const terminal = new MockKeyboardProcess();
+	const termdom = new TermDOM({process: terminal});
+	const {document} = termdom;
+	termdom.attach();
+
+	const events: any[] = [];
+	document.body.addEventListener("keydown", (event: any) => {
+		events.push({
+			key: event.key,
+			keyCode: event.keyCode,
+			ctrlKey: event.ctrlKey,
+		});
+	});
+
+	// Ctrl+S = 0x13, Ctrl+A = 0x01, Ctrl+Z = 0x1A -- raw ASCII control bytes,
+	// no escape sequence.
+	(terminal.stdin as any).emit("data", Buffer.from([0x13]));
+	(terminal.stdin as any).emit("data", Buffer.from([0x01]));
+	(terminal.stdin as any).emit("data", Buffer.from([0x1a]));
+
+	expect(events).toEqual([
+		{key: "s", keyCode: 83, ctrlKey: true},
+		{key: "a", keyCode: 65, ctrlKey: true},
+		{key: "z", keyCode: 90, ctrlKey: true},
+	]);
+});
+
+test("a plain letter never has ctrlKey set", async () => {
+	const terminal = new MockKeyboardProcess();
+	const termdom = new TermDOM({process: terminal});
+	const {document} = termdom;
+	termdom.attach();
+
+	const events: any[] = [];
+	document.body.addEventListener("keydown", (event: any) => {
+		events.push({key: event.key, ctrlKey: event.ctrlKey});
+	});
+
+	(terminal.stdin as any).emit("data", Buffer.from("s"));
+	expect(events).toEqual([{key: "s", ctrlKey: false}]);
+});
+
+test("Enter and Tab stay their named keys, not Ctrl+M/Ctrl+I", async () => {
+	// A raw terminal cannot distinguish the physical Enter/Tab keys from
+	// Ctrl+M/Ctrl+I -- they are the identical byte (0x0D/0x0A and 0x09). The
+	// named key has to win, matching every other terminal app.
+	const terminal = new MockKeyboardProcess();
+	const termdom = new TermDOM({process: terminal});
+	const {document} = termdom;
+	termdom.attach();
+
+	const events: any[] = [];
+	document.body.addEventListener("keydown", (event: any) => {
+		events.push({key: event.key, ctrlKey: event.ctrlKey});
+	});
+
+	(terminal.stdin as any).emit("data", Buffer.from("\r"));
+	(terminal.stdin as any).emit("data", Buffer.from("\t"));
+	expect(events).toEqual([
+		{key: "Enter", ctrlKey: false},
+		{key: "Tab", ctrlKey: false},
+	]);
+});
+
+test("Ctrl+letter in a focused input moves the caret, not inserts text", async () => {
+	const terminal = new MockKeyboardProcess();
+	const termdom = new TermDOM({process: terminal});
+	const {document} = termdom;
+	termdom.attach();
+
+	const input = document.createElement("input");
+	document.body.appendChild(input);
+	input.focus();
+	input.value = "hello";
+
+	(terminal.stdin as any).emit("data", Buffer.from([0x01])); // Ctrl+A
+	expect(input.value).toBe("hello"); // unchanged, not "helloa"
+});
+
 test("arrow keys are parsed correctly", async () => {
 	const terminal = new MockKeyboardProcess();
 	const termdom = new TermDOM({process: terminal});

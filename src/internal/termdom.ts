@@ -2083,56 +2083,77 @@ export class TermDOM {
 		// Handle special keys
 		// Detect modifier keys
 		let shiftKey = false;
+		let ctrlKey = false;
 
-		switch (key) {
-			case "\r":
-			case "\n":
-				keyName = "Enter";
-				keyCode = 13;
-				charCode = 13;
-				break;
-			case "\t":
-				keyName = "Tab";
-				keyCode = 9;
-				charCode = 9;
-				break;
-			case "\x1b[Z":
-				// Shift+Tab
-				keyName = "Tab";
-				keyCode = 9;
-				charCode = 9;
-				shiftKey = true;
-				break;
-			case "\x7f":
-				keyName = "Backspace";
-				keyCode = 8;
-				charCode = 8;
-				break;
-			case "\x1b[A":
-				keyName = "ArrowUp";
-				keyCode = 38;
-				charCode = 0;
-				break;
-			case "\x1b[B":
-				keyName = "ArrowDown";
-				keyCode = 40;
-				charCode = 0;
-				break;
-			case "\x1b[C":
-				keyName = "ArrowRight";
-				keyCode = 39;
-				charCode = 0;
-				break;
-			case "\x1b[D":
-				keyName = "ArrowLeft";
-				keyCode = 37;
-				charCode = 0;
-				break;
-			default:
-				// For regular characters, keyCode is often the uppercase charCode
-				if (key.length === 1) {
-					keyCode = key.toUpperCase().charCodeAt(0);
-				}
+		// Ctrl+<letter> arrives as a single raw ASCII control byte (Ctrl+A=0x01
+		// ... Ctrl+Z=0x1A) -- there is no escape sequence, and no way to combine
+		// it with Shift (the terminal only ever sends the one byte). Tab(0x09)
+		// and Enter(0x0A/0x0D) are excluded even though they fall in this range:
+		// a raw terminal genuinely cannot distinguish the physical Enter/Tab keys
+		// from Ctrl+M/Ctrl+I, they are the identical byte, so the named key wins
+		// -- matching every other terminal app. Ctrl+C(0x03) never reaches here:
+		// it is intercepted earlier, unconditionally, for SIGINT.
+		if (
+			charCode >= 1 &&
+			charCode <= 26 &&
+			charCode !== 9 &&
+			charCode !== 10 &&
+			charCode !== 13
+		) {
+			keyName = String.fromCharCode(charCode + 96); // 0x01 -> 'a' ... 0x1A -> 'z'
+			keyCode = charCode + 64; // 'A'..'Z', the DOM keyCode for the letter itself
+			ctrlKey = true;
+		} else {
+			switch (key) {
+				case "\r":
+				case "\n":
+					keyName = "Enter";
+					keyCode = 13;
+					charCode = 13;
+					break;
+				case "\t":
+					keyName = "Tab";
+					keyCode = 9;
+					charCode = 9;
+					break;
+				case "\x1b[Z":
+					// Shift+Tab
+					keyName = "Tab";
+					keyCode = 9;
+					charCode = 9;
+					shiftKey = true;
+					break;
+				case "\x7f":
+					keyName = "Backspace";
+					keyCode = 8;
+					charCode = 8;
+					break;
+				case "\x1b[A":
+					keyName = "ArrowUp";
+					keyCode = 38;
+					charCode = 0;
+					break;
+				case "\x1b[B":
+					keyName = "ArrowDown";
+					keyCode = 40;
+					charCode = 0;
+					break;
+				case "\x1b[C":
+					keyName = "ArrowRight";
+					keyCode = 39;
+					charCode = 0;
+					break;
+				case "\x1b[D":
+					keyName = "ArrowLeft";
+					keyCode = 37;
+					charCode = 0;
+					break;
+				default:
+					// For regular characters, keyCode is often the uppercase charCode
+					if (key.length === 1) {
+						keyCode = key.toUpperCase().charCodeAt(0);
+					}
+			}
 		}
 
 		// Create and dispatch keydown event
@@ -2142,7 +2163,7 @@ export class TermDOM {
 			keyCode: keyCode,
 			charCode: 0,
 			which: keyCode,
-			ctrlKey: false,
+			ctrlKey,
 			shiftKey,
 			altKey: false,
 			metaKey: false,
@@ -2181,7 +2202,7 @@ export class TermDOM {
 				keyCode: charCode,
 				charCode: charCode,
 				which: charCode,
-				ctrlKey: false,
+				ctrlKey,
 				shiftKey,
 				altKey: false,
 				metaKey: false,
@@ -2198,7 +2219,7 @@ export class TermDOM {
 			keyCode: keyCode,
 			charCode: 0,
 			which: keyCode,
-			ctrlKey: false,
+			ctrlKey,
 			shiftKey,
 			altKey: false,
 			metaKey: false,
