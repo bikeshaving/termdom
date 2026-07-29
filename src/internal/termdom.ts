@@ -28,6 +28,29 @@ import {
 // coalesce the burst of SIGWINCHes a drag fires, short enough to feel immediate.
 const RESIZE_DEBOUNCE_MS = 40;
 
+/**
+ * Apply CSS `text-transform` at paint time, not layout time. Every character
+ * occupies the same cell width regardless of case in a terminal, so unlike a
+ * browser's proportional font this can never change line wrapping -- there's
+ * no need to re-measure, just transform the already-shaped text right before
+ * it's drawn.
+ */
+function applyTextTransform(text: string, transform: string): string {
+	switch (transform) {
+		case "uppercase":
+			return text.toUpperCase();
+		case "lowercase":
+			return text.toLowerCase();
+		case "capitalize":
+			return text.replace(
+				/\p{L}[\p{L}\p{M}]*/gu,
+				(word) => (word[0]?.toUpperCase() ?? "") + word.slice(1),
+			);
+		default:
+			return text;
+	}
+}
+
 function detectColorDepth(process: ProcessLike): ColorDepth {
 	const colorterm = process.env.COLORTERM;
 	if (colorterm === "truecolor" || colorterm === "24bit") {
@@ -632,6 +655,13 @@ export class TermDOM {
 			.getComputedStyle(element)
 			.getPropertyValue("text-decoration")
 			.includes("underline");
+		// visibility:hidden reserves the box (layout is untouched) but paints
+		// nothing of it -- unlike display:none, which removes the box entirely. A
+		// descendant that sets visibility:visible still paints, since visibility
+		// inherits and each element resolves its own computed value here.
+		const visible =
+			this.window.getComputedStyle(element).getPropertyValue("visibility") !==
+			"hidden";
 
 		const style = {
 			fg: color && color !== "initial" ? cssColorToNumber(color) : undefined,
@@ -646,7 +676,7 @@ export class TermDOM {
 			underline,
 		};
 
-		if (rect && style.bg != null) {
+		if (rect && style.bg != null && visible) {
 			ctx.fillRect(rect.left, rect.top, rect.width, rect.height, style.bg);
 		}
 
@@ -654,13 +684,13 @@ export class TermDOM {
 		const display = this.window
 			.getComputedStyle(element)
 			.getPropertyValue("display");
-		if (display === "table" && rect) {
+		if (display === "table" && rect && visible) {
 			this.#renderTable(element, rect, style);
 			// Continue with normal child rendering
 		}
 
 		// Handle borders
-		if (rect) {
+		if (rect && visible) {
 			const borderStyles = resolveBorderStyles(element);
 			if (borderStyles.hasAnyBorder) {
 				// Use foreground color for borders, inherit element's background color
@@ -680,7 +710,7 @@ export class TermDOM {
 		}
 
 		// Handle list-style-position: outside markers
-		this.#renderOutsideMarker(element, ctx);
+		if (visible) this.#renderOutsideMarker(element, ctx);
 
 		// Render input elements (void elements with no children)
 		if (
@@ -688,7 +718,9 @@ export class TermDOM {
 			rect &&
 			(element as HTMLInputElement).type !== "hidden"
 		) {
-			this.#renderInputElement(element as HTMLInputElement, rect, style, ctx);
+			if (visible) {
+				this.#renderInputElement(element as HTMLInputElement, rect, style, ctx);
+			}
 			return; // Input elements have no children to render
 		}
 
@@ -970,6 +1002,11 @@ export class TermDOM {
 			computedStyle = this.window.getComputedStyle(parentElement);
 		}
 
+		// visibility inherits, so the parent's own resolved value already accounts
+		// for a closer ancestor overriding back to visible.
+		if (computedStyle.getPropertyValue("visibility") === "hidden") return;
+
+		const textTransform = computedStyle.getPropertyValue("text-transform");
 		const textColor = computedStyle.getPropertyValue("color");
 		const textBgColor = computedStyle.getPropertyValue("background-color");
 		const textBold = computedStyle.getPropertyValue("font-weight") === "bold";
@@ -1002,7 +1039,7 @@ export class TermDOM {
 					ctx.setText(
 						Math.round(rectText.rect.x),
 						Math.round(rectText.rect.y),
-						rectText.text,
+						applyTextTransform(rectText.text, textTransform),
 						textStyle,
 					);
 				}

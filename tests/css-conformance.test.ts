@@ -137,6 +137,23 @@ const FIXTURES: Fixture[] = [
 		html: `<style>p{color:green} p{color:blue}</style><p>wins-blue</p>`,
 		contains: ["wins-blue"],
 	},
+
+	// --- text-transform (paint-time; can't affect layout in a monospace grid) -
+	{
+		name: "text-transform:uppercase",
+		html: `<div style="text-transform:uppercase">shout</div>`,
+		contains: ["SHOUT"],
+	},
+	{
+		name: "text-transform:lowercase",
+		html: `<div style="text-transform:lowercase">LOUD</div>`,
+		contains: ["loud"],
+	},
+	{
+		name: "text-transform:capitalize",
+		html: `<div style="text-transform:capitalize">hi there</div>`,
+		contains: ["Hi There"],
+	},
 ];
 
 async function renderFixture(fx: Fixture) {
@@ -165,23 +182,29 @@ for (const fx of FIXTURES) {
 	});
 }
 
+test("css: visibility:hidden paints nothing, but reserves its box", async () => {
+	const {text} = await renderFixture({
+		name: "visibility",
+		html: `<div>a</div><div style="visibility:hidden">gone</div><div>b</div>`,
+	});
+	expect(text).toContain("a");
+	expect(text).toContain("b");
+	expect(text).not.toContain("gone");
+});
+
+test("css: visibility:visible on a descendant re-shows inside a hidden ancestor", async () => {
+	const {text} = await renderFixture({
+		name: "visibility-override",
+		html: `<div style="visibility:hidden">gone<span style="visibility:visible">shown</span></div>`,
+	});
+	expect(text).toContain("shown");
+	expect(text).not.toContain("gone");
+});
+
 // Known-broken fixtures: filed as gaps, not silent failures. Each documents a
 // confirmed conformance bug (verified against real output, not assumed). Move a
 // fixture up into FIXTURES once its property/at-rule is implemented.
-const KNOWN_GAPS: Array<Fixture & {bug: string}> = [
-	{
-		name: "text-transform: uppercase/capitalize/lowercase",
-		bug: "text-transform is parsed (styles.ts) but never applied during text paint -- rendered text is untransformed",
-		html: `<div style="text-transform:uppercase">shout</div>`,
-		contains: ["SHOUT"],
-	},
-	{
-		name: "visibility: hidden removes the element from paint",
-		bug: "visibility:hidden still paints its text -- only display:none actually hides content",
-		html: `<div>a</div><div style="visibility:hidden">gone</div><div>b</div>`,
-		contains: ["a", "b"],
-	},
-];
+const KNOWN_GAPS: Array<Fixture & {bug: string}> = [];
 
 for (const fx of KNOWN_GAPS) {
 	test.todo(`css gap: ${fx.name} (${fx.bug})`, async () => {

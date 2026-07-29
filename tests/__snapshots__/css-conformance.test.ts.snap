@@ -303,3 +303,51 @@ exports[`css: later rule wins on equal specificity (source order) 1`] = `
                                         
 "
 `;
+
+exports[`css: text-transform:uppercase 1`] = `
+"SHOUT                                   
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+"
+`;
+
+exports[`css: text-transform:lowercase 1`] = `
+"loud                                    
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+"
+`;
+
+exports[`css: text-transform:capitalize 1`] = `
+"Hi There                                
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+"
+`;
