@@ -1403,6 +1403,92 @@ export class TermDOM {
 			return termDOM[kLayoutEngine].createDOMRectList(rects);
 		};
 
+		// offsetWidth/offsetHeight/offsetTop/offsetLeft/offsetParent -- the most
+		// commonly reached-for measurement API, and previously entirely
+		// unimplemented (always 0/null via jsdom's defaults). Border-box
+		// dimensions and position, from the same layout rect getBoundingClientRect
+		// already uses -- rounded to whole cells, since that's what actually
+		// paints. offsetTop/Left are relative to offsetParent's own border-box
+		// origin (not its padding edge, which the spec technically uses): a
+		// simplification that only differs when offsetParent itself has a
+		// border, and is off by exactly that border's width when it does.
+		const offsetParentOf = (element: Element): HTMLElement | null => {
+			for (
+				let ancestor = element.parentElement;
+				ancestor;
+				ancestor = ancestor.parentElement
+			) {
+				const position = termDOM.window
+					.getComputedStyle(ancestor)
+					.getPropertyValue("position");
+				if (position && position !== "static") {
+					return ancestor as HTMLElement;
+				}
+			}
+			return termDOM.document.body === element ? null : termDOM.document.body;
+		};
+
+		Object.defineProperty(this.window.HTMLElement.prototype, "offsetWidth", {
+			get(this: Element) {
+				if (!this.isConnected) return 0;
+				termDOM.#processPendingMutationsAndRender();
+				return Math.round(termDOM[kLayoutEngine].getRect(this)?.width ?? 0);
+			},
+			configurable: true,
+			enumerable: true,
+		});
+
+		Object.defineProperty(this.window.HTMLElement.prototype, "offsetHeight", {
+			get(this: Element) {
+				if (!this.isConnected) return 0;
+				termDOM.#processPendingMutationsAndRender();
+				return Math.round(termDOM[kLayoutEngine].getRect(this)?.height ?? 0);
+			},
+			configurable: true,
+			enumerable: true,
+		});
+
+		Object.defineProperty(this.window.HTMLElement.prototype, "offsetParent", {
+			get(this: Element) {
+				if (!this.isConnected) return null;
+				return offsetParentOf(this);
+			},
+			configurable: true,
+			enumerable: true,
+		});
+
+		Object.defineProperty(this.window.HTMLElement.prototype, "offsetTop", {
+			get(this: Element) {
+				if (!this.isConnected) return 0;
+				termDOM.#processPendingMutationsAndRender();
+				const rect = termDOM[kLayoutEngine].getRect(this);
+				if (!rect) return 0;
+				const parent = offsetParentOf(this);
+				const parentRect = parent
+					? termDOM[kLayoutEngine].getRect(parent)
+					: null;
+				return Math.round(rect.top - (parentRect?.top ?? 0));
+			},
+			configurable: true,
+			enumerable: true,
+		});
+
+		Object.defineProperty(this.window.HTMLElement.prototype, "offsetLeft", {
+			get(this: Element) {
+				if (!this.isConnected) return 0;
+				termDOM.#processPendingMutationsAndRender();
+				const rect = termDOM[kLayoutEngine].getRect(this);
+				if (!rect) return 0;
+				const parent = offsetParentOf(this);
+				const parentRect = parent
+					? termDOM[kLayoutEngine].getRect(parent)
+					: null;
+				return Math.round(rect.left - (parentRect?.left ?? 0));
+			},
+			configurable: true,
+			enumerable: true,
+		});
+
 		// Fullscreen API methods
 		Element.prototype.requestFullscreen = function (
 			this: Element,
