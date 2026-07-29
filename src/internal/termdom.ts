@@ -1411,6 +1411,26 @@ export class TermDOM {
 		const {Element, Document} = this.window;
 		const termDOM = this;
 
+		// getRect()/getRects() (the layout engine's own primitives) are
+		// document-relative -- the coordinate space rendering already works in,
+		// since the renderer applies the camera offset once at paint time, not
+		// per element. But getBoundingClientRect/getClientRects are a *public*
+		// API, and CSSOM View defines them relative to the viewport: rect.top
+		// for a scrolled-past element should be negative, not the same
+		// ever-growing document row regardless of scroll. #toViewportRect is the
+		// one place that conversion happens, so both wrappers apply it
+		// identically. Internal callers that need the pre-conversion,
+		// document-relative rect (scrollIntoView, hit-testing) read
+		// getRect()/getRects() directly instead of going through these -- see
+		// their definitions.
+		const toViewportRect = (rect: DOMRect): DOMRect =>
+			termDOM[kLayoutEngine].createDOMRect(
+				rect.x,
+				rect.y - termDOM.#documentScrollTop,
+				rect.width,
+				rect.height,
+			);
+
 		Element.prototype.getBoundingClientRect = function (
 			this: Element,
 		): DOMRect {
@@ -1421,7 +1441,7 @@ export class TermDOM {
 			termDOM.#processPendingMutationsAndRender();
 
 			const rect = termDOM[kLayoutEngine].getRect(this);
-			return rect || termDOM[kLayoutEngine].createDOMRect(0, 0, 0, 0);
+			return toViewportRect(rect || termDOM[kLayoutEngine].createDOMRect());
 		};
 
 		Element.prototype.getClientRects = function (): DOMRectList {
@@ -1431,7 +1451,7 @@ export class TermDOM {
 
 			termDOM.#processPendingMutationsAndRender();
 
-			const rects = termDOM[kLayoutEngine].getRects(this);
+			const rects = termDOM[kLayoutEngine].getRects(this).map(toViewportRect);
 			return termDOM[kLayoutEngine].createDOMRectList(rects);
 		};
 
@@ -1605,8 +1625,13 @@ export class TermDOM {
 			x: number,
 			y: number,
 		): Element | null {
-			termDOM.#processPendingMutationsAndRender();
-			return findElementAtPoint(termDOM, this.documentElement, x, y);
+			// Per CSSOM View, x/y are viewport-relative -- convert to the
+			// document-relative space hit-testing works in, the same conversion
+			// getBoundingClientRect's toViewportRect makes in the other direction.
+			return termDOM.#findElementAtDocumentPoint(
+				x,
+				y + termDOM.#documentScrollTop,
+			);
 		};
 
 		// Override focus/blur to dispatch proper events
@@ -1671,12 +1696,18 @@ export class TermDOM {
 			this: HTMLElement,
 			_arg?: boolean | ScrollIntoViewOptions,
 		) {
-			const rect = this.getBoundingClientRect();
+			if (!this.isConnected) return;
+			termDOM.#processPendingMutationsAndRender();
 
-			// The rect is in document rows and the camera shows
-			// [documentScrollTop, documentScrollTop + region). Move the camera the
-			// minimal amount that brings the element into it -- the standard
-			// block: "nearest" behavior.
+			// Document-relative, not getBoundingClientRect's viewport-relative --
+			// this compares directly against documentScrollTop below, so it needs
+			// the same coordinate space getRect() already provides.
+			const rect = termDOM[kLayoutEngine].getRect(this);
+			if (!rect) return;
+
+			// The camera shows [documentScrollTop, documentScrollTop + region).
+			// Move it the minimal amount that brings the element into it -- the
+			// standard block: "nearest" behavior.
 			const regionHeight = Math.min(
 				termDOM.#height,
 				termDOM.document.body.scrollHeight,
@@ -1848,6 +1879,19 @@ export class TermDOM {
 	}
 
 	/**
+	 * Hit-test a document-relative point (flushing pending layout first). The
+	 * one place both document.elementFromPoint (which converts its public,
+	 * viewport-relative x/y into this space) and mouse hit-testing (whose
+	 * points are already document-relative, from #screenToDocumentPoint) go
+	 * through, so a click always tests against fresh layout regardless of
+	 * entry point.
+	 */
+	#findElementAtDocumentPoint(x: number, y: number): Element | null {
+		this.#processPendingMutationsAndRender();
+		return findElementAtPoint(this, this.document.documentElement, x, y);
+	}
+
+	/**
 	 * A mouse report from the terminal (SGR encoding: `CSI < code ; col ; row M/m`).
 	 * These only arrive while capture is on -- see updateMouseReporting.
 	 *
@@ -1871,8 +1915,11 @@ export class TermDOM {
 		const point = this.#screenToDocumentPoint(col - 1, row - 1);
 		const x = point?.x ?? col - 1;
 		const y = point?.y ?? 0;
+		// Already document-relative -- go straight to the shared hit-test rather
+		// than through the public elementFromPoint, which expects viewport-
+		// relative input and would convert it right back.
 		const target =
-			(point && this.document.elementFromPoint(x, y)) || this.document.body;
+			(point && this.#findElementAtDocumentPoint(x, y)) || this.document.body;
 
 		// Wheel: 64 = up, 65 = down. One notch is three rows, the browser's
 		// line-mode convention, and DOM_DELTA_LINE is literally true here.
@@ -2567,7 +2614,10 @@ function findElementAtPoint(
 	}
 
 	try {
-		const rects = Array.from(element.getClientRects());
+		// Document-relative, matching the document-relative x/y hit-testing
+		// works in throughout -- not the public, viewport-relative
+		// getClientRects(), which would need re-converting right back.
+		const rects = termDOM[kLayoutEngine].getRects(element);
 		if (!isPointInRects(x, y, rects)) {
 			return null;
 		}
