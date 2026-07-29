@@ -5,22 +5,22 @@ import {
 } from "./termdom.js";
 
 export class FullscreenManager {
-	private readonly process: ProcessLike;
-	private readonly stdin: TTYReadStream;
-	private readonly stdout: TTYWriteStream;
+	#process: ProcessLike;
+	#stdin: TTYReadStream;
+	#stdout: TTYWriteStream;
 
-	private fullscreenStack: Element[] = [];
-	private isInFullscreenMode: boolean = false;
-	private originalTtyMode: boolean = false;
-	private cleanupHandlers: Array<() => void> = [];
+	#fullscreenStack: Element[] = [];
+	#isInFullscreenMode: boolean = false;
+	#originalTtyMode: boolean = false;
+	#cleanupHandlers: Array<() => void> = [];
 
 	constructor(process: ProcessLike) {
-		this.process = process;
-		this.stdout = process.stdout;
-		this.stdin = process.stdin!;
+		this.#process = process;
+		this.#stdout = process.stdout;
+		this.#stdin = process.stdin!;
 
 		// Setup cleanup handlers
-		this.setupCleanupHandlers();
+		this.#setupCleanupHandlers();
 	}
 
 	/**
@@ -38,21 +38,21 @@ export class FullscreenManager {
 
 		try {
 			// Add to fullscreen stack
-			this.fullscreenStack.push(element);
+			this.#fullscreenStack.push(element);
 
 			// Enter fullscreen mode if this is the first element
-			if (!this.isInFullscreenMode) {
-				await this.enterFullscreenMode();
+			if (!this.#isInFullscreenMode) {
+				await this.#enterFullscreenMode();
 			}
 
 			// Fire fullscreenchange event
-			this.fireFullscreenChangeEvent(element);
+			this.#fireFullscreenChangeEvent(element);
 		} catch (error) {
 			// Remove from stack on error
-			this.fullscreenStack.pop();
+			this.#fullscreenStack.pop();
 
 			// Fire fullscreenerror event
-			this.fireFullscreenErrorEvent(element, error as Error);
+			this.#fireFullscreenErrorEvent(element, error as Error);
 			throw error;
 		}
 	}
@@ -61,28 +61,28 @@ export class FullscreenManager {
 	 * Exit fullscreen mode
 	 */
 	async exitFullscreen(): Promise<void> {
-		if (this.fullscreenStack.length === 0) {
+		if (this.#fullscreenStack.length === 0) {
 			return; // Already not in fullscreen
 		}
 
 		// Remove the topmost element
-		const exitingElement = this.fullscreenStack.pop()!;
+		const exitingElement = this.#fullscreenStack.pop()!;
 
 		// If no more elements in stack, exit fullscreen mode
-		if (this.fullscreenStack.length === 0) {
-			await this.exitFullscreenMode();
+		if (this.#fullscreenStack.length === 0) {
+			await this.#exitFullscreenMode();
 		}
 
 		// Fire fullscreenchange event
-		this.fireFullscreenChangeEvent(exitingElement);
+		this.#fireFullscreenChangeEvent(exitingElement);
 	}
 
 	/**
 	 * Get the current fullscreen element
 	 */
 	get fullscreenElement(): Element | null {
-		return this.fullscreenStack.length > 0
-			? this.fullscreenStack[this.fullscreenStack.length - 1]
+		return this.#fullscreenStack.length > 0
+			? this.#fullscreenStack[this.#fullscreenStack.length - 1]
 			: null;
 	}
 
@@ -90,51 +90,51 @@ export class FullscreenManager {
 	 * Check if currently in fullscreen mode
 	 */
 	get isFullscreen(): boolean {
-		return this.isInFullscreenMode;
+		return this.#isInFullscreenMode;
 	}
 
-	private async enterFullscreenMode(): Promise<void> {
+	async #enterFullscreenMode(): Promise<void> {
 		// Save original TTY mode
-		if (this.stdin && this.stdin.setRawMode) {
-			this.originalTtyMode = (this.stdin as any).isRaw || false;
+		if (this.#stdin && this.#stdin.setRawMode) {
+			this.#originalTtyMode = (this.#stdin as any).isRaw || false;
 		}
 
 		// Enter alternate screen buffer
-		this.stdout.write("\x1b[?1049h");
+		this.#stdout.write("\x1b[?1049h");
 
 		// Clear screen and hide cursor
-		this.stdout.write("\x1b[2J\x1b[H\x1b[?25l");
+		this.#stdout.write("\x1b[2J\x1b[H\x1b[?25l");
 
 		// Enable raw mode for input handling
-		if (this.stdin && this.stdin.setRawMode) {
-			this.stdin.setRawMode(true);
+		if (this.#stdin && this.#stdin.setRawMode) {
+			this.#stdin.setRawMode(true);
 		}
-		if (this.stdin) {
-			this.stdin.resume();
+		if (this.#stdin) {
+			this.#stdin.resume();
 		}
 
-		this.isInFullscreenMode = true;
+		this.#isInFullscreenMode = true;
 
 		// Setup input handling for Esc key
-		this.setupInputHandling();
+		this.#setupInputHandling();
 	}
 
-	private async exitFullscreenMode(): Promise<void> {
+	async #exitFullscreenMode(): Promise<void> {
 		// Restore cursor and exit alternate screen buffer
-		this.stdout.write("\x1b[?25h\x1b[?1049l");
+		this.#stdout.write("\x1b[?25h\x1b[?1049l");
 
 		// Restore original TTY mode
-		if (this.stdin && this.stdin.setRawMode) {
-			this.stdin.setRawMode(this.originalTtyMode);
+		if (this.#stdin && this.#stdin.setRawMode) {
+			this.#stdin.setRawMode(this.#originalTtyMode);
 		}
 
-		this.isInFullscreenMode = false;
+		this.#isInFullscreenMode = false;
 
 		// Remove input handling
-		this.removeInputHandling();
+		this.#removeInputHandling();
 	}
 
-	private inputHandler = (chunk: Buffer) => {
+	#inputHandler = (chunk: Buffer) => {
 		const key = chunk.toString("utf8");
 
 		// Handle Esc key to exit fullscreen
@@ -146,24 +146,24 @@ export class FullscreenManager {
 
 		// Dispatch keyboard event to the fullscreen element
 		if (this.fullscreenElement) {
-			this.dispatchKeyboardEvent(this.fullscreenElement, key, chunk);
+			this.#dispatchKeyboardEvent(this.fullscreenElement, key, chunk);
 		}
 	};
 
-	private setupInputHandling(): void {
-		if (this.stdin) {
-			this.stdin.on("data", this.inputHandler);
+	#setupInputHandling(): void {
+		if (this.#stdin) {
+			this.#stdin.on("data", this.#inputHandler);
 		}
 	}
 
-	private removeInputHandling(): void {
-		if (this.stdin) {
-			this.stdin.removeListener("data", this.inputHandler);
+	#removeInputHandling(): void {
+		if (this.#stdin) {
+			this.#stdin.removeListener("data", this.#inputHandler);
 		}
 	}
 
-	private fireFullscreenChangeEvent(element: Element): void {
-		const window = this.getWindow(element);
+	#fireFullscreenChangeEvent(element: Element): void {
+		const window = this.#getWindow(element);
 		if (!window) return;
 
 		const event = new window.CustomEvent("fullscreenchange", {
@@ -176,8 +176,8 @@ export class FullscreenManager {
 		element.ownerDocument?.dispatchEvent(event);
 	}
 
-	private fireFullscreenErrorEvent(element: Element, error: Error): void {
-		const window = this.getWindow(element);
+	#fireFullscreenErrorEvent(element: Element, error: Error): void {
+		const window = this.#getWindow(element);
 		if (!window) return;
 
 		const event = new window.CustomEvent("fullscreenerror", {
@@ -191,18 +191,18 @@ export class FullscreenManager {
 		element.ownerDocument?.dispatchEvent(event);
 	}
 
-	private getWindow(element?: Element): any {
+	#getWindow(element?: Element): any {
 		// Get window from the element's document, or from the stack
-		const targetElement = element || this.fullscreenStack[0];
+		const targetElement = element || this.#fullscreenStack[0];
 		return targetElement?.ownerDocument?.defaultView;
 	}
 
-	private dispatchKeyboardEvent(
+	#dispatchKeyboardEvent(
 		element: Element,
 		key: string,
 		_chunk: Buffer,
 	): void {
-		const window = this.getWindow(element);
+		const window = this.#getWindow(element);
 		if (!window) return;
 
 		// Map common key codes
@@ -307,39 +307,39 @@ export class FullscreenManager {
 		element.dispatchEvent(keyupEvent);
 	}
 
-	private setupCleanupHandlers(): void {
+	#setupCleanupHandlers(): void {
 		const cleanup = () => {
-			if (this.isInFullscreenMode) {
+			if (this.#isInFullscreenMode) {
 				// Force exit fullscreen mode on process exit
-				this.stdout.write("\x1b[?25h\x1b[?1049l");
+				this.#stdout.write("\x1b[?25h\x1b[?1049l");
 
 				// Restore TTY mode
-				if (this.stdin && this.stdin.setRawMode) {
-					this.stdin.setRawMode(this.originalTtyMode);
+				if (this.#stdin && this.#stdin.setRawMode) {
+					this.#stdin.setRawMode(this.#originalTtyMode);
 				}
 			}
 		};
 
-		this.process.on("exit", cleanup);
-		this.process.on("SIGINT", cleanup);
-		this.process.on("SIGTERM", cleanup);
-		this.process.on("SIGHUP", cleanup);
+		this.#process.on("exit", cleanup);
+		this.#process.on("SIGINT", cleanup);
+		this.#process.on("SIGTERM", cleanup);
+		this.#process.on("SIGHUP", cleanup);
 
-		this.cleanupHandlers.push(cleanup);
+		this.#cleanupHandlers.push(cleanup);
 	}
 
 	dispose(): void {
 		// Remove all event listeners and cleanup
-		this.removeInputHandling();
+		this.#removeInputHandling();
 
-		if (this.isInFullscreenMode) {
-			this.stdout.write("\x1b[?25h\x1b[?1049l");
-			if (this.stdin && this.stdin.setRawMode) {
-				this.stdin.setRawMode(this.originalTtyMode);
+		if (this.#isInFullscreenMode) {
+			this.#stdout.write("\x1b[?25h\x1b[?1049l");
+			if (this.#stdin && this.#stdin.setRawMode) {
+				this.#stdin.setRawMode(this.#originalTtyMode);
 			}
 		}
 
-		this.fullscreenStack = [];
-		this.isInFullscreenMode = false;
+		this.#fullscreenStack = [];
+		this.#isInFullscreenMode = false;
 	}
 }

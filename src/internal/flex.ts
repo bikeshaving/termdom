@@ -449,7 +449,7 @@ export class Node {
 	insertChild(child: Node, index: number): void {
 		child.parent = this;
 		this.children.splice(index, 0, child);
-		this.markDirtyUpward();
+		this.#markDirtyUpward();
 	}
 
 	removeChild(child: Node): void {
@@ -457,7 +457,7 @@ export class Node {
 		if (index !== -1) {
 			this.children.splice(index, 1);
 			child.parent = null;
-			this.markDirtyUpward();
+			this.#markDirtyUpward();
 		}
 	}
 
@@ -480,7 +480,7 @@ export class Node {
 
 	markDirty(): void {
 		this.dirty = true;
-		this.markDirtyUpward();
+		this.#markDirtyUpward();
 	}
 
 	/** Recompute paint extents for this subtree. See extentTop/extentBottom. */
@@ -497,7 +497,7 @@ export class Node {
 		this.extentBottom = extentBottom;
 	}
 
-	private markDirtyUpward(): void {
+	#markDirtyUpward(): void {
 		for (let node: Node | null = this; node; node = node.parent) {
 			node.dirty = true;
 		}
@@ -650,24 +650,24 @@ export class Node {
 	}
 
 	setMargin(edge: Edge, v: number | undefined): void {
-		this.setEdges(this.style.margin, edge, toValue(v));
+		this.#setEdges(this.style.margin, edge, toValue(v));
 		this.markDirty();
 	}
 	setMarginPercent(edge: Edge, v: number): void {
-		this.setEdges(this.style.margin, edge, {unit: UNIT_PERCENT, value: v});
+		this.#setEdges(this.style.margin, edge, {unit: UNIT_PERCENT, value: v});
 		this.markDirty();
 	}
 	setMarginAuto(edge: Edge): void {
-		this.setEdges(this.style.margin, edge, AUTO_VALUE);
+		this.#setEdges(this.style.margin, edge, AUTO_VALUE);
 		this.markDirty();
 	}
 
 	setPadding(edge: Edge, v: number | undefined): void {
-		this.setEdges(this.style.padding, edge, toValue(v));
+		this.#setEdges(this.style.padding, edge, toValue(v));
 		this.markDirty();
 	}
 	setPaddingPercent(edge: Edge, v: number): void {
-		this.setEdges(this.style.padding, edge, {unit: UNIT_PERCENT, value: v});
+		this.#setEdges(this.style.padding, edge, {unit: UNIT_PERCENT, value: v});
 		this.markDirty();
 	}
 
@@ -680,19 +680,19 @@ export class Node {
 	}
 
 	setPosition(edge: Edge, v: number | undefined): void {
-		this.setEdges(this.style.position, edge, toValue(v));
+		this.#setEdges(this.style.position, edge, toValue(v));
 		this.markDirty();
 	}
 	setPositionPercent(edge: Edge, v: number): void {
-		this.setEdges(this.style.position, edge, {unit: UNIT_PERCENT, value: v});
+		this.#setEdges(this.style.position, edge, {unit: UNIT_PERCENT, value: v});
 		this.markDirty();
 	}
 	setPositionAuto(edge: Edge): void {
-		this.setEdges(this.style.position, edge, AUTO_VALUE);
+		this.#setEdges(this.style.position, edge, AUTO_VALUE);
 		this.markDirty();
 	}
 
-	private setEdges(target: Value[], edge: Edge, value: Value): void {
+	#setEdges(target: Value[], edge: Edge, value: Value): void {
 		for (const index of expandEdge(edge)) {
 			target[index] = value;
 		}

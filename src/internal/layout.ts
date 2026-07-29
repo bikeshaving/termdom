@@ -756,14 +756,14 @@ export class LayoutEngine {
 	declare viewportRootNode: FlexTypes.Node;
 
 	// Public Maps for debugging
-	public nodeMap: Map<Node, FlexTypes.Node>;
-	public breakResultMap: Map<Node, BreakResult>;
+nodeMap: Map<Node, FlexTypes.Node>;
+breakResultMap: Map<Node, BreakResult>;
 
 	// Track nodes that were invalidated and need re-adding during calculateLayout
-	private invalidatedNodes: Set<Node>;
+	#invalidatedNodes: Set<Node>;
 
 	// Track layout nodes that have measure functions (for resize invalidation)
-	private measureNodes: Set<FlexTypes.Node>;
+	#measureNodes: Set<FlexTypes.Node>;
 
 	constructor(window: DOMWindow) {
 		this.window = window;
@@ -771,8 +771,8 @@ export class LayoutEngine {
 		this.rootElement = window.document.documentElement;
 		this.nodeMap = new Map<Node, FlexTypes.Node>();
 		this.breakResultMap = new Map<Node, BreakResult>();
-		this.invalidatedNodes = new Set<Node>();
-		this.measureNodes = new Set<FlexTypes.Node>();
+		this.#invalidatedNodes = new Set<Node>();
+		this.#measureNodes = new Set<FlexTypes.Node>();
 
 		// Create viewport root node (no DOM element associated)
 		this.viewportRootNode = Flex.Node.create();
@@ -796,7 +796,7 @@ export class LayoutEngine {
 
 		// Mark all leaf nodes (those with measure functions) as dirty
 		// so the engine re-invokes their measure functions with the new available width
-		for (const flexNode of this.measureNodes) {
+		for (const flexNode of this.#measureNodes) {
 			flexNode.markDirty();
 		}
 
@@ -809,7 +809,7 @@ export class LayoutEngine {
 		// still holds, and even the pruning sweep below -- O(nodes) isConnected
 		// checks -- is not worth paying. Every mutation path dirties the tree on
 		// its way in, so a clean tree cannot be hiding a disconnection.
-		if (!this.viewportRootNode.dirty && this.invalidatedNodes.size === 0) {
+		if (!this.viewportRootNode.dirty && this.#invalidatedNodes.size === 0) {
 			return;
 		}
 
@@ -821,7 +821,7 @@ export class LayoutEngine {
 		this.#pruneDisconnectedNodes();
 
 		// Re-add invalidated nodes that are still connected to DOM
-		for (const node of this.invalidatedNodes) {
+		for (const node of this.#invalidatedNodes) {
 			if (node.isConnected) {
 				// Find parent that has a layout node to attach to
 				let parent = node.parentElement;
@@ -835,7 +835,7 @@ export class LayoutEngine {
 				}
 			}
 		}
-		this.invalidatedNodes.clear();
+		this.#invalidatedNodes.clear();
 
 		// Every mutation path marks the flex tree dirty on its way in -- style
 		// setters, child insertion/removal, inline-run invalidation, resize. A
@@ -875,11 +875,11 @@ export class LayoutEngine {
 				parent.removeChild(flexNode);
 			}
 
-			this.measureNodes.delete(flexNode);
+			this.#measureNodes.delete(flexNode);
 			flexNode.freeRecursive();
 			this.nodeMap.delete(node);
 			this.breakResultMap.delete(node);
-			this.invalidatedNodes.delete(node);
+			this.#invalidatedNodes.delete(node);
 		}
 	}
 
@@ -893,8 +893,8 @@ export class LayoutEngine {
 		// Clear the maps (now regular Maps for debugging)
 		this.nodeMap = new Map();
 		this.breakResultMap = new Map();
-		this.invalidatedNodes = new Set();
-		this.measureNodes = new Set();
+		this.#invalidatedNodes = new Set();
+		this.#measureNodes = new Set();
 	}
 
 	/**
@@ -1423,7 +1423,7 @@ export class LayoutEngine {
 	 */
 	invalidate(node: Node): void {
 		// Track this node for re-adding during calculateLayout
-		this.invalidatedNodes.add(node);
+		this.#invalidatedNodes.add(node);
 
 		// If it's an inline-level node, invalidate the entire run
 		if (this.#isInlineLevel(node)) {
@@ -1443,7 +1443,7 @@ export class LayoutEngine {
 				// Check if node was actually removed vs just being invalidated (e.g., for pseudo-elements)
 				if (!node.isConnected) {
 					// Node was truly removed from DOM - free it
-					this.measureNodes.delete(flexNode);
+					this.#measureNodes.delete(flexNode);
 					flexNode.freeRecursive();
 					this.nodeMap.delete(node);
 				} else {
@@ -1561,7 +1561,7 @@ export class LayoutEngine {
 					if (pseudoMeta) {
 						// Removing pseudo element from nodeMap during invalidateInlineRun cleanup
 					}
-					this.measureNodes.delete(flexNode);
+					this.#measureNodes.delete(flexNode);
 					flexNode.freeRecursive();
 					this.nodeMap.delete(node);
 				}
@@ -1663,7 +1663,7 @@ export class LayoutEngine {
 		return false;
 	}
 
-	public handleMutations(mutations: MutationRecord[]): void {
+handleMutations(mutations: MutationRecord[]): void {
 		this.#handleMutationRecords(mutations);
 	}
 
@@ -1846,7 +1846,7 @@ export class LayoutEngine {
 					heightMode,
 				);
 			});
-			this.measureNodes.add(flexNode);
+			this.#measureNodes.add(flexNode);
 
 			// Note: Automatic minimum size for flex items is now handled in measureInlineRun
 
@@ -1935,7 +1935,7 @@ export class LayoutEngine {
 				);
 			},
 		);
-		this.measureNodes.add(flexNode);
+		this.#measureNodes.add(flexNode);
 
 		// Note: Automatic minimum size for flex items is now handled in measureInlineRun
 
@@ -1979,7 +1979,7 @@ export class LayoutEngine {
 				if (pseudoMeta) {
 					// Removing pseudo element from nodeMap during mutation removal
 				}
-				this.measureNodes.delete(flexNode);
+				this.#measureNodes.delete(flexNode);
 				flexNode.freeRecursive();
 				this.nodeMap.delete(element);
 			}
@@ -2009,7 +2009,7 @@ export class LayoutEngine {
 			// Check if text was actually removed vs just moved
 			if (!text.isConnected) {
 				// Text was truly removed from DOM - free it
-				this.measureNodes.delete(flexNode);
+				this.#measureNodes.delete(flexNode);
 				flexNode.freeRecursive();
 				this.nodeMap.delete(text);
 			}
