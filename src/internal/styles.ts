@@ -618,6 +618,71 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 		}
 	}
 
+	/** This element's parent's resolved value for `property`, or null at the root. */
+	#resolveFromParent(property: string): string | null {
+		const window = this.#element.ownerDocument?.defaultView;
+		const parent = this.#element.parentElement;
+		if (!window || !parent) return null;
+		return window.getComputedStyle(parent).getPropertyValue(property) || null;
+	}
+
+	/**
+	 * Resolve `var(--name[, fallback])` references in a declared value.
+	 *
+	 * Custom properties always inherit (they aren't subject to the fixed
+	 * INHERITED_PROPERTIES list), so lookup walks the element's own inline style
+	 * and matching rules first, then the parent chain via getComputedStyle --
+	 * which recurses through this same substitution at each ancestor, so a
+	 * custom property whose own value references another var() resolves too.
+	 * A depth guard stops a property that (invalidly) refers to itself.
+	 */
+	#substituteVar(value: string, depth = 0): string {
+		if (depth > 8 || !value.includes("var(")) return value;
+
+		let out = "";
+		let i = 0;
+		while (i < value.length) {
+			const start = value.indexOf("var(", i);
+			if (start === -1) {
+				out += value.slice(i);
+				break;
+			}
+			out += value.slice(i, start);
+
+			let parenDepth = 1;
+			let j = start + 4;
+			for (; j < value.length && parenDepth > 0; j++) {
+				if (value[j] === "(") parenDepth++;
+				else if (value[j] === ")") parenDepth--;
+			}
+			const inner = value.slice(start + 4, j - 1);
+			const commaIndex = inner.indexOf(",");
+			const name = (
+				commaIndex === -1 ? inner : inner.slice(0, commaIndex)
+			).trim();
+			const fallback =
+				commaIndex === -1 ? undefined : inner.slice(commaIndex + 1).trim();
+
+			const resolved = this.#resolveCustomProperty(name);
+			if (resolved !== null) {
+				out += this.#substituteVar(resolved, depth + 1);
+			} else if (fallback !== undefined) {
+				out += this.#substituteVar(fallback, depth + 1);
+			}
+			// Neither a value nor a fallback: the guaranteed-invalid value -- omit,
+			// which approximates the property's own initial/inherited fallback.
+
+			i = j;
+		}
+		return out;
+	}
+
+	#resolveCustomProperty(name: string): string | null {
+		// A custom property is just an ordinary (always-inherited) cascade lookup
+		// -- #resolvePropertyValueRaw's step 4 already walks ancestors for it.
+		return this.#resolvePropertyValueRaw(name) || null;
+	}
+
 	/** An author-level shorthand value, inline first, then stylesheet rules. */
 	#resolveShorthand(property: string): string | null {
 		const style = (this.#element as HTMLElement).style;
@@ -634,25 +699,47 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 	}
 
 	/**
-	 * Resolve property value applying CSS cascade: inline styles > CSS rules > defaults
+	 * Resolve property value applying CSS cascade: inline styles > CSS rules >
+	 * defaults, with `!important` promoted above all of that (an important
+	 * stylesheet rule beats even a non-important inline style, per spec), and
+	 * `var()` references substituted in whatever wins.
 	 */
 	#resolvePropertyValue(property: string): string {
-		// 1. Check inline style first (highest specificity)
+		const raw = this.#resolvePropertyValueRaw(property);
+		return raw ? this.#substituteVar(raw) : raw;
+	}
+
+	#resolvePropertyValueRaw(property: string): string {
 		const style = (this.#element as HTMLElement).style;
-		if (style) {
-			const inlineValue = style.getPropertyValue(property).trim();
-			if (inlineValue && !INITIAL_KEYWORDS.has(inlineValue)) {
-				return inlineValue;
+		const inlineValue = style?.getPropertyValue(property).trim();
+		const inlineUsable = !!inlineValue && !INITIAL_KEYWORDS.has(inlineValue);
+		const inlineImportant =
+			inlineUsable && style.getPropertyPriority(property) === "important";
+
+		// `inherit` skips the rest of the cascade and goes straight to the parent's
+		// resolved value, regardless of whether this property normally inherits.
+		if (inlineUsable && inlineValue === "inherit") {
+			return this.#resolveFromParent(property) ?? "";
+		}
+
+		// 1 & 2. Inline style and stylesheet rules, with an !important tier above
+		// the normal cascade. #cssRules is pre-sorted by specificity/source order,
+		// so within each tier the last match wins.
+		let ruleValue: string | null = null;
+		let importantRuleValue: string | null = null;
+		for (const rule of this.#cssRules) {
+			const value = rule.declarations[property];
+			if (value === undefined) continue;
+			if (rule.important[property]) {
+				importantRuleValue = value;
+			} else {
+				ruleValue = value;
 			}
 		}
 
-		// 2. Apply CSS rules from stylesheets (in specificity order - highest last)
-		let ruleValue = null;
-		for (const rule of this.#cssRules) {
-			if (rule.declarations[property]) {
-				ruleValue = rule.declarations[property];
-			}
-		}
+		if (inlineImportant) return inlineValue;
+		if (importantRuleValue) return importantRuleValue;
+		if (inlineUsable) return inlineValue;
 		if (ruleValue) {
 			return ruleValue;
 		}
@@ -726,8 +813,9 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 		}
 
 		// 4. For inherited properties, walk up the DOM using getComputedStyle
-		// which correctly resolves CSS rules on parent elements
-		if (INHERITED_PROPERTIES.has(property)) {
+		// which correctly resolves CSS rules on parent elements. Custom properties
+		// (--x) always inherit -- there's no fixed list for them to be in.
+		if (INHERITED_PROPERTIES.has(property) || property.startsWith("--")) {
 			const window = this.#element.ownerDocument?.defaultView;
 			if (window) {
 				for (
@@ -1243,6 +1331,8 @@ function getListMarker(listItem: Element, listParent: Element): string {
 interface ParsedCSSRule {
 	selector: string;
 	declarations: Record<string, string>;
+	/** Properties declared `!important` in this rule. */
+	important: Record<string, boolean>;
 	specificity: string; // Zero-padded string for lexicographic comparison
 	pseudoElement?: string;
 }
@@ -1483,18 +1573,83 @@ export class StyleManager {
 	}
 
 	/**
-	 * Parse a single stylesheet and add rules to parsedRules
+	 * Parse a stylesheet (or a @media block's own rule list) and add rules to
+	 * parsedRules. @media recurses into its nested rules when its condition
+	 * matches the terminal's current size; every other condition/at-rule
+	 * (@supports, @font-face, @keyframes, @import) has no terminal meaning and
+	 * stays dropped.
 	 */
-	#parseStyleSheet(stylesheet: CSSStyleSheet): void {
+	#parseStyleSheet(stylesheet: {cssRules: CSSRuleList}): void {
 		for (let i = 0; i < stylesheet.cssRules.length; i++) {
 			const rule = stylesheet.cssRules[i];
 			// TODO: use constructor.name
 			if (rule.type === 1) {
 				// CSSRule.STYLE_RULE
-				const styleRule = rule as CSSStyleRule;
-				this.#parseStyleRule(styleRule);
+				this.#parseStyleRule(rule as CSSStyleRule);
+			} else if (rule.type === 4) {
+				// CSSRule.MEDIA_RULE
+				const mediaRule = rule as CSSMediaRule;
+				if (this.#mediaQueryMatches(mediaRule.media.mediaText)) {
+					this.#parseStyleSheet(mediaRule);
+				}
 			}
 		}
+	}
+
+	/**
+	 * Whether a media query currently matches. There is exactly one "screen" --
+	 * the terminal viewport -- so only width/height features are meaningful;
+	 * everything else (scripting, color-gamut, pointer, ...) defaults to
+	 * matching rather than silently dropping an author's rules.
+	 */
+	#mediaQueryMatches(mediaText: string): boolean {
+		const text = mediaText.trim();
+		if (!text) return true;
+		return text.split(",").some((query) => this.#mediaQueryPartMatches(query));
+	}
+
+	#mediaQueryPartMatches(query: string): boolean {
+		let q = query.trim();
+		let negate = false;
+		if (/^not\s+/i.test(q)) {
+			negate = true;
+			q = q.replace(/^not\s+/i, "");
+		}
+
+		const typeMatch = q.match(/^(all|screen|print|speech)\b\s*(and\s+)?/i);
+		let matches = true;
+		if (typeMatch) {
+			matches = typeMatch[1].toLowerCase() !== "print";
+			q = q.slice(typeMatch[0].length);
+		}
+
+		const features = q.match(/\([^)]*\)/g) || [];
+		for (const feature of features) {
+			if (!this.#mediaFeatureMatches(feature.slice(1, -1).trim())) {
+				matches = false;
+			}
+		}
+
+		return negate ? !matches : matches;
+	}
+
+	#mediaFeatureMatches(feature: string): boolean {
+		const match = feature.match(
+			/^(min-|max-)?(width|height)\s*:\s*([\d.]+)(px|ch)?$/i,
+		);
+		if (!match) return true; // unrecognized feature: permissive default
+
+		const [, boundRaw, dimension, numRaw] = match;
+		const bound = boundRaw?.toLowerCase();
+		const num = parseFloat(numRaw);
+		const actual =
+			dimension.toLowerCase() === "width"
+				? this.#window.innerWidth
+				: this.#window.innerHeight;
+
+		if (bound === "min-") return actual >= num;
+		if (bound === "max-") return actual <= num;
+		return actual === num;
 	}
 
 	/**
@@ -1502,7 +1657,7 @@ export class StyleManager {
 	 */
 	#parseStyleRule(styleRule: CSSStyleRule): void {
 		const selector = styleRule.selectorText;
-		const declarations = this.#parseDeclarations(styleRule.style);
+		const {declarations, important} = this.#parseDeclarations(styleRule.style);
 		const specificity = this.#calculateSpecificity(selector);
 
 		// Check if this is a pseudo-element rule
@@ -1515,6 +1670,7 @@ export class StyleManager {
 			this.#parsedRules.push({
 				selector: baseSelector.trim(),
 				declarations,
+				important,
 				specificity,
 				pseudoElement,
 			});
@@ -1522,21 +1678,30 @@ export class StyleManager {
 			this.#parsedRules.push({
 				selector,
 				declarations,
+				important,
 				specificity,
 			});
 		}
 	}
 
 	/**
-	 * Parse CSSStyleDeclaration into a plain object
+	 * Parse CSSStyleDeclaration into a plain object, alongside which of its
+	 * properties were declared `!important`.
 	 */
-	#parseDeclarations(style: any): Record<string, string> {
+	#parseDeclarations(style: any): {
+		declarations: Record<string, string>;
+		important: Record<string, boolean>;
+	} {
 		const declarations: Record<string, string> = {};
+		const important: Record<string, boolean> = {};
 		for (let i = 0; i < style.length; i++) {
 			const property = style[i];
 			declarations[property] = style.getPropertyValue(property);
+			if (style.getPropertyPriority(property) === "important") {
+				important[property] = true;
+			}
 		}
-		return declarations;
+		return {declarations, important};
 	}
 
 	/**

@@ -192,46 +192,74 @@ for (const fx of KNOWN_GAPS) {
 	});
 }
 
-// These three resolve to a *color*, not visible text, so they need a
-// getComputedStyle assertion instead of a text-contains check.
-test.todo(
-	"css gap: var() resolves custom properties (currently returns the literal string)",
-	() => {
-		const terminal = new MockProcess({cols: 40, rows: 12});
-		const dom = new TermDOM({process: terminal});
-		dom.document.body.innerHTML = `<style>:root{--fg:red} p{color:var(--fg)}</style><p>x</p>`;
-		const color = dom.window
-			.getComputedStyle(dom.document.querySelector("p")!)
-			.getPropertyValue("color");
-		expect(color).toBe("rgb(255, 0, 0)");
-		dom.dispose();
-	},
-);
+// These resolve to a *color*, not visible text, so they need a getComputedStyle
+// assertion (against the literal author value -- this cascade never normalizes
+// named colors to rgb()) rather than a text-contains check.
+async function colorOf(html: string, sel: string): Promise<string> {
+	const terminal = new MockProcess({cols: 40, rows: 12});
+	const dom = new TermDOM({process: terminal});
+	dom.document.body.innerHTML = html;
+	await nextFrame(dom);
+	const color = dom.window
+		.getComputedStyle(dom.document.querySelector(sel)!)
+		.getPropertyValue("color");
+	dom.dispose();
+	return color;
+}
 
-test.todo(
-	"css gap: !important wins the cascade over higher specificity (currently ignored)",
-	() => {
-		const terminal = new MockProcess({cols: 40, rows: 12});
-		const dom = new TermDOM({process: terminal});
-		dom.document.body.innerHTML = `<style>p{color:blue!important} #a{color:green}</style><p id="a">x</p>`;
-		const color = dom.window
-			.getComputedStyle(dom.document.querySelector("#a")!)
-			.getPropertyValue("color");
-		expect(color).toBe("rgb(0, 0, 255)");
-		dom.dispose();
-	},
-);
+test("css: var() resolves custom properties, inherited from an ancestor", async () => {
+	expect(
+		await colorOf(
+			`<style>:root{--fg:red} p{color:var(--fg)}</style><p>x</p>`,
+			"p",
+		),
+	).toBe("red");
+});
 
-test.todo(
-	"css gap: @media rules apply when the query matches (currently dropped entirely)",
-	() => {
-		const terminal = new MockProcess({cols: 40, rows: 12});
-		const dom = new TermDOM({process: terminal});
-		dom.document.body.innerHTML = `<style>@media all{p{color:orange}}</style><p>x</p>`;
-		const color = dom.window
-			.getComputedStyle(dom.document.querySelector("p")!)
-			.getPropertyValue("color");
-		expect(color).toBe("rgb(255, 165, 0)");
-		dom.dispose();
-	},
-);
+test("css: var() falls back when the custom property is unset", async () => {
+	expect(
+		await colorOf(`<p style="color:var(--missing, blue)">x</p>`, "p"),
+	).toBe("blue");
+});
+
+test("css: !important wins the cascade over higher specificity", async () => {
+	expect(
+		await colorOf(
+			`<style>p{color:blue!important} #a{color:green}</style><p id="a">x</p>`,
+			"#a",
+		),
+	).toBe("blue");
+});
+
+test("css: an important inline style beats an important stylesheet rule", async () => {
+	expect(
+		await colorOf(
+			`<style>p{color:blue!important}</style><p style="color:orange!important">x</p>`,
+			"p",
+		),
+	).toBe("orange");
+});
+
+test("css: @media rules apply when the query matches", async () => {
+	expect(
+		await colorOf(`<style>@media all{p{color:orange}}</style><p>x</p>`, "p"),
+	).toBe("orange");
+});
+
+test("css: @media rules do not apply when the query fails", async () => {
+	expect(
+		await colorOf(
+			`<style>@media (min-width: 999999px){p{color:orange}}</style><p>x</p>`,
+			"p",
+		),
+	).not.toBe("orange");
+});
+
+test("css: color:inherit resolves the parent's value", async () => {
+	expect(
+		await colorOf(
+			`<div style="color:purple"><span id="s" style="color:inherit">x</span></div>`,
+			"#s",
+		),
+	).toBe("purple");
+});
