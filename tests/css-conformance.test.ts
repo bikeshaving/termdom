@@ -66,12 +66,6 @@ const FIXTURES: Fixture[] = [
 		contains: ["B", "I", "U", "S"],
 	},
 	{
-		name: "text-align center and right",
-		cols: 20,
-		html: `<div style="text-align:center">mid</div><div style="text-align:right">end</div>`,
-		contains: ["mid", "end"],
-	},
-	{
 		name: "white-space:pre preserves spacing",
 		html: `<pre style="white-space:pre">a    b\n  c</pre>`,
 		contains: ["a    b"],
@@ -199,6 +193,50 @@ test("css: visibility:visible on a descendant re-shows inside a hidden ancestor"
 	});
 	expect(text).toContain("shown");
 	expect(text).not.toContain("gone");
+});
+
+// text-align: assert actual horizontal position, not just presence -- a
+// liveness-only check can't tell "centered" from "left-aligned but present".
+// justify is intentionally not covered: it isn't implemented (see
+// lineAlignOffset in layout.ts).
+test("css: text-align:center centers a line within its container width", async () => {
+	const {text} = await renderFixture({
+		name: "text-align-center",
+		cols: 20,
+		html: `<div style="text-align:center; width:20px">mid</div>`,
+	});
+	expect(text.split("\n")[0]).toBe("         mid");
+});
+
+test("css: text-align:right pushes a line to the container's right edge", async () => {
+	const {text} = await renderFixture({
+		name: "text-align-right",
+		cols: 20,
+		html: `<div style="text-align:right; width:20px">end</div>`,
+	});
+	expect(text.split("\n")[0]).toBe("                 end");
+});
+
+test("css: text-align:left (the default) does not shift the line", async () => {
+	const {text} = await renderFixture({
+		name: "text-align-left",
+		cols: 20,
+		html: `<div style="width:20px">start</div>`,
+	});
+	expect(text.split("\n")[0]).toBe("start");
+});
+
+test("css: text-align:center re-centers each wrapped line independently", async () => {
+	const {text} = await renderFixture({
+		name: "text-align-center-wrap",
+		cols: 20,
+		rows: 6,
+		html: `<div style="text-align:center; width:20px">aa bb cc dd ee ff gg hh ii jj kk ll</div>`,
+	});
+	const lines = text.split("\n").filter((l) => l.trim());
+	// Each wrapped line is a different length, so a shared center offset would
+	// prove alignment is only computed once for the block rather than per line.
+	expect(lines).toEqual([" aa bb cc dd ee ff ", "  gg hh ii jj kk ll"]);
 });
 
 // Known-broken fixtures: filed as gaps, not silent failures. Each documents a

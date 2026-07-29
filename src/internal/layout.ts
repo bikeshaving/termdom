@@ -23,6 +23,27 @@ function getAbsolutePosition(flexNode: FlexTypes.Node): {
 	return {x, y};
 }
 
+/**
+ * How far a line's content should shift right for text-align:center/right --
+ * left/start/justify all offset zero. (justify -- distributing extra space
+ * between words on a line -- is intentionally not implemented; it would need
+ * to redistribute space during the line-breaking pass itself, not just shift
+ * an already-broken line.)
+ */
+function lineAlignOffset(
+	container: Element | null,
+	containerWidth: number | undefined,
+	lineWidth: number,
+): number {
+	if (!container || containerWidth === undefined) return 0;
+	const align = getPropertyValue(container, "text-align");
+	if (align === "center") return Math.max(0, (containerWidth - lineWidth) / 2);
+	if (align === "right" || align === "end") {
+		return Math.max(0, containerWidth - lineWidth);
+	}
+	return 0;
+}
+
 interface EnumMap {
 	align: FlexTypes.Align;
 	justify: FlexTypes.Justify;
@@ -710,6 +731,13 @@ export interface BreakResult {
 	lines: LineResult[];
 	maxLineWidth: number;
 	totalHeight: number;
+	/**
+	 * The available width lines were broken against, for text-align:center/right
+	 * to offset a line's used width (line.width) within it. Unset when the
+	 * constraint wasn't a finite width (shrink-to-fit content has nothing to
+	 * center/right-align within).
+	 */
+	containerWidth?: number;
 }
 
 interface BreakOptions {
@@ -1132,6 +1160,11 @@ export class LayoutEngine {
 		let accumulatedOffsetX = 0;
 		let accumulatedOffsetY = 0;
 		let currentNode = node;
+		// The element whose text-align governs this breakResult's lines -- the
+		// block container normally, but an inline-block's own style once the walk
+		// below descends into its nested breakResult, since that's a fresh inline
+		// formatting context with its own alignment.
+		let alignContainer: Element | null = runHead.parentElement;
 
 		while (currentNode !== runHead && currentNode.parentElement) {
 			const parent = currentNode.parentElement;
@@ -1151,6 +1184,7 @@ export class LayoutEngine {
 							accumulatedOffsetY += line.y + segment.leaf.boxModel.paddingTop;
 							if (segment.leaf.breakResult) {
 								currentBreakResult = segment.leaf.breakResult;
+								alignContainer = parent;
 							}
 							found = true;
 							break;
@@ -1242,8 +1276,14 @@ export class LayoutEngine {
 					concatenatedText += targetText.text;
 				}
 
+				const alignOffset = lineAlignOffset(
+					alignContainer,
+					currentBreakResult.containerWidth,
+					line.width,
+				);
+
 				const rect = new this.DOMRect(
-					containerX + minX,
+					containerX + minX + alignOffset,
 					containerY + line.y,
 					maxX - minX,
 					line.height,
@@ -2106,6 +2146,9 @@ export class LayoutEngine {
 			height,
 			heightMode,
 		);
+		if (Number.isFinite(width)) {
+			breakResult.containerWidth = width;
+		}
 
 		// Store the BreakResult for later use by getRects()
 		this.breakResultMap.set(node, breakResult);
