@@ -1,0 +1,305 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`css: block with border and padding 1`] = `
+"\x1B[38;2;255;255;255m┌──────────────────┐\x1B[0m                    \x1B[0m
+\x1B[38;2;255;255;255m│\x1B[0m                  \x1B[38;2;255;255;255m│\x1B[0m                    \x1B[0m
+\x1B[38;2;255;255;255m│\x1B[0m  Boxed           \x1B[38;2;255;255;255m│\x1B[0m                    \x1B[0m
+\x1B[38;2;255;255;255m│\x1B[0m                  \x1B[38;2;255;255;255m│\x1B[0m                    \x1B[0m
+\x1B[38;2;255;255;255m└──────────────────┘\x1B[0m                    \x1B[0m
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+"
+`;
+
+exports[`css: margin offsets a block from the edge 1`] = `
+"                                        
+    Indented                            
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+"
+`;
+
+exports[`css: nested blocks stack vertically 1`] = `
+"First                                   
+Second                                  
+Third                                   
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+"
+`;
+
+exports[`css: inline elements share a line 1`] = `
+"onetwothree                             
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+"
+`;
+
+exports[`css: inline-block reserves a box on the line 1`] = `
+"A\x1B[38;2;255;255;255m──────┐\x1B[0mB\x1B[38;2;255;255;255m──────┐\x1B[0m                        \x1B[0m
+\x1B[38;2;255;255;255m│\x1B[0m      \x1B[38;2;255;255;255m││\x1B[0m      \x1B[38;2;255;255;255m│\x1B[0m                        \x1B[0m
+\x1B[38;2;255;255;255m└──────┘└──────┘\x1B[0m                        \x1B[0m
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+"
+`;
+
+exports[`css: display:none removes the element 1`] = `
+"visible                                 
+after                                   
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+"
+`;
+
+exports[`css: bold italic underline strikethrough 1`] = `
+"\x1B[1mB\x1B[0m \x1B[39;3mI\x1B[0m \x1B[39;4mU\x1B[0m S                                 \x1B[0m
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+"
+`;
+
+exports[`css: text-align center and right 1`] = `
+"mid                 
+end                 
+                    
+                    
+                    
+                    
+                    
+                    
+                    
+                    
+                    
+                    
+"
+`;
+
+exports[`css: white-space:pre preserves spacing 1`] = `
+"a    b                                  
+                                        
+  c                                     
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+"
+`;
+
+exports[`css: named, hex, and rgb foreground colors 1`] = `
+"\x1B[38;2;255;0;0mnamed\x1B[0m                                   \x1B[0m
+\x1B[38;2;0;255;0mhex\x1B[0m                                     \x1B[0m
+\x1B[38;2;0;0;255mrgb\x1B[0m                                     \x1B[0m
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+"
+`;
+
+exports[`css: background color fills the box 1`] = `
+"\x1B[38;2;255;255;255;48;2;0;0;255mbg\x1B[39m        \x1B[0m                              \x1B[0m
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+"
+`;
+
+exports[`css: unordered list markers 1`] = `
+"  • alpha                               
+  • beta                                
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+"
+`;
+
+exports[`css: ordered list numbering 1`] = `
+" 1. first                               
+ 2. second                              
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+"
+`;
+
+exports[`css: table with cells 1`] = `
+"\x1B[38;2;255;255;255m┌──────┬──────┐\x1B[0m                         \x1B[0m
+\x1B[38;2;255;255;255m│\x1B[0m r1c1 \x1B[38;2;255;255;255m│\x1B[0m r1c2 \x1B[38;2;255;255;255m│\x1B[0m                         \x1B[0m
+\x1B[38;2;255;255;255m├──────┼──────┤\x1B[0m                         \x1B[0m
+\x1B[38;2;255;255;255m│\x1B[0m r2c1 \x1B[38;2;255;255;255m│\x1B[0m r2c2 \x1B[38;2;255;255;255m│\x1B[0m                         \x1B[0m
+\x1B[38;2;255;255;255m└──────┴──────┘\x1B[0m                         \x1B[0m
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+"
+`;
+
+exports[`css: flex row with justify-content space-between 1`] = `
+"L                  R    
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+"
+`;
+
+exports[`css: flex column stacks children 1`] = `
+"top                                     
+bottom                                  
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+"
+`;
+
+exports[`css: color inherits through nested elements 1`] = `
+"\x1B[38;2;255;0;255mouter inner\x1B[0m                             \x1B[0m
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+"
+`;
+
+exports[`css: id selector beats element selector (specificity) 1`] = `
+"\x1B[38;2;255;0;0mwins-red\x1B[0m                                \x1B[0m
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+"
+`;
+
+exports[`css: later rule wins on equal specificity (source order) 1`] = `
+"\x1B[38;2;0;0;255mwins-blue\x1B[0m                               \x1B[0m
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+"
+`;
