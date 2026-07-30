@@ -2084,6 +2084,8 @@ export class TermDOM {
 		// Detect modifier keys
 		let shiftKey = false;
 		let ctrlKey = false;
+		let altKey = false;
+		let metaKey = false;
 
 		// Ctrl+<letter> arrives as a single raw ASCII control byte (Ctrl+A=0x01
 		// ... Ctrl+Z=0x1A) -- there is no escape sequence, and no way to combine
@@ -2093,6 +2095,7 @@ export class TermDOM {
 		// from Ctrl+M/Ctrl+I, they are the identical byte, so the named key wins
 		// -- matching every other terminal app. Ctrl+C(0x03) never reaches here:
 		// it is intercepted earlier, unconditionally, for SIGINT.
+		const modifiedArrow = key.match(/^\x1b\[1;(\d+)([ABCD])$/);
 		if (
 			charCode >= 1 &&
 			charCode <= 26 &&
@@ -2103,6 +2106,27 @@ export class TermDOM {
 			keyName = String.fromCharCode(charCode + 96); // 0x01 -> 'a' ... 0x1A -> 'z'
 			keyCode = charCode + 64; // 'A'..'Z', the DOM keyCode for the letter itself
 			ctrlKey = true;
+		} else if (modifiedArrow) {
+			// xterm's extended CSI encoding for a modified arrow: CSI 1 ; <mod> <letter>,
+			// e.g. Alt+Up = \x1b[1;3A. The tokenizer already yields this whole sequence
+			// as one token unchanged -- it scans for the CSI final byte (A-D here)
+			// regardless of what parameters precede it -- so this is pure decoding, no
+			// parsing changes needed. mod-1 is a bitmask: 1=Shift, 2=Alt, 4=Ctrl, 8=Meta
+			// (metaKey included for spec-completeness; nothing on macOS actually sends
+			// it, since Cmd+key never reaches the PTY at all).
+			const modifierBits = parseInt(modifiedArrow[1], 10) - 1;
+			shiftKey = (modifierBits & 1) !== 0;
+			altKey = (modifierBits & 2) !== 0;
+			ctrlKey = (modifierBits & 4) !== 0;
+			metaKey = (modifierBits & 8) !== 0;
+			const arrowByLetter: Record<string, [string, number]> = {
+				A: ["ArrowUp", 38],
+				B: ["ArrowDown", 40],
+				C: ["ArrowRight", 39],
+				D: ["ArrowLeft", 37],
+			};
+			[keyName, keyCode] = arrowByLetter[modifiedArrow[2]];
+			charCode = 0;
 		} else {
 			switch (key) {
 				case "\r":
@@ -2165,8 +2189,8 @@ export class TermDOM {
 			which: keyCode,
 			ctrlKey,
 			shiftKey,
-			altKey: false,
-			metaKey: false,
+			altKey,
+			metaKey,
 			bubbles: true,
 			cancelable: true,
 		});
@@ -2204,8 +2228,8 @@ export class TermDOM {
 				which: charCode,
 				ctrlKey,
 				shiftKey,
-				altKey: false,
-				metaKey: false,
+				altKey,
+				metaKey,
 				bubbles: true,
 				cancelable: true,
 			});
@@ -2221,8 +2245,8 @@ export class TermDOM {
 			which: keyCode,
 			ctrlKey,
 			shiftKey,
-			altKey: false,
-			metaKey: false,
+			altKey,
+			metaKey,
 			bubbles: true,
 			cancelable: true,
 		});

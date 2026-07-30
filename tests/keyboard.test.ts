@@ -278,6 +278,90 @@ test("arrow keys are parsed correctly", async () => {
 	);
 });
 
+test("modified arrow keys decode xterm's CSI 1;<mod> encoding", async () => {
+	const terminal = new MockKeyboardProcess();
+	const termdom = new TermDOM({process: terminal});
+	const {document} = termdom;
+	termdom.attach();
+
+	const events: any[] = [];
+	document.body.addEventListener("keydown", (event: any) => {
+		events.push({
+			key: event.key,
+			keyCode: event.keyCode,
+			shiftKey: event.shiftKey,
+			altKey: event.altKey,
+			ctrlKey: event.ctrlKey,
+			metaKey: event.metaKey,
+		});
+	});
+
+	const send = (bytes: string) =>
+		(terminal.stdin as any).emit("data", Buffer.from(bytes));
+
+	send("\x1b[1;3A"); // Alt+Up (mod 3 = 1 + 2)
+	send("\x1b[1;5B"); // Ctrl+Down (mod 5 = 1 + 4)
+	send("\x1b[1;2C"); // Shift+Right (mod 2 = 1 + 1)
+	send("\x1b[1;7D"); // Ctrl+Alt+Left (mod 7 = 1 + 2 + 4)
+
+	expect(events).toEqual([
+		{
+			key: "ArrowUp",
+			keyCode: 38,
+			shiftKey: false,
+			altKey: true,
+			ctrlKey: false,
+			metaKey: false,
+		},
+		{
+			key: "ArrowDown",
+			keyCode: 40,
+			shiftKey: false,
+			altKey: false,
+			ctrlKey: true,
+			metaKey: false,
+		},
+		{
+			key: "ArrowRight",
+			keyCode: 39,
+			shiftKey: true,
+			altKey: false,
+			ctrlKey: false,
+			metaKey: false,
+		},
+		{
+			key: "ArrowLeft",
+			keyCode: 37,
+			shiftKey: false,
+			altKey: true,
+			ctrlKey: true,
+			metaKey: false,
+		},
+	]);
+});
+
+test("an unmodified arrow key has no modifiers set", async () => {
+	const terminal = new MockKeyboardProcess();
+	const termdom = new TermDOM({process: terminal});
+	const {document} = termdom;
+	termdom.attach();
+
+	const events: any[] = [];
+	document.body.addEventListener("keydown", (event: any) => {
+		events.push({
+			key: event.key,
+			shiftKey: event.shiftKey,
+			altKey: event.altKey,
+			ctrlKey: event.ctrlKey,
+		});
+	});
+
+	(terminal.stdin as any).emit("data", Buffer.from("\x1b[A"));
+	expect(events).toEqual([
+		{key: "ArrowUp", shiftKey: false, altKey: false, ctrlKey: false},
+	]);
+});
+
 test("keyboard events bubble up the DOM", async () => {
 	const terminal = new MockKeyboardProcess();
 	const termdom = new TermDOM({process: terminal});
