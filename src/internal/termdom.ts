@@ -887,39 +887,65 @@ export class TermDOM {
 		// Note: JSDOM automatically calls connectedCallback() when elements are added to DOM
 		// No manual lifecycle management needed
 
-		// Use ExpandedTreeWalker to render all children including pseudo-elements and shadow DOM
-		const walker = createExpandedTreeWalker(this.window, element);
-
 		// Collect the children first, then paint them in z-order. Painting straight
 		// down the tree in document order means nothing can ever sit on top of
 		// anything else, which is why an overlay or a modal was impossible: it
 		// would be painted before the content it is supposed to cover.
 		const children: Array<{node: Node; zIndex: number}> = [];
-		for (
-			let childNode = walker.firstChild();
-			childNode;
-			childNode = walker.nextSibling()
-		) {
-			// Cull before the z-index style read: an off-band child costs one map
-			// lookup instead of a computed-style resolution, which is what keeps a
-			// wide container of mostly off-screen children O(screen).
-			if (
-				childNode.nodeType === childNode.ELEMENT_NODE &&
-				this[kLayoutEngine].isSubtreeOutsideBand(
-					childNode as Element,
-					bandTop,
-					bandTop + ctx.rows,
-				)
-			) {
-				continue;
+
+		// Fast path: for a plain vertically-stacked container (no position:
+		// relative/absolute child, no flex-direction other than column -- see
+		// visibleChildrenInBand's own doc comment for exactly what that rules
+		// out), the layout tree already knows which children are in band
+		// without visiting the rest to rule them out. A long list scrolled to
+		// any depth used to cost O(total children) to paint one frame --
+		// worse the longer the list got, even though only ~O(screen) of it
+		// could ever be visible -- because the walker below has no choice but
+		// to step through every sibling to find out which ones are off-band.
+		const fastChildren = this[kLayoutEngine].visibleChildrenInBand(
+			element,
+			bandTop,
+			bandTop + ctx.rows,
+		);
+		if (fastChildren) {
+			for (const childNode of fastChildren) {
+				children.push({
+					node: childNode,
+					zIndex:
+						childNode.nodeType === childNode.ELEMENT_NODE
+							? this.#zIndexOf(childNode as Element)
+							: 0,
+				});
 			}
-			children.push({
-				node: childNode,
-				zIndex:
-					childNode.nodeType === childNode.ELEMENT_NODE
-						? this.#zIndexOf(childNode as Element)
-						: 0,
-			});
+		} else {
+			// Use ExpandedTreeWalker to render all children including pseudo-elements and shadow DOM
+			const walker = createExpandedTreeWalker(this.window, element);
+			for (
+				let childNode = walker.firstChild();
+				childNode;
+				childNode = walker.nextSibling()
+			) {
+				// Cull before the z-index style read: an off-band child costs one map
+				// lookup instead of a computed-style resolution, which is what keeps a
+				// wide container of mostly off-screen children O(screen).
+				if (
+					childNode.nodeType === childNode.ELEMENT_NODE &&
+					this[kLayoutEngine].isSubtreeOutsideBand(
+						childNode as Element,
+						bandTop,
+						bandTop + ctx.rows,
+					)
+				) {
+					continue;
+				}
+				children.push({
+					node: childNode,
+					zIndex:
+						childNode.nodeType === childNode.ELEMENT_NODE
+							? this.#zIndexOf(childNode as Element)
+							: 0,
+				});
+			}
 		}
 
 		// A stable sort, so boxes at the same level keep their document order and

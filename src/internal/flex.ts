@@ -398,6 +398,14 @@ function constraintsMatch(
 	);
 }
 
+/** See Node#unstackedChildCount. */
+function breaksStacking(node: Node): boolean {
+	return (
+		node.style.positionType !== POSITION_TYPE_STATIC ||
+		node.style.display === DISPLAY_NONE
+	);
+}
+
 export class Node {
 	style: Style;
 	layout: LayoutResult;
@@ -414,6 +422,18 @@ export class Node {
 	// extent. Auto-height boxes -- the normal case -- always contain theirs.)
 	extentTop = 0;
 	extentBottom = 0;
+	// How many direct children can't be trusted to keep children[] sorted
+	// top-to-bottom by extentTop -- incrementally maintained by insertChild/
+	// removeChild/setPositionType/setDisplay. Two ways a child breaks that:
+	// position:relative/absolute (its own extent can land anywhere -- an
+	// offset, or full removal from flow -- regardless of DOM position), or
+	// display:none (skipped by flow layout entirely, so its layout.top is
+	// never updated from a stale default -- its extent doesn't reflect where
+	// it sits in document order, unlike a merely zero-height visible box,
+	// which is still correctly slotted). children[] is only guaranteed sorted
+	// when this is 0, which is what lets paint-time culling skip straight to
+	// the visible range instead of visiting every child to rule it out.
+	unstackedChildCount = 0;
 	// Layout caches: the constraints of the last sizing pass and the last full
 	// layout pass, with the sizes they produced. A clean node asked again under
 	// identical constraints restores its size and skips its whole subtree -- so
@@ -444,6 +464,9 @@ export class Node {
 	insertChild(child: Node, index: number): void {
 		child.parent = this;
 		this.children.splice(index, 0, child);
+		if (breaksStacking(child)) {
+			this.unstackedChildCount++;
+		}
 		this.#markDirtyUpward();
 	}
 
@@ -452,6 +475,9 @@ export class Node {
 		if (index !== -1) {
 			this.children.splice(index, 1);
 			child.parent = null;
+			if (breaksStacking(child)) {
+				this.unstackedChildCount--;
+			}
 			this.#markDirtyUpward();
 		}
 	}
@@ -536,7 +562,9 @@ export class Node {
 		this.markDirty();
 	}
 	setPositionType(v: PositionType): void {
+		const before = breaksStacking(this);
 		this.style.positionType = v;
+		this.#updateParentUnstackedCount(before);
 		this.markDirty();
 	}
 	setFlexWrap(v: Wrap): void {
@@ -570,8 +598,18 @@ export class Node {
 	}
 
 	setDisplay(v: Display): void {
+		const before = breaksStacking(this);
 		this.style.display = v;
+		this.#updateParentUnstackedCount(before);
 		this.markDirty();
+	}
+
+	/** Keeps the parent's unstackedChildCount correct after a style setter that can flip breaksStacking(this). */
+	#updateParentUnstackedCount(before: boolean): void {
+		const after = breaksStacking(this);
+		if (this.parent && before !== after) {
+			this.parent.unstackedChildCount += after ? 1 : -1;
+		}
 	}
 
 	setFlexGrow(v: number | undefined): void {

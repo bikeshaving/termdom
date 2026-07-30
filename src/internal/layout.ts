@@ -814,6 +814,13 @@ export class LayoutEngine {
 	nodeMap: Map<Node, FlexTypes.Node>;
 	breakResultMap: Map<Node, BreakResult>;
 
+	// The reverse of nodeMap -- always kept in sync with it via #trackNode/
+	// #untrackNode, never written directly elsewhere. Lets paint-time culling
+	// go from a flex child (found by binary search over its parent's already-
+	// ordered children[]) back to the DOM/pseudo-element node it needs to
+	// paint, without re-deriving that order with a second full tree walk.
+	#domNodeByFlexNode: Map<FlexTypes.Node, Node>;
+
 	// Track nodes that were invalidated and need re-adding during calculateLayout
 	#invalidatedNodes: Set<Node>;
 
@@ -826,6 +833,7 @@ export class LayoutEngine {
 		this.rootElement = window.document.documentElement;
 		this.nodeMap = new Map<Node, FlexTypes.Node>();
 		this.breakResultMap = new Map<Node, BreakResult>();
+		this.#domNodeByFlexNode = new Map<FlexTypes.Node, Node>();
 		this.#invalidatedNodes = new Set<Node>();
 		this.#measureNodes = new Set<FlexTypes.Node>();
 
@@ -932,7 +940,7 @@ export class LayoutEngine {
 
 			this.#measureNodes.delete(flexNode);
 			flexNode.freeRecursive();
-			this.nodeMap.delete(node);
+			this.#untrackNode(node);
 			this.breakResultMap.delete(node);
 			this.#invalidatedNodes.delete(node);
 		}
@@ -948,6 +956,7 @@ export class LayoutEngine {
 		// Clear the maps (now regular Maps for debugging)
 		this.nodeMap = new Map();
 		this.breakResultMap = new Map();
+		this.#domNodeByFlexNode = new Map();
 		this.#invalidatedNodes = new Set();
 		this.#measureNodes = new Set();
 	}
@@ -977,6 +986,85 @@ export class LayoutEngine {
 		const node = this.nodeMap.get(element);
 		if (!node) return false;
 		return node.extentBottom <= top || node.extentTop >= bottom;
+	}
+
+	/**
+	 * The direct DOM/pseudo-element children of `element` whose paint extent
+	 * could intersect document rows [top, bottom), in document order -- found
+	 * with a binary search instead of visiting every child, which is what let
+	 * paint-time culling of a long list cost O(total children) per frame
+	 * instead of O(visible children). Returns null when that search can't be
+	 * trusted: children[] is only guaranteed sorted top-to-bottom by extentTop
+	 * when the container stacks its children vertically in document order
+	 * (flex-direction: column -- block flow's internal representation here,
+	 * see styleFlexNode) and none of them is position:relative/absolute
+	 * (either can land anywhere regardless of DOM order). Callers fall back to
+	 * walking every child themselves in that case, identical to before this
+	 * existed.
+	 */
+	visibleChildrenInBand(
+		element: Element,
+		top: number,
+		bottom: number,
+	): Node[] | null {
+		const flexNode = this.nodeMap.get(element);
+		if (
+			!flexNode ||
+			// A measure-function leaf (an inline/inline-block run head) never gets
+			// its DOM children added to the layout tree at all -- they're measured
+			// as an opaque unit, not walked -- so an empty children[] here means
+			// "not decomposed," not "confirmed nothing to paint." Its real DOM
+			// children (e.g. the run head's own text) still need the walker below.
+			flexNode.measureFunc !== null ||
+			flexNode.unstackedChildCount !== 0 ||
+			flexNode.getFlexDirection() !== Flex.FLEX_DIRECTION_COLUMN ||
+			// A non-run-head member of an inline run (a plain <span> inside
+			// running text, but also -- unlike that span -- an inline-block
+			// sibling, which paints its own box independently rather than
+			// through the run head's text) never gets its own flex node either;
+			// it's counted zero times here despite being a real DOM child. Cheap
+			// proxy for "every DOM child has exactly one children[] entry,"
+			// without walking to find out: pseudo-elements/shadow content
+			// widen this the other way (present in children[], absent from
+			// childNodes), so it's an equality check, not just child count.
+			element.childNodes.length !== flexNode.children.length
+		) {
+			return null;
+		}
+
+		const children = flexNode.children;
+		let lo = 0;
+		let hi = children.length;
+		while (lo < hi) {
+			const mid = (lo + hi) >>> 1;
+			if (children[mid].extentBottom <= top) {
+				lo = mid + 1;
+			} else {
+				hi = mid;
+			}
+		}
+
+		const result: Node[] = [];
+		for (let i = lo; i < children.length; i++) {
+			const child = children[i];
+			if (child.extentTop >= bottom) break;
+			const domNode = this.#domNodeByFlexNode.get(child);
+			if (domNode) result.push(domNode);
+		}
+		return result;
+	}
+
+	#trackNode(domNode: Node, flexNode: FlexTypes.Node): void {
+		this.nodeMap.set(domNode, flexNode);
+		this.#domNodeByFlexNode.set(flexNode, domNode);
+	}
+
+	#untrackNode(domNode: Node): void {
+		const flexNode = this.nodeMap.get(domNode);
+		if (flexNode) {
+			this.#domNodeByFlexNode.delete(flexNode);
+		}
+		this.nodeMap.delete(domNode);
 	}
 
 	getRect(element: Element): DOMRect | null {
@@ -1517,7 +1605,7 @@ export class LayoutEngine {
 					// Node was truly removed from DOM - free it
 					this.#measureNodes.delete(flexNode);
 					flexNode.freeRecursive();
-					this.nodeMap.delete(node);
+					this.#untrackNode(node);
 				} else {
 					// Node is still connected - just remove from parent but keep the layout
 					// node for reuse. It will be reattached during layout calculation.
@@ -1635,7 +1723,7 @@ export class LayoutEngine {
 					}
 					this.#measureNodes.delete(flexNode);
 					flexNode.freeRecursive();
-					this.nodeMap.delete(node);
+					this.#untrackNode(node);
 				}
 			}
 
@@ -1897,7 +1985,7 @@ export class LayoutEngine {
 		let flexNode = this.nodeMap.get(element);
 		if (!flexNode) {
 			flexNode = Flex.Node.createWithConfig(flexConfig);
-			this.nodeMap.set(element, flexNode);
+			this.#trackNode(element, flexNode);
 		}
 
 		styleFlexNode(element, flexNode);
@@ -1988,7 +2076,7 @@ export class LayoutEngine {
 		let flexNode = this.nodeMap.get(text);
 		if (!flexNode) {
 			flexNode = Flex.Node.createWithConfig(flexConfig);
-			this.nodeMap.set(text, flexNode);
+			this.#trackNode(text, flexNode);
 		}
 
 		flexNode.setMeasureFunc(
@@ -2053,7 +2141,7 @@ export class LayoutEngine {
 				}
 				this.#measureNodes.delete(flexNode);
 				flexNode.freeRecursive();
-				this.nodeMap.delete(element);
+				this.#untrackNode(element);
 			}
 			// If element.isConnected is true, element was moved - keep layout node and nodeMap entry
 			// It will be re-added to the new parent when that mutation is processed
@@ -2083,7 +2171,7 @@ export class LayoutEngine {
 				// Text was truly removed from DOM - free it
 				this.#measureNodes.delete(flexNode);
 				flexNode.freeRecursive();
-				this.nodeMap.delete(text);
+				this.#untrackNode(text);
 			}
 		}
 
