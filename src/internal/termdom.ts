@@ -65,6 +65,61 @@ function overflowClipRect(
 	};
 }
 
+// DOM `code` values for the named/special keys the tokenizer already resolves
+// unambiguously. This is what `code` is FOR -- unlike `key`, it identifies the
+// physical key, not the character it produced.
+const NAMED_KEY_CODES: Record<string, string> = {
+	Enter: "Enter",
+	Tab: "Tab",
+	Backspace: "Backspace",
+	Escape: "Escape",
+	ArrowUp: "ArrowUp",
+	ArrowDown: "ArrowDown",
+	ArrowLeft: "ArrowLeft",
+	ArrowRight: "ArrowRight",
+	Home: "Home",
+	End: "End",
+	Insert: "Insert",
+	Delete: "Delete",
+	PageUp: "PageUp",
+	PageDown: "PageDown",
+	F1: "F1",
+	F2: "F2",
+	F3: "F3",
+	F4: "F4",
+	F5: "F5",
+	F6: "F6",
+	F7: "F7",
+	F8: "F8",
+	F9: "F9",
+	F10: "F10",
+	F11: "F11",
+	F12: "F12",
+	" ": "Space",
+};
+
+/**
+ * The DOM `code` for a resolved key name -- physical key identity, independent
+ * of modifiers. Exact for named/special keys (the escape sequence uniquely
+ * identifies the physical key) and for letters/digits under the near-universal
+ * assumption of a US QWERTY layout. Not exact for punctuation: a terminal only
+ * ever tells us the character a key combination *produced* ("!" from Shift+1
+ * on US layout, but a different physical key entirely on others), never which
+ * physical key+modifiers produced it -- there is no protocol-level signal for
+ * that, unlike the modifier bits `ctrlKey`/`altKey`/`shiftKey` decode from.
+ * Falls back to the previous (also approximate) `Key<X>` guess for those.
+ */
+function domCodeFor(keyName: string): string {
+	const named = NAMED_KEY_CODES[keyName];
+	if (named) return named;
+	if (keyName.length === 1) {
+		const upper = keyName.toUpperCase();
+		if (upper >= "A" && upper <= "Z") return `Key${upper}`;
+		if (keyName >= "0" && keyName <= "9") return `Digit${keyName}`;
+	}
+	return `Key${keyName.toUpperCase()}`;
+}
+
 /**
  * Apply CSS `text-transform` at paint time, not layout time. Every character
  * occupies the same cell width regardless of case in a terminal, so unlike a
@@ -652,11 +707,16 @@ export class TermDOM {
 					this.#reclaimMouseCapture();
 				}
 
-				// TODO: Why does this filter on fullscreen????
-				// Route 4: General keyboard events (when not in fullscreen)
-				if (!this.#fullscreenManager.isFullscreen) {
-					this.#dispatchGlobalKeyboardEvent(Buffer.from(keyInput));
-				}
+				// Route 4: General keyboard events. Fullscreen used to have its own,
+				// entirely separate stdin listener and dispatch implementation here
+				// (fullscreen.ts's old #inputHandler) -- duplicated, and silently
+				// out of sync with this one: no tokenization for batched input, no
+				// SGR-mouse-report filtering (a mouse report arriving while
+				// fullscreen was active would get misread as literal keyboard
+				// text), none of the modifier decoding above. One pipeline for
+				// both now; #dispatchGlobalKeyboardEvent itself handles Escape
+				// exiting fullscreen (see below) the same way this used to.
+				this.#dispatchGlobalKeyboardEvent(Buffer.from(keyInput));
 			};
 			stdin.on("data", this.#stdinDataHandler);
 		}
@@ -2072,8 +2132,21 @@ export class TermDOM {
 			return;
 		}
 
-		// Find the focused element or use document.body
-		let targetElement = this.document.activeElement || this.document.body;
+		// Find the focused element. document.activeElement defaults to body when
+		// nothing is focused, so it can't be used with `||` to detect "nothing
+		// focused". In fullscreen, a browser moves focus to the fullscreen
+		// element as part of entering it -- but jsdom's own focus() only takes
+		// elements that are already focusable (tabindex, form controls, etc.),
+		// so an arbitrary fullscreen container is otherwise unreachable here.
+		// Fall back to it (before document.body) so keydown still lands on it,
+		// the same as the dedicated fullscreen dispatch this replaced -- but
+		// still prefer an explicitly focused descendant (e.g. an input inside
+		// the fullscreen element), which the old dispatch ignored.
+		const active = this.document.activeElement;
+		let targetElement =
+			active && active !== this.document.body
+				? active
+				: this.#fullscreenManager.fullscreenElement || this.document.body;
 
 		// Map common key codes (reuse logic from fullscreen manager)
 		let keyName = key;
@@ -2152,6 +2225,13 @@ export class TermDOM {
 					keyCode = 8;
 					charCode = 8;
 					break;
+				case "\x1b":
+					// A lone Escape -- not the start of a CSI/SS3 sequence, since the
+					// tokenizer already peels those off as their own multi-char tokens.
+					keyName = "Escape";
+					keyCode = 27;
+					charCode = 0;
+					break;
 				case "\x1b[A":
 					keyName = "ArrowUp";
 					keyCode = 38;
@@ -2172,6 +2252,101 @@ export class TermDOM {
 					keyCode = 37;
 					charCode = 0;
 					break;
+				case "\x1b[H":
+				case "\x1b[1~":
+					keyName = "Home";
+					keyCode = 36;
+					charCode = 0;
+					break;
+				case "\x1b[F":
+				case "\x1b[4~":
+					keyName = "End";
+					keyCode = 35;
+					charCode = 0;
+					break;
+				case "\x1b[2~":
+					keyName = "Insert";
+					keyCode = 45;
+					charCode = 0;
+					break;
+				case "\x1b[3~":
+					keyName = "Delete";
+					keyCode = 46;
+					charCode = 0;
+					break;
+				case "\x1b[5~":
+					keyName = "PageUp";
+					keyCode = 33;
+					charCode = 0;
+					break;
+				case "\x1b[6~":
+					keyName = "PageDown";
+					keyCode = 34;
+					charCode = 0;
+					break;
+				// F1-F4: SS3 encoding, the modern xterm default. F5-F12: CSI-tilde --
+				// note the historical gap (no ~16), a quirk of the original xterm
+				// numbering every terminal descended from it still follows.
+				case "\x1bOP":
+					keyName = "F1";
+					keyCode = 112;
+					charCode = 0;
+					break;
+				case "\x1bOQ":
+					keyName = "F2";
+					keyCode = 113;
+					charCode = 0;
+					break;
+				case "\x1bOR":
+					keyName = "F3";
+					keyCode = 114;
+					charCode = 0;
+					break;
+				case "\x1bOS":
+					keyName = "F4";
+					keyCode = 115;
+					charCode = 0;
+					break;
+				case "\x1b[15~":
+					keyName = "F5";
+					keyCode = 116;
+					charCode = 0;
+					break;
+				case "\x1b[17~":
+					keyName = "F6";
+					keyCode = 117;
+					charCode = 0;
+					break;
+				case "\x1b[18~":
+					keyName = "F7";
+					keyCode = 118;
+					charCode = 0;
+					break;
+				case "\x1b[19~":
+					keyName = "F8";
+					keyCode = 119;
+					charCode = 0;
+					break;
+				case "\x1b[20~":
+					keyName = "F9";
+					keyCode = 120;
+					charCode = 0;
+					break;
+				case "\x1b[21~":
+					keyName = "F10";
+					keyCode = 121;
+					charCode = 0;
+					break;
+				case "\x1b[23~":
+					keyName = "F11";
+					keyCode = 122;
+					charCode = 0;
+					break;
+				case "\x1b[24~":
+					keyName = "F12";
+					keyCode = 123;
+					charCode = 0;
+					break;
 				default:
 					// For regular characters, keyCode is often the uppercase charCode
 					if (key.length === 1) {
@@ -2180,10 +2355,18 @@ export class TermDOM {
 			}
 		}
 
+		// Escape exits fullscreen unconditionally -- not dispatched to the DOM at
+		// all, the same as a real browser: fullscreen exit is a user-agent
+		// guarantee an app can't trap the user past with preventDefault.
+		if (keyName === "Escape" && this.#fullscreenManager.isFullscreen) {
+			this.#fullscreenManager.exitFullscreen().catch(() => {});
+			return;
+		}
+
 		// Create and dispatch keydown event
 		const keydownEvent = new this.window.KeyboardEvent("keydown", {
 			key: keyName,
-			code: `Key${keyName.toUpperCase()}`,
+			code: domCodeFor(keyName),
 			keyCode: keyCode,
 			charCode: 0,
 			which: keyCode,
@@ -2222,7 +2405,7 @@ export class TermDOM {
 		if (notCanceled && key.length === 1 && charCode >= 32 && charCode < 127) {
 			const keypressEvent = new this.window.KeyboardEvent("keypress", {
 				key: key,
-				code: `Key${key.toUpperCase()}`,
+				code: domCodeFor(key),
 				keyCode: charCode,
 				charCode: charCode,
 				which: charCode,
@@ -2239,7 +2422,7 @@ export class TermDOM {
 		// Always dispatch keyup
 		const keyupEvent = new this.window.KeyboardEvent("keyup", {
 			key: keyName,
-			code: `Key${keyName.toUpperCase()}`,
+			code: domCodeFor(keyName),
 			keyCode: keyCode,
 			charCode: 0,
 			which: keyCode,

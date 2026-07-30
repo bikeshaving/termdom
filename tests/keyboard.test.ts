@@ -647,6 +647,191 @@ test("a focused input parks the real terminal cursor at its caret", async () => 
 	dom.dispose();
 });
 
+test("Escape, navigation, and function keys map to their named keys", async () => {
+	const terminal = new MockProcess({rows: 10, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	dom.attach();
+
+	const events: Array<{key: string; keyCode: number}> = [];
+	dom.document.addEventListener("keydown", (e: any) =>
+		events.push({key: e.key, keyCode: e.keyCode}),
+	);
+
+	const send = (bytes: string) =>
+		(terminal.stdin as any).emit("data", Buffer.from(bytes));
+
+	send("\x1b");
+	send("\x1b[H");
+	send("\x1b[1~");
+	send("\x1b[F");
+	send("\x1b[4~");
+	send("\x1b[2~");
+	send("\x1b[3~");
+	send("\x1b[5~");
+	send("\x1b[6~");
+	send("\x1bOP");
+	send("\x1bOQ");
+	send("\x1bOR");
+	send("\x1bOS");
+	send("\x1b[15~");
+	send("\x1b[17~");
+	send("\x1b[18~");
+	send("\x1b[19~");
+	send("\x1b[20~");
+	send("\x1b[21~");
+	send("\x1b[23~");
+	send("\x1b[24~");
+
+	expect(events).toEqual([
+		{key: "Escape", keyCode: 27},
+		{key: "Home", keyCode: 36},
+		{key: "Home", keyCode: 36},
+		{key: "End", keyCode: 35},
+		{key: "End", keyCode: 35},
+		{key: "Insert", keyCode: 45},
+		{key: "Delete", keyCode: 46},
+		{key: "PageUp", keyCode: 33},
+		{key: "PageDown", keyCode: 34},
+		{key: "F1", keyCode: 112},
+		{key: "F2", keyCode: 113},
+		{key: "F3", keyCode: 114},
+		{key: "F4", keyCode: 115},
+		{key: "F5", keyCode: 116},
+		{key: "F6", keyCode: 117},
+		{key: "F7", keyCode: 118},
+		{key: "F8", keyCode: 119},
+		{key: "F9", keyCode: 120},
+		{key: "F10", keyCode: 121},
+		{key: "F11", keyCode: 122},
+		{key: "F12", keyCode: 123},
+	]);
+	dom.dispose();
+});
+
+test("KeyboardEvent.code reports the physical key, not a formula off .key", async () => {
+	// code used to be `Key${key.toUpperCase()}` for every key, including named
+	// ones -- Enter reported code "KeyENTER" instead of "Enter", ArrowUp
+	// reported "KeyARROWUP" instead of "ArrowUp".
+	const terminal = new MockProcess({rows: 10, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	dom.attach();
+
+	const codes: string[] = [];
+	dom.document.addEventListener("keydown", (e: any) => codes.push(e.code));
+
+	const send = (bytes: string) =>
+		(terminal.stdin as any).emit("data", Buffer.from(bytes));
+
+	send("\r"); // Enter
+	send("\x1b[A"); // ArrowUp
+	send("\x1b[5~"); // PageUp
+	send("a");
+	send("5");
+	send(" ");
+
+	expect(codes).toEqual([
+		"Enter",
+		"ArrowUp",
+		"PageUp",
+		"KeyA",
+		"Digit5",
+		"Space",
+	]);
+	dom.dispose();
+});
+
+test("fullscreen routes keydown through the general pipeline: tokenization, mouse filtering, and modifiers all apply", async () => {
+	const terminal = new MockProcess({rows: 10, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	dom.attach();
+	const {document} = dom;
+	const container = document.createElement("div");
+	document.body.appendChild(container);
+	await container.requestFullscreen();
+
+	const events: Array<{key: string; ctrlKey: boolean}> = [];
+	container.addEventListener("keydown", (e: any) =>
+		events.push({key: e.key, ctrlKey: e.ctrlKey}),
+	);
+
+	// A batched chunk with a stray mouse report glued in -- the old fullscreen
+	// pipeline had no tokenizer and no mouse-report filter, so this would have
+	// dispatched one garbage "keydown" for the whole chunk.
+	(terminal.stdin as any).emit(
+		"data",
+		Buffer.from([
+			0x01,
+			..."j\x1b[<65;4;7Mj".split("").map((c) => c.charCodeAt(0)),
+		]),
+	);
+
+	expect(events).toEqual([
+		{key: "a", ctrlKey: true}, // Ctrl+A
+		{key: "j", ctrlKey: false},
+		{key: "j", ctrlKey: false},
+	]);
+	dom.dispose();
+});
+
+test("Escape still exits fullscreen, now dispatched from the general pipeline", async () => {
+	const terminal = new MockProcess({rows: 10, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	dom.attach();
+	const {document} = dom;
+	const container = document.createElement("div");
+	document.body.appendChild(container);
+	await container.requestFullscreen();
+	expect(document.fullscreenElement).toBe(container);
+
+	const escapeSeenByContainer: string[] = [];
+	container.addEventListener("keydown", (e: any) =>
+		escapeSeenByContainer.push(e.key),
+	);
+
+	(terminal.stdin as any).emit("data", Buffer.from("\x1b"));
+	await new Promise((resolve) => setTimeout(resolve, 10));
+
+	expect(document.fullscreenElement).toBe(null);
+	// Escape exits unconditionally, the same as a real browser -- it is never
+	// dispatched to the DOM, so the app can't preventDefault its way out.
+	expect(escapeSeenByContainer).toEqual([]);
+	dom.dispose();
+});
+
+test("a focused descendant inside a fullscreen element still wins over the element itself", async () => {
+	const terminal = new MockProcess({rows: 10, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	dom.attach();
+	const {document} = dom;
+	const container = document.createElement("div");
+	const input = document.createElement("input");
+	container.appendChild(input);
+	document.body.appendChild(container);
+	await container.requestFullscreen();
+	input.focus();
+
+	(terminal.stdin as any).emit("data", Buffer.from("x"));
+	expect(input.value).toBe("x");
+	dom.dispose();
+});
+
+test("with nothing focused, fullscreen keydown still lands on the fullscreen element", async () => {
+	const terminal = new MockProcess({rows: 10, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	dom.attach();
+	const {document} = dom;
+	const container = document.createElement("div");
+	document.body.appendChild(container);
+	await container.requestFullscreen();
+
+	const keys: string[] = [];
+	container.addEventListener("keydown", (e: any) => keys.push(e.key));
+
+	(terminal.stdin as any).emit("data", Buffer.from("q"));
+	expect(keys).toEqual(["q"]);
+	dom.dispose();
+});
+
 test("wide characters in an input measure in cells, not characters", async () => {
 	// CJK glyphs are two cells wide. Character arithmetic put the caret mid-text
 	// -- IME composition then anchored on top of already-typed glyphs, mangling
