@@ -1857,7 +1857,7 @@ export class LayoutEngine {
 						currentParent.removeChild(existingFlexNode);
 					}
 					// Add to new parent
-					const flexIndex = this.#getFlexIndex(node as Element);
+					const flexIndex = this.#getFlexIndex(node as Element, parentFlexNode);
 					parentFlexNode.insertChild(existingFlexNode, flexIndex);
 				}
 			}
@@ -1875,7 +1875,7 @@ export class LayoutEngine {
 		element: Element,
 		parentFlexNode: FlexTypes.Node | null = null,
 	): void {
-		const flexIndex = this.#getFlexIndex(element);
+		const flexIndex = this.#getFlexIndex(element, parentFlexNode);
 		const display = getPropertyValue(element, "display");
 
 		// For inline elements, we need to find or create the run head
@@ -2117,9 +2117,54 @@ export class LayoutEngine {
 		}
 	}
 
-	#getFlexIndex(element: Element): number {
+	#getFlexIndex(
+		element: Element,
+		parentFlexNode: FlexTypes.Node | null,
+	): number {
 		if (!element.parentElement) {
 			return 0;
+		}
+
+		// Fast path: walk backward from element for the nearest preceding
+		// sibling that already has a flex node, and reuse its position.
+		// Sequential building -- pushing rows into a list/tree in document
+		// order, by far the common case -- finds one on the very first step:
+		// the immediately preceding sibling was just added moments before by
+		// this same mutation-processing pass. getChildIndex searches from the
+		// tail for the same reason (a just-added node sits at or near the
+		// end), so the whole thing is O(1) instead of re-walking every earlier
+		// sibling from the start on every single insertion -- which is what
+		// made appending N children one at a time cost O(N) each, O(N^2) total
+		// (measured: 44 seconds of handleMutations alone for 8,000 sequential
+		// appends into one parent). Falls through to the full forward walk
+		// below only when no tracked sibling is found nearby (inserting at
+		// the front, or a run of skipped inline elements) -- correctness
+		// matches it exactly, since both count only siblings with a flex node.
+		if (parentFlexNode) {
+			const backward = createExpandedTreeWalker(
+				this.window,
+				element.parentElement,
+			);
+			backward.currentNode = element;
+			let prev = backward.previousSibling();
+			while (prev) {
+				let skippedInline = false;
+				if (prev.nodeType === prev.ELEMENT_NODE) {
+					const display = getPropertyValue(prev as Element, "display");
+					skippedInline =
+						(display === "inline" || display === "inline-block") &&
+						!this.isInlineRunHead(prev as Element);
+				}
+				if (!skippedInline) {
+					const prevFlexNode = this.nodeMap.get(prev);
+					if (prevFlexNode) {
+						const idx = parentFlexNode.getChildIndex(prevFlexNode);
+						if (idx !== -1) return idx + 1;
+						break; // stale mapping -- fall back to the full walk
+					}
+				}
+				prev = backward.previousSibling();
+			}
 		}
 
 		// Use the same expanded tree walker as addElementNode to ensure consistency

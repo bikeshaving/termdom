@@ -464,6 +464,16 @@ export class Node {
 		return this.children.length;
 	}
 
+	/**
+	 * This child's position among its siblings, or -1 if it isn't one.
+	 * Searches from the tail: callers that just inserted a run of trailing
+	 * children (the common case -- appending in document order) ask about the
+	 * most recently added one first, which sits at or near the end.
+	 */
+	getChildIndex(child: Node): number {
+		return this.children.lastIndexOf(child);
+	}
+
 	freeRecursive(): void {
 		for (const child of this.children) {
 			child.freeRecursive();
