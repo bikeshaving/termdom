@@ -1158,8 +1158,15 @@ export class TermDOM {
 			(boxModel.paddingLeft || 0) -
 			(boxModel.paddingRight || 0);
 
-		if (element.type === "checkbox") {
-			const mark = element.checked ? "[x]" : "[ ]";
+		if (element.type === "checkbox" || element.type === "radio") {
+			const mark =
+				element.type === "checkbox"
+					? element.checked
+						? "[x]"
+						: "[ ]"
+					: element.checked
+						? "(x)"
+						: "( )";
 			ctx.setText(contentX, contentY, mark, style);
 			if (element === this.document.activeElement) {
 				ctx.setCaret(contentX, contentY);
@@ -1958,11 +1965,26 @@ export class TermDOM {
 		keyName: string,
 		key: string,
 	): void {
-		if (element.type === "checkbox") {
-			// Only Space toggles a checkbox -- real browsers don't accept typed
-			// text into one at all, so every other key here is a no-op.
+		if (element.type === "checkbox" || element.type === "radio") {
+			// Only Space activates these -- real browsers don't accept typed
+			// text into them at all, so every other key here is a no-op. A
+			// checkbox toggles; a radio only ever checks (Space on an
+			// already-checked radio does nothing, per the browser default --
+			// jsdom's checkedness setter handles unchecking the rest of the
+			// same-name group).
 			if (key === " ") {
-				this.#toggleCheckbox(element);
+				if (element.type === "checkbox") {
+					this.#toggleCheckbox(element);
+				} else if (!element.checked) {
+					element.checked = true;
+					element.dispatchEvent(
+						new this.window.Event("change", {
+							bubbles: true,
+							cancelable: false,
+						}),
+					);
+					this.#render();
+				}
 			}
 			return;
 		}
@@ -2211,7 +2233,7 @@ export class TermDOM {
 			target.dispatchEvent(
 				new this.window.MouseEvent("click", {...eventInit, buttons: 0}),
 			);
-			// A checkbox's .checked already flipped -- jsdom's own click
+			// A checkbox/radio's .checked already flipped -- jsdom's own click
 			// activation behavior handles that directly, and forwards it from a
 			// <label for> or wrapping label the same way (honoring
 			// preventDefault in both cases) -- but that's a property change,
@@ -2222,16 +2244,18 @@ export class TermDOM {
 			// alone does not simulate (the direct-click case is already
 			// focused via mousedown's own default action above, so this is a
 			// harmless no-op there).
-			const checkbox =
-				target instanceof (this.window as any).HTMLInputElement &&
-				(target as HTMLInputElement).type === "checkbox"
-					? (target as HTMLInputElement)
-					: target instanceof (this.window as any).HTMLLabelElement &&
-						  (target as any).control?.type === "checkbox"
-						? ((target as any).control as HTMLInputElement)
-						: null;
-			if (checkbox) {
-				checkbox.focus();
+			const isCheckable = (el: unknown): el is HTMLInputElement =>
+				el instanceof (this.window as any).HTMLInputElement &&
+				((el as HTMLInputElement).type === "checkbox" ||
+					(el as HTMLInputElement).type === "radio");
+			const control = isCheckable(target)
+				? target
+				: target instanceof (this.window as any).HTMLLabelElement &&
+					  isCheckable((target as any).control)
+					? ((target as any).control as HTMLInputElement)
+					: null;
+			if (control) {
+				control.focus();
 				this.#render();
 			}
 

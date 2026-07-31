@@ -678,6 +678,48 @@ test("Space toggles a focused checkbox and fires change; other keys are no-ops",
 	dom.dispose();
 });
 
+test("radios render as ( )/(x); Space checks but never unchecks; groups are exclusive", async () => {
+	const terminal = new MockProcess({rows: 10, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	dom.attach();
+	const {document} = dom;
+
+	const a = document.createElement("input");
+	a.type = "radio";
+	a.name = "choice";
+	const b = document.createElement("input");
+	b.type = "radio";
+	b.name = "choice";
+	const row = document.createElement("div");
+	row.append(a, b);
+	document.body.appendChild(row);
+	a.focus();
+	await nextFrame(dom);
+	expect(terminal.getPlainText()).toContain("( )( )");
+
+	// Space checks the focused radio...
+	(terminal.stdin as any).emit("data", Buffer.from(" "));
+	await nextFrame(dom);
+	expect(a.checked).toBe(true);
+	expect(terminal.getPlainText()).toContain("(x)( )");
+
+	// ...but never unchecks it (the browser default; only another group
+	// member can take the check away).
+	(terminal.stdin as any).emit("data", Buffer.from(" "));
+	expect(a.checked).toBe(true);
+
+	// Checking the sibling unchecks this one -- jsdom's own radio-group
+	// exclusivity, surfaced through the same Space path.
+	b.focus();
+	(terminal.stdin as any).emit("data", Buffer.from(" "));
+	await nextFrame(dom);
+	expect(b.checked).toBe(true);
+	expect(a.checked).toBe(false);
+	expect(terminal.getPlainText()).toContain("( )(x)");
+
+	dom.dispose();
+});
+
 test("an autofocus element focuses itself as soon as it's connected, including nested", async () => {
 	const terminal = new MockProcess({rows: 10, cols: 40});
 	const dom = new TermDOM({process: terminal});
