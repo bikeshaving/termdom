@@ -623,7 +623,11 @@ test("a focused input parks the real terminal cursor at its caret", async () => 
 	// to the content bottom, hidden.
 	const terminal = new MockProcess({rows: 12, cols: 40});
 	const dom = new TermDOM({process: terminal});
-	dom.document.body.innerHTML = `<div>title line</div><div><input id="a" type="text"></div>`;
+	// The footer line keeps the content bottom below the input's row, so the
+	// blur assertion can tell "re-parked at the bottom" apart from "never
+	// moved" -- a flat one-row input at the end of the document would park
+	// in place.
+	dom.document.body.innerHTML = `<div>title line</div><div><input id="a" type="text"></div><div>footer line</div>`;
 	const input = dom.document.getElementById("a") as HTMLInputElement;
 	input.focus();
 	await nextFrame(dom);
@@ -934,10 +938,12 @@ test("wide characters in an input measure in cells, not characters", async () =>
 	// CJK glyphs are two cells wide. Character arithmetic put the caret mid-text
 	// -- IME composition then anchored on top of already-typed glyphs, mangling
 	// each committed syllable -- and padEnd by character count pushed the
-	// value's background through the input's right border.
+	// value's cells past the field's 20-cell extent. The "|" right after the
+	// input is the containment witness: it sits at cell 20 exactly when the
+	// field occupies exactly 20 cells.
 	const terminal = new MockProcess({rows: 8, cols: 40});
 	const dom = new TermDOM({process: terminal});
-	dom.document.body.innerHTML = `<div><input id="a" type="text" style="width:20ch"></div>`;
+	dom.document.body.innerHTML = `<div><input id="a" type="text" style="width:20ch">|</div>`;
 	const input = dom.document.getElementById("a") as HTMLInputElement;
 	input.focus();
 	await nextFrame(dom);
@@ -953,9 +959,10 @@ test("wide characters in an input measure in cells, not characters", async () =>
 	}
 
 	expect(input.value).toBe("김남제");
-	expect(line(1)).toBe("│ 김남제           │"); // border intact, bg contained
-	// Caret sits AFTER six cells of glyphs: contentX (2) + 6.
-	expect(buffer.cursorX).toBe(8);
+	// 3 glyphs = 6 cells, padded to the 20-cell field, marker at cell 20.
+	expect(line(0)).toBe("김남제              |");
+	// Caret sits AFTER six CELLS of glyphs, not three characters.
+	expect(buffer.cursorX).toBe(6);
 
 	dom.dispose();
 });

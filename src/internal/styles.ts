@@ -288,19 +288,19 @@ const TERMINAL_ELEMENT_DEFAULTS: Record<string, Record<string, string>> = {
 		padding: "0 1ch",
 		cursor: "pointer",
 	},
+	// A text input is a flat underlined field -- the terminal-native form
+	// convention ("name: ____________"), not a browser border translated
+	// literally into box-drawing characters, which costs three rows and two
+	// columns per field. The underline shows the field's extent (including
+	// its empty cells -- #renderInputElement pads the value to the content
+	// width with the same style), works on any color scheme, and focus
+	// already reads from the real terminal cursor parked at the caret. Width
+	// mirrors the browser's own size=20 default. Authors who want chrome add
+	// it; this is the UA baseline, deliberately lightweight.
 	input: {
 		display: "inline-block",
 		width: "20ch",
-		"border-top-width": "1px",
-		"border-right-width": "1px",
-		"border-bottom-width": "1px",
-		"border-left-width": "1px",
-		"border-top-style": "solid",
-		"border-right-style": "solid",
-		"border-bottom-style": "solid",
-		"border-left-style": "solid",
-		"padding-left": "1ch",
-		"padding-right": "1ch",
+		"text-decoration": "underline",
 	},
 	textarea: {
 		display: "inline-block",
