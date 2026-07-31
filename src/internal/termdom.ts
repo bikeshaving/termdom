@@ -991,15 +991,6 @@ export class TermDOM {
 			ctx.fillRect(rect.left, rect.top, rect.width, rect.height, style.bg);
 		}
 
-		// Handle tables with TanStack integration
-		const display = this.window
-			.getComputedStyle(element)
-			.getPropertyValue("display");
-		if (display === "table" && rect && visible) {
-			this.#renderTable(element, rect, style);
-			// Continue with normal child rendering
-		}
-
 		// Handle borders
 		if (rect && visible) {
 			const borderStyles = resolveBorderStyles(element);
@@ -1698,50 +1689,6 @@ export class TermDOM {
 	}
 
 	// TODO: move this to tables.ts? or layout.ts
-	#renderTable(tableElement: Element, _rect: DOMRect, _style: any): void {
-		// For now, let's fall back to normal rendering and let CSS handle table layout
-		// The layout engine should already handle display: table properly
-		// TODO: Implement table-specific optimizations like borders between cells
-
-		// Check if we have proper table children, if not, render as normal element
-		const hasTableStructure = this.#hasTableStructure(tableElement);
-		if (!hasTableStructure) {
-			// Render children normally
-			return;
-		}
-
-		// For tables with proper structure, add table-specific border rendering
-		this.#renderTableBorders(tableElement, _rect, _style);
-	}
-
-	#hasTableStructure(tableElement: Element): boolean {
-		// Check if element has table-like children (thead, tbody, tr, etc.)
-		const tableElements = ["thead", "tbody", "tfoot", "tr", "th", "td"];
-		return Array.from(tableElement.children).some((child) =>
-			tableElements.includes(child.tagName?.toLowerCase() || ""),
-		);
-	}
-
-	#renderTableBorders(
-		tableElement: Element,
-		_rect: DOMRect,
-		_style: any,
-	): void {
-		// Add borders between table cells
-		// This could be enhanced to draw proper table borders
-		// For now, this is a placeholder for table-specific rendering
-
-		// Check if border-collapse is set
-		const borderCollapse = this.window
-			.getComputedStyle(tableElement)
-			.getPropertyValue("border-collapse");
-
-		if (borderCollapse === "collapse") {
-			// TODO: Implement collapsed border model
-			// This would require drawing borders between cells
-		}
-	}
-
 	#processPendingMutationsAndRender(): boolean {
 		// A geometry read (getBoundingClientRect, elementFromPoint) needs fresh
 		// *layout*, not fresh pixels. This used to fire a full render() here, so
