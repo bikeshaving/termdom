@@ -260,8 +260,10 @@ export class TermDOM {
 	// Monotonic frame counter, used to timestamp observer entries.
 	#renderCount = 0;
 
-	// Input element state tracking
-	#inputCursorPositions = new WeakMap<Element, number>();
+	// Input element state tracking. Only the horizontal scroll of an
+	// overflowed field lives here -- pure presentation, invisible to the DOM.
+	// The caret does NOT: it is the input's own selectionStart/End/Direction,
+	// the standard API.
 	#inputScrollOffsets = new WeakMap<Element, number>();
 
 	// Track whether command start was explicitly detected (even if at row 1)
@@ -1201,13 +1203,15 @@ export class TermDOM {
 		// by character count pushed the value's background straight through the
 		// input's right border.
 		let scrollOffset = this.#inputScrollOffsets.get(element) ?? 0;
-		// Clamp to the CURRENT value: .value can change out from under the
-		// tracked caret (a framework resetting it on submit is the everyday
-		// case), and an out-of-range caret must not survive into geometry.
-		const cursor = Math.min(
-			this.#inputCursorPositions.get(element) ?? value.length,
-			value.length,
-		);
+		// The caret is the input's own selection (selectionStart/End), so a
+		// framework assigning .value can never strand it: per spec, setting
+		// value collapses the selection to the end. The caret sits at the
+		// selection's FOCUS -- the moving end, per selectionDirection -- which
+		// is the end that must stay scrolled into view while extending.
+		const selStart = element.selectionStart ?? value.length;
+		const selEnd = element.selectionEnd ?? value.length;
+		const cursor =
+			element.selectionDirection === "backward" ? selStart : selEnd;
 
 		if (isFocused) {
 			// Keep the caret's CELL offset inside the box.
@@ -1246,9 +1250,27 @@ export class TermDOM {
 			visibleText += char;
 			usedCells += charCells;
 		}
+		const visibleChars = visibleText.length;
 		visibleText += " ".repeat(Math.max(0, contentWidth - usedCells));
 
 		ctx.setText(contentX, contentY, visibleText, textStyle);
+
+		// A selection paints as inverse video over its visible slice --
+		// terminal-native highlight, no color assumptions. (Placeholder text
+		// can never be selected: it only shows for an empty value, whose
+		// selection is necessarily collapsed.)
+		if (isFocused && selEnd > selStart) {
+			const visStart = Math.max(selStart, scrollOffset);
+			const visEnd = Math.min(selEnd, scrollOffset + visibleChars);
+			if (visEnd > visStart) {
+				ctx.setText(
+					contentX + stringWidth(displayText.slice(scrollOffset, visStart)),
+					contentY,
+					displayText.slice(visStart, visEnd),
+					{...textStyle, inverse: true},
+				);
+			}
+		}
 
 		// The caret of a focused input is the REAL terminal cursor, parked there
 		// by the frame -- not an inverse-video imitation. IME composition, screen
@@ -1987,6 +2009,8 @@ export class TermDOM {
 		element: HTMLInputElement,
 		keyName: string,
 		key: string,
+		shiftKey: boolean,
+		ctrlKey: boolean,
 	): void {
 		if (element.type === "checkbox" || element.type === "radio") {
 			// Only Space activates these -- real browsers don't accept typed
@@ -2012,49 +2036,105 @@ export class TermDOM {
 			return;
 		}
 
+		// The caret IS the input's collapsed selection -- selectionStart/End/
+		// Direction, the standard API, not a private shadow of it. That makes
+		// the caret visible to setSelectionRange()/select() callers, and it
+		// means a framework assigning .value can't strand it: per spec (and in
+		// jsdom, verified) setting value collapses the selection to the end.
+		// Direction carries which end of a selection is the moving focus, so
+		// Shift+Left after Shift+Right shrinks the selection instead of
+		// flipping it -- exactly the browser's anchor/focus model.
 		const value = element.value;
-		// Clamp the tracked caret to the CURRENT value. Frameworks assign
-		// .value directly (TodoMVC resets it to "" on submit) and nothing
-		// tells us; a stale caret past the end made every edit key a silent
-		// no-op -- Backspace sliced value.slice(0, cursor-1) + slice(cursor),
-		// which is the value unchanged when cursor > length, and each typed
-		// character pushed the phantom caret further out.
-		const cursor = Math.min(
-			this.#inputCursorPositions.get(element) ?? value.length,
-			value.length,
-		);
+		const start = element.selectionStart ?? value.length;
+		const end = element.selectionEnd ?? value.length;
+		const backward = element.selectionDirection === "backward";
+		const caret = backward ? start : end;
+		const anchor = backward ? end : start;
+		const hasSelection = start !== end;
 
 		let newValue = value;
-		let newCursor = cursor;
+		let newStart = start;
+		let newEnd = end;
+		let newDirection: "forward" | "backward" | "none" = "none";
 
-		if (keyName === "Backspace") {
-			if (cursor > 0) {
-				newValue = value.slice(0, cursor - 1) + value.slice(cursor);
-				newCursor = cursor - 1;
+		// Collapse the selection to a caret at `pos`.
+		const collapse = (pos: number) => {
+			newStart = newEnd = Math.max(0, Math.min(pos, newValue.length));
+		};
+		// Move the selection's focus (anchor stays), Shift+arrow style.
+		const extend = (focus: number) => {
+			const clamped = Math.max(0, Math.min(focus, value.length));
+			newStart = Math.min(anchor, clamped);
+			newEnd = Math.max(anchor, clamped);
+			newDirection = clamped < anchor ? "backward" : "forward";
+		};
+
+		if (ctrlKey && keyName === "a") {
+			// Select all, the browser's Ctrl+A. (Never Cmd+A here: Cmd chords
+			// are consumed by the terminal app and don't reach the PTY.)
+			extend(0);
+			newStart = 0;
+			newEnd = value.length;
+			newDirection = "forward";
+		} else if (keyName === "Backspace") {
+			if (hasSelection) {
+				newValue = value.slice(0, start) + value.slice(end);
+				collapse(start);
+			} else if (caret > 0) {
+				newValue = value.slice(0, caret - 1) + value.slice(caret);
+				collapse(caret - 1);
 			}
 		} else if (keyName === "Delete") {
-			if (cursor < value.length) {
-				newValue = value.slice(0, cursor) + value.slice(cursor + 1);
+			if (hasSelection) {
+				newValue = value.slice(0, start) + value.slice(end);
+				collapse(start);
+			} else if (caret < value.length) {
+				newValue = value.slice(0, caret) + value.slice(caret + 1);
+				collapse(caret);
 			}
 		} else if (keyName === "ArrowLeft") {
-			newCursor = Math.max(0, cursor - 1);
+			if (shiftKey) {
+				extend(caret - 1);
+			} else if (hasSelection) {
+				// A plain arrow collapses to the selection's matching edge,
+				// not one past it -- the browser behavior.
+				collapse(start);
+			} else {
+				collapse(caret - 1);
+			}
 		} else if (keyName === "ArrowRight") {
-			newCursor = Math.min(value.length, cursor + 1);
+			if (shiftKey) {
+				extend(caret + 1);
+			} else if (hasSelection) {
+				collapse(end);
+			} else {
+				collapse(caret + 1);
+			}
 		} else if (keyName === "Home") {
-			newCursor = 0;
+			if (shiftKey) {
+				extend(0);
+			} else {
+				collapse(0);
+			}
 		} else if (keyName === "End") {
-			newCursor = value.length;
+			if (shiftKey) {
+				extend(value.length);
+			} else {
+				collapse(value.length);
+			}
 		} else if (key.length === 1 && key.charCodeAt(0) >= 32) {
-			// Printable character
-			newValue = value.slice(0, cursor) + key + value.slice(cursor);
-			newCursor = cursor + 1;
+			// Printable character: replaces the selection, as in a browser.
+			newValue = value.slice(0, start) + key + value.slice(end);
+			collapse(start + 1);
 		} else {
 			return; // Not an input action
 		}
 
 		if (newValue !== value) {
+			// Order matters: assigning .value collapses the selection to the
+			// end (per spec), so the new caret must be set after.
 			element.value = newValue;
-			this.#inputCursorPositions.set(element, newCursor);
+			element.setSelectionRange(newStart, newEnd, newDirection);
 
 			// Dispatch input event
 			element.dispatchEvent(
@@ -2063,9 +2143,13 @@ export class TermDOM {
 
 			// Trigger re-render since .value changes don't trigger MutationObserver
 			this.#render();
-		} else if (newCursor !== cursor) {
-			this.#inputCursorPositions.set(element, newCursor);
-			// Cursor moved - re-render to update cursor position
+		} else if (
+			newStart !== start ||
+			newEnd !== end ||
+			(newStart !== newEnd && newDirection !== element.selectionDirection)
+		) {
+			// jsdom fires the `select` event itself for a real range change.
+			element.setSelectionRange(newStart, newEnd, newDirection);
 			this.#render();
 		}
 	}
@@ -2369,7 +2453,7 @@ export class TermDOM {
 		// from Ctrl+M/Ctrl+I, they are the identical byte, so the named key wins
 		// -- matching every other terminal app. Ctrl+C(0x03) never reaches here:
 		// it is intercepted earlier, unconditionally, for SIGINT.
-		const modifiedArrow = key.match(/^\x1b\[1;(\d+)([ABCD])$/);
+		const modifiedArrow = key.match(/^\x1b\[1;(\d+)([ABCDHF])$/);
 		if (
 			charCode >= 1 &&
 			charCode <= 26 &&
@@ -2381,25 +2465,28 @@ export class TermDOM {
 			keyCode = charCode + 64; // 'A'..'Z', the DOM keyCode for the letter itself
 			ctrlKey = true;
 		} else if (modifiedArrow) {
-			// xterm's extended CSI encoding for a modified arrow: CSI 1 ; <mod> <letter>,
-			// e.g. Alt+Up = \x1b[1;3A. The tokenizer already yields this whole sequence
-			// as one token unchanged -- it scans for the CSI final byte (A-D here)
-			// regardless of what parameters precede it -- so this is pure decoding, no
-			// parsing changes needed. mod-1 is a bitmask: 1=Shift, 2=Alt, 4=Ctrl, 8=Meta
-			// (metaKey included for spec-completeness; nothing on macOS actually sends
-			// it, since Cmd+key never reaches the PTY at all).
+			// xterm's extended CSI encoding for a modified cursor key: CSI 1 ;
+			// <mod> <letter>, e.g. Alt+Up = \x1b[1;3A, Shift+Home = \x1b[1;2H.
+			// The tokenizer already yields this whole sequence as one token
+			// unchanged -- it scans for the CSI final byte regardless of what
+			// parameters precede it -- so this is pure decoding, no parsing
+			// changes needed. mod-1 is a bitmask: 1=Shift, 2=Alt, 4=Ctrl,
+			// 8=Meta (metaKey included for spec-completeness; nothing on macOS
+			// actually sends it, since Cmd+key never reaches the PTY at all).
 			const modifierBits = parseInt(modifiedArrow[1], 10) - 1;
 			shiftKey = (modifierBits & 1) !== 0;
 			altKey = (modifierBits & 2) !== 0;
 			ctrlKey = (modifierBits & 4) !== 0;
 			metaKey = (modifierBits & 8) !== 0;
-			const arrowByLetter: Record<string, [string, number]> = {
+			const cursorKeyByLetter: Record<string, [string, number]> = {
 				A: ["ArrowUp", 38],
 				B: ["ArrowDown", 40],
 				C: ["ArrowRight", 39],
 				D: ["ArrowLeft", 37],
+				H: ["Home", 36],
+				F: ["End", 35],
 			};
-			[keyName, keyCode] = arrowByLetter[modifiedArrow[2]];
+			[keyName, keyCode] = cursorKeyByLetter[modifiedArrow[2]];
 			charCode = 0;
 		} else {
 			switch (key) {
@@ -2598,6 +2685,8 @@ export class TermDOM {
 					targetElement as HTMLInputElement,
 					keyName,
 					key,
+					shiftKey,
+					ctrlKey,
 				);
 			}
 		}

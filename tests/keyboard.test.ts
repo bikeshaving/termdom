@@ -705,6 +705,116 @@ test("deleting at the end of an overflowed input scrolls earlier text back into 
 	dom.dispose();
 });
 
+test("the input caret IS selectionStart/End -- visible to and drivable by the standard API", async () => {
+	const terminal = new MockProcess({rows: 6, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	dom.attach();
+	const {document} = dom;
+	const input = document.createElement("input");
+	document.body.appendChild(input);
+	input.focus();
+	await nextFrame(dom);
+
+	// Typing moves the standard selection, not a private shadow of it.
+	(terminal.stdin as any).emit("data", Buffer.from("hello"));
+	expect(input.selectionStart).toBe(5);
+	expect(input.selectionEnd).toBe(5);
+
+	// ArrowLeft is observable through the API too.
+	(terminal.stdin as any).emit("data", Buffer.from("\x1b[D\x1b[D"));
+	expect(input.selectionStart).toBe(3);
+
+	// And the API drives the rendered caret: reposition programmatically,
+	// the real terminal cursor parks there on the next frame.
+	input.setSelectionRange(1, 1);
+	await nextFrame(dom);
+	const buffer = (terminal as any).terminal.buffer.active;
+	expect(buffer.cursorX).toBe(1);
+
+	// Typing lands at the API-set caret.
+	(terminal.stdin as any).emit("data", Buffer.from("X"));
+	expect(input.value).toBe("hXello");
+
+	dom.dispose();
+});
+
+test("Shift+arrows extend a selection with the browser's anchor/focus model", async () => {
+	const terminal = new MockProcess({rows: 6, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	dom.attach();
+	const {document} = dom;
+	const input = document.createElement("input");
+	document.body.appendChild(input);
+	input.focus();
+	await nextFrame(dom);
+	(terminal.stdin as any).emit("data", Buffer.from("abcdef"));
+
+	// Shift+Left twice from the end: focus walks left, anchor stays.
+	(terminal.stdin as any).emit("data", Buffer.from("\x1b[1;2D\x1b[1;2D"));
+	expect([input.selectionStart, input.selectionEnd]).toEqual([4, 6]);
+	expect(input.selectionDirection).toBe("backward");
+
+	// Shift+Right SHRINKS the backward selection instead of flipping it.
+	(terminal.stdin as any).emit("data", Buffer.from("\x1b[1;2C"));
+	expect([input.selectionStart, input.selectionEnd]).toEqual([5, 6]);
+
+	// A plain arrow collapses to the matching edge, not one past it.
+	(terminal.stdin as any).emit("data", Buffer.from("\x1b[D"));
+	expect([input.selectionStart, input.selectionEnd]).toEqual([5, 5]);
+
+	// Shift+Home selects back to the start; typing replaces the selection.
+	(terminal.stdin as any).emit("data", Buffer.from("\x1b[1;2H"));
+	expect([input.selectionStart, input.selectionEnd]).toEqual([0, 5]);
+	(terminal.stdin as any).emit("data", Buffer.from("Z"));
+	expect(input.value).toBe("Zf");
+	expect(input.selectionStart).toBe(1);
+
+	dom.dispose();
+});
+
+test("Ctrl+A selects all; Backspace deletes the whole selection", async () => {
+	const terminal = new MockProcess({rows: 6, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	dom.attach();
+	const {document} = dom;
+	const input = document.createElement("input");
+	document.body.appendChild(input);
+	input.focus();
+	await nextFrame(dom);
+	(terminal.stdin as any).emit("data", Buffer.from("some text"));
+
+	(terminal.stdin as any).emit("data", Buffer.from([0x01])); // Ctrl+A
+	expect([input.selectionStart, input.selectionEnd]).toEqual([0, 9]);
+	expect(input.value).toBe("some text"); // selected, not inserted
+
+	(terminal.stdin as any).emit("data", Buffer.from("\x7f")); // Backspace
+	expect(input.value).toBe("");
+	expect([input.selectionStart, input.selectionEnd]).toEqual([0, 0]);
+
+	dom.dispose();
+});
+
+test("a selection paints as inverse video over the selected cells", async () => {
+	const terminal = new MockProcess({rows: 6, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	dom.attach();
+	const {document} = dom;
+	const input = document.createElement("input");
+	document.body.appendChild(input);
+	input.focus();
+	await nextFrame(dom);
+	(terminal.stdin as any).emit("data", Buffer.from("abcdef"));
+	await nextFrame(dom);
+	expect(terminal.getScreenContents()).not.toMatch(/\x1b\[[\d;]*7m/);
+
+	// Select "ef" and the frame carries SGR 7 (inverse) for those cells.
+	(terminal.stdin as any).emit("data", Buffer.from("\x1b[1;2D\x1b[1;2D"));
+	await nextFrame(dom);
+	expect(terminal.getScreenContents()).toMatch(/\x1b\[[\d;]*7m/);
+
+	dom.dispose();
+});
+
 test("a focused input parks the real terminal cursor at its caret", async () => {
 	// IME composition, screen readers and the terminal's cursor style all anchor
 	// to the real cursor -- an inverse-video cell is not a caret. The frame parks
