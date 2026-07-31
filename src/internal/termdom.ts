@@ -1297,10 +1297,14 @@ export class TermDOM {
 	}
 
 	/**
-	 * The style a selection highlight paints with, over `base`: inverse
-	 * video by default -- terminal-native, no color assumptions -- unless
-	 * an author ::selection rule on `element` declares colors, which then
-	 * replace the inversion exactly as they would in a browser.
+	 * The style a selection highlight paints with, over `base`. Everything
+	 * comes from ::selection rules -- there is no built-in fallback. The UA
+	 * document sheet declares the Highlight/HighlightText system-color
+	 * pair, which is CSS's spelling of "swap the cell's colors" and
+	 * translates to SGR 7 (inverse), the terminal-native highlight with no
+	 * color assumptions; author colors replace the system keywords through
+	 * the ordinary cascade. An element no ::selection rule reaches paints
+	 * no highlight at all -- the UA rule is load-bearing.
 	 */
 	#selectionStyleFor(
 		element: Element,
@@ -1309,14 +1313,21 @@ export class TermDOM {
 		const declaration = this.window.getComputedStyle(element, "::selection");
 		const fg = declaration.getPropertyValue("color");
 		const bg = declaration.getPropertyValue("background-color");
-		if (fg || bg) {
-			return {
-				...base,
-				fg: fg ? cssColorToNumber(fg) : base.fg,
-				bg: bg ? cssColorToNumber(bg) : base.bg,
-			};
+		if (!fg && !bg) {
+			return base;
 		}
-		return {...base, inverse: true};
+		const isSystemHighlight = (value: string) =>
+			/^highlight(?:text)?$/i.test(value.trim());
+		const fgAuthored = Boolean(fg) && !isSystemHighlight(fg);
+		const bgAuthored = Boolean(bg) && !isSystemHighlight(bg);
+		if (!fgAuthored && !bgAuthored) {
+			return {...base, inverse: true};
+		}
+		return {
+			...base,
+			fg: fgAuthored ? cssColorToNumber(fg) : base.fg,
+			bg: bgAuthored ? cssColorToNumber(bg) : base.bg,
+		};
 	}
 
 	/**
@@ -1640,9 +1651,9 @@ export class TermDOM {
 		const selectionParent =
 			getPseudoMetadata(textNode)?.hostElement ??
 			compositionParentElement(textNode);
-		const selectionStyle = selectionParent
-			? this.#selectionStyleFor(selectionParent, textStyle)
-			: {...textStyle, inverse: true};
+		if (!selectionParent) return;
+		const selectionStyle = this.#selectionStyleFor(selectionParent, textStyle);
+		if (selectionStyle === textStyle) return; // no ::selection rule reaches here
 
 		const visToData = visualToDataOffsets(textNode.data, rectTexts);
 		let visualBase = 0;

@@ -509,3 +509,51 @@ test("::selection colors replace the inverse-video default", async () => {
 
 	dom.dispose();
 });
+
+// The UA document stylesheet: the engine's own html.css. The architectural
+// rule it enforces: NO painter emits a terminal attribute that didn't come
+// from a computed style -- even the selection's inverse video is declared,
+// as the system-color pair every browser's UA sheet uses.
+
+test("the selection default is a real UA rule, visible through getComputedStyle", async () => {
+	const terminal = new MockProcess({rows: 4, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	const {document} = dom;
+	const input = document.createElement("input");
+	document.body.appendChild(input);
+	await nextFrame(dom);
+
+	// The declared pair is the CSS spelling of "swap fg/bg": deleting this
+	// rule would leave selections unpainted, which is the point -- the rule
+	// is load-bearing, not decorative.
+	const declaration = dom.window.getComputedStyle(input, "::selection");
+	expect(declaration.getPropertyValue("background-color").toLowerCase()).toBe(
+		"highlight",
+	);
+	expect(declaration.getPropertyValue("color").toLowerCase()).toBe(
+		"highlighttext",
+	);
+
+	dom.dispose();
+});
+
+test("selection still paints inverse via the UA rule's system colors", async () => {
+	const terminal = new MockProcess({rows: 4, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	dom.attach();
+	const {document} = dom;
+	const input = document.createElement("input");
+	document.body.appendChild(input);
+	input.focus();
+	await nextFrame(dom);
+	(terminal.stdin as any).emit("data", Buffer.from("abc"));
+	await nextFrame(dom);
+	(terminal.stdin as any).emit("data", Buffer.from("\x1b[1;2D"));
+	await nextFrame(dom);
+
+	const cellAt = (row: number, col: number) =>
+		(terminal as any).terminal.buffer.active.getLine(row).getCell(col);
+	expect(cellAt(0, 2).isInverse()).toBeTruthy();
+
+	dom.dispose();
+});

@@ -1437,6 +1437,22 @@ interface CounterScope {
 	parent?: CounterScope;
 }
 
+/**
+ * The UA DOCUMENT stylesheet -- this engine's html.css. Rules here are UA
+ * origin (every author rule outranks them) and, uniquely, apply in EVERY
+ * tree scope, exactly as a browser's UA sheet styles shadow trees.
+ *
+ * The architectural rule this file anchors: no painter may emit a terminal
+ * attribute that didn't come from a computed style. Even the selection's
+ * inverse video is DECLARED -- the Highlight/HighlightText system-color
+ * pair is CSS's spelling of "swap the cell's colors", and the selection
+ * painters translate exactly that pair to SGR 7. Delete this rule and
+ * selections stop painting; it is load-bearing, not decorative.
+ */
+const UA_DOCUMENT_STYLES = `
+	*::selection { background-color: Highlight; color: HighlightText; }
+`;
+
 export class StyleManager {
 	#computedStyleCache = new WeakMap<Element, CSSStyleDeclaration>();
 	/**
@@ -1452,6 +1468,15 @@ export class StyleManager {
 	>();
 	#parsedRules: ParsedCSSRule[] = [];
 	#stylesheetsDirty = false;
+	/**
+	 * How many document.styleSheets the last parse consumed; -1 = never
+	 * parsed. A changed count re-parses on the next style computation --
+	 * which is what lets a sheet appended right before the first paint
+	 * apply even when no MutationObserver is attached. (The old sentinel
+	 * was #parsedRules.length === 0, which stopped meaning "never parsed"
+	 * the moment the UA document sheet guaranteed one rule.)
+	 */
+	#parsedStyleSheetCount = -1;
 
 	// CSS Counter support
 	#counterScopes = new WeakMap<Element, CounterScope>();
@@ -1643,9 +1668,13 @@ export class StyleManager {
 		element: Element,
 		pseudoElt?: string | null,
 	): globalThis.CSSStyleDeclaration {
-		// Ensure stylesheets are parsed if this is the first time we're
-		// computing styles, or a newly registered shadow root's sheet awaits
-		if (this.#parsedRules.length === 0 || this.#stylesheetsDirty) {
+		// Ensure stylesheets are parsed if the document's sheet list changed
+		// since the last parse, or a newly registered shadow root's sheet
+		// awaits
+		if (
+			this.#stylesheetsDirty ||
+			this.#document.styleSheets.length !== this.#parsedStyleSheetCount
+		) {
 			this.#parseStylesheets();
 		}
 		// Handle pseudo-element styles
@@ -1693,6 +1722,11 @@ export class StyleManager {
 		const document = this.#document;
 		this.#parsedRules = [];
 		this.#stylesheetsDirty = false;
+		this.#parsedStyleSheetCount = document.styleSheets.length;
+
+		// The UA document sheet parses first; origin ordering (not source
+		// order) is what keeps it beneath every author rule.
+		this.#parseStyleSheet(CSSOM.parse(UA_DOCUMENT_STYLES), undefined, true);
 
 		// Parse all stylesheets
 		for (let i = 0; i < document.styleSheets.length; i++) {
@@ -1735,18 +1769,22 @@ export class StyleManager {
 	 * (@supports, @font-face, @keyframes, @import) has no terminal meaning and
 	 * stays dropped.
 	 */
-	#parseStyleSheet(stylesheet: {cssRules: CSSRuleList}, scope?: Node): void {
+	#parseStyleSheet(
+		stylesheet: {cssRules: CSSRuleList},
+		scope?: Node,
+		uaOrigin?: boolean,
+	): void {
 		for (let i = 0; i < stylesheet.cssRules.length; i++) {
 			const rule = stylesheet.cssRules[i];
 			// TODO: use constructor.name
 			if (rule.type === 1) {
 				// CSSRule.STYLE_RULE
-				this.#parseStyleRule(rule as CSSStyleRule, scope);
+				this.#parseStyleRule(rule as CSSStyleRule, scope, uaOrigin);
 			} else if (rule.type === 4) {
 				// CSSRule.MEDIA_RULE
 				const mediaRule = rule as CSSMediaRule;
 				if (this.#mediaQueryMatches(mediaRule.media.mediaText)) {
-					this.#parseStyleSheet(mediaRule, scope);
+					this.#parseStyleSheet(mediaRule, scope, uaOrigin);
 				}
 			}
 		}
@@ -1811,11 +1849,17 @@ export class StyleManager {
 	/**
 	 * Parse a single style rule and extract selector/declarations
 	 */
-	#parseStyleRule(styleRule: CSSStyleRule, scope?: Node): void {
+	#parseStyleRule(
+		styleRule: CSSStyleRule,
+		scope?: Node,
+		uaOriginSheet?: boolean,
+	): void {
 		const selector = styleRule.selectorText;
 		const {declarations, important} = this.#parseDeclarations(styleRule.style);
 		const specificity = this.#calculateSpecificity(selector);
-		const uaOrigin = Boolean(scope && (scope as any).uaInternal);
+		const uaOrigin = Boolean(
+			uaOriginSheet || (scope && (scope as any).uaInternal),
+		);
 
 		// :host selectors only mean anything inside a shadow tree's own
 		// stylesheet; jsdom's matches() rejects them outright, so they parse
@@ -2004,9 +2048,15 @@ export class StyleManager {
 			if (rule.scope) {
 				return root === rule.scope && element.matches(rule.selector);
 			}
-			// Document rules match everything OUTSIDE shadow trees -- including
-			// detached elements (styles resolve before insertion, and always
-			// have here); the boundary they must not cross is the shadow root.
+			// UA document rules apply in EVERY tree scope, as a browser's own
+			// UA sheet styles shadow trees.
+			if (rule.uaOrigin) {
+				return element.matches(rule.selector);
+			}
+			// AUTHOR document rules match everything OUTSIDE shadow trees --
+			// including detached elements (styles resolve before insertion,
+			// and always have here); the boundary they must not cross is the
+			// shadow root.
 			const inShadowTree =
 				root.nodeType === 11 && Boolean((root as ShadowRoot).host);
 			return !inShadowTree && element.matches(rule.selector);
