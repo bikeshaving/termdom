@@ -906,54 +906,31 @@ export function hasShadowRoot(element: Element): boolean {
 }
 
 /**
- * Initialize shadow DOM support for a window (enables attachShadow polyfill)
+ * Create a UA-INTERNAL shadow root on an element: a real DocumentFragment
+ * (functional DOM -- appendChild, querySelector, live text nodes) tagged
+ * with the host, stored in the symbol slot, and invisible to every DOM API
+ * an author can reach: element.shadowRoot stays null, and attachShadow on
+ * the same element keeps throwing exactly as the spec demands for form
+ * controls. This is how a browser input's own internals work, and it is
+ * the mechanism the widget painters hang their trees on.
+ *
+ * There is deliberately NO attachShadow polyfill anymore: jsdom's native
+ * attachShadow is the author path, including its NotSupportedError on
+ * built-ins like <input> -- the old fallback swallowed that throw and
+ * handed back a prototype-only "root" that couldn't hold children at all.
  */
-export function initializeShadowDOM(window: DOMWindow): void {
-	// Polyfill attachShadow for JSDOM environments
-	const originalAttachShadow = window.Element.prototype.attachShadow;
-
-	window.Element.prototype.attachShadow = function (
-		this: Element,
-		options: ShadowRootInit,
-	): ShadowRoot {
-		let shadowRoot: ShadowRoot;
-
-		try {
-			// Call original method first (works for custom elements)
-			shadowRoot = originalAttachShadow.call(this, options);
-		} catch (e) {
-			// JSDOM doesn't support attachShadow on built-in elements
-			// Create a proper ShadowRoot manually
-			shadowRoot = createShadowRoot(window, this, options);
-		}
-
-		setShadowRoot(this, shadowRoot);
-		return shadowRoot;
-	};
-}
-
-/**
- * Create a shadow root manually (for JSDOM compatibility)
- */
-function createShadowRoot(
-	window: DOMWindow,
-	host: Element,
-	options: ShadowRootInit,
-): ShadowRoot {
-	// Create a proper ShadowRoot using JSDOM's internal constructor
-	const ShadowRootConstructor = window.ShadowRoot;
-	const shadowRoot = Object.create(ShadowRootConstructor.prototype);
-
-	// Initialize ShadowRoot properties
-	Object.defineProperties(shadowRoot, {
-		mode: {value: options.mode, writable: false},
-		host: {value: host, writable: false},
-		delegatesFocus: {value: !!options.delegatesFocus, writable: false},
+export function createUAShadowRoot(host: Element): ShadowRoot {
+	const document = host.ownerDocument;
+	if (!document) {
+		throw new Error("UA shadow root host must belong to a document");
+	}
+	const root = document.createDocumentFragment() as unknown as ShadowRoot;
+	Object.defineProperties(root, {
+		host: {value: host},
+		mode: {value: "closed"},
 	});
-
-	Object.setPrototypeOf(shadowRoot, ShadowRootConstructor.prototype);
-
-	return shadowRoot;
+	setShadowRoot(host, root);
+	return root;
 }
 
 // Tree walker and testing utilities

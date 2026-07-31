@@ -1443,6 +1443,7 @@ export class StyleManager {
 		Map<string, Record<string, string>>
 	>();
 	#parsedRules: ParsedCSSRule[] = [];
+	#stylesheetsDirty = false;
 
 	// CSS Counter support
 	#counterScopes = new WeakMap<Element, CounterScope>();
@@ -1488,6 +1489,10 @@ export class StyleManager {
 	 */
 	registerShadowRoot(root: ShadowRoot): void {
 		this.#shadowRoots.add(root);
+		// UA-internal roots are never observer-enrolled, so no STYLE mutation
+		// record will trigger a refresh for the <style> they already contain;
+		// re-parse lazily on the next style computation instead.
+		this.#stylesheetsDirty = true;
 	}
 
 	/**
@@ -1630,8 +1635,9 @@ export class StyleManager {
 		element: Element,
 		pseudoElt?: string | null,
 	): globalThis.CSSStyleDeclaration {
-		// Ensure stylesheets are parsed if this is the first time we're computing styles
-		if (this.#parsedRules.length === 0) {
+		// Ensure stylesheets are parsed if this is the first time we're
+		// computing styles, or a newly registered shadow root's sheet awaits
+		if (this.#parsedRules.length === 0 || this.#stylesheetsDirty) {
 			this.#parseStylesheets();
 		}
 		// Handle pseudo-element styles
@@ -1678,6 +1684,7 @@ export class StyleManager {
 	#parseStylesheets(): void {
 		const document = this.#document;
 		this.#parsedRules = [];
+		this.#stylesheetsDirty = false;
 
 		// Parse all stylesheets
 		for (let i = 0; i < document.styleSheets.length; i++) {
@@ -1803,8 +1810,10 @@ export class StyleManager {
 		// Supported forms: `:host`, `:host(sel)`, `:host:focus`, and any of
 		// those followed by a descendant (or `>` child) selector.
 		if (scope && selector.startsWith(":host")) {
+			// The argument needs balanced-paren matching, not [^)]*: the UA
+			// field sheet's own :host(:not(:focus)) nests one level deep.
 			const hostMatch = selector.match(
-				/^:host(?:\(([^)]*)\))?([^\s>]*)\s*(>)?\s*(.*)$/,
+				/^:host(?:\(((?:[^()]|\([^()]*\))*)\))?([^\s>]*)\s*(>)?\s*(.*)$/,
 			);
 			if (hostMatch) {
 				const [, arg, compound, child, restRaw] = hostMatch;

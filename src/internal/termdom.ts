@@ -21,7 +21,7 @@ import {ScrollingManager} from "./scrolling.js";
 import {
 	compositionParentElement,
 	createExpandedTreeWalker,
-	initializeShadowDOM,
+	createUAShadowRoot,
 	getPseudoMetadata,
 } from "./composition.js";
 
@@ -120,6 +120,23 @@ function domCodeFor(keyName: string): string {
 	}
 	return `Key${keyName.toUpperCase()}`;
 }
+
+/**
+ * The UA stylesheet of a text field's internal shadow tree: the field
+ * design as real, scoped CSS instead of painter constants. The placeholder
+ * is the gray ghost label always; when the host is BLURRED the blank --
+ * and the placeholder riding it -- goes faint: SGR dim via font-weight,
+ * SGR underline via text-decoration, the two classic codes that survive
+ * every terminal and every intermediary. The focused field's solid
+ * underline is not here: it comes from the input's own focus-aware UA
+ * default and INHERITS into every part, so authors override it exactly
+ * where they always could.
+ */
+const FIELD_UA_STYLES = `
+	[part="placeholder"] { color: #808080; }
+	:host(:not(:focus)) [part="placeholder"] { font-weight: lighter; text-decoration: underline; }
+	:host(:not(:focus)) [part="blank"] { font-weight: lighter; text-decoration: underline; }
+`;
 
 /**
  * The terminal has exactly three font weights, and CSS names all three:
@@ -331,6 +348,18 @@ export class TermDOM {
 	// The caret does NOT: it is the input's own selectionStart/End/Direction,
 	// the standard API.
 	#inputScrollOffsets = new WeakMap<Element, number>();
+	// The UA-internal shadow trees behind input widgets, by host: the tree
+	// IS the field's content model (value text, placeholder, blank / toggle
+	// glyph), and the painter reads its computed styles instead of
+	// hardcoding the design. This map just caches the part references.
+	#inputShadowParts = new WeakMap<
+		HTMLInputElement,
+		{
+			kind: "field" | "toggle";
+			spans: Record<string, HTMLElement>;
+			texts: Record<string, Text>;
+		}
+	>();
 
 	// Track whether command start was explicitly detected (even if at row 1)
 	#hasDetectedCommandStart: boolean = false;
@@ -436,9 +465,6 @@ export class TermDOM {
 
 		// Setup DOM inspector
 		setupInspectMethods(this.window);
-
-		// Setup shadow DOM support
-		initializeShadowDOM(this.window);
 
 		this.#initializeConstructorExtensions();
 		this.#renderer = new Renderer(
@@ -1004,7 +1030,7 @@ export class TermDOM {
 			(element as HTMLInputElement).type !== "hidden"
 		) {
 			if (visible) {
-				this.#renderInputElement(element as HTMLInputElement, rect, style, ctx);
+				this.#renderInputElement(element as HTMLInputElement, rect, ctx);
 			}
 			return; // Input elements have no children to render
 		}
@@ -1211,18 +1237,107 @@ export class TermDOM {
 	}
 
 	/**
-	 * Render an input element with its value and cursor
+	 * Build (or rebuild, when the type flips between text-ish and toggle)
+	 * an input's UA-internal shadow tree: real DOM in the symbol slot,
+	 * closed to authors -- element.shadowRoot stays null and attachShadow
+	 * still throws, exactly as for a browser input's own internals. The
+	 * field tree carries a real <style> scoped to its root; parts are
+	 * addressed by the standard `part` attribute, which is what gives
+	 * ::placeholder a real element to resolve onto.
+	 */
+	#ensureInputShadowParts(element: HTMLInputElement): {
+		kind: "field" | "toggle";
+		spans: Record<string, HTMLElement>;
+		texts: Record<string, Text>;
+	} {
+		const kind =
+			element.type === "checkbox" || element.type === "radio"
+				? ("toggle" as const)
+				: ("field" as const);
+		const cached = this.#inputShadowParts.get(element);
+		if (cached && cached.kind === kind) {
+			return cached;
+		}
+
+		const document = this.document;
+		const root = createUAShadowRoot(element);
+		while (root.firstChild) {
+			root.removeChild(root.firstChild);
+		}
+		const spans: Record<string, HTMLElement> = {};
+		const texts: Record<string, Text> = {};
+		const addPart = (part: string) => {
+			const span = document.createElement("span");
+			span.setAttribute("part", part);
+			const text = document.createTextNode("");
+			span.appendChild(text);
+			root.appendChild(span);
+			spans[part] = span;
+			texts[part] = text;
+		};
+		if (kind === "field") {
+			const style = document.createElement("style");
+			style.textContent = FIELD_UA_STYLES;
+			root.appendChild(style);
+			addPart("value");
+			addPart("placeholder");
+			addPart("blank");
+		} else {
+			addPart("glyph");
+		}
+
+		// Scope the UA rules to this root. The root is deliberately NOT
+		// observer-enrolled: the painter syncs the tree from the input's own
+		// state right before reading it, so a mutation record could only
+		// ever schedule a redundant frame.
+		this.#styleManager.registerShadowRoot(root);
+		const parts = {kind, spans, texts};
+		this.#inputShadowParts.set(element, parts);
+		return parts;
+	}
+
+	/**
+	 * A computed style reduced to terminal cell attributes -- one mapping,
+	 * shared by text nodes and the input painter's shadow parts.
+	 */
+	#cellStyleFromComputed(
+		computedStyle: CSSStyleDeclaration,
+	): import("./ansi.js").CellStyle {
+		const color = computedStyle.getPropertyValue("color");
+		const bgColor = computedStyle.getPropertyValue("background-color");
+		const {bold, dim} = resolveFontWeight(
+			computedStyle.getPropertyValue("font-weight"),
+		);
+		return {
+			fg: color && color !== "initial" ? cssColorToNumber(color) : undefined,
+			bg:
+				bgColor && bgColor !== "initial" && bgColor !== "transparent"
+					? cssColorToNumber(bgColor)
+					: undefined,
+			bold,
+			dim,
+			italic: computedStyle.getPropertyValue("font-style") === "italic",
+			underline: computedStyle
+				.getPropertyValue("text-decoration")
+				.includes("underline"),
+			underlineStyle:
+				computedStyle.getPropertyValue("text-decoration-style") === "double"
+					? ("double" as const)
+					: undefined,
+		};
+	}
+
+	/**
+	 * Render an input element: sync its UA shadow tree from the input's own
+	 * state, then paint the tree's parts with their computed styles. What
+	 * remains here is exactly the widget's editor mechanics -- the
+	 * scroll-window over an overflowing value and parking the REAL terminal
+	 * cursor -- the same split a browser makes between its input's shadow
+	 * content and its editor internals.
 	 */
 	#renderInputElement(
 		element: HTMLInputElement,
 		rect: DOMRect,
-		style: {
-			fg?: number;
-			bg?: number;
-			bold: boolean;
-			italic: boolean;
-			underline: boolean;
-		},
 		ctx: import("./ansi.js").DrawingContext,
 	): void {
 		const boxModel = getBoxModel(element);
@@ -1241,7 +1356,9 @@ export class TermDOM {
 			(boxModel.paddingLeft || 0) -
 			(boxModel.paddingRight || 0);
 
-		if (element.type === "checkbox" || element.type === "radio") {
+		const parts = this.#ensureInputShadowParts(element);
+
+		if (parts.kind === "toggle") {
 			const mark =
 				element.type === "checkbox"
 					? element.checked
@@ -1250,7 +1367,20 @@ export class TermDOM {
 					: element.checked
 						? "(x)"
 						: "( )";
-			ctx.setText(contentX, contentY, mark, style);
+			// The glyph is real DOM; its style (the focus underline included,
+			// inherited from the input's own focus-aware default) reads back
+			// off the tree.
+			if (parts.texts.glyph.data !== mark) {
+				parts.texts.glyph.data = mark;
+			}
+			ctx.setText(
+				contentX,
+				contentY,
+				mark,
+				this.#cellStyleFromComputed(
+					this.window.getComputedStyle(parts.spans.glyph),
+				),
+			);
 			if (element === this.document.activeElement) {
 				ctx.setCaret(contentX, contentY);
 			}
@@ -1261,22 +1391,31 @@ export class TermDOM {
 		const placeholder = element.getAttribute("placeholder") || "";
 		const isFocused = element === this.document.activeElement;
 
-		let displayText: string;
-		let textStyle = {...style};
-
-		if (value) {
-			displayText = value;
-		} else if (placeholder) {
-			// Shown focused or not, as in a browser -- the caret just sits at
-			// the field start, over the dimmed text. (This used to be gated on
-			// !isFocused, which nothing noticed while autofocus was
-			// unimplemented: no input ever STARTED focused, so the placeholder
-			// always survived the first paint.)
-			displayText = placeholder;
-			textStyle.fg = 0x808080;
-		} else {
-			displayText = "";
+		// Sync the tree: the input's state is the single source of truth,
+		// the tree is its rendered content model.
+		if (parts.texts.value.data !== value) {
+			parts.texts.value.data = value;
 		}
+		if (parts.texts.placeholder.data !== placeholder) {
+			parts.texts.placeholder.data = placeholder;
+		}
+
+		// Region styles come off the tree: the value inherits the input's
+		// own text style (solid underline when focused), the placeholder and
+		// the blank carry the UA field sheet -- gray ghost label, faint
+		// blank when blurred -- plus whatever the author adds.
+		const textStyle = this.#cellStyleFromComputed(
+			this.window.getComputedStyle(
+				value ? parts.spans.value : parts.spans.placeholder,
+			),
+		);
+		const blankStyle = this.#cellStyleFromComputed(
+			this.window.getComputedStyle(parts.spans.blank),
+		);
+
+		// Shown focused or not, as in a browser -- the caret just sits at
+		// the field start, over the dimmed text.
+		const displayText = value || placeholder;
 
 		// Everything below measures in CELLS, not characters. CJK text is two
 		// cells per glyph, so character arithmetic put the caret mid-text (IME
@@ -1334,42 +1473,25 @@ export class TermDOM {
 		const visibleChars = visibleText.length;
 		visibleText += " ".repeat(Math.max(0, contentWidth - usedCells));
 
-		if (isFocused) {
-			ctx.setText(contentX, contentY, visibleText, textStyle);
+		// The content region paints with its part's style, and the cells the
+		// content spares are the BLANK part -- which the UA sheet renders as
+		// the faint underlined blank when blurred, and which inherits the
+		// solid focus underline like everything else when focused.
+		if (displayText) {
+			ctx.setText(
+				contentX,
+				contentY,
+				visibleText.slice(0, visibleChars),
+				textStyle,
+			);
+			ctx.setText(
+				contentX + usedCells,
+				contentY,
+				visibleText.slice(visibleChars),
+				blankStyle,
+			);
 		} else {
-			// A blurred field is a FAINT BLANK: dim + underline (SGR 2 and 4,
-			// classic codes that survive every terminal and every re-encoding
-			// intermediary) across every cell the value doesn't occupy. In CSS
-			// terms the blank is `font-weight: lighter; text-decoration:
-			// underline` -- both attributes authors can write themselves
-			// (resolveFontWeight maps light weights to faint); only the
-			// value/remainder REGION split is widget magic, pending a field
-			// pseudo-element under the divergence doctrine. Typed
-			// content reads as plain text; the placeholder is part of the
-			// blank -- a ghost label sitting on it -- so it keeps its gray and
-			// goes faint with it. Focus swaps the whole extent to the solid
-			// underline (via the focus-aware default), the live-wire signal.
-			// This split is the UA widget painter's job, the same place the
-			// placeholder's gray lives -- browsers style their field
-			// internals the same way (::placeholder is UA magic, not author
-			// CSS).
-			const blank = {...textStyle, underline: true, dim: true};
-			if (value) {
-				ctx.setText(
-					contentX,
-					contentY,
-					visibleText.slice(0, visibleChars),
-					textStyle,
-				);
-				ctx.setText(
-					contentX + usedCells,
-					contentY,
-					visibleText.slice(visibleChars),
-					blank,
-				);
-			} else {
-				ctx.setText(contentX, contentY, visibleText, blank);
-			}
+			ctx.setText(contentX, contentY, visibleText, blankStyle);
 		}
 
 		// A selection paints as inverse video over its visible slice --
@@ -1438,38 +1560,7 @@ export class TermDOM {
 		if (computedStyle.getPropertyValue("visibility") === "hidden") return;
 
 		const textTransform = computedStyle.getPropertyValue("text-transform");
-		const textColor = computedStyle.getPropertyValue("color");
-		const textBgColor = computedStyle.getPropertyValue("background-color");
-		const {bold: textBold, dim: textDim} = resolveFontWeight(
-			computedStyle.getPropertyValue("font-weight"),
-		);
-		const textItalic =
-			computedStyle.getPropertyValue("font-style") === "italic";
-		const textUnderline = computedStyle
-			.getPropertyValue("text-decoration")
-			.includes("underline");
-		const textUnderlineStyle =
-			computedStyle.getPropertyValue("text-decoration-style") === "double"
-				? ("double" as const)
-				: undefined;
-
-		const textStyle = {
-			fg:
-				textColor && textColor !== "initial"
-					? cssColorToNumber(textColor)
-					: undefined,
-			bg:
-				textBgColor &&
-				textBgColor !== "initial" &&
-				textBgColor !== "transparent"
-					? cssColorToNumber(textBgColor)
-					: undefined,
-			bold: textBold,
-			dim: textDim,
-			italic: textItalic,
-			underline: textUnderline,
-			underlineStyle: textUnderlineStyle,
-		};
+		const textStyle = this.#cellStyleFromComputed(computedStyle);
 
 		const rectTexts = this[kLayoutEngine].getRectTexts(textNode);
 		if (rectTexts.length > 0) {

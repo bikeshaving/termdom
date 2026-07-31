@@ -402,3 +402,61 @@ test("slotted content inherits through the slot's shadow-tree chain", async () =
 
 	dom.dispose();
 });
+
+// Input internals as a UA shadow tree: the widget painter's content model
+// is real (UA-hidden) DOM in the symbol slot, styled by a real scoped
+// stylesheet -- while staying exactly as closed as a browser input's own
+// internals.
+
+test("input internals are a UA shadow tree, closed to authors", async () => {
+	const terminal = new MockProcess({rows: 4, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	const {document} = dom;
+	const input = document.createElement("input");
+	input.value = "typed";
+	document.body.appendChild(input);
+	await nextFrame(dom);
+
+	expect(terminal.getPlainText()).toContain("typed");
+	// The UA tree never leaks: no author-visible root, and attachShadow on
+	// an input keeps throwing exactly as the spec demands for form controls.
+	expect(input.shadowRoot).toBeNull();
+	expect(() => input.attachShadow({mode: "open"})).toThrow();
+
+	dom.dispose();
+});
+
+test("the field design survives the round-trip through the UA stylesheet", async () => {
+	// Same assertions as the keyboard suite's faint-blank oracle, but the
+	// styles now come from scoped :host(:not(:focus)) rules on real parts
+	// rather than painter constants -- this pins the whole pipeline: UA
+	// sheet parsing, scope gating, :host matching, focus invalidation of
+	// the shadow tree, and inheritance into the parts.
+	const terminal = new MockProcess({rows: 4, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	const {document} = dom;
+	const input = document.createElement("input");
+	input.setAttribute("placeholder", "hint");
+	document.body.appendChild(input);
+	await nextFrame(dom);
+
+	const cellAt = (row: number, col: number) =>
+		(terminal as any).terminal.buffer.active.getLine(row).getCell(col);
+
+	// Blurred: the placeholder rides the faint blank.
+	expect(cellAt(0, 0).isDim()).toBeTruthy();
+	expect(cellAt(0, 0).isUnderline()).toBeTruthy();
+
+	input.focus();
+	await nextFrame(dom);
+	// Focused: solid underline, no dim -- the :not(:focus) rules released
+	// their grip and the host's focus default took over.
+	expect(cellAt(0, 0).isDim()).toBeFalsy();
+	expect(cellAt(0, 0).isUnderline()).toBeTruthy();
+
+	input.blur();
+	await nextFrame(dom);
+	expect(cellAt(0, 0).isDim()).toBeTruthy();
+
+	dom.dispose();
+});
