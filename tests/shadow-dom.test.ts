@@ -460,3 +460,52 @@ test("the field design survives the round-trip through the UA stylesheet", async
 
 	dom.dispose();
 });
+
+test("::placeholder is author-styleable and cascades over the UA gray", async () => {
+	// input::placeholder resolves onto the UA tree's [part="placeholder"]
+	// span. Author rules beat the UA sheet by cascade ORIGIN, not
+	// specificity -- the UA attribute selector would otherwise outrank
+	// every plain author selector. Properties the author doesn't touch
+	// keep their UA values: the blurred placeholder stays faint.
+	const terminal = new MockProcess({rows: 4, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	const {document} = dom;
+	document.head.innerHTML = `<style>input::placeholder { color: #ff0000 }</style>`;
+	const input = document.createElement("input");
+	input.setAttribute("placeholder", "hint");
+	document.body.appendChild(input);
+	await nextFrame(dom);
+
+	const cellAt = (row: number, col: number) =>
+		(terminal as any).terminal.buffer.active.getLine(row).getCell(col);
+	expect(cellAt(0, 0).getFgColor()).toBe(0xff0000);
+	expect(cellAt(0, 0).isDim()).toBeTruthy(); // UA blurred-state rule holds
+	expect(cellAt(0, 0).isUnderline()).toBeTruthy();
+
+	dom.dispose();
+});
+
+test("::selection colors replace the inverse-video default", async () => {
+	const terminal = new MockProcess({rows: 4, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	dom.attach();
+	const {document} = dom;
+	document.head.innerHTML = `<style>input::selection { background-color: #0000ff; color: #ffffff }</style>`;
+	const input = document.createElement("input");
+	document.body.appendChild(input);
+	input.focus();
+	await nextFrame(dom);
+	(terminal.stdin as any).emit("data", Buffer.from("abc"));
+	await nextFrame(dom);
+	// Shift+Left selects "c".
+	(terminal.stdin as any).emit("data", Buffer.from("\x1b[1;2D"));
+	await nextFrame(dom);
+
+	const cellAt = (row: number, col: number) =>
+		(terminal as any).terminal.buffer.active.getLine(row).getCell(col);
+	expect(cellAt(0, 2).isInverse()).toBeFalsy();
+	expect(cellAt(0, 2).getBgColor()).toBe(0x0000ff);
+	expect(cellAt(0, 2).getFgColor()).toBe(0xffffff);
+
+	dom.dispose();
+});

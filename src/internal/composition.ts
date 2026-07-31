@@ -928,6 +928,9 @@ export function createUAShadowRoot(host: Element): ShadowRoot {
 	Object.defineProperties(root, {
 		host: {value: host},
 		mode: {value: "closed"},
+		// Cascade-origin marker: rules from this root's stylesheets are UA
+		// rules, which every author rule outranks regardless of specificity.
+		uaInternal: {value: true},
 	});
 	setShadowRoot(host, root);
 	return root;

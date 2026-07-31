@@ -1297,6 +1297,29 @@ export class TermDOM {
 	}
 
 	/**
+	 * The style a selection highlight paints with, over `base`: inverse
+	 * video by default -- terminal-native, no color assumptions -- unless
+	 * an author ::selection rule on `element` declares colors, which then
+	 * replace the inversion exactly as they would in a browser.
+	 */
+	#selectionStyleFor(
+		element: Element,
+		base: import("./ansi.js").CellStyle,
+	): import("./ansi.js").CellStyle {
+		const declaration = this.window.getComputedStyle(element, "::selection");
+		const fg = declaration.getPropertyValue("color");
+		const bg = declaration.getPropertyValue("background-color");
+		if (fg || bg) {
+			return {
+				...base,
+				fg: fg ? cssColorToNumber(fg) : base.fg,
+				bg: bg ? cssColorToNumber(bg) : base.bg,
+			};
+		}
+		return {...base, inverse: true};
+	}
+
+	/**
 	 * A computed style reduced to terminal cell attributes -- one mapping,
 	 * shared by text nodes and the input painter's shadow parts.
 	 */
@@ -1506,7 +1529,7 @@ export class TermDOM {
 					contentX + stringWidth(displayText.slice(scrollOffset, visStart)),
 					contentY,
 					displayText.slice(visStart, visEnd),
-					{...textStyle, inverse: true},
+					this.#selectionStyleFor(element, textStyle),
 				);
 			}
 		}
@@ -1614,6 +1637,13 @@ export class TermDOM {
 			range.endContainer === textNode ? range.endOffset : textNode.data.length;
 		if (to <= from) return;
 
+		const selectionParent =
+			getPseudoMetadata(textNode)?.hostElement ??
+			compositionParentElement(textNode);
+		const selectionStyle = selectionParent
+			? this.#selectionStyleFor(selectionParent, textStyle)
+			: {...textStyle, inverse: true};
+
 		const visToData = visualToDataOffsets(textNode.data, rectTexts);
 		let visualBase = 0;
 		for (const rectText of rectTexts) {
@@ -1635,7 +1665,7 @@ export class TermDOM {
 							stringWidth(rectText.text.slice(0, runStart)),
 						Math.round(rectText.rect.y),
 						applyTextTransform(rectText.text.slice(runStart, i), textTransform),
-						{...textStyle, inverse: true},
+						selectionStyle,
 					);
 					runStart = -1;
 				}

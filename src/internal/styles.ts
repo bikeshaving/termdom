@@ -1416,6 +1416,14 @@ interface ParsedCSSRule {
 	 * `child` restricts `rest` to direct children of the shadow root.
 	 */
 	host?: {predicate: string | null; rest: string | null; child: boolean};
+	/**
+	 * True for rules declared by a UA-internal shadow tree's stylesheet.
+	 * Cascade ORIGIN, the tier above specificity: every author rule beats
+	 * every UA rule, which is what lets `input::placeholder { color }`
+	 * override the UA sheet's gray despite the UA attribute selector's
+	 * higher specificity -- exactly the browser's origin ordering.
+	 */
+	uaOrigin?: boolean;
 }
 
 // CSS Counter interfaces
@@ -1706,8 +1714,12 @@ export class StyleManager {
 			}
 		}
 
-		// Sort rules by specificity for cascade resolution
+		// Sort rules for cascade resolution: origin first (UA rules sort
+		// below every author rule -- later wins), then specificity.
 		this.#parsedRules.sort((a, b) => {
+			if (Boolean(a.uaOrigin) !== Boolean(b.uaOrigin)) {
+				return a.uaOrigin ? -1 : 1;
+			}
 			if (a.specificity !== b.specificity) {
 				return a.specificity < b.specificity ? -1 : 1;
 			}
@@ -1803,6 +1815,7 @@ export class StyleManager {
 		const selector = styleRule.selectorText;
 		const {declarations, important} = this.#parseDeclarations(styleRule.style);
 		const specificity = this.#calculateSpecificity(selector);
+		const uaOrigin = Boolean(scope && (scope as any).uaInternal);
 
 		// :host selectors only mean anything inside a shadow tree's own
 		// stylesheet; jsdom's matches() rejects them outright, so they parse
@@ -1826,14 +1839,18 @@ export class StyleManager {
 					specificity,
 					scope,
 					host: {predicate, rest, child: Boolean(child)},
+					uaOrigin,
 				});
 				return;
 			}
 		}
 
-		// Check if this is a pseudo-element rule
+		// Check if this is a pseudo-element rule. ::placeholder/::selection
+		// are widget-part pseudos: no content node ever attaches for them --
+		// they resolve onto the UA shadow tree's [part] elements (see
+		// #getMatchingRules) or the selection painter.
 		const pseudoMatch = selector.match(
-			/^(.+)(::(?:before|after|marker|first-line|first-letter))(.*)$/,
+			/^(.+)(::(?:before|after|marker|first-line|first-letter|placeholder|selection))(.*)$/,
 		);
 
 		if (pseudoMatch) {
@@ -1845,6 +1862,7 @@ export class StyleManager {
 				specificity,
 				pseudoElement,
 				scope,
+				uaOrigin,
 			});
 		} else {
 			this.#parsedRules.push({
@@ -1853,6 +1871,7 @@ export class StyleManager {
 				important,
 				specificity,
 				scope,
+				uaOrigin,
 			});
 		}
 	}
@@ -1919,10 +1938,46 @@ export class StyleManager {
 	 * Get matching CSS rules for an element
 	 */
 	#getMatchingRules(element: Element): ParsedCSSRule[] {
+		// A UA shadow part IS the element its part pseudo styles: the host's
+		// ::placeholder rules cascade directly onto the [part="placeholder"]
+		// span, the way a browser resolves ::placeholder onto its input's
+		// internal placeholder element.
+		const partPseudo = this.#partPseudoFor(element);
+		const partHost = partPseudo
+			? (element.getRootNode() as ShadowRoot).host
+			: null;
 		return this.#parsedRules.filter((rule) => {
-			if (rule.pseudoElement) return false; // Skip pseudo-element rules for regular elements
+			if (rule.pseudoElement) {
+				return (
+					partPseudo !== null &&
+					partHost !== null &&
+					rule.pseudoElement === partPseudo &&
+					this.#ruleMatches(partHost, rule)
+				);
+			}
 			return this.#ruleMatches(element, rule);
 		});
+	}
+
+	/**
+	 * The part pseudo-element a UA shadow part element answers to, if any:
+	 * "::placeholder" for the [part="placeholder"] span of an input's
+	 * UA-internal tree. Author shadow trees are not eligible -- their parts
+	 * are theirs to style from inside.
+	 */
+	#partPseudoFor(element: Element): string | null {
+		const root = element.getRootNode();
+		if (
+			root.nodeType === 11 &&
+			(root as any).uaInternal &&
+			(root as ShadowRoot).host
+		) {
+			const part = element.getAttribute("part");
+			if (part === "placeholder" || part === "selection") {
+				return `::${part}`;
+			}
+		}
+		return null;
 	}
 
 	/**
@@ -2174,7 +2229,11 @@ export class StyleManager {
 		const pseudoRulesByType = new Map<string, ParsedCSSRule[]>();
 
 		for (const rule of this.#parsedRules) {
-			if (rule.pseudoElement) {
+			if (
+				rule.pseudoElement &&
+				rule.pseudoElement !== "::placeholder" &&
+				rule.pseudoElement !== "::selection"
+			) {
 				const rules = pseudoRulesByType.get(rule.pseudoElement) || [];
 				rules.push(rule);
 				pseudoRulesByType.set(rule.pseudoElement, rules);
