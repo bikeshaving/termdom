@@ -288,19 +288,21 @@ const TERMINAL_ELEMENT_DEFAULTS: Record<string, Record<string, string>> = {
 		padding: "0 1ch",
 		cursor: "pointer",
 	},
-	// A text input is a flat underlined field -- the terminal-native form
-	// convention ("name: ____________"), not a browser border translated
-	// literally into box-drawing characters, which costs three rows and two
-	// columns per field. The underline shows the field's extent (including
-	// its empty cells -- #renderInputElement pads the value to the content
-	// width with the same style), works on any color scheme, and focus
-	// already reads from the real terminal cursor parked at the caret. Width
-	// mirrors the browser's own size=20 default. Authors who want chrome add
-	// it; this is the UA baseline, deliberately lightweight.
+	// A text input is a flat field: bare when blurred (dim placeholder and
+	// the content are the affordance -- the convention of the entire
+	// prompt-tool ecosystem), underlined when FOCUSED (see
+	// getElementDefaults) -- "underline means live." Plain SGR 4 only:
+	// styled underlines (4:2) verified dead through the baseline
+	// tmux+Terminal.app chain, where the intermediary normalizes the
+	// graceful 4-then-4:2 pair into one styled attribute and the terminal
+	// drops it entirely -- the focused field would lose its marker on
+	// exactly the stack we promise works. No borders (three rows and two
+	// columns per field), no backgrounds (no theme-safe color exists).
+	// Width mirrors the browser's own size=20 default. This is the UA
+	// baseline, deliberately lightweight; authors who want chrome add it.
 	input: {
 		display: "inline-block",
 		width: "20ch",
-		"text-decoration": "underline",
 	},
 	textarea: {
 		display: "inline-block",
@@ -373,21 +375,17 @@ function getElementDefaults(
 ): Record<string, string> | undefined {
 	if (element.tagName === "INPUT") {
 		const input = element as HTMLInputElement;
-		// The focused field's underline goes double -- the UA "this is the
-		// live one" signal, degrading to plain single on terminals without
-		// styled-underline support (where the parked cursor still tells).
-		// Focus changes invalidate the computed-style cache (see
-		// handleFocusChange), so this is re-consulted at the right moments.
+		// The FOCUSED field gets the underline -- the UA "this is the live
+		// one" signal, in plain SGR 4, the one underline every terminal and
+		// every intermediary renders. Focus changes invalidate the
+		// computed-style cache (see handleFocusChange), so this is
+		// re-consulted at the right moments.
 		const focused = input.ownerDocument?.activeElement === input;
 		if (input.type === "checkbox" || input.type === "radio") {
-			// The compact glyph is bare when blurred; focus underlines it,
-			// double where supported -- same live-wire language as the field.
+			// The compact glyph is bare when blurred; focus underlines it --
+			// same live-wire language as the text field.
 			return focused
-				? {
-						...CHECKBOX_DEFAULTS,
-						"text-decoration": "underline",
-						"text-decoration-style": "double",
-					}
+				? {...CHECKBOX_DEFAULTS, "text-decoration": "underline"}
 				: CHECKBOX_DEFAULTS;
 		}
 		// The size attribute drives a text input's default width, one column
@@ -401,7 +399,7 @@ function getElementDefaults(
 				merged.width = `${size}ch`;
 			}
 			if (focused) {
-				merged["text-decoration-style"] = "double";
+				merged["text-decoration"] = "underline";
 			}
 			return merged;
 		}

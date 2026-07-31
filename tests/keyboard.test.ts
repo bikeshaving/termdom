@@ -1239,15 +1239,15 @@ test(":focus rules apply on focus and revert on blur", async () => {
 	dom.dispose();
 });
 
-test("a focused field's underline goes double (SGR 4:2), single when blurred", async () => {
-	// The UA live-wire signal: every field is single-underlined; the focused
-	// one upgrades to text-decoration-style: double, emitted as 4 then 4:2
-	// so terminals without styled-underline support keep the single
-	// underline. Verified against both oracles before building: tmux tracks
-	// 4:2 natively, xterm-headless parses it and keeps the underline flag.
+test("the focused field is underlined; blurred fields are bare", async () => {
+	// The UA live-wire signal, in plain SGR 4 -- the one underline every
+	// terminal AND every intermediary renders. Styled underlines (4:2) are
+	// deliberately absent from the defaults: verified by eye that the
+	// tmux+Apple Terminal chain drops them entirely, which would cost the
+	// focused field its marker on the baseline stack.
 	const terminal = new MockProcess({rows: 5, cols: 40});
 	const dom = new TermDOM({process: terminal});
-	const {document} = dom;
+	const {document, window} = dom;
 	let raw = "";
 	const originalWrite = terminal.stdout.write.bind(terminal.stdout);
 	(terminal.stdout as any).write = (chunk: any, enc?: any, cb?: any) => {
@@ -1258,21 +1258,48 @@ test("a focused field's underline goes double (SGR 4:2), single when blurred", a
 	const b = document.createElement("input");
 	document.body.append(a, b);
 	await nextFrame(dom);
-	expect(raw).not.toContain("4:2");
+	// Blurred: no underline anywhere in the frame.
+	expect(raw).not.toMatch(/\x1b\[[\d;]*\b4(?![\d:])[\d;]*m/);
 
 	a.focus();
 	await nextFrame(dom);
-	expect(raw).toContain("4:2");
+	expect(raw).toMatch(/\x1b\[[\d;]*\b4(?![\d:])[\d;]*m/);
+	expect(raw).not.toContain("4:2"); // never styled underlines from the UA
 
-	// Blur repaints the field back to a single underline: after the focus
-	// moves to b, fresh frames must still double-underline (b) -- and a
-	// full-clear assertion isn't possible on the raw stream, so assert the
-	// computed styles directly for the un-focus half.
+	const decoration = (el: Element) =>
+		window.getComputedStyle(el).getPropertyValue("text-decoration");
+	expect(decoration(a)).toContain("underline");
+	expect(decoration(b)).not.toContain("underline");
 	b.focus();
-	const style = (el: Element) =>
-		dom.window.getComputedStyle(el).getPropertyValue("text-decoration-style");
-	expect(style(a)).not.toBe("double");
-	expect(style(b)).toBe("double");
+	expect(decoration(a)).not.toContain("underline");
+	expect(decoration(b)).toContain("underline");
+
+	dom.dispose();
+});
+
+test("author CSS text-decoration-style: double emits SGR 4 then 4:2", async () => {
+	// The engine feature stands for authors targeting terminals they know
+	// support styled underlines -- the UA defaults just never use it. Plain
+	// 4 precedes 4:2 so a DIRECTLY connected non-supporting terminal keeps
+	// the single underline (an intermediary like tmux may still collapse
+	// the pair -- that is why it is opt-in).
+	const terminal = new MockProcess({rows: 5, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	const {document} = dom;
+	let raw = "";
+	const originalWrite = terminal.stdout.write.bind(terminal.stdout);
+	(terminal.stdout as any).write = (chunk: any, enc?: any, cb?: any) => {
+		raw += String(chunk);
+		return originalWrite(chunk, enc, cb);
+	};
+	const span = document.createElement("span");
+	span.textContent = "double";
+	span.style.setProperty("text-decoration", "underline");
+	span.style.setProperty("text-decoration-style", "double");
+	document.body.appendChild(span);
+	await nextFrame(dom);
+
+	expect(raw).toMatch(/\x1b\[[\d;]*4;4:2[;m]/);
 
 	dom.dispose();
 });

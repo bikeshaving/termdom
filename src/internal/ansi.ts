@@ -14,10 +14,15 @@ const enum FGStyle {
 	Underline = 0b00000100 << 24,
 	Strikethrough = 0b00001000 << 24,
 	Overline = 0b00010000 << 24,
-	// Styled underline (SGR 4:2, the kitty extension every modern terminal
+	// Styled underline (SGR 4:2, the kitty extension most modern terminals
 	// adopted). Only meaningful alongside Underline: emission sends plain 4
-	// first so a terminal that ignores 4:2 (Terminal.app) degrades to a
-	// single underline instead of none.
+	// first so a DIRECTLY connected terminal that ignores 4:2 keeps a single
+	// underline. That ordering cannot survive a re-encoding intermediary:
+	// tmux collapses the pair into one styled-underline attribute at parse
+	// time and forwards it to a client without the usstyle feature in a form
+	// Apple Terminal drops entirely (verified by eye through the real
+	// chain). Author-land CSS for terminals known to support it -- the UA
+	// defaults deliberately never use it.
 	DoubleUnderline = 0b00100000 << 24,
 }
 
