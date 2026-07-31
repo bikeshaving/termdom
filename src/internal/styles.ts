@@ -1502,6 +1502,22 @@ export class StyleManager {
 	}
 
 	/**
+	 * Focus moved: the cached ComputedStyleDeclarations of the elements that
+	 * gained and lost focus hold rule sets matched BEFORE the move, so a
+	 * `:focus` rule would never apply (or, symmetrically, never stop
+	 * applying) -- focus is not a mutation, and nothing else invalidates.
+	 * Selector matching itself is live (jsdom's matches(":focus") follows
+	 * activeElement); only these caches go stale. Scoped to the two moved
+	 * elements: `:focus-within` on ancestors would need chain invalidation,
+	 * which nothing supports or tests yet.
+	 */
+	handleFocusChange(...elements: Array<Element | null>): void {
+		for (const element of elements) {
+			if (element) this.#invalidateElementCaches(element);
+		}
+	}
+
+	/**
 	 * Invalidate cached styles for an element (invalidation approach)
 	 */
 	#invalidateElementCaches(element: Element): void {

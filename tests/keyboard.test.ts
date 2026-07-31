@@ -1202,3 +1202,39 @@ test("width:100% on an input fills its container instead of collapsing", async (
 
 	dom.dispose();
 });
+
+test(":focus rules apply on focus and revert on blur", async () => {
+	// Selector matching is live (jsdom's :focus follows activeElement), but
+	// computed styles are cached per element and focus is not a mutation --
+	// the cache held a rule set matched before the focus moved, so a :focus
+	// rule never applied, and once focused would never have un-applied.
+	const terminal = new MockProcess({rows: 5, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	const {document, window} = dom;
+	const style = document.createElement("style");
+	style.textContent = `input:focus { background: #264f78; }`;
+	document.head.appendChild(style);
+	const a = document.createElement("input");
+	const b = document.createElement("input");
+	document.body.append(a, b);
+	await nextFrame(dom);
+
+	const bg = (el: Element) =>
+		window.getComputedStyle(el).getPropertyValue("background-color");
+	expect(bg(a)).toBe("transparent");
+
+	a.focus();
+	expect(bg(a)).toBe("rgb(38, 79, 120)");
+	await nextFrame(dom);
+	expect(terminal.getScreenContents()).toContain("48;2;38;79;120"); // painted
+
+	// Focus moving to b un-applies on a and applies on b.
+	b.focus();
+	expect(bg(a)).toBe("transparent");
+	expect(bg(b)).toBe("rgb(38, 79, 120)");
+
+	b.blur();
+	expect(bg(b)).toBe("transparent");
+
+	dom.dispose();
+});

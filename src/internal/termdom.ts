@@ -1977,6 +1977,12 @@ export class TermDOM {
 			const prev = termDOM.document.activeElement;
 			originalFocus.call(this);
 			if (prev !== this) {
+				// :focus rules match live, but computed styles are cached and
+				// focus is not a mutation -- both moved elements must drop
+				// their caches, and the repaint must happen even when no
+				// listener mutates anything.
+				termDOM.#styleManager.handleFocusChange(prev, this);
+				void termDOM.#render();
 				if (prev && prev !== termDOM.document.body) {
 					prev.dispatchEvent(
 						new termDOM.window.FocusEvent("blur", {
@@ -2010,6 +2016,8 @@ export class TermDOM {
 			const wasFocused = termDOM.document.activeElement === this;
 			originalBlur.call(this);
 			if (wasFocused) {
+				termDOM.#styleManager.handleFocusChange(this);
+				void termDOM.#render();
 				this.dispatchEvent(
 					new termDOM.window.FocusEvent("blur", {
 						relatedTarget: null,
