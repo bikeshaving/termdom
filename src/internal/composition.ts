@@ -33,6 +33,29 @@ export const PSEUDO_ELEMENTS_SYMBOL = Symbol.for("TermDOM.pseudoElements");
 export const PSEUDO_METADATA_SYMBOL = Symbol.for("TermDOM.pseudoMetadata");
 
 /**
+ * The shadow root an element renders, whichever mechanism attached it: the
+ * symbol slot is the UA-INTERNAL tree (closed to DOM APIs, like a browser
+ * input's internals -- element.shadowRoot never exposes it), native
+ * attachShadow() is the AUTHOR tree. UA wins when both exist.
+ */
+export function compositionShadowRoot(element: Element): ShadowRoot | null {
+	return (element as any)[SHADOW_ROOT_SYMBOL] || element.shadowRoot || null;
+}
+
+/**
+ * The slot a node is assigned to, if any. Projection rides on jsdom's live
+ * slot assignment (per spec: Element.assignedSlot / Text.assignedSlot),
+ * not on any cached mapping of our own -- the walker stays stateless. Only
+ * elements and text can be assigned; everything else navigates normally.
+ */
+function assignedSlotOf(node: Node): HTMLSlotElement | null {
+	if (node.nodeType === node.ELEMENT_NODE || node.nodeType === node.TEXT_NODE) {
+		return (node as Element | Text).assignedSlot ?? null;
+	}
+	return null;
+}
+
+/**
  * Extended TreeWalker implementation based on W3C spec with support for
  * pseudo-elements, shadow DOM, and slot content traversal
  */
@@ -259,12 +282,137 @@ export class ExpandedTreeWalker {
 		return null;
 	}
 
+	// Flat-tree navigation: the raw hops below produce the composed tree
+	// (pseudos, shadow roots, slot projection); this layer additionally
+	// dissolves `display: contents` elements -- they participate in
+	// composition and inheritance but generate no box, so traversal splices
+	// their children into the parent's child sequence. This is how <slot>
+	// disappears from layout (UA default `slot { display: contents }`, as in
+	// browsers) while its projected content flows through.
+
+	#isContents(node: Node): boolean {
+		if (node.nodeType !== node.ELEMENT_NODE) return false;
+		return (
+			this.#window
+				.getComputedStyle(node as Element)
+				.getPropertyValue("display") === "contents"
+		);
+	}
+
+	/**
+	 * The first box-tree node at `node`'s position in flat order: `node`
+	 * itself unless it is a contents element, in which case its first
+	 * flattened descendant (or null if it has none).
+	 */
+	#flatHead(node: Node): Node | null {
+		if (!this.#isContents(node)) return node;
+		for (
+			let child = this.#rawFirstChild(node);
+			child;
+			child = this.#rawNextSibling(child)
+		) {
+			const head = this.#flatHead(child);
+			if (head) return head;
+		}
+		return null;
+	}
+
+	/** Mirror of #flatHead: the last box-tree node at `node`'s position. */
+	#flatTail(node: Node): Node | null {
+		if (!this.#isContents(node)) return node;
+		for (
+			let child = this.#rawLastChild(node);
+			child;
+			child = this.#rawPreviousSibling(child)
+		) {
+			const tail = this.#flatTail(child);
+			if (tail) return tail;
+		}
+		return null;
+	}
+
+	#getFirstChild(node: Node): Node | null {
+		for (
+			let child = this.#rawFirstChild(node);
+			child;
+			child = this.#rawNextSibling(child)
+		) {
+			const head = this.#flatHead(child);
+			if (head) return head;
+		}
+		return null;
+	}
+
+	#getLastChild(node: Node): Node | null {
+		for (
+			let child = this.#rawLastChild(node);
+			child;
+			child = this.#rawPreviousSibling(child)
+		) {
+			const tail = this.#flatTail(child);
+			if (tail) return tail;
+		}
+		return null;
+	}
+
+	#getNextSibling(node: Node): Node | null {
+		let current: Node = node;
+		// eslint-disable-next-line no-constant-condition
+		while (true) {
+			for (
+				let sibling = this.#rawNextSibling(current);
+				sibling;
+				sibling = this.#rawNextSibling(sibling)
+			) {
+				const head = this.#flatHead(sibling);
+				if (head) return head;
+			}
+			// Out of raw siblings: if the raw parent is a contents element, its
+			// siblings continue the flattened sequence.
+			const parent = this.#rawParent(current);
+			if (parent && this.#isContents(parent)) {
+				current = parent;
+				continue;
+			}
+			return null;
+		}
+	}
+
+	#getPreviousSibling(node: Node): Node | null {
+		let current: Node = node;
+		// eslint-disable-next-line no-constant-condition
+		while (true) {
+			for (
+				let sibling = this.#rawPreviousSibling(current);
+				sibling;
+				sibling = this.#rawPreviousSibling(sibling)
+			) {
+				const tail = this.#flatTail(sibling);
+				if (tail) return tail;
+			}
+			const parent = this.#rawParent(current);
+			if (parent && this.#isContents(parent)) {
+				current = parent;
+				continue;
+			}
+			return null;
+		}
+	}
+
+	#getParent(node: Node): Node | null {
+		let parent = this.#rawParent(node);
+		while (parent && this.#isContents(parent)) {
+			parent = this.#rawParent(parent);
+		}
+		return parent;
+	}
+
 	// Extended DOM navigation methods that understand pseudo-elements, shadow DOM, and slots
 
 	/**
 	 * Get expanded first child including pseudo-elements and shadow content
 	 */
-	#getFirstChild(node: Node): Node | null {
+	#rawFirstChild(node: Node): Node | null {
 		if (node.nodeType !== node.ELEMENT_NODE) {
 			return node.firstChild;
 		}
@@ -290,10 +438,14 @@ export class ExpandedTreeWalker {
 			return shadowRoot.firstChild;
 		}
 
-		// Handle slot assigned content as virtual children (stateless approach)
-		const slotContent = this.#getSlotContent(element as HTMLSlotElement);
-		if (slotContent.length > 0) {
-			return slotContent[0];
+		// A slot's composed children are its assigned nodes; its own light
+		// children are FALLBACK content, shown only when nothing is assigned
+		// (the fall-through to node.firstChild below).
+		if (element.nodeName === "SLOT") {
+			const assigned = this.#getSlotContent(element as HTMLSlotElement);
+			if (assigned.length > 0) {
+				return assigned[0];
+			}
 		}
 
 		// Regular first child
@@ -303,7 +455,7 @@ export class ExpandedTreeWalker {
 	/**
 	 * Get expanded last child including pseudo-elements and shadow content
 	 */
-	#getLastChild(node: Node): Node | null {
+	#rawLastChild(node: Node): Node | null {
 		if (node.nodeType !== node.ELEMENT_NODE) {
 			return node.lastChild;
 		}
@@ -324,25 +476,23 @@ export class ExpandedTreeWalker {
 			}
 		}
 
-		// Regular last child
-		let lastChild = node.lastChild;
-		if (lastChild) {
-			return lastChild;
-		}
-
-		// Check for shadow DOM content
+		// A shadow root REPLACES the host's light children in the composed
+		// tree, so it must be consulted before node.lastChild -- checking the
+		// light child first made last-child navigation disagree with
+		// #rawFirstChild (which composes shadow-first) on any host that kept
+		// light children around for slotting.
 		const shadowRoot = this.#getShadowRoot(element);
 		if (shadowRoot && shadowRoot.lastChild) {
 			return shadowRoot.lastChild;
 		}
 
-		return null;
+		return node.lastChild;
 	}
 
 	/**
 	 * Get next sibling including extended content transitions
 	 */
-	#getNextSibling(node: Node): Node | null {
+	#rawNextSibling(node: Node): Node | null {
 		// Handle pseudo-element to regular content transitions
 		const pseudoMeta = this.#getPseudoMetadata(node);
 		if (pseudoMeta) {
@@ -374,28 +524,18 @@ export class ExpandedTreeWalker {
 			}
 		}
 
-		// Handle virtual next sibling for slotted elements (stateless approach)
-		if (
-			node.nodeType === node.ELEMENT_NODE &&
-			(node as Element).hasAttribute &&
-			(node as Element).hasAttribute("slot")
-		) {
-			const parent = node.parentNode;
-			if (parent && parent.nodeType === parent.ELEMENT_NODE) {
-				const shadowRoot = this.#getShadowRoot(parent as Element);
-				if (shadowRoot) {
-					const slotName = (node as Element).getAttribute("slot") || "";
-					const slot = this.#findSlotInShadowRoot(shadowRoot, slotName);
-					if (slot && slot.assignedNodes) {
-						const assignedNodes = slot.assignedNodes();
-						const currentIndex = assignedNodes.indexOf(node);
-						if (currentIndex >= 0 && currentIndex < assignedNodes.length - 1) {
-							return assignedNodes[currentIndex + 1];
-						}
-						return null; // End of slot content
-					}
-				}
+		// A projected node's composed siblings are its neighbors in the
+		// slot's assigned-node list, NOT its light-tree siblings -- the light
+		// nextSibling may be assigned to a different slot (or to none), and
+		// following it walked the wrong subtree in light-tree order.
+		const assignedSlot = assignedSlotOf(node);
+		if (assignedSlot) {
+			const assignedNodes = assignedSlot.assignedNodes();
+			const currentIndex = assignedNodes.indexOf(node);
+			if (currentIndex >= 0 && currentIndex < assignedNodes.length - 1) {
+				return assignedNodes[currentIndex + 1];
 			}
+			return null; // End of slot content; nextNode climbs to the slot
 		}
 
 		// Regular sibling navigation
@@ -406,7 +546,7 @@ export class ExpandedTreeWalker {
 
 		// Handle transition from regular content to ::after pseudo element
 		// This happens when we've reached the end of regular siblings
-		const parent = this.#getParent(node);
+		const parent = this.#rawParent(node);
 		if (parent && parent.nodeType === parent.ELEMENT_NODE) {
 			const parentElement = parent as Element;
 			const afterElement = this.#getPseudoElement(parentElement, "::after");
@@ -431,7 +571,7 @@ export class ExpandedTreeWalker {
 	/**
 	 * Get previous sibling including extended content transitions
 	 */
-	#getPreviousSibling(node: Node): Node | null {
+	#rawPreviousSibling(node: Node): Node | null {
 		// Handle pseudo-element transitions
 		const pseudoMeta = this.#getPseudoMetadata(node);
 		if (pseudoMeta) {
@@ -463,6 +603,18 @@ export class ExpandedTreeWalker {
 			}
 		}
 
+		// Projected nodes navigate backward through the assigned-node list,
+		// mirroring #rawNextSibling.
+		const assignedSlot = assignedSlotOf(node);
+		if (assignedSlot) {
+			const assignedNodes = assignedSlot.assignedNodes();
+			const currentIndex = assignedNodes.indexOf(node);
+			if (currentIndex > 0) {
+				return assignedNodes[currentIndex - 1];
+			}
+			return null; // Start of slot content; previousNode climbs to the slot
+		}
+
 		// Regular sibling navigation
 		const prevSibling = node.previousSibling;
 		if (prevSibling) {
@@ -470,7 +622,7 @@ export class ExpandedTreeWalker {
 		}
 
 		// Handle transitions from regular content to pseudo-elements
-		const parent = this.#getParent(node);
+		const parent = this.#rawParent(node);
 		if (parent && parent.nodeType === parent.ELEMENT_NODE) {
 			const parentElement = parent as Element;
 
@@ -500,7 +652,7 @@ export class ExpandedTreeWalker {
 	/**
 	 * Get parent including extended content relationships
 	 */
-	#getParent(node: Node): Node | null {
+	#rawParent(node: Node): Node | null {
 		// Handle pseudo-element parent relationships
 		const pseudoMeta = this.#getPseudoMetadata(node);
 		if (pseudoMeta) {
@@ -515,24 +667,13 @@ export class ExpandedTreeWalker {
 			return (shadowRoot as any).host || shadowRoot.parentNode;
 		}
 
-		// Handle virtual parent for slotted elements (stateless approach)
-		if (
-			node.nodeType === node.ELEMENT_NODE &&
-			(node as Element).hasAttribute &&
-			(node as Element).hasAttribute("slot")
-		) {
-			const parent = node.parentNode;
-			if (parent && parent.nodeType === parent.ELEMENT_NODE) {
-				const shadowRoot = this.#getShadowRoot(parent as Element);
-				if (shadowRoot) {
-					const slotName = (node as Element).getAttribute("slot") || "";
-					// Find matching slot in shadow DOM
-					const slot = this.#findSlotInShadowRoot(shadowRoot, slotName);
-					if (slot) {
-						return slot;
-					}
-				}
-			}
+		// A projected node's composed parent is its assigned SLOT, not the
+		// shadow host it lives under in the light tree -- returning the host
+		// made nextNode's climb continue from the host's own siblings,
+		// abandoning whatever shadow content followed the slot.
+		const assignedSlot = assignedSlotOf(node);
+		if (assignedSlot) {
+			return assignedSlot;
 		}
 
 		return node.parentNode;
@@ -573,7 +714,7 @@ export class ExpandedTreeWalker {
 	 * real web components call. UA wins when both exist.
 	 */
 	#getShadowRoot(element: Element): ShadowRoot | null {
-		return (element as any)[SHADOW_ROOT_SYMBOL] || element.shadowRoot || null;
+		return compositionShadowRoot(element);
 	}
 
 	/**
@@ -609,20 +750,11 @@ export class ExpandedTreeWalker {
 	}
 
 	/**
-	 * Get slot content
+	 * A slot's assigned nodes (jsdom keeps the assignment live). Empty for a
+	 * slot outside any shadow tree -- its fallback children render instead.
 	 */
 	#getSlotContent(slot: HTMLSlotElement): Node[] {
-		if (typeof slot.assignedNodes === "function") {
-			return slot.assignedNodes();
-		} else {
-			const children: Node[] = [];
-			let child = slot.firstChild;
-			while (child) {
-				children.push(child);
-				child = child.nextSibling;
-			}
-			return children;
-		}
+		return typeof slot.assignedNodes === "function" ? slot.assignedNodes() : [];
 	}
 
 	/**
@@ -650,59 +782,28 @@ export class ExpandedTreeWalker {
 	 * This includes shadow DOM and slots but not ::after pseudo-element
 	 */
 	#getLastContentChild(element: Element): Node | null {
-		// Check regular last child first
-		if (element.lastChild) {
-			return element.lastChild;
-		}
-
-		// Check for shadow DOM content (but not ::after)
+		// Shadow content replaces light children in the composed tree, so a
+		// host's last content child comes from the shadow root when one exists.
 		const shadowRoot = this.#getShadowRoot(element);
 		if (shadowRoot && shadowRoot.lastChild) {
 			return shadowRoot.lastChild;
 		}
 
-		return null;
+		return element.lastChild;
 	}
 
 	/**
 	 * Check if node is a descendant of ancestor
 	 */
 	#isDescendantOf(node: Node, ancestor: Node): boolean {
-		let current: Node | null = node.parentNode;
+		let current: Node | null = this.#rawParent(node);
 		while (current) {
 			if (current === ancestor) {
 				return true;
 			}
-			current = this.#getParent(current);
+			current = this.#rawParent(current);
 		}
 		return false;
-	}
-
-	/**
-	 * Find a slot with given name in a shadow root
-	 */
-	#findSlotInShadowRoot(
-		shadowRoot: ShadowRoot,
-		slotName: string,
-	): HTMLSlotElement | null {
-		// Simple traversal to find slot - could be optimized
-		const traverse = (node: Node): HTMLSlotElement | null => {
-			if (node.nodeType === node.ELEMENT_NODE && node.nodeName === "SLOT") {
-				const slot = node as HTMLSlotElement;
-				if ((slot.name || "") === slotName) {
-					return slot;
-				}
-			}
-
-			for (let child = node.firstChild; child; child = child.nextSibling) {
-				const result = traverse(child);
-				if (result) return result;
-			}
-
-			return null;
-		};
-
-		return traverse(shadowRoot);
 	}
 }
 

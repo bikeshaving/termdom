@@ -281,6 +281,11 @@ const TERMINAL_ELEMENT_DEFAULTS: Record<string, Record<string, string>> = {
 	q: {display: "inline"},
 	label: {display: "inline"},
 	br: {display: "inline"},
+	// As in browsers: a slot generates no box of its own -- its projected
+	// (or fallback) content is spliced into the parent's child sequence by
+	// the walker's flat-tree layer (see composition.ts). Styling the slot
+	// still works for inherited properties, exactly the browser behavior.
+	slot: {display: "contents"},
 
 	// Terminal UI controls
 	button: {

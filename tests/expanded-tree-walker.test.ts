@@ -764,122 +764,49 @@ test("TermDOM - ExpandedTreeWalker basic traversal", () => {
 	expect(nextNode).toBe(div);
 });
 
-test("ExpandedTreeWalker supports named slots and multiple assigned elements", () => {
-	const dom = new JSDOM("<!DOCTYPE html><html><body></body></html>");
-	const window = dom.window;
-	const document = window.document;
+test("ExpandedTreeWalker flattens named slots into composed order", () => {
+	// Native shadow DOM end-to-end: jsdom performs the real slot assignment,
+	// and the walker's flat-tree layer dissolves the slots (UA default
+	// `slot { display: contents }`) -- projected content appears at each
+	// slot's position, unassigned-slot fallback stays hidden, and no SLOT
+	// element ever surfaces as a box of its own.
+	const terminal = new MockProcess();
+	const termdom = new TermDOM({process: terminal});
+	const {document} = termdom;
 
-	// Create host with multiple elements for different slots
 	const host = document.createElement("div");
-	host.innerHTML = `
-		<span slot="header" class="header-1">Header 1</span>
-		<span slot="header" class="header-2">Header 2</span>
-		<p slot="content" class="content-1">Content 1</p>
-		<p slot="content" class="content-2">Content 2</p>
-		<span class="default-content">Default content</span>
-	`;
+	host.innerHTML =
+		'<span slot="header" class="header-1">Header 1</span>' +
+		'<span slot="header" class="header-2">Header 2</span>' +
+		'<p slot="content" class="content-1">Content 1</p>' +
+		'<span class="default-content">Default content</span>';
+	const shadowRoot = host.attachShadow({mode: "open"});
+	shadowRoot.innerHTML =
+		'<div class="chrome-header"><slot name="header"></slot></div>' +
+		'<div class="chrome-content"><slot name="content"></slot></div>' +
+		"<slot></slot>";
 	document.body.appendChild(host);
 
-	// Create shadow root with named slots
-	const shadowRoot = {
-		mode: "open",
-		host: host,
-		childNodes: [],
-		nodeType: 11,
-	} as any;
-
-	// Create header slot
-	const headerSlot = document.createElement("slot");
-	headerSlot.name = "header";
-	const headerNodes = Array.from(host.querySelectorAll('[slot="header"]'));
-	Object.defineProperty(headerSlot, "assignedNodes", {
-		value: () => headerNodes,
-		writable: true,
-		configurable: true,
-	});
-
-	// Create content slot
-	const contentSlot = document.createElement("slot");
-	contentSlot.name = "content";
-	const contentNodes = Array.from(host.querySelectorAll('[slot="content"]'));
-	Object.defineProperty(contentSlot, "assignedNodes", {
-		value: () => contentNodes,
-		writable: true,
-		configurable: true,
-	});
-
-	// Create default slot
-	const defaultSlot = document.createElement("slot");
-	const defaultNodes = Array.from(host.childNodes).filter(
-		(node) => node.nodeType === 1 && !(node as Element).hasAttribute("slot"),
-	);
-	Object.defineProperty(defaultSlot, "assignedNodes", {
-		value: () => defaultNodes,
-		writable: true,
-		configurable: true,
-	});
-
-	// Set up shadow DOM structure with proper sibling links
-	shadowRoot.childNodes = [headerSlot, contentSlot, defaultSlot];
-	shadowRoot.firstChild = headerSlot;
-	shadowRoot.lastChild = defaultSlot;
-
-	// Link siblings properly
-	Object.defineProperty(headerSlot, "nextSibling", {
-		value: contentSlot,
-		writable: true,
-	});
-	Object.defineProperty(contentSlot, "previousSibling", {
-		value: headerSlot,
-		writable: true,
-	});
-	Object.defineProperty(contentSlot, "nextSibling", {
-		value: defaultSlot,
-		writable: true,
-	});
-	Object.defineProperty(defaultSlot, "previousSibling", {
-		value: contentSlot,
-		writable: true,
-	});
-
-	[headerSlot, contentSlot, defaultSlot].forEach((slot) => {
-		Object.defineProperty(slot, "parentNode", {
-			value: shadowRoot,
-			writable: true,
-			configurable: true,
-		});
-	});
-
-	setShadowRoot(host, shadowRoot);
-
-	const walker = createExpandedTreeWalker(window as any, document.body);
-
-	const nodes: Array<{name: string; className?: string; slotName?: string}> =
-		[];
-
-	let node = walker.nextNode();
-	while (node && nodes.length < 20) {
-		nodes.push({
-			name: node.nodeName,
-			className: (node as any).className || undefined,
-			slotName: (node as any).slot || undefined,
-		});
-		node = walker.nextNode();
+	const walker = createExpandedTreeWalker(termdom.window as any, host);
+	const classNames: string[] = [];
+	let sawSlot = false;
+	for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+		if (node.nodeType === node.ELEMENT_NODE) {
+			if (node.nodeName === "SLOT") sawSlot = true;
+			const className = (node as Element).className;
+			if (className) classNames.push(className);
+		}
 	}
 
-	// Should find all slot elements
-	expect(nodes.filter((n) => n.name === "SLOT")).toHaveLength(3);
-
-	// Should find elements assigned to header slot
-	expect(nodes.some((n) => n.className === "header-1")).toBe(true);
-	expect(nodes.some((n) => n.className === "header-2")).toBe(true);
-
-	// Should find elements assigned to content slot
-	expect(nodes.some((n) => n.className === "content-1")).toBe(true);
-	expect(nodes.some((n) => n.className === "content-2")).toBe(true);
-
-	// Should find elements assigned to default slot
-	expect(nodes.some((n) => n.className === "default-content")).toBe(true);
+	expect(sawSlot).toBe(false);
+	expect(classNames).toEqual([
+		"chrome-header",
+		"header-1",
+		"header-2",
+		"chrome-content",
+		"content-1",
+		"default-content",
+	]);
 });
 
 test("Pure JSDOM - ExpandedTreeWalker respects root boundary", () => {

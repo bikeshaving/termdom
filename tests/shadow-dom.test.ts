@@ -77,6 +77,134 @@ test("block structure inside a shadow root lays out normally", async () => {
 	dom.dispose();
 });
 
-test.todo(
-	"slot projection through a native shadow root (walker's stateless slot navigation predates native roots; hosts with slots currently render empty)",
-);
+// Slot projection: the composed tree interleaves shadow chrome with light
+// children pulled through <slot>s. The walker's hops are stateless, so
+// projection rides on jsdom's live slot assignment (assignedSlot /
+// assignedNodes) rather than any cached mapping.
+
+test("default slot projects light children between shadow siblings", async () => {
+	const terminal = new MockProcess({rows: 6, cols: 60});
+	const dom = new TermDOM({process: terminal});
+	const {document} = dom;
+	const host = document.createElement("div");
+	const root = host.attachShadow({mode: "open"});
+	root.innerHTML = `<div>HEADER</div><slot></slot><div>FOOTER</div>`;
+	const light = document.createElement("div");
+	light.textContent = "PROJECTED";
+	host.appendChild(light);
+	document.body.appendChild(host);
+	await nextFrame(dom);
+
+	const lines = terminal
+		.getPlainText()
+		.split("\n")
+		.map((l) => l.trim())
+		.filter(Boolean);
+	expect(lines).toEqual(["HEADER", "PROJECTED", "FOOTER"]);
+
+	dom.dispose();
+});
+
+test("named slots project by slot attribute, in shadow-tree order", async () => {
+	const terminal = new MockProcess({rows: 6, cols: 60});
+	const dom = new TermDOM({process: terminal});
+	const {document} = dom;
+	const host = document.createElement("div");
+	const root = host.attachShadow({mode: "open"});
+	// Shadow order reverses the light order: the slot's position wins.
+	root.innerHTML = `<div><slot name="second"></slot></div><div><slot name="first"></slot></div>`;
+	host.innerHTML = `<span slot="first">ALPHA</span><span slot="second">BETA</span>`;
+	document.body.appendChild(host);
+	await nextFrame(dom);
+
+	const lines = terminal
+		.getPlainText()
+		.split("\n")
+		.map((l) => l.trim())
+		.filter(Boolean);
+	expect(lines).toEqual(["BETA", "ALPHA"]);
+
+	dom.dispose();
+});
+
+test("a slot with nothing assigned renders its fallback content", async () => {
+	const terminal = new MockProcess({rows: 6, cols: 60});
+	const dom = new TermDOM({process: terminal});
+	const {document} = dom;
+	const host = document.createElement("div");
+	const root = host.attachShadow({mode: "open"});
+	root.innerHTML = `<slot>FALLBACK</slot>`;
+	document.body.appendChild(host);
+	await nextFrame(dom);
+
+	expect(terminal.getPlainText()).toContain("FALLBACK");
+
+	dom.dispose();
+});
+
+test("assigned content replaces fallback; unassigned light children don't render", async () => {
+	const terminal = new MockProcess({rows: 6, cols: 60});
+	const dom = new TermDOM({process: terminal});
+	const {document} = dom;
+	const host = document.createElement("div");
+	const root = host.attachShadow({mode: "open"});
+	root.innerHTML = `<slot name="a">FALLBACK</slot>`;
+	host.innerHTML = `<span slot="a">ASSIGNED</span><span slot="nowhere">ORPHAN</span>`;
+	document.body.appendChild(host);
+	await nextFrame(dom);
+
+	const output = terminal.getPlainText();
+	expect(output).toContain("ASSIGNED");
+	expect(output).not.toContain("FALLBACK");
+	expect(output).not.toContain("ORPHAN");
+
+	dom.dispose();
+});
+
+test("bare text light children project through the default slot", async () => {
+	const terminal = new MockProcess({rows: 6, cols: 60});
+	const dom = new TermDOM({process: terminal});
+	const {document} = dom;
+	const host = document.createElement("div");
+	const root = host.attachShadow({mode: "open"});
+	root.innerHTML = `<span>[</span><slot></slot><span>]</span>`;
+	host.appendChild(document.createTextNode("TEXTCHILD"));
+	document.body.appendChild(host);
+	await nextFrame(dom);
+
+	expect(terminal.getPlainText()).toContain("[TEXTCHILD]");
+
+	dom.dispose();
+});
+
+test("reassigning a slot attribute reprojects on the next frame", async () => {
+	const terminal = new MockProcess({rows: 6, cols: 60});
+	const dom = new TermDOM({process: terminal});
+	const {document} = dom;
+	const host = document.createElement("div");
+	const root = host.attachShadow({mode: "open"});
+	root.innerHTML = `<div>A:<slot name="a"></slot></div><div>B:<slot name="b"></slot></div>`;
+	const item = document.createElement("span");
+	item.setAttribute("slot", "a");
+	item.textContent = "ITEM";
+	host.appendChild(item);
+	document.body.appendChild(host);
+	await nextFrame(dom);
+	let lines = terminal
+		.getPlainText()
+		.split("\n")
+		.map((l) => l.trim())
+		.filter(Boolean);
+	expect(lines).toEqual(["A:ITEM", "B:"]);
+
+	item.setAttribute("slot", "b");
+	await nextFrame(dom);
+	lines = terminal
+		.getPlainText()
+		.split("\n")
+		.map((l) => l.trim())
+		.filter(Boolean);
+	expect(lines).toEqual(["A:", "B:ITEM"]);
+
+	dom.dispose();
+});

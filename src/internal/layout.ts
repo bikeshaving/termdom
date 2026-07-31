@@ -6,6 +6,7 @@ import {getBoxModel, type BoxModel} from "./styles.js";
 import {getPropertyValue, parseUnitValue} from "./styles.js";
 import {
 	compositionParentElement,
+	compositionShadowRoot,
 	createExpandedTreeWalker,
 	getPseudoMetadata,
 } from "./composition.js";
@@ -890,15 +891,19 @@ export class LayoutEngine {
 		// Re-add invalidated nodes that are still connected to DOM
 		for (const node of this.#invalidatedNodes) {
 			if (node.isConnected) {
-				// Find parent that has a layout node to attach to
-				let parent = node.parentElement;
+				// Find parent that has a layout node to attach to. The composed
+				// parent, not parentElement: a shadow root's direct child has no
+				// parentElement at all, and a rebuilt shadow subtree (slot
+				// reassignment, attachShadow on a connected host) would silently
+				// never re-attach.
+				let parent = compositionParentElement(node);
 				while (parent) {
 					const parentFlexNode = this.nodeMap.get(parent);
 					if (parentFlexNode) {
 						this.#addNode(node, parentFlexNode);
 						break;
 					}
-					parent = parent.parentElement;
+					parent = compositionParentElement(parent);
 				}
 			}
 		}
@@ -1031,7 +1036,13 @@ export class LayoutEngine {
 			// without walking to find out: pseudo-elements/shadow content
 			// widen this the other way (present in children[], absent from
 			// childNodes), so it's an equality check, not just child count.
-			element.childNodes.length !== flexNode.children.length
+			element.childNodes.length !== flexNode.children.length ||
+			// A shadow host's childNodes are its LIGHT children, unrelated to
+			// the composed children the layout tree holds -- the counts can
+			// collide by accident (1 light child, 1 run head) and the fast
+			// path then paints an incomplete child list. Hosts always take the
+			// walker.
+			compositionShadowRoot(element) !== null
 		) {
 			return null;
 		}
@@ -1842,6 +1853,17 @@ export class LayoutEngine {
 						styleFlexNode(element, flexNode);
 						// Invalidate inline runs if style changes might affect layout
 						this[kInvalidateInlineRun](element);
+					}
+				} else if (record.attributeName === "slot") {
+					// Reassigning a slot moves the node in the COMPOSED tree while
+					// the light tree stands still -- no childList record will ever
+					// arrive. Both the run it left and the run it joined are stale,
+					// and the old slot isn't recoverable statelessly (jsdom has
+					// already reassigned), so rebuild the host's whole composed
+					// subtree; slot reassignment is rare enough for the hammer.
+					const host = (record.target as Element).parentElement;
+					if (host && compositionShadowRoot(host)) {
+						this.invalidate(host);
 					}
 				}
 				// On to the next record -- returning here would silently drop every
