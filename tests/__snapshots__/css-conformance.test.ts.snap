@@ -65,8 +65,8 @@ exports[`css: inline elements share a line 1`] = `
 `;
 
 exports[`css: inline-block reserves a box on the line 1`] = `
-"A\x1B[38;2;255;255;255m──────┐\x1B[0mB\x1B[38;2;255;255;255m──────┐\x1B[0m                        \x1B[0m
-\x1B[38;2;255;255;255m│\x1B[0m      \x1B[38;2;255;255;255m││\x1B[0m      \x1B[38;2;255;255;255m│\x1B[0m                        \x1B[0m
+"\x1B[38;2;255;255;255m┌──────┐┌──────┐\x1B[0m                        \x1B[0m
+\x1B[38;2;255;255;255m│\x1B[0mA     \x1B[38;2;255;255;255m││\x1B[0mB     \x1B[38;2;255;255;255m│\x1B[0m                        \x1B[0m
 \x1B[38;2;255;255;255m└──────┘└──────┘\x1B[0m                        \x1B[0m
                                         
                                         
@@ -114,8 +114,8 @@ exports[`css: bold italic underline strikethrough 1`] = `
 
 exports[`css: white-space:pre preserves spacing 1`] = `
 "a    b                                  
-                                        
   c                                     
+                                        
                                         
                                         
                                         

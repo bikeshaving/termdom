@@ -6,6 +6,7 @@ import {getBoxModel, type BoxModel} from "./styles.js";
 import {getPropertyValue, parseUnitValue} from "./styles.js";
 import {
 	compositionBoxParentElement,
+	compositionIsConnected,
 	compositionParentElement,
 	compositionShadowRoot,
 	createExpandedTreeWalker,
@@ -1193,11 +1194,16 @@ export class LayoutEngine {
 								segment.leaf.node === element &&
 								segment.leaf.breakResult
 							) {
-								// Extract text from the nested breakResult
+								// Extract text from the nested breakResult. Content
+								// starts after border AND padding -- the border
+								// occupies real cells.
 								const nestedBreakResult = segment.leaf.breakResult;
-								// Get padding offsets for text positioning
-								const paddingLeft = segment.leaf.boxModel.paddingLeft;
-								const paddingTop = segment.leaf.boxModel.paddingTop;
+								const paddingLeft =
+									segment.leaf.boxModel.paddingLeft +
+									segment.leaf.boxModel.borderLeftWidth;
+								const paddingTop =
+									segment.leaf.boxModel.paddingTop +
+									segment.leaf.boxModel.borderTopWidth;
 								for (const nestedLine of nestedBreakResult.lines) {
 									for (const nestedSegment of nestedLine.segments) {
 										if (nestedSegment.leaf.type === "text") {
@@ -1220,9 +1226,11 @@ export class LayoutEngine {
 											// Recursively extract text from nested inline-block
 											const nestedInlineBlock = nestedSegment.leaf;
 											const nestedPaddingLeft =
-												nestedInlineBlock.boxModel.paddingLeft;
+												nestedInlineBlock.boxModel.paddingLeft +
+												nestedInlineBlock.boxModel.borderLeftWidth;
 											const nestedPaddingTop =
-												nestedInlineBlock.boxModel.paddingTop;
+												nestedInlineBlock.boxModel.paddingTop +
+												nestedInlineBlock.boxModel.borderTopWidth;
 
 											for (const innerLine of nestedInlineBlock.breakResult!
 												.lines) {
@@ -1290,10 +1298,14 @@ export class LayoutEngine {
 		// block container normally, but an inline-block's own style once the walk
 		// below descends into its nested breakResult, since that's a fresh inline
 		// formatting context with its own alignment.
-		let alignContainer: Element | null = runHead.parentElement;
+		let alignContainer: Element | null = compositionParentElement(runHead);
 
-		while (currentNode !== runHead && currentNode.parentElement) {
-			const parent = currentNode.parentElement;
+		// COMPOSITION parents: a widget's UA shadow text has no parentElement
+		// chain to its host at all, and the walk used to stop dead at the
+		// shadow boundary -- the value of every textarea resolved to zero
+		// fragments and painted nothing.
+		while (currentNode !== runHead && compositionParentElement(currentNode)) {
+			const parent = compositionParentElement(currentNode)!;
 
 			if (getPropertyValue(parent, "display") === "inline-block") {
 				// Find this inline-block in current breakResult
@@ -1304,10 +1316,17 @@ export class LayoutEngine {
 							segment.leaf.type === "inline-block" &&
 							segment.leaf.node === parent
 						) {
-							// Accumulate offset including padding and switch to internal breakResult
+							// Accumulate offset to the CONTENT edge -- border and
+							// padding both occupy cells -- and switch to the
+							// internal breakResult.
 							accumulatedOffsetX +=
-								segment.x + segment.leaf.boxModel.paddingLeft;
-							accumulatedOffsetY += line.y + segment.leaf.boxModel.paddingTop;
+								segment.x +
+								segment.leaf.boxModel.paddingLeft +
+								segment.leaf.boxModel.borderLeftWidth;
+							accumulatedOffsetY +=
+								line.y +
+								segment.leaf.boxModel.paddingTop +
+								segment.leaf.boxModel.borderTopWidth;
 							if (segment.leaf.breakResult) {
 								currentBreakResult = segment.leaf.breakResult;
 								alignContainer = parent;
@@ -1487,8 +1506,10 @@ export class LayoutEngine {
 	 * text nodes and can participate in inline runs.
 	 */
 	findInlineRunHead(node: Node): Node | null {
-		// 1. Validate input
-		if (!node.isConnected) {
+		// 1. Validate input. Composition-connected, not isConnected: a UA
+		// shadow tree's parts live in a fragment and are never DOM-connected,
+		// but they render (and measure, and invalidate) like anything else.
+		if (!compositionIsConnected(node)) {
 			// For pseudo elements, check if the host element is connected
 			const pseudoMetadata = getPseudoMetadata(node);
 			if (!pseudoMetadata || !pseudoMetadata.hostElement.isConnected) {
@@ -1727,6 +1748,40 @@ export class LayoutEngine {
 		return null;
 	}
 
+	/**
+	 * Invalidate the MEASURE that contains a node, without touching the
+	 * layout tree's shape. The full run invalidation (below) also ensures
+	 * the run head owns a layout node -- correct at flex level, but a
+	 * NESTED inline-block is a run head only inside its parent's
+	 * measurement, and manufacturing a layout node for it would insert a
+	 * child under a measure-function node. This walks to the nearest
+	 * ancestor that actually owns a measuring flex node, clears the cached
+	 * break results on the way, and dirties it.
+	 */
+	#invalidateEnclosingMeasure(node: Node): void {
+		const runHead = this.findInlineRunHead(node);
+		if (runHead) {
+			this.breakResultMap.delete(runHead);
+			const headFlexNode = this.nodeMap.get(runHead);
+			if (headFlexNode && headFlexNode.measureFunc) {
+				headFlexNode.markDirty();
+				return;
+			}
+		}
+		let current = compositionBoxParentElement(node);
+		while (current) {
+			const flexNode = this.nodeMap.get(current);
+			if (flexNode) {
+				this.breakResultMap.delete(current);
+				if (flexNode.measureFunc) {
+					flexNode.markDirty();
+				}
+				return;
+			}
+			current = compositionBoxParentElement(current);
+		}
+	}
+
 	[kInvalidateInlineRun](node: Node): void {
 		const runHead = this.findInlineRunHead(node);
 		if (runHead) {
@@ -1871,6 +1926,14 @@ export class LayoutEngine {
 						styleFlexNode(element, flexNode);
 						// Invalidate inline runs if style changes might affect layout
 						this[kInvalidateInlineRun](element);
+					} else {
+						// No flex node: an inline run MEMBER (or a shadow part).
+						// Its style feeds the enclosing measurement -- and the
+						// element itself may have just become display:none (a
+						// textarea's placeholder hiding), which makes its own
+						// run head unresolvable, so the walk starts from the
+						// box parent chain when needed.
+						this.#invalidateEnclosingMeasure(element);
 					}
 				} else if (record.attributeName === "slot") {
 					// Reassigning a slot moves the node in the COMPOSED tree while
@@ -1906,9 +1969,15 @@ export class LayoutEngine {
 						: (record.target as Element);
 				const parentFlexNode = this.nodeMap.get(parentElement);
 
-				// Skip adding children if parent is inline-block (it uses measure function and cannot have children)
+				// An inline-block parent gets no layout-tree children (it measures
+				// as a unit), but the addition still changes what that unit
+				// measures -- a widget's UA tree populating, a label gaining a
+				// span. Invalidate the enclosing MEASURE (never the run-head
+				// machinery: a nested inline-block must not be given a layout
+				// node of its own).
 				const parentDisplay = getPropertyValue(parentElement, "display");
 				if (parentDisplay === "inline-block") {
+					this.#invalidateEnclosingMeasure(parentElement);
 					continue;
 				}
 
@@ -2572,6 +2641,48 @@ export class LayoutEngine {
 						finalContentHeight = 1;
 					}
 
+					// min/max constraints clamp the measured content. This leaf IS
+					// where an inline-block's box gets its size (the flex node
+					// only ever reports the whole run), so min-height on a
+					// textarea -- or any author inline-block -- lands here.
+					// Values are border-box, like width; convert to content-box.
+					const minWidthValue = parseUnitValue(
+						getPropertyValue(element, "min-width"),
+					);
+					if (typeof minWidthValue === "number") {
+						finalContentWidth = Math.max(
+							finalContentWidth,
+							minWidthValue - horizontalBoxSpace,
+						);
+					}
+					const minHeightValue = parseUnitValue(
+						getPropertyValue(element, "min-height"),
+					);
+					if (typeof minHeightValue === "number") {
+						finalContentHeight = Math.max(
+							finalContentHeight,
+							minHeightValue - verticalBoxSpace,
+						);
+					}
+					const maxWidthValue = parseUnitValue(
+						getPropertyValue(element, "max-width"),
+					);
+					if (typeof maxWidthValue === "number") {
+						finalContentWidth = Math.min(
+							finalContentWidth,
+							maxWidthValue - horizontalBoxSpace,
+						);
+					}
+					const maxHeightValue = parseUnitValue(
+						getPropertyValue(element, "max-height"),
+					);
+					if (typeof maxHeightValue === "number") {
+						finalContentHeight = Math.min(
+							finalContentHeight,
+							maxHeightValue - verticalBoxSpace,
+						);
+					}
+
 					// If explicit dimensions were set, use those instead of measured content
 					if (boxModel.width !== undefined) {
 						finalContentWidth = Math.max(
@@ -3029,10 +3140,15 @@ export class LayoutEngine {
 				if (item.leafNode.type === "text" && item.processedContent) {
 					const relativeStart = itemStart - item.start;
 					const relativeEnd = itemEnd - item.start;
-					const portion = item.processedContent.slice(
-						relativeStart,
-						relativeEnd,
-					);
+					// A preserved newline is a BREAK, never a glyph: lines split
+					// right after it, so it can only ever sit at the segment's
+					// tail -- and a literal \n reaching the painter would feed
+					// the terminal a raw line feed, shifting every later cell
+					// of the frame (visualToDataOffsets already maps a break to
+					// "nothing", so offsets stay aligned).
+					const portion = item.processedContent
+						.slice(relativeStart, relativeEnd)
+						.replace(/\n+$/, "");
 					width = runtimeStringWidth(portion);
 
 					nodes.push({

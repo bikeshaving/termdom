@@ -319,10 +319,22 @@ const TERMINAL_ELEMENT_DEFAULTS: Record<string, Record<string, string>> = {
 	// A textarea preserves newlines and soft-wraps at its edge, exactly the
 	// browser default. Its UA shadow tree's value text lays out through the
 	// normal pipeline, so this is what makes multiline values multiline.
+	// Longhands, not the border shorthand: element defaults are consulted
+	// per property, so a `border` shorthand here never reaches the
+	// border-*-width longhands the box model measures (same reasoning as
+	// td/th below).
 	textarea: {
 		display: "inline-block",
-		border: "1px solid",
-		padding: "0 1ch",
+		"border-top-width": "1px",
+		"border-right-width": "1px",
+		"border-bottom-width": "1px",
+		"border-left-width": "1px",
+		"border-top-style": "solid",
+		"border-right-style": "solid",
+		"border-bottom-style": "solid",
+		"border-left-style": "solid",
+		"padding-left": "1ch",
+		"padding-right": "1ch",
 		"white-space": "pre-wrap",
 	},
 	select: {
@@ -389,6 +401,23 @@ const CHECKBOX_DEFAULTS: Record<string, string> = {
 function getElementDefaults(
 	element: Element,
 ): Record<string, string> | undefined {
+	if (element.tagName === "TEXTAREA") {
+		// rows/cols size the box exactly as in a browser (spec defaults 2
+		// and 20), in border-box terms: +2 for the border rows/cols, +2 for
+		// the horizontal padding. min-height rather than height: the field
+		// GROWS with its content -- the terminal-native reading of a
+		// multiline field (a browser scrolls inside a fixed box instead;
+		// element scrolling is machinery this engine doesn't have).
+		const rows = parseInt(element.getAttribute("rows") ?? "", 10);
+		const cols = parseInt(element.getAttribute("cols") ?? "", 10);
+		const effectiveRows = Number.isFinite(rows) && rows > 0 ? rows : 2;
+		const effectiveCols = Number.isFinite(cols) && cols > 0 ? cols : 20;
+		return {
+			...TERMINAL_ELEMENT_DEFAULTS.textarea,
+			"min-height": `${effectiveRows + 2}px`,
+			width: `${effectiveCols + 4}ch`,
+		};
+	}
 	if (element.tagName === "INPUT") {
 		const input = element as HTMLInputElement;
 		// The FOCUSED field gets the underline -- the UA "this is the live

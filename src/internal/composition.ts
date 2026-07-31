@@ -69,6 +69,23 @@ export function compositionShadowRoot(element: Element): ShadowRoot | null {
 }
 
 /**
+ * Connectivity through the COMPOSED tree: a UA-internal shadow root is a
+ * DocumentFragment, so its children are never "connected" in the DOM
+ * sense even while the host renders on screen -- isConnected alone would
+ * gate every UA part out of the inline-run machinery. A node is
+ * composition-connected when its own tree reaches the document, or its
+ * root is a shadow root whose host does.
+ */
+export function compositionIsConnected(node: Node): boolean {
+	if (node.isConnected) return true;
+	const root = node.getRootNode();
+	if (root.nodeType === 11 && (root as ShadowRoot).host) {
+		return compositionIsConnected((root as ShadowRoot).host);
+	}
+	return false;
+}
+
+/**
  * The slot a node is assigned to, if any. Projection rides on jsdom's live
  * slot assignment (per spec: Element.assignedSlot / Text.assignedSlot),
  * not on any cached mapping of our own -- the walker stays stateless. Only

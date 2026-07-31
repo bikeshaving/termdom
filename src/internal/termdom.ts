@@ -139,6 +139,19 @@ const FIELD_UA_STYLES = `
 `;
 
 /**
+ * The UA stylesheet of a textarea's internal shadow tree. Unlike the
+ * input, the textarea's parts render through the NORMAL pipeline -- the
+ * value text node lays out, wraps and paints like any document text -- so
+ * these rules are all there is: the placeholder's ghost gray, faint when
+ * the host is blurred, hidden by the sync controller (an inline
+ * display:none) whenever a value exists.
+ */
+const TEXTAREA_UA_STYLES = `
+	[part="placeholder"] { color: #808080; }
+	:host(:not(:focus)) [part="placeholder"] { font-weight: lighter; }
+`;
+
+/**
  * The terminal has exactly three font weights, and CSS names all three:
  * light maps to SGR faint (dim), normal to nothing, bold to SGR bold.
  * Numeric values follow the CSS scale (100-300 light, 600+ bold). The
@@ -352,10 +365,15 @@ export class TermDOM {
 	// IS the field's content model (value text, placeholder, blank / toggle
 	// glyph), and the painter reads its computed styles instead of
 	// hardcoding the design. This map just caches the part references.
+	// The column (in cells) a run of consecutive ArrowUp/ArrowDown presses
+	// aims for -- browsers remember where vertical travel STARTED, so
+	// passing through a short line and continuing returns to the original
+	// column. Cleared by any other editing action.
+	#textareaGoalColumn = new WeakMap<Element, number>();
 	#inputShadowParts = new WeakMap<
-		HTMLInputElement,
+		Element,
 		{
-			kind: "field" | "toggle";
+			kind: "field" | "toggle" | "textarea" | "select";
 			spans: Record<string, HTMLElement>;
 			texts: Record<string, Text>;
 		}
@@ -995,6 +1013,8 @@ export class TermDOM {
 		if (rect && visible) {
 			const borderStyles = resolveBorderStyles(element);
 			if (borderStyles.hasAnyBorder) {
+				if (process.env.DEBUG_BORDERS)
+					console.error("BORDER", element.tagName, JSON.stringify(rect));
 				// Border color per CSS: border-color, whose initial value is
 				// currentColor -- the element's own color -- and, with nothing
 				// authored anywhere, the terminal's DEFAULT foreground. Never a
@@ -1025,6 +1045,23 @@ export class TermDOM {
 
 		// Handle list-style-position: outside markers
 		if (visible) this.#renderOutsideMarker(element, ctx);
+
+		// A textarea's content IS its UA shadow tree, painted by the normal
+		// child walk below; what the widget owns here is just tree upkeep (a
+		// safety-net sync for framework .value assignments -- no observer
+		// record fires for those) and parking the real terminal caret at the
+		// multiline position.
+		if (element.tagName === "TEXTAREA" && rect) {
+			const textarea = element as HTMLTextAreaElement;
+			const parts = this.#ensureTextareaShadowParts(textarea);
+			this.#syncTextareaShadowTree(textarea, parts);
+			if (visible && textarea === this.document.activeElement) {
+				const caretCell = this.#textareaCaretCell(textarea);
+				if (caretCell) {
+					ctx.setCaret(caretCell.x, caretCell.y);
+				}
+			}
+		}
 
 		// Render input elements (void elements with no children)
 		if (
@@ -1249,7 +1286,7 @@ export class TermDOM {
 	 * ::placeholder a real element to resolve onto.
 	 */
 	#ensureInputShadowParts(element: HTMLInputElement): {
-		kind: "field" | "toggle";
+		kind: "field" | "toggle" | "textarea" | "select";
 		spans: Record<string, HTMLElement>;
 		texts: Record<string, Text>;
 	} {
@@ -1297,6 +1334,245 @@ export class TermDOM {
 		const parts = {kind, spans, texts};
 		this.#inputShadowParts.set(element, parts);
 		return parts;
+	}
+
+	/**
+	 * Build a textarea's UA-internal shadow tree. Unlike the input's, this
+	 * root IS observer-enrolled -- enrolled BEFORE it is populated, so the
+	 * population itself is the invalidation that swaps the composed tree in
+	 * -- because the value text lays out through the normal pipeline and
+	 * layout must hear about every change to it. The sync controller runs
+	 * at edit time (and as a paint-time safety net for framework .value
+	 * assignments), never in a loop: it only ever writes when the input's
+	 * state and the tree disagree.
+	 */
+	#ensureTextareaShadowParts(element: HTMLTextAreaElement): {
+		kind: "field" | "toggle" | "textarea" | "select";
+		spans: Record<string, HTMLElement>;
+		texts: Record<string, Text>;
+	} {
+		const cached = this.#inputShadowParts.get(element);
+		if (cached && cached.kind === "textarea") {
+			return cached;
+		}
+
+		const document = this.document;
+		const root = createUAShadowRoot(element);
+		this[kObserver].observe(root, {
+			childList: true,
+			subtree: true,
+			attributes: true,
+			characterData: true,
+		});
+		this.#styleManager.registerShadowRoot(root);
+
+		const spans: Record<string, HTMLElement> = {};
+		const texts: Record<string, Text> = {};
+		const style = document.createElement("style");
+		style.textContent = TEXTAREA_UA_STYLES;
+		root.appendChild(style);
+		for (const part of ["value", "placeholder"]) {
+			const span = document.createElement("span");
+			span.setAttribute("part", part);
+			const text = document.createTextNode("");
+			span.appendChild(text);
+			root.appendChild(span);
+			spans[part] = span;
+			texts[part] = text;
+		}
+
+		const parts = {kind: "textarea" as const, spans, texts};
+		this.#inputShadowParts.set(element, parts);
+		this.#syncTextareaShadowTree(element, parts);
+		return parts;
+	}
+
+	/**
+	 * Reconcile a textarea's UA tree with the element's own state -- the
+	 * single source of truth. Placeholder visibility is real CSS (an inline
+	 * display:none), not painter logic: the normal pipeline then simply
+	 * never sees it.
+	 */
+	#syncTextareaShadowTree(
+		element: HTMLTextAreaElement,
+		parts: {spans: Record<string, HTMLElement>; texts: Record<string, Text>},
+	): void {
+		const value = element.value;
+		const placeholder = element.getAttribute("placeholder") ?? "";
+		if (parts.texts.value.data !== value) {
+			parts.texts.value.data = value;
+		}
+		if (parts.texts.placeholder.data !== placeholder) {
+			parts.texts.placeholder.data = placeholder;
+		}
+		const placeholderDisplay = value ? "none" : "";
+		if (parts.spans.placeholder.style.display !== placeholderDisplay) {
+			parts.spans.placeholder.style.display = placeholderDisplay;
+		}
+	}
+
+	/**
+	 * The VISUAL lines of a textarea's laid-out value: the painted
+	 * fragments (one per soft-wrapped or hard-broken line), plus a virtual
+	 * empty line for each trailing newline past the last visual character
+	 * (typing Enter at the end must park the caret on the new, still-empty
+	 * line, which owns no fragment). Offsets are code units into .value;
+	 * geometry is document cells. Null before the value has ever laid out.
+	 */
+	#textareaVisualLines(element: HTMLTextAreaElement): {
+		value: string;
+		lines: Array<{
+			x: number;
+			y: number;
+			text: string;
+			/** Data offset of the line's first character / caret slot. */
+			startOffset: number;
+			/** Data offset of the caret slot AFTER the line's last character. */
+			endOffset: number;
+		}>;
+	} | null {
+		const parts = this.#ensureTextareaShadowParts(element);
+		const valueText = parts.texts.value;
+		const value = valueText.data;
+		const rect = element.getBoundingClientRect();
+		const boxModel = getBoxModel(element);
+		const contentX =
+			Math.round(rect.left) +
+			(boxModel.borderLeftWidth || 0) +
+			(boxModel.paddingLeft || 0);
+		const contentY = Math.round(rect.top) + (boxModel.borderTopWidth || 0);
+
+		if (!value) {
+			return {
+				value,
+				lines: [
+					{x: contentX, y: contentY, text: "", startOffset: 0, endOffset: 0},
+				],
+			};
+		}
+
+		const rectTexts = this[kLayoutEngine].getRectTexts(valueText);
+		if (rectTexts.length === 0) {
+			return null;
+		}
+		const visToData = visualToDataOffsets(value, rectTexts);
+
+		const lines: Array<{
+			x: number;
+			y: number;
+			text: string;
+			startOffset: number;
+			endOffset: number;
+		}> = [];
+		let visualBase = 0;
+		for (const rectText of rectTexts) {
+			const length = rectText.text.length;
+			const startOffset = length > 0 ? visToData[visualBase] : 0;
+			const endOffset =
+				length > 0 ? visToData[visualBase + length - 1] + 1 : startOffset;
+			lines.push({
+				x: Math.round(rectText.rect.x),
+				y: Math.round(rectText.rect.y),
+				text: rectText.text,
+				startOffset,
+				endOffset,
+			});
+			visualBase += length;
+		}
+
+		// Trailing newlines own virtual empty lines below the last fragment.
+		const last = lines[lines.length - 1];
+		let offset = last.endOffset;
+		let y = last.y;
+		while (offset < value.length) {
+			if (value[offset] === "\n") {
+				y += 1;
+				lines.push({
+					x: contentX,
+					y,
+					text: "",
+					startOffset: offset + 1,
+					endOffset: offset + 1,
+				});
+			}
+			offset += 1;
+		}
+		return {value, lines};
+	}
+
+	/** The visual line index a caret offset sits on, given #textareaVisualLines. */
+	#textareaLineAt(
+		lines: Array<{startOffset: number; endOffset: number}>,
+		caret: number,
+	): number {
+		for (let i = 0; i < lines.length; i++) {
+			// endOffset is a valid caret slot on this line; a caret exactly at
+			// a soft-wrap boundary belongs to the NEXT line's start (both
+			// lines claim the offset; later line wins), matching browsers.
+			if (caret <= lines[i].endOffset) {
+				const next = lines[i + 1];
+				if (next && next.startOffset <= caret) continue;
+				return i;
+			}
+		}
+		return lines.length - 1;
+	}
+
+	/** Caret cell for a focused textarea, from the laid-out value. */
+	#textareaCaretCell(
+		element: HTMLTextAreaElement,
+	): {x: number; y: number} | null {
+		const visual = this.#textareaVisualLines(element);
+		if (!visual) return null;
+		const caret =
+			element.selectionDirection === "backward"
+				? (element.selectionStart ?? visual.value.length)
+				: (element.selectionEnd ?? visual.value.length);
+		const lineIndex = this.#textareaLineAt(visual.lines, caret);
+		const line = visual.lines[lineIndex];
+		const within = Math.max(
+			0,
+			Math.min(caret, line.endOffset) - line.startOffset,
+		);
+		return {x: line.x + stringWidth(line.text.slice(0, within)), y: line.y};
+	}
+
+	/**
+	 * The caret offset one visual line up or down from `caret`, keeping the
+	 * column (in cells) where the target line allows -- soft wraps count as
+	 * lines, exactly as in a browser. First line up collapses to 0, last
+	 * line down to the end.
+	 */
+	#textareaVerticalTarget(
+		element: HTMLTextAreaElement,
+		caret: number,
+		direction: 1 | -1,
+	): number {
+		const visual = this.#textareaVisualLines(element);
+		if (!visual) return caret;
+		const lineIndex = this.#textareaLineAt(visual.lines, caret);
+		const targetIndex = lineIndex + direction;
+		if (targetIndex < 0) return 0;
+		if (targetIndex >= visual.lines.length) return visual.value.length;
+		const line = visual.lines[lineIndex];
+		const currentColumn = stringWidth(
+			line.text.slice(0, Math.max(0, caret - line.startOffset)),
+		);
+		// Consecutive vertical moves aim for the column travel STARTED at,
+		// even across shorter lines that clamp the caret -- the browser's
+		// goal column.
+		const column = this.#textareaGoalColumn.get(element) ?? currentColumn;
+		this.#textareaGoalColumn.set(element, column);
+		const target = visual.lines[targetIndex];
+		let cells = 0;
+		for (let i = 0; i < target.text.length; i++) {
+			const charCells = stringWidth(target.text[i]);
+			if (cells + charCells > column) {
+				return target.startOffset + i;
+			}
+			cells += charCells;
+		}
+		return target.endOffset;
 	}
 
 	/**
@@ -2331,13 +2607,18 @@ export class TermDOM {
 	}
 
 	#handleInputAction(
-		element: HTMLInputElement,
+		element: HTMLInputElement | HTMLTextAreaElement,
 		keyName: string,
 		key: string,
 		shiftKey: boolean,
 		ctrlKey: boolean,
 	): void {
+		const isTextarea = element.tagName === "TEXTAREA";
+		if (keyName !== "ArrowUp" && keyName !== "ArrowDown") {
+			this.#textareaGoalColumn.delete(element);
+		}
 		if (element.type === "checkbox" || element.type === "radio") {
+			const toggle = element as HTMLInputElement;
 			// Only Space activates these -- real browsers don't accept typed
 			// text into them at all, so every other key here is a no-op. A
 			// checkbox toggles; a radio only ever checks (Space on an
@@ -2345,10 +2626,10 @@ export class TermDOM {
 			// jsdom's checkedness setter handles unchecking the rest of the
 			// same-name group).
 			if (key === " ") {
-				if (element.type === "checkbox") {
-					this.#toggleCheckbox(element);
-				} else if (!element.checked) {
-					element.checked = true;
+				if (toggle.type === "checkbox") {
+					this.#toggleCheckbox(toggle);
+				} else if (!toggle.checked) {
+					toggle.checked = true;
 					element.dispatchEvent(
 						new this.window.Event("change", {
 							bubbles: true,
@@ -2435,17 +2716,63 @@ export class TermDOM {
 			} else {
 				collapse(caret + 1);
 			}
-		} else if (keyName === "Home") {
+		} else if (isTextarea && keyName === "Enter") {
+			// Enter is a newline in a textarea -- inserted like any typed
+			// character, replacing the selection.
+			newValue = value.slice(0, start) + "\n" + value.slice(end);
+			collapse(start + 1);
+		} else if (
+			isTextarea &&
+			(keyName === "ArrowUp" || keyName === "ArrowDown")
+		) {
+			// Vertical movement is by VISUAL line -- soft wraps count, as in
+			// a browser -- computed from the value's laid-out fragments.
+			this.#processPendingMutationsAndRender();
+			const target = this.#textareaVerticalTarget(
+				element as HTMLTextAreaElement,
+				caret,
+				keyName === "ArrowDown" ? 1 : -1,
+			);
 			if (shiftKey) {
-				extend(0);
+				extend(target);
 			} else {
-				collapse(0);
+				collapse(target);
+			}
+		} else if (keyName === "Home") {
+			// In a textarea, Home goes to the start of the caret's visual
+			// line; in an input, of the whole value.
+			let target = 0;
+			if (isTextarea) {
+				this.#processPendingMutationsAndRender();
+				const visual = this.#textareaVisualLines(
+					element as HTMLTextAreaElement,
+				);
+				if (visual) {
+					target =
+						visual.lines[this.#textareaLineAt(visual.lines, caret)].startOffset;
+				}
+			}
+			if (shiftKey) {
+				extend(target);
+			} else {
+				collapse(target);
 			}
 		} else if (keyName === "End") {
+			let target = value.length;
+			if (isTextarea) {
+				this.#processPendingMutationsAndRender();
+				const visual = this.#textareaVisualLines(
+					element as HTMLTextAreaElement,
+				);
+				if (visual) {
+					target =
+						visual.lines[this.#textareaLineAt(visual.lines, caret)].endOffset;
+				}
+			}
 			if (shiftKey) {
-				extend(value.length);
+				extend(target);
 			} else {
-				collapse(value.length);
+				collapse(target);
 			}
 		} else if (key.length === 1 && key.charCodeAt(0) >= 32) {
 			// Printable character: replaces the selection, as in a browser.
@@ -2460,6 +2787,15 @@ export class TermDOM {
 			// end (per spec), so the new caret must be set after.
 			element.value = newValue;
 			element.setSelectionRange(newStart, newEnd, newDirection);
+			if (isTextarea) {
+				// Push the new value into the UA tree now -- the mutation
+				// records from this sync are what invalidate layout, since no
+				// observer hears a .value assignment.
+				this.#syncTextareaShadowTree(
+					element as HTMLTextAreaElement,
+					this.#ensureTextareaShadowParts(element as HTMLTextAreaElement),
+				);
+			}
 
 			// Dispatch input event
 			element.dispatchEvent(
@@ -2565,7 +2901,11 @@ export class TermDOM {
 		y: number,
 	): {node: Text; offset: number} | null {
 		const element = this.#findElementAtDocumentPoint(x, y);
-		if (!element || element instanceof (this.window as any).HTMLInputElement) {
+		if (
+			!element ||
+			element instanceof (this.window as any).HTMLInputElement ||
+			element instanceof (this.window as any).HTMLTextAreaElement
+		) {
 			return null;
 		}
 
@@ -3138,14 +3478,15 @@ export class TermDOM {
 				this.#moveFocus(shiftKey);
 			}
 
-			// Input element default actions
+			// Editable widget default actions
 			if (
-				targetElement instanceof (this.window as any).HTMLInputElement &&
-				(targetElement as HTMLInputElement).type !== "submit" &&
-				(targetElement as HTMLInputElement).type !== "button"
+				(targetElement instanceof (this.window as any).HTMLInputElement &&
+					(targetElement as HTMLInputElement).type !== "submit" &&
+					(targetElement as HTMLInputElement).type !== "button") ||
+				targetElement instanceof (this.window as any).HTMLTextAreaElement
 			) {
 				this.#handleInputAction(
-					targetElement as HTMLInputElement,
+					targetElement as HTMLInputElement | HTMLTextAreaElement,
 					keyName,
 					key,
 					shiftKey,
