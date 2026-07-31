@@ -1165,3 +1165,40 @@ test("wide characters in an input measure in cells, not characters", async () =>
 
 	dom.dispose();
 });
+
+test("the size attribute sets a text input's default width, as in a browser", async () => {
+	// A browser sizes an unstyled input from size="..." (spec default 20) --
+	// its width never comes from the containing block. CSS width still wins
+	// over the attribute, as it does in a browser.
+	const terminal = new MockProcess({rows: 6, cols: 60});
+	const dom = new TermDOM({process: terminal});
+	dom.document.body.innerHTML = `<div><input id="a" size="8">|</div><div><input id="b">|</div><div><input id="c" size="8" style="width: 12ch">|</div>`;
+	await nextFrame(dom);
+
+	const lines = terminal.getPlainText().split("\n");
+	expect(lines[0].indexOf("|")).toBe(8); // size=8 -> 8 cells
+	expect(lines[1].indexOf("|")).toBe(20); // spec default 20
+	expect(lines[2].indexOf("|")).toBe(12); // CSS width beats the attribute
+
+	dom.dispose();
+});
+
+test("width:100% on an input fills its container instead of collapsing", async () => {
+	// The official TodoMVC stylesheet sizes its header input with width:100%.
+	// getBoxModel only carries absolute widths, so the percentage used to
+	// fall through to content sizing -- and a void input has no content:
+	// zero cells, invisible. Percentages now resolve against the inline
+	// run's available width.
+	const terminal = new MockProcess({rows: 4, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	dom.document.body.innerHTML = `<div><input style="width:100%" placeholder="What needs to be done?"></div><div><input style="width:50%"></div>`;
+	await nextFrame(dom);
+
+	const [full, half] = Array.from(dom.document.querySelectorAll("input"));
+	expect(full.getBoundingClientRect().width).toBe(40);
+	expect(half.getBoundingClientRect().width).toBe(20);
+	// The full-width field no longer clips its 22-char placeholder.
+	expect(terminal.getPlainText()).toContain("What needs to be done?");
+
+	dom.dispose();
+});

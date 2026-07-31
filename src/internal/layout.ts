@@ -2323,7 +2323,7 @@ export class LayoutEngine {
 
 	// Inline layout methods (moved from breaker.ts)
 	// TODO: Many of these methods could be regular functions
-	#collectLeafNodes(runHead: Node): Leaf[] {
+	#collectLeafNodes(runHead: Node, availableWidth: number): Leaf[] {
 		const leafNodes: Leaf[] = [];
 
 		// For pseudo elements, use the host element as the parent
@@ -2395,6 +2395,32 @@ export class LayoutEngine {
 				} else if (display === "inline-block") {
 					// Parse CSS box model properties
 					const boxModel = getBoxModel(element);
+
+					// getBoxModel only carries absolute widths; a percentage
+					// resolves here, against the run's available width -- the
+					// containing block's content width by the time layout asks.
+					// This is what lets `input { width: 100% }` (TodoMVC's own
+					// stylesheet) fill its container instead of collapsing to a
+					// void element's contentless zero. Against an indefinite
+					// width (a min-content probe offers 0, which IS definite and
+					// correctly resolves a percentage to 0), auto behavior falls
+					// through as before, per CSS.
+					if (boxModel.width === undefined) {
+						const widthValue = parseUnitValue(
+							getPropertyValue(element, "width"),
+						);
+						if (
+							widthValue !== null &&
+							typeof widthValue === "object" &&
+							Number.isFinite(availableWidth) &&
+							availableWidth < Number.MAX_SAFE_INTEGER
+						) {
+							boxModel.width = Math.max(
+								0,
+								Math.round((widthValue.percentage / 100) * availableWidth),
+							);
+						}
+					}
 
 					// Calculate available content dimensions
 					const horizontalBoxSpace =
@@ -2492,8 +2518,14 @@ export class LayoutEngine {
 		_height: number,
 		_heightMode: FlexTypes.MeasureMode,
 	): BreakResult {
-		// Collect leaf nodes from the run head
-		const leafNodes = this.#collectLeafNodes(runHead);
+		// Collect leaf nodes from the run head. An UNDEFINED width offer means
+		// "measure your natural size" -- indefinite, so percentage widths in
+		// the run cannot resolve against it (NaN); any definite offer,
+		// including an AT_MOST 0 min-content probe, resolves them.
+		const leafNodes = this.#collectLeafNodes(
+			runHead,
+			widthMode === Flex.MEASURE_MODE_UNDEFINED ? NaN : width,
+		);
 
 		// Handle empty case
 		if (leafNodes.length === 0) {

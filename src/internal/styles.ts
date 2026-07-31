@@ -371,12 +371,19 @@ const CHECKBOX_DEFAULTS: Record<string, string> = {
 function getElementDefaults(
 	element: Element,
 ): Record<string, string> | undefined {
-	if (
-		element.tagName === "INPUT" &&
-		((element as HTMLInputElement).type === "checkbox" ||
-			(element as HTMLInputElement).type === "radio")
-	) {
-		return CHECKBOX_DEFAULTS;
+	if (element.tagName === "INPUT") {
+		const input = element as HTMLInputElement;
+		if (input.type === "checkbox" || input.type === "radio") {
+			return CHECKBOX_DEFAULTS;
+		}
+		// The size attribute drives a text input's default width, one column
+		// per character position, exactly as a browser sizes an unstyled
+		// input from size="...". The static defaults entry carries the spec
+		// default of 20.
+		const size = parseInt(input.getAttribute("size") ?? "", 10);
+		if (Number.isFinite(size) && size > 0) {
+			return {...TERMINAL_ELEMENT_DEFAULTS.input, width: `${size}ch`};
+		}
 	}
 	return TERMINAL_ELEMENT_DEFAULTS[element.tagName.toLowerCase()];
 }

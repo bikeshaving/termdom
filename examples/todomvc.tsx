@@ -22,7 +22,7 @@ const style = document.createElement("style");
 style.textContent = `
   .todoapp { padding: 1ch 2ch; }
   .header h1 { color: cyan; font-weight: bold; }
-  .header .new-todo { }
+  .header .new-todo { width: 100%; }
   .main { padding-top: 1; }
   .toggle-all { margin-right: 1ch; }
   .todo-list { padding-left: 0; list-style: none; }
