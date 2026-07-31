@@ -1371,3 +1371,27 @@ test("TermDOM - ::marker rendering test", async () => {
 	const expectedPattern = "▶ [Content]";
 	expect(output.includes(expectedPattern)).toBe(true);
 });
+
+test("Pure JSDOM - nextSibling/previousSibling at the root return null, per spec", () => {
+	// The TreeWalker spec's traverse-siblings algorithm returns null when the
+	// current node is the root: a walker never visits its root's siblings.
+	// Without this guard, a walker rooted at an element whose subtree was
+	// exhausted escaped into the root's DOM siblings -- concretely, an
+	// inline-block flex item (its own inline-run head) "skipped its children"
+	// via nextSibling() and swallowed the NEXT flex item's text into its own
+	// measurement, misplacing every later sibling on the main axis.
+	const dom = new JSDOM(
+		"<!DOCTYPE html><html><body><span id='a'>x</span><span id='b'>y</span></body></html>",
+	);
+	const window = dom.window;
+	const a = window.document.getElementById("a")!;
+
+	const walker = createExpandedTreeWalker(window as any, a);
+	expect(walker.nextSibling()).toBe(null);
+	expect(walker.previousSibling()).toBe(null);
+	expect(walker.currentNode).toBe(a); // unmoved
+
+	// A child of the root still traverses siblings normally.
+	walker.firstChild();
+	expect(walker.nextSibling()).toBe(null); // lone text child, no sibling
+});

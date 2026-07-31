@@ -602,3 +602,35 @@ test("flexbox two columns: fixed width + flexible width with text wrapping", asy
 
 	dom.dispose();
 });
+
+test("an inline-block flex item does not swallow the next item's content into its measurement", async () => {
+	// An inline-block flex item is its own inline-run head. Collecting its
+	// leaves ends with a nextSibling() "skip children" step -- and since the
+	// item is also the walker's root, the walker used to escape the item and
+	// pull the NEXT flex item's text into this one's break result. The item
+	// then measured itself as wide as both ("[x]" + "Buy milk" = 11 cells),
+	// pushing every later sibling that far right on the main axis.
+	const terminal = new MockProcess({cols: 40, rows: 6});
+	const dom = new TermDOM({process: terminal});
+	const {document} = dom;
+
+	const row = document.createElement("div");
+	row.style.display = "flex";
+	row.style.flexDirection = "row";
+	(row.style as any).gap = "1ch";
+	const box = document.createElement("span");
+	box.style.display = "inline-block";
+	box.textContent = "[x]";
+	const label = document.createElement("label");
+	label.textContent = "Buy milk";
+	row.append(box, label);
+	document.body.appendChild(row);
+	await nextFrame(dom);
+
+	expect(box.getBoundingClientRect().width).toBe(3);
+	// 3 cells of box + 1 cell of gap.
+	expect(label.getBoundingClientRect().x).toBe(4);
+	expect(terminal.getPlainText()).toContain("[x] Buy milk");
+
+	dom.dispose();
+});

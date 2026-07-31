@@ -206,9 +206,19 @@ export class ExpandedTreeWalker {
 	}
 
 	/**
-	 * Move to next sibling
+	 * Move to next sibling. Per the TreeWalker spec's traverse-siblings
+	 * algorithm, the root has no siblings within the walk: same guard as
+	 * nextNode's, for the same reason -- returning the root's DOM sibling
+	 * escapes the subtree the walker was scoped to. (Concretely: an
+	 * inline-block flex item is its own inline-run head, and collecting its
+	 * leaves ends with a nextSibling() skip -- without this guard that
+	 * "skip" walked out of the item and swallowed the next flex item's text
+	 * into its measurement.)
 	 */
 	nextSibling(): Node | null {
+		if (this.currentNode === this.root) {
+			return null;
+		}
 		const nextSibling = this.#getNextSibling(this.currentNode);
 		if (nextSibling && this.#acceptNode(nextSibling)) {
 			this.currentNode = nextSibling;
@@ -218,9 +228,12 @@ export class ExpandedTreeWalker {
 	}
 
 	/**
-	 * Move to previous sibling
+	 * Move to previous sibling. Root-guarded like nextSibling, per spec.
 	 */
 	previousSibling(): Node | null {
+		if (this.currentNode === this.root) {
+			return null;
+		}
 		const previousSibling = this.#getPreviousSibling(this.currentNode);
 		if (previousSibling && this.#acceptNode(previousSibling)) {
 			this.currentNode = previousSibling;
