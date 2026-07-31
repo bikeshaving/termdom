@@ -121,6 +121,29 @@ function domCodeFor(keyName: string): string {
 }
 
 /**
+ * The terminal has exactly three font weights, and CSS names all three:
+ * light maps to SGR faint (dim), normal to nothing, bold to SGR bold.
+ * Numeric values follow the CSS scale (100-300 light, 600+ bold). The
+ * relative keywords resolve absolutely rather than against the parent's
+ * weight -- an approximation, documented rather than hidden: "bolder" from
+ * a bold parent cannot get bolder on a terminal anyway.
+ */
+function resolveFontWeight(weight: string): {bold: boolean; dim: boolean} {
+	if (weight === "bold" || weight === "bolder") {
+		return {bold: true, dim: false};
+	}
+	if (weight === "lighter") {
+		return {bold: false, dim: true};
+	}
+	const numeric = parseInt(weight, 10);
+	if (Number.isFinite(numeric)) {
+		if (numeric >= 600) return {bold: true, dim: false};
+		if (numeric <= 300) return {bold: false, dim: true};
+	}
+	return {bold: false, dim: false};
+}
+
+/**
  * Map each painted (visual) character of a text node back to its code-unit
  * offset in node.data. The painted fragments are the node's text after
  * whitespace collapsing and line breaking, so they differ from the raw data
@@ -898,9 +921,9 @@ export class TermDOM {
 		const backgroundColor = this.window
 			.getComputedStyle(element)
 			.getPropertyValue("background-color");
-		const bold =
-			this.window.getComputedStyle(element).getPropertyValue("font-weight") ===
-			"bold";
+		const {bold, dim} = resolveFontWeight(
+			this.window.getComputedStyle(element).getPropertyValue("font-weight"),
+		);
 		const italic =
 			this.window.getComputedStyle(element).getPropertyValue("font-style") ===
 			"italic";
@@ -931,6 +954,7 @@ export class TermDOM {
 					? cssColorToNumber(backgroundColor)
 					: undefined,
 			bold,
+			dim,
 			italic,
 			underline,
 			underlineStyle,
@@ -1157,7 +1181,9 @@ export class TermDOM {
 		const markerColor =
 			markerStyle.getPropertyValue("color") ||
 			computedStyle.getPropertyValue("color");
-		const markerBold = markerStyle.getPropertyValue("font-weight") === "bold";
+		const {bold: markerBold, dim: markerDim} = resolveFontWeight(
+			markerStyle.getPropertyValue("font-weight"),
+		);
 		const markerItalic =
 			markerStyle.getPropertyValue("font-style") === "italic";
 		const markerUnderline = markerStyle
@@ -1170,6 +1196,7 @@ export class TermDOM {
 					? cssColorToNumber(markerColor)
 					: undefined,
 			bold: markerBold,
+			dim: markerDim,
 			italic: markerItalic,
 			underline: markerUnderline,
 		};
@@ -1311,7 +1338,12 @@ export class TermDOM {
 		} else {
 			// A blurred field is a FAINT BLANK: dim + underline (SGR 2 and 4,
 			// classic codes that survive every terminal and every re-encoding
-			// intermediary) across every cell the value doesn't occupy. Typed
+			// intermediary) across every cell the value doesn't occupy. In CSS
+			// terms the blank is `font-weight: lighter; text-decoration:
+			// underline` -- both attributes authors can write themselves
+			// (resolveFontWeight maps light weights to faint); only the
+			// value/remainder REGION split is widget magic, pending a field
+			// pseudo-element under the divergence doctrine. Typed
 			// content reads as plain text; the placeholder is part of the
 			// blank -- a ghost label sitting on it -- so it keeps its gray and
 			// goes faint with it. Focus swaps the whole extent to the solid
@@ -1404,7 +1436,9 @@ export class TermDOM {
 		const textTransform = computedStyle.getPropertyValue("text-transform");
 		const textColor = computedStyle.getPropertyValue("color");
 		const textBgColor = computedStyle.getPropertyValue("background-color");
-		const textBold = computedStyle.getPropertyValue("font-weight") === "bold";
+		const {bold: textBold, dim: textDim} = resolveFontWeight(
+			computedStyle.getPropertyValue("font-weight"),
+		);
 		const textItalic =
 			computedStyle.getPropertyValue("font-style") === "italic";
 		const textUnderline = computedStyle
@@ -1427,6 +1461,7 @@ export class TermDOM {
 					? cssColorToNumber(textBgColor)
 					: undefined,
 			bold: textBold,
+			dim: textDim,
 			italic: textItalic,
 			underline: textUnderline,
 			underlineStyle: textUnderlineStyle,

@@ -271,7 +271,8 @@ const TERMINAL_ELEMENT_DEFAULTS: Record<string, Record<string, string>> = {
 	s: {display: "inline", "text-decoration": "line-through"},
 	sub: {display: "inline"},
 	sup: {display: "inline"},
-	small: {display: "inline"},
+	// SGR faint is the terminal's small: same glyph cells, reduced ink.
+	small: {display: "inline", "font-weight": "lighter"},
 	abbr: {display: "inline"},
 	cite: {display: "inline", "font-style": "italic"},
 	dfn: {display: "inline", "font-style": "italic"},

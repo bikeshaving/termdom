@@ -183,3 +183,30 @@ test("inline elements do not extend background", async () => {
 
 // Skip complex layout tests due to positioning issues
 // TODO: Re-enable when block layout stacking is fixed
+
+test("font-weight maps to the terminal's three weights", async () => {
+	// The terminal has exactly three font weights and CSS names all three:
+	// lighter/100-300 -> SGR faint (dim), bold/bolder/600+ -> SGR bold.
+	// Numeric weights count too -- font-weight: 700 was previously not even
+	// recognized as bold (only the literal string "bold" was).
+	const terminal = new MockProcess({rows: 6, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	const {document} = dom;
+	document.body.innerHTML = `
+		<div style="font-weight: lighter">faint keyword</div>
+		<div style="font-weight: 300">faint numeric</div>
+		<div style="font-weight: 700">bold numeric</div>
+		<div><small>small is faint by default</small></div>
+	`;
+	await nextFrame(dom);
+
+	const cellAt = (row: number, col: number) =>
+		(terminal as any).terminal.buffer.active.getLine(row).getCell(col);
+	expect(cellAt(0, 0).isDim()).toBeTruthy();
+	expect(cellAt(1, 0).isDim()).toBeTruthy();
+	expect(cellAt(2, 0).isBold()).toBeTruthy();
+	expect(cellAt(2, 0).isDim()).toBeFalsy();
+	expect(cellAt(3, 0).isDim()).toBeTruthy();
+
+	dom.dispose();
+});
