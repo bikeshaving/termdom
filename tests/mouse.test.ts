@@ -366,3 +366,123 @@ test("a click long after the previous one does not fire dblclick", async () => {
 
 	termdom.dispose();
 });
+
+test("dragging across text builds a real Selection, paints inverse, and copies via OSC 52", async () => {
+	const proc = new MockMouseProcess();
+	const termdom = new TermDOM({process: proc as any, detectCursor: false});
+	const {document, window} = termdom;
+
+	const line1 = document.createElement("div");
+	line1.textContent = "hello world";
+	const line2 = document.createElement("div");
+	line2.textContent = "second line";
+	document.body.append(line1, line2);
+	await nextFrame(termdom);
+
+	// Press at col 1 row 1 (before "h"), drag to col 6 (before "o" -- wait,
+	// before index 5), release: selects "hello".
+	proc.stdin.send("\x1b[<0;1;1M");
+	proc.stdin.send("\x1b[<32;6;1M"); // motion with left button held
+	await nextFrame(termdom);
+
+	const selection = window.getSelection()!;
+	expect(selection.isCollapsed).toBe(false);
+	expect(selection.toString()).toBe("hello");
+	// The highlight paints as inverse video (SGR 7).
+	expect(proc.written).toMatch(/\x1b\[[\d;]*7m/);
+
+	// Release copies the selection to the clipboard via OSC 52.
+	proc.stdin.send("\x1b[<0;6;1m");
+	const payload = Buffer.from("hello", "utf8").toString("base64");
+	expect(proc.written).toContain(`\x1b]52;c;${payload}\x07`);
+
+	termdom.dispose();
+});
+
+test("a backward drag selects, and spans nodes, with the anchor/focus handled by Selection", async () => {
+	const proc = new MockMouseProcess();
+	const termdom = new TermDOM({process: proc as any, detectCursor: false});
+	const {document, window} = termdom;
+
+	const line1 = document.createElement("div");
+	line1.textContent = "hello world";
+	const line2 = document.createElement("div");
+	line2.textContent = "second line";
+	document.body.append(line1, line2);
+	await nextFrame(termdom);
+
+	// Press mid-way through line 2, drag UP to mid line 1.
+	proc.stdin.send("\x1b[<0;7;2M"); // before "d" of "second" (offset 6)
+	proc.stdin.send("\x1b[<32;3;1M"); // up to before "l" of "hello" (offset 2)
+	await nextFrame(termdom);
+
+	const text = window.getSelection()!.toString();
+	expect(text).toContain("llo world");
+	expect(text).toContain("second");
+	proc.stdin.send("\x1b[<0;3;1m");
+
+	termdom.dispose();
+});
+
+test("a click collapses an existing selection", async () => {
+	const proc = new MockMouseProcess();
+	const termdom = new TermDOM({process: proc as any, detectCursor: false});
+	const {document, window} = termdom;
+
+	const div = document.createElement("div");
+	div.textContent = "some selectable text";
+	document.body.appendChild(div);
+	await nextFrame(termdom);
+
+	proc.stdin.send("\x1b[<0;1;1M");
+	proc.stdin.send("\x1b[<32;10;1M");
+	proc.stdin.send("\x1b[<0;10;1m");
+	expect(window.getSelection()!.isCollapsed).toBe(false);
+
+	// A fresh click elsewhere collapses it, as in a browser.
+	proc.stdin.send("\x1b[<0;3;1M");
+	proc.stdin.send("\x1b[<0;3;1m");
+	expect(window.getSelection()!.isCollapsed).toBe(true);
+
+	termdom.dispose();
+});
+
+test("a selecting drag released over a label does not activate it", async () => {
+	// Activation after a selecting gesture would toggle the label's checkbox
+	// -- and in a framework app the resulting re-render replaces the very
+	// nodes the fresh selection points into, destroying it on the spot.
+	// Browsers suppress the click; so do we.
+	const proc = new MockMouseProcess();
+	const termdom = new TermDOM({process: proc as any, detectCursor: false});
+	const {document, window} = termdom;
+
+	const row = document.createElement("div");
+	const checkbox = document.createElement("input");
+	checkbox.type = "checkbox";
+	checkbox.id = "cb";
+	const label = document.createElement("label");
+	label.setAttribute("for", "cb");
+	label.textContent = "Mark all as complete";
+	row.append(checkbox, label);
+	document.body.appendChild(row);
+	await nextFrame(termdom);
+
+	const clicks: string[] = [];
+	document.addEventListener("click", (e: any) => clicks.push(e.target.tagName));
+
+	// Drag across the label text ("[ ]Mark all..." -- label starts col 4).
+	proc.stdin.send("\x1b[<0;5;1M");
+	proc.stdin.send("\x1b[<32;12;1M");
+	proc.stdin.send("\x1b[<0;12;1m");
+
+	expect(window.getSelection()!.toString()).toBe("ark all");
+	expect(checkbox.checked).toBe(false); // NOT activated
+	expect(clicks).toEqual([]); // no click synthesized from a selecting drag
+
+	// A plain click on the label still activates as before.
+	proc.stdin.send("\x1b[<0;5;1M");
+	proc.stdin.send("\x1b[<0;5;1m");
+	expect(checkbox.checked).toBe(true);
+
+	termdom.dispose();
+});

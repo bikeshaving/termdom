@@ -121,6 +121,48 @@ function domCodeFor(keyName: string): string {
 }
 
 /**
+ * Map each painted (visual) character of a text node back to its code-unit
+ * offset in node.data. The painted fragments are the node's text after
+ * whitespace collapsing and line breaking, so they differ from the raw data
+ * only in whitespace: a run of data whitespace becomes one visual space, or
+ * nothing at a line break. Non-whitespace code units match one-for-one --
+ * including surrogate halves, which is what keeps the returned offsets valid
+ * as Range offsets (Ranges address code units, not glyphs).
+ *
+ * Selection needs this bridge in both directions: a mouse hit lands on a
+ * visual cell and must become a Range offset into the data; painting walks
+ * the visual fragments and must know which of them a data-offset Range
+ * covers.
+ */
+function visualToDataOffsets(
+	data: string,
+	fragments: Array<{text: string}>,
+): number[] {
+	const map: number[] = [];
+	let d = 0;
+	for (const fragment of fragments) {
+		// Code UNITS on both sides, not code points: surrogate halves of
+		// non-whitespace text are identical in data and fragment, so they
+		// align half-to-half, and the map stays indexable by the same
+		// positions String.prototype.slice uses.
+		for (let i = 0; i < fragment.text.length; i++) {
+			if (!/\s/.test(fragment.text[i])) {
+				// A visual char never comes from data whitespace -- skip any
+				// collapsed run to the next real char.
+				while (d < data.length && /\s/.test(data[d])) d++;
+				map.push(Math.min(d, Math.max(0, data.length - 1)));
+				d++;
+			} else {
+				// One visual space stands for the whole whitespace run.
+				map.push(Math.min(d, Math.max(0, data.length - 1)));
+				while (d < data.length && /\s/.test(data[d])) d++;
+			}
+		}
+	}
+	return map;
+}
+
+/**
  * Apply CSS `text-transform` at paint time, not layout time. Every character
  * occupies the same cell width regardless of case in a terminal, so unlike a
  * browser's proportional font this can never change line wrapping -- there's
@@ -331,6 +373,10 @@ export class TermDOM {
 	// becomes a click. (Browsers dispatch click at the nearest common
 	// ancestor; the same-element case is the one that matters on a cell grid.)
 	#mouseDownTarget: Element | null = null;
+	// Where a left-button drag started selecting text, as a caret position --
+	// the selection's anchor. The focus end follows the drag; both feed
+	// Selection.setBaseAndExtent, which handles backward drags itself.
+	#selectionDragAnchor: {node: Text; offset: number} | null = null;
 	// The target and time of the last completed click, to detect a second one
 	// close enough behind it to be a dblclick -- browsers' own double-click
 	// interval varies by OS/user setting; 500ms is the common default.
@@ -1355,6 +1401,73 @@ export class TermDOM {
 					);
 				}
 			}
+			this.#renderTextSelection(
+				textNode,
+				rectTexts,
+				textStyle,
+				textTransform,
+				ctx,
+			);
+		}
+	}
+
+	/**
+	 * Overlay the document selection on a text node's painted fragments as
+	 * inverse video -- the terminal-native highlight, no color assumptions.
+	 * The Range holds code-unit offsets into node.data; visualToDataOffsets
+	 * bridges each painted character back to its data offset, and contiguous
+	 * selected runs repaint inverse. Ranges whose boundary containers are
+	 * elements rather than text nodes still highlight any text node they
+	 * fully contain (the intersectsNode walk); a boundary that lands INSIDE
+	 * this node only resolves to a precise offset when the container is the
+	 * node itself -- the only shape our own drag selection produces.
+	 */
+	#renderTextSelection(
+		textNode: Text,
+		rectTexts: Array<import("./layout.js").RectText>,
+		textStyle: import("./ansi.js").CellStyle,
+		textTransform: string,
+		ctx: import("./ansi.js").DrawingContext,
+	): void {
+		const selection = this.window.getSelection();
+		if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
+			return;
+		}
+		const range = selection.getRangeAt(0);
+		if (!range.intersectsNode(textNode)) return;
+
+		const from = range.startContainer === textNode ? range.startOffset : 0;
+		const to =
+			range.endContainer === textNode ? range.endOffset : textNode.data.length;
+		if (to <= from) return;
+
+		const visToData = visualToDataOffsets(textNode.data, rectTexts);
+		let visualBase = 0;
+		for (const rectText of rectTexts) {
+			// Contiguous run of selected visual chars within this fragment.
+			let runStart = -1;
+			for (let i = 0; i <= rectText.text.length; i++) {
+				const dataOffset =
+					i < rectText.text.length ? visToData[visualBase + i] : -1;
+				const selected =
+					dataOffset >= 0 && dataOffset >= from && dataOffset < to;
+				if (selected && runStart === -1) {
+					runStart = i;
+				} else if (!selected && runStart !== -1) {
+					// Case transforms never change cell width, so slicing the
+					// untransformed text and transforming the slice paints the
+					// same cells the base pass did.
+					ctx.setText(
+						Math.round(rectText.rect.x) +
+							stringWidth(rectText.text.slice(0, runStart)),
+						Math.round(rectText.rect.y),
+						applyTextTransform(rectText.text.slice(runStart, i), textTransform),
+						{...textStyle, inverse: true},
+					);
+					runStart = -1;
+				}
+			}
+			visualBase += rectText.text.length;
 		}
 	}
 
@@ -2224,6 +2337,76 @@ export class TermDOM {
 	}
 
 	/**
+	 * Resolve a document-relative point to a caret position -- (text node,
+	 * code-unit offset into node.data) -- the way a browser's
+	 * caretPositionFromPoint does. Hit-tests the element, then scans its text
+	 * nodes' painted fragments for the one on the point's row; the x offset
+	 * becomes a visual character index (cell-width aware), and
+	 * visualToDataOffsets bridges that back to a Range-valid data offset.
+	 * Landing past a fragment's last character on its row means "after the
+	 * last character", so a drag can select through end-of-line. Returns null
+	 * over rows with no text (and over inputs, whose value is not document
+	 * text -- their selection is the input's own selectionStart/End world).
+	 */
+	#documentPointToTextPosition(
+		x: number,
+		y: number,
+	): {node: Text; offset: number} | null {
+		const element = this.#findElementAtDocumentPoint(x, y);
+		if (!element || element instanceof (this.window as any).HTMLInputElement) {
+			return null;
+		}
+
+		let best: {node: Text; offset: number; distance: number} | null = null;
+		const visit = (node: Node): void => {
+			for (const child of Array.from(node.childNodes)) {
+				if (child.nodeType === child.TEXT_NODE) {
+					const textNode = child as Text;
+					const fragments = this[kLayoutEngine].getRectTexts(textNode);
+					if (fragments.length === 0) continue;
+					const visToData = visualToDataOffsets(textNode.data, fragments);
+					let visualBase = 0;
+					for (const fragment of fragments) {
+						const rect = fragment.rect;
+						if (y >= rect.y && y < rect.y + Math.max(1, rect.height)) {
+							// Walk cells to the visual index under (or past) x.
+							let cellX = rect.x;
+							let index = 0;
+							while (index < fragment.text.length && cellX < x) {
+								const w = stringWidth(fragment.text[index]);
+								if (cellX + w > x) break;
+								cellX += w;
+								index++;
+							}
+							const distance =
+								x < rect.x
+									? rect.x - x
+									: x >= cellX && index === fragment.text.length
+										? x - cellX
+										: 0;
+							if (!best || distance < best.distance) {
+								const visual = visualBase + index;
+								const offset =
+									visual < visToData.length
+										? visToData[visual]
+										: textNode.data.length;
+								best = {node: textNode, offset, distance};
+							}
+						}
+						visualBase += fragment.text.length;
+					}
+				} else if (child.nodeType === child.ELEMENT_NODE) {
+					visit(child);
+				}
+			}
+		};
+		visit(element);
+		return best
+			? {node: (best as any).node, offset: (best as any).offset}
+			: null;
+	}
+
+	/**
 	 * A mouse report from the terminal (SGR encoding: `CSI < code ; col ; row M/m`).
 	 * These only arrive while capture is on -- see updateMouseReporting.
 	 *
@@ -2319,6 +2502,25 @@ export class TermDOM {
 
 		if (isMotion) {
 			target.dispatchEvent(new this.window.MouseEvent("mousemove", eventInit));
+			// Dragging with the anchor set extends the document selection to
+			// the caret position under the pointer. setBaseAndExtent handles a
+			// backward drag itself; over a textless stretch the focus simply
+			// stays where it last was.
+			if (this.#selectionDragAnchor && this.#mouseDownTarget && point) {
+				const focus = this.#documentPointToTextPosition(x, y);
+				if (focus) {
+					const anchor = this.#selectionDragAnchor;
+					this.window
+						.getSelection()
+						?.setBaseAndExtent(
+							anchor.node,
+							anchor.offset,
+							focus.node,
+							focus.offset,
+						);
+					this.#render();
+				}
+			}
 			return;
 		}
 
@@ -2340,11 +2542,60 @@ export class TermDOM {
 					(active as HTMLElement).blur();
 					void this.#render();
 				}
+
+				// Default action: mousedown collapses the document selection at
+				// the pressed caret position and anchors a possible drag there,
+				// as in a browser. Left button only -- and preventDefault on
+				// mousedown suppresses it, which is exactly how apps that want
+				// the drag events for themselves opt out.
+				const selection = this.window.getSelection();
+				if (base === 0 && selection) {
+					const anchor = point ? this.#documentPointToTextPosition(x, y) : null;
+					const hadSelection = !selection.isCollapsed;
+					this.#selectionDragAnchor = anchor;
+					if (anchor) {
+						selection.setBaseAndExtent(
+							anchor.node,
+							anchor.offset,
+							anchor.node,
+							anchor.offset,
+						);
+					} else if (selection.rangeCount > 0) {
+						selection.removeAllRanges();
+					}
+					if (hadSelection) {
+						this.#render();
+					}
+				}
 			}
 			return;
 		}
 
 		target.dispatchEvent(new this.window.MouseEvent("mouseup", eventInit));
+		// Releasing a selection drag offers the selected text to the system
+		// clipboard via OSC 52 -- select-to-copy, the terminal's own
+		// convention (a Cmd/Ctrl+C chord never reaches the PTY). Terminals
+		// without OSC 52 support ignore the sequence entirely.
+		let selectedByDrag = false;
+		if (this.#selectionDragAnchor) {
+			this.#selectionDragAnchor = null;
+			const text = this.window.getSelection()?.toString() ?? "";
+			if (text.length > 0) {
+				selectedByDrag = true;
+				this.#process.stdout.write(
+					`\x1b]52;c;${Buffer.from(text, "utf8").toString("base64")}\x07`,
+				);
+			}
+		}
+		// A drag that selected text is not a click: browsers suppress
+		// activation after a selecting gesture, and without this a drag
+		// released over a <label> would activate it -- toggling its checkbox,
+		// which in a framework app re-renders the very nodes the fresh
+		// selection points into, destroying it on the spot.
+		if (selectedByDrag) {
+			this.#mouseDownTarget = null;
+			return;
+		}
 		if (this.#mouseDownTarget === target) {
 			target.dispatchEvent(
 				new this.window.MouseEvent("click", {...eventInit, buttons: 0}),
