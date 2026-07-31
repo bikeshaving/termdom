@@ -152,6 +152,15 @@ const TEXTAREA_UA_STYLES = `
 `;
 
 /**
+ * The UA stylesheet of a select's internal shadow tree: the ▾ indicator
+ * is faint -- affordance, not content. Everything else (the focused
+ * field's underline included) inherits from the host's own defaults.
+ */
+const SELECT_UA_STYLES = `
+	[part="indicator"] { font-weight: lighter; }
+`;
+
+/**
  * The terminal has exactly three font weights, and CSS names all three:
  * light maps to SGR faint (dim), normal to nothing, bold to SGR bold.
  * Numeric values follow the CSS scale (100-300 light, 600+ bold). The
@@ -1063,6 +1072,26 @@ export class TermDOM {
 			}
 		}
 
+		// A select's content is its UA shadow tree (label + indicator),
+		// painted by the normal child walk; upkeep and caret parking are all
+		// that belongs here.
+		if (element.tagName === "SELECT" && rect) {
+			const select = element as HTMLSelectElement;
+			const parts = this.#ensureSelectShadowParts(select);
+			this.#syncSelectShadowTree(select, parts);
+			if (visible && select === this.document.activeElement) {
+				const boxModel = getBoxModel(select);
+				ctx.setCaret(
+					Math.round(rect.left) +
+						(boxModel.borderLeftWidth || 0) +
+						(boxModel.paddingLeft || 0),
+					Math.round(rect.top) +
+						(boxModel.borderTopWidth || 0) +
+						(boxModel.paddingTop || 0),
+				);
+			}
+		}
+
 		// Render input elements (void elements with no children)
 		if (
 			element.tagName === "INPUT" &&
@@ -1498,6 +1527,121 @@ export class TermDOM {
 			offset += 1;
 		}
 		return {value, lines};
+	}
+
+	/**
+	 * Build a select's UA-internal shadow tree: the selected option's label
+	 * (part=value) and the ▾ indicator (part=indicator), observer-enrolled
+	 * before population like the textarea's -- its content renders through
+	 * the normal pipeline, and composition hides the option list entirely.
+	 */
+	#ensureSelectShadowParts(element: HTMLSelectElement): {
+		kind: "field" | "toggle" | "textarea" | "select";
+		spans: Record<string, HTMLElement>;
+		texts: Record<string, Text>;
+	} {
+		const cached = this.#inputShadowParts.get(element);
+		if (cached && cached.kind === "select") {
+			return cached;
+		}
+
+		const document = this.document;
+		const root = createUAShadowRoot(element);
+		this[kObserver].observe(root, {
+			childList: true,
+			subtree: true,
+			attributes: true,
+			characterData: true,
+		});
+		this.#styleManager.registerShadowRoot(root);
+
+		const spans: Record<string, HTMLElement> = {};
+		const texts: Record<string, Text> = {};
+		const style = document.createElement("style");
+		style.textContent = SELECT_UA_STYLES;
+		root.appendChild(style);
+		for (const part of ["value", "indicator"]) {
+			const span = document.createElement("span");
+			span.setAttribute("part", part);
+			const text = document.createTextNode("");
+			span.appendChild(text);
+			root.appendChild(span);
+			spans[part] = span;
+			texts[part] = text;
+		}
+		texts.indicator.data = " \u25be"; // " ▾"
+
+		const parts = {kind: "select" as const, spans, texts};
+		this.#inputShadowParts.set(element, parts);
+		this.#syncSelectShadowTree(element, parts);
+		return parts;
+	}
+
+	/** Reconcile the select's UA tree with its own selection state. */
+	#syncSelectShadowTree(
+		element: HTMLSelectElement,
+		parts: {texts: Record<string, Text>},
+	): void {
+		const selected =
+			element.selectedIndex >= 0
+				? element.options[element.selectedIndex]
+				: null;
+		const label = selected ? selected.label : "";
+		if (parts.texts.value.data !== label) {
+			parts.texts.value.data = label;
+		}
+	}
+
+	/**
+	 * Arrow keys move a closed select's selection in place, skipping
+	 * disabled options, firing input and change -- the browser's own
+	 * closed-select keyboard model, with no popup to degrade.
+	 */
+	#handleSelectAction(element: HTMLSelectElement, keyName: string): void {
+		const options = Array.from(element.options);
+		if (options.length === 0) return;
+
+		const enabled = (index: number) => !options[index].disabled;
+		const current = element.selectedIndex;
+		let target = current;
+
+		const step = (from: number, direction: 1 | -1): number => {
+			for (
+				let i = from + direction;
+				i >= 0 && i < options.length;
+				i += direction
+			) {
+				if (enabled(i)) return i;
+			}
+			return from;
+		};
+
+		if (keyName === "ArrowDown" || keyName === "ArrowRight") {
+			target = step(current, 1);
+		} else if (keyName === "ArrowUp" || keyName === "ArrowLeft") {
+			target = step(current, -1);
+		} else if (keyName === "Home") {
+			target = step(-1, 1);
+		} else if (keyName === "End") {
+			target = step(options.length, -1);
+		} else {
+			return;
+		}
+
+		if (target !== current && target >= 0) {
+			element.selectedIndex = target;
+			this.#syncSelectShadowTree(
+				element,
+				this.#ensureSelectShadowParts(element),
+			);
+			element.dispatchEvent(
+				new this.window.Event("input", {bubbles: true, cancelable: false}),
+			);
+			element.dispatchEvent(
+				new this.window.Event("change", {bubbles: true, cancelable: false}),
+			);
+			this.#render();
+		}
 	}
 
 	/** The visual line index a caret offset sits on, given #textareaVisualLines. */
@@ -3492,6 +3636,10 @@ export class TermDOM {
 					shiftKey,
 					ctrlKey,
 				);
+			} else if (
+				targetElement instanceof (this.window as any).HTMLSelectElement
+			) {
+				this.#handleSelectAction(targetElement as HTMLSelectElement, keyName);
 			}
 		}
 

@@ -337,10 +337,12 @@ const TERMINAL_ELEMENT_DEFAULTS: Record<string, Record<string, string>> = {
 		"padding-right": "1ch",
 		"white-space": "pre-wrap",
 	},
+	// A select is a flat field in the input family: the selected option's
+	// label plus a dim indicator, underlined when focused (see
+	// getElementDefaults for the dynamic width and focus underline).
 	select: {
 		display: "inline-block",
-		border: "1px solid",
-		padding: "0 1ch",
+		"white-space": "pre",
 	},
 
 	// Tables
@@ -417,6 +419,24 @@ function getElementDefaults(
 			"min-height": `${effectiveRows + 2}px`,
 			width: `${effectiveCols + 4}ch`,
 		};
+	}
+	if (element.tagName === "SELECT") {
+		// Sized to the LONGEST option label plus the indicator, exactly as a
+		// browser sizes a closed select -- so the field's width never jumps
+		// as the selection changes.
+		const select = element as HTMLSelectElement;
+		let widest = 0;
+		for (const option of select.options) {
+			widest = Math.max(widest, stringWidth(option.label));
+		}
+		const merged: Record<string, string> = {
+			...TERMINAL_ELEMENT_DEFAULTS.select,
+			width: `${widest + 2}ch`,
+		};
+		if (select.ownerDocument?.activeElement === select) {
+			merged["text-decoration"] = "underline";
+		}
+		return merged;
 	}
 	if (element.tagName === "INPUT") {
 		const input = element as HTMLInputElement;
