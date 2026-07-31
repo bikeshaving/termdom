@@ -12,6 +12,23 @@ import type {DOMWindow} from "jsdom";
 
 // Symbols for storing pseudo-elements and shadow roots on nodes
 export const SHADOW_ROOT_SYMBOL = Symbol.for("TermDOM.shadowRoot");
+
+/**
+ * The parent ELEMENT of a node for composition purposes: layout, style
+ * inheritance, and inline-run resolution all want "the element this node
+ * renders inside", which for a shadow root's direct child is the HOST --
+ * node.parentElement is null there (a ShadowRoot is not an Element), which
+ * used to crash the inline-run machinery the moment native attachShadow
+ * content hit layout.
+ */
+export function compositionParentElement(node: Node): Element | null {
+	if (node.parentElement) return node.parentElement;
+	const parent = node.parentNode;
+	if (parent && parent.nodeType === 11 && (parent as ShadowRoot).host) {
+		return (parent as ShadowRoot).host;
+	}
+	return null;
+}
 export const PSEUDO_ELEMENTS_SYMBOL = Symbol.for("TermDOM.pseudoElements");
 export const PSEUDO_METADATA_SYMBOL = Symbol.for("TermDOM.pseudoMetadata");
 
@@ -549,10 +566,14 @@ export class ExpandedTreeWalker {
 	// Utility methods for extended content access
 
 	/**
-	 * Get shadow root using symbol key
+	 * Resolve an element's shadow root for composition. Two mechanisms, by
+	 * design: the symbol slot is the UA-INTERNAL tree (closed to DOM APIs,
+	 * like a browser input's internals -- element.shadowRoot never exposes
+	 * it), and native attachShadow() is the AUTHOR tree, the standard API
+	 * real web components call. UA wins when both exist.
 	 */
 	#getShadowRoot(element: Element): ShadowRoot | null {
-		return (element as any)[SHADOW_ROOT_SYMBOL] || null;
+		return (element as any)[SHADOW_ROOT_SYMBOL] || element.shadowRoot || null;
 	}
 
 	/**

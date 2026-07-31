@@ -2009,6 +2009,28 @@ export class TermDOM {
 		}
 
 		// Fullscreen API methods
+		// The document-rooted MutationObserver never sees inside a shadow
+		// root -- per spec, shadow trees are separate observation scopes. Each
+		// author-attached root gets enrolled in the same observer, so shadow
+		// mutations invalidate styles/layout and repaint like light ones.
+		// (Attaching to an ALREADY-connected host doesn't yet rebuild its
+		// existing light-children layout -- attach-then-populate-then-connect,
+		// the standard web-component order, is the supported path for now.)
+		const originalAttachShadow = Element.prototype.attachShadow;
+		Element.prototype.attachShadow = function (
+			this: Element,
+			init: ShadowRootInit,
+		): ShadowRoot {
+			const root = originalAttachShadow.call(this, init);
+			termDOM[kObserver].observe(root, {
+				childList: true,
+				subtree: true,
+				attributes: true,
+				characterData: true,
+			});
+			return root;
+		};
+
 		Element.prototype.requestFullscreen = function (
 			this: Element,
 			options?: FullscreenOptions,

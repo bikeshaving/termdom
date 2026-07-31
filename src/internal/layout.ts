@@ -4,7 +4,11 @@ import type * as FlexTypes from "./flex.js";
 import LineBreaker from "linebreak";
 import {getBoxModel, type BoxModel} from "./styles.js";
 import {getPropertyValue, parseUnitValue} from "./styles.js";
-import {createExpandedTreeWalker, getPseudoMetadata} from "./composition.js";
+import {
+	compositionParentElement,
+	createExpandedTreeWalker,
+	getPseudoMetadata,
+} from "./composition.js";
 import {stringWidth as runtimeStringWidth} from "./runtime.js";
 
 function getAbsolutePosition(flexNode: FlexTypes.Node): {
@@ -1530,9 +1534,9 @@ export class LayoutEngine {
 
 		// 4. Reset walker to current position and check container type
 		walker.currentNode = current;
+		const runParent = compositionParentElement(current);
 		const isInFlex =
-			current.parentElement &&
-			getPropertyValue(current.parentElement, "display") === "flex";
+			runParent && getPropertyValue(runParent, "display") === "flex";
 
 		if (isInFlex) {
 			// 5a. Flex container traversal
@@ -1854,7 +1858,12 @@ export class LayoutEngine {
 			// Handle added nodes
 			for (let j = 0; j < record.addedNodes.length; j++) {
 				const node = record.addedNodes[j];
-				const parentElement = record.target as Element;
+				// A mutation at a shadow root's top level reports the ROOT as
+				// its target; for layout its children belong to the HOST.
+				const parentElement =
+					record.target.nodeType === 11 && (record.target as ShadowRoot).host
+						? (record.target as ShadowRoot).host
+						: (record.target as Element);
 				const parentFlexNode = this.nodeMap.get(parentElement);
 
 				// Skip adding children if parent is inline-block (it uses measure function and cannot have children)
@@ -1870,11 +1879,19 @@ export class LayoutEngine {
 						this[kInvalidateInlineRun](node);
 						this[kInvalidateInlineRun](parentElement); // Also invalidate parent's run
 						continue; // Skip normal layout tree addition
+					} else if (!parentElement.isConnected) {
+						// The parent isn't in the document yet -- its own
+						// arrival later in this batch (or a later one) walks
+						// composed children and picks this node up. Shadow
+						// trees hit this ordering routinely: attachShadow +
+						// populate fire records before the host's append.
+						continue;
 					} else {
-						// Block elements should have parents with layout nodes
-						throw new Error(
-							`No parent layout node found for added node ${node.nodeName} under ${parentElement.tagName}`,
-						);
+						// Connected parent with no layout node: defer to the
+						// calculateLayout re-add sweep rather than throwing --
+						// it walks up for the nearest laid-out ancestor.
+						this.#invalidatedNodes.add(node);
+						continue;
 					}
 				}
 
@@ -2209,7 +2226,11 @@ export class LayoutEngine {
 		element: Element,
 		parentFlexNode: FlexTypes.Node | null,
 	): number {
-		if (!element.parentElement) {
+		// Composition parent, not parentElement: a shadow root's child has no
+		// parentElement, and returning 0 for every one inserted each at the
+		// FRONT -- shadow children rendered in reverse document order.
+		const compositionParent = compositionParentElement(element);
+		if (!compositionParent) {
 			return 0;
 		}
 
@@ -2229,10 +2250,7 @@ export class LayoutEngine {
 		// the front, or a run of skipped inline elements) -- correctness
 		// matches it exactly, since both count only siblings with a flex node.
 		if (parentFlexNode) {
-			const backward = createExpandedTreeWalker(
-				this.window,
-				element.parentElement,
-			);
+			const backward = createExpandedTreeWalker(this.window, compositionParent);
 			backward.currentNode = element;
 			let prev = backward.previousSibling();
 			while (prev) {
@@ -2256,7 +2274,7 @@ export class LayoutEngine {
 		}
 
 		// Use the same expanded tree walker as addElementNode to ensure consistency
-		const walker = createExpandedTreeWalker(this.window, element.parentElement);
+		const walker = createExpandedTreeWalker(this.window, compositionParent);
 
 		let flexIndex = 0;
 		let sibling = walker.firstChild();
@@ -2330,9 +2348,12 @@ export class LayoutEngine {
 		const pseudoMetadata = getPseudoMetadata(runHead);
 		const parentElement = pseudoMetadata
 			? pseudoMetadata.hostElement
-			: runHead.parentElement;
+			: compositionParentElement(runHead);
 
-		// Inline run heads should always have a parent element
+		// Inline run heads should always have a parent element (a shadow
+		// root's direct child resolves to its HOST -- a ShadowRoot is not an
+		// Element, and this exact spot crashed on native attachShadow content
+		// before compositionParentElement existed).
 		if (!parentElement) {
 			throw new Error("Inline run head must have a parent element");
 		}
@@ -2538,7 +2559,7 @@ export class LayoutEngine {
 		const styleElement = pseudoMetadata
 			? pseudoMetadata.hostElement
 			: runHead.nodeType === runHead.TEXT_NODE
-				? runHead.parentElement!
+				? compositionParentElement(runHead)!
 				: (runHead as Element);
 
 		// Get default CSS properties from the run head element
