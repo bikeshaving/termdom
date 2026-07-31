@@ -14,20 +14,46 @@ import type {DOMWindow} from "jsdom";
 export const SHADOW_ROOT_SYMBOL = Symbol.for("TermDOM.shadowRoot");
 
 /**
- * The parent ELEMENT of a node for composition purposes: layout, style
- * inheritance, and inline-run resolution all want "the element this node
- * renders inside", which for a shadow root's direct child is the HOST --
- * node.parentElement is null there (a ShadowRoot is not an Element), which
- * used to crash the inline-run machinery the moment native attachShadow
- * content hit layout.
+ * The FLAT-TREE parent element of a node: the element it renders inside,
+ * which is also the element style inheritance flows from. Three cases
+ * diverge from parentElement: a projected node's flat parent is its SLOT
+ * (inherited properties reach slotted content through the shadow chrome it
+ * lands in, per spec); a shadow root's direct child resolves to the HOST
+ * (node.parentElement is null there -- a ShadowRoot is not an Element,
+ * which used to crash the inline-run machinery the moment native
+ * attachShadow content hit layout); everything else is just parentElement.
  */
 export function compositionParentElement(node: Node): Element | null {
+	const slot = assignedSlotOf(node);
+	if (slot) return slot;
 	if (node.parentElement) return node.parentElement;
 	const parent = node.parentNode;
 	if (parent && parent.nodeType === 11 && (parent as ShadowRoot).host) {
 		return (parent as ShadowRoot).host;
 	}
 	return null;
+}
+
+/**
+ * The flat-tree BOX parent: like compositionParentElement, but skipping
+ * `display: contents` elements (slots, chiefly), which inherit styles but
+ * generate no box. Layout wants this one -- a projected node's box lives
+ * under the slot's own box parent, and rooting an inline-run walk at the
+ * slot would truncate the run at the slot's edge.
+ */
+export function compositionBoxParentElement(node: Node): Element | null {
+	let parent = compositionParentElement(node);
+	while (parent) {
+		const window = parent.ownerDocument?.defaultView;
+		if (
+			!window ||
+			window.getComputedStyle(parent).getPropertyValue("display") !== "contents"
+		) {
+			break;
+		}
+		parent = compositionParentElement(parent);
+	}
+	return parent;
 }
 export const PSEUDO_ELEMENTS_SYMBOL = Symbol.for("TermDOM.pseudoElements");
 export const PSEUDO_METADATA_SYMBOL = Symbol.for("TermDOM.pseudoMetadata");

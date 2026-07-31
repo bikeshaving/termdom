@@ -5,6 +5,7 @@ import LineBreaker from "linebreak";
 import {getBoxModel, type BoxModel} from "./styles.js";
 import {getPropertyValue, parseUnitValue} from "./styles.js";
 import {
+	compositionBoxParentElement,
 	compositionParentElement,
 	compositionShadowRoot,
 	createExpandedTreeWalker,
@@ -1545,7 +1546,7 @@ export class LayoutEngine {
 
 		// 4. Reset walker to current position and check container type
 		walker.currentNode = current;
-		const runParent = compositionParentElement(current);
+		const runParent = compositionBoxParentElement(current);
 		const isInFlex =
 			runParent && getPropertyValue(runParent, "display") === "flex";
 
@@ -2265,10 +2266,11 @@ export class LayoutEngine {
 		element: Element,
 		parentFlexNode: FlexTypes.Node | null,
 	): number {
-		// Composition parent, not parentElement: a shadow root's child has no
-		// parentElement, and returning 0 for every one inserted each at the
-		// FRONT -- shadow children rendered in reverse document order.
-		const compositionParent = compositionParentElement(element);
+		// Composition BOX parent, not parentElement: a shadow root's child has
+		// no parentElement, and returning 0 for every one inserted each at the
+		// FRONT -- shadow children rendered in reverse document order. And the
+		// box parent, not the slot: flex position counts box siblings.
+		const compositionParent = compositionBoxParentElement(element);
 		if (!compositionParent) {
 			return 0;
 		}
@@ -2387,12 +2389,14 @@ export class LayoutEngine {
 		const pseudoMetadata = getPseudoMetadata(runHead);
 		const parentElement = pseudoMetadata
 			? pseudoMetadata.hostElement
-			: compositionParentElement(runHead);
+			: compositionBoxParentElement(runHead);
 
 		// Inline run heads should always have a parent element (a shadow
 		// root's direct child resolves to its HOST -- a ShadowRoot is not an
 		// Element, and this exact spot crashed on native attachShadow content
-		// before compositionParentElement existed).
+		// before compositionParentElement existed). The BOX parent: rooting
+		// the walk at a display:contents slot would truncate the run at the
+		// slot's edge, and the run may extend past it.
 		if (!parentElement) {
 			throw new Error("Inline run head must have a parent element");
 		}

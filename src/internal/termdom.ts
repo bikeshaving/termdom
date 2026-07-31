@@ -19,6 +19,7 @@ import {
 import {setupInspectMethods} from "./inspector.js";
 import {ScrollingManager} from "./scrolling.js";
 import {
+	compositionParentElement,
 	createExpandedTreeWalker,
 	initializeShadowDOM,
 	getPseudoMetadata,
@@ -1410,10 +1411,13 @@ export class TermDOM {
 		// Check if this is a pseudo-element node
 		const pseudoMetadata = getPseudoMetadata(textNode);
 
-		// For pseudo elements, we don't have a parentElement, but we have hostElement
+		// For pseudo elements, we don't have a parentElement, but we have
+		// hostElement. Everything else styles from the FLAT-tree parent:
+		// slotted bare text draws its inherited styles through the slot's
+		// shadow chain, not from the host it came from.
 		const parentElement = pseudoMetadata
 			? pseudoMetadata.hostElement
-			: textNode.parentElement;
+			: compositionParentElement(textNode);
 		if (!parentElement) return;
 
 		let computedStyle: CSSStyleDeclaration;
@@ -2024,6 +2028,10 @@ export class TermDOM {
 				attributes: true,
 				characterData: true,
 			});
+			// The root's <style> elements join the cascade, scoped to this
+			// tree; the refresh rides on the STYLE mutation records the
+			// observer enrollment above will deliver.
+			termDOM.#styleManager.registerShadowRoot(root);
 			// attachShadow is not a DOM mutation -- no observer record will
 			// ever fire for it -- but on a CONNECTED host the composed tree
 			// just changed wholesale: light children stop rendering the moment

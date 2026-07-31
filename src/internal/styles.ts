@@ -7,6 +7,7 @@
 
 import {CSSStyleDeclaration} from "cssstyle";
 import {type DOMWindow} from "jsdom";
+import * as CSSOM from "rrweb-cssom";
 import {
 	cssColorToNumber as runtimeCssColorToNumber,
 	stringWidth,
@@ -14,6 +15,8 @@ import {
 import {
 	attachPseudoElement,
 	clearPseudoElements,
+	compositionParentElement,
+	compositionShadowRoot,
 	removePseudoElement,
 } from "./composition.js";
 import {type LayoutEngine} from "./layout.js";
@@ -678,10 +681,10 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 		}
 	}
 
-	/** This element's parent's resolved value for `property`, or null at the root. */
+	/** This element's flat-tree parent's resolved value for `property`, or null at the root. */
 	#resolveFromParent(property: string): string | null {
 		const window = this.#element.ownerDocument?.defaultView;
-		const parent = this.#element.parentElement;
+		const parent = compositionParentElement(this.#element);
 		if (!window || !parent) return null;
 		return window.getComputedStyle(parent).getPropertyValue(property) || null;
 	}
@@ -878,10 +881,13 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 		if (INHERITED_PROPERTIES.has(property) || property.startsWith("--")) {
 			const window = this.#element.ownerDocument?.defaultView;
 			if (window) {
+				// Flat-tree parents: inheritance crosses the shadow boundary
+				// (host -> shadow child) and reaches slotted content through
+				// its slot's chain, exactly as in a browser.
 				for (
-					let parent = this.#element.parentElement;
+					let parent = compositionParentElement(this.#element);
 					parent !== null;
-					parent = parent.parentElement
+					parent = compositionParentElement(parent)
 				) {
 					const parentValue = window
 						.getComputedStyle(parent)
@@ -1395,6 +1401,21 @@ interface ParsedCSSRule {
 	important: Record<string, boolean>;
 	specificity: string; // Zero-padded string for lexicographic comparison
 	pseudoElement?: string;
+	/**
+	 * The tree scope whose stylesheet declared this rule: a ShadowRoot for
+	 * rules from a shadow tree's <style>, undefined for document rules. A
+	 * rule only ever matches elements of its own tree -- the cascade's
+	 * encapsulation boundary in both directions.
+	 */
+	scope?: Node;
+	/**
+	 * Parsed form of a `:host`-prefixed selector (only meaningful with a
+	 * shadow `scope`): `predicate` is the parenthesized/compound condition
+	 * the HOST must match (null = unconditional), `rest` targets descendant
+	 * shadow-tree elements (null = the rule styles the host itself), and
+	 * `child` restricts `rest` to direct children of the shadow root.
+	 */
+	host?: {predicate: string | null; rest: string | null; child: boolean};
 }
 
 // CSS Counter interfaces
@@ -1410,6 +1431,13 @@ interface CounterScope {
 
 export class StyleManager {
 	#computedStyleCache = new WeakMap<Element, CSSStyleDeclaration>();
+	/**
+	 * Every shadow root whose <style> elements participate in the cascade.
+	 * jsdom never parses shadow stylesheets (shadowRoot.styleSheets does not
+	 * exist), so parsing walks these and feeds each <style>'s text through
+	 * the same CSSOM parser jsdom uses for document sheets.
+	 */
+	#shadowRoots = new Set<ShadowRoot>();
 	#pseudoElementStyleCache = new WeakMap<
 		Element,
 		Map<string, Record<string, string>>
@@ -1450,6 +1478,16 @@ export class StyleManager {
 
 		// Parse initial stylesheets (may be empty at construction time)
 		this.#parseStylesheets();
+	}
+
+	/**
+	 * Enroll a shadow root's stylesheets in the cascade. Called for every
+	 * attached root (author and UA alike); rules parse lazily on the next
+	 * stylesheet refresh, which the root's own <style> mutations trigger
+	 * through the shared observer.
+	 */
+	registerShadowRoot(root: ShadowRoot): void {
+		this.#shadowRoots.add(root);
 	}
 
 	/**
@@ -1538,7 +1576,18 @@ export class StyleManager {
 	 */
 	handleFocusChange(...elements: Array<Element | null>): void {
 		for (const element of elements) {
-			if (element) this.#invalidateElementCaches(element);
+			if (element) {
+				this.#invalidateElementCaches(element);
+				// A host's focus state reaches into its shadow tree through
+				// :host(:focus) rules (and inheritance from whatever they
+				// set), so the tree's cached styles go stale with it.
+				const shadowRoot = compositionShadowRoot(element);
+				if (shadowRoot) {
+					for (const descendant of shadowRoot.querySelectorAll("*")) {
+						this.#invalidateElementCaches(descendant);
+					}
+				}
+			}
 		}
 	}
 
@@ -1638,6 +1687,18 @@ export class StyleManager {
 			}
 		}
 
+		// Shadow-tree stylesheets, scoped to their root. Disconnected roots
+		// parse too: attach-populate-connect is the standard order, and a
+		// scope-gated rule matches nothing until its tree renders anyway.
+		for (const root of this.#shadowRoots) {
+			for (const styleElement of root.querySelectorAll("style")) {
+				const cssText = styleElement.textContent;
+				if (cssText) {
+					this.#parseStyleSheet(CSSOM.parse(cssText), root);
+				}
+			}
+		}
+
 		// Sort rules by specificity for cascade resolution
 		this.#parsedRules.sort((a, b) => {
 			if (a.specificity !== b.specificity) {
@@ -1655,18 +1716,18 @@ export class StyleManager {
 	 * (@supports, @font-face, @keyframes, @import) has no terminal meaning and
 	 * stays dropped.
 	 */
-	#parseStyleSheet(stylesheet: {cssRules: CSSRuleList}): void {
+	#parseStyleSheet(stylesheet: {cssRules: CSSRuleList}, scope?: Node): void {
 		for (let i = 0; i < stylesheet.cssRules.length; i++) {
 			const rule = stylesheet.cssRules[i];
 			// TODO: use constructor.name
 			if (rule.type === 1) {
 				// CSSRule.STYLE_RULE
-				this.#parseStyleRule(rule as CSSStyleRule);
+				this.#parseStyleRule(rule as CSSStyleRule, scope);
 			} else if (rule.type === 4) {
 				// CSSRule.MEDIA_RULE
 				const mediaRule = rule as CSSMediaRule;
 				if (this.#mediaQueryMatches(mediaRule.media.mediaText)) {
-					this.#parseStyleSheet(mediaRule);
+					this.#parseStyleSheet(mediaRule, scope);
 				}
 			}
 		}
@@ -1731,10 +1792,35 @@ export class StyleManager {
 	/**
 	 * Parse a single style rule and extract selector/declarations
 	 */
-	#parseStyleRule(styleRule: CSSStyleRule): void {
+	#parseStyleRule(styleRule: CSSStyleRule, scope?: Node): void {
 		const selector = styleRule.selectorText;
 		const {declarations, important} = this.#parseDeclarations(styleRule.style);
 		const specificity = this.#calculateSpecificity(selector);
+
+		// :host selectors only mean anything inside a shadow tree's own
+		// stylesheet; jsdom's matches() rejects them outright, so they parse
+		// into a structured predicate matched by #ruleMatches instead.
+		// Supported forms: `:host`, `:host(sel)`, `:host:focus`, and any of
+		// those followed by a descendant (or `>` child) selector.
+		if (scope && selector.startsWith(":host")) {
+			const hostMatch = selector.match(
+				/^:host(?:\(([^)]*)\))?([^\s>]*)\s*(>)?\s*(.*)$/,
+			);
+			if (hostMatch) {
+				const [, arg, compound, child, restRaw] = hostMatch;
+				const predicate = [arg, compound].filter(Boolean).join("") || null;
+				const rest = restRaw.trim() || null;
+				this.#parsedRules.push({
+					selector,
+					declarations,
+					important,
+					specificity,
+					scope,
+					host: {predicate, rest, child: Boolean(child)},
+				});
+				return;
+			}
+		}
 
 		// Check if this is a pseudo-element rule
 		const pseudoMatch = selector.match(
@@ -1749,6 +1835,7 @@ export class StyleManager {
 				important,
 				specificity,
 				pseudoElement,
+				scope,
 			});
 		} else {
 			this.#parsedRules.push({
@@ -1756,6 +1843,7 @@ export class StyleManager {
 				declarations,
 				important,
 				specificity,
+				scope,
 			});
 		}
 	}
@@ -1824,13 +1912,44 @@ export class StyleManager {
 	#getMatchingRules(element: Element): ParsedCSSRule[] {
 		return this.#parsedRules.filter((rule) => {
 			if (rule.pseudoElement) return false; // Skip pseudo-element rules for regular elements
-			try {
-				return element.matches(rule.selector);
-			} catch (e) {
-				// Fallback for unsupported selectors
-				return false;
-			}
+			return this.#ruleMatches(element, rule);
 		});
+	}
+
+	/**
+	 * Whether a rule applies to an element, honoring tree scopes: a rule
+	 * matches only elements of the tree its stylesheet belongs to --
+	 * document rules stop at every shadow boundary, shadow rules never
+	 * escape their root -- plus the one deliberate crossing, :host, which
+	 * lets a shadow stylesheet style its own host.
+	 */
+	#ruleMatches(element: Element, rule: ParsedCSSRule): boolean {
+		try {
+			if (rule.host) {
+				const scope = rule.scope as ShadowRoot;
+				const host = scope.host;
+				if (!host) return false;
+				const {predicate, rest, child} = rule.host;
+				if (predicate && !host.matches(predicate)) return false;
+				if (!rest) return element === host;
+				if (element.getRootNode() !== scope) return false;
+				if (!element.matches(rest)) return false;
+				return child ? element.parentNode === scope : true;
+			}
+			const root = element.getRootNode();
+			if (rule.scope) {
+				return root === rule.scope && element.matches(rule.selector);
+			}
+			// Document rules match everything OUTSIDE shadow trees -- including
+			// detached elements (styles resolve before insertion, and always
+			// have here); the boundary they must not cross is the shadow root.
+			const inShadowTree =
+				root.nodeType === 11 && Boolean((root as ShadowRoot).host);
+			return !inShadowTree && element.matches(rule.selector);
+		} catch (err) {
+			// Fallback for unsupported selectors
+			return false;
+		}
 	}
 
 	/**
@@ -1842,11 +1961,7 @@ export class StyleManager {
 	): Record<string, string> {
 		const matchingRules = this.#parsedRules.filter((rule) => {
 			if (rule.pseudoElement !== pseudoElement) return false;
-			try {
-				return element.matches(rule.selector);
-			} catch (err) {
-				return false;
-			}
+			return this.#ruleMatches(element, rule);
 		});
 
 		// Apply rules in cascade order
@@ -2064,8 +2179,11 @@ export class StyleManager {
 
 			for (const rule of rules) {
 				try {
-					// Find all elements matching this rule's selector
-					const elements = this.#document.querySelectorAll(rule.selector);
+					// Find all elements matching this rule's selector, within the
+					// rule's own tree scope -- a document query can't see shadow
+					// elements and a shadow rule must never claim document ones.
+					const scope = (rule.scope ?? this.#document) as ParentNode;
+					const elements = scope.querySelectorAll(rule.selector);
 					for (const element of elements) {
 						matchingElements.add(element);
 					}

@@ -274,3 +274,131 @@ test("reassigning a slot attribute reprojects on the next frame", async () => {
 
 	dom.dispose();
 });
+
+// Style scoping: a shadow tree is a separate tree scope for the cascade.
+// Document rules stop at the boundary, a shadow root's own <style> rules
+// never escape it, :host styles the host from inside, and INHERITED
+// properties flow across the boundary along the flat tree -- host to
+// shadow text, slot chain to slotted content -- exactly as in a browser.
+
+test("document rules do not leak into shadow trees", async () => {
+	const terminal = new MockProcess({rows: 6, cols: 60});
+	const dom = new TermDOM({process: terminal});
+	const {document} = dom;
+	document.head.innerHTML = `<style>span { text-transform: uppercase }</style>`;
+	const light = document.createElement("span");
+	light.textContent = "light";
+	document.body.appendChild(light);
+	const host = document.createElement("div");
+	const root = host.attachShadow({mode: "open"});
+	root.innerHTML = `<span>shadow</span>`;
+	document.body.appendChild(host);
+	await nextFrame(dom);
+
+	const output = terminal.getPlainText();
+	expect(output).toContain("LIGHT");
+	expect(output).toContain("shadow");
+	expect(output).not.toContain("SHADOW");
+
+	dom.dispose();
+});
+
+test("a shadow root's <style> styles its own tree only", async () => {
+	const terminal = new MockProcess({rows: 6, cols: 60});
+	const dom = new TermDOM({process: terminal});
+	const {document} = dom;
+	const light = document.createElement("span");
+	light.textContent = "light";
+	document.body.appendChild(light);
+	const host = document.createElement("div");
+	const root = host.attachShadow({mode: "open"});
+	root.innerHTML = `<style>span { text-transform: uppercase }</style><span>shadow</span>`;
+	document.body.appendChild(host);
+	await nextFrame(dom);
+
+	const output = terminal.getPlainText();
+	expect(output).toContain("SHADOW");
+	expect(output).toContain("light");
+	expect(output).not.toContain("LIGHT");
+
+	dom.dispose();
+});
+
+test(":host rules style the host from inside its own shadow tree", async () => {
+	const terminal = new MockProcess({rows: 6, cols: 60});
+	const dom = new TermDOM({process: terminal});
+	const {document} = dom;
+	const host = document.createElement("div");
+	const root = host.attachShadow({mode: "open"});
+	root.innerHTML = `<style>:host { text-transform: uppercase }</style><span>shadow</span>`;
+	document.body.appendChild(host);
+	// A sibling the :host rule must NOT touch.
+	const other = document.createElement("div");
+	other.textContent = "other";
+	document.body.appendChild(other);
+	await nextFrame(dom);
+
+	const output = terminal.getPlainText();
+	expect(output).toContain("SHADOW"); // inherited from the host
+	expect(output).toContain("other");
+
+	dom.dispose();
+});
+
+test(":host(selector) applies conditionally", async () => {
+	const terminal = new MockProcess({rows: 8, cols: 60});
+	const dom = new TermDOM({process: terminal});
+	const {document} = dom;
+	const make = (className: string, label: string) => {
+		const host = document.createElement("div");
+		host.className = className;
+		const root = host.attachShadow({mode: "open"});
+		root.innerHTML = `<style>:host(.loud) { text-transform: uppercase }</style><span>${label}</span>`;
+		document.body.appendChild(host);
+	};
+	make("loud", "first");
+	make("quiet", "second");
+	await nextFrame(dom);
+
+	const output = terminal.getPlainText();
+	expect(output).toContain("FIRST");
+	expect(output).toContain("second");
+	expect(output).not.toContain("SECOND");
+
+	dom.dispose();
+});
+
+test("inherited properties cross the shadow boundary from the host", async () => {
+	const terminal = new MockProcess({rows: 6, cols: 60});
+	const dom = new TermDOM({process: terminal});
+	const {document} = dom;
+	const host = document.createElement("div");
+	host.style.textTransform = "uppercase";
+	const root = host.attachShadow({mode: "open"});
+	root.innerHTML = `<span>shadow</span>`;
+	document.body.appendChild(host);
+	await nextFrame(dom);
+
+	expect(terminal.getPlainText()).toContain("SHADOW");
+
+	dom.dispose();
+});
+
+test("slotted content inherits through the slot's shadow-tree chain", async () => {
+	// In the flat tree the projected node's parent is the SLOT, so inherited
+	// properties flow from the shadow chrome it lands in -- not (only) from
+	// the host it came from.
+	const terminal = new MockProcess({rows: 6, cols: 60});
+	const dom = new TermDOM({process: terminal});
+	const {document} = dom;
+	const host = document.createElement("div");
+	const root = host.attachShadow({mode: "open"});
+	root.innerHTML = `<style>.wrap { text-transform: uppercase }</style><div class="wrap"><slot></slot></div>`;
+	host.appendChild(document.createTextNode("slotted"));
+	document.body.appendChild(host);
+	await nextFrame(dom);
+
+	expect(terminal.getPlainText()).toContain("SLOTTED");
+
+	dom.dispose();
+});
