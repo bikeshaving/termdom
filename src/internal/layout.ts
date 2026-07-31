@@ -2390,6 +2390,26 @@ export class LayoutEngine {
 
 	// Inline layout methods (moved from breaker.ts)
 	// TODO: Many of these methods could be regular functions
+	/**
+	 * The first composed (flat-tree) child that can start an inline run:
+	 * shadow content for hosts, projected content through slots, skipping
+	 * display:none elements -- a UA shadow tree's <style> would otherwise
+	 * terminate leaf collection at position zero.
+	 */
+	#firstComposedRenderableChild(element: Element): Node | null {
+		const walker = createExpandedTreeWalker(this.window, element);
+		for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
+			if (
+				child.nodeType === child.ELEMENT_NODE &&
+				getPropertyValue(child as Element, "display") === "none"
+			) {
+				continue;
+			}
+			return child;
+		}
+		return null;
+	}
+
 	#collectLeafNodes(runHead: Node, availableWidth: number): Leaf[] {
 		const leafNodes: Leaf[] = [];
 
@@ -2522,11 +2542,18 @@ export class LayoutEngine {
 						contentHeightMode = Flex.MEASURE_MODE_EXACTLY;
 					}
 
-					// Recursively measure inline-block content with constraints
+					// Recursively measure inline-block content with constraints.
+					// The COMPOSED first child, not element.firstChild: an
+					// inline-block shadow host (author tree or a widget's UA
+					// tree) renders its shadow content, and measuring the light
+					// children sized every such host to zero. display:none
+					// children (a UA tree's <style>, chiefly) can't start the
+					// run -- they'd terminate leaf collection before it began.
+					const contentStart = this.#firstComposedRenderableChild(element);
 					let inlineBlockResult: BreakResult | undefined;
-					if (element.firstChild) {
+					if (contentStart) {
 						inlineBlockResult = this.#breakNodes(
-							element.firstChild,
+							contentStart,
 							contentWidth,
 							contentWidthMode,
 							contentHeight,
@@ -2538,7 +2565,9 @@ export class LayoutEngine {
 					let finalContentWidth = inlineBlockResult?.maxLineWidth ?? 0;
 					let finalContentHeight = inlineBlockResult?.totalHeight ?? 0;
 
-					// Void elements (input, br, etc.) with no children get a minimum height of 1
+					// Void elements (input, br, etc.) with no LIGHT children keep a
+					// minimum height of 1 -- an input whose UA parts are all empty
+					// text still occupies its row.
 					if (!element.firstChild && finalContentHeight === 0) {
 						finalContentHeight = 1;
 					}

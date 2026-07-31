@@ -312,11 +312,18 @@ const TERMINAL_ELEMENT_DEFAULTS: Record<string, Record<string, string>> = {
 	input: {
 		display: "inline-block",
 		width: "20ch",
+		// A field's value never wraps or collapses -- runs of spaces are
+		// real content, and the painter's scroll-window handles overflow.
+		"white-space": "pre",
 	},
+	// A textarea preserves newlines and soft-wraps at its edge, exactly the
+	// browser default. Its UA shadow tree's value text lays out through the
+	// normal pipeline, so this is what makes multiline values multiline.
 	textarea: {
 		display: "inline-block",
 		border: "1px solid",
 		padding: "0 1ch",
+		"white-space": "pre-wrap",
 	},
 	select: {
 		display: "inline-block",

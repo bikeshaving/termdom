@@ -581,3 +581,23 @@ test("border color resolves through CSS: border-color, then currentColor, then d
 
 	dom.dispose();
 });
+
+test("an inline-block host measures its shadow content, not its light children", async () => {
+	// Inline-block measurement used to read element.firstChild -- the LIGHT
+	// tree -- so any inline-block shadow host measured zero and vanished.
+	const terminal = new MockProcess({rows: 4, cols: 60});
+	const dom = new TermDOM({process: terminal});
+	const {document} = dom;
+	const host = document.createElement("span");
+	host.style.display = "inline-block";
+	host.textContent = "LIGHT-IGNORED";
+	const root = host.attachShadow({mode: "open"});
+	root.innerHTML = `<style>b { font-weight: bold }</style><b>WIDE-SHADOW-CONTENT</b>`;
+	document.body.appendChild(host);
+	await nextFrame(dom);
+
+	expect(terminal.getPlainText()).toContain("WIDE-SHADOW-CONTENT");
+	expect(host.getBoundingClientRect().width).toBe("WIDE-SHADOW-CONTENT".length);
+
+	dom.dispose();
+});
