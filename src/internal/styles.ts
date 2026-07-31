@@ -351,6 +351,36 @@ const TERMINAL_ELEMENT_DEFAULTS: Record<string, Record<string, string>> = {
 	},
 };
 
+// input's own entry in TERMINAL_ELEMENT_DEFAULTS above (bordered box, 20ch
+// wide) is shaped for a text field, whose void-element content has nothing
+// else to size or paint a box from. A checkbox/radio renders as a compact
+// "[ ]"/"[x]" glyph instead (see #renderInputElement) -- same reasoning, same
+// problem, opposite answer: 3 cells wide, no border, no padding to pad it
+// out further.
+const CHECKBOX_DEFAULTS: Record<string, string> = {
+	display: "inline-block",
+	width: "3ch",
+};
+
+/**
+ * TERMINAL_ELEMENT_DEFAULTS keyed purely by tag name can't distinguish an
+ * <input type="checkbox"> from a text <input> -- both are just "input". This
+ * is the one place type has to be checked before falling back to the
+ * tag-level defaults.
+ */
+function getElementDefaults(
+	element: Element,
+): Record<string, string> | undefined {
+	if (
+		element.tagName === "INPUT" &&
+		((element as HTMLInputElement).type === "checkbox" ||
+			(element as HTMLInputElement).type === "radio")
+	) {
+		return CHECKBOX_DEFAULTS;
+	}
+	return TERMINAL_ELEMENT_DEFAULTS[element.tagName.toLowerCase()];
+}
+
 /**
  * Properties that inherit by default
  */
@@ -491,10 +521,8 @@ function getListGutterWidth(listElement: Element): number {
  * Get the initial/default value for a property on an element
  */
 function getInitialStyle(element: Element, property: string): string {
-	const tagName = element.tagName.toLowerCase();
-
 	// Check element-specific defaults first
-	const elementDefaults = TERMINAL_ELEMENT_DEFAULTS[tagName];
+	const elementDefaults = getElementDefaults(element);
 	if (elementDefaults && elementDefaults[property]) {
 		return elementDefaults[property];
 	}
@@ -807,7 +835,7 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 			return bullets[Math.min(depth, bullets.length - 1)];
 		}
 
-		const elementDefaults = TERMINAL_ELEMENT_DEFAULTS[tagName];
+		const elementDefaults = getElementDefaults(this.#element);
 		if (elementDefaults && elementDefaults[property]) {
 			return elementDefaults[property];
 		}

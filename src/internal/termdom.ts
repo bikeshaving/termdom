@@ -329,6 +329,12 @@ export class TermDOM {
 	// becomes a click. (Browsers dispatch click at the nearest common
 	// ancestor; the same-element case is the one that matters on a cell grid.)
 	#mouseDownTarget: Element | null = null;
+	// The target and time of the last completed click, to detect a second one
+	// close enough behind it to be a dblclick -- browsers' own double-click
+	// interval varies by OS/user setting; 500ms is the common default.
+	static readonly #DBLCLICK_INTERVAL_MS = 500;
+	#lastClickTarget: Element | null = null;
+	#lastClickTime = 0;
 	#process: ProcessLike;
 
 	#detectCursorEnabled: boolean;
@@ -541,12 +547,27 @@ export class TermDOM {
 		});
 	}
 
+	/**
+	 * Apply a batch of mutation records to everything that isn't painting:
+	 * pseudo-elements/caches, the layout tree, and the autofocus default
+	 * action. In the same order everywhere it's called, since mutations reach
+	 * this from two different places -- the observer's own async callback
+	 * below, and #processPendingMutationsAndRender/#renderStatic/
+	 * #renderInteractive's synchronous `takeRecords()` drain (a geometry read
+	 * or a scheduled render needs fresh layout NOW, not whenever the next
+	 * microtask checkpoint happens to land) -- and whichever one runs first
+	 * empties the queue for the other.
+	 */
+	#handlePendingMutations(mutations: MutationRecord[]): void {
+		this.#styleManager.handleMutations(mutations);
+		this[kLayoutEngine].handleMutations(mutations);
+		this.#focusAutofocusedNodes(mutations);
+	}
+
 	#setupMutationObserver(): MutationObserver {
 		const observer = new this.window.MutationObserver((mutations) => {
-			// Process mutations in correct order to avoid race conditions
-			this.#styleManager.handleMutations(mutations); // First: attach pseudo-elements, invalidate caches
-			this[kLayoutEngine].handleMutations(mutations); // Second: process DOM changes for layout
-			this.#render(); // Finally: render with fully processed DOM
+			this.#handlePendingMutations(mutations);
+			this.#render();
 		});
 
 		observer.observe(this.document.documentElement, {
@@ -557,6 +578,30 @@ export class TermDOM {
 		});
 
 		return observer;
+	}
+
+	/**
+	 * The `autofocus` default action: an element with the attribute set gets
+	 * focused as soon as it's connected, the same as a browser does at initial
+	 * page load -- generalized here to any insertion, which is what lets a
+	 * dynamically-created element (e.g. an edit input that only exists while
+	 * editing) still autofocus itself. Scoped to newly added nodes only, not
+	 * later attribute changes, matching the spec's "insertion" trigger. If a
+	 * batch inserts more than one autofocus element, the later mutation wins
+	 * (processed in order, each call simply moves focus again) -- same
+	 * ambiguity a real page with more than one autofocus element already has.
+	 */
+	#focusAutofocusedNodes(mutations: MutationRecord[]): void {
+		for (const record of mutations) {
+			for (const node of record.addedNodes) {
+				if (node.nodeType !== node.ELEMENT_NODE) continue;
+				const element = node as Element;
+				const candidate = (element as any).autofocus
+					? element
+					: element.querySelector?.("[autofocus]");
+				(candidate as HTMLElement | null)?.focus?.();
+			}
+		}
 	}
 
 	/**
@@ -1113,6 +1158,15 @@ export class TermDOM {
 			(boxModel.paddingLeft || 0) -
 			(boxModel.paddingRight || 0);
 
+		if (element.type === "checkbox") {
+			const mark = element.checked ? "[x]" : "[ ]";
+			ctx.setText(contentX, contentY, mark, style);
+			if (element === this.document.activeElement) {
+				ctx.setCaret(contentX, contentY);
+			}
+			return;
+		}
+
 		const value = element.value || "";
 		const placeholder = element.getAttribute("placeholder") || "";
 		const isFocused = element === this.document.activeElement;
@@ -1309,9 +1363,7 @@ export class TermDOM {
 		const pendingMutations = this[kObserver].takeRecords();
 		const hadMutations = pendingMutations.length > 0;
 		if (hadMutations) {
-			// Process mutations in the same order as MutationObserver callback
-			this.#styleManager.handleMutations(pendingMutations);
-			this[kLayoutEngine].handleMutations(pendingMutations);
+			this.#handlePendingMutations(pendingMutations);
 		}
 		this[kLayoutEngine].calculateLayout();
 		return hadMutations;
@@ -1885,11 +1937,36 @@ export class TermDOM {
 	/**
 	 * Handle input element default actions (character insertion, deletion, navigation)
 	 */
+	/**
+	 * Flip a checkbox's checked state and fire `change`, matching a browser's
+	 * Space-key default action for a focused checkbox -- never `input`, which
+	 * checkboxes don't fire. Click doesn't need this: jsdom's own click
+	 * activation behavior already toggles `.checked` and fires `change` (and
+	 * already honors preventDefault on the click), so handling it here too
+	 * would double-toggle.
+	 */
+	#toggleCheckbox(element: HTMLInputElement): void {
+		element.checked = !element.checked;
+		element.dispatchEvent(
+			new this.window.Event("change", {bubbles: true, cancelable: false}),
+		);
+		this.#render();
+	}
+
 	#handleInputAction(
 		element: HTMLInputElement,
 		keyName: string,
 		key: string,
 	): void {
+		if (element.type === "checkbox") {
+			// Only Space toggles a checkbox -- real browsers don't accept typed
+			// text into one at all, so every other key here is a no-op.
+			if (key === " ") {
+				this.#toggleCheckbox(element);
+			}
+			return;
+		}
+
 		const value = element.value;
 		const cursor = this.#inputCursorPositions.get(element) ?? value.length;
 
@@ -2134,6 +2211,48 @@ export class TermDOM {
 			target.dispatchEvent(
 				new this.window.MouseEvent("click", {...eventInit, buttons: 0}),
 			);
+			// A checkbox's .checked already flipped -- jsdom's own click
+			// activation behavior handles that directly, and forwards it from a
+			// <label for> or wrapping label the same way (honoring
+			// preventDefault in both cases) -- but that's a property change,
+			// invisible to the MutationObserver that would otherwise repaint it,
+			// same as .value on a text input. Focus also needs an explicit push
+			// here for the label case: a real browser's "focusing steps" move
+			// focus to the label's associated control, which jsdom's dispatch
+			// alone does not simulate (the direct-click case is already
+			// focused via mousedown's own default action above, so this is a
+			// harmless no-op there).
+			const checkbox =
+				target instanceof (this.window as any).HTMLInputElement &&
+				(target as HTMLInputElement).type === "checkbox"
+					? (target as HTMLInputElement)
+					: target instanceof (this.window as any).HTMLLabelElement &&
+						  (target as any).control?.type === "checkbox"
+						? ((target as any).control as HTMLInputElement)
+						: null;
+			if (checkbox) {
+				checkbox.focus();
+				this.#render();
+			}
+
+			// A second click on the same target within the double-click interval
+			// is also a dblclick -- in addition to, not instead of, its own click
+			// (a browser fires both). Reset after firing so a third quick click
+			// starts a fresh pair rather than double-firing again immediately.
+			const now = performance.now();
+			if (
+				this.#lastClickTarget === target &&
+				now - this.#lastClickTime <= TermDOM.#DBLCLICK_INTERVAL_MS
+			) {
+				target.dispatchEvent(
+					new this.window.MouseEvent("dblclick", {...eventInit, buttons: 0}),
+				);
+				this.#lastClickTarget = null;
+				this.#lastClickTime = 0;
+			} else {
+				this.#lastClickTarget = target as Element;
+				this.#lastClickTime = now;
+			}
 		}
 		this.#mouseDownTarget = null;
 	}
@@ -2472,8 +2591,7 @@ export class TermDOM {
 	async #renderStatic(): Promise<void> {
 		const pending = this[kObserver].takeRecords();
 		if (pending.length > 0) {
-			this.#styleManager.handleMutations(pending);
-			this[kLayoutEngine].handleMutations(pending);
+			this.#handlePendingMutations(pending);
 		}
 
 		this.#renderedOutsideMarkers = new WeakSet<Element>();
@@ -2591,8 +2709,7 @@ export class TermDOM {
 
 		const pending = this[kObserver].takeRecords();
 		if (pending.length > 0) {
-			this.#styleManager.handleMutations(pending);
-			this[kLayoutEngine].handleMutations(pending);
+			this.#handlePendingMutations(pending);
 		}
 
 		this.#renderedOutsideMarkers = new WeakSet<Element>();

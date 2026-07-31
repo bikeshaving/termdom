@@ -647,6 +647,62 @@ test("a focused input parks the real terminal cursor at its caret", async () => 
 	dom.dispose();
 });
 
+test("Space toggles a focused checkbox and fires change; other keys are no-ops", async () => {
+	const terminal = new MockProcess({rows: 10, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	dom.attach();
+	const {document} = dom;
+
+	const checkbox = document.createElement("input");
+	checkbox.type = "checkbox";
+	document.body.appendChild(checkbox);
+	checkbox.focus();
+	await nextFrame(dom);
+
+	const changes: boolean[] = [];
+	checkbox.addEventListener("change", () => changes.push(checkbox.checked));
+
+	(terminal.stdin as any).emit("data", Buffer.from(" "));
+	expect(checkbox.checked).toBe(true);
+	expect(changes).toEqual([true]);
+
+	// Checkboxes don't accept typed text -- every other key is a no-op.
+	(terminal.stdin as any).emit("data", Buffer.from("abc\r\x7f"));
+	expect(checkbox.checked).toBe(true);
+	expect(changes).toEqual([true]);
+
+	(terminal.stdin as any).emit("data", Buffer.from(" "));
+	expect(checkbox.checked).toBe(false);
+	expect(changes).toEqual([true, false]);
+
+	dom.dispose();
+});
+
+test("an autofocus element focuses itself as soon as it's connected, including nested", async () => {
+	const terminal = new MockProcess({rows: 10, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	dom.attach();
+	const {document} = dom;
+
+	const input = document.createElement("input");
+	input.setAttribute("autofocus", "");
+	document.body.appendChild(input);
+	await nextFrame(dom);
+	expect(document.activeElement).toBe(input);
+
+	// Also works via the JS property, and when buried in a subtree added in
+	// one shot (not itself the direct addedNode).
+	const wrapper = document.createElement("div");
+	const nested = document.createElement("input");
+	nested.autofocus = true;
+	wrapper.appendChild(nested);
+	document.body.appendChild(wrapper);
+	await nextFrame(dom);
+	expect(document.activeElement).toBe(nested);
+
+	dom.dispose();
+});
+
 test("Escape, navigation, and function keys map to their named keys", async () => {
 	const terminal = new MockProcess({rows: 10, cols: 40});
 	const dom = new TermDOM({process: terminal});

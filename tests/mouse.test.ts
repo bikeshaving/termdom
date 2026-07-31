@@ -234,3 +234,135 @@ test("click dispatches at the element under the cell and focuses inputs", async 
 	expect(document.activeElement).not.toBe(input);
 	termdom.dispose();
 });
+
+test("clicking a checkbox toggles it and fires change, and preventDefault blocks it", async () => {
+	const proc = new MockMouseProcess();
+	const termdom = new TermDOM({process: proc as any, detectCursor: false});
+	const {document} = termdom;
+
+	const checkbox = document.createElement("input");
+	checkbox.type = "checkbox";
+	document.body.appendChild(checkbox);
+	await nextFrame(termdom);
+
+	const changes: boolean[] = [];
+	checkbox.addEventListener("change", () => changes.push(checkbox.checked));
+
+	const click = () => {
+		proc.stdin.send("\x1b[<0;1;1M");
+		proc.stdin.send("\x1b[<0;1;1m");
+	};
+
+	click();
+	expect(checkbox.checked).toBe(true);
+	expect(changes).toEqual([true]);
+
+	click();
+	expect(checkbox.checked).toBe(false);
+	expect(changes).toEqual([true, false]);
+
+	checkbox.addEventListener("click", (e: any) => e.preventDefault());
+	click();
+	expect(checkbox.checked).toBe(false); // blocked, matching a real browser
+	expect(changes).toEqual([true, false]);
+
+	termdom.dispose();
+});
+
+test("clicking a label toggles its associated checkbox and moves focus to it", async () => {
+	const proc = new MockMouseProcess();
+	const termdom = new TermDOM({process: proc as any, detectCursor: false});
+	const {document} = termdom;
+
+	const checkbox = document.createElement("input");
+	checkbox.type = "checkbox";
+	checkbox.id = "cb";
+	document.body.appendChild(checkbox);
+	const label = document.createElement("label");
+	label.setAttribute("for", "cb");
+	label.textContent = "Mark all as complete";
+	document.body.appendChild(label);
+	await nextFrame(termdom);
+
+	const changes: boolean[] = [];
+	checkbox.addEventListener("change", () => changes.push(checkbox.checked));
+
+	// The checkbox ([ ], an inline-block) and the label share row 1 as one
+	// inline run: "[ ]Mark all as complete". Click inside the label's text,
+	// past the checkbox's 3 cells.
+	proc.stdin.send("\x1b[<0;5;1M");
+	proc.stdin.send("\x1b[<0;5;1m");
+
+	expect(checkbox.checked).toBe(true);
+	expect(changes).toEqual([true]);
+	expect(document.activeElement).toBe(checkbox);
+
+	termdom.dispose();
+});
+
+test("two quick clicks on the same target fire dblclick in addition to two clicks", async () => {
+	const proc = new MockMouseProcess();
+	const termdom = new TermDOM({process: proc as any, detectCursor: false});
+	const {document} = termdom;
+
+	const div = document.createElement("div");
+	div.textContent = "clickable";
+	document.body.appendChild(div);
+	await nextFrame(termdom);
+
+	const events: string[] = [];
+	div.addEventListener("click", () => events.push("click"));
+	div.addEventListener("dblclick", () => events.push("dblclick"));
+
+	const click = () => {
+		proc.stdin.send("\x1b[<0;1;1M");
+		proc.stdin.send("\x1b[<0;1;1m");
+	};
+
+	click();
+	click();
+	expect(events).toEqual(["click", "click", "dblclick"]);
+
+	// The pair is consumed -- a third click starts a fresh one, not an
+	// immediate second dblclick.
+	click();
+	expect(events).toEqual(["click", "click", "dblclick", "click"]);
+	click();
+	expect(events).toEqual([
+		"click",
+		"click",
+		"dblclick",
+		"click",
+		"click",
+		"dblclick",
+	]);
+
+	termdom.dispose();
+});
+
+test("a click long after the previous one does not fire dblclick", async () => {
+	const proc = new MockMouseProcess();
+	const termdom = new TermDOM({process: proc as any, detectCursor: false});
+	const {document} = termdom;
+
+	const div = document.createElement("div");
+	div.textContent = "clickable";
+	document.body.appendChild(div);
+	await nextFrame(termdom);
+
+	const events: string[] = [];
+	div.addEventListener("click", () => events.push("click"));
+	div.addEventListener("dblclick", () => events.push("dblclick"));
+
+	const click = () => {
+		proc.stdin.send("\x1b[<0;1;1M");
+		proc.stdin.send("\x1b[<0;1;1m");
+	};
+
+	click();
+	await new Promise((resolve) => setTimeout(resolve, 600)); // past the 500ms interval
+	click();
+	expect(events).toEqual(["click", "click"]);
+
+	termdom.dispose();
+});
