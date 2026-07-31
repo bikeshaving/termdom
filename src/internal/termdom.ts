@@ -908,6 +908,12 @@ export class TermDOM {
 			.getComputedStyle(element)
 			.getPropertyValue("text-decoration")
 			.includes("underline");
+		const underlineStyle =
+			this.window
+				.getComputedStyle(element)
+				.getPropertyValue("text-decoration-style") === "double"
+				? ("double" as const)
+				: undefined;
 		// visibility:hidden reserves the box (layout is untouched) but paints
 		// nothing of it -- unlike display:none, which removes the box entirely. A
 		// descendant that sets visibility:visible still paints, since visibility
@@ -927,6 +933,7 @@ export class TermDOM {
 			bold,
 			italic,
 			underline,
+			underlineStyle,
 		};
 
 		if (rect && style.bg != null && visible) {
@@ -1372,6 +1379,10 @@ export class TermDOM {
 		const textUnderline = computedStyle
 			.getPropertyValue("text-decoration")
 			.includes("underline");
+		const textUnderlineStyle =
+			computedStyle.getPropertyValue("text-decoration-style") === "double"
+				? ("double" as const)
+				: undefined;
 
 		const textStyle = {
 			fg:
@@ -1387,6 +1398,7 @@ export class TermDOM {
 			bold: textBold,
 			italic: textItalic,
 			underline: textUnderline,
+			underlineStyle: textUnderlineStyle,
 		};
 
 		const rectTexts = this[kLayoutEngine].getRectTexts(textNode);

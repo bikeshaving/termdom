@@ -373,16 +373,37 @@ function getElementDefaults(
 ): Record<string, string> | undefined {
 	if (element.tagName === "INPUT") {
 		const input = element as HTMLInputElement;
+		// The focused field's underline goes double -- the UA "this is the
+		// live one" signal, degrading to plain single on terminals without
+		// styled-underline support (where the parked cursor still tells).
+		// Focus changes invalidate the computed-style cache (see
+		// handleFocusChange), so this is re-consulted at the right moments.
+		const focused = input.ownerDocument?.activeElement === input;
 		if (input.type === "checkbox" || input.type === "radio") {
-			return CHECKBOX_DEFAULTS;
+			// The compact glyph is bare when blurred; focus underlines it,
+			// double where supported -- same live-wire language as the field.
+			return focused
+				? {
+						...CHECKBOX_DEFAULTS,
+						"text-decoration": "underline",
+						"text-decoration-style": "double",
+					}
+				: CHECKBOX_DEFAULTS;
 		}
 		// The size attribute drives a text input's default width, one column
 		// per character position, exactly as a browser sizes an unstyled
 		// input from size="...". The static defaults entry carries the spec
 		// default of 20.
 		const size = parseInt(input.getAttribute("size") ?? "", 10);
-		if (Number.isFinite(size) && size > 0) {
-			return {...TERMINAL_ELEMENT_DEFAULTS.input, width: `${size}ch`};
+		if (Number.isFinite(size) || focused) {
+			const merged = {...TERMINAL_ELEMENT_DEFAULTS.input};
+			if (Number.isFinite(size) && size > 0) {
+				merged.width = `${size}ch`;
+			}
+			if (focused) {
+				merged["text-decoration-style"] = "double";
+			}
+			return merged;
 		}
 	}
 	return TERMINAL_ELEMENT_DEFAULTS[element.tagName.toLowerCase()];

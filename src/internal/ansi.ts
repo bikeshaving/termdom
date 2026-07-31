@@ -14,6 +14,11 @@ const enum FGStyle {
 	Underline = 0b00000100 << 24,
 	Strikethrough = 0b00001000 << 24,
 	Overline = 0b00010000 << 24,
+	// Styled underline (SGR 4:2, the kitty extension every modern terminal
+	// adopted). Only meaningful alongside Underline: emission sends plain 4
+	// first so a terminal that ignores 4:2 (Terminal.app) degrades to a
+	// single underline instead of none.
+	DoubleUnderline = 0b00100000 << 24,
 }
 
 const enum BGStyle {
@@ -105,6 +110,8 @@ export interface CellStyle {
 	bold?: boolean;
 	italic?: boolean;
 	underline?: boolean;
+	/** CSS text-decoration-style, insofar as SGR can draw it. */
+	underlineStyle?: "solid" | "double";
 	strikethrough?: boolean;
 	inverse?: boolean;
 	dim?: boolean;
@@ -154,6 +161,8 @@ export class Cell {
 		if (cellStyle?.bold) fg |= FGStyle.Bold;
 		if (cellStyle?.italic) fg |= FGStyle.Italic;
 		if (cellStyle?.underline) fg |= FGStyle.Underline;
+		if (cellStyle?.underline && cellStyle?.underlineStyle === "double")
+			fg |= FGStyle.DoubleUnderline;
 		if (cellStyle?.strikethrough) fg |= FGStyle.Strikethrough;
 		if (cellStyle?.overline) fg |= FGStyle.Overline;
 		this.fg = fg;
@@ -199,6 +208,7 @@ export class Cell {
 			bold: (this.fg & FGStyle.Bold) !== 0,
 			italic: (this.fg & FGStyle.Italic) !== 0,
 			underline: (this.fg & FGStyle.Underline) !== 0,
+			doubleUnderline: (this.fg & FGStyle.DoubleUnderline) !== 0,
 			strikethrough: (this.fg & FGStyle.Strikethrough) !== 0,
 			overline: (this.fg & FGStyle.Overline) !== 0,
 			inverse: (this.bg & BGStyle.Inverse) !== 0,
@@ -233,6 +243,8 @@ export class Cell {
 		if (cellStyle?.bold) fg |= FGStyle.Bold;
 		if (cellStyle?.italic) fg |= FGStyle.Italic;
 		if (cellStyle?.underline) fg |= FGStyle.Underline;
+		if (cellStyle?.underline && cellStyle?.underlineStyle === "double")
+			fg |= FGStyle.DoubleUnderline;
 		if (cellStyle?.strikethrough) fg |= FGStyle.Strikethrough;
 		if (cellStyle?.overline) fg |= FGStyle.Overline;
 
@@ -423,9 +435,9 @@ function getStyleDiff(
 	cell: Cell,
 	prev: Cell | null,
 	colorDepth: ColorDepth,
-): number[] {
+): Array<number | string> {
 	if (!prev) {
-		const seq: number[] = [];
+		const seq: Array<number | string> = [];
 
 		const fgColor = cell.getFgColor();
 		const bgColor = cell.getBgColor();
@@ -442,6 +454,9 @@ function getStyleDiff(
 		if (flags.dim) seq.push(2);
 		if (flags.italic) seq.push(3);
 		if (flags.underline) seq.push(4);
+		// After plain 4, so terminals without styled-underline support keep
+		// the single underline.
+		if (flags.doubleUnderline) seq.push("4:2");
 		if (flags.blink) seq.push(5);
 		if (flags.inverse) seq.push(7);
 		if (flags.strikethrough) seq.push(9);
@@ -454,7 +469,7 @@ function getStyleDiff(
 		return [];
 	}
 
-	const seq: number[] = [];
+	const seq: Array<number | string> = [];
 	const isDefault = cell.fg === 0 && cell.bg === 0;
 	const wasDefault = prev.fg === 0 && prev.bg === 0;
 
@@ -499,7 +514,28 @@ function getStyleDiff(
 		diffFlag(cellFlags.bold, prevFlags.bold, 1, 22);
 		diffFlag(cellFlags.dim, prevFlags.dim, 2, 22);
 		diffFlag(cellFlags.italic, prevFlags.italic, 3, 23);
-		diffFlag(cellFlags.underline, prevFlags.underline, 4, 24);
+		// Underline and its style diff as one attribute: 24 clears both, a
+		// bare 4 sets single (which also downgrades a previous double, per
+		// ECMA-48 and tmux's own tracking), and 4:2 upgrades to double --
+		// always after a plain 4 so unsupporting terminals degrade to single.
+		if (
+			cellFlags.underline !== prevFlags.underline ||
+			cellFlags.doubleUnderline !== prevFlags.doubleUnderline
+		) {
+			if (!cellFlags.underline) {
+				seq.push(24);
+			} else {
+				if (
+					!prevFlags.underline ||
+					(prevFlags.doubleUnderline && !cellFlags.doubleUnderline)
+				) {
+					seq.push(4);
+				}
+				if (cellFlags.doubleUnderline) {
+					seq.push("4:2");
+				}
+			}
+		}
 		diffFlag(cellFlags.blink, prevFlags.blink, 5, 25);
 		diffFlag(cellFlags.inverse, prevFlags.inverse, 7, 27);
 		diffFlag(cellFlags.strikethrough, prevFlags.strikethrough, 9, 29);
@@ -856,6 +892,7 @@ export class DrawingContext {
 					bold: finalStyle.bold,
 					italic: finalStyle.italic,
 					underline: finalStyle.underline,
+					underlineStyle: finalStyle.underlineStyle,
 					strikethrough: finalStyle.strikethrough,
 					inverse: finalStyle.inverse,
 					dim: finalStyle.dim,

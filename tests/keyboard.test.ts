@@ -1238,3 +1238,41 @@ test(":focus rules apply on focus and revert on blur", async () => {
 
 	dom.dispose();
 });
+
+test("a focused field's underline goes double (SGR 4:2), single when blurred", async () => {
+	// The UA live-wire signal: every field is single-underlined; the focused
+	// one upgrades to text-decoration-style: double, emitted as 4 then 4:2
+	// so terminals without styled-underline support keep the single
+	// underline. Verified against both oracles before building: tmux tracks
+	// 4:2 natively, xterm-headless parses it and keeps the underline flag.
+	const terminal = new MockProcess({rows: 5, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	const {document} = dom;
+	let raw = "";
+	const originalWrite = terminal.stdout.write.bind(terminal.stdout);
+	(terminal.stdout as any).write = (chunk: any, enc?: any, cb?: any) => {
+		raw += String(chunk);
+		return originalWrite(chunk, enc, cb);
+	};
+	const a = document.createElement("input");
+	const b = document.createElement("input");
+	document.body.append(a, b);
+	await nextFrame(dom);
+	expect(raw).not.toContain("4:2");
+
+	a.focus();
+	await nextFrame(dom);
+	expect(raw).toContain("4:2");
+
+	// Blur repaints the field back to a single underline: after the focus
+	// moves to b, fresh frames must still double-underline (b) -- and a
+	// full-clear assertion isn't possible on the raw stream, so assert the
+	// computed styles directly for the un-focus half.
+	b.focus();
+	const style = (el: Element) =>
+		dom.window.getComputedStyle(el).getPropertyValue("text-decoration-style");
+	expect(style(a)).not.toBe("double");
+	expect(style(b)).toBe("double");
+
+	dom.dispose();
+});
