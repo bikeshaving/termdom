@@ -557,3 +557,27 @@ test("selection still paints inverse via the UA rule's system colors", async () 
 
 	dom.dispose();
 });
+
+test("border color resolves through CSS: border-color, then currentColor, then default", async () => {
+	const terminal = new MockProcess({rows: 8, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	const {document} = dom;
+	document.body.innerHTML = `
+		<div id="a" style="border: 1px solid; border-color: #0000ff">x</div>
+		<div id="b" style="border: 1px solid; color: #ff0000">x</div>
+		<div id="c" style="border: 1px solid">x</div>
+	`;
+	await nextFrame(dom);
+
+	const cellAt = (row: number, col: number) =>
+		(terminal as any).terminal.buffer.active.getLine(row).getCell(col);
+	// Explicit border-color wins.
+	expect(cellAt(0, 0).getFgColor()).toBe(0x0000ff);
+	// No border-color: currentColor, the element's own color.
+	expect(cellAt(3, 0).getFgColor()).toBe(0xff0000);
+	// Nothing authored: the terminal's DEFAULT foreground -- never a
+	// hardcoded white, which would break on light themes.
+	expect(cellAt(6, 0).isFgDefault()).toBeTruthy();
+
+	dom.dispose();
+});

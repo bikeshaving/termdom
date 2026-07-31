@@ -2266,11 +2266,15 @@ export class LayoutEngine {
 		element: Element,
 		parentFlexNode: FlexTypes.Node | null,
 	): number {
-		// Composition BOX parent, not parentElement: a shadow root's child has
-		// no parentElement, and returning 0 for every one inserted each at the
-		// FRONT -- shadow children rendered in reverse document order. And the
-		// box parent, not the slot: flex position counts box siblings.
-		const compositionParent = compositionBoxParentElement(element);
+		// Composition parent, not parentElement: a shadow root's child has no
+		// parentElement, and returning 0 for every one inserted each at the
+		// FRONT -- shadow children rendered in reverse document order. The
+		// CHEAP flat parent suffices here: the fast path below only needs a
+		// walker root somewhere above the element (previousSibling hops never
+		// consult it), and the box-parent resolution -- a computed-style read
+		// per ancestor -- is deferred to the slow path, off the hot
+		// sequential-append route.
+		const compositionParent = compositionParentElement(element);
 		if (!compositionParent) {
 			return 0;
 		}
@@ -2314,8 +2318,12 @@ export class LayoutEngine {
 			}
 		}
 
-		// Use the same expanded tree walker as addElementNode to ensure consistency
-		const walker = createExpandedTreeWalker(this.window, compositionParent);
+		// Use the same expanded tree walker as addElementNode to ensure
+		// consistency. The full forward walk enumerates BOX siblings, so it
+		// roots at the box parent -- the slot a projected element sits in
+		// generates no box, and rooting there would miss its box siblings.
+		const boxParent = compositionBoxParentElement(element) ?? compositionParent;
+		const walker = createExpandedTreeWalker(this.window, boxParent);
 
 		let flexIndex = 0;
 		let sibling = walker.firstChild();

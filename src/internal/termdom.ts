@@ -1004,9 +1004,21 @@ export class TermDOM {
 		if (rect && visible) {
 			const borderStyles = resolveBorderStyles(element);
 			if (borderStyles.hasAnyBorder) {
-				// Use foreground color for borders, inherit element's background color
+				// Border color per CSS: border-color, whose initial value is
+				// currentColor -- the element's own color -- and, with nothing
+				// authored anywhere, the terminal's DEFAULT foreground. Never a
+				// hardcoded white: no theme-safe color exists, and forcing one
+				// breaks light terminals.
+				const borderColor = this.window
+					.getComputedStyle(element)
+					.getPropertyValue("border-top-color");
 				const borderCellStyle = {
-					fg: style.fg || 0xffffff, // Default to white if no color
+					fg:
+						borderColor &&
+						borderColor !== "currentcolor" &&
+						borderColor !== "currentColor"
+							? cssColorToNumber(borderColor)
+							: style.fg,
 					bg: style.bg, // Inherit element's background color
 				};
 				ctx.drawBorder(
