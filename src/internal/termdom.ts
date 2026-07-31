@@ -1306,7 +1306,38 @@ export class TermDOM {
 		const visibleChars = visibleText.length;
 		visibleText += " ".repeat(Math.max(0, contentWidth - usedCells));
 
-		ctx.setText(contentX, contentY, visibleText, textStyle);
+		if (isFocused) {
+			ctx.setText(contentX, contentY, visibleText, textStyle);
+		} else {
+			// A blurred field is a FAINT BLANK: dim + underline (SGR 2 and 4,
+			// classic codes that survive every terminal and every re-encoding
+			// intermediary) across every cell the value doesn't occupy. Typed
+			// content reads as plain text; the placeholder is part of the
+			// blank -- a ghost label sitting on it -- so it keeps its gray and
+			// goes faint with it. Focus swaps the whole extent to the solid
+			// underline (via the focus-aware default), the live-wire signal.
+			// This split is the UA widget painter's job, the same place the
+			// placeholder's gray lives -- browsers style their field
+			// internals the same way (::placeholder is UA magic, not author
+			// CSS).
+			const blank = {...textStyle, underline: true, dim: true};
+			if (value) {
+				ctx.setText(
+					contentX,
+					contentY,
+					visibleText.slice(0, visibleChars),
+					textStyle,
+				);
+				ctx.setText(
+					contentX + usedCells,
+					contentY,
+					visibleText.slice(visibleChars),
+					blank,
+				);
+			} else {
+				ctx.setText(contentX, contentY, visibleText, blank);
+			}
+		}
 
 		// A selection paints as inverse video over its visible slice --
 		// terminal-native highlight, no color assumptions. (Placeholder text

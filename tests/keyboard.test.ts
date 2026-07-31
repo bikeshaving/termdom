@@ -1239,40 +1239,46 @@ test(":focus rules apply on focus and revert on blur", async () => {
 	dom.dispose();
 });
 
-test("the focused field is underlined; blurred fields are bare", async () => {
-	// The UA live-wire signal, in plain SGR 4 -- the one underline every
-	// terminal AND every intermediary renders. Styled underlines (4:2) are
-	// deliberately absent from the defaults: verified by eye that the
-	// tmux+Apple Terminal chain drops them entirely, which would cost the
-	// focused field its marker on the baseline stack.
+test("blurred fields are faint blanks; the focused field's line is solid", async () => {
+	// The UA field design, all in classic SGR that survives any chain:
+	// a blurred field paints dim+underlined blanks across the cells its
+	// value doesn't occupy (typed content stays plain text; a placeholder
+	// rides the blank and goes faint with it), and the focused field swaps
+	// to a solid underline across the whole extent.
 	const terminal = new MockProcess({rows: 5, cols: 40});
 	const dom = new TermDOM({process: terminal});
-	const {document, window} = dom;
-	let raw = "";
-	const originalWrite = terminal.stdout.write.bind(terminal.stdout);
-	(terminal.stdout as any).write = (chunk: any, enc?: any, cb?: any) => {
-		raw += String(chunk);
-		return originalWrite(chunk, enc, cb);
-	};
+	const {document} = dom;
 	const a = document.createElement("input");
+	a.value = "hi";
 	const b = document.createElement("input");
 	document.body.append(a, b);
 	await nextFrame(dom);
-	// Blurred: no underline anywhere in the frame.
-	expect(raw).not.toMatch(/\x1b\[[\d;]*\b4(?![\d:])[\d;]*m/);
 
+	const cellAt = (row: number, col: number) =>
+		(terminal as any).terminal.buffer.active.getLine(row).getCell(col);
+
+	// Blurred, with value: the value chars are plain text...
+	expect(cellAt(0, 0).isUnderline()).toBeFalsy();
+	expect(cellAt(0, 0).isDim()).toBeFalsy();
+	// ...and the remainder is the faint blank.
+	expect(cellAt(0, 5).isUnderline()).toBeTruthy();
+	expect(cellAt(0, 5).isDim()).toBeTruthy();
+	// Blurred, empty (input b sits beside a on the same line, cols 20-39):
+	// faint blank across the extent.
+	expect(cellAt(0, 25).isUnderline()).toBeTruthy();
+	expect(cellAt(0, 25).isDim()).toBeTruthy();
+
+	// Focused: solid underline across the whole extent, value included --
+	// and not dim.
 	a.focus();
 	await nextFrame(dom);
-	expect(raw).toMatch(/\x1b\[[\d;]*\b4(?![\d:])[\d;]*m/);
-	expect(raw).not.toContain("4:2"); // never styled underlines from the UA
-
-	const decoration = (el: Element) =>
-		window.getComputedStyle(el).getPropertyValue("text-decoration");
-	expect(decoration(a)).toContain("underline");
-	expect(decoration(b)).not.toContain("underline");
-	b.focus();
-	expect(decoration(a)).not.toContain("underline");
-	expect(decoration(b)).toContain("underline");
+	expect(cellAt(0, 0).isUnderline()).toBeTruthy();
+	expect(cellAt(0, 0).isDim()).toBeFalsy();
+	expect(cellAt(0, 5).isUnderline()).toBeTruthy();
+	expect(cellAt(0, 5).isDim()).toBeFalsy();
+	// The other field stays a faint blank.
+	expect(cellAt(0, 25).isUnderline()).toBeTruthy();
+	expect(cellAt(0, 25).isDim()).toBeTruthy();
 
 	dom.dispose();
 });
