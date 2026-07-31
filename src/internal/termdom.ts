@@ -2008,14 +2008,10 @@ export class TermDOM {
 			});
 		}
 
-		// Fullscreen API methods
 		// The document-rooted MutationObserver never sees inside a shadow
 		// root -- per spec, shadow trees are separate observation scopes. Each
 		// author-attached root gets enrolled in the same observer, so shadow
 		// mutations invalidate styles/layout and repaint like light ones.
-		// (Attaching to an ALREADY-connected host doesn't yet rebuild its
-		// existing light-children layout -- attach-then-populate-then-connect,
-		// the standard web-component order, is the supported path for now.)
 		const originalAttachShadow = Element.prototype.attachShadow;
 		Element.prototype.attachShadow = function (
 			this: Element,
@@ -2028,6 +2024,15 @@ export class TermDOM {
 				attributes: true,
 				characterData: true,
 			});
+			// attachShadow is not a DOM mutation -- no observer record will
+			// ever fire for it -- but on a CONNECTED host the composed tree
+			// just changed wholesale: light children stop rendering the moment
+			// the root exists, even while it is still empty. Rebuild the
+			// host's composed subtree and repaint.
+			if (this.isConnected) {
+				termDOM[kLayoutEngine].invalidate(this);
+				void termDOM.#render();
+			}
 			return root;
 		};
 

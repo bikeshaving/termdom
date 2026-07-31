@@ -1630,6 +1630,23 @@ export class LayoutEngine {
 					// markers, so appending a wider item changes the parent's computed
 					// padding, and reusing the node as-is would keep the stale gutter.
 					styleFlexNode(node as Element, flexNode);
+
+					// Sever its current flex CHILDREN too: this element's composed
+					// child set may have changed wholesale (attachShadow on a host
+					// that was already rendering its light children), and reusing
+					// the node with stale children keeps painting content that is
+					// no longer composed. Children that remain in the composed tree
+					// are re-invalidated by the recursion below and reattach
+					// through calculateLayout's re-add sweep; the rest stay
+					// tracked-but-detached, exactly like a moved node.
+					while (flexNode.children.length > 0) {
+						const childFlexNode = flexNode.children[0];
+						flexNode.removeChild(childFlexNode);
+						const childDomNode = this.#domNodeByFlexNode.get(childFlexNode);
+						if (childDomNode) {
+							this.#clearBreakResultCache(childDomNode);
+						}
+					}
 				}
 			}
 

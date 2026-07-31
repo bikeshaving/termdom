@@ -177,6 +177,72 @@ test("bare text light children project through the default slot", async () => {
 	dom.dispose();
 });
 
+test("attachShadow on a connected, already-rendered host replaces its content", async () => {
+	// The standard web-component order is attach-then-populate-then-connect,
+	// but nothing stops an author upgrading an element that is already on
+	// screen -- the light-children layout must be torn down and the composed
+	// tree take over, immediately for the (empty) root and on population.
+	const terminal = new MockProcess({rows: 6, cols: 60});
+	const dom = new TermDOM({process: terminal});
+	const {document} = dom;
+	const host = document.createElement("div");
+	host.textContent = "LIGHT";
+	document.body.appendChild(host);
+	await nextFrame(dom);
+	expect(terminal.getPlainText()).toContain("LIGHT");
+
+	const root = host.attachShadow({mode: "open"});
+	const inner = document.createElement("div");
+	inner.textContent = "UPGRADED";
+	root.appendChild(inner);
+	await nextFrame(dom);
+
+	const output = terminal.getPlainText();
+	expect(output).toContain("UPGRADED");
+	expect(output).not.toContain("LIGHT");
+
+	dom.dispose();
+});
+
+test("attachShadow alone blanks a connected host: an empty root has no composed content", async () => {
+	// attachShadow is not a DOM mutation -- no observer record fires -- but
+	// the composed tree changed all the same: an empty shadow root renders
+	// NOTHING, exactly as in a browser.
+	const terminal = new MockProcess({rows: 6, cols: 60});
+	const dom = new TermDOM({process: terminal});
+	const {document} = dom;
+	const host = document.createElement("div");
+	host.textContent = "LIGHT";
+	document.body.appendChild(host);
+	await nextFrame(dom);
+	expect(terminal.getPlainText()).toContain("LIGHT");
+
+	host.attachShadow({mode: "open"});
+	await nextFrame(dom);
+	expect(terminal.getPlainText()).not.toContain("LIGHT");
+
+	dom.dispose();
+});
+
+test("attachShadow on a connected host with slots reprojects its light children", async () => {
+	const terminal = new MockProcess({rows: 6, cols: 60});
+	const dom = new TermDOM({process: terminal});
+	const {document} = dom;
+	const host = document.createElement("div");
+	host.textContent = "KEPT";
+	document.body.appendChild(host);
+	await nextFrame(dom);
+	expect(terminal.getPlainText()).toContain("KEPT");
+
+	const root = host.attachShadow({mode: "open"});
+	root.innerHTML = `<span>&lt;</span><slot></slot><span>&gt;</span>`;
+	await nextFrame(dom);
+
+	expect(terminal.getPlainText()).toContain("<KEPT>");
+
+	dom.dispose();
+});
+
 test("reassigning a slot attribute reprojects on the next frame", async () => {
 	const terminal = new MockProcess({rows: 6, cols: 60});
 	const dom = new TermDOM({process: terminal});

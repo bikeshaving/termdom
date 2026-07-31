@@ -432,9 +432,11 @@ export class ExpandedTreeWalker {
 			return beforeElement;
 		}
 
-		// Check for shadow DOM content
+		// A host's composed children are its shadow root's children, and ONLY
+		// those -- an empty shadow root means an empty host, never a
+		// fall-through to the light children (they render solely via slots).
 		const shadowRoot = this.#getShadowRoot(element);
-		if (shadowRoot && shadowRoot.firstChild) {
+		if (shadowRoot) {
 			return shadowRoot.firstChild;
 		}
 
@@ -480,9 +482,10 @@ export class ExpandedTreeWalker {
 		// tree, so it must be consulted before node.lastChild -- checking the
 		// light child first made last-child navigation disagree with
 		// #rawFirstChild (which composes shadow-first) on any host that kept
-		// light children around for slotting.
+		// light children around for slotting. And like #rawFirstChild, no
+		// fall-through: an empty root means an empty host.
 		const shadowRoot = this.#getShadowRoot(element);
-		if (shadowRoot && shadowRoot.lastChild) {
+		if (shadowRoot) {
 			return shadowRoot.lastChild;
 		}
 
@@ -504,9 +507,10 @@ export class ExpandedTreeWalker {
 				if (beforeElement) {
 					return beforeElement;
 				}
-				// ::marker -> first regular child or shadow content (if no ::before)
+				// ::marker -> first composed child (shadow content replaces light
+				// children entirely; an empty root composes nothing)
 				const shadowRoot = this.#getShadowRoot(hostElement);
-				if (shadowRoot && shadowRoot.firstChild) {
+				if (shadowRoot) {
 					return shadowRoot.firstChild;
 				}
 
@@ -514,9 +518,10 @@ export class ExpandedTreeWalker {
 			}
 
 			if (pseudoMeta.pseudoType === "::before") {
-				// ::before -> first regular child or shadow content
+				// ::before -> first composed child (shadow-first, no light
+				// fall-through)
 				const shadowRoot = this.#getShadowRoot(hostElement);
-				if (shadowRoot && shadowRoot.firstChild) {
+				if (shadowRoot) {
 					return shadowRoot.firstChild;
 				}
 
@@ -578,17 +583,15 @@ export class ExpandedTreeWalker {
 			const hostElement = pseudoMeta.hostElement;
 
 			if (pseudoMeta.pseudoType === "::after") {
-				// ::after -> last regular child or shadow content
-				if (hostElement.lastChild) {
-					return hostElement.lastChild;
-				}
-
+				// ::after -> last composed child: the shadow root when one
+				// exists (light children only render via slots), else the
+				// last light child.
 				const shadowRoot = this.#getShadowRoot(hostElement);
-				if (shadowRoot && shadowRoot.lastChild) {
+				if (shadowRoot) {
 					return shadowRoot.lastChild;
 				}
 
-				return null;
+				return hostElement.lastChild;
 			}
 
 			if (pseudoMeta.pseudoType === "::before") {
@@ -783,9 +786,10 @@ export class ExpandedTreeWalker {
 	 */
 	#getLastContentChild(element: Element): Node | null {
 		// Shadow content replaces light children in the composed tree, so a
-		// host's last content child comes from the shadow root when one exists.
+		// host's last content child comes from the shadow root when one exists
+		// -- even an empty one.
 		const shadowRoot = this.#getShadowRoot(element);
-		if (shadowRoot && shadowRoot.lastChild) {
+		if (shadowRoot) {
 			return shadowRoot.lastChild;
 		}
 
