@@ -1183,9 +1183,13 @@ export class TermDOM {
 
 		if (value) {
 			displayText = value;
-		} else if (placeholder && !isFocused) {
+		} else if (placeholder) {
+			// Shown focused or not, as in a browser -- the caret just sits at
+			// the field start, over the dimmed text. (This used to be gated on
+			// !isFocused, which nothing noticed while autofocus was
+			// unimplemented: no input ever STARTED focused, so the placeholder
+			// always survived the first paint.)
 			displayText = placeholder;
-			// Dim the placeholder text
 			textStyle.fg = 0x808080;
 		} else {
 			displayText = "";

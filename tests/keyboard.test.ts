@@ -616,6 +616,32 @@ test("a lone stray cursor report dispatches nothing", async () => {
 	dom.dispose();
 });
 
+test("a focused empty input still shows its placeholder, caret at the field start", async () => {
+	// Browsers show the placeholder in a focused empty input -- the caret
+	// just sits at position 0 over the dimmed text, and the first keystroke
+	// replaces it. This regressed invisibly for as long as autofocus was
+	// unimplemented: no input ever STARTED focused, so the old
+	// hide-on-focus condition never had a first paint to ruin.
+	const terminal = new MockProcess({rows: 6, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	dom.document.body.innerHTML = `<div><input id="a" type="text" placeholder="What needs doing?" autofocus></div>`;
+	const input = dom.document.getElementById("a") as HTMLInputElement;
+	await nextFrame(dom);
+
+	expect(dom.document.activeElement).toBe(input); // autofocus took
+	expect(terminal.getPlainText()).toContain("What needs doing?");
+	const buffer = (terminal as any).terminal.buffer.active;
+	expect(buffer.cursorX).toBe(0); // caret at the start, over the placeholder
+
+	// Typing replaces the placeholder with the value.
+	(terminal.stdin as any).emit("data", Buffer.from("x"));
+	await nextFrame(dom);
+	expect(terminal.getPlainText()).not.toContain("What needs doing?");
+	expect(terminal.getPlainText()).toContain("x");
+
+	dom.dispose();
+});
+
 test("a focused input parks the real terminal cursor at its caret", async () => {
 	// IME composition, screen readers and the terminal's cursor style all anchor
 	// to the real cursor -- an inverse-video cell is not a caret. The frame parks
