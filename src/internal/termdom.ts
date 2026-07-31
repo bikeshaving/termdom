@@ -1201,7 +1201,13 @@ export class TermDOM {
 		// by character count pushed the value's background straight through the
 		// input's right border.
 		let scrollOffset = this.#inputScrollOffsets.get(element) ?? 0;
-		const cursor = this.#inputCursorPositions.get(element) ?? value.length;
+		// Clamp to the CURRENT value: .value can change out from under the
+		// tracked caret (a framework resetting it on submit is the everyday
+		// case), and an out-of-range caret must not survive into geometry.
+		const cursor = Math.min(
+			this.#inputCursorPositions.get(element) ?? value.length,
+			value.length,
+		);
 
 		if (isFocused) {
 			// Keep the caret's CELL offset inside the box.
@@ -1213,6 +1219,19 @@ export class TermDOM {
 				stringWidth(displayText.slice(scrollOffset, cursor)) >= contentWidth
 			) {
 				scrollOffset++;
+			}
+			// And scroll BACK when there's slack: after deleting at the end of
+			// an overflowed value, the window would otherwise stay put and show
+			// a shrinking tail with the earlier text still hidden off the left
+			// edge. Pull the window left while everything from one character
+			// earlier through the end still fits strictly inside the field
+			// (strictly: the caret needs its cell when it sits at the end),
+			// exactly what a browser's field does on backspace.
+			while (
+				scrollOffset > 0 &&
+				stringWidth(displayText.slice(scrollOffset - 1)) < contentWidth
+			) {
+				scrollOffset--;
 			}
 			this.#inputScrollOffsets.set(element, scrollOffset);
 		}
@@ -1994,7 +2013,16 @@ export class TermDOM {
 		}
 
 		const value = element.value;
-		const cursor = this.#inputCursorPositions.get(element) ?? value.length;
+		// Clamp the tracked caret to the CURRENT value. Frameworks assign
+		// .value directly (TodoMVC resets it to "" on submit) and nothing
+		// tells us; a stale caret past the end made every edit key a silent
+		// no-op -- Backspace sliced value.slice(0, cursor-1) + slice(cursor),
+		// which is the value unchanged when cursor > length, and each typed
+		// character pushed the phantom caret further out.
+		const cursor = Math.min(
+			this.#inputCursorPositions.get(element) ?? value.length,
+			value.length,
+		);
 
 		let newValue = value;
 		let newCursor = cursor;

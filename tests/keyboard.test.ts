@@ -642,6 +642,69 @@ test("a focused empty input still shows its placeholder, caret at the field star
 	dom.dispose();
 });
 
+test("backspace works after a framework resets .value out from under the caret", async () => {
+	// TodoMVC submits by assigning input.value = "" -- nothing notifies the
+	// tracked caret, which stayed at the old length. Typing then pushed the
+	// phantom caret further past the end, and Backspace's
+	// slice(0, cursor-1) + slice(cursor) returned the value UNCHANGED for a
+	// cursor beyond the end: a silent no-op per press until the stale caret
+	// happened to walk back into range. Clamping the caret to the current
+	// value at read fixes every edit key at once.
+	const terminal = new MockProcess({rows: 6, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	dom.attach();
+	const {document} = dom;
+	const input = document.createElement("input");
+	document.body.appendChild(input);
+	input.focus();
+	await nextFrame(dom);
+
+	(terminal.stdin as any).emit("data", Buffer.from("12345678"));
+	expect(input.value).toBe("12345678");
+
+	input.value = ""; // the framework's submit reset
+	(terminal.stdin as any).emit("data", Buffer.from("abc"));
+	expect(input.value).toBe("abc");
+
+	(terminal.stdin as any).emit("data", Buffer.from("\x7f")); // Backspace
+	expect(input.value).toBe("ab");
+
+	dom.dispose();
+});
+
+test("deleting at the end of an overflowed input scrolls earlier text back into view", async () => {
+	// With more text than the field holds, the window follows the caret
+	// right. On backspace it used to stay put: the tail shrank inside the
+	// window while the earlier characters sat hidden off the left edge. A
+	// browser's field scrolls back to keep the field full -- the previous
+	// letters reappear as you delete.
+	const terminal = new MockProcess({rows: 6, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	dom.attach();
+	const {document} = dom;
+	const input = document.createElement("input");
+	input.style.width = "10ch";
+	document.body.appendChild(input);
+	input.focus();
+	await nextFrame(dom);
+
+	(terminal.stdin as any).emit("data", Buffer.from("abcdefghijklmno"));
+	await nextFrame(dom);
+	// Window follows the caret: the last 9 chars + the caret cell.
+	expect(terminal.getPlainText()).toContain("ghijklmno");
+
+	for (let i = 0; i < 4; i++) {
+		(terminal.stdin as any).emit("data", Buffer.from("\x7f"));
+	}
+	await nextFrame(dom);
+	expect(input.value).toBe("abcdefghijk");
+	// The window scrolled back to stay full: c..k visible, not a shrunken
+	// "ghijk" tail with abcdef still hidden.
+	expect(terminal.getPlainText()).toContain("cdefghijk");
+
+	dom.dispose();
+});
+
 test("a focused input parks the real terminal cursor at its caret", async () => {
 	// IME composition, screen readers and the terminal's cursor style all anchor
 	// to the real cursor -- an inverse-video cell is not a caret. The frame parks
