@@ -1,0 +1,305 @@
+// The official Crank TodoMVC (github.com/bikeshaving/crank, examples/todomvc.js),
+// rendered to the terminal. The component code below is unmodified from the
+// original -- every interaction (checkbox toggle, double-click to edit,
+// autofocus, label-click delegation, dblclick detection) is a real DOM
+// feature termdom implements, not a todomvc-specific workaround. The only
+// change is the stylesheet: the original loads todomvc-app-css from a CDN,
+// which targets a browser (box-shadow, transitions, media queries) -- this
+// swaps it for an inline <style> using the same class names, in the CSS
+// subset a terminal can actually paint.
+//
+//   bun examples/todomvc.tsx
+import {TermDOM} from "../src/index.js";
+import type {Context} from "@b9g/crank";
+import {renderer} from "@b9g/crank/dom";
+
+const termDOM = new TermDOM();
+const document = termDOM.document;
+globalThis.Node = termDOM.window.Node;
+globalThis.document = termDOM.document;
+
+const style = document.createElement("style");
+style.textContent = `
+  .todoapp { padding: 1ch 2ch; }
+  .header h1 { color: cyan; font-weight: bold; }
+  .header .new-todo { }
+  .main { padding-top: 1; }
+  .toggle-all { margin-right: 1ch; }
+  .todo-list { padding-left: 0; list-style: none; }
+  .todo-list li .view { display: flex; flex-direction: row; gap: 1ch; }
+  .todo-list li.completed label { text-decoration: underline; color: #666; }
+  .todo-list li.editing .view { display: none; }
+  .destroy { color: red; }
+  .destroy::after { content: "(x)"; }
+  .footer { padding-top: 1; color: yellow; }
+  .todo-count strong { font-weight: bold; }
+  .filters { display: flex; flex-direction: row; gap: 1ch; padding-left: 0; list-style: none; }
+  .filters a { color: #888; }
+  .filters a.selected { color: cyan; font-weight: bold; }
+  .clear-completed { color: red; }
+`;
+document.head.appendChild(style);
+
+// Custom TodoMVC event that bubbles by default
+class TodoEvent extends CustomEvent<any> {
+	constructor(type: string, detail: any = {}) {
+		super(type, {
+			bubbles: true,
+			detail,
+		});
+	}
+}
+
+function* Header(this: Context) {
+	let title = "";
+
+	const oninput = (ev: any) => {
+		title = ev.target.value;
+	};
+
+	const onkeydown = (ev: any) => {
+		if (ev.key === "Enter" && title.trim()) {
+			ev.preventDefault();
+			this.dispatchEvent(new TodoEvent("todocreate", {title: title.trim()}));
+			this.refresh(() => (title = ""));
+		}
+	};
+
+	// Idiomatic Crank: this yields the component's props each iteration; {}
+	// says none are used.
+	// eslint-disable-next-line no-empty-pattern
+	for ({} of this) {
+		yield (
+			<header class="header">
+				<h1>todos</h1>
+				<input
+					class="new-todo"
+					placeholder="What needs to be done?"
+					value={title}
+					oninput={oninput}
+					onkeydown={onkeydown}
+					autofocus
+				/>
+			</header>
+		);
+	}
+}
+
+function* TodoItem(this: Context, {todo}: any) {
+	let editing = false;
+	let editTitle = todo.title;
+
+	const ontoggle = () => {
+		this.dispatchEvent(
+			new TodoEvent("todotoggle", {
+				id: todo.id,
+				completed: !todo.completed,
+			}),
+		);
+	};
+
+	const ondelete = () => {
+		this.dispatchEvent(new TodoEvent("tododelete", {id: todo.id}));
+	};
+
+	const onedit = () => {
+		this.refresh(() => {
+			editing = true;
+			editTitle = todo.title;
+		});
+	};
+
+	const onsave = () => {
+		if (editTitle.trim()) {
+			this.dispatchEvent(
+				new TodoEvent("todoedit", {
+					id: todo.id,
+					title: editTitle.trim(),
+				}),
+			);
+		}
+		this.refresh(() => (editing = false));
+	};
+
+	const oncancel = () => {
+		this.refresh(() => {
+			editing = false;
+			editTitle = todo.title;
+		});
+	};
+
+	const onkeydown = (ev: any) => {
+		if (ev.key === "Enter") {
+			onsave();
+		} else if (ev.key === "Escape") {
+			oncancel();
+		}
+	};
+
+	for ({todo} of this) {
+		yield (
+			<li class={{completed: todo.completed, editing}}>
+				<div class="view">
+					<input
+						class="toggle"
+						type="checkbox"
+						checked={todo.completed}
+						onchange={ontoggle}
+					/>
+					<label ondblclick={onedit}>{todo.title}</label>
+					<button class="destroy" onclick={ondelete}></button>
+				</div>
+				{editing && (
+					<input
+						class="edit"
+						type="text"
+						value={editTitle}
+						oninput={(ev: any) => (editTitle = ev.target.value)}
+						onkeydown={onkeydown}
+						onblur={onsave}
+						autofocus
+					/>
+				)}
+			</li>
+		);
+	}
+}
+
+function* TodoList(this: Context, {todos, filter}: any) {
+	for ({todos, filter} of this) {
+		const filteredTodos = todos.filter((todo: any) => {
+			if (filter === "active") return !todo.completed;
+			if (filter === "completed") return todo.completed;
+			return true;
+		});
+
+		yield (
+			<ul class="todo-list">
+				{filteredTodos.map((todo: any) => (
+					<TodoItem key={todo.id} todo={todo} />
+				))}
+			</ul>
+		);
+	}
+}
+
+function* Footer(this: Context, {todos, filter}: any) {
+	const setFilter = (newFilter: string) => {
+		this.dispatchEvent(new TodoEvent("filterchange", {filter: newFilter}));
+	};
+
+	const clearCompleted = () => {
+		this.dispatchEvent(new TodoEvent("todoclearcompleted"));
+	};
+
+	for ({todos, filter} of this) {
+		const activeCount = todos.filter((t: any) => !t.completed).length;
+		const completedCount = todos.filter((t: any) => t.completed).length;
+
+		yield (
+			<footer class="footer">
+				<span class="todo-count">
+					<strong>{activeCount}</strong> item{activeCount !== 1 ? "s" : ""} left
+				</span>
+				<ul class="filters">
+					{["all", "active", "completed"].map((f) => (
+						<li key={f}>
+							<a
+								href="javascript:void(0)"
+								onclick={() => setFilter(f === "all" ? "" : f)}
+								class={{selected: filter === (f === "all" ? "" : f)}}
+							>
+								{f === "all" ? "All" : f.charAt(0).toUpperCase() + f.slice(1)}
+							</a>
+						</li>
+					))}
+				</ul>
+				{completedCount > 0 && (
+					<button class="clear-completed" onclick={clearCompleted}>
+						Clear completed
+					</button>
+				)}
+			</footer>
+		);
+	}
+}
+
+function* App(this: Context) {
+	let todos: any[] = [];
+	let nextId = 1;
+	let filter = "";
+
+	this.addEventListener("todocreate", (ev: any) => {
+		this.refresh(() => {
+			todos.push({
+				id: nextId++,
+				title: ev.detail.title,
+				completed: false,
+			});
+		});
+	});
+
+	this.addEventListener("todotoggle", (ev: any) => {
+		this.refresh(() => {
+			const todo = todos.find((t) => t.id === ev.detail.id);
+			if (todo) todo.completed = ev.detail.completed;
+		});
+	});
+
+	this.addEventListener("todoedit", (ev: any) => {
+		this.refresh(() => {
+			const todo = todos.find((t) => t.id === ev.detail.id);
+			if (todo) todo.title = ev.detail.title;
+		});
+	});
+
+	this.addEventListener("tododelete", (ev: any) => {
+		this.refresh(() => {
+			todos = todos.filter((t) => t.id !== ev.detail.id);
+		});
+	});
+
+	this.addEventListener("todoclearcompleted", () => {
+		this.refresh(() => {
+			todos = todos.filter((t) => !t.completed);
+		});
+	});
+
+	this.addEventListener("filterchange", (ev: any) => {
+		this.refresh(() => {
+			filter = ev.detail.filter;
+		});
+	});
+
+	// Idiomatic Crank: this yields the component's props each iteration; {}
+	// says none are used.
+	// eslint-disable-next-line no-empty-pattern
+	for ({} of this) {
+		yield (
+			<section class="todoapp">
+				<Header />
+				{todos.length > 0 && (
+					<section class="main">
+						<input
+							id="toggle-all"
+							class="toggle-all"
+							type="checkbox"
+							checked={todos.every((t) => t.completed)}
+							onchange={(e: any) => {
+								const completed = e.target.checked;
+								this.refresh(() => {
+									todos.forEach((t) => (t.completed = completed));
+								});
+							}}
+						/>
+						<label for="toggle-all">Mark all as complete</label>
+						<TodoList todos={todos} filter={filter} />
+						<Footer todos={todos} filter={filter} />
+					</section>
+				)}
+			</section>
+		);
+	}
+}
+
+renderer.render(<App />, document.body);
