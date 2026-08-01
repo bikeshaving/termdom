@@ -488,12 +488,15 @@ const TERMINAL_ELEMENT_DEFAULTS: Record<string, Record<string, string>> = {
 	},
 	// A textarea preserves newlines and soft-wraps at its edge, exactly the
 	// browser default. Its UA shadow tree's value text lays out through the
-	// normal pipeline, so this is what makes multiline values multiline.
+	// normal pipeline, so this is what makes multiline values multiline --
+	// and break-word (the browser's own textarea UA rule) is what makes a
+	// long unbroken word wrap at the field edge instead of escaping it.
 	textarea: {
 		display: "inline-block",
 		border: "1px solid",
 		padding: "0 1ch",
 		"white-space": "pre-wrap",
+		"overflow-wrap": "break-word",
 	},
 	// A select is a flat field in the input family: the selected option's
 	// label plus a dim indicator, underlined when focused (see
@@ -682,6 +685,8 @@ const INHERITED_PROPERTIES = new Set([
 	"text-indent",
 	"text-transform",
 	"white-space",
+	"word-break",
+	"overflow-wrap",
 	"word-spacing",
 	"letter-spacing",
 	"visibility",

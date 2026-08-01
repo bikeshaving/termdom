@@ -356,3 +356,28 @@ test("borders respect the camera: culled above the band, visible when scrolled t
 
 	dom.dispose();
 });
+
+test("a long unbroken word wraps at the field edge -- overflow-wrap: break-word is the UA default", async () => {
+	const terminal = new MockProcess({rows: 10, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	const {document} = dom;
+	const textarea = document.createElement("textarea");
+	textarea.setAttribute("rows", "4");
+	textarea.style.width = "20ch";
+	textarea.value = "asdfasdfkasdjfalsdkfjasdlkfjasdlfkjasdlf";
+	document.body.appendChild(textarea);
+	await nextFrame(dom);
+	await nextFrame(dom);
+
+	// 20ch box minus border+padding = 16 content cells: no painted row may
+	// run past the border column.
+	const lines = terminal.getPlainText().split("\n");
+	for (const line of lines) {
+		expect(line.length).toBeLessThanOrEqual(20);
+	}
+	// And the whole word survives, spread across rows.
+	const rejoined = lines.map((l) => l.replace(/[│┌┐└┘─ ]/g, "")).join("");
+	expect(rejoined).toBe("asdfasdfkasdjfalsdkfjasdlkfjasdlfkjasdlf");
+
+	dom.dispose();
+});

@@ -2633,3 +2633,44 @@ test("break result cleanup prevents orphaned entries", async () => {
 // These tests verify that the layout invalidation logic works correctly.
 // DOM mutations automatically trigger MutationObserver -> #removeNode -> #invalidateInlineRun
 // ensuring that break results are properly cleared and runs are recalculated.
+
+test("overflow-wrap: normal lets a long word escape its box, as a browser does", async () => {
+	const terminal = new MockProcess({rows: 4, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	const {document} = dom;
+	const div = document.createElement("div");
+	div.style.width = "10ch";
+	div.textContent = "aaaaaaaaaaaaaaaaaaaa";
+	document.body.appendChild(div);
+	await nextFrame(dom);
+	await nextFrame(dom);
+
+	// One line, unbroken: the word overflows the 10ch box.
+	expect(terminal.getPlainText().split("\n")[0]).toContain(
+		"aaaaaaaaaaaaaaaaaaaa",
+	);
+
+	dom.dispose();
+});
+
+test("overflow-wrap: break-word wraps the long word inside the box", async () => {
+	const terminal = new MockProcess({rows: 6, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	const {document} = dom;
+	const div = document.createElement("div");
+	div.style.width = "10ch";
+	div.style.setProperty("overflow-wrap", "break-word");
+	div.textContent = "aaaaaaaaaaaaaaaaaaaa";
+	document.body.appendChild(div);
+	await nextFrame(dom);
+	await nextFrame(dom);
+
+	const lines = terminal
+		.getPlainText()
+		.split("\n")
+		.filter((l) => l.trim());
+	expect(lines[0]).toBe("aaaaaaaaaa");
+	expect(lines[1]).toBe("aaaaaaaaaa");
+
+	dom.dispose();
+});

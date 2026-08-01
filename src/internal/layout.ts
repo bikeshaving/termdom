@@ -791,8 +791,7 @@ export interface BreakResult {
 interface BreakOptions {
 	maxWidth: number;
 	whiteSpace?: string;
-	wordBreak?: string;
-	overflowWrap?: string;
+	nowrap?: boolean;
 }
 
 interface ProcessedContent {
@@ -3007,13 +3006,31 @@ export class LayoutEngine {
 
 		// Process and break the content with dynamic per-element styling
 		const processedContent = this.#processWhitespace(leafNodes);
+		const nowrap =
+			(whiteSpace || "normal") === "nowrap" ||
+			this.#hasNowrapLeaf(processedContent);
 		const breaks = this.#findBreakPoints(processedContent, {
 			maxWidth,
 			whiteSpace: whiteSpace || "normal",
-			wordBreak: wordBreak || "normal",
-			overflowWrap: overflowWrap || "normal",
+			nowrap,
 		});
-		const lines = this.#buildLines(processedContent, breaks, maxWidth);
+		// A word with no break opportunity inside it either overflows its
+		// line (overflow-wrap: normal, the browser default) or gains
+		// synthetic break points anywhere it needs them (break-word /
+		// anywhere / word-break: break-all). break-word deliberately does
+		// NOT shrink min-content -- the word still measures whole at the
+		// AT_MOST 0 probe -- while anywhere and break-all do.
+		const breakAnywhere =
+			!nowrap &&
+			(wordBreak === "break-all" ||
+				overflowWrap === "anywhere" ||
+				(overflowWrap === "break-word" && maxWidth > 0));
+		const lines = this.#buildLines(
+			processedContent,
+			breaks,
+			maxWidth,
+			breakAnywhere,
+		);
 
 		return {
 			lines,
@@ -3138,14 +3155,9 @@ export class LayoutEngine {
 		return {items, text};
 	}
 
-	#findBreakPoints(
-		content: ProcessedContent,
-		options: BreakOptions,
-	): BreakPoint[] {
-		const {whiteSpace = "normal"} = options;
-
-		// Check if ANY leaf node has white-space: nowrap
-		const hasNowrap = content.items.some((item) => {
+	/** Does ANY text leaf in the run carry white-space: nowrap? */
+	#hasNowrapLeaf(content: ProcessedContent): boolean {
+		return content.items.some((item) => {
 			if (item.leafNode.type === "text" && item.leafNode.node.parentElement) {
 				const leafWhiteSpace = getPropertyValue(
 					item.leafNode.node.parentElement,
@@ -3155,9 +3167,14 @@ export class LayoutEngine {
 			}
 			return false;
 		});
+	}
 
+	#findBreakPoints(
+		content: ProcessedContent,
+		options: BreakOptions,
+	): BreakPoint[] {
 		// For nowrap, only allow breaking at the very end
-		if (whiteSpace === "nowrap" || hasNowrap) {
+		if (options.nowrap) {
 			return [
 				{
 					position: content.text.length,
@@ -3200,6 +3217,7 @@ export class LayoutEngine {
 		content: ProcessedContent,
 		breaks: BreakPoint[],
 		maxWidth: number,
+		breakAnywhere: boolean,
 	): LineResult[] {
 		const lines: LineResult[] = [];
 		let currentY = 0;
@@ -3219,16 +3237,6 @@ export class LayoutEngine {
 					breakPoint.position,
 				);
 
-				// For nowrap (single break point at end), always use it regardless of width
-				if (
-					breaks.length === 1 &&
-					breakPoint.position === content.text.length
-				) {
-					bestBreak = breakPoint.position;
-					bestBreakWidth = width;
-					break;
-				}
-
 				if (width <= maxWidth) {
 					bestBreak = breakPoint.position;
 					bestBreakWidth = width;
@@ -3241,6 +3249,21 @@ export class LayoutEngine {
 					bestBreakWidth = width;
 					break;
 				}
+			}
+
+			// No break opportunity fits. Under overflow-wrap: normal the line
+			// takes the whole unbreakable unit and OVERFLOWS, exactly as a
+			// browser lets a long word escape its box; only break-word/
+			// anywhere/break-all may synthesize a break inside the word.
+			if (bestBreak === lineStart && !breakAnywhere) {
+				const next = breaks.find((b) => b.position > lineStart);
+				bestBreak = next ? next.position : content.text.length;
+				bestBreakWidth = this.#measureText(
+					content.text,
+					content.items,
+					lineStart,
+					bestBreak,
+				);
 			}
 
 			if (bestBreak === lineStart) {
