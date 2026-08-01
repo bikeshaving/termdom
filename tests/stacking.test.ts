@@ -142,3 +142,14 @@ test("an absolute box escapes a measure-function (inline-block) subtree", async 
 	expect(rows[1]).toContain("ESCAPED");
 	dom.dispose();
 });
+
+test("a relative inline run member keeps painting with its run", async () => {
+	// It has no hoisted box -- no positioned layer would paint it -- so the
+	// in-flow walk must not defer it. (Its text also keeps its run cells:
+	// relative positioning preserves flow space.)
+	const {terminal, dom} = await render(
+		`<div>ab<span style="position:relative">MID</span>cd</div>`,
+	);
+	expect(terminal.getPlainText()).toContain("abMIDcd");
+	dom.dispose();
+});
