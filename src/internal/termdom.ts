@@ -1709,24 +1709,38 @@ export class TermDOM {
 		element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
 	): void {
 		this.#processPendingMutationsAndRender();
-		let caretY: number | null = null;
+		const rect = this[kLayoutEngine].getRect(element);
+		if (!rect) return;
+		let caretY = Math.round(rect.top);
 		if (element.tagName === "TEXTAREA") {
 			const cell = this.#textareaCaretCell(element as HTMLTextAreaElement);
-			caretY = cell ? cell.y : null;
-		} else {
-			const rect = this[kLayoutEngine].getRect(element);
-			caretY = rect ? Math.round(rect.top) : null;
+			if (!cell) return;
+			caretY = cell.y;
 		}
-		if (caretY === null) return;
+		// The row span to reveal: the caret's row -- widened to the field's
+		// own edge when the caret sits on the first or last content row, so
+		// resting at a boundary shows the border instead of a cropped box.
+		const boxModel = getBoxModel(element);
+		let revealTop = caretY;
+		let revealBottom = caretY + 1;
+		if (caretY <= Math.round(rect.top) + (boxModel.borderTopWidth || 0)) {
+			revealTop = Math.round(rect.top);
+		}
+		if (
+			caretY >=
+			Math.round(rect.bottom) - (boxModel.borderBottomWidth || 0) - 1
+		) {
+			revealBottom = Math.round(rect.bottom);
+		}
 		const regionHeight = Math.min(
 			this.#height,
 			this.document.body.scrollHeight,
 		);
 		const top = this.#documentScrollTop;
-		if (caretY < top) {
-			this.#scrollCamera(caretY - top);
-		} else if (caretY + 1 > top + regionHeight) {
-			this.#scrollCamera(caretY + 1 - (top + regionHeight));
+		if (revealTop < top) {
+			this.#scrollCamera(revealTop - top);
+		} else if (revealBottom > top + regionHeight) {
+			this.#scrollCamera(revealBottom - (top + regionHeight));
 		}
 	}
 

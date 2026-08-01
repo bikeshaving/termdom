@@ -815,7 +815,10 @@ export class DrawingContext {
 			(toLeft > 0 ? toLeft << BorderShift.Left : 0);
 
 		const put = (col: number, row: number, encoding: number) => {
-			if (col < 0 || col >= this.cols || row < 0 || row >= this.rows) return;
+			// No bounds check here: rows are DOCUMENT rows, and #setBorderCell
+			// culls after applying the viewport offset -- pre-culling against
+			// terminal rows dropped bottom edges the camera had scrolled INTO
+			// view.
 			this.#setBorderCell(col, row, encoding, style);
 		};
 
@@ -919,7 +922,11 @@ export class DrawingContext {
 		borderEncoding: number,
 		style?: CellStyle,
 	): void {
-		const terminalY = y;
+		// Document row -> terminal row, exactly as #setCell translates text.
+		// Without the offset, borders were only ever correct at scroll 0: a
+		// scrolled camera stamped off-screen top edges into the band's first
+		// row and lost bottom edges it had scrolled to.
+		const terminalY = y + this.viewportOffset;
 
 		if (terminalY < 0 || terminalY >= this.rows || x < 0 || x >= this.cols) {
 			return;

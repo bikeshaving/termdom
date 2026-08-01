@@ -308,3 +308,51 @@ test("the camera follows the caret as the textarea grows past the viewport", asy
 
 	dom.dispose();
 });
+
+test("borders respect the camera: culled above the band, visible when scrolled to", async () => {
+	// #setBorderCell wrote at raw DOCUMENT rows -- correct only at scroll 0.
+	// Scrolled down, the off-screen top border stamped into the band's first
+	// row (merging into whatever text lived there), and the bottom border
+	// never painted even when the camera reached it.
+	const terminal = new MockProcess({rows: 6, cols: 30});
+	const dom = new TermDOM({process: terminal});
+	dom.attach();
+	const {document} = dom;
+	const textarea = document.createElement("textarea");
+	document.body.appendChild(textarea);
+	textarea.focus();
+	await nextFrame(dom);
+	for (let i = 0; i < 7; i++) {
+		type(terminal, `line${i}\r`);
+		await nextFrame(dom);
+	}
+	await nextFrame(dom);
+
+	const buffer = (terminal as any).terminal.buffer.active;
+	const row = (r: number) => buffer.getLine(r).translateToString(true);
+
+	// Caret at the bottom: the camera sits past the box top. The band's
+	// first row is CONTENT (side borders only), not a phantom top edge.
+	expect(row(0)).not.toContain("┌");
+	expect(row(0)).not.toContain("─");
+	// The caret's row is the last content row; the bottom border is the
+	// next document row -- scroll one more line into view by typing.
+	type(terminal, "tail");
+	await nextFrame(dom);
+	await nextFrame(dom);
+	const screen = terminal.getPlainText();
+	expect(screen).toContain("tail");
+	expect(row(0)).not.toContain("┌");
+
+	// Travel to the very top: the top border is real again, un-merged.
+	for (let i = 0; i < 12; i++) {
+		type(terminal, "\x1b[A");
+		await nextFrame(dom);
+	}
+	await nextFrame(dom);
+	expect(row(0)).toContain("┌");
+	expect(row(0)).not.toContain("line"); // border row is pure border
+	expect(row(1)).toContain("line0");
+
+	dom.dispose();
+});
