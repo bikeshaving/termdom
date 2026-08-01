@@ -2200,12 +2200,7 @@ export class TermDOM {
 		// arrows keep changing the value in place (the macOS closed-select
 		// model, unchanged).
 		if (keyName === "Enter" || key === " ") {
-			this.#openPickers.set(element, current >= 0 ? current : step(-1, 1));
-			this.#syncSelectShadowTree(
-				element,
-				this.#ensureSelectShadowParts(element),
-			);
-			this.#render();
+			this.#openSelectPicker(element);
 			return;
 		}
 		if (keyName === "ArrowDown" || keyName === "ArrowRight") {
@@ -2223,6 +2218,23 @@ export class TermDOM {
 		if (target !== current && target >= 0) {
 			this.#commitSelect(element, target);
 		}
+	}
+
+	/**
+	 * Open a select's picker with the highlight on the current selection
+	 * (or the first enabled option when nothing is selected) -- shared by
+	 * the keyboard's Enter/Space and the mouse's press-to-open.
+	 */
+	#openSelectPicker(element: HTMLSelectElement): void {
+		const options = Array.from(element.options);
+		if (options.length === 0) return;
+		let index = element.selectedIndex;
+		if (index < 0) {
+			index = options.findIndex((option) => !option.disabled);
+		}
+		this.#openPickers.set(element, index);
+		this.#syncSelectShadowTree(element, this.#ensureSelectShadowParts(element));
+		this.#render();
 	}
 
 	#commitSelect(element: HTMLSelectElement, index: number): void {
@@ -4099,6 +4111,53 @@ export class TermDOM {
 				} else if (!focusable && active && active !== this.document.body) {
 					(active as HTMLElement).blur();
 					void this.#render();
+				}
+
+				// Default action: pressing a select opens its picker, exactly
+				// like a browser's dropdown on mousedown. With the picker OPEN,
+				// a press on an option row commits it (a disabled row is inert,
+				// the sheet stays up), and a press back on the closed face
+				// dismisses without changing the value. preventDefault on
+				// mousedown suppresses all of it, as in a browser.
+				const select =
+					base === 0 &&
+					point &&
+					target instanceof (this.window as any).HTMLSelectElement
+						? (target as HTMLSelectElement)
+						: null;
+				if (select) {
+					const highlight = this.#openPickers.get(select);
+					if (highlight === undefined) {
+						this.#openSelectPicker(select);
+					} else {
+						// The un-retargeted hit tells the option rows (UA shadow
+						// parts under the picker) apart from the closed face.
+						const raw = this[kHitTest](this.document.documentElement, x, y);
+						const part = raw?.getAttribute("part");
+						if (part === "option") {
+							const parts = this.#ensureSelectShadowParts(select);
+							const index = Array.from(parts.spans.picker.children)
+								.filter((row) => row.getAttribute("part") === "option")
+								.indexOf(raw as Element);
+							const options = Array.from(select.options);
+							if (index < 0 || !options[index]?.disabled) {
+								this.#openPickers.delete(select);
+								if (index >= 0 && index !== select.selectedIndex) {
+									this.#commitSelect(select, index);
+								} else {
+									this.#syncSelectShadowTree(select, parts);
+									this.#render();
+								}
+							}
+						} else if (part !== "picker") {
+							this.#openPickers.delete(select);
+							this.#syncSelectShadowTree(
+								select,
+								this.#ensureSelectShadowParts(select),
+							);
+							this.#render();
+						}
+					}
 				}
 
 				// Default action: mousedown collapses the document selection at

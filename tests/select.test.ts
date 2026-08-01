@@ -221,3 +221,75 @@ test("picker: blurring the select closes it", async () => {
 
 	dom.dispose();
 });
+
+function click(terminal: MockProcess, col: number, row: number) {
+	type(terminal, `\x1b[<0;${col};${row}M\x1b[<0;${col};${row}m`);
+}
+
+test("picker: clicking the closed select opens it", async () => {
+	const terminal = new MockProcess({rows: 10, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	dom.attach();
+	const {document} = dom;
+	const select = makeSelect(document);
+	document.body.appendChild(select);
+	await nextFrame(dom);
+
+	click(terminal, 2, 1);
+	await nextFrame(dom);
+	const output = terminal.getPlainText();
+	expect(output).toContain("┌");
+	expect(output).toContain("Gamma ray");
+
+	dom.dispose();
+});
+
+test("picker: clicking an option row commits it, fires change, and closes", async () => {
+	const terminal = new MockProcess({rows: 10, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	dom.attach();
+	const {document} = dom;
+	const select = makeSelect(document);
+	document.body.appendChild(select);
+	let changed = "";
+	select.addEventListener("change", () => (changed = select.value));
+	await nextFrame(dom);
+
+	click(terminal, 2, 1);
+	await nextFrame(dom);
+	// Rows: 1 field, 2 border, 3 Alpha, 4 Beta, 5 Gamma ray, 6 border.
+	click(terminal, 3, 5);
+	await nextFrame(dom);
+	await nextFrame(dom);
+
+	expect(select.value).toBe("c");
+	expect(changed).toBe("c");
+	expect(terminal.getPlainText()).not.toContain("┌");
+
+	dom.dispose();
+});
+
+test("picker: a disabled row is inert; clicking the face again dismisses", async () => {
+	const terminal = new MockProcess({rows: 10, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	dom.attach();
+	const {document} = dom;
+	const select = makeSelect(document);
+	document.body.appendChild(select);
+	await nextFrame(dom);
+
+	click(terminal, 2, 1);
+	await nextFrame(dom);
+	click(terminal, 3, 4); // Beta, disabled -- no commit, stays open
+	await nextFrame(dom);
+	expect(select.value).toBe("a");
+	expect(terminal.getPlainText()).toContain("┌");
+
+	click(terminal, 2, 1); // the closed face -- dismiss without change
+	await nextFrame(dom);
+	await nextFrame(dom);
+	expect(select.value).toBe("a");
+	expect(terminal.getPlainText()).not.toContain("┌");
+
+	dom.dispose();
+});
