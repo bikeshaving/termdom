@@ -1375,6 +1375,25 @@ export class LayoutEngine {
 		containerY += accumulatedOffsetY;
 		breakResult = currentBreakResult;
 
+		// position:relative on an inline RUN MEMBER (no flex node of its own)
+		// shifts its painted fragments; walk the box-less ancestors up to the
+		// run head accumulating offsets.
+		for (
+			let ancestor =
+				node.nodeType === node.ELEMENT_NODE
+					? (node as Element)
+					: compositionParentElement(node);
+			ancestor && ancestor !== runHead && !this.nodeMap.has(ancestor);
+			ancestor = compositionParentElement(ancestor)
+		) {
+			if (getPropertyValue(ancestor, "position") === "relative") {
+				const left = parseUnitValue(getPropertyValue(ancestor, "left"));
+				const top = parseUnitValue(getPropertyValue(ancestor, "top"));
+				if (typeof left === "number") containerX += left;
+				if (typeof top === "number") containerY += top;
+			}
+		}
+
 		// Collect target text nodes based on node type
 		let targetTextNodes: Set<Text>;
 

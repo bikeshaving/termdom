@@ -153,3 +153,53 @@ test("a relative inline run member keeps painting with its run", async () => {
 	expect(terminal.getPlainText()).toContain("abMIDcd");
 	dom.dispose();
 });
+
+test("isolation: isolate forms a stacking context without positioning", async () => {
+	const {terminal, dom} = await render(`
+		<div style="isolation:isolate">
+			<div style="position:absolute; top:0; left:0; z-index:999; width:10ch">TRAPPED</div>
+		</div>
+		<div style="position:absolute; top:0; left:0; z-index:1; width:10ch">WINNER</div>`);
+	expect(terminal.getPlainText().split("\n")[0]).toContain("WINNER");
+	dom.dispose();
+});
+
+test("relative offsets shift an inline run member's fragments", async () => {
+	const {terminal, dom} = await render(
+		`<div>ab<span style="position:relative; left:3ch">MID</span></div>`,
+	);
+	const row = terminal.getPlainText().split("\n")[0];
+	expect(row.indexOf("MID")).toBe(5); // 2 (after "ab") + 3 offset
+	dom.dispose();
+});
+
+test("a positioned ancestor's overflow clips its absolute descendant", async () => {
+	// The wrapper IS the box's containing block, so its overflow:hidden
+	// clips -- unlike an overflow ancestor outside the CB chain.
+	const {terminal, dom} = await render(`
+		<div style="position:relative; overflow:hidden; height:2px; width:10ch">
+			<div style="position:absolute; top:0; left:0; width:20ch">WIDE-CLIPPED-TEXT</div>
+		</div>`);
+	const row = terminal.getPlainText().split("\n")[0];
+	expect(row).toContain("WIDE-CLIPP");
+	expect(row).not.toContain("WIDE-CLIPPED");
+	dom.dispose();
+});
+
+test("position:fixed stays glued to the viewport as the camera scrolls", async () => {
+	const terminal = new MockProcess({rows: 4, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	dom.document.body.innerHTML =
+		`<div style="position:fixed; top:0; left:30ch; width:6ch">PINNED</div>` +
+		Array.from({length: 10}, (_, i) => `<div>row${i}</div>`).join("");
+	await nextFrame(dom);
+	expect(terminal.getPlainText().split("\n")[0]).toContain("PINNED");
+
+	dom.window.scrollTo(0, 5);
+	await nextFrame(dom);
+	const rows = terminal.getPlainText().split("\n");
+	expect(rows[0]).toContain("row5"); // camera moved
+	expect(rows[0]).toContain("PINNED"); // fixed box did not
+
+	dom.dispose();
+});

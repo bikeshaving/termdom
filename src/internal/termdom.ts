@@ -1278,6 +1278,39 @@ export class TermDOM {
 		}
 	}
 
+	/**
+	 * The clip a deferred positioned box paints under: the context root's
+	 * clip, intersected with every overflow-clipping box along the CSS
+	 * containing-block chain (its positioned ancestors up to the context
+	 * root) -- and nothing else: intervening non-positioned overflow
+	 * ancestors don't clip a box they don't contain.
+	 */
+	#positionedClipFor(
+		element: Element,
+		contextRoot: Element,
+		contextClip: import("./ansi.js").DrawingContext["clipRect"],
+	): import("./ansi.js").DrawingContext["clipRect"] {
+		let clip = contextClip;
+		for (
+			let ancestor = compositionParentElement(element);
+			ancestor && ancestor !== contextRoot;
+			ancestor = compositionParentElement(ancestor)
+		) {
+			if (!this.#isPositioned(ancestor)) continue;
+			const style = this.window.getComputedStyle(ancestor);
+			const overflow = style.getPropertyValue("overflow");
+			const overflowX = style.getPropertyValue("overflow-x") || overflow;
+			const overflowY = style.getPropertyValue("overflow-y") || overflow;
+			if (overflowX === "hidden" || overflowY === "hidden") {
+				const rect = this[kLayoutEngine].getRect(ancestor);
+				if (rect) {
+					clip = overflowClipRect(rect, overflowX, overflowY, clip);
+				}
+			}
+		}
+		return clip;
+	}
+
 	#isPositioned(element: Element): boolean {
 		const position = this.window
 			.getComputedStyle(element)
@@ -1304,6 +1337,12 @@ export class TermDOM {
 	 */
 	#formsStackingContext(element: Element): boolean {
 		if (element === this.document.body) return true;
+		if (
+			this.window.getComputedStyle(element).getPropertyValue("isolation") ===
+			"isolate"
+		) {
+			return true;
+		}
 		return (
 			this.#isPositioned(element) && this.#zIndexValueOf(element) !== "auto"
 		);
@@ -1388,7 +1427,19 @@ export class TermDOM {
 		const contextClip = ctx.clipRect;
 		const paintMember = (element: Element) => {
 			const previousClip = ctx.clipRect;
-			ctx.clipRect = contextClip;
+			const previousOffset = ctx.viewportOffset;
+			// Clips apply along the CONTAINING BLOCK chain only: an overflow
+			// ancestor that isn't a positioned ancestor doesn't clip a
+			// deferred box, but its own containing blocks' overflow does.
+			ctx.clipRect = this.#positionedClipFor(element, root, contextClip);
+			// position:fixed anchors to the VIEWPORT: cancel the camera by
+			// undoing the scroll offset for the whole subtree.
+			if (
+				this.window.getComputedStyle(element).getPropertyValue("position") ===
+				"fixed"
+			) {
+				ctx.viewportOffset = previousOffset + this.#documentScrollTop;
+			}
 			try {
 				if (this.#formsStackingContext(element)) {
 					this.#renderStackingContext(element, ctx, layers);
@@ -1397,6 +1448,7 @@ export class TermDOM {
 				}
 			} finally {
 				ctx.clipRect = previousClip;
+				ctx.viewportOffset = previousOffset;
 			}
 		};
 		this.#renderElement(root, ctx, () => {
@@ -3433,10 +3485,18 @@ export class TermDOM {
 		layers: Map<Element, {neg: Element[]; zero: Element[]; pos: Element[]}>,
 	): Element | null {
 		const bucket = layers.get(root) ?? null;
-		const probeMember = (element: Element): Element | null =>
-			this.#formsStackingContext(element)
-				? this.#hitTestContext(element, x, y, layers)
-				: this.#hitTestInFlow(element, x, y);
+		const probeMember = (element: Element): Element | null => {
+			// A fixed box's layout lives in viewport space; convert the
+			// document-space probe point for its whole subtree.
+			const probeY =
+				this.window.getComputedStyle(element).getPropertyValue("position") ===
+				"fixed"
+					? y - this.#documentScrollTop
+					: y;
+			return this.#formsStackingContext(element)
+				? this.#hitTestContext(element, x, probeY, layers)
+				: this.#hitTestInFlow(element, x, probeY);
+		};
 		if (bucket) {
 			for (let i = bucket.pos.length - 1; i >= 0; i--) {
 				const hit = probeMember(bucket.pos[i]);
