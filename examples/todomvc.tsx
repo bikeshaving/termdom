@@ -23,7 +23,7 @@ style.textContent = `
   .todoapp { padding: 1ch 2ch; }
   .header h1 { color: cyan; font-weight: bold; }
   .header .new-todo { width: 100%; }
-  .main { padding-top: 1; }
+  .main { padding-top: 1px; }
   /* The toggle-all is a control over the LIST, not a list item: dim its
      label so the first todo doesn't appear to spawn a second checkbox. */
   .toggle-all { margin-right: 1ch; }
@@ -47,7 +47,7 @@ style.textContent = `
   /* An icon button: replace the UA "[ label ]" chrome with the glyph. */
   .destroy::before { content: none; }
   .destroy::after { content: "(x)"; }
-  .footer { padding-top: 1; color: yellow; }
+  .footer { padding-top: 1px; color: yellow; }
   .todo-count strong { font-weight: bold; }
   .filters { display: flex; flex-direction: row; gap: 1ch; padding-left: 0; list-style: none; }
   .filters a { color: #888; }

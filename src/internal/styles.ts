@@ -249,6 +249,101 @@ function perEdge(values: string[]): [string, string, string, string] {
 	return [a, b, c, d];
 }
 
+/**
+ * Properties whose every numeric component must carry a unit. CSS accepts
+ * a bare `0` for any length, and accepts bare numbers for the properties
+ * that are typed as numbers (line-height, z-index, flex-grow, order,
+ * opacity, font-weight) -- those are NOT listed here.
+ */
+const LENGTH_PROPERTIES = new Set([
+	"padding",
+	"padding-top",
+	"padding-right",
+	"padding-bottom",
+	"padding-left",
+	"margin",
+	"margin-top",
+	"margin-right",
+	"margin-bottom",
+	"margin-left",
+	"inset",
+	"top",
+	"right",
+	"bottom",
+	"left",
+	"width",
+	"height",
+	"min-width",
+	"max-width",
+	"min-height",
+	"max-height",
+	"gap",
+	"column-gap",
+	"row-gap",
+	"border-width",
+	"border-top-width",
+	"border-right-width",
+	"border-bottom-width",
+	"border-left-width",
+	"font-size",
+	"text-indent",
+	"letter-spacing",
+	"word-spacing",
+	"flex-basis",
+	"outline-width",
+	"outline-offset",
+]);
+
+/**
+ * A nonzero length written without a unit (`padding-top: 1`) is invalid
+ * CSS. Browsers reject the declaration at PARSE time, so it never enters
+ * the cascade and a lower-priority rule still wins -- coercing it to 0
+ * instead would let the bad declaration beat the good one. Terminal
+ * authoring makes this an easy slip to write, since 1px is exactly one
+ * cell here, so the check earns its keep: `padding-top: 1` means nothing,
+ * `padding-top: 1px` means one cell.
+ */
+export function isValidDeclaration(property: string, value: string): boolean {
+	if (!LENGTH_PROPERTIES.has(property)) {
+		return true;
+	}
+	// A shorthand is invalid as a WHOLE if any of its components is, so
+	// every component is checked and one failure rejects the declaration.
+	return value
+		.trim()
+		.split(/\s+/)
+		.filter(Boolean)
+		.every((token) => {
+			if (!/^[+-]?(\d+\.?\d*|\.\d+)$/.test(token)) {
+				return true; // carries a unit, or is a keyword like auto
+			}
+			return parseFloat(token) === 0; // bare 0 is the one legal bare number
+		});
+}
+
+/**
+ * Invalid declarations are dropped silently by default: this engine's
+ * output IS the terminal screen, so writing a warning mid-render would
+ * corrupt the frame it is warning about. Set TERMDOM_DEBUG_CSS to route
+ * them to stderr (deduped -- a bad rule in a stylesheet is re-parsed on
+ * every refresh, and one line per frame is its own kind of unusable).
+ */
+const reportedDeclarations = new Set<string>();
+function reportInvalidDeclaration(property: string, value: string): void {
+	if (!globalThis.process?.env?.TERMDOM_DEBUG_CSS) {
+		return;
+	}
+	const key = `${property}: ${value}`;
+	if (reportedDeclarations.has(key)) {
+		return;
+	}
+	reportedDeclarations.add(key);
+	globalThis.process.stderr?.write?.(
+		`termdom: dropped invalid CSS declaration \`${key}\` ` +
+			`(a nonzero length needs a unit -- 1px is one cell)\n`,
+	);
+}
+
 export function expandBoxShorthands(
 	declarations: Record<string, string>,
 ): Record<string, string> {
@@ -2134,7 +2229,15 @@ export class StyleManager {
 		const important: Record<string, boolean> = {};
 		for (let i = 0; i < style.length; i++) {
 			const property = style[i];
-			declarations[property] = style.getPropertyValue(property);
+			const value = style.getPropertyValue(property);
+			// Invalid declarations never enter the cascade (see
+			// isValidDeclaration): dropping is what lets a lower-priority
+			// rule keep winning, exactly as a browser would.
+			if (!isValidDeclaration(property, value)) {
+				reportInvalidDeclaration(property, value);
+				continue;
+			}
+			declarations[property] = value;
 			if (style.getPropertyPriority(property) === "important") {
 				important[property] = true;
 			}

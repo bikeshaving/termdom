@@ -2,6 +2,8 @@ import {test, expect, describe} from "@b9g/libuild/test";
 import {JSDOM} from "jsdom";
 import {StyleManager} from "../src/internal/styles.js";
 import {LayoutEngine} from "../src/internal/layout.js";
+import {TermDOM} from "../src/internal/termdom.js";
+import {MockProcess, nextFrame} from "./test-utils.js";
 
 describe("getComputedStyle - What We Support", () => {
 	test("CSS spec defaults", () => {
@@ -586,4 +588,60 @@ describe("getComputedStyle - What We Don't Support (Failing Tests)", () => {
 		expect(styles.getPropertyValue("--primary-color")).toBe("blue");
 		expect(styles.getPropertyValue("--spacing")).toBe("20px");
 	});
+});
+
+test("a nonzero length without a unit is invalid and never enters the cascade", async () => {
+	// Browsers reject the declaration at parse time, so a lower-priority
+	// rule still wins. Coercing to 0 instead would let the bad declaration
+	// beat the good one -- which is what this engine used to do, and what
+	// silently killed `padding-top: 1` in the examples.
+	const terminal = new MockProcess({rows: 6, cols: 30});
+	const dom = new TermDOM({process: terminal});
+	dom.document.head.innerHTML = `<style>
+		.box { padding-top: 3px; }
+		.box { padding-top: 1; }
+		.shorthand { padding: 1px 2; }
+	</style>`;
+	dom.document.body.innerHTML = `<div class="box">B</div><div class="shorthand">S</div>`;
+	await nextFrame(dom);
+	const value = (sel: string, prop: string) =>
+		dom.window
+			.getComputedStyle(dom.document.querySelector(sel)!)
+			.getPropertyValue(prop);
+
+	expect(value(".box", "padding-top")).toBe("3px");
+	// A shorthand is invalid as a whole if any component is: neither the
+	// good 1px nor the bad 2 survives.
+	expect(value(".shorthand", "padding-top")).toBe("0px");
+	expect(value(".shorthand", "padding-right")).toBe("0px");
+	dom.dispose();
+});
+
+test("bare numbers stay valid where CSS says they are", async () => {
+	// Zero needs no unit on any length, and the number-typed properties
+	// take bare numbers by spec -- the check is per-property, not a
+	// blanket ban on digits.
+	const terminal = new MockProcess({rows: 6, cols: 30});
+	const dom = new TermDOM({process: terminal});
+	dom.document.head.innerHTML = `<style>
+		.zero { padding-top: 0; margin: 0; }
+		.numeric { line-height: 2; z-index: 5; flex-grow: 2; font-weight: 700; }
+		.units { width: 50%; min-width: 10ch; max-width: 20px; margin: 0 auto; }
+	</style>`;
+	dom.document.body.innerHTML = `<div class="zero">Z</div><div class="numeric">N</div><div class="units">U</div>`;
+	await nextFrame(dom);
+	const value = (sel: string, prop: string) =>
+		dom.window
+			.getComputedStyle(dom.document.querySelector(sel)!)
+			.getPropertyValue(prop);
+
+	expect(value(".zero", "padding-top")).toBe("0px");
+	expect(value(".numeric", "line-height")).toBe("2");
+	expect(value(".numeric", "z-index")).toBe("5");
+	expect(value(".numeric", "flex-grow")).toBe("2");
+	expect(value(".numeric", "font-weight")).toBe("700");
+	expect(value(".units", "width")).toBe("50%");
+	expect(value(".units", "min-width")).toBe("10ch");
+	expect(value(".units", "margin-left")).toBe("auto");
+	dom.dispose();
 });

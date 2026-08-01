@@ -14,7 +14,7 @@ const style = document.createElement("style");
 style.textContent = `
   .gallery { padding: 1 2ch; }
   h2 { color: cyan; font-weight: bold; }
-  .variant { padding-top: 1; }
+  .variant { padding-top: 1px; }
   .name { color: yellow; }
   .desc { color: #666; }
   .row { display: flex; flex-direction: row; gap: 2ch; }

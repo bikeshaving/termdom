@@ -19,7 +19,7 @@ style.textContent = `
   .braille { color: magenta; display: inline; }
   .clock { color: cyan; display: inline; }
   .bounce { color: red; display: inline; }
-  .status { color: #666; padding-top: 1; }
+  .status { color: #666; padding-top: 1px; }
 `;
 document.head.appendChild(style);
 
