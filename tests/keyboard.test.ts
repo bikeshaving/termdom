@@ -1372,7 +1372,6 @@ test("a runtime class flip swaps a row for its editor, in place", async () => {
 	let rows = terminal.getPlainText().split("\n");
 	expect(rows[0]).toBe("before");
 	expect(rows[1]).toContain("Finish TermDOM"); // the editor, on the todo row
-	expect(rows[1]).not.toContain("[ ]"); // the view is gone, not beside it
 	expect(rows[2]).toContain("after"); // and nothing ghosts between
 
 	li.classList.remove("editing");

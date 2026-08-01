@@ -1611,8 +1611,12 @@ export class TermDOM {
 		// Scope the UA rules to this root. The root is deliberately NOT
 		// observer-enrolled: the painter syncs the tree from the input's own
 		// state right before reading it, so a mutation record could only
-		// ever schedule a redundant frame.
+		// ever schedule a redundant frame. The MEASURE, though, must hear
+		// about the tree once -- a width:auto input sizes to its composed
+		// content, and nothing else will ever invalidate it.
 		this.#styleManager.registerShadowRoot(root);
+		this[kLayoutEngine].invalidate(element);
+		void this.#render();
 		const parts = {kind, spans, texts};
 		this.#inputShadowParts.set(element, parts);
 		return parts;
@@ -2291,12 +2295,31 @@ export class TermDOM {
 		const isFocused = element === this.document.activeElement;
 
 		// Sync the tree: the input's state is the single source of truth,
-		// the tree is its rendered content model.
+		// the tree is its rendered content model. A width:auto input sizes
+		// to this content (field-sizing: content, effectively), so content
+		// changes must re-measure -- the UA root is unobserved, nothing else
+		// will -- and the blank part carries one space as the caret's cell
+		// past the last character.
+		const autoWidth =
+			this.window.getComputedStyle(element).getPropertyValue("width") ===
+			"auto";
+		let contentChanged = false;
 		if (parts.texts.value.data !== value) {
 			parts.texts.value.data = value;
+			contentChanged = true;
 		}
 		if (parts.texts.placeholder.data !== placeholder) {
 			parts.texts.placeholder.data = placeholder;
+			contentChanged = true;
+		}
+		const blank = autoWidth && !value ? "" : autoWidth ? " " : "";
+		if (parts.texts.blank.data !== blank) {
+			parts.texts.blank.data = blank;
+			contentChanged = true;
+		}
+		if (autoWidth && contentChanged) {
+			this[kLayoutEngine].invalidate(element);
+			void this.#render();
 		}
 
 		// Region styles come off the tree: the value inherits the input's

@@ -17,6 +17,8 @@ import {
 	clearPseudoElements,
 	compositionParentElement,
 	compositionShadowRoot,
+	getAllPseudoElements,
+	getPseudoElement,
 	removePseudoElement,
 } from "./composition.js";
 import {type LayoutEngine} from "./layout.js";
@@ -2459,14 +2461,11 @@ export class StyleManager {
 			this.#layoutEngine?.invalidate(body);
 		}
 
-		// TODO: Implement more granular pseudo-element invalidation
-		// Currently we clear ALL pseudo-elements on any stylesheet change,
-		// but we could be smarter and only clear/update affected elements
-		// by diffing the old vs new pseudo-element rules
-
-		// Clear all existing pseudo-elements before reattaching
-		// TODO: Performance optimization - this walks every element in the DOM when stylesheets change.
-		// Could track elements with pseudo-elements in a WeakSet and only clear those.
+		// Re-evaluate existing pseudos IDENTITY-PRESERVINGLY -- never clear
+		// wholesale: layout keys a pseudo's boxes by node instance, and a
+		// fresh node per refresh strands every mapped one. Attach handles
+		// content updates in place and removal when a pseudo stops matching.
+		// TODO: Performance - walks every element on stylesheet change.
 		const walker = this.#document.createTreeWalker(
 			this.#document.documentElement,
 			this.#window.NodeFilter.SHOW_ELEMENT,
@@ -2474,7 +2473,9 @@ export class StyleManager {
 		);
 		let element = walker.nextNode() as Element;
 		while (element) {
-			clearPseudoElements(element);
+			if (Object.keys(getAllPseudoElements(element)).length > 0) {
+				this.attachPseudoElementsToElement(element);
+			}
 			element = walker.nextNode() as Element;
 		}
 
@@ -2588,24 +2589,40 @@ export class StyleManager {
 			}
 		}
 
-		// Check if element should have this pseudo-element
-		if (this.shouldCreatePseudoElement(element, pseudoType)) {
-			const pseudoNode = this.createPseudoElementNode(element, pseudoType);
-			if (pseudoNode) {
-				// Attach pseudo-element to the element
-				// Use composition system to attach pseudo-element
-				attachPseudoElement(element, pseudoNode, pseudoType);
+		// Compute what the pseudo should hold now; null means "none".
+		const candidate = this.shouldCreatePseudoElement(element, pseudoType)
+			? this.createPseudoElementNode(element, pseudoType)
+			: null;
+		const existing = getPseudoElement(element, pseudoType) as Text | null;
 
-				// Add CSS-specific metadata
-				const existingMetadata = (pseudoNode as any).pseudoMetadata || {};
-				(pseudoNode as any).pseudoMetadata = {
-					...existingMetadata,
-					styles: this.#computePseudoElementStyle(element, pseudoType),
-				};
-
-				// Invalidate the element in layout engine to rediscover pseudo elements
+		// Pseudo NODE IDENTITY is stable: attaches re-run on every element
+		// addition and attribute invalidation, and layout keys the pseudo's
+		// boxes by instance -- a fresh node per attach strands the mapped one
+		// (an absolutely positioned button's ::after glyph simply vanished).
+		// Reuse the node; update its text in place; remove when content goes.
+		if (existing && candidate) {
+			if (existing.data !== candidate.data) {
+				existing.data = candidate.data;
 				this.#layoutEngine?.invalidate(element);
 			}
+			(existing as any).pseudoMetadata = {
+				...((existing as any).pseudoMetadata || {}),
+				styles: this.#computePseudoElementStyle(element, pseudoType),
+			};
+			return;
+		}
+		if (existing && !candidate) {
+			removePseudoElement(element, pseudoType);
+			this.#layoutEngine?.invalidate(element);
+			return;
+		}
+		if (candidate) {
+			attachPseudoElement(element, candidate, pseudoType);
+			(candidate as any).pseudoMetadata = {
+				...((candidate as any).pseudoMetadata || {}),
+				styles: this.#computePseudoElementStyle(element, pseudoType),
+			};
+			this.#layoutEngine?.invalidate(element);
 		}
 	}
 

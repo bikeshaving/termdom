@@ -915,18 +915,19 @@ export class LayoutEngine {
 		for (const node of this.#invalidatedNodes) {
 			if (node.isConnected) {
 				// Find parent that has a layout node to attach to. The composed
-				// parent, not parentElement: a shadow root's direct child has no
-				// parentElement at all, and a rebuilt shadow subtree (slot
-				// reassignment, attachShadow on a connected host) would silently
-				// never re-attach.
-				let parent = compositionParentElement(node);
+				// BOX parent: a shadow root's direct child has no parentElement
+				// at all, and a display:contents element (never re-visited by
+				// the flattening walker, so never retired) can still hold a
+				// stale severed node -- attaching under it strands the child
+				// in an orphan subtree.
+				let parent = compositionBoxParentElement(node);
 				while (parent) {
 					const parentFlexNode = this.nodeMap.get(parent);
 					if (parentFlexNode) {
 						this.#addNode(node, parentFlexNode);
 						break;
 					}
-					parent = compositionParentElement(parent);
+					parent = compositionBoxParentElement(parent);
 				}
 			}
 		}
@@ -2185,6 +2186,31 @@ export class LayoutEngine {
 		// sweeps must not smuggle descendants back in under the hidden
 		// container (the flex engine does not ignore them).
 		if (this.#hiddenByAncestor(node)) {
+			return;
+		}
+
+		// display:contents generates NO box: fresh builds flatten it via the
+		// walker, and a REBUILD must not resurrect a stale box from an
+		// earlier display value -- its children re-add as the box parent's
+		// own. Retire whatever node it had.
+		if (
+			node.nodeType === node.ELEMENT_NODE &&
+			getPropertyValue(node as Element, "display") === "contents"
+		) {
+			const staleNode = this.nodeMap.get(node);
+			if (staleNode) {
+				staleNode.getParent()?.removeChild(staleNode);
+				// Sever the children BEFORE freeing: they belong to other DOM
+				// nodes that the re-add sweep will re-attach at the box parent
+				// -- freeRecursive on a still-populated node would leave their
+				// nodeMap entries pointing at corpses.
+				while (staleNode.children.length > 0) {
+					staleNode.removeChild(staleNode.children[0]);
+				}
+				this.#measureNodes.delete(staleNode);
+				staleNode.freeRecursive();
+				this.#untrackNode(node);
+			}
 			return;
 		}
 		// Out-of-flow boxes hoist to their containing block, appended at the

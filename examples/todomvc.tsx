@@ -31,7 +31,15 @@ style.textContent = `
   .todo-list { padding-left: 0; list-style: none; }
   .todo-list li .view { display: flex; flex-direction: row; gap: 1ch; }
   .todo-list li.completed label { text-decoration: underline; color: #666; }
-  .todo-list li.editing .view { display: none; }
+  /* Editing keeps the row's chrome: the view DISSOLVES (display:
+     contents) so its checkbox and destroy button stay as flex siblings
+     of the editor, only the label yields its place, and the editor
+     shrink-wraps its text (width: auto -- field-sizing: content,
+     effectively). */
+  .todo-list li.editing { display: flex; flex-direction: row; gap: 1ch; }
+  .todo-list li.editing .view { display: contents; }
+  .todo-list li.editing .view label { display: none; }
+  .todo-list li .edit { width: auto; }
   .destroy { color: red; }
   /* An icon button: replace the UA "[ label ]" chrome with the glyph. */
   .destroy::before { content: none; }
