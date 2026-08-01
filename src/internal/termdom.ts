@@ -1493,10 +1493,16 @@ export class TermDOM {
 			startOffset: number;
 			endOffset: number;
 		}> = [];
+		// Blank lines between consecutive newlines own real, EMPTY layout
+		// fragments -- no visual characters, so visToData can't place them.
+		// A cursor over the value's own structure does: each line consumes
+		// its characters plus, when the character at its end is a newline,
+		// that one hard separator (soft wraps have no separator to consume).
 		let visualBase = 0;
+		let cursor = 0;
 		for (const rectText of rectTexts) {
 			const length = rectText.text.length;
-			const startOffset = length > 0 ? visToData[visualBase] : 0;
+			const startOffset = length > 0 ? visToData[visualBase] : cursor;
 			const endOffset =
 				length > 0 ? visToData[visualBase + length - 1] + 1 : startOffset;
 			lines.push({
@@ -1507,24 +1513,26 @@ export class TermDOM {
 				endOffset,
 			});
 			visualBase += length;
+			cursor =
+				endOffset < value.length && value[endOffset] === "\n"
+					? endOffset + 1
+					: endOffset;
 		}
 
-		// Trailing newlines own virtual empty lines below the last fragment.
-		const last = lines[lines.length - 1];
-		let offset = last.endOffset;
-		let y = last.y;
-		while (offset < value.length) {
-			if (value[offset] === "\n") {
-				y += 1;
-				lines.push({
-					x: contentX,
-					y,
-					text: "",
-					startOffset: offset + 1,
-					endOffset: offset + 1,
-				});
-			}
-			offset += 1;
+		// A value ending in a newline has exactly ONE line no fragment
+		// represents: the empty last line the caret sits on after a final
+		// Enter. (Interior blank lines all have fragments -- adding more
+		// virtual lines here is what once drifted the caret a row per
+		// blank line.)
+		if (value.endsWith("\n")) {
+			const last = lines[lines.length - 1];
+			lines.push({
+				x: contentX,
+				y: last.y + 1,
+				text: "",
+				startOffset: value.length,
+				endOffset: value.length,
+			});
 		}
 		return {value, lines};
 	}

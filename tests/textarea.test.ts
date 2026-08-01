@@ -177,3 +177,55 @@ test("the caret parks at the multiline position; arrows move between lines", asy
 
 	dom.dispose();
 });
+
+test("consecutive newlines: caret and arrows track blank lines exactly", async () => {
+	// Blank lines own real (empty) layout fragments, and only the line
+	// after a TRAILING newline is virtual -- offsets must come from the
+	// value's own structure, not double-counted separators, or the caret
+	// drifts a row per blank line.
+	const terminal = new MockProcess({rows: 10, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	dom.attach();
+	const {document} = dom;
+	const textarea = document.createElement("textarea");
+	document.body.appendChild(textarea);
+	textarea.focus();
+	await nextFrame(dom);
+
+	type(terminal, "a");
+	await nextFrame(dom);
+	type(terminal, "\r\r"); // two Enters: a blank line, caret below it
+	await nextFrame(dom);
+	type(terminal, "b");
+	await nextFrame(dom);
+	await nextFrame(dom);
+
+	const buffer = (terminal as any).terminal.buffer.active;
+	expect(textarea.value).toBe("a\n\nb");
+	// Rows: border 0, "a" 1, blank 2, "b" 3. Content x starts at 2.
+	expect(buffer.cursorY).toBe(3);
+	expect(buffer.cursorX).toBe(3); // after "b"
+
+	// Two more Enters: value ends with newlines; the caret sits on the
+	// (virtual) empty last line, exactly one row below "b"'s successor.
+	type(terminal, "\r\r");
+	await nextFrame(dom);
+	await nextFrame(dom);
+	expect(textarea.value).toBe("a\n\nb\n\n");
+	expect(buffer.cursorY).toBe(5);
+	expect(buffer.cursorX).toBe(2);
+
+	// Walking up visits every line, blank ones included.
+	type(terminal, "\x1b[A");
+	await nextFrame(dom);
+	expect(textarea.selectionStart).toBe(5); // the "" line between b and end
+	type(terminal, "\x1b[A");
+	await nextFrame(dom);
+	expect(textarea.selectionStart).toBe(3); // start of "b" (goal column 0)
+	type(terminal, "\x1b[A");
+	await nextFrame(dom);
+	expect(textarea.selectionStart).toBe(2); // the blank line
+	expect(buffer.cursorY).toBe(2);
+
+	dom.dispose();
+});
