@@ -1409,6 +1409,13 @@ export class TermDOM {
 			spans[part] = span;
 			texts[part] = text;
 		}
+		// The trailing <br> anchor, the same trick a browser's editor uses:
+		// it makes the run's content always end in exactly one line break,
+		// so the line count equals the LOGICAL line count -- the breaker
+		// never emits a line after a final newline, and without the anchor a
+		// value ending in "\n" measured one row short, parking the caret on
+		// the bottom border.
+		root.appendChild(document.createElement("br"));
 
 		const parts = {kind: "textarea" as const, spans, texts};
 		this.#inputShadowParts.set(element, parts);

@@ -2710,6 +2710,12 @@ export class LayoutEngine {
 				} else if (display === "inline") {
 					// Inline element - traverse into its children
 					if (!walker.nextNode()) break;
+				} else if (display === "none") {
+					// display:none generates no box and does NOT interrupt the
+					// run -- a hidden sibling (a widget's blanked placeholder
+					// part, an author's toggled span) is invisible to it, as in
+					// a browser. Skip the subtree, keep collecting.
+					if (!walker.nextSibling()) break;
 				} else {
 					// Block element - stop traversal
 					break;

@@ -229,3 +229,41 @@ test("consecutive newlines: caret and arrows track blank lines exactly", async (
 
 	dom.dispose();
 });
+
+test("a trailing newline grows the box; the caret never touches the border", async () => {
+	// The UA tree keeps a trailing <br> anchor after the value -- the same
+	// trick a browser's editor uses -- so the empty last line a final Enter
+	// creates is real, measured content: the box grows and the caret's row
+	// stays strictly inside it.
+	const terminal = new MockProcess({rows: 12, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	dom.attach();
+	const {document} = dom;
+	const textarea = document.createElement("textarea");
+	document.body.appendChild(textarea);
+	textarea.focus();
+	await nextFrame(dom);
+
+	const buffer = (terminal as any).terminal.buffer.active;
+	const bottomBorderRow = () =>
+		Math.round(textarea.getBoundingClientRect().bottom) - 1;
+
+	type(terminal, "\r");
+	await nextFrame(dom);
+	expect(buffer.cursorY).toBeLessThan(bottomBorderRow());
+
+	type(terminal, "\r");
+	await nextFrame(dom);
+	// Three logical lines now (all empty): content grew past rows=2.
+	expect(textarea.getBoundingClientRect().height).toBe(5);
+	expect(buffer.cursorY).toBe(3);
+	expect(buffer.cursorY).toBeLessThan(bottomBorderRow());
+
+	// And typing on that last line lands where the caret promised.
+	type(terminal, "z");
+	await nextFrame(dom);
+	const row = buffer.getLine(3).translateToString(true);
+	expect(row).toContain("z");
+
+	dom.dispose();
+});
