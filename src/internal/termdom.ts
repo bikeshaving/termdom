@@ -162,13 +162,14 @@ const SELECT_UA_STYLES = `
 		display: none;
 		position: absolute;
 		background-color: Canvas;
+		text-decoration: none;
 		border-top-width: 1px; border-right-width: 1px;
 		border-bottom-width: 1px; border-left-width: 1px;
 		border-top-style: solid; border-right-style: solid;
 		border-bottom-style: solid; border-left-style: solid;
 	}
 	[part="option"] { display: block; white-space: pre; }
-	[part="option"][data-highlighted] { font-weight: bold; text-decoration: underline; }
+	[part="option"][data-highlighted] { background-color: Highlight; color: HighlightText; }
 	[part="option"][data-disabled] { font-weight: lighter; }
 `;
 
@@ -193,6 +194,14 @@ function resolveFontWeight(weight: string): {bold: boolean; dim: boolean} {
 		if (numeric <= 300) return {bold: false, dim: true};
 	}
 	return {bold: false, dim: false};
+}
+
+/**
+ * Highlight / HighlightText -- the system-color pair whose combined
+ * meaning on a terminal is "swap the cell's colors", SGR inverse.
+ */
+function isSystemHighlightColor(value: string): boolean {
+	return /^highlight(?:text)?$/i.test(value.trim());
 }
 
 /**
@@ -1242,16 +1251,28 @@ export class TermDOM {
 		// background -- clears the box to the terminal's DEFAULT background:
 		// opaque in every theme without asserting any color, the same
 		// system-color translation ::selection's Highlight pair uses. The UA
-		// picker sheet relies on it; authors can too.
+		// picker sheet relies on it; authors can too. The Highlight/
+		// HighlightText pair fills the box with SGR inverse instead -- the
+		// browser's blue dropdown row, in the terminal's own colors (the UA
+		// select sheet's highlighted option rides this).
 		const isCanvasBg =
 			Boolean(backgroundColor) && /^canvas$/i.test(backgroundColor.trim());
+		const isHighlightBox =
+			Boolean(backgroundColor) &&
+			isSystemHighlightColor(backgroundColor) &&
+			Boolean(color) &&
+			isSystemHighlightColor(color);
 		const style = {
-			fg: color && color !== "initial" ? cssColorToNumber(color) : undefined,
+			fg:
+				color && color !== "initial" && !isSystemHighlightColor(color)
+					? cssColorToNumber(color)
+					: undefined,
 			bg:
 				backgroundColor &&
 				!isCanvasBg &&
 				backgroundColor !== "initial" &&
-				backgroundColor !== "transparent"
+				backgroundColor !== "transparent" &&
+				!isSystemHighlightColor(backgroundColor)
 					? cssColorToNumber(backgroundColor)
 					: undefined,
 			bold,
@@ -1261,13 +1282,13 @@ export class TermDOM {
 			underlineStyle,
 		};
 
-		if (rect && visible && (style.bg != null || isCanvasBg)) {
+		if (rect && visible && (style.bg != null || isCanvasBg || isHighlightBox)) {
 			ctx.fillRect(
 				rect.left,
 				rect.top,
 				rect.width,
 				rect.height,
-				isCanvasBg ? "default" : style.bg,
+				isCanvasBg ? "default" : isHighlightBox ? "inverse" : style.bg,
 			);
 		}
 
@@ -2434,10 +2455,8 @@ export class TermDOM {
 		if (!fg && !bg) {
 			return base;
 		}
-		const isSystemHighlight = (value: string) =>
-			/^highlight(?:text)?$/i.test(value.trim());
-		const fgAuthored = Boolean(fg) && !isSystemHighlight(fg);
-		const bgAuthored = Boolean(bg) && !isSystemHighlight(bg);
+		const fgAuthored = Boolean(fg) && !isSystemHighlightColor(fg);
+		const bgAuthored = Boolean(bg) && !isSystemHighlightColor(bg);
 		if (!fgAuthored && !bgAuthored) {
 			return {...base, inverse: true};
 		}
@@ -2460,15 +2479,28 @@ export class TermDOM {
 		const {bold, dim} = resolveFontWeight(
 			computedStyle.getPropertyValue("font-weight"),
 		);
+		// The Highlight/HighlightText system-color pair is CSS's spelling of
+		// "swap the cell's colors": it translates to SGR inverse, the
+		// terminal-native highlight with no color assumptions -- the same
+		// translation ::selection's resolver makes. Either name alone (the
+		// other overridden by an author color) can't mean "swap", so the
+		// system side simply resolves to nothing.
+		const isHighlightPair =
+			isSystemHighlightColor(bgColor) && isSystemHighlightColor(color);
 		return {
-			fg: color && color !== "initial" ? cssColorToNumber(color) : undefined,
+			fg:
+				color && color !== "initial" && !isSystemHighlightColor(color)
+					? cssColorToNumber(color)
+					: undefined,
 			bg:
 				bgColor &&
 				bgColor !== "initial" &&
 				bgColor !== "transparent" &&
-				!/^canvas$/i.test(bgColor.trim())
+				!/^canvas$/i.test(bgColor.trim()) &&
+				!isSystemHighlightColor(bgColor)
 					? cssColorToNumber(bgColor)
 					: undefined,
+			inverse: isHighlightPair || undefined,
 			bold,
 			dim,
 			italic: computedStyle.getPropertyValue("font-style") === "italic",

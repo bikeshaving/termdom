@@ -293,3 +293,31 @@ test("picker: a disabled row is inert; clicking the face again dismisses", async
 
 	dom.dispose();
 });
+
+test("picker: the highlighted row is inverse video, the rest carry no underline", async () => {
+	const terminal = new MockProcess({rows: 10, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	dom.attach();
+	const {document} = dom;
+	const select = makeSelect(document);
+	document.body.appendChild(select);
+	select.focus();
+	await nextFrame(dom);
+	type(terminal, " "); // open at Alpha
+	await nextFrame(dom);
+
+	const cellAt = (row: number, col: number) =>
+		(terminal as any).terminal.buffer.active.getLine(row).getCell(col);
+	// Rows: 0 field, 1 border, 2 Alpha (highlighted), 3 Beta, 4 Gamma ray.
+	// The highlighted row paints SGR inverse -- the Highlight/HighlightText
+	// UA pair -- across the row, not just under the label.
+	expect(cellAt(2, 1).isInverse()).toBeTruthy();
+	expect(cellAt(2, 6).isInverse()).toBeTruthy(); // past "Alpha": still the row
+	// Unhighlighted rows are clean: the host's focus underline must not
+	// inherit into the sheet.
+	expect(cellAt(3, 1).isInverse()).toBeFalsy();
+	expect(cellAt(3, 1).isUnderline()).toBeFalsy();
+	expect(cellAt(4, 1).isUnderline()).toBeFalsy();
+
+	dom.dispose();
+});

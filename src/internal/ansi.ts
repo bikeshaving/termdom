@@ -791,7 +791,7 @@ export class DrawingContext {
 		y: number,
 		width: number,
 		height: number,
-		bgColor?: number | null | "default",
+		bgColor?: number | null | "default" | "inverse",
 	): void {
 		if (bgColor == null) {
 			return;
@@ -800,10 +800,13 @@ export class DrawingContext {
 		// "default" clears the cells to the terminal's own background --
 		// CSS's Canvas system color -- which still OVERWRITES whatever was
 		// painted underneath: an opaque box in the theme's color, whatever
-		// that theme is.
-		const style: CellStyle = {
-			bg: bgColor === "default" ? undefined : bgColor,
-		};
+		// that theme is. "inverse" fills with SGR inverse instead: the
+		// Highlight/HighlightText system-color pair, swapping each cell's
+		// colors with no assumption about what they are.
+		const style: CellStyle =
+			bgColor === "inverse"
+				? {inverse: true}
+				: {bg: bgColor === "default" ? undefined : bgColor};
 
 		for (let row = y; row < y + height; row++) {
 			for (let col = x; col < x + width; col++) {
