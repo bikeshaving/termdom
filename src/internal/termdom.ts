@@ -2989,6 +2989,11 @@ export class TermDOM {
 					// viewport) and neither a mutation nor a focus move fired.
 					termDOM.#styleManager.handleFocusChange(this);
 					termDOM[kLayoutEngine].invalidate(this);
+					// The screen under the renderer changed wholesale (the
+					// alternate screen starts cleared): drop the diff model or
+					// the first fullscreen frame patches against the main
+					// screen's content.
+					termDOM.#renderer.clearPreviousBuffer();
 					termDOM.#updateMouseReporting();
 					void termDOM.#render();
 				});
@@ -3003,6 +3008,11 @@ export class TermDOM {
 					termDOM.#styleManager.handleFocusChange(element);
 					termDOM[kLayoutEngine].invalidate(element);
 				}
+				// Same wholesale swap in reverse: the terminal restored the
+				// main screen, but the diff model still describes the last
+				// ALTERNATE-screen frame -- patching against it garbles the
+				// restored document.
+				termDOM.#renderer.clearPreviousBuffer();
 				termDOM.#updateMouseReporting();
 				void termDOM.#render();
 			});

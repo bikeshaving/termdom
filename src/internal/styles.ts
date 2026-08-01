@@ -494,8 +494,15 @@ function getElementDefaults(
 		if (window) {
 			return {
 				...base,
+				// The browser's :fullscreen block: fixed at the viewport
+				// origin, viewport-sized, opaque over the document (Canvas =
+				// the terminal's own background, the ::backdrop stand-in).
+				position: "fixed",
+				top: "0px",
+				left: "0px",
 				width: `${window.innerWidth}ch`,
 				height: `${window.innerHeight}px`,
+				"background-color": "Canvas",
 			};
 		}
 	}

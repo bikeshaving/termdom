@@ -235,3 +235,37 @@ test("pseudo-elements work on programmatic render without MutationObserver", asy
 
 	termDOM.dispose();
 });
+
+test("exiting fullscreen restores a coherent document frame", async () => {
+	// Fullscreen swaps screens under the renderer: entering clears to the
+	// alternate screen, exiting restores the main one. The diff model must
+	// reset on BOTH transitions -- diffing the restored main screen against
+	// the last alternate-screen frame patches cells that never matched.
+	const terminal = new MockProcess({rows: 8, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	dom.attach();
+	const {document} = dom;
+	document.body.innerHTML = `<div>alpha document row</div><div>beta document row</div><div id="fs">stage content</div>`;
+	await nextFrame(dom);
+	expect(terminal.getPlainText()).toContain("alpha document row");
+
+	const stage = document.getElementById("fs")!;
+	await stage.requestFullscreen();
+	await nextFrame(dom);
+	await nextFrame(dom);
+	// Fullscreen: the stage fills the alternate screen; the document rows
+	// are not part of it.
+	expect(terminal.getPlainText()).toContain("stage content");
+	expect(terminal.getPlainText()).not.toContain("alpha document row");
+
+	await document.exitFullscreen();
+	await nextFrame(dom);
+	await nextFrame(dom);
+	// Back on the main screen: the whole document, coherently.
+	const text = terminal.getPlainText();
+	expect(text).toContain("alpha document row");
+	expect(text).toContain("beta document row");
+	expect(text).toContain("stage content");
+
+	dom.dispose();
+});
