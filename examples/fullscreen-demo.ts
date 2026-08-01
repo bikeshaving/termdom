@@ -1,72 +1,69 @@
 #!/usr/bin/env bun
+// Fullscreen: requestFullscreen() takes an element to the alternate
+// screen, where the UA :fullscreen treatment sizes it to the viewport --
+// so flex centering, backgrounds and live updates all just work there.
+// Exiting restores the document (and the terminal's scrollback) intact.
+//
+//   bun examples/fullscreen-demo.ts
+//
+//   f  toggle fullscreen    q  quit
+
 import {TermDOM} from "../src/index.js";
 
 const termdom = new TermDOM();
 const {document} = termdom;
 
-// Create a fullscreen-capable element
-const container = document.createElement("div");
-container.style.backgroundColor = "blue";
-container.style.color = "white";
-container.style.padding = "2";
+const style = document.createElement("style");
+style.textContent = `
+  .page { padding: 1 2ch; }
+  h2 { color: cyan; }
+  .hint { color: #666; }
+  .stage.fs {
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    background-color: #001133; color: white;
+  }
+  .stage.fs .big { color: cyan; font-weight: bold; }
+  .stage.fs .clock { color: yellow; }
+  .stage.fs .spinner { color: lightgreen; }
+  .stage.fs .hint { color: #557; }
+`;
+document.head.appendChild(style);
 
-const title = document.createElement("h1");
-title.textContent = "🖥️  Fullscreen Demo";
-title.style.color = "cyan";
-container.appendChild(title);
+const page = document.createElement("div");
+page.className = "page";
+page.innerHTML = `
+  <h2>Fullscreen demo</h2>
+  <div class="stage"><div class="big">This element goes fullscreen.</div><div class="clock"></div><div class="spinner"></div><div class="hint">press f</div></div>
+  <div class="hint">f toggles fullscreen · q quits</div>
+`;
+document.body.appendChild(page);
 
-const instructions = document.createElement("p");
-instructions.textContent = "Press 'f' to toggle fullscreen, 'q' to quit";
-instructions.style.color = "yellow";
-container.appendChild(instructions);
+const stage = page.querySelector(".stage") as HTMLElement;
+const clock = stage.querySelector(".clock") as HTMLElement;
+const spinner = stage.querySelector(".spinner") as HTMLElement;
+const hint = stage.querySelector(".stage .hint") as HTMLElement;
 
-const status = document.createElement("p");
-status.textContent = "Status: Not in fullscreen";
-status.id = "status";
-container.appendChild(status);
+const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+let tick = 0;
+setInterval(() => {
+	tick++;
+	clock.textContent = new Date().toLocaleTimeString();
+	spinner.textContent = `${frames[tick % frames.length]} live while fullscreen ${frames[tick % frames.length]}`;
+}, 100);
 
-document.body.appendChild(container);
-
-// Add event listeners
-document.addEventListener("fullscreenchange", async () => {
-	const status = document.getElementById("status")!;
-	if (document.fullscreenElement) {
-		status.textContent = `Status: ${document.fullscreenElement.tagName} is fullscreen`;
-		status.style.color = "green";
-	} else {
-		status.textContent = "Status: Exited fullscreen";
-		status.style.color = "red";
-	}
-	await new Promise<void>((r) =>
-		termdom.window.requestAnimationFrame(() => r()),
-	); // Re-render when fullscreen changes
+document.addEventListener("fullscreenchange", () => {
+	const fullscreen = document.fullscreenElement === stage;
+	stage.classList.toggle("fs", fullscreen);
+	hint.textContent = fullscreen ? "f returns · q quits" : "press f";
 });
 
-document.addEventListener("fullscreenerror", (_event: any) => {});
-
-// Keyboard events land on the focused element (or body when nothing is
-// focused) and bubble UP to document -- a listener on the container, a
-// sibling-less child of body, never hears them. Listen at the document.
+// Keyboard events land on the focused element (or body) and bubble up to
+// the document -- never DOWN into children, so listen here.
 document.addEventListener("keydown", async (event: KeyboardEvent) => {
-	if (event.key === "q" || event.key === "Q") {
-		process.exit(0);
-	}
-
-	if (event.key === "f" || event.key === "F") {
-		try {
-			if (document.fullscreenElement) {
-				await document.exitFullscreen();
-			} else {
-				await container.requestFullscreen();
-			}
-			await new Promise<void>((r) =>
-				termdom.window.requestAnimationFrame(() => r()),
-			); // Re-render after fullscreen change
-		} catch {
-			// Ignore fullscreen errors
-		}
+	if (event.key === "q") process.exit(0);
+	if (event.key === "f") {
+		if (document.fullscreenElement) await document.exitFullscreen();
+		else await stage.requestFullscreen();
 	}
 });
-
-// Initial render
-await new Promise<void>((r) => termdom.window.requestAnimationFrame(() => r()));

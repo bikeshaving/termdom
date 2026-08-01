@@ -2984,20 +2984,35 @@ export class TermDOM {
 		): Promise<void> {
 			return termDOM.#fullscreenManager
 				.requestFullscreen(this, options)
-				.then(() => termDOM.#updateMouseReporting());
+				.then(() => {
+					// The element's UA styles changed (it now fills the
+					// viewport) and neither a mutation nor a focus move fired.
+					termDOM.#styleManager.handleFocusChange(this);
+					termDOM[kLayoutEngine].invalidate(this);
+					termDOM.#updateMouseReporting();
+					void termDOM.#render();
+				});
 		};
 
 		Document.prototype.exitFullscreen = function (
 			this: Document,
 		): Promise<void> {
-			return termDOM.#fullscreenManager
-				.exitFullscreen()
-				.then(() => termDOM.#updateMouseReporting());
+			const element = termDOM.#fullscreenManager.fullscreenElement;
+			return termDOM.#fullscreenManager.exitFullscreen().then(() => {
+				if (element) {
+					termDOM.#styleManager.handleFocusChange(element);
+					termDOM[kLayoutEngine].invalidate(element);
+				}
+				termDOM.#updateMouseReporting();
+				void termDOM.#render();
+			});
 		};
 
 		Object.defineProperty(Document.prototype, "fullscreenElement", {
 			get: function (this: Document) {
-				return termDOM.#fullscreenManager.fullscreenElement;
+				// Style computation consults this during construction, before
+				// the manager field is assigned.
+				return termDOM.#fullscreenManager?.fullscreenElement ?? null;
 			},
 			configurable: true,
 		});

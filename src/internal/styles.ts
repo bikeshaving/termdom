@@ -485,6 +485,20 @@ const CHECKBOX_DEFAULTS: Record<string, string> = {
 function getElementDefaults(
 	element: Element,
 ): Record<string, string> | undefined {
+	// The browser's UA :fullscreen treatment: the fullscreen element fills
+	// the viewport. Explicit cells rather than percentages -- the alternate
+	// screen IS the containing geometry, and innerWidth/Height are its size.
+	if (element.ownerDocument?.fullscreenElement === element) {
+		const window = element.ownerDocument.defaultView;
+		const base = TERMINAL_ELEMENT_DEFAULTS[element.tagName.toLowerCase()] ?? {};
+		if (window) {
+			return {
+				...base,
+				width: `${window.innerWidth}ch`,
+				height: `${window.innerHeight}px`,
+			};
+		}
+	}
 	if (element.tagName === "TEXTAREA") {
 		// rows/cols size the box exactly as in a browser (spec defaults 2
 		// and 20), in border-box terms: +2 for the border rows/cols, +2 for
