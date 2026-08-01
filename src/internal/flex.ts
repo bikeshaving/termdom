@@ -241,6 +241,8 @@ interface Style {
 	borderCollapse: boolean;
 
 	flexGrow: number;
+	/** CSS order: items lay out in order-modified document order. */
+	order: number;
 	flexShrink: number;
 	flexBasis: Value;
 
@@ -294,6 +296,7 @@ function createStyle(): Style {
 		borderCollapse: false,
 
 		flexGrow: NaN,
+		order: 0,
 		flexShrink: NaN,
 		flexBasis: AUTO_VALUE,
 
@@ -612,6 +615,10 @@ export class Node {
 		}
 	}
 
+	setOrder(v: number | undefined): void {
+		this.style.order = v ?? 0;
+		this.markDirty();
+	}
 	setFlexGrow(v: number | undefined): void {
 		this.style.flexGrow = v === undefined ? NaN : v;
 		this.markDirty();
@@ -1450,6 +1457,13 @@ function layoutFlexbox(
 			ownerHeight,
 		);
 		inFlow.push(child);
+	}
+
+	// CSS order: sort items into order-modified document order before line
+	// collection. The sort is stable, so equal values keep document order;
+	// the common all-zero case skips the sort entirely.
+	if (inFlow.some((child) => child.style.order !== 0)) {
+		inFlow.sort((a, b) => a.style.order - b.style.order);
 	}
 
 	// -- 9.3 collect into lines --------------------------------------------

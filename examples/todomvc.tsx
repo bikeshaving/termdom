@@ -39,6 +39,9 @@ style.textContent = `
   .todo-list li.editing { display: flex; flex-direction: row; gap: 1ch; }
   .todo-list li.editing .view { display: contents; }
   .todo-list li.editing .view label { display: none; }
+  /* The editor takes the label's visual slot: the destroy button sits
+     between them in the DOM, so order it after the editor. */
+  .todo-list li.editing .destroy { order: 1; }
   .todo-list li .edit { width: auto; }
   .destroy { color: red; }
   /* An icon button: replace the UA "[ label ]" chrome with the glyph. */

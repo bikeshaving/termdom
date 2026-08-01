@@ -634,3 +634,59 @@ test("an inline-block flex item does not swallow the next item's content into it
 
 	dom.dispose();
 });
+
+test("order lays flex items out in order-modified document order", async () => {
+	// The stable sort: explicit values position around the default 0, and
+	// equal values keep document order.
+	const terminal = new MockProcess({cols: 40, rows: 4});
+	const dom = new TermDOM({process: terminal});
+	dom.document.body.innerHTML =
+		`<div style="display: flex; flex-direction: row; gap: 1ch">` +
+		`<span style="order: 1">last</span><span>mid1</span>` +
+		`<span style="order: -1">first</span><span>mid2</span></div>`;
+	await nextFrame(dom);
+	expect(terminal.getPlainText().split("\n")[0].trimEnd()).toBe(
+		"first mid1 mid2 last",
+	);
+	dom.dispose();
+});
+
+test("order is inert outside a flex formatting context", async () => {
+	// Browsers ignore order on block-level children even though this
+	// engine models block layout with flex nodes.
+	const terminal = new MockProcess({cols: 40, rows: 4});
+	const dom = new TermDOM({process: terminal});
+	dom.document.body.innerHTML = `
+		<div>
+			<div style="order: 1">alpha</div>
+			<div style="order: -1">beta</div>
+		</div>`;
+	await nextFrame(dom);
+	const rows = terminal.getPlainText().split("\n");
+	expect(rows[0].trimEnd()).toBe("alpha");
+	expect(rows[1].trimEnd()).toBe("beta");
+	dom.dispose();
+});
+
+test("a runtime order change reorders live flex items", async () => {
+	// TodoMVC's editing row: the destroy button precedes the editor in
+	// the DOM but orders after it while editing, so the editor takes the
+	// label's visual slot.
+	const terminal = new MockProcess({cols: 40, rows: 4});
+	const dom = new TermDOM({process: terminal});
+	dom.document.body.innerHTML = `
+		<style>.row { display: flex; flex-direction: row; gap: 1ch }
+		       .row.flipped .b { order: 1 }</style>
+		<div class="row"><span class="b">bee</span><span>ay</span></div>`;
+	await nextFrame(dom);
+	expect(terminal.getPlainText().split("\n")[0].trimEnd()).toBe("bee ay");
+
+	dom.document.querySelector(".row")!.classList.add("flipped");
+	await nextFrame(dom);
+	expect(terminal.getPlainText().split("\n")[0].trimEnd()).toBe("ay bee");
+
+	dom.document.querySelector(".row")!.classList.remove("flipped");
+	await nextFrame(dom);
+	expect(terminal.getPlainText().split("\n")[0].trimEnd()).toBe("bee ay");
+	dom.dispose();
+});
