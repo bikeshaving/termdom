@@ -7,7 +7,7 @@
 
 import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
-import {MockProcess, nextFrame} from "./test-utils.js";
+import {MockProcess, nextFrame, canSnapshot} from "./test-utils.js";
 
 test("red foreground color renders correctly", async () => {
 	const terminal = new MockProcess();
@@ -26,7 +26,7 @@ test("red foreground color renders correctly", async () => {
 	expect(snapshot).toMatch(/\x1b\[38;2;255;0;0/); // Red RGB
 	expect(snapshot).toContain("Red text");
 
-	if (typeof Bun !== "undefined")
+	if (canSnapshot)
 		(expect(snapshot) as {toMatchSnapshot(): void}).toMatchSnapshot();
 
 	dom.dispose();
@@ -57,7 +57,7 @@ test("background colors fill full width", async () => {
 	const visibleContent = coloredLine?.replace(/\x1b\[[0-9;]*m/g, "") || "";
 	expect(visibleContent.trim()).toBe("Short text");
 
-	if (typeof Bun !== "undefined")
+	if (canSnapshot)
 		(expect(snapshot) as {toMatchSnapshot(): void}).toMatchSnapshot();
 
 	dom.dispose();
@@ -85,7 +85,7 @@ test("mixed foreground and background colors", async () => {
 	expect(snapshot).toMatch(/38;2;255;255;0/); // yellow foreground
 	expect(snapshot).toMatch(/48;2;0;0;255/); // blue background
 
-	if (typeof Bun !== "undefined")
+	if (canSnapshot)
 		(expect(snapshot) as {toMatchSnapshot(): void}).toMatchSnapshot();
 
 	dom.dispose();
@@ -121,7 +121,7 @@ test("CSS color formats are handled correctly", async () => {
 	expect(snapshot).toMatch(/38;2;0;0;255/); // Blue RGB
 	expect(snapshot).toContain("Named color");
 
-	if (typeof Bun !== "undefined")
+	if (canSnapshot)
 		(expect(snapshot) as {toMatchSnapshot(): void}).toMatchSnapshot();
 
 	dom.dispose();
@@ -148,7 +148,7 @@ test("style combinations work correctly", async () => {
 	expect(snapshot).toMatch(/38;2;255;0;0/); // red foreground
 	expect(snapshot).toMatch(/48;2;255;255;0/); // yellow background
 
-	if (typeof Bun !== "undefined")
+	if (canSnapshot)
 		(expect(snapshot) as {toMatchSnapshot(): void}).toMatchSnapshot();
 
 	dom.dispose();
@@ -175,7 +175,7 @@ test("inline elements do not extend background", async () => {
 	// Should only be as wide as the text
 	expect(visibleContent.trim()).toBe("Inline text");
 
-	if (typeof Bun !== "undefined")
+	if (canSnapshot)
 		(expect(snapshot) as {toMatchSnapshot(): void}).toMatchSnapshot();
 
 	dom.dispose();

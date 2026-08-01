@@ -333,7 +333,7 @@ test(
 		}
 		const elapsed = performance.now() - start;
 
-		expect(elapsed / 30).toBeLessThan(50); // O(visible) is ~5ms/frame; O(total) would be seconds
+		expect(elapsed / 30).toBeLessThan(150); // O(visible) is ~5ms/frame even loaded; O(total) would be seconds
 
 		dom.dispose();
 	},

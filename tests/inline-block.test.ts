@@ -5,7 +5,7 @@
  */
 
 import {test, expect} from "@b9g/libuild/test";
-import {MockProcess, nextFrame} from "./test-utils";
+import {MockProcess, nextFrame, canSnapshot} from "./test-utils";
 import {TermDOM} from "../src/internal/termdom.js";
 
 test("inline-block elements render side by side", async () => {
@@ -42,7 +42,7 @@ test("inline-block elements render side by side", async () => {
 	expect(output).toContain("\x1b[38;2;255;255;255;48;2;255;0;0m"); // white text on red background
 	expect(output).toContain("\x1b[48;2;0;0;255m"); // blue background
 
-	if (typeof Bun !== "undefined")
+	if (canSnapshot)
 		(expect(output) as {toMatchSnapshot(): void}).toMatchSnapshot();
 	terminal.writeANSI("inline-block-side-by-side");
 
@@ -77,7 +77,7 @@ test("inline-block elements with padding", async () => {
 	expect(contentLine).toContain("  "); // Check for spaces (padding)
 	expect(contentLine).toContain("Padded"); // Check for content
 
-	if (typeof Bun !== "undefined")
+	if (canSnapshot)
 		(expect(output) as {toMatchSnapshot(): void}).toMatchSnapshot();
 	terminal.writeANSI("inline-block-padding");
 
@@ -111,7 +111,7 @@ test("inline-block elements with margins", async () => {
 	// Should have 3 spaces between blocks due to marginRight: "3px"
 	expect(visibleText).toContain("First   Second");
 
-	if (typeof Bun !== "undefined")
+	if (canSnapshot)
 		(
 			expect(terminal.getStaticANSI()) as {toMatchSnapshot(): void}
 		).toMatchSnapshot();
@@ -150,7 +150,7 @@ test("inline-block elements wrapping to multiple lines", async () => {
 		expect(visibleText).toContain(word);
 	}
 
-	if (typeof Bun !== "undefined")
+	if (canSnapshot)
 		(
 			expect(terminal.getStaticANSI()) as {toMatchSnapshot(): void}
 		).toMatchSnapshot();
@@ -196,7 +196,7 @@ test("mixed inline and inline-block elements", async () => {
 	expect(output).toContain("48;2;128;0;128"); // purple background (may be combined with other codes)
 	expect(output).toContain("38;2;0;255;255"); // cyan text (may have background reset after)
 
-	if (typeof Bun !== "undefined")
+	if (canSnapshot)
 		(expect(output) as {toMatchSnapshot(): void}).toMatchSnapshot();
 	terminal.writeANSI("mixed-inline-and-inline-block");
 
@@ -235,7 +235,7 @@ test("nested inline-block elements", async () => {
 	expect(output).toContain("\x1b[48;2;0;0;128m"); // navy background for outer
 	expect(output).toContain("48;2;255;0;0"); // red background for inner (may be combined with other codes)
 
-	if (typeof Bun !== "undefined")
+	if (canSnapshot)
 		(expect(output) as {toMatchSnapshot(): void}).toMatchSnapshot();
 	terminal.writeANSI("nested-inline-block");
 
@@ -271,7 +271,7 @@ test("inline-block with explicit width", async () => {
 	// First block should be exactly 10 characters wide due to width: "10px"
 	expect(visibleText).toContain("Fixed     Auto"); // "Fixed" + 5 spaces to reach 10 chars + "Auto"
 
-	if (typeof Bun !== "undefined")
+	if (canSnapshot)
 		(expect(output) as {toMatchSnapshot(): void}).toMatchSnapshot();
 	terminal.writeANSI("inline-block-fixed-width");
 
@@ -309,7 +309,7 @@ test("inline-block with height", async () => {
 	);
 	expect(greenBackgroundLines.length).toBe(3);
 
-	if (typeof Bun !== "undefined")
+	if (canSnapshot)
 		(expect(output) as {toMatchSnapshot(): void}).toMatchSnapshot();
 	terminal.writeANSI("inline-block-height");
 
@@ -338,7 +338,7 @@ test("inline-block with borders", async () => {
 	expect(output).toContain("┌"); // top border
 	expect(output).toContain("└"); // bottom border
 
-	if (typeof Bun !== "undefined")
+	if (canSnapshot)
 		(expect(output) as {toMatchSnapshot(): void}).toMatchSnapshot();
 	terminal.writeANSI("inline-block-borders");
 

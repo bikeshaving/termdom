@@ -13,7 +13,7 @@
 
 import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
-import {MockProcess, nextFrame} from "./test-utils.js";
+import {MockProcess, nextFrame, canSnapshot} from "./test-utils.js";
 
 interface Fixture {
 	name: string;
@@ -171,7 +171,7 @@ for (const fx of FIXTURES) {
 		}
 
 		// Full-fidelity lock: colors, styles, and layout together.
-		if (typeof Bun !== "undefined")
+		if (canSnapshot)
 			(expect(screen) as {toMatchSnapshot(): void}).toMatchSnapshot();
 	});
 }

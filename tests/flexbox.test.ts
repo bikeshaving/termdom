@@ -6,7 +6,7 @@
  */
 
 import {test, expect} from "@b9g/libuild/test";
-import {MockProcess, nextFrame} from "./test-utils";
+import {MockProcess, nextFrame, canSnapshot} from "./test-utils";
 import {TermDOM} from "../src/internal/termdom.js";
 
 test("flexbox-demo layout renders correctly", async () => {
@@ -171,7 +171,7 @@ test("flexbox-demo layout renders correctly", async () => {
 		expect(line.length).toBeLessThanOrEqual(80);
 	}
 
-	if (typeof Bun !== "undefined")
+	if (canSnapshot)
 		(
 			expect(terminal.getStaticANSI()) as {toMatchSnapshot(): void}
 		).toMatchSnapshot();
@@ -238,7 +238,7 @@ test("nested flexbox containers", async () => {
 	expect(visibleText).toContain("Left");
 	expect(visibleText).toContain("Right");
 
-	if (typeof Bun !== "undefined")
+	if (canSnapshot)
 		(
 			expect(terminal.getStaticANSI()) as {toMatchSnapshot(): void}
 		).toMatchSnapshot();
@@ -286,7 +286,7 @@ test("flexbox with flex-grow", async () => {
 	expect(visibleText).toContain("Fixed");
 	expect(visibleText).toContain("This item grows to fill available space");
 
-	if (typeof Bun !== "undefined")
+	if (canSnapshot)
 		(
 			expect(terminal.getStaticANSI()) as {toMatchSnapshot(): void}
 		).toMatchSnapshot();
@@ -340,7 +340,7 @@ test("flexbox with align-items and justify-content", async () => {
 	expect(visibleText).toContain("Item 2");
 	expect(visibleText).toContain("Item 3");
 
-	if (typeof Bun !== "undefined")
+	if (canSnapshot)
 		(
 			expect(terminal.getStaticANSI()) as {toMatchSnapshot(): void}
 		).toMatchSnapshot();
@@ -384,7 +384,7 @@ test("flexbox wrapping behavior", async () => {
 		expect(line.length).toBeLessThanOrEqual(40);
 	}
 
-	if (typeof Bun !== "undefined")
+	if (canSnapshot)
 		(
 			expect(terminal.getStaticANSI()) as {toMatchSnapshot(): void}
 		).toMatchSnapshot();
@@ -473,7 +473,7 @@ test("flexbox column with mixed content", async () => {
 	expect(visibleText).toContain("+12%");
 	expect(visibleText).toContain("Welcome to the dashboard");
 
-	if (typeof Bun !== "undefined")
+	if (canSnapshot)
 		(
 			expect(terminal.getStaticANSI()) as {toMatchSnapshot(): void}
 		).toMatchSnapshot();

@@ -8,7 +8,7 @@
  */
 
 import {test, expect} from "@b9g/libuild/test";
-import {MockProcess, nextFrame} from "./test-utils.js";
+import {MockProcess, nextFrame, canSnapshot} from "./test-utils.js";
 import {TermDOM} from "../src/internal/termdom.js";
 
 test("renders single emoji correctly", async () => {
@@ -24,7 +24,7 @@ test("renders single emoji correctly", async () => {
 	const output = terminal.getVisibleText();
 	expect(output).toContain("🚀");
 
-	if (typeof Bun !== "undefined")
+	if (canSnapshot)
 		(
 			expect(terminal.getStaticANSI()) as {toMatchSnapshot(): void}
 		).toMatchSnapshot();
@@ -50,7 +50,7 @@ test("renders emoji with text correctly", async () => {
 	expect(ansiOutput).toContain("Hello 🌍 World!"); // Space after emoji should be preserved
 	expect(ansiOutput).not.toMatch(/🌍(?! )/); // Should not have emoji without following space
 
-	if (typeof Bun !== "undefined")
+	if (canSnapshot)
 		(
 			expect(terminal.getStaticANSI()) as {toMatchSnapshot(): void}
 		).toMatchSnapshot();
@@ -91,7 +91,7 @@ test("renders multiple emojis correctly", async () => {
 	expect(output).toContain("🎯");
 	expect(output).toContain("Party");
 
-	if (typeof Bun !== "undefined")
+	if (canSnapshot)
 		(
 			expect(terminal.getStaticANSI()) as {toMatchSnapshot(): void}
 		).toMatchSnapshot();
@@ -123,7 +123,7 @@ test("renders emoji with colors correctly", async () => {
 	expect(output).toContain("🌈");
 	expect(output).toContain("Colorful Text");
 
-	if (typeof Bun !== "undefined")
+	if (canSnapshot)
 		(
 			expect(terminal.getStaticANSI()) as {toMatchSnapshot(): void}
 		).toMatchSnapshot();
@@ -183,7 +183,7 @@ test("handles emoji width calculation", async () => {
 	// Each span maintains its spaces: "Text " + "🚀" + " More" → "Text 🚀 More"
 	expect(output).toContain("Text 🚀 More");
 
-	if (typeof Bun !== "undefined")
+	if (canSnapshot)
 		(
 			expect(terminal.getStaticANSI()) as {toMatchSnapshot(): void}
 		).toMatchSnapshot();

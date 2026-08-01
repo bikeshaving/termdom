@@ -9,7 +9,7 @@ import {
 	Renderer,
 } from "../src/internal/ansi.js";
 import {BorderEdgeStyle} from "../src/internal/styles.js";
-import {stripControlCodes} from "./test-utils.js";
+import {stripControlCodes, canSnapshot} from "./test-utils.js";
 
 describe("Cell", () => {
 	describe("constructor", () => {
@@ -969,7 +969,7 @@ describe("Border Integration", () => {
 		});
 
 		const cleanOutput = stripControlCodes(output);
-		if (typeof Bun !== "undefined")
+		if (canSnapshot)
 			(expect(cleanOutput) as {toMatchSnapshot(): void}).toMatchSnapshot();
 	});
 
@@ -1004,7 +1004,7 @@ describe("Border Integration", () => {
 		});
 
 		const cleanOutput = stripControlCodes(output);
-		if (typeof Bun !== "undefined")
+		if (canSnapshot)
 			(expect(cleanOutput) as {toMatchSnapshot(): void}).toMatchSnapshot();
 	});
 
@@ -1083,7 +1083,7 @@ describe("Border Integration", () => {
 		});
 
 		const cleanOutput = stripControlCodes(output);
-		if (typeof Bun !== "undefined")
+		if (canSnapshot)
 			(expect(cleanOutput) as {toMatchSnapshot(): void}).toMatchSnapshot();
 	});
 
@@ -1102,7 +1102,7 @@ describe("Border Integration", () => {
 		});
 
 		const cleanOutput = stripControlCodes(output);
-		if (typeof Bun !== "undefined")
+		if (canSnapshot)
 			(expect(cleanOutput) as {toMatchSnapshot(): void}).toMatchSnapshot();
 	});
 
@@ -1122,7 +1122,7 @@ describe("Border Integration", () => {
 		});
 
 		const cleanOutput = stripControlCodes(output);
-		if (typeof Bun !== "undefined")
+		if (canSnapshot)
 			(expect(cleanOutput) as {toMatchSnapshot(): void}).toMatchSnapshot();
 	});
 
@@ -1142,7 +1142,7 @@ describe("Border Integration", () => {
 		});
 
 		const cleanOutput = stripControlCodes(output);
-		if (typeof Bun !== "undefined")
+		if (canSnapshot)
 			(expect(cleanOutput) as {toMatchSnapshot(): void}).toMatchSnapshot();
 	});
 
@@ -1179,7 +1179,7 @@ describe("Border Integration", () => {
 		});
 
 		const cleanOutput = stripControlCodes(output);
-		if (typeof Bun !== "undefined")
+		if (canSnapshot)
 			(expect(cleanOutput) as {toMatchSnapshot(): void}).toMatchSnapshot();
 	});
 
@@ -1221,7 +1221,7 @@ describe("Border Integration", () => {
 		});
 
 		const cleanOutput = stripControlCodes(output);
-		if (typeof Bun !== "undefined")
+		if (canSnapshot)
 			(expect(cleanOutput) as {toMatchSnapshot(): void}).toMatchSnapshot();
 	});
 
@@ -1254,7 +1254,7 @@ describe("Border Integration", () => {
 		});
 
 		const cleanOutput = stripControlCodes(output);
-		if (typeof Bun !== "undefined")
+		if (canSnapshot)
 			(expect(cleanOutput) as {toMatchSnapshot(): void}).toMatchSnapshot();
 	});
 
@@ -1283,7 +1283,7 @@ describe("Border Integration", () => {
 		});
 
 		const cleanOutput = stripControlCodes(output);
-		if (typeof Bun !== "undefined")
+		if (canSnapshot)
 			(expect(cleanOutput) as {toMatchSnapshot(): void}).toMatchSnapshot();
 	});
 
@@ -1314,7 +1314,7 @@ describe("Border Integration", () => {
 		});
 
 		const cleanOutput = stripControlCodes(output);
-		if (typeof Bun !== "undefined")
+		if (canSnapshot)
 			(expect(cleanOutput) as {toMatchSnapshot(): void}).toMatchSnapshot();
 	});
 });
