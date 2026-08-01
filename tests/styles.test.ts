@@ -93,13 +93,14 @@ describe("getComputedStyle - What We Support", () => {
 				.getComputedStyle(dom.window.document.getElementById("button")!)
 				.getPropertyValue("display"),
 		).toBe("inline-block");
-		// Defaults normalize shorthands to LONGHANDS -- the per-property
-		// form everything downstream (box model, border painter) reads.
+		// The button is a flat member of the field family: padded, no
+		// border. (Shorthand normalization is pinned by td's longhands and
+		// the stacking suite's rule test.)
 		const buttonStyle = dom.window.getComputedStyle(
 			dom.window.document.getElementById("button")!,
 		);
-		expect(buttonStyle.getPropertyValue("border-top-width")).toBe("1px");
-		expect(buttonStyle.getPropertyValue("border-top-style")).toBe("solid");
+		expect(buttonStyle.getPropertyValue("padding-left")).toBe("1ch");
+		expect(buttonStyle.getPropertyValue("border-top-style")).toBe("none");
 	});
 
 	test("inline styles override defaults", () => {

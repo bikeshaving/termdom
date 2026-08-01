@@ -492,7 +492,15 @@ export class ExpandedTreeWalker {
 		}
 
 		// Regular first child
-		return node.firstChild;
+		if (node.firstChild) {
+			return node.firstChild;
+		}
+
+		// A CHILDLESS element still renders its ::after -- the sibling
+		// transition only reaches ::after from a last child, which doesn't
+		// exist here, so for an empty element the pseudo IS the content
+		// (an empty <button class="destroy"> with ::after content, say).
+		return this.#getPseudoElement(element, "::after");
 	}
 
 	/**

@@ -378,10 +378,12 @@ const TERMINAL_ELEMENT_DEFAULTS: Record<string, Record<string, string>> = {
 	// still works for inherited properties, exactly the browser behavior.
 	slot: {display: "contents"},
 
-	// Terminal UI controls
+	// Terminal UI controls. The button joins the flat field family: no
+	// border (three rows and two columns per button, in a world of one-row
+	// list items), just breathing room and the family's focus underline
+	// (see getElementDefaults). Authors who want chrome add it.
 	button: {
 		display: "inline-block",
-		border: "1px solid",
 		padding: "0 1ch",
 		cursor: "pointer",
 	},
@@ -522,6 +524,15 @@ function getElementDefaults(
 			"min-height": `${effectiveRows + 2}px`,
 			width: `${effectiveCols + 4}ch`,
 		};
+	}
+	if (element.tagName === "BUTTON") {
+		const merged: Record<string, string> = {
+			...TERMINAL_ELEMENT_DEFAULTS.button,
+		};
+		if (element.ownerDocument?.activeElement === element) {
+			merged["text-decoration"] = "underline";
+		}
+		return merged;
 	}
 	if (element.tagName === "SELECT") {
 		// Sized to the LONGEST option label plus the indicator, exactly as a
