@@ -1137,7 +1137,22 @@ export class LayoutEngine {
 									// Get absolute position of the inline-block element
 									const flexNode = this.nodeMap.get(element);
 									if (!flexNode) {
-										// Fallback to relative position if no layout node
+										// A run MEMBER owns no layout node -- only the run
+										// head does -- so segment.x/line.y are RUN-relative.
+										// Anchor them at the run head's absolute position:
+										// returned bare, every input preceded by text in its
+										// run ("Name: <input>") painted at the document's own
+										// row 0, over whatever lived there.
+										const runFlexNode = this.nodeMap.get(runHead);
+										if (runFlexNode) {
+											const runPosition = getAbsolutePosition(runFlexNode);
+											return new this.DOMRect(
+												runPosition.x + segment.x,
+												runPosition.y + line.y,
+												segment.width,
+												line.height,
+											);
+										}
 										return new this.DOMRect(
 											segment.x,
 											line.y,

@@ -1558,3 +1558,26 @@ test("typing stays cheap: a keystroke must not relayout the world", async () => 
 
 	dom.dispose();
 });
+
+test("an input preceded by text in its run positions on its own row", async () => {
+	// The most ordinary form markup there is: label text and the input in
+	// ONE inline run. A run member owns no layout node, and its rect
+	// fallback returned run-relative coordinates as document ones -- every
+	// such input painted at row 0, over whatever lived there.
+	const terminal = new MockProcess({rows: 6, cols: 50});
+	const dom = new TermDOM({process: terminal});
+	dom.document.body.innerHTML =
+		`<div>Name: <input value="Ada"></div>` +
+		`<div>Email: <input placeholder="you@example.com"></div>`;
+	await nextFrame(dom);
+	await nextFrame(dom);
+
+	const lines = terminal.getPlainText().split("\n");
+	expect(lines[0]).toContain("Name: Ada");
+	expect(lines[1]).toContain("Email: you@example.com");
+	expect(lines[0]).not.toContain("you@example.com");
+
+	const inputs = dom.document.querySelectorAll("input");
+	expect(inputs[1].getBoundingClientRect().y).toBe(1);
+	dom.dispose();
+});

@@ -43,9 +43,9 @@ exports[`inline-block elements with margins 1`] = `
 `;
 
 exports[`inline-block elements wrapping to multiple lines 1`] = `
-" \x1B[38;2;255;255;255;48;2;0;0;139mFirst\x1B[39m  \x1B[38;2;255;255;255mSecond\x1B[39m \x1B[0m     \x1B[0m
-\x1B[48;2;0;0;139m \x1B[38;2;255;255;255mThird\x1B[39m  \x1B[38;2;255;255;255mFourth\x1B[39m \x1B[0m     \x1B[0m
-\x1B[48;2;0;0;139m \x1B[38;2;255;255;255mFifth\x1B[39m \x1B[0m             \x1B[0m
+" \x1B[38;2;255;255;255;48;2;0;0;139mFirst\x1B[39m  \x1B[38;2;255;255;255mSecond\x1B[39m  \x1B[0m    \x1B[0m
+ \x1B[38;2;255;255;255;48;2;0;0;139mThird\x1B[39m  \x1B[38;2;255;255;255mFourth\x1B[39m  \x1B[0m    \x1B[0m
+ \x1B[38;2;255;255;255;48;2;0;0;139mFifth\x1B[39m  \x1B[0m            \x1B[0m
                     
                     
                     
