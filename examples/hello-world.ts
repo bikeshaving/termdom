@@ -15,7 +15,6 @@ async function helloWorld() {
 	const container = document.createElement("div");
 	container.style.setProperty("background-color", "blue");
 	container.style.setProperty("color", "white");
-	//container.style.setProperty("padding", "1px");
 	container.textContent = "🎯 Hello, HTML Terminal!";
 
 	const subtitle = document.createElement("div");

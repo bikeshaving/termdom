@@ -4,7 +4,7 @@ import {LayoutEngine, kInvalidateInlineRun} from "../src/internal/layout.js";
 import {StyleManager} from "../src/internal/styles.js";
 import {TermDOM, kLayoutEngine} from "../src/internal/termdom.js";
 import {
-	setPseudoElement,
+	attachPseudoElement,
 	createPseudoNode,
 } from "../src/internal/composition.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
@@ -1669,7 +1669,7 @@ test("::before pseudo element becomes run head", () => {
 
 	// Add ::before pseudo element
 	const beforeNode = createPseudoNode(quote, "::before", '"');
-	setPseudoElement(quote, "::before", beforeNode);
+	attachPseudoElement(quote, beforeNode, "::before");
 
 	// ::before should be treated as the first child and become run head
 	expect(layoutEngine.isInlineRunHead(beforeNode)).toBe(true);
@@ -1693,9 +1693,9 @@ test("::marker appears before ::before in run head order", () => {
 	const beforeNode = createPseudoNode(listItem, "::before", "[");
 	const afterNode = createPseudoNode(listItem, "::after", "]");
 
-	setPseudoElement(listItem, "::marker", markerNode);
-	setPseudoElement(listItem, "::before", beforeNode);
-	setPseudoElement(listItem, "::after", afterNode);
+	attachPseudoElement(listItem, markerNode, "::marker");
+	attachPseudoElement(listItem, beforeNode, "::before");
+	attachPseudoElement(listItem, afterNode, "::after");
 
 	// ::marker should be the run head (first in document order)
 	expect(layoutEngine.isInlineRunHead(markerNode)).toBe(true);
@@ -1724,7 +1724,7 @@ test("Dynamic pseudo element addition affects run heads", () => {
 
 	// Add ::before pseudo element
 	const beforeNode = createPseudoNode(div, "::before", "→ ");
-	setPseudoElement(div, "::before", beforeNode);
+	attachPseudoElement(div, beforeNode, "::before");
 
 	// Force recalculation
 	layoutEngine.calculateLayout();

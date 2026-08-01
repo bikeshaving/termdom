@@ -53,7 +53,6 @@ export const GUTTER_ALL = 2;
 
 export const DISPLAY_FLEX = 0;
 export const DISPLAY_NONE = 1;
-export const DISPLAY_CONTENTS = 2;
 export const DISPLAY_TABLE = 3;
 export const DISPLAY_TABLE_ROW_GROUP = 4;
 export const DISPLAY_TABLE_HEADER_GROUP = 5;
@@ -787,39 +786,11 @@ export class Node {
 		};
 	}
 
-	getComputedMargin(edge: Edge): number {
-		return this.layout.margin[expandEdge(edge)[0]] ?? 0;
-	}
-	getComputedPadding(edge: Edge): number {
-		return this.layout.padding[expandEdge(edge)[0]] ?? 0;
-	}
-	getComputedBorder(edge: Edge): number {
-		return this.layout.border[expandEdge(edge)[0]] ?? 0;
-	}
-
 	getFlexDirection(): FlexDirection {
 		return this.style.flexDirection;
 	}
-	getJustifyContent(): Justify {
-		return this.style.justifyContent;
-	}
-	getAlignContent(): Align {
-		return this.style.alignContent;
-	}
-	getAlignItems(): Align {
-		return this.style.alignItems;
-	}
-	getAlignSelf(): Align {
-		return this.style.alignSelf;
-	}
 	getPositionType(): PositionType {
 		return this.style.positionType;
-	}
-	getFlexWrap(): Wrap {
-		return this.style.flexWrap;
-	}
-	getDisplay(): Display {
-		return this.style.display;
 	}
 	getGap(gutter: number): number {
 		return gutter === GUTTER_ROW
@@ -827,14 +798,8 @@ export class Node {
 			: this.style.gap[GUTTER_COLUMN];
 	}
 
-	getFlexGrow(): number {
-		return resolveFlexGrow(this);
-	}
 	getFlexShrink(): number {
 		return resolveFlexShrink(this);
-	}
-	getChild(index: number): Node {
-		return this.children[index];
 	}
 
 	// -- entry point --------------------------------------------------------
@@ -3389,7 +3354,6 @@ const Flex = {
 
 	DISPLAY_FLEX,
 	DISPLAY_NONE,
-	DISPLAY_CONTENTS,
 	DISPLAY_TABLE,
 	DISPLAY_TABLE_ROW_GROUP,
 	DISPLAY_TABLE_HEADER_GROUP,

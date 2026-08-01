@@ -271,17 +271,6 @@ export class ObserverManager {
 		this.#host = host;
 	}
 
-	createResizeObserver(callback: ResizeObserverCallback): ResizeObserver {
-		return new ResizeObserver(callback, this);
-	}
-
-	createIntersectionObserver(
-		callback: IntersectionObserverCallback,
-		init?: IntersectionObserverInit,
-	): IntersectionObserver {
-		return new IntersectionObserver(callback, this, init);
-	}
-
 	register(observer: ResizeObserver | IntersectionObserver): void {
 		if (observer instanceof ResizeObserver) this.#resize.add(observer);
 		else this.#intersection.add(observer);

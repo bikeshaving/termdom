@@ -2686,8 +2686,6 @@ export class LayoutEngine {
 		return result;
 	}
 
-	// Inline layout methods (moved from breaker.ts)
-	// TODO: Many of these methods could be regular functions
 	/**
 	 * The first composed (flat-tree) child that can start an inline run:
 	 * shadow content for hosts, projected content through slots, skipping
@@ -3441,34 +3439,6 @@ export class LayoutEngine {
 
 		return nodes;
 	}
-}
-
-export function computeBoundingRect(
-	DOMRect: typeof globalThis.DOMRect,
-	rects: DOMRect[] | DOMRectList,
-): DOMRect {
-	const rectArray: DOMRect[] = Array.from(rects);
-	if (rectArray.length === 0) {
-		return new DOMRect(0, 0, 0, 0);
-	}
-
-	if (rectArray.length === 1) {
-		return rectArray[0];
-	}
-
-	let minLeft = Infinity;
-	let minTop = Infinity;
-	let maxRight = -Infinity;
-	let maxBottom = -Infinity;
-
-	for (const rect of rectArray) {
-		minLeft = Math.min(minLeft, rect.left);
-		minTop = Math.min(minTop, rect.top);
-		maxRight = Math.max(maxRight, rect.right);
-		maxBottom = Math.max(maxBottom, rect.bottom);
-	}
-
-	return new DOMRect(minLeft, minTop, maxRight - minLeft, maxBottom - minTop);
 }
 
 export function isPointInRects(

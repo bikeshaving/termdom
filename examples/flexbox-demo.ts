@@ -142,5 +142,3 @@ const footerVersion = document.createElement("span");
 footerVersion.textContent = "v1.0.0";
 footerVersion.style.color = "white";
 footer.appendChild(footerVersion);
-
-//await new Promise<void>((r) => termDOM.window.requestAnimationFrame(() => r()));

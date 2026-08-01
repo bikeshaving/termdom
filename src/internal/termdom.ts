@@ -17,7 +17,6 @@ import {
 	IntersectionObserver as TermIntersectionObserver,
 } from "./observers.js";
 import {setupInspectMethods} from "./inspector.js";
-import {ScrollingManager} from "./scrolling.js";
 import {
 	compositionIsConnected,
 	compositionParentElement,
@@ -362,7 +361,13 @@ export class TermDOM {
 	#fullscreenManager: FullscreenManager;
 	#observerManager: ObserverManager;
 	#styleManager: StyleManager;
-	#scrollingManager: ScrollingManager;
+	// The command-start anchor: the row the document starts on. The document
+	// CAMERA (scrollY/pageYOffset/scrollTop) is a separate value owned by
+	// #initializeWindow. #anchorScrollTop is always -#screenTop once set, and
+	// survives only for fullscreen hit-testing, whose formula predates the
+	// camera and is algebraically equivalent.
+	#screenTop = 0;
+	#anchorScrollTop = 0;
 
 	// Guard against re-entrant rendering. A render() call arriving while one is in
 	// flight sets renderQueued rather than being dropped, so a trailing frame runs.
@@ -536,7 +541,6 @@ export class TermDOM {
 		this.#installObservers();
 
 		// Initialize scrolling management after window setup
-		this.#scrollingManager = new ScrollingManager(this.window, this.document);
 
 		this[kObserver] = this.#setupMutationObserver();
 
@@ -566,10 +570,11 @@ export class TermDOM {
 			configurable: true,
 		});
 
-		// Initialize screenTop for terminal viewport positioning (readonly like browsers)
+		// screenTop: readonly like browsers, and LIVE -- cursor detection moves
+		// the anchor after this runs. A frozen value here silently shadowed the
+		// real one, with only constructor line order deciding which won.
 		Object.defineProperty(window, "screenTop", {
-			value: 0,
-			writable: false,
+			get: () => this.#screenTop,
 			configurable: true,
 			enumerable: true,
 		});
@@ -2587,7 +2592,6 @@ export class TermDOM {
 		}
 	}
 
-	// TODO: move this to tables.ts? or layout.ts
 	#processPendingMutationsAndRender(): boolean {
 		// A geometry read (getBoundingClientRect, elementFromPoint) needs fresh
 		// *layout*, not fresh pixels. A full render() here would make every
@@ -2679,8 +2683,8 @@ export class TermDOM {
 		const epoch = this.#resizeEpoch;
 
 		const redraw = (startRow: number) => {
-			this.#scrollingManager.setScreenTop(startRow);
-			this.#scrollingManager.scrollToCommandStart();
+			this.#screenTop = startRow;
+			this.#anchorScrollTop = -this.#screenTop;
 			this.#renderer.resetScreen(startRow);
 
 			// Everything suppressed since the first SIGWINCH may paint again. The
@@ -2694,7 +2698,7 @@ export class TermDOM {
 		};
 
 		const computedReanchor = () => {
-			const previousStart = this.#scrollingManager.getScreenTop();
+			const previousStart = this.#screenTop;
 			const scrolledUp = Math.max(0, previousStart + contentHeight - newHeight);
 			return Math.max(0, previousStart - scrolledUp);
 		};
@@ -3561,10 +3565,9 @@ export class TermDOM {
 		row: number,
 	): {x: number; y: number} | null {
 		if (this.#fullscreenManager.isFullscreen) {
-			return {x, y: row + this.#scrollingManager.getScrollTop()};
+			return {x, y: row + this.#anchorScrollTop};
 		}
-		const y =
-			row - this.#scrollingManager.getScreenTop() + this.#documentScrollTop;
+		const y = row - this.#screenTop + this.#documentScrollTop;
 		return y < 0 ? null : {x, y};
 	}
 
@@ -4412,7 +4415,7 @@ export class TermDOM {
 		const contentHeight = this.document.body.scrollHeight;
 		if (contentHeight === 0) return;
 
-		const top = this.#scrollingManager.getScreenTop();
+		const top = this.#screenTop;
 
 		// Back to the top of our region, and erase from there down. Only rows we
 		// painted ourselves; the scrollback above is untouched.
@@ -4551,7 +4554,7 @@ export class TermDOM {
 	 * Returns the screen row our region now starts at.
 	 */
 	#reserveRows(rows: number): number {
-		const top = this.#scrollingManager.getScreenTop();
+		const top = this.#screenTop;
 		const overflow = top + rows - this.#height;
 
 		if (overflow <= 0) return top;
@@ -4568,10 +4571,10 @@ export class TermDOM {
 			// against the wrong screen rows, skipped cells it wrongly believed
 			// unchanged, and composited the old frame under the new one whenever a
 			// document-mode region grew past the space below the shell prompt.
-			this.#scrollingManager.setScreenTop(top - push);
+			this.#screenTop = top - push;
 		}
 
-		return this.#scrollingManager.getScreenTop();
+		return this.#screenTop;
 	}
 
 	/**
@@ -4636,11 +4639,11 @@ export class TermDOM {
 					const row = parseInt(match[1], 10);
 					// Set window.screenTop (convert 1-based terminal row to 0-based)
 					const screenTop = row - 1;
-					this.#scrollingManager.setScreenTop(screenTop);
+					this.#screenTop = screenTop;
 
 					// Set scrollTop to command start position (browser behavior)
 					// For command start, we want content to shift up to terminal top
-					this.#scrollingManager.scrollToCommandStart();
+					this.#anchorScrollTop = -this.#screenTop;
 
 					this.#hasDetectedCommandStart = true;
 					resolve(row);

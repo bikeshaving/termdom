@@ -125,17 +125,6 @@ export interface CellStyle {
 	border?: number;
 }
 
-export interface BorderStyle {
-	top?: {width: number; style: "solid" | "double" | "none"; color?: number};
-	right?: {width: number; style: "solid" | "double" | "none"; color?: number};
-	bottom?: {
-		width: number;
-		style: "solid" | "double" | "none";
-		color?: number;
-	};
-	left?: {width: number; style: "solid" | "double" | "none"; color?: number};
-}
-
 const cache = new LRUCache<string, Cell>(2 ** 12);
 
 export class Cell {
@@ -1058,27 +1047,6 @@ export class Renderer {
 			}
 		}
 		return 0;
-	}
-
-	wrappedContentHeightAt(cols: number): number | null {
-		if (!this.#prevBuffer || this.#prevContentHeight === 0 || cols <= 0) {
-			return null;
-		}
-		const rows = Math.min(this.#prevContentHeight, this.#prevBuffer.length);
-		let wrapped = 0;
-		for (let row = 0; row < rows; row++) {
-			const line = this.#prevBuffer[row];
-			let len = 0;
-			for (let col = line.length - 1; col >= 0; col--) {
-				const cell = line[col];
-				if (cell !== null) {
-					len = col + cell.width;
-					break;
-				}
-			}
-			wrapped += Math.max(1, Math.ceil(len / cols));
-		}
-		return wrapped;
 	}
 
 	/**

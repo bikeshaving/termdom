@@ -5,11 +5,10 @@ import {MockProcess, nextFrame, styleManagerFor} from "./test-utils.js";
 import {
 	createExpandedTreeWalker,
 	setShadowRoot,
-	setPseudoElement,
+	attachPseudoElement,
 	createPseudoNode,
 	isPseudoNode,
 	getPseudoMetadata,
-	getShadowRoot,
 	getPseudoElement,
 } from "../src/internal/composition.js";
 
@@ -52,8 +51,8 @@ test("Pure JSDOM - ExpandedTreeWalker pseudo-element traversal", () => {
 	const beforeNode = createPseudoNode(div, "::before", "Before: ");
 	const afterNode = createPseudoNode(div, "::after", " :After");
 
-	setPseudoElement(div, "::before", beforeNode);
-	setPseudoElement(div, "::after", afterNode);
+	attachPseudoElement(div, beforeNode, "::before");
+	attachPseudoElement(div, afterNode, "::after");
 
 	const walker = createExpandedTreeWalker(window as any, document.body);
 
@@ -234,14 +233,9 @@ test("Pure JSDOM - ExpandedTreeWalker utility functions", () => {
 	const div = document.createElement("div");
 	document.body.appendChild(div);
 
-	// Test shadow root storage
-	const shadowRoot = {mode: "open", host: div} as any;
-	setShadowRoot(div, shadowRoot);
-	expect(getShadowRoot(div)).toBe(shadowRoot);
-
 	// Test pseudo-element storage
 	const beforeNode = createPseudoNode(div, "::before", "Before");
-	setPseudoElement(div, "::before", beforeNode);
+	attachPseudoElement(div, beforeNode, "::before");
 	expect(getPseudoElement(div, "::before")).toBe(beforeNode);
 	expect(getPseudoElement(div, "::after")).toBe(null);
 
@@ -271,9 +265,9 @@ test("Pure JSDOM - ExpandedTreeWalker ::marker pseudo-element traversal", () => 
 	const beforeNode = createPseudoNode(li, "::before", "[");
 	const afterNode = createPseudoNode(li, "::after", "]");
 
-	setPseudoElement(li, "::marker", markerNode);
-	setPseudoElement(li, "::before", beforeNode);
-	setPseudoElement(li, "::after", afterNode);
+	attachPseudoElement(li, markerNode, "::marker");
+	attachPseudoElement(li, beforeNode, "::before");
+	attachPseudoElement(li, afterNode, "::after");
 
 	const walker = createExpandedTreeWalker(window as any, ul);
 
@@ -548,9 +542,9 @@ test("Pure JSDOM - ExpandedTreeWalker complex nested scenario with pseudo-elemen
 	const beforeNode = createPseudoNode(li, "::before", "[");
 	const afterNode = createPseudoNode(li, "::after", "]");
 
-	setPseudoElement(li, "::marker", markerNode);
-	setPseudoElement(li, "::before", beforeNode);
-	setPseudoElement(li, "::after", afterNode);
+	attachPseudoElement(li, markerNode, "::marker");
+	attachPseudoElement(li, beforeNode, "::before");
+	attachPseudoElement(li, afterNode, "::after");
 
 	// Create shadow root for list item
 	const liShadowRoot = {
@@ -966,8 +960,8 @@ test("FAILING - ExpandedTreeWalker ::after elements in layout engine pattern", (
 	const beforeNode = createPseudoNode(quote, "::before", '"');
 	const afterNode = createPseudoNode(quote, "::after", '"');
 
-	setPseudoElement(quote, "::before", beforeNode);
-	setPseudoElement(quote, "::after", afterNode);
+	attachPseudoElement(quote, beforeNode, "::before");
+	attachPseudoElement(quote, afterNode, "::after");
 
 	// Create walker that matches layout engine usage: start from quote element
 	const walker = createExpandedTreeWalker(

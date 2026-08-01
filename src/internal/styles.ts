@@ -14,7 +14,6 @@ import {
 } from "./runtime.js";
 import {
 	attachPseudoElement,
-	clearPseudoElements,
 	compositionParentElement,
 	compositionShadowRoot,
 	getAllPseudoElements,
@@ -1233,19 +1232,6 @@ interface BoxCharSet {
 }
 
 export const BOX_DRAWING: Record<string, BoxCharSet> = {
-	ascii: {
-		horizontal: "-",
-		vertical: "|",
-		topLeft: "+",
-		topRight: "+",
-		bottomLeft: "+",
-		bottomRight: "+",
-		topTee: "+",
-		bottomTee: "+",
-		leftTee: "+",
-		rightTee: "+",
-		cross: "+",
-	},
 	light: {
 		horizontal: "─",
 		vertical: "│",
@@ -2371,16 +2357,6 @@ export class StyleManager {
 	}
 
 	/**
-	 * Get pseudo-element styles for use by ExpandedTreeWalker
-	 */
-	getPseudoElementStyles(
-		element: Element,
-		pseudoType: string,
-	): Record<string, string> {
-		return this.#computePseudoElementStyle(element, pseudoType);
-	}
-
-	/**
 	 * Get marker content for outside positioning
 	 * This is separate from createPseudoElementNode to handle outside markers
 	 */
@@ -2702,28 +2678,6 @@ export class StyleManager {
 				styles: this.#computePseudoElementStyle(element, pseudoType),
 			};
 			this.#layoutEngine?.invalidate(element);
-		}
-	}
-
-	/**
-	 * Clean up pseudo-elements when an element is removed from the DOM
-	 */
-	cleanupPseudoElementsForRemovedElement(element: Element): void {
-		// Clean up pseudo-elements for this element
-		clearPseudoElements(element);
-
-		// Also clean up pseudo-elements for any descendant elements
-		// TODO: Performance optimization - walks all descendants when element is removed.
-		// Could track which descendants have pseudo-elements to avoid full traversal.
-		const walker = this.#document.createTreeWalker(
-			element,
-			this.#window.NodeFilter.SHOW_ELEMENT,
-			null,
-		);
-		let descendant = walker.nextNode() as Element;
-		while (descendant) {
-			clearPseudoElements(descendant);
-			descendant = walker.nextNode() as Element;
 		}
 	}
 

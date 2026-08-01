@@ -3,9 +3,9 @@
  * Provides fallbacks for Node.js and Deno environments.
  */
 
-// Detect runtime
+// Bun is the only runtime with a native fast path worth branching on; Node
+// and Deno both take the pure-JS fallback, so neither needs detecting.
 const isBun = typeof globalThis.Bun !== "undefined";
-const isDeno = typeof (globalThis as any).Deno !== "undefined";
 
 /**
  * Get the display width of a string in terminal columns.
@@ -540,6 +540,3 @@ export function parseColorFallback(color: string): number | null {
 
 	return null;
 }
-
-// Export runtime detection for conditional logic
-export {isBun, isDeno};

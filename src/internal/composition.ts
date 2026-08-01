@@ -911,22 +911,8 @@ export function getAllPseudoElements(element: Element): Record<string, Node> {
 }
 
 /**
- * Clear all pseudo-elements from an element
- */
-export function clearPseudoElements(element: Element): void {
-	delete (element as any)[PSEUDO_ELEMENTS_SYMBOL];
-}
-
-/**
  * Shadow DOM Management utilities
  */
-
-/**
- * Check if an element has a shadow root
- */
-export function hasShadowRoot(element: Element): boolean {
-	return getShadowRoot(element) !== null;
-}
 
 /**
  * Create a UA-INTERNAL shadow root on an element: a real DocumentFragment
@@ -976,32 +962,6 @@ export function createExpandedTreeWalker(
  */
 export function setShadowRoot(element: Element, shadowRoot: ShadowRoot): void {
 	(element as any)[SHADOW_ROOT_SYMBOL] = shadowRoot;
-}
-
-/**
- * Get shadow root from an element
- */
-export function getShadowRoot(element: Element): ShadowRoot | null {
-	return (element as any)[SHADOW_ROOT_SYMBOL] || null;
-}
-
-/**
- * Set pseudo-element on an element using symbol storage
- */
-export function setPseudoElement(
-	element: Element,
-	pseudoType: string,
-	node: Node,
-): void {
-	const pseudos = (element as any)[PSEUDO_ELEMENTS_SYMBOL] || {};
-	pseudos[pseudoType] = node;
-	(element as any)[PSEUDO_ELEMENTS_SYMBOL] = pseudos;
-
-	// Set metadata on the pseudo-element
-	(node as any)[PSEUDO_METADATA_SYMBOL] = {
-		pseudoType,
-		hostElement: element,
-	};
 }
 
 /**
