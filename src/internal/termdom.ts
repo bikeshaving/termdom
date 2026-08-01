@@ -4329,6 +4329,14 @@ export class TermDOM {
 					if (offset !== null) {
 						field.setSelectionRange(offset, offset);
 						this.#fieldDragAnchor = {element: field, offset};
+						// The DOCUMENT selection still clears on entry -- a page
+						// selection doesn't stay highlighted behind a field click
+						// in a browser either. The two worlds just never merge:
+						// getSelection() cannot see inside the field, per spec.
+						const docSelection = this.window.getSelection();
+						if (docSelection && !docSelection.isCollapsed) {
+							docSelection.removeAllRanges();
+						}
 						this.#render();
 					}
 				}

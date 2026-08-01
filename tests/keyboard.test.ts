@@ -1490,3 +1490,31 @@ test("a drag inside an input selects within the field, bounded to its value", as
 	expect(input.selectionDirection).toBe("backward");
 	dom.dispose();
 });
+
+test("clicking into a field clears the document selection's highlight", async () => {
+	const terminal = new MockProcess({rows: 4, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	dom.attach();
+	dom.document.body.innerHTML = `<div id="p">page text here</div><div><input value="hello"></div>`;
+	await nextFrame(dom);
+
+	// Select the page text by drag, then press inside the input: the
+	// document selection collapses away; the field's world takes over.
+	(terminal.stdin as any).emit(
+		"data",
+		Buffer.from("\x1b[<0;1;1M\x1b[<32;9;1M\x1b[<0;9;1m"),
+	);
+	await nextFrame(dom);
+	expect(dom.window.getSelection()?.toString()).toBe("page tex");
+
+	(terminal.stdin as any).emit("data", Buffer.from("\x1b[<0;3;2M\x1b[<0;3;2m"));
+	await nextFrame(dom);
+	expect(dom.window.getSelection()?.isCollapsed ?? true).toBe(true);
+	const input = dom.document.querySelector("input") as HTMLInputElement;
+	expect(dom.document.activeElement).toBe(input);
+	// And getSelection never exposes the field's own selection, per spec.
+	input.setSelectionRange(0, 5);
+	await nextFrame(dom);
+	expect(dom.window.getSelection()?.toString() ?? "").toBe("");
+	dom.dispose();
+});
