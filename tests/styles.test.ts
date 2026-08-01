@@ -93,11 +93,13 @@ describe("getComputedStyle - What We Support", () => {
 				.getComputedStyle(dom.window.document.getElementById("button")!)
 				.getPropertyValue("display"),
 		).toBe("inline-block");
-		expect(
-			dom.window
-				.getComputedStyle(dom.window.document.getElementById("button")!)
-				.getPropertyValue("border"),
-		).toBe("1px solid");
+		// Defaults normalize shorthands to LONGHANDS -- the per-property
+		// form everything downstream (box model, border painter) reads.
+		const buttonStyle = dom.window.getComputedStyle(
+			dom.window.document.getElementById("button")!,
+		);
+		expect(buttonStyle.getPropertyValue("border-top-width")).toBe("1px");
+		expect(buttonStyle.getPropertyValue("border-top-style")).toBe("solid");
 	});
 
 	test("inline styles override defaults", () => {

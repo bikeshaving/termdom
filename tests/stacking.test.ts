@@ -203,3 +203,17 @@ test("position:fixed stays glued to the viewport as the camera scrolls", async (
 
 	dom.dispose();
 });
+
+test("the border shorthand in a stylesheet rule reaches the box model", async () => {
+	// Rules and element defaults are consulted per-property; the expander
+	// turns border/padding/margin shorthands into the longhands the box
+	// model and painter read. Height proves MEASUREMENT, not just paint.
+	const {terminal, dom} = await render(
+		`<style>.boxed { border: 1px solid; padding: 1px; width: 10ch }</style>
+		 <div class="boxed">X</div>`,
+	);
+	const div = dom.document.querySelector(".boxed")!;
+	expect(div.getBoundingClientRect().height).toBe(5); // 1+1+1+1+1
+	expect(terminal.getPlainText()).toContain("┌");
+	dom.dispose();
+});

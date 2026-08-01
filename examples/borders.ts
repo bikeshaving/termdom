@@ -15,13 +15,7 @@ const termdom = new TermDOM();
 const {document} = termdom;
 
 const style = document.createElement("style");
-// Longhands, not the `border` shorthand: stylesheet rules are consulted
-// per property, and the shorthand never reaches the border-*-width/style
-// longhands the box model and painter read. (Inline styles expand it;
-// rules don't -- same trap as element defaults.)
-const edge = (kind: string) =>
-	`border-top-width:1px; border-right-width:1px; border-bottom-width:1px; border-left-width:1px;
-	 border-top-style:${kind}; border-right-style:${kind}; border-bottom-style:${kind}; border-left-style:${kind};`;
+const edge = (kind: string) => `border: 1px ${kind};`;
 style.textContent = `
   .app { padding: 1 2ch; }
   h2 { color: cyan; }
