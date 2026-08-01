@@ -39,9 +39,13 @@ test("a positioned box with a higher z-index paints over its siblings", async ()
 });
 
 test("a negative z-index paints behind", async () => {
+	// The fixture used to omit the z-index and passed by the old per-sibling
+	// stable sort. Per CSS a z:auto positioned box paints ABOVE in-flow
+	// content (the layer the stacking painter now implements), so going
+	// behind requires what the title always claimed: a negative z-index.
 	const rows = await renderRows(`
 		<div style="position:relative">
-			<div style="position:absolute; top:0; left:0">BEHIND</div>
+			<div style="position:absolute; top:0; left:0; z-index:-1">BEHIND</div>
 			<div>front</div>
 		</div>`);
 

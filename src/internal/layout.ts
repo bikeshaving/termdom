@@ -96,7 +96,11 @@ function parseSpanAttribute(element: Element, name: string): number {
 	return Number.isFinite(span) && span > 0 ? span : 1;
 }
 
-function styleFlexNode(element: Element, flexNode: FlexTypes.Node): void {
+function styleFlexNode(
+	element: Element,
+	flexNode: FlexTypes.Node,
+	positionedElements?: Set<Element>,
+): void {
 	const window = element.ownerDocument?.defaultView;
 	if (!window) {
 		throw new Error("Element must have an ownerDocument with defaultView");
@@ -594,6 +598,17 @@ function styleFlexNode(element: Element, flexNode: FlexTypes.Node): void {
 
 	// Handle positioning properties
 	const position = computedStyle.getPropertyValue("position");
+	// The stacking-context painter hoists positioned boxes to their context
+	// root; this registry is how it finds them without an O(document) sweep
+	// per frame. Membership follows the style application that created or
+	// restyled the box.
+	if (positionedElements) {
+		if (position && position !== "static") {
+			positionedElements.add(element);
+		} else {
+			positionedElements.delete(element);
+		}
+	}
 	if (position === "absolute") {
 		flexNode.setPositionType(Flex.POSITION_TYPE_ABSOLUTE);
 
@@ -830,6 +845,13 @@ export class LayoutEngine {
 
 	// Track nodes that were invalidated and need re-adding during calculateLayout
 	#invalidatedNodes: Set<Node>;
+	/**
+	 * Every element whose computed position is not static, maintained by
+	 * styleFlexNode. The paint side groups these under their stacking
+	 * contexts each frame -- positioned boxes are rare, so per-frame work
+	 * is O(positioned), never O(document).
+	 */
+	positionedElements = new Set<Element>();
 
 	// Track layout nodes that have measure functions (for resize invalidation)
 	#measureNodes: Set<FlexTypes.Node>;
@@ -1082,6 +1104,9 @@ export class LayoutEngine {
 			this.#domNodeByFlexNode.delete(flexNode);
 		}
 		this.nodeMap.delete(domNode);
+		if (domNode.nodeType === domNode.ELEMENT_NODE) {
+			this.positionedElements.delete(domNode as Element);
+		}
 	}
 
 	getRect(element: Element): DOMRect | null {
@@ -1651,7 +1676,7 @@ export class LayoutEngine {
 					// have changed them. A list's padding-left is derived from its items'
 					// markers, so appending a wider item changes the parent's computed
 					// padding, and reusing the node as-is would keep the stale gutter.
-					styleFlexNode(node as Element, flexNode);
+					styleFlexNode(node as Element, flexNode, this.positionedElements);
 
 					// Sever its current flex CHILDREN too: this element's composed
 					// child set may have changed wholesale (attachShadow on a host
@@ -1923,7 +1948,7 @@ export class LayoutEngine {
 					const element = record.target as Element;
 					const flexNode = this.nodeMap.get(element);
 					if (flexNode) {
-						styleFlexNode(element, flexNode);
+						styleFlexNode(element, flexNode, this.positionedElements);
 						// Invalidate inline runs if style changes might affect layout
 						this[kInvalidateInlineRun](element);
 					} else {
@@ -2114,7 +2139,7 @@ export class LayoutEngine {
 			this.#trackNode(element, flexNode);
 		}
 
-		styleFlexNode(element, flexNode);
+		styleFlexNode(element, flexNode, this.positionedElements);
 
 		if (display === "none") {
 			flexNode.setDisplay(Flex.DISPLAY_NONE);
