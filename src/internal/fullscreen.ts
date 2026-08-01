@@ -137,9 +137,10 @@ export class FullscreenManager {
 			cancelable: false,
 		});
 
-		// Fire on both element and document
+		// Per spec: fired on the element, and it BUBBLES -- document listeners
+		// hear it through the bubble; dispatching on the document as well
+		// delivered every transition twice.
 		element.dispatchEvent(event);
-		element.ownerDocument?.dispatchEvent(event);
 	}
 
 	#fireFullscreenErrorEvent(element: Element, error: Error): void {

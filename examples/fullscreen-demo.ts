@@ -44,8 +44,10 @@ document.addEventListener("fullscreenchange", async () => {
 
 document.addEventListener("fullscreenerror", (_event: any) => {});
 
-// Setup keyboard event handlers
-container.addEventListener("keydown", async (event: KeyboardEvent) => {
+// Keyboard events land on the focused element (or body when nothing is
+// focused) and bubble UP to document -- a listener on the container, a
+// sibling-less child of body, never hears them. Listen at the document.
+document.addEventListener("keydown", async (event: KeyboardEvent) => {
 	if (event.key === "q" || event.key === "Q") {
 		process.exit(0);
 	}
