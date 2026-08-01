@@ -577,9 +577,15 @@ export class TermDOM {
 	// flight sets renderQueued rather than being dropped, so a trailing frame runs.
 	#isRendering = false;
 	// Callbacks registered via window.requestAnimationFrame, fired once the frame
-	// that includes their pending mutations has actually been written.
-	#frameCallbacks: FrameRequestCallback[] = [];
+	// that includes their pending mutations has actually been written. Keyed
+	// by the handle requestAnimationFrame returned, so cancelAnimationFrame
+	// can actually cancel.
+	#frameCallbacks = new Map<number, FrameRequestCallback>();
 	#nextRafId = 1;
+	// One updater per live MediaQueryList: re-evaluates its query and fires
+	// "change" if the answer flipped. Run by #handleResize -- SIGWINCH is
+	// this screen's window resize.
+	#mediaQueryUpdaters = new Set<() => void>();
 	// document.close() sealed the current document into scrollback; the next
 	// mutation starts a fresh document below it.
 	#sealed = false;
@@ -864,10 +870,70 @@ export class TermDOM {
 		// your pending mutations has landed.
 		window.requestAnimationFrame = ((cb: FrameRequestCallback): number => {
 			const id = termDOM.#nextRafId++;
-			termDOM.#frameCallbacks.push(cb);
+			termDOM.#frameCallbacks.set(id, cb);
 			void termDOM.#render();
 			return id;
 		}) as typeof window.requestAnimationFrame;
+		window.cancelAnimationFrame = ((handle: number): void => {
+			termDOM.#frameCallbacks.delete(handle);
+		}) as typeof window.cancelAnimationFrame;
+
+		// matchMedia: the terminal is the one screen, and queries answer
+		// through the SAME evaluator @media stylesheet rules use, so a
+		// script and a stylesheet can never disagree about the viewport.
+		// The list is live: a resize (SIGWINCH is this screen's window
+		// resize) re-evaluates and fires "change" when the answer flips --
+		// the browser contract, which is what makes responsive terminal
+		// layouts a matchMedia listener instead of a bespoke resize hook.
+		window.matchMedia = ((query: string): MediaQueryList => {
+			const media = String(query);
+			const mql = new (window as any).EventTarget();
+			let matches = termDOM.#styleManager.mediaQueryMatches(media);
+			let onchange: ((ev: Event) => void) | null = null;
+			Object.defineProperties(mql, {
+				media: {get: () => media, enumerable: true, configurable: true},
+				matches: {get: () => matches, enumerable: true, configurable: true},
+				onchange: {
+					get: () => onchange,
+					set: (value: ((ev: Event) => void) | null) => {
+						// An event-handler attribute IS a listener, per spec:
+						// route it through add/removeEventListener so dispatch
+						// order and dedup behave like any other handler.
+						if (onchange) mql.removeEventListener("change", onchange);
+						onchange = typeof value === "function" ? value : null;
+						if (onchange) mql.addEventListener("change", onchange);
+					},
+					enumerable: true,
+					configurable: true,
+				},
+				// The pre-2020 MediaQueryList API, still what much deployed
+				// code calls: plain aliases for the EventTarget pair.
+				addListener: {
+					value: (cb: ((ev: Event) => void) | null) => {
+						if (cb) mql.addEventListener("change", cb);
+					},
+					configurable: true,
+				},
+				removeListener: {
+					value: (cb: ((ev: Event) => void) | null) => {
+						if (cb) mql.removeEventListener("change", cb);
+					},
+					configurable: true,
+				},
+			});
+			termDOM.#mediaQueryUpdaters.add(() => {
+				const now = termDOM.#styleManager.mediaQueryMatches(media);
+				if (now === matches) return;
+				matches = now;
+				const event = new termDOM.window.Event("change");
+				Object.defineProperties(event, {
+					matches: {value: now, enumerable: true},
+					media: {value: media, enumerable: true},
+				});
+				mql.dispatchEvent(event);
+			});
+			return mql as MediaQueryList;
+		}) as typeof window.matchMedia;
 
 		// document.close() finalizes the document: flush the live region into the
 		// terminal's scrollback and seal it -- the SSR res.end() of the terminal.
@@ -1199,9 +1265,9 @@ export class TermDOM {
 	}
 
 	#drainFrameCallbacks(): void {
-		if (this.#frameCallbacks.length === 0) return;
-		const callbacks = this.#frameCallbacks;
-		this.#frameCallbacks = [];
+		if (this.#frameCallbacks.size === 0) return;
+		const callbacks = [...this.#frameCallbacks.values()];
+		this.#frameCallbacks.clear();
 		const now = performance.now();
 		for (const cb of callbacks) cb(now);
 	}
@@ -3032,6 +3098,13 @@ export class TermDOM {
 		});
 
 		this.window._terminalSize = {width: newWidth, height: newHeight};
+
+		// The viewport changed, so every @media answer may have: re-parse
+		// the stylesheets against the new size (they were parsed against
+		// the old one and would stay stale), then let each live
+		// MediaQueryList re-evaluate and fire "change" if it flipped.
+		this.#styleManager.refreshStylesheets();
+		for (const update of this.#mediaQueryUpdaters) update();
 
 		this.#renderer.resize(newHeight, newWidth);
 		this[kLayoutEngine].resize(newWidth, newHeight);

@@ -744,3 +744,85 @@ test("a width resize re-anchors via the parked cursor, not guesswork", async () 
 
 	dom.dispose();
 });
+
+test("matchMedia answers with the stylesheet evaluator and goes live on resize", async () => {
+	const terminal = new MockProcess({cols: 100, rows: 30});
+	const dom = new TermDOM({process: terminal});
+	const {window, document} = dom;
+
+	const mql = window.matchMedia("(min-width: 90px)");
+	expect(mql.media).toBe("(min-width: 90px)");
+	expect(mql.matches).toBe(true);
+
+	const events: boolean[] = [];
+	mql.onchange = (ev: any) => events.push(ev.matches);
+	const listener = (ev: any) => events.push(ev.matches);
+	mql.addEventListener("change", listener);
+
+	document.body.innerHTML = "<div>x</div>";
+	await nextFrame(dom);
+
+	terminal.resize(50, 30);
+	(terminal as any).emit("SIGWINCH");
+	await nextFrame(dom);
+	await new Promise((r) => setTimeout(r, 100));
+
+	expect(mql.matches).toBe(false);
+	expect(events).toEqual([false, false]); // onchange + listener, once each
+
+	// A resize that doesn't flip the answer fires nothing.
+	terminal.resize(40, 30);
+	(terminal as any).emit("SIGWINCH");
+	await new Promise((r) => setTimeout(r, 100));
+	expect(events.length).toBe(2);
+
+	dom.dispose();
+});
+
+test("@media stylesheet rules re-evaluate when the terminal resizes", async () => {
+	const terminal = new MockProcess({cols: 100, rows: 30});
+	const dom = new TermDOM({process: terminal});
+	const {window, document} = dom;
+
+	const style = document.createElement("style");
+	style.textContent = `@media (max-width: 60px) { div { color: red; } }`;
+	document.head.appendChild(style);
+	document.body.innerHTML = `<div id="d">narrow-only</div>`;
+	await nextFrame(dom);
+	const div = document.getElementById("d")!;
+	expect(window.getComputedStyle(div).getPropertyValue("color")).not.toBe(
+		"red",
+	);
+
+	terminal.resize(50, 30);
+	(terminal as any).emit("SIGWINCH");
+	await nextFrame(dom);
+	await new Promise((r) => setTimeout(r, 100));
+
+	expect(window.getComputedStyle(div).getPropertyValue("color")).toBe("red");
+
+	dom.dispose();
+});
+
+test("cancelAnimationFrame actually cancels", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const dom = new TermDOM({process: terminal});
+	const {window, document} = dom;
+
+	let canceled = false;
+	let kept = false;
+	const id = window.requestAnimationFrame(() => {
+		canceled = true;
+	});
+	window.requestAnimationFrame(() => {
+		kept = true;
+	});
+	window.cancelAnimationFrame(id);
+
+	document.body.innerHTML = "<div>x</div>";
+	await nextFrame(dom);
+	expect(kept).toBe(true);
+	expect(canceled).toBe(false);
+
+	dom.dispose();
+});

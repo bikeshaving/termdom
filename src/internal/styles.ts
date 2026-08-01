@@ -2060,7 +2060,7 @@ export class StyleManager {
 			} else if (rule.type === 4) {
 				// CSSRule.MEDIA_RULE
 				const mediaRule = rule as CSSMediaRule;
-				if (this.#mediaQueryMatches(mediaRule.media.mediaText)) {
+				if (this.mediaQueryMatches(mediaRule.media.mediaText)) {
 					this.#parseStyleSheet(mediaRule, scope, uaOrigin);
 				}
 			}
@@ -2071,9 +2071,11 @@ export class StyleManager {
 	 * Whether a media query currently matches. There is exactly one "screen" --
 	 * the terminal viewport -- so only width/height features are meaningful;
 	 * everything else (scripting, color-gamut, pointer, ...) defaults to
-	 * matching rather than silently dropping an author's rules.
+	 * matching rather than silently dropping an author's rules. Public: it
+	 * answers window.matchMedia through the SAME evaluator @media uses, so
+	 * a stylesheet and a script can never disagree about the viewport.
 	 */
-	#mediaQueryMatches(mediaText: string): boolean {
+	mediaQueryMatches(mediaText: string): boolean {
 		const text = mediaText.trim();
 		if (!text) return true;
 		return text.split(",").some((query) => this.#mediaQueryPartMatches(query));
