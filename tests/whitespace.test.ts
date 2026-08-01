@@ -538,3 +538,26 @@ test("complex mixed white-space with word-break properties", async () => {
 
 	dom.dispose();
 });
+
+test("a leading <br> keeps its line break and the whole run after it", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 6});
+	const dom = new TermDOM({process: terminal});
+	dom.document.body.innerHTML = `<br> abcdef`;
+
+	await nextFrame(dom);
+	await nextFrame(dom);
+
+	const lines = terminal
+		.getPlainText()
+		.split("\n")
+		.map((line) => line.replace(/\s+$/, ""));
+
+	// The run's leading-whitespace trim used to eat the <br>'s newline (losing
+	// the break) and shift every leaf's offsets without shifting the text those
+	// offsets index into -- so the line measured one cell short of what it
+	// painted and clipped the last character: " abcde".
+	expect(lines[0]).toBe("");
+	expect(lines[1]).toBe(" abcdef");
+
+	dom.dispose();
+});

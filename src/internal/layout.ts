@@ -901,6 +901,14 @@ export class LayoutEngine {
 	// Track layout nodes that have measure functions (for resize invalidation)
 	#measureNodes: Set<FlexTypes.Node>;
 
+	/**
+	 * Inline boxes a block-level box broke apart (see #addSplitFragments). They
+	 * paint boxes that live OUTSIDE their own layout subtree, so paint culling
+	 * cannot trust their extents. Add-only and weak: an element that stops
+	 * splitting merely stops being culled, which costs a walk, never a frame.
+	 */
+	#brokenInlines = new WeakSet<Element>();
+
 	constructor(window: DOMWindow) {
 		this.window = window;
 		this.DOMRect = window.DOMRect;
@@ -1068,7 +1076,14 @@ export class LayoutEngine {
 	isSubtreeOutsideBand(element: Element, top: number, bottom: number): boolean {
 		const node = this.nodeMap.get(element);
 		if (!node) return false;
-		return node.extentBottom <= top || node.extentTop >= bottom;
+		if (node.extentBottom > top && node.extentTop < bottom) return false;
+		// An inline broken around a block-level box paints boxes that are NOT
+		// in its own layout subtree -- the block and the fragment after it are
+		// the container's children -- so its extent says nothing about them.
+		// The paint walk still reaches them through the DOM, and culling by
+		// this node's zero-height first fragment blanked the whole thing:
+		// `<a href="..."><div>card</div></a>` rendered empty.
+		return !this.#brokenInlines.has(element);
 	}
 
 	/**
@@ -1695,92 +1710,153 @@ export class LayoutEngine {
 			return null;
 		}
 
-		// 2. Create ExpandedTreeWalker to traverse elements, text nodes, and pseudo-elements
+		// 2. Walk BACKWARD through the flow from the node, in flat document
+		// order, until the run's first node is reached. Sideways while
+		// siblings share the run, up when an inline box's own start is inside
+		// it, down into a sibling that a block-level box split -- the run
+		// begins after that block, which may be several levels deep.
 		const walker = createExpandedTreeWalker(
 			this.window,
 			node.ownerDocument || this.window.document,
 		);
 
-		// Position walker at starting node
-		walker.currentNode = node;
 		let current = node;
+		for (;;) {
+			const previous = this.#previousRunNode(current, walker);
+			if (previous === "boundary") {
+				return current;
+			}
+			if (previous !== null) {
+				current = previous;
+				continue;
+			}
 
-		// 3. Traverse up through inline parents
-		while (walker.parentNode()) {
-			const parent = walker.currentNode;
-			if (parent.nodeType !== parent.ELEMENT_NODE) continue;
-
-			// An out-of-flow ancestor is a formatting-context boundary: its
-			// content forms runs INSIDE it, never joining the flow it left.
-			if (this.#isOutOfFlow(parent)) break;
-
-			const parentDisplay = getPropertyValue(parent as Element, "display");
-
+			// Nothing before it at this level: the enclosing inline box opened
+			// inside this run, so the box itself is part of it. Through the
+			// walker, whose parent hop resolves a pseudo-element to its host --
+			// a ::after has no parentElement of its own.
+			walker.currentNode = current;
+			const parentNode = walker.parentNode();
+			if (!parentNode || parentNode.nodeType !== parentNode.ELEMENT_NODE) {
+				return current;
+			}
+			const parent = parentNode as Element;
+			if (this.#isOutOfFlow(parent)) {
+				return current;
+			}
+			const parentDisplay = getPropertyValue(parent, "display");
 			if (parentDisplay === "inline") {
 				current = parent;
-			} else if (parentDisplay === "inline-block") {
-				// Only walk up through inline-block if current node is inline (not inline-block)
-				if (node.nodeType === node.ELEMENT_NODE) {
-					const nodeDisplay = getPropertyValue(node as Element, "display");
-					if (nodeDisplay === "inline") {
-						current = parent;
-					} else {
-						// Current node is inline-block, stop here
-						break;
-					}
-				} else {
-					// Current node is text, can walk up through inline-block
-					current = parent;
-				}
-			} else {
-				break;
+				continue;
 			}
+			if (parentDisplay === "inline-block") {
+				// An inline-block's content is its own formatting context: text
+				// inside it runs from the box, but a nested inline-block box is
+				// where its own run starts.
+				if (
+					node.nodeType === node.ELEMENT_NODE &&
+					getPropertyValue(node as Element, "display") !== "inline"
+				) {
+					return current;
+				}
+				current = parent;
+				continue;
+			}
+			return current;
+		}
+	}
+
+	/**
+	 * The node before `current` within its inline run, or "boundary" when the
+	 * run starts at `current` -- because a block-level box precedes it (CSS
+	 * splits an inline around block-level content into separate anonymous
+	 * blocks), or because a flex container puts every item in its own run.
+	 * Null means the level is exhausted and the caller should climb.
+	 */
+	#previousRunNode(
+		current: Node,
+		walker: ExpandedTreeWalker,
+	): Node | "boundary" | null {
+		const boxParent = compositionBoxParentElement(current);
+		const inFlex =
+			boxParent !== null && getPropertyValue(boxParent, "display") === "flex";
+		if (inFlex && current.nodeType === current.ELEMENT_NODE) {
+			return "boundary"; // Elements in flex are their own run heads
 		}
 
-		// 4. Reset walker to current position and check container type
 		walker.currentNode = current;
-		const runParent = compositionBoxParentElement(current);
-		const isInFlex =
-			runParent && getPropertyValue(runParent, "display") === "flex";
-
-		if (isInFlex) {
-			// 5a. Flex container traversal
-			if (current.nodeType === current.ELEMENT_NODE) {
-				return current; // Elements in flex are their own run heads
+		while (walker.previousSibling()) {
+			const previous = walker.currentNode;
+			if (previous.nodeType !== previous.ELEMENT_NODE) {
+				return previous; // Text: always shares the run
 			}
 
-			while (walker.previousSibling()) {
-				const prev = walker.currentNode;
-
-				if (prev.nodeType === prev.ELEMENT_NODE) {
-					if (this.#isOutOfFlow(prev)) continue; // takes no run position
-					break; // Stop at any element in flex
-				}
-				// Must be text node due to TreeWalker filter
-				current = prev;
+			const element = previous as Element;
+			if (this.#isOutOfFlow(element)) continue; // takes no run position
+			const display = getPropertyValue(element, "display");
+			if (display === "none") continue; // generates no box at all
+			if (inFlex) return "boundary"; // Stop at any element in flex
+			if (display !== "inline" && display !== "inline-block") {
+				return "boundary";
 			}
-		} else {
-			// 5b. Normal flow traversal
-			while (walker.previousSibling()) {
-				const prev = walker.currentNode;
-
-				if (prev.nodeType === prev.ELEMENT_NODE) {
-					const prevElement = prev as Element;
-					if (this.#isOutOfFlow(prevElement)) continue; // takes no run position
-					const prevDisplay = getPropertyValue(prevElement, "display");
-					if (prevDisplay === "inline" || prevDisplay === "inline-block") {
-						current = prevElement;
-					} else {
-						break;
-					}
-				} else {
-					// Must be text node due to TreeWalker filter
-					current = prev;
-				}
-			}
+			// The run continues into this sibling -- but only as far back as
+			// its own last fragment, since a block inside it split it too.
+			return this.#lastRunNodeWithin(element, walker) ?? "boundary";
 		}
 
-		return current;
+		return null;
+	}
+
+	/**
+	 * The last node of the run that ends inside an inline box, in flat order:
+	 * its deepest final inline descendant. Null when its content ends in a
+	 * block-level box, which means the run the caller is tracing back does not
+	 * reach inside at all -- it begins after that block.
+	 */
+	#lastRunNodeWithin(
+		element: Element,
+		walker: ExpandedTreeWalker,
+	): Node | null {
+		let current: Node = element;
+		for (;;) {
+			// An inline-block is opaque: the box itself is the run member, and
+			// its contents form runs of their own.
+			if (
+				current.nodeType === current.ELEMENT_NODE &&
+				current !== element &&
+				getPropertyValue(current as Element, "display") === "inline-block"
+			) {
+				return current;
+			}
+			if (
+				current === element &&
+				getPropertyValue(element, "display") === "inline-block"
+			) {
+				return element;
+			}
+
+			walker.currentNode = current;
+			let last = walker.lastChild();
+			while (last) {
+				if (last.nodeType !== last.ELEMENT_NODE) break;
+				const lastElement = last as Element;
+				if (
+					!this.#isOutOfFlow(lastElement) &&
+					getPropertyValue(lastElement, "display") !== "none"
+				) {
+					break;
+				}
+				last = walker.previousSibling(); // no box here; keep looking back
+			}
+			if (!last) return current;
+			if (last.nodeType === last.ELEMENT_NODE) {
+				const display = getPropertyValue(last as Element, "display");
+				if (display !== "inline" && display !== "inline-block") {
+					return null; // ends in a block: the run starts after it
+				}
+			}
+			current = last;
+		}
 	}
 
 	isInlineRunHead(node: Node): boolean {
@@ -1869,6 +1945,13 @@ export class LayoutEngine {
 		const runHead = this.findInlineRunHead(node);
 		if (runHead) {
 			this.breakResultMap.delete(runHead);
+			// Dirty the measure that refills it, always: a clean node keeps its
+			// cached height, so the run lays out at its old size and then paints
+			// nothing, having no break result left to paint FROM.
+			const flexNode = this.nodeMap.get(runHead);
+			if (flexNode?.measureFunc) {
+				flexNode.markDirty();
+			}
 		}
 	}
 
@@ -2419,6 +2502,15 @@ export class LayoutEngine {
 					parentFlexNode.insertChild(existingFlexNode, flexIndex);
 				}
 			}
+			// Reusing the node says nothing about the boxes this element handed
+			// to its container. A rebuild frees those and re-adds from the
+			// container's DIRECT children, which never names them -- they hang
+			// off an inline that still had its own node, so the sweep reached
+			// here, reparented, and returned with the block and everything
+			// after it missing from the tree.
+			if (node.nodeType === node.ELEMENT_NODE) {
+				this.#addSplitFragments(node as Element, parentFlexNode);
+			}
 			return;
 		}
 
@@ -2468,6 +2560,7 @@ export class LayoutEngine {
 					runHeadFlexNode.markDirty();
 				}
 				this.#adoptOutOfFlowDescendants(element);
+				this.#addSplitFragments(element, parentFlexNode);
 				return;
 			}
 			// If runHead === element, this is the run head - proceed to create layout node
@@ -2509,6 +2602,7 @@ export class LayoutEngine {
 			}
 
 			this.#adoptOutOfFlowDescendants(element);
+			this.#addSplitFragments(element, parentFlexNode);
 			return;
 		}
 
@@ -2520,28 +2614,18 @@ export class LayoutEngine {
 			return;
 		}
 
-		// Use ExpandedTreeWalker to traverse children including pseudo-elements
+		// Use ExpandedTreeWalker to traverse children including pseudo-elements.
+		// Only DIRECT children: an inline child broken apart by a block-level
+		// box adds its own fragments to this container from #addSplitFragments,
+		// which every path into that inline reaches.
 		const walker = createExpandedTreeWalker(this.window, element);
-
-		// Start with first child (skip the element itself)
-		let child = walker.firstChild();
-		while (child) {
-			if (child.nodeType === child.ELEMENT_NODE) {
-				const childDisplay = getPropertyValue(child as Element, "display");
-				if (childDisplay === "inline" || childDisplay === "inline-block") {
-					if (display === "flex") {
-						this.#addNode(child, flexNode);
-					} else {
-						this.#addNode(child, flexNode);
-					}
-				} else {
-					this.#addNode(child, flexNode);
-				}
-			} else if (child.nodeType === child.TEXT_NODE) {
-				// Text nodes need to be added to the layout tree
+		for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
+			if (
+				child.nodeType === child.ELEMENT_NODE ||
+				child.nodeType === child.TEXT_NODE
+			) {
 				this.#addNode(child, flexNode);
 			}
-			child = walker.nextSibling();
 		}
 
 		if (flexNode && parentFlexNode) {
@@ -2702,6 +2786,85 @@ export class LayoutEngine {
 		}
 	}
 
+	/**
+	 * The boxes a block container lays out, in document order, seeing THROUGH
+	 * any inline box that wraps block-level content. CSS breaks such an inline
+	 * apart (CSS2 §9.2.1.1): `<p><span>a<div>b</div>c</span></p>` gives the
+	 * paragraph THREE boxes -- an anonymous block holding "a", the div, and
+	 * another holding "c" -- not one inline. The wrapper is yielded before its
+	 * own children because it heads the first fragment's run.
+	 *
+	 * `<a href="..."><div>card</div></a>` is this shape, and everything from
+	 * the block onward used to render as nothing at all.
+	 */
+	#flowChildren(container: Element, into: Node[] = []): Node[] {
+		const walker = createExpandedTreeWalker(this.window, container);
+		for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
+			into.push(child);
+			if (
+				child.nodeType === child.ELEMENT_NODE &&
+				this.#splitsAroundBlock(child as Element)
+			) {
+				this.#flowChildren(child as Element, into);
+			}
+		}
+		return into;
+	}
+
+	/**
+	 * Hand an inline box's children to the container that will actually lay
+	 * them out. The inline itself keeps a run node for the fragment BEFORE the
+	 * block-level box that broke it; everything from the block onward -- the
+	 * block, and the run that resumes after it -- belongs to the container, at
+	 * the same level as the inline. Reached from both sides of the run-head
+	 * check in #addElementNode, because a broken inline may equally be a run
+	 * head (its fragment starts a line) or a member of one.
+	 */
+	#addSplitFragments(
+		element: Element,
+		parentFlexNode: FlexTypes.Node | null,
+	): void {
+		if (!this.#splitsAroundBlock(element)) return;
+		// Remembered rather than recomputed: paint culling asks per element per
+		// frame, and re-walking an inline's subtree there would cost every
+		// off-screen row of a long list.
+		this.#brokenInlines.add(element);
+		const walker = createExpandedTreeWalker(this.window, element);
+		for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
+			if (
+				child.nodeType === child.ELEMENT_NODE ||
+				child.nodeType === child.TEXT_NODE
+			) {
+				this.#addNode(child, parentFlexNode);
+			}
+		}
+	}
+
+	/** An inline box with block-level content inside it: CSS breaks it apart. */
+	#splitsAroundBlock(element: Element): boolean {
+		if (this.#isOutOfFlow(element)) return false;
+		if (getPropertyValue(element, "display") !== "inline") return false;
+		return this.#containsBlockLevelBox(element);
+	}
+
+	#containsBlockLevelBox(element: Element): boolean {
+		const walker = createExpandedTreeWalker(this.window, element);
+		for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
+			if (child.nodeType !== child.ELEMENT_NODE) continue;
+			const childElement = child as Element;
+			if (this.#isOutOfFlow(childElement)) continue;
+			const display = getPropertyValue(childElement, "display");
+			// An inline-block contains its own blocks without splitting anything.
+			if (display === "none" || display === "inline-block") continue;
+			if (display === "inline") {
+				if (this.#containsBlockLevelBox(childElement)) return true;
+				continue;
+			}
+			return true;
+		}
+		return false;
+	}
+
 	#getFlexIndex(
 		element: Element,
 		parentFlexNode: FlexTypes.Node | null,
@@ -2741,6 +2904,11 @@ export class LayoutEngine {
 			while (prev) {
 				let skippedInline = false;
 				if (prev.nodeType === prev.ELEMENT_NODE) {
+					// A broken inline's own node covers only its FIRST fragment;
+					// the block that split it and everything after sit between
+					// that node and this element. Its index says nothing about
+					// where we go -- the full walk below counts them.
+					if (this.#brokenInlines.has(prev as Element)) break;
 					const display = getPropertyValue(prev as Element, "display");
 					skippedInline =
 						(display === "inline" || display === "inline-block") &&
@@ -2758,17 +2926,25 @@ export class LayoutEngine {
 			}
 		}
 
-		// Use the same expanded tree walker as addElementNode to ensure
-		// consistency. The full forward walk enumerates BOX siblings, so it
-		// roots at the box parent -- the slot a projected element sits in
-		// generates no box, and rooting there would miss its box siblings.
-		const boxParent = compositionBoxParentElement(element) ?? compositionParent;
-		const walker = createExpandedTreeWalker(this.window, boxParent);
+		// Use the same enumeration as addElementNode to ensure consistency. The
+		// full forward walk enumerates BOX siblings, so it roots at the box
+		// parent -- the slot a projected element sits in generates no box, and
+		// rooting there would miss its box siblings. It climbs out of inline
+		// wrappers for the same reason addElementNode descends through them: a
+		// block-level box inside an inline is a box of the CONTAINER, and its
+		// position is counted among the container's children.
+		let boxParent = compositionBoxParentElement(element) ?? compositionParent;
+		for (
+			let ancestor = compositionBoxParentElement(boxParent);
+			ancestor && this.#splitsAroundBlock(boxParent);
+			ancestor = compositionBoxParentElement(boxParent)
+		) {
+			boxParent = ancestor;
+		}
 
 		let flexIndex = 0;
-		let sibling = walker.firstChild();
-
-		while (sibling && sibling !== element) {
+		for (const sibling of this.#flowChildren(boxParent)) {
+			if (sibling === element) break;
 			if (sibling.nodeType === sibling.ELEMENT_NODE) {
 				const siblingElement = sibling as Element;
 				const siblingDisplay = getPropertyValue(siblingElement, "display");
@@ -2792,8 +2968,6 @@ export class LayoutEngine {
 				}
 			}
 			// Note: Pseudo-elements will also be counted if they have layout nodes
-
-			sibling = walker.nextSibling();
 		}
 
 		return flexIndex;
@@ -2876,8 +3050,19 @@ export class LayoutEngine {
 			// For flex items that are elements, traverse only within that element
 			traversalRoot = runHead;
 		} else {
-			// For all other cases, use the parent as the boundary
-			traversalRoot = parentElement;
+			// The block container, not the immediate parent: a run that starts
+			// INSIDE an inline box -- the fragment after a block-level box split
+			// it -- carries on past that box's end. `<span>a<div/>b</span>c`
+			// puts "b" and "c" on one line, so the walk cannot stop at </span>.
+			let root: Element = parentElement;
+			for (
+				let ancestor = compositionBoxParentElement(root);
+				ancestor && getPropertyValue(root, "display") === "inline";
+				ancestor = compositionBoxParentElement(root)
+			) {
+				root = ancestor;
+			}
+			traversalRoot = root;
 		}
 
 		// Use ExpandedTreeWalker for traversal
@@ -3279,17 +3464,39 @@ export class LayoutEngine {
 			const shouldTrim = !hasPreWhitespace && leafNodes.length > 1;
 
 			if (shouldTrim) {
-				const trimStart = text.match(/^\s*/)?.[0].length || 0;
-				const trimEnd = text.match(/\s*$/)?.[0].length || 0;
+				// Spaces and tabs, never the newline a <br> contributes: that
+				// one is a forced break, not collapsible whitespace, and
+				// trimming it dropped the blank line `<br>text` opens with.
+				const trimStart = text.match(/^[^\S\n]*/)?.[0].length || 0;
+				const trimEnd = text.match(/[^\S\n]*$/)?.[0].length || 0;
 
 				if (trimStart > 0 || trimEnd > 0) {
-					// Adjust text
-					text = text.trim();
+					const trimmedEnd = text.length - trimEnd;
+					text = text.slice(trimStart, trimmedEnd);
 
-					// Adjust item positions
+					// Each leaf's own text must be trimmed by exactly what its
+					// offsets moved. Shifting the offsets alone left the painter
+					// slicing the UNtrimmed string at trimmed positions, so a run
+					// whose first leaf lost a leading space painted one character
+					// past its measured width -- and the line clipped the last
+					// one off: "<br> abcdef" rendered " abcde".
 					for (const item of items) {
-						item.start = Math.max(0, item.start - trimStart);
-						item.end = Math.max(0, item.end - trimStart);
+						const clampedStart = Math.min(
+							Math.max(item.start, trimStart),
+							trimmedEnd,
+						);
+						const clampedEnd = Math.min(
+							Math.max(item.end, trimStart),
+							trimmedEnd,
+						);
+						if (item.processedContent !== undefined) {
+							item.processedContent = item.processedContent.slice(
+								clampedStart - item.start,
+								clampedEnd - item.start,
+							);
+						}
+						item.start = clampedStart - trimStart;
+						item.end = clampedEnd - trimStart;
 					}
 				}
 			}
