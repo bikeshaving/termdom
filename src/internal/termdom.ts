@@ -4357,15 +4357,25 @@ export class TermDOM {
 		this.#renderedOutsideMarkers = new WeakSet<Element>();
 		this[kLayoutEngine].calculateLayout();
 
-		const contentHeight = this.#documentPaintHeight();
+		// Fullscreen owns the WHOLE alternate screen from row zero: the
+		// main screen's command anchor means nothing there, and reserveRows'
+		// index-scrolls would scroll the alternate screen itself. The
+		// document's scroll position survives untouched underneath -- the
+		// fixed, Canvas-backed fullscreen element covers it regardless.
+		const isFullscreen = this.#fullscreenManager.isFullscreen;
+		const contentHeight = isFullscreen
+			? this.#height
+			: this.#documentPaintHeight();
 		const regionHeight = Math.min(contentHeight, this.#height);
 
 		// Take the room we need by pushing earlier output up, never over it.
-		const top = this.#reserveRows(regionHeight);
+		const top = isFullscreen ? 0 : this.#reserveRows(regionHeight);
 
-		// The camera cannot run off the end of the document.
-		const maxScroll = Math.max(0, contentHeight - regionHeight);
-		this.#documentScrollTop = Math.min(this.#documentScrollTop, maxScroll);
+		if (!isFullscreen) {
+			// The camera cannot run off the end of the document.
+			const maxScroll = Math.max(0, contentHeight - regionHeight);
+			this.#documentScrollTop = Math.min(this.#documentScrollTop, maxScroll);
+		}
 
 		const ansi = this.#renderer.renderFrame(
 			-this.#documentScrollTop,

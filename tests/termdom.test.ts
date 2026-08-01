@@ -236,6 +236,30 @@ test("pseudo-elements work on programmatic render without MutationObserver", asy
 	termDOM.dispose();
 });
 
+test("fullscreen owns the alternate screen from row zero, whatever the anchor", async () => {
+	// A real session's document anchors below prior shell output; the
+	// fullscreen frame must ignore that anchor entirely -- paint at row 0
+	// of the alternate screen, never push index-scrolls into it.
+	const terminal = new MockProcess({rows: 8, cols: 40});
+	(terminal as any).terminal.write("one\r\ntwo\r\nthree\r\nfour\r\n");
+	const dom = new TermDOM({process: terminal});
+	dom.attach();
+	const {document} = dom;
+	document.body.innerHTML = `<div>doc row</div><div id="fs">STAGE</div>`;
+	await nextFrame(dom);
+	await document.getElementById("fs")!.requestFullscreen();
+	await nextFrame(dom);
+	await nextFrame(dom);
+	const buffer = (terminal as any).terminal.buffer.active;
+	expect(buffer.getLine(0).translateToString(true)).toContain("STAGE");
+
+	await document.exitFullscreen();
+	await nextFrame(dom);
+	await nextFrame(dom);
+	expect(terminal.getPlainText()).toContain("doc row");
+	dom.dispose();
+});
+
 test("exiting fullscreen restores a coherent document frame", async () => {
 	// Fullscreen swaps screens under the renderer: entering clears to the
 	// alternate screen, exiting restores the main one. The diff model must
