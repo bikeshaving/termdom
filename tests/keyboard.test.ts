@@ -1518,3 +1518,43 @@ test("clicking into a field clears the document selection's highlight", async ()
 	expect(dom.window.getSelection()?.toString() ?? "").toBe("");
 	dom.dispose();
 });
+
+test("typing stays cheap: a keystroke must not relayout the world", async () => {
+	// Regression guard for the 61ms-per-keystroke storm: a className
+	// re-assigned with an IDENTICAL value on every input event (the
+	// framework pattern) was rebuilding the whole layout tree from body,
+	// and initial-valued inherited properties re-walked the ancestor
+	// chain on every read. The bound is ~3x today's cost -- generous
+	// enough for slow machines, far below the failure mode.
+	const terminal = new MockProcess({rows: 30, cols: 100});
+	const dom = new TermDOM({process: terminal});
+	dom.attach();
+	const {document} = dom;
+	document.body.innerHTML = `
+		<div class="row"><div>Type</div><select><option>feat</option><option>fix</option></select><div id="counter"></div></div>
+		<div class="row"><div>Subject</div><input id="subject" style="width: 50ch"></div>
+		<div class="row"><div>Body</div><textarea rows="5" cols="60"></textarea></div>
+		<div id="status"></div>`;
+	const subject = document.getElementById("subject") as HTMLInputElement;
+	const counter = document.getElementById("counter")!;
+	const status = document.getElementById("status")!;
+	subject.addEventListener("input", () => {
+		counter.textContent = `${subject.value.length}/50`;
+		counter.className = "counter";
+		status.textContent = `→ ${subject.value}`;
+	});
+	subject.focus();
+	await nextFrame(dom);
+
+	const times: number[] = [];
+	for (let i = 0; i < 30; i++) {
+		const t0 = performance.now();
+		(terminal.stdin as any).emit("data", Buffer.from("x"));
+		await nextFrame(dom);
+		times.push(performance.now() - t0);
+	}
+	times.sort((a, b) => a - b);
+	expect(times[15]).toBeLessThan(25);
+
+	dom.dispose();
+});

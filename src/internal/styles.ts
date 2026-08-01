@@ -830,6 +830,15 @@ function getInitialStyle(element: Element, property: string): string {
 export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 	#element: Element;
 	#cssRules: ParsedCSSRule[];
+	// Lazily resolved properties -- INCLUDING ones that resolved to "".
+	// The pre-populated store can only hold truthy values, so an
+	// initial-valued property (word-break, visibility, ...) used to
+	// re-resolve on EVERY read; for an inherited property that means
+	// re-walking the whole ancestor chain, and each ancestor's own read
+	// does the same -- thousands of full cascade resolutions per
+	// keystroke. The declaration is discarded wholesale on invalidation,
+	// so memoizing here needs no invalidation of its own.
+	#resolved = new Map<string, string>();
 
 	constructor(element: Element, cssRules: ParsedCSSRule[] = []) {
 		// Initialize with no onChange callback since this is read-only computed style
@@ -1166,9 +1175,12 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 			return this.#normalizeForTerminal(property, cachedValue);
 		}
 
-		// If not in our pre-populated cache, resolve it fresh
-		// (This handles properties not in our common list)
-		const freshValue = this.#resolvePropertyValue(property);
+		// Not pre-populated: resolve once, memoize -- empty results too.
+		let freshValue = this.#resolved.get(property);
+		if (freshValue === undefined) {
+			freshValue = this.#resolvePropertyValue(property);
+			this.#resolved.set(property, freshValue);
+		}
 		return this.#normalizeForTerminal(property, freshValue);
 	}
 

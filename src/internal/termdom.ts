@@ -688,6 +688,14 @@ export class TermDOM {
 	// the selection's anchor. The focus end follows the drag; both feed
 	// Selection.setBaseAndExtent, which handles backward drags itself.
 	#selectionDragAnchor: {node: Text; offset: number} | null = null;
+	// The field whose caret the NEXT frame must reveal -- set by edits,
+	// consumed inside #renderInteractive after its layout flush. Last
+	// edit before the frame wins.
+	#pendingCaretReveal:
+		| HTMLInputElement
+		| HTMLTextAreaElement
+		| HTMLSelectElement
+		| null = null;
 	// A drag that started inside a text field extends the FIELD's own
 	// selection (selectionStart/End, bounded to the field) rather than the
 	// document selection -- the browser's exact split. The anchor is a
@@ -924,9 +932,24 @@ export class TermDOM {
 	 * empties the queue for the other.
 	 */
 	#handlePendingMutations(mutations: MutationRecord[]): void {
-		this.#styleManager.handleMutations(mutations);
-		this[kLayoutEngine].handleMutations(mutations);
-		this.#focusAutofocusedNodes(mutations);
+		// Attribute records whose value did not actually change are dropped
+		// before any handler sees them. Frameworks (and this repo's own
+		// examples) re-assign className/style with identical values on every
+		// update; per spec each assignment fires a record, and a class
+		// record rebuilds the whole layout tree from body -- the difference
+		// between a keystroke costing a counter re-measure and costing the
+		// document. A->B->A inside one unpainted batch also nets out: the
+		// intermediate value never rendered, so skipping is correct, and a
+		// same-batch pair still processes via the B->A record.
+		const relevant = mutations.filter((record) => {
+			if (record.type !== "attributes" || !record.attributeName) return true;
+			const target = record.target as Element;
+			return record.oldValue !== target.getAttribute(record.attributeName);
+		});
+		if (relevant.length === 0) return;
+		this.#styleManager.handleMutations(relevant);
+		this[kLayoutEngine].handleMutations(relevant);
+		this.#focusAutofocusedNodes(relevant);
 	}
 
 	#setupMutationObserver(): MutationObserver {
@@ -939,6 +962,7 @@ export class TermDOM {
 			childList: true,
 			subtree: true,
 			attributes: true,
+			attributeOldValue: true,
 			characterData: true,
 		});
 
@@ -1914,6 +1938,7 @@ export class TermDOM {
 			childList: true,
 			subtree: true,
 			attributes: true,
+			attributeOldValue: true,
 			characterData: true,
 		});
 		this.#styleManager.registerShadowRoot(root);
@@ -2089,6 +2114,7 @@ export class TermDOM {
 			childList: true,
 			subtree: true,
 			attributes: true,
+			attributeOldValue: true,
 			characterData: true,
 		});
 		this.#styleManager.registerShadowRoot(root);
@@ -2314,7 +2340,7 @@ export class TermDOM {
 		element.dispatchEvent(
 			new this.window.Event("change", {bubbles: true, cancelable: false}),
 		);
-		this.#scrollCaretIntoView(element);
+		this.#queueCaretReveal(element);
 		this.#render();
 	}
 
@@ -2411,12 +2437,26 @@ export class TermDOM {
 	}
 
 	/**
+	 * Queue a caret reveal for the next frame. Edits used to reveal
+	 * IMMEDIATELY, which cost a full synchronous layout flush per
+	 * keystroke before the frame's own flush -- half the typing latency.
+	 * The reveal now rides the frame the edit already scheduled: one
+	 * camera decision against the layout that frame flushes anyway,
+	 * however many keystrokes coalesced into it.
+	 */
+	#queueCaretReveal(
+		element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
+	): void {
+		this.#pendingCaretReveal = element;
+	}
+
+	/**
 	 * Keep the editing caret inside the camera, the way a browser keeps the
 	 * caret of a focused control visible on every EDIT (typing, Enter,
 	 * caret travel) -- and only on edits: wheel-scrolling away from a
-	 * focused field stays allowed, so this never runs from the render loop.
-	 * The caret row comes from fresh layout; single-row widgets reduce to
-	 * their own row.
+	 * focused field stays allowed, so the render loop runs this only when
+	 * an edit queued it (see #queueCaretReveal). The caret row comes from
+	 * fresh layout; single-row widgets reduce to their own row.
 	 */
 	#scrollCaretIntoView(
 		element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
@@ -3361,6 +3401,7 @@ export class TermDOM {
 				childList: true,
 				subtree: true,
 				attributes: true,
+				attributeOldValue: true,
 				characterData: true,
 			});
 			// The root's <style> elements join the cascade, scoped to this
@@ -3842,7 +3883,7 @@ export class TermDOM {
 				new this.window.Event("input", {bubbles: true, cancelable: false}),
 			);
 
-			this.#scrollCaretIntoView(element);
+			this.#queueCaretReveal(element);
 			// Trigger re-render since .value changes don't trigger MutationObserver
 			this.#render();
 		} else if (
@@ -3852,7 +3893,7 @@ export class TermDOM {
 		) {
 			// jsdom fires the `select` event itself for a real range change.
 			element.setSelectionRange(newStart, newEnd, newDirection);
-			this.#scrollCaretIntoView(element);
+			this.#queueCaretReveal(element);
 			this.#render();
 		}
 	}
@@ -4931,6 +4972,18 @@ export class TermDOM {
 
 		this.#renderedOutsideMarkers = new WeakSet<Element>();
 		this[kLayoutEngine].calculateLayout();
+
+		// The caret reveal an edit queued runs here, against the layout this
+		// frame just flushed -- one camera decision per frame, however many
+		// keystrokes coalesced into it. Skipped if focus has already moved
+		// on: revealing a field the user left would yank the camera back.
+		if (this.#pendingCaretReveal) {
+			const reveal = this.#pendingCaretReveal;
+			this.#pendingCaretReveal = null;
+			if (reveal === this.document.activeElement) {
+				this.#scrollCaretIntoView(reveal);
+			}
+		}
 
 		// Fullscreen owns the WHOLE alternate screen from row zero: the
 		// main screen's command anchor means nothing there, and reserveRows'

@@ -1,6 +1,11 @@
 import {BOX_DRAWING, BorderEdgeStyle} from "./styles.js";
 import {stringWidth as runtimeStringWidth} from "./runtime.js";
 
+/** One shared grapheme segmenter -- construction is expensive. */
+const graphemeSegmenter = new Intl.Segmenter("en", {granularity: "grapheme"});
+/** Text that needs no segmentation: one char, one cell, no combining. */
+const asciiPrintable = /^[\x20-\x7e]*$/;
+
 /**
  * Every other LRU cache in the JavaScript ecosystem is insane.
  */
@@ -817,10 +822,21 @@ export class DrawingContext {
 
 	setText(x: number, y: number, text: string, style?: CellStyle): number {
 		let currentX = x;
-		const segmenter = new Intl.Segmenter("en", {granularity: "grapheme"});
-		const segments = Array.from(segmenter.segment(text));
 
-		for (const segment of segments) {
+		// Printable ASCII -- the overwhelmingly common case -- needs no
+		// grapheme segmentation: every char is its own one-cell grapheme.
+		// Segmenting anyway (worse, constructing a Segmenter per call)
+		// dominated the text painter's profile.
+		if (asciiPrintable.test(text)) {
+			for (let i = 0; i < text.length; i++) {
+				if (currentX + 1 > this.cols) break;
+				this.#setCell(y, currentX, text[i], style);
+				currentX++;
+			}
+			return currentX;
+		}
+
+		for (const segment of graphemeSegmenter.segment(text)) {
 			const char = segment.segment;
 			const width = runtimeStringWidth(char);
 
