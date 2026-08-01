@@ -92,3 +92,53 @@ test("an absolute box outside its parent's rect is still clickable", async () =>
 	expect(dom.document.elementFromPoint(6, 3)?.id).toBe("hang");
 	dom.dispose();
 });
+
+// Containing blocks: an absolute box positions against its nearest
+// POSITIONED ancestor (else the initial containing block), never simply
+// its parent -- and being out of flow, it neither occupies inline-run
+// space nor is trapped inside a measure-function subtree.
+
+test("absolute resolves against the nearest positioned ancestor", async () => {
+	const {terminal, dom} = await render(`
+		<div>push down one row</div>
+		<div style="position:relative">
+			<div>filler row</div>
+			<div><div style="position:absolute; top:0; left:20ch; width:6ch">MARK</div></div>
+		</div>`);
+	const rows = terminal.getPlainText().split("\n");
+	// top:0 against the RELATIVE wrapper (document row 1) -- not against
+	// the static div it actually sits inside (row 2), and not the ICB.
+	expect(rows[1]).toContain("MARK");
+	expect(rows[1]).toContain("filler");
+	dom.dispose();
+});
+
+test("with no positioned ancestor, the initial containing block wins", async () => {
+	const {terminal, dom} = await render(`
+		<div>row zero</div>
+		<div><div><div style="position:absolute; top:0; left:20ch; width:6ch">TOP</div></div></div>`);
+	const rows = terminal.getPlainText().split("\n");
+	expect(rows[0]).toContain("TOP");
+	expect(rows[0]).toContain("row zero");
+	dom.dispose();
+});
+
+test("an absolute box does not occupy inline-run space", async () => {
+	const {terminal, dom} = await render(`
+		<div>ab<span style="position:absolute; top:2px; left:0; width:4ch">X</span>cd</div>`);
+	const rows = terminal.getPlainText().split("\n");
+	expect(rows[0]).toContain("abcd"); // contiguous: X takes no run cells
+	expect(rows[2]).toContain("X");
+	dom.dispose();
+});
+
+test("an absolute box escapes a measure-function (inline-block) subtree", async () => {
+	const {terminal, dom} = await render(`
+		<div style="position:relative">
+			<span style="display:inline-block">label<span style="position:absolute; top:1px; left:10ch; width:8ch">ESCAPED</span></span>
+		</div>`);
+	const rows = terminal.getPlainText().split("\n");
+	expect(rows[0]).toContain("label");
+	expect(rows[1]).toContain("ESCAPED");
+	dom.dispose();
+});

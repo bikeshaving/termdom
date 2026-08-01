@@ -1567,6 +1567,10 @@ export class LayoutEngine {
 			const parent = walker.currentNode;
 			if (parent.nodeType !== parent.ELEMENT_NODE) continue;
 
+			// An out-of-flow ancestor is a formatting-context boundary: its
+			// content forms runs INSIDE it, never joining the flow it left.
+			if (this.#isOutOfFlow(parent)) break;
+
 			const parentDisplay = getPropertyValue(parent as Element, "display");
 
 			if (parentDisplay === "inline") {
@@ -1606,6 +1610,7 @@ export class LayoutEngine {
 				const prev = walker.currentNode;
 
 				if (prev.nodeType === prev.ELEMENT_NODE) {
+					if (this.#isOutOfFlow(prev)) continue; // takes no run position
 					break; // Stop at any element in flex
 				}
 				// Must be text node due to TreeWalker filter
@@ -1618,6 +1623,7 @@ export class LayoutEngine {
 
 				if (prev.nodeType === prev.ELEMENT_NODE) {
 					const prevElement = prev as Element;
+					if (this.#isOutOfFlow(prevElement)) continue; // takes no run position
 					const prevDisplay = getPropertyValue(prevElement, "display");
 					if (prevDisplay === "inline" || prevDisplay === "inline-block") {
 						current = prevElement;
@@ -1994,6 +2000,14 @@ export class LayoutEngine {
 						: (record.target as Element);
 				const parentFlexNode = this.nodeMap.get(parentElement);
 
+				// An out-of-flow box doesn't care what its DOM parent is -- it
+				// hoists to its containing block (inside #addNode), even out of
+				// a measure-function subtree.
+				if (this.#isOutOfFlow(node)) {
+					this.#addNode(node, parentFlexNode ?? null);
+					continue;
+				}
+
 				// An inline-block parent gets no layout-tree children (it measures
 				// as a unit), but the addition still changes what that unit
 				// measures -- a widget's UA tree populating, a label gaining a
@@ -2083,7 +2097,47 @@ export class LayoutEngine {
 		}
 	}
 
+	/** position:absolute (and fixed, approximated as absolute-to-ICB) takes
+	 * a box out of normal flow entirely. */
+	#isOutOfFlow(node: Node): boolean {
+		if (node.nodeType !== node.ELEMENT_NODE) return false;
+		const position = getPropertyValue(node as Element, "position");
+		return position === "absolute" || position === "fixed";
+	}
+
+	/**
+	 * The flex node an out-of-flow box belongs under: its CSS containing
+	 * block -- the nearest ancestor whose position isn't static -- or the
+	 * initial containing block (the document root) when there is none. This
+	 * is the hoist that makes absolute positioning containing-block-correct
+	 * (flex's own absolute type only knows its parent) AND what frees an
+	 * absolute box from a measure-function subtree: its layout node hangs
+	 * from the containing block, wherever its DOM sits. Paint order is
+	 * unaffected -- the stacking-context painter never uses flex order for
+	 * positioned boxes.
+	 */
+	#containingBlockFlexNode(element: Element): FlexTypes.Node | null {
+		for (
+			let ancestor = compositionParentElement(element);
+			ancestor;
+			ancestor = compositionParentElement(ancestor)
+		) {
+			const position = getPropertyValue(ancestor, "position");
+			if (position && position !== "static") {
+				const flexNode = this.nodeMap.get(ancestor);
+				if (flexNode) return flexNode;
+			}
+		}
+		return this.nodeMap.get(this.rootElement) ?? null;
+	}
+
 	#addNode(node: Node, parentFlexNode: FlexTypes.Node | null = null): void {
+		// Out-of-flow boxes hoist to their containing block, appended at the
+		// end -- they neither displace siblings nor depend on tree position.
+		if (this.#isOutOfFlow(node)) {
+			const containingBlock = this.#containingBlockFlexNode(node as Element);
+			if (containingBlock) parentFlexNode = containingBlock;
+		}
 		if (this.nodeMap.has(node)) {
 			// Node already exists - this might be a moved node that needs reparenting
 			const existingFlexNode = this.nodeMap.get(node);
@@ -2096,7 +2150,9 @@ export class LayoutEngine {
 						currentParent.removeChild(existingFlexNode);
 					}
 					// Add to new parent
-					const flexIndex = this.#getFlexIndex(node as Element, parentFlexNode);
+					const flexIndex = this.#isOutOfFlow(node)
+						? parentFlexNode.children.length
+						: this.#getFlexIndex(node as Element, parentFlexNode);
 					parentFlexNode.insertChild(existingFlexNode, flexIndex);
 				}
 			}
@@ -2110,15 +2166,35 @@ export class LayoutEngine {
 		}
 	}
 
+	/**
+	 * Add layout nodes for every out-of-flow box in a subtree the child
+	 * walk will never descend into (an inline run member, an inline-block's
+	 * measured content). #addNode hoists each to its containing block; the
+	 * run machinery skips them, so this is the only path that finds them.
+	 */
+	#adoptOutOfFlowDescendants(element: Element): void {
+		const walker = createExpandedTreeWalker(this.window, element);
+		for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+			if (node.nodeType === node.ELEMENT_NODE && this.#isOutOfFlow(node)) {
+				this.#addNode(node, null);
+			}
+		}
+	}
+
 	#addElementNode(
 		element: Element,
 		parentFlexNode: FlexTypes.Node | null = null,
 	): void {
-		const flexIndex = this.#getFlexIndex(element, parentFlexNode);
+		const outOfFlow = this.#isOutOfFlow(element);
+		const flexIndex = outOfFlow
+			? (parentFlexNode?.children.length ?? 0)
+			: this.#getFlexIndex(element, parentFlexNode);
 		const display = getPropertyValue(element, "display");
 
-		// For inline elements, we need to find or create the run head
-		if (display === "inline" || display === "inline-block") {
+		// For inline elements, we need to find or create the run head --
+		// unless the box is out of flow, which blockifies it per CSS: it
+		// never joins a run.
+		if (!outOfFlow && (display === "inline" || display === "inline-block")) {
 			const runHead = this.findInlineRunHead(element);
 			if (runHead && runHead !== element) {
 				// This element is part of an existing run - the run head will handle it
@@ -2128,6 +2204,7 @@ export class LayoutEngine {
 				if (runHeadFlexNode) {
 					runHeadFlexNode.markDirty();
 				}
+				this.#adoptOutOfFlowDescendants(element);
 				return;
 			}
 			// If runHead === element, this is the run head - proceed to create layout node
@@ -2147,7 +2224,10 @@ export class LayoutEngine {
 				parentFlexNode.insertChild(flexNode, flexIndex);
 			}
 			return;
-		} else if (display === "inline" || display === "inline-block") {
+		} else if (
+			!outOfFlow &&
+			(display === "inline" || display === "inline-block")
+		) {
 			flexNode.setMeasureFunc((width, widthMode, height, heightMode) => {
 				return this.#measureInlineRun(
 					element,
@@ -2165,6 +2245,7 @@ export class LayoutEngine {
 				parentFlexNode.insertChild(flexNode, flexIndex);
 			}
 
+			this.#adoptOutOfFlowDescendants(element);
 			return;
 		}
 
@@ -2172,7 +2253,7 @@ export class LayoutEngine {
 		// This prevents Flex constraint violations (nodes with measure functions cannot have children)
 
 		// Inline-block elements cannot have children in the layout tree because they use measure functions
-		if (display === "inline-block") {
+		if (!outOfFlow && display === "inline-block") {
 			return;
 		}
 
@@ -2275,12 +2356,14 @@ export class LayoutEngine {
 			this.#invalidateBlockRemoval(parent);
 		}
 
-		// Remove from Flex layout
+		// Remove from Flex layout, through the flex node's ACTUAL parent: a
+		// hoisted out-of-flow box hangs from its containing block, not from
+		// the DOM parent this record names.
 		const flexNode = this.nodeMap.get(element);
 		if (flexNode) {
-			const parentFlexNode = this.nodeMap.get(parent);
-			if (parentFlexNode) {
-				parentFlexNode.removeChild(flexNode);
+			const actualParent = flexNode.getParent();
+			if (actualParent) {
+				actualParent.removeChild(flexNode);
 			}
 
 			// Check if element was actually removed vs just moved
@@ -2495,7 +2578,8 @@ export class LayoutEngine {
 		for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
 			if (
 				child.nodeType === child.ELEMENT_NODE &&
-				getPropertyValue(child as Element, "display") === "none"
+				(getPropertyValue(child as Element, "display") === "none" ||
+					this.#isOutOfFlow(child))
 			) {
 				continue;
 			}
@@ -2571,7 +2655,16 @@ export class LayoutEngine {
 				const element = node as Element;
 				const display = getPropertyValue(element, "display");
 
-				if (element.tagName === "BR") {
+				if (
+					getPropertyValue(element, "display") === "none" ||
+					this.#isOutOfFlow(element)
+				) {
+					// No box here (none) or a box ELSEWHERE (out of flow):
+					// neither occupies run space nor interrupts the run. Checked
+					// before the display branches -- an absolute inline span
+					// otherwise measures into the run it left.
+					if (!walker.nextSibling()) break;
+				} else if (element.tagName === "BR") {
 					leafNodes.push({
 						type: "br",
 						node: element as HTMLBRElement,
@@ -2735,12 +2828,6 @@ export class LayoutEngine {
 				} else if (display === "inline") {
 					// Inline element - traverse into its children
 					if (!walker.nextNode()) break;
-				} else if (display === "none") {
-					// display:none generates no box and does NOT interrupt the
-					// run -- a hidden sibling (a widget's blanked placeholder
-					// part, an author's toggled span) is invisible to it, as in
-					// a browser. Skip the subtree, keep collecting.
-					if (!walker.nextSibling()) break;
 				} else {
 					// Block element - stop traversal
 					break;
