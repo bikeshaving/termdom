@@ -688,6 +688,15 @@ export class TermDOM {
 	// the selection's anchor. The focus end follows the drag; both feed
 	// Selection.setBaseAndExtent, which handles backward drags itself.
 	#selectionDragAnchor: {node: Text; offset: number} | null = null;
+	// A drag that started inside a text field extends the FIELD's own
+	// selection (selectionStart/End, bounded to the field) rather than the
+	// document selection -- the browser's exact split. The anchor is a
+	// value offset; the focus end follows the pointer, clamped into the
+	// field.
+	#fieldDragAnchor: {
+		element: HTMLInputElement | HTMLTextAreaElement;
+		offset: number;
+	} | null = null;
 	// The target and time of the last completed click, to detect a second one
 	// close enough behind it to be a dblclick -- browsers' own double-click
 	// interval varies by OS/user setting; 500ms is the common default.
@@ -1475,6 +1484,44 @@ export class TermDOM {
 			}
 		} finally {
 			ctx.clipRect = previousClip;
+		}
+
+		// The textarea's selection paints OVER the value text the child walk
+		// just laid down: the field's own bounded selection, shown while
+		// focused, styled by its ::selection rules like any document text.
+		if (element.tagName === "TEXTAREA" && rect && visible) {
+			this.#renderTextareaSelection(element as HTMLTextAreaElement, ctx);
+		}
+	}
+
+	#renderTextareaSelection(
+		element: HTMLTextAreaElement,
+		ctx: import("./ansi.js").DrawingContext,
+	): void {
+		if (element !== this.document.activeElement) return;
+		const selStart = element.selectionStart ?? 0;
+		const selEnd = element.selectionEnd ?? 0;
+		if (selEnd <= selStart) return;
+		const visual = this.#textareaVisualLines(element);
+		if (!visual) return;
+		const parts = this.#ensureTextareaShadowParts(element);
+		const style = this.#selectionStyleFor(
+			element,
+			this.#cellStyleFromComputed(
+				this.window.getComputedStyle(parts.spans.value),
+			),
+		);
+		for (const line of visual.lines) {
+			const from = Math.max(selStart, line.startOffset);
+			const to = Math.min(selEnd, line.endOffset);
+			if (to <= from) continue;
+			const pre = line.text.slice(0, from - line.startOffset);
+			const slice = line.text.slice(
+				from - line.startOffset,
+				to - line.startOffset,
+			);
+			if (!slice) continue;
+			ctx.setText(line.x + stringWidth(pre), line.y, slice, style);
 		}
 	}
 
@@ -2306,6 +2353,61 @@ export class TermDOM {
 			Math.min(caret, line.endOffset) - line.startOffset,
 		);
 		return {x: line.x + stringWidth(line.text.slice(0, within)), y: line.y};
+	}
+
+	/**
+	 * The value offset under a document-space point in a text field --
+	 * cell-width aware, clamped to the nearest offset so a drag that
+	 * leaves the field still resolves (the browser's capture model:
+	 * a selection begun in a field is the field's until release).
+	 */
+	#fieldOffsetAtPoint(
+		element: HTMLInputElement | HTMLTextAreaElement,
+		x: number,
+		y: number,
+	): number | null {
+		if (element.tagName === "TEXTAREA") {
+			const visual = this.#textareaVisualLines(element as HTMLTextAreaElement);
+			if (!visual || visual.lines.length === 0) return null;
+			// The pressed row's line; above the first clamps to it, below
+			// the last to that.
+			let line = visual.lines[0];
+			for (const candidate of visual.lines) {
+				if (candidate.y > y) break;
+				line = candidate;
+			}
+			const rel = x - line.x;
+			if (rel <= 0) return line.startOffset;
+			let cells = 0;
+			let offset = 0;
+			for (const char of line.text) {
+				if (cells >= rel) break;
+				cells += stringWidth(char);
+				offset += char.length;
+			}
+			return Math.min(line.startOffset + offset, line.endOffset);
+		}
+
+		const input = element as HTMLInputElement;
+		const rect = this[kLayoutEngine].getRect(input);
+		if (!rect) return null;
+		const boxModel = getBoxModel(input);
+		const contentX =
+			Math.round(rect.left) +
+			(boxModel.borderLeftWidth || 0) +
+			(boxModel.paddingLeft || 0);
+		const value = input.value || "";
+		const scrollOffset = this.#inputScrollOffsets.get(input) ?? 0;
+		const rel = x - contentX;
+		if (rel <= 0) return Math.min(scrollOffset, value.length);
+		let cells = 0;
+		let offset = scrollOffset;
+		for (const char of value.slice(scrollOffset)) {
+			if (cells >= rel) break;
+			cells += stringWidth(char);
+			offset += char.length;
+		}
+		return Math.min(offset, value.length);
 	}
 
 	/**
@@ -4104,6 +4206,22 @@ export class TermDOM {
 
 		if (isMotion) {
 			target.dispatchEvent(new this.window.MouseEvent("mousemove", eventInit));
+			// A field drag extends the field's own selection to the offset
+			// under the pointer -- clamped into the field, whichever element
+			// the pointer is over now (the field holds the capture).
+			if (this.#fieldDragAnchor && point) {
+				const {element: fieldElement, offset: anchor} = this.#fieldDragAnchor;
+				const focus = this.#fieldOffsetAtPoint(fieldElement, x, y);
+				if (focus !== null && focus !== undefined) {
+					fieldElement.setSelectionRange(
+						Math.min(anchor, focus),
+						Math.max(anchor, focus),
+						focus < anchor ? "backward" : "forward",
+					);
+					this.#render();
+				}
+				return;
+			}
 			// Dragging with the anchor set extends the document selection to
 			// the caret position under the pointer. setBaseAndExtent handles a
 			// backward drag itself; over a textless stretch the focus simply
@@ -4128,6 +4246,7 @@ export class TermDOM {
 
 		if (!isRelease) {
 			this.#mouseDownTarget = target;
+			this.#fieldDragAnchor = null;
 			const notCanceled = target.dispatchEvent(
 				new this.window.MouseEvent("mousedown", eventInit),
 			);
@@ -4192,13 +4311,35 @@ export class TermDOM {
 					}
 				}
 
+				// Default action: a press in a text field parks the caret at
+				// the pressed character and anchors a FIELD drag there -- the
+				// field's own bounded selectionStart/End world, never the
+				// document selection: the same split a browser makes.
+				const field =
+					base === 0 &&
+					point &&
+					(target instanceof (this.window as any).HTMLTextAreaElement ||
+						(target instanceof (this.window as any).HTMLInputElement &&
+							(target as HTMLInputElement).type !== "checkbox" &&
+							(target as HTMLInputElement).type !== "radio"))
+						? (target as HTMLInputElement | HTMLTextAreaElement)
+						: null;
+				if (field) {
+					const offset = this.#fieldOffsetAtPoint(field, x, y);
+					if (offset !== null) {
+						field.setSelectionRange(offset, offset);
+						this.#fieldDragAnchor = {element: field, offset};
+						this.#render();
+					}
+				}
+
 				// Default action: mousedown collapses the document selection at
 				// the pressed caret position and anchors a possible drag there,
 				// as in a browser. Left button only -- and preventDefault on
 				// mousedown suppresses it, which is exactly how apps that want
 				// the drag events for themselves opt out.
 				const selection = this.window.getSelection();
-				if (base === 0 && selection) {
+				if (base === 0 && selection && !this.#fieldDragAnchor) {
 					const anchor = point ? this.#documentPointToTextPosition(x, y) : null;
 					const hadSelection = !selection.isCollapsed;
 					this.#selectionDragAnchor = anchor;
@@ -4226,6 +4367,20 @@ export class TermDOM {
 		// convention (a Cmd/Ctrl+C chord never reaches the PTY). Terminals
 		// without OSC 52 support ignore the sequence entirely.
 		let selectedByDrag = false;
+		if (this.#fieldDragAnchor) {
+			// A field drag ends the same way: the field's selected text goes
+			// to the system clipboard, select-to-copy.
+			const {element: fieldElement} = this.#fieldDragAnchor;
+			this.#fieldDragAnchor = null;
+			const from = fieldElement.selectionStart ?? 0;
+			const to = fieldElement.selectionEnd ?? 0;
+			if (to > from) {
+				const text = fieldElement.value.slice(from, to);
+				this.#process.stdout.write(
+					`\x1b]52;c;${Buffer.from(text, "utf8").toString("base64")}\x07`,
+				);
+			}
+		}
 		if (this.#selectionDragAnchor) {
 			this.#selectionDragAnchor = null;
 			const text = this.window.getSelection()?.toString() ?? "";

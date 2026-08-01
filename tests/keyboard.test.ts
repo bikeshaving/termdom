@@ -1440,3 +1440,53 @@ test("an empty width:auto input keeps a single underlined caret cell", async () 
 	expect(line().getCell(3).isUnderline()).toBeTruthy();
 	dom.dispose();
 });
+
+test("a click in a text input parks the caret at the pressed character", async () => {
+	const terminal = new MockProcess({rows: 4, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	dom.attach();
+	dom.document.body.innerHTML = `<div><input value="hello world"></div>`;
+	await nextFrame(dom);
+	const input = dom.document.querySelector("input") as HTMLInputElement;
+
+	// Column 7 (1-based) is the second 'o' region: offset 6.
+	(terminal.stdin as any).emit("data", Buffer.from("\x1b[<0;7;1M\x1b[<0;7;1m"));
+	await nextFrame(dom);
+	expect(dom.document.activeElement).toBe(input);
+	expect(input.selectionStart).toBe(6);
+	expect(input.selectionEnd).toBe(6);
+	dom.dispose();
+});
+
+test("a drag inside an input selects within the field, bounded to its value", async () => {
+	const terminal = new MockProcess({rows: 4, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	dom.attach();
+	dom.document.body.innerHTML = `<div><input value="hello world"></div>`;
+	await nextFrame(dom);
+	const input = dom.document.querySelector("input") as HTMLInputElement;
+
+	// Press at col 2 (offset 1), drag far past the value's end, release:
+	// the selection clamps to the value -- the field's own world, not the
+	// document selection.
+	(terminal.stdin as any).emit(
+		"data",
+		Buffer.from("\x1b[<0;2;1M\x1b[<32;30;1M\x1b[<0;30;1m"),
+	);
+	await nextFrame(dom);
+	expect(input.selectionStart).toBe(1);
+	expect(input.selectionEnd).toBe(11);
+	expect(input.selectionDirection).toBe("forward");
+	expect(dom.window.getSelection()?.isCollapsed ?? true).toBe(true);
+
+	// A backward drag flips direction, per the anchor/focus model.
+	(terminal.stdin as any).emit(
+		"data",
+		Buffer.from("\x1b[<0;7;1M\x1b[<32;3;1M\x1b[<0;3;1m"),
+	);
+	await nextFrame(dom);
+	expect(input.selectionStart).toBe(2);
+	expect(input.selectionEnd).toBe(6);
+	expect(input.selectionDirection).toBe("backward");
+	dom.dispose();
+});

@@ -381,3 +381,56 @@ test("a long unbroken word wraps at the field edge -- overflow-wrap: break-word 
 
 	dom.dispose();
 });
+
+test("the focused textarea paints its selection as inverse video", async () => {
+	const terminal = new MockProcess({rows: 8, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	dom.attach();
+	const {document} = dom;
+	const textarea = document.createElement("textarea");
+	textarea.setAttribute("rows", "3");
+	textarea.setAttribute("cols", "12");
+	textarea.value = "alpha beta gamma";
+	document.body.appendChild(textarea);
+	textarea.focus();
+	await nextFrame(dom);
+
+	type(terminal, "\x01"); // Ctrl+A: select all
+	await nextFrame(dom);
+	expect(textarea.selectionStart).toBe(0);
+	expect(textarea.selectionEnd).toBe(16);
+
+	// The value rows paint inverse; the border does not.
+	const cellAt = (row: number, col: number) =>
+		(terminal as any).terminal.buffer.active.getLine(row).getCell(col);
+	// Row 1 is the first content row; "alpha" starts past border+padding.
+	expect(cellAt(1, 2).isInverse()).toBeTruthy();
+	expect(cellAt(0, 0).isInverse()).toBeFalsy();
+
+	dom.dispose();
+});
+
+test("a drag inside the textarea selects within its value", async () => {
+	const terminal = new MockProcess({rows: 8, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	dom.attach();
+	const {document} = dom;
+	const textarea = document.createElement("textarea");
+	textarea.setAttribute("rows", "3");
+	textarea.setAttribute("cols", "12");
+	textarea.value = "alpha beta gamma";
+	document.body.appendChild(textarea);
+	await nextFrame(dom);
+
+	// Content starts at col 3 (border + 1ch padding), row 2 (1-based).
+	// Press on 'l' (offset 1), drag down a visual line: the focus lands
+	// mid second line, all within the field's own selection.
+	type(terminal, "\x1b[<0;4;2M\x1b[<32;6;3M\x1b[<0;6;3m");
+	await nextFrame(dom);
+	expect(document.activeElement).toBe(textarea);
+	expect(textarea.selectionStart).toBe(1);
+	expect(textarea.selectionEnd).toBeGreaterThan(6); // into line two
+	expect(dom.window.getSelection()?.isCollapsed ?? true).toBe(true);
+
+	dom.dispose();
+});
