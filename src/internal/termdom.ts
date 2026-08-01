@@ -4395,12 +4395,3 @@ export class TermDOM {
 		this.#jsdom.window.close();
 	}
 }
-
-function findElementAtPoint(
-	termDOM: TermDOM,
-	element: Element,
-	x: number,
-	y: number,
-): Element | null {
-	return termDOM[kHitTest](element, x, y);
-}

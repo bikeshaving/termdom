@@ -70,7 +70,7 @@ test("a z:auto positioned box paints above in-flow content", async () => {
 });
 
 test("hit-testing lands on what is visibly on top", async () => {
-	const {terminal, dom} = await render(`
+	const {dom} = await render(`
 		<div id="under">underneath row zero</div>
 		<div id="over" style="position:absolute; top:0; left:0; z-index:2; width:10ch">OVER</div>`);
 	const {document} = dom;
@@ -85,7 +85,7 @@ test("an absolute box outside its parent's rect is still clickable", async () =>
 	// The old top-down hit test required every ancestor to contain the
 	// point; a positioned child hanging outside its parent could never be
 	// reached.
-	const {terminal, dom} = await render(`
+	const {dom} = await render(`
 		<div style="height:1">
 			<div id="hang" style="position:absolute; top:3px; left:5ch; width:6ch">HANG</div>
 		</div>`);
