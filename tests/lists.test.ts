@@ -353,8 +353,10 @@ test("list performance with many items", async () => {
 
 	const renderTime = endTime - startTime;
 
-	// Should render in reasonable time (less than 1 second)
-	expect(renderTime).toBeLessThan(1000);
+	// A pathology tripwire, not a benchmark: the bound only has to catch a
+	// complexity blowup, and it must hold with every core busy (libuild runs
+	// test files in parallel processes) on node's pure-JS fallbacks too.
+	expect(renderTime).toBeLessThan(5000);
 
 	const output = terminal.getStaticANSI();
 	expect(output).toContain("Item 1 with");

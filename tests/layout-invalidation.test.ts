@@ -292,10 +292,11 @@ test("bulk sequential appends no longer scale quadratically", async () => {
 	await nextFrame(dom);
 	const elapsed = performance.now() - start;
 
-	// O(n^2) at this size took tens of seconds; O(n) takes well under a
-	// second even on slow CI. 5s leaves generous headroom without letting a
-	// quadratic regression pass unnoticed.
-	expect(elapsed).toBeLessThan(5000);
+	// O(n^2) at this size measured 44 SECONDS; O(n) runs in a few even on a
+	// machine where libuild has every core busy with parallel test
+	// processes, on node's pure-JS fallbacks. 15s keeps that whole regime
+	// passing while a quadratic regression still fails by a wide margin.
+	expect(elapsed).toBeLessThan(15000);
 
 	dom.dispose();
 });
