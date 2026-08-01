@@ -85,7 +85,7 @@ exports[`renders multiple emojis correctly 1`] = `
 `;
 
 exports[`renders emoji with colors correctly 1`] = `
-"\x1B[38;2;255;0;255;48;2;255;255;0m🎨 Colorful Text 🌈\x1B[0m                                                             \x1B[0m
+"\x1B[38;2;255;0;255;48;2;255;255;0m🎨 Colorful Text 🌈\x1B[39m                                                             \x1B[0m
                                                                                 
                                                                                 
                                                                                 

@@ -97,3 +97,87 @@ test("an inline-block child does not split its inline", async () => {
 
 	dom.dispose();
 });
+
+/**
+ * The other half: an inline-block may legally CONTAIN block-level boxes,
+ * because it establishes a block container. That is not a split -- the boxes
+ * stack inside it -- so the box gets a layout tree of its own, laid out during
+ * its measurement and anchored wherever the run finally puts it.
+ */
+
+test("an inline-block lays out block-level children inside itself", async () => {
+	const {dom, lines} = await render(
+		`<span style="display: inline-block"><div>one</div><div>two</div></span>`,
+	);
+
+	expect(lines().slice(0, 2)).toEqual(["one", "two"]);
+
+	dom.dispose();
+});
+
+test("inline content around a block inside an inline-block still paints", async () => {
+	const {dom, lines} = await render(
+		`<div style="display: inline-block">before<p>block</p>after</div>`,
+	);
+
+	// "before" is an anonymous block INSIDE the box, not part of the run the
+	// box itself sits on -- reading it as the latter measured it against a run
+	// that ends at the first block, and it painted nothing.
+	expect(lines().slice(0, 3)).toEqual(["before", "block", "after"]);
+
+	dom.dispose();
+});
+
+test("an inline-block shrinks to fit its block content", async () => {
+	const {dom, terminal, lines} = await render(
+		`<span style="display: inline-block; border: 1px solid"><div>one</div><div>two</div></span>`,
+	);
+
+	// Shrink-to-fit: three cells of content plus the border box.
+	expect(lines()[0]).toBe("┌───┐");
+	expect(lines()[1]).toBe("│one│");
+	expect(lines()[3]).toBe("└───┘");
+	expect(terminal.getPlainText()).toContain("two");
+
+	dom.dispose();
+});
+
+test("a widget inside an inline-block's block content paints in place", async () => {
+	const {dom, terminal} = await render(
+		`<span style="display: inline-block"><p>x<input value="typed">tail</p></span>`,
+	);
+
+	const input = dom.document.querySelector("input")!;
+	const rect = input.getBoundingClientRect();
+	// Positions inside the detached tree mean nothing until the run places the
+	// box; the widget resolved to the document origin before they were anchored.
+	expect(rect.x).toBe(1);
+	expect(terminal.getPlainText()).toContain("typed");
+
+	dom.dispose();
+});
+
+test("an inline-block's content survives sitting inside another inline", async () => {
+	// Nested this way the box is a run MEMBER, and #addElementNode is never
+	// called on one -- so nothing built its content tree until the measure did.
+	const {dom, lines} = await render(
+		`<span><span style="display: inline-block"><p>deep</p></span> tail</span>`,
+	);
+
+	expect(lines()[0]).toBe("deep tail");
+
+	dom.dispose();
+});
+
+test("a widget in an inline-block does not take a box of its own", async () => {
+	const {dom, lines} = await render(
+		`heading<span style="display: inline-block"><input value="V"></span>`,
+	);
+
+	// The run measures the box and everything in it. Manufacturing a layout
+	// node for the widget put it at the top of the document, one row above the
+	// text it belongs beside.
+	expect(lines()[0]).toBe("headingV");
+
+	dom.dispose();
+});

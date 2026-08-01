@@ -97,6 +97,8 @@ function parseSpanAttribute(element: Element, name: string): number {
 	return Number.isFinite(span) && span > 0 ? span : 1;
 }
 
+const ZERO_OFFSET = {x: 0, y: 0};
+
 /** The line and segment a break result placed an inline-block box on. */
 function findInlineBlockSegment(
 	breakResult: BreakResult,
@@ -152,8 +154,16 @@ function styleFlexNode(
 
 	// Skip box model properties for inline elements (not inline-block)
 	const display = computedStyle.getPropertyValue("display");
+	// A flex item is BLOCKIFIED (css-display-3 §2.7): `display: inline` on a
+	// flex container's child computes to block, so its width and height apply
+	// like any block's. Forcing them auto here let the measure function answer
+	// with the content size instead, and `<span style="width:30ch">` inside a
+	// flex row came out as wide as its text.
+	const parentIsFlex =
+		element.parentElement !== null &&
+		getPropertyValue(element.parentElement, "display") === "flex";
 	// Handle width/height based on display type
-	if (display === "inline") {
+	if (display === "inline" && !parentIsFlex) {
 		// For pure inline elements, unset dimensions since they handle dimensions in their measure function
 		flexNode.setWidthAuto();
 		flexNode.setHeightAuto();
@@ -909,6 +919,23 @@ export class LayoutEngine {
 	 */
 	#brokenInlines = new WeakSet<Element>();
 
+	/**
+	 * Containers a broken inline handed boxes to, which is what makes their
+	 * children[] stop corresponding to their childNodes. Add-only, like
+	 * #brokenInlines: a container that stops holding split boxes only loses a
+	 * paint fast path.
+	 */
+	#splitContainers = new WeakSet<Element>();
+
+	/**
+	 * Detached layout trees for inline-blocks that hold block-level content,
+	 * both ways round (see #buildBlockContent). Strong maps, not weak: the
+	 * reverse lookup runs per coordinate read, and `size` is what keeps that
+	 * check free for every document that has none.
+	 */
+	#blockContentRoots = new Map<Element, FlexTypes.Node>();
+	#blockContentHosts = new Map<FlexTypes.Node, Element>();
+
 	constructor(window: DOMWindow) {
 		this.window = window;
 		this.DOMRect = window.DOMRect;
@@ -979,6 +1006,15 @@ export class LayoutEngine {
 					const parentFlexNode = this.nodeMap.get(parent);
 					if (parentFlexNode) {
 						this.#addNode(node, parentFlexNode);
+						break;
+					}
+					// An inline box on the way up owns no layout node because a
+					// RUN measures it, and everything inside it with it.
+					// Climbing past one lands the content in the run's own
+					// container, as a sibling of the line it belongs to. A
+					// BROKEN inline is the exception: its fragments really are
+					// the container's boxes.
+					if (this.#isInlineLevel(parent) && !this.#brokenInlines.has(parent)) {
 						break;
 					}
 					parent = compositionBoxParentElement(parent);
@@ -1131,7 +1167,14 @@ export class LayoutEngine {
 			// collide by accident (1 light child, 1 run head) and the fast
 			// path then paints an incomplete child list. Hosts always take the
 			// walker.
-			compositionShadowRoot(element) !== null
+			compositionShadowRoot(element) !== null ||
+			// So can a container that a broken inline handed boxes to: those
+			// boxes are children[] entries whose DOM node lives a level DOWN,
+			// while this element's own later children own no entry at all.
+			// `<span>a<div/><span>c</span></span>d<input>` collides at three
+			// and three, and the fast path painted the fragments while
+			// dropping the text and the input after them.
+			this.#splitContainers.has(element)
 		) {
 			return null;
 		}
@@ -1211,8 +1254,12 @@ export class LayoutEngine {
 		if (!runHead || !runFlexNode || !breakResult) return null;
 
 		const runPosition = getAbsolutePosition(runFlexNode);
-		let originX = runPosition.x;
-		let originY = runPosition.y;
+		// The run may itself live in an inline-block's detached content tree,
+		// where positions start at that box's content edge rather than the
+		// document's origin.
+		const runOffset = this.#contentRootOffset(runFlexNode);
+		let originX = runPosition.x + runOffset.x;
+		let originY = runPosition.y + runOffset.y;
 
 		// Outermost-first, so each hop's offsets are expressed in the frame the
 		// previous hop just established. The run head itself is IN the chain
@@ -1257,7 +1304,13 @@ export class LayoutEngine {
 		const ownFlexNode = descended ? undefined : this.nodeMap.get(element);
 		if (ownFlexNode) {
 			const {x, y} = getAbsolutePosition(ownFlexNode);
-			return new this.DOMRect(x, y, target.segment.width, target.line.height);
+			const offset = this.#contentRootOffset(ownFlexNode);
+			return new this.DOMRect(
+				x + offset.x,
+				y + offset.y,
+				target.segment.width,
+				target.line.height,
+			);
 		}
 		return new this.DOMRect(
 			originX + target.segment.x,
@@ -1270,8 +1323,17 @@ export class LayoutEngine {
 	getRect(element: Element): DOMRect | null {
 		const display = getPropertyValue(element, "display");
 
+		// A blockified flex item's box is the item the container sized, not the
+		// extent of the text it happens to hold: its layout node is the truth,
+		// and the run machinery below would report the text union instead.
+		const isFlexItem =
+			(display === "inline" || display === "inline-block") &&
+			this.nodeMap.has(element) &&
+			element.parentElement !== null &&
+			getPropertyValue(element.parentElement, "display") === "flex";
+
 		// For inline/inline-block elements, check if they appear in breakResults
-		if (display === "inline" || display === "inline-block") {
+		if (!isFlexItem && (display === "inline" || display === "inline-block")) {
 			// For inline-block elements, search through all breakResults to find this element
 			if (display === "inline-block") {
 				const rect = this.#inlineBlockRect(element);
@@ -1309,10 +1371,13 @@ export class LayoutEngine {
 		}
 
 		const {x, y} = getAbsolutePosition(flexNode);
+		// Zero unless this box lives in an inline-block's detached tree, where
+		// positions are relative to a box the RUN placed.
+		const offset = this.#contentRootOffset(flexNode);
 
 		return new this.DOMRect(
-			x,
-			y,
+			x + offset.x,
+			y + offset.y,
 			flexNode.getComputedWidth(),
 			flexNode.getComputedHeight(),
 		);
@@ -1343,7 +1408,10 @@ export class LayoutEngine {
 					const flexNode = this.nodeMap.get(element);
 					if (!flexNode) return [];
 
-					const {x: containerX, y: containerY} = getAbsolutePosition(flexNode);
+					const position = getAbsolutePosition(flexNode);
+					const offset = this.#contentRootOffset(flexNode);
+					const containerX = position.x + offset.x;
+					const containerY = position.y + offset.y;
 
 					for (const line of breakResult.lines) {
 						for (const segment of line.segments) {
@@ -1445,6 +1513,11 @@ export class LayoutEngine {
 		if (!flexNode) return [];
 
 		let {x: containerX, y: containerY} = getAbsolutePosition(flexNode);
+		// A run inside an inline-block's detached tree is positioned relative to
+		// that box, which only the run that placed it can locate.
+		const contentOffset = this.#contentRootOffset(flexNode);
+		containerX += contentOffset.x;
+		containerY += contentOffset.y;
 
 		// Walk from target node up to runHead, handling nested inline-blocks
 		// This handles the case where getRectTexts is called on elements/text inside inline-blocks
@@ -1750,6 +1823,15 @@ export class LayoutEngine {
 				continue;
 			}
 			if (parentDisplay === "inline-block") {
+				// Unless the box holds block-level content, in which case it is
+				// a block container with a layout tree of its own: its inline
+				// content forms anonymous blocks INSIDE it and runs from there,
+				// never from the box. Climbing anyway made the leading content
+				// a member of the box's own run -- the one that stops at the
+				// first block -- and it painted nothing.
+				if (this.#blockContentRoots.has(parent)) {
+					return current;
+				}
 				// An inline-block's content is its own formatting context: text
 				// inside it runs from the box, but a nested inline-block box is
 				// where its own run starts.
@@ -1957,10 +2039,7 @@ export class LayoutEngine {
 			// Dirty the measure that refills it, always: a clean node keeps its
 			// cached height, so the run lays out at its old size and then paints
 			// nothing, having no break result left to paint FROM.
-			const flexNode = this.nodeMap.get(runHead);
-			if (flexNode?.measureFunc) {
-				flexNode.markDirty();
-			}
+			this.#markRunMeasureDirty(runHead);
 		}
 	}
 
@@ -1996,10 +2075,7 @@ export class LayoutEngine {
 		for (const inlineNode of inlineNodes) {
 			if (this.breakResultMap.has(inlineNode)) {
 				this.breakResultMap.delete(inlineNode);
-				const flexNode = this.nodeMap.get(inlineNode);
-				if (flexNode?.measureFunc) {
-					flexNode.markDirty();
-				}
+				this.#markRunMeasureDirty(inlineNode);
 			}
 		}
 	}
@@ -2042,6 +2118,10 @@ export class LayoutEngine {
 			const headFlexNode = this.nodeMap.get(runHead);
 			if (headFlexNode && headFlexNode.measureFunc) {
 				headFlexNode.markDirty();
+				// Keep climbing out of any detached content tree this run sits
+				// in: only the box that owns the tree can run it again.
+				const host = this.#hostOfContentRoot(headFlexNode);
+				if (host) this.#invalidateEnclosingMeasure(host);
 				return;
 			}
 		}
@@ -2053,6 +2133,8 @@ export class LayoutEngine {
 				if (flexNode.measureFunc) {
 					flexNode.markDirty();
 				}
+				const host = this.#hostOfContentRoot(flexNode);
+				if (host) this.#invalidateEnclosingMeasure(host);
 				return;
 			}
 			current = compositionBoxParentElement(current);
@@ -2101,6 +2183,17 @@ export class LayoutEngine {
 					if (parentFlexNode) {
 						// Add the run head to the layout tree
 						this.#addNode(runHead, parentFlexNode);
+						break;
+					}
+					// An inline box owns no layout node because a RUN measures
+					// it, contents and all -- so the run head found inside it is
+					// measured too, and manufacturing a node in the container
+					// gives it a box of its own there. `text<span
+					// style="display:inline-block"><input></span>` put the input
+					// at the top of the document and pushed the text down a row.
+					// A BROKEN inline is the exception: its fragments really are
+					// the container's boxes.
+					if (this.#isInlineLevel(parent) && !this.#brokenInlines.has(parent)) {
 						break;
 					}
 					parent = parent.parentElement;
@@ -2570,6 +2663,7 @@ export class LayoutEngine {
 				}
 				this.#adoptOutOfFlowDescendants(element);
 				this.#addSplitFragments(element, parentFlexNode);
+				this.#buildBlockContent(element);
 				return;
 			}
 			// If runHead === element, this is the run head - proceed to create layout node
@@ -2612,6 +2706,7 @@ export class LayoutEngine {
 
 			this.#adoptOutOfFlowDescendants(element);
 			this.#addSplitFragments(element, parentFlexNode);
+			this.#buildBlockContent(element);
 			return;
 		}
 
@@ -2821,6 +2916,116 @@ export class LayoutEngine {
 	}
 
 	/**
+	 * Give an inline-block that holds block-level content a layout tree of its
+	 * own. An inline-block establishes a block container, so `<span
+	 * style="display:inline-block"><p>x</p></span>` is legal and common -- but
+	 * the box is measured as ONE opaque unit by the run it sits on, and a run
+	 * ends at a block-level box, so the p's content was simply dropped.
+	 *
+	 * The tree is DETACHED: nothing above may lay these boxes out, because the
+	 * run decides where the inline-block lands and only afterwards is there an
+	 * origin to hang them from (see #contentRootOffset). The root is laid out
+	 * during measurement instead, and its children's coordinates are read back
+	 * relative to the box's content edge.
+	 */
+	#buildBlockContent(element: Element): void {
+		// Only an inline-block, never a plain inline: an inline containing a
+		// block is BROKEN around it (#addSplitFragments), and building a
+		// content tree here would steal back the boxes the split just handed to
+		// the container.
+		if (
+			getPropertyValue(element, "display") !== "inline-block" ||
+			!this.#containsBlockLevelBox(element)
+		) {
+			this.#dropBlockContent(element);
+			return;
+		}
+
+		let root = this.#blockContentRoots.get(element);
+		if (!root) {
+			root = Flex.Node.createWithConfig(flexConfig);
+			root.setFlexDirection(Flex.FLEX_DIRECTION_COLUMN);
+			root.setAlignItems(Flex.ALIGN_STRETCH);
+			this.#blockContentRoots.set(element, root);
+			this.#blockContentHosts.set(root, element);
+		}
+
+		const walker = createExpandedTreeWalker(this.window, element);
+		for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
+			if (
+				child.nodeType === child.ELEMENT_NODE ||
+				child.nodeType === child.TEXT_NODE
+			) {
+				this.#addNode(child, root);
+			}
+		}
+	}
+
+	/** Build the content tree if this box needs one and has none yet. */
+	#ensureBlockContent(element: Element): void {
+		if (this.#blockContentRoots.has(element)) return;
+		if (!this.#containsBlockLevelBox(element)) return;
+		this.#buildBlockContent(element);
+	}
+
+	/** Retire an inline-block's content tree once its content is all inline again. */
+	#dropBlockContent(element: Element): void {
+		const root = this.#blockContentRoots.get(element);
+		if (!root) return;
+		this.#blockContentRoots.delete(element);
+		this.#blockContentHosts.delete(root);
+		// Sever first: the children belong to DOM nodes that re-add themselves
+		// through the run machinery, and freeing them would leave nodeMap
+		// pointing at corpses.
+		while (root.children.length > 0) {
+			root.removeChild(root.children[0]);
+		}
+		root.freeRecursive();
+	}
+
+	/**
+	 * How far to shift coordinates read out of a detached content tree to put
+	 * them in document space: the host inline-block's own content edge, which
+	 * only the run that placed the box can say.
+	 */
+	/** The inline-block whose detached tree this node lives in, if any. */
+	#hostOfContentRoot(flexNode: FlexTypes.Node): Element | null {
+		if (this.#blockContentHosts.size === 0) return null;
+		let root = flexNode;
+		for (let parent = root.getParent(); parent; parent = root.getParent()) {
+			root = parent;
+		}
+		return this.#blockContentHosts.get(root) ?? null;
+	}
+
+	/**
+	 * Dirty the measure that refills a run's break result -- and, when the run
+	 * lives in an inline-block's detached tree, the box whose measure is the
+	 * only thing that ever lays that tree out. Dirtying just the run there
+	 * invalidates it forever: nothing above the box ever visits those nodes, so
+	 * the cleared break result is never rebuilt and the run paints nothing.
+	 */
+	#markRunMeasureDirty(runHead: Node): void {
+		const flexNode = this.nodeMap.get(runHead);
+		if (!flexNode) return;
+		if (flexNode.measureFunc) flexNode.markDirty();
+		const host = this.#hostOfContentRoot(flexNode);
+		if (host) this.#invalidateEnclosingMeasure(host);
+	}
+
+	#contentRootOffset(flexNode: FlexTypes.Node): {x: number; y: number} {
+		const host = this.#hostOfContentRoot(flexNode);
+		if (!host) return ZERO_OFFSET;
+		const hostRect = this.getRect(host);
+		if (!hostRect) return ZERO_OFFSET;
+		const boxModel = getBoxModel(host);
+		return {
+			x: hostRect.x + boxModel.borderLeftWidth + boxModel.paddingLeft,
+			y: hostRect.y + boxModel.borderTopWidth + boxModel.paddingTop,
+		};
+	}
+
+	/**
 	 * Hand an inline box's children to the container that will actually lay
 	 * them out. The inline itself keeps a run node for the fragment BEFORE the
 	 * block-level box that broke it; everything from the block onward -- the
@@ -2838,6 +3043,12 @@ export class LayoutEngine {
 		// frame, and re-walking an inline's subtree there would cost every
 		// off-screen row of a long list.
 		this.#brokenInlines.add(element);
+		const container = parentFlexNode
+			? this.#domNodeByFlexNode.get(parentFlexNode)
+			: undefined;
+		if (container && container.nodeType === container.ELEMENT_NODE) {
+			this.#splitContainers.add(container as Element);
+		}
 		const walker = createExpandedTreeWalker(this.window, element);
 		for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
 			if (
@@ -3074,12 +3285,24 @@ export class LayoutEngine {
 			traversalRoot = root;
 		}
 
+		// Text directly inside a flex container forms an ANONYMOUS flex item out
+		// of the contiguous text runs, and every element child is an item of its
+		// own -- so this run ends at the first one. Without the stop, the text's
+		// item measured the following box into itself: `<p style="display:flex">
+		// text <input> more</p>` gave the text a 21-cell item, which pushed
+		// " more" off the far edge of a line it had room for.
+		const stopsAtFlexItems =
+			parentDisplay === "flex" && runHead.nodeType === runHead.TEXT_NODE;
+
 		// Use ExpandedTreeWalker for traversal
 		const walker = createExpandedTreeWalker(this.window, traversalRoot);
 
 		walker.currentNode = runHead;
 		while (walker.currentNode) {
 			const node = walker.currentNode;
+			if (stopsAtFlexItems && node.nodeType === node.ELEMENT_NODE) {
+				break;
+			}
 
 			if (node.nodeType === node.TEXT_NODE) {
 				// Text node - add as leaf
@@ -3127,6 +3350,13 @@ export class LayoutEngine {
 					// Continue with normal traversal
 					if (!walker.nextNode()) break;
 				} else if (display === "inline-block") {
+					// Before anything reads its size or asks what its content
+					// runs from: an inline-block nested inside another inline is
+					// a run MEMBER, and #addElementNode is never called on one,
+					// so this is the first moment its block content is known to
+					// need a tree.
+					this.#ensureBlockContent(element);
+
 					// Parse CSS box model properties
 					const boxModel = getBoxModel(element);
 
@@ -3191,21 +3421,40 @@ export class LayoutEngine {
 					// children sized every such host to zero. display:none
 					// children (a UA tree's <style>, chiefly) can't start the
 					// run -- they'd terminate leaf collection before it began.
-					const contentStart = this.#firstComposedRenderableChild(element);
+					const contentRoot = this.#blockContentRoots.get(element);
 					let inlineBlockResult: BreakResult | undefined;
-					if (contentStart) {
-						inlineBlockResult = this.#breakNodes(
-							contentStart,
-							contentWidth,
-							contentWidthMode,
-							contentHeight,
-							contentHeightMode,
-						);
-					}
+					let finalContentWidth: number;
+					let finalContentHeight: number;
 
-					// Calculate final content dimensions
-					let finalContentWidth = inlineBlockResult?.maxLineWidth ?? 0;
-					let finalContentHeight = inlineBlockResult?.totalHeight ?? 0;
+					if (contentRoot) {
+						// Block-level content inside: lay the box's own tree out
+						// here, since nothing above it will. An indefinite width
+						// shrinks to fit, which is what an inline-block does.
+						// NaN is the engine's "undefined": the axis shrinks to fit.
+						contentRoot.calculateLayout(
+							contentWidthMode === Flex.MEASURE_MODE_EXACTLY
+								? contentWidth
+								: Number.NaN,
+							contentHeightMode === Flex.MEASURE_MODE_EXACTLY
+								? contentHeight
+								: Number.NaN,
+						);
+						finalContentWidth = contentRoot.getComputedWidth();
+						finalContentHeight = contentRoot.getComputedHeight();
+					} else {
+						const contentStart = this.#firstComposedRenderableChild(element);
+						if (contentStart) {
+							inlineBlockResult = this.#breakNodes(
+								contentStart,
+								contentWidth,
+								contentWidthMode,
+								contentHeight,
+								contentHeightMode,
+							);
+						}
+						finalContentWidth = inlineBlockResult?.maxLineWidth ?? 0;
+						finalContentHeight = inlineBlockResult?.totalHeight ?? 0;
+					}
 
 					// Void elements (input, br, etc.) with no LIGHT children keep a
 					// minimum height of 1 -- an input whose UA parts are all empty

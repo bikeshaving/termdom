@@ -690,3 +690,59 @@ test("a runtime order change reorders live flex items", async () => {
 	expect(terminal.getPlainText().split("\n")[0].trimEnd()).toBe("bee ay");
 	dom.dispose();
 });
+
+test("text between flex items forms its own anonymous item", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 6});
+	const dom = new TermDOM({process: terminal});
+	dom.document.body.innerHTML = `<p style="display: flex">text <input> more</p>`;
+
+	await nextFrame(dom);
+	await nextFrame(dom);
+
+	// The text's item used to measure the following <input> into itself -- a
+	// 21-cell item for five cells of text -- which pushed " more" clean off a
+	// line with room to spare for all three.
+	const output = terminal.getPlainText();
+	expect(output).toContain("text");
+	expect(output).toContain("more");
+
+	dom.dispose();
+});
+
+test("a flex item's width applies even when it is an inline box", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 6});
+	const dom = new TermDOM({process: terminal});
+	dom.document.body.innerHTML = `<div style="display: flex"><span style="width: 30ch">aaaa</span><span style="width: 30ch">bbbb</span></div>`;
+
+	await nextFrame(dom);
+	await nextFrame(dom);
+
+	// Flex items are blockified (css-display-3 §2.7), so `width` is theirs to
+	// keep; treating them as pure inlines let the measure answer with the text
+	// size instead. 30 + 30 in 40 columns shrinks to 20 and 20.
+	const [first, second] = [...dom.document.querySelectorAll("span")].map((el) =>
+		el.getBoundingClientRect(),
+	);
+	expect(first.width).toBe(20);
+	expect(second.width).toBe(20);
+	expect(second.x).toBe(20);
+
+	dom.dispose();
+});
+
+test("flex-shrink: 0 keeps an item at its width while the rest give way", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 6});
+	const dom = new TermDOM({process: terminal});
+	dom.document.body.innerHTML = `<div style="display: flex"><div style="width: 30ch; flex-shrink: 0">aaaa</div><div style="width: 30ch">bbbb</div></div>`;
+
+	await nextFrame(dom);
+	await nextFrame(dom);
+
+	const [first, second] = [...dom.document.querySelectorAll("div div")].map(
+		(el) => el.getBoundingClientRect(),
+	);
+	expect(first.width).toBe(30);
+	expect(second.width).toBe(10);
+
+	dom.dispose();
+});

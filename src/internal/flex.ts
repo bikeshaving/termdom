@@ -1075,6 +1075,7 @@ function layoutMeasureNode(
 	heightMode: MeasureMode,
 	ownerWidth: number,
 	ownerHeight: number,
+	performLayout: boolean,
 ): void {
 	const paddingBorderRow = paddingAndBorderForAxis(
 		node,
@@ -1098,7 +1099,14 @@ function layoutMeasureNode(
 
 	if (
 		widthMode === MEASURE_MODE_EXACTLY &&
-		heightMode === MEASURE_MODE_EXACTLY
+		heightMode === MEASURE_MODE_EXACTLY &&
+		// ...on a sizing pass. A measure function may do more than answer with
+		// a size -- ours breaks the text into the lines that later get PAINTED,
+		// at whatever width it was offered. Skipping it on the final pass left
+		// a stretched flex item painting the lines from the last sizing probe
+		// it happened to receive, which is the min-content one: an item 19
+		// cells wide rendered "aaa bbb" broken across two lines.
+		!performLayout
 	) {
 		// Both axes are fully determined; no need to consult the measure function.
 		setMeasuredDimensions(
@@ -3185,6 +3193,7 @@ function layoutNodeImpl(
 			heightMode,
 			ownerWidth,
 			ownerHeight,
+			performLayout,
 		);
 		return;
 	}
