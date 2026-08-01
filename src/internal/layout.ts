@@ -825,7 +825,6 @@ export class LayoutEngine {
 	declare rootElement: Element;
 	declare window: DOMWindow;
 
-	// TODO:
 	declare terminalWidth: number;
 	declare terminalHeight: number;
 
@@ -936,8 +935,8 @@ export class LayoutEngine {
 		// Every mutation path marks the flex tree dirty on its way in -- style
 		// setters, child insertion/removal, inline-run invalidation, resize. A
 		// clean root therefore means the previous layout is still exact, and
-		// recomputing it would be pure waste: an animation repainting one span
-		// used to pay a full-tree relayout on every frame.
+		// recomputing it would be pure waste -- a full-tree relayout per frame
+		// for an animation repainting one span.
 		if (!this.viewportRootNode.dirty) {
 			return;
 		}
@@ -1330,9 +1329,8 @@ export class LayoutEngine {
 		let alignContainer: Element | null = compositionParentElement(runHead);
 
 		// COMPOSITION parents: a widget's UA shadow text has no parentElement
-		// chain to its host at all, and the walk used to stop dead at the
-		// shadow boundary -- the value of every textarea resolved to zero
-		// fragments and painted nothing.
+		// chain to its host at all, so a parentElement walk dies at the shadow
+		// boundary and the value resolves to zero fragments.
 		while (currentNode !== runHead && compositionParentElement(currentNode)) {
 			const parent = compositionParentElement(currentNode)!;
 

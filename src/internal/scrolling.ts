@@ -9,9 +9,7 @@ import type {DOMWindow} from "jsdom";
  *
  * The anchor's own scroll-relative position (#scrollTop, always -screenTop
  * once set) survives here only for fullscreen mode's hit-testing formula,
- * which predates the camera and is algebraically equivalent to -screenTop --
- * left alone since it isn't broken and touching it is outside the camera fix
- * this class exists for now.
+ * which predates the camera and is algebraically equivalent to -screenTop.
  */
 export class ScrollingManager {
 	#scrollTop = 0;

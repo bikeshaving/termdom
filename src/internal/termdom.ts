@@ -897,15 +897,13 @@ export class TermDOM {
 					this.#reclaimMouseCapture();
 				}
 
-				// Route 4: General keyboard events. Fullscreen used to have its own,
-				// entirely separate stdin listener and dispatch implementation here
-				// (fullscreen.ts's old #inputHandler) -- duplicated, and silently
-				// out of sync with this one: no tokenization for batched input, no
-				// SGR-mouse-report filtering (a mouse report arriving while
-				// fullscreen was active would get misread as literal keyboard
-				// text), none of the modifier decoding above. One pipeline for
-				// both now; #dispatchGlobalKeyboardEvent itself handles Escape
-				// exiting fullscreen (see below) the same way this used to.
+				// Route 4: General keyboard events -- ONE pipeline, fullscreen
+				// included. A separate fullscreen listener would drift from this
+				// one: the tokenization for batched input, the SGR-mouse-report
+				// filtering (a report misreads as literal keyboard text without
+				// it) and the modifier decoding all live here.
+				// #dispatchGlobalKeyboardEvent handles Escape exiting
+				// fullscreen (see below).
 				this.#dispatchGlobalKeyboardEvent(Buffer.from(keyInput));
 			};
 			stdin.on("data", this.#stdinDataHandler);
@@ -1159,11 +1157,11 @@ export class TermDOM {
 		// relative/absolute child, no flex-direction other than column -- see
 		// visibleChildrenInBand's own doc comment for exactly what that rules
 		// out), the layout tree already knows which children are in band
-		// without visiting the rest to rule them out. A long list scrolled to
-		// any depth used to cost O(total children) to paint one frame --
-		// worse the longer the list got, even though only ~O(screen) of it
-		// could ever be visible -- because the walker below has no choice but
-		// to step through every sibling to find out which ones are off-band.
+		// without visiting the rest to rule them out. Without it, a long list
+		// scrolled to any depth costs O(total children) per frame -- worse
+		// the longer the list gets, though only ~O(screen) of it can ever be
+		// visible -- because the walker below has no choice but to step
+		// through every sibling to find out which ones are off-band.
 		const fastChildren = this[kLayoutEngine].visibleChildrenInBand(
 			element,
 			bandTop,
@@ -2535,10 +2533,10 @@ export class TermDOM {
 	// TODO: move this to tables.ts? or layout.ts
 	#processPendingMutationsAndRender(): boolean {
 		// A geometry read (getBoundingClientRect, elementFromPoint) needs fresh
-		// *layout*, not fresh pixels. This used to fire a full render() here, so
-		// every rect read with pending mutations painted a frame -- an app calling
-		// scrollIntoView on each keystroke paid two paints per key, and the rect
-		// could still be stale because the render was not awaited. Flushing
+		// *layout*, not fresh pixels. A full render() here would make every
+		// rect read with pending mutations paint a frame -- an app calling
+		// scrollIntoView on each keystroke pays two paints per key, and the
+		// rect could still be stale unless the render were awaited. Flushing
 		// mutations and laying out synchronously gives an exact rect; painting
 		// stays with the caller's own render. The dirty-skip makes this free when
 		// nothing changed.
@@ -2846,7 +2844,7 @@ export class TermDOM {
 		};
 
 		// The content+padding box (border-box rect minus border widths), which
-		// both clientWidth/Height and (for now) scrollWidth/Height report -- see
+		// both clientWidth/Height and scrollWidth/Height report -- see
 		// their definition below for why scroll* is an alias of client* rather
 		// than the element's true unclamped content size.
 		const contentBoxOf = (
@@ -4301,9 +4299,9 @@ export class TermDOM {
 	 * content away into the scrollback, where it survives and the user can still
 	 * reach it.
 	 *
-	 * Nothing of ours is committed. The document stays a single mutable thing that we
-	 * repaint a window of -- so unlike flow mode, content that scrolls out of view is
-	 * not frozen, and reflow anywhere is free.
+	 * Nothing of ours is committed. The document stays a single mutable thing
+	 * that we repaint a window of: content that scrolls out of view is never
+	 * frozen output, and reflow anywhere is free.
 	 */
 	async #renderInteractive(): Promise<void> {
 		// The previous document was sealed to scrollback by close(). Start a fresh

@@ -19,9 +19,8 @@ export const SHADOW_ROOT_SYMBOL = Symbol.for("TermDOM.shadowRoot");
  * diverge from parentElement: a projected node's flat parent is its SLOT
  * (inherited properties reach slotted content through the shadow chrome it
  * lands in, per spec); a shadow root's direct child resolves to the HOST
- * (node.parentElement is null there -- a ShadowRoot is not an Element,
- * which used to crash the inline-run machinery the moment native
- * attachShadow content hit layout); everything else is just parentElement.
+ * (node.parentElement is null there -- a ShadowRoot is not an Element);
+ * everything else is just parentElement.
  */
 export function compositionParentElement(node: Node): Element | null {
 	const slot = assignedSlotOf(node);
@@ -205,7 +204,6 @@ export class ExpandedTreeWalker {
 	 * Move to the previous node in document order
 	 */
 	previousNode(): Node | null {
-		// Simplified for now - focus on nextNode correctness
 		let node = this.currentNode;
 
 		if (node === this.root) {
@@ -931,10 +929,10 @@ export function hasShadowRoot(element: Element): boolean {
  * controls. This is how a browser input's own internals work, and it is
  * the mechanism the widget painters hang their trees on.
  *
- * There is deliberately NO attachShadow polyfill anymore: jsdom's native
+ * There is deliberately NO attachShadow polyfill: jsdom's native
  * attachShadow is the author path, including its NotSupportedError on
- * built-ins like <input> -- the old fallback swallowed that throw and
- * handed back a prototype-only "root" that couldn't hold children at all.
+ * built-ins like <input> -- swallowing that throw would hide a spec
+ * behavior authors are entitled to observe.
  */
 export function createUAShadowRoot(host: Element): ShadowRoot {
 	const document = host.ownerDocument;
