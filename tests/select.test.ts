@@ -121,3 +121,103 @@ test("select internals are closed: no shadowRoot, attachShadow throws", async ()
 
 	dom.dispose();
 });
+
+test("Space opens the picker in the top layer, over following content", async () => {
+	const terminal = new MockProcess({rows: 8, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	dom.attach();
+	const {document} = dom;
+	const select = makeSelect(document);
+	document.body.appendChild(select);
+	const below = document.createElement("div");
+	below.textContent = "content underneath the picker";
+	document.body.appendChild(below);
+	select.focus();
+	await nextFrame(dom);
+
+	type(terminal, " ");
+	await nextFrame(dom);
+	await nextFrame(dom);
+	const rows = terminal.getPlainText().split("\n");
+	// The picker's bordered list covers the row the content held.
+	expect(rows[1]).toContain("┌");
+	expect(rows[2]).toContain("Alpha");
+	expect(rows[3]).toContain("Beta");
+	expect(rows[4]).toContain("Gamma ray");
+	expect(rows[1]).not.toContain("underneath");
+
+	dom.dispose();
+});
+
+test("picker: arrows highlight without committing; Enter commits and closes", async () => {
+	const terminal = new MockProcess({rows: 10, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	dom.attach();
+	const {document} = dom;
+	const select = makeSelect(document);
+	document.body.appendChild(select);
+	const events: string[] = [];
+	select.addEventListener("change", () => events.push(select.value));
+	select.focus();
+	await nextFrame(dom);
+
+	type(terminal, " ");
+	await nextFrame(dom);
+	type(terminal, "\x1b[B"); // highlight moves (skips disabled Beta)...
+	await nextFrame(dom);
+	expect(select.value).toBe("a"); // ...but nothing committed yet
+	expect(events).toEqual([]);
+
+	type(terminal, "\r"); // Enter commits Gamma and closes
+	await nextFrame(dom);
+	await nextFrame(dom);
+	expect(select.value).toBe("c");
+	expect(events).toEqual(["c"]);
+	expect(terminal.getPlainText()).not.toContain("┌");
+
+	dom.dispose();
+});
+
+test("picker: Escape dismisses without changing the value", async () => {
+	const terminal = new MockProcess({rows: 10, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	dom.attach();
+	const {document} = dom;
+	const select = makeSelect(document);
+	document.body.appendChild(select);
+	select.focus();
+	await nextFrame(dom);
+
+	type(terminal, " ");
+	await nextFrame(dom);
+	type(terminal, "\x1b[B");
+	await nextFrame(dom);
+	type(terminal, "\x1b"); // Escape
+	await nextFrame(dom);
+	await nextFrame(dom);
+	expect(select.value).toBe("a");
+	expect(terminal.getPlainText()).not.toContain("┌");
+
+	dom.dispose();
+});
+
+test("picker: blurring the select closes it", async () => {
+	const terminal = new MockProcess({rows: 10, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	dom.attach();
+	const {document} = dom;
+	const select = makeSelect(document);
+	document.body.appendChild(select);
+	select.focus();
+	await nextFrame(dom);
+	type(terminal, " ");
+	await nextFrame(dom);
+	expect(terminal.getPlainText()).toContain("┌");
+
+	select.blur();
+	await nextFrame(dom);
+	await nextFrame(dom);
+	expect(terminal.getPlainText()).not.toContain("┌");
+
+	dom.dispose();
+});

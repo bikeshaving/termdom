@@ -955,7 +955,11 @@ export class LayoutEngine {
 	 * which are never "connected" themselves -- if its host element is.
 	 */
 	#isNodeLive(node: Node): boolean {
-		if (node.isConnected) return true;
+		// Composition-connected, not isConnected: a UA shadow tree's nodes
+		// live in a fragment and are never DOM-connected, but ones with
+		// layout presence (a hoisted picker part) render like anything else
+		// -- the prune sweep must not reap them every frame.
+		if (compositionIsConnected(node)) return true;
 		const pseudoMetadata = getPseudoMetadata(node);
 		return Boolean(pseudoMetadata?.hostElement.isConnected);
 	}
@@ -2125,7 +2129,10 @@ export class LayoutEngine {
 			const position = getPropertyValue(ancestor, "position");
 			if (position && position !== "static") {
 				const flexNode = this.nodeMap.get(ancestor);
-				if (flexNode) return flexNode;
+				// A measure-function node cannot take flex children; a
+				// positioned inline-block can't serve as a flex containing
+				// block, so the hoist keeps climbing.
+				if (flexNode && !flexNode.measureFunc) return flexNode;
 			}
 		}
 		return this.nodeMap.get(this.rootElement) ?? null;

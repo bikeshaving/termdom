@@ -19,6 +19,7 @@ import {
 import {setupInspectMethods} from "./inspector.js";
 import {ScrollingManager} from "./scrolling.js";
 import {
+	compositionIsConnected,
 	compositionParentElement,
 	createExpandedTreeWalker,
 	createUAShadowRoot,
@@ -158,6 +159,17 @@ const TEXTAREA_UA_STYLES = `
  */
 const SELECT_UA_STYLES = `
 	[part="indicator"] { font-weight: lighter; }
+	[part="picker"] {
+		display: none;
+		position: absolute;
+		border-top-width: 1px; border-right-width: 1px;
+		border-bottom-width: 1px; border-left-width: 1px;
+		border-top-style: solid; border-right-style: solid;
+		border-bottom-style: solid; border-left-style: solid;
+	}
+	[part="option"] { display: block; white-space: pre; }
+	[part="option"][data-highlighted] { font-weight: bold; text-decoration: underline; }
+	[part="option"][data-disabled] { font-weight: lighter; }
 `;
 
 /**
@@ -380,6 +392,12 @@ export class TermDOM {
 	// passing through a short line and continuing returns to the original
 	// column. Cleared by any other editing action.
 	#textareaGoalColumn = new WeakMap<Element, number>();
+	/**
+	 * The TOP LAYER: elements painted above every stacking context, in
+	 * insertion order, unclipped -- the foundation dialog/popover/::picker
+	 * share. Members are excluded from normal stacking collection.
+	 */
+	#topLayer = new Set<Element>();
 	#inputShadowParts = new WeakMap<
 		Element,
 		{
@@ -1203,6 +1221,43 @@ export class TermDOM {
 		}
 	}
 
+	/**
+	 * The paint height of the document: body's scroll height, extended to
+	 * cover top-layer boxes -- hoisted under the root, they contribute
+	 * nothing to body's own height, and a picker opening at the bottom
+	 * edge must still get rows to paint into.
+	 */
+	#documentPaintHeight(): number {
+		let height = this.document.body.scrollHeight;
+		for (const element of this.#topLayer) {
+			if (!compositionIsConnected(element)) continue;
+			const rect = this[kLayoutEngine].getRect(element);
+			if (rect) height = Math.max(height, Math.ceil(rect.bottom));
+		}
+		return height;
+	}
+
+	/** The whole document: the root stacking context, then the top layer. */
+	#renderDocument(ctx: import("./ansi.js").DrawingContext): void {
+		const layers = this.#collectStackingLayers();
+		this.#renderStackingContext(this.document.body, ctx, layers);
+		for (const element of this.#topLayer) {
+			// COMPOSITION-connected: a UA part (the select's picker) lives in
+			// a fragment and is never DOM-connected while very much on screen.
+			if (!compositionIsConnected(element)) {
+				this.#topLayer.delete(element);
+				continue;
+			}
+			const previousClip = ctx.clipRect;
+			ctx.clipRect = null;
+			try {
+				this.#renderStackingContext(element, ctx, layers);
+			} finally {
+				ctx.clipRect = previousClip;
+			}
+		}
+	}
+
 	#isPositioned(element: Element): boolean {
 		const position = this.window
 			.getComputedStyle(element)
@@ -1251,6 +1306,7 @@ export class TermDOM {
 		>();
 		for (const element of this[kLayoutEngine].positionedElements) {
 			if (!element.isConnected || element === this.document.body) continue;
+			if (this.#topLayer.has(element)) continue; // painted above everything
 			if (!this.#isPositioned(element)) continue; // stale registry entry
 			let root: Element = this.document.body;
 			for (
@@ -1693,16 +1749,29 @@ export class TermDOM {
 		}
 		texts.indicator.data = " \u25be"; // " ▾"
 
+		// The picker: the spec-shaped ::picker(select) popover as a real UA
+		// part -- an absolutely positioned box the open state reveals, whose
+		// geometry the sync controller anchors to the field in document
+		// coordinates (its containing block is the ICB; a measure-function
+		// select can't serve as one).
+		const picker = document.createElement("div");
+		picker.setAttribute("part", "picker");
+		root.appendChild(picker);
+		spans.picker = picker;
+
 		const parts = {kind: "select" as const, spans, texts};
 		this.#inputShadowParts.set(element, parts);
 		this.#syncSelectShadowTree(element, parts);
 		return parts;
 	}
 
+	/** Highlighted option index of each OPEN picker; absence = closed. */
+	#openPickers = new WeakMap<HTMLSelectElement, number>();
+
 	/** Reconcile the select's UA tree with its own selection state. */
 	#syncSelectShadowTree(
 		element: HTMLSelectElement,
-		parts: {texts: Record<string, Text>},
+		parts: {spans: Record<string, HTMLElement>; texts: Record<string, Text>},
 	): void {
 		const selected =
 			element.selectedIndex >= 0
@@ -1712,6 +1781,67 @@ export class TermDOM {
 		if (parts.texts.value.data !== label) {
 			parts.texts.value.data = label;
 		}
+
+		// Losing focus closes the picker, as everywhere.
+		if (
+			this.#openPickers.has(element) &&
+			this.document.activeElement !== element
+		) {
+			this.#openPickers.delete(element);
+		}
+
+		const picker = parts.spans.picker;
+		const highlight = this.#openPickers.get(element);
+		const open = highlight !== undefined;
+		if (!open) {
+			if (picker.style.display !== "none") {
+				picker.style.display = "none";
+				this.#topLayer.delete(picker);
+			}
+			return;
+		}
+
+		// Rebuild rows to match the option list; cheap at option-list scale.
+		const options = Array.from(element.options);
+		while (picker.childNodes.length > options.length) {
+			picker.removeChild(picker.lastChild!);
+		}
+		while (picker.childNodes.length < options.length) {
+			const row = this.document.createElement("div");
+			row.setAttribute("part", "option");
+			picker.appendChild(row);
+		}
+		options.forEach((option, index) => {
+			const row = picker.childNodes[index] as HTMLElement;
+			if (row.textContent !== option.label) row.textContent = option.label;
+			// Attribute writes are guarded: setAttribute queues a mutation
+			// record even when the value is unchanged, and this sync runs at
+			// paint time on an OBSERVED root -- unconditional writes are an
+			// infinite render loop.
+			if (option.disabled !== row.hasAttribute("data-disabled")) {
+				if (option.disabled) row.setAttribute("data-disabled", "");
+				else row.removeAttribute("data-disabled");
+			}
+			const highlighted = index === highlight;
+			if (highlighted !== row.hasAttribute("data-highlighted")) {
+				if (highlighted) row.setAttribute("data-highlighted", "");
+				else row.removeAttribute("data-highlighted");
+			}
+		});
+
+		// Anchor below the field in DOCUMENT coordinates (the picker's
+		// containing block is the ICB), matching the field's width.
+		const rect = this[kLayoutEngine].getRect(element);
+		if (rect) {
+			const top = `${Math.round(rect.bottom)}px`;
+			const left = `${Math.round(rect.left)}px`;
+			const width = `${Math.max(4, Math.round(rect.width))}ch`;
+			if (picker.style.top !== top) picker.style.top = top;
+			if (picker.style.left !== left) picker.style.left = left;
+			if (picker.style.width !== width) picker.style.width = width;
+		}
+		if (picker.style.display !== "block") picker.style.display = "block";
+		this.#topLayer.add(picker);
 	}
 
 	/**
@@ -1719,7 +1849,11 @@ export class TermDOM {
 	 * disabled options, firing input and change -- the browser's own
 	 * closed-select keyboard model, with no popup to degrade.
 	 */
-	#handleSelectAction(element: HTMLSelectElement, keyName: string): void {
+	#handleSelectAction(
+		element: HTMLSelectElement,
+		keyName: string,
+		key: string,
+	): void {
 		const options = Array.from(element.options);
 		if (options.length === 0) return;
 
@@ -1738,6 +1872,50 @@ export class TermDOM {
 			return from;
 		};
 
+		// OPEN picker: arrows move the highlight without committing; Enter or
+		// Space commits; Escape dismisses without change -- the browser's
+		// picker model.
+		const highlight = this.#openPickers.get(element);
+		if (highlight !== undefined) {
+			if (keyName === "ArrowDown") {
+				this.#openPickers.set(element, step(highlight, 1));
+			} else if (keyName === "ArrowUp") {
+				this.#openPickers.set(element, step(highlight, -1));
+			} else if (keyName === "Home") {
+				this.#openPickers.set(element, step(-1, 1));
+			} else if (keyName === "End") {
+				this.#openPickers.set(element, step(options.length, -1));
+			} else if (keyName === "Enter" || key === " ") {
+				this.#openPickers.delete(element);
+				if (highlight !== current && enabled(highlight)) {
+					this.#commitSelect(element, highlight);
+					return;
+				}
+			} else if (keyName === "Escape") {
+				this.#openPickers.delete(element);
+			} else {
+				return;
+			}
+			this.#syncSelectShadowTree(
+				element,
+				this.#ensureSelectShadowParts(element),
+			);
+			this.#render();
+			return;
+		}
+
+		// CLOSED: Space or Enter opens the picker at the current selection;
+		// arrows keep changing the value in place (the macOS closed-select
+		// model, unchanged).
+		if (keyName === "Enter" || key === " ") {
+			this.#openPickers.set(element, current >= 0 ? current : step(-1, 1));
+			this.#syncSelectShadowTree(
+				element,
+				this.#ensureSelectShadowParts(element),
+			);
+			this.#render();
+			return;
+		}
 		if (keyName === "ArrowDown" || keyName === "ArrowRight") {
 			target = step(current, 1);
 		} else if (keyName === "ArrowUp" || keyName === "ArrowLeft") {
@@ -1751,20 +1929,21 @@ export class TermDOM {
 		}
 
 		if (target !== current && target >= 0) {
-			element.selectedIndex = target;
-			this.#syncSelectShadowTree(
-				element,
-				this.#ensureSelectShadowParts(element),
-			);
-			element.dispatchEvent(
-				new this.window.Event("input", {bubbles: true, cancelable: false}),
-			);
-			element.dispatchEvent(
-				new this.window.Event("change", {bubbles: true, cancelable: false}),
-			);
-			this.#scrollCaretIntoView(element);
-			this.#render();
+			this.#commitSelect(element, target);
 		}
+	}
+
+	#commitSelect(element: HTMLSelectElement, index: number): void {
+		element.selectedIndex = index;
+		this.#syncSelectShadowTree(element, this.#ensureSelectShadowParts(element));
+		element.dispatchEvent(
+			new this.window.Event("input", {bubbles: true, cancelable: false}),
+		);
+		element.dispatchEvent(
+			new this.window.Event("change", {bubbles: true, cancelable: false}),
+		);
+		this.#scrollCaretIntoView(element);
+		this.#render();
 	}
 
 	/** The visual line index a caret offset sits on, given #textareaVisualLines. */
@@ -3215,6 +3394,12 @@ export class TermDOM {
 		// the body-level buckets would never be consulted.
 		const paintRoot =
 			root === this.document.documentElement ? this.document.body : root;
+		const topLayer = [...this.#topLayer].reverse();
+		for (const element of topLayer) {
+			if (!compositionIsConnected(element)) continue;
+			const hit = this.#hitTestContext(element, x, y, layers);
+			if (hit) return hit;
+		}
 		return this.#hitTestContext(paintRoot, x, y, layers);
 	}
 
@@ -3888,7 +4073,11 @@ export class TermDOM {
 			} else if (
 				targetElement instanceof (this.window as any).HTMLSelectElement
 			) {
-				this.#handleSelectAction(targetElement as HTMLSelectElement, keyName);
+				this.#handleSelectAction(
+					targetElement as HTMLSelectElement,
+					keyName,
+					key,
+				);
 			}
 		}
 
@@ -3946,11 +4135,7 @@ export class TermDOM {
 		const output = this.#renderer.renderStatic(
 			this.document.body.scrollHeight,
 			(ctx) => {
-				this.#renderStackingContext(
-					this.document.body,
-					ctx,
-					this.#collectStackingLayers(),
-				);
+				this.#renderDocument(ctx);
 			},
 		);
 
@@ -4006,11 +4191,7 @@ export class TermDOM {
 		const output = this.#renderer.renderStatic(
 			contentHeight,
 			(ctx) => {
-				this.#renderStackingContext(
-					this.document.body,
-					ctx,
-					this.#collectStackingLayers(),
-				);
+				this.#renderDocument(ctx);
 			},
 			"\r\n",
 		);
@@ -4069,7 +4250,7 @@ export class TermDOM {
 		this.#renderedOutsideMarkers = new WeakSet<Element>();
 		this[kLayoutEngine].calculateLayout();
 
-		const contentHeight = this.document.body.scrollHeight;
+		const contentHeight = this.#documentPaintHeight();
 		const regionHeight = Math.min(contentHeight, this.#height);
 
 		// Take the room we need by pushing earlier output up, never over it.
@@ -4082,11 +4263,7 @@ export class TermDOM {
 		const ansi = this.#renderer.renderFrame(
 			-this.#documentScrollTop,
 			(ctx) => {
-				this.#renderStackingContext(
-					this.document.body,
-					ctx,
-					this.#collectStackingLayers(),
-				);
+				this.#renderDocument(ctx);
 			},
 			top,
 			top + regionHeight,
