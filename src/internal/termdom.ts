@@ -1075,8 +1075,6 @@ export class TermDOM {
 		if (rect && visible) {
 			const borderStyles = resolveBorderStyles(element);
 			if (borderStyles.hasAnyBorder) {
-				if (process.env.DEBUG_BORDERS)
-					console.error("BORDER", element.tagName, JSON.stringify(rect));
 				// Border color per CSS: border-color, whose initial value is
 				// currentColor -- the element's own color -- and, with nothing
 				// authored anywhere, the terminal's DEFAULT foreground. Never a

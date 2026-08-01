@@ -321,29 +321,6 @@ export function isValidDeclaration(property: string, value: string): boolean {
 		});
 }
 
-/**
- * Invalid declarations are dropped silently by default: this engine's
- * output IS the terminal screen, so writing a warning mid-render would
- * corrupt the frame it is warning about. Set TERMDOM_DEBUG_CSS to route
- * them to stderr (deduped -- a bad rule in a stylesheet is re-parsed on
- * every refresh, and one line per frame is its own kind of unusable).
- */
-const reportedDeclarations = new Set<string>();
-function reportInvalidDeclaration(property: string, value: string): void {
-	if (!globalThis.process?.env?.TERMDOM_DEBUG_CSS) {
-		return;
-	}
-	const key = `${property}: ${value}`;
-	if (reportedDeclarations.has(key)) {
-		return;
-	}
-	reportedDeclarations.add(key);
-	globalThis.process.stderr?.write?.(
-		`termdom: dropped invalid CSS declaration \`${key}\` ` +
-			`(a nonzero length needs a unit -- 1px is one cell)\n`,
-	);
-}
-
 export function expandBoxShorthands(
 	declarations: Record<string, string>,
 ): Record<string, string> {
@@ -2234,7 +2211,6 @@ export class StyleManager {
 			// isValidDeclaration): dropping is what lets a lower-priority
 			// rule keep winning, exactly as a browser would.
 			if (!isValidDeclaration(property, value)) {
-				reportInvalidDeclaration(property, value);
 				continue;
 			}
 			declarations[property] = value;
