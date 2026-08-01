@@ -1777,18 +1777,27 @@ export class LayoutEngine {
 		current: Node,
 		walker: ExpandedTreeWalker,
 	): Node | "boundary" | null {
+		walker.currentNode = current;
+		if (!walker.previousSibling()) {
+			return null; // Nothing precedes it here; the caller climbs.
+		}
+
+		// Asked once, and only now that a sibling exists to judge: a flex
+		// container puts every item in a run of its own. Above the loop rather
+		// than inside it because the answer is a property of this LEVEL, and
+		// this walk runs thousands of times per keystroke -- re-reading the
+		// container's display per sibling, or per ancestor hop, costs about a
+		// millisecond of the frame on its own.
 		const boxParent = compositionBoxParentElement(current);
 		const inFlex =
 			boxParent !== null && getPropertyValue(boxParent, "display") === "flex";
-		if (inFlex && current.nodeType === current.ELEMENT_NODE) {
-			return "boundary"; // Elements in flex are their own run heads
-		}
+		const isElement = current.nodeType === current.ELEMENT_NODE;
 
-		walker.currentNode = current;
-		while (walker.previousSibling()) {
+		do {
 			const previous = walker.currentNode;
 			if (previous.nodeType !== previous.ELEMENT_NODE) {
-				return previous; // Text: always shares the run
+				// Text shares the run, unless flex made this element an item.
+				return inFlex && isElement ? "boundary" : previous;
 			}
 
 			const element = previous as Element;
@@ -1802,7 +1811,7 @@ export class LayoutEngine {
 			// The run continues into this sibling -- but only as far back as
 			// its own last fragment, since a block inside it split it too.
 			return this.#lastRunNodeWithin(element, walker) ?? "boundary";
-		}
+		} while (walker.previousSibling());
 
 		return null;
 	}
