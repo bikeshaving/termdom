@@ -2441,6 +2441,16 @@ export class StyleManager {
 		this.#parseStylesheets();
 		this.clearCache();
 
+		// Rules can change LAYOUT (a display flip, new dimensions), and boxes
+		// may already have been built under the pre-parse styles -- a
+		// .view{display:none} arriving with the same batch as its markup left
+		// the hidden subtree's stale boxes ghosting about. Rebuild from the
+		// root; stylesheet changes are rare.
+		const body = this.#document.body;
+		if (body) {
+			this.#layoutEngine?.invalidate(body);
+		}
+
 		// TODO: Implement more granular pseudo-element invalidation
 		// Currently we clear ALL pseudo-elements on any stylesheet change,
 		// but we could be smarter and only clear/update affected elements

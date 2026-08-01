@@ -995,6 +995,17 @@ export class TermDOM {
 			return;
 		}
 
+		// display:none generates NO box and no descendant boxes -- final, per
+		// CSS. Stray run state under a hidden subtree (an editing todo's
+		// hidden .view) could otherwise ghost-paint at whatever coordinates
+		// it last held.
+		if (
+			this.window.getComputedStyle(element).getPropertyValue("display") ===
+			"none"
+		) {
+			return;
+		}
+
 		const rect = this[kLayoutEngine].getRect(element);
 
 		const color = this.window
@@ -3166,7 +3177,29 @@ export class TermDOM {
 	#getFocusableElements(): Element[] {
 		const elements = Array.from(
 			this.document.querySelectorAll(FOCUSABLE_SELECTOR),
-		);
+		).filter((element) => {
+			// Browsers keep unrendered elements out of tab order: a hidden
+			// edit-row checkbox must not swallow a Tab press invisibly. An
+			// element is rendered when nothing on its flat-tree chain is
+			// display:none and it produced boxes.
+			for (
+				let ancestor: Element | null = element;
+				ancestor;
+				ancestor = compositionParentElement(ancestor)
+			) {
+				if (
+					this.window.getComputedStyle(ancestor).getPropertyValue("display") ===
+					"none"
+				) {
+					return false;
+				}
+			}
+			try {
+				return this[kLayoutEngine].getRects(element).length > 0;
+			} catch {
+				return false;
+			}
+		});
 		return elements.sort((a, b) => {
 			const aTab = parseInt(a.getAttribute("tabindex") || "0", 10);
 			const bTab = parseInt(b.getAttribute("tabindex") || "0", 10);
@@ -3588,6 +3621,12 @@ export class TermDOM {
 	 */
 	#hitTestInFlow(element: Element, x: number, y: number): Element | null {
 		if (element.nodeType !== 1) return null;
+		if (
+			this.window.getComputedStyle(element).getPropertyValue("display") ===
+			"none"
+		) {
+			return null;
+		}
 		try {
 			const rects = this[kLayoutEngine].getRects(element);
 			if (!isPointInRects(x, y, rects)) return null;

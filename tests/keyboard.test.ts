@@ -1310,3 +1310,35 @@ test("author CSS text-decoration-style: double emits SGR 4 then 4:2", async () =
 
 	dom.dispose();
 });
+
+test("display:none subtrees neither render, ghost, nor take tab focus", async () => {
+	// A stylesheet arriving in the same batch as its markup used to leave
+	// the hidden subtree's stale boxes ghost-painting at old coordinates,
+	// and its controls silently swallowed Tab presses. Rules can change
+	// layout, so a stylesheet refresh rebuilds from the root; tab order
+	// includes only rendered elements, as in browsers.
+	const terminal = new MockProcess({rows: 8, cols: 50});
+	const dom = new TermDOM({process: terminal});
+	dom.attach();
+	const {document} = dom;
+	document.head.innerHTML = `<style>.editing .view { display: none } .view { display: flex; flex-direction: row }</style>`;
+	document.body.innerHTML =
+		`<div>before</div>` +
+		`<li class="editing"><div class="view"><input type="checkbox"><label>todo</label><button>x</button></div><input class="edit"></li>` +
+		`<div>after</div>`;
+	await nextFrame(dom);
+	await nextFrame(dom);
+
+	const rows = terminal.getPlainText().split("\n");
+	expect(rows[0]).toBe("before"); // no ghost row above
+	expect(terminal.getPlainText()).not.toContain("todo"); // hidden stays hidden
+
+	(document.querySelector(".edit") as HTMLElement).focus();
+	(terminal.stdin as any).emit("data", Buffer.from("\t"));
+	await nextFrame(dom);
+	// The hidden checkbox and button are not in tab order; the edit input
+	// is the only rendered focusable, so focus stays put.
+	expect((document.activeElement as HTMLElement).className).toBe("edit");
+
+	dom.dispose();
+});

@@ -24,6 +24,9 @@ style.textContent = `
   .header h1 { color: cyan; font-weight: bold; }
   .header .new-todo { width: 100%; }
   .main { padding-top: 1; }
+  /* The toggle-all is a control over the LIST, not a list item: label it
+     so the first todo doesn't appear to spawn a mystery second checkbox. */
+  .main::before { content: "mark all as complete: "; color: #666; }
   .toggle-all { margin-right: 1ch; }
   .todo-list { padding-left: 0; list-style: none; }
   .todo-list li .view { display: flex; flex-direction: row; gap: 1ch; }
