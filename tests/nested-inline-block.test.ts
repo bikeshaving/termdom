@@ -208,3 +208,78 @@ test("mixed content in nested inline-blocks", async () => {
 
 	dom.dispose();
 });
+
+/**
+ * The four below were found by a markup fuzzer whose invariant is simply
+ * "every token in the document appears exactly once in the frame" -- each one
+ * silently DROPPED content the browser paints, which is the failure mode no
+ * snapshot catches, because a snapshot blesses whatever it was shown.
+ */
+
+test("a run continues past a nested inline-block, not just past its parent", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 6});
+	const dom = new TermDOM({process: terminal});
+	dom.document.body.innerHTML = `<span><span style="display: inline-block">badge</span></span> and the rest`;
+
+	await nextFrame(dom);
+	await nextFrame(dom);
+
+	// The leaf walk used to stop at the inline-block's last-child position,
+	// so everything after the wrapping span vanished.
+	expect(terminal.getVisibleText()).toContain("badge and the rest");
+
+	dom.dispose();
+});
+
+test("a run continues past a boxless child of a nested inline", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 6});
+	const dom = new TermDOM({process: terminal});
+	dom.document.body.innerHTML = `<span>lead<span style="display: none">gone</span></span> tail`;
+
+	await nextFrame(dom);
+	await nextFrame(dom);
+
+	const text = terminal.getVisibleText();
+	expect(text).toContain("lead tail");
+	expect(text).not.toContain("gone");
+
+	dom.dispose();
+});
+
+test("a widget alone inside an inline-block paints where the box measured it", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 6});
+	const dom = new TermDOM({process: terminal});
+	dom.document.body.innerHTML = `<div style="display: inline-block; padding: 0 2ch"><input value="typed"></div>`;
+
+	await nextFrame(dom);
+	await nextFrame(dom);
+
+	const input = dom.document.querySelector("input")!;
+	const rect = input.getBoundingClientRect();
+	// Its coordinates exist only inside the inline-block's own measurement;
+	// read from the outer run it resolved to nothing and painted nowhere.
+	expect(rect.x).toBe(2);
+	expect(rect.width).toBeGreaterThan(0);
+	expect(terminal.getVisibleText()).toContain("typed");
+
+	dom.dispose();
+});
+
+test("a block between two runs does not blank the earlier one", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 6});
+	const dom = new TermDOM({process: terminal});
+	dom.document.body.innerHTML = `heading<div>middle</div><input value="field">`;
+
+	await nextFrame(dom);
+	await nextFrame(dom);
+
+	// Attaching the input's UA shadow tree cleared every break result in the
+	// body -- including this text's, whose flex node stayed clean and so never
+	// re-measured. It laid out at the right rect and painted nothing.
+	const lines = terminal.getVisibleText().split("\n");
+	expect(lines[0]).toContain("heading");
+	expect(lines[1]).toContain("middle");
+	expect(lines[2]).toContain("field");
+
+	dom.dispose();
+});

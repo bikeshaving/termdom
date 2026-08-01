@@ -10,6 +10,7 @@ import {
 	compositionParentElement,
 	compositionShadowRoot,
 	createExpandedTreeWalker,
+	ExpandedTreeWalker,
 	getPseudoMetadata,
 } from "./composition.js";
 import {stringWidth as runtimeStringWidth} from "./runtime.js";
@@ -94,6 +95,48 @@ function parseSpanAttribute(element: Element, name: string): number {
 	if (!raw) return 1;
 	const span = parseInt(raw, 10);
 	return Number.isFinite(span) && span > 0 ? span : 1;
+}
+
+/** The line and segment a break result placed an inline-block box on. */
+function findInlineBlockSegment(
+	breakResult: BreakResult,
+	element: Element,
+): {
+	line: LineResult;
+	segment: LineResult["segments"][number] & {leaf: InlineBlockLeaf};
+} | null {
+	for (const line of breakResult.lines) {
+		for (const segment of line.segments) {
+			if (
+				segment.leaf.type === "inline-block" &&
+				segment.leaf.node === element
+			) {
+				return {
+					line,
+					segment: segment as LineResult["segments"][number] & {
+						leaf: InlineBlockLeaf;
+					},
+				};
+			}
+		}
+	}
+	return null;
+}
+
+/**
+ * Advance a walker past the current node's subtree, in document order,
+ * without descending into it. nextSibling() alone is not that: it gives up
+ * the moment the skipped node is its parent's last child, and an inline run
+ * does not end there. `<span><b>x</b></span> tail` collects the <b>, finds
+ * no sibling inside the span, and must climb out to reach " tail" -- before
+ * this it just stopped, and every leaf after a nested inline-block (or a
+ * display:none/absolute box) silently vanished from the line.
+ */
+function skipSubtree(walker: ExpandedTreeWalker): boolean {
+	while (!walker.nextSibling()) {
+		if (!walker.parentNode()) return false;
+	}
+	return true;
 }
 
 function styleFlexNode(
@@ -1116,6 +1159,99 @@ export class LayoutEngine {
 		}
 	}
 
+	/**
+	 * Where an inline-block box landed, read back out of the run that measured
+	 * it. Three depths, and only the first is direct:
+	 *
+	 * - The box owns a layout node (it heads its own run): ask the flex tree.
+	 * - It is a MEMBER of a run headed elsewhere ("Name: <input>"): it owns no
+	 *   layout node, so segment.x/line.y are RUN-relative and must be anchored
+	 *   at the head's absolute position -- returned bare, the input painted at
+	 *   the document's own row 0, over whatever lived there.
+	 * - It sits inside ANOTHER inline-block, which measured it as part of one
+	 *   opaque unit: its coordinates exist only in a break result nested under
+	 *   that box's leaf, so the walk below descends into each enclosing
+	 *   inline-block at its content edge to reach them. Nothing did that
+	 *   before, so `<div style="display:inline-block"><input></div>` -- a
+	 *   widget in any inline-block toolbar or card -- resolved to no rect and
+	 *   painted nothing at all.
+	 */
+	#inlineBlockRect(element: Element): DOMRect | null {
+		// Climb to the nearest enclosing run that was actually laid out on its
+		// own: a run measured inside an inline-block publishes no break result
+		// (it hangs off that box's leaf instead), and its head may still be
+		// holding a flex node left over from before it was absorbed -- one
+		// parked at 0,0, which is what an inline-block'd widget used to
+		// position itself by.
+		let runHead: Node | null = this.findInlineRunHead(element);
+		let runFlexNode = runHead ? this.nodeMap.get(runHead) : undefined;
+		let breakResult = runHead ? this.breakResultMap.get(runHead) : undefined;
+		while (runHead && !(runFlexNode && breakResult)) {
+			const parent = compositionBoxParentElement(runHead);
+			if (!parent) return null;
+			runHead = this.findInlineRunHead(parent) ?? parent;
+			runFlexNode = this.nodeMap.get(runHead);
+			breakResult = this.breakResultMap.get(runHead);
+		}
+		if (!runHead || !runFlexNode || !breakResult) return null;
+
+		const runPosition = getAbsolutePosition(runFlexNode);
+		let originX = runPosition.x;
+		let originY = runPosition.y;
+
+		// Outermost-first, so each hop's offsets are expressed in the frame the
+		// previous hop just established. The run head itself is IN the chain
+		// when it is an inline-block: it heads the run its own box sits in, and
+		// the content it wraps lives one break result further down.
+		const enclosing: Element[] = [];
+		for (
+			let ancestor = compositionParentElement(element);
+			ancestor;
+			ancestor = compositionParentElement(ancestor)
+		) {
+			enclosing.unshift(ancestor);
+			if (ancestor === runHead) break;
+		}
+		let descended = false;
+		for (const ancestor of enclosing) {
+			if (getPropertyValue(ancestor, "display") !== "inline-block") continue;
+			const hop = findInlineBlockSegment(breakResult, ancestor);
+			if (!hop) continue;
+			// Border and padding both occupy cells, so the content edge is where
+			// the nested run's own origin sits.
+			originX +=
+				hop.segment.x +
+				hop.segment.leaf.boxModel.paddingLeft +
+				hop.segment.leaf.boxModel.borderLeftWidth;
+			originY +=
+				hop.line.y +
+				hop.segment.leaf.boxModel.paddingTop +
+				hop.segment.leaf.boxModel.borderTopWidth;
+			if (hop.segment.leaf.breakResult) {
+				breakResult = hop.segment.leaf.breakResult;
+				descended = true;
+			}
+		}
+
+		const target = findInlineBlockSegment(breakResult, element);
+		if (!target) return null;
+
+		// Only the run that owns the box can speak for its position. Once the
+		// walk descends into a nested measurement, any flex node the box still
+		// holds belongs to a layout it is no longer part of.
+		const ownFlexNode = descended ? undefined : this.nodeMap.get(element);
+		if (ownFlexNode) {
+			const {x, y} = getAbsolutePosition(ownFlexNode);
+			return new this.DOMRect(x, y, target.segment.width, target.line.height);
+		}
+		return new this.DOMRect(
+			originX + target.segment.x,
+			originY + target.line.y,
+			target.segment.width,
+			target.line.height,
+		);
+	}
+
 	getRect(element: Element): DOMRect | null {
 		const display = getPropertyValue(element, "display");
 
@@ -1123,49 +1259,9 @@ export class LayoutEngine {
 		if (display === "inline" || display === "inline-block") {
 			// For inline-block elements, search through all breakResults to find this element
 			if (display === "inline-block") {
-				// Find the inline run head that contains this element
-				const runHead = this.findInlineRunHead(element);
-				if (runHead) {
-					const breakResult = this.breakResultMap.get(runHead);
-					if (breakResult) {
-						for (const line of breakResult.lines) {
-							for (const segment of line.segments) {
-								if (
-									segment.leaf.type === "inline-block" &&
-									segment.leaf.node === element
-								) {
-									// Get absolute position of the inline-block element
-									const flexNode = this.nodeMap.get(element);
-									if (!flexNode) {
-										// A run MEMBER owns no layout node -- only the run
-										// head does -- so segment.x/line.y are RUN-relative.
-										// Anchor them at the run head's absolute position:
-										// returned bare, every input preceded by text in its
-										// run ("Name: <input>") painted at the document's own
-										// row 0, over whatever lived there.
-										const runFlexNode = this.nodeMap.get(runHead);
-										if (runFlexNode) {
-											const runPosition = getAbsolutePosition(runFlexNode);
-											return new this.DOMRect(
-												runPosition.x + segment.x,
-												runPosition.y + line.y,
-												segment.width,
-												line.height,
-											);
-										}
-										return new this.DOMRect(
-											segment.x,
-											line.y,
-											segment.width,
-											line.height,
-										);
-									}
-									const {x, y} = getAbsolutePosition(flexNode);
-									return new this.DOMRect(x, y, segment.width, line.height);
-								}
-							}
-						}
-					}
+				const rect = this.#inlineBlockRect(element);
+				if (rect) {
+					return rect;
 				}
 			}
 
@@ -1797,10 +1893,21 @@ export class LayoutEngine {
 			child = walker.nextSibling();
 		}
 
-		// Delete break results for any of these nodes that have them
+		// Delete break results for any of these nodes that have them -- and
+		// dirty the measure that would refill them. The container holds every
+		// run inside it, not just the one that changed: `text<div/><input>`
+		// puts the leading text and the input in SEPARATE runs, and attaching
+		// the input's UA shadow tree cleared the text's break result too. A
+		// cleared result whose flex node is still clean is never recomputed,
+		// so that text measured, laid out at the right rect, and then painted
+		// nothing at all.
 		for (const inlineNode of inlineNodes) {
 			if (this.breakResultMap.has(inlineNode)) {
 				this.breakResultMap.delete(inlineNode);
+				const flexNode = this.nodeMap.get(inlineNode);
+				if (flexNode?.measureFunc) {
+					flexNode.markDirty();
+				}
 			}
 		}
 	}
@@ -2244,6 +2351,27 @@ export class LayoutEngine {
 			const containingBlock = this.#containingBlockFlexNode(node as Element);
 			if (containingBlock) parentFlexNode = containingBlock;
 		}
+
+		// A measure-function node owns no layout children: everything under an
+		// inline-block was measured as one opaque unit, positions and all.
+		// (Out-of-flow boxes already hoisted above -- they left that unit.) A
+		// rebuild sweep that resolves a parent by climbing to the nearest
+		// tracked ancestor lands here, and inserting would leave the element
+		// holding a node the flex engine never lays out -- extent 0..0 at 0,0,
+		// which paint culling reads as "nothing to draw." That is why an
+		// <input> alone inside an inline-block box painted nothing while the
+		// same input beside a single letter of text painted fine.
+		if (parentFlexNode?.measureFunc) {
+			const stale = this.nodeMap.get(node);
+			if (stale && stale.getParent() === parentFlexNode) {
+				parentFlexNode.removeChild(stale);
+				this.#measureNodes.delete(stale);
+				stale.freeRecursive();
+				this.#untrackNode(node);
+			}
+			return;
+		}
+
 		if (this.nodeMap.has(node)) {
 			// Node already exists - this might be a moved node that needs reparenting
 			const existingFlexNode = this.nodeMap.get(node);
@@ -2796,7 +2924,7 @@ export class LayoutEngine {
 					// neither occupies run space nor interrupts the run. Checked
 					// before the display branches -- an absolute inline span
 					// otherwise measures into the run it left.
-					if (!walker.nextSibling()) break;
+					if (!skipSubtree(walker)) break;
 				} else if (element.tagName === "BR") {
 					leafNodes.push({
 						type: "br",
@@ -2956,8 +3084,8 @@ export class LayoutEngine {
 						contentWidth: finalContentWidth,
 						contentHeight: finalContentHeight,
 					});
-					// Skip children by going to next sibling
-					if (!walker.nextSibling()) break;
+					// Skip children -- they were measured inside the box above
+					if (!skipSubtree(walker)) break;
 				} else if (display === "inline") {
 					// Inline element - traverse into its children
 					if (!walker.nextNode()) break;
