@@ -30,6 +30,8 @@ style.textContent = `
   .todo-list li.completed label { text-decoration: underline; color: #666; }
   .todo-list li.editing .view { display: none; }
   .destroy { color: red; }
+  /* An icon button: replace the UA "[ label ]" chrome with the glyph. */
+  .destroy::before { content: none; }
   .destroy::after { content: "(x)"; }
   .footer { padding-top: 1; color: yellow; }
   .todo-count strong { font-weight: bold; }

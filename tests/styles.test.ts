@@ -93,14 +93,16 @@ describe("getComputedStyle - What We Support", () => {
 				.getComputedStyle(dom.window.document.getElementById("button")!)
 				.getPropertyValue("display"),
 		).toBe("inline-block");
-		// The button is a flat member of the field family: padded, no
-		// border. (Shorthand normalization is pinned by td's longhands and
-		// the stacking suite's rule test.)
-		const buttonStyle = dom.window.getComputedStyle(
-			dom.window.document.getElementById("button")!,
-		);
-		expect(buttonStyle.getPropertyValue("padding-left")).toBe("1ch");
+		// The button is "[ Label ]": chrome comes from UA ::before/::after
+		// bracket rules, not from box properties.
+		const button = dom.window.document.getElementById("button")!;
+		const buttonStyle = dom.window.getComputedStyle(button);
 		expect(buttonStyle.getPropertyValue("border-top-style")).toBe("none");
+		expect(
+			dom.window
+				.getComputedStyle(button, "::before")
+				.getPropertyValue("content"),
+		).toBe('"[ "');
 	});
 
 	test("inline styles override defaults", () => {

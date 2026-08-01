@@ -382,9 +382,16 @@ const TERMINAL_ELEMENT_DEFAULTS: Record<string, Record<string, string>> = {
 	// border (three rows and two columns per button, in a world of one-row
 	// list items), just breathing room and the family's focus underline
 	// (see getElementDefaults). Authors who want chrome add it.
+	// The button is the toggles' visual language extended to labels:
+	// "[ Label ]", the delimited one-row form every terminal tradition
+	// from dialog/whiptail to Midnight Commander to the text-mode
+	// browsers (Lynx, w3m, ELinks render HTML buttons exactly this way)
+	// converged on. The brackets are UA ::before/::after rules in the UA
+	// document stylesheet -- author content rules override them (an
+	// icon button sets its own), and focus underlines the whole token
+	// like the rest of the field family.
 	button: {
 		display: "inline-block",
-		padding: "0 1ch",
 		cursor: "pointer",
 	},
 	// A text input is a flat field: bare when blurred (dim placeholder and
@@ -1621,6 +1628,8 @@ interface CounterScope {
  */
 const UA_DOCUMENT_STYLES = `
 	*::selection { background-color: Highlight; color: HighlightText; }
+	button::before { content: "[ "; }
+	button::after { content: " ]"; }
 `;
 
 export class StyleManager {
@@ -1867,6 +1876,19 @@ export class StyleManager {
 			const declaration = new CSSStyleDeclaration();
 			for (const [property, value] of Object.entries(pseudoStyle)) {
 				declaration.setProperty(property, value);
+			}
+			// Per CSS, a pseudo-element INHERITS from its originating element:
+			// a button's focus underline runs through its UA brackets, a
+			// .destroy's color reaches its ::after glyph. Rule declarations
+			// above win; inherited values only fill the gaps.
+			const hostStyle = this.#getComputedStyle(element);
+			for (const property of INHERITED_PROPERTIES) {
+				if (!declaration.getPropertyValue(property)) {
+					const inherited = hostStyle.getPropertyValue(property);
+					if (inherited) {
+						declaration.setProperty(property, inherited);
+					}
+				}
 			}
 			return declaration as unknown as globalThis.CSSStyleDeclaration;
 		}
