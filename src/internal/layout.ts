@@ -423,6 +423,7 @@ function styleFlexNode(
 		flexNode.setFlexShrink(0); // Prevent shrinking in block containers
 		flexNode.setFlexBasisAuto();
 		flexNode.setAlignSelf(Flex.ALIGN_AUTO);
+		flexNode.setOrder(undefined); // order only applies to flex items
 	} else {
 		const flexGrow = computedStyle.getPropertyValue("flex-grow");
 		const growValue = parseFloat(flexGrow);
@@ -431,6 +432,9 @@ function styleFlexNode(
 		} else {
 			flexNode.setFlexGrow(undefined);
 		}
+
+		const orderValue = parseInt(computedStyle.getPropertyValue("order"), 10);
+		flexNode.setOrder(Number.isNaN(orderValue) ? undefined : orderValue);
 
 		const flexShrink = computedStyle.getPropertyValue("flex-shrink");
 		const shrinkValue = parseFloat(flexShrink);
@@ -1566,6 +1570,13 @@ export class LayoutEngine {
 
 		if (node.nodeType === node.ELEMENT_NODE) {
 			const element = node as Element;
+			// An out-of-flow element is never a run head or run member -- it
+			// left the flow entirely. Letting run invalidation "ensure" it a
+			// bare layout node made later rebuilds skip its full build (its
+			// pseudo-only content simply vanished on a runtime class flip).
+			if (this.#isOutOfFlow(element)) {
+				return null;
+			}
 			const display = getPropertyValue(element, "display");
 			if (display !== "inline" && display !== "inline-block") {
 				return null;
@@ -2222,6 +2233,35 @@ export class LayoutEngine {
 		if (this.nodeMap.has(node)) {
 			// Node already exists - this might be a moved node that needs reparenting
 			const existingFlexNode = this.nodeMap.get(node);
+			// Reuse is only sound while the node is still the same KIND of box.
+			// A run member flipped out of flow at runtime (or back) changes
+			// kind: the stale node keeps its inline-run measure func, and that
+			// measure skips out-of-flow boxes -- so it measures 0x0 and the
+			// element (pseudo content included) silently vanishes. Retire the
+			// mismatched node and rebuild from scratch instead.
+			if (existingFlexNode && node.nodeType === node.ELEMENT_NODE) {
+				const element = node as Element;
+				const display = getPropertyValue(element, "display");
+				const needsMeasure =
+					!this.#isOutOfFlow(element) &&
+					(display === "inline" || display === "inline-block");
+				if (needsMeasure !== this.#measureNodes.has(existingFlexNode)) {
+					existingFlexNode.getParent()?.removeChild(existingFlexNode);
+					// Sever children before freeing: they belong to other DOM
+					// nodes (see the display:contents retirement above).
+					while (existingFlexNode.children.length > 0) {
+						existingFlexNode.removeChild(existingFlexNode.children[0]);
+					}
+					this.#measureNodes.delete(existingFlexNode);
+					existingFlexNode.freeRecursive();
+					this.#untrackNode(node);
+					this.#addElementNode(element, parentFlexNode);
+					return;
+				}
+				// Whatever moved the node may also have restyled it (the flip
+				// that hoists a box to its containing block usually did).
+				styleFlexNode(element, existingFlexNode, this.positionedElements);
+			}
 			if (existingFlexNode && parentFlexNode) {
 				// Check if it's already a child of the correct parent
 				const currentParent = existingFlexNode.getParent();

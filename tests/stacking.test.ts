@@ -217,3 +217,36 @@ test("the border shorthand in a stylesheet rule reaches the box model", async ()
 	expect(terminal.getPlainText()).toContain("┌");
 	dom.dispose();
 });
+
+test("a runtime flip to position:absolute keeps pseudo-only content", async () => {
+	// The rebuild path used to reparent the stale run-member node wholesale:
+	// its inline-run measure func skips out-of-flow boxes, so the flipped
+	// button measured 0x0 and its ::after glyph silently vanished. The box
+	// changed KIND -- reuse must give way to a full rebuild, both ways.
+	const {terminal, dom} = await render(`
+		<style>
+			li { position: relative; display: flex; flex-direction: row; }
+			.destroy::before { content: none } .destroy::after { content: "(x)" }
+			li.pinned .destroy { position: absolute; top: 0px; right: 0px; }
+		</style>
+		<li id="li"><span>Finish TermDOM</span><button class="destroy"></button></li>`);
+	const li = dom.document.getElementById("li")!;
+	expect(terminal.getPlainText().split("\n")[0].trimEnd()).toBe(
+		"Finish TermDOM(x)",
+	);
+
+	li.classList.add("pinned");
+	await nextFrame(dom);
+	await nextFrame(dom);
+	const pinned = terminal.getPlainText().split("\n")[0];
+	expect(pinned.trimEnd().endsWith("(x)")).toBe(true); // at the right edge
+	expect(pinned.startsWith("Finish TermDOM ")).toBe(true); // out of the row flow
+
+	li.classList.remove("pinned");
+	await nextFrame(dom);
+	await nextFrame(dom);
+	expect(terminal.getPlainText().split("\n")[0].trimEnd()).toBe(
+		"Finish TermDOM(x)",
+	);
+	dom.dispose();
+});

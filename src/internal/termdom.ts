@@ -2163,6 +2163,45 @@ export class TermDOM {
 	}
 
 	/**
+	 * Sync an input's UA tree from its own state -- the single source of
+	 * truth; the tree is its rendered content model. A width:auto input
+	 * sizes to this content (field-sizing: content, effectively), so
+	 * content changes must re-measure -- the UA root is unobserved, nothing
+	 * else will -- and the blank part carries one space as the caret's cell
+	 * past the last character. Called at paint (safety net) AND at edit
+	 * commit, BEFORE layout flushes: painting one frame at the stale width
+	 * shifted the scroll-window and dropped the lead character for a frame.
+	 */
+	#syncInputShadowTree(
+		element: HTMLInputElement,
+		parts: {spans: Record<string, HTMLElement>; texts: Record<string, Text>},
+	): void {
+		const value = element.value || "";
+		const placeholder = element.getAttribute("placeholder") || "";
+		const autoWidth =
+			this.window.getComputedStyle(element).getPropertyValue("width") ===
+			"auto";
+		let contentChanged = false;
+		if (parts.texts.value.data !== value) {
+			parts.texts.value.data = value;
+			contentChanged = true;
+		}
+		if (parts.texts.placeholder.data !== placeholder) {
+			parts.texts.placeholder.data = placeholder;
+			contentChanged = true;
+		}
+		const blank = autoWidth && !value ? "" : autoWidth ? " " : "";
+		if (parts.texts.blank.data !== blank) {
+			parts.texts.blank.data = blank;
+			contentChanged = true;
+		}
+		if (autoWidth && contentChanged) {
+			this[kLayoutEngine].invalidate(element);
+			void this.#render();
+		}
+	}
+
+	/**
 	 * The style a selection highlight paints with, over `base`. Everything
 	 * comes from ::selection rules -- there is no built-in fallback. The UA
 	 * document sheet declares the Highlight/HighlightText system-color
@@ -2294,33 +2333,7 @@ export class TermDOM {
 		const placeholder = element.getAttribute("placeholder") || "";
 		const isFocused = element === this.document.activeElement;
 
-		// Sync the tree: the input's state is the single source of truth,
-		// the tree is its rendered content model. A width:auto input sizes
-		// to this content (field-sizing: content, effectively), so content
-		// changes must re-measure -- the UA root is unobserved, nothing else
-		// will -- and the blank part carries one space as the caret's cell
-		// past the last character.
-		const autoWidth =
-			this.window.getComputedStyle(element).getPropertyValue("width") ===
-			"auto";
-		let contentChanged = false;
-		if (parts.texts.value.data !== value) {
-			parts.texts.value.data = value;
-			contentChanged = true;
-		}
-		if (parts.texts.placeholder.data !== placeholder) {
-			parts.texts.placeholder.data = placeholder;
-			contentChanged = true;
-		}
-		const blank = autoWidth && !value ? "" : autoWidth ? " " : "";
-		if (parts.texts.blank.data !== blank) {
-			parts.texts.blank.data = blank;
-			contentChanged = true;
-		}
-		if (autoWidth && contentChanged) {
-			this[kLayoutEngine].invalidate(element);
-			void this.#render();
-		}
+		this.#syncInputShadowTree(element, parts);
 
 		// Region styles come off the tree: the value inherits the input's
 		// own text style (solid underline when focused), the placeholder and
@@ -3467,6 +3480,14 @@ export class TermDOM {
 				this.#syncTextareaShadowTree(
 					element as HTMLTextAreaElement,
 					this.#ensureTextareaShadowParts(element as HTMLTextAreaElement),
+				);
+			} else {
+				// Same for the input: a width:auto field must measure at the
+				// NEW width before this frame paints, or the scroll-window
+				// momentarily shoves the lead character off the field.
+				this.#syncInputShadowTree(
+					element as HTMLInputElement,
+					this.#ensureInputShadowParts(element as HTMLInputElement),
 				);
 			}
 

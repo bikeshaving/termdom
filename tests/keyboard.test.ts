@@ -1385,3 +1385,25 @@ test("a runtime class flip swaps a row for its editor, in place", async () => {
 
 	dom.dispose();
 });
+
+test("typing in a width:auto input never clips the lead character", async () => {
+	// A shrink-wrapped field grows with its value, but the growth used to
+	// land a frame late: the keystroke painted at the stale width, the
+	// caret did not fit, and the scroll-window shoved the first character
+	// off the field for one frame. The edit path now syncs the UA tree
+	// before layout flushes, so the very first frame shows the full value.
+	const terminal = new MockProcess({rows: 4, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	dom.attach();
+	dom.document.body.innerHTML = `<div><input style="width: auto" value="abc"></div>`;
+	await nextFrame(dom);
+	const input = dom.document.querySelector("input") as HTMLInputElement;
+	input.focus();
+	input.setSelectionRange(3, 3);
+	await nextFrame(dom);
+
+	(terminal.stdin as any).emit("data", Buffer.from("d"));
+	await nextFrame(dom); // the FIRST frame after the keystroke
+	expect(terminal.getPlainText().split("\n")[0]).toContain("abcd");
+	dom.dispose();
+});
