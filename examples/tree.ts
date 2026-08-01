@@ -16,7 +16,6 @@ import {join, resolve} from "node:path";
 const root = resolve(process.argv[2] ?? ".");
 const termdom = new TermDOM();
 const {document, window} = termdom;
-termdom.setViewportMode("document");
 
 const style = document.createElement("style");
 style.textContent = `
@@ -172,7 +171,9 @@ async function refresh(): Promise<void> {
 	// At the first row, pull the camera the rest of the way up so the header
 	// shows too -- scrollIntoView alone stops one row short of it.
 	if (selected === 0) window.scrollBy(0, -document.body.scrollHeight);
-	await termdom.render();
+	await new Promise<void>((r) =>
+		termdom.window.requestAnimationFrame(() => r()),
+	);
 }
 
 function rebuild(): void {

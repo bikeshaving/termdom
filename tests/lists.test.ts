@@ -8,9 +8,9 @@
  * - Mixed content scenarios
  */
 
-import {test, expect} from "bun:test";
+import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
-import {MockProcess} from "./test-utils.js";
+import {MockProcess, nextFrame} from "./test-utils.js";
 
 // Test all unordered list style types
 test("unordered list style types with snapshots", async () => {
@@ -46,7 +46,7 @@ test("unordered list style types with snapshots", async () => {
 		container.appendChild(ul);
 	}
 
-	await dom.render();
+	await nextFrame(dom);
 	const output = terminal.getStaticANSI();
 
 	// Verify each style renders with correct symbol
@@ -54,7 +54,8 @@ test("unordered list style types with snapshots", async () => {
 		expect(output).toContain(style.symbol);
 	});
 
-	expect(output).toMatchSnapshot();
+	if (typeof Bun !== "undefined")
+		(expect(output) as {toMatchSnapshot(): void}).toMatchSnapshot();
 	terminal.writeANSI("lists-style-types-unordered");
 	dom.dispose();
 });
@@ -95,7 +96,7 @@ test("ordered list style types with snapshots", async () => {
 		container.appendChild(ol);
 	}
 
-	await dom.render();
+	await nextFrame(dom);
 	const output = terminal.getStaticANSI();
 
 	// Verify each style renders with correct numbering
@@ -105,7 +106,8 @@ test("ordered list style types with snapshots", async () => {
 		});
 	});
 
-	expect(output).toMatchSnapshot();
+	if (typeof Bun !== "undefined")
+		(expect(output) as {toMatchSnapshot(): void}).toMatchSnapshot();
 	terminal.writeANSI("lists-style-types-ordered");
 	dom.dispose();
 });
@@ -138,7 +140,7 @@ test("nested lists with proper indentation", async () => {
 	`;
 	document.body.appendChild(container);
 
-	await dom.render();
+	await nextFrame(dom);
 	const output = terminal.getStaticANSI();
 
 	// Verify proper nesting symbols and indentation
@@ -146,7 +148,8 @@ test("nested lists with proper indentation", async () => {
 	expect(output).toContain("◦ Second level A"); // Second level: ◦
 	expect(output).toContain("▪ Third level I"); // Third level: ▪
 
-	expect(output).toMatchSnapshot();
+	if (typeof Bun !== "undefined")
+		(expect(output) as {toMatchSnapshot(): void}).toMatchSnapshot();
 	terminal.writeANSI("lists-nesting-indentation");
 	dom.dispose();
 });
@@ -183,7 +186,7 @@ test("mixed ordered and unordered nesting", async () => {
 	`;
 	document.body.appendChild(container);
 
-	await dom.render();
+	await nextFrame(dom);
 	const output = terminal.getStaticANSI();
 
 	// Verify mixed numbering systems
@@ -193,7 +196,8 @@ test("mixed ordered and unordered nesting", async () => {
 	expect(output).toContain("1. Unit tests"); // Nested OL restarts numbering
 	expect(output).toContain("2. Integration tests");
 
-	expect(output).toMatchSnapshot();
+	if (typeof Bun !== "undefined")
+		(expect(output) as {toMatchSnapshot(): void}).toMatchSnapshot();
 	terminal.writeANSI("lists-nesting-mixed-types");
 	dom.dispose();
 });
@@ -228,7 +232,7 @@ test("list counters and start attribute", async () => {
 	});
 	container.appendChild(ol2);
 
-	await dom.render();
+	await nextFrame(dom);
 	const output = terminal.getStaticANSI();
 
 	// Verify start attribute works
@@ -237,7 +241,8 @@ test("list counters and start attribute", async () => {
 	expect(output).toContain("c. Third alpha"); // start=3 with lower-alpha
 	expect(output).toContain("d. Fourth alpha");
 
-	expect(output).toMatchSnapshot();
+	if (typeof Bun !== "undefined")
+		(expect(output) as {toMatchSnapshot(): void}).toMatchSnapshot();
 	terminal.writeANSI("lists-counters-start-attribute");
 	dom.dispose();
 });
@@ -266,7 +271,7 @@ test("lists with mixed inline and block content", async () => {
 	`;
 	document.body.appendChild(container);
 
-	await dom.render();
+	await nextFrame(dom);
 	const output = terminal.getStaticANSI();
 
 	// Verify mixed content renders properly
@@ -275,7 +280,8 @@ test("lists with mixed inline and block content", async () => {
 	expect(output).toContain("This is a paragraph");
 	expect(output).toContain("Block content");
 
-	expect(output).toMatchSnapshot();
+	if (typeof Bun !== "undefined")
+		(expect(output) as {toMatchSnapshot(): void}).toMatchSnapshot();
 	terminal.writeANSI("lists-content-mixed-inline-block");
 	dom.dispose();
 });
@@ -310,14 +316,15 @@ test("list edge cases", async () => {
 	divListItem.textContent = "Div as list item";
 	container.appendChild(divListItem);
 
-	await dom.render();
+	await nextFrame(dom);
 	const output = terminal.getStaticANSI();
 
 	// Should handle edge cases gracefully
 	expect(output).toContain("Orphan item");
 	expect(output).toContain("Div as list item");
 
-	expect(output).toMatchSnapshot();
+	if (typeof Bun !== "undefined")
+		(expect(output) as {toMatchSnapshot(): void}).toMatchSnapshot();
 	terminal.writeANSI("lists-edge-cases-empty-items");
 	dom.dispose();
 });
@@ -341,7 +348,7 @@ test("list performance with many items", async () => {
 	container.appendChild(ul);
 
 	const startTime = performance.now();
-	await dom.render();
+	await nextFrame(dom);
 	const endTime = performance.now();
 
 	const renderTime = endTime - startTime;
@@ -392,7 +399,7 @@ test("lists in flexbox containers", async () => {
 	`;
 	container.appendChild(column2);
 
-	await dom.render();
+	await nextFrame(dom);
 	const output = terminal.getStaticANSI();
 
 	// Verify both lists render in columns
@@ -401,7 +408,8 @@ test("lists in flexbox containers", async () => {
 	expect(output).toContain("• Task 1");
 	expect(output).toContain("1. First step");
 
-	expect(output).toMatchSnapshot();
+	if (typeof Bun !== "undefined")
+		(expect(output) as {toMatchSnapshot(): void}).toMatchSnapshot();
 	terminal.writeANSI("lists-layout-flexbox-containers");
 	dom.dispose();
 });
@@ -423,7 +431,7 @@ test("list rerendering maintains correct layout", async () => {
 	`;
 
 	// First render
-	await dom.render();
+	await nextFrame(dom);
 	const firstOutput = terminal.getPlainText();
 
 	expect(firstOutput).toContain("Dynamic List");
@@ -444,7 +452,7 @@ test("list rerendering maintains correct layout", async () => {
 	`;
 
 	// Second render
-	await dom.render();
+	await nextFrame(dom);
 	const secondOutput = terminal.getPlainText();
 
 	expect(secondOutput).toContain("Dynamic List");

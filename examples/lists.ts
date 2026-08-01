@@ -250,7 +250,7 @@ container.appendChild(mixedSection);
 
 document.body.appendChild(container);
 
-await termdom.render();
-await termdom.render();
+await new Promise<void>((r) => termdom.window.requestAnimationFrame(() => r()));
+await new Promise<void>((r) => termdom.window.requestAnimationFrame(() => r()));
 
 process.exit(0);

@@ -11,9 +11,9 @@
  * marker in the list's padding, so the item text starts at the content edge and
  * the marker sits immediately before it, separated by exactly one cell.
  */
-import {test, expect} from "bun:test";
+import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
-import {MockProcess} from "./test-utils.js";
+import {MockProcess, nextFrame} from "./test-utils.js";
 import {stripControlCodes} from "./test-utils.js";
 
 /** Render HTML and return the non-blank rendered rows, ANSI stripped. */
@@ -21,7 +21,7 @@ async function renderRows(html: string, cols = 40): Promise<string[]> {
 	const terminal = new MockProcess({cols, rows: 20});
 	const dom = new TermDOM({process: terminal});
 	dom.document.body.innerHTML = html;
-	await dom.render();
+	await nextFrame(dom);
 	const output = stripControlCodes(terminal.getStaticANSI());
 	dom.dispose();
 	return output
@@ -182,7 +182,7 @@ test("the gutter is recomputed when items are added", async () => {
 	const {document} = dom;
 
 	document.body.innerHTML = `<ol style="list-style-type:lower-roman"><li>one</li><li>two</li><li>three</li></ol>`;
-	await dom.render();
+	await nextFrame(dom);
 
 	const list = document.querySelector("ol")!;
 	// Widest marker is now "viii. " -- 6 cells, where "iii. " needed 5.
@@ -191,7 +191,7 @@ test("the gutter is recomputed when items are added", async () => {
 		item.textContent = `item${i}`;
 		list.appendChild(item);
 	}
-	await dom.render();
+	await nextFrame(dom);
 
 	const rows = stripControlCodes(terminal.getStaticANSI())
 		.split("\n")
@@ -206,7 +206,7 @@ test("::marker inherits color from its list item", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 20});
 	const dom = new TermDOM({process: terminal});
 	dom.document.body.innerHTML = `<ul><li style="color:green">A</li></ul>`;
-	await dom.render();
+	await nextFrame(dom);
 	const output = terminal.getStaticANSI();
 	dom.dispose();
 

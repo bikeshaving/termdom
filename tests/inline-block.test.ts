@@ -4,8 +4,8 @@
  * Tests for inline and inline-block element rendering in the terminal.
  */
 
-import {test, expect} from "bun:test";
-import {MockProcess} from "./test-utils";
+import {test, expect} from "@b9g/libuild/test";
+import {MockProcess, nextFrame} from "./test-utils";
 import {TermDOM} from "../src/internal/termdom.js";
 
 test("inline-block elements render side by side", async () => {
@@ -30,7 +30,7 @@ test("inline-block elements render side by side", async () => {
 	block2.textContent = "Block2";
 	container.appendChild(block2);
 
-	await dom.render();
+	await nextFrame(dom);
 
 	const visibleText = terminal.getVisibleText();
 	const output = terminal.getStaticANSI();
@@ -42,7 +42,8 @@ test("inline-block elements render side by side", async () => {
 	expect(output).toContain("\x1b[38;2;255;255;255;48;2;255;0;0m"); // white text on red background
 	expect(output).toContain("\x1b[48;2;0;0;255m"); // blue background
 
-	expect(output).toMatchSnapshot();
+	if (typeof Bun !== "undefined")
+		(expect(output) as {toMatchSnapshot(): void}).toMatchSnapshot();
 	terminal.writeANSI("inline-block-side-by-side");
 
 	dom.dispose();
@@ -61,7 +62,7 @@ test("inline-block elements with padding", async () => {
 	block.textContent = "Padded";
 	document.body.appendChild(block);
 
-	await dom.render();
+	await nextFrame(dom);
 
 	const output = terminal.getStaticANSI();
 	const lines = output.trim().split("\n");
@@ -76,7 +77,8 @@ test("inline-block elements with padding", async () => {
 	expect(contentLine).toContain("  "); // Check for spaces (padding)
 	expect(contentLine).toContain("Padded"); // Check for content
 
-	expect(output).toMatchSnapshot();
+	if (typeof Bun !== "undefined")
+		(expect(output) as {toMatchSnapshot(): void}).toMatchSnapshot();
 	terminal.writeANSI("inline-block-padding");
 
 	dom.dispose();
@@ -102,14 +104,17 @@ test("inline-block elements with margins", async () => {
 	block2.textContent = "Second";
 	document.body.appendChild(block2);
 
-	await dom.render();
+	await nextFrame(dom);
 
 	const visibleText = terminal.getVisibleText();
 
 	// Should have 3 spaces between blocks due to marginRight: "3px"
 	expect(visibleText).toContain("First   Second");
 
-	expect(terminal.getStaticANSI()).toMatchSnapshot();
+	if (typeof Bun !== "undefined")
+		(
+			expect(terminal.getStaticANSI()) as {toMatchSnapshot(): void}
+		).toMatchSnapshot();
 	terminal.writeANSI("inline-block-margins");
 
 	dom.dispose();
@@ -132,7 +137,7 @@ test("inline-block elements wrapping to multiple lines", async () => {
 		document.body.appendChild(block);
 	}
 
-	await dom.render();
+	await nextFrame(dom);
 
 	const visibleText = terminal.getVisibleText();
 	const lines = visibleText.split("\n").filter((line) => line.trim());
@@ -145,7 +150,10 @@ test("inline-block elements wrapping to multiple lines", async () => {
 		expect(visibleText).toContain(word);
 	}
 
-	expect(terminal.getStaticANSI()).toMatchSnapshot();
+	if (typeof Bun !== "undefined")
+		(
+			expect(terminal.getStaticANSI()) as {toMatchSnapshot(): void}
+		).toMatchSnapshot();
 	terminal.writeANSI("inline-block-wrapping");
 
 	dom.dispose();
@@ -174,7 +182,7 @@ test("mixed inline and inline-block elements", async () => {
 	text2.style.color = "cyan";
 	document.body.appendChild(text2);
 
-	await dom.render();
+	await nextFrame(dom);
 
 	const visibleText = terminal.getVisibleText();
 
@@ -188,7 +196,8 @@ test("mixed inline and inline-block elements", async () => {
 	expect(output).toContain("48;2;128;0;128"); // purple background (may be combined with other codes)
 	expect(output).toContain("38;2;0;255;255"); // cyan text (may have background reset after)
 
-	expect(output).toMatchSnapshot();
+	if (typeof Bun !== "undefined")
+		(expect(output) as {toMatchSnapshot(): void}).toMatchSnapshot();
 	terminal.writeANSI("mixed-inline-and-inline-block");
 
 	dom.dispose();
@@ -218,7 +227,7 @@ test("nested inline-block elements", async () => {
 	inner2.textContent = "block";
 	outer.appendChild(inner2);
 
-	await dom.render();
+	await nextFrame(dom);
 
 	const output = terminal.getStaticANSI();
 
@@ -226,7 +235,8 @@ test("nested inline-block elements", async () => {
 	expect(output).toContain("\x1b[48;2;0;0;128m"); // navy background for outer
 	expect(output).toContain("48;2;255;0;0"); // red background for inner (may be combined with other codes)
 
-	expect(output).toMatchSnapshot();
+	if (typeof Bun !== "undefined")
+		(expect(output) as {toMatchSnapshot(): void}).toMatchSnapshot();
 	terminal.writeANSI("nested-inline-block");
 
 	dom.dispose();
@@ -253,7 +263,7 @@ test("inline-block with explicit width", async () => {
 	block2.textContent = "Auto";
 	document.body.appendChild(block2);
 
-	await dom.render();
+	await nextFrame(dom);
 
 	const output = terminal.getStaticANSI();
 	const visibleText = terminal.getVisibleText();
@@ -261,7 +271,8 @@ test("inline-block with explicit width", async () => {
 	// First block should be exactly 10 characters wide due to width: "10px"
 	expect(visibleText).toContain("Fixed     Auto"); // "Fixed" + 5 spaces to reach 10 chars + "Auto"
 
-	expect(output).toMatchSnapshot();
+	if (typeof Bun !== "undefined")
+		(expect(output) as {toMatchSnapshot(): void}).toMatchSnapshot();
 	terminal.writeANSI("inline-block-fixed-width");
 
 	dom.dispose();
@@ -287,7 +298,7 @@ test("inline-block with height", async () => {
 	block2.textContent = "Normal";
 	document.body.appendChild(block2);
 
-	await dom.render();
+	await nextFrame(dom);
 
 	const output = terminal.getStaticANSI();
 	const lines = output.trim().split("\n");
@@ -298,7 +309,8 @@ test("inline-block with height", async () => {
 	);
 	expect(greenBackgroundLines.length).toBe(3);
 
-	expect(output).toMatchSnapshot();
+	if (typeof Bun !== "undefined")
+		(expect(output) as {toMatchSnapshot(): void}).toMatchSnapshot();
 	terminal.writeANSI("inline-block-height");
 
 	dom.dispose();
@@ -318,7 +330,7 @@ test("inline-block with borders", async () => {
 	block.textContent = "Bordered";
 	document.body.appendChild(block);
 
-	await dom.render();
+	await nextFrame(dom);
 
 	const output = terminal.getStaticANSI();
 
@@ -326,7 +338,8 @@ test("inline-block with borders", async () => {
 	expect(output).toContain("┌"); // top border
 	expect(output).toContain("└"); // bottom border
 
-	expect(output).toMatchSnapshot();
+	if (typeof Bun !== "undefined")
+		(expect(output) as {toMatchSnapshot(): void}).toMatchSnapshot();
 	terminal.writeANSI("inline-block-borders");
 
 	dom.dispose();
@@ -342,7 +355,7 @@ test("an empty inline flex item measures zero, not its next sibling's width", as
 	const terminal = new MockProcess({cols: 40, rows: 4});
 	const dom = new TermDOM({process: terminal});
 	dom.document.body.innerHTML = `<div style="display:flex"><span></span><span>ABC</span><span>XY</span></div>`;
-	await dom.render();
+	await nextFrame(dom);
 
 	const spans = [...dom.document.querySelectorAll("span")];
 	const rect = (i: number) => spans[i].getBoundingClientRect();
@@ -377,7 +390,7 @@ test("a progress bar stays intact when its fill or track empties", async () => {
 		fill.textContent = "█".repeat(filled);
 		track.textContent = "░".repeat(width - filled);
 		pct.textContent = `${p}%`;
-		await dom.render();
+		await nextFrame(dom);
 	};
 
 	for (const p of [0, 50, 100]) {

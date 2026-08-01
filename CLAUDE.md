@@ -22,6 +22,19 @@ test("hello world", () => {
 });
 ```
 
+## Rendering invariant: every terminal attribute has a CSS rule behind it
+
+No painter may emit an SGR attribute (dim, underline, inverse, a color,
+...) from a hardcoded constant. Every attribute a cell carries must trace
+back to a computed style on real DOM: element styles, UA shadow trees
+(built-in widgets' internals -- see the input's field parts), the UA
+document stylesheet in styles.ts (our html.css -- e.g. ::selection's
+Highlight/HighlightText pair, which IS the inverse-video default), or
+author rules. The only code allowed to know about SGR is the CSS-value →
+terminal-attribute mapping layer (resolveFontWeight, cssColorToNumber,
+#cellStyleFromComputed, the ANSI renderer). If a widget needs a look, give
+it a UA rule or a UA shadow part -- never a literal in the painter.
+
 ## Development Commands
 
 - `bun typecheck` - Check TypeScript errors

@@ -14,6 +14,16 @@ const enum FGStyle {
 	Underline = 0b00000100 << 24,
 	Strikethrough = 0b00001000 << 24,
 	Overline = 0b00010000 << 24,
+	// Styled underline (SGR 4:2, the kitty extension most modern terminals
+	// adopted). Only meaningful alongside Underline: emission sends plain 4
+	// first so a DIRECTLY connected terminal that ignores 4:2 keeps a single
+	// underline. That ordering cannot survive a re-encoding intermediary:
+	// tmux collapses the pair into one styled-underline attribute at parse
+	// time and forwards it to a client without the usstyle feature in a form
+	// Apple Terminal drops entirely (verified by eye through the real
+	// chain). Author-land CSS for terminals known to support it -- the UA
+	// defaults deliberately never use it.
+	DoubleUnderline = 0b00100000 << 24,
 }
 
 const enum BGStyle {
@@ -105,6 +115,8 @@ export interface CellStyle {
 	bold?: boolean;
 	italic?: boolean;
 	underline?: boolean;
+	/** CSS text-decoration-style, insofar as SGR can draw it. */
+	underlineStyle?: "solid" | "double";
 	strikethrough?: boolean;
 	inverse?: boolean;
 	dim?: boolean;
@@ -154,6 +166,8 @@ export class Cell {
 		if (cellStyle?.bold) fg |= FGStyle.Bold;
 		if (cellStyle?.italic) fg |= FGStyle.Italic;
 		if (cellStyle?.underline) fg |= FGStyle.Underline;
+		if (cellStyle?.underline && cellStyle?.underlineStyle === "double")
+			fg |= FGStyle.DoubleUnderline;
 		if (cellStyle?.strikethrough) fg |= FGStyle.Strikethrough;
 		if (cellStyle?.overline) fg |= FGStyle.Overline;
 		this.fg = fg;
@@ -199,6 +213,7 @@ export class Cell {
 			bold: (this.fg & FGStyle.Bold) !== 0,
 			italic: (this.fg & FGStyle.Italic) !== 0,
 			underline: (this.fg & FGStyle.Underline) !== 0,
+			doubleUnderline: (this.fg & FGStyle.DoubleUnderline) !== 0,
 			strikethrough: (this.fg & FGStyle.Strikethrough) !== 0,
 			overline: (this.fg & FGStyle.Overline) !== 0,
 			inverse: (this.bg & BGStyle.Inverse) !== 0,
@@ -233,6 +248,8 @@ export class Cell {
 		if (cellStyle?.bold) fg |= FGStyle.Bold;
 		if (cellStyle?.italic) fg |= FGStyle.Italic;
 		if (cellStyle?.underline) fg |= FGStyle.Underline;
+		if (cellStyle?.underline && cellStyle?.underlineStyle === "double")
+			fg |= FGStyle.DoubleUnderline;
 		if (cellStyle?.strikethrough) fg |= FGStyle.Strikethrough;
 		if (cellStyle?.overline) fg |= FGStyle.Overline;
 
@@ -423,9 +440,9 @@ function getStyleDiff(
 	cell: Cell,
 	prev: Cell | null,
 	colorDepth: ColorDepth,
-): number[] {
+): Array<number | string> {
 	if (!prev) {
-		const seq: number[] = [];
+		const seq: Array<number | string> = [];
 
 		const fgColor = cell.getFgColor();
 		const bgColor = cell.getBgColor();
@@ -442,6 +459,9 @@ function getStyleDiff(
 		if (flags.dim) seq.push(2);
 		if (flags.italic) seq.push(3);
 		if (flags.underline) seq.push(4);
+		// After plain 4, so terminals without styled-underline support keep
+		// the single underline.
+		if (flags.doubleUnderline) seq.push("4:2");
 		if (flags.blink) seq.push(5);
 		if (flags.inverse) seq.push(7);
 		if (flags.strikethrough) seq.push(9);
@@ -454,7 +474,7 @@ function getStyleDiff(
 		return [];
 	}
 
-	const seq: number[] = [];
+	const seq: Array<number | string> = [];
 	const isDefault = cell.fg === 0 && cell.bg === 0;
 	const wasDefault = prev.fg === 0 && prev.bg === 0;
 
@@ -499,7 +519,28 @@ function getStyleDiff(
 		diffFlag(cellFlags.bold, prevFlags.bold, 1, 22);
 		diffFlag(cellFlags.dim, prevFlags.dim, 2, 22);
 		diffFlag(cellFlags.italic, prevFlags.italic, 3, 23);
-		diffFlag(cellFlags.underline, prevFlags.underline, 4, 24);
+		// Underline and its style diff as one attribute: 24 clears both, a
+		// bare 4 sets single (which also downgrades a previous double, per
+		// ECMA-48 and tmux's own tracking), and 4:2 upgrades to double --
+		// always after a plain 4 so unsupporting terminals degrade to single.
+		if (
+			cellFlags.underline !== prevFlags.underline ||
+			cellFlags.doubleUnderline !== prevFlags.doubleUnderline
+		) {
+			if (!cellFlags.underline) {
+				seq.push(24);
+			} else {
+				if (
+					!prevFlags.underline ||
+					(prevFlags.doubleUnderline && !cellFlags.doubleUnderline)
+				) {
+					seq.push(4);
+				}
+				if (cellFlags.doubleUnderline) {
+					seq.push("4:2");
+				}
+			}
+		}
 		diffFlag(cellFlags.blink, prevFlags.blink, 5, 25);
 		diffFlag(cellFlags.inverse, prevFlags.inverse, 7, 27);
 		diffFlag(cellFlags.strikethrough, prevFlags.strikethrough, 9, 29);
@@ -663,6 +704,17 @@ export class DrawingContext {
 	// and shows it -- IME composition anchors at the real cursor, so a fake
 	// inverse-cell caret is not enough for text entry.
 	caret: {col: number; row: number} | null = null;
+	// The active overflow:hidden clip, in the same document-space (row, col)
+	// coordinates as every draw call below -- set/restored by the renderer
+	// around a clipping element's children. An edge is +-Infinity when that
+	// axis isn't clipped (e.g. overflow-x:hidden;overflow-y:visible only
+	// bounds left/right). null means no clip is active at all.
+	clipRect: {
+		left: number;
+		top: number;
+		right: number;
+		bottom: number;
+	} | null = null;
 
 	constructor(
 		buffer: CellBuffer,
@@ -763,7 +815,10 @@ export class DrawingContext {
 			(toLeft > 0 ? toLeft << BorderShift.Left : 0);
 
 		const put = (col: number, row: number, encoding: number) => {
-			if (col < 0 || col >= this.cols || row < 0 || row >= this.rows) return;
+			// No bounds check here: rows are DOCUMENT rows, and #setBorderCell
+			// culls after applying the viewport offset -- pre-culling against
+			// terminal rows dropped bottom edges the camera had scrolled INTO
+			// view.
 			this.#setBorderCell(col, row, encoding, style);
 		};
 
@@ -809,6 +864,12 @@ export class DrawingContext {
 		}
 	}
 
+	#inClip(row: number, col: number): boolean {
+		if (!this.clipRect) return true;
+		const {left, top, right, bottom} = this.clipRect;
+		return col >= left && col < right && row >= top && row < bottom;
+	}
+
 	#setCell(row: number, col: number, char: string, style?: CellStyle): void {
 		const terminalRow = row + this.viewportOffset;
 
@@ -819,6 +880,8 @@ export class DrawingContext {
 			col >= this.cols
 		)
 			return;
+
+		if (this.clipRect && !this.#inClip(row, col)) return;
 
 		row = terminalRow;
 
@@ -837,6 +900,7 @@ export class DrawingContext {
 					bold: finalStyle.bold,
 					italic: finalStyle.italic,
 					underline: finalStyle.underline,
+					underlineStyle: finalStyle.underlineStyle,
 					strikethrough: finalStyle.strikethrough,
 					inverse: finalStyle.inverse,
 					dim: finalStyle.dim,
@@ -858,11 +922,16 @@ export class DrawingContext {
 		borderEncoding: number,
 		style?: CellStyle,
 	): void {
-		const terminalY = y;
+		// Document row -> terminal row, exactly as #setCell translates text.
+		// Without the offset, borders were only ever correct at scroll 0: a
+		// scrolled camera stamped off-screen top edges into the band's first
+		// row and lost bottom edges it had scrolled to.
+		const terminalY = y + this.viewportOffset;
 
 		if (terminalY < 0 || terminalY >= this.rows || x < 0 || x >= this.cols) {
 			return;
 		}
+		if (!this.#inClip(y, x)) return;
 
 		y = terminalY;
 
@@ -1014,20 +1083,6 @@ export class Renderer {
 	 * the fold: the already-printed copy is in the scrollback and cannot be
 	 * corrected, so the only honest thing left is to print a fresh one below it.
 	 */
-	/**
-	 * Record that `rows` lines were scrolled off the top by newlines the caller
-	 * already emitted, so our picture of the screen matches the terminal's.
-	 *
-	 * Newlines are used rather than SU (`CSI n S`) because SU *discards* what it
-	 * scrolls past, while a newline at the bottom margin commits it to the
-	 * scrollback -- which is the whole point: the rows being pushed away belong to
-	 * whatever ran before us, and must survive.
-	 */
-	beginNewBlock(): void {
-		this.#hasSavedCursor = false;
-		this.clearPreviousBuffer();
-	}
-
 	clearPreviousBuffer(): void {
 		this.#prevBuffer = null;
 		this.#prevContentHeight = 0;

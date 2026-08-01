@@ -19,9 +19,9 @@
  * Nothing of ours is committed in document mode, so nothing is frozen: the
  * document stays a single mutable thing that we repaint a window of.
  */
-import {test, expect} from "bun:test";
+import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
-import {MockProcess} from "./test-utils.js";
+import {MockProcess, nextFrame} from "./test-utils.js";
 
 interface Screen {
 	scrollback: string[];
@@ -48,8 +48,8 @@ async function withPriorOutput(rows = 10) {
 	const terminal = new MockProcess({rows, cols: 30});
 	terminal.stdout.write("PREV-1\r\nPREV-2\r\nPREV-3\r\nPREV-4\r\n");
 
-	const dom = new TermDOM({process: terminal});
-	await dom.detectCommandStart();
+	const dom = new TermDOM({process: terminal, detectCursor: true});
+	await nextFrame(dom);
 
 	return {terminal, dom};
 }
@@ -60,12 +60,11 @@ test("document mode scrolls prior output away rather than painting over it", asy
 	// The command started below the previous command's output.
 	expect(dom.window.screenTop).toBe(4);
 
-	dom.setViewportMode("document");
 	dom.document.body.innerHTML = Array.from(
 		{length: 30},
 		(_, i) => `<div>doc ${i + 1}</div>`,
 	).join("");
-	await dom.render();
+	await nextFrame(dom);
 
 	const screen = read(terminal, 10);
 
@@ -82,15 +81,14 @@ test("document mode scrolls prior output away rather than painting over it", asy
 
 test("the camera moves over the document without committing anything", async () => {
 	const {terminal, dom} = await withPriorOutput();
-	dom.setViewportMode("document");
 	dom.document.body.innerHTML = Array.from(
 		{length: 30},
 		(_, i) => `<div>doc ${i + 1}</div>`,
 	).join("");
-	await dom.render();
+	await nextFrame(dom);
 
-	dom.scrollDocumentBy(10);
-	await dom.render();
+	dom.window.scrollBy(0, 10);
+	await nextFrame(dom);
 
 	const screen = read(terminal, 10);
 
@@ -107,15 +105,14 @@ test("the camera moves over the document without committing anything", async () 
 
 test("the camera cannot run off the end of the document", async () => {
 	const {terminal, dom} = await withPriorOutput();
-	dom.setViewportMode("document");
 	dom.document.body.innerHTML = Array.from(
 		{length: 15},
 		(_, i) => `<div>doc ${i + 1}</div>`,
 	).join("");
-	await dom.render();
+	await nextFrame(dom);
 
-	dom.scrollDocumentBy(1000);
-	await dom.render();
+	dom.window.scrollBy(0, 1000);
+	await nextFrame(dom);
 
 	// 15 rows of document, 10 rows of screen: the furthest it can go is row 5,
 	// which puts the last row of the document at the bottom of the screen.
@@ -130,24 +127,23 @@ test("content above the camera stays mutable, unlike flow mode", async () => {
 	// frozen: an element that has scrolled out of view can still be changed, and
 	// scrolling back to it shows the change.
 	const {terminal, dom} = await withPriorOutput();
-	dom.setViewportMode("document");
 	dom.document.body.innerHTML = Array.from(
 		{length: 30},
 		(_, i) => `<div id="d${i + 1}">doc ${i + 1}</div>`,
 	).join("");
-	await dom.render();
+	await nextFrame(dom);
 
-	dom.scrollDocumentBy(15);
-	await dom.render();
+	dom.window.scrollBy(0, 15);
+	await nextFrame(dom);
 
 	// Change a row that is now far above the camera -- in flow mode this row
 	// would be frozen in the scrollback and the change would be unrepresentable.
 	dom.document.getElementById("d2")!.textContent = "CHANGED-WAY-UP";
-	await dom.render();
+	await nextFrame(dom);
 
 	// Scroll back to it.
-	dom.scrollDocumentBy(-15);
-	await dom.render();
+	dom.window.scrollBy(0, -15);
+	await nextFrame(dom);
 
 	const screen = read(terminal, 10);
 	expect(screen.viewport[1]).toBe("CHANGED-WAY-UP");
@@ -172,13 +168,12 @@ test("document mode waits for cursor detection so the anchor never shifts", asyn
 	// NOT await it -- the render must, which is the fix. (detectCursor defaults off
 	// for a non-real process, so enable it to exercise the path.)
 	const dom = new TermDOM({process: terminal, detectCursor: true});
-	dom.setViewportMode("document");
 	dom.document.body.innerHTML = `<div id="a">A-0</div><div id="b">B</div>`;
-	await dom.render();
+	await nextFrame(dom);
 
 	// A second frame, well after detection has resolved.
 	dom.document.getElementById("a")!.textContent = "A-1";
-	await dom.render();
+	await nextFrame(dom);
 
 	const screen = read(terminal, 10);
 
@@ -204,19 +199,17 @@ test("a render arriving mid-frame is coalesced, not dropped", async () => {
 	// latest state unrendered. The guard now defers instead: it runs a trailing
 	// frame that folds in whatever mutated in the meantime.
 	const terminal = new MockProcess({rows: 20, cols: 40});
-	const dom = new TermDOM({process: terminal});
-	dom.setViewportMode("document");
+	const dom = new TermDOM({process: terminal, detectCursor: true});
 	dom.document.body.innerHTML =
 		`<div id="dyn">frame 0</div>` +
 		Array.from({length: 8}, (_, i) => `<div>static ${i + 1}</div>`).join("");
-	await dom.render();
+	await nextFrame(dom);
 
-	// Two renders where the second starts while the first is still in flight.
+	// Two updates back to back: the second lands while the first frame is still
+	// being coalesced. The latest state must win, with nothing dropped or shifted.
 	dom.document.getElementById("dyn")!.textContent = "frame 1";
-	const first = dom.render();
 	dom.document.getElementById("dyn")!.textContent = "frame 2";
-	const second = dom.render();
-	await Promise.all([first, second]);
+	await nextFrame(dom);
 
 	const screen = read(terminal, 20);
 
@@ -237,16 +230,15 @@ test("culling never drops an absolute child positioned far from its parent", asy
 	// the union of the box with every descendant's, so the parent survives
 	// culling and the deep child paints when the camera reaches it.
 	const terminal = new MockProcess({rows: 10, cols: 40});
-	const dom = new TermDOM({process: terminal});
-	dom.setViewportMode("document");
+	const dom = new TermDOM({process: terminal, detectCursor: true});
 	dom.document.body.innerHTML =
 		`<div style="position:relative">top row` +
 		`<div style="position:absolute;top:45ch;left:0">ABS-DEEP</div></div>` +
 		Array.from({length: 58}, (_, i) => `<div>row ${i + 1}</div>`).join("");
-	await dom.render();
+	await nextFrame(dom);
 
-	dom.scrollDocumentBy(42);
-	await dom.render();
+	dom.window.scrollBy(0, 42);
+	await nextFrame(dom);
 
 	const screen = read(terminal, 10);
 	// The absolute child paints at document row 45 -- visible row 3 with the
@@ -254,8 +246,8 @@ test("culling never drops an absolute child positioned far from its parent", asy
 	expect(screen.viewport[3]).toContain("EP");
 
 	// And scrolling back re-reveals the culled top correctly.
-	dom.scrollDocumentBy(-42);
-	await dom.render();
+	dom.window.scrollBy(0, -42);
+	await nextFrame(dom);
 	expect(read(terminal, 10).viewport[0]).toBe("top row");
 
 	dom.dispose();
@@ -274,12 +266,11 @@ test("growing past the prompt keeps the diff aligned with the screen", async () 
 		terminal.stdout.write("PREV-1\r\nPREV-2\r\n", () => resolve());
 	});
 	const dom = new TermDOM({process: terminal, detectCursor: true});
-	dom.setViewportMode("document");
 	dom.document.body.innerHTML = Array.from(
 		{length: 15},
 		(_, i) => `<div>R${String(i).padStart(2, "0")}</div>`,
 	).join("");
-	await dom.render();
+	await nextFrame(dom);
 
 	// Grow so the region needs the prompt's two rows; new row r equals what the
 	// old, wrongly-shifted model would predict at r -- the trap for the diff.
@@ -287,7 +278,7 @@ test("growing past the prompt keeps the diff aligned with the screen", async () 
 		{length: 22},
 		(_, i) => `<div>R${String(i + 2).padStart(2, "0")}</div>`,
 	).join("");
-	await dom.render();
+	await nextFrame(dom);
 
 	const screen = read(terminal, 20);
 	expect(screen.viewport[0]).toBe("R02");
@@ -295,4 +286,39 @@ test("growing past the prompt keeps the diff aligned with the screen", async () 
 	expect(screen.viewport[19]).toBe("R21");
 
 	dom.dispose();
+});
+
+test("close() seals the document into scrollback; a later mutation starts a fresh block below", async () => {
+	const {terminal, dom} = await withPriorOutput();
+	dom.document.body.innerHTML = `<div>first block</div>`;
+	await nextFrame(dom);
+
+	// close() flushes the live region to scrollback and freezes it -- res.end().
+	dom.document.close();
+
+	// A new mutation is a fresh document, rendered below the sealed block.
+	dom.document.body.innerHTML = `<div>second block</div>`;
+	await nextFrame(dom);
+
+	// The prior command's output, the sealed block, and the new block all survive;
+	// nothing was overwritten.
+	const screen = read(terminal, 10);
+	const all = [...screen.scrollback, ...screen.viewport];
+	expect(all).toContain("PREV-1");
+	expect(all).toContain("first block");
+	expect(all).toContain("second block");
+
+	dom.dispose();
+});
+
+test("[Symbol.dispose] tears down, so `using` works", () => {
+	const terminal = new MockProcess({rows: 10, cols: 30});
+	const dom = new TermDOM({process: terminal, detectCursor: true});
+	dom.document.body.innerHTML = "<div>hi</div>";
+
+	// The explicit-resource-management hook delegates to dispose().
+	dom[Symbol.dispose]();
+
+	// Idempotent with an explicit dispose(); tearing down twice is safe.
+	expect(() => dom.dispose()).not.toThrow();
 });

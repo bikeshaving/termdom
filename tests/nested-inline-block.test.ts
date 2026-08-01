@@ -3,9 +3,9 @@
  * Specifically testing findInlineRunHead and getRectTexts logic
  */
 
-import {test, expect} from "bun:test";
-import {MockProcess} from "./test-utils";
-import {TermDOM} from "../src/internal/termdom.js";
+import {test, expect} from "@b9g/libuild/test";
+import {MockProcess, nextFrame} from "./test-utils";
+import {TermDOM, kLayoutEngine} from "../src/internal/termdom.js";
 
 test("findInlineRunHead should find outer inline-block for nested text nodes", async () => {
 	const terminal = new MockProcess({cols: 50, rows: 10});
@@ -28,10 +28,10 @@ test("findInlineRunHead should find outer inline-block for nested text nodes", a
 	inner.textContent = "block";
 	outer.appendChild(inner);
 
-	await dom.render();
+	await nextFrame(dom);
 
 	// Access layout engine internals for testing
-	const layoutEngine = (dom as any).layoutEngine;
+	const layoutEngine = dom[kLayoutEngine];
 
 	// Test findInlineRunHead for different nodes
 	const spanTextNode = span.firstChild as Text;
@@ -65,9 +65,9 @@ test("getRectTexts should work for text nodes in nested inline-blocks", async ()
 	inner.textContent = "Second";
 	outer.appendChild(inner);
 
-	await dom.render();
+	await nextFrame(dom);
 
-	const layoutEngine = (dom as any).layoutEngine;
+	const layoutEngine = dom[kLayoutEngine];
 
 	// Test getRectTexts on individual text nodes
 	const spanTextNode = span.firstChild as Text;
@@ -113,7 +113,7 @@ test("nested inline-block should render both texts", async () => {
 	inner.textContent = "block";
 	outer.appendChild(inner);
 
-	await dom.render();
+	await nextFrame(dom);
 
 	const output = terminal.getStaticANSI();
 	const visibleText = terminal.getVisibleText();
@@ -149,9 +149,9 @@ test("deeply nested inline-blocks should work", async () => {
 	inner.textContent = "Inner";
 	middle.appendChild(inner);
 
-	await dom.render();
+	await nextFrame(dom);
 
-	const layoutEngine = (dom as any).layoutEngine;
+	const layoutEngine = dom[kLayoutEngine];
 	const visibleText = terminal.getVisibleText();
 
 	// All text should be present
@@ -196,7 +196,7 @@ test("mixed content in nested inline-blocks", async () => {
 	const text2 = document.createTextNode(" End");
 	container.appendChild(text2);
 
-	await dom.render();
+	await nextFrame(dom);
 
 	const visibleText = terminal.getVisibleText();
 

@@ -5,8 +5,8 @@
  * to ensure proper TTY simulation and cursor query handling
  */
 
-import {describe, test, expect, beforeEach} from "bun:test";
-import {MockProcess, stripControlCodes} from "./test-utils.js";
+import {describe, test, expect, beforeEach} from "@b9g/libuild/test";
+import {MockProcess, stripControlCodes, nextFrame} from "./test-utils.js";
 import {TermDOM} from "../src/internal/termdom.js";
 
 describe("MockProcess", () => {
@@ -122,25 +122,16 @@ describe("MockProcess", () => {
 		test("TermDOM cursor detection completes", async () => {
 			const dom = new TermDOM({process: terminal});
 
-			// Should be able to call detectCommandStart without timeout
+			// Cursor detection runs on the first frame; on a responsive terminal it
+			// must settle quickly, not hang on TermDOM's 1s fallback.
 			const startTime = Date.now();
-			try {
-				await Promise.race([
-					dom.detectCommandStart(),
-					new Promise((_, reject) =>
-						setTimeout(() => reject(new Error("Timeout")), 500),
-					),
-				]);
-			} catch (error) {
-				const elapsed = Date.now() - startTime;
-				// If it times out, it should be our 500ms timeout, not the 1000ms TermDOM timeout
-				if (error instanceof Error && error.message === "Timeout") {
-					expect(elapsed).toBeLessThan(600); // Our timeout
-				} else {
-					// Unexpected error
-					throw error;
-				}
-			}
+			await Promise.race([
+				nextFrame(dom),
+				new Promise((_, reject) =>
+					setTimeout(() => reject(new Error("Timeout")), 500),
+				),
+			]);
+			expect(Date.now() - startTime).toBeLessThan(500);
 
 			dom.dispose();
 		});
@@ -154,7 +145,7 @@ describe("MockProcess", () => {
 
 			// Should render without timing out
 			const startTime = Date.now();
-			await dom.render();
+			await nextFrame(dom);
 			const elapsed = Date.now() - startTime;
 
 			// Should complete quickly, not take 1000ms timeout

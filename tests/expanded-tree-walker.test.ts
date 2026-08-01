@@ -1,7 +1,7 @@
-import {test, expect} from "bun:test";
+import {test, expect} from "@b9g/libuild/test";
 import {JSDOM} from "jsdom";
 import {TermDOM} from "../src/internal/termdom.js";
-import {MockProcess} from "./test-utils.js";
+import {MockProcess, nextFrame, styleManagerFor} from "./test-utils.js";
 import {
 	createExpandedTreeWalker,
 	setShadowRoot,
@@ -678,7 +678,10 @@ test("TermDOM - ExpandedTreeWalker basic functionality", () => {
 	div.textContent = "Hello World";
 	document.body.appendChild(div);
 
-	const expandedWalker = termdom.createExpandedTreeWalker(document.body);
+	const expandedWalker = createExpandedTreeWalker(
+		termdom.window as any,
+		document.body,
+	);
 
 	expect(expandedWalker).toBeDefined();
 	expect(expandedWalker.root).toBe(document.body);
@@ -717,7 +720,7 @@ test("TermDOM - ExpandedTreeWalker with shadow DOM", () => {
 	testEl.textContent = "Light content";
 	document.body.appendChild(testEl);
 
-	const walker = termdom.createExpandedTreeWalker(document.body);
+	const walker = createExpandedTreeWalker(termdom.window as any, document.body);
 
 	const nodes: Array<{name: string; content: string; className?: string}> = [];
 
@@ -751,7 +754,7 @@ test("TermDOM - ExpandedTreeWalker basic traversal", () => {
 	document.body.appendChild(div);
 
 	// Test basic walker creation and traversal
-	const walker = termdom.createExpandedTreeWalker(document.body);
+	const walker = createExpandedTreeWalker(termdom.window as any, document.body);
 
 	expect(walker.root).toBe(document.body);
 	expect(walker.currentNode).toBe(document.body);
@@ -761,122 +764,49 @@ test("TermDOM - ExpandedTreeWalker basic traversal", () => {
 	expect(nextNode).toBe(div);
 });
 
-test("ExpandedTreeWalker supports named slots and multiple assigned elements", () => {
-	const dom = new JSDOM("<!DOCTYPE html><html><body></body></html>");
-	const window = dom.window;
-	const document = window.document;
+test("ExpandedTreeWalker flattens named slots into composed order", () => {
+	// Native shadow DOM end-to-end: jsdom performs the real slot assignment,
+	// and the walker's flat-tree layer dissolves the slots (UA default
+	// `slot { display: contents }`) -- projected content appears at each
+	// slot's position, unassigned-slot fallback stays hidden, and no SLOT
+	// element ever surfaces as a box of its own.
+	const terminal = new MockProcess();
+	const termdom = new TermDOM({process: terminal});
+	const {document} = termdom;
 
-	// Create host with multiple elements for different slots
 	const host = document.createElement("div");
-	host.innerHTML = `
-		<span slot="header" class="header-1">Header 1</span>
-		<span slot="header" class="header-2">Header 2</span>
-		<p slot="content" class="content-1">Content 1</p>
-		<p slot="content" class="content-2">Content 2</p>
-		<span class="default-content">Default content</span>
-	`;
+	host.innerHTML =
+		'<span slot="header" class="header-1">Header 1</span>' +
+		'<span slot="header" class="header-2">Header 2</span>' +
+		'<p slot="content" class="content-1">Content 1</p>' +
+		'<span class="default-content">Default content</span>';
+	const shadowRoot = host.attachShadow({mode: "open"});
+	shadowRoot.innerHTML =
+		'<div class="chrome-header"><slot name="header"></slot></div>' +
+		'<div class="chrome-content"><slot name="content"></slot></div>' +
+		"<slot></slot>";
 	document.body.appendChild(host);
 
-	// Create shadow root with named slots
-	const shadowRoot = {
-		mode: "open",
-		host: host,
-		childNodes: [],
-		nodeType: 11,
-	} as any;
-
-	// Create header slot
-	const headerSlot = document.createElement("slot");
-	headerSlot.name = "header";
-	const headerNodes = Array.from(host.querySelectorAll('[slot="header"]'));
-	Object.defineProperty(headerSlot, "assignedNodes", {
-		value: () => headerNodes,
-		writable: true,
-		configurable: true,
-	});
-
-	// Create content slot
-	const contentSlot = document.createElement("slot");
-	contentSlot.name = "content";
-	const contentNodes = Array.from(host.querySelectorAll('[slot="content"]'));
-	Object.defineProperty(contentSlot, "assignedNodes", {
-		value: () => contentNodes,
-		writable: true,
-		configurable: true,
-	});
-
-	// Create default slot
-	const defaultSlot = document.createElement("slot");
-	const defaultNodes = Array.from(host.childNodes).filter(
-		(node) => node.nodeType === 1 && !(node as Element).hasAttribute("slot"),
-	);
-	Object.defineProperty(defaultSlot, "assignedNodes", {
-		value: () => defaultNodes,
-		writable: true,
-		configurable: true,
-	});
-
-	// Set up shadow DOM structure with proper sibling links
-	shadowRoot.childNodes = [headerSlot, contentSlot, defaultSlot];
-	shadowRoot.firstChild = headerSlot;
-	shadowRoot.lastChild = defaultSlot;
-
-	// Link siblings properly
-	Object.defineProperty(headerSlot, "nextSibling", {
-		value: contentSlot,
-		writable: true,
-	});
-	Object.defineProperty(contentSlot, "previousSibling", {
-		value: headerSlot,
-		writable: true,
-	});
-	Object.defineProperty(contentSlot, "nextSibling", {
-		value: defaultSlot,
-		writable: true,
-	});
-	Object.defineProperty(defaultSlot, "previousSibling", {
-		value: contentSlot,
-		writable: true,
-	});
-
-	[headerSlot, contentSlot, defaultSlot].forEach((slot) => {
-		Object.defineProperty(slot, "parentNode", {
-			value: shadowRoot,
-			writable: true,
-			configurable: true,
-		});
-	});
-
-	setShadowRoot(host, shadowRoot);
-
-	const walker = createExpandedTreeWalker(window as any, document.body);
-
-	const nodes: Array<{name: string; className?: string; slotName?: string}> =
-		[];
-
-	let node = walker.nextNode();
-	while (node && nodes.length < 20) {
-		nodes.push({
-			name: node.nodeName,
-			className: (node as any).className || undefined,
-			slotName: (node as any).slot || undefined,
-		});
-		node = walker.nextNode();
+	const walker = createExpandedTreeWalker(termdom.window as any, host);
+	const classNames: string[] = [];
+	let sawSlot = false;
+	for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+		if (node.nodeType === node.ELEMENT_NODE) {
+			if (node.nodeName === "SLOT") sawSlot = true;
+			const className = (node as Element).className;
+			if (className) classNames.push(className);
+		}
 	}
 
-	// Should find all slot elements
-	expect(nodes.filter((n) => n.name === "SLOT")).toHaveLength(3);
-
-	// Should find elements assigned to header slot
-	expect(nodes.some((n) => n.className === "header-1")).toBe(true);
-	expect(nodes.some((n) => n.className === "header-2")).toBe(true);
-
-	// Should find elements assigned to content slot
-	expect(nodes.some((n) => n.className === "content-1")).toBe(true);
-	expect(nodes.some((n) => n.className === "content-2")).toBe(true);
-
-	// Should find elements assigned to default slot
-	expect(nodes.some((n) => n.className === "default-content")).toBe(true);
+	expect(sawSlot).toBe(false);
+	expect(classNames).toEqual([
+		"chrome-header",
+		"header-1",
+		"header-2",
+		"chrome-content",
+		"content-1",
+		"default-content",
+	]);
 });
 
 test("Pure JSDOM - ExpandedTreeWalker respects root boundary", () => {
@@ -1155,7 +1085,7 @@ test("TermDOM - ::marker pseudo-elements with display: list-item", () => {
 	document.body.appendChild(regularDiv);
 
 	// Trigger stylesheet refresh to attach pseudo elements
-	termdom.styleManager.refreshStylesheets();
+	styleManagerFor(termdom).refreshStylesheets();
 
 	// Check that pseudo elements were created correctly
 	expect(getPseudoElement(li, "::marker")?.textContent).toBe("★ ");
@@ -1205,7 +1135,7 @@ test("TermDOM - ::marker appears before ::before pseudo-elements", () => {
 	document.body.appendChild(div);
 
 	// Trigger stylesheet refresh
-	termdom.styleManager.refreshStylesheets();
+	styleManagerFor(termdom).refreshStylesheets();
 
 	// Verify all pseudo elements exist
 	expect(getPseudoElement(div, "::marker")?.textContent).toBe("★ ");
@@ -1213,7 +1143,7 @@ test("TermDOM - ::marker appears before ::before pseudo-elements", () => {
 	expect(getPseudoElement(div, "::after")?.textContent).toBe("]");
 
 	// Use ExpandedTreeWalker to verify order
-	const walker = termdom.createExpandedTreeWalker(div);
+	const walker = createExpandedTreeWalker(termdom.window as any, div);
 
 	const foundNodes: Array<{
 		type: string;
@@ -1289,10 +1219,10 @@ test("TermDOM - ::marker only on elements with display: list-item in walker trav
 	document.body.appendChild(container);
 
 	// Trigger stylesheet refresh
-	termdom.styleManager.refreshStylesheets();
+	styleManagerFor(termdom).refreshStylesheets();
 
 	// Use walker to traverse and find ::marker elements
-	const walker = termdom.createExpandedTreeWalker(container);
+	const walker = createExpandedTreeWalker(termdom.window as any, container);
 
 	const markerNodes: Array<{parentTag: string; content: string}> = [];
 	let node = walker.nextNode();
@@ -1357,8 +1287,8 @@ test("TermDOM - ::marker rendering test", async () => {
 	document.body.appendChild(div);
 
 	// Trigger stylesheet refresh and render
-	termdom.styleManager.refreshStylesheets();
-	await termdom.render();
+	styleManagerFor(termdom).refreshStylesheets();
+	await nextFrame(termdom);
 
 	// Check terminal output contains all pseudo-element content in correct order
 	const output = terminal.getPlainText();
@@ -1367,4 +1297,28 @@ test("TermDOM - ::marker rendering test", async () => {
 	// Verify the exact order appears in output
 	const expectedPattern = "▶ [Content]";
 	expect(output.includes(expectedPattern)).toBe(true);
+});
+
+test("Pure JSDOM - nextSibling/previousSibling at the root return null, per spec", () => {
+	// The TreeWalker spec's traverse-siblings algorithm returns null when the
+	// current node is the root: a walker never visits its root's siblings.
+	// Without this guard, a walker rooted at an element whose subtree was
+	// exhausted escaped into the root's DOM siblings -- concretely, an
+	// inline-block flex item (its own inline-run head) "skipped its children"
+	// via nextSibling() and swallowed the NEXT flex item's text into its own
+	// measurement, misplacing every later sibling on the main axis.
+	const dom = new JSDOM(
+		"<!DOCTYPE html><html><body><span id='a'>x</span><span id='b'>y</span></body></html>",
+	);
+	const window = dom.window;
+	const a = window.document.getElementById("a")!;
+
+	const walker = createExpandedTreeWalker(window as any, a);
+	expect(walker.nextSibling()).toBe(null);
+	expect(walker.previousSibling()).toBe(null);
+	expect(walker.currentNode).toBe(a); // unmoved
+
+	// A child of the root still traverses siblings normally.
+	walker.firstChild();
+	expect(walker.nextSibling()).toBe(null); // lone text child, no sibling
 });

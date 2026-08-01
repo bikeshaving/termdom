@@ -272,15 +272,15 @@ interface LayoutResult {
 }
 
 /**
- * `useWebDefaults` semantics: flex-direction defaults to row (not column),
- * align-content to stretch (not flex-start), and flex-shrink to 1 (not 0).
- * termdom always constructs its config with web defaults on.
+ * Web (browser) flex defaults, always: flex-direction row, align-content
+ * stretch, flex-shrink 1. Yoga's non-web defaults (column, flex-shrink 0) are
+ * React Native's; a DOM renderer never wants them.
  */
-function createStyle(webDefaults: boolean): Style {
+function createStyle(): Style {
 	return {
-		flexDirection: webDefaults ? FLEX_DIRECTION_ROW : FLEX_DIRECTION_COLUMN,
+		flexDirection: FLEX_DIRECTION_ROW,
 		justifyContent: JUSTIFY_FLEX_START,
-		alignContent: webDefaults ? ALIGN_STRETCH : ALIGN_FLEX_START,
+		alignContent: ALIGN_STRETCH,
 		alignItems: ALIGN_STRETCH,
 		alignSelf: ALIGN_AUTO,
 		positionType: POSITION_TYPE_RELATIVE,
@@ -346,15 +346,10 @@ function createLayout(): LayoutResult {
 // ---------------------------------------------------------------------------
 
 export class Config {
-	useWebDefaults = false;
 	pointScaleFactor = 1;
 
 	static create(): Config {
 		return new Config();
-	}
-
-	setUseWebDefaults(value: boolean): void {
-		this.useWebDefaults = value;
 	}
 
 	setPointScaleFactor(value: number): void {
@@ -403,6 +398,14 @@ function constraintsMatch(
 	);
 }
 
+/** See Node#unstackedChildCount. */
+function breaksStacking(node: Node): boolean {
+	return (
+		node.style.positionType !== POSITION_TYPE_STATIC ||
+		node.style.display === DISPLAY_NONE
+	);
+}
+
 export class Node {
 	style: Style;
 	layout: LayoutResult;
@@ -419,6 +422,18 @@ export class Node {
 	// extent. Auto-height boxes -- the normal case -- always contain theirs.)
 	extentTop = 0;
 	extentBottom = 0;
+	// How many direct children can't be trusted to keep children[] sorted
+	// top-to-bottom by extentTop -- incrementally maintained by insertChild/
+	// removeChild/setPositionType/setDisplay. Two ways a child breaks that:
+	// position:relative/absolute (its own extent can land anywhere -- an
+	// offset, or full removal from flow -- regardless of DOM position), or
+	// display:none (skipped by flow layout entirely, so its layout.top is
+	// never updated from a stale default -- its extent doesn't reflect where
+	// it sits in document order, unlike a merely zero-height visible box,
+	// which is still correctly slotted). children[] is only guaranteed sorted
+	// when this is 0, which is what lets paint-time culling skip straight to
+	// the visible range instead of visiting every child to rule it out.
+	unstackedChildCount = 0;
 	// Layout caches: the constraints of the last sizing pass and the last full
 	// layout pass, with the sizes they produced. A clean node asked again under
 	// identical constraints restores its size and skips its whole subtree -- so
@@ -432,7 +447,7 @@ export class Node {
 
 	constructor(config: Config = defaultConfig) {
 		this.config = config;
-		this.style = createStyle(config.useWebDefaults);
+		this.style = createStyle();
 		this.layout = createLayout();
 	}
 
@@ -449,7 +464,10 @@ export class Node {
 	insertChild(child: Node, index: number): void {
 		child.parent = this;
 		this.children.splice(index, 0, child);
-		this.markDirtyUpward();
+		if (breaksStacking(child)) {
+			this.unstackedChildCount++;
+		}
+		this.#markDirtyUpward();
 	}
 
 	removeChild(child: Node): void {
@@ -457,7 +475,10 @@ export class Node {
 		if (index !== -1) {
 			this.children.splice(index, 1);
 			child.parent = null;
-			this.markDirtyUpward();
+			if (breaksStacking(child)) {
+				this.unstackedChildCount--;
+			}
+			this.#markDirtyUpward();
 		}
 	}
 
@@ -467,6 +488,16 @@ export class Node {
 
 	getChildCount(): number {
 		return this.children.length;
+	}
+
+	/**
+	 * This child's position among its siblings, or -1 if it isn't one.
+	 * Searches from the tail: callers that just inserted a run of trailing
+	 * children (the common case -- appending in document order) ask about the
+	 * most recently added one first, which sits at or near the end.
+	 */
+	getChildIndex(child: Node): number {
+		return this.children.lastIndexOf(child);
 	}
 
 	freeRecursive(): void {
@@ -480,7 +511,7 @@ export class Node {
 
 	markDirty(): void {
 		this.dirty = true;
-		this.markDirtyUpward();
+		this.#markDirtyUpward();
 	}
 
 	/** Recompute paint extents for this subtree. See extentTop/extentBottom. */
@@ -497,7 +528,7 @@ export class Node {
 		this.extentBottom = extentBottom;
 	}
 
-	private markDirtyUpward(): void {
+	#markDirtyUpward(): void {
 		for (let node: Node | null = this; node; node = node.parent) {
 			node.dirty = true;
 		}
@@ -531,7 +562,9 @@ export class Node {
 		this.markDirty();
 	}
 	setPositionType(v: PositionType): void {
+		const before = breaksStacking(this);
 		this.style.positionType = v;
+		this.#updateParentUnstackedCount(before);
 		this.markDirty();
 	}
 	setFlexWrap(v: Wrap): void {
@@ -565,8 +598,18 @@ export class Node {
 	}
 
 	setDisplay(v: Display): void {
+		const before = breaksStacking(this);
 		this.style.display = v;
+		this.#updateParentUnstackedCount(before);
 		this.markDirty();
+	}
+
+	/** Keeps the parent's unstackedChildCount correct after a style setter that can flip breaksStacking(this). */
+	#updateParentUnstackedCount(before: boolean): void {
+		const after = breaksStacking(this);
+		if (this.parent && before !== after) {
+			this.parent.unstackedChildCount += after ? 1 : -1;
+		}
 	}
 
 	setFlexGrow(v: number | undefined): void {
@@ -650,24 +693,24 @@ export class Node {
 	}
 
 	setMargin(edge: Edge, v: number | undefined): void {
-		this.setEdges(this.style.margin, edge, toValue(v));
+		this.#setEdges(this.style.margin, edge, toValue(v));
 		this.markDirty();
 	}
 	setMarginPercent(edge: Edge, v: number): void {
-		this.setEdges(this.style.margin, edge, {unit: UNIT_PERCENT, value: v});
+		this.#setEdges(this.style.margin, edge, {unit: UNIT_PERCENT, value: v});
 		this.markDirty();
 	}
 	setMarginAuto(edge: Edge): void {
-		this.setEdges(this.style.margin, edge, AUTO_VALUE);
+		this.#setEdges(this.style.margin, edge, AUTO_VALUE);
 		this.markDirty();
 	}
 
 	setPadding(edge: Edge, v: number | undefined): void {
-		this.setEdges(this.style.padding, edge, toValue(v));
+		this.#setEdges(this.style.padding, edge, toValue(v));
 		this.markDirty();
 	}
 	setPaddingPercent(edge: Edge, v: number): void {
-		this.setEdges(this.style.padding, edge, {unit: UNIT_PERCENT, value: v});
+		this.#setEdges(this.style.padding, edge, {unit: UNIT_PERCENT, value: v});
 		this.markDirty();
 	}
 
@@ -680,19 +723,19 @@ export class Node {
 	}
 
 	setPosition(edge: Edge, v: number | undefined): void {
-		this.setEdges(this.style.position, edge, toValue(v));
+		this.#setEdges(this.style.position, edge, toValue(v));
 		this.markDirty();
 	}
 	setPositionPercent(edge: Edge, v: number): void {
-		this.setEdges(this.style.position, edge, {unit: UNIT_PERCENT, value: v});
+		this.#setEdges(this.style.position, edge, {unit: UNIT_PERCENT, value: v});
 		this.markDirty();
 	}
 	setPositionAuto(edge: Edge): void {
-		this.setEdges(this.style.position, edge, AUTO_VALUE);
+		this.#setEdges(this.style.position, edge, AUTO_VALUE);
 		this.markDirty();
 	}
 
-	private setEdges(target: Value[], edge: Edge, value: Value): void {
+	#setEdges(target: Value[], edge: Edge, value: Value): void {
 		for (const index of expandEdge(edge)) {
 			target[index] = value;
 		}
@@ -850,7 +893,7 @@ function resolveFlexGrow(node: Node): number {
 function resolveFlexShrink(node: Node): number {
 	if (!node.parent) return 0;
 	if (isDefined(node.style.flexShrink)) return node.style.flexShrink;
-	return node.config.useWebDefaults ? 1 : 0;
+	return 1; // web default
 }
 
 /** flex-basis: auto falls back to the main-axis size property. */

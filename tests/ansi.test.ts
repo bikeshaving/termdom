@@ -1,4 +1,4 @@
-import {describe, expect, test} from "bun:test";
+import {describe, expect, test} from "@b9g/libuild/test";
 import {
 	Cell,
 	type CellStyle,
@@ -969,7 +969,8 @@ describe("Border Integration", () => {
 		});
 
 		const cleanOutput = stripControlCodes(output);
-		expect(cleanOutput).toMatchSnapshot();
+		if (typeof Bun !== "undefined")
+			(expect(cleanOutput) as {toMatchSnapshot(): void}).toMatchSnapshot();
 	});
 
 	test("renders collapsed table borders - mixed border styles", () => {
@@ -1003,7 +1004,8 @@ describe("Border Integration", () => {
 		});
 
 		const cleanOutput = stripControlCodes(output);
-		expect(cleanOutput).toMatchSnapshot();
+		if (typeof Bun !== "undefined")
+			(expect(cleanOutput) as {toMatchSnapshot(): void}).toMatchSnapshot();
 	});
 
 	test("renders collapsed table borders - header and data rows", () => {
@@ -1081,7 +1083,8 @@ describe("Border Integration", () => {
 		});
 
 		const cleanOutput = stripControlCodes(output);
-		expect(cleanOutput).toMatchSnapshot();
+		if (typeof Bun !== "undefined")
+			(expect(cleanOutput) as {toMatchSnapshot(): void}).toMatchSnapshot();
 	});
 
 	test("renders simple single cell with border", () => {
@@ -1099,7 +1102,8 @@ describe("Border Integration", () => {
 		});
 
 		const cleanOutput = stripControlCodes(output);
-		expect(cleanOutput).toMatchSnapshot();
+		if (typeof Bun !== "undefined")
+			(expect(cleanOutput) as {toMatchSnapshot(): void}).toMatchSnapshot();
 	});
 
 	test("renders double border box", () => {
@@ -1118,7 +1122,8 @@ describe("Border Integration", () => {
 		});
 
 		const cleanOutput = stripControlCodes(output);
-		expect(cleanOutput).toMatchSnapshot();
+		if (typeof Bun !== "undefined")
+			(expect(cleanOutput) as {toMatchSnapshot(): void}).toMatchSnapshot();
 	});
 
 	test("renders partial borders - top and left only", () => {
@@ -1137,7 +1142,8 @@ describe("Border Integration", () => {
 		});
 
 		const cleanOutput = stripControlCodes(output);
-		expect(cleanOutput).toMatchSnapshot();
+		if (typeof Bun !== "undefined")
+			(expect(cleanOutput) as {toMatchSnapshot(): void}).toMatchSnapshot();
 	});
 
 	test("renders L-shaped table border pattern", () => {
@@ -1173,7 +1179,8 @@ describe("Border Integration", () => {
 		});
 
 		const cleanOutput = stripControlCodes(output);
-		expect(cleanOutput).toMatchSnapshot();
+		if (typeof Bun !== "undefined")
+			(expect(cleanOutput) as {toMatchSnapshot(): void}).toMatchSnapshot();
 	});
 
 	test("renders mixed border styles in adjacent cells", () => {
@@ -1214,7 +1221,8 @@ describe("Border Integration", () => {
 		});
 
 		const cleanOutput = stripControlCodes(output);
-		expect(cleanOutput).toMatchSnapshot();
+		if (typeof Bun !== "undefined")
+			(expect(cleanOutput) as {toMatchSnapshot(): void}).toMatchSnapshot();
 	});
 
 	test("renders nested borders", () => {
@@ -1246,7 +1254,8 @@ describe("Border Integration", () => {
 		});
 
 		const cleanOutput = stripControlCodes(output);
-		expect(cleanOutput).toMatchSnapshot();
+		if (typeof Bun !== "undefined")
+			(expect(cleanOutput) as {toMatchSnapshot(): void}).toMatchSnapshot();
 	});
 
 	test("renders grid layout - 3x3 table", () => {
@@ -1274,7 +1283,8 @@ describe("Border Integration", () => {
 		});
 
 		const cleanOutput = stripControlCodes(output);
-		expect(cleanOutput).toMatchSnapshot();
+		if (typeof Bun !== "undefined")
+			(expect(cleanOutput) as {toMatchSnapshot(): void}).toMatchSnapshot();
 	});
 
 	test("renders borders with background colors", () => {
@@ -1304,6 +1314,7 @@ describe("Border Integration", () => {
 		});
 
 		const cleanOutput = stripControlCodes(output);
-		expect(cleanOutput).toMatchSnapshot();
+		if (typeof Bun !== "undefined")
+			(expect(cleanOutput) as {toMatchSnapshot(): void}).toMatchSnapshot();
 	});
 });

@@ -37,7 +37,9 @@ document.addEventListener("fullscreenchange", async () => {
 		status.textContent = "Status: Exited fullscreen";
 		status.style.color = "red";
 	}
-	await termdom.render(); // Re-render when fullscreen changes
+	await new Promise<void>((r) =>
+		termdom.window.requestAnimationFrame(() => r()),
+	); // Re-render when fullscreen changes
 });
 
 document.addEventListener("fullscreenerror", (_event: any) => {});
@@ -55,7 +57,9 @@ container.addEventListener("keydown", async (event: KeyboardEvent) => {
 			} else {
 				await container.requestFullscreen();
 			}
-			await termdom.render(); // Re-render after fullscreen change
+			await new Promise<void>((r) =>
+				termdom.window.requestAnimationFrame(() => r()),
+			); // Re-render after fullscreen change
 		} catch {
 			// Ignore fullscreen errors
 		}
@@ -63,4 +67,4 @@ container.addEventListener("keydown", async (event: KeyboardEvent) => {
 });
 
 // Initial render
-await termdom.render();
+await new Promise<void>((r) => termdom.window.requestAnimationFrame(() => r()));

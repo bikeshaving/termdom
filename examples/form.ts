@@ -64,9 +64,8 @@ document.addEventListener("keydown", (event: Event) => {
 	const [name, email, handle] = fields.map((f) => f.value.trim());
 	if (!name && !email && !handle) return;
 	done.textContent = `✓ saved: ${name || "anonymous"} <${email || "n/a"}> @${handle || "n/a"}`;
-	void termdom.render();
 });
 
 updatePreview();
 fields[0].focus();
-await termdom.render();
+await new Promise<void>((r) => termdom.window.requestAnimationFrame(() => r()));

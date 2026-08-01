@@ -7,8 +7,8 @@
  * - Complex emoji sequences (skin tones, combinations)
  */
 
-import {test, expect} from "bun:test";
-import {MockProcess} from "./test-utils.js";
+import {test, expect} from "@b9g/libuild/test";
+import {MockProcess, nextFrame} from "./test-utils.js";
 import {TermDOM} from "../src/internal/termdom.js";
 
 test("renders single emoji correctly", async () => {
@@ -19,12 +19,15 @@ test("renders single emoji correctly", async () => {
 	span.textContent = "🚀";
 	dom.document.body.appendChild(span);
 
-	await dom.render();
+	await nextFrame(dom);
 
 	const output = terminal.getVisibleText();
 	expect(output).toContain("🚀");
 
-	expect(terminal.getStaticANSI()).toMatchSnapshot();
+	if (typeof Bun !== "undefined")
+		(
+			expect(terminal.getStaticANSI()) as {toMatchSnapshot(): void}
+		).toMatchSnapshot();
 	terminal.writeANSI("single-emoji");
 	dom.dispose();
 });
@@ -37,7 +40,7 @@ test("renders emoji with text correctly", async () => {
 	span.textContent = "Hello 🌍 World!";
 	dom.document.body.appendChild(span);
 
-	await dom.render();
+	await nextFrame(dom);
 
 	const output = terminal.getVisibleText();
 	expect(output).toContain("Hello 🌍 World!");
@@ -47,7 +50,10 @@ test("renders emoji with text correctly", async () => {
 	expect(ansiOutput).toContain("Hello 🌍 World!"); // Space after emoji should be preserved
 	expect(ansiOutput).not.toMatch(/🌍(?! )/); // Should not have emoji without following space
 
-	expect(terminal.getStaticANSI()).toMatchSnapshot();
+	if (typeof Bun !== "undefined")
+		(
+			expect(terminal.getStaticANSI()) as {toMatchSnapshot(): void}
+		).toMatchSnapshot();
 	terminal.writeANSI("emoji-with-text");
 	dom.dispose();
 });
@@ -77,7 +83,7 @@ test("renders multiple emojis correctly", async () => {
 
 	dom.document.body.appendChild(container);
 
-	await dom.render();
+	await nextFrame(dom);
 
 	const output = terminal.getVisibleText();
 	// Test that emojis are rendered
@@ -85,7 +91,10 @@ test("renders multiple emojis correctly", async () => {
 	expect(output).toContain("🎯");
 	expect(output).toContain("Party");
 
-	expect(terminal.getStaticANSI()).toMatchSnapshot();
+	if (typeof Bun !== "undefined")
+		(
+			expect(terminal.getStaticANSI()) as {toMatchSnapshot(): void}
+		).toMatchSnapshot();
 	terminal.writeANSI("multiple-emojis");
 	dom.dispose();
 });
@@ -107,14 +116,17 @@ test("renders emoji with colors correctly", async () => {
 	container.appendChild(emojiSpan);
 	dom.document.body.appendChild(container);
 
-	await dom.render();
+	await nextFrame(dom);
 
 	const output = terminal.getVisibleText();
 	expect(output).toContain("🎨");
 	expect(output).toContain("🌈");
 	expect(output).toContain("Colorful Text");
 
-	expect(terminal.getStaticANSI()).toMatchSnapshot();
+	if (typeof Bun !== "undefined")
+		(
+			expect(terminal.getStaticANSI()) as {toMatchSnapshot(): void}
+		).toMatchSnapshot();
 	terminal.writeANSI("emoji-with-colors");
 	dom.dispose();
 });
@@ -127,7 +139,7 @@ test("preserves spaces after emojis", async () => {
 	span.textContent = "A🌍B"; // Pattern that was failing before
 	dom.document.body.appendChild(span);
 
-	await dom.render();
+	await nextFrame(dom);
 
 	const output = terminal.getVisibleText();
 	expect(output).toContain("A🌍B");
@@ -164,14 +176,17 @@ test("handles emoji width calculation", async () => {
 	container.appendChild(moreText);
 	dom.document.body.appendChild(container);
 
-	await dom.render();
+	await nextFrame(dom);
 
 	const output = terminal.getVisibleText();
 	// With corrected whitespace handling, spaces are preserved for proper width measurement
 	// Each span maintains its spaces: "Text " + "🚀" + " More" → "Text 🚀 More"
 	expect(output).toContain("Text 🚀 More");
 
-	expect(terminal.getStaticANSI()).toMatchSnapshot();
+	if (typeof Bun !== "undefined")
+		(
+			expect(terminal.getStaticANSI()) as {toMatchSnapshot(): void}
+		).toMatchSnapshot();
 	terminal.writeANSI("emoji-width-layout");
 	dom.dispose();
 });
@@ -200,7 +215,7 @@ test("whitespace collapse affecting emoji rendering", async () => {
 	container.appendChild(span3);
 	dom.document.body.appendChild(container);
 
-	await dom.render();
+	await nextFrame(dom);
 
 	const output = terminal.getVisibleText();
 
@@ -238,7 +253,7 @@ test("text after emoji gets truncated", async () => {
 	container.appendChild(span3);
 	dom.document.body.appendChild(container);
 
-	await dom.render();
+	await nextFrame(dom);
 
 	const output = terminal.getVisibleText();
 
@@ -275,7 +290,7 @@ test("emoji spacing with complex whitespace patterns", async () => {
 	});
 
 	dom.document.body.appendChild(container);
-	await dom.render();
+	await nextFrame(dom);
 
 	const output = terminal.getVisibleText();
 

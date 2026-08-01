@@ -1,6 +1,6 @@
-import {test, expect} from "bun:test";
+import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
-import {MockProcess} from "./test-utils.js";
+import {MockProcess, styleManagerFor} from "./test-utils.js";
 
 test("CSS specificity calculation", async () => {
 	const terminal = new MockProcess();
@@ -22,37 +22,23 @@ test("CSS specificity calculation", async () => {
 	// Wait for MutationObserver to parse styles
 	await new Promise((resolve) => setTimeout(resolve, 10));
 
-	// Get parsed rules to verify specificity ordering
-	const styleManager = termdom.styleManager;
-	const parsedRules = (styleManager as any).parsedRules;
+	// Specificity is verified through the cascade -- the most specific matching
+	// rule wins in getComputedStyle -- rather than by reading the parser's table.
+	const colorOf = (className: string, id: string): string => {
+		const el = document.createElement("div");
+		if (className) el.className = className;
+		if (id) el.id = id;
+		document.body.appendChild(el);
+		return termdom.window.getComputedStyle(el).getPropertyValue("color");
+	};
 
-	// Find specific rules to test specificity values
-	const divRule = parsedRules.find((r: any) => r.selector === "div");
-	const classRule = parsedRules.find((r: any) => r.selector === ".class");
-	const multiClassRule = parsedRules.find(
-		(r: any) => r.selector === ".class.other",
-	);
-	const idRule = parsedRules.find((r: any) => r.selector === "#id");
-	const idClassRule = parsedRules.find((r: any) => r.selector === "#id.class");
-	const divClassRule = parsedRules.find((r: any) => r.selector === "div.class");
+	expect(colorOf("", "")).toBe("red"); // div (000-000-001)
+	expect(colorOf("class", "")).toBe("yellow"); // div.class (000-001-001) beats .class
+	expect(colorOf("class other", "")).toBe("blue"); // .class.other (000-002-000)
+	expect(colorOf("", "id")).toBe("purple"); // #id (001-000-000)
+	expect(colorOf("class", "id")).toBe("orange"); // #id.class (001-001-000)
 
-	// Test specificity string format and ordering
-	expect(divRule.specificity).toBe("000-000-001");
-	expect(classRule.specificity).toBe("000-001-000");
-	expect(multiClassRule.specificity).toBe("000-002-000");
-	expect(idRule.specificity).toBe("001-000-000");
-	expect(idClassRule.specificity).toBe("001-001-000");
-	expect(divClassRule.specificity).toBe("000-001-001");
-
-	// Test lexicographic ordering
-	expect(divRule.specificity < classRule.specificity).toBe(true);
-	expect(classRule.specificity < multiClassRule.specificity).toBe(true);
-	expect(multiClassRule.specificity < idRule.specificity).toBe(true);
-	expect(idRule.specificity < idClassRule.specificity).toBe(true);
-
-	// Class + element should beat element alone, but lose to 2 classes
-	expect(divRule.specificity < divClassRule.specificity).toBe(true);
-	expect(divClassRule.specificity < multiClassRule.specificity).toBe(true);
+	termdom.dispose();
 });
 
 test("CSS cascade resolution", async () => {
@@ -156,23 +142,7 @@ test("Pseudo-element specificity", async () => {
 	expect(beforeStyle.getPropertyValue("content")).toBe('"id"');
 	expect(beforeStyle.getPropertyValue("color")).toBe("blue");
 
-	// Verify specificity strings for pseudo-elements
-	const styleManager = termdom.styleManager;
-	const parsedRules = (styleManager as any).parsedRules;
-
-	const divPseudo = parsedRules.find(
-		(r: any) => r.selector === "div" && r.pseudoElement === "::before",
-	);
-	const classPseudo = parsedRules.find(
-		(r: any) => r.selector === ".class" && r.pseudoElement === "::before",
-	);
-	const idPseudo = parsedRules.find(
-		(r: any) => r.selector === "#id" && r.pseudoElement === "::before",
-	);
-
-	expect(divPseudo.specificity).toBe("000-000-002");
-	expect(classPseudo.specificity).toBe("000-001-001");
-	expect(idPseudo.specificity).toBe("001-000-001");
+	termdom.dispose();
 });
 
 test.todo("StyleManager auto-refresh on DOM changes", async () => {
@@ -226,7 +196,7 @@ test("StyleManager createPseudoElementNode", async () => {
 
 	await new Promise((resolve) => setTimeout(resolve, 10));
 
-	const styleManager = termdom.styleManager;
+	const styleManager = styleManagerFor(termdom);
 
 	// Test element with content
 	const testDiv = document.createElement("div");

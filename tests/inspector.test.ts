@@ -1,4 +1,4 @@
-import {test, expect} from "bun:test";
+import {test, expect} from "@b9g/libuild/test";
 import {JSDOM} from "jsdom";
 import {
 	inspectElement,

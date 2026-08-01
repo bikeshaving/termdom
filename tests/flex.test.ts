@@ -1,4 +1,4 @@
-import {beforeEach, describe, expect, test} from "bun:test";
+import {beforeEach, describe, expect, test} from "@b9g/libuild/test";
 import Flex, {Config, Node} from "../src/internal/flex.js";
 
 /**
@@ -22,7 +22,6 @@ let config: Config;
 
 beforeEach(() => {
 	config = Config.create();
-	config.setUseWebDefaults(true);
 	config.setPointScaleFactor(1);
 });
 

@@ -13,7 +13,6 @@ const FS: Record<string, string[]> = {
 export default {
 	setup(termdom: TermDOM) {
 		const {document} = termdom;
-		termdom.setViewportMode("document");
 		const style = document.createElement("style");
 		style.textContent = `
 			.header { color: cyan; font-weight: bold; }

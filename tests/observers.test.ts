@@ -5,9 +5,9 @@
  * drive real renders and assert the callbacks fire with the right values. JSDOM
  * ships neither observer, so before this they were simply `undefined`.
  */
-import {test, expect} from "bun:test";
+import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
-import {MockProcess} from "./test-utils.js";
+import {MockProcess, nextFrame} from "./test-utils.js";
 
 function make(rows = 10, cols = 40) {
 	const terminal = new MockProcess({rows, cols});
@@ -36,7 +36,7 @@ test("ResizeObserver fires an initial entry when it starts observing", async () 
 		}
 	});
 	ro.observe(box);
-	await dom.render();
+	await nextFrame(dom);
 
 	expect(sizes).toEqual(["20x4"]);
 	dom.dispose();
@@ -54,7 +54,7 @@ test("ResizeObserver fires when the terminal resizes a percentage-sized box", as
 		for (const e of entries) widths.push(e.contentRect.width);
 	});
 	ro.observe(box);
-	await dom.render();
+	await nextFrame(dom);
 
 	terminal.resize(60, 10);
 	(terminal as any).emit("SIGWINCH");
@@ -75,9 +75,9 @@ test("ResizeObserver does not fire when the size is unchanged", async () => {
 	let calls = 0;
 	const ro = new window.ResizeObserver(() => calls++);
 	ro.observe(box);
-	await dom.render();
-	await dom.render(); // no change
-	await dom.render();
+	await nextFrame(dom);
+	await nextFrame(dom); // no change
+	await nextFrame(dom);
 
 	expect(calls).toBe(1);
 	dom.dispose();
@@ -93,7 +93,7 @@ test("unobserve stops further ResizeObserver callbacks", async () => {
 	let calls = 0;
 	const ro = new window.ResizeObserver(() => calls++);
 	ro.observe(box);
-	await dom.render();
+	await nextFrame(dom);
 	expect(calls).toBe(1);
 
 	ro.unobserve(box);
@@ -118,8 +118,7 @@ test("IntersectionObserver reports an off-screen element as not intersecting", a
 	});
 	// Row 18 is below a 10-row viewport.
 	io.observe(document.getElementById("r18"));
-	dom.setViewportMode("document");
-	await dom.render();
+	await nextFrame(dom);
 
 	expect(states).toEqual([false]);
 	dom.dispose();
@@ -137,11 +136,10 @@ test("IntersectionObserver fires again when a target scrolls into view", async (
 		for (const e of entries) states.push(e.isIntersecting);
 	});
 	io.observe(document.getElementById("r18"));
-	dom.setViewportMode("document");
-	await dom.render();
+	await nextFrame(dom);
 
-	dom.scrollDocumentBy(15);
-	await dom.render();
+	dom.window.scrollBy(0, 15);
+	await nextFrame(dom);
 
 	// Off-screen, then scrolled into view -- two callbacks, on each flip.
 	expect(states).toEqual([false, true]);
@@ -162,8 +160,7 @@ test("IntersectionObserver honours a ratio threshold", async () => {
 		{threshold: 1},
 	);
 	io.observe(document.getElementById("tall"));
-	dom.setViewportMode("document");
-	await dom.render();
+	await nextFrame(dom);
 
 	// The initial callback reports the starting state, as the DOM does. The block
 	// overlaps the viewport but is only half visible (4 of 8 rows), which does not

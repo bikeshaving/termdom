@@ -1,13 +1,13 @@
-import {test, expect} from "bun:test";
+import {test, expect} from "@b9g/libuild/test";
 import {JSDOM} from "jsdom";
-import {LayoutEngine} from "../src/internal/layout.js";
+import {LayoutEngine, kInvalidateInlineRun} from "../src/internal/layout.js";
 import {StyleManager} from "../src/internal/styles.js";
-import {TermDOM} from "../src/internal/termdom.js";
+import {TermDOM, kLayoutEngine} from "../src/internal/termdom.js";
 import {
 	setPseudoElement,
 	createPseudoNode,
 } from "../src/internal/composition.js";
-import {MockProcess} from "./test-utils.js";
+import {MockProcess, nextFrame} from "./test-utils.js";
 
 function createLayoutEngine(html: string = "<div></div>") {
 	const jsdom = new JSDOM(`<!DOCTYPE html><html><head><style>
@@ -1192,13 +1192,13 @@ test("Inline run head changes - text to element", async () => {
 	termdom.document.body.appendChild(div);
 
 	// Initial render
-	await termdom.render();
+	await nextFrame(termdom);
 
 	// Change run head from text to span element
 	div.innerHTML = "<span>New span content</span>";
 
 	// Re-render and verify layout updates
-	await termdom.render();
+	await nextFrame(termdom);
 	const updatedOutput = terminal.getPlainText();
 
 	expect(updatedOutput).toContain("New span content");
@@ -1218,14 +1218,14 @@ test("Inline run head changes - element to text", async () => {
 	termdom.document.body.appendChild(div);
 
 	// Initial render
-	await termdom.render();
+	await nextFrame(termdom);
 	const _initialOutput = terminal.getPlainText();
 
 	// Change run head from span to text
 	div.innerHTML = "New text content";
 
 	// Re-render and verify layout updates
-	await termdom.render();
+	await nextFrame(termdom);
 	const updatedOutput = terminal.getPlainText();
 
 	expect(updatedOutput).toContain("New text content");
@@ -1245,7 +1245,7 @@ test("Adding inline elements to existing run", async () => {
 	termdom.document.body.appendChild(div);
 
 	// Initial render
-	await termdom.render();
+	await nextFrame(termdom);
 
 	// Add inline elements dynamically
 	const span1 = termdom.document.createElement("span");
@@ -1257,7 +1257,7 @@ test("Adding inline elements to existing run", async () => {
 	div.appendChild(span2);
 
 	// Re-render and verify all content appears on same line
-	await termdom.render();
+	await nextFrame(termdom);
 	const output = terminal.getPlainText();
 
 	expect(output).toContain("Start middle end");
@@ -1279,7 +1279,7 @@ test("Removing inline elements from run", async () => {
 	termdom.document.body.appendChild(div);
 
 	// Initial render
-	await termdom.render();
+	await nextFrame(termdom);
 	const _initialOutput = terminal.getPlainText();
 	expect(_initialOutput).toContain("Start REMOVE end");
 
@@ -1288,7 +1288,7 @@ test("Removing inline elements from run", async () => {
 	elementToRemove.remove();
 
 	// Re-render and verify element is gone, run is updated
-	await termdom.render();
+	await nextFrame(termdom);
 	const updatedOutput = terminal.getPlainText();
 
 	expect(updatedOutput).toContain("Start end"); // Proper whitespace collapse after span removal
@@ -1319,7 +1319,7 @@ test("Inline-block elements affecting run layout", async () => {
 	div.appendChild(textAfter);
 
 	// Render and verify inline-block is treated as atomic unit
-	await termdom.render();
+	await nextFrame(termdom);
 	const output = terminal.getPlainText();
 
 	expect(output).toContain("Text before");
@@ -1348,7 +1348,7 @@ test("Rapid DOM changes stress test", async () => {
 		container.appendChild(span);
 
 		// Render after each change
-		await termdom.render();
+		await nextFrame(termdom);
 
 		// Verify content is present
 		const output = terminal.getPlainText();
@@ -1360,7 +1360,7 @@ test("Rapid DOM changes stress test", async () => {
 		const element = termdom.document.getElementById(`item${i}`)!;
 		element.remove();
 
-		await termdom.render();
+		await nextFrame(termdom);
 
 		// Verify element is gone
 		const output = terminal.getPlainText();
@@ -1386,13 +1386,13 @@ test("Text node splitting and merging", async () => {
 	termdom.document.body.appendChild(div);
 
 	// Initial render
-	await termdom.render();
+	await nextFrame(termdom);
 
 	// Split the text node
 	textNode.splitText(10); // Split at "This is a "
 
 	// Re-render and verify layout handles split text
-	await termdom.render();
+	await nextFrame(termdom);
 	const splitOutput = terminal.getPlainText();
 	expect(splitOutput).toContain("This is a long text node");
 
@@ -1402,7 +1402,7 @@ test("Text node splitting and merging", async () => {
 	div.insertBefore(span, div.childNodes[1]);
 
 	// Final render
-	await termdom.render();
+	await nextFrame(termdom);
 	const finalOutput = terminal.getPlainText();
 	expect(finalOutput).toContain("This is a [INSERTED]long text node");
 });
@@ -1420,7 +1420,7 @@ test("White-space handling in dynamic inline runs", async () => {
 	termdom.document.body.appendChild(div);
 
 	// Initial render
-	await termdom.render();
+	await nextFrame(termdom);
 	const _initialOutput = terminal.getPlainText();
 
 	// Remove the span
@@ -1428,7 +1428,7 @@ test("White-space handling in dynamic inline runs", async () => {
 	span.remove();
 
 	// Re-render and verify whitespace is handled correctly
-	await termdom.render();
+	await nextFrame(termdom);
 	const updatedOutput = terminal.getPlainText();
 
 	// Should collapse whitespace appropriately
@@ -1450,7 +1450,7 @@ test("Direct textContent changes in inline runs", async () => {
 	termdom.document.body.appendChild(div);
 
 	// Initial render
-	await termdom.render();
+	await nextFrame(termdom);
 	const initialOutput = terminal.getPlainText();
 	expect(initialOutput).toContain("Before original after");
 
@@ -1459,7 +1459,7 @@ test("Direct textContent changes in inline runs", async () => {
 	span.textContent = "MODIFIED";
 
 	// Re-render and verify textContent change is reflected
-	await termdom.render();
+	await nextFrame(termdom);
 	const updatedOutput = terminal.getPlainText();
 
 	expect(updatedOutput).toContain("Before MODIFIED after");
@@ -1480,7 +1480,7 @@ test("Text node data changes (characterData mutations)", async () => {
 	termdom.document.body.appendChild(div);
 
 	// Initial render
-	await termdom.render();
+	await nextFrame(termdom);
 	const initialOutput = terminal.getPlainText();
 	expect(initialOutput).toContain("Initial text content");
 
@@ -1488,7 +1488,7 @@ test("Text node data changes (characterData mutations)", async () => {
 	textNode.data = "Changed text content";
 
 	// Re-render and verify change is reflected
-	await termdom.render();
+	await nextFrame(termdom);
 	const updatedOutput = terminal.getPlainText();
 
 	expect(updatedOutput).toContain("Changed text content");
@@ -1509,7 +1509,7 @@ test("Direct textContent changes in inline runs", async () => {
 	termdom.document.body.appendChild(div);
 
 	// Initial render
-	await termdom.render();
+	await nextFrame(termdom);
 	const initialOutput = terminal.getPlainText();
 	expect(initialOutput).toContain("Before original after");
 
@@ -1518,7 +1518,7 @@ test("Direct textContent changes in inline runs", async () => {
 	span.textContent = "MODIFIED";
 
 	// Re-render and verify textContent change is reflected
-	await termdom.render();
+	await nextFrame(termdom);
 	const updatedOutput = terminal.getPlainText();
 
 	expect(updatedOutput).toContain("Before MODIFIED after");
@@ -1544,7 +1544,7 @@ test("Block element interrupting inline run", async () => {
 	termdom.document.body.appendChild(container);
 
 	// Initial render - should be on one line
-	await termdom.render();
+	await nextFrame(termdom);
 
 	// Insert block element in the middle
 	const blockDiv = termdom.document.createElement("div");
@@ -1555,7 +1555,7 @@ test("Block element interrupting inline run", async () => {
 	container.insertBefore(blockDiv, inlineSpan);
 
 	// Re-render and verify block element creates line breaks
-	await termdom.render();
+	await nextFrame(termdom);
 	const updatedOutput = terminal.getPlainText();
 	const lines = updatedOutput.split("\n").filter((line) => line.trim());
 
@@ -1580,7 +1580,7 @@ test("Block element removal merging inline runs", async () => {
 	termdom.document.body.appendChild(container);
 
 	// Initial render - should have multiple lines due to block element
-	await termdom.render();
+	await nextFrame(termdom);
 	const initialOutput = terminal.getPlainText();
 	let initialLines = initialOutput.split("\n").filter((line) => line.trim());
 	expect(initialLines.length).toBeGreaterThan(1); // Should be split by block
@@ -1590,7 +1590,7 @@ test("Block element removal merging inline runs", async () => {
 	blockElement.remove();
 
 	// Re-render and verify inline runs merge back into one line
-	await termdom.render();
+	await nextFrame(termdom);
 	const updatedOutput = terminal.getPlainText();
 
 	// Should now be on one line (or at least fewer lines)
@@ -1617,8 +1617,8 @@ test("Block element removal properly cleans up former run head Yoga nodes", asyn
 	termdom.document.body.appendChild(container);
 
 	// Initial render - span should be a run head with Yoga node
-	await termdom.render();
-	const layoutEngine = (termdom as any).layoutEngine;
+	await nextFrame(termdom);
+	const layoutEngine = termdom[kLayoutEngine];
 	const span = termdom.document.getElementById("span")!;
 
 	// Remove the block element
@@ -1626,7 +1626,7 @@ test("Block element removal properly cleans up former run head Yoga nodes", asyn
 	blockElement.remove();
 
 	// Re-render to trigger mutation processing and cleanup
-	await termdom.render();
+	await nextFrame(termdom);
 	const updatedOutput = terminal.getPlainText();
 	expect(updatedOutput).toContain("Before inline after");
 
@@ -1761,14 +1761,14 @@ test.skip("layout invalidation preserves inline run behavior", async () => {
 	li.style.display = "list-item";
 	container.appendChild(li);
 
-	const layoutEngine = (termdom as any).layoutEngine;
+	const layoutEngine = termdom[kLayoutEngine];
 
 	// Track inline run invalidation calls
 	const originalInvalidateInlineRun =
-		layoutEngine.invalidateInlineRun.bind(layoutEngine);
+		layoutEngine[kInvalidateInlineRun].bind(layoutEngine);
 	let inlineInvalidationCalls = 0;
 
-	layoutEngine.invalidateInlineRun = function (node: Node) {
+	layoutEngine[kInvalidateInlineRun] = function (node: Node) {
 		inlineInvalidationCalls++;
 		return originalInvalidateInlineRun(node);
 	};
@@ -1793,7 +1793,7 @@ test.skip("layout invalidation preserves inline run behavior", async () => {
 
 	// Full render should work without errors
 	await expect(async () => {
-		await termdom.render();
+		await nextFrame(termdom);
 	}).not.toThrow();
 });
 
@@ -2001,7 +2001,7 @@ test("whitespace between block elements should be collapsed", async () => {
 	`;
 	document.body.appendChild(container);
 
-	await dom.render();
+	await nextFrame(dom);
 
 	// Get the raw terminal buffer to check for phantom lines
 	const buffer = (terminal as any).terminal.buffer.active;
@@ -2045,7 +2045,7 @@ test("whitespace in nested lists should be collapsed", async () => {
 	`;
 	document.body.appendChild(container);
 
-	await dom.render();
+	await nextFrame(dom);
 
 	// Count phantom lines in terminal buffer
 	const buffer = (terminal as any).terminal.buffer.active;
@@ -2094,7 +2094,7 @@ test("programmatic DOM creation should not have phantom lines", async () => {
 	container.appendChild(ul);
 	document.body.appendChild(container);
 
-	await dom.render();
+	await nextFrame(dom);
 
 	// Even programmatic creation currently creates phantom lines
 	// This suggests the issue is deeper than just innerHTML whitespace
@@ -2127,7 +2127,7 @@ test("compact HTML should not have phantom lines", async () => {
 	container.innerHTML = `<ul><li>Item 1</li><li>Item 2<ul><li>Sub item</li></ul></li></ul>`;
 	document.body.appendChild(container);
 
-	await dom.render();
+	await nextFrame(dom);
 
 	const buffer = (terminal as any).terminal.buffer.active;
 	let phantomLineCount = 0;
@@ -2354,7 +2354,7 @@ function createTermDOM(html: string = "<div></div>") {
 	// Clear default body content and add test HTML
 	document.body.innerHTML = html;
 
-	return {termdom, document, layoutEngine: (termdom as any).layoutEngine};
+	return {termdom, document, layoutEngine: termdom[kLayoutEngine]};
 }
 
 function getPosition(layoutEngine: any, element: Element): number {
@@ -2385,20 +2385,20 @@ test("inline element removal preserves positioning", async () => {
 	document.body.appendChild(container);
 
 	// Initial render
-	await termdom.render();
+	await nextFrame(termdom);
 	expect(getPosition(layoutEngine, span1)).toBe(0); // A at x=0
 	expect(getPosition(layoutEngine, span2)).toBe(1); // B at x=1
 	expect(getPosition(layoutEngine, span3)).toBe(2); // C at x=2
 
 	// Remove middle element
 	container.removeChild(span2);
-	await termdom.render();
+	await nextFrame(termdom);
 	expect(getPosition(layoutEngine, span1)).toBe(0); // A at x=0
 	expect(getPosition(layoutEngine, span3)).toBe(1); // C at x=1 (moved left)
 
 	// Re-add at end
 	container.appendChild(span2);
-	await termdom.render();
+	await nextFrame(termdom);
 	expect(getPosition(layoutEngine, span1)).toBe(0); // A at x=0
 	expect(getPosition(layoutEngine, span3)).toBe(1); // C at x=1
 	expect(getPosition(layoutEngine, span2)).toBe(2); // B at x=2 (at end)
@@ -2423,7 +2423,7 @@ test("inline element removal in same position preserves layout", async () => {
 	document.body.appendChild(container);
 
 	// Initial render
-	await termdom.render();
+	await nextFrame(termdom);
 	const initialPositions = [
 		getPosition(layoutEngine, span1),
 		getPosition(layoutEngine, span2),
@@ -2433,10 +2433,10 @@ test("inline element removal in same position preserves layout", async () => {
 	// Remove middle element and re-add in exact same position
 	const nextSibling = span2.nextSibling;
 	container.removeChild(span2);
-	await termdom.render();
+	await nextFrame(termdom);
 
 	container.insertBefore(span2, nextSibling);
-	await termdom.render();
+	await nextFrame(termdom);
 
 	// Positions should be identical to initial state
 	expect(getPosition(layoutEngine, span1)).toBe(initialPositions[0]);
@@ -2459,7 +2459,7 @@ test("run head removal transfers to next inline element", async () => {
 	container.appendChild(span2);
 	document.body.appendChild(container);
 
-	await termdom.render();
+	await nextFrame(termdom);
 
 	// Verify span1 is the run head initially
 	expect(layoutEngine.findInlineRunHead(span1)).toBe(span1);
@@ -2467,7 +2467,7 @@ test("run head removal transfers to next inline element", async () => {
 
 	// Remove the run head
 	container.removeChild(span1);
-	await termdom.render();
+	await nextFrame(termdom);
 
 	// span2 should become the new run head and have correct position
 	expect(layoutEngine.findInlineRunHead(span2)).toBe(span2);
@@ -2478,7 +2478,7 @@ test("run head removal transfers to next inline element", async () => {
 
 	// Re-add original run head at beginning
 	container.insertBefore(span1, span2);
-	await termdom.render();
+	await nextFrame(termdom);
 
 	// span1 should become run head again with both elements correctly positioned
 	expect(layoutEngine.findInlineRunHead(span1)).toBe(span1);
@@ -2509,7 +2509,7 @@ test("block element removal merges adjacent inline runs", async () => {
 	container.appendChild(span2);
 	document.body.appendChild(container);
 
-	await termdom.render();
+	await nextFrame(termdom);
 
 	// Initially span1 and span2 should have different run heads
 	const runHead1 = layoutEngine.findInlineRunHead(span1);
@@ -2519,7 +2519,7 @@ test("block element removal merges adjacent inline runs", async () => {
 
 	// Remove block element
 	container.removeChild(blockDiv);
-	await termdom.render();
+	await nextFrame(termdom);
 
 	// Now span1 and span2 should share the same run head (span1)
 	expect(layoutEngine.findInlineRunHead(span1)).toBe(span1);
@@ -2544,7 +2544,7 @@ test("text node removal invalidates inline runs", async () => {
 	container.appendChild(textNode);
 	document.body.appendChild(container);
 
-	await termdom.render();
+	await nextFrame(termdom);
 
 	// Both should be positioned correctly
 	expect(getPosition(layoutEngine, span)).toBe(0);
@@ -2553,7 +2553,7 @@ test("text node removal invalidates inline runs", async () => {
 
 	// Remove text node
 	container.removeChild(textNode);
-	await termdom.render();
+	await nextFrame(termdom);
 
 	// Span should still work correctly
 	expect(getPosition(layoutEngine, span)).toBe(0);
@@ -2575,7 +2575,7 @@ test("multiple element removal handles invalidation correctly", async () => {
 	}
 	document.body.appendChild(container);
 
-	await termdom.render();
+	await nextFrame(termdom);
 
 	// Verify initial positions
 	spans.forEach((span, i) => {
@@ -2585,7 +2585,7 @@ test("multiple element removal handles invalidation correctly", async () => {
 	// Remove multiple elements (B and D)
 	container.removeChild(spans[1]); // Remove B
 	container.removeChild(spans[3]); // Remove D
-	await termdom.render();
+	await nextFrame(termdom);
 
 	// Remaining elements should be positioned correctly: A C E
 	expect(getPosition(layoutEngine, spans[0])).toBe(0); // A at x=0
@@ -2608,13 +2608,13 @@ test("break result cleanup prevents orphaned entries", async () => {
 	container.appendChild(span2);
 	document.body.appendChild(container);
 
-	await termdom.render();
+	await nextFrame(termdom);
 
 	const initialBreakResults = layoutEngine.breakResultMap.size;
 
 	// Remove element
 	container.removeChild(span2);
-	await termdom.render();
+	await nextFrame(termdom);
 
 	// Break result count should remain consistent (no orphaned entries)
 	expect(layoutEngine.breakResultMap.size).toBeLessThanOrEqual(
@@ -2623,7 +2623,7 @@ test("break result cleanup prevents orphaned entries", async () => {
 
 	// Re-add element
 	container.appendChild(span2);
-	await termdom.render();
+	await nextFrame(termdom);
 
 	// Should still be able to get correct positions
 	expect(getPosition(layoutEngine, span1)).toBe(0);

@@ -5,9 +5,9 @@
  * and that background colors render correctly without bleeding.
  */
 
-import {test, expect} from "bun:test";
+import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
-import {MockProcess} from "./test-utils.js";
+import {MockProcess, nextFrame} from "./test-utils.js";
 
 test("red foreground color renders correctly", async () => {
 	const terminal = new MockProcess();
@@ -19,14 +19,15 @@ test("red foreground color renders correctly", async () => {
 	div.style.color = "red";
 	document.body.appendChild(div);
 
-	await dom.render();
+	await nextFrame(dom);
 	const snapshot = terminal.getScreenContents();
 
 	// Verify red RGB color code
 	expect(snapshot).toMatch(/\x1b\[38;2;255;0;0/); // Red RGB
 	expect(snapshot).toContain("Red text");
 
-	expect(snapshot).toMatchSnapshot();
+	if (typeof Bun !== "undefined")
+		(expect(snapshot) as {toMatchSnapshot(): void}).toMatchSnapshot();
 
 	dom.dispose();
 });
@@ -42,7 +43,7 @@ test("background colors fill full width", async () => {
 	div.style.display = "block";
 	document.body.appendChild(div);
 
-	await dom.render();
+	await nextFrame(dom);
 	const snapshot = terminal.getScreenContents();
 
 	// Background should fill the entire line (80 chars)
@@ -56,7 +57,8 @@ test("background colors fill full width", async () => {
 	const visibleContent = coloredLine?.replace(/\x1b\[[0-9;]*m/g, "") || "";
 	expect(visibleContent.trim()).toBe("Short text");
 
-	expect(snapshot).toMatchSnapshot();
+	if (typeof Bun !== "undefined")
+		(expect(snapshot) as {toMatchSnapshot(): void}).toMatchSnapshot();
 
 	dom.dispose();
 });
@@ -76,14 +78,15 @@ test("mixed foreground and background colors", async () => {
 	div.style.display = "block";
 	document.body.appendChild(div);
 
-	await dom.render();
+	await nextFrame(dom);
 	const snapshot = terminal.getScreenContents();
 
 	// Should have combined foreground and background codes
 	expect(snapshot).toMatch(/38;2;255;255;0/); // yellow foreground
 	expect(snapshot).toMatch(/48;2;0;0;255/); // blue background
 
-	expect(snapshot).toMatchSnapshot();
+	if (typeof Bun !== "undefined")
+		(expect(snapshot) as {toMatchSnapshot(): void}).toMatchSnapshot();
 
 	dom.dispose();
 });
@@ -111,14 +114,15 @@ test("CSS color formats are handled correctly", async () => {
 	div3.style.color = "blue";
 	document.body.appendChild(div3);
 
-	await dom.render();
+	await nextFrame(dom);
 	const snapshot = terminal.getScreenContents();
 
 	// Should produce blue RGB code
 	expect(snapshot).toMatch(/38;2;0;0;255/); // Blue RGB
 	expect(snapshot).toContain("Named color");
 
-	expect(snapshot).toMatchSnapshot();
+	if (typeof Bun !== "undefined")
+		(expect(snapshot) as {toMatchSnapshot(): void}).toMatchSnapshot();
 
 	dom.dispose();
 });
@@ -136,7 +140,7 @@ test("style combinations work correctly", async () => {
 	div.style.display = "block";
 	document.body.appendChild(div);
 
-	await dom.render();
+	await nextFrame(dom);
 	const snapshot = terminal.getScreenContents();
 
 	// Should have combined style codes
@@ -144,7 +148,8 @@ test("style combinations work correctly", async () => {
 	expect(snapshot).toMatch(/38;2;255;0;0/); // red foreground
 	expect(snapshot).toMatch(/48;2;255;255;0/); // yellow background
 
-	expect(snapshot).toMatchSnapshot();
+	if (typeof Bun !== "undefined")
+		(expect(snapshot) as {toMatchSnapshot(): void}).toMatchSnapshot();
 
 	dom.dispose();
 });
@@ -159,7 +164,7 @@ test("inline elements do not extend background", async () => {
 	span.style.backgroundColor = "green";
 	document.body.appendChild(span);
 
-	await dom.render();
+	await nextFrame(dom);
 	const snapshot = terminal.getScreenContents();
 
 	// Inline elements should not fill the full width
@@ -170,10 +175,38 @@ test("inline elements do not extend background", async () => {
 	// Should only be as wide as the text
 	expect(visibleContent.trim()).toBe("Inline text");
 
-	expect(snapshot).toMatchSnapshot();
+	if (typeof Bun !== "undefined")
+		(expect(snapshot) as {toMatchSnapshot(): void}).toMatchSnapshot();
 
 	dom.dispose();
 });
 
 // Skip complex layout tests due to positioning issues
 // TODO: Re-enable when block layout stacking is fixed
+
+test("font-weight maps to the terminal's three weights", async () => {
+	// The terminal has exactly three font weights and CSS names all three:
+	// lighter/100-300 -> SGR faint (dim), bold/bolder/600+ -> SGR bold.
+	// Numeric weights count too -- font-weight: 700 was previously not even
+	// recognized as bold (only the literal string "bold" was).
+	const terminal = new MockProcess({rows: 6, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	const {document} = dom;
+	document.body.innerHTML = `
+		<div style="font-weight: lighter">faint keyword</div>
+		<div style="font-weight: 300">faint numeric</div>
+		<div style="font-weight: 700">bold numeric</div>
+		<div><small>small is faint by default</small></div>
+	`;
+	await nextFrame(dom);
+
+	const cellAt = (row: number, col: number) =>
+		(terminal as any).terminal.buffer.active.getLine(row).getCell(col);
+	expect(cellAt(0, 0).isDim()).toBeTruthy();
+	expect(cellAt(1, 0).isDim()).toBeTruthy();
+	expect(cellAt(2, 0).isBold()).toBeTruthy();
+	expect(cellAt(2, 0).isDim()).toBeFalsy();
+	expect(cellAt(3, 0).isDim()).toBeTruthy();
+
+	dom.dispose();
+});

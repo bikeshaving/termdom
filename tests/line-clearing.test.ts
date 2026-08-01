@@ -1,6 +1,6 @@
-import {test, expect} from "bun:test";
+import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/index.js";
-import {MockProcess} from "./test-utils.js";
+import {MockProcess, nextFrame} from "./test-utils.js";
 
 test("line clearing removes terminal artifacts from previous commands", async () => {
 	// Create a test terminal to simulate artifacts
@@ -41,7 +41,7 @@ test("line clearing removes terminal artifacts from previous commands", async ()
 	document.body.appendChild(div2);
 
 	// Render TermDOM content - this should clear lines and replace artifacts
-	await dom.render();
+	await nextFrame(dom);
 
 	// Capture final state
 	const afterText = terminal.getVisibleText();
@@ -83,7 +83,7 @@ test("indented content clears entire line including leading columns", async () =
 	document.body.appendChild(div);
 
 	// Render - this should clear the entire line and place indented content
-	await dom.render();
+	await nextFrame(dom);
 
 	// Capture final state
 	const afterText = terminal.getVisibleText();
@@ -118,7 +118,7 @@ test("first render includes line clear sequences", async () => {
 	document.body.appendChild(div);
 
 	// First render - should contain clear sequences
-	await dom.render();
+	await nextFrame(dom);
 
 	// Verify first render has clear sequences in the raw output
 	expect(capturedOutput).toContain("\r\x1b[K");

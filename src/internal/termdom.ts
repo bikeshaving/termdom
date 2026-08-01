@@ -19,17 +19,234 @@ import {
 import {setupInspectMethods} from "./inspector.js";
 import {ScrollingManager} from "./scrolling.js";
 import {
+	compositionParentElement,
 	createExpandedTreeWalker,
-	type ExpandedTreeWalker,
-	getShadowRoot,
-	hasShadowRoot,
-	initializeShadowDOM,
+	createUAShadowRoot,
 	getPseudoMetadata,
 } from "./composition.js";
 
 // How long to wait for a resize drag to settle before redrawing. Long enough to
 // coalesce the burst of SIGWINCHes a drag fires, short enough to feel immediate.
 const RESIZE_DEBOUNCE_MS = 40;
+
+type ClipRect = {left: number; top: number; right: number; bottom: number};
+
+/**
+ * The clip an overflow:hidden (or overflow-x/-y:hidden) element imposes on its
+ * own children, intersected with whatever clip was already active from an
+ * ancestor. overflow:auto/scroll/visible impose no clip on that axis -- there
+ * are no scrollable containers, only the document camera, so "auto/scroll"
+ * degrades to "visible" rather than clipping content nobody can scroll to see.
+ * An axis that isn't hidden stays unbounded (+-Infinity), not just "this
+ * element's own edge", so overflow-x:hidden;overflow-y:visible only bounds
+ * columns, matching CSS's independent per-axis overflow.
+ */
+function overflowClipRect(
+	rect: {left: number; top: number; width: number; height: number} | null,
+	overflowX: string,
+	overflowY: string,
+	parent: ClipRect | null,
+): ClipRect | null {
+	if (!rect) return parent;
+	const hiddenX = overflowX === "hidden";
+	const hiddenY = overflowY === "hidden";
+	if (!hiddenX && !hiddenY) return parent;
+
+	const left = hiddenX ? rect.left : -Infinity;
+	const right = hiddenX ? rect.left + rect.width : Infinity;
+	const top = hiddenY ? rect.top : -Infinity;
+	const bottom = hiddenY ? rect.top + rect.height : Infinity;
+
+	if (!parent) return {left, top, right, bottom};
+	return {
+		left: Math.max(parent.left, left),
+		top: Math.max(parent.top, top),
+		right: Math.min(parent.right, right),
+		bottom: Math.min(parent.bottom, bottom),
+	};
+}
+
+// DOM `code` values for the named/special keys the tokenizer already resolves
+// unambiguously. This is what `code` is FOR -- unlike `key`, it identifies the
+// physical key, not the character it produced.
+const NAMED_KEY_CODES: Record<string, string> = {
+	Enter: "Enter",
+	Tab: "Tab",
+	Backspace: "Backspace",
+	Escape: "Escape",
+	ArrowUp: "ArrowUp",
+	ArrowDown: "ArrowDown",
+	ArrowLeft: "ArrowLeft",
+	ArrowRight: "ArrowRight",
+	Home: "Home",
+	End: "End",
+	Insert: "Insert",
+	Delete: "Delete",
+	PageUp: "PageUp",
+	PageDown: "PageDown",
+	F1: "F1",
+	F2: "F2",
+	F3: "F3",
+	F4: "F4",
+	F5: "F5",
+	F6: "F6",
+	F7: "F7",
+	F8: "F8",
+	F9: "F9",
+	F10: "F10",
+	F11: "F11",
+	F12: "F12",
+	" ": "Space",
+};
+
+/**
+ * The DOM `code` for a resolved key name -- physical key identity, independent
+ * of modifiers. Exact for named/special keys (the escape sequence uniquely
+ * identifies the physical key) and for letters/digits under the near-universal
+ * assumption of a US QWERTY layout. Not exact for punctuation: a terminal only
+ * ever tells us the character a key combination *produced* ("!" from Shift+1
+ * on US layout, but a different physical key entirely on others), never which
+ * physical key+modifiers produced it -- there is no protocol-level signal for
+ * that, unlike the modifier bits `ctrlKey`/`altKey`/`shiftKey` decode from.
+ * Falls back to the previous (also approximate) `Key<X>` guess for those.
+ */
+function domCodeFor(keyName: string): string {
+	const named = NAMED_KEY_CODES[keyName];
+	if (named) return named;
+	if (keyName.length === 1) {
+		const upper = keyName.toUpperCase();
+		if (upper >= "A" && upper <= "Z") return `Key${upper}`;
+		if (keyName >= "0" && keyName <= "9") return `Digit${keyName}`;
+	}
+	return `Key${keyName.toUpperCase()}`;
+}
+
+/**
+ * The UA stylesheet of a text field's internal shadow tree: the field
+ * design as real, scoped CSS instead of painter constants. The placeholder
+ * is the gray ghost label always; when the host is BLURRED the blank --
+ * and the placeholder riding it -- goes faint: SGR dim via font-weight,
+ * SGR underline via text-decoration, the two classic codes that survive
+ * every terminal and every intermediary. The focused field's solid
+ * underline is not here: it comes from the input's own focus-aware UA
+ * default and INHERITS into every part, so authors override it exactly
+ * where they always could.
+ */
+const FIELD_UA_STYLES = `
+	[part="placeholder"] { color: #808080; }
+	:host(:not(:focus)) [part="placeholder"] { font-weight: lighter; text-decoration: underline; }
+	:host(:not(:focus)) [part="blank"] { font-weight: lighter; text-decoration: underline; }
+`;
+
+/**
+ * The UA stylesheet of a textarea's internal shadow tree. Unlike the
+ * input, the textarea's parts render through the NORMAL pipeline -- the
+ * value text node lays out, wraps and paints like any document text -- so
+ * these rules are all there is: the placeholder's ghost gray, faint when
+ * the host is blurred, hidden by the sync controller (an inline
+ * display:none) whenever a value exists.
+ */
+const TEXTAREA_UA_STYLES = `
+	[part="placeholder"] { color: #808080; }
+	:host(:not(:focus)) [part="placeholder"] { font-weight: lighter; }
+`;
+
+/**
+ * The UA stylesheet of a select's internal shadow tree: the ▾ indicator
+ * is faint -- affordance, not content. Everything else (the focused
+ * field's underline included) inherits from the host's own defaults.
+ */
+const SELECT_UA_STYLES = `
+	[part="indicator"] { font-weight: lighter; }
+`;
+
+/**
+ * The terminal has exactly three font weights, and CSS names all three:
+ * light maps to SGR faint (dim), normal to nothing, bold to SGR bold.
+ * Numeric values follow the CSS scale (100-300 light, 600+ bold). The
+ * relative keywords resolve absolutely rather than against the parent's
+ * weight -- an approximation, documented rather than hidden: "bolder" from
+ * a bold parent cannot get bolder on a terminal anyway.
+ */
+function resolveFontWeight(weight: string): {bold: boolean; dim: boolean} {
+	if (weight === "bold" || weight === "bolder") {
+		return {bold: true, dim: false};
+	}
+	if (weight === "lighter") {
+		return {bold: false, dim: true};
+	}
+	const numeric = parseInt(weight, 10);
+	if (Number.isFinite(numeric)) {
+		if (numeric >= 600) return {bold: true, dim: false};
+		if (numeric <= 300) return {bold: false, dim: true};
+	}
+	return {bold: false, dim: false};
+}
+
+/**
+ * Map each painted (visual) character of a text node back to its code-unit
+ * offset in node.data. The painted fragments are the node's text after
+ * whitespace collapsing and line breaking, so they differ from the raw data
+ * only in whitespace: a run of data whitespace becomes one visual space, or
+ * nothing at a line break. Non-whitespace code units match one-for-one --
+ * including surrogate halves, which is what keeps the returned offsets valid
+ * as Range offsets (Ranges address code units, not glyphs).
+ *
+ * Selection needs this bridge in both directions: a mouse hit lands on a
+ * visual cell and must become a Range offset into the data; painting walks
+ * the visual fragments and must know which of them a data-offset Range
+ * covers.
+ */
+function visualToDataOffsets(
+	data: string,
+	fragments: Array<{text: string}>,
+): number[] {
+	const map: number[] = [];
+	let d = 0;
+	for (const fragment of fragments) {
+		// Code UNITS on both sides, not code points: surrogate halves of
+		// non-whitespace text are identical in data and fragment, so they
+		// align half-to-half, and the map stays indexable by the same
+		// positions String.prototype.slice uses.
+		for (let i = 0; i < fragment.text.length; i++) {
+			if (!/\s/.test(fragment.text[i])) {
+				// A visual char never comes from data whitespace -- skip any
+				// collapsed run to the next real char.
+				while (d < data.length && /\s/.test(data[d])) d++;
+				map.push(Math.min(d, Math.max(0, data.length - 1)));
+				d++;
+			} else {
+				// One visual space stands for the whole whitespace run.
+				map.push(Math.min(d, Math.max(0, data.length - 1)));
+				while (d < data.length && /\s/.test(data[d])) d++;
+			}
+		}
+	}
+	return map;
+}
+
+/**
+ * Apply CSS `text-transform` at paint time, not layout time. Every character
+ * occupies the same cell width regardless of case in a terminal, so unlike a
+ * browser's proportional font this can never change line wrapping -- there's
+ * no need to re-measure, just transform the already-shaped text right before
+ * it's drawn.
+ */
+function applyTextTransform(text: string, transform: string): string {
+	switch (transform) {
+		case "uppercase":
+			return text.toUpperCase();
+		case "lowercase":
+			return text.toLowerCase();
+		case "capitalize":
+			return text.replace(
+				/\p{L}[\p{L}\p{M}]*/gu,
+				(word) => (word[0]?.toUpperCase() ?? "") + word.slice(1),
+			);
+		default:
+			return text;
+	}
+}
 
 function detectColorDepth(process: ProcessLike): ColorDepth {
 	const colorterm = process.env.COLORTERM;
@@ -82,18 +299,12 @@ export interface TermDOMOptions {
 	detectCursor?: boolean;
 }
 
-// Test-only instance tracking. A test harness that creates many short-lived
-// TermDOMs (and, being tests, does not always dispose them) can turn this on and
-// dispose the leaked ones between tests. Off by default -- the set stays null and
-// every hook below is a no-op -- so production pays nothing.
-let trackedInstances: Set<TermDOM> | null = null;
-
 // Frames keep the terminal cursor hidden, and dispose() shows it again -- but
 // an app that calls process.exit() without disposing would strand the user's
 // shell with no cursor. One process-level exit hook restores it for any live
 // interactive instance that skipped dispose. Registered lazily, only for
 // instances driving the real process (never for test mocks).
-const undisposedInteractive = new Set<TermDOM>();
+const undisposedInteractive = new Set<ProcessLike>();
 let exitHookInstalled = false;
 
 // What Tab traverses and what a mousedown focuses -- one definition of
@@ -105,12 +316,10 @@ function installCursorRestoreOnExit(): void {
 	if (exitHookInstalled) return;
 	exitHookInstalled = true;
 	process.on("exit", () => {
-		for (const instance of undisposedInteractive) {
+		for (const proc of undisposedInteractive) {
 			try {
 				// Mouse capture off (a no-op if it was never on), cursor back on.
-				(instance as unknown as {process: ProcessLike}).process.stdout.write(
-					"\x1b[?1006l\x1b[?1002l\x1b[?25h",
-				);
+				proc.stdout.write("\x1b[?1006l\x1b[?1002l\x1b[?25h");
 			} catch {
 				// The stream may already be gone; the shell will survive.
 			}
@@ -118,238 +327,219 @@ function installCursorRestoreOnExit(): void {
 	});
 }
 
-/** Begin tracking TermDOM instances for later bulk disposal (test harness only). */
-export function __enableInstanceTracking(): void {
-	trackedInstances ??= new Set<TermDOM>();
-}
-
-/** Dispose every tracked, still-live TermDOM instance (test harness only). */
-export function __disposeTrackedInstances(): void {
-	if (!trackedInstances) return;
-	for (const instance of trackedInstances) {
-		try {
-			instance.dispose();
-		} catch {
-			// Already disposed, or mid-teardown; ignore.
-		}
-	}
-	trackedInstances.clear();
-}
+// Symbol-keyed handles for the internals the test suite must reach (the layout
+// engine, input injection, anchor state). These are deliberately not #private so
+// a test can import the key and read them -- but they are off the public API:
+// index.ts does not re-export these symbols, so a consumer cannot name them.
+const kLayoutEngine = Symbol("layoutEngine");
+const kObserver = Symbol("observer");
+export {kLayoutEngine, kObserver};
 
 export class TermDOM {
-	public readonly document: Document;
-	public readonly window: DOMWindow;
+	readonly document: Document;
+	readonly window: DOMWindow;
 
-	private readonly renderer: Renderer;
-	private readonly layoutEngine: LayoutEngine;
+	#renderer: Renderer;
+	[kLayoutEngine]: LayoutEngine;
 	// TODO: Should we expose the JSDOM instance?
-	private readonly jsdom: JSDOM;
-	private readonly observer: MutationObserver;
-	private readonly fullscreenManager: FullscreenManager;
-	private readonly observerManager: ObserverManager;
-	public readonly styleManager: StyleManager;
-	private readonly scrollingManager: ScrollingManager;
+	#jsdom: JSDOM;
+	[kObserver]: MutationObserver;
+	#fullscreenManager: FullscreenManager;
+	#observerManager: ObserverManager;
+	#styleManager: StyleManager;
+	#scrollingManager: ScrollingManager;
 
 	// Guard against re-entrant rendering. A render() call arriving while one is in
 	// flight sets renderQueued rather than being dropped, so a trailing frame runs.
-	private isRendering = false;
-	private renderQueued = false;
-	private renderInFlight: Promise<void> | null = null;
+	#isRendering = false;
+	// Callbacks registered via window.requestAnimationFrame, fired once the frame
+	// that includes their pending mutations has actually been written.
+	#frameCallbacks: FrameRequestCallback[] = [];
+	#nextRafId = 1;
+	// document.close() sealed the current document into scrollback; the next
+	// mutation starts a fresh document below it.
+	#sealed = false;
+	#renderQueued = false;
+	#renderInFlight: Promise<void> | null = null;
 
 	// Monotonic frame counter, used to timestamp observer entries.
-	private renderCount = 0;
+	#renderCount = 0;
 
-	// Input element state tracking
-	private inputCursorPositions = new WeakMap<Element, number>();
-	private inputScrollOffsets = new WeakMap<Element, number>();
+	// Input element state tracking. Only the horizontal scroll of an
+	// overflowed field lives here -- pure presentation, invisible to the DOM.
+	// The caret does NOT: it is the input's own selectionStart/End/Direction,
+	// the standard API.
+	#inputScrollOffsets = new WeakMap<Element, number>();
+	// The UA-internal shadow trees behind input widgets, by host: the tree
+	// IS the field's content model (value text, placeholder, blank / toggle
+	// glyph), and the painter reads its computed styles instead of
+	// hardcoding the design. This map just caches the part references.
+	// The column (in cells) a run of consecutive ArrowUp/ArrowDown presses
+	// aims for -- browsers remember where vertical travel STARTED, so
+	// passing through a short line and continuing returns to the original
+	// column. Cleared by any other editing action.
+	#textareaGoalColumn = new WeakMap<Element, number>();
+	#inputShadowParts = new WeakMap<
+		Element,
+		{
+			kind: "field" | "toggle" | "textarea" | "select";
+			spans: Record<string, HTMLElement>;
+			texts: Record<string, Text>;
+		}
+	>();
 
 	// Track whether command start was explicitly detected (even if at row 1)
-	private hasDetectedCommandStart: boolean = false;
-
-	// The element that sat at the fold when we last committed, and where it sat.
-	// If the content above the fold changes height, this element moves -- which is
-	// how we notice that the committed rows no longer mean what they meant.
-	private foldAnchor: {element: Element; top: number} | null = null;
-
-	// Document rows that have scrolled off the top into the terminal's scrollback.
-	// The cursor cannot address scrollback, so these are frozen for good: they can
-	// never be redrawn. Everything below them is the live, addressable viewport.
-	private committedRows = 0;
+	#hasDetectedCommandStart: boolean = false;
 
 	// Unified stdin handling
-	private cursorDetectionHandler: ((data: string) => void) | null = null;
+	#cursorDetectionHandler: ((data: string) => void) | null = null;
 
 	// Handles and timers that must be torn down in dispose(), or they keep the
 	// process alive after the app is done -- which, across a test suite, piles up
 	// into a hang.
-	private sigintHandler: (() => void) | null = null;
-	private sigwinchHandler: (() => void) | null = null;
-	private stdinDataHandler: ((chunk: string | Buffer) => void) | null = null;
-	private cursorDetectionTimer: ReturnType<typeof setTimeout> | null = null;
-	private resizeTimer: ReturnType<typeof setTimeout> | null = null;
+	#sigintHandler: (() => void) | null = null;
+	#sigwinchHandler: (() => void) | null = null;
+	#stdinDataHandler: ((chunk: string | Buffer) => void) | null = null;
+	#cursorDetectionTimer: ReturnType<typeof setTimeout> | null = null;
+	#resizeTimer: ReturnType<typeof setTimeout> | null = null;
 	// True from the first SIGWINCH of a resize until the re-anchored redraw. While
 	// set, render() bails: the terminal has rewrapped the screen and our anchor is
 	// momentarily stale, so an auto-render (an animation tick) painting now lands
 	// at the wrong rows and scrolls a stray copy into the scrollback. Only the
 	// final redraw that handleResize issues is allowed through.
-	private resizeInProgress = false;
+	#resizeInProgress = false;
 	// Whether we have taken hold of the terminal: raw mode, signal handlers,
 	// the stdin listener and the cursor query. Construction never touches the
 	// process -- attach() does, lazily on the first render or explicitly.
-	private attached = false;
+	#attached = false;
 	// Bumped on every SIGWINCH. The re-anchor waits on an async cursor query;
 	// if another resize lands while it is in flight, the stale response must not
 	// trigger a redraw at coordinates that no longer mean anything.
-	private resizeEpoch = 0;
+	#resizeEpoch = 0;
 
 	// Promise that resolves when cursor detection completes (or times out)
-	private cursorDetectionPromise: Promise<void> | null = null;
+	#cursorDetectionPromise: Promise<void> | null = null;
 
-	private width: number;
-	private height: number;
-	/**
-	 * How the document scrolls.
-	 *
-	 * - `flow`: the document accumulates. Rows that scroll off the top are committed
-	 *   to the terminal's scrollback, frozen and unaddressable. This is what an
-	 *   ordinary command does.
-	 * - `document`: the document is a fixed thing the user moves a camera over. We
-	 *   own a region of the screen and repaint a window of the document into it.
-	 *   Nothing is committed, so nothing is frozen: the whole document stays
-	 *   mutable.
-	 *
-	 * This is *not* the same axis as whether we occupy the whole screen.
-	 * requestFullscreen() is about screen ownership -- a user-facing experience --
-	 * and the alternate buffer is one way to implement it. Document mode still
-	 * starts at the command height and still respects what came before it.
-	 */
-	private viewportMode: "flow" | "document" = "flow";
-
-	/** Which document row sits at the top of our region, in document mode. */
-	private documentScrollTop = 0;
+	#width: number;
+	#height: number;
+	/** Which document row sits at the top of the camera. */
+	#documentScrollTop = 0;
 
 	// Whether the terminal is currently reporting mouse events to us. See
 	// updateMouseReporting for when capture is on.
-	private mouseReportingEnabled = false;
+	#mouseReportingEnabled = false;
 	// Scroll chaining yielded the mouse back to the terminal: the camera hit
 	// the document top and the user kept scrolling up, so the wheel now
-	// belongs to the terminal's own scrollback. The yield only has to outlast
-	// the gesture that is escaping: terminals report the mouse against the
-	// live screen only, so once the view is scrolled back, re-armed capture
-	// changes nothing -- the wheel keeps scrolling the history natively, and
-	// the first tick after the view returns to the bottom is ours again,
-	// which is exactly where the document should take over. Hence the timer.
-	// A keystroke reclaims immediately (terminals snap to the live screen on
-	// input).
-	private mouseCaptureYielded = false;
-	private mouseRearmTimer: ReturnType<typeof setTimeout> | null = null;
+	// belongs to the terminal's own scrollback. Cleared by the next keystroke
+	// -- terminals snap to the live screen on input, which is exactly the
+	// moment the wheel should become ours again -- or, failing that, by
+	// #SCROLL_CHAIN_TIMEOUT_MS of silence (see #scrollChainTimer).
+	#mouseCaptureYielded = false;
+	// Self-heals a yield that a keystroke never reclaims: while yielded, wheel
+	// activity produces literally no signal (that's the entire mechanism --
+	// the terminal is handling it, not us), so there's no way to reset this on
+	// continued scrolling the way a real debounce would. It's a flat window
+	// from the moment of yielding, not "N ms since the last wheel tick" --
+	// which is exactly why this can't be too short: a real wheel/trackpad
+	// doesn't tick perfectly continuously, and any gap between ticks longer
+	// than this window re-enables capture mid-scroll, which the very next
+	// tick immediately re-yields -- a disable/enable toggle on every gap for
+	// as long as the user keeps scrolling, not just a one-time early
+	// re-enable. Tried 1000ms live; it was short enough to hit that toggle
+	// and felt like lag. 3000ms tested flawless.
+	static readonly #SCROLL_CHAIN_TIMEOUT_MS = 3000;
+	#scrollChainTimer: ReturnType<typeof setTimeout> | null = null;
 	// Where the last mousedown landed, so a mouseup on the same element
 	// becomes a click. (Browsers dispatch click at the nearest common
 	// ancestor; the same-element case is the one that matters on a cell grid.)
-	private mouseDownTarget: Element | null = null;
-	private readonly process: ProcessLike;
+	#mouseDownTarget: Element | null = null;
+	// Where a left-button drag started selecting text, as a caret position --
+	// the selection's anchor. The focus end follows the drag; both feed
+	// Selection.setBaseAndExtent, which handles backward drags itself.
+	#selectionDragAnchor: {node: Text; offset: number} | null = null;
+	// The target and time of the last completed click, to detect a second one
+	// close enough behind it to be a dblclick -- browsers' own double-click
+	// interval varies by OS/user setting; 500ms is the common default.
+	static readonly #DBLCLICK_INTERVAL_MS = 500;
+	#lastClickTarget: Element | null = null;
+	#lastClickTime = 0;
+	#process: ProcessLike;
 
-	private readonly detectCursorEnabled: boolean;
+	#detectCursorEnabled: boolean;
 
 	// A stdout that is not a terminal -- a pipe, a file, a CI log -- has no
 	// viewport, no cursor, no scrollback and no resize. It cannot interpret cursor
 	// movement either, so the interactive frame would write CUP and DECSC sequences
 	// straight into the file.
-	private readonly interactive: boolean;
+	#interactive: boolean;
 
 	constructor(options: TermDOMOptions = {}) {
-		this.process = options.process || process;
-		this.interactive = this.process.stdout.isTTY !== false;
-		this.detectCursorEnabled =
-			(options.detectCursor ?? this.process === process) && this.interactive;
+		this.#process = options.process || process;
+		this.#interactive = this.#process.stdout.isTTY !== false;
+		this.#detectCursorEnabled =
+			(options.detectCursor ?? this.#process === process) && this.#interactive;
 
-		this.width = options.width || this.process.stdout.columns || 80;
-		this.height = options.height || this.process.stdout.rows || 24;
+		this.#width = options.width || this.#process.stdout.columns || 80;
+		this.#height = options.height || this.#process.stdout.rows || 24;
 
-		this.jsdom = new JSDOM(
+		this.#jsdom = new JSDOM(
 			"<!DOCTYPE html><html><head></head><body></body></html>",
 			{pretendToBeVisual: true},
 		);
 
-		this.window = this.jsdom.window;
-		this.document = this.jsdom.window.document;
+		this.window = this.#jsdom.window;
+		this.document = this.#jsdom.window.document;
 
 		// Setup DOM inspector
 		setupInspectMethods(this.window);
 
-		// Setup shadow DOM support
-		initializeShadowDOM(this.window);
-
-		this.initializeConstructorExtensions();
-		this.renderer = new Renderer(
-			this.height,
-			this.width,
-			options.colorDepth || detectColorDepth(this.process),
+		this.#initializeConstructorExtensions();
+		this.#renderer = new Renderer(
+			this.#height,
+			this.#width,
+			options.colorDepth || detectColorDepth(this.#process),
 		);
 
 		// Setup style management FIRST to override getComputedStyle before LayoutEngine uses it
-		this.styleManager = new StyleManager(this.window);
+		this.#styleManager = new StyleManager(this.window);
 
 		// Create layout engine after StyleManager overrides getComputedStyle
-		this.layoutEngine = new LayoutEngine(this.jsdom.window);
-		this.styleManager.setLayoutEngine(this.layoutEngine);
-		this.layoutEngine.resize(this.width, this.height);
-		this.fullscreenManager = new FullscreenManager(this.process);
-		this.observerManager = new ObserverManager(this.createObserverHost());
+		this[kLayoutEngine] = new LayoutEngine(this.#jsdom.window);
+		this.#styleManager.setLayoutEngine(this[kLayoutEngine]);
+		this[kLayoutEngine].resize(this.#width, this.#height);
+		this.#fullscreenManager = new FullscreenManager(this.#process);
+		this.#observerManager = new ObserverManager(this.#createObserverHost());
 
-		this.initializeWindow();
-		this.installObservers();
+		this.#initializeWindow();
+		this.#installObservers();
 
 		// Initialize scrolling management after window setup
-		this.scrollingManager = new ScrollingManager(this.window, this.document);
+		this.#scrollingManager = new ScrollingManager(this.window, this.document);
 
-		this.observer = this.setupMutationObserver();
+		this[kObserver] = this.#setupMutationObserver();
 
 		// Initial processing of all elements is handled by StyleManager's constructor
-
-		trackedInstances?.add(this);
 	}
 
-	/**
-	 * Get cached shadow root for an element (works with both open and closed shadows)
-	 */
-	getShadowRoot(element: Element): ShadowRoot | null {
-		return getShadowRoot(element);
-	}
-
-	/**
-	 * Check if an element has a shadow root
-	 */
-	hasShadowRoot(element: Element): boolean {
-		return hasShadowRoot(element);
-	}
-
-	/**
-	 * Create an ExpandedTreeWalker that can traverse pseudo-elements, shadow DOM, and slot content
-	 */
-	createExpandedTreeWalker(root: Node): ExpandedTreeWalker {
-		return createExpandedTreeWalker(this.window, root);
-	}
-
-	private initializeWindow(): void {
+	#initializeWindow(): void {
 		const window = this.window;
 		Object.defineProperty(window, "innerWidth", {
-			value: this.width,
+			value: this.#width,
 			writable: false,
 			configurable: true,
 		});
 		Object.defineProperty(window, "innerHeight", {
-			value: this.height,
+			value: this.#height,
 			writable: false,
 			configurable: true,
 		});
 		Object.defineProperty(window, "outerWidth", {
-			value: this.width,
+			value: this.#width,
 			writable: false,
 			configurable: true,
 		});
 		Object.defineProperty(window, "outerHeight", {
-			value: this.height,
+			value: this.#height,
 			writable: false,
 			configurable: true,
 		});
@@ -362,15 +552,16 @@ export class TermDOM {
 			enumerable: true,
 		});
 
-		// Standard window scrolling, mapped onto the document-mode camera. In flow
-		// mode scrollY reports how far the content has scrolled; scrollBy only
-		// means something when there is a camera to move.
+		// Standard window scrolling, mapped onto the camera: scrollY is how far the
+		// camera has moved down the document, scrollBy moves it.
 		const termDOM = this;
 		Object.defineProperty(window, "scrollY", {
-			get: () =>
-				termDOM.viewportMode === "document"
-					? termDOM.documentScrollTop
-					: Math.max(0, -termDOM.scrollingManager.getScrollTop()),
+			get: () => termDOM.#documentScrollTop,
+			configurable: true,
+			enumerable: true,
+		});
+		Object.defineProperty(window, "pageYOffset", {
+			get: () => termDOM.#documentScrollTop,
 			configurable: true,
 			enumerable: true,
 		});
@@ -382,13 +573,74 @@ export class TermDOM {
 				typeof xOrOptions === "object" && xOrOptions !== null
 					? (xOrOptions.top ?? 0)
 					: (y ?? 0);
-			termDOM.scrollDocumentBy(dy);
+			termDOM.#scrollCamera(dy);
 		}) as typeof window.scrollBy;
+
+		// scrollTo/scroll set the camera to an absolute position -- the same
+		// state scrollY reads and scrollBy moves relatively. document.
+		// documentElement/body.scrollTop are the same value again, standard DOM
+		// (window.scrollY === document.documentElement.scrollTop always): one
+		// camera, four ways to read or move it, matching the "unified scrolling
+		// model" the viewport tests already name it after.
+		const scrollToCamera = (
+			xOrOptions?: number | ScrollToOptions,
+			y?: number,
+		): void => {
+			const targetY =
+				typeof xOrOptions === "object" && xOrOptions !== null
+					? (xOrOptions.top ?? termDOM.#documentScrollTop)
+					: (y ?? 0);
+			termDOM.#documentScrollTop = Math.max(0, targetY);
+			void termDOM.#render();
+		};
+		window.scrollTo = scrollToCamera as typeof window.scrollTo;
+		window.scroll = scrollToCamera as typeof window.scroll;
+
+		for (const root of [this.document.documentElement, this.document.body]) {
+			Object.defineProperty(root, "scrollTop", {
+				get: () => termDOM.#documentScrollTop,
+				set: (value: number) => {
+					termDOM.#documentScrollTop = Math.max(0, value);
+					void termDOM.#render();
+				},
+				configurable: true,
+				enumerable: true,
+			});
+		}
+
+		// requestAnimationFrame is the only way to await a painted frame -- render()
+		// is private. jsdom's pretendToBeVisual rAF is a bare timer, decoupled from
+		// our (async) paint, so a callback could fire before the frame is written.
+		// Route it through the render loop: schedule a render and fire the callback
+		// once it completes, so "await a frame" always means the frame that includes
+		// your pending mutations has landed.
+		window.requestAnimationFrame = ((cb: FrameRequestCallback): number => {
+			const id = termDOM.#nextRafId++;
+			termDOM.#frameCallbacks.push(cb);
+			void termDOM.#render();
+			return id;
+		}) as typeof window.requestAnimationFrame;
+
+		// document.close() finalizes the document: flush the live region into the
+		// terminal's scrollback and seal it -- the SSR res.end() of the terminal.
+		// A later DOM mutation starts a fresh document below the sealed block. This
+		// is the "print rich output and stop" seam: write(), then close().
+		const nativeDocumentClose = termDOM.document.close.bind(termDOM.document);
+		termDOM.document.close = () => {
+			nativeDocumentClose();
+			// dispose() tears down via jsdom's window.close(), which calls
+			// document.close() -- but it has already set attached=false, so we skip
+			// the seal there. A real seal is a close() from a live, painted session.
+			if (termDOM.#attached && termDOM.#renderCount > 0) {
+				termDOM.#flushDocument();
+				termDOM.#sealed = true;
+			}
+		};
 
 		// Implement standard DOM scrollHeight properties
 		Object.defineProperty(this.document.body, "scrollHeight", {
 			get() {
-				return termDOM.layoutEngine.getContentHeight();
+				return termDOM[kLayoutEngine].getContentHeight();
 			},
 			configurable: true,
 			enumerable: true,
@@ -396,7 +648,7 @@ export class TermDOM {
 
 		Object.defineProperty(this.document.documentElement, "scrollHeight", {
 			get() {
-				return termDOM.layoutEngine.getContentHeight();
+				return termDOM[kLayoutEngine].getContentHeight();
 			},
 			configurable: true,
 			enumerable: true,
@@ -405,7 +657,7 @@ export class TermDOM {
 		// clientHeight is the viewport height (terminal height)
 		Object.defineProperty(this.document.body, "clientHeight", {
 			get() {
-				return termDOM.height;
+				return termDOM.#height;
 			},
 			configurable: true,
 			enumerable: true,
@@ -413,19 +665,34 @@ export class TermDOM {
 
 		Object.defineProperty(this.document.documentElement, "clientHeight", {
 			get() {
-				return termDOM.height;
+				return termDOM.#height;
 			},
 			configurable: true,
 			enumerable: true,
 		});
 	}
 
-	private setupMutationObserver(): MutationObserver {
+	/**
+	 * Apply a batch of mutation records to everything that isn't painting:
+	 * pseudo-elements/caches, the layout tree, and the autofocus default
+	 * action. In the same order everywhere it's called, since mutations reach
+	 * this from two different places -- the observer's own async callback
+	 * below, and #processPendingMutationsAndRender/#renderStatic/
+	 * #renderInteractive's synchronous `takeRecords()` drain (a geometry read
+	 * or a scheduled render needs fresh layout NOW, not whenever the next
+	 * microtask checkpoint happens to land) -- and whichever one runs first
+	 * empties the queue for the other.
+	 */
+	#handlePendingMutations(mutations: MutationRecord[]): void {
+		this.#styleManager.handleMutations(mutations);
+		this[kLayoutEngine].handleMutations(mutations);
+		this.#focusAutofocusedNodes(mutations);
+	}
+
+	#setupMutationObserver(): MutationObserver {
 		const observer = new this.window.MutationObserver((mutations) => {
-			// Process mutations in correct order to avoid race conditions
-			this.styleManager.handleMutations(mutations); // First: attach pseudo-elements, invalidate caches
-			this.layoutEngine.handleMutations(mutations); // Second: process DOM changes for layout
-			this.render(); // Finally: render with fully processed DOM
+			this.#handlePendingMutations(mutations);
+			this.#render();
 		});
 
 		observer.observe(this.document.documentElement, {
@@ -439,6 +706,30 @@ export class TermDOM {
 	}
 
 	/**
+	 * The `autofocus` default action: an element with the attribute set gets
+	 * focused as soon as it's connected, the same as a browser does at initial
+	 * page load -- generalized here to any insertion, which is what lets a
+	 * dynamically-created element (e.g. an edit input that only exists while
+	 * editing) still autofocus itself. Scoped to newly added nodes only, not
+	 * later attribute changes, matching the spec's "insertion" trigger. If a
+	 * batch inserts more than one autofocus element, the later mutation wins
+	 * (processed in order, each call simply moves focus again) -- same
+	 * ambiguity a real page with more than one autofocus element already has.
+	 */
+	#focusAutofocusedNodes(mutations: MutationRecord[]): void {
+		for (const record of mutations) {
+			for (const node of record.addedNodes) {
+				if (node.nodeType !== node.ELEMENT_NODE) continue;
+				const element = node as Element;
+				const candidate = (element as any).autofocus
+					? element
+					: element.querySelector?.("[autofocus]");
+				(candidate as HTMLElement | null)?.focus?.();
+			}
+		}
+	}
+
+	/**
 	 * Take hold of the terminal: raw mode, signal handlers, the stdin listener,
 	 * the cursor-position query, and the exit hook that restores the cursor.
 	 *
@@ -449,17 +740,17 @@ export class TermDOM {
 	 * terminal changes hands. Idempotent; dispose() reverses it.
 	 */
 	attach(): void {
-		if (this.attached) return;
-		this.attached = true;
+		if (this.#attached) return;
+		this.#attached = true;
 
-		this.setupProcessHandlers();
-		this.updateMouseReporting();
-		this.initializeCursorDetection();
+		this.#setupProcessHandlers();
+		this.#updateMouseReporting();
+		this.#initializeCursorDetection();
 
 		// See installCursorRestoreOnExit: if this instance dies without
 		// dispose(), the exit hook hands the user their cursor back.
-		if (this.interactive && this.process === process) {
-			undisposedInteractive.add(this);
+		if (this.#interactive && this.#process === process) {
+			undisposedInteractive.add(this.#process);
 			installCursorRestoreOnExit();
 		}
 	}
@@ -474,36 +765,52 @@ export class TermDOM {
 	 * Idempotent; call it whenever attachment, viewport mode, or fullscreen
 	 * changes.
 	 */
-	private updateMouseReporting(): void {
+	#updateMouseReporting(): void {
 		const wanted =
-			this.attached &&
-			this.interactive &&
-			Boolean(this.process.stdin?.isTTY) &&
-			!this.mouseCaptureYielded &&
-			(this.viewportMode === "document" || this.fullscreenManager.isFullscreen);
-		if (wanted === this.mouseReportingEnabled) return;
-		this.mouseReportingEnabled = wanted;
+			this.#attached &&
+			this.#interactive &&
+			Boolean(this.#process.stdin?.isTTY) &&
+			!this.#mouseCaptureYielded;
+		if (wanted === this.#mouseReportingEnabled) return;
+		this.#mouseReportingEnabled = wanted;
 		// 1002: button presses, releases, wheel, and drag motion (no move flood
 		// while nothing is pressed). 1006: SGR encoding, the only one that is
 		// unambiguous past column 223.
-		this.process.stdout.write(
+		this.#process.stdout.write(
 			wanted ? "\x1b[?1002h\x1b[?1006h" : "\x1b[?1006l\x1b[?1002l",
 		);
 	}
 
+	/**
+	 * End a scroll-chaining yield, from whichever of the two triggers reaches
+	 * it first -- a keystroke (the common case) or the fallback timer (see
+	 * #scrollChainTimer). Both need the same cleanup, so this is the one place
+	 * that does it: clear the pending timer (the other trigger firing later
+	 * would be a harmless no-op via #updateMouseReporting's own idempotence,
+	 * but there is no reason to let it) and restore mouse capture.
+	 */
+	#reclaimMouseCapture(): void {
+		if (this.#scrollChainTimer !== null) {
+			clearTimeout(this.#scrollChainTimer);
+			this.#scrollChainTimer = null;
+		}
+		this.#mouseCaptureYielded = false;
+		this.#updateMouseReporting();
+	}
+
 	// TODO: This should be put in an event translator abstraction
-	private setupProcessHandlers(): void {
-		this.sigintHandler = () => {
+	#setupProcessHandlers(): void {
+		this.#sigintHandler = () => {
 			this.dispose();
-			this.process.exit(0);
+			this.#process.exit(0);
 		};
-		this.process.on("SIGINT", this.sigintHandler);
+		this.#process.on("SIGINT", this.#sigintHandler);
 
-		this.sigwinchHandler = () => this.scheduleResize();
-		this.process.on("SIGWINCH", this.sigwinchHandler);
+		this.#sigwinchHandler = () => this.#scheduleResize();
+		this.#process.on("SIGWINCH", this.#sigwinchHandler);
 
-		if (this.process.stdin?.isTTY) {
-			const stdin = this.process.stdin;
+		if (this.#process.stdin?.isTTY) {
+			const stdin = this.#process.stdin;
 			if (!stdin) return;
 
 			// Configure terminal for proper input handling (once)
@@ -512,7 +819,7 @@ export class TermDOM {
 			stdin.setEncoding?.("utf8");
 
 			// Single unified handler for all stdin data
-			this.stdinDataHandler = (chunk: string | Buffer) => {
+			this.#stdinDataHandler = (chunk: string | Buffer) => {
 				// Ensure we have both string and buffer representations
 				const data = Buffer.isBuffer(chunk)
 					? chunk
@@ -524,14 +831,14 @@ export class TermDOM {
 				// so hand the report to the waiting query and let the rest continue
 				// through the normal routes as keystrokes.
 				const report = dataStr.match(/\x1b\[\d+;\d+R/);
-				if (this.cursorDetectionHandler && report) {
-					this.cursorDetectionHandler(report[0]);
+				if (this.#cursorDetectionHandler && report) {
+					this.#cursorDetectionHandler(report[0]);
 					const rest =
 						dataStr.slice(0, report.index) +
 						dataStr.slice((report.index ?? 0) + report[0].length);
 					if (rest.length === 0) return;
-					if (this.stdinDataHandler) {
-						this.stdinDataHandler(rest);
+					if (this.#stdinDataHandler) {
+						this.#stdinDataHandler(rest);
 					}
 					return;
 				}
@@ -539,7 +846,7 @@ export class TermDOM {
 				// Route 2: Ctrl-C handling (high priority) - check raw bytes
 				if (data.length > 0 && data[0] === 0x03) {
 					this.dispose();
-					return this.process.exit(0);
+					return this.#process.exit(0);
 				}
 
 				// Route 3: SGR mouse reports. Peeled off token by token so a report
@@ -548,10 +855,10 @@ export class TermDOM {
 				// mouse-capturing mode, so its reports must not be dropped with the
 				// keyboard events.
 				let keyInput = "";
-				for (const token of this.tokenizeInput(dataStr)) {
+				for (const token of this.#tokenizeInput(dataStr)) {
 					const mouse = token.match(/^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/);
 					if (mouse) {
-						this.handleMouseReport(
+						this.#handleMouseReport(
 							parseInt(mouse[1]),
 							parseInt(mouse[2]),
 							parseInt(mouse[3]),
@@ -564,33 +871,33 @@ export class TermDOM {
 				if (keyInput.length === 0) return;
 
 				// A keystroke means the user is back at the live screen (terminals
-				// snap to the bottom on input): reclaim the mouse immediately if
-				// scroll chaining yielded it, ahead of the re-arm timer.
-				if (this.mouseCaptureYielded) {
-					if (this.mouseRearmTimer !== null) {
-						clearTimeout(this.mouseRearmTimer);
-						this.mouseRearmTimer = null;
-					}
-					this.mouseCaptureYielded = false;
-					this.updateMouseReporting();
+				// snap to the bottom on input): reclaim the mouse if scroll
+				// chaining yielded it.
+				if (this.#mouseCaptureYielded) {
+					this.#reclaimMouseCapture();
 				}
 
-				// TODO: Why does this filter on fullscreen????
-				// Route 4: General keyboard events (when not in fullscreen)
-				if (!this.fullscreenManager.isFullscreen) {
-					this.dispatchGlobalKeyboardEvent(Buffer.from(keyInput));
-				}
+				// Route 4: General keyboard events. Fullscreen used to have its own,
+				// entirely separate stdin listener and dispatch implementation here
+				// (fullscreen.ts's old #inputHandler) -- duplicated, and silently
+				// out of sync with this one: no tokenization for batched input, no
+				// SGR-mouse-report filtering (a mouse report arriving while
+				// fullscreen was active would get misread as literal keyboard
+				// text), none of the modifier decoding above. One pipeline for
+				// both now; #dispatchGlobalKeyboardEvent itself handles Escape
+				// exiting fullscreen (see below) the same way this used to.
+				this.#dispatchGlobalKeyboardEvent(Buffer.from(keyInput));
 			};
-			stdin.on("data", this.stdinDataHandler);
+			stdin.on("data", this.#stdinDataHandler);
 		}
 	}
 
-	async render(): Promise<void> {
+	async #render(): Promise<void> {
 		this.attach();
 
 		// A resize is settling: suppress every render until handleResize issues the
 		// single re-anchored redraw. See resizeInProgress.
-		if (this.resizeInProgress) {
+		if (this.#resizeInProgress) {
 			return;
 		}
 
@@ -600,153 +907,47 @@ export class TermDOM {
 		// at the wrong place. Instead mark one pending and hand back the running
 		// loop's promise: it will fold this caller's changes into a trailing frame,
 		// so awaiting render() always means "what I changed is painted".
-		if (this.isRendering) {
-			this.renderQueued = true;
-			return this.renderInFlight ?? Promise.resolve();
+		if (this.#isRendering) {
+			this.#renderQueued = true;
+			return this.#renderInFlight ?? Promise.resolve();
 		}
 
-		this.isRendering = true;
-		this.renderInFlight = (async () => {
+		this.#isRendering = true;
+		this.#renderInFlight = (async () => {
 			try {
 				do {
-					this.renderQueued = false;
-					await this.renderOnce();
-				} while (this.renderQueued);
+					this.#renderQueued = false;
+					await this.#renderOnce();
+				} while (this.#renderQueued);
+				// The frame(s) are written; wake anything awaiting requestAnimationFrame.
+				this.#drainFrameCallbacks();
 			} finally {
-				this.isRendering = false;
-				this.renderInFlight = null;
+				this.#isRendering = false;
+				this.#renderInFlight = null;
 			}
 		})();
-		return this.renderInFlight;
+		return this.#renderInFlight;
 	}
 
-	private async renderOnce(): Promise<void> {
-		if (!this.interactive) {
-			await this.renderStatic();
+	#drainFrameCallbacks(): void {
+		if (this.#frameCallbacks.length === 0) return;
+		const callbacks = this.#frameCallbacks;
+		this.#frameCallbacks = [];
+		const now = performance.now();
+		for (const cb of callbacks) cb(now);
+	}
+
+	async #renderOnce(): Promise<void> {
+		if (!this.#interactive) {
+			await this.#renderStatic();
 			return;
 		}
 
-		if (this.viewportMode === "document") {
-			await this.renderDocumentMode();
-			return;
-		}
-
-		// Wait for cursor detection to complete before first render
-		if (this.cursorDetectionPromise) {
-			await this.cursorDetectionPromise;
-		}
-
-		// Process any pending mutations first (for direct render() calls)
-		const pendingMutations = this.observer.takeRecords();
-		if (pendingMutations.length > 0) {
-			this.styleManager.handleMutations(pendingMutations);
-			this.layoutEngine.handleMutations(pendingMutations);
-		}
-
-		// Clear the rendered markers set for this frame
-		this.renderedOutsideMarkers = new WeakSet<Element>();
-
-		// Note: refreshStylesheets() is called by mutation observer when stylesheets change
-
-		// Always use auto height for natural content sizing and scrolling
-		this.layoutEngine.calculateLayout();
-
-		// Content taller than the room left below the command start has to push the
-		// command start upward, so the overflow scrolls into the terminal's native
-		// scrollback -- exactly as a normal command's output does. Without this the
-		// rows past the bottom of the terminal are simply never drawn, and the
-		// content is silently lost.
-		if (this.hasDetectedCommandStart) {
-			this.pushUpForOverflow();
-		}
-
-		// Which *region* of the document we draw is a different question from how we
-		// position the cursor to draw it. The resize path deliberately unsets
-		// hasDetectedCommandStart so the frame is placed with DECRC rather than CUP
-		// -- and keying the region on that flag too meant a resize fell back to a
-		// stale scroll offset and painted over rows the terminal had just handed
-		// back to us out of scrollback.
-		const flow = this.interactive;
-
-		// If the document reflowed above the fold, the commit index no longer refers
-		// to the same content: printing from it would duplicate rows into the
-		// scrollback and drop the newly inserted ones. We cannot correct what is
-		// already in the scrollback, so we print the document again below it.
-		if (flow && this.hasReflowedAboveFold()) {
-			await this.reprintAsNewBlock();
-			this.layoutEngine.calculateLayout();
-		}
-
-		// The document rows still ours to draw: everything below what has already
-		// scrolled into the scrollback. On a frame where the content has grown this
-		// region is taller than the terminal, and printing it is what scrolls the
-		// terminal and commits the overflow to scrollback.
-		const contentHeight = this.document.body.scrollHeight;
-
-		// Flow mode's commit index is a document row number, so it only means
-		// anything while the document is append-only. If the document shrinks below
-		// what has already been committed -- rows removed, or cleared -- the index
-		// points past the end and there is nothing left to draw, which blanked the
-		// screen entirely. Clamp it back to what the document can actually support.
-		//
-		// This is a floor, not a fix: reflow *above* the fold still shifts every row
-		// number underneath the commit index, and the scrollback cannot be rewritten
-		// to match. See the note in SCROLLBACK.md.
-		const maxCommitted = Math.max(0, contentHeight - this.height);
-		if (this.committedRows > maxCommitted) {
-			this.committedRows = maxCommitted;
-		}
-
-		const regionRows = Math.max(0, contentHeight - this.committedRows);
-
-		// Where on screen that region begins. Once anything has been committed the
-		// content fills the terminal from its top row.
-		const startRow =
-			this.committedRows > 0 ? 0 : this.scrollingManager.getScreenTop();
-
-		const viewportOffset = flow
-			? -this.committedRows
-			: -this.scrollingManager.getScrollTop();
-
-		const cursorPosition = this.hasDetectedCommandStart ? startRow : undefined;
-
-		const ansi = this.renderer.renderFrame(
-			viewportOffset,
-			(ctx) => {
-				this.renderElement(this.document.body, ctx);
-			},
-			cursorPosition,
-			flow ? startRow + regionRows : undefined,
-		);
-
-		// Printing past the bottom margin scrolls the terminal, and those rows are
-		// now in its scrollback -- permanently, and beyond our reach.
-		if (flow) {
-			const scrolled = Math.max(0, startRow + regionRows - this.height);
-			if (scrolled > 0) {
-				this.committedRows += scrolled;
-				this.scrollingManager.setScreenTop(Math.max(0, startRow - scrolled));
-			}
-			this.updateFoldAnchor();
-		}
-
-		if (ansi) {
-			await new Promise<void>((resolve, reject) => {
-				this.process.stdout.write(ansi, "utf8", (error) => {
-					if (error) {
-						reject(error);
-					} else {
-						resolve();
-					}
-				});
-			});
-		}
-
-		this.afterRender();
+		await this.#renderInteractive();
 	}
 
 	// TODO: many of the following methods do not belong on the TermDOM class
-	private renderElement(
+	#renderElement(
 		element: Element,
 		ctx: import("./ansi.js").DrawingContext,
 	): void {
@@ -757,7 +958,7 @@ export class TermDOM {
 		// and the paint costs what is on screen, not what is in the document.
 		const bandTop = -ctx.viewportOffset;
 		if (
-			this.layoutEngine.isSubtreeOutsideBand(
+			this[kLayoutEngine].isSubtreeOutsideBand(
 				element,
 				bandTop,
 				bandTop + ctx.rows,
@@ -766,7 +967,7 @@ export class TermDOM {
 			return;
 		}
 
-		const rect = this.layoutEngine.getRect(element);
+		const rect = this[kLayoutEngine].getRect(element);
 
 		const color = this.window
 			.getComputedStyle(element)
@@ -774,9 +975,9 @@ export class TermDOM {
 		const backgroundColor = this.window
 			.getComputedStyle(element)
 			.getPropertyValue("background-color");
-		const bold =
-			this.window.getComputedStyle(element).getPropertyValue("font-weight") ===
-			"bold";
+		const {bold, dim} = resolveFontWeight(
+			this.window.getComputedStyle(element).getPropertyValue("font-weight"),
+		);
 		const italic =
 			this.window.getComputedStyle(element).getPropertyValue("font-style") ===
 			"italic";
@@ -784,6 +985,19 @@ export class TermDOM {
 			.getComputedStyle(element)
 			.getPropertyValue("text-decoration")
 			.includes("underline");
+		const underlineStyle =
+			this.window
+				.getComputedStyle(element)
+				.getPropertyValue("text-decoration-style") === "double"
+				? ("double" as const)
+				: undefined;
+		// visibility:hidden reserves the box (layout is untouched) but paints
+		// nothing of it -- unlike display:none, which removes the box entirely. A
+		// descendant that sets visibility:visible still paints, since visibility
+		// inherits and each element resolves its own computed value here.
+		const visible =
+			this.window.getComputedStyle(element).getPropertyValue("visibility") !==
+			"hidden";
 
 		const style = {
 			fg: color && color !== "initial" ? cssColorToNumber(color) : undefined,
@@ -794,30 +1008,37 @@ export class TermDOM {
 					? cssColorToNumber(backgroundColor)
 					: undefined,
 			bold,
+			dim,
 			italic,
 			underline,
+			underlineStyle,
 		};
 
-		if (rect && style.bg != null) {
+		if (rect && style.bg != null && visible) {
 			ctx.fillRect(rect.left, rect.top, rect.width, rect.height, style.bg);
 		}
 
-		// Handle tables with TanStack integration
-		const display = this.window
-			.getComputedStyle(element)
-			.getPropertyValue("display");
-		if (display === "table" && rect) {
-			this.renderTable(element, rect, style);
-			// Continue with normal child rendering
-		}
-
 		// Handle borders
-		if (rect) {
+		if (rect && visible) {
 			const borderStyles = resolveBorderStyles(element);
 			if (borderStyles.hasAnyBorder) {
-				// Use foreground color for borders, inherit element's background color
+				if (process.env.DEBUG_BORDERS)
+					console.error("BORDER", element.tagName, JSON.stringify(rect));
+				// Border color per CSS: border-color, whose initial value is
+				// currentColor -- the element's own color -- and, with nothing
+				// authored anywhere, the terminal's DEFAULT foreground. Never a
+				// hardcoded white: no theme-safe color exists, and forcing one
+				// breaks light terminals.
+				const borderColor = this.window
+					.getComputedStyle(element)
+					.getPropertyValue("border-top-color");
 				const borderCellStyle = {
-					fg: style.fg || 0xffffff, // Default to white if no color
+					fg:
+						borderColor &&
+						borderColor !== "currentcolor" &&
+						borderColor !== "currentColor"
+							? cssColorToNumber(borderColor)
+							: style.fg,
 					bg: style.bg, // Inherit element's background color
 				};
 				ctx.drawBorder(
@@ -832,7 +1053,44 @@ export class TermDOM {
 		}
 
 		// Handle list-style-position: outside markers
-		this.renderOutsideMarker(element, ctx);
+		if (visible) this.#renderOutsideMarker(element, ctx);
+
+		// A textarea's content IS its UA shadow tree, painted by the normal
+		// child walk below; what the widget owns here is just tree upkeep (a
+		// safety-net sync for framework .value assignments -- no observer
+		// record fires for those) and parking the real terminal caret at the
+		// multiline position.
+		if (element.tagName === "TEXTAREA" && rect) {
+			const textarea = element as HTMLTextAreaElement;
+			const parts = this.#ensureTextareaShadowParts(textarea);
+			this.#syncTextareaShadowTree(textarea, parts);
+			if (visible && textarea === this.document.activeElement) {
+				const caretCell = this.#textareaCaretCell(textarea);
+				if (caretCell) {
+					ctx.setCaret(caretCell.x, caretCell.y);
+				}
+			}
+		}
+
+		// A select's content is its UA shadow tree (label + indicator),
+		// painted by the normal child walk; upkeep and caret parking are all
+		// that belongs here.
+		if (element.tagName === "SELECT" && rect) {
+			const select = element as HTMLSelectElement;
+			const parts = this.#ensureSelectShadowParts(select);
+			this.#syncSelectShadowTree(select, parts);
+			if (visible && select === this.document.activeElement) {
+				const boxModel = getBoxModel(select);
+				ctx.setCaret(
+					Math.round(rect.left) +
+						(boxModel.borderLeftWidth || 0) +
+						(boxModel.paddingLeft || 0),
+					Math.round(rect.top) +
+						(boxModel.borderTopWidth || 0) +
+						(boxModel.paddingTop || 0),
+				);
+			}
+		}
 
 		// Render input elements (void elements with no children)
 		if (
@@ -840,62 +1098,109 @@ export class TermDOM {
 			rect &&
 			(element as HTMLInputElement).type !== "hidden"
 		) {
-			this.renderInputElement(element as HTMLInputElement, rect, style, ctx);
+			if (visible) {
+				this.#renderInputElement(element as HTMLInputElement, rect, ctx);
+			}
 			return; // Input elements have no children to render
 		}
 
 		// Note: JSDOM automatically calls connectedCallback() when elements are added to DOM
 		// No manual lifecycle management needed
 
-		// Use ExpandedTreeWalker to render all children including pseudo-elements and shadow DOM
-		const walker = this.createExpandedTreeWalker(element);
-
 		// Collect the children first, then paint them in z-order. Painting straight
 		// down the tree in document order means nothing can ever sit on top of
 		// anything else, which is why an overlay or a modal was impossible: it
 		// would be painted before the content it is supposed to cover.
 		const children: Array<{node: Node; zIndex: number}> = [];
-		for (
-			let childNode = walker.firstChild();
-			childNode;
-			childNode = walker.nextSibling()
-		) {
-			// Cull before the z-index style read: an off-band child costs one map
-			// lookup instead of a computed-style resolution, which is what keeps a
-			// wide container of mostly off-screen children O(screen).
-			if (
-				childNode.nodeType === childNode.ELEMENT_NODE &&
-				this.layoutEngine.isSubtreeOutsideBand(
-					childNode as Element,
-					bandTop,
-					bandTop + ctx.rows,
-				)
-			) {
-				continue;
+
+		// Fast path: for a plain vertically-stacked container (no position:
+		// relative/absolute child, no flex-direction other than column -- see
+		// visibleChildrenInBand's own doc comment for exactly what that rules
+		// out), the layout tree already knows which children are in band
+		// without visiting the rest to rule them out. A long list scrolled to
+		// any depth used to cost O(total children) to paint one frame --
+		// worse the longer the list got, even though only ~O(screen) of it
+		// could ever be visible -- because the walker below has no choice but
+		// to step through every sibling to find out which ones are off-band.
+		const fastChildren = this[kLayoutEngine].visibleChildrenInBand(
+			element,
+			bandTop,
+			bandTop + ctx.rows,
+		);
+		if (fastChildren) {
+			for (const childNode of fastChildren) {
+				children.push({
+					node: childNode,
+					zIndex:
+						childNode.nodeType === childNode.ELEMENT_NODE
+							? this.#zIndexOf(childNode as Element)
+							: 0,
+				});
 			}
-			children.push({
-				node: childNode,
-				zIndex:
-					childNode.nodeType === childNode.ELEMENT_NODE
-						? this.zIndexOf(childNode as Element)
-						: 0,
-			});
+		} else {
+			// Use ExpandedTreeWalker to render all children including pseudo-elements and shadow DOM
+			const walker = createExpandedTreeWalker(this.window, element);
+			for (
+				let childNode = walker.firstChild();
+				childNode;
+				childNode = walker.nextSibling()
+			) {
+				// Cull before the z-index style read: an off-band child costs one map
+				// lookup instead of a computed-style resolution, which is what keeps a
+				// wide container of mostly off-screen children O(screen).
+				if (
+					childNode.nodeType === childNode.ELEMENT_NODE &&
+					this[kLayoutEngine].isSubtreeOutsideBand(
+						childNode as Element,
+						bandTop,
+						bandTop + ctx.rows,
+					)
+				) {
+					continue;
+				}
+				children.push({
+					node: childNode,
+					zIndex:
+						childNode.nodeType === childNode.ELEMENT_NODE
+							? this.#zIndexOf(childNode as Element)
+							: 0,
+				});
+			}
 		}
 
 		// A stable sort, so boxes at the same level keep their document order and
 		// only an explicit z-index moves anything.
 		children.sort((a, b) => a.zIndex - b.zIndex);
 
-		for (const {node: childNode} of children) {
-			if (childNode.nodeType === childNode.ELEMENT_NODE) {
-				const childElement = childNode as Element;
-				if (childElement instanceof (this.window as any).HTMLElement) {
-					this.renderElement(childElement, ctx);
+		// overflow:hidden clips *descendants* to this element's own box -- never
+		// the element's own border/background painted above, which is why this is
+		// scoped to just the children, not the whole function.
+		const overflow = this.window
+			.getComputedStyle(element)
+			.getPropertyValue("overflow");
+		const overflowX =
+			this.window.getComputedStyle(element).getPropertyValue("overflow-x") ||
+			overflow;
+		const overflowY =
+			this.window.getComputedStyle(element).getPropertyValue("overflow-y") ||
+			overflow;
+		const previousClip = ctx.clipRect;
+		ctx.clipRect = overflowClipRect(rect, overflowX, overflowY, previousClip);
+
+		try {
+			for (const {node: childNode} of children) {
+				if (childNode.nodeType === childNode.ELEMENT_NODE) {
+					const childElement = childNode as Element;
+					if (childElement instanceof (this.window as any).HTMLElement) {
+						this.#renderElement(childElement, ctx);
+					}
+				} else if (childNode.nodeType === childNode.TEXT_NODE) {
+					const textNode = childNode as Text;
+					this.#renderText(textNode, ctx);
 				}
-			} else if (childNode.nodeType === childNode.TEXT_NODE) {
-				const textNode = childNode as Text;
-				this.renderText(textNode, ctx);
 			}
+		} finally {
+			ctx.clipRect = previousClip;
 		}
 	}
 
@@ -905,7 +1210,7 @@ export class TermDOM {
 	 * z-index only applies to positioned boxes, so a static one always sits at 0
 	 * and keeps its document order.
 	 */
-	private zIndexOf(element: Element): number {
+	#zIndexOf(element: Element): number {
 		const computedStyle = this.window.getComputedStyle(element);
 
 		const position = computedStyle.getPropertyValue("position");
@@ -921,9 +1226,9 @@ export class TermDOM {
 	/**
 	 * Render outside positioned markers for list items
 	 */
-	private renderedOutsideMarkers = new WeakSet<Element>();
+	#renderedOutsideMarkers = new WeakSet<Element>();
 
-	private renderOutsideMarker(
+	#renderOutsideMarker(
 		element: Element,
 		ctx: import("./ansi.js").DrawingContext,
 	): void {
@@ -944,18 +1249,18 @@ export class TermDOM {
 		}
 
 		// Prevent duplicate rendering in the same frame
-		if (this.renderedOutsideMarkers.has(element)) {
+		if (this.#renderedOutsideMarkers.has(element)) {
 			return;
 		}
-		this.renderedOutsideMarkers.add(element);
+		this.#renderedOutsideMarkers.add(element);
 
 		// Get marker content from StyleManager
-		const markerContent = this.styleManager.getMarkerContent(element);
+		const markerContent = this.#styleManager.getMarkerContent(element);
 		if (!markerContent) {
 			return;
 		}
 
-		const rect = this.layoutEngine.getRect(element);
+		const rect = this[kLayoutEngine].getRect(element);
 		if (!rect) {
 			return;
 		}
@@ -972,7 +1277,9 @@ export class TermDOM {
 		const markerColor =
 			markerStyle.getPropertyValue("color") ||
 			computedStyle.getPropertyValue("color");
-		const markerBold = markerStyle.getPropertyValue("font-weight") === "bold";
+		const {bold: markerBold, dim: markerDim} = resolveFontWeight(
+			markerStyle.getPropertyValue("font-weight"),
+		);
 		const markerItalic =
 			markerStyle.getPropertyValue("font-style") === "italic";
 		const markerUnderline = markerStyle
@@ -985,6 +1292,7 @@ export class TermDOM {
 					? cssColorToNumber(markerColor)
 					: undefined,
 			bold: markerBold,
+			dim: markerDim,
 			italic: markerItalic,
 			underline: markerUnderline,
 		};
@@ -998,18 +1306,558 @@ export class TermDOM {
 	}
 
 	/**
-	 * Render an input element with its value and cursor
+	 * Build (or rebuild, when the type flips between text-ish and toggle)
+	 * an input's UA-internal shadow tree: real DOM in the symbol slot,
+	 * closed to authors -- element.shadowRoot stays null and attachShadow
+	 * still throws, exactly as for a browser input's own internals. The
+	 * field tree carries a real <style> scoped to its root; parts are
+	 * addressed by the standard `part` attribute, which is what gives
+	 * ::placeholder a real element to resolve onto.
 	 */
-	private renderInputElement(
+	#ensureInputShadowParts(element: HTMLInputElement): {
+		kind: "field" | "toggle" | "textarea" | "select";
+		spans: Record<string, HTMLElement>;
+		texts: Record<string, Text>;
+	} {
+		const kind =
+			element.type === "checkbox" || element.type === "radio"
+				? ("toggle" as const)
+				: ("field" as const);
+		const cached = this.#inputShadowParts.get(element);
+		if (cached && cached.kind === kind) {
+			return cached;
+		}
+
+		const document = this.document;
+		const root = createUAShadowRoot(element);
+		while (root.firstChild) {
+			root.removeChild(root.firstChild);
+		}
+		const spans: Record<string, HTMLElement> = {};
+		const texts: Record<string, Text> = {};
+		const addPart = (part: string) => {
+			const span = document.createElement("span");
+			span.setAttribute("part", part);
+			const text = document.createTextNode("");
+			span.appendChild(text);
+			root.appendChild(span);
+			spans[part] = span;
+			texts[part] = text;
+		};
+		if (kind === "field") {
+			const style = document.createElement("style");
+			style.textContent = FIELD_UA_STYLES;
+			root.appendChild(style);
+			addPart("value");
+			addPart("placeholder");
+			addPart("blank");
+		} else {
+			addPart("glyph");
+		}
+
+		// Scope the UA rules to this root. The root is deliberately NOT
+		// observer-enrolled: the painter syncs the tree from the input's own
+		// state right before reading it, so a mutation record could only
+		// ever schedule a redundant frame.
+		this.#styleManager.registerShadowRoot(root);
+		const parts = {kind, spans, texts};
+		this.#inputShadowParts.set(element, parts);
+		return parts;
+	}
+
+	/**
+	 * Build a textarea's UA-internal shadow tree. Unlike the input's, this
+	 * root IS observer-enrolled -- enrolled BEFORE it is populated, so the
+	 * population itself is the invalidation that swaps the composed tree in
+	 * -- because the value text lays out through the normal pipeline and
+	 * layout must hear about every change to it. The sync controller runs
+	 * at edit time (and as a paint-time safety net for framework .value
+	 * assignments), never in a loop: it only ever writes when the input's
+	 * state and the tree disagree.
+	 */
+	#ensureTextareaShadowParts(element: HTMLTextAreaElement): {
+		kind: "field" | "toggle" | "textarea" | "select";
+		spans: Record<string, HTMLElement>;
+		texts: Record<string, Text>;
+	} {
+		const cached = this.#inputShadowParts.get(element);
+		if (cached && cached.kind === "textarea") {
+			return cached;
+		}
+
+		const document = this.document;
+		const root = createUAShadowRoot(element);
+		this[kObserver].observe(root, {
+			childList: true,
+			subtree: true,
+			attributes: true,
+			characterData: true,
+		});
+		this.#styleManager.registerShadowRoot(root);
+
+		const spans: Record<string, HTMLElement> = {};
+		const texts: Record<string, Text> = {};
+		const style = document.createElement("style");
+		style.textContent = TEXTAREA_UA_STYLES;
+		root.appendChild(style);
+		for (const part of ["value", "placeholder"]) {
+			const span = document.createElement("span");
+			span.setAttribute("part", part);
+			const text = document.createTextNode("");
+			span.appendChild(text);
+			root.appendChild(span);
+			spans[part] = span;
+			texts[part] = text;
+		}
+		// The trailing <br> anchor, the same trick a browser's editor uses:
+		// it makes the run's content always end in exactly one line break,
+		// so the line count equals the LOGICAL line count -- the breaker
+		// never emits a line after a final newline, and without the anchor a
+		// value ending in "\n" measured one row short, parking the caret on
+		// the bottom border.
+		root.appendChild(document.createElement("br"));
+
+		const parts = {kind: "textarea" as const, spans, texts};
+		this.#inputShadowParts.set(element, parts);
+		this.#syncTextareaShadowTree(element, parts);
+		return parts;
+	}
+
+	/**
+	 * Reconcile a textarea's UA tree with the element's own state -- the
+	 * single source of truth. Placeholder visibility is real CSS (an inline
+	 * display:none), not painter logic: the normal pipeline then simply
+	 * never sees it.
+	 */
+	#syncTextareaShadowTree(
+		element: HTMLTextAreaElement,
+		parts: {spans: Record<string, HTMLElement>; texts: Record<string, Text>},
+	): void {
+		const value = element.value;
+		const placeholder = element.getAttribute("placeholder") ?? "";
+		if (parts.texts.value.data !== value) {
+			parts.texts.value.data = value;
+		}
+		if (parts.texts.placeholder.data !== placeholder) {
+			parts.texts.placeholder.data = placeholder;
+		}
+		const placeholderDisplay = value ? "none" : "";
+		if (parts.spans.placeholder.style.display !== placeholderDisplay) {
+			parts.spans.placeholder.style.display = placeholderDisplay;
+		}
+	}
+
+	/**
+	 * The VISUAL lines of a textarea's laid-out value: the painted
+	 * fragments (one per soft-wrapped or hard-broken line), plus a virtual
+	 * empty line for each trailing newline past the last visual character
+	 * (typing Enter at the end must park the caret on the new, still-empty
+	 * line, which owns no fragment). Offsets are code units into .value;
+	 * geometry is document cells. Null before the value has ever laid out.
+	 */
+	#textareaVisualLines(element: HTMLTextAreaElement): {
+		value: string;
+		lines: Array<{
+			x: number;
+			y: number;
+			text: string;
+			/** Data offset of the line's first character / caret slot. */
+			startOffset: number;
+			/** Data offset of the caret slot AFTER the line's last character. */
+			endOffset: number;
+		}>;
+	} | null {
+		const parts = this.#ensureTextareaShadowParts(element);
+		const valueText = parts.texts.value;
+		const value = valueText.data;
+		const rect = element.getBoundingClientRect();
+		const boxModel = getBoxModel(element);
+		const contentX =
+			Math.round(rect.left) +
+			(boxModel.borderLeftWidth || 0) +
+			(boxModel.paddingLeft || 0);
+		const contentY = Math.round(rect.top) + (boxModel.borderTopWidth || 0);
+
+		if (!value) {
+			return {
+				value,
+				lines: [
+					{x: contentX, y: contentY, text: "", startOffset: 0, endOffset: 0},
+				],
+			};
+		}
+
+		const rectTexts = this[kLayoutEngine].getRectTexts(valueText);
+		if (rectTexts.length === 0) {
+			return null;
+		}
+		const visToData = visualToDataOffsets(value, rectTexts);
+
+		const lines: Array<{
+			x: number;
+			y: number;
+			text: string;
+			startOffset: number;
+			endOffset: number;
+		}> = [];
+		// Blank lines between consecutive newlines own real, EMPTY layout
+		// fragments -- no visual characters, so visToData can't place them.
+		// A cursor over the value's own structure does: each line consumes
+		// its characters plus, when the character at its end is a newline,
+		// that one hard separator (soft wraps have no separator to consume).
+		let visualBase = 0;
+		let cursor = 0;
+		for (const rectText of rectTexts) {
+			const length = rectText.text.length;
+			const startOffset = length > 0 ? visToData[visualBase] : cursor;
+			const endOffset =
+				length > 0 ? visToData[visualBase + length - 1] + 1 : startOffset;
+			lines.push({
+				x: Math.round(rectText.rect.x),
+				y: Math.round(rectText.rect.y),
+				text: rectText.text,
+				startOffset,
+				endOffset,
+			});
+			visualBase += length;
+			cursor =
+				endOffset < value.length && value[endOffset] === "\n"
+					? endOffset + 1
+					: endOffset;
+		}
+
+		// A value ending in a newline has exactly ONE line no fragment
+		// represents: the empty last line the caret sits on after a final
+		// Enter. (Interior blank lines all have fragments -- adding more
+		// virtual lines here is what once drifted the caret a row per
+		// blank line.)
+		if (value.endsWith("\n")) {
+			const last = lines[lines.length - 1];
+			lines.push({
+				x: contentX,
+				y: last.y + 1,
+				text: "",
+				startOffset: value.length,
+				endOffset: value.length,
+			});
+		}
+		return {value, lines};
+	}
+
+	/**
+	 * Build a select's UA-internal shadow tree: the selected option's label
+	 * (part=value) and the ▾ indicator (part=indicator), observer-enrolled
+	 * before population like the textarea's -- its content renders through
+	 * the normal pipeline, and composition hides the option list entirely.
+	 */
+	#ensureSelectShadowParts(element: HTMLSelectElement): {
+		kind: "field" | "toggle" | "textarea" | "select";
+		spans: Record<string, HTMLElement>;
+		texts: Record<string, Text>;
+	} {
+		const cached = this.#inputShadowParts.get(element);
+		if (cached && cached.kind === "select") {
+			return cached;
+		}
+
+		const document = this.document;
+		const root = createUAShadowRoot(element);
+		this[kObserver].observe(root, {
+			childList: true,
+			subtree: true,
+			attributes: true,
+			characterData: true,
+		});
+		this.#styleManager.registerShadowRoot(root);
+
+		const spans: Record<string, HTMLElement> = {};
+		const texts: Record<string, Text> = {};
+		const style = document.createElement("style");
+		style.textContent = SELECT_UA_STYLES;
+		root.appendChild(style);
+		for (const part of ["value", "indicator"]) {
+			const span = document.createElement("span");
+			span.setAttribute("part", part);
+			const text = document.createTextNode("");
+			span.appendChild(text);
+			root.appendChild(span);
+			spans[part] = span;
+			texts[part] = text;
+		}
+		texts.indicator.data = " \u25be"; // " ▾"
+
+		const parts = {kind: "select" as const, spans, texts};
+		this.#inputShadowParts.set(element, parts);
+		this.#syncSelectShadowTree(element, parts);
+		return parts;
+	}
+
+	/** Reconcile the select's UA tree with its own selection state. */
+	#syncSelectShadowTree(
+		element: HTMLSelectElement,
+		parts: {texts: Record<string, Text>},
+	): void {
+		const selected =
+			element.selectedIndex >= 0
+				? element.options[element.selectedIndex]
+				: null;
+		const label = selected ? selected.label : "";
+		if (parts.texts.value.data !== label) {
+			parts.texts.value.data = label;
+		}
+	}
+
+	/**
+	 * Arrow keys move a closed select's selection in place, skipping
+	 * disabled options, firing input and change -- the browser's own
+	 * closed-select keyboard model, with no popup to degrade.
+	 */
+	#handleSelectAction(element: HTMLSelectElement, keyName: string): void {
+		const options = Array.from(element.options);
+		if (options.length === 0) return;
+
+		const enabled = (index: number) => !options[index].disabled;
+		const current = element.selectedIndex;
+		let target = current;
+
+		const step = (from: number, direction: 1 | -1): number => {
+			for (
+				let i = from + direction;
+				i >= 0 && i < options.length;
+				i += direction
+			) {
+				if (enabled(i)) return i;
+			}
+			return from;
+		};
+
+		if (keyName === "ArrowDown" || keyName === "ArrowRight") {
+			target = step(current, 1);
+		} else if (keyName === "ArrowUp" || keyName === "ArrowLeft") {
+			target = step(current, -1);
+		} else if (keyName === "Home") {
+			target = step(-1, 1);
+		} else if (keyName === "End") {
+			target = step(options.length, -1);
+		} else {
+			return;
+		}
+
+		if (target !== current && target >= 0) {
+			element.selectedIndex = target;
+			this.#syncSelectShadowTree(
+				element,
+				this.#ensureSelectShadowParts(element),
+			);
+			element.dispatchEvent(
+				new this.window.Event("input", {bubbles: true, cancelable: false}),
+			);
+			element.dispatchEvent(
+				new this.window.Event("change", {bubbles: true, cancelable: false}),
+			);
+			this.#scrollCaretIntoView(element);
+			this.#render();
+		}
+	}
+
+	/** The visual line index a caret offset sits on, given #textareaVisualLines. */
+	#textareaLineAt(
+		lines: Array<{startOffset: number; endOffset: number}>,
+		caret: number,
+	): number {
+		for (let i = 0; i < lines.length; i++) {
+			// endOffset is a valid caret slot on this line; a caret exactly at
+			// a soft-wrap boundary belongs to the NEXT line's start (both
+			// lines claim the offset; later line wins), matching browsers.
+			if (caret <= lines[i].endOffset) {
+				const next = lines[i + 1];
+				if (next && next.startOffset <= caret) continue;
+				return i;
+			}
+		}
+		return lines.length - 1;
+	}
+
+	/** Caret cell for a focused textarea, from the laid-out value. */
+	#textareaCaretCell(
+		element: HTMLTextAreaElement,
+	): {x: number; y: number} | null {
+		const visual = this.#textareaVisualLines(element);
+		if (!visual) return null;
+		const caret =
+			element.selectionDirection === "backward"
+				? (element.selectionStart ?? visual.value.length)
+				: (element.selectionEnd ?? visual.value.length);
+		const lineIndex = this.#textareaLineAt(visual.lines, caret);
+		const line = visual.lines[lineIndex];
+		const within = Math.max(
+			0,
+			Math.min(caret, line.endOffset) - line.startOffset,
+		);
+		return {x: line.x + stringWidth(line.text.slice(0, within)), y: line.y};
+	}
+
+	/**
+	 * Keep the editing caret inside the camera, the way a browser keeps the
+	 * caret of a focused control visible on every EDIT (typing, Enter,
+	 * caret travel) -- and only on edits: wheel-scrolling away from a
+	 * focused field stays allowed, so this never runs from the render loop.
+	 * The caret row comes from fresh layout; single-row widgets reduce to
+	 * their own row.
+	 */
+	#scrollCaretIntoView(
+		element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
+	): void {
+		this.#processPendingMutationsAndRender();
+		const rect = this[kLayoutEngine].getRect(element);
+		if (!rect) return;
+		let caretY = Math.round(rect.top);
+		if (element.tagName === "TEXTAREA") {
+			const cell = this.#textareaCaretCell(element as HTMLTextAreaElement);
+			if (!cell) return;
+			caretY = cell.y;
+		}
+		// The row span to reveal: the caret's row -- widened to the field's
+		// own edge when the caret sits on the first or last content row, so
+		// resting at a boundary shows the border instead of a cropped box.
+		const boxModel = getBoxModel(element);
+		let revealTop = caretY;
+		let revealBottom = caretY + 1;
+		if (caretY <= Math.round(rect.top) + (boxModel.borderTopWidth || 0)) {
+			revealTop = Math.round(rect.top);
+		}
+		if (
+			caretY >=
+			Math.round(rect.bottom) - (boxModel.borderBottomWidth || 0) - 1
+		) {
+			revealBottom = Math.round(rect.bottom);
+		}
+		const regionHeight = Math.min(
+			this.#height,
+			this.document.body.scrollHeight,
+		);
+		const top = this.#documentScrollTop;
+		if (revealTop < top) {
+			this.#scrollCamera(revealTop - top);
+		} else if (revealBottom > top + regionHeight) {
+			this.#scrollCamera(revealBottom - (top + regionHeight));
+		}
+	}
+
+	/**
+	 * The caret offset one visual line up or down from `caret`, keeping the
+	 * column (in cells) where the target line allows -- soft wraps count as
+	 * lines, exactly as in a browser. First line up collapses to 0, last
+	 * line down to the end.
+	 */
+	#textareaVerticalTarget(
+		element: HTMLTextAreaElement,
+		caret: number,
+		direction: 1 | -1,
+	): number {
+		const visual = this.#textareaVisualLines(element);
+		if (!visual) return caret;
+		const lineIndex = this.#textareaLineAt(visual.lines, caret);
+		const targetIndex = lineIndex + direction;
+		if (targetIndex < 0) return 0;
+		if (targetIndex >= visual.lines.length) return visual.value.length;
+		const line = visual.lines[lineIndex];
+		const currentColumn = stringWidth(
+			line.text.slice(0, Math.max(0, caret - line.startOffset)),
+		);
+		// Consecutive vertical moves aim for the column travel STARTED at,
+		// even across shorter lines that clamp the caret -- the browser's
+		// goal column.
+		const column = this.#textareaGoalColumn.get(element) ?? currentColumn;
+		this.#textareaGoalColumn.set(element, column);
+		const target = visual.lines[targetIndex];
+		let cells = 0;
+		for (let i = 0; i < target.text.length; i++) {
+			const charCells = stringWidth(target.text[i]);
+			if (cells + charCells > column) {
+				return target.startOffset + i;
+			}
+			cells += charCells;
+		}
+		return target.endOffset;
+	}
+
+	/**
+	 * The style a selection highlight paints with, over `base`. Everything
+	 * comes from ::selection rules -- there is no built-in fallback. The UA
+	 * document sheet declares the Highlight/HighlightText system-color
+	 * pair, which is CSS's spelling of "swap the cell's colors" and
+	 * translates to SGR 7 (inverse), the terminal-native highlight with no
+	 * color assumptions; author colors replace the system keywords through
+	 * the ordinary cascade. An element no ::selection rule reaches paints
+	 * no highlight at all -- the UA rule is load-bearing.
+	 */
+	#selectionStyleFor(
+		element: Element,
+		base: import("./ansi.js").CellStyle,
+	): import("./ansi.js").CellStyle {
+		const declaration = this.window.getComputedStyle(element, "::selection");
+		const fg = declaration.getPropertyValue("color");
+		const bg = declaration.getPropertyValue("background-color");
+		if (!fg && !bg) {
+			return base;
+		}
+		const isSystemHighlight = (value: string) =>
+			/^highlight(?:text)?$/i.test(value.trim());
+		const fgAuthored = Boolean(fg) && !isSystemHighlight(fg);
+		const bgAuthored = Boolean(bg) && !isSystemHighlight(bg);
+		if (!fgAuthored && !bgAuthored) {
+			return {...base, inverse: true};
+		}
+		return {
+			...base,
+			fg: fgAuthored ? cssColorToNumber(fg) : base.fg,
+			bg: bgAuthored ? cssColorToNumber(bg) : base.bg,
+		};
+	}
+
+	/**
+	 * A computed style reduced to terminal cell attributes -- one mapping,
+	 * shared by text nodes and the input painter's shadow parts.
+	 */
+	#cellStyleFromComputed(
+		computedStyle: CSSStyleDeclaration,
+	): import("./ansi.js").CellStyle {
+		const color = computedStyle.getPropertyValue("color");
+		const bgColor = computedStyle.getPropertyValue("background-color");
+		const {bold, dim} = resolveFontWeight(
+			computedStyle.getPropertyValue("font-weight"),
+		);
+		return {
+			fg: color && color !== "initial" ? cssColorToNumber(color) : undefined,
+			bg:
+				bgColor && bgColor !== "initial" && bgColor !== "transparent"
+					? cssColorToNumber(bgColor)
+					: undefined,
+			bold,
+			dim,
+			italic: computedStyle.getPropertyValue("font-style") === "italic",
+			underline: computedStyle
+				.getPropertyValue("text-decoration")
+				.includes("underline"),
+			underlineStyle:
+				computedStyle.getPropertyValue("text-decoration-style") === "double"
+					? ("double" as const)
+					: undefined,
+		};
+	}
+
+	/**
+	 * Render an input element: sync its UA shadow tree from the input's own
+	 * state, then paint the tree's parts with their computed styles. What
+	 * remains here is exactly the widget's editor mechanics -- the
+	 * scroll-window over an overflowing value and parking the REAL terminal
+	 * cursor -- the same split a browser makes between its input's shadow
+	 * content and its editor internals.
+	 */
+	#renderInputElement(
 		element: HTMLInputElement,
 		rect: DOMRect,
-		style: {
-			fg?: number;
-			bg?: number;
-			bold: boolean;
-			italic: boolean;
-			underline: boolean;
-		},
 		ctx: import("./ansi.js").DrawingContext,
 	): void {
 		const boxModel = getBoxModel(element);
@@ -1028,30 +1876,82 @@ export class TermDOM {
 			(boxModel.paddingLeft || 0) -
 			(boxModel.paddingRight || 0);
 
+		const parts = this.#ensureInputShadowParts(element);
+
+		if (parts.kind === "toggle") {
+			const mark =
+				element.type === "checkbox"
+					? element.checked
+						? "[x]"
+						: "[ ]"
+					: element.checked
+						? "(x)"
+						: "( )";
+			// The glyph is real DOM; its style (the focus underline included,
+			// inherited from the input's own focus-aware default) reads back
+			// off the tree.
+			if (parts.texts.glyph.data !== mark) {
+				parts.texts.glyph.data = mark;
+			}
+			ctx.setText(
+				contentX,
+				contentY,
+				mark,
+				this.#cellStyleFromComputed(
+					this.window.getComputedStyle(parts.spans.glyph),
+				),
+			);
+			if (element === this.document.activeElement) {
+				ctx.setCaret(contentX, contentY);
+			}
+			return;
+		}
+
 		const value = element.value || "";
 		const placeholder = element.getAttribute("placeholder") || "";
 		const isFocused = element === this.document.activeElement;
 
-		let displayText: string;
-		let textStyle = {...style};
-
-		if (value) {
-			displayText = value;
-		} else if (placeholder && !isFocused) {
-			displayText = placeholder;
-			// Dim the placeholder text
-			textStyle.fg = 0x808080;
-		} else {
-			displayText = "";
+		// Sync the tree: the input's state is the single source of truth,
+		// the tree is its rendered content model.
+		if (parts.texts.value.data !== value) {
+			parts.texts.value.data = value;
 		}
+		if (parts.texts.placeholder.data !== placeholder) {
+			parts.texts.placeholder.data = placeholder;
+		}
+
+		// Region styles come off the tree: the value inherits the input's
+		// own text style (solid underline when focused), the placeholder and
+		// the blank carry the UA field sheet -- gray ghost label, faint
+		// blank when blurred -- plus whatever the author adds.
+		const textStyle = this.#cellStyleFromComputed(
+			this.window.getComputedStyle(
+				value ? parts.spans.value : parts.spans.placeholder,
+			),
+		);
+		const blankStyle = this.#cellStyleFromComputed(
+			this.window.getComputedStyle(parts.spans.blank),
+		);
+
+		// Shown focused or not, as in a browser -- the caret just sits at
+		// the field start, over the dimmed text.
+		const displayText = value || placeholder;
 
 		// Everything below measures in CELLS, not characters. CJK text is two
 		// cells per glyph, so character arithmetic put the caret mid-text (IME
 		// composition then anchored on top of already-typed glyphs) and padEnd
 		// by character count pushed the value's background straight through the
 		// input's right border.
-		let scrollOffset = this.inputScrollOffsets.get(element) ?? 0;
-		const cursor = this.inputCursorPositions.get(element) ?? value.length;
+		let scrollOffset = this.#inputScrollOffsets.get(element) ?? 0;
+		// The caret is the input's own selection (selectionStart/End), so a
+		// framework assigning .value can never strand it: per spec, setting
+		// value collapses the selection to the end. The caret sits at the
+		// selection's FOCUS -- the moving end, per selectionDirection -- which
+		// is the end that must stay scrolled into view while extending.
+		const selStart = element.selectionStart ?? value.length;
+		const selEnd = element.selectionEnd ?? value.length;
+		const cursor =
+			element.selectionDirection === "backward" ? selStart : selEnd;
 
 		if (isFocused) {
 			// Keep the caret's CELL offset inside the box.
@@ -1064,7 +1964,20 @@ export class TermDOM {
 			) {
 				scrollOffset++;
 			}
-			this.inputScrollOffsets.set(element, scrollOffset);
+			// And scroll BACK when there's slack: after deleting at the end of
+			// an overflowed value, the window would otherwise stay put and show
+			// a shrinking tail with the earlier text still hidden off the left
+			// edge. Pull the window left while everything from one character
+			// earlier through the end still fits strictly inside the field
+			// (strictly: the caret needs its cell when it sits at the end),
+			// exactly what a browser's field does on backspace.
+			while (
+				scrollOffset > 0 &&
+				stringWidth(displayText.slice(scrollOffset - 1)) < contentWidth
+			) {
+				scrollOffset--;
+			}
+			this.#inputScrollOffsets.set(element, scrollOffset);
 		}
 
 		// Take characters from the scroll offset until the next one would no
@@ -1077,9 +1990,46 @@ export class TermDOM {
 			visibleText += char;
 			usedCells += charCells;
 		}
+		const visibleChars = visibleText.length;
 		visibleText += " ".repeat(Math.max(0, contentWidth - usedCells));
 
-		ctx.setText(contentX, contentY, visibleText, textStyle);
+		// The content region paints with its part's style, and the cells the
+		// content spares are the BLANK part -- which the UA sheet renders as
+		// the faint underlined blank when blurred, and which inherits the
+		// solid focus underline like everything else when focused.
+		if (displayText) {
+			ctx.setText(
+				contentX,
+				contentY,
+				visibleText.slice(0, visibleChars),
+				textStyle,
+			);
+			ctx.setText(
+				contentX + usedCells,
+				contentY,
+				visibleText.slice(visibleChars),
+				blankStyle,
+			);
+		} else {
+			ctx.setText(contentX, contentY, visibleText, blankStyle);
+		}
+
+		// A selection paints as inverse video over its visible slice --
+		// terminal-native highlight, no color assumptions. (Placeholder text
+		// can never be selected: it only shows for an empty value, whose
+		// selection is necessarily collapsed.)
+		if (isFocused && selEnd > selStart) {
+			const visStart = Math.max(selStart, scrollOffset);
+			const visEnd = Math.min(selEnd, scrollOffset + visibleChars);
+			if (visEnd > visStart) {
+				ctx.setText(
+					contentX + stringWidth(displayText.slice(scrollOffset, visStart)),
+					contentY,
+					displayText.slice(visStart, visEnd),
+					this.#selectionStyleFor(element, textStyle),
+				);
+			}
+		}
 
 		// The caret of a focused input is the REAL terminal cursor, parked there
 		// by the frame -- not an inverse-video imitation. IME composition, screen
@@ -1096,20 +2046,20 @@ export class TermDOM {
 	/**
 	 * Render a text node with proper styling from its parent element or pseudo-element
 	 */
-	private renderText(
-		textNode: Text,
-		ctx: import("./ansi.js").DrawingContext,
-	): void {
+	#renderText(textNode: Text, ctx: import("./ansi.js").DrawingContext): void {
 		const textContent = textNode.data;
 		if (!textContent) return;
 
 		// Check if this is a pseudo-element node
 		const pseudoMetadata = getPseudoMetadata(textNode);
 
-		// For pseudo elements, we don't have a parentElement, but we have hostElement
+		// For pseudo elements, we don't have a parentElement, but we have
+		// hostElement. Everything else styles from the FLAT-tree parent:
+		// slotted bare text draws its inherited styles through the slot's
+		// shadow chain, not from the host it came from.
 		const parentElement = pseudoMetadata
 			? pseudoMetadata.hostElement
-			: textNode.parentElement;
+			: compositionParentElement(textNode);
 		if (!parentElement) return;
 
 		let computedStyle: CSSStyleDeclaration;
@@ -1125,96 +2075,104 @@ export class TermDOM {
 			computedStyle = this.window.getComputedStyle(parentElement);
 		}
 
-		const textColor = computedStyle.getPropertyValue("color");
-		const textBgColor = computedStyle.getPropertyValue("background-color");
-		const textBold = computedStyle.getPropertyValue("font-weight") === "bold";
-		const textItalic =
-			computedStyle.getPropertyValue("font-style") === "italic";
-		const textUnderline = computedStyle
-			.getPropertyValue("text-decoration")
-			.includes("underline");
+		// visibility inherits, so the parent's own resolved value already accounts
+		// for a closer ancestor overriding back to visible.
+		if (computedStyle.getPropertyValue("visibility") === "hidden") return;
 
-		const textStyle = {
-			fg:
-				textColor && textColor !== "initial"
-					? cssColorToNumber(textColor)
-					: undefined,
-			bg:
-				textBgColor &&
-				textBgColor !== "initial" &&
-				textBgColor !== "transparent"
-					? cssColorToNumber(textBgColor)
-					: undefined,
-			bold: textBold,
-			italic: textItalic,
-			underline: textUnderline,
-		};
+		const textTransform = computedStyle.getPropertyValue("text-transform");
+		const textStyle = this.#cellStyleFromComputed(computedStyle);
 
-		const rectTexts = this.layoutEngine.getRectTexts(textNode);
+		const rectTexts = this[kLayoutEngine].getRectTexts(textNode);
 		if (rectTexts.length > 0) {
 			for (const rectText of rectTexts) {
 				if (rectText.text.length > 0) {
 					ctx.setText(
 						Math.round(rectText.rect.x),
 						Math.round(rectText.rect.y),
-						rectText.text,
+						applyTextTransform(rectText.text, textTransform),
 						textStyle,
 					);
 				}
 			}
+			this.#renderTextSelection(
+				textNode,
+				rectTexts,
+				textStyle,
+				textTransform,
+				ctx,
+			);
+		}
+	}
+
+	/**
+	 * Overlay the document selection on a text node's painted fragments as
+	 * inverse video -- the terminal-native highlight, no color assumptions.
+	 * The Range holds code-unit offsets into node.data; visualToDataOffsets
+	 * bridges each painted character back to its data offset, and contiguous
+	 * selected runs repaint inverse. Ranges whose boundary containers are
+	 * elements rather than text nodes still highlight any text node they
+	 * fully contain (the intersectsNode walk); a boundary that lands INSIDE
+	 * this node only resolves to a precise offset when the container is the
+	 * node itself -- the only shape our own drag selection produces.
+	 */
+	#renderTextSelection(
+		textNode: Text,
+		rectTexts: Array<import("./layout.js").RectText>,
+		textStyle: import("./ansi.js").CellStyle,
+		textTransform: string,
+		ctx: import("./ansi.js").DrawingContext,
+	): void {
+		const selection = this.window.getSelection();
+		if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
+			return;
+		}
+		const range = selection.getRangeAt(0);
+		if (!range.intersectsNode(textNode)) return;
+
+		const from = range.startContainer === textNode ? range.startOffset : 0;
+		const to =
+			range.endContainer === textNode ? range.endOffset : textNode.data.length;
+		if (to <= from) return;
+
+		const selectionParent =
+			getPseudoMetadata(textNode)?.hostElement ??
+			compositionParentElement(textNode);
+		if (!selectionParent) return;
+		const selectionStyle = this.#selectionStyleFor(selectionParent, textStyle);
+		if (selectionStyle === textStyle) return; // no ::selection rule reaches here
+
+		const visToData = visualToDataOffsets(textNode.data, rectTexts);
+		let visualBase = 0;
+		for (const rectText of rectTexts) {
+			// Contiguous run of selected visual chars within this fragment.
+			let runStart = -1;
+			for (let i = 0; i <= rectText.text.length; i++) {
+				const dataOffset =
+					i < rectText.text.length ? visToData[visualBase + i] : -1;
+				const selected =
+					dataOffset >= 0 && dataOffset >= from && dataOffset < to;
+				if (selected && runStart === -1) {
+					runStart = i;
+				} else if (!selected && runStart !== -1) {
+					// Case transforms never change cell width, so slicing the
+					// untransformed text and transforming the slice paints the
+					// same cells the base pass did.
+					ctx.setText(
+						Math.round(rectText.rect.x) +
+							stringWidth(rectText.text.slice(0, runStart)),
+						Math.round(rectText.rect.y),
+						applyTextTransform(rectText.text.slice(runStart, i), textTransform),
+						selectionStyle,
+					);
+					runStart = -1;
+				}
+			}
+			visualBase += rectText.text.length;
 		}
 	}
 
 	// TODO: move this to tables.ts? or layout.ts
-	private renderTable(
-		tableElement: Element,
-		_rect: DOMRect,
-		_style: any,
-	): void {
-		// For now, let's fall back to normal rendering and let CSS handle table layout
-		// The layout engine should already handle display: table properly
-		// TODO: Implement table-specific optimizations like borders between cells
-
-		// Check if we have proper table children, if not, render as normal element
-		const hasTableStructure = this.hasTableStructure(tableElement);
-		if (!hasTableStructure) {
-			// Render children normally
-			return;
-		}
-
-		// For tables with proper structure, add table-specific border rendering
-		this.renderTableBorders(tableElement, _rect, _style);
-	}
-
-	private hasTableStructure(tableElement: Element): boolean {
-		// Check if element has table-like children (thead, tbody, tr, etc.)
-		const tableElements = ["thead", "tbody", "tfoot", "tr", "th", "td"];
-		return Array.from(tableElement.children).some((child) =>
-			tableElements.includes(child.tagName?.toLowerCase() || ""),
-		);
-	}
-
-	private renderTableBorders(
-		tableElement: Element,
-		_rect: DOMRect,
-		_style: any,
-	): void {
-		// Add borders between table cells
-		// This could be enhanced to draw proper table borders
-		// For now, this is a placeholder for table-specific rendering
-
-		// Check if border-collapse is set
-		const borderCollapse = this.window
-			.getComputedStyle(tableElement)
-			.getPropertyValue("border-collapse");
-
-		if (borderCollapse === "collapse") {
-			// TODO: Implement collapsed border model
-			// This would require drawing borders between cells
-		}
-	}
-
-	private processPendingMutationsAndRender(): boolean {
+	#processPendingMutationsAndRender(): boolean {
 		// A geometry read (getBoundingClientRect, elementFromPoint) needs fresh
 		// *layout*, not fresh pixels. This used to fire a full render() here, so
 		// every rect read with pending mutations painted a frame -- an app calling
@@ -1223,14 +2181,12 @@ export class TermDOM {
 		// mutations and laying out synchronously gives an exact rect; painting
 		// stays with the caller's own render. The dirty-skip makes this free when
 		// nothing changed.
-		const pendingMutations = this.observer.takeRecords();
+		const pendingMutations = this[kObserver].takeRecords();
 		const hadMutations = pendingMutations.length > 0;
 		if (hadMutations) {
-			// Process mutations in the same order as MutationObserver callback
-			this.styleManager.handleMutations(pendingMutations);
-			this.layoutEngine.handleMutations(pendingMutations);
+			this.#handlePendingMutations(pendingMutations);
 		}
-		this.layoutEngine.calculateLayout();
+		this[kLayoutEngine].calculateLayout();
 		return hadMutations;
 	}
 
@@ -1243,25 +2199,25 @@ export class TermDOM {
 	 * the length of the drag rather than the fact that it happened. Waiting for the
 	 * drag to settle turns the whole gesture into one redraw, and one lot of crud.
 	 */
-	private scheduleResize(): void {
+	#scheduleResize(): void {
 		// Suppress renders from the very first SIGWINCH, before the debounce
 		// settles, so a drag's worth of animation ticks cannot paint at the stale
 		// anchor while the terminal is rewrapping under us.
-		this.resizeInProgress = true;
-		this.resizeEpoch++;
-		if (this.resizeTimer !== null) clearTimeout(this.resizeTimer);
-		this.resizeTimer = setTimeout(() => {
-			this.resizeTimer = null;
-			this.handleResize();
+		this.#resizeInProgress = true;
+		this.#resizeEpoch++;
+		if (this.#resizeTimer !== null) clearTimeout(this.#resizeTimer);
+		this.#resizeTimer = setTimeout(() => {
+			this.#resizeTimer = null;
+			this.#handleResize();
 		}, RESIZE_DEBOUNCE_MS);
 	}
 
-	private handleResize(): void {
-		const newWidth = this.process.stdout.columns || 80;
-		const newHeight = this.process.stdout.rows || 24;
+	#handleResize(): void {
+		const newWidth = this.#process.stdout.columns || 80;
+		const newHeight = this.#process.stdout.rows || 24;
 
-		this.width = newWidth;
-		this.height = newHeight;
+		this.#width = newWidth;
+		this.#height = newHeight;
 
 		Object.defineProperty(this.window, "innerWidth", {
 			value: newWidth,
@@ -1276,8 +2232,8 @@ export class TermDOM {
 
 		this.window._terminalSize = {width: newWidth, height: newHeight};
 
-		this.renderer.resize(newHeight, newWidth);
-		this.layoutEngine.resize(newWidth, newHeight);
+		this.#renderer.resize(newHeight, newWidth);
+		this[kLayoutEngine].resize(newWidth, newHeight);
 
 		// Re-anchor and redraw. The terminal has already rewrapped everything on
 		// screen -- including our old frame -- and how far our content moved depends
@@ -1300,48 +2256,47 @@ export class TermDOM {
 		// SIGWINCH, so nothing paints at a stale anchor while the query is in
 		// flight. If the terminal does not answer, fall back to the computed
 		// vertical re-anchor (exact for height changes, approximate for width).
-		this.layoutEngine.calculateLayout();
+		this[kLayoutEngine].calculateLayout();
 		const contentHeight = this.document.body.scrollHeight;
-		const wrappedRowsAbove = this.renderer.wrappedRowsAboveCursorPark(newWidth);
-		const epoch = this.resizeEpoch;
+		const wrappedRowsAbove =
+			this.#renderer.wrappedRowsAboveCursorPark(newWidth);
+		const epoch = this.#resizeEpoch;
 
 		const redraw = (startRow: number) => {
-			this.committedRows = 0;
-			this.foldAnchor = null;
-			this.scrollingManager.setScreenTop(startRow);
-			this.scrollingManager.scrollToCommandStart();
-			this.renderer.resetScreen(startRow);
+			this.#scrollingManager.setScreenTop(startRow);
+			this.#scrollingManager.scrollToCommandStart();
+			this.#renderer.resetScreen(startRow);
 
 			// Everything suppressed since the first SIGWINCH may paint again. The
 			// frame is placed by the screen reset, not by cursor detection.
-			this.resizeInProgress = false;
-			const wasDetected = this.hasDetectedCommandStart;
-			this.hasDetectedCommandStart = false;
-			this.render().then(() => {
-				this.hasDetectedCommandStart = wasDetected;
+			this.#resizeInProgress = false;
+			const wasDetected = this.#hasDetectedCommandStart;
+			this.#hasDetectedCommandStart = false;
+			this.#render().then(() => {
+				this.#hasDetectedCommandStart = wasDetected;
 			});
 		};
 
 		const computedReanchor = () => {
-			const previousStart = this.scrollingManager.getScreenTop();
+			const previousStart = this.#scrollingManager.getScreenTop();
 			const scrolledUp = Math.max(0, previousStart + contentHeight - newHeight);
 			return Math.max(0, previousStart - scrolledUp);
 		};
 
 		if (
-			this.detectCursorEnabled &&
-			this.process.stdin?.isTTY &&
+			this.#detectCursorEnabled &&
+			this.#process.stdin?.isTTY &&
 			wrappedRowsAbove !== null
 		) {
-			this.queryCursorRow()
+			this.#queryCursorRow()
 				.then((cursorRow) => {
 					// A newer resize superseded this one; its handler will redraw.
-					if (epoch !== this.resizeEpoch) return;
+					if (epoch !== this.#resizeEpoch) return;
 					const startRow = Math.max(0, cursorRow - wrappedRowsAbove);
 					redraw(startRow);
 				})
 				.catch(() => {
-					if (epoch !== this.resizeEpoch) return;
+					if (epoch !== this.#resizeEpoch) return;
 					const startRow = computedReanchor();
 					redraw(startRow);
 				});
@@ -1352,10 +2307,10 @@ export class TermDOM {
 	}
 
 	/** The measurement surface the observers read each frame. See ObserverHost. */
-	private createObserverHost(): ObserverHost {
+	#createObserverHost(): ObserverHost {
 		return {
 			getBorderBox: (element) => {
-				const rect = this.layoutEngine.getRect(element);
+				const rect = this[kLayoutEngine].getRect(element);
 				return rect
 					? {
 							top: rect.top,
@@ -1366,7 +2321,7 @@ export class TermDOM {
 					: null;
 			},
 			getContentBox: (element) => {
-				const rect = this.layoutEngine.getRect(element);
+				const rect = this[kLayoutEngine].getRect(element);
 				if (!rect) return null;
 				const box = getBoxModel(element);
 				const width = Math.max(
@@ -1391,18 +2346,15 @@ export class TermDOM {
 				// The visible window over the document, in the document coordinate
 				// space getRect() uses: it begins at the current scroll offset and is
 				// one terminal high.
-				const scrollTop =
-					this.viewportMode === "document"
-						? this.documentScrollTop
-						: Math.max(0, -this.scrollingManager.getScrollTop());
+				const scrollTop = this.#documentScrollTop;
 				return {
 					top: scrollTop,
 					left: 0,
-					width: this.width,
-					height: this.height,
+					width: this.#width,
+					height: this.#height,
 				};
 			},
-			now: () => this.renderCount,
+			now: () => this.#renderCount,
 		};
 	}
 
@@ -1413,14 +2365,14 @@ export class TermDOM {
 	 * mutates the DOM schedules the next frame through the mutation observer, so
 	 * there is no re-entrancy to guard against here.
 	 */
-	private afterRender(): void {
-		this.renderCount++;
-		this.observerManager.flush();
+	#afterRender(): void {
+		this.#renderCount++;
+		this.#observerManager.flush();
 	}
 
 	/** Install the observer constructors on the window, bound to this instance. */
-	private installObservers(): void {
-		const manager = this.observerManager;
+	#installObservers(): void {
+		const manager = this.#observerManager;
 		const window = this.window as unknown as {
 			ResizeObserver: unknown;
 			IntersectionObserver: unknown;
@@ -1445,55 +2397,247 @@ export class TermDOM {
 	}
 
 	// TODO: Move these somewhere?
-	private initializeConstructorExtensions(): void {
+	#initializeConstructorExtensions(): void {
 		const {Element, Document} = this.window;
 		const termDOM = this;
+
+		// getRect()/getRects() (the layout engine's own primitives) are
+		// document-relative -- the coordinate space rendering already works in,
+		// since the renderer applies the camera offset once at paint time, not
+		// per element. But getBoundingClientRect/getClientRects are a *public*
+		// API, and CSSOM View defines them relative to the viewport: rect.top
+		// for a scrolled-past element should be negative, not the same
+		// ever-growing document row regardless of scroll. #toViewportRect is the
+		// one place that conversion happens, so both wrappers apply it
+		// identically. Internal callers that need the pre-conversion,
+		// document-relative rect (scrollIntoView, hit-testing) read
+		// getRect()/getRects() directly instead of going through these -- see
+		// their definitions.
+		const toViewportRect = (rect: DOMRect): DOMRect =>
+			termDOM[kLayoutEngine].createDOMRect(
+				rect.x,
+				rect.y - termDOM.#documentScrollTop,
+				rect.width,
+				rect.height,
+			);
 
 		Element.prototype.getBoundingClientRect = function (
 			this: Element,
 		): DOMRect {
 			if (!this.isConnected) {
-				return termDOM.layoutEngine.createDOMRect(0, 0, 0, 0);
+				return termDOM[kLayoutEngine].createDOMRect(0, 0, 0, 0);
 			}
 
-			termDOM.processPendingMutationsAndRender();
+			termDOM.#processPendingMutationsAndRender();
 
-			const rect = termDOM.layoutEngine.getRect(this);
-			return rect || termDOM.layoutEngine.createDOMRect(0, 0, 0, 0);
+			const rect = termDOM[kLayoutEngine].getRect(this);
+			return toViewportRect(rect || termDOM[kLayoutEngine].createDOMRect());
 		};
 
 		Element.prototype.getClientRects = function (): DOMRectList {
 			if (!this.isConnected) {
-				return termDOM.layoutEngine.createDOMRectList();
+				return termDOM[kLayoutEngine].createDOMRectList();
 			}
 
-			termDOM.processPendingMutationsAndRender();
+			termDOM.#processPendingMutationsAndRender();
 
-			const rects = termDOM.layoutEngine.getRects(this);
-			return termDOM.layoutEngine.createDOMRectList(rects);
+			const rects = termDOM[kLayoutEngine].getRects(this).map(toViewportRect);
+			return termDOM[kLayoutEngine].createDOMRectList(rects);
 		};
 
-		// Fullscreen API methods
+		// offsetWidth/offsetHeight/offsetTop/offsetLeft/offsetParent/clientWidth/
+		// clientHeight/scrollWidth/scrollHeight -- the most commonly reached-for
+		// measurement APIs, and previously entirely unimplemented (always
+		// 0/null via jsdom's defaults). Every one of them is derived from
+		// #layoutRectOf, the single place that decides "is this element
+		// connected, has layout settled, what is its border-box rect" -- so
+		// offsetWidth and clientWidth can never quietly disagree about which
+		// rect they mean, and a future change to that decision (e.g. how
+		// isConnected or render-flushing is handled) only has one place to make.
+		//
+		// #layoutRectOf returns the same rect getBoundingClientRect uses,
+		// unrounded (each getter below rounds for its own purpose -- offsetTop
+		// rounds the *difference* of two rects, not each rect independently, so
+		// rounding here first would double-round and drift by a cell).
+		const layoutRectOf = (element: Element): DOMRect | null => {
+			if (!element.isConnected) return null;
+			termDOM.#processPendingMutationsAndRender();
+			return termDOM[kLayoutEngine].getRect(element);
+		};
+
+		// offsetParent walks the live DOM tree, not layout -- a separate concern
+		// from #layoutRectOf, reused by offsetParent itself and by offsetTop/Left
+		// to find what they're relative to.
+		const offsetParentOf = (element: Element): HTMLElement | null => {
+			for (
+				let ancestor = element.parentElement;
+				ancestor;
+				ancestor = ancestor.parentElement
+			) {
+				const position = termDOM.window
+					.getComputedStyle(ancestor)
+					.getPropertyValue("position");
+				if (position && position !== "static") {
+					return ancestor as HTMLElement;
+				}
+			}
+			return termDOM.document.body === element ? null : termDOM.document.body;
+		};
+
+		// The content+padding box (border-box rect minus border widths), which
+		// both clientWidth/Height and (for now) scrollWidth/Height report -- see
+		// their definition below for why scroll* is an alias of client* rather
+		// than the element's true unclamped content size.
+		const contentBoxOf = (
+			element: Element,
+		): {width: number; height: number} | null => {
+			const rect = layoutRectOf(element);
+			if (!rect) return null;
+			const box = getBoxModel(element);
+			return {
+				width: rect.width - box.borderLeftWidth - box.borderRightWidth,
+				height: rect.height - box.borderTopWidth - box.borderBottomWidth,
+			};
+		};
+
+		Object.defineProperty(this.window.HTMLElement.prototype, "offsetWidth", {
+			get(this: Element) {
+				return Math.round(layoutRectOf(this)?.width ?? 0);
+			},
+			configurable: true,
+			enumerable: true,
+		});
+
+		Object.defineProperty(this.window.HTMLElement.prototype, "offsetHeight", {
+			get(this: Element) {
+				return Math.round(layoutRectOf(this)?.height ?? 0);
+			},
+			configurable: true,
+			enumerable: true,
+		});
+
+		Object.defineProperty(this.window.HTMLElement.prototype, "offsetParent", {
+			get(this: Element) {
+				return this.isConnected ? offsetParentOf(this) : null;
+			},
+			configurable: true,
+			enumerable: true,
+		});
+
+		// offsetTop/Left are relative to offsetParent's own border-box origin
+		// (not its padding edge, which the spec technically uses): a
+		// simplification that only differs when offsetParent itself has a
+		// border, and is off by exactly that border's width when it does.
+		Object.defineProperty(this.window.HTMLElement.prototype, "offsetTop", {
+			get(this: Element) {
+				const rect = layoutRectOf(this);
+				if (!rect) return 0;
+				const parent = offsetParentOf(this);
+				const parentRect = parent ? layoutRectOf(parent) : null;
+				return Math.round(rect.top - (parentRect?.top ?? 0));
+			},
+			configurable: true,
+			enumerable: true,
+		});
+
+		Object.defineProperty(this.window.HTMLElement.prototype, "offsetLeft", {
+			get(this: Element) {
+				const rect = layoutRectOf(this);
+				if (!rect) return 0;
+				const parent = offsetParentOf(this);
+				const parentRect = parent ? layoutRectOf(parent) : null;
+				return Math.round(rect.left - (parentRect?.left ?? 0));
+			},
+			configurable: true,
+			enumerable: true,
+		});
+
+		// clientWidth/clientHeight/scrollWidth/scrollHeight, generalized from the
+		// html/body-only instance properties defined above (which still win: an
+		// own-property shadows a prototype getter, so document.body's viewport-
+		// height special case is untouched).
+		//
+		// scroll* is set equal to client* here rather than the element's true
+		// unclamped content size, matching the same limitation the paint-extent
+		// culling above already documents for the same reason: nothing in the
+		// layout engine measures a subtree's natural size separately from
+		// whatever box it was actually constrained into. That makes scroll* exact
+		// for the common case (auto-sized boxes, no overflow) and an honest
+		// under-report for a box with both an explicit size *and* overflowing
+		// normal-flow content -- the one case a real browser's scrollWidth/Height
+		// would exceed clientWidth/Height.
+		for (const prop of ["clientWidth", "scrollWidth"] as const) {
+			Object.defineProperty(this.window.HTMLElement.prototype, prop, {
+				get(this: Element) {
+					return Math.round(contentBoxOf(this)?.width ?? 0);
+				},
+				configurable: true,
+				enumerable: true,
+			});
+		}
+
+		for (const prop of ["clientHeight", "scrollHeight"] as const) {
+			Object.defineProperty(this.window.HTMLElement.prototype, prop, {
+				get(this: Element) {
+					return Math.round(contentBoxOf(this)?.height ?? 0);
+				},
+				configurable: true,
+				enumerable: true,
+			});
+		}
+
+		// The document-rooted MutationObserver never sees inside a shadow
+		// root -- per spec, shadow trees are separate observation scopes. Each
+		// author-attached root gets enrolled in the same observer, so shadow
+		// mutations invalidate styles/layout and repaint like light ones.
+		const originalAttachShadow = Element.prototype.attachShadow;
+		Element.prototype.attachShadow = function (
+			this: Element,
+			init: ShadowRootInit,
+		): ShadowRoot {
+			const root = originalAttachShadow.call(this, init);
+			termDOM[kObserver].observe(root, {
+				childList: true,
+				subtree: true,
+				attributes: true,
+				characterData: true,
+			});
+			// The root's <style> elements join the cascade, scoped to this
+			// tree; the refresh rides on the STYLE mutation records the
+			// observer enrollment above will deliver.
+			termDOM.#styleManager.registerShadowRoot(root);
+			// attachShadow is not a DOM mutation -- no observer record will
+			// ever fire for it -- but on a CONNECTED host the composed tree
+			// just changed wholesale: light children stop rendering the moment
+			// the root exists, even while it is still empty. Rebuild the
+			// host's composed subtree and repaint.
+			if (this.isConnected) {
+				termDOM[kLayoutEngine].invalidate(this);
+				void termDOM.#render();
+			}
+			return root;
+		};
+
 		Element.prototype.requestFullscreen = function (
 			this: Element,
 			options?: FullscreenOptions,
 		): Promise<void> {
-			return termDOM.fullscreenManager
+			return termDOM.#fullscreenManager
 				.requestFullscreen(this, options)
-				.then(() => termDOM.updateMouseReporting());
+				.then(() => termDOM.#updateMouseReporting());
 		};
 
 		Document.prototype.exitFullscreen = function (
 			this: Document,
 		): Promise<void> {
-			return termDOM.fullscreenManager
+			return termDOM.#fullscreenManager
 				.exitFullscreen()
-				.then(() => termDOM.updateMouseReporting());
+				.then(() => termDOM.#updateMouseReporting());
 		};
 
 		Object.defineProperty(Document.prototype, "fullscreenElement", {
 			get: function (this: Document) {
-				return termDOM.fullscreenManager.fullscreenElement;
+				return termDOM.#fullscreenManager.fullscreenElement;
 			},
 			configurable: true,
 		});
@@ -1502,8 +2646,13 @@ export class TermDOM {
 			x: number,
 			y: number,
 		): Element | null {
-			termDOM.processPendingMutationsAndRender();
-			return findElementAtPoint(termDOM, this.documentElement, x, y);
+			// Per CSSOM View, x/y are viewport-relative -- convert to the
+			// document-relative space hit-testing works in, the same conversion
+			// getBoundingClientRect's toViewportRect makes in the other direction.
+			return termDOM.#findElementAtDocumentPoint(
+				x,
+				y + termDOM.#documentScrollTop,
+			);
 		};
 
 		// Override focus/blur to dispatch proper events
@@ -1515,6 +2664,12 @@ export class TermDOM {
 			const prev = termDOM.document.activeElement;
 			originalFocus.call(this);
 			if (prev !== this) {
+				// :focus rules match live, but computed styles are cached and
+				// focus is not a mutation -- both moved elements must drop
+				// their caches, and the repaint must happen even when no
+				// listener mutates anything.
+				termDOM.#styleManager.handleFocusChange(prev, this);
+				void termDOM.#render();
 				if (prev && prev !== termDOM.document.body) {
 					prev.dispatchEvent(
 						new termDOM.window.FocusEvent("blur", {
@@ -1548,6 +2703,8 @@ export class TermDOM {
 			const wasFocused = termDOM.document.activeElement === this;
 			originalBlur.call(this);
 			if (wasFocused) {
+				termDOM.#styleManager.handleFocusChange(this);
+				void termDOM.#render();
 				this.dispatchEvent(
 					new termDOM.window.FocusEvent("blur", {
 						relatedTarget: null,
@@ -1568,37 +2725,27 @@ export class TermDOM {
 			this: HTMLElement,
 			_arg?: boolean | ScrollIntoViewOptions,
 		) {
-			const rect = this.getBoundingClientRect();
+			if (!this.isConnected) return;
+			termDOM.#processPendingMutationsAndRender();
 
-			// In document mode the rect is in document rows and the camera shows
-			// [documentScrollTop, documentScrollTop + region). Move the camera the
-			// minimal amount that brings the element into it -- the standard
-			// block: "nearest" behavior.
-			if (termDOM.viewportMode === "document") {
-				const regionHeight = Math.min(
-					termDOM.height,
-					termDOM.document.body.scrollHeight,
-				);
-				const top = termDOM.documentScrollTop;
-				if (rect.top < top) {
-					termDOM.scrollDocumentBy(rect.top - top);
-				} else if (rect.bottom > top + regionHeight) {
-					termDOM.scrollDocumentBy(rect.bottom - (top + regionHeight));
-				}
-				return;
-			}
+			// Document-relative, not getBoundingClientRect's viewport-relative --
+			// this compares directly against documentScrollTop below, so it needs
+			// the same coordinate space getRect() already provides.
+			const rect = termDOM[kLayoutEngine].getRect(this);
+			if (!rect) return;
 
-			const viewportHeight = termDOM.height;
-			const scrollTop = termDOM.scrollingManager.getScrollTop();
-
-			if (rect.top < 0) {
-				// Element is above viewport - scroll up
-				termDOM.scrollingManager.setScrollTop(scrollTop + rect.top);
-			} else if (rect.bottom > viewportHeight) {
-				// Element is below viewport - scroll down
-				termDOM.scrollingManager.setScrollTop(
-					scrollTop + (rect.bottom - viewportHeight),
-				);
+			// The camera shows [documentScrollTop, documentScrollTop + region).
+			// Move it the minimal amount that brings the element into it -- the
+			// standard block: "nearest" behavior.
+			const regionHeight = Math.min(
+				termDOM.#height,
+				termDOM.document.body.scrollHeight,
+			);
+			const top = termDOM.#documentScrollTop;
+			if (rect.top < top) {
+				termDOM.#scrollCamera(rect.top - top);
+			} else if (rect.bottom > top + regionHeight) {
+				termDOM.#scrollCamera(rect.bottom - (top + regionHeight));
 			}
 		};
 	}
@@ -1606,7 +2753,7 @@ export class TermDOM {
 	/**
 	 * Get all focusable elements in tab order
 	 */
-	private getFocusableElements(): Element[] {
+	#getFocusableElements(): Element[] {
 		const elements = Array.from(
 			this.document.querySelectorAll(FOCUSABLE_SELECTOR),
 		);
@@ -1625,8 +2772,8 @@ export class TermDOM {
 	/**
 	 * Focus the next or previous focusable element
 	 */
-	private moveFocus(reverse: boolean): void {
-		const focusable = this.getFocusableElements();
+	#moveFocus(reverse: boolean): void {
+		const focusable = this.#getFocusableElements();
 		if (focusable.length === 0) return;
 
 		const current = this.document.activeElement;
@@ -1644,63 +2791,236 @@ export class TermDOM {
 		// Focus is not a DOM mutation, so no observer will schedule a frame -- but
 		// :focus styling and the caret (the real terminal cursor, parked in the
 		// focused field) both need one to move.
-		void this.render();
+		void this.#render();
 	}
 
 	/**
 	 * Handle input element default actions (character insertion, deletion, navigation)
 	 */
-	private handleInputAction(
-		element: HTMLInputElement,
+	/**
+	 * Flip a checkbox's checked state and fire `change`, matching a browser's
+	 * Space-key default action for a focused checkbox -- never `input`, which
+	 * checkboxes don't fire. Click doesn't need this: jsdom's own click
+	 * activation behavior already toggles `.checked` and fires `change` (and
+	 * already honors preventDefault on the click), so handling it here too
+	 * would double-toggle.
+	 */
+	#toggleCheckbox(element: HTMLInputElement): void {
+		element.checked = !element.checked;
+		element.dispatchEvent(
+			new this.window.Event("change", {bubbles: true, cancelable: false}),
+		);
+		this.#render();
+	}
+
+	#handleInputAction(
+		element: HTMLInputElement | HTMLTextAreaElement,
 		keyName: string,
 		key: string,
+		shiftKey: boolean,
+		ctrlKey: boolean,
 	): void {
+		const isTextarea = element.tagName === "TEXTAREA";
+		if (keyName !== "ArrowUp" && keyName !== "ArrowDown") {
+			this.#textareaGoalColumn.delete(element);
+		}
+		if (element.type === "checkbox" || element.type === "radio") {
+			const toggle = element as HTMLInputElement;
+			// Only Space activates these -- real browsers don't accept typed
+			// text into them at all, so every other key here is a no-op. A
+			// checkbox toggles; a radio only ever checks (Space on an
+			// already-checked radio does nothing, per the browser default --
+			// jsdom's checkedness setter handles unchecking the rest of the
+			// same-name group).
+			if (key === " ") {
+				if (toggle.type === "checkbox") {
+					this.#toggleCheckbox(toggle);
+				} else if (!toggle.checked) {
+					toggle.checked = true;
+					element.dispatchEvent(
+						new this.window.Event("change", {
+							bubbles: true,
+							cancelable: false,
+						}),
+					);
+					this.#render();
+				}
+			}
+			return;
+		}
+
+		// The caret IS the input's collapsed selection -- selectionStart/End/
+		// Direction, the standard API, not a private shadow of it. That makes
+		// the caret visible to setSelectionRange()/select() callers, and it
+		// means a framework assigning .value can't strand it: per spec (and in
+		// jsdom, verified) setting value collapses the selection to the end.
+		// Direction carries which end of a selection is the moving focus, so
+		// Shift+Left after Shift+Right shrinks the selection instead of
+		// flipping it -- exactly the browser's anchor/focus model.
 		const value = element.value;
-		const cursor = this.inputCursorPositions.get(element) ?? value.length;
+		const start = element.selectionStart ?? value.length;
+		const end = element.selectionEnd ?? value.length;
+		const backward = element.selectionDirection === "backward";
+		const caret = backward ? start : end;
+		const anchor = backward ? end : start;
+		const hasSelection = start !== end;
 
 		let newValue = value;
-		let newCursor = cursor;
+		let newStart = start;
+		let newEnd = end;
+		let newDirection: "forward" | "backward" | "none" = "none";
 
-		if (keyName === "Backspace") {
-			if (cursor > 0) {
-				newValue = value.slice(0, cursor - 1) + value.slice(cursor);
-				newCursor = cursor - 1;
+		// Collapse the selection to a caret at `pos`.
+		const collapse = (pos: number) => {
+			newStart = newEnd = Math.max(0, Math.min(pos, newValue.length));
+		};
+		// Move the selection's focus (anchor stays), Shift+arrow style.
+		const extend = (focus: number) => {
+			const clamped = Math.max(0, Math.min(focus, value.length));
+			newStart = Math.min(anchor, clamped);
+			newEnd = Math.max(anchor, clamped);
+			newDirection = clamped < anchor ? "backward" : "forward";
+		};
+
+		if (ctrlKey && keyName === "a") {
+			// Select all, the browser's Ctrl+A. (Never Cmd+A here: Cmd chords
+			// are consumed by the terminal app and don't reach the PTY.)
+			extend(0);
+			newStart = 0;
+			newEnd = value.length;
+			newDirection = "forward";
+		} else if (keyName === "Backspace") {
+			if (hasSelection) {
+				newValue = value.slice(0, start) + value.slice(end);
+				collapse(start);
+			} else if (caret > 0) {
+				newValue = value.slice(0, caret - 1) + value.slice(caret);
+				collapse(caret - 1);
 			}
 		} else if (keyName === "Delete") {
-			if (cursor < value.length) {
-				newValue = value.slice(0, cursor) + value.slice(cursor + 1);
+			if (hasSelection) {
+				newValue = value.slice(0, start) + value.slice(end);
+				collapse(start);
+			} else if (caret < value.length) {
+				newValue = value.slice(0, caret) + value.slice(caret + 1);
+				collapse(caret);
 			}
 		} else if (keyName === "ArrowLeft") {
-			newCursor = Math.max(0, cursor - 1);
+			if (shiftKey) {
+				extend(caret - 1);
+			} else if (hasSelection) {
+				// A plain arrow collapses to the selection's matching edge,
+				// not one past it -- the browser behavior.
+				collapse(start);
+			} else {
+				collapse(caret - 1);
+			}
 		} else if (keyName === "ArrowRight") {
-			newCursor = Math.min(value.length, cursor + 1);
+			if (shiftKey) {
+				extend(caret + 1);
+			} else if (hasSelection) {
+				collapse(end);
+			} else {
+				collapse(caret + 1);
+			}
+		} else if (isTextarea && keyName === "Enter") {
+			// Enter is a newline in a textarea -- inserted like any typed
+			// character, replacing the selection.
+			newValue = value.slice(0, start) + "\n" + value.slice(end);
+			collapse(start + 1);
+		} else if (
+			isTextarea &&
+			(keyName === "ArrowUp" || keyName === "ArrowDown")
+		) {
+			// Vertical movement is by VISUAL line -- soft wraps count, as in
+			// a browser -- computed from the value's laid-out fragments.
+			this.#processPendingMutationsAndRender();
+			const target = this.#textareaVerticalTarget(
+				element as HTMLTextAreaElement,
+				caret,
+				keyName === "ArrowDown" ? 1 : -1,
+			);
+			if (shiftKey) {
+				extend(target);
+			} else {
+				collapse(target);
+			}
 		} else if (keyName === "Home") {
-			newCursor = 0;
+			// In a textarea, Home goes to the start of the caret's visual
+			// line; in an input, of the whole value.
+			let target = 0;
+			if (isTextarea) {
+				this.#processPendingMutationsAndRender();
+				const visual = this.#textareaVisualLines(
+					element as HTMLTextAreaElement,
+				);
+				if (visual) {
+					target =
+						visual.lines[this.#textareaLineAt(visual.lines, caret)].startOffset;
+				}
+			}
+			if (shiftKey) {
+				extend(target);
+			} else {
+				collapse(target);
+			}
 		} else if (keyName === "End") {
-			newCursor = value.length;
+			let target = value.length;
+			if (isTextarea) {
+				this.#processPendingMutationsAndRender();
+				const visual = this.#textareaVisualLines(
+					element as HTMLTextAreaElement,
+				);
+				if (visual) {
+					target =
+						visual.lines[this.#textareaLineAt(visual.lines, caret)].endOffset;
+				}
+			}
+			if (shiftKey) {
+				extend(target);
+			} else {
+				collapse(target);
+			}
 		} else if (key.length === 1 && key.charCodeAt(0) >= 32) {
-			// Printable character
-			newValue = value.slice(0, cursor) + key + value.slice(cursor);
-			newCursor = cursor + 1;
+			// Printable character: replaces the selection, as in a browser.
+			newValue = value.slice(0, start) + key + value.slice(end);
+			collapse(start + 1);
 		} else {
 			return; // Not an input action
 		}
 
 		if (newValue !== value) {
+			// Order matters: assigning .value collapses the selection to the
+			// end (per spec), so the new caret must be set after.
 			element.value = newValue;
-			this.inputCursorPositions.set(element, newCursor);
+			element.setSelectionRange(newStart, newEnd, newDirection);
+			if (isTextarea) {
+				// Push the new value into the UA tree now -- the mutation
+				// records from this sync are what invalidate layout, since no
+				// observer hears a .value assignment.
+				this.#syncTextareaShadowTree(
+					element as HTMLTextAreaElement,
+					this.#ensureTextareaShadowParts(element as HTMLTextAreaElement),
+				);
+			}
 
 			// Dispatch input event
 			element.dispatchEvent(
 				new this.window.Event("input", {bubbles: true, cancelable: false}),
 			);
 
+			this.#scrollCaretIntoView(element);
 			// Trigger re-render since .value changes don't trigger MutationObserver
-			this.render();
-		} else if (newCursor !== cursor) {
-			this.inputCursorPositions.set(element, newCursor);
-			// Cursor moved - re-render to update cursor position
-			this.render();
+			this.#render();
+		} else if (
+			newStart !== start ||
+			newEnd !== end ||
+			(newStart !== newEnd && newDirection !== element.selectionDirection)
+		) {
+			// jsdom fires the `select` event itself for a real range change.
+			element.setSelectionRange(newStart, newEnd, newDirection);
+			this.#scrollCaretIntoView(element);
+			this.#render();
 		}
 	}
 
@@ -1715,7 +3035,7 @@ export class TermDOM {
 	 * instead of once per press, and a stray cursor report ate every key packed
 	 * behind it.
 	 */
-	private *tokenizeInput(input: string): Generator<string> {
+	*#tokenizeInput(input: string): Generator<string> {
 		let i = 0;
 		while (i < input.length) {
 			if (input[i] === "\x1b" && i + 1 < input.length) {
@@ -1748,24 +3068,103 @@ export class TermDOM {
 	 * Returns null for cells above our region (a shell prompt is not part of
 	 * the document).
 	 */
-	private screenToDocumentPoint(
+	#screenToDocumentPoint(
 		x: number,
 		row: number,
 	): {x: number; y: number} | null {
-		if (this.fullscreenManager.isFullscreen) {
-			return {x, y: row + this.scrollingManager.getScrollTop()};
+		if (this.#fullscreenManager.isFullscreen) {
+			return {x, y: row + this.#scrollingManager.getScrollTop()};
 		}
-		if (this.viewportMode === "document") {
-			const y =
-				row - this.scrollingManager.getScreenTop() + this.documentScrollTop;
-			return y < 0 ? null : {x, y};
-		}
-		// Flow mode: rows above the region belong to committed content or the
-		// shell. (Capture is off in flow mode, so this is for completeness.)
-		const start =
-			this.committedRows > 0 ? 0 : this.scrollingManager.getScreenTop();
-		const y = row - start + this.committedRows;
+		const y =
+			row - this.#scrollingManager.getScreenTop() + this.#documentScrollTop;
 		return y < 0 ? null : {x, y};
+	}
+
+	/**
+	 * Hit-test a document-relative point (flushing pending layout first). The
+	 * one place both document.elementFromPoint (which converts its public,
+	 * viewport-relative x/y into this space) and mouse hit-testing (whose
+	 * points are already document-relative, from #screenToDocumentPoint) go
+	 * through, so a click always tests against fresh layout regardless of
+	 * entry point.
+	 */
+	#findElementAtDocumentPoint(x: number, y: number): Element | null {
+		this.#processPendingMutationsAndRender();
+		return findElementAtPoint(this, this.document.documentElement, x, y);
+	}
+
+	/**
+	 * Resolve a document-relative point to a caret position -- (text node,
+	 * code-unit offset into node.data) -- the way a browser's
+	 * caretPositionFromPoint does. Hit-tests the element, then scans its text
+	 * nodes' painted fragments for the one on the point's row; the x offset
+	 * becomes a visual character index (cell-width aware), and
+	 * visualToDataOffsets bridges that back to a Range-valid data offset.
+	 * Landing past a fragment's last character on its row means "after the
+	 * last character", so a drag can select through end-of-line. Returns null
+	 * over rows with no text (and over inputs, whose value is not document
+	 * text -- their selection is the input's own selectionStart/End world).
+	 */
+	#documentPointToTextPosition(
+		x: number,
+		y: number,
+	): {node: Text; offset: number} | null {
+		const element = this.#findElementAtDocumentPoint(x, y);
+		if (
+			!element ||
+			element instanceof (this.window as any).HTMLInputElement ||
+			element instanceof (this.window as any).HTMLTextAreaElement
+		) {
+			return null;
+		}
+
+		let best: {node: Text; offset: number; distance: number} | null = null;
+		const visit = (node: Node): void => {
+			for (const child of Array.from(node.childNodes)) {
+				if (child.nodeType === child.TEXT_NODE) {
+					const textNode = child as Text;
+					const fragments = this[kLayoutEngine].getRectTexts(textNode);
+					if (fragments.length === 0) continue;
+					const visToData = visualToDataOffsets(textNode.data, fragments);
+					let visualBase = 0;
+					for (const fragment of fragments) {
+						const rect = fragment.rect;
+						if (y >= rect.y && y < rect.y + Math.max(1, rect.height)) {
+							// Walk cells to the visual index under (or past) x.
+							let cellX = rect.x;
+							let index = 0;
+							while (index < fragment.text.length && cellX < x) {
+								const w = stringWidth(fragment.text[index]);
+								if (cellX + w > x) break;
+								cellX += w;
+								index++;
+							}
+							const distance =
+								x < rect.x
+									? rect.x - x
+									: x >= cellX && index === fragment.text.length
+										? x - cellX
+										: 0;
+							if (!best || distance < best.distance) {
+								const visual = visualBase + index;
+								const offset =
+									visual < visToData.length
+										? visToData[visual]
+										: textNode.data.length;
+								best = {node: textNode, offset, distance};
+							}
+						}
+						visualBase += fragment.text.length;
+					}
+				} else if (child.nodeType === child.ELEMENT_NODE) {
+					visit(child);
+				}
+			}
+		};
+		visit(element);
+		return best
+			? {node: (best as any).node, offset: (best as any).offset}
+			: null;
 	}
 
 	/**
@@ -1777,7 +3176,7 @@ export class TermDOM {
 	 * browser's default actions: wheel scrolls the camera, mousedown moves
 	 * focus, mouseup on the mousedown target is a click.
 	 */
-	private handleMouseReport(
+	#handleMouseReport(
 		code: number,
 		col: number,
 		row: number,
@@ -1789,11 +3188,14 @@ export class TermDOM {
 		const isMotion = (code & 32) !== 0;
 		const base = code & ~(4 | 8 | 16 | 32);
 
-		const point = this.screenToDocumentPoint(col - 1, row - 1);
+		const point = this.#screenToDocumentPoint(col - 1, row - 1);
 		const x = point?.x ?? col - 1;
 		const y = point?.y ?? 0;
+		// Already document-relative -- go straight to the shared hit-test rather
+		// than through the public elementFromPoint, which expects viewport-
+		// relative input and would convert it right back.
 		const target =
-			(point && this.document.elementFromPoint(x, y)) || this.document.body;
+			(point && this.#findElementAtDocumentPoint(x, y)) || this.document.body;
 
 		// Wheel: 64 = up, 65 = down. One notch is three rows, the browser's
 		// line-mode convention, and DOM_DELTA_LINE is literally true here.
@@ -1815,30 +3217,30 @@ export class TermDOM {
 			if (notCanceled) {
 				if (
 					deltaY < 0 &&
-					this.documentScrollTop === 0 &&
-					this.viewportMode === "document" &&
-					!this.fullscreenManager.isFullscreen
+					this.#documentScrollTop === 0 &&
+					!this.#fullscreenManager.isFullscreen
 				) {
 					// Scroll chaining, the browser default: the camera is at the
 					// document top, so the scroll escapes to the parent scroller --
 					// here, the terminal's own scrollback. Yield the mouse so the
-					// next wheel tick scrolls the shell history natively, then
-					// re-arm shortly after (see mouseCaptureYielded for why that is
-					// safe while the user is still away in the scrollback). An app
-					// opts out the same way it would in a browser: preventDefault
-					// on the wheel event.
-					this.mouseCaptureYielded = true;
-					this.updateMouseReporting();
-					if (this.mouseRearmTimer !== null) {
-						clearTimeout(this.mouseRearmTimer);
+					// next wheel tick scrolls the shell history natively; the next
+					// keystroke reclaims it, and #SCROLL_CHAIN_TIMEOUT_MS of silence
+					// reclaims it too, in case the user scrolls back down without
+					// ever pressing a key -- wheel activity while yielded produces no
+					// signal we could otherwise catch that on. An app opts out the
+					// same way it would in a browser: preventDefault on the wheel
+					// event.
+					this.#mouseCaptureYielded = true;
+					this.#updateMouseReporting();
+					if (this.#scrollChainTimer !== null) {
+						clearTimeout(this.#scrollChainTimer);
 					}
-					this.mouseRearmTimer = setTimeout(() => {
-						this.mouseRearmTimer = null;
-						this.mouseCaptureYielded = false;
-						this.updateMouseReporting();
-					}, 300);
+					this.#scrollChainTimer = setTimeout(() => {
+						this.#scrollChainTimer = null;
+						this.#reclaimMouseCapture();
+					}, TermDOM.#SCROLL_CHAIN_TIMEOUT_MS);
 				} else {
-					this.scrollDocumentBy(deltaY);
+					this.#scrollCamera(deltaY);
 				}
 			}
 			return;
@@ -1861,11 +3263,30 @@ export class TermDOM {
 
 		if (isMotion) {
 			target.dispatchEvent(new this.window.MouseEvent("mousemove", eventInit));
+			// Dragging with the anchor set extends the document selection to
+			// the caret position under the pointer. setBaseAndExtent handles a
+			// backward drag itself; over a textless stretch the focus simply
+			// stays where it last was.
+			if (this.#selectionDragAnchor && this.#mouseDownTarget && point) {
+				const focus = this.#documentPointToTextPosition(x, y);
+				if (focus) {
+					const anchor = this.#selectionDragAnchor;
+					this.window
+						.getSelection()
+						?.setBaseAndExtent(
+							anchor.node,
+							anchor.offset,
+							focus.node,
+							focus.offset,
+						);
+					this.#render();
+				}
+			}
 			return;
 		}
 
 		if (!isRelease) {
-			this.mouseDownTarget = target;
+			this.#mouseDownTarget = target;
 			const notCanceled = target.dispatchEvent(
 				new this.window.MouseEvent("mousedown", eventInit),
 			);
@@ -1877,32 +3298,125 @@ export class TermDOM {
 				const active = this.document.activeElement;
 				if (focusable && focusable !== active) {
 					(focusable as HTMLElement).focus();
-					void this.render();
+					void this.#render();
 				} else if (!focusable && active && active !== this.document.body) {
 					(active as HTMLElement).blur();
-					void this.render();
+					void this.#render();
+				}
+
+				// Default action: mousedown collapses the document selection at
+				// the pressed caret position and anchors a possible drag there,
+				// as in a browser. Left button only -- and preventDefault on
+				// mousedown suppresses it, which is exactly how apps that want
+				// the drag events for themselves opt out.
+				const selection = this.window.getSelection();
+				if (base === 0 && selection) {
+					const anchor = point ? this.#documentPointToTextPosition(x, y) : null;
+					const hadSelection = !selection.isCollapsed;
+					this.#selectionDragAnchor = anchor;
+					if (anchor) {
+						selection.setBaseAndExtent(
+							anchor.node,
+							anchor.offset,
+							anchor.node,
+							anchor.offset,
+						);
+					} else if (selection.rangeCount > 0) {
+						selection.removeAllRanges();
+					}
+					if (hadSelection) {
+						this.#render();
+					}
 				}
 			}
 			return;
 		}
 
 		target.dispatchEvent(new this.window.MouseEvent("mouseup", eventInit));
-		if (this.mouseDownTarget === target) {
+		// Releasing a selection drag offers the selected text to the system
+		// clipboard via OSC 52 -- select-to-copy, the terminal's own
+		// convention (a Cmd/Ctrl+C chord never reaches the PTY). Terminals
+		// without OSC 52 support ignore the sequence entirely.
+		let selectedByDrag = false;
+		if (this.#selectionDragAnchor) {
+			this.#selectionDragAnchor = null;
+			const text = this.window.getSelection()?.toString() ?? "";
+			if (text.length > 0) {
+				selectedByDrag = true;
+				this.#process.stdout.write(
+					`\x1b]52;c;${Buffer.from(text, "utf8").toString("base64")}\x07`,
+				);
+			}
+		}
+		// A drag that selected text is not a click: browsers suppress
+		// activation after a selecting gesture, and without this a drag
+		// released over a <label> would activate it -- toggling its checkbox,
+		// which in a framework app re-renders the very nodes the fresh
+		// selection points into, destroying it on the spot.
+		if (selectedByDrag) {
+			this.#mouseDownTarget = null;
+			return;
+		}
+		if (this.#mouseDownTarget === target) {
 			target.dispatchEvent(
 				new this.window.MouseEvent("click", {...eventInit, buttons: 0}),
 			);
+			// A checkbox/radio's .checked already flipped -- jsdom's own click
+			// activation behavior handles that directly, and forwards it from a
+			// <label for> or wrapping label the same way (honoring
+			// preventDefault in both cases) -- but that's a property change,
+			// invisible to the MutationObserver that would otherwise repaint it,
+			// same as .value on a text input. Focus also needs an explicit push
+			// here for the label case: a real browser's "focusing steps" move
+			// focus to the label's associated control, which jsdom's dispatch
+			// alone does not simulate (the direct-click case is already
+			// focused via mousedown's own default action above, so this is a
+			// harmless no-op there).
+			const isCheckable = (el: unknown): el is HTMLInputElement =>
+				el instanceof (this.window as any).HTMLInputElement &&
+				((el as HTMLInputElement).type === "checkbox" ||
+					(el as HTMLInputElement).type === "radio");
+			const control = isCheckable(target)
+				? target
+				: target instanceof (this.window as any).HTMLLabelElement &&
+					  isCheckable((target as any).control)
+					? ((target as any).control as HTMLInputElement)
+					: null;
+			if (control) {
+				control.focus();
+				this.#render();
+			}
+
+			// A second click on the same target within the double-click interval
+			// is also a dblclick -- in addition to, not instead of, its own click
+			// (a browser fires both). Reset after firing so a third quick click
+			// starts a fresh pair rather than double-firing again immediately.
+			const now = performance.now();
+			if (
+				this.#lastClickTarget === target &&
+				now - this.#lastClickTime <= TermDOM.#DBLCLICK_INTERVAL_MS
+			) {
+				target.dispatchEvent(
+					new this.window.MouseEvent("dblclick", {...eventInit, buttons: 0}),
+				);
+				this.#lastClickTarget = null;
+				this.#lastClickTime = 0;
+			} else {
+				this.#lastClickTarget = target as Element;
+				this.#lastClickTime = now;
+			}
 		}
-		this.mouseDownTarget = null;
+		this.#mouseDownTarget = null;
 	}
 
-	private dispatchGlobalKeyboardEvent(chunk: Buffer): void {
+	#dispatchGlobalKeyboardEvent(chunk: Buffer): void {
 		const key = chunk.toString("utf8");
 
 		// Tokenize multi-key chunks and dispatch each token on its own.
-		const tokens = Array.from(this.tokenizeInput(key));
+		const tokens = Array.from(this.#tokenizeInput(key));
 		if (tokens.length > 1) {
 			for (const token of tokens) {
-				this.dispatchGlobalKeyboardEvent(Buffer.from(token));
+				this.#dispatchGlobalKeyboardEvent(Buffer.from(token));
 			}
 			return;
 		}
@@ -1915,8 +3429,21 @@ export class TermDOM {
 			return;
 		}
 
-		// Find the focused element or use document.body
-		let targetElement = this.document.activeElement || this.document.body;
+		// Find the focused element. document.activeElement defaults to body when
+		// nothing is focused, so it can't be used with `||` to detect "nothing
+		// focused". In fullscreen, a browser moves focus to the fullscreen
+		// element as part of entering it -- but jsdom's own focus() only takes
+		// elements that are already focusable (tabindex, form controls, etc.),
+		// so an arbitrary fullscreen container is otherwise unreachable here.
+		// Fall back to it (before document.body) so keydown still lands on it,
+		// the same as the dedicated fullscreen dispatch this replaced -- but
+		// still prefer an explicitly focused descendant (e.g. an input inside
+		// the fullscreen element), which the old dispatch ignored.
+		const active = this.document.activeElement;
+		let targetElement =
+			active && active !== this.document.body
+				? active
+				: this.#fullscreenManager.fullscreenElement || this.document.body;
 
 		// Map common key codes (reuse logic from fullscreen manager)
 		let keyName = key;
@@ -1926,69 +3453,227 @@ export class TermDOM {
 		// Handle special keys
 		// Detect modifier keys
 		let shiftKey = false;
+		let ctrlKey = false;
+		let altKey = false;
+		let metaKey = false;
 
-		switch (key) {
-			case "\r":
-			case "\n":
-				keyName = "Enter";
-				keyCode = 13;
-				charCode = 13;
-				break;
-			case "\t":
-				keyName = "Tab";
-				keyCode = 9;
-				charCode = 9;
-				break;
-			case "\x1b[Z":
-				// Shift+Tab
-				keyName = "Tab";
-				keyCode = 9;
-				charCode = 9;
-				shiftKey = true;
-				break;
-			case "\x7f":
-				keyName = "Backspace";
-				keyCode = 8;
-				charCode = 8;
-				break;
-			case "\x1b[A":
-				keyName = "ArrowUp";
-				keyCode = 38;
-				charCode = 0;
-				break;
-			case "\x1b[B":
-				keyName = "ArrowDown";
-				keyCode = 40;
-				charCode = 0;
-				break;
-			case "\x1b[C":
-				keyName = "ArrowRight";
-				keyCode = 39;
-				charCode = 0;
-				break;
-			case "\x1b[D":
-				keyName = "ArrowLeft";
-				keyCode = 37;
-				charCode = 0;
-				break;
-			default:
-				// For regular characters, keyCode is often the uppercase charCode
-				if (key.length === 1) {
-					keyCode = key.toUpperCase().charCodeAt(0);
-				}
+		// Ctrl+<letter> arrives as a single raw ASCII control byte (Ctrl+A=0x01
+		// ... Ctrl+Z=0x1A) -- there is no escape sequence, and no way to combine
+		// it with Shift (the terminal only ever sends the one byte). Tab(0x09)
+		// and Enter(0x0A/0x0D) are excluded even though they fall in this range:
+		// a raw terminal genuinely cannot distinguish the physical Enter/Tab keys
+		// from Ctrl+M/Ctrl+I, they are the identical byte, so the named key wins
+		// -- matching every other terminal app. Ctrl+C(0x03) never reaches here:
+		// it is intercepted earlier, unconditionally, for SIGINT.
+		const modifiedArrow = key.match(/^\x1b\[1;(\d+)([ABCDHF])$/);
+		if (
+			charCode >= 1 &&
+			charCode <= 26 &&
+			charCode !== 9 &&
+			charCode !== 10 &&
+			charCode !== 13
+		) {
+			keyName = String.fromCharCode(charCode + 96); // 0x01 -> 'a' ... 0x1A -> 'z'
+			keyCode = charCode + 64; // 'A'..'Z', the DOM keyCode for the letter itself
+			ctrlKey = true;
+		} else if (modifiedArrow) {
+			// xterm's extended CSI encoding for a modified cursor key: CSI 1 ;
+			// <mod> <letter>, e.g. Alt+Up = \x1b[1;3A, Shift+Home = \x1b[1;2H.
+			// The tokenizer already yields this whole sequence as one token
+			// unchanged -- it scans for the CSI final byte regardless of what
+			// parameters precede it -- so this is pure decoding, no parsing
+			// changes needed. mod-1 is a bitmask: 1=Shift, 2=Alt, 4=Ctrl,
+			// 8=Meta (metaKey included for spec-completeness; nothing on macOS
+			// actually sends it, since Cmd+key never reaches the PTY at all).
+			const modifierBits = parseInt(modifiedArrow[1], 10) - 1;
+			shiftKey = (modifierBits & 1) !== 0;
+			altKey = (modifierBits & 2) !== 0;
+			ctrlKey = (modifierBits & 4) !== 0;
+			metaKey = (modifierBits & 8) !== 0;
+			const cursorKeyByLetter: Record<string, [string, number]> = {
+				A: ["ArrowUp", 38],
+				B: ["ArrowDown", 40],
+				C: ["ArrowRight", 39],
+				D: ["ArrowLeft", 37],
+				H: ["Home", 36],
+				F: ["End", 35],
+			};
+			[keyName, keyCode] = cursorKeyByLetter[modifiedArrow[2]];
+			charCode = 0;
+		} else {
+			switch (key) {
+				case "\r":
+				case "\n":
+					keyName = "Enter";
+					keyCode = 13;
+					charCode = 13;
+					break;
+				case "\t":
+					keyName = "Tab";
+					keyCode = 9;
+					charCode = 9;
+					break;
+				case "\x1b[Z":
+					// Shift+Tab
+					keyName = "Tab";
+					keyCode = 9;
+					charCode = 9;
+					shiftKey = true;
+					break;
+				case "\x7f":
+					keyName = "Backspace";
+					keyCode = 8;
+					charCode = 8;
+					break;
+				case "\x1b":
+					// A lone Escape -- not the start of a CSI/SS3 sequence, since the
+					// tokenizer already peels those off as their own multi-char tokens.
+					keyName = "Escape";
+					keyCode = 27;
+					charCode = 0;
+					break;
+				case "\x1b[A":
+					keyName = "ArrowUp";
+					keyCode = 38;
+					charCode = 0;
+					break;
+				case "\x1b[B":
+					keyName = "ArrowDown";
+					keyCode = 40;
+					charCode = 0;
+					break;
+				case "\x1b[C":
+					keyName = "ArrowRight";
+					keyCode = 39;
+					charCode = 0;
+					break;
+				case "\x1b[D":
+					keyName = "ArrowLeft";
+					keyCode = 37;
+					charCode = 0;
+					break;
+				case "\x1b[H":
+				case "\x1b[1~":
+					keyName = "Home";
+					keyCode = 36;
+					charCode = 0;
+					break;
+				case "\x1b[F":
+				case "\x1b[4~":
+					keyName = "End";
+					keyCode = 35;
+					charCode = 0;
+					break;
+				case "\x1b[2~":
+					keyName = "Insert";
+					keyCode = 45;
+					charCode = 0;
+					break;
+				case "\x1b[3~":
+					keyName = "Delete";
+					keyCode = 46;
+					charCode = 0;
+					break;
+				case "\x1b[5~":
+					keyName = "PageUp";
+					keyCode = 33;
+					charCode = 0;
+					break;
+				case "\x1b[6~":
+					keyName = "PageDown";
+					keyCode = 34;
+					charCode = 0;
+					break;
+				// F1-F4: SS3 encoding, the modern xterm default. F5-F12: CSI-tilde --
+				// note the historical gap (no ~16), a quirk of the original xterm
+				// numbering every terminal descended from it still follows.
+				case "\x1bOP":
+					keyName = "F1";
+					keyCode = 112;
+					charCode = 0;
+					break;
+				case "\x1bOQ":
+					keyName = "F2";
+					keyCode = 113;
+					charCode = 0;
+					break;
+				case "\x1bOR":
+					keyName = "F3";
+					keyCode = 114;
+					charCode = 0;
+					break;
+				case "\x1bOS":
+					keyName = "F4";
+					keyCode = 115;
+					charCode = 0;
+					break;
+				case "\x1b[15~":
+					keyName = "F5";
+					keyCode = 116;
+					charCode = 0;
+					break;
+				case "\x1b[17~":
+					keyName = "F6";
+					keyCode = 117;
+					charCode = 0;
+					break;
+				case "\x1b[18~":
+					keyName = "F7";
+					keyCode = 118;
+					charCode = 0;
+					break;
+				case "\x1b[19~":
+					keyName = "F8";
+					keyCode = 119;
+					charCode = 0;
+					break;
+				case "\x1b[20~":
+					keyName = "F9";
+					keyCode = 120;
+					charCode = 0;
+					break;
+				case "\x1b[21~":
+					keyName = "F10";
+					keyCode = 121;
+					charCode = 0;
+					break;
+				case "\x1b[23~":
+					keyName = "F11";
+					keyCode = 122;
+					charCode = 0;
+					break;
+				case "\x1b[24~":
+					keyName = "F12";
+					keyCode = 123;
+					charCode = 0;
+					break;
+				default:
+					// For regular characters, keyCode is often the uppercase charCode
+					if (key.length === 1) {
+						keyCode = key.toUpperCase().charCodeAt(0);
+					}
+			}
+		}
+
+		// Escape exits fullscreen unconditionally -- not dispatched to the DOM at
+		// all, the same as a real browser: fullscreen exit is a user-agent
+		// guarantee an app can't trap the user past with preventDefault.
+		if (keyName === "Escape" && this.#fullscreenManager.isFullscreen) {
+			this.#fullscreenManager.exitFullscreen().catch(() => {});
+			return;
 		}
 
 		// Create and dispatch keydown event
 		const keydownEvent = new this.window.KeyboardEvent("keydown", {
 			key: keyName,
-			code: `Key${keyName.toUpperCase()}`,
+			code: domCodeFor(keyName),
 			keyCode: keyCode,
 			charCode: 0,
 			which: keyCode,
-			ctrlKey: false,
+			ctrlKey,
 			shiftKey,
-			altKey: false,
-			metaKey: false,
+			altKey,
+			metaKey,
 			bubbles: true,
 			cancelable: true,
 		});
@@ -1999,16 +3684,27 @@ export class TermDOM {
 		if (notCanceled) {
 			// Tab navigation
 			if (keyName === "Tab") {
-				this.moveFocus(shiftKey);
+				this.#moveFocus(shiftKey);
 			}
 
-			// Input element default actions
+			// Editable widget default actions
 			if (
-				targetElement instanceof (this.window as any).HTMLInputElement &&
-				(targetElement as HTMLInputElement).type !== "submit" &&
-				(targetElement as HTMLInputElement).type !== "button"
+				(targetElement instanceof (this.window as any).HTMLInputElement &&
+					(targetElement as HTMLInputElement).type !== "submit" &&
+					(targetElement as HTMLInputElement).type !== "button") ||
+				targetElement instanceof (this.window as any).HTMLTextAreaElement
 			) {
-				this.handleInputAction(targetElement as HTMLInputElement, keyName, key);
+				this.#handleInputAction(
+					targetElement as HTMLInputElement | HTMLTextAreaElement,
+					keyName,
+					key,
+					shiftKey,
+					ctrlKey,
+				);
+			} else if (
+				targetElement instanceof (this.window as any).HTMLSelectElement
+			) {
+				this.#handleSelectAction(targetElement as HTMLSelectElement, keyName);
 			}
 		}
 
@@ -2016,14 +3712,14 @@ export class TermDOM {
 		if (notCanceled && key.length === 1 && charCode >= 32 && charCode < 127) {
 			const keypressEvent = new this.window.KeyboardEvent("keypress", {
 				key: key,
-				code: `Key${key.toUpperCase()}`,
+				code: domCodeFor(key),
 				keyCode: charCode,
 				charCode: charCode,
 				which: charCode,
-				ctrlKey: false,
+				ctrlKey,
 				shiftKey,
-				altKey: false,
-				metaKey: false,
+				altKey,
+				metaKey,
 				bubbles: true,
 				cancelable: true,
 			});
@@ -2033,14 +3729,14 @@ export class TermDOM {
 		// Always dispatch keyup
 		const keyupEvent = new this.window.KeyboardEvent("keyup", {
 			key: keyName,
-			code: `Key${keyName.toUpperCase()}`,
+			code: domCodeFor(keyName),
 			keyCode: keyCode,
 			charCode: 0,
 			which: keyCode,
-			ctrlKey: false,
+			ctrlKey,
 			shiftKey,
-			altKey: false,
-			metaKey: false,
+			altKey,
+			metaKey,
 			bubbles: true,
 			cancelable: true,
 		});
@@ -2054,25 +3750,24 @@ export class TermDOM {
 	 * document is simply printed. Every hard problem in this file is a consequence
 	 * of having a viewport, and a pipe does not have one.
 	 */
-	private async renderStatic(): Promise<void> {
-		const pending = this.observer.takeRecords();
+	async #renderStatic(): Promise<void> {
+		const pending = this[kObserver].takeRecords();
 		if (pending.length > 0) {
-			this.styleManager.handleMutations(pending);
-			this.layoutEngine.handleMutations(pending);
+			this.#handlePendingMutations(pending);
 		}
 
-		this.renderedOutsideMarkers = new WeakSet<Element>();
-		this.layoutEngine.calculateLayout();
+		this.#renderedOutsideMarkers = new WeakSet<Element>();
+		this[kLayoutEngine].calculateLayout();
 
-		const output = this.renderer.renderStatic(
+		const output = this.#renderer.renderStatic(
 			this.document.body.scrollHeight,
 			(ctx) => {
-				this.renderElement(this.document.body, ctx);
+				this.#renderElement(this.document.body, ctx);
 			},
 		);
 
-		if (output) await this.write(output);
-		this.afterRender();
+		if (output) await this.#write(output);
+		this.#afterRender();
 	}
 
 	/**
@@ -2108,33 +3803,33 @@ export class TermDOM {
 	 * The cost of waiting is that a crash takes the output with it -- flow's partial
 	 * output survives, because it was already printed.
 	 */
-	private flushDocument(): void {
-		if (this.viewportMode !== "document" || !this.interactive) return;
+	#flushDocument(): void {
+		if (!this.#interactive) return;
 
 		const contentHeight = this.document.body.scrollHeight;
 		if (contentHeight === 0) return;
 
-		const top = this.scrollingManager.getScreenTop();
+		const top = this.#scrollingManager.getScreenTop();
 
 		// Back to the top of our region, and erase from there down. Only rows we
 		// painted ourselves; the scrollback above is untouched.
-		this.process.stdout.write(`\x1b[${top + 1};1H\x1b[J`);
+		this.#process.stdout.write(`\x1b[${top + 1};1H\x1b[J`);
 
-		const output = this.renderer.renderStatic(
+		const output = this.#renderer.renderStatic(
 			contentHeight,
 			(ctx) => {
-				this.renderElement(this.document.body, ctx);
+				this.#renderElement(this.document.body, ctx);
 			},
 			"\r\n",
 		);
 
-		if (output) this.process.stdout.write(output);
+		if (output) this.#process.stdout.write(output);
 	}
 
 	/** Write to stdout and wait for it to be flushed. */
-	private write(output: string): Promise<void> {
+	#write(output: string): Promise<void> {
 		return new Promise<void>((resolve, reject) => {
-			this.process.stdout.write(output, "utf8", (error) => {
+			this.#process.stdout.write(output, "utf8", (error) => {
 				if (error) reject(error);
 				else resolve();
 			});
@@ -2154,67 +3849,63 @@ export class TermDOM {
 	 * repaint a window of -- so unlike flow mode, content that scrolls out of view is
 	 * not frozen, and reflow anywhere is free.
 	 */
-	private async renderDocumentMode(): Promise<void> {
+	async #renderInteractive(): Promise<void> {
+		// The previous document was sealed to scrollback by close(). Start a fresh
+		// one below it: re-anchor to where the cursor now sits and reset the diff so
+		// nothing composites over the frozen block.
+		if (this.#sealed) {
+			this.#sealed = false;
+			this.#documentScrollTop = 0;
+			this.#renderer.clearPreviousBuffer();
+			if (this.#process.stdin?.isTTY) await this.#detectCommandStart();
+		}
+
 		// Our region starts at the command-start row, which cursor detection resolves
 		// asynchronously. Render before it lands and the first frame anchors at row 0
 		// while every diff after detection anchors one row lower -- the labels stay,
 		// the values slide down a row. Wait for the anchor to settle first, exactly
 		// as the flow path does.
-		if (this.cursorDetectionPromise) {
-			await this.cursorDetectionPromise;
+		if (this.#cursorDetectionPromise) {
+			await this.#cursorDetectionPromise;
 		}
 
-		const pending = this.observer.takeRecords();
+		const pending = this[kObserver].takeRecords();
 		if (pending.length > 0) {
-			this.styleManager.handleMutations(pending);
-			this.layoutEngine.handleMutations(pending);
+			this.#handlePendingMutations(pending);
 		}
 
-		this.renderedOutsideMarkers = new WeakSet<Element>();
-		this.layoutEngine.calculateLayout();
+		this.#renderedOutsideMarkers = new WeakSet<Element>();
+		this[kLayoutEngine].calculateLayout();
 
 		const contentHeight = this.document.body.scrollHeight;
-		const regionHeight = Math.min(contentHeight, this.height);
+		const regionHeight = Math.min(contentHeight, this.#height);
 
 		// Take the room we need by pushing earlier output up, never over it.
-		const top = this.reserveRows(regionHeight);
+		const top = this.#reserveRows(regionHeight);
 
 		// The camera cannot run off the end of the document.
 		const maxScroll = Math.max(0, contentHeight - regionHeight);
-		this.documentScrollTop = Math.min(this.documentScrollTop, maxScroll);
+		this.#documentScrollTop = Math.min(this.#documentScrollTop, maxScroll);
 
-		const ansi = this.renderer.renderFrame(
-			-this.documentScrollTop,
+		const ansi = this.#renderer.renderFrame(
+			-this.#documentScrollTop,
 			(ctx) => {
-				this.renderElement(this.document.body, ctx);
+				this.#renderElement(this.document.body, ctx);
 			},
 			top,
 			top + regionHeight,
 		);
 
-		if (ansi) await this.write(ansi);
-		this.afterRender();
+		if (ansi) await this.#write(ansi);
+		this.#afterRender();
 	}
 
-	/**
-	 * Choose how the document scrolls. See `viewportMode`.
-	 */
-	setViewportMode(mode: "flow" | "document"): void {
-		if (mode === this.viewportMode) return;
-		this.viewportMode = mode;
-		this.documentScrollTop = 0;
-		this.renderer.clearPreviousBuffer();
-		this.mouseCaptureYielded = false;
-		this.updateMouseReporting();
-	}
-
-	/** Move the camera, in document mode. Ignored in flow mode. */
-	scrollDocumentBy(rows: number): void {
-		if (this.viewportMode !== "document") return;
-		this.documentScrollTop = Math.max(0, this.documentScrollTop + rows);
+	/** Move the camera over the document. */
+	#scrollCamera(rows: number): void {
+		this.#documentScrollTop = Math.max(0, this.#documentScrollTop + rows);
 		// A camera move is invisible to the MutationObserver; schedule the frame
 		// it needs, the same way a DOM mutation would.
-		void this.render();
+		void this.#render();
 	}
 
 	/**
@@ -2222,23 +3913,41 @@ export class TermDOM {
 	 * anything that was already on screen*.
 	 *
 	 * If there is not enough room between the command start and the bottom of the
-	 * terminal, we scroll the terminal -- by printing newlines at the bottom margin,
-	 * which pushes the rows above into the scrollback, where they are preserved and
-	 * the user can still reach them. Overwriting them in place would destroy the
-	 * output of whatever ran before us; scrolling them away is what an ordinary
-	 * command does when it prints.
+	 * terminal, we scroll the terminal -- pushing the rows above into the
+	 * scrollback, where they are preserved and the user can still reach them.
+	 * Overwriting them in place would destroy the output of whatever ran before
+	 * us; scrolling them away is what an ordinary command does when it prints.
+	 *
+	 * This positions the cursor at the bottom row (CUP) and sends IND (ESC D,
+	 * Index -- "move down a line, scrolling if already at the bottom margin")
+	 * `push` times. Two things this is deliberately NOT:
+	 *
+	 * - Not "print bare newlines at the bottom margin". Verified directly (a
+	 *   real terminal via tmux, and the xterm-headless mock the test suite
+	 *   runs against) that a bare LF only triggers a scroll when the cursor
+	 *   reaches the bottom row through ordinary sequential output --
+	 *   teleporting there with an absolute CUP first and then sending LF
+	 *   leaves the screen completely unchanged in both.
+	 * - Not CSI n S (Scroll Up), which scrolls the visible screen correctly in
+	 *   both but -- verified directly -- does not add the scrolled-off rows to
+	 *   xterm-headless's own scrollback history the way real terminal
+	 *   scrolling does, which would make the "scrolled away, not destroyed"
+	 *   half of this behavior untestable. IND scrolls identically but goes
+	 *   through the same internal path as natural overflow, so it does.
 	 *
 	 * Returns the screen row our region now starts at.
 	 */
-	private reserveRows(rows: number): number {
-		const top = this.scrollingManager.getScreenTop();
-		const overflow = top + rows - this.height;
+	#reserveRows(rows: number): number {
+		const top = this.#scrollingManager.getScreenTop();
+		const overflow = top + rows - this.#height;
 
 		if (overflow <= 0) return top;
 
 		const push = Math.min(overflow, top);
 		if (push > 0) {
-			this.process.stdout.write(`\x1b[${this.height};1H` + "\n".repeat(push));
+			this.#process.stdout.write(
+				`\x1b[${this.#height};1H` + "\x1bD".repeat(push),
+			);
 			// Do NOT shift the renderer's previous buffer. Its rows are relative to
 			// the region top, and the top moves up by exactly the amount the screen
 			// scrolled -- the two cancel, so buffer coordinates are unchanged.
@@ -2246,117 +3955,37 @@ export class TermDOM {
 			// against the wrong screen rows, skipped cells it wrongly believed
 			// unchanged, and composited the old frame under the new one whenever a
 			// document-mode region grew past the space below the shell prompt.
-			this.scrollingManager.setScreenTop(top - push);
+			this.#scrollingManager.setScreenTop(top - push);
 		}
 
-		return this.scrollingManager.getScreenTop();
-	}
-
-	/**
-	 * Has the document reflowed above the fold?
-	 *
-	 * The commit index is a row *number*, so it only means anything while the rows
-	 * above it stay where they are. Insert a row near the top and every row number
-	 * beneath it shifts: rows already in the scrollback get printed again
-	 * (duplicated), and the newly inserted content never appears at all.
-	 *
-	 * The committed rows are beyond our reach, but we can watch the first element
-	 * that is still ours. If it has moved, everything above it changed height.
-	 */
-	private hasReflowedAboveFold(): boolean {
-		if (this.committedRows === 0 || this.foldAnchor === null) return false;
-
-		const {element, top} = this.foldAnchor;
-		if (!element.isConnected) return true;
-
-		const rect = this.layoutEngine.getRect(element);
-		if (!rect) return true;
-
-		return Math.round(rect.top) !== top;
-	}
-
-	/** Remember the first element below the fold, so we can tell if it moves. */
-	private updateFoldAnchor(): void {
-		if (this.committedRows === 0) {
-			this.foldAnchor = null;
-			return;
-		}
-
-		for (const element of Array.from(this.document.body.children)) {
-			const rect = this.layoutEngine.getRect(element);
-			if (!rect) continue;
-			if (rect.top >= this.committedRows) {
-				this.foldAnchor = {element, top: Math.round(rect.top)};
-				return;
-			}
-		}
-
-		this.foldAnchor = null;
-	}
-
-	/**
-	 * Print the document again, below what is already there.
-	 *
-	 * The scrollback cannot be rewritten: no escape sequence addresses it. There
-	 * are exactly two primitives -- append, or destroy the lot with ED3. Destroying
-	 * it and re-rendering is what flicker *is*, so we append. The stale copy stays
-	 * above as a record of what was shown, and a correct one is printed below it.
-	 *
-	 * It costs a duplicate. It never flickers, and it never loses anything.
-	 */
-	private async reprintAsNewBlock(): Promise<void> {
-		this.process.stdout.write("\r\n");
-
-		this.committedRows = 0;
-		this.foldAnchor = null;
-		this.renderer.beginNewBlock();
-
-		// Re-anchor: ask the terminal where the cursor actually is now.
-		await this.detectCommandStart();
-	}
-
-	private pushUpForOverflow(): void {
-		const contentHeight = this.document.body.scrollHeight;
-
-		// Where the content currently starts, as a terminal row.
-		const startRow = -this.scrollingManager.getScrollTop();
-		const roomBelow = this.height - startRow;
-
-		if (contentHeight <= roomBelow) return;
-
-		const pushUp = contentHeight - roomBelow;
-
-		// The command start moves up by the overflow, and the content with it.
-		const screenTop = this.scrollingManager.getScreenTop();
-		this.scrollingManager.setScreenTop(Math.max(0, screenTop - pushUp));
-		this.scrollingManager.scrollBy(pushUp, true);
+		return this.#scrollingManager.getScreenTop();
 	}
 
 	/**
 	 * Initialize cursor position detection for TTY environments
 	 * This runs asynchronously during construction to set up proper viewport positioning
 	 */
-	private initializeCursorDetection(): void {
-		this.cursorDetectionPromise = null;
+	#initializeCursorDetection(): void {
+		this.#cursorDetectionPromise = null;
 		// Only detect cursor position in TTY environments when enabled
-		if (this.detectCursorEnabled && this.process.stdin?.isTTY) {
+		if (this.#detectCursorEnabled && this.#process.stdin?.isTTY) {
 			// Set up cursor detection promise that render() will wait for
-			this.cursorDetectionPromise = Promise.race([
-				this.detectCommandStart().then(() => {}),
+			this.#cursorDetectionPromise = Promise.race([
+				this.#detectCommandStart().then(() => {}),
 				// Fallback: if cursor detection takes too long, proceed without it
 				new Promise<void>((resolve) => setTimeout(resolve, 1000)),
 			])
 				.catch(() => {
 					// If cursor detection fails, continue without it
-					this.hasDetectedCommandStart = false;
+					this.#hasDetectedCommandStart = false;
 				})
 				.finally(() => {
 					// Clear the promise so subsequent renders don't wait
-					this.cursorDetectionPromise = null;
+					this.#cursorDetectionPromise = null;
 				});
 		} else {
 			// In non-TTY environments, don't set up cursor detection at all
-			this.cursorDetectionPromise = null;
+			this.#cursorDetectionPromise = null;
 		}
 	}
 
@@ -2364,10 +3993,10 @@ export class TermDOM {
 	 * Detect current cursor position and set window.screenTop
 	 * Sends \x1b[6n and waits for response \x1b[row;colR
 	 */
-	detectCommandStart(): Promise<number> {
+	#detectCommandStart(): Promise<number> {
 		this.attach();
 		return new Promise<number>((resolve, reject) => {
-			if (!this.process.stdin?.isTTY) {
+			if (!this.#process.stdin?.isTTY) {
 				reject(new Error("Cannot detect cursor position: stdin is not a TTY"));
 				return;
 			}
@@ -2375,15 +4004,15 @@ export class TermDOM {
 			let responseBuffer = "";
 
 			const finish = () => {
-				this.cursorDetectionHandler = null;
-				if (this.cursorDetectionTimer !== null) {
-					clearTimeout(this.cursorDetectionTimer);
-					this.cursorDetectionTimer = null;
+				this.#cursorDetectionHandler = null;
+				if (this.#cursorDetectionTimer !== null) {
+					clearTimeout(this.#cursorDetectionTimer);
+					this.#cursorDetectionTimer = null;
 				}
 			};
 
 			// Set up cursor detection handler for unified stdin
-			this.cursorDetectionHandler = (dataStr: string) => {
+			this.#cursorDetectionHandler = (dataStr: string) => {
 				responseBuffer += dataStr;
 
 				// Look for cursor position response pattern: \x1b[row;colR
@@ -2394,32 +4023,32 @@ export class TermDOM {
 					const row = parseInt(match[1], 10);
 					// Set window.screenTop (convert 1-based terminal row to 0-based)
 					const screenTop = row - 1;
-					this.scrollingManager.setScreenTop(screenTop);
+					this.#scrollingManager.setScreenTop(screenTop);
 
 					// Set scrollTop to command start position (browser behavior)
 					// For command start, we want content to shift up to terminal top
-					this.scrollingManager.scrollToCommandStart();
+					this.#scrollingManager.scrollToCommandStart();
 
-					this.hasDetectedCommandStart = true;
+					this.#hasDetectedCommandStart = true;
 					resolve(row);
 				}
 			};
 
 			// Send cursor position query with proper flushing
-			this.process.stdout.write("\x1b[6n");
+			this.#process.stdout.write("\x1b[6n");
 
 			// Force flush the output buffer (critical for cursor queries)
-			if (typeof (this.process.stdout as any)._flush === "function") {
-				(this.process.stdout as any)._flush();
+			if (typeof (this.#process.stdout as any)._flush === "function") {
+				(this.#process.stdout as any)._flush();
 			}
 
 			// Timeout after 1000ms (reasonable balance for reliability). The timer is
 			// held so it can be cleared the moment a response arrives -- otherwise it
 			// keeps the event loop alive for a further second after we are done.
-			this.cursorDetectionTimer = setTimeout(() => {
-				this.cursorDetectionTimer = null;
-				if (this.cursorDetectionHandler) {
-					this.cursorDetectionHandler = null;
+			this.#cursorDetectionTimer = setTimeout(() => {
+				this.#cursorDetectionTimer = null;
+				if (this.#cursorDetectionHandler) {
+					this.#cursorDetectionHandler = null;
 					reject(new Error("Timeout waiting for cursor position response"));
 				}
 			}, 1000);
@@ -2434,9 +4063,9 @@ export class TermDOM {
 	 * actually ended up. Rejects on timeout so the caller can fall back to a
 	 * computed anchor.
 	 */
-	private queryCursorRow(): Promise<number> {
+	#queryCursorRow(): Promise<number> {
 		return new Promise<number>((resolve, reject) => {
-			if (!this.process.stdin?.isTTY) {
+			if (!this.#process.stdin?.isTTY) {
 				reject(new Error("stdin is not a TTY"));
 				return;
 			}
@@ -2454,13 +4083,13 @@ export class TermDOM {
 				responseBuffer += dataStr;
 				const match = responseBuffer.match(/\x1b\[(\d+);(\d+)R/);
 				if (match) {
-					if (this.cursorDetectionHandler === handler) {
-						this.cursorDetectionHandler = null;
+					if (this.#cursorDetectionHandler === handler) {
+						this.#cursorDetectionHandler = null;
 					}
 					if (localTimer !== null) {
 						clearTimeout(localTimer);
-						if (this.cursorDetectionTimer === localTimer) {
-							this.cursorDetectionTimer = null;
+						if (this.#cursorDetectionTimer === localTimer) {
+							this.#cursorDetectionTimer = null;
 						}
 						localTimer = null;
 					}
@@ -2470,87 +4099,91 @@ export class TermDOM {
 
 			// Replacing a stale handler is fine: its own timeout still fires and
 			// rejects it, and the caller's epoch check discards the stale result.
-			this.cursorDetectionHandler = handler;
+			this.#cursorDetectionHandler = handler;
 
-			this.process.stdout.write("\x1b[6n");
-			if (typeof (this.process.stdout as any)._flush === "function") {
-				(this.process.stdout as any)._flush();
+			this.#process.stdout.write("\x1b[6n");
+			if (typeof (this.#process.stdout as any)._flush === "function") {
+				(this.#process.stdout as any)._flush();
 			}
 
 			// Short timeout: the redraw should feel immediate, and a terminal that
 			// does not answer promptly falls back to the computed re-anchor.
 			localTimer = setTimeout(() => {
-				if (this.cursorDetectionHandler === handler) {
-					this.cursorDetectionHandler = null;
+				if (this.#cursorDetectionHandler === handler) {
+					this.#cursorDetectionHandler = null;
 				}
-				if (this.cursorDetectionTimer === localTimer) {
-					this.cursorDetectionTimer = null;
+				if (this.#cursorDetectionTimer === localTimer) {
+					this.#cursorDetectionTimer = null;
 				}
 				localTimer = null;
 				reject(new Error("Timeout waiting for cursor position response"));
 			}, 200);
-			this.cursorDetectionTimer = localTimer;
+			this.#cursorDetectionTimer = localTimer;
 		});
 	}
 
+	/** Explicit resource management: `using dom = new TermDOM()` tears down on scope exit. */
+	[Symbol.dispose](): void {
+		this.dispose();
+	}
+
 	dispose(): void {
-		trackedInstances?.delete(this);
-		undisposedInteractive.delete(this);
-		this.attached = false;
+		undisposedInteractive.delete(this.#process);
+		this.#attached = false;
 
 		// Document mode has been painting a window in place, so nothing it showed
 		// has reached the terminal's scrollback. Pay it all out now.
-		this.flushDocument();
+		this.#flushDocument();
 
 		// Frames keep the terminal cursor hidden (it is parked for resize
 		// bookkeeping, not UI); hand it back visible on the way out. The mouse
 		// goes back to the terminal the same way.
-		if (this.mouseReportingEnabled) {
-			this.process.stdout.write("\x1b[?1006l\x1b[?1002l");
-			this.mouseReportingEnabled = false;
+		if (this.#mouseReportingEnabled) {
+			this.#process.stdout.write("\x1b[?1006l\x1b[?1002l");
+			this.#mouseReportingEnabled = false;
 		}
-		if (this.interactive) {
-			this.process.stdout.write("\x1b[?25h");
+		if (this.#interactive) {
+			this.#process.stdout.write("\x1b[?25h");
 		}
 
 		// Tear down everything that holds the event loop open. Without this a
 		// disposed TermDOM keeps the process alive -- via the process signal
 		// listeners, the stdin data listener, and the cursor-detection timer -- and
 		// across a whole test suite those accumulate until nothing can exit.
-		if (this.cursorDetectionTimer !== null) {
-			clearTimeout(this.cursorDetectionTimer);
-			this.cursorDetectionTimer = null;
+		if (this.#cursorDetectionTimer !== null) {
+			clearTimeout(this.#cursorDetectionTimer);
+			this.#cursorDetectionTimer = null;
 		}
-		if (this.resizeTimer !== null) {
-			clearTimeout(this.resizeTimer);
-			this.resizeTimer = null;
+		if (this.#resizeTimer !== null) {
+			clearTimeout(this.#resizeTimer);
+			this.#resizeTimer = null;
 		}
-		if (this.mouseRearmTimer !== null) {
-			clearTimeout(this.mouseRearmTimer);
-			this.mouseRearmTimer = null;
+		if (this.#scrollChainTimer !== null) {
+			clearTimeout(this.#scrollChainTimer);
+			this.#scrollChainTimer = null;
 		}
-		this.cursorDetectionHandler = null;
+		this.#cursorDetectionHandler = null;
 
-		if (this.sigintHandler) {
-			(this.process as unknown as EventEmitter).removeListener?.(
+		if (this.#sigintHandler) {
+			(this.#process as unknown as EventEmitter).removeListener?.(
 				"SIGINT",
-				this.sigintHandler,
+				this.#sigintHandler,
 			);
-			this.sigintHandler = null;
+			this.#sigintHandler = null;
 		}
-		if (this.sigwinchHandler) {
-			(this.process as unknown as EventEmitter).removeListener?.(
+		if (this.#sigwinchHandler) {
+			(this.#process as unknown as EventEmitter).removeListener?.(
 				"SIGWINCH",
-				this.sigwinchHandler,
+				this.#sigwinchHandler,
 			);
-			this.sigwinchHandler = null;
+			this.#sigwinchHandler = null;
 		}
 
-		if (this.process.stdin?.isTTY) {
-			const stdin = this.process.stdin as TTYReadStream;
-			if (this.stdinDataHandler) {
-				stdin.removeListener?.("data", this.stdinDataHandler);
-				this.stdinDataHandler = null;
+		if (this.#process.stdin?.isTTY) {
+			const stdin = this.#process.stdin as TTYReadStream;
+			if (this.#stdinDataHandler) {
+				stdin.removeListener?.("data", this.#stdinDataHandler);
+				this.#stdinDataHandler = null;
 			}
 			stdin.setRawMode?.(false);
 			stdin.pause();
@@ -2558,12 +4191,12 @@ export class TermDOM {
 
 		// Shadow DOM cleanup is automatic with symbol-based storage
 
-		this.observer.disconnect();
-		this.styleManager.dispose();
-		this.layoutEngine.dispose();
-		this.fullscreenManager.dispose();
-		this.observerManager.dispose();
-		this.jsdom.window.close();
+		this[kObserver].disconnect();
+		this.#styleManager.dispose();
+		this[kLayoutEngine].dispose();
+		this.#fullscreenManager.dispose();
+		this.#observerManager.dispose();
+		this.#jsdom.window.close();
 	}
 }
 
@@ -2578,7 +4211,10 @@ function findElementAtPoint(
 	}
 
 	try {
-		const rects = Array.from(element.getClientRects());
+		// Document-relative, matching the document-relative x/y hit-testing
+		// works in throughout -- not the public, viewport-relative
+		// getClientRects(), which would need re-converting right back.
+		const rects = termDOM[kLayoutEngine].getRects(element);
 		if (!isPointInRects(x, y, rects)) {
 			return null;
 		}
@@ -2587,7 +4223,7 @@ function findElementAtPoint(
 	}
 
 	// Use ExpandedTreeWalker to traverse children (including shadow DOM)
-	const walker = termDOM.createExpandedTreeWalker(element);
+	const walker = createExpandedTreeWalker(termDOM.window, element);
 
 	let child = walker.nextNode() as Element;
 	while (child) {

@@ -1,5 +1,6 @@
-import {test, expect} from "bun:test";
+import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
+import {nextFrame} from "./test-utils.js";
 import {EventEmitter} from "events";
 
 // A TTY-shaped process that records everything written to stdout, so tests
@@ -64,7 +65,6 @@ const DISABLE = "\x1b[?1006l\x1b[?1002l";
 function makeDocumentModeApp(lines = 30) {
 	const proc = new MockMouseProcess();
 	const termdom = new TermDOM({process: proc as any, detectCursor: false});
-	termdom.setViewportMode("document");
 	const {document} = termdom;
 	for (let i = 0; i < lines; i++) {
 		const div = document.createElement("div");
@@ -74,50 +74,30 @@ function makeDocumentModeApp(lines = 30) {
 	return {proc, termdom, document};
 }
 
-test("document mode captures the mouse; flow mode leaves it native", async () => {
+test("an interactive app captures the mouse; dispose releases it", async () => {
 	const {proc, termdom} = makeDocumentModeApp();
-	await termdom.render();
+	await nextFrame(termdom);
 	expect(proc.written).toContain(ENABLE);
 
 	termdom.dispose();
 	expect(proc.written).toContain(DISABLE);
-
-	const flowProc = new MockMouseProcess();
-	const flow = new TermDOM({process: flowProc as any, detectCursor: false});
-	const div = flow.document.createElement("div");
-	div.textContent = "flow content";
-	flow.document.body.appendChild(div);
-	await flow.render();
-	expect(flowProc.written).not.toContain(ENABLE);
-	flow.dispose();
-});
-
-test("switching viewport mode toggles capture", async () => {
-	const {proc, termdom} = makeDocumentModeApp();
-	await termdom.render();
-	expect(proc.written).toContain(ENABLE);
-	expect(proc.written).not.toContain(DISABLE);
-
-	termdom.setViewportMode("flow");
-	expect(proc.written).toContain(DISABLE);
-	termdom.dispose();
 });
 
 test("wheel scrolls the document camera", async () => {
 	const {proc, termdom} = makeDocumentModeApp();
-	await termdom.render();
+	await nextFrame(termdom);
 
 	proc.stdin.send("\x1b[<65;5;3M"); // wheel down at col 5, row 3
-	expect((termdom as any).documentScrollTop).toBe(3);
+	expect(termdom.window.scrollY).toBe(3);
 
 	proc.stdin.send("\x1b[<64;5;3M"); // wheel up
-	expect((termdom as any).documentScrollTop).toBe(0);
+	expect(termdom.window.scrollY).toBe(0);
 	termdom.dispose();
 });
 
 test("wheel dispatches a cancelable WheelEvent; preventDefault stops the camera", async () => {
 	const {proc, termdom, document} = makeDocumentModeApp();
-	await termdom.render();
+	await nextFrame(termdom);
 
 	const seen: Array<{deltaY: number; deltaMode: number}> = [];
 	document.body.addEventListener("wheel", (event: any) => {
@@ -127,13 +107,13 @@ test("wheel dispatches a cancelable WheelEvent; preventDefault stops the camera"
 
 	proc.stdin.send("\x1b[<65;5;3M");
 	expect(seen).toEqual([{deltaY: 3, deltaMode: 1}]);
-	expect((termdom as any).documentScrollTop).toBe(0); // canceled
+	expect(termdom.window.scrollY).toBe(0); // canceled
 	termdom.dispose();
 });
 
 test("mouse reports never leak into keyboard events", async () => {
 	const {proc, termdom, document} = makeDocumentModeApp();
-	await termdom.render();
+	await nextFrame(termdom);
 
 	const keys: string[] = [];
 	document.body.addEventListener("keydown", (event: any) => {
@@ -143,7 +123,7 @@ test("mouse reports never leak into keyboard events", async () => {
 	// A report glued to fast keystrokes: both keys arrive, the report does not.
 	proc.stdin.send("j\x1b[<65;4;7Mj");
 	expect(keys).toEqual(["j", "j"]);
-	expect((termdom as any).documentScrollTop).toBe(3);
+	expect(termdom.window.scrollY).toBe(3);
 
 	// Clicks and drag motion are swallowed too.
 	proc.stdin.send("\x1b[<0;2;2M\x1b[<32;3;2M\x1b[<0;3;2m");
@@ -153,7 +133,7 @@ test("mouse reports never leak into keyboard events", async () => {
 
 test("wheel at the document top chains to the terminal; a keystroke reclaims", async () => {
 	const {proc, termdom} = makeDocumentModeApp();
-	await termdom.render();
+	await nextFrame(termdom);
 
 	const disables = () =>
 		proc.output.filter((chunk) => chunk.includes(DISABLE)).length;
@@ -163,9 +143,9 @@ test("wheel at the document top chains to the terminal; a keystroke reclaims", a
 
 	// Scrolled down, wheel up consumes normally -- no chaining mid-document.
 	proc.stdin.send("\x1b[<65;5;3M");
-	expect((termdom as any).documentScrollTop).toBe(3);
+	expect(termdom.window.scrollY).toBe(3);
 	proc.stdin.send("\x1b[<64;5;3M");
-	expect((termdom as any).documentScrollTop).toBe(0);
+	expect(termdom.window.scrollY).toBe(0);
 	expect(disables()).toBe(0);
 
 	// Wheel up AT the top: the scroll escapes to the terminal's scrollback,
@@ -173,37 +153,43 @@ test("wheel at the document top chains to the terminal; a keystroke reclaims", a
 	proc.stdin.send("\x1b[<64;5;3M");
 	expect(disables()).toBe(1);
 
-	// A keystroke reclaims it immediately, ahead of the re-arm timer.
+	// A keystroke reclaims it.
 	proc.stdin.send("j");
 	expect(enables()).toBe(2);
 	termdom.dispose();
 });
 
-test("capture re-arms on its own after the escaping gesture, without a keystroke", async () => {
+test("a yielded wheel self-heals after the chain timeout, with no keystroke", async () => {
 	const {proc, termdom} = makeDocumentModeApp();
-	await termdom.render();
-	const enables = () =>
-		proc.output.filter((chunk) => chunk.includes(ENABLE)).length;
+	await nextFrame(termdom);
+
 	const disables = () =>
 		proc.output.filter((chunk) => chunk.includes(DISABLE)).length;
-
-	// Wheel up at the top yields the mouse to the scrollback.
-	proc.stdin.send("\x1b[<64;5;3M");
-	expect(disables()).toBe(1);
+	const enables = () =>
+		proc.output.filter((chunk) => chunk.includes(ENABLE)).length;
 	expect(enables()).toBe(1);
 
-	// The yield only outlasts the gesture; capture comes back on its own, so
-	// the wheel takes over the instant the view returns to the live screen --
-	// no keystroke needed. (This is what the user hit as a bug: scroll into
-	// history, scroll back, and the document would not take the wheel again.)
-	await new Promise((resolve) => setTimeout(resolve, 350));
-	expect(enables()).toBe(2);
+	// Wheel up at the top yields the mouse -- same as the keystroke-reclaim
+	// test, but here nothing ever types a key. Real timeout, not a shortened
+	// test-only one: wheel activity produces no signal while yielded (that's
+	// the entire mechanism), so there's nothing to fake-clock advance against;
+	// this exercises the actual production constant.
+	proc.stdin.send("\x1b[<64;5;3M");
+	expect(disables()).toBe(1);
+	expect(enables()).toBe(1); // still yielded
+
+	await new Promise((resolve) => setTimeout(resolve, 3200));
+	expect(enables()).toBe(2); // self-healed without any keystroke
+
+	// And scrolling actually works again -- not just the escape sequence.
+	proc.stdin.send("\x1b[<65;5;3M"); // wheel down
+	expect(termdom.window.scrollY).toBe(3);
 	termdom.dispose();
 });
 
 test("preventDefault on wheel opts out of scroll chaining", async () => {
 	const {proc, termdom, document} = makeDocumentModeApp();
-	await termdom.render();
+	await nextFrame(termdom);
 
 	document.body.addEventListener("wheel", (event: any) => {
 		event.preventDefault();
@@ -217,7 +203,6 @@ test("preventDefault on wheel opts out of scroll chaining", async () => {
 test("click dispatches at the element under the cell and focuses inputs", async () => {
 	const proc = new MockMouseProcess();
 	const termdom = new TermDOM({process: proc as any, detectCursor: false});
-	termdom.setViewportMode("document");
 	const {document} = termdom;
 
 	const input = document.createElement("input");
@@ -226,7 +211,7 @@ test("click dispatches at the element under the cell and focuses inputs", async 
 	const below = document.createElement("div");
 	below.textContent = "not focusable";
 	document.body.appendChild(below);
-	await termdom.render();
+	await nextFrame(termdom);
 
 	const events: Array<{type: string; target: string}> = [];
 	for (const type of ["mousedown", "mouseup", "click"]) {
@@ -247,5 +232,257 @@ test("click dispatches at the element under the cell and focuses inputs", async 
 	proc.stdin.send("\x1b[<0;2;6M");
 	proc.stdin.send("\x1b[<0;2;6m");
 	expect(document.activeElement).not.toBe(input);
+	termdom.dispose();
+});
+
+test("clicking a checkbox toggles it and fires change, and preventDefault blocks it", async () => {
+	const proc = new MockMouseProcess();
+	const termdom = new TermDOM({process: proc as any, detectCursor: false});
+	const {document} = termdom;
+
+	const checkbox = document.createElement("input");
+	checkbox.type = "checkbox";
+	document.body.appendChild(checkbox);
+	await nextFrame(termdom);
+
+	const changes: boolean[] = [];
+	checkbox.addEventListener("change", () => changes.push(checkbox.checked));
+
+	const click = () => {
+		proc.stdin.send("\x1b[<0;1;1M");
+		proc.stdin.send("\x1b[<0;1;1m");
+	};
+
+	click();
+	expect(checkbox.checked).toBe(true);
+	expect(changes).toEqual([true]);
+
+	click();
+	expect(checkbox.checked).toBe(false);
+	expect(changes).toEqual([true, false]);
+
+	checkbox.addEventListener("click", (e: any) => e.preventDefault());
+	click();
+	expect(checkbox.checked).toBe(false); // blocked, matching a real browser
+	expect(changes).toEqual([true, false]);
+
+	termdom.dispose();
+});
+
+test("clicking a label toggles its associated checkbox and moves focus to it", async () => {
+	const proc = new MockMouseProcess();
+	const termdom = new TermDOM({process: proc as any, detectCursor: false});
+	const {document} = termdom;
+
+	const checkbox = document.createElement("input");
+	checkbox.type = "checkbox";
+	checkbox.id = "cb";
+	document.body.appendChild(checkbox);
+	const label = document.createElement("label");
+	label.setAttribute("for", "cb");
+	label.textContent = "Mark all as complete";
+	document.body.appendChild(label);
+	await nextFrame(termdom);
+
+	const changes: boolean[] = [];
+	checkbox.addEventListener("change", () => changes.push(checkbox.checked));
+
+	// The checkbox ([ ], an inline-block) and the label share row 1 as one
+	// inline run: "[ ]Mark all as complete". Click inside the label's text,
+	// past the checkbox's 3 cells.
+	proc.stdin.send("\x1b[<0;5;1M");
+	proc.stdin.send("\x1b[<0;5;1m");
+
+	expect(checkbox.checked).toBe(true);
+	expect(changes).toEqual([true]);
+	expect(document.activeElement).toBe(checkbox);
+
+	termdom.dispose();
+});
+
+test("two quick clicks on the same target fire dblclick in addition to two clicks", async () => {
+	const proc = new MockMouseProcess();
+	const termdom = new TermDOM({process: proc as any, detectCursor: false});
+	const {document} = termdom;
+
+	const div = document.createElement("div");
+	div.textContent = "clickable";
+	document.body.appendChild(div);
+	await nextFrame(termdom);
+
+	const events: string[] = [];
+	div.addEventListener("click", () => events.push("click"));
+	div.addEventListener("dblclick", () => events.push("dblclick"));
+
+	const click = () => {
+		proc.stdin.send("\x1b[<0;1;1M");
+		proc.stdin.send("\x1b[<0;1;1m");
+	};
+
+	click();
+	click();
+	expect(events).toEqual(["click", "click", "dblclick"]);
+
+	// The pair is consumed -- a third click starts a fresh one, not an
+	// immediate second dblclick.
+	click();
+	expect(events).toEqual(["click", "click", "dblclick", "click"]);
+	click();
+	expect(events).toEqual([
+		"click",
+		"click",
+		"dblclick",
+		"click",
+		"click",
+		"dblclick",
+	]);
+
+	termdom.dispose();
+});
+
+test("a click long after the previous one does not fire dblclick", async () => {
+	const proc = new MockMouseProcess();
+	const termdom = new TermDOM({process: proc as any, detectCursor: false});
+	const {document} = termdom;
+
+	const div = document.createElement("div");
+	div.textContent = "clickable";
+	document.body.appendChild(div);
+	await nextFrame(termdom);
+
+	const events: string[] = [];
+	div.addEventListener("click", () => events.push("click"));
+	div.addEventListener("dblclick", () => events.push("dblclick"));
+
+	const click = () => {
+		proc.stdin.send("\x1b[<0;1;1M");
+		proc.stdin.send("\x1b[<0;1;1m");
+	};
+
+	click();
+	await new Promise((resolve) => setTimeout(resolve, 600)); // past the 500ms interval
+	click();
+	expect(events).toEqual(["click", "click"]);
+
+	termdom.dispose();
+});
+
+test("dragging across text builds a real Selection, paints inverse, and copies via OSC 52", async () => {
+	const proc = new MockMouseProcess();
+	const termdom = new TermDOM({process: proc as any, detectCursor: false});
+	const {document, window} = termdom;
+
+	const line1 = document.createElement("div");
+	line1.textContent = "hello world";
+	const line2 = document.createElement("div");
+	line2.textContent = "second line";
+	document.body.append(line1, line2);
+	await nextFrame(termdom);
+
+	// Press at col 1 row 1 (before "h"), drag to col 6 (before "o" -- wait,
+	// before index 5), release: selects "hello".
+	proc.stdin.send("\x1b[<0;1;1M");
+	proc.stdin.send("\x1b[<32;6;1M"); // motion with left button held
+	await nextFrame(termdom);
+
+	const selection = window.getSelection()!;
+	expect(selection.isCollapsed).toBe(false);
+	expect(selection.toString()).toBe("hello");
+	// The highlight paints as inverse video (SGR 7).
+	expect(proc.written).toMatch(/\x1b\[[\d;]*7m/);
+
+	// Release copies the selection to the clipboard via OSC 52.
+	proc.stdin.send("\x1b[<0;6;1m");
+	const payload = Buffer.from("hello", "utf8").toString("base64");
+	expect(proc.written).toContain(`\x1b]52;c;${payload}\x07`);
+
+	termdom.dispose();
+});
+
+test("a backward drag selects, and spans nodes, with the anchor/focus handled by Selection", async () => {
+	const proc = new MockMouseProcess();
+	const termdom = new TermDOM({process: proc as any, detectCursor: false});
+	const {document, window} = termdom;
+
+	const line1 = document.createElement("div");
+	line1.textContent = "hello world";
+	const line2 = document.createElement("div");
+	line2.textContent = "second line";
+	document.body.append(line1, line2);
+	await nextFrame(termdom);
+
+	// Press mid-way through line 2, drag UP to mid line 1.
+	proc.stdin.send("\x1b[<0;7;2M"); // before "d" of "second" (offset 6)
+	proc.stdin.send("\x1b[<32;3;1M"); // up to before "l" of "hello" (offset 2)
+	await nextFrame(termdom);
+
+	const text = window.getSelection()!.toString();
+	expect(text).toContain("llo world");
+	expect(text).toContain("second");
+	proc.stdin.send("\x1b[<0;3;1m");
+
+	termdom.dispose();
+});
+
+test("a click collapses an existing selection", async () => {
+	const proc = new MockMouseProcess();
+	const termdom = new TermDOM({process: proc as any, detectCursor: false});
+	const {document, window} = termdom;
+
+	const div = document.createElement("div");
+	div.textContent = "some selectable text";
+	document.body.appendChild(div);
+	await nextFrame(termdom);
+
+	proc.stdin.send("\x1b[<0;1;1M");
+	proc.stdin.send("\x1b[<32;10;1M");
+	proc.stdin.send("\x1b[<0;10;1m");
+	expect(window.getSelection()!.isCollapsed).toBe(false);
+
+	// A fresh click elsewhere collapses it, as in a browser.
+	proc.stdin.send("\x1b[<0;3;1M");
+	proc.stdin.send("\x1b[<0;3;1m");
+	expect(window.getSelection()!.isCollapsed).toBe(true);
+
+	termdom.dispose();
+});
+
+test("a selecting drag released over a label does not activate it", async () => {
+	// Activation after a selecting gesture would toggle the label's checkbox
+	// -- and in a framework app the resulting re-render replaces the very
+	// nodes the fresh selection points into, destroying it on the spot.
+	// Browsers suppress the click; so do we.
+	const proc = new MockMouseProcess();
+	const termdom = new TermDOM({process: proc as any, detectCursor: false});
+	const {document, window} = termdom;
+
+	const row = document.createElement("div");
+	const checkbox = document.createElement("input");
+	checkbox.type = "checkbox";
+	checkbox.id = "cb";
+	const label = document.createElement("label");
+	label.setAttribute("for", "cb");
+	label.textContent = "Mark all as complete";
+	row.append(checkbox, label);
+	document.body.appendChild(row);
+	await nextFrame(termdom);
+
+	const clicks: string[] = [];
+	document.addEventListener("click", (e: any) => clicks.push(e.target.tagName));
+
+	// Drag across the label text ("[ ]Mark all..." -- label starts col 4).
+	proc.stdin.send("\x1b[<0;5;1M");
+	proc.stdin.send("\x1b[<32;12;1M");
+	proc.stdin.send("\x1b[<0;12;1m");
+
+	expect(window.getSelection()!.toString()).toBe("ark all");
+	expect(checkbox.checked).toBe(false); // NOT activated
+	expect(clicks).toEqual([]); // no click synthesized from a selecting drag
+
+	// A plain click on the label still activates as before.
+	proc.stdin.send("\x1b[<0;5;1M");
+	proc.stdin.send("\x1b[<0;5;1m");
+	expect(checkbox.checked).toBe(true);
+
 	termdom.dispose();
 });

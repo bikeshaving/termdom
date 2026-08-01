@@ -10,7 +10,9 @@ import {
 	type TTYReadStream,
 } from "../src/internal/termdom.js";
 import {EventEmitter} from "events";
-import {Terminal} from "@xterm/headless";
+import xtermPkg from "@xterm/headless";
+const {Terminal} = xtermPkg;
+type Terminal = InstanceType<typeof Terminal>;
 import {
 	type CellBuffer,
 	Cell,
@@ -18,6 +20,9 @@ import {
 	type ColorDepth,
 } from "../src/internal/ansi.js";
 import {generateANSI} from "../src/internal/ansi.js";
+import {stringWidth} from "../src/internal/runtime.js";
+import {StyleManager} from "../src/internal/styles.js";
+import {LayoutEngine} from "../src/internal/layout.js";
 import {writeFileSync, mkdirSync, existsSync} from "fs";
 import {join} from "path";
 
@@ -31,8 +36,8 @@ class MockWriteStream extends EventEmitter implements TTYWriteStream {
 	columns: number;
 	rows: number;
 	isTTY = true;
-	private terminal: Terminal;
-	private stdin: MockReadStream;
+	terminal: Terminal;
+	#stdin: MockReadStream;
 
 	constructor(
 		terminal: Terminal,
@@ -42,7 +47,7 @@ class MockWriteStream extends EventEmitter implements TTYWriteStream {
 	) {
 		super();
 		this.terminal = terminal;
-		this.stdin = stdin;
+		this.#stdin = stdin;
 		this.columns = cols;
 		this.rows = rows;
 
@@ -50,7 +55,7 @@ class MockWriteStream extends EventEmitter implements TTYWriteStream {
 		// xterm.js automatically handles cursor position queries and responds via onData
 		this.terminal.onData((data) => {
 			// Forward any responses from xterm (like cursor position) to stdin
-			this.stdin.simulateResponse(data);
+			this.#stdin.simulateResponse(data);
 		});
 	}
 
@@ -103,7 +108,7 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 	stdout: MockWriteStream;
 	stdin: MockReadStream;
 	env: Record<string, string | undefined>;
-	private terminal: Terminal;
+	terminal: Terminal;
 
 	constructor(
 		options: {
@@ -197,8 +202,15 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 		const buffer = this.terminal.buffer.active;
 		const lines: string[] = [];
 
+		// buffer.getLine(y) is an absolute index into the whole scrollback
+		// buffer (0 = the first line ever written), not "row 0 of what's
+		// currently on screen" -- viewportY is the offset that gets you there.
+		// This only diverges from 0 once real scrollback exists, which nothing
+		// previously exercised: every existing render path avoided triggering
+		// it, so this returned the right answer by coincidence until push-up's
+		// scroll made it observable.
 		for (let row = 0; row < this.terminal.rows; row++) {
-			const line = buffer.getLine(row);
+			const line = buffer.getLine(buffer.viewportY + row);
 			if (line) {
 				const lineText = line.translateToString(true); // true = trim right
 				lines.push(lineText);
@@ -220,12 +232,12 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 	/**
 	 * Convert xterm buffer to our CellBuffer format
 	 */
-	private xtermToCellBuffer(): CellBuffer {
+	#xtermToCellBuffer(): CellBuffer {
 		const buffer = this.terminal.buffer.active;
 		const cellBuffer = createBuffer(this.terminal.rows, this.terminal.cols);
 
 		for (let row = 0; row < this.terminal.rows; row++) {
-			const line = buffer.getLine(row);
+			const line = buffer.getLine(buffer.viewportY + row);
 			if (!line) continue;
 
 			let outputCol = 0; // Track output column separately from xterm column
@@ -279,7 +291,7 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 				outputCol++;
 
 				// If this is a wide character, create a continuation cell at the next output position
-				const actualWidth = Bun.stringWidth(actualChars);
+				const actualWidth = stringWidth(actualChars);
 				if (actualWidth === 2 && outputCol < this.terminal.cols) {
 					cellBuffer[row][outputCol] = null; // Continuation cell
 					outputCol++;
@@ -294,9 +306,9 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 	 * Get static ANSI content using Renderer's generateANSI (no cursor movements)
 	 */
 	getStaticANSI(): string {
-		const cellBuffer = this.xtermToCellBuffer();
+		const cellBuffer = this.#xtermToCellBuffer();
 		// Use same color depth detection logic as TermDOM
-		const colorDepth = this.detectColorDepth();
+		const colorDepth = this.#detectColorDepth();
 		const fullOutput = generateANSI(cellBuffer, colorDepth);
 		return stripControlCodes(fullOutput);
 	}
@@ -304,7 +316,7 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 	/**
 	 * Detect color depth from environment (same logic as TermDOM)
 	 */
-	private detectColorDepth(): ColorDepth {
+	#detectColorDepth(): ColorDepth {
 		const colorterm = this.env.COLORTERM;
 		if (colorterm === "truecolor" || colorterm === "24bit") {
 			return "rgb";
@@ -330,13 +342,40 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 	 */
 	writeANSI(testName: string): void {
 		const ansiOutput = this.getStaticANSI();
-		const ansiDir = join(import.meta.dir, "__snapshots__", "ansi");
+		const ansiDir = join(process.cwd(), "tests", "__snapshots__", "ansi");
 		if (!existsSync(ansiDir)) {
 			mkdirSync(ansiDir, {recursive: true});
 		}
 		const ansiFilename = `${testName}.ansi`;
 		writeFileSync(join(ansiDir, ansiFilename), ansiOutput);
 	}
+}
+
+/**
+ * Await the next painted frame. Rendering is automatic (the MutationObserver
+ * drives it), so a test mutates the DOM and then awaits a frame -- exactly what a
+ * page does with requestAnimationFrame, and the reason TermDOM has no public
+ * render(). jsdom provides rAF via pretendToBeVisual.
+ */
+export function nextFrame(dom: {
+	window: {requestAnimationFrame(cb: () => void): number};
+}): Promise<void> {
+	return new Promise((resolve) =>
+		dom.window.requestAnimationFrame(() => resolve()),
+	);
+}
+
+/**
+ * A StyleManager wired to a TermDOM's window, for the handful of tests that
+ * inspect CSS parsing or pseudo-element resolution directly. styleManager is
+ * #private on TermDOM; this re-parses the same document's stylesheets, so it
+ * resolves the same rules.
+ */
+export function styleManagerFor(dom: {window: any}): StyleManager {
+	const sm = new StyleManager(dom.window);
+	sm.setLayoutEngine(new LayoutEngine(dom.window));
+	sm.refreshStylesheets();
+	return sm;
 }
 
 export function stripControlCodes(ansi: string): string {

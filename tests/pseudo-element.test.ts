@@ -1,7 +1,10 @@
-import {test, expect} from "bun:test";
+import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
-import {MockProcess} from "./test-utils.js";
-import {getPseudoElement} from "../src/internal/composition.js";
+import {MockProcess, nextFrame, styleManagerFor} from "./test-utils.js";
+import {
+	getPseudoElement,
+	createExpandedTreeWalker,
+} from "../src/internal/composition.js";
 
 test("::before and ::after content rendering", async () => {
 	const terminal = new MockProcess();
@@ -54,14 +57,14 @@ test("::before and ::after content rendering", async () => {
 	document.body.appendChild(decorated);
 
 	// Trigger stylesheet refresh to attach pseudo elements
-	termdom.styleManager.refreshStylesheets();
+	styleManagerFor(termdom).refreshStylesheets();
 
 	// Check the actual attached pseudo elements using the composition API
 	const beforeQuoteNode = getPseudoElement(quote, "::before");
 	const afterQuoteNode = getPseudoElement(quote, "::after");
 
 	// Render to terminal
-	await termdom.render();
+	await nextFrame(termdom);
 	const output = terminal.getPlainText();
 
 	// Verify that pseudo-element content appears in the rendered output
@@ -76,7 +79,7 @@ test("::before and ::after content rendering", async () => {
 	expect(afterQuoteNode).not.toBeNull();
 	expect(afterQuoteNode!.textContent).toBe('"');
 
-	const beforePrefixNode = termdom.styleManager.createPseudoElementNode(
+	const beforePrefixNode = styleManagerFor(termdom).createPseudoElementNode(
 		note,
 		"::before",
 	);
@@ -133,7 +136,7 @@ test("::marker pseudo-element with lists", async () => {
 	document.body.appendChild(emojiList);
 
 	// Render to terminal
-	await termdom.render();
+	await nextFrame(termdom);
 	const output = terminal.getPlainText();
 
 	// Verify custom markers appear in output (outside positioning is the default)
@@ -144,7 +147,7 @@ test("::marker pseudo-element with lists", async () => {
 	expect(output).toContain("Fire item");
 
 	// Verify StyleManager can get marker content for outside positioning
-	const styleManager = termdom.styleManager;
+	const styleManager = styleManagerFor(termdom);
 
 	const markerContent = styleManager.getMarkerContent(item1);
 	expect(markerContent).not.toBeNull();
@@ -179,7 +182,7 @@ test("Pseudo-element cascade and specificity in rendering", async () => {
 	document.body.appendChild(element);
 
 	// Render to terminal
-	await termdom.render();
+	await nextFrame(termdom);
 	const output = terminal.getPlainText();
 
 	// Should use highest specificity rule (ID selector)
@@ -188,7 +191,6 @@ test("Pseudo-element cascade and specificity in rendering", async () => {
 	expect(output).not.toContain("content: Test message");
 
 	// Verify StyleManager cascade resolution
-	const _styleManager = termdom.styleManager;
 	const beforeStyle = termdom.window.getComputedStyle(element, "::before");
 	expect(beforeStyle.getPropertyValue("content")).toBe('"special: "');
 });
@@ -237,7 +239,7 @@ test.todo(
 		document.body.appendChild(noneEl);
 
 		// Render to terminal
-		await termdom.render();
+		await nextFrame(termdom);
 		const output = terminal.getPlainText();
 
 		// Verify complex content rendering
@@ -245,7 +247,7 @@ test.todo(
 		expect(output).toContain("★ Important");
 
 		// Verify empty/none/normal don't create pseudo-elements
-		const styleManager = termdom.styleManager;
+		const styleManager = styleManagerFor(termdom);
 
 		expect(styleManager.shouldCreatePseudoElement(emptyEl, "::before")).toBe(
 			false,
@@ -283,7 +285,7 @@ test("Pseudo-elements with inline styles override", async () => {
 	document.body.appendChild(element);
 
 	// Render to terminal
-	await termdom.render();
+	await nextFrame(termdom);
 	const output = terminal.getPlainText();
 
 	// Should contain pseudo-element content
@@ -335,7 +337,7 @@ test.todo(
 		list.appendChild(listItem);
 
 		// Use ExpandedTreeWalker to traverse and collect all content
-		const walker = termdom.createExpandedTreeWalker(container);
+		const walker = createExpandedTreeWalker(termdom.window as any, container);
 
 		const traversedContent: string[] = [];
 		let currentNode = walker.nextNode();
@@ -359,7 +361,7 @@ test.todo(
 		expect(allContent).toContain("AFTER");
 
 		// Render and verify final output
-		await termdom.render();
+		await nextFrame(termdom);
 		const output = terminal.getPlainText();
 
 		// The output should contain pseudo-element content in proper document order

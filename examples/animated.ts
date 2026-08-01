@@ -191,4 +191,4 @@ document.addEventListener("keydown", (e: Event) => {
 const interval = setInterval(updateAnimations, 80);
 updateAnimations();
 
-await termdom.render();
+await new Promise<void>((r) => termdom.window.requestAnimationFrame(() => r()));

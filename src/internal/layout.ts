@@ -4,7 +4,14 @@ import type * as FlexTypes from "./flex.js";
 import LineBreaker from "linebreak";
 import {getBoxModel, type BoxModel} from "./styles.js";
 import {getPropertyValue, parseUnitValue} from "./styles.js";
-import {createExpandedTreeWalker, getPseudoMetadata} from "./composition.js";
+import {
+	compositionBoxParentElement,
+	compositionIsConnected,
+	compositionParentElement,
+	compositionShadowRoot,
+	createExpandedTreeWalker,
+	getPseudoMetadata,
+} from "./composition.js";
 import {stringWidth as runtimeStringWidth} from "./runtime.js";
 
 function getAbsolutePosition(flexNode: FlexTypes.Node): {
@@ -21,6 +28,49 @@ function getAbsolutePosition(flexNode: FlexTypes.Node): {
 	}
 
 	return {x, y};
+}
+
+/**
+ * How far a line's content should shift right for text-align:center/right --
+ * left/start/justify all offset zero. (justify -- distributing extra space
+ * between words on a line -- is intentionally not implemented; it would need
+ * to redistribute space during the line-breaking pass itself, not just shift
+ * an already-broken line.)
+ */
+function lineAlignOffset(
+	container: Element | null,
+	containerWidth: number | undefined,
+	lineWidth: number,
+): number {
+	if (!container || containerWidth === undefined) return 0;
+	const align = getPropertyValue(container, "text-align");
+	if (align === "center") return Math.max(0, (containerWidth - lineWidth) / 2);
+	if (align === "right" || align === "end") {
+		return Math.max(0, containerWidth - lineWidth);
+	}
+	return 0;
+}
+
+/**
+ * text-indent shifts only a block's first formatted line. Simplification: this
+ * is added on top of whatever text-align already offsets the line by, rather
+ * than shrinking the line box the way a browser would -- indent's overwhelming
+ * real use (indenting the first line of a left-aligned paragraph) is unaffected
+ * by that difference; indent combined with center/right is rare enough not to
+ * be worth the extra bookkeeping.
+ */
+function lineIndent(
+	isFirstLine: boolean,
+	container: Element | null,
+	containerWidth: number | undefined,
+): number {
+	if (!isFirstLine || !container) return 0;
+	const parsed = parseUnitValue(getPropertyValue(container, "text-indent"));
+	if (parsed === null) return 0;
+	if (typeof parsed === "number") return parsed;
+	return containerWidth === undefined
+		? 0
+		: (parsed.percentage / 100) * containerWidth;
 }
 
 interface EnumMap {
@@ -710,6 +760,13 @@ export interface BreakResult {
 	lines: LineResult[];
 	maxLineWidth: number;
 	totalHeight: number;
+	/**
+	 * The available width lines were broken against, for text-align:center/right
+	 * to offset a line's used width (line.width) within it. Unset when the
+	 * constraint wasn't a finite width (shrink-to-fit content has nothing to
+	 * center/right-align within).
+	 */
+	containerWidth?: number;
 }
 
 interface BreakOptions {
@@ -740,8 +797,13 @@ export interface RectText {
 }
 
 const flexConfig = Flex.Config.create();
-flexConfig.setUseWebDefaults(true);
 flexConfig.setPointScaleFactor(1.0);
+
+// Symbol-keyed so the invalidation test can spy on it (a #private method's
+// internal calls are invisible to a spy). Not on the public LayoutEngine type;
+// index.ts does not re-export it.
+const kInvalidateInlineRun = Symbol("invalidateInlineRun");
+export {kInvalidateInlineRun};
 
 export class LayoutEngine {
 	declare DOMRect: typeof DOMRect;
@@ -756,14 +818,21 @@ export class LayoutEngine {
 	declare viewportRootNode: FlexTypes.Node;
 
 	// Public Maps for debugging
-	public nodeMap: Map<Node, FlexTypes.Node>;
-	public breakResultMap: Map<Node, BreakResult>;
+	nodeMap: Map<Node, FlexTypes.Node>;
+	breakResultMap: Map<Node, BreakResult>;
+
+	// The reverse of nodeMap -- always kept in sync with it via #trackNode/
+	// #untrackNode, never written directly elsewhere. Lets paint-time culling
+	// go from a flex child (found by binary search over its parent's already-
+	// ordered children[]) back to the DOM/pseudo-element node it needs to
+	// paint, without re-deriving that order with a second full tree walk.
+	#domNodeByFlexNode: Map<FlexTypes.Node, Node>;
 
 	// Track nodes that were invalidated and need re-adding during calculateLayout
-	private invalidatedNodes: Set<Node>;
+	#invalidatedNodes: Set<Node>;
 
 	// Track layout nodes that have measure functions (for resize invalidation)
-	private measureNodes: Set<FlexTypes.Node>;
+	#measureNodes: Set<FlexTypes.Node>;
 
 	constructor(window: DOMWindow) {
 		this.window = window;
@@ -771,8 +840,9 @@ export class LayoutEngine {
 		this.rootElement = window.document.documentElement;
 		this.nodeMap = new Map<Node, FlexTypes.Node>();
 		this.breakResultMap = new Map<Node, BreakResult>();
-		this.invalidatedNodes = new Set<Node>();
-		this.measureNodes = new Set<FlexTypes.Node>();
+		this.#domNodeByFlexNode = new Map<FlexTypes.Node, Node>();
+		this.#invalidatedNodes = new Set<Node>();
+		this.#measureNodes = new Set<FlexTypes.Node>();
 
 		// Create viewport root node (no DOM element associated)
 		this.viewportRootNode = Flex.Node.create();
@@ -796,7 +866,7 @@ export class LayoutEngine {
 
 		// Mark all leaf nodes (those with measure functions) as dirty
 		// so the engine re-invokes their measure functions with the new available width
-		for (const flexNode of this.measureNodes) {
+		for (const flexNode of this.#measureNodes) {
 			flexNode.markDirty();
 		}
 
@@ -809,7 +879,7 @@ export class LayoutEngine {
 		// still holds, and even the pruning sweep below -- O(nodes) isConnected
 		// checks -- is not worth paying. Every mutation path dirties the tree on
 		// its way in, so a clean tree cannot be hiding a disconnection.
-		if (!this.viewportRootNode.dirty && this.invalidatedNodes.size === 0) {
+		if (!this.viewportRootNode.dirty && this.#invalidatedNodes.size === 0) {
 			return;
 		}
 
@@ -821,21 +891,25 @@ export class LayoutEngine {
 		this.#pruneDisconnectedNodes();
 
 		// Re-add invalidated nodes that are still connected to DOM
-		for (const node of this.invalidatedNodes) {
+		for (const node of this.#invalidatedNodes) {
 			if (node.isConnected) {
-				// Find parent that has a layout node to attach to
-				let parent = node.parentElement;
+				// Find parent that has a layout node to attach to. The composed
+				// parent, not parentElement: a shadow root's direct child has no
+				// parentElement at all, and a rebuilt shadow subtree (slot
+				// reassignment, attachShadow on a connected host) would silently
+				// never re-attach.
+				let parent = compositionParentElement(node);
 				while (parent) {
 					const parentFlexNode = this.nodeMap.get(parent);
 					if (parentFlexNode) {
 						this.#addNode(node, parentFlexNode);
 						break;
 					}
-					parent = parent.parentElement;
+					parent = compositionParentElement(parent);
 				}
 			}
 		}
-		this.invalidatedNodes.clear();
+		this.#invalidatedNodes.clear();
 
 		// Every mutation path marks the flex tree dirty on its way in -- style
 		// setters, child insertion/removal, inline-run invalidation, resize. A
@@ -875,11 +949,11 @@ export class LayoutEngine {
 				parent.removeChild(flexNode);
 			}
 
-			this.measureNodes.delete(flexNode);
+			this.#measureNodes.delete(flexNode);
 			flexNode.freeRecursive();
-			this.nodeMap.delete(node);
+			this.#untrackNode(node);
 			this.breakResultMap.delete(node);
-			this.invalidatedNodes.delete(node);
+			this.#invalidatedNodes.delete(node);
 		}
 	}
 
@@ -893,8 +967,9 @@ export class LayoutEngine {
 		// Clear the maps (now regular Maps for debugging)
 		this.nodeMap = new Map();
 		this.breakResultMap = new Map();
-		this.invalidatedNodes = new Set();
-		this.measureNodes = new Set();
+		this.#domNodeByFlexNode = new Map();
+		this.#invalidatedNodes = new Set();
+		this.#measureNodes = new Set();
 	}
 
 	/**
@@ -922,6 +997,91 @@ export class LayoutEngine {
 		const node = this.nodeMap.get(element);
 		if (!node) return false;
 		return node.extentBottom <= top || node.extentTop >= bottom;
+	}
+
+	/**
+	 * The direct DOM/pseudo-element children of `element` whose paint extent
+	 * could intersect document rows [top, bottom), in document order -- found
+	 * with a binary search instead of visiting every child, which is what let
+	 * paint-time culling of a long list cost O(total children) per frame
+	 * instead of O(visible children). Returns null when that search can't be
+	 * trusted: children[] is only guaranteed sorted top-to-bottom by extentTop
+	 * when the container stacks its children vertically in document order
+	 * (flex-direction: column -- block flow's internal representation here,
+	 * see styleFlexNode) and none of them is position:relative/absolute
+	 * (either can land anywhere regardless of DOM order). Callers fall back to
+	 * walking every child themselves in that case, identical to before this
+	 * existed.
+	 */
+	visibleChildrenInBand(
+		element: Element,
+		top: number,
+		bottom: number,
+	): Node[] | null {
+		const flexNode = this.nodeMap.get(element);
+		if (
+			!flexNode ||
+			// A measure-function leaf (an inline/inline-block run head) never gets
+			// its DOM children added to the layout tree at all -- they're measured
+			// as an opaque unit, not walked -- so an empty children[] here means
+			// "not decomposed," not "confirmed nothing to paint." Its real DOM
+			// children (e.g. the run head's own text) still need the walker below.
+			flexNode.measureFunc !== null ||
+			flexNode.unstackedChildCount !== 0 ||
+			flexNode.getFlexDirection() !== Flex.FLEX_DIRECTION_COLUMN ||
+			// A non-run-head member of an inline run (a plain <span> inside
+			// running text, but also -- unlike that span -- an inline-block
+			// sibling, which paints its own box independently rather than
+			// through the run head's text) never gets its own flex node either;
+			// it's counted zero times here despite being a real DOM child. Cheap
+			// proxy for "every DOM child has exactly one children[] entry,"
+			// without walking to find out: pseudo-elements/shadow content
+			// widen this the other way (present in children[], absent from
+			// childNodes), so it's an equality check, not just child count.
+			element.childNodes.length !== flexNode.children.length ||
+			// A shadow host's childNodes are its LIGHT children, unrelated to
+			// the composed children the layout tree holds -- the counts can
+			// collide by accident (1 light child, 1 run head) and the fast
+			// path then paints an incomplete child list. Hosts always take the
+			// walker.
+			compositionShadowRoot(element) !== null
+		) {
+			return null;
+		}
+
+		const children = flexNode.children;
+		let lo = 0;
+		let hi = children.length;
+		while (lo < hi) {
+			const mid = (lo + hi) >>> 1;
+			if (children[mid].extentBottom <= top) {
+				lo = mid + 1;
+			} else {
+				hi = mid;
+			}
+		}
+
+		const result: Node[] = [];
+		for (let i = lo; i < children.length; i++) {
+			const child = children[i];
+			if (child.extentTop >= bottom) break;
+			const domNode = this.#domNodeByFlexNode.get(child);
+			if (domNode) result.push(domNode);
+		}
+		return result;
+	}
+
+	#trackNode(domNode: Node, flexNode: FlexTypes.Node): void {
+		this.nodeMap.set(domNode, flexNode);
+		this.#domNodeByFlexNode.set(flexNode, domNode);
+	}
+
+	#untrackNode(domNode: Node): void {
+		const flexNode = this.nodeMap.get(domNode);
+		if (flexNode) {
+			this.#domNodeByFlexNode.delete(flexNode);
+		}
+		this.nodeMap.delete(domNode);
 	}
 
 	getRect(element: Element): DOMRect | null {
@@ -1034,11 +1194,16 @@ export class LayoutEngine {
 								segment.leaf.node === element &&
 								segment.leaf.breakResult
 							) {
-								// Extract text from the nested breakResult
+								// Extract text from the nested breakResult. Content
+								// starts after border AND padding -- the border
+								// occupies real cells.
 								const nestedBreakResult = segment.leaf.breakResult;
-								// Get padding offsets for text positioning
-								const paddingLeft = segment.leaf.boxModel.paddingLeft;
-								const paddingTop = segment.leaf.boxModel.paddingTop;
+								const paddingLeft =
+									segment.leaf.boxModel.paddingLeft +
+									segment.leaf.boxModel.borderLeftWidth;
+								const paddingTop =
+									segment.leaf.boxModel.paddingTop +
+									segment.leaf.boxModel.borderTopWidth;
 								for (const nestedLine of nestedBreakResult.lines) {
 									for (const nestedSegment of nestedLine.segments) {
 										if (nestedSegment.leaf.type === "text") {
@@ -1061,9 +1226,11 @@ export class LayoutEngine {
 											// Recursively extract text from nested inline-block
 											const nestedInlineBlock = nestedSegment.leaf;
 											const nestedPaddingLeft =
-												nestedInlineBlock.boxModel.paddingLeft;
+												nestedInlineBlock.boxModel.paddingLeft +
+												nestedInlineBlock.boxModel.borderLeftWidth;
 											const nestedPaddingTop =
-												nestedInlineBlock.boxModel.paddingTop;
+												nestedInlineBlock.boxModel.paddingTop +
+												nestedInlineBlock.boxModel.borderTopWidth;
 
 											for (const innerLine of nestedInlineBlock.breakResult!
 												.lines) {
@@ -1127,9 +1294,18 @@ export class LayoutEngine {
 		let accumulatedOffsetX = 0;
 		let accumulatedOffsetY = 0;
 		let currentNode = node;
+		// The element whose text-align governs this breakResult's lines -- the
+		// block container normally, but an inline-block's own style once the walk
+		// below descends into its nested breakResult, since that's a fresh inline
+		// formatting context with its own alignment.
+		let alignContainer: Element | null = compositionParentElement(runHead);
 
-		while (currentNode !== runHead && currentNode.parentElement) {
-			const parent = currentNode.parentElement;
+		// COMPOSITION parents: a widget's UA shadow text has no parentElement
+		// chain to its host at all, and the walk used to stop dead at the
+		// shadow boundary -- the value of every textarea resolved to zero
+		// fragments and painted nothing.
+		while (currentNode !== runHead && compositionParentElement(currentNode)) {
+			const parent = compositionParentElement(currentNode)!;
 
 			if (getPropertyValue(parent, "display") === "inline-block") {
 				// Find this inline-block in current breakResult
@@ -1140,12 +1316,20 @@ export class LayoutEngine {
 							segment.leaf.type === "inline-block" &&
 							segment.leaf.node === parent
 						) {
-							// Accumulate offset including padding and switch to internal breakResult
+							// Accumulate offset to the CONTENT edge -- border and
+							// padding both occupy cells -- and switch to the
+							// internal breakResult.
 							accumulatedOffsetX +=
-								segment.x + segment.leaf.boxModel.paddingLeft;
-							accumulatedOffsetY += line.y + segment.leaf.boxModel.paddingTop;
+								segment.x +
+								segment.leaf.boxModel.paddingLeft +
+								segment.leaf.boxModel.borderLeftWidth;
+							accumulatedOffsetY +=
+								line.y +
+								segment.leaf.boxModel.paddingTop +
+								segment.leaf.boxModel.borderTopWidth;
 							if (segment.leaf.breakResult) {
 								currentBreakResult = segment.leaf.breakResult;
+								alignContainer = parent;
 							}
 							found = true;
 							break;
@@ -1237,8 +1421,19 @@ export class LayoutEngine {
 					concatenatedText += targetText.text;
 				}
 
+				const alignOffset = lineAlignOffset(
+					alignContainer,
+					currentBreakResult.containerWidth,
+					line.width,
+				);
+				const indent = lineIndent(
+					line === currentBreakResult.lines[0],
+					alignContainer,
+					currentBreakResult.containerWidth,
+				);
+
 				const rect = new this.DOMRect(
-					containerX + minX,
+					containerX + minX + alignOffset + indent,
 					containerY + line.y,
 					maxX - minX,
 					line.height,
@@ -1311,8 +1506,10 @@ export class LayoutEngine {
 	 * text nodes and can participate in inline runs.
 	 */
 	findInlineRunHead(node: Node): Node | null {
-		// 1. Validate input
-		if (!node.isConnected) {
+		// 1. Validate input. Composition-connected, not isConnected: a UA
+		// shadow tree's parts live in a fragment and are never DOM-connected,
+		// but they render (and measure, and invalidate) like anything else.
+		if (!compositionIsConnected(node)) {
 			// For pseudo elements, check if the host element is connected
 			const pseudoMetadata = getPseudoMetadata(node);
 			if (!pseudoMetadata || !pseudoMetadata.hostElement.isConnected) {
@@ -1370,9 +1567,9 @@ export class LayoutEngine {
 
 		// 4. Reset walker to current position and check container type
 		walker.currentNode = current;
+		const runParent = compositionBoxParentElement(current);
 		const isInFlex =
-			current.parentElement &&
-			getPropertyValue(current.parentElement, "display") === "flex";
+			runParent && getPropertyValue(runParent, "display") === "flex";
 
 		if (isInFlex) {
 			// 5a. Flex container traversal
@@ -1423,11 +1620,11 @@ export class LayoutEngine {
 	 */
 	invalidate(node: Node): void {
 		// Track this node for re-adding during calculateLayout
-		this.invalidatedNodes.add(node);
+		this.#invalidatedNodes.add(node);
 
 		// If it's an inline-level node, invalidate the entire run
 		if (this.#isInlineLevel(node)) {
-			this.#invalidateInlineRun(node);
+			this[kInvalidateInlineRun](node);
 		} else if (node.nodeType === node.ELEMENT_NODE) {
 			// For block-level elements, remove from nodeMap to force recreation
 			// We can't call markDirty() on container nodes as the engine only allows
@@ -1443,9 +1640,9 @@ export class LayoutEngine {
 				// Check if node was actually removed vs just being invalidated (e.g., for pseudo-elements)
 				if (!node.isConnected) {
 					// Node was truly removed from DOM - free it
-					this.measureNodes.delete(flexNode);
+					this.#measureNodes.delete(flexNode);
 					flexNode.freeRecursive();
-					this.nodeMap.delete(node);
+					this.#untrackNode(node);
 				} else {
 					// Node is still connected - just remove from parent but keep the layout
 					// node for reuse. It will be reattached during layout calculation.
@@ -1455,6 +1652,23 @@ export class LayoutEngine {
 					// markers, so appending a wider item changes the parent's computed
 					// padding, and reusing the node as-is would keep the stale gutter.
 					styleFlexNode(node as Element, flexNode);
+
+					// Sever its current flex CHILDREN too: this element's composed
+					// child set may have changed wholesale (attachShadow on a host
+					// that was already rendering its light children), and reusing
+					// the node with stale children keeps painting content that is
+					// no longer composed. Children that remain in the composed tree
+					// are re-invalidated by the recursion below and reattach
+					// through calculateLayout's re-add sweep; the rest stay
+					// tracked-but-detached, exactly like a moved node.
+					while (flexNode.children.length > 0) {
+						const childFlexNode = flexNode.children[0];
+						flexNode.removeChild(childFlexNode);
+						const childDomNode = this.#domNodeByFlexNode.get(childFlexNode);
+						if (childDomNode) {
+							this.#clearBreakResultCache(childDomNode);
+						}
+					}
 				}
 			}
 
@@ -1534,7 +1748,41 @@ export class LayoutEngine {
 		return null;
 	}
 
-	#invalidateInlineRun(node: Node): void {
+	/**
+	 * Invalidate the MEASURE that contains a node, without touching the
+	 * layout tree's shape. The full run invalidation (below) also ensures
+	 * the run head owns a layout node -- correct at flex level, but a
+	 * NESTED inline-block is a run head only inside its parent's
+	 * measurement, and manufacturing a layout node for it would insert a
+	 * child under a measure-function node. This walks to the nearest
+	 * ancestor that actually owns a measuring flex node, clears the cached
+	 * break results on the way, and dirties it.
+	 */
+	#invalidateEnclosingMeasure(node: Node): void {
+		const runHead = this.findInlineRunHead(node);
+		if (runHead) {
+			this.breakResultMap.delete(runHead);
+			const headFlexNode = this.nodeMap.get(runHead);
+			if (headFlexNode && headFlexNode.measureFunc) {
+				headFlexNode.markDirty();
+				return;
+			}
+		}
+		let current = compositionBoxParentElement(node);
+		while (current) {
+			const flexNode = this.nodeMap.get(current);
+			if (flexNode) {
+				this.breakResultMap.delete(current);
+				if (flexNode.measureFunc) {
+					flexNode.markDirty();
+				}
+				return;
+			}
+			current = compositionBoxParentElement(current);
+		}
+	}
+
+	[kInvalidateInlineRun](node: Node): void {
 		const runHead = this.findInlineRunHead(node);
 		if (runHead) {
 			// Clear ALL break results for nodes in this inline run
@@ -1561,9 +1809,9 @@ export class LayoutEngine {
 					if (pseudoMeta) {
 						// Removing pseudo element from nodeMap during invalidateInlineRun cleanup
 					}
-					this.measureNodes.delete(flexNode);
+					this.#measureNodes.delete(flexNode);
 					flexNode.freeRecursive();
-					this.nodeMap.delete(node);
+					this.#untrackNode(node);
 				}
 			}
 
@@ -1663,7 +1911,7 @@ export class LayoutEngine {
 		return false;
 	}
 
-	public handleMutations(mutations: MutationRecord[]): void {
+	handleMutations(mutations: MutationRecord[]): void {
 		this.#handleMutationRecords(mutations);
 	}
 
@@ -1677,7 +1925,26 @@ export class LayoutEngine {
 					if (flexNode) {
 						styleFlexNode(element, flexNode);
 						// Invalidate inline runs if style changes might affect layout
-						this.#invalidateInlineRun(element);
+						this[kInvalidateInlineRun](element);
+					} else {
+						// No flex node: an inline run MEMBER (or a shadow part).
+						// Its style feeds the enclosing measurement -- and the
+						// element itself may have just become display:none (a
+						// textarea's placeholder hiding), which makes its own
+						// run head unresolvable, so the walk starts from the
+						// box parent chain when needed.
+						this.#invalidateEnclosingMeasure(element);
+					}
+				} else if (record.attributeName === "slot") {
+					// Reassigning a slot moves the node in the COMPOSED tree while
+					// the light tree stands still -- no childList record will ever
+					// arrive. Both the run it left and the run it joined are stale,
+					// and the old slot isn't recoverable statelessly (jsdom has
+					// already reassigned), so rebuild the host's whole composed
+					// subtree; slot reassignment is rare enough for the hammer.
+					const host = (record.target as Element).parentElement;
+					if (host && compositionShadowRoot(host)) {
+						this.invalidate(host);
 					}
 				}
 				// On to the next record -- returning here would silently drop every
@@ -1687,19 +1954,30 @@ export class LayoutEngine {
 			} else if (record.type === "characterData") {
 				const textNode = record.target as Text;
 				// Invalidate the inline run containing this text node
-				this.#invalidateInlineRun(textNode);
+				this[kInvalidateInlineRun](textNode);
 				continue;
 			}
 
 			// Handle added nodes
 			for (let j = 0; j < record.addedNodes.length; j++) {
 				const node = record.addedNodes[j];
-				const parentElement = record.target as Element;
+				// A mutation at a shadow root's top level reports the ROOT as
+				// its target; for layout its children belong to the HOST.
+				const parentElement =
+					record.target.nodeType === 11 && (record.target as ShadowRoot).host
+						? (record.target as ShadowRoot).host
+						: (record.target as Element);
 				const parentFlexNode = this.nodeMap.get(parentElement);
 
-				// Skip adding children if parent is inline-block (it uses measure function and cannot have children)
+				// An inline-block parent gets no layout-tree children (it measures
+				// as a unit), but the addition still changes what that unit
+				// measures -- a widget's UA tree populating, a label gaining a
+				// span. Invalidate the enclosing MEASURE (never the run-head
+				// machinery: a nested inline-block must not be given a layout
+				// node of its own).
 				const parentDisplay = getPropertyValue(parentElement, "display");
 				if (parentDisplay === "inline-block") {
+					this.#invalidateEnclosingMeasure(parentElement);
 					continue;
 				}
 
@@ -1707,14 +1985,22 @@ export class LayoutEngine {
 					// If parent has no layout node, it might be an inline element that's part of a run
 					// Instead of adding to the layout tree, just invalidate the inline run
 					if (this.#isInlineLevel(node)) {
-						this.#invalidateInlineRun(node);
-						this.#invalidateInlineRun(parentElement); // Also invalidate parent's run
+						this[kInvalidateInlineRun](node);
+						this[kInvalidateInlineRun](parentElement); // Also invalidate parent's run
 						continue; // Skip normal layout tree addition
+					} else if (!parentElement.isConnected) {
+						// The parent isn't in the document yet -- its own
+						// arrival later in this batch (or a later one) walks
+						// composed children and picks this node up. Shadow
+						// trees hit this ordering routinely: attachShadow +
+						// populate fire records before the host's append.
+						continue;
 					} else {
-						// Block elements should have parents with layout nodes
-						throw new Error(
-							`No parent layout node found for added node ${node.nodeName} under ${parentElement.tagName}`,
-						);
+						// Connected parent with no layout node: defer to the
+						// calculateLayout re-add sweep rather than throwing --
+						// it walks up for the nearest laid-out ancestor.
+						this.#invalidatedNodes.add(node);
+						continue;
 					}
 				}
 
@@ -1724,28 +2010,28 @@ export class LayoutEngine {
 				// Invalidate inline runs that might be affected by this addition
 				if (this.#isInlineLevel(node)) {
 					// If adding an inline node, invalidate the run it joins
-					this.#invalidateInlineRun(node);
+					this[kInvalidateInlineRun](node);
 
 					// Also check if this changes the run head of existing runs
 					const nextSibling = node.nextSibling;
 					if (nextSibling && this.#isInlineLevel(nextSibling)) {
-						this.#invalidateInlineRun(nextSibling);
+						this[kInvalidateInlineRun](nextSibling);
 					}
 
 					const prevSibling = node.previousSibling;
 					if (prevSibling && this.#isInlineLevel(prevSibling)) {
-						this.#invalidateInlineRun(prevSibling);
+						this[kInvalidateInlineRun](prevSibling);
 					}
 				} else {
 					// Block element added - might split inline runs
 					const nextSibling = node.nextSibling;
 					if (nextSibling && this.#isInlineLevel(nextSibling)) {
-						this.#invalidateInlineRun(nextSibling);
+						this[kInvalidateInlineRun](nextSibling);
 					}
 
 					const prevSibling = node.previousSibling;
 					if (prevSibling && this.#isInlineLevel(prevSibling)) {
-						this.#invalidateInlineRun(prevSibling);
+						this[kInvalidateInlineRun](prevSibling);
 					}
 				}
 			}
@@ -1761,10 +2047,10 @@ export class LayoutEngine {
 					record.previousSibling &&
 					this.#isInlineLevel(record.previousSibling)
 				) {
-					this.#invalidateInlineRun(record.previousSibling);
+					this[kInvalidateInlineRun](record.previousSibling);
 				}
 				if (record.nextSibling && this.#isInlineLevel(record.nextSibling)) {
-					this.#invalidateInlineRun(record.nextSibling);
+					this[kInvalidateInlineRun](record.nextSibling);
 				}
 
 				this.#removeNode(node, parent);
@@ -1785,7 +2071,7 @@ export class LayoutEngine {
 						currentParent.removeChild(existingFlexNode);
 					}
 					// Add to new parent
-					const flexIndex = this.#getFlexIndex(node as Element);
+					const flexIndex = this.#getFlexIndex(node as Element, parentFlexNode);
 					parentFlexNode.insertChild(existingFlexNode, flexIndex);
 				}
 			}
@@ -1803,7 +2089,7 @@ export class LayoutEngine {
 		element: Element,
 		parentFlexNode: FlexTypes.Node | null = null,
 	): void {
-		const flexIndex = this.#getFlexIndex(element);
+		const flexIndex = this.#getFlexIndex(element, parentFlexNode);
 		const display = getPropertyValue(element, "display");
 
 		// For inline elements, we need to find or create the run head
@@ -1825,7 +2111,7 @@ export class LayoutEngine {
 		let flexNode = this.nodeMap.get(element);
 		if (!flexNode) {
 			flexNode = Flex.Node.createWithConfig(flexConfig);
-			this.nodeMap.set(element, flexNode);
+			this.#trackNode(element, flexNode);
 		}
 
 		styleFlexNode(element, flexNode);
@@ -1846,7 +2132,7 @@ export class LayoutEngine {
 					heightMode,
 				);
 			});
-			this.measureNodes.add(flexNode);
+			this.#measureNodes.add(flexNode);
 
 			// Note: Automatic minimum size for flex items is now handled in measureInlineRun
 
@@ -1916,7 +2202,7 @@ export class LayoutEngine {
 		let flexNode = this.nodeMap.get(text);
 		if (!flexNode) {
 			flexNode = Flex.Node.createWithConfig(flexConfig);
-			this.nodeMap.set(text, flexNode);
+			this.#trackNode(text, flexNode);
 		}
 
 		flexNode.setMeasureFunc(
@@ -1935,7 +2221,7 @@ export class LayoutEngine {
 				);
 			},
 		);
-		this.measureNodes.add(flexNode);
+		this.#measureNodes.add(flexNode);
 
 		// Note: Automatic minimum size for flex items is now handled in measureInlineRun
 
@@ -1979,9 +2265,9 @@ export class LayoutEngine {
 				if (pseudoMeta) {
 					// Removing pseudo element from nodeMap during mutation removal
 				}
-				this.measureNodes.delete(flexNode);
+				this.#measureNodes.delete(flexNode);
 				flexNode.freeRecursive();
-				this.nodeMap.delete(element);
+				this.#untrackNode(element);
 			}
 			// If element.isConnected is true, element was moved - keep layout node and nodeMap entry
 			// It will be re-added to the new parent when that mutation is processed
@@ -2009,9 +2295,9 @@ export class LayoutEngine {
 			// Check if text was actually removed vs just moved
 			if (!text.isConnected) {
 				// Text was truly removed from DOM - free it
-				this.measureNodes.delete(flexNode);
+				this.#measureNodes.delete(flexNode);
 				flexNode.freeRecursive();
-				this.nodeMap.delete(text);
+				this.#untrackNode(text);
 			}
 		}
 
@@ -2039,19 +2325,74 @@ export class LayoutEngine {
 
 		while (child) {
 			if (this.#isInlineLevel(child)) {
-				this.#invalidateInlineRun(child);
+				this[kInvalidateInlineRun](child);
 			}
 			child = walker.nextSibling();
 		}
 	}
 
-	#getFlexIndex(element: Element): number {
-		if (!element.parentElement) {
+	#getFlexIndex(
+		element: Element,
+		parentFlexNode: FlexTypes.Node | null,
+	): number {
+		// Composition parent, not parentElement: a shadow root's child has no
+		// parentElement, and returning 0 for every one inserted each at the
+		// FRONT -- shadow children rendered in reverse document order. The
+		// CHEAP flat parent suffices here: the fast path below only needs a
+		// walker root somewhere above the element (previousSibling hops never
+		// consult it), and the box-parent resolution -- a computed-style read
+		// per ancestor -- is deferred to the slow path, off the hot
+		// sequential-append route.
+		const compositionParent = compositionParentElement(element);
+		if (!compositionParent) {
 			return 0;
 		}
 
-		// Use the same expanded tree walker as addElementNode to ensure consistency
-		const walker = createExpandedTreeWalker(this.window, element.parentElement);
+		// Fast path: walk backward from element for the nearest preceding
+		// sibling that already has a flex node, and reuse its position.
+		// Sequential building -- pushing rows into a list/tree in document
+		// order, by far the common case -- finds one on the very first step:
+		// the immediately preceding sibling was just added moments before by
+		// this same mutation-processing pass. getChildIndex searches from the
+		// tail for the same reason (a just-added node sits at or near the
+		// end), so the whole thing is O(1) instead of re-walking every earlier
+		// sibling from the start on every single insertion -- which is what
+		// made appending N children one at a time cost O(N) each, O(N^2) total
+		// (measured: 44 seconds of handleMutations alone for 8,000 sequential
+		// appends into one parent). Falls through to the full forward walk
+		// below only when no tracked sibling is found nearby (inserting at
+		// the front, or a run of skipped inline elements) -- correctness
+		// matches it exactly, since both count only siblings with a flex node.
+		if (parentFlexNode) {
+			const backward = createExpandedTreeWalker(this.window, compositionParent);
+			backward.currentNode = element;
+			let prev = backward.previousSibling();
+			while (prev) {
+				let skippedInline = false;
+				if (prev.nodeType === prev.ELEMENT_NODE) {
+					const display = getPropertyValue(prev as Element, "display");
+					skippedInline =
+						(display === "inline" || display === "inline-block") &&
+						!this.isInlineRunHead(prev as Element);
+				}
+				if (!skippedInline) {
+					const prevFlexNode = this.nodeMap.get(prev);
+					if (prevFlexNode) {
+						const idx = parentFlexNode.getChildIndex(prevFlexNode);
+						if (idx !== -1) return idx + 1;
+						break; // stale mapping -- fall back to the full walk
+					}
+				}
+				prev = backward.previousSibling();
+			}
+		}
+
+		// Use the same expanded tree walker as addElementNode to ensure
+		// consistency. The full forward walk enumerates BOX siblings, so it
+		// roots at the box parent -- the slot a projected element sits in
+		// generates no box, and rooting there would miss its box siblings.
+		const boxParent = compositionBoxParentElement(element) ?? compositionParent;
+		const walker = createExpandedTreeWalker(this.window, boxParent);
 
 		let flexIndex = 0;
 		let sibling = walker.firstChild();
@@ -2101,6 +2442,9 @@ export class LayoutEngine {
 			height,
 			heightMode,
 		);
+		if (Number.isFinite(width)) {
+			breakResult.containerWidth = width;
+		}
 
 		// Store the BreakResult for later use by getRects()
 		this.breakResultMap.set(node, breakResult);
@@ -2115,16 +2459,41 @@ export class LayoutEngine {
 
 	// Inline layout methods (moved from breaker.ts)
 	// TODO: Many of these methods could be regular functions
-	#collectLeafNodes(runHead: Node): Leaf[] {
+	/**
+	 * The first composed (flat-tree) child that can start an inline run:
+	 * shadow content for hosts, projected content through slots, skipping
+	 * display:none elements -- a UA shadow tree's <style> would otherwise
+	 * terminate leaf collection at position zero.
+	 */
+	#firstComposedRenderableChild(element: Element): Node | null {
+		const walker = createExpandedTreeWalker(this.window, element);
+		for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
+			if (
+				child.nodeType === child.ELEMENT_NODE &&
+				getPropertyValue(child as Element, "display") === "none"
+			) {
+				continue;
+			}
+			return child;
+		}
+		return null;
+	}
+
+	#collectLeafNodes(runHead: Node, availableWidth: number): Leaf[] {
 		const leafNodes: Leaf[] = [];
 
 		// For pseudo elements, use the host element as the parent
 		const pseudoMetadata = getPseudoMetadata(runHead);
 		const parentElement = pseudoMetadata
 			? pseudoMetadata.hostElement
-			: runHead.parentElement;
+			: compositionBoxParentElement(runHead);
 
-		// Inline run heads should always have a parent element
+		// Inline run heads should always have a parent element (a shadow
+		// root's direct child resolves to its HOST -- a ShadowRoot is not an
+		// Element, and this exact spot crashed on native attachShadow content
+		// before compositionParentElement existed). The BOX parent: rooting
+		// the walk at a display:contents slot would truncate the run at the
+		// slot's edge, and the run may extend past it.
 		if (!parentElement) {
 			throw new Error("Inline run head must have a parent element");
 		}
@@ -2188,6 +2557,32 @@ export class LayoutEngine {
 					// Parse CSS box model properties
 					const boxModel = getBoxModel(element);
 
+					// getBoxModel only carries absolute widths; a percentage
+					// resolves here, against the run's available width -- the
+					// containing block's content width by the time layout asks.
+					// This is what lets `input { width: 100% }` (TodoMVC's own
+					// stylesheet) fill its container instead of collapsing to a
+					// void element's contentless zero. Against an indefinite
+					// width (a min-content probe offers 0, which IS definite and
+					// correctly resolves a percentage to 0), auto behavior falls
+					// through as before, per CSS.
+					if (boxModel.width === undefined) {
+						const widthValue = parseUnitValue(
+							getPropertyValue(element, "width"),
+						);
+						if (
+							widthValue !== null &&
+							typeof widthValue === "object" &&
+							Number.isFinite(availableWidth) &&
+							availableWidth < Number.MAX_SAFE_INTEGER
+						) {
+							boxModel.width = Math.max(
+								0,
+								Math.round((widthValue.percentage / 100) * availableWidth),
+							);
+						}
+					}
+
 					// Calculate available content dimensions
 					const horizontalBoxSpace =
 						boxModel.paddingLeft +
@@ -2216,11 +2611,18 @@ export class LayoutEngine {
 						contentHeightMode = Flex.MEASURE_MODE_EXACTLY;
 					}
 
-					// Recursively measure inline-block content with constraints
+					// Recursively measure inline-block content with constraints.
+					// The COMPOSED first child, not element.firstChild: an
+					// inline-block shadow host (author tree or a widget's UA
+					// tree) renders its shadow content, and measuring the light
+					// children sized every such host to zero. display:none
+					// children (a UA tree's <style>, chiefly) can't start the
+					// run -- they'd terminate leaf collection before it began.
+					const contentStart = this.#firstComposedRenderableChild(element);
 					let inlineBlockResult: BreakResult | undefined;
-					if (element.firstChild) {
+					if (contentStart) {
 						inlineBlockResult = this.#breakNodes(
-							element.firstChild,
+							contentStart,
 							contentWidth,
 							contentWidthMode,
 							contentHeight,
@@ -2232,9 +2634,53 @@ export class LayoutEngine {
 					let finalContentWidth = inlineBlockResult?.maxLineWidth ?? 0;
 					let finalContentHeight = inlineBlockResult?.totalHeight ?? 0;
 
-					// Void elements (input, br, etc.) with no children get a minimum height of 1
+					// Void elements (input, br, etc.) with no LIGHT children keep a
+					// minimum height of 1 -- an input whose UA parts are all empty
+					// text still occupies its row.
 					if (!element.firstChild && finalContentHeight === 0) {
 						finalContentHeight = 1;
+					}
+
+					// min/max constraints clamp the measured content. This leaf IS
+					// where an inline-block's box gets its size (the flex node
+					// only ever reports the whole run), so min-height on a
+					// textarea -- or any author inline-block -- lands here.
+					// Values are border-box, like width; convert to content-box.
+					const minWidthValue = parseUnitValue(
+						getPropertyValue(element, "min-width"),
+					);
+					if (typeof minWidthValue === "number") {
+						finalContentWidth = Math.max(
+							finalContentWidth,
+							minWidthValue - horizontalBoxSpace,
+						);
+					}
+					const minHeightValue = parseUnitValue(
+						getPropertyValue(element, "min-height"),
+					);
+					if (typeof minHeightValue === "number") {
+						finalContentHeight = Math.max(
+							finalContentHeight,
+							minHeightValue - verticalBoxSpace,
+						);
+					}
+					const maxWidthValue = parseUnitValue(
+						getPropertyValue(element, "max-width"),
+					);
+					if (typeof maxWidthValue === "number") {
+						finalContentWidth = Math.min(
+							finalContentWidth,
+							maxWidthValue - horizontalBoxSpace,
+						);
+					}
+					const maxHeightValue = parseUnitValue(
+						getPropertyValue(element, "max-height"),
+					);
+					if (typeof maxHeightValue === "number") {
+						finalContentHeight = Math.min(
+							finalContentHeight,
+							maxHeightValue - verticalBoxSpace,
+						);
 					}
 
 					// If explicit dimensions were set, use those instead of measured content
@@ -2264,6 +2710,12 @@ export class LayoutEngine {
 				} else if (display === "inline") {
 					// Inline element - traverse into its children
 					if (!walker.nextNode()) break;
+				} else if (display === "none") {
+					// display:none generates no box and does NOT interrupt the
+					// run -- a hidden sibling (a widget's blanked placeholder
+					// part, an author's toggled span) is invisible to it, as in
+					// a browser. Skip the subtree, keep collecting.
+					if (!walker.nextSibling()) break;
 				} else {
 					// Block element - stop traversal
 					break;
@@ -2284,8 +2736,14 @@ export class LayoutEngine {
 		_height: number,
 		_heightMode: FlexTypes.MeasureMode,
 	): BreakResult {
-		// Collect leaf nodes from the run head
-		const leafNodes = this.#collectLeafNodes(runHead);
+		// Collect leaf nodes from the run head. An UNDEFINED width offer means
+		// "measure your natural size" -- indefinite, so percentage widths in
+		// the run cannot resolve against it (NaN); any definite offer,
+		// including an AT_MOST 0 min-content probe, resolves them.
+		const leafNodes = this.#collectLeafNodes(
+			runHead,
+			widthMode === Flex.MEASURE_MODE_UNDEFINED ? NaN : width,
+		);
 
 		// Handle empty case
 		if (leafNodes.length === 0) {
@@ -2298,7 +2756,7 @@ export class LayoutEngine {
 		const styleElement = pseudoMetadata
 			? pseudoMetadata.hostElement
 			: runHead.nodeType === runHead.TEXT_NODE
-				? runHead.parentElement!
+				? compositionParentElement(runHead)!
 				: (runHead as Element);
 
 		// Get default CSS properties from the run head element
@@ -2688,10 +3146,15 @@ export class LayoutEngine {
 				if (item.leafNode.type === "text" && item.processedContent) {
 					const relativeStart = itemStart - item.start;
 					const relativeEnd = itemEnd - item.start;
-					const portion = item.processedContent.slice(
-						relativeStart,
-						relativeEnd,
-					);
+					// A preserved newline is a BREAK, never a glyph: lines split
+					// right after it, so it can only ever sit at the segment's
+					// tail -- and a literal \n reaching the painter would feed
+					// the terminal a raw line feed, shifting every later cell
+					// of the frame (visualToDataOffsets already maps a break to
+					// "nothing", so offsets stay aligned).
+					const portion = item.processedContent
+						.slice(relativeStart, relativeEnd)
+						.replace(/\n+$/, "");
 					width = runtimeStringWidth(portion);
 
 					nodes.push({

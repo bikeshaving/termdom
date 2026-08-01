@@ -24,6 +24,7 @@ style.textContent = `
   .done .text { text-decoration: underline; }
   .delete-btn { color: red; }
   .status { color: yellow; }
+  .index { color: #666; }
 `;
 document.head.appendChild(style);
 
@@ -79,9 +80,15 @@ app.appendChild(statusBar);
 function renderTodos() {
 	todoList.innerHTML = "";
 
-	for (const todo of todos) {
+	for (const [index, todo] of todos.entries()) {
 		const item = document.createElement("div");
 		item.className = "todo-item" + (todo.done ? " done" : "");
+
+		// Only the first 9 are reachable by the 1-9 toggle/delete keys, so
+		// only those get a number -- a 10th item's number would be a lie.
+		const number = document.createElement("span");
+		number.className = "index";
+		number.textContent = index < 9 ? `${index + 1}.` : "  ";
 
 		const checkbox = document.createElement("span");
 		checkbox.textContent = todo.done ? "[x]" : "[ ]";
@@ -94,6 +101,7 @@ function renderTodos() {
 		del.className = "delete-btn";
 		del.textContent = "(d)";
 
+		item.appendChild(number);
 		item.appendChild(checkbox);
 		item.appendChild(text);
 		item.appendChild(del);
@@ -135,6 +143,22 @@ let pendingDelete = false;
 document.addEventListener("keydown", (e: Event) => {
 	const ke = e as KeyboardEvent;
 
+	// Tab toggles focus between the input and the list. Without this, focus
+	// (grabbed once at startup and never released) is permanently stuck on
+	// the input: termdom's default Tab action cycles among focusable
+	// elements, but input is the only one, so it re-focuses itself, and
+	// every handler below that requires activeElement !== input -- toggle,
+	// delete, quit -- becomes unreachable dead code.
+	if (ke.key === "Tab") {
+		ke.preventDefault();
+		if (document.activeElement === input) {
+			input.blur();
+		} else {
+			input.focus();
+		}
+		return;
+	}
+
 	if (ke.key === "q" && document.activeElement !== input) {
 		process.exit(0);
 	}
@@ -163,7 +187,9 @@ document.addEventListener("keydown", (e: Event) => {
 
 // Auto-render on DOM changes
 const observer = new termdom.window.MutationObserver(async () => {
-	await termdom.render();
+	await new Promise<void>((r) =>
+		termdom.window.requestAnimationFrame(() => r()),
+	);
 });
 observer.observe(document.body, {
 	childList: true,
@@ -171,4 +197,4 @@ observer.observe(document.body, {
 	characterData: true,
 });
 
-await termdom.render();
+await new Promise<void>((r) => termdom.window.requestAnimationFrame(() => r()));

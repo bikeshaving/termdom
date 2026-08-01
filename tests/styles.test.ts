@@ -1,4 +1,4 @@
-import {test, expect, describe} from "bun:test";
+import {test, expect, describe} from "@b9g/libuild/test";
 import {JSDOM} from "jsdom";
 import {StyleManager} from "../src/internal/styles.js";
 import {LayoutEngine} from "../src/internal/layout.js";

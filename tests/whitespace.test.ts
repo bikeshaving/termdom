@@ -11,8 +11,8 @@
  * Tests both standalone behavior and interaction with flexbox containers.
  */
 
-import {test, expect} from "bun:test";
-import {MockProcess} from "./test-utils";
+import {test, expect} from "@b9g/libuild/test";
+import {MockProcess, nextFrame} from "./test-utils";
 import {TermDOM} from "../src/internal/termdom.js";
 
 // ===== NOWRAP TESTS =====
@@ -34,7 +34,7 @@ test("white-space: nowrap in non-flex context should not wrap", async () => {
 	text.style.color = "white";
 	container.appendChild(text);
 
-	await dom.render();
+	await nextFrame(dom);
 
 	const visibleText = terminal.getVisibleText();
 
@@ -85,7 +85,7 @@ test("white-space: nowrap in flex context - content should determine container s
 	secondText.style.color = "white";
 	flexItem2.appendChild(secondText);
 
-	await dom.render();
+	await nextFrame(dom);
 
 	const visibleText = terminal.getVisibleText();
 
@@ -148,7 +148,7 @@ test("white-space: nowrap vs normal text wrapping comparison", async () => {
 	nowrapText.style.whiteSpace = "nowrap";
 	nowrapDiv.appendChild(nowrapText);
 
-	await dom.render();
+	await nextFrame(dom);
 
 	const visibleText = terminal.getVisibleText();
 	const lines = visibleText.split("\n");
@@ -212,7 +212,7 @@ test("white-space: nowrap with emoji and unicode", async () => {
 	text.style.color = "white";
 	container.appendChild(text);
 
-	await dom.render();
+	await nextFrame(dom);
 
 	const visibleText = terminal.getVisibleText();
 
@@ -263,7 +263,7 @@ test("flexShrink 0 with white-space: nowrap should prevent shrinking entirely", 
 	// Note: normal wrapping, should adapt to available space
 	item2.appendChild(text2);
 
-	await dom.render();
+	await nextFrame(dom);
 
 	const visibleText = terminal.getVisibleText();
 
@@ -320,7 +320,7 @@ test("mixed white-space properties in single inline run", async () => {
 	nowrapText.style.color = "yellow";
 	container.appendChild(nowrapText);
 
-	await dom.render();
+	await nextFrame(dom);
 	const visibleText = terminal.getVisibleText();
 
 	// The nowrap span should appear on one line with spaces preserved
@@ -370,7 +370,7 @@ test("alternating white-space properties in inline run", async () => {
 		container.appendChild(span);
 	});
 
-	await dom.render();
+	await nextFrame(dom);
 	const visibleText = terminal.getVisibleText();
 
 	// The nowrap word should not be broken
@@ -408,7 +408,7 @@ test("nested elements with different white-space properties", async () => {
 	// More normal text
 	outerSpan.appendChild(document.createTextNode(" and more text"));
 
-	await dom.render();
+	await nextFrame(dom);
 	const visibleText = terminal.getVisibleText();
 
 	// The inner nowrap span should stay together
@@ -440,7 +440,7 @@ test("pre and nowrap interaction in same run", async () => {
 	nowrapSpan.style.color = "magenta";
 	container.appendChild(nowrapSpan);
 
-	await dom.render();
+	await nextFrame(dom);
 	const visibleText = terminal.getVisibleText();
 
 	// Pre should preserve formatting, nowrap should not break
@@ -481,7 +481,7 @@ test("white-space inheritance and override", async () => {
 	overrideChild.style.color = "yellow";
 	parent.appendChild(overrideChild);
 
-	await dom.render();
+	await nextFrame(dom);
 	const visibleText = terminal.getVisibleText();
 
 	// Inherited nowrap should not wrap
@@ -525,7 +525,7 @@ test("complex mixed white-space with word-break properties", async () => {
 	preLine.style.color = "green";
 	container.appendChild(preLine);
 
-	await dom.render();
+	await nextFrame(dom);
 	const visibleText = terminal.getVisibleText();
 
 	// Nowrap should override word-break and stay on one line
