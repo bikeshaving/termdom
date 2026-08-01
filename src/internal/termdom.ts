@@ -2190,7 +2190,10 @@ export class TermDOM {
 			parts.texts.placeholder.data = placeholder;
 			contentChanged = true;
 		}
-		const blank = autoWidth && !value ? "" : autoWidth ? " " : "";
+		// An empty field must not collapse to zero cells: with no value and
+		// no placeholder to give it width, the blank's single caret cell IS
+		// the field -- one faint underlined cell marking an editable spot.
+		const blank = !autoWidth ? "" : value || !placeholder ? " " : "";
 		if (parts.texts.blank.data !== blank) {
 			parts.texts.blank.data = blank;
 			contentChanged = true;

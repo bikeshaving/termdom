@@ -1407,3 +1407,36 @@ test("typing in a width:auto input never clips the lead character", async () => 
 	expect(terminal.getPlainText().split("\n")[0]).toContain("abcd");
 	dom.dispose();
 });
+
+test("an empty width:auto input keeps a single underlined caret cell", async () => {
+	// With no value and no placeholder the blank IS the field: one faint
+	// underlined cell marking an editable spot, instead of collapsing to
+	// zero width and vanishing from the row.
+	const terminal = new MockProcess({rows: 4, cols: 30});
+	const dom = new TermDOM({process: terminal});
+	dom.attach();
+	dom.document.body.innerHTML =
+		`<div style="display:flex; flex-direction:row; gap:1ch">` +
+		`<span>a:</span><input style="width: auto"><span>z</span></div>`;
+	await nextFrame(dom);
+	await nextFrame(dom);
+
+	const line = () => (terminal as any).terminal.buffer.active.getLine(0);
+	expect(line().translateToString(false).trimEnd()).toBe("a:   z");
+	expect(line().getCell(3).isUnderline()).toBeTruthy();
+	expect(line().getCell(3).isDim()).toBeTruthy();
+
+	// Typing grows the field; deleting back to empty returns to the
+	// single cell rather than zero width.
+	const input = dom.document.querySelector("input") as HTMLInputElement;
+	input.focus();
+	await nextFrame(dom);
+	(terminal.stdin as any).emit("data", Buffer.from("hi"));
+	await nextFrame(dom);
+	expect(line().translateToString(false).trimEnd()).toBe("a: hi  z");
+	(terminal.stdin as any).emit("data", Buffer.from("\x7f\x7f"));
+	await nextFrame(dom);
+	expect(line().translateToString(false).trimEnd()).toBe("a:   z");
+	expect(line().getCell(3).isUnderline()).toBeTruthy();
+	dom.dispose();
+});
