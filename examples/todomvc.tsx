@@ -24,10 +24,10 @@ style.textContent = `
   .header h1 { color: cyan; font-weight: bold; }
   .header .new-todo { width: 100%; }
   .main { padding-top: 1; }
-  /* The toggle-all is a control over the LIST, not a list item: label it
-     so the first todo doesn't appear to spawn a mystery second checkbox. */
-  .main::before { content: "mark all as complete: "; color: #666; }
+  /* The toggle-all is a control over the LIST, not a list item: dim its
+     label so the first todo doesn't appear to spawn a second checkbox. */
   .toggle-all { margin-right: 1ch; }
+  label[for="toggle-all"] { color: #666; }
   .todo-list { padding-left: 0; list-style: none; }
   .todo-list li .view { display: flex; flex-direction: row; gap: 1ch; }
   .todo-list li.completed label { text-decoration: underline; color: #666; }

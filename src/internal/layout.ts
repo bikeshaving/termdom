@@ -1987,6 +1987,18 @@ export class LayoutEngine {
 						// box parent chain when needed.
 						this.#invalidateEnclosingMeasure(element);
 					}
+				} else if (
+					record.attributeName === "class" ||
+					record.attributeName === "id"
+				) {
+					// Selector-bearing attributes change which rules match the
+					// whole SUBTREE -- a class flip can toggle a descendant's
+					// display and reshape every box under it. Rebuild from the
+					// body, the same proven path a stylesheet refresh takes:
+					// partial subtree re-adds leave stray boxes when display
+					// flips mid-batch. Class churn is interaction-scale.
+					const body = record.target.ownerDocument?.body;
+					if (body) this.invalidate(body);
 				} else if (record.attributeName === "slot") {
 					// Reassigning a slot moves the node in the COMPOSED tree while
 					// the light tree stands still -- no childList record will ever
@@ -2155,7 +2167,26 @@ export class LayoutEngine {
 		return this.nodeMap.get(this.rootElement) ?? null;
 	}
 
+	/** Hidden by an ancestor's display:none anywhere up the flat tree. */
+	#hiddenByAncestor(node: Node): boolean {
+		for (
+			let ancestor = compositionParentElement(node);
+			ancestor;
+			ancestor = compositionParentElement(ancestor)
+		) {
+			if (getPropertyValue(ancestor, "display") === "none") return true;
+		}
+		return false;
+	}
+
 	#addNode(node: Node, parentFlexNode: FlexTypes.Node | null = null): void {
+		// A display:none ancestor removes the whole subtree from layout --
+		// fresh builds never descend past the none boundary, and rebuild
+		// sweeps must not smuggle descendants back in under the hidden
+		// container (the flex engine does not ignore them).
+		if (this.#hiddenByAncestor(node)) {
+			return;
+		}
 		// Out-of-flow boxes hoist to their containing block, appended at the
 		// end -- they neither displace siblings nor depend on tree position.
 		if (this.#isOutOfFlow(node)) {

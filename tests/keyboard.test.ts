@@ -1342,3 +1342,47 @@ test("display:none subtrees neither render, ghost, nor take tab focus", async ()
 
 	dom.dispose();
 });
+
+test("a runtime class flip swaps a row for its editor, in place", async () => {
+	// The TodoMVC edit cycle as Crank drives it: the li GAINS .editing
+	// after mount. Descendant rules (.editing .view) must recompute for
+	// the subtree, layout must rebuild for the display flip, and the
+	// hidden container's descendants must not smuggle back into layout --
+	// three separate bugs once lived in this one interaction.
+	const terminal = new MockProcess({rows: 8, cols: 50});
+	const dom = new TermDOM({process: terminal});
+	dom.attach();
+	const {document} = dom;
+	document.head.innerHTML = `<style>.editing .view { display: none } .view { display: flex; flex-direction: row; gap: 1ch }</style>`;
+	document.body.innerHTML =
+		`<div>before</div>` +
+		`<li id="item"><div class="view"><input type="checkbox"><label>Finish TermDOM</label><button>x</button></div></li>` +
+		`<div>after</div>`;
+	await nextFrame(dom);
+
+	const li = document.getElementById("item")!;
+	li.classList.add("editing");
+	const edit = document.createElement("input");
+	edit.className = "edit";
+	edit.value = "Finish TermDOM";
+	li.appendChild(edit);
+	await nextFrame(dom);
+	await nextFrame(dom);
+
+	let rows = terminal.getPlainText().split("\n");
+	expect(rows[0]).toBe("before");
+	expect(rows[1]).toContain("Finish TermDOM"); // the editor, on the todo row
+	expect(rows[1]).not.toContain("[ ]"); // the view is gone, not beside it
+	expect(rows[2]).toContain("after"); // and nothing ghosts between
+
+	li.classList.remove("editing");
+	li.removeChild(edit);
+	await nextFrame(dom);
+	await nextFrame(dom);
+	rows = terminal.getPlainText().split("\n");
+	expect(rows[1]).toContain("[ ] Finish TermDOM");
+	expect(rows[2]).toContain("after");
+	expect(rows.length).toBeLessThanOrEqual(4); // no stray rows below
+
+	dom.dispose();
+});

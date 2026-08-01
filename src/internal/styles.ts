@@ -1763,10 +1763,18 @@ export class StyleManager {
 					}
 				}
 			} else if (mutation.type === "attributes") {
-				// Invalidate caches for attribute changes (over-invalidation approach)
+				// Invalidate caches for attribute changes (over-invalidation
+				// approach) -- INCLUDING descendants: a class flip on an
+				// ancestor changes which descendant-combinator rules match
+				// (.editing .view {display:none} is exactly the TodoMVC edit
+				// row), and the descendants' cached styles know nothing of it.
 				const element = mutation.target as Element;
 				this.#invalidateElementCaches(element);
 				this.attachPseudoElementsToElement(element);
+				for (const descendant of element.querySelectorAll("*")) {
+					this.#invalidateElementCaches(descendant);
+					this.attachPseudoElementsToElement(descendant);
+				}
 			} else if (mutation.type === "characterData") {
 				// Check for changes to <style> element content
 				if (mutation.target.parentElement?.tagName === "STYLE") {
