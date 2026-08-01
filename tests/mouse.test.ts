@@ -486,3 +486,20 @@ test("a selecting drag released over a label does not activate it", async () => 
 
 	termdom.dispose();
 });
+
+test("a click inside a widget's UA shadow content focuses the widget", async () => {
+	// Hit-testing descends into composed content, so a click over an
+	// input's value lands on a UA-internal span -- which has no
+	// parentElement chain for closest() to climb. Per spec, hits retarget
+	// to the shadow HOST from outside the tree: the click is on the input.
+	const {proc, termdom} = makeDocumentModeApp();
+	const {document} = termdom;
+	document.body.innerHTML = `<div>row0</div><div><input id="i" value="hello"></div>`;
+	await nextFrame(termdom);
+
+	expect(document.elementFromPoint(2, 1)?.id).toBe("i");
+	proc.stdin.send("\x1b[<0;3;2M\x1b[<0;3;2m"); // click at col 3, row 2
+	await nextFrame(termdom);
+	expect(document.activeElement?.id).toBe("i");
+	termdom.dispose();
+});

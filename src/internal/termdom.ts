@@ -3500,7 +3500,21 @@ export class TermDOM {
 	 */
 	#findElementAtDocumentPoint(x: number, y: number): Element | null {
 		this.#processPendingMutationsAndRender();
-		return this[kHitTest](this.document.documentElement, x, y);
+		let element = this[kHitTest](this.document.documentElement, x, y);
+		// RETARGET out of shadow trees, per spec: from outside a shadow tree
+		// (and the document is always outside), the hit is the HOST -- a
+		// click on an input's internal value span is a click on the input.
+		// Without this, closest()/focus logic dead-ends inside the UA
+		// fragment, whose parts have no parentElement chain to climb.
+		while (element) {
+			const root = element.getRootNode();
+			if (root.nodeType === 11 && (root as ShadowRoot).host) {
+				element = (root as ShadowRoot).host;
+			} else {
+				break;
+			}
+		}
+		return element;
 	}
 
 	/**
