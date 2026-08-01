@@ -260,6 +260,35 @@ test("fullscreen owns the alternate screen from row zero, whatever the anchor", 
 	dom.dispose();
 });
 
+test("no frame straddles a screen switch, even mid-animation", async () => {
+	// An in-flight render finishing its stdout write AFTER ?1049l paints
+	// alternate-screen geometry onto the restored main screen. Transitions
+	// drain the in-flight frame and hold new ones until the switch lands.
+	const terminal = new MockProcess({rows: 8, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	dom.attach();
+	const {document} = dom;
+	document.body.innerHTML = `<div>alpha doc row</div><div id="fs">STAGE</div>`;
+	await nextFrame(dom);
+	const stage = document.getElementById("fs")!;
+	await stage.requestFullscreen();
+	await nextFrame(dom);
+
+	// Rapid mutations schedule frames; exit immediately, awaiting nothing.
+	stage.textContent = "STAGE tick 1";
+	stage.textContent = "STAGE tick 2";
+	const exited = document.exitFullscreen();
+	stage.textContent = "STAGE tick 3";
+	await exited;
+	await nextFrame(dom);
+	await nextFrame(dom);
+
+	const rows = terminal.getPlainText().split("\n");
+	expect(rows[0]).toContain("alpha doc row"); // main screen, coherent
+	expect(rows[1]).toContain("STAGE tick 3"); // trailing frame landed AFTER, correctly
+	dom.dispose();
+});
+
 test("exiting fullscreen restores a coherent document frame", async () => {
 	// Fullscreen swaps screens under the renderer: entering clears to the
 	// alternate screen, exiting restores the main one. The diff model must

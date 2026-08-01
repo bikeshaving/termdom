@@ -375,6 +375,7 @@ export class TermDOM {
 	// mutation starts a fresh document below it.
 	#sealed = false;
 	#renderQueued = false;
+	#screenSwitching = false;
 	#renderInFlight: Promise<void> | null = null;
 
 	// Monotonic frame counter, used to timestamp observer entries.
@@ -917,6 +918,13 @@ export class TermDOM {
 		// A resize is settling: suppress every render until handleResize issues the
 		// single re-anchored redraw. See resizeInProgress.
 		if (this.#resizeInProgress) {
+			return;
+		}
+
+		// A screen switch (fullscreen enter/exit) is in progress: no frame
+		// may straddle it -- a frame computed for one screen landing on the
+		// other paints the wrong geometry onto the wrong buffer.
+		if (this.#screenSwitching) {
 			return;
 		}
 
@@ -2982,9 +2990,16 @@ export class TermDOM {
 			this: Element,
 			options?: FullscreenOptions,
 		): Promise<void> {
-			return termDOM.#fullscreenManager
-				.requestFullscreen(this, options)
-				.then(() => {
+			return (async () => {
+				// No frame may straddle the screen switch: an in-flight render
+				// finishing its stdout write AFTER the switch paints one
+				// screen's geometry onto the other (the demo's animation made
+				// this a near-certainty on exit). Hold new frames, drain the
+				// running one, then switch.
+				termDOM.#screenSwitching = true;
+				try {
+					await termDOM.#renderInFlight;
+					await termDOM.#fullscreenManager.requestFullscreen(this, options);
 					// The element's UA styles changed (it now fills the
 					// viewport) and neither a mutation nor a focus move fired.
 					termDOM.#styleManager.handleFocusChange(this);
@@ -2995,27 +3010,37 @@ export class TermDOM {
 					// screen's content.
 					termDOM.#renderer.clearPreviousBuffer();
 					termDOM.#updateMouseReporting();
-					void termDOM.#render();
-				});
+				} finally {
+					termDOM.#screenSwitching = false;
+				}
+				void termDOM.#render();
+			})();
 		};
 
 		Document.prototype.exitFullscreen = function (
 			this: Document,
 		): Promise<void> {
-			const element = termDOM.#fullscreenManager.fullscreenElement;
-			return termDOM.#fullscreenManager.exitFullscreen().then(() => {
-				if (element) {
-					termDOM.#styleManager.handleFocusChange(element);
-					termDOM[kLayoutEngine].invalidate(element);
+			return (async () => {
+				const element = termDOM.#fullscreenManager.fullscreenElement;
+				termDOM.#screenSwitching = true;
+				try {
+					await termDOM.#renderInFlight;
+					await termDOM.#fullscreenManager.exitFullscreen();
+					if (element) {
+						termDOM.#styleManager.handleFocusChange(element);
+						termDOM[kLayoutEngine].invalidate(element);
+					}
+					// Same wholesale swap in reverse: the terminal restored the
+					// main screen, but the diff model still describes the last
+					// ALTERNATE-screen frame -- patching against it garbles the
+					// restored document.
+					termDOM.#renderer.clearPreviousBuffer();
+					termDOM.#updateMouseReporting();
+				} finally {
+					termDOM.#screenSwitching = false;
 				}
-				// Same wholesale swap in reverse: the terminal restored the
-				// main screen, but the diff model still describes the last
-				// ALTERNATE-screen frame -- patching against it garbles the
-				// restored document.
-				termDOM.#renderer.clearPreviousBuffer();
-				termDOM.#updateMouseReporting();
 				void termDOM.#render();
-			});
+			})();
 		};
 
 		Object.defineProperty(Document.prototype, "fullscreenElement", {
