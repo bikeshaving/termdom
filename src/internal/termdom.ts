@@ -1655,6 +1655,7 @@ export class TermDOM {
 			element.dispatchEvent(
 				new this.window.Event("change", {bubbles: true, cancelable: false}),
 			);
+			this.#scrollCaretIntoView(element);
 			this.#render();
 		}
 	}
@@ -1694,6 +1695,39 @@ export class TermDOM {
 			Math.min(caret, line.endOffset) - line.startOffset,
 		);
 		return {x: line.x + stringWidth(line.text.slice(0, within)), y: line.y};
+	}
+
+	/**
+	 * Keep the editing caret inside the camera, the way a browser keeps the
+	 * caret of a focused control visible on every EDIT (typing, Enter,
+	 * caret travel) -- and only on edits: wheel-scrolling away from a
+	 * focused field stays allowed, so this never runs from the render loop.
+	 * The caret row comes from fresh layout; single-row widgets reduce to
+	 * their own row.
+	 */
+	#scrollCaretIntoView(
+		element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
+	): void {
+		this.#processPendingMutationsAndRender();
+		let caretY: number | null = null;
+		if (element.tagName === "TEXTAREA") {
+			const cell = this.#textareaCaretCell(element as HTMLTextAreaElement);
+			caretY = cell ? cell.y : null;
+		} else {
+			const rect = this[kLayoutEngine].getRect(element);
+			caretY = rect ? Math.round(rect.top) : null;
+		}
+		if (caretY === null) return;
+		const regionHeight = Math.min(
+			this.#height,
+			this.document.body.scrollHeight,
+		);
+		const top = this.#documentScrollTop;
+		if (caretY < top) {
+			this.#scrollCamera(caretY - top);
+		} else if (caretY + 1 > top + regionHeight) {
+			this.#scrollCamera(caretY + 1 - (top + regionHeight));
+		}
 	}
 
 	/**
@@ -2961,6 +2995,7 @@ export class TermDOM {
 				new this.window.Event("input", {bubbles: true, cancelable: false}),
 			);
 
+			this.#scrollCaretIntoView(element);
 			// Trigger re-render since .value changes don't trigger MutationObserver
 			this.#render();
 		} else if (
@@ -2970,6 +3005,7 @@ export class TermDOM {
 		) {
 			// jsdom fires the `select` event itself for a real range change.
 			element.setSelectionRange(newStart, newEnd, newDirection);
+			this.#scrollCaretIntoView(element);
 			this.#render();
 		}
 	}

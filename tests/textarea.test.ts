@@ -267,3 +267,44 @@ test("a trailing newline grows the box; the caret never touches the border", asy
 
 	dom.dispose();
 });
+
+test("the camera follows the caret as the textarea grows past the viewport", async () => {
+	// Browser rule: EDITS keep the caret in view (scrolling away by wheel
+	// stays allowed -- the camera only chases the caret on editing
+	// actions). Grow a textarea past the terminal height and the camera
+	// must follow the caret down, then back up on arrow travel.
+	const terminal = new MockProcess({rows: 6, cols: 30});
+	const dom = new TermDOM({process: terminal});
+	dom.attach();
+	const {document} = dom;
+	const textarea = document.createElement("textarea");
+	document.body.appendChild(textarea);
+	textarea.focus();
+	await nextFrame(dom);
+
+	const buffer = (terminal as any).terminal.buffer.active;
+	for (let i = 0; i < 8; i++) {
+		type(terminal, `line${i}\r`);
+		await nextFrame(dom);
+		await nextFrame(dom);
+		// The caret's row stays on screen the whole way down.
+		expect(buffer.cursorY).toBeGreaterThanOrEqual(0);
+		expect(buffer.cursorY).toBeLessThan(6);
+	}
+	// The latest line is visible; the first has scrolled off.
+	const text = () => terminal.getPlainText();
+	expect(text()).toContain("line7");
+	expect(text()).not.toContain("line0");
+
+	// Travel back up: the camera follows the caret to the top.
+	for (let i = 0; i < 9; i++) {
+		type(terminal, "\x1b[A");
+		await nextFrame(dom);
+	}
+	await nextFrame(dom);
+	expect(buffer.cursorY).toBeGreaterThanOrEqual(0);
+	expect(text()).toContain("line0");
+	expect(text()).not.toContain("line7");
+
+	dom.dispose();
+});
