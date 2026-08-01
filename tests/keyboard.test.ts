@@ -1257,8 +1257,9 @@ test("blurred fields are faint blanks; the focused field's line is solid", async
 	const cellAt = (row: number, col: number) =>
 		(terminal as any).terminal.buffer.active.getLine(row).getCell(col);
 
-	// Blurred, with value: the value chars are plain text...
-	expect(cellAt(0, 0).isUnderline()).toBeFalsy();
+	// Blurred, with value: the underline runs through the typed text too --
+	// the field reads as ONE continuous strip -- but the value is never dim.
+	expect(cellAt(0, 0).isUnderline()).toBeTruthy();
 	expect(cellAt(0, 0).isDim()).toBeFalsy();
 	// ...and the remainder is the faint blank.
 	expect(cellAt(0, 5).isUnderline()).toBeTruthy();

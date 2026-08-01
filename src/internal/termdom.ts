@@ -135,6 +135,7 @@ function domCodeFor(keyName: string): string {
  */
 const FIELD_UA_STYLES = `
 	[part="placeholder"] { color: #808080; }
+	:host(:not(:focus)) [part="value"] { text-decoration: underline; }
 	:host(:not(:focus)) [part="placeholder"] { font-weight: lighter; text-decoration: underline; }
 	:host(:not(:focus)) [part="blank"] { font-weight: lighter; text-decoration: underline; }
 `;
