@@ -162,6 +162,7 @@ const SELECT_UA_STYLES = `
 	[part="picker"] {
 		display: none;
 		position: absolute;
+		background-color: Canvas;
 		border-top-width: 1px; border-right-width: 1px;
 		border-bottom-width: 1px; border-left-width: 1px;
 		border-top-style: solid; border-right-style: solid;
@@ -1019,10 +1020,18 @@ export class TermDOM {
 			this.window.getComputedStyle(element).getPropertyValue("visibility") !==
 			"hidden";
 
+		// background-color: Canvas -- the CSS system color for the document
+		// background -- clears the box to the terminal's DEFAULT background:
+		// opaque in every theme without asserting any color, the same
+		// system-color translation ::selection's Highlight pair uses. The UA
+		// picker sheet relies on it; authors can too.
+		const isCanvasBg =
+			Boolean(backgroundColor) && /^canvas$/i.test(backgroundColor.trim());
 		const style = {
 			fg: color && color !== "initial" ? cssColorToNumber(color) : undefined,
 			bg:
 				backgroundColor &&
+				!isCanvasBg &&
 				backgroundColor !== "initial" &&
 				backgroundColor !== "transparent"
 					? cssColorToNumber(backgroundColor)
@@ -1034,8 +1043,14 @@ export class TermDOM {
 			underlineStyle,
 		};
 
-		if (rect && style.bg != null && visible) {
-			ctx.fillRect(rect.left, rect.top, rect.width, rect.height, style.bg);
+		if (rect && visible && (style.bg != null || isCanvasBg)) {
+			ctx.fillRect(
+				rect.left,
+				rect.top,
+				rect.width,
+				rect.height,
+				isCanvasBg ? "default" : style.bg,
+			);
 		}
 
 		// Handle borders
@@ -2117,7 +2132,10 @@ export class TermDOM {
 		return {
 			fg: color && color !== "initial" ? cssColorToNumber(color) : undefined,
 			bg:
-				bgColor && bgColor !== "initial" && bgColor !== "transparent"
+				bgColor &&
+				bgColor !== "initial" &&
+				bgColor !== "transparent" &&
+				!/^canvas$/i.test(bgColor.trim())
 					? cssColorToNumber(bgColor)
 					: undefined,
 			bold,

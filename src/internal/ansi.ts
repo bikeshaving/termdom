@@ -737,13 +737,19 @@ export class DrawingContext {
 		y: number,
 		width: number,
 		height: number,
-		bgColor?: number | null,
+		bgColor?: number | null | "default",
 	): void {
 		if (bgColor == null) {
 			return;
 		}
 
-		const style: CellStyle = {bg: bgColor};
+		// "default" clears the cells to the terminal's own background --
+		// CSS's Canvas system color -- which still OVERWRITES whatever was
+		// painted underneath: an opaque box in the theme's color, whatever
+		// that theme is.
+		const style: CellStyle = {
+			bg: bgColor === "default" ? undefined : bgColor,
+		};
 
 		for (let row = y; row < y + height; row++) {
 			for (let col = x; col < x + width; col++) {
