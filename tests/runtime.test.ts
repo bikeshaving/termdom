@@ -1,5 +1,5 @@
 import {describe, expect, test} from "@b9g/libuild/test";
-import {stringWidthFallback} from "../src/internal/runtime.js";
+import {stringWidth, stringWidthFallback} from "../src/internal/runtime.js";
 
 /**
  * termdom uses Bun.stringWidth when it is available and stringWidthFallback
@@ -106,3 +106,21 @@ const bunStringWidth =
 		});
 	},
 );
+
+/**
+ * The one place the two deliberately DISAGREE, and why stringWidth() gates on
+ * it: Bun.stringWidth charges a cell per code point, so a combining mark --
+ * which renders onto the character before it and advances nothing -- is counted
+ * as if it were a letter of its own.
+ */
+test("combining marks take the grapheme-aware path, not Bun's", () => {
+	// "שָׁלוֹם": four Hebrew letters carrying three niqqud. Four cells.
+	expect(stringWidth("שָׁלוֹם")).toBe(4);
+	// Arabic with harakat: five letters, three marks.
+	expect(stringWidth("مَرْحَبًا")).toBe(5);
+	// Cyrillic with a combining titlo.
+	expect(stringWidth("и҃")).toBe(1);
+	// And the fast path is still exact for everything without them.
+	expect(stringWidth("hello")).toBe(5);
+	expect(stringWidth("中文")).toBe(4);
+});
