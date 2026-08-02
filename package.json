@@ -41,6 +41,7 @@
     "lint": "eslint --ext .js,.jsx,.ts,.tsx .",
     "smoke": "node scripts/smoke.mjs",
     "smoke:deno": "deno run -A --node-modules-dir=manual scripts/smoke.mjs",
+    "support": "bun scripts/support-matrix.ts",
     "test": "libuild test -p bun -p node",
     "typecheck": "tsc --noEmit"
   },
@@ -66,6 +67,7 @@
     "eslint": "^8.57.1",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-prettier": "^5.2.6",
+    "mdn-data": "2.29.0",
     "ssh2": "^1.17.0",
     "typescript": "^5.9.2"
   }

@@ -73,6 +73,32 @@ much better, and both are worth rebuilding when you need them:
   flagged `ahem` or containing `<script>`. Cell quantization mostly produces
   false *passes*, so treat it as a bug net, not a conformance score.
 
+## The support matrix
+
+`SUPPORT.md` is generated, never edited:
+
+```sh
+bun run support            # regenerate
+bun scripts/support-matrix.ts --check   # fail if stale
+```
+
+Nothing in it is asserted. Each feature carries a probe that applies it to a
+real document, renders to a terminal buffer, and reports whether anything a user
+could see changed -- geometry, or painted cells. A property the engine parses and
+stores but never acts on counts as unsupported, because to a user it is. The CSS
+property list comes from `mdn-data`, so "what is there to support" is the
+platform's answer rather than our memory of it.
+
+The test values are fixtures, and a bad one produces a false negative -- probing
+`width` on a `<span>` once reported the entire box model missing, because width
+does not apply to inline boxes. So when a row says `no`, check the probe before
+believing it: give the feature a context where its effect is observable, and if
+it still reports nothing, that is a real gap. Two of this file's rows started as
+fixture bugs and one (`white-space: pre`) turned out to be a real one.
+
+Regenerate after any change that could move a row, and treat a surprising diff
+as a finding rather than noise.
+
 ## Style
 
 Private fields use ECMAScript `#private`, not TypeScript's `private` — there's a
