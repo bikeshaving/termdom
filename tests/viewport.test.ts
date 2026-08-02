@@ -706,9 +706,12 @@ test("a width resize re-anchors via the parked cursor, not guesswork", async () 
 	// A width change makes the terminal rewrap our old frame in place, moving our
 	// content by an amount that depends on text above us that we do not own.
 	// Guessing strands a copy of the old frame wherever the guess is wrong. The
-	// re-anchor instead queries the cursor -- parked on the content's bottom row,
-	// riding its line through the rewrap -- and subtracts the old frame's
-	// computable rewrapped height. See "Re-anchoring on a resize" in SCROLLBACK.md.
+	// re-anchor instead queries the cursor -- parked on the content's bottom row
+	// after every frame, so its resting place is deterministic and it rides its
+	// line through the rewrap -- and subtracts the old frame's computable
+	// rewrapped height. Both halves are load-bearing: without the parking the
+	// cursor sits wherever the last diff happened to leave it, and the query
+	// answers about a row we cannot reason about.
 	const terminal = new MockProcess({rows: 20, cols: 60});
 	await new Promise<void>((resolve) => {
 		terminal.stdout.write("PREV-A\r\nPREV-B\r\n", () => resolve());

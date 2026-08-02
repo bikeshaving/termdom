@@ -4949,8 +4949,8 @@ export class TermDOM {
 	 * scrollback -- searchable, selectable, copy-pasteable -- rather than trapped
 	 * in an alternate screen buffer.
 	 *
-	 * See SCROLLBACK.md. Without this, content past the bottom of the terminal is
-	 * never drawn at all.
+	 * Without this, content past the bottom of the terminal is never drawn at
+	 * all.
 	 */
 	/**
 	 * Print the whole document to stdout, once, on the way out.
