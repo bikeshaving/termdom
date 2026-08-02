@@ -60,11 +60,13 @@ evaluator. A terminal resize re-evaluates both and fires `change` on live
 `MediaQueryList` objects, so a responsive layout is just CSS.
 
 **Right-to-left text.** Hebrew and Arabic land in the right order, including
-Latin words and numbers embedded in them, and `direction: rtl` starts lines at
-the right edge. A browser hands bidi to the platform; a terminal will not, so
-termdom takes the explicit side of ECMA-48's `BDSM` contract — it asks for
-explicit mode, asks back what it got (`DECRQM`), and emits cells already in
-visual order. A terminal that insists on reordering is detected and left to it.
+Latin words and numbers embedded in them, and Arabic letters are joined into
+their contextual forms. `direction: rtl` starts lines at the right edge; text
+with no declared direction takes it from its first strong character. A browser
+hands bidi to the platform; a terminal will not, so termdom takes the explicit
+side of ECMA-48's `BDSM` contract — it asks for explicit mode, asks back what it
+got (`DECRQM`), and emits cells already in visual order. A terminal that insists
+on reordering is detected and left to it.
 
 **Mouse events.** Dispatched at the element under the cell: `wheel` scrolls,
 `mousedown` moves focus, `click` is a click.
@@ -117,12 +119,10 @@ TermDOM implements the parts of CSS that mean something on a character grid, and
 is honest about the rest:
 
 - **CSS Grid** — not yet. Flexbox and table layout are implemented.
-- **Arabic contextual shaping** — RTL text is ordered correctly (see above), but
-  Arabic letters are emitted in their isolated forms rather than joined. Hebrew,
-  which does not join, renders fully.
-- **Explicit bidi embedding controls** — `LRE`/`RLE`/`PDF` and the isolate
-  characters are left alone rather than reordered wrongly. Text without them
-  takes the strong-direction path.
+- **Arabic ligature widths** — a lam-alef pair shapes into one ligature glyph, so
+  such a line paints one cell narrower than it measured, leaving a small gap.
+  Shaping is deliberately the last thing that happens, because doing it earlier
+  would slide the character offsets the caret and selection are expressed in.
 - **`aspect-ratio`** — deliberately omitted; a ratio has no meaning on a grid
   whose cells are not square.
 - **Sub-cell sizing** — a cell is indivisible. All layout is in whole cells.

@@ -27,14 +27,37 @@ test("a right-to-left run is reversed into visual order", () => {
 
 test("numbers keep their own direction inside RTL text", () => {
 	// UAX #9 gives digits their own weak classes; the effect is that a number is
-	// never reversed. Treating them as neutral turned "2.1" into "1.2".
+	// never reversed, in either script's numerals.
 	const visual = toVisualOrder("مرحبا Bun 2.1", "rtl");
 	expect(visual).toContain("Bun 2.1");
-	expect(visual.indexOf("Bun")).toBeLessThan(visual.indexOf("م"));
+	// The Latin run sits to the LEFT of the Arabic in an RTL paragraph.
+	expect(visual.indexOf("Bun")).toBeLessThan(
+		visual.search(/\p{Script=Arabic}/u),
+	);
 });
 
 test("Arabic-Indic digits are not reversed either", () => {
 	expect(toVisualOrder("١٢٣", "rtl")).toContain("١٢٣");
+});
+
+test("Arabic letters are shaped into their contextual forms", () => {
+	// Arabic is cursive: a letter takes a different form depending on its
+	// neighbours, so reordering alone leaves disconnected isolated letters.
+	// Hebrew does not join and passes through untouched.
+	const visual = toVisualOrder("مرحبا", "rtl");
+	expect(visual).not.toContain("م"); // U+0645, the isolated form
+	// Presentation forms only (U+FE70..U+FEFF).
+	expect(/^[\uFE70-\uFEFF]+$/.test(visual)).toBe(true);
+	expect(toVisualOrder("שלום", "rtl")).toBe([..."שלום"].reverse().join(""));
+});
+
+test("a lam-alef ligature collapses two characters into one", () => {
+	// Which is why shaping runs at the END of layout and never on the text that
+	// gets measured: doing it earlier would slide every character offset after
+	// it, and those offsets are what the caret and selection are expressed in.
+	const visual = toVisualOrder("لا", "rtl");
+	expect([...visual].length).toBe(1);
+	expect(visual.codePointAt(0)).toBe(0xfefb);
 });
 
 test("an LTR paragraph reverses only its RTL islands", () => {
