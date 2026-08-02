@@ -14,6 +14,7 @@ import {
 	getPseudoMetadata,
 } from "./composition.js";
 import {stringWidth as runtimeStringWidth} from "./runtime.js";
+import {hasRTL, inferParagraphDirection, toVisualOrder} from "./bidi.js";
 
 function getAbsolutePosition(flexNode: FlexTypes.Node): {
 	x: number;
@@ -47,6 +48,14 @@ function lineAlignOffset(
 	const align = getPropertyValue(container, "text-align");
 	if (align === "center") return Math.max(0, (containerWidth - lineWidth) / 2);
 	if (align === "right" || align === "end") {
+		return Math.max(0, containerWidth - lineWidth);
+	}
+	// `start` is the start of the READING direction, so an RTL paragraph with no
+	// text-align of its own begins at the right edge. Unset behaves as start.
+	if (
+		(align === "" || align === "start") &&
+		getPropertyValue(container, "direction") === "rtl"
+	) {
 		return Math.max(0, containerWidth - lineWidth);
 	}
 	return 0;
@@ -918,6 +927,21 @@ export class LayoutEngine {
 	 * splitting merely stops being culled, which costs a walk, never a frame.
 	 */
 	#brokenInlines = new WeakSet<Element>();
+
+	/**
+	 * Set when the terminal answered that it reorders bidirectional text itself
+	 * (see #negotiateBidi). Then lines stay in logical order: one reordering is
+	 * correct, two is a sentence backwards again.
+	 */
+	#terminalReordersText = false;
+
+	setTerminalReordersText(value: boolean): void {
+		if (this.#terminalReordersText === value) return;
+		this.#terminalReordersText = value;
+		// Every cached line was built for the other contract.
+		this.breakResultMap = new Map();
+		for (const flexNode of this.#measureNodes) flexNode.markDirty();
+	}
 
 	/**
 	 * Containers a broken inline handed boxes to, which is what makes their
@@ -3611,11 +3635,25 @@ export class LayoutEngine {
 			(wordBreak === "break-all" ||
 				overflowWrap === "anywhere" ||
 				(overflowWrap === "break-word" && maxWidth > 0));
+		// The paragraph's base direction: `direction: rtl` states it, and
+		// otherwise the content decides it the way UAX #9 §P2 does -- the first
+		// strong character wins. That second half is what makes an Arabic string
+		// dropped into an undeclared <div> come out right, which is how such a
+		// string usually arrives.
+		const declared = getPropertyValue(styleElement, "direction");
+		const base: "ltr" | "rtl" =
+			declared === "rtl"
+				? "rtl"
+				: declared === "ltr"
+					? "ltr"
+					: inferParagraphDirection(processedContent.text);
+
 		const lines = this.#buildLines(
 			processedContent,
 			breaks,
 			maxWidth,
 			breakAnywhere,
+			base,
 		);
 
 		return {
@@ -3826,6 +3864,7 @@ export class LayoutEngine {
 		breaks: BreakPoint[],
 		maxWidth: number,
 		breakAnywhere: boolean,
+		base: "ltr" | "rtl" = "ltr",
 	): LineResult[] {
 		const lines: LineResult[] = [];
 		let currentY = 0;
@@ -3935,6 +3974,12 @@ export class LayoutEngine {
 					1,
 				);
 
+				// Cells go out in VISUAL order, because the terminal will not
+				// reorder them for us (see bidi.ts). Doing it here rather than at
+				// paint time means hit-testing and selection read the same
+				// coordinates the user is looking at.
+				this.#toVisualLine(lineNodes, bestBreakWidth, base);
+
 				lines.push({
 					segments: lineNodes,
 					y: currentY,
@@ -3987,6 +4032,42 @@ export class LayoutEngine {
 		}
 
 		return width;
+	}
+
+	/**
+	 * Rewrite one built line from logical order into visual order, in place.
+	 *
+	 * Two halves, and both are needed: each segment's characters are reordered
+	 * (bidi.ts), and in an RTL paragraph the segments themselves are mirrored
+	 * across the line, since the line now starts at its right edge.
+	 *
+	 * Segment boundaries are leaf boundaries, so a directional run split across
+	 * two leaves -- `<span>مرحبا</span><span>Bun</span>` -- reorders within each
+	 * leaf rather than across the pair. Whole-line reordering would need the
+	 * segments merged and re-split, which loses the leaf identity that painting,
+	 * hit-testing and selection all key on.
+	 */
+	#toVisualLine(
+		segments: LineResult["segments"],
+		lineWidth: number,
+		base: "ltr" | "rtl",
+	): void {
+		if (this.#terminalReordersText) return; // It insists; let it.
+		if (base === "ltr" && !segments.some((s) => hasRTL(s.processedText))) {
+			return; // Nothing bidirectional here; the common case pays one scan.
+		}
+
+		for (const segment of segments) {
+			if (segment.leaf.type === "text") {
+				segment.processedText = toVisualOrder(segment.processedText, base);
+			}
+		}
+
+		if (base === "rtl") {
+			for (const segment of segments) {
+				segment.x = lineWidth - segment.x - segment.width;
+			}
+		}
 	}
 
 	#getNodesInRange(

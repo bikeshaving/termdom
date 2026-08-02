@@ -631,6 +631,12 @@ export class TermDOM {
 	// Unified stdin handling
 	#cursorDetectionHandler: ((data: string) => void) | null = null;
 
+	/** Waiting for the terminal's DECRPM answer about BDSM; see #negotiateBidi. */
+	#bidiProbeHandler: ((value: number) => void) | null = null;
+	#bidiProbeTimer: ReturnType<typeof setTimeout> | null = null;
+	/** The BDSM state the terminal reported before we touched it, for dispose. */
+	#priorBidiMode: number | null = null;
+
 	// Handles and timers that must be torn down in dispose(), or they keep the
 	// process alive after the app is done -- which, across a test suite, piles up
 	// into a hang.
@@ -1076,6 +1082,7 @@ export class TermDOM {
 		this.#setupProcessHandlers();
 		this.#updateMouseReporting();
 		this.#initializeCursorDetection();
+		void this.#negotiateBidi();
 
 		// See installCursorRestoreOnExit: if this instance dies without
 		// dispose(), the exit hook hands the user their cursor back.
@@ -1160,6 +1167,20 @@ export class TermDOM {
 				// can land in the same chunk as the report -- "jjj\x1b[12;1Rjjj" --
 				// so hand the report to the waiting query and let the rest continue
 				// through the normal routes as keystrokes.
+				// Route 0: the terminal's answer about BDSM (DECRPM). Same
+				// splicing as the cursor report below -- it is a reply, never a
+				// keystroke, and it can share a chunk with real typing.
+				const modeReport = dataStr.match(/\x1b\[8;(\d+)\$y/);
+				if (this.#bidiProbeHandler && modeReport) {
+					this.#bidiProbeHandler(parseInt(modeReport[1], 10));
+					const rest =
+						dataStr.slice(0, modeReport.index) +
+						dataStr.slice((modeReport.index ?? 0) + modeReport[0].length);
+					if (rest.length === 0) return;
+					if (this.#stdinDataHandler) this.#stdinDataHandler(rest);
+					return;
+				}
+
 				const report = dataStr.match(/\x1b\[\d+;\d+R/);
 				if (this.#cursorDetectionHandler && report) {
 					this.#cursorDetectionHandler(report[0]);
@@ -5181,6 +5202,63 @@ export class TermDOM {
 	}
 
 	/**
+	 * Settle who reorders bidirectional text, us or the terminal.
+	 *
+	 * ECMA-48 mode 8 (BDSM) has two sides: *implicit*, where the terminal runs
+	 * the bidi algorithm over what it receives, and *explicit*, where the
+	 * application decides the order and the terminal paints cells as given. We
+	 * need explicit, and not by preference: this renderer addresses cells
+	 * directly and diffs frames, so it hands the terminal single cells at
+	 * absolute positions. A terminal reordering each of those against a line it
+	 * was never given whole would scramble the frame. So we ask for explicit and
+	 * then ask what we got (DECRQM), rather than assuming either.
+	 *
+	 * The answer is a DECRPM value: 0 means the terminal does not recognise the
+	 * mode at all -- no bidi, cells land as written, which is the same contract
+	 * explicit gives us. 2 or 4 confirm explicit. 1 or 3 mean it intends to
+	 * reorder anyway, and 3 (permanently set) means our request was refused; in
+	 * that case we stop reordering and emit logical order, because the terminal
+	 * doing it once beats both of us doing it.
+	 *
+	 * Silence is the common case -- most terminals answer nothing at all -- and
+	 * is treated as "no bidi", which is what silence has always meant here.
+	 */
+	async #negotiateBidi(): Promise<void> {
+		if (!this.#interactive || !this.#process.stdin?.isTTY) return;
+
+		const answer = await new Promise<number | null>((resolve) => {
+			// The same second the cursor probe allows: a cold start or a slow SSH
+			// link can outlast a tighter window, and answering late is answering.
+			// Held in a field so dispose() can clear it -- a live timer keeps the
+			// event loop open, which across a test suite is fatal.
+			this.#bidiProbeTimer = setTimeout(() => {
+				this.#bidiProbeTimer = null;
+				this.#bidiProbeHandler = null;
+				resolve(null);
+			}, 1000);
+			this.#bidiProbeHandler = (value: number) => {
+				if (this.#bidiProbeTimer !== null) {
+					clearTimeout(this.#bidiProbeTimer);
+					this.#bidiProbeTimer = null;
+				}
+				this.#bidiProbeHandler = null;
+				resolve(value);
+			};
+			// Explicit mode, then "what is mode 8 now?" in one write.
+			this.#process.stdout.write("\x1b[8l\x1b[8$p");
+		});
+
+		if (answer === null || answer === 0) return; // No bidi: cells as written.
+		this.#priorBidiMode = answer;
+
+		// 1 = still set, 3 = permanently set. Either way it reorders regardless of
+		// what we asked, so hand it text in the order it expects.
+		if (answer === 1 || answer === 3) {
+			this[kLayoutEngine].setTerminalReordersText(true);
+		}
+	}
+
+	/**
 	 * Detect current cursor position and set window.screenTop
 	 * Sends \x1b[6n and waits for response \x1b[row;colR
 	 */
@@ -5336,11 +5414,23 @@ export class TermDOM {
 		if (this.#interactive) {
 			this.#process.stdout.write("\x1b[?25h");
 		}
+		// We asked for explicit bidi on the way in; give the terminal back the
+		// mode it reported, so the next command inherits its own settings rather
+		// than ours. Only when it was SET -- reset is where we left it anyway.
+		if (this.#priorBidiMode === 1) {
+			this.#process.stdout.write("\x1b[8h");
+			this.#priorBidiMode = null;
+		}
 
 		// Tear down everything that holds the event loop open. Without this a
 		// disposed TermDOM keeps the process alive -- via the process signal
 		// listeners, the stdin data listener, and the cursor-detection timer -- and
 		// across a whole test suite those accumulate until nothing can exit.
+		if (this.#bidiProbeTimer !== null) {
+			clearTimeout(this.#bidiProbeTimer);
+			this.#bidiProbeTimer = null;
+			this.#bidiProbeHandler = null;
+		}
 		if (this.#cursorDetectionTimer !== null) {
 			clearTimeout(this.#cursorDetectionTimer);
 			this.#cursorDetectionTimer = null;

@@ -59,6 +59,13 @@ part-based styling work on them.
 evaluator. A terminal resize re-evaluates both and fires `change` on live
 `MediaQueryList` objects, so a responsive layout is just CSS.
 
+**Right-to-left text.** Hebrew and Arabic land in the right order, including
+Latin words and numbers embedded in them, and `direction: rtl` starts lines at
+the right edge. A browser hands bidi to the platform; a terminal will not, so
+termdom takes the explicit side of ECMA-48's `BDSM` contract — it asks for
+explicit mode, asks back what it got (`DECRQM`), and emits cells already in
+visual order. A terminal that insists on reordering is detected and left to it.
+
 **Mouse events.** Dispatched at the element under the cell: `wheel` scrolls,
 `mousedown` moves focus, `click` is a click.
 
@@ -96,6 +103,7 @@ Run any of these with `bun examples/<file>`.
 | `tanstack-table.ts` | TanStack Table driving a real `<table>` |
 | `timer.tsx` | a Crank component rendered to the terminal |
 | `animated.ts` | an animated frame that respects your shell history |
+| `rtl.ts` | Hebrew and Arabic: visual reordering, `direction: rtl`, embedded Latin |
 | `fullscreen-demo.ts` | the Fullscreen API over the alternate screen |
 | `ssh-server.ts` | the whole library behind an SSH server; every connection gets its own DOM |
 | `hello-world.ts`, `flexbox-demo.ts`, `borders.ts`, `lists.ts`, `input-styles.ts` | focused layout showcases |
@@ -109,10 +117,12 @@ TermDOM implements the parts of CSS that mean something on a character grid, and
 is honest about the rest:
 
 - **CSS Grid** — not yet. Flexbox and table layout are implemented.
-- **RTL / `direction`** — not implemented. Nothing about a cell grid prevents it;
-  the cost is that terminals do not implement the Unicode bidirectional
-  algorithm, so we would have to reorder mixed-direction text into visual order
-  ourselves and shape Arabic contextual forms before emitting cells.
+- **Arabic contextual shaping** — RTL text is ordered correctly (see above), but
+  Arabic letters are emitted in their isolated forms rather than joined. Hebrew,
+  which does not join, renders fully.
+- **Explicit bidi embedding controls** — `LRE`/`RLE`/`PDF` and the isolate
+  characters are left alone rather than reordered wrongly. Text without them
+  takes the strong-direction path.
 - **`aspect-ratio`** — deliberately omitted; a ratio has no meaning on a grid
   whose cells are not square.
 - **Sub-cell sizing** — a cell is indivisible. All layout is in whole cells.
