@@ -72,6 +72,14 @@ const segmenter =
 		? new Intl.Segmenter("en", {granularity: "grapheme"})
 		: null;
 
+/**
+ * Spacing combining marks (general category Mc). Unlike Mn and Me, which draw
+ * onto the character before them, these ADVANCE -- Devanagari's vowel signs are
+ * the common case, and POSIX wcwidth gives them a column each by omitting Mc
+ * from the zero-width categories.
+ */
+const SPACING_MARK = /\p{Mc}/gu;
+
 /** Display width of a single grapheme cluster, in terminal cells. */
 function graphemeWidth(cluster: string): number {
 	const code = cluster.codePointAt(0)!;
@@ -100,9 +108,21 @@ function graphemeWidth(cluster: string): number {
 		return Array.from(cluster).length > 1 ? 2 : 1;
 	}
 
-	if (inRanges(code, WIDE_RANGES)) return 2;
+	const base = inRanges(code, WIDE_RANGES) ? 2 : 1;
 
-	return 1;
+	// The base carries its own width, and every SPACING mark riding with it
+	// carries one more. A cluster is one unit for breaking and one unit for the
+	// caret, but not necessarily one column: "का" is a letter plus a spacing
+	// vowel sign, and occupies two.
+	//
+	// Counted strictly AFTER the base, never including it -- a lone spacing
+	// mark is its own base, and scanning the whole cluster charged it twice.
+	const rest = cluster.slice(String.fromCodePoint(code).length);
+	if (!rest) return base;
+	SPACING_MARK.lastIndex = 0;
+	let spacing = 0;
+	while (SPACING_MARK.exec(rest) !== null) spacing++;
+	return base + spacing;
 }
 
 /**

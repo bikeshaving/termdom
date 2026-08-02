@@ -163,3 +163,71 @@ test("a terminal that insists on reordering gets logical order instead", async (
 
 	dom.dispose();
 });
+
+test("grapheme-cluster mode is negotiated, and given back on dispose", async () => {
+	// Mode 2027 (terminal-unicode-core): terminals measure by POSIX wcwidth,
+	// which is per code point and cannot express a ZWJ sequence as one unit.
+	// We measure by cluster, so this asks the terminal to agree.
+	const terminal = new MockProcess({cols: 20, rows: 4});
+	const stdout = terminal.stdout as unknown as {
+		write: (...args: unknown[]) => boolean;
+	};
+	const original = stdout.write.bind(stdout);
+	const seen: string[] = [];
+	stdout.write = (...args: unknown[]) => {
+		const data = String(args[0]);
+		seen.push(data);
+		if (data.includes("\x1b[?2027$p")) {
+			setTimeout(
+				() =>
+					(
+						terminal.stdin as unknown as {simulateResponse: (s: string) => void}
+					).simulateResponse("\x1b[?2027;1$y"),
+				0,
+			);
+			const rest = data.replace("\x1b[?2027h", "").replace("\x1b[?2027$p", "");
+			return rest ? original(rest, ...args.slice(1)) : true;
+		}
+		return original(...args);
+	};
+
+	const dom = new TermDOM({process: terminal});
+	dom.document.body.innerHTML = `<div>hi</div>`;
+	await nextFrame(dom);
+	await new Promise((resolve) => setTimeout(resolve, 60));
+	dom.dispose();
+
+	const all = seen.join("");
+	expect(all).toContain("\x1b[?2027h");
+	expect(all).toContain("\x1b[?2027$p");
+	// Ours to turn off, since it was ours to turn on.
+	expect(all).toContain("\x1b[?2027l");
+
+	dom.dispose();
+});
+
+test("a terminal that ignores mode 2027 is left alone", async () => {
+	// Silence is the common answer, and means the same as "not recognised": our
+	// measurements do not change, only whether the terminal agrees with them.
+	const terminal = new MockProcess({cols: 20, rows: 4});
+	const stdout = terminal.stdout as unknown as {
+		write: (...args: unknown[]) => boolean;
+	};
+	const original = stdout.write.bind(stdout);
+	const seen: string[] = [];
+	stdout.write = (...args: unknown[]) => {
+		seen.push(String(args[0]));
+		return original(...args);
+	};
+
+	const dom = new TermDOM({process: terminal});
+	dom.document.body.innerHTML = `<div>hi</div>`;
+	await nextFrame(dom);
+	await new Promise((resolve) => setTimeout(resolve, 1100));
+	dom.dispose();
+
+	// Nothing to restore: the mode never took.
+	expect(seen.join("")).not.toContain("\x1b[?2027l");
+
+	dom.dispose();
+});

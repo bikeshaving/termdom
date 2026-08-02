@@ -631,11 +631,18 @@ export class TermDOM {
 	// Unified stdin handling
 	#cursorDetectionHandler: ((data: string) => void) | null = null;
 
-	/** Waiting for the terminal's DECRPM answer about BDSM; see #negotiateBidi. */
-	#bidiProbeHandler: ((value: number) => void) | null = null;
-	#bidiProbeTimer: ReturnType<typeof setTimeout> | null = null;
+	/**
+	 * Outstanding DECRQM queries, keyed by the mode as it appears in the reply
+	 * ("8", "?2027"). Two negotiations run concurrently at startup and their
+	 * answers can arrive in either order, so they are matched by mode number
+	 * rather than by whoever asked last.
+	 */
+	#modeProbeHandlers = new Map<string, (value: number) => void>();
+	#modeProbeTimers = new Set<ReturnType<typeof setTimeout>>();
 	/** The BDSM state the terminal reported before we touched it, for dispose. */
 	#priorBidiMode: number | null = null;
+	/** Whether the terminal agreed to grapheme-cluster widths (mode 2027). */
+	#graphemeClustersNegotiated = false;
 
 	// Handles and timers that must be torn down in dispose(), or they keep the
 	// process alive after the app is done -- which, across a test suite, piles up
@@ -1083,6 +1090,7 @@ export class TermDOM {
 		this.#updateMouseReporting();
 		this.#initializeCursorDetection();
 		void this.#negotiateBidi();
+		void this.#negotiateGraphemeClusters();
 
 		// See installCursorRestoreOnExit: if this instance dies without
 		// dispose(), the exit hook hands the user their cursor back.
@@ -1170,15 +1178,20 @@ export class TermDOM {
 				// Route 0: the terminal's answer about BDSM (DECRPM). Same
 				// splicing as the cursor report below -- it is a reply, never a
 				// keystroke, and it can share a chunk with real typing.
-				const modeReport = dataStr.match(/\x1b\[8;(\d+)\$y/);
-				if (this.#bidiProbeHandler && modeReport) {
-					this.#bidiProbeHandler(parseInt(modeReport[1], 10));
-					const rest =
-						dataStr.slice(0, modeReport.index) +
-						dataStr.slice((modeReport.index ?? 0) + modeReport[0].length);
-					if (rest.length === 0) return;
-					if (this.#stdinDataHandler) this.#stdinDataHandler(rest);
-					return;
+				const modeReport = dataStr.match(/\x1b\[(\??)(\d+);(\d+)\$y/);
+				if (modeReport) {
+					const mode = (modeReport[1] ? "?" : "") + modeReport[2];
+					const waiting = this.#modeProbeHandlers.get(mode);
+					if (waiting) {
+						this.#modeProbeHandlers.delete(mode);
+						waiting(parseInt(modeReport[3], 10));
+						const rest =
+							dataStr.slice(0, modeReport.index) +
+							dataStr.slice((modeReport.index ?? 0) + modeReport[0].length);
+						if (rest.length === 0) return;
+						if (this.#stdinDataHandler) this.#stdinDataHandler(rest);
+						return;
+					}
 				}
 
 				const report = dataStr.match(/\x1b\[\d+;\d+R/);
@@ -5223,30 +5236,42 @@ export class TermDOM {
 	 * Silence is the common case -- most terminals answer nothing at all -- and
 	 * is treated as "no bidi", which is what silence has always meant here.
 	 */
+	/**
+	 * Set a terminal mode and ask what it actually is now (DECRQM), resolving
+	 * with the reported value -- or null if the terminal says nothing, which is
+	 * the common case, since most implement no such mode and answer only the
+	 * queries they know.
+	 *
+	 * The reply values are DECRPM's: 0 not recognised, 1 set, 2 reset, 3
+	 * permanently set, 4 permanently reset. 0 and silence mean the same thing to
+	 * every caller here -- the terminal has no opinion, so ours stands.
+	 */
+	#probeMode(mode: string, request: string): Promise<number | null> {
+		return new Promise<number | null>((resolve) => {
+			// The same second the cursor probe allows: a cold start or a slow SSH
+			// link can outlast a tighter window, and answering late is answering.
+			// Timers are tracked so dispose() can clear them -- a live one keeps
+			// the event loop open, which across a test suite is fatal.
+			const timer = setTimeout(() => {
+				this.#modeProbeTimers.delete(timer);
+				this.#modeProbeHandlers.delete(mode);
+				resolve(null);
+			}, 1000);
+			this.#modeProbeTimers.add(timer);
+			this.#modeProbeHandlers.set(mode, (value: number) => {
+				clearTimeout(timer);
+				this.#modeProbeTimers.delete(timer);
+				resolve(value);
+			});
+			this.#process.stdout.write(request);
+		});
+	}
+
 	async #negotiateBidi(): Promise<void> {
 		if (!this.#interactive || !this.#process.stdin?.isTTY) return;
 
-		const answer = await new Promise<number | null>((resolve) => {
-			// The same second the cursor probe allows: a cold start or a slow SSH
-			// link can outlast a tighter window, and answering late is answering.
-			// Held in a field so dispose() can clear it -- a live timer keeps the
-			// event loop open, which across a test suite is fatal.
-			this.#bidiProbeTimer = setTimeout(() => {
-				this.#bidiProbeTimer = null;
-				this.#bidiProbeHandler = null;
-				resolve(null);
-			}, 1000);
-			this.#bidiProbeHandler = (value: number) => {
-				if (this.#bidiProbeTimer !== null) {
-					clearTimeout(this.#bidiProbeTimer);
-					this.#bidiProbeTimer = null;
-				}
-				this.#bidiProbeHandler = null;
-				resolve(value);
-			};
-			// Explicit mode, then "what is mode 8 now?" in one write.
-			this.#process.stdout.write("\x1b[8l\x1b[8$p");
-		});
+		// Explicit mode, then "what is mode 8 now?" in one write.
+		const answer = await this.#probeMode("8", "\x1b[8l\x1b[8$p");
 
 		if (answer === null || answer === 0) return; // No bidi: cells as written.
 		this.#priorBidiMode = answer;
@@ -5256,6 +5281,31 @@ export class TermDOM {
 		if (answer === 1 || answer === 3) {
 			this[kLayoutEngine].setTerminalReordersText(true);
 		}
+	}
+
+	/**
+	 * Ask the terminal to measure text in grapheme CLUSTERS rather than by code
+	 * point (DEC private mode 2027, the terminal-unicode-core specification).
+	 *
+	 * The default a terminal implements is POSIX wcwidth, which is per code
+	 * point and predates emoji: it cannot express that a ZWJ family sequence or
+	 * an emoji with a variation selector is one indivisible unit, so it advances
+	 * the cursor once per code point in them. We measure by cluster -- that is
+	 * what stringWidth does -- so on such a terminal every cluster of more than
+	 * one code point is a standing disagreement about where the next cell is.
+	 *
+	 * Mode 2027 is the fix the terminal community landed on, and it is asked for
+	 * the same way as bidi: set it, then query it. A terminal that does not know
+	 * the mode answers 0 or says nothing, and we simply carry on -- our
+	 * measurements do not change, because they were already cluster-based; what
+	 * changes is only whether the terminal agrees with them.
+	 */
+	async #negotiateGraphemeClusters(): Promise<void> {
+		if (!this.#interactive || !this.#process.stdin?.isTTY) return;
+
+		const answer = await this.#probeMode("?2027", "\x1b[?2027h\x1b[?2027$p");
+		// 1 = set (it agrees now), 3 = permanently set (it always did).
+		this.#graphemeClustersNegotiated = answer === 1 || answer === 3;
 	}
 
 	/**
@@ -5421,16 +5471,20 @@ export class TermDOM {
 			this.#process.stdout.write("\x1b[8h");
 			this.#priorBidiMode = null;
 		}
+		// Mode 2027 likewise: we turned it on, so turn it off. A terminal that
+		// never had it does not see this, having answered nothing.
+		if (this.#graphemeClustersNegotiated) {
+			this.#process.stdout.write("\x1b[?2027l");
+			this.#graphemeClustersNegotiated = false;
+		}
 
 		// Tear down everything that holds the event loop open. Without this a
 		// disposed TermDOM keeps the process alive -- via the process signal
 		// listeners, the stdin data listener, and the cursor-detection timer -- and
 		// across a whole test suite those accumulate until nothing can exit.
-		if (this.#bidiProbeTimer !== null) {
-			clearTimeout(this.#bidiProbeTimer);
-			this.#bidiProbeTimer = null;
-			this.#bidiProbeHandler = null;
-		}
+		for (const timer of this.#modeProbeTimers) clearTimeout(timer);
+		this.#modeProbeTimers.clear();
+		this.#modeProbeHandlers.clear();
 		if (this.#cursorDetectionTimer !== null) {
 			clearTimeout(this.#cursorDetectionTimer);
 			this.#cursorDetectionTimer = null;
