@@ -1,5 +1,5 @@
 /**
- * Types for the dependencies that ship none.
+ * Ambient types for the external packages that ship none.
  *
  * All of them are hand-written against the small surface termdom actually
  * consumes, not the packages' full APIs -- if a call site starts needing more,
