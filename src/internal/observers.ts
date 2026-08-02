@@ -2,16 +2,24 @@
  * ResizeObserver and IntersectionObserver for the terminal.
  *
  * Both are driven the same way: after every layout, the manager measures each
- * observed element and fires a callback when what it watches has changed. That is
- * exactly the information the layout engine already produces each frame, so these
- * are thin -- they read boxes termdom computed anyway.
+ * observed element and fires a callback when what it watches has changed. That
+ * is exactly the information the layout engine already produces each frame, so
+ * these are thin -- they read boxes termdom computed anyway.
  *
- * - ResizeObserver watches an element's content-box size. Its headline use here is
- *   the terminal itself resizing: a component can react through the standard DOM
- *   API instead of listening for SIGWINCH.
- * - IntersectionObserver watches whether an element overlaps the viewport -- the
- *   visible cell grid. A terminal has a discrete, exact viewport, so "on screen"
- *   is a clean integer comparison rather than the approximation a browser makes.
+ * - ResizeObserver watches an element's content-box size. Its headline use here
+ *   is the terminal itself resizing: a component can react through the standard
+ *   DOM API instead of listening for SIGWINCH.
+ * - IntersectionObserver watches whether an element overlaps the root -- by
+ *   default the visible cell grid. A terminal has a discrete, exact viewport, so
+ *   "on screen" is a clean integer comparison rather than the approximation a
+ *   browser makes.
+ *
+ * These objects are handed to author code as `window.ResizeObserver` and
+ * `window.IntersectionObserver`, so their public surface has to be the DOM's and
+ * nothing else. The measure hook the manager needs is therefore keyed by a
+ * module-private symbol rather than named as a method: `observer.check(host)`
+ * would show up in autocomplete, in `Object.keys`, and in any duck-typing
+ * check, advertising an operation the DOM has never had.
  */
 
 interface Rect {
@@ -21,6 +29,18 @@ interface Rect {
 	height: number;
 }
 
+const EMPTY_RECT: Rect = {top: 0, left: 0, width: 0, height: 0};
+
+/**
+ * The manager's way in. Not #private, because the manager has to call it; not a
+ * named method, because author code must never see it.
+ */
+const kCheck = Symbol("check");
+/** Subclass hooks and shared state, symbol-keyed for the same reason. */
+const kTargets = Symbol("targets");
+const kMeasure = Symbol("measure");
+const kDeliver = Symbol("deliver");
+
 /**
  * What the manager needs from its host (TermDOM) to measure the world, kept as a
  * tiny interface so the observers do not reach into TermDOM internals.
@@ -28,13 +48,88 @@ interface Rect {
 export interface ObserverHost {
 	/** Border-box rect of an element in document coordinates, or null if unlaid. */
 	getBorderBox(element: Element): Rect | null;
-	/** Content-box size of an element (border box minus padding and border). */
-	getContentBox(element: Element): {width: number; height: number} | null;
+	/**
+	 * Content-box of an element: its size, and the offset of its top-left from
+	 * the border box, which is what ResizeObserver reports as contentRect's
+	 * origin. Null if the element generates no box at all.
+	 */
+	getContentBox(
+		element: Element,
+	): {width: number; height: number; top: number; left: number} | null;
 	/** The visible viewport rect, in the same document coordinates as boxes. */
 	getViewportRect(): Rect;
 	/** A frame counter, used only to timestamp entries. */
 	now(): number;
 }
+
+/**
+ * The half of an observer that is identical between the two: which elements are
+ * watched, what was last reported for each, and registration with the manager.
+ *
+ * Subclasses supply only how to measure one target (#measure) and how to build
+ * an entry from that measurement, which is the whole of what differs.
+ */
+abstract class LayoutObserver<TState, TEntry> {
+	#manager: ObserverManager;
+	/** Observed targets, each mapped to what was last reported for it. */
+	[kTargets] = new Map<Element, TState | null>();
+
+	constructor(manager: ObserverManager) {
+		this.#manager = manager;
+	}
+
+	observe(target: Element): void {
+		// A fresh target has no last state, so its first measurement always counts
+		// as a change -- which is what fires the initial callback the DOM promises.
+		if (!this[kTargets].has(target)) {
+			this[kTargets].set(target, null);
+		}
+		this.#manager.register(this as unknown as AnyObserver);
+	}
+
+	unobserve(target: Element): void {
+		this[kTargets].delete(target);
+		if (this[kTargets].size === 0) {
+			this.#manager.unregister(this as unknown as AnyObserver);
+		}
+	}
+
+	disconnect(): void {
+		this[kTargets].clear();
+		this.#manager.unregister(this as unknown as AnyObserver);
+	}
+
+	/**
+	 * Records are computed and delivered in the same pass (see the manager's
+	 * flush), so nothing is ever queued undelivered and this is always empty.
+	 * Present because the DOM has it and code checks for it.
+	 */
+	takeRecords(): TEntry[] {
+		return [];
+	}
+
+	/** Measure one target: its new state, and the entry to report, or null. */
+	abstract [kMeasure](
+		target: Element,
+		last: TState | null,
+		host: ObserverHost,
+	): {state: TState; entry: TEntry} | null;
+
+	abstract [kDeliver](entries: TEntry[]): void;
+
+	[kCheck](host: ObserverHost): void {
+		const entries: TEntry[] = [];
+		for (const [target, last] of this[kTargets]) {
+			const result = this[kMeasure](target, last, host);
+			if (!result) continue;
+			this[kTargets].set(target, result.state);
+			entries.push(result.entry);
+		}
+		if (entries.length > 0) this[kDeliver](entries);
+	}
+}
+
+type AnyObserver = {[kCheck](host: ObserverHost): void};
 
 // ---------------------------------------------------------------------------
 // ResizeObserver
@@ -58,78 +153,77 @@ type ResizeObserverCallback = (
 	observer: ResizeObserver,
 ) => void;
 
-export class ResizeObserver {
+interface ResizeSize {
+	width: number;
+	height: number;
+}
+
+export class ResizeObserver extends LayoutObserver<
+	ResizeSize,
+	ResizeObserverEntry
+> {
 	#callback: ResizeObserverCallback;
-	#manager: ObserverManager;
-	/** Observed targets and the content-box size we last reported for each. */
-	#targets = new Map<Element, {width: number; height: number} | null>();
 
 	constructor(callback: ResizeObserverCallback, manager: ObserverManager) {
+		super(manager);
 		this.#callback = callback;
-		this.#manager = manager;
 	}
 
-	observe(target: Element): void {
-		// A fresh target has no "last size", so its first measurement always counts
-		// as a change -- which is what fires the initial callback the DOM promises.
-		if (!this.#targets.has(target)) {
-			this.#targets.set(target, null);
+	[kMeasure](
+		target: Element,
+		last: ResizeSize | null,
+		host: ObserverHost,
+	): {state: ResizeSize; entry: ResizeObserverEntry} | null {
+		// An element with no box -- display:none, or detached -- has a size, and
+		// that size is zero. Reporting it is how the DOM lets a component notice
+		// it has been hidden; skipping it stranded the last size it ever had.
+		const content = host.getContentBox(target) ?? {
+			width: 0,
+			height: 0,
+			top: 0,
+			left: 0,
+		};
+
+		if (
+			last &&
+			last.width === content.width &&
+			last.height === content.height
+		) {
+			return null;
 		}
-		this.#manager.register(this);
-	}
 
-	unobserve(target: Element): void {
-		this.#targets.delete(target);
-		if (this.#targets.size === 0) this.#manager.unregister(this);
-	}
-
-	disconnect(): void {
-		this.#targets.clear();
-		this.#manager.unregister(this);
-	}
-
-	/** Measure every target and fire once with whatever changed. Manager-only. */
-	check(host: ObserverHost): void {
-		const entries: ResizeObserverEntry[] = [];
-
-		for (const [target, last] of this.#targets) {
-			const content = host.getContentBox(target);
-			if (!content) continue;
-
-			if (
-				last &&
-				last.width === content.width &&
-				last.height === content.height
-			) {
-				continue;
-			}
-			this.#targets.set(target, {width: content.width, height: content.height});
-
-			const box: ResizeObserverSize = {
-				inlineSize: content.width,
-				blockSize: content.height,
-			};
-			const border = host.getBorderBox(target);
-			const borderBox: ResizeObserverSize = {
-				inlineSize: border?.width ?? content.width,
-				blockSize: border?.height ?? content.height,
-			};
-
-			entries.push({
+		const box: ResizeObserverSize = {
+			inlineSize: content.width,
+			blockSize: content.height,
+		};
+		const border = host.getBorderBox(target);
+		return {
+			state: {width: content.width, height: content.height},
+			entry: {
 				target,
+				// Origin is the content box's offset inside the border box -- the
+				// padding and border that precede it -- not zero.
 				contentRect: {
-					top: 0,
-					left: 0,
+					top: content.top,
+					left: content.left,
 					width: content.width,
 					height: content.height,
 				},
 				contentBoxSize: [box],
-				borderBoxSize: [borderBox],
+				borderBoxSize: [
+					{
+						inlineSize: border?.width ?? content.width,
+						blockSize: border?.height ?? content.height,
+					},
+				],
+				// A cell is the device pixel here, so these coincide.
 				devicePixelContentBoxSize: [box],
-			});
-		}
+			},
+		};
+	}
 
-		if (entries.length > 0) this.#callback(entries, this);
+	[kDeliver](entries: ResizeObserverEntry[]): void {
+		this.#callback(entries, this);
 	}
 }
 
@@ -175,80 +269,127 @@ function intersectionRatio(box: Rect, clip: Rect): {ratio: number; rect: Rect} {
 	};
 }
 
-export class IntersectionObserver {
+/**
+ * Grow (or shrink) a rect by a CSS margin shorthand, per the root-margin rules:
+ * one to four lengths, in the order top, right, bottom, left.
+ *
+ * Lengths are cells, whichever unit is written: a row vertically, a column
+ * horizontally. `px` and `ch` therefore mean the same thing here, which is the
+ * same equivalence the rest of termdom's box model makes. Percentages are
+ * resolved against the root's own size, as the spec requires.
+ */
+function applyRootMargin(rect: Rect, margin: string): Rect {
+	const parts = margin.trim().split(/\s+/).filter(Boolean);
+	if (parts.length === 0) return rect;
+
+	const resolve = (value: string, basis: number): number => {
+		const match = /^(-?[\d.]+)(px|ch|%)?$/.exec(value);
+		if (!match) return 0;
+		const n = parseFloat(match[1]);
+		if (!Number.isFinite(n)) return 0;
+		return match[2] === "%" ? (n / 100) * basis : n;
+	};
+
+	const [t, r = t, b = t, l = r] = parts;
+	const top = resolve(t, rect.height);
+	const right = resolve(r, rect.width);
+	const bottom = resolve(b, rect.height);
+	const left = resolve(l, rect.width);
+
+	return {
+		top: rect.top - top,
+		left: rect.left - left,
+		width: Math.max(0, rect.width + left + right),
+		height: Math.max(0, rect.height + top + bottom),
+	};
+}
+
+export class IntersectionObserver extends LayoutObserver<
+	number,
+	IntersectionObserverEntry
+> {
 	#callback: IntersectionObserverCallback;
-	#manager: ObserverManager;
-	#thresholds: number[];
-	/** Observed targets and whether they last counted as intersecting. */
-	#targets = new Map<Element, boolean | null>();
+	#root: Element | null;
+
+	readonly rootMargin: string;
+	readonly thresholds: readonly number[];
 
 	constructor(
 		callback: IntersectionObserverCallback,
 		manager: ObserverManager,
 		init: IntersectionObserverInit = {},
 	) {
+		super(manager);
 		this.#callback = callback;
-		this.#manager = manager;
+		this.#root = init.root ?? null;
+		this.rootMargin = init.rootMargin ?? "0px";
 
 		// A single number, an array, or the default of "any intersection at all".
 		const t = init.threshold ?? 0;
-		this.#thresholds = (Array.isArray(t) ? [...t] : [t]).sort((a, b) => a - b);
-	}
-
-	observe(target: Element): void {
-		if (!this.#targets.has(target)) this.#targets.set(target, null);
-		this.#manager.register(this);
-	}
-
-	unobserve(target: Element): void {
-		this.#targets.delete(target);
-		if (this.#targets.size === 0) this.#manager.unregister(this);
-	}
-
-	disconnect(): void {
-		this.#targets.clear();
-		this.#manager.unregister(this);
-	}
-
-	/** Whether `ratio` meets any configured threshold. */
-	#meets(ratio: number): boolean {
-		// Ratio 0 with a 0 threshold means "not intersecting"; any positive overlap
-		// against a 0 threshold does. A higher threshold needs that much coverage.
-		return this.#thresholds.some((threshold) =>
-			threshold === 0 ? ratio > 0 : ratio >= threshold,
+		this.thresholds = Object.freeze(
+			(Array.isArray(t) ? [...t] : [t]).sort((a, b) => a - b),
 		);
 	}
 
-	check(host: ObserverHost): void {
-		const viewport = host.getViewportRect();
-		const entries: IntersectionObserverEntry[] = [];
+	get root(): Element | null {
+		return this.#root;
+	}
 
-		for (const [target, wasIntersecting] of this.#targets) {
-			const box = host.getBorderBox(target);
-			if (!box) continue;
+	/**
+	 * How many thresholds the ratio has reached, which is what the spec actually
+	 * watches: an observation fires when this CHANGES, so a target scrolling
+	 * through `[0, 0.5, 1]` reports at each step. Tracking only the boolean
+	 * "is it intersecting" collapsed all of those into one callback and made
+	 * threshold arrays decorative.
+	 */
+	#thresholdIndex(ratio: number): number {
+		let index = 0;
+		while (index < this.thresholds.length && ratio >= this.thresholds[index]) {
+			// A zero threshold means "any overlap at all", so a ratio of exactly
+			// zero has not reached it.
+			if (this.thresholds[index] === 0 && ratio === 0) break;
+			index++;
+		}
+		return index;
+	}
 
-			const {ratio, rect} = intersectionRatio(box, viewport);
-			const isIntersecting = this.#meets(ratio);
+	[kMeasure](
+		target: Element,
+		last: number | null,
+		host: ObserverHost,
+	): {state: number; entry: IntersectionObserverEntry} | null {
+		const box = host.getBorderBox(target);
+		if (!box) return null;
 
-			// Fire only when the intersecting state flips, matching the callback the
-			// DOM delivers (and the initial one, since the last state starts null).
-			if (wasIntersecting === isIntersecting) continue;
-			this.#targets.set(target, isIntersecting);
+		// The root: an explicit element's border box, or the viewport. Either way
+		// grown by rootMargin, which is the whole point of that option -- it is
+		// what lets a list start loading a row before it scrolls into view.
+		const rootBox = this.#root
+			? host.getBorderBox(this.#root)
+			: host.getViewportRect();
+		if (!rootBox) return null;
+		const rootBounds = applyRootMargin(rootBox, this.rootMargin);
 
-			entries.push({
+		const {ratio, rect} = intersectionRatio(box, rootBounds);
+		const index = this.#thresholdIndex(ratio);
+		if (last === index) return null;
+
+		return {
+			state: index,
+			entry: {
 				target,
-				isIntersecting,
+				isIntersecting: index > 0,
 				intersectionRatio: ratio,
 				boundingClientRect: box,
-				intersectionRect: isIntersecting
-					? rect
-					: {top: 0, left: 0, width: 0, height: 0},
-				rootBounds: viewport,
+				intersectionRect: index > 0 ? rect : EMPTY_RECT,
+				rootBounds,
 				time: host.now(),
-			});
-		}
+			},
+		};
+	}
 
-		if (entries.length > 0) this.#callback(entries, this);
+	[kDeliver](entries: IntersectionObserverEntry[]): void {
+		this.#callback(entries, this);
 	}
 }
 
@@ -259,37 +400,41 @@ export class IntersectionObserver {
 /**
  * Owns the live observers and runs them after each layout.
  *
- * Registration is reference-counted through observe/unobserve/disconnect, so an
- * observer with nothing to watch does no work and holds no memory.
+ * One set, not one per kind: an observer is anything that can be asked to
+ * measure itself, so routing by `instanceof` bought nothing except a second
+ * collection to keep in step and a reason for the manager to know its
+ * subclasses. Registration is reference-counted through
+ * observe/unobserve/disconnect, so an observer with nothing to watch does no
+ * work and holds no memory.
  */
 export class ObserverManager {
 	#host: ObserverHost;
-	#resize = new Set<ResizeObserver>();
-	#intersection = new Set<IntersectionObserver>();
+	#observers = new Set<AnyObserver>();
 
 	constructor(host: ObserverHost) {
 		this.#host = host;
 	}
 
-	register(observer: ResizeObserver | IntersectionObserver): void {
-		if (observer instanceof ResizeObserver) this.#resize.add(observer);
-		else this.#intersection.add(observer);
+	register(observer: AnyObserver): void {
+		this.#observers.add(observer);
 	}
 
-	unregister(observer: ResizeObserver | IntersectionObserver): void {
-		if (observer instanceof ResizeObserver) this.#resize.delete(observer);
-		else this.#intersection.delete(observer);
+	unregister(observer: AnyObserver): void {
+		this.#observers.delete(observer);
 	}
 
 	/** Run every observer against the current layout. Called after each render. */
 	flush(): void {
-		if (this.#resize.size === 0 && this.#intersection.size === 0) return;
-		for (const observer of this.#resize) observer.check(this.#host);
-		for (const observer of this.#intersection) observer.check(this.#host);
+		if (this.#observers.size === 0) return;
+		// A copy: a callback may observe or disconnect, and mutating the set
+		// mid-iteration would visit the new observer against a layout it has not
+		// been measured for, or skip one that is still live.
+		for (const observer of [...this.#observers]) {
+			observer[kCheck](this.#host);
+		}
 	}
 
 	dispose(): void {
-		this.#resize.clear();
-		this.#intersection.clear();
+		this.#observers.clear();
 	}
 }

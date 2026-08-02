@@ -169,3 +169,193 @@ test("IntersectionObserver honours a ratio threshold", async () => {
 	expect(states).toEqual([false]);
 	dom.dispose();
 });
+
+test("the manager hook is not part of the public surface", () => {
+	// These objects are handed to author code as window.ResizeObserver, so their
+	// surface has to be the DOM's. The measure hook the manager calls is keyed by
+	// a module-private symbol precisely so it cannot be seen or called from here.
+	const {dom, window} = make() as any;
+	const ro = new window.ResizeObserver(() => {});
+	const io = new window.IntersectionObserver(() => {});
+
+	expect((ro as {check?: unknown}).check).toBeUndefined();
+	expect((io as {check?: unknown}).check).toBeUndefined();
+	// Nor reachable by enumerating what the object exposes.
+	const names = new Set<string>();
+	for (
+		let o = ro;
+		o && o !== Object.prototype;
+		o = Object.getPrototypeOf(o) as typeof ro
+	) {
+		for (const key of Object.getOwnPropertyNames(o)) names.add(key);
+	}
+	expect([...names].some((n) => /check/i.test(n))).toBe(false);
+
+	dom.dispose();
+});
+
+test("ResizeObserver reports the content box's own origin", async () => {
+	const {dom, document, window} = make() as any;
+	document.body.innerHTML = `<div id="a" style="width:10ch;height:3px;padding:1px 2ch">A</div>`;
+	await nextFrame(dom);
+
+	const entries: Array<{contentRect: {top: number; left: number}}> = [];
+	const ro = new window.ResizeObserver((es: typeof entries) =>
+		entries.push(...es),
+	);
+	ro.observe(document.getElementById("a"));
+	await nextFrame(dom);
+	await nextFrame(dom);
+
+	// Not 0,0: contentRect's origin is what precedes the content inside the
+	// border box, which here is one row of padding and two columns of it.
+	expect(entries[0].contentRect.top).toBe(1);
+	expect(entries[0].contentRect.left).toBe(2);
+
+	dom.dispose();
+});
+
+test("ResizeObserver reports 0x0 when an element is hidden", async () => {
+	const {dom, document, window} = make() as any;
+	document.body.innerHTML = `<div id="a" style="width:10ch;height:3px">A</div>`;
+	await nextFrame(dom);
+
+	const entries: Array<{
+		contentRect: {top: number; left: number; width: number; height: number};
+	}> = [];
+	const ro = new window.ResizeObserver((es: typeof entries) =>
+		entries.push(...es),
+	);
+	ro.observe(document.getElementById("a"));
+	await nextFrame(dom);
+	await nextFrame(dom);
+	entries.length = 0;
+
+	document.getElementById("a").style.display = "none";
+	await nextFrame(dom);
+	await nextFrame(dom);
+
+	// Reporting the hide is how a component learns it has been hidden; skipping
+	// it left the observer holding the last size the element ever had.
+	expect(entries.length).toBe(1);
+	expect(entries[0].contentRect).toEqual({
+		top: 0,
+		left: 0,
+		width: 0,
+		height: 0,
+	});
+
+	dom.dispose();
+});
+
+test("display:none stops taking up rows", async () => {
+	// Not an observer bug: styleFlexNode set DISPLAY_NONE and then a later branch
+	// reset it to flex, so a hidden element stopped painting but kept its space.
+	const {dom, terminal, document} = make(8, 30) as any;
+	document.body.innerHTML = `<div id="a" style="height:3px">AAA</div><div>after</div>`;
+	await nextFrame(dom);
+	await nextFrame(dom);
+
+	const rows = () =>
+		terminal
+			.getPlainText()
+			.split("\n")
+			.map((l: string) => l.replace(/\s+$/, ""));
+	expect(rows()[3]).toBe("after");
+
+	document.getElementById("a").style.display = "none";
+	await nextFrame(dom);
+	await nextFrame(dom);
+	expect(rows()[0]).toBe("after");
+
+	// And comes back.
+	document.getElementById("a").style.display = "";
+	await nextFrame(dom);
+	await nextFrame(dom);
+	expect(rows()[0]).toBe("AAA");
+	expect(rows()[3]).toBe("after");
+
+	dom.dispose();
+});
+
+test("IntersectionObserver honours rootMargin", async () => {
+	const {dom, document, window} = make(5, 40) as any;
+	document.body.innerHTML = `<div style="height:20px">spacer</div><div id="far" style="height:2px">far</div>`;
+	await nextFrame(dom);
+	const far = document.getElementById("far");
+
+	const without: boolean[] = [];
+	const a = new window.IntersectionObserver(
+		(es: Array<{isIntersecting: boolean}>) => {
+			for (const e of es) without.push(e.isIntersecting);
+		},
+	);
+	a.observe(far);
+	await nextFrame(dom);
+	await nextFrame(dom);
+	expect(without).toEqual([false]);
+
+	const withMargin: boolean[] = [];
+	const b = new window.IntersectionObserver(
+		(es: Array<{isIntersecting: boolean}>) => {
+			for (const e of es) withMargin.push(e.isIntersecting);
+		},
+		{rootMargin: "100px"},
+	);
+	b.observe(far);
+	await nextFrame(dom);
+	await nextFrame(dom);
+	// The whole point of the option: start work before the row scrolls in.
+	expect(withMargin).toEqual([true]);
+
+	dom.dispose();
+});
+
+test("IntersectionObserver fires at every threshold crossing", async () => {
+	const {dom, document, window} = make(6, 40) as any;
+	document.body.innerHTML =
+		`<div style="height:3px">top</div>` +
+		`<div id="target" style="height:4px">target</div>` +
+		`<div style="height:40px">filler</div>`;
+	await nextFrame(dom);
+
+	const ratios: number[] = [];
+	const io = new window.IntersectionObserver(
+		(es: Array<{intersectionRatio: number}>) => {
+			for (const e of es) ratios.push(e.intersectionRatio);
+		},
+		{threshold: [0, 0.25, 0.5, 0.75, 1]},
+	);
+	io.observe(document.getElementById("target"));
+	await nextFrame(dom);
+	for (let i = 0; i < 5; i++) {
+		dom.window.scrollBy(0, 1);
+		await nextFrame(dom);
+		await nextFrame(dom);
+	}
+
+	// Tracking only the boolean "is it intersecting" collapsed the whole scroll
+	// into a single callback and made threshold arrays decorative.
+	expect(ratios.length).toBeGreaterThan(1);
+
+	dom.dispose();
+});
+
+test("IntersectionObserver exposes root, rootMargin and thresholds", () => {
+	const {dom, document, window} = make() as any;
+	document.body.innerHTML = `<div id="r"></div>`;
+	const root = document.getElementById("r");
+	const io = new window.IntersectionObserver(() => {}, {
+		root,
+		rootMargin: "10px",
+		threshold: [1, 0, 0.5],
+	});
+
+	expect(io.root).toBe(root);
+	expect(io.rootMargin).toBe("10px");
+	expect(io.thresholds).toEqual([0, 0.5, 1]); // sorted, as the DOM requires
+	expect(typeof io.takeRecords).toBe("function");
+	expect(io.takeRecords()).toEqual([]);
+
+	dom.dispose();
+});

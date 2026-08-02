@@ -312,10 +312,10 @@ export interface ProcessLike extends EventEmitter {
 }
 
 export interface TermDOMOptions {
+	process?: ProcessLike;
 	width?: number;
 	height?: number;
 	colorDepth?: ColorDepth;
-	process?: ProcessLike;
 	/** Disable automatic cursor position detection. Useful for testing. */
 	detectCursor?: boolean;
 }
@@ -3229,6 +3229,15 @@ export class TermDOM {
 					: null;
 			},
 			getContentBox: (element) => {
+				// An element that generates no box has no content box either --
+				// not a zero-sized one at its old padding offsets. Reported as
+				// "nothing", which the observer turns into an all-zero rect.
+				if (
+					this.window.getComputedStyle(element).getPropertyValue("display") ===
+					"none"
+				) {
+					return null;
+				}
 				const rect = this[kLayoutEngine].getRect(element);
 				if (!rect) return null;
 				const box = getBoxModel(element);
@@ -3248,7 +3257,14 @@ export class TermDOM {
 						(box.borderTopWidth || 0) -
 						(box.borderBottomWidth || 0),
 				);
-				return {width, height};
+				// Origin relative to the border box: what precedes the content on
+				// each axis. ResizeObserver reports this as contentRect's top/left.
+				return {
+					width,
+					height,
+					top: (box.borderTopWidth || 0) + (box.paddingTop || 0),
+					left: (box.borderLeftWidth || 0) + (box.paddingLeft || 0),
+				};
 			},
 			getViewportRect: () => {
 				// The visible window over the document, in the document coordinate

@@ -652,11 +652,14 @@ function styleFlexNode(
 		} else {
 			flexNode.setAlignContent(Flex.ALIGN_FLEX_START);
 		}
-	} else if (!display.startsWith("table")) {
-		// Default block layout. Table displays are set above and must not be
-		// overwritten here -- listing them out by hand meant table-caption was
-		// missed, and its display was silently reset to flex, which is why the
-		// table could never find its own caption.
+	} else if (display !== "none" && !display.startsWith("table")) {
+		// Default block layout. Displays decided above must not be overwritten
+		// here -- listing out the ones to skip by hand missed table-caption once,
+		// whose display was silently reset to flex, which is why the table could
+		// never find its own caption. `none` was the same trap: an element hidden
+		// at runtime had DISPLAY_NONE set a hundred lines up and taken away again
+		// here, so it stopped painting but kept its rows, and everything below it
+		// stayed pushed down.
 		flexNode.setDisplay(Flex.DISPLAY_FLEX);
 		flexNode.setFlexDirection(Flex.FLEX_DIRECTION_COLUMN);
 		flexNode.setAlignItems(Flex.ALIGN_STRETCH);
