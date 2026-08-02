@@ -645,3 +645,44 @@ test("bare numbers stay valid where CSS says they are", async () => {
 	expect(value(".units", "margin-left")).toBe("auto");
 	dom.dispose();
 });
+
+test("min-width applies to ordinary block boxes", async () => {
+	// A block container is a COLUMN flex container internally, so `width` is its
+	// children's CROSS axis -- and the cross-axis path resolved a definite size
+	// without clamping it, so min-width did nothing on most of a document.
+	const terminal = new MockProcess({cols: 40, rows: 6});
+	const dom = new TermDOM({process: terminal});
+	dom.document.head.innerHTML = `<style>
+		#narrow { width: 5ch; min-width: 20ch; }
+		#wide { width: 30ch; max-width: 5ch; }
+	</style>`;
+	dom.document.body.innerHTML = `<div id="narrow">a</div><div id="wide">b</div>`;
+
+	await nextFrame(dom);
+	await nextFrame(dom);
+
+	expect(
+		dom.document.getElementById("narrow")!.getBoundingClientRect().width,
+	).toBe(20);
+	expect(
+		dom.document.getElementById("wide")!.getBoundingClientRect().width,
+	).toBe(5);
+
+	dom.dispose();
+});
+
+test("the text-decoration longhand underlines, not just the shorthand", async () => {
+	// text-decoration is a shorthand whose value lives in the longhands, so
+	// `text-decoration-line: underline` leaves the shorthand computing to "none".
+	const terminal = new MockProcess({cols: 20, rows: 3});
+	const dom = new TermDOM({process: terminal});
+	dom.document.head.innerHTML = `<style>#p { text-decoration-line: underline; }</style>`;
+	dom.document.body.innerHTML = `<div id="p">abc</div>`;
+
+	await nextFrame(dom);
+	await nextFrame(dom);
+
+	expect(/\x1b\[[^m]*4[;m]/.test(terminal.getStaticANSI())).toBe(true);
+
+	dom.dispose();
+});

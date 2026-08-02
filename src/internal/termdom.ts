@@ -40,6 +40,21 @@ type ClipRect = {left: number; top: number; right: number; bottom: number};
  * element's own edge", so overflow-x:hidden;overflow-y:visible only bounds
  * columns, matching CSS's independent per-axis overflow.
  */
+/**
+ * Whether a computed style asks for an underline.
+ *
+ * `text-decoration` is a shorthand whose value lives in the longhands, so an
+ * author writing `text-decoration-line: underline` leaves the shorthand
+ * computing to "none" -- and reading only the shorthand meant the longhand did
+ * nothing at all. Read the longhand first, since it is where the value is, and
+ * fall back to the shorthand for the styles that set it that way.
+ */
+function hasUnderline(style: CSSStyleDeclaration): boolean {
+	const line = style.getPropertyValue("text-decoration-line");
+	if (line) return line.includes("underline");
+	return style.getPropertyValue("text-decoration").includes("underline");
+}
+
 function overflowClipRect(
 	rect: {left: number; top: number; width: number; height: number} | null,
 	overflowX: string,
@@ -1362,10 +1377,7 @@ export class TermDOM {
 		const italic =
 			this.window.getComputedStyle(element).getPropertyValue("font-style") ===
 			"italic";
-		const underline = this.window
-			.getComputedStyle(element)
-			.getPropertyValue("text-decoration")
-			.includes("underline");
+		const underline = hasUnderline(this.window.getComputedStyle(element));
 		const underlineStyle =
 			this.window
 				.getComputedStyle(element)
@@ -1925,9 +1937,7 @@ export class TermDOM {
 		);
 		const markerItalic =
 			markerStyle.getPropertyValue("font-style") === "italic";
-		const markerUnderline = markerStyle
-			.getPropertyValue("text-decoration")
-			.includes("underline");
+		const markerUnderline = hasUnderline(markerStyle);
 
 		const markerTextStyle = {
 			fg:
@@ -2746,9 +2756,7 @@ export class TermDOM {
 			bold,
 			dim,
 			italic: computedStyle.getPropertyValue("font-style") === "italic",
-			underline: computedStyle
-				.getPropertyValue("text-decoration")
-				.includes("underline"),
+			underline: hasUnderline(computedStyle),
 			underlineStyle:
 				computedStyle.getPropertyValue("text-decoration-style") === "double"
 					? ("double" as const)

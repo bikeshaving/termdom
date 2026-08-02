@@ -561,3 +561,31 @@ test("a leading <br> keeps its line break and the whole run after it", async () 
 
 	dom.dispose();
 });
+
+test("white-space: pre suppresses wrapping but keeps newlines", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 12});
+	const dom = new TermDOM({process: terminal});
+	dom.document.head.innerHTML = `<style>
+		#wrap { display: block; width: 10ch; white-space: pre; }
+		#lines { white-space: pre; }
+	</style>`;
+	dom.document.body.innerHTML =
+		`<div id="wrap">the quick brown fox jumps over the lazy dog</div>` +
+		`<div id="lines">one\ntwo\nthree</div>`;
+
+	await nextFrame(dom);
+	await nextFrame(dom);
+
+	// `pre` does not wrap -- it overflows, like nowrap. This wrapped instead,
+	// and the bug hid behind nowrap working correctly.
+	expect(
+		dom.document.getElementById("wrap")!.getBoundingClientRect().height,
+	).toBe(1);
+	// But a newline is a break the CONTENT demands, and suppressing every break
+	// point to stop wrapping suppressed those too.
+	expect(
+		dom.document.getElementById("lines")!.getBoundingClientRect().height,
+	).toBe(3);
+
+	dom.dispose();
+});

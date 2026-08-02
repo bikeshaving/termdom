@@ -182,7 +182,7 @@ const FEATURES: Record<string, Feature> = {
 	"text-transform": {value: "uppercase"},
 	"text-align": {value: "right"},
 	"text-indent": {value: "4ch"},
-	"white-space": {value: "nowrap", setup: NARROW, text: LONG},
+	"white-space": {value: "pre", setup: NARROW, text: LONG},
 	"word-break": {value: "break-all", setup: NARROW, text: LONG},
 	"overflow-wrap": {
 		value: "break-word",

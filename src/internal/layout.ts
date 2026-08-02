@@ -3619,7 +3619,13 @@ export class LayoutEngine {
 
 		// Process and break the content with dynamic per-element styling
 		const processedContent = this.#processWhitespace(leafNodes);
+		// `pre` suppresses wrapping exactly as `nowrap` does -- it differs only in
+		// preserving whitespace and honouring newlines, which #collapseWhitespace
+		// already handles. Treating it as wrappable meant a narrow box folded text
+		// that a browser lets overflow, and the bug hid behind `nowrap` working.
+		const preservesLines = whiteSpace === "pre";
 		const nowrap =
+			preservesLines ||
 			(whiteSpace || "normal") === "nowrap" ||
 			this.#hasNowrapLeaf(processedContent);
 		const breaks = this.#findBreakPoints(processedContent, {
@@ -3822,14 +3828,20 @@ export class LayoutEngine {
 		content: ProcessedContent,
 		options: BreakOptions,
 	): BreakPoint[] {
-		// For nowrap, only allow breaking at the very end
+		// Nothing may break a nowrap run except a break the CONTENT demands: a
+		// newline under `pre`, or a <br>. Dropping every break point suppressed
+		// those too, so `pre` -- which does not wrap but does honour newlines --
+		// collapsed a three-line block onto one line.
 		if (options.nowrap) {
-			return [
-				{
-					position: content.text.length,
-					required: false,
-				},
-			];
+			const forced: BreakPoint[] = [];
+			if (options.whiteSpace === "pre" || options.whiteSpace === "pre-wrap") {
+				for (let i = content.text.indexOf("\n"); i !== -1; ) {
+					forced.push({position: i + 1, required: true});
+					i = content.text.indexOf("\n", i + 1);
+				}
+			}
+			forced.push({position: content.text.length, required: false});
+			return forced;
 		}
 
 		const breaker = new LineBreaker(content.text);

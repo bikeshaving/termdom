@@ -9,7 +9,7 @@ painted. A property termdom parses and stores but never acts on counts as
 unsupported here, because to a user it is.
 
 Probed 118 features against the CSS property list from
-`mdn-data`; 80 have an observable effect.
+`mdn-data`; 82 have an observable effect.
 
 ## Box model
 
@@ -17,7 +17,7 @@ Probed 118 features against the CSS property list from
 | --- | --- |
 | `width` | yes |
 | `height` | yes |
-| `min-width` | no (no effect) |
+| `min-width` | yes |
 | `min-height` | yes |
 | `max-width` | yes |
 | `max-height` | yes |
@@ -97,7 +97,7 @@ Probed 118 features against the CSS property list from
 | `font-weight` | yes |
 | `font-style` | yes |
 | `text-decoration` | yes |
-| `text-decoration-line` | no (no effect) |
+| `text-decoration-line` | yes |
 | `text-decoration-style` | no (no effect) |
 | `text-transform` | yes |
 | `text-align` | yes |

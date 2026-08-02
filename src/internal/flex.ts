@@ -1977,11 +1977,23 @@ function layoutFlexItem(
 		: NaN;
 
 	if (isDefined(crossTarget)) {
+		// Clamped, like every other resolved size: min-width and max-width bound
+		// `width` whichever axis it lands on, and a block container is a COLUMN
+		// flex container internally -- so width is its children's CROSS axis, and
+		// leaving this unclamped meant `min-width` did nothing at all on the
+		// ordinary block boxes that make up most of a document. The main axis
+		// already clamps through boundAxis; this is the other half.
+		const bounded = boundAxisWithinMinMax(
+			child,
+			cross,
+			crossTarget,
+			innerCross,
+		);
 		if (isRow(cross)) {
-			childWidth.value = crossTarget + marginCrossForChild;
+			childWidth.value = bounded + marginCrossForChild;
 			childWidth.mode = MEASURE_MODE_EXACTLY;
 		} else {
-			childHeight.value = crossTarget + marginCrossForChild;
+			childHeight.value = bounded + marginCrossForChild;
 			childHeight.mode = MEASURE_MODE_EXACTLY;
 		}
 	} else if (
