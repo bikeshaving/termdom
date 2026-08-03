@@ -1166,6 +1166,20 @@ export class Renderer {
 		this.clearPreviousBuffer();
 	}
 
+	/**
+	 * The screen scrolled by `rows` between resetScreen() and the frame that
+	 * consumes it -- reserveRows pushing earlier output into the scrollback to
+	 * make room. The pending reset row is SCREEN-absolute, so it rides the
+	 * scroll like everything else on screen; without this, the erase and the
+	 * paint land `rows` too low, overflow the bottom margin, and the frame's
+	 * own top rows get scrolled up and stranded as duplicates.
+	 */
+	shiftScreenReset(rows: number): void {
+		if (this.#needsScreenReset && rows > 0) {
+			this.#resetAtRow = Math.max(0, this.#resetAtRow - rows);
+		}
+	}
+
 	get hasSavedCursor(): boolean {
 		return this.#hasSavedCursor;
 	}

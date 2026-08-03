@@ -879,5 +879,14 @@ test("a height shrink clamps the re-anchor so the frame fits below it", async ()
 	expect(visibleCopies("HEADER-ROW")).toBe(1);
 	expect(visibleCopies("BODY-10")).toBe(1);
 
+	// The room was taken by scrolling the prompt up, never painting over it:
+	// both prompt lines survive, on screen or in the scrollback.
+	const allRows: string[] = [];
+	for (let i = 0; i < buffer.baseY + terminal.stdout.rows; i++) {
+		allRows.push(line(i));
+	}
+	expect(allRows).toContain("~/proj % demo");
+	expect(allRows).toContain("~ %");
+
 	dom.dispose();
 });

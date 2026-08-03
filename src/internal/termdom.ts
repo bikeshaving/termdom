@@ -3884,13 +3884,12 @@ export class TermDOM {
 		const epoch = this.#resizeEpoch;
 
 		const redraw = (startRow: number) => {
-			// However the start row was recovered, the frame must FIT below it:
-			// painting past the new bottom margin scrolls the terminal mid-
-			// redraw, which shoves the frame's own freshly painted top rows up
-			// and strands them above the rest -- the duplicated header on a
-			// vertical shrink. The computed re-anchor has this clamp built into
-			// its arithmetic; the cursor-recovered path needs it applied.
-			startRow = Math.max(0, Math.min(startRow, newHeight - contentHeight));
+			// The recovered row is where the frame STOOD; whether the frame
+			// still FITS below it at the new height is reserveRows' problem,
+			// which solves it the only permissible way -- scrolling earlier
+			// output up into the scrollback, never painting over it. (An
+			// earlier fix clamped startRow upward here instead, which planted
+			// the frame on top of the shell prompt above it.)
 			this.#screenTop = startRow;
 			this.#anchorScrollTop = -this.#screenTop;
 			this.#renderer.resetScreen(startRow);
@@ -5437,6 +5436,9 @@ export class TermDOM {
 			// unchanged, and composited the old frame under the new one whenever a
 			// document-mode region grew past the space below the shell prompt.
 			this.#screenTop = top - push;
+			// A pending post-resize screen reset IS screen-absolute, though, and
+			// must ride the scroll (see shiftScreenReset).
+			this.#renderer.shiftScreenReset(push);
 		}
 
 		return this.#screenTop;
