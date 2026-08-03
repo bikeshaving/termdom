@@ -345,8 +345,41 @@ let exitHookInstalled = false;
 
 // What Tab traverses and what a mousedown focuses -- one definition of
 // "focusable" for both.
+//
+// `a[href]` is in the list because an anchor WITH an href is focusable and
+// sequentially reachable per HTML, and an anchor without one is not -- the
+// attribute qualifier draws that line for free. Leaving links out made
+// navigation link-shaped UI (TodoMVC's All/Active/Completed filters) reachable
+// only by mouse.
 const FOCUSABLE_SELECTOR =
-	'input:not([disabled]), button:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+	'a[href], input:not([disabled]), button:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/** Input types that are buttons rather than fields. */
+const BUTTON_INPUT_TYPES = new Set(["submit", "button", "reset", "image"]);
+
+/**
+ * Does a keypress on this element activate it, the way a click would?
+ *
+ * Buttons do, on Enter and on Space. Links do, on Enter only -- Space scrolls
+ * the page in a browser rather than following the link, and the difference is
+ * observable enough to be worth keeping.
+ */
+function keyboardActivation(
+	element: Element,
+): {enter: boolean; space: boolean} | null {
+	const tag = element.tagName;
+	if (tag === "BUTTON") {
+		return {enter: true, space: true};
+	}
+	if (tag === "INPUT") {
+		const type = (element as HTMLInputElement).type;
+		return BUTTON_INPUT_TYPES.has(type) ? {enter: true, space: true} : null;
+	}
+	if (tag === "A" && element.hasAttribute("href")) {
+		return {enter: true, space: false};
+	}
+	return null;
+}
 
 function installCursorRestoreOnExit(): void {
 	if (exitHookInstalled) return;
@@ -4924,6 +4957,23 @@ export class TermDOM {
 					shiftKey,
 					ctrlKey,
 				);
+			} else if (keyboardActivation(targetElement as Element)) {
+				// A focused button activates on Enter and on Space, and a link on
+				// Enter, per HTML's activation behavior. Without this, both took
+				// focus and painted :focus while doing nothing -- advertising an
+				// affordance they did not have. `input[type=submit|button]`,
+				// excluded from the editing branch above, had no handler at all.
+				const activation = keyboardActivation(targetElement as Element)!;
+				if (
+					(keyName === "Enter" && activation.enter) ||
+					(key === " " && activation.space)
+				) {
+					// click() rather than a synthesized event: it runs the element's
+					// full activation behavior, so a submit button submits its form
+					// and a link follows its href, exactly as a mouse click would.
+					(targetElement as HTMLElement).click();
+					this.#render();
+				}
 			} else if (
 				targetElement instanceof (this.window as any).HTMLSelectElement
 			) {

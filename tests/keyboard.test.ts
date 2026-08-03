@@ -1541,3 +1541,109 @@ test("an input preceded by text in its run positions on its own row", async () =
 	expect(inputs[1].getBoundingClientRect().y).toBe(1);
 	dom.dispose();
 });
+
+test("a focused button activates on Enter and on Space", async () => {
+	// A button that takes focus and paints :focus while doing nothing is
+	// advertising an affordance it does not have. HTML gives buttons an
+	// activation behavior on both keys; input[type=submit|button] is a button
+	// too, and was previously excluded from every keyboard path.
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const dom = new TermDOM({process: terminal});
+	dom.attach();
+	const {document} = dom;
+	document.body.innerHTML = `
+		<button id="btn">Clear completed</button>
+		<input type="submit" id="submit" value="Save">`;
+	await nextFrame(dom);
+
+	const seen: string[] = [];
+	document.getElementById("btn")!.addEventListener("click", () => {
+		seen.push("btn");
+	});
+	document.getElementById("submit")!.addEventListener("click", (ev) => {
+		// No form to submit to, and jsdom would try to navigate.
+		ev.preventDefault();
+		seen.push("submit");
+	});
+
+	(document.getElementById("btn") as HTMLElement).focus();
+	terminal.stdin.emit("data", Buffer.from("\r"));
+	await nextFrame(dom);
+	terminal.stdin.emit("data", Buffer.from(" "));
+	await nextFrame(dom);
+
+	(document.getElementById("submit") as HTMLElement).focus();
+	terminal.stdin.emit("data", Buffer.from("\r"));
+	await nextFrame(dom);
+	terminal.stdin.emit("data", Buffer.from(" "));
+	await nextFrame(dom);
+
+	expect(seen).toEqual(["btn", "btn", "submit", "submit"]);
+	dom.dispose();
+});
+
+test("a keydown listener can cancel a button's activation", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const dom = new TermDOM({process: terminal});
+	dom.attach();
+	const {document} = dom;
+	document.body.innerHTML = `<button id="btn">Go</button>`;
+	await nextFrame(dom);
+
+	let clicks = 0;
+	const button = document.getElementById("btn") as HTMLElement;
+	button.addEventListener("click", () => clicks++);
+	button.addEventListener("keydown", (ev) => ev.preventDefault());
+	button.focus();
+
+	terminal.stdin.emit("data", Buffer.from("\r"));
+	await nextFrame(dom);
+
+	expect(clicks).toBe(0);
+	dom.dispose();
+});
+
+test("links are focusable, and activate on Enter but not Space", async () => {
+	// An <a> WITH an href is sequentially focusable per HTML; one without is
+	// not. Space scrolls rather than following the link, so a link is not
+	// simply a button.
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const dom = new TermDOM({process: terminal});
+	dom.attach();
+	const {document} = dom;
+	document.body.innerHTML = `
+		<input id="text">
+		<a href="#/" id="all">All</a>
+		<a id="nohref">Not a link</a>
+		<a href="#/active" id="active">Active</a>`;
+	await nextFrame(dom);
+
+	// Tab order includes both hrefs, in document order, and skips the anchor
+	// with no href.
+	const order: string[] = [];
+	(document.getElementById("text") as HTMLElement).focus();
+	for (let i = 0; i < 3; i++) {
+		terminal.stdin.emit("data", Buffer.from("\t"));
+		await nextFrame(dom);
+		order.push(document.activeElement?.id ?? "");
+	}
+	expect(order).toEqual(["all", "active", "text"]);
+
+	let clicks = 0;
+	const all = document.getElementById("all") as HTMLElement;
+	all.addEventListener("click", (ev) => {
+		ev.preventDefault();
+		clicks++;
+	});
+	all.focus();
+
+	terminal.stdin.emit("data", Buffer.from("\r"));
+	await nextFrame(dom);
+	expect(clicks).toBe(1);
+
+	terminal.stdin.emit("data", Buffer.from(" "));
+	await nextFrame(dom);
+	expect(clicks).toBe(1);
+
+	dom.dispose();
+});
