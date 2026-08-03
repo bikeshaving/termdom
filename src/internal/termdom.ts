@@ -220,6 +220,104 @@ function isSystemHighlightColor(value: string): boolean {
 }
 
 /**
+ * A computed style reduced to terminal cell attributes -- one mapping,
+ * shared by text nodes and the input painter's shadow parts.
+ */
+function cellStyleFromComputed(
+	computedStyle: CSSStyleDeclaration,
+): import("./ansi.js").CellStyle {
+	const color = computedStyle.getPropertyValue("color");
+	const bgColor = computedStyle.getPropertyValue("background-color");
+	const {bold, dim} = resolveFontWeight(
+		computedStyle.getPropertyValue("font-weight"),
+	);
+	// The Highlight/HighlightText system-color pair is CSS's spelling of
+	// "swap the cell's colors": it translates to SGR inverse, the
+	// terminal-native highlight with no color assumptions -- the same
+	// translation ::selection's resolver makes. Either name alone (the
+	// other overridden by an author color) can't mean "swap", so the
+	// system side simply resolves to nothing.
+	const isHighlightPair =
+		isSystemHighlightColor(bgColor) && isSystemHighlightColor(color);
+	return {
+		fg:
+			color && color !== "initial" && !isSystemHighlightColor(color)
+				? cssColorToNumber(color)
+				: undefined,
+		bg:
+			bgColor &&
+			bgColor !== "initial" &&
+			bgColor !== "transparent" &&
+			!/^canvas$/i.test(bgColor.trim()) &&
+			!isSystemHighlightColor(bgColor)
+				? cssColorToNumber(bgColor)
+				: undefined,
+		inverse: isHighlightPair || undefined,
+		bold,
+		dim,
+		italic: computedStyle.getPropertyValue("font-style") === "italic",
+		underline: hasUnderline(computedStyle),
+		underlineStyle:
+			computedStyle.getPropertyValue("text-decoration-style") === "double"
+				? ("double" as const)
+				: undefined,
+	};
+}
+
+/**
+ * The style a selection highlight paints with, over `base`. Everything
+ * comes from ::selection rules -- there is no built-in fallback. The UA
+ * document sheet declares the Highlight/HighlightText system-color
+ * pair, which is CSS's spelling of "swap the cell's colors" and
+ * translates to SGR 7 (inverse), the terminal-native highlight with no
+ * color assumptions; author colors replace the system keywords through
+ * the ordinary cascade. An element no ::selection rule reaches paints
+ * no highlight at all -- the UA rule is load-bearing.
+ */
+function selectionStyleFor(
+	window: DOMWindow,
+	element: Element,
+	base: import("./ansi.js").CellStyle,
+): import("./ansi.js").CellStyle {
+	const declaration = window.getComputedStyle(element, "::selection");
+	const fg = declaration.getPropertyValue("color");
+	const bg = declaration.getPropertyValue("background-color");
+	if (!fg && !bg) {
+		return base;
+	}
+	const fgAuthored = Boolean(fg) && !isSystemHighlightColor(fg);
+	const bgAuthored = Boolean(bg) && !isSystemHighlightColor(bg);
+	if (!fgAuthored && !bgAuthored) {
+		return {...base, inverse: true};
+	}
+	return {
+		...base,
+		fg: fgAuthored ? cssColorToNumber(fg) : base.fg,
+		bg: bgAuthored ? cssColorToNumber(bg) : base.bg,
+	};
+}
+
+/**
+ * Whether a box takes part in positioned layout -- the predicate both the
+ * containing-block chain and stacking-context collection are built on.
+ */
+function isPositioned(window: DOMWindow, element: Element): boolean {
+	const position = window
+		.getComputedStyle(element)
+		.getPropertyValue("position");
+	return Boolean(position) && position !== "static";
+}
+
+/** z-index only means anything on a positioned box; "auto" stays distinct
+ * from 0 -- auto paints in the same layer but does NOT form a context. */
+function zIndexValueOf(window: DOMWindow, element: Element): number | "auto" {
+	const zIndex = window.getComputedStyle(element).getPropertyValue("z-index");
+	if (!zIndex || zIndex === "auto") return "auto";
+	const value = parseInt(zIndex, 10);
+	return Number.isFinite(value) ? value : "auto";
+}
+
+/**
  * Map each painted (visual) character of a text node back to its code-unit
  * offset in node.data. The painted fragments are the node's text after
  * whitespace collapsing and line breaking, so they differ from the raw data
@@ -259,6 +357,167 @@ function visualToDataOffsets(
 		}
 	}
 	return map;
+}
+
+/**
+ * Reconcile a textarea's UA tree with the element's own state -- the
+ * single source of truth. Placeholder visibility is real CSS (an inline
+ * display:none), not painter logic: the normal pipeline then simply
+ * never sees it.
+ */
+function syncTextareaShadowTree(
+	element: HTMLTextAreaElement,
+	parts: {spans: Record<string, HTMLElement>; texts: Record<string, Text>},
+): void {
+	const value = element.value;
+	const placeholder = element.getAttribute("placeholder") ?? "";
+	if (parts.texts.value.data !== value) {
+		parts.texts.value.data = value;
+	}
+	if (parts.texts.placeholder.data !== placeholder) {
+		parts.texts.placeholder.data = placeholder;
+	}
+	const placeholderDisplay = value ? "none" : "";
+	if (parts.spans.placeholder.style.display !== placeholderDisplay) {
+		parts.spans.placeholder.style.display = placeholderDisplay;
+	}
+}
+
+/** One visual (soft-wrapped or hard-broken) line of a laid-out textarea. */
+type TextareaVisualLine = {
+	x: number;
+	y: number;
+	text: string;
+	/** Data offset of the line's first character / caret slot. */
+	startOffset: number;
+	/** Data offset of the caret slot AFTER the line's last character. */
+	endOffset: number;
+};
+
+/**
+ * The VISUAL lines of a textarea's laid-out value: the painted
+ * fragments (one per soft-wrapped or hard-broken line), plus a virtual
+ * empty line for each trailing newline past the last visual character
+ * (typing Enter at the end must park the caret on the new, still-empty
+ * line, which owns no fragment). Offsets are code units into .value;
+ * geometry is document cells. Null before the value has ever laid out.
+ *
+ * The caller passes the widget's shadow parts rather than having them
+ * looked up here: every call site already has them, or needs them for
+ * something else in the same breath.
+ */
+function textareaVisualLines(
+	element: HTMLTextAreaElement,
+	parts: {texts: Record<string, Text>},
+	layoutEngine: LayoutEngine,
+): {value: string; lines: TextareaVisualLine[]} | null {
+	const valueText = parts.texts.value;
+	const value = valueText.data;
+	const rect = element.getBoundingClientRect();
+	const boxModel = getBoxModel(element);
+	const contentX =
+		Math.round(rect.left) +
+		(boxModel.borderLeftWidth || 0) +
+		(boxModel.paddingLeft || 0);
+	const contentY = Math.round(rect.top) + (boxModel.borderTopWidth || 0);
+
+	if (!value) {
+		return {
+			value,
+			lines: [
+				{x: contentX, y: contentY, text: "", startOffset: 0, endOffset: 0},
+			],
+		};
+	}
+
+	const rectTexts = layoutEngine.getRectTexts(valueText);
+	if (rectTexts.length === 0) {
+		return null;
+	}
+	const visToData = visualToDataOffsets(value, rectTexts);
+
+	const lines: TextareaVisualLine[] = [];
+	// Blank lines between consecutive newlines own real, EMPTY layout
+	// fragments -- no visual characters, so visToData can't place them.
+	// A cursor over the value's own structure does: each line consumes
+	// its characters plus, when the character at its end is a newline,
+	// that one hard separator (soft wraps have no separator to consume).
+	let visualBase = 0;
+	let cursor = 0;
+	for (const rectText of rectTexts) {
+		const length = rectText.text.length;
+		const startOffset = length > 0 ? visToData[visualBase] : cursor;
+		const endOffset =
+			length > 0 ? visToData[visualBase + length - 1] + 1 : startOffset;
+		lines.push({
+			x: Math.round(rectText.rect.x),
+			y: Math.round(rectText.rect.y),
+			text: rectText.text,
+			startOffset,
+			endOffset,
+		});
+		visualBase += length;
+		cursor =
+			endOffset < value.length && value[endOffset] === "\n"
+				? endOffset + 1
+				: endOffset;
+	}
+
+	// A value ending in a newline has exactly ONE line no fragment
+	// represents: the empty last line the caret sits on after a final
+	// Enter. (Interior blank lines all have fragments -- adding more
+	// virtual lines here is what once drifted the caret a row per
+	// blank line.)
+	if (value.endsWith("\n")) {
+		const last = lines[lines.length - 1];
+		lines.push({
+			x: contentX,
+			y: last.y + 1,
+			text: "",
+			startOffset: value.length,
+			endOffset: value.length,
+		});
+	}
+	return {value, lines};
+}
+
+/** The visual line index a caret offset sits on, given textareaVisualLines. */
+function textareaLineAt(
+	lines: Array<{startOffset: number; endOffset: number}>,
+	caret: number,
+): number {
+	for (let i = 0; i < lines.length; i++) {
+		// endOffset is a valid caret slot on this line; a caret exactly at
+		// a soft-wrap boundary belongs to the NEXT line's start (both
+		// lines claim the offset; later line wins), matching browsers.
+		if (caret <= lines[i].endOffset) {
+			const next = lines[i + 1];
+			if (next && next.startOffset <= caret) continue;
+			return i;
+		}
+	}
+	return lines.length - 1;
+}
+
+/** Caret cell for a focused textarea, from the laid-out value. */
+function textareaCaretCell(
+	element: HTMLTextAreaElement,
+	parts: {texts: Record<string, Text>},
+	layoutEngine: LayoutEngine,
+): {x: number; y: number} | null {
+	const visual = textareaVisualLines(element, parts, layoutEngine);
+	if (!visual) return null;
+	const caret =
+		element.selectionDirection === "backward"
+			? (element.selectionStart ?? visual.value.length)
+			: (element.selectionEnd ?? visual.value.length);
+	const lineIndex = textareaLineAt(visual.lines, caret);
+	const line = visual.lines[lineIndex];
+	const within = Math.max(
+		0,
+		Math.min(caret, line.endOffset) - line.startOffset,
+	);
+	return {x: line.x + stringWidth(line.text.slice(0, within)), y: line.y};
 }
 
 /**
@@ -353,6 +612,74 @@ let exitHookInstalled = false;
 // only by mouse.
 const FOCUSABLE_SELECTOR =
 	'a[href], input:not([disabled]), button:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/**
+ * Get all focusable elements in tab order
+ */
+function getFocusableElements(
+	document: Document,
+	window: DOMWindow,
+	layoutEngine: LayoutEngine,
+): Element[] {
+	const elements = Array.from(
+		document.querySelectorAll(FOCUSABLE_SELECTOR),
+	).filter((element) => {
+		// Browsers keep unrendered elements out of tab order: a hidden
+		// edit-row checkbox must not swallow a Tab press invisibly. An
+		// element is rendered when nothing on its flat-tree chain is
+		// display:none and it produced boxes.
+		for (
+			let ancestor: Element | null = element;
+			ancestor;
+			ancestor = compositionParentElement(ancestor)
+		) {
+			if (
+				window.getComputedStyle(ancestor).getPropertyValue("display") === "none"
+			) {
+				return false;
+			}
+		}
+		try {
+			return layoutEngine.getRects(element).length > 0;
+		} catch {
+			return false;
+		}
+	});
+	return elements.sort((a, b) => {
+		const aTab = parseInt(a.getAttribute("tabindex") || "0", 10);
+		const bTab = parseInt(b.getAttribute("tabindex") || "0", 10);
+		if (aTab !== bTab) {
+			if (aTab > 0 && bTab > 0) return aTab - bTab;
+			if (aTab > 0) return -1;
+			if (bTab > 0) return 1;
+		}
+		return 0;
+	});
+}
+
+/**
+ * The `autofocus` default action: an element with the attribute set gets
+ * focused as soon as it's connected, the same as a browser does at initial
+ * page load -- generalized here to any insertion, which is what lets a
+ * dynamically-created element (e.g. an edit input that only exists while
+ * editing) still autofocus itself. Scoped to newly added nodes only, not
+ * later attribute changes, matching the spec's "insertion" trigger. If a
+ * batch inserts more than one autofocus element, the later mutation wins
+ * (processed in order, each call simply moves focus again) -- same
+ * ambiguity a real page with more than one autofocus element already has.
+ */
+function focusAutofocusedNodes(mutations: MutationRecord[]): void {
+	for (const record of mutations) {
+		for (const node of record.addedNodes) {
+			if (node.nodeType !== node.ELEMENT_NODE) continue;
+			const element = node as Element;
+			const candidate = (element as any).autofocus
+				? element
+				: element.querySelector?.("[autofocus]");
+			(candidate as HTMLElement | null)?.focus?.();
+		}
+	}
+}
 
 /** Input types that are buttons rather than fields. */
 const BUTTON_INPUT_TYPES = new Set(["submit", "button", "reset", "image"]);
@@ -1076,7 +1403,7 @@ export class TermDOM {
 		if (relevant.length === 0) return;
 		this.#styleManager.handleMutations(relevant);
 		this[kLayoutEngine].handleMutations(relevant);
-		this.#focusAutofocusedNodes(relevant);
+		focusAutofocusedNodes(relevant);
 	}
 
 	#setupMutationObserver(): MutationObserver {
@@ -1094,30 +1421,6 @@ export class TermDOM {
 		});
 
 		return observer;
-	}
-
-	/**
-	 * The `autofocus` default action: an element with the attribute set gets
-	 * focused as soon as it's connected, the same as a browser does at initial
-	 * page load -- generalized here to any insertion, which is what lets a
-	 * dynamically-created element (e.g. an edit input that only exists while
-	 * editing) still autofocus itself. Scoped to newly added nodes only, not
-	 * later attribute changes, matching the spec's "insertion" trigger. If a
-	 * batch inserts more than one autofocus element, the later mutation wins
-	 * (processed in order, each call simply moves focus again) -- same
-	 * ambiguity a real page with more than one autofocus element already has.
-	 */
-	#focusAutofocusedNodes(mutations: MutationRecord[]): void {
-		for (const record of mutations) {
-			for (const node of record.addedNodes) {
-				if (node.nodeType !== node.ELEMENT_NODE) continue;
-				const element = node as Element;
-				const candidate = (element as any).autofocus
-					? element
-					: element.querySelector?.("[autofocus]");
-				(candidate as HTMLElement | null)?.focus?.();
-			}
-		}
 	}
 
 	/**
@@ -1513,9 +1816,13 @@ export class TermDOM {
 		if (element.tagName === "TEXTAREA" && rect) {
 			const textarea = element as HTMLTextAreaElement;
 			const parts = this.#ensureTextareaShadowParts(textarea);
-			this.#syncTextareaShadowTree(textarea, parts);
+			syncTextareaShadowTree(textarea, parts);
 			if (visible && textarea === this.document.activeElement) {
-				const caretCell = this.#textareaCaretCell(textarea);
+				const caretCell = textareaCaretCell(
+					textarea,
+					parts,
+					this[kLayoutEngine],
+				);
 				if (caretCell) {
 					ctx.setCaret(caretCell.x, caretCell.y);
 				}
@@ -1611,7 +1918,7 @@ export class TermDOM {
 				}
 				if (
 					childNode.nodeType === childNode.ELEMENT_NODE &&
-					this.#isPositioned(childNode as Element) &&
+					isPositioned(this.window, childNode as Element) &&
 					this[kLayoutEngine].positionedElements.has(childNode as Element)
 				) {
 					// Hoisted to its stacking context. Registry membership is
@@ -1671,14 +1978,13 @@ export class TermDOM {
 		const selStart = element.selectionStart ?? 0;
 		const selEnd = element.selectionEnd ?? 0;
 		if (selEnd <= selStart) return;
-		const visual = this.#textareaVisualLines(element);
-		if (!visual) return;
 		const parts = this.#ensureTextareaShadowParts(element);
-		const style = this.#selectionStyleFor(
+		const visual = textareaVisualLines(element, parts, this[kLayoutEngine]);
+		if (!visual) return;
+		const style = selectionStyleFor(
+			this.window,
 			element,
-			this.#cellStyleFromComputed(
-				this.window.getComputedStyle(parts.spans.value),
-			),
+			cellStyleFromComputed(this.window.getComputedStyle(parts.spans.value)),
 		);
 		for (const line of visual.lines) {
 			const from = Math.max(selStart, line.startOffset);
@@ -1749,7 +2055,7 @@ export class TermDOM {
 			ancestor && ancestor !== contextRoot;
 			ancestor = compositionParentElement(ancestor)
 		) {
-			if (!this.#isPositioned(ancestor)) continue;
+			if (!isPositioned(this.window, ancestor)) continue;
 			const style = this.window.getComputedStyle(ancestor);
 			const overflow = style.getPropertyValue("overflow");
 			const overflowX = style.getPropertyValue("overflow-x") || overflow;
@@ -1762,24 +2068,6 @@ export class TermDOM {
 			}
 		}
 		return clip;
-	}
-
-	#isPositioned(element: Element): boolean {
-		const position = this.window
-			.getComputedStyle(element)
-			.getPropertyValue("position");
-		return Boolean(position) && position !== "static";
-	}
-
-	/** z-index only means anything on a positioned box; "auto" stays distinct
-	 * from 0 -- auto paints in the same layer but does NOT form a context. */
-	#zIndexValueOf(element: Element): number | "auto" {
-		const zIndex = this.window
-			.getComputedStyle(element)
-			.getPropertyValue("z-index");
-		if (!zIndex || zIndex === "auto") return "auto";
-		const value = parseInt(zIndex, 10);
-		return Number.isFinite(value) ? value : "auto";
 	}
 
 	/**
@@ -1797,7 +2085,8 @@ export class TermDOM {
 			return true;
 		}
 		return (
-			this.#isPositioned(element) && this.#zIndexValueOf(element) !== "auto"
+			isPositioned(this.window, element) &&
+			zIndexValueOf(this.window, element) !== "auto"
 		);
 	}
 
@@ -1819,7 +2108,7 @@ export class TermDOM {
 		for (const element of this[kLayoutEngine].positionedElements) {
 			if (!element.isConnected || element === this.document.body) continue;
 			if (this.#topLayer.has(element)) continue; // painted above everything
-			if (!this.#isPositioned(element)) continue; // stale registry entry
+			if (!isPositioned(this.window, element)) continue; // stale registry entry
 			let root: Element = this.document.body;
 			for (
 				let ancestor = compositionParentElement(element);
@@ -1836,7 +2125,7 @@ export class TermDOM {
 				bucket = {neg: [], zero: [], pos: []};
 				layers.set(root, bucket);
 			}
-			const z = this.#zIndexValueOf(element);
+			const z = zIndexValueOf(this.window, element);
 			if (z === "auto" || z === 0) bucket.zero.push(element);
 			else if (z < 0) bucket.neg.push(element);
 			else bucket.pos.push(element);
@@ -1845,8 +2134,8 @@ export class TermDOM {
 			a.compareDocumentPosition(b) & 4 ? -1 : 1; // 4: b follows a
 		for (const bucket of layers.values()) {
 			const byZ = (a: Element, b: Element) => {
-				const za = this.#zIndexValueOf(a) as number;
-				const zb = this.#zIndexValueOf(b) as number;
+				const za = zIndexValueOf(this.window, a) as number;
+				const zb = zIndexValueOf(this.window, b) as number;
 				return za !== zb ? za - zb : treeOrder(a, b);
 			};
 			bucket.neg.sort(byZ);
@@ -2110,129 +2399,8 @@ export class TermDOM {
 
 		const parts = {kind: "textarea" as const, spans, texts};
 		this.#inputShadowParts.set(element, parts);
-		this.#syncTextareaShadowTree(element, parts);
+		syncTextareaShadowTree(element, parts);
 		return parts;
-	}
-
-	/**
-	 * Reconcile a textarea's UA tree with the element's own state -- the
-	 * single source of truth. Placeholder visibility is real CSS (an inline
-	 * display:none), not painter logic: the normal pipeline then simply
-	 * never sees it.
-	 */
-	#syncTextareaShadowTree(
-		element: HTMLTextAreaElement,
-		parts: {spans: Record<string, HTMLElement>; texts: Record<string, Text>},
-	): void {
-		const value = element.value;
-		const placeholder = element.getAttribute("placeholder") ?? "";
-		if (parts.texts.value.data !== value) {
-			parts.texts.value.data = value;
-		}
-		if (parts.texts.placeholder.data !== placeholder) {
-			parts.texts.placeholder.data = placeholder;
-		}
-		const placeholderDisplay = value ? "none" : "";
-		if (parts.spans.placeholder.style.display !== placeholderDisplay) {
-			parts.spans.placeholder.style.display = placeholderDisplay;
-		}
-	}
-
-	/**
-	 * The VISUAL lines of a textarea's laid-out value: the painted
-	 * fragments (one per soft-wrapped or hard-broken line), plus a virtual
-	 * empty line for each trailing newline past the last visual character
-	 * (typing Enter at the end must park the caret on the new, still-empty
-	 * line, which owns no fragment). Offsets are code units into .value;
-	 * geometry is document cells. Null before the value has ever laid out.
-	 */
-	#textareaVisualLines(element: HTMLTextAreaElement): {
-		value: string;
-		lines: Array<{
-			x: number;
-			y: number;
-			text: string;
-			/** Data offset of the line's first character / caret slot. */
-			startOffset: number;
-			/** Data offset of the caret slot AFTER the line's last character. */
-			endOffset: number;
-		}>;
-	} | null {
-		const parts = this.#ensureTextareaShadowParts(element);
-		const valueText = parts.texts.value;
-		const value = valueText.data;
-		const rect = element.getBoundingClientRect();
-		const boxModel = getBoxModel(element);
-		const contentX =
-			Math.round(rect.left) +
-			(boxModel.borderLeftWidth || 0) +
-			(boxModel.paddingLeft || 0);
-		const contentY = Math.round(rect.top) + (boxModel.borderTopWidth || 0);
-
-		if (!value) {
-			return {
-				value,
-				lines: [
-					{x: contentX, y: contentY, text: "", startOffset: 0, endOffset: 0},
-				],
-			};
-		}
-
-		const rectTexts = this[kLayoutEngine].getRectTexts(valueText);
-		if (rectTexts.length === 0) {
-			return null;
-		}
-		const visToData = visualToDataOffsets(value, rectTexts);
-
-		const lines: Array<{
-			x: number;
-			y: number;
-			text: string;
-			startOffset: number;
-			endOffset: number;
-		}> = [];
-		// Blank lines between consecutive newlines own real, EMPTY layout
-		// fragments -- no visual characters, so visToData can't place them.
-		// A cursor over the value's own structure does: each line consumes
-		// its characters plus, when the character at its end is a newline,
-		// that one hard separator (soft wraps have no separator to consume).
-		let visualBase = 0;
-		let cursor = 0;
-		for (const rectText of rectTexts) {
-			const length = rectText.text.length;
-			const startOffset = length > 0 ? visToData[visualBase] : cursor;
-			const endOffset =
-				length > 0 ? visToData[visualBase + length - 1] + 1 : startOffset;
-			lines.push({
-				x: Math.round(rectText.rect.x),
-				y: Math.round(rectText.rect.y),
-				text: rectText.text,
-				startOffset,
-				endOffset,
-			});
-			visualBase += length;
-			cursor =
-				endOffset < value.length && value[endOffset] === "\n"
-					? endOffset + 1
-					: endOffset;
-		}
-
-		// A value ending in a newline has exactly ONE line no fragment
-		// represents: the empty last line the caret sits on after a final
-		// Enter. (Interior blank lines all have fragments -- adding more
-		// virtual lines here is what once drifted the caret a row per
-		// blank line.)
-		if (value.endsWith("\n")) {
-			const last = lines[lines.length - 1];
-			lines.push({
-				x: contentX,
-				y: last.y + 1,
-				text: "",
-				startOffset: value.length,
-				endOffset: value.length,
-			});
-		}
-		return {value, lines};
 	}
 
 	/**
@@ -2487,43 +2655,6 @@ export class TermDOM {
 		this.#render();
 	}
 
-	/** The visual line index a caret offset sits on, given #textareaVisualLines. */
-	#textareaLineAt(
-		lines: Array<{startOffset: number; endOffset: number}>,
-		caret: number,
-	): number {
-		for (let i = 0; i < lines.length; i++) {
-			// endOffset is a valid caret slot on this line; a caret exactly at
-			// a soft-wrap boundary belongs to the NEXT line's start (both
-			// lines claim the offset; later line wins), matching browsers.
-			if (caret <= lines[i].endOffset) {
-				const next = lines[i + 1];
-				if (next && next.startOffset <= caret) continue;
-				return i;
-			}
-		}
-		return lines.length - 1;
-	}
-
-	/** Caret cell for a focused textarea, from the laid-out value. */
-	#textareaCaretCell(
-		element: HTMLTextAreaElement,
-	): {x: number; y: number} | null {
-		const visual = this.#textareaVisualLines(element);
-		if (!visual) return null;
-		const caret =
-			element.selectionDirection === "backward"
-				? (element.selectionStart ?? visual.value.length)
-				: (element.selectionEnd ?? visual.value.length);
-		const lineIndex = this.#textareaLineAt(visual.lines, caret);
-		const line = visual.lines[lineIndex];
-		const within = Math.max(
-			0,
-			Math.min(caret, line.endOffset) - line.startOffset,
-		);
-		return {x: line.x + stringWidth(line.text.slice(0, within)), y: line.y};
-	}
-
 	/**
 	 * The value offset under a document-space point in a text field --
 	 * cell-width aware, clamped to the nearest offset so a drag that
@@ -2536,7 +2667,12 @@ export class TermDOM {
 		y: number,
 	): number | null {
 		if (element.tagName === "TEXTAREA") {
-			const visual = this.#textareaVisualLines(element as HTMLTextAreaElement);
+			const textarea = element as HTMLTextAreaElement;
+			const visual = textareaVisualLines(
+				textarea,
+				this.#ensureTextareaShadowParts(textarea),
+				this[kLayoutEngine],
+			);
 			if (!visual || visual.lines.length === 0) return null;
 			// The pressed row's line; above the first clamps to it, below
 			// the last to that.
@@ -2609,7 +2745,12 @@ export class TermDOM {
 		if (!rect) return;
 		let caretY = Math.round(rect.top);
 		if (element.tagName === "TEXTAREA") {
-			const cell = this.#textareaCaretCell(element as HTMLTextAreaElement);
+			const textarea = element as HTMLTextAreaElement;
+			const cell = textareaCaretCell(
+				textarea,
+				this.#ensureTextareaShadowParts(textarea),
+				this[kLayoutEngine],
+			);
 			if (!cell) return;
 			caretY = cell.y;
 		}
@@ -2651,9 +2792,13 @@ export class TermDOM {
 		caret: number,
 		direction: 1 | -1,
 	): number {
-		const visual = this.#textareaVisualLines(element);
+		const visual = textareaVisualLines(
+			element,
+			this.#ensureTextareaShadowParts(element),
+			this[kLayoutEngine],
+		);
 		if (!visual) return caret;
-		const lineIndex = this.#textareaLineAt(visual.lines, caret);
+		const lineIndex = textareaLineAt(visual.lines, caret);
 		const targetIndex = lineIndex + direction;
 		if (targetIndex < 0) return 0;
 		if (targetIndex >= visual.lines.length) return visual.value.length;
@@ -2721,83 +2866,6 @@ export class TermDOM {
 	}
 
 	/**
-	 * The style a selection highlight paints with, over `base`. Everything
-	 * comes from ::selection rules -- there is no built-in fallback. The UA
-	 * document sheet declares the Highlight/HighlightText system-color
-	 * pair, which is CSS's spelling of "swap the cell's colors" and
-	 * translates to SGR 7 (inverse), the terminal-native highlight with no
-	 * color assumptions; author colors replace the system keywords through
-	 * the ordinary cascade. An element no ::selection rule reaches paints
-	 * no highlight at all -- the UA rule is load-bearing.
-	 */
-	#selectionStyleFor(
-		element: Element,
-		base: import("./ansi.js").CellStyle,
-	): import("./ansi.js").CellStyle {
-		const declaration = this.window.getComputedStyle(element, "::selection");
-		const fg = declaration.getPropertyValue("color");
-		const bg = declaration.getPropertyValue("background-color");
-		if (!fg && !bg) {
-			return base;
-		}
-		const fgAuthored = Boolean(fg) && !isSystemHighlightColor(fg);
-		const bgAuthored = Boolean(bg) && !isSystemHighlightColor(bg);
-		if (!fgAuthored && !bgAuthored) {
-			return {...base, inverse: true};
-		}
-		return {
-			...base,
-			fg: fgAuthored ? cssColorToNumber(fg) : base.fg,
-			bg: bgAuthored ? cssColorToNumber(bg) : base.bg,
-		};
-	}
-
-	/**
-	 * A computed style reduced to terminal cell attributes -- one mapping,
-	 * shared by text nodes and the input painter's shadow parts.
-	 */
-	#cellStyleFromComputed(
-		computedStyle: CSSStyleDeclaration,
-	): import("./ansi.js").CellStyle {
-		const color = computedStyle.getPropertyValue("color");
-		const bgColor = computedStyle.getPropertyValue("background-color");
-		const {bold, dim} = resolveFontWeight(
-			computedStyle.getPropertyValue("font-weight"),
-		);
-		// The Highlight/HighlightText system-color pair is CSS's spelling of
-		// "swap the cell's colors": it translates to SGR inverse, the
-		// terminal-native highlight with no color assumptions -- the same
-		// translation ::selection's resolver makes. Either name alone (the
-		// other overridden by an author color) can't mean "swap", so the
-		// system side simply resolves to nothing.
-		const isHighlightPair =
-			isSystemHighlightColor(bgColor) && isSystemHighlightColor(color);
-		return {
-			fg:
-				color && color !== "initial" && !isSystemHighlightColor(color)
-					? cssColorToNumber(color)
-					: undefined,
-			bg:
-				bgColor &&
-				bgColor !== "initial" &&
-				bgColor !== "transparent" &&
-				!/^canvas$/i.test(bgColor.trim()) &&
-				!isSystemHighlightColor(bgColor)
-					? cssColorToNumber(bgColor)
-					: undefined,
-			inverse: isHighlightPair || undefined,
-			bold,
-			dim,
-			italic: computedStyle.getPropertyValue("font-style") === "italic",
-			underline: hasUnderline(computedStyle),
-			underlineStyle:
-				computedStyle.getPropertyValue("text-decoration-style") === "double"
-					? ("double" as const)
-					: undefined,
-		};
-	}
-
-	/**
 	 * Render an input element: sync its UA shadow tree from the input's own
 	 * state, then paint the tree's parts with their computed styles. What
 	 * remains here is exactly the widget's editor mechanics -- the
@@ -2847,9 +2915,7 @@ export class TermDOM {
 				contentX,
 				contentY,
 				mark,
-				this.#cellStyleFromComputed(
-					this.window.getComputedStyle(parts.spans.glyph),
-				),
+				cellStyleFromComputed(this.window.getComputedStyle(parts.spans.glyph)),
 			);
 			if (element === this.document.activeElement) {
 				ctx.setCaret(contentX, contentY);
@@ -2867,12 +2933,12 @@ export class TermDOM {
 		// own text style (solid underline when focused), the placeholder and
 		// the blank carry the UA field sheet -- gray ghost label, faint
 		// blank when blurred -- plus whatever the author adds.
-		const textStyle = this.#cellStyleFromComputed(
+		const textStyle = cellStyleFromComputed(
 			this.window.getComputedStyle(
 				value ? parts.spans.value : parts.spans.placeholder,
 			),
 		);
-		const blankStyle = this.#cellStyleFromComputed(
+		const blankStyle = cellStyleFromComputed(
 			this.window.getComputedStyle(parts.spans.blank),
 		);
 
@@ -2969,7 +3035,7 @@ export class TermDOM {
 					contentX + stringWidth(displayText.slice(scrollOffset, visStart)),
 					contentY,
 					displayText.slice(visStart, visEnd),
-					this.#selectionStyleFor(element, textStyle),
+					selectionStyleFor(this.window, element, textStyle),
 				);
 			}
 		}
@@ -3023,7 +3089,7 @@ export class TermDOM {
 		if (computedStyle.getPropertyValue("visibility") === "hidden") return;
 
 		const textTransform = computedStyle.getPropertyValue("text-transform");
-		const textStyle = this.#cellStyleFromComputed(computedStyle);
+		const textStyle = cellStyleFromComputed(computedStyle);
 
 		const rectTexts = this[kLayoutEngine].getRectTexts(textNode);
 		if (rectTexts.length > 0) {
@@ -3081,7 +3147,11 @@ export class TermDOM {
 			getPseudoMetadata(textNode)?.hostElement ??
 			compositionParentElement(textNode);
 		if (!selectionParent) return;
-		const selectionStyle = this.#selectionStyleFor(selectionParent, textStyle);
+		const selectionStyle = selectionStyleFor(
+			this.window,
+			selectionParent,
+			textStyle,
+		);
 		if (selectionStyle === textStyle) return; // no ::selection rule reaches here
 
 		const visToData = visualToDataOffsets(textNode.data, rectTexts);
@@ -3759,51 +3829,14 @@ export class TermDOM {
 	}
 
 	/**
-	 * Get all focusable elements in tab order
-	 */
-	#getFocusableElements(): Element[] {
-		const elements = Array.from(
-			this.document.querySelectorAll(FOCUSABLE_SELECTOR),
-		).filter((element) => {
-			// Browsers keep unrendered elements out of tab order: a hidden
-			// edit-row checkbox must not swallow a Tab press invisibly. An
-			// element is rendered when nothing on its flat-tree chain is
-			// display:none and it produced boxes.
-			for (
-				let ancestor: Element | null = element;
-				ancestor;
-				ancestor = compositionParentElement(ancestor)
-			) {
-				if (
-					this.window.getComputedStyle(ancestor).getPropertyValue("display") ===
-					"none"
-				) {
-					return false;
-				}
-			}
-			try {
-				return this[kLayoutEngine].getRects(element).length > 0;
-			} catch {
-				return false;
-			}
-		});
-		return elements.sort((a, b) => {
-			const aTab = parseInt(a.getAttribute("tabindex") || "0", 10);
-			const bTab = parseInt(b.getAttribute("tabindex") || "0", 10);
-			if (aTab !== bTab) {
-				if (aTab > 0 && bTab > 0) return aTab - bTab;
-				if (aTab > 0) return -1;
-				if (bTab > 0) return 1;
-			}
-			return 0;
-		});
-	}
-
-	/**
 	 * Focus the next or previous focusable element
 	 */
 	#moveFocus(reverse: boolean): void {
-		const focusable = this.#getFocusableElements();
+		const focusable = getFocusableElements(
+			this.document,
+			this.window,
+			this[kLayoutEngine],
+		);
 		if (focusable.length === 0) return;
 
 		const current = this.document.activeElement;
@@ -3981,12 +4014,15 @@ export class TermDOM {
 			let target = 0;
 			if (isTextarea) {
 				this.#processPendingMutationsAndRender();
-				const visual = this.#textareaVisualLines(
-					element as HTMLTextAreaElement,
+				const textarea = element as HTMLTextAreaElement;
+				const visual = textareaVisualLines(
+					textarea,
+					this.#ensureTextareaShadowParts(textarea),
+					this[kLayoutEngine],
 				);
 				if (visual) {
 					target =
-						visual.lines[this.#textareaLineAt(visual.lines, caret)].startOffset;
+						visual.lines[textareaLineAt(visual.lines, caret)].startOffset;
 				}
 			}
 			if (shiftKey) {
@@ -3998,12 +4034,14 @@ export class TermDOM {
 			let target = value.length;
 			if (isTextarea) {
 				this.#processPendingMutationsAndRender();
-				const visual = this.#textareaVisualLines(
-					element as HTMLTextAreaElement,
+				const textarea = element as HTMLTextAreaElement;
+				const visual = textareaVisualLines(
+					textarea,
+					this.#ensureTextareaShadowParts(textarea),
+					this[kLayoutEngine],
 				);
 				if (visual) {
-					target =
-						visual.lines[this.#textareaLineAt(visual.lines, caret)].endOffset;
+					target = visual.lines[textareaLineAt(visual.lines, caret)].endOffset;
 				}
 			}
 			if (shiftKey) {
@@ -4028,7 +4066,7 @@ export class TermDOM {
 				// Push the new value into the UA tree now -- the mutation
 				// records from this sync are what invalidate layout, since no
 				// observer hears a .value assignment.
-				this.#syncTextareaShadowTree(
+				syncTextareaShadowTree(
 					element as HTMLTextAreaElement,
 					this.#ensureTextareaShadowParts(element as HTMLTextAreaElement),
 				);
@@ -4231,7 +4269,7 @@ export class TermDOM {
 		const walker = createExpandedTreeWalker(this.window, element);
 		for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
 			if (child.nodeType !== 1) continue;
-			if (this.#isPositioned(child as Element)) continue;
+			if (isPositioned(this.window, child as Element)) continue;
 			children.push(child as Element);
 		}
 		for (let i = children.length - 1; i >= 0; i--) {

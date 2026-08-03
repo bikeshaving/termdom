@@ -32,7 +32,7 @@ attribute a cell carries — dim, underline, inverse, a color — must trace bac
 a computed style on real DOM: element styles, UA shadow trees (the built-in
 controls' internals), the UA document stylesheet in `styles.ts`, or author
 rules. Only the CSS-value → terminal-attribute mapping layer is allowed to know
-about SGR: `resolveFontWeight`, `cssColorToNumber`, `#cellStyleFromComputed`,
+about SGR: `resolveFontWeight`, `cssColorToNumber`, `cellStyleFromComputed`,
 and the ANSI renderer. If a control needs a look, give it a UA rule or a UA
 shadow part — never a literal in the painter.
 
