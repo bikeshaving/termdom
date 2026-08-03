@@ -829,3 +829,55 @@ test("cancelAnimationFrame actually cancels", async () => {
 
 	dom.dispose();
 });
+
+test("a height shrink clamps the re-anchor so the frame fits below it", async () => {
+	// The cursor-recovered start row can be exactly where the frame stood --
+	// and still be wrong, when the new height cannot fit the frame below it.
+	// Painting past the bottom margin scrolls the terminal mid-redraw, which
+	// shoves the frame's freshly painted top rows up and strands them above
+	// the rest: the duplicated header the commit-editor showed on a vertical
+	// shrink. A focused field is the load-bearing ingredient -- it parks the
+	// cursor at the caret, mid-frame, so the recovery answers a mid-frame row.
+	const terminal = new MockProcess({rows: 18, cols: 60});
+	await new Promise<void>((resolve) => {
+		terminal.stdout.write("~/proj % demo\r\n~ %\r\n", () => resolve());
+	});
+	const dom = new TermDOM({process: terminal, detectCursor: true});
+	dom.document.body.innerHTML =
+		`<div>HEADER-ROW</div>` +
+		`<div>Subject <input id="s"></div>` +
+		Array.from({length: 10}, (_, i) => `<div>BODY-${i + 1}</div>`).join("");
+	(dom.document.getElementById("s") as HTMLElement).focus();
+	await nextFrame(dom);
+
+	// 12 content rows anchored at row 2: the bottom sits on the last screen
+	// row. Shrink so the frame no longer fits at its old anchor.
+	terminal.resize(60, 13);
+	(terminal as any).emit("SIGWINCH");
+
+	const buffer = (terminal as any).terminal.buffer.active;
+	const line = (i: number): string =>
+		(buffer.getLine(i)?.translateToString(true) ?? "").replace(/\s+$/, "");
+	const visibleCopies = (text: string): number => {
+		let copies = 0;
+		for (let i = buffer.baseY; i < buffer.baseY + terminal.stdout.rows; i++) {
+			if (line(i) === text) copies++;
+		}
+		return copies;
+	};
+
+	// The redraw arrives after the resize debounce plus a cursor-query round
+	// trip, so poll for the settled screen rather than betting on a delay.
+	const settled = () =>
+		visibleCopies("HEADER-ROW") === 1 && visibleCopies("BODY-10") === 1;
+	for (let waited = 0; !settled() && waited < 2000; waited += 50) {
+		await new Promise((resolve) => setTimeout(resolve, 50));
+	}
+
+	// The visible screen carries exactly one copy of the frame's header, and
+	// the frame is complete: its bottom row made it onto the screen.
+	expect(visibleCopies("HEADER-ROW")).toBe(1);
+	expect(visibleCopies("BODY-10")).toBe(1);
+
+	dom.dispose();
+});
