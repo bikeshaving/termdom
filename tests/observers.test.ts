@@ -238,12 +238,13 @@ test("ResizeObserver reports 0x0 when an element is hidden", async () => {
 	// Reporting the hide is how a component learns it has been hidden; skipping
 	// it left the observer holding the last size the element ever had.
 	expect(entries.length).toBe(1);
-	expect(entries[0].contentRect).toEqual({
-		top: 0,
-		left: 0,
-		width: 0,
-		height: 0,
-	});
+	// contentRect is a real DOMRect (as in a browser), so compare fields
+	// rather than structure.
+	const rect = entries[0].contentRect;
+	expect(rect.top).toBe(0);
+	expect(rect.left).toBe(0);
+	expect(rect.width).toBe(0);
+	expect(rect.height).toBe(0);
 
 	dom.dispose();
 });

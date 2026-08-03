@@ -28,18 +28,15 @@ import {
 // coalesce the burst of SIGWINCHes a drag fires, short enough to feel immediate.
 const RESIZE_DEBOUNCE_MS = 40;
 
+/**
+ * A clip in EDGE coordinates, not origin+size, and deliberately not a DOMRect:
+ * an axis that nothing clips is unbounded, and the only honest spelling of
+ * that is -Infinity to +Infinity. A DOMRect would have to store it as
+ * `x: -Infinity, width: Infinity`, whose `right` is then `NaN` -- which every
+ * intersection downstream would silently propagate.
+ */
 type ClipRect = {left: number; top: number; right: number; bottom: number};
 
-/**
- * The clip an overflow:hidden (or overflow-x/-y:hidden) element imposes on its
- * own children, intersected with whatever clip was already active from an
- * ancestor. overflow:auto/scroll/visible impose no clip on that axis -- there
- * are no scrollable containers, only the document camera, so "auto/scroll"
- * degrades to "visible" rather than clipping content nobody can scroll to see.
- * An axis that isn't hidden stays unbounded (+-Infinity), not just "this
- * element's own edge", so overflow-x:hidden;overflow-y:visible only bounds
- * columns, matching CSS's independent per-axis overflow.
- */
 /**
  * Whether a computed style asks for an underline.
  *
@@ -55,6 +52,16 @@ function hasUnderline(style: CSSStyleDeclaration): boolean {
 	return style.getPropertyValue("text-decoration").includes("underline");
 }
 
+/**
+ * The clip an overflow:hidden (or overflow-x/-y:hidden) element imposes on its
+ * own children, intersected with whatever clip was already active from an
+ * ancestor. overflow:auto/scroll/visible impose no clip on that axis -- there
+ * are no scrollable containers, only the document camera, so "auto/scroll"
+ * degrades to "visible" rather than clipping content nobody can scroll to see.
+ * An axis that isn't hidden stays unbounded (+-Infinity), not just "this
+ * element's own edge", so overflow-x:hidden;overflow-y:visible only bounds
+ * columns, matching CSS's independent per-axis overflow.
+ */
 function overflowClipRect(
 	rect: {left: number; top: number; width: number; height: number} | null,
 	overflowX: string,
@@ -1595,17 +1602,9 @@ function createObserverHost(
 	host: DOMPatchHost,
 ): ObserverHost {
 	return {
-		getBorderBox: (element) => {
-			const rect = host.layoutEngine.getRect(element);
-			return rect
-				? {
-						top: rect.top,
-						left: rect.left,
-						width: rect.width,
-						height: rect.height,
-					}
-				: null;
-		},
+		// getRect builds a fresh DOMRect per call, so this one can be handed
+		// straight to author code with nothing to alias.
+		getBorderBox: (element) => host.layoutEngine.getRect(element),
 		getContentBox: (element) => {
 			// An element that generates no box has no content box either --
 			// not a zero-sized one at its old padding offsets. Reported as
@@ -1643,18 +1642,18 @@ function createObserverHost(
 				left: (box.borderLeftWidth || 0) + (box.paddingLeft || 0),
 			};
 		},
-		getViewportRect: () => {
+		getViewportRect: () =>
 			// The visible window over the document, in the document coordinate
 			// space getRect() uses: it begins at the current scroll offset and is
 			// one terminal high.
-			const scrollTop = host.scrollTop;
-			return {
-				top: scrollTop,
-				left: 0,
-				width: host.width,
-				height: host.height,
-			};
-		},
+			host.layoutEngine.createDOMRect(
+				0,
+				host.scrollTop,
+				host.width,
+				host.height,
+			),
+		createRect: (x, y, width, height) =>
+			host.layoutEngine.createDOMRect(x, y, width, height),
 		now: () => host.renderCount,
 	};
 }

@@ -22,14 +22,23 @@
  * check, advertising an operation the DOM has never had.
  */
 
-interface Rect {
-	top: number;
-	left: number;
+/**
+ * An element's content box: its size, plus the offset of its top-left corner
+ * INSIDE the border box -- the padding and border that precede it.
+ *
+ * Deliberately not a rect. `top`/`left` are a distance from the border edge,
+ * not a position in the document, and calling it a DOMRect would invite
+ * exactly the arithmetic (comparing it against a border box, intersecting it
+ * with the viewport) that its coordinates cannot support. ResizeObserver
+ * reports these four numbers as contentRect, which is where the confusion
+ * comes from in the first place.
+ */
+export interface ContentBox {
 	width: number;
 	height: number;
+	top: number;
+	left: number;
 }
-
-const EMPTY_RECT: Rect = {top: 0, left: 0, width: 0, height: 0};
 
 /**
  * The manager's way in. Not #private, because the manager has to call it; not a
@@ -47,17 +56,20 @@ const kDeliver = Symbol("deliver");
  */
 export interface ObserverHost {
 	/** Border-box rect of an element in document coordinates, or null if unlaid. */
-	getBorderBox(element: Element): Rect | null;
+	getBorderBox(element: Element): DOMRect | null;
 	/**
-	 * Content-box of an element: its size, and the offset of its top-left from
-	 * the border box, which is what ResizeObserver reports as contentRect's
-	 * origin. Null if the element generates no box at all.
+	 * Content-box of an element. Null if the element generates no box at all.
 	 */
-	getContentBox(
-		element: Element,
-	): {width: number; height: number; top: number; left: number} | null;
+	getContentBox(element: Element): ContentBox | null;
 	/** The visible viewport rect, in the same document coordinates as boxes. */
-	getViewportRect(): Rect;
+	getViewportRect(): DOMRect;
+	/**
+	 * Build a rect. The entries these observers hand to author code carry
+	 * DOMRects, like a browser's do, and only the host knows which window's
+	 * DOMRect constructor that has to be -- an `instanceof window.DOMRect`
+	 * check on an entry has to pass.
+	 */
+	createRect(x: number, y: number, width: number, height: number): DOMRect;
 	/** A frame counter, used only to timestamp entries. */
 	now(): number;
 }
@@ -142,7 +154,7 @@ interface ResizeObserverSize {
 
 interface ResizeObserverEntry {
 	target: Element;
-	contentRect: Rect;
+	contentRect: DOMRect;
 	borderBoxSize: readonly ResizeObserverSize[];
 	contentBoxSize: readonly ResizeObserverSize[];
 	devicePixelContentBoxSize: readonly ResizeObserverSize[];
@@ -203,12 +215,12 @@ export class ResizeObserver extends LayoutObserver<
 				target,
 				// Origin is the content box's offset inside the border box -- the
 				// padding and border that precede it -- not zero.
-				contentRect: {
-					top: content.top,
-					left: content.left,
-					width: content.width,
-					height: content.height,
-				},
+				contentRect: host.createRect(
+					content.left,
+					content.top,
+					content.width,
+					content.height,
+				),
 				contentBoxSize: [box],
 				borderBoxSize: [
 					{
@@ -241,9 +253,9 @@ interface IntersectionObserverEntry {
 	target: Element;
 	isIntersecting: boolean;
 	intersectionRatio: number;
-	boundingClientRect: Rect;
-	intersectionRect: Rect;
-	rootBounds: Rect | null;
+	boundingClientRect: DOMRect;
+	intersectionRect: DOMRect;
+	rootBounds: DOMRect | null;
 	time: number;
 }
 
@@ -253,7 +265,11 @@ type IntersectionObserverCallback = (
 ) => void;
 
 /** Fraction of `box` that lies within `clip`, from 0 (disjoint) to 1 (contained). */
-function intersectionRatio(box: Rect, clip: Rect): {ratio: number; rect: Rect} {
+function intersectionRatio(
+	box: DOMRect,
+	clip: DOMRect,
+	host: ObserverHost,
+): {ratio: number; rect: DOMRect} {
 	const left = Math.max(box.left, clip.left);
 	const top = Math.max(box.top, clip.top);
 	const right = Math.min(box.left + box.width, clip.left + clip.width);
@@ -265,7 +281,7 @@ function intersectionRatio(box: Rect, clip: Rect): {ratio: number; rect: Rect} {
 
 	return {
 		ratio: area > 0 ? (width * height) / area : width > 0 && height > 0 ? 1 : 0,
-		rect: {top, left, width, height},
+		rect: host.createRect(left, top, width, height),
 	};
 }
 
@@ -278,7 +294,11 @@ function intersectionRatio(box: Rect, clip: Rect): {ratio: number; rect: Rect} {
  * same equivalence the rest of termdom's box model makes. Percentages are
  * resolved against the root's own size, as the spec requires.
  */
-function applyRootMargin(rect: Rect, margin: string): Rect {
+function applyRootMargin(
+	rect: DOMRect,
+	margin: string,
+	host: ObserverHost,
+): DOMRect {
 	const parts = margin.trim().split(/\s+/).filter(Boolean);
 	if (parts.length === 0) return rect;
 
@@ -296,12 +316,12 @@ function applyRootMargin(rect: Rect, margin: string): Rect {
 	const bottom = resolve(b, rect.height);
 	const left = resolve(l, rect.width);
 
-	return {
-		top: rect.top - top,
-		left: rect.left - left,
-		width: Math.max(0, rect.width + left + right),
-		height: Math.max(0, rect.height + top + bottom),
-	};
+	return host.createRect(
+		rect.left - left,
+		rect.top - top,
+		Math.max(0, rect.width + left + right),
+		Math.max(0, rect.height + top + bottom),
+	);
 }
 
 export class IntersectionObserver extends LayoutObserver<
@@ -368,9 +388,9 @@ export class IntersectionObserver extends LayoutObserver<
 			? host.getBorderBox(this.#root)
 			: host.getViewportRect();
 		if (!rootBox) return null;
-		const rootBounds = applyRootMargin(rootBox, this.rootMargin);
+		const rootBounds = applyRootMargin(rootBox, this.rootMargin, host);
 
-		const {ratio, rect} = intersectionRatio(box, rootBounds);
+		const {ratio, rect} = intersectionRatio(box, rootBounds, host);
 		const index = this.#thresholdIndex(ratio);
 		if (last === index) return null;
 
@@ -381,7 +401,7 @@ export class IntersectionObserver extends LayoutObserver<
 				isIntersecting: index > 0,
 				intersectionRatio: ratio,
 				boundingClientRect: box,
-				intersectionRect: index > 0 ? rect : EMPTY_RECT,
+				intersectionRect: index > 0 ? rect : host.createRect(0, 0, 0, 0),
 				rootBounds,
 				time: host.now(),
 			},
