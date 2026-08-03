@@ -34,6 +34,18 @@ export function getPropertyValue(element: Element, property: string): string {
 	return window.getComputedStyle(element).getPropertyValue(property);
 }
 
+/**
+ * invalidationScopeFor, reachable from the layout engine, which holds a
+ * window but no StyleManager -- the same registry hop getListGutterWidth
+ * makes from inside the cascade. Null when no manager is registered; the
+ * caller falls back to rebuilding from body.
+ */
+export function selectorInvalidationScope(element: Element): Element | null {
+	const window = element.ownerDocument?.defaultView;
+	const styleManager = window ? styleManagers.get(window) : undefined;
+	return styleManager ? styleManager.invalidationScopeFor(element) : null;
+}
+
 export function parseUnitValue(
 	value: string,
 ): number | {percentage: number} | null {
@@ -828,6 +840,25 @@ function getInitialStyle(element: Element, property: string): string {
 	return CSS_SPEC_DEFAULTS[property] || "";
 }
 
+/**
+ * The box shorthands whose computed answers and defaults flow through their
+ * longhands (see getPropertyValue). Border shorthands are excluded on
+ * purpose: their expansion is a documented todo, and resolveBorderStyles
+ * reads the longhands directly.
+ */
+const BOX_SHORTHAND_LONGHANDS = new Map<string, readonly string[]>([
+	["margin", ["margin-top", "margin-right", "margin-bottom", "margin-left"]],
+	[
+		"padding",
+		["padding-top", "padding-right", "padding-bottom", "padding-left"],
+	],
+]);
+const BOX_LONGHAND_SHORTHAND = new Map<string, string>(
+	[...BOX_SHORTHAND_LONGHANDS].flatMap(([shorthand, longhands]) =>
+		longhands.map((longhand): [string, string] => [longhand, shorthand]),
+	),
+);
+
 export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 	#element: Element;
 	#cssRules: ParsedCSSRule[];
@@ -847,104 +878,6 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 
 		this.#element = element;
 		this.#cssRules = cssRules;
-
-		// Pre-populate with all our resolved values
-		this.#populateDeclaration();
-	}
-
-	#populateDeclaration(): void {
-		// Get all CSS properties we might need to resolve
-		const properties = [
-			// Layout properties
-			"display",
-			"position",
-			"top",
-			"right",
-			"bottom",
-			"left",
-			"width",
-			"height",
-			"min-width",
-			"min-height",
-			"max-width",
-			"max-height",
-			"margin",
-			"margin-top",
-			"margin-right",
-			"margin-bottom",
-			"margin-left",
-			"padding",
-			"padding-top",
-			"padding-right",
-			"padding-bottom",
-			"padding-left",
-			"border-width",
-			"border-style",
-			"border-color",
-			"border-radius",
-			"border-top-width",
-			"border-right-width",
-			"border-bottom-width",
-			"border-left-width",
-			"border-top-style",
-			"border-right-style",
-			"border-bottom-style",
-			"border-left-style",
-			"border-top-color",
-			"border-right-color",
-			"border-bottom-color",
-			"border-left-color",
-			"overflow",
-			"overflow-x",
-			"overflow-y",
-			"z-index",
-
-			// Flexbox
-			"flex-direction",
-			"flex-wrap",
-			"justify-content",
-			"align-items",
-			"align-content",
-			"flex",
-			"flex-grow",
-			"flex-shrink",
-			"flex-basis",
-			"gap",
-			"row-gap",
-			"column-gap",
-			"align-self",
-			"order",
-
-			// Text and visual
-			"color",
-			"background-color",
-			"font-size",
-			"font-weight",
-			"font-style",
-			"text-decoration",
-			"text-align",
-			"white-space",
-			"word-break",
-			"overflow-wrap",
-			"direction",
-			"list-style",
-			"list-style-type",
-			"list-style-position",
-			"list-style-image",
-
-			// CSS Counters
-			"counter-reset",
-			"counter-increment",
-			"content",
-		];
-
-		// Resolve each property and set it in the declaration
-		for (const property of properties) {
-			const value = this.#resolvePropertyValue(property);
-			if (value) {
-				super.setProperty(property, value);
-			}
-		}
 	}
 
 	/** This element's flat-tree parent's resolved value for `property`, or null at the root. */
@@ -1169,21 +1102,61 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 		return getInitialStyle(this.#element, property);
 	}
 
-	// Override getPropertyValue to use our terminal-specific resolution
+	// Override getPropertyValue to use our terminal-specific resolution.
+	// Resolution is fully lazy: construction populates nothing, and each
+	// property resolves on first read. Every consumer in the engine reads
+	// through here (nothing enumerates a computed style or reads its
+	// cssText), and most elements are only ever asked a handful of
+	// properties -- the composition walker asks each element `display`
+	// alone, and the eager pre-population this replaced made that one
+	// question cost ~0.2ms per element, the bulk of first-render time on a
+	// large document.
 	override getPropertyValue(property: string): string {
-		// First check if we have a cached value from populateDeclaration
-		const cachedValue = super.getPropertyValue(property);
-		if (cachedValue) {
-			return this.#normalizeForTerminal(property, cachedValue);
-		}
-
-		// Not pre-populated: resolve once, memoize -- empty results too.
-		let freshValue = this.#resolved.get(property);
-		if (freshValue === undefined) {
-			freshValue = this.#resolvePropertyValue(property);
+		if (!this.#resolved.has(property)) {
+			const freshValue = this.#resolvePropertyValue(property);
 			this.#resolved.set(property, freshValue);
+			// Store through cssstyle so its shorthand semantics apply on
+			// read-back -- `margin: 10px` answers as "10px 10px 10px 10px",
+			// exactly as the eager pre-population produced. A value cssstyle
+			// rejects just stays in #resolved and is answered raw below.
+			if (freshValue) {
+				super.setProperty(property, freshValue);
+			}
+			// A box-shorthand answer is cssstyle's serialization of the four
+			// stored longhands, and a longhand with nothing declared takes
+			// its "0px" from the stored shorthand's default -- both worked
+			// by construction when every property was pre-populated. Pull
+			// the counterpart(s) in so the store holds what the read below
+			// serializes from. Marking `property` resolved above is what
+			// keeps this mutual pull finite.
+			const longhands = BOX_SHORTHAND_LONGHANDS.get(property);
+			if (longhands) {
+				for (const longhand of longhands) {
+					this.getPropertyValue(longhand);
+					// Re-assert a declared longhand over what this
+					// shorthand's own store just wrote: the store keeps only
+					// one value per slot, and the longhand is the cascade
+					// winner regardless of which was READ first.
+					const raw = this.#resolved.get(longhand);
+					if (raw) {
+						super.setProperty(longhand, raw);
+					}
+				}
+			} else if (!freshValue) {
+				const shorthand = BOX_LONGHAND_SHORTHAND.get(property);
+				if (shorthand) {
+					this.getPropertyValue(shorthand);
+				}
+			}
 		}
-		return this.#normalizeForTerminal(property, freshValue);
+		const storedValue = super.getPropertyValue(property);
+		if (storedValue) {
+			return this.#normalizeForTerminal(property, storedValue);
+		}
+		return this.#normalizeForTerminal(
+			property,
+			this.#resolved.get(property) ?? "",
+		);
 	}
 
 	/**
@@ -1727,6 +1700,27 @@ export class StyleManager {
 	#parsedRules: ParsedCSSRule[] = [];
 	#stylesheetsDirty = false;
 	/**
+	 * Whether any parsed selector can reach OUTSIDE the mutated element's
+	 * subtree: sibling combinators reach following siblings, :has() reaches
+	 * ancestors. Set during parsing, read by invalidationScopeFor() to decide
+	 * how much layout a class/id flip must rebuild. String tests are
+	 * deliberately loose (`~=` in an attribute selector counts as a sibling
+	 * combinator): a false positive only widens the rebuild.
+	 */
+	#selectorsReachSiblings = false;
+	#selectorsReachAncestors = false;
+	/**
+	 * Rule-existence gates, also set during parsing. Attaching pseudos and
+	 * initializing counters both start by building full computed-style
+	 * declarations -- per element, on every insertion and attribute change.
+	 * A document whose sheets declare no ::before for divs and no counters
+	 * anywhere must not pay that; these let the hot paths answer "could any
+	 * rule possibly apply here" with a few matches() calls instead.
+	 */
+	#pseudoRulesByType = new Map<string, ParsedCSSRule[]>();
+	#counterRulesExist = false;
+	#listItemRulesExist = false;
+	/**
 	 * How many document.styleSheets the last parse consumed; -1 = never
 	 * parsed. A changed count re-parses on the next style computation --
 	 * which is what lets a sheet appended right before the first paint
@@ -1854,6 +1848,28 @@ export class StyleManager {
 					this.#invalidateElementCaches(descendant);
 					this.attachPseudoElementsToElement(descendant);
 				}
+				// Sibling combinators reach right: `.on ~ .light` matches (or
+				// stops matching) a FOLLOWING sibling when this element's
+				// attributes change, and that sibling's cached styles know
+				// nothing of it. Same flags the layout scope decision uses;
+				// :has() reaches ancestors, for which only the nuclear cache
+				// clear is honest.
+				if (this.#selectorsReachAncestors) {
+					this.clearCache();
+				} else if (this.#selectorsReachSiblings) {
+					for (
+						let sibling = element.nextElementSibling;
+						sibling;
+						sibling = sibling.nextElementSibling
+					) {
+						this.#invalidateElementCaches(sibling);
+						this.attachPseudoElementsToElement(sibling);
+						for (const descendant of sibling.querySelectorAll("*")) {
+							this.#invalidateElementCaches(descendant);
+							this.attachPseudoElementsToElement(descendant);
+						}
+					}
+				}
 			} else if (mutation.type === "characterData") {
 				// Check for changes to <style> element content
 				if (mutation.target.parentElement?.tagName === "STYLE") {
@@ -1866,6 +1882,30 @@ export class StyleManager {
 		if (shouldRefreshStylesheets) {
 			this.refreshStylesheets();
 		}
+	}
+
+	/**
+	 * The outermost element whose layout a class/id flip on `element` can
+	 * affect. Selectors reach the element itself and its descendants; a
+	 * sibling combinator anywhere in the sheets extends that to the parent's
+	 * subtree, and :has() extends it to the whole document. This is what
+	 * keeps a selection-highlight flip from rebuilding every box on the
+	 * page: rules for `.row.selected` can only reach the row.
+	 */
+	invalidationScopeFor(element: Element): Element {
+		if (
+			this.#stylesheetsDirty ||
+			this.#document.styleSheets.length !== this.#parsedStyleSheetCount
+		) {
+			this.#parseStylesheets();
+		}
+		if (this.#selectorsReachAncestors) {
+			return this.#document.body ?? element;
+		}
+		if (this.#selectorsReachSiblings) {
+			return element.parentElement ?? element;
+		}
+		return element;
 	}
 
 	/**
@@ -2000,6 +2040,11 @@ export class StyleManager {
 	#parseStylesheets(): void {
 		const document = this.#document;
 		this.#parsedRules = [];
+		this.#selectorsReachSiblings = false;
+		this.#selectorsReachAncestors = false;
+		this.#pseudoRulesByType = new Map();
+		this.#counterRulesExist = false;
+		this.#listItemRulesExist = false;
 		this.#stylesheetsDirty = false;
 		this.#parsedStyleSheetCount = document.styleSheets.length;
 
@@ -2136,7 +2181,23 @@ export class StyleManager {
 		uaOriginSheet?: boolean,
 	): void {
 		const selector = styleRule.selectorText;
+		if (selector.includes("+") || selector.includes("~")) {
+			this.#selectorsReachSiblings = true;
+		}
+		if (selector.includes(":has")) {
+			this.#selectorsReachAncestors = true;
+		}
 		const {declarations, important} = this.#parseDeclarations(styleRule.style);
+		if (
+			declarations["counter-reset"] ||
+			declarations["counter-increment"] ||
+			declarations["content"]?.includes("counter")
+		) {
+			this.#counterRulesExist = true;
+		}
+		if (declarations["display"] === "list-item") {
+			this.#listItemRulesExist = true;
+		}
 		const specificity = this.#calculateSpecificity(selector);
 		const uaOrigin = Boolean(
 			uaOriginSheet || (scope && (scope as any).uaInternal),
@@ -2180,7 +2241,7 @@ export class StyleManager {
 
 		if (pseudoMatch) {
 			const [, baseSelector, pseudoElement] = pseudoMatch;
-			this.#parsedRules.push({
+			const rule: ParsedCSSRule = {
 				selector: baseSelector.trim(),
 				declarations,
 				important,
@@ -2188,7 +2249,11 @@ export class StyleManager {
 				pseudoElement,
 				scope,
 				uaOrigin,
-			});
+			};
+			this.#parsedRules.push(rule);
+			const byType = this.#pseudoRulesByType.get(pseudoElement);
+			if (byType) byType.push(rule);
+			else this.#pseudoRulesByType.set(pseudoElement, [rule]);
 		} else {
 			this.#parsedRules.push({
 				selector,
@@ -2640,10 +2705,51 @@ export class StyleManager {
 	/**
 	 * Attach a specific pseudo-element type to an element if it should have one
 	 */
+	/**
+	 * Could any parsed rule give this element a pseudo of this type? A few
+	 * matches() calls against only the rules that declare the pseudo --
+	 * instead of building the full pseudo style declaration per element per
+	 * type just to discover `content` is "none". Over-matching is safe (the
+	 * full path still decides); the win is the early false for the common
+	 * document with no pseudo rules beyond the UA button brackets.
+	 */
+	#pseudoRuleCouldMatch(element: Element, pseudoType: string): boolean {
+		if (pseudoType === "::marker") {
+			// Markers exist only on display:list-item boxes: an <li>, a rule
+			// declaring it, or an inline style. Nothing else needs the
+			// computed-display check below.
+			return (
+				element.tagName === "LI" ||
+				this.#listItemRulesExist ||
+				(element.getAttribute("style") ?? "").includes("list-item")
+			);
+		}
+		const rules = this.#pseudoRulesByType.get(pseudoType);
+		if (!rules) return false;
+		for (const rule of rules) {
+			try {
+				if (element.matches(rule.selector)) return true;
+			} catch {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	#attachPseudoElementToElementForType(
 		element: Element,
 		pseudoType: string,
 	): void {
+		// No rule can apply and none is attached: skip the counter and style
+		// computations wholesale. (An attached pseudo still takes the full
+		// path so a rule that STOPPED matching removes it.)
+		if (
+			!this.#pseudoRuleCouldMatch(element, pseudoType) &&
+			!getPseudoElement(element, pseudoType)
+		) {
+			return;
+		}
+
 		// Initialize counters for this element first (needed for counter() functions)
 		this.initializeCounters(element);
 
@@ -2819,6 +2925,24 @@ export class StyleManager {
 	initializeCounters(element: Element): void {
 		// Skip if already initialized
 		if (this.#counterScopes.has(element)) {
+			return;
+		}
+
+		// With no counter-bearing rules anywhere, only lists carry counters
+		// (the automatic list-item one). Skip everything else -- UNLESS the
+		// element sits under a scope-holding parent, so a chain like
+		// ol > li > div > ol keeps its inheritance path unbroken.
+		const tag = element.tagName;
+		if (
+			!this.#counterRulesExist &&
+			tag !== "OL" &&
+			tag !== "UL" &&
+			tag !== "LI" &&
+			!(
+				element.parentElement && this.#counterScopes.has(element.parentElement)
+			) &&
+			!(element.getAttribute("style") ?? "").includes("counter")
+		) {
 			return;
 		}
 

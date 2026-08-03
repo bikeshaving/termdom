@@ -3,7 +3,11 @@ import Flex from "./flex.js";
 import type * as FlexTypes from "./flex.js";
 import LineBreaker from "linebreak";
 import {getBoxModel, type BoxModel} from "./styles.js";
-import {getPropertyValue, parseUnitValue} from "./styles.js";
+import {
+	getPropertyValue,
+	parseUnitValue,
+	selectorInvalidationScope,
+} from "./styles.js";
 import {
 	compositionBoxParentElement,
 	compositionIsConnected,
@@ -2338,12 +2342,53 @@ export class LayoutEngine {
 				) {
 					// Selector-bearing attributes change which rules match the
 					// whole SUBTREE -- a class flip can toggle a descendant's
-					// display and reshape every box under it. Rebuild from the
-					// body, the same proven path a stylesheet refresh takes:
-					// partial subtree re-adds leave stray boxes when display
-					// flips mid-batch. Class churn is interaction-scale.
-					const body = record.target.ownerDocument?.body;
-					if (body) this.invalidate(body);
+					// display and reshape every box under it. But no further:
+					// the style manager knows whether any sheet's selectors
+					// can reach past the subtree (sibling combinators, :has),
+					// and answers with the outermost element the flip can
+					// affect. Rebuilding from body here made every selection
+					// highlight in a 200-row list cost the whole document.
+					const element = record.target as Element;
+					let scope =
+						selectorInvalidationScope(element) ??
+						record.target.ownerDocument?.body;
+					if (scope === element) {
+						// An element in inline context participates in
+						// structures wider than its subtree: an inline's box
+						// lives in a run owned by the nearest block container,
+						// and a block INSIDE an inline breaks that inline into
+						// fragments owned by the same container. Rebuild from
+						// the container, or the fragments reassemble wrong (a
+						// block-in-inline's content vanished on a no-op flip).
+						// Iterated, because the container reached can itself
+						// be a fragment of a broken inline one level further
+						// out -- climb until the scope sits in block context.
+						let lifted: Element | null = scope;
+						while (lifted) {
+							if (this.#isInlineLevel(lifted)) {
+								lifted = this.#findInlineRunContainer(lifted);
+								continue;
+							}
+							const parent: Element | null = lifted.parentElement;
+							if (parent && this.#isInlineLevel(parent)) {
+								lifted = this.#findInlineRunContainer(parent);
+								continue;
+							}
+							break;
+						}
+						scope = lifted ?? scope;
+					}
+					if (scope) {
+						this.invalidate(scope);
+						if (scope === element) {
+							// The flip can also change the element's OWN outer
+							// display, moving it into or out of an enclosing
+							// inline run -- a run the subtree rebuild above
+							// never touches. Clearing the enclosing measure is
+							// cheap and local, so do it unconditionally.
+							this.#invalidateEnclosingMeasure(element);
+						}
+					}
 				} else if (record.attributeName === "slot") {
 					// Reassigning a slot moves the node in the COMPOSED tree while
 					// the light tree stands still -- no childList record will ever

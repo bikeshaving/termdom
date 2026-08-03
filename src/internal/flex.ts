@@ -440,10 +440,12 @@ export class Node {
 	// layout pass, with the sizes they produced. A clean node asked again under
 	// identical constraints restores its size and skips its whole subtree -- so
 	// a one-line edit relays out its ancestor chain while every clean sibling
-	// returns in O(1). Two slots because flex sizes children twice (a measuring
-	// pass, then the placing pass) with different constraints; one slot would
-	// ping-pong and never hit. Invalidation is the dirty flag, which every
-	// mutation path already sets on the way in.
+	// returns in O(1). The ring holds 8 sizing answers because one placing
+	// pass probes a text child under as many as 5 distinct constraint pairs
+	// (flex basis, auto minimum, the placing probes); a smaller ring evicted
+	// this frame what next frame asks first, so a 1,200-row list re-measured
+	// every clean row on every keystroke. Invalidation is the dirty flag,
+	// which every mutation path already sets on the way in.
 	cachedMeasures: CachedLayout[] = [];
 	cachedLayout: CachedLayout | null = null;
 
@@ -3148,7 +3150,7 @@ function layoutNode(
 		// Flex asks the same node under several constraint pairs per pass (a
 		// measuring probe and a placing probe, sometimes more); keep a small
 		// ring of answers so alternating probes both hit next frame.
-		if (node.cachedMeasures.length >= 4) node.cachedMeasures.shift();
+		if (node.cachedMeasures.length >= 8) node.cachedMeasures.shift();
 		node.cachedMeasures.push(entry);
 	}
 	node.dirty = false;

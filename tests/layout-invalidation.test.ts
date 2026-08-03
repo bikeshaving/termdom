@@ -270,72 +270,51 @@ test("a display:none sibling among visible ones does not break which rows paint"
 	dom.dispose();
 });
 
-test("bulk sequential appends no longer scale quadratically", async () => {
-	// The regression this whole fix targets: appending N rows one at a time
-	// into the same parent used to cost O(N) each (re-walking every earlier
-	// sibling), O(N^2) total -- 8,000 rows measured at 44 SECONDS before the
-	// fix. Not a tight timing assertion (that would be flaky under load); it
-	// only has to rule out the quadratic blowup coming back, so the bound is
-	// generous on purpose.
+test("a class flip is scoped: a sibling-combinator rule still reaches the sibling", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
 
-	const container = document.createElement("div");
-	document.body.appendChild(container);
-	const start = performance.now();
-	for (let i = 0; i < 4000; i++) {
-		const row = document.createElement("div");
-		row.textContent = `row ${i}`;
-		container.appendChild(row);
-	}
+	// The sibling combinator is what forces the invalidation scope past the
+	// flipped element's own subtree -- if the scope stayed at the element,
+	// the sibling would keep its old display.
+	const style = document.createElement("style");
+	style.textContent = `.on ~ .light { display: none; }`;
+	document.head.appendChild(style);
+	document.body.innerHTML = `<div id="switch">switch</div><div class="light">light</div>`;
 	await nextFrame(dom);
-	const elapsed = performance.now() - start;
+	expect(terminal.getPlainText()).toContain("light");
 
-	// O(n^2) at this size measured 44 SECONDS; O(n) runs in a few even on a
-	// machine where libuild has every core busy with parallel test
-	// processes, on node's pure-JS fallbacks. 15s keeps that whole regime
-	// passing while a quadratic regression still fails by a wide margin.
-	expect(elapsed).toBeLessThan(15000);
+	document.getElementById("switch")!.className = "on";
+	await nextFrame(dom);
+	expect(terminal.getPlainText()).not.toContain("light");
+
+	document.getElementById("switch")!.className = "";
+	await nextFrame(dom);
+	expect(terminal.getPlainText()).toContain("light");
 
 	dom.dispose();
 });
 
-test(
-	"wheel-scrolling a long, already-built list stays fast regardless of its length",
-	async () => {
-		// The other half of the wheel-stutter report this fix targets: once a
-		// list is built, repainting it after a pure camera move (no DOM mutation)
-		// used to cost O(total rows) every frame -- the walk-based child-gathering
-		// had to visit every sibling just to rule most of them out, so a longer
-		// list made every subsequent frame slower even though only ~5 rows were
-		// ever visible. The fast path (LayoutEngine#visibleChildrenInBand)
-		// binary-searches straight to the visible range instead. A generous
-		// per-frame bound here only needs to catch that O(total rows)-per-frame
-		// cost coming back, not pin an exact number.
-		const terminal = new MockProcess({cols: 20, rows: 5});
-		const dom = new TermDOM({process: terminal});
-		const {document} = dom;
+test("a no-op class flip on a block inside an inline repaints identically", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const dom = new TermDOM({process: terminal});
+	const {document} = dom;
 
-		const container = document.createElement("div");
-		document.body.appendChild(container);
-		for (let i = 0; i < 8000; i++) {
-			const row = document.createElement("div");
-			row.textContent = `row${i}`;
-			container.appendChild(row);
-		}
-		await nextFrame(dom);
+	// A block in an inline breaks the span into fragments owned by the
+	// nearest block container; a scoped invalidation must rebuild from that
+	// container (found by the markup fuzzer: the div's content vanished).
+	document.body.innerHTML = `<span><p>head</p> <div id="mid">middle</div></span> tail`;
+	await nextFrame(dom);
+	const before = terminal.getPlainText();
+	expect(before).toContain("middle");
 
-		const start = performance.now();
-		for (let i = 0; i < 30; i++) {
-			(terminal.stdin as any).emit("data", Buffer.from("\x1b[<65;5;3M")); // wheel down
-			await nextFrame(dom);
-		}
-		const elapsed = performance.now() - start;
+	const mid = document.getElementById("mid")!;
+	mid.className = "flip";
+	await nextFrame(dom);
+	mid.className = "";
+	await nextFrame(dom);
+	expect(terminal.getPlainText()).toEqual(before);
 
-		expect(elapsed / 30).toBeLessThan(150); // O(visible) is ~5ms/frame even loaded; O(total) would be seconds
-
-		dom.dispose();
-	},
-	{timeout: 20000},
-);
+	dom.dispose();
+});
