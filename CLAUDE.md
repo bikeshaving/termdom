@@ -4,7 +4,7 @@ humans alike; keep it as the single copy rather than duplicating rules here.
 
 Two things that are specifically for you:
 
-- Run `bun typecheck`, `bun test` and `bun lint --fix` before calling work done,
-  and report failures rather than describing the change as finished.
-- IDE diagnostics in this repo go stale often. Verify against a real `bun
-  typecheck` before acting on one.
+- Run `npm run typecheck`, `npm test` and `npm run lint -- --fix` before calling
+  work done, and report failures rather than describing the change as finished.
+- IDE diagnostics in this repo go stale often. Verify against a real
+  `npm run typecheck` before acting on one.

@@ -11,14 +11,14 @@
 // The <input> stays single-line by spec -- assigning it a value with a
 // newline strips it, which is exactly why <textarea> exists.
 //
-//   bun examples/commit-editor.ts
+//   node examples/commit-editor.ts
 //
 //   Tab/Shift+Tab  move between fields
 //   ↑/↓            change type (in select) / move by line (in textarea)
 //   Enter          newline (in textarea)
 //   Ctrl+C         quit
 
-import {TermDOM} from "../src/index.js";
+import {TermDOM} from "@b9g/termdom";
 
 const termdom = new TermDOM();
 const {document} = termdom;

@@ -7,9 +7,9 @@
 // border-collapse at work). Overlap here comes from absolutely positioned
 // boxes sharing edge cells; no table required.
 //
-//   bun examples/borders.ts        Ctrl+C to quit
+//   node examples/borders.ts        Ctrl+C to quit
 
-import {TermDOM} from "../src/index.js";
+import {TermDOM} from "@b9g/termdom";
 
 const termdom = new TermDOM();
 const {document} = termdom;

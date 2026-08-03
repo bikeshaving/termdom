@@ -1,0 +1,82 @@
+import frontmatter from "front-matter";
+
+interface WalkInfo {
+	filename: string;
+}
+
+async function* walk(
+	dir: FileSystemDirectoryHandle,
+	basePath: string = "",
+): AsyncGenerator<WalkInfo> {
+	const entries: Array<[string, FileSystemHandle]> = [];
+	for await (const entry of dir.entries()) {
+		entries.push(entry);
+	}
+	entries.sort((a, b) => a[0].localeCompare(b[0]));
+
+	for (const [name, handle] of entries) {
+		const path = basePath ? `${basePath}/${name}` : name;
+		if (handle.kind === "directory") {
+			yield* walk(handle as FileSystemDirectoryHandle, path);
+		} else if (handle.kind === "file") {
+			yield {filename: path};
+		}
+	}
+}
+
+export interface DocInfo {
+	attributes: {
+		title: string;
+		publish: boolean;
+		description?: string;
+	};
+	url: string;
+	filename: string;
+	body: string;
+}
+
+/**
+ * Read every markdown file under `dir`, front matter parsed and a URL derived
+ * from the filename. Numeric prefixes (`01-`) order the files on disk and are
+ * stripped from the URL, so the sidebar order is the directory order.
+ */
+export async function collectDocuments(
+	dir: FileSystemDirectoryHandle,
+	prefix?: string,
+): Promise<DocInfo[]> {
+	const docs: DocInfo[] = [];
+	for await (const {filename} of walk(dir)) {
+		if (filename.endsWith(".md")) {
+			const fileHandle = await navigatePath(dir, filename);
+			const file = await fileHandle.getFile();
+			const md = await file.text();
+			const {attributes, body} = frontmatter(md) as unknown as DocInfo;
+			attributes.publish =
+				attributes.publish == null ? true : attributes.publish;
+
+			const urlBase = prefix ? `/${prefix}` : "";
+			const url =
+				`${urlBase}/${filename}`
+					.replace(/\.md$/, "")
+					.replace(/([0-9]+-)+/, "")
+					.replace(/\/index$/, "") + // index.md -> parent directory URL
+				"/";
+			const docsRelativeFilename = prefix ? `${prefix}/${filename}` : filename;
+			docs.push({url, filename: docsRelativeFilename, body, attributes});
+		}
+	}
+
+	return docs;
+}
+
+async function navigatePath(
+	dir: FileSystemDirectoryHandle,
+	path: string,
+): Promise<FileSystemFileHandle> {
+	const parts = path.split("/");
+	let current = dir;
+	for (let i = 0; i < parts.length - 1; i++) {
+		current = await current.getDirectoryHandle(parts[i]);
+	}
+	return current.getFileHandle(parts[parts.length - 1]);
+}

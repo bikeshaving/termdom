@@ -4,10 +4,10 @@
 // is the DOM's own machinery -- Tab/Shift+Tab move focus, arrows and
 // Home/End/Backspace edit, and typing lands in whichever input is focused.
 //
-//   bun examples/form.ts
+//   node examples/form.ts
 //
 //   Tab/Shift+Tab  next/previous field    Enter  submit    Ctrl+C  quit
-import {TermDOM} from "../src/index.js";
+import {TermDOM} from "@b9g/termdom";
 
 const termdom = new TermDOM();
 const {document} = termdom;

@@ -1,10 +1,10 @@
 /**
  * Hello world: build a DOM, style it with CSS, render it to the terminal.
  *
- *   bun examples/hello-world.ts
+ *   node examples/hello-world.ts
  */
 
-import {TermDOM} from "../src/index.js";
+import {TermDOM} from "@b9g/termdom";
 
 async function helloWorld() {
 	// Create a TermDOM instance (like JSDOM, but for terminals)

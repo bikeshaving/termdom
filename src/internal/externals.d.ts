@@ -59,15 +59,25 @@ declare module "bidi-js" {
 }
 
 declare module "arabic-persian-reshaper" {
+	interface Shaper {
+		convertArabic(text: string): string;
+	}
+
 	/**
 	 * Arabic contextual shaping: base letters in, presentation forms out. Note
 	 * that it is NOT length-preserving -- lam-alef pairs collapse to a single
 	 * ligature codepoint.
+	 *
+	 * Declared as a DEFAULT export even though the package is an object of two
+	 * named shapers. It is CommonJS, and Node's static export detection reads
+	 * only `PersianShaper` off it -- `ArabicShaper` is invisible to the lexer,
+	 * so importing it by name throws at load time in Node while working in
+	 * Bun. The default is the whole `module.exports`, which every runtime
+	 * agrees on.
 	 */
-	export const ArabicShaper: {
-		convertArabic(text: string): string;
+	const shapers: {
+		ArabicShaper: Shaper;
+		PersianShaper: Shaper;
 	};
-	export const PersianShaper: {
-		convertArabic(text: string): string;
-	};
+	export default shapers;
 }

@@ -4,8 +4,8 @@
 // nothing here is a special rendering mode. Each row shows three states:
 // a placeholder, empty with no placeholder, and a typed value.
 //
-//   bun examples/input-styles.ts        Tab / Shift+Tab to move focus
-import {TermDOM} from "../src/index.js";
+//   node examples/input-styles.ts        Tab / Shift+Tab to move focus
+import {TermDOM} from "@b9g/termdom";
 
 const termdom = new TermDOM();
 const {document} = termdom;

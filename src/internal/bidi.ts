@@ -21,7 +21,9 @@
  */
 
 import bidiFactory from "bidi-js";
-import {ArabicShaper} from "arabic-persian-reshaper";
+import arabicPersianReshaper from "arabic-persian-reshaper";
+
+const {ArabicShaper} = arabicPersianReshaper;
 
 const bidi = bidiFactory();
 

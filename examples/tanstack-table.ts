@@ -2,8 +2,8 @@
 // TanStack Table driving a real <table> element. termdom doesn't know
 // TanStack exists -- the library targets the DOM, and the DOM is real.
 //
-//   bun examples/tanstack-table.ts
-import {TermDOM} from "../src/index.js";
+//   node examples/tanstack-table.ts
+import {TermDOM} from "@b9g/termdom";
 import {createTable, getCoreRowModel} from "@tanstack/table-core";
 
 const termdom = new TermDOM();

@@ -4,11 +4,11 @@
 // so flex centering, backgrounds and live updates all just work there.
 // Exiting restores the document (and the terminal's scrollback) intact.
 //
-//   bun examples/fullscreen-demo.ts
+//   node examples/fullscreen-demo.ts
 //
 //   f  toggle fullscreen    q  quit
 
-import {TermDOM} from "../src/index.js";
+import {TermDOM} from "@b9g/termdom";
 
 const termdom = new TermDOM();
 const {document} = termdom;

@@ -1,0 +1,15 @@
+{
+	"compilerOptions": {
+		"target": "esnext",
+		"module": "esnext",
+		"lib": ["esnext", "dom"],
+		"declaration": false,
+		"downlevelIteration": true,
+		"strict": true,
+		"moduleResolution": "bundler",
+		"allowImportingTsExtensions": true,
+		"esModuleInterop": true,
+		"noEmit": true
+	},
+	"include": ["src", "scripts", "dist/server/shovel.d.ts"]
+}

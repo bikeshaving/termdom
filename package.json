@@ -42,7 +42,7 @@
     "smoke": "node scripts/smoke.mjs",
     "smoke:deno": "deno run -A --node-modules-dir=manual scripts/smoke.mjs",
     "support": "BUN_JSC_useFTLJIT=false bun scripts/support-matrix.ts",
-    "test": "libuild test -p bun -p node",
+    "test": "libuild test -p node -p bun",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

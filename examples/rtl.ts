@@ -1,7 +1,7 @@
 /**
  * Right-to-left text: Hebrew and Arabic, beside their left-to-right equivalents.
  *
- *   bun examples/rtl.ts
+ *   node examples/rtl.ts
  *
  * Terminals do not run the Unicode bidirectional algorithm, so termdom asks for
  * ECMA-48 explicit mode (BDSM, `CSI 8 l`), asks back what it got (`CSI 8 $ p`),
@@ -10,7 +10,7 @@
  * them needs contextual shaping, which is not implemented yet.
  */
 
-import {TermDOM} from "../src/index.js";
+import {TermDOM} from "@b9g/termdom";
 
 const dom = new TermDOM();
 const {document} = dom;

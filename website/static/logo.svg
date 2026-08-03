@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="termdom">
+	<rect width="512" height="512" rx="72" fill="#0d1117"/>
+	<rect x="36" y="36" width="440" height="440" rx="44" fill="none" stroke="#30363d" stroke-width="8"/>
+	<!-- A shell prompt, and the block cursor that is the whole idea: a cell. -->
+	<path d="M112 176 L168 224 L112 272" fill="none" stroke="#7ee787" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+	<rect x="200" y="168" width="112" height="112" fill="#58d6ff"/>
+	<rect x="112" y="320" width="288" height="24" rx="12" fill="#30363d"/>
+</svg>

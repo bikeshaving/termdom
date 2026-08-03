@@ -8,8 +8,8 @@
 // swaps it for an inline <style> using the same class names, in the CSS
 // subset a terminal can actually paint.
 //
-//   bun examples/todomvc.tsx
-import {TermDOM} from "../src/index.js";
+//   node examples/todomvc.tsx
+import {TermDOM} from "@b9g/termdom";
 import type {Context} from "@b9g/crank";
 import {renderer} from "@b9g/crank/dom";
 

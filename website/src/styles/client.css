@@ -1,0 +1,187 @@
+@import "normalize.css";
+@import "./prism-theme.css";
+
+:root {
+	--bg-color: #0d1117;
+	--text-color: #e6edf3;
+	--highlight-color: #58d6ff;
+	--muted-color: #8b949e;
+	--surface-color: #161b22;
+	--border-color: #30363d;
+	--accent-color: #7ee787;
+
+	color-scheme: dark;
+}
+
+.color-scheme-light {
+	--bg-color: #f7f9fb;
+	--text-color: #10151c;
+	--highlight-color: #0b6fa4;
+	--muted-color: #5b6672;
+	--surface-color: #ffffff;
+	--border-color: #d5dbe2;
+	--accent-color: #1a7f37;
+
+	color-scheme: light;
+}
+
+/*
+ * A terminal library's website is monospace throughout. It is not a costume:
+ * every measurement on the page is in cells, so the page is set in the units
+ * the library works in.
+ */
+html {
+	font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+		"Liberation Mono", monospace;
+	font-size: 16px;
+	scroll-padding-top: 4rem;
+}
+
+body {
+	background-color: var(--bg-color);
+	color: var(--text-color);
+	line-height: 1.6;
+	margin: 0;
+	overflow-wrap: break-word;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+a {
+	color: var(--highlight-color);
+	text-decoration: none;
+}
+
+a:hover {
+	text-decoration: underline;
+}
+
+h1,
+h2,
+h3,
+h4 {
+	line-height: 1.25;
+	font-weight: 700;
+}
+
+h1 {
+	font-size: 1.9rem;
+	margin: 0 0 1rem;
+}
+
+h2 {
+	font-size: 1.3rem;
+	margin: 3rem 0 0.75rem;
+	color: var(--highlight-color);
+}
+
+h3 {
+	font-size: 1.05rem;
+	margin: 2rem 0 0.5rem;
+}
+
+code {
+	font-family: inherit;
+	font-size: 0.9em;
+	background-color: var(--surface-color);
+	border: 1px solid var(--border-color);
+	border-radius: 4px;
+	padding: 0.1em 0.35em;
+}
+
+pre {
+	background-color: var(--surface-color);
+	border: 1px solid var(--border-color);
+	border-radius: 8px;
+	padding: 1rem 1.2rem;
+	overflow-x: auto;
+	font-size: 0.85rem;
+	line-height: 1.5;
+}
+
+pre code {
+	background: none;
+	border: none;
+	padding: 0;
+	font-size: inherit;
+}
+
+blockquote {
+	margin: 1.5rem 0;
+	padding-left: 1rem;
+	border-left: 3px solid var(--border-color);
+	color: var(--muted-color);
+}
+
+table {
+	border-collapse: collapse;
+	width: 100%;
+	margin: 1.5rem 0;
+	font-size: 0.9rem;
+	display: block;
+	overflow-x: auto;
+}
+
+th,
+td {
+	border: 1px solid var(--border-color);
+	padding: 0.4rem 0.7rem;
+	text-align: left;
+}
+
+th {
+	background-color: var(--surface-color);
+}
+
+hr {
+	border: none;
+	border-top: 1px solid var(--border-color);
+	margin: 2.5rem 0;
+}
+
+details {
+	margin: 0.75rem 0;
+	border: 1px solid var(--border-color);
+	border-radius: 6px;
+	padding: 0.5rem 0.9rem;
+	background-color: var(--surface-color);
+}
+
+details summary {
+	cursor: pointer;
+	color: var(--highlight-color);
+}
+
+details[open] summary {
+	margin-bottom: 0.5rem;
+}
+
+/*
+ * The asciinema player ships its own stylesheet; these are the few places the
+ * site has an opinion about it.
+ */
+.cast-player {
+	border: 1px solid var(--border-color);
+	border-radius: 8px;
+	overflow: hidden;
+	background: #0d1117;
+}
+
+.cast-player .ap-player {
+	font-size: 13px;
+}
+
+/* Pagefind's search UI, themed to match. */
+:root {
+	--pagefind-ui-scale: 0.8;
+	--pagefind-ui-primary: var(--text-color);
+	--pagefind-ui-text: var(--text-color);
+	--pagefind-ui-background: var(--bg-color);
+	--pagefind-ui-border: var(--border-color);
+	--pagefind-ui-tag: var(--surface-color);
+	--pagefind-ui-border-width: 1px;
+	--pagefind-ui-border-radius: 6px;
+	--pagefind-ui-font: inherit;
+}

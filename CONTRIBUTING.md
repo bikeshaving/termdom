@@ -3,16 +3,27 @@
 ## Commands
 
 ```sh
-bun test            # the suite, on bun and node
-bun typecheck       # tsc --noEmit
-bun lint --fix      # eslint
-bun examples/hello-world.ts
+npm test            # the suite, on node and bun
+npm run typecheck   # tsc --noEmit
+npm run lint -- --fix
+npm run build       # libuild, into dist/
+node examples/hello-world.ts
 ```
 
 Zero type errors, zero lint errors, zero test failures per commit.
 
-This project uses Bun: `bun <file>`, `bun install`, `bun run <script>`, and
-`Bun.file` / ``Bun.$`ls` `` over their node equivalents.
+Builds, tests and releases all go through **libuild** (`libuild build`,
+`libuild test`, `libuild publish`) — it owns the bundling and the declaration
+emit, and it deliberately ignores `tsconfig.json` when generating types.
+`tsconfig.json` exists for `tsc --noEmit` and your editor, nothing else.
+
+Examples import `@b9g/termdom` by package name, resolved through `exports` to
+`dist/`, so `npm run build` has to have run at least once. They are ordinary
+Node programs; nothing in the library requires a particular runtime.
+
+One maintainer script still needs Bun: `scripts/support-matrix.ts` imports test
+helpers and internal modules through `.js` specifiers that only Bun resolves to
+their `.ts` sources. Nothing a *user* of the library touches needs Bun.
 
 ## The rendering invariant
 
@@ -78,9 +89,14 @@ much better, and both are worth rebuilding when you need them:
 `SUPPORT.md` is generated, never edited:
 
 ```sh
-bun run support            # regenerate
-bun scripts/support-matrix.ts --check   # fail if stale
+npm run support                                   # regenerate
+BUN_JSC_useFTLJIT=false bun scripts/support-matrix.ts --check   # fail if stale
 ```
+
+This is the one script that needs Bun, and it also needs the JIT flag: at this
+probe count Bun's top tier miscompiles a loop in cssstyle's value parser into an
+infinite allocating spin (oven-sh/bun#36798). `npm run support` sets the flag
+for you.
 
 Nothing in it is asserted. Each feature carries a probe that applies it to a
 real document, renders to a terminal buffer, and reports whether anything a user

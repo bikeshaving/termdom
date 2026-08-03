@@ -7,7 +7,7 @@ paint to a terminal. You build a page; it renders in cells. No new API to learn,
 no native or WASM dependency.
 
 ```sh
-bun add @b9g/termdom   # or npm install @b9g/termdom
+npm install @b9g/termdom
 ```
 
 ```ts
@@ -93,7 +93,8 @@ keyboard repeat rate.
 
 ## Examples
 
-Run any of these with `bun examples/<file>`.
+Build the package once with `npm run build`, then run any of these with
+`node examples/<file>`.
 
 | example | shows |
 | --- | --- |
@@ -110,8 +111,13 @@ Run any of these with `bun examples/<file>`.
 | `ssh-server.ts` | the whole library behind an SSH server; every connection gets its own DOM |
 | `hello-world.ts`, `flexbox-demo.ts`, `borders.ts`, `lists.ts`, `input-styles.ts` | focused layout showcases |
 
-Examples import the TypeScript source directly, so they are Bun-only. Node and
-Deno consumers use the built package.
+Each example imports `@b9g/termdom` exactly as your own code would, so they run
+on Node, Bun and Deno alike.
+
+The exception is `todomvc.tsx`, which is JSX and therefore needs a transform —
+run it with `bun examples/todomvc.tsx`, or any JSX-aware runner. It is written
+in JSX because it is verbatim upstream Crank code, and the point of the example
+is that it runs unmodified.
 
 ## What is not supported
 
@@ -140,8 +146,9 @@ is honest about the rest:
 
 ## Runtimes
 
-Bun, Node and Deno. The library has no native or WASM dependency, so a TermDOM
-app also compiles to a single binary with `bun build --compile`.
+Node, Bun and Deno. The library has no native or WASM dependency, so nothing
+about it is tied to a particular runtime — and a TermDOM app also compiles to a
+single binary with `bun build --compile`.
 
 ## License
 

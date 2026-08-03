@@ -4,7 +4,7 @@
 // same seam the test harness uses. The library needs no changes: an SSH
 // session is a TTY like any other.
 //
-//   bun examples/ssh-server.ts [port]      (default 2222)
+//   node examples/ssh-server.ts [port]      (default 2222)
 //   ssh -p 2222 localhost                  (any user, no password)
 //
 // This is the shape of `ssh termdom.org`: the landing page as a living app.
@@ -12,7 +12,7 @@ import {Server, type PseudoTtyInfo, type ServerChannel} from "ssh2";
 import {EventEmitter} from "node:events";
 import {execSync} from "node:child_process";
 import {existsSync, readFileSync} from "node:fs";
-import {TermDOM, type ProcessLike} from "../src/index.js";
+import {TermDOM, type ProcessLike} from "@b9g/termdom";
 
 const PORT = parseInt(process.argv[2] ?? "2222", 10);
 const HOST_KEY = new URL("../.sshkeys/host_ed25519", import.meta.url).pathname;
