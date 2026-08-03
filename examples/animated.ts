@@ -18,7 +18,7 @@ style.textContent = `
   .bar-pct { color: white; display: inline; padding-left: 1ch; }
   .braille { color: magenta; display: inline; }
   .clock { color: cyan; display: inline; }
-  .bounce { color: red; display: inline; }
+  .bounce { color: red; display: inline; white-space: pre; }
   .status { color: #666; padding-top: 1px; }
 `;
 document.head.appendChild(style);
