@@ -41,7 +41,7 @@
     "lint": "eslint --ext .js,.jsx,.ts,.tsx .",
     "smoke": "node scripts/smoke.mjs",
     "smoke:deno": "deno run -A --node-modules-dir=manual scripts/smoke.mjs",
-    "support": "bun scripts/support-matrix.ts",
+    "support": "BUN_JSC_useFTLJIT=false bun scripts/support-matrix.ts",
     "test": "libuild test -p bun -p node",
     "typecheck": "tsc --noEmit"
   },
