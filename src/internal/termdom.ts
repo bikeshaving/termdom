@@ -26,7 +26,9 @@ import {
 	type UATextareaElement,
 	type UAWidgetController,
 	defineUAWidgets,
+	textareaCaretCell,
 	textareaLineAt,
+	textareaVisualLines,
 } from "./widgets.js";
 
 // How long to wait for a resize drag to settle before redrawing. Long enough to
@@ -2093,7 +2095,7 @@ export class TermDOM {
 			const textarea = this.#textarea(element as HTMLTextAreaElement);
 			textarea.uaReconcile();
 			if (visible && textarea === this.document.activeElement) {
-				const caretCell = textarea.uaCaretCell();
+				const caretCell = textareaCaretCell(textarea, this[kLayoutEngine]);
 				if (caretCell) {
 					ctx.setCaret(caretCell.x, caretCell.y);
 				}
@@ -2847,7 +2849,7 @@ export class TermDOM {
 	): number | null {
 		if (element.tagName === "TEXTAREA") {
 			const textarea = this.#textarea(element as HTMLTextAreaElement);
-			const visual = textarea.uaVisualLines();
+			const visual = textareaVisualLines(textarea, this[kLayoutEngine]);
 			if (!visual || visual.lines.length === 0) return null;
 			// The pressed row's line; above the first clamps to it, below
 			// the last to that.
@@ -2919,7 +2921,11 @@ export class TermDOM {
 		if (!rect) return;
 		let caretY = Math.round(rect.top);
 		if (element.tagName === "TEXTAREA") {
-			const cell = this.#textarea(element as HTMLTextAreaElement).uaCaretCell();
+			this.#textarea(element as HTMLTextAreaElement); // ensure the shadow exists
+			const cell = textareaCaretCell(
+				element as HTMLTextAreaElement,
+				this[kLayoutEngine],
+			);
 			if (!cell) return;
 			caretY = cell.y;
 		}
@@ -3738,9 +3744,10 @@ export class TermDOM {
 			let target = 0;
 			if (isTextarea) {
 				this.#processPendingMutationsAndRender();
-				const visual = this.#textarea(
+				const visual = textareaVisualLines(
 					element as HTMLTextAreaElement,
-				).uaVisualLines();
+					this[kLayoutEngine],
+				);
 				if (visual) {
 					target =
 						visual.lines[textareaLineAt(visual.lines, caret)].startOffset;
@@ -3755,9 +3762,10 @@ export class TermDOM {
 			let target = value.length;
 			if (isTextarea) {
 				this.#processPendingMutationsAndRender();
-				const visual = this.#textarea(
+				const visual = textareaVisualLines(
 					element as HTMLTextAreaElement,
-				).uaVisualLines();
+					this[kLayoutEngine],
+				);
 				if (visual) {
 					target = visual.lines[textareaLineAt(visual.lines, caret)].endOffset;
 				}

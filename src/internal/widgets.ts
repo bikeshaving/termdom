@@ -20,7 +20,7 @@
 import type {DOMWindow} from "jsdom";
 import jsdomUtils from "jsdom/lib/jsdom/living/generated/utils.js";
 import jsdomCustomElements from "jsdom/lib/jsdom/living/helpers/custom-elements.js";
-import {createUAShadowRoot} from "./composition.js";
+import {compositionShadowRoot, createUAShadowRoot} from "./composition.js";
 import {type LayoutEngine, visualToDataOffsets} from "./layout.js";
 import {type StyleManager, getBoxModel} from "./styles.js";
 import {stringWidth} from "./runtime.js";
@@ -70,14 +70,117 @@ export function textareaLineAt(
 	return lines.length - 1;
 }
 
+/** The value part's text node inside a field's UA shadow, or null if unbuilt. */
+function fieldValueText(field: Element): Text | null {
+	const span = compositionShadowRoot(field)?.querySelector('[part="value"]');
+	return (span?.firstChild as Text) ?? null;
+}
+
+/**
+ * The VISUAL lines of a textarea's laid-out value: the painted fragments (one
+ * per soft-wrapped or hard-broken line), plus a virtual empty line for each
+ * trailing newline past the last visual character (typing Enter at the end must
+ * park the caret on the new, still-empty line, which owns no fragment). Offsets
+ * are code units into .value; geometry is document cells. Null before the value
+ * has ever laid out. A pure read of the laid-out shadow value -- the painter
+ * uses it for the caret, the editing path for Home/End/vertical and hit tests.
+ */
+export function textareaVisualLines(
+	field: HTMLTextAreaElement,
+	layoutEngine: LayoutEngine,
+): {value: string; lines: TextareaVisualLine[]} | null {
+	const valueText = fieldValueText(field);
+	if (!valueText) return null;
+	const value = valueText.data;
+	const rect = field.getBoundingClientRect();
+	const boxModel = getBoxModel(field);
+	const contentX =
+		Math.round(rect.left) +
+		(boxModel.borderLeftWidth || 0) +
+		(boxModel.paddingLeft || 0);
+	const contentY = Math.round(rect.top) + (boxModel.borderTopWidth || 0);
+
+	if (!value) {
+		return {
+			value,
+			lines: [
+				{x: contentX, y: contentY, text: "", startOffset: 0, endOffset: 0},
+			],
+		};
+	}
+
+	const rectTexts = layoutEngine.getRectTexts(valueText);
+	if (rectTexts.length === 0) return null;
+	const visToData = visualToDataOffsets(value, rectTexts);
+
+	const lines: TextareaVisualLine[] = [];
+	// Blank lines between consecutive newlines own real, EMPTY layout fragments
+	// -- no visual characters, so visToData can't place them. A cursor over the
+	// value's own structure does: each line consumes its characters plus, when
+	// the character at its end is a newline, that one hard separator (soft wraps
+	// have no separator to consume).
+	let visualBase = 0;
+	let cursor = 0;
+	for (const rectText of rectTexts) {
+		const length = rectText.text.length;
+		const startOffset = length > 0 ? visToData[visualBase] : cursor;
+		const endOffset =
+			length > 0 ? visToData[visualBase + length - 1] + 1 : startOffset;
+		lines.push({
+			x: Math.round(rectText.rect.x),
+			y: Math.round(rectText.rect.y),
+			text: rectText.text,
+			startOffset,
+			endOffset,
+		});
+		visualBase += length;
+		cursor =
+			endOffset < value.length && value[endOffset] === "\n"
+				? endOffset + 1
+				: endOffset;
+	}
+
+	// A value ending in a newline has exactly ONE line no fragment represents:
+	// the empty last line the caret sits on after a final Enter. (Interior blank
+	// lines all have fragments -- adding more virtual lines here is what once
+	// drifted the caret a row per blank line.)
+	if (value.endsWith("\n")) {
+		const last = lines[lines.length - 1];
+		lines.push({
+			x: contentX,
+			y: last.y + 1,
+			text: "",
+			startOffset: value.length,
+			endOffset: value.length,
+		});
+	}
+	return {value, lines};
+}
+
+/** Caret cell for a focused textarea, in document coordinates. */
+export function textareaCaretCell(
+	field: HTMLTextAreaElement,
+	layoutEngine: LayoutEngine,
+): {x: number; y: number} | null {
+	const visual = textareaVisualLines(field, layoutEngine);
+	if (!visual) return null;
+	const caret =
+		field.selectionDirection === "backward"
+			? (field.selectionStart ?? visual.value.length)
+			: (field.selectionEnd ?? visual.value.length);
+	const lineIndex = textareaLineAt(visual.lines, caret);
+	const line = visual.lines[lineIndex];
+	const within = Math.max(
+		0,
+		Math.min(caret, line.endOffset) - line.startOffset,
+	);
+	return {x: line.x + stringWidth(line.text.slice(0, within)), y: line.y};
+}
+
 /** The UA custom-element interface a <textarea> presents once upgraded. */
 export interface UATextareaElement extends HTMLTextAreaElement {
 	/** Reconcile the UA tree with the element's own value/placeholder state. */
 	uaReconcile(): void;
-	/** The painted visual lines of the laid-out value; null before first layout. */
-	uaVisualLines(): {value: string; lines: TextareaVisualLine[]} | null;
-	/** Caret cell for the focused textarea, in document coordinates. */
-	uaCaretCell(): {x: number; y: number} | null;
 	/** Caret offset one visual line up (-1) or down (+1), keeping the column. */
 	uaVerticalTarget(caret: number, direction: 1 | -1): number;
 	/** Forget the goal column, so the next vertical move starts a fresh one. */
@@ -188,99 +291,6 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 			}
 		}
 
-		/**
-		 * The VISUAL lines of the laid-out value: the painted fragments (one per
-		 * soft-wrapped or hard-broken line), plus a virtual empty line for each
-		 * trailing newline past the last visual character (typing Enter at the
-		 * end must park the caret on the new, still-empty line, which owns no
-		 * fragment). Offsets are code units into .value; geometry is document
-		 * cells. Null before the value has ever laid out.
-		 */
-		uaVisualLines(): {value: string; lines: TextareaVisualLine[]} | null {
-			const valueText = this.#valueText;
-			const value = valueText.data;
-			const rect = this.getBoundingClientRect();
-			const boxModel = getBoxModel(this);
-			const contentX =
-				Math.round(rect.left) +
-				(boxModel.borderLeftWidth || 0) +
-				(boxModel.paddingLeft || 0);
-			const contentY = Math.round(rect.top) + (boxModel.borderTopWidth || 0);
-
-			if (!value) {
-				return {
-					value,
-					lines: [
-						{x: contentX, y: contentY, text: "", startOffset: 0, endOffset: 0},
-					],
-				};
-			}
-
-			const rectTexts = layoutEngine.getRectTexts(valueText);
-			if (rectTexts.length === 0) return null;
-			const visToData = visualToDataOffsets(value, rectTexts);
-
-			const lines: TextareaVisualLine[] = [];
-			// Blank lines between consecutive newlines own real, EMPTY layout
-			// fragments -- no visual characters, so visToData can't place them. A
-			// cursor over the value's own structure does: each line consumes its
-			// characters plus, when the character at its end is a newline, that
-			// one hard separator (soft wraps have no separator to consume).
-			let visualBase = 0;
-			let cursor = 0;
-			for (const rectText of rectTexts) {
-				const length = rectText.text.length;
-				const startOffset = length > 0 ? visToData[visualBase] : cursor;
-				const endOffset =
-					length > 0 ? visToData[visualBase + length - 1] + 1 : startOffset;
-				lines.push({
-					x: Math.round(rectText.rect.x),
-					y: Math.round(rectText.rect.y),
-					text: rectText.text,
-					startOffset,
-					endOffset,
-				});
-				visualBase += length;
-				cursor =
-					endOffset < value.length && value[endOffset] === "\n"
-						? endOffset + 1
-						: endOffset;
-			}
-
-			// A value ending in a newline has exactly ONE line no fragment
-			// represents: the empty last line the caret sits on after a final
-			// Enter. (Interior blank lines all have fragments -- adding more
-			// virtual lines here is what once drifted the caret a row per blank
-			// line.)
-			if (value.endsWith("\n")) {
-				const last = lines[lines.length - 1];
-				lines.push({
-					x: contentX,
-					y: last.y + 1,
-					text: "",
-					startOffset: value.length,
-					endOffset: value.length,
-				});
-			}
-			return {value, lines};
-		}
-
-		uaCaretCell(): {x: number; y: number} | null {
-			const visual = this.uaVisualLines();
-			if (!visual) return null;
-			const caret =
-				this.selectionDirection === "backward"
-					? (this.selectionStart ?? visual.value.length)
-					: (this.selectionEnd ?? visual.value.length);
-			const lineIndex = textareaLineAt(visual.lines, caret);
-			const line = visual.lines[lineIndex];
-			const within = Math.max(
-				0,
-				Math.min(caret, line.endOffset) - line.startOffset,
-			);
-			return {x: line.x + stringWidth(line.text.slice(0, within)), y: line.y};
-		}
-
 		uaClearGoalColumn(): void {
 			this.#goalColumn = null;
 		}
@@ -292,7 +302,7 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 		 * line down to the end.
 		 */
 		uaVerticalTarget(caret: number, direction: 1 | -1): number {
-			const visual = this.uaVisualLines();
+			const visual = textareaVisualLines(this, layoutEngine);
 			if (!visual) return caret;
 			const lineIndex = textareaLineAt(visual.lines, caret);
 			const targetIndex = lineIndex + direction;
