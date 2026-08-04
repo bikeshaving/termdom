@@ -830,14 +830,17 @@ test("cancelAnimationFrame actually cancels", async () => {
 	dom.dispose();
 });
 
-test("a height shrink clamps the re-anchor so the frame fits below it", async () => {
-	// The cursor-recovered start row can be exactly where the frame stood --
-	// and still be wrong, when the new height cannot fit the frame below it.
-	// Painting past the bottom margin scrolls the terminal mid-redraw, which
-	// shoves the frame's freshly painted top rows up and strands them above
-	// the rest: the duplicated header the commit-editor showed on a vertical
-	// shrink. A focused field is the load-bearing ingredient -- it parks the
-	// cursor at the caret, mid-frame, so the recovery answers a mid-frame row.
+test("a height shrink past the fit point repaints one whole frame", async () => {
+	// When the new height cannot fit the frame below its anchor, the amount
+	// the terminal scrolled is unrecoverable -- a same-cursor DSR reports the
+	// frame did not move even when it did, and making room on top of that
+	// mis-anchor strands a copy of the frame's own top rows (the duplicated
+	// header the commit-editor showed on a vertical shrink). A focused field
+	// is the load-bearing ingredient: it parks the cursor at the caret,
+	// mid-frame, so the recovery answers a mid-frame row. The engine resolves
+	// it by clearing the whole screen and painting from the top -- exactly one
+	// frame, no fragment of the previous paint, at the cost of the output that
+	// was above it.
 	const terminal = new MockProcess({rows: 18, cols: 60});
 	await new Promise<void>((resolve) => {
 		terminal.stdout.write("~/proj % demo\r\n~ %\r\n", () => resolve());
@@ -874,19 +877,14 @@ test("a height shrink clamps the re-anchor so the frame fits below it", async ()
 		await new Promise((resolve) => setTimeout(resolve, 50));
 	}
 
-	// The visible screen carries exactly one copy of the frame's header, and
-	// the frame is complete: its bottom row made it onto the screen.
+	// Exactly one copy of the frame's header, and the frame is complete: its
+	// bottom row made it onto the screen. No stranded remnant of the previous
+	// paint, which is the property the clear guarantees.
 	expect(visibleCopies("HEADER-ROW")).toBe(1);
 	expect(visibleCopies("BODY-10")).toBe(1);
 
-	// The room was taken by scrolling the prompt up, never painting over it:
-	// both prompt lines survive, on screen or in the scrollback.
-	const allRows: string[] = [];
-	for (let i = 0; i < buffer.baseY + terminal.stdout.rows; i++) {
-		allRows.push(line(i));
-	}
-	expect(allRows).toContain("~/proj % demo");
-	expect(allRows).toContain("~ %");
+	// The frame is at the top of the cleared screen.
+	expect(line(buffer.baseY)).toBe("HEADER-ROW");
 
 	dom.dispose();
 });

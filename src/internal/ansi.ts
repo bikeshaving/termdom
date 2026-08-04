@@ -1068,6 +1068,8 @@ export class Renderer {
 	#needsFullClear: boolean = false;
 	#needsScreenReset: boolean = false;
 	#resetAtRow: number = 0;
+	/** The pending reset erases the whole screen, not from #resetAtRow down. */
+	#clearWholeScreen: boolean = false;
 	#rows: number;
 	#cols: number;
 	#colorDepth: ColorDepth;
@@ -1162,6 +1164,23 @@ export class Renderer {
 	resetScreen(startRow: number): void {
 		this.#needsScreenReset = true;
 		this.#resetAtRow = Math.max(0, startRow);
+		this.#clearWholeScreen = false;
+		this.#hasSavedCursor = false;
+		this.clearPreviousBuffer();
+	}
+
+	/**
+	 * Erase every visible row and paint from the top, for the resize whose
+	 * anchor cannot be trusted (the frame no longer fits below where the cursor
+	 * query put it, so the amount the terminal scrolled is unrecoverable).
+	 * Nothing of the old frame can survive an erase that covers every row it
+	 * could occupy -- a guarantee of the sequence, not a measured outcome. It
+	 * costs the output above us, which beats a screen holding two half-frames.
+	 */
+	clearScreen(): void {
+		this.#needsScreenReset = true;
+		this.#resetAtRow = 0;
+		this.#clearWholeScreen = true;
 		this.#hasSavedCursor = false;
 		this.clearPreviousBuffer();
 	}
@@ -1392,7 +1411,10 @@ export class Renderer {
 				// or two higher than the content did, scroll the old frame up into the
 				// scrollback -- a fresh copy on every resize.
 				prefix += `\x1b[${this.#resetAtRow + 1};1H`; // CUP - content start
-				prefix += "\x1b[J"; // ED0 - erase from here to the bottom
+				// ED2 takes the whole screen; ED0 takes from here down and
+				// leaves whatever is above untouched.
+				prefix += this.#clearWholeScreen ? "\x1b[2J" : "\x1b[J";
+				this.#clearWholeScreen = false;
 				prefix += "\x1b7"; // DECSC - save the new content start
 				this.#hasSavedCursor = true;
 				this.#needsScreenReset = false;

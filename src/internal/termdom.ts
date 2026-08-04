@@ -3910,6 +3910,24 @@ export class TermDOM {
 			return Math.max(0, previousStart - scrolledUp);
 		};
 
+		// The anchor is trustworthy exactly while the frame still FITS below it.
+		// When it does, no room-making scroll happens and the redraw is precise,
+		// so the prompt above is left alone. When it does not, the terminal
+		// scrolled the frame by an amount a same-cursor DSR cannot report, and
+		// making room on top of that mis-anchor is what strands a copy of our
+		// own rows -- an intermittent race we cannot win. There, clear the whole
+		// screen and start at the top: the erase covers every row the old frame
+		// could hold, so no fragment survives. It costs the output above us,
+		// which is the trade for a screen that is always legible.
+		const place = (startRow: number) => {
+			if (startRow + contentHeight <= newHeight) {
+				redraw(startRow);
+			} else {
+				this.#renderer.clearScreen();
+				redraw(0);
+			}
+		};
+
 		if (
 			this.#detectCursorEnabled &&
 			this.#process.stdin?.isTTY &&
@@ -3919,17 +3937,14 @@ export class TermDOM {
 				.then((cursorRow) => {
 					// A newer resize superseded this one; its handler will redraw.
 					if (epoch !== this.#resizeEpoch) return;
-					const startRow = Math.max(0, cursorRow - wrappedRowsAbove);
-					redraw(startRow);
+					place(Math.max(0, cursorRow - wrappedRowsAbove));
 				})
 				.catch(() => {
 					if (epoch !== this.#resizeEpoch) return;
-					const startRow = computedReanchor();
-					redraw(startRow);
+					place(computedReanchor());
 				});
 		} else {
-			const startRow = computedReanchor();
-			redraw(startRow);
+			place(computedReanchor());
 		}
 	}
 
