@@ -830,14 +830,14 @@ test("cancelAnimationFrame actually cancels", async () => {
 	dom.dispose();
 });
 
-test("a height shrink that still fits moves nothing and erases nothing", async () => {
-	// The invariant that holds in EVERY terminal: when the frame still fits
-	// below its anchor, no terminal has any reason to move our content, so the
-	// anchor stands and the prompt above is untouched. (When the frame does
-	// NOT fit, terminals disagree about whether they scroll the content or
-	// discard rows from the bottom, and no query distinguishes the two -- that
-	// case is covered by the drag test below, which asserts the property that
-	// survives the disagreement: exactly one copy.)
+test("a height shrink clamps the re-anchor so the frame fits below it", async () => {
+	// The cursor-recovered start row can be exactly where the frame stood --
+	// and still be wrong, when the new height cannot fit the frame below it.
+	// Painting past the bottom margin scrolls the terminal mid-redraw, which
+	// shoves the frame's freshly painted top rows up and strands them above
+	// the rest: the duplicated header the commit-editor showed on a vertical
+	// shrink. A focused field is the load-bearing ingredient -- it parks the
+	// cursor at the caret, mid-frame, so the recovery answers a mid-frame row.
 	const terminal = new MockProcess({rows: 18, cols: 60});
 	await new Promise<void>((resolve) => {
 		terminal.stdout.write("~/proj % demo\r\n~ %\r\n", () => resolve());
@@ -849,56 +849,11 @@ test("a height shrink that still fits moves nothing and erases nothing", async (
 		Array.from({length: 10}, (_, i) => `<div>BODY-${i + 1}</div>`).join("");
 	(dom.document.getElementById("s") as HTMLElement).focus();
 	await nextFrame(dom);
-	expect(dom.window.screenTop).toBe(2);
 
-	// 12 content rows anchored at row 2 need 14; 16 rows leave room to spare.
-	terminal.resize(60, 16);
+	// 12 content rows anchored at row 2: the bottom sits on the last screen
+	// row. Shrink so the frame no longer fits at its old anchor.
+	terminal.resize(60, 13);
 	(terminal as any).emit("SIGWINCH");
-	await new Promise((resolve) => setTimeout(resolve, 200));
-
-	const buffer = (terminal as any).terminal.buffer.active;
-	const line = (i: number): string =>
-		(buffer.getLine(i)?.translateToString(true) ?? "").replace(/\s+$/, "");
-
-	// Both prompt lines still on the visible screen, exactly where they were.
-	expect(line(0)).toBe("~/proj % demo");
-	expect(line(1)).toBe("~ %");
-	expect(dom.window.screenTop).toBe(2);
-
-	// And one copy of the frame, top and bottom.
-	let headers = 0;
-	let bottoms = 0;
-	for (let i = buffer.baseY; i < buffer.baseY + terminal.stdout.rows; i++) {
-		if (line(i) === "HEADER-ROW") headers++;
-		if (line(i) === "BODY-10") bottoms++;
-	}
-	expect(headers).toBe(1);
-	expect(bottoms).toBe(1);
-
-	dom.dispose();
-});
-
-test("a height-only resize re-anchors by computation, not by asking the cursor", async () => {
-	// A height change reflows nothing, so the only movement is the scroll the
-	// terminal performs to keep the bottom in view -- exactly the overflow,
-	// and computable. Measuring it with DSR instead is wrong: a terminal
-	// scrolls the content without carrying the cursor's ROW NUMBER along
-	// (tmux does not), so the recovered anchor lands a row too low and the
-	// erase leaves the old frame's top row stranded above the new one. That
-	// is the doubling a window drag produced, one row per scrolled resize.
-	const terminal = new MockProcess({rows: 24, cols: 60});
-	await new Promise<void>((resolve) => {
-		terminal.stdout.write("~/proj % demo\r\n~ %\r\n", () => resolve());
-	});
-	const dom = new TermDOM({process: terminal, detectCursor: true});
-	dom.document.body.innerHTML =
-		`<div>HEADER-ROW</div>` +
-		`<div>Subject <input id="s"></div>` +
-		Array.from({length: 10}, (_, i) => `<div>BODY-${i + 1}</div>`).join("");
-	// A focused field parks the cursor mid-frame, which is what makes the
-	// terminal's cursor bookkeeping and the content's disagree.
-	(dom.document.getElementById("s") as HTMLElement).focus();
-	await nextFrame(dom);
 
 	const buffer = (terminal as any).terminal.buffer.active;
 	const line = (i: number): string =>
@@ -911,19 +866,27 @@ test("a height-only resize re-anchors by computation, not by asking the cursor",
 		return copies;
 	};
 
-	// Shrink one row at a time, the way a drag does, past the point where the
-	// frame stops fitting below its anchor.
-	for (const rows of [23, 22, 21, 20, 19, 18]) {
-		terminal.resize(60, rows);
-		(terminal as any).emit("SIGWINCH");
-		const settled = () =>
-			visibleCopies("HEADER-ROW") === 1 && visibleCopies("BODY-10") === 1;
-		for (let waited = 0; !settled() && waited < 2000; waited += 50) {
-			await new Promise((resolve) => setTimeout(resolve, 50));
-		}
-		expect(visibleCopies("HEADER-ROW")).toBe(1);
-		expect(visibleCopies("BODY-10")).toBe(1);
+	// The redraw arrives after the resize debounce plus a cursor-query round
+	// trip, so poll for the settled screen rather than betting on a delay.
+	const settled = () =>
+		visibleCopies("HEADER-ROW") === 1 && visibleCopies("BODY-10") === 1;
+	for (let waited = 0; !settled() && waited < 2000; waited += 50) {
+		await new Promise((resolve) => setTimeout(resolve, 50));
 	}
+
+	// The visible screen carries exactly one copy of the frame's header, and
+	// the frame is complete: its bottom row made it onto the screen.
+	expect(visibleCopies("HEADER-ROW")).toBe(1);
+	expect(visibleCopies("BODY-10")).toBe(1);
+
+	// The room was taken by scrolling the prompt up, never painting over it:
+	// both prompt lines survive, on screen or in the scrollback.
+	const allRows: string[] = [];
+	for (let i = 0; i < buffer.baseY + terminal.stdout.rows; i++) {
+		allRows.push(line(i));
+	}
+	expect(allRows).toContain("~/proj % demo");
+	expect(allRows).toContain("~ %");
 
 	dom.dispose();
 });

@@ -1068,8 +1068,6 @@ export class Renderer {
 	#needsFullClear: boolean = false;
 	#needsScreenReset: boolean = false;
 	#resetAtRow: number = 0;
-	/** The pending reset takes the whole screen, not from #resetAtRow down. */
-	#clearWholeScreen: boolean = false;
 	#rows: number;
 	#cols: number;
 	#colorDepth: ColorDepth;
@@ -1164,24 +1162,6 @@ export class Renderer {
 	resetScreen(startRow: number): void {
 		this.#needsScreenReset = true;
 		this.#resetAtRow = Math.max(0, startRow);
-		this.#clearWholeScreen = false;
-		this.#hasSavedCursor = false;
-		this.clearPreviousBuffer();
-	}
-
-	/**
-	 * Take the whole screen: the next frame erases every visible row before it
-	 * paints, rather than erasing from a start row downward.
-	 *
-	 * For the resize whose anchor could not be recovered (see repaintFromTop).
-	 * Erasing from a guessed row leaves either a stranded copy of our own top
-	 * rows or a half-erased prompt; erasing everything leaves one legible
-	 * screen. What scrolled off remains in the scrollback either way.
-	 */
-	clearScreen(): void {
-		this.#needsScreenReset = true;
-		this.#resetAtRow = 0;
-		this.#clearWholeScreen = true;
 		this.#hasSavedCursor = false;
 		this.clearPreviousBuffer();
 	}
@@ -1412,11 +1392,7 @@ export class Renderer {
 				// or two higher than the content did, scroll the old frame up into the
 				// scrollback -- a fresh copy on every resize.
 				prefix += `\x1b[${this.#resetAtRow + 1};1H`; // CUP - content start
-				// ED2 wipes every visible row (the anchor was unrecoverable, so
-				// there is no row we can honestly erase FROM); ED0 clears from
-				// the recovered start down and leaves what is above untouched.
-				prefix += this.#clearWholeScreen ? "\x1b[2J" : "\x1b[J";
-				this.#clearWholeScreen = false;
+				prefix += "\x1b[J"; // ED0 - erase from here to the bottom
 				prefix += "\x1b7"; // DECSC - save the new content start
 				this.#hasSavedCursor = true;
 				this.#needsScreenReset = false;
