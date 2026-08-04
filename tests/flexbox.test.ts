@@ -746,3 +746,30 @@ test("flex-shrink: 0 keeps an item at its width while the rest give way", async 
 
 	dom.dispose();
 });
+
+test("an inline element that becomes a flex item keeps its padding", async () => {
+	// A flex item is blockified (css-display-3 §2.7): `display: inline` on a
+	// flex container's child computes to block-level and carries its box model
+	// like any block. The engine used to clear the inline element's padding,
+	// so `.row{display:flex} .row span{padding:0 2ch}` collapsed to no gap --
+	// the reason examples/form.ts had to use block <div> labels.
+	const terminal = new MockProcess({cols: 40, rows: 6});
+	const dom = new TermDOM({process: terminal});
+	const {document} = dom;
+	const style = document.createElement("style");
+	style.textContent = `.row{display:flex;flex-direction:row}
+.row span{padding:0 2ch}`;
+	document.head.appendChild(style);
+	document.body.innerHTML = `<div class="row"><span id="s">LBL</span><span>val</span></div>`;
+	await nextFrame(dom);
+
+	// 3 cells of text plus 2ch padding on each side = 7 cells wide.
+	const rect = document.getElementById("s")!.getBoundingClientRect();
+	expect(rect.width).toBe(7);
+
+	// And the padding shows as a real gap before the sibling, not "LBLval".
+	const firstRow = terminal.getPlainText().split("\n")[0];
+	expect(firstRow).toContain("LBL    val");
+
+	dom.dispose();
+});

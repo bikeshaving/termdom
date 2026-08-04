@@ -309,8 +309,12 @@ function styleFlexNode(
 		}
 	}
 
-	// Box model properties: clear for inline elements, apply for block/inline-block
-	if (display === "inline") {
+	// Box model properties: clear for inline elements, apply for block/
+	// inline-block -- and for a blockified inline flex item, which keeps its
+	// padding, margin and border like any block (css-display-3 §2.7). Without
+	// the parentIsFlex exception, `.row{display:flex} .row span{padding:1}`
+	// dropped the span's padding entirely.
+	if (display === "inline" && !parentIsFlex) {
 		// Clear all box model properties for inline elements
 		flexNode.setMargin(Flex.EDGE_TOP, 0);
 		flexNode.setMargin(Flex.EDGE_RIGHT, 0);
@@ -2248,7 +2252,21 @@ export class LayoutEngine {
 		if (node.nodeType === node.ELEMENT_NODE) {
 			const element = node as Element;
 			const display = getPropertyValue(element, "display");
-			return display === "inline" || display === "inline-block";
+			if (display !== "inline" && display !== "inline-block") return false;
+			// A flex item is BLOCKIFIED (css-display-3 §2.7): an inline child of
+			// a flex container is not inline-level -- it takes a block's box
+			// model (its own padding, its width/height) instead of being folded
+			// into an inline run that drops them. Mirrors styleFlexNode's
+			// blockify. inline-block already carries its padding, so leaving it
+			// inline-level here keeps its existing (correct) layout path.
+			if (
+				display === "inline" &&
+				element.parentElement !== null &&
+				getPropertyValue(element.parentElement, "display") === "flex"
+			) {
+				return false;
+			}
+			return true;
 		}
 
 		return false;
