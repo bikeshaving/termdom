@@ -82,8 +82,6 @@ export interface UATextareaElement extends HTMLTextAreaElement {
 	uaVerticalTarget(caret: number, direction: 1 | -1): number;
 	/** Forget the goal column, so the next vertical move starts a fresh one. */
 	uaClearGoalColumn(): void;
-	/** The value part span, whose computed style the selection paint reads. */
-	readonly uaValueSpan: HTMLElement;
 }
 
 /** Upgrades plain form controls to their UA widget classes, in place. */
@@ -121,7 +119,6 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 		#valueText!: Text;
 		#placeholderText!: Text;
 		#placeholderSpan!: HTMLElement;
-		#valueSpan!: HTMLElement;
 		#goalColumn: number | null = null;
 
 		/**
@@ -146,8 +143,7 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 			const style = document.createElement("style");
 			style.textContent = TEXTAREA_UA_STYLES;
 			root.appendChild(style);
-			this.#valueSpan = this.#addPart(root, "value");
-			this.#valueText = this.#valueSpan.firstChild as Text;
+			this.#valueText = this.#addPart(root, "value").firstChild as Text;
 			this.#placeholderSpan = this.#addPart(root, "placeholder");
 			this.#placeholderText = this.#placeholderSpan.firstChild as Text;
 			// The trailing <br> anchor, the same trick a browser's editor uses:
@@ -171,10 +167,6 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 			span.appendChild(document.createTextNode(""));
 			root.appendChild(span);
 			return span;
-		}
-
-		get uaValueSpan(): HTMLElement {
-			return this.#valueSpan;
 		}
 
 		/**

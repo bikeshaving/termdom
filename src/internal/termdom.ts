@@ -2233,42 +2233,9 @@ export class TermDOM {
 			ctx.clipRect = previousClip;
 		}
 
-		// The textarea's selection paints OVER the value text the child walk
-		// just laid down: the field's own bounded selection, shown while
-		// focused, styled by its ::selection rules like any document text.
-		if (element.tagName === "TEXTAREA" && rect && visible) {
-			this.#renderTextareaSelection(element as HTMLTextAreaElement, ctx);
-		}
-	}
-
-	#renderTextareaSelection(
-		element: HTMLTextAreaElement,
-		ctx: import("./ansi.js").DrawingContext,
-	): void {
-		if (element !== this.document.activeElement) return;
-		const selStart = element.selectionStart ?? 0;
-		const selEnd = element.selectionEnd ?? 0;
-		if (selEnd <= selStart) return;
-		const textarea = this.#textarea(element);
-		const visual = textarea.uaVisualLines();
-		if (!visual) return;
-		const style = selectionStyleFor(
-			this.window,
-			element,
-			cellStyleFromComputed(this.window.getComputedStyle(textarea.uaValueSpan)),
-		);
-		for (const line of visual.lines) {
-			const from = Math.max(selStart, line.startOffset);
-			const to = Math.min(selEnd, line.endOffset);
-			if (to <= from) continue;
-			const pre = line.text.slice(0, from - line.startOffset);
-			const slice = line.text.slice(
-				from - line.startOffset,
-				to - line.startOffset,
-			);
-			if (!slice) continue;
-			ctx.setText(line.x + stringWidth(pre), line.y, slice, style);
-		}
+		// A focused textarea's own selection now paints inline while the child
+		// walk lays down the value text -- #renderTextSelection reads the
+		// control's selectionStart/End, the same way it reads a document Range.
 	}
 
 	/**
@@ -3284,6 +3251,52 @@ export class TermDOM {
 	 * this node only resolves to a precise offset when the container is the
 	 * node itself -- the only shape our own drag selection produces.
 	 */
+	/**
+	 * The data-offset range to highlight over a text node, and the element whose
+	 * ::selection rules style it. Two sources, one shape: a focused form
+	 * control's own selection (selectionStart/End) when this text node is its
+	 * shadow value -- getSelection() cannot see inside a control, per spec, so
+	 * the painter reads the control directly -- otherwise the document selection.
+	 */
+	#selectionRangeFor(
+		textNode: Text,
+	): {from: number; to: number; selectionParent: Element} | null {
+		const host = (textNode.getRootNode() as {host?: Element}).host;
+		if (
+			host &&
+			host === this.document.activeElement &&
+			host.tagName === "TEXTAREA" &&
+			textNode.parentElement?.getAttribute("part") === "value"
+		) {
+			const field = host as HTMLTextAreaElement;
+			const start = field.selectionStart ?? 0;
+			const end = field.selectionEnd ?? 0;
+			if (end <= start) return null;
+			const length = textNode.data.length;
+			return {
+				from: Math.max(0, Math.min(start, length)),
+				to: Math.max(0, Math.min(end, length)),
+				selectionParent: textNode.parentElement,
+			};
+		}
+
+		const selection = this.window.getSelection();
+		if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
+			return null;
+		}
+		const range = selection.getRangeAt(0);
+		if (!range.intersectsNode(textNode)) return null;
+		const from = range.startContainer === textNode ? range.startOffset : 0;
+		const to =
+			range.endContainer === textNode ? range.endOffset : textNode.data.length;
+		if (to <= from) return null;
+		const selectionParent =
+			getPseudoMetadata(textNode)?.hostElement ??
+			compositionParentElement(textNode);
+		if (!selectionParent) return null;
+		return {from, to, selectionParent};
+	}
+
 	#renderTextSelection(
 		textNode: Text,
 		rectTexts: Array<import("./layout.js").RectText>,
@@ -3291,22 +3304,9 @@ export class TermDOM {
 		textTransform: string,
 		ctx: import("./ansi.js").DrawingContext,
 	): void {
-		const selection = this.window.getSelection();
-		if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
-			return;
-		}
-		const range = selection.getRangeAt(0);
-		if (!range.intersectsNode(textNode)) return;
-
-		const from = range.startContainer === textNode ? range.startOffset : 0;
-		const to =
-			range.endContainer === textNode ? range.endOffset : textNode.data.length;
-		if (to <= from) return;
-
-		const selectionParent =
-			getPseudoMetadata(textNode)?.hostElement ??
-			compositionParentElement(textNode);
-		if (!selectionParent) return;
+		const found = this.#selectionRangeFor(textNode);
+		if (!found) return;
+		const {from, to, selectionParent} = found;
 		const selectionStyle = selectionStyleFor(
 			this.window,
 			selectionParent,
