@@ -585,44 +585,6 @@ function prevGraphemeBoundary(value: string, index: number): number {
 	return previous;
 }
 
-/**
- * Split raw terminal input into key tokens: CSI sequences (ESC [ ... final
- * byte), SS3 sequences (ESC O x), and single characters.
- *
- * Fast input arrives batched -- a held arrow key delivers "\x1b[B\x1b[B\x1b[B"
- * in one chunk, and a terminal report can land glued to ordinary keystrokes.
- * Anything that treats a chunk as one key swallows everything after the first
- * token: a held arrow repeated once per chunk instead of once per press, and a
- * stray cursor report ate every key packed behind it.
- */
-function* tokenizeInput(input: string): Generator<string> {
-	let i = 0;
-	while (i < input.length) {
-		if (input[i] === "\x1b" && i + 1 < input.length) {
-			if (input[i + 1] === "[") {
-				// CSI: parameter/intermediate bytes end at a final byte 0x40-0x7e.
-				let end = i + 2;
-				while (
-					end < input.length &&
-					!(input.charCodeAt(end) >= 0x40 && input.charCodeAt(end) <= 0x7e)
-				) {
-					end++;
-				}
-				yield input.slice(i, Math.min(end + 1, input.length));
-				i = end + 1;
-				continue;
-			}
-			if (input[i + 1] === "O" && i + 2 < input.length) {
-				yield input.slice(i, i + 3);
-				i += 3;
-				continue;
-			}
-		}
-		yield input[i];
-		i++;
-	}
-}
-
 function detectColorDepth(process: ProcessLike): ColorDepth {
 	const colorterm = process.env.COLORTERM;
 	if (colorterm === "truecolor" || colorterm === "24bit") {
@@ -1731,1857 +1693,6 @@ function createObserverHost(
 	};
 }
 
-/** The parts of an input's UA shadow tree the painter reads back. */
-type ShadowParts = {
-	kind: "field" | "toggle" | "textarea" | "select";
-	spans: Record<string, HTMLElement>;
-	texts: Record<string, Text>;
-};
-
-/**
- * Everything the painter needs from the TermDOM it belongs to. Getters and
- * callbacks, never values -- the camera (documentScrollTop) moves during a
- * frame, the top layer and the outside-marker set are live objects the render
- * loop mutates (renderedOutsideMarkers is replaced wholesale each frame), and
- * the shadow-part builders mutate the DOM and must run against the current
- * tree. A captured snapshot of any of these would paint against a stale world.
- */
-interface PaintHost {
-	readonly layoutEngine: LayoutEngine;
-	readonly styleManager: StyleManager;
-	/** The document camera; moves within a frame. */
-	readonly documentScrollTop: number;
-	/** Live: the render loop adds and removes members. */
-	readonly topLayer: Set<Element>;
-	/** Live: the render loop replaces this set at the start of every frame. */
-	readonly renderedOutsideMarkers: WeakSet<Element>;
-	readonly inputScrollOffsets: WeakMap<Element, number>;
-	ensureInputShadowParts(element: HTMLInputElement): ShadowParts;
-	ensureTextareaShadowParts(element: HTMLTextAreaElement): ShadowParts;
-	ensureSelectShadowParts(element: HTMLSelectElement): ShadowParts;
-	syncInputShadowTree(
-		element: HTMLInputElement,
-		parts: {spans: Record<string, HTMLElement>; texts: Record<string, Text>},
-	): void;
-	syncSelectShadowTree(
-		element: HTMLSelectElement,
-		parts: {spans: Record<string, HTMLElement>; texts: Record<string, Text>},
-	): void;
-}
-
-/**
- * Everything the widget chrome needs from the TermDOM it belongs to. Getters
- * and callbacks, never values, for the same reason as PaintHost: the picker
- * overlay set and its open-picker map are live objects the interaction code
- * also mutates, and building a shadow tree schedules a frame and enrolls the
- * new root with the observer and the style cascade.
- */
-interface WidgetHost {
-	readonly styleManager: StyleManager;
-	readonly layoutEngine: LayoutEngine;
-	readonly observer: MutationObserver;
-	/** Live: the select interaction reads and writes the open-picker state. */
-	readonly openPickers: WeakMap<HTMLSelectElement, number>;
-	/** Live: the picker overlay is added to and removed from the top layer. */
-	readonly topLayer: Set<Element>;
-	render(): void;
-}
-
-/**
- * The UA shadow trees for the form widgets: building the [part] elements an
- * <input>, <textarea>, or <select> renders through, and reconciling them with
- * the element's own value and selection. It owns the input-parts map; the
- * painter reads these trees and the interaction code drives them, both through
- * the seam above.
- */
-class WidgetChrome {
-	#window: DOMWindow;
-	#document: Document;
-	#host: WidgetHost;
-	#inputShadowParts = new WeakMap<Element, ShadowParts>();
-
-	constructor(window: DOMWindow, host: WidgetHost) {
-		this.#window = window;
-		this.#document = window.document;
-		this.#host = host;
-	}
-
-	ensureInputShadowParts(element: HTMLInputElement): {
-		kind: "field" | "toggle" | "textarea" | "select";
-		spans: Record<string, HTMLElement>;
-		texts: Record<string, Text>;
-	} {
-		const kind =
-			element.type === "checkbox" || element.type === "radio"
-				? ("toggle" as const)
-				: ("field" as const);
-		const cached = this.#inputShadowParts.get(element);
-		if (cached && cached.kind === kind) {
-			return cached;
-		}
-
-		const document = this.#document;
-		const root = createUAShadowRoot(element);
-		while (root.firstChild) {
-			root.removeChild(root.firstChild);
-		}
-		const spans: Record<string, HTMLElement> = {};
-		const texts: Record<string, Text> = {};
-		const addPart = (part: string) => {
-			const span = document.createElement("span");
-			span.setAttribute("part", part);
-			const text = document.createTextNode("");
-			span.appendChild(text);
-			root.appendChild(span);
-			spans[part] = span;
-			texts[part] = text;
-		};
-		if (kind === "field") {
-			const style = document.createElement("style");
-			style.textContent = FIELD_UA_STYLES;
-			root.appendChild(style);
-			addPart("value");
-			addPart("placeholder");
-			addPart("blank");
-		} else {
-			addPart("glyph");
-		}
-
-		// Scope the UA rules to this root. The root is deliberately NOT
-		// observer-enrolled: the painter syncs the tree from the input's own
-		// state right before reading it, so a mutation record could only
-		// ever schedule a redundant frame. The MEASURE, though, must hear
-		// about the tree once -- a width:auto input sizes to its composed
-		// content, and nothing else will ever invalidate it.
-		this.#host.styleManager.registerShadowRoot(root);
-		this.#host.layoutEngine.invalidate(element);
-		void this.#host.render();
-		const parts = {kind, spans, texts};
-		this.#inputShadowParts.set(element, parts);
-		return parts;
-	}
-
-	/**
-	 * Build a textarea's UA-internal shadow tree. Unlike the input's, this
-	 * root IS observer-enrolled -- enrolled BEFORE it is populated, so the
-	 * population itself is the invalidation that swaps the composed tree in
-	 * -- because the value text lays out through the normal pipeline and
-	 * layout must hear about every change to it. The sync controller runs
-	 * at edit time (and as a paint-time safety net for framework .value
-	 * assignments), never in a loop: it only ever writes when the input's
-	 * state and the tree disagree.
-	 */
-	ensureTextareaShadowParts(element: HTMLTextAreaElement): {
-		kind: "field" | "toggle" | "textarea" | "select";
-		spans: Record<string, HTMLElement>;
-		texts: Record<string, Text>;
-	} {
-		const cached = this.#inputShadowParts.get(element);
-		if (cached && cached.kind === "textarea") {
-			return cached;
-		}
-
-		const document = this.#document;
-		const root = createUAShadowRoot(element);
-		this.#host.observer.observe(root, {
-			childList: true,
-			subtree: true,
-			attributes: true,
-			attributeOldValue: true,
-			characterData: true,
-		});
-		this.#host.styleManager.registerShadowRoot(root);
-
-		const spans: Record<string, HTMLElement> = {};
-		const texts: Record<string, Text> = {};
-		const style = document.createElement("style");
-		style.textContent = TEXTAREA_UA_STYLES;
-		root.appendChild(style);
-		for (const part of ["value", "placeholder"]) {
-			const span = document.createElement("span");
-			span.setAttribute("part", part);
-			const text = document.createTextNode("");
-			span.appendChild(text);
-			root.appendChild(span);
-			spans[part] = span;
-			texts[part] = text;
-		}
-		// The trailing <br> anchor, the same trick a browser's editor uses:
-		// it makes the run's content always end in exactly one line break,
-		// so the line count equals the LOGICAL line count -- the breaker
-		// never emits a line after a final newline, and without the anchor a
-		// value ending in "\n" measured one row short, parking the caret on
-		// the bottom border.
-		root.appendChild(document.createElement("br"));
-
-		const parts = {kind: "textarea" as const, spans, texts};
-		this.#inputShadowParts.set(element, parts);
-		syncTextareaShadowTree(element, parts);
-		return parts;
-	}
-
-	/**
-	 * Build a select's UA-internal shadow tree: the selected option's label
-	 * (part=value) and the ▾ indicator (part=indicator), observer-enrolled
-	 * before population like the textarea's -- its content renders through
-	 * the normal pipeline, and composition hides the option list entirely.
-	 */
-	ensureSelectShadowParts(element: HTMLSelectElement): {
-		kind: "field" | "toggle" | "textarea" | "select";
-		spans: Record<string, HTMLElement>;
-		texts: Record<string, Text>;
-	} {
-		const cached = this.#inputShadowParts.get(element);
-		if (cached && cached.kind === "select") {
-			return cached;
-		}
-
-		const document = this.#document;
-		const root = createUAShadowRoot(element);
-		this.#host.observer.observe(root, {
-			childList: true,
-			subtree: true,
-			attributes: true,
-			attributeOldValue: true,
-			characterData: true,
-		});
-		this.#host.styleManager.registerShadowRoot(root);
-
-		const spans: Record<string, HTMLElement> = {};
-		const texts: Record<string, Text> = {};
-		const style = document.createElement("style");
-		style.textContent = SELECT_UA_STYLES;
-		root.appendChild(style);
-		for (const part of ["value", "indicator"]) {
-			const span = document.createElement("span");
-			span.setAttribute("part", part);
-			const text = document.createTextNode("");
-			span.appendChild(text);
-			root.appendChild(span);
-			spans[part] = span;
-			texts[part] = text;
-		}
-		texts.indicator.data = " \u25be"; // " ▾"
-
-		// The picker: the spec-shaped ::picker(select) popover as a real UA
-		// part -- an absolutely positioned box the open state reveals, whose
-		// geometry the sync controller anchors to the field in document
-		// coordinates (its containing block is the ICB; a measure-function
-		// select can't serve as one).
-		const picker = document.createElement("div");
-		picker.setAttribute("part", "picker");
-		root.appendChild(picker);
-		spans.picker = picker;
-
-		const parts = {kind: "select" as const, spans, texts};
-		this.#inputShadowParts.set(element, parts);
-		this.syncSelectShadowTree(element, parts);
-		return parts;
-	}
-
-	/** Reconcile the select's UA tree with its own selection state. */
-	syncSelectShadowTree(
-		element: HTMLSelectElement,
-		parts: {spans: Record<string, HTMLElement>; texts: Record<string, Text>},
-	): void {
-		const selected =
-			element.selectedIndex >= 0
-				? element.options[element.selectedIndex]
-				: null;
-		const label = selected ? selected.label : "";
-		if (parts.texts.value.data !== label) {
-			parts.texts.value.data = label;
-		}
-
-		// Losing focus closes the picker, as everywhere.
-		if (
-			this.#host.openPickers.has(element) &&
-			this.#document.activeElement !== element
-		) {
-			this.#host.openPickers.delete(element);
-		}
-
-		const picker = parts.spans.picker;
-		const highlight = this.#host.openPickers.get(element);
-		const open = highlight !== undefined;
-		if (!open) {
-			if (picker.style.display !== "none") {
-				picker.style.display = "none";
-				this.#host.topLayer.delete(picker);
-			}
-			return;
-		}
-
-		// Rebuild rows to match the option list; cheap at option-list scale.
-		const options = Array.from(element.options);
-		while (picker.childNodes.length > options.length) {
-			picker.removeChild(picker.lastChild!);
-		}
-		while (picker.childNodes.length < options.length) {
-			const row = this.#document.createElement("div");
-			row.setAttribute("part", "option");
-			picker.appendChild(row);
-		}
-		options.forEach((option, index) => {
-			const row = picker.childNodes[index] as HTMLElement;
-			if (row.textContent !== option.label) row.textContent = option.label;
-			// Attribute writes are guarded: setAttribute queues a mutation
-			// record even when the value is unchanged, and this sync runs at
-			// paint time on an OBSERVED root -- unconditional writes are an
-			// infinite render loop.
-			if (option.disabled !== row.hasAttribute("data-disabled")) {
-				if (option.disabled) row.setAttribute("data-disabled", "");
-				else row.removeAttribute("data-disabled");
-			}
-			const highlighted = index === highlight;
-			if (highlighted !== row.hasAttribute("data-highlighted")) {
-				if (highlighted) row.setAttribute("data-highlighted", "");
-				else row.removeAttribute("data-highlighted");
-			}
-		});
-
-		// Anchor below the field in DOCUMENT coordinates (the picker's
-		// containing block is the ICB), matching the field's width.
-		const rect = this.#host.layoutEngine.getRect(element);
-		if (rect) {
-			const top = `${Math.round(rect.bottom)}px`;
-			const left = `${Math.round(rect.left)}px`;
-			const width = `${Math.max(4, Math.round(rect.width))}ch`;
-			if (picker.style.top !== top) picker.style.top = top;
-			if (picker.style.left !== left) picker.style.left = left;
-			if (picker.style.width !== width) picker.style.width = width;
-		}
-		if (picker.style.display !== "block") picker.style.display = "block";
-		this.#host.topLayer.add(picker);
-	}
-
-	/**
-	 * Arrow keys move a closed select's selection in place, skipping
-	 * disabled options, firing input and change -- the browser's own
-	 * closed-select keyboard model, with no popup to degrade.
-	 */
-	syncInputShadowTree(
-		element: HTMLInputElement,
-		parts: {spans: Record<string, HTMLElement>; texts: Record<string, Text>},
-	): void {
-		const value = element.value || "";
-		const placeholder = element.getAttribute("placeholder") || "";
-		const autoWidth =
-			this.#window.getComputedStyle(element).getPropertyValue("width") ===
-			"auto";
-		let contentChanged = false;
-		if (parts.texts.value.data !== value) {
-			parts.texts.value.data = value;
-			contentChanged = true;
-		}
-		if (parts.texts.placeholder.data !== placeholder) {
-			parts.texts.placeholder.data = placeholder;
-			contentChanged = true;
-		}
-		// An empty field must not collapse to zero cells: with no value and
-		// no placeholder to give it width, the blank's single caret cell IS
-		// the field -- one faint underlined cell marking an editable spot.
-		const blank = !autoWidth ? "" : value || !placeholder ? " " : "";
-		if (parts.texts.blank.data !== blank) {
-			parts.texts.blank.data = blank;
-			contentChanged = true;
-		}
-		if (autoWidth && contentChanged) {
-			this.#host.layoutEngine.invalidate(element);
-			void this.#host.render();
-		}
-	}
-
-	/**
-	 * Render an input element: sync its UA shadow tree from the input's own
-	 * state, then paint the tree's parts with their computed styles. What
-	 * remains here is exactly the widget's editor mechanics -- the
-	 * scroll-window over an overflowing value and parking the REAL terminal
-	 * cursor -- the same split a browser makes between its input's shadow
-	 * content and its editor internals.
-	 */
-	toggleCheckbox(element: HTMLInputElement): void {
-		element.checked = !element.checked;
-		element.dispatchEvent(
-			new this.#window.Event("change", {bubbles: true, cancelable: false}),
-		);
-		this.#host.render();
-	}
-}
-
-/**
- * What the input editing needs from the TermDOM it belongs to. Getters and
- * callbacks, never values: the widget chrome it drives, the live open-picker
- * and textarea goal-column maps the dispatch code also touches, the caret
- * reveal it queues for the render loop to consume, and render/mutation-flush
- * callbacks because editing a value schedules a frame the observer never hears.
- */
-interface InputActionsHost {
-	readonly widgets: WidgetChrome;
-	readonly layoutEngine: LayoutEngine;
-	readonly openPickers: WeakMap<HTMLSelectElement, number>;
-	readonly textareaGoalColumn: WeakMap<Element, number>;
-	render(): void;
-	processPendingMutationsAndRender(): void;
-	queueCaretReveal(
-		element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
-	): void;
-	textareaVerticalTarget(
-		element: HTMLTextAreaElement,
-		caret: number,
-		direction: 1 | -1,
-	): number;
-}
-
-/**
- * The default-action editing behavior for the form widgets: what a key does to
- * an <input> or <textarea>'s value and selection (grapheme-aware motion,
- * deletion, insertion), and what opens, moves, and commits a <select>'s
- * picker. It reconciles the UA tree through the widget chrome and queues a
- * caret reveal; the keyboard and mouse dispatch that decide WHEN to run these
- * stay in TermDOM and call in.
- */
-class InputActions {
-	#window: DOMWindow;
-	#host: InputActionsHost;
-
-	constructor(window: DOMWindow, host: InputActionsHost) {
-		this.#window = window;
-		this.#host = host;
-	}
-
-	handleSelectAction(
-		element: HTMLSelectElement,
-		keyName: string,
-		key: string,
-	): void {
-		const options = Array.from(element.options);
-		if (options.length === 0) return;
-
-		const enabled = (index: number) => !options[index].disabled;
-		const current = element.selectedIndex;
-		let target = current;
-
-		const step = (from: number, direction: 1 | -1): number => {
-			for (
-				let i = from + direction;
-				i >= 0 && i < options.length;
-				i += direction
-			) {
-				if (enabled(i)) return i;
-			}
-			return from;
-		};
-
-		// OPEN picker: arrows move the highlight without committing; Enter or
-		// Space commits; Escape dismisses without change -- the browser's
-		// picker model.
-		const highlight = this.#host.openPickers.get(element);
-		if (highlight !== undefined) {
-			if (keyName === "ArrowDown") {
-				this.#host.openPickers.set(element, step(highlight, 1));
-			} else if (keyName === "ArrowUp") {
-				this.#host.openPickers.set(element, step(highlight, -1));
-			} else if (keyName === "Home") {
-				this.#host.openPickers.set(element, step(-1, 1));
-			} else if (keyName === "End") {
-				this.#host.openPickers.set(element, step(options.length, -1));
-			} else if (keyName === "Enter" || key === " ") {
-				this.#host.openPickers.delete(element);
-				if (highlight !== current && enabled(highlight)) {
-					this.commitSelect(element, highlight);
-					return;
-				}
-			} else if (keyName === "Escape") {
-				this.#host.openPickers.delete(element);
-			} else {
-				return;
-			}
-			this.#host.widgets.syncSelectShadowTree(
-				element,
-				this.#host.widgets.ensureSelectShadowParts(element),
-			);
-			this.#host.render();
-			return;
-		}
-
-		// CLOSED: Space or Enter opens the picker at the current selection;
-		// arrows keep changing the value in place (the macOS closed-select
-		// model, unchanged).
-		if (keyName === "Enter" || key === " ") {
-			this.openSelectPicker(element);
-			return;
-		}
-		if (keyName === "ArrowDown" || keyName === "ArrowRight") {
-			target = step(current, 1);
-		} else if (keyName === "ArrowUp" || keyName === "ArrowLeft") {
-			target = step(current, -1);
-		} else if (keyName === "Home") {
-			target = step(-1, 1);
-		} else if (keyName === "End") {
-			target = step(options.length, -1);
-		} else {
-			return;
-		}
-
-		if (target !== current && target >= 0) {
-			this.commitSelect(element, target);
-		}
-	}
-
-	/**
-	 * Open a select's picker with the highlight on the current selection
-	 * (or the first enabled option when nothing is selected) -- shared by
-	 * the keyboard's Enter/Space and the mouse's press-to-open.
-	 */
-	openSelectPicker(element: HTMLSelectElement): void {
-		const options = Array.from(element.options);
-		if (options.length === 0) return;
-		let index = element.selectedIndex;
-		if (index < 0) {
-			index = options.findIndex((option) => !option.disabled);
-		}
-		this.#host.openPickers.set(element, index);
-		this.#host.widgets.syncSelectShadowTree(
-			element,
-			this.#host.widgets.ensureSelectShadowParts(element),
-		);
-		this.#host.render();
-	}
-
-	commitSelect(element: HTMLSelectElement, index: number): void {
-		element.selectedIndex = index;
-		this.#host.widgets.syncSelectShadowTree(
-			element,
-			this.#host.widgets.ensureSelectShadowParts(element),
-		);
-		element.dispatchEvent(
-			new this.#window.Event("input", {bubbles: true, cancelable: false}),
-		);
-		element.dispatchEvent(
-			new this.#window.Event("change", {bubbles: true, cancelable: false}),
-		);
-		this.#host.queueCaretReveal(element);
-		this.#host.render();
-	}
-
-	/**
-	 * The value offset under a document-space point in a text field --
-	 * cell-width aware, clamped to the nearest offset so a drag that
-	 * leaves the field still resolves (the browser's capture model:
-	 * a selection begun in a field is the field's until release).
-	 */
-	handleInputAction(
-		element: HTMLInputElement | HTMLTextAreaElement,
-		keyName: string,
-		key: string,
-		shiftKey: boolean,
-		ctrlKey: boolean,
-	): void {
-		const isTextarea = element.tagName === "TEXTAREA";
-		if (keyName !== "ArrowUp" && keyName !== "ArrowDown") {
-			this.#host.textareaGoalColumn.delete(element);
-		}
-		if (element.type === "checkbox" || element.type === "radio") {
-			const toggle = element as HTMLInputElement;
-			// Only Space activates these -- real browsers don't accept typed
-			// text into them at all, so every other key here is a no-op. A
-			// checkbox toggles; a radio only ever checks (Space on an
-			// already-checked radio does nothing, per the browser default --
-			// jsdom's checkedness setter handles unchecking the rest of the
-			// same-name group).
-			if (key === " ") {
-				if (toggle.type === "checkbox") {
-					this.#host.widgets.toggleCheckbox(toggle);
-				} else if (!toggle.checked) {
-					toggle.checked = true;
-					element.dispatchEvent(
-						new this.#window.Event("change", {
-							bubbles: true,
-							cancelable: false,
-						}),
-					);
-					this.#host.render();
-				}
-			}
-			return;
-		}
-
-		// The caret IS the input's collapsed selection -- selectionStart/End/
-		// Direction, the standard API, not a private shadow of it. That makes
-		// the caret visible to setSelectionRange()/select() callers, and it
-		// means a framework assigning .value can't strand it: per spec (and in
-		// jsdom, verified) setting value collapses the selection to the end.
-		// Direction carries which end of a selection is the moving focus, so
-		// Shift+Left after Shift+Right shrinks the selection instead of
-		// flipping it -- exactly the browser's anchor/focus model.
-		const value = element.value;
-		const start = element.selectionStart ?? value.length;
-		const end = element.selectionEnd ?? value.length;
-		const backward = element.selectionDirection === "backward";
-		const caret = backward ? start : end;
-		const anchor = backward ? end : start;
-		const hasSelection = start !== end;
-
-		let newValue = value;
-		let newStart = start;
-		let newEnd = end;
-		let newDirection: "forward" | "backward" | "none" = "none";
-
-		// Collapse the selection to a caret at `pos`.
-		const collapse = (pos: number) => {
-			newStart = newEnd = Math.max(0, Math.min(pos, newValue.length));
-		};
-		// Move the selection's focus (anchor stays), Shift+arrow style.
-		const extend = (focus: number) => {
-			const clamped = Math.max(0, Math.min(focus, value.length));
-			newStart = Math.min(anchor, clamped);
-			newEnd = Math.max(anchor, clamped);
-			newDirection = clamped < anchor ? "backward" : "forward";
-		};
-
-		if (ctrlKey && keyName === "a") {
-			// Select all, the browser's Ctrl+A. (Never Cmd+A here: Cmd chords
-			// are consumed by the terminal app and don't reach the PTY.)
-			extend(0);
-			newStart = 0;
-			newEnd = value.length;
-			newDirection = "forward";
-		} else if (keyName === "Backspace") {
-			if (hasSelection) {
-				newValue = value.slice(0, start) + value.slice(end);
-				collapse(start);
-			} else if (caret > 0) {
-				const from = prevGraphemeBoundary(value, caret);
-				newValue = value.slice(0, from) + value.slice(caret);
-				collapse(from);
-			}
-		} else if (keyName === "Delete") {
-			if (hasSelection) {
-				newValue = value.slice(0, start) + value.slice(end);
-				collapse(start);
-			} else if (caret < value.length) {
-				const to = nextGraphemeBoundary(value, caret);
-				newValue = value.slice(0, caret) + value.slice(to);
-				collapse(caret);
-			}
-		} else if (keyName === "ArrowLeft") {
-			if (shiftKey) {
-				extend(prevGraphemeBoundary(value, caret));
-			} else if (hasSelection) {
-				// A plain arrow collapses to the selection's matching edge,
-				// not one past it -- the browser behavior.
-				collapse(start);
-			} else {
-				collapse(prevGraphemeBoundary(value, caret));
-			}
-		} else if (keyName === "ArrowRight") {
-			if (shiftKey) {
-				extend(nextGraphemeBoundary(value, caret));
-			} else if (hasSelection) {
-				collapse(end);
-			} else {
-				collapse(nextGraphemeBoundary(value, caret));
-			}
-		} else if (isTextarea && keyName === "Enter") {
-			// Enter is a newline in a textarea -- inserted like any typed
-			// character, replacing the selection.
-			newValue = value.slice(0, start) + "\n" + value.slice(end);
-			collapse(start + 1);
-		} else if (
-			isTextarea &&
-			(keyName === "ArrowUp" || keyName === "ArrowDown")
-		) {
-			// Vertical movement is by VISUAL line -- soft wraps count, as in
-			// a browser -- computed from the value's laid-out fragments.
-			this.#host.processPendingMutationsAndRender();
-			const target = this.#host.textareaVerticalTarget(
-				element as HTMLTextAreaElement,
-				caret,
-				keyName === "ArrowDown" ? 1 : -1,
-			);
-			if (shiftKey) {
-				extend(target);
-			} else {
-				collapse(target);
-			}
-		} else if (keyName === "Home") {
-			// In a textarea, Home goes to the start of the caret's visual
-			// line; in an input, of the whole value.
-			let target = 0;
-			if (isTextarea) {
-				this.#host.processPendingMutationsAndRender();
-				const textarea = element as HTMLTextAreaElement;
-				const visual = textareaVisualLines(
-					textarea,
-					this.#host.widgets.ensureTextareaShadowParts(textarea),
-					this.#host.layoutEngine,
-				);
-				if (visual) {
-					target =
-						visual.lines[textareaLineAt(visual.lines, caret)].startOffset;
-				}
-			}
-			if (shiftKey) {
-				extend(target);
-			} else {
-				collapse(target);
-			}
-		} else if (keyName === "End") {
-			let target = value.length;
-			if (isTextarea) {
-				this.#host.processPendingMutationsAndRender();
-				const textarea = element as HTMLTextAreaElement;
-				const visual = textareaVisualLines(
-					textarea,
-					this.#host.widgets.ensureTextareaShadowParts(textarea),
-					this.#host.layoutEngine,
-				);
-				if (visual) {
-					target = visual.lines[textareaLineAt(visual.lines, caret)].endOffset;
-				}
-			}
-			if (shiftKey) {
-				extend(target);
-			} else {
-				collapse(target);
-			}
-		} else if (key.length === 1 && key.charCodeAt(0) >= 32) {
-			// Printable character: replaces the selection, as in a browser.
-			newValue = value.slice(0, start) + key + value.slice(end);
-			collapse(start + 1);
-		} else {
-			return; // Not an input action
-		}
-
-		if (newValue !== value) {
-			// Order matters: assigning .value collapses the selection to the
-			// end (per spec), so the new caret must be set after.
-			element.value = newValue;
-			element.setSelectionRange(newStart, newEnd, newDirection);
-			if (isTextarea) {
-				// Push the new value into the UA tree now -- the mutation
-				// records from this sync are what invalidate layout, since no
-				// observer hears a .value assignment.
-				syncTextareaShadowTree(
-					element as HTMLTextAreaElement,
-					this.#host.widgets.ensureTextareaShadowParts(
-						element as HTMLTextAreaElement,
-					),
-				);
-			} else {
-				// Same for the input: a width:auto field must measure at the
-				// NEW width before this frame paints, or the scroll-window
-				// momentarily shoves the lead character off the field.
-				this.#host.widgets.syncInputShadowTree(
-					element as HTMLInputElement,
-					this.#host.widgets.ensureInputShadowParts(
-						element as HTMLInputElement,
-					),
-				);
-			}
-
-			// Dispatch input event
-			element.dispatchEvent(
-				new this.#window.Event("input", {bubbles: true, cancelable: false}),
-			);
-
-			this.#host.queueCaretReveal(element);
-			// Trigger re-render since .value changes don't trigger MutationObserver
-			this.#host.render();
-		} else if (
-			newStart !== start ||
-			newEnd !== end ||
-			(newStart !== newEnd && newDirection !== element.selectionDirection)
-		) {
-			// jsdom fires the `select` event itself for a real range change.
-			element.setSelectionRange(newStart, newEnd, newDirection);
-			this.#host.queueCaretReveal(element);
-			this.#host.render();
-		}
-	}
-
-	/**
-	 * Split raw terminal input into key tokens: CSI sequences (ESC [ ... final
-	 * byte), SS3 sequences (ESC O x), and single characters.
-	 *
-	 * Fast input arrives batched -- a held arrow key delivers
-	 * "\x1b[B\x1b[B\x1b[B" in one chunk, and a terminal report can land glued to
-	 * ordinary keystrokes. Anything that treats a chunk as one key swallows
-	 * everything after the first token: a held arrow repeated once per chunk
-	 * instead of once per press, and a stray cursor report ate every key packed
-	 * behind it.
-	 */
-}
-
-/**
- * What the terminal input translator needs from the session. It reads replies
- * in flight (the mode-probe map and the pending cursor-detection handler) and
- * routes the rest onward -- mouse, keyboard, and the quit chord.
- */
-interface TerminalInputHost {
-	readonly modeProbeHandlers: Map<string, (value: number) => void>;
-	readonly cursorDetectionHandler: ((data: string) => void) | null;
-	readonly mouseCaptureYielded: boolean;
-	handleMouseReport(
-		button: number,
-		column: number,
-		row: number,
-		release: boolean,
-	): void;
-	reclaimMouseCapture(): void;
-	dispatchKeyboard(input: Buffer): void;
-	quit(): void;
-}
-
-/**
- * The terminal input translator: raw stdin bytes in, semantic events out. It
- * understands the terminal's reply protocols -- splicing a cursor-position or
- * DECRPM reply out of a chunk that also carries typing -- peels SGR mouse
- * reports off token by token, and hands the remaining keystrokes on. It knows
- * escape sequences and nothing of the DOM; the session wires it up and decides
- * what the routed events mean.
- */
-class TerminalInput {
-	#host: TerminalInputHost;
-
-	constructor(host: TerminalInputHost) {
-		this.#host = host;
-	}
-
-	feed(chunk: string | Buffer): void {
-		// Ensure we have both string and buffer representations
-		const data = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, "utf8");
-		const dataStr = data.toString("utf8");
-
-		// Route 1: Cursor position responses (highest priority). Fast typing
-		// can land in the same chunk as the report -- "jjj\x1b[12;1Rjjj" --
-		// so hand the report to the waiting query and let the rest continue
-		// through the normal routes as keystrokes.
-		// Route 0: the terminal's answer about BDSM (DECRPM). Same
-		// splicing as the cursor report below -- it is a reply, never a
-		// keystroke, and it can share a chunk with real typing.
-		const modeReport = dataStr.match(/\x1b\[(\??)(\d+);(\d+)\$y/);
-		if (modeReport) {
-			const mode = (modeReport[1] ? "?" : "") + modeReport[2];
-			const waiting = this.#host.modeProbeHandlers.get(mode);
-			if (waiting) {
-				this.#host.modeProbeHandlers.delete(mode);
-				waiting(parseInt(modeReport[3], 10));
-				const rest =
-					dataStr.slice(0, modeReport.index) +
-					dataStr.slice((modeReport.index ?? 0) + modeReport[0].length);
-				if (rest.length === 0) return;
-				this.feed(rest);
-				return;
-			}
-		}
-
-		const report = dataStr.match(/\x1b\[\d+;\d+R/);
-		if (this.#host.cursorDetectionHandler && report) {
-			this.#host.cursorDetectionHandler(report[0]);
-			const rest =
-				dataStr.slice(0, report.index) +
-				dataStr.slice((report.index ?? 0) + report[0].length);
-			if (rest.length === 0) return;
-			this.feed(rest);
-			return;
-		}
-
-		// Route 2: Ctrl-C handling (high priority) - check raw bytes
-		if (data.length > 0 && data[0] === 0x03) {
-			this.#host.quit();
-			return;
-		}
-
-		// Route 3: SGR mouse reports. Peeled off token by token so a report
-		// glued to fast keystrokes ("jj\x1b[<65;4;7Mjj") eats neither side,
-		// and BEFORE the fullscreen filter below -- fullscreen is a
-		// mouse-capturing mode, so its reports must not be dropped with the
-		// keyboard events.
-		let keyInput = "";
-		for (const token of tokenizeInput(dataStr)) {
-			const mouse = token.match(/^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/);
-			if (mouse) {
-				this.#host.handleMouseReport(
-					parseInt(mouse[1]),
-					parseInt(mouse[2]),
-					parseInt(mouse[3]),
-					mouse[4] === "m",
-				);
-			} else {
-				keyInput += token;
-			}
-		}
-		if (keyInput.length === 0) return;
-
-		// A keystroke means the user is back at the live screen (terminals
-		// snap to the bottom on input): reclaim the mouse if scroll
-		// chaining yielded it.
-		if (this.#host.mouseCaptureYielded) {
-			this.#host.reclaimMouseCapture();
-		}
-
-		// Route 4: General keyboard events -- ONE pipeline, fullscreen
-		// included. A separate fullscreen listener would drift from this
-		// one: the tokenization for batched input, the SGR-mouse-report
-		// filtering (a report misreads as literal keyboard text without
-		// it) and the modifier decoding all live here.
-		// #dispatchGlobalKeyboardEvent handles Escape exiting
-		// fullscreen (see below).
-		this.#host.dispatchKeyboard(Buffer.from(keyInput));
-	}
-}
-
-/**
- * The paint tree-walk, lifted out of TermDOM: it turns the laid-out document
- * into cells in a DrawingContext and reads nothing of the terminal session
- * (the frame loop, the cursor, the anchor) -- those stay in TermDOM and drive
- * it. Its dependencies on the session are the explicit PaintHost above.
- */
-class Painter {
-	#window: DOMWindow;
-	#document: Document;
-	#host: PaintHost;
-
-	constructor(window: DOMWindow, host: PaintHost) {
-		this.#window = window;
-		this.#document = window.document;
-		this.#host = host;
-	}
-
-	#renderElement(
-		element: Element,
-		ctx: import("./ansi.js").DrawingContext,
-		afterOwnBox?: () => void,
-	): void {
-		// Viewport culling. The buffer only keeps document rows in
-		// [-viewportOffset, -viewportOffset + rows); a subtree whose paint extent
-		// lies wholly outside that band would be walked -- styles computed, text
-		// shaped, borders drawn -- and then discarded cell by cell. Skip it here
-		// and the paint costs what is on screen, not what is in the document.
-		const bandTop = -ctx.viewportOffset;
-		if (
-			this.#host.layoutEngine.isSubtreeOutsideBand(
-				element,
-				bandTop,
-				bandTop + ctx.rows,
-			)
-		) {
-			return;
-		}
-
-		// display:none generates NO box and no descendant boxes -- final, per
-		// CSS. Stray run state under a hidden subtree (an editing todo's
-		// hidden .view) could otherwise ghost-paint at whatever coordinates
-		// it last held.
-		if (
-			this.#window.getComputedStyle(element).getPropertyValue("display") ===
-			"none"
-		) {
-			return;
-		}
-
-		const rect = this.#host.layoutEngine.getRect(element);
-
-		const color = this.#window
-			.getComputedStyle(element)
-			.getPropertyValue("color");
-		const backgroundColor = this.#window
-			.getComputedStyle(element)
-			.getPropertyValue("background-color");
-		const {bold, dim} = resolveFontWeight(
-			this.#window.getComputedStyle(element).getPropertyValue("font-weight"),
-		);
-		const italic =
-			this.#window.getComputedStyle(element).getPropertyValue("font-style") ===
-			"italic";
-		const underline = hasUnderline(this.#window.getComputedStyle(element));
-		const underlineStyle =
-			this.#window
-				.getComputedStyle(element)
-				.getPropertyValue("text-decoration-style") === "double"
-				? ("double" as const)
-				: undefined;
-		// visibility:hidden reserves the box (layout is untouched) but paints
-		// nothing of it -- unlike display:none, which removes the box entirely. A
-		// descendant that sets visibility:visible still paints, since visibility
-		// inherits and each element resolves its own computed value here.
-		const visible =
-			this.#window.getComputedStyle(element).getPropertyValue("visibility") !==
-			"hidden";
-
-		// background-color: Canvas -- the CSS system color for the document
-		// background -- clears the box to the terminal's DEFAULT background:
-		// opaque in every theme without asserting any color, the same
-		// system-color translation ::selection's Highlight pair uses. The UA
-		// picker sheet relies on it; authors can too. The Highlight/
-		// HighlightText pair fills the box with SGR inverse instead -- the
-		// browser's blue dropdown row, in the terminal's own colors (the UA
-		// select sheet's highlighted option rides this).
-		const isCanvasBg =
-			Boolean(backgroundColor) && /^canvas$/i.test(backgroundColor.trim());
-		const isHighlightBox =
-			Boolean(backgroundColor) &&
-			isSystemHighlightColor(backgroundColor) &&
-			Boolean(color) &&
-			isSystemHighlightColor(color);
-		const style = {
-			fg:
-				color && color !== "initial" && !isSystemHighlightColor(color)
-					? cssColorToNumber(color)
-					: undefined,
-			bg:
-				backgroundColor &&
-				!isCanvasBg &&
-				backgroundColor !== "initial" &&
-				backgroundColor !== "transparent" &&
-				!isSystemHighlightColor(backgroundColor)
-					? cssColorToNumber(backgroundColor)
-					: undefined,
-			bold,
-			dim,
-			italic,
-			underline,
-			underlineStyle,
-		};
-
-		if (rect && visible && (style.bg != null || isCanvasBg || isHighlightBox)) {
-			ctx.fillRect(
-				rect.left,
-				rect.top,
-				rect.width,
-				rect.height,
-				isCanvasBg ? "default" : isHighlightBox ? "inverse" : style.bg,
-			);
-		}
-
-		// Handle borders
-		if (rect && visible) {
-			const borderStyles = resolveBorderStyles(element);
-			if (borderStyles.hasAnyBorder) {
-				// Border color per CSS: border-color, whose initial value is
-				// currentColor -- the element's own color -- and, with nothing
-				// authored anywhere, the terminal's DEFAULT foreground. Never a
-				// hardcoded white: no theme-safe color exists, and forcing one
-				// breaks light terminals.
-				const borderColor = this.#window
-					.getComputedStyle(element)
-					.getPropertyValue("border-top-color");
-				const borderCellStyle = {
-					fg:
-						borderColor &&
-						borderColor !== "currentcolor" &&
-						borderColor !== "currentColor"
-							? cssColorToNumber(borderColor)
-							: style.fg,
-					bg: style.bg, // Inherit element's background color
-				};
-				ctx.drawBorder(
-					Math.round(rect.left),
-					Math.round(rect.top),
-					Math.round(rect.width),
-					Math.round(rect.height),
-					borderStyles,
-					borderCellStyle,
-				);
-			}
-		}
-
-		// Handle list-style-position: outside markers
-		if (visible) this.#renderOutsideMarker(element, ctx);
-
-		// A textarea's content IS its UA shadow tree, painted by the normal
-		// child walk below; what the widget owns here is just tree upkeep (a
-		// safety-net sync for framework .value assignments -- no observer
-		// record fires for those) and parking the real terminal caret at the
-		// multiline position.
-		if (element.tagName === "TEXTAREA" && rect) {
-			const textarea = element as HTMLTextAreaElement;
-			const parts = this.#host.ensureTextareaShadowParts(textarea);
-			syncTextareaShadowTree(textarea, parts);
-			if (visible && textarea === this.#document.activeElement) {
-				const caretCell = textareaCaretCell(
-					textarea,
-					parts,
-					this.#host.layoutEngine,
-				);
-				if (caretCell) {
-					ctx.setCaret(caretCell.x, caretCell.y);
-				}
-			}
-		}
-
-		// A select's content is its UA shadow tree (label + indicator),
-		// painted by the normal child walk; upkeep and caret parking are all
-		// that belongs here.
-		if (element.tagName === "SELECT" && rect) {
-			const select = element as HTMLSelectElement;
-			const parts = this.#host.ensureSelectShadowParts(select);
-			this.#host.syncSelectShadowTree(select, parts);
-			if (visible && select === this.#document.activeElement) {
-				const boxModel = getBoxModel(select);
-				ctx.setCaret(
-					Math.round(rect.left) +
-						(boxModel.borderLeftWidth || 0) +
-						(boxModel.paddingLeft || 0),
-					Math.round(rect.top) +
-						(boxModel.borderTopWidth || 0) +
-						(boxModel.paddingTop || 0),
-				);
-			}
-		}
-
-		// Render input elements (void elements with no children)
-		if (
-			element.tagName === "INPUT" &&
-			rect &&
-			(element as HTMLInputElement).type !== "hidden"
-		) {
-			if (visible) {
-				this.#renderInputElement(element as HTMLInputElement, rect, ctx);
-			}
-			return; // Input elements have no children to render
-		}
-
-		// Note: JSDOM automatically calls connectedCallback() when elements are added to DOM
-		// No manual lifecycle management needed
-
-		// The stacking-context painter slots its negative-z layer here: after
-		// this element's own background and border, before any of its in-flow
-		// content -- the CSS position for negative z-index.
-		if (afterOwnBox) afterOwnBox();
-
-		// The IN-FLOW walk: children paint in tree order, and POSITIONED
-		// children don't paint here at all -- per CSS they are hoisted to
-		// their nearest stacking context and painted in its layer order (see
-		// #renderStackingContext). The old per-sibling z sort could never
-		// let a deep overlay escape its parent's siblings; hoisting is what
-		// makes a modal or dropdown paint over unrelated subtrees.
-		const children: Node[] = [];
-
-		// Fast path: for a plain vertically-stacked container (no position:
-		// relative/absolute child, no flex-direction other than column -- see
-		// visibleChildrenInBand's own doc comment for exactly what that rules
-		// out), the layout tree already knows which children are in band
-		// without visiting the rest to rule them out. Without it, a long list
-		// scrolled to any depth costs O(total children) per frame -- worse
-		// the longer the list gets, though only ~O(screen) of it can ever be
-		// visible -- because the walker below has no choice but to step
-		// through every sibling to find out which ones are off-band.
-		const fastChildren = this.#host.layoutEngine.visibleChildrenInBand(
-			element,
-			bandTop,
-			bandTop + ctx.rows,
-		);
-		if (fastChildren) {
-			for (const childNode of fastChildren) {
-				children.push(childNode);
-			}
-		} else {
-			// Use ExpandedTreeWalker to render all children including pseudo-elements and shadow DOM
-			const walker = createExpandedTreeWalker(this.#window, element);
-			for (
-				let childNode = walker.firstChild();
-				childNode;
-				childNode = walker.nextSibling()
-			) {
-				// Cull before any style read: an off-band child costs one map
-				// lookup instead of a computed-style resolution, which is what keeps a
-				// wide container of mostly off-screen children O(screen).
-				if (
-					childNode.nodeType === childNode.ELEMENT_NODE &&
-					this.#host.layoutEngine.isSubtreeOutsideBand(
-						childNode as Element,
-						bandTop,
-						bandTop + ctx.rows,
-					)
-				) {
-					continue;
-				}
-				if (
-					childNode.nodeType === childNode.ELEMENT_NODE &&
-					isPositioned(this.#window, childNode as Element) &&
-					this.#host.layoutEngine.positionedElements.has(childNode as Element)
-				) {
-					// Hoisted to its stacking context. Registry membership is
-					// the gate: a positioned INLINE run member owns no box of
-					// its own -- no layer would ever paint it, so it stays with
-					// its run (offsets on run members are an unsupported edge).
-					continue;
-				}
-				children.push(childNode);
-			}
-		}
-
-		// overflow:hidden clips *descendants* to this element's own box -- never
-		// the element's own border/background painted above, which is why this is
-		// scoped to just the children, not the whole function.
-		const overflow = this.#window
-			.getComputedStyle(element)
-			.getPropertyValue("overflow");
-		const overflowX =
-			this.#window.getComputedStyle(element).getPropertyValue("overflow-x") ||
-			overflow;
-		const overflowY =
-			this.#window.getComputedStyle(element).getPropertyValue("overflow-y") ||
-			overflow;
-		const previousClip = ctx.clipRect;
-		ctx.clipRect = overflowClipRect(rect, overflowX, overflowY, previousClip);
-
-		try {
-			for (const childNode of children) {
-				if (childNode.nodeType === childNode.ELEMENT_NODE) {
-					const childElement = childNode as Element;
-					if (childElement instanceof (this.#window as any).HTMLElement) {
-						this.#renderElement(childElement, ctx);
-					}
-				} else if (childNode.nodeType === childNode.TEXT_NODE) {
-					const textNode = childNode as Text;
-					this.#renderText(textNode, ctx);
-				}
-			}
-		} finally {
-			ctx.clipRect = previousClip;
-		}
-
-		// The textarea's selection paints OVER the value text the child walk
-		// just laid down: the field's own bounded selection, shown while
-		// focused, styled by its ::selection rules like any document text.
-		if (element.tagName === "TEXTAREA" && rect && visible) {
-			this.#renderTextareaSelection(element as HTMLTextAreaElement, ctx);
-		}
-	}
-
-	#renderTextareaSelection(
-		element: HTMLTextAreaElement,
-		ctx: import("./ansi.js").DrawingContext,
-	): void {
-		if (element !== this.#document.activeElement) return;
-		const selStart = element.selectionStart ?? 0;
-		const selEnd = element.selectionEnd ?? 0;
-		if (selEnd <= selStart) return;
-		const parts = this.#host.ensureTextareaShadowParts(element);
-		const visual = textareaVisualLines(element, parts, this.#host.layoutEngine);
-		if (!visual) return;
-		const style = selectionStyleFor(
-			this.#window,
-			element,
-			cellStyleFromComputed(this.#window.getComputedStyle(parts.spans.value)),
-		);
-		for (const line of visual.lines) {
-			const from = Math.max(selStart, line.startOffset);
-			const to = Math.min(selEnd, line.endOffset);
-			if (to <= from) continue;
-			const pre = line.text.slice(0, from - line.startOffset);
-			const slice = line.text.slice(
-				from - line.startOffset,
-				to - line.startOffset,
-			);
-			if (!slice) continue;
-			ctx.setText(line.x + stringWidth(pre), line.y, slice, style);
-		}
-	}
-
-	/**
-	 * The paint height of the document: body's scroll height, extended to
-	 * cover top-layer boxes -- hoisted under the root, they contribute
-	 * nothing to body's own height, and a picker opening at the bottom
-	 * edge must still get rows to paint into.
-	 */
-	documentPaintHeight(): number {
-		let height = this.#document.body.scrollHeight;
-		for (const element of this.#host.topLayer) {
-			if (!compositionIsConnected(element)) continue;
-			const rect = this.#host.layoutEngine.getRect(element);
-			if (rect) height = Math.max(height, Math.ceil(rect.bottom));
-		}
-		return height;
-	}
-
-	/** The whole document: the root stacking context, then the top layer. */
-	renderDocument(ctx: import("./ansi.js").DrawingContext): void {
-		const layers = this.collectStackingLayers();
-		this.#renderStackingContext(this.#document.body, ctx, layers);
-		for (const element of this.#host.topLayer) {
-			// COMPOSITION-connected: a UA part (the select's picker) lives in
-			// a fragment and is never DOM-connected while very much on screen.
-			if (!compositionIsConnected(element)) {
-				this.#host.topLayer.delete(element);
-				continue;
-			}
-			const previousClip = ctx.clipRect;
-			ctx.clipRect = null;
-			try {
-				this.#renderStackingContext(element, ctx, layers);
-			} finally {
-				ctx.clipRect = previousClip;
-			}
-		}
-	}
-
-	/**
-	 * The clip a deferred positioned box paints under: the context root's
-	 * clip, intersected with every overflow-clipping box along the CSS
-	 * containing-block chain (its positioned ancestors up to the context
-	 * root) -- and nothing else: intervening non-positioned overflow
-	 * ancestors don't clip a box they don't contain.
-	 */
-	#positionedClipFor(
-		element: Element,
-		contextRoot: Element,
-		contextClip: import("./ansi.js").DrawingContext["clipRect"],
-	): import("./ansi.js").DrawingContext["clipRect"] {
-		let clip = contextClip;
-		for (
-			let ancestor = compositionParentElement(element);
-			ancestor && ancestor !== contextRoot;
-			ancestor = compositionParentElement(ancestor)
-		) {
-			if (!isPositioned(this.#window, ancestor)) continue;
-			const style = this.#window.getComputedStyle(ancestor);
-			const overflow = style.getPropertyValue("overflow");
-			const overflowX = style.getPropertyValue("overflow-x") || overflow;
-			const overflowY = style.getPropertyValue("overflow-y") || overflow;
-			if (overflowX === "hidden" || overflowY === "hidden") {
-				const rect = this.#host.layoutEngine.getRect(ancestor);
-				if (rect) {
-					clip = overflowClipRect(rect, overflowX, overflowY, clip);
-				}
-			}
-		}
-		return clip;
-	}
-
-	/**
-	 * Whether an element establishes a stacking context: the paint-atomic
-	 * unit of CSS layering. Terminal-relevant predicate: positioned with a
-	 * non-auto z-index. (The root context belongs to <body>, the paint
-	 * root.) opacity/transform/filter have no terminal meaning here.
-	 */
-	formsStackingContext(element: Element): boolean {
-		if (element === this.#document.body) return true;
-		if (
-			this.#window.getComputedStyle(element).getPropertyValue("isolation") ===
-			"isolate"
-		) {
-			return true;
-		}
-		return (
-			isPositioned(this.#window, element) &&
-			zIndexValueOf(this.#window, element) !== "auto"
-		);
-	}
-
-	/**
-	 * Group every connected positioned element under its nearest
-	 * stacking-context ancestor, bucketed into the CSS paint layers:
-	 * negative-z contexts, the z:auto/0 layer, positive-z contexts. Walks
-	 * only the positioned registry -- O(positioned x depth) per frame,
-	 * never O(document).
-	 */
-	collectStackingLayers(): Map<
-		Element,
-		{neg: Element[]; zero: Element[]; pos: Element[]}
-	> {
-		const layers = new Map<
-			Element,
-			{neg: Element[]; zero: Element[]; pos: Element[]}
-		>();
-		for (const element of this.#host.layoutEngine.positionedElements) {
-			if (!element.isConnected || element === this.#document.body) continue;
-			if (this.#host.topLayer.has(element)) continue; // painted above everything
-			if (!isPositioned(this.#window, element)) continue; // stale registry entry
-			let root: Element = this.#document.body;
-			for (
-				let ancestor = compositionParentElement(element);
-				ancestor;
-				ancestor = compositionParentElement(ancestor)
-			) {
-				if (this.formsStackingContext(ancestor)) {
-					root = ancestor;
-					break;
-				}
-			}
-			let bucket = layers.get(root);
-			if (!bucket) {
-				bucket = {neg: [], zero: [], pos: []};
-				layers.set(root, bucket);
-			}
-			const z = zIndexValueOf(this.#window, element);
-			if (z === "auto" || z === 0) bucket.zero.push(element);
-			else if (z < 0) bucket.neg.push(element);
-			else bucket.pos.push(element);
-		}
-		const treeOrder = (a: Element, b: Element) =>
-			a.compareDocumentPosition(b) & 4 ? -1 : 1; // 4: b follows a
-		for (const bucket of layers.values()) {
-			const byZ = (a: Element, b: Element) => {
-				const za = zIndexValueOf(this.#window, a) as number;
-				const zb = zIndexValueOf(this.#window, b) as number;
-				return za !== zb ? za - zb : treeOrder(a, b);
-			};
-			bucket.neg.sort(byZ);
-			bucket.zero.sort(treeOrder);
-			bucket.pos.sort(byZ);
-		}
-		return layers;
-	}
-
-	/**
-	 * Paint a stacking context in the CSS layer order: the root's own box,
-	 * negative-z child contexts, in-flow content (the #renderElement walk,
-	 * which skips positioned descendants), the positioned z:auto/0 layer,
-	 * then positive-z contexts. A z:auto member doesn't isolate: it paints
-	 * as an in-flow subtree here while its own positioned descendants sit
-	 * in THIS context's buckets. Deferred layers paint under the context
-	 * root's clip -- a positioned box escapes overflow ancestors between
-	 * itself and its context, the common CSS escape (per-containing-block
-	 * clipping is layer-2 work).
-	 */
-	#renderStackingContext(
-		root: Element,
-		ctx: import("./ansi.js").DrawingContext,
-		layers: Map<Element, {neg: Element[]; zero: Element[]; pos: Element[]}>,
-	): void {
-		const bucket = layers.get(root);
-		if (!bucket) {
-			this.#renderElement(root, ctx);
-			return;
-		}
-		const contextClip = ctx.clipRect;
-		const paintMember = (element: Element) => {
-			const previousClip = ctx.clipRect;
-			const previousOffset = ctx.viewportOffset;
-			// Clips apply along the CONTAINING BLOCK chain only: an overflow
-			// ancestor that isn't a positioned ancestor doesn't clip a
-			// deferred box, but its own containing blocks' overflow does.
-			ctx.clipRect = this.#positionedClipFor(element, root, contextClip);
-			// position:fixed anchors to the VIEWPORT: cancel the camera by
-			// undoing the scroll offset for the whole subtree.
-			if (
-				this.#window.getComputedStyle(element).getPropertyValue("position") ===
-				"fixed"
-			) {
-				ctx.viewportOffset = previousOffset + this.#host.documentScrollTop;
-			}
-			try {
-				if (this.formsStackingContext(element)) {
-					this.#renderStackingContext(element, ctx, layers);
-				} else {
-					this.#renderElement(element, ctx);
-				}
-			} finally {
-				ctx.clipRect = previousClip;
-				ctx.viewportOffset = previousOffset;
-			}
-		};
-		this.#renderElement(root, ctx, () => {
-			for (const element of bucket.neg) paintMember(element);
-		});
-		for (const element of bucket.zero) paintMember(element);
-		for (const element of bucket.pos) paintMember(element);
-	}
-
-	/**
-	 * Render outside positioned markers for list items
-	 */
-	#renderOutsideMarker(
-		element: Element,
-		ctx: import("./ansi.js").DrawingContext,
-	): void {
-		const computedStyle = this.#window.getComputedStyle(element);
-		const display = computedStyle.getPropertyValue("display");
-
-		// Only handle list items
-		if (display !== "list-item") {
-			return;
-		}
-
-		const listStylePosition =
-			computedStyle.getPropertyValue("list-style-position") || "outside";
-
-		// Only handle outside positioning
-		if (listStylePosition !== "outside") {
-			return;
-		}
-
-		// Prevent duplicate rendering in the same frame
-		if (this.#host.renderedOutsideMarkers.has(element)) {
-			return;
-		}
-		this.#host.renderedOutsideMarkers.add(element);
-
-		// Get marker content from StyleManager
-		const markerContent = this.#host.styleManager.getMarkerContent(element);
-		if (!markerContent) {
-			return;
-		}
-
-		const rect = this.#host.layoutEngine.getRect(element);
-		if (!rect) {
-			return;
-		}
-
-		// Cells, not code units: a marker like "日本 " is 3 characters but 5 cells
-		// wide, and right-aligning it by its length would paint it over the item's
-		// own text.
-		const markerWidth = stringWidth(markerContent);
-
-		// Get marker styles
-		const markerStyle = this.#window.getComputedStyle(element, "::marker");
-		// ::marker inherits color from its originating element, so fall back to the
-		// list item's own color rather than rendering the marker unstyled.
-		const markerColor =
-			markerStyle.getPropertyValue("color") ||
-			computedStyle.getPropertyValue("color");
-		const {bold: markerBold, dim: markerDim} = resolveFontWeight(
-			markerStyle.getPropertyValue("font-weight"),
-		);
-		const markerItalic =
-			markerStyle.getPropertyValue("font-style") === "italic";
-		const markerUnderline = hasUnderline(markerStyle);
-
-		const markerTextStyle = {
-			fg:
-				markerColor && markerColor !== "initial"
-					? cssColorToNumber(markerColor)
-					: undefined,
-			bold: markerBold,
-			dim: markerDim,
-			italic: markerItalic,
-			underline: markerUnderline,
-		};
-
-		// Position marker just before the list item's content area (outside positioning)
-		const markerX = Math.max(0, Math.round(rect.left) - markerWidth);
-		const markerY = Math.round(rect.top);
-
-		// Render the marker (clipped to available space, never mutate the DOM)
-		ctx.setText(markerX, markerY, markerContent, markerTextStyle);
-	}
-
-	/**
-	 * Build (or rebuild, when the type flips between text-ish and toggle)
-	 * an input's UA-internal shadow tree: real DOM in the symbol slot,
-	 * closed to authors -- element.shadowRoot stays null and attachShadow
-	 * still throws, exactly as for a browser input's own internals. The
-	 * field tree carries a real <style> scoped to its root; parts are
-	 * addressed by the standard `part` attribute, which is what gives
-	 * ::placeholder a real element to resolve onto.
-	 */
-	#renderInputElement(
-		element: HTMLInputElement,
-		rect: DOMRect,
-		ctx: import("./ansi.js").DrawingContext,
-	): void {
-		const boxModel = getBoxModel(element);
-		const contentX =
-			Math.round(rect.left) +
-			(boxModel.borderLeftWidth || 0) +
-			(boxModel.paddingLeft || 0);
-		const contentY =
-			Math.round(rect.top) +
-			(boxModel.borderTopWidth || 0) +
-			(boxModel.paddingTop || 0);
-		const contentWidth =
-			Math.round(rect.width) -
-			(boxModel.borderLeftWidth || 0) -
-			(boxModel.borderRightWidth || 0) -
-			(boxModel.paddingLeft || 0) -
-			(boxModel.paddingRight || 0);
-
-		const parts = this.#host.ensureInputShadowParts(element);
-
-		if (parts.kind === "toggle") {
-			const mark =
-				element.type === "checkbox"
-					? element.checked
-						? "[x]"
-						: "[ ]"
-					: element.checked
-						? "(x)"
-						: "( )";
-			// The glyph is real DOM; its style (the focus underline included,
-			// inherited from the input's own focus-aware default) reads back
-			// off the tree.
-			if (parts.texts.glyph.data !== mark) {
-				parts.texts.glyph.data = mark;
-			}
-			ctx.setText(
-				contentX,
-				contentY,
-				mark,
-				cellStyleFromComputed(this.#window.getComputedStyle(parts.spans.glyph)),
-			);
-			if (element === this.#document.activeElement) {
-				ctx.setCaret(contentX, contentY);
-			}
-			return;
-		}
-
-		const value = element.value || "";
-		const placeholder = element.getAttribute("placeholder") || "";
-		const isFocused = element === this.#document.activeElement;
-
-		this.#host.syncInputShadowTree(element, parts);
-
-		// Region styles come off the tree: the value inherits the input's
-		// own text style (solid underline when focused), the placeholder and
-		// the blank carry the UA field sheet -- gray ghost label, faint
-		// blank when blurred -- plus whatever the author adds.
-		const textStyle = cellStyleFromComputed(
-			this.#window.getComputedStyle(
-				value ? parts.spans.value : parts.spans.placeholder,
-			),
-		);
-		const blankStyle = cellStyleFromComputed(
-			this.#window.getComputedStyle(parts.spans.blank),
-		);
-
-		// Shown focused or not, as in a browser -- the caret just sits at
-		// the field start, over the dimmed text.
-		const displayText = value || placeholder;
-
-		// Everything below measures in CELLS, not characters. CJK text is two
-		// cells per glyph, so character arithmetic put the caret mid-text (IME
-		// composition then anchored on top of already-typed glyphs) and padEnd
-		// by character count pushed the value's background straight through the
-		// input's right border.
-		let scrollOffset = this.#host.inputScrollOffsets.get(element) ?? 0;
-		// The caret is the input's own selection (selectionStart/End), so a
-		// framework assigning .value can never strand it: per spec, setting
-		// value collapses the selection to the end. The caret sits at the
-		// selection's FOCUS -- the moving end, per selectionDirection -- which
-		// is the end that must stay scrolled into view while extending.
-		const selStart = element.selectionStart ?? value.length;
-		const selEnd = element.selectionEnd ?? value.length;
-		const cursor =
-			element.selectionDirection === "backward" ? selStart : selEnd;
-
-		if (isFocused) {
-			// Keep the caret's CELL offset inside the box.
-			if (cursor < scrollOffset) {
-				scrollOffset = cursor;
-			}
-			while (
-				scrollOffset < cursor &&
-				stringWidth(displayText.slice(scrollOffset, cursor)) >= contentWidth
-			) {
-				scrollOffset++;
-			}
-			// And scroll BACK when there's slack: after deleting at the end of
-			// an overflowed value, the window would otherwise stay put and show
-			// a shrinking tail with the earlier text still hidden off the left
-			// edge. Pull the window left while everything from one character
-			// earlier through the end still fits strictly inside the field
-			// (strictly: the caret needs its cell when it sits at the end),
-			// exactly what a browser's field does on backspace.
-			while (
-				scrollOffset > 0 &&
-				stringWidth(displayText.slice(scrollOffset - 1)) < contentWidth
-			) {
-				scrollOffset--;
-			}
-			this.#host.inputScrollOffsets.set(element, scrollOffset);
-		}
-
-		// Take characters from the scroll offset until the next one would no
-		// longer fit, then pad with spaces to exactly the content width in cells.
-		let visibleText = "";
-		let usedCells = 0;
-		for (const char of displayText.slice(scrollOffset)) {
-			const charCells = stringWidth(char);
-			if (usedCells + charCells > contentWidth) break;
-			visibleText += char;
-			usedCells += charCells;
-		}
-		const visibleChars = visibleText.length;
-		visibleText += " ".repeat(Math.max(0, contentWidth - usedCells));
-
-		// The content region paints with its part's style, and the cells the
-		// content spares are the BLANK part -- which the UA sheet renders as
-		// the faint underlined blank when blurred, and which inherits the
-		// solid focus underline like everything else when focused.
-		if (displayText) {
-			ctx.setText(
-				contentX,
-				contentY,
-				visibleText.slice(0, visibleChars),
-				textStyle,
-			);
-			ctx.setText(
-				contentX + usedCells,
-				contentY,
-				visibleText.slice(visibleChars),
-				blankStyle,
-			);
-		} else {
-			ctx.setText(contentX, contentY, visibleText, blankStyle);
-		}
-
-		// A selection paints as inverse video over its visible slice --
-		// terminal-native highlight, no color assumptions. (Placeholder text
-		// can never be selected: it only shows for an empty value, whose
-		// selection is necessarily collapsed.)
-		if (isFocused && selEnd > selStart) {
-			const visStart = Math.max(selStart, scrollOffset);
-			const visEnd = Math.min(selEnd, scrollOffset + visibleChars);
-			if (visEnd > visStart) {
-				ctx.setText(
-					contentX + stringWidth(displayText.slice(scrollOffset, visStart)),
-					contentY,
-					displayText.slice(visStart, visEnd),
-					selectionStyleFor(this.#window, element, textStyle),
-				);
-			}
-		}
-
-		// The caret of a focused input is the REAL terminal cursor, parked there
-		// by the frame -- not an inverse-video imitation. IME composition, screen
-		// readers and the terminal's own cursor style all anchor to the real one.
-		if (isFocused) {
-			const cursorX =
-				contentX + stringWidth(displayText.slice(scrollOffset, cursor));
-			if (cursorX >= contentX && cursorX < contentX + contentWidth) {
-				ctx.setCaret(cursorX, contentY);
-			}
-		}
-	}
-
-	/**
-	 * Render a text node with proper styling from its parent element or pseudo-element
-	 */
-	#renderText(textNode: Text, ctx: import("./ansi.js").DrawingContext): void {
-		const textContent = textNode.data;
-		if (!textContent) return;
-
-		// Check if this is a pseudo-element node
-		const pseudoMetadata = getPseudoMetadata(textNode);
-
-		// For pseudo elements, we don't have a parentElement, but we have
-		// hostElement. Everything else styles from the FLAT-tree parent:
-		// slotted bare text draws its inherited styles through the slot's
-		// shadow chain, not from the host it came from.
-		const parentElement = pseudoMetadata
-			? pseudoMetadata.hostElement
-			: compositionParentElement(textNode);
-		if (!parentElement) return;
-
-		let computedStyle: CSSStyleDeclaration;
-
-		if (pseudoMetadata) {
-			// For pseudo-elements, get the computed style with the pseudo-element selector
-			computedStyle = this.#window.getComputedStyle(
-				pseudoMetadata.hostElement,
-				pseudoMetadata.pseudoType,
-			);
-		} else {
-			// For regular text nodes, use the parent element's style
-			computedStyle = this.#window.getComputedStyle(parentElement);
-		}
-
-		// visibility inherits, so the parent's own resolved value already accounts
-		// for a closer ancestor overriding back to visible.
-		if (computedStyle.getPropertyValue("visibility") === "hidden") return;
-
-		const textTransform = computedStyle.getPropertyValue("text-transform");
-		const textStyle = cellStyleFromComputed(computedStyle);
-
-		const rectTexts = this.#host.layoutEngine.getRectTexts(textNode);
-		if (rectTexts.length > 0) {
-			for (const rectText of rectTexts) {
-				if (rectText.text.length > 0) {
-					ctx.setText(
-						Math.round(rectText.rect.x),
-						Math.round(rectText.rect.y),
-						applyTextTransform(rectText.text, textTransform),
-						textStyle,
-					);
-				}
-			}
-			this.#renderTextSelection(
-				textNode,
-				rectTexts,
-				textStyle,
-				textTransform,
-				ctx,
-			);
-		}
-	}
-
-	/**
-	 * Overlay the document selection on a text node's painted fragments as
-	 * inverse video -- the terminal-native highlight, no color assumptions.
-	 * The Range holds code-unit offsets into node.data; visualToDataOffsets
-	 * bridges each painted character back to its data offset, and contiguous
-	 * selected runs repaint inverse. Ranges whose boundary containers are
-	 * elements rather than text nodes still highlight any text node they
-	 * fully contain (the intersectsNode walk); a boundary that lands INSIDE
-	 * this node only resolves to a precise offset when the container is the
-	 * node itself -- the only shape our own drag selection produces.
-	 */
-	#renderTextSelection(
-		textNode: Text,
-		rectTexts: Array<import("./layout.js").RectText>,
-		textStyle: import("./ansi.js").CellStyle,
-		textTransform: string,
-		ctx: import("./ansi.js").DrawingContext,
-	): void {
-		const selection = this.#window.getSelection();
-		if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
-			return;
-		}
-		const range = selection.getRangeAt(0);
-		if (!range.intersectsNode(textNode)) return;
-
-		const from = range.startContainer === textNode ? range.startOffset : 0;
-		const to =
-			range.endContainer === textNode ? range.endOffset : textNode.data.length;
-		if (to <= from) return;
-
-		const selectionParent =
-			getPseudoMetadata(textNode)?.hostElement ??
-			compositionParentElement(textNode);
-		if (!selectionParent) return;
-		const selectionStyle = selectionStyleFor(
-			this.#window,
-			selectionParent,
-			textStyle,
-		);
-		if (selectionStyle === textStyle) return; // no ::selection rule reaches here
-
-		const visToData = visualToDataOffsets(textNode.data, rectTexts);
-		let visualBase = 0;
-		for (const rectText of rectTexts) {
-			// Contiguous run of selected visual chars within this fragment.
-			let runStart = -1;
-			for (let i = 0; i <= rectText.text.length; i++) {
-				const dataOffset =
-					i < rectText.text.length ? visToData[visualBase + i] : -1;
-				const selected =
-					dataOffset >= 0 && dataOffset >= from && dataOffset < to;
-				if (selected && runStart === -1) {
-					runStart = i;
-				} else if (!selected && runStart !== -1) {
-					// Case transforms never change cell width, so slicing the
-					// untransformed text and transforming the slice paints the
-					// same cells the base pass did.
-					ctx.setText(
-						Math.round(rectText.rect.x) +
-							stringWidth(rectText.text.slice(0, runStart)),
-						Math.round(rectText.rect.y),
-						applyTextTransform(rectText.text.slice(runStart, i), textTransform),
-						selectionStyle,
-					);
-					runStart = -1;
-				}
-			}
-			visualBase += rectText.text.length;
-		}
-	}
-}
-
 export class TermDOM {
 	readonly document: Document;
 	readonly window: DOMWindow;
@@ -3594,12 +1705,6 @@ export class TermDOM {
 	#fullscreenManager: FullscreenManager;
 	#observerManager: ObserverManager;
 	#styleManager: StyleManager;
-	#painter: Painter;
-	#widgets: WidgetChrome;
-	#inputActions: InputActions;
-	#terminalInput: TerminalInput;
-	/** Outside list markers already painted this frame; reset each frame. */
-	#renderedOutsideMarkers = new WeakSet<Element>();
 	// The command-start anchor: the row the document starts on. The document
 	// CAMERA (scrollY/pageYOffset/scrollTop) is a separate value owned by
 	// installWindowExtensions. #anchorScrollTop is always -#screenTop once set,
@@ -3651,8 +1756,14 @@ export class TermDOM {
 	 * share. Members are excluded from normal stacking collection.
 	 */
 	#topLayer = new Set<Element>();
-	/** Highlighted option index of each OPEN picker; absence = closed. */
-	#openPickers = new WeakMap<HTMLSelectElement, number>();
+	#inputShadowParts = new WeakMap<
+		Element,
+		{
+			kind: "field" | "toggle" | "textarea" | "select";
+			spans: Record<string, HTMLElement>;
+			texts: Record<string, Text>;
+		}
+	>();
 
 	// Track whether command start was explicitly detected (even if at row 1)
 	#hasDetectedCommandStart: boolean = false;
@@ -3793,13 +1904,6 @@ export class TermDOM {
 		// the window below. Built here, before the fields it exposes exist:
 		// nothing reads through it until a patched API is actually called.
 		const host = this.#createDOMPatchHost();
-		this.#widgets = new WidgetChrome(this.window, this.#createWidgetHost());
-		this.#inputActions = new InputActions(
-			this.window,
-			this.#createInputActionsHost(),
-		);
-		this.#terminalInput = new TerminalInput(this.#createTerminalInputHost());
-		this.#painter = new Painter(this.window, this.#createPaintHost());
 
 		installConstructorExtensions(this.window, host);
 		this.#renderer = new Renderer(
@@ -3835,113 +1939,6 @@ export class TermDOM {
 	 * window: see DOMPatchHost for why every member is a getter or a callback
 	 * rather than a value.
 	 */
-	#createTerminalInputHost(): TerminalInputHost {
-		const termDOM = this;
-		return {
-			get modeProbeHandlers() {
-				return termDOM.#modeProbeHandlers;
-			},
-			get cursorDetectionHandler() {
-				return termDOM.#cursorDetectionHandler;
-			},
-			get mouseCaptureYielded() {
-				return termDOM.#mouseCaptureYielded;
-			},
-			handleMouseReport: (button, column, row, release) =>
-				termDOM.#handleMouseReport(button, column, row, release),
-			reclaimMouseCapture: () => termDOM.#reclaimMouseCapture(),
-			dispatchKeyboard: (input) => termDOM.#dispatchGlobalKeyboardEvent(input),
-			quit: () => {
-				termDOM.dispose();
-				termDOM.#process.exit(0);
-			},
-		};
-	}
-
-	#createInputActionsHost(): InputActionsHost {
-		const termDOM = this;
-		return {
-			get widgets() {
-				return termDOM.#widgets;
-			},
-			get layoutEngine() {
-				return termDOM[kLayoutEngine];
-			},
-			get openPickers() {
-				return termDOM.#openPickers;
-			},
-			get textareaGoalColumn() {
-				return termDOM.#textareaGoalColumn;
-			},
-			render: () => {
-				termDOM.#render();
-			},
-			processPendingMutationsAndRender: () =>
-				termDOM.#processPendingMutationsAndRender(),
-			queueCaretReveal: (element) => termDOM.#queueCaretReveal(element),
-			textareaVerticalTarget: (element, caret, direction) =>
-				termDOM.#textareaVerticalTarget(element, caret, direction),
-		};
-	}
-
-	#createWidgetHost(): WidgetHost {
-		const termDOM = this;
-		return {
-			get styleManager() {
-				return termDOM.#styleManager;
-			},
-			get layoutEngine() {
-				return termDOM[kLayoutEngine];
-			},
-			get observer() {
-				return termDOM[kObserver];
-			},
-			get openPickers() {
-				return termDOM.#openPickers;
-			},
-			get topLayer() {
-				return termDOM.#topLayer;
-			},
-			render: () => {
-				termDOM.#render();
-			},
-		};
-	}
-
-	#createPaintHost(): PaintHost {
-		const termDOM = this;
-		return {
-			get layoutEngine() {
-				return termDOM[kLayoutEngine];
-			},
-			get styleManager() {
-				return termDOM.#styleManager;
-			},
-			get documentScrollTop() {
-				return termDOM.#documentScrollTop;
-			},
-			get topLayer() {
-				return termDOM.#topLayer;
-			},
-			get renderedOutsideMarkers() {
-				return termDOM.#renderedOutsideMarkers;
-			},
-			get inputScrollOffsets() {
-				return termDOM.#inputScrollOffsets;
-			},
-			ensureInputShadowParts: (element) =>
-				termDOM.#widgets.ensureInputShadowParts(element),
-			ensureTextareaShadowParts: (element) =>
-				termDOM.#widgets.ensureTextareaShadowParts(element),
-			ensureSelectShadowParts: (element) =>
-				termDOM.#widgets.ensureSelectShadowParts(element),
-			syncInputShadowTree: (element, parts) =>
-				termDOM.#widgets.syncInputShadowTree(element, parts),
-			syncSelectShadowTree: (element, parts) =>
-				termDOM.#widgets.syncSelectShadowTree(element, parts),
-		};
-	}
-
 	#createDOMPatchHost(): DOMPatchHost {
 		const termDOM = this;
 		return {
@@ -4154,10 +2151,93 @@ export class TermDOM {
 			stdin.resume();
 			stdin.setEncoding?.("utf8");
 
-			// Every chunk goes through the terminal input translator: it splices
-			// out cursor and mode replies, peels off SGR mouse reports, and hands
-			// the rest on as keyboard events.
-			this.#stdinDataHandler = (chunk) => this.#terminalInput.feed(chunk);
+			// Single unified handler for all stdin data
+			this.#stdinDataHandler = (chunk: string | Buffer) => {
+				// Ensure we have both string and buffer representations
+				const data = Buffer.isBuffer(chunk)
+					? chunk
+					: Buffer.from(chunk, "utf8");
+				const dataStr = data.toString("utf8");
+
+				// Route 1: Cursor position responses (highest priority). Fast typing
+				// can land in the same chunk as the report -- "jjj\x1b[12;1Rjjj" --
+				// so hand the report to the waiting query and let the rest continue
+				// through the normal routes as keystrokes.
+				// Route 0: the terminal's answer about BDSM (DECRPM). Same
+				// splicing as the cursor report below -- it is a reply, never a
+				// keystroke, and it can share a chunk with real typing.
+				const modeReport = dataStr.match(/\x1b\[(\??)(\d+);(\d+)\$y/);
+				if (modeReport) {
+					const mode = (modeReport[1] ? "?" : "") + modeReport[2];
+					const waiting = this.#modeProbeHandlers.get(mode);
+					if (waiting) {
+						this.#modeProbeHandlers.delete(mode);
+						waiting(parseInt(modeReport[3], 10));
+						const rest =
+							dataStr.slice(0, modeReport.index) +
+							dataStr.slice((modeReport.index ?? 0) + modeReport[0].length);
+						if (rest.length === 0) return;
+						if (this.#stdinDataHandler) this.#stdinDataHandler(rest);
+						return;
+					}
+				}
+
+				const report = dataStr.match(/\x1b\[\d+;\d+R/);
+				if (this.#cursorDetectionHandler && report) {
+					this.#cursorDetectionHandler(report[0]);
+					const rest =
+						dataStr.slice(0, report.index) +
+						dataStr.slice((report.index ?? 0) + report[0].length);
+					if (rest.length === 0) return;
+					if (this.#stdinDataHandler) {
+						this.#stdinDataHandler(rest);
+					}
+					return;
+				}
+
+				// Route 2: Ctrl-C handling (high priority) - check raw bytes
+				if (data.length > 0 && data[0] === 0x03) {
+					this.dispose();
+					return this.#process.exit(0);
+				}
+
+				// Route 3: SGR mouse reports. Peeled off token by token so a report
+				// glued to fast keystrokes ("jj\x1b[<65;4;7Mjj") eats neither side,
+				// and BEFORE the fullscreen filter below -- fullscreen is a
+				// mouse-capturing mode, so its reports must not be dropped with the
+				// keyboard events.
+				let keyInput = "";
+				for (const token of this.#tokenizeInput(dataStr)) {
+					const mouse = token.match(/^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/);
+					if (mouse) {
+						this.#handleMouseReport(
+							parseInt(mouse[1]),
+							parseInt(mouse[2]),
+							parseInt(mouse[3]),
+							mouse[4] === "m",
+						);
+					} else {
+						keyInput += token;
+					}
+				}
+				if (keyInput.length === 0) return;
+
+				// A keystroke means the user is back at the live screen (terminals
+				// snap to the bottom on input): reclaim the mouse if scroll
+				// chaining yielded it.
+				if (this.#mouseCaptureYielded) {
+					this.#reclaimMouseCapture();
+				}
+
+				// Route 4: General keyboard events -- ONE pipeline, fullscreen
+				// included. A separate fullscreen listener would drift from this
+				// one: the tokenization for batched input, the SGR-mouse-report
+				// filtering (a report misreads as literal keyboard text without
+				// it) and the modifier decoding all live here.
+				// #dispatchGlobalKeyboardEvent handles Escape exiting
+				// fullscreen (see below).
+				this.#dispatchGlobalKeyboardEvent(Buffer.from(keyInput));
+			};
 			stdin.on("data", this.#stdinDataHandler);
 		}
 	}
@@ -4224,6 +2304,1000 @@ export class TermDOM {
 	}
 
 	// TODO: many of the following methods do not belong on the TermDOM class
+	#renderElement(
+		element: Element,
+		ctx: import("./ansi.js").DrawingContext,
+		afterOwnBox?: () => void,
+	): void {
+		// Viewport culling. The buffer only keeps document rows in
+		// [-viewportOffset, -viewportOffset + rows); a subtree whose paint extent
+		// lies wholly outside that band would be walked -- styles computed, text
+		// shaped, borders drawn -- and then discarded cell by cell. Skip it here
+		// and the paint costs what is on screen, not what is in the document.
+		const bandTop = -ctx.viewportOffset;
+		if (
+			this[kLayoutEngine].isSubtreeOutsideBand(
+				element,
+				bandTop,
+				bandTop + ctx.rows,
+			)
+		) {
+			return;
+		}
+
+		// display:none generates NO box and no descendant boxes -- final, per
+		// CSS. Stray run state under a hidden subtree (an editing todo's
+		// hidden .view) could otherwise ghost-paint at whatever coordinates
+		// it last held.
+		if (
+			this.window.getComputedStyle(element).getPropertyValue("display") ===
+			"none"
+		) {
+			return;
+		}
+
+		const rect = this[kLayoutEngine].getRect(element);
+
+		const color = this.window
+			.getComputedStyle(element)
+			.getPropertyValue("color");
+		const backgroundColor = this.window
+			.getComputedStyle(element)
+			.getPropertyValue("background-color");
+		const {bold, dim} = resolveFontWeight(
+			this.window.getComputedStyle(element).getPropertyValue("font-weight"),
+		);
+		const italic =
+			this.window.getComputedStyle(element).getPropertyValue("font-style") ===
+			"italic";
+		const underline = hasUnderline(this.window.getComputedStyle(element));
+		const underlineStyle =
+			this.window
+				.getComputedStyle(element)
+				.getPropertyValue("text-decoration-style") === "double"
+				? ("double" as const)
+				: undefined;
+		// visibility:hidden reserves the box (layout is untouched) but paints
+		// nothing of it -- unlike display:none, which removes the box entirely. A
+		// descendant that sets visibility:visible still paints, since visibility
+		// inherits and each element resolves its own computed value here.
+		const visible =
+			this.window.getComputedStyle(element).getPropertyValue("visibility") !==
+			"hidden";
+
+		// background-color: Canvas -- the CSS system color for the document
+		// background -- clears the box to the terminal's DEFAULT background:
+		// opaque in every theme without asserting any color, the same
+		// system-color translation ::selection's Highlight pair uses. The UA
+		// picker sheet relies on it; authors can too. The Highlight/
+		// HighlightText pair fills the box with SGR inverse instead -- the
+		// browser's blue dropdown row, in the terminal's own colors (the UA
+		// select sheet's highlighted option rides this).
+		const isCanvasBg =
+			Boolean(backgroundColor) && /^canvas$/i.test(backgroundColor.trim());
+		const isHighlightBox =
+			Boolean(backgroundColor) &&
+			isSystemHighlightColor(backgroundColor) &&
+			Boolean(color) &&
+			isSystemHighlightColor(color);
+		const style = {
+			fg:
+				color && color !== "initial" && !isSystemHighlightColor(color)
+					? cssColorToNumber(color)
+					: undefined,
+			bg:
+				backgroundColor &&
+				!isCanvasBg &&
+				backgroundColor !== "initial" &&
+				backgroundColor !== "transparent" &&
+				!isSystemHighlightColor(backgroundColor)
+					? cssColorToNumber(backgroundColor)
+					: undefined,
+			bold,
+			dim,
+			italic,
+			underline,
+			underlineStyle,
+		};
+
+		if (rect && visible && (style.bg != null || isCanvasBg || isHighlightBox)) {
+			ctx.fillRect(
+				rect.left,
+				rect.top,
+				rect.width,
+				rect.height,
+				isCanvasBg ? "default" : isHighlightBox ? "inverse" : style.bg,
+			);
+		}
+
+		// Handle borders
+		if (rect && visible) {
+			const borderStyles = resolveBorderStyles(element);
+			if (borderStyles.hasAnyBorder) {
+				// Border color per CSS: border-color, whose initial value is
+				// currentColor -- the element's own color -- and, with nothing
+				// authored anywhere, the terminal's DEFAULT foreground. Never a
+				// hardcoded white: no theme-safe color exists, and forcing one
+				// breaks light terminals.
+				const borderColor = this.window
+					.getComputedStyle(element)
+					.getPropertyValue("border-top-color");
+				const borderCellStyle = {
+					fg:
+						borderColor &&
+						borderColor !== "currentcolor" &&
+						borderColor !== "currentColor"
+							? cssColorToNumber(borderColor)
+							: style.fg,
+					bg: style.bg, // Inherit element's background color
+				};
+				ctx.drawBorder(
+					Math.round(rect.left),
+					Math.round(rect.top),
+					Math.round(rect.width),
+					Math.round(rect.height),
+					borderStyles,
+					borderCellStyle,
+				);
+			}
+		}
+
+		// Handle list-style-position: outside markers
+		if (visible) this.#renderOutsideMarker(element, ctx);
+
+		// A textarea's content IS its UA shadow tree, painted by the normal
+		// child walk below; what the widget owns here is just tree upkeep (a
+		// safety-net sync for framework .value assignments -- no observer
+		// record fires for those) and parking the real terminal caret at the
+		// multiline position.
+		if (element.tagName === "TEXTAREA" && rect) {
+			const textarea = element as HTMLTextAreaElement;
+			const parts = this.#ensureTextareaShadowParts(textarea);
+			syncTextareaShadowTree(textarea, parts);
+			if (visible && textarea === this.document.activeElement) {
+				const caretCell = textareaCaretCell(
+					textarea,
+					parts,
+					this[kLayoutEngine],
+				);
+				if (caretCell) {
+					ctx.setCaret(caretCell.x, caretCell.y);
+				}
+			}
+		}
+
+		// A select's content is its UA shadow tree (label + indicator),
+		// painted by the normal child walk; upkeep and caret parking are all
+		// that belongs here.
+		if (element.tagName === "SELECT" && rect) {
+			const select = element as HTMLSelectElement;
+			const parts = this.#ensureSelectShadowParts(select);
+			this.#syncSelectShadowTree(select, parts);
+			if (visible && select === this.document.activeElement) {
+				const boxModel = getBoxModel(select);
+				ctx.setCaret(
+					Math.round(rect.left) +
+						(boxModel.borderLeftWidth || 0) +
+						(boxModel.paddingLeft || 0),
+					Math.round(rect.top) +
+						(boxModel.borderTopWidth || 0) +
+						(boxModel.paddingTop || 0),
+				);
+			}
+		}
+
+		// Render input elements (void elements with no children)
+		if (
+			element.tagName === "INPUT" &&
+			rect &&
+			(element as HTMLInputElement).type !== "hidden"
+		) {
+			if (visible) {
+				this.#renderInputElement(element as HTMLInputElement, rect, ctx);
+			}
+			return; // Input elements have no children to render
+		}
+
+		// Note: JSDOM automatically calls connectedCallback() when elements are added to DOM
+		// No manual lifecycle management needed
+
+		// The stacking-context painter slots its negative-z layer here: after
+		// this element's own background and border, before any of its in-flow
+		// content -- the CSS position for negative z-index.
+		if (afterOwnBox) afterOwnBox();
+
+		// The IN-FLOW walk: children paint in tree order, and POSITIONED
+		// children don't paint here at all -- per CSS they are hoisted to
+		// their nearest stacking context and painted in its layer order (see
+		// #renderStackingContext). The old per-sibling z sort could never
+		// let a deep overlay escape its parent's siblings; hoisting is what
+		// makes a modal or dropdown paint over unrelated subtrees.
+		const children: Node[] = [];
+
+		// Fast path: for a plain vertically-stacked container (no position:
+		// relative/absolute child, no flex-direction other than column -- see
+		// visibleChildrenInBand's own doc comment for exactly what that rules
+		// out), the layout tree already knows which children are in band
+		// without visiting the rest to rule them out. Without it, a long list
+		// scrolled to any depth costs O(total children) per frame -- worse
+		// the longer the list gets, though only ~O(screen) of it can ever be
+		// visible -- because the walker below has no choice but to step
+		// through every sibling to find out which ones are off-band.
+		const fastChildren = this[kLayoutEngine].visibleChildrenInBand(
+			element,
+			bandTop,
+			bandTop + ctx.rows,
+		);
+		if (fastChildren) {
+			for (const childNode of fastChildren) {
+				children.push(childNode);
+			}
+		} else {
+			// Use ExpandedTreeWalker to render all children including pseudo-elements and shadow DOM
+			const walker = createExpandedTreeWalker(this.window, element);
+			for (
+				let childNode = walker.firstChild();
+				childNode;
+				childNode = walker.nextSibling()
+			) {
+				// Cull before any style read: an off-band child costs one map
+				// lookup instead of a computed-style resolution, which is what keeps a
+				// wide container of mostly off-screen children O(screen).
+				if (
+					childNode.nodeType === childNode.ELEMENT_NODE &&
+					this[kLayoutEngine].isSubtreeOutsideBand(
+						childNode as Element,
+						bandTop,
+						bandTop + ctx.rows,
+					)
+				) {
+					continue;
+				}
+				if (
+					childNode.nodeType === childNode.ELEMENT_NODE &&
+					isPositioned(this.window, childNode as Element) &&
+					this[kLayoutEngine].positionedElements.has(childNode as Element)
+				) {
+					// Hoisted to its stacking context. Registry membership is
+					// the gate: a positioned INLINE run member owns no box of
+					// its own -- no layer would ever paint it, so it stays with
+					// its run (offsets on run members are an unsupported edge).
+					continue;
+				}
+				children.push(childNode);
+			}
+		}
+
+		// overflow:hidden clips *descendants* to this element's own box -- never
+		// the element's own border/background painted above, which is why this is
+		// scoped to just the children, not the whole function.
+		const overflow = this.window
+			.getComputedStyle(element)
+			.getPropertyValue("overflow");
+		const overflowX =
+			this.window.getComputedStyle(element).getPropertyValue("overflow-x") ||
+			overflow;
+		const overflowY =
+			this.window.getComputedStyle(element).getPropertyValue("overflow-y") ||
+			overflow;
+		const previousClip = ctx.clipRect;
+		ctx.clipRect = overflowClipRect(rect, overflowX, overflowY, previousClip);
+
+		try {
+			for (const childNode of children) {
+				if (childNode.nodeType === childNode.ELEMENT_NODE) {
+					const childElement = childNode as Element;
+					if (childElement instanceof (this.window as any).HTMLElement) {
+						this.#renderElement(childElement, ctx);
+					}
+				} else if (childNode.nodeType === childNode.TEXT_NODE) {
+					const textNode = childNode as Text;
+					this.#renderText(textNode, ctx);
+				}
+			}
+		} finally {
+			ctx.clipRect = previousClip;
+		}
+
+		// The textarea's selection paints OVER the value text the child walk
+		// just laid down: the field's own bounded selection, shown while
+		// focused, styled by its ::selection rules like any document text.
+		if (element.tagName === "TEXTAREA" && rect && visible) {
+			this.#renderTextareaSelection(element as HTMLTextAreaElement, ctx);
+		}
+	}
+
+	#renderTextareaSelection(
+		element: HTMLTextAreaElement,
+		ctx: import("./ansi.js").DrawingContext,
+	): void {
+		if (element !== this.document.activeElement) return;
+		const selStart = element.selectionStart ?? 0;
+		const selEnd = element.selectionEnd ?? 0;
+		if (selEnd <= selStart) return;
+		const parts = this.#ensureTextareaShadowParts(element);
+		const visual = textareaVisualLines(element, parts, this[kLayoutEngine]);
+		if (!visual) return;
+		const style = selectionStyleFor(
+			this.window,
+			element,
+			cellStyleFromComputed(this.window.getComputedStyle(parts.spans.value)),
+		);
+		for (const line of visual.lines) {
+			const from = Math.max(selStart, line.startOffset);
+			const to = Math.min(selEnd, line.endOffset);
+			if (to <= from) continue;
+			const pre = line.text.slice(0, from - line.startOffset);
+			const slice = line.text.slice(
+				from - line.startOffset,
+				to - line.startOffset,
+			);
+			if (!slice) continue;
+			ctx.setText(line.x + stringWidth(pre), line.y, slice, style);
+		}
+	}
+
+	/**
+	 * The paint height of the document: body's scroll height, extended to
+	 * cover top-layer boxes -- hoisted under the root, they contribute
+	 * nothing to body's own height, and a picker opening at the bottom
+	 * edge must still get rows to paint into.
+	 */
+	#documentPaintHeight(): number {
+		let height = this.document.body.scrollHeight;
+		for (const element of this.#topLayer) {
+			if (!compositionIsConnected(element)) continue;
+			const rect = this[kLayoutEngine].getRect(element);
+			if (rect) height = Math.max(height, Math.ceil(rect.bottom));
+		}
+		return height;
+	}
+
+	/** The whole document: the root stacking context, then the top layer. */
+	#renderDocument(ctx: import("./ansi.js").DrawingContext): void {
+		const layers = this.#collectStackingLayers();
+		this.#renderStackingContext(this.document.body, ctx, layers);
+		for (const element of this.#topLayer) {
+			// COMPOSITION-connected: a UA part (the select's picker) lives in
+			// a fragment and is never DOM-connected while very much on screen.
+			if (!compositionIsConnected(element)) {
+				this.#topLayer.delete(element);
+				continue;
+			}
+			const previousClip = ctx.clipRect;
+			ctx.clipRect = null;
+			try {
+				this.#renderStackingContext(element, ctx, layers);
+			} finally {
+				ctx.clipRect = previousClip;
+			}
+		}
+	}
+
+	/**
+	 * The clip a deferred positioned box paints under: the context root's
+	 * clip, intersected with every overflow-clipping box along the CSS
+	 * containing-block chain (its positioned ancestors up to the context
+	 * root) -- and nothing else: intervening non-positioned overflow
+	 * ancestors don't clip a box they don't contain.
+	 */
+	#positionedClipFor(
+		element: Element,
+		contextRoot: Element,
+		contextClip: import("./ansi.js").DrawingContext["clipRect"],
+	): import("./ansi.js").DrawingContext["clipRect"] {
+		let clip = contextClip;
+		for (
+			let ancestor = compositionParentElement(element);
+			ancestor && ancestor !== contextRoot;
+			ancestor = compositionParentElement(ancestor)
+		) {
+			if (!isPositioned(this.window, ancestor)) continue;
+			const style = this.window.getComputedStyle(ancestor);
+			const overflow = style.getPropertyValue("overflow");
+			const overflowX = style.getPropertyValue("overflow-x") || overflow;
+			const overflowY = style.getPropertyValue("overflow-y") || overflow;
+			if (overflowX === "hidden" || overflowY === "hidden") {
+				const rect = this[kLayoutEngine].getRect(ancestor);
+				if (rect) {
+					clip = overflowClipRect(rect, overflowX, overflowY, clip);
+				}
+			}
+		}
+		return clip;
+	}
+
+	/**
+	 * Whether an element establishes a stacking context: the paint-atomic
+	 * unit of CSS layering. Terminal-relevant predicate: positioned with a
+	 * non-auto z-index. (The root context belongs to <body>, the paint
+	 * root.) opacity/transform/filter have no terminal meaning here.
+	 */
+	#formsStackingContext(element: Element): boolean {
+		if (element === this.document.body) return true;
+		if (
+			this.window.getComputedStyle(element).getPropertyValue("isolation") ===
+			"isolate"
+		) {
+			return true;
+		}
+		return (
+			isPositioned(this.window, element) &&
+			zIndexValueOf(this.window, element) !== "auto"
+		);
+	}
+
+	/**
+	 * Group every connected positioned element under its nearest
+	 * stacking-context ancestor, bucketed into the CSS paint layers:
+	 * negative-z contexts, the z:auto/0 layer, positive-z contexts. Walks
+	 * only the positioned registry -- O(positioned x depth) per frame,
+	 * never O(document).
+	 */
+	#collectStackingLayers(): Map<
+		Element,
+		{neg: Element[]; zero: Element[]; pos: Element[]}
+	> {
+		const layers = new Map<
+			Element,
+			{neg: Element[]; zero: Element[]; pos: Element[]}
+		>();
+		for (const element of this[kLayoutEngine].positionedElements) {
+			if (!element.isConnected || element === this.document.body) continue;
+			if (this.#topLayer.has(element)) continue; // painted above everything
+			if (!isPositioned(this.window, element)) continue; // stale registry entry
+			let root: Element = this.document.body;
+			for (
+				let ancestor = compositionParentElement(element);
+				ancestor;
+				ancestor = compositionParentElement(ancestor)
+			) {
+				if (this.#formsStackingContext(ancestor)) {
+					root = ancestor;
+					break;
+				}
+			}
+			let bucket = layers.get(root);
+			if (!bucket) {
+				bucket = {neg: [], zero: [], pos: []};
+				layers.set(root, bucket);
+			}
+			const z = zIndexValueOf(this.window, element);
+			if (z === "auto" || z === 0) bucket.zero.push(element);
+			else if (z < 0) bucket.neg.push(element);
+			else bucket.pos.push(element);
+		}
+		const treeOrder = (a: Element, b: Element) =>
+			a.compareDocumentPosition(b) & 4 ? -1 : 1; // 4: b follows a
+		for (const bucket of layers.values()) {
+			const byZ = (a: Element, b: Element) => {
+				const za = zIndexValueOf(this.window, a) as number;
+				const zb = zIndexValueOf(this.window, b) as number;
+				return za !== zb ? za - zb : treeOrder(a, b);
+			};
+			bucket.neg.sort(byZ);
+			bucket.zero.sort(treeOrder);
+			bucket.pos.sort(byZ);
+		}
+		return layers;
+	}
+
+	/**
+	 * Paint a stacking context in the CSS layer order: the root's own box,
+	 * negative-z child contexts, in-flow content (the #renderElement walk,
+	 * which skips positioned descendants), the positioned z:auto/0 layer,
+	 * then positive-z contexts. A z:auto member doesn't isolate: it paints
+	 * as an in-flow subtree here while its own positioned descendants sit
+	 * in THIS context's buckets. Deferred layers paint under the context
+	 * root's clip -- a positioned box escapes overflow ancestors between
+	 * itself and its context, the common CSS escape (per-containing-block
+	 * clipping is layer-2 work).
+	 */
+	#renderStackingContext(
+		root: Element,
+		ctx: import("./ansi.js").DrawingContext,
+		layers: Map<Element, {neg: Element[]; zero: Element[]; pos: Element[]}>,
+	): void {
+		const bucket = layers.get(root);
+		if (!bucket) {
+			this.#renderElement(root, ctx);
+			return;
+		}
+		const contextClip = ctx.clipRect;
+		const paintMember = (element: Element) => {
+			const previousClip = ctx.clipRect;
+			const previousOffset = ctx.viewportOffset;
+			// Clips apply along the CONTAINING BLOCK chain only: an overflow
+			// ancestor that isn't a positioned ancestor doesn't clip a
+			// deferred box, but its own containing blocks' overflow does.
+			ctx.clipRect = this.#positionedClipFor(element, root, contextClip);
+			// position:fixed anchors to the VIEWPORT: cancel the camera by
+			// undoing the scroll offset for the whole subtree.
+			if (
+				this.window.getComputedStyle(element).getPropertyValue("position") ===
+				"fixed"
+			) {
+				ctx.viewportOffset = previousOffset + this.#documentScrollTop;
+			}
+			try {
+				if (this.#formsStackingContext(element)) {
+					this.#renderStackingContext(element, ctx, layers);
+				} else {
+					this.#renderElement(element, ctx);
+				}
+			} finally {
+				ctx.clipRect = previousClip;
+				ctx.viewportOffset = previousOffset;
+			}
+		};
+		this.#renderElement(root, ctx, () => {
+			for (const element of bucket.neg) paintMember(element);
+		});
+		for (const element of bucket.zero) paintMember(element);
+		for (const element of bucket.pos) paintMember(element);
+	}
+
+	/**
+	 * Render outside positioned markers for list items
+	 */
+	#renderedOutsideMarkers = new WeakSet<Element>();
+
+	#renderOutsideMarker(
+		element: Element,
+		ctx: import("./ansi.js").DrawingContext,
+	): void {
+		const computedStyle = this.window.getComputedStyle(element);
+		const display = computedStyle.getPropertyValue("display");
+
+		// Only handle list items
+		if (display !== "list-item") {
+			return;
+		}
+
+		const listStylePosition =
+			computedStyle.getPropertyValue("list-style-position") || "outside";
+
+		// Only handle outside positioning
+		if (listStylePosition !== "outside") {
+			return;
+		}
+
+		// Prevent duplicate rendering in the same frame
+		if (this.#renderedOutsideMarkers.has(element)) {
+			return;
+		}
+		this.#renderedOutsideMarkers.add(element);
+
+		// Get marker content from StyleManager
+		const markerContent = this.#styleManager.getMarkerContent(element);
+		if (!markerContent) {
+			return;
+		}
+
+		const rect = this[kLayoutEngine].getRect(element);
+		if (!rect) {
+			return;
+		}
+
+		// Cells, not code units: a marker like "日本 " is 3 characters but 5 cells
+		// wide, and right-aligning it by its length would paint it over the item's
+		// own text.
+		const markerWidth = stringWidth(markerContent);
+
+		// Get marker styles
+		const markerStyle = this.window.getComputedStyle(element, "::marker");
+		// ::marker inherits color from its originating element, so fall back to the
+		// list item's own color rather than rendering the marker unstyled.
+		const markerColor =
+			markerStyle.getPropertyValue("color") ||
+			computedStyle.getPropertyValue("color");
+		const {bold: markerBold, dim: markerDim} = resolveFontWeight(
+			markerStyle.getPropertyValue("font-weight"),
+		);
+		const markerItalic =
+			markerStyle.getPropertyValue("font-style") === "italic";
+		const markerUnderline = hasUnderline(markerStyle);
+
+		const markerTextStyle = {
+			fg:
+				markerColor && markerColor !== "initial"
+					? cssColorToNumber(markerColor)
+					: undefined,
+			bold: markerBold,
+			dim: markerDim,
+			italic: markerItalic,
+			underline: markerUnderline,
+		};
+
+		// Position marker just before the list item's content area (outside positioning)
+		const markerX = Math.max(0, Math.round(rect.left) - markerWidth);
+		const markerY = Math.round(rect.top);
+
+		// Render the marker (clipped to available space, never mutate the DOM)
+		ctx.setText(markerX, markerY, markerContent, markerTextStyle);
+	}
+
+	/**
+	 * Build (or rebuild, when the type flips between text-ish and toggle)
+	 * an input's UA-internal shadow tree: real DOM in the symbol slot,
+	 * closed to authors -- element.shadowRoot stays null and attachShadow
+	 * still throws, exactly as for a browser input's own internals. The
+	 * field tree carries a real <style> scoped to its root; parts are
+	 * addressed by the standard `part` attribute, which is what gives
+	 * ::placeholder a real element to resolve onto.
+	 */
+	#ensureInputShadowParts(element: HTMLInputElement): {
+		kind: "field" | "toggle" | "textarea" | "select";
+		spans: Record<string, HTMLElement>;
+		texts: Record<string, Text>;
+	} {
+		const kind =
+			element.type === "checkbox" || element.type === "radio"
+				? ("toggle" as const)
+				: ("field" as const);
+		const cached = this.#inputShadowParts.get(element);
+		if (cached && cached.kind === kind) {
+			return cached;
+		}
+
+		const document = this.document;
+		const root = createUAShadowRoot(element);
+		while (root.firstChild) {
+			root.removeChild(root.firstChild);
+		}
+		const spans: Record<string, HTMLElement> = {};
+		const texts: Record<string, Text> = {};
+		const addPart = (part: string) => {
+			const span = document.createElement("span");
+			span.setAttribute("part", part);
+			const text = document.createTextNode("");
+			span.appendChild(text);
+			root.appendChild(span);
+			spans[part] = span;
+			texts[part] = text;
+		};
+		if (kind === "field") {
+			const style = document.createElement("style");
+			style.textContent = FIELD_UA_STYLES;
+			root.appendChild(style);
+			addPart("value");
+			addPart("placeholder");
+			addPart("blank");
+		} else {
+			addPart("glyph");
+		}
+
+		// Scope the UA rules to this root. The root is deliberately NOT
+		// observer-enrolled: the painter syncs the tree from the input's own
+		// state right before reading it, so a mutation record could only
+		// ever schedule a redundant frame. The MEASURE, though, must hear
+		// about the tree once -- a width:auto input sizes to its composed
+		// content, and nothing else will ever invalidate it.
+		this.#styleManager.registerShadowRoot(root);
+		this[kLayoutEngine].invalidate(element);
+		void this.#render();
+		const parts = {kind, spans, texts};
+		this.#inputShadowParts.set(element, parts);
+		return parts;
+	}
+
+	/**
+	 * Build a textarea's UA-internal shadow tree. Unlike the input's, this
+	 * root IS observer-enrolled -- enrolled BEFORE it is populated, so the
+	 * population itself is the invalidation that swaps the composed tree in
+	 * -- because the value text lays out through the normal pipeline and
+	 * layout must hear about every change to it. The sync controller runs
+	 * at edit time (and as a paint-time safety net for framework .value
+	 * assignments), never in a loop: it only ever writes when the input's
+	 * state and the tree disagree.
+	 */
+	#ensureTextareaShadowParts(element: HTMLTextAreaElement): {
+		kind: "field" | "toggle" | "textarea" | "select";
+		spans: Record<string, HTMLElement>;
+		texts: Record<string, Text>;
+	} {
+		const cached = this.#inputShadowParts.get(element);
+		if (cached && cached.kind === "textarea") {
+			return cached;
+		}
+
+		const document = this.document;
+		const root = createUAShadowRoot(element);
+		this[kObserver].observe(root, {
+			childList: true,
+			subtree: true,
+			attributes: true,
+			attributeOldValue: true,
+			characterData: true,
+		});
+		this.#styleManager.registerShadowRoot(root);
+
+		const spans: Record<string, HTMLElement> = {};
+		const texts: Record<string, Text> = {};
+		const style = document.createElement("style");
+		style.textContent = TEXTAREA_UA_STYLES;
+		root.appendChild(style);
+		for (const part of ["value", "placeholder"]) {
+			const span = document.createElement("span");
+			span.setAttribute("part", part);
+			const text = document.createTextNode("");
+			span.appendChild(text);
+			root.appendChild(span);
+			spans[part] = span;
+			texts[part] = text;
+		}
+		// The trailing <br> anchor, the same trick a browser's editor uses:
+		// it makes the run's content always end in exactly one line break,
+		// so the line count equals the LOGICAL line count -- the breaker
+		// never emits a line after a final newline, and without the anchor a
+		// value ending in "\n" measured one row short, parking the caret on
+		// the bottom border.
+		root.appendChild(document.createElement("br"));
+
+		const parts = {kind: "textarea" as const, spans, texts};
+		this.#inputShadowParts.set(element, parts);
+		syncTextareaShadowTree(element, parts);
+		return parts;
+	}
+
+	/**
+	 * Build a select's UA-internal shadow tree: the selected option's label
+	 * (part=value) and the ▾ indicator (part=indicator), observer-enrolled
+	 * before population like the textarea's -- its content renders through
+	 * the normal pipeline, and composition hides the option list entirely.
+	 */
+	#ensureSelectShadowParts(element: HTMLSelectElement): {
+		kind: "field" | "toggle" | "textarea" | "select";
+		spans: Record<string, HTMLElement>;
+		texts: Record<string, Text>;
+	} {
+		const cached = this.#inputShadowParts.get(element);
+		if (cached && cached.kind === "select") {
+			return cached;
+		}
+
+		const document = this.document;
+		const root = createUAShadowRoot(element);
+		this[kObserver].observe(root, {
+			childList: true,
+			subtree: true,
+			attributes: true,
+			attributeOldValue: true,
+			characterData: true,
+		});
+		this.#styleManager.registerShadowRoot(root);
+
+		const spans: Record<string, HTMLElement> = {};
+		const texts: Record<string, Text> = {};
+		const style = document.createElement("style");
+		style.textContent = SELECT_UA_STYLES;
+		root.appendChild(style);
+		for (const part of ["value", "indicator"]) {
+			const span = document.createElement("span");
+			span.setAttribute("part", part);
+			const text = document.createTextNode("");
+			span.appendChild(text);
+			root.appendChild(span);
+			spans[part] = span;
+			texts[part] = text;
+		}
+		texts.indicator.data = " \u25be"; // " ▾"
+
+		// The picker: the spec-shaped ::picker(select) popover as a real UA
+		// part -- an absolutely positioned box the open state reveals, whose
+		// geometry the sync controller anchors to the field in document
+		// coordinates (its containing block is the ICB; a measure-function
+		// select can't serve as one).
+		const picker = document.createElement("div");
+		picker.setAttribute("part", "picker");
+		root.appendChild(picker);
+		spans.picker = picker;
+
+		const parts = {kind: "select" as const, spans, texts};
+		this.#inputShadowParts.set(element, parts);
+		this.#syncSelectShadowTree(element, parts);
+		return parts;
+	}
+
+	/** Highlighted option index of each OPEN picker; absence = closed. */
+	#openPickers = new WeakMap<HTMLSelectElement, number>();
+
+	/** Reconcile the select's UA tree with its own selection state. */
+	#syncSelectShadowTree(
+		element: HTMLSelectElement,
+		parts: {spans: Record<string, HTMLElement>; texts: Record<string, Text>},
+	): void {
+		const selected =
+			element.selectedIndex >= 0
+				? element.options[element.selectedIndex]
+				: null;
+		const label = selected ? selected.label : "";
+		if (parts.texts.value.data !== label) {
+			parts.texts.value.data = label;
+		}
+
+		// Losing focus closes the picker, as everywhere.
+		if (
+			this.#openPickers.has(element) &&
+			this.document.activeElement !== element
+		) {
+			this.#openPickers.delete(element);
+		}
+
+		const picker = parts.spans.picker;
+		const highlight = this.#openPickers.get(element);
+		const open = highlight !== undefined;
+		if (!open) {
+			if (picker.style.display !== "none") {
+				picker.style.display = "none";
+				this.#topLayer.delete(picker);
+			}
+			return;
+		}
+
+		// Rebuild rows to match the option list; cheap at option-list scale.
+		const options = Array.from(element.options);
+		while (picker.childNodes.length > options.length) {
+			picker.removeChild(picker.lastChild!);
+		}
+		while (picker.childNodes.length < options.length) {
+			const row = this.document.createElement("div");
+			row.setAttribute("part", "option");
+			picker.appendChild(row);
+		}
+		options.forEach((option, index) => {
+			const row = picker.childNodes[index] as HTMLElement;
+			if (row.textContent !== option.label) row.textContent = option.label;
+			// Attribute writes are guarded: setAttribute queues a mutation
+			// record even when the value is unchanged, and this sync runs at
+			// paint time on an OBSERVED root -- unconditional writes are an
+			// infinite render loop.
+			if (option.disabled !== row.hasAttribute("data-disabled")) {
+				if (option.disabled) row.setAttribute("data-disabled", "");
+				else row.removeAttribute("data-disabled");
+			}
+			const highlighted = index === highlight;
+			if (highlighted !== row.hasAttribute("data-highlighted")) {
+				if (highlighted) row.setAttribute("data-highlighted", "");
+				else row.removeAttribute("data-highlighted");
+			}
+		});
+
+		// Anchor below the field in DOCUMENT coordinates (the picker's
+		// containing block is the ICB), matching the field's width.
+		const rect = this[kLayoutEngine].getRect(element);
+		if (rect) {
+			const top = `${Math.round(rect.bottom)}px`;
+			const left = `${Math.round(rect.left)}px`;
+			const width = `${Math.max(4, Math.round(rect.width))}ch`;
+			if (picker.style.top !== top) picker.style.top = top;
+			if (picker.style.left !== left) picker.style.left = left;
+			if (picker.style.width !== width) picker.style.width = width;
+		}
+		if (picker.style.display !== "block") picker.style.display = "block";
+		this.#topLayer.add(picker);
+	}
+
+	/**
+	 * Arrow keys move a closed select's selection in place, skipping
+	 * disabled options, firing input and change -- the browser's own
+	 * closed-select keyboard model, with no popup to degrade.
+	 */
+	#handleSelectAction(
+		element: HTMLSelectElement,
+		keyName: string,
+		key: string,
+	): void {
+		const options = Array.from(element.options);
+		if (options.length === 0) return;
+
+		const enabled = (index: number) => !options[index].disabled;
+		const current = element.selectedIndex;
+		let target = current;
+
+		const step = (from: number, direction: 1 | -1): number => {
+			for (
+				let i = from + direction;
+				i >= 0 && i < options.length;
+				i += direction
+			) {
+				if (enabled(i)) return i;
+			}
+			return from;
+		};
+
+		// OPEN picker: arrows move the highlight without committing; Enter or
+		// Space commits; Escape dismisses without change -- the browser's
+		// picker model.
+		const highlight = this.#openPickers.get(element);
+		if (highlight !== undefined) {
+			if (keyName === "ArrowDown") {
+				this.#openPickers.set(element, step(highlight, 1));
+			} else if (keyName === "ArrowUp") {
+				this.#openPickers.set(element, step(highlight, -1));
+			} else if (keyName === "Home") {
+				this.#openPickers.set(element, step(-1, 1));
+			} else if (keyName === "End") {
+				this.#openPickers.set(element, step(options.length, -1));
+			} else if (keyName === "Enter" || key === " ") {
+				this.#openPickers.delete(element);
+				if (highlight !== current && enabled(highlight)) {
+					this.#commitSelect(element, highlight);
+					return;
+				}
+			} else if (keyName === "Escape") {
+				this.#openPickers.delete(element);
+			} else {
+				return;
+			}
+			this.#syncSelectShadowTree(
+				element,
+				this.#ensureSelectShadowParts(element),
+			);
+			this.#render();
+			return;
+		}
+
+		// CLOSED: Space or Enter opens the picker at the current selection;
+		// arrows keep changing the value in place (the macOS closed-select
+		// model, unchanged).
+		if (keyName === "Enter" || key === " ") {
+			this.#openSelectPicker(element);
+			return;
+		}
+		if (keyName === "ArrowDown" || keyName === "ArrowRight") {
+			target = step(current, 1);
+		} else if (keyName === "ArrowUp" || keyName === "ArrowLeft") {
+			target = step(current, -1);
+		} else if (keyName === "Home") {
+			target = step(-1, 1);
+		} else if (keyName === "End") {
+			target = step(options.length, -1);
+		} else {
+			return;
+		}
+
+		if (target !== current && target >= 0) {
+			this.#commitSelect(element, target);
+		}
+	}
+
+	/**
+	 * Open a select's picker with the highlight on the current selection
+	 * (or the first enabled option when nothing is selected) -- shared by
+	 * the keyboard's Enter/Space and the mouse's press-to-open.
+	 */
+	#openSelectPicker(element: HTMLSelectElement): void {
+		const options = Array.from(element.options);
+		if (options.length === 0) return;
+		let index = element.selectedIndex;
+		if (index < 0) {
+			index = options.findIndex((option) => !option.disabled);
+		}
+		this.#openPickers.set(element, index);
+		this.#syncSelectShadowTree(element, this.#ensureSelectShadowParts(element));
+		this.#render();
+	}
+
+	#commitSelect(element: HTMLSelectElement, index: number): void {
+		element.selectedIndex = index;
+		this.#syncSelectShadowTree(element, this.#ensureSelectShadowParts(element));
+		element.dispatchEvent(
+			new this.window.Event("input", {bubbles: true, cancelable: false}),
+		);
+		element.dispatchEvent(
+			new this.window.Event("change", {bubbles: true, cancelable: false}),
+		);
+		this.#queueCaretReveal(element);
+		this.#render();
+	}
+
+	/**
+	 * The value offset under a document-space point in a text field --
+	 * cell-width aware, clamped to the nearest offset so a drag that
+	 * leaves the field still resolves (the browser's capture model:
+	 * a selection begun in a field is the field's until release).
+	 */
 	#fieldOffsetAtPoint(
 		element: HTMLInputElement | HTMLTextAreaElement,
 		x: number,
@@ -4233,7 +3307,7 @@ export class TermDOM {
 			const textarea = element as HTMLTextAreaElement;
 			const visual = textareaVisualLines(
 				textarea,
-				this.#widgets.ensureTextareaShadowParts(textarea),
+				this.#ensureTextareaShadowParts(textarea),
 				this[kLayoutEngine],
 			);
 			if (!visual || visual.lines.length === 0) return null;
@@ -4310,7 +3384,7 @@ export class TermDOM {
 			const textarea = element as HTMLTextAreaElement;
 			const cell = textareaCaretCell(
 				textarea,
-				this.#widgets.ensureTextareaShadowParts(textarea),
+				this.#ensureTextareaShadowParts(textarea),
 				this[kLayoutEngine],
 			);
 			if (!cell) return;
@@ -4356,7 +3430,7 @@ export class TermDOM {
 	): number {
 		const visual = textareaVisualLines(
 			element,
-			this.#widgets.ensureTextareaShadowParts(element),
+			this.#ensureTextareaShadowParts(element),
 			this[kLayoutEngine],
 		);
 		if (!visual) return caret;
@@ -4395,6 +3469,357 @@ export class TermDOM {
 	 * commit, BEFORE layout flushes: painting one frame at the stale width
 	 * shifted the scroll-window and dropped the lead character for a frame.
 	 */
+	#syncInputShadowTree(
+		element: HTMLInputElement,
+		parts: {spans: Record<string, HTMLElement>; texts: Record<string, Text>},
+	): void {
+		const value = element.value || "";
+		const placeholder = element.getAttribute("placeholder") || "";
+		const autoWidth =
+			this.window.getComputedStyle(element).getPropertyValue("width") ===
+			"auto";
+		let contentChanged = false;
+		if (parts.texts.value.data !== value) {
+			parts.texts.value.data = value;
+			contentChanged = true;
+		}
+		if (parts.texts.placeholder.data !== placeholder) {
+			parts.texts.placeholder.data = placeholder;
+			contentChanged = true;
+		}
+		// An empty field must not collapse to zero cells: with no value and
+		// no placeholder to give it width, the blank's single caret cell IS
+		// the field -- one faint underlined cell marking an editable spot.
+		const blank = !autoWidth ? "" : value || !placeholder ? " " : "";
+		if (parts.texts.blank.data !== blank) {
+			parts.texts.blank.data = blank;
+			contentChanged = true;
+		}
+		if (autoWidth && contentChanged) {
+			this[kLayoutEngine].invalidate(element);
+			void this.#render();
+		}
+	}
+
+	/**
+	 * Render an input element: sync its UA shadow tree from the input's own
+	 * state, then paint the tree's parts with their computed styles. What
+	 * remains here is exactly the widget's editor mechanics -- the
+	 * scroll-window over an overflowing value and parking the REAL terminal
+	 * cursor -- the same split a browser makes between its input's shadow
+	 * content and its editor internals.
+	 */
+	#renderInputElement(
+		element: HTMLInputElement,
+		rect: DOMRect,
+		ctx: import("./ansi.js").DrawingContext,
+	): void {
+		const boxModel = getBoxModel(element);
+		const contentX =
+			Math.round(rect.left) +
+			(boxModel.borderLeftWidth || 0) +
+			(boxModel.paddingLeft || 0);
+		const contentY =
+			Math.round(rect.top) +
+			(boxModel.borderTopWidth || 0) +
+			(boxModel.paddingTop || 0);
+		const contentWidth =
+			Math.round(rect.width) -
+			(boxModel.borderLeftWidth || 0) -
+			(boxModel.borderRightWidth || 0) -
+			(boxModel.paddingLeft || 0) -
+			(boxModel.paddingRight || 0);
+
+		const parts = this.#ensureInputShadowParts(element);
+
+		if (parts.kind === "toggle") {
+			const mark =
+				element.type === "checkbox"
+					? element.checked
+						? "[x]"
+						: "[ ]"
+					: element.checked
+						? "(x)"
+						: "( )";
+			// The glyph is real DOM; its style (the focus underline included,
+			// inherited from the input's own focus-aware default) reads back
+			// off the tree.
+			if (parts.texts.glyph.data !== mark) {
+				parts.texts.glyph.data = mark;
+			}
+			ctx.setText(
+				contentX,
+				contentY,
+				mark,
+				cellStyleFromComputed(this.window.getComputedStyle(parts.spans.glyph)),
+			);
+			if (element === this.document.activeElement) {
+				ctx.setCaret(contentX, contentY);
+			}
+			return;
+		}
+
+		const value = element.value || "";
+		const placeholder = element.getAttribute("placeholder") || "";
+		const isFocused = element === this.document.activeElement;
+
+		this.#syncInputShadowTree(element, parts);
+
+		// Region styles come off the tree: the value inherits the input's
+		// own text style (solid underline when focused), the placeholder and
+		// the blank carry the UA field sheet -- gray ghost label, faint
+		// blank when blurred -- plus whatever the author adds.
+		const textStyle = cellStyleFromComputed(
+			this.window.getComputedStyle(
+				value ? parts.spans.value : parts.spans.placeholder,
+			),
+		);
+		const blankStyle = cellStyleFromComputed(
+			this.window.getComputedStyle(parts.spans.blank),
+		);
+
+		// Shown focused or not, as in a browser -- the caret just sits at
+		// the field start, over the dimmed text.
+		const displayText = value || placeholder;
+
+		// Everything below measures in CELLS, not characters. CJK text is two
+		// cells per glyph, so character arithmetic put the caret mid-text (IME
+		// composition then anchored on top of already-typed glyphs) and padEnd
+		// by character count pushed the value's background straight through the
+		// input's right border.
+		let scrollOffset = this.#inputScrollOffsets.get(element) ?? 0;
+		// The caret is the input's own selection (selectionStart/End), so a
+		// framework assigning .value can never strand it: per spec, setting
+		// value collapses the selection to the end. The caret sits at the
+		// selection's FOCUS -- the moving end, per selectionDirection -- which
+		// is the end that must stay scrolled into view while extending.
+		const selStart = element.selectionStart ?? value.length;
+		const selEnd = element.selectionEnd ?? value.length;
+		const cursor =
+			element.selectionDirection === "backward" ? selStart : selEnd;
+
+		if (isFocused) {
+			// Keep the caret's CELL offset inside the box.
+			if (cursor < scrollOffset) {
+				scrollOffset = cursor;
+			}
+			while (
+				scrollOffset < cursor &&
+				stringWidth(displayText.slice(scrollOffset, cursor)) >= contentWidth
+			) {
+				scrollOffset++;
+			}
+			// And scroll BACK when there's slack: after deleting at the end of
+			// an overflowed value, the window would otherwise stay put and show
+			// a shrinking tail with the earlier text still hidden off the left
+			// edge. Pull the window left while everything from one character
+			// earlier through the end still fits strictly inside the field
+			// (strictly: the caret needs its cell when it sits at the end),
+			// exactly what a browser's field does on backspace.
+			while (
+				scrollOffset > 0 &&
+				stringWidth(displayText.slice(scrollOffset - 1)) < contentWidth
+			) {
+				scrollOffset--;
+			}
+			this.#inputScrollOffsets.set(element, scrollOffset);
+		}
+
+		// Take characters from the scroll offset until the next one would no
+		// longer fit, then pad with spaces to exactly the content width in cells.
+		let visibleText = "";
+		let usedCells = 0;
+		for (const char of displayText.slice(scrollOffset)) {
+			const charCells = stringWidth(char);
+			if (usedCells + charCells > contentWidth) break;
+			visibleText += char;
+			usedCells += charCells;
+		}
+		const visibleChars = visibleText.length;
+		visibleText += " ".repeat(Math.max(0, contentWidth - usedCells));
+
+		// The content region paints with its part's style, and the cells the
+		// content spares are the BLANK part -- which the UA sheet renders as
+		// the faint underlined blank when blurred, and which inherits the
+		// solid focus underline like everything else when focused.
+		if (displayText) {
+			ctx.setText(
+				contentX,
+				contentY,
+				visibleText.slice(0, visibleChars),
+				textStyle,
+			);
+			ctx.setText(
+				contentX + usedCells,
+				contentY,
+				visibleText.slice(visibleChars),
+				blankStyle,
+			);
+		} else {
+			ctx.setText(contentX, contentY, visibleText, blankStyle);
+		}
+
+		// A selection paints as inverse video over its visible slice --
+		// terminal-native highlight, no color assumptions. (Placeholder text
+		// can never be selected: it only shows for an empty value, whose
+		// selection is necessarily collapsed.)
+		if (isFocused && selEnd > selStart) {
+			const visStart = Math.max(selStart, scrollOffset);
+			const visEnd = Math.min(selEnd, scrollOffset + visibleChars);
+			if (visEnd > visStart) {
+				ctx.setText(
+					contentX + stringWidth(displayText.slice(scrollOffset, visStart)),
+					contentY,
+					displayText.slice(visStart, visEnd),
+					selectionStyleFor(this.window, element, textStyle),
+				);
+			}
+		}
+
+		// The caret of a focused input is the REAL terminal cursor, parked there
+		// by the frame -- not an inverse-video imitation. IME composition, screen
+		// readers and the terminal's own cursor style all anchor to the real one.
+		if (isFocused) {
+			const cursorX =
+				contentX + stringWidth(displayText.slice(scrollOffset, cursor));
+			if (cursorX >= contentX && cursorX < contentX + contentWidth) {
+				ctx.setCaret(cursorX, contentY);
+			}
+		}
+	}
+
+	/**
+	 * Render a text node with proper styling from its parent element or pseudo-element
+	 */
+	#renderText(textNode: Text, ctx: import("./ansi.js").DrawingContext): void {
+		const textContent = textNode.data;
+		if (!textContent) return;
+
+		// Check if this is a pseudo-element node
+		const pseudoMetadata = getPseudoMetadata(textNode);
+
+		// For pseudo elements, we don't have a parentElement, but we have
+		// hostElement. Everything else styles from the FLAT-tree parent:
+		// slotted bare text draws its inherited styles through the slot's
+		// shadow chain, not from the host it came from.
+		const parentElement = pseudoMetadata
+			? pseudoMetadata.hostElement
+			: compositionParentElement(textNode);
+		if (!parentElement) return;
+
+		let computedStyle: CSSStyleDeclaration;
+
+		if (pseudoMetadata) {
+			// For pseudo-elements, get the computed style with the pseudo-element selector
+			computedStyle = this.window.getComputedStyle(
+				pseudoMetadata.hostElement,
+				pseudoMetadata.pseudoType,
+			);
+		} else {
+			// For regular text nodes, use the parent element's style
+			computedStyle = this.window.getComputedStyle(parentElement);
+		}
+
+		// visibility inherits, so the parent's own resolved value already accounts
+		// for a closer ancestor overriding back to visible.
+		if (computedStyle.getPropertyValue("visibility") === "hidden") return;
+
+		const textTransform = computedStyle.getPropertyValue("text-transform");
+		const textStyle = cellStyleFromComputed(computedStyle);
+
+		const rectTexts = this[kLayoutEngine].getRectTexts(textNode);
+		if (rectTexts.length > 0) {
+			for (const rectText of rectTexts) {
+				if (rectText.text.length > 0) {
+					ctx.setText(
+						Math.round(rectText.rect.x),
+						Math.round(rectText.rect.y),
+						applyTextTransform(rectText.text, textTransform),
+						textStyle,
+					);
+				}
+			}
+			this.#renderTextSelection(
+				textNode,
+				rectTexts,
+				textStyle,
+				textTransform,
+				ctx,
+			);
+		}
+	}
+
+	/**
+	 * Overlay the document selection on a text node's painted fragments as
+	 * inverse video -- the terminal-native highlight, no color assumptions.
+	 * The Range holds code-unit offsets into node.data; visualToDataOffsets
+	 * bridges each painted character back to its data offset, and contiguous
+	 * selected runs repaint inverse. Ranges whose boundary containers are
+	 * elements rather than text nodes still highlight any text node they
+	 * fully contain (the intersectsNode walk); a boundary that lands INSIDE
+	 * this node only resolves to a precise offset when the container is the
+	 * node itself -- the only shape our own drag selection produces.
+	 */
+	#renderTextSelection(
+		textNode: Text,
+		rectTexts: Array<import("./layout.js").RectText>,
+		textStyle: import("./ansi.js").CellStyle,
+		textTransform: string,
+		ctx: import("./ansi.js").DrawingContext,
+	): void {
+		const selection = this.window.getSelection();
+		if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
+			return;
+		}
+		const range = selection.getRangeAt(0);
+		if (!range.intersectsNode(textNode)) return;
+
+		const from = range.startContainer === textNode ? range.startOffset : 0;
+		const to =
+			range.endContainer === textNode ? range.endOffset : textNode.data.length;
+		if (to <= from) return;
+
+		const selectionParent =
+			getPseudoMetadata(textNode)?.hostElement ??
+			compositionParentElement(textNode);
+		if (!selectionParent) return;
+		const selectionStyle = selectionStyleFor(
+			this.window,
+			selectionParent,
+			textStyle,
+		);
+		if (selectionStyle === textStyle) return; // no ::selection rule reaches here
+
+		const visToData = visualToDataOffsets(textNode.data, rectTexts);
+		let visualBase = 0;
+		for (const rectText of rectTexts) {
+			// Contiguous run of selected visual chars within this fragment.
+			let runStart = -1;
+			for (let i = 0; i <= rectText.text.length; i++) {
+				const dataOffset =
+					i < rectText.text.length ? visToData[visualBase + i] : -1;
+				const selected =
+					dataOffset >= 0 && dataOffset >= from && dataOffset < to;
+				if (selected && runStart === -1) {
+					runStart = i;
+				} else if (!selected && runStart !== -1) {
+					// Case transforms never change cell width, so slicing the
+					// untransformed text and transforming the slice paints the
+					// same cells the base pass did.
+					ctx.setText(
+						Math.round(rectText.rect.x) +
+							stringWidth(rectText.text.slice(0, runStart)),
+						Math.round(rectText.rect.y),
+						applyTextTransform(rectText.text.slice(runStart, i), textTransform),
+						selectionStyle,
+					);
+					runStart = -1;
+				}
+			}
+			visualBase += rectText.text.length;
+		}
+	}
+
 	#processPendingMutationsAndRender(): boolean {
 		// A geometry read (getBoundingClientRect, elementFromPoint) needs fresh
 		// *layout*, not fresh pixels. A full render() here would make every
@@ -4625,6 +4050,290 @@ export class TermDOM {
 	}
 
 	/**
+	 * Handle input element default actions (character insertion, deletion, navigation)
+	 */
+	/**
+	 * Flip a checkbox's checked state and fire `change`, matching a browser's
+	 * Space-key default action for a focused checkbox -- never `input`, which
+	 * checkboxes don't fire. Click doesn't need this: jsdom's own click
+	 * activation behavior already toggles `.checked` and fires `change` (and
+	 * already honors preventDefault on the click), so handling it here too
+	 * would double-toggle.
+	 */
+	#toggleCheckbox(element: HTMLInputElement): void {
+		element.checked = !element.checked;
+		element.dispatchEvent(
+			new this.window.Event("change", {bubbles: true, cancelable: false}),
+		);
+		this.#render();
+	}
+
+	#handleInputAction(
+		element: HTMLInputElement | HTMLTextAreaElement,
+		keyName: string,
+		key: string,
+		shiftKey: boolean,
+		ctrlKey: boolean,
+	): void {
+		const isTextarea = element.tagName === "TEXTAREA";
+		if (keyName !== "ArrowUp" && keyName !== "ArrowDown") {
+			this.#textareaGoalColumn.delete(element);
+		}
+		if (element.type === "checkbox" || element.type === "radio") {
+			const toggle = element as HTMLInputElement;
+			// Only Space activates these -- real browsers don't accept typed
+			// text into them at all, so every other key here is a no-op. A
+			// checkbox toggles; a radio only ever checks (Space on an
+			// already-checked radio does nothing, per the browser default --
+			// jsdom's checkedness setter handles unchecking the rest of the
+			// same-name group).
+			if (key === " ") {
+				if (toggle.type === "checkbox") {
+					this.#toggleCheckbox(toggle);
+				} else if (!toggle.checked) {
+					toggle.checked = true;
+					element.dispatchEvent(
+						new this.window.Event("change", {
+							bubbles: true,
+							cancelable: false,
+						}),
+					);
+					this.#render();
+				}
+			}
+			return;
+		}
+
+		// The caret IS the input's collapsed selection -- selectionStart/End/
+		// Direction, the standard API, not a private shadow of it. That makes
+		// the caret visible to setSelectionRange()/select() callers, and it
+		// means a framework assigning .value can't strand it: per spec (and in
+		// jsdom, verified) setting value collapses the selection to the end.
+		// Direction carries which end of a selection is the moving focus, so
+		// Shift+Left after Shift+Right shrinks the selection instead of
+		// flipping it -- exactly the browser's anchor/focus model.
+		const value = element.value;
+		const start = element.selectionStart ?? value.length;
+		const end = element.selectionEnd ?? value.length;
+		const backward = element.selectionDirection === "backward";
+		const caret = backward ? start : end;
+		const anchor = backward ? end : start;
+		const hasSelection = start !== end;
+
+		let newValue = value;
+		let newStart = start;
+		let newEnd = end;
+		let newDirection: "forward" | "backward" | "none" = "none";
+
+		// Collapse the selection to a caret at `pos`.
+		const collapse = (pos: number) => {
+			newStart = newEnd = Math.max(0, Math.min(pos, newValue.length));
+		};
+		// Move the selection's focus (anchor stays), Shift+arrow style.
+		const extend = (focus: number) => {
+			const clamped = Math.max(0, Math.min(focus, value.length));
+			newStart = Math.min(anchor, clamped);
+			newEnd = Math.max(anchor, clamped);
+			newDirection = clamped < anchor ? "backward" : "forward";
+		};
+
+		if (ctrlKey && keyName === "a") {
+			// Select all, the browser's Ctrl+A. (Never Cmd+A here: Cmd chords
+			// are consumed by the terminal app and don't reach the PTY.)
+			extend(0);
+			newStart = 0;
+			newEnd = value.length;
+			newDirection = "forward";
+		} else if (keyName === "Backspace") {
+			if (hasSelection) {
+				newValue = value.slice(0, start) + value.slice(end);
+				collapse(start);
+			} else if (caret > 0) {
+				const from = prevGraphemeBoundary(value, caret);
+				newValue = value.slice(0, from) + value.slice(caret);
+				collapse(from);
+			}
+		} else if (keyName === "Delete") {
+			if (hasSelection) {
+				newValue = value.slice(0, start) + value.slice(end);
+				collapse(start);
+			} else if (caret < value.length) {
+				const to = nextGraphemeBoundary(value, caret);
+				newValue = value.slice(0, caret) + value.slice(to);
+				collapse(caret);
+			}
+		} else if (keyName === "ArrowLeft") {
+			if (shiftKey) {
+				extend(prevGraphemeBoundary(value, caret));
+			} else if (hasSelection) {
+				// A plain arrow collapses to the selection's matching edge,
+				// not one past it -- the browser behavior.
+				collapse(start);
+			} else {
+				collapse(prevGraphemeBoundary(value, caret));
+			}
+		} else if (keyName === "ArrowRight") {
+			if (shiftKey) {
+				extend(nextGraphemeBoundary(value, caret));
+			} else if (hasSelection) {
+				collapse(end);
+			} else {
+				collapse(nextGraphemeBoundary(value, caret));
+			}
+		} else if (isTextarea && keyName === "Enter") {
+			// Enter is a newline in a textarea -- inserted like any typed
+			// character, replacing the selection.
+			newValue = value.slice(0, start) + "\n" + value.slice(end);
+			collapse(start + 1);
+		} else if (
+			isTextarea &&
+			(keyName === "ArrowUp" || keyName === "ArrowDown")
+		) {
+			// Vertical movement is by VISUAL line -- soft wraps count, as in
+			// a browser -- computed from the value's laid-out fragments.
+			this.#processPendingMutationsAndRender();
+			const target = this.#textareaVerticalTarget(
+				element as HTMLTextAreaElement,
+				caret,
+				keyName === "ArrowDown" ? 1 : -1,
+			);
+			if (shiftKey) {
+				extend(target);
+			} else {
+				collapse(target);
+			}
+		} else if (keyName === "Home") {
+			// In a textarea, Home goes to the start of the caret's visual
+			// line; in an input, of the whole value.
+			let target = 0;
+			if (isTextarea) {
+				this.#processPendingMutationsAndRender();
+				const textarea = element as HTMLTextAreaElement;
+				const visual = textareaVisualLines(
+					textarea,
+					this.#ensureTextareaShadowParts(textarea),
+					this[kLayoutEngine],
+				);
+				if (visual) {
+					target =
+						visual.lines[textareaLineAt(visual.lines, caret)].startOffset;
+				}
+			}
+			if (shiftKey) {
+				extend(target);
+			} else {
+				collapse(target);
+			}
+		} else if (keyName === "End") {
+			let target = value.length;
+			if (isTextarea) {
+				this.#processPendingMutationsAndRender();
+				const textarea = element as HTMLTextAreaElement;
+				const visual = textareaVisualLines(
+					textarea,
+					this.#ensureTextareaShadowParts(textarea),
+					this[kLayoutEngine],
+				);
+				if (visual) {
+					target = visual.lines[textareaLineAt(visual.lines, caret)].endOffset;
+				}
+			}
+			if (shiftKey) {
+				extend(target);
+			} else {
+				collapse(target);
+			}
+		} else if (key.length === 1 && key.charCodeAt(0) >= 32) {
+			// Printable character: replaces the selection, as in a browser.
+			newValue = value.slice(0, start) + key + value.slice(end);
+			collapse(start + 1);
+		} else {
+			return; // Not an input action
+		}
+
+		if (newValue !== value) {
+			// Order matters: assigning .value collapses the selection to the
+			// end (per spec), so the new caret must be set after.
+			element.value = newValue;
+			element.setSelectionRange(newStart, newEnd, newDirection);
+			if (isTextarea) {
+				// Push the new value into the UA tree now -- the mutation
+				// records from this sync are what invalidate layout, since no
+				// observer hears a .value assignment.
+				syncTextareaShadowTree(
+					element as HTMLTextAreaElement,
+					this.#ensureTextareaShadowParts(element as HTMLTextAreaElement),
+				);
+			} else {
+				// Same for the input: a width:auto field must measure at the
+				// NEW width before this frame paints, or the scroll-window
+				// momentarily shoves the lead character off the field.
+				this.#syncInputShadowTree(
+					element as HTMLInputElement,
+					this.#ensureInputShadowParts(element as HTMLInputElement),
+				);
+			}
+
+			// Dispatch input event
+			element.dispatchEvent(
+				new this.window.Event("input", {bubbles: true, cancelable: false}),
+			);
+
+			this.#queueCaretReveal(element);
+			// Trigger re-render since .value changes don't trigger MutationObserver
+			this.#render();
+		} else if (
+			newStart !== start ||
+			newEnd !== end ||
+			(newStart !== newEnd && newDirection !== element.selectionDirection)
+		) {
+			// jsdom fires the `select` event itself for a real range change.
+			element.setSelectionRange(newStart, newEnd, newDirection);
+			this.#queueCaretReveal(element);
+			this.#render();
+		}
+	}
+
+	/**
+	 * Split raw terminal input into key tokens: CSI sequences (ESC [ ... final
+	 * byte), SS3 sequences (ESC O x), and single characters.
+	 *
+	 * Fast input arrives batched -- a held arrow key delivers
+	 * "\x1b[B\x1b[B\x1b[B" in one chunk, and a terminal report can land glued to
+	 * ordinary keystrokes. Anything that treats a chunk as one key swallows
+	 * everything after the first token: a held arrow repeated once per chunk
+	 * instead of once per press, and a stray cursor report ate every key packed
+	 * behind it.
+	 */
+	*#tokenizeInput(input: string): Generator<string> {
+		let i = 0;
+		while (i < input.length) {
+			if (input[i] === "\x1b" && i + 1 < input.length) {
+				if (input[i + 1] === "[") {
+					// CSI: parameter/intermediate bytes end at a final byte 0x40-0x7e.
+					let end = i + 2;
+					while (
+						end < input.length &&
+						!(input.charCodeAt(end) >= 0x40 && input.charCodeAt(end) <= 0x7e)
+					) {
+						end++;
+					}
+					yield input.slice(i, Math.min(end + 1, input.length));
+					i = end + 1;
+					continue;
+				}
+				if (input[i + 1] === "O" && i + 2 < input.length) {
+					yield input.slice(i, i + 3);
+					i += 3;
+					continue;
+				}
+			}
+			yield input[i];
+			i++;
+		}
+	}
+
+	/**
 	 * Where a screen cell lands in the document, given who owns the camera.
 	 * Returns null for cells above our region (a shell prompt is not part of
 	 * the document).
@@ -4677,7 +4386,7 @@ export class TermDOM {
 	 * contain the point and could never reach it.
 	 */
 	[kHitTest](root: Element, x: number, y: number): Element | null {
-		const layers = this.#painter.collectStackingLayers();
+		const layers = this.#collectStackingLayers();
 		// Paint roots at <body>; a probe from documentElement must too, or
 		// the body-level buckets would never be consulted.
 		const paintRoot =
@@ -4706,7 +4415,7 @@ export class TermDOM {
 				"fixed"
 					? y - this.#documentScrollTop
 					: y;
-			return this.#painter.formsStackingContext(element)
+			return this.#formsStackingContext(element)
 				? this.#hitTestContext(element, x, probeY, layers)
 				: this.#hitTestInFlow(element, x, probeY);
 		};
@@ -5007,14 +4716,14 @@ export class TermDOM {
 				if (select) {
 					const highlight = this.#openPickers.get(select);
 					if (highlight === undefined) {
-						this.#inputActions.openSelectPicker(select);
+						this.#openSelectPicker(select);
 					} else {
 						// The un-retargeted hit tells the option rows (UA shadow
 						// parts under the picker) apart from the closed face.
 						const raw = this[kHitTest](this.document.documentElement, x, y);
 						const part = raw?.getAttribute("part");
 						if (part === "option") {
-							const parts = this.#widgets.ensureSelectShadowParts(select);
+							const parts = this.#ensureSelectShadowParts(select);
 							const index = Array.from(parts.spans.picker.children)
 								.filter((row) => row.getAttribute("part") === "option")
 								.indexOf(raw as Element);
@@ -5022,17 +4731,17 @@ export class TermDOM {
 							if (index < 0 || !options[index]?.disabled) {
 								this.#openPickers.delete(select);
 								if (index >= 0 && index !== select.selectedIndex) {
-									this.#inputActions.commitSelect(select, index);
+									this.#commitSelect(select, index);
 								} else {
-									this.#widgets.syncSelectShadowTree(select, parts);
+									this.#syncSelectShadowTree(select, parts);
 									this.#render();
 								}
 							}
 						} else if (part !== "picker") {
 							this.#openPickers.delete(select);
-							this.#widgets.syncSelectShadowTree(
+							this.#syncSelectShadowTree(
 								select,
-								this.#widgets.ensureSelectShadowParts(select),
+								this.#ensureSelectShadowParts(select),
 							);
 							this.#render();
 						}
@@ -5192,7 +4901,7 @@ export class TermDOM {
 		const key = chunk.toString("utf8");
 
 		// Tokenize multi-key chunks and dispatch each token on its own.
-		const tokens = Array.from(tokenizeInput(key));
+		const tokens = Array.from(this.#tokenizeInput(key));
 		if (tokens.length > 1) {
 			for (const token of tokens) {
 				this.#dispatchGlobalKeyboardEvent(Buffer.from(token));
@@ -5473,7 +5182,7 @@ export class TermDOM {
 					(targetElement as HTMLInputElement).type !== "button") ||
 				targetElement instanceof (this.window as any).HTMLTextAreaElement
 			) {
-				this.#inputActions.handleInputAction(
+				this.#handleInputAction(
 					targetElement as HTMLInputElement | HTMLTextAreaElement,
 					keyName,
 					key,
@@ -5500,7 +5209,7 @@ export class TermDOM {
 			} else if (
 				targetElement instanceof (this.window as any).HTMLSelectElement
 			) {
-				this.#inputActions.handleSelectAction(
+				this.#handleSelectAction(
 					targetElement as HTMLSelectElement,
 					keyName,
 					key,
@@ -5562,7 +5271,7 @@ export class TermDOM {
 		const output = this.#renderer.renderStatic(
 			this.document.body.scrollHeight,
 			(ctx) => {
-				this.#painter.renderDocument(ctx);
+				this.#renderDocument(ctx);
 			},
 		);
 
@@ -5618,7 +5327,7 @@ export class TermDOM {
 		const output = this.#renderer.renderStatic(
 			contentHeight,
 			(ctx) => {
-				this.#painter.renderDocument(ctx);
+				this.#renderDocument(ctx);
 			},
 			"\r\n",
 		);
@@ -5697,7 +5406,7 @@ export class TermDOM {
 		const isFullscreen = this.#fullscreenManager.isFullscreen;
 		const contentHeight = isFullscreen
 			? this.#height
-			: this.#painter.documentPaintHeight();
+			: this.#documentPaintHeight();
 		const regionHeight = Math.min(contentHeight, this.#height);
 
 		// Take the room we need by pushing earlier output up, never over it.
@@ -5712,7 +5421,7 @@ export class TermDOM {
 		const ansi = this.#renderer.renderFrame(
 			-this.#documentScrollTop,
 			(ctx) => {
-				this.#painter.renderDocument(ctx);
+				this.#renderDocument(ctx);
 			},
 			top,
 			top + regionHeight,
