@@ -1647,3 +1647,63 @@ test("links are focusable, and activate on Enter but not Space", async () => {
 
 	dom.dispose();
 });
+
+test("caret motion and deletion move by grapheme, not code unit", async () => {
+	// selectionStart/End stay code-unit indices (the DOM API), but a single
+	// Backspace/Delete/arrow must step over a whole grapheme -- an emoji is a
+	// surrogate pair, a family emoji a ZWJ join, an accented letter a base plus
+	// a combining mark. Editing by code unit corrupts all three.
+	const terminal = new MockKeyboardProcess();
+	const termdom = new TermDOM({process: terminal});
+	const {document} = termdom;
+	termdom.attach();
+	const input = document.createElement("input");
+	document.body.appendChild(input);
+	input.focus();
+
+	const type = (seq: string) =>
+		(terminal.stdin as any).emit("data", Buffer.from(seq));
+	const BS = "\x7f";
+	const DEL = "\x1b[3~";
+	const LEFT = "\x1b[D";
+	const RIGHT = "\x1b[C";
+
+	// Backspace deletes a whole emoji (surrogate pair), not half of it.
+	input.value = "ab\u{1F600}"; // "ab😀"
+	input.setSelectionRange(input.value.length, input.value.length);
+	type(BS);
+	expect(input.value).toBe("ab");
+	expect(input.selectionStart).toBe(2);
+
+	// Backspace deletes a whole ZWJ family emoji as one unit.
+	input.value = "x\u{1F468}‍\u{1F469}‍\u{1F467}"; // "x👨‍👩‍👧"
+	input.setSelectionRange(input.value.length, input.value.length);
+	type(BS);
+	expect(input.value).toBe("x");
+	expect(input.selectionStart).toBe(1);
+
+	// Backspace deletes a base letter plus its combining mark together.
+	input.value = "é"; // "é" as e + COMBINING ACUTE
+	input.setSelectionRange(input.value.length, input.value.length);
+	type(BS);
+	expect(input.value).toBe("");
+
+	// Left arrow steps over an emoji to its leading boundary, then Delete
+	// forward removes the whole emoji.
+	input.value = "\u{1F600}z"; // "😀z"
+	input.setSelectionRange(input.value.length, input.value.length); // after z
+	type(LEFT); // between emoji and z (code unit 2)
+	expect(input.selectionStart).toBe(2);
+	type(LEFT); // before the emoji (code unit 0), not mid-pair
+	expect(input.selectionStart).toBe(0);
+	type(DEL); // delete the whole emoji forward
+	expect(input.value).toBe("z");
+
+	// Right arrow steps over the emoji as one unit.
+	input.value = "\u{1F600}z";
+	input.setSelectionRange(0, 0);
+	type(RIGHT);
+	expect(input.selectionStart).toBe(2); // past the pair, not into it
+
+	termdom.dispose();
+});

@@ -550,6 +550,41 @@ function applyTextTransform(text: string, transform: string): string {
 	}
 }
 
+/**
+ * Grapheme-cluster boundaries for caret motion and deletion. selectionStart/
+ * End stay code-unit indices, as the DOM API requires -- these only snap a
+ * one-"character" step onto a boundary, so Backspace deletes a whole emoji
+ * rather than half a surrogate pair, and an arrow steps over a combining
+ * sequence or ZWJ join as one unit. Rebuilt per keystroke: input values are
+ * short and Intl.Segmenter is cheap, so there is no cache to keep coherent.
+ */
+const graphemeSegmenter = new Intl.Segmenter(undefined, {
+	granularity: "grapheme",
+});
+function graphemeBoundaries(value: string): number[] {
+	const boundaries = [0];
+	for (const {index, segment} of graphemeSegmenter.segment(value)) {
+		boundaries.push(index + segment.length);
+	}
+	return boundaries;
+}
+/** The first grapheme boundary strictly after `index` (or the end). */
+function nextGraphemeBoundary(value: string, index: number): number {
+	for (const boundary of graphemeBoundaries(value)) {
+		if (boundary > index) return boundary;
+	}
+	return value.length;
+}
+/** The last grapheme boundary strictly before `index` (or the start). */
+function prevGraphemeBoundary(value: string, index: number): number {
+	let previous = 0;
+	for (const boundary of graphemeBoundaries(value)) {
+		if (boundary >= index) break;
+		previous = boundary;
+	}
+	return previous;
+}
+
 function detectColorDepth(process: ProcessLike): ColorDepth {
 	const colorterm = process.env.COLORTERM;
 	if (colorterm === "truecolor" || colorterm === "24bit") {
@@ -4207,34 +4242,36 @@ export class TermDOM {
 				newValue = value.slice(0, start) + value.slice(end);
 				collapse(start);
 			} else if (caret > 0) {
-				newValue = value.slice(0, caret - 1) + value.slice(caret);
-				collapse(caret - 1);
+				const from = prevGraphemeBoundary(value, caret);
+				newValue = value.slice(0, from) + value.slice(caret);
+				collapse(from);
 			}
 		} else if (keyName === "Delete") {
 			if (hasSelection) {
 				newValue = value.slice(0, start) + value.slice(end);
 				collapse(start);
 			} else if (caret < value.length) {
-				newValue = value.slice(0, caret) + value.slice(caret + 1);
+				const to = nextGraphemeBoundary(value, caret);
+				newValue = value.slice(0, caret) + value.slice(to);
 				collapse(caret);
 			}
 		} else if (keyName === "ArrowLeft") {
 			if (shiftKey) {
-				extend(caret - 1);
+				extend(prevGraphemeBoundary(value, caret));
 			} else if (hasSelection) {
 				// A plain arrow collapses to the selection's matching edge,
 				// not one past it -- the browser behavior.
 				collapse(start);
 			} else {
-				collapse(caret - 1);
+				collapse(prevGraphemeBoundary(value, caret));
 			}
 		} else if (keyName === "ArrowRight") {
 			if (shiftKey) {
-				extend(caret + 1);
+				extend(nextGraphemeBoundary(value, caret));
 			} else if (hasSelection) {
 				collapse(end);
 			} else {
-				collapse(caret + 1);
+				collapse(nextGraphemeBoundary(value, caret));
 			}
 		} else if (isTextarea && keyName === "Enter") {
 			// Enter is a newline in a textarea -- inserted like any typed
