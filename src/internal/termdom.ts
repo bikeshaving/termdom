@@ -986,713 +986,6 @@ export class FullscreenManager {
  * A captured value would freeze `undefined` for half of these and a stale
  * number for the other half.
  */
-interface DOMPatchHost {
-	readonly width: number;
-	readonly height: number;
-	readonly layoutEngine: LayoutEngine;
-	readonly observer: MutationObserver;
-	readonly styleManager: StyleManager;
-	readonly fullscreenManager: FullscreenManager;
-	readonly renderer: Renderer;
-	/** The command-start anchor; cursor detection moves it after setup. */
-	readonly screenTop: number;
-	/** The document camera, shared by scrollY/pageYOffset/scrollTop. */
-	scrollTop: number;
-	/** Set while a screen switch holds frames back. */
-	screenSwitching: boolean;
-	readonly renderInFlight: Promise<void> | null;
-	readonly attached: boolean;
-	readonly renderCount: number;
-	/** rAF callbacks by handle; a completed frame drains them. */
-	readonly frameCallbacks: Map<number, FrameRequestCallback>;
-	/** One per live MediaQueryList, re-run on resize. */
-	readonly mediaQueryUpdaters: Set<() => void>;
-	allocateFrameHandle(): number;
-	mediaQueryMatches(query: string): boolean;
-	render(): Promise<void>;
-	flushPendingMutations(): void;
-	scrollCamera(rows: number): void;
-	updateMouseReporting(): void;
-	elementAtDocumentPoint(x: number, y: number): Element | null;
-	/** Flush the live region into scrollback and seal the document. */
-	sealToScrollback(): void;
-}
-
-/**
- * Give the jsdom window the parts of the browser a terminal actually has: a
- * viewport with a size, one scrolling camera, a frame clock tied to the
- * render loop, media queries answered by the real style evaluator, and a
- * document.close() that seals output into the scrollback.
- */
-function installWindowExtensions(window: DOMWindow, host: DOMPatchHost): void {
-	const document = window.document;
-	Object.defineProperty(window, "innerWidth", {
-		value: host.width,
-		writable: false,
-		configurable: true,
-	});
-	Object.defineProperty(window, "innerHeight", {
-		value: host.height,
-		writable: false,
-		configurable: true,
-	});
-	Object.defineProperty(window, "outerWidth", {
-		value: host.width,
-		writable: false,
-		configurable: true,
-	});
-	Object.defineProperty(window, "outerHeight", {
-		value: host.height,
-		writable: false,
-		configurable: true,
-	});
-
-	// screenTop: readonly like browsers, and LIVE -- cursor detection moves
-	// the anchor after this runs. A frozen value here silently shadowed the
-	// real one, with only constructor line order deciding which won.
-	Object.defineProperty(window, "screenTop", {
-		get: () => host.screenTop,
-		configurable: true,
-		enumerable: true,
-	});
-
-	// Standard window scrolling, mapped onto the camera: scrollY is how far the
-	// camera has moved down the document, scrollBy moves it.
-	Object.defineProperty(window, "scrollY", {
-		get: () => host.scrollTop,
-		configurable: true,
-		enumerable: true,
-	});
-	Object.defineProperty(window, "pageYOffset", {
-		get: () => host.scrollTop,
-		configurable: true,
-		enumerable: true,
-	});
-	window.scrollBy = ((
-		xOrOptions?: number | ScrollToOptions,
-		y?: number,
-	): void => {
-		const dy =
-			typeof xOrOptions === "object" && xOrOptions !== null
-				? (xOrOptions.top ?? 0)
-				: (y ?? 0);
-		host.scrollCamera(dy);
-	}) as typeof window.scrollBy;
-
-	// scrollTo/scroll set the camera to an absolute position -- the same
-	// state scrollY reads and scrollBy moves relatively. document.
-	// documentElement/body.scrollTop are the same value again, standard DOM
-	// (window.scrollY === document.documentElement.scrollTop always): one
-	// camera, four ways to read or move it, matching the "unified scrolling
-	// model" the viewport tests already name it after.
-	const scrollToCamera = (
-		xOrOptions?: number | ScrollToOptions,
-		y?: number,
-	): void => {
-		const targetY =
-			typeof xOrOptions === "object" && xOrOptions !== null
-				? (xOrOptions.top ?? host.scrollTop)
-				: (y ?? 0);
-		host.scrollTop = Math.max(0, targetY);
-		void host.render();
-	};
-	window.scrollTo = scrollToCamera as typeof window.scrollTo;
-	window.scroll = scrollToCamera as typeof window.scroll;
-
-	for (const root of [document.documentElement, document.body]) {
-		Object.defineProperty(root, "scrollTop", {
-			get: () => host.scrollTop,
-			set: (value: number) => {
-				host.scrollTop = Math.max(0, value);
-				void host.render();
-			},
-			configurable: true,
-			enumerable: true,
-		});
-	}
-
-	// requestAnimationFrame is the only way to await a painted frame -- render()
-	// is private. jsdom's pretendToBeVisual rAF is a bare timer, decoupled from
-	// our (async) paint, so a callback could fire before the frame is written.
-	// Route it through the render loop: schedule a render and fire the callback
-	// once it completes, so "await a frame" always means the frame that includes
-	// your pending mutations has landed.
-	window.requestAnimationFrame = ((cb: FrameRequestCallback): number => {
-		const id = host.allocateFrameHandle();
-		host.frameCallbacks.set(id, cb);
-		void host.render();
-		return id;
-	}) as typeof window.requestAnimationFrame;
-	window.cancelAnimationFrame = ((handle: number): void => {
-		host.frameCallbacks.delete(handle);
-	}) as typeof window.cancelAnimationFrame;
-
-	// matchMedia: the terminal is the one screen, and queries answer
-	// through the SAME evaluator @media stylesheet rules use, so a
-	// script and a stylesheet can never disagree about the viewport.
-	// The list is live: a resize (SIGWINCH is this screen's window
-	// resize) re-evaluates and fires "change" when the answer flips --
-	// the browser contract, which is what makes responsive terminal
-	// layouts a matchMedia listener instead of a bespoke resize hook.
-	window.matchMedia = ((query: string): MediaQueryList => {
-		const media = String(query);
-		const mql = new (window as any).EventTarget();
-		let matches = host.mediaQueryMatches(media);
-		let onchange: ((ev: Event) => void) | null = null;
-		Object.defineProperties(mql, {
-			media: {get: () => media, enumerable: true, configurable: true},
-			matches: {get: () => matches, enumerable: true, configurable: true},
-			onchange: {
-				get: () => onchange,
-				set: (value: ((ev: Event) => void) | null) => {
-					// An event-handler attribute IS a listener, per spec:
-					// route it through add/removeEventListener so dispatch
-					// order and dedup behave like any other handler.
-					if (onchange) mql.removeEventListener("change", onchange);
-					onchange = typeof value === "function" ? value : null;
-					if (onchange) mql.addEventListener("change", onchange);
-				},
-				enumerable: true,
-				configurable: true,
-			},
-			// The pre-2020 MediaQueryList API, still what much deployed
-			// code calls: plain aliases for the EventTarget pair.
-			addListener: {
-				value: (cb: ((ev: Event) => void) | null) => {
-					if (cb) mql.addEventListener("change", cb);
-				},
-				configurable: true,
-			},
-			removeListener: {
-				value: (cb: ((ev: Event) => void) | null) => {
-					if (cb) mql.removeEventListener("change", cb);
-				},
-				configurable: true,
-			},
-		});
-		host.mediaQueryUpdaters.add(() => {
-			const now = host.mediaQueryMatches(media);
-			if (now === matches) return;
-			matches = now;
-			const event = new window.Event("change");
-			Object.defineProperties(event, {
-				matches: {value: now, enumerable: true},
-				media: {value: media, enumerable: true},
-			});
-			mql.dispatchEvent(event);
-		});
-		return mql as MediaQueryList;
-	}) as typeof window.matchMedia;
-
-	// document.close() finalizes the document: flush the live region into the
-	// terminal's scrollback and seal it -- the SSR res.end() of the terminal.
-	// A later DOM mutation starts a fresh document below the sealed block. This
-	// is the "print rich output and stop" seam: write(), then close().
-	const nativeDocumentClose = document.close.bind(document);
-	document.close = () => {
-		nativeDocumentClose();
-		// dispose() tears down via jsdom's window.close(), which calls
-		// document.close() -- but it has already set attached=false, so we skip
-		// the seal there. A real seal is a close() from a live, painted session.
-		if (host.attached && host.renderCount > 0) {
-			host.sealToScrollback();
-		}
-	};
-
-	// Implement standard DOM scrollHeight properties
-	Object.defineProperty(document.body, "scrollHeight", {
-		get() {
-			return host.layoutEngine.getContentHeight();
-		},
-		configurable: true,
-		enumerable: true,
-	});
-
-	Object.defineProperty(document.documentElement, "scrollHeight", {
-		get() {
-			return host.layoutEngine.getContentHeight();
-		},
-		configurable: true,
-		enumerable: true,
-	});
-
-	// clientHeight is the viewport height (terminal height)
-	Object.defineProperty(document.body, "clientHeight", {
-		get() {
-			return host.height;
-		},
-		configurable: true,
-		enumerable: true,
-	});
-
-	Object.defineProperty(document.documentElement, "clientHeight", {
-		get() {
-			return host.height;
-		},
-		configurable: true,
-		enumerable: true,
-	});
-}
-
-/**
- * Patch the DOM constructors themselves: geometry (getBoundingClientRect and
- * the offset/client/scroll measurement family), focus, scrollIntoView,
- * shadow-root enrollment and the Fullscreen API. These are prototype methods,
- * so they apply to every element the document will ever have -- and they are
- * installed before the layout engine, the style manager, the renderer and the
- * observer exist, which is why the host hands those out through getters.
- */
-function installConstructorExtensions(
-	window: DOMWindow,
-	host: DOMPatchHost,
-): void {
-	const {Element, Document} = window;
-	const document = window.document;
-
-	// getRect()/getRects() (the layout engine's own primitives) are
-	// document-relative -- the coordinate space rendering already works in,
-	// since the renderer applies the camera offset once at paint time, not
-	// per element. But getBoundingClientRect/getClientRects are a *public*
-	// API, and CSSOM View defines them relative to the viewport: rect.top
-	// for a scrolled-past element should be negative, not the same
-	// ever-growing document row regardless of scroll. #toViewportRect is the
-	// one place that conversion happens, so both wrappers apply it
-	// identically. Internal callers that need the pre-conversion,
-	// document-relative rect (scrollIntoView, hit-testing) read
-	// getRect()/getRects() directly instead of going through these -- see
-	// their definitions.
-	const toViewportRect = (rect: DOMRect): DOMRect =>
-		host.layoutEngine.createDOMRect(
-			rect.x,
-			rect.y - host.scrollTop,
-			rect.width,
-			rect.height,
-		);
-
-	Element.prototype.getBoundingClientRect = function (this: Element): DOMRect {
-		if (!this.isConnected) {
-			return host.layoutEngine.createDOMRect(0, 0, 0, 0);
-		}
-
-		host.flushPendingMutations();
-
-		const rect = host.layoutEngine.getRect(this);
-		return toViewportRect(rect || host.layoutEngine.createDOMRect());
-	};
-
-	Element.prototype.getClientRects = function (): DOMRectList {
-		if (!this.isConnected) {
-			return host.layoutEngine.createDOMRectList();
-		}
-
-		host.flushPendingMutations();
-
-		const rects = host.layoutEngine.getRects(this).map(toViewportRect);
-		return host.layoutEngine.createDOMRectList(rects);
-	};
-
-	// offsetWidth/offsetHeight/offsetTop/offsetLeft/offsetParent/clientWidth/
-	// clientHeight/scrollWidth/scrollHeight -- the most commonly reached-for
-	// measurement APIs, and previously entirely unimplemented (always
-	// 0/null via jsdom's defaults). Every one of them is derived from
-	// layoutRectOf, the single place that decides "is this element
-	// connected, has layout settled, what is its border-box rect" -- so
-	// offsetWidth and clientWidth can never quietly disagree about which
-	// rect they mean, and a future change to that decision (e.g. how
-	// isConnected or render-flushing is handled) only has one place to make.
-	//
-	// layoutRectOf returns the same rect getBoundingClientRect uses,
-	// unrounded (each getter below rounds for its own purpose -- offsetTop
-	// rounds the *difference* of two rects, not each rect independently, so
-	// rounding here first would double-round and drift by a cell).
-	const layoutRectOf = (element: Element): DOMRect | null => {
-		if (!element.isConnected) return null;
-		host.flushPendingMutations();
-		return host.layoutEngine.getRect(element);
-	};
-
-	// offsetParent walks the live DOM tree, not layout -- a separate concern
-	// from layoutRectOf, reused by offsetParent itself and by offsetTop/Left
-	// to find what they're relative to.
-	const offsetParentOf = (element: Element): HTMLElement | null => {
-		for (
-			let ancestor = element.parentElement;
-			ancestor;
-			ancestor = ancestor.parentElement
-		) {
-			const position = window
-				.getComputedStyle(ancestor)
-				.getPropertyValue("position");
-			if (position && position !== "static") {
-				return ancestor as HTMLElement;
-			}
-		}
-		return document.body === element ? null : document.body;
-	};
-
-	// The content+padding box (border-box rect minus border widths), which
-	// both clientWidth/Height and scrollWidth/Height report -- see
-	// their definition below for why scroll* is an alias of client* rather
-	// than the element's true unclamped content size.
-	const contentBoxOf = (
-		element: Element,
-	): {width: number; height: number} | null => {
-		const rect = layoutRectOf(element);
-		if (!rect) return null;
-		const box = getBoxModel(element);
-		return {
-			width: rect.width - box.borderLeftWidth - box.borderRightWidth,
-			height: rect.height - box.borderTopWidth - box.borderBottomWidth,
-		};
-	};
-
-	Object.defineProperty(window.HTMLElement.prototype, "offsetWidth", {
-		get(this: Element) {
-			return Math.round(layoutRectOf(this)?.width ?? 0);
-		},
-		configurable: true,
-		enumerable: true,
-	});
-
-	Object.defineProperty(window.HTMLElement.prototype, "offsetHeight", {
-		get(this: Element) {
-			return Math.round(layoutRectOf(this)?.height ?? 0);
-		},
-		configurable: true,
-		enumerable: true,
-	});
-
-	Object.defineProperty(window.HTMLElement.prototype, "offsetParent", {
-		get(this: Element) {
-			return this.isConnected ? offsetParentOf(this) : null;
-		},
-		configurable: true,
-		enumerable: true,
-	});
-
-	// offsetTop/Left are relative to offsetParent's own border-box origin
-	// (not its padding edge, which the spec technically uses): a
-	// simplification that only differs when offsetParent itself has a
-	// border, and is off by exactly that border's width when it does.
-	Object.defineProperty(window.HTMLElement.prototype, "offsetTop", {
-		get(this: Element) {
-			const rect = layoutRectOf(this);
-			if (!rect) return 0;
-			const parent = offsetParentOf(this);
-			const parentRect = parent ? layoutRectOf(parent) : null;
-			return Math.round(rect.top - (parentRect?.top ?? 0));
-		},
-		configurable: true,
-		enumerable: true,
-	});
-
-	Object.defineProperty(window.HTMLElement.prototype, "offsetLeft", {
-		get(this: Element) {
-			const rect = layoutRectOf(this);
-			if (!rect) return 0;
-			const parent = offsetParentOf(this);
-			const parentRect = parent ? layoutRectOf(parent) : null;
-			return Math.round(rect.left - (parentRect?.left ?? 0));
-		},
-		configurable: true,
-		enumerable: true,
-	});
-
-	// clientWidth/clientHeight/scrollWidth/scrollHeight, generalized from the
-	// html/body-only instance properties defined above (which still win: an
-	// own-property shadows a prototype getter, so document.body's viewport-
-	// height special case is untouched).
-	//
-	// scroll* is set equal to client* here rather than the element's true
-	// unclamped content size, matching the same limitation the paint-extent
-	// culling above already documents for the same reason: nothing in the
-	// layout engine measures a subtree's natural size separately from
-	// whatever box it was actually constrained into. That makes scroll* exact
-	// for the common case (auto-sized boxes, no overflow) and an honest
-	// under-report for a box with both an explicit size *and* overflowing
-	// normal-flow content -- the one case a real browser's scrollWidth/Height
-	// would exceed clientWidth/Height.
-	for (const prop of ["clientWidth", "scrollWidth"] as const) {
-		Object.defineProperty(window.HTMLElement.prototype, prop, {
-			get(this: Element) {
-				return Math.round(contentBoxOf(this)?.width ?? 0);
-			},
-			configurable: true,
-			enumerable: true,
-		});
-	}
-
-	for (const prop of ["clientHeight", "scrollHeight"] as const) {
-		Object.defineProperty(window.HTMLElement.prototype, prop, {
-			get(this: Element) {
-				return Math.round(contentBoxOf(this)?.height ?? 0);
-			},
-			configurable: true,
-			enumerable: true,
-		});
-	}
-
-	// The document-rooted MutationObserver never sees inside a shadow
-	// root -- per spec, shadow trees are separate observation scopes. Each
-	// author-attached root gets enrolled in the same observer, so shadow
-	// mutations invalidate styles/layout and repaint like light ones.
-	const originalAttachShadow = Element.prototype.attachShadow;
-	Element.prototype.attachShadow = function (
-		this: Element,
-		init: ShadowRootInit,
-	): ShadowRoot {
-		const root = originalAttachShadow.call(this, init);
-		host.observer.observe(root, {
-			childList: true,
-			subtree: true,
-			attributes: true,
-			attributeOldValue: true,
-			characterData: true,
-		});
-		// The root's <style> elements join the cascade, scoped to this
-		// tree; the refresh rides on the STYLE mutation records the
-		// observer enrollment above will deliver.
-		host.styleManager.registerShadowRoot(root);
-		// attachShadow is not a DOM mutation -- no observer record will
-		// ever fire for it -- but on a CONNECTED host the composed tree
-		// just changed wholesale: light children stop rendering the moment
-		// the root exists, even while it is still empty. Rebuild the
-		// host's composed subtree and repaint.
-		if (this.isConnected) {
-			host.layoutEngine.invalidate(this);
-			void host.render();
-		}
-		return root;
-	};
-
-	Element.prototype.requestFullscreen = function (
-		this: Element,
-		options?: FullscreenOptions,
-	): Promise<void> {
-		return (async () => {
-			// No frame may straddle the screen switch: an in-flight render
-			// finishing its stdout write AFTER the switch paints one
-			// screen's geometry onto the other (the demo's animation made
-			// this a near-certainty on exit). Hold new frames, drain the
-			// running one, then switch.
-			host.screenSwitching = true;
-			try {
-				await host.renderInFlight;
-				await host.fullscreenManager.requestFullscreen(this, options);
-				// The element's UA styles changed (it now fills the
-				// viewport) and neither a mutation nor a focus move fired.
-				host.styleManager.handleFocusChange(this);
-				host.layoutEngine.invalidate(this);
-				// The screen under the renderer changed wholesale (the
-				// alternate screen starts cleared): drop the diff model or
-				// the first fullscreen frame patches against the main
-				// screen's content.
-				host.renderer.clearPreviousBuffer();
-				host.updateMouseReporting();
-			} finally {
-				host.screenSwitching = false;
-			}
-			void host.render();
-		})();
-	};
-
-	Document.prototype.exitFullscreen = function (this: Document): Promise<void> {
-		return (async () => {
-			const element = host.fullscreenManager.fullscreenElement;
-			host.screenSwitching = true;
-			try {
-				await host.renderInFlight;
-				await host.fullscreenManager.exitFullscreen();
-				if (element) {
-					host.styleManager.handleFocusChange(element);
-					host.layoutEngine.invalidate(element);
-				}
-				// Same wholesale swap in reverse: the terminal restored the
-				// main screen, but the diff model still describes the last
-				// ALTERNATE-screen frame -- patching against it garbles the
-				// restored document.
-				host.renderer.clearPreviousBuffer();
-				host.updateMouseReporting();
-			} finally {
-				host.screenSwitching = false;
-			}
-			void host.render();
-		})();
-	};
-
-	Object.defineProperty(Document.prototype, "fullscreenElement", {
-		get: function (this: Document) {
-			// Style computation consults this during construction, before
-			// the manager field is assigned.
-			return host.fullscreenManager?.fullscreenElement ?? null;
-		},
-		configurable: true,
-	});
-
-	Document.prototype.elementFromPoint = function (
-		x: number,
-		y: number,
-	): Element | null {
-		// Per CSSOM View, x/y are viewport-relative -- convert to the
-		// document-relative space hit-testing works in, the same conversion
-		// getBoundingClientRect's toViewportRect makes in the other direction.
-		return host.elementAtDocumentPoint(x, y + host.scrollTop);
-	};
-
-	// Override focus/blur to dispatch proper events
-	const HTMLElement = window.HTMLElement;
-	const originalFocus = HTMLElement.prototype.focus;
-	const originalBlur = HTMLElement.prototype.blur;
-
-	HTMLElement.prototype.focus = function (this: HTMLElement) {
-		const prev = document.activeElement;
-		originalFocus.call(this);
-		if (prev !== this) {
-			// :focus rules match live, but computed styles are cached and
-			// focus is not a mutation -- both moved elements must drop
-			// their caches, and the repaint must happen even when no
-			// listener mutates anything.
-			host.styleManager.handleFocusChange(prev, this);
-			void host.render();
-			if (prev && prev !== document.body) {
-				prev.dispatchEvent(
-					new window.FocusEvent("blur", {
-						relatedTarget: this,
-						bubbles: false,
-					}),
-				);
-				prev.dispatchEvent(
-					new window.FocusEvent("focusout", {
-						relatedTarget: this,
-						bubbles: true,
-					}),
-				);
-			}
-			this.dispatchEvent(
-				new window.FocusEvent("focus", {
-					relatedTarget: prev,
-					bubbles: false,
-				}),
-			);
-			this.dispatchEvent(
-				new window.FocusEvent("focusin", {
-					relatedTarget: prev,
-					bubbles: true,
-				}),
-			);
-		}
-	};
-
-	HTMLElement.prototype.blur = function (this: HTMLElement) {
-		const wasFocused = document.activeElement === this;
-		originalBlur.call(this);
-		if (wasFocused) {
-			host.styleManager.handleFocusChange(this);
-			void host.render();
-			this.dispatchEvent(
-				new window.FocusEvent("blur", {
-					relatedTarget: null,
-					bubbles: false,
-				}),
-			);
-			this.dispatchEvent(
-				new window.FocusEvent("focusout", {
-					relatedTarget: null,
-					bubbles: true,
-				}),
-			);
-		}
-	};
-
-	// Override scrollIntoView to adjust scroll offset
-	HTMLElement.prototype.scrollIntoView = function (
-		this: HTMLElement,
-		_arg?: boolean | ScrollIntoViewOptions,
-	) {
-		if (!this.isConnected) return;
-		host.flushPendingMutations();
-
-		// Document-relative, not getBoundingClientRect's viewport-relative --
-		// this compares directly against documentScrollTop below, so it needs
-		// the same coordinate space getRect() already provides.
-		const rect = host.layoutEngine.getRect(this);
-		if (!rect) return;
-
-		// The camera shows [documentScrollTop, documentScrollTop + region).
-		// Move it the minimal amount that brings the element into it -- the
-		// standard block: "nearest" behavior.
-		const regionHeight = Math.min(host.height, document.body.scrollHeight);
-		const top = host.scrollTop;
-		if (rect.top < top) {
-			host.scrollCamera(rect.top - top);
-		} else if (rect.bottom > top + regionHeight) {
-			host.scrollCamera(rect.bottom - (top + regionHeight));
-		}
-	};
-}
-
-/** The measurement surface the observers read each frame. See ObserverHost. */
-function createObserverHost(
-	window: DOMWindow,
-	host: DOMPatchHost,
-): ObserverHost {
-	return {
-		// getRect builds a fresh DOMRect per call, so this one can be handed
-		// straight to author code with nothing to alias.
-		getBorderBox: (element) => host.layoutEngine.getRect(element),
-		getContentBox: (element) => {
-			// An element that generates no box has no content box either --
-			// not a zero-sized one at its old padding offsets. Reported as
-			// "nothing", which the observer turns into an all-zero rect.
-			if (
-				window.getComputedStyle(element).getPropertyValue("display") === "none"
-			) {
-				return null;
-			}
-			const rect = host.layoutEngine.getRect(element);
-			if (!rect) return null;
-			const box = getBoxModel(element);
-			const width = Math.max(
-				0,
-				rect.width -
-					(box.paddingLeft || 0) -
-					(box.paddingRight || 0) -
-					(box.borderLeftWidth || 0) -
-					(box.borderRightWidth || 0),
-			);
-			const height = Math.max(
-				0,
-				rect.height -
-					(box.paddingTop || 0) -
-					(box.paddingBottom || 0) -
-					(box.borderTopWidth || 0) -
-					(box.borderBottomWidth || 0),
-			);
-			// Origin relative to the border box: what precedes the content on
-			// each axis. ResizeObserver reports this as contentRect's top/left.
-			return {
-				width,
-				height,
-				top: (box.borderTopWidth || 0) + (box.paddingTop || 0),
-				left: (box.borderLeftWidth || 0) + (box.paddingLeft || 0),
-			};
-		},
-		getViewportRect: () =>
-			// The visible window over the document, in the document coordinate
-			// space getRect() uses: it begins at the current scroll offset and is
-			// one terminal high.
-			host.layoutEngine.createDOMRect(
-				0,
-				host.scrollTop,
-				host.width,
-				host.height,
-			),
-		createRect: (x, y, width, height) =>
-			host.layoutEngine.createDOMRect(x, y, width, height),
-		now: () => host.renderCount,
-	};
-}
-
 export class TermDOM {
 	readonly document: Document;
 	readonly window: DOMWindow;
@@ -1903,9 +1196,8 @@ export class TermDOM {
 		// One bag of getters and callbacks, shared by everything that patches
 		// the window below. Built here, before the fields it exposes exist:
 		// nothing reads through it until a patched API is actually called.
-		const host = this.#createDOMPatchHost();
 
-		installConstructorExtensions(this.window, host);
+		this.#installConstructorExtensions();
 		this.#renderer = new Renderer(
 			this.#height,
 			this.#width,
@@ -1920,11 +1212,9 @@ export class TermDOM {
 		this.#styleManager.setLayoutEngine(this[kLayoutEngine]);
 		this[kLayoutEngine].resize(this.#width, this.#height);
 		this.#fullscreenManager = new FullscreenManager(this.#process);
-		this.#observerManager = new ObserverManager(
-			createObserverHost(this.window, host),
-		);
+		this.#observerManager = new ObserverManager(this.#createObserverHost());
 
-		installWindowExtensions(this.window, host);
+		this.#installWindowExtensions();
 		this.#installObservers();
 
 		// Initialize scrolling management after window setup
@@ -1939,75 +1229,683 @@ export class TermDOM {
 	 * window: see DOMPatchHost for why every member is a getter or a callback
 	 * rather than a value.
 	 */
-	#createDOMPatchHost(): DOMPatchHost {
+	#allocateFrameHandle(): number {
+		return this.#nextRafId++;
+	}
+
+	#sealToScrollback(): void {
+		this.#flushDocument();
+		this.#sealed = true;
+	}
+
+	#createObserverHost(): ObserverHost {
 		const termDOM = this;
+		const window = termDOM.window;
 		return {
-			get width() {
-				return termDOM.#width;
+			// getRect builds a fresh DOMRect per call, so this one can be handed
+			// straight to author code with nothing to alias.
+			getBorderBox: (element) => termDOM[kLayoutEngine].getRect(element),
+			getContentBox: (element) => {
+				// An element that generates no box has no content box either --
+				// not a zero-sized one at its old padding offsets. Reported as
+				// "nothing", which the observer turns into an all-zero rect.
+				if (
+					window.getComputedStyle(element).getPropertyValue("display") ===
+					"none"
+				) {
+					return null;
+				}
+				const rect = termDOM[kLayoutEngine].getRect(element);
+				if (!rect) return null;
+				const box = getBoxModel(element);
+				const width = Math.max(
+					0,
+					rect.width -
+						(box.paddingLeft || 0) -
+						(box.paddingRight || 0) -
+						(box.borderLeftWidth || 0) -
+						(box.borderRightWidth || 0),
+				);
+				const height = Math.max(
+					0,
+					rect.height -
+						(box.paddingTop || 0) -
+						(box.paddingBottom || 0) -
+						(box.borderTopWidth || 0) -
+						(box.borderBottomWidth || 0),
+				);
+				// Origin relative to the border box: what precedes the content on
+				// each axis. ResizeObserver reports this as contentRect's top/left.
+				return {
+					width,
+					height,
+					top: (box.borderTopWidth || 0) + (box.paddingTop || 0),
+					left: (box.borderLeftWidth || 0) + (box.paddingLeft || 0),
+				};
 			},
-			get height() {
+			getViewportRect: () =>
+				// The visible window over the document, in the document coordinate
+				// space getRect() uses: it begins at the current scroll offset and is
+				// one terminal high.
+				termDOM[kLayoutEngine].createDOMRect(
+					0,
+					termDOM.#documentScrollTop,
+					termDOM.#width,
+					termDOM.#height,
+				),
+			createRect: (x, y, width, height) =>
+				termDOM[kLayoutEngine].createDOMRect(x, y, width, height),
+			now: () => termDOM.#renderCount,
+		};
+	}
+
+	#installWindowExtensions(): void {
+		const termDOM = this;
+		const window = termDOM.window;
+		const document = window.document;
+		Object.defineProperty(window, "innerWidth", {
+			value: termDOM.#width,
+			writable: false,
+			configurable: true,
+		});
+		Object.defineProperty(window, "innerHeight", {
+			value: termDOM.#height,
+			writable: false,
+			configurable: true,
+		});
+		Object.defineProperty(window, "outerWidth", {
+			value: termDOM.#width,
+			writable: false,
+			configurable: true,
+		});
+		Object.defineProperty(window, "outerHeight", {
+			value: termDOM.#height,
+			writable: false,
+			configurable: true,
+		});
+
+		// screenTop: readonly like browsers, and LIVE -- cursor detection moves
+		// the anchor after this runs. A frozen value here silently shadowed the
+		// real one, with only constructor line order deciding which won.
+		Object.defineProperty(window, "screenTop", {
+			get: () => termDOM.#screenTop,
+			configurable: true,
+			enumerable: true,
+		});
+
+		// Standard window scrolling, mapped onto the camera: scrollY is how far the
+		// camera has moved down the document, scrollBy moves it.
+		Object.defineProperty(window, "scrollY", {
+			get: () => termDOM.#documentScrollTop,
+			configurable: true,
+			enumerable: true,
+		});
+		Object.defineProperty(window, "pageYOffset", {
+			get: () => termDOM.#documentScrollTop,
+			configurable: true,
+			enumerable: true,
+		});
+		window.scrollBy = ((
+			xOrOptions?: number | ScrollToOptions,
+			y?: number,
+		): void => {
+			const dy =
+				typeof xOrOptions === "object" && xOrOptions !== null
+					? (xOrOptions.top ?? 0)
+					: (y ?? 0);
+			termDOM.#scrollCamera(dy);
+		}) as typeof window.scrollBy;
+
+		// scrollTo/scroll set the camera to an absolute position -- the same
+		// state scrollY reads and scrollBy moves relatively. document.
+		// documentElement/body.scrollTop are the same value again, standard DOM
+		// (window.scrollY === document.documentElement.scrollTop always): one
+		// camera, four ways to read or move it, matching the "unified scrolling
+		// model" the viewport tests already name it after.
+		const scrollToCamera = (
+			xOrOptions?: number | ScrollToOptions,
+			y?: number,
+		): void => {
+			const targetY =
+				typeof xOrOptions === "object" && xOrOptions !== null
+					? (xOrOptions.top ?? termDOM.#documentScrollTop)
+					: (y ?? 0);
+			termDOM.#documentScrollTop = Math.max(0, targetY);
+			void termDOM.#render();
+		};
+		window.scrollTo = scrollToCamera as typeof window.scrollTo;
+		window.scroll = scrollToCamera as typeof window.scroll;
+
+		for (const root of [document.documentElement, document.body]) {
+			Object.defineProperty(root, "scrollTop", {
+				get: () => termDOM.#documentScrollTop,
+				set: (value: number) => {
+					termDOM.#documentScrollTop = Math.max(0, value);
+					void termDOM.#render();
+				},
+				configurable: true,
+				enumerable: true,
+			});
+		}
+
+		// requestAnimationFrame is the only way to await a painted frame -- render()
+		// is private. jsdom's pretendToBeVisual rAF is a bare timer, decoupled from
+		// our (async) paint, so a callback could fire before the frame is written.
+		// Route it through the render loop: schedule a render and fire the callback
+		// once it completes, so "await a frame" always means the frame that includes
+		// your pending mutations has landed.
+		window.requestAnimationFrame = ((cb: FrameRequestCallback): number => {
+			const id = termDOM.#allocateFrameHandle();
+			termDOM.#frameCallbacks.set(id, cb);
+			void termDOM.#render();
+			return id;
+		}) as typeof window.requestAnimationFrame;
+		window.cancelAnimationFrame = ((handle: number): void => {
+			termDOM.#frameCallbacks.delete(handle);
+		}) as typeof window.cancelAnimationFrame;
+
+		// matchMedia: the terminal is the one screen, and queries answer
+		// through the SAME evaluator @media stylesheet rules use, so a
+		// script and a stylesheet can never disagree about the viewport.
+		// The list is live: a resize (SIGWINCH is this screen's window
+		// resize) re-evaluates and fires "change" when the answer flips --
+		// the browser contract, which is what makes responsive terminal
+		// layouts a matchMedia listener instead of a bespoke resize hook.
+		window.matchMedia = ((query: string): MediaQueryList => {
+			const media = String(query);
+			const mql = new (window as any).EventTarget();
+			let matches = termDOM.#styleManager.mediaQueryMatches(media);
+			let onchange: ((ev: Event) => void) | null = null;
+			Object.defineProperties(mql, {
+				media: {get: () => media, enumerable: true, configurable: true},
+				matches: {get: () => matches, enumerable: true, configurable: true},
+				onchange: {
+					get: () => onchange,
+					set: (value: ((ev: Event) => void) | null) => {
+						// An event-handler attribute IS a listener, per spec:
+						// route it through add/removeEventListener so dispatch
+						// order and dedup behave like any other handler.
+						if (onchange) mql.removeEventListener("change", onchange);
+						onchange = typeof value === "function" ? value : null;
+						if (onchange) mql.addEventListener("change", onchange);
+					},
+					enumerable: true,
+					configurable: true,
+				},
+				// The pre-2020 MediaQueryList API, still what much deployed
+				// code calls: plain aliases for the EventTarget pair.
+				addListener: {
+					value: (cb: ((ev: Event) => void) | null) => {
+						if (cb) mql.addEventListener("change", cb);
+					},
+					configurable: true,
+				},
+				removeListener: {
+					value: (cb: ((ev: Event) => void) | null) => {
+						if (cb) mql.removeEventListener("change", cb);
+					},
+					configurable: true,
+				},
+			});
+			termDOM.#mediaQueryUpdaters.add(() => {
+				const now = termDOM.#styleManager.mediaQueryMatches(media);
+				if (now === matches) return;
+				matches = now;
+				const event = new window.Event("change");
+				Object.defineProperties(event, {
+					matches: {value: now, enumerable: true},
+					media: {value: media, enumerable: true},
+				});
+				mql.dispatchEvent(event);
+			});
+			return mql as MediaQueryList;
+		}) as typeof window.matchMedia;
+
+		// document.close() finalizes the document: flush the live region into the
+		// terminal's scrollback and seal it -- the SSR res.end() of the terminal.
+		// A later DOM mutation starts a fresh document below the sealed block. This
+		// is the "print rich output and stop" seam: write(), then close().
+		const nativeDocumentClose = document.close.bind(document);
+		document.close = () => {
+			nativeDocumentClose();
+			// dispose() tears down via jsdom's window.close(), which calls
+			// document.close() -- but it has already set attached=false, so we skip
+			// the seal there. A real seal is a close() from a live, painted session.
+			if (termDOM.#attached && termDOM.#renderCount > 0) {
+				termDOM.#sealToScrollback();
+			}
+		};
+
+		// Implement standard DOM scrollHeight properties
+		Object.defineProperty(document.body, "scrollHeight", {
+			get() {
+				return termDOM[kLayoutEngine].getContentHeight();
+			},
+			configurable: true,
+			enumerable: true,
+		});
+
+		Object.defineProperty(document.documentElement, "scrollHeight", {
+			get() {
+				return termDOM[kLayoutEngine].getContentHeight();
+			},
+			configurable: true,
+			enumerable: true,
+		});
+
+		// clientHeight is the viewport height (terminal height)
+		Object.defineProperty(document.body, "clientHeight", {
+			get() {
 				return termDOM.#height;
 			},
-			get layoutEngine() {
-				return termDOM[kLayoutEngine];
+			configurable: true,
+			enumerable: true,
+		});
+
+		Object.defineProperty(document.documentElement, "clientHeight", {
+			get() {
+				return termDOM.#height;
 			},
-			get observer() {
-				return termDOM[kObserver];
+			configurable: true,
+			enumerable: true,
+		});
+	}
+
+	#installConstructorExtensions(): void {
+		const termDOM = this;
+		const window = termDOM.window;
+		const {Element, Document} = window;
+		const document = window.document;
+
+		// getRect()/getRects() (the layout engine's own primitives) are
+		// document-relative -- the coordinate space rendering already works in,
+		// since the renderer applies the camera offset once at paint time, not
+		// per element. But getBoundingClientRect/getClientRects are a *public*
+		// API, and CSSOM View defines them relative to the viewport: rect.top
+		// for a scrolled-past element should be negative, not the same
+		// ever-growing document row regardless of scroll. #toViewportRect is the
+		// one place that conversion happens, so both wrappers apply it
+		// identically. Internal callers that need the pre-conversion,
+		// document-relative rect (scrollIntoView, hit-testing) read
+		// getRect()/getRects() directly instead of going through these -- see
+		// their definitions.
+		const toViewportRect = (rect: DOMRect): DOMRect =>
+			termDOM[kLayoutEngine].createDOMRect(
+				rect.x,
+				rect.y - termDOM.#documentScrollTop,
+				rect.width,
+				rect.height,
+			);
+
+		Element.prototype.getBoundingClientRect = function (
+			this: Element,
+		): DOMRect {
+			if (!this.isConnected) {
+				return termDOM[kLayoutEngine].createDOMRect(0, 0, 0, 0);
+			}
+
+			termDOM.#processPendingMutationsAndRender();
+
+			const rect = termDOM[kLayoutEngine].getRect(this);
+			return toViewportRect(rect || termDOM[kLayoutEngine].createDOMRect());
+		};
+
+		Element.prototype.getClientRects = function (): DOMRectList {
+			if (!this.isConnected) {
+				return termDOM[kLayoutEngine].createDOMRectList();
+			}
+
+			termDOM.#processPendingMutationsAndRender();
+
+			const rects = termDOM[kLayoutEngine].getRects(this).map(toViewportRect);
+			return termDOM[kLayoutEngine].createDOMRectList(rects);
+		};
+
+		// offsetWidth/offsetHeight/offsetTop/offsetLeft/offsetParent/clientWidth/
+		// clientHeight/scrollWidth/scrollHeight -- the most commonly reached-for
+		// measurement APIs, and previously entirely unimplemented (always
+		// 0/null via jsdom's defaults). Every one of them is derived from
+		// layoutRectOf, the single place that decides "is this element
+		// connected, has layout settled, what is its border-box rect" -- so
+		// offsetWidth and clientWidth can never quietly disagree about which
+		// rect they mean, and a future change to that decision (e.g. how
+		// isConnected or render-flushing is handled) only has one place to make.
+		//
+		// layoutRectOf returns the same rect getBoundingClientRect uses,
+		// unrounded (each getter below rounds for its own purpose -- offsetTop
+		// rounds the *difference* of two rects, not each rect independently, so
+		// rounding here first would double-round and drift by a cell).
+		const layoutRectOf = (element: Element): DOMRect | null => {
+			if (!element.isConnected) return null;
+			termDOM.#processPendingMutationsAndRender();
+			return termDOM[kLayoutEngine].getRect(element);
+		};
+
+		// offsetParent walks the live DOM tree, not layout -- a separate concern
+		// from layoutRectOf, reused by offsetParent itself and by offsetTop/Left
+		// to find what they're relative to.
+		const offsetParentOf = (element: Element): HTMLElement | null => {
+			for (
+				let ancestor = element.parentElement;
+				ancestor;
+				ancestor = ancestor.parentElement
+			) {
+				const position = window
+					.getComputedStyle(ancestor)
+					.getPropertyValue("position");
+				if (position && position !== "static") {
+					return ancestor as HTMLElement;
+				}
+			}
+			return document.body === element ? null : document.body;
+		};
+
+		// The content+padding box (border-box rect minus border widths), which
+		// both clientWidth/Height and scrollWidth/Height report -- see
+		// their definition below for why scroll* is an alias of client* rather
+		// than the element's true unclamped content size.
+		const contentBoxOf = (
+			element: Element,
+		): {width: number; height: number} | null => {
+			const rect = layoutRectOf(element);
+			if (!rect) return null;
+			const box = getBoxModel(element);
+			return {
+				width: rect.width - box.borderLeftWidth - box.borderRightWidth,
+				height: rect.height - box.borderTopWidth - box.borderBottomWidth,
+			};
+		};
+
+		Object.defineProperty(window.HTMLElement.prototype, "offsetWidth", {
+			get(this: Element) {
+				return Math.round(layoutRectOf(this)?.width ?? 0);
 			},
-			get styleManager() {
-				return termDOM.#styleManager;
+			configurable: true,
+			enumerable: true,
+		});
+
+		Object.defineProperty(window.HTMLElement.prototype, "offsetHeight", {
+			get(this: Element) {
+				return Math.round(layoutRectOf(this)?.height ?? 0);
 			},
-			get fullscreenManager() {
-				return termDOM.#fullscreenManager;
+			configurable: true,
+			enumerable: true,
+		});
+
+		Object.defineProperty(window.HTMLElement.prototype, "offsetParent", {
+			get(this: Element) {
+				return this.isConnected ? offsetParentOf(this) : null;
 			},
-			get renderer() {
-				return termDOM.#renderer;
+			configurable: true,
+			enumerable: true,
+		});
+
+		// offsetTop/Left are relative to offsetParent's own border-box origin
+		// (not its padding edge, which the spec technically uses): a
+		// simplification that only differs when offsetParent itself has a
+		// border, and is off by exactly that border's width when it does.
+		Object.defineProperty(window.HTMLElement.prototype, "offsetTop", {
+			get(this: Element) {
+				const rect = layoutRectOf(this);
+				if (!rect) return 0;
+				const parent = offsetParentOf(this);
+				const parentRect = parent ? layoutRectOf(parent) : null;
+				return Math.round(rect.top - (parentRect?.top ?? 0));
 			},
-			get screenTop() {
-				return termDOM.#screenTop;
+			configurable: true,
+			enumerable: true,
+		});
+
+		Object.defineProperty(window.HTMLElement.prototype, "offsetLeft", {
+			get(this: Element) {
+				const rect = layoutRectOf(this);
+				if (!rect) return 0;
+				const parent = offsetParentOf(this);
+				const parentRect = parent ? layoutRectOf(parent) : null;
+				return Math.round(rect.left - (parentRect?.left ?? 0));
 			},
-			get scrollTop() {
-				return termDOM.#documentScrollTop;
+			configurable: true,
+			enumerable: true,
+		});
+
+		// clientWidth/clientHeight/scrollWidth/scrollHeight, generalized from the
+		// html/body-only instance properties defined above (which still win: an
+		// own-property shadows a prototype getter, so document.body's viewport-
+		// height special case is untouched).
+		//
+		// scroll* is set equal to client* here rather than the element's true
+		// unclamped content size, matching the same limitation the paint-extent
+		// culling above already documents for the same reason: nothing in the
+		// layout engine measures a subtree's natural size separately from
+		// whatever box it was actually constrained into. That makes scroll* exact
+		// for the common case (auto-sized boxes, no overflow) and an honest
+		// under-report for a box with both an explicit size *and* overflowing
+		// normal-flow content -- the one case a real browser's scrollWidth/Height
+		// would exceed clientWidth/Height.
+		for (const prop of ["clientWidth", "scrollWidth"] as const) {
+			Object.defineProperty(window.HTMLElement.prototype, prop, {
+				get(this: Element) {
+					return Math.round(contentBoxOf(this)?.width ?? 0);
+				},
+				configurable: true,
+				enumerable: true,
+			});
+		}
+
+		for (const prop of ["clientHeight", "scrollHeight"] as const) {
+			Object.defineProperty(window.HTMLElement.prototype, prop, {
+				get(this: Element) {
+					return Math.round(contentBoxOf(this)?.height ?? 0);
+				},
+				configurable: true,
+				enumerable: true,
+			});
+		}
+
+		// The document-rooted MutationObserver never sees inside a shadow
+		// root -- per spec, shadow trees are separate observation scopes. Each
+		// author-attached root gets enrolled in the same observer, so shadow
+		// mutations invalidate styles/layout and repaint like light ones.
+		const originalAttachShadow = Element.prototype.attachShadow;
+		Element.prototype.attachShadow = function (
+			this: Element,
+			init: ShadowRootInit,
+		): ShadowRoot {
+			const root = originalAttachShadow.call(this, init);
+			termDOM[kObserver].observe(root, {
+				childList: true,
+				subtree: true,
+				attributes: true,
+				attributeOldValue: true,
+				characterData: true,
+			});
+			// The root's <style> elements join the cascade, scoped to this
+			// tree; the refresh rides on the STYLE mutation records the
+			// observer enrollment above will deliver.
+			termDOM.#styleManager.registerShadowRoot(root);
+			// attachShadow is not a DOM mutation -- no observer record will
+			// ever fire for it -- but on a CONNECTED host the composed tree
+			// just changed wholesale: light children stop rendering the moment
+			// the root exists, even while it is still empty. Rebuild the
+			// host's composed subtree and repaint.
+			if (this.isConnected) {
+				termDOM[kLayoutEngine].invalidate(this);
+				void termDOM.#render();
+			}
+			return root;
+		};
+
+		Element.prototype.requestFullscreen = function (
+			this: Element,
+			options?: FullscreenOptions,
+		): Promise<void> {
+			return (async () => {
+				// No frame may straddle the screen switch: an in-flight render
+				// finishing its stdout write AFTER the switch paints one
+				// screen's geometry onto the other (the demo's animation made
+				// this a near-certainty on exit). Hold new frames, drain the
+				// running one, then switch.
+				termDOM.#screenSwitching = true;
+				try {
+					await termDOM.#renderInFlight;
+					await termDOM.#fullscreenManager.requestFullscreen(this, options);
+					// The element's UA styles changed (it now fills the
+					// viewport) and neither a mutation nor a focus move fired.
+					termDOM.#styleManager.handleFocusChange(this);
+					termDOM[kLayoutEngine].invalidate(this);
+					// The screen under the renderer changed wholesale (the
+					// alternate screen starts cleared): drop the diff model or
+					// the first fullscreen frame patches against the main
+					// screen's content.
+					termDOM.#renderer.clearPreviousBuffer();
+					termDOM.#updateMouseReporting();
+				} finally {
+					termDOM.#screenSwitching = false;
+				}
+				void termDOM.#render();
+			})();
+		};
+
+		Document.prototype.exitFullscreen = function (
+			this: Document,
+		): Promise<void> {
+			return (async () => {
+				const element = termDOM.#fullscreenManager.fullscreenElement;
+				termDOM.#screenSwitching = true;
+				try {
+					await termDOM.#renderInFlight;
+					await termDOM.#fullscreenManager.exitFullscreen();
+					if (element) {
+						termDOM.#styleManager.handleFocusChange(element);
+						termDOM[kLayoutEngine].invalidate(element);
+					}
+					// Same wholesale swap in reverse: the terminal restored the
+					// main screen, but the diff model still describes the last
+					// ALTERNATE-screen frame -- patching against it garbles the
+					// restored document.
+					termDOM.#renderer.clearPreviousBuffer();
+					termDOM.#updateMouseReporting();
+				} finally {
+					termDOM.#screenSwitching = false;
+				}
+				void termDOM.#render();
+			})();
+		};
+
+		Object.defineProperty(Document.prototype, "fullscreenElement", {
+			get: function (this: Document) {
+				// Style computation consults this during construction, before
+				// the manager field is assigned.
+				return termDOM.#fullscreenManager?.fullscreenElement ?? null;
 			},
-			set scrollTop(value: number) {
-				termDOM.#documentScrollTop = value;
-			},
-			get screenSwitching() {
-				return termDOM.#screenSwitching;
-			},
-			set screenSwitching(value: boolean) {
-				termDOM.#screenSwitching = value;
-			},
-			get renderInFlight() {
-				return termDOM.#renderInFlight;
-			},
-			get attached() {
-				return termDOM.#attached;
-			},
-			get renderCount() {
-				return termDOM.#renderCount;
-			},
-			get frameCallbacks() {
-				return termDOM.#frameCallbacks;
-			},
-			get mediaQueryUpdaters() {
-				return termDOM.#mediaQueryUpdaters;
-			},
-			allocateFrameHandle: () => termDOM.#nextRafId++,
-			mediaQueryMatches: (query) =>
-				termDOM.#styleManager.mediaQueryMatches(query),
-			render: () => termDOM.#render(),
-			flushPendingMutations: () => {
-				termDOM.#processPendingMutationsAndRender();
-			},
-			scrollCamera: (rows) => termDOM.#scrollCamera(rows),
-			updateMouseReporting: () => termDOM.#updateMouseReporting(),
-			elementAtDocumentPoint: (x, y) =>
-				termDOM.#findElementAtDocumentPoint(x, y),
-			sealToScrollback: () => {
-				termDOM.#flushDocument();
-				termDOM.#sealed = true;
-			},
+			configurable: true,
+		});
+
+		Document.prototype.elementFromPoint = function (
+			x: number,
+			y: number,
+		): Element | null {
+			// Per CSSOM View, x/y are viewport-relative -- convert to the
+			// document-relative space hit-testing works in, the same conversion
+			// getBoundingClientRect's toViewportRect makes in the other direction.
+			return termDOM.#findElementAtDocumentPoint(
+				x,
+				y + termDOM.#documentScrollTop,
+			);
+		};
+
+		// Override focus/blur to dispatch proper events
+		const HTMLElement = window.HTMLElement;
+		const originalFocus = HTMLElement.prototype.focus;
+		const originalBlur = HTMLElement.prototype.blur;
+
+		HTMLElement.prototype.focus = function (this: HTMLElement) {
+			const prev = document.activeElement;
+			originalFocus.call(this);
+			if (prev !== this) {
+				// :focus rules match live, but computed styles are cached and
+				// focus is not a mutation -- both moved elements must drop
+				// their caches, and the repaint must happen even when no
+				// listener mutates anything.
+				termDOM.#styleManager.handleFocusChange(prev, this);
+				void termDOM.#render();
+				if (prev && prev !== document.body) {
+					prev.dispatchEvent(
+						new window.FocusEvent("blur", {
+							relatedTarget: this,
+							bubbles: false,
+						}),
+					);
+					prev.dispatchEvent(
+						new window.FocusEvent("focusout", {
+							relatedTarget: this,
+							bubbles: true,
+						}),
+					);
+				}
+				this.dispatchEvent(
+					new window.FocusEvent("focus", {
+						relatedTarget: prev,
+						bubbles: false,
+					}),
+				);
+				this.dispatchEvent(
+					new window.FocusEvent("focusin", {
+						relatedTarget: prev,
+						bubbles: true,
+					}),
+				);
+			}
+		};
+
+		HTMLElement.prototype.blur = function (this: HTMLElement) {
+			const wasFocused = document.activeElement === this;
+			originalBlur.call(this);
+			if (wasFocused) {
+				termDOM.#styleManager.handleFocusChange(this);
+				void termDOM.#render();
+				this.dispatchEvent(
+					new window.FocusEvent("blur", {
+						relatedTarget: null,
+						bubbles: false,
+					}),
+				);
+				this.dispatchEvent(
+					new window.FocusEvent("focusout", {
+						relatedTarget: null,
+						bubbles: true,
+					}),
+				);
+			}
+		};
+
+		// Override scrollIntoView to adjust scroll offset
+		HTMLElement.prototype.scrollIntoView = function (
+			this: HTMLElement,
+			_arg?: boolean | ScrollIntoViewOptions,
+		) {
+			if (!this.isConnected) return;
+			termDOM.#processPendingMutationsAndRender();
+
+			// Document-relative, not getBoundingClientRect's viewport-relative --
+			// this compares directly against documentScrollTop below, so it needs
+			// the same coordinate space getRect() already provides.
+			const rect = termDOM[kLayoutEngine].getRect(this);
+			if (!rect) return;
+
+			// The camera shows [documentScrollTop, documentScrollTop + region).
+			// Move it the minimal amount that brings the element into it -- the
+			// standard block: "nearest" behavior.
+			const regionHeight = Math.min(
+				termDOM.#height,
+				document.body.scrollHeight,
+			);
+			const top = termDOM.#documentScrollTop;
+			if (rect.top < top) {
+				termDOM.#scrollCamera(rect.top - top);
+			} else if (rect.bottom > top + regionHeight) {
+				termDOM.#scrollCamera(rect.bottom - (top + regionHeight));
+			}
 		};
 	}
 
