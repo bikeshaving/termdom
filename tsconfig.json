@@ -11,6 +11,13 @@
     // Bundler mode
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
+
+    // Examples import the package by name, as a user would -- resolve that to
+    // the source so `tsc --noEmit` is hermetic and needs no built dist (the
+    // exports map points types at dist/, which a fresh checkout has not built).
+    "paths": {
+      "@b9g/termdom": ["./src/index.ts"]
+    },
     "verbatimModuleSyntax": true,
     "noEmit": true,
 
