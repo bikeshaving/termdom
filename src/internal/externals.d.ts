@@ -58,6 +58,34 @@ declare module "bidi-js" {
 	export default function bidiFactory(): Bidi;
 }
 
+declare module "jsdom/lib/jsdom/living/generated/utils.js" {
+	// jsdom's private wrapper<->impl bridge. Reached to drive a form control's
+	// custom-element upgrade at the impl level, which the public API never
+	// exposes for built-ins. Default import (the whole module.exports): these
+	// are CommonJS and Node's static export lexer misses the individual names.
+	const utils: {
+		/** The internal impl object backing a public DOM wrapper. */
+		implForWrapper(wrapper: object): any;
+	};
+	export default utils;
+}
+
+declare module "jsdom/lib/jsdom/living/helpers/custom-elements.js" {
+	// jsdom's custom-element reactions machinery -- the same code an
+	// `<input is="...">` upgrade runs. We use it to upgrade a PLAIN form
+	// control (no `is=`) to its UA class in place: no author markup, no custom
+	// runtime, jsdom's real connectedCallback/attributeChangedCallback lifecycle.
+	const customElements: {
+		/** Run the upgrade algorithm: swap prototype, replay attrs, connect. */
+		upgradeElement(definition: unknown, elementImpl: object): void;
+		/** Open a reactions queue so a following upgrade flushes synchronously. */
+		ceReactionsPreSteps(): void;
+		/** Close the queue and invoke the reactions it collected, synchronously. */
+		ceReactionsPostSteps(): void;
+	};
+	export default customElements;
+}
+
 declare module "arabic-persian-reshaper" {
 	interface Shaper {
 		convertArabic(text: string): string;

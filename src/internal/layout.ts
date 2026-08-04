@@ -4284,3 +4284,45 @@ export function isPointInRects(
 		);
 	});
 }
+
+/**
+ * Map each painted (visual) character of a text node back to its code-unit
+ * offset in node.data. The painted fragments are the node's text after
+ * whitespace collapsing and line breaking, so they differ from the raw data
+ * only in whitespace: a run of data whitespace becomes one visual space, or
+ * nothing at a line break. Non-whitespace code units match one-for-one --
+ * including surrogate halves, which is what keeps the returned offsets valid as
+ * Range offsets (Ranges address code units, not glyphs).
+ *
+ * Selection needs this bridge in both directions: a mouse hit lands on a visual
+ * cell and must become a Range offset into the data; painting walks the visual
+ * fragments and must know which of them a data-offset Range covers. The
+ * textarea widget reuses it to place a caret in its laid-out value.
+ */
+export function visualToDataOffsets(
+	data: string,
+	fragments: Array<{text: string}>,
+): number[] {
+	const map: number[] = [];
+	let d = 0;
+	for (const fragment of fragments) {
+		// Code UNITS on both sides, not code points: surrogate halves of
+		// non-whitespace text are identical in data and fragment, so they align
+		// half-to-half, and the map stays indexable by the same positions
+		// String.prototype.slice uses.
+		for (let i = 0; i < fragment.text.length; i++) {
+			if (!/\s/.test(fragment.text[i])) {
+				// A visual char never comes from data whitespace -- skip any
+				// collapsed run to the next real char.
+				while (d < data.length && /\s/.test(data[d])) d++;
+				map.push(Math.min(d, Math.max(0, data.length - 1)));
+				d++;
+			} else {
+				// One visual space stands for the whole whitespace run.
+				map.push(Math.min(d, Math.max(0, data.length - 1)));
+				while (d < data.length && /\s/.test(data[d])) d++;
+			}
+		}
+	}
+	return map;
+}
