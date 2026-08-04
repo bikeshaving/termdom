@@ -601,11 +601,23 @@ test("resizing narrower reprints cleanly instead of layering over reflowed remna
 
 	terminal.resize(24, 12);
 	(terminal as any).emit("SIGWINCH");
-	await new Promise((resolve) => setTimeout(resolve, 80));
 
 	const buffer = (terminal as any).terminal.buffer.active;
 	const line = (i: number): string =>
 		(buffer.getLine(i)?.translateToString(true) ?? "").replace(/\s+$/, "");
+
+	// The rewrap arrives after the resize debounce plus a cursor-query round
+	// trip; poll for the final wrap rather than a fixed delay the parallel
+	// runner can outrun. The settled marker is the narrow wrap of the first
+	// line -- an intermediate render can leave a wider break ("...for the demo")
+	// on the way there.
+	for (
+		let waited = 0;
+		line(0) !== "Header line for the" && waited < 2000;
+		waited += 25
+	) {
+		await new Promise((resolve) => setTimeout(resolve, 25));
+	}
 
 	// Content fit, so nothing scrolled off: no reflowed remnants in scrollback.
 	expect(buffer.baseY).toBe(0);
@@ -726,19 +738,33 @@ test("a width resize re-anchors via the parked cursor, not guesswork", async () 
 	// Narrow enough that the header wraps to two rows.
 	terminal.resize(30, 20);
 	(terminal as any).emit("SIGWINCH");
-	await new Promise((resolve) => setTimeout(resolve, 150));
 
 	const buffer = (terminal as any).terminal.buffer.active;
 	const line = (i: number): string =>
 		(buffer.getLine(i)?.translateToString(true) ?? "").replace(/\s+$/, "");
+	const headerCopiesOnScreen = (): number => {
+		let copies = 0;
+		for (let i = 0; i < buffer.baseY + 20; i++) {
+			if (line(i).startsWith("HEADER LINE")) copies++;
+		}
+		return copies;
+	};
+
+	// The redraw arrives after the resize debounce plus a cursor-query round
+	// trip; poll for the settled screen rather than betting on a fixed delay,
+	// which the parallel test runner can outrun under load. The settled marker
+	// is the REWRAP itself -- line 2 holding the header broken at the 30-column
+	// edge ("...FAIRLY", not the wider "...FAIRLY LON") -- because screenTop and
+	// the single-copy count are already true of the pre-resize screen and would
+	// let the poll exit before the rewrap landed.
+	const rewrapped = () => line(2) === "HEADER LINE THAT IS FAIRLY";
+	for (let waited = 0; !rewrapped() && waited < 2000; waited += 25) {
+		await new Promise((resolve) => setTimeout(resolve, 25));
+	}
 
 	// The anchor recovered its true position and the frame appears exactly once.
 	expect(dom.window.screenTop).toBe(2);
-	let headerCopies = 0;
-	for (let i = 0; i < buffer.baseY + 20; i++) {
-		if (line(i).startsWith("HEADER LINE")) headerCopies++;
-	}
-	expect(headerCopies).toBe(1);
+	expect(headerCopiesOnScreen()).toBe(1);
 
 	// Prior output is intact above the rewrapped frame.
 	expect(line(0)).toBe("PREV-A");
