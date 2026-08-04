@@ -22,6 +22,9 @@
  * check, advertising an operation the DOM has never had.
  */
 
+import {type LayoutEngine} from "./layout.js";
+import {getBoxModel} from "./styles.js";
+
 /**
  * An element's content box: its size, plus the offset of its top-left corner
  * INSIDE the border box -- the padding and border that precede it.
@@ -54,25 +57,6 @@ const kDeliver = Symbol("deliver");
  * What the manager needs from its host (TermDOM) to measure the world, kept as a
  * tiny interface so the observers do not reach into TermDOM internals.
  */
-export interface ObserverHost {
-	/** Border-box rect of an element in document coordinates, or null if unlaid. */
-	getBorderBox(element: Element): DOMRect | null;
-	/**
-	 * Content-box of an element. Null if the element generates no box at all.
-	 */
-	getContentBox(element: Element): ContentBox | null;
-	/** The visible viewport rect, in the same document coordinates as boxes. */
-	getViewportRect(): DOMRect;
-	/**
-	 * Build a rect. The entries these observers hand to author code carry
-	 * DOMRects, like a browser's do, and only the host knows which window's
-	 * DOMRect constructor that has to be -- an `instanceof window.DOMRect`
-	 * check on an entry has to pass.
-	 */
-	createRect(x: number, y: number, width: number, height: number): DOMRect;
-	/** A frame counter, used only to timestamp entries. */
-	now(): number;
-}
 
 /**
  * The half of an observer that is identical between the two: which elements are
@@ -81,6 +65,50 @@ export interface ObserverHost {
  * Subclasses supply only how to measure one target (#measure) and how to build
  * an entry from that measurement, which is the whole of what differs.
  */
+/**
+ * ResizeObserver's contentRect: an element's content box, or null when it
+ * generates no box at all (display:none or detached) -- reported as "nothing",
+ * which the observer turns into an all-zero rect.
+ */
+function contentBoxOf(
+	element: Element,
+	layoutEngine: LayoutEngine,
+): ContentBox | null {
+	const window = element.ownerDocument?.defaultView;
+	if (
+		window &&
+		window.getComputedStyle(element).getPropertyValue("display") === "none"
+	) {
+		return null;
+	}
+	const rect = layoutEngine.getRect(element);
+	if (!rect) return null;
+	const box = getBoxModel(element);
+	const width = Math.max(
+		0,
+		rect.width -
+			(box.paddingLeft || 0) -
+			(box.paddingRight || 0) -
+			(box.borderLeftWidth || 0) -
+			(box.borderRightWidth || 0),
+	);
+	const height = Math.max(
+		0,
+		rect.height -
+			(box.paddingTop || 0) -
+			(box.paddingBottom || 0) -
+			(box.borderTopWidth || 0) -
+			(box.borderBottomWidth || 0),
+	);
+	// Origin relative to the border box: what precedes the content on each axis.
+	return {
+		width,
+		height,
+		top: (box.borderTopWidth || 0) + (box.paddingTop || 0),
+		left: (box.borderLeftWidth || 0) + (box.paddingLeft || 0),
+	};
+}
+
 abstract class LayoutObserver<TState, TEntry> {
 	#manager: ObserverManager;
 	/** Observed targets, each mapped to what was last reported for it. */
@@ -124,15 +152,23 @@ abstract class LayoutObserver<TState, TEntry> {
 	abstract [kMeasure](
 		target: Element,
 		last: TState | null,
-		host: ObserverHost,
+		layoutEngine: LayoutEngine,
+		viewport: DOMRect,
+		frame: number,
 	): {state: TState; entry: TEntry} | null;
 
 	abstract [kDeliver](entries: TEntry[]): void;
 
-	[kCheck](host: ObserverHost): void {
+	[kCheck](layoutEngine: LayoutEngine, viewport: DOMRect, frame: number): void {
 		const entries: TEntry[] = [];
 		for (const [target, last] of this[kTargets]) {
-			const result = this[kMeasure](target, last, host);
+			const result = this[kMeasure](
+				target,
+				last,
+				layoutEngine,
+				viewport,
+				frame,
+			);
 			if (!result) continue;
 			this[kTargets].set(target, result.state);
 			entries.push(result.entry);
@@ -141,7 +177,9 @@ abstract class LayoutObserver<TState, TEntry> {
 	}
 }
 
-type AnyObserver = {[kCheck](host: ObserverHost): void};
+type AnyObserver = {
+	[kCheck](layoutEngine: LayoutEngine, viewport: DOMRect, frame: number): void;
+};
 
 // ---------------------------------------------------------------------------
 // ResizeObserver
@@ -184,12 +222,12 @@ export class ResizeObserver extends LayoutObserver<
 	[kMeasure](
 		target: Element,
 		last: ResizeSize | null,
-		host: ObserverHost,
+		layoutEngine: LayoutEngine,
 	): {state: ResizeSize; entry: ResizeObserverEntry} | null {
 		// An element with no box -- display:none, or detached -- has a size, and
 		// that size is zero. Reporting it is how the DOM lets a component notice
 		// it has been hidden; skipping it stranded the last size it ever had.
-		const content = host.getContentBox(target) ?? {
+		const content = contentBoxOf(target, layoutEngine) ?? {
 			width: 0,
 			height: 0,
 			top: 0,
@@ -208,14 +246,14 @@ export class ResizeObserver extends LayoutObserver<
 			inlineSize: content.width,
 			blockSize: content.height,
 		};
-		const border = host.getBorderBox(target);
+		const border = layoutEngine.getRect(target);
 		return {
 			state: {width: content.width, height: content.height},
 			entry: {
 				target,
 				// Origin is the content box's offset inside the border box -- the
 				// padding and border that precede it -- not zero.
-				contentRect: host.createRect(
+				contentRect: layoutEngine.createDOMRect(
 					content.left,
 					content.top,
 					content.width,
@@ -268,7 +306,7 @@ type IntersectionObserverCallback = (
 function intersectionRatio(
 	box: DOMRect,
 	clip: DOMRect,
-	host: ObserverHost,
+	layoutEngine: LayoutEngine,
 ): {ratio: number; rect: DOMRect} {
 	const left = Math.max(box.left, clip.left);
 	const top = Math.max(box.top, clip.top);
@@ -281,7 +319,7 @@ function intersectionRatio(
 
 	return {
 		ratio: area > 0 ? (width * height) / area : width > 0 && height > 0 ? 1 : 0,
-		rect: host.createRect(left, top, width, height),
+		rect: layoutEngine.createDOMRect(left, top, width, height),
 	};
 }
 
@@ -297,7 +335,7 @@ function intersectionRatio(
 function applyRootMargin(
 	rect: DOMRect,
 	margin: string,
-	host: ObserverHost,
+	layoutEngine: LayoutEngine,
 ): DOMRect {
 	const parts = margin.trim().split(/\s+/).filter(Boolean);
 	if (parts.length === 0) return rect;
@@ -316,7 +354,7 @@ function applyRootMargin(
 	const bottom = resolve(b, rect.height);
 	const left = resolve(l, rect.width);
 
-	return host.createRect(
+	return layoutEngine.createDOMRect(
 		rect.left - left,
 		rect.top - top,
 		Math.max(0, rect.width + left + right),
@@ -376,21 +414,21 @@ export class IntersectionObserver extends LayoutObserver<
 	[kMeasure](
 		target: Element,
 		last: number | null,
-		host: ObserverHost,
+		layoutEngine: LayoutEngine,
+		viewport: DOMRect,
+		frame: number,
 	): {state: number; entry: IntersectionObserverEntry} | null {
-		const box = host.getBorderBox(target);
+		const box = layoutEngine.getRect(target);
 		if (!box) return null;
 
 		// The root: an explicit element's border box, or the viewport. Either way
 		// grown by rootMargin, which is the whole point of that option -- it is
 		// what lets a list start loading a row before it scrolls into view.
-		const rootBox = this.#root
-			? host.getBorderBox(this.#root)
-			: host.getViewportRect();
+		const rootBox = this.#root ? layoutEngine.getRect(this.#root) : viewport;
 		if (!rootBox) return null;
-		const rootBounds = applyRootMargin(rootBox, this.rootMargin, host);
+		const rootBounds = applyRootMargin(rootBox, this.rootMargin, layoutEngine);
 
-		const {ratio, rect} = intersectionRatio(box, rootBounds, host);
+		const {ratio, rect} = intersectionRatio(box, rootBounds, layoutEngine);
 		const index = this.#thresholdIndex(ratio);
 		if (last === index) return null;
 
@@ -401,9 +439,10 @@ export class IntersectionObserver extends LayoutObserver<
 				isIntersecting: index > 0,
 				intersectionRatio: ratio,
 				boundingClientRect: box,
-				intersectionRect: index > 0 ? rect : host.createRect(0, 0, 0, 0),
+				intersectionRect:
+					index > 0 ? rect : layoutEngine.createDOMRect(0, 0, 0, 0),
 				rootBounds,
-				time: host.now(),
+				time: frame,
 			},
 		};
 	}
@@ -428,11 +467,11 @@ export class IntersectionObserver extends LayoutObserver<
  * work and holds no memory.
  */
 export class ObserverManager {
-	#host: ObserverHost;
+	#layoutEngine: LayoutEngine;
 	#observers = new Set<AnyObserver>();
 
-	constructor(host: ObserverHost) {
-		this.#host = host;
+	constructor(layoutEngine: LayoutEngine) {
+		this.#layoutEngine = layoutEngine;
 	}
 
 	register(observer: AnyObserver): void {
@@ -444,13 +483,13 @@ export class ObserverManager {
 	}
 
 	/** Run every observer against the current layout. Called after each render. */
-	flush(): void {
+	flush(viewport: DOMRect, frame: number): void {
 		if (this.#observers.size === 0) return;
 		// A copy: a callback may observe or disconnect, and mutating the set
 		// mid-iteration would visit the new observer against a layout it has not
 		// been measured for, or skip one that is still live.
 		for (const observer of [...this.#observers]) {
-			observer[kCheck](this.#host);
+			observer[kCheck](this.#layoutEngine, viewport, frame);
 		}
 	}
 

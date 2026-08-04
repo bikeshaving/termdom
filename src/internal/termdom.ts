@@ -11,7 +11,6 @@ import {
 import {stringWidth} from "./runtime.js";
 import {
 	ObserverManager,
-	type ObserverHost,
 	ResizeObserver as TermResizeObserver,
 	IntersectionObserver as TermIntersectionObserver,
 } from "./observers.js";
@@ -1212,7 +1211,7 @@ export class TermDOM {
 		this.#styleManager.setLayoutEngine(this[kLayoutEngine]);
 		this[kLayoutEngine].resize(this.#width, this.#height);
 		this.#fullscreenManager = new FullscreenManager(this.#process);
-		this.#observerManager = new ObserverManager(this.#createObserverHost());
+		this.#observerManager = new ObserverManager(this[kLayoutEngine]);
 
 		this.#installWindowExtensions();
 		this.#installObservers();
@@ -1236,67 +1235,6 @@ export class TermDOM {
 	#sealToScrollback(): void {
 		this.#flushDocument();
 		this.#sealed = true;
-	}
-
-	#createObserverHost(): ObserverHost {
-		const termDOM = this;
-		const window = termDOM.window;
-		return {
-			// getRect builds a fresh DOMRect per call, so this one can be handed
-			// straight to author code with nothing to alias.
-			getBorderBox: (element) => termDOM[kLayoutEngine].getRect(element),
-			getContentBox: (element) => {
-				// An element that generates no box has no content box either --
-				// not a zero-sized one at its old padding offsets. Reported as
-				// "nothing", which the observer turns into an all-zero rect.
-				if (
-					window.getComputedStyle(element).getPropertyValue("display") ===
-					"none"
-				) {
-					return null;
-				}
-				const rect = termDOM[kLayoutEngine].getRect(element);
-				if (!rect) return null;
-				const box = getBoxModel(element);
-				const width = Math.max(
-					0,
-					rect.width -
-						(box.paddingLeft || 0) -
-						(box.paddingRight || 0) -
-						(box.borderLeftWidth || 0) -
-						(box.borderRightWidth || 0),
-				);
-				const height = Math.max(
-					0,
-					rect.height -
-						(box.paddingTop || 0) -
-						(box.paddingBottom || 0) -
-						(box.borderTopWidth || 0) -
-						(box.borderBottomWidth || 0),
-				);
-				// Origin relative to the border box: what precedes the content on
-				// each axis. ResizeObserver reports this as contentRect's top/left.
-				return {
-					width,
-					height,
-					top: (box.borderTopWidth || 0) + (box.paddingTop || 0),
-					left: (box.borderLeftWidth || 0) + (box.paddingLeft || 0),
-				};
-			},
-			getViewportRect: () =>
-				// The visible window over the document, in the document coordinate
-				// space getRect() uses: it begins at the current scroll offset and is
-				// one terminal high.
-				termDOM[kLayoutEngine].createDOMRect(
-					0,
-					termDOM.#documentScrollTop,
-					termDOM.#width,
-					termDOM.#height,
-				),
-			createRect: (x, y, width, height) =>
-				termDOM[kLayoutEngine].createDOMRect(x, y, width, height),
-			now: () => termDOM.#renderCount,
-		};
 	}
 
 	#installWindowExtensions(): void {
@@ -3889,7 +3827,15 @@ export class TermDOM {
 	 */
 	#afterRender(): void {
 		this.#renderCount++;
-		this.#observerManager.flush();
+		// The viewport in document coordinates: the scroll offset, one terminal
+		// high. IntersectionObserver measures targets against it.
+		const viewport = this[kLayoutEngine].createDOMRect(
+			0,
+			this.#documentScrollTop,
+			this.#width,
+			this.#height,
+		);
+		this.#observerManager.flush(viewport, this.#renderCount);
 	}
 
 	/** Install the observer constructors on the window, bound to this instance. */
