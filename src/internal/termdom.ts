@@ -1658,6 +1658,993 @@ function createObserverHost(
 	};
 }
 
+/** The parts of an input's UA shadow tree the painter reads back. */
+type ShadowParts = {
+	kind: "field" | "toggle" | "textarea" | "select";
+	spans: Record<string, HTMLElement>;
+	texts: Record<string, Text>;
+};
+
+/**
+ * Everything the painter needs from the TermDOM it belongs to. Getters and
+ * callbacks, never values -- the camera (documentScrollTop) moves during a
+ * frame, the top layer and the outside-marker set are live objects the render
+ * loop mutates (renderedOutsideMarkers is replaced wholesale each frame), and
+ * the shadow-part builders mutate the DOM and must run against the current
+ * tree. A captured snapshot of any of these would paint against a stale world.
+ */
+interface PaintHost {
+	readonly layoutEngine: LayoutEngine;
+	readonly styleManager: StyleManager;
+	/** The document camera; moves within a frame. */
+	readonly documentScrollTop: number;
+	/** Live: the render loop adds and removes members. */
+	readonly topLayer: Set<Element>;
+	/** Live: the render loop replaces this set at the start of every frame. */
+	readonly renderedOutsideMarkers: WeakSet<Element>;
+	readonly inputScrollOffsets: WeakMap<Element, number>;
+	ensureInputShadowParts(element: HTMLInputElement): ShadowParts;
+	ensureTextareaShadowParts(element: HTMLTextAreaElement): ShadowParts;
+	ensureSelectShadowParts(element: HTMLSelectElement): ShadowParts;
+	syncInputShadowTree(
+		element: HTMLInputElement,
+		parts: {spans: Record<string, HTMLElement>; texts: Record<string, Text>},
+	): void;
+	syncSelectShadowTree(
+		element: HTMLSelectElement,
+		parts: {spans: Record<string, HTMLElement>; texts: Record<string, Text>},
+	): void;
+}
+
+/**
+ * The paint tree-walk, lifted out of TermDOM: it turns the laid-out document
+ * into cells in a DrawingContext and reads nothing of the terminal session
+ * (the frame loop, the cursor, the anchor) -- those stay in TermDOM and drive
+ * it. Its dependencies on the session are the explicit PaintHost above.
+ */
+class Painter {
+	#window: DOMWindow;
+	#document: Document;
+	#host: PaintHost;
+
+	constructor(window: DOMWindow, host: PaintHost) {
+		this.#window = window;
+		this.#document = window.document;
+		this.#host = host;
+	}
+
+	#renderElement(
+		element: Element,
+		ctx: import("./ansi.js").DrawingContext,
+		afterOwnBox?: () => void,
+	): void {
+		// Viewport culling. The buffer only keeps document rows in
+		// [-viewportOffset, -viewportOffset + rows); a subtree whose paint extent
+		// lies wholly outside that band would be walked -- styles computed, text
+		// shaped, borders drawn -- and then discarded cell by cell. Skip it here
+		// and the paint costs what is on screen, not what is in the document.
+		const bandTop = -ctx.viewportOffset;
+		if (
+			this.#host.layoutEngine.isSubtreeOutsideBand(
+				element,
+				bandTop,
+				bandTop + ctx.rows,
+			)
+		) {
+			return;
+		}
+
+		// display:none generates NO box and no descendant boxes -- final, per
+		// CSS. Stray run state under a hidden subtree (an editing todo's
+		// hidden .view) could otherwise ghost-paint at whatever coordinates
+		// it last held.
+		if (
+			this.#window.getComputedStyle(element).getPropertyValue("display") ===
+			"none"
+		) {
+			return;
+		}
+
+		const rect = this.#host.layoutEngine.getRect(element);
+
+		const color = this.#window
+			.getComputedStyle(element)
+			.getPropertyValue("color");
+		const backgroundColor = this.#window
+			.getComputedStyle(element)
+			.getPropertyValue("background-color");
+		const {bold, dim} = resolveFontWeight(
+			this.#window.getComputedStyle(element).getPropertyValue("font-weight"),
+		);
+		const italic =
+			this.#window.getComputedStyle(element).getPropertyValue("font-style") ===
+			"italic";
+		const underline = hasUnderline(this.#window.getComputedStyle(element));
+		const underlineStyle =
+			this.#window
+				.getComputedStyle(element)
+				.getPropertyValue("text-decoration-style") === "double"
+				? ("double" as const)
+				: undefined;
+		// visibility:hidden reserves the box (layout is untouched) but paints
+		// nothing of it -- unlike display:none, which removes the box entirely. A
+		// descendant that sets visibility:visible still paints, since visibility
+		// inherits and each element resolves its own computed value here.
+		const visible =
+			this.#window.getComputedStyle(element).getPropertyValue("visibility") !==
+			"hidden";
+
+		// background-color: Canvas -- the CSS system color for the document
+		// background -- clears the box to the terminal's DEFAULT background:
+		// opaque in every theme without asserting any color, the same
+		// system-color translation ::selection's Highlight pair uses. The UA
+		// picker sheet relies on it; authors can too. The Highlight/
+		// HighlightText pair fills the box with SGR inverse instead -- the
+		// browser's blue dropdown row, in the terminal's own colors (the UA
+		// select sheet's highlighted option rides this).
+		const isCanvasBg =
+			Boolean(backgroundColor) && /^canvas$/i.test(backgroundColor.trim());
+		const isHighlightBox =
+			Boolean(backgroundColor) &&
+			isSystemHighlightColor(backgroundColor) &&
+			Boolean(color) &&
+			isSystemHighlightColor(color);
+		const style = {
+			fg:
+				color && color !== "initial" && !isSystemHighlightColor(color)
+					? cssColorToNumber(color)
+					: undefined,
+			bg:
+				backgroundColor &&
+				!isCanvasBg &&
+				backgroundColor !== "initial" &&
+				backgroundColor !== "transparent" &&
+				!isSystemHighlightColor(backgroundColor)
+					? cssColorToNumber(backgroundColor)
+					: undefined,
+			bold,
+			dim,
+			italic,
+			underline,
+			underlineStyle,
+		};
+
+		if (rect && visible && (style.bg != null || isCanvasBg || isHighlightBox)) {
+			ctx.fillRect(
+				rect.left,
+				rect.top,
+				rect.width,
+				rect.height,
+				isCanvasBg ? "default" : isHighlightBox ? "inverse" : style.bg,
+			);
+		}
+
+		// Handle borders
+		if (rect && visible) {
+			const borderStyles = resolveBorderStyles(element);
+			if (borderStyles.hasAnyBorder) {
+				// Border color per CSS: border-color, whose initial value is
+				// currentColor -- the element's own color -- and, with nothing
+				// authored anywhere, the terminal's DEFAULT foreground. Never a
+				// hardcoded white: no theme-safe color exists, and forcing one
+				// breaks light terminals.
+				const borderColor = this.#window
+					.getComputedStyle(element)
+					.getPropertyValue("border-top-color");
+				const borderCellStyle = {
+					fg:
+						borderColor &&
+						borderColor !== "currentcolor" &&
+						borderColor !== "currentColor"
+							? cssColorToNumber(borderColor)
+							: style.fg,
+					bg: style.bg, // Inherit element's background color
+				};
+				ctx.drawBorder(
+					Math.round(rect.left),
+					Math.round(rect.top),
+					Math.round(rect.width),
+					Math.round(rect.height),
+					borderStyles,
+					borderCellStyle,
+				);
+			}
+		}
+
+		// Handle list-style-position: outside markers
+		if (visible) this.#renderOutsideMarker(element, ctx);
+
+		// A textarea's content IS its UA shadow tree, painted by the normal
+		// child walk below; what the widget owns here is just tree upkeep (a
+		// safety-net sync for framework .value assignments -- no observer
+		// record fires for those) and parking the real terminal caret at the
+		// multiline position.
+		if (element.tagName === "TEXTAREA" && rect) {
+			const textarea = element as HTMLTextAreaElement;
+			const parts = this.#host.ensureTextareaShadowParts(textarea);
+			syncTextareaShadowTree(textarea, parts);
+			if (visible && textarea === this.#document.activeElement) {
+				const caretCell = textareaCaretCell(
+					textarea,
+					parts,
+					this.#host.layoutEngine,
+				);
+				if (caretCell) {
+					ctx.setCaret(caretCell.x, caretCell.y);
+				}
+			}
+		}
+
+		// A select's content is its UA shadow tree (label + indicator),
+		// painted by the normal child walk; upkeep and caret parking are all
+		// that belongs here.
+		if (element.tagName === "SELECT" && rect) {
+			const select = element as HTMLSelectElement;
+			const parts = this.#host.ensureSelectShadowParts(select);
+			this.#host.syncSelectShadowTree(select, parts);
+			if (visible && select === this.#document.activeElement) {
+				const boxModel = getBoxModel(select);
+				ctx.setCaret(
+					Math.round(rect.left) +
+						(boxModel.borderLeftWidth || 0) +
+						(boxModel.paddingLeft || 0),
+					Math.round(rect.top) +
+						(boxModel.borderTopWidth || 0) +
+						(boxModel.paddingTop || 0),
+				);
+			}
+		}
+
+		// Render input elements (void elements with no children)
+		if (
+			element.tagName === "INPUT" &&
+			rect &&
+			(element as HTMLInputElement).type !== "hidden"
+		) {
+			if (visible) {
+				this.#renderInputElement(element as HTMLInputElement, rect, ctx);
+			}
+			return; // Input elements have no children to render
+		}
+
+		// Note: JSDOM automatically calls connectedCallback() when elements are added to DOM
+		// No manual lifecycle management needed
+
+		// The stacking-context painter slots its negative-z layer here: after
+		// this element's own background and border, before any of its in-flow
+		// content -- the CSS position for negative z-index.
+		if (afterOwnBox) afterOwnBox();
+
+		// The IN-FLOW walk: children paint in tree order, and POSITIONED
+		// children don't paint here at all -- per CSS they are hoisted to
+		// their nearest stacking context and painted in its layer order (see
+		// #renderStackingContext). The old per-sibling z sort could never
+		// let a deep overlay escape its parent's siblings; hoisting is what
+		// makes a modal or dropdown paint over unrelated subtrees.
+		const children: Node[] = [];
+
+		// Fast path: for a plain vertically-stacked container (no position:
+		// relative/absolute child, no flex-direction other than column -- see
+		// visibleChildrenInBand's own doc comment for exactly what that rules
+		// out), the layout tree already knows which children are in band
+		// without visiting the rest to rule them out. Without it, a long list
+		// scrolled to any depth costs O(total children) per frame -- worse
+		// the longer the list gets, though only ~O(screen) of it can ever be
+		// visible -- because the walker below has no choice but to step
+		// through every sibling to find out which ones are off-band.
+		const fastChildren = this.#host.layoutEngine.visibleChildrenInBand(
+			element,
+			bandTop,
+			bandTop + ctx.rows,
+		);
+		if (fastChildren) {
+			for (const childNode of fastChildren) {
+				children.push(childNode);
+			}
+		} else {
+			// Use ExpandedTreeWalker to render all children including pseudo-elements and shadow DOM
+			const walker = createExpandedTreeWalker(this.#window, element);
+			for (
+				let childNode = walker.firstChild();
+				childNode;
+				childNode = walker.nextSibling()
+			) {
+				// Cull before any style read: an off-band child costs one map
+				// lookup instead of a computed-style resolution, which is what keeps a
+				// wide container of mostly off-screen children O(screen).
+				if (
+					childNode.nodeType === childNode.ELEMENT_NODE &&
+					this.#host.layoutEngine.isSubtreeOutsideBand(
+						childNode as Element,
+						bandTop,
+						bandTop + ctx.rows,
+					)
+				) {
+					continue;
+				}
+				if (
+					childNode.nodeType === childNode.ELEMENT_NODE &&
+					isPositioned(this.#window, childNode as Element) &&
+					this.#host.layoutEngine.positionedElements.has(childNode as Element)
+				) {
+					// Hoisted to its stacking context. Registry membership is
+					// the gate: a positioned INLINE run member owns no box of
+					// its own -- no layer would ever paint it, so it stays with
+					// its run (offsets on run members are an unsupported edge).
+					continue;
+				}
+				children.push(childNode);
+			}
+		}
+
+		// overflow:hidden clips *descendants* to this element's own box -- never
+		// the element's own border/background painted above, which is why this is
+		// scoped to just the children, not the whole function.
+		const overflow = this.#window
+			.getComputedStyle(element)
+			.getPropertyValue("overflow");
+		const overflowX =
+			this.#window.getComputedStyle(element).getPropertyValue("overflow-x") ||
+			overflow;
+		const overflowY =
+			this.#window.getComputedStyle(element).getPropertyValue("overflow-y") ||
+			overflow;
+		const previousClip = ctx.clipRect;
+		ctx.clipRect = overflowClipRect(rect, overflowX, overflowY, previousClip);
+
+		try {
+			for (const childNode of children) {
+				if (childNode.nodeType === childNode.ELEMENT_NODE) {
+					const childElement = childNode as Element;
+					if (childElement instanceof (this.#window as any).HTMLElement) {
+						this.#renderElement(childElement, ctx);
+					}
+				} else if (childNode.nodeType === childNode.TEXT_NODE) {
+					const textNode = childNode as Text;
+					this.#renderText(textNode, ctx);
+				}
+			}
+		} finally {
+			ctx.clipRect = previousClip;
+		}
+
+		// The textarea's selection paints OVER the value text the child walk
+		// just laid down: the field's own bounded selection, shown while
+		// focused, styled by its ::selection rules like any document text.
+		if (element.tagName === "TEXTAREA" && rect && visible) {
+			this.#renderTextareaSelection(element as HTMLTextAreaElement, ctx);
+		}
+	}
+
+	#renderTextareaSelection(
+		element: HTMLTextAreaElement,
+		ctx: import("./ansi.js").DrawingContext,
+	): void {
+		if (element !== this.#document.activeElement) return;
+		const selStart = element.selectionStart ?? 0;
+		const selEnd = element.selectionEnd ?? 0;
+		if (selEnd <= selStart) return;
+		const parts = this.#host.ensureTextareaShadowParts(element);
+		const visual = textareaVisualLines(element, parts, this.#host.layoutEngine);
+		if (!visual) return;
+		const style = selectionStyleFor(
+			this.#window,
+			element,
+			cellStyleFromComputed(this.#window.getComputedStyle(parts.spans.value)),
+		);
+		for (const line of visual.lines) {
+			const from = Math.max(selStart, line.startOffset);
+			const to = Math.min(selEnd, line.endOffset);
+			if (to <= from) continue;
+			const pre = line.text.slice(0, from - line.startOffset);
+			const slice = line.text.slice(
+				from - line.startOffset,
+				to - line.startOffset,
+			);
+			if (!slice) continue;
+			ctx.setText(line.x + stringWidth(pre), line.y, slice, style);
+		}
+	}
+
+	/**
+	 * The paint height of the document: body's scroll height, extended to
+	 * cover top-layer boxes -- hoisted under the root, they contribute
+	 * nothing to body's own height, and a picker opening at the bottom
+	 * edge must still get rows to paint into.
+	 */
+	documentPaintHeight(): number {
+		let height = this.#document.body.scrollHeight;
+		for (const element of this.#host.topLayer) {
+			if (!compositionIsConnected(element)) continue;
+			const rect = this.#host.layoutEngine.getRect(element);
+			if (rect) height = Math.max(height, Math.ceil(rect.bottom));
+		}
+		return height;
+	}
+
+	/** The whole document: the root stacking context, then the top layer. */
+	renderDocument(ctx: import("./ansi.js").DrawingContext): void {
+		const layers = this.collectStackingLayers();
+		this.#renderStackingContext(this.#document.body, ctx, layers);
+		for (const element of this.#host.topLayer) {
+			// COMPOSITION-connected: a UA part (the select's picker) lives in
+			// a fragment and is never DOM-connected while very much on screen.
+			if (!compositionIsConnected(element)) {
+				this.#host.topLayer.delete(element);
+				continue;
+			}
+			const previousClip = ctx.clipRect;
+			ctx.clipRect = null;
+			try {
+				this.#renderStackingContext(element, ctx, layers);
+			} finally {
+				ctx.clipRect = previousClip;
+			}
+		}
+	}
+
+	/**
+	 * The clip a deferred positioned box paints under: the context root's
+	 * clip, intersected with every overflow-clipping box along the CSS
+	 * containing-block chain (its positioned ancestors up to the context
+	 * root) -- and nothing else: intervening non-positioned overflow
+	 * ancestors don't clip a box they don't contain.
+	 */
+	#positionedClipFor(
+		element: Element,
+		contextRoot: Element,
+		contextClip: import("./ansi.js").DrawingContext["clipRect"],
+	): import("./ansi.js").DrawingContext["clipRect"] {
+		let clip = contextClip;
+		for (
+			let ancestor = compositionParentElement(element);
+			ancestor && ancestor !== contextRoot;
+			ancestor = compositionParentElement(ancestor)
+		) {
+			if (!isPositioned(this.#window, ancestor)) continue;
+			const style = this.#window.getComputedStyle(ancestor);
+			const overflow = style.getPropertyValue("overflow");
+			const overflowX = style.getPropertyValue("overflow-x") || overflow;
+			const overflowY = style.getPropertyValue("overflow-y") || overflow;
+			if (overflowX === "hidden" || overflowY === "hidden") {
+				const rect = this.#host.layoutEngine.getRect(ancestor);
+				if (rect) {
+					clip = overflowClipRect(rect, overflowX, overflowY, clip);
+				}
+			}
+		}
+		return clip;
+	}
+
+	/**
+	 * Whether an element establishes a stacking context: the paint-atomic
+	 * unit of CSS layering. Terminal-relevant predicate: positioned with a
+	 * non-auto z-index. (The root context belongs to <body>, the paint
+	 * root.) opacity/transform/filter have no terminal meaning here.
+	 */
+	formsStackingContext(element: Element): boolean {
+		if (element === this.#document.body) return true;
+		if (
+			this.#window.getComputedStyle(element).getPropertyValue("isolation") ===
+			"isolate"
+		) {
+			return true;
+		}
+		return (
+			isPositioned(this.#window, element) &&
+			zIndexValueOf(this.#window, element) !== "auto"
+		);
+	}
+
+	/**
+	 * Group every connected positioned element under its nearest
+	 * stacking-context ancestor, bucketed into the CSS paint layers:
+	 * negative-z contexts, the z:auto/0 layer, positive-z contexts. Walks
+	 * only the positioned registry -- O(positioned x depth) per frame,
+	 * never O(document).
+	 */
+	collectStackingLayers(): Map<
+		Element,
+		{neg: Element[]; zero: Element[]; pos: Element[]}
+	> {
+		const layers = new Map<
+			Element,
+			{neg: Element[]; zero: Element[]; pos: Element[]}
+		>();
+		for (const element of this.#host.layoutEngine.positionedElements) {
+			if (!element.isConnected || element === this.#document.body) continue;
+			if (this.#host.topLayer.has(element)) continue; // painted above everything
+			if (!isPositioned(this.#window, element)) continue; // stale registry entry
+			let root: Element = this.#document.body;
+			for (
+				let ancestor = compositionParentElement(element);
+				ancestor;
+				ancestor = compositionParentElement(ancestor)
+			) {
+				if (this.formsStackingContext(ancestor)) {
+					root = ancestor;
+					break;
+				}
+			}
+			let bucket = layers.get(root);
+			if (!bucket) {
+				bucket = {neg: [], zero: [], pos: []};
+				layers.set(root, bucket);
+			}
+			const z = zIndexValueOf(this.#window, element);
+			if (z === "auto" || z === 0) bucket.zero.push(element);
+			else if (z < 0) bucket.neg.push(element);
+			else bucket.pos.push(element);
+		}
+		const treeOrder = (a: Element, b: Element) =>
+			a.compareDocumentPosition(b) & 4 ? -1 : 1; // 4: b follows a
+		for (const bucket of layers.values()) {
+			const byZ = (a: Element, b: Element) => {
+				const za = zIndexValueOf(this.#window, a) as number;
+				const zb = zIndexValueOf(this.#window, b) as number;
+				return za !== zb ? za - zb : treeOrder(a, b);
+			};
+			bucket.neg.sort(byZ);
+			bucket.zero.sort(treeOrder);
+			bucket.pos.sort(byZ);
+		}
+		return layers;
+	}
+
+	/**
+	 * Paint a stacking context in the CSS layer order: the root's own box,
+	 * negative-z child contexts, in-flow content (the #renderElement walk,
+	 * which skips positioned descendants), the positioned z:auto/0 layer,
+	 * then positive-z contexts. A z:auto member doesn't isolate: it paints
+	 * as an in-flow subtree here while its own positioned descendants sit
+	 * in THIS context's buckets. Deferred layers paint under the context
+	 * root's clip -- a positioned box escapes overflow ancestors between
+	 * itself and its context, the common CSS escape (per-containing-block
+	 * clipping is layer-2 work).
+	 */
+	#renderStackingContext(
+		root: Element,
+		ctx: import("./ansi.js").DrawingContext,
+		layers: Map<Element, {neg: Element[]; zero: Element[]; pos: Element[]}>,
+	): void {
+		const bucket = layers.get(root);
+		if (!bucket) {
+			this.#renderElement(root, ctx);
+			return;
+		}
+		const contextClip = ctx.clipRect;
+		const paintMember = (element: Element) => {
+			const previousClip = ctx.clipRect;
+			const previousOffset = ctx.viewportOffset;
+			// Clips apply along the CONTAINING BLOCK chain only: an overflow
+			// ancestor that isn't a positioned ancestor doesn't clip a
+			// deferred box, but its own containing blocks' overflow does.
+			ctx.clipRect = this.#positionedClipFor(element, root, contextClip);
+			// position:fixed anchors to the VIEWPORT: cancel the camera by
+			// undoing the scroll offset for the whole subtree.
+			if (
+				this.#window.getComputedStyle(element).getPropertyValue("position") ===
+				"fixed"
+			) {
+				ctx.viewportOffset = previousOffset + this.#host.documentScrollTop;
+			}
+			try {
+				if (this.formsStackingContext(element)) {
+					this.#renderStackingContext(element, ctx, layers);
+				} else {
+					this.#renderElement(element, ctx);
+				}
+			} finally {
+				ctx.clipRect = previousClip;
+				ctx.viewportOffset = previousOffset;
+			}
+		};
+		this.#renderElement(root, ctx, () => {
+			for (const element of bucket.neg) paintMember(element);
+		});
+		for (const element of bucket.zero) paintMember(element);
+		for (const element of bucket.pos) paintMember(element);
+	}
+
+	/**
+	 * Render outside positioned markers for list items
+	 */
+	#renderOutsideMarker(
+		element: Element,
+		ctx: import("./ansi.js").DrawingContext,
+	): void {
+		const computedStyle = this.#window.getComputedStyle(element);
+		const display = computedStyle.getPropertyValue("display");
+
+		// Only handle list items
+		if (display !== "list-item") {
+			return;
+		}
+
+		const listStylePosition =
+			computedStyle.getPropertyValue("list-style-position") || "outside";
+
+		// Only handle outside positioning
+		if (listStylePosition !== "outside") {
+			return;
+		}
+
+		// Prevent duplicate rendering in the same frame
+		if (this.#host.renderedOutsideMarkers.has(element)) {
+			return;
+		}
+		this.#host.renderedOutsideMarkers.add(element);
+
+		// Get marker content from StyleManager
+		const markerContent = this.#host.styleManager.getMarkerContent(element);
+		if (!markerContent) {
+			return;
+		}
+
+		const rect = this.#host.layoutEngine.getRect(element);
+		if (!rect) {
+			return;
+		}
+
+		// Cells, not code units: a marker like "日本 " is 3 characters but 5 cells
+		// wide, and right-aligning it by its length would paint it over the item's
+		// own text.
+		const markerWidth = stringWidth(markerContent);
+
+		// Get marker styles
+		const markerStyle = this.#window.getComputedStyle(element, "::marker");
+		// ::marker inherits color from its originating element, so fall back to the
+		// list item's own color rather than rendering the marker unstyled.
+		const markerColor =
+			markerStyle.getPropertyValue("color") ||
+			computedStyle.getPropertyValue("color");
+		const {bold: markerBold, dim: markerDim} = resolveFontWeight(
+			markerStyle.getPropertyValue("font-weight"),
+		);
+		const markerItalic =
+			markerStyle.getPropertyValue("font-style") === "italic";
+		const markerUnderline = hasUnderline(markerStyle);
+
+		const markerTextStyle = {
+			fg:
+				markerColor && markerColor !== "initial"
+					? cssColorToNumber(markerColor)
+					: undefined,
+			bold: markerBold,
+			dim: markerDim,
+			italic: markerItalic,
+			underline: markerUnderline,
+		};
+
+		// Position marker just before the list item's content area (outside positioning)
+		const markerX = Math.max(0, Math.round(rect.left) - markerWidth);
+		const markerY = Math.round(rect.top);
+
+		// Render the marker (clipped to available space, never mutate the DOM)
+		ctx.setText(markerX, markerY, markerContent, markerTextStyle);
+	}
+
+	/**
+	 * Build (or rebuild, when the type flips between text-ish and toggle)
+	 * an input's UA-internal shadow tree: real DOM in the symbol slot,
+	 * closed to authors -- element.shadowRoot stays null and attachShadow
+	 * still throws, exactly as for a browser input's own internals. The
+	 * field tree carries a real <style> scoped to its root; parts are
+	 * addressed by the standard `part` attribute, which is what gives
+	 * ::placeholder a real element to resolve onto.
+	 */
+	#renderInputElement(
+		element: HTMLInputElement,
+		rect: DOMRect,
+		ctx: import("./ansi.js").DrawingContext,
+	): void {
+		const boxModel = getBoxModel(element);
+		const contentX =
+			Math.round(rect.left) +
+			(boxModel.borderLeftWidth || 0) +
+			(boxModel.paddingLeft || 0);
+		const contentY =
+			Math.round(rect.top) +
+			(boxModel.borderTopWidth || 0) +
+			(boxModel.paddingTop || 0);
+		const contentWidth =
+			Math.round(rect.width) -
+			(boxModel.borderLeftWidth || 0) -
+			(boxModel.borderRightWidth || 0) -
+			(boxModel.paddingLeft || 0) -
+			(boxModel.paddingRight || 0);
+
+		const parts = this.#host.ensureInputShadowParts(element);
+
+		if (parts.kind === "toggle") {
+			const mark =
+				element.type === "checkbox"
+					? element.checked
+						? "[x]"
+						: "[ ]"
+					: element.checked
+						? "(x)"
+						: "( )";
+			// The glyph is real DOM; its style (the focus underline included,
+			// inherited from the input's own focus-aware default) reads back
+			// off the tree.
+			if (parts.texts.glyph.data !== mark) {
+				parts.texts.glyph.data = mark;
+			}
+			ctx.setText(
+				contentX,
+				contentY,
+				mark,
+				cellStyleFromComputed(this.#window.getComputedStyle(parts.spans.glyph)),
+			);
+			if (element === this.#document.activeElement) {
+				ctx.setCaret(contentX, contentY);
+			}
+			return;
+		}
+
+		const value = element.value || "";
+		const placeholder = element.getAttribute("placeholder") || "";
+		const isFocused = element === this.#document.activeElement;
+
+		this.#host.syncInputShadowTree(element, parts);
+
+		// Region styles come off the tree: the value inherits the input's
+		// own text style (solid underline when focused), the placeholder and
+		// the blank carry the UA field sheet -- gray ghost label, faint
+		// blank when blurred -- plus whatever the author adds.
+		const textStyle = cellStyleFromComputed(
+			this.#window.getComputedStyle(
+				value ? parts.spans.value : parts.spans.placeholder,
+			),
+		);
+		const blankStyle = cellStyleFromComputed(
+			this.#window.getComputedStyle(parts.spans.blank),
+		);
+
+		// Shown focused or not, as in a browser -- the caret just sits at
+		// the field start, over the dimmed text.
+		const displayText = value || placeholder;
+
+		// Everything below measures in CELLS, not characters. CJK text is two
+		// cells per glyph, so character arithmetic put the caret mid-text (IME
+		// composition then anchored on top of already-typed glyphs) and padEnd
+		// by character count pushed the value's background straight through the
+		// input's right border.
+		let scrollOffset = this.#host.inputScrollOffsets.get(element) ?? 0;
+		// The caret is the input's own selection (selectionStart/End), so a
+		// framework assigning .value can never strand it: per spec, setting
+		// value collapses the selection to the end. The caret sits at the
+		// selection's FOCUS -- the moving end, per selectionDirection -- which
+		// is the end that must stay scrolled into view while extending.
+		const selStart = element.selectionStart ?? value.length;
+		const selEnd = element.selectionEnd ?? value.length;
+		const cursor =
+			element.selectionDirection === "backward" ? selStart : selEnd;
+
+		if (isFocused) {
+			// Keep the caret's CELL offset inside the box.
+			if (cursor < scrollOffset) {
+				scrollOffset = cursor;
+			}
+			while (
+				scrollOffset < cursor &&
+				stringWidth(displayText.slice(scrollOffset, cursor)) >= contentWidth
+			) {
+				scrollOffset++;
+			}
+			// And scroll BACK when there's slack: after deleting at the end of
+			// an overflowed value, the window would otherwise stay put and show
+			// a shrinking tail with the earlier text still hidden off the left
+			// edge. Pull the window left while everything from one character
+			// earlier through the end still fits strictly inside the field
+			// (strictly: the caret needs its cell when it sits at the end),
+			// exactly what a browser's field does on backspace.
+			while (
+				scrollOffset > 0 &&
+				stringWidth(displayText.slice(scrollOffset - 1)) < contentWidth
+			) {
+				scrollOffset--;
+			}
+			this.#host.inputScrollOffsets.set(element, scrollOffset);
+		}
+
+		// Take characters from the scroll offset until the next one would no
+		// longer fit, then pad with spaces to exactly the content width in cells.
+		let visibleText = "";
+		let usedCells = 0;
+		for (const char of displayText.slice(scrollOffset)) {
+			const charCells = stringWidth(char);
+			if (usedCells + charCells > contentWidth) break;
+			visibleText += char;
+			usedCells += charCells;
+		}
+		const visibleChars = visibleText.length;
+		visibleText += " ".repeat(Math.max(0, contentWidth - usedCells));
+
+		// The content region paints with its part's style, and the cells the
+		// content spares are the BLANK part -- which the UA sheet renders as
+		// the faint underlined blank when blurred, and which inherits the
+		// solid focus underline like everything else when focused.
+		if (displayText) {
+			ctx.setText(
+				contentX,
+				contentY,
+				visibleText.slice(0, visibleChars),
+				textStyle,
+			);
+			ctx.setText(
+				contentX + usedCells,
+				contentY,
+				visibleText.slice(visibleChars),
+				blankStyle,
+			);
+		} else {
+			ctx.setText(contentX, contentY, visibleText, blankStyle);
+		}
+
+		// A selection paints as inverse video over its visible slice --
+		// terminal-native highlight, no color assumptions. (Placeholder text
+		// can never be selected: it only shows for an empty value, whose
+		// selection is necessarily collapsed.)
+		if (isFocused && selEnd > selStart) {
+			const visStart = Math.max(selStart, scrollOffset);
+			const visEnd = Math.min(selEnd, scrollOffset + visibleChars);
+			if (visEnd > visStart) {
+				ctx.setText(
+					contentX + stringWidth(displayText.slice(scrollOffset, visStart)),
+					contentY,
+					displayText.slice(visStart, visEnd),
+					selectionStyleFor(this.#window, element, textStyle),
+				);
+			}
+		}
+
+		// The caret of a focused input is the REAL terminal cursor, parked there
+		// by the frame -- not an inverse-video imitation. IME composition, screen
+		// readers and the terminal's own cursor style all anchor to the real one.
+		if (isFocused) {
+			const cursorX =
+				contentX + stringWidth(displayText.slice(scrollOffset, cursor));
+			if (cursorX >= contentX && cursorX < contentX + contentWidth) {
+				ctx.setCaret(cursorX, contentY);
+			}
+		}
+	}
+
+	/**
+	 * Render a text node with proper styling from its parent element or pseudo-element
+	 */
+	#renderText(textNode: Text, ctx: import("./ansi.js").DrawingContext): void {
+		const textContent = textNode.data;
+		if (!textContent) return;
+
+		// Check if this is a pseudo-element node
+		const pseudoMetadata = getPseudoMetadata(textNode);
+
+		// For pseudo elements, we don't have a parentElement, but we have
+		// hostElement. Everything else styles from the FLAT-tree parent:
+		// slotted bare text draws its inherited styles through the slot's
+		// shadow chain, not from the host it came from.
+		const parentElement = pseudoMetadata
+			? pseudoMetadata.hostElement
+			: compositionParentElement(textNode);
+		if (!parentElement) return;
+
+		let computedStyle: CSSStyleDeclaration;
+
+		if (pseudoMetadata) {
+			// For pseudo-elements, get the computed style with the pseudo-element selector
+			computedStyle = this.#window.getComputedStyle(
+				pseudoMetadata.hostElement,
+				pseudoMetadata.pseudoType,
+			);
+		} else {
+			// For regular text nodes, use the parent element's style
+			computedStyle = this.#window.getComputedStyle(parentElement);
+		}
+
+		// visibility inherits, so the parent's own resolved value already accounts
+		// for a closer ancestor overriding back to visible.
+		if (computedStyle.getPropertyValue("visibility") === "hidden") return;
+
+		const textTransform = computedStyle.getPropertyValue("text-transform");
+		const textStyle = cellStyleFromComputed(computedStyle);
+
+		const rectTexts = this.#host.layoutEngine.getRectTexts(textNode);
+		if (rectTexts.length > 0) {
+			for (const rectText of rectTexts) {
+				if (rectText.text.length > 0) {
+					ctx.setText(
+						Math.round(rectText.rect.x),
+						Math.round(rectText.rect.y),
+						applyTextTransform(rectText.text, textTransform),
+						textStyle,
+					);
+				}
+			}
+			this.#renderTextSelection(
+				textNode,
+				rectTexts,
+				textStyle,
+				textTransform,
+				ctx,
+			);
+		}
+	}
+
+	/**
+	 * Overlay the document selection on a text node's painted fragments as
+	 * inverse video -- the terminal-native highlight, no color assumptions.
+	 * The Range holds code-unit offsets into node.data; visualToDataOffsets
+	 * bridges each painted character back to its data offset, and contiguous
+	 * selected runs repaint inverse. Ranges whose boundary containers are
+	 * elements rather than text nodes still highlight any text node they
+	 * fully contain (the intersectsNode walk); a boundary that lands INSIDE
+	 * this node only resolves to a precise offset when the container is the
+	 * node itself -- the only shape our own drag selection produces.
+	 */
+	#renderTextSelection(
+		textNode: Text,
+		rectTexts: Array<import("./layout.js").RectText>,
+		textStyle: import("./ansi.js").CellStyle,
+		textTransform: string,
+		ctx: import("./ansi.js").DrawingContext,
+	): void {
+		const selection = this.#window.getSelection();
+		if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
+			return;
+		}
+		const range = selection.getRangeAt(0);
+		if (!range.intersectsNode(textNode)) return;
+
+		const from = range.startContainer === textNode ? range.startOffset : 0;
+		const to =
+			range.endContainer === textNode ? range.endOffset : textNode.data.length;
+		if (to <= from) return;
+
+		const selectionParent =
+			getPseudoMetadata(textNode)?.hostElement ??
+			compositionParentElement(textNode);
+		if (!selectionParent) return;
+		const selectionStyle = selectionStyleFor(
+			this.#window,
+			selectionParent,
+			textStyle,
+		);
+		if (selectionStyle === textStyle) return; // no ::selection rule reaches here
+
+		const visToData = visualToDataOffsets(textNode.data, rectTexts);
+		let visualBase = 0;
+		for (const rectText of rectTexts) {
+			// Contiguous run of selected visual chars within this fragment.
+			let runStart = -1;
+			for (let i = 0; i <= rectText.text.length; i++) {
+				const dataOffset =
+					i < rectText.text.length ? visToData[visualBase + i] : -1;
+				const selected =
+					dataOffset >= 0 && dataOffset >= from && dataOffset < to;
+				if (selected && runStart === -1) {
+					runStart = i;
+				} else if (!selected && runStart !== -1) {
+					// Case transforms never change cell width, so slicing the
+					// untransformed text and transforming the slice paints the
+					// same cells the base pass did.
+					ctx.setText(
+						Math.round(rectText.rect.x) +
+							stringWidth(rectText.text.slice(0, runStart)),
+						Math.round(rectText.rect.y),
+						applyTextTransform(rectText.text.slice(runStart, i), textTransform),
+						selectionStyle,
+					);
+					runStart = -1;
+				}
+			}
+			visualBase += rectText.text.length;
+		}
+	}
+}
+
 export class TermDOM {
 	readonly document: Document;
 	readonly window: DOMWindow;
@@ -1670,6 +2657,9 @@ export class TermDOM {
 	#fullscreenManager: FullscreenManager;
 	#observerManager: ObserverManager;
 	#styleManager: StyleManager;
+	#painter: Painter;
+	/** Outside list markers already painted this frame; reset each frame. */
+	#renderedOutsideMarkers = new WeakSet<Element>();
 	// The command-start anchor: the row the document starts on. The document
 	// CAMERA (scrollY/pageYOffset/scrollTop) is a separate value owned by
 	// installWindowExtensions. #anchorScrollTop is always -#screenTop once set,
@@ -1869,6 +2859,7 @@ export class TermDOM {
 		// the window below. Built here, before the fields it exposes exist:
 		// nothing reads through it until a patched API is actually called.
 		const host = this.#createDOMPatchHost();
+		this.#painter = new Painter(this.window, this.#createPaintHost());
 
 		installConstructorExtensions(this.window, host);
 		this.#renderer = new Renderer(
@@ -1904,6 +2895,40 @@ export class TermDOM {
 	 * window: see DOMPatchHost for why every member is a getter or a callback
 	 * rather than a value.
 	 */
+	#createPaintHost(): PaintHost {
+		const termDOM = this;
+		return {
+			get layoutEngine() {
+				return termDOM[kLayoutEngine];
+			},
+			get styleManager() {
+				return termDOM.#styleManager;
+			},
+			get documentScrollTop() {
+				return termDOM.#documentScrollTop;
+			},
+			get topLayer() {
+				return termDOM.#topLayer;
+			},
+			get renderedOutsideMarkers() {
+				return termDOM.#renderedOutsideMarkers;
+			},
+			get inputScrollOffsets() {
+				return termDOM.#inputScrollOffsets;
+			},
+			ensureInputShadowParts: (element) =>
+				termDOM.#ensureInputShadowParts(element),
+			ensureTextareaShadowParts: (element) =>
+				termDOM.#ensureTextareaShadowParts(element),
+			ensureSelectShadowParts: (element) =>
+				termDOM.#ensureSelectShadowParts(element),
+			syncInputShadowTree: (element, parts) =>
+				termDOM.#syncInputShadowTree(element, parts),
+			syncSelectShadowTree: (element, parts) =>
+				termDOM.#syncSelectShadowTree(element, parts),
+		};
+	}
+
 	#createDOMPatchHost(): DOMPatchHost {
 		const termDOM = this;
 		return {
@@ -2269,628 +3294,6 @@ export class TermDOM {
 	}
 
 	// TODO: many of the following methods do not belong on the TermDOM class
-	#renderElement(
-		element: Element,
-		ctx: import("./ansi.js").DrawingContext,
-		afterOwnBox?: () => void,
-	): void {
-		// Viewport culling. The buffer only keeps document rows in
-		// [-viewportOffset, -viewportOffset + rows); a subtree whose paint extent
-		// lies wholly outside that band would be walked -- styles computed, text
-		// shaped, borders drawn -- and then discarded cell by cell. Skip it here
-		// and the paint costs what is on screen, not what is in the document.
-		const bandTop = -ctx.viewportOffset;
-		if (
-			this[kLayoutEngine].isSubtreeOutsideBand(
-				element,
-				bandTop,
-				bandTop + ctx.rows,
-			)
-		) {
-			return;
-		}
-
-		// display:none generates NO box and no descendant boxes -- final, per
-		// CSS. Stray run state under a hidden subtree (an editing todo's
-		// hidden .view) could otherwise ghost-paint at whatever coordinates
-		// it last held.
-		if (
-			this.window.getComputedStyle(element).getPropertyValue("display") ===
-			"none"
-		) {
-			return;
-		}
-
-		const rect = this[kLayoutEngine].getRect(element);
-
-		const color = this.window
-			.getComputedStyle(element)
-			.getPropertyValue("color");
-		const backgroundColor = this.window
-			.getComputedStyle(element)
-			.getPropertyValue("background-color");
-		const {bold, dim} = resolveFontWeight(
-			this.window.getComputedStyle(element).getPropertyValue("font-weight"),
-		);
-		const italic =
-			this.window.getComputedStyle(element).getPropertyValue("font-style") ===
-			"italic";
-		const underline = hasUnderline(this.window.getComputedStyle(element));
-		const underlineStyle =
-			this.window
-				.getComputedStyle(element)
-				.getPropertyValue("text-decoration-style") === "double"
-				? ("double" as const)
-				: undefined;
-		// visibility:hidden reserves the box (layout is untouched) but paints
-		// nothing of it -- unlike display:none, which removes the box entirely. A
-		// descendant that sets visibility:visible still paints, since visibility
-		// inherits and each element resolves its own computed value here.
-		const visible =
-			this.window.getComputedStyle(element).getPropertyValue("visibility") !==
-			"hidden";
-
-		// background-color: Canvas -- the CSS system color for the document
-		// background -- clears the box to the terminal's DEFAULT background:
-		// opaque in every theme without asserting any color, the same
-		// system-color translation ::selection's Highlight pair uses. The UA
-		// picker sheet relies on it; authors can too. The Highlight/
-		// HighlightText pair fills the box with SGR inverse instead -- the
-		// browser's blue dropdown row, in the terminal's own colors (the UA
-		// select sheet's highlighted option rides this).
-		const isCanvasBg =
-			Boolean(backgroundColor) && /^canvas$/i.test(backgroundColor.trim());
-		const isHighlightBox =
-			Boolean(backgroundColor) &&
-			isSystemHighlightColor(backgroundColor) &&
-			Boolean(color) &&
-			isSystemHighlightColor(color);
-		const style = {
-			fg:
-				color && color !== "initial" && !isSystemHighlightColor(color)
-					? cssColorToNumber(color)
-					: undefined,
-			bg:
-				backgroundColor &&
-				!isCanvasBg &&
-				backgroundColor !== "initial" &&
-				backgroundColor !== "transparent" &&
-				!isSystemHighlightColor(backgroundColor)
-					? cssColorToNumber(backgroundColor)
-					: undefined,
-			bold,
-			dim,
-			italic,
-			underline,
-			underlineStyle,
-		};
-
-		if (rect && visible && (style.bg != null || isCanvasBg || isHighlightBox)) {
-			ctx.fillRect(
-				rect.left,
-				rect.top,
-				rect.width,
-				rect.height,
-				isCanvasBg ? "default" : isHighlightBox ? "inverse" : style.bg,
-			);
-		}
-
-		// Handle borders
-		if (rect && visible) {
-			const borderStyles = resolveBorderStyles(element);
-			if (borderStyles.hasAnyBorder) {
-				// Border color per CSS: border-color, whose initial value is
-				// currentColor -- the element's own color -- and, with nothing
-				// authored anywhere, the terminal's DEFAULT foreground. Never a
-				// hardcoded white: no theme-safe color exists, and forcing one
-				// breaks light terminals.
-				const borderColor = this.window
-					.getComputedStyle(element)
-					.getPropertyValue("border-top-color");
-				const borderCellStyle = {
-					fg:
-						borderColor &&
-						borderColor !== "currentcolor" &&
-						borderColor !== "currentColor"
-							? cssColorToNumber(borderColor)
-							: style.fg,
-					bg: style.bg, // Inherit element's background color
-				};
-				ctx.drawBorder(
-					Math.round(rect.left),
-					Math.round(rect.top),
-					Math.round(rect.width),
-					Math.round(rect.height),
-					borderStyles,
-					borderCellStyle,
-				);
-			}
-		}
-
-		// Handle list-style-position: outside markers
-		if (visible) this.#renderOutsideMarker(element, ctx);
-
-		// A textarea's content IS its UA shadow tree, painted by the normal
-		// child walk below; what the widget owns here is just tree upkeep (a
-		// safety-net sync for framework .value assignments -- no observer
-		// record fires for those) and parking the real terminal caret at the
-		// multiline position.
-		if (element.tagName === "TEXTAREA" && rect) {
-			const textarea = element as HTMLTextAreaElement;
-			const parts = this.#ensureTextareaShadowParts(textarea);
-			syncTextareaShadowTree(textarea, parts);
-			if (visible && textarea === this.document.activeElement) {
-				const caretCell = textareaCaretCell(
-					textarea,
-					parts,
-					this[kLayoutEngine],
-				);
-				if (caretCell) {
-					ctx.setCaret(caretCell.x, caretCell.y);
-				}
-			}
-		}
-
-		// A select's content is its UA shadow tree (label + indicator),
-		// painted by the normal child walk; upkeep and caret parking are all
-		// that belongs here.
-		if (element.tagName === "SELECT" && rect) {
-			const select = element as HTMLSelectElement;
-			const parts = this.#ensureSelectShadowParts(select);
-			this.#syncSelectShadowTree(select, parts);
-			if (visible && select === this.document.activeElement) {
-				const boxModel = getBoxModel(select);
-				ctx.setCaret(
-					Math.round(rect.left) +
-						(boxModel.borderLeftWidth || 0) +
-						(boxModel.paddingLeft || 0),
-					Math.round(rect.top) +
-						(boxModel.borderTopWidth || 0) +
-						(boxModel.paddingTop || 0),
-				);
-			}
-		}
-
-		// Render input elements (void elements with no children)
-		if (
-			element.tagName === "INPUT" &&
-			rect &&
-			(element as HTMLInputElement).type !== "hidden"
-		) {
-			if (visible) {
-				this.#renderInputElement(element as HTMLInputElement, rect, ctx);
-			}
-			return; // Input elements have no children to render
-		}
-
-		// Note: JSDOM automatically calls connectedCallback() when elements are added to DOM
-		// No manual lifecycle management needed
-
-		// The stacking-context painter slots its negative-z layer here: after
-		// this element's own background and border, before any of its in-flow
-		// content -- the CSS position for negative z-index.
-		if (afterOwnBox) afterOwnBox();
-
-		// The IN-FLOW walk: children paint in tree order, and POSITIONED
-		// children don't paint here at all -- per CSS they are hoisted to
-		// their nearest stacking context and painted in its layer order (see
-		// #renderStackingContext). The old per-sibling z sort could never
-		// let a deep overlay escape its parent's siblings; hoisting is what
-		// makes a modal or dropdown paint over unrelated subtrees.
-		const children: Node[] = [];
-
-		// Fast path: for a plain vertically-stacked container (no position:
-		// relative/absolute child, no flex-direction other than column -- see
-		// visibleChildrenInBand's own doc comment for exactly what that rules
-		// out), the layout tree already knows which children are in band
-		// without visiting the rest to rule them out. Without it, a long list
-		// scrolled to any depth costs O(total children) per frame -- worse
-		// the longer the list gets, though only ~O(screen) of it can ever be
-		// visible -- because the walker below has no choice but to step
-		// through every sibling to find out which ones are off-band.
-		const fastChildren = this[kLayoutEngine].visibleChildrenInBand(
-			element,
-			bandTop,
-			bandTop + ctx.rows,
-		);
-		if (fastChildren) {
-			for (const childNode of fastChildren) {
-				children.push(childNode);
-			}
-		} else {
-			// Use ExpandedTreeWalker to render all children including pseudo-elements and shadow DOM
-			const walker = createExpandedTreeWalker(this.window, element);
-			for (
-				let childNode = walker.firstChild();
-				childNode;
-				childNode = walker.nextSibling()
-			) {
-				// Cull before any style read: an off-band child costs one map
-				// lookup instead of a computed-style resolution, which is what keeps a
-				// wide container of mostly off-screen children O(screen).
-				if (
-					childNode.nodeType === childNode.ELEMENT_NODE &&
-					this[kLayoutEngine].isSubtreeOutsideBand(
-						childNode as Element,
-						bandTop,
-						bandTop + ctx.rows,
-					)
-				) {
-					continue;
-				}
-				if (
-					childNode.nodeType === childNode.ELEMENT_NODE &&
-					isPositioned(this.window, childNode as Element) &&
-					this[kLayoutEngine].positionedElements.has(childNode as Element)
-				) {
-					// Hoisted to its stacking context. Registry membership is
-					// the gate: a positioned INLINE run member owns no box of
-					// its own -- no layer would ever paint it, so it stays with
-					// its run (offsets on run members are an unsupported edge).
-					continue;
-				}
-				children.push(childNode);
-			}
-		}
-
-		// overflow:hidden clips *descendants* to this element's own box -- never
-		// the element's own border/background painted above, which is why this is
-		// scoped to just the children, not the whole function.
-		const overflow = this.window
-			.getComputedStyle(element)
-			.getPropertyValue("overflow");
-		const overflowX =
-			this.window.getComputedStyle(element).getPropertyValue("overflow-x") ||
-			overflow;
-		const overflowY =
-			this.window.getComputedStyle(element).getPropertyValue("overflow-y") ||
-			overflow;
-		const previousClip = ctx.clipRect;
-		ctx.clipRect = overflowClipRect(rect, overflowX, overflowY, previousClip);
-
-		try {
-			for (const childNode of children) {
-				if (childNode.nodeType === childNode.ELEMENT_NODE) {
-					const childElement = childNode as Element;
-					if (childElement instanceof (this.window as any).HTMLElement) {
-						this.#renderElement(childElement, ctx);
-					}
-				} else if (childNode.nodeType === childNode.TEXT_NODE) {
-					const textNode = childNode as Text;
-					this.#renderText(textNode, ctx);
-				}
-			}
-		} finally {
-			ctx.clipRect = previousClip;
-		}
-
-		// The textarea's selection paints OVER the value text the child walk
-		// just laid down: the field's own bounded selection, shown while
-		// focused, styled by its ::selection rules like any document text.
-		if (element.tagName === "TEXTAREA" && rect && visible) {
-			this.#renderTextareaSelection(element as HTMLTextAreaElement, ctx);
-		}
-	}
-
-	#renderTextareaSelection(
-		element: HTMLTextAreaElement,
-		ctx: import("./ansi.js").DrawingContext,
-	): void {
-		if (element !== this.document.activeElement) return;
-		const selStart = element.selectionStart ?? 0;
-		const selEnd = element.selectionEnd ?? 0;
-		if (selEnd <= selStart) return;
-		const parts = this.#ensureTextareaShadowParts(element);
-		const visual = textareaVisualLines(element, parts, this[kLayoutEngine]);
-		if (!visual) return;
-		const style = selectionStyleFor(
-			this.window,
-			element,
-			cellStyleFromComputed(this.window.getComputedStyle(parts.spans.value)),
-		);
-		for (const line of visual.lines) {
-			const from = Math.max(selStart, line.startOffset);
-			const to = Math.min(selEnd, line.endOffset);
-			if (to <= from) continue;
-			const pre = line.text.slice(0, from - line.startOffset);
-			const slice = line.text.slice(
-				from - line.startOffset,
-				to - line.startOffset,
-			);
-			if (!slice) continue;
-			ctx.setText(line.x + stringWidth(pre), line.y, slice, style);
-		}
-	}
-
-	/**
-	 * The paint height of the document: body's scroll height, extended to
-	 * cover top-layer boxes -- hoisted under the root, they contribute
-	 * nothing to body's own height, and a picker opening at the bottom
-	 * edge must still get rows to paint into.
-	 */
-	#documentPaintHeight(): number {
-		let height = this.document.body.scrollHeight;
-		for (const element of this.#topLayer) {
-			if (!compositionIsConnected(element)) continue;
-			const rect = this[kLayoutEngine].getRect(element);
-			if (rect) height = Math.max(height, Math.ceil(rect.bottom));
-		}
-		return height;
-	}
-
-	/** The whole document: the root stacking context, then the top layer. */
-	#renderDocument(ctx: import("./ansi.js").DrawingContext): void {
-		const layers = this.#collectStackingLayers();
-		this.#renderStackingContext(this.document.body, ctx, layers);
-		for (const element of this.#topLayer) {
-			// COMPOSITION-connected: a UA part (the select's picker) lives in
-			// a fragment and is never DOM-connected while very much on screen.
-			if (!compositionIsConnected(element)) {
-				this.#topLayer.delete(element);
-				continue;
-			}
-			const previousClip = ctx.clipRect;
-			ctx.clipRect = null;
-			try {
-				this.#renderStackingContext(element, ctx, layers);
-			} finally {
-				ctx.clipRect = previousClip;
-			}
-		}
-	}
-
-	/**
-	 * The clip a deferred positioned box paints under: the context root's
-	 * clip, intersected with every overflow-clipping box along the CSS
-	 * containing-block chain (its positioned ancestors up to the context
-	 * root) -- and nothing else: intervening non-positioned overflow
-	 * ancestors don't clip a box they don't contain.
-	 */
-	#positionedClipFor(
-		element: Element,
-		contextRoot: Element,
-		contextClip: import("./ansi.js").DrawingContext["clipRect"],
-	): import("./ansi.js").DrawingContext["clipRect"] {
-		let clip = contextClip;
-		for (
-			let ancestor = compositionParentElement(element);
-			ancestor && ancestor !== contextRoot;
-			ancestor = compositionParentElement(ancestor)
-		) {
-			if (!isPositioned(this.window, ancestor)) continue;
-			const style = this.window.getComputedStyle(ancestor);
-			const overflow = style.getPropertyValue("overflow");
-			const overflowX = style.getPropertyValue("overflow-x") || overflow;
-			const overflowY = style.getPropertyValue("overflow-y") || overflow;
-			if (overflowX === "hidden" || overflowY === "hidden") {
-				const rect = this[kLayoutEngine].getRect(ancestor);
-				if (rect) {
-					clip = overflowClipRect(rect, overflowX, overflowY, clip);
-				}
-			}
-		}
-		return clip;
-	}
-
-	/**
-	 * Whether an element establishes a stacking context: the paint-atomic
-	 * unit of CSS layering. Terminal-relevant predicate: positioned with a
-	 * non-auto z-index. (The root context belongs to <body>, the paint
-	 * root.) opacity/transform/filter have no terminal meaning here.
-	 */
-	#formsStackingContext(element: Element): boolean {
-		if (element === this.document.body) return true;
-		if (
-			this.window.getComputedStyle(element).getPropertyValue("isolation") ===
-			"isolate"
-		) {
-			return true;
-		}
-		return (
-			isPositioned(this.window, element) &&
-			zIndexValueOf(this.window, element) !== "auto"
-		);
-	}
-
-	/**
-	 * Group every connected positioned element under its nearest
-	 * stacking-context ancestor, bucketed into the CSS paint layers:
-	 * negative-z contexts, the z:auto/0 layer, positive-z contexts. Walks
-	 * only the positioned registry -- O(positioned x depth) per frame,
-	 * never O(document).
-	 */
-	#collectStackingLayers(): Map<
-		Element,
-		{neg: Element[]; zero: Element[]; pos: Element[]}
-	> {
-		const layers = new Map<
-			Element,
-			{neg: Element[]; zero: Element[]; pos: Element[]}
-		>();
-		for (const element of this[kLayoutEngine].positionedElements) {
-			if (!element.isConnected || element === this.document.body) continue;
-			if (this.#topLayer.has(element)) continue; // painted above everything
-			if (!isPositioned(this.window, element)) continue; // stale registry entry
-			let root: Element = this.document.body;
-			for (
-				let ancestor = compositionParentElement(element);
-				ancestor;
-				ancestor = compositionParentElement(ancestor)
-			) {
-				if (this.#formsStackingContext(ancestor)) {
-					root = ancestor;
-					break;
-				}
-			}
-			let bucket = layers.get(root);
-			if (!bucket) {
-				bucket = {neg: [], zero: [], pos: []};
-				layers.set(root, bucket);
-			}
-			const z = zIndexValueOf(this.window, element);
-			if (z === "auto" || z === 0) bucket.zero.push(element);
-			else if (z < 0) bucket.neg.push(element);
-			else bucket.pos.push(element);
-		}
-		const treeOrder = (a: Element, b: Element) =>
-			a.compareDocumentPosition(b) & 4 ? -1 : 1; // 4: b follows a
-		for (const bucket of layers.values()) {
-			const byZ = (a: Element, b: Element) => {
-				const za = zIndexValueOf(this.window, a) as number;
-				const zb = zIndexValueOf(this.window, b) as number;
-				return za !== zb ? za - zb : treeOrder(a, b);
-			};
-			bucket.neg.sort(byZ);
-			bucket.zero.sort(treeOrder);
-			bucket.pos.sort(byZ);
-		}
-		return layers;
-	}
-
-	/**
-	 * Paint a stacking context in the CSS layer order: the root's own box,
-	 * negative-z child contexts, in-flow content (the #renderElement walk,
-	 * which skips positioned descendants), the positioned z:auto/0 layer,
-	 * then positive-z contexts. A z:auto member doesn't isolate: it paints
-	 * as an in-flow subtree here while its own positioned descendants sit
-	 * in THIS context's buckets. Deferred layers paint under the context
-	 * root's clip -- a positioned box escapes overflow ancestors between
-	 * itself and its context, the common CSS escape (per-containing-block
-	 * clipping is layer-2 work).
-	 */
-	#renderStackingContext(
-		root: Element,
-		ctx: import("./ansi.js").DrawingContext,
-		layers: Map<Element, {neg: Element[]; zero: Element[]; pos: Element[]}>,
-	): void {
-		const bucket = layers.get(root);
-		if (!bucket) {
-			this.#renderElement(root, ctx);
-			return;
-		}
-		const contextClip = ctx.clipRect;
-		const paintMember = (element: Element) => {
-			const previousClip = ctx.clipRect;
-			const previousOffset = ctx.viewportOffset;
-			// Clips apply along the CONTAINING BLOCK chain only: an overflow
-			// ancestor that isn't a positioned ancestor doesn't clip a
-			// deferred box, but its own containing blocks' overflow does.
-			ctx.clipRect = this.#positionedClipFor(element, root, contextClip);
-			// position:fixed anchors to the VIEWPORT: cancel the camera by
-			// undoing the scroll offset for the whole subtree.
-			if (
-				this.window.getComputedStyle(element).getPropertyValue("position") ===
-				"fixed"
-			) {
-				ctx.viewportOffset = previousOffset + this.#documentScrollTop;
-			}
-			try {
-				if (this.#formsStackingContext(element)) {
-					this.#renderStackingContext(element, ctx, layers);
-				} else {
-					this.#renderElement(element, ctx);
-				}
-			} finally {
-				ctx.clipRect = previousClip;
-				ctx.viewportOffset = previousOffset;
-			}
-		};
-		this.#renderElement(root, ctx, () => {
-			for (const element of bucket.neg) paintMember(element);
-		});
-		for (const element of bucket.zero) paintMember(element);
-		for (const element of bucket.pos) paintMember(element);
-	}
-
-	/**
-	 * Render outside positioned markers for list items
-	 */
-	#renderedOutsideMarkers = new WeakSet<Element>();
-
-	#renderOutsideMarker(
-		element: Element,
-		ctx: import("./ansi.js").DrawingContext,
-	): void {
-		const computedStyle = this.window.getComputedStyle(element);
-		const display = computedStyle.getPropertyValue("display");
-
-		// Only handle list items
-		if (display !== "list-item") {
-			return;
-		}
-
-		const listStylePosition =
-			computedStyle.getPropertyValue("list-style-position") || "outside";
-
-		// Only handle outside positioning
-		if (listStylePosition !== "outside") {
-			return;
-		}
-
-		// Prevent duplicate rendering in the same frame
-		if (this.#renderedOutsideMarkers.has(element)) {
-			return;
-		}
-		this.#renderedOutsideMarkers.add(element);
-
-		// Get marker content from StyleManager
-		const markerContent = this.#styleManager.getMarkerContent(element);
-		if (!markerContent) {
-			return;
-		}
-
-		const rect = this[kLayoutEngine].getRect(element);
-		if (!rect) {
-			return;
-		}
-
-		// Cells, not code units: a marker like "日本 " is 3 characters but 5 cells
-		// wide, and right-aligning it by its length would paint it over the item's
-		// own text.
-		const markerWidth = stringWidth(markerContent);
-
-		// Get marker styles
-		const markerStyle = this.window.getComputedStyle(element, "::marker");
-		// ::marker inherits color from its originating element, so fall back to the
-		// list item's own color rather than rendering the marker unstyled.
-		const markerColor =
-			markerStyle.getPropertyValue("color") ||
-			computedStyle.getPropertyValue("color");
-		const {bold: markerBold, dim: markerDim} = resolveFontWeight(
-			markerStyle.getPropertyValue("font-weight"),
-		);
-		const markerItalic =
-			markerStyle.getPropertyValue("font-style") === "italic";
-		const markerUnderline = hasUnderline(markerStyle);
-
-		const markerTextStyle = {
-			fg:
-				markerColor && markerColor !== "initial"
-					? cssColorToNumber(markerColor)
-					: undefined,
-			bold: markerBold,
-			dim: markerDim,
-			italic: markerItalic,
-			underline: markerUnderline,
-		};
-
-		// Position marker just before the list item's content area (outside positioning)
-		const markerX = Math.max(0, Math.round(rect.left) - markerWidth);
-		const markerY = Math.round(rect.top);
-
-		// Render the marker (clipped to available space, never mutate the DOM)
-		ctx.setText(markerX, markerY, markerContent, markerTextStyle);
-	}
-
-	/**
-	 * Build (or rebuild, when the type flips between text-ish and toggle)
-	 * an input's UA-internal shadow tree: real DOM in the symbol slot,
-	 * closed to authors -- element.shadowRoot stays null and attachShadow
-	 * still throws, exactly as for a browser input's own internals. The
-	 * field tree carries a real <style> scoped to its root; parts are
-	 * addressed by the standard `part` attribute, which is what gives
-	 * ::placeholder a real element to resolve onto.
-	 */
 	#ensureInputShadowParts(element: HTMLInputElement): {
 		kind: "field" | "toggle" | "textarea" | "select";
 		spans: Record<string, HTMLElement>;
@@ -3475,317 +3878,6 @@ export class TermDOM {
 	 * cursor -- the same split a browser makes between its input's shadow
 	 * content and its editor internals.
 	 */
-	#renderInputElement(
-		element: HTMLInputElement,
-		rect: DOMRect,
-		ctx: import("./ansi.js").DrawingContext,
-	): void {
-		const boxModel = getBoxModel(element);
-		const contentX =
-			Math.round(rect.left) +
-			(boxModel.borderLeftWidth || 0) +
-			(boxModel.paddingLeft || 0);
-		const contentY =
-			Math.round(rect.top) +
-			(boxModel.borderTopWidth || 0) +
-			(boxModel.paddingTop || 0);
-		const contentWidth =
-			Math.round(rect.width) -
-			(boxModel.borderLeftWidth || 0) -
-			(boxModel.borderRightWidth || 0) -
-			(boxModel.paddingLeft || 0) -
-			(boxModel.paddingRight || 0);
-
-		const parts = this.#ensureInputShadowParts(element);
-
-		if (parts.kind === "toggle") {
-			const mark =
-				element.type === "checkbox"
-					? element.checked
-						? "[x]"
-						: "[ ]"
-					: element.checked
-						? "(x)"
-						: "( )";
-			// The glyph is real DOM; its style (the focus underline included,
-			// inherited from the input's own focus-aware default) reads back
-			// off the tree.
-			if (parts.texts.glyph.data !== mark) {
-				parts.texts.glyph.data = mark;
-			}
-			ctx.setText(
-				contentX,
-				contentY,
-				mark,
-				cellStyleFromComputed(this.window.getComputedStyle(parts.spans.glyph)),
-			);
-			if (element === this.document.activeElement) {
-				ctx.setCaret(contentX, contentY);
-			}
-			return;
-		}
-
-		const value = element.value || "";
-		const placeholder = element.getAttribute("placeholder") || "";
-		const isFocused = element === this.document.activeElement;
-
-		this.#syncInputShadowTree(element, parts);
-
-		// Region styles come off the tree: the value inherits the input's
-		// own text style (solid underline when focused), the placeholder and
-		// the blank carry the UA field sheet -- gray ghost label, faint
-		// blank when blurred -- plus whatever the author adds.
-		const textStyle = cellStyleFromComputed(
-			this.window.getComputedStyle(
-				value ? parts.spans.value : parts.spans.placeholder,
-			),
-		);
-		const blankStyle = cellStyleFromComputed(
-			this.window.getComputedStyle(parts.spans.blank),
-		);
-
-		// Shown focused or not, as in a browser -- the caret just sits at
-		// the field start, over the dimmed text.
-		const displayText = value || placeholder;
-
-		// Everything below measures in CELLS, not characters. CJK text is two
-		// cells per glyph, so character arithmetic put the caret mid-text (IME
-		// composition then anchored on top of already-typed glyphs) and padEnd
-		// by character count pushed the value's background straight through the
-		// input's right border.
-		let scrollOffset = this.#inputScrollOffsets.get(element) ?? 0;
-		// The caret is the input's own selection (selectionStart/End), so a
-		// framework assigning .value can never strand it: per spec, setting
-		// value collapses the selection to the end. The caret sits at the
-		// selection's FOCUS -- the moving end, per selectionDirection -- which
-		// is the end that must stay scrolled into view while extending.
-		const selStart = element.selectionStart ?? value.length;
-		const selEnd = element.selectionEnd ?? value.length;
-		const cursor =
-			element.selectionDirection === "backward" ? selStart : selEnd;
-
-		if (isFocused) {
-			// Keep the caret's CELL offset inside the box.
-			if (cursor < scrollOffset) {
-				scrollOffset = cursor;
-			}
-			while (
-				scrollOffset < cursor &&
-				stringWidth(displayText.slice(scrollOffset, cursor)) >= contentWidth
-			) {
-				scrollOffset++;
-			}
-			// And scroll BACK when there's slack: after deleting at the end of
-			// an overflowed value, the window would otherwise stay put and show
-			// a shrinking tail with the earlier text still hidden off the left
-			// edge. Pull the window left while everything from one character
-			// earlier through the end still fits strictly inside the field
-			// (strictly: the caret needs its cell when it sits at the end),
-			// exactly what a browser's field does on backspace.
-			while (
-				scrollOffset > 0 &&
-				stringWidth(displayText.slice(scrollOffset - 1)) < contentWidth
-			) {
-				scrollOffset--;
-			}
-			this.#inputScrollOffsets.set(element, scrollOffset);
-		}
-
-		// Take characters from the scroll offset until the next one would no
-		// longer fit, then pad with spaces to exactly the content width in cells.
-		let visibleText = "";
-		let usedCells = 0;
-		for (const char of displayText.slice(scrollOffset)) {
-			const charCells = stringWidth(char);
-			if (usedCells + charCells > contentWidth) break;
-			visibleText += char;
-			usedCells += charCells;
-		}
-		const visibleChars = visibleText.length;
-		visibleText += " ".repeat(Math.max(0, contentWidth - usedCells));
-
-		// The content region paints with its part's style, and the cells the
-		// content spares are the BLANK part -- which the UA sheet renders as
-		// the faint underlined blank when blurred, and which inherits the
-		// solid focus underline like everything else when focused.
-		if (displayText) {
-			ctx.setText(
-				contentX,
-				contentY,
-				visibleText.slice(0, visibleChars),
-				textStyle,
-			);
-			ctx.setText(
-				contentX + usedCells,
-				contentY,
-				visibleText.slice(visibleChars),
-				blankStyle,
-			);
-		} else {
-			ctx.setText(contentX, contentY, visibleText, blankStyle);
-		}
-
-		// A selection paints as inverse video over its visible slice --
-		// terminal-native highlight, no color assumptions. (Placeholder text
-		// can never be selected: it only shows for an empty value, whose
-		// selection is necessarily collapsed.)
-		if (isFocused && selEnd > selStart) {
-			const visStart = Math.max(selStart, scrollOffset);
-			const visEnd = Math.min(selEnd, scrollOffset + visibleChars);
-			if (visEnd > visStart) {
-				ctx.setText(
-					contentX + stringWidth(displayText.slice(scrollOffset, visStart)),
-					contentY,
-					displayText.slice(visStart, visEnd),
-					selectionStyleFor(this.window, element, textStyle),
-				);
-			}
-		}
-
-		// The caret of a focused input is the REAL terminal cursor, parked there
-		// by the frame -- not an inverse-video imitation. IME composition, screen
-		// readers and the terminal's own cursor style all anchor to the real one.
-		if (isFocused) {
-			const cursorX =
-				contentX + stringWidth(displayText.slice(scrollOffset, cursor));
-			if (cursorX >= contentX && cursorX < contentX + contentWidth) {
-				ctx.setCaret(cursorX, contentY);
-			}
-		}
-	}
-
-	/**
-	 * Render a text node with proper styling from its parent element or pseudo-element
-	 */
-	#renderText(textNode: Text, ctx: import("./ansi.js").DrawingContext): void {
-		const textContent = textNode.data;
-		if (!textContent) return;
-
-		// Check if this is a pseudo-element node
-		const pseudoMetadata = getPseudoMetadata(textNode);
-
-		// For pseudo elements, we don't have a parentElement, but we have
-		// hostElement. Everything else styles from the FLAT-tree parent:
-		// slotted bare text draws its inherited styles through the slot's
-		// shadow chain, not from the host it came from.
-		const parentElement = pseudoMetadata
-			? pseudoMetadata.hostElement
-			: compositionParentElement(textNode);
-		if (!parentElement) return;
-
-		let computedStyle: CSSStyleDeclaration;
-
-		if (pseudoMetadata) {
-			// For pseudo-elements, get the computed style with the pseudo-element selector
-			computedStyle = this.window.getComputedStyle(
-				pseudoMetadata.hostElement,
-				pseudoMetadata.pseudoType,
-			);
-		} else {
-			// For regular text nodes, use the parent element's style
-			computedStyle = this.window.getComputedStyle(parentElement);
-		}
-
-		// visibility inherits, so the parent's own resolved value already accounts
-		// for a closer ancestor overriding back to visible.
-		if (computedStyle.getPropertyValue("visibility") === "hidden") return;
-
-		const textTransform = computedStyle.getPropertyValue("text-transform");
-		const textStyle = cellStyleFromComputed(computedStyle);
-
-		const rectTexts = this[kLayoutEngine].getRectTexts(textNode);
-		if (rectTexts.length > 0) {
-			for (const rectText of rectTexts) {
-				if (rectText.text.length > 0) {
-					ctx.setText(
-						Math.round(rectText.rect.x),
-						Math.round(rectText.rect.y),
-						applyTextTransform(rectText.text, textTransform),
-						textStyle,
-					);
-				}
-			}
-			this.#renderTextSelection(
-				textNode,
-				rectTexts,
-				textStyle,
-				textTransform,
-				ctx,
-			);
-		}
-	}
-
-	/**
-	 * Overlay the document selection on a text node's painted fragments as
-	 * inverse video -- the terminal-native highlight, no color assumptions.
-	 * The Range holds code-unit offsets into node.data; visualToDataOffsets
-	 * bridges each painted character back to its data offset, and contiguous
-	 * selected runs repaint inverse. Ranges whose boundary containers are
-	 * elements rather than text nodes still highlight any text node they
-	 * fully contain (the intersectsNode walk); a boundary that lands INSIDE
-	 * this node only resolves to a precise offset when the container is the
-	 * node itself -- the only shape our own drag selection produces.
-	 */
-	#renderTextSelection(
-		textNode: Text,
-		rectTexts: Array<import("./layout.js").RectText>,
-		textStyle: import("./ansi.js").CellStyle,
-		textTransform: string,
-		ctx: import("./ansi.js").DrawingContext,
-	): void {
-		const selection = this.window.getSelection();
-		if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
-			return;
-		}
-		const range = selection.getRangeAt(0);
-		if (!range.intersectsNode(textNode)) return;
-
-		const from = range.startContainer === textNode ? range.startOffset : 0;
-		const to =
-			range.endContainer === textNode ? range.endOffset : textNode.data.length;
-		if (to <= from) return;
-
-		const selectionParent =
-			getPseudoMetadata(textNode)?.hostElement ??
-			compositionParentElement(textNode);
-		if (!selectionParent) return;
-		const selectionStyle = selectionStyleFor(
-			this.window,
-			selectionParent,
-			textStyle,
-		);
-		if (selectionStyle === textStyle) return; // no ::selection rule reaches here
-
-		const visToData = visualToDataOffsets(textNode.data, rectTexts);
-		let visualBase = 0;
-		for (const rectText of rectTexts) {
-			// Contiguous run of selected visual chars within this fragment.
-			let runStart = -1;
-			for (let i = 0; i <= rectText.text.length; i++) {
-				const dataOffset =
-					i < rectText.text.length ? visToData[visualBase + i] : -1;
-				const selected =
-					dataOffset >= 0 && dataOffset >= from && dataOffset < to;
-				if (selected && runStart === -1) {
-					runStart = i;
-				} else if (!selected && runStart !== -1) {
-					// Case transforms never change cell width, so slicing the
-					// untransformed text and transforming the slice paints the
-					// same cells the base pass did.
-					ctx.setText(
-						Math.round(rectText.rect.x) +
-							stringWidth(rectText.text.slice(0, runStart)),
-						Math.round(rectText.rect.y),
-						applyTextTransform(rectText.text.slice(runStart, i), textTransform),
-						selectionStyle,
-					);
-					runStart = -1;
-				}
-			}
-			visualBase += rectText.text.length;
-		}
-	}
-
 	#processPendingMutationsAndRender(): boolean {
 		// A geometry read (getBoundingClientRect, elementFromPoint) needs fresh
 		// *layout*, not fresh pixels. A full render() here would make every
@@ -4350,7 +4442,7 @@ export class TermDOM {
 	 * contain the point and could never reach it.
 	 */
 	[kHitTest](root: Element, x: number, y: number): Element | null {
-		const layers = this.#collectStackingLayers();
+		const layers = this.#painter.collectStackingLayers();
 		// Paint roots at <body>; a probe from documentElement must too, or
 		// the body-level buckets would never be consulted.
 		const paintRoot =
@@ -4379,7 +4471,7 @@ export class TermDOM {
 				"fixed"
 					? y - this.#documentScrollTop
 					: y;
-			return this.#formsStackingContext(element)
+			return this.#painter.formsStackingContext(element)
 				? this.#hitTestContext(element, x, probeY, layers)
 				: this.#hitTestInFlow(element, x, probeY);
 		};
@@ -5235,7 +5327,7 @@ export class TermDOM {
 		const output = this.#renderer.renderStatic(
 			this.document.body.scrollHeight,
 			(ctx) => {
-				this.#renderDocument(ctx);
+				this.#painter.renderDocument(ctx);
 			},
 		);
 
@@ -5291,7 +5383,7 @@ export class TermDOM {
 		const output = this.#renderer.renderStatic(
 			contentHeight,
 			(ctx) => {
-				this.#renderDocument(ctx);
+				this.#painter.renderDocument(ctx);
 			},
 			"\r\n",
 		);
@@ -5370,7 +5462,7 @@ export class TermDOM {
 		const isFullscreen = this.#fullscreenManager.isFullscreen;
 		const contentHeight = isFullscreen
 			? this.#height
-			: this.#documentPaintHeight();
+			: this.#painter.documentPaintHeight();
 		const regionHeight = Math.min(contentHeight, this.#height);
 
 		// Take the room we need by pushing earlier output up, never over it.
@@ -5385,7 +5477,7 @@ export class TermDOM {
 		const ansi = this.#renderer.renderFrame(
 			-this.#documentScrollTop,
 			(ctx) => {
-				this.#renderDocument(ctx);
+				this.#painter.renderDocument(ctx);
 			},
 			top,
 			top + regionHeight,
