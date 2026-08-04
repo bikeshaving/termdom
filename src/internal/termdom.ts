@@ -3829,11 +3829,6 @@ export class TermDOM {
 	#handleResize(): void {
 		const newWidth = this.#process.stdout.columns || 80;
 		const newHeight = this.#process.stdout.rows || 24;
-		// Captured before the new size lands: what the last painted frame
-		// occupied is what decides whether this resize cut into it.
-		const previousHeight = this.#height;
-		const previousTop = this.#screenTop;
-		const paintedHeight = this.#renderer.paintedContentHeight;
 
 		this.#width = newWidth;
 		this.#height = newHeight;
@@ -3914,44 +3909,6 @@ export class TermDOM {
 			const scrolledUp = Math.max(0, previousStart + contentHeight - newHeight);
 			return Math.max(0, previousStart - scrolledUp);
 		};
-
-		// A shrink that cut rows our own frame occupied is the one case where
-		// the frame's new position cannot be established at all. The terminal
-		// either scrolled the content up to preserve it or discarded those
-		// rows, and nothing distinguishes the two: it moves the cursor only
-		// when the CURSOR would go off screen, so a scroll performed purely to
-		// preserve content leaves the cursor's row where it was and DSR
-		// answers as though nothing moved. (Probed: tmux is silent to
-		// DECRQCRA, the one escape that reads screen content back, so there is
-		// no sigil to find either -- and a cursor we move ourselves is
-		// positioned from the very belief we are trying to check.)
-		//
-		// Rather than paint at a guess and leave the screen carrying fragments
-		// of two frames -- a stranded copy of our top rows, or a half-erased
-		// prompt -- take the whole screen and start from its top. It costs the
-		// visible output above us, which is a real loss, but a legible screen
-		// beats a confusing one.
-		const rowsCut = previousTop + paintedHeight - newHeight;
-		if (newHeight < previousHeight && rowsCut > 0) {
-			// The terminal either scrolled the content up by exactly the rows
-			// it had to cut, or discarded them where they stood, and nothing
-			// distinguishes the two: it moves the cursor only when the CURSOR
-			// would go off screen, so a scroll performed purely to preserve
-			// content leaves the cursor's row where it was and DSR answers as
-			// though nothing moved. (Probed: tmux is silent to DECRQCRA, the
-			// one escape that reads screen content back, so there is no sigil
-			// to find either -- and a cursor we move ourselves is positioned
-			// from the very belief we are trying to check.)
-			//
-			// So resolve it by covering both: erase and paint from the higher
-			// of the two candidate rows. If the terminal scrolled, that is
-			// exactly where the frame now is. If it discarded, we move the
-			// frame up onto rows the prompt still holds -- at most the rows
-			// that were cut, a bounded loss, and the screen carries one whole
-			// frame either way instead of fragments of two.
-			redraw(Math.max(0, previousTop - rowsCut));
-			return;
-		}
 
 		if (
 			this.#detectCursorEnabled &&
