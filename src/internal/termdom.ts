@@ -3829,6 +3829,7 @@ export class TermDOM {
 	#handleResize(): void {
 		const newWidth = this.#process.stdout.columns || 80;
 		const newHeight = this.#process.stdout.rows || 24;
+		const widthChanged = newWidth !== this.#width;
 
 		this.#width = newWidth;
 		this.#height = newHeight;
@@ -3856,27 +3857,31 @@ export class TermDOM {
 		this.#renderer.resize(newHeight, newWidth);
 		this[kLayoutEngine].resize(newWidth, newHeight);
 
-		// Re-anchor and redraw. The terminal has already rewrapped everything on
-		// screen -- including our old frame -- and how far our content moved depends
-		// on text above us that we do not own. But two facts make its new position
-		// exactly recoverable:
+		// Re-anchor and redraw. Which of the two recoveries below is trustworthy
+		// depends on whether the WIDTH changed, because that is what decides
+		// whether anything reflowed.
 		//
-		//   1. The cursor is parked on our content's bottom row after every frame,
-		//      and it rides its line through the rewrap (renderFrame parks it).
-		//   2. Every row we paint is a hard line, so the old frame's rewrapped
-		//      height is computable from the previous frame's own line lengths.
+		// A width change rewraps everything on screen -- including our old frame
+		// -- and how far our content moved depends on text above us that we do
+		// not own, so it cannot be computed. It can be measured: the cursor is
+		// parked in our frame after every paint and rides its line through the
+		// rewrap, and every row we paint is a hard line, so the previous frame's
+		// rewrapped height follows from its own line lengths. Ask the terminal
+		// where the cursor is (DSR) and subtract that height.
 		//
-		// So: ask the terminal where the cursor is (DSR), subtract the rewrapped
-		// height, and that is our frame's new top row -- ground truth, immune to
-		// whatever the shell prompt above did. Anything that ballooned past the
-		// screen top is in the scrollback, beyond rewriting; the redraw's erase
-		// covers everything from the recovered top down, so the visible screen
-		// carries exactly one copy.
+		// A height-only change reflows nothing. The only movement is the scroll
+		// the terminal performs to keep the screen's bottom in view, which is
+		// exactly the overflow -- computable, and computed below. Measuring it
+		// instead is actively WRONG: a terminal scrolls the content but is under
+		// no obligation to carry the cursor's ROW NUMBER along with it (tmux
+		// does not), so DSR answers about the row the cursor sat on before the
+		// scroll, the anchor lands one row too low, and the erase leaves the old
+		// frame's top row stranded above the new one -- the doubling a drag
+		// produced, one stranded row per scrolled resize.
 		//
 		// resizeInProgress has suppressed every animation tick since the first
-		// SIGWINCH, so nothing paints at a stale anchor while the query is in
-		// flight. If the terminal does not answer, fall back to the computed
-		// vertical re-anchor (exact for height changes, approximate for width).
+		// SIGWINCH, so nothing paints at a stale anchor while a query is in
+		// flight.
 		this[kLayoutEngine].calculateLayout();
 		const contentHeight = this.document.body.scrollHeight;
 		const wrappedRowsAbove =
@@ -3910,7 +3915,20 @@ export class TermDOM {
 			return Math.max(0, previousStart - scrolledUp);
 		};
 
+		// Nothing is knowable: the width reflowed the screen by an amount only
+		// the terminal can report, and it did not answer. Rather than paint at
+		// a guess -- which lands either a row short (a stranded copy of our own
+		// top rows) or a row long (the shell prompt, half erased) -- take the
+		// whole screen and start from its top. Wiping output we do not own is a
+		// real cost, but it is a WHOLE and legible one, where the alternatives
+		// leave the screen in a state no one can read.
+		const repaintFromTop = () => {
+			this.#renderer.clearScreen();
+			redraw(0);
+		};
+
 		if (
+			widthChanged &&
 			this.#detectCursorEnabled &&
 			this.#process.stdin?.isTTY &&
 			wrappedRowsAbove !== null
@@ -3924,8 +3942,7 @@ export class TermDOM {
 				})
 				.catch(() => {
 					if (epoch !== this.#resizeEpoch) return;
-					const startRow = computedReanchor();
-					redraw(startRow);
+					repaintFromTop();
 				});
 		} else {
 			const startRow = computedReanchor();
