@@ -1396,6 +1396,22 @@ export class LayoutEngine {
 
 				return new this.DOMRect(minX, minY, maxX - minX, maxY - minY);
 			}
+
+			// A pure inline element with no text of its own has no inline box to
+			// report -- a browser gives a zero-width rect at the position it
+			// would occupy. The block fallback below instead returns the layout
+			// node's width, which for an empty inline is its containing block's,
+			// so `<div style="width:30ch"><span></span></div>` measured the span
+			// at 30 columns. inline-block keeps the fallback: its node IS its box.
+			if (display === "inline") {
+				const runFlexNode = this.nodeMap.get(element);
+				// No layout node means the element was removed or never laid
+				// out -- null, exactly as the block fallback below reports it.
+				// A laid-out empty inline gets a zero-size rect at its position.
+				if (!runFlexNode) return null;
+				const position = getAbsolutePosition(runFlexNode);
+				return new this.DOMRect(position.x, position.y, 0, 0);
+			}
 		}
 
 		// Fall back to the layout node for block elements and containers
@@ -1553,6 +1569,29 @@ export class LayoutEngine {
 		const contentOffset = this.#contentRootOffset(flexNode);
 		containerX += contentOffset.x;
 		containerY += contentOffset.y;
+
+		// getAbsolutePosition gives the run head's BORDER box. A blockified
+		// inline flex item reserved its own padding and border in that box (see
+		// styleFlexNode's parentIsFlex exception) but its text ignored them,
+		// painting at the border edge instead of below the padding. Push the run
+		// in by that box. Scoped to exactly the blockified case: a normal inline
+		// has its flex-node box model cleared even when the author declared
+		// padding (so getBoxModel would over-report), an inline-block's content
+		// offset is already handled by #contentRootOffset above, and a block's
+		// run head is a text node with no box.
+		if (runHead.nodeType === runHead.ELEMENT_NODE) {
+			const runHeadElement = runHead as Element;
+			const parent = runHeadElement.parentElement;
+			if (
+				getPropertyValue(runHeadElement, "display") === "inline" &&
+				parent !== null &&
+				getPropertyValue(parent, "display") === "flex"
+			) {
+				const runHeadBox = getBoxModel(runHeadElement);
+				containerX += runHeadBox.paddingLeft + runHeadBox.borderLeftWidth;
+				containerY += runHeadBox.paddingTop + runHeadBox.borderTopWidth;
+			}
+		}
 
 		// Walk from target node up to runHead, handling nested inline-blocks
 		// This handles the case where getRectTexts is called on elements/text inside inline-blocks

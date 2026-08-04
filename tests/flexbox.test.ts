@@ -773,3 +773,26 @@ test("an inline element that becomes a flex item keeps its padding", async () =>
 
 	dom.dispose();
 });
+
+test("a blockified inline flex item offsets its content by padding", async () => {
+	// The blockified inline flex item reserves its padding in its box, and its
+	// content must sit inside that padding, not at the border edge. The box was
+	// reserved but the text painted at the corner -- horizontally ("LBL" flush
+	// left inside a padded box) and vertically (padding-top ignored).
+	const terminal = new MockProcess({cols: 30, rows: 6});
+	const dom = new TermDOM({process: terminal});
+	const {document} = dom;
+	const style = document.createElement("style");
+	style.textContent = `.row{display:flex;flex-direction:row}
+.pad{padding:2ch}`;
+	document.head.appendChild(style);
+	document.body.innerHTML = `<div class="row"><span class="pad">Z</span></div>`;
+	await nextFrame(dom);
+
+	// 2ch padding on every side: the "Z" lands at row 2, column 2, not (0,0).
+	const rows = terminal.getPlainText().split("\n");
+	expect(rows[0]).not.toContain("Z");
+	expect(rows[2]?.[2]).toBe("Z");
+
+	dom.dispose();
+});

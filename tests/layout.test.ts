@@ -2674,3 +2674,19 @@ test("overflow-wrap: break-word wraps the long word inside the box", async () =>
 
 	dom.dispose();
 });
+
+test("an empty inline element measures zero, not its container's width", async () => {
+	// A pure inline element with no text has no inline box of its own; getRect
+	// used to fall through to the layout node and report the containing block's
+	// width. `<div style="width:30ch"><span></span></div>` measured the span at
+	// 30 columns instead of 0.
+	const {jsdom, layoutEngine} = createLayoutEngine(
+		`<div style="width:30ch"><span id="e"></span><span id="n"><b>hi</b></span></div>`,
+	);
+	const empty = jsdom.window.document.getElementById("e")!;
+	const nested = jsdom.window.document.getElementById("n")!;
+
+	expect(layoutEngine.getRect(empty)?.width).toBe(0);
+	// An inline whose text lives in a nested inline still measures that text.
+	expect(layoutEngine.getRect(nested)?.width).toBe(2);
+});
