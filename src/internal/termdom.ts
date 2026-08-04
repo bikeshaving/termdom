@@ -1732,6 +1732,346 @@ interface PaintHost {
 }
 
 /**
+ * Everything the widget chrome needs from the TermDOM it belongs to. Getters
+ * and callbacks, never values, for the same reason as PaintHost: the picker
+ * overlay set and its open-picker map are live objects the interaction code
+ * also mutates, and building a shadow tree schedules a frame and enrolls the
+ * new root with the observer and the style cascade.
+ */
+interface WidgetHost {
+	readonly styleManager: StyleManager;
+	readonly layoutEngine: LayoutEngine;
+	readonly observer: MutationObserver;
+	/** Live: the select interaction reads and writes the open-picker state. */
+	readonly openPickers: WeakMap<HTMLSelectElement, number>;
+	/** Live: the picker overlay is added to and removed from the top layer. */
+	readonly topLayer: Set<Element>;
+	render(): void;
+}
+
+/**
+ * The UA shadow trees for the form widgets: building the [part] elements an
+ * <input>, <textarea>, or <select> renders through, and reconciling them with
+ * the element's own value and selection. It owns the input-parts map; the
+ * painter reads these trees and the interaction code drives them, both through
+ * the seam above.
+ */
+class WidgetChrome {
+	#window: DOMWindow;
+	#document: Document;
+	#host: WidgetHost;
+	#inputShadowParts = new WeakMap<Element, ShadowParts>();
+
+	constructor(window: DOMWindow, host: WidgetHost) {
+		this.#window = window;
+		this.#document = window.document;
+		this.#host = host;
+	}
+
+	ensureInputShadowParts(element: HTMLInputElement): {
+		kind: "field" | "toggle" | "textarea" | "select";
+		spans: Record<string, HTMLElement>;
+		texts: Record<string, Text>;
+	} {
+		const kind =
+			element.type === "checkbox" || element.type === "radio"
+				? ("toggle" as const)
+				: ("field" as const);
+		const cached = this.#inputShadowParts.get(element);
+		if (cached && cached.kind === kind) {
+			return cached;
+		}
+
+		const document = this.#document;
+		const root = createUAShadowRoot(element);
+		while (root.firstChild) {
+			root.removeChild(root.firstChild);
+		}
+		const spans: Record<string, HTMLElement> = {};
+		const texts: Record<string, Text> = {};
+		const addPart = (part: string) => {
+			const span = document.createElement("span");
+			span.setAttribute("part", part);
+			const text = document.createTextNode("");
+			span.appendChild(text);
+			root.appendChild(span);
+			spans[part] = span;
+			texts[part] = text;
+		};
+		if (kind === "field") {
+			const style = document.createElement("style");
+			style.textContent = FIELD_UA_STYLES;
+			root.appendChild(style);
+			addPart("value");
+			addPart("placeholder");
+			addPart("blank");
+		} else {
+			addPart("glyph");
+		}
+
+		// Scope the UA rules to this root. The root is deliberately NOT
+		// observer-enrolled: the painter syncs the tree from the input's own
+		// state right before reading it, so a mutation record could only
+		// ever schedule a redundant frame. The MEASURE, though, must hear
+		// about the tree once -- a width:auto input sizes to its composed
+		// content, and nothing else will ever invalidate it.
+		this.#host.styleManager.registerShadowRoot(root);
+		this.#host.layoutEngine.invalidate(element);
+		void this.#host.render();
+		const parts = {kind, spans, texts};
+		this.#inputShadowParts.set(element, parts);
+		return parts;
+	}
+
+	/**
+	 * Build a textarea's UA-internal shadow tree. Unlike the input's, this
+	 * root IS observer-enrolled -- enrolled BEFORE it is populated, so the
+	 * population itself is the invalidation that swaps the composed tree in
+	 * -- because the value text lays out through the normal pipeline and
+	 * layout must hear about every change to it. The sync controller runs
+	 * at edit time (and as a paint-time safety net for framework .value
+	 * assignments), never in a loop: it only ever writes when the input's
+	 * state and the tree disagree.
+	 */
+	ensureTextareaShadowParts(element: HTMLTextAreaElement): {
+		kind: "field" | "toggle" | "textarea" | "select";
+		spans: Record<string, HTMLElement>;
+		texts: Record<string, Text>;
+	} {
+		const cached = this.#inputShadowParts.get(element);
+		if (cached && cached.kind === "textarea") {
+			return cached;
+		}
+
+		const document = this.#document;
+		const root = createUAShadowRoot(element);
+		this.#host.observer.observe(root, {
+			childList: true,
+			subtree: true,
+			attributes: true,
+			attributeOldValue: true,
+			characterData: true,
+		});
+		this.#host.styleManager.registerShadowRoot(root);
+
+		const spans: Record<string, HTMLElement> = {};
+		const texts: Record<string, Text> = {};
+		const style = document.createElement("style");
+		style.textContent = TEXTAREA_UA_STYLES;
+		root.appendChild(style);
+		for (const part of ["value", "placeholder"]) {
+			const span = document.createElement("span");
+			span.setAttribute("part", part);
+			const text = document.createTextNode("");
+			span.appendChild(text);
+			root.appendChild(span);
+			spans[part] = span;
+			texts[part] = text;
+		}
+		// The trailing <br> anchor, the same trick a browser's editor uses:
+		// it makes the run's content always end in exactly one line break,
+		// so the line count equals the LOGICAL line count -- the breaker
+		// never emits a line after a final newline, and without the anchor a
+		// value ending in "\n" measured one row short, parking the caret on
+		// the bottom border.
+		root.appendChild(document.createElement("br"));
+
+		const parts = {kind: "textarea" as const, spans, texts};
+		this.#inputShadowParts.set(element, parts);
+		syncTextareaShadowTree(element, parts);
+		return parts;
+	}
+
+	/**
+	 * Build a select's UA-internal shadow tree: the selected option's label
+	 * (part=value) and the ▾ indicator (part=indicator), observer-enrolled
+	 * before population like the textarea's -- its content renders through
+	 * the normal pipeline, and composition hides the option list entirely.
+	 */
+	ensureSelectShadowParts(element: HTMLSelectElement): {
+		kind: "field" | "toggle" | "textarea" | "select";
+		spans: Record<string, HTMLElement>;
+		texts: Record<string, Text>;
+	} {
+		const cached = this.#inputShadowParts.get(element);
+		if (cached && cached.kind === "select") {
+			return cached;
+		}
+
+		const document = this.#document;
+		const root = createUAShadowRoot(element);
+		this.#host.observer.observe(root, {
+			childList: true,
+			subtree: true,
+			attributes: true,
+			attributeOldValue: true,
+			characterData: true,
+		});
+		this.#host.styleManager.registerShadowRoot(root);
+
+		const spans: Record<string, HTMLElement> = {};
+		const texts: Record<string, Text> = {};
+		const style = document.createElement("style");
+		style.textContent = SELECT_UA_STYLES;
+		root.appendChild(style);
+		for (const part of ["value", "indicator"]) {
+			const span = document.createElement("span");
+			span.setAttribute("part", part);
+			const text = document.createTextNode("");
+			span.appendChild(text);
+			root.appendChild(span);
+			spans[part] = span;
+			texts[part] = text;
+		}
+		texts.indicator.data = " \u25be"; // " ▾"
+
+		// The picker: the spec-shaped ::picker(select) popover as a real UA
+		// part -- an absolutely positioned box the open state reveals, whose
+		// geometry the sync controller anchors to the field in document
+		// coordinates (its containing block is the ICB; a measure-function
+		// select can't serve as one).
+		const picker = document.createElement("div");
+		picker.setAttribute("part", "picker");
+		root.appendChild(picker);
+		spans.picker = picker;
+
+		const parts = {kind: "select" as const, spans, texts};
+		this.#inputShadowParts.set(element, parts);
+		this.syncSelectShadowTree(element, parts);
+		return parts;
+	}
+
+	/** Reconcile the select's UA tree with its own selection state. */
+	syncSelectShadowTree(
+		element: HTMLSelectElement,
+		parts: {spans: Record<string, HTMLElement>; texts: Record<string, Text>},
+	): void {
+		const selected =
+			element.selectedIndex >= 0
+				? element.options[element.selectedIndex]
+				: null;
+		const label = selected ? selected.label : "";
+		if (parts.texts.value.data !== label) {
+			parts.texts.value.data = label;
+		}
+
+		// Losing focus closes the picker, as everywhere.
+		if (
+			this.#host.openPickers.has(element) &&
+			this.#document.activeElement !== element
+		) {
+			this.#host.openPickers.delete(element);
+		}
+
+		const picker = parts.spans.picker;
+		const highlight = this.#host.openPickers.get(element);
+		const open = highlight !== undefined;
+		if (!open) {
+			if (picker.style.display !== "none") {
+				picker.style.display = "none";
+				this.#host.topLayer.delete(picker);
+			}
+			return;
+		}
+
+		// Rebuild rows to match the option list; cheap at option-list scale.
+		const options = Array.from(element.options);
+		while (picker.childNodes.length > options.length) {
+			picker.removeChild(picker.lastChild!);
+		}
+		while (picker.childNodes.length < options.length) {
+			const row = this.#document.createElement("div");
+			row.setAttribute("part", "option");
+			picker.appendChild(row);
+		}
+		options.forEach((option, index) => {
+			const row = picker.childNodes[index] as HTMLElement;
+			if (row.textContent !== option.label) row.textContent = option.label;
+			// Attribute writes are guarded: setAttribute queues a mutation
+			// record even when the value is unchanged, and this sync runs at
+			// paint time on an OBSERVED root -- unconditional writes are an
+			// infinite render loop.
+			if (option.disabled !== row.hasAttribute("data-disabled")) {
+				if (option.disabled) row.setAttribute("data-disabled", "");
+				else row.removeAttribute("data-disabled");
+			}
+			const highlighted = index === highlight;
+			if (highlighted !== row.hasAttribute("data-highlighted")) {
+				if (highlighted) row.setAttribute("data-highlighted", "");
+				else row.removeAttribute("data-highlighted");
+			}
+		});
+
+		// Anchor below the field in DOCUMENT coordinates (the picker's
+		// containing block is the ICB), matching the field's width.
+		const rect = this.#host.layoutEngine.getRect(element);
+		if (rect) {
+			const top = `${Math.round(rect.bottom)}px`;
+			const left = `${Math.round(rect.left)}px`;
+			const width = `${Math.max(4, Math.round(rect.width))}ch`;
+			if (picker.style.top !== top) picker.style.top = top;
+			if (picker.style.left !== left) picker.style.left = left;
+			if (picker.style.width !== width) picker.style.width = width;
+		}
+		if (picker.style.display !== "block") picker.style.display = "block";
+		this.#host.topLayer.add(picker);
+	}
+
+	/**
+	 * Arrow keys move a closed select's selection in place, skipping
+	 * disabled options, firing input and change -- the browser's own
+	 * closed-select keyboard model, with no popup to degrade.
+	 */
+	syncInputShadowTree(
+		element: HTMLInputElement,
+		parts: {spans: Record<string, HTMLElement>; texts: Record<string, Text>},
+	): void {
+		const value = element.value || "";
+		const placeholder = element.getAttribute("placeholder") || "";
+		const autoWidth =
+			this.#window.getComputedStyle(element).getPropertyValue("width") ===
+			"auto";
+		let contentChanged = false;
+		if (parts.texts.value.data !== value) {
+			parts.texts.value.data = value;
+			contentChanged = true;
+		}
+		if (parts.texts.placeholder.data !== placeholder) {
+			parts.texts.placeholder.data = placeholder;
+			contentChanged = true;
+		}
+		// An empty field must not collapse to zero cells: with no value and
+		// no placeholder to give it width, the blank's single caret cell IS
+		// the field -- one faint underlined cell marking an editable spot.
+		const blank = !autoWidth ? "" : value || !placeholder ? " " : "";
+		if (parts.texts.blank.data !== blank) {
+			parts.texts.blank.data = blank;
+			contentChanged = true;
+		}
+		if (autoWidth && contentChanged) {
+			this.#host.layoutEngine.invalidate(element);
+			void this.#host.render();
+		}
+	}
+
+	/**
+	 * Render an input element: sync its UA shadow tree from the input's own
+	 * state, then paint the tree's parts with their computed styles. What
+	 * remains here is exactly the widget's editor mechanics -- the
+	 * scroll-window over an overflowing value and parking the REAL terminal
+	 * cursor -- the same split a browser makes between its input's shadow
+	 * content and its editor internals.
+	 */
+	toggleCheckbox(element: HTMLInputElement): void {
+		element.checked = !element.checked;
+		element.dispatchEvent(
+			new this.#window.Event("change", {bubbles: true, cancelable: false}),
+		);
+		this.#host.render();
+	}
+}
+
+/**
  * The paint tree-walk, lifted out of TermDOM: it turns the laid-out document
  * into cells in a DrawingContext and reads nothing of the terminal session
  * (the frame loop, the cursor, the anchor) -- those stay in TermDOM and drive
@@ -2693,6 +3033,7 @@ export class TermDOM {
 	#observerManager: ObserverManager;
 	#styleManager: StyleManager;
 	#painter: Painter;
+	#widgets: WidgetChrome;
 	/** Outside list markers already painted this frame; reset each frame. */
 	#renderedOutsideMarkers = new WeakSet<Element>();
 	// The command-start anchor: the row the document starts on. The document
@@ -2746,14 +3087,8 @@ export class TermDOM {
 	 * share. Members are excluded from normal stacking collection.
 	 */
 	#topLayer = new Set<Element>();
-	#inputShadowParts = new WeakMap<
-		Element,
-		{
-			kind: "field" | "toggle" | "textarea" | "select";
-			spans: Record<string, HTMLElement>;
-			texts: Record<string, Text>;
-		}
-	>();
+	/** Highlighted option index of each OPEN picker; absence = closed. */
+	#openPickers = new WeakMap<HTMLSelectElement, number>();
 
 	// Track whether command start was explicitly detected (even if at row 1)
 	#hasDetectedCommandStart: boolean = false;
@@ -2894,6 +3229,7 @@ export class TermDOM {
 		// the window below. Built here, before the fields it exposes exist:
 		// nothing reads through it until a patched API is actually called.
 		const host = this.#createDOMPatchHost();
+		this.#widgets = new WidgetChrome(this.window, this.#createWidgetHost());
 		this.#painter = new Painter(this.window, this.#createPaintHost());
 
 		installConstructorExtensions(this.window, host);
@@ -2930,6 +3266,30 @@ export class TermDOM {
 	 * window: see DOMPatchHost for why every member is a getter or a callback
 	 * rather than a value.
 	 */
+	#createWidgetHost(): WidgetHost {
+		const termDOM = this;
+		return {
+			get styleManager() {
+				return termDOM.#styleManager;
+			},
+			get layoutEngine() {
+				return termDOM[kLayoutEngine];
+			},
+			get observer() {
+				return termDOM[kObserver];
+			},
+			get openPickers() {
+				return termDOM.#openPickers;
+			},
+			get topLayer() {
+				return termDOM.#topLayer;
+			},
+			render: () => {
+				termDOM.#render();
+			},
+		};
+	}
+
 	#createPaintHost(): PaintHost {
 		const termDOM = this;
 		return {
@@ -2952,15 +3312,15 @@ export class TermDOM {
 				return termDOM.#inputScrollOffsets;
 			},
 			ensureInputShadowParts: (element) =>
-				termDOM.#ensureInputShadowParts(element),
+				termDOM.#widgets.ensureInputShadowParts(element),
 			ensureTextareaShadowParts: (element) =>
-				termDOM.#ensureTextareaShadowParts(element),
+				termDOM.#widgets.ensureTextareaShadowParts(element),
 			ensureSelectShadowParts: (element) =>
-				termDOM.#ensureSelectShadowParts(element),
+				termDOM.#widgets.ensureSelectShadowParts(element),
 			syncInputShadowTree: (element, parts) =>
-				termDOM.#syncInputShadowTree(element, parts),
+				termDOM.#widgets.syncInputShadowTree(element, parts),
 			syncSelectShadowTree: (element, parts) =>
-				termDOM.#syncSelectShadowTree(element, parts),
+				termDOM.#widgets.syncSelectShadowTree(element, parts),
 		};
 	}
 
@@ -3329,263 +3689,6 @@ export class TermDOM {
 	}
 
 	// TODO: many of the following methods do not belong on the TermDOM class
-	#ensureInputShadowParts(element: HTMLInputElement): {
-		kind: "field" | "toggle" | "textarea" | "select";
-		spans: Record<string, HTMLElement>;
-		texts: Record<string, Text>;
-	} {
-		const kind =
-			element.type === "checkbox" || element.type === "radio"
-				? ("toggle" as const)
-				: ("field" as const);
-		const cached = this.#inputShadowParts.get(element);
-		if (cached && cached.kind === kind) {
-			return cached;
-		}
-
-		const document = this.document;
-		const root = createUAShadowRoot(element);
-		while (root.firstChild) {
-			root.removeChild(root.firstChild);
-		}
-		const spans: Record<string, HTMLElement> = {};
-		const texts: Record<string, Text> = {};
-		const addPart = (part: string) => {
-			const span = document.createElement("span");
-			span.setAttribute("part", part);
-			const text = document.createTextNode("");
-			span.appendChild(text);
-			root.appendChild(span);
-			spans[part] = span;
-			texts[part] = text;
-		};
-		if (kind === "field") {
-			const style = document.createElement("style");
-			style.textContent = FIELD_UA_STYLES;
-			root.appendChild(style);
-			addPart("value");
-			addPart("placeholder");
-			addPart("blank");
-		} else {
-			addPart("glyph");
-		}
-
-		// Scope the UA rules to this root. The root is deliberately NOT
-		// observer-enrolled: the painter syncs the tree from the input's own
-		// state right before reading it, so a mutation record could only
-		// ever schedule a redundant frame. The MEASURE, though, must hear
-		// about the tree once -- a width:auto input sizes to its composed
-		// content, and nothing else will ever invalidate it.
-		this.#styleManager.registerShadowRoot(root);
-		this[kLayoutEngine].invalidate(element);
-		void this.#render();
-		const parts = {kind, spans, texts};
-		this.#inputShadowParts.set(element, parts);
-		return parts;
-	}
-
-	/**
-	 * Build a textarea's UA-internal shadow tree. Unlike the input's, this
-	 * root IS observer-enrolled -- enrolled BEFORE it is populated, so the
-	 * population itself is the invalidation that swaps the composed tree in
-	 * -- because the value text lays out through the normal pipeline and
-	 * layout must hear about every change to it. The sync controller runs
-	 * at edit time (and as a paint-time safety net for framework .value
-	 * assignments), never in a loop: it only ever writes when the input's
-	 * state and the tree disagree.
-	 */
-	#ensureTextareaShadowParts(element: HTMLTextAreaElement): {
-		kind: "field" | "toggle" | "textarea" | "select";
-		spans: Record<string, HTMLElement>;
-		texts: Record<string, Text>;
-	} {
-		const cached = this.#inputShadowParts.get(element);
-		if (cached && cached.kind === "textarea") {
-			return cached;
-		}
-
-		const document = this.document;
-		const root = createUAShadowRoot(element);
-		this[kObserver].observe(root, {
-			childList: true,
-			subtree: true,
-			attributes: true,
-			attributeOldValue: true,
-			characterData: true,
-		});
-		this.#styleManager.registerShadowRoot(root);
-
-		const spans: Record<string, HTMLElement> = {};
-		const texts: Record<string, Text> = {};
-		const style = document.createElement("style");
-		style.textContent = TEXTAREA_UA_STYLES;
-		root.appendChild(style);
-		for (const part of ["value", "placeholder"]) {
-			const span = document.createElement("span");
-			span.setAttribute("part", part);
-			const text = document.createTextNode("");
-			span.appendChild(text);
-			root.appendChild(span);
-			spans[part] = span;
-			texts[part] = text;
-		}
-		// The trailing <br> anchor, the same trick a browser's editor uses:
-		// it makes the run's content always end in exactly one line break,
-		// so the line count equals the LOGICAL line count -- the breaker
-		// never emits a line after a final newline, and without the anchor a
-		// value ending in "\n" measured one row short, parking the caret on
-		// the bottom border.
-		root.appendChild(document.createElement("br"));
-
-		const parts = {kind: "textarea" as const, spans, texts};
-		this.#inputShadowParts.set(element, parts);
-		syncTextareaShadowTree(element, parts);
-		return parts;
-	}
-
-	/**
-	 * Build a select's UA-internal shadow tree: the selected option's label
-	 * (part=value) and the ▾ indicator (part=indicator), observer-enrolled
-	 * before population like the textarea's -- its content renders through
-	 * the normal pipeline, and composition hides the option list entirely.
-	 */
-	#ensureSelectShadowParts(element: HTMLSelectElement): {
-		kind: "field" | "toggle" | "textarea" | "select";
-		spans: Record<string, HTMLElement>;
-		texts: Record<string, Text>;
-	} {
-		const cached = this.#inputShadowParts.get(element);
-		if (cached && cached.kind === "select") {
-			return cached;
-		}
-
-		const document = this.document;
-		const root = createUAShadowRoot(element);
-		this[kObserver].observe(root, {
-			childList: true,
-			subtree: true,
-			attributes: true,
-			attributeOldValue: true,
-			characterData: true,
-		});
-		this.#styleManager.registerShadowRoot(root);
-
-		const spans: Record<string, HTMLElement> = {};
-		const texts: Record<string, Text> = {};
-		const style = document.createElement("style");
-		style.textContent = SELECT_UA_STYLES;
-		root.appendChild(style);
-		for (const part of ["value", "indicator"]) {
-			const span = document.createElement("span");
-			span.setAttribute("part", part);
-			const text = document.createTextNode("");
-			span.appendChild(text);
-			root.appendChild(span);
-			spans[part] = span;
-			texts[part] = text;
-		}
-		texts.indicator.data = " \u25be"; // " ▾"
-
-		// The picker: the spec-shaped ::picker(select) popover as a real UA
-		// part -- an absolutely positioned box the open state reveals, whose
-		// geometry the sync controller anchors to the field in document
-		// coordinates (its containing block is the ICB; a measure-function
-		// select can't serve as one).
-		const picker = document.createElement("div");
-		picker.setAttribute("part", "picker");
-		root.appendChild(picker);
-		spans.picker = picker;
-
-		const parts = {kind: "select" as const, spans, texts};
-		this.#inputShadowParts.set(element, parts);
-		this.#syncSelectShadowTree(element, parts);
-		return parts;
-	}
-
-	/** Highlighted option index of each OPEN picker; absence = closed. */
-	#openPickers = new WeakMap<HTMLSelectElement, number>();
-
-	/** Reconcile the select's UA tree with its own selection state. */
-	#syncSelectShadowTree(
-		element: HTMLSelectElement,
-		parts: {spans: Record<string, HTMLElement>; texts: Record<string, Text>},
-	): void {
-		const selected =
-			element.selectedIndex >= 0
-				? element.options[element.selectedIndex]
-				: null;
-		const label = selected ? selected.label : "";
-		if (parts.texts.value.data !== label) {
-			parts.texts.value.data = label;
-		}
-
-		// Losing focus closes the picker, as everywhere.
-		if (
-			this.#openPickers.has(element) &&
-			this.document.activeElement !== element
-		) {
-			this.#openPickers.delete(element);
-		}
-
-		const picker = parts.spans.picker;
-		const highlight = this.#openPickers.get(element);
-		const open = highlight !== undefined;
-		if (!open) {
-			if (picker.style.display !== "none") {
-				picker.style.display = "none";
-				this.#topLayer.delete(picker);
-			}
-			return;
-		}
-
-		// Rebuild rows to match the option list; cheap at option-list scale.
-		const options = Array.from(element.options);
-		while (picker.childNodes.length > options.length) {
-			picker.removeChild(picker.lastChild!);
-		}
-		while (picker.childNodes.length < options.length) {
-			const row = this.document.createElement("div");
-			row.setAttribute("part", "option");
-			picker.appendChild(row);
-		}
-		options.forEach((option, index) => {
-			const row = picker.childNodes[index] as HTMLElement;
-			if (row.textContent !== option.label) row.textContent = option.label;
-			// Attribute writes are guarded: setAttribute queues a mutation
-			// record even when the value is unchanged, and this sync runs at
-			// paint time on an OBSERVED root -- unconditional writes are an
-			// infinite render loop.
-			if (option.disabled !== row.hasAttribute("data-disabled")) {
-				if (option.disabled) row.setAttribute("data-disabled", "");
-				else row.removeAttribute("data-disabled");
-			}
-			const highlighted = index === highlight;
-			if (highlighted !== row.hasAttribute("data-highlighted")) {
-				if (highlighted) row.setAttribute("data-highlighted", "");
-				else row.removeAttribute("data-highlighted");
-			}
-		});
-
-		// Anchor below the field in DOCUMENT coordinates (the picker's
-		// containing block is the ICB), matching the field's width.
-		const rect = this[kLayoutEngine].getRect(element);
-		if (rect) {
-			const top = `${Math.round(rect.bottom)}px`;
-			const left = `${Math.round(rect.left)}px`;
-			const width = `${Math.max(4, Math.round(rect.width))}ch`;
-			if (picker.style.top !== top) picker.style.top = top;
-			if (picker.style.left !== left) picker.style.left = left;
-			if (picker.style.width !== width) picker.style.width = width;
-		}
-		if (picker.style.display !== "block") picker.style.display = "block";
-		this.#topLayer.add(picker);
-	}
-
-	/**
-	 * Arrow keys move a closed select's selection in place, skipping
-	 * disabled options, firing input and change -- the browser's own
-	 * closed-select keyboard model, with no popup to degrade.
-	 */
 	#handleSelectAction(
 		element: HTMLSelectElement,
 		keyName: string,
@@ -3633,9 +3736,9 @@ export class TermDOM {
 			} else {
 				return;
 			}
-			this.#syncSelectShadowTree(
+			this.#widgets.syncSelectShadowTree(
 				element,
-				this.#ensureSelectShadowParts(element),
+				this.#widgets.ensureSelectShadowParts(element),
 			);
 			this.#render();
 			return;
@@ -3678,13 +3781,19 @@ export class TermDOM {
 			index = options.findIndex((option) => !option.disabled);
 		}
 		this.#openPickers.set(element, index);
-		this.#syncSelectShadowTree(element, this.#ensureSelectShadowParts(element));
+		this.#widgets.syncSelectShadowTree(
+			element,
+			this.#widgets.ensureSelectShadowParts(element),
+		);
 		this.#render();
 	}
 
 	#commitSelect(element: HTMLSelectElement, index: number): void {
 		element.selectedIndex = index;
-		this.#syncSelectShadowTree(element, this.#ensureSelectShadowParts(element));
+		this.#widgets.syncSelectShadowTree(
+			element,
+			this.#widgets.ensureSelectShadowParts(element),
+		);
 		element.dispatchEvent(
 			new this.window.Event("input", {bubbles: true, cancelable: false}),
 		);
@@ -3710,7 +3819,7 @@ export class TermDOM {
 			const textarea = element as HTMLTextAreaElement;
 			const visual = textareaVisualLines(
 				textarea,
-				this.#ensureTextareaShadowParts(textarea),
+				this.#widgets.ensureTextareaShadowParts(textarea),
 				this[kLayoutEngine],
 			);
 			if (!visual || visual.lines.length === 0) return null;
@@ -3788,7 +3897,7 @@ export class TermDOM {
 			const textarea = element as HTMLTextAreaElement;
 			const cell = textareaCaretCell(
 				textarea,
-				this.#ensureTextareaShadowParts(textarea),
+				this.#widgets.ensureTextareaShadowParts(textarea),
 				this[kLayoutEngine],
 			);
 			if (!cell) return;
@@ -3834,7 +3943,7 @@ export class TermDOM {
 	): number {
 		const visual = textareaVisualLines(
 			element,
-			this.#ensureTextareaShadowParts(element),
+			this.#widgets.ensureTextareaShadowParts(element),
 			this[kLayoutEngine],
 		);
 		if (!visual) return caret;
@@ -3872,46 +3981,6 @@ export class TermDOM {
 	 * past the last character. Called at paint (safety net) AND at edit
 	 * commit, BEFORE layout flushes: painting one frame at the stale width
 	 * shifted the scroll-window and dropped the lead character for a frame.
-	 */
-	#syncInputShadowTree(
-		element: HTMLInputElement,
-		parts: {spans: Record<string, HTMLElement>; texts: Record<string, Text>},
-	): void {
-		const value = element.value || "";
-		const placeholder = element.getAttribute("placeholder") || "";
-		const autoWidth =
-			this.window.getComputedStyle(element).getPropertyValue("width") ===
-			"auto";
-		let contentChanged = false;
-		if (parts.texts.value.data !== value) {
-			parts.texts.value.data = value;
-			contentChanged = true;
-		}
-		if (parts.texts.placeholder.data !== placeholder) {
-			parts.texts.placeholder.data = placeholder;
-			contentChanged = true;
-		}
-		// An empty field must not collapse to zero cells: with no value and
-		// no placeholder to give it width, the blank's single caret cell IS
-		// the field -- one faint underlined cell marking an editable spot.
-		const blank = !autoWidth ? "" : value || !placeholder ? " " : "";
-		if (parts.texts.blank.data !== blank) {
-			parts.texts.blank.data = blank;
-			contentChanged = true;
-		}
-		if (autoWidth && contentChanged) {
-			this[kLayoutEngine].invalidate(element);
-			void this.#render();
-		}
-	}
-
-	/**
-	 * Render an input element: sync its UA shadow tree from the input's own
-	 * state, then paint the tree's parts with their computed styles. What
-	 * remains here is exactly the widget's editor mechanics -- the
-	 * scroll-window over an overflowing value and parking the REAL terminal
-	 * cursor -- the same split a browser makes between its input's shadow
-	 * content and its editor internals.
 	 */
 	#processPendingMutationsAndRender(): boolean {
 		// A geometry read (getBoundingClientRect, elementFromPoint) needs fresh
@@ -4153,14 +4222,6 @@ export class TermDOM {
 	 * already honors preventDefault on the click), so handling it here too
 	 * would double-toggle.
 	 */
-	#toggleCheckbox(element: HTMLInputElement): void {
-		element.checked = !element.checked;
-		element.dispatchEvent(
-			new this.window.Event("change", {bubbles: true, cancelable: false}),
-		);
-		this.#render();
-	}
-
 	#handleInputAction(
 		element: HTMLInputElement | HTMLTextAreaElement,
 		keyName: string,
@@ -4182,7 +4243,7 @@ export class TermDOM {
 			// same-name group).
 			if (key === " ") {
 				if (toggle.type === "checkbox") {
-					this.#toggleCheckbox(toggle);
+					this.#widgets.toggleCheckbox(toggle);
 				} else if (!toggle.checked) {
 					toggle.checked = true;
 					element.dispatchEvent(
@@ -4304,7 +4365,7 @@ export class TermDOM {
 				const textarea = element as HTMLTextAreaElement;
 				const visual = textareaVisualLines(
 					textarea,
-					this.#ensureTextareaShadowParts(textarea),
+					this.#widgets.ensureTextareaShadowParts(textarea),
 					this[kLayoutEngine],
 				);
 				if (visual) {
@@ -4324,7 +4385,7 @@ export class TermDOM {
 				const textarea = element as HTMLTextAreaElement;
 				const visual = textareaVisualLines(
 					textarea,
-					this.#ensureTextareaShadowParts(textarea),
+					this.#widgets.ensureTextareaShadowParts(textarea),
 					this[kLayoutEngine],
 				);
 				if (visual) {
@@ -4355,15 +4416,17 @@ export class TermDOM {
 				// observer hears a .value assignment.
 				syncTextareaShadowTree(
 					element as HTMLTextAreaElement,
-					this.#ensureTextareaShadowParts(element as HTMLTextAreaElement),
+					this.#widgets.ensureTextareaShadowParts(
+						element as HTMLTextAreaElement,
+					),
 				);
 			} else {
 				// Same for the input: a width:auto field must measure at the
 				// NEW width before this frame paints, or the scroll-window
 				// momentarily shoves the lead character off the field.
-				this.#syncInputShadowTree(
+				this.#widgets.syncInputShadowTree(
 					element as HTMLInputElement,
-					this.#ensureInputShadowParts(element as HTMLInputElement),
+					this.#widgets.ensureInputShadowParts(element as HTMLInputElement),
 				);
 			}
 
@@ -4816,7 +4879,7 @@ export class TermDOM {
 						const raw = this[kHitTest](this.document.documentElement, x, y);
 						const part = raw?.getAttribute("part");
 						if (part === "option") {
-							const parts = this.#ensureSelectShadowParts(select);
+							const parts = this.#widgets.ensureSelectShadowParts(select);
 							const index = Array.from(parts.spans.picker.children)
 								.filter((row) => row.getAttribute("part") === "option")
 								.indexOf(raw as Element);
@@ -4826,15 +4889,15 @@ export class TermDOM {
 								if (index >= 0 && index !== select.selectedIndex) {
 									this.#commitSelect(select, index);
 								} else {
-									this.#syncSelectShadowTree(select, parts);
+									this.#widgets.syncSelectShadowTree(select, parts);
 									this.#render();
 								}
 							}
 						} else if (part !== "picker") {
 							this.#openPickers.delete(select);
-							this.#syncSelectShadowTree(
+							this.#widgets.syncSelectShadowTree(
 								select,
-								this.#ensureSelectShadowParts(select),
+								this.#widgets.ensureSelectShadowParts(select),
 							);
 							this.#render();
 						}
