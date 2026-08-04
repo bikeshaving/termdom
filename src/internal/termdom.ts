@@ -585,6 +585,44 @@ function prevGraphemeBoundary(value: string, index: number): number {
 	return previous;
 }
 
+/**
+ * Split raw terminal input into key tokens: CSI sequences (ESC [ ... final
+ * byte), SS3 sequences (ESC O x), and single characters.
+ *
+ * Fast input arrives batched -- a held arrow key delivers "\x1b[B\x1b[B\x1b[B"
+ * in one chunk, and a terminal report can land glued to ordinary keystrokes.
+ * Anything that treats a chunk as one key swallows everything after the first
+ * token: a held arrow repeated once per chunk instead of once per press, and a
+ * stray cursor report ate every key packed behind it.
+ */
+function* tokenizeInput(input: string): Generator<string> {
+	let i = 0;
+	while (i < input.length) {
+		if (input[i] === "\x1b" && i + 1 < input.length) {
+			if (input[i + 1] === "[") {
+				// CSI: parameter/intermediate bytes end at a final byte 0x40-0x7e.
+				let end = i + 2;
+				while (
+					end < input.length &&
+					!(input.charCodeAt(end) >= 0x40 && input.charCodeAt(end) <= 0x7e)
+				) {
+					end++;
+				}
+				yield input.slice(i, Math.min(end + 1, input.length));
+				i = end + 1;
+				continue;
+			}
+			if (input[i + 1] === "O" && i + 2 < input.length) {
+				yield input.slice(i, i + 3);
+				i += 3;
+				continue;
+			}
+		}
+		yield input[i];
+		i++;
+	}
+}
+
 function detectColorDepth(process: ProcessLike): ColorDepth {
 	const colorterm = process.env.COLORTERM;
 	if (colorterm === "truecolor" || colorterm === "24bit") {
@@ -2477,6 +2515,125 @@ class InputActions {
 }
 
 /**
+ * What the terminal input translator needs from the session. It reads replies
+ * in flight (the mode-probe map and the pending cursor-detection handler) and
+ * routes the rest onward -- mouse, keyboard, and the quit chord.
+ */
+interface TerminalInputHost {
+	readonly modeProbeHandlers: Map<string, (value: number) => void>;
+	readonly cursorDetectionHandler: ((data: string) => void) | null;
+	readonly mouseCaptureYielded: boolean;
+	handleMouseReport(
+		button: number,
+		column: number,
+		row: number,
+		release: boolean,
+	): void;
+	reclaimMouseCapture(): void;
+	dispatchKeyboard(input: Buffer): void;
+	quit(): void;
+}
+
+/**
+ * The terminal input translator: raw stdin bytes in, semantic events out. It
+ * understands the terminal's reply protocols -- splicing a cursor-position or
+ * DECRPM reply out of a chunk that also carries typing -- peels SGR mouse
+ * reports off token by token, and hands the remaining keystrokes on. It knows
+ * escape sequences and nothing of the DOM; the session wires it up and decides
+ * what the routed events mean.
+ */
+class TerminalInput {
+	#host: TerminalInputHost;
+
+	constructor(host: TerminalInputHost) {
+		this.#host = host;
+	}
+
+	feed(chunk: string | Buffer): void {
+		// Ensure we have both string and buffer representations
+		const data = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, "utf8");
+		const dataStr = data.toString("utf8");
+
+		// Route 1: Cursor position responses (highest priority). Fast typing
+		// can land in the same chunk as the report -- "jjj\x1b[12;1Rjjj" --
+		// so hand the report to the waiting query and let the rest continue
+		// through the normal routes as keystrokes.
+		// Route 0: the terminal's answer about BDSM (DECRPM). Same
+		// splicing as the cursor report below -- it is a reply, never a
+		// keystroke, and it can share a chunk with real typing.
+		const modeReport = dataStr.match(/\x1b\[(\??)(\d+);(\d+)\$y/);
+		if (modeReport) {
+			const mode = (modeReport[1] ? "?" : "") + modeReport[2];
+			const waiting = this.#host.modeProbeHandlers.get(mode);
+			if (waiting) {
+				this.#host.modeProbeHandlers.delete(mode);
+				waiting(parseInt(modeReport[3], 10));
+				const rest =
+					dataStr.slice(0, modeReport.index) +
+					dataStr.slice((modeReport.index ?? 0) + modeReport[0].length);
+				if (rest.length === 0) return;
+				this.feed(rest);
+				return;
+			}
+		}
+
+		const report = dataStr.match(/\x1b\[\d+;\d+R/);
+		if (this.#host.cursorDetectionHandler && report) {
+			this.#host.cursorDetectionHandler(report[0]);
+			const rest =
+				dataStr.slice(0, report.index) +
+				dataStr.slice((report.index ?? 0) + report[0].length);
+			if (rest.length === 0) return;
+			this.feed(rest);
+			return;
+		}
+
+		// Route 2: Ctrl-C handling (high priority) - check raw bytes
+		if (data.length > 0 && data[0] === 0x03) {
+			this.#host.quit();
+			return;
+		}
+
+		// Route 3: SGR mouse reports. Peeled off token by token so a report
+		// glued to fast keystrokes ("jj\x1b[<65;4;7Mjj") eats neither side,
+		// and BEFORE the fullscreen filter below -- fullscreen is a
+		// mouse-capturing mode, so its reports must not be dropped with the
+		// keyboard events.
+		let keyInput = "";
+		for (const token of tokenizeInput(dataStr)) {
+			const mouse = token.match(/^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/);
+			if (mouse) {
+				this.#host.handleMouseReport(
+					parseInt(mouse[1]),
+					parseInt(mouse[2]),
+					parseInt(mouse[3]),
+					mouse[4] === "m",
+				);
+			} else {
+				keyInput += token;
+			}
+		}
+		if (keyInput.length === 0) return;
+
+		// A keystroke means the user is back at the live screen (terminals
+		// snap to the bottom on input): reclaim the mouse if scroll
+		// chaining yielded it.
+		if (this.#host.mouseCaptureYielded) {
+			this.#host.reclaimMouseCapture();
+		}
+
+		// Route 4: General keyboard events -- ONE pipeline, fullscreen
+		// included. A separate fullscreen listener would drift from this
+		// one: the tokenization for batched input, the SGR-mouse-report
+		// filtering (a report misreads as literal keyboard text without
+		// it) and the modifier decoding all live here.
+		// #dispatchGlobalKeyboardEvent handles Escape exiting
+		// fullscreen (see below).
+		this.#host.dispatchKeyboard(Buffer.from(keyInput));
+	}
+}
+
+/**
  * The paint tree-walk, lifted out of TermDOM: it turns the laid-out document
  * into cells in a DrawingContext and reads nothing of the terminal session
  * (the frame loop, the cursor, the anchor) -- those stay in TermDOM and drive
@@ -3440,6 +3597,7 @@ export class TermDOM {
 	#painter: Painter;
 	#widgets: WidgetChrome;
 	#inputActions: InputActions;
+	#terminalInput: TerminalInput;
 	/** Outside list markers already painted this frame; reset each frame. */
 	#renderedOutsideMarkers = new WeakSet<Element>();
 	// The command-start anchor: the row the document starts on. The document
@@ -3640,6 +3798,7 @@ export class TermDOM {
 			this.window,
 			this.#createInputActionsHost(),
 		);
+		this.#terminalInput = new TerminalInput(this.#createTerminalInputHost());
 		this.#painter = new Painter(this.window, this.#createPaintHost());
 
 		installConstructorExtensions(this.window, host);
@@ -3676,6 +3835,29 @@ export class TermDOM {
 	 * window: see DOMPatchHost for why every member is a getter or a callback
 	 * rather than a value.
 	 */
+	#createTerminalInputHost(): TerminalInputHost {
+		const termDOM = this;
+		return {
+			get modeProbeHandlers() {
+				return termDOM.#modeProbeHandlers;
+			},
+			get cursorDetectionHandler() {
+				return termDOM.#cursorDetectionHandler;
+			},
+			get mouseCaptureYielded() {
+				return termDOM.#mouseCaptureYielded;
+			},
+			handleMouseReport: (button, column, row, release) =>
+				termDOM.#handleMouseReport(button, column, row, release),
+			reclaimMouseCapture: () => termDOM.#reclaimMouseCapture(),
+			dispatchKeyboard: (input) => termDOM.#dispatchGlobalKeyboardEvent(input),
+			quit: () => {
+				termDOM.dispose();
+				termDOM.#process.exit(0);
+			},
+		};
+	}
+
 	#createInputActionsHost(): InputActionsHost {
 		const termDOM = this;
 		return {
@@ -3972,93 +4154,10 @@ export class TermDOM {
 			stdin.resume();
 			stdin.setEncoding?.("utf8");
 
-			// Single unified handler for all stdin data
-			this.#stdinDataHandler = (chunk: string | Buffer) => {
-				// Ensure we have both string and buffer representations
-				const data = Buffer.isBuffer(chunk)
-					? chunk
-					: Buffer.from(chunk, "utf8");
-				const dataStr = data.toString("utf8");
-
-				// Route 1: Cursor position responses (highest priority). Fast typing
-				// can land in the same chunk as the report -- "jjj\x1b[12;1Rjjj" --
-				// so hand the report to the waiting query and let the rest continue
-				// through the normal routes as keystrokes.
-				// Route 0: the terminal's answer about BDSM (DECRPM). Same
-				// splicing as the cursor report below -- it is a reply, never a
-				// keystroke, and it can share a chunk with real typing.
-				const modeReport = dataStr.match(/\x1b\[(\??)(\d+);(\d+)\$y/);
-				if (modeReport) {
-					const mode = (modeReport[1] ? "?" : "") + modeReport[2];
-					const waiting = this.#modeProbeHandlers.get(mode);
-					if (waiting) {
-						this.#modeProbeHandlers.delete(mode);
-						waiting(parseInt(modeReport[3], 10));
-						const rest =
-							dataStr.slice(0, modeReport.index) +
-							dataStr.slice((modeReport.index ?? 0) + modeReport[0].length);
-						if (rest.length === 0) return;
-						if (this.#stdinDataHandler) this.#stdinDataHandler(rest);
-						return;
-					}
-				}
-
-				const report = dataStr.match(/\x1b\[\d+;\d+R/);
-				if (this.#cursorDetectionHandler && report) {
-					this.#cursorDetectionHandler(report[0]);
-					const rest =
-						dataStr.slice(0, report.index) +
-						dataStr.slice((report.index ?? 0) + report[0].length);
-					if (rest.length === 0) return;
-					if (this.#stdinDataHandler) {
-						this.#stdinDataHandler(rest);
-					}
-					return;
-				}
-
-				// Route 2: Ctrl-C handling (high priority) - check raw bytes
-				if (data.length > 0 && data[0] === 0x03) {
-					this.dispose();
-					return this.#process.exit(0);
-				}
-
-				// Route 3: SGR mouse reports. Peeled off token by token so a report
-				// glued to fast keystrokes ("jj\x1b[<65;4;7Mjj") eats neither side,
-				// and BEFORE the fullscreen filter below -- fullscreen is a
-				// mouse-capturing mode, so its reports must not be dropped with the
-				// keyboard events.
-				let keyInput = "";
-				for (const token of this.#tokenizeInput(dataStr)) {
-					const mouse = token.match(/^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/);
-					if (mouse) {
-						this.#handleMouseReport(
-							parseInt(mouse[1]),
-							parseInt(mouse[2]),
-							parseInt(mouse[3]),
-							mouse[4] === "m",
-						);
-					} else {
-						keyInput += token;
-					}
-				}
-				if (keyInput.length === 0) return;
-
-				// A keystroke means the user is back at the live screen (terminals
-				// snap to the bottom on input): reclaim the mouse if scroll
-				// chaining yielded it.
-				if (this.#mouseCaptureYielded) {
-					this.#reclaimMouseCapture();
-				}
-
-				// Route 4: General keyboard events -- ONE pipeline, fullscreen
-				// included. A separate fullscreen listener would drift from this
-				// one: the tokenization for batched input, the SGR-mouse-report
-				// filtering (a report misreads as literal keyboard text without
-				// it) and the modifier decoding all live here.
-				// #dispatchGlobalKeyboardEvent handles Escape exiting
-				// fullscreen (see below).
-				this.#dispatchGlobalKeyboardEvent(Buffer.from(keyInput));
-			};
+			// Every chunk goes through the terminal input translator: it splices
+			// out cursor and mode replies, peels off SGR mouse reports, and hands
+			// the rest on as keyboard events.
+			this.#stdinDataHandler = (chunk) => this.#terminalInput.feed(chunk);
 			stdin.on("data", this.#stdinDataHandler);
 		}
 	}
@@ -4524,45 +4623,6 @@ export class TermDOM {
 		// :focus styling and the caret (the real terminal cursor, parked in the
 		// focused field) both need one to move.
 		void this.#render();
-	}
-
-	/**
-	 * Handle input element default actions (character insertion, deletion, navigation)
-	 */
-	/**
-	 * Flip a checkbox's checked state and fire `change`, matching a browser's
-	 * Space-key default action for a focused checkbox -- never `input`, which
-	 * checkboxes don't fire. Click doesn't need this: jsdom's own click
-	 * activation behavior already toggles `.checked` and fires `change` (and
-	 * already honors preventDefault on the click), so handling it here too
-	 * would double-toggle.
-	 */
-	*#tokenizeInput(input: string): Generator<string> {
-		let i = 0;
-		while (i < input.length) {
-			if (input[i] === "\x1b" && i + 1 < input.length) {
-				if (input[i + 1] === "[") {
-					// CSI: parameter/intermediate bytes end at a final byte 0x40-0x7e.
-					let end = i + 2;
-					while (
-						end < input.length &&
-						!(input.charCodeAt(end) >= 0x40 && input.charCodeAt(end) <= 0x7e)
-					) {
-						end++;
-					}
-					yield input.slice(i, Math.min(end + 1, input.length));
-					i = end + 1;
-					continue;
-				}
-				if (input[i + 1] === "O" && i + 2 < input.length) {
-					yield input.slice(i, i + 3);
-					i += 3;
-					continue;
-				}
-			}
-			yield input[i];
-			i++;
-		}
 	}
 
 	/**
@@ -5133,7 +5193,7 @@ export class TermDOM {
 		const key = chunk.toString("utf8");
 
 		// Tokenize multi-key chunks and dispatch each token on its own.
-		const tokens = Array.from(this.#tokenizeInput(key));
+		const tokens = Array.from(tokenizeInput(key));
 		if (tokens.length > 1) {
 			for (const token of tokens) {
 				this.#dispatchGlobalKeyboardEvent(Buffer.from(token));
