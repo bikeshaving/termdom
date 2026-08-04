@@ -442,9 +442,9 @@ export class Node {
 	// a one-line edit relays out its ancestor chain while every clean sibling
 	// returns in O(1). The ring holds 8 sizing answers because one placing
 	// pass probes a text child under as many as 5 distinct constraint pairs
-	// (flex basis, auto minimum, the placing probes); a smaller ring evicted
-	// this frame what next frame asks first, so a 1,200-row list re-measured
-	// every clean row on every keystroke. Invalidation is the dirty flag,
+	// (flex basis, auto minimum, the placing probes); a smaller ring evicts
+	// this frame what the next frame asks for first, so a large list
+	// re-measures every clean row on every keystroke. Invalidation is the dirty flag,
 	// which every mutation path already sets on the way in.
 	cachedMeasures: CachedLayout[] = [];
 	cachedLayout: CachedLayout | null = null;

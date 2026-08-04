@@ -4183,7 +4183,7 @@ export class TermDOM {
 		// previous-buffer out of step with the screen, which shows up as rows drawn
 		// at the wrong place. Instead mark one pending and hand back the running
 		// loop's promise: it will fold this caller's changes into a trailing frame,
-		// so awaiting render() always means "what I changed is painted".
+		// so awaiting render() always means "the caller's changes are painted".
 		if (this.#isRendering) {
 			this.#renderQueued = true;
 			return this.#renderInFlight ?? Promise.resolve();
@@ -4279,12 +4279,11 @@ export class TermDOM {
 	}
 
 	/**
-	 * Queue a caret reveal for the next frame. Edits used to reveal
-	 * IMMEDIATELY, which cost a full synchronous layout flush per
-	 * keystroke before the frame's own flush -- half the typing latency.
-	 * The reveal now rides the frame the edit already scheduled: one
-	 * camera decision against the layout that frame flushes anyway,
-	 * however many keystrokes coalesced into it.
+	 * Queue a caret reveal for the next frame. The reveal rides the frame
+	 * the edit already scheduled: one camera decision against the layout
+	 * that frame flushes anyway, however many keystrokes coalesced into it.
+	 * Revealing immediately instead would cost a full synchronous layout
+	 * flush per keystroke, before the frame's own -- half the typing latency.
 	 */
 	#queueCaretReveal(
 		element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
@@ -4494,12 +4493,12 @@ export class TermDOM {
 		const epoch = this.#resizeEpoch;
 
 		const redraw = (startRow: number) => {
-			// The recovered row is where the frame STOOD; whether the frame
-			// still FITS below it at the new height is reserveRows' problem,
+			// The recovered row is where the frame stands; whether it still
+			// FITS below that row at the new height is reserveRows' problem,
 			// which solves it the only permissible way -- scrolling earlier
-			// output up into the scrollback, never painting over it. (An
-			// earlier fix clamped startRow upward here instead, which planted
-			// the frame on top of the shell prompt above it.)
+			// output up into the scrollback, never painting over it. Clamping
+			// startRow upward to force a fit instead would plant the frame on
+			// top of the shell prompt above it.
 			this.#screenTop = startRow;
 			this.#anchorScrollTop = -this.#screenTop;
 			this.#renderer.resetScreen(startRow);

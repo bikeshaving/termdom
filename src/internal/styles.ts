@@ -1793,7 +1793,7 @@ export class StyleManager {
 				// removing an item invalidates the *list*, not just the item that
 				// moved. Without this the gutter stays at whatever the original items
 				// needed, and a wider marker added later overruns it -- the "iii.Third"
-				// collision, back again after any mutation.
+				// collision, on any mutation.
 				this.#invalidateEnclosingList(mutation.target);
 
 				// Check for stylesheet changes

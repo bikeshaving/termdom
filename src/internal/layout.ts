@@ -143,9 +143,9 @@ function findInlineBlockSegment(
  * without descending into it. nextSibling() alone is not that: it gives up
  * the moment the skipped node is its parent's last child, and an inline run
  * does not end there. `<span><b>x</b></span> tail` collects the <b>, finds
- * no sibling inside the span, and must climb out to reach " tail" -- before
- * this it just stopped, and every leaf after a nested inline-block (or a
- * display:none/absolute box) silently vanished from the line.
+ * no sibling inside the span, and must climb out to reach " tail". Stopping
+ * at the parent's last child instead drops every leaf after a nested
+ * inline-block (or a display:none/absolute box) from the line.
  */
 function skipSubtree(walker: ExpandedTreeWalker): boolean {
 	while (!walker.nextSibling()) {
@@ -661,13 +661,11 @@ function styleFlexNode(
 			flexNode.setAlignContent(Flex.ALIGN_FLEX_START);
 		}
 	} else if (display !== "none" && !display.startsWith("table")) {
-		// Default block layout. Displays decided above must not be overwritten
-		// here -- listing out the ones to skip by hand missed table-caption once,
-		// whose display was silently reset to flex, which is why the table could
-		// never find its own caption. `none` was the same trap: an element hidden
-		// at runtime had DISPLAY_NONE set a hundred lines up and taken away again
-		// here, so it stopped painting but kept its rows, and everything below it
-		// stayed pushed down.
+		// Default block layout. Displays decided above (table parts, `none`)
+		// must not be overwritten here. Resetting a table-caption to flex
+		// leaves the table unable to find its own caption; resetting a
+		// runtime-hidden element (DISPLAY_NONE, set a hundred lines up) back to
+		// flex keeps its rows painting and pushes everything below it down.
 		flexNode.setDisplay(Flex.DISPLAY_FLEX);
 		flexNode.setFlexDirection(Flex.FLEX_DIRECTION_COLUMN);
 		flexNode.setAlignItems(Flex.ALIGN_STRETCH);
@@ -1168,8 +1166,7 @@ export class LayoutEngine {
 	 * (flex-direction: column -- block flow's internal representation here,
 	 * see styleFlexNode) and none of them is position:relative/absolute
 	 * (either can land anywhere regardless of DOM order). Callers fall back to
-	 * walking every child themselves in that case, identical to before this
-	 * existed.
+	 * walking every child themselves in that case.
 	 */
 	visibleChildrenInBand(
 		element: Element,
@@ -1264,10 +1261,9 @@ export class LayoutEngine {
 	 * - It sits inside ANOTHER inline-block, which measured it as part of one
 	 *   opaque unit: its coordinates exist only in a break result nested under
 	 *   that box's leaf, so the walk below descends into each enclosing
-	 *   inline-block at its content edge to reach them. Nothing did that
-	 *   before, so `<div style="display:inline-block"><input></div>` -- a
-	 *   widget in any inline-block toolbar or card -- resolved to no rect and
-	 *   painted nothing at all.
+	 *   inline-block at its content edge to reach them. Without that descent,
+	 *   `<div style="display:inline-block"><input></div>` -- a widget in any
+	 *   inline-block toolbar or card -- resolves to no rect and paints nothing.
 	 */
 	#inlineBlockRect(element: Element): DOMRect | null {
 		// Climb to the nearest enclosing run that was actually laid out on its
@@ -1844,8 +1840,8 @@ export class LayoutEngine {
 			const element = node as Element;
 			// An out-of-flow element is never a run head or run member -- it
 			// left the flow entirely. Letting run invalidation "ensure" it a
-			// bare layout node made later rebuilds skip its full build (its
-			// pseudo-only content simply vanished on a runtime class flip).
+			// bare layout node makes later rebuilds skip its full build, so its
+			// pseudo-only content vanishes on a runtime class flip.
 			if (this.#isOutOfFlow(element)) {
 				return null;
 			}
@@ -1900,9 +1896,9 @@ export class LayoutEngine {
 				// Unless the box holds block-level content, in which case it is
 				// a block container with a layout tree of its own: its inline
 				// content forms anonymous blocks INSIDE it and runs from there,
-				// never from the box. Climbing anyway made the leading content
+				// never from the box. Climbing anyway makes the leading content
 				// a member of the box's own run -- the one that stops at the
-				// first block -- and it painted nothing.
+				// first block -- and it paints nothing.
 				if (this.#blockContentRoots.has(parent)) {
 					return current;
 				}
@@ -2416,7 +2412,7 @@ export class LayoutEngine {
 						// and a block INSIDE an inline breaks that inline into
 						// fragments owned by the same container. Rebuild from
 						// the container, or the fragments reassemble wrong (a
-						// block-in-inline's content vanished on a no-op flip).
+						// block-in-inline's content vanishes on a no-op flip).
 						// Iterated, because the container reached can itself
 						// be a fragment of a broken inline one level further
 						// out -- climb until the scope sits in block context.
@@ -2672,9 +2668,9 @@ export class LayoutEngine {
 		// rebuild sweep that resolves a parent by climbing to the nearest
 		// tracked ancestor lands here, and inserting would leave the element
 		// holding a node the flex engine never lays out -- extent 0..0 at 0,0,
-		// which paint culling reads as "nothing to draw." That is why an
-		// <input> alone inside an inline-block box painted nothing while the
-		// same input beside a single letter of text painted fine.
+		// which paint culling reads as "nothing to draw" -- so an <input> alone
+		// inside an inline-block box paints nothing, while the same input
+		// beside a single letter of text paints fine.
 		if (parentFlexNode?.measureFunc) {
 			const stale = this.nodeMap.get(node);
 			if (stale && stale.getParent() === parentFlexNode) {
@@ -3027,8 +3023,8 @@ export class LayoutEngine {
 	 * another holding "c" -- not one inline. The wrapper is yielded before its
 	 * own children because it heads the first fragment's run.
 	 *
-	 * `<a href="..."><div>card</div></a>` is this shape, and everything from
-	 * the block onward used to render as nothing at all.
+	 * `<a href="..."><div>card</div></a>` is this shape; without the split,
+	 * everything from the block onward renders as nothing.
 	 */
 	#flowChildren(container: Element, into: Node[] = []): Node[] {
 		const walker = createExpandedTreeWalker(this.window, container);
@@ -3239,10 +3235,9 @@ export class LayoutEngine {
 		// this same mutation-processing pass. getChildIndex searches from the
 		// tail for the same reason (a just-added node sits at or near the
 		// end), so the whole thing is O(1) instead of re-walking every earlier
-		// sibling from the start on every single insertion -- which is what
-		// made appending N children one at a time cost O(N) each, O(N^2) total
-		// (measured: 44 seconds of handleMutations alone for 8,000 sequential
-		// appends into one parent). Falls through to the full forward walk
+		// sibling from the start on every single insertion -- which makes
+		// appending N children one at a time cost O(N) each, O(N^2) total.
+		// Falls through to the full forward walk
 		// below only when no tracked sibling is found nearby (inserting at
 		// the front, or a run of skipped inline elements) -- correctness
 		// matches it exactly, since both count only siblings with a flex node.
@@ -3711,9 +3706,9 @@ export class LayoutEngine {
 
 		// An offered width of 0 is a real constraint, not "unlimited": it asks for
 		// the narrowest the content can be, which is its min-content size -- the
-		// longest word that cannot be broken. Treating it as unlimited returned
-		// max-content instead, so min-content came back as zero everywhere and a
-		// long word had nothing stopping it overflowing its box.
+		// longest word that cannot be broken. Treating it as unlimited returns
+		// max-content instead, making min-content zero everywhere, with a long
+		// word left nothing to stop it overflowing its box.
 		const maxWidth =
 			widthMode === Flex.MEASURE_MODE_UNDEFINED
 				? Number.MAX_SAFE_INTEGER

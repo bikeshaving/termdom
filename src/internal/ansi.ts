@@ -90,9 +90,8 @@ const enum FGStyle {
 	// underline. That ordering cannot survive a re-encoding intermediary:
 	// tmux collapses the pair into one styled-underline attribute at parse
 	// time and forwards it to a client without the usstyle feature in a form
-	// Apple Terminal drops entirely (verified by eye through the real
-	// chain). Author-land CSS for terminals known to support it -- the UA
-	// defaults deliberately never use it.
+	// Apple Terminal drops entirely. Author-land CSS for terminals known to
+	// support it -- the UA defaults deliberately never use it.
 	DoubleUnderline = 0b00100000 << 24,
 }
 
