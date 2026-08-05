@@ -15,7 +15,7 @@ import {
 	hasRTL,
 	inferParagraphDirection,
 	toVisualOrder,
-} from "../src/internal/bidi.js";
+} from "../src/internal/text.js";
 
 const HEBREW = "שלום";
 const HEBREW_VISUAL = [...HEBREW].reverse().join("");

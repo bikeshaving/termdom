@@ -7,7 +7,7 @@
  * resolves against, the UA DOCUMENT sheet (::selection and the button
  * brackets), and the scoped stylesheets of the form widgets' internal shadow
  * trees. The cascade (styles.ts) and the widgets (widgets.ts) both read from
- * here; it depends only on runtime + the DOM, so it stays a leaf.
+ * here; it depends only on text + the DOM, so it stays a leaf.
  *
  * The architectural invariant it anchors: no painter emits a terminal attribute
  * that didn't come from a computed style. Even the selection's inverse video is
@@ -15,7 +15,7 @@
  * colors", which the selection painters translate to SGR 7. Delete that rule
  * and selections stop painting; it is load-bearing, not decorative.
  */
-import {stringWidth} from "./runtime.js";
+import {stringWidth} from "./text.js";
 
 // ---- Box-model shorthand expansion (the UA table is built on it) ----
 /**

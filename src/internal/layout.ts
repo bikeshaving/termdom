@@ -17,8 +17,12 @@ import {
 	ExpandedTreeWalker,
 	getPseudoMetadata,
 } from "./composition.js";
-import {stringWidth as runtimeStringWidth} from "./runtime.js";
-import {hasRTL, inferParagraphDirection, toVisualOrder} from "./bidi.js";
+import {
+	hasRTL,
+	inferParagraphDirection,
+	stringWidth as runtimeStringWidth,
+	toVisualOrder,
+} from "./text.js";
 
 function getAbsolutePosition(flexNode: FlexTypes.Node): {
 	x: number;

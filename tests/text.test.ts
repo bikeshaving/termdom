@@ -1,5 +1,5 @@
 import {describe, expect, test} from "@b9g/libuild/test";
-import {stringWidth, stringWidthFallback} from "../src/internal/runtime.js";
+import {stringWidth, stringWidthFallback} from "../src/internal/text.js";
 
 /**
  * termdom uses Bun.stringWidth when it is available and stringWidthFallback

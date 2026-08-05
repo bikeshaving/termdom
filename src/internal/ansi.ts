@@ -1,5 +1,5 @@
 import {BOX_DRAWING, BorderEdgeStyle} from "./styles.js";
-import {stringWidth as runtimeStringWidth} from "./runtime.js";
+import {stringWidth as runtimeStringWidth} from "./text.js";
 
 /** One shared grapheme segmenter -- construction is expensive. */
 const graphemeSegmenter = new Intl.Segmenter("en", {granularity: "grapheme"});

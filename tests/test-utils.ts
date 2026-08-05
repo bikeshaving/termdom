@@ -20,7 +20,7 @@ import {
 	type ColorDepth,
 } from "../src/internal/ansi.js";
 import {generateANSI} from "../src/internal/ansi.js";
-import {stringWidth} from "../src/internal/runtime.js";
+import {stringWidth} from "../src/internal/text.js";
 import {StyleManager} from "../src/internal/styles.js";
 import {LayoutEngine} from "../src/internal/layout.js";
 import {writeFileSync, mkdirSync, existsSync} from "fs";

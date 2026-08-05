@@ -8,7 +8,7 @@ import {
 	cssColorToNumber,
 	getBoxModel,
 } from "./styles.js";
-import {stringWidth} from "./runtime.js";
+import {stringWidth} from "./text.js";
 import {
 	ObserverManager,
 	ResizeObserver as TermResizeObserver,

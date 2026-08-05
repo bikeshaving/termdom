@@ -8,10 +8,8 @@
 import {CSSStyleDeclaration} from "cssstyle";
 import {type DOMWindow} from "jsdom";
 import * as CSSOM from "rrweb-cssom";
-import {
-	cssColorToNumber as runtimeCssColorToNumber,
-	stringWidth,
-} from "./runtime.js";
+import {stringWidth} from "./text.js";
+import {cssColorToNumber as runtimeCssColorToNumber} from "./color.js";
 import {
 	attachPseudoElement,
 	compositionParentElement,

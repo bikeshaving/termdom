@@ -31,7 +31,7 @@ import {
 	nextGraphemeBoundary,
 	prevGraphemeBoundary,
 	stringWidth,
-} from "./runtime.js";
+} from "./text.js";
 import {
 	FIELD_UA_STYLES,
 	SELECT_UA_STYLES,
