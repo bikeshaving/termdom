@@ -814,7 +814,7 @@ Object.defineProperty(DOMRectList.prototype, Symbol.toStringTag, {
 });
 
 // Inline layout types (moved from breaker.ts)
-export interface InlineBlockLeaf {
+interface InlineBlockLeaf {
 	type: "inline-block";
 	node: Element;
 	breakResult?: BreakResult;
@@ -823,20 +823,20 @@ export interface InlineBlockLeaf {
 	contentHeight: number;
 }
 
-export interface TextLeaf {
+interface TextLeaf {
 	type: "text";
 	node: Text;
 	content: string;
 }
 
-export interface BRLeaf {
+interface BRLeaf {
 	type: "br";
 	node: HTMLBRElement;
 }
 
-export type Leaf = InlineBlockLeaf | TextLeaf | BRLeaf;
+type Leaf = InlineBlockLeaf | TextLeaf | BRLeaf;
 
-export interface LineResult {
+interface LineResult {
 	segments: Array<{
 		leaf: Leaf;
 		start: number;
@@ -850,7 +850,7 @@ export interface LineResult {
 	height: number;
 }
 
-export interface BreakResult {
+interface BreakResult {
 	lines: LineResult[];
 	maxLineWidth: number;
 	totalHeight: number;

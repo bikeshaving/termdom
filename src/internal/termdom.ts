@@ -2,12 +2,8 @@ import {type EventEmitter} from "events";
 import {type DOMWindow, JSDOM} from "jsdom";
 import {LayoutEngine, isPointInRects, visualToDataOffsets} from "./layout.js";
 import {type ColorDepth, Renderer} from "./ansi.js";
-import {
-	StyleManager,
-	resolveBorderStyles,
-	cssColorToNumber,
-	getBoxModel,
-} from "./styles.js";
+import {StyleManager, resolveBorderStyles, getBoxModel} from "./styles.js";
+import {cssColorToNumber} from "./color.js";
 import {stringWidth} from "./text.js";
 import {
 	ObserverManager,

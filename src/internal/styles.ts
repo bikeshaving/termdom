@@ -9,7 +9,6 @@ import {CSSStyleDeclaration} from "cssstyle";
 import {type DOMWindow} from "jsdom";
 import * as CSSOM from "rrweb-cssom";
 import {stringWidth} from "./text.js";
-import {cssColorToNumber as runtimeCssColorToNumber} from "./color.js";
 import {
 	attachPseudoElement,
 	compositionParentElement,
@@ -231,7 +230,7 @@ const LENGTH_PROPERTIES = new Set([
  * cell here, so the check earns its keep: `padding-top: 1` means nothing,
  * `padding-top: 1px` means one cell.
  */
-export function isValidDeclaration(property: string, value: string): boolean {
+function isValidDeclaration(property: string, value: string): boolean {
 	if (!LENGTH_PROPERTIES.has(property)) {
 		return true;
 	}
@@ -928,18 +927,6 @@ export function resolveBorderStyles(element: Element): {
 		hasAnyBorder:
 			topEdge > 0 || rightEdge > 0 || bottomEdge > 0 || leftEdge > 0,
 	};
-}
-
-/**
- * Convert CSS color string to numeric color value
- */
-export function cssColorToNumber(cssColor: string): number {
-	if (!cssColor || cssColor === "transparent" || cssColor === "none") {
-		return 0;
-	}
-
-	const colorNumber = runtimeCssColorToNumber(cssColor);
-	return typeof colorNumber === "number" ? colorNumber : 0;
 }
 
 /** Roman numeral for 1-3999; callers must range-check. */

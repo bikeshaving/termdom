@@ -54,7 +54,7 @@ export type TextareaVisualLine = {
  * lines. Exported for the callers that already hold the lines (selection paint,
  * Home/End) and only need the index.
  */
-export function textareaLineAt(
+function textareaLineAt(
 	lines: Array<{startOffset: number; endOffset: number}>,
 	caret: number,
 ): number {
@@ -179,7 +179,7 @@ export function textareaCaretCell(
 }
 
 /** A field's value and selection after an editing key -- what to apply. */
-export interface FieldEditResult {
+interface FieldEditResult {
 	value: string;
 	start: number;
 	end: number;
@@ -191,7 +191,7 @@ export interface FieldEditResult {
  * anchor (the browser's anchor/focus model), a plain move collapses there.
  * Value is carried through unchanged -- a move never edits text.
  */
-export function fieldSelectionMove(
+function fieldSelectionMove(
 	value: string,
 	anchor: number,
 	target: number,
@@ -217,7 +217,7 @@ export function fieldSelectionMove(
  * value+selection, or null if the key is not one of these -- the field-specific
  * keys (Enter, vertical motion, Home/End) belong to the caller.
  */
-export function applySharedFieldEdit(
+function applySharedFieldEdit(
 	field: HTMLInputElement | HTMLTextAreaElement,
 	key: string,
 	shiftKey: boolean,
@@ -307,7 +307,7 @@ function collapsedEdit(value: string, pos: number): FieldEditResult {
  * setSelectionRange, which fires `select` -- both events the render loop hears.
  * Shared by the field widgets; the window comes off the field's own document.
  */
-export function applyFieldEdit(
+function applyFieldEdit(
 	field: HTMLInputElement | HTMLTextAreaElement,
 	result: FieldEditResult,
 ): void {

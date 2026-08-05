@@ -164,7 +164,7 @@ const NAMED_COLORS: Record<string, number> = {
  * Parse a CSS color to 24-bit RGB (0xRRGGBB): named colors, #hex, rgb()/rgba(),
  * and hsl()/hsla(). Returns null for anything unrecognized.
  */
-export function parseColorFallback(color: string): number | null {
+function parseColorFallback(color: string): number | null {
 	color = color.trim().toLowerCase();
 
 	// Named colors
@@ -234,6 +234,15 @@ export function parseColorFallback(color: string): number | null {
 /**
  * Parse a CSS color string to 24-bit RGB (0xRRGGBB), or null if unrecognized.
  */
-export function cssColorToNumber(cssColor: string): number | null {
-	return parseColorFallback(cssColor);
+/**
+ * Parse a CSS color to packed 24-bit RGB (0xRRGGBB). Empty, `transparent`, and
+ * `none` -- and anything unrecognized -- resolve to 0: a painter has no null to
+ * carry into a cell.
+ */
+export function cssColorToNumber(cssColor: string): number {
+	if (!cssColor || cssColor === "transparent" || cssColor === "none") {
+		return 0;
+	}
+	const colorNumber = parseColorFallback(cssColor);
+	return typeof colorNumber === "number" ? colorNumber : 0;
 }
