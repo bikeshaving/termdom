@@ -102,7 +102,6 @@ Build the package once with `npm run build`, then run any of these with
 | `form.ts` | text inputs, Tab focus, `:focus` styling, live preview, IME-correct carets |
 | `commit-editor.ts` | a git-commit editor: input, textarea and select together |
 | `todomvc.tsx` | TodoMVC on its own unmodified markup and logic, under Crank |
-| `todo-app.ts` | a small interactive app in vanilla DOM |
 | `tanstack-table.ts` | TanStack Table driving a real `<table>` |
 | `timer.tsx` | a Crank component rendered to the terminal |
 | `animated.ts` | an animated frame that respects your shell history |

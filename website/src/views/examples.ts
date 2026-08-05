@@ -24,7 +24,6 @@ const EXAMPLES: Array<{file: string; shows: string}> = [
 		shows:
 			"TodoMVC on its own unmodified markup and logic, rendered under Crank.",
 	},
-	{file: "todo-app.ts", shows: "A small interactive app in vanilla DOM."},
 	{file: "tanstack-table.ts", shows: "TanStack Table driving a real <table>."},
 	{file: "timer.tsx", shows: "A Crank component rendered to the terminal."},
 	{
