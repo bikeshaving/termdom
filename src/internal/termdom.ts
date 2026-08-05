@@ -1898,13 +1898,15 @@ export class TermDOM {
 			const select = element as HTMLSelectElement;
 			this.#uaWidgets.upgrade(select);
 			const picker =
-				compositionShadowRoot(select)?.querySelector('[part="picker"]');
+				compositionShadowRoot(select)?.querySelector<HTMLElement>(
+					'[part="picker"]',
+				);
+			// The widget flips the picker's display inline on open/close, so its
+			// own intent reads straight off style.display -- no style resolution,
+			// and exactly the open/closed signal the top-layer decision wants.
 			if (picker) {
-				if (this.window.getComputedStyle(picker).display !== "none") {
-					this.#topLayer.add(picker);
-				} else {
-					this.#topLayer.delete(picker);
-				}
+				if (picker.style.display !== "none") this.#topLayer.add(picker);
+				else this.#topLayer.delete(picker);
 			}
 			if (visible && select === this.document.activeElement) {
 				const boxModel = getBoxModel(select);
@@ -2486,9 +2488,12 @@ export class TermDOM {
 					: element.checked
 						? "(x)"
 						: "( )";
-			// The glyph is real DOM; its style (the focus underline included,
-			// inherited from the input's own focus-aware default) reads back
-			// off the tree. The mark itself is the painter's, from live .checked.
+			// The mark is read from live .checked at paint, not reconciled by the
+			// widget: a radio's group exclusivity unchecks its siblings with no
+			// event or setter on them to hook, so only a paint-time read stays
+			// correct. The glyph text node carries it so a width:auto toggle
+			// measures; its computed style (the focus underline included) reads
+			// back off the tree.
 			const glyphText = glyphSpan.firstChild as Text;
 			if (glyphText.data !== mark) glyphText.data = mark;
 			ctx.setText(
@@ -3286,10 +3291,9 @@ export class TermDOM {
 			(point && this.#findElementAtDocumentPoint(x, y)) || this.document.body;
 
 		if (wheelDeltaY !== null) {
-			const deltaY = wheelDeltaY;
 			const notCanceled = target.dispatchEvent(
 				new this.window.WheelEvent("wheel", {
-					deltaY,
+					deltaY: wheelDeltaY,
 					deltaMode: 1, // DOM_DELTA_LINE
 					clientX: x,
 					clientY: y,
@@ -3302,7 +3306,7 @@ export class TermDOM {
 			);
 			if (notCanceled) {
 				if (
-					deltaY < 0 &&
+					wheelDeltaY < 0 &&
 					this.#documentScrollTop === 0 &&
 					!this.#fullscreenManager.isFullscreen
 				) {
@@ -3326,7 +3330,7 @@ export class TermDOM {
 						this.#reclaimMouseCapture();
 					}, TermDOM.#SCROLL_CHAIN_TIMEOUT_MS);
 				} else {
-					this.#scrollCamera(deltaY);
+					this.#scrollCamera(wheelDeltaY);
 				}
 			}
 			return;

@@ -837,7 +837,7 @@ test("a focused input parks the real terminal cursor at its caret", async () => 
 
 	// Typing advances the real cursor with the caret.
 	(terminal.stdin as any).emit("data", Buffer.from("hey"));
-	await new Promise((resolve) => setTimeout(resolve, 50));
+	await nextFrame(dom);
 	expect(buffer.cursorY).toBe(caretRow);
 	expect(buffer.cursorX).toBe(caretCol + 3);
 

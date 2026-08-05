@@ -21,7 +21,11 @@ import type {DOMWindow} from "jsdom";
 import jsdomUtils from "jsdom/lib/jsdom/living/generated/utils.js";
 import jsdomCustomElements from "jsdom/lib/jsdom/living/helpers/custom-elements.js";
 import {compositionShadowRoot, createUAShadowRoot} from "./composition.js";
-import {type LayoutEngine, visualToDataOffsets} from "./layout.js";
+import {
+	type LayoutEngine,
+	isPointInRects,
+	visualToDataOffsets,
+} from "./layout.js";
 import {type StyleManager, getBoxModel} from "./styles.js";
 import {
 	nextGraphemeBoundary,
@@ -425,7 +429,10 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 		 * change to it.
 		 */
 		connectedCallback(): void {
-			if (this.#valueText) return; // Re-connect: tree already built.
+			if (this.#valueText) {
+				this.#reconcile(); // Re-connect: tree already built.
+				return;
+			}
 			const root = createUAShadowRoot(this);
 			observer.observe(root, {
 				childList: true,
@@ -647,10 +654,11 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 
 		/**
 		 * Build (or rebuild, on a type flip) the UA-internal shadow tree. The
-		 * field tree carries value / placeholder / blank parts; the toggle tree
-		 * a single glyph part the painter fills from `.checked`. Enrolled in the
-		 * observer so a framework's value/placeholder change schedules a frame,
-		 * exactly like the textarea's tree.
+		 * field tree carries value / placeholder / blank parts; the toggle tree a
+		 * single glyph part the painter fills from live `.checked` (a radio's
+		 * group exclusivity unchecks siblings with no hook to reconcile on).
+		 * Enrolled in the observer so a framework's value/placeholder change
+		 * schedules a frame, exactly like the textarea's tree.
 		 */
 		#build(): void {
 			const root = this.#root ?? createUAShadowRoot(this);
@@ -675,7 +683,7 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 				this.#blankText = addPart(root, "blank").firstChild as Text;
 			} else {
 				this.#valueText = null;
-				addPart(root, "glyph"); // The painter fills it from `.checked`.
+				addPart(root, "glyph"); // The painter fills it from live .checked.
 			}
 			this.#reconcile();
 		}
@@ -994,7 +1002,7 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 			const rows = Array.from(this.#picker!.childNodes) as HTMLElement[];
 			const index = rows.findIndex((row) => {
 				const r = layoutEngine.getRect(row);
-				return r && x >= r.left && x < r.right && y >= r.top && y < r.bottom;
+				return r ? isPointInRects(x, y, r) : false;
 			});
 			if (index >= 0) {
 				// A disabled row is inert: the sheet stays up, nothing commits.
@@ -1008,9 +1016,7 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 			// Off every row: a press inside the picker's own padding does
 			// nothing; a press outside it (the closed face) dismisses.
 			const pr = layoutEngine.getRect(this.#picker!);
-			const insidePicker =
-				pr && x >= pr.left && x < pr.right && y >= pr.top && y < pr.bottom;
-			if (!insidePicker) {
+			if (!(pr && isPointInRects(x, y, pr))) {
 				this.#highlight = null;
 				this.#reconcile();
 			}

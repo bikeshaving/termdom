@@ -133,13 +133,21 @@ function graphemeWidth(cluster: string): number {
  * sequence or ZWJ join as one unit. Rebuilt per keystroke: input values are
  * short and Intl.Segmenter is cheap, so there is no cache to keep coherent.
  */
-const graphemeSegmenter = new Intl.Segmenter(undefined, {
-	granularity: "grapheme",
-});
 function graphemeBoundaries(value: string): number[] {
 	const boundaries = [0];
-	for (const {index, segment} of graphemeSegmenter.segment(value)) {
-		boundaries.push(index + segment.length);
+	if (segmenter) {
+		for (const {index, segment} of segmenter.segment(value)) {
+			boundaries.push(index + segment.length);
+		}
+	} else {
+		// No Intl.Segmenter: fall back to code-point boundaries -- a step over a
+		// surrogate pair stays whole, though combining sequences split. The same
+		// degradation stringWidthFallback takes.
+		let i = 0;
+		for (const char of value) {
+			i += char.length;
+			boundaries.push(i);
+		}
 	}
 	return boundaries;
 }

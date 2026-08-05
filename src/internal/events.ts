@@ -1,19 +1,23 @@
 /**
- * The input decode layer: how a user traces an event from the wire into the DOM.
+ * The input layer: how a user traces an event from the wire into the DOM.
  *
- * The terminal hands TermDOM one undifferentiated stream of bytes. This module
- * turns that stream into event semantics -- it answers "what did these bytes
- * mean" and nothing else:
+ * Two responsibilities, both upstream of dispatch. First, DECODE -- the
+ * terminal hands TermDOM one undifferentiated stream of bytes, and this turns
+ * it into event semantics, answering "what did these bytes mean":
  *
  *   raw chunk --tokenizeInput--> tokens
  *   key token --decodeKey--> a KeyStroke (or null, a terminal reply to drop)
  *   SGR mouse report --decodeMouseReport--> a MouseReport
  *
- * Everything here is pure or takes only genuine collaborators (the document,
- * the window, the layout engine) -- never a callback into TermDOM. The other
- * half of the trace -- constructing the DOM events, dispatching them into the
- * tree, and running the render-coupled default actions -- stays with TermDOM,
- * because that half IS the render loop.
+ * Second, the FOCUS / ACTIVATION policy the dispatch consults -- what is
+ * focusable and in what order (getFocusableElements), what autofocuses on
+ * insertion, and whether a keypress activates an element like a click would.
+ * These read the DOM through genuine collaborators (the document, the window,
+ * the layout engine) -- never a callback into TermDOM.
+ *
+ * The other half of the trace -- constructing the DOM events, dispatching them
+ * into the tree, and running the render-coupled default actions -- stays with
+ * TermDOM, because that half IS the render loop.
  */
 
 import type {DOMWindow} from "jsdom";

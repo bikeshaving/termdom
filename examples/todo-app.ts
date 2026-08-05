@@ -184,17 +184,3 @@ document.addEventListener("keydown", (e: Event) => {
 		pendingDelete = true;
 	}
 });
-
-// Auto-render on DOM changes
-const observer = new termdom.window.MutationObserver(async () => {
-	await new Promise<void>((r) =>
-		termdom.window.requestAnimationFrame(() => r()),
-	);
-});
-observer.observe(document.body, {
-	childList: true,
-	subtree: true,
-	characterData: true,
-});
-
-await new Promise<void>((r) => termdom.window.requestAnimationFrame(() => r()));
