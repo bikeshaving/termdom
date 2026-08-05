@@ -32,57 +32,11 @@ import {
 	prevGraphemeBoundary,
 	stringWidth,
 } from "./runtime.js";
-
-/**
- * The UA stylesheet of a textarea's internal shadow tree. Unlike the input,
- * the textarea's parts render through the NORMAL pipeline -- the value text
- * node lays out, wraps and paints like any document text -- so these rules are
- * all there is: the placeholder's ghost gray, faint when the host is blurred,
- * hidden by the reconcile (an inline display:none) whenever a value exists.
- */
-const TEXTAREA_UA_STYLES = `
-	[part="placeholder"] { color: #808080; }
-	:host(:not(:focus)) [part="placeholder"] { font-weight: lighter; }
-`;
-
-/**
- * The UA stylesheet of an <input>'s internal shadow tree: the field design as
- * real, scoped CSS instead of painter constants. The placeholder is the gray
- * ghost label always; when the host is BLURRED the blank -- and the placeholder
- * riding it -- goes faint: SGR dim via font-weight, SGR underline via
- * text-decoration, the two classic codes that survive every terminal and every
- * intermediary. The focused field's solid underline is not here: it comes from
- * the input's own focus-aware UA default and INHERITS into every part, so
- * authors override it exactly where they always could.
- */
-const FIELD_UA_STYLES = `
-	[part="placeholder"] { color: #808080; }
-	:host(:not(:focus)) [part="value"] { font-weight: lighter; text-decoration: underline; }
-	:host(:not(:focus)) [part="placeholder"] { font-weight: lighter; text-decoration: underline; }
-	:host(:not(:focus)) [part="blank"] { font-weight: lighter; text-decoration: underline; }
-`;
-
-/**
- * The UA stylesheet of a select's internal shadow tree: the ▾ indicator is
- * faint -- affordance, not content. Everything else (the focused field's
- * underline included) inherits from the host's own defaults.
- */
-const SELECT_UA_STYLES = `
-	[part="indicator"] { font-weight: lighter; }
-	[part="picker"] {
-		display: none;
-		position: absolute;
-		background-color: Canvas;
-		text-decoration: none;
-		border-top-width: 1px; border-right-width: 1px;
-		border-bottom-width: 1px; border-left-width: 1px;
-		border-top-style: solid; border-right-style: solid;
-		border-bottom-style: solid; border-left-style: solid;
-	}
-	[part="option"] { display: block; white-space: pre; }
-	[part="option"][data-highlighted] { background-color: Highlight; color: HighlightText; }
-	[part="option"][data-disabled] { font-weight: lighter; }
-`;
+import {
+	FIELD_UA_STYLES,
+	SELECT_UA_STYLES,
+	TEXTAREA_UA_STYLES,
+} from "./useragent.js";
 
 /** One visual (soft-wrapped or hard-broken) line of a laid-out textarea. */
 export type TextareaVisualLine = {
