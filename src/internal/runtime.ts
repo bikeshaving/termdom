@@ -126,6 +126,41 @@ function graphemeWidth(cluster: string): number {
 }
 
 /**
+ * Grapheme-cluster boundaries for caret motion and deletion. selectionStart/
+ * End stay code-unit indices, as the DOM API requires -- these only snap a
+ * one-"character" step onto a boundary, so Backspace deletes a whole emoji
+ * rather than half a surrogate pair, and an arrow steps over a combining
+ * sequence or ZWJ join as one unit. Rebuilt per keystroke: input values are
+ * short and Intl.Segmenter is cheap, so there is no cache to keep coherent.
+ */
+const graphemeSegmenter = new Intl.Segmenter(undefined, {
+	granularity: "grapheme",
+});
+function graphemeBoundaries(value: string): number[] {
+	const boundaries = [0];
+	for (const {index, segment} of graphemeSegmenter.segment(value)) {
+		boundaries.push(index + segment.length);
+	}
+	return boundaries;
+}
+/** The first grapheme boundary strictly after `index` (or the end). */
+export function nextGraphemeBoundary(value: string, index: number): number {
+	for (const boundary of graphemeBoundaries(value)) {
+		if (boundary > index) return boundary;
+	}
+	return value.length;
+}
+/** The last grapheme boundary strictly before `index` (or the start). */
+export function prevGraphemeBoundary(value: string, index: number): number {
+	let previous = 0;
+	for (const boundary of graphemeBoundaries(value)) {
+		if (boundary >= index) break;
+		previous = boundary;
+	}
+	return previous;
+}
+
+/**
  * Parse a CSS color string to 24-bit RGB (0xRRGGBB), or null if unrecognized.
  */
 export function cssColorToNumber(cssColor: string): number | null {

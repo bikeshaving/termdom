@@ -16,18 +16,26 @@ import {
 } from "./observers.js";
 import {setupInspectMethods} from "./inspector.js";
 import {
+	FOCUSABLE_SELECTOR,
+	decodeKey,
+	decodeMouseReport,
+	domCodeFor,
+	focusAutofocusedNodes,
+	getFocusableElements,
+	keyboardActivation,
+	tokenizeInput,
+} from "./events.js";
+import {
 	compositionIsConnected,
 	compositionParentElement,
+	compositionShadowRoot,
 	createExpandedTreeWalker,
-	createUAShadowRoot,
 	getPseudoMetadata,
 } from "./composition.js";
 import {
-	type UATextareaElement,
 	type UAWidgetController,
 	defineUAWidgets,
 	textareaCaretCell,
-	textareaLineAt,
 	textareaVisualLines,
 } from "./widgets.js";
 
@@ -93,101 +101,6 @@ function overflowClipRect(
 		bottom: Math.min(parent.bottom, bottom),
 	};
 }
-
-// DOM `code` values for the named/special keys the tokenizer already resolves
-// unambiguously. This is what `code` is FOR -- unlike `key`, it identifies the
-// physical key, not the character it produced.
-const NAMED_KEY_CODES: Record<string, string> = {
-	Enter: "Enter",
-	Tab: "Tab",
-	Backspace: "Backspace",
-	Escape: "Escape",
-	ArrowUp: "ArrowUp",
-	ArrowDown: "ArrowDown",
-	ArrowLeft: "ArrowLeft",
-	ArrowRight: "ArrowRight",
-	Home: "Home",
-	End: "End",
-	Insert: "Insert",
-	Delete: "Delete",
-	PageUp: "PageUp",
-	PageDown: "PageDown",
-	F1: "F1",
-	F2: "F2",
-	F3: "F3",
-	F4: "F4",
-	F5: "F5",
-	F6: "F6",
-	F7: "F7",
-	F8: "F8",
-	F9: "F9",
-	F10: "F10",
-	F11: "F11",
-	F12: "F12",
-	" ": "Space",
-};
-
-/**
- * The DOM `code` for a resolved key name -- physical key identity, independent
- * of modifiers. Exact for named/special keys (the escape sequence uniquely
- * identifies the physical key) and for letters/digits under the near-universal
- * assumption of a US QWERTY layout. Not exact for punctuation: a terminal only
- * ever tells us the character a key combination *produced* ("!" from Shift+1
- * on US layout, but a different physical key entirely on others), never which
- * physical key+modifiers produced it -- there is no protocol-level signal for
- * that, unlike the modifier bits `ctrlKey`/`altKey`/`shiftKey` decode from.
- * Falls back to the previous (also approximate) `Key<X>` guess for those.
- */
-function domCodeFor(keyName: string): string {
-	const named = NAMED_KEY_CODES[keyName];
-	if (named) return named;
-	if (keyName.length === 1) {
-		const upper = keyName.toUpperCase();
-		if (upper >= "A" && upper <= "Z") return `Key${upper}`;
-		if (keyName >= "0" && keyName <= "9") return `Digit${keyName}`;
-	}
-	return `Key${keyName.toUpperCase()}`;
-}
-
-/**
- * The UA stylesheet of a text field's internal shadow tree: the field
- * design as real, scoped CSS instead of painter constants. The placeholder
- * is the gray ghost label always; when the host is BLURRED the blank --
- * and the placeholder riding it -- goes faint: SGR dim via font-weight,
- * SGR underline via text-decoration, the two classic codes that survive
- * every terminal and every intermediary. The focused field's solid
- * underline is not here: it comes from the input's own focus-aware UA
- * default and INHERITS into every part, so authors override it exactly
- * where they always could.
- */
-const FIELD_UA_STYLES = `
-	[part="placeholder"] { color: #808080; }
-	:host(:not(:focus)) [part="value"] { font-weight: lighter; text-decoration: underline; }
-	:host(:not(:focus)) [part="placeholder"] { font-weight: lighter; text-decoration: underline; }
-	:host(:not(:focus)) [part="blank"] { font-weight: lighter; text-decoration: underline; }
-`;
-
-/**
- * The UA stylesheet of a select's internal shadow tree: the ▾ indicator
- * is faint -- affordance, not content. Everything else (the focused
- * field's underline included) inherits from the host's own defaults.
- */
-const SELECT_UA_STYLES = `
-	[part="indicator"] { font-weight: lighter; }
-	[part="picker"] {
-		display: none;
-		position: absolute;
-		background-color: Canvas;
-		text-decoration: none;
-		border-top-width: 1px; border-right-width: 1px;
-		border-bottom-width: 1px; border-left-width: 1px;
-		border-top-style: solid; border-right-style: solid;
-		border-bottom-style: solid; border-left-style: solid;
-	}
-	[part="option"] { display: block; white-space: pre; }
-	[part="option"][data-highlighted] { background-color: Highlight; color: HighlightText; }
-	[part="option"][data-disabled] { font-weight: lighter; }
-`;
 
 /**
  * The terminal has exactly three font weights, and CSS names all three:
@@ -341,41 +254,6 @@ function applyTextTransform(text: string, transform: string): string {
 	}
 }
 
-/**
- * Grapheme-cluster boundaries for caret motion and deletion. selectionStart/
- * End stay code-unit indices, as the DOM API requires -- these only snap a
- * one-"character" step onto a boundary, so Backspace deletes a whole emoji
- * rather than half a surrogate pair, and an arrow steps over a combining
- * sequence or ZWJ join as one unit. Rebuilt per keystroke: input values are
- * short and Intl.Segmenter is cheap, so there is no cache to keep coherent.
- */
-const graphemeSegmenter = new Intl.Segmenter(undefined, {
-	granularity: "grapheme",
-});
-function graphemeBoundaries(value: string): number[] {
-	const boundaries = [0];
-	for (const {index, segment} of graphemeSegmenter.segment(value)) {
-		boundaries.push(index + segment.length);
-	}
-	return boundaries;
-}
-/** The first grapheme boundary strictly after `index` (or the end). */
-function nextGraphemeBoundary(value: string, index: number): number {
-	for (const boundary of graphemeBoundaries(value)) {
-		if (boundary > index) return boundary;
-	}
-	return value.length;
-}
-/** The last grapheme boundary strictly before `index` (or the start). */
-function prevGraphemeBoundary(value: string, index: number): number {
-	let previous = 0;
-	for (const boundary of graphemeBoundaries(value)) {
-		if (boundary >= index) break;
-		previous = boundary;
-	}
-	return previous;
-}
-
 function detectColorDepth(process: ProcessLike): ColorDepth {
 	const colorterm = process.env.COLORTERM;
 	if (colorterm === "truecolor" || colorterm === "24bit") {
@@ -434,112 +312,6 @@ export interface TermDOMOptions {
 // instances driving the real process (never for test mocks).
 const undisposedInteractive = new Set<ProcessLike>();
 let exitHookInstalled = false;
-
-// What Tab traverses and what a mousedown focuses -- one definition of
-// "focusable" for both.
-//
-// `a[href]` is in the list because an anchor WITH an href is focusable and
-// sequentially reachable per HTML, and an anchor without one is not -- the
-// attribute qualifier draws that line for free. Leaving links out made
-// navigation link-shaped UI (TodoMVC's All/Active/Completed filters) reachable
-// only by mouse.
-const FOCUSABLE_SELECTOR =
-	'a[href], input:not([disabled]), button:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
-
-/**
- * Get all focusable elements in tab order
- */
-function getFocusableElements(
-	document: Document,
-	window: DOMWindow,
-	layoutEngine: LayoutEngine,
-): Element[] {
-	const elements = Array.from(
-		document.querySelectorAll(FOCUSABLE_SELECTOR),
-	).filter((element) => {
-		// Browsers keep unrendered elements out of tab order: a hidden
-		// edit-row checkbox must not swallow a Tab press invisibly. An
-		// element is rendered when nothing on its flat-tree chain is
-		// display:none and it produced boxes.
-		for (
-			let ancestor: Element | null = element;
-			ancestor;
-			ancestor = compositionParentElement(ancestor)
-		) {
-			if (
-				window.getComputedStyle(ancestor).getPropertyValue("display") === "none"
-			) {
-				return false;
-			}
-		}
-		try {
-			return layoutEngine.getRects(element).length > 0;
-		} catch {
-			return false;
-		}
-	});
-	return elements.sort((a, b) => {
-		const aTab = parseInt(a.getAttribute("tabindex") || "0", 10);
-		const bTab = parseInt(b.getAttribute("tabindex") || "0", 10);
-		if (aTab !== bTab) {
-			if (aTab > 0 && bTab > 0) return aTab - bTab;
-			if (aTab > 0) return -1;
-			if (bTab > 0) return 1;
-		}
-		return 0;
-	});
-}
-
-/**
- * The `autofocus` default action: an element with the attribute set gets
- * focused as soon as it's connected, the same as a browser does at initial
- * page load -- generalized here to any insertion, which is what lets a
- * dynamically-created element (e.g. an edit input that only exists while
- * editing) still autofocus itself. Scoped to newly added nodes only, not
- * later attribute changes, matching the spec's "insertion" trigger. If a
- * batch inserts more than one autofocus element, the later mutation wins
- * (processed in order, each call simply moves focus again) -- same
- * ambiguity a real page with more than one autofocus element already has.
- */
-function focusAutofocusedNodes(mutations: MutationRecord[]): void {
-	for (const record of mutations) {
-		for (const node of record.addedNodes) {
-			if (node.nodeType !== node.ELEMENT_NODE) continue;
-			const element = node as Element;
-			const candidate = (element as any).autofocus
-				? element
-				: element.querySelector?.("[autofocus]");
-			(candidate as HTMLElement | null)?.focus?.();
-		}
-	}
-}
-
-/** Input types that are buttons rather than fields. */
-const BUTTON_INPUT_TYPES = new Set(["submit", "button", "reset", "image"]);
-
-/**
- * Does a keypress on this element activate it, the way a click would?
- *
- * Buttons do, on Enter and on Space. Links do, on Enter only -- Space scrolls
- * the page in a browser rather than following the link, and the difference is
- * observable enough to be worth keeping.
- */
-function keyboardActivation(
-	element: Element,
-): {enter: boolean; space: boolean} | null {
-	const tag = element.tagName;
-	if (tag === "BUTTON") {
-		return {enter: true, space: true};
-	}
-	if (tag === "INPUT") {
-		const type = (element as HTMLInputElement).type;
-		return BUTTON_INPUT_TYPES.has(type) ? {enter: true, space: true} : null;
-	}
-	if (tag === "A" && element.hasAttribute("href")) {
-		return {enter: true, space: false};
-	}
-	return null;
-}
 
 function installCursorRestoreOnExit(): void {
 	if (exitHookInstalled) return;
@@ -836,14 +608,6 @@ export class TermDOM {
 	 * share. Members are excluded from normal stacking collection.
 	 */
 	#topLayer = new Set<Element>();
-	#inputShadowParts = new WeakMap<
-		Element,
-		{
-			kind: "field" | "toggle" | "textarea" | "select";
-			spans: Record<string, HTMLElement>;
-			texts: Record<string, Text>;
-		}
-	>();
 
 	// Track whether command start was explicitly detected (even if at row 1)
 	#hasDetectedCommandStart: boolean = false;
@@ -1015,18 +779,42 @@ export class TermDOM {
 			observer: this[kObserver],
 		});
 
+		// A field edit -- text (input/select events) or a checkbox/radio toggle
+		// (change) -- announces itself with standard events. The render loop
+		// keeps the caret in view and repaints in response to those, rather than
+		// each edit path reaching back into it. Capture, so it lands however the
+		// event bubbles.
+		this.document.addEventListener("input", this.#onFieldEditEvent, true);
+		this.document.addEventListener("select", this.#onFieldEditEvent, true);
+		this.document.addEventListener("change", this.#onFieldEditEvent, true);
+
 		// Initial processing of all elements is handled by StyleManager's constructor
 	}
 
 	/**
-	 * Upgrade a <textarea> to its UA widget class (idempotent) and return it
-	 * typed. The upgrade is synchronous: the shadow tree exists on return, so a
-	 * paint that discovers the element the same tick still has parts to read.
+	 * Keep a focused field's caret in view and repaint, on the standard
+	 * input/select/change events its own edit fires. Scoped to the active
+	 * field: an event from elsewhere (a select commit, an author's dispatch on
+	 * an unfocused control, a text input's change on blur) must not yank the
+	 * camera to it.
 	 */
-	#textarea(element: HTMLTextAreaElement): UATextareaElement {
-		this.#uaWidgets.upgrade(element);
-		return element as UATextareaElement;
-	}
+	#onFieldEditEvent = (event: Event): void => {
+		const target = event.target;
+		if (
+			target !== this.document.activeElement ||
+			!(
+				target instanceof (this.window as any).HTMLInputElement ||
+				target instanceof (this.window as any).HTMLTextAreaElement ||
+				target instanceof (this.window as any).HTMLSelectElement
+			)
+		) {
+			return;
+		}
+		this.#queueCaretReveal(
+			target as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
+		);
+		void this.#render();
+	};
 
 	/**
 	 * The seam between this instance and the jsdom patches installed over its
@@ -1848,7 +1636,7 @@ export class TermDOM {
 				// mouse-capturing mode, so its reports must not be dropped with the
 				// keyboard events.
 				let keyInput = "";
-				for (const token of this.#tokenizeInput(dataStr)) {
+				for (const token of tokenizeInput(dataStr)) {
 					const mouse = token.match(/^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/);
 					if (mouse) {
 						this.#handleMouseReport(
@@ -2087,13 +1875,12 @@ export class TermDOM {
 		if (visible) this.#renderOutsideMarker(element, ctx);
 
 		// A textarea's content IS its UA shadow tree, painted by the normal
-		// child walk below; what the widget owns here is just tree upkeep (a
-		// safety-net sync for framework .value assignments -- no observer
-		// record fires for those) and parking the real terminal caret at the
-		// multiline position.
+		// child walk below; upgrading it here (idempotent) guarantees the tree
+		// exists for a textarea discovered mid-paint, and parking the real
+		// terminal caret at the multiline position is the rest.
 		if (element.tagName === "TEXTAREA" && rect) {
-			const textarea = this.#textarea(element as HTMLTextAreaElement);
-			textarea.uaReconcile();
+			this.#uaWidgets.upgrade(element);
+			const textarea = element as HTMLTextAreaElement;
 			if (visible && textarea === this.document.activeElement) {
 				const caretCell = textareaCaretCell(textarea, this[kLayoutEngine]);
 				if (caretCell) {
@@ -2102,13 +1889,23 @@ export class TermDOM {
 			}
 		}
 
-		// A select's content is its UA shadow tree (label + indicator),
-		// painted by the normal child walk; upkeep and caret parking are all
-		// that belongs here.
+		// A select's content is its UA shadow tree (label + indicator + picker),
+		// painted by the normal child walk; the widget owns it. Upgrading here
+		// (idempotent) guarantees it exists mid-paint, and an OPEN picker (the
+		// widget shows it by flipping display) paints in the top layer, over
+		// following content. Parking the caret at the field origin is the rest.
 		if (element.tagName === "SELECT" && rect) {
 			const select = element as HTMLSelectElement;
-			const parts = this.#ensureSelectShadowParts(select);
-			this.#syncSelectShadowTree(select, parts);
+			this.#uaWidgets.upgrade(select);
+			const picker =
+				compositionShadowRoot(select)?.querySelector('[part="picker"]');
+			if (picker) {
+				if (this.window.getComputedStyle(picker).display !== "none") {
+					this.#topLayer.add(picker);
+				} else {
+					this.#topLayer.delete(picker);
+				}
+			}
 			if (visible && select === this.document.activeElement) {
 				const boxModel = getBoxModel(select);
 				ctx.setCaret(
@@ -2521,322 +2318,6 @@ export class TermDOM {
 	}
 
 	/**
-	 * Build (or rebuild, when the type flips between text-ish and toggle)
-	 * an input's UA-internal shadow tree: real DOM in the symbol slot,
-	 * closed to authors -- element.shadowRoot stays null and attachShadow
-	 * still throws, exactly as for a browser input's own internals. The
-	 * field tree carries a real <style> scoped to its root; parts are
-	 * addressed by the standard `part` attribute, which is what gives
-	 * ::placeholder a real element to resolve onto.
-	 */
-	#ensureInputShadowParts(element: HTMLInputElement): {
-		kind: "field" | "toggle" | "textarea" | "select";
-		spans: Record<string, HTMLElement>;
-		texts: Record<string, Text>;
-	} {
-		const kind =
-			element.type === "checkbox" || element.type === "radio"
-				? ("toggle" as const)
-				: ("field" as const);
-		const cached = this.#inputShadowParts.get(element);
-		if (cached && cached.kind === kind) {
-			return cached;
-		}
-
-		const document = this.document;
-		const root = createUAShadowRoot(element);
-		while (root.firstChild) {
-			root.removeChild(root.firstChild);
-		}
-		const spans: Record<string, HTMLElement> = {};
-		const texts: Record<string, Text> = {};
-		const addPart = (part: string) => {
-			const span = document.createElement("span");
-			span.setAttribute("part", part);
-			const text = document.createTextNode("");
-			span.appendChild(text);
-			root.appendChild(span);
-			spans[part] = span;
-			texts[part] = text;
-		};
-		if (kind === "field") {
-			const style = document.createElement("style");
-			style.textContent = FIELD_UA_STYLES;
-			root.appendChild(style);
-			addPart("value");
-			addPart("placeholder");
-			addPart("blank");
-		} else {
-			addPart("glyph");
-		}
-
-		// Scope the UA rules to this root. The root is deliberately NOT
-		// observer-enrolled: the painter syncs the tree from the input's own
-		// state right before reading it, so a mutation record could only
-		// ever schedule a redundant frame. The MEASURE, though, must hear
-		// about the tree once -- a width:auto input sizes to its composed
-		// content, and nothing else will ever invalidate it.
-		this.#styleManager.registerShadowRoot(root);
-		this[kLayoutEngine].invalidate(element);
-		void this.#render();
-		const parts = {kind, spans, texts};
-		this.#inputShadowParts.set(element, parts);
-		return parts;
-	}
-
-	/**
-	 * Build a select's UA-internal shadow tree: the selected option's label
-	 * (part=value) and the ▾ indicator (part=indicator), observer-enrolled
-	 * before population like the textarea's -- its content renders through
-	 * the normal pipeline, and composition hides the option list entirely.
-	 */
-	#ensureSelectShadowParts(element: HTMLSelectElement): {
-		kind: "field" | "toggle" | "textarea" | "select";
-		spans: Record<string, HTMLElement>;
-		texts: Record<string, Text>;
-	} {
-		const cached = this.#inputShadowParts.get(element);
-		if (cached && cached.kind === "select") {
-			return cached;
-		}
-
-		const document = this.document;
-		const root = createUAShadowRoot(element);
-		this[kObserver].observe(root, {
-			childList: true,
-			subtree: true,
-			attributes: true,
-			attributeOldValue: true,
-			characterData: true,
-		});
-		this.#styleManager.registerShadowRoot(root);
-
-		const spans: Record<string, HTMLElement> = {};
-		const texts: Record<string, Text> = {};
-		const style = document.createElement("style");
-		style.textContent = SELECT_UA_STYLES;
-		root.appendChild(style);
-		for (const part of ["value", "indicator"]) {
-			const span = document.createElement("span");
-			span.setAttribute("part", part);
-			const text = document.createTextNode("");
-			span.appendChild(text);
-			root.appendChild(span);
-			spans[part] = span;
-			texts[part] = text;
-		}
-		texts.indicator.data = " \u25be"; // " ▾"
-
-		// The picker: the spec-shaped ::picker(select) popover as a real UA
-		// part -- an absolutely positioned box the open state reveals, whose
-		// geometry the sync controller anchors to the field in document
-		// coordinates (its containing block is the ICB; a measure-function
-		// select can't serve as one).
-		const picker = document.createElement("div");
-		picker.setAttribute("part", "picker");
-		root.appendChild(picker);
-		spans.picker = picker;
-
-		const parts = {kind: "select" as const, spans, texts};
-		this.#inputShadowParts.set(element, parts);
-		this.#syncSelectShadowTree(element, parts);
-		return parts;
-	}
-
-	/** Highlighted option index of each OPEN picker; absence = closed. */
-	#openPickers = new WeakMap<HTMLSelectElement, number>();
-
-	/** Reconcile the select's UA tree with its own selection state. */
-	#syncSelectShadowTree(
-		element: HTMLSelectElement,
-		parts: {spans: Record<string, HTMLElement>; texts: Record<string, Text>},
-	): void {
-		const selected =
-			element.selectedIndex >= 0
-				? element.options[element.selectedIndex]
-				: null;
-		const label = selected ? selected.label : "";
-		if (parts.texts.value.data !== label) {
-			parts.texts.value.data = label;
-		}
-
-		// Losing focus closes the picker, as everywhere.
-		if (
-			this.#openPickers.has(element) &&
-			this.document.activeElement !== element
-		) {
-			this.#openPickers.delete(element);
-		}
-
-		const picker = parts.spans.picker;
-		const highlight = this.#openPickers.get(element);
-		const open = highlight !== undefined;
-		if (!open) {
-			if (picker.style.display !== "none") {
-				picker.style.display = "none";
-				this.#topLayer.delete(picker);
-			}
-			return;
-		}
-
-		// Rebuild rows to match the option list; cheap at option-list scale.
-		const options = Array.from(element.options);
-		while (picker.childNodes.length > options.length) {
-			picker.removeChild(picker.lastChild!);
-		}
-		while (picker.childNodes.length < options.length) {
-			const row = this.document.createElement("div");
-			row.setAttribute("part", "option");
-			picker.appendChild(row);
-		}
-		options.forEach((option, index) => {
-			const row = picker.childNodes[index] as HTMLElement;
-			if (row.textContent !== option.label) row.textContent = option.label;
-			// Attribute writes are guarded: setAttribute queues a mutation
-			// record even when the value is unchanged, and this sync runs at
-			// paint time on an OBSERVED root -- unconditional writes are an
-			// infinite render loop.
-			if (option.disabled !== row.hasAttribute("data-disabled")) {
-				if (option.disabled) row.setAttribute("data-disabled", "");
-				else row.removeAttribute("data-disabled");
-			}
-			const highlighted = index === highlight;
-			if (highlighted !== row.hasAttribute("data-highlighted")) {
-				if (highlighted) row.setAttribute("data-highlighted", "");
-				else row.removeAttribute("data-highlighted");
-			}
-		});
-
-		// Anchor below the field in DOCUMENT coordinates (the picker's
-		// containing block is the ICB), matching the field's width.
-		const rect = this[kLayoutEngine].getRect(element);
-		if (rect) {
-			const top = `${Math.round(rect.bottom)}px`;
-			const left = `${Math.round(rect.left)}px`;
-			const width = `${Math.max(4, Math.round(rect.width))}ch`;
-			if (picker.style.top !== top) picker.style.top = top;
-			if (picker.style.left !== left) picker.style.left = left;
-			if (picker.style.width !== width) picker.style.width = width;
-		}
-		if (picker.style.display !== "block") picker.style.display = "block";
-		this.#topLayer.add(picker);
-	}
-
-	/**
-	 * Arrow keys move a closed select's selection in place, skipping
-	 * disabled options, firing input and change -- the browser's own
-	 * closed-select keyboard model, with no popup to degrade.
-	 */
-	#handleSelectAction(
-		element: HTMLSelectElement,
-		keyName: string,
-		key: string,
-	): void {
-		const options = Array.from(element.options);
-		if (options.length === 0) return;
-
-		const enabled = (index: number) => !options[index].disabled;
-		const current = element.selectedIndex;
-		let target = current;
-
-		const step = (from: number, direction: 1 | -1): number => {
-			for (
-				let i = from + direction;
-				i >= 0 && i < options.length;
-				i += direction
-			) {
-				if (enabled(i)) return i;
-			}
-			return from;
-		};
-
-		// OPEN picker: arrows move the highlight without committing; Enter or
-		// Space commits; Escape dismisses without change -- the browser's
-		// picker model.
-		const highlight = this.#openPickers.get(element);
-		if (highlight !== undefined) {
-			if (keyName === "ArrowDown") {
-				this.#openPickers.set(element, step(highlight, 1));
-			} else if (keyName === "ArrowUp") {
-				this.#openPickers.set(element, step(highlight, -1));
-			} else if (keyName === "Home") {
-				this.#openPickers.set(element, step(-1, 1));
-			} else if (keyName === "End") {
-				this.#openPickers.set(element, step(options.length, -1));
-			} else if (keyName === "Enter" || key === " ") {
-				this.#openPickers.delete(element);
-				if (highlight !== current && enabled(highlight)) {
-					this.#commitSelect(element, highlight);
-					return;
-				}
-			} else if (keyName === "Escape") {
-				this.#openPickers.delete(element);
-			} else {
-				return;
-			}
-			this.#syncSelectShadowTree(
-				element,
-				this.#ensureSelectShadowParts(element),
-			);
-			this.#render();
-			return;
-		}
-
-		// CLOSED: Space or Enter opens the picker at the current selection;
-		// arrows keep changing the value in place (the macOS closed-select
-		// model, unchanged).
-		if (keyName === "Enter" || key === " ") {
-			this.#openSelectPicker(element);
-			return;
-		}
-		if (keyName === "ArrowDown" || keyName === "ArrowRight") {
-			target = step(current, 1);
-		} else if (keyName === "ArrowUp" || keyName === "ArrowLeft") {
-			target = step(current, -1);
-		} else if (keyName === "Home") {
-			target = step(-1, 1);
-		} else if (keyName === "End") {
-			target = step(options.length, -1);
-		} else {
-			return;
-		}
-
-		if (target !== current && target >= 0) {
-			this.#commitSelect(element, target);
-		}
-	}
-
-	/**
-	 * Open a select's picker with the highlight on the current selection
-	 * (or the first enabled option when nothing is selected) -- shared by
-	 * the keyboard's Enter/Space and the mouse's press-to-open.
-	 */
-	#openSelectPicker(element: HTMLSelectElement): void {
-		const options = Array.from(element.options);
-		if (options.length === 0) return;
-		let index = element.selectedIndex;
-		if (index < 0) {
-			index = options.findIndex((option) => !option.disabled);
-		}
-		this.#openPickers.set(element, index);
-		this.#syncSelectShadowTree(element, this.#ensureSelectShadowParts(element));
-		this.#render();
-	}
-
-	#commitSelect(element: HTMLSelectElement, index: number): void {
-		element.selectedIndex = index;
-		this.#syncSelectShadowTree(element, this.#ensureSelectShadowParts(element));
-		element.dispatchEvent(
-			new this.window.Event("input", {bubbles: true, cancelable: false}),
-		);
-		element.dispatchEvent(
-			new this.window.Event("change", {bubbles: true, cancelable: false}),
-		);
-		this.#queueCaretReveal(element);
-		this.#render();
-	}
-
-	/**
 	 * The value offset under a document-space point in a text field --
 	 * cell-width aware, clamped to the nearest offset so a drag that
 	 * leaves the field still resolves (the browser's capture model:
@@ -2848,8 +2329,11 @@ export class TermDOM {
 		y: number,
 	): number | null {
 		if (element.tagName === "TEXTAREA") {
-			const textarea = this.#textarea(element as HTMLTextAreaElement);
-			const visual = textareaVisualLines(textarea, this[kLayoutEngine]);
+			this.#uaWidgets.upgrade(element);
+			const visual = textareaVisualLines(
+				element as HTMLTextAreaElement,
+				this[kLayoutEngine],
+			);
 			if (!visual || visual.lines.length === 0) return null;
 			// The pressed row's line; above the first clamps to it, below
 			// the last to that.
@@ -2921,7 +2405,7 @@ export class TermDOM {
 		if (!rect) return;
 		let caretY = Math.round(rect.top);
 		if (element.tagName === "TEXTAREA") {
-			this.#textarea(element as HTMLTextAreaElement); // ensure the shadow exists
+			this.#uaWidgets.upgrade(element); // ensure the shadow exists
 			const cell = textareaCaretCell(
 				element as HTMLTextAreaElement,
 				this[kLayoutEngine],
@@ -2957,54 +2441,11 @@ export class TermDOM {
 	}
 
 	/**
-	 * Sync an input's UA tree from its own state -- the single source of
-	 * truth; the tree is its rendered content model. A width:auto input
-	 * sizes to this content (field-sizing: content, effectively), so
-	 * content changes must re-measure -- the UA root is unobserved, nothing
-	 * else will -- and the blank part carries one space as the caret's cell
-	 * past the last character. Called at paint (safety net) AND at edit
-	 * commit, BEFORE layout flushes: painting one frame at the stale width
-	 * shifted the scroll-window and dropped the lead character for a frame.
-	 */
-	#syncInputShadowTree(
-		element: HTMLInputElement,
-		parts: {spans: Record<string, HTMLElement>; texts: Record<string, Text>},
-	): void {
-		const value = element.value || "";
-		const placeholder = element.getAttribute("placeholder") || "";
-		const autoWidth =
-			this.window.getComputedStyle(element).getPropertyValue("width") ===
-			"auto";
-		let contentChanged = false;
-		if (parts.texts.value.data !== value) {
-			parts.texts.value.data = value;
-			contentChanged = true;
-		}
-		if (parts.texts.placeholder.data !== placeholder) {
-			parts.texts.placeholder.data = placeholder;
-			contentChanged = true;
-		}
-		// An empty field must not collapse to zero cells: with no value and
-		// no placeholder to give it width, the blank's single caret cell IS
-		// the field -- one faint underlined cell marking an editable spot.
-		const blank = !autoWidth ? "" : value || !placeholder ? " " : "";
-		if (parts.texts.blank.data !== blank) {
-			parts.texts.blank.data = blank;
-			contentChanged = true;
-		}
-		if (autoWidth && contentChanged) {
-			this[kLayoutEngine].invalidate(element);
-			void this.#render();
-		}
-	}
-
-	/**
-	 * Render an input element: sync its UA shadow tree from the input's own
-	 * state, then paint the tree's parts with their computed styles. What
-	 * remains here is exactly the widget's editor mechanics -- the
-	 * scroll-window over an overflowing value and parking the REAL terminal
-	 * cursor -- the same split a browser makes between its input's shadow
-	 * content and its editor internals.
+	 * Render an input element: read its UA widget's shadow parts for their
+	 * computed styles and paint them. What remains here is exactly the widget's
+	 * editor mechanics -- the scroll-window over an overflowing value and
+	 * parking the REAL terminal cursor -- the same split a browser makes between
+	 * its input's shadow content and its editor internals.
 	 */
 	#renderInputElement(
 		element: HTMLInputElement,
@@ -3027,9 +2468,16 @@ export class TermDOM {
 			(boxModel.paddingLeft || 0) -
 			(boxModel.paddingRight || 0);
 
-		const parts = this.#ensureInputShadowParts(element);
+		// The UA widget owns the shadow tree and reconciles it from the input's
+		// own state; the painter only reads its parts' computed styles. Upgrading
+		// here (idempotent) guarantees the tree exists for an input discovered
+		// mid-paint.
+		this.#uaWidgets.upgrade(element);
+		const root = compositionShadowRoot(element);
+		if (!root) return;
 
-		if (parts.kind === "toggle") {
+		if (element.type === "checkbox" || element.type === "radio") {
+			const glyphSpan = root.querySelector('[part="glyph"]') as HTMLElement;
 			const mark =
 				element.type === "checkbox"
 					? element.checked
@@ -3040,15 +2488,14 @@ export class TermDOM {
 						: "( )";
 			// The glyph is real DOM; its style (the focus underline included,
 			// inherited from the input's own focus-aware default) reads back
-			// off the tree.
-			if (parts.texts.glyph.data !== mark) {
-				parts.texts.glyph.data = mark;
-			}
+			// off the tree. The mark itself is the painter's, from live .checked.
+			const glyphText = glyphSpan.firstChild as Text;
+			if (glyphText.data !== mark) glyphText.data = mark;
 			ctx.setText(
 				contentX,
 				contentY,
 				mark,
-				cellStyleFromComputed(this.window.getComputedStyle(parts.spans.glyph)),
+				cellStyleFromComputed(this.window.getComputedStyle(glyphSpan)),
 			);
 			if (element === this.document.activeElement) {
 				ctx.setCaret(contentX, contentY);
@@ -3060,19 +2507,21 @@ export class TermDOM {
 		const placeholder = element.getAttribute("placeholder") || "";
 		const isFocused = element === this.document.activeElement;
 
-		this.#syncInputShadowTree(element, parts);
+		const valueSpan = root.querySelector('[part="value"]') as HTMLElement;
+		const placeholderSpan = root.querySelector(
+			'[part="placeholder"]',
+		) as HTMLElement;
+		const blankSpan = root.querySelector('[part="blank"]') as HTMLElement;
 
 		// Region styles come off the tree: the value inherits the input's
 		// own text style (solid underline when focused), the placeholder and
 		// the blank carry the UA field sheet -- gray ghost label, faint
 		// blank when blurred -- plus whatever the author adds.
 		const textStyle = cellStyleFromComputed(
-			this.window.getComputedStyle(
-				value ? parts.spans.value : parts.spans.placeholder,
-			),
+			this.window.getComputedStyle(value ? valueSpan : placeholderSpan),
 		);
 		const blankStyle = cellStyleFromComputed(
-			this.window.getComputedStyle(parts.spans.blank),
+			this.window.getComputedStyle(blankSpan),
 		);
 
 		// Shown focused or not, as in a browser -- the caret just sits at
@@ -3588,281 +3037,6 @@ export class TermDOM {
 	}
 
 	/**
-	 * Handle input element default actions (character insertion, deletion, navigation)
-	 */
-	/**
-	 * Flip a checkbox's checked state and fire `change`, matching a browser's
-	 * Space-key default action for a focused checkbox -- never `input`, which
-	 * checkboxes don't fire. Click doesn't need this: jsdom's own click
-	 * activation behavior already toggles `.checked` and fires `change` (and
-	 * already honors preventDefault on the click), so handling it here too
-	 * would double-toggle.
-	 */
-	#toggleCheckbox(element: HTMLInputElement): void {
-		element.checked = !element.checked;
-		element.dispatchEvent(
-			new this.window.Event("change", {bubbles: true, cancelable: false}),
-		);
-		this.#render();
-	}
-
-	#handleInputAction(
-		element: HTMLInputElement | HTMLTextAreaElement,
-		keyName: string,
-		key: string,
-		shiftKey: boolean,
-		ctrlKey: boolean,
-	): void {
-		const isTextarea = element.tagName === "TEXTAREA";
-		if (isTextarea && keyName !== "ArrowUp" && keyName !== "ArrowDown") {
-			this.#textarea(element as HTMLTextAreaElement).uaClearGoalColumn();
-		}
-		if (element.type === "checkbox" || element.type === "radio") {
-			const toggle = element as HTMLInputElement;
-			// Only Space activates these -- real browsers don't accept typed
-			// text into them at all, so every other key here is a no-op. A
-			// checkbox toggles; a radio only ever checks (Space on an
-			// already-checked radio does nothing, per the browser default --
-			// jsdom's checkedness setter handles unchecking the rest of the
-			// same-name group).
-			if (key === " ") {
-				if (toggle.type === "checkbox") {
-					this.#toggleCheckbox(toggle);
-				} else if (!toggle.checked) {
-					toggle.checked = true;
-					element.dispatchEvent(
-						new this.window.Event("change", {
-							bubbles: true,
-							cancelable: false,
-						}),
-					);
-					this.#render();
-				}
-			}
-			return;
-		}
-
-		// The caret IS the input's collapsed selection -- selectionStart/End/
-		// Direction, the standard API, not a private shadow of it. That makes
-		// the caret visible to setSelectionRange()/select() callers, and it
-		// means a framework assigning .value can't strand it: per spec (and in
-		// jsdom, verified) setting value collapses the selection to the end.
-		// Direction carries which end of a selection is the moving focus, so
-		// Shift+Left after Shift+Right shrinks the selection instead of
-		// flipping it -- exactly the browser's anchor/focus model.
-		const value = element.value;
-		const start = element.selectionStart ?? value.length;
-		const end = element.selectionEnd ?? value.length;
-		const backward = element.selectionDirection === "backward";
-		const caret = backward ? start : end;
-		const anchor = backward ? end : start;
-		const hasSelection = start !== end;
-
-		let newValue = value;
-		let newStart = start;
-		let newEnd = end;
-		let newDirection: "forward" | "backward" | "none" = "none";
-
-		// Collapse the selection to a caret at `pos`.
-		const collapse = (pos: number) => {
-			newStart = newEnd = Math.max(0, Math.min(pos, newValue.length));
-		};
-		// Move the selection's focus (anchor stays), Shift+arrow style.
-		const extend = (focus: number) => {
-			const clamped = Math.max(0, Math.min(focus, value.length));
-			newStart = Math.min(anchor, clamped);
-			newEnd = Math.max(anchor, clamped);
-			newDirection = clamped < anchor ? "backward" : "forward";
-		};
-
-		if (ctrlKey && keyName === "a") {
-			// Select all, the browser's Ctrl+A. (Never Cmd+A here: Cmd chords
-			// are consumed by the terminal app and don't reach the PTY.)
-			extend(0);
-			newStart = 0;
-			newEnd = value.length;
-			newDirection = "forward";
-		} else if (keyName === "Backspace") {
-			if (hasSelection) {
-				newValue = value.slice(0, start) + value.slice(end);
-				collapse(start);
-			} else if (caret > 0) {
-				const from = prevGraphemeBoundary(value, caret);
-				newValue = value.slice(0, from) + value.slice(caret);
-				collapse(from);
-			}
-		} else if (keyName === "Delete") {
-			if (hasSelection) {
-				newValue = value.slice(0, start) + value.slice(end);
-				collapse(start);
-			} else if (caret < value.length) {
-				const to = nextGraphemeBoundary(value, caret);
-				newValue = value.slice(0, caret) + value.slice(to);
-				collapse(caret);
-			}
-		} else if (keyName === "ArrowLeft") {
-			if (shiftKey) {
-				extend(prevGraphemeBoundary(value, caret));
-			} else if (hasSelection) {
-				// A plain arrow collapses to the selection's matching edge,
-				// not one past it -- the browser behavior.
-				collapse(start);
-			} else {
-				collapse(prevGraphemeBoundary(value, caret));
-			}
-		} else if (keyName === "ArrowRight") {
-			if (shiftKey) {
-				extend(nextGraphemeBoundary(value, caret));
-			} else if (hasSelection) {
-				collapse(end);
-			} else {
-				collapse(nextGraphemeBoundary(value, caret));
-			}
-		} else if (isTextarea && keyName === "Enter") {
-			// Enter is a newline in a textarea -- inserted like any typed
-			// character, replacing the selection.
-			newValue = value.slice(0, start) + "\n" + value.slice(end);
-			collapse(start + 1);
-		} else if (
-			isTextarea &&
-			(keyName === "ArrowUp" || keyName === "ArrowDown")
-		) {
-			// Vertical movement is by VISUAL line -- soft wraps count, as in
-			// a browser -- computed from the value's laid-out fragments.
-			this.#processPendingMutationsAndRender();
-			const target = this.#textarea(
-				element as HTMLTextAreaElement,
-			).uaVerticalTarget(caret, keyName === "ArrowDown" ? 1 : -1);
-			if (shiftKey) {
-				extend(target);
-			} else {
-				collapse(target);
-			}
-		} else if (keyName === "Home") {
-			// In a textarea, Home goes to the start of the caret's visual
-			// line; in an input, of the whole value.
-			let target = 0;
-			if (isTextarea) {
-				this.#processPendingMutationsAndRender();
-				const visual = textareaVisualLines(
-					element as HTMLTextAreaElement,
-					this[kLayoutEngine],
-				);
-				if (visual) {
-					target =
-						visual.lines[textareaLineAt(visual.lines, caret)].startOffset;
-				}
-			}
-			if (shiftKey) {
-				extend(target);
-			} else {
-				collapse(target);
-			}
-		} else if (keyName === "End") {
-			let target = value.length;
-			if (isTextarea) {
-				this.#processPendingMutationsAndRender();
-				const visual = textareaVisualLines(
-					element as HTMLTextAreaElement,
-					this[kLayoutEngine],
-				);
-				if (visual) {
-					target = visual.lines[textareaLineAt(visual.lines, caret)].endOffset;
-				}
-			}
-			if (shiftKey) {
-				extend(target);
-			} else {
-				collapse(target);
-			}
-		} else if (key.length === 1 && key.charCodeAt(0) >= 32) {
-			// Printable character: replaces the selection, as in a browser.
-			newValue = value.slice(0, start) + key + value.slice(end);
-			collapse(start + 1);
-		} else {
-			return; // Not an input action
-		}
-
-		if (newValue !== value) {
-			// Order matters: assigning .value collapses the selection to the
-			// end (per spec), so the new caret must be set after.
-			element.value = newValue;
-			element.setSelectionRange(newStart, newEnd, newDirection);
-			if (isTextarea) {
-				// Push the new value into the UA tree now -- the mutation
-				// records from this reconcile are what invalidate layout, since no
-				// observer hears a .value assignment.
-				this.#textarea(element as HTMLTextAreaElement).uaReconcile();
-			} else {
-				// Same for the input: a width:auto field must measure at the
-				// NEW width before this frame paints, or the scroll-window
-				// momentarily shoves the lead character off the field.
-				this.#syncInputShadowTree(
-					element as HTMLInputElement,
-					this.#ensureInputShadowParts(element as HTMLInputElement),
-				);
-			}
-
-			// Dispatch input event
-			element.dispatchEvent(
-				new this.window.Event("input", {bubbles: true, cancelable: false}),
-			);
-
-			this.#queueCaretReveal(element);
-			// Trigger re-render since .value changes don't trigger MutationObserver
-			this.#render();
-		} else if (
-			newStart !== start ||
-			newEnd !== end ||
-			(newStart !== newEnd && newDirection !== element.selectionDirection)
-		) {
-			// jsdom fires the `select` event itself for a real range change.
-			element.setSelectionRange(newStart, newEnd, newDirection);
-			this.#queueCaretReveal(element);
-			this.#render();
-		}
-	}
-
-	/**
-	 * Split raw terminal input into key tokens: CSI sequences (ESC [ ... final
-	 * byte), SS3 sequences (ESC O x), and single characters.
-	 *
-	 * Fast input arrives batched -- a held arrow key delivers
-	 * "\x1b[B\x1b[B\x1b[B" in one chunk, and a terminal report can land glued to
-	 * ordinary keystrokes. Anything that treats a chunk as one key swallows
-	 * everything after the first token: a held arrow repeated once per chunk
-	 * instead of once per press, and a stray cursor report ate every key packed
-	 * behind it.
-	 */
-	*#tokenizeInput(input: string): Generator<string> {
-		let i = 0;
-		while (i < input.length) {
-			if (input[i] === "\x1b" && i + 1 < input.length) {
-				if (input[i + 1] === "[") {
-					// CSI: parameter/intermediate bytes end at a final byte 0x40-0x7e.
-					let end = i + 2;
-					while (
-						end < input.length &&
-						!(input.charCodeAt(end) >= 0x40 && input.charCodeAt(end) <= 0x7e)
-					) {
-						end++;
-					}
-					yield input.slice(i, Math.min(end + 1, input.length));
-					i = end + 1;
-					continue;
-				}
-				if (input[i + 1] === "O" && i + 2 < input.length) {
-					yield input.slice(i, i + 3);
-					i += 3;
-					continue;
-				}
-			}
-			yield input[i];
-			i++;
-		}
-	}
-
-	/**
 	 * Where a screen cell lands in the document, given who owns the camera.
 	 * Returns null for cells above our region (a shell prompt is not part of
 	 * the document).
@@ -4091,11 +3265,16 @@ export class TermDOM {
 		row: number,
 		isRelease: boolean,
 	): void {
-		const shiftKey = (code & 4) !== 0;
-		const altKey = (code & 8) !== 0;
-		const ctrlKey = (code & 16) !== 0;
-		const isMotion = (code & 32) !== 0;
-		const base = code & ~(4 | 8 | 16 | 32);
+		const {
+			shiftKey,
+			altKey,
+			ctrlKey,
+			isMotion,
+			base,
+			wheelDeltaY,
+			button,
+			buttons,
+		} = decodeMouseReport(code, isRelease);
 
 		const point = this.#screenToDocumentPoint(col - 1, row - 1);
 		const x = point?.x ?? col - 1;
@@ -4106,10 +3285,8 @@ export class TermDOM {
 		const target =
 			(point && this.#findElementAtDocumentPoint(x, y)) || this.document.body;
 
-		// Wheel: 64 = up, 65 = down. One notch is three rows, the browser's
-		// line-mode convention, and DOM_DELTA_LINE is literally true here.
-		if (base === 64 || base === 65) {
-			const deltaY = base === 64 ? -3 : 3;
+		if (wheelDeltaY !== null) {
+			const deltaY = wheelDeltaY;
 			const notCanceled = target.dispatchEvent(
 				new this.window.WheelEvent("wheel", {
 					deltaY,
@@ -4159,8 +3336,8 @@ export class TermDOM {
 		// encoding; SGR names the button even on release, so 3 carries nothing.
 		if (base > 2) return;
 		const eventInit = {
-			button: base === 1 ? 1 : base === 2 ? 2 : 0,
-			buttons: isRelease ? 0 : base === 1 ? 4 : base === 2 ? 2 : 1,
+			button,
+			buttons,
 			clientX: x,
 			clientY: y,
 			shiftKey,
@@ -4230,52 +3407,10 @@ export class TermDOM {
 					void this.#render();
 				}
 
-				// Default action: pressing a select opens its picker, exactly
-				// like a browser's dropdown on mousedown. With the picker OPEN,
-				// a press on an option row commits it (a disabled row is inert,
-				// the sheet stays up), and a press back on the closed face
-				// dismisses without changing the value. preventDefault on
-				// mousedown suppresses all of it, as in a browser.
-				const select =
-					base === 0 &&
-					point &&
-					target instanceof (this.window as any).HTMLSelectElement
-						? (target as HTMLSelectElement)
-						: null;
-				if (select) {
-					const highlight = this.#openPickers.get(select);
-					if (highlight === undefined) {
-						this.#openSelectPicker(select);
-					} else {
-						// The un-retargeted hit tells the option rows (UA shadow
-						// parts under the picker) apart from the closed face.
-						const raw = this[kHitTest](this.document.documentElement, x, y);
-						const part = raw?.getAttribute("part");
-						if (part === "option") {
-							const parts = this.#ensureSelectShadowParts(select);
-							const index = Array.from(parts.spans.picker.children)
-								.filter((row) => row.getAttribute("part") === "option")
-								.indexOf(raw as Element);
-							const options = Array.from(select.options);
-							if (index < 0 || !options[index]?.disabled) {
-								this.#openPickers.delete(select);
-								if (index >= 0 && index !== select.selectedIndex) {
-									this.#commitSelect(select, index);
-								} else {
-									this.#syncSelectShadowTree(select, parts);
-									this.#render();
-								}
-							}
-						} else if (part !== "picker") {
-							this.#openPickers.delete(select);
-							this.#syncSelectShadowTree(
-								select,
-								this.#ensureSelectShadowParts(select),
-							);
-							this.#render();
-						}
-					}
-				}
+				// A select's press-to-open and option-row commit are the select
+				// widget's own mousedown listener, run during dispatch above --
+				// the un-retargeted option row it needs comes from the rows' own
+				// document rects, not a renderer hit-test here.
 
 				// Default action: a press in a text field parks the caret at
 				// the pressed character and anchors a FIELD drag there -- the
@@ -4430,7 +3565,7 @@ export class TermDOM {
 		const key = chunk.toString("utf8");
 
 		// Tokenize multi-key chunks and dispatch each token on its own.
-		const tokens = Array.from(this.#tokenizeInput(key));
+		const tokens = Array.from(tokenizeInput(key));
 		if (tokens.length > 1) {
 			for (const token of tokens) {
 				this.#dispatchGlobalKeyboardEvent(Buffer.from(token));
@@ -4438,13 +3573,13 @@ export class TermDOM {
 			return;
 		}
 
-		// A cursor position report is the terminal answering a query, not the
-		// user pressing keys. With no query outstanding (a late or duplicate
-		// answer), it is not a keystroke -- drop it rather than dispatching a
-		// nonsense key event.
-		if (/^\x1b\[\d+;\d+R$/.test(key)) {
-			return;
-		}
+		// A cursor position report with no query outstanding is a late or
+		// duplicate terminal reply, not a keystroke: decodeKey returns null and
+		// nothing is dispatched.
+		const stroke = decodeKey(key);
+		if (!stroke) return;
+		const {keyName, keyCode, charCode, shiftKey, ctrlKey, altKey, metaKey} =
+			stroke;
 
 		// Find the focused element. document.activeElement defaults to body when
 		// nothing is focused, so it can't be used with `||` to detect "nothing
@@ -4457,220 +3592,10 @@ export class TermDOM {
 		// still prefer an explicitly focused descendant (e.g. an input inside
 		// the fullscreen element), which the old dispatch ignored.
 		const active = this.document.activeElement;
-		let targetElement =
+		const targetElement =
 			active && active !== this.document.body
 				? active
 				: this.#fullscreenManager.fullscreenElement || this.document.body;
-
-		// Map common key codes (reuse logic from fullscreen manager)
-		let keyName = key;
-		let keyCode = 0;
-		let charCode = key.charCodeAt(0);
-
-		// Handle special keys
-		// Detect modifier keys
-		let shiftKey = false;
-		let ctrlKey = false;
-		let altKey = false;
-		let metaKey = false;
-
-		// Ctrl+<letter> arrives as a single raw ASCII control byte (Ctrl+A=0x01
-		// ... Ctrl+Z=0x1A) -- there is no escape sequence, and no way to combine
-		// it with Shift (the terminal only ever sends the one byte). Tab(0x09)
-		// and Enter(0x0A/0x0D) are excluded even though they fall in this range:
-		// a raw terminal genuinely cannot distinguish the physical Enter/Tab keys
-		// from Ctrl+M/Ctrl+I, they are the identical byte, so the named key wins
-		// -- matching every other terminal app. Ctrl+C(0x03) never reaches here:
-		// it is intercepted earlier, unconditionally, for SIGINT.
-		const modifiedArrow = key.match(/^\x1b\[1;(\d+)([ABCDHF])$/);
-		if (
-			charCode >= 1 &&
-			charCode <= 26 &&
-			charCode !== 9 &&
-			charCode !== 10 &&
-			charCode !== 13
-		) {
-			keyName = String.fromCharCode(charCode + 96); // 0x01 -> 'a' ... 0x1A -> 'z'
-			keyCode = charCode + 64; // 'A'..'Z', the DOM keyCode for the letter itself
-			ctrlKey = true;
-		} else if (modifiedArrow) {
-			// xterm's extended CSI encoding for a modified cursor key: CSI 1 ;
-			// <mod> <letter>, e.g. Alt+Up = \x1b[1;3A, Shift+Home = \x1b[1;2H.
-			// The tokenizer already yields this whole sequence as one token
-			// unchanged -- it scans for the CSI final byte regardless of what
-			// parameters precede it -- so this is pure decoding, no parsing
-			// changes needed. mod-1 is a bitmask: 1=Shift, 2=Alt, 4=Ctrl,
-			// 8=Meta (metaKey included for spec-completeness; nothing on macOS
-			// actually sends it, since Cmd+key never reaches the PTY at all).
-			const modifierBits = parseInt(modifiedArrow[1], 10) - 1;
-			shiftKey = (modifierBits & 1) !== 0;
-			altKey = (modifierBits & 2) !== 0;
-			ctrlKey = (modifierBits & 4) !== 0;
-			metaKey = (modifierBits & 8) !== 0;
-			const cursorKeyByLetter: Record<string, [string, number]> = {
-				A: ["ArrowUp", 38],
-				B: ["ArrowDown", 40],
-				C: ["ArrowRight", 39],
-				D: ["ArrowLeft", 37],
-				H: ["Home", 36],
-				F: ["End", 35],
-			};
-			[keyName, keyCode] = cursorKeyByLetter[modifiedArrow[2]];
-			charCode = 0;
-		} else {
-			switch (key) {
-				case "\r":
-				case "\n":
-					keyName = "Enter";
-					keyCode = 13;
-					charCode = 13;
-					break;
-				case "\t":
-					keyName = "Tab";
-					keyCode = 9;
-					charCode = 9;
-					break;
-				case "\x1b[Z":
-					// Shift+Tab
-					keyName = "Tab";
-					keyCode = 9;
-					charCode = 9;
-					shiftKey = true;
-					break;
-				case "\x7f":
-					keyName = "Backspace";
-					keyCode = 8;
-					charCode = 8;
-					break;
-				case "\x1b":
-					// A lone Escape -- not the start of a CSI/SS3 sequence, since the
-					// tokenizer already peels those off as their own multi-char tokens.
-					keyName = "Escape";
-					keyCode = 27;
-					charCode = 0;
-					break;
-				case "\x1b[A":
-					keyName = "ArrowUp";
-					keyCode = 38;
-					charCode = 0;
-					break;
-				case "\x1b[B":
-					keyName = "ArrowDown";
-					keyCode = 40;
-					charCode = 0;
-					break;
-				case "\x1b[C":
-					keyName = "ArrowRight";
-					keyCode = 39;
-					charCode = 0;
-					break;
-				case "\x1b[D":
-					keyName = "ArrowLeft";
-					keyCode = 37;
-					charCode = 0;
-					break;
-				case "\x1b[H":
-				case "\x1b[1~":
-					keyName = "Home";
-					keyCode = 36;
-					charCode = 0;
-					break;
-				case "\x1b[F":
-				case "\x1b[4~":
-					keyName = "End";
-					keyCode = 35;
-					charCode = 0;
-					break;
-				case "\x1b[2~":
-					keyName = "Insert";
-					keyCode = 45;
-					charCode = 0;
-					break;
-				case "\x1b[3~":
-					keyName = "Delete";
-					keyCode = 46;
-					charCode = 0;
-					break;
-				case "\x1b[5~":
-					keyName = "PageUp";
-					keyCode = 33;
-					charCode = 0;
-					break;
-				case "\x1b[6~":
-					keyName = "PageDown";
-					keyCode = 34;
-					charCode = 0;
-					break;
-				// F1-F4: SS3 encoding, the modern xterm default. F5-F12: CSI-tilde --
-				// note the historical gap (no ~16), a quirk of the original xterm
-				// numbering every terminal descended from it still follows.
-				case "\x1bOP":
-					keyName = "F1";
-					keyCode = 112;
-					charCode = 0;
-					break;
-				case "\x1bOQ":
-					keyName = "F2";
-					keyCode = 113;
-					charCode = 0;
-					break;
-				case "\x1bOR":
-					keyName = "F3";
-					keyCode = 114;
-					charCode = 0;
-					break;
-				case "\x1bOS":
-					keyName = "F4";
-					keyCode = 115;
-					charCode = 0;
-					break;
-				case "\x1b[15~":
-					keyName = "F5";
-					keyCode = 116;
-					charCode = 0;
-					break;
-				case "\x1b[17~":
-					keyName = "F6";
-					keyCode = 117;
-					charCode = 0;
-					break;
-				case "\x1b[18~":
-					keyName = "F7";
-					keyCode = 118;
-					charCode = 0;
-					break;
-				case "\x1b[19~":
-					keyName = "F8";
-					keyCode = 119;
-					charCode = 0;
-					break;
-				case "\x1b[20~":
-					keyName = "F9";
-					keyCode = 120;
-					charCode = 0;
-					break;
-				case "\x1b[21~":
-					keyName = "F10";
-					keyCode = 121;
-					charCode = 0;
-					break;
-				case "\x1b[23~":
-					keyName = "F11";
-					keyCode = 122;
-					charCode = 0;
-					break;
-				case "\x1b[24~":
-					keyName = "F12";
-					keyCode = 123;
-					charCode = 0;
-					break;
-				default:
-					// For regular characters, keyCode is often the uppercase charCode
-					if (key.length === 1) {
-						keyCode = key.toUpperCase().charCodeAt(0);
-					}
-			}
-		}
 
 		// Escape exits fullscreen unconditionally -- not dispatched to the DOM at
 		// all, the same as a real browser: fullscreen exit is a user-agent
@@ -4704,26 +3629,14 @@ export class TermDOM {
 				this.#moveFocus(shiftKey);
 			}
 
-			// Editable widget default actions
-			if (
-				(targetElement instanceof (this.window as any).HTMLInputElement &&
-					(targetElement as HTMLInputElement).type !== "submit" &&
-					(targetElement as HTMLInputElement).type !== "button") ||
-				targetElement instanceof (this.window as any).HTMLTextAreaElement
-			) {
-				this.#handleInputAction(
-					targetElement as HTMLInputElement | HTMLTextAreaElement,
-					keyName,
-					key,
-					shiftKey,
-					ctrlKey,
-				);
-			} else if (keyboardActivation(targetElement as Element)) {
+			// Field editing (input and textarea) is each widget's own keydown
+			// listener, run during dispatch above -- not a default action here.
+			if (keyboardActivation(targetElement as Element)) {
 				// A focused button activates on Enter and on Space, and a link on
 				// Enter, per HTML's activation behavior. Without this, both took
 				// focus and painted :focus while doing nothing -- advertising an
-				// affordance they did not have. `input[type=submit|button]`,
-				// excluded from the editing branch above, had no handler at all.
+				// affordance they did not have. `input[type=submit|button]`
+				// activate here; text inputs never match keyboardActivation.
 				const activation = keyboardActivation(targetElement as Element)!;
 				if (
 					(keyName === "Enter" && activation.enter) ||
@@ -4735,15 +3648,9 @@ export class TermDOM {
 					(targetElement as HTMLElement).click();
 					this.#render();
 				}
-			} else if (
-				targetElement instanceof (this.window as any).HTMLSelectElement
-			) {
-				this.#handleSelectAction(
-					targetElement as HTMLSelectElement,
-					keyName,
-					key,
-				);
 			}
+			// A select's editing (open/navigate/commit) is the select widget's
+			// own keydown listener, run during dispatch above -- not here.
 		}
 
 		// If keydown wasn't canceled and it's a printable character, dispatch keypress
