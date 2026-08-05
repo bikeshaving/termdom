@@ -26,11 +26,24 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs",
       "default": "./dist/index.js"
-    }
+    },
+    "./index": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./index.js": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./package.json": "./dist/package.json"
   },
   "types": "./dist/index.d.ts",
-  "main": "./dist/index.js",
+  "main": "./dist/index.cjs",
   "files": [
     "dist",
     "README.md",
@@ -43,7 +56,8 @@
     "smoke:deno": "deno run -A --node-modules-dir=manual scripts/smoke.mjs",
     "support": "BUN_JSC_useFTLJIT=false bun scripts/support-matrix.ts",
     "test": "libuild test -p node -p bun",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "echo 'ERROR: Cannot publish from root directory. Use libuild publish instead.' && exit 1"
   },
   "dependencies": {
     "arabic-persian-reshaper": "1.0.1",
@@ -70,5 +84,6 @@
     "mdn-data": "2.29.0",
     "ssh2": "^1.17.0",
     "typescript": "^5.9.2"
-  }
+  },
+  "module": "./dist/index.js"
 }
