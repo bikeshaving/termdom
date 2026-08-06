@@ -1,6 +1,7 @@
 import {type EventEmitter} from "events";
 import {type DOMWindow, JSDOM} from "jsdom";
 import {LayoutEngine, isPointInRects, visualToDataOffsets} from "./layout.js";
+import {Camera} from "./camera.js";
 import {type ColorDepth, Renderer} from "./ansi.js";
 import {StyleManager, resolveBorderStyles, getBoxModel} from "./styles.js";
 import {cssColorToNumber} from "./color.js";
@@ -558,13 +559,9 @@ export class TermDOM {
 	#observerManager: ObserverManager;
 	#styleManager: StyleManager;
 	#uaWidgets: UAWidgetController;
-	// The command-start anchor: the row the document starts on. The document
-	// CAMERA (scrollY/pageYOffset/scrollTop) is a separate value owned by
-	// installWindowExtensions. #anchorScrollTop is always -#screenTop once set,
-	// and survives only for fullscreen hit-testing, whose formula predates the
-	// camera and is algebraically equivalent.
-	#screenTop = 0;
-	#anchorScrollTop = 0;
+	// Where the viewport looks in the document: scrollTop (window.scrollY),
+	// screenTop (the command-start row), and the fullscreen anchor. See Camera.
+	#camera = new Camera();
 
 	// Guard against re-entrant rendering. A render() call arriving while one is in
 	// flight sets renderQueued rather than being dropped, so a trailing frame runs.
@@ -652,8 +649,6 @@ export class TermDOM {
 
 	#width: number;
 	#height: number;
-	/** Which document row sits at the top of the camera. */
-	#documentScrollTop = 0;
 
 	// Whether the terminal is currently reporting mouse events to us. See
 	// updateMouseReporting for when capture is on.
@@ -855,7 +850,7 @@ export class TermDOM {
 		// the anchor after this runs. A frozen value here silently shadowed the
 		// real one, with only constructor line order deciding which won.
 		Object.defineProperty(window, "screenTop", {
-			get: () => termDOM.#screenTop,
+			get: () => termDOM.#camera.screenTop,
 			configurable: true,
 			enumerable: true,
 		});
@@ -863,12 +858,12 @@ export class TermDOM {
 		// Standard window scrolling, mapped onto the camera: scrollY is how far the
 		// camera has moved down the document, scrollBy moves it.
 		Object.defineProperty(window, "scrollY", {
-			get: () => termDOM.#documentScrollTop,
+			get: () => termDOM.#camera.scrollTop,
 			configurable: true,
 			enumerable: true,
 		});
 		Object.defineProperty(window, "pageYOffset", {
-			get: () => termDOM.#documentScrollTop,
+			get: () => termDOM.#camera.scrollTop,
 			configurable: true,
 			enumerable: true,
 		});
@@ -895,9 +890,9 @@ export class TermDOM {
 		): void => {
 			const targetY =
 				typeof xOrOptions === "object" && xOrOptions !== null
-					? (xOrOptions.top ?? termDOM.#documentScrollTop)
+					? (xOrOptions.top ?? termDOM.#camera.scrollTop)
 					: (y ?? 0);
-			termDOM.#documentScrollTop = Math.max(0, targetY);
+			termDOM.#camera.scrollTop = Math.max(0, targetY);
 			void termDOM.#render();
 		};
 		window.scrollTo = scrollToCamera as typeof window.scrollTo;
@@ -905,9 +900,9 @@ export class TermDOM {
 
 		for (const root of [document.documentElement, document.body]) {
 			Object.defineProperty(root, "scrollTop", {
-				get: () => termDOM.#documentScrollTop,
+				get: () => termDOM.#camera.scrollTop,
 				set: (value: number) => {
-					termDOM.#documentScrollTop = Math.max(0, value);
+					termDOM.#camera.scrollTop = Math.max(0, value);
 					void termDOM.#render();
 				},
 				configurable: true,
@@ -1059,7 +1054,7 @@ export class TermDOM {
 		const toViewportRect = (rect: DOMRect): DOMRect =>
 			termDOM[kLayoutEngine].createDOMRect(
 				rect.x,
-				rect.y - termDOM.#documentScrollTop,
+				rect.y - termDOM.#camera.scrollTop,
 				rect.width,
 				rect.height,
 			);
@@ -1337,7 +1332,7 @@ export class TermDOM {
 			// getBoundingClientRect's toViewportRect makes in the other direction.
 			return termDOM.#findElementAtDocumentPoint(
 				x,
-				y + termDOM.#documentScrollTop,
+				y + termDOM.#camera.scrollTop,
 			);
 		};
 
@@ -1427,7 +1422,7 @@ export class TermDOM {
 				termDOM.#height,
 				document.body.scrollHeight,
 			);
-			const top = termDOM.#documentScrollTop;
+			const top = termDOM.#camera.scrollTop;
 			if (rect.top < top) {
 				termDOM.#scrollCamera(rect.top - top);
 			} else if (rect.bottom > top + regionHeight) {
@@ -2215,7 +2210,7 @@ export class TermDOM {
 				this.window.getComputedStyle(element).getPropertyValue("position") ===
 				"fixed"
 			) {
-				ctx.viewportOffset = previousOffset + this.#documentScrollTop;
+				ctx.viewportOffset = previousOffset + this.#camera.scrollTop;
 			}
 			try {
 				if (this.#formsStackingContext(element)) {
@@ -2430,7 +2425,7 @@ export class TermDOM {
 			this.#height,
 			this.document.body.scrollHeight,
 		);
-		const top = this.#documentScrollTop;
+		const top = this.#camera.scrollTop;
 		if (revealTop < top) {
 			this.#scrollCamera(revealTop - top);
 		} else if (revealBottom > top + regionHeight) {
@@ -2904,8 +2899,8 @@ export class TermDOM {
 			// output up into the scrollback, never painting over it. Clamping
 			// startRow upward to force a fit instead would plant the frame on
 			// top of the shell prompt above it.
-			this.#screenTop = startRow;
-			this.#anchorScrollTop = -this.#screenTop;
+			this.#camera.screenTop = startRow;
+			this.#camera.anchorScrollTop = -this.#camera.screenTop;
 			this.#renderer.resetScreen(startRow);
 
 			// Everything suppressed since the first SIGWINCH may paint again. The
@@ -2919,7 +2914,7 @@ export class TermDOM {
 		};
 
 		const computedReanchor = () => {
-			const previousStart = this.#screenTop;
+			const previousStart = this.#camera.screenTop;
 			const scrolledUp = Math.max(0, previousStart + contentHeight - newHeight);
 			return Math.max(0, previousStart - scrolledUp);
 		};
@@ -2975,7 +2970,7 @@ export class TermDOM {
 		// high. IntersectionObserver measures targets against it.
 		const viewport = this[kLayoutEngine].createDOMRect(
 			0,
-			this.#documentScrollTop,
+			this.#camera.scrollTop,
 			this.#width,
 			this.#height,
 		);
@@ -3035,22 +3030,6 @@ export class TermDOM {
 		// :focus styling and the caret (the real terminal cursor, parked in the
 		// focused field) both need one to move.
 		void this.#render();
-	}
-
-	/**
-	 * Where a screen cell lands in the document, given who owns the camera.
-	 * Returns null for cells above our region (a shell prompt is not part of
-	 * the document).
-	 */
-	#screenToDocumentPoint(
-		x: number,
-		row: number,
-	): {x: number; y: number} | null {
-		if (this.#fullscreenManager.isFullscreen) {
-			return {x, y: row + this.#anchorScrollTop};
-		}
-		const y = row - this.#screenTop + this.#documentScrollTop;
-		return y < 0 ? null : {x, y};
 	}
 
 	/**
@@ -3117,7 +3096,7 @@ export class TermDOM {
 			const probeY =
 				this.window.getComputedStyle(element).getPropertyValue("position") ===
 				"fixed"
-					? y - this.#documentScrollTop
+					? y - this.#camera.scrollTop
 					: y;
 			return this.#formsStackingContext(element)
 				? this.#hitTestContext(element, x, probeY, layers)
@@ -3277,7 +3256,11 @@ export class TermDOM {
 			buttons,
 		} = decodeMouseReport(code, isRelease);
 
-		const point = this.#screenToDocumentPoint(col - 1, row - 1);
+		const point = this.#camera.screenToDocumentPoint(
+			col - 1,
+			row - 1,
+			this.#fullscreenManager.isFullscreen,
+		);
 		const x = point?.x ?? col - 1;
 		const y = point?.y ?? 0;
 		// Already document-relative -- go straight to the shared hit-test rather
@@ -3303,7 +3286,7 @@ export class TermDOM {
 			if (notCanceled) {
 				if (
 					wheelDeltaY < 0 &&
-					this.#documentScrollTop === 0 &&
+					this.#camera.scrollTop === 0 &&
 					!this.#fullscreenManager.isFullscreen
 				) {
 					// Scroll chaining, the browser default: the camera is at the
@@ -3754,7 +3737,7 @@ export class TermDOM {
 		const contentHeight = this.document.body.scrollHeight;
 		if (contentHeight === 0) return;
 
-		const top = this.#screenTop;
+		const top = this.#camera.screenTop;
 
 		// Back to the top of our region, and erase from there down. Only rows we
 		// painted ourselves; the scrollback above is untouched.
@@ -3800,7 +3783,7 @@ export class TermDOM {
 		// nothing composites over the frozen block.
 		if (this.#sealed) {
 			this.#sealed = false;
-			this.#documentScrollTop = 0;
+			this.#camera.scrollTop = 0;
 			this.#renderer.clearPreviousBuffer();
 			if (this.#process.stdin?.isTTY) await this.#detectCommandStart();
 		}
@@ -3851,11 +3834,11 @@ export class TermDOM {
 		if (!isFullscreen) {
 			// The camera cannot run off the end of the document.
 			const maxScroll = Math.max(0, contentHeight - regionHeight);
-			this.#documentScrollTop = Math.min(this.#documentScrollTop, maxScroll);
+			this.#camera.scrollTop = Math.min(this.#camera.scrollTop, maxScroll);
 		}
 
 		const ansi = this.#renderer.renderFrame(
-			-this.#documentScrollTop,
+			-this.#camera.scrollTop,
 			(ctx) => {
 				this.#renderDocument(ctx);
 			},
@@ -3869,7 +3852,7 @@ export class TermDOM {
 
 	/** Move the camera over the document. */
 	#scrollCamera(rows: number): void {
-		this.#documentScrollTop = Math.max(0, this.#documentScrollTop + rows);
+		this.#camera.scrollBy(rows);
 		// A camera move is invisible to the MutationObserver; schedule the frame
 		// it needs, the same way a DOM mutation would.
 		void this.#render();
@@ -3905,7 +3888,7 @@ export class TermDOM {
 	 * Returns the screen row our region now starts at.
 	 */
 	#reserveRows(rows: number): number {
-		const top = this.#screenTop;
+		const top = this.#camera.screenTop;
 		const overflow = top + rows - this.#height;
 
 		if (overflow <= 0) return top;
@@ -3922,13 +3905,13 @@ export class TermDOM {
 			// against the wrong screen rows, skipped cells it wrongly believed
 			// unchanged, and composited the old frame under the new one whenever a
 			// document-mode region grew past the space below the shell prompt.
-			this.#screenTop = top - push;
+			this.#camera.screenTop = top - push;
 			// A pending post-resize screen reset IS screen-absolute, though, and
 			// must ride the scroll (see shiftScreenReset).
 			this.#renderer.shiftScreenReset(push);
 		}
 
-		return this.#screenTop;
+		return this.#camera.screenTop;
 	}
 
 	/**
@@ -4087,11 +4070,11 @@ export class TermDOM {
 					const row = parseInt(match[1], 10);
 					// Set window.screenTop (convert 1-based terminal row to 0-based)
 					const screenTop = row - 1;
-					this.#screenTop = screenTop;
+					this.#camera.screenTop = screenTop;
 
 					// Set scrollTop to command start position (browser behavior)
 					// For command start, we want content to shift up to terminal top
-					this.#anchorScrollTop = -this.#screenTop;
+					this.#camera.anchorScrollTop = -this.#camera.screenTop;
 
 					this.#hasDetectedCommandStart = true;
 					resolve(row);
