@@ -68,6 +68,42 @@ export function compositionShadowRoot(element: Element): ShadowRoot | null {
 }
 
 /**
+ * The value part's text node inside a form control's UA shadow, or null before
+ * the shadow is built. A composed-tree query -- the control's editable text
+ * lives at its `[part="value"]`, reached through the closed UA shadow the way a
+ * browser's own editing internals reach it. The renderer reads it to place the
+ * caret; the editing path to hit-test a point.
+ */
+export function fieldValueText(field: Element): Text | null {
+	const span = compositionShadowRoot(field)?.querySelector('[part="value"]');
+	return (span?.firstChild as Text) ?? null;
+}
+
+/**
+ * A collapsed Range at a focused control's caret, inside that value text. Its
+ * geometry is then whatever the layout already placed the offset at (read via
+ * `Range` / `getRangeRects`) -- no bespoke caret walk. Backward selections carry
+ * the caret at the start, forward ones at the end, matching the DOM.
+ */
+export function fieldCaretRange(
+	field: HTMLInputElement | HTMLTextAreaElement,
+): Range | null {
+	const valueText = fieldValueText(field);
+	if (!valueText) return null;
+	const caret =
+		field.selectionDirection === "backward"
+			? (field.selectionStart ?? valueText.data.length)
+			: (field.selectionEnd ?? valueText.data.length);
+	const range = field.ownerDocument.createRange();
+	range.setStart(
+		valueText,
+		Math.max(0, Math.min(caret, valueText.data.length)),
+	);
+	range.collapse(true);
+	return range;
+}
+
+/**
  * Connectivity through the COMPOSED tree: a UA-internal shadow root is a
  * DocumentFragment, so its children are never "connected" in the DOM
  * sense even while the host renders on screen -- isConnected alone would

@@ -13,9 +13,10 @@ import {
 	compositionParentElement,
 	compositionShadowRoot,
 	createExpandedTreeWalker,
+	fieldCaretRange,
 	getPseudoMetadata,
 } from "./composition.js";
-import {type UAWidgetController, fieldCaretRange} from "./widgets.js";
+import {type UAWidgetController} from "./widgets.js";
 
 /**
  * A clip in EDGE coordinates, not origin+size, and deliberately not a DOMRect:

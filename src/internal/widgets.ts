@@ -20,7 +20,7 @@
 import type {DOMWindow} from "jsdom";
 import jsdomUtils from "jsdom/lib/jsdom/living/generated/utils.js";
 import jsdomCustomElements from "jsdom/lib/jsdom/living/helpers/custom-elements.js";
-import {compositionShadowRoot, createUAShadowRoot} from "./composition.js";
+import {createUAShadowRoot, fieldValueText} from "./composition.js";
 import {type LayoutEngine, isPointInRects} from "./layout.js";
 import {type StyleManager} from "./styles.js";
 import {
@@ -35,7 +35,7 @@ import {
 } from "./useragent.js";
 
 /** One visual (soft-wrapped or hard-broken) line of a laid-out textarea. */
-export type TextareaVisualLine = {
+type TextareaVisualLine = {
 	x: number;
 	y: number;
 	text: string;
@@ -67,22 +67,13 @@ function textareaLineAt(
 	return lines.length - 1;
 }
 
-/** The value part's text node inside a field's UA shadow, or null if unbuilt. */
-function fieldValueText(field: Element): Text | null {
-	const span = compositionShadowRoot(field)?.querySelector('[part="value"]');
-	return (span?.firstChild as Text) ?? null;
-}
-
 /**
- * The VISUAL lines of a textarea's laid-out value: the painted fragments (one
- * per soft-wrapped or hard-broken line), plus a virtual empty line for each
- * trailing newline past the last visual character (typing Enter at the end must
- * park the caret on the new, still-empty line, which owns no fragment). Offsets
- * are code units into .value; geometry is document cells. Null before the value
- * has ever laid out. A pure read of the laid-out shadow value -- the painter
- * uses it for the caret, the editing path for Home/End/vertical and hit tests.
+ * A textarea's laid-out visual lines with their data ranges -- a thin field
+ * view over the shared `lineFragments` primitive (the empty and trailing-newline
+ * lines included). Internal to the widget's own Home/End and vertical-motion
+ * editing; geometry consumers read `lineFragments` or a `Range` directly.
  */
-export function textareaVisualLines(
+function textareaVisualLines(
 	field: HTMLTextAreaElement,
 	layoutEngine: LayoutEngine,
 ): {value: string; lines: TextareaVisualLine[]} | null {
@@ -95,30 +86,6 @@ export function textareaVisualLines(
 	const lines = layoutEngine.lineFragments(valueText);
 	if (lines.length === 0) return null;
 	return {value: valueText.data, lines};
-}
-
-/**
- * A collapsed Range at a focused field's caret, inside its shadow value text.
- * Its geometry is then whatever the layout already placed that offset at
- * (`getRangeRects`) -- no bespoke caret walk. Backward selections carry the
- * caret at the start, forward ones at the end, matching the DOM.
- */
-export function fieldCaretRange(
-	field: HTMLInputElement | HTMLTextAreaElement,
-): Range | null {
-	const valueText = fieldValueText(field);
-	if (!valueText) return null;
-	const caret =
-		field.selectionDirection === "backward"
-			? (field.selectionStart ?? valueText.data.length)
-			: (field.selectionEnd ?? valueText.data.length);
-	const range = field.ownerDocument.createRange();
-	range.setStart(
-		valueText,
-		Math.max(0, Math.min(caret, valueText.data.length)),
-	);
-	range.collapse(true);
-	return range;
 }
 
 /** A field's value and selection after an editing key -- what to apply. */

@@ -23,13 +23,12 @@ import {
 	keyboardActivation,
 	tokenizeInput,
 } from "./events.js";
-import {compositionIsConnected} from "./composition.js";
 import {
-	type UAWidgetController,
-	defineUAWidgets,
+	compositionIsConnected,
 	fieldCaretRange,
-	textareaVisualLines,
-} from "./widgets.js";
+	fieldValueText,
+} from "./composition.js";
+import {type UAWidgetController, defineUAWidgets} from "./widgets.js";
 
 // How long to wait for a resize drag to settle before redrawing. Long enough to
 // coalesce the burst of SIGWINCHes a drag fires, short enough to feel immediate.
@@ -1670,15 +1669,14 @@ export class TermDOM {
 	): number | null {
 		if (element.tagName === "TEXTAREA") {
 			this.#uaWidgets.upgrade(element);
-			const visual = textareaVisualLines(
-				element as HTMLTextAreaElement,
-				this[kLayoutEngine],
-			);
-			if (!visual || visual.lines.length === 0) return null;
+			const valueText = fieldValueText(element);
+			if (!valueText) return null;
+			const lines = this[kLayoutEngine].lineFragments(valueText);
+			if (lines.length === 0) return null;
 			// The pressed row's line; above the first clamps to it, below
 			// the last to that.
-			let line = visual.lines[0];
-			for (const candidate of visual.lines) {
+			let line = lines[0];
+			for (const candidate of lines) {
 				if (candidate.y > y) break;
 				line = candidate;
 			}
