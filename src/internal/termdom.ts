@@ -1,6 +1,6 @@
 import {type EventEmitter} from "events";
 import {type DOMWindow, JSDOM} from "jsdom";
-import {LayoutEngine, isPointInRects, visualToDataOffsets} from "./layout.js";
+import {LayoutEngine, isPositioned, visualToDataOffsets} from "./layout.js";
 import {Camera} from "./camera.js";
 import {type ColorDepth, Renderer} from "./ansi.js";
 import {StyleManager, resolveBorderStyles, getBoxModel} from "./styles.js";
@@ -209,26 +209,6 @@ function selectionStyleFor(
 }
 
 /**
- * Whether a box takes part in positioned layout -- the predicate both the
- * containing-block chain and stacking-context collection are built on.
- */
-function isPositioned(window: DOMWindow, element: Element): boolean {
-	const position = window
-		.getComputedStyle(element)
-		.getPropertyValue("position");
-	return Boolean(position) && position !== "static";
-}
-
-/** z-index only means anything on a positioned box; "auto" stays distinct
- * from 0 -- auto paints in the same layer but does NOT form a context. */
-function zIndexValueOf(window: DOMWindow, element: Element): number | "auto" {
-	const zIndex = window.getComputedStyle(element).getPropertyValue("z-index");
-	if (!zIndex || zIndex === "auto") return "auto";
-	const value = parseInt(zIndex, 10);
-	return Number.isFinite(value) ? value : "auto";
-}
-
-/**
  * Apply CSS `text-transform` at paint time, not layout time. Every character
  * occupies the same cell width regardless of case in a terminal, so unlike a
  * browser's proportional font this can never change line wrapping -- there's
@@ -331,7 +311,6 @@ function installCursorRestoreOnExit(): void {
 // index.ts does not re-export these symbols, so a consumer cannot name them.
 const kLayoutEngine = Symbol("layoutEngine");
 const kObserver = Symbol("observer");
-const kHitTest = Symbol("hitTest");
 export {kLayoutEngine, kObserver};
 
 /**
@@ -2048,7 +2027,7 @@ export class TermDOM {
 
 	/** The whole document: the root stacking context, then the top layer. */
 	#renderDocument(ctx: import("./ansi.js").DrawingContext): void {
-		const layers = this.#collectStackingLayers();
+		const layers = this[kLayoutEngine].collectStackingLayers(this.#topLayer);
 		this.#renderStackingContext(this.document.body, ctx, layers);
 		for (const element of this.#topLayer) {
 			// COMPOSITION-connected: a UA part (the select's picker) lives in
@@ -2101,81 +2080,6 @@ export class TermDOM {
 	}
 
 	/**
-	 * Whether an element establishes a stacking context: the paint-atomic
-	 * unit of CSS layering. Terminal-relevant predicate: positioned with a
-	 * non-auto z-index. (The root context belongs to <body>, the paint
-	 * root.) opacity/transform/filter have no terminal meaning here.
-	 */
-	#formsStackingContext(element: Element): boolean {
-		if (element === this.document.body) return true;
-		if (
-			this.window.getComputedStyle(element).getPropertyValue("isolation") ===
-			"isolate"
-		) {
-			return true;
-		}
-		return (
-			isPositioned(this.window, element) &&
-			zIndexValueOf(this.window, element) !== "auto"
-		);
-	}
-
-	/**
-	 * Group every connected positioned element under its nearest
-	 * stacking-context ancestor, bucketed into the CSS paint layers:
-	 * negative-z contexts, the z:auto/0 layer, positive-z contexts. Walks
-	 * only the positioned registry -- O(positioned x depth) per frame,
-	 * never O(document).
-	 */
-	#collectStackingLayers(): Map<
-		Element,
-		{neg: Element[]; zero: Element[]; pos: Element[]}
-	> {
-		const layers = new Map<
-			Element,
-			{neg: Element[]; zero: Element[]; pos: Element[]}
-		>();
-		for (const element of this[kLayoutEngine].positionedElements) {
-			if (!element.isConnected || element === this.document.body) continue;
-			if (this.#topLayer.has(element)) continue; // painted above everything
-			if (!isPositioned(this.window, element)) continue; // stale registry entry
-			let root: Element = this.document.body;
-			for (
-				let ancestor = compositionParentElement(element);
-				ancestor;
-				ancestor = compositionParentElement(ancestor)
-			) {
-				if (this.#formsStackingContext(ancestor)) {
-					root = ancestor;
-					break;
-				}
-			}
-			let bucket = layers.get(root);
-			if (!bucket) {
-				bucket = {neg: [], zero: [], pos: []};
-				layers.set(root, bucket);
-			}
-			const z = zIndexValueOf(this.window, element);
-			if (z === "auto" || z === 0) bucket.zero.push(element);
-			else if (z < 0) bucket.neg.push(element);
-			else bucket.pos.push(element);
-		}
-		const treeOrder = (a: Element, b: Element) =>
-			a.compareDocumentPosition(b) & 4 ? -1 : 1; // 4: b follows a
-		for (const bucket of layers.values()) {
-			const byZ = (a: Element, b: Element) => {
-				const za = zIndexValueOf(this.window, a) as number;
-				const zb = zIndexValueOf(this.window, b) as number;
-				return za !== zb ? za - zb : treeOrder(a, b);
-			};
-			bucket.neg.sort(byZ);
-			bucket.zero.sort(treeOrder);
-			bucket.pos.sort(byZ);
-		}
-		return layers;
-	}
-
-	/**
 	 * Paint a stacking context in the CSS layer order: the root's own box,
 	 * negative-z child contexts, in-flow content (the #renderElement walk,
 	 * which skips positioned descendants), the positioned z:auto/0 layer,
@@ -2213,7 +2117,7 @@ export class TermDOM {
 				ctx.viewportOffset = previousOffset + this.#camera.scrollTop;
 			}
 			try {
-				if (this.#formsStackingContext(element)) {
+				if (this[kLayoutEngine].formsStackingContext(element)) {
 					this.#renderStackingContext(element, ctx, layers);
 				} else {
 					this.#renderElement(element, ctx);
@@ -3042,7 +2946,13 @@ export class TermDOM {
 	 */
 	#findElementAtDocumentPoint(x: number, y: number): Element | null {
 		this.#processPendingMutationsAndRender();
-		let element = this[kHitTest](this.document.documentElement, x, y);
+		let element = this[kLayoutEngine].hitTest(
+			this.document.documentElement,
+			x,
+			y,
+			this.#topLayer,
+			this.#camera.scrollTop,
+		);
 		// RETARGET out of shadow trees, per spec: from outside a shadow tree
 		// (and the document is always outside), the hit is the HOST -- a
 		// click on an input's internal value span is a click on the input.
@@ -3055,103 +2965,6 @@ export class TermDOM {
 			} else {
 				break;
 			}
-		}
-		return element;
-	}
-
-	/**
-	 * Hit-testing mirrors the stacking-context paint order, topmost first:
-	 * positive-z contexts (descending), the positioned z:auto/0 layer
-	 * (reverse tree order), in-flow content, then negative-z contexts.
-	 * Because positioned elements are probed at their CONTEXT rather than
-	 * through their parents, an absolute box hanging outside its parent's
-	 * rect is clickable -- the old top-down walk required every ancestor to
-	 * contain the point and could never reach it.
-	 */
-	[kHitTest](root: Element, x: number, y: number): Element | null {
-		const layers = this.#collectStackingLayers();
-		// Paint roots at <body>; a probe from documentElement must too, or
-		// the body-level buckets would never be consulted.
-		const paintRoot =
-			root === this.document.documentElement ? this.document.body : root;
-		const topLayer = [...this.#topLayer].reverse();
-		for (const element of topLayer) {
-			if (!compositionIsConnected(element)) continue;
-			const hit = this.#hitTestContext(element, x, y, layers);
-			if (hit) return hit;
-		}
-		return this.#hitTestContext(paintRoot, x, y, layers);
-	}
-
-	#hitTestContext(
-		root: Element,
-		x: number,
-		y: number,
-		layers: Map<Element, {neg: Element[]; zero: Element[]; pos: Element[]}>,
-	): Element | null {
-		const bucket = layers.get(root) ?? null;
-		const probeMember = (element: Element): Element | null => {
-			// A fixed box's layout lives in viewport space; convert the
-			// document-space probe point for its whole subtree.
-			const probeY =
-				this.window.getComputedStyle(element).getPropertyValue("position") ===
-				"fixed"
-					? y - this.#camera.scrollTop
-					: y;
-			return this.#formsStackingContext(element)
-				? this.#hitTestContext(element, x, probeY, layers)
-				: this.#hitTestInFlow(element, x, probeY);
-		};
-		if (bucket) {
-			for (let i = bucket.pos.length - 1; i >= 0; i--) {
-				const hit = probeMember(bucket.pos[i]);
-				if (hit) return hit;
-			}
-			for (let i = bucket.zero.length - 1; i >= 0; i--) {
-				const hit = probeMember(bucket.zero[i]);
-				if (hit) return hit;
-			}
-		}
-		const inFlow = this.#hitTestInFlow(root, x, y);
-		if (inFlow) return inFlow;
-		if (bucket) {
-			for (let i = bucket.neg.length - 1; i >= 0; i--) {
-				const hit = probeMember(bucket.neg[i]);
-				if (hit) return hit;
-			}
-		}
-		return null;
-	}
-
-	/**
-	 * In-flow descent: the element must contain the point; children are
-	 * probed in REVERSE tree order (last-painted wins), positioned children
-	 * skipped -- their context probes them.
-	 */
-	#hitTestInFlow(element: Element, x: number, y: number): Element | null {
-		if (element.nodeType !== 1) return null;
-		if (
-			this.window.getComputedStyle(element).getPropertyValue("display") ===
-			"none"
-		) {
-			return null;
-		}
-		try {
-			const rects = this[kLayoutEngine].getRects(element);
-			if (!isPointInRects(x, y, rects)) return null;
-		} catch {
-			return null;
-		}
-		const children: Element[] = [];
-		const walker = createExpandedTreeWalker(this.window, element);
-		for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
-			if (child.nodeType !== 1) continue;
-			if (isPositioned(this.window, child as Element)) continue;
-			children.push(child as Element);
-		}
-		for (let i = children.length - 1; i >= 0; i--) {
-			const hit = this.#hitTestInFlow(children[i], x, y);
-			if (hit) return hit;
 		}
 		return element;
 	}
