@@ -1649,12 +1649,12 @@ export class TermDOM {
 			this.#height,
 			this.document.body.scrollHeight,
 		);
-		const top = this.#viewport.scrollTop;
-		if (revealTop < top) {
-			this.#scrollCamera(revealTop - top);
-		} else if (revealBottom > top + regionHeight) {
-			this.#scrollCamera(revealBottom - (top + regionHeight));
-		}
+		const delta = this.#viewport.scrollDeltaToReveal(
+			revealTop,
+			revealBottom,
+			regionHeight,
+		);
+		if (delta) this.#scrollCamera(delta);
 	}
 
 	#processPendingMutationsAndRender(): boolean {
@@ -2657,12 +2657,7 @@ export class TermDOM {
 	 * Returns the screen row our region now starts at.
 	 */
 	#reserveRows(rows: number): number {
-		const top = this.#viewport.screenTop;
-		const overflow = top + rows - this.#height;
-
-		if (overflow <= 0) return top;
-
-		const push = Math.min(overflow, top);
+		const push = this.#viewport.reserveRows(rows, this.#height);
 		if (push > 0) {
 			this.#process.stdout.write(
 				`\x1b[${this.#height};1H` + "\x1bD".repeat(push),
@@ -2674,7 +2669,7 @@ export class TermDOM {
 			// against the wrong screen rows, skipped cells it wrongly believed
 			// unchanged, and composited the old frame under the new one whenever a
 			// document-mode region grew past the space below the shell prompt.
-			this.#viewport.screenTop = top - push;
+			//
 			// A pending post-resize screen reset IS screen-absolute, though, and
 			// must ride the scroll (see shiftScreenReset).
 			this.#renderer.shiftScreenReset(push);
