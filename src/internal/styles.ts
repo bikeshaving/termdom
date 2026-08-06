@@ -1716,7 +1716,7 @@ export class StyleManager {
 		// they resolve onto the UA shadow tree's [part] elements (see
 		// #getMatchingRules) or the selection painter.
 		const pseudoMatch = selector.match(
-			/^(.+)(::(?:before|after|marker|first-line|first-letter|placeholder|selection))(.*)$/,
+			/^(.+)(::(?:before|after|marker|first-line|first-letter|placeholder|selection|part\([^)]+\)))(.*)$/,
 		);
 
 		if (pseudoMatch) {
@@ -1822,16 +1822,32 @@ export class StyleManager {
 		// span, the way a browser resolves ::placeholder onto its input's
 		// internal placeholder element.
 		const partPseudo = this.#partPseudoFor(element);
-		const partHost = partPseudo
-			? (element.getRootNode() as ShadowRoot).host
-			: null;
+		const root = element.getRootNode();
+		const shadowHost =
+			root.nodeType === 11 ? ((root as ShadowRoot).host ?? null) : null;
+		const partNames = (element.getAttribute("part") ?? "")
+			.split(/\s+/)
+			.filter(Boolean);
 		return this.#parsedRules.filter((rule) => {
 			if (rule.pseudoElement) {
+				// ::part(name): an author styling an exposed shadow part from
+				// outside. The rule matches the shadow's HOST; its declarations
+				// cascade onto the part element -- any shadow, not just the UA's,
+				// which is the standard CSS Shadow Parts crossing.
+				const partArg = rule.pseudoElement.match(/^::part\((.+)\)$/);
+				if (partArg) {
+					return (
+						shadowHost !== null &&
+						partNames.includes(partArg[1].trim()) &&
+						this.#ruleMatches(shadowHost, rule)
+					);
+				}
+				// ::placeholder / ::selection: UA-part pseudo aliases.
 				return (
 					partPseudo !== null &&
-					partHost !== null &&
+					shadowHost !== null &&
 					rule.pseudoElement === partPseudo &&
-					this.#ruleMatches(partHost, rule)
+					this.#ruleMatches(shadowHost, rule)
 				);
 			}
 			return this.#ruleMatches(element, rule);
@@ -2116,7 +2132,8 @@ export class StyleManager {
 			if (
 				rule.pseudoElement &&
 				rule.pseudoElement !== "::placeholder" &&
-				rule.pseudoElement !== "::selection"
+				rule.pseudoElement !== "::selection" &&
+				!rule.pseudoElement.startsWith("::part(")
 			) {
 				const rules = pseudoRulesByType.get(rule.pseudoElement) || [];
 				rules.push(rule);

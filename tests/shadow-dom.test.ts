@@ -601,3 +601,42 @@ test("an inline-block host measures its shadow content, not its light children",
 
 	dom.dispose();
 });
+
+test("::part() styles an exposed shadow part from the document, per spec", async () => {
+	const terminal = new MockProcess({rows: 4, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	const {document, window} = dom;
+
+	const style = document.createElement("style");
+	style.textContent = `my-card::part(title) { font-weight: bold; color: rgb(9, 8, 7); }`;
+	document.head.appendChild(style);
+
+	const Base = window.HTMLElement as unknown as typeof HTMLElement;
+	class Card extends Base {
+		connectedCallback() {
+			const root = this.attachShadow({mode: "open"});
+			const title = document.createElement("span");
+			title.setAttribute("part", "title");
+			title.textContent = "Heading";
+			const body = document.createElement("span");
+			body.setAttribute("part", "body");
+			body.textContent = "text";
+			root.append(title, body);
+		}
+	}
+	window.customElements.define("my-card", Card);
+
+	const card = document.createElement("my-card");
+	document.body.appendChild(card);
+	await nextFrame(dom);
+
+	const root = (card as unknown as {shadowRoot: ShadowRoot}).shadowRoot;
+	const title = root.querySelector('[part="title"]')!;
+	const body = root.querySelector('[part="body"]')!;
+	// The rule reaches the exposed part -- and only that part.
+	expect(window.getComputedStyle(title).fontWeight).toBe("bold");
+	expect(window.getComputedStyle(title).color).toBe("rgb(9, 8, 7)");
+	expect(window.getComputedStyle(body).fontWeight).not.toBe("bold");
+
+	dom.dispose();
+});
