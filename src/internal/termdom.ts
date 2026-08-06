@@ -3,6 +3,7 @@ import {type DOMWindow, JSDOM} from "jsdom";
 import {LayoutEngine, visualToDataOffsets} from "./layout.js";
 import {Viewport} from "./viewport.js";
 import {Painter} from "./painter.js";
+import {TerminalProbe} from "./terminalprobe.js";
 import {type ColorDepth, Renderer} from "./ansi.js";
 import {StyleManager, getBoxModel} from "./styles.js";
 import {stringWidth} from "./text.js";
@@ -387,32 +388,12 @@ export class TermDOM {
 	 */
 	#topLayer = new Set<Element>();
 
-	// Track whether command start was explicitly detected (even if at row 1)
-	#hasDetectedCommandStart: boolean = false;
-
-	// Unified stdin handling
-	#cursorDetectionHandler: ((data: string) => void) | null = null;
-
-	/**
-	 * Outstanding DECRQM queries, keyed by the mode as it appears in the reply
-	 * ("8", "?2027"). Two negotiations run concurrently at startup and their
-	 * answers can arrive in either order, so they are matched by mode number
-	 * rather than by whoever asked last.
-	 */
-	#modeProbeHandlers = new Map<string, (value: number) => void>();
-	#modeProbeTimers = new Set<ReturnType<typeof setTimeout>>();
-	/** The BDSM state the terminal reported before we touched it, for dispose. */
-	#priorBidiMode: number | null = null;
-	/** Whether the terminal agreed to grapheme-cluster widths (mode 2027). */
-	#graphemeClustersNegotiated = false;
-
 	// Handles and timers that must be torn down in dispose(), or they keep the
 	// process alive after the app is done -- which, across a test suite, piles up
 	// into a hang.
 	#sigintHandler: (() => void) | null = null;
 	#sigwinchHandler: (() => void) | null = null;
 	#stdinDataHandler: ((chunk: string | Buffer) => void) | null = null;
-	#cursorDetectionTimer: ReturnType<typeof setTimeout> | null = null;
 	#resizeTimer: ReturnType<typeof setTimeout> | null = null;
 	// True from the first SIGWINCH of a resize until the re-anchored redraw. While
 	// set, render() bails: the terminal has rewrapped the screen and our anchor is
@@ -428,9 +409,6 @@ export class TermDOM {
 	// if another resize lands while it is in flight, the stale response must not
 	// trigger a redraw at coordinates that no longer mean anything.
 	#resizeEpoch = 0;
-
-	// Promise that resolves when cursor detection completes (or times out)
-	#cursorDetectionPromise: Promise<void> | null = null;
 
 	#width: number;
 	#height: number;
@@ -492,7 +470,10 @@ export class TermDOM {
 	#lastClickTime = 0;
 	#process: ProcessLike;
 
-	#detectCursorEnabled: boolean;
+	// The terminal round-trip conversation: cursor-position (command start,
+	// resize re-anchor) and mode-support (bidi, grapheme clusters) queries whose
+	// replies arrive asynchronously on stdin.
+	#probe: TerminalProbe;
 
 	// A stdout that is not a terminal -- a pipe, a file, a CI log -- has no
 	// viewport, no cursor, no scrollback and no resize. It cannot interpret cursor
@@ -503,7 +484,7 @@ export class TermDOM {
 	constructor(options: TermDOMOptions = {}) {
 		this.#process = options.process || process;
 		this.#interactive = this.#process.stdout.isTTY !== false;
-		this.#detectCursorEnabled =
+		const detectCursorEnabled =
 			(options.detectCursor ?? this.#process === process) && this.#interactive;
 
 		this.#width = options.width || this.#process.stdout.columns || 80;
@@ -563,6 +544,13 @@ export class TermDOM {
 			viewport: this.#viewport,
 			topLayer: this.#topLayer,
 			inputScrollOffsets: this.#inputScrollOffsets,
+		});
+		this.#probe = new TerminalProbe({
+			process: this.#process,
+			viewport: this.#viewport,
+			layout: this[kLayoutEngine],
+			interactive: this.#interactive,
+			detectCursor: detectCursorEnabled,
 		});
 
 		// A field edit -- text (input/select events) or a checkbox/radio toggle
@@ -1291,9 +1279,9 @@ export class TermDOM {
 
 		this.#setupProcessHandlers();
 		this.#updateMouseReporting();
-		this.#initializeCursorDetection();
-		void this.#negotiateBidi();
-		void this.#negotiateGraphemeClusters();
+		this.#probe.initializeCursorDetection();
+		void this.#probe.negotiateBidi();
+		void this.#probe.negotiateGraphemeClusters();
 
 		// See installCursorRestoreOnExit: if this instance dies without
 		// dispose(), the exit hook hands the user their cursor back.
@@ -1384,10 +1372,7 @@ export class TermDOM {
 				const modeReport = dataStr.match(/\x1b\[(\??)(\d+);(\d+)\$y/);
 				if (modeReport) {
 					const mode = (modeReport[1] ? "?" : "") + modeReport[2];
-					const waiting = this.#modeProbeHandlers.get(mode);
-					if (waiting) {
-						this.#modeProbeHandlers.delete(mode);
-						waiting(parseInt(modeReport[3], 10));
+					if (this.#probe.feedModeReport(mode, parseInt(modeReport[3], 10))) {
 						const rest =
 							dataStr.slice(0, modeReport.index) +
 							dataStr.slice((modeReport.index ?? 0) + modeReport[0].length);
@@ -1398,8 +1383,7 @@ export class TermDOM {
 				}
 
 				const report = dataStr.match(/\x1b\[\d+;\d+R/);
-				if (this.#cursorDetectionHandler && report) {
-					this.#cursorDetectionHandler(report[0]);
+				if (report && this.#probe.feedCursorReport(report[0])) {
 					const rest =
 						dataStr.slice(0, report.index) +
 						dataStr.slice((report.index ?? 0) + report[0].length);
@@ -1768,10 +1752,10 @@ export class TermDOM {
 			// Everything suppressed since the first SIGWINCH may paint again. The
 			// frame is placed by the screen reset, not by cursor detection.
 			this.#resizeInProgress = false;
-			const wasDetected = this.#hasDetectedCommandStart;
-			this.#hasDetectedCommandStart = false;
+			const wasDetected = this.#probe.hasDetectedCommandStart;
+			this.#probe.hasDetectedCommandStart = false;
 			this.#render().then(() => {
-				this.#hasDetectedCommandStart = wasDetected;
+				this.#probe.hasDetectedCommandStart = wasDetected;
 			});
 		};
 
@@ -1800,11 +1784,12 @@ export class TermDOM {
 		};
 
 		if (
-			this.#detectCursorEnabled &&
+			this.#probe.detectCursorEnabled &&
 			this.#process.stdin?.isTTY &&
 			wrappedRowsAbove !== null
 		) {
-			this.#queryCursorRow()
+			this.#probe
+				.queryCursorRow()
 				.then((cursorRow) => {
 					// A newer resize superseded this one; its handler will redraw.
 					if (epoch !== this.#resizeEpoch) return;
@@ -2555,17 +2540,23 @@ export class TermDOM {
 			this.#sealed = false;
 			this.#viewport.scrollTop = 0;
 			this.#renderer.clearPreviousBuffer();
-			if (this.#process.stdin?.isTTY) await this.#detectCommandStart();
+			// detectCommandStart waits for a reply on stdin, so the listener must
+			// be attached first (idempotent -- normally already done by now).
+			if (this.#process.stdin?.isTTY) {
+				this.attach();
+				await this.#probe.detectCommandStart();
+			}
 		}
 
 		// Our region starts at the command-start row, which cursor detection resolves
 		// asynchronously. Render before it lands and the first frame anchors at row 0
 		// while every diff after detection anchors one row lower -- the labels stay,
 		// the values slide down a row. Wait for the anchor to settle first, exactly
-		// as the flow path does.
-		if (this.#cursorDetectionPromise) {
-			await this.#cursorDetectionPromise;
-		}
+		// as the flow path does. Await only when one is pending: an unconditional
+		// await would defer the rest of this frame a microtask even with nothing
+		// to wait for, and a downstream synchronous scroll clamp depends on it.
+		const detectionPending = this.#probe.cursorDetectionPending;
+		if (detectionPending) await detectionPending;
 
 		const pending = this[kObserver].takeRecords();
 		if (pending.length > 0) {
@@ -2678,261 +2669,6 @@ export class TermDOM {
 		return this.#viewport.screenTop;
 	}
 
-	/**
-	 * Initialize cursor position detection for TTY environments
-	 * This runs asynchronously during construction to set up proper viewport positioning
-	 */
-	#initializeCursorDetection(): void {
-		this.#cursorDetectionPromise = null;
-		// Only detect cursor position in TTY environments when enabled
-		if (this.#detectCursorEnabled && this.#process.stdin?.isTTY) {
-			// Set up cursor detection promise that render() will wait for
-			this.#cursorDetectionPromise = Promise.race([
-				this.#detectCommandStart().then(() => {}),
-				// Fallback: if cursor detection takes too long, proceed without it
-				new Promise<void>((resolve) => setTimeout(resolve, 1000)),
-			])
-				.catch(() => {
-					// If cursor detection fails, continue without it
-					this.#hasDetectedCommandStart = false;
-				})
-				.finally(() => {
-					// Clear the promise so subsequent renders don't wait
-					this.#cursorDetectionPromise = null;
-				});
-		} else {
-			// In non-TTY environments, don't set up cursor detection at all
-			this.#cursorDetectionPromise = null;
-		}
-	}
-
-	/**
-	 * Settle who reorders bidirectional text, us or the terminal.
-	 *
-	 * ECMA-48 mode 8 (BDSM) has two sides: *implicit*, where the terminal runs
-	 * the bidi algorithm over what it receives, and *explicit*, where the
-	 * application decides the order and the terminal paints cells as given. We
-	 * need explicit, and not by preference: this renderer addresses cells
-	 * directly and diffs frames, so it hands the terminal single cells at
-	 * absolute positions. A terminal reordering each of those against a line it
-	 * was never given whole would scramble the frame. So we ask for explicit and
-	 * then ask what we got (DECRQM), rather than assuming either.
-	 *
-	 * The answer is a DECRPM value: 0 means the terminal does not recognise the
-	 * mode at all -- no bidi, cells land as written, which is the same contract
-	 * explicit gives us. 2 or 4 confirm explicit. 1 or 3 mean it intends to
-	 * reorder anyway, and 3 (permanently set) means our request was refused; in
-	 * that case we stop reordering and emit logical order, because the terminal
-	 * doing it once beats both of us doing it.
-	 *
-	 * Silence is the common case -- most terminals answer nothing at all -- and
-	 * is treated as "no bidi", which is what silence has always meant here.
-	 */
-	/**
-	 * Set a terminal mode and ask what it actually is now (DECRQM), resolving
-	 * with the reported value -- or null if the terminal says nothing, which is
-	 * the common case, since most implement no such mode and answer only the
-	 * queries they know.
-	 *
-	 * The reply values are DECRPM's: 0 not recognised, 1 set, 2 reset, 3
-	 * permanently set, 4 permanently reset. 0 and silence mean the same thing to
-	 * every caller here -- the terminal has no opinion, so ours stands.
-	 */
-	#probeMode(mode: string, request: string): Promise<number | null> {
-		return new Promise<number | null>((resolve) => {
-			// The same second the cursor probe allows: a cold start or a slow SSH
-			// link can outlast a tighter window, and answering late is answering.
-			// Timers are tracked so dispose() can clear them -- a live one keeps
-			// the event loop open, which across a test suite is fatal.
-			const timer = setTimeout(() => {
-				this.#modeProbeTimers.delete(timer);
-				this.#modeProbeHandlers.delete(mode);
-				resolve(null);
-			}, 1000);
-			this.#modeProbeTimers.add(timer);
-			this.#modeProbeHandlers.set(mode, (value: number) => {
-				clearTimeout(timer);
-				this.#modeProbeTimers.delete(timer);
-				resolve(value);
-			});
-			this.#process.stdout.write(request);
-		});
-	}
-
-	async #negotiateBidi(): Promise<void> {
-		if (!this.#interactive || !this.#process.stdin?.isTTY) return;
-
-		// Explicit mode, then "what is mode 8 now?" in one write.
-		const answer = await this.#probeMode("8", "\x1b[8l\x1b[8$p");
-
-		if (answer === null || answer === 0) return; // No bidi: cells as written.
-		this.#priorBidiMode = answer;
-
-		// 1 = still set, 3 = permanently set. Either way it reorders regardless of
-		// what we asked, so hand it text in the order it expects.
-		if (answer === 1 || answer === 3) {
-			this[kLayoutEngine].setTerminalReordersText(true);
-		}
-	}
-
-	/**
-	 * Ask the terminal to measure text in grapheme CLUSTERS rather than by code
-	 * point (DEC private mode 2027, the terminal-unicode-core specification).
-	 *
-	 * The default a terminal implements is POSIX wcwidth, which is per code
-	 * point and predates emoji: it cannot express that a ZWJ family sequence or
-	 * an emoji with a variation selector is one indivisible unit, so it advances
-	 * the cursor once per code point in them. We measure by cluster -- that is
-	 * what stringWidth does -- so on such a terminal every cluster of more than
-	 * one code point is a standing disagreement about where the next cell is.
-	 *
-	 * Mode 2027 is the fix the terminal community landed on, and it is asked for
-	 * the same way as bidi: set it, then query it. A terminal that does not know
-	 * the mode answers 0 or says nothing, and we simply carry on -- our
-	 * measurements do not change, because they were already cluster-based; what
-	 * changes is only whether the terminal agrees with them.
-	 */
-	async #negotiateGraphemeClusters(): Promise<void> {
-		if (!this.#interactive || !this.#process.stdin?.isTTY) return;
-
-		const answer = await this.#probeMode("?2027", "\x1b[?2027h\x1b[?2027$p");
-		// 1 = set (it agrees now), 3 = permanently set (it always did).
-		this.#graphemeClustersNegotiated = answer === 1 || answer === 3;
-	}
-
-	/**
-	 * Detect current cursor position and set window.screenTop
-	 * Sends \x1b[6n and waits for response \x1b[row;colR
-	 */
-	#detectCommandStart(): Promise<number> {
-		this.attach();
-		return new Promise<number>((resolve, reject) => {
-			if (!this.#process.stdin?.isTTY) {
-				reject(new Error("Cannot detect cursor position: stdin is not a TTY"));
-				return;
-			}
-
-			let responseBuffer = "";
-
-			const finish = () => {
-				this.#cursorDetectionHandler = null;
-				if (this.#cursorDetectionTimer !== null) {
-					clearTimeout(this.#cursorDetectionTimer);
-					this.#cursorDetectionTimer = null;
-				}
-			};
-
-			// Set up cursor detection handler for unified stdin
-			this.#cursorDetectionHandler = (dataStr: string) => {
-				responseBuffer += dataStr;
-
-				// Look for cursor position response pattern: \x1b[row;colR
-				const match = responseBuffer.match(/\x1b\[(\d+);(\d+)R/);
-				if (match) {
-					finish();
-
-					const row = parseInt(match[1], 10);
-					// Set window.screenTop (convert 1-based terminal row to 0-based)
-					const screenTop = row - 1;
-					this.#viewport.screenTop = screenTop;
-
-					// Set scrollTop to command start position (browser behavior)
-					// For command start, we want content to shift up to terminal top
-					this.#viewport.anchorScrollTop = -this.#viewport.screenTop;
-
-					this.#hasDetectedCommandStart = true;
-					resolve(row);
-				}
-			};
-
-			// Send cursor position query with proper flushing
-			this.#process.stdout.write("\x1b[6n");
-
-			// Force flush the output buffer (critical for cursor queries)
-			if (typeof (this.#process.stdout as any)._flush === "function") {
-				(this.#process.stdout as any)._flush();
-			}
-
-			// Timeout after 1000ms (reasonable balance for reliability). The timer is
-			// held so it can be cleared the moment a response arrives -- otherwise it
-			// keeps the event loop alive for a further second after we are done.
-			this.#cursorDetectionTimer = setTimeout(() => {
-				this.#cursorDetectionTimer = null;
-				if (this.#cursorDetectionHandler) {
-					this.#cursorDetectionHandler = null;
-					reject(new Error("Timeout waiting for cursor position response"));
-				}
-			}, 1000);
-		});
-	}
-
-	/**
-	 * Ask the terminal where the cursor is (DSR) and resolve with its 0-based row.
-	 *
-	 * Used by the resize re-anchor: the cursor is parked on our content's bottom
-	 * row after every frame, so after a rewrap its position names where the frame
-	 * actually ended up. Rejects on timeout so the caller can fall back to a
-	 * computed anchor.
-	 */
-	#queryCursorRow(): Promise<number> {
-		return new Promise<number>((resolve, reject) => {
-			if (!this.#process.stdin?.isTTY) {
-				reject(new Error("stdin is not a TTY"));
-				return;
-			}
-
-			// Queries can overlap: a drag fires resizes faster than the terminal
-			// answers, and each handleResize issues its own query. The handler and
-			// timer live in shared instance slots (so stdin routing and dispose can
-			// see them), so every cleanup must check identity before clearing --
-			// otherwise a superseded query's cleanup kills its successor's handler
-			// and timeout, and that resize never redraws at all.
-			let responseBuffer = "";
-			let localTimer: ReturnType<typeof setTimeout> | null = null;
-
-			const handler = (dataStr: string) => {
-				responseBuffer += dataStr;
-				const match = responseBuffer.match(/\x1b\[(\d+);(\d+)R/);
-				if (match) {
-					if (this.#cursorDetectionHandler === handler) {
-						this.#cursorDetectionHandler = null;
-					}
-					if (localTimer !== null) {
-						clearTimeout(localTimer);
-						if (this.#cursorDetectionTimer === localTimer) {
-							this.#cursorDetectionTimer = null;
-						}
-						localTimer = null;
-					}
-					resolve(parseInt(match[1], 10) - 1);
-				}
-			};
-
-			// Replacing a stale handler is fine: its own timeout still fires and
-			// rejects it, and the caller's epoch check discards the stale result.
-			this.#cursorDetectionHandler = handler;
-
-			this.#process.stdout.write("\x1b[6n");
-			if (typeof (this.#process.stdout as any)._flush === "function") {
-				(this.#process.stdout as any)._flush();
-			}
-
-			// Short timeout: the redraw should feel immediate, and a terminal that
-			// does not answer promptly falls back to the computed re-anchor.
-			localTimer = setTimeout(() => {
-				if (this.#cursorDetectionHandler === handler) {
-					this.#cursorDetectionHandler = null;
-				}
-				if (this.#cursorDetectionTimer === localTimer) {
-					this.#cursorDetectionTimer = null;
-				}
-				localTimer = null;
-				reject(new Error("Timeout waiting for cursor position response"));
-			}, 200);
-			this.#cursorDetectionTimer = localTimer;
-		});
-	}
-
 	/** Explicit resource management: `using dom = new TermDOM()` tears down on scope exit. */
 	[Symbol.dispose](): void {
 		this.dispose();
@@ -2956,31 +2692,14 @@ export class TermDOM {
 		if (this.#interactive) {
 			this.#process.stdout.write("\x1b[?25h");
 		}
-		// We asked for explicit bidi on the way in; give the terminal back the
-		// mode it reported, so the next command inherits its own settings rather
-		// than ours. Only when it was SET -- reset is where we left it anyway.
-		if (this.#priorBidiMode === 1) {
-			this.#process.stdout.write("\x1b[8h");
-			this.#priorBidiMode = null;
-		}
-		// Mode 2027 likewise: we turned it on, so turn it off. A terminal that
-		// never had it does not see this, having answered nothing.
-		if (this.#graphemeClustersNegotiated) {
-			this.#process.stdout.write("\x1b[?2027l");
-			this.#graphemeClustersNegotiated = false;
-		}
+		// Restore the terminal modes we negotiated and clear the probe's own
+		// timers and handlers -- a live query timer keeps the event loop open.
+		this.#probe.dispose();
 
-		// Tear down everything that holds the event loop open. Without this a
+		// Tear down the rest of what holds the event loop open. Without this a
 		// disposed TermDOM keeps the process alive -- via the process signal
-		// listeners, the stdin data listener, and the cursor-detection timer -- and
-		// across a whole test suite those accumulate until nothing can exit.
-		for (const timer of this.#modeProbeTimers) clearTimeout(timer);
-		this.#modeProbeTimers.clear();
-		this.#modeProbeHandlers.clear();
-		if (this.#cursorDetectionTimer !== null) {
-			clearTimeout(this.#cursorDetectionTimer);
-			this.#cursorDetectionTimer = null;
-		}
+		// listeners, the stdin data listener, and the resize timers -- and across
+		// a whole test suite those accumulate until nothing can exit.
 		if (this.#resizeTimer !== null) {
 			clearTimeout(this.#resizeTimer);
 			this.#resizeTimer = null;
@@ -2989,7 +2708,6 @@ export class TermDOM {
 			clearTimeout(this.#scrollChainTimer);
 			this.#scrollChainTimer = null;
 		}
-		this.#cursorDetectionHandler = null;
 
 		if (this.#sigintHandler) {
 			(this.#process as unknown as EventEmitter).removeListener?.(
