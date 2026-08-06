@@ -1912,6 +1912,44 @@ export class LayoutEngine {
 					? endOffset + 1
 					: endOffset;
 		}
+		// A value ending in a newline has an empty last line no fragment
+		// represents -- the caret's row after a final Enter. It sits one line
+		// below the last, at the same left edge.
+		if (lines.length > 0 && data.endsWith("\n")) {
+			const last = lines[lines.length - 1];
+			lines.push({
+				x: last.x,
+				y: last.y + last.height,
+				height: last.height,
+				text: "",
+				startOffset: data.length,
+				endOffset: data.length,
+			});
+		}
+		// Empty text has no fragment at all, so its one line sits at the
+		// containing block's content-box origin -- where a caret rests in an
+		// empty field. Derived from the block itself, not any widget.
+		if (lines.length === 0) {
+			const parent = textNode.parentElement;
+			const rect = parent && this.getRect(parent);
+			if (rect && parent) {
+				const box = getBoxModel(parent);
+				lines.push({
+					x:
+						Math.round(rect.x) +
+						(box.borderLeftWidth || 0) +
+						(box.paddingLeft || 0),
+					y:
+						Math.round(rect.y) +
+						(box.borderTopWidth || 0) +
+						(box.paddingTop || 0),
+					height: rect.height || 1,
+					text: "",
+					startOffset: 0,
+					endOffset: 0,
+				});
+			}
+		}
 		return lines;
 	}
 

@@ -22,7 +22,7 @@ import jsdomUtils from "jsdom/lib/jsdom/living/generated/utils.js";
 import jsdomCustomElements from "jsdom/lib/jsdom/living/helpers/custom-elements.js";
 import {compositionShadowRoot, createUAShadowRoot} from "./composition.js";
 import {type LayoutEngine, isPointInRects} from "./layout.js";
-import {type StyleManager, getBoxModel} from "./styles.js";
+import {type StyleManager} from "./styles.js";
 import {
 	nextGraphemeBoundary,
 	prevGraphemeBoundary,
@@ -88,64 +88,37 @@ export function textareaVisualLines(
 ): {value: string; lines: TextareaVisualLine[]} | null {
 	const valueText = fieldValueText(field);
 	if (!valueText) return null;
-	const value = valueText.data;
-	const rect = field.getBoundingClientRect();
-	const boxModel = getBoxModel(field);
-	const contentX =
-		Math.round(rect.left) +
-		(boxModel.borderLeftWidth || 0) +
-		(boxModel.paddingLeft || 0);
-	const contentY = Math.round(rect.top) + (boxModel.borderTopWidth || 0);
-
-	if (!value) {
-		return {
-			value,
-			lines: [
-				{x: contentX, y: contentY, text: "", startOffset: 0, endOffset: 0},
-			],
-		};
-	}
-
-	// The laid-out lines with their data ranges -- the same annotation range
-	// geometry reads, so the caret and a Range agree on where an offset sits.
-	const lines: TextareaVisualLine[] = layoutEngine.lineFragments(valueText);
+	// The laid-out lines with their data ranges, including the empty lines no
+	// fragment represents (an empty value, a trailing newline) -- the same
+	// annotation range geometry reads, so the caret, a Range, and vertical
+	// navigation all agree on where an offset sits.
+	const lines = layoutEngine.lineFragments(valueText);
 	if (lines.length === 0) return null;
-
-	// A value ending in a newline has exactly ONE line no fragment represents:
-	// the empty last line the caret sits on after a final Enter. (Interior blank
-	// lines all have fragments -- adding more virtual lines here is what once
-	// drifted the caret a row per blank line.)
-	if (value.endsWith("\n")) {
-		const last = lines[lines.length - 1];
-		lines.push({
-			x: contentX,
-			y: last.y + 1,
-			text: "",
-			startOffset: value.length,
-			endOffset: value.length,
-		});
-	}
-	return {value, lines};
+	return {value: valueText.data, lines};
 }
 
-/** Caret cell for a focused textarea, in document coordinates. */
-export function textareaCaretCell(
-	field: HTMLTextAreaElement,
-	layoutEngine: LayoutEngine,
-): {x: number; y: number} | null {
-	const visual = textareaVisualLines(field, layoutEngine);
-	if (!visual) return null;
+/**
+ * A collapsed Range at a focused field's caret, inside its shadow value text.
+ * Its geometry is then whatever the layout already placed that offset at
+ * (`getRangeRects`) -- no bespoke caret walk. Backward selections carry the
+ * caret at the start, forward ones at the end, matching the DOM.
+ */
+export function fieldCaretRange(
+	field: HTMLInputElement | HTMLTextAreaElement,
+): Range | null {
+	const valueText = fieldValueText(field);
+	if (!valueText) return null;
 	const caret =
 		field.selectionDirection === "backward"
-			? (field.selectionStart ?? visual.value.length)
-			: (field.selectionEnd ?? visual.value.length);
-	const lineIndex = textareaLineAt(visual.lines, caret);
-	const line = visual.lines[lineIndex];
-	const within = Math.max(
-		0,
-		Math.min(caret, line.endOffset) - line.startOffset,
+			? (field.selectionStart ?? valueText.data.length)
+			: (field.selectionEnd ?? valueText.data.length);
+	const range = field.ownerDocument.createRange();
+	range.setStart(
+		valueText,
+		Math.max(0, Math.min(caret, valueText.data.length)),
 	);
-	return {x: line.x + stringWidth(line.text.slice(0, within)), y: line.y};
+	range.collapse(true);
+	return range;
 }
 
 /** A field's value and selection after an editing key -- what to apply. */

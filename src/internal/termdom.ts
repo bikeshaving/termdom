@@ -27,7 +27,7 @@ import {compositionIsConnected} from "./composition.js";
 import {
 	type UAWidgetController,
 	defineUAWidgets,
-	textareaCaretCell,
+	fieldCaretRange,
 	textareaVisualLines,
 } from "./widgets.js";
 
@@ -1746,12 +1746,10 @@ export class TermDOM {
 		let caretY = Math.round(rect.top);
 		if (element.tagName === "TEXTAREA") {
 			this.#uaWidgets.upgrade(element); // ensure the shadow exists
-			const cell = textareaCaretCell(
-				element as HTMLTextAreaElement,
-				this[kLayoutEngine],
-			);
-			if (!cell) return;
-			caretY = cell.y;
+			const range = fieldCaretRange(element as HTMLTextAreaElement);
+			const [caret] = range ? this[kLayoutEngine].getRangeRects(range) : [];
+			if (!caret) return;
+			caretY = caret.y;
 		}
 		// The row span to reveal: the caret's row -- widened to the field's
 		// own edge when the caret sits on the first or last content row, so

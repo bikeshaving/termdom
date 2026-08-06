@@ -15,7 +15,7 @@ import {
 	createExpandedTreeWalker,
 	getPseudoMetadata,
 } from "./composition.js";
-import {type UAWidgetController, textareaCaretCell} from "./widgets.js";
+import {type UAWidgetController, fieldCaretRange} from "./widgets.js";
 
 /**
  * A clip in EDGE coordinates, not origin+size, and deliberately not a DOMRect:
@@ -425,10 +425,9 @@ export class Painter {
 			this.#uaWidgets.upgrade(element);
 			const textarea = element as HTMLTextAreaElement;
 			if (visible && textarea === this.#document.activeElement) {
-				const caretCell = textareaCaretCell(textarea, this.#layout);
-				if (caretCell) {
-					ctx.setCaret(caretCell.x, caretCell.y);
-				}
+				const range = fieldCaretRange(textarea);
+				const [caret] = range ? this.#layout.getRangeRects(range) : [];
+				if (caret) ctx.setCaret(caret.x, caret.y);
 			}
 		}
 
