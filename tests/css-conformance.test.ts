@@ -195,9 +195,9 @@ test("css: visibility:visible on a descendant re-shows inside a hidden ancestor"
 	expect(text).not.toContain("gone");
 });
 
-// overflow:hidden clips descendant paint to the box, independent of whether the
-// box is scrollable -- termdom has no scrollable containers, only the document
-// camera, so this is purely "don't paint outside this rect", not scroll-into-view.
+// overflow:hidden clips descendant paint to the box. Scrolling within the box
+// (element scrollLeft/scrollTop shifting its content) is a separate axis, tested
+// under viewport-relative-rect; these cases are purely the clip.
 test("css: overflow:hidden clips content taller than the box", async () => {
 	const {text} = await renderFixture({
 		name: "overflow-hidden-vertical",

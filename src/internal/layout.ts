@@ -47,22 +47,6 @@ function zIndexValueOf(window: DOMWindow, element: Element): number | "auto" {
 	return Number.isFinite(value) ? value : "auto";
 }
 
-function getAbsolutePosition(flexNode: FlexTypes.Node): {
-	x: number;
-	y: number;
-} {
-	let x = 0;
-	let y = 0;
-	let current: FlexTypes.Node | null = flexNode;
-
-	for (; current; current = current.getParent()) {
-		x += current.getComputedLeft();
-		y += current.getComputedTop();
-	}
-
-	return {x, y};
-}
-
 /**
  * How far a line's content should shift right for text-align:center/right --
  * left/start/justify all offset zero. (justify -- distributing extra space
@@ -1311,7 +1295,7 @@ export class LayoutEngine {
 		}
 		if (!runHead || !runFlexNode || !breakResult) return null;
 
-		const runPosition = getAbsolutePosition(runFlexNode);
+		const runPosition = this.#absolutePosition(runFlexNode);
 		// The run may itself live in an inline-block's detached content tree,
 		// where positions start at that box's content edge rather than the
 		// document's origin.
@@ -1361,7 +1345,7 @@ export class LayoutEngine {
 		// holds belongs to a layout it is no longer part of.
 		const ownFlexNode = descended ? undefined : this.nodeMap.get(element);
 		if (ownFlexNode) {
-			const {x, y} = getAbsolutePosition(ownFlexNode);
+			const {x, y} = this.#absolutePosition(ownFlexNode);
 			const offset = this.#contentRootOffset(ownFlexNode);
 			return new this.DOMRect(
 				x + offset.x,
@@ -1376,6 +1360,47 @@ export class LayoutEngine {
 			target.segment.width,
 			target.line.height,
 		);
+	}
+
+	/**
+	 * A flex node's absolute document position: the sum of computed offsets up
+	 * the tree, minus the scrollLeft/scrollTop of every ANCESTOR scroll box
+	 * along the way -- a box's own scroll shifts its descendants, not itself.
+	 * Scroll is a post-layout content offset, not a flex concept, so it is
+	 * applied here, in the single funnel every geometry read passes through, so
+	 * paint, getRect, hit-testing, and Range geometry all inherit it at once.
+	 */
+	#absolutePosition(flexNode: FlexTypes.Node): {x: number; y: number} {
+		// The document roots' scrollLeft/scrollTop ARE the camera (the window
+		// shim maps them onto the viewport), and the camera is applied once at
+		// paint, not in this document-space geometry. Only per-element scroll on
+		// other boxes belongs here.
+		const document = this.window.document;
+		const root = document.documentElement;
+		const body = document.body;
+		let x = 0;
+		let y = 0;
+		for (
+			let current: FlexTypes.Node | null = flexNode;
+			current;
+			current = current.getParent()
+		) {
+			x += current.getComputedLeft();
+			y += current.getComputedTop();
+			if (current !== flexNode) {
+				const node = this.#domNodeByFlexNode.get(current);
+				if (
+					node &&
+					node.nodeType === node.ELEMENT_NODE &&
+					node !== root &&
+					node !== body
+				) {
+					x -= (node as Element).scrollLeft || 0;
+					y -= (node as Element).scrollTop || 0;
+				}
+			}
+		}
+		return {x, y};
 	}
 
 	getRect(element: Element): DOMRect | null {
@@ -1432,7 +1457,7 @@ export class LayoutEngine {
 				// out -- null, exactly as the block fallback below reports it.
 				// A laid-out empty inline gets a zero-size rect at its position.
 				if (!runFlexNode) return null;
-				const position = getAbsolutePosition(runFlexNode);
+				const position = this.#absolutePosition(runFlexNode);
 				return new this.DOMRect(position.x, position.y, 0, 0);
 			}
 		}
@@ -1444,7 +1469,7 @@ export class LayoutEngine {
 			return null;
 		}
 
-		const {x, y} = getAbsolutePosition(flexNode);
+		const {x, y} = this.#absolutePosition(flexNode);
 		// Zero unless this box lives in an inline-block's detached tree, where
 		// positions are relative to a box the RUN placed.
 		const offset = this.#contentRootOffset(flexNode);
@@ -1482,7 +1507,7 @@ export class LayoutEngine {
 					const flexNode = this.nodeMap.get(element);
 					if (!flexNode) return [];
 
-					const position = getAbsolutePosition(flexNode);
+					const position = this.#absolutePosition(flexNode);
 					const offset = this.#contentRootOffset(flexNode);
 					const containerX = position.x + offset.x;
 					const containerY = position.y + offset.y;
@@ -1586,7 +1611,7 @@ export class LayoutEngine {
 		const flexNode = this.nodeMap.get(runHead);
 		if (!flexNode) return [];
 
-		let {x: containerX, y: containerY} = getAbsolutePosition(flexNode);
+		let {x: containerX, y: containerY} = this.#absolutePosition(flexNode);
 		// A run inside an inline-block's detached tree is positioned relative to
 		// that box, which only the run that placed it can locate.
 		const contentOffset = this.#contentRootOffset(flexNode);

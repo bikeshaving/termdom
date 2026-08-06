@@ -129,3 +129,20 @@ test("scrollIntoView still brings an off-screen element into view", async () => 
 	expect(rect.bottom).toBeLessThanOrEqual(5);
 	dom.dispose();
 });
+
+test("an element's own scrollLeft shifts its descendants, distinct from the camera", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 5});
+	const dom = new TermDOM({process: terminal});
+	dom.document.body.innerHTML = `<div id="s" style="overflow:hidden; width:5px"><span id="c">abcdefghij</span></div>`;
+	await nextFrame(dom);
+
+	const content = dom.document.getElementById("c")!;
+	const left0 = content.getBoundingClientRect().left;
+
+	// Per-element scroll is a document-space content offset the layout applies,
+	// separate from the document camera. A rect read flushes layout itself and
+	// reads scrollLeft live, so the child's box shifts left with no repaint.
+	dom.document.getElementById("s")!.scrollLeft = 3;
+	expect(content.getBoundingClientRect().left).toBe(left0 - 3);
+	dom.dispose();
+});
