@@ -34,6 +34,9 @@ import {type UAWidgetController, defineUAWidgets} from "./widgets.js";
 // coalesce the burst of SIGWINCHes a drag fires, short enough to feel immediate.
 const RESIZE_DEBOUNCE_MS = 40;
 
+// The built-in tags that upgrade to a UA widget on connect.
+const UPGRADEABLE_CONTROLS = new Set(["INPUT", "TEXTAREA", "SELECT"]);
+
 function detectColorDepth(process: ProcessLike): ColorDepth {
 	const colorterm = process.env.COLORTERM;
 	if (colorterm === "truecolor" || colorterm === "24bit") {
@@ -551,7 +554,6 @@ export class TermDOM {
 			document: this.document,
 			layout: this[kLayoutEngine],
 			styleManager: this.#styleManager,
-			uaWidgets: this.#uaWidgets,
 			viewport: this.#viewport,
 			topLayer: this.#topLayer,
 			inputScrollOffsets: this.#inputScrollOffsets,
@@ -1291,6 +1293,27 @@ export class TermDOM {
 			return record.oldValue !== target.getAttribute(record.attributeName);
 		});
 		if (relevant.length === 0) return;
+		// Upgrade UA form controls the moment they connect -- before layout reads
+		// their shadow and before the painter walks it -- the way a browser
+		// upgrades a custom element on connect, not lazily at first paint. (jsdom
+		// won't auto-upgrade a plain built-in, so the shell drives it here, the
+		// one place every insert -- observer-driven or drained from a synchronous
+		// render -- passes through.)
+		for (const record of relevant) {
+			if (record.type !== "childList") continue;
+			for (const added of record.addedNodes) {
+				if (added.nodeType !== added.ELEMENT_NODE) continue;
+				const element = added as Element;
+				if (UPGRADEABLE_CONTROLS.has(element.tagName)) {
+					this.#uaWidgets.upgrade(element);
+				}
+				for (const control of element.querySelectorAll(
+					"input, textarea, select",
+				)) {
+					this.#uaWidgets.upgrade(control);
+				}
+			}
+		}
 		this.#styleManager.handleMutations(relevant);
 		this[kLayoutEngine].handleMutations(relevant);
 		focusAutofocusedNodes(relevant);
@@ -1668,7 +1691,6 @@ export class TermDOM {
 		y: number,
 	): number | null {
 		if (element.tagName === "TEXTAREA") {
-			this.#uaWidgets.upgrade(element);
 			const valueText = fieldValueText(element);
 			if (!valueText) return null;
 			const lines = this[kLayoutEngine].lineFragments(valueText);
@@ -1743,7 +1765,6 @@ export class TermDOM {
 		if (!rect) return;
 		let caretY = Math.round(rect.top);
 		if (element.tagName === "TEXTAREA") {
-			this.#uaWidgets.upgrade(element); // ensure the shadow exists
 			const range = fieldCaretRange(element as HTMLTextAreaElement);
 			const [caret] = range ? this[kLayoutEngine].getRangeRects(range) : [];
 			if (!caret) return;

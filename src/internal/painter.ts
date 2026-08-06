@@ -16,7 +16,6 @@ import {
 	fieldCaretRange,
 	getPseudoMetadata,
 } from "./composition.js";
-import {type UAWidgetController} from "./widgets.js";
 
 /**
  * A clip in EDGE coordinates, not origin+size, and deliberately not a DOMRect:
@@ -212,9 +211,11 @@ function applyTextTransform(text: string, transform: string): string {
 /**
  * The paint walk: the pure transformation of a laid-out DOM tree into terminal
  * cells. It reads geometry from the {@link LayoutEngine}, computed styles from
- * the {@link StyleManager} and jsdom, and the form controls' shadow parts from
- * the UA widgets, then draws into a `DrawingContext`. It owns no scheduling and
- * mutates no DOM -- callers hand it a fresh context and call {@link Painter.paint}.
+ * the {@link StyleManager} and jsdom, and form controls' shadow parts and caret
+ * from the composed tree (the shell upgrades the widgets on connect, so their
+ * shadow is already there), then draws into a `DrawingContext`. It owns no
+ * scheduling and mutates no DOM -- callers hand it a fresh context and call
+ * {@link Painter.paint}.
  *
  * Two pieces of render state are shared with TermDOM rather than owned here: the
  * top layer (the shell decides what is promoted; the walk only reads and prunes
@@ -231,7 +232,6 @@ export class Painter {
 	#document: Document;
 	#layout: LayoutEngine;
 	#styleManager: StyleManager;
-	#uaWidgets: UAWidgetController;
 	#viewport: Viewport;
 	// Shared with TermDOM by reference -- see the class doc.
 	#topLayer: Set<Element>;
@@ -244,7 +244,6 @@ export class Painter {
 		document: Document;
 		layout: LayoutEngine;
 		styleManager: StyleManager;
-		uaWidgets: UAWidgetController;
 		viewport: Viewport;
 		topLayer: Set<Element>;
 		inputScrollOffsets: WeakMap<Element, number>;
@@ -253,7 +252,6 @@ export class Painter {
 		this.#document = deps.document;
 		this.#layout = deps.layout;
 		this.#styleManager = deps.styleManager;
-		this.#uaWidgets = deps.uaWidgets;
 		this.#viewport = deps.viewport;
 		this.#topLayer = deps.topLayer;
 		this.#inputScrollOffsets = deps.inputScrollOffsets;
@@ -418,12 +416,10 @@ export class Painter {
 		// Handle list-style-position: outside markers
 		if (visible) this.#renderOutsideMarker(element, ctx);
 
-		// A textarea's content IS its UA shadow tree, painted by the normal
-		// child walk below; upgrading it here (idempotent) guarantees the tree
-		// exists for a textarea discovered mid-paint, and parking the real
-		// terminal caret at the multiline position is the rest.
+		// A textarea's content IS its UA shadow tree, built on connect and
+		// painted by the normal child walk below; parking the real terminal
+		// caret at the multiline position is the rest.
 		if (element.tagName === "TEXTAREA" && rect) {
-			this.#uaWidgets.upgrade(element);
 			const textarea = element as HTMLTextAreaElement;
 			if (visible && textarea === this.#document.activeElement) {
 				const range = fieldCaretRange(textarea);
@@ -433,13 +429,11 @@ export class Painter {
 		}
 
 		// A select's content is its UA shadow tree (label + indicator + picker),
-		// painted by the normal child walk; the widget owns it. Upgrading here
-		// (idempotent) guarantees it exists mid-paint, and an OPEN picker (the
-		// widget shows it by flipping display) paints in the top layer, over
+		// built on connect and painted by the normal child walk; an OPEN picker
+		// (the widget shows it by flipping display) paints in the top layer, over
 		// following content. Parking the caret at the field origin is the rest.
 		if (element.tagName === "SELECT" && rect) {
 			const select = element as HTMLSelectElement;
-			this.#uaWidgets.upgrade(select);
 			const picker =
 				compositionShadowRoot(select)?.querySelector<HTMLElement>(
 					'[part="picker"]',
@@ -774,11 +768,9 @@ export class Painter {
 			(boxModel.paddingLeft || 0) -
 			(boxModel.paddingRight || 0);
 
-		// The UA widget owns the shadow tree and reconciles it from the input's
-		// own state; the painter only reads its parts' computed styles. Upgrading
-		// here (idempotent) guarantees the tree exists for an input discovered
-		// mid-paint.
-		this.#uaWidgets.upgrade(element);
+		// The UA widget owns the shadow tree (built on connect) and reconciles it
+		// from the input's own state; the painter only reads its parts' computed
+		// styles.
 		const root = compositionShadowRoot(element);
 		if (!root) return;
 
