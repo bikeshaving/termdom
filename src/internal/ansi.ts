@@ -837,7 +837,7 @@ export class DrawingContext {
 
 		for (const segment of graphemeSegmenter.segment(text)) {
 			const char = segment.segment;
-			const width = runtimeStringWidth(char);
+			const width = stringWidth(char);
 
 			if (currentX + width > this.cols) {
 				break;
