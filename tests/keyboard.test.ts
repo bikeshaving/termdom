@@ -1707,3 +1707,28 @@ test("caret motion and deletion move by grapheme, not code unit", async () => {
 
 	termdom.dispose();
 });
+
+test("a password input paints masked bullets, never the real value", async () => {
+	const terminal = new MockProcess({rows: 3, cols: 20});
+	const dom = new TermDOM({process: terminal, detectCursor: false});
+	dom.document.body.innerHTML = `<input type="password" value="secret">`;
+	await nextFrame(dom);
+
+	const input = dom.document.querySelector("input")! as HTMLInputElement;
+	// The screen shows one bullet per character; the secret never reaches it.
+	expect(terminal.getPlainText()).toContain("••••••");
+	expect(terminal.getPlainText()).not.toContain("secret");
+	// The real value stays intact on the element -- masking is display-only.
+	expect(input.value).toBe("secret");
+
+	// Typing extends the mask, and .value stays real (position aside).
+	input.focus();
+	(terminal.stdin as any).emit("data", Buffer.from("x"));
+	await nextFrame(dom);
+	expect(input.value.length).toBe(7);
+	expect(input.value).toContain("secret");
+	expect(terminal.getPlainText()).toContain("•••••••");
+	expect(terminal.getPlainText()).not.toContain("secret");
+
+	dom.dispose();
+});

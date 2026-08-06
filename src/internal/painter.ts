@@ -800,15 +800,18 @@ export class Painter {
 			return;
 		}
 
-		const value = element.value || "";
-		const placeholder = element.getAttribute("placeholder") || "";
-		const isFocused = element === this.#document.activeElement;
-
 		const valueSpan = root.querySelector('[part="value"]') as HTMLElement;
 		const placeholderSpan = root.querySelector(
 			'[part="placeholder"]',
 		) as HTMLElement;
 		const blankSpan = root.querySelector('[part="blank"]') as HTMLElement;
+
+		// The value comes from the shadow the widget reconciled, not element.value
+		// directly -- so a password's masked bullets are simply what paints, and
+		// the real value never leaves .value. Identical to .value for other types.
+		const value = valueSpan.textContent || "";
+		const placeholder = element.getAttribute("placeholder") || "";
+		const isFocused = element === this.#document.activeElement;
 
 		// Region styles come off the tree: the value inherits the input's
 		// own text style (solid underline when focused), the placeholder and

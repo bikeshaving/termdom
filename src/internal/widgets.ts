@@ -566,7 +566,13 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 				const placeholder = this.getAttribute("placeholder") ?? "";
 				const autoWidth =
 					window.getComputedStyle(this).getPropertyValue("width") === "auto";
-				if (this.#valueText.data !== value) this.#valueText.data = value;
+				// A password puts one bullet per code unit into the shadow, never
+				// the real value -- so what lays out, paints, and can be selected is
+				// only the mask; the value stays in .value alone. Offsets stay 1:1
+				// with .value on the BMP, keeping caret and scroll window aligned.
+				const shown =
+					this.type === "password" ? "•".repeat(value.length) : value;
+				if (this.#valueText.data !== shown) this.#valueText.data = shown;
 				if (this.#placeholderText!.data !== placeholder) {
 					this.#placeholderText!.data = placeholder;
 				}
