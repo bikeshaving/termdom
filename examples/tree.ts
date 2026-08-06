@@ -14,8 +14,8 @@ import {readdirSync} from "node:fs";
 import {join, resolve} from "node:path";
 
 const root = resolve(process.argv[2] ?? ".");
-const termdom = new TermDOM();
-const {document, window} = termdom;
+const term = new TermDOM();
+const {document, window} = term;
 
 const style = document.createElement("style");
 style.textContent = `
@@ -171,9 +171,7 @@ async function refresh(): Promise<void> {
 	// At the first row, pull the camera the rest of the way up so the header
 	// shows too -- scrollIntoView alone stops one row short of it.
 	if (selected === 0) window.scrollBy(0, -document.body.scrollHeight);
-	await new Promise<void>((r) =>
-		termdom.window.requestAnimationFrame(() => r()),
-	);
+	await new Promise<void>((r) => term.window.requestAnimationFrame(() => r()));
 }
 
 function rebuild(): void {
@@ -186,7 +184,7 @@ document.addEventListener("keydown", (event: Event) => {
 	const key = (event as KeyboardEvent).key;
 	const current = rows()[selected];
 	if (key === "q") {
-		termdom.dispose();
+		term.dispose();
 		process.exit(0);
 	} else if (key === "j" || key === "ArrowDown") {
 		select(selected + 1);

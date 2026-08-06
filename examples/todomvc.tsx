@@ -13,10 +13,10 @@ import {TermDOM} from "@b9g/termdom";
 import type {Context} from "@b9g/crank";
 import {renderer} from "@b9g/crank/dom";
 
-const termDOM = new TermDOM();
-const document = termDOM.document;
-globalThis.Node = termDOM.window.Node;
-globalThis.document = termDOM.document;
+const term = new TermDOM();
+const document = term.document;
+globalThis.Node = term.window.Node;
+globalThis.document = term.document;
 
 const style = document.createElement("style");
 style.textContent = `

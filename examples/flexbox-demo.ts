@@ -6,8 +6,8 @@
  */
 
 import {TermDOM} from "@b9g/termdom";
-const termDOM = new TermDOM();
-const {document} = termDOM;
+const term = new TermDOM();
+const {document} = term;
 
 // Create main container with column layout
 const mainContainer = document.createElement("div");

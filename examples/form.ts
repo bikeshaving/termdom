@@ -9,8 +9,8 @@
 //   Tab/Shift+Tab  next/previous field    Enter  submit    Ctrl+C  quit
 import {TermDOM} from "@b9g/termdom";
 
-const termdom = new TermDOM();
-const {document} = termdom;
+const term = new TermDOM();
+const {document} = term;
 
 const style = document.createElement("style");
 style.textContent = `
@@ -68,4 +68,4 @@ document.addEventListener("keydown", (event: Event) => {
 
 updatePreview();
 fields[0].focus();
-await new Promise<void>((r) => termdom.window.requestAnimationFrame(() => r()));
+await new Promise<void>((r) => term.window.requestAnimationFrame(() => r()));

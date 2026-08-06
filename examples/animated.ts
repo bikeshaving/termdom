@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
 import {TermDOM} from "@b9g/termdom";
 
-const termdom = new TermDOM();
-const {document} = termdom;
+const term = new TermDOM();
+const {document} = term;
 
 const style = document.createElement("style");
 style.textContent = `
@@ -182,7 +182,7 @@ document.addEventListener("keydown", (e: Event) => {
 	const ke = e as KeyboardEvent;
 	if (ke.key === "q") {
 		clearInterval(interval);
-		termdom.dispose();
+		term.dispose();
 		process.exit(0);
 	}
 });
@@ -191,4 +191,4 @@ document.addEventListener("keydown", (e: Event) => {
 const interval = setInterval(updateAnimations, 80);
 updateAnimations();
 
-await new Promise<void>((r) => termdom.window.requestAnimationFrame(() => r()));
+await new Promise<void>((r) => term.window.requestAnimationFrame(() => r()));

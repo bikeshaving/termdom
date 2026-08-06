@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
 import {TermDOM} from "@b9g/termdom";
 
-const termdom = new TermDOM();
-const {document} = termdom;
+const term = new TermDOM();
+const {document} = term;
 const style = document.createElement("style");
 style.textContent = `
 ul {
@@ -250,7 +250,7 @@ container.appendChild(mixedSection);
 
 document.body.appendChild(container);
 
-await new Promise<void>((r) => termdom.window.requestAnimationFrame(() => r()));
-await new Promise<void>((r) => termdom.window.requestAnimationFrame(() => r()));
+await new Promise<void>((r) => term.window.requestAnimationFrame(() => r()));
+await new Promise<void>((r) => term.window.requestAnimationFrame(() => r()));
 
 process.exit(0);

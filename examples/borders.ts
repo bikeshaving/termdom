@@ -11,8 +11,8 @@
 
 import {TermDOM} from "@b9g/termdom";
 
-const termdom = new TermDOM();
-const {document} = termdom;
+const term = new TermDOM();
+const {document} = term;
 
 const style = document.createElement("style");
 const edge = (kind: string) => `border: 1px ${kind};`;

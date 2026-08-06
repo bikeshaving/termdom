@@ -21,8 +21,8 @@ on it compiles to a single binary with `bun build --compile`, if you want one.
 ```ts
 import {TermDOM} from "@b9g/termdom";
 
-const dom = new TermDOM();
-const {document} = dom;
+const term = new TermDOM();
+const {document} = term;
 
 const box = document.createElement("div");
 box.style.backgroundColor = "blue";
@@ -87,7 +87,7 @@ An interactive app hands the terminal back when it exits:
 
 ```ts
 process.on("SIGINT", () => {
-	dom.dispose();
+	term.dispose();
 	process.exit(0);
 });
 ```

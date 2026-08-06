@@ -8,8 +8,8 @@ import {TermDOM} from "@b9g/termdom";
 
 async function helloWorld() {
 	// Create a TermDOM instance (like JSDOM, but for terminals)
-	const dom = new TermDOM();
-	const {document} = dom;
+	const term = new TermDOM();
+	const {document} = term;
 
 	// Create standard HTML elements with CSS styling!
 	const container = document.createElement("div");

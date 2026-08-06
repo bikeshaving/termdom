@@ -86,8 +86,8 @@ function channelProcess(
 
 /** The app a visitor lands in. One instance per connection. */
 function serveSession(proc: ProcessLike, onDone: () => void): () => void {
-	const termdom = new TermDOM({process: proc, detectCursor: false});
-	const {document} = termdom;
+	const term = new TermDOM({process: proc, detectCursor: false});
+	const {document} = term;
 
 	const style = document.createElement("style");
 	style.textContent = `
@@ -137,7 +137,7 @@ function serveSession(proc: ProcessLike, onDone: () => void): () => void {
 
 	function cleanup(): void {
 		clearInterval(interval);
-		termdom.dispose();
+		term.dispose();
 	}
 	return cleanup;
 }

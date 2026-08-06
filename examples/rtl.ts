@@ -12,8 +12,8 @@
 
 import {TermDOM} from "@b9g/termdom";
 
-const dom = new TermDOM();
-const {document} = dom;
+const term = new TermDOM();
+const {document} = term;
 
 const style = document.createElement("style");
 style.textContent = `

@@ -7,8 +7,8 @@
 //   node examples/input-styles.ts        Tab / Shift+Tab to move focus
 import {TermDOM} from "@b9g/termdom";
 
-const termdom = new TermDOM();
-const {document} = termdom;
+const term = new TermDOM();
+const {document} = term;
 
 const style = document.createElement("style");
 style.textContent = `

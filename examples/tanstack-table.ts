@@ -6,8 +6,8 @@
 import {TermDOM} from "@b9g/termdom";
 import {createTable, getCoreRowModel} from "@tanstack/table-core";
 
-const termdom = new TermDOM();
-const {document} = termdom;
+const term = new TermDOM();
+const {document} = term;
 
 // Sample data
 const data = [
@@ -142,4 +142,4 @@ Rows: ${table.getRowModel().rows.length} | Columns: ${table.getAllColumns().leng
 `;
 document.body.appendChild(stats);
 
-await new Promise<void>((r) => termdom.window.requestAnimationFrame(() => r()));
+await new Promise<void>((r) => term.window.requestAnimationFrame(() => r()));
