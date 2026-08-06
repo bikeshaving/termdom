@@ -1841,10 +1841,32 @@ export class LayoutEngine {
 				const caret = this.#caretRect(textNode, from);
 				if (caret) rects.push(caret);
 			} else if (to > from) {
-				this.#appendSelectionRects(rects, textNode, from, to);
+				for (const run of this.#selectionRuns(textNode, from, to)) {
+					rects.push(run.rect);
+				}
 			}
 		}
 		return rects;
+	}
+
+	/**
+	 * The selected runs a Range covers -- each contiguous painted run as a rect
+	 * and its raw text -- across every text node it spans. The text lets a
+	 * caller repaint the run in the selection style; `getRangeRects` is this
+	 * without the text, for the public `Range` API.
+	 */
+	getRangeRuns(range: Range): Array<{rect: globalThis.DOMRect; text: string}> {
+		if (range.collapsed) return [];
+		const runs: Array<{rect: globalThis.DOMRect; text: string}> = [];
+		for (const textNode of this.#rangeTextNodes(range)) {
+			const from = range.startContainer === textNode ? range.startOffset : 0;
+			const to =
+				range.endContainer === textNode
+					? range.endOffset
+					: textNode.data.length;
+			if (to > from) runs.push(...this.#selectionRuns(textNode, from, to));
+		}
+		return runs;
 	}
 
 	/** The text nodes a range covers, in document order. */
@@ -1977,15 +1999,20 @@ export class LayoutEngine {
 		return this.createDOMRect(x, line.y, 0, line.height);
 	}
 
-	/** Rects for a [from, to) data-offset selection within one text node. */
-	#appendSelectionRects(
-		out: globalThis.DOMRect[],
+	/**
+	 * The selected runs within one text node's [from, to) data range: each a
+	 * contiguous painted run as a rect PLUS its raw (untransformed) text. The
+	 * text is what a rect alone cannot carry and what selection highlighting
+	 * needs, since the only way to restyle a cell is to redraw its glyph.
+	 */
+	#selectionRuns(
 		textNode: Text,
 		from: number,
 		to: number,
-	): void {
+	): Array<{rect: globalThis.DOMRect; text: string}> {
+		const runs: Array<{rect: globalThis.DOMRect; text: string}> = [];
 		const rectTexts = this.getRectTexts(textNode);
-		if (rectTexts.length === 0) return;
+		if (rectTexts.length === 0) return runs;
 		const visToData = visualToDataOffsets(textNode.data, rectTexts);
 		let visualBase = 0;
 		for (const rectText of rectTexts) {
@@ -2001,19 +2028,21 @@ export class LayoutEngine {
 						Math.round(rectText.rect.x) +
 						runtimeStringWidth(rectText.text.slice(0, runStart));
 					const width = runtimeStringWidth(rectText.text.slice(runStart, i));
-					out.push(
-						this.createDOMRect(
+					runs.push({
+						rect: this.createDOMRect(
 							x,
 							Math.round(rectText.rect.y),
 							width,
 							rectText.rect.height,
 						),
-					);
+						text: rectText.text.slice(runStart, i),
+					});
 					runStart = -1;
 				}
 			}
 			visualBase += rectText.text.length;
 		}
+		return runs;
 	}
 
 	/**

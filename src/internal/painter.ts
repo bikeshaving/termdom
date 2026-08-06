@@ -1,9 +1,5 @@
 import {type DOMWindow} from "jsdom";
-import {
-	type LayoutEngine,
-	isPositioned,
-	visualToDataOffsets,
-} from "./layout.js";
+import {type LayoutEngine, isPositioned} from "./layout.js";
 import {type Viewport} from "./viewport.js";
 import {type StyleManager, resolveBorderStyles, getBoxModel} from "./styles.js";
 import {cssColorToNumber} from "./color.js";
@@ -986,13 +982,7 @@ export class Painter {
 					);
 				}
 			}
-			this.#renderTextSelection(
-				textNode,
-				rectTexts,
-				textStyle,
-				textTransform,
-				ctx,
-			);
+			this.#renderTextSelection(textNode, textStyle, textTransform, ctx);
 		}
 	}
 
@@ -1043,19 +1033,15 @@ export class Painter {
 	}
 
 	/**
-	 * Overlay the document selection on a text node's painted fragments as
-	 * inverse video -- the terminal-native highlight, no color assumptions.
-	 * The Range holds code-unit offsets into node.data; visualToDataOffsets
-	 * bridges each painted character back to its data offset, and contiguous
-	 * selected runs repaint inverse. Ranges whose boundary containers are
-	 * elements rather than text nodes still highlight any text node they
-	 * fully contain (the intersectsNode walk); a boundary that lands INSIDE
-	 * this node only resolves to a precise offset when the container is the
-	 * node itself -- the only shape our own drag selection produces.
+	 * Overlay the selection on a text node as inverse video (or the author's
+	 * ::selection colors) by redrawing its selected runs in the highlight style.
+	 * The selected region comes from #selectionRangeFor; the runs' rects and text
+	 * come from the layout's Range geometry, so the painter does no offset math.
+	 * Case transforms never change cell width, so transforming each run's raw
+	 * text repaints exactly the cells the base pass laid down.
 	 */
 	#renderTextSelection(
 		textNode: Text,
-		rectTexts: Array<import("./layout.js").RectText>,
 		textStyle: import("./ansi.js").CellStyle,
 		textTransform: string,
 		ctx: import("./ansi.js").DrawingContext,
@@ -1070,33 +1056,16 @@ export class Painter {
 		);
 		if (selectionStyle === textStyle) return; // no ::selection rule reaches here
 
-		const visToData = visualToDataOffsets(textNode.data, rectTexts);
-		let visualBase = 0;
-		for (const rectText of rectTexts) {
-			// Contiguous run of selected visual chars within this fragment.
-			let runStart = -1;
-			for (let i = 0; i <= rectText.text.length; i++) {
-				const dataOffset =
-					i < rectText.text.length ? visToData[visualBase + i] : -1;
-				const selected =
-					dataOffset >= 0 && dataOffset >= from && dataOffset < to;
-				if (selected && runStart === -1) {
-					runStart = i;
-				} else if (!selected && runStart !== -1) {
-					// Case transforms never change cell width, so slicing the
-					// untransformed text and transforming the slice paints the
-					// same cells the base pass did.
-					ctx.setText(
-						Math.round(rectText.rect.x) +
-							stringWidth(rectText.text.slice(0, runStart)),
-						Math.round(rectText.rect.y),
-						applyTextTransform(rectText.text.slice(runStart, i), textTransform),
-						selectionStyle,
-					);
-					runStart = -1;
-				}
-			}
-			visualBase += rectText.text.length;
+		const range = textNode.ownerDocument.createRange();
+		range.setStart(textNode, from);
+		range.setEnd(textNode, to);
+		for (const run of this.#layout.getRangeRuns(range)) {
+			ctx.setText(
+				run.rect.x,
+				run.rect.y,
+				applyTextTransform(run.text, textTransform),
+				selectionStyle,
+			);
 		}
 	}
 }
