@@ -413,6 +413,14 @@ export class TermDOM {
 	#width: number;
 	#height: number;
 
+	// Explicit constructor overrides, kept so attach() can re-derive config from
+	// scratch when it binds to a different process than the constructor saw.
+	// An explicit option still wins over whatever that process reports.
+	#widthOption: number | undefined;
+	#heightOption: number | undefined;
+	#colorDepthOption: ColorDepth | undefined;
+	#detectCursorOption: boolean | undefined;
+
 	// Whether the terminal is currently reporting mouse events to us. See
 	// updateMouseReporting for when capture is on.
 	#mouseReportingEnabled = false;
@@ -482,6 +490,10 @@ export class TermDOM {
 	#interactive: boolean;
 
 	constructor(options: TermDOMOptions = {}) {
+		this.#widthOption = options.width;
+		this.#heightOption = options.height;
+		this.#colorDepthOption = options.colorDepth;
+		this.#detectCursorOption = options.detectCursor;
 		this.#process = options.process || process;
 		this.#interactive = this.#process.stdout.isTTY !== false;
 		const detectCursorEnabled =
@@ -1273,8 +1285,29 @@ export class TermDOM {
 	 * just works) or explicitly by callers that want to control the moment the
 	 * terminal changes hands. Idempotent; dispose() reverses it.
 	 */
-	attach(): void {
-		if (this.#attached) return;
+	/**
+	 * Take hold of a terminal: raw mode, signal handlers, the stdin listener,
+	 * and the startup cursor/mode queries. Called lazily on the first render, or
+	 * explicitly. Idempotent for the process it already holds.
+	 *
+	 * Passing a different process rebinds to it -- the construction-time process
+	 * (the global `process` by default) was only a stand-in, and this re-derives
+	 * every process-dependent fact from the one handed here. Rebinding is only
+	 * allowed before the first attach; re-attaching a live instance to another
+	 * terminal needs handler teardown that does not exist yet.
+	 */
+	attach(proc: ProcessLike = this.#process): void {
+		const rebinding = proc !== this.#process;
+		if (this.#attached) {
+			if (rebinding) {
+				throw new Error(
+					"attach(): cannot re-attach a live TermDOM to a different process; " +
+						"attach once, before the first render.",
+				);
+			}
+			return;
+		}
+		if (rebinding) this.#rebindProcess(proc);
 		this.#attached = true;
 
 		this.#setupProcessHandlers();
@@ -1289,6 +1322,73 @@ export class TermDOM {
 			undisposedInteractive.add(this.#process);
 			installCursorRestoreOnExit();
 		}
+	}
+
+	/**
+	 * Adopt `proc` and re-derive everything that comes from the terminal:
+	 * interactivity, cursor detection, color depth, and the viewport size when
+	 * no explicit option pins it. The collaborators that hold the process --
+	 * the renderer, the fullscreen manager, the terminal probe -- are rebuilt
+	 * rather than mutated: the renderer has no color-depth setter, and a rebind
+	 * always precedes the first frame. The process-independent collaborators
+	 * (layout, style, painter, viewport) are untouched; only the layout is
+	 * resized to the new terminal.
+	 */
+	#rebindProcess(proc: ProcessLike): void {
+		this.#process = proc;
+		this.#interactive = proc.stdout.isTTY !== false;
+		const detectCursor =
+			(this.#detectCursorOption ?? proc === process) && this.#interactive;
+		this.#applyTerminalSize(
+			this.#widthOption || proc.stdout.columns || 80,
+			this.#heightOption || proc.stdout.rows || 24,
+		);
+		this.#renderer = new Renderer(
+			this.#height,
+			this.#width,
+			this.#colorDepthOption || detectColorDepth(proc),
+		);
+		this.#fullscreenManager = new FullscreenManager(proc);
+		this.#probe = new TerminalProbe({
+			process: proc,
+			viewport: this.#viewport,
+			layout: this[kLayoutEngine],
+			interactive: this.#interactive,
+			detectCursor,
+		});
+	}
+
+	/**
+	 * Adopt a new terminal size: update the reported dimensions, re-parse the
+	 * stylesheets and re-evaluate media queries against them (a viewport change
+	 * can flip any @media answer), and resize the layout. The renderer is left
+	 * to the caller -- a resize resizes it in place, a rebind replaces it.
+	 */
+	#applyTerminalSize(newWidth: number, newHeight: number): void {
+		this.#width = newWidth;
+		this.#height = newHeight;
+
+		Object.defineProperty(this.window, "innerWidth", {
+			value: newWidth,
+			writable: false,
+			configurable: true,
+		});
+		Object.defineProperty(this.window, "innerHeight", {
+			value: newHeight,
+			writable: false,
+			configurable: true,
+		});
+
+		this.window._terminalSize = {width: newWidth, height: newHeight};
+
+		// The viewport changed, so every @media answer may have: re-parse the
+		// stylesheets against the new size (they were parsed against the old one
+		// and would stay stale), then let each live MediaQueryList re-evaluate
+		// and fire "change" if it flipped.
+		this.#styleManager.refreshStylesheets();
+		for (const update of this.#mediaQueryUpdaters) update();
+
+		this[kLayoutEngine].resize(newWidth, newHeight);
 	}
 
 	/**
@@ -1685,31 +1785,8 @@ export class TermDOM {
 		const newWidth = this.#process.stdout.columns || 80;
 		const newHeight = this.#process.stdout.rows || 24;
 
-		this.#width = newWidth;
-		this.#height = newHeight;
-
-		Object.defineProperty(this.window, "innerWidth", {
-			value: newWidth,
-			writable: false,
-			configurable: true,
-		});
-		Object.defineProperty(this.window, "innerHeight", {
-			value: newHeight,
-			writable: false,
-			configurable: true,
-		});
-
-		this.window._terminalSize = {width: newWidth, height: newHeight};
-
-		// The viewport changed, so every @media answer may have: re-parse
-		// the stylesheets against the new size (they were parsed against
-		// the old one and would stay stale), then let each live
-		// MediaQueryList re-evaluate and fire "change" if it flipped.
-		this.#styleManager.refreshStylesheets();
-		for (const update of this.#mediaQueryUpdaters) update();
-
+		this.#applyTerminalSize(newWidth, newHeight);
 		this.#renderer.resize(newHeight, newWidth);
-		this[kLayoutEngine].resize(newWidth, newHeight);
 
 		// Re-anchor and redraw. The terminal has already rewrapped everything on
 		// screen -- including our old frame -- and how far our content moved depends

@@ -322,3 +322,37 @@ test("exiting fullscreen restores a coherent document frame", async () => {
 
 	dom.dispose();
 });
+
+test("a headless TermDOM binds its terminal at attach(), re-deriving size", async () => {
+	// Construct with no process -- the global process stands in until attach.
+	const dom = new TermDOM();
+
+	// Rebind to a specific terminal before the first render: its size, not the
+	// stand-in's, must reach the document (window.innerWidth and layout).
+	const terminal = new MockProcess({rows: 12, cols: 50});
+	dom.attach(terminal);
+	dom.document.body.innerHTML = "<p>bound late</p>";
+	await nextFrame(dom);
+
+	expect(dom.window.innerWidth).toBe(50);
+	expect(dom.window.innerHeight).toBe(12);
+	expect(terminal.getPlainText()).toContain("bound late");
+
+	dom.dispose();
+});
+
+test("attach() is idempotent for its process but rejects a different one", () => {
+	const terminal = new MockProcess({rows: 8, cols: 40});
+	const dom = new TermDOM({process: terminal});
+
+	dom.attach(); // first attach
+	dom.attach(); // same process -> no-op, no throw
+	dom.attach(terminal); // still the same process -> no-op
+
+	// Re-attaching a live instance to a different terminal is not supported.
+	expect(() => dom.attach(new MockProcess({rows: 5, cols: 5}))).toThrow(
+		/different process/,
+	);
+
+	dom.dispose();
+});
