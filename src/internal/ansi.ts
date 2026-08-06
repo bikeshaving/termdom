@@ -1,5 +1,5 @@
 import {BOX_DRAWING, BorderEdgeStyle} from "./styles.js";
-import {stringWidth as runtimeStringWidth} from "./text.js";
+import {stringWidth} from "./text.js";
 
 /** One shared grapheme segmenter -- construction is expensive. */
 const graphemeSegmenter = new Intl.Segmenter("en", {granularity: "grapheme"});
@@ -259,11 +259,11 @@ export class Cell {
 	}
 
 	get isWide(): boolean {
-		return this.grapheme ? runtimeStringWidth(this.grapheme) > 1 : false;
+		return this.grapheme ? stringWidth(this.grapheme) > 1 : false;
 	}
 
 	get width(): number {
-		return this.grapheme ? runtimeStringWidth(this.grapheme) : 0;
+		return this.grapheme ? stringWidth(this.grapheme) : 0;
 	}
 
 	getStyleFlags() {
