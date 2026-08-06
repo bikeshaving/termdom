@@ -21,11 +21,7 @@ import type {DOMWindow} from "jsdom";
 import jsdomUtils from "jsdom/lib/jsdom/living/generated/utils.js";
 import jsdomCustomElements from "jsdom/lib/jsdom/living/helpers/custom-elements.js";
 import {compositionShadowRoot, createUAShadowRoot} from "./composition.js";
-import {
-	type LayoutEngine,
-	isPointInRects,
-	visualToDataOffsets,
-} from "./layout.js";
+import {type LayoutEngine, isPointInRects} from "./layout.js";
 import {type StyleManager, getBoxModel} from "./styles.js";
 import {
 	nextGraphemeBoundary,
@@ -110,36 +106,10 @@ export function textareaVisualLines(
 		};
 	}
 
-	const rectTexts = layoutEngine.getRectTexts(valueText);
-	if (rectTexts.length === 0) return null;
-	const visToData = visualToDataOffsets(value, rectTexts);
-
-	const lines: TextareaVisualLine[] = [];
-	// Blank lines between consecutive newlines own real, EMPTY layout fragments
-	// -- no visual characters, so visToData can't place them. A cursor over the
-	// value's own structure does: each line consumes its characters plus, when
-	// the character at its end is a newline, that one hard separator (soft wraps
-	// have no separator to consume).
-	let visualBase = 0;
-	let cursor = 0;
-	for (const rectText of rectTexts) {
-		const length = rectText.text.length;
-		const startOffset = length > 0 ? visToData[visualBase] : cursor;
-		const endOffset =
-			length > 0 ? visToData[visualBase + length - 1] + 1 : startOffset;
-		lines.push({
-			x: Math.round(rectText.rect.x),
-			y: Math.round(rectText.rect.y),
-			text: rectText.text,
-			startOffset,
-			endOffset,
-		});
-		visualBase += length;
-		cursor =
-			endOffset < value.length && value[endOffset] === "\n"
-				? endOffset + 1
-				: endOffset;
-	}
+	// The laid-out lines with their data ranges -- the same annotation range
+	// geometry reads, so the caret and a Range agree on where an offset sits.
+	const lines: TextareaVisualLine[] = layoutEngine.lineFragments(valueText);
+	if (lines.length === 0) return null;
 
 	// A value ending in a newline has exactly ONE line no fragment represents:
 	// the empty last line the caret sits on after a final Enter. (Interior blank

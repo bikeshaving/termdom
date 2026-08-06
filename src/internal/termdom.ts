@@ -831,7 +831,7 @@ export class TermDOM {
 	#installConstructorExtensions(): void {
 		const termDOM = this;
 		const window = termDOM.window;
-		const {Element, Document} = window;
+		const {Element, Document, Range} = window;
 		const document = window.document;
 
 		// getRect()/getRects() (the layout engine's own primitives) are
@@ -876,6 +876,45 @@ export class TermDOM {
 
 			const rects = termDOM[kLayoutEngine].getRects(this).map(toViewportRect);
 			return termDOM[kLayoutEngine].createDOMRectList(rects);
+		};
+
+		// Range geometry. jsdom does no layout, so Range.getClientRects/
+		// getBoundingClientRect are absent -- these supply them from the same
+		// layout the element wrappers use, viewport-converted identically. The
+		// caret and selection painters read the document-relative
+		// getRangeRects() directly, the way scrollIntoView reads getRect().
+		Range.prototype.getClientRects = function (this: Range): DOMRectList {
+			termDOM.#processPendingMutationsAndRender();
+			const rects = termDOM[kLayoutEngine]
+				.getRangeRects(this)
+				.map(toViewportRect);
+			return termDOM[kLayoutEngine].createDOMRectList(rects);
+		};
+
+		Range.prototype.getBoundingClientRect = function (this: Range): DOMRect {
+			termDOM.#processPendingMutationsAndRender();
+			const rects = termDOM[kLayoutEngine].getRangeRects(this);
+			if (rects.length === 0) {
+				return toViewportRect(termDOM[kLayoutEngine].createDOMRect());
+			}
+			let left = Infinity;
+			let top = Infinity;
+			let right = -Infinity;
+			let bottom = -Infinity;
+			for (const rect of rects) {
+				left = Math.min(left, rect.x);
+				top = Math.min(top, rect.y);
+				right = Math.max(right, rect.x + rect.width);
+				bottom = Math.max(bottom, rect.y + rect.height);
+			}
+			return toViewportRect(
+				termDOM[kLayoutEngine].createDOMRect(
+					left,
+					top,
+					right - left,
+					bottom - top,
+				),
+			);
 		};
 
 		// offsetWidth/offsetHeight/offsetTop/offsetLeft/offsetParent/clientWidth/

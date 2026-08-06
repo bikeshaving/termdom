@@ -1814,6 +1814,171 @@ export class LayoutEngine {
 	}
 
 	/**
+	 * The document-space rects a Range covers -- the geometry
+	 * `Range.getClientRects()`/`getBoundingClientRect()` report, and the source
+	 * the painter reads for the caret and for selection highlighting. A collapsed
+	 * range yields one zero-width caret rect; a spanning range yields a rect per
+	 * contiguous selected run per line. Boundaries resolve per text node the way
+	 * the selection walk does: a node the range starts in uses its offset, one it
+	 * only passes through is covered whole.
+	 *
+	 * Two offset regimes, matched to the two callers. The caret path walks line
+	 * fragments annotated with their data range (a pre-wrap field value, blank
+	 * lines and all -- 1:1 offset<->column), so a caret lands on the right line
+	 * including empty ones. The selection path bridges each painted column back
+	 * to a data offset through visualToDataOffsets, so it stays correct over
+	 * collapsing whitespace, where column and offset diverge.
+	 */
+	getRangeRects(range: Range): globalThis.DOMRect[] {
+		const rects: globalThis.DOMRect[] = [];
+		for (const textNode of this.#rangeTextNodes(range)) {
+			const from = range.startContainer === textNode ? range.startOffset : 0;
+			const to =
+				range.endContainer === textNode
+					? range.endOffset
+					: textNode.data.length;
+			if (range.collapsed) {
+				const caret = this.#caretRect(textNode, from);
+				if (caret) rects.push(caret);
+			} else if (to > from) {
+				this.#appendSelectionRects(rects, textNode, from, to);
+			}
+		}
+		return rects;
+	}
+
+	/** The text nodes a range covers, in document order. */
+	#rangeTextNodes(range: Range): Text[] {
+		if (range.collapsed) {
+			const container = range.startContainer;
+			return container.nodeType === container.TEXT_NODE
+				? [container as Text]
+				: [];
+		}
+		const root = range.commonAncestorContainer;
+		if (root.nodeType === root.TEXT_NODE) return [root as Text];
+		const nodes: Text[] = [];
+		const walker = this.window.document.createTreeWalker(
+			root,
+			this.window.NodeFilter.SHOW_TEXT,
+		);
+		let node: Node | null;
+		while ((node = walker.nextNode())) {
+			if (range.intersectsNode(node)) nodes.push(node as Text);
+		}
+		return nodes;
+	}
+
+	/**
+	 * Each laid-out line of a text node, annotated with the data range it spans.
+	 * A blank line between two newlines owns a real but EMPTY layout fragment
+	 * with no columns to place an offset by, so its offset is carried forward
+	 * through the hard separators the previous line's characters did not consume
+	 * -- the same accounting a caret in an empty line depends on.
+	 *
+	 * The one place a text node's laid-out lines get their data ranges, shared by
+	 * range geometry here and the textarea's own visual-line navigation.
+	 */
+	lineFragments(textNode: Text): Array<{
+		x: number;
+		y: number;
+		height: number;
+		text: string;
+		startOffset: number;
+		endOffset: number;
+	}> {
+		const data = textNode.data;
+		const rectTexts = this.getRectTexts(textNode);
+		const visToData = visualToDataOffsets(data, rectTexts);
+		const lines = [];
+		let visualBase = 0;
+		let cursor = 0;
+		for (const rectText of rectTexts) {
+			const length = rectText.text.length;
+			const startOffset = length > 0 ? visToData[visualBase] : cursor;
+			const endOffset =
+				length > 0 ? visToData[visualBase + length - 1] + 1 : startOffset;
+			lines.push({
+				x: Math.round(rectText.rect.x),
+				y: Math.round(rectText.rect.y),
+				height: rectText.rect.height,
+				text: rectText.text,
+				startOffset,
+				endOffset,
+			});
+			visualBase += length;
+			cursor =
+				endOffset < data.length && data[endOffset] === "\n"
+					? endOffset + 1
+					: endOffset;
+		}
+		return lines;
+	}
+
+	/** A zero-width caret rect at a data offset within a text node. */
+	#caretRect(textNode: Text, offset: number): globalThis.DOMRect | null {
+		const lines = this.lineFragments(textNode);
+		if (lines.length === 0) return null;
+		// The line owning the caret: the first whose end it does not pass, but a
+		// caret exactly on a soft-wrap boundary belongs to the next line's start.
+		let lineIndex = lines.length - 1;
+		for (let i = 0; i < lines.length; i++) {
+			if (offset <= lines[i].endOffset) {
+				const next = lines[i + 1];
+				if (next && next.startOffset <= offset) continue;
+				lineIndex = i;
+				break;
+			}
+		}
+		const line = lines[lineIndex];
+		const within = Math.max(
+			0,
+			Math.min(offset, line.endOffset) - line.startOffset,
+		);
+		const x = line.x + runtimeStringWidth(line.text.slice(0, within));
+		return this.createDOMRect(x, line.y, 0, line.height);
+	}
+
+	/** Rects for a [from, to) data-offset selection within one text node. */
+	#appendSelectionRects(
+		out: globalThis.DOMRect[],
+		textNode: Text,
+		from: number,
+		to: number,
+	): void {
+		const rectTexts = this.getRectTexts(textNode);
+		if (rectTexts.length === 0) return;
+		const visToData = visualToDataOffsets(textNode.data, rectTexts);
+		let visualBase = 0;
+		for (const rectText of rectTexts) {
+			let runStart = -1;
+			for (let i = 0; i <= rectText.text.length; i++) {
+				const dataOffset =
+					i < rectText.text.length ? visToData[visualBase + i] : -1;
+				const selected = dataOffset >= from && dataOffset < to;
+				if (selected && runStart === -1) {
+					runStart = i;
+				} else if (!selected && runStart !== -1) {
+					const x =
+						Math.round(rectText.rect.x) +
+						runtimeStringWidth(rectText.text.slice(0, runStart));
+					const width = runtimeStringWidth(rectText.text.slice(runStart, i));
+					out.push(
+						this.createDOMRect(
+							x,
+							Math.round(rectText.rect.y),
+							width,
+							rectText.rect.height,
+						),
+					);
+					runStart = -1;
+				}
+			}
+			visualBase += rectText.text.length;
+		}
+	}
+
+	/**
 	 * Whether an element establishes a stacking context: the paint-atomic unit
 	 * of CSS layering. Terminal-relevant predicate: positioned with a non-auto
 	 * z-index. The root context belongs to <body>, the paint root. (opacity/
