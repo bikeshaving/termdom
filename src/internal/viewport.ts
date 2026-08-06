@@ -1,5 +1,5 @@
 /**
- * The camera: where the viewport is looking in the document, and the math that
+ * The viewport: where the visible window is looking in the document, and the math that
  * maps a terminal cell back to a document point.
  *
  * TermDOM paints a moving window of the document into a region of the terminal.
@@ -17,7 +17,7 @@
  * (scrollBy) trigger their own repaint. Not a "Manager": it conforms to no API,
  * it is the internal source `window.scrollY` happens to read.
  */
-export class Camera {
+export class Viewport {
 	#scrollTop = 0;
 	#screenTop = 0;
 	#anchorScrollTop = 0;
