@@ -914,3 +914,46 @@ test("a height shrink past the fit point repaints one whole frame", async () => 
 
 	dom.dispose();
 });
+
+test("scroll-transform frames match a full repaint exactly", async () => {
+	// One-row camera moves ride the DECSTBM+DL/IL scroll transform (shifted
+	// previous buffer, banded repaint); a multi-row jump takes the full diff.
+	// Whatever path a frame takes, the screen must come out identical --
+	// including the fixed bar, whose rows the transform must repaint at both
+	// its real and its shifted position.
+	const content =
+		Array.from(
+			{length: 60},
+			(_, i) => `<div>line ${i} of the document</div>`,
+		).join("") +
+		`<div style="position:fixed;bottom:0;left:0;right:0;background-color:#333">BAR</div>`;
+
+	const render = async (steps: number[]): Promise<string> => {
+		const terminal = new MockProcess({cols: 40, rows: 10});
+		const dom = new TermDOM({transport: terminal.transport});
+		dom.attach();
+		dom.document.body.innerHTML = content;
+		await nextFrame(dom);
+		for (const step of steps) {
+			dom.window.scrollBy(0, step);
+			await nextFrame(dom);
+		}
+		// Erased cells are spaces in default colors -- blank on any terminal.
+		const text = terminal
+			.getVisibleText()
+			.split("\n")
+			.map((line) => line.trimEnd())
+			.join("\n");
+		dom.dispose();
+		return text;
+	};
+
+	const stepped = await render(Array(12).fill(1));
+	const jumped = await render([12]);
+	expect(stepped).toEqual(jumped);
+
+	// And back up through the IL path.
+	const upAndDown = await render([...Array(12).fill(1), ...Array(7).fill(-1)]);
+	const direct = await render([5]);
+	expect(upAndDown).toEqual(direct);
+});

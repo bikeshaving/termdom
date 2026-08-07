@@ -21,6 +21,7 @@ import {
 	createExpandedTreeWalker,
 	ExpandedTreeWalker,
 	getPseudoMetadata,
+	invalidateComposition,
 } from "./composition.js";
 import {
 	hasRTL,
@@ -1252,6 +1253,10 @@ export class LayoutEngine {
 	#terminalReordersText = false;
 
 	setTerminalReordersText(value: boolean): void {
+		// Flips the visual order of every RTL run without a mutation; the
+		// negotiation resolves long after attach, so the next frame must not
+		// be skipped as clean.
+		invalidateComposition();
 		if (this.#terminalReordersText === value) return;
 		this.#terminalReordersText = value;
 		// Every cached line was built for the other contract.
@@ -1449,6 +1454,27 @@ export class LayoutEngine {
 	 * a stale answer is impossible because extents are recomputed with layout
 	 * and layout is recomputed whenever the tree is dirty.
 	 */
+	/**
+	 * The viewport rows occupied by fixed-position content: the hoisted
+	 * children of the viewport root, excluding the document's own subtree.
+	 * A scroll-transform frame must repaint exactly these rows -- the
+	 * terminal's region scroll moved them along with everything else.
+	 */
+	fixedRowBands(rows: number): Array<[number, number]> {
+		const bands: Array<[number, number]> = [];
+		const documentNode = this.nodeMap.get(this.rootElement);
+		for (const child of this.viewportRootNode.children) {
+			if (child === documentNode) continue;
+			const top = Math.max(0, Math.floor(child.getComputedTop()));
+			const bottom = Math.min(
+				rows,
+				Math.ceil(child.getComputedTop() + child.getComputedHeight()),
+			);
+			if (bottom > top) bands.push([top, bottom]);
+		}
+		return bands;
+	}
+
 	isSubtreeOutsideBand(element: Element, top: number, bottom: number): boolean {
 		const node = this.nodeMap.get(element);
 		if (!node) return false;

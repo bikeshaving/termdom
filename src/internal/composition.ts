@@ -43,6 +43,16 @@ export function invalidateComposition(): void {
 }
 
 /**
+ * The current invalidation epoch. Everything that can change what a frame
+ * looks like -- mutations, style invalidation, composition attachments --
+ * bumps it, which is exactly the "nothing changed but the camera" signal
+ * the scroll-transform fast path gates on.
+ */
+export function currentCompositionEpoch(): number {
+	return compositionEpoch;
+}
+
+/**
  * The FLAT-TREE parent element of a node: the element it renders inside,
  * which is also the element style inheritance flows from. Three cases
  * diverge from parentElement: a projected node's flat parent is its SLOT

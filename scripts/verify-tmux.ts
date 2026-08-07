@@ -206,6 +206,27 @@ const scenarios: Scenario[] = [
 				!after.includes(" 0%"),
 				"the absolute-positioned percentage did not update",
 			);
+
+			// Line scrolls ride the DECSTBM+DL/IL scroll transform; a camera
+			// move is a view change, and none of it may reach the scrollback.
+			const depthBefore = pane.historyDepth(16);
+			for (let i = 0; i < 8; i++) {
+				pane.sendKeys("Down");
+				await sleep(120);
+			}
+			for (let i = 0; i < 4; i++) {
+				pane.sendKeys("Up");
+				await sleep(120);
+			}
+			const depthAfter = pane.historyDepth(16);
+			assert(
+				depthAfter === depthBefore,
+				`scroll transform leaked into scrollback: depth ${depthBefore} -> ${depthAfter}`,
+			);
+			assert(
+				bottom().includes("sample"),
+				"status bar did not survive line scrolling in both directions",
+			);
 		},
 	},
 	{

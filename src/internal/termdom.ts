@@ -29,6 +29,7 @@ import {
 import {
 	compositionIsConnected,
 	compositionParentElement,
+	currentCompositionEpoch,
 	fieldCaretRange,
 	fieldValueText,
 	invalidateComposition,
@@ -305,6 +306,20 @@ export class TermDOM {
 	// the stdin listener and the cursor query. Construction never touches the
 	// process -- attach() does, lazily on the first render or explicitly.
 	#attached = false;
+	// The camera position and invalidation epoch of the last painted frame:
+	// when neither the epoch nor anything else moved but the camera, the
+	// frame is a rigid scroll and the renderer can transform it instead of
+	// repainting everything.
+	#lastFrameScrollTop: number | null = null;
+	#lastFrameEpoch = -1;
+	// Reactive pseudo-state (:focus, :hover, :active) and document selection
+	// change without mutations; the architecture detects them by repainting
+	// and diffing. Every path that can flip them -- user input, focus moves
+	// -- bumps this, so the clean-frame skip below never swallows one.
+	#inputGeneration = 0;
+	#lastFrameInputGeneration = -1;
+	#lastFrameActiveElement: Element | null = null;
+
 	// Bumped on every SIGWINCH. The re-anchor waits on an async cursor query;
 	// if another resize lands while it is in flight, the stale response must not
 	// trigger a redraw at coordinates that no longer mean anything.
@@ -1054,6 +1069,10 @@ export class TermDOM {
 			// The root's <style> elements join the cascade, scoped to this
 			// tree; the refresh rides on the STYLE mutation records the
 			// observer enrollment above will deliver.
+			// A shadow attachment recomposes the host's subtree with no
+			// mutation record; the flat-tree memo and the clean-frame skip
+			// both key off the epoch.
+			invalidateComposition();
 			termDOM.#styleManager.registerShadowRoot(root);
 			// attachShadow is not a DOM mutation -- no observer record will
 			// ever fire for it -- but on a CONNECTED host the composed tree
@@ -1336,6 +1355,7 @@ export class TermDOM {
 			anchorDetection: this.#transport.sharesScreen ?? this.#defaultedTransport,
 			handlers: {
 				onKeys: (keyInput) => {
+					this.#inputGeneration++;
 					// A keystroke means the user is back at the live screen
 					// (terminals snap to the bottom on input): reclaim the mouse
 					// if scroll chaining yielded it.
@@ -1345,9 +1365,11 @@ export class TermDOM {
 					this.#dispatchGlobalKeyboardEvent(Buffer.from(keyInput));
 				},
 				onMouse: (button, x, y, release) => {
+					this.#inputGeneration++;
 					this.#handleMouseReport(button, x, y, release);
 				},
 				onPaste: (text) => {
+					this.#inputGeneration++;
 					this.#dispatchPaste(text);
 				},
 				onResize: () => {
@@ -1574,6 +1596,9 @@ export class TermDOM {
 	}
 
 	async #renderOnce(): Promise<void> {
+		// An in-flight render loop can outlive dispose() by one queued frame;
+		// everything below assumes a live document.
+		if (this.#disposed) return;
 		if (!this.#interactive) {
 			await this.#renderStatic();
 			return;
@@ -2732,12 +2757,39 @@ export class TermDOM {
 		// frame just flushed -- one camera decision per frame, however many
 		// keystrokes coalesced into it. Skipped if focus has already moved
 		// on: revealing a field the user left would yank the camera back.
+		const revealed = this.#pendingCaretReveal !== null;
 		if (this.#pendingCaretReveal) {
 			const reveal = this.#pendingCaretReveal;
 			this.#pendingCaretReveal = null;
 			if (reveal === this.document.activeElement) {
 				this.#scrollCaretIntoView(reveal);
 			}
+		}
+
+		// A frame in which nothing observable moved: no mutations drained, no
+		// invalidation (the composition epoch hears mutations, style changes
+		// and attachments), no input since the last frame (input is what
+		// flips :focus/:hover/:active and drives selection), focus on the
+		// same element, no live selection, the camera unmoved, no reveal, no
+		// pending reset. An idle requestAnimationFrame tick lands here;
+		// painting would emit nothing, so don't pay for discovering that.
+		const selection = this.window.getSelection?.();
+		if (
+			pending.length === 0 &&
+			!revealed &&
+			this.#lastFrameScrollTop !== null &&
+			this.#viewport.scrollTop === this.#lastFrameScrollTop &&
+			currentCompositionEpoch() === this.#lastFrameEpoch &&
+			this.#inputGeneration === this.#lastFrameInputGeneration &&
+			this.document.activeElement === this.#lastFrameActiveElement &&
+			(!selection || selection.rangeCount === 0 || selection.isCollapsed) &&
+			!this.#renderer.needsRepaint
+		) {
+			// Skip the PAINT, not the frame: observers still run against the
+			// (unchanged) layout, so a fresh observe() gets its initial entry
+			// on the next tick exactly as it would from a painted frame.
+			this.#afterRender();
+			return;
 		}
 
 		// Recompute the focused input's scroll window every frame (derived state).
@@ -2769,6 +2821,59 @@ export class TermDOM {
 			this.#viewport.scrollTop = Math.min(this.#viewport.scrollTop, maxScroll);
 		}
 
+		// A frame whose only difference from the last one is the camera is a
+		// rigid transform: the terminal scrolls the region itself (DECSTBM +
+		// DL/IL, never touching the scrollback), and only the exposed band
+		// plus fixed-content rows repaint. Gated hard: full-viewport document
+		// mode, no invalidation of any kind since the last frame (the
+		// composition epoch hears mutations, style changes and attachments),
+		// no drag selection in progress. Everything else takes the full diff.
+		let scroll: {delta: number; bands: Array<[number, number]>} | undefined;
+		const scrollTop = this.#viewport.scrollTop;
+		if (
+			!isFullscreen &&
+			top === 0 &&
+			regionHeight === this.#height &&
+			this.#lastFrameScrollTop !== null &&
+			scrollTop !== this.#lastFrameScrollTop &&
+			currentCompositionEpoch() === this.#lastFrameEpoch &&
+			this.#selectionDragAnchor === null &&
+			this.#fieldDragAnchor === null &&
+			!this.#resizeInProgress
+		) {
+			const delta = scrollTop - this.#lastFrameScrollTop;
+			if (Math.abs(delta) < regionHeight) {
+				const bands: Array<[number, number]> =
+					delta > 0 ? [[regionHeight - delta, regionHeight]] : [[0, -delta]];
+				for (const band of this[kLayoutEngine].fixedRowBands(this.#height)) {
+					bands.push(band);
+					// The terminal's scroll moved the fixed content along with
+					// everything else, leaving a stale copy at the shifted
+					// position; that row must repaint from the document too, or
+					// the ghost survives (model and screen agree on it, so the
+					// diff alone never corrects it).
+					const ghostStart = Math.max(0, band[0] - delta);
+					const ghostEnd = Math.min(regionHeight, band[1] - delta);
+					if (ghostEnd > ghostStart) bands.push([ghostStart, ghostEnd]);
+				}
+				// The focused field's rows repaint too: its caret cell and the
+				// real cursor park come from the painter visiting it.
+				const active = this.document.activeElement;
+				if (active && UPGRADEABLE_CONTROLS.has(active.tagName)) {
+					const rect = this[kLayoutEngine].getRect(active);
+					if (rect) {
+						const startRow = Math.max(0, Math.floor(rect.top - scrollTop));
+						const endRow = Math.min(
+							regionHeight,
+							Math.ceil(rect.top + rect.height - scrollTop),
+						);
+						if (endRow > startRow) bands.push([startRow, endRow]);
+					}
+				}
+				scroll = {delta, bands};
+			}
+		}
+
 		const ansi = this.#renderer.renderFrame(
 			-this.#viewport.scrollTop,
 			(ctx) => {
@@ -2776,7 +2881,12 @@ export class TermDOM {
 			},
 			top,
 			top + regionHeight,
+			scroll,
 		);
+		this.#lastFrameScrollTop = scrollTop;
+		this.#lastFrameEpoch = currentCompositionEpoch();
+		this.#lastFrameInputGeneration = this.#inputGeneration;
+		this.#lastFrameActiveElement = this.document.activeElement;
 
 		if (ansi) await this.#write(ansi);
 		this.#afterRender();

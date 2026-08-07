@@ -707,6 +707,12 @@ export class DrawingContext {
 		right: number;
 		bottom: number;
 	} | null = null;
+	// When set, only buffer rows inside these [start, end) bands accept
+	// writes: a scroll-transform frame repaints the exposed band and the
+	// fixed-content rows, and everything else is the shifted previous frame.
+	// Writes an element makes outside the bands are identical to the shifted
+	// content by construction, so dropping them loses nothing.
+	paintBands: Array<[number, number]> | null = null;
 
 	constructor(
 		buffer: CellBuffer,
@@ -944,6 +950,17 @@ export class DrawingContext {
 			col >= this.cols
 		)
 			return;
+
+		if (this.paintBands) {
+			let inBand = false;
+			for (const [start, end] of this.paintBands) {
+				if (terminalRow >= start && terminalRow < end) {
+					inBand = true;
+					break;
+				}
+			}
+			if (!inBand) return;
+		}
 
 		if (this.clipRect && !this.#inClip(row, col)) return;
 
@@ -1183,6 +1200,11 @@ export class Renderer {
 		return this.#hasSavedCursor;
 	}
 
+	/** A reset or clear is pending: the next frame must actually paint. */
+	get needsRepaint(): boolean {
+		return this.#needsScreenReset || this.#needsFullClear;
+	}
+
 	/**
 	 * Render one frame.
 	 *
@@ -1270,12 +1292,86 @@ export class Renderer {
 		drawCallback: (ctx: DrawingContext) => void,
 		cursorPosition?: number,
 		regionRows?: number,
+		scroll?: {delta: number; bands: Array<[number, number]>},
 	): string {
 		const frameRows = Math.max(this.#rows, regionRows ?? this.#rows);
 		const overflowing = frameRows > this.#rows;
 
 		// Setup: Create new frame buffer
 		const nextBuffer = createBuffer(frameRows, this.#cols);
+
+		// A pure camera move is a rigid transform the terminal can perform
+		// itself: DECSTBM pins the margins to our region (anything above --
+		// a shell prompt -- is outside them and untouchable), and DL/IL
+		// within margins move the rows without touching the scrollback in
+		// any terminal, unlike SU. The previous buffer shifts to match, the
+		// exposed band plus fixed-content rows repaint, and every other row
+		// is seeded from the shifted model so the diff leaves it alone.
+		// Anything impure -- a reset pending, a growth frame, no previous
+		// frame -- falls through to the ordinary full diff.
+		let scrollPrefix = "";
+		const scrolling =
+			scroll !== undefined &&
+			scroll.delta !== 0 &&
+			Math.abs(scroll.delta) < this.#rows &&
+			this.#prevBuffer !== null &&
+			!overflowing &&
+			!this.#needsScreenReset &&
+			!this.#needsFullClear &&
+			cursorPosition !== undefined;
+		if (scrolling && this.#prevBuffer && cursorPosition !== undefined) {
+			const delta = scroll!.delta;
+			const regionTop = cursorPosition;
+			const regionEnd = Math.min(regionRows ?? this.#rows, this.#rows);
+
+			// Shift the model: screen row r now shows what was at r + delta.
+			const prev = this.#prevBuffer;
+			const shifted: CellBuffer = [];
+			for (let row = 0; row < prev.length; row++) {
+				const source = row + delta;
+				shifted.push(
+					source >= 0 && source < prev.length
+						? prev[source]
+						: new Array(this.#cols).fill(null),
+				);
+			}
+			this.#prevBuffer = shifted;
+			const shiftedLines = new Set<number>();
+			for (const row of this.#renderedLines) {
+				const moved = row - delta;
+				if (moved >= 0 && moved < frameRows) shiftedLines.add(moved);
+			}
+			// The repainted bands emit fresh \r\x1b[K lines regardless.
+			for (const [start, end] of scroll!.bands) {
+				for (let row = start; row < end; row++) shiftedLines.add(row);
+			}
+			this.#renderedLines = shiftedLines;
+
+			// Seed everything outside the bands from the shifted model; the
+			// paint callback owns the bands (enforced by the context mask).
+			for (let row = 0; row < Math.min(frameRows, shifted.length); row++) {
+				let inBand = false;
+				for (const [start, end] of scroll!.bands) {
+					if (row >= start && row < end) {
+						inBand = true;
+						break;
+					}
+				}
+				if (inBand) continue;
+				for (let col = 0; col < this.#cols; col++) {
+					nextBuffer[row][col] = shifted[row][col];
+				}
+			}
+
+			// DECSTBM homes the cursor, so position after resetting margins is
+			// the standard prefix's problem (it always CUPs for this caller).
+			const count = Math.abs(delta);
+			scrollPrefix =
+				`\x1b[${regionTop + 1};${regionEnd}r` +
+				`\x1b[${regionTop + 1};1H` +
+				(delta > 0 ? `\x1b[${count}M` : `\x1b[${count}L`) +
+				"\x1b[r";
+		}
 
 		// Create drawing context and execute drawing operations
 		const context = new DrawingContext(
@@ -1284,15 +1380,8 @@ export class Renderer {
 			this.#cols,
 			offset,
 		);
+		if (scrolling) context.paintBands = scroll!.bands;
 		drawCallback(context);
-
-		// An offset change is rendered by repainting cells, never by SU/SD scroll
-		// commands. SU and SD move the WHOLE terminal screen -- a region that
-		// starts below a shell prompt would drag the prompt and any stale rows
-		// through itself on every camera move, and SU commits rows to scrollback,
-		// which document mode promises never to do. They also require a second
-		// model of where the screen is (a shifted previous buffer) that has to
-		// stay in lockstep with the diff model. Diffs are fast; one model wins.
 
 		// Create diff buffer. A frame taller than the terminal is a growth frame:
 		// the rows below the fold have never been on screen, so there is nothing to
@@ -1403,8 +1492,12 @@ export class Renderer {
 		}
 		this.#lastCaretVisible = caretVisible;
 
+		if (scrolling) {
+			hasContent = true;
+		}
+
 		// Build output with proper framing
-		let prefix = "";
+		let prefix = scrollPrefix;
 		let suffix = "";
 		// The frame's on-screen start row, when a positioning branch names one
 		// absolutely. Used to park the cursor at the content bottom after painting.

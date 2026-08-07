@@ -298,9 +298,33 @@ export class Painter {
 		// lies wholly outside that band would be walked -- styles computed, text
 		// shaped, borders drawn -- and then discarded cell by cell. Skip it here
 		// and the paint costs what is on screen, not what is in the document.
-		const bandTop = -ctx.viewportOffset;
-		if (
-			this.#layout.isSubtreeOutsideBand(element, bandTop, bandTop + ctx.rows)
+		// The enclosing band, for the child-enumeration queries below; the
+		// per-band check underneath culls precisely on recursion, and the
+		// context's cell mask makes any overshoot harmless.
+		let bandTop = -ctx.viewportOffset;
+		let bandBottom = bandTop + ctx.rows;
+		if (ctx.paintBands) {
+			// A scroll-transform frame repaints only its bands: skip any
+			// subtree outside every one of them.
+			let inside = false;
+			bandTop = Infinity;
+			bandBottom = -Infinity;
+			for (const [start, end] of ctx.paintBands) {
+				bandTop = Math.min(bandTop, start - ctx.viewportOffset);
+				bandBottom = Math.max(bandBottom, end - ctx.viewportOffset);
+				if (
+					!this.#layout.isSubtreeOutsideBand(
+						element,
+						start - ctx.viewportOffset,
+						end - ctx.viewportOffset,
+					)
+				) {
+					inside = true;
+				}
+			}
+			if (!inside) return;
+		} else if (
+			this.#layout.isSubtreeOutsideBand(element, bandTop, bandBottom)
 		) {
 			return;
 		}
@@ -531,7 +555,7 @@ export class Painter {
 		const fastChildren = this.#layout.visibleChildrenInBand(
 			element,
 			bandTop,
-			bandTop + ctx.rows,
+			bandBottom,
 		);
 		if (fastChildren) {
 			for (const childNode of fastChildren) {
@@ -553,7 +577,7 @@ export class Painter {
 					this.#layout.isSubtreeOutsideBand(
 						childNode as Element,
 						bandTop,
-						bandTop + ctx.rows,
+						bandBottom,
 					)
 				) {
 					continue;
