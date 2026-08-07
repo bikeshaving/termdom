@@ -1964,6 +1964,16 @@ export class TermDOM {
 		const hadMutations = pendingMutations.length > 0;
 		if (hadMutations) {
 			this.#handlePendingMutations(pendingMutations);
+			// takeRecords() stole these from the observer callback that would
+			// have painted them. When the caller's own follow-up (a camera
+			// move, an input's render) never comes -- scrollIntoView on an
+			// already-visible row is the canonical case -- the mutation would
+			// otherwise never reach the screen. Schedule the paint the drain
+			// consumed, UNCONDITIONALLY: render() itself queues a trailing
+			// frame when one is in flight, and skipping "because a render is
+			// running" leaves the screen one interaction behind the DOM when
+			// keystrokes arrive faster than frames.
+			void this.#render();
 		}
 		this[kLayoutEngine].calculateLayout();
 		return hadMutations;

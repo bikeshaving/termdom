@@ -154,6 +154,33 @@ const scenarios: Scenario[] = [
 		},
 	},
 	{
+		name: "fuzzy-finder: navigation repaints on its own, keystrokes faster than frames",
+		command: "node examples/fuzzy-finder.ts",
+		cols: 70,
+		rows: 14,
+		run: async (pane) => {
+			// The selection marker row: starts with the marker glyph, below the
+			// input row (which carries the same sigil). tmux renders the NBSP
+			// as a plain space, so match on the glyph alone.
+			const marked = () =>
+				pane
+					.screen()
+					.findIndex((l, i) => i >= 2 && l.trimStart().startsWith("\u203a"));
+			const before = marked();
+			assert(before > 0, "no selection marker on screen");
+			// Two batched Downs in one chunk: the screen must land on the
+			// SECOND row down -- a frozen or one-behind screen is the drained-
+			// mutation bug. No frame is awaited anywhere but the wall clock.
+			pane.sendKeys("Down", "Down");
+			await sleep(900);
+			const after = marked();
+			assert(
+				after === before + 2,
+				`marker moved ${after - before} rows for two Downs (at ${after})`,
+			);
+		},
+	},
+	{
 		name: "resize: a widening resize adds nothing to the scrollback",
 		command: "node examples/flexbox.ts",
 		cols: 60,

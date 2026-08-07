@@ -105,3 +105,36 @@ test("print() writes the document once, with no terminal takeover", async () => 
 	// dispose after a print still owes the terminal nothing.
 	expect(writes.count()).toBe(1);
 });
+
+test("a geometry read never strands the mutations it drained", async () => {
+	// scrollIntoView/getBoundingClientRect flush pending mutations for exact
+	// layout via takeRecords -- which steals them from the observer callback
+	// that would have painted. If no scroll or explicit frame follows, the
+	// mutation must still reach the screen: the drain schedules the paint it
+	// consumed.
+	const terminal = new MockProcess({cols: 40, rows: 8});
+	const dom = new TermDOM({process: terminal});
+	dom.document.body.innerHTML = `<div id="a">before</div>`;
+	dom.attach();
+	await nextFrame(dom);
+	expect(terminal.getVisibleText()).toContain("before");
+
+	const el = dom.document.getElementById("a")!;
+	el.textContent = "after";
+	// The geometry read drains the queue synchronously...
+	el.getBoundingClientRect();
+	// ...and no rAF, no scroll, no further mutation follows. Wait on wall
+	// clock only: the paint must arrive on its own.
+	await new Promise((r) => setTimeout(r, 80));
+	expect(terminal.getVisibleText()).toContain("after");
+
+	// Two mutate+drain cycles back to back -- keystrokes faster than frames.
+	// The screen must catch up to the LAST state, not freeze one behind.
+	el.textContent = "second";
+	el.getBoundingClientRect();
+	el.textContent = "third";
+	el.getBoundingClientRect();
+	await new Promise((r) => setTimeout(r, 80));
+	expect(terminal.getVisibleText()).toContain("third");
+	dom.dispose();
+});
