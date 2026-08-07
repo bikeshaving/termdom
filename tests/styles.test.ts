@@ -756,3 +756,22 @@ test("a single side turns off: style.borderTop = 'none'", async () => {
 	expect(textarea.getBoundingClientRect().height).toBe(2);
 	dom.dispose();
 });
+
+test("style.background = 'none' overrides a stylesheet background", async () => {
+	// The same cssstyle erasure as the border family: `background: none`
+	// cleared the inline longhands instead of declaring image none and color
+	// transparent, so a class background always won. The shim stores both.
+	const terminal = new MockProcess({cols: 20, rows: 4});
+	const dom = new TermDOM({process: terminal});
+	dom.document.head.innerHTML = `<style>.paint { background: red; }</style>`;
+	dom.document.body.innerHTML = `<div class="paint" id="box" style="background: none">x</div>`;
+	await nextFrame(dom);
+
+	const computed = dom.window.getComputedStyle(
+		dom.document.getElementById("box")!,
+	);
+	expect(computed.getPropertyValue("background-color")).toBe("transparent");
+	const cell = (terminal as any).terminal.buffer.active.getLine(0).getCell(0);
+	expect(cell.isBgDefault()).toBeTruthy();
+	dom.dispose();
+});

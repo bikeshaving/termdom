@@ -20,6 +20,7 @@ const DECLARATIONS = [
 	"border-style: none",
 	"border-top-style: none",
 	"background: red",
+	"background: none",
 	"background-color: transparent",
 	"margin: 1px 2px",
 	"margin: auto",

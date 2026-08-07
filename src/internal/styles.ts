@@ -117,40 +117,81 @@ export interface BoxModel {
 // writes the style longhands the keyword actually declares. Paired with
 // getBoxModel's used-width gate, style:none alone releases both glyphs and
 // space, matching the browser.
-const kBorderNoneShimmed = Symbol("termdom.borderNoneShim");
-const BORDER_NONE_TARGETS: Record<string, string[]> = {
-	border: [
-		"border-top-style",
-		"border-right-style",
-		"border-bottom-style",
-		"border-left-style",
-	],
-	borderStyle: [
-		"border-top-style",
-		"border-right-style",
-		"border-bottom-style",
-		"border-left-style",
-	],
-	borderTop: ["border-top-style"],
-	borderRight: ["border-right-style"],
-	borderBottom: ["border-bottom-style"],
-	borderLeft: ["border-left-style"],
-	borderTopStyle: ["border-top-style"],
-	borderRightStyle: ["border-right-style"],
-	borderBottomStyle: ["border-bottom-style"],
-	borderLeftStyle: ["border-left-style"],
+const kNoneErasureShimmed = Symbol("termdom.noneErasureShim");
+const BORDER_KEYWORDS = new Set(["none", "hidden"]);
+const sideStyles = (keyword: string, sides: string[]) =>
+	Object.fromEntries(sides.map((s) => [`border-${s}-style`, keyword]));
+const ALL_SIDES = ["top", "right", "bottom", "left"];
+/**
+ * Per broken setter: the keywords it erases, and the longhand declarations
+ * the keyword actually means -- what the browser stores at inline weight.
+ */
+const NONE_ERASURE_SHIMS: Record<
+	string,
+	{keywords: Set<string>; declares(keyword: string): Record<string, string>}
+> = {
+	border: {
+		keywords: BORDER_KEYWORDS,
+		declares: (kw) => sideStyles(kw, ALL_SIDES),
+	},
+	borderStyle: {
+		keywords: BORDER_KEYWORDS,
+		declares: (kw) => sideStyles(kw, ALL_SIDES),
+	},
+	borderTop: {
+		keywords: BORDER_KEYWORDS,
+		declares: (kw) => sideStyles(kw, ["top"]),
+	},
+	borderRight: {
+		keywords: BORDER_KEYWORDS,
+		declares: (kw) => sideStyles(kw, ["right"]),
+	},
+	borderBottom: {
+		keywords: BORDER_KEYWORDS,
+		declares: (kw) => sideStyles(kw, ["bottom"]),
+	},
+	borderLeft: {
+		keywords: BORDER_KEYWORDS,
+		declares: (kw) => sideStyles(kw, ["left"]),
+	},
+	borderTopStyle: {
+		keywords: BORDER_KEYWORDS,
+		declares: (kw) => sideStyles(kw, ["top"]),
+	},
+	borderRightStyle: {
+		keywords: BORDER_KEYWORDS,
+		declares: (kw) => sideStyles(kw, ["right"]),
+	},
+	borderBottomStyle: {
+		keywords: BORDER_KEYWORDS,
+		declares: (kw) => sideStyles(kw, ["bottom"]),
+	},
+	borderLeftStyle: {
+		keywords: BORDER_KEYWORDS,
+		declares: (kw) => sideStyles(kw, ["left"]),
+	},
+	// `background: none` declares image none and color transparent (the
+	// initial) at inline weight -- both must be STORED, or a stylesheet
+	// background still wins over the inline none.
+	background: {
+		keywords: new Set(["none"]),
+		declares: () => ({
+			"background-image": "none",
+			"background-color": "transparent",
+		}),
+	},
 };
 
 /** Patch the CSSStyleDeclaration prototype behind `style`, once per class. */
-export function shimInlineBorderNone(style: object): void {
+export function shimInlineNoneErasure(style: object): void {
 	const prototype = Object.getPrototypeOf(style) as Record<
 		string | symbol,
 		unknown
 	>;
-	if (prototype[kBorderNoneShimmed]) return;
-	prototype[kBorderNoneShimmed] = true;
+	if (prototype[kNoneErasureShimmed]) return;
+	prototype[kNoneErasureShimmed] = true;
 
-	for (const [property, longhands] of Object.entries(BORDER_NONE_TARGETS)) {
+	for (const [property, shim] of Object.entries(NONE_ERASURE_SHIMS)) {
 		// The dashed alias shares the camelCase accessor's functions; patching
 		// each descriptor found covers both spellings and setProperty, which
 		// dispatches through them.
@@ -164,13 +205,14 @@ export function shimInlineBorderNone(style: object): void {
 				set(value: unknown) {
 					originalSet.call(this, value);
 					const keyword = String(value).trim().toLowerCase();
-					if (keyword === "none" || keyword === "hidden") {
-						for (const longhand of longhands) {
+					if (shim.keywords.has(keyword)) {
+						const declarations = shim.declares(keyword);
+						for (const [longhand, stored] of Object.entries(declarations)) {
 							(
 								this as {
 									_setProperty(name: string, value: string): void;
 								}
-							)._setProperty(longhand, keyword);
+							)._setProperty(longhand, stored);
 						}
 					}
 				},
