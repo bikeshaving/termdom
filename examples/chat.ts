@@ -141,8 +141,7 @@ document.addEventListener(
 	(event: Event) => {
 		const e = event as KeyboardEvent;
 		if (e.key === "Escape" || (e.ctrlKey && e.key === "c")) {
-			term.dispose();
-			process.exit(0);
+			term.window.close();
 		} else if (e.key === "Enter" && !e.shiftKey) {
 			e.preventDefault();
 			void send();
@@ -159,6 +158,5 @@ await scrollToPrompt();
 if (!process.stdout.isTTY) {
 	input.value = "In one short sentence, what is a terminal emulator?";
 	await send();
-	term.dispose();
-	process.exit(0);
+	term.window.close();
 }

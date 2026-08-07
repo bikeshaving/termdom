@@ -198,8 +198,7 @@ await new Promise<void>((r) => window.requestAnimationFrame(() => r()));
 // terminal's scrollback on the way.
 const fits = document.body.scrollHeight <= window.innerHeight;
 if (!process.stdout.isTTY || fits) {
-	term.dispose();
-	process.exit(0);
+	term.window.close();
 }
 
 // Pager mode: the document is taller than the screen, so move the camera over
@@ -225,8 +224,7 @@ const updateStatus = () => {
 updateStatus();
 const bindings: Record<string, () => void> = {
 	q: () => {
-		term.dispose();
-		process.exit(0);
+		term.window.close();
 	},
 	" ": () => window.scrollBy(0, page()),
 	f: () => window.scrollBy(0, page()),

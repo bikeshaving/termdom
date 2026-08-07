@@ -174,8 +174,7 @@ document.addEventListener("keydown", (event: Event) => {
 	const key = (event as KeyboardEvent).key;
 	const current = rows()[selected];
 	if (key === "q") {
-		term.dispose();
-		process.exit(0);
+		term.window.close();
 	} else if (key === "j" || key === "ArrowDown") {
 		select(selected + 1);
 	} else if (key === "k" || key === "ArrowUp") {

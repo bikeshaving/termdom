@@ -62,7 +62,12 @@ output. Does not require `attach()`.
 
 Reverses `attach()`: flushes the document into scrollback, restores every
 terminal mode and the title, releases the transport, and clears all timers
-and listeners. `using term = new TermDOM()` disposes on scope exit.
+and listeners. Returns a promise that resolves when every queued restore
+has reached the transport; await it before writing further output or
+exiting with a status code. The process transport also restores
+shell-critical modes (mouse reporting, cursor visibility, bracketed paste)
+synchronously, so a caller that exits without awaiting leaves the shell
+usable. `using term = new TermDOM()` disposes on scope exit.
 
 ## `TerminalTransport`
 

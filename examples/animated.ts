@@ -183,8 +183,7 @@ document.addEventListener("keydown", (e: Event) => {
 	const ke = e as KeyboardEvent;
 	if (ke.key === "q") {
 		clearInterval(interval);
-		term.dispose();
-		process.exit(0);
+		term.window.close();
 	}
 });
 

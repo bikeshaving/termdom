@@ -82,8 +82,7 @@ document.addEventListener(
 	(event: Event) => {
 		const e = event as KeyboardEvent;
 		if (e.key === "Escape" || (e.ctrlKey && e.key === "c")) {
-			term.dispose();
-			process.exit(0);
+			term.window.close();
 		}
 	},
 	true,
@@ -95,7 +94,6 @@ if (!process.stdout.isTTY) {
 	input.value = "Tr0ub4dor";
 	input.dispatchEvent(new term.window.Event("input", {bubbles: true}));
 	setTimeout(() => {
-		term.dispose();
-		process.exit(0);
+		term.window.close();
 	}, 100);
 }

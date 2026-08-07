@@ -91,6 +91,11 @@ class Pane {
 		return Math.max(0, this.full().length - 1 - rows);
 	}
 
+	/** A tmux format expanded against this pane (e.g. #{mouse_any_flag}). */
+	display(format: string): string {
+		return tmux("display-message", "-t", this.#session, "-p", format).trim();
+	}
+
 	async resize(cols: number, rows: number): Promise<void> {
 		tmux(
 			"resize-window",
@@ -226,6 +231,20 @@ const scenarios: Scenario[] = [
 			assert(
 				bottom().includes("sample"),
 				"status bar did not survive line scrolling in both directions",
+			);
+
+			// Quitting must hand the terminal back: tmux tracks whether the
+			// app left mouse reporting on, which is what sprays SGR reports
+			// into the freed shell.
+			pane.sendKeys("q");
+			await sleep(600);
+			assert(
+				pane.display("#{mouse_any_flag}") === "0",
+				"quitting left mouse reporting enabled",
+			);
+			assert(
+				pane.display("#{cursor_flag}") === "1",
+				"quitting left the cursor hidden",
 			);
 		},
 	},

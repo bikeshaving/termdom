@@ -152,8 +152,10 @@ function move(delta: number): void {
 	rows()[selected]?.scrollIntoView();
 }
 
-function finish(pick: string | null): void {
-	term.dispose();
+async function finish(pick: string | null): Promise<void> {
+	// dispose() resolves once the final flush has reached the terminal, so
+	// the picked line prints below the paid-out UI, not into it.
+	await term.dispose();
 	if (pick !== null) process.stdout.write(pick + "\n");
 	process.exit(pick === null ? 1 : 0);
 }
@@ -169,8 +171,8 @@ input.addEventListener("input", () => {
 document.addEventListener("keydown", (event: Event) => {
 	const e = event as KeyboardEvent;
 	const ctrl = e.ctrlKey;
-	if (e.key === "Escape" || (ctrl && e.key === "c")) finish(null);
-	else if (e.key === "Enter") finish(matches[selected] ?? null);
+	if (e.key === "Escape" || (ctrl && e.key === "c")) void finish(null);
+	else if (e.key === "Enter") void finish(matches[selected] ?? null);
 	else if (e.key === "ArrowDown" || (ctrl && e.key === "n")) move(1);
 	else if (e.key === "ArrowUp" || (ctrl && e.key === "p")) move(-1);
 	else return;
@@ -184,6 +186,5 @@ input.focus();
 // the example is inspectable without a TTY.
 await new Promise<void>((r) => window.requestAnimationFrame(() => r()));
 if (!process.stdout.isTTY) {
-	term.dispose();
-	process.exit(0);
+	term.window.close();
 }

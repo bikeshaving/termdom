@@ -735,11 +735,11 @@ export class TermDOM {
 		termDOM.#nativeWindowClose = window.close.bind(window);
 		window.close = () => {
 			const wasAttached = termDOM.#attached;
-			termDOM.dispose();
+			// Everything dispose queued must reach the wire before the
+			// transport acts on the close (a process transport exits).
+			const flushed = termDOM.dispose();
 			if (wasAttached) {
-				// Everything dispose queued must reach the wire before the
-				// transport acts on the close (a process transport exits).
-				void termDOM.#session.flush().then(() => {
+				void flushed.then(() => {
 					termDOM.#transport.close?.({code: 0});
 				});
 			}
@@ -3086,8 +3086,15 @@ export class TermDOM {
 
 	#disposed = false;
 
-	dispose(): void {
-		if (this.#disposed) return;
+	/**
+	 * Tear down and hand the terminal back. The returned promise resolves
+	 * when every queued restore has reached the transport -- await it before
+	 * writing your own output or exiting with a status code. (The process
+	 * transport also restores the shell-critical modes synchronously, so a
+	 * caller that exits without awaiting still leaves the shell usable.)
+	 */
+	dispose(): Promise<void> {
+		if (this.#disposed) return Promise.resolve();
 		this.#disposed = true;
 
 		// A TermDOM that never attached owes the terminal nothing: no final
@@ -3138,9 +3145,11 @@ export class TermDOM {
 		this.#styleManager.dispose();
 		this[kLayoutEngine].dispose();
 		this.#observerManager.dispose();
+		const flushed = this.#session.flush();
 		(
 			this.#nativeWindowClose ??
 			this.#jsdom.window.close.bind(this.#jsdom.window)
 		)();
+		return flushed;
 	}
 }

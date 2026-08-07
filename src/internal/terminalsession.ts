@@ -156,6 +156,13 @@ export function transportFromProcess(
 		if (!engaged) return;
 		engaged = false;
 		undisposedProcesses.delete(proc);
+		// Restore the terminal SYNCHRONOUSLY: the engine's own restores ride
+		// the writable's queue, and `dispose(); process.exit()` -- a
+		// completely reasonable app -- exits before that queue flushes. These
+		// are the modes whose survival wrecks the user's shell (mouse
+		// reporting above all); each is idempotent, so the queued restores
+		// arriving later repeat them harmlessly.
+		proc.stdout.write("[?1006l[?1002l[?25h[?2004l[23;0t");
 		if (dataListener && proc.stdin) {
 			proc.stdin.removeListener?.("data", dataListener);
 			dataListener = null;

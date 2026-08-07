@@ -139,3 +139,28 @@ test("a geometry read never strands the mutations it drained", async () => {
 	expect(terminal.getVisibleText()).toContain("third");
 	dom.dispose();
 });
+
+test("dispose() restores shell-critical modes synchronously", async () => {
+	// `term.dispose(); process.exit(0)` is a reasonable app. The engine's own
+	// restores ride the transport's write queue and would lose that race, so
+	// the process transport restores the modes that wreck a shell -- mouse
+	// reporting above all -- synchronously on disengage.
+	const terminal = new MockProcess({cols: 40, rows: 8});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.attach();
+	await nextFrame(dom);
+
+	let restored = "";
+	const original = terminal.stdout.write.bind(terminal.stdout);
+	terminal.stdout.write = ((chunk: any, enc?: any, cb?: any) => {
+		restored += String(chunk);
+		return original(chunk, enc, cb);
+	}) as typeof terminal.stdout.write;
+
+	void dom.dispose();
+	// No awaits between dispose and the assertions: exit comes next.
+	expect(restored).toContain("\x1b[?1002l");
+	expect(restored).toContain("\x1b[?1006l");
+	expect(restored).toContain("\x1b[?25h");
+	expect(restored).toContain("\x1b[?2004l");
+});
