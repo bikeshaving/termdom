@@ -14,7 +14,7 @@
   "extends": ["eslint:recommended", "plugin:prettier/recommended"],
   "overrides": [
     {
-      "files": ["examples/**/*.ts"],
+      "files": ["examples/**/*.ts", "scripts/**/*.ts"],
       "rules": {
         "no-console": "off"
       }

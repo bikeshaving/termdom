@@ -67,8 +67,9 @@ to the alternate screen and back.
 
 Ordinary Node programs in [`examples/`](./examples):
 
-- [`todomvc.tsx`](./examples/todomvc.tsx) — the official Crank TodoMVC,
-  component code unmodified; only the stylesheet was swapped.
+- [`todomvc.ts`](./examples/todomvc.ts) — the official Crank TodoMVC,
+  component logic unmodified; only the stylesheet was swapped and the JSX
+  is Crank's `jsx` template tag, so plain `node` runs it.
 - [`markdown.ts`](./examples/markdown.ts) — a Markdown viewer (marked +
   Prism): flow mode when it fits, a pager when it doesn't.
 - [`chat.ts`](./examples/chat.ts) — a streaming LLM chat client as a web

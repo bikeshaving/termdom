@@ -1,16 +1,18 @@
 // The official Crank TodoMVC (github.com/bikeshaving/crank, examples/todomvc.js),
-// rendered to the terminal. The component code below is unmodified from the
+// rendered to the terminal. The component logic is unmodified from the
 // original -- every interaction (checkbox toggle, double-click to edit,
 // autofocus, label-click delegation, dblclick detection) is a real DOM
-// feature termdom implements, not a todomvc-specific workaround. The only
-// change is the stylesheet: the original loads todomvc-app-css from a CDN,
-// which targets a browser (box-shadow, transitions, media queries) -- this
-// swaps it for an inline <style> using the same class names, in the CSS
-// subset a terminal can actually paint.
+// feature termdom implements, not a todomvc-specific workaround. Two
+// translations only: the JSX is Crank's `jsx` template tag, so this is
+// erasable TypeScript that plain `node` runs with no transform; and the
+// stylesheet is inline -- the original loads todomvc-app-css from a CDN,
+// which targets a browser (box-shadow, transitions, media queries) -- in
+// the CSS subset a terminal can actually paint.
 //
-//   node examples/todomvc.tsx
+//   node examples/todomvc.ts
 import {TermDOM} from "@b9g/termdom";
 import type {Context} from "@b9g/crank";
+import {jsx} from "@b9g/crank/standalone";
 import {renderer} from "@b9g/crank/dom";
 
 const term = new TermDOM();
@@ -85,19 +87,19 @@ function* Header(this: Context) {
 	// says none are used.
 	// eslint-disable-next-line no-empty-pattern
 	for ({} of this) {
-		yield (
+		yield jsx`
 			<header class="header">
 				<h1>todos</h1>
 				<input
 					class="new-todo"
 					placeholder="What needs to be done?"
-					value={title}
-					oninput={oninput}
-					onkeydown={onkeydown}
+					value=${title}
+					oninput=${oninput}
+					onkeydown=${onkeydown}
 					autofocus
 				/>
 			</header>
-		);
+		`;
 	}
 }
 
@@ -153,31 +155,34 @@ function* TodoItem(this: Context, {todo}: any) {
 	};
 
 	for ({todo} of this) {
-		yield (
-			<li class={{completed: todo.completed, editing}}>
+		yield jsx`
+			<li class=${{completed: todo.completed, editing}}>
 				<div class="view">
 					<input
 						class="toggle"
 						type="checkbox"
-						checked={todo.completed}
-						onchange={ontoggle}
+						checked=${todo.completed}
+						onchange=${ontoggle}
 					/>
-					<label ondblclick={onedit}>{todo.title}</label>
-					<button class="destroy" onclick={ondelete}></button>
+					<label ondblclick=${onedit}>${todo.title}</label>
+					<button class="destroy" onclick=${ondelete}></button>
 				</div>
-				{editing && (
-					<input
-						class="edit"
-						type="text"
-						value={editTitle}
-						oninput={(ev: any) => (editTitle = ev.target.value)}
-						onkeydown={onkeydown}
-						onblur={onsave}
-						autofocus
-					/>
-				)}
+				${
+					editing &&
+					jsx`
+						<input
+							class="edit"
+							type="text"
+							value=${editTitle}
+							oninput=${(ev: any) => (editTitle = ev.target.value)}
+							onkeydown=${onkeydown}
+							onblur=${onsave}
+							autofocus
+						/>
+					`
+				}
 			</li>
-		);
+		`;
 	}
 }
 
@@ -189,13 +194,13 @@ function* TodoList(this: Context, {todos, filter}: any) {
 			return true;
 		});
 
-		yield (
+		yield jsx`
 			<ul class="todo-list">
-				{filteredTodos.map((todo: any) => (
-					<TodoItem key={todo.id} todo={todo} />
-				))}
+				${filteredTodos.map(
+					(todo: any) => jsx`<${TodoItem} $key=${todo.id} todo=${todo} />`,
+				)}
 			</ul>
-		);
+		`;
 	}
 }
 
@@ -212,31 +217,36 @@ function* Footer(this: Context, {todos, filter}: any) {
 		const activeCount = todos.filter((t: any) => !t.completed).length;
 		const completedCount = todos.filter((t: any) => t.completed).length;
 
-		yield (
+		yield jsx`
 			<footer class="footer">
 				<span class="todo-count">
-					<strong>{activeCount}</strong> item{activeCount !== 1 ? "s" : ""} left
+					<strong>${activeCount}</strong> item${activeCount !== 1 ? "s" : ""} left
 				</span>
 				<ul class="filters">
-					{["all", "active", "completed"].map((f) => (
-						<li key={f}>
-							<a
-								href="javascript:void(0)"
-								onclick={() => setFilter(f === "all" ? "" : f)}
-								class={{selected: filter === (f === "all" ? "" : f)}}
-							>
-								{f === "all" ? "All" : f.charAt(0).toUpperCase() + f.slice(1)}
-							</a>
-						</li>
-					))}
+					${["all", "active", "completed"].map(
+						(f) => jsx`
+							<li $key=${f}>
+								<a
+									href="javascript:void(0)"
+									onclick=${() => setFilter(f === "all" ? "" : f)}
+									class=${{selected: filter === (f === "all" ? "" : f)}}
+								>
+									${f === "all" ? "All" : f.charAt(0).toUpperCase() + f.slice(1)}
+								</a>
+							</li>
+						`,
+					)}
 				</ul>
-				{completedCount > 0 && (
-					<button class="clear-completed" onclick={clearCompleted}>
-						Clear completed
-					</button>
-				)}
+				${
+					completedCount > 0 &&
+					jsx`
+						<button class="clear-completed" onclick=${clearCompleted}>
+							Clear completed
+						</button>
+					`
+				}
 			</footer>
-		);
+		`;
 	}
 }
 
@@ -291,31 +301,34 @@ function* App(this: Context) {
 	// says none are used.
 	// eslint-disable-next-line no-empty-pattern
 	for ({} of this) {
-		yield (
+		yield jsx`
 			<section class="todoapp">
-				<Header />
-				{todos.length > 0 && (
-					<section class="main">
-						<input
-							id="toggle-all"
-							class="toggle-all"
-							type="checkbox"
-							checked={todos.every((t) => t.completed)}
-							onchange={(e: any) => {
-								const completed = e.target.checked;
-								this.refresh(() => {
-									todos.forEach((t) => (t.completed = completed));
-								});
-							}}
-						/>
-						<label for="toggle-all">Mark all as complete</label>
-						<TodoList todos={todos} filter={filter} />
-						<Footer todos={todos} filter={filter} />
-					</section>
-				)}
+				<${Header} />
+				${
+					todos.length > 0 &&
+					jsx`
+						<section class="main">
+							<input
+								id="toggle-all"
+								class="toggle-all"
+								type="checkbox"
+								checked=${todos.every((t) => t.completed)}
+								onchange=${(e: any) => {
+									const completed = e.target.checked;
+									this.refresh(() => {
+										todos.forEach((t) => (t.completed = completed));
+									});
+								}}
+							/>
+							<label for="toggle-all">Mark all as complete</label>
+							<${TodoList} todos=${todos} filter=${filter} />
+							<${Footer} todos=${todos} filter=${filter} />
+						</section>
+					`
+				}
 			</section>
-		);
+		`;
 	}
 }
 
-renderer.render(<App />, document.body);
+renderer.render(jsx`<${App} />`, document.body);
