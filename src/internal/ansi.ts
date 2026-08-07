@@ -1314,6 +1314,11 @@ export class Renderer {
 
 				line += cell.border > 0 ? getBorderChar(cell.border) : cell.grapheme;
 				previous = cell;
+
+				// A wide grapheme's continuation column is null in the buffer but
+				// already covered by the glyph -- skip it, or the line grows a
+				// phantom space per wide character and shifts what follows.
+				if (cell.border === 0) col += stringWidth(cell.grapheme) - 1;
 			}
 
 			if (previous !== null) line += "\x1b[0m";

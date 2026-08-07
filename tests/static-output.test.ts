@@ -97,3 +97,14 @@ test("a document taller than the terminal is emitted in full", async () => {
 	expect(lines[0]).toBe("row 1");
 	expect(lines[29]).toBe("row 30");
 });
+
+test("wide characters keep their columns in static output", async () => {
+	// A wide grapheme occupies two buffer columns: its glyph cell and a
+	// continuation. The continuation must not ALSO print as a space, or every
+	// emoji shifts the rest of its line one column right.
+	const output = await renderPiped(`<div>🙂 ok</div><div>a🙂b end</div>`);
+	const stripped = output.replace(/\x1b\[[0-9;]*m/g, "");
+
+	expect(stripped).toContain("🙂 ok");
+	expect(stripped).toContain("a🙂b end");
+});
