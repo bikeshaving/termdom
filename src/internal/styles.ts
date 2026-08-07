@@ -675,10 +675,17 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 		if (property === "background-color") {
 			// The full background shorthand covers images, positions and repeats
 			// that mean nothing in a terminal; honor the everyday
-			// `background: <color>` form and ignore the rest.
+			// `background: <color>` form and ignore the rest. `none` is the
+			// IMAGE component, never a color -- the color `background: none`
+			// declares is its initial, transparent.
 			const shorthand = this.#resolveShorthand("background");
 			if (shorthand && !shorthand.includes("url(")) {
-				return shorthand.trim();
+				const color = shorthand
+					.trim()
+					.split(/\s+/)
+					.filter((token) => token.toLowerCase() !== "none")
+					.join(" ");
+				return color || "transparent";
 			}
 		}
 
