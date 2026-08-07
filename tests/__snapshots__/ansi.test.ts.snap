@@ -1,79 +1,58 @@
-// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+// Jest Snapshot v1, https://goo.gl/fbAQLP
 
-exports[`Border Integration renders collapsed table borders - 2x2 grid 1`] = `
-"\x1B[J┌───┬───┐
+exports[`Border Integration > renders L-shaped table border pattern 1`] = `[J┌──┬──┐
+├──┼──┘
+└──┘`;
+
+exports[`Border Integration > renders borders with background colors 1`] = `[J  [38;2;255;0;0;48;2;0;255;0m┌───┐[0m
+  [38;2;255;0;0;48;2;0;255;0m│[0mCol[38;2;255;0;0;48;2;0;255;0m│[0m
+  [38;2;255;0;0;48;2;0;255;0m└───┘[0m`;
+
+exports[`Border Integration > renders collapsed table borders - 2x2 grid 1`] = `[J┌───┬───┐
 │A1 │B1 │
 ├───┼───┤
 │A2 │B2 │
-└───┴───┘"
-`;
+└───┴───┘`;
 
-exports[`Border Integration renders collapsed table borders - mixed border styles 1`] = `
-"\x1B[J┌────╦════╗
-│Sol ║Dbl ║
-└────╩════╝"
-`;
-
-exports[`Border Integration renders collapsed table borders - header and data rows 1`] = `
-"\x1B[J┌───┬───┬───┐
+exports[`Border Integration > renders collapsed table borders - header and data rows 1`] = `[J┌───┬───┬───┐
 │Nam│Age│Cty│
 ├───┼───┼───┤
 │Jon│25 │NYC│
-└───┴───┴───┘"
-`;
+└───┴───┴───┘`;
 
-exports[`Border Integration renders simple single cell with border 1`] = `
-"\x1B[J
-  ┌──┐
-  └──┘"
-`;
+exports[`Border Integration > renders collapsed table borders - mixed border styles 1`] = `[J┌────╦════╗
+│Sol ║Dbl ║
+└────╩════╝`;
 
-exports[`Border Integration renders double border box 1`] = `
-"\x1B[J
+exports[`Border Integration > renders double border box 1`] = `[J
   ╔════╗
   ║Test║
-  ╚════╝"
-`;
+  ╚════╝`;
 
-exports[`Border Integration renders partial borders - top and left only 1`] = `
-"\x1B[J┌────
-│Part"
-`;
-
-exports[`Border Integration renders L-shaped table border pattern 1`] = `
-"\x1B[J┌──┬──┐
-├──┼──┘
-└──┘"
-`;
-
-exports[`Border Integration renders mixed border styles in adjacent cells 1`] = `
-"\x1B[J┌─╦═╦━┓
-│S║D║H┃
-└─╩═╩━┛"
-`;
-
-exports[`Border Integration renders nested borders 1`] = `
-"\x1B[J╔═══════╗
-║Out    ║
-║ ┌───┐ ║
-║ │In │ ║
-║ └───┘ ║
-║    Out║
-╚═══════╝"
-`;
-
-exports[`Border Integration renders grid layout - 3x3 table 1`] = `
-"\x1B[J┌──┬──┬──┐
+exports[`Border Integration > renders grid layout - 3x3 table 1`] = `[J┌──┬──┬──┐
 │11│12│13│
 ├──┼──┼──┤
 │21│22│23│
 ├──┼──┼──┤
 │31│32│33│
-└──┴──┴──┘"
-`;
+└──┴──┴──┘`;
 
-exports[`Border Integration renders borders with background colors 1`] = `
-"\x1B[J  \x1B[38;2;255;0;0;48;2;0;255;0m┌───┐\x1B[0m
-  \x1B[38;2;255;0;0;48;2;0;255;0m│\x1B[0mCol\x1B[38;2;255;0;0;48;2;0;255;0m│\x1B[0m
-  \x1B[38;2;255;0;0;48;2;0;255;0m└───┘\x1B[0m"
-`;
+exports[`Border Integration > renders mixed border styles in adjacent cells 1`] = `[J┌─╦═╦━┓
+│S║D║H┃
+└─╩═╩━┛`;
+
+exports[`Border Integration > renders nested borders 1`] = `[J╔═══════╗
+║Out    ║
+║ ┌───┐ ║
+║ │In │ ║
+║ └───┘ ║
+║    Out║
+╚═══════╝`;
+
+exports[`Border Integration > renders partial borders - top and left only 1`] = `[J┌────
+│Part`;
+
+exports[`Border Integration > renders simple single cell with border 1`] = `[J
+  ┌──┐
+  └──┘`;
+

@@ -8,7 +8,7 @@
  */
 
 import {test, expect} from "@b9g/libuild/test";
-import {MockProcess, nextFrame, canSnapshot} from "./test-utils.js";
+import {MockProcess, nextFrame} from "./test-utils.js";
 import {TermDOM} from "../src/internal/termdom.js";
 
 test("renders single emoji correctly", async () => {
@@ -24,10 +24,7 @@ test("renders single emoji correctly", async () => {
 	const output = terminal.getVisibleText();
 	expect(output).toContain("🚀");
 
-	if (canSnapshot)
-		(
-			expect(terminal.getStaticANSI()) as {toMatchSnapshot(): void}
-		).toMatchSnapshot();
+	expect(terminal.getStaticANSI()).toMatchSnapshot();
 	terminal.writeANSI("single-emoji");
 	dom.dispose();
 });
@@ -50,10 +47,7 @@ test("renders emoji with text correctly", async () => {
 	expect(ansiOutput).toContain("Hello 🌍 World!"); // Space after emoji should be preserved
 	expect(ansiOutput).not.toMatch(/🌍(?! )/); // Should not have emoji without following space
 
-	if (canSnapshot)
-		(
-			expect(terminal.getStaticANSI()) as {toMatchSnapshot(): void}
-		).toMatchSnapshot();
+	expect(terminal.getStaticANSI()).toMatchSnapshot();
 	terminal.writeANSI("emoji-with-text");
 	dom.dispose();
 });
@@ -91,10 +85,7 @@ test("renders multiple emojis correctly", async () => {
 	expect(output).toContain("🎯");
 	expect(output).toContain("Party");
 
-	if (canSnapshot)
-		(
-			expect(terminal.getStaticANSI()) as {toMatchSnapshot(): void}
-		).toMatchSnapshot();
+	expect(terminal.getStaticANSI()).toMatchSnapshot();
 	terminal.writeANSI("multiple-emojis");
 	dom.dispose();
 });
@@ -123,10 +114,7 @@ test("renders emoji with colors correctly", async () => {
 	expect(output).toContain("🌈");
 	expect(output).toContain("Colorful Text");
 
-	if (canSnapshot)
-		(
-			expect(terminal.getStaticANSI()) as {toMatchSnapshot(): void}
-		).toMatchSnapshot();
+	expect(terminal.getStaticANSI()).toMatchSnapshot();
 	terminal.writeANSI("emoji-with-colors");
 	dom.dispose();
 });
@@ -183,10 +171,7 @@ test("handles emoji width calculation", async () => {
 	// Each span maintains its spaces: "Text " + "🚀" + " More" → "Text 🚀 More"
 	expect(output).toContain("Text 🚀 More");
 
-	if (canSnapshot)
-		(
-			expect(terminal.getStaticANSI()) as {toMatchSnapshot(): void}
-		).toMatchSnapshot();
+	expect(terminal.getStaticANSI()).toMatchSnapshot();
 	terminal.writeANSI("emoji-width-layout");
 	dom.dispose();
 });

@@ -1,7 +1,6 @@
-// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+// Jest Snapshot v1, https://goo.gl/fbAQLP
 
-exports[`renders single emoji correctly 1`] = `
-"🚀                                                                              
+exports[`handles emoji width calculation 1`] = `Text 🚀 More                                                                    
                                                                                 
                                                                                 
                                                                                 
@@ -25,11 +24,11 @@ exports[`renders single emoji correctly 1`] = `
                                                                                 
                                                                                 
                                                                                 
-"
 `;
 
-exports[`renders emoji with text correctly 1`] = `
-"Hello 🌍 World!                                                                 
+exports[`renders emoji with colors correctly 1`] = `[48;2;255;255;0m                                                                                [0m
+[48;2;255;255;0m  [38;2;255;0;255m🎨 Colorful Text 🌈[39m                                                           [0m
+[48;2;255;255;0m                                                                                [0m
                                                                                 
                                                                                 
                                                                                 
@@ -51,17 +50,9 @@ exports[`renders emoji with text correctly 1`] = `
                                                                                 
                                                                                 
                                                                                 
-                                                                                
-                                                                                
-"
 `;
 
-exports[`renders multiple emojis correctly 1`] = `
-"🚀🎯📄                                                                          
-🎉 Party 🎊                                                                     
-👨‍💻                                                                            
-🌈🦄✨                                                                          
-📱💻⌨️🖱️                                                                        
+exports[`renders emoji with text correctly 1`] = `Hello 🌍 World!                                                                 
                                                                                 
                                                                                 
                                                                                 
@@ -81,39 +72,39 @@ exports[`renders multiple emojis correctly 1`] = `
                                                                                 
                                                                                 
                                                                                 
-"
+                                                                                
+                                                                                
+                                                                                
+                                                                                
 `;
 
-exports[`renders emoji with colors correctly 1`] = `
-"\x1B[38;2;255;0;255;48;2;255;255;0m🎨 Colorful Text 🌈\x1B[39m                                                             \x1B[0m
+exports[`renders multiple emojis correctly 1`] = `                                                                                
+                                                                                
+  🚀🎯📄                                                                        
                                                                                 
                                                                                 
                                                                                 
                                                                                 
+  🎉 Party 🎊                                                                   
                                                                                 
                                                                                 
                                                                                 
                                                                                 
+  👨‍💻                                                                          
                                                                                 
                                                                                 
                                                                                 
                                                                                 
+  🌈🦄✨                                                                        
                                                                                 
                                                                                 
                                                                                 
                                                                                 
+  📱💻⌨️🖱️                                                                      
                                                                                 
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-"
 `;
 
-exports[`handles emoji width calculation 1`] = `
-"Text 🚀 More                                                                    
+exports[`renders single emoji correctly 1`] = `🚀                                                                              
                                                                                 
                                                                                 
                                                                                 
@@ -137,5 +128,4 @@ exports[`handles emoji width calculation 1`] = `
                                                                                 
                                                                                 
                                                                                 
-"
 `;

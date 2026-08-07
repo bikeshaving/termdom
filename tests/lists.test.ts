@@ -10,7 +10,7 @@
 
 import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
-import {MockProcess, nextFrame, canSnapshot} from "./test-utils.js";
+import {MockProcess, nextFrame} from "./test-utils.js";
 
 // Test all unordered list style types
 test("unordered list style types with snapshots", async () => {
@@ -54,8 +54,7 @@ test("unordered list style types with snapshots", async () => {
 		expect(output).toContain(style.symbol);
 	});
 
-	if (canSnapshot)
-		(expect(output) as {toMatchSnapshot(): void}).toMatchSnapshot();
+	expect(output).toMatchSnapshot();
 	terminal.writeANSI("lists-style-types-unordered");
 	dom.dispose();
 });
@@ -106,8 +105,7 @@ test("ordered list style types with snapshots", async () => {
 		});
 	});
 
-	if (canSnapshot)
-		(expect(output) as {toMatchSnapshot(): void}).toMatchSnapshot();
+	expect(output).toMatchSnapshot();
 	terminal.writeANSI("lists-style-types-ordered");
 	dom.dispose();
 });
@@ -148,8 +146,7 @@ test("nested lists with proper indentation", async () => {
 	expect(output).toContain("◦ Second level A"); // Second level: ◦
 	expect(output).toContain("▪ Third level I"); // Third level: ▪
 
-	if (canSnapshot)
-		(expect(output) as {toMatchSnapshot(): void}).toMatchSnapshot();
+	expect(output).toMatchSnapshot();
 	terminal.writeANSI("lists-nesting-indentation");
 	dom.dispose();
 });
@@ -196,8 +193,7 @@ test("mixed ordered and unordered nesting", async () => {
 	expect(output).toContain("1. Unit tests"); // Nested OL restarts numbering
 	expect(output).toContain("2. Integration tests");
 
-	if (canSnapshot)
-		(expect(output) as {toMatchSnapshot(): void}).toMatchSnapshot();
+	expect(output).toMatchSnapshot();
 	terminal.writeANSI("lists-nesting-mixed-types");
 	dom.dispose();
 });
@@ -241,8 +237,7 @@ test("list counters and start attribute", async () => {
 	expect(output).toContain("c. Third alpha"); // start=3 with lower-alpha
 	expect(output).toContain("d. Fourth alpha");
 
-	if (canSnapshot)
-		(expect(output) as {toMatchSnapshot(): void}).toMatchSnapshot();
+	expect(output).toMatchSnapshot();
 	terminal.writeANSI("lists-counters-start-attribute");
 	dom.dispose();
 });
@@ -280,8 +275,7 @@ test("lists with mixed inline and block content", async () => {
 	expect(output).toContain("This is a paragraph");
 	expect(output).toContain("Block content");
 
-	if (canSnapshot)
-		(expect(output) as {toMatchSnapshot(): void}).toMatchSnapshot();
+	expect(output).toMatchSnapshot();
 	terminal.writeANSI("lists-content-mixed-inline-block");
 	dom.dispose();
 });
@@ -323,8 +317,7 @@ test("list edge cases", async () => {
 	expect(output).toContain("Orphan item");
 	expect(output).toContain("Div as list item");
 
-	if (canSnapshot)
-		(expect(output) as {toMatchSnapshot(): void}).toMatchSnapshot();
+	expect(output).toMatchSnapshot();
 	terminal.writeANSI("lists-edge-cases-empty-items");
 	dom.dispose();
 });
@@ -401,8 +394,7 @@ test("lists in flexbox containers", async () => {
 	expect(output).toContain("• Task 1");
 	expect(output).toContain("1. First step");
 
-	if (canSnapshot)
-		(expect(output) as {toMatchSnapshot(): void}).toMatchSnapshot();
+	expect(output).toMatchSnapshot();
 	terminal.writeANSI("lists-layout-flexbox-containers");
 	dom.dispose();
 });

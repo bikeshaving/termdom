@@ -390,13 +390,3 @@ export function stripControlCodes(ansi: string): string {
 		.replace(/\x1b[78]/g, "") // Remove DECSC/DECRC (save/restore cursor)
 		.replace(/\r(?!\n)/g, ""); // Remove standalone carriage returns
 }
-
-/**
- * Snapshots only run where the committed snapshot files can be FOUND:
- * plain `bun test` from source. Under libuild the tests execute from a
- * bundle whose file identity keys a different snapshot path entirely --
- * bun then tries to create fresh snapshots, which CI forbids (and which
- * would compare against nothing anyway).
- */
-export const canSnapshot =
-	typeof Bun !== "undefined" && !import.meta.path.includes(".libuild-test");

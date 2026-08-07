@@ -1,18 +1,9 @@
-// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+// Jest Snapshot v1, https://goo.gl/fbAQLP
 
-exports[`unordered list style types with snapshots 1`] = `
-"disc:                                   
-  • First item                          
-  • Second item                         
-  • Third item                          
-circle:                                 
-  ◦ First item                          
-  ◦ Second item                         
-  ◦ Third item                          
-square:                                 
-  ▪ First item                          
-  ▪ Second item                         
-  ▪ Third item                          
+exports[`list counters and start attribute 1`] = ` 5. Fifth item                          
+ 6. Sixth item                          
+ c. Third alpha                         
+ d. Fourth alpha                        
                                         
                                         
                                         
@@ -21,59 +12,73 @@ square:
                                         
                                         
                                         
-"
+                                        
+                                        
+                                        
 `;
 
-exports[`ordered list style types with snapshots 1`] = `
-"decimal:                                
- 1. First                               
- 2. Second                              
- 3. Third                               
-lower-alpha:                            
- a. First                               
- b. Second                              
- c. Third                               
-upper-alpha:                            
- A. First                               
- B. Second                              
- C. Third                               
-lower-roman:                            
-  i. First                              
- ii. Second                             
-iii. Third                              
-upper-roman:                            
-  I. First                              
- II. Second                             
-III. Third                              
+exports[`list edge cases 1`] = `Orphan item                             
+Div as list item                        
                                         
                                         
                                         
                                         
                                         
-"
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
 `;
 
-exports[`nested lists with proper indentation 1`] = `
-"Nested Structure                                  
-  • Top level item 1                              
-  • Top level item 2                              
-      ◦ Second level A                            
-      ◦ Second level B                            
-          ▪ Third level I                         
-          ▪ Third level II                        
-  • Top level item 3                              
-                                                  
-                                                  
-                                                  
-                                                  
-                                                  
-                                                  
-                                                  
-"
+exports[`lists in flexbox containers 1`] = `Tasks       Steps                                                               
+  • Task 1   1. First step                                                      
+  • Task 2   2. Second step                                                     
+  • Task 3   3. Third step                                                      
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
 `;
 
-exports[`mixed ordered and unordered nesting 1`] = `
-"Mixed Nesting                                               
+exports[`lists with mixed inline and block content 1`] = `Lists with Rich Content                           
+  • Text with [39;1mbold[0m and [39;3mitalic[0m                     [0m
+  • Item with code: console.log('hello')          
+  •  Item with paragraph:                         
+    This is a paragraph inside a list item with   
+    some longer text that might wrap.             
+  • Block content                                 
+    Multiple blocks                               
+                                                  
+                                                  
+                                                  
+                                                  
+                                                  
+                                                  
+                                                  
+                                                  
+                                                  
+                                                  
+                                                  
+                                                  
+`;
+
+exports[`mixed ordered and unordered nesting 1`] = `Mixed Nesting                                               
  1. Setup Process                                           
       ◦ Install dependencies                                
       ◦ Configure environment                               
@@ -103,55 +108,64 @@ exports[`mixed ordered and unordered nesting 1`] = `
                                                             
                                                             
                                                             
-"
 `;
 
-exports[`list counters and start attribute 1`] = `
-" 5. Fifth item                          
- 6. Sixth item                          
- c. Third alpha                         
- d. Fourth alpha                        
-                                        
-                                        
-                                        
-                                        
-                                        
-                                        
-                                        
-                                        
-                                        
-                                        
-                                        
-"
+exports[`nested lists with proper indentation 1`] = `Nested Structure                                  
+  • Top level item 1                              
+  • Top level item 2                              
+      ◦ Second level A                            
+      ◦ Second level B                            
+          ▪ Third level I                         
+          ▪ Third level II                        
+  • Top level item 3                              
+                                                  
+                                                  
+                                                  
+                                                  
+                                                  
+                                                  
+                                                  
 `;
 
-exports[`lists with mixed inline and block content 1`] = `
-"Lists with Rich Content                           
-  • Text with \x1B[39;1mbold\x1B[0m and \x1B[39;3mitalic\x1B[0m                     \x1B[0m
-  • Item with code: console.log('hello')          
-  •  Item with paragraph:                         
-    This is a paragraph inside a list item with   
-    some longer text that might wrap.             
-  • Block content                                 
-    Multiple blocks                               
-                                                  
-                                                  
-                                                  
-                                                  
-                                                  
-                                                  
-                                                  
-                                                  
-                                                  
-                                                  
-                                                  
-                                                  
-"
+exports[`ordered list style types with snapshots 1`] = `decimal:                                
+ 1. First                               
+ 2. Second                              
+ 3. Third                               
+lower-alpha:                            
+ a. First                               
+ b. Second                              
+ c. Third                               
+upper-alpha:                            
+ A. First                               
+ B. Second                              
+ C. Third                               
+lower-roman:                            
+  i. First                              
+ ii. Second                             
+iii. Third                              
+upper-roman:                            
+  I. First                              
+ II. Second                             
+III. Third                              
+                                        
+                                        
+                                        
+                                        
+                                        
 `;
 
-exports[`list edge cases 1`] = `
-"Orphan item                             
-Div as list item                        
+exports[`unordered list style types with snapshots 1`] = `disc:                                   
+  • First item                          
+  • Second item                         
+  • Third item                          
+circle:                                 
+  ◦ First item                          
+  ◦ Second item                         
+  ◦ Third item                          
+square:                                 
+  ▪ First item                          
+  ▪ Second item                         
+  ▪ Third item                          
                                         
                                         
                                         
@@ -160,34 +174,4 @@ Div as list item
                                         
                                         
                                         
-                                        
-                                        
-                                        
-                                        
-                                        
-"
-`;
-
-exports[`lists in flexbox containers 1`] = `
-"Tasks       Steps                                                               
-  • Task 1   1. First step                                                      
-  • Task 2   2. Second step                                                     
-  • Task 3   3. Third step                                                      
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-"
 `;

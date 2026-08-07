@@ -6,7 +6,7 @@
  */
 
 import {test, expect} from "@b9g/libuild/test";
-import {MockProcess, nextFrame, canSnapshot} from "./test-utils";
+import {MockProcess, nextFrame} from "./test-utils";
 import {TermDOM} from "../src/internal/termdom.js";
 
 test("flexbox-demo layout renders correctly", async () => {
@@ -171,10 +171,7 @@ test("flexbox-demo layout renders correctly", async () => {
 		expect(line.length).toBeLessThanOrEqual(80);
 	}
 
-	if (canSnapshot)
-		(
-			expect(terminal.getStaticANSI()) as {toMatchSnapshot(): void}
-		).toMatchSnapshot();
+	expect(terminal.getStaticANSI()).toMatchSnapshot();
 	terminal.writeANSI("flexbox-demo-full");
 
 	dom.dispose();
@@ -238,10 +235,7 @@ test("nested flexbox containers", async () => {
 	expect(visibleText).toContain("Left");
 	expect(visibleText).toContain("Right");
 
-	if (canSnapshot)
-		(
-			expect(terminal.getStaticANSI()) as {toMatchSnapshot(): void}
-		).toMatchSnapshot();
+	expect(terminal.getStaticANSI()).toMatchSnapshot();
 	terminal.writeANSI("nested-flexbox");
 
 	dom.dispose();
@@ -286,10 +280,7 @@ test("flexbox with flex-grow", async () => {
 	expect(visibleText).toContain("Fixed");
 	expect(visibleText).toContain("This item grows to fill available space");
 
-	if (canSnapshot)
-		(
-			expect(terminal.getStaticANSI()) as {toMatchSnapshot(): void}
-		).toMatchSnapshot();
+	expect(terminal.getStaticANSI()).toMatchSnapshot();
 	terminal.writeANSI("flexbox-grow");
 
 	dom.dispose();
@@ -340,10 +331,7 @@ test("flexbox with align-items and justify-content", async () => {
 	expect(visibleText).toContain("Item 2");
 	expect(visibleText).toContain("Item 3");
 
-	if (canSnapshot)
-		(
-			expect(terminal.getStaticANSI()) as {toMatchSnapshot(): void}
-		).toMatchSnapshot();
+	expect(terminal.getStaticANSI()).toMatchSnapshot();
 	terminal.writeANSI("flexbox-alignment");
 
 	dom.dispose();
@@ -384,10 +372,7 @@ test("flexbox wrapping behavior", async () => {
 		expect(line.length).toBeLessThanOrEqual(40);
 	}
 
-	if (canSnapshot)
-		(
-			expect(terminal.getStaticANSI()) as {toMatchSnapshot(): void}
-		).toMatchSnapshot();
+	expect(terminal.getStaticANSI()).toMatchSnapshot();
 	terminal.writeANSI("flexbox-wrap");
 
 	dom.dispose();
@@ -473,10 +458,7 @@ test("flexbox column with mixed content", async () => {
 	expect(visibleText).toContain("+12%");
 	expect(visibleText).toContain("Welcome to the dashboard");
 
-	if (canSnapshot)
-		(
-			expect(terminal.getStaticANSI()) as {toMatchSnapshot(): void}
-		).toMatchSnapshot();
+	expect(terminal.getStaticANSI()).toMatchSnapshot();
 	terminal.writeANSI("flexbox-dashboard");
 
 	dom.dispose();
@@ -697,7 +679,6 @@ test("text between flex items forms its own anonymous item", async () => {
 	dom.document.body.innerHTML = `<p style="display: flex">text <input> more</p>`;
 
 	await nextFrame(dom);
-	await nextFrame(dom);
 
 	// The text's item used to measure the following <input> into itself -- a
 	// 21-cell item for five cells of text -- which pushed " more" clean off a
@@ -714,7 +695,6 @@ test("a flex item's width applies even when it is an inline box", async () => {
 	const dom = new TermDOM({process: terminal});
 	dom.document.body.innerHTML = `<div style="display: flex"><span style="width: 30ch">aaaa</span><span style="width: 30ch">bbbb</span></div>`;
 
-	await nextFrame(dom);
 	await nextFrame(dom);
 
 	// Flex items are blockified (css-display-3 §2.7), so `width` is theirs to
@@ -735,7 +715,6 @@ test("flex-shrink: 0 keeps an item at its width while the rest give way", async 
 	const dom = new TermDOM({process: terminal});
 	dom.document.body.innerHTML = `<div style="display: flex"><div style="width: 30ch; flex-shrink: 0">aaaa</div><div style="width: 30ch">bbbb</div></div>`;
 
-	await nextFrame(dom);
 	await nextFrame(dom);
 
 	const [first, second] = [...dom.document.querySelectorAll("div div")].map(

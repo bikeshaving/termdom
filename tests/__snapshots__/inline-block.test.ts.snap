@@ -1,7 +1,6 @@
-// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+// Jest Snapshot v1, https://goo.gl/fbAQLP
 
-exports[`inline-block elements render side by side 1`] = `
-"\x1B[38;2;255;255;255;48;2;255;0;0mBlock1\x1B[48;2;0;0;255mBlock2\x1B[0m                            \x1B[0m
+exports[`inline-block elements render side by side 1`] = `[38;2;255;255;255;48;2;255;0;0mBlock1[48;2;0;0;255mBlock2[0m                            [0m
                                         
                                         
                                         
@@ -11,13 +10,9 @@ exports[`inline-block elements render side by side 1`] = `
                                         
                                         
                                         
-"
 `;
 
-exports[`inline-block elements with padding 1`] = `
-"\x1B[48;2;0;128;0m          \x1B[0m                              \x1B[0m
-\x1B[48;2;0;128;0m  \x1B[38;2;255;255;255mPadded\x1B[39m  \x1B[0m                              \x1B[0m
-\x1B[48;2;0;128;0m          \x1B[0m                              \x1B[0m
+exports[`inline-block elements with margins 1`] = `[38;2;255;255;255;48;2;255;0;0mFirst[39m   [38;2;255;255;255;48;2;0;0;255mSecond[0m                          [0m
                                         
                                         
                                         
@@ -25,11 +20,13 @@ exports[`inline-block elements with padding 1`] = `
                                         
                                         
                                         
-"
+                                        
+                                        
 `;
 
-exports[`inline-block elements with margins 1`] = `
-"\x1B[38;2;255;255;255;48;2;255;0;0mFirst\x1B[39m   \x1B[38;2;255;255;255;48;2;0;0;255mSecond\x1B[0m                          \x1B[0m
+exports[`inline-block elements with padding 1`] = `[48;2;0;128;0m          [0m                              [0m
+[48;2;0;128;0m  [38;2;255;255;255mPadded[39m  [0m                              [0m
+[48;2;0;128;0m          [0m                              [0m
                                         
                                         
                                         
@@ -37,15 +34,11 @@ exports[`inline-block elements with margins 1`] = `
                                         
                                         
                                         
-                                        
-                                        
-"
 `;
 
-exports[`inline-block elements wrapping to multiple lines 1`] = `
-" \x1B[38;2;255;255;255;48;2;0;0;139mFirst\x1B[39m  \x1B[38;2;255;255;255mSecond\x1B[39m  \x1B[0m    \x1B[0m
- \x1B[38;2;255;255;255;48;2;0;0;139mThird\x1B[39m  \x1B[38;2;255;255;255mFourth\x1B[39m  \x1B[0m    \x1B[0m
- \x1B[38;2;255;255;255;48;2;0;0;139mFifth\x1B[39m  \x1B[0m            \x1B[0m
+exports[`inline-block elements wrapping to multiple lines 1`] = ` [38;2;255;255;255;48;2;0;0;139mFirst[39m  [38;2;255;255;255mSecond[39m  [0m    [0m
+ [38;2;255;255;255;48;2;0;0;139mThird[39m  [38;2;255;255;255mFourth[39m  [0m    [0m
+ [38;2;255;255;255;48;2;0;0;139mFifth[39m  [0m            [0m
                     
                     
                     
@@ -53,39 +46,35 @@ exports[`inline-block elements wrapping to multiple lines 1`] = `
                     
                     
                     
-"
 `;
 
-exports[`mixed inline and inline-block elements 1`] = `
-"\x1B[38;2;255;255;0mRegular \x1B[39;48;2;128;0;128m \x1B[38;2;255;255;255minline-block\x1B[39m \x1B[38;2;0;255;255;49m text\x1B[0m                       \x1B[0m
-                                                  
-                                                  
-                                                  
-                                                  
-                                                  
-                                                  
-                                                  
-                                                  
-                                                  
-"
+exports[`inline-block with borders 1`] = `[38;2;255;0;0m┌──────────┐[0m                            [0m
+[38;2;255;0;0m│[0m          [38;2;255;0;0m│[0m                            [0m
+[38;2;255;0;0m│[0m [38;2;255;255;255mBordered[0m [38;2;255;0;0m│[0m                            [0m
+[38;2;255;0;0m│[0m          [38;2;255;0;0m│[0m                            [0m
+[38;2;255;0;0m└──────────┘[0m                            [0m
+                                        
+                                        
+                                        
+                                        
+                                        
 `;
 
-exports[`nested inline-block elements 1`] = `
-"\x1B[48;2;0;0;128m                \x1B[0m                                  \x1B[0m
-\x1B[48;2;0;0;128m \x1B[38;2;255;255;255mNested \x1B[39;48;2;255;0;0m \x1B[38;2;255;255;255mblock\x1B[39m \x1B[48;2;0;0;128m \x1B[0m                                  \x1B[0m
-\x1B[48;2;0;0;128m                \x1B[0m                                  \x1B[0m
-                                                  
-                                                  
-                                                  
-                                                  
-                                                  
-                                                  
-                                                  
-"
+exports[`inline-block with explicit width 1`] = `[38;2;255;255;255;48;2;0;128;0mFixed[39m     [38;2;255;255;255;48;2;0;0;255mAuto[0m                          [0m
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
 `;
 
-exports[`inline-block with explicit width 1`] = `
-"\x1B[38;2;255;255;255;48;2;0;128;0mFixed\x1B[39m     \x1B[38;2;255;255;255;48;2;0;0;255mAuto\x1B[0m                          \x1B[0m
+exports[`inline-block with height 1`] = `[38;2;255;255;255;48;2;0;100;0mTall[48;2;139;0;0mNormal[0m                              [0m
+[48;2;0;100;0m    [48;2;139;0;0m      [0m                              [0m
+[48;2;0;100;0m    [48;2;139;0;0m      [0m                              [0m
                                         
                                         
                                         
@@ -93,35 +82,28 @@ exports[`inline-block with explicit width 1`] = `
                                         
                                         
                                         
-                                        
-                                        
-"
 `;
 
-exports[`inline-block with height 1`] = `
-"\x1B[38;2;255;255;255;48;2;0;100;0mTall\x1B[48;2;139;0;0mNormal\x1B[0m                              \x1B[0m
-\x1B[48;2;0;100;0m    \x1B[48;2;139;0;0m      \x1B[0m                              \x1B[0m
-\x1B[48;2;0;100;0m    \x1B[48;2;139;0;0m      \x1B[0m                              \x1B[0m
-                                        
-                                        
-                                        
-                                        
-                                        
-                                        
-                                        
-"
+exports[`mixed inline and inline-block elements 1`] = `[38;2;255;255;0mRegular [39;48;2;128;0;128m [38;2;255;255;255minline-block[39m [38;2;0;255;255;49m text[0m                       [0m
+                                                  
+                                                  
+                                                  
+                                                  
+                                                  
+                                                  
+                                                  
+                                                  
+                                                  
 `;
 
-exports[`inline-block with borders 1`] = `
-"\x1B[38;2;255;0;0m┌──────────┐\x1B[0m                            \x1B[0m
-\x1B[38;2;255;0;0m│\x1B[0m          \x1B[38;2;255;0;0m│\x1B[0m                            \x1B[0m
-\x1B[38;2;255;0;0m│\x1B[0m \x1B[38;2;255;255;255mBordered\x1B[0m \x1B[38;2;255;0;0m│\x1B[0m                            \x1B[0m
-\x1B[38;2;255;0;0m│\x1B[0m          \x1B[38;2;255;0;0m│\x1B[0m                            \x1B[0m
-\x1B[38;2;255;0;0m└──────────┘\x1B[0m                            \x1B[0m
-                                        
-                                        
-                                        
-                                        
-                                        
-"
+exports[`nested inline-block elements 1`] = `[48;2;0;0;128m                [0m                                  [0m
+[48;2;0;0;128m [38;2;255;255;255mNested [39;48;2;255;0;0m [38;2;255;255;255mblock[39m [48;2;0;0;128m [0m                                  [0m
+[48;2;0;0;128m                [0m                                  [0m
+                                                  
+                                                  
+                                                  
+                                                  
+                                                  
+                                                  
+                                                  
 `;
