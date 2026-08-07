@@ -10,8 +10,8 @@ unsupported here, because to a user it is.
 
 Of the 487 standard CSS properties in `mdn-data`:
 
-- **88 supported**, measured.
-- **123 probed and unsupported** -- real gaps.
+- **93 supported**, measured.
+- **118 probed and unsupported** -- real gaps.
 - **301 not applicable** to a character grid, by the reasons below.
 - **0 unclassified** -- work left to do.
 
@@ -25,14 +25,14 @@ way and counted in the first two figures.
 | `border-top-width` | yes |
 | `border-top-style` | yes |
 | `border-top-color` | yes |
-| `border-right-width` | no (no effect) |
-| `border-right-style` | no (no effect) |
+| `border-right-width` | yes |
+| `border-right-style` | yes |
 | `border-right-color` | no (no effect) |
 | `border-bottom-width` | yes |
 | `border-bottom-style` | yes |
 | `border-bottom-color` | no (no effect) |
 | `border-left-width` | yes |
-| `border-left-style` | no (no effect) |
+| `border-left-style` | yes |
 | `border-left-color` | no (no effect) |
 | `border-block-start-width` | no (no effect) |
 | `border-block-end-width` | no (no effect) |
@@ -80,7 +80,7 @@ way and counted in the first two figures.
 | `border-style` | yes |
 | `border-color` | yes |
 | `border-top` | yes |
-| `border-right` | no (no effect) |
+| `border-right` | yes |
 | `border-bottom` | yes |
 | `border-left` | yes |
 | `box-sizing` | no (no effect) |
@@ -112,7 +112,7 @@ way and counted in the first two figures.
 | `flex-grow` | yes |
 | `flex-shrink` | yes |
 | `flex-basis` | yes |
-| `flex` | no (no effect) |
+| `flex` | yes |
 | `justify-content` | yes |
 | `align-items` | yes |
 | `align-self` | yes |
