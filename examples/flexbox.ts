@@ -1,10 +1,3 @@
-/**
- * Flexbox layout: nested containers, direction, gap, and alignment,
- * all driven by ordinary CSS on an integer cell grid.
- *
- *   node examples/flexbox-demo.ts
- */
-
 import {TermDOM} from "@b9g/termdom";
 const term = new TermDOM();
 term.attach();

@@ -40,8 +40,6 @@ style.textContent = `
 `;
 document.head.appendChild(style);
 
-// Flex rows are written single-line: whitespace-only text nodes between
-// flex items still become items in this engine (browsers drop them).
 const editor = document.createElement("div");
 editor.className = "editor";
 editor.innerHTML = `

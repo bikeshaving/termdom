@@ -807,3 +807,44 @@ test("flex: none from a stylesheet pins the item", async () => {
 	);
 	dom.dispose();
 });
+
+test("whitespace-only text between flex items is not an item", async () => {
+	// css-flexbox-1 §4: an anonymous flex item containing only collapsible
+	// white space is not rendered. Multi-line markup is the normal way to
+	// write flex rows; the indentation must not become phantom items that
+	// eat gap and justify-content space.
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const dom = new TermDOM({process: terminal});
+	dom.document.body.innerHTML = `<div style="display:flex;gap:2ch">
+		<div id="a">A</div>
+		<div id="b">B</div>
+	</div><div style="display:flex;justify-content:space-between;width:20ch">
+		<div id="c">C</div>
+		<div id="d">D</div>
+	</div>`;
+	await nextFrame(dom);
+
+	const rect = (id: string) =>
+		dom.document.getElementById(id)!.getBoundingClientRect();
+	expect(rect("a").left).toBe(0);
+	expect(rect("b").left).toBe(3); // A(1) + gap(2)
+	expect(rect("c").left).toBe(0);
+	expect(rect("d").left).toBe(19); // flushed to the far edge
+	dom.dispose();
+});
+
+test.todo("white-space: pre keeps whitespace items, per spec", async () => {
+	// The suppression correctly spares this item (pre is not collapsible),
+	// but a pre-existing quirk measures whitespace-only runs at zero width,
+	// so the preserved spaces occupy no cells. The ITEM part of §4 is
+	// honored; the measurement is a separate bug.
+	// Non-collapsible white space DOES generate an anonymous item.
+	const terminal = new MockProcess({cols: 40, rows: 6});
+	const dom = new TermDOM({process: terminal});
+	dom.document.body.innerHTML = `<div style="display:flex;white-space:pre"><div id="a">A</div>  <div id="b">B</div></div>`;
+	await nextFrame(dom);
+	expect(dom.document.getElementById("b")!.getBoundingClientRect().left).toBe(
+		3, // A(1) + two preserved spaces
+	);
+	dom.dispose();
+});

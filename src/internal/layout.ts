@@ -3622,8 +3622,46 @@ export class LayoutEngine {
 		}
 	}
 
+	/**
+	 * css-flexbox-1 §4: an anonymous flex item containing only collapsible
+	 * white space is not rendered. The newlines and indentation of
+	 * multi-line flex markup must not become items that eat gap and
+	 * justify-content space -- browsers drop them; so do we. Preserved
+	 * white space (white-space: pre/pre-wrap on the container) stays an
+	 * item, and a run that reaches any inline content is a real item.
+	 */
+	#isSuppressedFlexWhitespace(text: Text): boolean {
+		const parent = text.parentElement;
+		if (!parent) return false;
+		const display = getPropertyValue(parent, "display");
+		if (display !== "flex" && display !== "inline-flex") return false;
+		const whiteSpace = getPropertyValue(parent, "white-space");
+		if (whiteSpace === "pre" || whiteSpace === "pre-wrap") return false;
+		for (let node: Node | null = text; node; node = node.nextSibling) {
+			if (node.nodeType === node.TEXT_NODE) {
+				if ((node as Text).data.trim() !== "") return false;
+				continue;
+			}
+			if (node.nodeType !== node.ELEMENT_NODE) continue;
+			const sibling = node as Element;
+			const siblingDisplay = getPropertyValue(sibling, "display");
+			if (siblingDisplay === "none") continue;
+			// An inline sibling joins this run and gives it content; anything
+			// block-level ends the run with only white space collected.
+			if (siblingDisplay === "inline" || siblingDisplay === "inline-block") {
+				return false;
+			}
+			break;
+		}
+		return true;
+	}
+
 	#addTextNode(text: Text, parentFlexNode: FlexTypes.Node | null = null): void {
 		if (!parentFlexNode) {
+			return;
+		}
+
+		if (this.#isSuppressedFlexWhitespace(text)) {
 			return;
 		}
 
