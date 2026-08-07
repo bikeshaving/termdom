@@ -1,13 +1,3 @@
-// An interactive file tree, NERDTree-style, written as a plain web page:
-// createElement, classList, dataset, addEventListener, scrollIntoView. The
-// only terminal-specific line is setViewportMode("document") -- the tree is a
-// document the user moves a camera over, not a transcript.
-//
-//   node examples/tree.ts [dir]
-//
-//   j/k or arrows  move    Enter/l  expand or open    h  collapse or parent
-//   g/G            top/bottom       .  toggle dotfiles    q  quit
-//   mouse          wheel scrolls the camera; click selects, click a dir toggles
 import {TermDOM} from "@b9g/termdom";
 import {readdirSync} from "node:fs";
 import {join, resolve} from "node:path";

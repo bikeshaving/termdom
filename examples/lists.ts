@@ -1,4 +1,3 @@
-#!/usr/bin/env bun
 import {TermDOM} from "@b9g/termdom";
 
 const term = new TermDOM();

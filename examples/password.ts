@@ -1,13 +1,5 @@
-// A password strength meter: a masked <input type="password"> driving live
-// requirement checks. Every keystroke re-renders through Crank; the UA
-// widget masks the value, the card is an ordinary bordered box.
-//
 // Adapted from https://backbonenotbad.hyperclay.com/
 // https://gist.github.com/panphora/8f4d620ae92e8b28dcb4f20152185749
-//
-//   node examples/password.ts
-//
-//   type a password · Esc or Ctrl-c quit
 import {TermDOM} from "@b9g/termdom";
 import type {Context} from "@b9g/crank";
 import {jsx} from "@b9g/crank/standalone";

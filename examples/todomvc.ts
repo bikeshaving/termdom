@@ -1,15 +1,4 @@
 // The official Crank TodoMVC (github.com/bikeshaving/crank, examples/todomvc.js),
-// rendered to the terminal. The component logic is unmodified from the
-// original -- every interaction (checkbox toggle, double-click to edit,
-// autofocus, label-click delegation, dblclick detection) is a real DOM
-// feature termdom implements, not a todomvc-specific workaround. Two
-// translations only: the JSX is Crank's `jsx` template tag, so this is
-// erasable TypeScript that plain `node` runs with no transform; and the
-// stylesheet is inline -- the original loads todomvc-app-css from a CDN,
-// which targets a browser (box-shadow, transitions, media queries) -- in
-// the CSS subset a terminal can actually paint.
-//
-//   node examples/todomvc.ts
 import {TermDOM} from "@b9g/termdom";
 import type {Context} from "@b9g/crank";
 import {jsx} from "@b9g/crank/standalone";

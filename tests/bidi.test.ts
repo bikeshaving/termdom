@@ -227,3 +227,23 @@ test("a terminal that ignores mode 2027 is left alone", async () => {
 
 	dom.dispose();
 });
+
+test("lam-alef shaping keeps RTL text flush at the right edge", async () => {
+	// Shaping is not length-preserving: a lam-alef pair collapses into one
+	// ligature glyph. The measured segment is a cell wider than the painted
+	// run, and that spare cell must fall on the LEFT (the RTL ragged edge),
+	// never between the text and the right border it aligns to.
+	const terminal = new MockProcess({cols: 50, rows: 6});
+	const dom = new TermDOM({process: terminal});
+	dom.document.body.innerHTML = `<div style="direction:rtl;border:1px solid;width:30ch">الإصدار يعمل</div>`;
+	await nextFrame(dom);
+
+	const row = terminal
+		.getVisibleText()
+		.split("\n")
+		.find((l) => l.includes("ﺭ") || l.includes("ﻝ") || l.includes("ﻹ"))!;
+	// The cell immediately inside the right border holds text, not a gap.
+	const inner = row.slice(row.indexOf("│") + 1, row.lastIndexOf("│"));
+	expect(inner.trimEnd().length).toBe(inner.length);
+	dom.dispose();
+});

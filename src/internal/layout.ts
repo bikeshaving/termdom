@@ -5073,6 +5073,20 @@ export class LayoutEngine {
 		if (base === "rtl") {
 			for (const segment of segments) {
 				segment.x = lineWidth - segment.x - segment.width;
+				// Shaping is not length-preserving: a lam-alef pair collapses
+				// into one ligature glyph, so the painted run can be narrower
+				// than the measured segment. Pin the RIGHT edge -- the RTL
+				// flush edge -- and let the spare cell fall on the left, where
+				// an RTL reader expects ragged. Offsets stay logical; only the
+				// painted box moves.
+				if (segment.leaf.type === "text") {
+					const shaped = runtimeStringWidth(segment.processedText);
+					const delta = segment.width - shaped;
+					if (delta > 0) {
+						segment.x += delta;
+						segment.width = shaped;
+					}
+				}
 			}
 		}
 	}

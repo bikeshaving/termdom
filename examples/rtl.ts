@@ -5,9 +5,10 @@
  *
  * Terminals do not run the Unicode bidirectional algorithm, so termdom asks for
  * ECMA-48 explicit mode (BDSM, `CSI 8 l`), asks back what it got (`CSI 8 $ p`),
- * and hands over cells already in visual order. Hebrew comes out right. Arabic
- * comes out in the right ORDER, but its letters stay in isolated forms: joining
- * them needs contextual shaping, which is not implemented yet.
+ * and hands over cells already in visual order: UAX #9 reordering via bidi-js,
+ * and contextual Arabic shaping (joined letterforms, lam-alef ligatures) via
+ * arabic-persian-reshaper, applied after measurement so caret offsets stay
+ * logical.
  */
 
 import {TermDOM} from "@b9g/termdom";
@@ -39,7 +40,7 @@ app.innerHTML = `
 	<h1>RTL rendering</h1>
 
 	<section>
-		<div class="label">Hebrew, undeclared — direction inferred from the text</div>
+		<div class="label">Hebrew in an LTR paragraph — reordered, left-aligned, as a browser without dir=auto</div>
 		<div class="card">שלום עולם</div>
 	</section>
 
@@ -49,7 +50,7 @@ app.innerHTML = `
 	</section>
 
 	<section>
-		<div class="label">Arabic — correct order, unshaped letters</div>
+		<div class="label">Arabic — reordered and contextually shaped</div>
 		<div class="card rtl">مرحبا بالعالم</div>
 	</section>
 
