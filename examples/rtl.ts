@@ -9,6 +9,11 @@
  * and contextual Arabic shaping (joined letterforms, lam-alef ligatures) via
  * arabic-persian-reshaper, applied after measurement so caret offsets stay
  * logical.
+ *
+ * What termdom guarantees is the CELL layout: every character in its correct
+ * column. How joined and evenly spaced the result LOOKS depends on the
+ * terminal font's presentation-form glyphs, which most monospace fonts take
+ * from system fallback at uneven advance widths.
  */
 
 import {TermDOM} from "@b9g/termdom";
