@@ -617,6 +617,19 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 			}
 		}
 
+		if (
+			property === "flex-grow" ||
+			property === "flex-shrink" ||
+			property === "flex-basis"
+		) {
+			const shorthand = this.#resolveShorthand("flex");
+			if (shorthand) {
+				const expanded = expandFlexShorthand(shorthand);
+				const value = expanded?.[property as keyof FlexParts];
+				if (value) return value;
+			}
+		}
+
 		if (property === "background-color") {
 			// The full background shorthand covers images, positions and repeats
 			// that mean nothing in a terminal; honor the everyday
@@ -1070,6 +1083,52 @@ function expandListStyle(value: string): ListStyleParts {
 	}
 
 	return parts;
+}
+
+interface FlexParts {
+	"flex-grow": string;
+	"flex-shrink": string;
+	"flex-basis": string;
+}
+
+/**
+ * Expand the `flex` shorthand (css-flexbox-1 §7.1.1): `none` is 0 0 auto,
+ * `auto` 1 1 auto, `initial` 0 1 auto; otherwise the first number is grow,
+ * a second number is shrink, anything else is the basis -- and a one-value
+ * numeric form (`flex: 1`) sets the basis to 0%, which is what makes it the
+ * everyday grow-to-fill declaration.
+ */
+function expandFlexShorthand(value: string): FlexParts | null {
+	const v = value.trim();
+	if (v === "none") {
+		return {"flex-grow": "0", "flex-shrink": "0", "flex-basis": "auto"};
+	}
+	if (v === "auto") {
+		return {"flex-grow": "1", "flex-shrink": "1", "flex-basis": "auto"};
+	}
+	if (v === "initial") {
+		return {"flex-grow": "0", "flex-shrink": "1", "flex-basis": "auto"};
+	}
+	let grow: string | undefined;
+	let shrink: string | undefined;
+	let basis: string | undefined;
+	for (const token of v.split(/\s+/)) {
+		if (/^[\d.]+$/.test(token)) {
+			if (grow === undefined) grow = token;
+			else if (shrink === undefined) shrink = token;
+			else return null;
+		} else if (basis === undefined) {
+			basis = token;
+		} else {
+			return null;
+		}
+	}
+	if (grow === undefined && basis === undefined) return null;
+	return {
+		"flex-grow": grow ?? "1",
+		"flex-shrink": shrink ?? "1",
+		"flex-basis": basis ?? (grow !== undefined ? "0%" : "auto"),
+	};
 }
 
 /** How many lists this element is nested inside, not counting itself. */

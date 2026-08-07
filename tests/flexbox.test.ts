@@ -775,3 +775,35 @@ test("a blockified inline flex item offsets its content by padding", async () =>
 
 	dom.dispose();
 });
+
+test("the flex shorthand in a stylesheet expands: flex 1 grows", async () => {
+	// css-flexbox-1 §7.1.1: `flex: 1` means 1 1 0% -- the everyday grow-to-fill
+	// declaration. It must work from a stylesheet, not only element.style.
+	const terminal = new MockProcess({cols: 40, rows: 6});
+	const dom = new TermDOM({process: terminal});
+	dom.document.head.innerHTML = `<style>.grow { flex: 1; }</style>`;
+	dom.document.body.innerHTML =
+		`<div style="display:flex;width:40ch">` +
+		`<span>x</span><div id="g" class="grow">y</div></div>`;
+	await nextFrame(dom);
+
+	const g = dom.document.getElementById("g")!;
+	expect(g.getBoundingClientRect().width).toBe(39);
+	dom.dispose();
+});
+
+test("flex: none from a stylesheet pins the item", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 6});
+	const dom = new TermDOM({process: terminal});
+	dom.document.head.innerHTML = `<style>.pin { flex: none; width: 10ch; }</style>`;
+	dom.document.body.innerHTML =
+		`<div style="display:flex;width:20ch">` +
+		`<div id="p" class="pin">abc</div><div style="width:30ch">overflow</div></div>`;
+	await nextFrame(dom);
+
+	// flex: none = 0 0 auto -- the item neither grows nor shrinks.
+	expect(dom.document.getElementById("p")!.getBoundingClientRect().width).toBe(
+		10,
+	);
+	dom.dispose();
+});
