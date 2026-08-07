@@ -4231,6 +4231,16 @@ export class LayoutEngine {
 					if (boxModel.width !== undefined) {
 						contentWidth = Math.max(0, boxModel.width - horizontalBoxSpace);
 						contentWidthMode = Flex.MEASURE_MODE_EXACTLY;
+					} else if (element.tagName === "TEXTAREA") {
+						// cols sizes the CONTENT box (spec default 20), exactly as the
+						// attribute does in a browser; the box then adds whatever
+						// border and padding the cascade actually left. The UA sheet
+						// deliberately carries no width for it -- a constant that
+						// pre-baked the UA chrome could not be unbaked by an author's
+						// `border: none`.
+						const cols = parseInt(element.getAttribute("cols") ?? "", 10);
+						contentWidth = Number.isFinite(cols) && cols > 0 ? cols : 20;
+						contentWidthMode = Flex.MEASURE_MODE_EXACTLY;
 					}
 
 					// When width is this element's flex MAIN axis, its used width is
@@ -4333,6 +4343,26 @@ export class LayoutEngine {
 					// text still occupies its row.
 					if (!element.firstChild && finalContentHeight === 0) {
 						finalContentHeight = 1;
+					}
+
+					// A textarea's rows floor its CONTENT height (spec default 2) --
+					// a floor, not a height: the field grows with its content, the
+					// terminal-native reading of a multiline field (a browser scrolls
+					// inside a fixed box instead; element scrolling is machinery this
+					// engine doesn't have). An author height wins below. cols likewise
+					// fix the reported content width: the box is attribute-sized, not
+					// content-sized, however short the value or placeholder runs.
+					if (element.tagName === "TEXTAREA") {
+						if (boxModel.height === undefined) {
+							const rows = parseInt(element.getAttribute("rows") ?? "", 10);
+							finalContentHeight = Math.max(
+								finalContentHeight,
+								Number.isFinite(rows) && rows > 0 ? rows : 2,
+							);
+						}
+						if (boxModel.width === undefined && !offerOwnsWidth) {
+							finalContentWidth = contentWidth;
+						}
 					}
 
 					// min/max constraints clamp the measured content. This leaf IS

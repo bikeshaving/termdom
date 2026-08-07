@@ -373,23 +373,11 @@ export function getElementDefaults(
 			};
 		}
 	}
-	if (element.tagName === "TEXTAREA") {
-		// rows/cols size the box exactly as in a browser (spec defaults 2
-		// and 20), in border-box terms: +2 for the border rows/cols, +2 for
-		// the horizontal padding. min-height rather than height: the field
-		// GROWS with its content -- the terminal-native reading of a
-		// multiline field (a browser scrolls inside a fixed box instead;
-		// element scrolling is machinery this engine doesn't have).
-		const rows = parseInt(element.getAttribute("rows") ?? "", 10);
-		const cols = parseInt(element.getAttribute("cols") ?? "", 10);
-		const effectiveRows = Number.isFinite(rows) && rows > 0 ? rows : 2;
-		const effectiveCols = Number.isFinite(cols) && cols > 0 ? cols : 20;
-		return {
-			...TERMINAL_ELEMENT_DEFAULTS.textarea,
-			"min-height": `${effectiveRows + 2}px`,
-			width: `${effectiveCols + 4}ch`,
-		};
-	}
+	// A textarea's rows/cols are NOT defaults here: they size the CONTENT
+	// box, and only layout knows what border and padding the cascade actually
+	// left on the element to add around it. Baking the UA chrome into a
+	// min-height/width constant left authors unable to unbake it with
+	// `border: none`. See the textarea leaf sizing in layout.ts.
 	if (element.tagName === "BUTTON") {
 		const merged: Record<string, string> = {
 			...TERMINAL_ELEMENT_DEFAULTS.button,

@@ -115,22 +115,27 @@ function assert(condition: boolean, message: string): void {
 
 const scenarios: Scenario[] = [
 	{
-		name: "chat composer: bordered textarea is 3 rows and lights up on focus",
+		name: "chat composer: flat one-row field with the accent focus underline",
 		command: "node examples/chat.ts",
 		cols: 118,
 		run: async (pane) => {
 			const screen = pane.screen();
-			const top = screen.findIndex((l) => l.includes("┌"));
-			assert(top > 0, "no border top row on screen");
-			assert(
-				screen[top + 1].includes("│") &&
-					screen[top + 1].includes("message ch.at"),
-				"row below border top is not the placeholder content row",
+			const row = screen.findIndex(
+				(l) => l.includes("›") && l.includes("message ch.at"),
 			);
-			assert(screen[top + 2].includes("└"), "no border bottom on third row");
+			assert(row > 0, "sigil and placeholder do not share the composer row");
 			assert(
-				pane.screenANSI().includes("38;2;95;175;255"),
-				"focused composer border does not carry the outline accent color",
+				!screen.some((l) => l.includes("┌")),
+				"composer still draws a border box",
+			);
+			const ansi = pane.screenANSI().split("\n")[row];
+			assert(
+				ansi.includes("38;2;95;175;255"),
+				"focused composer does not carry the outline accent color",
+			);
+			assert(
+				/\x1b\[(?:[0-9]+;)*4(?:;[0-9]+)*m/.test(ansi),
+				"focused composer row is not underlined",
 			);
 		},
 	},

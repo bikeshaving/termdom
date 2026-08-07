@@ -26,9 +26,9 @@ style.textContent = `
 	.prompt .sigil { color: #ff8700; font-weight: bold; }
 	/* Flat like the UA's input family: the › sigil is the prompt chrome, so
 	   the UA border box around the composer read as a second, mismatched
-	   frame. The UA's rows=1 min-height assumes its border rows; borderless,
-	   the composer is one row until the text wraps. */
-	textarea { flex-grow: 1; border: none; padding: 0; min-height: 1px; }
+	   frame. Borderless, rows=1 sizes the content: one row until the text
+	   wraps. */
+	textarea { flex-grow: 1; border: none; padding: 0; }
 `;
 document.head.appendChild(style);
 

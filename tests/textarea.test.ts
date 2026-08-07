@@ -422,3 +422,42 @@ test("a drag inside the textarea selects within its value", async () => {
 
 	dom.dispose();
 });
+
+test("rows/cols size the CONTENT: removing the UA chrome shrinks the box", async () => {
+	// rows and cols are content dimensions, as in a browser -- the box adds
+	// whatever border and padding the cascade actually leaves on the element.
+	// The UA must not bake its own chrome into constants an author cannot
+	// unbake by writing `border: none`.
+	const terminal = new MockProcess({rows: 10, cols: 60});
+	const dom = new TermDOM({process: terminal});
+	const {document} = dom;
+	// A stylesheet, not inline styles: cssstyle drops the inline
+	// `border: none` shorthand outright (accepts `border: 0` and full
+	// triplets), an upstream parsing gap this test must not depend on.
+	document.head.innerHTML = `<style>textarea { border: none; padding: 0; }</style>`;
+	const textarea = document.createElement("textarea");
+	textarea.setAttribute("rows", "1");
+	document.body.appendChild(textarea);
+	await nextFrame(dom);
+
+	const rect = textarea.getBoundingClientRect();
+	expect(rect.height).toBe(1); // 1 content row, no chrome left to add
+	expect(rect.width).toBe(20); // the cols default, no chrome left to add
+
+	dom.dispose();
+});
+
+test("an author height beats the rows-derived content floor", async () => {
+	const terminal = new MockProcess({rows: 10, cols: 60});
+	const dom = new TermDOM({process: terminal});
+	const {document} = dom;
+	const textarea = document.createElement("textarea");
+	textarea.setAttribute("rows", "5");
+	textarea.style.height = "2px";
+	document.body.appendChild(textarea);
+	await nextFrame(dom);
+
+	expect(textarea.getBoundingClientRect().height).toBe(2);
+
+	dom.dispose();
+});
