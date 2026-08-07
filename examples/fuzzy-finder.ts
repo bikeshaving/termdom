@@ -138,18 +138,25 @@ function render(): void {
 	status.textContent = ` ${matches.length}/${items.length}`;
 }
 
+function setSelected(row: HTMLElement | undefined, on: boolean): void {
+	if (!row) return;
+	row.classList.toggle("selected", on);
+	row.querySelector<HTMLElement>(".mark")!.textContent = on
+		? "\u203a\u00a0"
+		: "\u00a0\u00a0";
+}
+
 function move(delta: number): void {
 	if (matches.length === 0) return;
-	selected = Math.max(0, Math.min(selected + delta, matches.length - 1));
-	rows().forEach((row, i) => {
-		row.classList.toggle("selected", i === selected);
-		row.querySelector<HTMLElement>(".mark")!.textContent =
-			i === selected ? "\u203a\u00a0" : "\u00a0\u00a0";
-		row
-			.querySelector<HTMLElement>(".text")!
-			.classList.toggle("selected", i === selected);
-	});
-	rows()[selected]?.scrollIntoView();
+	const next = Math.max(0, Math.min(selected + delta, matches.length - 1));
+	if (next === selected) return;
+	// Only the two rows that changed: an arrow key is two rows of work, not
+	// a walk over the whole list.
+	const all = rows();
+	setSelected(all[selected], false);
+	setSelected(all[next], true);
+	selected = next;
+	all[selected]?.scrollIntoView();
 }
 
 async function finish(pick: string | null): Promise<void> {
