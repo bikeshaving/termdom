@@ -53,7 +53,7 @@ exports[`Border Integration > renders nested borders 1`] = `[J╔════�
 
 exports[`Border Integration > renders partial borders - top and left only 1`] = `[J┌────
 │Part
- 
+│
  `;
 
 exports[`Border Integration > renders simple single cell with border 1`] = `[J 

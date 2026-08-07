@@ -204,3 +204,25 @@ test("font-weight maps to the terminal's three weights", async () => {
 
 	dom.dispose();
 });
+
+test("a blockquote's left border covers margin rows and every paragraph", async () => {
+	const terminal = new MockProcess({cols: 60, rows: 10});
+	const dom = new TermDOM({process: terminal});
+	dom.document.head.innerHTML = `<style>
+		blockquote { border-left: 1px solid #5f5f5f; padding-left: 1ch; margin-top: 1px; }
+		p { margin-top: 1px; }
+	</style>`;
+	dom.document.body.innerHTML =
+		`<div>Blockquote</div>` +
+		`<blockquote><p>first quote line</p><p>second quote line</p></blockquote>`;
+	await nextFrame(dom);
+
+	const cellAt = (row: number, col: number) =>
+		(terminal as any).terminal.buffer.active.getLine(row).getCell(col);
+	// The blockquote box spans rows 2-5: the first paragraph's margin row, both
+	// text rows, and the inter-paragraph margin row. The bar covers all four.
+	for (const row of [2, 3, 4, 5]) {
+		expect(cellAt(row, 0).getChars()).toBe("│");
+	}
+	dom.dispose();
+});

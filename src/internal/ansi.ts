@@ -975,15 +975,20 @@ export class DrawingContext {
 			}
 		}
 
-		// The sides are vertical runs between the corners.
+		// The sides are vertical runs between the corners -- and a missing
+		// horizontal edge has no corner, so the run owns that end row itself.
+		// Skipping unconditionally cut a border-left-only box (a blockquote)
+		// off at its first and last row.
+		const sideTop = hasTop ? y + 1 : y;
+		const sideBottom = hasBottom ? bottom - 1 : bottom;
 		if (hasLeft) {
-			for (let row = y + 1; row < bottom; row++) {
+			for (let row = sideTop; row <= sideBottom; row++) {
 				put(x, row, encode(leftEdge, 0, leftEdge, 0));
 			}
 		}
 
 		if (hasRight && right !== x) {
-			for (let row = y + 1; row < bottom; row++) {
+			for (let row = sideTop; row <= sideBottom; row++) {
 				put(right, row, encode(rightEdge, 0, rightEdge, 0));
 			}
 		}

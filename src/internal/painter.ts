@@ -393,6 +393,33 @@ export class Painter {
 		// Handle borders
 		if (rect && visible) {
 			const borderStyles = resolveBorderStyles(element);
+			// A transparent edge reserves its layout space but paints no glyph
+			// -- the browser behavior authors use for invisible spacing borders.
+			// Suppress those edges for PAINTING only; layout reads the widths
+			// elsewhere and is unaffected.
+			const edgeColorProps = [
+				["topEdge", "border-top-color"],
+				["rightEdge", "border-right-color"],
+				["bottomEdge", "border-bottom-color"],
+				["leftEdge", "border-left-color"],
+			] as const;
+			for (const [edge, prop] of edgeColorProps) {
+				if (
+					borderStyles[edge] > 0 &&
+					this.#window
+						.getComputedStyle(element)
+						.getPropertyValue(prop)
+						.trim()
+						.toLowerCase() === "transparent"
+				) {
+					borderStyles[edge] = 0;
+				}
+			}
+			borderStyles.hasAnyBorder =
+				borderStyles.topEdge > 0 ||
+				borderStyles.rightEdge > 0 ||
+				borderStyles.bottomEdge > 0 ||
+				borderStyles.leftEdge > 0;
 			if (borderStyles.hasAnyBorder) {
 				// Border color per CSS: border-color, whose initial value is
 				// currentColor -- the element's own color -- and, with nothing

@@ -1140,6 +1140,33 @@ describe("Border Integration", () => {
 		expect(cleanOutput).toMatchSnapshot();
 	});
 
+	test("a left-only border spans the full box height", () => {
+		// No top or bottom edge means no corner cells -- the vertical run owns
+		// the end rows too. Skipping them is what cut a blockquote's border
+		// off at its first and last row.
+		const renderer = new Renderer(5, 8);
+		renderer.clearPreviousBuffer();
+
+		const output = renderer.renderFrame(0, (ctx) => {
+			ctx.drawBorder(0, 0, 6, 4, {
+				topEdge: 0,
+				rightEdge: 0,
+				bottomEdge: 0,
+				leftEdge: BorderEdgeStyle.Solid,
+				hasAnyBorder: true,
+			});
+			ctx.setText(2, 1, "Quote");
+		});
+
+		// includes, not startsWith: the reset frame's erase sequence survives
+		// stripControlCodes on the first row.
+		const rows = stripControlCodes(output)
+			.split("\n")
+			.map((l) => l.trimEnd());
+		const barRows = rows.filter((l) => l.includes("│")).length;
+		expect(barRows).toBe(4);
+	});
+
 	test("renders L-shaped table border pattern", () => {
 		const renderer = new Renderer(4, 7);
 		renderer.clearPreviousBuffer();
