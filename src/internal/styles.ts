@@ -182,6 +182,43 @@ const NONE_ERASURE_SHIMS: Record<
 	},
 };
 
+/**
+ * Longhand -> the shorthands whose stored !important covers it. cssstyle
+ * keeps one priority entry per key a declaration was SET with, so a
+ * shorthand's importance lives only under the shorthand's own name.
+ */
+const PRIORITY_SHORTHANDS: Record<string, string[]> = (() => {
+	const map: Record<string, string[]> = {};
+	for (const side of ["top", "right", "bottom", "left"]) {
+		for (const part of ["width", "style", "color"]) {
+			map[`border-${side}-${part}`] = [
+				`border-${side}`,
+				`border-${part}`,
+				"border",
+			];
+		}
+		map[`margin-${side}`] = ["margin"];
+		map[`padding-${side}`] = ["padding"];
+	}
+	map["background-color"] = ["background"];
+	map["background-image"] = ["background"];
+	map["flex-grow"] = ["flex"];
+	map["flex-shrink"] = ["flex"];
+	map["flex-basis"] = ["flex"];
+	map["row-gap"] = ["gap"];
+	map["column-gap"] = ["gap"];
+	for (const part of ["style", "width", "color"]) {
+		map[`outline-${part}`] = ["outline"];
+	}
+	for (const part of ["type", "position", "image"]) {
+		map[`list-style-${part}`] = ["list-style"];
+	}
+	for (const part of ["line", "style", "color"]) {
+		map[`text-decoration-${part}`] = ["text-decoration"];
+	}
+	return map;
+})();
+
 /** Patch the CSSStyleDeclaration prototype behind `style`, once per class. */
 export function shimInlineNoneErasure(style: object): void {
 	const prototype = Object.getPrototypeOf(style) as Record<
@@ -604,8 +641,18 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 		const style = (this.#element as HTMLElement).style;
 		const inlineValue = style?.getPropertyValue(property).trim();
 		const inlineUsable = !!inlineValue && !INITIAL_KEYWORDS.has(inlineValue);
+		// cssstyle stores setProperty's priority under the key it was SET
+		// with; a shorthand's !important never appears on the longhands the
+		// cascade resolves. Consult the covering shorthands too. (Coarse by
+		// necessity: cssstyle keeps one priority per set key, so a later
+		// non-important longhand override inside an important shorthand is
+		// beyond recovering.)
 		const inlineImportant =
-			inlineUsable && style.getPropertyPriority(property) === "important";
+			inlineUsable &&
+			(style.getPropertyPriority(property) === "important" ||
+				(PRIORITY_SHORTHANDS[property] ?? []).some(
+					(shorthand) => style.getPropertyPriority(shorthand) === "important",
+				));
 
 		// `inherit` skips the rest of the cascade and goes straight to the parent's
 		// resolved value, regardless of whether this property normally inherits.

@@ -775,3 +775,59 @@ test("style.background = 'none' overrides a stylesheet background", async () => 
 	expect(cell.isBgDefault()).toBeTruthy();
 	dom.dispose();
 });
+
+test("toggling border none -> solid -> none through element.style survives", async () => {
+	// The shim stores longhands with the raw primitive; a later ordinary set
+	// must overwrite them, and a return to none must erase the border again.
+	const terminal = new MockProcess({cols: 40, rows: 8});
+	const dom = new TermDOM({process: terminal});
+	const el = dom.document.createElement("div");
+	el.textContent = "x";
+	dom.document.body.appendChild(el);
+	const computed = () =>
+		dom.window.getComputedStyle(el).getPropertyValue("border-top-style");
+
+	el.style.border = "none";
+	await nextFrame(dom);
+	expect(computed()).toBe("none");
+
+	el.style.border = "1px solid red";
+	await nextFrame(dom);
+	expect(computed()).toBe("solid");
+	expect(el.getBoundingClientRect().height).toBe(3);
+
+	el.style.border = "none";
+	await nextFrame(dom);
+	expect(computed()).toBe("none");
+	expect(el.getBoundingClientRect().height).toBe(1);
+	dom.dispose();
+});
+
+test("an inline shorthand's !important carries to its longhands", async () => {
+	// cssstyle stores setProperty's priority under the SHORTHAND key; the
+	// cascade resolves longhands. Without consulting the covering shorthand's
+	// priority, every inline `setProperty(shorthand, v, "important")` lost to
+	// an important stylesheet rule -- border: none included.
+	const terminal = new MockProcess({cols: 40, rows: 8});
+	const dom = new TermDOM({process: terminal});
+	dom.document.head.innerHTML = `<style>
+		#a { border: 2px solid !important; }
+		#b { margin-top: 5px !important; }
+	</style>`;
+	dom.document.body.innerHTML = `<div id="a">x</div><div id="b">y</div>`;
+	const a = dom.document.getElementById("a")!;
+	const b = dom.document.getElementById("b")!;
+	(a as HTMLElement).style.setProperty("border", "none", "important");
+	(b as HTMLElement).style.setProperty("margin", "1px", "important");
+	await nextFrame(dom);
+
+	// Inline !important beats stylesheet !important, shorthand or not.
+	expect(
+		dom.window.getComputedStyle(a).getPropertyValue("border-top-style"),
+	).toBe("none");
+	expect(a.getBoundingClientRect().height).toBe(1);
+	expect(dom.window.getComputedStyle(b).getPropertyValue("margin-top")).toBe(
+		"1px",
+	);
+	dom.dispose();
+});
