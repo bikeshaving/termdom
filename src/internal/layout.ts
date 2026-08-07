@@ -2482,12 +2482,10 @@ export class LayoutEngine {
 		const bucket = layers.get(root) ?? null;
 		const probeMember = (element: Element): Element | null => {
 			// A fixed box's layout lives in viewport space; convert the
-			// document-space probe point for its whole subtree.
-			const probeY =
-				this.window.getComputedStyle(element).getPropertyValue("position") ===
-				"fixed"
-					? y - cameraScrollTop
-					: y;
+			// document-space probe point for its whole subtree. Fixed-space is
+			// a property of the containing-block CHAIN, so the check walks
+			// ancestors -- an absolute box inside a fixed bar lives there too.
+			const probeY = this.#inFixedSpace(element) ? y - cameraScrollTop : y;
 			return this.formsStackingContext(element)
 				? this.#hitTestContext(element, x, probeY, layers, cameraScrollTop)
 				: this.#hitTestInFlow(element, x, probeY);
@@ -3352,6 +3350,18 @@ export class LayoutEngine {
 	 * unaffected -- the stacking-context painter never uses flex order for
 	 * positioned boxes.
 	 */
+	/** Whether the element or any composed ancestor is position: fixed. */
+	#inFixedSpace(element: Element): boolean {
+		for (
+			let el: Element | null = element;
+			el;
+			el = compositionParentElement(el)
+		) {
+			if (getPropertyValue(el, "position") === "fixed") return true;
+		}
+		return false;
+	}
+
 	#containingBlockFlexNode(element: Element): FlexTypes.Node | null {
 		for (
 			let ancestor = compositionParentElement(element);
@@ -3417,8 +3427,17 @@ export class LayoutEngine {
 		}
 		// Out-of-flow boxes hoist to their containing block, appended at the
 		// end -- they neither displace siblings nor depend on tree position.
+		// position: fixed skips the ancestor climb entirely: its containing
+		// block is the VIEWPORT (the terminal-sized root the document node
+		// itself hangs from), so bottom/right resolve against the screen and
+		// the box holds still under the camera -- which is the coordinate
+		// space the painter's camera-cancel and hit-testing's conversion
+		// always assumed.
 		if (this.#isOutOfFlow(node)) {
-			const containingBlock = this.#containingBlockFlexNode(node as Element);
+			const containingBlock =
+				getPropertyValue(node as Element, "position") === "fixed"
+					? this.viewportRootNode
+					: this.#containingBlockFlexNode(node as Element);
 			if (containingBlock) parentFlexNode = containingBlock;
 		}
 

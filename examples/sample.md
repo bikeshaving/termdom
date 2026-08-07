@@ -34,7 +34,7 @@ A task list (GitHub-flavoured, rendered as real checkboxes):
 
 - [x] Write the parser adapter
 - [x] Style the headings
-- [ ] Add a fixed status line
+- [x] Add a fixed status line
 
 ## Blockquote
 

@@ -669,6 +669,23 @@ export class Painter {
 		}
 	}
 
+	/** Whether the element or any composed ancestor is position: fixed. */
+	#inFixedSpace(element: Element): boolean {
+		for (
+			let el: Element | null = element;
+			el;
+			el = compositionParentElement(el)
+		) {
+			if (
+				this.#window.getComputedStyle(el).getPropertyValue("position") ===
+				"fixed"
+			) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	/**
 	 * The clip a deferred positioned box paints under: the context root's
 	 * clip, intersected with every overflow-clipping box along the CSS
@@ -732,11 +749,11 @@ export class Painter {
 			// deferred box, but its own containing blocks' overflow does.
 			ctx.clipRect = this.#positionedClipFor(element, root, contextClip);
 			// position:fixed anchors to the VIEWPORT: cancel the camera by
-			// undoing the scroll offset for the whole subtree.
-			if (
-				this.#window.getComputedStyle(element).getPropertyValue("position") ===
-				"fixed"
-			) {
+			// undoing the scroll offset for the whole subtree. Fixed-space is
+			// a property of the containing-block CHAIN: an absolute box inside
+			// a fixed bar is laid out against the bar's viewport coordinates
+			// and must ride with it, so the walk includes ancestors.
+			if (this.#inFixedSpace(element)) {
 				ctx.viewportOffset = previousOffset + this.#viewport.scrollTop;
 			}
 			try {

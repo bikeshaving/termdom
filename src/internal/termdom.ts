@@ -25,6 +25,7 @@ import {
 } from "./events.js";
 import {
 	compositionIsConnected,
+	compositionParentElement,
 	fieldCaretRange,
 	fieldValueText,
 } from "./composition.js";
@@ -855,13 +856,33 @@ export class TermDOM {
 		// document-relative rect (scrollIntoView, hit-testing) read
 		// getRect()/getRects() directly instead of going through these -- see
 		// their definitions.
-		const toViewportRect = (rect: DOMRect): DOMRect =>
-			termDOM[kLayoutEngine].createDOMRect(
-				rect.x,
-				rect.y - termDOM.#viewport.scrollTop,
-				rect.width,
-				rect.height,
-			);
+		// A box inside a position:fixed subtree is laid out in viewport space
+		// already -- subtracting the camera would double-convert it. Per spec
+		// its client rect is scroll-invariant.
+		const inFixedSpace = (element: Element): boolean => {
+			for (
+				let el: Element | null = element;
+				el;
+				el = compositionParentElement(el)
+			) {
+				if (
+					termDOM.window.getComputedStyle(el).getPropertyValue("position") ===
+					"fixed"
+				) {
+					return true;
+				}
+			}
+			return false;
+		};
+		const toViewportRect = (rect: DOMRect, element?: Element): DOMRect =>
+			element && inFixedSpace(element)
+				? rect
+				: termDOM[kLayoutEngine].createDOMRect(
+						rect.x,
+						rect.y - termDOM.#viewport.scrollTop,
+						rect.width,
+						rect.height,
+					);
 
 		Element.prototype.getBoundingClientRect = function (
 			this: Element,
@@ -873,7 +894,10 @@ export class TermDOM {
 			termDOM.#processPendingMutationsAndRender();
 
 			const rect = termDOM[kLayoutEngine].getRect(this);
-			return toViewportRect(rect || termDOM[kLayoutEngine].createDOMRect());
+			return toViewportRect(
+				rect || termDOM[kLayoutEngine].createDOMRect(),
+				this,
+			);
 		};
 
 		Element.prototype.getClientRects = function (): DOMRectList {
@@ -883,7 +907,9 @@ export class TermDOM {
 
 			termDOM.#processPendingMutationsAndRender();
 
-			const rects = termDOM[kLayoutEngine].getRects(this).map(toViewportRect);
+			const rects = termDOM[kLayoutEngine]
+				.getRects(this)
+				.map((rect) => toViewportRect(rect, this));
 			return termDOM[kLayoutEngine].createDOMRectList(rects);
 		};
 
@@ -894,17 +920,27 @@ export class TermDOM {
 		// getRangeRects() directly, the way scrollIntoView reads getRect().
 		Range.prototype.getClientRects = function (this: Range): DOMRectList {
 			termDOM.#processPendingMutationsAndRender();
+			const container = this.startContainer;
+			const anchor =
+				container.nodeType === container.ELEMENT_NODE
+					? (container as Element)
+					: (container.parentElement ?? undefined);
 			const rects = termDOM[kLayoutEngine]
 				.getRangeRects(this)
-				.map(toViewportRect);
+				.map((rect) => toViewportRect(rect, anchor));
 			return termDOM[kLayoutEngine].createDOMRectList(rects);
 		};
 
 		Range.prototype.getBoundingClientRect = function (this: Range): DOMRect {
 			termDOM.#processPendingMutationsAndRender();
+			const container = this.startContainer;
+			const anchor =
+				container.nodeType === container.ELEMENT_NODE
+					? (container as Element)
+					: (container.parentElement ?? undefined);
 			const rects = termDOM[kLayoutEngine].getRangeRects(this);
 			if (rects.length === 0) {
-				return toViewportRect(termDOM[kLayoutEngine].createDOMRect());
+				return toViewportRect(termDOM[kLayoutEngine].createDOMRect(), anchor);
 			}
 			let left = Infinity;
 			let top = Infinity;
@@ -923,6 +959,7 @@ export class TermDOM {
 					right - left,
 					bottom - top,
 				),
+				anchor,
 			);
 		};
 

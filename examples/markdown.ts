@@ -80,6 +80,21 @@ style.textContent = `
 	hr { color: #444444; margin-top: 1px; }
 	th { font-weight: bold; color: #ffd700; }
 	del { text-decoration: line-through; }
+
+	/* The pager's status line: position: fixed pins it to the VIEWPORT, so
+	   the camera scrolls the document underneath it -- the same contract as
+	   a web page's sticky footer. The percentage is position: absolute
+	   against the bar, flushed to its right edge. */
+	.status {
+		position: fixed;
+		bottom: 0;
+		left: 0;
+		width: 100%;
+		background-color: #262626;
+		color: #9e9e9e;
+		padding: 0 1ch;
+	}
+	.status .pct { position: absolute; right: 1ch; top: 0; color: #ffd700; }
 `;
 document.head.appendChild(style);
 
@@ -104,6 +119,22 @@ if (!process.stdout.isTTY || fits) {
 // same scrolling any web page gets -- no terminal-specific plumbing.
 const page = () => Math.max(1, window.innerHeight - 1);
 const height = () => document.body.scrollHeight;
+
+// The status line the sample's own task list asked for.
+const status = document.createElement("div");
+status.className = "status";
+const statusName = document.createElement("span");
+statusName.textContent = `${file.split("/").pop()} · j/k scroll · q quit`;
+const pct = document.createElement("span");
+pct.className = "pct";
+status.append(statusName, pct);
+document.body.appendChild(status);
+
+const updateStatus = () => {
+	const max = Math.max(1, height() - window.innerHeight);
+	pct.textContent = `${Math.min(100, Math.round((window.scrollY / max) * 100))}%`;
+};
+updateStatus();
 const bindings: Record<string, () => void> = {
 	q: () => {
 		term.dispose();
@@ -123,4 +154,5 @@ const bindings: Record<string, () => void> = {
 };
 document.addEventListener("keydown", (event: Event) => {
 	bindings[(event as KeyboardEvent).key]?.();
+	updateStatus();
 });
