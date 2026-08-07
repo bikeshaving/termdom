@@ -831,3 +831,22 @@ test("an inline shorthand's !important carries to its longhands", async () => {
 	);
 	dom.dispose();
 });
+
+test("border: solid means a visible medium border, sheet and inline alike", async () => {
+	// A style keyword with no width leaves the width at its initial, medium
+	// -- which is a real, visible border (one cell; the grid cannot grade
+	// thin/medium/thick). Both parsers must agree: the sheet path kept the
+	// keyword no reader understood, and cssstyle fills the width with 0.
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const dom = new TermDOM({process: terminal});
+	dom.document.head.innerHTML = `<style>#sheet { border: solid; }</style>`;
+	dom.document.body.innerHTML = `<div id="sheet">a</div><div id="inline" style="border: solid">b</div>`;
+	await nextFrame(dom);
+
+	for (const id of ["sheet", "inline"]) {
+		const el = dom.document.getElementById(id)!;
+		expect(el.getBoundingClientRect().height).toBe(3);
+	}
+	expect(terminal.getVisibleText()).toContain("┌");
+	dom.dispose();
+});

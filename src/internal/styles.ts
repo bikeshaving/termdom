@@ -119,6 +119,16 @@ export interface BoxModel {
 // space, matching the browser.
 const kNoneErasureShimmed = Symbol("termdom.noneErasureShim");
 const BORDER_KEYWORDS = new Set(["none", "hidden"]);
+const VISIBLE_BORDER_STYLES = new Set([
+	"dotted",
+	"dashed",
+	"solid",
+	"double",
+	"groove",
+	"ridge",
+	"inset",
+	"outset",
+]);
 const sideStyles = (keyword: string, sides: string[]) =>
 	Object.fromEntries(sides.map((s) => [`border-${s}-style`, keyword]));
 const ALL_SIDES = ["top", "right", "bottom", "left"];
@@ -128,11 +138,19 @@ const ALL_SIDES = ["top", "right", "bottom", "left"];
  */
 const NONE_ERASURE_SHIMS: Record<
 	string,
-	{keywords: Set<string>; declares(keyword: string): Record<string, string>}
+	{
+		keywords: Set<string>;
+		declares(keyword: string): Record<string, string>;
+		/** Sides whose width defaults to medium when the shorthand names a
+		 * style but no width -- cssstyle fills those widths with 0, turning
+		 * `border: solid` invisible where a browser shows a medium border. */
+		widthSides?: string[];
+	}
 > = {
 	border: {
 		keywords: BORDER_KEYWORDS,
 		declares: (kw) => sideStyles(kw, ALL_SIDES),
+		widthSides: ALL_SIDES,
 	},
 	borderStyle: {
 		keywords: BORDER_KEYWORDS,
@@ -141,18 +159,22 @@ const NONE_ERASURE_SHIMS: Record<
 	borderTop: {
 		keywords: BORDER_KEYWORDS,
 		declares: (kw) => sideStyles(kw, ["top"]),
+		widthSides: ["top"],
 	},
 	borderRight: {
 		keywords: BORDER_KEYWORDS,
 		declares: (kw) => sideStyles(kw, ["right"]),
+		widthSides: ["right"],
 	},
 	borderBottom: {
 		keywords: BORDER_KEYWORDS,
 		declares: (kw) => sideStyles(kw, ["bottom"]),
+		widthSides: ["bottom"],
 	},
 	borderLeft: {
 		keywords: BORDER_KEYWORDS,
 		declares: (kw) => sideStyles(kw, ["left"]),
+		widthSides: ["left"],
 	},
 	borderTopStyle: {
 		keywords: BORDER_KEYWORDS,
@@ -241,21 +263,52 @@ export function shimInlineNoneErasure(style: object): void {
 				...descriptor,
 				set(value: unknown) {
 					originalSet.call(this, value);
-					const keyword = String(value).trim().toLowerCase();
-					if (shim.keywords.has(keyword)) {
-						const declarations = shim.declares(keyword);
+					const raw = String(value).trim().toLowerCase();
+					const store = this as {
+						_setProperty(name: string, value: string): void;
+					};
+					if (shim.keywords.has(raw)) {
+						const declarations = shim.declares(raw);
 						for (const [longhand, stored] of Object.entries(declarations)) {
-							(
-								this as {
-									_setProperty(name: string, value: string): void;
-								}
-							)._setProperty(longhand, stored);
+							store._setProperty(longhand, stored);
+						}
+						return;
+					}
+					if (shim.widthSides) {
+						const tokens = raw.split(/\s+/);
+						const hasStyle = tokens.some((t) => VISIBLE_BORDER_STYLES.has(t));
+						const hasWidth = tokens.some(
+							(t) =>
+								/^[\d.]/.test(t) ||
+								t === "thin" ||
+								t === "medium" ||
+								t === "thick",
+						);
+						if (hasStyle && !hasWidth) {
+							for (const side of shim.widthSides) {
+								store._setProperty(`border-${side}-width`, "medium");
+							}
 						}
 					}
 				},
 			});
 		}
 	}
+}
+
+/**
+ * Border widths, keywords included: thin/medium/thick all land on one cell
+ * -- the grid cannot grade them, and medium is the initial that a bare
+ * `border: solid` carries, which must be a VISIBLE border as in a browser.
+ */
+export function parseBorderWidthValue(
+	value: string,
+): ReturnType<typeof parseUnitValue> {
+	const keyword = value.trim().toLowerCase();
+	if (keyword === "thin" || keyword === "medium" || keyword === "thick") {
+		return 1;
+	}
+	return parseUnitValue(value);
 }
 
 export function getBoxModel(element: Element): BoxModel {
@@ -303,7 +356,7 @@ export function getBoxModel(element: Element): BoxModel {
 	const borderWidthFor = (side: string) => {
 		const style = computedStyle.getPropertyValue(`border-${side}-style`);
 		if (!style || style === "none" || style === "hidden") return null;
-		return parseUnitValue(
+		return parseBorderWidthValue(
 			computedStyle.getPropertyValue(`border-${side}-width`),
 		);
 	};
@@ -1019,7 +1072,8 @@ export function resolveBorderStyles(element: Element): {
 		style: string,
 		isRounded: boolean,
 	): number => {
-		const widthValue = parseFloat(width);
+		const parsed = parseBorderWidthValue(width);
+		const widthValue = typeof parsed === "number" ? parsed : NaN;
 		if (isNaN(widthValue) || widthValue <= 0 || !style || style === "none") {
 			return 0;
 		}

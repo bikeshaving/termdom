@@ -2,7 +2,7 @@ import type {DOMWindow} from "jsdom";
 import Flex from "./flex.js";
 import type * as FlexTypes from "./flex.js";
 import LineBreaker from "linebreak";
-import {getBoxModel, type BoxModel} from "./styles.js";
+import {getBoxModel, parseBorderWidthValue, type BoxModel} from "./styles.js";
 import {
 	getPropertyValue,
 	parseUnitValue,
@@ -659,7 +659,7 @@ function styleFlexNode(
 		const usedBorderWidth = (side: string) => {
 			const style = computedStyle.getPropertyValue(`border-${side}-style`);
 			if (!style || style === "none" || style === "hidden") return null;
-			return parseUnitValue(
+			return parseBorderWidthValue(
 				computedStyle.getPropertyValue(`border-${side}-width`),
 			);
 		};
