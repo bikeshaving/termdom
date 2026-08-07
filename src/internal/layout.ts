@@ -3850,7 +3850,25 @@ export class LayoutEngine {
 		return null;
 	}
 
-	#collectLeafNodes(runHead: Node, availableWidth: number): Leaf[] {
+	/**
+	 * Whether width is this element's flex MAIN axis: its composed parent is
+	 * a row-direction flex container, so the flex algorithm -- not its own
+	 * CSS width -- owns its used width.
+	 */
+	#isRowFlexItem(element: Element): boolean {
+		const parent = compositionParentElement(element);
+		if (!parent) return false;
+		const display = getPropertyValue(parent, "display");
+		if (display !== "flex" && display !== "inline-flex") return false;
+		const direction = getPropertyValue(parent, "flex-direction") || "row";
+		return direction === "row" || direction === "row-reverse";
+	}
+
+	#collectLeafNodes(
+		runHead: Node,
+		availableWidth: number,
+		availableWidthMode: FlexTypes.MeasureMode = Flex.MEASURE_MODE_UNDEFINED,
+	): Leaf[] {
 		const leafNodes: Leaf[] = [];
 
 		// For pseudo elements, use the host element as the parent
@@ -4016,17 +4034,52 @@ export class LayoutEngine {
 						contentWidthMode = Flex.MEASURE_MODE_EXACTLY;
 					}
 
-					// A flex-grow item is laid out wider than its CSS width (its flex
-					// basis). getBoxModel reports the basis, so break the content at
-					// the larger offered width instead, or it wraps at the un-grown
-					// basis.
-					if (
-						Number.isFinite(availableWidth) &&
-						availableWidth - horizontalBoxSpace > contentWidth &&
-						parseFloat(getPropertyValue(element, "flex-grow") || "0") > 0
-					) {
-						contentWidth = Math.max(0, availableWidth - horizontalBoxSpace);
-						contentWidthMode = Flex.MEASURE_MODE_EXACTLY;
+					// When width is this element's flex MAIN axis, its used width is
+					// the flex engine's to decide -- basis, grow, shrink and min/max
+					// all resolved engine-side -- and the measure offers carry that
+					// authority: a definite EXACTLY offer is the resolved used width
+					// (the final layout pass, see flex.ts), and an AT_MOST offer
+					// below the CSS width is an intrinsic probe (the css-flexbox-1
+					// §4.5 min-content floor offers 0) that wants the CONTENT's
+					// minimum, not the basis -- the engine clamps the floor by the
+					// specified size itself. Both break the content at the offer.
+					// Row flex items only: in column flex, width is the cross axis
+					// and a definite width wins over stretch; a block container is
+					// emulated as column flex, and its EXACTLY stretch offer
+					// describes the CONTAINER's width, not this element's own
+					// resolution -- a definite-width inline-block in a narrow block
+					// overflows, it does not re-wrap.
+					let offerOwnsWidth = false;
+					if (Number.isFinite(availableWidth) && this.#isRowFlexItem(element)) {
+						const offered = Math.max(0, availableWidth - horizontalBoxSpace);
+						if (availableWidthMode === Flex.MEASURE_MODE_EXACTLY) {
+							contentWidth = offered;
+							contentWidthMode = Flex.MEASURE_MODE_EXACTLY;
+							offerOwnsWidth = true;
+						} else if (
+							availableWidthMode === Flex.MEASURE_MODE_AT_MOST &&
+							offered < contentWidth
+						) {
+							contentWidth = offered;
+							contentWidthMode = Flex.MEASURE_MODE_AT_MOST;
+							offerOwnsWidth = true;
+						}
+					}
+
+					// max-width caps the width the content BREAKS at, not just the
+					// reported box size the later clamp covers -- otherwise the
+					// content wraps at its natural width and overflows the capped box.
+					const maxWidthValue = parseUnitValue(
+						getPropertyValue(element, "max-width"),
+					);
+					if (typeof maxWidthValue === "number") {
+						const cap = Math.max(0, maxWidthValue - horizontalBoxSpace);
+						if (cap < contentWidth) {
+							contentWidth = cap;
+							if (contentWidthMode === Flex.MEASURE_MODE_UNDEFINED) {
+								contentWidthMode = Flex.MEASURE_MODE_AT_MOST;
+							}
+						}
 					}
 
 					if (boxModel.height !== undefined) {
@@ -4106,9 +4159,6 @@ export class LayoutEngine {
 							minHeightValue - verticalBoxSpace,
 						);
 					}
-					const maxWidthValue = parseUnitValue(
-						getPropertyValue(element, "max-width"),
-					);
 					if (typeof maxWidthValue === "number") {
 						finalContentWidth = Math.min(
 							finalContentWidth,
@@ -4125,8 +4175,11 @@ export class LayoutEngine {
 						);
 					}
 
-					// If explicit dimensions were set, use those instead of measured content
-					if (boxModel.width !== undefined) {
+					// If explicit dimensions were set, use those instead of measured
+					// content -- unless the measure offer owned the width above: an
+					// intrinsic probe's answer must be the content's, not the basis
+					// the engine already knows.
+					if (boxModel.width !== undefined && !offerOwnsWidth) {
 						finalContentWidth = Math.max(
 							0,
 							boxModel.width - horizontalBoxSpace,
@@ -4179,6 +4232,7 @@ export class LayoutEngine {
 		const leafNodes = this.#collectLeafNodes(
 			runHead,
 			widthMode === Flex.MEASURE_MODE_UNDEFINED ? NaN : width,
+			widthMode,
 		);
 
 		// Handle empty case

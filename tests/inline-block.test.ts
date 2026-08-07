@@ -5,7 +5,7 @@
  */
 
 import {test, expect} from "@b9g/libuild/test";
-import {MockProcess, nextFrame, canSnapshot} from "./test-utils";
+import {MockProcess, nextFrame} from "./test-utils";
 import {TermDOM, kLayoutEngine} from "../src/internal/termdom.js";
 
 function heightOf(dom: TermDOM, el: Element): number | undefined {
@@ -25,6 +25,17 @@ test("a bordered inline-block in a flex ROW is not double-counted in height", as
 	dom.dispose();
 });
 
+test("an empty rows=1 textarea in a flex ROW is 3 rows: content + border", async () => {
+	const terminal = new MockProcess({cols: 118, rows: 30});
+	const dom = new TermDOM({process: terminal});
+	dom.document.body.innerHTML =
+		`<div style="display:flex"><span>› </span>` +
+		`<textarea rows="1" placeholder="message ch.at…" style="flex-grow:1"></textarea></div>`;
+	await nextFrame(dom);
+	expect(heightOf(dom, dom.document.querySelector("textarea")!)).toBe(3);
+	dom.dispose();
+});
+
 test("a flex-grow textarea wraps its value at the grown width, not its flex-basis", async () => {
 	const terminal = new MockProcess({cols: 60, rows: 8});
 	const dom = new TermDOM({process: terminal});
@@ -34,11 +45,34 @@ test("a flex-grow textarea wraps its value at the grown width, not its flex-basi
 	const ta = dom.document.querySelector("textarea") as HTMLTextAreaElement;
 	ta.value = "Testing this out from a wide flex composer";
 	await nextFrame(dom);
-	await nextFrame(dom);
 	// The whole phrase fits inside the grown ~58-col box: one line, intact.
 	expect(terminal.getVisibleText()).toContain(
 		"Testing this out from a wide flex composer",
 	);
+	dom.dispose();
+});
+
+test("a flex-shrink inline-block wraps its content at the shrunk width, not its basis", async () => {
+	const terminal = new MockProcess({cols: 20, rows: 8});
+	const dom = new TermDOM({process: terminal});
+	dom.document.body.innerHTML =
+		`<div style="display:flex;width:20ch">` +
+		`<div id="box" style="display:inline-block;width:40ch">aaaa bbbb cccc dddd eeee ffff</div></div>`;
+	await nextFrame(dom);
+	// 29 columns of text in a box shrunk from 40ch to the container's 20:
+	// two lines at the USED width, not one overflowing line at the basis.
+	expect(heightOf(dom, dom.document.getElementById("box")!)).toBe(2);
+	dom.dispose();
+});
+
+test("a max-width-capped inline-block wraps its content at the capped width", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 8});
+	const dom = new TermDOM({process: terminal});
+	dom.document.body.innerHTML = `<div><div id="box" style="display:inline-block;max-width:10ch">aa bb cc dd</div></div>`;
+	await nextFrame(dom);
+	// 11 columns of text capped at 10: the content re-wraps inside the cap
+	// instead of overflowing a box whose reported width was merely clamped.
+	expect(heightOf(dom, dom.document.getElementById("box")!)).toBe(2);
 	dom.dispose();
 });
 
@@ -76,8 +110,7 @@ test("inline-block elements render side by side", async () => {
 	expect(output).toContain("\x1b[38;2;255;255;255;48;2;255;0;0m"); // white text on red background
 	expect(output).toContain("\x1b[48;2;0;0;255m"); // blue background
 
-	if (canSnapshot)
-		(expect(output) as {toMatchSnapshot(): void}).toMatchSnapshot();
+	expect(output).toMatchSnapshot();
 	terminal.writeANSI("inline-block-side-by-side");
 
 	dom.dispose();
@@ -111,8 +144,7 @@ test("inline-block elements with padding", async () => {
 	expect(contentLine).toContain("  "); // Check for spaces (padding)
 	expect(contentLine).toContain("Padded"); // Check for content
 
-	if (canSnapshot)
-		(expect(output) as {toMatchSnapshot(): void}).toMatchSnapshot();
+	expect(output).toMatchSnapshot();
 	terminal.writeANSI("inline-block-padding");
 
 	dom.dispose();
@@ -145,10 +177,7 @@ test("inline-block elements with margins", async () => {
 	// Should have 3 spaces between blocks due to marginRight: "3px"
 	expect(visibleText).toContain("First   Second");
 
-	if (canSnapshot)
-		(
-			expect(terminal.getStaticANSI()) as {toMatchSnapshot(): void}
-		).toMatchSnapshot();
+	expect(terminal.getStaticANSI()).toMatchSnapshot();
 	terminal.writeANSI("inline-block-margins");
 
 	dom.dispose();
@@ -184,10 +213,7 @@ test("inline-block elements wrapping to multiple lines", async () => {
 		expect(visibleText).toContain(word);
 	}
 
-	if (canSnapshot)
-		(
-			expect(terminal.getStaticANSI()) as {toMatchSnapshot(): void}
-		).toMatchSnapshot();
+	expect(terminal.getStaticANSI()).toMatchSnapshot();
 	terminal.writeANSI("inline-block-wrapping");
 
 	dom.dispose();
@@ -230,8 +256,7 @@ test("mixed inline and inline-block elements", async () => {
 	expect(output).toContain("48;2;128;0;128"); // purple background (may be combined with other codes)
 	expect(output).toContain("38;2;0;255;255"); // cyan text (may have background reset after)
 
-	if (canSnapshot)
-		(expect(output) as {toMatchSnapshot(): void}).toMatchSnapshot();
+	expect(output).toMatchSnapshot();
 	terminal.writeANSI("mixed-inline-and-inline-block");
 
 	dom.dispose();
@@ -269,8 +294,7 @@ test("nested inline-block elements", async () => {
 	expect(output).toContain("\x1b[48;2;0;0;128m"); // navy background for outer
 	expect(output).toContain("48;2;255;0;0"); // red background for inner (may be combined with other codes)
 
-	if (canSnapshot)
-		(expect(output) as {toMatchSnapshot(): void}).toMatchSnapshot();
+	expect(output).toMatchSnapshot();
 	terminal.writeANSI("nested-inline-block");
 
 	dom.dispose();
@@ -305,8 +329,7 @@ test("inline-block with explicit width", async () => {
 	// First block should be exactly 10 characters wide due to width: "10px"
 	expect(visibleText).toContain("Fixed     Auto"); // "Fixed" + 5 spaces to reach 10 chars + "Auto"
 
-	if (canSnapshot)
-		(expect(output) as {toMatchSnapshot(): void}).toMatchSnapshot();
+	expect(output).toMatchSnapshot();
 	terminal.writeANSI("inline-block-fixed-width");
 
 	dom.dispose();
@@ -343,8 +366,7 @@ test("inline-block with height", async () => {
 	);
 	expect(greenBackgroundLines.length).toBe(3);
 
-	if (canSnapshot)
-		(expect(output) as {toMatchSnapshot(): void}).toMatchSnapshot();
+	expect(output).toMatchSnapshot();
 	terminal.writeANSI("inline-block-height");
 
 	dom.dispose();
@@ -372,8 +394,7 @@ test("inline-block with borders", async () => {
 	expect(output).toContain("┌"); // top border
 	expect(output).toContain("└"); // bottom border
 
-	if (canSnapshot)
-		(expect(output) as {toMatchSnapshot(): void}).toMatchSnapshot();
+	expect(output).toMatchSnapshot();
 	terminal.writeANSI("inline-block-borders");
 
 	dom.dispose();
