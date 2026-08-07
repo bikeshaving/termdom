@@ -1682,10 +1682,38 @@ export class StyleManager {
 	 * keeps a selection-highlight flip from rebuilding every box on the
 	 * page: rules for `.row.selected` can only reach the row.
 	 */
+
+	/**
+	 * document.styleSheets.length without jsdom's per-access list proxy.
+	 *
+	 * The length is polled on every computed-style read to catch a <style>
+	 * appended in the same tick, before the mutation observer delivers -- and
+	 * through the wrapper each poll pays the full LegacyPlatformObject proxy
+	 * walk, which dominated paint profiles. jsdom keeps the real list on the
+	 * wrapper's impl object behind its "impl" symbol; read it directly, and
+	 * fall back to the wrapper if the internals ever move.
+	 */
+	#styleSheetListImpl: {length: number} | null | undefined;
+
+	#styleSheetCount(): number {
+		if (this.#styleSheetListImpl === undefined) {
+			const list = this.#document.styleSheets;
+			const implSymbol = Object.getOwnPropertySymbols(list).find(
+				(symbol) => symbol.description === "impl",
+			);
+			this.#styleSheetListImpl = implSymbol
+				? ((list as any)[implSymbol] as {length: number})
+				: null;
+		}
+		return this.#styleSheetListImpl
+			? this.#styleSheetListImpl.length
+			: this.#document.styleSheets.length;
+	}
+
 	invalidationScopeFor(element: Element): Element {
 		if (
 			this.#stylesheetsDirty ||
-			this.#document.styleSheets.length !== this.#parsedStyleSheetCount
+			this.#styleSheetCount() !== this.#parsedStyleSheetCount
 		) {
 			this.#parseStylesheets();
 		}
@@ -1776,7 +1804,7 @@ export class StyleManager {
 		// awaits
 		if (
 			this.#stylesheetsDirty ||
-			this.#document.styleSheets.length !== this.#parsedStyleSheetCount
+			this.#styleSheetCount() !== this.#parsedStyleSheetCount
 		) {
 			this.#parseStylesheets();
 		}

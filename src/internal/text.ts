@@ -36,6 +36,83 @@ const isBun = typeof globalThis.Bun !== "undefined";
 const COMBINING = /[\p{M}\p{Cf}]/u;
 
 /**
+ * Every other LRU cache in the JavaScript ecosystem is insane.
+ */
+export class LRUCache<TKey, TValue> {
+	declare limit: number;
+	declare map: Map<TKey, TValue>;
+
+	constructor(limit: number) {
+		if (limit <= 0) throw new TypeError("limit must be positive");
+		this.limit = limit;
+		this.map = new Map();
+	}
+
+	get(key: TKey): TValue | undefined {
+		const val = this.map.get(key);
+		// One lookup answers most calls; the has() check only disambiguates a
+		// stored undefined from a miss.
+		if (val === undefined && !this.map.has(key)) return undefined;
+		// Refresh recency
+		this.map.delete(key);
+		this.map.set(key, val!);
+		return val;
+	}
+
+	set(key: TKey, val: TValue): void {
+		if (this.map.has(key)) {
+			this.map.delete(key); // refresh recency
+		} else if (this.map.size >= this.limit) {
+			// Evict oldest (first inserted)
+			const oldestKey = this.map.keys().next().value as TKey;
+			this.map.delete(oldestKey);
+		}
+		this.map.set(key, val);
+	}
+
+	has(key: TKey): boolean {
+		return this.map.has(key);
+	}
+
+	delete(key: TKey): boolean {
+		return this.map.delete(key);
+	}
+
+	clear(): void {
+		this.map.clear();
+	}
+
+	get size(): number {
+		return this.map.size;
+	}
+
+	keys(): IterableIterator<TKey> {
+		return this.map.keys();
+	}
+
+	values(): IterableIterator<TValue> {
+		return this.map.values();
+	}
+
+	entries(): IterableIterator<[TKey, TValue]> {
+		return this.map.entries();
+	}
+
+	[Symbol.iterator](): IterableIterator<[TKey, TValue]> {
+		return this.map[Symbol.iterator]();
+	}
+}
+
+// Printable ASCII is its own width, and most text is exactly that: one
+// regex test and a length read, against a full grapheme walk.
+const PRINTABLE_ASCII = /^[\x20-\x7e]*$/;
+
+// Width is a pure property of the string, so results are memoized: a painted
+// frame re-measures the same runs every repaint. LRU-bounded so an endless
+// stream of unique strings (a logger) cannot grow it without limit.
+const widthCache = new LRUCache<string, number>(2 ** 14);
+
+/**
  * Get the display width of a string in terminal columns.
  *
  * Bun.stringWidth is ~19x faster and is used wherever it is right, which is
@@ -46,11 +123,17 @@ const COMBINING = /[\p{M}\p{Cf}]/u;
  * the fallback below is the implementation that knows that.
  */
 export function stringWidth(str: string): number {
-	if (isBun && !COMBINING.test(str)) {
-		return Bun.stringWidth(str);
-	}
+	if (PRINTABLE_ASCII.test(str)) return str.length;
 
-	return stringWidthFallback(str);
+	const cached = widthCache.get(str);
+	if (cached !== undefined) return cached;
+
+	const width =
+		isBun && !COMBINING.test(str)
+			? Bun.stringWidth(str)
+			: stringWidthFallback(str);
+	widthCache.set(str, width);
+	return width;
 }
 
 /**

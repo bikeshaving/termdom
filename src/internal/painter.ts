@@ -309,41 +309,33 @@ export class Painter {
 		// CSS. Stray run state under a hidden subtree (an editing todo's
 		// hidden .view) could otherwise ghost-paint at whatever coordinates
 		// it last held.
-		if (
-			this.#window.getComputedStyle(element).getPropertyValue("display") ===
-			"none"
-		) {
+		// One computed-style read per element per paint: every property below
+		// comes off this declaration, not its own getComputedStyle call --
+		// each call re-checks stylesheet staleness through jsdom's list proxy,
+		// and this walk runs for everything on screen every frame.
+		const computed = this.#window.getComputedStyle(element);
+		if (computed.getPropertyValue("display") === "none") {
 			return;
 		}
 
 		const rect = this.#layout.getRect(element);
 
-		const color = this.#window
-			.getComputedStyle(element)
-			.getPropertyValue("color");
-		const backgroundColor = this.#window
-			.getComputedStyle(element)
-			.getPropertyValue("background-color");
+		const color = computed.getPropertyValue("color");
+		const backgroundColor = computed.getPropertyValue("background-color");
 		const {bold, dim} = resolveFontWeight(
-			this.#window.getComputedStyle(element).getPropertyValue("font-weight"),
+			computed.getPropertyValue("font-weight"),
 		);
-		const italic =
-			this.#window.getComputedStyle(element).getPropertyValue("font-style") ===
-			"italic";
-		const underline = hasUnderline(this.#window.getComputedStyle(element));
+		const italic = computed.getPropertyValue("font-style") === "italic";
+		const underline = hasUnderline(computed);
 		const underlineStyle =
-			this.#window
-				.getComputedStyle(element)
-				.getPropertyValue("text-decoration-style") === "double"
+			computed.getPropertyValue("text-decoration-style") === "double"
 				? ("double" as const)
 				: undefined;
 		// visibility:hidden reserves the box (layout is untouched) but paints
 		// nothing of it -- unlike display:none, which removes the box entirely. A
 		// descendant that sets visibility:visible still paints, since visibility
 		// inherits and each element resolves its own computed value here.
-		const visible =
-			this.#window.getComputedStyle(element).getPropertyValue("visibility") !==
-			"hidden";
+		const visible = computed.getPropertyValue("visibility") !== "hidden";
 
 		// background-color: Canvas -- the CSS system color for the document
 		// background -- clears the box to the terminal's DEFAULT background:
@@ -406,11 +398,7 @@ export class Painter {
 			for (const [edge, prop] of edgeColorProps) {
 				if (
 					borderStyles[edge] > 0 &&
-					this.#window
-						.getComputedStyle(element)
-						.getPropertyValue(prop)
-						.trim()
-						.toLowerCase() === "transparent"
+					computed.getPropertyValue(prop).trim().toLowerCase() === "transparent"
 				) {
 					borderStyles[edge] = 0;
 				}
@@ -426,9 +414,7 @@ export class Painter {
 				// authored anywhere, the terminal's DEFAULT foreground. Never a
 				// hardcoded white: no theme-safe color exists, and forcing one
 				// breaks light terminals.
-				const borderColor = this.#window
-					.getComputedStyle(element)
-					.getPropertyValue("border-top-color");
+				const borderColor = computed.getPropertyValue("border-top-color");
 				const borderCellStyle = {
 					fg:
 						borderColor &&
