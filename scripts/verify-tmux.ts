@@ -155,7 +155,7 @@ const scenarios: Scenario[] = [
 	},
 	{
 		name: "resize: a widening resize adds nothing to the scrollback",
-		command: "node examples/flexbox-demo.ts",
+		command: "node examples/flexbox.ts",
 		cols: 60,
 		run: async (pane) => {
 			assert(
@@ -169,14 +169,14 @@ const scenarios: Scenario[] = [
 				`widening resize pushed ${depth} rows into scrollback`,
 			);
 			assert(
-				pane.screen().some((l) => l.includes("TTY Flexbox Demo")),
+				pane.screen().some((l) => l.includes("TermDOM flexbox")),
 				"frame missing after resize",
 			);
 		},
 	},
 	{
 		name: "resize: narrowing garbage stays within the terminal's own reflow",
-		command: "node examples/flexbox-demo.ts",
+		command: "node examples/flexbox.ts",
 		cols: 100,
 		run: async (pane) => {
 			await pane.resize(60, 30);
@@ -189,7 +189,7 @@ const scenarios: Scenario[] = [
 				`narrowing left ${depth} scrollback rows -- more than one reflowed frame`,
 			);
 			assert(
-				pane.screen().some((l) => l.includes("TTY Flexbox Demo")),
+				pane.screen().some((l) => l.includes("TermDOM flexbox")),
 				"frame missing after resize",
 			);
 		},

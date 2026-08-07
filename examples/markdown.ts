@@ -1,17 +1,3 @@
-#!/usr/bin/env node
-// Render a Markdown file to the terminal: `marked` (an unmodified web library)
-// turns it into HTML, TermDOM renders that HTML with a small CSS theme. A good
-// stress test -- headings, lists, tables, code, blockquotes, task lists, rules
-// all in one document.
-//
-// If the rendered page fits the viewport it prints and exits (flow mode); if it
-// is taller, it stays open as a pager and the camera scrolls over it.
-//
-//   node examples/markdown.ts [file.md]
-//
-//   space / f     page down     b        page up
-//   j / Down      line down     k / Up   line up
-//   g / G         top / bottom  q        quit
 import {TermDOM} from "@b9g/termdom";
 import {marked} from "marked";
 import {markedHighlight} from "marked-highlight";
@@ -102,7 +88,6 @@ article.innerHTML = html;
 document.body.appendChild(article);
 
 // Let layout settle and the first frame paint before measuring the page.
-await new Promise<void>((r) => window.requestAnimationFrame(() => r()));
 await new Promise<void>((r) => window.requestAnimationFrame(() => r()));
 
 // Flow mode: a page that fits (or output that isn't a terminal, e.g. piped to a

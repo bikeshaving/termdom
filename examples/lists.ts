@@ -252,7 +252,8 @@ container.appendChild(mixedSection);
 
 document.body.appendChild(container);
 
-await new Promise<void>((r) => term.window.requestAnimationFrame(() => r()));
+// One frame: by the time a requestAnimationFrame callback runs, the frame
+// including every pending mutation has been painted. Two is superstition.
 await new Promise<void>((r) => term.window.requestAnimationFrame(() => r()));
 
 process.exit(0);

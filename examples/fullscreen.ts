@@ -1,12 +1,3 @@
-// Fullscreen: requestFullscreen() takes an element to the alternate
-// screen, where the UA :fullscreen treatment sizes it to the viewport --
-// so flex centering, backgrounds and live updates all just work there.
-// Exiting restores the document (and the terminal's scrollback) intact.
-//
-//   node examples/fullscreen-demo.ts
-//
-//   f  toggle fullscreen    q  quit
-
 import {TermDOM} from "@b9g/termdom";
 
 const term = new TermDOM();

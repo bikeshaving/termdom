@@ -21,12 +21,12 @@ header.style.padding = "1px 1px 1px 1px";
 mainContainer.appendChild(header);
 
 const headerTitle = document.createElement("span");
-headerTitle.textContent = "🚀 TTY Flexbox Demo";
+headerTitle.textContent = "🚀 TermDOM flexbox";
 headerTitle.style.color = "white";
 header.appendChild(headerTitle);
 
 const headerSubtitle = document.createElement("span");
-headerSubtitle.textContent = "Terminal Object Model";
+headerSubtitle.textContent = "HTML · CSS · DOM → cells";
 headerSubtitle.style.textAlign = "right";
 headerSubtitle.style.color = "white";
 header.appendChild(headerSubtitle);
@@ -79,7 +79,7 @@ mainContent.appendChild(contentTitle);
 
 const contentText = document.createElement("span");
 contentText.textContent =
-	"This demonstrates flexbox layout with nested containers. The layout automatically adjusts based on flexDirection properties: column for vertical stacking, row for horizontal arrangement.";
+	"Flex rows and columns, gap, grow and shrink -- resolved by a spec flexbox engine and painted to whole cells. Multi-line markup lays out as in a browser: whitespace between items is not an item.";
 contentText.style.color = "white";
 contentText.style.padding = "1px 0px 1px 0px";
 mainContent.appendChild(contentText);
@@ -92,9 +92,9 @@ featuresContainer.style.padding = "1px 0px 0px 0px";
 mainContent.appendChild(featuresContainer);
 
 const features = [
-	{title: "🎨 Styling", desc: "Rich terminal colors and formatting"},
-	{title: "📐 Layout", desc: "Flexbox-based positioning system"},
-	{title: "⚡ Performance", desc: "Efficient ScreenBuffer rendering"},
+	{title: "🎨 Styling", desc: "One cascade: sheets, inline, var(), :has()"},
+	{title: "📐 Layout", desc: "Flex, tables, margin collapsing"},
+	{title: "🧩 Widgets", desc: "Inputs and selects as UA shadow trees"},
 ];
 
 for (const feature of features) {
@@ -128,11 +128,11 @@ footer.style.padding = "1px 2px 1px 2px";
 mainContainer.appendChild(footer);
 
 const footerText = document.createElement("span");
-footerText.textContent = "© 2024 Terminal Object Model";
+footerText.textContent = "© 2026 TermDOM";
 footerText.style.color = "white";
 footer.appendChild(footerText);
 
 const footerVersion = document.createElement("span");
-footerVersion.textContent = "v1.0.0";
+footerVersion.textContent = "v0.1.0";
 footerVersion.style.color = "white";
 footer.appendChild(footerVersion);

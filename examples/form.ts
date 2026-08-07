@@ -1,11 +1,3 @@
-// A form, written like a web page: <input> elements, focus(), "input" events,
-// and a live preview that re-renders as you type. Everything interactive here
-// is the DOM's own machinery -- Tab/Shift+Tab move focus, arrows and
-// Home/End/Backspace edit, and typing lands in whichever input is focused.
-//
-//   node examples/form.ts
-//
-//   Tab/Shift+Tab  next/previous field    Enter  submit    Ctrl+C  quit
 import {TermDOM} from "@b9g/termdom";
 
 const term = new TermDOM();
