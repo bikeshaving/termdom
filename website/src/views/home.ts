@@ -67,6 +67,7 @@ const featureList = css`
 const HELLO = `import {TermDOM} from "@b9g/termdom";
 
 const term = new TermDOM();
+term.attach(); // take the terminal -- the only call that does
 const {document} = term;
 
 const box = document.createElement("div");

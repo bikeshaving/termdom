@@ -22,6 +22,8 @@ on it compiles to a single binary with `bun build --compile`, if you want one.
 import {TermDOM} from "@b9g/termdom";
 
 const term = new TermDOM();
+// Take the terminal. Nothing touches stdout before this call.
+term.attach();
 const {document} = term;
 
 const box = document.createElement("div");
@@ -33,10 +35,15 @@ box.textContent = "Hello, terminal";
 document.body.appendChild(box);
 ```
 
-There is no render call, and that is not a convenience — it is the same
-contract a browser gives you. Mutations are observed and painted on the next
-frame. Append a node, set a style, change some text: the frame that follows
-shows it.
+`attach()` is the only call that takes the terminal — construction and DOM
+mutation are inert until it runs, and an app that only wants static output
+can skip it entirely: `term.print()` writes the document once to stdout as
+ordinary command output, and `term.renderToString()` returns the ANSI string.
+
+After that there is no render call, and that is not a convenience — it is the
+same contract a browser gives you. Mutations are observed and painted on the
+next frame. Append a node, set a style, change some text: the frame that
+follows shows it.
 
 ## The one rule: everything is cells
 
