@@ -40,7 +40,7 @@ A task list (GitHub-flavoured, rendered as real checkboxes):
 
 > The best way to predict the future is to invent it.
 >
-> Terminals are just very wide, very short web pages.
+> Simple things should be simple, complex things should be possible.
 
 ## Code block
 

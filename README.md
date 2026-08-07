@@ -1,8 +1,6 @@
 # TermDOM
 
-**Build terminal UIs with HTML, CSS and the DOM.**
-
-Terminals are just very wide, very short web pages.
+**Build terminal apps with HTML, CSS and the DOM.**
 
 ```sh
 npm install @b9g/termdom
@@ -31,9 +29,7 @@ document.body.appendChild(box);
 ## What it is
 
 TermDOM is a rendering engine: a real DOM (via JSDOM) with real CSS layout,
-painted to terminal cells. No native or WASM dependency, no widget objects, no
-bespoke layout language — you write HTML and CSS, and the engine answers the
-way a browser would.
+painted to terminal cells.
 
 - **Layout** — block and inline flow, flexbox, tables, `position` and
   `z-index` stacking, margin collapsing, `overflow` clipping, percentage
@@ -45,31 +41,19 @@ way a browser would.
   are UA shadow trees with terminal-native default styling: flat underlined
   fields, `[ ]`/`( )` toggles, a focus accent. Style them with ordinary CSS,
   `::placeholder`, `::selection`, and `::part()`.
+- **Shadow DOM** — author shadow roots, slots, `:host`, scoped styles.
 - **Events** — keyboard (modifiers decoded), mouse (click, dblclick,
   wheel), focus, bracketed paste as real paste events, IME composition.
   `addEventListener`, capture phases, and delegation behave as on the web.
-- **Shadow DOM** — author shadow roots, slots, `:host`, scoped styles.
-- **The rest of the platform** — `getBoundingClientRect` (viewport-relative,
-  per spec), `elementFromPoint`, `scrollIntoView`, `matchMedia` (live),
-  `requestAnimationFrame` tied to real painted frames, `MutationObserver`,
-  `ResizeObserver`, the Fullscreen API (the alternate screen).
-
-## How it renders
-
-By default TermDOM renders **inline**, like any command: output starts at the
-cursor, earlier shell output stays where it was, taller-than-the-screen
-documents scroll with a camera (`window.scrollY` is real), and resizes
-re-anchor cleanly. Piped output (`node app.ts > out.txt`) renders once as
-plain lines with no control sequences. `element.requestFullscreen()` switches
-to the alternate screen and back.
+- **The rest of the platform** — `getBoundingClientRect`, `elementFromPoint`, `scrollIntoView`, `matchMedia`, `requestAnimationFrame`, `MutationObserver`,
+  `ResizeObserver`, the Fullscreen API.
 
 ## Examples
 
 Ordinary Node programs in [`examples/`](./examples):
 
 - [`todomvc.ts`](./examples/todomvc.ts) — the official Crank TodoMVC,
-  component logic unmodified; only the stylesheet was swapped and the JSX
-  is Crank's `jsx` template tag, so plain `node` runs it.
+  component logic unmodified; only the stylesheet was swapped.
 - [`markdown.ts`](./examples/markdown.ts) — a Markdown viewer (marked +
   Prism): flow mode when it fits, a pager when it doesn't.
 - [`chat.ts`](./examples/chat.ts) — a streaming LLM chat client as a web
