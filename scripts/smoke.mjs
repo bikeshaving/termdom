@@ -114,7 +114,7 @@ document.body.innerHTML = `
 		<div style="flex:1">MIDDLE</div>
 		<div style="width:5ch">right</div>
 	</div>`;
-await new Promise((r) => term.window.requestAnimationFrame(() => r()));
+// Same as the width section: geometry reads flush layout synchronously.
 
 const boxes = [...document.querySelectorAll("div div")].map((el) =>
 	el.getBoundingClientRect(),
