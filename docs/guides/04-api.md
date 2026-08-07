@@ -1,11 +1,7 @@
 ---
 title: API
-description: The TermDOM class, the TerminalTransport contract, and the process wrapper — the entire surface that isn't the DOM itself.
+description: The TermDOM class, the TerminalTransport interface, and transportFromProcess.
 ---
-
-Almost everything in TermDOM is the DOM: `document`, `window`, elements,
-events, observers, all behaving as they do in a browser. This page documents
-the part that isn't — one class, one interface, and one function.
 
 ## `new TermDOM(options?)`
 
@@ -15,66 +11,62 @@ import {TermDOM} from "@b9g/termdom";
 const term = new TermDOM();
 ```
 
-Construction is inert: no bytes are written, no terminal modes change, and
-input is untouched until `attach()`. The document is live immediately —
-build it, style it, measure it with `getBoundingClientRect()` — all before
-(or without) taking the terminal.
+Construction writes nothing to the terminal and changes no terminal modes.
+The document is usable immediately: it can be built, styled, and measured
+before `attach()` is called, or without calling it at all.
 
 Options:
 
-- `transport` — the terminal to render to, as a [`TerminalTransport`](#terminaltransport).
-  Defaults to a wrapper around the global `process`, so the zero-config path
-  renders to the real terminal.
+- `transport?: TerminalTransport` — the terminal to render to. Defaults to
+  `transportFromProcess()`, a wrapper around the global `process`.
 
 ### `term.document`, `term.window`
 
-The DOM. `document` is a real `Document`; `window` carries the platform:
-`requestAnimationFrame` (resolves when the frame that includes your pending
-mutations has been written), `matchMedia`, `getSelection`, scrolling
-(`scrollY`, `scrollTo`, `scrollBy`), `innerWidth`/`innerHeight` in cells,
-and the observers.
+The DOM. `document` is a `Document`; `window` provides
+`requestAnimationFrame` (resolves after the frame that includes your pending
+mutations has been written), `matchMedia`, `getSelection`, `scrollY`,
+`scrollTo`, `scrollBy`, `innerWidth`/`innerHeight` (in cells),
+`MutationObserver`, `ResizeObserver`, and `IntersectionObserver`.
 
-Two window members reach the terminal itself:
+Two members reach the terminal:
 
-- **`window.close()`** — end the session, the way it closes a tab: the final
-  frame is flushed to scrollback, modes are restored, and the transport is
-  closed. On the default process transport that exits the process. An
-  unhandled Ctrl-C performs exactly this call as its default action; handle
-  `keydown` and `preventDefault()` to override it.
-- **`document.title`** — sets the terminal's window title (OSC 2, in-band).
+- **`window.close()`** — flushes the final frame to scrollback, restores
+  terminal modes, disposes the instance, and calls `transport.close({code: 0})`.
+  On the default process transport this exits the process. An unhandled
+  Ctrl-C performs this call as its default action; a `keydown` listener that
+  calls `preventDefault()` overrides it.
+- **`document.title`** — setting it sets the terminal window title (OSC 2).
   The previous title is saved on `attach()` and restored on `dispose()`.
 
 ### `term.attach(transport?)`
 
-Take the terminal. This is the only call that does: raw mode, input,
-mouse reporting, bracketed paste, and capability negotiation all begin here,
-and the document paints whatever it already holds. Idempotent.
+Takes the terminal: raw mode, input handling, mouse reporting, bracketed
+paste, and capability negotiation begin here, and the document paints
+whatever it holds. Idempotent. No other call writes to the terminal.
 
-Passing a transport rebinds the instance to it — allowed only before the
-first attach.
+Passing a transport rebinds the instance to it. Rebinding is only allowed
+before the first attach.
 
 ### `term.renderToString(lineEnding?)`
 
-The document as an ANSI string: colors and line breaks, no cursor controls,
-no modes. Needs no `attach()` and touches nothing. For files, tests, and
-piped output.
+Returns the rendered document as an ANSI string: colors and line breaks
+only, no cursor controls or mode changes. Does not require `attach()`.
+`lineEnding` is `"\n"` (default) or `"\r\n"`.
 
 ### `term.print()`
 
-`renderToString()` written to the transport once, as ordinary command
-output — `console.log` for a DOM. No takeover.
+Writes `renderToString()` to the transport once, as ordinary command
+output. Does not require `attach()`.
 
 ### `term.dispose()`
 
-Reverse of `attach()`: flush the document into scrollback, restore every
-mode and the title, release the transport, and tear down timers and
-listeners. `using term = new TermDOM()` disposes on scope exit.
+Reverses `attach()`: flushes the document into scrollback, restores every
+terminal mode and the title, releases the transport, and clears all timers
+and listeners. `using term = new TermDOM()` disposes on scope exit.
 
 ## `TerminalTransport`
 
-The wire between the engine and a terminal — a structural interface modeled
-on the common subset of WebTransport and WebSocketStream, so a future
-network relay speaks it natively:
+The interface between the engine and a terminal:
 
 ```ts
 interface TerminalTransport {
@@ -86,24 +78,27 @@ interface TerminalTransport {
 	readonly closed: Promise<TerminalCloseInfo | void>;
 	close?(info?: {code?: number; reason?: string}): void;
 	colorDepth?: "ansi" | "256" | "rgb"; // absent = rgb
-	interactive?: boolean; // absent = true; false = piped output
-	sharesScreen?: boolean; // prior content above: anchor at the cursor
+	interactive?: boolean; // absent = true; false = plain line output
+	sharesScreen?: boolean; // screen has prior content: anchor at the cursor
 }
 ```
 
-You read *from* the terminal (keystrokes) and write *to* it (frames), the
-`WebSocketStream` orientation. `closed` settles when the terminal goes away
-(hangup, disconnect); `close()` is the app being done with it — an exit
-code on the process, `channel.end()` on an SSH relay, the embedder's own
-decision under xterm.js.
-
-Anything satisfying this shape is a terminal: a Node process via
-`transportFromProcess` (the default), an xterm.js instance behind a
-fifteen-line adapter, an SSH PTY channel.
+- `readable` carries user input: keystrokes, mouse reports, paste bursts,
+  and replies to queries. `writable` receives frames.
+- `resizes` emits the new size whenever the terminal is resized.
+- `closed` settles when the terminal goes away (hangup, disconnect). The
+  engine disposes in response.
+- `close(info)` is called by `window.close()`. The process transport calls
+  `process.exit(info.code)`; other transports define their own behavior.
+- `interactive: false` disables cursor-addressed frames; output is written
+  as plain appended lines.
+- `sharesScreen: true` makes rendering anchor at the current cursor row
+  (found with a DSR query) instead of row 0. When absent, the default
+  process transport anchors and injected transports do not.
 
 ## `transportFromProcess(proc?, options?)`
 
-The default wrapper, exported for explicit use:
+Returns a `TerminalTransport` over a Node-process-shaped object.
 
 ```ts
 import {TermDOM, transportFromProcess} from "@b9g/termdom";
@@ -111,9 +106,12 @@ import {TermDOM, transportFromProcess} from "@b9g/termdom";
 const term = new TermDOM({transport: transportFromProcess(process)});
 ```
 
-Everything Node-shaped lives inside it: raw mode (engaged on first read,
-released on teardown), `SIGWINCH` → `resizes`, signal handling → `closed`,
-`TERM`/`COLORTERM` sniffing → `colorDepth`, `stdout.isTTY` → `interactive`,
-and a process exit hook that restores the cursor if an app dies without
-disposing. `proc` is a structural subset of Node's `process` (the
-`ProcessLike` type), so tests can hand it mocks.
+- `proc` — a structural subset of Node's `process` (the exported
+  `ProcessLike` type). Defaults to the global `process`.
+- `options.sharesScreen` — sets the transport's `sharesScreen` field.
+
+The wrapper owns all process-level behavior: raw mode (enabled on first
+read of `readable`, released on teardown), `SIGWINCH` → `resizes`, signal
+handling → `closed`, `TERM`/`COLORTERM` → `colorDepth`, `stdout.isTTY` →
+`interactive`, and a process exit hook that restores the cursor if the app
+exits without disposing.
