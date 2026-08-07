@@ -181,6 +181,34 @@ const scenarios: Scenario[] = [
 		},
 	},
 	{
+		name: "markdown pager: the fixed status bar pins while the camera scrolls",
+		command: "node examples/markdown.ts",
+		cols: 90,
+		rows: 16,
+		run: async (pane) => {
+			const bottom = () =>
+				pane
+					.screen()
+					.filter((l) => l.trim())
+					.pop() ?? "";
+			assert(
+				bottom().includes("sample") && bottom().includes("0%"),
+				"status bar missing from the viewport's bottom row",
+			);
+			pane.sendKeys("Space");
+			await sleep(900);
+			const after = bottom();
+			assert(
+				after.includes("sample"),
+				"status bar did not stay pinned through a page scroll",
+			);
+			assert(
+				!after.includes(" 0%"),
+				"the absolute-positioned percentage did not update",
+			);
+		},
+	},
+	{
 		name: "resize: a widening resize adds nothing to the scrollback",
 		command: "node examples/flexbox.ts",
 		cols: 60,
