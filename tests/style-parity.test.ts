@@ -32,6 +32,7 @@ const DECLARATIONS = [
 	"margin: 1px 2px 3px 4px",
 	"margin: auto",
 	"margin-left: auto",
+	"margin-top: -1px",
 	"padding: 1px 2px",
 	"padding: 0",
 	"display: none",

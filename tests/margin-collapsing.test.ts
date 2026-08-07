@@ -37,10 +37,6 @@ test("adjacent sibling margins collapse to the larger", async () => {
 	dom.dispose();
 });
 
-// Negative margins are unsupported engine-wide (parseUnitValue rejects any
-// non-digit-leading value in every margin path, not just collapsing), so the
-// most-negative half of the §8.3.1 combine rule stays untested until they are.
-
 test("a first child's margin collapses through a borderless-top parent", async () => {
 	// The blockquote case: border-left only, so the first paragraph's
 	// margin-top escapes the box. The bar starts at the first text row.
@@ -118,5 +114,40 @@ test("flex items never collapse margins", async () => {
 	const a = rectOf(dom, dom.document.getElementById("a")!);
 	const b = rectOf(dom, dom.document.getElementById("b")!);
 	expect(b.top - a.bottom).toBe(3);
+	dom.dispose();
+});
+
+test("a negative margin pulls the box up", async () => {
+	const {dom} = await layout(
+		`<div id="a">A</div><div id="b" style="margin-top:-1px">B</div>`,
+	);
+	const a = rectOf(dom, dom.document.getElementById("a")!);
+	const b = rectOf(dom, dom.document.getElementById("b")!);
+	// B overlaps A's row: the negative margin is real geometry, not clamped.
+	expect(b.top).toBe(a.bottom - 1);
+	dom.dispose();
+});
+
+test("a negative margin subtracts from the collapsed positive", async () => {
+	// §8.3.1: the collapsed margin is the largest positive plus the most
+	// negative of the adjoining set.
+	const {dom} = await layout(
+		`<div id="a" style="margin-bottom:2px">A</div>` +
+			`<div id="b" style="margin-top:-1px">B</div>`,
+	);
+	const a = rectOf(dom, dom.document.getElementById("a")!);
+	const b = rectOf(dom, dom.document.getElementById("b")!);
+	expect(b.top - a.bottom).toBe(1);
+	dom.dispose();
+});
+
+test("negative values stay rejected where CSS forbids them", async () => {
+	const {dom} = await layout(
+		`<div id="w" style="width:-5px;padding-top:-1px">x</div>`,
+	);
+	// Invalid declarations fall back: auto width fills the line, padding 0.
+	const w = rectOf(dom, dom.document.getElementById("w")!);
+	expect(w.width).toBe(60);
+	expect(w.height).toBe(1);
 	dom.dispose();
 });

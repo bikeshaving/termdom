@@ -2,7 +2,12 @@ import type {DOMWindow} from "jsdom";
 import Flex from "./flex.js";
 import type * as FlexTypes from "./flex.js";
 import LineBreaker from "linebreak";
-import {getBoxModel, parseBorderWidthValue, type BoxModel} from "./styles.js";
+import {
+	getBoxModel,
+	parseBorderWidthValue,
+	parseSignedUnitValue,
+	type BoxModel,
+} from "./styles.js";
 import {
 	getPropertyValue,
 	parseUnitValue,
@@ -189,7 +194,7 @@ function numericMargin(
 	element: Element,
 	property: "margin-top" | "margin-bottom",
 ): number {
-	const value = parseUnitValue(getPropertyValue(element, property));
+	const value = parseSignedUnitValue(getPropertyValue(element, property));
 	return typeof value === "number" ? value : 0;
 }
 
@@ -533,7 +538,7 @@ function styleFlexNode(
 		// Apply normal box model properties for block/inline-block elements
 
 		// Margins
-		const marginTop = parseUnitValue(
+		const marginTop = parseSignedUnitValue(
 			computedStyle.getPropertyValue("margin-top"),
 		);
 		if (typeof marginTop === "number") {
@@ -549,7 +554,7 @@ function styleFlexNode(
 			}
 		}
 
-		const marginRight = parseUnitValue(
+		const marginRight = parseSignedUnitValue(
 			computedStyle.getPropertyValue("margin-right"),
 		);
 		if (typeof marginRight === "number") {
@@ -565,7 +570,7 @@ function styleFlexNode(
 			}
 		}
 
-		const marginBottom = parseUnitValue(
+		const marginBottom = parseSignedUnitValue(
 			computedStyle.getPropertyValue("margin-bottom"),
 		);
 		if (typeof marginBottom === "number") {
@@ -581,7 +586,7 @@ function styleFlexNode(
 			}
 		}
 
-		const marginLeft = parseUnitValue(
+		const marginLeft = parseSignedUnitValue(
 			computedStyle.getPropertyValue("margin-left"),
 		);
 		if (typeof marginLeft === "number") {

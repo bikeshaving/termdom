@@ -297,6 +297,27 @@ export function shimInlineNoneErasure(style: object): void {
 }
 
 /**
+ * Lengths that may be negative: margins (and offsets). parseUnitValue's
+ * digit gate is the right default -- negative widths, paddings and borders
+ * are invalid CSS and must stay rejected -- so the sign lives in a separate
+ * parser the margin paths opt into.
+ */
+export function parseSignedUnitValue(
+	value: string,
+): ReturnType<typeof parseUnitValue> {
+	const trimmed = value?.trim();
+	if (trimmed?.startsWith("-")) {
+		const inner = parseUnitValue(trimmed.slice(1));
+		if (typeof inner === "number") return -inner;
+		if (inner && "percentage" in inner) {
+			return {percentage: -inner.percentage};
+		}
+		return null;
+	}
+	return parseUnitValue(value);
+}
+
+/**
  * Border widths, keywords included: thin/medium/thick all land on one cell
  * -- the grid cannot grade them, and medium is the initial that a bare
  * `border: solid` carries, which must be a VISIBLE border as in a browser.
@@ -337,16 +358,16 @@ export function getBoxModel(element: Element): BoxModel {
 	);
 
 	// Parse margin
-	const marginTop = parseUnitValue(
+	const marginTop = parseSignedUnitValue(
 		computedStyle.getPropertyValue("margin-top"),
 	);
-	const marginRight = parseUnitValue(
+	const marginRight = parseSignedUnitValue(
 		computedStyle.getPropertyValue("margin-right"),
 	);
-	const marginBottom = parseUnitValue(
+	const marginBottom = parseSignedUnitValue(
 		computedStyle.getPropertyValue("margin-bottom"),
 	);
-	const marginLeft = parseUnitValue(
+	const marginLeft = parseSignedUnitValue(
 		computedStyle.getPropertyValue("margin-left"),
 	);
 
