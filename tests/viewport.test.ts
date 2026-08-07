@@ -957,3 +957,53 @@ test("scroll-transform frames match a full repaint exactly", async () => {
 	const direct = await render([5]);
 	expect(upAndDown).toEqual(direct);
 });
+
+test("bounded-damage frames match a full repaint exactly", async () => {
+	// Keystroke-shaped work: each step scrolls AND mutates -- a status-bar
+	// percentage in fixed space, and a selected-class flip on a row. Bounded
+	// damage rides the banded transform; the same operations done in one
+	// jump take the full diff. The screens must be identical.
+	const content =
+		`<style>.row.selected { background-color: #264f78; color: #ffffff; }</style>` +
+		Array.from(
+			{length: 40},
+			(_, i) => `<div class="row" id="r${i}">row ${i} content here</div>`,
+		).join("") +
+		`<div style="position:fixed;bottom:0;left:0;right:0;background-color:#333">bar <span id="pct">0%</span></div>`;
+
+	const render = async (steps: number): Promise<string> => {
+		const terminal = new MockProcess({cols: 40, rows: 10});
+		const dom = new TermDOM({transport: terminal.transport});
+		dom.attach();
+		dom.document.body.innerHTML = content;
+		await nextFrame(dom);
+		const doc = dom.document;
+		if (steps === 1) {
+			// One jump: scroll, select, and set the percentage in one frame.
+			dom.window.scrollBy(0, 8);
+			doc.getElementById("r10")!.classList.add("selected");
+			doc.getElementById("pct")!.textContent = "80%";
+			await nextFrame(dom);
+		} else {
+			for (let i = 0; i < 8; i++) {
+				dom.window.scrollBy(0, 1);
+				doc.querySelector(".row.selected")?.classList.remove("selected");
+				doc.getElementById(`r${3 + i}`)!.classList.add("selected");
+				doc.getElementById("pct")!.textContent = `${(i + 1) * 10}%`;
+				await nextFrame(dom);
+			}
+			doc.querySelector(".row.selected")?.classList.remove("selected");
+			doc.getElementById("r10")!.classList.add("selected");
+			await nextFrame(dom);
+		}
+		const text = terminal
+			.getVisibleText()
+			.split("\n")
+			.map((line) => line.trimEnd())
+			.join("\n");
+		dom.dispose();
+		return text;
+	};
+
+	expect(await render(8)).toEqual(await render(1));
+});

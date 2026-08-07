@@ -1310,9 +1310,10 @@ export class Renderer {
 		// Anything impure -- a reset pending, a growth frame, no previous
 		// frame -- falls through to the ordinary full diff.
 		let scrollPrefix = "";
+		// delta 0 is a banded repaint with no terminal scroll: mutations whose
+		// damage is bounded repaint their rows over a seeded, unshifted model.
 		const scrolling =
 			scroll !== undefined &&
-			scroll.delta !== 0 &&
 			Math.abs(scroll.delta) < this.#rows &&
 			this.#prevBuffer !== null &&
 			!overflowing &&
@@ -1325,6 +1326,7 @@ export class Renderer {
 			const regionEnd = Math.min(regionRows ?? this.#rows, this.#rows);
 
 			// Shift the model: screen row r now shows what was at r + delta.
+			// A zero delta shifts nothing -- the model already matches.
 			const prev = this.#prevBuffer;
 			const shifted: CellBuffer = [];
 			for (let row = 0; row < prev.length; row++) {
@@ -1365,12 +1367,15 @@ export class Renderer {
 
 			// DECSTBM homes the cursor, so position after resetting margins is
 			// the standard prefix's problem (it always CUPs for this caller).
-			const count = Math.abs(delta);
-			scrollPrefix =
-				`\x1b[${regionTop + 1};${regionEnd}r` +
-				`\x1b[${regionTop + 1};1H` +
-				(delta > 0 ? `\x1b[${count}M` : `\x1b[${count}L`) +
-				"\x1b[r";
+			// A zero delta needs no terminal scroll at all.
+			if (delta !== 0) {
+				const count = Math.abs(delta);
+				scrollPrefix =
+					`\x1b[${regionTop + 1};${regionEnd}r` +
+					`\x1b[${regionTop + 1};1H` +
+					(delta > 0 ? `\x1b[${count}M` : `\x1b[${count}L`) +
+					"\x1b[r";
+			}
 		}
 
 		// Create drawing context and execute drawing operations

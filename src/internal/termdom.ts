@@ -30,9 +30,11 @@ import {
 	compositionIsConnected,
 	compositionParentElement,
 	currentCompositionEpoch,
+	currentStructuralGeneration,
 	fieldCaretRange,
 	fieldValueText,
 	invalidateComposition,
+	invalidateStructure,
 } from "./composition.js";
 import {type UAWidgetController, defineUAWidgets} from "./widgets.js";
 
@@ -319,6 +321,42 @@ export class TermDOM {
 	#inputGeneration = 0;
 	#lastFrameInputGeneration = -1;
 	#lastFrameActiveElement: Element | null = null;
+	// Mouse input is tracked separately: it can flip :hover anywhere on the
+	// screen, which no damage set can bound. Keyboard input's reactive
+	// effects (:focus, :active) name their elements.
+	#mouseGeneration = 0;
+	#lastFrameMouseGeneration = -1;
+	#lastFrameStructuralGeneration = -1;
+	#lastFrameSelectionLive = false;
+
+	// The elements this frame's mutations touched, with the layout rect each
+	// held BEFORE relayout -- the two positions a banded repaint must cover.
+	// Null once the damage stopped being worth bounding; a full repaint
+	// follows. Cleared after every painted frame.
+	#frameDamage: Map<Element, DOMRect | null> | null = new Map();
+
+	#addFrameDamage(node: Node): void {
+		if (!this.#frameDamage) return;
+		const element =
+			node.nodeType === node.ELEMENT_NODE
+				? (node as Element)
+				: (node.parentElement ?? null);
+		if (!element) {
+			this.#frameDamage = null;
+			return;
+		}
+		if (this.#frameDamage.has(element)) return;
+		if (this.#frameDamage.size >= 24) {
+			this.#frameDamage = null;
+			return;
+		}
+		// The rect BEFORE this frame's relayout: getRect answers from the
+		// last computed layout until calculateLayout runs.
+		this.#frameDamage.set(
+			element,
+			(this[kLayoutEngine].getRect(element) as DOMRect | null) ?? null,
+		);
+	}
 
 	// Bumped on every SIGWINCH. The re-anchor waits on an async cursor query;
 	// if another resize lands while it is in flight, the stale response must not
@@ -1070,9 +1108,8 @@ export class TermDOM {
 			// tree; the refresh rides on the STYLE mutation records the
 			// observer enrollment above will deliver.
 			// A shadow attachment recomposes the host's subtree with no
-			// mutation record; the flat-tree memo and the clean-frame skip
-			// both key off the epoch.
-			invalidateComposition();
+			// mutation record: unbounded for any banded repaint.
+			invalidateStructure();
 			termDOM.#styleManager.registerShadowRoot(root);
 			// attachShadow is not a DOM mutation -- no observer record will
 			// ever fire for it -- but on a CONNECTED host the composed tree
@@ -1283,6 +1320,19 @@ export class TermDOM {
 		// Any observed mutation can move a node in the flat tree; drop the
 		// memoized composition links before anything reads through them.
 		invalidateComposition();
+		// Record the damage while the old layout still answers: the target's
+		// pre-mutation rows are half of what a banded repaint must cover.
+		for (const mutation of mutations) {
+			this.#addFrameDamage(mutation.target);
+			if (mutation.type === "childList") {
+				for (const node of mutation.addedNodes) this.#addFrameDamage(node);
+				for (const node of mutation.removedNodes) {
+					// A removed node has no rect and no rows of its own left;
+					// its damage is its old parent's, already added above.
+					void node;
+				}
+			}
+		}
 		// Attribute records whose value did not actually change are dropped
 		// before any handler sees them. Frameworks (and this repo's own
 		// examples) re-assign className/style with identical values on every
@@ -1366,6 +1416,7 @@ export class TermDOM {
 				},
 				onMouse: (button, x, y, release) => {
 					this.#inputGeneration++;
+					this.#mouseGeneration++;
 					this.#handleMouseReport(button, x, y, release);
 				},
 				onPaste: (text) => {
@@ -2821,57 +2872,131 @@ export class TermDOM {
 			this.#viewport.scrollTop = Math.min(this.#viewport.scrollTop, maxScroll);
 		}
 
-		// A frame whose only difference from the last one is the camera is a
-		// rigid transform: the terminal scrolls the region itself (DECSTBM +
-		// DL/IL, never touching the scrollback), and only the exposed band
-		// plus fixed-content rows repaint. Gated hard: full-viewport document
-		// mode, no invalidation of any kind since the last frame (the
-		// composition epoch hears mutations, style changes and attachments),
-		// no drag selection in progress. Everything else takes the full diff.
+		// A frame is a TRANSFORM when everything that changed since the last
+		// one is bounded: the camera (a rigid shift the terminal performs via
+		// DECSTBM + DL/IL, never touching the scrollback), plus mutations and
+		// style flips whose damage names its elements. The exposed band, the
+		// fixed rows (at real and shifted positions), the focused field, and
+		// every damaged element's old and new rows repaint; nothing else is
+		// even walked. Anything unbounded -- a structural event, mouse input
+		// (:hover can flip anywhere), a live selection, a drag, a geometry
+		// change that can cascade -- takes the full diff.
 		let scroll: {delta: number; bands: Array<[number, number]>} | undefined;
 		const scrollTop = this.#viewport.scrollTop;
-		if (
+		const styleDamage = this.#styleManager.drainStyleDamage();
+		const frameDamage = this.#frameDamage;
+		this.#frameDamage = new Map();
+		const documentSelection = this.window.getSelection?.();
+		const liveSelection = Boolean(
+			documentSelection &&
+				documentSelection.rangeCount > 0 &&
+				!documentSelection.isCollapsed,
+		);
+		transform: if (
 			!isFullscreen &&
 			top === 0 &&
 			regionHeight === this.#height &&
 			this.#lastFrameScrollTop !== null &&
-			scrollTop !== this.#lastFrameScrollTop &&
-			currentCompositionEpoch() === this.#lastFrameEpoch &&
+			currentStructuralGeneration() === this.#lastFrameStructuralGeneration &&
+			this.#mouseGeneration === this.#lastFrameMouseGeneration &&
+			!liveSelection &&
+			!this.#lastFrameSelectionLive &&
 			this.#selectionDragAnchor === null &&
 			this.#fieldDragAnchor === null &&
-			!this.#resizeInProgress
+			!this.#resizeInProgress &&
+			frameDamage !== null &&
+			styleDamage !== null
 		) {
 			const delta = scrollTop - this.#lastFrameScrollTop;
-			if (Math.abs(delta) < regionHeight) {
-				const bands: Array<[number, number]> =
-					delta > 0 ? [[regionHeight - delta, regionHeight]] : [[0, -delta]];
-				for (const band of this[kLayoutEngine].fixedRowBands(this.#height)) {
-					bands.push(band);
-					// The terminal's scroll moved the fixed content along with
-					// everything else, leaving a stale copy at the shifted
-					// position; that row must repaint from the document too, or
-					// the ghost survives (model and screen agree on it, so the
-					// diff alone never corrects it).
-					const ghostStart = Math.max(0, band[0] - delta);
-					const ghostEnd = Math.min(regionHeight, band[1] - delta);
-					if (ghostEnd > ghostStart) bands.push([ghostStart, ghostEnd]);
+			if (Math.abs(delta) >= regionHeight) break transform;
+			if (delta === 0 && frameDamage.size === 0 && styleDamage.size === 0) {
+				break transform;
+			}
+
+			const bands: Array<[number, number]> = [];
+			const addBand = (start: number, end: number): void => {
+				const clampedStart = Math.max(0, Math.floor(start));
+				const clampedEnd = Math.min(regionHeight, Math.ceil(end));
+				if (clampedEnd > clampedStart) bands.push([clampedStart, clampedEnd]);
+			};
+
+			if (delta > 0) addBand(regionHeight - delta, regionHeight);
+			else if (delta < 0) addBand(0, -delta);
+			for (const band of this[kLayoutEngine].fixedRowBands(this.#height)) {
+				addBand(band[0], band[1]);
+				// The terminal's scroll moved fixed content along with everything
+				// else, leaving a stale copy at the shifted position; that row
+				// must repaint from the document too, or the ghost survives
+				// (model and screen agree on it, so the diff never corrects it).
+				if (delta !== 0) addBand(band[0] - delta, band[1] - delta);
+			}
+			// The focused field's rows repaint: its caret cell and the real
+			// cursor park come from the painter visiting it.
+			const active = this.document.activeElement;
+			if (active && UPGRADEABLE_CONTROLS.has(active.tagName)) {
+				const rect = this[kLayoutEngine].getRect(active);
+				if (rect) {
+					addBand(rect.top - scrollTop, rect.top + rect.height - scrollTop);
 				}
-				// The focused field's rows repaint too: its caret cell and the
-				// real cursor park come from the painter visiting it.
-				const active = this.document.activeElement;
-				if (active && UPGRADEABLE_CONTROLS.has(active.tagName)) {
-					const rect = this[kLayoutEngine].getRect(active);
-					if (rect) {
-						const startRow = Math.max(0, Math.floor(rect.top - scrollTop));
-						const endRow = Math.min(
-							regionHeight,
-							Math.ceil(rect.top + rect.height - scrollTop),
-						);
-						if (endRow > startRow) bands.push([startRow, endRow]);
+			}
+
+			// A focus move flips :focus/:focus-visible on both elements.
+			const damaged = new Set<Element>(frameDamage.keys());
+			for (const element of styleDamage) damaged.add(element);
+			if (active !== this.#lastFrameActiveElement) {
+				if (active) damaged.add(active);
+				if (this.#lastFrameActiveElement) {
+					damaged.add(this.#lastFrameActiveElement);
+				}
+			}
+
+			for (const element of damaged) {
+				// The damage an element's change can reach is its selector
+				// invalidation scope; a scope of the whole document is unbounded,
+				// so the frame is not a transform.
+				const scope = this.#styleManager.invalidationScopeFor(element);
+				if (
+					scope === this.document.body ||
+					scope === this.document.documentElement
+				) {
+					break transform;
+				}
+				const before = frameDamage.get(element) ?? frameDamage.get(scope);
+				const after = this[kLayoutEngine].getRect(scope);
+				if (!after && !before) continue; // gone; the parent carries it
+				// A geometry change cascades: everything after the element may
+				// have moved, which no per-element damage can bound.
+				if (
+					before &&
+					after &&
+					(before.top !== after.top || before.height !== after.height)
+				) {
+					break transform;
+				}
+				const fixedSpace = this[kLayoutEngine].isInFixedSpace(scope);
+				if (after) {
+					const afterTop = fixedSpace ? after.top : after.top - scrollTop;
+					addBand(afterTop, afterTop + after.height);
+					// The shifted stale copy of the damaged rows, as for fixed.
+					if (delta !== 0) {
+						addBand(afterTop - delta, afterTop + after.height - delta);
 					}
 				}
-				scroll = {delta, bands};
+				if (before) {
+					const beforeTop = fixedSpace
+						? before.top
+						: before.top - this.#lastFrameScrollTop;
+					addBand(beforeTop - delta, beforeTop + before.height - delta);
+				}
 			}
+
+			// Past most of the region the transform stops paying for itself.
+			let coverage = 0;
+			for (const [start, end] of bands) coverage += end - start;
+			if (delta === 0 && bands.length === 0) break transform;
+			if (coverage > regionHeight * 0.75) break transform;
+
+			scroll = {delta, bands};
 		}
 
 		const ansi = this.#renderer.renderFrame(
@@ -2886,6 +3011,9 @@ export class TermDOM {
 		this.#lastFrameScrollTop = scrollTop;
 		this.#lastFrameEpoch = currentCompositionEpoch();
 		this.#lastFrameInputGeneration = this.#inputGeneration;
+		this.#lastFrameMouseGeneration = this.#mouseGeneration;
+		this.#lastFrameStructuralGeneration = currentStructuralGeneration();
+		this.#lastFrameSelectionLive = liveSelection;
 		this.#lastFrameActiveElement = this.document.activeElement;
 
 		if (ansi) await this.#write(ansi);

@@ -22,6 +22,7 @@ import {
 	ExpandedTreeWalker,
 	getPseudoMetadata,
 	invalidateComposition,
+	invalidateStructure,
 } from "./composition.js";
 import {
 	hasRTL,
@@ -1255,8 +1256,8 @@ export class LayoutEngine {
 	setTerminalReordersText(value: boolean): void {
 		// Flips the visual order of every RTL run without a mutation; the
 		// negotiation resolves long after attach, so the next frame must not
-		// be skipped as clean.
-		invalidateComposition();
+		// be skipped as clean or banded.
+		invalidateStructure();
 		if (this.#terminalReordersText === value) return;
 		this.#terminalReordersText = value;
 		// Every cached line was built for the other contract.
@@ -3377,6 +3378,11 @@ export class LayoutEngine {
 	 * positioned boxes.
 	 */
 	/** Whether the element or any composed ancestor is position: fixed. */
+	/** Whether the element's containing-block chain reaches a fixed box. */
+	isInFixedSpace(element: Element): boolean {
+		return this.#inFixedSpace(element);
+	}
+
 	#inFixedSpace(element: Element): boolean {
 		for (
 			let el: Element | null = element;

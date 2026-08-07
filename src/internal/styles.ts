@@ -17,6 +17,7 @@ import {
 	getPseudoElement,
 	removePseudoElement,
 	invalidateComposition,
+	invalidateStructure,
 } from "./composition.js";
 import {type LayoutEngine} from "./layout.js";
 import {
@@ -1864,6 +1865,7 @@ export class StyleManager {
 	 * Parse all stylesheets in the document and extract rules
 	 */
 	#parseStylesheets(): void {
+		invalidateStructure();
 		const document = this.#document;
 		this.#parsedRules = [];
 		this.#selectorsReachSiblings = false;
@@ -2751,9 +2753,28 @@ export class StyleManager {
 	/**
 	 * Invalidate cached computed style for an element
 	 */
+	// Elements style-invalidated since the last drain; null once the count
+	// stopped being worth tracking. The engine drains this per frame to bound
+	// a banded repaint.
+	#pendingStyleDamage: Set<Element> | null = new Set();
+
+	/**
+	 * The style-invalidated elements since the last call, or null when the
+	 * set overflowed (treat as unbounded). Resets the accumulator.
+	 */
+	drainStyleDamage(): Set<Element> | null {
+		const damage = this.#pendingStyleDamage;
+		this.#pendingStyleDamage = new Set();
+		return damage;
+	}
+
 	invalidateElement(element: Element): void {
 		this.#computedStyleCache.delete(element);
 		this.#pseudoElementStyleCache.delete(element);
+		if (this.#pendingStyleDamage) {
+			this.#pendingStyleDamage.add(element);
+			if (this.#pendingStyleDamage.size > 24) this.#pendingStyleDamage = null;
+		}
 		// A style change can flip display: contents, which moves the node's
 		// flat-tree BOX parent; the composition memo must not outlive it.
 		invalidateComposition();

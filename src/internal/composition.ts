@@ -36,10 +36,28 @@ interface CompositionLinks {
 }
 const linkCache = new WeakMap<Node, CompositionLinks>();
 let compositionEpoch = 0;
+let structuralGeneration = 0;
 
 /** Drop every memoized flat-tree link; cheap, and correctness's big hammer. */
 export function invalidateComposition(): void {
 	compositionEpoch++;
+}
+
+/**
+ * An UNBOUNDED invalidation: a stylesheet reparse, a shadow attachment, a
+ * pseudo-element change, the bidi reorder flip -- events whose damage no
+ * per-element tracking can bound. Bumps the memo epoch too. Frames may only
+ * take a banded repaint while this generation holds still; bounded damage
+ * (mutation records, per-element style invalidation) is tracked by the
+ * engine instead and does NOT come through here.
+ */
+export function invalidateStructure(): void {
+	structuralGeneration++;
+	compositionEpoch++;
+}
+
+export function currentStructuralGeneration(): number {
+	return structuralGeneration;
 }
 
 /**
@@ -974,7 +992,7 @@ export function attachPseudoElement(
 	pseudoNode: Text,
 	pseudoType: string,
 ): void {
-	invalidateComposition();
+	invalidateStructure();
 	// Store pseudo-elements on the element using a symbol as a Record
 	if (!(element as any)[PSEUDO_ELEMENTS_SYMBOL]) {
 		(element as any)[PSEUDO_ELEMENTS_SYMBOL] = {};
@@ -1000,7 +1018,7 @@ export function removePseudoElement(
 	element: Element,
 	pseudoType: string,
 ): void {
-	invalidateComposition();
+	invalidateStructure();
 	const pseudos = (element as any)[PSEUDO_ELEMENTS_SYMBOL] as
 		| Record<string, Node>
 		| undefined;
@@ -1035,7 +1053,7 @@ export function getAllPseudoElements(element: Element): Record<string, Node> {
  * behavior authors are entitled to observe.
  */
 export function createUAShadowRoot(host: Element): ShadowRoot {
-	invalidateComposition();
+	invalidateStructure();
 	const document = host.ownerDocument;
 	if (!document) {
 		throw new Error("UA shadow root host must belong to a document");
@@ -1068,7 +1086,7 @@ export function createExpandedTreeWalker(
  * Set shadow root on an element using symbol storage
  */
 export function setShadowRoot(element: Element, shadowRoot: ShadowRoot): void {
-	invalidateComposition();
+	invalidateStructure();
 	(element as any)[SHADOW_ROOT_SYMBOL] = shadowRoot;
 }
 
