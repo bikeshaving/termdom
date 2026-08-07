@@ -2,18 +2,16 @@
 
 # Support
 
-Every row is measured, not asserted: the generator applies the feature to a
-real document, renders it to a terminal buffer, and reports whether anything
-a user could see actually changed -- the geometry of a box, or the cells
-painted. A property termdom parses and stores but never acts on counts as
-unsupported here, because to a user it is.
+The generator applies each feature to a real document, renders it to a
+terminal buffer, and records whether the output changed. A property that
+is parsed and stored but never affects rendering is listed as unsupported.
 
 Of the 487 standard CSS properties in `mdn-data`:
 
-- **93 supported**, measured.
-- **118 probed and unsupported** -- real gaps.
-- **301 not applicable** to a character grid, by the reasons below.
-- **0 unclassified** -- work left to do.
+- **93 supported**
+- **118 unsupported**
+- **301 not applicable** to a character grid, for the reasons below
+- **0 unclassified**
 
 Non-property features (selectors, at-rules, DOM APIs) are probed the same
 way and counted in the first two figures.

@@ -1,4 +1,5 @@
 import {jsx} from "@b9g/crank/standalone";
+import {Marked} from "@b9g/crankdown";
 import {css} from "@emotion/css";
 
 import {Root} from "../components/root.js";
@@ -66,7 +67,11 @@ const EXAMPLES: Array<{file: string; shows: string}> = [
 	{file: "lists.ts", shows: "Markers, counters and nested list gutters."},
 ];
 
-export default function Examples({url}: {url: string}) {
+export default async function Examples({url}: {url: string}) {
+	const contentDir = await self.directories.open("content");
+	const file = await (await contentDir.getFileHandle("examples.md")).getFile();
+	const intro = await file.text();
+
 	return jsx`
 		<${Root}
 			title="TermDOM | Examples"
@@ -79,20 +84,7 @@ export default function Examples({url}: {url: string}) {
 				padding: 5rem 1.2rem 2rem;
 			`}>
 				<h1>Examples</h1>
-				<p>
-					Every example below is a single file in the repository. Clone it, run
-					<code>npm install &amp;&amp; npm run build</code> once, then run any of
-					them with <code>node examples/&lt;file&gt;</code>.
-				</p>
-				<p class=${css`
-					color: var(--muted-color);
-					font-size: 0.9rem;
-				`}>
-					Each one imports <code>@b9g/termdom</code> exactly as your own code
-					would, so they run on Node, Bun and Deno alike. The exception is
-					<code>todomvc.tsx</code>, which is JSX and needs a transform ${" — "}
-					run it with Bun, or any JSX-aware runner.
-				</p>
+				<${Marked} markdown=${intro} components=${undefined} />
 
 				<table>
 					<thead>

@@ -1,6 +1,7 @@
 import {jsx} from "@b9g/crank/standalone";
 
 import {CodeBlock} from "./code-block.js";
+import {CastPlayer} from "./cast-player.js";
 
 /**
  * Overrides for the markdown renderer.
@@ -13,6 +14,21 @@ export const components = {
 	code({token}: any) {
 		const {text, lang} = token;
 		return jsx`<${CodeBlock} code=${text} lang=${lang || "ts"} />`;
+	},
+
+	/** `![caption](cast:name)` embeds a recording via the casts map the
+	 * view passes as a prop on Marked. */
+	image({token, rootProps}: any) {
+		const {href, text} = token;
+		if (href?.startsWith("cast:") && rootProps.casts?.[href.slice(5)]) {
+			return jsx`<${CastPlayer}
+				src=${rootProps.casts[href.slice(5)]}
+				rows=${24}
+				cols=${78}
+				caption=${text}
+			/>`;
+		}
+		return jsx`<img src=${href} alt=${text} />`;
 	},
 
 	link({token, rootProps, children}: any) {
