@@ -11,8 +11,9 @@ const boxes = Array.from(
 );
 
 if (boxes.length > 0) {
+	// The player's stylesheet is a real <link> in the document head (see
+	// root.ts): dynamically import()ing a .css file bundles to a no-op.
 	const playerModule = import("asciinema-player");
-	import("asciinema-player/dist/bundle/asciinema-player.css");
 
 	const mount = async (box: HTMLElement): Promise<void> => {
 		const player = await playerModule;

@@ -59,6 +59,7 @@ export function* Root(
 					<link rel="shortcut icon" href=${assets.favicon} />
 					<style><${Raw} value=${css} /></style>
 					<link rel="stylesheet" type="text/css" href=${assets.clientCSS} />
+					<link rel="stylesheet" type="text/css" href=${assets.asciinemaCSS} />
 					<meta name="description" content=${description} />
 					<meta property="og:type" content="website" />
 					<meta property="og:title" content=${title} />

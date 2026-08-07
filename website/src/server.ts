@@ -15,6 +15,10 @@ import NotFoundView from "./views/not-found.js";
 // Asset imports. Shovel bundles each one and hands back a content-hashed URL,
 // so nothing here is a hardcoded path.
 import clientCSS from "./styles/client.css" with {assetBase: "/static/"};
+// The player's stylesheet ships as a real <link>: a dynamic import() of a
+// .css file bundles to a no-op module, which left the player unstyled --
+// giant raw SVG controls and a collapsed terminal box.
+import asciinemaCSS from "asciinema-player/dist/bundle/asciinema-player.css" with {assetBase: "/static/"};
 import navbarScript from "./clients/navbar.ts" with {assetBase: "/static/"};
 import castsScript from "./clients/casts.ts" with {assetBase: "/static/"};
 import searchScript from "./clients/search.ts" with {assetBase: "/static/"};
@@ -29,6 +33,7 @@ import formCast from "../static/casts/form.cast" with {assetBase: "/static/", as
 
 export const assets = {
 	clientCSS,
+	asciinemaCSS,
 	navbarScript,
 	castsScript,
 	searchScript,
