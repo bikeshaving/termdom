@@ -53,3 +53,55 @@ test("geometry reads work unattached, and stay silent", async () => {
 	expect(writes.count()).toBe(0);
 	dom.dispose();
 });
+
+test("dispose() before attach() writes nothing", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 8});
+	const writes = countWrites(terminal);
+	const dom = new TermDOM({process: terminal});
+	dom.document.body.innerHTML = `<div>never shown</div>`;
+	await new Promise((r) => setTimeout(r, 20));
+	dom.dispose();
+	expect(writes.count()).toBe(0);
+});
+
+test("requestFullscreen before attach() rejects and stays silent", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 8});
+	const writes = countWrites(terminal);
+	const dom = new TermDOM({process: terminal});
+	dom.document.body.innerHTML = `<div id="stage">x</div>`;
+	await expect(
+		dom.document.getElementById("stage")!.requestFullscreen(),
+	).rejects.toThrow();
+	expect(writes.count()).toBe(0);
+	dom.dispose();
+});
+
+test("renderToString returns ANSI without attach or stdout", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 8});
+	const writes = countWrites(terminal);
+	const dom = new TermDOM({process: terminal});
+	dom.document.body.innerHTML = `<div style="color:red">static content</div>`;
+	const ansi = dom.renderToString();
+	expect(ansi).toContain("static content");
+	expect(ansi).toContain("\x1b[38;2;255;0;0m");
+	// A document string, not a terminal session: no modes, no cursor control.
+	expect(ansi).not.toContain("\x1b[?");
+	expect(ansi).not.toContain("\x1b[2J");
+	expect(writes.count()).toBe(0);
+	dom.dispose();
+});
+
+test("print() writes the document once, with no terminal takeover", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 8});
+	const writes = countWrites(terminal);
+	const dom = new TermDOM({process: terminal});
+	dom.document.body.innerHTML = `<div>printed line</div>`;
+	dom.print();
+	expect(writes.count()).toBe(1);
+	// The mock terminal ingests writes asynchronously; let it catch up.
+	await new Promise((r) => setTimeout(r, 20));
+	expect(terminal.getVisibleText()).toContain("printed line");
+	dom.dispose();
+	// dispose after a print still owes the terminal nothing.
+	expect(writes.count()).toBe(1);
+});

@@ -28,6 +28,12 @@ box.textContent = "Hello, terminal";
 document.body.appendChild(box);
 ```
 
+`attach()` is the only call that takes the terminal — construction and DOM
+mutation are inert. Non-interactive apps can skip it entirely:
+`term.renderToString()` returns the document as an ANSI string, and
+`term.print()` writes it once to stdout as ordinary command output — no raw
+mode, no takeover.
+
 ## What it is
 
 TermDOM is a rendering engine: a real DOM (via JSDOM) with real CSS layout,

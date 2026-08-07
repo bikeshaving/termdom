@@ -1104,6 +1104,14 @@ export class TermDOM {
 			this: Element,
 			options?: FullscreenOptions,
 		): Promise<void> {
+			// Fullscreen writes the alternate-screen switch; attach() is the
+			// only consent for that. A browser rejects without a user gesture,
+			// and this is the terminal's equivalent precondition.
+			if (!termDOM.#attached) {
+				return Promise.reject(
+					new Error("requestFullscreen(): attach() the terminal first"),
+				);
+			}
 			return (async () => {
 				// No frame may straddle the screen switch: an in-flight render
 				// finishing its stdout write AFTER the switch paints one
@@ -2760,23 +2768,48 @@ export class TermDOM {
 	#flushDocument(): void {
 		if (!this.#interactive) return;
 
-		const contentHeight = this.document.body.scrollHeight;
-		if (contentHeight === 0) return;
-
 		const top = this.#viewport.screenTop;
+		const output = this.renderToString("\r\n");
+		if (!output) return;
 
 		// Back to the top of our region, and erase from there down. Only rows we
 		// painted ourselves; the scrollback above is untouched.
 		this.#process.stdout.write(`\x1b[${top + 1};1H\x1b[J`);
+		this.#process.stdout.write(output);
+	}
 
-		const output = this.#renderer.renderStatic(
+	/**
+	 * Render the current document to an ANSI string: colors and line breaks,
+	 * no cursor controls, no modes -- a document, not a terminal session.
+	 * The non-interactive half of the API: needs no attach(), touches no
+	 * stdout, and flushes pending mutations and layout first so the string
+	 * is exact. The interactive frame pipeline pairs with attach(); this
+	 * pairs with nothing.
+	 */
+	renderToString(lineEnding: "\n" | "\r\n" = "\n"): string {
+		this.#processPendingMutationsAndRender();
+		const contentHeight = this.document.body.scrollHeight;
+		if (contentHeight === 0) return "";
+		return this.#renderer.renderStatic(
 			contentHeight,
 			(ctx) => {
 				this.#painter.paint(ctx);
 			},
-			"\r\n",
+			lineEnding,
 		);
+	}
 
+	/**
+	 * Print the document to stdout once, as ordinary command output -- one
+	 * plain write, no raw mode, no takeover. console.log for a DOM: the API
+	 * for apps that render HTML and exit. CRLF only when a LIVE raw-mode
+	 * session owns the terminal (an attached instance printing mid-session);
+	 * cooked mode translates bare newlines itself.
+	 */
+	print(): void {
+		const output = this.renderToString(
+			this.#attached && this.#interactive ? "\r\n" : "\n",
+		);
 		if (output) this.#process.stdout.write(output);
 	}
 
@@ -2956,11 +2989,14 @@ export class TermDOM {
 
 	dispose(): void {
 		undisposedInteractive.delete(this.#process);
+		// A TermDOM that never attached owes the terminal nothing: no final
+		// flush, no mode restores -- there is no session to close.
+		const wasAttached = this.#attached;
 		this.#attached = false;
 
 		// Document mode has been painting a window in place, so nothing it showed
 		// has reached the terminal's scrollback. Pay it all out now.
-		this.#flushDocument();
+		if (wasAttached) this.#flushDocument();
 
 		// Frames keep the terminal cursor hidden (it is parked for resize
 		// bookkeeping, not UI); hand it back visible on the way out. The mouse
@@ -2969,7 +3005,7 @@ export class TermDOM {
 			this.#process.stdout.write("\x1b[?1006l\x1b[?1002l");
 			this.#mouseReportingEnabled = false;
 		}
-		if (this.#interactive) {
+		if (wasAttached && this.#interactive) {
 			this.#process.stdout.write("\x1b[?25h\x1b[?2004l");
 		}
 		// Restore the terminal modes we negotiated and clear the probe's own
