@@ -247,3 +247,35 @@ test("lam-alef shaping keeps RTL text flush at the right edge", async () => {
 	expect(inner.trimEnd().length).toBe(inner.length);
 	dom.dispose();
 });
+
+test("shaped Arabic ends exactly at the RTL padding boundary", async () => {
+	// The rtl example's third card, pinned at the CELL level: a bordered,
+	// 1ch-padded RTL box whose shaped text must end exactly one cell before
+	// the right border -- the padding, not a gap. Any wider look in a real
+	// terminal is font glyph advance, which no cell can control.
+	const terminal = new MockProcess({cols: 50, rows: 6});
+	const dom = new TermDOM({process: terminal});
+	dom.document.head.innerHTML = `<style>
+		.card { direction: rtl; border: 1px solid; padding: 0 1ch; width: 34ch; }
+	</style>`;
+	// "marhaba bil-alam", as escapes: raw RTL literals drag bidi state
+	// through every editor and terminal that renders this file.
+	const text =
+		"\u0645\u0631\u062d\u0628\u0627\u0020\u0628\u0627\u0644\u0639\u0627\u0644\u0645";
+	dom.document.body.innerHTML = `<div class="card">${text}</div>`;
+	await nextFrame(dom);
+
+	const row = terminal
+		.getVisibleText()
+		.split("\n")
+		.find((l) => l.includes("│") && !/^[\s┌─]+$/.test(l))!;
+	const inner = row.slice(row.indexOf("│") + 1, row.lastIndexOf("│"));
+	expect(inner.length).toBe(32);
+	// Exactly one trailing cell: the padding. Not two (a width bug), not zero
+	// (text overlapping the padding).
+	expect(inner).toMatch(/\S  ?$/u);
+	expect(inner.length - inner.trimEnd().length).toBe(1);
+	// And 13 logical characters occupy exactly 13 cells.
+	expect(inner.trim().length).toBe(13);
+	dom.dispose();
+});
