@@ -653,37 +653,38 @@ function styleFlexNode(
 			flexNode.setPadding(Flex.EDGE_LEFT, undefined);
 		}
 
-		// Border widths
-		const borderTopWidth = parseUnitValue(
-			computedStyle.getPropertyValue("border-top-width"),
-		);
+		// Border widths. The USED width is 0 when the side's style is none or
+		// hidden (css-backgrounds §3.3) -- same gate as getBoxModel, or the
+		// two box models disagree about the same element.
+		const usedBorderWidth = (side: string) => {
+			const style = computedStyle.getPropertyValue(`border-${side}-style`);
+			if (!style || style === "none" || style === "hidden") return null;
+			return parseUnitValue(
+				computedStyle.getPropertyValue(`border-${side}-width`),
+			);
+		};
+		const borderTopWidth = usedBorderWidth("top");
 		if (typeof borderTopWidth === "number" && borderTopWidth > 0) {
 			flexNode.setBorder(Flex.EDGE_TOP, borderTopWidth);
 		} else {
 			flexNode.setBorder(Flex.EDGE_TOP, 0);
 		}
 
-		const borderRightWidth = parseUnitValue(
-			computedStyle.getPropertyValue("border-right-width"),
-		);
+		const borderRightWidth = usedBorderWidth("right");
 		if (typeof borderRightWidth === "number" && borderRightWidth > 0) {
 			flexNode.setBorder(Flex.EDGE_RIGHT, borderRightWidth);
 		} else {
 			flexNode.setBorder(Flex.EDGE_RIGHT, 0);
 		}
 
-		const borderBottomWidth = parseUnitValue(
-			computedStyle.getPropertyValue("border-bottom-width"),
-		);
+		const borderBottomWidth = usedBorderWidth("bottom");
 		if (typeof borderBottomWidth === "number" && borderBottomWidth > 0) {
 			flexNode.setBorder(Flex.EDGE_BOTTOM, borderBottomWidth);
 		} else {
 			flexNode.setBorder(Flex.EDGE_BOTTOM, 0);
 		}
 
-		const borderLeftWidth = parseUnitValue(
-			computedStyle.getPropertyValue("border-left-width"),
-		);
+		const borderLeftWidth = usedBorderWidth("left");
 		if (typeof borderLeftWidth === "number" && borderLeftWidth > 0) {
 			flexNode.setBorder(Flex.EDGE_LEFT, borderLeftWidth);
 		} else {

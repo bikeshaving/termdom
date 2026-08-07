@@ -5,7 +5,7 @@ import {Viewport} from "./viewport.js";
 import {Painter} from "./painter.js";
 import {TerminalProbe} from "./terminalprobe.js";
 import {type ColorDepth, Renderer} from "./ansi.js";
-import {StyleManager, getBoxModel} from "./styles.js";
+import {StyleManager, getBoxModel, shimInlineBorderNone} from "./styles.js";
 import {stringWidth} from "./text.js";
 import {
 	ObserverManager,
@@ -516,6 +516,10 @@ export class TermDOM {
 
 		this.window = this.#jsdom.window;
 		this.document = this.#jsdom.window.document;
+
+		// cssstyle erases inline border declarations set to none/hidden
+		// instead of storing them; see the shim for the full pathology.
+		shimInlineBorderNone(this.document.body.style);
 
 		// Setup DOM inspector
 		setupInspectMethods(this.window);

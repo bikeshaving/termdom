@@ -684,3 +684,75 @@ test("the text-decoration longhand underlines, not just the shorthand", async ()
 
 	dom.dispose();
 });
+
+// ---- Inline border:none (the cssstyle none-erasure, shimmed) ----
+//
+// Upstream cssstyle (jsdom's inline CSSOM, v4 and v5 alike) treats `none` and
+// `hidden` on every border property -- shorthand or longhand -- as "erase the
+// declaration". Erasing an inline declaration resurrects whatever sits below
+// it in the cascade, so an author could never turn OFF a UA border from
+// element.style. The engine shims the affected setters to store the style
+// keyword for real.
+
+test("style.border = 'none' overrides the UA textarea border", async () => {
+	const terminal = new MockProcess({cols: 60, rows: 10});
+	const dom = new TermDOM({process: terminal});
+	const textarea = dom.document.createElement("textarea");
+	textarea.setAttribute("rows", "1");
+	textarea.style.border = "none";
+	textarea.style.padding = "0";
+	dom.document.body.appendChild(textarea);
+	await nextFrame(dom);
+
+	const computed = dom.window.getComputedStyle(textarea);
+	expect(computed.getPropertyValue("border-top-style")).toBe("none");
+	expect(textarea.getBoundingClientRect().height).toBe(1);
+	dom.dispose();
+});
+
+test("setProperty and cssText forms of border:none work too", async () => {
+	const terminal = new MockProcess({cols: 60, rows: 10});
+	const dom = new TermDOM({process: terminal});
+	const a = dom.document.createElement("textarea");
+	a.setAttribute("rows", "1");
+	a.style.setProperty("border", "none");
+	a.style.setProperty("padding", "0");
+	const b = dom.document.createElement("textarea");
+	b.setAttribute("rows", "1");
+	b.style.cssText = "border: none; padding: 0";
+	dom.document.body.append(a, b);
+	await nextFrame(dom);
+
+	expect(a.getBoundingClientRect().height).toBe(1);
+	expect(b.getBoundingClientRect().height).toBe(1);
+	dom.dispose();
+});
+
+test("a border style of none zeroes the USED border width", async () => {
+	// css-backgrounds §3.3: computed border-width is 0 when the style is none
+	// or hidden -- the box reserves no space however wide the width says.
+	const terminal = new MockProcess({cols: 60, rows: 10});
+	const dom = new TermDOM({process: terminal});
+	dom.document.head.innerHTML = `<style>#box { border: 2px solid; border-style: none; width: 10px; }</style>`;
+	dom.document.body.innerHTML = `<div id="box">x</div>`;
+	await nextFrame(dom);
+
+	const box = dom.document.getElementById("box")!;
+	expect(box.clientWidth).toBe(10);
+	expect(box.getBoundingClientRect().height).toBe(1);
+	dom.dispose();
+});
+
+test("a single side turns off: style.borderTop = 'none'", async () => {
+	const terminal = new MockProcess({cols: 60, rows: 10});
+	const dom = new TermDOM({process: terminal});
+	const textarea = dom.document.createElement("textarea");
+	textarea.setAttribute("rows", "1");
+	textarea.style.borderTop = "none";
+	dom.document.body.appendChild(textarea);
+	await nextFrame(dom);
+
+	// Bottom border survives; the top border row is gone: 1 content + 1 border.
+	expect(textarea.getBoundingClientRect().height).toBe(2);
+	dom.dispose();
+});

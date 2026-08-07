@@ -103,6 +103,82 @@ export interface BoxModel {
 /**
  * Parse CSS box model properties from an element's computed style
  */
+// ---- cssstyle border:none shim ----
+//
+// Upstream cssstyle (jsdom's inline-style CSSOM; v4 nested under jsdom and
+// current v5 alike) treats `none` and `hidden` on every border property --
+// the `border` shorthand, the per-side shorthands, and even the style
+// longhands -- as "erase the declaration": its setters call
+// _setProperty(prop, "") instead of storing the keyword. Erasing an inline
+// declaration resurrects whatever sits below it in the cascade, so
+// `el.style.border = "none"` could never turn OFF a UA border. The raw
+// _setProperty primitive stores values verbatim, so the shim lets the
+// original setter run (its erasure doubles as the shorthand's reset), then
+// writes the style longhands the keyword actually declares. Paired with
+// getBoxModel's used-width gate, style:none alone releases both glyphs and
+// space, matching the browser.
+const kBorderNoneShimmed = Symbol("termdom.borderNoneShim");
+const BORDER_NONE_TARGETS: Record<string, string[]> = {
+	border: [
+		"border-top-style",
+		"border-right-style",
+		"border-bottom-style",
+		"border-left-style",
+	],
+	borderStyle: [
+		"border-top-style",
+		"border-right-style",
+		"border-bottom-style",
+		"border-left-style",
+	],
+	borderTop: ["border-top-style"],
+	borderRight: ["border-right-style"],
+	borderBottom: ["border-bottom-style"],
+	borderLeft: ["border-left-style"],
+	borderTopStyle: ["border-top-style"],
+	borderRightStyle: ["border-right-style"],
+	borderBottomStyle: ["border-bottom-style"],
+	borderLeftStyle: ["border-left-style"],
+};
+
+/** Patch the CSSStyleDeclaration prototype behind `style`, once per class. */
+export function shimInlineBorderNone(style: object): void {
+	const prototype = Object.getPrototypeOf(style) as Record<
+		string | symbol,
+		unknown
+	>;
+	if (prototype[kBorderNoneShimmed]) return;
+	prototype[kBorderNoneShimmed] = true;
+
+	for (const [property, longhands] of Object.entries(BORDER_NONE_TARGETS)) {
+		// The dashed alias shares the camelCase accessor's functions; patching
+		// each descriptor found covers both spellings and setProperty, which
+		// dispatches through them.
+		const dashed = property.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
+		for (const name of [property, dashed]) {
+			const descriptor = Object.getOwnPropertyDescriptor(prototype, name);
+			if (!descriptor?.set) continue;
+			const originalSet = descriptor.set;
+			Object.defineProperty(prototype, name, {
+				...descriptor,
+				set(value: unknown) {
+					originalSet.call(this, value);
+					const keyword = String(value).trim().toLowerCase();
+					if (keyword === "none" || keyword === "hidden") {
+						for (const longhand of longhands) {
+							(
+								this as {
+									_setProperty(name: string, value: string): void;
+								}
+							)._setProperty(longhand, keyword);
+						}
+					}
+				},
+			});
+		}
+	}
+}
+
 export function getBoxModel(element: Element): BoxModel {
 	const window = element.ownerDocument?.defaultView;
 	if (!window) {
@@ -142,19 +218,20 @@ export function getBoxModel(element: Element): BoxModel {
 		computedStyle.getPropertyValue("margin-left"),
 	);
 
-	// Parse border
-	const borderTopWidth = parseUnitValue(
-		computedStyle.getPropertyValue("border-top-width"),
-	);
-	const borderRightWidth = parseUnitValue(
-		computedStyle.getPropertyValue("border-right-width"),
-	);
-	const borderBottomWidth = parseUnitValue(
-		computedStyle.getPropertyValue("border-bottom-width"),
-	);
-	const borderLeftWidth = parseUnitValue(
-		computedStyle.getPropertyValue("border-left-width"),
-	);
+	// Parse border. The USED width is 0 when the side's style is none or
+	// hidden (css-backgrounds §3.3), however wide the width property says --
+	// `border-style: none` must release the space, not just the glyphs.
+	const borderWidthFor = (side: string) => {
+		const style = computedStyle.getPropertyValue(`border-${side}-style`);
+		if (!style || style === "none" || style === "hidden") return null;
+		return parseUnitValue(
+			computedStyle.getPropertyValue(`border-${side}-width`),
+		);
+	};
+	const borderTopWidth = borderWidthFor("top");
+	const borderRightWidth = borderWidthFor("right");
+	const borderBottomWidth = borderWidthFor("bottom");
+	const borderLeftWidth = borderWidthFor("left");
 
 	return {
 		width: typeof widthValue === "number" ? widthValue : undefined,
