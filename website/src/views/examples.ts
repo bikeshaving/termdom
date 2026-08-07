@@ -61,11 +61,6 @@ const EXAMPLES: Array<{file: string; shows: string}> = [
 		file: "fullscreen.ts",
 		shows: "The Fullscreen API over the alternate screen.",
 	},
-	{
-		file: "ssh-server.ts",
-		shows:
-			"The whole library behind an SSH server; every connection gets its own DOM.",
-	},
 	{file: "flexbox.ts", shows: "Flex containers, wrapping and alignment."},
 	{file: "borders.ts", shows: "Border styles, collapsing and box drawing."},
 	{file: "lists.ts", shows: "Markers, counters and nested list gutters."},

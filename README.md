@@ -71,9 +71,6 @@ Ordinary Node programs in [`examples/`](./examples):
 - [`fuzzy-finder.ts`](./examples/fuzzy-finder.ts), [`git-log.ts`](./examples/git-log.ts),
   [`tanstack-table.ts`](./examples/tanstack-table.ts) — interactive lists and
   tables.
-- [`ssh-server.ts`](./examples/ssh-server.ts) — a TermDOM app served over
-  SSH: the engine renders to any `ProcessLike`, and an SSH channel is a TTY
-  like any other.
 
 ## Runtimes
 

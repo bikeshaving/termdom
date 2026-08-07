@@ -119,13 +119,9 @@ export default function Home({url}: {url: string}) {
 					Build Terminal UIs with HTML, CSS and DOM.
 				</p>
 
-				<p class=${heroCommand}>ssh termdom.org</p>
+				<p class=${heroCommand}>npm install @b9g/termdom</p>
 				<p class=${heroNote}>
-					the landing page is a DOM, rendered to your terminal
-					${" · "}
-					or: <code class=${css`
-						color: var(--accent-color);
-					`}>npm install @b9g/termdom</code>
+					a real DOM, a real cascade, a real layout engine — rendered to your terminal
 				</p>
 
 				<p>
