@@ -2746,11 +2746,15 @@ export class TermDOM {
 	 * session owns the terminal (an attached instance printing mid-session);
 	 * cooked mode translates bare newlines itself.
 	 */
-	print(): void {
+	print(): Promise<void> {
 		const output = this.renderToString(
 			this.#attached && this.#interactive ? "\r\n" : "\n",
 		);
-		if (output) void this.#session.write(output);
+		if (!output) return Promise.resolve();
+		// The write rides the transport's stream: resolve when it has landed,
+		// so print-then-exit works over any transport, not just a synchronous
+		// local stdout.
+		return this.#session.write(output);
 	}
 
 	/** Write to the transport and wait for it to be flushed. */

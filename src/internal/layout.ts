@@ -21,7 +21,6 @@ import {
 	createExpandedTreeWalker,
 	ExpandedTreeWalker,
 	getPseudoMetadata,
-	invalidateComposition,
 	invalidateStructure,
 } from "./composition.js";
 import {

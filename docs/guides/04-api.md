@@ -56,7 +56,8 @@ only, no cursor controls or mode changes. Does not require `attach()`.
 ### `term.print()`
 
 Writes `renderToString()` to the transport once, as ordinary command
-output. Does not require `attach()`.
+output. Does not require `attach()`. Returns a promise that resolves when
+the output has reached the transport; await it before exiting.
 
 ### `term.dispose()`
 

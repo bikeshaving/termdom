@@ -202,9 +202,8 @@ test("grapheme-cluster mode is negotiated, and given back on dispose", async () 
 	dom.document.body.innerHTML = `<div>hi</div>`;
 	await nextFrame(dom);
 	await new Promise((resolve) => setTimeout(resolve, 60));
-	dom.dispose();
-	// Dispose's mode restore rides the transport's stream; let it flush.
-	await new Promise((resolve) => setTimeout(resolve, 20));
+	// dispose() resolves when its queued mode restores have landed.
+	await dom.dispose();
 
 	const all = seen.join("");
 	expect(all).toContain("\x1b[?2027h");
