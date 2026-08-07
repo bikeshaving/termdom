@@ -24,7 +24,11 @@ style.textContent = `
 	.msg.pending .body { color: #808080; }
 	.prompt { display: flex; flex-direction: row; margin-top: 1px; }
 	.prompt .sigil { color: #ff8700; font-weight: bold; }
-	textarea { flex-grow: 1; }
+	/* Flat like the UA's input family: the › sigil is the prompt chrome, so
+	   the UA border box around the composer read as a second, mismatched
+	   frame. The UA's rows=1 min-height assumes its border rows; borderless,
+	   the composer is one row until the text wraps. */
+	textarea { flex-grow: 1; border: none; padding: 0; min-height: 1px; }
 `;
 document.head.appendChild(style);
 
