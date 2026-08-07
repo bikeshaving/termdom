@@ -2712,10 +2712,17 @@ export class TermDOM {
 		const output = this.renderToString("\r\n");
 		if (!output) return;
 
-		// Back to the top of our region, and erase from there down. Only rows we
-		// painted ourselves; the scrollback above is untouched.
-		void this.#session.write(`\x1b[${top + 1};1H\x1b[J`);
-		void this.#session.write(output);
+		// Back to the top of our region; every payout line then clears ITSELF
+		// (\x1b[K before its text) and one partial erase covers whatever the
+		// old frame held below. Never a full ED from the top row: tmux
+		// preserves a fully-erased screen by pushing it into scrollback (the
+		// courtesy it extends to `clear`), which archived a copy of the final
+		// frame above the payout -- the document twice, interleaved.
+		void this.#session.write(`\x1b[${top + 1};1H`);
+		void this.#session.write(
+			"\x1b[K" + output.replace(/\r\n(?!$)/g, "\r\n\x1b[K"),
+		);
+		void this.#session.write("\x1b[J");
 	}
 
 	/**

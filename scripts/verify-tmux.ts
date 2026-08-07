@@ -246,6 +246,19 @@ const scenarios: Scenario[] = [
 				pane.display("#{cursor_flag}") === "1",
 				"quitting left the cursor hidden",
 			);
+			// The quit payout must put the document into the scrollback
+			// exactly ONCE. A full ED from the home row would make tmux
+			// archive the final frame above the payout -- the document twice,
+			// interleaved -- so the payout clears per row instead.
+			const copies = pane
+				.full()
+				.filter((line) =>
+					line.includes("exercises the whole element set"),
+				).length;
+			assert(
+				copies === 1,
+				`quit payout left ${copies} copies of the document in scrollback`,
+			);
 		},
 	},
 	{
