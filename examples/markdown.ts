@@ -88,6 +88,7 @@ style.textContent = `
 	.token.regex, .token.important, .token.variable { color: #fd971f; }
 	blockquote { border-left: 1px solid #5f5f5f; padding-left: 1ch; color: #8a8a8a; margin-top: 1px; }
 	ul, ol { margin-top: 1px; }
+	li > ul, li > ol { margin-top: 0; }
 	hr { color: #444444; margin-top: 1px; }
 	th { font-weight: bold; color: #ffd700; }
 	del { text-decoration: line-through; }
