@@ -6,7 +6,41 @@
 
 import {test, expect} from "@b9g/libuild/test";
 import {MockProcess, nextFrame, canSnapshot} from "./test-utils";
-import {TermDOM} from "../src/internal/termdom.js";
+import {TermDOM, kLayoutEngine} from "../src/internal/termdom.js";
+
+function heightOf(dom: TermDOM, el: Element): number | undefined {
+	return (
+		dom as unknown as Record<symbol, {getRect(e: Element): DOMRect | null}>
+	)[kLayoutEngine].getRect(el)?.height;
+}
+
+test("a bordered inline-block in a flex ROW is not double-counted in height", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const dom = new TermDOM({process: terminal});
+	dom.document.body.innerHTML =
+		`<div style="display:flex"><span>x</span>` +
+		`<div id="box" style="display:inline-block;border:1px solid;flex-grow:1">y</div></div>`;
+	await nextFrame(dom);
+	expect(heightOf(dom, dom.document.getElementById("box")!)).toBe(3);
+	dom.dispose();
+});
+
+test("a flex-grow textarea wraps its value at the grown width, not its flex-basis", async () => {
+	const terminal = new MockProcess({cols: 60, rows: 8});
+	const dom = new TermDOM({process: terminal});
+	dom.document.body.innerHTML =
+		`<div style="display:flex"><span>x</span>` +
+		`<textarea style="flex-grow:1"></textarea></div>`;
+	const ta = dom.document.querySelector("textarea") as HTMLTextAreaElement;
+	ta.value = "Testing this out from a wide flex composer";
+	await nextFrame(dom);
+	await nextFrame(dom);
+	// The whole phrase fits inside the grown ~58-col box: one line, intact.
+	expect(terminal.getVisibleText()).toContain(
+		"Testing this out from a wide flex composer",
+	);
+	dom.dispose();
+});
 
 test("inline-block elements render side by side", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});

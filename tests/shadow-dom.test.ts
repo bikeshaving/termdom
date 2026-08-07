@@ -427,11 +427,11 @@ test("input internals are a UA shadow tree, closed to authors", async () => {
 });
 
 test("the field design survives the round-trip through the UA stylesheet", async () => {
-	// Same assertions as the keyboard suite's faint-blank oracle, but the
-	// styles now come from scoped :host(:not(:focus)) rules on real parts
-	// rather than painter constants -- this pins the whole pipeline: UA
-	// sheet parsing, scope gating, :host matching, focus invalidation of
-	// the shadow tree, and inheritance into the parts.
+	// The field design is scoped CSS on real parts, not painter constants:
+	// the placeholder is the UA gray ghost, and the focus affordance is an
+	// `outline` the painter renders as a box-model-aware underline across the
+	// whole field. This pins the whole pipeline: UA sheet parsing, scope
+	// gating, :host(:focus) matching, focus invalidation, and the outline pass.
 	const terminal = new MockProcess({rows: 4, cols: 40});
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
@@ -443,20 +443,23 @@ test("the field design survives the round-trip through the UA stylesheet", async
 	const cellAt = (row: number, col: number) =>
 		(terminal as any).terminal.buffer.active.getLine(row).getCell(col);
 
-	// Blurred: the placeholder rides the faint blank.
-	expect(cellAt(0, 0).isDim()).toBeTruthy();
-	expect(cellAt(0, 0).isUnderline()).toBeTruthy();
+	// Blurred: the placeholder shows as the UA gray ghost, no chrome of its own.
+	expect(cellAt(0, 0).getFgColor()).toBe(0x808080);
+	expect(cellAt(0, 0).isUnderline()).toBeFalsy();
 
 	input.focus();
 	await nextFrame(dom);
-	// Focused: solid underline, no dim -- the :not(:focus) rules released
-	// their grip and the host's focus default took over.
-	expect(cellAt(0, 0).isDim()).toBeFalsy();
+	// Focused: the :host(:focus) outline renders as a solid underline across
+	// the whole field -- the value/placeholder AND the empty tail past it, the
+	// box-model-aware fill a plain text-decoration could never reach.
 	expect(cellAt(0, 0).isUnderline()).toBeTruthy();
+	expect(cellAt(0, 5).isUnderline()).toBeTruthy();
+	expect(cellAt(0, 0).isDim()).toBeFalsy();
 
 	input.blur();
 	await nextFrame(dom);
-	expect(cellAt(0, 0).isDim()).toBeTruthy();
+	// Blurred again: the outline is gone, the field is plain.
+	expect(cellAt(0, 0).isUnderline()).toBeFalsy();
 
 	dom.dispose();
 });
@@ -465,8 +468,7 @@ test("::placeholder is author-styleable and cascades over the UA gray", async ()
 	// input::placeholder resolves onto the UA tree's [part="placeholder"]
 	// span. Author rules beat the UA sheet by cascade ORIGIN, not
 	// specificity -- the UA attribute selector would otherwise outrank
-	// every plain author selector. Properties the author doesn't touch
-	// keep their UA values: the blurred placeholder stays faint.
+	// every plain author selector.
 	const terminal = new MockProcess({rows: 4, cols: 40});
 	const dom = new TermDOM({process: terminal});
 	const {document} = dom;
@@ -478,9 +480,9 @@ test("::placeholder is author-styleable and cascades over the UA gray", async ()
 
 	const cellAt = (row: number, col: number) =>
 		(terminal as any).terminal.buffer.active.getLine(row).getCell(col);
+	// The author color wins; a blurred field carries no chrome of its own.
 	expect(cellAt(0, 0).getFgColor()).toBe(0xff0000);
-	expect(cellAt(0, 0).isDim()).toBeTruthy(); // UA blurred-state rule holds
-	expect(cellAt(0, 0).isUnderline()).toBeTruthy();
+	expect(cellAt(0, 0).isUnderline()).toBeFalsy();
 
 	dom.dispose();
 });

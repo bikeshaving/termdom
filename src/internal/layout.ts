@@ -492,6 +492,25 @@ function styleFlexNode(
 		}
 	}
 
+	// An inline-block flex item's measure already returns a border-box size, so
+	// the flex node must not add padding+border again on the CROSS axis (it
+	// double-counts, e.g. a bordered textarea in a flex row is too tall). Zero the
+	// cross-axis edges only -- the main axis is masked by flex sizing.
+	if (display === "inline-block" && parentIsFlex) {
+		const direction = getPropertyValue(
+			element.parentElement!,
+			"flex-direction",
+		);
+		const crossEdges =
+			direction === "column" || direction === "column-reverse"
+				? [Flex.EDGE_LEFT, Flex.EDGE_RIGHT]
+				: [Flex.EDGE_TOP, Flex.EDGE_BOTTOM];
+		for (const edge of crossEdges) {
+			flexNode.setPadding(edge, 0);
+			flexNode.setBorder(edge, 0);
+		}
+	}
+
 	const parentDisplay = element.parentElement
 		? getPropertyValue(element.parentElement, "display")
 		: null;
@@ -3994,6 +4013,19 @@ export class LayoutEngine {
 
 					if (boxModel.width !== undefined) {
 						contentWidth = Math.max(0, boxModel.width - horizontalBoxSpace);
+						contentWidthMode = Flex.MEASURE_MODE_EXACTLY;
+					}
+
+					// A flex-grow item is laid out wider than its CSS width (its flex
+					// basis). getBoxModel reports the basis, so break the content at
+					// the larger offered width instead, or it wraps at the un-grown
+					// basis.
+					if (
+						Number.isFinite(availableWidth) &&
+						availableWidth - horizontalBoxSpace > contentWidth &&
+						parseFloat(getPropertyValue(element, "flex-grow") || "0") > 0
+					) {
+						contentWidth = Math.max(0, availableWidth - horizontalBoxSpace);
 						contentWidthMode = Flex.MEASURE_MODE_EXACTLY;
 					}
 

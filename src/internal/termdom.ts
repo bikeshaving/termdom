@@ -102,8 +102,8 @@ function installCursorRestoreOnExit(): void {
 	process.on("exit", () => {
 		for (const proc of undisposedInteractive) {
 			try {
-				// Mouse capture off (a no-op if it was never on), cursor back on.
-				proc.stdout.write("\x1b[?1006l\x1b[?1002l\x1b[?25h");
+				// Mouse capture off, cursor back on, bracketed paste off.
+				proc.stdout.write("\x1b[?1006l\x1b[?1002l\x1b[?25h\x1b[?2004l");
 			} catch {
 				// The stream may already be gone; the shell will survive.
 			}
@@ -118,6 +118,11 @@ function installCursorRestoreOnExit(): void {
 const kLayoutEngine = Symbol("layoutEngine");
 const kObserver = Symbol("observer");
 export {kLayoutEngine, kObserver};
+
+/** A text-ish input type (not checkbox/radio/hidden). */
+function isTextInputType(type: string): boolean {
+	return type !== "checkbox" && type !== "radio" && type !== "hidden";
+}
 
 /**
  * The Fullscreen API over the terminal's alternate screen. Lives here
@@ -345,7 +350,7 @@ export class TermDOM {
 	#styleManager: StyleManager;
 	#uaWidgets: UAWidgetController;
 	// The DOM-tree -> terminal-cells paint walk. Reads geometry/styles/widgets;
-	// owns no scheduling. Shares #topLayer and #inputScrollOffsets by reference.
+	// owns no scheduling. Shares #topLayer by reference.
 	#painter: Painter;
 	// Where the viewport looks in the document: scrollTop (window.scrollY),
 	// screenTop (the command-start row), and the fullscreen anchor. See Viewport.
@@ -374,11 +379,8 @@ export class TermDOM {
 	// Monotonic frame counter, used to timestamp observer entries.
 	#renderCount = 0;
 
-	// Input element state tracking. Only the horizontal scroll of an
-	// overflowed field lives here -- pure presentation, invisible to the DOM.
-	// The caret does NOT: it is the input's own selectionStart/End/Direction,
-	// the standard API.
-	#inputScrollOffsets = new WeakMap<Element, number>();
+	// An overflowed field's horizontal scroll lives on the value part's own
+	// scrollLeft (set by #scrollFieldCaretIntoView), not a side table.
 	// The UA-internal shadow trees behind input widgets, by host: the tree
 	// IS the field's content model (value text, placeholder, blank / toggle
 	// glyph), and the painter reads its computed styles instead of
@@ -426,6 +428,9 @@ export class TermDOM {
 	// Whether the terminal is currently reporting mouse events to us. See
 	// updateMouseReporting for when capture is on.
 	#mouseReportingEnabled = false;
+	// Body of a bracketed paste (ESC[200~..ESC[201~) across stdin chunks; null
+	// when no paste is in flight.
+	#pasteBuffer: string | null = null;
 	// Scroll chaining yielded the mouse back to the terminal: the camera hit
 	// the document top and the user kept scrolling up, so the wheel now
 	// belongs to the terminal's own scrollback. Cleared by the next keystroke
@@ -556,7 +561,6 @@ export class TermDOM {
 			styleManager: this.#styleManager,
 			viewport: this.#viewport,
 			topLayer: this.#topLayer,
-			inputScrollOffsets: this.#inputScrollOffsets,
 		});
 		this.#probe = new TerminalProbe({
 			process: this.#process,
@@ -1514,6 +1518,9 @@ export class TermDOM {
 			stdin.setRawMode?.(true);
 			stdin.resume();
 			stdin.setEncoding?.("utf8");
+			// Enable bracketed paste, but only for a real terminal: the sequence
+			// goes to stdout, which may be piped even while stdin is a TTY.
+			if (this.#interactive) this.#process.stdout.write("\x1b[?2004h");
 
 			// Single unified handler for all stdin data
 			this.#stdinDataHandler = (chunk: string | Buffer) => {
@@ -1522,6 +1529,36 @@ export class TermDOM {
 					? chunk
 					: Buffer.from(chunk, "utf8");
 				const dataStr = data.toString("utf8");
+
+				// Bracketed paste: its body is literal text (a pasted newline must
+				// not fire Enter), buffered across chunks until ESC[201~. Checked
+				// before the report routes so paste content isn't parsed as a reply.
+				if (this.#pasteBuffer !== null) {
+					const end = dataStr.indexOf("\x1b[201~");
+					if (end === -1) {
+						this.#pasteBuffer += dataStr;
+						return;
+					}
+					this.#dispatchPaste(this.#pasteBuffer + dataStr.slice(0, end));
+					this.#pasteBuffer = null;
+					const after = dataStr.slice(end + 6);
+					if (after.length && this.#stdinDataHandler) {
+						this.#stdinDataHandler(after);
+					}
+					return;
+				}
+				const pasteStart = dataStr.indexOf("\x1b[200~");
+				if (pasteStart !== -1) {
+					const before = dataStr.slice(0, pasteStart);
+					if (before.length && this.#stdinDataHandler) {
+						this.#stdinDataHandler(before);
+					}
+					this.#pasteBuffer = "";
+					if (this.#stdinDataHandler) {
+						this.#stdinDataHandler(dataStr.slice(pasteStart + 6));
+					}
+					return;
+				}
 
 				// Route 1: Cursor position responses (highest priority). Fast typing
 				// can land in the same chunk as the report -- "jjj\x1b[12;1Rjjj" --
@@ -1723,13 +1760,20 @@ export class TermDOM {
 			(boxModel.borderLeftWidth || 0) +
 			(boxModel.paddingLeft || 0);
 		const value = input.value || "";
-		const scrollOffset = this.#inputScrollOffsets.get(input) ?? 0;
-		const rel = x - contentX;
-		if (rel <= 0) return Math.min(scrollOffset, value.length);
+		// The click's target cell is its column plus the cells scrolled off the
+		// left (the value part's scrollLeft). SHOWN text = a password's bullets.
+		const valueText = fieldValueText(input);
+		const valueSpan = valueText?.parentElement as HTMLElement | null;
+		const shown = valueText?.data ?? value;
+		const scrollLeft = valueSpan
+			? Math.max(0, Math.round(valueSpan.scrollLeft))
+			: 0;
+		const targetCell = x - contentX + scrollLeft;
+		if (targetCell <= 0) return 0;
 		let cells = 0;
-		let offset = scrollOffset;
-		for (const char of value.slice(scrollOffset)) {
-			if (cells >= rel) break;
+		let offset = 0;
+		for (const char of shown) {
+			if (cells >= targetCell) break;
 			cells += stringWidth(char);
 			offset += char.length;
 		}
@@ -1795,6 +1839,55 @@ export class TermDOM {
 			regionHeight,
 		);
 		if (delta) this.#scrollCamera(delta);
+	}
+
+	/**
+	 * Keep a single-line input's caret in its box by setting the value part's
+	 * scrollLeft (the layout reads it live, no relayout). Measured in cells.
+	 */
+	#scrollFieldCaretIntoView(input: HTMLInputElement): void {
+		const valueText = fieldValueText(input);
+		const valueSpan = valueText?.parentElement as HTMLElement | null;
+		if (!valueText || !valueSpan) return;
+		const rect = this[kLayoutEngine].getRect(input);
+		if (!rect) return;
+		const boxModel = getBoxModel(input);
+		const contentWidth =
+			Math.round(rect.width) -
+			(boxModel.borderLeftWidth || 0) -
+			(boxModel.borderRightWidth || 0) -
+			(boxModel.paddingLeft || 0) -
+			(boxModel.paddingRight || 0);
+		if (contentWidth <= 0) return;
+
+		const shown = valueText.data;
+		// Seed from the current scrollLeft so a settled window doesn't jitter.
+		const currentScroll = Math.max(0, Math.round(valueSpan.scrollLeft));
+		let scrollOffset = 0;
+		for (let acc = 0; scrollOffset < shown.length && acc < currentScroll; ) {
+			acc += stringWidth(shown[scrollOffset]);
+			scrollOffset++;
+		}
+		// The caret sits at the selection's moving end.
+		const start = input.selectionStart ?? shown.length;
+		const end = input.selectionEnd ?? shown.length;
+		const cursor = input.selectionDirection === "backward" ? start : end;
+		// Keep the caret's cell in the box, then pull back when a deletion left slack.
+		if (cursor < scrollOffset) scrollOffset = cursor;
+		while (
+			scrollOffset < cursor &&
+			stringWidth(shown.slice(scrollOffset, cursor)) >= contentWidth
+		) {
+			scrollOffset++;
+		}
+		while (
+			scrollOffset > 0 &&
+			stringWidth(shown.slice(scrollOffset - 1)) < contentWidth
+		) {
+			scrollOffset--;
+		}
+		const scrollLeft = stringWidth(shown.slice(0, scrollOffset));
+		if (scrollLeft !== currentScroll) valueSpan.scrollLeft = scrollLeft;
 	}
 
 	#processPendingMutationsAndRender(): boolean {
@@ -2262,6 +2355,11 @@ export class TermDOM {
 		if (!isRelease) {
 			this.#mouseDownTarget = target;
 			this.#fieldDragAnchor = null;
+			// A pointer press suppresses the :focus-visible ring.
+			if (this.#styleManager.setFocusVisible(false)) {
+				this.#styleManager.handleFocusChange(this.document.activeElement);
+				void this.#render();
+			}
 			const notCanceled = target.dispatchEvent(
 				new this.window.MouseEvent("mousedown", eventInit),
 			);
@@ -2433,6 +2531,24 @@ export class TermDOM {
 		this.#mouseDownTarget = null;
 	}
 
+	/**
+	 * Deliver a paste to the focused control as an `insertFromPaste` beforeinput;
+	 * its own listener does the edit. Dropped if nothing editable is focused.
+	 */
+	#dispatchPaste(text: string): void {
+		const target = this.document.activeElement;
+		if (!target || target === this.document.body) return;
+		target.dispatchEvent(
+			new this.window.InputEvent("beforeinput", {
+				inputType: "insertFromPaste",
+				data: text,
+				bubbles: true,
+				cancelable: true,
+			}),
+		);
+		void this.#render();
+	}
+
 	#dispatchGlobalKeyboardEvent(chunk: Buffer): void {
 		const key = chunk.toString("utf8");
 
@@ -2452,6 +2568,12 @@ export class TermDOM {
 		if (!stroke) return;
 		const {keyName, keyCode, charCode, shiftKey, ctrlKey, altKey, metaKey} =
 			stroke;
+
+		// Keyboard input warrants the :focus-visible ring; repaint if it flipped.
+		if (this.#styleManager.setFocusVisible(true)) {
+			this.#styleManager.handleFocusChange(this.document.activeElement);
+			void this.#render();
+		}
 
 		// Find the focused element. document.activeElement defaults to body when
 		// nothing is focused, so it can't be used with `||` to detect "nothing
@@ -2710,6 +2832,15 @@ export class TermDOM {
 			}
 		}
 
+		// Recompute the focused input's scroll window every frame (derived state).
+		const activeField = this.document.activeElement;
+		if (
+			activeField instanceof (this.window as any).HTMLInputElement &&
+			isTextInputType((activeField as HTMLInputElement).type)
+		) {
+			this.#scrollFieldCaretIntoView(activeField as HTMLInputElement);
+		}
+
 		// Fullscreen owns the WHOLE alternate screen from row zero: the
 		// main screen's command anchor means nothing there, and reserveRows'
 		// index-scrolls would scroll the alternate screen itself. The
@@ -2823,7 +2954,7 @@ export class TermDOM {
 			this.#mouseReportingEnabled = false;
 		}
 		if (this.#interactive) {
-			this.#process.stdout.write("\x1b[?25h");
+			this.#process.stdout.write("\x1b[?25h\x1b[?2004l");
 		}
 		// Restore the terminal modes we negotiated and clear the probe's own
 		// timers and handlers -- a live query timer keeps the event loop open.

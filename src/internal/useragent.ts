@@ -521,6 +521,9 @@ export const UA_DOCUMENT_STYLES = `
 	*::selection { background-color: Highlight; color: HighlightText; }
 	button::before { content: "[ "; }
 	button::after { content: " ]"; }
+	a[href] { text-decoration: underline; }
+	a[href]:focus-visible { background-color: Highlight; color: HighlightText; }
+	button:focus-visible { outline-width: 1px; outline-style: solid; }
 `;
 
 // ---- Form-widget internal shadow stylesheets ----
@@ -538,19 +541,15 @@ export const TEXTAREA_UA_STYLES = `
 
 /**
  * The UA stylesheet of an <input>'s internal shadow tree: the field design as
- * real, scoped CSS instead of painter constants. The placeholder is the gray
- * ghost label always; when the host is BLURRED the blank -- and the placeholder
- * riding it -- goes faint: SGR dim via font-weight, SGR underline via
- * text-decoration, the two classic codes that survive every terminal and every
- * intermediary. The focused field's solid underline is not here: it comes from
- * the input's own focus-aware UA default and INHERITS into every part, so
- * authors override it exactly where they always could.
+ * real, scoped CSS. The value and placeholder are single-line inline-blocks that
+ * clip their text (the render loop sets scrollLeft to follow the caret); the
+ * focus affordance is an `outline`, which the painter renders as a bottom
+ * underline across the whole field. A blurred field carries no chrome.
  */
 export const FIELD_UA_STYLES = `
+	[part="value"], [part="placeholder"] { display: inline-block; white-space: pre; overflow: hidden; min-width: 1ch; max-width: 100%; vertical-align: top; }
 	[part="placeholder"] { color: #808080; }
-	:host(:not(:focus)) [part="value"] { font-weight: lighter; text-decoration: underline; }
-	:host(:not(:focus)) [part="placeholder"] { font-weight: lighter; text-decoration: underline; }
-	:host(:not(:focus)) [part="blank"] { font-weight: lighter; text-decoration: underline; }
+	:host(:focus) { outline-width: 1px; outline-style: solid; }
 `;
 
 /**

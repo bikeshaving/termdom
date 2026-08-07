@@ -37,6 +37,21 @@ function hasUnderline(style: CSSStyleDeclaration): boolean {
 	return style.getPropertyValue("text-decoration").includes("underline");
 }
 
+/** Whether a computed style asks for a line-through (SGR strikethrough). */
+function hasLineThrough(style: CSSStyleDeclaration): boolean {
+	const line = style.getPropertyValue("text-decoration-line");
+	if (line) return line.includes("line-through");
+	return style.getPropertyValue("text-decoration").includes("line-through");
+}
+
+/** A textarea or text-ish input (not a checkbox/radio or hidden input). */
+function isTextField(element: Element): boolean {
+	if (element.tagName === "TEXTAREA") return true;
+	if (element.tagName !== "INPUT") return false;
+	const type = (element as HTMLInputElement).type;
+	return type !== "checkbox" && type !== "radio" && type !== "hidden";
+}
+
 /**
  * The clip an overflow:hidden (or overflow-x/-y:hidden) element imposes on its
  * own children, intersected with whatever clip was already active from an
@@ -145,6 +160,7 @@ function cellStyleFromComputed(
 			computedStyle.getPropertyValue("text-decoration-style") === "double"
 				? ("double" as const)
 				: undefined,
+		strikethrough: hasLineThrough(computedStyle),
 	};
 }
 
@@ -231,7 +247,6 @@ export class Painter {
 	#viewport: Viewport;
 	// Shared with TermDOM by reference -- see the class doc.
 	#topLayer: Set<Element>;
-	#inputScrollOffsets: WeakMap<Element, number>;
 	// List markers already painted this frame; each renders at most once.
 	#renderedOutsideMarkers = new WeakSet<Element>();
 
@@ -242,7 +257,6 @@ export class Painter {
 		styleManager: StyleManager;
 		viewport: Viewport;
 		topLayer: Set<Element>;
-		inputScrollOffsets: WeakMap<Element, number>;
 	}) {
 		this.#window = deps.window;
 		this.#document = deps.document;
@@ -250,7 +264,6 @@ export class Painter {
 		this.#styleManager = deps.styleManager;
 		this.#viewport = deps.viewport;
 		this.#topLayer = deps.topLayer;
-		this.#inputScrollOffsets = deps.inputScrollOffsets;
 	}
 
 	/** The whole document: the root stacking context, then the top layer. */
@@ -412,15 +425,27 @@ export class Painter {
 		// Handle list-style-position: outside markers
 		if (visible) this.#renderOutsideMarker(element, ctx);
 
-		// A textarea's content IS its UA shadow tree, built on connect and
-		// painted by the normal child walk below; parking the real terminal
-		// caret at the multiline position is the rest.
-		if (element.tagName === "TEXTAREA" && rect) {
-			const textarea = element as HTMLTextAreaElement;
-			if (visible && textarea === this.#document.activeElement) {
-				const range = fieldCaretRange(textarea);
+		// A text field's content is its shadow tree, painted by the child walk
+		// below; the rest is parking the caret at its Range position, falling back
+		// to the content origin when the value is empty (no box for the Range).
+		if (rect && visible && isTextField(element)) {
+			const field = element as HTMLInputElement | HTMLTextAreaElement;
+			if (field === this.#document.activeElement) {
+				const range = fieldCaretRange(field);
 				const [caret] = range ? this.#layout.getRangeRects(range) : [];
-				if (caret) ctx.setCaret(caret.x, caret.y);
+				if (caret) {
+					ctx.setCaret(caret.x, caret.y);
+				} else {
+					const boxModel = getBoxModel(field);
+					ctx.setCaret(
+						Math.round(rect.left) +
+							(boxModel.borderLeftWidth || 0) +
+							(boxModel.paddingLeft || 0),
+						Math.round(rect.top) +
+							(boxModel.borderTopWidth || 0) +
+							(boxModel.paddingTop || 0),
+					);
+				}
 			}
 		}
 
@@ -454,16 +479,15 @@ export class Painter {
 			}
 		}
 
-		// Render input elements (void elements with no children)
-		if (
-			element.tagName === "INPUT" &&
-			rect &&
-			(element as HTMLInputElement).type !== "hidden"
-		) {
-			if (visible) {
-				this.#renderInputElement(element as HTMLInputElement, rect, ctx);
+		// A checkbox/radio is a single glyph (#renderToggleGlyph) with nothing to
+		// walk; every other input is a text field, painted by the walk below.
+		if (element.tagName === "INPUT" && rect) {
+			const input = element as HTMLInputElement;
+			if (input.type === "checkbox" || input.type === "radio") {
+				if (visible) this.#renderToggleGlyph(input, rect, ctx);
+				return;
 			}
-			return; // Input elements have no children to render
+			if (input.type === "hidden") return;
 		}
 
 		// Note: JSDOM automatically calls connectedCallback() when elements are added to DOM
@@ -570,6 +594,35 @@ export class Painter {
 		// A focused textarea's own selection now paints inline while the child
 		// walk lays down the value text -- #renderTextSelection reads the
 		// control's selectionStart/End, the same way it reads a document Range.
+
+		// An `outline` paints last, as a box-model-aware underline along the box's
+		// bottom row (a focus ring). Bottom only: overline (SGR 53) is unreliable.
+		if (rect && visible) {
+			const computed = this.#window.getComputedStyle(element);
+			const outlineStyle = computed.getPropertyValue("outline-style");
+			if (
+				outlineStyle &&
+				outlineStyle !== "none" &&
+				parseFloat(computed.getPropertyValue("outline-width")) !== 0
+			) {
+				const outlineColor = computed
+					.getPropertyValue("outline-color")
+					.trim()
+					.toLowerCase();
+				const hasColor =
+					Boolean(outlineColor) &&
+					outlineColor !== "currentcolor" &&
+					outlineColor !== "invert" &&
+					!isSystemHighlightColor(outlineColor);
+				ctx.edgeRow(
+					Math.round(rect.left),
+					Math.round(rect.bottom) - 1,
+					Math.round(rect.width),
+					"underline",
+					hasColor ? {fg: cssColorToNumber(outlineColor)} : undefined,
+				);
+			}
+		}
 	}
 
 	/**
@@ -737,17 +790,17 @@ export class Painter {
 	}
 
 	/**
-	 * Render an input element: read its UA widget's shadow parts for their
-	 * computed styles and paint them. What remains here is exactly the widget's
-	 * editor mechanics -- the scroll-window over an overflowing value and
-	 * parking the REAL terminal cursor -- the same split a browser makes between
-	 * its input's shadow content and its editor internals.
+	 * Draw a checkbox/radio's glyph, read from live `.checked` at paint -- a
+	 * radio's group unchecks its siblings with no event to hook, so a paint-time
+	 * read is the only correct one.
 	 */
-	#renderInputElement(
+	#renderToggleGlyph(
 		element: HTMLInputElement,
 		rect: DOMRect,
 		ctx: import("./ansi.js").DrawingContext,
 	): void {
+		const root = compositionShadowRoot(element);
+		if (!root) return;
 		const boxModel = getBoxModel(element);
 		const contentX =
 			Math.round(rect.left) +
@@ -757,180 +810,26 @@ export class Painter {
 			Math.round(rect.top) +
 			(boxModel.borderTopWidth || 0) +
 			(boxModel.paddingTop || 0);
-		const contentWidth =
-			Math.round(rect.width) -
-			(boxModel.borderLeftWidth || 0) -
-			(boxModel.borderRightWidth || 0) -
-			(boxModel.paddingLeft || 0) -
-			(boxModel.paddingRight || 0);
 
-		// The UA widget owns the shadow tree (built on connect) and reconciles it
-		// from the input's own state; the painter only reads its parts' computed
-		// styles.
-		const root = compositionShadowRoot(element);
-		if (!root) return;
-
-		if (element.type === "checkbox" || element.type === "radio") {
-			const glyphSpan = root.querySelector('[part="glyph"]') as HTMLElement;
-			const mark =
-				element.type === "checkbox"
-					? element.checked
-						? "[x]"
-						: "[ ]"
-					: element.checked
-						? "(x)"
-						: "( )";
-			// The mark is read from live .checked at paint, not reconciled by the
-			// widget: a radio's group exclusivity unchecks its siblings with no
-			// event or setter on them to hook, so only a paint-time read stays
-			// correct. The glyph text node carries it so a width:auto toggle
-			// measures; its computed style (the focus underline included) reads
-			// back off the tree.
-			const glyphText = glyphSpan.firstChild as Text;
-			if (glyphText.data !== mark) glyphText.data = mark;
-			ctx.setText(
-				contentX,
-				contentY,
-				mark,
-				cellStyleFromComputed(this.#window.getComputedStyle(glyphSpan)),
-			);
-			if (element === this.#document.activeElement) {
-				ctx.setCaret(contentX, contentY);
-			}
-			return;
-		}
-
-		const valueSpan = root.querySelector('[part="value"]') as HTMLElement;
-		const placeholderSpan = root.querySelector(
-			'[part="placeholder"]',
-		) as HTMLElement;
-		const blankSpan = root.querySelector('[part="blank"]') as HTMLElement;
-
-		// The value comes from the shadow the widget reconciled, not element.value
-		// directly -- so a password's masked bullets are simply what paints, and
-		// the real value never leaves .value. Identical to .value for other types.
-		const value = valueSpan.textContent || "";
-		const placeholder = element.getAttribute("placeholder") || "";
-		const isFocused = element === this.#document.activeElement;
-
-		// Region styles come off the tree: the value inherits the input's
-		// own text style (solid underline when focused), the placeholder and
-		// the blank carry the UA field sheet -- gray ghost label, faint
-		// blank when blurred -- plus whatever the author adds.
-		const textStyle = cellStyleFromComputed(
-			this.#window.getComputedStyle(value ? valueSpan : placeholderSpan),
+		const glyphSpan = root.querySelector('[part="glyph"]') as HTMLElement;
+		const mark =
+			element.type === "checkbox"
+				? element.checked
+					? "[x]"
+					: "[ ]"
+				: element.checked
+					? "(x)"
+					: "( )";
+		const glyphText = glyphSpan.firstChild as Text;
+		if (glyphText.data !== mark) glyphText.data = mark;
+		ctx.setText(
+			contentX,
+			contentY,
+			mark,
+			cellStyleFromComputed(this.#window.getComputedStyle(glyphSpan)),
 		);
-		const blankStyle = cellStyleFromComputed(
-			this.#window.getComputedStyle(blankSpan),
-		);
-
-		// Shown focused or not, as in a browser -- the caret just sits at
-		// the field start, over the dimmed text.
-		const displayText = value || placeholder;
-
-		// Everything below measures in CELLS, not characters. CJK text is two
-		// cells per glyph, so character arithmetic put the caret mid-text (IME
-		// composition then anchored on top of already-typed glyphs) and padEnd
-		// by character count pushed the value's background straight through the
-		// input's right border.
-		let scrollOffset = this.#inputScrollOffsets.get(element) ?? 0;
-		// The caret is the input's own selection (selectionStart/End), so a
-		// framework assigning .value can never strand it: per spec, setting
-		// value collapses the selection to the end. The caret sits at the
-		// selection's FOCUS -- the moving end, per selectionDirection -- which
-		// is the end that must stay scrolled into view while extending.
-		const selStart = element.selectionStart ?? value.length;
-		const selEnd = element.selectionEnd ?? value.length;
-		const cursor =
-			element.selectionDirection === "backward" ? selStart : selEnd;
-
-		if (isFocused) {
-			// Keep the caret's CELL offset inside the box.
-			if (cursor < scrollOffset) {
-				scrollOffset = cursor;
-			}
-			while (
-				scrollOffset < cursor &&
-				stringWidth(displayText.slice(scrollOffset, cursor)) >= contentWidth
-			) {
-				scrollOffset++;
-			}
-			// And scroll BACK when there's slack: after deleting at the end of
-			// an overflowed value, the window would otherwise stay put and show
-			// a shrinking tail with the earlier text still hidden off the left
-			// edge. Pull the window left while everything from one character
-			// earlier through the end still fits strictly inside the field
-			// (strictly: the caret needs its cell when it sits at the end),
-			// exactly what a browser's field does on backspace.
-			while (
-				scrollOffset > 0 &&
-				stringWidth(displayText.slice(scrollOffset - 1)) < contentWidth
-			) {
-				scrollOffset--;
-			}
-			this.#inputScrollOffsets.set(element, scrollOffset);
-		}
-
-		// Take characters from the scroll offset until the next one would no
-		// longer fit, then pad with spaces to exactly the content width in cells.
-		let visibleText = "";
-		let usedCells = 0;
-		for (const char of displayText.slice(scrollOffset)) {
-			const charCells = stringWidth(char);
-			if (usedCells + charCells > contentWidth) break;
-			visibleText += char;
-			usedCells += charCells;
-		}
-		const visibleChars = visibleText.length;
-		visibleText += " ".repeat(Math.max(0, contentWidth - usedCells));
-
-		// The content region paints with its part's style, and the cells the
-		// content spares are the BLANK part -- which the UA sheet renders as
-		// the faint underlined blank when blurred, and which inherits the
-		// solid focus underline like everything else when focused.
-		if (displayText) {
-			ctx.setText(
-				contentX,
-				contentY,
-				visibleText.slice(0, visibleChars),
-				textStyle,
-			);
-			ctx.setText(
-				contentX + usedCells,
-				contentY,
-				visibleText.slice(visibleChars),
-				blankStyle,
-			);
-		} else {
-			ctx.setText(contentX, contentY, visibleText, blankStyle);
-		}
-
-		// A selection paints as inverse video over its visible slice --
-		// terminal-native highlight, no color assumptions. (Placeholder text
-		// can never be selected: it only shows for an empty value, whose
-		// selection is necessarily collapsed.)
-		if (isFocused && selEnd > selStart) {
-			const visStart = Math.max(selStart, scrollOffset);
-			const visEnd = Math.min(selEnd, scrollOffset + visibleChars);
-			if (visEnd > visStart) {
-				ctx.setText(
-					contentX + stringWidth(displayText.slice(scrollOffset, visStart)),
-					contentY,
-					displayText.slice(visStart, visEnd),
-					selectionStyleFor(this.#window, element, textStyle),
-				);
-			}
-		}
-
-		// The caret of a focused input is the REAL terminal cursor, parked there
-		// by the frame -- not an inverse-video imitation. IME composition, screen
-		// readers and the terminal's own cursor style all anchor to the real one.
-		if (isFocused) {
-			const cursorX =
-				contentX + stringWidth(displayText.slice(scrollOffset, cursor));
-			if (cursorX >= contentX && cursorX < contentX + contentWidth) {
-				ctx.setCaret(cursorX, contentY);
-			}
+		if (element === this.#document.activeElement) {
+			ctx.setCaret(contentX, contentY);
 		}
 	}
 
@@ -1003,10 +902,10 @@ export class Painter {
 		if (
 			host &&
 			host === this.#document.activeElement &&
-			host.tagName === "TEXTAREA" &&
+			isTextField(host) &&
 			textNode.parentElement?.getAttribute("part") === "value"
 		) {
-			const field = host as HTMLTextAreaElement;
+			const field = host as HTMLTextAreaElement | HTMLInputElement;
 			const start = field.selectionStart ?? 0;
 			const end = field.selectionEnd ?? 0;
 			if (end <= start) return null;
@@ -1014,7 +913,9 @@ export class Painter {
 			return {
 				from: Math.max(0, Math.min(start, length)),
 				to: Math.max(0, Math.min(end, length)),
-				selectionParent: textNode.parentElement,
+				// ::selection resolves on the field host (`input::selection`), not
+				// the shadow value span.
+				selectionParent: host,
 			};
 		}
 

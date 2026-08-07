@@ -1200,6 +1200,9 @@ export class StyleManager {
 	#pseudoRulesByType = new Map<string, ParsedCSSRule[]>();
 	#counterRulesExist = false;
 	#listItemRulesExist = false;
+	// The `:focus-visible` state, driven by TermDOM from the last input modality
+	// (keyboard true, pointer false). #ruleMatches gates such rules on it.
+	#focusVisibleActive = true;
 	/**
 	 * How many document.styleSheets the last parse consumed; -1 = never
 	 * parsed. A changed count re-parses on the next style computation --
@@ -1413,6 +1416,13 @@ export class StyleManager {
 				}
 			}
 		}
+	}
+
+	/** Set the `:focus-visible` state; returns whether it changed. */
+	setFocusVisible(active: boolean): boolean {
+		if (this.#focusVisibleActive === active) return false;
+		this.#focusVisibleActive = active;
+		return true;
 	}
 
 	/**
@@ -1884,6 +1894,13 @@ export class StyleManager {
 	 */
 	#ruleMatches(element: Element, rule: ParsedCSSRule): boolean {
 		try {
+			// jsdom treats `:focus-visible` as `:focus`, so gate it on our own flag.
+			if (
+				!this.#focusVisibleActive &&
+				rule.selector.includes(":focus-visible")
+			) {
+				return false;
+			}
 			if (rule.host) {
 				const scope = rule.scope as ShadowRoot;
 				const host = scope.host;

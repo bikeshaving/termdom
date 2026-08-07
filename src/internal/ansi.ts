@@ -837,6 +837,12 @@ export class DrawingContext {
 
 		for (const segment of graphemeSegmenter.segment(text)) {
 			const char = segment.segment;
+
+			// Never write a control char to a cell: a trailing one would survive to
+			// the output as a raw escape byte (injection from untrusted text).
+			const code = char.codePointAt(0)!;
+			if (code < 0x20 || (code >= 0x7f && code < 0xa0)) continue;
+
 			const width = stringWidth(char);
 
 			if (currentX + width > this.cols) {
@@ -848,6 +854,42 @@ export class DrawingContext {
 		}
 
 		return currentX;
+	}
+
+	/**
+	 * Merge an underline/overline across a row, preserving existing glyphs (an
+	 * empty cell becomes a spaced edge). Used to render `outline` as a full-width
+	 * edge; setText can't, since it overwrites.
+	 */
+	edgeRow(
+		x: number,
+		y: number,
+		width: number,
+		edge: "underline" | "overline",
+		style?: CellStyle,
+	): void {
+		const terminalRow = y + this.viewportOffset;
+		if (terminalRow < 0 || terminalRow >= this.rows) return;
+		for (let col = x; col < x + width; col++) {
+			if (col < 0 || col >= this.cols) continue;
+			if (this.clipRect && !this.#inClip(y, col)) continue;
+			const existing = this.buffer[terminalRow][col];
+			const flags = existing?.getStyleFlags();
+			this.buffer[terminalRow][col] = Cell.create({
+				grapheme: existing?.grapheme ?? " ",
+				fg: style?.fg ?? existing?.getFgColor(),
+				bg: existing?.getBgColor(),
+				bold: flags?.bold,
+				italic: flags?.italic,
+				underline: edge === "underline" || flags?.underline,
+				underlineStyle: flags?.doubleUnderline ? "double" : undefined,
+				strikethrough: flags?.strikethrough,
+				overline: edge === "overline" || flags?.overline,
+				inverse: flags?.inverse,
+				blink: flags?.blink,
+				dim: style?.dim ?? flags?.dim,
+			});
+		}
 	}
 
 	drawBorder(
@@ -864,7 +906,9 @@ export class DrawingContext {
 		},
 		style?: CellStyle,
 	): void {
-		if (width < 2 || height < 2 || !borderStyles.hasAnyBorder) return;
+		if (!borderStyles.hasAnyBorder || width < 1 || height < 1) return;
+		// A thin box (a 1-row <hr>, say) still shows its horizontal edges: the loops
+		// below draw only the run that fits, so let it through.
 
 		const right = x + width - 1;
 		const bottom = y + height - 1;
@@ -914,8 +958,9 @@ export class DrawingContext {
 			}
 		}
 
-		// Bottom edge: the same run, turning up at its corners.
-		if (hasBottom && bottom !== y) {
+		// Bottom edge: the same run, turning up at its corners. On a 1-row box it
+		// draws only if the top didn't already cover that row.
+		if (hasBottom && (bottom !== y || !hasTop)) {
 			for (let col = x; col <= right; col++) {
 				const atLeft = col === x && hasLeft;
 				const atRight = col === right && hasRight;

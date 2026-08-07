@@ -239,6 +239,24 @@ function applyFieldEdit(
 	}
 }
 
+/** Insert pasted `text` at the field's selection (one atomic edit). */
+function insertPaste(
+	field: HTMLInputElement | HTMLTextAreaElement,
+	text: string,
+): void {
+	if (!text) return;
+	const value = field.value;
+	const start = field.selectionStart ?? value.length;
+	const end = field.selectionEnd ?? value.length;
+	applyFieldEdit(
+		field,
+		collapsedEdit(
+			value.slice(0, start) + text + value.slice(end),
+			start + text.length,
+		),
+	);
+}
+
 /** Add a `part`-attributed span (holding one empty text node) to a UA root. */
 function addPart(root: ShadowRoot, part: string): HTMLElement {
 	const span = root.ownerDocument.createElement("span");
@@ -326,9 +344,20 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 			// method the renderer reaches in to call -- the custom-element surface
 			// is the whole boundary.
 			this.addEventListener("keydown", this.#onKeydown);
+			this.addEventListener(
+				"beforeinput",
+				this.#onBeforeInput as EventListener,
+			);
 
 			this.#reconcile();
 		}
+
+		// A textarea keeps a paste's newlines.
+		#onBeforeInput = (event: InputEvent): void => {
+			if (event.inputType !== "insertFromPaste" || event.data == null) return;
+			event.preventDefault();
+			insertPaste(this, event.data);
+		};
 
 		attributeChangedCallback(): void {
 			if (this.#valueText) this.#reconcile();
@@ -478,7 +507,6 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 		#root: ShadowRoot | null = null;
 		#valueText: Text | null = null;
 		#placeholderText: Text | null = null;
-		#blankText: Text | null = null;
 
 		/** field for a text-ish input, toggle for checkbox/radio. */
 		#kindFor(): "field" | "toggle" {
@@ -494,9 +522,21 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 			}
 			this.#build();
 			// Editing is the widget's own default action, like a browser input's
-			// -- a keydown listener, not a renderer hook.
+			// -- a keydown listener; paste is a beforeinput listener.
 			this.addEventListener("keydown", this.#onKeydown);
+			this.addEventListener(
+				"beforeinput",
+				this.#onBeforeInput as EventListener,
+			);
 		}
+
+		// A single-line input strips a paste's line breaks (HTML value sanitization).
+		#onBeforeInput = (event: InputEvent): void => {
+			if (event.inputType !== "insertFromPaste" || event.data == null) return;
+			if (this.type === "checkbox" || this.type === "radio") return;
+			event.preventDefault();
+			insertPaste(this, event.data.replace(/[\r\n]+/g, ""));
+		};
 
 		attributeChangedCallback(name: string): void {
 			if (!this.#root) return;
@@ -518,7 +558,7 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 
 		/**
 		 * Build (or rebuild, on a type flip) the UA-internal shadow tree. The
-		 * field tree carries value / placeholder / blank parts; the toggle tree a
+		 * field tree carries value / placeholder parts; the toggle tree a
 		 * single glyph part the painter fills from live `.checked` (a radio's
 		 * group exclusivity unchecks siblings with no hook to reconcile on).
 		 * Enrolled in the observer so a framework's value/placeholder change
@@ -544,7 +584,6 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 				root.appendChild(style);
 				this.#valueText = addPart(root, "value").firstChild as Text;
 				this.#placeholderText = addPart(root, "placeholder").firstChild as Text;
-				this.#blankText = addPart(root, "blank").firstChild as Text;
 			} else {
 				this.#valueText = null;
 				addPart(root, "glyph"); // The painter fills it from live .checked.
@@ -554,18 +593,15 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 
 		/**
 		 * Reconcile the field tree with the input's own value/placeholder -- the
-		 * rendered content model a width:auto input measures against. The blank
-		 * part carries the caret's own cell past the last character; the
-		 * painter's scroll-window and caret read the input's value and selection
-		 * directly. A toggle has no text to reconcile; its glyph is the
+		 * rendered content model a width:auto input measures against. The value
+		 * text paints through the normal walk; the placeholder shows only when the
+		 * value is empty. A toggle has no text to reconcile; its glyph is the
 		 * painter's.
 		 */
 		#reconcile(): void {
 			if (this.#kind === "field" && this.#valueText) {
 				const value = this.value;
 				const placeholder = this.getAttribute("placeholder") ?? "";
-				const autoWidth =
-					window.getComputedStyle(this).getPropertyValue("width") === "auto";
 				// A password puts one bullet per code unit into the shadow, never
 				// the real value -- so what lays out, paints, and can be selected is
 				// only the mask; the value stays in .value alone. Offsets stay 1:1
@@ -576,11 +612,12 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 				if (this.#placeholderText!.data !== placeholder) {
 					this.#placeholderText!.data = placeholder;
 				}
-				// An empty field must not collapse to zero cells: with no value
-				// and no placeholder, the blank's single caret cell IS the field
-				// -- one faint underlined cell marking an editable spot.
-				const blank = !autoWidth ? "" : value || !placeholder ? " " : "";
-				if (this.#blankText!.data !== blank) this.#blankText!.data = blank;
+				// Exactly one occupies the slot: value when present, else placeholder.
+				(this.#valueText.parentElement as HTMLElement).style.display = value
+					? "inline-block"
+					: "none";
+				(this.#placeholderText!.parentElement as HTMLElement).style.display =
+					value ? "none" : "inline-block";
 			}
 			// A width:auto input sizes to its composed content; nothing else
 			// invalidates the measure, and the observer would only hear it on a
