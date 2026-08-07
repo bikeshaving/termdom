@@ -58,6 +58,8 @@ Ordinary Node programs in [`examples/`](./examples):
   Prism): flow mode when it fits, a pager when it doesn't.
 - [`chat.ts`](./examples/chat.ts) — a streaming LLM chat client as a web
   page: transcript, composer, tokens reflowing live.
+- [`password.ts`](./examples/password.ts) — a password strength meter: a
+  masked `<input type="password">` driving live requirement checks.
 - [`fuzzy-finder.ts`](./examples/fuzzy-finder.ts), [`git-log.ts`](./examples/git-log.ts),
   [`tanstack-table.ts`](./examples/tanstack-table.ts) — interactive lists and
   tables.

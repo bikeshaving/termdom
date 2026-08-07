@@ -197,7 +197,7 @@ function* TodoList(this: Context, {todos, filter}: any) {
 		yield jsx`
 			<ul class="todo-list">
 				${filteredTodos.map(
-					(todo: any) => jsx`<${TodoItem} $key=${todo.id} todo=${todo} />`,
+					(todo: any) => jsx`<${TodoItem} key=${todo.id} todo=${todo} />`,
 				)}
 			</ul>
 		`;
@@ -225,7 +225,7 @@ function* Footer(this: Context, {todos, filter}: any) {
 				<ul class="filters">
 					${["all", "active", "completed"].map(
 						(f) => jsx`
-							<li $key=${f}>
+							<li key=${f}>
 								<a
 									href="javascript:void(0)"
 									onclick=${() => setFilter(f === "all" ? "" : f)}
