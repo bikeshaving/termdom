@@ -314,6 +314,60 @@ function adjoiningMargins(
 	return out;
 }
 
+/**
+ * A SELF-COLLAPSING block (css2 §8.3.1): zero-height, nothing at either
+ * vertical edge -- its own top and bottom margins adjoin each other, and
+ * the margins of its neighbors pass straight through it.
+ */
+function isSelfCollapsing(element: Element): boolean {
+	if (!isInFlow(element)) return false;
+	const display = getPropertyValue(element, "display");
+	if (display !== "block" && display !== "list-item") return false;
+	if (establishesBFC(element)) return false;
+	for (const side of ["top", "bottom"]) {
+		if (parseFloat(getPropertyValue(element, `border-${side}-width`)) > 0) {
+			return false;
+		}
+		const padding = parseUnitValue(
+			getPropertyValue(element, `padding-${side}`),
+		);
+		if (typeof padding === "number" && padding > 0) return false;
+	}
+	const height = getPropertyValue(element, "height");
+	if (height && height !== "auto") return false;
+	const minHeight = parseUnitValue(getPropertyValue(element, "min-height"));
+	if (typeof minHeight === "number" && minHeight > 0) return false;
+	for (const node of element.childNodes) {
+		if (node.nodeType === node.TEXT_NODE) {
+			if ((node as Text).data.trim() !== "") return false;
+			continue;
+		}
+		if (node.nodeType !== node.ELEMENT_NODE) continue;
+		if (isInFlow(node as Element)) return false;
+	}
+	return true;
+}
+
+/**
+ * Walk to the nearest NON-self-collapsing block sibling, gathering the
+ * margins of every empty block passed through into `margins`.
+ */
+function siblingThroughEmpties(
+	element: Element,
+	direction: "previousSibling" | "nextSibling",
+	margins: number[] | null,
+): Element | null {
+	let sibling = adjacentBlockSibling(element, direction);
+	while (sibling && isSelfCollapsing(sibling)) {
+		margins?.push(
+			numericMargin(sibling, "margin-top"),
+			numericMargin(sibling, "margin-bottom"),
+		);
+		sibling = adjacentBlockSibling(sibling, direction);
+	}
+	return sibling;
+}
+
 /** Whether `element`'s vertical margins are subject to collapsing at all:
  * an in-flow block-level box in a block container. Flex items never
  * collapse (css-flexbox-1 §4). */
@@ -337,8 +391,22 @@ function collapsedMarginTop(element: Element): number | null {
 	) {
 		return 0;
 	}
-	const previous = adjacentBlockSibling(element, "previousSibling");
+	// A self-collapsing box between real siblings owns no gap: the following
+	// box's top margin gathers everything (both of the empty's margins
+	// included), so the empty contributes zero of its own.
+	if (
+		isSelfCollapsing(element) &&
+		siblingThroughEmpties(element, "nextSibling", null)
+	) {
+		return 0;
+	}
 	const margins = adjoiningMargins(element, "top", []);
+	if (isSelfCollapsing(element)) {
+		// Last in its run: nothing after it will gather, so this box carries
+		// the whole collapsed set -- both its own margins adjoin.
+		margins.push(numericMargin(element, "margin-bottom"));
+	}
+	const previous = siblingThroughEmpties(element, "previousSibling", margins);
 	if (previous) adjoiningMargins(previous, "bottom", margins);
 	return combineMargins(margins);
 }
@@ -353,7 +421,11 @@ function collapsedMarginBottom(element: Element): number | null {
 	) {
 		return 0;
 	}
-	// A following sibling's top margin owns the whole collapsed gap.
+	// A following sibling's top margin owns the whole collapsed gap (an
+	// empty follower still gathers: its own top walk collects this box's
+	// bottom chain) -- and a self-collapsing box's bottom is already counted
+	// wherever its top went.
+	if (isSelfCollapsing(element)) return 0;
 	if (adjacentBlockSibling(element, "nextSibling")) return 0;
 	return combineMargins(adjoiningMargins(element, "bottom", []));
 }

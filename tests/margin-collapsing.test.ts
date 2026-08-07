@@ -151,3 +151,44 @@ test("negative values stay rejected where CSS forbids them", async () => {
 	expect(w.height).toBe(1);
 	dom.dispose();
 });
+
+test("an empty block self-collapses: one margin passes through it", async () => {
+	const {dom} = await layout(
+		`<div id="a">A</div>` +
+			`<div id="e" style="margin-top:2px;margin-bottom:3px"></div>` +
+			`<div id="b">B</div>`,
+	);
+	const a = rectOf(dom, dom.document.getElementById("a")!);
+	const e = rectOf(dom, dom.document.getElementById("e")!);
+	const b = rectOf(dom, dom.document.getElementById("b")!);
+	// All four margins adjoin through the zero-height block: max is 3.
+	expect(e.height).toBe(0);
+	expect(b.top - a.bottom).toBe(3);
+	dom.dispose();
+});
+
+test("a chain of empty blocks still collapses to one margin", async () => {
+	const {dom} = await layout(
+		`<div id="a">A</div>` +
+			`<div style="margin-bottom:2px"></div>` +
+			`<div style="margin-top:1px"></div>` +
+			`<div id="b" style="margin-top:1px">B</div>`,
+	);
+	const a = rectOf(dom, dom.document.getElementById("a")!);
+	const b = rectOf(dom, dom.document.getElementById("b")!);
+	expect(b.top - a.bottom).toBe(2);
+	dom.dispose();
+});
+
+test("border or height stops self-collapse", async () => {
+	const {dom} = await layout(
+		`<div id="a">A</div>` +
+			`<div id="e" style="height:1px;margin-top:1px;margin-bottom:1px"></div>` +
+			`<div id="b">B</div>`,
+	);
+	const a = rectOf(dom, dom.document.getElementById("a")!);
+	const b = rectOf(dom, dom.document.getElementById("b")!);
+	// A real box between them: both margins apply around it.
+	expect(b.top - a.bottom).toBe(3);
+	dom.dispose();
+});
