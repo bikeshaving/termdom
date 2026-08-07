@@ -37,8 +37,9 @@ document.body.appendChild(box);
 
 `attach()` is the only call that takes the terminal — construction and DOM
 mutation are inert until it runs. A program that only wants static output
-needs no instance at all: `renderANSI(html)` returns the ANSI string, and
-`print(html)` appends it to stdout as ordinary command output.
+never calls it: `term.renderANSI(html)` returns the ANSI string at the
+transport's width, and `term.print(html)` writes it through the transport
+as ordinary command output.
 
 After that there is no render call, and that is not a convenience — it is the
 same contract a browser gives you. Mutations are observed and painted on the

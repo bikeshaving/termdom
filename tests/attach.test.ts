@@ -6,7 +6,7 @@
  */
 import {test, expect} from "@b9g/libuild/test";
 import {MockProcess, nextFrame} from "./test-utils";
-import {TermDOM, renderANSI, print} from "../src/internal/termdom.js";
+import {TermDOM} from "../src/internal/termdom.js";
 
 function countWrites(terminal: MockProcess): {count(): number} {
 	let writes = 0;
@@ -76,10 +76,13 @@ test("requestFullscreen before attach() rejects and stays silent", async () => {
 	dom.dispose();
 });
 
-test("renderANSI is a pure HTML-to-ANSI transform", () => {
-	const ansi = renderANSI(`<div style="color:red">static content</div>`, {
-		cols: 40,
-	});
+test("renderANSI transforms HTML at the transport's width, touching nothing", () => {
+	const terminal = new MockProcess({cols: 40, rows: 8});
+	const writes = countWrites(terminal);
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML = `<div>the instance's own document</div>`;
+
+	const ansi = dom.renderANSI(`<div style="color:red">static content</div>`);
 	expect(ansi).toContain("static content");
 	expect(ansi).toContain("\x1b[38;2;255;0;0m");
 	// A document string, not a terminal session: no modes, no cursor control.
@@ -87,28 +90,28 @@ test("renderANSI is a pure HTML-to-ANSI transform", () => {
 	expect(ansi).not.toContain("\x1b[2J");
 	// Styles in the fragment join the cascade.
 	expect(
-		renderANSI(`<style>p { color: #00ff00 }</style><p>green</p>`, {cols: 40}),
+		dom.renderANSI(`<style>p { color: #00ff00 }</style><p>green</p>`),
 	).toContain("\x1b[38;2;0;255;0m");
+	// The instance's document was neither consulted nor mutated, and the
+	// transport saw no bytes.
+	expect(ansi).not.toContain("the instance's own document");
+	expect(dom.document.body.textContent).toBe("the instance's own document");
+	expect(writes.count()).toBe(0);
+	dom.dispose();
 });
 
-test("print() appends the rendered HTML to stdout once", async () => {
-	const written: string[] = [];
-	const original = process.stdout.write.bind(process.stdout);
-	(process.stdout as any).write = (chunk: any, cb?: any) => {
-		written.push(String(chunk));
-		if (typeof cb === "function") cb();
-		return true;
-	};
-	try {
-		await print(`<div>printed line</div>`, {cols: 40});
-	} finally {
-		(process.stdout as any).write = original;
-	}
-	expect(written).toHaveLength(1);
-	expect(written[0]).toContain("printed line");
-	// Ordinary command output: no takeover, no raw-mode CRLF.
-	expect(written[0]).not.toContain("\x1b[?");
-	expect(written[0]).not.toContain("\r\n");
+test("print() writes the rendered HTML through the transport once", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 8});
+	const writes = countWrites(terminal);
+	const dom = new TermDOM({transport: terminal.transport});
+	await dom.print(`<div>printed line</div>`);
+	expect(writes.count()).toBe(1);
+	await new Promise((r) => setTimeout(r, 20));
+	expect(terminal.getVisibleText()).toContain("printed line");
+	// Ordinary command output: no takeover, and dispose owes nothing more.
+	dom.dispose();
+	await new Promise((r) => setTimeout(r, 20));
+	expect(writes.count()).toBe(1);
 });
 
 test("a geometry read never strands the mutations it drained", async () => {

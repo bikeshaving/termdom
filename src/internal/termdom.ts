@@ -3073,6 +3073,62 @@ export class TermDOM {
 		return this.#viewport.screenTop;
 	}
 
+	// The scratch engine behind renderANSI/print, created on first use and
+	// sized from the transport; recreated if the transport's width changes.
+	// One jsdom document, reused across calls -- a program that prints many
+	// fragments pays construction once.
+	#staticSibling: TermDOM | null = null;
+
+	#staticRenderer(): TermDOM {
+		const cols = this.#transport.cols;
+		if (this.#staticSibling && this.#staticSibling.#width !== cols) {
+			void this.#staticSibling.dispose();
+			this.#staticSibling = null;
+		}
+		this.#staticSibling ??= new TermDOM({
+			transport: {
+				cols,
+				rows: 24,
+				readable: new ReadableStream<string>({}, {highWaterMark: 0}),
+				writable: new WritableStream<string>({}),
+				closed: new Promise<void>(() => {}),
+				interactive: false,
+			},
+		});
+		return this.#staticSibling;
+	}
+
+	/**
+	 * Render an HTML string to an ANSI string at the transport's width:
+	 * colors and line breaks, no cursor controls, no modes. <style> elements
+	 * in the fragment join the cascade. The instance's own document is not
+	 * consulted or touched.
+	 */
+	renderANSI(html: string): string {
+		return this.#renderStaticHTML(html, "\n");
+	}
+
+	#renderStaticHTML(html: string, lineEnding: "\n" | "\r\n"): string {
+		const renderer = this.#staticRenderer();
+		renderer.document.body.innerHTML = html;
+		return renderer[kRenderStatic](lineEnding);
+	}
+
+	/**
+	 * renderANSI(html) written through the transport, as ordinary command
+	 * output. Resolves when the bytes have reached the transport. CRLF while
+	 * a live raw-mode session holds the terminal; cooked mode translates
+	 * bare newlines itself.
+	 */
+	print(html: string): Promise<void> {
+		const output = this.#renderStaticHTML(
+			html,
+			this.#attached && this.#interactive ? "\r\n" : "\n",
+		);
+		if (!output) return Promise.resolve();
+		return this.#session.write(output);
+	}
+
 	/** Explicit resource management: `using dom = new TermDOM()` tears down on scope exit. */
 	[Symbol.dispose](): void {
 		this.dispose();
@@ -3135,6 +3191,10 @@ export class TermDOM {
 
 		// Shadow DOM cleanup is automatic with symbol-based storage
 
+		if (this.#staticSibling) {
+			void this.#staticSibling.dispose();
+			this.#staticSibling = null;
+		}
 		this[kObserver].disconnect();
 		this.#styleManager.dispose();
 		this[kLayoutEngine].dispose();
@@ -3146,54 +3206,4 @@ export class TermDOM {
 		)();
 		return flushed;
 	}
-}
-
-export interface RenderANSIOptions {
-	/** Line width in cells. Defaults to the terminal's, then 80. */
-	cols?: number;
-}
-
-/**
- * Render an HTML string to an ANSI string: colors and line breaks, no
- * cursor controls, no modes. `<style>` elements in the fragment join the
- * cascade like any document's.
- */
-export function renderANSI(
-	html: string,
-	options: RenderANSIOptions = {},
-): string {
-	const cols =
-		options.cols ??
-		((typeof process !== "undefined" && process.stdout?.columns) || 80);
-	const term = new TermDOM({
-		transport: {
-			cols,
-			rows: 24,
-			readable: new ReadableStream<string>({}, {highWaterMark: 0}),
-			writable: new WritableStream<string>({}),
-			closed: new Promise<void>(() => {}),
-			interactive: false,
-		},
-	});
-	try {
-		term.document.body.innerHTML = html;
-		return term[kRenderStatic]("\n");
-	} finally {
-		void term.dispose();
-	}
-}
-
-/** renderANSI() appended to stdout. Resolves when the bytes have flushed. */
-export function print(
-	html: string,
-	options: RenderANSIOptions = {},
-): Promise<void> {
-	const output = renderANSI(html, options);
-	if (!output) return Promise.resolve();
-	return new Promise<void>((resolve, reject) => {
-		process.stdout.write(output, (error) => {
-			if (error) reject(error);
-			else resolve();
-		});
-	});
 }
