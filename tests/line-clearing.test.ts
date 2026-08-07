@@ -1,5 +1,6 @@
 import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/index.js";
+import {Renderer} from "../src/internal/ansi.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
 test("line clearing removes terminal artifacts from previous commands", async () => {
@@ -124,4 +125,53 @@ test("first render includes line clear sequences", async () => {
 	expect(capturedOutput).toContain("\r\x1b[K");
 
 	dom.dispose();
+});
+
+test("a screen reset clears stale rows without a screen-qualifying erase", async () => {
+	// tmux (and terminals like it) preserve a fully-erased screen by pushing
+	// it into scrollback -- the courtesy it extends to `clear`. An ED at the
+	// home position therefore archives a copy of the old frame on every
+	// resize. The reset must instead clear per-row (each painted or blank row
+	// erases itself) plus one partial erase below the content, which never
+	// qualifies as a whole-screen clear.
+	const terminal = new MockProcess({cols: 20, rows: 6});
+	const renderer = new Renderer(6, 20, "rgb");
+	const write = (s: string) =>
+		new Promise<void>((r) => terminal.stdout.write(s, () => r()));
+
+	// An initial frame fills five rows.
+	await write(
+		renderer.renderFrame(
+			0,
+			(ctx) => {
+				for (let i = 0; i < 5; i++) ctx.setText(0, i, `stale row ${i}`);
+			},
+			0,
+			5,
+		),
+	);
+	expect(terminal.getVisibleText()).toContain("stale row 4");
+
+	// The resize path resets the screen; the new frame is shorter and leaves
+	// row 1 blank.
+	renderer.resetScreen(0);
+	const out = renderer.renderFrame(
+		0,
+		(ctx) => {
+			ctx.setText(0, 0, "fresh top");
+			ctx.setText(0, 2, "fresh mid");
+		},
+		0,
+		3,
+	);
+	expect(out).not.toContain("\x1b[2J");
+	expect(out).not.toMatch(/\x1b\[1;1H\x1b\[J/);
+
+	await write(out);
+	const text = terminal.getVisibleText();
+	expect(text).toContain("fresh top");
+	expect(text).toContain("fresh mid");
+	// Row 1 (blank in the new frame) and rows 3-4 (below it) are stale rows
+	// the erase-free reset still has to clear.
+	expect(text).not.toContain("stale");
 });

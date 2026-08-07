@@ -1114,8 +1114,6 @@ export class Renderer {
 	#needsFullClear: boolean = false;
 	#needsScreenReset: boolean = false;
 	#resetAtRow: number = 0;
-	/** The pending reset erases the whole screen, not from #resetAtRow down. */
-	#clearWholeScreen: boolean = false;
 	#rows: number;
 	#cols: number;
 	#colorDepth: ColorDepth;
@@ -1210,25 +1208,22 @@ export class Renderer {
 	resetScreen(startRow: number): void {
 		this.#needsScreenReset = true;
 		this.#resetAtRow = Math.max(0, startRow);
-		this.#clearWholeScreen = false;
 		this.#hasSavedCursor = false;
 		this.clearPreviousBuffer();
 	}
 
 	/**
-	 * Erase every visible row and paint from the top, for the resize whose
-	 * anchor cannot be trusted (the frame no longer fits below where the cursor
-	 * query put it, so the amount the terminal scrolled is unrecoverable).
-	 * Nothing of the old frame can survive an erase that covers every row it
-	 * could occupy -- a guarantee of the sequence, not a measured outcome. It
-	 * costs the output above us, which beats a screen holding two half-frames.
+	 * Reset from the top row, for the resize whose anchor cannot be trusted
+	 * (the frame no longer fits below where the cursor query put it, so the
+	 * amount the terminal scrolled is unrecoverable). Nothing of the old frame
+	 * survives: a reset frame covers every visible row -- each region row
+	 * clears itself, and one partial erase takes everything below the content
+	 * -- without the whole-screen ED that tmux would archive into scrollback.
+	 * It costs the output above us, which beats a screen holding two
+	 * half-frames.
 	 */
 	clearScreen(): void {
-		this.#needsScreenReset = true;
-		this.#resetAtRow = 0;
-		this.#clearWholeScreen = true;
-		this.#hasSavedCursor = false;
-		this.clearPreviousBuffer();
+		this.resetScreen(0);
 	}
 
 	/**
@@ -1404,6 +1399,37 @@ export class Renderer {
 			}
 		}
 
+		// A reset frame redraws onto rows whose terminal content is unknown --
+		// the previous buffer was dropped. Every region row must clear ITSELF:
+		// a row the new frame leaves blank gets a seeded space so generateANSI
+		// emits its \r\e[K line like any content row. Per-row erases instead of
+		// one ED from the home position matter in tmux, which preserves a
+		// fully-erased screen by pushing it into scrollback (the courtesy it
+		// extends to `clear`) -- the ED archived a copy of the old frame into
+		// the scrollback on every resize.
+		const resetFrame = this.#needsScreenReset || this.#needsFullClear;
+		if (resetFrame) {
+			// Buffer rows are region-relative (the anchor row is where the frame
+			// CUPs to); regionRows is a screen-absolute end. Seed exactly the
+			// region's rows -- seeding further would count blank screen rows as
+			// content and skew the park the resize re-anchor measures from.
+			const anchorRow = this.#needsScreenReset
+				? this.#resetAtRow
+				: (cursorPosition ?? 0);
+			const regionHeight = (regionRows ?? this.#rows) - anchorRow;
+			const seedRows = Math.min(frameRows, this.#rows, regionHeight);
+			for (let row = 0; row < seedRows; row++) {
+				let empty = true;
+				for (let col = 0; col < this.#cols; col++) {
+					if (diffBuffer[row][col] !== null) {
+						empty = false;
+						break;
+					}
+				}
+				if (empty) diffBuffer[row][0] = Cell.create(" ");
+			}
+		}
+
 		// Check for content
 		let hasContent = false;
 
@@ -1456,16 +1482,13 @@ export class Renderer {
 				// prompt, an earlier command -- is short and does not reflow-grow, so
 				// our own record of the row our content starts at still holds.
 				//
-				// Position there absolutely and erase from there to the bottom (ED0),
-				// then reprint. We do NOT home to the top of the screen: that would
-				// wipe whatever is above us and, because the redraw then starts a row
-				// or two higher than the content did, scroll the old frame up into the
-				// scrollback -- a fresh copy on every resize.
+				// Position there absolutely and reprint. We do NOT home to the top of
+				// the screen: that would wipe whatever is above us. And no ED here at
+				// all: every region row clears itself (see the reset-frame seeding),
+				// and the rows below the content get one PARTIAL erase after the
+				// paint -- a full-screen ED from the home row is exactly what tmux
+				// archives into the scrollback.
 				prefix += `\x1b[${this.#resetAtRow + 1};1H`; // CUP - content start
-				// ED2 takes the whole screen; ED0 takes from here down and
-				// leaves whatever is above untouched.
-				prefix += this.#clearWholeScreen ? "\x1b[2J" : "\x1b[J";
-				this.#clearWholeScreen = false;
 				prefix += "\x1b7"; // DECSC - save the new content start
 				this.#hasSavedCursor = true;
 				this.#needsScreenReset = false;
@@ -1539,6 +1562,16 @@ export class Renderer {
 			}
 			staleOutput += "\r"; // CR - column 0
 			staleOutput += "\x1b[J"; // ED0 - Erase from cursor to end of screen
+		} else if (
+			resetFrame &&
+			frameStartRow !== undefined &&
+			frameStartRow + contentHeight < this.#rows
+		) {
+			// After a reset nothing below the content is trusted either -- the
+			// old frame may have been taller. Erase from the first row past the
+			// content: a PARTIAL erase, which no terminal treats as a screen
+			// clear worth archiving.
+			staleOutput += `\x1b[${frameStartRow + contentHeight + 1};1H\x1b[J`;
 		}
 
 		// Update state for next frame. Anything above the last terminalHeight rows

@@ -58,7 +58,13 @@ test("ResizeObserver fires when the terminal resizes a percentage-sized box", as
 
 	terminal.resize(60, 10);
 	(terminal as any).emit("SIGWINCH");
-	await new Promise((r) => setTimeout(r, 60));
+	// The resize pipeline is debounced (RESIZE_DEBOUNCE_MS) and re-anchors
+	// through an async cursor query -- wait for the observation itself, not a
+	// guessed interval.
+	const deadline = Date.now() + 2000;
+	while (widths.length < 2 && Date.now() < deadline) {
+		await new Promise((r) => setTimeout(r, 10));
+	}
 
 	// Full-width at 40 columns, then full-width at 60.
 	expect(widths).toEqual([40, 60]);
