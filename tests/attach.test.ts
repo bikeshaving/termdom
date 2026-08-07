@@ -164,3 +164,18 @@ test("dispose() restores shell-critical modes synchronously", async () => {
 	expect(restored).toContain("\x1b[?25h");
 	expect(restored).toContain("\x1b[?2004l");
 });
+
+test("awaiting dispose() means the final flush has landed", async () => {
+	// A CLI that prints a result after teardown (the fuzzy finder's picked
+	// line) needs its output BELOW the paid-out document, not raced into it.
+	const terminal = new MockProcess({cols: 40, rows: 8});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.attach();
+	dom.document.body.innerHTML = `<div>document payout line</div>`;
+	await nextFrame(dom);
+
+	await dom.dispose();
+	// The payout has been ingested by the terminal before the promise
+	// resolves; a write issued now lands after it.
+	expect(terminal.getVisibleText()).toContain("document payout line");
+});
