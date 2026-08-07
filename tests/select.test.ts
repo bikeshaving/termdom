@@ -30,7 +30,6 @@ test("select renders the selected label and indicator, never the option list", a
 	const select = makeSelect(document);
 	document.body.appendChild(select);
 	await nextFrame(dom);
-	await nextFrame(dom);
 
 	const output = terminal.getPlainText();
 	expect(output).toContain("Alpha");
@@ -47,7 +46,6 @@ test("the field is sized to the longest option label", async () => {
 	const {document} = dom;
 	const select = makeSelect(document);
 	document.body.appendChild(select);
-	await nextFrame(dom);
 	await nextFrame(dom);
 
 	// "Gamma ray" (9) + " ▾" (2)
@@ -114,7 +112,6 @@ test("select internals are closed: no shadowRoot, attachShadow throws", async ()
 	const select = makeSelect(document);
 	document.body.appendChild(select);
 	await nextFrame(dom);
-	await nextFrame(dom);
 
 	expect(select.shadowRoot).toBeNull();
 	expect(() => select.attachShadow({mode: "open"})).toThrow();
@@ -136,7 +133,6 @@ test("Space opens the picker in the top layer, over following content", async ()
 	await nextFrame(dom);
 
 	type(terminal, " ");
-	await nextFrame(dom);
 	await nextFrame(dom);
 	const rows = terminal.getPlainText().split("\n");
 	// The picker's bordered list covers the row the content held.
@@ -170,7 +166,6 @@ test("picker: arrows highlight without committing; Enter commits and closes", as
 
 	type(terminal, "\r"); // Enter commits Gamma and closes
 	await nextFrame(dom);
-	await nextFrame(dom);
 	expect(select.value).toBe("c");
 	expect(events).toEqual(["c"]);
 	expect(terminal.getPlainText()).not.toContain("┌");
@@ -194,7 +189,6 @@ test("picker: Escape dismisses without changing the value", async () => {
 	await nextFrame(dom);
 	type(terminal, "\x1b"); // Escape
 	await nextFrame(dom);
-	await nextFrame(dom);
 	expect(select.value).toBe("a");
 	expect(terminal.getPlainText()).not.toContain("┌");
 
@@ -215,7 +209,6 @@ test("picker: blurring the select closes it", async () => {
 	expect(terminal.getPlainText()).toContain("┌");
 
 	select.blur();
-	await nextFrame(dom);
 	await nextFrame(dom);
 	expect(terminal.getPlainText()).not.toContain("┌");
 
@@ -260,7 +253,6 @@ test("picker: clicking an option row commits it, fires change, and closes", asyn
 	// Rows: 1 field, 2 border, 3 Alpha, 4 Beta, 5 Gamma ray, 6 border.
 	click(terminal, 3, 5);
 	await nextFrame(dom);
-	await nextFrame(dom);
 
 	expect(select.value).toBe("c");
 	expect(changed).toBe("c");
@@ -286,7 +278,6 @@ test("picker: a disabled row is inert; clicking the face again dismisses", async
 	expect(terminal.getPlainText()).toContain("┌");
 
 	click(terminal, 2, 1); // the closed face -- dismiss without change
-	await nextFrame(dom);
 	await nextFrame(dom);
 	expect(select.value).toBe("a");
 	expect(terminal.getPlainText()).not.toContain("┌");

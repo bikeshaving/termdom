@@ -88,7 +88,6 @@ test("undeclared RTL text still paints in visual order", async () => {
 	dom.document.body.innerHTML = `<div>${HEBREW}</div>`;
 
 	await nextFrame(dom);
-	await nextFrame(dom);
 
 	expect(terminal.getPlainText().split("\n")[0].trimEnd()).toBe(HEBREW_VISUAL);
 
@@ -100,7 +99,6 @@ test("direction: rtl right-aligns the line and keeps Latin runs readable", async
 	const dom = new TermDOM({process: terminal});
 	dom.document.body.innerHTML = `<div style="direction: rtl; width: 20ch">مرحبا Bun</div>`;
 
-	await nextFrame(dom);
 	await nextFrame(dom);
 
 	const line = terminal.getPlainText().split("\n")[0];
@@ -119,7 +117,6 @@ test("the terminal is asked to leave bidi to us, and its answer is honoured", as
 	const dom = new TermDOM({process: terminal});
 	dom.document.body.innerHTML = `<div>${HEBREW}</div>`;
 
-	await nextFrame(dom);
 	await nextFrame(dom);
 
 	expect(terminal.getPlainText().split("\n")[0].trimEnd()).toBe(HEBREW_VISUAL);
@@ -155,7 +152,6 @@ test("a terminal that insists on reordering gets logical order instead", async (
 	dom.document.body.innerHTML = `<div>${HEBREW}</div>`;
 	await nextFrame(dom);
 	await new Promise((resolve) => setTimeout(resolve, 60));
-	await nextFrame(dom);
 	await nextFrame(dom);
 
 	// Doing it twice is a sentence backwards again, so we stand down.

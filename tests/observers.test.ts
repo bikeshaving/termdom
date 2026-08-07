@@ -75,7 +75,6 @@ test("ResizeObserver does not fire when the size is unchanged", async () => {
 	let calls = 0;
 	const ro = new window.ResizeObserver(() => calls++);
 	ro.observe(box);
-	await nextFrame(dom);
 	await nextFrame(dom); // no change
 	await nextFrame(dom);
 
@@ -205,7 +204,6 @@ test("ResizeObserver reports the content box's own origin", async () => {
 	);
 	ro.observe(document.getElementById("a"));
 	await nextFrame(dom);
-	await nextFrame(dom);
 
 	// Not 0,0: contentRect's origin is what precedes the content inside the
 	// border box, which here is one row of padding and two columns of it.
@@ -228,11 +226,9 @@ test("ResizeObserver reports 0x0 when an element is hidden", async () => {
 	);
 	ro.observe(document.getElementById("a"));
 	await nextFrame(dom);
-	await nextFrame(dom);
 	entries.length = 0;
 
 	document.getElementById("a").style.display = "none";
-	await nextFrame(dom);
 	await nextFrame(dom);
 
 	// Reporting the hide is how a component learns it has been hidden; skipping
@@ -255,7 +251,6 @@ test("display:none stops taking up rows", async () => {
 	const {dom, terminal, document} = make(8, 30) as any;
 	document.body.innerHTML = `<div id="a" style="height:3px">AAA</div><div>after</div>`;
 	await nextFrame(dom);
-	await nextFrame(dom);
 
 	const rows = () =>
 		terminal
@@ -266,12 +261,10 @@ test("display:none stops taking up rows", async () => {
 
 	document.getElementById("a").style.display = "none";
 	await nextFrame(dom);
-	await nextFrame(dom);
 	expect(rows()[0]).toBe("after");
 
 	// And comes back.
 	document.getElementById("a").style.display = "";
-	await nextFrame(dom);
 	await nextFrame(dom);
 	expect(rows()[0]).toBe("AAA");
 	expect(rows()[3]).toBe("after");
@@ -293,7 +286,6 @@ test("IntersectionObserver honours rootMargin", async () => {
 	);
 	a.observe(far);
 	await nextFrame(dom);
-	await nextFrame(dom);
 	expect(without).toEqual([false]);
 
 	const withMargin: boolean[] = [];
@@ -304,7 +296,6 @@ test("IntersectionObserver honours rootMargin", async () => {
 		{rootMargin: "100px"},
 	);
 	b.observe(far);
-	await nextFrame(dom);
 	await nextFrame(dom);
 	// The whole point of the option: start work before the row scrolls in.
 	expect(withMargin).toEqual([true]);
@@ -331,7 +322,6 @@ test("IntersectionObserver fires at every threshold crossing", async () => {
 	await nextFrame(dom);
 	for (let i = 0; i < 5; i++) {
 		dom.window.scrollBy(0, 1);
-		await nextFrame(dom);
 		await nextFrame(dom);
 	}
 

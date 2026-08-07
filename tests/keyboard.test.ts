@@ -1318,7 +1318,6 @@ test("display:none subtrees neither render, ghost, nor take tab focus", async ()
 		`<li class="editing"><div class="view"><input type="checkbox"><label>todo</label><button>x</button></div><input class="edit"></li>` +
 		`<div>after</div>`;
 	await nextFrame(dom);
-	await nextFrame(dom);
 
 	const rows = terminal.getPlainText().split("\n");
 	expect(rows[0]).toBe("before"); // no ghost row above
@@ -1358,7 +1357,6 @@ test("a runtime class flip swaps a row for its editor, in place", async () => {
 	edit.value = "Finish TermDOM";
 	li.appendChild(edit);
 	await nextFrame(dom);
-	await nextFrame(dom);
 
 	let rows = terminal.getPlainText().split("\n");
 	expect(rows[0]).toBe("before");
@@ -1367,7 +1365,6 @@ test("a runtime class flip swaps a row for its editor, in place", async () => {
 
 	li.classList.remove("editing");
 	li.removeChild(edit);
-	await nextFrame(dom);
 	await nextFrame(dom);
 	rows = terminal.getPlainText().split("\n");
 	expect(rows[1]).toContain("[ ] Finish TermDOM");
@@ -1409,7 +1406,6 @@ test("an empty width:auto input keeps a single caret cell", async () => {
 	dom.document.body.innerHTML =
 		`<div style="display:flex; flex-direction:row; gap:1ch">` +
 		`<span>a:</span><input style="width: auto"><span>z</span></div>`;
-	await nextFrame(dom);
 	await nextFrame(dom);
 
 	const line = () => (terminal as any).terminal.buffer.active.getLine(0);
@@ -1646,7 +1642,6 @@ test("an input preceded by text in its run positions on its own row", async () =
 	dom.document.body.innerHTML =
 		`<div>Name: <input value="Ada"></div>` +
 		`<div>Email: <input placeholder="you@example.com"></div>`;
-	await nextFrame(dom);
 	await nextFrame(dom);
 
 	const lines = terminal.getPlainText().split("\n");

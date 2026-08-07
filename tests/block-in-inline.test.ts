@@ -18,7 +18,6 @@ async function render(html: string, cols = 40, rows = 8) {
 	const dom = new TermDOM({process: terminal});
 	dom.document.body.innerHTML = html;
 	await nextFrame(dom);
-	await nextFrame(dom);
 	const lines = () =>
 		terminal
 			.getPlainText()

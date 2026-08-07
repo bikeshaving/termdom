@@ -237,13 +237,11 @@ test("a runtime flip to position:absolute keeps pseudo-only content", async () =
 
 	li.classList.add("pinned");
 	await nextFrame(dom);
-	await nextFrame(dom);
 	const pinned = terminal.getPlainText().split("\n")[0];
 	expect(pinned.trimEnd().endsWith("(x)")).toBe(true); // at the right edge
 	expect(pinned.startsWith("Finish TermDOM ")).toBe(true); // out of the row flow
 
 	li.classList.remove("pinned");
-	await nextFrame(dom);
 	await nextFrame(dom);
 	expect(terminal.getPlainText().split("\n")[0].trimEnd()).toBe(
 		"Finish TermDOM(x)",

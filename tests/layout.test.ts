@@ -2643,7 +2643,6 @@ test("overflow-wrap: normal lets a long word escape its box, as a browser does",
 	div.textContent = "aaaaaaaaaaaaaaaaaaaa";
 	document.body.appendChild(div);
 	await nextFrame(dom);
-	await nextFrame(dom);
 
 	// One line, unbroken: the word overflows the 10ch box.
 	expect(terminal.getPlainText().split("\n")[0]).toContain(
@@ -2662,7 +2661,6 @@ test("overflow-wrap: break-word wraps the long word inside the box", async () =>
 	div.style.setProperty("overflow-wrap", "break-word");
 	div.textContent = "aaaaaaaaaaaaaaaaaaaa";
 	document.body.appendChild(div);
-	await nextFrame(dom);
 	await nextFrame(dom);
 
 	const lines = terminal

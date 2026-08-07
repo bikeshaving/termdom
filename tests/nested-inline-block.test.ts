@@ -222,7 +222,6 @@ test("a run continues past a nested inline-block, not just past its parent", asy
 	dom.document.body.innerHTML = `<span><span style="display: inline-block">badge</span></span> and the rest`;
 
 	await nextFrame(dom);
-	await nextFrame(dom);
 
 	// The leaf walk used to stop at the inline-block's last-child position,
 	// so everything after the wrapping span vanished.
@@ -237,7 +236,6 @@ test("a run continues past a boxless child of a nested inline", async () => {
 	dom.document.body.innerHTML = `<span>lead<span style="display: none">gone</span></span> tail`;
 
 	await nextFrame(dom);
-	await nextFrame(dom);
 
 	const text = terminal.getVisibleText();
 	expect(text).toContain("lead tail");
@@ -251,7 +249,6 @@ test("a widget alone inside an inline-block paints where the box measured it", a
 	const dom = new TermDOM({process: terminal});
 	dom.document.body.innerHTML = `<div style="display: inline-block; padding: 0 2ch"><input value="typed"></div>`;
 
-	await nextFrame(dom);
 	await nextFrame(dom);
 
 	const input = dom.document.querySelector("input")!;
@@ -270,7 +267,6 @@ test("a block between two runs does not blank the earlier one", async () => {
 	const dom = new TermDOM({process: terminal});
 	dom.document.body.innerHTML = `heading<div>middle</div><input value="field">`;
 
-	await nextFrame(dom);
 	await nextFrame(dom);
 
 	// Attaching the input's UA shadow tree cleared every break result in the

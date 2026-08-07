@@ -659,7 +659,6 @@ test("min-width applies to ordinary block boxes", async () => {
 	dom.document.body.innerHTML = `<div id="narrow">a</div><div id="wide">b</div>`;
 
 	await nextFrame(dom);
-	await nextFrame(dom);
 
 	expect(
 		dom.document.getElementById("narrow")!.getBoundingClientRect().width,
@@ -679,7 +678,6 @@ test("the text-decoration longhand underlines, not just the shorthand", async ()
 	dom.document.head.innerHTML = `<style>#p { text-decoration-line: underline; }</style>`;
 	dom.document.body.innerHTML = `<div id="p">abc</div>`;
 
-	await nextFrame(dom);
 	await nextFrame(dom);
 
 	expect(/\x1b\[[^m]*4[;m]/.test(terminal.getStaticANSI())).toBe(true);

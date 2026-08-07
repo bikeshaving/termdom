@@ -249,12 +249,10 @@ test("fullscreen owns the alternate screen from row zero, whatever the anchor", 
 	await nextFrame(dom);
 	await document.getElementById("fs")!.requestFullscreen();
 	await nextFrame(dom);
-	await nextFrame(dom);
 	const buffer = (terminal as any).terminal.buffer.active;
 	expect(buffer.getLine(0).translateToString(true)).toContain("STAGE");
 
 	await document.exitFullscreen();
-	await nextFrame(dom);
 	await nextFrame(dom);
 	expect(terminal.getPlainText()).toContain("doc row");
 	dom.dispose();
@@ -281,7 +279,6 @@ test("no frame straddles a screen switch, even mid-animation", async () => {
 	stage.textContent = "STAGE tick 3";
 	await exited;
 	await nextFrame(dom);
-	await nextFrame(dom);
 
 	const rows = terminal.getPlainText().split("\n");
 	expect(rows[0]).toContain("alpha doc row"); // main screen, coherent
@@ -305,14 +302,12 @@ test("exiting fullscreen restores a coherent document frame", async () => {
 	const stage = document.getElementById("fs")!;
 	await stage.requestFullscreen();
 	await nextFrame(dom);
-	await nextFrame(dom);
 	// Fullscreen: the stage fills the alternate screen; the document rows
 	// are not part of it.
 	expect(terminal.getPlainText()).toContain("stage content");
 	expect(terminal.getPlainText()).not.toContain("alpha document row");
 
 	await document.exitFullscreen();
-	await nextFrame(dom);
 	await nextFrame(dom);
 	// Back on the main screen: the whole document, coherently.
 	const text = terminal.getPlainText();

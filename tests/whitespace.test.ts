@@ -545,7 +545,6 @@ test("a leading <br> keeps its line break and the whole run after it", async () 
 	dom.document.body.innerHTML = `<br> abcdef`;
 
 	await nextFrame(dom);
-	await nextFrame(dom);
 
 	const lines = terminal
 		.getPlainText()
@@ -573,7 +572,6 @@ test("white-space: pre suppresses wrapping but keeps newlines", async () => {
 		`<div id="wrap">the quick brown fox jumps over the lazy dog</div>` +
 		`<div id="lines">one\ntwo\nthree</div>`;
 
-	await nextFrame(dom);
 	await nextFrame(dom);
 
 	// `pre` does not wrap -- it overflows, like nowrap. This wrapped instead,

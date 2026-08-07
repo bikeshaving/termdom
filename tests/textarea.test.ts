@@ -21,7 +21,6 @@ test("textarea renders its multiline value inside the bordered box", async () =>
 	textarea.value = "first line\nsecond line";
 	document.body.appendChild(textarea);
 	await nextFrame(dom);
-	await nextFrame(dom);
 
 	const output = terminal.getPlainText();
 	expect(output).toContain("first line");
@@ -43,7 +42,6 @@ test("long lines soft-wrap at the content edge, as pre-wrap says", async () => {
 	textarea.setAttribute("cols", "10");
 	textarea.value = "aaaa bbbb cccc";
 	document.body.appendChild(textarea);
-	await nextFrame(dom);
 	await nextFrame(dom);
 
 	const lines = terminal
@@ -90,13 +88,11 @@ test("the placeholder shows in an empty textarea and hides once typed", async ()
 	textarea.setAttribute("placeholder", "Say something");
 	document.body.appendChild(textarea);
 	await nextFrame(dom);
-	await nextFrame(dom);
 	expect(terminal.getPlainText()).toContain("Say something");
 
 	textarea.focus();
 	await nextFrame(dom);
 	type(terminal, "x");
-	await nextFrame(dom);
 	await nextFrame(dom);
 	const output = terminal.getPlainText();
 	expect(output).not.toContain("Say something");
@@ -113,7 +109,6 @@ test("textarea internals are closed: no shadowRoot, attachShadow throws", async 
 	textarea.value = "content";
 	document.body.appendChild(textarea);
 	await nextFrame(dom);
-	await nextFrame(dom);
 
 	expect(textarea.shadowRoot).toBeNull();
 	expect(() => textarea.attachShadow({mode: "open"})).toThrow();
@@ -129,7 +124,6 @@ test("rows and cols size the empty box, as in a browser", async () => {
 	textarea.setAttribute("rows", "3");
 	textarea.setAttribute("cols", "8");
 	document.body.appendChild(textarea);
-	await nextFrame(dom);
 	await nextFrame(dom);
 
 	const rect = textarea.getBoundingClientRect();
@@ -154,7 +148,6 @@ test("the caret parks at the multiline position; arrows move between lines", asy
 	type(terminal, "\r");
 	await nextFrame(dom);
 	type(terminal, "wxyz");
-	await nextFrame(dom);
 	await nextFrame(dom);
 
 	// Caret after "wxyz" on the second content row. Content origin is
@@ -198,7 +191,6 @@ test("consecutive newlines: caret and arrows track blank lines exactly", async (
 	await nextFrame(dom);
 	type(terminal, "b");
 	await nextFrame(dom);
-	await nextFrame(dom);
 
 	const buffer = (terminal as any).terminal.buffer.active;
 	expect(textarea.value).toBe("a\n\nb");
@@ -209,7 +201,6 @@ test("consecutive newlines: caret and arrows track blank lines exactly", async (
 	// Two more Enters: value ends with newlines; the caret sits on the
 	// (virtual) empty last line, exactly one row below "b"'s successor.
 	type(terminal, "\r\r");
-	await nextFrame(dom);
 	await nextFrame(dom);
 	expect(textarea.value).toBe("a\n\nb\n\n");
 	expect(buffer.cursorY).toBe(5);
@@ -286,7 +277,6 @@ test("the camera follows the caret as the textarea grows past the viewport", asy
 	for (let i = 0; i < 8; i++) {
 		type(terminal, `line${i}\r`);
 		await nextFrame(dom);
-		await nextFrame(dom);
 		// The caret's row stays on screen the whole way down.
 		expect(buffer.cursorY).toBeGreaterThanOrEqual(0);
 		expect(buffer.cursorY).toBeLessThan(6);
@@ -339,7 +329,6 @@ test("borders respect the camera: culled above the band, visible when scrolled t
 	// next document row -- scroll one more line into view by typing.
 	type(terminal, "tail");
 	await nextFrame(dom);
-	await nextFrame(dom);
 	const screen = terminal.getPlainText();
 	expect(screen).toContain("tail");
 	expect(row(0)).not.toContain("┌");
@@ -366,7 +355,6 @@ test("a long unbroken word wraps at the field edge -- overflow-wrap: break-word 
 	textarea.style.width = "20ch";
 	textarea.value = "asdfasdfkasdjfalsdkfjasdlkfjasdlfkjasdlf";
 	document.body.appendChild(textarea);
-	await nextFrame(dom);
 	await nextFrame(dom);
 
 	// 20ch box minus border+padding = 16 content cells: no painted row may
