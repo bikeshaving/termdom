@@ -16,7 +16,7 @@ function heightOf(dom: TermDOM, el: Element): number | undefined {
 
 test("a bordered inline-block in a flex ROW is not double-counted in height", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML =
 		`<div style="display:flex"><span>x</span>` +
 		`<div id="box" style="display:inline-block;border:1px solid;flex-grow:1">y</div></div>`;
@@ -27,7 +27,7 @@ test("a bordered inline-block in a flex ROW is not double-counted in height", as
 
 test("an empty rows=1 textarea in a flex ROW is 3 rows: content + border", async () => {
 	const terminal = new MockProcess({cols: 118, rows: 30});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML =
 		`<div style="display:flex"><span>› </span>` +
 		`<textarea rows="1" placeholder="message ch.at…" style="flex-grow:1"></textarea></div>`;
@@ -38,7 +38,7 @@ test("an empty rows=1 textarea in a flex ROW is 3 rows: content + border", async
 
 test("a flex-grow textarea wraps its value at the grown width, not its flex-basis", async () => {
 	const terminal = new MockProcess({cols: 60, rows: 8});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML =
 		`<div style="display:flex"><span>x</span>` +
 		`<textarea style="flex-grow:1"></textarea></div>`;
@@ -54,7 +54,7 @@ test("a flex-grow textarea wraps its value at the grown width, not its flex-basi
 
 test("a flex-shrink inline-block wraps its content at the shrunk width, not its basis", async () => {
 	const terminal = new MockProcess({cols: 20, rows: 8});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML =
 		`<div style="display:flex;width:20ch">` +
 		`<div id="box" style="display:inline-block;width:40ch">aaaa bbbb cccc dddd eeee ffff</div></div>`;
@@ -67,7 +67,7 @@ test("a flex-shrink inline-block wraps its content at the shrunk width, not its 
 
 test("a max-width-capped inline-block wraps its content at the capped width", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 8});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = `<div><div id="box" style="display:inline-block;max-width:10ch">aa bb cc dd</div></div>`;
 	await nextFrame(dom);
 	// 11 columns of text capped at 10: the content re-wraps inside the cap
@@ -78,7 +78,7 @@ test("a max-width-capped inline-block wraps its content at the capped width", as
 
 test("inline-block elements render side by side", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	const container = document.createElement("div");
@@ -118,7 +118,7 @@ test("inline-block elements render side by side", async () => {
 
 test("inline-block elements with padding", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	const block = document.createElement("div");
@@ -152,7 +152,7 @@ test("inline-block elements with padding", async () => {
 
 test("inline-block elements with margins", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	const block1 = document.createElement("div");
@@ -185,7 +185,7 @@ test("inline-block elements with margins", async () => {
 
 test("inline-block elements wrapping to multiple lines", async () => {
 	const terminal = new MockProcess({cols: 20, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	const words = ["First", "Second", "Third", "Fourth", "Fifth"];
@@ -221,7 +221,7 @@ test("inline-block elements wrapping to multiple lines", async () => {
 
 test("mixed inline and inline-block elements", async () => {
 	const terminal = new MockProcess({cols: 50, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	const text1 = document.createElement("span");
@@ -264,7 +264,7 @@ test("mixed inline and inline-block elements", async () => {
 
 test("nested inline-block elements", async () => {
 	const terminal = new MockProcess({cols: 50, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	const outer = document.createElement("div");
@@ -302,7 +302,7 @@ test("nested inline-block elements", async () => {
 
 test("inline-block with explicit width", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	const block1 = document.createElement("div");
@@ -337,7 +337,7 @@ test("inline-block with explicit width", async () => {
 
 test("inline-block with height", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	const block1 = document.createElement("div");
@@ -374,7 +374,7 @@ test("inline-block with height", async () => {
 
 test("inline-block with borders", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	const block = document.createElement("div");
@@ -408,7 +408,7 @@ test("an empty inline flex item measures zero, not its next sibling's width", as
 	// width 3, shoving everything after it -- which is exactly what broke a
 	// progress bar whenever its fill or track emptied (0% and 100%).
 	const terminal = new MockProcess({cols: 40, rows: 4});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = `<div style="display:flex"><span></span><span>ABC</span><span>XY</span></div>`;
 	await nextFrame(dom);
 
@@ -430,7 +430,7 @@ test("a progress bar stays intact when its fill or track empties", async () => {
 	// row. The fill and track must always tile to a constant width, with the
 	// percent immediately after -- no gap opening up, nothing shoved off.
 	const terminal = new MockProcess({cols: 50, rows: 4});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML =
 		`<div style="display:flex">` +
 		`<span id="fill"></span><span id="track"></span><span id="pct"></span>` +

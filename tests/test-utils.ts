@@ -8,7 +8,9 @@ import {
 	type ProcessLike,
 	type TTYWriteStream,
 	type TTYReadStream,
-} from "../src/internal/termdom.js";
+	type TerminalTransport,
+	transportFromProcess,
+} from "../src/internal/terminalsession.js";
 import {EventEmitter} from "events";
 import xtermPkg from "@xterm/headless";
 const {Terminal} = xtermPkg;
@@ -109,6 +111,22 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 	stdin: MockReadStream;
 	env: Record<string, string | undefined>;
 	terminal: Terminal;
+	#transport: TerminalTransport | null = null;
+
+	/** This mock as a TerminalTransport, the shape TermDOM takes. */
+	get transport(): TerminalTransport {
+		return (this.#transport ??= transportFromProcess(this));
+	}
+
+	/**
+	 * A transport that declares prior screen content (sharesScreen), for tests
+	 * exercising command-start anchoring: xterm-headless answers the DSR query.
+	 * Fresh per access -- a transport's streams are one-shot, and anchor tests
+	 * attach several instances to the same mock terminal in sequence.
+	 */
+	get sharedTransport(): TerminalTransport {
+		return transportFromProcess(this, {sharesScreen: true});
+	}
 
 	constructor(
 		options: {

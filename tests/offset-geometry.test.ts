@@ -13,7 +13,7 @@ import {MockProcess, nextFrame} from "./test-utils.js";
 
 test("offsetWidth/offsetHeight report an element's own border-box size", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = `<div id="box" style="width:12px; height:4px"></div>`;
 	await nextFrame(dom);
 
@@ -25,7 +25,7 @@ test("offsetWidth/offsetHeight report an element's own border-box size", async (
 
 test("a disconnected element reports zero offset geometry", () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const div = dom.document.createElement("div");
 	div.style.width = "12px";
 
@@ -39,7 +39,7 @@ test("a disconnected element reports zero offset geometry", () => {
 
 test("offsetParent is the nearest positioned ancestor", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = `
 		<div id="static-wrapper">
 			<div id="positioned" style="position:relative">
@@ -57,7 +57,7 @@ test("offsetParent is the nearest positioned ancestor", async () => {
 
 test("offsetParent falls back to body when no ancestor is positioned", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = `<div id="a"><div id="b">x</div></div>`;
 	await nextFrame(dom);
 
@@ -68,14 +68,14 @@ test("offsetParent falls back to body when no ancestor is positioned", async () 
 
 test("body has no offsetParent", () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	expect(dom.document.body.offsetParent).toBe(null);
 	dom.dispose();
 });
 
 test("offsetTop/offsetLeft are relative to offsetParent's own box, including margins", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = `
 		<div id="outer" style="width:20px; height:5px; position:relative">
 			<div id="inner" style="width:10px; height:3px; margin-left:2px; margin-top:1px">hi</div>
@@ -95,7 +95,7 @@ test("offsetTop/offsetLeft are relative to offsetParent's own box, including mar
 
 test("clientWidth/clientHeight exclude border but include padding, for any element", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = `<div id="bordered" style="width:10px; height:4px; border:1px solid; padding:1px"></div>`;
 	await nextFrame(dom);
 
@@ -110,7 +110,7 @@ test("clientWidth/clientHeight exclude border but include padding, for any eleme
 
 test("scrollWidth/scrollHeight equal clientWidth/clientHeight when content doesn't overflow", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = `<div id="box" style="width:8px; height:3px"></div>`;
 	await nextFrame(dom);
 
@@ -122,7 +122,7 @@ test("scrollWidth/scrollHeight equal clientWidth/clientHeight when content doesn
 
 test("body's own clientHeight/scrollHeight (viewport height, real content height) are not shadowed", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = `<div>one</div><div>two</div>`;
 	await nextFrame(dom);
 
@@ -143,7 +143,7 @@ test("offsetWidth/Height and clientWidth/Height stay mechanically consistent wit
 	// silently drift out of sync across an edit to just one of them the way
 	// duplicated code could.
 	const terminal = new MockProcess({cols: 40, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = `
 		<div id="a" style="width:14px; height:6px; border:2px solid; padding:1px"></div>
 		<div id="b" style="width:9px; height:5px"></div>

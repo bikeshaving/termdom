@@ -19,7 +19,7 @@ import {MockProcess, nextFrame} from "./test-utils.js";
 
 function makeOverflowingApp(rows = 5, lines = 20) {
 	const terminal = new MockProcess({cols: 40, rows});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	for (let i = 0; i < lines; i++) {
 		const div = dom.document.createElement("div");
 		div.id = `line${i}`;
@@ -68,7 +68,7 @@ test("getClientRects() applies the same viewport conversion", async () => {
 
 test("a disconnected element's rect is still a zero rect, not NaN from an unset scroll offset", () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const div = dom.document.createElement("div");
 	const rect = div.getBoundingClientRect();
 	expect(rect.top).toBe(0);
@@ -88,6 +88,7 @@ test("mouse click hit-testing still targets the right element while scrolled", a
 
 	// Row 3 (1-based) at the top -> line2 (0-based row index 2).
 	(terminal.stdin as any).emit("data", Buffer.from("\x1b[<0;1;3M"));
+	await new Promise((r) => setTimeout(r, 0));
 	await nextFrame(dom);
 	expect(clicked.pop()).toBe("line2");
 
@@ -97,6 +98,7 @@ test("mouse click hit-testing still targets the right element while scrolled", a
 	dom.window.scrollTo(0, 5);
 	await nextFrame(dom);
 	(terminal.stdin as any).emit("data", Buffer.from("\x1b[<0;1;3M"));
+	await new Promise((r) => setTimeout(r, 0));
 	await nextFrame(dom);
 	expect(clicked.pop()).toBe("line7");
 	dom.dispose();
@@ -132,7 +134,7 @@ test("scrollIntoView still brings an off-screen element into view", async () => 
 
 test("an element's own scrollLeft shifts its descendants, distinct from the camera", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 5});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = `<div id="s" style="overflow:hidden; width:5px"><span id="c">abcdefghij</span></div>`;
 	await nextFrame(dom);
 

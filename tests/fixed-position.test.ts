@@ -18,7 +18,7 @@ function makeTallDoc(dom: TermDOM): void {
 
 test("a fixed bottom bar sits on the viewport's last row, unscrolled", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	makeTallDoc(dom);
 	await nextFrame(dom);
 
@@ -30,7 +30,7 @@ test("a fixed bottom bar sits on the viewport's last row, unscrolled", async () 
 
 test("the bar stays pinned while the camera scrolls", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	makeTallDoc(dom);
 	await nextFrame(dom);
 

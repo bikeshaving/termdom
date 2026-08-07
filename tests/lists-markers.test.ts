@@ -19,7 +19,7 @@ import {stripControlCodes} from "./test-utils.js";
 /** Render HTML and return the non-blank rendered rows, ANSI stripped. */
 async function renderRows(html: string, cols = 40): Promise<string[]> {
 	const terminal = new MockProcess({cols, rows: 20});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = html;
 	await nextFrame(dom);
 	const output = stripControlCodes(terminal.getStaticANSI());
@@ -178,7 +178,7 @@ test("the gutter is recomputed when items are added", async () => {
 	// the gutter stayed at what the original items needed and a wider marker added
 	// later overran it, bringing the "iii.Third" collision straight back.
 	const terminal = new MockProcess({cols: 40, rows: 20});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	document.body.innerHTML = `<ol style="list-style-type:lower-roman"><li>one</li><li>two</li><li>three</li></ol>`;
@@ -204,7 +204,7 @@ test("the gutter is recomputed when items are added", async () => {
 
 test("::marker inherits color from its list item", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 20});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = `<ul><li style="color:green">A</li></ul>`;
 	await nextFrame(dom);
 	const output = terminal.getStaticANSI();

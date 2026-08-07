@@ -4,7 +4,7 @@ import {MockProcess, nextFrame} from "./test-utils.js";
 
 test("pseudo-elements render correctly after mutation observer fixes", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	// Create simple list
@@ -36,7 +36,7 @@ test("pseudo-elements render correctly after mutation observer fixes", async () 
 
 test("multiple list items render correctly", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	const ul = document.createElement("ul");
@@ -73,7 +73,7 @@ test("a class change does not swallow later mutations in the same batch", async 
 	// followed by a sibling's text change dropped the text change: the sibling's
 	// new text node never entered the layout tree and the row rendered empty.
 	const terminal = new MockProcess({cols: 40, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	const header = document.createElement("div");
@@ -107,7 +107,7 @@ test("appending many rows one at a time preserves document order", async () => {
 	// the sequential-build pattern real apps actually use (tree.ts's fill(),
 	// any list built with a push loop).
 	const terminal = new MockProcess({cols: 40, rows: 60});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	const container = document.createElement("div");
@@ -135,7 +135,7 @@ test("inserting a node in the middle of an already-laid-out list lands at the ri
 	// case that fast path can't shortcut -- has to keep falling back to the
 	// exact, full walk.
 	const terminal = new MockProcess({cols: 40, rows: 20});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	const container = document.createElement("div");
@@ -175,7 +175,7 @@ test("scrolling a long list paints the correct visible rows at every offset", as
 	// exactly the rows in view, not an off-by-one range from a binary search
 	// edge case, at the top, the middle, and the bottom of the list.
 	const terminal = new MockProcess({cols: 20, rows: 5});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document, window} = dom;
 
 	const container = document.createElement("div");
@@ -215,7 +215,7 @@ test("an absolutely positioned overlay among many siblings still paints, scrolle
 	// This is the fallback path actually getting exercised end-to-end, not
 	// just declining to run.
 	const terminal = new MockProcess({cols: 20, rows: 5});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	const container = document.createElement("div");
@@ -245,7 +245,7 @@ test("a display:none sibling among visible ones does not break which rows paint"
 	// search that didn't know to disqualify it could jump to the wrong start
 	// index using its degenerate extent as a pivot.
 	const terminal = new MockProcess({cols: 20, rows: 5});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	const container = document.createElement("div");
@@ -272,7 +272,7 @@ test("a display:none sibling among visible ones does not break which rows paint"
 
 test("a class flip is scoped: a sibling-combinator rule still reaches the sibling", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	// The sibling combinator is what forces the invalidation scope past the
@@ -298,7 +298,7 @@ test("a class flip is scoped: a sibling-combinator rule still reaches the siblin
 
 test("a no-op class flip on a block inside an inline repaints identically", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	// A block in an inline breaks the span into fragments owned by the

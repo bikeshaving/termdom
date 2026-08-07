@@ -8,7 +8,7 @@ import {
 
 test("::before and ::after content rendering", async () => {
 	const terminal = new MockProcess();
-	const termdom = new TermDOM({process: terminal});
+	const termdom = new TermDOM({transport: terminal.transport});
 	const {document} = termdom;
 
 	// Add CSS with pseudo-element content
@@ -89,7 +89,7 @@ test("::before and ::after content rendering", async () => {
 
 test("::marker pseudo-element with lists", async () => {
 	const terminal = new MockProcess();
-	const termdom = new TermDOM({process: terminal});
+	const termdom = new TermDOM({transport: terminal.transport});
 	const {document} = termdom;
 
 	// Add CSS for custom list markers
@@ -160,7 +160,7 @@ test("::marker pseudo-element with lists", async () => {
 
 test("Pseudo-element cascade and specificity in rendering", async () => {
 	const terminal = new MockProcess();
-	const termdom = new TermDOM({process: terminal});
+	const termdom = new TermDOM({transport: terminal.transport});
 	const {document} = termdom;
 
 	// Test CSS specificity with pseudo-elements
@@ -199,7 +199,7 @@ test.todo(
 	"Complex pseudo-element content with special characters",
 	async () => {
 		const terminal = new MockProcess();
-		const termdom = new TermDOM({process: terminal});
+		const termdom = new TermDOM({transport: terminal.transport});
 		const {document} = termdom;
 
 		// Test various content types
@@ -266,7 +266,7 @@ test.todo(
 
 test("Pseudo-elements with inline styles override", async () => {
 	const terminal = new MockProcess();
-	const termdom = new TermDOM({process: terminal});
+	const termdom = new TermDOM({transport: terminal.transport});
 	const {document} = termdom;
 
 	// Base CSS rules
@@ -305,7 +305,7 @@ test.todo(
 	"ExpandedTreeWalker traverses pseudo-elements in document order",
 	async () => {
 		const terminal = new MockProcess();
-		const termdom = new TermDOM({process: terminal});
+		const termdom = new TermDOM({transport: terminal.transport});
 		const {document} = termdom;
 
 		// Add CSS for multiple pseudo-elements

@@ -9,7 +9,7 @@ import {TermDOM, kLayoutEngine} from "../src/internal/termdom.js";
 
 test("findInlineRunHead should find outer inline-block for nested text nodes", async () => {
 	const terminal = new MockProcess({cols: 50, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	// Create nested structure: outer inline-block > span + inner inline-block
@@ -49,7 +49,7 @@ test("findInlineRunHead should find outer inline-block for nested text nodes", a
 
 test("getRectTexts should work for text nodes in nested inline-blocks", async () => {
 	const terminal = new MockProcess({cols: 50, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	const outer = document.createElement("div");
@@ -91,7 +91,7 @@ test("getRectTexts should work for text nodes in nested inline-blocks", async ()
 
 test("nested inline-block should render both texts", async () => {
 	const terminal = new MockProcess({cols: 50, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	const outer = document.createElement("div");
@@ -131,7 +131,7 @@ test("nested inline-block should render both texts", async () => {
 
 test("deeply nested inline-blocks should work", async () => {
 	const terminal = new MockProcess({cols: 50, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	// Create: outer > middle > inner structure
@@ -170,7 +170,7 @@ test("deeply nested inline-blocks should work", async () => {
 
 test("mixed content in nested inline-blocks", async () => {
 	const terminal = new MockProcess({cols: 50, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	const container = document.createElement("div");
@@ -218,7 +218,7 @@ test("mixed content in nested inline-blocks", async () => {
 
 test("a run continues past a nested inline-block, not just past its parent", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 6});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = `<span><span style="display: inline-block">badge</span></span> and the rest`;
 
 	await nextFrame(dom);
@@ -232,7 +232,7 @@ test("a run continues past a nested inline-block, not just past its parent", asy
 
 test("a run continues past a boxless child of a nested inline", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 6});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = `<span>lead<span style="display: none">gone</span></span> tail`;
 
 	await nextFrame(dom);
@@ -246,7 +246,7 @@ test("a run continues past a boxless child of a nested inline", async () => {
 
 test("a widget alone inside an inline-block paints where the box measured it", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 6});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = `<div style="display: inline-block; padding: 0 2ch"><input value="typed"></div>`;
 
 	await nextFrame(dom);
@@ -264,7 +264,7 @@ test("a widget alone inside an inline-block paints where the box measured it", a
 
 test("a block between two runs does not blank the earlier one", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 6});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = `heading<div>middle</div><input value="field">`;
 
 	await nextFrame(dom);

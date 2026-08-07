@@ -1,10 +1,13 @@
-import {type EventEmitter} from "events";
 import {type DOMWindow, JSDOM} from "jsdom";
 import {LayoutEngine, visualToDataOffsets} from "./layout.js";
 import {Viewport} from "./viewport.js";
 import {Painter} from "./painter.js";
-import {TerminalProbe} from "./terminalprobe.js";
-import {type ColorDepth, Renderer} from "./ansi.js";
+import {
+	TerminalSession,
+	transportFromProcess,
+	type TerminalTransport,
+} from "./terminalsession.js";
+import {Renderer} from "./ansi.js";
 import {StyleManager, getBoxModel, shimInlineNoneErasure} from "./styles.js";
 import {stringWidth} from "./text.js";
 import {
@@ -38,78 +41,19 @@ const RESIZE_DEBOUNCE_MS = 40;
 // The built-in tags that upgrade to a UA widget on connect.
 const UPGRADEABLE_CONTROLS = new Set(["INPUT", "TEXTAREA", "SELECT"]);
 
-function detectColorDepth(process: ProcessLike): ColorDepth {
-	const colorterm = process.env.COLORTERM;
-	if (colorterm === "truecolor" || colorterm === "24bit") {
-		return "rgb";
-	}
-
-	const term = process.env.TERM || "";
-	if (term.includes("256color") || term.includes("256")) {
-		return "256";
-	}
-
-	return "ansi";
-}
-
-// TODO: Can we use web streams (WritableStream)
-export interface TTYWriteStream {
-	write(
-		chunk: any,
-		encoding?: BufferEncoding | ((error?: Error) => void),
-		callback?: (error?: Error) => void,
-	): boolean;
-	columns: number;
-	rows: number;
-	isTTY: boolean;
-}
-
-// TODO: Can we use web streams (ReadableStream) or at least track what events we're using?
-export interface TTYReadStream extends EventEmitter {
-	isTTY: boolean;
-	setRawMode?(mode: boolean): this;
-	resume(): this;
-	pause(): this;
-	setEncoding?(encoding?: string): this;
-}
-
-export interface ProcessLike extends EventEmitter {
-	stdin?: TTYReadStream;
-	stdout: TTYWriteStream;
-	exit(code?: number): never;
-	env: Record<string, string | undefined>;
-}
+export {
+	transportFromProcess,
+	type TerminalTransport,
+} from "./terminalsession.js";
 
 export interface TermDOMOptions {
-	process?: ProcessLike;
-	width?: number;
-	height?: number;
-	colorDepth?: ColorDepth;
-	/** Disable automatic cursor position detection. Useful for testing. */
-	detectCursor?: boolean;
-}
-
-// Frames keep the terminal cursor hidden, and dispose() shows it again -- but
-// an app that calls process.exit() without disposing would strand the user's
-// shell with no cursor. One process-level exit hook restores it for any live
-// interactive instance that skipped dispose. Registered lazily, only for
-// instances driving the real process (never for test mocks).
-const undisposedInteractive = new Set<ProcessLike>();
-let exitHookInstalled = false;
-
-function installCursorRestoreOnExit(): void {
-	if (exitHookInstalled) return;
-	exitHookInstalled = true;
-	process.on("exit", () => {
-		for (const proc of undisposedInteractive) {
-			try {
-				// Mouse capture off, cursor back on, bracketed paste off.
-				proc.stdout.write("\x1b[?1006l\x1b[?1002l\x1b[?25h\x1b[?2004l");
-			} catch {
-				// The stream may already be gone; the shell will survive.
-			}
-		}
-	});
+	/**
+	 * The terminal this instance renders to. Defaults to a wrapper around the
+	 * global process, so `attach()` takes the real terminal; inject an xterm.js
+	 * or SSH transport to render elsewhere. Everything about the terminal --
+	 * size, color depth, input, resizes, lifecycle -- comes from here.
+	 */
+	transport?: TerminalTransport;
 }
 
 // Symbol-keyed handles for the internals the test suite must reach (the layout
@@ -127,26 +71,21 @@ function isTextInputType(type: string): boolean {
 
 /**
  * The Fullscreen API over the terminal's alternate screen. Lives here
- * rather than in its own module because it needs TermDOM's process and
- * stream types, and because the alt-screen switch has to serialize with
- * rendering -- the two are one concern, not two.
+ * rather than in its own module because the alt-screen switch has to
+ * serialize with rendering -- the two are one concern, not two.
+ *
+ * Writes through the session like every other emitter; raw mode is the
+ * session's for the whole attachment, so there is nothing to save or restore
+ * here beyond the screen switch itself.
  */
 export class FullscreenManager {
-	#process: ProcessLike;
-	#stdin: TTYReadStream;
-	#stdout: TTYWriteStream;
+	#write: (output: string) => void;
 
 	#fullscreenStack: Element[] = [];
 	#isInFullscreenMode: boolean = false;
-	#originalTtyMode: boolean = false;
 
-	constructor(process: ProcessLike) {
-		this.#process = process;
-		this.#stdout = process.stdout;
-		this.#stdin = process.stdin!;
-
-		// Setup cleanup handlers
-		this.#setupCleanupHandlers();
+	constructor(write: (output: string) => void) {
+		this.#write = write;
 	}
 
 	/**
@@ -220,36 +159,16 @@ export class FullscreenManager {
 	}
 
 	async #enterFullscreenMode(): Promise<void> {
-		// Save original TTY mode
-		if (this.#stdin && this.#stdin.setRawMode) {
-			this.#originalTtyMode = (this.#stdin as any).isRaw || false;
-		}
-
-		// Enter alternate screen buffer
-		this.#stdout.write("\x1b[?1049h");
-
-		// Clear screen and hide cursor
-		this.#stdout.write("\x1b[2J\x1b[H\x1b[?25l");
-
-		// Enable raw mode for input handling
-		if (this.#stdin && this.#stdin.setRawMode) {
-			this.#stdin.setRawMode(true);
-		}
-		if (this.#stdin) {
-			this.#stdin.resume();
-		}
+		// Enter alternate screen buffer, clear it, hide the cursor.
+		this.#write("\x1b[?1049h");
+		this.#write("\x1b[2J\x1b[H\x1b[?25l");
 
 		this.#isInFullscreenMode = true;
 	}
 
 	async #exitFullscreenMode(): Promise<void> {
 		// Restore cursor and exit alternate screen buffer
-		this.#stdout.write("\x1b[?25h\x1b[?1049l");
-
-		// Restore original TTY mode
-		if (this.#stdin && this.#stdin.setRawMode) {
-			this.#stdin.setRawMode(this.#originalTtyMode);
-		}
+		this.#write("\x1b[?25h\x1b[?1049l");
 
 		this.#isInFullscreenMode = false;
 	}
@@ -290,31 +209,9 @@ export class FullscreenManager {
 		return targetElement?.ownerDocument?.defaultView;
 	}
 
-	#setupCleanupHandlers(): void {
-		const cleanup = () => {
-			if (this.#isInFullscreenMode) {
-				// Force exit fullscreen mode on process exit
-				this.#stdout.write("\x1b[?25h\x1b[?1049l");
-
-				// Restore TTY mode
-				if (this.#stdin && this.#stdin.setRawMode) {
-					this.#stdin.setRawMode(this.#originalTtyMode);
-				}
-			}
-		};
-
-		this.#process.on("exit", cleanup);
-		this.#process.on("SIGINT", cleanup);
-		this.#process.on("SIGTERM", cleanup);
-		this.#process.on("SIGHUP", cleanup);
-	}
-
 	dispose(): void {
 		if (this.#isInFullscreenMode) {
-			this.#stdout.write("\x1b[?25h\x1b[?1049l");
-			if (this.#stdin && this.#stdin.setRawMode) {
-				this.#stdin.setRawMode(this.#originalTtyMode);
-			}
+			this.#write("\x1b[?25h\x1b[?1049l");
 		}
 
 		this.#fullscreenStack = [];
@@ -393,12 +290,9 @@ export class TermDOM {
 	 */
 	#topLayer = new Set<Element>();
 
-	// Handles and timers that must be torn down in dispose(), or they keep the
-	// process alive after the app is done -- which, across a test suite, piles up
+	// Timers that must be torn down in dispose(), or they keep the process
+	// alive after the app is done -- which, across a test suite, piles up
 	// into a hang.
-	#sigintHandler: (() => void) | null = null;
-	#sigwinchHandler: (() => void) | null = null;
-	#stdinDataHandler: ((chunk: string | Buffer) => void) | null = null;
 	#resizeTimer: ReturnType<typeof setTimeout> | null = null;
 	// True from the first SIGWINCH of a resize until the re-anchored redraw. While
 	// set, render() bails: the terminal has rewrapped the screen and our anchor is
@@ -418,20 +312,9 @@ export class TermDOM {
 	#width: number;
 	#height: number;
 
-	// Explicit constructor overrides, kept so attach() can re-derive config from
-	// scratch when it binds to a different process than the constructor saw.
-	// An explicit option still wins over whatever that process reports.
-	#widthOption: number | undefined;
-	#heightOption: number | undefined;
-	#colorDepthOption: ColorDepth | undefined;
-	#detectCursorOption: boolean | undefined;
-
 	// Whether the terminal is currently reporting mouse events to us. See
 	// updateMouseReporting for when capture is on.
 	#mouseReportingEnabled = false;
-	// Body of a bracketed paste (ESC[200~..ESC[201~) across stdin chunks; null
-	// when no paste is in flight.
-	#pasteBuffer: string | null = null;
 	// Scroll chaining yielded the mouse back to the terminal: the camera hit
 	// the document top and the user kept scrolling up, so the wheel now
 	// belongs to the terminal's own scrollback. Cleared by the next keystroke
@@ -484,31 +367,36 @@ export class TermDOM {
 	static readonly #DBLCLICK_INTERVAL_MS = 500;
 	#lastClickTarget: Element | null = null;
 	#lastClickTime = 0;
-	#process: ProcessLike;
+	#transport: TerminalTransport;
 
-	// The terminal round-trip conversation: cursor-position (command start,
-	// resize re-anchor) and mode-support (bidi, grapheme clusters) queries whose
-	// replies arrive asynchronously on stdin.
-	#probe: TerminalProbe;
+	// The conversation over the transport: the input demultiplexer plus the
+	// cursor-position (command start, resize re-anchor) and mode-support (bidi,
+	// grapheme clusters) queries whose replies arrive interleaved with typing.
+	#session: TerminalSession;
 
-	// A stdout that is not a terminal -- a pipe, a file, a CI log -- has no
-	// viewport, no cursor, no scrollback and no resize. It cannot interpret cursor
-	// movement either, so the interactive frame would write CUP and DECSC sequences
-	// straight into the file.
+	// The unpatched jsdom window.close, for dispose(): the patched one closes
+	// the terminal session, and dispose is what it calls to do that.
+	#nativeWindowClose: (() => void) | null = null;
+
+	// A defaulted transport over a piped stdout -- a pipe, a file, a CI log --
+	// has no viewport, no cursor, no scrollback and no resize. It cannot
+	// interpret cursor movement either, so the interactive frame would write
+	// CUP and DECSC sequences straight into the file. An injected transport
+	// asserts a terminal exists on the other end.
 	#interactive: boolean;
 
-	constructor(options: TermDOMOptions = {}) {
-		this.#widthOption = options.width;
-		this.#heightOption = options.height;
-		this.#colorDepthOption = options.colorDepth;
-		this.#detectCursorOption = options.detectCursor;
-		this.#process = options.process || process;
-		this.#interactive = this.#process.stdout.isTTY !== false;
-		const detectCursorEnabled =
-			(options.detectCursor ?? this.#process === process) && this.#interactive;
+	// Command-start anchoring is a shell-sharing concern: only the default
+	// process transport starts below a prompt it does not own. Injected
+	// transports (tests, xterm.js, SSH) own their screen from row 0.
+	#defaultedTransport: boolean;
 
-		this.#width = options.width || this.#process.stdout.columns || 80;
-		this.#height = options.height || this.#process.stdout.rows || 24;
+	constructor(options: TermDOMOptions = {}) {
+		this.#defaultedTransport = !options.transport;
+		this.#transport = options.transport ?? transportFromProcess();
+		this.#interactive = this.#transport.interactive ?? true;
+
+		this.#width = this.#transport.cols;
+		this.#height = this.#transport.rows;
 
 		this.#jsdom = new JSDOM(
 			"<!DOCTYPE html><html><head></head><body></body></html>",
@@ -533,7 +421,7 @@ export class TermDOM {
 		this.#renderer = new Renderer(
 			this.#height,
 			this.#width,
-			options.colorDepth || detectColorDepth(this.#process),
+			this.#transport.colorDepth ?? "rgb",
 		);
 
 		// Setup style management FIRST to override getComputedStyle before LayoutEngine uses it
@@ -543,7 +431,9 @@ export class TermDOM {
 		this[kLayoutEngine] = new LayoutEngine(this.#jsdom.window);
 		this.#styleManager.setLayoutEngine(this[kLayoutEngine]);
 		this[kLayoutEngine].resize(this.#width, this.#height);
-		this.#fullscreenManager = new FullscreenManager(this.#process);
+		this.#fullscreenManager = new FullscreenManager((output) => {
+			void this.#session.write(output);
+		});
 		this.#observerManager = new ObserverManager(this[kLayoutEngine]);
 
 		this.#installWindowExtensions();
@@ -567,13 +457,7 @@ export class TermDOM {
 			viewport: this.#viewport,
 			topLayer: this.#topLayer,
 		});
-		this.#probe = new TerminalProbe({
-			process: this.#process,
-			viewport: this.#viewport,
-			layout: this[kLayoutEngine],
-			interactive: this.#interactive,
-			detectCursor: detectCursorEnabled,
-		});
+		this.#session = this.#buildSession();
 
 		// A field edit -- text (input/select events) or a checkbox/radio toggle
 		// (change) -- announces itself with standard events. The render loop
@@ -787,6 +671,51 @@ export class TermDOM {
 			});
 			return mql as MediaQueryList;
 		}) as typeof window.matchMedia;
+
+		// window.close() closes the terminal session, the way it closes the tab
+		// in a browser: dispose (final flush, mode restores, teardown), then
+		// close the transport -- which for the process transport is exit, for an
+		// SSH channel is end, and for an embedder is its own decision. Ctrl-C's
+		// default action calls exactly this. jsdom's own close (resource
+		// teardown) still runs inside dispose, through the saved original.
+		termDOM.#nativeWindowClose = window.close.bind(window);
+		window.close = () => {
+			const wasAttached = termDOM.#attached;
+			termDOM.dispose();
+			if (wasAttached) {
+				// Everything dispose queued must reach the wire before the
+				// transport acts on the close (a process transport exits).
+				void termDOM.#session.flush().then(() => {
+					termDOM.#transport.close?.({code: 0});
+				});
+			}
+		};
+
+		// document.title drives the terminal's window title, in-band: OSC 2
+		// down the same wire as every frame. A real terminal retitles itself,
+		// SSH passes it through to the client, xterm.js fires onTitleChange for
+		// its embedder. attach() pushes the old title; dispose() pops it.
+		let nativeTitle: PropertyDescriptor | undefined;
+		for (
+			let proto = Object.getPrototypeOf(document);
+			proto && !nativeTitle;
+			proto = Object.getPrototypeOf(proto)
+		) {
+			nativeTitle = Object.getOwnPropertyDescriptor(proto, "title");
+		}
+		if (nativeTitle?.get && nativeTitle.set) {
+			Object.defineProperty(document, "title", {
+				get: () => nativeTitle.get!.call(document),
+				set: (value: string) => {
+					nativeTitle.set!.call(document, value);
+					if (termDOM.#attached && termDOM.#interactive) {
+						void termDOM.#session.write(`\x1b]2;${String(value)}\x07`);
+					}
+				},
+				configurable: true,
+				enumerable: true,
+			});
+		}
 
 		// document.close() finalizes the document: flush the live region into the
 		// terminal's scrollback and seal it -- the SSR res.end() of the terminal.
@@ -1390,52 +1319,95 @@ export class TermDOM {
 	}
 
 	/**
-	 * Take hold of the terminal: raw mode, signal handlers, the stdin listener,
-	 * the cursor-position query, and the exit hook that restores the cursor.
+	 * The session over the transport: input demultiplexing and the query
+	 * round-trips, wired to this instance's dispatchers. Rebuilt on a rebind;
+	 * started only by attach() -- construction holds no lock and reads nothing.
+	 */
+	#buildSession(): TerminalSession {
+		return new TerminalSession({
+			transport: this.#transport,
+			viewport: this.#viewport,
+			layout: this[kLayoutEngine],
+			interactive: this.#interactive,
+			anchorDetection: this.#transport.sharesScreen ?? this.#defaultedTransport,
+			handlers: {
+				onKeys: (keyInput) => {
+					// A keystroke means the user is back at the live screen
+					// (terminals snap to the bottom on input): reclaim the mouse
+					// if scroll chaining yielded it.
+					if (this.#mouseCaptureYielded) {
+						this.#reclaimMouseCapture();
+					}
+					this.#dispatchGlobalKeyboardEvent(Buffer.from(keyInput));
+				},
+				onMouse: (button, x, y, release) => {
+					this.#handleMouseReport(button, x, y, release);
+				},
+				onPaste: (text) => {
+					this.#dispatchPaste(text);
+				},
+				onResize: () => {
+					this.#scheduleResize();
+				},
+				// Ctrl-C's default action is the DOM's own way out: close the
+				// window. An app that wants different behavior handles the
+				// keydown; this is what happens when nobody does.
+				onCloseRequest: () => {
+					this.window.close();
+				},
+				// The terminal went away (hangup, disconnect, process exit):
+				// clean up this side. The transport is already closing; there
+				// is nothing to close back.
+				onClosed: () => {
+					this.dispose();
+				},
+			},
+		});
+	}
+
+	/**
+	 * Take hold of the terminal: begin the session (input, resizes, closure),
+	 * the startup cursor/mode queries, and mouse reporting.
 	 *
 	 * Construction is inert -- a constructor has no business writing escape
-	 * sequences to stdout or flipping stdin into raw mode. Attachment happens
-	 * here, invoked lazily by the first render (so the zero-config path still
-	 * just works) or explicitly by callers that want to control the moment the
-	 * terminal changes hands. Idempotent; dispose() reverses it.
-	 */
-	/**
-	 * Take hold of a terminal: raw mode, signal handlers, the stdin listener,
-	 * and the startup cursor/mode queries. Called lazily on the first render, or
-	 * explicitly. Idempotent for the process it already holds.
+	 * sequences or flipping a tty into raw mode. Attachment is the one door to
+	 * the terminal; dispose() reverses it.
 	 *
-	 * Passing a different process rebinds to it -- the construction-time process
-	 * (the global `process` by default) was only a stand-in, and this re-derives
-	 * every process-dependent fact from the one handed here. Rebinding is only
-	 * allowed before the first attach; re-attaching a live instance to another
-	 * terminal needs handler teardown that does not exist yet.
+	 * Passing a different transport rebinds to it -- the construction-time
+	 * transport (the global process by default) was only a stand-in, and this
+	 * re-derives every terminal-dependent fact from the one handed here.
+	 * Rebinding is only allowed before the first attach; re-attaching a live
+	 * instance to another terminal needs teardown that does not exist yet.
 	 */
-	attach(proc: ProcessLike = this.#process): void {
-		const rebinding = proc !== this.#process;
+	attach(transport: TerminalTransport = this.#transport): void {
+		const rebinding = transport !== this.#transport;
 		if (this.#attached) {
 			if (rebinding) {
 				throw new Error(
-					"attach(): cannot re-attach a live TermDOM to a different process; " +
-						"attach once, before the first render.",
+					"attach(): cannot re-attach a live TermDOM to a different " +
+						"transport; attach once, before the first render.",
 				);
 			}
 			return;
 		}
-		if (rebinding) this.#rebindProcess(proc);
+		if (rebinding) this.#rebindTransport(transport);
 		this.#attached = true;
 
-		this.#setupProcessHandlers();
-		this.#updateMouseReporting();
-		this.#probe.initializeCursorDetection();
-		void this.#probe.negotiateBidi();
-		void this.#probe.negotiateGraphemeClusters();
-
-		// See installCursorRestoreOnExit: if this instance dies without
-		// dispose(), the exit hook hands the user their cursor back.
-		if (this.#interactive && this.#process === process) {
-			undisposedInteractive.add(this.#process);
-			installCursorRestoreOnExit();
+		this.#session.start();
+		if (this.#interactive) {
+			// Bracketed paste on: pasted text arrives fenced, as one insertion.
+			void this.#session.write("\x1b[?2004h");
+			// Save the terminal's title, so dispose can hand it back; the
+			// document.title setter emits the replacement.
+			void this.#session.write("\x1b[22;0t");
+			if (this.document.title) {
+				void this.#session.write(`\x1b]2;${this.document.title}\x07`);
+			}
 		}
+		this.#updateMouseReporting();
+		this.#session.initializeCursorDetection();
+		void this.#session.negotiateBidi();
+		void this.#session.negotiateGraphemeClusters();
 
 		// Paint whatever the document already holds: an app may build its DOM
 		// first and attach last, and nothing after this call would otherwise
@@ -1447,37 +1419,25 @@ export class TermDOM {
 	}
 
 	/**
-	 * Adopt `proc` and re-derive everything that comes from the terminal:
-	 * interactivity, cursor detection, color depth, and the viewport size when
-	 * no explicit option pins it. The collaborators that hold the process --
-	 * the renderer, the fullscreen manager, the terminal probe -- are rebuilt
-	 * rather than mutated: the renderer has no color-depth setter, and a rebind
-	 * always precedes the first frame. The process-independent collaborators
+	 * Adopt `transport` and re-derive everything that comes from the terminal:
+	 * color depth, the viewport size, and the session. The collaborators that
+	 * hold the transport -- the renderer, the session -- are rebuilt rather
+	 * than mutated: the renderer has no color-depth setter, and a rebind always
+	 * precedes the first frame. The transport-independent collaborators
 	 * (layout, style, painter, viewport) are untouched; only the layout is
 	 * resized to the new terminal.
 	 */
-	#rebindProcess(proc: ProcessLike): void {
-		this.#process = proc;
-		this.#interactive = proc.stdout.isTTY !== false;
-		const detectCursor =
-			(this.#detectCursorOption ?? proc === process) && this.#interactive;
-		this.#applyTerminalSize(
-			this.#widthOption || proc.stdout.columns || 80,
-			this.#heightOption || proc.stdout.rows || 24,
-		);
+	#rebindTransport(transport: TerminalTransport): void {
+		this.#transport = transport;
+		this.#defaultedTransport = false;
+		this.#interactive = transport.interactive ?? true;
+		this.#applyTerminalSize(transport.cols, transport.rows);
 		this.#renderer = new Renderer(
 			this.#height,
 			this.#width,
-			this.#colorDepthOption || detectColorDepth(proc),
+			transport.colorDepth ?? "rgb",
 		);
-		this.#fullscreenManager = new FullscreenManager(proc);
-		this.#probe = new TerminalProbe({
-			process: proc,
-			viewport: this.#viewport,
-			layout: this[kLayoutEngine],
-			interactive: this.#interactive,
-			detectCursor,
-		});
+		this.#session = this.#buildSession();
 	}
 
 	/**
@@ -1525,16 +1485,13 @@ export class TermDOM {
 	 */
 	#updateMouseReporting(): void {
 		const wanted =
-			this.#attached &&
-			this.#interactive &&
-			Boolean(this.#process.stdin?.isTTY) &&
-			!this.#mouseCaptureYielded;
+			this.#attached && this.#interactive && !this.#mouseCaptureYielded;
 		if (wanted === this.#mouseReportingEnabled) return;
 		this.#mouseReportingEnabled = wanted;
 		// 1002: button presses, releases, wheel, and drag motion (no move flood
 		// while nothing is pressed). 1006: SGR encoding, the only one that is
 		// unambiguous past column 223.
-		this.#process.stdout.write(
+		void this.#session.write(
 			wanted ? "\x1b[?1002h\x1b[?1006h" : "\x1b[?1006l\x1b[?1002l",
 		);
 	}
@@ -1554,146 +1511,6 @@ export class TermDOM {
 		}
 		this.#mouseCaptureYielded = false;
 		this.#updateMouseReporting();
-	}
-
-	// TODO: This should be put in an event translator abstraction
-	#setupProcessHandlers(): void {
-		this.#sigintHandler = () => {
-			this.dispose();
-			this.#process.exit(0);
-		};
-		this.#process.on("SIGINT", this.#sigintHandler);
-
-		this.#sigwinchHandler = () => this.#scheduleResize();
-		this.#process.on("SIGWINCH", this.#sigwinchHandler);
-
-		if (this.#process.stdin?.isTTY) {
-			const stdin = this.#process.stdin;
-			if (!stdin) return;
-
-			// Configure terminal for proper input handling (once)
-			stdin.setRawMode?.(true);
-			stdin.resume();
-			stdin.setEncoding?.("utf8");
-			// Enable bracketed paste, but only for a real terminal: the sequence
-			// goes to stdout, which may be piped even while stdin is a TTY.
-			if (this.#interactive) this.#process.stdout.write("\x1b[?2004h");
-
-			// Single unified handler for all stdin data
-			this.#stdinDataHandler = (chunk: string | Buffer) => {
-				// Ensure we have both string and buffer representations
-				const data = Buffer.isBuffer(chunk)
-					? chunk
-					: Buffer.from(chunk, "utf8");
-				const dataStr = data.toString("utf8");
-
-				// Bracketed paste: its body is literal text (a pasted newline must
-				// not fire Enter), buffered across chunks until ESC[201~. Checked
-				// before the report routes so paste content isn't parsed as a reply.
-				if (this.#pasteBuffer !== null) {
-					const end = dataStr.indexOf("\x1b[201~");
-					if (end === -1) {
-						this.#pasteBuffer += dataStr;
-						return;
-					}
-					this.#dispatchPaste(this.#pasteBuffer + dataStr.slice(0, end));
-					this.#pasteBuffer = null;
-					const after = dataStr.slice(end + 6);
-					if (after.length && this.#stdinDataHandler) {
-						this.#stdinDataHandler(after);
-					}
-					return;
-				}
-				const pasteStart = dataStr.indexOf("\x1b[200~");
-				if (pasteStart !== -1) {
-					const before = dataStr.slice(0, pasteStart);
-					if (before.length && this.#stdinDataHandler) {
-						this.#stdinDataHandler(before);
-					}
-					this.#pasteBuffer = "";
-					if (this.#stdinDataHandler) {
-						this.#stdinDataHandler(dataStr.slice(pasteStart + 6));
-					}
-					return;
-				}
-
-				// Route 1: Cursor position responses (highest priority). Fast typing
-				// can land in the same chunk as the report -- "jjj\x1b[12;1Rjjj" --
-				// so hand the report to the waiting query and let the rest continue
-				// through the normal routes as keystrokes.
-				// Route 0: the terminal's answer about BDSM (DECRPM). Same
-				// splicing as the cursor report below -- it is a reply, never a
-				// keystroke, and it can share a chunk with real typing.
-				const modeReport = dataStr.match(/\x1b\[(\??)(\d+);(\d+)\$y/);
-				if (modeReport) {
-					const mode = (modeReport[1] ? "?" : "") + modeReport[2];
-					if (this.#probe.feedModeReport(mode, parseInt(modeReport[3], 10))) {
-						const rest =
-							dataStr.slice(0, modeReport.index) +
-							dataStr.slice((modeReport.index ?? 0) + modeReport[0].length);
-						if (rest.length === 0) return;
-						if (this.#stdinDataHandler) this.#stdinDataHandler(rest);
-						return;
-					}
-				}
-
-				const report = dataStr.match(/\x1b\[\d+;\d+R/);
-				if (report && this.#probe.feedCursorReport(report[0])) {
-					const rest =
-						dataStr.slice(0, report.index) +
-						dataStr.slice((report.index ?? 0) + report[0].length);
-					if (rest.length === 0) return;
-					if (this.#stdinDataHandler) {
-						this.#stdinDataHandler(rest);
-					}
-					return;
-				}
-
-				// Route 2: Ctrl-C handling (high priority) - check raw bytes
-				if (data.length > 0 && data[0] === 0x03) {
-					this.dispose();
-					return this.#process.exit(0);
-				}
-
-				// Route 3: SGR mouse reports. Peeled off token by token so a report
-				// glued to fast keystrokes ("jj\x1b[<65;4;7Mjj") eats neither side,
-				// and BEFORE the fullscreen filter below -- fullscreen is a
-				// mouse-capturing mode, so its reports must not be dropped with the
-				// keyboard events.
-				let keyInput = "";
-				for (const token of tokenizeInput(dataStr)) {
-					const mouse = token.match(/^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/);
-					if (mouse) {
-						this.#handleMouseReport(
-							parseInt(mouse[1]),
-							parseInt(mouse[2]),
-							parseInt(mouse[3]),
-							mouse[4] === "m",
-						);
-					} else {
-						keyInput += token;
-					}
-				}
-				if (keyInput.length === 0) return;
-
-				// A keystroke means the user is back at the live screen (terminals
-				// snap to the bottom on input): reclaim the mouse if scroll
-				// chaining yielded it.
-				if (this.#mouseCaptureYielded) {
-					this.#reclaimMouseCapture();
-				}
-
-				// Route 4: General keyboard events -- ONE pipeline, fullscreen
-				// included. A separate fullscreen listener would drift from this
-				// one: the tokenization for batched input, the SGR-mouse-report
-				// filtering (a report misreads as literal keyboard text without
-				// it) and the modifier decoding all live here.
-				// #dispatchGlobalKeyboardEvent handles Escape exiting
-				// fullscreen (see below).
-				this.#dispatchGlobalKeyboardEvent(Buffer.from(keyInput));
-			};
-			stdin.on("data", this.#stdinDataHandler);
-		}
 	}
 
 	async #render(): Promise<void> {
@@ -2002,8 +1819,8 @@ export class TermDOM {
 	}
 
 	#handleResize(): void {
-		const newWidth = this.#process.stdout.columns || 80;
-		const newHeight = this.#process.stdout.rows || 24;
+		const newWidth = this.#transport.cols;
+		const newHeight = this.#transport.rows;
 
 		this.#applyTerminalSize(newWidth, newHeight);
 		this.#renderer.resize(newHeight, newWidth);
@@ -2049,10 +1866,10 @@ export class TermDOM {
 			// Everything suppressed since the first SIGWINCH may paint again. The
 			// frame is placed by the screen reset, not by cursor detection.
 			this.#resizeInProgress = false;
-			const wasDetected = this.#probe.hasDetectedCommandStart;
-			this.#probe.hasDetectedCommandStart = false;
+			const wasDetected = this.#session.hasDetectedCommandStart;
+			this.#session.hasDetectedCommandStart = false;
 			this.#render().then(() => {
-				this.#probe.hasDetectedCommandStart = wasDetected;
+				this.#session.hasDetectedCommandStart = wasDetected;
 			});
 		};
 
@@ -2080,12 +1897,8 @@ export class TermDOM {
 			}
 		};
 
-		if (
-			this.#probe.detectCursorEnabled &&
-			this.#process.stdin?.isTTY &&
-			wrappedRowsAbove !== null
-		) {
-			this.#probe
+		if (this.#session.anchorDetectionEnabled && wrappedRowsAbove !== null) {
+			this.#session
 				.queryCursorRow()
 				.then((cursorRow) => {
 					// A newer resize superseded this one; its handler will redraw.
@@ -2526,7 +2339,7 @@ export class TermDOM {
 			const to = fieldElement.selectionEnd ?? 0;
 			if (to > from) {
 				const text = fieldElement.value.slice(from, to);
-				this.#process.stdout.write(
+				void this.#session.write(
 					`\x1b]52;c;${Buffer.from(text, "utf8").toString("base64")}\x07`,
 				);
 			}
@@ -2536,7 +2349,7 @@ export class TermDOM {
 			const text = this.window.getSelection()?.toString() ?? "";
 			if (text.length > 0) {
 				selectedByDrag = true;
-				this.#process.stdout.write(
+				void this.#session.write(
 					`\x1b]52;c;${Buffer.from(text, "utf8").toString("base64")}\x07`,
 				);
 			}
@@ -2821,8 +2634,8 @@ export class TermDOM {
 
 		// Back to the top of our region, and erase from there down. Only rows we
 		// painted ourselves; the scrollback above is untouched.
-		this.#process.stdout.write(`\x1b[${top + 1};1H\x1b[J`);
-		this.#process.stdout.write(output);
+		void this.#session.write(`\x1b[${top + 1};1H\x1b[J`);
+		void this.#session.write(output);
 	}
 
 	/**
@@ -2857,17 +2670,12 @@ export class TermDOM {
 		const output = this.renderToString(
 			this.#attached && this.#interactive ? "\r\n" : "\n",
 		);
-		if (output) this.#process.stdout.write(output);
+		if (output) void this.#session.write(output);
 	}
 
-	/** Write to stdout and wait for it to be flushed. */
+	/** Write to the transport and wait for it to be flushed. */
 	#write(output: string): Promise<void> {
-		return new Promise<void>((resolve, reject) => {
-			this.#process.stdout.write(output, "utf8", (error) => {
-				if (error) reject(error);
-				else resolve();
-			});
-		});
+		return this.#session.write(output);
 	}
 
 	/**
@@ -2893,9 +2701,9 @@ export class TermDOM {
 			this.#renderer.clearPreviousBuffer();
 			// detectCommandStart waits for a reply on stdin, so the listener must
 			// be attached first (idempotent -- normally already done by now).
-			if (this.#process.stdin?.isTTY) {
+			if (this.#interactive) {
 				this.attach();
-				await this.#probe.detectCommandStart();
+				await this.#session.detectCommandStart();
 			}
 		}
 
@@ -2906,7 +2714,7 @@ export class TermDOM {
 		// as the flow path does. Await only when one is pending: an unconditional
 		// await would defer the rest of this frame a microtask even with nothing
 		// to wait for, and a downstream synchronous scroll clamp depends on it.
-		const detectionPending = this.#probe.cursorDetectionPending;
+		const detectionPending = this.#session.cursorDetectionPending;
 		if (detectionPending) await detectionPending;
 
 		const pending = this[kObserver].takeRecords();
@@ -3010,7 +2818,7 @@ export class TermDOM {
 	#reserveRows(rows: number): number {
 		const push = this.#viewport.reserveRows(rows, this.#height);
 		if (push > 0) {
-			this.#process.stdout.write(
+			void this.#session.write(
 				`\x1b[${this.#height};1H` + "\x1bD".repeat(push),
 			);
 			// Do NOT shift the renderer's previous buffer. Its rows are relative to
@@ -3034,8 +2842,12 @@ export class TermDOM {
 		this.dispose();
 	}
 
+	#disposed = false;
+
 	dispose(): void {
-		undisposedInteractive.delete(this.#process);
+		if (this.#disposed) return;
+		this.#disposed = true;
+
 		// A TermDOM that never attached owes the terminal nothing: no final
 		// flush, no mode restores -- there is no session to close.
 		const wasAttached = this.#attached;
@@ -3047,22 +2859,28 @@ export class TermDOM {
 
 		// Frames keep the terminal cursor hidden (it is parked for resize
 		// bookkeeping, not UI); hand it back visible on the way out. The mouse
-		// goes back to the terminal the same way.
+		// goes back to the terminal the same way, and the title we replaced
+		// pops back to what the terminal held before attach pushed it.
 		if (this.#mouseReportingEnabled) {
-			this.#process.stdout.write("\x1b[?1006l\x1b[?1002l");
+			void this.#session.write("\x1b[?1006l\x1b[?1002l");
 			this.#mouseReportingEnabled = false;
 		}
 		if (wasAttached && this.#interactive) {
-			this.#process.stdout.write("\x1b[?25h\x1b[?2004l");
+			void this.#session.write("\x1b[?25h\x1b[?2004l\x1b[23;0t");
 		}
-		// Restore the terminal modes we negotiated and clear the probe's own
-		// timers and handlers -- a live query timer keeps the event loop open.
-		this.#probe.dispose();
+		// The fullscreen manager's own teardown writes the alt-screen restore,
+		// so it must run while the session still holds the wire.
+		this.#fullscreenManager.dispose();
+
+		// Restore the terminal modes we negotiated, clear the session's timers
+		// and handlers (a live query timer keeps the event loop open), and
+		// release the transport -- which is what hands a process transport its
+		// tty back.
+		this.#session.dispose();
 
 		// Tear down the rest of what holds the event loop open. Without this a
-		// disposed TermDOM keeps the process alive -- via the process signal
-		// listeners, the stdin data listener, and the resize timers -- and across
-		// a whole test suite those accumulate until nothing can exit.
+		// disposed TermDOM keeps the process alive via the resize timers, and
+		// across a whole test suite those accumulate until nothing can exit.
 		if (this.#resizeTimer !== null) {
 			clearTimeout(this.#resizeTimer);
 			this.#resizeTimer = null;
@@ -3072,38 +2890,15 @@ export class TermDOM {
 			this.#scrollChainTimer = null;
 		}
 
-		if (this.#sigintHandler) {
-			(this.#process as unknown as EventEmitter).removeListener?.(
-				"SIGINT",
-				this.#sigintHandler,
-			);
-			this.#sigintHandler = null;
-		}
-		if (this.#sigwinchHandler) {
-			(this.#process as unknown as EventEmitter).removeListener?.(
-				"SIGWINCH",
-				this.#sigwinchHandler,
-			);
-			this.#sigwinchHandler = null;
-		}
-
-		if (this.#process.stdin?.isTTY) {
-			const stdin = this.#process.stdin as TTYReadStream;
-			if (this.#stdinDataHandler) {
-				stdin.removeListener?.("data", this.#stdinDataHandler);
-				this.#stdinDataHandler = null;
-			}
-			stdin.setRawMode?.(false);
-			stdin.pause();
-		}
-
 		// Shadow DOM cleanup is automatic with symbol-based storage
 
 		this[kObserver].disconnect();
 		this.#styleManager.dispose();
 		this[kLayoutEngine].dispose();
-		this.#fullscreenManager.dispose();
 		this.#observerManager.dispose();
-		this.#jsdom.window.close();
+		(
+			this.#nativeWindowClose ??
+			this.#jsdom.window.close.bind(this.#jsdom.window)
+		)();
 	}
 }

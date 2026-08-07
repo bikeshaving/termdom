@@ -10,7 +10,7 @@
  *   bun scripts/record.ts animated > animated.cast
  */
 import {EventEmitter} from "node:events";
-import {TermDOM, type ProcessLike} from "../src/index.js";
+import {TermDOM, transportFromProcess, type ProcessLike} from "../src/index.js";
 
 const COLS = 78;
 const ROWS = 24;
@@ -85,7 +85,7 @@ async function record(
 	steps: Step[],
 ): Promise<void> {
 	const {proc, events, pressKey, clock} = makeRecorder();
-	const termdom = new TermDOM({process: proc, detectCursor: false});
+	const termdom = new TermDOM({transport: transportFromProcess(proc as any)});
 	termdom.attach();
 	const teardown = await setup(termdom);
 	await new Promise<void>((r) =>

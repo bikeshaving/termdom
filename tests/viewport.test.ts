@@ -10,7 +10,7 @@ test("cursor detection sets window.screenTop from the command-start row", async 
 		terminal.stdout.write("\x1b[15;1H", () => resolve());
 	});
 
-	const dom = new TermDOM({process: terminal, detectCursor: true});
+	const dom = new TermDOM({transport: terminal.sharedTransport});
 
 	// Construction auto-detects the anchor; a frame settles it. Row 15 (1-based)
 	// is screenTop 14 (0-based).
@@ -25,7 +25,7 @@ test("cursor detection handles a different row", async () => {
 		terminal.stdout.write("\x1b[23;1H", () => resolve());
 	});
 
-	const dom = new TermDOM({process: terminal, detectCursor: true});
+	const dom = new TermDOM({transport: terminal.sharedTransport});
 
 	await nextFrame(dom);
 	expect(dom.window.screenTop).toBe(22);
@@ -38,7 +38,7 @@ test("cursor detection handles row 1 (top of terminal)", async () => {
 		terminal.stdout.write("\x1b[1;1H", () => resolve());
 	});
 
-	const dom = new TermDOM({process: terminal, detectCursor: true});
+	const dom = new TermDOM({transport: terminal.sharedTransport});
 
 	await nextFrame(dom);
 	expect(dom.window.screenTop).toBe(0);
@@ -52,7 +52,7 @@ test("rendering small content from command start (fits in available space)", asy
 		terminal.stdout.write("\x1b[8;1H", () => resolve());
 	});
 
-	const dom = new TermDOM({process: terminal, detectCursor: true});
+	const dom = new TermDOM({transport: terminal.sharedTransport});
 	await nextFrame(dom);
 
 	// Add small content that fits in available space
@@ -77,7 +77,7 @@ test("push-up calculation when content exceeds available space", async () => {
 		terminal.stdout.write("\x1b[8;1H", () => resolve());
 	});
 
-	const dom = new TermDOM({process: terminal, detectCursor: true});
+	const dom = new TermDOM({transport: terminal.sharedTransport});
 	await nextFrame(dom);
 	expect(dom.window.screenTop).toBe(7); // Row 8 -> 0-based = 7
 
@@ -105,7 +105,7 @@ test("no push-up when content fits in available space", async () => {
 		terminal.stdout.write("\x1b[7;1H", () => resolve());
 	});
 
-	const dom = new TermDOM({process: terminal, detectCursor: true});
+	const dom = new TermDOM({transport: terminal.sharedTransport});
 	await nextFrame(dom);
 	expect(dom.window.screenTop).toBe(6); // Row 7 -> 0-based = 6
 
@@ -130,7 +130,7 @@ test("push-up to terminal top when content is very large", async () => {
 		terminal.stdout.write("\x1b[4;1H", () => resolve());
 	});
 
-	const dom = new TermDOM({process: terminal, detectCursor: true});
+	const dom = new TermDOM({transport: terminal.sharedTransport});
 	await nextFrame(dom);
 	expect(dom.window.screenTop).toBe(3); // Row 4 -> 0-based = 3
 
@@ -157,7 +157,7 @@ test("document height calculation with auto layout", async () => {
 		terminal.stdout.write("\x1b[10;1H", () => resolve());
 	});
 
-	const dom = new TermDOM({process: terminal, detectCursor: true});
+	const dom = new TermDOM({transport: terminal.sharedTransport});
 	await nextFrame(dom);
 
 	// Add content with known height (3 lines)
@@ -184,7 +184,7 @@ test("rendering at top of terminal (row 1) with large content", async () => {
 		terminal.stdout.write("\x1b[1;1H", () => resolve());
 	});
 
-	const dom = new TermDOM({process: terminal, detectCursor: true});
+	const dom = new TermDOM({transport: terminal.sharedTransport});
 	await nextFrame(dom);
 
 	// Add content that exactly fills terminal height
@@ -206,7 +206,7 @@ test("coordinate transformation from layout space to terminal space", async () =
 		terminal.stdout.write("\x1b[5;1H", () => resolve());
 	});
 
-	const dom = new TermDOM({process: terminal, detectCursor: true});
+	const dom = new TermDOM({transport: terminal.sharedTransport});
 	await nextFrame(dom);
 
 	// Add content with known layout coordinates
@@ -236,7 +236,7 @@ test("handling content that would exceed terminal bottom", async () => {
 		terminal.stdout.write("\x1b[8;1H", () => resolve());
 	});
 
-	const dom = new TermDOM({process: terminal, detectCursor: true});
+	const dom = new TermDOM({transport: terminal.sharedTransport});
 	await nextFrame(dom);
 
 	// Add content that needs 5 lines (exceeds the 3 available by 2)
@@ -280,7 +280,7 @@ test("maximum layout height calculation", async () => {
 			terminal.stdout.write(`\x1b[${commandStart};1H`, () => resolve());
 		});
 
-		const dom = new TermDOM({process: terminal, detectCursor: true});
+		const dom = new TermDOM({transport: terminal.sharedTransport});
 		await nextFrame(dom);
 
 		// TODO: When maxLayoutHeight property is added, verify calculation:
@@ -299,7 +299,7 @@ test("push-up offset calculation when content exceeds available space", async ()
 		terminal.stdout.write("\x1b[9;1H", () => resolve());
 	});
 
-	const dom = new TermDOM({process: terminal, detectCursor: true});
+	const dom = new TermDOM({transport: terminal.sharedTransport});
 	await nextFrame(dom);
 
 	// Add content that needs 4 lines (exceeds available 2 lines by 2)
@@ -341,7 +341,7 @@ test("content positioning with different terminal sizes", async () => {
 	await new Promise<void>((resolve) => {
 		smallTerminal.stdout.write("\x1b[3;1H", () => resolve());
 	});
-	const smallDom = new TermDOM({process: smallTerminal, detectCursor: true});
+	const smallDom = new TermDOM({transport: smallTerminal.sharedTransport});
 	await nextFrame(smallDom);
 	smallDom.document.body.innerHTML = content;
 	await nextFrame(smallDom);
@@ -350,7 +350,7 @@ test("content positioning with different terminal sizes", async () => {
 	await new Promise<void>((resolve) => {
 		largeTerminal.stdout.write("\x1b[25;1H", () => resolve());
 	});
-	const largeDom = new TermDOM({process: largeTerminal, detectCursor: true});
+	const largeDom = new TermDOM({transport: largeTerminal.sharedTransport});
 	await nextFrame(largeDom);
 	largeDom.document.body.innerHTML = content;
 	await nextFrame(largeDom);
@@ -374,7 +374,7 @@ test("push-up prevents content from being clipped, when it still fits the termin
 		terminal.stdout.write("\x1b[4;1H", () => resolve());
 	});
 
-	const dom = new TermDOM({process: terminal, detectCursor: true});
+	const dom = new TermDOM({transport: terminal.sharedTransport});
 	await nextFrame(dom);
 
 	// 3 lines of content, only 2 rows available below the cursor -- but the
@@ -407,7 +407,7 @@ test("content larger than terminal height (edge case)", async () => {
 		terminal.stdout.write("\x1b[3;1H", () => resolve());
 	});
 
-	const dom = new TermDOM({process: terminal, detectCursor: true});
+	const dom = new TermDOM({transport: terminal.sharedTransport});
 	await nextFrame(dom);
 	expect(dom.window.screenTop).toBe(2); // Row 3 -> 0-based = 2
 
@@ -439,7 +439,7 @@ test("unified scrolling model: screenTop + scrollY", async () => {
 		terminal.stdout.write("\x1b[6;1H", () => resolve());
 	});
 
-	const dom = new TermDOM({process: terminal, detectCursor: true});
+	const dom = new TermDOM({transport: terminal.sharedTransport});
 	await nextFrame(dom);
 
 	// Initial state: command start detected
@@ -458,7 +458,7 @@ test("unified scrolling model: user scrolls to terminal top", async () => {
 		terminal.stdout.write("\x1b[8;1H", () => resolve());
 	});
 
-	const dom = new TermDOM({process: terminal, detectCursor: true});
+	const dom = new TermDOM({transport: terminal.sharedTransport});
 	await nextFrame(dom);
 
 	expect(dom.window.screenTop).toBe(7); // Row 8 -> 0-based = 7 (readonly)
@@ -480,7 +480,7 @@ test("unified scrolling model: user scrolls down in document", async () => {
 		terminal.stdout.write("\x1b[5;1H", () => resolve());
 	});
 
-	const dom = new TermDOM({process: terminal, detectCursor: true});
+	const dom = new TermDOM({transport: terminal.sharedTransport});
 	await nextFrame(dom);
 
 	expect(dom.window.screenTop).toBe(4); // Row 5 -> 0-based = 4
@@ -502,7 +502,7 @@ test("unified scrolling model: pageYOffset alias", async () => {
 		terminal.stdout.write("\x1b[3;1H", () => resolve());
 	});
 
-	const dom = new TermDOM({process: terminal, detectCursor: true});
+	const dom = new TermDOM({transport: terminal.sharedTransport});
 	await nextFrame(dom);
 
 	// pageYOffset should be an alias for scrollY
@@ -522,7 +522,7 @@ test("unified scrolling model: push-up moves screenTop, not scrollY", async () =
 		terminal.stdout.write("\x1b[9;1H", () => resolve());
 	});
 
-	const dom = new TermDOM({process: terminal, detectCursor: true});
+	const dom = new TermDOM({transport: terminal.sharedTransport});
 	await nextFrame(dom);
 
 	const initialScreenTop = dom.window.screenTop;
@@ -551,7 +551,7 @@ test("unified scrolling model: push-up moves screenTop, not scrollY", async () =
 test("standard DOM properties: scrollHeight and clientHeight", async () => {
 	const terminal = new MockProcess({rows: 10, cols: 40});
 
-	const dom = new TermDOM({process: terminal, detectCursor: true});
+	const dom = new TermDOM({transport: terminal.sharedTransport});
 
 	// Add content with known height
 	dom.document.body.innerHTML = `
@@ -590,7 +590,7 @@ test("resizing narrower reprints cleanly instead of layering over reflowed remna
 	// For content that fit on screen, nothing is pushed to scrollback and the
 	// result is a single clean render with no duplication.
 	const terminal = new MockProcess({rows: 12, cols: 40});
-	const dom = new TermDOM({process: terminal, detectCursor: true});
+	const dom = new TermDOM({transport: terminal.sharedTransport});
 	await nextFrame(dom);
 
 	dom.document.body.innerHTML =
@@ -647,7 +647,7 @@ test("shrinking height re-anchors to the scrolled command start, no orphaned top
 	// The fix computes that scroll from the new layout height and re-anchors, so
 	// the visible viewport shows the frame exactly once.
 	const terminal = new MockProcess({rows: 16, cols: 40});
-	const dom = new TermDOM({process: terminal, detectCursor: true});
+	const dom = new TermDOM({transport: terminal.sharedTransport});
 
 	// Two prompt lines above, so the command start is below the top of the screen.
 	await new Promise<void>((resolve) => {
@@ -695,7 +695,7 @@ test("the cursor parks at the content bottom after every frame", async () => {
 	await new Promise<void>((resolve) => {
 		terminal.stdout.write("PREV-1\r\nPREV-2\r\n", () => resolve());
 	});
-	const dom = new TermDOM({process: terminal, detectCursor: true});
+	const dom = new TermDOM({transport: terminal.sharedTransport});
 	dom.document.body.innerHTML = `<div id="a">alpha</div><div>beta</div><div>gamma</div><div>delta</div>`;
 	await nextFrame(dom);
 
@@ -728,7 +728,7 @@ test("a width resize re-anchors via the parked cursor, not guesswork", async () 
 	await new Promise<void>((resolve) => {
 		terminal.stdout.write("PREV-A\r\nPREV-B\r\n", () => resolve());
 	});
-	const dom = new TermDOM({process: terminal, detectCursor: true});
+	const dom = new TermDOM({transport: terminal.sharedTransport});
 	dom.document.body.innerHTML =
 		`<div>HEADER LINE THAT IS FAIRLY LONG AND WILL WRAP WHEN NARROW</div>` +
 		`<div>short one</div><div>short two</div><div>short three</div>`;
@@ -776,7 +776,7 @@ test("a width resize re-anchors via the parked cursor, not guesswork", async () 
 
 test("matchMedia answers with the stylesheet evaluator and goes live on resize", async () => {
 	const terminal = new MockProcess({cols: 100, rows: 30});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {window, document} = dom;
 
 	const mql = window.matchMedia("(min-width: 90px)");
@@ -810,7 +810,7 @@ test("matchMedia answers with the stylesheet evaluator and goes live on resize",
 
 test("@media stylesheet rules re-evaluate when the terminal resizes", async () => {
 	const terminal = new MockProcess({cols: 100, rows: 30});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {window, document} = dom;
 
 	const style = document.createElement("style");
@@ -835,7 +835,7 @@ test("@media stylesheet rules re-evaluate when the terminal resizes", async () =
 
 test("cancelAnimationFrame actually cancels", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {window, document} = dom;
 
 	let canceled = false;
@@ -871,7 +871,7 @@ test("a height shrink past the fit point repaints one whole frame", async () => 
 	await new Promise<void>((resolve) => {
 		terminal.stdout.write("~/proj % demo\r\n~ %\r\n", () => resolve());
 	});
-	const dom = new TermDOM({process: terminal, detectCursor: true});
+	const dom = new TermDOM({transport: terminal.sharedTransport});
 	dom.document.body.innerHTML =
 		`<div>HEADER-ROW</div>` +
 		`<div>Subject <input id="s"></div>` +

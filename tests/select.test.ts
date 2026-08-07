@@ -10,8 +10,10 @@ import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
-function type(terminal: MockProcess, data: string) {
+function type(terminal: MockProcess, data: string): Promise<void> {
 	(terminal.stdin as any).emit("data", Buffer.from(data));
+	// Input rides the transport's readable: delivery is a microtask away.
+	return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 function makeSelect(document: Document): HTMLSelectElement {
@@ -25,7 +27,7 @@ function makeSelect(document: Document): HTMLSelectElement {
 
 test("select renders the selected label and indicator, never the option list", async () => {
 	const terminal = new MockProcess({rows: 4, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 	const select = makeSelect(document);
 	document.body.appendChild(select);
@@ -42,7 +44,7 @@ test("select renders the selected label and indicator, never the option list", a
 
 test("the field is sized to the longest option label", async () => {
 	const terminal = new MockProcess({rows: 4, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 	const select = makeSelect(document);
 	document.body.appendChild(select);
@@ -56,7 +58,7 @@ test("the field is sized to the longest option label", async () => {
 
 test("arrows change the selection in place, skipping disabled options", async () => {
 	const terminal = new MockProcess({rows: 4, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.attach();
 	const {document} = dom;
 	const select = makeSelect(document);
@@ -69,17 +71,17 @@ test("arrows change the selection in place, skipping disabled options", async ()
 	select.focus();
 	await nextFrame(dom);
 
-	type(terminal, "\x1b[B"); // ArrowDown: skips disabled Beta, lands on Gamma
+	await type(terminal, "\x1b[B"); // ArrowDown: skips disabled Beta, lands on Gamma
 	await nextFrame(dom);
 	expect(select.value).toBe("c");
 	expect(events).toEqual(["input", "change:c"]);
 	expect(terminal.getPlainText()).toContain("Gamma ray");
 
-	type(terminal, "\x1b[B"); // ArrowDown at the end: stays
+	await type(terminal, "\x1b[B"); // ArrowDown at the end: stays
 	await nextFrame(dom);
 	expect(select.value).toBe("c");
 
-	type(terminal, "\x1b[A"); // ArrowUp: back to Alpha
+	await type(terminal, "\x1b[A"); // ArrowUp: back to Alpha
 	await nextFrame(dom);
 	expect(select.value).toBe("a");
 	expect(terminal.getPlainText()).toContain("Alpha");
@@ -89,7 +91,7 @@ test("arrows change the selection in place, skipping disabled options", async ()
 
 test("a focused select underlines its field, like the rest of the family", async () => {
 	const terminal = new MockProcess({rows: 4, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 	const select = makeSelect(document);
 	document.body.appendChild(select);
@@ -107,7 +109,7 @@ test("a focused select underlines its field, like the rest of the family", async
 
 test("select internals are closed: no shadowRoot, attachShadow throws", async () => {
 	const terminal = new MockProcess({rows: 4, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 	const select = makeSelect(document);
 	document.body.appendChild(select);
@@ -121,7 +123,7 @@ test("select internals are closed: no shadowRoot, attachShadow throws", async ()
 
 test("Space opens the picker in the top layer, over following content", async () => {
 	const terminal = new MockProcess({rows: 8, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.attach();
 	const {document} = dom;
 	const select = makeSelect(document);
@@ -132,7 +134,7 @@ test("Space opens the picker in the top layer, over following content", async ()
 	select.focus();
 	await nextFrame(dom);
 
-	type(terminal, " ");
+	await type(terminal, " ");
 	await nextFrame(dom);
 	const rows = terminal.getPlainText().split("\n");
 	// The picker's bordered list covers the row the content held.
@@ -147,7 +149,7 @@ test("Space opens the picker in the top layer, over following content", async ()
 
 test("picker: arrows highlight without committing; Enter commits and closes", async () => {
 	const terminal = new MockProcess({rows: 10, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.attach();
 	const {document} = dom;
 	const select = makeSelect(document);
@@ -157,14 +159,14 @@ test("picker: arrows highlight without committing; Enter commits and closes", as
 	select.focus();
 	await nextFrame(dom);
 
-	type(terminal, " ");
+	await type(terminal, " ");
 	await nextFrame(dom);
-	type(terminal, "\x1b[B"); // highlight moves (skips disabled Beta)...
+	await type(terminal, "\x1b[B"); // highlight moves (skips disabled Beta)...
 	await nextFrame(dom);
 	expect(select.value).toBe("a"); // ...but nothing committed yet
 	expect(events).toEqual([]);
 
-	type(terminal, "\r"); // Enter commits Gamma and closes
+	await type(terminal, "\r"); // Enter commits Gamma and closes
 	await nextFrame(dom);
 	expect(select.value).toBe("c");
 	expect(events).toEqual(["c"]);
@@ -175,7 +177,7 @@ test("picker: arrows highlight without committing; Enter commits and closes", as
 
 test("picker: Escape dismisses without changing the value", async () => {
 	const terminal = new MockProcess({rows: 10, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.attach();
 	const {document} = dom;
 	const select = makeSelect(document);
@@ -183,11 +185,11 @@ test("picker: Escape dismisses without changing the value", async () => {
 	select.focus();
 	await nextFrame(dom);
 
-	type(terminal, " ");
+	await type(terminal, " ");
 	await nextFrame(dom);
-	type(terminal, "\x1b[B");
+	await type(terminal, "\x1b[B");
 	await nextFrame(dom);
-	type(terminal, "\x1b"); // Escape
+	await type(terminal, "\x1b"); // Escape
 	await nextFrame(dom);
 	expect(select.value).toBe("a");
 	expect(terminal.getPlainText()).not.toContain("┌");
@@ -197,14 +199,14 @@ test("picker: Escape dismisses without changing the value", async () => {
 
 test("picker: blurring the select closes it", async () => {
 	const terminal = new MockProcess({rows: 10, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.attach();
 	const {document} = dom;
 	const select = makeSelect(document);
 	document.body.appendChild(select);
 	select.focus();
 	await nextFrame(dom);
-	type(terminal, " ");
+	await type(terminal, " ");
 	await nextFrame(dom);
 	expect(terminal.getPlainText()).toContain("┌");
 
@@ -215,20 +217,20 @@ test("picker: blurring the select closes it", async () => {
 	dom.dispose();
 });
 
-function click(terminal: MockProcess, col: number, row: number) {
-	type(terminal, `\x1b[<0;${col};${row}M\x1b[<0;${col};${row}m`);
+function click(terminal: MockProcess, col: number, row: number): Promise<void> {
+	return type(terminal, `\x1b[<0;${col};${row}M\x1b[<0;${col};${row}m`);
 }
 
 test("picker: clicking the closed select opens it", async () => {
 	const terminal = new MockProcess({rows: 10, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.attach();
 	const {document} = dom;
 	const select = makeSelect(document);
 	document.body.appendChild(select);
 	await nextFrame(dom);
 
-	click(terminal, 2, 1);
+	await click(terminal, 2, 1);
 	await nextFrame(dom);
 	const output = terminal.getPlainText();
 	expect(output).toContain("┌");
@@ -239,7 +241,7 @@ test("picker: clicking the closed select opens it", async () => {
 
 test("picker: clicking an option row commits it, fires change, and closes", async () => {
 	const terminal = new MockProcess({rows: 10, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.attach();
 	const {document} = dom;
 	const select = makeSelect(document);
@@ -248,10 +250,10 @@ test("picker: clicking an option row commits it, fires change, and closes", asyn
 	select.addEventListener("change", () => (changed = select.value));
 	await nextFrame(dom);
 
-	click(terminal, 2, 1);
+	await click(terminal, 2, 1);
 	await nextFrame(dom);
 	// Rows: 1 field, 2 border, 3 Alpha, 4 Beta, 5 Gamma ray, 6 border.
-	click(terminal, 3, 5);
+	await click(terminal, 3, 5);
 	await nextFrame(dom);
 
 	expect(select.value).toBe("c");
@@ -263,21 +265,21 @@ test("picker: clicking an option row commits it, fires change, and closes", asyn
 
 test("picker: a disabled row is inert; clicking the face again dismisses", async () => {
 	const terminal = new MockProcess({rows: 10, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.attach();
 	const {document} = dom;
 	const select = makeSelect(document);
 	document.body.appendChild(select);
 	await nextFrame(dom);
 
-	click(terminal, 2, 1);
+	await click(terminal, 2, 1);
 	await nextFrame(dom);
-	click(terminal, 3, 4); // Beta, disabled -- no commit, stays open
+	await click(terminal, 3, 4); // Beta, disabled -- no commit, stays open
 	await nextFrame(dom);
 	expect(select.value).toBe("a");
 	expect(terminal.getPlainText()).toContain("┌");
 
-	click(terminal, 2, 1); // the closed face -- dismiss without change
+	await click(terminal, 2, 1); // the closed face -- dismiss without change
 	await nextFrame(dom);
 	expect(select.value).toBe("a");
 	expect(terminal.getPlainText()).not.toContain("┌");
@@ -287,14 +289,14 @@ test("picker: a disabled row is inert; clicking the face again dismisses", async
 
 test("picker: the highlighted row is inverse video, the rest carry no underline", async () => {
 	const terminal = new MockProcess({rows: 10, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.attach();
 	const {document} = dom;
 	const select = makeSelect(document);
 	document.body.appendChild(select);
 	select.focus();
 	await nextFrame(dom);
-	type(terminal, " "); // open at Alpha
+	await type(terminal, " "); // open at Alpha
 	await nextFrame(dom);
 
 	const cellAt = (row: number, col: number) =>

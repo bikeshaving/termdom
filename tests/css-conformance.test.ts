@@ -152,7 +152,7 @@ const FIXTURES: Fixture[] = [
 
 async function renderFixture(fx: Fixture) {
 	const terminal = new MockProcess({cols: fx.cols ?? 40, rows: fx.rows ?? 12});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = fx.html;
 	await nextFrame(dom);
 	const screen = terminal.getScreenContents();
@@ -337,7 +337,7 @@ for (const fx of KNOWN_GAPS) {
 // named colors to rgb()) rather than a text-contains check.
 async function colorOf(html: string, sel: string): Promise<string> {
 	const terminal = new MockProcess({cols: 40, rows: 12});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = html;
 	await nextFrame(dom);
 	const color = dom.window

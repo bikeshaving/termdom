@@ -33,7 +33,7 @@ async function renderPiped(html: string, cols = 40): Promise<string> {
 		return true;
 	};
 
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = html;
 	await nextFrame(dom);
 	dom.dispose();

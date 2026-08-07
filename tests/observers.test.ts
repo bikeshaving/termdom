@@ -11,7 +11,7 @@ import {MockProcess, nextFrame} from "./test-utils.js";
 
 function make(rows = 10, cols = 40) {
 	const terminal = new MockProcess({rows, cols});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	return {terminal, dom, document: dom.document, window: dom.window as any};
 }
 

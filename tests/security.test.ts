@@ -52,7 +52,7 @@ test("control characters in text never reach the terminal output", async () => {
 	for (const payload of payloads) {
 		const t = new MockProcess({rows: 4, cols: 20});
 		const raw = captureRawOutput(t);
-		const dom = new TermDOM({process: t});
+		const dom = new TermDOM({transport: t.transport});
 		dom.document.body.textContent = payload;
 		await nextFrame(dom);
 
@@ -69,7 +69,7 @@ test("control characters in text never reach the terminal output", async () => {
 
 test("a <script> in rendered HTML is inert (no code execution)", async () => {
 	const t = new MockProcess({rows: 4, cols: 40});
-	const dom = new TermDOM({process: t});
+	const dom = new TermDOM({transport: t.transport});
 	(globalThis as unknown as {__termdomPwned?: boolean}).__termdomPwned = false;
 	// If jsdom ran scripts, either of these would flip the flag.
 	dom.document.body.innerHTML =

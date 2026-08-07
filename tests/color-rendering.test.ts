@@ -11,7 +11,7 @@ import {MockProcess, nextFrame} from "./test-utils.js";
 
 test("red foreground color renders correctly", async () => {
 	const terminal = new MockProcess();
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	const div = document.createElement("div");
@@ -33,7 +33,7 @@ test("red foreground color renders correctly", async () => {
 
 test("background colors fill full width", async () => {
 	const terminal = new MockProcess();
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	const div = document.createElement("div");
@@ -66,7 +66,7 @@ test("background colors fill full width", async () => {
 
 test("mixed foreground and background colors", async () => {
 	const terminal = new MockProcess();
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	const div = document.createElement("div");
@@ -90,7 +90,7 @@ test("mixed foreground and background colors", async () => {
 
 test("CSS color formats are handled correctly", async () => {
 	const terminal = new MockProcess();
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	// RGB format
@@ -125,7 +125,7 @@ test("CSS color formats are handled correctly", async () => {
 
 test("style combinations work correctly", async () => {
 	const terminal = new MockProcess();
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	const div = document.createElement("div");
@@ -151,7 +151,7 @@ test("style combinations work correctly", async () => {
 
 test("inline elements do not extend background", async () => {
 	const terminal = new MockProcess();
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	const span = document.createElement("span");
@@ -184,7 +184,7 @@ test("font-weight maps to the terminal's three weights", async () => {
 	// Numeric weights count too -- font-weight: 700 was previously not even
 	// recognized as bold (only the literal string "bold" was).
 	const terminal = new MockProcess({rows: 6, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 	document.body.innerHTML = `
 		<div style="font-weight: lighter">faint keyword</div>
@@ -207,7 +207,7 @@ test("font-weight maps to the terminal's three weights", async () => {
 
 test("a blockquote's left border covers margin rows and every paragraph", async () => {
 	const terminal = new MockProcess({cols: 60, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.head.innerHTML = `<style>
 		blockquote { border-left: 1px solid #5f5f5f; padding-left: 1ch; margin-top: 1px; }
 		p { margin-top: 1px; }

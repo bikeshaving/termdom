@@ -167,7 +167,7 @@ function normalize(
 
 test("inline styles and stylesheets compute identically", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 8});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document, window} = dom;
 
 	const failures: string[] = [];

@@ -13,7 +13,7 @@ import {MockProcess, stripControlCodes, nextFrame} from "./test-utils.js";
 
 async function renderRows(html: string, cols = 30): Promise<string[]> {
 	const terminal = new MockProcess({cols, rows: 8});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = html;
 	await nextFrame(dom);
 	const rows = stripControlCodes(terminal.getStaticANSI())

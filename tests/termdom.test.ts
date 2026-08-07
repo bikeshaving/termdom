@@ -8,7 +8,7 @@ import {MockProcess, nextFrame} from "./test-utils";
 
 test("TermDOM provides HTML document with terminal capabilities", () => {
 	const terminal = new MockProcess();
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	expect(document).toBeDefined();
@@ -20,7 +20,7 @@ test("TermDOM provides HTML document with terminal capabilities", () => {
 
 test("can create standard HTML elements", () => {
 	const terminal = new MockProcess();
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	const div = document.createElement("div");
@@ -36,7 +36,7 @@ test("can create standard HTML elements", () => {
 
 test("can build HTML DOM tree", () => {
 	const terminal = new MockProcess();
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	const container = document.createElement("div");
@@ -57,7 +57,7 @@ test("can build HTML DOM tree", () => {
 
 test("HTML elements have CSS styling", () => {
 	const terminal = new MockProcess();
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	const element = document.createElement("div");
@@ -84,9 +84,7 @@ test("HTML elements have CSS styling", () => {
 test("TermDOM provides correct terminal dimensions", () => {
 	const terminal = new MockProcess({cols: 100, rows: 50});
 	const dom = new TermDOM({
-		process: terminal,
-		width: 100,
-		height: 50,
+		transport: terminal.transport,
 	});
 
 	expect(dom.window.innerWidth).toBe(100);
@@ -97,7 +95,7 @@ test("TermDOM provides correct terminal dimensions", () => {
 
 test("HTML elements support layout APIs", () => {
 	const terminal = new MockProcess();
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	// Test that standard HTML elements have layout APIs
@@ -120,7 +118,7 @@ test("HTML elements support layout APIs", () => {
 
 test("can render HTML to terminal without errors", async () => {
 	const terminal = new MockProcess();
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	const div = document.createElement("div");
@@ -139,7 +137,7 @@ test("pseudo-element CSS content is available immediately after render", async (
 	// This was broken before the render pipeline fix - content would be empty until second render
 
 	const terminal = new MockProcess();
-	const termDOM = new TermDOM({process: terminal});
+	const termDOM = new TermDOM({transport: terminal.transport});
 
 	// Set up HTML with pseudo-element CSS
 	termDOM.document.body.innerHTML = `
@@ -174,7 +172,7 @@ test("lists render correctly without requiring double-rendering", async () => {
 	// Lists should render with proper markers on the first render
 
 	const terminal = new MockProcess();
-	const termDOM = new TermDOM({process: terminal});
+	const termDOM = new TermDOM({transport: terminal.transport});
 
 	// Set up a list with custom markers
 	termDOM.document.body.innerHTML = `
@@ -207,7 +205,7 @@ test("pseudo-elements work on programmatic render without MutationObserver", asy
 	// and tests if pseudo-elements work on the first programmatic render call
 
 	const terminal = new MockProcess();
-	const termDOM = new TermDOM({process: terminal});
+	const termDOM = new TermDOM({transport: terminal.transport});
 
 	// Disconnect MutationObserver to prevent accidental double-rendering
 	termDOM[kObserver].disconnect();
@@ -242,7 +240,7 @@ test("fullscreen owns the alternate screen from row zero, whatever the anchor", 
 	// of the alternate screen, never push index-scrolls into it.
 	const terminal = new MockProcess({rows: 8, cols: 40});
 	(terminal as any).terminal.write("one\r\ntwo\r\nthree\r\nfour\r\n");
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.attach();
 	const {document} = dom;
 	document.body.innerHTML = `<div>doc row</div><div id="fs">STAGE</div>`;
@@ -263,7 +261,7 @@ test("no frame straddles a screen switch, even mid-animation", async () => {
 	// alternate-screen geometry onto the restored main screen. Transitions
 	// drain the in-flight frame and hold new ones until the switch lands.
 	const terminal = new MockProcess({rows: 8, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.attach();
 	const {document} = dom;
 	document.body.innerHTML = `<div>alpha doc row</div><div id="fs">STAGE</div>`;
@@ -292,7 +290,7 @@ test("exiting fullscreen restores a coherent document frame", async () => {
 	// reset on BOTH transitions -- diffing the restored main screen against
 	// the last alternate-screen frame patches cells that never matched.
 	const terminal = new MockProcess({rows: 8, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.attach();
 	const {document} = dom;
 	document.body.innerHTML = `<div>alpha document row</div><div>beta document row</div><div id="fs">stage content</div>`;
@@ -325,7 +323,7 @@ test("a headless TermDOM binds its terminal at attach(), re-deriving size", asyn
 	// Rebind to a specific terminal before the first render: its size, not the
 	// stand-in's, must reach the document (window.innerWidth and layout).
 	const terminal = new MockProcess({rows: 12, cols: 50});
-	dom.attach(terminal);
+	dom.attach(terminal.transport);
 	dom.document.body.innerHTML = "<p>bound late</p>";
 	await nextFrame(dom);
 
@@ -336,18 +334,21 @@ test("a headless TermDOM binds its terminal at attach(), re-deriving size", asyn
 	dom.dispose();
 });
 
-test("attach() is idempotent for its process but rejects a different one", () => {
+test("attach() is idempotent for its process but rejects a different one", async () => {
 	const terminal = new MockProcess({rows: 8, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 
 	dom.attach(); // first attach
-	dom.attach(); // same process -> no-op, no throw
-	dom.attach(terminal); // still the same process -> no-op
+
+	await new Promise((r) => setTimeout(r, 0));
+	dom.attach(); // same transport -> no-op, no throw
+	await new Promise((r) => setTimeout(r, 0));
+	dom.attach(terminal.transport); // still the same transport -> no-op
 
 	// Re-attaching a live instance to a different terminal is not supported.
-	expect(() => dom.attach(new MockProcess({rows: 5, cols: 5}))).toThrow(
-		/different process/,
-	);
+	expect(() =>
+		dom.attach(new MockProcess({rows: 5, cols: 5}).transport),
+	).toThrow(/different transport/);
 
 	dom.dispose();
 });

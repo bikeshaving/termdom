@@ -26,7 +26,7 @@ interface Box {
 
 async function render(html: string, cols = 60) {
 	const terminal = new MockProcess({cols, rows: 20});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = html;
 	await nextFrame(dom);
 

@@ -15,7 +15,7 @@ import {MockProcess, nextFrame} from "./test-utils.js";
 // Test all unordered list style types
 test("unordered list style types with snapshots", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 20});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	const container = document.createElement("div");
@@ -62,7 +62,7 @@ test("unordered list style types with snapshots", async () => {
 // Test all ordered list style types
 test("ordered list style types with snapshots", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 25});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	const container = document.createElement("div");
@@ -113,7 +113,7 @@ test("ordered list style types with snapshots", async () => {
 // Test nested list structures
 test("nested lists with proper indentation", async () => {
 	const terminal = new MockProcess({cols: 50, rows: 15});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	// Create complex nested structure
@@ -154,7 +154,7 @@ test("nested lists with proper indentation", async () => {
 // Test mixed ordered/unordered nesting
 test("mixed ordered and unordered nesting", async () => {
 	const terminal = new MockProcess({cols: 60, rows: 30});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	const container = document.createElement("div");
@@ -201,7 +201,7 @@ test("mixed ordered and unordered nesting", async () => {
 // Test list counter behavior and start attribute
 test("list counters and start attribute", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 15});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	const container = document.createElement("div");
@@ -245,7 +245,7 @@ test("list counters and start attribute", async () => {
 // Test lists with mixed content
 test("lists with mixed inline and block content", async () => {
 	const terminal = new MockProcess({cols: 50, rows: 20});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	const container = document.createElement("div");
@@ -283,7 +283,7 @@ test("lists with mixed inline and block content", async () => {
 // Test edge cases and error conditions
 test("list edge cases", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 15});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	const container = document.createElement("div");
@@ -325,7 +325,7 @@ test("list edge cases", async () => {
 // Test list performance with many items
 test("list performance with many items", async () => {
 	const terminal = new MockProcess({cols: 60, rows: 120});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	const container = document.createElement("div");
@@ -352,7 +352,7 @@ test("list performance with many items", async () => {
 // Test list layout with flexbox
 test("lists in flexbox containers", async () => {
 	const terminal = new MockProcess({cols: 80, rows: 20});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	const container = document.createElement("div");
@@ -403,7 +403,7 @@ test("list rerendering maintains correct layout", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 20});
 	// Override isTTY to prevent cursor detection which interferes with the test
 	(terminal.stdin as any).isTTY = false;
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	// Initial list

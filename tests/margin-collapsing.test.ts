@@ -19,7 +19,7 @@ function rectOf(dom: TermDOM, el: Element) {
 
 async function layout(html: string, head = "") {
 	const terminal = new MockProcess({cols: 60, rows: 16});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	if (head) dom.document.head.innerHTML = head;
 	dom.document.body.innerHTML = html;
 	await nextFrame(dom);

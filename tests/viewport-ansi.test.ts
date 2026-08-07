@@ -1,5 +1,5 @@
 import {test, expect, describe} from "@b9g/libuild/test";
-import {TermDOM} from "../src/internal/termdom.js";
+import {TermDOM, transportFromProcess} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
 // A raw-capture mock: it keeps the exact bytes TermDOM writes, so tests can
@@ -54,7 +54,9 @@ describe("Viewport Integration Tests", () => {
 
 	test("content renders from home without a redundant cursor-home escape", async () => {
 		const mock = createRawMockProcess(24, 80);
-		const termdom = new TermDOM({process: mock.process as any});
+		const termdom = new TermDOM({
+			transport: transportFromProcess(mock.process as any),
+		});
 
 		const div = termdom.document.createElement("div");
 		div.textContent = "Hello World";
@@ -70,11 +72,15 @@ describe("Viewport Integration Tests", () => {
 
 	test("empty content writes nothing (hasContent optimization)", async () => {
 		const mock = createRawMockProcess(24, 80);
-		const termdom = new TermDOM({process: mock.process as any});
+		const termdom = new TermDOM({
+			transport: transportFromProcess(mock.process as any),
+		});
 
 		await nextFrame(termdom); // no content added
 
-		expect(mock.getOutput()).toBe("");
+		// attach() writes its session prelude (bracketed paste, title push,
+		// mouse reporting); the claim under test is that no FRAME was written.
+		expect(mock.getOutput()).not.toContain("\x1b[?2026h");
 	});
 
 	// --- Anchor placement, driven by real cursor detection --------------------
@@ -82,7 +88,7 @@ describe("Viewport Integration Tests", () => {
 	test("content renders from the detected command-start row", async () => {
 		const terminal = new MockProcess({rows: 24, cols: 80});
 		await parkCursor(terminal, 5); // 1-based row 5 -> screenTop 4
-		const dom = new TermDOM({process: terminal, detectCursor: true});
+		const dom = new TermDOM({transport: terminal.sharedTransport});
 		await nextFrame(dom);
 
 		dom.document.body.innerHTML = "<div>Positioned content</div>";
@@ -98,7 +104,7 @@ describe("Viewport Integration Tests", () => {
 	test("the anchor offset is applied once, not doubled", async () => {
 		const terminal = new MockProcess({rows: 24, cols: 80});
 		await parkCursor(terminal, 8); // screenTop 7
-		const dom = new TermDOM({process: terminal, detectCursor: true});
+		const dom = new TermDOM({transport: terminal.sharedTransport});
 		await nextFrame(dom);
 
 		dom.document.body.innerHTML = "<div>No double offset</div>";
@@ -119,7 +125,7 @@ describe("Viewport Integration Tests", () => {
 		async () => {
 			const terminal = new MockProcess({rows: 5, cols: 40});
 			await parkCursor(terminal, 4); // screenTop 3, only 2 rows below
-			const dom = new TermDOM({process: terminal, detectCursor: true});
+			const dom = new TermDOM({transport: terminal.sharedTransport});
 			await nextFrame(dom);
 
 			const container = dom.document.createElement("div");

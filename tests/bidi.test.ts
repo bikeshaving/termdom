@@ -84,7 +84,7 @@ test("undeclared RTL text still paints in visual order", async () => {
 	// The common way such a string arrives: no dir attribute, no CSS, just
 	// Hebrew dropped into a div. The content decides the direction.
 	const terminal = new MockProcess({cols: 20, rows: 4});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = `<div>${HEBREW}</div>`;
 
 	await nextFrame(dom);
@@ -96,7 +96,7 @@ test("undeclared RTL text still paints in visual order", async () => {
 
 test("direction: rtl right-aligns the line and keeps Latin runs readable", async () => {
 	const terminal = new MockProcess({cols: 30, rows: 4});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = `<div style="direction: rtl; width: 20ch">مرحبا Bun</div>`;
 
 	await nextFrame(dom);
@@ -114,7 +114,7 @@ test("the terminal is asked to leave bidi to us, and its answer is honoured", as
 	// MockProcess wraps a real headless terminal, which does not implement BDSM
 	// and answers DECRQM with 0 ("not recognised") -- so we reorder.
 	const terminal = new MockProcess({cols: 20, rows: 4});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = `<div>${HEBREW}</div>`;
 
 	await nextFrame(dom);
@@ -143,12 +143,18 @@ test("a terminal that insists on reordering gets logical order instead", async (
 				0,
 			);
 			const rest = data.replace("\x1b[8l", "").replace("\x1b[8$p", "");
-			return rest ? original(rest, ...args.slice(1)) : true;
+			if (rest) return original(rest, ...args.slice(1));
+			// The write is swallowed, but its completion callback must still
+			// fire: the transport's sink resolves on it, and an unresolved
+			// write blocks every write queued behind it.
+			const callback = args.find((arg) => typeof arg === "function");
+			if (callback) (callback as () => void)();
+			return true;
 		}
 		return original(...args);
 	};
 
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = `<div>${HEBREW}</div>`;
 	await nextFrame(dom);
 	await new Promise((resolve) => setTimeout(resolve, 60));
@@ -182,16 +188,23 @@ test("grapheme-cluster mode is negotiated, and given back on dispose", async () 
 				0,
 			);
 			const rest = data.replace("\x1b[?2027h", "").replace("\x1b[?2027$p", "");
-			return rest ? original(rest, ...args.slice(1)) : true;
+			if (rest) return original(rest, ...args.slice(1));
+			// See above: the sink resolves on the callback, so a swallowed
+			// write must still complete or it blocks the queue behind it.
+			const callback = args.find((arg) => typeof arg === "function");
+			if (callback) (callback as () => void)();
+			return true;
 		}
 		return original(...args);
 	};
 
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = `<div>hi</div>`;
 	await nextFrame(dom);
 	await new Promise((resolve) => setTimeout(resolve, 60));
 	dom.dispose();
+	// Dispose's mode restore rides the transport's stream; let it flush.
+	await new Promise((resolve) => setTimeout(resolve, 20));
 
 	const all = seen.join("");
 	expect(all).toContain("\x1b[?2027h");
@@ -216,7 +229,7 @@ test("a terminal that ignores mode 2027 is left alone", async () => {
 		return original(...args);
 	};
 
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = `<div>hi</div>`;
 	await nextFrame(dom);
 	await new Promise((resolve) => setTimeout(resolve, 1100));
@@ -234,7 +247,7 @@ test("lam-alef shaping keeps RTL text flush at the right edge", async () => {
 	// run, and that spare cell must fall on the LEFT (the RTL ragged edge),
 	// never between the text and the right border it aligns to.
 	const terminal = new MockProcess({cols: 50, rows: 6});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = `<div style="direction:rtl;border:1px solid;width:30ch">الإصدار يعمل</div>`;
 	await nextFrame(dom);
 
@@ -254,7 +267,7 @@ test("shaped Arabic ends exactly at the RTL padding boundary", async () => {
 	// the right border -- the padding, not a gap. Any wider look in a real
 	// terminal is font glyph advance, which no cell can control.
 	const terminal = new MockProcess({cols: 50, rows: 6});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.head.innerHTML = `<style>
 		.card { direction: rtl; border: 1px solid; padding: 0 1ch; width: 34ch; }
 	</style>`;

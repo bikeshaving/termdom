@@ -21,7 +21,7 @@ function countWrites(terminal: MockProcess): {count(): number} {
 test("mutations produce no stdout before attach()", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 8});
 	const writes = countWrites(terminal);
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = `<div>should not paint</div>`;
 	dom.document.body.appendChild(dom.document.createElement("p"));
 	// Let the mutation observer microtask and any stray timers run.
@@ -32,7 +32,7 @@ test("mutations produce no stdout before attach()", async () => {
 
 test("attach() paints the document built before it", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 8});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = `<div>early content</div>`;
 	await new Promise((r) => setTimeout(r, 20));
 	expect(terminal.getVisibleText()).not.toContain("early content");
@@ -46,7 +46,7 @@ test("attach() paints the document built before it", async () => {
 test("geometry reads work unattached, and stay silent", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 8});
 	const writes = countWrites(terminal);
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = `<div id="box" style="width:10px">x</div>`;
 	const rect = dom.document.getElementById("box")!.getBoundingClientRect();
 	expect(rect.width).toBe(10);
@@ -57,7 +57,7 @@ test("geometry reads work unattached, and stay silent", async () => {
 test("dispose() before attach() writes nothing", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 8});
 	const writes = countWrites(terminal);
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = `<div>never shown</div>`;
 	await new Promise((r) => setTimeout(r, 20));
 	dom.dispose();
@@ -67,7 +67,7 @@ test("dispose() before attach() writes nothing", async () => {
 test("requestFullscreen before attach() rejects and stays silent", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 8});
 	const writes = countWrites(terminal);
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = `<div id="stage">x</div>`;
 	await expect(
 		dom.document.getElementById("stage")!.requestFullscreen(),
@@ -79,7 +79,7 @@ test("requestFullscreen before attach() rejects and stays silent", async () => {
 test("renderToString returns ANSI without attach or stdout", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 8});
 	const writes = countWrites(terminal);
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = `<div style="color:red">static content</div>`;
 	const ansi = dom.renderToString();
 	expect(ansi).toContain("static content");
@@ -94,12 +94,13 @@ test("renderToString returns ANSI without attach or stdout", async () => {
 test("print() writes the document once, with no terminal takeover", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 8});
 	const writes = countWrites(terminal);
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = `<div>printed line</div>`;
 	dom.print();
-	expect(writes.count()).toBe(1);
-	// The mock terminal ingests writes asynchronously; let it catch up.
+	// The write rides the transport's stream: one microtask to the sink, then
+	// the mock terminal ingests it.
 	await new Promise((r) => setTimeout(r, 20));
+	expect(writes.count()).toBe(1);
 	expect(terminal.getVisibleText()).toContain("printed line");
 	dom.dispose();
 	// dispose after a print still owes the terminal nothing.
@@ -113,7 +114,7 @@ test("a geometry read never strands the mutations it drained", async () => {
 	// mutation must still reach the screen: the drain schedules the paint it
 	// consumed.
 	const terminal = new MockProcess({cols: 40, rows: 8});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = `<div id="a">before</div>`;
 	dom.attach();
 	await nextFrame(dom);

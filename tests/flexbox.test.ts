@@ -11,7 +11,7 @@ import {TermDOM} from "../src/internal/termdom.js";
 
 test("flexbox-demo layout renders correctly", async () => {
 	const terminal = new MockProcess({cols: 80, rows: 24});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	// Recreate the flexbox-demo layout
@@ -179,7 +179,7 @@ test("flexbox-demo layout renders correctly", async () => {
 
 test("nested flexbox containers", async () => {
 	const terminal = new MockProcess({cols: 60, rows: 20});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	// Create nested flex containers
@@ -243,7 +243,7 @@ test("nested flexbox containers", async () => {
 
 test("flexbox with flex-grow", async () => {
 	const terminal = new MockProcess({cols: 80, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	const container = document.createElement("div");
@@ -288,7 +288,7 @@ test("flexbox with flex-grow", async () => {
 
 test("flexbox with align-items and justify-content", async () => {
 	const terminal = new MockProcess({cols: 60, rows: 15});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	// Center alignment test
@@ -339,7 +339,7 @@ test("flexbox with align-items and justify-content", async () => {
 
 test("flexbox wrapping behavior", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	const container = document.createElement("div");
@@ -380,7 +380,7 @@ test("flexbox wrapping behavior", async () => {
 
 test("flexbox column with mixed content", async () => {
 	const terminal = new MockProcess({cols: 50, rows: 20});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	const container = document.createElement("div");
@@ -466,7 +466,7 @@ test("flexbox column with mixed content", async () => {
 
 test("flexbox column children should have different Y positions", async () => {
 	const terminal = new MockProcess({cols: 20, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	// Create tight constraints that trigger the bug
@@ -533,7 +533,7 @@ test("flexbox column children should have different Y positions", async () => {
 
 test("flexbox two columns: fixed width + flexible width with text wrapping", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	// Create flex row container
@@ -593,7 +593,7 @@ test("an inline-block flex item does not swallow the next item's content into it
 	// then measured itself as wide as both ("[x]" + "Buy milk" = 11 cells),
 	// pushing every later sibling that far right on the main axis.
 	const terminal = new MockProcess({cols: 40, rows: 6});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	const row = document.createElement("div");
@@ -621,7 +621,7 @@ test("order lays flex items out in order-modified document order", async () => {
 	// The stable sort: explicit values position around the default 0, and
 	// equal values keep document order.
 	const terminal = new MockProcess({cols: 40, rows: 4});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML =
 		`<div style="display: flex; flex-direction: row; gap: 1ch">` +
 		`<span style="order: 1">last</span><span>mid1</span>` +
@@ -637,7 +637,7 @@ test("order is inert outside a flex formatting context", async () => {
 	// Browsers ignore order on block-level children even though this
 	// engine models block layout with flex nodes.
 	const terminal = new MockProcess({cols: 40, rows: 4});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = `
 		<div>
 			<div style="order: 1">alpha</div>
@@ -655,7 +655,7 @@ test("a runtime order change reorders live flex items", async () => {
 	// the DOM but orders after it while editing, so the editor takes the
 	// label's visual slot.
 	const terminal = new MockProcess({cols: 40, rows: 4});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = `
 		<style>.row { display: flex; flex-direction: row; gap: 1ch }
 		       .row.flipped .b { order: 1 }</style>
@@ -675,7 +675,7 @@ test("a runtime order change reorders live flex items", async () => {
 
 test("text between flex items forms its own anonymous item", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 6});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = `<p style="display: flex">text <input> more</p>`;
 
 	await nextFrame(dom);
@@ -692,7 +692,7 @@ test("text between flex items forms its own anonymous item", async () => {
 
 test("a flex item's width applies even when it is an inline box", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 6});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = `<div style="display: flex"><span style="width: 30ch">aaaa</span><span style="width: 30ch">bbbb</span></div>`;
 
 	await nextFrame(dom);
@@ -712,7 +712,7 @@ test("a flex item's width applies even when it is an inline box", async () => {
 
 test("flex-shrink: 0 keeps an item at its width while the rest give way", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 6});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = `<div style="display: flex"><div style="width: 30ch; flex-shrink: 0">aaaa</div><div style="width: 30ch">bbbb</div></div>`;
 
 	await nextFrame(dom);
@@ -733,7 +733,7 @@ test("an inline element that becomes a flex item keeps its padding", async () =>
 	// so `.row{display:flex} .row span{padding:0 2ch}` collapsed to no gap --
 	// the reason examples/form.ts had to use block <div> labels.
 	const terminal = new MockProcess({cols: 40, rows: 6});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 	const style = document.createElement("style");
 	style.textContent = `.row{display:flex;flex-direction:row}
@@ -759,7 +759,7 @@ test("a blockified inline flex item offsets its content by padding", async () =>
 	// reserved but the text painted at the corner -- horizontally ("LBL" flush
 	// left inside a padded box) and vertically (padding-top ignored).
 	const terminal = new MockProcess({cols: 30, rows: 6});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 	const style = document.createElement("style");
 	style.textContent = `.row{display:flex;flex-direction:row}
@@ -780,7 +780,7 @@ test("the flex shorthand in a stylesheet expands: flex 1 grows", async () => {
 	// css-flexbox-1 §7.1.1: `flex: 1` means 1 1 0% -- the everyday grow-to-fill
 	// declaration. It must work from a stylesheet, not only element.style.
 	const terminal = new MockProcess({cols: 40, rows: 6});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.head.innerHTML = `<style>.grow { flex: 1; }</style>`;
 	dom.document.body.innerHTML =
 		`<div style="display:flex;width:40ch">` +
@@ -794,7 +794,7 @@ test("the flex shorthand in a stylesheet expands: flex 1 grows", async () => {
 
 test("flex: none from a stylesheet pins the item", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 6});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.head.innerHTML = `<style>.pin { flex: none; width: 10ch; }</style>`;
 	dom.document.body.innerHTML =
 		`<div style="display:flex;width:20ch">` +
@@ -814,7 +814,7 @@ test("whitespace-only text between flex items is not an item", async () => {
 	// write flex rows; the indentation must not become phantom items that
 	// eat gap and justify-content space.
 	const terminal = new MockProcess({cols: 40, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = `<div style="display:flex;gap:2ch">
 		<div id="a">A</div>
 		<div id="b">B</div>
@@ -840,7 +840,7 @@ test.todo("white-space: pre keeps whitespace items, per spec", async () => {
 	// honored; the measurement is a separate bug.
 	// Non-collapsible white space DOES generate an anonymous item.
 	const terminal = new MockProcess({cols: 40, rows: 6});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = `<div style="display:flex;white-space:pre"><div id="a">A</div>  <div id="b">B</div></div>`;
 	await nextFrame(dom);
 	expect(dom.document.getElementById("b")!.getBoundingClientRect().left).toBe(

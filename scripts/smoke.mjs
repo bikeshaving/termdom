@@ -15,7 +15,7 @@
  *   bun run build && node scripts/smoke.mjs
  *   bun run build && deno run -A --node-modules-dir=manual scripts/smoke.mjs
  */
-import {TermDOM} from "../dist/index.js";
+import {TermDOM, transportFromProcess} from "../dist/index.js";
 
 const runtime =
 	typeof Deno !== "undefined"
@@ -38,7 +38,17 @@ console.log(`\ntermdom smoke test on ${runtime}\n`);
 // Widths, measured through layout: each string sits in an inline-block
 // whose width IS the string's cell width. Kana, CJK punctuation and
 // grapheme clusters are what a naive fallback gets wrong.
-const term = new TermDOM({width: 60, height: 10, detectCursor: false});
+const layoutProc = {
+	env: {},
+	stdout: {write: () => true, isTTY: false, columns: 60, rows: 10},
+	stdin: undefined,
+	on() {},
+	removeListener() {},
+	exit(code) {
+		throw new Error(`exit(${code})`);
+	},
+};
+const term = new TermDOM({transport: transportFromProcess(layoutProc)});
 const {document} = term;
 const widthCases = [
 	["ascii", "hello", 5],
@@ -90,7 +100,7 @@ const proc = {
 	off() {},
 	removeListener() {},
 };
-const colorTerm = new TermDOM({process: proc, detectCursor: false});
+const colorTerm = new TermDOM({transport: transportFromProcess(proc)});
 colorTerm.attach();
 colorTerm.document.body.innerHTML =
 	`<div style="color:#ff8000">hex</div>` +

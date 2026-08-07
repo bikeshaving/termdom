@@ -9,13 +9,15 @@ import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 
-function type(terminal: MockProcess, data: string) {
+function type(terminal: MockProcess, data: string): Promise<void> {
 	(terminal.stdin as any).emit("data", Buffer.from(data));
+	// Input rides the transport's readable: delivery is a microtask away.
+	return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 test("textarea renders its multiline value inside the bordered box", async () => {
 	const terminal = new MockProcess({rows: 8, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 	const textarea = document.createElement("textarea");
 	textarea.value = "first line\nsecond line";
@@ -36,7 +38,7 @@ test("textarea renders its multiline value inside the bordered box", async () =>
 
 test("long lines soft-wrap at the content edge, as pre-wrap says", async () => {
 	const terminal = new MockProcess({rows: 8, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 	const textarea = document.createElement("textarea");
 	textarea.setAttribute("cols", "10");
@@ -56,19 +58,20 @@ test("long lines soft-wrap at the content edge, as pre-wrap says", async () => {
 
 test("typing edits the value; Enter inserts a newline", async () => {
 	const terminal = new MockProcess({rows: 8, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 	const {document} = dom;
 	const textarea = document.createElement("textarea");
 	document.body.appendChild(textarea);
 	textarea.focus();
 	await nextFrame(dom);
 
-	type(terminal, "ab");
+	await type(terminal, "ab");
 	await nextFrame(dom);
-	type(terminal, "\r"); // Enter
+	await type(terminal, "\r"); // Enter
 	await nextFrame(dom);
-	type(terminal, "cd");
+	await type(terminal, "cd");
 	await nextFrame(dom);
 
 	expect(textarea.value).toBe("ab\ncd");
@@ -81,8 +84,9 @@ test("typing edits the value; Enter inserts a newline", async () => {
 
 test("the placeholder shows in an empty textarea and hides once typed", async () => {
 	const terminal = new MockProcess({rows: 8, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 	const {document} = dom;
 	const textarea = document.createElement("textarea");
 	textarea.setAttribute("placeholder", "Say something");
@@ -92,7 +96,7 @@ test("the placeholder shows in an empty textarea and hides once typed", async ()
 
 	textarea.focus();
 	await nextFrame(dom);
-	type(terminal, "x");
+	await type(terminal, "x");
 	await nextFrame(dom);
 	const output = terminal.getPlainText();
 	expect(output).not.toContain("Say something");
@@ -103,7 +107,7 @@ test("the placeholder shows in an empty textarea and hides once typed", async ()
 
 test("textarea internals are closed: no shadowRoot, attachShadow throws", async () => {
 	const terminal = new MockProcess({rows: 8, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 	const textarea = document.createElement("textarea");
 	textarea.value = "content";
@@ -118,7 +122,7 @@ test("textarea internals are closed: no shadowRoot, attachShadow throws", async 
 
 test("rows and cols size the empty box, as in a browser", async () => {
 	const terminal = new MockProcess({rows: 10, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 	const textarea = document.createElement("textarea");
 	textarea.setAttribute("rows", "3");
@@ -135,19 +139,20 @@ test("rows and cols size the empty box, as in a browser", async () => {
 
 test("the caret parks at the multiline position; arrows move between lines", async () => {
 	const terminal = new MockProcess({rows: 8, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 	const {document} = dom;
 	const textarea = document.createElement("textarea");
 	document.body.appendChild(textarea);
 	textarea.focus();
 	await nextFrame(dom);
 
-	type(terminal, "ab");
+	await type(terminal, "ab");
 	await nextFrame(dom);
-	type(terminal, "\r");
+	await type(terminal, "\r");
 	await nextFrame(dom);
-	type(terminal, "wxyz");
+	await type(terminal, "wxyz");
 	await nextFrame(dom);
 
 	// Caret after "wxyz" on the second content row. Content origin is
@@ -158,13 +163,13 @@ test("the caret parks at the multiline position; arrows move between lines", asy
 	expect(buffer.cursorX).toBe(2 + 4); // border+padding, after "wxyz"
 
 	// ArrowUp keeps the column where possible.
-	type(terminal, "\x1b[A");
+	await type(terminal, "\x1b[A");
 	await nextFrame(dom);
 	expect(textarea.selectionStart).toBe(2); // end of "ab" (column clamps)
 	expect(buffer.cursorY).toBe(1);
 
 	// ArrowDown returns to the second line.
-	type(terminal, "\x1b[B");
+	await type(terminal, "\x1b[B");
 	await nextFrame(dom);
 	expect(textarea.selectionStart).toBe(7);
 
@@ -177,19 +182,20 @@ test("consecutive newlines: caret and arrows track blank lines exactly", async (
 	// value's own structure, not double-counted separators, or the caret
 	// drifts a row per blank line.
 	const terminal = new MockProcess({rows: 10, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 	const {document} = dom;
 	const textarea = document.createElement("textarea");
 	document.body.appendChild(textarea);
 	textarea.focus();
 	await nextFrame(dom);
 
-	type(terminal, "a");
+	await type(terminal, "a");
 	await nextFrame(dom);
-	type(terminal, "\r\r"); // two Enters: a blank line, caret below it
+	await type(terminal, "\r\r"); // two Enters: a blank line, caret below it
 	await nextFrame(dom);
-	type(terminal, "b");
+	await type(terminal, "b");
 	await nextFrame(dom);
 
 	const buffer = (terminal as any).terminal.buffer.active;
@@ -200,20 +206,20 @@ test("consecutive newlines: caret and arrows track blank lines exactly", async (
 
 	// Two more Enters: value ends with newlines; the caret sits on the
 	// (virtual) empty last line, exactly one row below "b"'s successor.
-	type(terminal, "\r\r");
+	await type(terminal, "\r\r");
 	await nextFrame(dom);
 	expect(textarea.value).toBe("a\n\nb\n\n");
 	expect(buffer.cursorY).toBe(5);
 	expect(buffer.cursorX).toBe(2);
 
 	// Walking up visits every line, blank ones included.
-	type(terminal, "\x1b[A");
+	await type(terminal, "\x1b[A");
 	await nextFrame(dom);
 	expect(textarea.selectionStart).toBe(5); // the "" line between b and end
-	type(terminal, "\x1b[A");
+	await type(terminal, "\x1b[A");
 	await nextFrame(dom);
 	expect(textarea.selectionStart).toBe(3); // start of "b" (goal column 0)
-	type(terminal, "\x1b[A");
+	await type(terminal, "\x1b[A");
 	await nextFrame(dom);
 	expect(textarea.selectionStart).toBe(2); // the blank line
 	expect(buffer.cursorY).toBe(2);
@@ -227,8 +233,9 @@ test("a trailing newline grows the box; the caret never touches the border", asy
 	// creates is real, measured content: the box grows and the caret's row
 	// stays strictly inside it.
 	const terminal = new MockProcess({rows: 12, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 	const {document} = dom;
 	const textarea = document.createElement("textarea");
 	document.body.appendChild(textarea);
@@ -239,11 +246,11 @@ test("a trailing newline grows the box; the caret never touches the border", asy
 	const bottomBorderRow = () =>
 		Math.round(textarea.getBoundingClientRect().bottom) - 1;
 
-	type(terminal, "\r");
+	await type(terminal, "\r");
 	await nextFrame(dom);
 	expect(buffer.cursorY).toBeLessThan(bottomBorderRow());
 
-	type(terminal, "\r");
+	await type(terminal, "\r");
 	await nextFrame(dom);
 	// Three logical lines now (all empty): content grew past rows=2.
 	expect(textarea.getBoundingClientRect().height).toBe(5);
@@ -251,7 +258,7 @@ test("a trailing newline grows the box; the caret never touches the border", asy
 	expect(buffer.cursorY).toBeLessThan(bottomBorderRow());
 
 	// And typing on that last line lands where the caret promised.
-	type(terminal, "z");
+	await type(terminal, "z");
 	await nextFrame(dom);
 	const row = buffer.getLine(3).translateToString(true);
 	expect(row).toContain("z");
@@ -265,8 +272,9 @@ test("the camera follows the caret as the textarea grows past the viewport", asy
 	// actions). Grow a textarea past the terminal height and the camera
 	// must follow the caret down, then back up on arrow travel.
 	const terminal = new MockProcess({rows: 6, cols: 30});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 	const {document} = dom;
 	const textarea = document.createElement("textarea");
 	document.body.appendChild(textarea);
@@ -275,7 +283,7 @@ test("the camera follows the caret as the textarea grows past the viewport", asy
 
 	const buffer = (terminal as any).terminal.buffer.active;
 	for (let i = 0; i < 8; i++) {
-		type(terminal, `line${i}\r`);
+		await type(terminal, `line${i}\r`);
 		await nextFrame(dom);
 		// The caret's row stays on screen the whole way down.
 		expect(buffer.cursorY).toBeGreaterThanOrEqual(0);
@@ -288,7 +296,7 @@ test("the camera follows the caret as the textarea grows past the viewport", asy
 
 	// Travel back up: the camera follows the caret to the top.
 	for (let i = 0; i < 9; i++) {
-		type(terminal, "\x1b[A");
+		await type(terminal, "\x1b[A");
 		await nextFrame(dom);
 	}
 	await nextFrame(dom);
@@ -305,15 +313,16 @@ test("borders respect the camera: culled above the band, visible when scrolled t
 	// row (merging into whatever text lived there), and the bottom border
 	// never painted even when the camera reached it.
 	const terminal = new MockProcess({rows: 6, cols: 30});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 	const {document} = dom;
 	const textarea = document.createElement("textarea");
 	document.body.appendChild(textarea);
 	textarea.focus();
 	await nextFrame(dom);
 	for (let i = 0; i < 7; i++) {
-		type(terminal, `line${i}\r`);
+		await type(terminal, `line${i}\r`);
 		await nextFrame(dom);
 	}
 	await nextFrame(dom);
@@ -327,7 +336,7 @@ test("borders respect the camera: culled above the band, visible when scrolled t
 	expect(row(0)).not.toContain("─");
 	// The caret's row is the last content row; the bottom border is the
 	// next document row -- scroll one more line into view by typing.
-	type(terminal, "tail");
+	await type(terminal, "tail");
 	await nextFrame(dom);
 	const screen = terminal.getPlainText();
 	expect(screen).toContain("tail");
@@ -335,7 +344,7 @@ test("borders respect the camera: culled above the band, visible when scrolled t
 
 	// Travel to the very top: the top border is real again, un-merged.
 	for (let i = 0; i < 12; i++) {
-		type(terminal, "\x1b[A");
+		await type(terminal, "\x1b[A");
 		await nextFrame(dom);
 	}
 	await nextFrame(dom);
@@ -348,7 +357,7 @@ test("borders respect the camera: culled above the band, visible when scrolled t
 
 test("a long unbroken word wraps at the field edge -- overflow-wrap: break-word is the UA default", async () => {
 	const terminal = new MockProcess({rows: 10, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 	const textarea = document.createElement("textarea");
 	textarea.setAttribute("rows", "4");
@@ -372,8 +381,9 @@ test("a long unbroken word wraps at the field edge -- overflow-wrap: break-word 
 
 test("the focused textarea paints its selection as inverse video", async () => {
 	const terminal = new MockProcess({rows: 8, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 	const {document} = dom;
 	const textarea = document.createElement("textarea");
 	textarea.setAttribute("rows", "3");
@@ -383,7 +393,7 @@ test("the focused textarea paints its selection as inverse video", async () => {
 	textarea.focus();
 	await nextFrame(dom);
 
-	type(terminal, "\x01"); // Ctrl+A: select all
+	await type(terminal, "\x01"); // Ctrl+A: select all
 	await nextFrame(dom);
 	expect(textarea.selectionStart).toBe(0);
 	expect(textarea.selectionEnd).toBe(16);
@@ -400,8 +410,9 @@ test("the focused textarea paints its selection as inverse video", async () => {
 
 test("a drag inside the textarea selects within its value", async () => {
 	const terminal = new MockProcess({rows: 8, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 	const {document} = dom;
 	const textarea = document.createElement("textarea");
 	textarea.setAttribute("rows", "3");
@@ -413,7 +424,7 @@ test("a drag inside the textarea selects within its value", async () => {
 	// Content starts at col 3 (border + 1ch padding), row 2 (1-based).
 	// Press on 'l' (offset 1), drag down a visual line: the focus lands
 	// mid second line, all within the field's own selection.
-	type(terminal, "\x1b[<0;4;2M\x1b[<32;6;3M\x1b[<0;6;3m");
+	await type(terminal, "\x1b[<0;4;2M\x1b[<32;6;3M\x1b[<0;6;3m");
 	await nextFrame(dom);
 	expect(document.activeElement).toBe(textarea);
 	expect(textarea.selectionStart).toBe(1);
@@ -429,7 +440,7 @@ test("rows/cols size the CONTENT: removing the UA chrome shrinks the box", async
 	// The UA must not bake its own chrome into constants an author cannot
 	// unbake by writing `border: none`.
 	const terminal = new MockProcess({rows: 10, cols: 60});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 	// A stylesheet, not inline styles: cssstyle drops the inline
 	// `border: none` shorthand outright (accepts `border: 0` and full
@@ -449,7 +460,7 @@ test("rows/cols size the CONTENT: removing the UA chrome shrinks the box", async
 
 test("an author height beats the rows-derived content floor", async () => {
 	const terminal = new MockProcess({rows: 10, cols: 60});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 	const textarea = document.createElement("textarea");
 	textarea.setAttribute("rows", "5");

@@ -4,7 +4,7 @@ import {MockProcess, nextFrame} from "./test-utils.js";
 
 test("list-style-position: inside (current behavior)", async () => {
 	const terminal = new MockProcess();
-	const termdom = new TermDOM({process: terminal});
+	const termdom = new TermDOM({transport: terminal.transport});
 	const {document} = termdom;
 
 	// Create a list with inside positioning (should be current behavior)
@@ -59,7 +59,7 @@ test("list-style-position: inside (current behavior)", async () => {
 
 test("list-style-position: inside with wide marker", async () => {
 	const terminal = new MockProcess();
-	const termdom = new TermDOM({process: terminal});
+	const termdom = new TermDOM({transport: terminal.transport});
 	const {document} = termdom;
 
 	const style = document.createElement("style");
@@ -98,7 +98,7 @@ test("list-style-position: inside with wide marker", async () => {
 
 test("default list behavior is inside positioning", async () => {
 	const terminal = new MockProcess();
-	const termdom = new TermDOM({process: terminal});
+	const termdom = new TermDOM({transport: terminal.transport});
 	const {document} = termdom;
 
 	// No explicit list-style-position set - should default to current behavior
@@ -122,7 +122,7 @@ test("default list behavior is inside positioning", async () => {
 
 test("list-style-position: outside with adequate space", async () => {
 	const terminal = new MockProcess();
-	const termdom = new TermDOM({process: terminal});
+	const termdom = new TermDOM({transport: terminal.transport});
 	const {document} = termdom;
 
 	const style = document.createElement("style");
@@ -165,7 +165,7 @@ test("list-style-position: outside with adequate space", async () => {
 
 test("list-style-position: outside with marker overflow", async () => {
 	const terminal = new MockProcess();
-	const termdom = new TermDOM({process: terminal});
+	const termdom = new TermDOM({transport: terminal.transport});
 	const {document} = termdom;
 
 	const style = document.createElement("style");
@@ -204,7 +204,7 @@ test("list-style-position: outside with marker overflow", async () => {
 
 test("list-style-position: outside multi-line alignment", async () => {
 	const terminal = new MockProcess();
-	const termdom = new TermDOM({process: terminal});
+	const termdom = new TermDOM({transport: terminal.transport});
 	const {document} = termdom;
 
 	const style = document.createElement("style");
@@ -248,7 +248,7 @@ test("list-style-position: outside multi-line alignment", async () => {
 
 test("list-style-position: outside markers should not duplicate", async () => {
 	const terminal = new MockProcess();
-	const termdom = new TermDOM({process: terminal});
+	const termdom = new TermDOM({transport: terminal.transport});
 	const {document} = termdom;
 
 	const style = document.createElement("style");
@@ -284,7 +284,7 @@ test("list-style-position: outside markers should not duplicate", async () => {
 
 test("list-style-position: outside with custom content should not duplicate", async () => {
 	const terminal = new MockProcess();
-	const termdom = new TermDOM({process: terminal});
+	const termdom = new TermDOM({transport: terminal.transport});
 	const {document} = termdom;
 
 	const style = document.createElement("style");
@@ -320,7 +320,7 @@ test("list-style-position: outside with custom content should not duplicate", as
 
 test("list-style-position: outside default bullet should not duplicate", async () => {
 	const terminal = new MockProcess();
-	const termdom = new TermDOM({process: terminal});
+	const termdom = new TermDOM({transport: terminal.transport});
 	const {document} = termdom;
 
 	const style = document.createElement("style");

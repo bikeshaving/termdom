@@ -1,5 +1,5 @@
 import {test, expect} from "@b9g/libuild/test";
-import {TermDOM} from "../src/internal/termdom.js";
+import {TermDOM, transportFromProcess} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 import {EventEmitter} from "events";
 
@@ -26,19 +26,21 @@ class MockTTYStream extends EventEmitter {
 	}
 
 	// Simulate keyboard input
-	simulateKeypress(key: string) {
+	simulateKeypress(key: string): Promise<void> {
 		const buffer = Buffer.from(key);
 		this.emit("data", buffer);
+		// Input rides the transport's readable: delivery is a microtask away.
+		return new Promise((resolve) => setTimeout(resolve, 0));
 	}
 
-	simulateArrowKey(direction: "up" | "down" | "left" | "right") {
+	simulateArrowKey(direction: "up" | "down" | "left" | "right"): Promise<void> {
 		const sequences = {
 			up: "\x1b[A",
 			down: "\x1b[B",
 			right: "\x1b[C",
 			left: "\x1b[D",
 		};
-		this.simulateKeypress(sequences[direction]);
+		return this.simulateKeypress(sequences[direction]);
 	}
 }
 
@@ -73,9 +75,12 @@ class MockKeyboardProcess extends EventEmitter {
 
 test("keyboard events are dispatched to elements", async () => {
 	const terminal = new MockKeyboardProcess();
-	const termdom = new TermDOM({process: terminal});
+	const termdom = new TermDOM({
+		transport: transportFromProcess(terminal as any),
+	});
 	const {document} = termdom;
 	termdom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 
 	// Create a test element
 	const container = document.createElement("div");
@@ -115,6 +120,7 @@ test("keyboard events are dispatched to elements", async () => {
 	// Simulate keyboard input by calling the internal method directly
 	const chunk = Buffer.from("a");
 	(terminal.stdin as any).emit("data", chunk);
+	await new Promise((r) => setTimeout(r, 0));
 
 	// Check events were fired
 	expect(events.length).toBeGreaterThan(0);
@@ -124,9 +130,12 @@ test("keyboard events are dispatched to elements", async () => {
 
 test("special keys are mapped correctly", async () => {
 	const terminal = new MockKeyboardProcess();
-	const termdom = new TermDOM({process: terminal});
+	const termdom = new TermDOM({
+		transport: transportFromProcess(terminal as any),
+	});
 	const {document} = termdom;
 	termdom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 
 	const container = document.createElement("div");
 	document.body.appendChild(container);
@@ -141,16 +150,19 @@ test("special keys are mapped correctly", async () => {
 
 	// Test Enter key
 	(terminal.stdin as any).emit("data", Buffer.from("\r"));
+	await new Promise((r) => setTimeout(r, 0));
 	expect(events.some((e) => e.key === "Enter" && e.keyCode === 13)).toBe(true);
 
 	// Test Tab key
 	events.length = 0;
 	(terminal.stdin as any).emit("data", Buffer.from("\t"));
+	await new Promise((r) => setTimeout(r, 0));
 	expect(events.some((e) => e.key === "Tab" && e.keyCode === 9)).toBe(true);
 
 	// Test Backspace
 	events.length = 0;
 	(terminal.stdin as any).emit("data", Buffer.from("\x7f"));
+	await new Promise((r) => setTimeout(r, 0));
 	expect(events.some((e) => e.key === "Backspace" && e.keyCode === 8)).toBe(
 		true,
 	);
@@ -158,9 +170,12 @@ test("special keys are mapped correctly", async () => {
 
 test("Ctrl+letter decodes as the letter with ctrlKey, not a control character", async () => {
 	const terminal = new MockKeyboardProcess();
-	const termdom = new TermDOM({process: terminal});
+	const termdom = new TermDOM({
+		transport: transportFromProcess(terminal as any),
+	});
 	const {document} = termdom;
 	termdom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 
 	const events: any[] = [];
 	document.body.addEventListener("keydown", (event: any) => {
@@ -174,8 +189,11 @@ test("Ctrl+letter decodes as the letter with ctrlKey, not a control character", 
 	// Ctrl+S = 0x13, Ctrl+A = 0x01, Ctrl+Z = 0x1A -- raw ASCII control bytes,
 	// no escape sequence.
 	(terminal.stdin as any).emit("data", Buffer.from([0x13]));
+	await new Promise((r) => setTimeout(r, 0));
 	(terminal.stdin as any).emit("data", Buffer.from([0x01]));
+	await new Promise((r) => setTimeout(r, 0));
 	(terminal.stdin as any).emit("data", Buffer.from([0x1a]));
+	await new Promise((r) => setTimeout(r, 0));
 
 	expect(events).toEqual([
 		{key: "s", keyCode: 83, ctrlKey: true},
@@ -186,9 +204,12 @@ test("Ctrl+letter decodes as the letter with ctrlKey, not a control character", 
 
 test("a plain letter never has ctrlKey set", async () => {
 	const terminal = new MockKeyboardProcess();
-	const termdom = new TermDOM({process: terminal});
+	const termdom = new TermDOM({
+		transport: transportFromProcess(terminal as any),
+	});
 	const {document} = termdom;
 	termdom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 
 	const events: any[] = [];
 	document.body.addEventListener("keydown", (event: any) => {
@@ -196,6 +217,9 @@ test("a plain letter never has ctrlKey set", async () => {
 	});
 
 	(terminal.stdin as any).emit("data", Buffer.from("s"));
+	await new Promise((r) => setTimeout(r, 0));
+
+	await new Promise((r) => setTimeout(r, 0));
 	expect(events).toEqual([{key: "s", ctrlKey: false}]);
 });
 
@@ -204,9 +228,12 @@ test("Enter and Tab stay their named keys, not Ctrl+M/Ctrl+I", async () => {
 	// Ctrl+M/Ctrl+I -- they are the identical byte (0x0D/0x0A and 0x09). The
 	// named key has to win, matching every other terminal app.
 	const terminal = new MockKeyboardProcess();
-	const termdom = new TermDOM({process: terminal});
+	const termdom = new TermDOM({
+		transport: transportFromProcess(terminal as any),
+	});
 	const {document} = termdom;
 	termdom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 
 	const events: any[] = [];
 	document.body.addEventListener("keydown", (event: any) => {
@@ -214,7 +241,11 @@ test("Enter and Tab stay their named keys, not Ctrl+M/Ctrl+I", async () => {
 	});
 
 	(terminal.stdin as any).emit("data", Buffer.from("\r"));
+	await new Promise((r) => setTimeout(r, 0));
+
+	await new Promise((r) => setTimeout(r, 0));
 	(terminal.stdin as any).emit("data", Buffer.from("\t"));
+	await new Promise((r) => setTimeout(r, 0));
 	expect(events).toEqual([
 		{key: "Enter", ctrlKey: false},
 		{key: "Tab", ctrlKey: false},
@@ -223,24 +254,33 @@ test("Enter and Tab stay their named keys, not Ctrl+M/Ctrl+I", async () => {
 
 test("Ctrl+letter in a focused input moves the caret, not inserts text", async () => {
 	const terminal = new MockKeyboardProcess();
-	const termdom = new TermDOM({process: terminal});
+	const termdom = new TermDOM({
+		transport: transportFromProcess(terminal as any),
+	});
 	const {document} = termdom;
 	termdom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 
 	const input = document.createElement("input");
 	document.body.appendChild(input);
 	input.focus();
 	input.value = "hello";
 
-	(terminal.stdin as any).emit("data", Buffer.from([0x01])); // Ctrl+A
+	(terminal.stdin as any).emit("data", Buffer.from([0x01]));
+	await new Promise((r) => setTimeout(r, 0));
+
+	await new Promise((r) => setTimeout(r, 0)); // Ctrl+A
 	expect(input.value).toBe("hello"); // unchanged, not "helloa"
 });
 
 test("arrow keys are parsed correctly", async () => {
 	const terminal = new MockKeyboardProcess();
-	const termdom = new TermDOM({process: terminal});
+	const termdom = new TermDOM({
+		transport: transportFromProcess(terminal as any),
+	});
 	const {document} = termdom;
 	termdom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 
 	const container = document.createElement("div");
 	document.body.appendChild(container);
@@ -255,24 +295,28 @@ test("arrow keys are parsed correctly", async () => {
 
 	// Test arrow keys (ANSI sequences)
 	(terminal.stdin as any).emit("data", Buffer.from("\x1b[A"));
+	await new Promise((r) => setTimeout(r, 0));
 	expect(events.some((e) => e.key === "ArrowUp" && e.keyCode === 38)).toBe(
 		true,
 	);
 
 	events.length = 0;
 	(terminal.stdin as any).emit("data", Buffer.from("\x1b[B"));
+	await new Promise((r) => setTimeout(r, 0));
 	expect(events.some((e) => e.key === "ArrowDown" && e.keyCode === 40)).toBe(
 		true,
 	);
 
 	events.length = 0;
 	(terminal.stdin as any).emit("data", Buffer.from("\x1b[C"));
+	await new Promise((r) => setTimeout(r, 0));
 	expect(events.some((e) => e.key === "ArrowRight" && e.keyCode === 39)).toBe(
 		true,
 	);
 
 	events.length = 0;
 	(terminal.stdin as any).emit("data", Buffer.from("\x1b[D"));
+	await new Promise((r) => setTimeout(r, 0));
 	expect(events.some((e) => e.key === "ArrowLeft" && e.keyCode === 37)).toBe(
 		true,
 	);
@@ -280,9 +324,12 @@ test("arrow keys are parsed correctly", async () => {
 
 test("modified arrow keys decode xterm's CSI 1;<mod> encoding", async () => {
 	const terminal = new MockKeyboardProcess();
-	const termdom = new TermDOM({process: terminal});
+	const termdom = new TermDOM({
+		transport: transportFromProcess(terminal as any),
+	});
 	const {document} = termdom;
 	termdom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 
 	const events: any[] = [];
 	document.body.addEventListener("keydown", (event: any) => {
@@ -296,13 +343,15 @@ test("modified arrow keys decode xterm's CSI 1;<mod> encoding", async () => {
 		});
 	});
 
-	const send = (bytes: string) =>
+	const send = async (bytes: string) => {
 		(terminal.stdin as any).emit("data", Buffer.from(bytes));
+		await new Promise((r) => setTimeout(r, 0));
+	};
 
-	send("\x1b[1;3A"); // Alt+Up (mod 3 = 1 + 2)
-	send("\x1b[1;5B"); // Ctrl+Down (mod 5 = 1 + 4)
-	send("\x1b[1;2C"); // Shift+Right (mod 2 = 1 + 1)
-	send("\x1b[1;7D"); // Ctrl+Alt+Left (mod 7 = 1 + 2 + 4)
+	await send("\x1b[1;3A"); // Alt+Up (mod 3 = 1 + 2)
+	await send("\x1b[1;5B"); // Ctrl+Down (mod 5 = 1 + 4)
+	await send("\x1b[1;2C"); // Shift+Right (mod 2 = 1 + 1)
+	await send("\x1b[1;7D"); // Ctrl+Alt+Left (mod 7 = 1 + 2 + 4)
 
 	expect(events).toEqual([
 		{
@@ -342,9 +391,12 @@ test("modified arrow keys decode xterm's CSI 1;<mod> encoding", async () => {
 
 test("an unmodified arrow key has no modifiers set", async () => {
 	const terminal = new MockKeyboardProcess();
-	const termdom = new TermDOM({process: terminal});
+	const termdom = new TermDOM({
+		transport: transportFromProcess(terminal as any),
+	});
 	const {document} = termdom;
 	termdom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 
 	const events: any[] = [];
 	document.body.addEventListener("keydown", (event: any) => {
@@ -357,6 +409,9 @@ test("an unmodified arrow key has no modifiers set", async () => {
 	});
 
 	(terminal.stdin as any).emit("data", Buffer.from("\x1b[A"));
+	await new Promise((r) => setTimeout(r, 0));
+
+	await new Promise((r) => setTimeout(r, 0));
 	expect(events).toEqual([
 		{key: "ArrowUp", shiftKey: false, altKey: false, ctrlKey: false},
 	]);
@@ -364,9 +419,12 @@ test("an unmodified arrow key has no modifiers set", async () => {
 
 test("keyboard events bubble up the DOM", async () => {
 	const terminal = new MockKeyboardProcess();
-	const termdom = new TermDOM({process: terminal});
+	const termdom = new TermDOM({
+		transport: transportFromProcess(terminal as any),
+	});
 	const {document} = termdom;
 	termdom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 
 	const parent = document.createElement("div");
 	const child = document.createElement("span");
@@ -381,6 +439,7 @@ test("keyboard events bubble up the DOM", async () => {
 
 	// Simulate keydown on child
 	(terminal.stdin as any).emit("data", Buffer.from("a"));
+	await new Promise((r) => setTimeout(r, 0));
 
 	// Events should bubble from child to parent
 	expect(childEvents.length).toBe(0); // No direct events on child since we target document.body
@@ -391,12 +450,17 @@ test("keyboard events bubble up the DOM", async () => {
 	document.body.addEventListener("keydown", () => bodyEvents.push("body"));
 
 	(terminal.stdin as any).emit("data", Buffer.from("b"));
+	await new Promise((r) => setTimeout(r, 0));
+
+	await new Promise((r) => setTimeout(r, 0));
 	expect(bodyEvents.length).toBe(1);
 });
 
 test("can create keyboard event manually", () => {
 	const terminal = new MockKeyboardProcess();
-	const termdom = new TermDOM({process: terminal});
+	const termdom = new TermDOM({
+		transport: transportFromProcess(terminal as any),
+	});
 	const {document: _document, window} = termdom;
 
 	// Test that we can create KeyboardEvent
@@ -414,7 +478,9 @@ test("can create keyboard event manually", () => {
 
 test("manual event dispatch works", () => {
 	const terminal = new MockKeyboardProcess();
-	const termdom = new TermDOM({process: terminal});
+	const termdom = new TermDOM({
+		transport: transportFromProcess(terminal as any),
+	});
 	const {document, window} = termdom;
 
 	const element = document.createElement("div");
@@ -442,9 +508,7 @@ test("keyboard system works with mock TTY", async () => {
 
 	// Create TermDOM with our mock process
 	const termdom = new TermDOM({
-		process: mockProcess as any,
-		width: 80,
-		height: 24,
+		transport: transportFromProcess(mockProcess as any),
 	});
 
 	const {document} = termdom;
@@ -547,9 +611,7 @@ test("non-TTY environment doesn't set up keyboard handling", () => {
 
 	// This should work without trying to set up keyboard handling
 	const termdom = new TermDOM({
-		process: nonTtyProcess as any,
-		width: 80,
-		height: 24,
+		transport: transportFromProcess(nonTtyProcess as any),
 	});
 
 	expect(termdom).toBeDefined();
@@ -559,13 +621,15 @@ test("a batched chunk of plain keys dispatches one keydown per key", async () =>
 	// Fast key repeat arrives batched -- "jjjjj" in one stdin chunk. Anything
 	// that treats a chunk as one key swallows the rest.
 	const terminal = new MockProcess({rows: 10, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach(); // stdin listeners live behind attach(), not the constructor
+	await new Promise((r) => setTimeout(r, 0));
 	const keys: string[] = [];
 	dom.document.addEventListener("keydown", (e: Event) =>
 		keys.push((e as KeyboardEvent).key),
 	);
 	(terminal.stdin as any).emit("data", Buffer.from("jjjjj"));
+	await new Promise((r) => setTimeout(r, 0));
 	expect(keys).toEqual(["j", "j", "j", "j", "j"]);
 	dom.dispose();
 });
@@ -576,13 +640,15 @@ test("a batched chunk of arrow sequences dispatches one keydown per arrow", asyn
 	// key repeat collapsed into a single ArrowDown -- the cursor lagging far
 	// behind the keyboard.
 	const terminal = new MockProcess({rows: 10, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach(); // stdin listeners live behind attach(), not the constructor
+	await new Promise((r) => setTimeout(r, 0));
 	const keys: string[] = [];
 	dom.document.addEventListener("keydown", (e: Event) =>
 		keys.push((e as KeyboardEvent).key),
 	);
 	(terminal.stdin as any).emit("data", Buffer.from("\x1b[B\x1b[B\x1b[B"));
+	await new Promise((r) => setTimeout(r, 0));
 	expect(keys).toEqual(["ArrowDown", "ArrowDown", "ArrowDown"]);
 	dom.dispose();
 });
@@ -592,26 +658,30 @@ test("keys packed behind a stray cursor report still dispatch", async () => {
 	// chunk. The report is the terminal talking, not the user typing: it must
 	// be dropped, and every key around it must still arrive.
 	const terminal = new MockProcess({rows: 10, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach(); // stdin listeners live behind attach(), not the constructor
+	await new Promise((r) => setTimeout(r, 0));
 	const keys: string[] = [];
 	dom.document.addEventListener("keydown", (e: Event) =>
 		keys.push((e as KeyboardEvent).key),
 	);
 	(terminal.stdin as any).emit("data", Buffer.from("jj\x1b[12;1Rjjj"));
+	await new Promise((r) => setTimeout(r, 0));
 	expect(keys).toEqual(["j", "j", "j", "j", "j"]);
 	dom.dispose();
 });
 
 test("a lone stray cursor report dispatches nothing", async () => {
 	const terminal = new MockProcess({rows: 10, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach(); // stdin listeners live behind attach(), not the constructor
+	await new Promise((r) => setTimeout(r, 0));
 	const keys: string[] = [];
 	dom.document.addEventListener("keydown", (e: Event) =>
 		keys.push((e as KeyboardEvent).key),
 	);
 	(terminal.stdin as any).emit("data", Buffer.from("\x1b[12;1R"));
+	await new Promise((r) => setTimeout(r, 0));
 	expect(keys).toEqual([]);
 	dom.dispose();
 });
@@ -623,7 +693,7 @@ test("a focused empty input still shows its placeholder, caret at the field star
 	// unimplemented: no input ever STARTED focused, so the old
 	// hide-on-focus condition never had a first paint to ruin.
 	const terminal = new MockProcess({rows: 6, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.document.body.innerHTML = `<div><input id="a" type="text" placeholder="What needs doing?" autofocus></div>`;
 	const input = dom.document.getElementById("a") as HTMLInputElement;
 	await nextFrame(dom);
@@ -635,6 +705,7 @@ test("a focused empty input still shows its placeholder, caret at the field star
 
 	// Typing replaces the placeholder with the value.
 	(terminal.stdin as any).emit("data", Buffer.from("x"));
+	await new Promise((r) => setTimeout(r, 0));
 	await nextFrame(dom);
 	expect(terminal.getPlainText()).not.toContain("What needs doing?");
 	expect(terminal.getPlainText()).toContain("x");
@@ -651,8 +722,9 @@ test("backspace works after a framework resets .value out from under the caret",
 	// happened to walk back into range. Clamping the caret to the current
 	// value at read fixes every edit key at once.
 	const terminal = new MockProcess({rows: 6, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 	const {document} = dom;
 	const input = document.createElement("input");
 	document.body.appendChild(input);
@@ -660,13 +732,20 @@ test("backspace works after a framework resets .value out from under the caret",
 	await nextFrame(dom);
 
 	(terminal.stdin as any).emit("data", Buffer.from("12345678"));
+	await new Promise((r) => setTimeout(r, 0));
+
+	await new Promise((r) => setTimeout(r, 0));
 	expect(input.value).toBe("12345678");
 
 	input.value = ""; // the framework's submit reset
 	(terminal.stdin as any).emit("data", Buffer.from("abc"));
+	await new Promise((r) => setTimeout(r, 0));
 	expect(input.value).toBe("abc");
 
-	(terminal.stdin as any).emit("data", Buffer.from("\x7f")); // Backspace
+	(terminal.stdin as any).emit("data", Buffer.from("\x7f"));
+	await new Promise((r) => setTimeout(r, 0));
+
+	await new Promise((r) => setTimeout(r, 0)); // Backspace
 	expect(input.value).toBe("ab");
 
 	dom.dispose();
@@ -679,8 +758,9 @@ test("deleting at the end of an overflowed input scrolls earlier text back into 
 	// browser's field scrolls back to keep the field full -- the previous
 	// letters reappear as you delete.
 	const terminal = new MockProcess({rows: 6, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 	const {document} = dom;
 	const input = document.createElement("input");
 	input.style.width = "10ch";
@@ -689,12 +769,16 @@ test("deleting at the end of an overflowed input scrolls earlier text back into 
 	await nextFrame(dom);
 
 	(terminal.stdin as any).emit("data", Buffer.from("abcdefghijklmno"));
+	await new Promise((r) => setTimeout(r, 0));
+
+	await new Promise((r) => setTimeout(r, 0));
 	await nextFrame(dom);
 	// Window follows the caret: the last 9 chars + the caret cell.
 	expect(terminal.getPlainText()).toContain("ghijklmno");
 
 	for (let i = 0; i < 4; i++) {
 		(terminal.stdin as any).emit("data", Buffer.from("\x7f"));
+		await new Promise((r) => setTimeout(r, 0));
 	}
 	await nextFrame(dom);
 	expect(input.value).toBe("abcdefghijk");
@@ -707,8 +791,9 @@ test("deleting at the end of an overflowed input scrolls earlier text back into 
 
 test("the input caret IS selectionStart/End -- visible to and drivable by the standard API", async () => {
 	const terminal = new MockProcess({rows: 6, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 	const {document} = dom;
 	const input = document.createElement("input");
 	document.body.appendChild(input);
@@ -717,11 +802,13 @@ test("the input caret IS selectionStart/End -- visible to and drivable by the st
 
 	// Typing moves the standard selection, not a private shadow of it.
 	(terminal.stdin as any).emit("data", Buffer.from("hello"));
+	await new Promise((r) => setTimeout(r, 0));
 	expect(input.selectionStart).toBe(5);
 	expect(input.selectionEnd).toBe(5);
 
 	// ArrowLeft is observable through the API too.
 	(terminal.stdin as any).emit("data", Buffer.from("\x1b[D\x1b[D"));
+	await new Promise((r) => setTimeout(r, 0));
 	expect(input.selectionStart).toBe(3);
 
 	// And the API drives the rendered caret: reposition programmatically,
@@ -733,6 +820,7 @@ test("the input caret IS selectionStart/End -- visible to and drivable by the st
 
 	// Typing lands at the API-set caret.
 	(terminal.stdin as any).emit("data", Buffer.from("X"));
+	await new Promise((r) => setTimeout(r, 0));
 	expect(input.value).toBe("hXello");
 
 	dom.dispose();
@@ -740,32 +828,39 @@ test("the input caret IS selectionStart/End -- visible to and drivable by the st
 
 test("Shift+arrows extend a selection with the browser's anchor/focus model", async () => {
 	const terminal = new MockProcess({rows: 6, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 	const {document} = dom;
 	const input = document.createElement("input");
 	document.body.appendChild(input);
 	input.focus();
 	await nextFrame(dom);
 	(terminal.stdin as any).emit("data", Buffer.from("abcdef"));
+	await new Promise((r) => setTimeout(r, 0));
 
 	// Shift+Left twice from the end: focus walks left, anchor stays.
 	(terminal.stdin as any).emit("data", Buffer.from("\x1b[1;2D\x1b[1;2D"));
+	await new Promise((r) => setTimeout(r, 0));
 	expect([input.selectionStart, input.selectionEnd]).toEqual([4, 6]);
 	expect(input.selectionDirection).toBe("backward");
 
 	// Shift+Right SHRINKS the backward selection instead of flipping it.
 	(terminal.stdin as any).emit("data", Buffer.from("\x1b[1;2C"));
+	await new Promise((r) => setTimeout(r, 0));
 	expect([input.selectionStart, input.selectionEnd]).toEqual([5, 6]);
 
 	// A plain arrow collapses to the matching edge, not one past it.
 	(terminal.stdin as any).emit("data", Buffer.from("\x1b[D"));
+	await new Promise((r) => setTimeout(r, 0));
 	expect([input.selectionStart, input.selectionEnd]).toEqual([5, 5]);
 
 	// Shift+Home selects back to the start; typing replaces the selection.
 	(terminal.stdin as any).emit("data", Buffer.from("\x1b[1;2H"));
+	await new Promise((r) => setTimeout(r, 0));
 	expect([input.selectionStart, input.selectionEnd]).toEqual([0, 5]);
 	(terminal.stdin as any).emit("data", Buffer.from("Z"));
+	await new Promise((r) => setTimeout(r, 0));
 	expect(input.value).toBe("Zf");
 	expect(input.selectionStart).toBe(1);
 
@@ -774,20 +869,28 @@ test("Shift+arrows extend a selection with the browser's anchor/focus model", as
 
 test("Ctrl+A selects all; Backspace deletes the whole selection", async () => {
 	const terminal = new MockProcess({rows: 6, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 	const {document} = dom;
 	const input = document.createElement("input");
 	document.body.appendChild(input);
 	input.focus();
 	await nextFrame(dom);
 	(terminal.stdin as any).emit("data", Buffer.from("some text"));
+	await new Promise((r) => setTimeout(r, 0));
 
-	(terminal.stdin as any).emit("data", Buffer.from([0x01])); // Ctrl+A
+	(terminal.stdin as any).emit("data", Buffer.from([0x01]));
+	await new Promise((r) => setTimeout(r, 0));
+
+	await new Promise((r) => setTimeout(r, 0)); // Ctrl+A
 	expect([input.selectionStart, input.selectionEnd]).toEqual([0, 9]);
 	expect(input.value).toBe("some text"); // selected, not inserted
 
-	(terminal.stdin as any).emit("data", Buffer.from("\x7f")); // Backspace
+	(terminal.stdin as any).emit("data", Buffer.from("\x7f"));
+	await new Promise((r) => setTimeout(r, 0));
+
+	await new Promise((r) => setTimeout(r, 0)); // Backspace
 	expect(input.value).toBe("");
 	expect([input.selectionStart, input.selectionEnd]).toEqual([0, 0]);
 
@@ -796,19 +899,22 @@ test("Ctrl+A selects all; Backspace deletes the whole selection", async () => {
 
 test("a selection paints as inverse video over the selected cells", async () => {
 	const terminal = new MockProcess({rows: 6, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 	const {document} = dom;
 	const input = document.createElement("input");
 	document.body.appendChild(input);
 	input.focus();
 	await nextFrame(dom);
 	(terminal.stdin as any).emit("data", Buffer.from("abcdef"));
+	await new Promise((r) => setTimeout(r, 0));
 	await nextFrame(dom);
 	expect(terminal.getScreenContents()).not.toMatch(/\x1b\[[\d;]*7m/);
 
 	// Select "ef" and the frame carries SGR 7 (inverse) for those cells.
 	(terminal.stdin as any).emit("data", Buffer.from("\x1b[1;2D\x1b[1;2D"));
+	await new Promise((r) => setTimeout(r, 0));
 	await nextFrame(dom);
 	expect(terminal.getScreenContents()).toMatch(/\x1b\[[\d;]*7m/);
 
@@ -821,7 +927,7 @@ test("a focused input parks the real terminal cursor at its caret", async () => 
 	// the cursor at the focused input's caret (and shows it); on blur it returns
 	// to the content bottom, hidden.
 	const terminal = new MockProcess({rows: 12, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	// The footer line keeps the content bottom below the input's row, so the
 	// blur assertion can tell "re-parked at the bottom" apart from "never
 	// moved" -- a flat one-row input at the end of the document would park
@@ -837,6 +943,7 @@ test("a focused input parks the real terminal cursor at its caret", async () => 
 
 	// Typing advances the real cursor with the caret.
 	(terminal.stdin as any).emit("data", Buffer.from("hey"));
+	await new Promise((r) => setTimeout(r, 0));
 	await nextFrame(dom);
 	expect(buffer.cursorY).toBe(caretRow);
 	expect(buffer.cursorX).toBe(caretCol + 3);
@@ -852,8 +959,9 @@ test("a focused input parks the real terminal cursor at its caret", async () => 
 
 test("Space toggles a focused checkbox and fires change; other keys are no-ops", async () => {
 	const terminal = new MockProcess({rows: 10, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 	const {document} = dom;
 
 	const checkbox = document.createElement("input");
@@ -866,15 +974,22 @@ test("Space toggles a focused checkbox and fires change; other keys are no-ops",
 	checkbox.addEventListener("change", () => changes.push(checkbox.checked));
 
 	(terminal.stdin as any).emit("data", Buffer.from(" "));
+	await new Promise((r) => setTimeout(r, 0));
+
+	await new Promise((r) => setTimeout(r, 0));
 	expect(checkbox.checked).toBe(true);
 	expect(changes).toEqual([true]);
 
 	// Checkboxes don't accept typed text -- every other key is a no-op.
 	(terminal.stdin as any).emit("data", Buffer.from("abc\r\x7f"));
+	await new Promise((r) => setTimeout(r, 0));
 	expect(checkbox.checked).toBe(true);
 	expect(changes).toEqual([true]);
 
 	(terminal.stdin as any).emit("data", Buffer.from(" "));
+	await new Promise((r) => setTimeout(r, 0));
+
+	await new Promise((r) => setTimeout(r, 0));
 	expect(checkbox.checked).toBe(false);
 	expect(changes).toEqual([true, false]);
 
@@ -883,8 +998,9 @@ test("Space toggles a focused checkbox and fires change; other keys are no-ops",
 
 test("radios render as ( )/(x); Space checks but never unchecks; groups are exclusive", async () => {
 	const terminal = new MockProcess({rows: 10, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 	const {document} = dom;
 
 	const a = document.createElement("input");
@@ -902,6 +1018,7 @@ test("radios render as ( )/(x); Space checks but never unchecks; groups are excl
 
 	// Space checks the focused radio...
 	(terminal.stdin as any).emit("data", Buffer.from(" "));
+	await new Promise((r) => setTimeout(r, 0));
 	await nextFrame(dom);
 	expect(a.checked).toBe(true);
 	expect(terminal.getPlainText()).toContain("(x)( )");
@@ -909,12 +1026,14 @@ test("radios render as ( )/(x); Space checks but never unchecks; groups are excl
 	// ...but never unchecks it (the browser default; only another group
 	// member can take the check away).
 	(terminal.stdin as any).emit("data", Buffer.from(" "));
+	await new Promise((r) => setTimeout(r, 0));
 	expect(a.checked).toBe(true);
 
 	// Checking the sibling unchecks this one -- jsdom's own radio-group
 	// exclusivity, surfaced through the same Space path.
 	b.focus();
 	(terminal.stdin as any).emit("data", Buffer.from(" "));
+	await new Promise((r) => setTimeout(r, 0));
 	await nextFrame(dom);
 	expect(b.checked).toBe(true);
 	expect(a.checked).toBe(false);
@@ -925,8 +1044,9 @@ test("radios render as ( )/(x); Space checks but never unchecks; groups are excl
 
 test("an autofocus element focuses itself as soon as it's connected, including nested", async () => {
 	const terminal = new MockProcess({rows: 10, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 	const {document} = dom;
 
 	const input = document.createElement("input");
@@ -950,38 +1070,41 @@ test("an autofocus element focuses itself as soon as it's connected, including n
 
 test("Escape, navigation, and function keys map to their named keys", async () => {
 	const terminal = new MockProcess({rows: 10, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 
 	const events: Array<{key: string; keyCode: number}> = [];
 	dom.document.addEventListener("keydown", (e: any) =>
 		events.push({key: e.key, keyCode: e.keyCode}),
 	);
 
-	const send = (bytes: string) =>
+	const send = async (bytes: string) => {
 		(terminal.stdin as any).emit("data", Buffer.from(bytes));
+		await new Promise((r) => setTimeout(r, 0));
+	};
 
-	send("\x1b");
-	send("\x1b[H");
-	send("\x1b[1~");
-	send("\x1b[F");
-	send("\x1b[4~");
-	send("\x1b[2~");
-	send("\x1b[3~");
-	send("\x1b[5~");
-	send("\x1b[6~");
-	send("\x1bOP");
-	send("\x1bOQ");
-	send("\x1bOR");
-	send("\x1bOS");
-	send("\x1b[15~");
-	send("\x1b[17~");
-	send("\x1b[18~");
-	send("\x1b[19~");
-	send("\x1b[20~");
-	send("\x1b[21~");
-	send("\x1b[23~");
-	send("\x1b[24~");
+	await send("\x1b");
+	await send("\x1b[H");
+	await send("\x1b[1~");
+	await send("\x1b[F");
+	await send("\x1b[4~");
+	await send("\x1b[2~");
+	await send("\x1b[3~");
+	await send("\x1b[5~");
+	await send("\x1b[6~");
+	await send("\x1bOP");
+	await send("\x1bOQ");
+	await send("\x1bOR");
+	await send("\x1bOS");
+	await send("\x1b[15~");
+	await send("\x1b[17~");
+	await send("\x1b[18~");
+	await send("\x1b[19~");
+	await send("\x1b[20~");
+	await send("\x1b[21~");
+	await send("\x1b[23~");
+	await send("\x1b[24~");
 
 	expect(events).toEqual([
 		{key: "Escape", keyCode: 27},
@@ -1014,21 +1137,24 @@ test("KeyboardEvent.code reports the physical key, not a formula off .key", asyn
 	// ones -- Enter reported code "KeyENTER" instead of "Enter", ArrowUp
 	// reported "KeyARROWUP" instead of "ArrowUp".
 	const terminal = new MockProcess({rows: 10, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 
 	const codes: string[] = [];
 	dom.document.addEventListener("keydown", (e: any) => codes.push(e.code));
 
-	const send = (bytes: string) =>
+	const send = async (bytes: string) => {
 		(terminal.stdin as any).emit("data", Buffer.from(bytes));
+		await new Promise((r) => setTimeout(r, 0));
+	};
 
-	send("\r"); // Enter
-	send("\x1b[A"); // ArrowUp
-	send("\x1b[5~"); // PageUp
-	send("a");
-	send("5");
-	send(" ");
+	await send("\r"); // Enter
+	await send("\x1b[A"); // ArrowUp
+	await send("\x1b[5~"); // PageUp
+	await send("a");
+	await send("5");
+	await send(" ");
 
 	expect(codes).toEqual([
 		"Enter",
@@ -1043,8 +1169,9 @@ test("KeyboardEvent.code reports the physical key, not a formula off .key", asyn
 
 test("fullscreen routes keydown through the general pipeline: tokenization, mouse filtering, and modifiers all apply", async () => {
 	const terminal = new MockProcess({rows: 10, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 	const {document} = dom;
 	const container = document.createElement("div");
 	document.body.appendChild(container);
@@ -1065,6 +1192,7 @@ test("fullscreen routes keydown through the general pipeline: tokenization, mous
 			..."j\x1b[<65;4;7Mj".split("").map((c) => c.charCodeAt(0)),
 		]),
 	);
+	await new Promise((r) => setTimeout(r, 0));
 
 	expect(events).toEqual([
 		{key: "a", ctrlKey: true}, // Ctrl+A
@@ -1076,8 +1204,9 @@ test("fullscreen routes keydown through the general pipeline: tokenization, mous
 
 test("Escape still exits fullscreen, now dispatched from the general pipeline", async () => {
 	const terminal = new MockProcess({rows: 10, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 	const {document} = dom;
 	const container = document.createElement("div");
 	document.body.appendChild(container);
@@ -1090,6 +1219,9 @@ test("Escape still exits fullscreen, now dispatched from the general pipeline", 
 	);
 
 	(terminal.stdin as any).emit("data", Buffer.from("\x1b"));
+	await new Promise((r) => setTimeout(r, 0));
+
+	await new Promise((r) => setTimeout(r, 0));
 	await new Promise((resolve) => setTimeout(resolve, 10));
 
 	expect(document.fullscreenElement).toBe(null);
@@ -1101,8 +1233,9 @@ test("Escape still exits fullscreen, now dispatched from the general pipeline", 
 
 test("a focused descendant inside a fullscreen element still wins over the element itself", async () => {
 	const terminal = new MockProcess({rows: 10, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 	const {document} = dom;
 	const container = document.createElement("div");
 	const input = document.createElement("input");
@@ -1112,14 +1245,18 @@ test("a focused descendant inside a fullscreen element still wins over the eleme
 	input.focus();
 
 	(terminal.stdin as any).emit("data", Buffer.from("x"));
+	await new Promise((r) => setTimeout(r, 0));
+
+	await new Promise((r) => setTimeout(r, 0));
 	expect(input.value).toBe("x");
 	dom.dispose();
 });
 
 test("with nothing focused, fullscreen keydown still lands on the fullscreen element", async () => {
 	const terminal = new MockProcess({rows: 10, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 	const {document} = dom;
 	const container = document.createElement("div");
 	document.body.appendChild(container);
@@ -1129,6 +1266,9 @@ test("with nothing focused, fullscreen keydown still lands on the fullscreen ele
 	container.addEventListener("keydown", (e: any) => keys.push(e.key));
 
 	(terminal.stdin as any).emit("data", Buffer.from("q"));
+	await new Promise((r) => setTimeout(r, 0));
+
+	await new Promise((r) => setTimeout(r, 0));
 	expect(keys).toEqual(["q"]);
 	dom.dispose();
 });
@@ -1141,7 +1281,7 @@ test("wide characters in an input measure in cells, not characters", async () =>
 	// input is the containment witness: it sits at cell 20 exactly when the
 	// field occupies exactly 20 cells.
 	const terminal = new MockProcess({rows: 8, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.document.body.innerHTML = `<div><input id="a" type="text" style="width:20ch">|</div>`;
 	const input = dom.document.getElementById("a") as HTMLInputElement;
 	input.focus();
@@ -1154,6 +1294,7 @@ test("wide characters in an input measure in cells, not characters", async () =>
 	// Commit syllables one at a time, the way an IME delivers them.
 	for (const syllable of ["김", "남", "제"]) {
 		(terminal.stdin as any).emit("data", Buffer.from(syllable));
+		await new Promise((r) => setTimeout(r, 0));
 		await new Promise((resolve) => setTimeout(resolve, 40));
 	}
 
@@ -1171,7 +1312,7 @@ test("the size attribute sets a text input's default width, as in a browser", as
 	// its width never comes from the containing block. CSS width still wins
 	// over the attribute, as it does in a browser.
 	const terminal = new MockProcess({rows: 6, cols: 60});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.document.body.innerHTML = `<div><input id="a" size="8">|</div><div><input id="b">|</div><div><input id="c" size="8" style="width: 12ch">|</div>`;
 	await nextFrame(dom);
 
@@ -1190,7 +1331,7 @@ test("width:100% on an input fills its container instead of collapsing", async (
 	// zero cells, invisible. Percentages now resolve against the inline
 	// run's available width.
 	const terminal = new MockProcess({rows: 4, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.document.body.innerHTML = `<div><input style="width:100%" placeholder="What needs to be done?"></div><div><input style="width:50%"></div>`;
 	await nextFrame(dom);
 
@@ -1209,7 +1350,7 @@ test(":focus rules apply on focus and revert on blur", async () => {
 	// the cache held a rule set matched before the focus moved, so a :focus
 	// rule never applied, and once focused would never have un-applied.
 	const terminal = new MockProcess({rows: 5, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	const {document, window} = dom;
 	const style = document.createElement("style");
 	style.textContent = `input:focus { background: #264f78; }`;
@@ -1245,7 +1386,7 @@ test("a blurred field is plain; the focused field carries an underline across it
 	// a solid underline across the WHOLE field -- the value AND the empty tail
 	// past it, the fill a glyph-only text-decoration could never reach.
 	const terminal = new MockProcess({rows: 5, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	const {document} = dom;
 	const a = document.createElement("input");
 	a.value = "hi";
@@ -1282,7 +1423,7 @@ test("author CSS text-decoration-style: double emits SGR 4 then 4:2", async () =
 	// the single underline (an intermediary like tmux may still collapse
 	// the pair -- that is why it is opt-in).
 	const terminal = new MockProcess({rows: 5, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	const {document} = dom;
 	let raw = "";
 	const originalWrite = terminal.stdout.write.bind(terminal.stdout);
@@ -1309,8 +1450,9 @@ test("display:none subtrees neither render, ghost, nor take tab focus", async ()
 	// layout, so a stylesheet refresh rebuilds from the root; tab order
 	// includes only rendered elements, as in browsers.
 	const terminal = new MockProcess({rows: 8, cols: 50});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 	const {document} = dom;
 	document.head.innerHTML = `<style>.editing .view { display: none } .view { display: flex; flex-direction: row }</style>`;
 	document.body.innerHTML =
@@ -1325,6 +1467,7 @@ test("display:none subtrees neither render, ghost, nor take tab focus", async ()
 
 	(document.querySelector(".edit") as HTMLElement).focus();
 	(terminal.stdin as any).emit("data", Buffer.from("\t"));
+	await new Promise((r) => setTimeout(r, 0));
 	await nextFrame(dom);
 	// The hidden checkbox and button are not in tab order; the edit input
 	// is the only rendered focusable, so focus stays put.
@@ -1340,8 +1483,9 @@ test("a runtime class flip swaps a row for its editor, in place", async () => {
 	// hidden container's descendants must not smuggle back into layout --
 	// three separate bugs once lived in this one interaction.
 	const terminal = new MockProcess({rows: 8, cols: 50});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 	const {document} = dom;
 	document.head.innerHTML = `<style>.editing .view { display: none } .view { display: flex; flex-direction: row; gap: 1ch }</style>`;
 	document.body.innerHTML =
@@ -1381,8 +1525,9 @@ test("typing in a width:auto input never clips the lead character", async () => 
 	// off the field for one frame. The edit path now syncs the UA tree
 	// before layout flushes, so the very first frame shows the full value.
 	const terminal = new MockProcess({rows: 4, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 	dom.document.body.innerHTML = `<div><input style="width: auto" value="abc"></div>`;
 	await nextFrame(dom);
 	const input = dom.document.querySelector("input") as HTMLInputElement;
@@ -1391,6 +1536,9 @@ test("typing in a width:auto input never clips the lead character", async () => 
 	await nextFrame(dom);
 
 	(terminal.stdin as any).emit("data", Buffer.from("d"));
+	await new Promise((r) => setTimeout(r, 0));
+
+	await new Promise((r) => setTimeout(r, 0));
 	await nextFrame(dom); // the FIRST frame after the keystroke
 	expect(terminal.getPlainText().split("\n")[0]).toContain("abcd");
 	dom.dispose();
@@ -1401,8 +1549,9 @@ test("an empty width:auto input keeps a single caret cell", async () => {
 	// collapsing to zero width and vanishing from the row. Blurred it is plain;
 	// focusing draws the outline underline over that single cell.
 	const terminal = new MockProcess({rows: 4, cols: 30});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 	dom.document.body.innerHTML =
 		`<div style="display:flex; flex-direction:row; gap:1ch">` +
 		`<span>a:</span><input style="width: auto"><span>z</span></div>`;
@@ -1421,9 +1570,11 @@ test("an empty width:auto input keeps a single caret cell", async () => {
 	// Typing grows the field; deleting back to empty returns to the single
 	// cell rather than zero width, and the outline still marks it.
 	(terminal.stdin as any).emit("data", Buffer.from("hi"));
+	await new Promise((r) => setTimeout(r, 0));
 	await nextFrame(dom);
 	expect(line().translateToString(false).trimEnd()).toBe("a: hi z");
 	(terminal.stdin as any).emit("data", Buffer.from("\x7f\x7f"));
+	await new Promise((r) => setTimeout(r, 0));
 	await nextFrame(dom);
 	expect(line().translateToString(false).trimEnd()).toBe("a:   z");
 	expect(line().getCell(3).isUnderline()).toBeTruthy();
@@ -1435,8 +1586,9 @@ test("non-mouse nav: a link underlines at rest and inverts on Tab focus", async 
 	// reads as a link (the monochrome-safe signal), so it can't use underline
 	// for FOCUS too -- Tab focus inverts it instead, a distinct attribute.
 	const terminal = new MockProcess({rows: 4, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 	dom.document.body.innerHTML = `<a href="/x">link</a>`;
 	await nextFrame(dom);
 
@@ -1448,6 +1600,7 @@ test("non-mouse nav: a link underlines at rest and inverts on Tab focus", async 
 
 	// Tab moves focus to the link and inverts it.
 	(terminal.stdin as any).emit("data", Buffer.from("\t"));
+	await new Promise((r) => setTimeout(r, 0));
 	await nextFrame(dom);
 	expect(dom.document.activeElement?.tagName).toBe("A");
 	expect(cellAt(0, 0).isInverse()).toBeTruthy();
@@ -1459,8 +1612,9 @@ test("non-mouse nav: a button takes the outline underline across its whole box o
 	// same `outline` focus as a field -- and the merge op lines the WHOLE box,
 	// brackets included, where an inverse FILL misses the ::before/::after.
 	const terminal = new MockProcess({rows: 4, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 	dom.document.body.innerHTML = `<button>go</button>`;
 	await nextFrame(dom);
 
@@ -1476,6 +1630,9 @@ test("non-mouse nav: a button takes the outline underline across its whole box o
 	expect(cellAt(0, 0).isUnderline()).toBeFalsy();
 
 	(terminal.stdin as any).emit("data", Buffer.from("\t"));
+	await new Promise((r) => setTimeout(r, 0));
+
+	await new Promise((r) => setTimeout(r, 0));
 	await nextFrame(dom);
 	expect(dom.document.activeElement?.tagName).toBe("BUTTON");
 	// The whole box is underlined, the opening bracket and closing bracket too.
@@ -1489,7 +1646,7 @@ test("bracketed paste into an input strips newlines and never replays as keys", 
 	// must not fire Enter (submit), a pasted 'q' must not trigger a shortcut, and
 	// a single-line input drops the line breaks per HTML value sanitization.
 	const terminal = new MockProcess({rows: 5, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.document.body.innerHTML = `<input>`;
 	const input = dom.document.querySelector("input") as HTMLInputElement;
 	let keydowns = 0;
@@ -1511,7 +1668,7 @@ test("bracketed paste into an input strips newlines and never replays as keys", 
 
 test("bracketed paste into a textarea keeps its newlines", async () => {
 	const terminal = new MockProcess({rows: 6, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.document.body.innerHTML = `<textarea></textarea>`;
 	const ta = dom.document.querySelector("textarea") as HTMLTextAreaElement;
 	await nextFrame(dom);
@@ -1533,8 +1690,9 @@ test("non-mouse nav: the focus ring is keyboard-only (:focus-visible)", async ()
 	// driven off the last input modality since the platform gives no signal for
 	// it. The link stays focused either way; only the ring differs.
 	const terminal = new MockProcess({rows: 4, cols: 20});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 	dom.document.body.innerHTML = `<a href="/x">link</a>`;
 	await nextFrame(dom);
 	const inverse = () =>
@@ -1542,12 +1700,14 @@ test("non-mouse nav: the focus ring is keyboard-only (:focus-visible)", async ()
 
 	// Tab (keyboard) focuses the link WITH the ring.
 	(terminal.stdin as any).emit("data", Buffer.from("\t"));
+	await new Promise((r) => setTimeout(r, 0));
 	await nextFrame(dom);
 	expect(dom.document.activeElement?.tagName).toBe("A");
 	expect(inverse()).toBeTruthy();
 
 	// A mouse press keeps the link focused but drops the ring.
 	(terminal.stdin as any).emit("data", Buffer.from("\x1b[<0;1;1M"));
+	await new Promise((r) => setTimeout(r, 0));
 	await nextFrame(dom);
 	expect(dom.document.activeElement?.tagName).toBe("A");
 	expect(inverse()).toBeFalsy();
@@ -1556,14 +1716,16 @@ test("non-mouse nav: the focus ring is keyboard-only (:focus-visible)", async ()
 
 test("a click in a text input parks the caret at the pressed character", async () => {
 	const terminal = new MockProcess({rows: 4, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 	dom.document.body.innerHTML = `<div><input value="hello world"></div>`;
 	await nextFrame(dom);
 	const input = dom.document.querySelector("input") as HTMLInputElement;
 
 	// Column 7 (1-based) is the second 'o' region: offset 6.
 	(terminal.stdin as any).emit("data", Buffer.from("\x1b[<0;7;1M\x1b[<0;7;1m"));
+	await new Promise((r) => setTimeout(r, 0));
 	await nextFrame(dom);
 	expect(dom.document.activeElement).toBe(input);
 	expect(input.selectionStart).toBe(6);
@@ -1573,8 +1735,9 @@ test("a click in a text input parks the caret at the pressed character", async (
 
 test("a drag inside an input selects within the field, bounded to its value", async () => {
 	const terminal = new MockProcess({rows: 4, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 	dom.document.body.innerHTML = `<div><input value="hello world"></div>`;
 	await nextFrame(dom);
 	const input = dom.document.querySelector("input") as HTMLInputElement;
@@ -1606,8 +1769,9 @@ test("a drag inside an input selects within the field, bounded to its value", as
 
 test("clicking into a field clears the document selection's highlight", async () => {
 	const terminal = new MockProcess({rows: 4, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 	dom.document.body.innerHTML = `<div id="p">page text here</div><div><input value="hello"></div>`;
 	await nextFrame(dom);
 
@@ -1621,6 +1785,9 @@ test("clicking into a field clears the document selection's highlight", async ()
 	expect(dom.window.getSelection()?.toString()).toBe("page tex");
 
 	(terminal.stdin as any).emit("data", Buffer.from("\x1b[<0;3;2M\x1b[<0;3;2m"));
+	await new Promise((r) => setTimeout(r, 0));
+
+	await new Promise((r) => setTimeout(r, 0));
 	await nextFrame(dom);
 	expect(dom.window.getSelection()?.isCollapsed ?? true).toBe(true);
 	const input = dom.document.querySelector("input") as HTMLInputElement;
@@ -1638,7 +1805,7 @@ test("an input preceded by text in its run positions on its own row", async () =
 	// fallback returned run-relative coordinates as document ones -- every
 	// such input painted at row 0, over whatever lived there.
 	const terminal = new MockProcess({rows: 6, cols: 50});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.document.body.innerHTML =
 		`<div>Name: <input value="Ada"></div>` +
 		`<div>Email: <input placeholder="you@example.com"></div>`;
@@ -1660,8 +1827,9 @@ test("a focused button activates on Enter and on Space", async () => {
 	// activation behavior on both keys; input[type=submit|button] is a button
 	// too, and was previously excluded from every keyboard path.
 	const terminal = new MockProcess({cols: 40, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 	const {document} = dom;
 	document.body.innerHTML = `
 		<button id="btn">Clear completed</button>
@@ -1680,14 +1848,18 @@ test("a focused button activates on Enter and on Space", async () => {
 
 	(document.getElementById("btn") as HTMLElement).focus();
 	terminal.stdin.emit("data", Buffer.from("\r"));
+	await new Promise((r) => setTimeout(r, 0));
 	await nextFrame(dom);
 	terminal.stdin.emit("data", Buffer.from(" "));
+	await new Promise((r) => setTimeout(r, 0));
 	await nextFrame(dom);
 
 	(document.getElementById("submit") as HTMLElement).focus();
 	terminal.stdin.emit("data", Buffer.from("\r"));
+	await new Promise((r) => setTimeout(r, 0));
 	await nextFrame(dom);
 	terminal.stdin.emit("data", Buffer.from(" "));
+	await new Promise((r) => setTimeout(r, 0));
 	await nextFrame(dom);
 
 	expect(seen).toEqual(["btn", "btn", "submit", "submit"]);
@@ -1696,8 +1868,9 @@ test("a focused button activates on Enter and on Space", async () => {
 
 test("a keydown listener can cancel a button's activation", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 	const {document} = dom;
 	document.body.innerHTML = `<button id="btn">Go</button>`;
 	await nextFrame(dom);
@@ -1709,6 +1882,8 @@ test("a keydown listener can cancel a button's activation", async () => {
 	button.focus();
 
 	terminal.stdin.emit("data", Buffer.from("\r"));
+
+	await new Promise((r) => setTimeout(r, 0));
 	await nextFrame(dom);
 
 	expect(clicks).toBe(0);
@@ -1720,8 +1895,9 @@ test("links are focusable, and activate on Enter but not Space", async () => {
 	// not. Space scrolls rather than following the link, so a link is not
 	// simply a button.
 	const terminal = new MockProcess({cols: 40, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 	const {document} = dom;
 	document.body.innerHTML = `
 		<input id="text">
@@ -1736,6 +1912,7 @@ test("links are focusable, and activate on Enter but not Space", async () => {
 	(document.getElementById("text") as HTMLElement).focus();
 	for (let i = 0; i < 3; i++) {
 		terminal.stdin.emit("data", Buffer.from("\t"));
+		await new Promise((r) => setTimeout(r, 0));
 		await nextFrame(dom);
 		order.push(document.activeElement?.id ?? "");
 	}
@@ -1750,10 +1927,14 @@ test("links are focusable, and activate on Enter but not Space", async () => {
 	all.focus();
 
 	terminal.stdin.emit("data", Buffer.from("\r"));
+
+	await new Promise((r) => setTimeout(r, 0));
 	await nextFrame(dom);
 	expect(clicks).toBe(1);
 
 	terminal.stdin.emit("data", Buffer.from(" "));
+
+	await new Promise((r) => setTimeout(r, 0));
 	await nextFrame(dom);
 	expect(clicks).toBe(1);
 
@@ -1766,15 +1947,20 @@ test("caret motion and deletion move by grapheme, not code unit", async () => {
 	// surrogate pair, a family emoji a ZWJ join, an accented letter a base plus
 	// a combining mark. Editing by code unit corrupts all three.
 	const terminal = new MockKeyboardProcess();
-	const termdom = new TermDOM({process: terminal});
+	const termdom = new TermDOM({
+		transport: transportFromProcess(terminal as any),
+	});
 	const {document} = termdom;
 	termdom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 	const input = document.createElement("input");
 	document.body.appendChild(input);
 	input.focus();
 
-	const type = (seq: string) =>
+	const type = async (seq: string) => {
 		(terminal.stdin as any).emit("data", Buffer.from(seq));
+		await new Promise((r) => setTimeout(r, 0));
+	};
 	const BS = "\x7f";
 	const DEL = "\x1b[3~";
 	const LEFT = "\x1b[D";
@@ -1783,38 +1969,38 @@ test("caret motion and deletion move by grapheme, not code unit", async () => {
 	// Backspace deletes a whole emoji (surrogate pair), not half of it.
 	input.value = "ab\u{1F600}"; // "ab😀"
 	input.setSelectionRange(input.value.length, input.value.length);
-	type(BS);
+	await type(BS);
 	expect(input.value).toBe("ab");
 	expect(input.selectionStart).toBe(2);
 
 	// Backspace deletes a whole ZWJ family emoji as one unit.
 	input.value = "x\u{1F468}‍\u{1F469}‍\u{1F467}"; // "x👨‍👩‍👧"
 	input.setSelectionRange(input.value.length, input.value.length);
-	type(BS);
+	await type(BS);
 	expect(input.value).toBe("x");
 	expect(input.selectionStart).toBe(1);
 
 	// Backspace deletes a base letter plus its combining mark together.
 	input.value = "é"; // "é" as e + COMBINING ACUTE
 	input.setSelectionRange(input.value.length, input.value.length);
-	type(BS);
+	await type(BS);
 	expect(input.value).toBe("");
 
 	// Left arrow steps over an emoji to its leading boundary, then Delete
 	// forward removes the whole emoji.
 	input.value = "\u{1F600}z"; // "😀z"
 	input.setSelectionRange(input.value.length, input.value.length); // after z
-	type(LEFT); // between emoji and z (code unit 2)
+	await type(LEFT); // between emoji and z (code unit 2)
 	expect(input.selectionStart).toBe(2);
-	type(LEFT); // before the emoji (code unit 0), not mid-pair
+	await type(LEFT); // before the emoji (code unit 0), not mid-pair
 	expect(input.selectionStart).toBe(0);
-	type(DEL); // delete the whole emoji forward
+	await type(DEL); // delete the whole emoji forward
 	expect(input.value).toBe("z");
 
 	// Right arrow steps over the emoji as one unit.
 	input.value = "\u{1F600}z";
 	input.setSelectionRange(0, 0);
-	type(RIGHT);
+	await type(RIGHT);
 	expect(input.selectionStart).toBe(2); // past the pair, not into it
 
 	termdom.dispose();
@@ -1822,7 +2008,7 @@ test("caret motion and deletion move by grapheme, not code unit", async () => {
 
 test("a password input paints masked bullets, never the real value", async () => {
 	const terminal = new MockProcess({rows: 3, cols: 20});
-	const dom = new TermDOM({process: terminal, detectCursor: false});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.document.body.innerHTML = `<input type="password" value="secret">`;
 	await nextFrame(dom);
 
@@ -1836,6 +2022,7 @@ test("a password input paints masked bullets, never the real value", async () =>
 	// Typing extends the mask, and .value stays real (position aside).
 	input.focus();
 	(terminal.stdin as any).emit("data", Buffer.from("x"));
+	await new Promise((r) => setTimeout(r, 0));
 	await nextFrame(dom);
 	expect(input.value.length).toBe(7);
 	expect(input.value).toContain("secret");

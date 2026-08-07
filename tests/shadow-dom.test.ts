@@ -14,7 +14,7 @@ import {MockProcess, nextFrame} from "./test-utils.js";
 
 test("attachShadow content renders, replacing the host's light children", async () => {
 	const terminal = new MockProcess({rows: 6, cols: 60});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 	const host = document.createElement("div");
 	host.textContent = "LIGHT";
@@ -37,7 +37,7 @@ test("mutations inside a shadow root invalidate and repaint", async () => {
 	// trees; each attached root is enrolled in the observer at attachShadow
 	// time.
 	const terminal = new MockProcess({rows: 6, cols: 60});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 	const host = document.createElement("div");
 	const root = host.attachShadow({mode: "open"});
@@ -59,7 +59,7 @@ test("mutations inside a shadow root invalidate and repaint", async () => {
 
 test("block structure inside a shadow root lays out normally", async () => {
 	const terminal = new MockProcess({rows: 6, cols: 60});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 	const host = document.createElement("div");
 	const root = host.attachShadow({mode: "open"});
@@ -84,7 +84,7 @@ test("block structure inside a shadow root lays out normally", async () => {
 
 test("default slot projects light children between shadow siblings", async () => {
 	const terminal = new MockProcess({rows: 6, cols: 60});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 	const host = document.createElement("div");
 	const root = host.attachShadow({mode: "open"});
@@ -107,7 +107,7 @@ test("default slot projects light children between shadow siblings", async () =>
 
 test("named slots project by slot attribute, in shadow-tree order", async () => {
 	const terminal = new MockProcess({rows: 6, cols: 60});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 	const host = document.createElement("div");
 	const root = host.attachShadow({mode: "open"});
@@ -129,7 +129,7 @@ test("named slots project by slot attribute, in shadow-tree order", async () => 
 
 test("a slot with nothing assigned renders its fallback content", async () => {
 	const terminal = new MockProcess({rows: 6, cols: 60});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 	const host = document.createElement("div");
 	const root = host.attachShadow({mode: "open"});
@@ -144,7 +144,7 @@ test("a slot with nothing assigned renders its fallback content", async () => {
 
 test("assigned content replaces fallback; unassigned light children don't render", async () => {
 	const terminal = new MockProcess({rows: 6, cols: 60});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 	const host = document.createElement("div");
 	const root = host.attachShadow({mode: "open"});
@@ -163,7 +163,7 @@ test("assigned content replaces fallback; unassigned light children don't render
 
 test("bare text light children project through the default slot", async () => {
 	const terminal = new MockProcess({rows: 6, cols: 60});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 	const host = document.createElement("div");
 	const root = host.attachShadow({mode: "open"});
@@ -183,7 +183,7 @@ test("attachShadow on a connected, already-rendered host replaces its content", 
 	// screen -- the light-children layout must be torn down and the composed
 	// tree take over, immediately for the (empty) root and on population.
 	const terminal = new MockProcess({rows: 6, cols: 60});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 	const host = document.createElement("div");
 	host.textContent = "LIGHT";
@@ -209,7 +209,7 @@ test("attachShadow alone blanks a connected host: an empty root has no composed 
 	// the composed tree changed all the same: an empty shadow root renders
 	// NOTHING, exactly as in a browser.
 	const terminal = new MockProcess({rows: 6, cols: 60});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 	const host = document.createElement("div");
 	host.textContent = "LIGHT";
@@ -226,7 +226,7 @@ test("attachShadow alone blanks a connected host: an empty root has no composed 
 
 test("attachShadow on a connected host with slots reprojects its light children", async () => {
 	const terminal = new MockProcess({rows: 6, cols: 60});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 	const host = document.createElement("div");
 	host.textContent = "KEPT";
@@ -245,7 +245,7 @@ test("attachShadow on a connected host with slots reprojects its light children"
 
 test("reassigning a slot attribute reprojects on the next frame", async () => {
 	const terminal = new MockProcess({rows: 6, cols: 60});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 	const host = document.createElement("div");
 	const root = host.attachShadow({mode: "open"});
@@ -283,7 +283,7 @@ test("reassigning a slot attribute reprojects on the next frame", async () => {
 
 test("document rules do not leak into shadow trees", async () => {
 	const terminal = new MockProcess({rows: 6, cols: 60});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 	document.head.innerHTML = `<style>span { text-transform: uppercase }</style>`;
 	const light = document.createElement("span");
@@ -305,7 +305,7 @@ test("document rules do not leak into shadow trees", async () => {
 
 test("a shadow root's <style> styles its own tree only", async () => {
 	const terminal = new MockProcess({rows: 6, cols: 60});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 	const light = document.createElement("span");
 	light.textContent = "light";
@@ -326,7 +326,7 @@ test("a shadow root's <style> styles its own tree only", async () => {
 
 test(":host rules style the host from inside its own shadow tree", async () => {
 	const terminal = new MockProcess({rows: 6, cols: 60});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 	const host = document.createElement("div");
 	const root = host.attachShadow({mode: "open"});
@@ -347,7 +347,7 @@ test(":host rules style the host from inside its own shadow tree", async () => {
 
 test(":host(selector) applies conditionally", async () => {
 	const terminal = new MockProcess({rows: 8, cols: 60});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 	const make = (className: string, label: string) => {
 		const host = document.createElement("div");
@@ -370,7 +370,7 @@ test(":host(selector) applies conditionally", async () => {
 
 test("inherited properties cross the shadow boundary from the host", async () => {
 	const terminal = new MockProcess({rows: 6, cols: 60});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 	const host = document.createElement("div");
 	host.style.textTransform = "uppercase";
@@ -389,7 +389,7 @@ test("slotted content inherits through the slot's shadow-tree chain", async () =
 	// properties flow from the shadow chrome it lands in -- not (only) from
 	// the host it came from.
 	const terminal = new MockProcess({rows: 6, cols: 60});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 	const host = document.createElement("div");
 	const root = host.attachShadow({mode: "open"});
@@ -410,7 +410,7 @@ test("slotted content inherits through the slot's shadow-tree chain", async () =
 
 test("input internals are a UA shadow tree, closed to authors", async () => {
 	const terminal = new MockProcess({rows: 4, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 	const input = document.createElement("input");
 	input.value = "typed";
@@ -433,7 +433,7 @@ test("the field design survives the round-trip through the UA stylesheet", async
 	// whole field. This pins the whole pipeline: UA sheet parsing, scope
 	// gating, :host(:focus) matching, focus invalidation, and the outline pass.
 	const terminal = new MockProcess({rows: 4, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 	const input = document.createElement("input");
 	input.setAttribute("placeholder", "hint");
@@ -470,7 +470,7 @@ test("::placeholder is author-styleable and cascades over the UA gray", async ()
 	// specificity -- the UA attribute selector would otherwise outrank
 	// every plain author selector.
 	const terminal = new MockProcess({rows: 4, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 	document.head.innerHTML = `<style>input::placeholder { color: #ff0000 }</style>`;
 	const input = document.createElement("input");
@@ -489,8 +489,9 @@ test("::placeholder is author-styleable and cascades over the UA gray", async ()
 
 test("::selection colors replace the inverse-video default", async () => {
 	const terminal = new MockProcess({rows: 4, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 	const {document} = dom;
 	document.head.innerHTML = `<style>input::selection { background-color: #0000ff; color: #ffffff }</style>`;
 	const input = document.createElement("input");
@@ -498,9 +499,11 @@ test("::selection colors replace the inverse-video default", async () => {
 	input.focus();
 	await nextFrame(dom);
 	(terminal.stdin as any).emit("data", Buffer.from("abc"));
+	await new Promise((r) => setTimeout(r, 0));
 	await nextFrame(dom);
 	// Shift+Left selects "c".
 	(terminal.stdin as any).emit("data", Buffer.from("\x1b[1;2D"));
+	await new Promise((r) => setTimeout(r, 0));
 	await nextFrame(dom);
 
 	const cellAt = (row: number, col: number) =>
@@ -519,7 +522,7 @@ test("::selection colors replace the inverse-video default", async () => {
 
 test("the selection default is a real UA rule, visible through getComputedStyle", async () => {
 	const terminal = new MockProcess({rows: 4, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 	const input = document.createElement("input");
 	document.body.appendChild(input);
@@ -541,16 +544,19 @@ test("the selection default is a real UA rule, visible through getComputedStyle"
 
 test("selection still paints inverse via the UA rule's system colors", async () => {
 	const terminal = new MockProcess({rows: 4, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 	const {document} = dom;
 	const input = document.createElement("input");
 	document.body.appendChild(input);
 	input.focus();
 	await nextFrame(dom);
 	(terminal.stdin as any).emit("data", Buffer.from("abc"));
+	await new Promise((r) => setTimeout(r, 0));
 	await nextFrame(dom);
 	(terminal.stdin as any).emit("data", Buffer.from("\x1b[1;2D"));
+	await new Promise((r) => setTimeout(r, 0));
 	await nextFrame(dom);
 
 	const cellAt = (row: number, col: number) =>
@@ -562,8 +568,9 @@ test("selection still paints inverse via the UA rule's system colors", async () 
 
 test("a focused textarea's outline repaints its border in the outline color", async () => {
 	const terminal = new MockProcess({rows: 6, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 	const {document} = dom;
 	const textarea = document.createElement("textarea");
 	textarea.setAttribute("rows", "1");
@@ -589,8 +596,9 @@ test("a focused textarea's outline repaints its border in the outline color", as
 
 test("a focused input's outline underline carries the outline color on unclaimed cells", async () => {
 	const terminal = new MockProcess({rows: 4, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
 	const {document} = dom;
 	const input = document.createElement("input");
 	input.setAttribute("placeholder", "hint");
@@ -611,7 +619,7 @@ test("a focused input's outline underline carries the outline color on unclaimed
 
 test("border color resolves through CSS: border-color, then currentColor, then default", async () => {
 	const terminal = new MockProcess({rows: 8, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 	document.body.innerHTML = `
 		<div id="a" style="border: 1px solid; border-color: #0000ff">x</div>
@@ -637,7 +645,7 @@ test("an inline-block host measures its shadow content, not its light children",
 	// Inline-block measurement used to read element.firstChild -- the LIGHT
 	// tree -- so any inline-block shadow host measured zero and vanished.
 	const terminal = new MockProcess({rows: 4, cols: 60});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 	const host = document.createElement("span");
 	host.style.display = "inline-block";
@@ -655,7 +663,7 @@ test("an inline-block host measures its shadow content, not its light children",
 
 test("::part() styles an exposed shadow part from the document, per spec", async () => {
 	const terminal = new MockProcess({rows: 4, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document, window} = dom;
 
 	const style = document.createElement("style");

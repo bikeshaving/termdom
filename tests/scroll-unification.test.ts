@@ -12,7 +12,7 @@ import {MockProcess, nextFrame} from "./test-utils.js";
 
 function makeOverflowingApp(rows = 5, lines = 20) {
 	const terminal = new MockProcess({cols: 40, rows});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	for (let i = 0; i < lines; i++) {
 		const div = dom.document.createElement("div");
 		div.textContent = `line ${i}`;

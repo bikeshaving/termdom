@@ -114,13 +114,13 @@ describe("MockProcess", () => {
 	describe("TermDOM integration", () => {
 		test("works with TermDOM constructor", () => {
 			expect(() => {
-				const dom = new TermDOM({process: terminal});
+				const dom = new TermDOM({transport: terminal.transport});
 				dom.dispose();
 			}).not.toThrow();
 		});
 
 		test("TermDOM cursor detection completes", async () => {
-			const dom = new TermDOM({process: terminal});
+			const dom = new TermDOM({transport: terminal.transport});
 
 			// Cursor detection runs on the first frame. What matters is that it
 			// SETTLES on a responsive terminal rather than hanging on TermDOM's
@@ -138,7 +138,7 @@ describe("MockProcess", () => {
 		});
 
 		test("TermDOM render works without cursor timeout", async () => {
-			const dom = new TermDOM({process: terminal});
+			const dom = new TermDOM({transport: terminal.transport});
 
 			const span = dom.document.createElement("span");
 			span.textContent = "Test Content";

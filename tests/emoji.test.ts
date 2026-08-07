@@ -13,7 +13,7 @@ import {TermDOM} from "../src/internal/termdom.js";
 
 test("renders single emoji correctly", async () => {
 	const terminal = new MockProcess();
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 
 	const span = dom.document.createElement("span");
 	span.textContent = "🚀";
@@ -31,7 +31,7 @@ test("renders single emoji correctly", async () => {
 
 test("renders emoji with text correctly", async () => {
 	const terminal = new MockProcess();
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 
 	const span = dom.document.createElement("span");
 	span.textContent = "Hello 🌍 World!";
@@ -54,7 +54,7 @@ test("renders emoji with text correctly", async () => {
 
 test("renders multiple emojis correctly", async () => {
 	const terminal = new MockProcess();
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 
 	const container = dom.document.createElement("div");
 	container.style.setProperty("display", "flex");
@@ -92,7 +92,7 @@ test("renders multiple emojis correctly", async () => {
 
 test("renders emoji with colors correctly", async () => {
 	const terminal = new MockProcess();
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 
 	const container = dom.document.createElement("div");
 	container.style.setProperty("display", "flex");
@@ -121,7 +121,7 @@ test("renders emoji with colors correctly", async () => {
 
 test("preserves spaces after emojis", async () => {
 	const terminal = new MockProcess();
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 
 	const span = dom.document.createElement("span");
 	span.textContent = "A🌍B"; // Pattern that was failing before
@@ -142,7 +142,7 @@ test("preserves spaces after emojis", async () => {
 
 test("handles emoji width calculation", async () => {
 	const terminal = new MockProcess();
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 
 	// Test that emojis are properly calculated for layout
 	const container = dom.document.createElement("div");
@@ -178,7 +178,7 @@ test("handles emoji width calculation", async () => {
 
 test("whitespace collapse affecting emoji rendering", async () => {
 	const terminal = new MockProcess();
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 
 	// Test case that exposes whitespace/emoji interaction bugs
 	const container = dom.document.createElement("div");
@@ -217,7 +217,7 @@ test("whitespace collapse affecting emoji rendering", async () => {
 
 test("text after emoji gets truncated", async () => {
 	const terminal = new MockProcess();
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 
 	// Specific test for the "Mor" truncation bug
 	const container = dom.document.createElement("div");
@@ -252,7 +252,7 @@ test("text after emoji gets truncated", async () => {
 
 test("emoji spacing with complex whitespace patterns", async () => {
 	const terminal = new MockProcess();
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 
 	// Test various whitespace patterns around emojis
 	const testCases = [

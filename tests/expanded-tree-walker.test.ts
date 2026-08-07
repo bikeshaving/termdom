@@ -665,7 +665,7 @@ test("Pure JSDOM - ExpandedTreeWalker complex nested scenario with pseudo-elemen
 
 test("TermDOM - ExpandedTreeWalker basic functionality", () => {
 	const terminal = new MockProcess();
-	const termdom = new TermDOM({process: terminal});
+	const termdom = new TermDOM({transport: terminal.transport});
 	const {document} = termdom;
 
 	const div = document.createElement("div");
@@ -691,7 +691,7 @@ test("TermDOM - ExpandedTreeWalker basic functionality", () => {
 
 test("TermDOM - ExpandedTreeWalker with shadow DOM", () => {
 	const terminal = new MockProcess();
-	const termdom = new TermDOM({process: terminal});
+	const termdom = new TermDOM({transport: terminal.transport});
 	const {document} = termdom;
 
 	// Create a custom element with shadow DOM
@@ -740,7 +740,7 @@ test("TermDOM - ExpandedTreeWalker with shadow DOM", () => {
 
 test("TermDOM - ExpandedTreeWalker basic traversal", () => {
 	const terminal = new MockProcess();
-	const termdom = new TermDOM({process: terminal});
+	const termdom = new TermDOM({transport: terminal.transport});
 	const {document} = termdom;
 
 	const div = document.createElement("div");
@@ -765,7 +765,7 @@ test("ExpandedTreeWalker flattens named slots into composed order", () => {
 	// slot's position, unassigned-slot fallback stays hidden, and no SLOT
 	// element ever surfaces as a box of its own.
 	const terminal = new MockProcess();
-	const termdom = new TermDOM({process: terminal});
+	const termdom = new TermDOM({transport: terminal.transport});
 	const {document} = termdom;
 
 	const host = document.createElement("div");
@@ -1041,7 +1041,7 @@ test("Pure JSDOM - ExpandedTreeWalker manual currentNode setting respects root",
 
 test("TermDOM - ::marker pseudo-elements with display: list-item", () => {
 	const terminal = new MockProcess();
-	const termdom = new TermDOM({process: terminal});
+	const termdom = new TermDOM({transport: terminal.transport});
 	const {document} = termdom;
 
 	// Add CSS with ::marker pseudo-element content
@@ -1100,7 +1100,7 @@ test("TermDOM - ::marker pseudo-elements with display: list-item", () => {
 
 test("TermDOM - ::marker appears before ::before pseudo-elements", () => {
 	const terminal = new MockProcess();
-	const termdom = new TermDOM({process: terminal});
+	const termdom = new TermDOM({transport: terminal.transport});
 	const {document} = termdom;
 
 	// Add CSS with both ::marker and ::before pseudo-elements
@@ -1180,7 +1180,7 @@ test("TermDOM - ::marker appears before ::before pseudo-elements", () => {
 
 test("TermDOM - ::marker only on elements with display: list-item in walker traversal", () => {
 	const terminal = new MockProcess();
-	const termdom = new TermDOM({process: terminal});
+	const termdom = new TermDOM({transport: terminal.transport});
 	const {document} = termdom;
 
 	// Add CSS
@@ -1261,7 +1261,7 @@ test("TermDOM - ::marker only on elements with display: list-item in walker trav
 
 test("TermDOM - ::marker rendering test", async () => {
 	const terminal = new MockProcess();
-	const termdom = new TermDOM({process: terminal});
+	const termdom = new TermDOM({transport: terminal.transport});
 	const {document} = termdom;
 
 	// Add CSS with ::marker and other pseudo-elements

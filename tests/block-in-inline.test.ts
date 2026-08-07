@@ -15,7 +15,7 @@ import {TermDOM} from "../src/internal/termdom.js";
 
 async function render(html: string, cols = 40, rows = 8) {
 	const terminal = new MockProcess({cols, rows});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = html;
 	await nextFrame(dom);
 	const lines = () =>

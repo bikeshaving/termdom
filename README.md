@@ -2,8 +2,8 @@
 
 **Build terminal apps with HTML, CSS and the DOM.**
 
-TermDOM is a rendering engine: a real DOM (via JSDOM) with real CSS layout
-painted to terminal cells for building interactive TUIs.
+TermDOM is a TUI rendering engine: a real DOM (via JSDOM) with real CSS layout
+painted to terminal cells so you can use HTML, CSS and any web framework to create interactive CLI applications.
 
 ```sh
 npm install @b9g/termdom
@@ -33,9 +33,9 @@ await new Promise((resolve) => window.requestAnimationFrame(resolve));
 
 ## What it is
 
-- **Layout** — block and inline flow, flexbox, tables, `position` and `z-index`
-  stacking, margin collapsing, `overflow` clipping, percentage sizing, media
-  queries.
+- **Layout** — linebreaking for text, block and inline flow, flexbox, tables,
+  `position` and `z-index` stacking, margin collapsing, `overflow` clipping,
+  percentage sizing, media queries.
 - **Styling** — stylesheets and inline styles through one cascade: selectors
   (`:has()` included), specificity, `!important`, `var()`, `@media`,
   inheritance. Every cell attribute traces to a computed style.
@@ -47,8 +47,10 @@ await new Promise((resolve) => window.requestAnimationFrame(resolve));
 - **Events** — keyboard (modifiers decoded), mouse (click, dblclick, wheel),
   focus, bracketed paste as real paste events, IME composition.
   `addEventListener`, capture phases, and delegation behave as on the web.
-- **The rest of the platform** — `getBoundingClientRect`, `elementFromPoint`, `scrollIntoView`, `matchMedia`, `requestAnimationFrame`, `MutationObserver`,
-  `ResizeObserver`, the Fullscreen API, are all hooked up and work normally.
+- **The rest of the platform** — `getBoundingClientRect`, `elementFromPoint`,
+  `scrollIntoView`, `matchMedia`, `requestAnimationFrame`, `MutationObserver`,
+  `ResizeObserver`, the Fullscreen API, are all hooked up to the terminal’s
+  layout, viewport and runtime.
 
 ## Examples
 

@@ -28,7 +28,7 @@ test("line clearing removes terminal artifacts from previous commands", async ()
 	expect(beforeText).toContain("directory/");
 
 	// Now create TermDOM content that will overwrite some of these lines
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	const div1 = document.createElement("div");
@@ -75,7 +75,7 @@ test("indented content clears entire line including leading columns", async () =
 	expect(beforeText).toContain("artifact content line");
 
 	// Create TermDOM with indented content
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	const div = document.createElement("div");
@@ -99,7 +99,7 @@ test("indented content clears entire line including leading columns", async () =
 test("first render includes line clear sequences", async () => {
 	// This test verifies that clear sequences are present in the raw output
 	const terminal = new MockProcess({cols: 40, rows: 5});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	// Capture the raw ANSI output by intercepting stdout writes

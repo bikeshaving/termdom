@@ -4,7 +4,7 @@ import {MockProcess, styleManagerFor} from "./test-utils.js";
 
 test("CSS specificity calculation", async () => {
 	const terminal = new MockProcess();
-	const termdom = new TermDOM({process: terminal});
+	const termdom = new TermDOM({transport: terminal.transport});
 	const {document} = termdom;
 
 	// Add CSS with different specificities
@@ -43,7 +43,7 @@ test("CSS specificity calculation", async () => {
 
 test("CSS cascade resolution", async () => {
 	const terminal = new MockProcess();
-	const termdom = new TermDOM({process: terminal});
+	const termdom = new TermDOM({transport: terminal.transport});
 	const {document} = termdom;
 
 	// Test cascade: inline > CSS rules by specificity > defaults
@@ -75,7 +75,7 @@ test("CSS cascade resolution", async () => {
 
 test("Pseudo-element CSS support", async () => {
 	const terminal = new MockProcess();
-	const termdom = new TermDOM({process: terminal});
+	const termdom = new TermDOM({transport: terminal.transport});
 	const {document} = termdom;
 
 	const style = document.createElement("style");
@@ -119,7 +119,7 @@ test("Pseudo-element CSS support", async () => {
 
 test("Pseudo-element specificity", async () => {
 	const terminal = new MockProcess();
-	const termdom = new TermDOM({process: terminal});
+	const termdom = new TermDOM({transport: terminal.transport});
 	const {document} = termdom;
 
 	const style = document.createElement("style");
@@ -147,7 +147,7 @@ test("Pseudo-element specificity", async () => {
 
 test.todo("StyleManager auto-refresh on DOM changes", async () => {
 	const terminal = new MockProcess();
-	const termdom = new TermDOM({process: terminal});
+	const termdom = new TermDOM({transport: terminal.transport});
 	const {document} = termdom;
 
 	const div = document.createElement("div");
@@ -183,7 +183,7 @@ test.todo("StyleManager auto-refresh on DOM changes", async () => {
 
 test("StyleManager createPseudoElementNode", async () => {
 	const terminal = new MockProcess();
-	const termdom = new TermDOM({process: terminal});
+	const termdom = new TermDOM({transport: terminal.transport});
 	const {document} = termdom;
 
 	const style = document.createElement("style");

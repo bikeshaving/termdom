@@ -596,7 +596,7 @@ test("a nonzero length without a unit is invalid and never enters the cascade", 
 	// beat the good one -- which is what this engine used to do, and what
 	// silently killed `padding-top: 1` in the examples.
 	const terminal = new MockProcess({rows: 6, cols: 30});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.head.innerHTML = `<style>
 		.box { padding-top: 3px; }
 		.box { padding-top: 1; }
@@ -622,7 +622,7 @@ test("bare numbers stay valid where CSS says they are", async () => {
 	// take bare numbers by spec -- the check is per-property, not a
 	// blanket ban on digits.
 	const terminal = new MockProcess({rows: 6, cols: 30});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.head.innerHTML = `<style>
 		.zero { padding-top: 0; margin: 0; }
 		.numeric { line-height: 2; z-index: 5; flex-grow: 2; font-weight: 700; }
@@ -651,7 +651,7 @@ test("min-width applies to ordinary block boxes", async () => {
 	// children's CROSS axis -- and the cross-axis path resolved a definite size
 	// without clamping it, so min-width did nothing on most of a document.
 	const terminal = new MockProcess({cols: 40, rows: 6});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.head.innerHTML = `<style>
 		#narrow { width: 5ch; min-width: 20ch; }
 		#wide { width: 30ch; max-width: 5ch; }
@@ -674,7 +674,7 @@ test("the text-decoration longhand underlines, not just the shorthand", async ()
 	// text-decoration is a shorthand whose value lives in the longhands, so
 	// `text-decoration-line: underline` leaves the shorthand computing to "none".
 	const terminal = new MockProcess({cols: 20, rows: 3});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.head.innerHTML = `<style>#p { text-decoration-line: underline; }</style>`;
 	dom.document.body.innerHTML = `<div id="p">abc</div>`;
 
@@ -696,7 +696,7 @@ test("the text-decoration longhand underlines, not just the shorthand", async ()
 
 test("style.border = 'none' overrides the UA textarea border", async () => {
 	const terminal = new MockProcess({cols: 60, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const textarea = dom.document.createElement("textarea");
 	textarea.setAttribute("rows", "1");
 	textarea.style.border = "none";
@@ -712,7 +712,7 @@ test("style.border = 'none' overrides the UA textarea border", async () => {
 
 test("setProperty and cssText forms of border:none work too", async () => {
 	const terminal = new MockProcess({cols: 60, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const a = dom.document.createElement("textarea");
 	a.setAttribute("rows", "1");
 	a.style.setProperty("border", "none");
@@ -732,7 +732,7 @@ test("a border style of none zeroes the USED border width", async () => {
 	// css-backgrounds §3.3: computed border-width is 0 when the style is none
 	// or hidden -- the box reserves no space however wide the width says.
 	const terminal = new MockProcess({cols: 60, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.head.innerHTML = `<style>#box { border: 2px solid; border-style: none; width: 10px; }</style>`;
 	dom.document.body.innerHTML = `<div id="box">x</div>`;
 	await nextFrame(dom);
@@ -745,7 +745,7 @@ test("a border style of none zeroes the USED border width", async () => {
 
 test("a single side turns off: style.borderTop = 'none'", async () => {
 	const terminal = new MockProcess({cols: 60, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const textarea = dom.document.createElement("textarea");
 	textarea.setAttribute("rows", "1");
 	textarea.style.borderTop = "none";
@@ -762,7 +762,7 @@ test("style.background = 'none' overrides a stylesheet background", async () => 
 	// cleared the inline longhands instead of declaring image none and color
 	// transparent, so a class background always won. The shim stores both.
 	const terminal = new MockProcess({cols: 20, rows: 4});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.head.innerHTML = `<style>.paint { background: red; }</style>`;
 	dom.document.body.innerHTML = `<div class="paint" id="box" style="background: none">x</div>`;
 	await nextFrame(dom);
@@ -780,7 +780,7 @@ test("toggling border none -> solid -> none through element.style survives", asy
 	// The shim stores longhands with the raw primitive; a later ordinary set
 	// must overwrite them, and a return to none must erase the border again.
 	const terminal = new MockProcess({cols: 40, rows: 8});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const el = dom.document.createElement("div");
 	el.textContent = "x";
 	dom.document.body.appendChild(el);
@@ -809,7 +809,7 @@ test("an inline shorthand's !important carries to its longhands", async () => {
 	// priority, every inline `setProperty(shorthand, v, "important")` lost to
 	// an important stylesheet rule -- border: none included.
 	const terminal = new MockProcess({cols: 40, rows: 8});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.head.innerHTML = `<style>
 		#a { border: 2px solid !important; }
 		#b { margin-top: 5px !important; }
@@ -838,7 +838,7 @@ test("border: solid means a visible medium border, sheet and inline alike", asyn
 	// thin/medium/thick). Both parsers must agree: the sheet path kept the
 	// keyword no reader understood, and cssstyle fills the width with 0.
 	const terminal = new MockProcess({cols: 40, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.head.innerHTML = `<style>#sheet { border: solid; }</style>`;
 	dom.document.body.innerHTML = `<div id="sheet">a</div><div id="inline" style="border: solid">b</div>`;
 	await nextFrame(dom);

@@ -12,7 +12,7 @@ import {MockProcess, nextFrame} from "./test-utils.js";
 
 async function render(html: string, cols = 40, rows = 8) {
 	const terminal = new MockProcess({rows, cols});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = html;
 	await nextFrame(dom);
 	return {terminal, dom};
@@ -188,7 +188,7 @@ test("a positioned ancestor's overflow clips its absolute descendant", async () 
 
 test("position:fixed stays glued to the viewport as the camera scrolls", async () => {
 	const terminal = new MockProcess({rows: 4, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML =
 		`<div style="position:fixed; top:0; left:30ch; width:6ch">PINNED</div>` +
 		Array.from({length: 10}, (_, i) => `<div>row${i}</div>`).join("");

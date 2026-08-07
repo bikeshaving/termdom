@@ -22,7 +22,7 @@ function css(color: number): string {
 }
 
 const terminal = new MockProcess({cols: COLS, rows: ROWS});
-const term = new TermDOM({process: terminal});
+const term = new TermDOM({transport: terminal.transport});
 const {document} = term;
 
 // The TodoMVC styles and components, inline: importing the example would

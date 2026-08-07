@@ -1182,9 +1182,7 @@ test("getRectTexts - maintains backward compatibility", () => {
 test("Inline run head changes - text to element", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
 	const termdom = new TermDOM({
-		width: 40,
-		height: 10,
-		process: terminal,
+		transport: terminal.transport,
 	});
 
 	const div = termdom.document.createElement("div");
@@ -1208,9 +1206,7 @@ test("Inline run head changes - text to element", async () => {
 test("Inline run head changes - element to text", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
 	const termdom = new TermDOM({
-		width: 40,
-		height: 10,
-		process: terminal as any,
+		transport: terminal.transport,
 	});
 
 	const div = termdom.document.createElement("div");
@@ -1235,9 +1231,7 @@ test("Inline run head changes - element to text", async () => {
 test("Adding inline elements to existing run", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
 	const termdom = new TermDOM({
-		width: 40,
-		height: 10,
-		process: terminal as any,
+		transport: terminal.transport,
 	});
 
 	const div = termdom.document.createElement("div");
@@ -1269,9 +1263,7 @@ test("Adding inline elements to existing run", async () => {
 test("Removing inline elements from run", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
 	const termdom = new TermDOM({
-		width: 40,
-		height: 10,
-		process: terminal as any,
+		transport: terminal.transport,
 	});
 
 	const div = termdom.document.createElement("div");
@@ -1298,9 +1290,7 @@ test("Removing inline elements from run", async () => {
 test("Inline-block elements affecting run layout", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
 	const termdom = new TermDOM({
-		width: 40,
-		height: 10,
-		process: terminal as any,
+		transport: terminal.transport,
 	});
 
 	const div = termdom.document.createElement("div");
@@ -1330,9 +1320,7 @@ test("Inline-block elements affecting run layout", async () => {
 test("Rapid DOM changes stress test", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
 	const termdom = new TermDOM({
-		width: 40,
-		height: 10,
-		process: terminal as any,
+		transport: terminal.transport,
 	});
 
 	const container = termdom.document.createElement("div");
@@ -1375,9 +1363,7 @@ test("Rapid DOM changes stress test", async () => {
 test("Text node splitting and merging", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
 	const termdom = new TermDOM({
-		width: 40,
-		height: 10,
-		process: terminal as any,
+		transport: terminal.transport,
 	});
 
 	const div = termdom.document.createElement("div");
@@ -1410,9 +1396,7 @@ test("Text node splitting and merging", async () => {
 test("White-space handling in dynamic inline runs", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
 	const termdom = new TermDOM({
-		width: 40,
-		height: 10,
-		process: terminal as any,
+		transport: terminal.transport,
 	});
 
 	const div = termdom.document.createElement("div");
@@ -1440,9 +1424,7 @@ test("White-space handling in dynamic inline runs", async () => {
 test("Direct textContent changes in inline runs", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
 	const termdom = new TermDOM({
-		width: 40,
-		height: 10,
-		process: terminal as any,
+		transport: terminal.transport,
 	});
 
 	const div = termdom.document.createElement("div");
@@ -1469,9 +1451,7 @@ test("Direct textContent changes in inline runs", async () => {
 test("Text node data changes (characterData mutations)", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
 	const termdom = new TermDOM({
-		width: 40,
-		height: 10,
-		process: terminal as any,
+		transport: terminal.transport,
 	});
 
 	const div = termdom.document.createElement("div");
@@ -1499,9 +1479,7 @@ test("Text node data changes (characterData mutations)", async () => {
 test("Direct textContent changes in inline runs", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
 	const termdom = new TermDOM({
-		width: 40,
-		height: 10,
-		process: terminal as any,
+		transport: terminal.transport,
 	});
 
 	const div = termdom.document.createElement("div");
@@ -1534,9 +1512,7 @@ test.todo("Text node data changes (characterData mutations)", async () => {
 test("Block element interrupting inline run", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
 	const termdom = new TermDOM({
-		width: 40,
-		height: 10,
-		process: terminal as any,
+		transport: terminal.transport,
 	});
 
 	const container = termdom.document.createElement("div");
@@ -1569,9 +1545,7 @@ test("Block element interrupting inline run", async () => {
 test("Block element removal merging inline runs", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
 	const termdom = new TermDOM({
-		width: 40,
-		height: 10,
-		process: terminal as any,
+		transport: terminal.transport,
 	});
 
 	const container = termdom.document.createElement("div");
@@ -1606,9 +1580,7 @@ test("Block element removal merging inline runs", async () => {
 test("Block element removal properly cleans up former run head Yoga nodes", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
 	const termdom = new TermDOM({
-		width: 40,
-		height: 10,
-		process: terminal as any,
+		transport: terminal.transport,
 	});
 
 	const container = termdom.document.createElement("div");
@@ -1985,7 +1957,7 @@ test("Block children have flex-shrink: 0 to prevent content clipping", () => {
 
 test("whitespace between block elements should be collapsed", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	// HTML with significant whitespace between block elements
@@ -2026,7 +1998,7 @@ test("whitespace between block elements should be collapsed", async () => {
 
 test("whitespace in nested lists should be collapsed", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 12});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	// Nested list with formatted HTML (the original phantom line case)
@@ -2069,7 +2041,7 @@ test("whitespace in nested lists should be collapsed", async () => {
 
 test("programmatic DOM creation should not have phantom lines", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 8});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	// Programmatic creation (no whitespace text nodes)
@@ -2119,7 +2091,7 @@ test("programmatic DOM creation should not have phantom lines", async () => {
 
 test("compact HTML should not have phantom lines", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 8});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	// HTML without any whitespace between elements
@@ -2348,7 +2320,7 @@ test("auto values reset positioning properties", () => {
 // which automatically triggers layout invalidation when elements are added/removed.
 
 function createTermDOM(html: string = "<div></div>") {
-	const termdom = new TermDOM({process: new MockProcess()});
+	const termdom = new TermDOM({transport: new MockProcess().transport});
 	const {document} = termdom;
 
 	// Clear default body content and add test HTML
@@ -2636,7 +2608,7 @@ test("break result cleanup prevents orphaned entries", async () => {
 
 test("overflow-wrap: normal lets a long word escape its box, as a browser does", async () => {
 	const terminal = new MockProcess({rows: 4, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 	const div = document.createElement("div");
 	div.style.width = "10ch";
@@ -2654,7 +2626,7 @@ test("overflow-wrap: normal lets a long word escape its box, as a browser does",
 
 test("overflow-wrap: break-word wraps the long word inside the box", async () => {
 	const terminal = new MockProcess({rows: 6, cols: 40});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 	const div = document.createElement("div");
 	div.style.width = "10ch";

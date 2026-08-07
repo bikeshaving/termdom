@@ -19,7 +19,7 @@ import {TermDOM} from "../src/internal/termdom.js";
 
 test("white-space: nowrap in non-flex context should not wrap", async () => {
 	const terminal = new MockProcess({cols: 60, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	// Simple block container (not flex) with constrained width
@@ -52,7 +52,7 @@ test("white-space: nowrap in non-flex context should not wrap", async () => {
 
 test("white-space: nowrap in flex context - content should determine container size", async () => {
 	const terminal = new MockProcess({cols: 80, rows: 10});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	// Flex container with nowrap content
@@ -113,7 +113,7 @@ test("white-space: nowrap in flex context - content should determine container s
 
 test("white-space: nowrap vs normal text wrapping comparison", async () => {
 	const terminal = new MockProcess({cols: 30, rows: 15});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	const container = document.createElement("div");
@@ -198,7 +198,7 @@ test("white-space: nowrap vs normal text wrapping comparison", async () => {
 
 test("white-space: nowrap with emoji and unicode", async () => {
 	const terminal = new MockProcess({cols: 15, rows: 5});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	const container = document.createElement("div");
@@ -228,7 +228,7 @@ test("white-space: nowrap with emoji and unicode", async () => {
 
 test("flexShrink 0 with white-space: nowrap should prevent shrinking entirely", async () => {
 	const terminal = new MockProcess({cols: 50, rows: 8});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	const flexContainer = document.createElement("div");
@@ -294,7 +294,7 @@ test("flexShrink 0 with white-space: nowrap should prevent shrinking entirely", 
 
 test("mixed white-space properties in single inline run", async () => {
 	const terminal = new MockProcess({cols: 60, rows: 5});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	// Container with mixed white-space properties
@@ -345,7 +345,7 @@ test("mixed white-space properties in single inline run", async () => {
 
 test("alternating white-space properties in inline run", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 6});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	const container = document.createElement("div");
@@ -381,7 +381,7 @@ test("alternating white-space properties in inline run", async () => {
 
 test("nested elements with different white-space properties", async () => {
 	const terminal = new MockProcess({cols: 50, rows: 4});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	const container = document.createElement("div");
@@ -419,7 +419,7 @@ test("nested elements with different white-space properties", async () => {
 
 test("pre and nowrap interaction in same run", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 5});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	const container = document.createElement("div");
@@ -455,7 +455,7 @@ test("pre and nowrap interaction in same run", async () => {
 
 test("white-space inheritance and override", async () => {
 	const terminal = new MockProcess({cols: 50, rows: 4});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	// Parent with nowrap
@@ -496,7 +496,7 @@ test("white-space inheritance and override", async () => {
 
 test("complex mixed white-space with word-break properties", async () => {
 	const terminal = new MockProcess({cols: 50, rows: 6});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
 
 	const container = document.createElement("div");
@@ -541,7 +541,7 @@ test("complex mixed white-space with word-break properties", async () => {
 
 test("a leading <br> keeps its line break and the whole run after it", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 6});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.body.innerHTML = `<br> abcdef`;
 
 	await nextFrame(dom);
@@ -563,7 +563,7 @@ test("a leading <br> keeps its line break and the whole run after it", async () 
 
 test("white-space: pre suppresses wrapping but keeps newlines", async () => {
 	const terminal = new MockProcess({cols: 40, rows: 12});
-	const dom = new TermDOM({process: terminal});
+	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.head.innerHTML = `<style>
 		#wrap { display: block; width: 10ch; white-space: pre; }
 		#lines { white-space: pre; }
