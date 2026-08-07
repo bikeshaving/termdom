@@ -595,8 +595,11 @@ export class Painter {
 		// walk lays down the value text -- #renderTextSelection reads the
 		// control's selectionStart/End, the same way it reads a document Range.
 
-		// An `outline` paints last, as a box-model-aware underline along the box's
-		// bottom row (a focus ring). Bottom only: overline (SGR 53) is unreliable.
+		// An `outline` paints last (a focus ring). A bordered box already has a
+		// ring of glyphs at its perimeter, so the outline repaints them in the
+		// outline color rather than underlining them. A borderless box gets an
+		// underline along its bottom row in the same color. Bottom only:
+		// overline (SGR 53) is unreliable.
 		if (rect && visible) {
 			const computed = this.#window.getComputedStyle(element);
 			const outlineStyle = computed.getPropertyValue("outline-style");
@@ -614,13 +617,27 @@ export class Painter {
 					outlineColor !== "currentcolor" &&
 					outlineColor !== "invert" &&
 					!isSystemHighlightColor(outlineColor);
-				ctx.edgeRow(
-					Math.round(rect.left),
-					Math.round(rect.bottom) - 1,
-					Math.round(rect.width),
-					"underline",
-					hasColor ? {fg: cssColorToNumber(outlineColor)} : undefined,
-				);
+				const borderStyles = resolveBorderStyles(element);
+				if (borderStyles.hasAnyBorder) {
+					if (hasColor) {
+						ctx.drawBorder(
+							Math.round(rect.left),
+							Math.round(rect.top),
+							Math.round(rect.width),
+							Math.round(rect.height),
+							borderStyles,
+							{fg: cssColorToNumber(outlineColor), bg: style.bg},
+						);
+					}
+				} else {
+					ctx.edgeRow(
+						Math.round(rect.left),
+						Math.round(rect.bottom) - 1,
+						Math.round(rect.width),
+						"underline",
+						hasColor ? {fg: cssColorToNumber(outlineColor)} : undefined,
+					);
+				}
 			}
 		}
 	}

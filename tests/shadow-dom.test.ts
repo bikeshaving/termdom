@@ -560,6 +560,55 @@ test("selection still paints inverse via the UA rule's system colors", async () 
 	dom.dispose();
 });
 
+test("a focused textarea's outline repaints its border in the outline color", async () => {
+	const terminal = new MockProcess({rows: 6, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	dom.attach();
+	const {document} = dom;
+	const textarea = document.createElement("textarea");
+	textarea.setAttribute("rows", "1");
+	document.body.appendChild(textarea);
+	await nextFrame(dom);
+
+	const cellAt = (row: number, col: number) =>
+		(terminal as any).terminal.buffer.active.getLine(row).getCell(col);
+	// Blurred: the UA border paints in the default foreground, not the accent.
+	expect(cellAt(0, 0).getChars()).toBe("┌");
+	expect(cellAt(0, 0).getFgColor()).not.toBe(0x5fafff);
+
+	textarea.focus();
+	await nextFrame(dom);
+	// Focused: the border ring carries the outline color; the bottom border
+	// row is glyphs, not an underline.
+	expect(cellAt(0, 0).getFgColor()).toBe(0x5fafff);
+	expect(cellAt(2, 0).getFgColor()).toBe(0x5fafff);
+	expect(cellAt(2, 0).isUnderline()).toBeFalsy();
+
+	dom.dispose();
+});
+
+test("a focused input's outline underline carries the outline color on unclaimed cells", async () => {
+	const terminal = new MockProcess({rows: 4, cols: 40});
+	const dom = new TermDOM({process: terminal});
+	dom.attach();
+	const {document} = dom;
+	const input = document.createElement("input");
+	input.setAttribute("placeholder", "hint");
+	document.body.appendChild(input);
+	input.focus();
+	await nextFrame(dom);
+
+	const cellAt = (row: number, col: number) =>
+		(terminal as any).terminal.buffer.active.getLine(row).getCell(col);
+	// A blank cell of the field row: underlined, in the accent.
+	expect(cellAt(0, 19).isUnderline()).toBeTruthy();
+	expect(cellAt(0, 19).getFgColor()).toBe(0x5fafff);
+	// The placeholder's explicit gray wins over the outline's default.
+	expect(cellAt(0, 0).getFgColor()).toBe(0x808080);
+
+	dom.dispose();
+});
+
 test("border color resolves through CSS: border-color, then currentColor, then default", async () => {
 	const terminal = new MockProcess({rows: 8, cols: 40});
 	const dom = new TermDOM({process: terminal});

@@ -859,7 +859,9 @@ export class DrawingContext {
 	/**
 	 * Merge an underline/overline across a row, preserving existing glyphs (an
 	 * empty cell becomes a spaced edge). Used to render `outline` as a full-width
-	 * edge; setText can't, since it overwrites.
+	 * edge; setText can't, since it overwrites. The style's fg is the row's
+	 * DEFAULT color: a cell that already carries an explicit foreground
+	 * (::selection, ::placeholder, authored color) keeps it.
 	 */
 	edgeRow(
 		x: number,
@@ -877,7 +879,7 @@ export class DrawingContext {
 			const flags = existing?.getStyleFlags();
 			this.buffer[terminalRow][col] = Cell.create({
 				grapheme: existing?.grapheme ?? " ",
-				fg: style?.fg ?? existing?.getFgColor(),
+				fg: existing?.getFgColor() ?? style?.fg,
 				bg: existing?.getBgColor(),
 				bold: flags?.bold,
 				italic: flags?.italic,

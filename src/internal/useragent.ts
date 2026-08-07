@@ -523,7 +523,7 @@ export const UA_DOCUMENT_STYLES = `
 	button::after { content: " ]"; }
 	a[href] { text-decoration: underline; }
 	a[href]:focus-visible { background-color: Highlight; color: HighlightText; }
-	button:focus-visible { outline-width: 1px; outline-style: solid; }
+	button:focus-visible { outline-width: 1px; outline-style: solid; outline-color: #5fafff; }
 `;
 
 // ---- Form-widget internal shadow stylesheets ----
@@ -532,11 +532,14 @@ export const UA_DOCUMENT_STYLES = `
  * the textarea's parts render through the NORMAL pipeline -- the value text
  * node lays out, wraps and paints like any document text -- so these rules are
  * all there is: the placeholder's ghost gray, faint when the host is blurred,
- * hidden by the reconcile (an inline display:none) whenever a value exists.
+ * hidden by the reconcile (an inline display:none) whenever a value exists,
+ * and the focus outline, which the painter renders on the host's UA border
+ * by repainting it in the outline color.
  */
 export const TEXTAREA_UA_STYLES = `
 	[part="placeholder"] { color: #808080; }
 	:host(:not(:focus)) [part="placeholder"] { font-weight: lighter; }
+	:host(:focus) { outline-width: 1px; outline-style: solid; outline-color: #5fafff; }
 `;
 
 /**
@@ -544,12 +547,13 @@ export const TEXTAREA_UA_STYLES = `
  * real, scoped CSS. The value and placeholder are single-line inline-blocks that
  * clip their text (the render loop sets scrollLeft to follow the caret); the
  * focus affordance is an `outline`, which the painter renders as a bottom
- * underline across the whole field. A blurred field carries no chrome.
+ * underline across the whole field in the outline color (a bordered field
+ * would show it on the border instead). A blurred field carries no chrome.
  */
 export const FIELD_UA_STYLES = `
 	[part="value"], [part="placeholder"] { display: inline-block; white-space: pre; overflow: hidden; min-width: 1ch; max-width: 100%; vertical-align: top; }
 	[part="placeholder"] { color: #808080; }
-	:host(:focus) { outline-width: 1px; outline-style: solid; }
+	:host(:focus) { outline-width: 1px; outline-style: solid; outline-color: #5fafff; }
 `;
 
 /**
