@@ -31,6 +31,7 @@ import {
 	compositionParentElement,
 	fieldCaretRange,
 	fieldValueText,
+	invalidateComposition,
 } from "./composition.js";
 import {type UAWidgetController, defineUAWidgets} from "./widgets.js";
 
@@ -1260,6 +1261,9 @@ export class TermDOM {
 	 * empties the queue for the other.
 	 */
 	#handlePendingMutations(mutations: MutationRecord[]): void {
+		// Any observed mutation can move a node in the flat tree; drop the
+		// memoized composition links before anything reads through them.
+		invalidateComposition();
 		// Attribute records whose value did not actually change are dropped
 		// before any handler sees them. Frameworks (and this repo's own
 		// examples) re-assign className/style with identical values on every

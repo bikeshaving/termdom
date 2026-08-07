@@ -16,6 +16,7 @@ import {
 	getAllPseudoElements,
 	getPseudoElement,
 	removePseudoElement,
+	invalidateComposition,
 } from "./composition.js";
 import {type LayoutEngine} from "./layout.js";
 import {
@@ -2753,6 +2754,9 @@ export class StyleManager {
 	invalidateElement(element: Element): void {
 		this.#computedStyleCache.delete(element);
 		this.#pseudoElementStyleCache.delete(element);
+		// A style change can flip display: contents, which moves the node's
+		// flat-tree BOX parent; the composition memo must not outlive it.
+		invalidateComposition();
 	}
 
 	/**

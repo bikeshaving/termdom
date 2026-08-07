@@ -14,6 +14,35 @@ import type {DOMWindow} from "jsdom";
 export const SHADOW_ROOT_SYMBOL = Symbol.for("TermDOM.shadowRoot");
 
 /**
+ * The flat tree is DERIVED here -- jsdom maintains only the raw tree plus
+ * slot assignment -- and deriving it per node is the paint walk's hottest
+ * cost. Upward links (flat parent, flat box parent) are memoized per node,
+ * and the whole memo is dropped by bumping one epoch whenever anything that
+ * can move a node lands: a mutation batch, a style invalidation (display:
+ * contents changes the box parent), or this module's own attachments.
+ * Frames with no mutations -- scrolling, chiefly -- reuse every link.
+ *
+ * Only UPWARD links are safe to cache this way: a child-list change makes
+ * new nodes (cache misses) and removes old ones (never asked again), but
+ * cannot silently change a surviving node's parent without a record from
+ * an enrolled root or a call through this module.
+ */
+interface CompositionLinks {
+	epoch: number;
+	parent: Element | null;
+	hasParent: boolean;
+	boxParent: Element | null;
+	hasBoxParent: boolean;
+}
+const linkCache = new WeakMap<Node, CompositionLinks>();
+let compositionEpoch = 0;
+
+/** Drop every memoized flat-tree link; cheap, and correctness's big hammer. */
+export function invalidateComposition(): void {
+	compositionEpoch++;
+}
+
+/**
  * The FLAT-TREE parent element of a node: the element it renders inside,
  * which is also the element style inheritance flows from. Three cases
  * diverge from parentElement: a projected node's flat parent is its SLOT
@@ -23,6 +52,27 @@ export const SHADOW_ROOT_SYMBOL = Symbol.for("TermDOM.shadowRoot");
  * everything else is just parentElement.
  */
 export function compositionParentElement(node: Node): Element | null {
+	let links = linkCache.get(node);
+	if (links && links.epoch === compositionEpoch && links.hasParent) {
+		return links.parent;
+	}
+	const parent = uncachedCompositionParentElement(node);
+	if (!links || links.epoch !== compositionEpoch) {
+		links = {
+			epoch: compositionEpoch,
+			parent: null,
+			hasParent: false,
+			boxParent: null,
+			hasBoxParent: false,
+		};
+		linkCache.set(node, links);
+	}
+	links.parent = parent;
+	links.hasParent = true;
+	return parent;
+}
+
+function uncachedCompositionParentElement(node: Node): Element | null {
 	const slot = assignedSlotOf(node);
 	if (slot) return slot;
 	if (node.parentElement) return node.parentElement;
@@ -41,6 +91,10 @@ export function compositionParentElement(node: Node): Element | null {
  * slot would truncate the run at the slot's edge.
  */
 export function compositionBoxParentElement(node: Node): Element | null {
+	const links = linkCache.get(node);
+	if (links && links.epoch === compositionEpoch && links.hasBoxParent) {
+		return links.boxParent;
+	}
 	let parent = compositionParentElement(node);
 	while (parent) {
 		const window = parent.ownerDocument?.defaultView;
@@ -52,6 +106,10 @@ export function compositionBoxParentElement(node: Node): Element | null {
 		}
 		parent = compositionParentElement(parent);
 	}
+	// compositionParentElement above ensured a current-epoch entry exists.
+	const current = linkCache.get(node)!;
+	current.boxParent = parent;
+	current.hasBoxParent = true;
 	return parent;
 }
 export const PSEUDO_ELEMENTS_SYMBOL = Symbol.for("TermDOM.pseudoElements");
@@ -906,6 +964,7 @@ export function attachPseudoElement(
 	pseudoNode: Text,
 	pseudoType: string,
 ): void {
+	invalidateComposition();
 	// Store pseudo-elements on the element using a symbol as a Record
 	if (!(element as any)[PSEUDO_ELEMENTS_SYMBOL]) {
 		(element as any)[PSEUDO_ELEMENTS_SYMBOL] = {};
@@ -931,6 +990,7 @@ export function removePseudoElement(
 	element: Element,
 	pseudoType: string,
 ): void {
+	invalidateComposition();
 	const pseudos = (element as any)[PSEUDO_ELEMENTS_SYMBOL] as
 		| Record<string, Node>
 		| undefined;
@@ -965,6 +1025,7 @@ export function getAllPseudoElements(element: Element): Record<string, Node> {
  * behavior authors are entitled to observe.
  */
 export function createUAShadowRoot(host: Element): ShadowRoot {
+	invalidateComposition();
 	const document = host.ownerDocument;
 	if (!document) {
 		throw new Error("UA shadow root host must belong to a document");
@@ -997,6 +1058,7 @@ export function createExpandedTreeWalker(
  * Set shadow root on an element using symbol storage
  */
 export function setShadowRoot(element: Element, shadowRoot: ShadowRoot): void {
+	invalidateComposition();
 	(element as any)[SHADOW_ROOT_SYMBOL] = shadowRoot;
 }
 
