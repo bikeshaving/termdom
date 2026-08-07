@@ -84,7 +84,11 @@ test("offsetTop/offsetLeft are relative to offsetParent's own box, including mar
 	await nextFrame(dom);
 
 	const inner = dom.document.getElementById("inner")!;
-	expect(inner.offsetTop).toBe(1);
+	// margin-top collapses THROUGH the outer div's borderless, unpadded top
+	// (position:relative establishes no BFC), so vertically the inner sits
+	// flush -- exactly what a browser reports here. margin-left has no
+	// collapsing and offsets the box.
+	expect(inner.offsetTop).toBe(0);
 	expect(inner.offsetLeft).toBe(2);
 	dom.dispose();
 });

@@ -219,10 +219,14 @@ test("a blockquote's left border covers margin rows and every paragraph", async 
 
 	const cellAt = (row: number, col: number) =>
 		(terminal as any).terminal.buffer.active.getLine(row).getCell(col);
-	// The blockquote box spans rows 2-5: the first paragraph's margin row, both
-	// text rows, and the inter-paragraph margin row. The bar covers all four.
-	for (const row of [2, 3, 4, 5]) {
+	// The first paragraph's margin-top collapses through the blockquote's
+	// borderless top and escapes the box, so the bar starts AT the first text
+	// row: text, gap, text -- rows 2-4 -- with the collapsed margin as bare
+	// row 1 above the box.
+	for (const row of [2, 3, 4]) {
 		expect(cellAt(row, 0).getChars()).toBe("│");
 	}
+	expect(cellAt(1, 0)?.getChars() ?? "").not.toBe("│");
+	expect(cellAt(5, 0)?.getChars() ?? "").not.toBe("│");
 	dom.dispose();
 });
