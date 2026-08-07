@@ -86,6 +86,7 @@ async function record(
 ): Promise<void> {
 	const {proc, events, pressKey, clock} = makeRecorder();
 	const termdom = new TermDOM({process: proc, detectCursor: false});
+	termdom.attach();
 	const teardown = await setup(termdom);
 	await new Promise<void>((r) =>
 		termdom.window.requestAnimationFrame(() => r()),

@@ -1391,6 +1391,14 @@ export class TermDOM {
 			undisposedInteractive.add(this.#process);
 			installCursorRestoreOnExit();
 		}
+
+		// Paint whatever the document already holds: an app may build its DOM
+		// first and attach last, and nothing after this call would otherwise
+		// trigger the first frame. Deferred a microtask so the render does not
+		// occupy the re-entrancy guard while synchronous code right after
+		// attach() (append, focus, keystrokes) still expects its own render
+		// calls to drain mutations inline.
+		queueMicrotask(() => void this.#render());
 	}
 
 	/**
@@ -1644,7 +1652,11 @@ export class TermDOM {
 	}
 
 	async #render(): Promise<void> {
-		this.attach();
+		// attach() is the ONLY door to the terminal: until the app calls it,
+		// mutations keep the DOM and layout live but write nothing. Rendering
+		// resumes -- starting with whatever the document holds by then -- the
+		// moment attach() runs, which ends by scheduling this render.
+		if (!this.#attached) return;
 
 		// A resize is settling: suppress every render until handleResize issues the
 		// single re-anchored redraw. See resizeInProgress.

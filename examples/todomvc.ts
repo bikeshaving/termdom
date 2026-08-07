@@ -16,6 +16,8 @@ import {jsx} from "@b9g/crank/standalone";
 import {renderer} from "@b9g/crank/dom";
 
 const term = new TermDOM();
+
+term.attach();
 const document = term.document;
 globalThis.Node = term.window.Node;
 globalThis.document = term.document;

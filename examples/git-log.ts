@@ -38,6 +38,8 @@ const commits = git([
 	});
 
 const term = new TermDOM();
+
+term.attach();
 const {document, window} = term;
 
 const style = document.createElement("style");

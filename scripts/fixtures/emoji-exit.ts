@@ -3,6 +3,8 @@
 import {TermDOM} from "@b9g/termdom";
 
 const term = new TermDOM();
+
+term.attach();
 term.document.body.innerHTML =
 	`<div>🙂 one wide</div>` +
 	`<div>a🙂b🎉c end-marker</div>` +

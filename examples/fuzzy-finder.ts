@@ -67,6 +67,7 @@ function score(item: string, query: string): number | null {
 
 // ---- DOM ---------------------------------------------------------------------
 const term = new TermDOM();
+term.attach();
 const {document, window} = term;
 
 const style = document.createElement("style");

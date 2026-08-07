@@ -1,15 +1,9 @@
-#!/usr/bin/env node
-// A chat client for ch.at (an LLM reachable over plain HTTP) written as a web
-// page: a scrolling transcript, a real <input> to type into, and the reply
-// STREAMED token-by-token into a growing DOM node -- a good test of live updates
-// and reflow, not just a static render. No API key, no SDK: just fetch().
-//
-//   node examples/chat.ts
-//
-//   type a message · Enter send · Shift+Enter newline · Esc or Ctrl-c quit
+// A chat client for ch.at (an LLM reachable over plain HTTP)
 import {TermDOM} from "@b9g/termdom";
 
 const term = new TermDOM();
+
+term.attach();
 const {document, window} = term;
 
 const style = document.createElement("style");

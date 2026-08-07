@@ -56,6 +56,8 @@ const source = readFileSync(file, "utf8");
 const html = marked.parse(source, {async: false}) as string;
 
 const term = new TermDOM();
+
+term.attach();
 const {document, window} = term;
 
 // A compact terminal theme. The UA sheet already makes links underlined and

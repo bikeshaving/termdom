@@ -1,7 +1,8 @@
-#!/usr/bin/env bun
 import {TermDOM} from "@b9g/termdom";
 
 const term = new TermDOM();
+
+term.attach();
 const {document} = term;
 
 const style = document.createElement("style");
@@ -190,5 +191,3 @@ document.addEventListener("keydown", (e: Event) => {
 // Start animation loop
 const interval = setInterval(updateAnimations, 80);
 updateAnimations();
-
-await new Promise<void>((r) => term.window.requestAnimationFrame(() => r()));

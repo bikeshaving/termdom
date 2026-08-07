@@ -1,4 +1,3 @@
-#!/usr/bin/env bun
 // An interactive file tree, NERDTree-style, written as a plain web page:
 // createElement, classList, dataset, addEventListener, scrollIntoView. The
 // only terminal-specific line is setViewportMode("document") -- the tree is a
@@ -15,6 +14,7 @@ import {join, resolve} from "node:path";
 
 const root = resolve(process.argv[2] ?? ".");
 const term = new TermDOM();
+term.attach();
 const {document, window} = term;
 
 const style = document.createElement("style");

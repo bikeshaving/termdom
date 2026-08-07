@@ -1,4 +1,3 @@
-#!/usr/bin/env bun
 // A form, written like a web page: <input> elements, focus(), "input" events,
 // and a live preview that re-renders as you type. Everything interactive here
 // is the DOM's own machinery -- Tab/Shift+Tab move focus, arrows and
@@ -10,6 +9,8 @@
 import {TermDOM} from "@b9g/termdom";
 
 const term = new TermDOM();
+
+term.attach();
 const {document} = term;
 
 const style = document.createElement("style");

@@ -9,6 +9,7 @@ import {TermDOM} from "@b9g/termdom";
 async function helloWorld() {
 	// Create a TermDOM instance (like JSDOM, but for terminals)
 	const term = new TermDOM();
+	term.attach();
 	const {document} = term;
 
 	// Create standard HTML elements with CSS styling!

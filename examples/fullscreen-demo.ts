@@ -1,4 +1,3 @@
-#!/usr/bin/env bun
 // Fullscreen: requestFullscreen() takes an element to the alternate
 // screen, where the UA :fullscreen treatment sizes it to the viewport --
 // so flex centering, backgrounds and live updates all just work there.
@@ -11,6 +10,8 @@
 import {TermDOM} from "@b9g/termdom";
 
 const term = new TermDOM();
+
+term.attach();
 const {document} = term;
 
 const style = document.createElement("style");

@@ -7,6 +7,8 @@ import {TermDOM} from "@b9g/termdom";
 import {createTable, getCoreRowModel} from "@tanstack/table-core";
 
 const term = new TermDOM();
+
+term.attach();
 const {document} = term;
 
 // Sample data

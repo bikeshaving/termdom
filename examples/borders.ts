@@ -1,17 +1,8 @@
-#!/usr/bin/env bun
-// Border showcase: the five charsets, and the cell-union machinery that
-// merges overlapping edges into real junction glyphs (├ ┬ ┼ ┤ ┴). Each
-// border cell records which directions lines LEAVE it; two boxes sharing a
-// cell merge by union and land on the right glyph -- the same machinery
-// that collapses table cell borders (see the tanstack-table example for
-// border-collapse at work). Overlap here comes from absolutely positioned
-// boxes sharing edge cells; no table required.
-//
-//   node examples/borders.ts        Ctrl+C to quit
-
 import {TermDOM} from "@b9g/termdom";
 
 const term = new TermDOM();
+
+term.attach();
 const {document} = term;
 
 const style = document.createElement("style");

@@ -87,6 +87,7 @@ function channelProcess(
 /** The app a visitor lands in. One instance per connection. */
 function serveSession(proc: ProcessLike, onDone: () => void): () => void {
 	const term = new TermDOM({process: proc, detectCursor: false});
+	term.attach();
 	const {document} = term;
 
 	const style = document.createElement("style");

@@ -10,6 +10,8 @@ npm install @b9g/termdom
 import {TermDOM} from "@b9g/termdom";
 
 const term = new TermDOM();
+// Take the terminal: nothing touches stdout before this call.
+term.attach();
 const {document} = term;
 
 // The document is a real DOM document.

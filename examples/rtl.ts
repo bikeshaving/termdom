@@ -13,6 +13,8 @@
 import {TermDOM} from "@b9g/termdom";
 
 const term = new TermDOM();
+
+term.attach();
 const {document} = term;
 
 const style = document.createElement("style");

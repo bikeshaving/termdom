@@ -58,7 +58,9 @@ document.body.innerHTML = `<section class="todoapp">
 		</footer>
 	</section>
 </section>`;
-document.querySelector("input.new-todo")?.dispatchEvent(new term.window.Event("noop"));
+document
+	.querySelector("input.new-todo")
+	?.dispatchEvent(new term.window.Event("noop"));
 await nextFrame(term);
 (document.querySelector(".new-todo") as HTMLElement)?.focus();
 await nextFrame(term);
@@ -95,7 +97,8 @@ for (let y = 0; y < ROWS; y++) {
 	for (let x = 0; x < COLS; x++) {
 		const cell = line.getCell(x);
 		const chars = cell?.getChars() || " ";
-		const fg = cell && !cell.isFgDefault() ? css(cell.getFgColor()) : DEFAULT_FG;
+		const fg =
+			cell && !cell.isFgDefault() ? css(cell.getFgColor()) : DEFAULT_FG;
 		const bold = !!cell?.isBold();
 		const underline = !!cell?.isUnderline();
 		if (cell && !cell.isBgDefault()) {

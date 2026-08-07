@@ -1,4 +1,3 @@
-#!/usr/bin/env bun
 // A commit-message composer: one <select>, one <input>, one <textarea> --
 // all three form widgets, each rendering through its UA-internal shadow
 // tree. Nothing here is a special mode: the select's label and ▾, the
@@ -21,6 +20,8 @@
 import {TermDOM} from "@b9g/termdom";
 
 const term = new TermDOM();
+
+term.attach();
 const {document} = term;
 
 const style = document.createElement("style");

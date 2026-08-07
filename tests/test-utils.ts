@@ -359,7 +359,13 @@ export class MockProcess extends EventEmitter implements ProcessLike {
  */
 export function nextFrame(dom: {
 	window: {requestAnimationFrame(cb: () => void): number};
+	attach?(): void;
 }): Promise<void> {
+	// attach() is the only door to the terminal; a test awaiting a frame is
+	// asking for one, so the harness makes the explicit call (idempotent).
+	// The attach.test.ts contract tests exercise the unattached state by not
+	// coming through here.
+	dom.attach?.();
 	return new Promise((resolve) =>
 		dom.window.requestAnimationFrame(() => resolve()),
 	);
