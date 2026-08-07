@@ -9,8 +9,8 @@ try {
 	// A runtime that objects still starts; it just recompiles.
 }
 
-export {TermDOM} from "./internal/termdom.js";
-export type {TermDOMOptions} from "./internal/termdom.js";
+export {TermDOM, renderANSI, print} from "./internal/termdom.js";
+export type {TermDOMOptions, RenderANSIOptions} from "./internal/termdom.js";
 export {transportFromProcess} from "./internal/terminalsession.js";
 export type {
 	TerminalTransport,

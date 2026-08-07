@@ -36,9 +36,9 @@ document.body.appendChild(box);
 ```
 
 `attach()` is the only call that takes the terminal — construction and DOM
-mutation are inert until it runs, and an app that only wants static output
-can skip it entirely: `term.print()` writes the document once to stdout as
-ordinary command output, and `term.renderToString()` returns the ANSI string.
+mutation are inert until it runs. A program that only wants static output
+needs no instance at all: `renderANSI(html)` returns the ANSI string, and
+`print(html)` appends it to stdout as ordinary command output.
 
 After that there is no render call, and that is not a convenience — it is the
 same contract a browser gives you. Mutations are observed and painted on the

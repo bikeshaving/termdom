@@ -47,18 +47,6 @@ whatever it holds. Idempotent. No other call writes to the terminal.
 Passing a transport rebinds the instance to it. Rebinding is only allowed
 before the first attach.
 
-### `term.renderToString(lineEnding?)`
-
-Returns the rendered document as an ANSI string: colors and line breaks
-only, no cursor controls or mode changes. Does not require `attach()`.
-`lineEnding` is `"\n"` (default) or `"\r\n"`.
-
-### `term.print()`
-
-Writes `renderToString()` to the transport once, as ordinary command
-output. Does not require `attach()`. Returns a promise that resolves when
-the output has reached the transport; await it before exiting.
-
 ### `term.dispose()`
 
 Reverses `attach()`: flushes the document into scrollback, restores every
@@ -101,6 +89,27 @@ interface TerminalTransport {
 - `sharesScreen: true` makes rendering anchor at the current cursor row
   (found with a DSR query) instead of row 0. When absent, the default
   process transport anchors and injected transports do not.
+
+## `renderANSI(html, options?)`
+
+Renders an HTML string to an ANSI string: colors and line breaks only, no
+cursor controls or mode changes. `<style>` elements in the fragment join
+the cascade.
+
+```ts
+import {renderANSI} from "@b9g/termdom";
+
+const ansi = renderANSI(`<div style="color:red">error</div>`, {cols: 80});
+```
+
+- `options.cols` — line width in cells. Defaults to the terminal's width,
+  then 80.
+
+## `print(html, options?)`
+
+`renderANSI(html, options)` appended to stdout as ordinary command output.
+Returns a promise that resolves when the bytes have flushed; await it
+before exiting.
 
 ## `transportFromProcess(proc?, options?)`
 

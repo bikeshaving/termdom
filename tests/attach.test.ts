@@ -6,7 +6,7 @@
  */
 import {test, expect} from "@b9g/libuild/test";
 import {MockProcess, nextFrame} from "./test-utils";
-import {TermDOM} from "../src/internal/termdom.js";
+import {TermDOM, renderANSI, print} from "../src/internal/termdom.js";
 
 function countWrites(terminal: MockProcess): {count(): number} {
 	let writes = 0;
@@ -76,35 +76,39 @@ test("requestFullscreen before attach() rejects and stays silent", async () => {
 	dom.dispose();
 });
 
-test("renderToString returns ANSI without attach or stdout", async () => {
-	const terminal = new MockProcess({cols: 40, rows: 8});
-	const writes = countWrites(terminal);
-	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.body.innerHTML = `<div style="color:red">static content</div>`;
-	const ansi = dom.renderToString();
+test("renderANSI is a pure HTML-to-ANSI transform", () => {
+	const ansi = renderANSI(`<div style="color:red">static content</div>`, {
+		cols: 40,
+	});
 	expect(ansi).toContain("static content");
 	expect(ansi).toContain("\x1b[38;2;255;0;0m");
 	// A document string, not a terminal session: no modes, no cursor control.
 	expect(ansi).not.toContain("\x1b[?");
 	expect(ansi).not.toContain("\x1b[2J");
-	expect(writes.count()).toBe(0);
-	dom.dispose();
+	// Styles in the fragment join the cascade.
+	expect(
+		renderANSI(`<style>p { color: #00ff00 }</style><p>green</p>`, {cols: 40}),
+	).toContain("\x1b[38;2;0;255;0m");
 });
 
-test("print() writes the document once, with no terminal takeover", async () => {
-	const terminal = new MockProcess({cols: 40, rows: 8});
-	const writes = countWrites(terminal);
-	const dom = new TermDOM({transport: terminal.transport});
-	dom.document.body.innerHTML = `<div>printed line</div>`;
-	dom.print();
-	// The write rides the transport's stream: one microtask to the sink, then
-	// the mock terminal ingests it.
-	await new Promise((r) => setTimeout(r, 20));
-	expect(writes.count()).toBe(1);
-	expect(terminal.getVisibleText()).toContain("printed line");
-	dom.dispose();
-	// dispose after a print still owes the terminal nothing.
-	expect(writes.count()).toBe(1);
+test("print() appends the rendered HTML to stdout once", async () => {
+	const written: string[] = [];
+	const original = process.stdout.write.bind(process.stdout);
+	(process.stdout as any).write = (chunk: any, cb?: any) => {
+		written.push(String(chunk));
+		if (typeof cb === "function") cb();
+		return true;
+	};
+	try {
+		await print(`<div>printed line</div>`, {cols: 40});
+	} finally {
+		(process.stdout as any).write = original;
+	}
+	expect(written).toHaveLength(1);
+	expect(written[0]).toContain("printed line");
+	// Ordinary command output: no takeover, no raw-mode CRLF.
+	expect(written[0]).not.toContain("\x1b[?");
+	expect(written[0]).not.toContain("\r\n");
 });
 
 test("a geometry read never strands the mutations it drained", async () => {

@@ -66,7 +66,10 @@ export interface TermDOMOptions {
 // index.ts does not re-export these symbols, so a consumer cannot name them.
 const kLayoutEngine = Symbol("layoutEngine");
 const kObserver = Symbol("observer");
-export {kLayoutEngine, kObserver};
+// The static-render entry renderANSI() reaches through; off the public API
+// like the test handles above.
+const kRenderStatic = Symbol("renderStatic");
+export {kLayoutEngine, kObserver, kRenderStatic};
 
 /** A text-ish input type (not checkbox/radio/hidden). */
 function isTextInputType(type: string): boolean {
@@ -2709,7 +2712,7 @@ export class TermDOM {
 		if (!this.#interactive) return;
 
 		const top = this.#viewport.screenTop;
-		const output = this.renderToString("\r\n");
+		const output = this[kRenderStatic]("\r\n");
 		if (!output) return;
 
 		// Back to the top of our region; every payout line then clears ITSELF
@@ -2726,14 +2729,12 @@ export class TermDOM {
 	}
 
 	/**
-	 * Render the current document to an ANSI string: colors and line breaks,
-	 * no cursor controls, no modes -- a document, not a terminal session.
-	 * The non-interactive half of the API: needs no attach(), touches no
-	 * stdout, and flushes pending mutations and layout first so the string
-	 * is exact. The interactive frame pipeline pairs with attach(); this
-	 * pairs with nothing.
+	 * The document as an ANSI string: colors and line breaks, no cursor
+	 * controls, no modes. Feeds the quit payout (CRLF: raw mode does not
+	 * translate bare newlines) and the renderANSI() module entry; not part
+	 * of the class's public surface.
 	 */
-	renderToString(lineEnding: "\n" | "\r\n" = "\n"): string {
+	[kRenderStatic](lineEnding: "\n" | "\r\n"): string {
 		this.#processPendingMutationsAndRender();
 		const contentHeight = this.document.body.scrollHeight;
 		if (contentHeight === 0) return "";
@@ -2744,24 +2745,6 @@ export class TermDOM {
 			},
 			lineEnding,
 		);
-	}
-
-	/**
-	 * Print the document to stdout once, as ordinary command output -- one
-	 * plain write, no raw mode, no takeover. console.log for a DOM: the API
-	 * for apps that render HTML and exit. CRLF only when a LIVE raw-mode
-	 * session owns the terminal (an attached instance printing mid-session);
-	 * cooked mode translates bare newlines itself.
-	 */
-	print(): Promise<void> {
-		const output = this.renderToString(
-			this.#attached && this.#interactive ? "\r\n" : "\n",
-		);
-		if (!output) return Promise.resolve();
-		// The write rides the transport's stream: resolve when it has landed,
-		// so print-then-exit works over any transport, not just a synchronous
-		// local stdout.
-		return this.#session.write(output);
 	}
 
 	/** Write to the transport and wait for it to be flushed. */
@@ -3163,4 +3146,54 @@ export class TermDOM {
 		)();
 		return flushed;
 	}
+}
+
+export interface RenderANSIOptions {
+	/** Line width in cells. Defaults to the terminal's, then 80. */
+	cols?: number;
+}
+
+/**
+ * Render an HTML string to an ANSI string: colors and line breaks, no
+ * cursor controls, no modes. `<style>` elements in the fragment join the
+ * cascade like any document's.
+ */
+export function renderANSI(
+	html: string,
+	options: RenderANSIOptions = {},
+): string {
+	const cols =
+		options.cols ??
+		((typeof process !== "undefined" && process.stdout?.columns) || 80);
+	const term = new TermDOM({
+		transport: {
+			cols,
+			rows: 24,
+			readable: new ReadableStream<string>({}, {highWaterMark: 0}),
+			writable: new WritableStream<string>({}),
+			closed: new Promise<void>(() => {}),
+			interactive: false,
+		},
+	});
+	try {
+		term.document.body.innerHTML = html;
+		return term[kRenderStatic]("\n");
+	} finally {
+		void term.dispose();
+	}
+}
+
+/** renderANSI() appended to stdout. Resolves when the bytes have flushed. */
+export function print(
+	html: string,
+	options: RenderANSIOptions = {},
+): Promise<void> {
+	const output = renderANSI(html, options);
+	if (!output) return Promise.resolve();
+	return new Promise<void>((resolve, reject) => {
+		process.stdout.write(output, (error) => {
+			if (error) reject(error);
+			else resolve();
+		});
+	});
 }
