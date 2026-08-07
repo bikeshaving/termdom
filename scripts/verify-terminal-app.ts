@@ -218,7 +218,7 @@ const scenarios: Scenario[] = [
 	},
 	{
 		name: "resize: the frame survives a narrow-and-back without duplicating itself",
-		command: "node examples/flexbox-demo.ts",
+		command: "node examples/flexbox.ts",
 		cols: 100,
 		run: async (win) => {
 			await win.resize(70, 30);
