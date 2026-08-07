@@ -57,6 +57,8 @@
     "support": "BUN_JSC_useFTLJIT=false bun scripts/support-matrix.ts",
     "test": "libuild test -p node -p bun",
     "typecheck": "tsc --noEmit",
+    "verify:tmux": "node scripts/verify-tmux.ts",
+    "verify:terminal": "node scripts/verify-terminal-app.ts",
     "prepublishOnly": "echo 'ERROR: Cannot publish from root directory. Use libuild publish instead.' && exit 1"
   },
   "dependencies": {

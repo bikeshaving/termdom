@@ -8,7 +8,16 @@ npm run typecheck   # tsc --noEmit
 npm run lint -- --fix
 npm run build       # libuild, into dist/
 node examples/hello-world.ts
+npm run verify:tmux      # real-terminal scenarios against tmux (private socket)
+npm run verify:terminal  # real-terminal scenarios against Terminal.app (local, opens windows)
 ```
+
+The unit suite renders into an xterm-headless mock; the two `verify:` harnesses
+drive the built package through real terminals — tmux for grid/reflow/scrollback
+semantics with SGR-level captures (CI-safe), Terminal.app for the support
+baseline itself (macOS only, needs the one-time Automation permission). The
+mock, tmux, and Terminal.app have each disagreed with the others before; a
+change to rendering, resize, or exit behavior should pass all three.
 
 Zero type errors, zero lint errors, zero test failures per commit.
 
