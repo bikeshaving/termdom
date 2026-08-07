@@ -13,7 +13,11 @@
  * What termdom guarantees is the CELL layout: every character in its correct
  * column. How joined and evenly spaced the result LOOKS depends on the
  * terminal font's presentation-form glyphs, which most monospace fonts take
- * from system fallback at uneven advance widths.
+ * from system fallback at uneven advance widths. Some emulators (Terminal.app)
+ * even lay a whole Arabic run out with those font advances and paint the REST
+ * OF THE ROW from where the run's pixels ended -- a bent border on an
+ * otherwise perfect grid. Both user-side fixes work: an emulator that clamps
+ * glyphs to their cells (kitty, Alacritty), or a monospaced Arabic font.
  */
 
 import {TermDOM} from "@b9g/termdom";
