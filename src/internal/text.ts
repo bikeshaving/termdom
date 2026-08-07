@@ -37,69 +37,88 @@ const COMBINING = /[\p{M}\p{Cf}]/u;
 
 /**
  * Every other LRU cache in the JavaScript ecosystem is insane.
+ *
+ * Two generations instead of per-hit reordering: a hit in the young
+ * generation costs one Map.get and moves nothing -- the delete+set recency
+ * shuffle showed up as whole percents of frame time at cell-cache rates.
+ * When the young generation fills, it becomes the old one and the previous
+ * old generation is dropped wholesale; anything still being asked for gets
+ * promoted young again on its next hit. Recency is approximate, the bound
+ * is exact: at most 2x the limit is ever held.
  */
 export class LRUCache<TKey, TValue> {
 	declare limit: number;
 	declare map: Map<TKey, TValue>;
+	declare old: Map<TKey, TValue>;
 
 	constructor(limit: number) {
 		if (limit <= 0) throw new TypeError("limit must be positive");
 		this.limit = limit;
 		this.map = new Map();
+		this.old = new Map();
 	}
 
 	get(key: TKey): TValue | undefined {
 		const val = this.map.get(key);
 		// One lookup answers most calls; the has() check only disambiguates a
 		// stored undefined from a miss.
-		if (val === undefined && !this.map.has(key)) return undefined;
-		// Refresh recency
-		this.map.delete(key);
-		this.map.set(key, val!);
-		return val;
+		if (val !== undefined || this.map.has(key)) return val;
+		if (this.old.has(key)) {
+			const promoted = this.old.get(key)!;
+			this.old.delete(key);
+			this.set(key, promoted);
+			return promoted;
+		}
+		return undefined;
 	}
 
 	set(key: TKey, val: TValue): void {
-		if (this.map.has(key)) {
-			this.map.delete(key); // refresh recency
-		} else if (this.map.size >= this.limit) {
-			// Evict oldest (first inserted)
-			const oldestKey = this.map.keys().next().value as TKey;
-			this.map.delete(oldestKey);
+		if (!this.map.has(key) && this.map.size >= this.limit) {
+			this.old = this.map;
+			this.map = new Map();
 		}
 		this.map.set(key, val);
 	}
 
 	has(key: TKey): boolean {
-		return this.map.has(key);
+		return this.map.has(key) || this.old.has(key);
 	}
 
 	delete(key: TKey): boolean {
-		return this.map.delete(key);
+		const young = this.map.delete(key);
+		const old = this.old.delete(key);
+		return young || old;
 	}
 
 	clear(): void {
 		this.map.clear();
+		this.old.clear();
 	}
 
 	get size(): number {
-		return this.map.size;
+		return this.map.size + this.old.size;
 	}
 
-	keys(): IterableIterator<TKey> {
-		return this.map.keys();
+	*keys(): IterableIterator<TKey> {
+		yield* this.map.keys();
+		for (const key of this.old.keys()) {
+			if (!this.map.has(key)) yield key;
+		}
 	}
 
-	values(): IterableIterator<TValue> {
-		return this.map.values();
+	*values(): IterableIterator<TValue> {
+		for (const [, value] of this) yield value;
 	}
 
-	entries(): IterableIterator<[TKey, TValue]> {
-		return this.map.entries();
+	*entries(): IterableIterator<[TKey, TValue]> {
+		yield* this.map.entries();
+		for (const entry of this.old.entries()) {
+			if (!this.map.has(entry[0])) yield entry;
+		}
 	}
 
 	[Symbol.iterator](): IterableIterator<[TKey, TValue]> {
-		return this.map[Symbol.iterator]();
+		return this.entries();
 	}
 }
 
