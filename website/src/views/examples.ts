@@ -6,9 +6,37 @@ import {Root} from "../components/root.js";
 const REPO = "https://github.com/bikeshaving/termdom/blob/main/examples";
 
 const EXAMPLES: Array<{file: string; shows: string}> = [
+	{file: "hello-world.ts", shows: "The smallest possible document."},
+	{
+		file: "todomvc.ts",
+		shows:
+			"TodoMVC on its own unmodified logic, rendered under Crank -- plain node runs it.",
+	},
+	{
+		file: "markdown.ts",
+		shows:
+			"A Markdown viewer (marked + Prism): flow mode when it fits, a pager when it doesn't.",
+	},
+	{
+		file: "chat.ts",
+		shows:
+			"A streaming LLM chat client: transcript, composer, tokens reflowing live.",
+	},
+	{
+		file: "password.ts",
+		shows: "A password strength meter: a masked input driving live checks.",
+	},
 	{
 		file: "tree.ts",
 		shows: "NERDTree-style file tree: navigation, lazy loading, camera-follow.",
+	},
+	{
+		file: "fuzzy-finder.ts",
+		shows: "An fzf-style picker: filtering, selection, live highlighting.",
+	},
+	{
+		file: "git-log.ts",
+		shows: "A scrolling git log: real repository data in a navigable list.",
 	},
 	{
 		file: "form.ts",
@@ -19,13 +47,7 @@ const EXAMPLES: Array<{file: string; shows: string}> = [
 		file: "commit-editor.ts",
 		shows: "A git-commit editor: input, textarea and select together.",
 	},
-	{
-		file: "todomvc.tsx",
-		shows:
-			"TodoMVC on its own unmodified markup and logic, rendered under Crank.",
-	},
 	{file: "tanstack-table.ts", shows: "TanStack Table driving a real <table>."},
-	{file: "timer.tsx", shows: "A Crank component rendered to the terminal."},
 	{
 		file: "animated.ts",
 		shows: "An animated frame that respects your shell history.",
@@ -36,7 +58,7 @@ const EXAMPLES: Array<{file: string; shows: string}> = [
 			"Hebrew and Arabic: visual reordering, direction: rtl, embedded Latin.",
 	},
 	{
-		file: "fullscreen-demo.ts",
+		file: "fullscreen.ts",
 		shows: "The Fullscreen API over the alternate screen.",
 	},
 	{
@@ -44,11 +66,9 @@ const EXAMPLES: Array<{file: string; shows: string}> = [
 		shows:
 			"The whole library behind an SSH server; every connection gets its own DOM.",
 	},
-	{file: "hello-world.ts", shows: "The smallest possible document."},
-	{file: "flexbox-demo.ts", shows: "Flex containers, wrapping and alignment."},
+	{file: "flexbox.ts", shows: "Flex containers, wrapping and alignment."},
 	{file: "borders.ts", shows: "Border styles, collapsing and box drawing."},
 	{file: "lists.ts", shows: "Markers, counters and nested list gutters."},
-	{file: "input-styles.ts", shows: "Styling the built-in form controls."},
 ];
 
 export default function Examples({url}: {url: string}) {
