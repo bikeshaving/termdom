@@ -56,7 +56,8 @@ document.body.innerHTML = widthCases
 			`<div><span id="w${i}" style="display:inline-block">${text}</span></div>`,
 	)
 	.join("");
-await new Promise((r) => term.window.requestAnimationFrame(() => r()));
+// No attach() and no frame await: this instance never touches the terminal,
+// and getBoundingClientRect flushes layout synchronously on its own.
 
 console.log("string width (via layout):");
 widthCases.forEach(([label, , cells], i) => {
