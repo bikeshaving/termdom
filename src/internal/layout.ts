@@ -2823,8 +2823,14 @@ export class LayoutEngine {
 	 */
 	invalidate(node: Node): void {
 		// Run membership may have moved (the invalidated node could be, or
-		// displace, a run head); drop every memoized head.
+		// displace, a run head); drop every enumerated container. Once for the
+		// whole subtree below: invalidation rearranges layout nodes, never the
+		// DOM or the cascade the enumeration reads.
 		this.#runHeadEpoch++;
+		this.#invalidateNode(node);
+	}
+
+	#invalidateNode(node: Node): void {
 		// Track this node for re-adding during calculateLayout
 		this.#invalidatedNodes.add(node);
 
@@ -2891,7 +2897,7 @@ export class LayoutEngine {
 		let child = walker.firstChild();
 
 		while (child) {
-			this.invalidate(child);
+			this.#invalidateNode(child);
 			child = walker.nextSibling();
 		}
 	}
