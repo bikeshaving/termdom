@@ -243,6 +243,23 @@ const kChildren = Symbol("children");
 const kCollectionCaches = Symbol("collection caches");
 const kHost = Symbol("host");
 const kRegisteredObservers = Symbol("registered observer list");
+const kShadowRoot = Symbol("shadow root");
+const kShadowMode = Symbol("shadow root mode");
+const kDelegatesFocus = Symbol("delegates focus");
+const kSlotAssignment = Symbol("slot assignment");
+const kClonable = Symbol("clonable");
+const kSerializable = Symbol("serializable");
+const kDeclarative = Symbol("declarative");
+const kAvailableToInternals = Symbol("available to element internals");
+const kSlotName = Symbol("slot name");
+const kSlottableName = Symbol("slottable name");
+const kAssignedSlot = Symbol("assigned slot");
+const kAssignedNodes = Symbol("assigned nodes");
+const kManualAssignment = Symbol("manually assigned nodes");
+const kManualSlot = Symbol("manual slot assignment");
+const kReactionQueue = Symbol("custom element reaction queue");
+const kPseudoElements = Symbol("user-agent pseudo-element slots");
+const kTemplateContent = Symbol("template content");
 
 /* ------------------------------------------------------------------ events */
 
@@ -857,9 +874,6 @@ function removeListener(listeners: Listener[], listener: Listener): void {
 /**
  * Retarget an object against another: walk out of the shadow trees the other
  * object cannot see into.
- *
- * Shadow trees are a later phase, so no root is a shadow root and an object
- * retargets to itself.
  */
 function retarget(
 	object: EventTarget | null,
@@ -877,12 +891,9 @@ function retarget(
 	}
 }
 
-/**
- * Whether a root is a shadow root. Shadow trees are a later phase; until one
- * exists, a node's root is the tree root and nothing is hidden behind a host.
- */
-function isShadowRoot(_root: Node): boolean {
-	return false;
+/** Whether a root is a shadow root: a fragment a host holds. */
+function isShadowRoot(root: Node): boolean {
+	return root instanceof ShadowRoot;
 }
 
 function appendToPath(
@@ -894,12 +905,15 @@ function appendToPath(
 ): void {
 	const inShadowTree =
 		invocationTarget instanceof Node && isShadowRoot(getRoot(invocationTarget));
+	const rootOfClosedTree =
+		invocationTarget instanceof ShadowRoot &&
+		invocationTarget[kShadowMode] === "closed";
 	state.path.push({
 		invocationTarget,
 		invocationTargetInShadowTree: inShadowTree,
 		shadowAdjustedTarget,
 		relatedTarget,
-		rootOfClosedTree: false,
+		rootOfClosedTree,
 		slotInClosedTree,
 	});
 }
@@ -925,16 +939,34 @@ function dispatch(target: EventTarget, event: Event): boolean {
 		let eventTarget = target;
 		const isActivationEvent = event[kIsMouseEvent] && event.type === "click";
 		appendToPath(state, eventTarget, eventTarget, relatedTarget, false);
+		// A slottable that is assigned reaches its slot next, and the slot's
+		// tree may be closed to the tree the event started in: the struct for
+		// the slot carries that, so composedPath can count the boundary.
+		let slottable: Node | null = isAssigned(eventTarget)
+			? (eventTarget as Node)
+			: null;
+		let slotInClosedTree = false;
 		if (isActivationEvent && hasActivationBehavior(eventTarget)) {
 			activationTarget = eventTarget;
 		}
 		let parent = eventTarget[kGetTheParent](event);
 		while (parent !== null) {
+			if (slottable !== null) {
+				slottable = null;
+				const slotRoot = getRoot(parent as Node);
+				if (
+					slotRoot instanceof ShadowRoot &&
+					slotRoot[kShadowMode] === "closed"
+				) {
+					slotInClosedTree = true;
+				}
+			}
+			if (isAssigned(parent)) slottable = parent as Node;
 			relatedTarget = retarget(state.relatedTarget, parent);
 			if (
 				parent instanceof Node &&
 				eventTarget instanceof Node &&
-				isInclusiveAncestor(getRoot(eventTarget), parent)
+				isShadowIncludingInclusiveAncestor(getRoot(eventTarget), parent)
 			) {
 				if (
 					isActivationEvent &&
@@ -944,7 +976,7 @@ function dispatch(target: EventTarget, event: Event): boolean {
 				) {
 					activationTarget = parent;
 				}
-				appendToPath(state, parent, null, relatedTarget, false);
+				appendToPath(state, parent, null, relatedTarget, slotInClosedTree);
 			} else if (parent === relatedTarget) {
 				parent = null;
 			} else {
@@ -956,9 +988,16 @@ function dispatch(target: EventTarget, event: Event): boolean {
 				) {
 					activationTarget = eventTarget;
 				}
-				appendToPath(state, parent, eventTarget, relatedTarget, false);
+				appendToPath(
+					state,
+					parent,
+					eventTarget,
+					relatedTarget,
+					slotInClosedTree,
+				);
 			}
 			if (parent !== null) parent = parent[kGetTheParent](event);
+			slotInClosedTree = false;
 		}
 		for (let index = state.path.length - 1; index >= 0; index--) {
 			const struct = state.path[index];
@@ -1236,8 +1275,9 @@ export class Node extends EventTarget {
 	}
 
 	/**
-	 * The target a dispatch reaches next: a node's assigned slot if it has
-	 * one, and otherwise its parent. Slot assignment is a later phase.
+	 * The target a dispatch reaches next: a node's parent. A slottable that is
+	 * assigned overrides this to reach its slot, which is where the composed
+	 * tree continues.
 	 */
 	override [kGetTheParent](_event: Event): EventTarget | null {
 		return this[kParent];
@@ -1256,7 +1296,7 @@ export class Node extends EventTarget {
 	}
 
 	get isConnected(): boolean {
-		return getRoot(this).nodeType === DOCUMENT_NODE;
+		return shadowIncludingRoot(this).nodeType === DOCUMENT_NODE;
 	}
 
 	get ownerDocument(): Document | null {
@@ -1266,8 +1306,11 @@ export class Node extends EventTarget {
 	}
 
 	getRootNode(options?: {composed?: boolean}): Node {
-		void options;
-		return getRoot(this);
+		const init = toDictionary<{composed?: boolean}>(
+			options ?? {},
+			"A GetRootNodeOptions",
+		);
+		return init.composed ? shadowIncludingRoot(this) : getRoot(this);
 	}
 
 	get parentNode(): Node | null {
@@ -1365,6 +1408,9 @@ export class Node extends EventTarget {
 	}
 
 	cloneNode(deep = false): Node {
+		if (isShadowRoot(this)) {
+			throw domError("NotSupportedError", "A shadow root cannot be cloned");
+		}
 		return cloneNode(this, undefined, Boolean(deep));
 	}
 
@@ -1582,6 +1628,49 @@ function isHostIncludingInclusiveAncestor(ancestor: Node, node: Node): boolean {
 	return false;
 }
 
+/**
+ * A node's shadow-including root: the root, stepping from a shadow root to its
+ * host and on up, so a node inside a shadow tree in a document roots at that
+ * document.
+ */
+function shadowIncludingRoot(node: Node): Node {
+	const root = getRoot(node);
+	return isShadowRoot(root)
+		? shadowIncludingRoot((root as ShadowRoot)[kHost] as Element)
+		: root;
+}
+
+/** Whether ancestor is node, an ancestor of node, or a host above it. */
+function isShadowIncludingInclusiveAncestor(
+	ancestor: Node,
+	node: Node,
+): boolean {
+	if (isInclusiveAncestor(ancestor, node)) return true;
+	const root = getRoot(node);
+	if (isShadowRoot(root)) {
+		return isShadowIncludingInclusiveAncestor(
+			ancestor,
+			(root as ShadowRoot)[kHost] as Element,
+		);
+	}
+	return false;
+}
+
+/**
+ * Every shadow-including inclusive descendant, in shadow-including tree order:
+ * a node, then its shadow root's tree, then its children's.
+ */
+function* shadowIncludingInclusiveDescendants(node: Node): Generator<Node> {
+	yield node;
+	if (node.nodeType === ELEMENT_NODE) {
+		const shadow = (node as Element)[kShadowRoot];
+		if (shadow !== null) yield* shadowIncludingInclusiveDescendants(shadow);
+	}
+	for (let child = node[kFirstChild]; child !== null; child = child[kNext]) {
+		yield* shadowIncludingInclusiveDescendants(child);
+	}
+}
+
 /** The next node in tree order, stopping once the walk leaves the root. */
 function nextInTree(node: Node, root: Node): Node | null {
 	if (node[kFirstChild] !== null) return node[kFirstChild];
@@ -1777,10 +1866,38 @@ function insertNode(
 	for (const inserted of nodes) {
 		adoptNode(inserted, document);
 		linkChild(inserted, parent, child);
-		let current: Node | null = inserted;
-		while (current !== null) {
-			current[kInsertionSteps]();
-			current = nextInTree(current, inserted);
+		const shadow =
+			parent.nodeType === ELEMENT_NODE
+				? (parent as Element)[kShadowRoot]
+				: null;
+		if (shadow !== null) {
+			if (shadow[kSlotAssignment] === "named") {
+				if (isSlottable(inserted)) assignASlot(inserted as Slottable);
+			} else {
+				// A manual assignment names nodes rather than finding them, and
+				// only a node the host still has counts: the host's child list
+				// changing is what makes an assignment appear or disappear.
+				assignSlottablesForTree(shadow);
+			}
+		}
+		if (
+			isShadowRoot(getRoot(parent)) &&
+			parent instanceof HTMLSlotElement &&
+			parent[kAssignedNodes].length === 0
+		) {
+			signalASlotChange(parent);
+		}
+		assignSlottablesForTree(getRoot(inserted));
+		for (const descendant of shadowIncludingInclusiveDescendants(inserted)) {
+			descendant[kInsertionSteps]();
+			if (!descendant.isConnected) continue;
+			if (descendant.nodeType !== ELEMENT_NODE) continue;
+			const element = descendant as Element;
+			if (element[kCustomState] === "custom") {
+				enqueueCallbackReaction(element, "connectedCallback", []);
+			} else {
+				tryToUpgrade(element);
+			}
 		}
 	}
 	bumpVersion();
@@ -1991,10 +2108,40 @@ function removeNode(node: Node, suppressObservers = false): void {
 	const oldPreviousSibling = node[kPrevious];
 	const oldNextSibling = node[kNext];
 	unlinkChild(node);
-	let current: Node | null = node;
-	while (current !== null) {
-		current[kRemovingSteps](parent);
-		current = nextInTree(current, node);
+	const assignedSlot = isSlottable(node)
+		? (node as Slottable)[kAssignedSlot]
+		: null;
+	if (assignedSlot !== null) assignSlottables(assignedSlot);
+	const hostShadow =
+		parent.nodeType === ELEMENT_NODE ? (parent as Element)[kShadowRoot] : null;
+	if (hostShadow !== null && hostShadow[kSlotAssignment] === "manual") {
+		assignSlottablesForTree(hostShadow);
+	}
+	if (
+		isShadowRoot(getRoot(parent)) &&
+		parent instanceof HTMLSlotElement &&
+		parent[kAssignedNodes].length === 0
+	) {
+		signalASlotChange(parent);
+	}
+	if (hasInclusiveDescendantSlot(node)) {
+		assignSlottablesForTree(getRoot(parent));
+		assignSlottablesForTree(node);
+	}
+	const parentWasConnected = parent.isConnected;
+	for (const descendant of shadowIncludingInclusiveDescendants(node)) {
+		descendant[kRemovingSteps](parent);
+		if (
+			parentWasConnected &&
+			descendant.nodeType === ELEMENT_NODE &&
+			(descendant as Element)[kCustomState] === "custom"
+		) {
+			enqueueCallbackReaction(
+				descendant as Element,
+				"disconnectedCallback",
+				[],
+			);
+		}
 	}
 	bumpVersion();
 	addTransientObservers(node, parent);
@@ -2016,7 +2163,7 @@ function adoptNode(node: Node, document: Document): void {
 	const oldDocument = node[kDocument];
 	if (node[kParent] !== null) removeNode(node);
 	if (oldDocument === document) return;
-	for (const descendant of inclusiveDescendants(node)) {
+	for (const descendant of shadowIncludingInclusiveDescendants(node)) {
 		descendant[kDocument] = document;
 		if (descendant.nodeType === ELEMENT_NODE) {
 			for (const attr of (descendant as Element)[kAttributeList]) {
@@ -2024,7 +2171,16 @@ function adoptNode(node: Node, document: Document): void {
 			}
 		}
 	}
-	for (const descendant of inclusiveDescendants(node)) {
+	for (const descendant of shadowIncludingInclusiveDescendants(node)) {
+		if (
+			descendant.nodeType === ELEMENT_NODE &&
+			(descendant as Element)[kCustomState] === "custom"
+		) {
+			enqueueCallbackReaction(descendant as Element, "adoptedCallback", [
+				oldDocument,
+				document,
+			]);
+		}
 		descendant[kAdoptingSteps](oldDocument);
 	}
 }
@@ -2111,7 +2267,12 @@ function notifyMutationObservers(): void {
 	mutationObserverMicrotaskQueued = false;
 	const notifySet = [...pendingMutationObservers];
 	pendingMutationObservers.clear();
+	const signalSet = signalSlots.splice(0, signalSlots.length);
 	for (const observer of notifySet) observer[kNotifyObserver]();
+	for (const slot of signalSet) {
+		const event = new Event("slotchange", {bubbles: true});
+		dispatch(slot, event);
+	}
 }
 
 function registeredObserverList(node: Node): RegisteredObserver[] {
@@ -3212,9 +3373,21 @@ function queueCharacterDataMutationRecord(
 }
 
 export class Text extends CharacterData {
+	[kAssignedSlot]: HTMLSlotElement | null = null;
+	[kManualSlot]: HTMLSlotElement | null = null;
+
 	constructor(data = "") {
 		super(data === null ? "null" : String(data));
 		this[kDocument] = currentDocument();
+	}
+
+	/** A slottable that is assigned reaches its slot before its parent. */
+	override [kGetTheParent](_event: Event): EventTarget | null {
+		return this[kAssignedSlot] ?? this[kParent];
+	}
+
+	get assignedSlot(): HTMLSlotElement | null {
+		return findASlot(this, true);
 	}
 
 	override get nodeType(): number {
@@ -3826,61 +3999,49 @@ const kAttributesMap = Symbol("attributes");
 type CustomElementState =
 	| "uncustomized"
 	| "undefined"
+	| "failed"
 	| "custom"
 	| "precustomized";
 
 /**
- * What the tree knows about a kind of element.
+ * The interface an element name is built through.
  *
- * Every element -- a div as much as a would-be custom element -- is created by
- * looking one of these up, so the machinery a definition needs (a constructor,
- * an observed-attribute set, lifecycle reactions) is the same machinery the
- * built-ins already run through. Nothing about it is on the public surface.
+ * A name the DOM Standard gives behavior of its own -- slot, and the template
+ * whose content fragment the parser fills -- is created through the class that
+ * carries that behavior; every other name lands on one of the four namespace
+ * interfaces. An author's definitions live in a CustomElementRegistry, which
+ * is a separate table with a separate lifetime.
  */
-interface ElementDefinition {
-	namespace: string | null;
-	localName: string;
-	is: string | null;
-	constructor: new () => Element;
-	observedAttributes: Set<string>;
-	connectedCallback?: (element: Element) => void;
-	disconnectedCallback?: (element: Element) => void;
-	adoptedCallback?: (element: Element, from: Document, to: Document) => void;
-	attributeChangedCallback?: (
-		element: Element,
-		localName: string,
-		oldValue: string | null,
-		value: string | null,
-		namespace: string | null,
-	) => void;
-	custom: boolean;
-}
-
-/** The registry a document looks an element definition up in. */
 class ElementRegistry {
-	#byName = new Map<string, ElementDefinition>();
+	#byName = new Map<string, new () => Element>();
 
-	define(definition: ElementDefinition): void {
-		this.#byName.set(
-			`${definition.namespace}|${definition.localName}|${definition.is ?? ""}`,
-			definition,
-		);
+	define(
+		namespace: string | null,
+		localName: string,
+		constructor: new () => Element,
+	): void {
+		this.#byName.set(`${namespace}|${localName}`, constructor);
 	}
 
 	lookup(
 		namespace: string | null,
 		localName: string,
-		is: string | null,
-	): ElementDefinition | null {
-		return (
-			this.#byName.get(`${namespace}|${localName}|${is ?? ""}`) ??
-			this.#byName.get(`${namespace}|${localName}|`) ??
-			null
-		);
+	): (new () => Element) | null {
+		return this.#byName.get(`${namespace}|${localName}`) ?? null;
 	}
 }
 
 const builtinRegistry = new ElementRegistry();
+
+/**
+ * Whether the tree is building an element itself.
+ *
+ * The HTML element constructor is an author-facing algorithm: it asks which
+ * custom element definition `new.target` names and throws when there is none.
+ * The tree's own creation path needs the same classes with none of that, and
+ * this flag is how the constructor tells the two apart.
+ */
+let internalConstruction = false;
 
 /**
  * The HTML elements the HTML Standard gives no interface of their own: they
@@ -4038,15 +4199,26 @@ export class Element extends Node {
 	[kLocalName] = "";
 	[kAttributeList]: Attr[] = [];
 	[kCustomState]: CustomElementState = "uncustomized";
-	[kDefinition]: ElementDefinition | null = null;
+	[kDefinition]: CustomElementDefinition | null = null;
 	[kIsValue]: string | null = null;
 	[kClassList]: DOMTokenList | null = null;
 	[kAttributesMap]: NamedNodeMap | null = null;
 	[kChildren]: HTMLCollection | null = null;
+	[kShadowRoot]: ShadowRoot | null = null;
+	[kSlottableName] = "";
+	[kAssignedSlot]: HTMLSlotElement | null = null;
+	[kManualSlot]: HTMLSlotElement | null = null;
+	[kReactionQueue]: Reaction[] | null = null;
+	[kPseudoElements]: Map<string, Element> | null = null;
 
 	constructor() {
 		super();
 		this[kDocument] = currentDocument();
+	}
+
+	/** A slottable that is assigned reaches its slot before its parent. */
+	override [kGetTheParent](_event: Event): EventTarget | null {
+		return this[kAssignedSlot] ?? this[kParent];
 	}
 
 	override get nodeType(): number {
@@ -4119,6 +4291,40 @@ export class Element extends Node {
 
 	set slot(value: string) {
 		this.setAttribute("slot", String(value));
+	}
+
+	get assignedSlot(): HTMLSlotElement | null {
+		return findASlot(this, true);
+	}
+
+	attachShadow(init: ShadowRootInit): ShadowRoot {
+		const options = toDictionary<ShadowRootInit>(init, "A ShadowRootInit");
+		const mode = String(options.mode);
+		if (mode !== "open" && mode !== "closed") {
+			throw new TypeError(`${mode} is not a shadow root mode`);
+		}
+		const slotAssignment =
+			options.slotAssignment === undefined
+				? "named"
+				: String(options.slotAssignment);
+		if (slotAssignment !== "named" && slotAssignment !== "manual") {
+			throw new TypeError(`${slotAssignment} is not a slot assignment mode`);
+		}
+		attachShadowRoot(
+			this,
+			mode,
+			Boolean(options.clonable),
+			Boolean(options.serializable),
+			Boolean(options.delegatesFocus),
+			slotAssignment,
+		);
+		return this[kShadowRoot] as ShadowRoot;
+	}
+
+	get shadowRoot(): ShadowRoot | null {
+		const shadow = this[kShadowRoot];
+		if (shadow === null || shadow[kShadowMode] !== "open") return null;
+		return shadow;
 	}
 
 	get attributes(): NamedNodeMap {
@@ -4308,11 +4514,31 @@ export class Element extends Node {
 	}
 
 	get innerHTML(): string {
-		return serializeFragment(this);
+		return serializeFragment(this, false);
 	}
 
 	set innerHTML(value: string) {
 		const fragment = parseFragmentHTML(String(value ?? ""), this);
+		replaceAll(fragment, this);
+	}
+
+	getHTML(options?: {
+		serializableShadowRoots?: boolean;
+		shadowRoots?: ShadowRoot[];
+	}): string {
+		const init = toDictionary<{
+			serializableShadowRoots?: boolean;
+			shadowRoots?: ShadowRoot[];
+		}>(options ?? {}, "A GetHTMLOptions");
+		return serializeFragment(
+			this,
+			Boolean(init.serializableShadowRoots),
+			init.shadowRoots ?? [],
+		);
+	}
+
+	setHTMLUnsafe(html: string): void {
+		const fragment = parseFragmentHTML(String(html ?? ""), this, true);
 		replaceAll(fragment, this);
 	}
 
@@ -4404,30 +4630,12 @@ export class Element extends Node {
 		if (root.nodeType === DOCUMENT_NODE) {
 			addToIdMap(root as Document, this);
 		}
-		const definition = this[kDefinition];
-		if (definition !== null && definition.connectedCallback !== undefined) {
-			enqueueReaction(() => definition.connectedCallback?.(this));
-		}
 	}
 
 	override [kRemovingSteps](oldParent: Node): void {
 		const root = getRoot(oldParent);
 		if (root.nodeType === DOCUMENT_NODE) {
 			removeFromIdMap(root as Document, this);
-		}
-		const definition = this[kDefinition];
-		if (definition !== null && definition.disconnectedCallback !== undefined) {
-			enqueueReaction(() => definition.disconnectedCallback?.(this));
-		}
-	}
-
-	override [kAdoptingSteps](oldDocument: Document): void {
-		const definition = this[kDefinition];
-		if (definition !== null && definition.adoptedCallback !== undefined) {
-			const to = this[kDocument];
-			enqueueReaction(() =>
-				definition.adoptedCallback?.(this, oldDocument, to),
-			);
 		}
 	}
 
@@ -4445,21 +4653,23 @@ export class Element extends Node {
 				if (value !== null && value !== "") addIdEntry(document, value, this);
 			}
 		}
-		const definition = this[kDefinition];
+		if (namespace === null && localName === "slot") {
+			updateSlottableName(this, oldValue, value);
+		}
 		if (
-			definition !== null &&
-			definition.attributeChangedCallback !== undefined &&
-			definition.observedAttributes.has(localName)
+			namespace === null &&
+			localName === "name" &&
+			this instanceof HTMLSlotElement
 		) {
-			enqueueReaction(() =>
-				definition.attributeChangedCallback?.(
-					this,
-					localName,
-					oldValue,
-					value,
-					namespace,
-				),
-			);
+			updateSlotName(this, oldValue, value);
+		}
+		if (this[kCustomState] === "custom") {
+			enqueueCallbackReaction(this, "attributeChangedCallback", [
+				localName,
+				oldValue,
+				value,
+				namespace,
+			]);
 		}
 	}
 
@@ -4490,7 +4700,62 @@ Object.defineProperty(Element.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-export class HTMLElement extends Element {}
+/**
+ * The HTML element constructor.
+ *
+ * `new.target` is the whole mechanism: an author's class reaches this through
+ * `super()`, and what it gets back depends on why it is running. Called while
+ * an upgrade is in flight, it hands back the element already in the tree --
+ * the construction stack's last entry -- so the author's constructor decorates
+ * the node the parser built. Called on its own, it builds a fresh element with
+ * the author's prototype. Either way the element is this class's, so an author
+ * never sees a second object.
+ *
+ * The tree's own creation path does not come through here at all: it needs an
+ * HTMLElement for every name HTML knows, and this constructor throws for a
+ * new.target it cannot find a definition for.
+ */
+export class HTMLElement extends Element {
+	constructor() {
+		super();
+		if (internalConstruction) return;
+		const target = new.target as unknown as CustomElementConstructor;
+		if (target === (HTMLElement as unknown as CustomElementConstructor)) {
+			throw new TypeError("Illegal constructor");
+		}
+		const definition = globalCustomElements[kDefinitionFor](target);
+		if (definition === null) {
+			throw new TypeError("This constructor is not a custom element's");
+		}
+		if (definition.localName !== definition.name) {
+			throw new TypeError(
+				"A customized built-in element is not implemented here",
+			);
+		}
+		const stack = definition.constructionStack;
+		if (stack.length === 0) {
+			this[kDocument] = currentDocument();
+			this[kNamespace] = HTML_NAMESPACE;
+			this[kPrefix] = null;
+			this[kLocalName] = definition.localName;
+			this[kCustomState] = "custom";
+			this[kDefinition] = definition;
+			this[kIsValue] = null;
+			return;
+		}
+		const element = stack[stack.length - 1];
+		if (element === alreadyConstructed) {
+			throw domError(
+				"InvalidStateError",
+				"That custom element is already being constructed",
+			);
+		}
+		stack[stack.length - 1] = alreadyConstructed;
+		Object.setPrototypeOf(element, target.prototype as object);
+		// eslint-disable-next-line no-constructor-return
+		return element as HTMLElement;
+	}
+}
 
 Object.defineProperty(HTMLElement.prototype, Symbol.toStringTag, {
 	value: "HTMLElement",
@@ -4536,66 +4801,162 @@ function setAttributeValue(
 	changeAttribute(attribute, value);
 }
 
-/**
- * A custom element reaction.
- *
- * The reaction queue and the backup element queue belong to the event loop,
- * which is a later phase; a reaction here runs where the spec enqueues it.
- */
-function enqueueReaction(reaction: () => void): void {
-	try {
-		reaction();
-	} catch (error) {
-		reportError(error);
+/** The interface a name and a namespace are built through. */
+function elementInterface(
+	namespace: string | null,
+	localName: string,
+): new () => Element {
+	const builtin = builtinRegistry.lookup(namespace, localName);
+	if (builtin !== null) return builtin;
+	if (namespace === HTML_NAMESPACE) {
+		return HTML_KNOWN_NAMES.has(localName) ||
+			HTML_ELEMENT_NAMES.has(localName) ||
+			isValidCustomElementName(localName)
+			? HTMLElement
+			: HTMLUnknownElement;
 	}
+	if (namespace === SVG_NAMESPACE) return SVGElement;
+	if (namespace === MATHML_NAMESPACE) return MathMLElement;
+	return Element;
 }
 
-/** The spec's "create an element" algorithm. */
-function createElementInternal(
+/** Build an element of an interface without running an author's constructor. */
+function buildElement(
 	document: Document,
+	constructor: new () => Element,
 	localName: string,
 	namespace: string | null,
-	prefix: string | null = null,
-	is: string | null = null,
+	prefix: string | null,
+	is: string | null,
 ): Element {
-	const definition = builtinRegistry.lookup(namespace, localName, is);
-	let constructor: new () => Element;
-	if (definition !== null) {
-		constructor = definition.constructor;
-	} else if (namespace === HTML_NAMESPACE) {
-		constructor =
-			HTML_KNOWN_NAMES.has(localName) || HTML_ELEMENT_NAMES.has(localName)
-				? HTMLElement
-				: isValidCustomElementName(localName)
-					? HTMLElement
-					: HTMLUnknownElement;
-	} else if (namespace === SVG_NAMESPACE) {
-		constructor = SVGElement;
-	} else if (namespace === MATHML_NAMESPACE) {
-		constructor = MathMLElement;
-	} else {
-		constructor = Element;
-	}
-	const previous = currentDocumentForConstruction;
+	const previousDocument = currentDocumentForConstruction;
+	const previousInternal = internalConstruction;
 	currentDocumentForConstruction = document;
+	internalConstruction = true;
 	let element: Element;
 	try {
 		element = new constructor();
 	} finally {
-		currentDocumentForConstruction = previous;
+		currentDocumentForConstruction = previousDocument;
+		internalConstruction = previousInternal;
 	}
 	element[kDocument] = document;
 	element[kNamespace] = namespace;
 	element[kPrefix] = prefix;
 	element[kLocalName] = localName;
 	element[kIsValue] = is;
-	element[kDefinition] = definition;
+	return element;
+}
+
+/**
+ * The spec's "create an element" algorithm.
+ *
+ * With the synchronous flag set -- createElement and its kin -- an author's
+ * constructor runs here and its result is checked to be a bare element of the
+ * right name. Without it -- the parser -- the element is created undefined and
+ * an upgrade reaction is enqueued, so the parser never re-enters script.
+ */
+function createElementInternal(
+	document: Document,
+	localName: string,
+	namespace: string | null,
+	prefix: string | null = null,
+	is: string | null = null,
+	synchronous = true,
+): Element {
+	const definition = lookUpCustomElementDefinition(namespace, localName, is);
+	if (definition !== null && definition.name !== definition.localName) {
+		throw domError(
+			"NotSupportedError",
+			"A customized built-in element is not implemented here",
+		);
+	}
+	if (definition !== null) {
+		if (!synchronous) {
+			const element = buildElement(
+				document,
+				elementInterface(namespace, localName),
+				localName,
+				namespace,
+				prefix,
+				is,
+			);
+			element[kCustomState] = "undefined";
+			enqueueUpgradeReaction(element, definition);
+			return element;
+		}
+		let result: Element;
+		try {
+			result = constructCustomElement(definition);
+			if (result[kCustomState] !== "custom" || result[kDefinition] === null) {
+				throw new TypeError("That constructor did not build a custom element");
+			}
+			if (result[kAttributeList].length > 0) {
+				throw domError(
+					"NotSupportedError",
+					"A custom element constructor may not set attributes",
+				);
+			}
+			if (result[kFirstChild] !== null) {
+				throw domError(
+					"NotSupportedError",
+					"A custom element constructor may not append children",
+				);
+			}
+			if (result[kParent] !== null) {
+				throw domError(
+					"NotSupportedError",
+					"A custom element constructor may not insert the element",
+				);
+			}
+			if (result[kDocument] !== document) {
+				throw domError(
+					"NotSupportedError",
+					"A custom element constructor may not change the node document",
+				);
+			}
+			if (result[kNamespace] !== HTML_NAMESPACE) {
+				throw domError(
+					"NotSupportedError",
+					"A custom element constructor may not change the namespace",
+				);
+			}
+			if (result[kLocalName] !== localName) {
+				throw domError(
+					"NotSupportedError",
+					"A custom element constructor may not change the local name",
+				);
+			}
+		} catch (error) {
+			reportError(error);
+			const failed = buildElement(
+				document,
+				elementInterface(namespace, localName),
+				localName,
+				namespace,
+				prefix,
+				null,
+			);
+			failed[kCustomState] = "failed";
+			return failed;
+		}
+		result[kPrefix] = prefix;
+		result[kIsValue] = null;
+		return result;
+	}
+	const element = buildElement(
+		document,
+		elementInterface(namespace, localName),
+		localName,
+		namespace,
+		prefix,
+		is,
+	);
 	element[kCustomState] =
-		definition !== null && definition.custom
-			? "custom"
-			: namespace === HTML_NAMESPACE && isValidCustomElementName(localName)
-				? "undefined"
-				: "uncustomized";
+		namespace === HTML_NAMESPACE &&
+		(isValidCustomElementName(localName) || is !== null)
+			? "undefined"
+			: "uncustomized";
 	return element;
 }
 
@@ -4616,6 +4977,1118 @@ function isValidCustomElementName(name: string): boolean {
 	return CUSTOM_NAME_RE.test(name) && !RESERVED_CUSTOM_NAMES.has(name);
 }
 
+/* --------------------------------------------------- custom element reactions */
+
+const kDefinitionFor = Symbol("the definition a constructor defines");
+const kLookUp = Symbol("look up a custom element definition");
+
+/** The marker an entry in a construction stack becomes once super() ran. */
+const alreadyConstructed = Symbol("already constructed");
+
+type CustomElementConstructor = new () => Element;
+
+interface CustomElementDefinition {
+	name: string;
+	localName: string;
+	constructor: CustomElementConstructor;
+	observedAttributes: Set<string>;
+	lifecycleCallbacks: Map<string, ((...args: unknown[]) => void) | null>;
+	constructionStack: Array<Element | typeof alreadyConstructed>;
+	formAssociated: boolean;
+	disableInternals: boolean;
+	disableShadow: boolean;
+}
+
+type Reaction =
+	| {upgrade: CustomElementDefinition}
+	| {callback: (...args: unknown[]) => void; args: unknown[]};
+
+/**
+ * The custom element reactions stack.
+ *
+ * Author code must see a lifecycle callback after the mutation that caused it
+ * has finished, never in the middle of one: a queue is pushed when an API the
+ * IDL marks [CEReactions] is entered and drained when it returns, so a script
+ * that appends a subtree gets one connectedCallback per element, in tree
+ * order, after the whole subtree is in place.
+ */
+const reactionsStack: Element[][] = [];
+
+/**
+ * Where a reaction goes when nothing on the stack claims it -- a mutation the
+ * tree makes on its own behalf. The queue drains on a microtask, and the flag
+ * keeps a reaction enqueued by that drain from starting a second one.
+ */
+const backupElementQueue: Element[] = [];
+let processingBackupElementQueue = false;
+
+function enqueueOnAppropriateElementQueue(element: Element): void {
+	if (reactionsStack.length === 0) {
+		backupElementQueue.push(element);
+		if (processingBackupElementQueue) return;
+		processingBackupElementQueue = true;
+		queueMicrotask(() => {
+			invokeReactions(backupElementQueue);
+			processingBackupElementQueue = false;
+		});
+		return;
+	}
+	reactionsStack[reactionsStack.length - 1].push(element);
+}
+
+function elementReactionQueue(element: Element): Reaction[] {
+	let queue = element[kReactionQueue];
+	if (queue === null) {
+		queue = [];
+		element[kReactionQueue] = queue;
+	}
+	return queue;
+}
+
+function enqueueCallbackReaction(
+	element: Element,
+	callbackName: string,
+	args: unknown[],
+): void {
+	const definition = element[kDefinition];
+	if (definition === null) return;
+	const callback = definition.lifecycleCallbacks.get(callbackName) ?? null;
+	if (callback === null) return;
+	if (
+		callbackName === "attributeChangedCallback" &&
+		!definition.observedAttributes.has(args[0] as string)
+	) {
+		return;
+	}
+	elementReactionQueue(element).push({callback, args});
+	enqueueOnAppropriateElementQueue(element);
+}
+
+function enqueueUpgradeReaction(
+	element: Element,
+	definition: CustomElementDefinition,
+): void {
+	elementReactionQueue(element).push({upgrade: definition});
+	enqueueOnAppropriateElementQueue(element);
+}
+
+/** Run every reaction every element in a queue has waiting. */
+function invokeReactions(queue: Element[]): void {
+	while (queue.length > 0) {
+		const element = queue.shift() as Element;
+		const reactions = element[kReactionQueue];
+		if (reactions === null) continue;
+		while (reactions.length > 0) {
+			const reaction = reactions.shift() as Reaction;
+			try {
+				if ("upgrade" in reaction) {
+					upgradeElement(element, reaction.upgrade);
+				} else {
+					reaction.callback.apply(element, reaction.args);
+				}
+			} catch (error) {
+				reportError(error);
+			}
+		}
+	}
+}
+
+/** The steps [CEReactions] adds around an operation. */
+function withReactions<T>(steps: () => T): T {
+	reactionsStack.push([]);
+	try {
+		return steps();
+	} finally {
+		invokeReactions(reactionsStack.pop() as Element[]);
+	}
+}
+
+/**
+ * Wrap the members the IDL marks [CEReactions] so that each is a reactions
+ * boundary. A getter is never one -- the extended attribute cannot appear on a
+ * readonly attribute -- so only values and setters are wrapped.
+ */
+function ceReactions(prototype: object, names: string[]): void {
+	for (const name of names) {
+		const descriptor = Object.getOwnPropertyDescriptor(prototype, name);
+		if (descriptor === undefined) continue;
+		if (typeof descriptor.value === "function") {
+			descriptor.value = wrapWithReactions(
+				descriptor.value as (...args: unknown[]) => unknown,
+			);
+		} else if (typeof descriptor.set === "function") {
+			descriptor.set = wrapWithReactions(descriptor.set) as (
+				value: unknown,
+			) => void;
+		} else {
+			continue;
+		}
+		Object.defineProperty(prototype, name, descriptor);
+	}
+}
+
+function wrapWithReactions(
+	steps: (...args: unknown[]) => unknown,
+): (...args: unknown[]) => unknown {
+	function wrapper(this: unknown, ...args: unknown[]): unknown {
+		return withReactions(() => steps.apply(this, args));
+	}
+	Object.defineProperty(wrapper, "length", {
+		value: steps.length,
+		configurable: true,
+	});
+	Object.defineProperty(wrapper, "name", {
+		value: steps.name,
+		configurable: true,
+	});
+	return wrapper;
+}
+
+/* ---------------------------------------------------- custom element registry */
+
+function isConstructor(value: unknown): boolean {
+	if (typeof value !== "function") return false;
+	try {
+		Reflect.construct(function () {}, [], value as new () => unknown);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/** Convert a value to sequence<DOMString>, as the IDL binding would. */
+function toStringSequenceStrict(value: unknown, what: string): string[] {
+	if (value === null || typeof value !== "object") {
+		if (typeof value !== "string") throw new TypeError(`${what} is not a list`);
+	}
+	const iterator = (value as Iterable<unknown>)[Symbol.iterator];
+	if (typeof iterator !== "function") {
+		throw new TypeError(`${what} is not a list`);
+	}
+	const strings: string[] = [];
+	for (const entry of value as Iterable<unknown>) strings.push(String(entry));
+	return strings;
+}
+
+function toCallback(
+	value: unknown,
+	name: string,
+): ((...args: unknown[]) => void) | null {
+	if (value === undefined) return null;
+	if (typeof value !== "function") {
+		throw new TypeError(`${name} is not callable`);
+	}
+	return value as (...args: unknown[]) => void;
+}
+
+const LIFECYCLE_CALLBACK_NAMES = [
+	"connectedCallback",
+	"disconnectedCallback",
+	"connectedMoveCallback",
+	"adoptedCallback",
+	"attributeChangedCallback",
+];
+
+const FORM_CALLBACK_NAMES = [
+	"formAssociatedCallback",
+	"formResetCallback",
+	"formDisabledCallback",
+	"formStateRestoreCallback",
+];
+
+export class CustomElementRegistry {
+	#definitions: CustomElementDefinition[] = [];
+	#definitionIsRunning = false;
+	#whenDefined = new Map<
+		string,
+		{
+			promise: Promise<CustomElementConstructor>;
+			resolve: (value: CustomElementConstructor) => void;
+		}
+	>();
+
+	define(
+		name: string,
+		constructor: CustomElementConstructor,
+		options?: {extends?: string},
+	): void {
+		if (arguments.length < 2) {
+			throw new TypeError("define needs a name and a constructor");
+		}
+		if (!isConstructor(constructor)) {
+			throw new TypeError("That is not a constructor");
+		}
+		const localName = String(name);
+		if (!isValidCustomElementName(localName)) {
+			throw domError(
+				"SyntaxError",
+				`"${localName}" is not a valid custom element name`,
+			);
+		}
+		if (this.#definitions.some((entry) => entry.name === localName)) {
+			throw domError("NotSupportedError", `"${localName}" is already defined`);
+		}
+		if (this.#definitions.some((entry) => entry.constructor === constructor)) {
+			throw domError(
+				"NotSupportedError",
+				"That constructor is already defining an element",
+			);
+		}
+		const init = toDictionary<{extends?: string}>(
+			options ?? {},
+			"An ElementDefinitionOptions",
+		);
+		if (init.extends !== undefined && init.extends !== null) {
+			throw domError(
+				"NotSupportedError",
+				"A customized built-in element is not implemented here",
+			);
+		}
+		if (this.#definitionIsRunning) {
+			throw domError("NotSupportedError", "A definition is already being read");
+		}
+		this.#definitionIsRunning = true;
+		let observedAttributes: string[] = [];
+		let formAssociated = false;
+		let disableInternals = false;
+		let disableShadow = false;
+		const lifecycleCallbacks = new Map<
+			string,
+			((...args: unknown[]) => void) | null
+		>();
+		try {
+			const source = constructor as unknown as Record<string, unknown>;
+			const prototype = source.prototype;
+			if (prototype === null || typeof prototype !== "object") {
+				throw new TypeError("That constructor has no prototype object");
+			}
+			const proto = prototype as Record<string, unknown>;
+			for (const callbackName of LIFECYCLE_CALLBACK_NAMES) {
+				lifecycleCallbacks.set(
+					callbackName,
+					toCallback(proto[callbackName], callbackName),
+				);
+			}
+			if (lifecycleCallbacks.get("attributeChangedCallback") !== null) {
+				const observed = source.observedAttributes;
+				if (observed !== undefined) {
+					observedAttributes = toStringSequenceStrict(
+						observed,
+						"observedAttributes",
+					);
+				}
+			}
+			const disabled = source.disabledFeatures;
+			if (disabled !== undefined) {
+				const features = toStringSequenceStrict(disabled, "disabledFeatures");
+				disableInternals = features.includes("internals");
+				disableShadow = features.includes("shadow");
+			}
+			formAssociated = Boolean(source.formAssociated);
+			if (formAssociated) {
+				for (const callbackName of FORM_CALLBACK_NAMES) {
+					lifecycleCallbacks.set(
+						callbackName,
+						toCallback(proto[callbackName], callbackName),
+					);
+				}
+			}
+		} finally {
+			this.#definitionIsRunning = false;
+		}
+		const definition: CustomElementDefinition = {
+			name: localName,
+			localName,
+			constructor,
+			observedAttributes: new Set(observedAttributes),
+			lifecycleCallbacks,
+			constructionStack: [],
+			formAssociated,
+			disableInternals,
+			disableShadow,
+		};
+		this.#definitions.push(definition);
+		const document = currentDocument();
+		for (const candidate of shadowIncludingInclusiveDescendants(document)) {
+			if (candidate.nodeType !== ELEMENT_NODE) continue;
+			const element = candidate as Element;
+			if (element[kNamespace] !== HTML_NAMESPACE) continue;
+			if (element[kLocalName] !== localName) continue;
+			enqueueUpgradeReaction(element, definition);
+		}
+		const pending = this.#whenDefined.get(localName);
+		if (pending !== undefined) {
+			pending.resolve(constructor);
+			this.#whenDefined.delete(localName);
+		}
+	}
+
+	get(name: string): CustomElementConstructor | undefined {
+		const localName = String(name);
+		const definition = this.#definitions.find(
+			(entry) => entry.name === localName,
+		);
+		return definition === undefined ? undefined : definition.constructor;
+	}
+
+	getName(constructor: CustomElementConstructor): string | null {
+		const definition = this.#definitions.find(
+			(entry) => entry.constructor === constructor,
+		);
+		return definition === undefined ? null : definition.name;
+	}
+
+	whenDefined(name: string): Promise<CustomElementConstructor> {
+		const localName = String(name);
+		if (!isValidCustomElementName(localName)) {
+			return Promise.reject(
+				domError(
+					"SyntaxError",
+					`"${localName}" is not a valid custom element name`,
+				),
+			);
+		}
+		const defined = this.#definitions.find((entry) => entry.name === localName);
+		if (defined !== undefined) return Promise.resolve(defined.constructor);
+		let pending = this.#whenDefined.get(localName);
+		if (pending === undefined) {
+			let resolve: (value: CustomElementConstructor) => void = () => {};
+			const promise = new Promise<CustomElementConstructor>((settle) => {
+				resolve = settle;
+			});
+			pending = {promise, resolve};
+			this.#whenDefined.set(localName, pending);
+		}
+		return pending.promise;
+	}
+
+	upgrade(root: Node): void {
+		if (!(root instanceof Node)) throw new TypeError("That is not a node");
+		for (const candidate of shadowIncludingInclusiveDescendants(root)) {
+			if (candidate.nodeType !== ELEMENT_NODE) continue;
+			tryToUpgrade(candidate as Element);
+		}
+	}
+
+	[kDefinitionFor](
+		constructor: CustomElementConstructor,
+	): CustomElementDefinition | null {
+		return (
+			this.#definitions.find((entry) => entry.constructor === constructor) ??
+			null
+		);
+	}
+
+	[kLookUp](
+		namespace: string | null,
+		localName: string,
+		is: string | null,
+	): CustomElementDefinition | null {
+		if (namespace !== HTML_NAMESPACE) return null;
+		for (const definition of this.#definitions) {
+			if (definition.name === localName && definition.localName === localName) {
+				return definition;
+			}
+		}
+		for (const definition of this.#definitions) {
+			if (definition.name === is && definition.localName === localName) {
+				return definition;
+			}
+		}
+		return null;
+	}
+}
+
+Object.defineProperty(CustomElementRegistry.prototype, Symbol.toStringTag, {
+	value: "CustomElementRegistry",
+	configurable: true,
+});
+
+/**
+ * The registry every document in this realm shares.
+ *
+ * The spec hangs one off each Window; there is no Window here, and a document
+ * reaches this one through the algorithms below rather than through a global,
+ * so the tree stays standalone.
+ */
+export const customElements = new CustomElementRegistry();
+
+const globalCustomElements = customElements;
+
+function lookUpCustomElementDefinition(
+	namespace: string | null,
+	localName: string,
+	is: string | null,
+): CustomElementDefinition | null {
+	return globalCustomElements[kLookUp](namespace, localName, is);
+}
+
+/** Construct a definition's constructor, as the spec's Construct(C) does. */
+function constructCustomElement(definition: CustomElementDefinition): Element {
+	return Reflect.construct(
+		definition.constructor,
+		[],
+		definition.constructor,
+	) as Element;
+}
+
+/**
+ * The upgrade algorithm.
+ *
+ * The element is already in the tree; what changes is its prototype, its
+ * state, and the callbacks it owes. The reactions for the attributes it
+ * already carries and for being connected are enqueued before the constructor
+ * runs, so an author's constructor sees them arrive afterwards.
+ */
+function upgradeElement(
+	element: Element,
+	definition: CustomElementDefinition,
+): void {
+	const state = element[kCustomState];
+	if (state !== "undefined" && state !== "uncustomized") return;
+	element[kDefinition] = definition;
+	element[kCustomState] = "failed";
+	for (const attribute of element[kAttributeList]) {
+		enqueueCallbackReaction(element, "attributeChangedCallback", [
+			attribute[kLocalName],
+			null,
+			attribute[kValue],
+			attribute[kNamespace],
+		]);
+	}
+	if (element.isConnected) {
+		enqueueCallbackReaction(element, "connectedCallback", []);
+	}
+	definition.constructionStack.push(element);
+	try {
+		if (definition.disableShadow && element[kShadowRoot] !== null) {
+			throw domError(
+				"NotSupportedError",
+				"That definition disabled shadow roots",
+			);
+		}
+		element[kCustomState] = "precustomized";
+		const result = constructCustomElement(definition);
+		if (result !== element) {
+			throw new TypeError("That constructor built a different element");
+		}
+	} catch (error) {
+		definition.constructionStack.pop();
+		element[kDefinition] = null;
+		element[kReactionQueue] = null;
+		throw error;
+	}
+	definition.constructionStack.pop();
+	element[kCustomState] = "custom";
+}
+
+function tryToUpgrade(element: Element): void {
+	const definition = lookUpCustomElementDefinition(
+		element[kNamespace],
+		element[kLocalName],
+		element[kIsValue],
+	);
+	if (definition !== null) enqueueUpgradeReaction(element, definition);
+}
+
+/* --------------------------------------------------------------- shadow trees */
+
+/** The element names a shadow root may be attached to. */
+const SHADOW_HOST_NAMES = new Set([
+	"article",
+	"aside",
+	"blockquote",
+	"body",
+	"div",
+	"footer",
+	"h1",
+	"h2",
+	"h3",
+	"h4",
+	"h5",
+	"h6",
+	"header",
+	"main",
+	"nav",
+	"p",
+	"section",
+	"span",
+]);
+
+interface ShadowRootInit {
+	mode: "open" | "closed";
+	delegatesFocus?: boolean;
+	slotAssignment?: "named" | "manual";
+	clonable?: boolean;
+	serializable?: boolean;
+}
+
+/**
+ * A shadow root: the root of a tree a host element carries beside its
+ * children.
+ *
+ * It is a document fragment with a host, which is what makes every algorithm
+ * that already steps from a fragment to its host -- pre-insertion validity,
+ * retargeting, the composed path -- work across it without a second concept.
+ */
+export class ShadowRoot extends DocumentFragment {
+	[kShadowMode]: "open" | "closed" = "open";
+	[kDelegatesFocus] = false;
+	[kSlotAssignment]: "named" | "manual" = "named";
+	[kClonable] = false;
+	[kSerializable] = false;
+	[kDeclarative] = false;
+	[kAvailableToInternals] = false;
+
+	constructor() {
+		super();
+		if (!internalConstruction) throw new TypeError("Illegal constructor");
+	}
+
+	get mode(): "open" | "closed" {
+		return this[kShadowMode];
+	}
+
+	get delegatesFocus(): boolean {
+		return this[kDelegatesFocus];
+	}
+
+	get slotAssignment(): "named" | "manual" {
+		return this[kSlotAssignment];
+	}
+
+	get clonable(): boolean {
+		return this[kClonable];
+	}
+
+	get serializable(): boolean {
+		return this[kSerializable];
+	}
+
+	get host(): Element {
+		return this[kHost] as Element;
+	}
+
+	get innerHTML(): string {
+		return serializeFragment(this, false);
+	}
+
+	set innerHTML(value: string) {
+		const fragment = parseFragmentHTML(
+			String(value ?? ""),
+			this[kHost] as Element,
+			false,
+		);
+		replaceAll(fragment, this);
+	}
+
+	getHTML(options?: {
+		serializableShadowRoots?: boolean;
+		shadowRoots?: ShadowRoot[];
+	}): string {
+		const init = toDictionary<{
+			serializableShadowRoots?: boolean;
+			shadowRoots?: ShadowRoot[];
+		}>(options ?? {}, "A GetHTMLOptions");
+		return serializeFragment(
+			this,
+			Boolean(init.serializableShadowRoots),
+			init.shadowRoots ?? [],
+		);
+	}
+
+	setHTMLUnsafe(html: string): void {
+		const fragment = parseFragmentHTML(
+			String(html ?? ""),
+			this[kHost] as Element,
+			true,
+		);
+		replaceAll(fragment, this);
+	}
+
+	/**
+	 * A dispatch leaves a shadow tree through the host, unless the event was
+	 * dispatched inside this very tree and is not composed.
+	 */
+	override [kGetTheParent](event: Event): EventTarget | null {
+		const path = event[kDispatchState].path;
+		if (
+			!event.composed &&
+			path.length > 0 &&
+			path[0].invocationTarget instanceof Node &&
+			getRoot(path[0].invocationTarget) === this
+		) {
+			return null;
+		}
+		return this[kHost];
+	}
+
+	override [kCloneSingle](_document: Document): Node {
+		throw domError("NotSupportedError", "A shadow root cannot be cloned");
+	}
+}
+
+Object.defineProperty(ShadowRoot.prototype, Symbol.toStringTag, {
+	value: "ShadowRoot",
+	configurable: true,
+});
+
+/** The spec's "attach a shadow root" algorithm. */
+function attachShadowRoot(
+	element: Element,
+	mode: "open" | "closed",
+	clonable: boolean,
+	serializable: boolean,
+	delegatesFocus: boolean,
+	slotAssignment: "named" | "manual",
+): void {
+	if (element[kNamespace] !== HTML_NAMESPACE) {
+		throw domError(
+			"NotSupportedError",
+			"Only an HTML element can host a shadow tree",
+		);
+	}
+	const localName = element[kLocalName];
+	if (
+		!SHADOW_HOST_NAMES.has(localName) &&
+		!isValidCustomElementName(localName)
+	) {
+		throw domError(
+			"NotSupportedError",
+			`A ${localName} cannot host a shadow tree`,
+		);
+	}
+	if (isValidCustomElementName(localName) || element[kIsValue] !== null) {
+		const definition = lookUpCustomElementDefinition(
+			element[kNamespace],
+			localName,
+			element[kIsValue],
+		);
+		if (definition !== null && definition.disableShadow) {
+			throw domError(
+				"NotSupportedError",
+				"That definition disabled shadow roots",
+			);
+		}
+	}
+	const existing = element[kShadowRoot];
+	if (existing !== null) {
+		if (!existing[kDeclarative] || existing[kShadowMode] !== mode) {
+			throw domError(
+				"NotSupportedError",
+				"That element already hosts a shadow tree",
+			);
+		}
+		for (const child of childNodeArray(existing)) removeNode(child);
+		existing[kDeclarative] = false;
+		return;
+	}
+	const previous = internalConstruction;
+	internalConstruction = true;
+	let shadow: ShadowRoot;
+	try {
+		shadow = new ShadowRoot();
+	} finally {
+		internalConstruction = previous;
+	}
+	shadow[kDocument] = element[kDocument];
+	shadow[kHost] = element;
+	shadow[kShadowMode] = mode;
+	shadow[kDelegatesFocus] = delegatesFocus;
+	const state = element[kCustomState];
+	shadow[kAvailableToInternals] =
+		state === "precustomized" || state === "custom";
+	shadow[kSlotAssignment] = slotAssignment;
+	shadow[kDeclarative] = false;
+	shadow[kClonable] = clonable;
+	shadow[kSerializable] = serializable;
+	element[kShadowRoot] = shadow;
+}
+
+/* ---------------------------------------------------------------------- slots */
+
+type Slottable = Element | Text;
+
+function isSlottable(node: Node): boolean {
+	return node.nodeType === ELEMENT_NODE || node.nodeType === TEXT_NODE;
+}
+
+function isAssigned(target: EventTarget | null): boolean {
+	return (
+		target instanceof Node &&
+		isSlottable(target) &&
+		(target as Slottable)[kAssignedSlot] !== null
+	);
+}
+
+/** A slottable's name: an element's slot attribute, and "" for text. */
+function slottableName(slottable: Slottable): string {
+	return slottable.nodeType === ELEMENT_NODE
+		? (slottable as Element)[kSlottableName]
+		: "";
+}
+
+function hasInclusiveDescendantSlot(node: Node): boolean {
+	if (node instanceof HTMLSlotElement) return true;
+	for (const descendant of descendants(node)) {
+		if (descendant instanceof HTMLSlotElement) return true;
+	}
+	return false;
+}
+
+/** The spec's "find a slot" algorithm. */
+function findASlot(slottable: Slottable, open = false): HTMLSlotElement | null {
+	const parent = slottable[kParent];
+	if (parent === null || parent.nodeType !== ELEMENT_NODE) return null;
+	const shadow = (parent as Element)[kShadowRoot];
+	if (shadow === null) return null;
+	if (open && shadow[kShadowMode] !== "open") return null;
+	if (shadow[kSlotAssignment] === "manual") {
+		for (const descendant of descendants(shadow)) {
+			if (
+				descendant instanceof HTMLSlotElement &&
+				descendant[kManualAssignment].includes(slottable)
+			) {
+				return descendant;
+			}
+		}
+		return null;
+	}
+	const name = slottableName(slottable);
+	for (const descendant of descendants(shadow)) {
+		if (
+			descendant instanceof HTMLSlotElement &&
+			descendant[kSlotName] === name
+		) {
+			return descendant;
+		}
+	}
+	return null;
+}
+
+/** The spec's "find slottables" algorithm. */
+function findSlottables(slot: HTMLSlotElement): Slottable[] {
+	const result: Slottable[] = [];
+	const root = getRoot(slot);
+	if (!isShadowRoot(root)) return result;
+	const shadow = root as ShadowRoot;
+	const host = shadow[kHost] as Element;
+	if (shadow[kSlotAssignment] === "manual") {
+		for (const slottable of slot[kManualAssignment]) {
+			if (slottable[kParent] === host) result.push(slottable);
+		}
+		return result;
+	}
+	for (let child = host[kFirstChild]; child !== null; child = child[kNext]) {
+		if (!isSlottable(child)) continue;
+		if (findASlot(child as Slottable) === slot) result.push(child as Slottable);
+	}
+	return result;
+}
+
+/** The spec's "find flattened slottables" algorithm. */
+function findFlattenedSlottables(slot: HTMLSlotElement): Slottable[] {
+	const result: Slottable[] = [];
+	if (!isShadowRoot(getRoot(slot))) return result;
+	let slottables = findSlottables(slot);
+	if (slottables.length === 0) {
+		slottables = [];
+		for (let child = slot[kFirstChild]; child !== null; child = child[kNext]) {
+			if (isSlottable(child)) slottables.push(child as Slottable);
+		}
+	}
+	for (const node of slottables) {
+		if (node instanceof HTMLSlotElement && isShadowRoot(getRoot(node))) {
+			result.push(...findFlattenedSlottables(node));
+		} else {
+			result.push(node);
+		}
+	}
+	return result;
+}
+
+/** The spec's "assign slottables" algorithm. */
+function assignSlottables(slot: HTMLSlotElement): void {
+	const slottables = findSlottables(slot);
+	const assigned = slot[kAssignedNodes];
+	const identical =
+		slottables.length === assigned.length &&
+		slottables.every((node, index) => node === assigned[index]);
+	if (!identical) signalASlotChange(slot);
+	for (const previous of assigned) {
+		if (previous[kAssignedSlot] === slot && !slottables.includes(previous)) {
+			previous[kAssignedSlot] = null;
+		}
+	}
+	slot[kAssignedNodes] = slottables;
+	for (const slottable of slottables) slottable[kAssignedSlot] = slot;
+}
+
+/** The spec's "assign slottables for a tree" algorithm. */
+function assignSlottablesForTree(root: Node): void {
+	for (const node of inclusiveDescendants(root)) {
+		if (node instanceof HTMLSlotElement) assignSlottables(node);
+	}
+}
+
+/** The spec's "assign a slot" algorithm. */
+function assignASlot(slottable: Slottable): void {
+	const slot = findASlot(slottable);
+	if (slot !== null) assignSlottables(slot);
+}
+
+/**
+ * The slots whose assignment changed since the last microtask checkpoint.
+ *
+ * slotchange is signalled here rather than fired here: the spec fires it from
+ * the same microtask that delivers mutation records, and after them, so a
+ * script that observes both sees the records first.
+ */
+const signalSlots: HTMLSlotElement[] = [];
+
+function signalASlotChange(slot: HTMLSlotElement): void {
+	if (!signalSlots.includes(slot)) signalSlots.push(slot);
+	queueMutationObserverMicrotask();
+}
+
+/** The attribute change steps that keep a slottable's name current. */
+function updateSlottableName(
+	element: Element,
+	oldValue: string | null,
+	value: string | null,
+): void {
+	if (value === oldValue) return;
+	if (value === null && oldValue === "") return;
+	if (value === "" && oldValue === null) return;
+	element[kSlottableName] = value === null || value === "" ? "" : value;
+	const assigned = element[kAssignedSlot];
+	if (assigned !== null) assignSlottables(assigned);
+	assignASlot(element);
+}
+
+/** The attribute change steps that keep a slot's name current. */
+function updateSlotName(
+	slot: HTMLSlotElement,
+	oldValue: string | null,
+	value: string | null,
+): void {
+	if (value === oldValue) return;
+	if (value === null && oldValue === "") return;
+	if (value === "" && oldValue === null) return;
+	slot[kSlotName] = value === null || value === "" ? "" : value;
+	assignSlottablesForTree(getRoot(slot));
+}
+
+/**
+ * A slot: the place in a shadow tree where a host's children are rendered.
+ *
+ * Assignment is recomputed rather than incrementally patched, because every
+ * input to it -- the host's children, their slot attributes, the slot names in
+ * the tree -- can change from any of a dozen mutation entry points, and one
+ * recomputation per changed tree is both the spec's shape and the only one
+ * that cannot drift.
+ */
+export class HTMLSlotElement extends HTMLElement {
+	[kSlotName] = "";
+	[kAssignedNodes]: Slottable[] = [];
+	[kManualAssignment]: Slottable[] = [];
+
+	get name(): string {
+		return this.getAttribute("name") ?? "";
+	}
+
+	set name(value: string) {
+		this.setAttribute("name", String(value));
+	}
+
+	assignedNodes(options?: {flatten?: boolean}): Node[] {
+		const init = toDictionary<{flatten?: boolean}>(
+			options ?? {},
+			"An AssignedNodesOptions",
+		);
+		if (!init.flatten) return [...this[kAssignedNodes]];
+		return findFlattenedSlottables(this);
+	}
+
+	assignedElements(options?: {flatten?: boolean}): Element[] {
+		return this.assignedNodes(options).filter(
+			(node) => node.nodeType === ELEMENT_NODE,
+		) as Element[];
+	}
+
+	/**
+	 * The assignment is recomputed over every tree a slot in it lost or gained
+	 * a node: the spec's own step covers this slot's tree, and a node taken
+	 * from a slot in another shadow tree leaves that tree's assignment stale
+	 * until its slots are recomputed too.
+	 */
+	assign(...nodes: Slottable[]): void {
+		for (const node of nodes) {
+			if (!(node instanceof Node) || !isSlottable(node)) {
+				throw new TypeError("Only an element or a text node can be assigned");
+			}
+		}
+		const roots: Node[] = [getRoot(this)];
+		for (const slottable of this[kManualAssignment]) {
+			slottable[kManualSlot] = null;
+		}
+		const assigned: Slottable[] = [];
+		for (const node of nodes) {
+			const slottable = node as Slottable;
+			if (assigned.includes(slottable)) continue;
+			const previous = slottable[kManualSlot];
+			if (previous !== null && previous !== this) {
+				const index = previous[kManualAssignment].indexOf(slottable);
+				if (index >= 0) previous[kManualAssignment].splice(index, 1);
+				const root = getRoot(previous);
+				if (!roots.includes(root)) roots.push(root);
+			}
+			slottable[kManualSlot] = this;
+			assigned.push(slottable);
+		}
+		this[kManualAssignment] = assigned;
+		for (const root of roots) assignSlottablesForTree(root);
+	}
+}
+
+Object.defineProperty(HTMLSlotElement.prototype, Symbol.toStringTag, {
+	value: "HTMLSlotElement",
+	configurable: true,
+});
+
+builtinRegistry.define(HTML_NAMESPACE, "slot", HTMLSlotElement);
+
+/**
+ * A template: an element whose children are parsed into a fragment beside it
+ * rather than into the tree.
+ *
+ * The fragment is the shape a shadow tree is written in -- a declarative
+ * shadow root is a template, and every test that builds one builds it from a
+ * template's content -- so the element that owns that fragment belongs beside
+ * the slot rather than a phase later. Its host is the template, which is what
+ * stops a template from being appended into its own contents.
+ */
+export class HTMLTemplateElement extends HTMLElement {
+	[kTemplateContent]: DocumentFragment | null = null;
+
+	get content(): DocumentFragment {
+		let content = this[kTemplateContent];
+		if (content === null) {
+			content = new DocumentFragment();
+			content[kDocument] = this[kDocument];
+			content[kHost] = this;
+			this[kTemplateContent] = content;
+		}
+		return content;
+	}
+
+	get shadowRootMode(): string {
+		return this.getAttribute("shadowrootmode") ?? "";
+	}
+
+	set shadowRootMode(value: string) {
+		this.setAttribute("shadowrootmode", String(value));
+	}
+
+	get shadowRootDelegatesFocus(): boolean {
+		return this.hasAttribute("shadowrootdelegatesfocus");
+	}
+
+	set shadowRootDelegatesFocus(value: boolean) {
+		this.toggleAttribute("shadowrootdelegatesfocus", Boolean(value));
+	}
+
+	get shadowRootClonable(): boolean {
+		return this.hasAttribute("shadowrootclonable");
+	}
+
+	set shadowRootClonable(value: boolean) {
+		this.toggleAttribute("shadowrootclonable", Boolean(value));
+	}
+
+	get shadowRootSerializable(): boolean {
+		return this.hasAttribute("shadowrootserializable");
+	}
+
+	set shadowRootSerializable(value: boolean) {
+		this.toggleAttribute("shadowrootserializable", Boolean(value));
+	}
+
+	override [kAdoptingSteps](_oldDocument: Document): void {
+		const content = this[kTemplateContent];
+		if (content !== null) adoptNode(content, this[kDocument]);
+	}
+
+	override [kCloningSteps](
+		copy: Node,
+		document: Document,
+		_deep: boolean,
+	): void {
+		const content = this[kTemplateContent];
+		if (content === null) return;
+		const target = (copy as HTMLTemplateElement).content;
+		for (let child = content[kFirstChild]; child !== null; child = child[kNext]) {
+			appendNode(cloneNode(child, document, true), target);
+		}
+	}
+}
+
+Object.defineProperty(HTMLTemplateElement.prototype, Symbol.toStringTag, {
+	value: "HTMLTemplateElement",
+	configurable: true,
+});
+
+builtinRegistry.define(HTML_NAMESPACE, "template", HTMLTemplateElement);
+
+/* ------------------------------------------------- user-agent pseudo-elements */
+
+/**
+ * The pseudo-element slots an element carries.
+ *
+ * A ::before, ::after or ::marker box needs a node to hang style and children
+ * off, and the engine's compositor needs to walk to it; the DOM Standard has
+ * no such node, and an author must never find one. These live in a map keyed
+ * by the pseudo-element's name, reachable only through the two functions
+ * below, which the engine's composition pass is the sole caller of. Nothing
+ * links them into the tree: their parent stays null, so childNodes, the tree
+ * walkers, the collections and the selector engine cannot reach them, and no
+ * mutation record or slot assignment ever names one.
+ *
+ * The element a slot holds is an ordinary Element of the host's document, so
+ * everything the engine already does with an element -- computed style, a box,
+ * text children -- works on it unchanged.
+ */
+export function pseudoElement(host: Element, name: string): Element | null {
+	const slots = host[kPseudoElements];
+	return slots === undefined || slots === null
+		? null
+		: (slots.get(name) ?? null);
+}
+
+/**
+ * Give an element its pseudo-element node for a name, building one the first
+ * time it is asked for. The node is an element named after the pseudo-element
+ * so a debugger's dump reads plainly; it is never serialized.
+ */
+export function ensurePseudoElement(host: Element, name: string): Element {
+	let slots = host[kPseudoElements];
+	if (slots === null) {
+		slots = new Map<string, Element>();
+		host[kPseudoElements] = slots;
+	}
+	let element = slots.get(name);
+	if (element === undefined) {
+		element = createElementInternal(host[kDocument], name, HTML_NAMESPACE);
+		slots.set(name, element);
+	}
+	return element;
+}
+
+/** Drop an element's pseudo-element node for a name. */
+export function clearPseudoElement(host: Element, name: string): void {
+	host[kPseudoElements]?.delete(name);
+}
+
 /* --------------------------------------------------------------- document */
 
 const kDocumentURL = Symbol("document URL");
@@ -4626,7 +6099,6 @@ const kEncoding = Symbol("encoding");
 const kIdMap = Symbol("id map");
 const kNodeIterators = Symbol("node iterators");
 const kNwsapi = Symbol("selector engine");
-const kTemplateContent = Symbol("template content");
 
 let currentDocumentForConstruction: Document | null = null;
 let ambientDocument: Document | null = null;
@@ -4668,6 +6140,11 @@ export class Document extends Node {
 	[kNodeIterators]: Array<WeakRef<NodeIterator>> = [];
 	[kNwsapi]: ReturnType<typeof NWSAPI> | null = null;
 	[kChildren]: HTMLCollection | null = null;
+
+	/** Parse a document, declarative shadow roots included. */
+	static parseHTMLUnsafe(html: string): Document {
+		return parseHTMLUnsafe(String(html));
+	}
 
 	override get nodeType(): number {
 		return DOCUMENT_NODE;
@@ -4985,6 +6462,9 @@ export class Document extends Node {
 		if (node.nodeType === DOCUMENT_NODE) {
 			throw domError("NotSupportedError", "A document cannot be imported");
 		}
+		if (isShadowRoot(node)) {
+			throw domError("NotSupportedError", "A shadow root cannot be imported");
+		}
 		return cloneNode(node, this, Boolean(deep));
 	}
 
@@ -4992,6 +6472,9 @@ export class Document extends Node {
 		if (!(node instanceof Node)) throw new TypeError("That is not a node");
 		if (node.nodeType === DOCUMENT_NODE) {
 			throw domError("NotSupportedError", "A document cannot be adopted");
+		}
+		if (isShadowRoot(node)) {
+			throw hierarchyRequestError("A shadow root cannot be adopted");
 		}
 		adoptNode(node, this);
 		return node;
@@ -5612,6 +7095,31 @@ function cloneNode(
 	const copy = node[kCloneSingle](target);
 	if (copy.nodeType === DOCUMENT_NODE) copy[kDocument] = copy as Document;
 	node[kCloningSteps](copy, target, deep);
+	if (node.nodeType === ELEMENT_NODE) {
+		const shadow = (node as Element)[kShadowRoot];
+		if (shadow !== null && shadow[kClonable]) {
+			attachShadowRoot(
+				copy as Element,
+				shadow[kShadowMode],
+				true,
+				shadow[kSerializable],
+				shadow[kDelegatesFocus],
+				shadow[kSlotAssignment],
+			);
+			const copiedShadow = (copy as Element)[kShadowRoot] as ShadowRoot;
+			copiedShadow[kDeclarative] = shadow[kDeclarative];
+			for (
+				let child = shadow[kFirstChild];
+				child !== null;
+				child = child[kNext]
+			) {
+				appendNode(
+					cloneNode(child, copiedShadow[kDocument], true),
+					copiedShadow,
+				);
+			}
+		}
+	}
 	if (deep) {
 		for (let child = node[kFirstChild]; child !== null; child = child[kNext]) {
 			appendNode(cloneNode(child, copy[kDocument], true), copy);
@@ -6236,6 +7744,9 @@ function treeAdapterFor(document: Document | null) {
 				target as Document,
 				tagName,
 				namespaceURI,
+				null,
+				null,
+				false,
 			);
 			adapter.adoptAttributes(element, attrs);
 			return element;
@@ -6256,14 +7767,12 @@ function treeAdapterFor(document: Document | null) {
 			templateElement: Element,
 			contentElement: DocumentFragment,
 		): void {
-			(templateElement as unknown as Record<symbol, unknown>)[
-				kTemplateContent
-			] = contentElement;
+			contentElement[kHost] = templateElement;
+			(templateElement as HTMLTemplateElement)[kTemplateContent] =
+				contentElement;
 		},
 		getTemplateContent(templateElement: Element): DocumentFragment {
-			return (templateElement as unknown as Record<symbol, DocumentFragment>)[
-				kTemplateContent
-			];
+			return (templateElement as HTMLTemplateElement).content;
 		},
 		setDocumentType(
 			documentNode: Document,
@@ -6393,18 +7902,86 @@ function treeAdapterFor(document: Document | null) {
 	return adapter;
 }
 
+/**
+ * Turn the templates a declarative shadow root was parsed as into shadow
+ * trees.
+ *
+ * The HTML parser attaches a shadow root the moment it sees a template whose
+ * shadowrootmode names a mode; parse5 has no such step, so the templates land
+ * as templates and this walk converts them afterwards. The walk is depth-first
+ * over the tree it is given and then over each shadow tree it creates, which
+ * reaches a nested declarative root inside one. A template whose parent cannot
+ * host a shadow tree, or whose parent already hosts one, stays a template --
+ * the parser's own error handling.
+ */
+function attachDeclarativeShadowRoots(root: Node): void {
+	const templates: Element[] = [];
+	for (const node of descendants(root)) {
+		if (node.nodeType !== ELEMENT_NODE) continue;
+		const element = node as Element;
+		if (element[kNamespace] !== HTML_NAMESPACE) continue;
+		if (element[kLocalName] !== "template") continue;
+		if (element.getAttribute("shadowrootmode") === null) continue;
+		templates.push(element);
+	}
+	for (const template of templates) {
+		const host = template[kParent];
+		if (host === null || host.nodeType !== ELEMENT_NODE) continue;
+		const mode = asciiLowercase(
+			template.getAttribute("shadowrootmode") as string,
+		);
+		if (mode !== "open" && mode !== "closed") continue;
+		try {
+			attachShadowRoot(
+				host as Element,
+				mode,
+				template.hasAttribute("shadowrootclonable"),
+				template.hasAttribute("shadowrootserializable"),
+				template.hasAttribute("shadowrootdelegatesfocus"),
+				"named",
+			);
+		} catch {
+			continue;
+		}
+		const shadow = (host as Element)[kShadowRoot] as ShadowRoot;
+		shadow[kDeclarative] = true;
+		const content = (template as HTMLTemplateElement)[kTemplateContent];
+		removeNode(template);
+		if (content !== null && content !== undefined) {
+			for (const child of childNodeArray(content)) {
+				insertNode(child, shadow, null, true);
+			}
+		}
+		attachDeclarativeShadowRoots(shadow);
+	}
+}
+
 /** Parse an HTML document, per the HTML Standard's parsing algorithm. */
-export function parseHTMLDocument(html: string, url = "about:blank"): Document {
+export function parseHTMLDocument(
+	html: string,
+	url = "about:blank",
+	allowDeclarativeShadowRoots = true,
+): Document {
 	const adapter = treeAdapterFor(null);
 	const document = parse5Parse(html, {
 		treeAdapter: adapter as never,
 	}) as unknown as Document;
 	document[kDocumentURL] = url;
+	if (allowDeclarativeShadowRoots) attachDeclarativeShadowRoots(document);
 	return document;
 }
 
-/** The HTML fragment parsing algorithm, with a context element. */
-function parseFragmentHTML(markup: string, context: Element): DocumentFragment {
+/**
+ * The HTML fragment parsing algorithm, with a context element.
+ *
+ * A declarative shadow root only becomes one where the caller allowed it:
+ * innerHTML does not, and setHTMLUnsafe and parseHTMLUnsafe do.
+ */
+function parseFragmentHTML(
+	markup: string,
+	context: Element,
+	allowDeclarativeShadowRoots = false,
+): DocumentFragment {
 	const document = context[kDocument];
 	const adapter = treeAdapterFor(document);
 	const parsed = parseFragment(context as never, markup, {
@@ -6414,14 +7991,20 @@ function parseFragmentHTML(markup: string, context: Element): DocumentFragment {
 	for (const child of childNodeArray(parsed)) {
 		insertNode(child, fragment, null, true);
 	}
+	if (allowDeclarativeShadowRoots) attachDeclarativeShadowRoots(fragment);
 	return fragment;
+}
+
+/** Parse a whole document, declarative shadow roots and all. */
+export function parseHTMLUnsafe(html: string): Document {
+	return parseHTMLDocument(String(html));
 }
 
 export class DOMParser {
 	parseFromString(string: string, type: string): Document {
 		const contentType = String(type);
 		if (contentType === "text/html") {
-			return parseHTMLDocument(String(string));
+			return parseHTMLDocument(String(string), "about:blank", false);
 		}
 		if (
 			contentType === "text/xml" ||
@@ -6518,18 +8101,27 @@ function attributeSerializedName(attribute: Attr): string {
 	return attribute[kQualifiedName];
 }
 
-/** The HTML fragment serialization algorithm, over a node's children. */
-function serializeFragment(node: Node): string {
+/**
+ * The HTML fragment serialization algorithm, over a node's children.
+ *
+ * A shadow root is written out as the template the parser reads back, but only
+ * where the caller asked for it: getHTML's options say whether a serializable
+ * root counts and name the closed roots to include. innerHTML asks for none,
+ * so a shadow tree stays invisible to it.
+ */
+function serializeFragment(
+	node: Node,
+	serializableShadowRoots: boolean,
+	shadowRoots: ShadowRoot[] = [],
+): string {
 	let children = node;
 	if (
 		node.nodeType === ELEMENT_NODE &&
 		(node as Element)[kNamespace] === HTML_NAMESPACE &&
 		(node as Element)[kLocalName] === "template"
 	) {
-		const content = (node as unknown as Record<symbol, Node | undefined>)[
-			kTemplateContent
-		];
-		if (content !== undefined) children = content;
+		const content = (node as HTMLTemplateElement)[kTemplateContent];
+		if (content !== null && content !== undefined) children = content;
 	}
 	let html = "";
 	for (
@@ -6537,16 +8129,36 @@ function serializeFragment(node: Node): string {
 		child !== null;
 		child = child[kNext]
 	) {
-		html += serializeNode(child);
+		html += serializeNode(child, serializableShadowRoots, shadowRoots);
 	}
 	return html;
 }
 
 function serializeOuterHTML(element: Element): string {
-	return serializeNode(element);
+	return serializeNode(element, false, []);
 }
 
-function serializeNode(node: Node): string {
+/** The template a declarative shadow root serializes as. */
+function serializeShadowRoot(
+	shadow: ShadowRoot,
+	serializableShadowRoots: boolean,
+	shadowRoots: ShadowRoot[],
+): string {
+	let html = `<template shadowrootmode="${shadow[kShadowMode]}"`;
+	if (shadow[kDelegatesFocus]) html += ' shadowrootdelegatesfocus=""';
+	if (shadow[kSerializable]) html += ' shadowrootserializable=""';
+	if (shadow[kClonable]) html += ' shadowrootclonable=""';
+	html += ">";
+	html += serializeFragment(shadow, serializableShadowRoots, shadowRoots);
+	html += "</template>";
+	return html;
+}
+
+function serializeNode(
+	node: Node,
+	serializableShadowRoots: boolean,
+	shadowRoots: ShadowRoot[],
+): string {
 	switch (node.nodeType) {
 		case ELEMENT_NODE: {
 			const element = node as Element;
@@ -6567,7 +8179,19 @@ function serializeNode(node: Node): string {
 			if (namespace === HTML_NAMESPACE && VOID_ELEMENTS.has(tagName)) {
 				return html;
 			}
-			html += serializeFragment(element);
+			const shadow = element[kShadowRoot];
+			if (
+				shadow !== null &&
+				((serializableShadowRoots && shadow[kSerializable]) ||
+					shadowRoots.includes(shadow))
+			) {
+				html += serializeShadowRoot(
+					shadow,
+					serializableShadowRoots,
+					shadowRoots,
+				);
+			}
+			html += serializeFragment(element, serializableShadowRoots, shadowRoots);
 			html += `</${tagName}>`;
 			return html;
 		}
@@ -6600,9 +8224,106 @@ function serializeNode(node: Node): string {
 				child !== null;
 				child = child[kNext]
 			) {
-				html += serializeNode(child);
+				html += serializeNode(child, serializableShadowRoots, shadowRoots);
 			}
 			return html;
 		}
 	}
 }
+
+/* --------------------------------------------------- custom element boundaries */
+
+/**
+ * Every member the IDL marks [CEReactions], wrapped once the prototypes are
+ * complete.
+ *
+ * The list is the extended attribute's, read off the interfaces this DOM has:
+ * anything that can insert, remove, rename or restyle a node is here, and
+ * nothing else is. A member missing from this list would run an author's
+ * callback in the middle of the mutation that caused it instead of after it.
+ */
+ceReactions(Node.prototype, [
+	"appendChild",
+	"insertBefore",
+	"removeChild",
+	"replaceChild",
+	"normalize",
+	"cloneNode",
+	"nodeValue",
+	"textContent",
+]);
+ceReactions(Element.prototype, [
+	"after",
+	"append",
+	"attachShadow",
+	"before",
+	"className",
+	"id",
+	"innerHTML",
+	"insertAdjacentElement",
+	"insertAdjacentHTML",
+	"insertAdjacentText",
+	"outerHTML",
+	"prepend",
+	"remove",
+	"removeAttribute",
+	"removeAttributeNS",
+	"removeAttributeNode",
+	"replaceChildren",
+	"replaceWith",
+	"setAttribute",
+	"setAttributeNS",
+	"setAttributeNode",
+	"setAttributeNodeNS",
+	"setHTMLUnsafe",
+	"slot",
+	"toggleAttribute",
+]);
+ceReactions(ShadowRoot.prototype, ["innerHTML", "setHTMLUnsafe"]);
+ceReactions(HTMLSlotElement.prototype, ["assign", "name"]);
+ceReactions(DocumentFragment.prototype, [
+	"append",
+	"prepend",
+	"replaceChildren",
+]);
+ceReactions(Document.prototype, [
+	"adoptNode",
+	"append",
+	"createElement",
+	"createElementNS",
+	"importNode",
+	"prepend",
+	"replaceChildren",
+	"title",
+]);
+ceReactions(CharacterData.prototype, [
+	"after",
+	"appendData",
+	"before",
+	"data",
+	"deleteData",
+	"insertData",
+	"remove",
+	"replaceData",
+	"replaceWith",
+]);
+ceReactions(DocumentType.prototype, [
+	"after",
+	"before",
+	"remove",
+	"replaceWith",
+]);
+ceReactions(Attr.prototype, ["value"]);
+ceReactions(NamedNodeMap.prototype, [
+	"removeNamedItem",
+	"removeNamedItemNS",
+	"setNamedItem",
+	"setNamedItemNS",
+]);
+ceReactions(DOMTokenList.prototype, [
+	"add",
+	"remove",
+	"replace",
+	"toggle",
+	"value",
+]);
