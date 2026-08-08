@@ -4119,6 +4119,34 @@ function usedLength(cells: number): string {
 	return `${Math.round(cells * 1000) / 1000}px`;
 }
 
+/** The four properties that place a positioned box against its containing block. */
+const INSET_PROPERTIES = new Set(["top", "right", "bottom", "left"]);
+
+const OPPOSITE_INSET: Record<string, string> = {
+	top: "bottom",
+	bottom: "top",
+	left: "right",
+	right: "left",
+};
+
+/**
+ * A computed inset as a length in cells, with percentages -- and the one
+ * percentage a calc() can still carry -- resolved against the containing
+ * block. Null for `auto`, which is not a length but an instruction to
+ * measure.
+ */
+function insetLength(computed: string, basis: number): number | null {
+	if (!computed || computed === "auto") return null;
+	const calc = /^calc\(([+-]?[\d.]+)px ([+-]) ([\d.]+)%\)$/.exec(computed);
+	if (calc) {
+		const percentage = (parseFloat(calc[3]) / 100) * basis;
+		return parseFloat(calc[1]) + (calc[2] === "-" ? -percentage : percentage);
+	}
+	if (computed.endsWith("%")) return (parseFloat(computed) / 100) * basis;
+	const length = parseFloat(computed);
+	return Number.isFinite(length) ? length : null;
+}
+
 /**
  * A computed style as the engine reads it: `computedValueOf` alone, answering
  * the cascade's value with no resolved-value branch and no author-facing
@@ -4342,22 +4370,18 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 			);
 			if (!style || style === "none" || style === "hidden") return "0px";
 		}
+		const inset = INSET_PROPERTIES.has(property);
 		// An inset only applies to a positioned box; on a static one it stays
 		// as declared.
-		if (
-			(property === "top" ||
-				property === "right" ||
-				property === "bottom" ||
-				property === "left") &&
-			this.getPropertyValue("position") === "static"
-		) {
-			return computed;
-		}
+		const position = inset ? this.getPropertyValue("position") : "";
+		if (inset && position === "static") return computed;
 
 		const rect = this.#manager!.usedRect(this.#element);
 		// No box -- display:none, or a tree layout never reached -- so the
 		// computed value is the answer, exactly as CSSOM says.
 		if (!rect) return computed;
+
+		if (inset) return this.#usedInset(property, computed, rect, position);
 
 		if (property === "width" || property === "height") {
 			const vertical = property === "height";
@@ -4390,6 +4414,143 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 			return usedLength((parseFloat(computed) / 100) * basis);
 		}
 		return computed || "0px";
+	}
+
+	/**
+	 * A positioned box's inset, as used.
+	 *
+	 * A declared inset resolves where it stands -- a percentage against the
+	 * containing block, everything else as written -- which is also what CSSOM
+	 * asks for when the four insets over-constrain the box. `auto` is the one
+	 * that has to be measured: it is whatever distance the box ended up at.
+	 */
+	#usedInset(
+		property: string,
+		computed: string,
+		rect: DOMRect,
+		position: string,
+	): string {
+		const block = this.#containingBlockBox(position);
+		if (!block) return computed;
+		const vertical = property === "top" || property === "bottom";
+		const basis = vertical ? block.height : block.width;
+		const own = insetLength(computed, basis);
+		if (own !== null) return usedLength(own);
+		// A sticky box keeps its `auto`: it names an edge that constrains
+		// nothing, not a distance.
+		if (position === "sticky") return computed;
+
+		const opposite = OPPOSITE_INSET[property];
+		const other = insetLength(this.computedValueOf(opposite), basis);
+		// A relatively positioned box is offset from where it already was, so
+		// an `auto` inset is the negative of its opposite -- and zero when both
+		// are auto, which moves the box nowhere.
+		if (position === "relative") return usedLength(other === null ? 0 : -other);
+
+		// Out of flow: the box hangs in its containing block, so the used
+		// inset is the distance from that block's edge to the box's margin
+		// edge -- the far side of the box when the opposite inset placed it,
+		// and its static position when neither did.
+		const start = vertical ? "margin-top" : "margin-left";
+		const end = vertical ? "margin-bottom" : "margin-right";
+		if (other !== null) {
+			const size =
+				(vertical ? rect.height : rect.width) +
+				this.#edge(start) +
+				this.#edge(end);
+			return usedLength(basis - other - size);
+		}
+		switch (property) {
+			case "top":
+				return usedLength(rect.y - this.#edge(start) - block.y);
+			case "left":
+				return usedLength(rect.x - this.#edge(start) - block.x);
+			case "bottom":
+				return usedLength(
+					block.y + block.height - (rect.y + rect.height + this.#edge(end)),
+				);
+			default:
+				return usedLength(
+					block.x + block.width - (rect.x + rect.width + this.#edge(end)),
+				);
+		}
+	}
+
+	/**
+	 * The box this element's insets are measured against: the padding box of
+	 * the containing block an out-of-flow box hangs from, the scrollport a
+	 * sticky box is constrained by, and otherwise the content box of the box
+	 * this one flows in.
+	 */
+	#containingBlockBox(position: string): DOMRect | null {
+		if (position === "fixed") return this.#viewportBox();
+		if (position === "absolute") {
+			for (
+				let ancestor = compositionParentElement(this.#element);
+				ancestor;
+				ancestor = compositionParentElement(ancestor)
+			) {
+				const ancestorPosition =
+					computedStyleOf(ancestor).computedValueOf("position");
+				if (ancestorPosition && ancestorPosition !== "static") {
+					return this.#boxOf(ancestor, false);
+				}
+			}
+			return this.#viewportBox();
+		}
+		if (position === "sticky") {
+			for (
+				let ancestor = compositionParentElement(this.#element);
+				ancestor;
+				ancestor = compositionParentElement(ancestor)
+			) {
+				const overflow = computedStyleOf(ancestor).computedValueOf("overflow");
+				if (overflow && overflow !== "visible") {
+					return this.#boxOf(ancestor, true);
+				}
+			}
+		}
+		const parent = compositionParentElement(this.#element);
+		return parent ? this.#boxOf(parent, true) : this.#viewportBox();
+	}
+
+	/** An ancestor's padding box, or its content box, in the same coordinates as a rect. */
+	#boxOf(element: Element, content: boolean): DOMRect | null {
+		const rect = this.#manager!.usedRect(element);
+		if (!rect) return null;
+		const style = computedStyleOf(element);
+		const edge = (name: string): number =>
+			parseFloat(style.computedValueOf(name)) || 0;
+		let top = edge("border-top-width");
+		let left = edge("border-left-width");
+		let bottom = edge("border-bottom-width");
+		let right = edge("border-right-width");
+		if (content) {
+			top += edge("padding-top");
+			left += edge("padding-left");
+			bottom += edge("padding-bottom");
+			right += edge("padding-right");
+		}
+		return new (rect.constructor as typeof DOMRect)(
+			rect.x + left,
+			rect.y + top,
+			rect.width - left - right,
+			rect.height - top - bottom,
+		);
+	}
+
+	/** The initial containing block: the grid itself. */
+	#viewportBox(): DOMRect | null {
+		const viewport = this.#manager!.viewportSize();
+		if (!viewport) return null;
+		const rect = this.#manager!.usedRect(this.#element);
+		if (!rect) return null;
+		return new (rect.constructor as typeof DOMRect)(
+			0,
+			0,
+			viewport.width,
+			viewport.height,
+		);
 	}
 
 	/** One edge length in cells, for the arithmetic above. */

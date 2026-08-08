@@ -12,11 +12,15 @@
  * Run: bun scripts/wpt-cssom.ts [name-filter]
  */
 
-import {JSDOM, VirtualConsole} from "jsdom";
+import {type DOMWindow, JSDOM, VirtualConsole} from "jsdom";
 import {existsSync, mkdirSync, readFileSync, writeFileSync} from "node:fs";
 import {dirname, join} from "node:path";
 import {fileURLToPath} from "node:url";
-import {installInlineStyle, StyleManager} from "../src/internal/styles.ts";
+import {
+	getBoxModel,
+	installInlineStyle,
+	StyleManager,
+} from "../src/internal/styles.ts";
 import {LayoutEngine} from "../src/internal/layout.ts";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -158,6 +162,41 @@ interface Outcome {
 	error?: string;
 }
 
+/**
+ * clientWidth/clientHeight, which several tests derive their expected
+ * resolved values from.
+ *
+ * TermDOM installs these off the same layout rects; a document under this
+ * harness has a StyleManager and a LayoutEngine but no TermDOM, so the
+ * harness installs the same padding-box measurement rather than leaving
+ * jsdom's constant zero standing in for the engine's geometry.
+ */
+function installGeometry(window: DOMWindow, styleManager: StyleManager): void {
+	const clientBox = (
+		element: Element,
+	): {width: number; height: number} | null => {
+		const rect = styleManager.usedRect(element);
+		if (!rect) return null;
+		const box = getBoxModel(element);
+		return {
+			width: rect.width - box.borderLeftWidth - box.borderRightWidth,
+			height: rect.height - box.borderTopWidth - box.borderBottomWidth,
+		};
+	};
+	for (const [property, axis] of [
+		["clientWidth", "width"],
+		["clientHeight", "height"],
+	] as const) {
+		Object.defineProperty(window.HTMLElement.prototype, property, {
+			get(this: Element) {
+				return Math.round(clientBox(this)?.[axis] ?? 0);
+			},
+			configurable: true,
+			enumerable: true,
+		});
+	}
+}
+
 /** Resolve a script's src against the suite directory, as a repo path. */
 function resolveScript(src: string): string {
 	if (src.startsWith("/")) return src.slice(1);
@@ -197,16 +236,32 @@ async function runFile(file: string): Promise<Outcome> {
 	const layoutEngine = new LayoutEngine(dom.window);
 	styleManager.setLayoutEngine(layoutEngine);
 	// The flush a resolved value takes. TermDOM's own is
-	// #processPendingMutationsAndRender; here, with no render loop, laying out
-	// synchronously is the same seam without the paint.
+	// #processPendingMutationsAndRender: pending mutations drained into the
+	// style and layout engines, then a synchronous layout. Here, with no
+	// render loop, it is the same seam without the paint -- and the drain is
+	// what makes a value read straight after a DOM build measure that build.
+	const observer = new dom.window.MutationObserver(() => {});
+	observer.observe(dom.window.document, {
+		childList: true,
+		subtree: true,
+		attributes: true,
+		attributeOldValue: true,
+		characterData: true,
+	});
 	styleManager.setLayoutFlush(() => {
+		const pending = observer.takeRecords();
+		if (pending.length > 0) {
+			styleManager.handleMutations(pending);
+			layoutEngine.handleMutations(pending);
+		}
 		layoutEngine.calculateLayout();
-		return false;
+		return pending.length > 0;
 	});
 	// The suite is written against a browser viewport in CSS pixels; this
 	// engine's pixel is a cell, so the harness gives it a grid the same size
 	// as the viewport the tests assume.
 	layoutEngine.resize(800, 600);
+	installGeometry(dom.window, styleManager);
 
 	const outcome: Outcome = {file, harness: "TIMEOUT", subtests: []};
 	const done = new Promise<void>((resolve) => {
