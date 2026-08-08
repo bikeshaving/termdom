@@ -17,16 +17,7 @@
  */
 import {stringWidth} from "./text.js";
 
-// ---- Box-model shorthand expansion (the UA table is built on it) ----
-/**
- * Expand box-model SHORTHANDS into the longhands everything downstream
- * reads. Both stylesheet rules and element defaults are consulted
- * per-property, so a `border: 1px solid` that never becomes
- * border-top-width etc. simply doesn't exist to the box model or the
- * border painter. (Inline styles don't need this: cssstyle expands them.)
- * Declaration order is preserved, so an explicit longhand after a
- * shorthand still overrides it.
- */
+// ---- Shorthand expansion (the UA table is built on it) ----
 const BORDER_STYLE_KEYWORDS = new Set([
 	"none",
 	"hidden",
@@ -39,14 +30,154 @@ const BORDER_STYLE_KEYWORDS = new Set([
 	"inset",
 	"outset",
 ]);
+const LINE_WIDTH_KEYWORDS = new Set(["thin", "medium", "thick"]);
 const EDGES = ["top", "right", "bottom", "left"] as const;
+const LIST_STYLE_POSITIONS = new Set(["inside", "outside"]);
 
 /** CSS 1-4 value expansion: [all], [v h], [t h b], [t r b l]. */
 function perEdge(values: string[]): [string, string, string, string] {
 	const [a, b = a, c = a, d = b] = values;
 	return [a, b, c, d];
 }
-export function expandBoxShorthands(
+
+/**
+ * A value's top-level components. Whitespace INSIDE parentheses separates a
+ * function's own arguments, not components: `rgb(95, 175, 255)` is one color,
+ * however many spaces it carries.
+ */
+function splitComponents(value: string): string[] {
+	const components: string[] = [];
+	let depth = 0;
+	let start = 0;
+	for (let i = 0; i <= value.length; i++) {
+		const char = value[i];
+		if (char === "(") depth++;
+		else if (char === ")") depth--;
+		else if ((i === value.length || /\s/.test(char)) && depth === 0) {
+			const component = value.slice(start, i).trim();
+			if (component) components.push(component);
+			start = i + 1;
+		}
+	}
+	return components;
+}
+
+/**
+ * The `<line-width> || <line-style> || <color>` grammar shared by `border`,
+ * the per-side border shorthands and `outline`. Components may appear in any
+ * order and any may be omitted.
+ */
+function splitLineValue(value: string): {
+	width: string | null;
+	lineStyle: string | null;
+	color: string | null;
+} {
+	let width: string | null = null;
+	let lineStyle: string | null = null;
+	let color: string | null = null;
+	for (const token of splitComponents(value)) {
+		if (BORDER_STYLE_KEYWORDS.has(token)) lineStyle = token;
+		else if (/^[\d.]/.test(token) || LINE_WIDTH_KEYWORDS.has(token)) {
+			width = token;
+		} else if (token) color = token;
+	}
+	return {width, lineStyle, color};
+}
+
+/**
+ * Expand the `flex` shorthand (css-flexbox-1 §7.1.1): `none` is 0 0 auto,
+ * `auto` 1 1 auto, `initial` 0 1 auto; otherwise the first number is grow,
+ * a second number is shrink, anything else is the basis -- and a one-value
+ * numeric form (`flex: 1`) sets the basis to 0%, which is what makes it the
+ * everyday grow-to-fill declaration.
+ */
+function expandFlex(value: string): Record<string, string> | null {
+	const v = value.trim();
+	if (v === "none") {
+		return {"flex-grow": "0", "flex-shrink": "0", "flex-basis": "auto"};
+	}
+	if (v === "auto") {
+		return {"flex-grow": "1", "flex-shrink": "1", "flex-basis": "auto"};
+	}
+	if (v === "initial") {
+		return {"flex-grow": "0", "flex-shrink": "1", "flex-basis": "auto"};
+	}
+	let grow: string | undefined;
+	let shrink: string | undefined;
+	let basis: string | undefined;
+	for (const token of v.split(/\s+/)) {
+		if (/^[\d.]+$/.test(token)) {
+			if (grow === undefined) grow = token;
+			else if (shrink === undefined) shrink = token;
+			else return null;
+		} else if (basis === undefined) {
+			basis = token;
+		} else {
+			return null;
+		}
+	}
+	if (grow === undefined && basis === undefined) return null;
+	return {
+		"flex-grow": grow ?? "1",
+		"flex-shrink": shrink ?? "1",
+		"flex-basis": basis ?? (grow !== undefined ? "0%" : "auto"),
+	};
+}
+
+/**
+ * Expand the `list-style` shorthand, whose components may appear in any order.
+ *
+ * `none` is ambiguous -- it sets whichever of type/image has not been given --
+ * but for a terminal there are no images, so it always means "no marker".
+ */
+function expandListStyle(value: string): Record<string, string> {
+	const parts: Record<string, string> = {};
+	for (const token of value.trim().split(/\s+/)) {
+		if (!token) continue;
+		if (LIST_STYLE_POSITIONS.has(token)) {
+			parts["list-style-position"] = token;
+		} else if (token.startsWith("url(")) {
+			parts["list-style-image"] = token;
+		} else {
+			parts["list-style-type"] = token;
+		}
+	}
+	return parts;
+}
+
+/**
+ * Expand the `background` shorthand down to the two components a terminal can
+ * render. Positions, repeats and attachments mean nothing on a cell grid and
+ * are dropped; `none` is the IMAGE component, never a color, so the color a
+ * bare `background: none` declares is its initial, transparent.
+ */
+function expandBackground(value: string): Record<string, string> {
+	const tokens = splitComponents(value);
+	if (value.includes("url(")) {
+		return {"background-image": value.trim()};
+	}
+	const color = tokens
+		.filter((token) => token.toLowerCase() !== "none")
+		.join(" ");
+	return {
+		"background-image": "none",
+		"background-color": color || "transparent",
+	};
+}
+
+/**
+ * Expand CSS SHORTHANDS into the longhands everything downstream reads.
+ * Declarations are consulted per-property, so a `border: 1px solid` that
+ * never becomes border-top-width etc. simply doesn't exist to the box model
+ * or the border painter. Declaration order is preserved, so an explicit
+ * longhand after a shorthand still overrides it.
+ *
+ * A shorthand keeps its own entry alongside the longhands it declares, so
+ * `getPropertyValue("border")` still answers what was authored. `margin` and
+ * `padding` are the exception: their computed answers are serialized from the
+ * four longhands, so keeping the shorthand would shadow that.
+ */
+export function expandShorthands(
 	declarations: Record<string, string>,
 ): Record<string, string> {
 	const out: Record<string, string> = {};
@@ -56,51 +187,93 @@ export function expandBoxShorthands(
 			out[`border-${edge}-${kind}`] = edgeValues[i];
 		});
 	};
-	const splitBorderValue = (value: string) => {
-		let width: string | null = null;
-		let borderStyle: string | null = null;
-		let color: string | null = null;
-		for (const token of value.trim().split(/\s+/)) {
-			if (BORDER_STYLE_KEYWORDS.has(token)) borderStyle = token;
-			else if (
-				/^[\d.]/.test(token) ||
-				token === "thin" ||
-				token === "thick" ||
-				token === "medium"
-			)
-				width = token;
-			else if (token) color = token;
-		}
-		return {width, borderStyle, color};
-	};
 
 	for (const [property, value] of Object.entries(declarations)) {
-		const values = value.trim().split(/\s+/).filter(Boolean);
-		if (property === "border") {
-			const {width, borderStyle, color} = splitBorderValue(value);
-			setEdges("width", [width ?? "medium"]);
-			setEdges("style", [borderStyle ?? "none"]);
-			if (color) setEdges("color", [color]);
-		} else if (property === "border-width") {
-			setEdges("width", values);
-		} else if (property === "border-style") {
-			setEdges("style", values);
-		} else if (property === "border-color") {
-			setEdges("color", values);
-		} else if (/^border-(top|right|bottom|left)$/.test(property)) {
-			const edge = property.slice("border-".length);
-			const {width, borderStyle, color} = splitBorderValue(value);
-			out[`border-${edge}-width`] = width ?? "medium";
-			out[`border-${edge}-style`] = borderStyle ?? "none";
-			if (color) out[`border-${edge}-color`] = color;
-		} else if (property === "padding" || property === "margin") {
-			const edgeValues = perEdge(values);
-			EDGES.forEach((edge, i) => {
-				out[`${property}-${edge}`] = edgeValues[i];
-			});
-		} else {
-			out[property] = value;
+		const values = splitComponents(value);
+		switch (property) {
+			case "border": {
+				const {width, lineStyle, color} = splitLineValue(value);
+				setEdges("width", [width ?? "medium"]);
+				setEdges("style", [lineStyle ?? "none"]);
+				if (color) setEdges("color", [color]);
+				break;
+			}
+			case "border-width":
+				setEdges("width", values);
+				break;
+			case "border-style":
+				setEdges("style", values);
+				break;
+			case "border-color":
+				setEdges("color", values);
+				break;
+			case "border-top":
+			case "border-right":
+			case "border-bottom":
+			case "border-left": {
+				const edge = property.slice("border-".length);
+				const {width, lineStyle, color} = splitLineValue(value);
+				out[`border-${edge}-width`] = width ?? "medium";
+				out[`border-${edge}-style`] = lineStyle ?? "none";
+				if (color) out[`border-${edge}-color`] = color;
+				break;
+			}
+			case "outline": {
+				const {width, lineStyle, color} = splitLineValue(value);
+				out["outline-width"] = width ?? "medium";
+				out["outline-style"] = lineStyle ?? "none";
+				if (color) out["outline-color"] = color;
+				break;
+			}
+			case "padding":
+			case "margin": {
+				const edgeValues = perEdge(values);
+				EDGES.forEach((edge, i) => {
+					out[`${property}-${edge}`] = edgeValues[i];
+				});
+				// The shorthand itself is serialized from these on read.
+				continue;
+			}
+			case "inset": {
+				const edgeValues = perEdge(values);
+				EDGES.forEach((edge, i) => {
+					out[edge] = edgeValues[i];
+				});
+				break;
+			}
+			case "gap": {
+				out["row-gap"] = values[0];
+				out["column-gap"] = values[1] ?? values[0];
+				break;
+			}
+			case "overflow": {
+				out["overflow-x"] = values[0];
+				out["overflow-y"] = values[1] ?? values[0];
+				break;
+			}
+			case "flex": {
+				Object.assign(out, expandFlex(value) ?? {});
+				break;
+			}
+			case "list-style":
+				Object.assign(out, expandListStyle(value));
+				break;
+			case "background":
+				Object.assign(out, expandBackground(value));
+				break;
+			case "text-decoration": {
+				// `<line> || <style> || <color>`; only the line component has a
+				// terminal rendering, and it is the one the painter reads.
+				const line = values
+					.filter((token) =>
+						/^(none|underline|overline|line-through|blink)$/.test(token),
+					)
+					.join(" ");
+				if (line) out["text-decoration-line"] = line;
+				break;
+			}
 		}
+		out[property] = value;
 	}
 	return out;
 }
@@ -111,8 +284,14 @@ export function expandBoxShorthands(
  */
 const CSS_SPEC_DEFAULTS: Record<string, string> = {
 	display: "inline",
-	margin: "0",
-	padding: "0",
+	"margin-top": "0",
+	"margin-right": "0",
+	"margin-bottom": "0",
+	"margin-left": "0",
+	"padding-top": "0",
+	"padding-right": "0",
+	"padding-bottom": "0",
+	"padding-left": "0",
 	"border-width": "0",
 	"border-style": "none",
 	"border-color": "currentColor",
@@ -331,7 +510,7 @@ export const TERMINAL_ELEMENT_DEFAULTS: Record<
 // The defaults above may use shorthands; normalize them once so the
 // per-property consultation below always finds longhands.
 for (const [tag, declarations] of Object.entries(TERMINAL_ELEMENT_DEFAULTS)) {
-	TERMINAL_ELEMENT_DEFAULTS[tag] = expandBoxShorthands(declarations);
+	TERMINAL_ELEMENT_DEFAULTS[tag] = expandShorthands(declarations);
 }
 // input's own entry in TERMINAL_ELEMENT_DEFAULTS above (bordered box, 20ch
 // wide) is shaped for a text field, whose void-element content has nothing
