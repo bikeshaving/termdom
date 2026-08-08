@@ -70,6 +70,28 @@ const VALID_ATTRIBUTE_LOCAL_NAME = /^[^\0\t\n\f\r /=>]+$/u;
 const VALID_NAMESPACE_PREFIX = /^[^\0\t\n\f\r />]+$/u;
 const VALID_DOCTYPE_NAME = /^[^\0\t\n\f\r >]*$/u;
 
+// XML 1.0 (5th ed) Name, which a processing instruction's target must match.
+// Surrogates are matched as pairs so an astral character counts as one.
+const NAME_START =
+	"A-Z_a-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02FF\u0370-\u037D" +
+	"\u037F-\u1FFF\u200C-\u200D\u2070-\u218F\u2C00-\u2FEF" +
+	"\u3001-\uD7FF\uF900-\uFDCF\uFDF0-\uFFFD:";
+const NAME_REST = `${NAME_START}\\-.0-9\u00B7\u0300-\u036F\u203F-\u2040`;
+// The combining-mark ranges are the production's own, and are meant to match
+// a combining mark on its own rather than as part of a grapheme.
+// eslint-disable-next-line no-misleading-character-class
+const XML_NAME = new RegExp(
+	`^(?:[${NAME_START}]|[\uD800-\uDBFF][\uDC00-\uDFFF])` +
+		`(?:[${NAME_REST}]|[\uD800-\uDBFF][\uDC00-\uDFFF])*$`,
+);
+
+/** Throw unless the string matches the XML Name production. */
+function validateXMLName(name: string): void {
+	if (!XML_NAME.test(name)) {
+		throw domError("InvalidCharacterError", `"${name}" is not a valid name`);
+	}
+}
+
 function isValidLocalName(name: string, forAttribute: boolean): boolean {
 	return forAttribute
 		? VALID_ATTRIBUTE_LOCAL_NAME.test(name)
@@ -148,14 +170,20 @@ function validateAndExtract(
 		(qualifiedName === "xmlns" || prefix === "xmlns") &&
 		ns !== XMLNS_NAMESPACE
 	) {
-		throw domError("NamespaceError", "The xmlns name needs the XMLNS namespace");
+		throw domError(
+			"NamespaceError",
+			"The xmlns name needs the XMLNS namespace",
+		);
 	}
 	if (
 		ns === XMLNS_NAMESPACE &&
 		qualifiedName !== "xmlns" &&
 		prefix !== "xmlns"
 	) {
-		throw domError("NamespaceError", "The XMLNS namespace needs the xmlns name");
+		throw domError(
+			"NamespaceError",
+			"The XMLNS namespace needs the xmlns name",
+		);
 	}
 	return {namespace: ns, prefix, localName};
 }
@@ -396,7 +424,10 @@ export interface AddEventListenerOptions {
 	capture?: boolean;
 	once?: boolean;
 	passive?: boolean;
-	signal?: {aborted: boolean; addEventListener(type: string, cb: () => void): void};
+	signal?: {
+		aborted: boolean;
+		addEventListener(type: string, cb: () => void): void;
+	};
 }
 
 interface Listener {
@@ -410,7 +441,12 @@ interface Listener {
 
 function normalizeOptions(
 	options: boolean | AddEventListenerOptions | undefined,
-): {capture: boolean; once: boolean; passive: boolean; signal: AddEventListenerOptions["signal"]} {
+): {
+	capture: boolean;
+	once: boolean;
+	passive: boolean;
+	signal: AddEventListenerOptions["signal"];
+} {
 	if (typeof options === "boolean" || options == null) {
 		return {
 			capture: Boolean(options),
@@ -660,7 +696,7 @@ function bumpVersion(): void {
 	treeVersion++;
 	for (let i = 0; i < materialized.length; i++) {
 		const collection = materialized[i].deref();
-		if (collection !== undefined) collection[kSync]();
+		if (collection !== undefined) syncMethod.call(collection);
 	}
 }
 
@@ -895,14 +931,11 @@ export class Node extends EventTarget {
 				}
 			}
 		}
-		if (
-			node1 === null ||
-			node2 === null ||
-			getRoot(node1) !== getRoot(node2)
-		) {
-			const first = node1 === null || node2 === null
-				? this[kSerial] < other[kSerial]
-				: getRoot(node2)[kSerial] < getRoot(node1)[kSerial];
+		if (node1 === null || node2 === null || getRoot(node1) !== getRoot(node2)) {
+			const first =
+				node1 === null || node2 === null
+					? this[kSerial] < other[kSerial]
+					: getRoot(node2)[kSerial] < getRoot(node1)[kSerial];
 			return (
 				DOCUMENT_POSITION_DISCONNECTED +
 				DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC +
@@ -950,13 +983,16 @@ export class Node extends EventTarget {
 			}
 			default: {
 				const parent = this.parentElement;
-				return parent === null ? null : locateNamespacePrefix(parent, namespace);
+				return parent === null
+					? null
+					: locateNamespacePrefix(parent, namespace);
 			}
 		}
 	}
 
 	lookupNamespaceURI(prefix: string | null): string | null {
-		return locateNamespace(this, prefix === "" ? null : prefix);
+		const name = prefix == null || prefix === "" ? null : String(prefix);
+		return locateNamespace(this, name);
 	}
 
 	isDefaultNamespace(namespace: string | null): boolean {
@@ -1100,6 +1136,16 @@ function* descendants(node: Node): Generator<Node> {
 	}
 }
 
+/** Every descendant element of a node, in tree order, into an array. */
+function descendantElements(root: Node, into: Element[]): Element[] {
+	let current = root[kFirstChild];
+	while (current !== null) {
+		if (current.nodeType === ELEMENT_NODE) into.push(current as Element);
+		current = nextInTree(current, root);
+	}
+	return into;
+}
+
 /** Whether node1 precedes node2 in tree order; both share a root. */
 function precedesInTree(node1: Node, node2: Node): boolean {
 	const root = getRoot(node1);
@@ -1112,16 +1158,6 @@ function precedesInTree(node1: Node, node2: Node): boolean {
 
 function isExclusiveText(node: Node): boolean {
 	return node.nodeType === TEXT_NODE;
-}
-
-function childIndex(node: Node): number {
-	let index = 0;
-	let current = node[kPrevious];
-	while (current !== null) {
-		index++;
-		current = current[kPrevious];
-	}
-	return index;
 }
 
 /* --------------------------------------------------- mutation: pre-insert */
@@ -1164,6 +1200,7 @@ function ensurePreInsertionValidity(
 	node: Node,
 	parent: Node,
 	child: Node | null,
+	replacingAll = false,
 ): void {
 	const parentType = parent.nodeType;
 	if (
@@ -1195,6 +1232,8 @@ function ensurePreInsertionValidity(
 		throw hierarchyRequestError("That node cannot go there");
 	}
 	if (parentType !== DOCUMENT_NODE) return;
+	const elements = replacingAll ? 0 : countChildren(parent, ELEMENT_NODE);
+	const doctypes = replacingAll ? 0 : countChildren(parent, DOCUMENT_TYPE_NODE);
 	if (type === DOCUMENT_FRAGMENT_NODE) {
 		const elementCount = countChildren(node, ELEMENT_NODE);
 		if (elementCount > 1 || countChildren(node, TEXT_NODE) > 0) {
@@ -1202,7 +1241,7 @@ function ensurePreInsertionValidity(
 		}
 		if (
 			elementCount === 1 &&
-			(countChildren(parent, ELEMENT_NODE) > 0 ||
+			(elements > 0 ||
 				(child !== null && child.nodeType === DOCUMENT_TYPE_NODE) ||
 				hasFollowing(child, DOCUMENT_TYPE_NODE))
 		) {
@@ -1210,7 +1249,7 @@ function ensurePreInsertionValidity(
 		}
 	} else if (type === ELEMENT_NODE) {
 		if (
-			countChildren(parent, ELEMENT_NODE) > 0 ||
+			elements > 0 ||
 			(child !== null && child.nodeType === DOCUMENT_TYPE_NODE) ||
 			hasFollowing(child, DOCUMENT_TYPE_NODE)
 		) {
@@ -1218,9 +1257,9 @@ function ensurePreInsertionValidity(
 		}
 	} else if (type === DOCUMENT_TYPE_NODE) {
 		if (
-			countChildren(parent, DOCUMENT_TYPE_NODE) > 0 ||
+			doctypes > 0 ||
 			(child !== null && hasPreceding(child, ELEMENT_NODE)) ||
-			(child === null && countChildren(parent, ELEMENT_NODE) > 0)
+			(child === null && elements > 0)
 		) {
 			throw hierarchyRequestError("A document can have one doctype child");
 		}
@@ -1257,13 +1296,16 @@ function insertNode(
 		for (const child_ of nodes) removeNode(child_, true);
 		queueTreeMutationRecord(node, [], nodes, null, null);
 	}
-	const previousSibling = child !== null ? child[kPrevious] : parent[kLastChild];
+	const previousSibling =
+		child !== null ? child[kPrevious] : parent[kLastChild];
 	const document = parent[kDocument];
 	for (const inserted of nodes) {
 		adoptNode(inserted, document);
 		linkChild(inserted, parent, child);
-		for (const descendant of inclusiveDescendants(inserted)) {
-			descendant[kInsertionSteps]();
+		let current: Node | null = inserted;
+		while (current !== null) {
+			current[kInsertionSteps]();
+			current = nextInTree(current, inserted);
 		}
 	}
 	bumpVersion();
@@ -1469,8 +1511,10 @@ function removeNode(node: Node, suppressObservers = false): void {
 	const oldPreviousSibling = node[kPrevious];
 	const oldNextSibling = node[kNext];
 	unlinkChild(node);
-	for (const descendant of inclusiveDescendants(node)) {
-		descendant[kRemovingSteps](parent);
+	let current: Node | null = node;
+	while (current !== null) {
+		current[kRemovingSteps](parent);
+		current = nextInTree(current, node);
 	}
 	bumpVersion();
 	if (!suppressObservers) {
@@ -1584,11 +1628,15 @@ abstract class LiveList implements Materializable {
 	#materialize(): void {
 		const items = this.#items;
 		const self = this as unknown as Record<number | string, unknown>;
+		const list = this;
 		for (let index = this.#defined; index < items.length; index++) {
 			const at = index;
 			Object.defineProperty(this, at, {
-				get(this: LiveList) {
-					return this[kEnsure]()[at] ?? undefined;
+				// The recompute is reached through the captured method, not
+				// through the prototype: a caller may replace the prototype,
+				// and an indexed property is meant to survive that.
+				get(): unknown {
+					return ensureMethod.call(list)[at] ?? undefined;
 				},
 				enumerable: true,
 				configurable: true,
@@ -1621,7 +1669,23 @@ abstract class LiveList implements Materializable {
 	}
 }
 
+const ensureMethod = (
+	LiveList.prototype as unknown as Record<symbol, () => Node[]>
+)[kEnsure];
+const syncMethod = (
+	LiveList.prototype as unknown as Record<symbol, () => void>
+)[kSync];
+
 export class NodeList extends LiveList {
+	declare forEach: (
+		callback: (node: Node, index: number, list: NodeList) => void,
+		thisArg?: unknown,
+	) => void;
+	declare keys: () => IterableIterator<number>;
+	declare values: () => IterableIterator<Node>;
+	declare entries: () => IterableIterator<[number, Node]>;
+	declare [Symbol.iterator]: () => IterableIterator<Node>;
+
 	#compute: () => Node[];
 
 	constructor(compute: () => Node[], live: boolean) {
@@ -1642,34 +1706,6 @@ export class NodeList extends LiveList {
 		const at = toUnsignedLong(index);
 		return at < items.length ? items[at] : null;
 	}
-
-	forEach(
-		callback: (node: Node, index: number, list: NodeList) => void,
-		thisArg?: unknown,
-	): void {
-		const items = this[kEnsure]();
-		for (let index = 0; index < items.length; index++) {
-			callback.call(thisArg, items[index], index, this);
-		}
-	}
-
-	*keys(): IterableIterator<number> {
-		const items = this[kEnsure]();
-		for (let index = 0; index < items.length; index++) yield index;
-	}
-
-	*values(): IterableIterator<Node> {
-		yield* this[kEnsure]().slice();
-	}
-
-	*entries(): IterableIterator<[number, Node]> {
-		const items = this[kEnsure]().slice();
-		for (let index = 0; index < items.length; index++) yield [index, items[index]];
-	}
-
-	[Symbol.iterator](): IterableIterator<Node> {
-		return this.values();
-	}
 }
 
 Object.defineProperty(NodeList.prototype, Symbol.toStringTag, {
@@ -1678,6 +1714,8 @@ Object.defineProperty(NodeList.prototype, Symbol.toStringTag, {
 });
 
 export class HTMLCollection extends LiveList {
+	declare [Symbol.iterator]: () => IterableIterator<Element>;
+
 	#compute: () => Element[];
 
 	constructor(compute: () => Element[]) {
@@ -1730,10 +1768,6 @@ export class HTMLCollection extends LiveList {
 		}
 		return null;
 	}
-
-	*[Symbol.iterator](): IterableIterator<Element> {
-		yield* this[kEnsure]().slice() as Element[];
-	}
 }
 
 Object.defineProperty(HTMLCollection.prototype, Symbol.toStringTag, {
@@ -1763,7 +1797,9 @@ function createStaticNodeList(nodes: Node[]): NodeList {
 /** A collection cache keyed by kind and name, so identity is stable. */
 function collectionCache(node: Node): Map<string, HTMLCollection> {
 	const owner = node as unknown as Record<symbol, unknown>;
-	let cache = owner[kCollectionCaches] as Map<string, HTMLCollection> | undefined;
+	let cache = owner[kCollectionCaches] as
+		| Map<string, HTMLCollection>
+		| undefined;
 	if (cache === undefined) {
 		cache = new Map();
 		owner[kCollectionCaches] = cache;
@@ -1786,15 +1822,17 @@ function elementsByTagName(root: Node, qualifiedName: string): HTMLCollection {
 	if (collection === undefined) {
 		const lowered = asciiLowercase(qualifiedName);
 		collection = new HTMLCollection(() => {
+			const all = descendantElements(root, []);
+			if (qualifiedName === "*") return all;
 			const found: Element[] = [];
-			for (const node of descendants(root)) {
-				if (node.nodeType !== ELEMENT_NODE) continue;
-				const element = node as Element;
-				if (qualifiedName === "*") {
-					found.push(element);
-				} else if (element.namespaceURI === HTML_NAMESPACE) {
-					if (element[kQualifiedName] === lowered) found.push(element);
-				} else if (element[kQualifiedName] === qualifiedName) {
+			for (const element of all) {
+				const name =
+					element[kPrefix] === null
+						? element[kLocalName]
+						: `${element[kPrefix]}:${element[kLocalName]}`;
+				if (element[kNamespace] === HTML_NAMESPACE) {
+					if (name === lowered) found.push(element);
+				} else if (name === qualifiedName) {
 					found.push(element);
 				}
 			}
@@ -1818,11 +1856,9 @@ function elementsByTagNameNS(
 	if (collection === undefined) {
 		collection = new HTMLCollection(() => {
 			const found: Element[] = [];
-			for (const node of descendants(root)) {
-				if (node.nodeType !== ELEMENT_NODE) continue;
-				const element = node as Element;
-				if (ns !== "*" && element.namespaceURI !== ns) continue;
-				if (localName !== "*" && element.localName !== localName) continue;
+			for (const element of descendantElements(root, [])) {
+				if (ns !== "*" && element[kNamespace] !== ns) continue;
+				if (localName !== "*" && element[kLocalName] !== localName) continue;
 				found.push(element);
 			}
 			return found;
@@ -1848,13 +1884,15 @@ function elementsByClassName(root: Node, classNames: string): HTMLCollection {
 			if (classes.length === 0) return found;
 			const isQuirks = root[kDocument][kMode] === "quirks";
 			const wanted = isQuirks ? quirks : classes;
-			for (const node of descendants(root)) {
-				if (node.nodeType !== ELEMENT_NODE) continue;
-				const element = node as Element;
-				const tokens = element.classList;
+			for (const element of descendantElements(root, [])) {
+				const value = element.getAttribute("class");
+				if (value === null) continue;
+				const tokens = splitOnAsciiWhitespace(
+					isQuirks ? asciiLowercase(value) : value,
+				);
 				let all = true;
 				for (const name of wanted) {
-					if (!tokens[kHasToken](name, isQuirks)) {
+					if (!tokens.includes(name)) {
 						all = false;
 						break;
 					}
@@ -1870,8 +1908,6 @@ function elementsByClassName(root: Node, classNames: string): HTMLCollection {
 }
 
 /* ------------------------------------------------------------ token lists */
-
-const kHasToken = Symbol("token membership");
 
 const ASCII_WHITESPACE = /[\t\n\f\r ]+/;
 
@@ -1894,6 +1930,15 @@ function asciiUppercase(value: string): string {
 }
 
 export class DOMTokenList extends LiveList {
+	declare forEach: (
+		callback: (token: string, index: number, list: DOMTokenList) => void,
+		thisArg?: unknown,
+	) => void;
+	declare keys: () => IterableIterator<number>;
+	declare values: () => IterableIterator<string>;
+	declare entries: () => IterableIterator<[number, string]>;
+	declare [Symbol.iterator]: () => IterableIterator<string>;
+
 	#element: Element;
 	#attribute: string;
 	#supported: Set<string> | null;
@@ -1919,13 +1964,6 @@ export class DOMTokenList extends LiveList {
 		return this[kEnsure]() as unknown as string[];
 	}
 
-	[kHasToken](token: string, caseInsensitive: boolean): boolean {
-		const tokens = this.#tokens;
-		if (!caseInsensitive) return tokens.includes(token);
-		const lowered = asciiLowercase(token);
-		return tokens.some((each) => asciiLowercase(each) === lowered);
-	}
-
 	get length(): number {
 		return this.#tokens.length;
 	}
@@ -1941,7 +1979,7 @@ export class DOMTokenList extends LiveList {
 	}
 
 	add(...tokens: string[]): void {
-		for (const token of tokens) validateToken(token);
+		validateTokens(tokens);
 		const current = this.#tokens.slice();
 		for (const token of tokens) {
 			if (!current.includes(token)) current.push(String(token));
@@ -1950,7 +1988,7 @@ export class DOMTokenList extends LiveList {
 	}
 
 	remove(...tokens: string[]): void {
-		for (const token of tokens) validateToken(token);
+		validateTokens(tokens);
 		const current = this.#tokens.filter(
 			(each) => !tokens.some((token) => String(token) === each),
 		);
@@ -1958,7 +1996,7 @@ export class DOMTokenList extends LiveList {
 	}
 
 	toggle(token: string, force?: boolean): boolean {
-		validateToken(token);
+		validateTokens([token]);
 		const name = String(token);
 		const current = this.#tokens.slice();
 		const index = current.indexOf(name);
@@ -1979,19 +2017,27 @@ export class DOMTokenList extends LiveList {
 	}
 
 	replace(token: string, newToken: string): boolean {
-		validateToken(token);
-		validateToken(newToken);
-		const current = this.#tokens.slice();
-		const index = current.indexOf(String(token));
-		if (index === -1) return false;
+		validateTokens([token, newToken]);
+		const name = String(token);
 		const replacement = String(newToken);
-		const existing = current.indexOf(replacement);
-		if (existing !== -1 && existing !== index) {
-			current.splice(index, 1);
-		} else {
-			current[index] = replacement;
+		const current = this.#tokens.slice();
+		if (!current.includes(name)) return false;
+		// The ordered set replacement: the first of either token becomes the
+		// replacement, and every other instance of either is dropped.
+		const first = Math.min(
+			...[current.indexOf(name), current.indexOf(replacement)].filter(
+				(index) => index !== -1,
+			),
+		);
+		const replaced: string[] = [];
+		for (let index = 0; index < current.length; index++) {
+			if (index === first) {
+				replaced.push(replacement);
+			} else if (current[index] !== name && current[index] !== replacement) {
+				replaced.push(current[index]);
+			}
 		}
-		this.#write(current);
+		this.#write(replaced);
 		return true;
 	}
 
@@ -2020,36 +2066,6 @@ export class DOMTokenList extends LiveList {
 		}
 		this.#element.setAttribute(this.#attribute, tokens.join(" "));
 	}
-
-	forEach(
-		callback: (token: string, index: number, list: DOMTokenList) => void,
-		thisArg?: unknown,
-	): void {
-		const tokens = this.#tokens.slice();
-		for (let index = 0; index < tokens.length; index++) {
-			callback.call(thisArg, tokens[index], index, this);
-		}
-	}
-
-	*keys(): IterableIterator<number> {
-		const tokens = this.#tokens;
-		for (let index = 0; index < tokens.length; index++) yield index;
-	}
-
-	*values(): IterableIterator<string> {
-		yield* this.#tokens.slice();
-	}
-
-	*entries(): IterableIterator<[number, string]> {
-		const tokens = this.#tokens.slice();
-		for (let index = 0; index < tokens.length; index++) {
-			yield [index, tokens[index]];
-		}
-	}
-
-	[Symbol.iterator](): IterableIterator<string> {
-		return this.values();
-	}
 }
 
 Object.defineProperty(DOMTokenList.prototype, Symbol.toStringTag, {
@@ -2057,16 +2073,50 @@ Object.defineProperty(DOMTokenList.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-function validateToken(token: string): void {
-	const name = String(token);
-	if (name === "") {
-		throw domError("SyntaxError", "A token cannot be the empty string");
+/**
+ * The Array iteration functions, on the collections WebIDL says get them.
+ *
+ * An interface with an indexed property getter and a length takes
+ * %Array.prototype%'s own functions -- the same function objects, not
+ * lookalikes -- so a caller comparing them finds them equal, and iteration
+ * reads length and index on each step, which keeps it live.
+ */
+function installArrayIteration(
+	prototype: object,
+	valueIterator: boolean,
+): void {
+	const members: Record<string | symbol, unknown> = {
+		[Symbol.iterator]: Array.prototype[Symbol.iterator],
+	};
+	if (valueIterator) {
+		members.keys = Array.prototype.keys;
+		members.values = Array.prototype.values;
+		members.entries = Array.prototype.entries;
+		members.forEach = Array.prototype.forEach;
 	}
-	if (/[\t\n\f\r ]/.test(name)) {
-		throw domError(
-			"InvalidCharacterError",
-			"A token cannot contain ASCII whitespace",
-		);
+	for (const key of Reflect.ownKeys(members)) {
+		Object.defineProperty(prototype, key, {
+			value: members[key as string],
+			writable: true,
+			enumerable: typeof key === "string",
+			configurable: true,
+		});
+	}
+}
+
+function validateTokens(tokens: string[]): void {
+	for (const token of tokens) {
+		if (String(token) === "") {
+			throw domError("SyntaxError", "A token cannot be the empty string");
+		}
+	}
+	for (const token of tokens) {
+		if (/[\t\n\f\r ]/.test(String(token))) {
+			throw domError(
+				"InvalidCharacterError",
+				"A token cannot contain ASCII whitespace",
+			);
+		}
 	}
 }
 
@@ -2087,7 +2137,12 @@ export class CharacterData extends Node {
 	}
 
 	set data(value: string) {
-		replaceData(this, 0, this[kData].length, value === null ? "" : String(value));
+		replaceData(
+			this,
+			0,
+			this[kData].length,
+			value === null ? "" : String(value),
+		);
 	}
 
 	get length(): number {
@@ -2099,7 +2154,7 @@ export class CharacterData extends Node {
 	}
 
 	override set nodeValue(value: string | null) {
-		replaceData(this, 0, this[kData].length, value === null ? "" : String(value));
+		replaceData(this, 0, this[kData].length, nullableString(value));
 	}
 
 	override get textContent(): string | null {
@@ -2107,10 +2162,13 @@ export class CharacterData extends Node {
 	}
 
 	override set textContent(value: string | null) {
-		replaceData(this, 0, this[kData].length, value === null ? "" : String(value));
+		replaceData(this, 0, this[kData].length, nullableString(value));
 	}
 
 	substringData(offset: number, count: number): string {
+		if (arguments.length < 2) {
+			throw new TypeError("substringData needs an offset and a count");
+		}
 		const length = this[kData].length;
 		const start = toUnsignedLong(offset);
 		if (start > length) throw indexSizeError("The offset is past the end");
@@ -2120,18 +2178,28 @@ export class CharacterData extends Node {
 	}
 
 	appendData(data: string): void {
+		if (arguments.length < 1) throw new TypeError("appendData needs data");
 		replaceData(this, this[kData].length, 0, String(data));
 	}
 
 	insertData(offset: number, data: string): void {
+		if (arguments.length < 2) {
+			throw new TypeError("insertData needs an offset and data");
+		}
 		replaceData(this, toUnsignedLong(offset), 0, String(data));
 	}
 
 	deleteData(offset: number, count: number): void {
+		if (arguments.length < 2) {
+			throw new TypeError("deleteData needs an offset and a count");
+		}
 		replaceData(this, toUnsignedLong(offset), toUnsignedLong(count), "");
 	}
 
 	replaceData(offset: number, count: number, data: string): void {
+		if (arguments.length < 3) {
+			throw new TypeError("replaceData needs an offset, a count and data");
+		}
 		replaceData(
 			this,
 			toUnsignedLong(offset),
@@ -2146,6 +2214,11 @@ Object.defineProperty(CharacterData.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
+/** A nullable DOMString: null and undefined are both the empty string. */
+function nullableString(value: string | null | undefined): string {
+	return value == null ? "" : String(value);
+}
+
 /** The spec's "replace data" algorithm. */
 function replaceData(
 	node: CharacterData,
@@ -2157,7 +2230,8 @@ function replaceData(
 	if (offset > length) throw indexSizeError("The offset is past the end");
 	const size = offset + count > length ? length - offset : count;
 	const oldValue = node[kData];
-	node[kData] = oldValue.slice(0, offset) + data + oldValue.slice(offset + size);
+	node[kData] =
+		oldValue.slice(0, offset) + data + oldValue.slice(offset + size);
 	queueCharacterDataMutationRecord(node, oldValue);
 	bumpVersion();
 	const parent = node[kParent];
@@ -2188,6 +2262,7 @@ export class Text extends CharacterData {
 	}
 
 	splitText(offset: number): Text {
+		if (arguments.length < 1) throw new TypeError("splitText needs an offset");
 		const start = toUnsignedLong(offset);
 		const length = this[kData].length;
 		if (start > length) throw indexSizeError("The offset is past the end");
@@ -2418,16 +2493,19 @@ Object.defineProperty(DocumentFragment.prototype, Symbol.toStringTag, {
 
 function descendantText(node: Node): string {
 	let text = "";
-	for (const descendant of descendants(node)) {
-		if (descendant.nodeType === TEXT_NODE) {
-			text += (descendant as CharacterData)[kData];
+	let current = node[kFirstChild];
+	while (current !== null) {
+		const type = current.nodeType;
+		if (type === TEXT_NODE || type === CDATA_SECTION_NODE) {
+			text += (current as CharacterData)[kData];
 		}
+		current = nextInTree(current, node);
 	}
 	return text;
 }
 
 function setDescendantText(node: Node, value: string | null): void {
-	const string = value === null ? "" : String(value);
+	const string = nullableString(value);
 	let replacement: Node | null = null;
 	if (string !== "") {
 		replacement = new Text(string);
@@ -2517,7 +2595,7 @@ export class Attr extends Node {
 	}
 
 	override set nodeValue(value: string | null) {
-		setExistingAttributeValue(this, value === null ? "" : String(value));
+		setExistingAttributeValue(this, nullableString(value));
 	}
 
 	override get textContent(): string | null {
@@ -2525,7 +2603,7 @@ export class Attr extends Node {
 	}
 
 	override set textContent(value: string | null) {
-		setExistingAttributeValue(this, value === null ? "" : String(value));
+		setExistingAttributeValue(this, nullableString(value));
 	}
 
 	override [kCloneSingle](document: Document): Node {
@@ -2626,9 +2704,15 @@ function queueAttributeMutationRecord(
 	_oldValue: string | null,
 ): void {}
 
-function getAttributeByName(element: Element, qualifiedName: string): Attr | null {
+function getAttributeByName(
+	element: Element,
+	qualifiedName: string,
+): Attr | null {
 	let name = qualifiedName;
-	if (element[kNamespace] === HTML_NAMESPACE && isHTMLDocument(element[kDocument])) {
+	if (
+		element[kNamespace] === HTML_NAMESPACE &&
+		isHTMLDocument(element[kDocument])
+	) {
 		name = asciiLowercase(name);
 	}
 	for (const attribute of element[kAttributeList]) {
@@ -2652,7 +2736,10 @@ function getAttributeByNamespace(
 }
 
 function setAttributeNode(element: Element, attribute: Attr): Attr | null {
-	if (attribute[kOwnerElement] !== null && attribute[kOwnerElement] !== element) {
+	if (
+		attribute[kOwnerElement] !== null &&
+		attribute[kOwnerElement] !== element
+	) {
 		throw domError(
 			"InUseAttributeError",
 			"That attribute already belongs to an element",
@@ -2673,6 +2760,8 @@ function setAttributeNode(element: Element, attribute: Attr): Attr | null {
 }
 
 export class NamedNodeMap extends LiveList {
+	declare [Symbol.iterator]: () => IterableIterator<Attr>;
+
 	#element: Element;
 
 	constructor(element: Element) {
@@ -2713,11 +2802,7 @@ export class NamedNodeMap extends LiveList {
 	}
 
 	getNamedItemNS(namespace: string | null, localName: string): Attr | null {
-		return getAttributeByNamespace(
-			this.#element,
-			namespace,
-			String(localName),
-		);
+		return getAttributeByNamespace(this.#element, namespace, String(localName));
 	}
 
 	setNamedItem(attr: Attr): Attr | null {
@@ -2745,16 +2830,17 @@ export class NamedNodeMap extends LiveList {
 		removeAttributeNode(this.#element, attribute);
 		return attribute;
 	}
-
-	*[Symbol.iterator](): IterableIterator<Attr> {
-		yield* this[kEnsure]().slice() as Attr[];
-	}
 }
 
 Object.defineProperty(NamedNodeMap.prototype, Symbol.toStringTag, {
 	value: "NamedNodeMap",
 	configurable: true,
 });
+
+installArrayIteration(NodeList.prototype, true);
+installArrayIteration(DOMTokenList.prototype, true);
+installArrayIteration(HTMLCollection.prototype, false);
+installArrayIteration(NamedNodeMap.prototype, false);
 
 /* ---------------------------------------------------------------- elements */
 
@@ -2875,19 +2961,102 @@ const HTML_ELEMENT_NAMES = new Set([
  * HTMLElement, which is what an element with no HTML behavior attached is.
  */
 const HTML_KNOWN_NAMES = new Set([
-	"a", "area", "audio", "base", "blockquote", "body", "br", "button",
-	"canvas", "caption", "col", "colgroup", "data", "datalist", "del",
-	"details", "dialog", "div", "dl", "embed", "fieldset", "form", "h1", "h2",
-	"h3", "h4", "h5", "h6", "head", "hr", "html", "iframe", "img", "input",
-	"ins", "label", "legend", "li", "link", "map", "menu", "meta", "meter",
-	"object", "ol", "optgroup", "option", "output", "p", "param", "picture",
-	"pre", "progress", "q", "script", "select", "slot", "source", "span",
-	"style", "table", "tbody", "td", "template", "textarea", "tfoot", "th",
-	"thead", "time", "title", "tr", "track", "ul", "video",
+	"a",
+	"area",
+	"audio",
+	"base",
+	"blockquote",
+	"body",
+	"br",
+	"button",
+	"canvas",
+	"caption",
+	"col",
+	"colgroup",
+	"data",
+	"datalist",
+	"del",
+	"details",
+	"dialog",
+	"div",
+	"dl",
+	"embed",
+	"fieldset",
+	"form",
+	"h1",
+	"h2",
+	"h3",
+	"h4",
+	"h5",
+	"h6",
+	"head",
+	"hr",
+	"html",
+	"iframe",
+	"img",
+	"input",
+	"ins",
+	"label",
+	"legend",
+	"li",
+	"link",
+	"map",
+	"menu",
+	"meta",
+	"meter",
+	"object",
+	"ol",
+	"optgroup",
+	"option",
+	"output",
+	"p",
+	"param",
+	"picture",
+	"pre",
+	"progress",
+	"q",
+	"script",
+	"select",
+	"slot",
+	"source",
+	"span",
+	"style",
+	"table",
+	"tbody",
+	"td",
+	"template",
+	"textarea",
+	"tfoot",
+	"th",
+	"thead",
+	"time",
+	"title",
+	"tr",
+	"track",
+	"ul",
+	"video",
 	// The obsolete names that still have an interface.
-	"acronym", "basefont", "big", "center", "dir", "font", "frame",
-	"frameset", "isindex", "keygen", "listing", "marquee", "nobr",
-	"noembed", "noframes", "plaintext", "rb", "rtc", "strike", "tt", "xmp",
+	"acronym",
+	"basefont",
+	"big",
+	"center",
+	"dir",
+	"font",
+	"frame",
+	"frameset",
+	"isindex",
+	"keygen",
+	"listing",
+	"marquee",
+	"nobr",
+	"noembed",
+	"noframes",
+	"plaintext",
+	"rb",
+	"rtc",
+	"strike",
+	"tt",
+	"xmp",
 ]);
 
 export class Element extends Node {
@@ -3017,7 +3186,10 @@ export class Element extends Node {
 		}
 		let name = String(qualifiedName);
 		validateAttributeLocalName(name);
-		if (this[kNamespace] === HTML_NAMESPACE && isHTMLDocument(this[kDocument])) {
+		if (
+			this[kNamespace] === HTML_NAMESPACE &&
+			isHTMLDocument(this[kDocument])
+		) {
 			name = asciiLowercase(name);
 		}
 		const string = value === null ? "null" : String(value);
@@ -3071,7 +3243,10 @@ export class Element extends Node {
 	toggleAttribute(qualifiedName: string, force?: boolean): boolean {
 		let name = String(qualifiedName);
 		validateAttributeLocalName(name);
-		if (this[kNamespace] === HTML_NAMESPACE && isHTMLDocument(this[kDocument])) {
+		if (
+			this[kNamespace] === HTML_NAMESPACE &&
+			isHTMLDocument(this[kDocument])
+		) {
 			name = asciiLowercase(name);
 		}
 		const attribute = getAttributeByName(this, name);
@@ -3093,7 +3268,10 @@ export class Element extends Node {
 
 	hasAttribute(qualifiedName: string): boolean {
 		let name = String(qualifiedName);
-		if (this[kNamespace] === HTML_NAMESPACE && isHTMLDocument(this[kDocument])) {
+		if (
+			this[kNamespace] === HTML_NAMESPACE &&
+			isHTMLDocument(this[kDocument])
+		) {
 			name = asciiLowercase(name);
 		}
 		for (const attribute of this[kAttributeList]) {
@@ -3103,9 +3281,7 @@ export class Element extends Node {
 	}
 
 	hasAttributeNS(namespace: string | null, localName: string): boolean {
-		return (
-			getAttributeByNamespace(this, namespace, String(localName)) !== null
-		);
+		return getAttributeByNamespace(this, namespace, String(localName)) !== null;
 	}
 
 	getAttributeNode(qualifiedName: string): Attr | null {
@@ -3276,7 +3452,9 @@ export class Element extends Node {
 		const definition = this[kDefinition];
 		if (definition !== null && definition.adoptedCallback !== undefined) {
 			const to = this[kDocument];
-			enqueueReaction(() => definition.adoptedCallback?.(this, oldDocument, to));
+			enqueueReaction(() =>
+				definition.adoptedCallback?.(this, oldDocument, to),
+			);
 		}
 	}
 
@@ -3448,7 +3626,8 @@ function createElementInternal(
 	return element;
 }
 
-const CUSTOM_NAME_RE = /^[a-z][-._0-9a-z·À-῿‌-‍‿-⁀⁰-↏Ⰰ-⿯、-퟿豈-﷏ﷰ-�]*-[-._0-9a-z·À-῿‌-‍‿-⁀⁰-↏Ⰰ-⿯、-퟿豈-﷏ﷰ-�]*$/;
+const CUSTOM_NAME_RE =
+	/^[a-z][-._0-9a-z·À-῿‌-‍‿-⁀⁰-↏Ⰰ-⿯、-퟿豈-﷏ﷰ-�]*-[-._0-9a-z·À-῿‌-‍‿-⁀⁰-↏Ⰰ-⿯、-퟿豈-﷏ﷰ-�]*$/;
 const RESERVED_CUSTOM_NAMES = new Set([
 	"annotation-xml",
 	"color-profile",
@@ -3572,6 +3751,10 @@ export class Document extends Node {
 	}
 
 	get defaultView(): null {
+		return null;
+	}
+
+	get location(): null {
 		return null;
 	}
 
@@ -3806,10 +3989,12 @@ export class Document extends Node {
 		data: string,
 	): ProcessingInstruction {
 		if (arguments.length < 2) {
-			throw new TypeError("createProcessingInstruction needs a target and data");
+			throw new TypeError(
+				"createProcessingInstruction needs a target and data",
+			);
 		}
 		const name = String(target);
-		validateElementLocalName(name);
+		validateXMLName(name);
 		const string = String(data);
 		if (string.includes("?>")) {
 			throw domError(
@@ -3889,7 +4074,9 @@ export class Document extends Node {
 	): NodeIterator {
 		if (!(root instanceof Node)) throw new TypeError("That is not a node");
 		const iterator = new NodeIterator(root, toUnsignedLong(whatToShow), filter);
-		const iterators = this[kNodeIterators];
+		// The spec keys the pre-removing steps off the root's node document,
+		// which need not be the document the iterator was created from.
+		const iterators = root[kDocument][kNodeIterators];
 		let write = 0;
 		for (let read = 0; read < iterators.length; read++) {
 			if (iterators[read].deref() !== undefined) {
@@ -3912,11 +4099,7 @@ export class Document extends Node {
 
 	override [kCloneSingle](_document: Document): Node {
 		const copy = new Document();
-		copy[kType] = this[kType];
-		copy[kContentType] = this[kContentType];
-		copy[kEncoding] = this[kEncoding];
-		copy[kDocumentURL] = this[kDocumentURL];
-		copy[kMode] = this[kMode];
+		copyDocumentState(this, copy);
 		return copy;
 	}
 }
@@ -3926,7 +4109,13 @@ Object.defineProperty(Document.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-export class XMLDocument extends Document {}
+export class XMLDocument extends Document {
+	override [kCloneSingle](_document: Document): Node {
+		const copy = new XMLDocument();
+		copyDocumentState(this, copy);
+		return copy;
+	}
+}
 
 Object.defineProperty(XMLDocument.prototype, Symbol.toStringTag, {
 	value: "XMLDocument",
@@ -3934,9 +4123,15 @@ Object.defineProperty(XMLDocument.prototype, Symbol.toStringTag, {
 });
 
 function stripAndCollapseWhitespace(value: string): string {
-	return value
-		.replace(/[\t\n\f\r ]+/g, " ")
-		.replace(/^ | $/g, "");
+	return value.replace(/[\t\n\f\r ]+/g, " ").replace(/^ | $/g, "");
+}
+
+function copyDocumentState(from: Document, to: Document): void {
+	to[kType] = from[kType];
+	to[kContentType] = from[kContentType];
+	to[kEncoding] = from[kEncoding];
+	to[kDocumentURL] = from[kDocumentURL];
+	to[kMode] = from[kMode];
 }
 
 function extractIs(options: {is?: string} | string | undefined): string | null {
@@ -4004,12 +4199,14 @@ export class DOMImplementation {
 		qualifiedName: string | null,
 		doctype: DocumentType | null = null,
 	): XMLDocument {
+		if (arguments.length < 2) {
+			throw new TypeError("createDocument needs a namespace and a name");
+		}
 		const document = new XMLDocument();
 		document[kType] = "xml";
 		document[kContentType] = "application/xml";
-		document[kDocumentURL] = this.#document[kDocumentURL];
 		let element: Element | null = null;
-		const name = qualifiedName == null ? "" : String(qualifiedName);
+		const name = qualifiedName === null ? "" : String(qualifiedName);
 		if (name !== "") {
 			element = document.createElementNS(
 				namespace == null ? null : String(namespace),
@@ -4028,10 +4225,7 @@ export class DOMImplementation {
 	}
 
 	createHTMLDocument(title?: string): Document {
-		return createHTMLDocument(
-			title === undefined ? undefined : String(title),
-			this.#document[kDocumentURL],
-		);
+		return createHTMLDocument(title === undefined ? undefined : String(title));
 	}
 
 	hasFeature(): boolean {
@@ -4094,10 +4288,7 @@ function buildHTMLSkeleton(document: Document, title?: string): void {
 
 type Insertable = Node | string;
 
-function convertNodesIntoNode(
-	nodes: Insertable[],
-	document: Document,
-): Node {
+function convertNodesIntoNode(nodes: Insertable[], document: Document): Node {
 	if (nodes.length === 1 && nodes[0] instanceof Node) return nodes[0];
 	const converted = nodes.map((node) => {
 		if (node instanceof Node) return node;
@@ -4178,7 +4369,7 @@ const parentNodeMembers = {
 	replaceChildren: {
 		value(this: Node, ...nodes: Insertable[]): void {
 			const node = convertNodesIntoNode(nodes, this[kDocument]);
-			ensurePreInsertionValidity(node, this, null);
+			ensurePreInsertionValidity(node, this, null, true);
 			replaceAll(node, this);
 		},
 		configurable: true,
@@ -4389,7 +4580,11 @@ Object.defineProperties(Element.prototype, {
 });
 
 /** The spec's "insert adjacent" algorithm, shared by element and text. */
-function insertAdjacent(element: Element, where: string, node: Node): Node | null {
+function insertAdjacent(
+	element: Element,
+	where: string,
+	node: Node,
+): Node | null {
 	switch (asciiLowercase(where)) {
 		case "beforebegin": {
 			const parent = element[kParent];
@@ -4519,10 +4714,7 @@ function locateNamespacePrefix(
 		return element[kPrefix];
 	}
 	for (const attribute of element[kAttributeList]) {
-		if (
-			attribute[kPrefix] === "xmlns" &&
-			attribute[kValue] === namespace
-		) {
+		if (attribute[kPrefix] === "xmlns" && attribute[kValue] === namespace) {
 			return attribute[kLocalName];
 		}
 	}
@@ -4533,6 +4725,9 @@ function locateNamespacePrefix(
 function locateNamespace(node: Node, prefix: string | null): string | null {
 	switch (node.nodeType) {
 		case ELEMENT_NODE: {
+			// The two prefixes the XML specifications bind for good.
+			if (prefix === "xml") return XML_NAMESPACE;
+			if (prefix === "xmlns") return XMLNS_NAMESPACE;
 			const element = node as Element;
 			if (element[kNamespace] !== null && element[kPrefix] === prefix) {
 				return element[kNamespace];
@@ -4727,10 +4922,17 @@ export class NodeIterator {
 					before = true;
 				}
 			}
-			if (filterNode(state, node as Node) === FILTER_ACCEPT) break;
+			if (filterNode(state, node as Node) === FILTER_ACCEPT) {
+				// A filter that removed the very node it was filtering leaves
+				// the reference where the pre-removing steps put it: a node
+				// outside the root can never be the reference.
+				if (isInclusiveAncestor(this.#root, node as Node)) {
+					this.#reference = node as Node;
+					this.#pointerBefore = before;
+				}
+				break;
+			}
 		}
-		this.#reference = node as Node;
-		this.#pointerBefore = before;
 		return node;
 	}
 
@@ -4738,7 +4940,7 @@ export class NodeIterator {
 	[kPreRemove](toBeRemoved: Node): void {
 		if (
 			!isInclusiveAncestor(toBeRemoved, this.#reference) ||
-			toBeRemoved === this.#root
+			isInclusiveAncestor(toBeRemoved, this.#root)
 		) {
 			return;
 		}
@@ -4932,7 +5134,11 @@ export class TreeWalker {
 					break;
 				}
 				const parent: Node | null = node[kParent];
-				if (parent === null || parent === this.#root || parent === this.#current) {
+				if (
+					parent === null ||
+					parent === this.#root ||
+					parent === this.#current
+				) {
 					return null;
 				}
 				node = parent;
@@ -5131,12 +5337,7 @@ function treeAdapterFor(document: Document | null) {
 				if (getAttributeByNamespace(recipient, namespace, localName) !== null) {
 					continue;
 				}
-				const created = new Attr(
-					namespace,
-					prefix,
-					localName,
-					attribute.value,
-				);
+				const created = new Attr(namespace, prefix, localName, attribute.value);
 				created[kDocument] = recipient[kDocument];
 				appendAttribute(recipient, created);
 			}
@@ -5300,7 +5501,7 @@ const RAW_TEXT_PARENTS = new Set([
 function escapeText(value: string): string {
 	return value
 		.replace(/&/g, "&amp;")
-		.replace(/ /g, "&nbsp;")
+		.replace(/\u00a0/g, "&nbsp;")
 		.replace(/</g, "&lt;")
 		.replace(/>/g, "&gt;");
 }
@@ -5308,7 +5509,7 @@ function escapeText(value: string): string {
 function escapeAttribute(value: string): string {
 	return value
 		.replace(/&/g, "&amp;")
-		.replace(/ /g, "&nbsp;")
+		.replace(/\u00a0/g, "&nbsp;")
 		.replace(/"/g, "&quot;");
 }
 
@@ -5402,11 +5603,14 @@ function serializeNode(node: Node): string {
 			return `<!DOCTYPE ${(node as DocumentType)[kName]}>`;
 		default: {
 			let html = "";
-			for (let child = node[kFirstChild]; child !== null; child = child[kNext]) {
+			for (
+				let child = node[kFirstChild];
+				child !== null;
+				child = child[kNext]
+			) {
 				html += serializeNode(child);
 			}
 			return html;
 		}
 	}
 }
-

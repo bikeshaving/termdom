@@ -212,7 +212,11 @@ test("getElementsByClassName follows a class attribute change", () => {
 test("children skips non-element children", () => {
 	const document = make();
 	const parent = document.createElement("div");
-	parent.append("text", document.createElement("i"), document.createComment("c"));
+	parent.append(
+		"text",
+		document.createElement("i"),
+		document.createComment("c"),
+	);
 	expect(parent.childNodes.length).toBe(3);
 	expect(parent.children.length).toBe(1);
 	expect(parent.children[0].localName).toBe("i");
@@ -265,7 +269,9 @@ test("setAttribute keeps an existing attribute node and its prefix", () => {
 	node.setAttributeNS("http://example.com/", "pre:name", "one");
 	const attribute = node.getAttributeNodeNS("http://example.com/", "name");
 	node.setAttributeNS("http://example.com/", "other:name", "two");
-	expect(node.getAttributeNodeNS("http://example.com/", "name")).toBe(attribute);
+	expect(node.getAttributeNodeNS("http://example.com/", "name")).toBe(
+		attribute,
+	);
 	expect(attribute.prefix).toBe("pre");
 	expect(attribute.value).toBe("two");
 });
@@ -367,8 +373,7 @@ test("a NodeIterator whose pointer is before the removed node moves forward", ()
 
 test("a TreeWalker's filter rejects a subtree and skips a single node", () => {
 	const document = make();
-	document.body.innerHTML =
-		"<a><b><c></c></b></a><d><e></e></d>";
+	document.body.innerHTML = "<a><b><c></c></b></a><d><e></e></d>";
 	const walker = document.createTreeWalker(
 		document.body,
 		NodeFilter.SHOW_ELEMENT,
@@ -474,7 +479,8 @@ test("querySelectorAll is static and querySelector reads the live tree", () => {
 
 test("closest walks up from the element itself", () => {
 	const document = make();
-	document.body.innerHTML = "<div id=a><div id=b><span id=c></span></div></div>";
+	document.body.innerHTML =
+		"<div id=a><div id=b><span id=c></span></div></div>";
 	const span = document.getElementById("c");
 	expect(span.closest("span").id).toBe("c");
 	expect(span.closest("div").id).toBe("b");
