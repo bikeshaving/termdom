@@ -311,7 +311,9 @@ const CSS_SPEC_DEFAULTS: Record<string, string> = {
 	"border-radius": "0",
 	"background-color": "transparent",
 	color: "#000000",
-	"font-size": "1rem",
+	// One cell tall: the terminal's font is the grid, and a length written in
+	// em is a length written in cells.
+	"font-size": "1px",
 	"font-weight": "normal",
 	"font-style": "normal",
 	"text-decoration": "none",

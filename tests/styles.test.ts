@@ -25,7 +25,7 @@ describe("getComputedStyle - What We Support", () => {
 			"rgba(0, 0, 0, 0)",
 		);
 		expect(styles.getPropertyValue("color")).toBe("rgb(0, 0, 0)");
-		expect(styles.getPropertyValue("font-size")).toBe("1rem");
+		expect(styles.getPropertyValue("font-size")).toBe("1px");
 		expect(styles.getPropertyValue("white-space")).toBe("normal");
 		expect(styles.getPropertyValue("position")).toBe("static");
 		expect(styles.getPropertyValue("width")).toBe("auto");
@@ -79,7 +79,7 @@ describe("getComputedStyle - What We Support", () => {
 			dom.window
 				.getComputedStyle(dom.window.document.getElementById("ul")!)
 				.getPropertyValue("padding-left"),
-		).toBe("4ch");
+		).toBe("4px");
 		expect(
 			dom.window
 				.getComputedStyle(dom.window.document.getElementById("li")!)
@@ -647,7 +647,7 @@ test("bare numbers stay valid where CSS says they are", async () => {
 	// width and margin are resolved-value properties: a rendered box reports
 	// the used length, which is how these units prove they were accepted.
 	expect(value(".units", "width")).toBe("15px");
-	expect(value(".units", "min-width")).toBe("10ch");
+	expect(value(".units", "min-width")).toBe("10px");
 	// `margin: 0 auto` centres the box, and the used margin says by how much.
 	expect(value(".units", "margin-left")).toMatch(/^\d+(\.\d+)?px$/);
 	dom.dispose();

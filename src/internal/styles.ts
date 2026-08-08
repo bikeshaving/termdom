@@ -545,27 +545,296 @@ function serializeColor(value: string): string | null {
 }
 
 /**
+ * The properties whose value absolutizes against the element it is computed
+ * on: every property that takes a length, plus the two whose percentage is
+ * font-relative. A value on any other property is the same string on every
+ * element, and interning is the whole of its computation.
+ */
+const ABSOLUTIZED_PROPERTIES = new Set([
+	...LENGTH_PROPERTIES,
+	"line-height",
+	"vertical-align",
+	"border-spacing",
+	"text-underline-offset",
+]);
+
+/**
+ * The properties whose percentage resolves at computed-value time, against
+ * the font size: `font-size` against the parent's, `line-height` against the
+ * element's own. Every other percentage stays a percentage until it is used.
+ */
+const FONT_RELATIVE_PERCENTAGES = new Set(["font-size", "line-height"]);
+
+/** A number carrying a unit that only an element can measure. */
+const RELATIVE_UNIT = /[\d.](?:r?em|ex|ch|vw|vh|vmin|vmax)\b/i;
+
+/**
+ * One interned computed value: the string, and whether answering it needs
+ * the element -- a relative length to absolutize, a calc() to reduce, a
+ * font-relative percentage to resolve. The flag is decided once per declared
+ * text, so the common value (a keyword, an integer, a px or ch length) is
+ * still nothing but two map lookups.
+ */
+interface ComputedEntry {
+	value: string;
+	contextual: boolean;
+}
+
+const EMPTY_ENTRY: ComputedEntry = {value: "", contextual: false};
+
+/**
  * Computed strings interned by property and declared text. A document draws
  * its declared values from a small vocabulary -- a handful of colors, a
  * handful of lengths, the same keywords on every element -- so the same pair
  * recurs across thousands of elements and every generation after the first.
  */
-const computedValues = new Map<string, Map<string, string>>();
+const computedValues = new Map<string, Map<string, ComputedEntry>>();
 
-function computedValue(property: string, declared: string): string {
-	if (!declared) return "";
+function computedEntry(property: string, declared: string): ComputedEntry {
+	if (!declared) return EMPTY_ENTRY;
 	let byValue = computedValues.get(property);
 	if (!byValue) {
 		byValue = new Map();
 		computedValues.set(property, byValue);
 	}
-	let value = byValue.get(declared);
-	if (value === undefined) {
-		value = normalizeValue(property, declared);
+	let entry = byValue.get(declared);
+	if (entry === undefined) {
+		const value = normalizeValue(property, declared);
+		entry = {
+			value,
+			contextual:
+				ABSOLUTIZED_PROPERTIES.has(property) &&
+				(RELATIVE_UNIT.test(value) ||
+					value.includes("calc(") ||
+					(FONT_RELATIVE_PERCENTAGES.has(property) && value.includes("%"))),
+		};
 		if (byValue.size >= 512) byValue.clear();
-		byValue.set(declared, value);
+		byValue.set(declared, entry);
 	}
-	return value;
+	return entry;
+}
+
+function computedValue(property: string, declared: string): string {
+	return computedEntry(property, declared).value;
+}
+
+/** The unit a length measures in, and the px each one of it is worth. */
+interface LengthContext {
+	/** The font size relative units measure against, in px. */
+	font: number;
+	/** The root element's font size, for `rem`. */
+	root: number;
+	viewportWidth: number;
+	viewportHeight: number;
+	/** What a percentage is worth, or null where percentages stay. */
+	percent: number | null;
+}
+
+/**
+ * The font size a terminal draws with: one cell. It is the initial value
+ * `font-size` computes to, so `1em` is one cell in a document that declares
+ * no font size -- and a document that declares one still gets the spec's
+ * arithmetic, which the grid then rounds to cells.
+ */
+const INITIAL_FONT_SIZE = 1;
+
+function fontSizeOf(style: ComputedStyle): number {
+	const size = parseFloat(style.computedValueOf("font-size"));
+	return Number.isFinite(size) ? size : INITIAL_FONT_SIZE;
+}
+
+function unitFactor(unit: string, context: LengthContext): number | null {
+	switch (unit.toLowerCase()) {
+		case "em":
+			return context.font;
+		case "rem":
+			return context.root;
+		// A terminal has no font metrics: every glyph is one cell, so the
+		// x-height a browser measures is the half-em it falls back to.
+		case "ex":
+			return context.font / 2;
+		// One cell wide, whatever font size the document declares -- the grid's
+		// column is not something a style can resize.
+		case "ch":
+			return 1;
+		case "vw":
+			return context.viewportWidth / 100;
+		case "vh":
+			return context.viewportHeight / 100;
+		case "vmin":
+			return Math.min(context.viewportWidth, context.viewportHeight) / 100;
+		case "vmax":
+			return Math.max(context.viewportWidth, context.viewportHeight) / 100;
+		case "%":
+			return context.percent;
+		default:
+			return null;
+	}
+}
+
+/** A length in the spelling a computed value carries: px, six decimals at most. */
+function absoluteLength(px: number): string {
+	return `${Math.round(px * 1e6) / 1e6}px`;
+}
+
+/** A number token followed by its unit, anywhere in a value. */
+const LENGTH_TOKEN = /([+-]?(?:\d+\.?\d*|\.\d+))(%|[a-zA-Z]+)/g;
+
+/**
+ * A computed value with every relative length replaced by the absolute one it
+ * computes to, and every calc() reduced. What is left is px, the percentages
+ * a property keeps until it is used, and whatever this engine does not
+ * measure -- which passes through untouched.
+ */
+function absolutizeLengths(value: string, context: LengthContext): string {
+	const reduced = value.includes("calc(") ? replaceCalc(value, context) : value;
+	return reduced.replace(
+		LENGTH_TOKEN,
+		(token, number: string, unit: string) => {
+			const factor = unitFactor(unit, context);
+			return factor === null
+				? token
+				: absoluteLength(parseFloat(number) * factor);
+		},
+	);
+}
+
+/** Each calc() in a value, replaced by the value it reduces to. */
+function replaceCalc(value: string, context: LengthContext): string {
+	let out = "";
+	let index = 0;
+	while (index < value.length) {
+		const start = value.toLowerCase().indexOf("calc(", index);
+		if (start === -1) {
+			out += value.slice(index);
+			break;
+		}
+		out += value.slice(index, start);
+		let depth = 0;
+		let end = start + 4;
+		for (; end < value.length; end++) {
+			if (value[end] === "(") depth++;
+			else if (value[end] === ")" && --depth === 0) break;
+		}
+		const body = value.slice(start + 5, end);
+		const terms = evaluateCalc(body, context);
+		out += terms === null ? value.slice(start, end + 1) : serializeCalc(terms);
+		index = end + 1;
+	}
+	return out;
+}
+
+/**
+ * What a math function reduces to: a length in px, a percentage, and a plain
+ * number, at most one of which a valid calc() leaves nonzero alongside the
+ * others.
+ */
+interface CalcTerms {
+	px: number;
+	percent: number;
+	number: number;
+}
+
+/**
+ * The reduced form of a sum, per css-values: a lone term serializes as
+ * itself, and a length that still carries a percentage keeps the calc() it
+ * needs to hold the two together.
+ */
+function serializeCalc(terms: CalcTerms): string {
+	const round = (value: number): number => Math.round(value * 1e6) / 1e6;
+	const px = round(terms.px);
+	const percent = round(terms.percent);
+	const number = round(terms.number);
+	if (percent === 0 && px === 0 && number !== 0) return `${number}`;
+	if (percent === 0) return `${px}px`;
+	if (px === 0 && number === 0) return `${percent}%`;
+	return `calc(${px}px ${percent < 0 ? "-" : "+"} ${Math.abs(percent)}%)`;
+}
+
+/**
+ * A calc() body reduced to its terms. Null for anything this cannot reduce --
+ * a nested min()/max()/clamp(), a unit with no cell length, an unsubstituted
+ * var() -- which leaves the value as the author wrote it.
+ */
+function evaluateCalc(body: string, context: LengthContext): CalcTerms | null {
+	const tokens = body.match(
+		/[+-]?(?:\d+\.?\d*|\.\d+)(?:%|[a-zA-Z]+)?|[()*/+-]/g,
+	);
+	if (!tokens) return null;
+	let position = 0;
+	const peek = (): string | undefined => tokens[position];
+
+	const scale = (terms: CalcTerms, by: number): CalcTerms => ({
+		px: terms.px * by,
+		percent: terms.percent * by,
+		number: terms.number * by,
+	});
+
+	const primary = (): CalcTerms | null => {
+		const token = tokens[position++];
+		if (token === undefined) return null;
+		if (token === "(") {
+			const inner = sum();
+			if (inner === null || tokens[position++] !== ")") return null;
+			return inner;
+		}
+		if (token === "-" || token === "+") {
+			const inner = primary();
+			return inner === null ? null : scale(inner, token === "-" ? -1 : 1);
+		}
+		const match = /^([+-]?(?:\d+\.?\d*|\.\d+))(%|[a-zA-Z]+)?$/.exec(token);
+		if (!match) return null;
+		const number = parseFloat(match[1]);
+		if (!match[2]) return {px: 0, percent: 0, number};
+		if (match[2] === "px") return {px: number, percent: 0, number: 0};
+		if (match[2] === "%" && context.percent === null) {
+			return {px: 0, percent: number, number: 0};
+		}
+		const factor = unitFactor(match[2], context);
+		if (factor === null) return null;
+		return {px: number * factor, percent: 0, number: 0};
+	};
+
+	const product = (): CalcTerms | null => {
+		let left = primary();
+		while (left !== null && (peek() === "*" || peek() === "/")) {
+			const operator = tokens[position++];
+			const right = primary();
+			if (right === null) return null;
+			if (operator === "/") {
+				if (right.px !== 0 || right.percent !== 0 || right.number === 0) {
+					return null;
+				}
+				left = scale(left, 1 / right.number);
+			} else if (right.px === 0 && right.percent === 0) {
+				left = scale(left, right.number);
+			} else if (left.px === 0 && left.percent === 0) {
+				left = scale(right, left.number);
+			} else {
+				return null;
+			}
+		}
+		return left;
+	};
+
+	const sum = (): CalcTerms | null => {
+		let left = product();
+		while (left !== null && (peek() === "+" || peek() === "-")) {
+			const operator = tokens[position++];
+			const right = product();
+			if (right === null) return null;
+			const sign = operator === "-" ? -1 : 1;
+			left = {
+				px: left.px + sign * right.px,
+				percent: left.percent + sign * right.percent,
+				number: left.number + sign * right.number,
+			};
+		}
+		return left;
+	};
+
+	const terms = sum();
+	return terms !== null && position === tokens.length ? terms : null;
 }
 
 /** A cascade level's declarations: expanded longhands, and which are `!important`. */
@@ -3982,6 +4251,62 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 	}
 
 	/**
+	 * One property's computed value: the cascade's declaration, interned, and
+	 * absolutized against this element when the interned entry says only an
+	 * element can answer it. The memo both callers write into is the
+	 * per-element, per-generation cache that absolutization is paid into once.
+	 */
+	#computed(property: string): string {
+		const entry = computedEntry(property, this.#resolvePropertyValue(property));
+		if (!entry.contextual) return entry.value;
+		return absolutizeLengths(entry.value, this.#lengthContext(property));
+	}
+
+	/**
+	 * What a relative length on this element is worth.
+	 *
+	 * `font-size` measures against the PARENT's font size, so it is the one
+	 * property whose own computed value is not in its own context; every other
+	 * property measures against this element's font size, which therefore
+	 * computes first.
+	 */
+	#lengthContext(property: string): LengthContext {
+		const own = property === "font-size";
+		const parent = own ? compositionParentElement(this.#element) : null;
+		const font = own
+			? parent
+				? fontSizeOf(computedStyleOf(parent))
+				: INITIAL_FONT_SIZE
+			: fontSizeOf(this);
+		const root = this.#rootFontSize(own);
+		const viewport = this.#manager?.viewportSize();
+		return {
+			font,
+			root,
+			viewportWidth: viewport ? viewport.width : 0,
+			viewportHeight: viewport ? viewport.height : 0,
+			// A percentage is font-relative on exactly two properties: on
+			// `font-size` it is a share of the parent's, on `line-height` of
+			// this element's own. Everywhere else it stays a percentage until
+			// something uses it.
+			percent: FONT_RELATIVE_PERCENTAGES.has(property) ? font / 100 : null,
+		};
+	}
+
+	/** The font size `rem` measures against: the root element's. */
+	#rootFontSize(ownFontSize: boolean): number {
+		const root = this.#element.ownerDocument?.documentElement;
+		// `rem` in the root's own font-size is the initial value, not the
+		// value being computed.
+		if (!root || (ownFontSize && root === this.#element)) {
+			return INITIAL_FONT_SIZE;
+		}
+		return root === this.#element
+			? fontSizeOf(this)
+			: fontSizeOf(computedStyleOf(root));
+	}
+
+	/**
 	 * The computed value: what the cascade says, before any box exists. This
 	 * is what the engine's own geometry decisions read -- a used value there
 	 * would feed layout its own output.
@@ -4002,7 +4327,7 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 							CSS_INITIAL_VALUES[longhand] ||
 							"",
 					)
-				: computedValue(property, this.#resolvePropertyValue(property));
+				: this.#computed(property);
 			this.#resolved.set(property, value);
 		}
 		return value;
@@ -4361,7 +4686,7 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 							CSS_INITIAL_VALUES[longhand] ||
 							"",
 					)
-				: computedValue(property, this.#resolvePropertyValue(property));
+				: this.#computed(property);
 			this.#resolved.set(property, value);
 		}
 		return value;
@@ -5193,6 +5518,18 @@ export class StyleManager {
 
 	setLayoutFlush(flush: () => boolean): void {
 		this.#layoutFlush = flush;
+	}
+
+	/**
+	 * The grid a viewport unit measures against, in cells. Null before a
+	 * layout engine is wired up, where `1vw` has nothing to be a hundredth of.
+	 */
+	viewportSize(): {width: number; height: number} | null {
+		if (!this.#layoutEngine) return null;
+		return {
+			width: this.#layoutEngine.terminalWidth,
+			height: this.#layoutEngine.terminalHeight,
+		};
 	}
 
 	/** The element's border-box rect, measured after that flush. */
