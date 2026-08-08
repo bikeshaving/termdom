@@ -464,7 +464,6 @@ function generatedFeatures(): Record<string, Feature> {
 	return out;
 }
 
-
 /**
  * The document every probe renders. #probe is block-level on purpose: `width`
  * on an inline box correctly does nothing, so probing with a <span> reported

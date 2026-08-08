@@ -4,7 +4,7 @@
 
 TermDOM is a JavaScript library that displays HTML and CSS in the terminal. It
 renders actual DOM nodes to the screen, and redraws when they are mutated, so a
-TUI or interactive CLI application can be written like a client-side web app.
+TUI or interactive CLI application can be written with frontend web technologies.
 
 ```sh
 npm install @b9g/termdom
