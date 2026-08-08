@@ -64,8 +64,13 @@ export interface TerminalTransport {
 	/** The terminal went away: hangup, disconnect, process exit. Always
 	 * fulfills with a TerminalCloseInfo; fields may be absent. */
 	readonly closed: Promise<TerminalCloseInfo>;
-	/** The app is done with the terminal (window.close()'s last act). */
-	close?(info?: TerminalCloseInfo): void;
+	/** The app is done with the terminal (window.close()'s last act). A
+	 * transport that owns its medium ends it -- the process transport exits
+	 * the process with info's status; an SSH transport would end the channel.
+	 * One that doesn't (an embedded pane, a test harness) implements this as
+	 * a no-op: the engine has already flushed and disposed by the time it
+	 * calls here. */
+	close(info?: TerminalCloseInfo): void;
 }
 
 // The Node process shape the default wrapper consumes. The engine itself

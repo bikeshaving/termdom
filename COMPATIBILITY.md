@@ -7,7 +7,7 @@ properties. Every row is a probe -- the feature applied to a real
 document and rendered, with the row recording whether the output
 changed.
 
-94 features supported, 117 probed and unsupported,
+101 features supported, 110 probed and unsupported,
 301 CSS properties not yet probed.
 
 ## DOM APIs
@@ -59,13 +59,13 @@ changed.
 | `border-top-color` | yes |
 | `border-right-width` | yes |
 | `border-right-style` | yes |
-| `border-right-color` | no (no effect) |
+| `border-right-color` | yes |
 | `border-bottom-width` | yes |
 | `border-bottom-style` | yes |
-| `border-bottom-color` | no (no effect) |
+| `border-bottom-color` | yes |
 | `border-left-width` | yes |
 | `border-left-style` | yes |
-| `border-left-color` | no (no effect) |
+| `border-left-color` | yes |
 | `border-block-start-width` | no (no effect) |
 | `border-block-end-width` | no (no effect) |
 | `border-inline-start-width` | no (no effect) |
@@ -130,9 +130,9 @@ changed.
 | `z-index` | yes |
 | `float` | no (no effect) |
 | `clear` | no (no effect) |
-| `overflow` | no (no effect) |
-| `overflow-x` | no (no effect) |
-| `overflow-y` | no (no effect) |
+| `overflow` | yes |
+| `overflow-x` | yes |
+| `overflow-y` | yes |
 | `visibility` | yes |
 
 ## Flexbox
@@ -199,7 +199,7 @@ changed.
 | `border-collapse` | yes |
 | `table-layout` | no (no effect) |
 | `vertical-align` | no (no effect) |
-| `content` | no (no effect) |
+| `content` | yes |
 | `counter-reset` | no (no effect) |
 | `counter-increment` | no (no effect) |
 

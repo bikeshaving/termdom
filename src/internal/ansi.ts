@@ -844,6 +844,15 @@ export class DrawingContext {
 			hasAnyBorder: boolean;
 		},
 		style?: CellStyle,
+		// Per-edge overrides for differently-colored sides. A corner cell's
+		// glyph spans two edges but holds one color; it takes the horizontal
+		// edge's, the closest a cell gets to the browser's diagonal miter.
+		edgeStyles?: {
+			top?: CellStyle;
+			right?: CellStyle;
+			bottom?: CellStyle;
+			left?: CellStyle;
+		},
 	): void {
 		if (!borderStyles.hasAnyBorder || width < 1 || height < 1) return;
 		// A thin box (a 1-row <hr>, say) still shows its horizontal edges: the loops
@@ -875,12 +884,17 @@ export class DrawingContext {
 			(down > 0 ? down << BorderShift.Bottom : 0) |
 			(toLeft > 0 ? toLeft << BorderShift.Left : 0);
 
-		const put = (col: number, row: number, encoding: number) => {
+		const put = (
+			col: number,
+			row: number,
+			encoding: number,
+			edgeStyle?: CellStyle,
+		) => {
 			// No bounds check here: rows are DOCUMENT rows, and #setBorderCell
 			// culls after applying the viewport offset -- pre-culling against
 			// terminal rows dropped bottom edges the camera had scrolled INTO
 			// view.
-			this.#setBorderCell(col, row, encoding, style);
+			this.#setBorderCell(col, row, encoding, edgeStyle ?? style);
 		};
 
 		// Top edge: a horizontal run that turns down at whichever corners exist.
@@ -893,6 +907,7 @@ export class DrawingContext {
 					col,
 					y,
 					encode(0, atRight ? 0 : topEdge, down, atLeft ? 0 : topEdge),
+					edgeStyles?.top,
 				);
 			}
 		}
@@ -908,6 +923,7 @@ export class DrawingContext {
 					col,
 					bottom,
 					encode(up, atRight ? 0 : bottomEdge, 0, atLeft ? 0 : bottomEdge),
+					edgeStyles?.bottom,
 				);
 			}
 		}
@@ -920,13 +936,13 @@ export class DrawingContext {
 		const sideBottom = hasBottom ? bottom - 1 : bottom;
 		if (hasLeft) {
 			for (let row = sideTop; row <= sideBottom; row++) {
-				put(x, row, encode(leftEdge, 0, leftEdge, 0));
+				put(x, row, encode(leftEdge, 0, leftEdge, 0), edgeStyles?.left);
 			}
 		}
 
 		if (hasRight && right !== x) {
 			for (let row = sideTop; row <= sideBottom; row++) {
-				put(right, row, encode(rightEdge, 0, rightEdge, 0));
+				put(right, row, encode(rightEdge, 0, rightEdge, 0), edgeStyles?.right);
 			}
 		}
 	}

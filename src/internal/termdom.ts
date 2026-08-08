@@ -734,7 +734,7 @@ export class TermDOM {
 			void (async () => {
 				if (wasAttached) await termDOM.#attachReady;
 				await termDOM.dispose();
-				if (wasAttached) termDOM.#transport.close?.({status: 0});
+				if (wasAttached) termDOM.#transport.close({status: 0});
 			})();
 		};
 
@@ -3128,6 +3128,7 @@ export class TermDOM {
 				colorDepth: "rgb",
 				interactive: false,
 				sharesScreen: false,
+				close() {},
 			},
 		});
 		return this.#staticSibling;

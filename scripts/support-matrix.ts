@@ -61,6 +61,9 @@ interface Feature {
 	text?: string;
 	/** Whole-document override, for properties that need real structure. */
 	markup?: string;
+	/** Selector override for the declaration, for properties that only act
+	 * on a pseudo-element (content on #probe::before, not #probe). */
+	selector?: string;
 }
 
 const LONG = "the quick brown fox jumps over the lazy dog again and again";
@@ -113,9 +116,24 @@ const FEATURES: Record<string, Feature> = {
 	},
 	float: {value: "right"},
 	clear: {value: "both", setup: "#probe { float: left; }"},
-	overflow: {value: "hidden", setup: NARROW, markup: undefined},
-	"overflow-x": {value: "hidden", setup: NARROW},
-	"overflow-y": {value: "hidden", setup: "#probe { height: 1px; }"},
+	// Clipping only shows against content that overflows the box: an
+	// unbreakable word wider than it for the x axis, wrapped lines taller
+	// than it for the y axis.
+	overflow: {
+		value: "hidden",
+		setup: NARROW,
+		text: "an-unbreakable-overflowing-word",
+	},
+	"overflow-x": {
+		value: "hidden",
+		setup: NARROW,
+		text: "an-unbreakable-overflowing-word",
+	},
+	"overflow-y": {
+		value: "hidden",
+		setup: "#probe { width: 6ch; height: 1px; }",
+		text: "aaa bbb ccc",
+	},
 	visibility: {value: "hidden"},
 
 	// Flexbox -- container properties on the parent, item properties on the item
@@ -246,7 +264,7 @@ const FEATURES: Record<string, Feature> = {
 			"#probe { display: inline-block; height: 1px; }" +
 			" #sibling { display: inline-block; height: 4px; }",
 	},
-	content: {value: '"X"'},
+	content: {value: '"X"', selector: "#probe::before"},
 	"counter-reset": {value: "c 3"},
 	"counter-increment": {value: "c 2"},
 
@@ -539,7 +557,8 @@ function cssProbe(property: string, feature: Feature, category: string): Probe {
 		(feature.text
 			? PROBE_MARKUP.replace("probe text", feature.text)
 			: PROBE_MARKUP);
-	const target = feature.target === "parent" ? "#parent" : "#probe";
+	const target =
+		feature.selector ?? (feature.target === "parent" ? "#parent" : "#probe");
 	// BASE_CSS blocks out the default #parent; a probe that brings its own
 	// markup (a real <table>, say) brings its own context and must not have
 	// display: block forced onto its root.

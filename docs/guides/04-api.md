@@ -46,7 +46,7 @@ wiring.
 
 `window.close()` ends the session: it flushes the final frame to
 scrollback, restores terminal modes, disposes the instance, and calls
-`transport.close({code: 0})` — on the default process transport, that
+`transport.close({status: 0})` — on the default process transport, that
 exits the process. An unhandled Ctrl-C performs this call as its default
 action; a `keydown` listener that calls `preventDefault()` overrides it.
 
@@ -116,7 +116,9 @@ interface TerminalTransport {
 	readonly resizes: ReadableStream<{cols: number; rows: number}>;
 	readonly ready: Promise<void>; // established; Promise.resolve() if born so
 	readonly closed: Promise<TerminalCloseInfo>;
-	close?(info?: TerminalCloseInfo): void;
+	// Ends the medium if the transport owns it (the process transport exits
+	// the process); a no-op otherwise.
+	close(info?: TerminalCloseInfo): void;
 }
 
 interface TerminalCloseInfo {

@@ -230,3 +230,24 @@ test("a blockquote's left border covers margin rows and every paragraph", async 
 	expect(cellAt(5, 0)?.getChars() ?? "").not.toBe("│");
 	dom.dispose();
 });
+
+test("each border side paints its own border color", async () => {
+	const terminal = new MockProcess({cols: 20, rows: 6});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+
+	document.body.innerHTML =
+		`<style>#p { width: 6ch; border: 1px solid; ` +
+		`border-top-color: red; border-right-color: lime; ` +
+		`border-bottom-color: blue; border-left-color: yellow; }</style>` +
+		`<div id="p">x</div>`;
+	await nextFrame(dom);
+	const snapshot = terminal.getScreenContents();
+
+	expect(snapshot).toMatch(/38;2;255;0;0/); // top: red
+	expect(snapshot).toMatch(/38;2;0;255;0/); // right: lime
+	expect(snapshot).toMatch(/38;2;0;0;255/); // bottom: blue
+	expect(snapshot).toMatch(/38;2;255;255;0/); // left: yellow
+
+	dom.dispose();
+});

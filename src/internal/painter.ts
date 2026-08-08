@@ -427,28 +427,37 @@ export class Painter {
 				borderStyles.bottomEdge > 0 ||
 				borderStyles.leftEdge > 0;
 			if (borderStyles.hasAnyBorder) {
-				// Border color per CSS: border-color, whose initial value is
-				// currentColor -- the element's own color -- and, with nothing
-				// authored anywhere, the terminal's DEFAULT foreground. Never a
-				// hardcoded white: no theme-safe color exists, and forcing one
-				// breaks light terminals.
-				const borderColor = computed.getPropertyValue("border-top-color");
-				const borderCellStyle = {
-					fg:
-						borderColor &&
-						borderColor !== "currentcolor" &&
-						borderColor !== "currentColor"
-							? cssColorToNumber(borderColor)
-							: style.fg,
-					bg: style.bg, // Inherit element's background color
+				// Border color per CSS: each side's border-<side>-color, whose
+				// initial value is currentColor -- the element's own color --
+				// and, with nothing authored anywhere, the terminal's DEFAULT
+				// foreground. Never a hardcoded white: no theme-safe color
+				// exists, and forcing one breaks light terminals.
+				const edgeCellStyle = (prop: string): import("./ansi.js").CellStyle => {
+					const borderColor = computed.getPropertyValue(prop);
+					return {
+						fg:
+							borderColor &&
+							borderColor !== "currentcolor" &&
+							borderColor !== "currentColor"
+								? cssColorToNumber(borderColor)
+								: style.fg,
+						bg: style.bg, // Inherit element's background color
+					};
 				};
+				const top = edgeCellStyle("border-top-color");
 				ctx.drawBorder(
 					Math.round(rect.left),
 					Math.round(rect.top),
 					Math.round(rect.width),
 					Math.round(rect.height),
 					borderStyles,
-					borderCellStyle,
+					top,
+					{
+						top,
+						right: edgeCellStyle("border-right-color"),
+						bottom: edgeCellStyle("border-bottom-color"),
+						left: edgeCellStyle("border-left-color"),
+					},
 				);
 			}
 		}
