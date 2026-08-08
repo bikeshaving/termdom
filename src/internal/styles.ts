@@ -3736,6 +3736,9 @@ export function uaStyleSheet(): CSSStyleSheet {
 	return uaDocumentSheet;
 }
 
+/** The epoch a declaration with no manager behind it watches: one that never moves. */
+const NO_STYLE_EPOCH = {value: 0};
+
 export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 	#element: Element;
 	#cssRules: ParsedCSSRule[];
@@ -3747,7 +3750,7 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 	 * re-resolves rather than being replaced.
 	 */
 	#manager: StyleManager | null = null;
-	#epoch: {value: number} | null = null;
+	#epoch = NO_STYLE_EPOCH;
 	#seenEpoch = 0;
 	#stale = false;
 	// Lazily resolved properties -- INCLUDING ones that resolved to "".
@@ -3780,13 +3783,15 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 		this.#stale = true;
 	}
 
-	/** Re-resolve against the current cascade when anything has changed. */
+	/**
+	 * Re-resolve against the current cascade. Reads take the two-field guard
+	 * inline and call this only when it has actually moved -- this sits on the
+	 * hottest path in the engine, under every property read of every element.
+	 */
 	#refresh(): void {
 		if (!this.#manager) return;
-		const epoch = this.#epoch!.value;
-		if (!this.#stale && epoch === this.#seenEpoch) return;
 		this.#stale = false;
-		this.#seenEpoch = epoch;
+		this.#seenEpoch = this.#epoch.value;
 		this.#cssRules = this.#manager.matchingRules(this.#element);
 		this.#resolved.clear();
 	}
@@ -4005,7 +4010,7 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 	// elements are only ever asked a handful of properties -- the
 	// composition walker asks each element `display` alone.
 	override getPropertyValue(property: string): string {
-		this.#refresh();
+		if (this.#stale || this.#epoch.value !== this.#seenEpoch) this.#refresh();
 		let value = this.#resolved.get(property);
 		if (value === undefined) {
 			// A shorthand answers as its longhands, each in its own computed

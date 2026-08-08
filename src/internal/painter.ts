@@ -32,16 +32,14 @@ type ClipRect = {left: number; top: number; right: number; bottom: number};
  * fall back to the shorthand for the styles that set it that way.
  */
 function hasUnderline(style: CSSStyleDeclaration): boolean {
-	const line = style.getPropertyValue("text-decoration-line");
-	if (line) return line.includes("underline");
-	return style.getPropertyValue("text-decoration").includes("underline");
+	return style.getPropertyValue("text-decoration-line").includes("underline");
 }
 
 /** Whether a computed style asks for a line-through (SGR strikethrough). */
 function hasLineThrough(style: CSSStyleDeclaration): boolean {
-	const line = style.getPropertyValue("text-decoration-line");
-	if (line) return line.includes("line-through");
-	return style.getPropertyValue("text-decoration").includes("line-through");
+	return style
+		.getPropertyValue("text-decoration-line")
+		.includes("line-through");
 }
 
 /** A textarea or text-ish input (not a checkbox/radio or hidden input). */
