@@ -19,6 +19,7 @@ import {
 	compositionParentElement,
 	compositionShadowRoot,
 	createExpandedTreeWalker,
+	currentCompositionEpoch,
 	ExpandedTreeWalker,
 	getPseudoMetadata,
 	invalidateStructure,
@@ -1320,6 +1321,14 @@ export class LayoutEngine {
 	}
 
 	calculateLayout() {
+		// The DOM may have changed since the last pass without an invalidate()
+		// (callers may mutate and then call this directly, with no observer in
+		// between), and run heads must reflect the tree as it stands NOW. One
+		// bump serves the whole pass: entries memoized during it stay warm --
+		// the O(N^2) this cache exists for is intra-pass -- and the pass's
+		// entries remain valid afterward for paint and hit-testing, until the
+		// next mutation or pass.
+		this.#runHeadEpoch++;
 		// Nothing marked dirty and nothing awaiting re-add: the previous layout
 		// still holds, and even the pruning sweep below -- O(nodes) isConnected
 		// checks -- is not worth paying. Every mutation path dirties the tree on
@@ -2610,7 +2619,26 @@ export class LayoutEngine {
 	 * Note: Pseudo-elements (::before, ::marker, ::after) are treated as
 	 * text nodes and can participate in inline runs.
 	 */
+	// The run head of a node, memoized. Finding it walks backward to the run's
+	// first node -- O(run length) -- and layout asks for every node in a run,
+	// so without this a run of N inline boxes costs O(N^2). Two counters guard
+	// staleness, both bumped exactly when run membership can move: the
+	// composition epoch (mutations, shadow/slot changes) and the engine's own
+	// invalidation counter (direct invalidate() calls, which callers may make
+	// before any observer has advanced the epoch).
+	#runHeadCache = new WeakMap<Node, {epoch: number; head: Node | null}>();
+	#runHeadEpoch = 0;
+
 	findInlineRunHead(node: Node): Node | null {
+		const cached = this.#runHeadCache.get(node);
+		const epoch = currentCompositionEpoch() + this.#runHeadEpoch;
+		if (cached && cached.epoch === epoch) return cached.head;
+		const head = this.#computeInlineRunHead(node);
+		this.#runHeadCache.set(node, {epoch, head});
+		return head;
+	}
+
+	#computeInlineRunHead(node: Node): Node | null {
 		// 1. Validate input. Composition-connected, not isConnected: a UA
 		// shadow tree's parts live in a fragment and are never DOM-connected,
 		// but they render (and measure, and invalidate) like anything else.
@@ -2650,12 +2678,22 @@ export class LayoutEngine {
 		);
 
 		let current = node;
+		const epoch = currentCompositionEpoch() + this.#runHeadEpoch;
 		for (;;) {
 			const previous = this.#previousRunNode(current, walker);
 			if (previous === "boundary") {
 				return current;
 			}
 			if (previous !== null) {
+				// A preceding node in the same run shares this node's head; its
+				// memoized answer, when fresh, ends the walk here. This is what
+				// keeps a cold pass over a run of N boxes O(N) amortized instead
+				// of O(N^2) -- each node's walk reaches at most one uncached step
+				// back before hitting the run's already-resolved prefix.
+				const cached = this.#runHeadCache.get(previous);
+				if (cached && cached.epoch === epoch && cached.head) {
+					return cached.head;
+				}
 				current = previous;
 				continue;
 			}
@@ -2816,6 +2854,9 @@ export class LayoutEngine {
 	 * For block elements, invalidates their layout by removing from nodeMap
 	 */
 	invalidate(node: Node): void {
+		// Run membership may have moved (the invalidated node could be, or
+		// displace, a run head); drop every memoized head.
+		this.#runHeadEpoch++;
 		// Track this node for re-adding during calculateLayout
 		this.#invalidatedNodes.add(node);
 

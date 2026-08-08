@@ -383,10 +383,16 @@ export class ExpandedTreeWalker {
 	 * Move to first child
 	 */
 	firstChild(): Node | null {
-		const firstChild = this.#getFirstChild(this.currentNode);
-		if (firstChild && this.#acceptNode(firstChild)) {
-			this.currentNode = firstChild;
-			return firstChild;
+		let child = this.#getFirstChild(this.currentNode);
+		// Skip rejected nodes (comments, processing instructions) rather than
+		// halting: a rejected first child must not hide the accepted siblings
+		// behind it, which is FILTER_SKIP, the DOM TreeWalker default.
+		while (child && !this.#acceptNode(child)) {
+			child = this.#getNextSibling(child);
+		}
+		if (child) {
+			this.currentNode = child;
+			return child;
 		}
 		return null;
 	}
@@ -395,10 +401,13 @@ export class ExpandedTreeWalker {
 	 * Move to last child
 	 */
 	lastChild(): Node | null {
-		const lastChild = this.#getLastChild(this.currentNode);
-		if (lastChild && this.#acceptNode(lastChild)) {
-			this.currentNode = lastChild;
-			return lastChild;
+		let child = this.#getLastChild(this.currentNode);
+		while (child && !this.#acceptNode(child)) {
+			child = this.#getPreviousSibling(child);
+		}
+		if (child) {
+			this.currentNode = child;
+			return child;
 		}
 		return null;
 	}
@@ -417,10 +426,13 @@ export class ExpandedTreeWalker {
 		if (this.currentNode === this.root) {
 			return null;
 		}
-		const nextSibling = this.#getNextSibling(this.currentNode);
-		if (nextSibling && this.#acceptNode(nextSibling)) {
-			this.currentNode = nextSibling;
-			return nextSibling;
+		let sibling = this.#getNextSibling(this.currentNode);
+		while (sibling && !this.#acceptNode(sibling)) {
+			sibling = this.#getNextSibling(sibling);
+		}
+		if (sibling) {
+			this.currentNode = sibling;
+			return sibling;
 		}
 		return null;
 	}
@@ -432,10 +444,13 @@ export class ExpandedTreeWalker {
 		if (this.currentNode === this.root) {
 			return null;
 		}
-		const previousSibling = this.#getPreviousSibling(this.currentNode);
-		if (previousSibling && this.#acceptNode(previousSibling)) {
-			this.currentNode = previousSibling;
-			return previousSibling;
+		let sibling = this.#getPreviousSibling(this.currentNode);
+		while (sibling && !this.#acceptNode(sibling)) {
+			sibling = this.#getPreviousSibling(sibling);
+		}
+		if (sibling) {
+			this.currentNode = sibling;
+			return sibling;
 		}
 		return null;
 	}
@@ -867,7 +882,11 @@ export class ExpandedTreeWalker {
 	 * Accept node - always traverses elements and text nodes (including pseudo-elements)
 	 */
 	#acceptNode(node: Node): boolean {
-		// Accept element nodes and text nodes (including pseudo-element text nodes)
+		// Only elements and text (pseudo-element text included) generate boxes.
+		// Every other node type a document can hold -- comments, processing
+		// instructions, CDATA, doctype -- is SKIPPED by the traversal methods,
+		// which advance past a rejected node rather than halting on it, so one
+		// anywhere in the flow cannot hide the content around it.
 		return (
 			node.nodeType === node.ELEMENT_NODE || node.nodeType === node.TEXT_NODE
 		);

@@ -1316,3 +1316,57 @@ test("Pure JSDOM - nextSibling/previousSibling at the root return null, per spec
 	walker.firstChild();
 	expect(walker.nextSibling()).toBe(null); // lone text child, no sibling
 });
+
+test("ExpandedTreeWalker skips comments rather than halting on them", () => {
+	// A rejected node (a comment) must not hide the accepted siblings behind
+	// it: the traversal skips it, FILTER_SKIP as in a DOM TreeWalker. A
+	// leading comment used to make firstChild() return null, collapsing the
+	// whole container to nothing -- a Markdown file starting with an HTML
+	// comment rendered blank.
+	const dom = new JSDOM("<!DOCTYPE html><html><body></body></html>");
+	const window = dom.window;
+	const document = window.document;
+
+	const names = (root: Node): string[] => {
+		const walker = createExpandedTreeWalker(window as any, root);
+		const out: string[] = [];
+		for (let n = walker.firstChild(); n; n = walker.nextSibling()) {
+			out.push(n.nodeType === n.ELEMENT_NODE ? (n as Element).tagName : (n as Text).data);
+		}
+		return out;
+	};
+
+	// Leading comment: the element behind it is still the first child.
+	document.body.innerHTML = "<!-- c --><h1>A</h1>";
+	expect(names(document.body)).toEqual(["H1"]);
+
+	// Comment between two blocks: both are reached.
+	document.body.innerHTML = "<h1>A</h1><!-- c --><h2>B</h2>";
+	expect(names(document.body)).toEqual(["H1", "H2"]);
+
+	// Trailing comment: no phantom node after the element.
+	document.body.innerHTML = "<h1>A</h1><!-- c -->";
+	expect(names(document.body)).toEqual(["H1"]);
+
+	// A run of comments is skipped as one.
+	document.body.innerHTML = "<!--x--><!--y--><h1>A</h1><!--z--><p>B</p>";
+	expect(names(document.body)).toEqual(["H1", "P"]);
+
+	// Comments interleaved with text and elements in an inline run.
+	document.body.innerHTML = "<p>a<!-- c -->b</p>";
+	const p = document.querySelector("p")!;
+	expect(names(p)).toEqual(["a", "b"]);
+
+	// lastChild()/previousSibling() skip backward the same way.
+	document.body.innerHTML = "<h1>A</h1><h2>B</h2><!-- c -->";
+	const back: string[] = [];
+	const walker = createExpandedTreeWalker(window as any, document.body);
+	for (let n = walker.lastChild(); n; n = walker.previousSibling()) {
+		back.push((n as Element).tagName);
+	}
+	expect(back).toEqual(["H2", "H1"]);
+
+	// A container whose only children are comments has no accepted children.
+	document.body.innerHTML = "<div><!--a--><!--b--></div>";
+	expect(names(document.querySelector("div")!)).toEqual([]);
+});

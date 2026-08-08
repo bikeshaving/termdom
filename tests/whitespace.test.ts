@@ -587,3 +587,30 @@ test("white-space: pre suppresses wrapping but keeps newlines", async () => {
 
 	dom.dispose();
 });
+
+test("a comment node never collapses the block that holds it", async () => {
+	// A non-rendering node (a comment) in the flow must not suppress the boxes
+	// around it. A leading HTML comment -- how every generated Markdown file
+	// starts -- collapsed its container to zero height, rendering blank.
+	const terminal = new MockProcess({cols: 40, rows: 8});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.attach();
+
+	const height = async (html: string): Promise<number> => {
+		dom.document.body.innerHTML = `<main>${html}</main>`;
+		await nextFrame(dom);
+		return dom.document.body.scrollHeight;
+	};
+
+	expect(await height("<h1>A</h1><p>B</p>")).toBe(2);
+	// Same content, a comment in each position: height is unchanged.
+	expect(await height("<!-- c --><h1>A</h1><p>B</p>")).toBe(2);
+	expect(await height("<h1>A</h1><!-- c --><p>B</p>")).toBe(2);
+	expect(await height("<h1>A</h1><p>B</p><!-- c -->")).toBe(2);
+	// A comment inside an inline run leaves the line intact.
+	expect(await height("<p>a<!-- c -->b</p>")).toBe(1);
+	// A block whose only child is a comment still generates no content.
+	expect(await height("<!-- only a comment -->")).toBe(0);
+
+	dom.dispose();
+});
