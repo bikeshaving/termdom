@@ -1197,6 +1197,41 @@ export interface RectText {
 const flexConfig = Flex.Config.create();
 flexConfig.setPointScaleFactor(1.0);
 
+/**
+ * An anonymous box: one contiguous run of inline-level flow children of a
+ * block container (CSS2 §9.2.1.1). The container owns it; it owns the layout
+ * node that measures the run and the lines that measurement produced.
+ *
+ * `head` is whichever flow child opens the run at this moment, and nothing but
+ * measurement hangs off it -- a run whose first node leaves the tree keeps its
+ * box, its position among the container's boxes, and its break-result slot,
+ * and re-measures from the node that now opens it.
+ *
+ * `styledFrom` is the element the flex node's own style came from, null while
+ * a text node heads the run: an anonymous box has no style of its own, so a
+ * run headed by an inline box takes that box's, exactly as its measurement
+ * does.
+ */
+class InlineBox {
+	head: Node;
+	container: Element;
+	flexNode: FlexTypes.Node | null = null;
+	breakResult: BreakResult | null = null;
+	styledFrom: Element | null = null;
+
+	constructor(container: Element, head: Node) {
+		this.container = container;
+		this.head = head;
+	}
+}
+
+/**
+ * One entry of a block container's ordered box list: an anonymous box, or the
+ * node of a box that belongs to a DOM node of its own (block-level children,
+ * and the blockified element children of a flex container).
+ */
+type ContainerBox = Node | InlineBox;
+
 // Symbol-keyed so the invalidation test can spy on it (a #private method's
 // internal calls are invisible to a spy). Not on the public LayoutEngine type;
 // index.ts does not re-export it.
@@ -1260,6 +1295,7 @@ export class LayoutEngine {
 		this.#terminalReordersText = value;
 		// Every cached line was built for the other contract.
 		this.breakResultMap = new Map();
+		for (const box of this.#inlineBoxes.values()) box.breakResult = null;
 		for (const flexNode of this.#measureNodes) flexNode.markDirty();
 	}
 
@@ -1309,6 +1345,7 @@ export class LayoutEngine {
 
 		// Clear all cached break results so text re-wraps at new width
 		this.breakResultMap.clear();
+		for (const box of this.#inlineBoxes.values()) box.breakResult = null;
 
 		// Mark all leaf nodes (those with measure functions) as dirty
 		// so the engine re-invokes their measure functions with the new available width
@@ -1333,7 +1370,11 @@ export class LayoutEngine {
 		// still holds, and even the pruning sweep below -- O(nodes) isConnected
 		// checks -- is not worth paying. Every mutation path dirties the tree on
 		// its way in, so a clean tree cannot be hiding a disconnection.
-		if (!this.viewportRootNode.dirty && this.#invalidatedNodes.size === 0) {
+		if (
+			!this.viewportRootNode.dirty &&
+			this.#invalidatedNodes.size === 0 &&
+			this.#dirtyRunContainers.size === 0
+		) {
 			return;
 		}
 
@@ -1375,6 +1416,20 @@ export class LayoutEngine {
 		}
 		this.#invalidatedNodes.clear();
 
+		// Give every container whose content moved the boxes it lays out now.
+		// Draining rather than iterating: building a block-level box a broken
+		// inline handed over reaches containers of its own.
+		const synced = new Set<Element>();
+		while (this.#dirtyRunContainers.size > 0) {
+			const containers = [...this.#dirtyRunContainers];
+			this.#dirtyRunContainers.clear();
+			for (const container of containers) {
+				if (synced.has(container)) continue;
+				synced.add(container);
+				this.#syncContainerRuns(container);
+			}
+		}
+
 		// Every mutation path marks the flex tree dirty on its way in -- style
 		// setters, child insertion/removal, inline-run invalidation, resize. A
 		// clean root therefore means the previous layout is still exact, and
@@ -1407,6 +1462,10 @@ export class LayoutEngine {
 	}
 
 	#pruneDisconnectedNodes(): void {
+		// A box outlives the nodes that pass through it, but not its container.
+		for (const box of [...this.#inlineBoxes.values()]) {
+			if (!this.#isNodeLive(box.container)) this.#retireInlineBox(box);
+		}
 		for (const [node, flexNode] of this.nodeMap) {
 			if (node === this.rootElement || this.#isNodeLive(node)) {
 				continue;
@@ -1438,6 +1497,8 @@ export class LayoutEngine {
 		this.#domNodeByFlexNode = new Map();
 		this.#invalidatedNodes = new Set();
 		this.#measureNodes = new Set();
+		this.#inlineBoxes = new Map();
+		this.#dirtyRunContainers = new Set();
 	}
 
 	/**
@@ -1611,14 +1672,14 @@ export class LayoutEngine {
 		// parked at 0,0, which is what an inline-block'd widget used to
 		// position itself by.
 		let runHead: Node | null = this.findInlineRunHead(element);
-		let runFlexNode = runHead ? this.nodeMap.get(runHead) : undefined;
-		let breakResult = runHead ? this.breakResultMap.get(runHead) : undefined;
+		let runFlexNode = runHead ? this.#runFlexNode(runHead) : undefined;
+		let breakResult = runHead ? this.#runBreakResult(runHead) : undefined;
 		while (runHead && !(runFlexNode && breakResult)) {
 			const parent = compositionBoxParentElement(runHead);
 			if (!parent) return null;
 			runHead = this.findInlineRunHead(parent) ?? parent;
-			runFlexNode = this.nodeMap.get(runHead);
-			breakResult = this.breakResultMap.get(runHead);
+			runFlexNode = this.#runFlexNode(runHead);
+			breakResult = this.#runBreakResult(runHead);
 		}
 		if (!runHead || !runFlexNode || !breakResult) return null;
 
@@ -1670,7 +1731,7 @@ export class LayoutEngine {
 		// Only the run that owns the box can speak for its position. Once the
 		// walk descends into a nested measurement, any flex node the box still
 		// holds belongs to a layout it is no longer part of.
-		const ownFlexNode = descended ? undefined : this.nodeMap.get(element);
+		const ownFlexNode = descended ? undefined : this.#runFlexNode(element);
 		if (ownFlexNode) {
 			const {x, y} = this.#absolutePosition(ownFlexNode);
 			const offset = this.#contentRootOffset(ownFlexNode);
@@ -1779,7 +1840,7 @@ export class LayoutEngine {
 			// so `<div style="width:30ch"><span></span></div>` measured the span
 			// at 30 columns. inline-block keeps the fallback: its node IS its box.
 			if (display === "inline") {
-				const runFlexNode = this.nodeMap.get(element);
+				const runFlexNode = this.#runFlexNode(element);
 				// No layout node means the element was removed or never laid
 				// out -- null, exactly as the block fallback below reports it.
 				// A laid-out empty inline gets a zero-size rect at its position.
@@ -1789,8 +1850,10 @@ export class LayoutEngine {
 			}
 		}
 
-		// Fall back to the layout node for block elements and containers
-		let flexNode = this.nodeMap.get(element);
+		// Fall back to the layout node for block elements and containers -- or,
+		// for an inline-block whose own segment is unreadable, to the box that
+		// measures the run it opens.
+		const flexNode = this.nodeMap.get(element) ?? this.#runFlexNode(element);
 
 		if (!flexNode) {
 			return null;
@@ -1827,11 +1890,11 @@ export class LayoutEngine {
 			// Special case: inline-block element called directly (e.g., getRectTexts(inlineBlockDiv))
 			// The element's breakResult contains itself as an inline-block segment with nested content
 			if (display === "inline-block" && this.isInlineRunHead(element)) {
-				const breakResult = this.breakResultMap.get(element);
+				const breakResult = this.#runBreakResult(element);
 				if (breakResult) {
 					// The breakResult contains this inline-block as a segment with nested content
 					const rectTexts: RectText[] = [];
-					const flexNode = this.nodeMap.get(element);
+					const flexNode = this.#runFlexNode(element);
 					if (!flexNode) return [];
 
 					const position = this.#absolutePosition(flexNode);
@@ -1929,13 +1992,13 @@ export class LayoutEngine {
 		}
 
 		// Get stored BreakResult for the run head
-		let breakResult = this.breakResultMap.get(runHead);
+		let breakResult = this.#runBreakResult(runHead);
 		if (!breakResult) {
 			return [];
 		}
 
 		// Get run head's absolute position by accumulating parent positions
-		const flexNode = this.nodeMap.get(runHead);
+		const flexNode = this.#runFlexNode(runHead);
 		if (!flexNode) return [];
 
 		let {x: containerX, y: containerY} = this.#absolutePosition(flexNode);
@@ -2675,28 +2738,61 @@ export class LayoutEngine {
 	 */
 	#boxesByContainer = new WeakMap<
 		Element,
-		{epoch: number; heads: Map<Node, Node>; boxes: Node[]}
+		{
+			epoch: number;
+			heads: Map<Node, ContainerBox>;
+			boxes: ContainerBox[];
+			runs: InlineBox[];
+		}
 	>();
 	#boxEpoch = 0;
 
-	#containerBoxes(container: Element): {heads: Map<Node, Node>; boxes: Node[]} {
+	/**
+	 * Every live anonymous box, by the layout node it owns: the reverse of
+	 * InlineBox.flexNode, and the registry the sweeps that must reach every box
+	 * (resize, pruning, disposal) walk. Strong, because a container's
+	 * enumeration is dropped whenever the tree moves under it and the boxes it
+	 * held must still be retired.
+	 */
+	#inlineBoxes = new Map<FlexTypes.Node, InlineBox>();
+
+	/**
+	 * Containers whose box list may no longer match their layout children.
+	 * Reconciled once per pass, in calculateLayout, however many mutations
+	 * dirtied them.
+	 */
+	#dirtyRunContainers = new Set<Element>();
+
+	#containerBoxes(container: Element): {
+		heads: Map<Node, ContainerBox>;
+		boxes: ContainerBox[];
+		runs: InlineBox[];
+	} {
 		const cached = this.#boxesByContainer.get(container);
 		const epoch = currentCompositionEpoch() + this.#boxEpoch;
 		if (cached && cached.epoch === epoch) return cached;
 
-		const heads = new Map<Node, Node>();
-		const boxes: Node[] = [];
+		const heads = new Map<Node, ContainerBox>();
+		const boxes: ContainerBox[] = [];
+		// Anonymous boxes are matched to the previous enumeration's by their
+		// ordinal among the container's runs, which is the identity a run has:
+		// the third run of a paragraph stays the third run when its first node
+		// is deleted, when its text changes, when a member is inserted. Only a
+		// change to the NUMBER of runs -- a block-level box splitting one in
+		// two, or leaving and merging two into one -- creates or retires a box.
+		const previous = cached ? cached.runs : [];
+		const runs: InlineBox[] = [];
 		// A flex container puts every element child in a box of its own and
 		// gathers only its contiguous text into anonymous ones.
 		const inFlex = getPropertyValue(container, "display") === "flex";
-		let head: Node | null = null;
+		let run: InlineBox | null = null;
 		for (const child of this.#flowChildren(container)) {
 			if (child.nodeType === child.ELEMENT_NODE) {
 				const element = child as Element;
 				const display = getPropertyValue(element, "display");
 				const inlineLevel = display === "inline" || display === "inline-block";
 				if (display === "none" || this.#isOutOfFlow(element)) {
-					heads.set(child, head ?? child);
+					heads.set(child, run ?? child);
 					// A hidden block still holds a box slot; an out-of-flow one
 					// hangs from its containing block, and an inline that left the
 					// flow was never a box of this container's to begin with.
@@ -2704,29 +2800,210 @@ export class LayoutEngine {
 					continue;
 				}
 				if (!inlineLevel) {
-					head = null; // block-level box: the run ends here
+					run = null; // block-level box: the run ends here
 					boxes.push(child);
 					continue;
 				}
 				if (inFlex) {
+					// Blockified (css-display-3 §2.7): the element's box is its
+					// own, not an anonymous one gathered around it.
 					heads.set(child, child);
 					boxes.push(child);
-					head = null;
+					run = null;
 					continue;
 				}
 			} else if (child.nodeType !== child.TEXT_NODE) {
 				continue;
+			} else if (this.#isSuppressedFlexWhitespace(child as Text)) {
+				// Collapsible white space between flex items renders nothing at
+				// all (css-flexbox-1 §4), so it opens no anonymous item.
+				continue;
 			}
-			if (head === null) {
-				head = child;
-				boxes.push(child); // a fresh anonymous box, headed here
+			if (run === null) {
+				run = previous[runs.length] ?? new InlineBox(container, child);
+				run.head = child;
+				runs.push(run);
+				boxes.push(run);
 			}
-			heads.set(child, head);
+			heads.set(child, run);
 		}
 
-		const entry = {epoch, heads, boxes};
+		// Runs the container no longer has: their content merged into a
+		// neighbour's box or left the tree entirely.
+		for (let i = runs.length; i < previous.length; i++) {
+			this.#retireInlineBox(previous[i]);
+		}
+
+		const entry = {epoch, heads, boxes, runs};
 		this.#boxesByContainer.set(container, entry);
 		return entry;
+	}
+
+	/** Free an anonymous box's layout node and forget the box. */
+	#retireInlineBox(box: InlineBox): void {
+		const flexNode = box.flexNode;
+		box.flexNode = null;
+		box.breakResult = null;
+		if (!flexNode) return;
+		flexNode.getParent()?.removeChild(flexNode);
+		this.#measureNodes.delete(flexNode);
+		this.#inlineBoxes.delete(flexNode);
+		this.#domNodeByFlexNode.delete(flexNode);
+		flexNode.freeRecursive();
+	}
+
+	/** The anonymous box a node's content is laid out in, if it is in one. */
+	#boxOf(node: Node): InlineBox | null {
+		const entry = this.#boxEntryOf(node);
+		return entry instanceof InlineBox ? entry : null;
+	}
+
+	/** The container box entry a node's content falls under. */
+	#boxEntryOf(node: Node): ContainerBox | null {
+		if (!compositionIsConnected(node)) {
+			const pseudoMetadata = getPseudoMetadata(node);
+			if (!pseudoMetadata || !pseudoMetadata.hostElement.isConnected) {
+				return null;
+			}
+		}
+
+		if (node.nodeType === node.ELEMENT_NODE) {
+			const element = node as Element;
+			// An out-of-flow element is never a run head or run member -- it
+			// left the flow entirely. Letting run invalidation "ensure" it a
+			// bare layout node makes later rebuilds skip its full build, so its
+			// pseudo-only content vanishes on a runtime class flip.
+			if (this.#isOutOfFlow(element)) return null;
+			const display = getPropertyValue(element, "display");
+			if (display !== "inline" && display !== "inline-block") return null;
+		} else if (node.nodeType !== node.TEXT_NODE) {
+			return null;
+		}
+
+		const container = this.#runContainerOf(node);
+		if (!container) return node;
+		const {heads} = this.#containerBoxes(container);
+		// Up from the node to whichever of its ancestors the container counts
+		// among its own flow children: that is the box the content falls under.
+		for (let current: Node = node; current !== container; ) {
+			const entry = heads.get(current);
+			if (entry) return entry;
+			const parent = this.#boxParentOf(current);
+			if (!parent) return current;
+			current = parent;
+		}
+		return node;
+	}
+
+	/**
+	 * The layout node that measures the run a node heads: an anonymous box's,
+	 * or the node's own when its box belongs to it (a flex container's
+	 * blockified inline children).
+	 */
+	#runFlexNode(node: Node): FlexTypes.Node | undefined {
+		const box = this.#boxOf(node);
+		if (box) return box.head === node ? (box.flexNode ?? undefined) : undefined;
+		return this.nodeMap.get(node);
+	}
+
+	/** The lines the run a node heads was broken into, if it has been measured. */
+	#runBreakResult(node: Node): BreakResult | undefined {
+		const box = this.#boxOf(node);
+		if (box) {
+			return box.head === node ? (box.breakResult ?? undefined) : undefined;
+		}
+		return this.breakResultMap.get(node);
+	}
+
+	/** Forget the lines of the run a node heads, so its measure runs again. */
+	#deleteRunBreakResult(node: Node): void {
+		const box = this.#boxOf(node);
+		if (box) {
+			if (box.head === node) box.breakResult = null;
+			return;
+		}
+		this.breakResultMap.delete(node);
+	}
+
+	/**
+	 * Bring a container's layout children into line with its box list: every
+	 * anonymous box owns a measuring layout node at its own position among the
+	 * container's boxes, and the block-level boxes an inline handed over (a
+	 * block inside an inline breaks it apart, CSS2 §9.2.1.1) are built as the
+	 * container's own.
+	 *
+	 * Positions are counted, not searched: a box sits after every earlier box
+	 * of the container that reached the layout tree, which is what the flex
+	 * engine's child order has to say.
+	 */
+	#syncContainerRuns(container: Element): void {
+		this.#dirtyRunContainers.delete(container);
+		const containerFlexNode =
+			this.#blockContentRoots.get(container) ?? this.nodeMap.get(container);
+		// No layout node, a node that measures its content as one opaque unit,
+		// or a subtree display:none removed from layout: nothing here lays out
+		// boxes of its own.
+		if (!containerFlexNode || containerFlexNode.measureFunc) return;
+		if (
+			getPropertyValue(container, "display") === "none" ||
+			this.#hiddenByAncestor(container)
+		) {
+			return;
+		}
+
+		const {boxes} = this.#containerBoxes(container);
+		let index = 0;
+		for (const entry of boxes) {
+			if (entry instanceof InlineBox) {
+				let flexNode = entry.flexNode;
+				const styledFrom =
+					entry.head.nodeType === entry.head.ELEMENT_NODE
+						? (entry.head as Element)
+						: null;
+				// The head decides the box's own flex styles (an anonymous box has
+				// none), so a run that changes hands starts from a fresh node
+				// rather than wearing the last head's margins and flex factors.
+				if (flexNode && entry.styledFrom !== styledFrom) {
+					this.#retireInlineBox(entry);
+					flexNode = null;
+				}
+				if (!flexNode) {
+					flexNode = Flex.Node.createWithConfig(flexConfig);
+					entry.flexNode = flexNode;
+					entry.styledFrom = styledFrom;
+					if (styledFrom) {
+						styleFlexNode(styledFrom, flexNode, this.positionedElements);
+					}
+					flexNode.setMeasureFunc((width, widthMode, height, heightMode) =>
+						this.#measureInlineRun(entry, width, widthMode, height, heightMode),
+					);
+					this.#measureNodes.add(flexNode);
+					this.#inlineBoxes.set(flexNode, entry);
+					this.#domNodeByFlexNode.set(flexNode, entry.head);
+				} else if (this.#domNodeByFlexNode.get(flexNode) !== entry.head) {
+					// Paint reaches a box through the node that opens it.
+					this.#domNodeByFlexNode.set(flexNode, entry.head);
+				}
+				if (containerFlexNode.getChildIndex(flexNode) !== index) {
+					flexNode.getParent()?.removeChild(flexNode);
+					containerFlexNode.insertChild(flexNode, index);
+				}
+				index++;
+				continue;
+			}
+			// A block-level box inside an inline reaches the layout tree only
+			// here: the container's own child walk never descends into the
+			// inline that holds it, so neither a fresh build nor a rebuild
+			// that severed the container's children ever names it.
+			if (!this.#isOutOfFlow(entry) && this.#boxParentOf(entry) !== container) {
+				const existing = this.nodeMap.get(entry);
+				if (!existing || existing.getParent() !== containerFlexNode) {
+					this.#addNode(entry, containerFlexNode);
+				}
+			}
+			const flexNode = this.nodeMap.get(entry);
+			if (flexNode && flexNode.getParent() === containerFlexNode) index++;
+		}
 	}
 
 	/** The flat-tree parent that can hold a box, pseudo-elements included. */
@@ -2769,43 +3046,11 @@ export class LayoutEngine {
 		}
 	}
 
+	/** The node an inline-level node's box is measured from. */
 	findInlineRunHead(node: Node): Node | null {
-		// Composition-connected, not isConnected: a UA shadow tree's parts live
-		// in a fragment and are never DOM-connected, but they render (and
-		// measure, and invalidate) like anything else.
-		if (!compositionIsConnected(node)) {
-			const pseudoMetadata = getPseudoMetadata(node);
-			if (!pseudoMetadata || !pseudoMetadata.hostElement.isConnected) {
-				return null;
-			}
-		}
-
-		if (node.nodeType === node.ELEMENT_NODE) {
-			const element = node as Element;
-			// An out-of-flow element is never a run head or run member -- it
-			// left the flow entirely. Letting run invalidation "ensure" it a
-			// bare layout node makes later rebuilds skip its full build, so its
-			// pseudo-only content vanishes on a runtime class flip.
-			if (this.#isOutOfFlow(element)) return null;
-			const display = getPropertyValue(element, "display");
-			if (display !== "inline" && display !== "inline-block") return null;
-		} else if (node.nodeType !== node.TEXT_NODE) {
-			return null;
-		}
-
-		const container = this.#runContainerOf(node);
-		if (!container) return node;
-		const {heads} = this.#containerBoxes(container);
-		// Up from the node to whichever of its ancestors the container counts
-		// among its own flow children: that is the box the content falls under.
-		for (let current: Node = node; current !== container; ) {
-			const head = heads.get(current);
-			if (head) return head;
-			const parent = this.#boxParentOf(current);
-			if (!parent) return current;
-			current = parent;
-		}
-		return node;
+		const entry = this.#boxEntryOf(node);
+		if (!entry) return null;
+		return entry instanceof InlineBox ? entry.head : entry;
 	}
 
 	isInlineRunHead(node: Node): boolean {
@@ -2899,50 +3144,46 @@ export class LayoutEngine {
 	}
 
 	#clearBreakResultCache(node: Node): void {
-		// Find the run head for this node
-		const runHead = this.findInlineRunHead(node);
-		if (runHead) {
-			this.breakResultMap.delete(runHead);
+		const entry = this.#boxEntryOf(node);
+		if (entry instanceof InlineBox) {
+			this.#invalidateBox(entry);
+		} else if (entry) {
+			this.breakResultMap.delete(entry);
 			// Dirty the measure that refills it, always: a clean node keeps its
 			// cached height, so the run lays out at its old size and then paints
 			// nothing, having no break result left to paint FROM.
-			this.#markRunMeasureDirty(runHead);
+			this.#markRunMeasureDirty(entry);
 		}
 	}
 
 	/**
-	 * Clear all break results for nodes that are part of the same inline run as the given node.
-	 * This handles the case where run structure changes and old break results become orphaned.
+	 * Drop an anonymous box's lines and dirty the measure that refills them --
+	 * including, when the box sits in an inline-block's detached tree, the box
+	 * whose measure is the only thing that ever lays that tree out.
 	 */
-	#clearAllBreakResultsInRun(node: Node): void {
-		// Find the container element for this inline run
-		const container = this.#findInlineRunContainer(node);
-		if (!container) return;
+	#invalidateBox(box: InlineBox): void {
+		box.breakResult = null;
+		const flexNode = box.flexNode;
+		if (!flexNode) return;
+		flexNode.markDirty();
+		const host = this.#hostOfContentRoot(flexNode);
+		if (host) this.#invalidateEnclosingMeasure(host);
+	}
 
-		// Find all inline-level nodes in the container
-		const inlineNodes: Node[] = [];
-		const walker = createExpandedTreeWalker(this.window, container);
-
-		let child = walker.firstChild();
-		while (child) {
-			if (this.#isInlineLevel(child)) {
-				inlineNodes.push(child);
-			}
-			child = walker.nextSibling();
-		}
-
-		// Delete break results for any of these nodes that have them -- and
-		// dirty the measure that would refill them. The container holds every
-		// run inside it, not just the one that changed: `text<div/><input>`
-		// puts the leading text and the input in SEPARATE runs, and attaching
-		// the input's UA shadow tree cleared the text's break result too. A
-		// cleared result whose flex node is still clean is never recomputed,
-		// so that text measured, laid out at the right rect, and then painted
-		// nothing at all.
-		for (const inlineNode of inlineNodes) {
-			if (this.breakResultMap.has(inlineNode)) {
-				this.breakResultMap.delete(inlineNode);
-				this.#markRunMeasureDirty(inlineNode);
+	/**
+	 * Drop the lines of every box a container lays out, not just the one that
+	 * changed: `text<div/><input>` puts the leading text and the input in
+	 * SEPARATE boxes, and what reshapes one commonly reshapes the other. A
+	 * cleared result whose flex node is still clean is never recomputed, so
+	 * such a box measures, lays out at the right rect, and paints nothing.
+	 */
+	#invalidateContainerBoxes(container: Element): void {
+		for (const entry of this.#containerBoxes(container).boxes) {
+			if (entry instanceof InlineBox) {
+				this.#invalidateBox(entry);
+			} else if (this.breakResultMap.has(entry)) {
+				this.breakResultMap.delete(entry);
+				this.#markRunMeasureDirty(entry);
 			}
 		}
 	}
@@ -2979,10 +3220,16 @@ export class LayoutEngine {
 	 * break results on the way, and dirties it.
 	 */
 	#invalidateEnclosingMeasure(node: Node): void {
-		const runHead = this.findInlineRunHead(node);
-		if (runHead) {
-			this.breakResultMap.delete(runHead);
-			const headFlexNode = this.nodeMap.get(runHead);
+		const entry = this.#boxEntryOf(node);
+		if (entry instanceof InlineBox) {
+			if (entry.flexNode) {
+				this.#invalidateBox(entry);
+				return;
+			}
+			entry.breakResult = null;
+		} else if (entry) {
+			this.breakResultMap.delete(entry);
+			const headFlexNode = this.nodeMap.get(entry);
 			if (headFlexNode && headFlexNode.measureFunc) {
 				headFlexNode.markDirty();
 				// Keep climbing out of any detached content tree this run sits
@@ -3009,70 +3256,29 @@ export class LayoutEngine {
 	}
 
 	[kInvalidateInlineRun](node: Node): void {
-		const runHead = this.findInlineRunHead(node);
-		if (runHead) {
-			// Clear ALL break results for nodes in this inline run
-			// This handles the case where run head changes and old break results become orphaned
-			this.#clearAllBreakResultsInRun(node);
-
-			// Also clear the current run head's break result
-			this.breakResultMap.delete(runHead);
-
-			// If this node has a layout node but is NOT the run head, clean it up
-			if (runHead !== node && this.nodeMap.has(node)) {
-				const flexNode = this.nodeMap.get(node);
-				if (flexNode) {
-					// Remove from parent
-					const parent = node.parentElement;
-					if (parent) {
-						const parentFlexNode = this.nodeMap.get(parent);
-						if (parentFlexNode) {
-							parentFlexNode.removeChild(flexNode);
-						}
-					}
-					// Free and remove from map
-					const pseudoMeta = getPseudoMetadata(node);
-					if (pseudoMeta) {
-						// Removing pseudo element from nodeMap during invalidateInlineRun cleanup
-					}
-					this.#measureNodes.delete(flexNode);
-					flexNode.freeRecursive();
-					this.#untrackNode(node);
-				}
+		const entry = this.#boxEntryOf(node);
+		if (!entry) return;
+		if (entry instanceof InlineBox) {
+			this.#invalidateContainerBoxes(entry.container);
+			this.#dirtyRunContainers.add(entry.container);
+			// Content an anonymous box lays out owns no layout node of its own.
+			// One left over from an earlier shape of the container measures the
+			// same content a second time, in a box the container no longer has.
+			const stale = this.nodeMap.get(node);
+			if (stale) {
+				stale.getParent()?.removeChild(stale);
+				this.#measureNodes.delete(stale);
+				stale.freeRecursive();
+				this.#untrackNode(node);
 			}
-
-			// Ensure the actual run head has a layout node
-			if (!this.nodeMap.has(runHead)) {
-				// Find the parent that should contain this run head's layout node
-				let parent = runHead.parentElement;
-				while (parent) {
-					const parentFlexNode = this.nodeMap.get(parent);
-					if (parentFlexNode) {
-						// Add the run head to the layout tree
-						this.#addNode(runHead, parentFlexNode);
-						break;
-					}
-					// An inline box owns no layout node because a RUN measures
-					// it, contents and all -- so the run head found inside it is
-					// measured too, and manufacturing a node in the container
-					// gives it a box of its own there. `text<span
-					// style="display:inline-block"><input></span>` put the input
-					// at the top of the document and pushed the text down a row.
-					// A BROKEN inline is the exception: its fragments really are
-					// the container's boxes.
-					if (this.#isInlineLevel(parent) && !this.#brokenInlines.has(parent)) {
-						break;
-					}
-					parent = parent.parentElement;
-				}
-			} else {
-				// Run head already has a layout node, just mark it dirty
-				const flexNode = this.nodeMap.get(runHead);
-				if (flexNode) {
-					flexNode.markDirty();
-				}
-			}
+			return;
 		}
+		// A box of the element's own (a flex container blockifies its inline
+		// children) measures only itself.
+		const container = this.#runContainerOf(entry);
+		if (container) this.#invalidateContainerBoxes(container);
+		this.breakResultMap.delete(entry);
+		this.nodeMap.get(entry)?.markDirty();
 	}
 
 	#isInlineLevel(node: Node): boolean {
@@ -3507,7 +3713,26 @@ export class LayoutEngine {
 
 		if (this.nodeMap.has(node)) {
 			// Node already exists - this might be a moved node that needs reparenting
-			const existingFlexNode = this.nodeMap.get(node);
+			const existingFlexNode = this.nodeMap.get(node)!;
+			// Content that an anonymous box lays out owns no layout node: one
+			// left from when this node was block-level, or headed a run under a
+			// shape the container no longer has, is retired here so the box is
+			// the only thing measuring it.
+			if (this.#isInlineLevel(node) && this.#boxOf(node)) {
+				existingFlexNode.getParent()?.removeChild(existingFlexNode);
+				while (existingFlexNode.children.length > 0) {
+					existingFlexNode.removeChild(existingFlexNode.children[0]);
+				}
+				this.#measureNodes.delete(existingFlexNode);
+				existingFlexNode.freeRecursive();
+				this.#untrackNode(node);
+				if (node.nodeType === node.ELEMENT_NODE) {
+					this.#addElementNode(node as Element, parentFlexNode);
+				} else {
+					this.#addTextNode(node as Text, parentFlexNode);
+				}
+				return;
+			}
 			// Reuse is only sound while the node is still the same KIND of box.
 			// A run member flipped out of flow at runtime (or back) changes
 			// kind: the stale node keeps its inline-run measure func, and that
@@ -3552,15 +3777,6 @@ export class LayoutEngine {
 					parentFlexNode.insertChild(existingFlexNode, flexIndex);
 				}
 			}
-			// Reusing the node says nothing about the boxes this element handed
-			// to its container. A rebuild frees those and re-adds from the
-			// container's DIRECT children, which never names them -- they hang
-			// off an inline that still had its own node, so the sweep reached
-			// here, reparented, and returned with the block and everything
-			// after it missing from the tree.
-			if (node.nodeType === node.ELEMENT_NODE) {
-				this.#addSplitFragments(node as Element, parentFlexNode);
-			}
 			return;
 		}
 
@@ -3593,25 +3809,20 @@ export class LayoutEngine {
 		const outOfFlow = this.#isOutOfFlow(element);
 		const display = getPropertyValue(element, "display");
 
-		// For inline elements, we need to find or create the run head --
-		// unless the box is out of flow, which blockifies it per CSS: it
-		// never joins a run.
+		// Inline-level content lays out in its container's anonymous boxes,
+		// which the container reconciles as a whole -- unless the box is out of
+		// flow, which blockifies it per CSS: it never joins a run.
 		if (!outOfFlow && (display === "inline" || display === "inline-block")) {
-			const runHead = this.findInlineRunHead(element);
-			if (runHead && runHead !== element) {
-				// This element is part of an existing run - the run head will handle it
-				// Clear any cached results for the run head to force re-measurement
-				this.#clearBreakResultCache(runHead);
-				const runHeadFlexNode = this.nodeMap.get(runHead);
-				if (runHeadFlexNode) {
-					runHeadFlexNode.markDirty();
-				}
+			const box = this.#boxOf(element);
+			if (box) {
+				this.#invalidateBox(box);
+				this.#dirtyRunContainers.add(box.container);
 				this.#adoptOutOfFlowDescendants(element);
-				this.#addSplitFragments(element, parentFlexNode);
 				this.#buildBlockContent(element);
 				return;
 			}
-			// If runHead === element, this is the run head - proceed to create layout node
+			// No anonymous box holds it: its own box is what lays it out (a
+			// flex container's blockified children) -- proceed to create it.
 		}
 
 		// After the run-member return: members never insert a node of their
@@ -3657,7 +3868,6 @@ export class LayoutEngine {
 			}
 
 			this.#adoptOutOfFlowDescendants(element);
-			this.#addSplitFragments(element, parentFlexNode);
 			this.#buildBlockContent(element);
 			return;
 		}
@@ -3672,8 +3882,8 @@ export class LayoutEngine {
 
 		// Use ExpandedTreeWalker to traverse children including pseudo-elements.
 		// Only DIRECT children: an inline child broken apart by a block-level
-		// box adds its own fragments to this container from #addSplitFragments,
-		// which every path into that inline reaches.
+		// box holds boxes this container lays out, and those reach the tree
+		// through its own box reconciliation.
 		const walker = createExpandedTreeWalker(this.window, element);
 		for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
 			if (
@@ -3682,6 +3892,15 @@ export class LayoutEngine {
 			) {
 				this.#addNode(child, flexNode);
 			}
+		}
+
+		// The inline children just walked past lay out in boxes of this
+		// container's, which only the container can place. Here rather than in
+		// calculateLayout's drain, because a container built from inside a
+		// measure (an inline-block's block content) is laid out the moment the
+		// measure returns, with no drain in between.
+		if (this.#dirtyRunContainers.has(element)) {
+			this.#syncContainerRuns(element);
 		}
 
 		if (flexNode && parentFlexNode) {
@@ -3732,20 +3951,15 @@ export class LayoutEngine {
 			return;
 		}
 
-		// For text nodes, find the inline run head
-		const runHead = this.findInlineRunHead(text);
-		if (runHead && runHead !== text) {
-			// This text node is part of an existing run - the run head will handle it
-			// Clear any cached results for the run head to force re-measurement
-			this.#clearBreakResultCache(runHead);
-			const runHeadFlexNode = this.nodeMap.get(runHead);
-			if (runHeadFlexNode) {
-				runHeadFlexNode.markDirty();
-			}
+		// Text lays out in its container's anonymous box, which the container
+		// reconciles as a whole.
+		const box = this.#boxOf(text);
+		if (box) {
+			this.#invalidateBox(box);
+			this.#dirtyRunContainers.add(box.container);
 			return;
 		}
 
-		// This text node is the run head - create a layout node for it
 		let flexNode = this.nodeMap.get(text);
 		if (!flexNode) {
 			flexNode = Flex.Node.createWithConfig(flexConfig);
@@ -3891,7 +4105,11 @@ export class LayoutEngine {
 	 * `<a href="..."><div>card</div></a>` is this shape; without the split,
 	 * everything from the block onward renders as nothing.
 	 */
-	#flowChildren(container: Element, into: Node[] = []): Node[] {
+	#flowChildren(
+		container: Element,
+		into: Node[] = [],
+		root = container,
+	): Node[] {
 		const walker = createExpandedTreeWalker(this.window, container);
 		for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
 			into.push(child);
@@ -3899,7 +4117,12 @@ export class LayoutEngine {
 				child.nodeType === child.ELEMENT_NODE &&
 				this.#splitsAroundBlock(child as Element)
 			) {
-				this.#flowChildren(child as Element, into);
+				// Remembered rather than recomputed: paint culling asks per
+				// element per frame, and re-walking an inline's subtree there
+				// would cost every off-screen row of a long list.
+				this.#brokenInlines.add(child as Element);
+				this.#splitContainers.add(root);
+				this.#flowChildren(child as Element, into, root);
 			}
 		}
 		return into;
@@ -3948,6 +4171,12 @@ export class LayoutEngine {
 			) {
 				this.#addNode(child, root);
 			}
+		}
+
+		// The tree is laid out by the measure that reaches it, which may be the
+		// one running right now: its boxes have to be in it before it returns.
+		if (this.#dirtyRunContainers.has(element)) {
+			this.#syncContainerRuns(element);
 		}
 	}
 
@@ -4013,41 +4242,6 @@ export class LayoutEngine {
 			x: hostRect.x + boxModel.borderLeftWidth + boxModel.paddingLeft,
 			y: hostRect.y + boxModel.borderTopWidth + boxModel.paddingTop,
 		};
-	}
-
-	/**
-	 * Hand an inline box's children to the container that will actually lay
-	 * them out. The inline itself keeps a run node for the fragment BEFORE the
-	 * block-level box that broke it; everything from the block onward -- the
-	 * block, and the run that resumes after it -- belongs to the container, at
-	 * the same level as the inline. Reached from both sides of the run-head
-	 * check in #addElementNode, because a broken inline may equally be a run
-	 * head (its fragment starts a line) or a member of one.
-	 */
-	#addSplitFragments(
-		element: Element,
-		parentFlexNode: FlexTypes.Node | null,
-	): void {
-		if (!this.#splitsAroundBlock(element)) return;
-		// Remembered rather than recomputed: paint culling asks per element per
-		// frame, and re-walking an inline's subtree there would cost every
-		// off-screen row of a long list.
-		this.#brokenInlines.add(element);
-		const container = parentFlexNode
-			? this.#domNodeByFlexNode.get(parentFlexNode)
-			: undefined;
-		if (container && container.nodeType === container.ELEMENT_NODE) {
-			this.#splitContainers.add(container as Element);
-		}
-		const walker = createExpandedTreeWalker(this.window, element);
-		for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
-			if (
-				child.nodeType === child.ELEMENT_NODE ||
-				child.nodeType === child.TEXT_NODE
-			) {
-				this.#addNode(child, parentFlexNode);
-			}
-		}
 	}
 
 	/** An inline box with block-level content inside it: CSS breaks it apart. */
@@ -4156,19 +4350,26 @@ export class LayoutEngine {
 		let flexIndex = 0;
 		for (const sibling of this.#containerBoxes(boxParent).boxes) {
 			if (sibling === element) break;
-			if (this.nodeMap.has(sibling)) flexIndex++;
+			if (sibling instanceof InlineBox) {
+				if (sibling.flexNode) flexIndex++;
+			} else if (this.nodeMap.has(sibling)) {
+				flexIndex++;
+			}
 		}
 
 		return flexIndex;
 	}
 
 	#measureInlineRun(
-		node: Node,
+		box: Node | InlineBox,
 		width: number,
 		widthMode: FlexTypes.MeasureMode,
 		height: number,
 		heightMode: FlexTypes.MeasureMode,
 	): {width: number; height: number} {
+		// An anonymous box measures from whatever opens it now, which is what
+		// makes losing a head a re-measure rather than a rebuild.
+		const node = box instanceof InlineBox ? box.head : box;
 		const breakResult = this.#breakNodes(
 			node,
 			width,
@@ -4181,7 +4382,11 @@ export class LayoutEngine {
 		}
 
 		// Store the BreakResult for later use by getRects()
-		this.breakResultMap.set(node, breakResult);
+		if (box instanceof InlineBox) {
+			box.breakResult = breakResult;
+		} else {
+			this.breakResultMap.set(box, breakResult);
+		}
 
 		const result = {
 			width: breakResult.maxLineWidth,

@@ -1783,24 +1783,21 @@ test("Block child positioned after parent text content", () => {
 	const child = parent.querySelector("div")!;
 	const textNode = parent.firstChild!;
 
-	const parentYoga = layoutEngine.nodeMap.get(parent);
-	const childYoga = layoutEngine.nodeMap.get(child);
-	const textYoga = layoutEngine.nodeMap.get(textNode);
-
-	const parentLayout = parentYoga!.getComputedLayout();
-	const childLayout = childYoga!.getComputedLayout();
-	const textLayout = textYoga!.getComputedLayout();
+	const parentRect = layoutEngine.getRect(parent)!;
+	const childRect = layoutEngine.getRect(child)!;
+	const textRects = layoutEngine.getRectTexts(textNode);
 
 	// Parent should have height for text + child
-	expect(parentLayout.height).toBe(2);
+	expect(parentRect.height).toBe(2);
 
 	// Text should be positioned first (at parent origin)
-	expect(textLayout.top).toBe(0);
-	expect(textLayout.height).toBe(1);
+	expect(textRects.length).toBe(1);
+	expect(textRects[0].rect.y).toBe(parentRect.y);
+	expect(textRects[0].rect.height).toBe(1);
 
 	// Child should be positioned after text
-	expect(childLayout.top).toBe(1);
-	expect(childLayout.height).toBe(1);
+	expect(childRect.y).toBe(parentRect.y + 1);
+	expect(childRect.height).toBe(1);
 });
 
 test("Multiple block children positioned sequentially after parent text", () => {
