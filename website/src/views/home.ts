@@ -99,7 +99,7 @@ export default async function Home({url}: {url: string}) {
 
 				<p class=${heroCommand}>npm install @b9g/termdom</p>
 				<p class=${heroNote}>
-					a real DOM, a real cascade, a real layout engine — rendered to your terminal
+					a real DOM, a real cascade, a real layout engine ${"—"} rendered to your terminal
 				</p>
 
 				<div class=${content}>
