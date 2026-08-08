@@ -6,7 +6,8 @@
  */
 
 import {type DOMWindow} from "jsdom";
-import * as CSSOM from "rrweb-cssom";
+import * as cssTree from "css-tree";
+import {parseCSSColor} from "./color.js";
 import {stringWidth} from "./text.js";
 import {
 	attachPseudoElement,
@@ -19,6 +20,12 @@ import {
 	invalidateStructure,
 } from "./composition.js";
 import {type LayoutEngine} from "./layout.js";
+import {
+	CSS_INITIAL_VALUES,
+	CSS_LONGHANDS,
+	CSS_PROPERTIES,
+	CSS_SHORTHANDS,
+} from "./cssproperties.js";
 import {
 	INHERITED_PROPERTIES,
 	INITIAL_KEYWORDS,
@@ -33,11 +40,13 @@ import {
  * Works with both regular DOM and JSDOM environments.
  */
 export function getPropertyValue(element: Element, property: string): string {
-	const window = element.ownerDocument?.defaultView;
-	if (!window) {
-		throw new Error("Element does not have an associated window");
-	}
-	return window.getComputedStyle(element).getPropertyValue(property);
+	// The COMPUTED value, not the resolved one: layout and paint decide
+	// geometry from this, and a used value here would feed layout its own
+	// output. It is the internal path by construction -- computedStyleOf
+	// reaches the cascade's declaration directly -- so there is no branch to
+	// guard, nothing to unwind, and nothing between here and the value but
+	// two map lookups.
+	return computedStyleOf(element).computedValueOf(property);
 }
 
 /**
@@ -142,52 +151,53 @@ export function parseBorderWidthValue(
 }
 
 export function getBoxModel(element: Element): BoxModel {
-	const window = element.ownerDocument?.defaultView;
-	if (!window) {
-		throw new Error("Element does not have an associated window");
-	}
-	const computedStyle = window.getComputedStyle(element);
+	// The engine's own read: the cascade's declaration, straight, with none of
+	// the author path's resolved-value work between here and the values layout
+	// is about to decide geometry from.
+	return readBoxModel(computedStyleOf(element));
+}
 
+function readBoxModel(computedStyle: ComputedStyle): BoxModel {
 	// Parse explicit width/height
-	const widthValue = parseUnitValue(computedStyle.getPropertyValue("width"));
-	const heightValue = parseUnitValue(computedStyle.getPropertyValue("height"));
+	const widthValue = parseUnitValue(computedStyle.computedValueOf("width"));
+	const heightValue = parseUnitValue(computedStyle.computedValueOf("height"));
 
 	// Parse padding
 	const paddingTop = parseUnitValue(
-		computedStyle.getPropertyValue("padding-top"),
+		computedStyle.computedValueOf("padding-top"),
 	);
 	const paddingRight = parseUnitValue(
-		computedStyle.getPropertyValue("padding-right"),
+		computedStyle.computedValueOf("padding-right"),
 	);
 	const paddingBottom = parseUnitValue(
-		computedStyle.getPropertyValue("padding-bottom"),
+		computedStyle.computedValueOf("padding-bottom"),
 	);
 	const paddingLeft = parseUnitValue(
-		computedStyle.getPropertyValue("padding-left"),
+		computedStyle.computedValueOf("padding-left"),
 	);
 
 	// Parse margin
 	const marginTop = parseSignedUnitValue(
-		computedStyle.getPropertyValue("margin-top"),
+		computedStyle.computedValueOf("margin-top"),
 	);
 	const marginRight = parseSignedUnitValue(
-		computedStyle.getPropertyValue("margin-right"),
+		computedStyle.computedValueOf("margin-right"),
 	);
 	const marginBottom = parseSignedUnitValue(
-		computedStyle.getPropertyValue("margin-bottom"),
+		computedStyle.computedValueOf("margin-bottom"),
 	);
 	const marginLeft = parseSignedUnitValue(
-		computedStyle.getPropertyValue("margin-left"),
+		computedStyle.computedValueOf("margin-left"),
 	);
 
 	// Parse border. The USED width is 0 when the side's style is none or
 	// hidden (css-backgrounds §3.3), however wide the width property says --
 	// `border-style: none` must release the space, not just the glyphs.
 	const borderWidthFor = (side: string) => {
-		const style = computedStyle.getPropertyValue(`border-${side}-style`);
+		const style = computedStyle.computedValueOf(`border-${side}-style`);
 		if (!style || style === "none" || style === "hidden") return null;
 		return parseBorderWidthValue(
-			computedStyle.getPropertyValue(`border-${side}-width`),
+			computedStyle.computedValueOf(`border-${side}-width`),
 		);
 	};
 	const borderTopWidth = borderWidthFor("top");
@@ -302,6 +312,16 @@ const listGutterInProgress = new WeakSet<Element>();
  */
 const styleManagers = new WeakMap<object, StyleManager>();
 
+/**
+ * The same registry keyed by DOCUMENT rather than window.
+ *
+ * jsdom's window is a global proxy: every property read through it, and every
+ * WeakMap lookup keyed on it, pays for the trap. The internal read path takes
+ * this door instead -- the document is a plain object, and an element already
+ * holds one.
+ */
+const documentManagers = new WeakMap<object, StyleManager>();
+
 /** A marker is separated from its item's text by one cell. */
 function withMarkerSeparator(marker: string): string {
 	return marker ? `${marker} ` : "";
@@ -324,12 +344,13 @@ function unquoteContent(content: string): string {
 		const char = content[index];
 
 		if (char === '"' || char === "'") {
-			const close = content.indexOf(char, index + 1);
-			if (close === -1) {
-				out += content.slice(index + 1);
-				break;
+			// A quote or a backslash inside the string carries a backslash of
+			// its own, which is spelling, not content.
+			let close = index + 1;
+			for (; close < content.length && content[close] !== char; close++) {
+				if (content[close] === "\\") close++;
 			}
-			out += content.slice(index + 1, close);
+			out += content.slice(index + 1, close).replace(/\\(.)/g, "$1");
 			index = close + 1;
 		} else if (/\s/.test(char)) {
 			// Whitespace *between* components is not rendered.
@@ -485,8 +506,7 @@ function normalizeValue(property: string, declared: string): string {
 		return value;
 	}
 	if (COLOR_PROPERTIES.has(property)) {
-		if (value.startsWith("#")) return hexColorToRgb(value) ?? value;
-		return IDENTIFIER_VALUE.test(value) ? value.toLowerCase() : value;
+		return serializeColor(value) ?? value;
 	}
 	if (LENGTH_PROPERTIES.has(property)) {
 		return value.split(/\s+/).map(computedNumber).join(" ");
@@ -495,27 +515,326 @@ function normalizeValue(property: string, declared: string): string {
 }
 
 /**
+ * A color's resolved spelling: `rgb(r, g, b)`, or `rgba(r, g, b, a)` when it
+ * is not opaque. Null for a value that names no color -- `currentcolor` before
+ * it resolves, a keyword this engine's color table does not carry.
+ */
+function serializeColor(value: string): string | null {
+	const text = value.trim();
+	if (!text || text.toLowerCase() === "currentcolor") return null;
+	if (/^transparent$/i.test(text)) return "rgba(0, 0, 0, 0)";
+	if (text.startsWith("#")) return hexColorToRgb(text);
+	const packed = parseCSSColor(text);
+	if (packed === null) return null;
+	const red = (packed >> 16) & 0xff;
+	const green = (packed >> 8) & 0xff;
+	const blue = packed & 0xff;
+	// An alpha component survives the 24-bit packing as its own text.
+	const functional = /^(?:rgba|hsla)\(([^)]*)\)$/i.exec(text);
+	const parts = functional ? functional[1].split(/\s*[,/]\s*/) : [];
+	if (parts.length === 4) {
+		const raw = parts[3].trim();
+		const opacity = raw.endsWith("%")
+			? Number(raw.slice(0, -1)) / 100
+			: Number(raw);
+		if (Number.isFinite(opacity) && opacity < 1) {
+			return `rgba(${red}, ${green}, ${blue}, ${opacity})`;
+		}
+	}
+	return `rgb(${red}, ${green}, ${blue})`;
+}
+
+/**
+ * The properties whose value absolutizes against the element it is computed
+ * on: every property that takes a length, plus the two whose percentage is
+ * font-relative. A value on any other property is the same string on every
+ * element, and interning is the whole of its computation.
+ */
+const ABSOLUTIZED_PROPERTIES = new Set([
+	...LENGTH_PROPERTIES,
+	"line-height",
+	"vertical-align",
+	"border-spacing",
+	"text-underline-offset",
+]);
+
+/**
+ * The properties whose percentage resolves at computed-value time, against
+ * the font size: `font-size` against the parent's, `line-height` against the
+ * element's own. Every other percentage stays a percentage until it is used.
+ */
+const FONT_RELATIVE_PERCENTAGES = new Set(["font-size", "line-height"]);
+
+/** A number carrying a unit that only an element can measure. */
+const RELATIVE_UNIT = /[\d.](?:r?em|ex|ch|vw|vh|vmin|vmax)\b/i;
+
+/**
+ * One interned computed value: the string, and whether answering it needs
+ * the element -- a relative length to absolutize, a calc() to reduce, a
+ * font-relative percentage to resolve. The flag is decided once per declared
+ * text, so the common value (a keyword, an integer, a px or ch length) is
+ * still nothing but two map lookups.
+ */
+interface ComputedEntry {
+	value: string;
+	contextual: boolean;
+}
+
+const EMPTY_ENTRY: ComputedEntry = {value: "", contextual: false};
+
+/**
  * Computed strings interned by property and declared text. A document draws
  * its declared values from a small vocabulary -- a handful of colors, a
  * handful of lengths, the same keywords on every element -- so the same pair
  * recurs across thousands of elements and every generation after the first.
  */
-const computedValues = new Map<string, Map<string, string>>();
+const computedValues = new Map<string, Map<string, ComputedEntry>>();
 
-function computedValue(property: string, declared: string): string {
-	if (!declared) return "";
+function computedEntry(property: string, declared: string): ComputedEntry {
+	if (!declared) return EMPTY_ENTRY;
 	let byValue = computedValues.get(property);
 	if (!byValue) {
 		byValue = new Map();
 		computedValues.set(property, byValue);
 	}
-	let value = byValue.get(declared);
-	if (value === undefined) {
-		value = normalizeValue(property, declared);
+	let entry = byValue.get(declared);
+	if (entry === undefined) {
+		const value = normalizeValue(property, declared);
+		entry = {
+			value,
+			contextual:
+				ABSOLUTIZED_PROPERTIES.has(property) &&
+				(RELATIVE_UNIT.test(value) ||
+					value.includes("calc(") ||
+					(FONT_RELATIVE_PERCENTAGES.has(property) && value.includes("%"))),
+		};
 		if (byValue.size >= 512) byValue.clear();
-		byValue.set(declared, value);
+		byValue.set(declared, entry);
 	}
-	return value;
+	return entry;
+}
+
+function computedValue(property: string, declared: string): string {
+	return computedEntry(property, declared).value;
+}
+
+/** The unit a length measures in, and the px each one of it is worth. */
+interface LengthContext {
+	/** The font size relative units measure against, in px. */
+	font: number;
+	/** The root element's font size, for `rem`. */
+	root: number;
+	viewportWidth: number;
+	viewportHeight: number;
+	/** What a percentage is worth, or null where percentages stay. */
+	percent: number | null;
+}
+
+/**
+ * The font size a terminal draws with: one cell. It is the initial value
+ * `font-size` computes to, so `1em` is one cell in a document that declares
+ * no font size -- and a document that declares one still gets the spec's
+ * arithmetic, which the grid then rounds to cells.
+ */
+const INITIAL_FONT_SIZE = 1;
+
+function fontSizeOf(style: ComputedStyle): number {
+	const size = parseFloat(style.computedValueOf("font-size"));
+	return Number.isFinite(size) ? size : INITIAL_FONT_SIZE;
+}
+
+function unitFactor(unit: string, context: LengthContext): number | null {
+	switch (unit.toLowerCase()) {
+		case "em":
+			return context.font;
+		case "rem":
+			return context.root;
+		// A terminal has no font metrics: every glyph is one cell, so the
+		// x-height a browser measures is the half-em it falls back to.
+		case "ex":
+			return context.font / 2;
+		// One cell wide, whatever font size the document declares -- the grid's
+		// column is not something a style can resize.
+		case "ch":
+			return 1;
+		case "vw":
+			return context.viewportWidth / 100;
+		case "vh":
+			return context.viewportHeight / 100;
+		case "vmin":
+			return Math.min(context.viewportWidth, context.viewportHeight) / 100;
+		case "vmax":
+			return Math.max(context.viewportWidth, context.viewportHeight) / 100;
+		case "%":
+			return context.percent;
+		default:
+			return null;
+	}
+}
+
+/** A length in the spelling a computed value carries: px, six decimals at most. */
+function absoluteLength(px: number): string {
+	return `${Math.round(px * 1e6) / 1e6}px`;
+}
+
+/** A number token followed by its unit, anywhere in a value. */
+const LENGTH_TOKEN = /([+-]?(?:\d+\.?\d*|\.\d+))(%|[a-zA-Z]+)/g;
+
+/**
+ * A computed value with every relative length replaced by the absolute one it
+ * computes to, and every calc() reduced. What is left is px, the percentages
+ * a property keeps until it is used, and whatever this engine does not
+ * measure -- which passes through untouched.
+ */
+function absolutizeLengths(value: string, context: LengthContext): string {
+	const reduced = value.includes("calc(") ? replaceCalc(value, context) : value;
+	return reduced.replace(
+		LENGTH_TOKEN,
+		(token, number: string, unit: string) => {
+			const factor = unitFactor(unit, context);
+			return factor === null
+				? token
+				: absoluteLength(parseFloat(number) * factor);
+		},
+	);
+}
+
+/** Each calc() in a value, replaced by the value it reduces to. */
+function replaceCalc(value: string, context: LengthContext): string {
+	let out = "";
+	let index = 0;
+	while (index < value.length) {
+		const start = value.toLowerCase().indexOf("calc(", index);
+		if (start === -1) {
+			out += value.slice(index);
+			break;
+		}
+		out += value.slice(index, start);
+		let depth = 0;
+		let end = start + 4;
+		for (; end < value.length; end++) {
+			if (value[end] === "(") depth++;
+			else if (value[end] === ")" && --depth === 0) break;
+		}
+		const body = value.slice(start + 5, end);
+		const terms = evaluateCalc(body, context);
+		out += terms === null ? value.slice(start, end + 1) : serializeCalc(terms);
+		index = end + 1;
+	}
+	return out;
+}
+
+/**
+ * What a math function reduces to: a length in px, a percentage, and a plain
+ * number, at most one of which a valid calc() leaves nonzero alongside the
+ * others.
+ */
+interface CalcTerms {
+	px: number;
+	percent: number;
+	number: number;
+}
+
+/**
+ * The reduced form of a sum, per css-values: a lone term serializes as
+ * itself, and a length that still carries a percentage keeps the calc() it
+ * needs to hold the two together.
+ */
+function serializeCalc(terms: CalcTerms): string {
+	const round = (value: number): number => Math.round(value * 1e6) / 1e6;
+	const px = round(terms.px);
+	const percent = round(terms.percent);
+	const number = round(terms.number);
+	if (percent === 0 && px === 0 && number !== 0) return `${number}`;
+	if (percent === 0) return `${px}px`;
+	if (px === 0 && number === 0) return `${percent}%`;
+	return `calc(${px}px ${percent < 0 ? "-" : "+"} ${Math.abs(percent)}%)`;
+}
+
+/**
+ * A calc() body reduced to its terms. Null for anything this cannot reduce --
+ * a nested min()/max()/clamp(), a unit with no cell length, an unsubstituted
+ * var() -- which leaves the value as the author wrote it.
+ */
+function evaluateCalc(body: string, context: LengthContext): CalcTerms | null {
+	const tokens = body.match(
+		/[+-]?(?:\d+\.?\d*|\.\d+)(?:%|[a-zA-Z]+)?|[()*/+-]/g,
+	);
+	if (!tokens) return null;
+	let position = 0;
+	const peek = (): string | undefined => tokens[position];
+
+	const scale = (terms: CalcTerms, by: number): CalcTerms => ({
+		px: terms.px * by,
+		percent: terms.percent * by,
+		number: terms.number * by,
+	});
+
+	const primary = (): CalcTerms | null => {
+		const token = tokens[position++];
+		if (token === undefined) return null;
+		if (token === "(") {
+			const inner = sum();
+			if (inner === null || tokens[position++] !== ")") return null;
+			return inner;
+		}
+		if (token === "-" || token === "+") {
+			const inner = primary();
+			return inner === null ? null : scale(inner, token === "-" ? -1 : 1);
+		}
+		const match = /^([+-]?(?:\d+\.?\d*|\.\d+))(%|[a-zA-Z]+)?$/.exec(token);
+		if (!match) return null;
+		const number = parseFloat(match[1]);
+		if (!match[2]) return {px: 0, percent: 0, number};
+		if (match[2] === "px") return {px: number, percent: 0, number: 0};
+		if (match[2] === "%" && context.percent === null) {
+			return {px: 0, percent: number, number: 0};
+		}
+		const factor = unitFactor(match[2], context);
+		if (factor === null) return null;
+		return {px: number * factor, percent: 0, number: 0};
+	};
+
+	const product = (): CalcTerms | null => {
+		let left = primary();
+		while (left !== null && (peek() === "*" || peek() === "/")) {
+			const operator = tokens[position++];
+			const right = primary();
+			if (right === null) return null;
+			if (operator === "/") {
+				if (right.px !== 0 || right.percent !== 0 || right.number === 0) {
+					return null;
+				}
+				left = scale(left, 1 / right.number);
+			} else if (right.px === 0 && right.percent === 0) {
+				left = scale(left, right.number);
+			} else if (left.px === 0 && left.percent === 0) {
+				left = scale(right, left.number);
+			} else {
+				return null;
+			}
+		}
+		return left;
+	};
+
+	const sum = (): CalcTerms | null => {
+		let left = product();
+		while (left !== null && (peek() === "+" || peek() === "-")) {
+			const operator = tokens[position++];
+			const right = product();
+			if (right === null) return null;
+			const sign = operator === "-" ? -1 : 1;
+			left = {
+				px: left.px + sign * right.px,
+				percent: left.percent + sign * right.percent,
+				number: left.number + sign * right.number,
+			};
+		}
+		return left;
+	};
+
+	const terms = sum();
+	return terms !== null && position === tokens.length ? terms : null;
 }
 
 /** A cascade level's declarations: expanded longhands, and which are `!important`. */
@@ -534,173 +853,505 @@ interface DeclarationSource {
 	getPropertyPriority(property: string): string;
 }
 
-/**
- * A declaration block as the cascade stores it: expanded longhands, alongside
- * which of them a `!important` covers.
- */
-function expandDeclarations(style: DeclarationSource): DeclarationBlock {
-	const authored: Record<string, string> = {};
-	const authoredImportant: Record<string, string> = {};
-	for (let i = 0; i < style.length; i++) {
-		const property = style[i];
-		const value = style.getPropertyValue(property);
-		// Invalid declarations never enter the cascade (see
-		// isValidDeclaration): dropping is what lets a lower-priority
-		// rule keep winning, exactly as a browser would.
-		if (!isValidDeclaration(property, value)) {
-			continue;
-		}
-		authored[property] = value;
-		if (style.getPropertyPriority(property) === "important") {
-			authoredImportant[property] = value;
-		}
-	}
-	// Declarations are consulted per-property downstream; a shorthand that stays
-	// a shorthand is invisible to the box model -- and its importance, which
-	// covers every longhand it declares, along with it.
-	const important: Record<string, boolean> = {};
-	for (const property of Object.keys(expandShorthands(authoredImportant))) {
-		important[property] = true;
-	}
-	return {declarations: expandShorthands(authored), important};
-}
-
-/** One declaration as authored on an element's `style` attribute. */
-interface InlineDeclaration {
+/** One declaration of a block: a longhand, or a shorthand kept undecomposed. */
+interface CSSDeclaration {
 	name: string;
 	value: string;
 	important: boolean;
 }
 
-/**
- * The properties `element.style` exposes as camelCase (and dashed) accessors.
- * Anything outside the list is still reachable through setProperty and
- * getPropertyValue, as a custom property is.
- */
-const INLINE_STYLE_ACCESSORS = [
-	"align-content",
-	"align-items",
-	"align-self",
-	"appearance",
-	"background",
-	"background-clip",
-	"background-color",
-	"background-image",
-	"background-position",
-	"background-repeat",
-	"background-size",
-	"border",
-	"border-bottom",
-	"border-bottom-color",
-	"border-bottom-style",
-	"border-bottom-width",
-	"border-collapse",
-	"border-color",
-	"border-left",
-	"border-left-color",
-	"border-left-style",
-	"border-left-width",
-	"border-radius",
-	"border-right",
-	"border-right-color",
-	"border-right-style",
-	"border-right-width",
-	"border-spacing",
-	"border-style",
-	"border-top",
-	"border-top-color",
-	"border-top-style",
-	"border-top-width",
-	"border-width",
-	"bottom",
-	"box-sizing",
-	"caption-side",
-	"caret-color",
-	"clear",
-	"color",
-	"column-gap",
-	"content",
-	"cursor",
-	"direction",
-	"display",
-	"flex",
-	"flex-basis",
-	"flex-direction",
-	"flex-flow",
-	"flex-grow",
-	"flex-shrink",
-	"flex-wrap",
-	"float",
-	"font",
-	"font-family",
-	"font-size",
-	"font-style",
-	"font-weight",
-	"gap",
-	"height",
-	"inset",
-	"justify-content",
-	"left",
-	"letter-spacing",
-	"line-height",
-	"list-style",
-	"list-style-image",
-	"list-style-position",
-	"list-style-type",
-	"margin",
-	"margin-bottom",
-	"margin-left",
-	"margin-right",
-	"margin-top",
-	"max-height",
-	"max-width",
-	"min-height",
-	"min-width",
-	"opacity",
-	"order",
-	"outline",
-	"outline-color",
-	"outline-offset",
-	"outline-style",
-	"outline-width",
-	"overflow",
-	"overflow-wrap",
-	"overflow-x",
-	"overflow-y",
-	"padding",
-	"padding-bottom",
-	"padding-left",
-	"padding-right",
-	"padding-top",
-	"pointer-events",
-	"position",
-	"resize",
-	"right",
-	"row-gap",
-	"table-layout",
-	"text-align",
-	"text-decoration",
-	"text-decoration-color",
-	"text-decoration-line",
-	"text-decoration-style",
-	"text-indent",
-	"text-overflow",
-	"text-transform",
-	"top",
-	"unicode-bidi",
-	"user-select",
-	"vertical-align",
-	"visibility",
-	"white-space",
-	"width",
-	"word-break",
-	"word-spacing",
-	"writing-mode",
-	"z-index",
-];
+/** Every property CSSOM exposes, shorthands included. */
+const SUPPORTED_PROPERTIES = new Set(CSS_PROPERTIES);
 
-function camelCaseProperty(property: string): string {
-	return property.replace(/-([a-z])/g, (_, letter: string) =>
+const EDGE_NAMES = ["top", "right", "bottom", "left"] as const;
+
+/** The components of a line shorthand, in the order its grammar writes them. */
+const LINE_COMPONENTS = ["width", "style", "color"] as const;
+
+/** The keywords every property accepts, whatever its own grammar. */
+const CSS_WIDE_KEYWORDS = new Set([
+	"initial",
+	"inherit",
+	"unset",
+	"revert",
+	"revert-layer",
+]);
+
+const CORNER_NAMES = [
+	"top-left",
+	"top-right",
+	"bottom-right",
+	"bottom-left",
+] as const;
+
+/**
+ * The shape of a shorthand's grammar, and so how its value serializes: a box
+ * of four sides or corners collapsed to one to four values, a pair collapsed
+ * when both agree, a line's width/style/color, `border`'s three uniform boxes,
+ * or a plain sequence of components.
+ */
+type ShorthandShape = "box" | "pair" | "line" | "border" | "sequence";
+
+/**
+ * Each shorthand's longhands, in the order its grammar names them: the
+ * property index lists a box's sides alphabetically, where the grammar --
+ * and so the order the longhands are stored and serialized in -- runs
+ * top, right, bottom, left.
+ */
+const SHORTHAND_LONGHANDS = new Map<string, readonly string[]>();
+
+/** Each shorthand's shape, classified once rather than per serialization. */
+const SHORTHAND_SHAPES = new Map<string, ShorthandShape>();
+
+for (const [shorthand, indexed] of Object.entries(CSS_SHORTHANDS)) {
+	const box =
+		boxOrder(shorthand, indexed, EDGE_NAMES) ??
+		boxOrder(shorthand, indexed, CORNER_NAMES);
+	const longhands = box ?? indexed;
+	SHORTHAND_LONGHANDS.set(shorthand, longhands);
+	SHORTHAND_SHAPES.set(
+		shorthand,
+		box
+			? "box"
+			: longhands.length === 12 &&
+				  LINE_COMPONENTS.every(
+						(kind) =>
+							longhands.filter((longhand) => longhand.endsWith(`-${kind}`))
+								.length === 4,
+				  )
+				? "border"
+				: longhands.length === LINE_COMPONENTS.length &&
+					  longhands.every((longhand, index) =>
+							longhand.endsWith(`-${LINE_COMPONENTS[index]}`),
+					  )
+					? "line"
+					: longhands.length === 2
+						? "pair"
+						: "sequence",
+	);
+}
+
+/**
+ * The shorthands a longhand belongs to, widest first: block serialization
+ * prefers the shorthand covering the most declarations, and `all` -- covering
+ * every longhand there is -- comes first of all.
+ */
+const LONGHAND_SHORTHANDS = new Map<string, readonly string[]>();
+{
+	const byLonghand = new Map<string, string[]>();
+	for (const [shorthand, longhands] of SHORTHAND_LONGHANDS) {
+		for (const longhand of longhands) {
+			let shorthands = byLonghand.get(longhand);
+			if (!shorthands) byLonghand.set(longhand, (shorthands = []));
+			shorthands.push(shorthand);
+		}
+	}
+	for (const [longhand, shorthands] of byLonghand) {
+		shorthands.sort(
+			(a, b) =>
+				SHORTHAND_LONGHANDS.get(b)!.length -
+					SHORTHAND_LONGHANDS.get(a)!.length || (a < b ? -1 : 1),
+		);
+		LONGHAND_SHORTHANDS.set(longhand, shorthands);
+	}
+}
+
+/**
+ * A declared value in its CSSOM spelling: comments removed, runs of whitespace
+ * collapsed to one space, no space inside a function's parentheses except the
+ * single space that follows each comma. Strings pass through as authored.
+ */
+export function serializeCSSValue(input: string): string {
+	let out = "";
+	let space = false;
+	const emit = (token: string): void => {
+		if (out.endsWith(",")) out += " ";
+		else if (space && out !== "" && !out.endsWith("(")) out += " ";
+		space = false;
+		out += token;
+	};
+
+	for (let i = 0; i < input.length; i++) {
+		const character = input[i];
+		if (WHITESPACE.has(character)) {
+			space = out !== "";
+			continue;
+		}
+		if (character === "/" && input[i + 1] === "*") {
+			const end = input.indexOf("*/", i + 2);
+			i = end === -1 ? input.length : end + 1;
+			space = out !== "";
+			continue;
+		}
+		if (character === '"' || character === "'") {
+			const end = endOfString(input, i);
+			emit(serializeCSSString(unescapeCSSString(input.slice(i + 1, end))));
+			i = end;
+			continue;
+		}
+		if (character === "," || character === ")") {
+			out += character;
+			space = false;
+			continue;
+		}
+		if (startsNumber(input, i)) {
+			const number = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?/.exec(
+				input.slice(i),
+			)![0];
+			i += number.length;
+			const unit = /^(?:%|[a-zA-Z\u0080-\uFFFF]+)/.exec(input.slice(i))?.[0];
+			if (unit) i += unit.length;
+			emit(
+				serializeCSSNumber(number) +
+					(unit === "%" ? "%" : (unit?.toLowerCase() ?? "")),
+			);
+			i--;
+			continue;
+		}
+		if (startsIdentifier(input, i)) {
+			const name = /^[a-zA-Z0-9_\u0080-\uFFFF\\-]+/.exec(input.slice(i))![0];
+			i += name.length;
+			// A url() token's body is not an identifier list: it runs to the
+			// closing parenthesis, quoted or not, and serializes quoted.
+			if (name.toLowerCase() === "url" && input[i] === "(") {
+				const end = input.indexOf(")", i);
+				const body = input.slice(i + 1, end === -1 ? input.length : end).trim();
+				const url =
+					body.startsWith('"') || body.startsWith("'")
+						? unescapeCSSString(body.slice(1, -1))
+						: unescapeCSSString(body);
+				emit(`url(${serializeCSSString(url)})`);
+				i = end === -1 ? input.length : end;
+				continue;
+			}
+			emit(name);
+			i--;
+			continue;
+		}
+		if (character === "#") {
+			const name = /^#[a-zA-Z0-9_\u0080-\uFFFF\\-]*/.exec(input.slice(i))![0];
+			emit(name);
+			i += name.length - 1;
+			continue;
+		}
+		emit(character);
+	}
+	return out;
+}
+
+const WHITESPACE = new Set([" ", "\t", "\n", "\r", "\f"]);
+
+function endOfString(input: string, start: number): number {
+	const quote = input[start];
+	for (let i = start + 1; i < input.length; i++) {
+		if (input[i] === "\\") i++;
+		else if (input[i] === quote) return i;
+	}
+	return input.length;
+}
+
+function unescapeCSSString(text: string): string {
+	return text.replace(/\\(.)/g, "$1");
+}
+
+/** Whether a number token begins at `index`. */
+function startsNumber(input: string, index: number): boolean {
+	const rest = input.slice(index, index + 3);
+	return /^[+-]?(\d|\.\d)/.test(rest);
+}
+
+/** Whether an identifier begins at `index`. */
+function startsIdentifier(input: string, index: number): boolean {
+	return /^[a-zA-Z_\u0080-\uFFFF\\-]/.test(input[index]);
+}
+
+/**
+ * Serialize a number as CSSOM says: the shortest form that round-trips, with
+ * no leading `+`, no bare leading `.`, and no negative zero.
+ */
+export function serializeCSSNumber(text: string): string {
+	const value = Number(text);
+	if (!Number.isFinite(value)) return text;
+	if (Object.is(value, -0)) return "0";
+	return String(value);
+}
+
+/** Serialize a string: double-quoted, with quotes and backslashes escaped. */
+export function serializeCSSString(text: string): string {
+	return `"${text.replace(/[\\"]/g, "\\$&")}"`;
+}
+
+/**
+ * Serialize an identifier: what `CSS.escape` answers. A code point that could
+ * not stand in an identifier is written as a hex escape, and one that merely
+ * needs quoting takes a backslash.
+ */
+export function serializeCSSIdentifier(value: string): string {
+	const text = String(value);
+	let out = "";
+	for (let i = 0; i < text.length; i++) {
+		const code = text.charCodeAt(i);
+		const character = text[i];
+		if (code === 0) {
+			out += "�";
+		} else if (
+			(code >= 0x1 && code <= 0x1f) ||
+			code === 0x7f ||
+			(i === 0 && code >= 0x30 && code <= 0x39) ||
+			(i === 1 && code >= 0x30 && code <= 0x39 && text.charCodeAt(0) === 0x2d)
+		) {
+			out += `\\${code.toString(16)} `;
+		} else if (i === 0 && code === 0x2d && text.length === 1) {
+			out += `\\${character}`;
+		} else if (
+			code >= 0x80 ||
+			code === 0x2d ||
+			code === 0x5f ||
+			(code >= 0x30 && code <= 0x39) ||
+			(code >= 0x41 && code <= 0x5a) ||
+			(code >= 0x61 && code <= 0x7a)
+		) {
+			out += character;
+		} else {
+			out += `\\${character}`;
+		}
+	}
+	return out;
+}
+
+/**
+ * Whether a declaration would be honoured: `CSS.supports(property, value)`, and
+ * the one-argument form that takes a `@supports` condition.
+ */
+function cssSupports(conditionOrProperty: string, value?: string): boolean {
+	if (value === undefined) {
+		const condition = String(conditionOrProperty).trim();
+		// `selector(...)` asks whether a selector parses, which is exactly
+		// what the cascade's own selector parser answers.
+		const selector = /^selector\(([\s\S]*)\)$/.exec(condition);
+		if (selector) return parseSelectorList(selector[1]) !== null;
+		if (!condition.startsWith("(") || !condition.endsWith(")")) return false;
+		const inner = condition.slice(1, -1);
+		const colon = inner.indexOf(":");
+		if (colon === -1) return false;
+		return cssSupports(inner.slice(0, colon), inner.slice(colon + 1));
+	}
+	const property = normalizePropertyName(conditionOrProperty);
+	if (property.startsWith("--")) return true;
+	if (!SUPPORTED_PROPERTIES.has(property)) return false;
+	const text = serializeCSSValue(String(value));
+	return text !== "" && isValidDeclaration(property, text);
+}
+
+/** The `CSS` namespace object: identifier escaping and support queries. */
+const CSSNamespace = {
+	escape: serializeCSSIdentifier,
+	supports: cssSupports,
+	[Symbol.toStringTag]: "CSS",
+};
+
+/** The declarations of a `style` attribute, a `cssText`, or a rule's block. */
+function parseDeclarationText(text: string): CSSDeclaration[] {
+	const declarations: CSSDeclaration[] = [];
+	let depth = 0;
+	let start = 0;
+	const push = (end: number): void => {
+		const source = text.slice(start, end);
+		start = end + 1;
+		const colon = source.indexOf(":");
+		if (colon === -1) return;
+		const name = normalizePropertyName(source.slice(0, colon));
+		if (!name) return;
+		let value = serializeCSSValue(source.slice(colon + 1));
+		let important = false;
+		const bang = value.toLowerCase().lastIndexOf("!important");
+		if (bang !== -1 && !value.slice(bang + 10).trim()) {
+			important = true;
+			value = value.slice(0, bang).trim();
+		}
+		if (!value) return;
+		declarations.push({name, value, important});
+	};
+	for (let i = 0; i < text.length; i++) {
+		const character = text[i];
+		if (character === "/" && text[i + 1] === "*") {
+			const end = text.indexOf("*/", i + 2);
+			i = end === -1 ? text.length : end + 1;
+		} else if (character === '"' || character === "'") {
+			for (i++; i < text.length && text[i] !== character; i++) {
+				if (text[i] === "\\") i++;
+			}
+		} else if (character === "(" || character === "[" || character === "{") {
+			depth++;
+		} else if (character === ")" || character === "]" || character === "}") {
+			depth--;
+		} else if (character === ";" && depth <= 0) {
+			push(i);
+		}
+	}
+	push(text.length);
+	return declarations;
+}
+
+/**
+ * A shorthand's value as its longhands, every longhand the shorthand covers
+ * given a value -- the ones its grammar leaves out reset to their initial
+ * value, as a browser's shorthand write does. Null for a shorthand whose
+ * grammar this engine does not decompose, which stays a declaration of its own.
+ */
+function expandShorthandValue(
+	property: string,
+	value: string,
+): Record<string, string> | null {
+	const longhands = SHORTHAND_LONGHANDS.get(property);
+	if (!longhands) return null;
+	// A CSS-wide keyword is the whole value of every longhand the shorthand
+	// covers -- which is all of them, for `all`.
+	if (CSS_WIDE_KEYWORDS.has(value.toLowerCase())) {
+		return Object.fromEntries(
+			longhands.map((longhand) => [longhand, value.toLowerCase()]),
+		);
+	}
+	const expanded = expandShorthands({[property]: value});
+	const out: Record<string, string> = {};
+	let decomposed = false;
+	for (const longhand of longhands) {
+		if (expanded[longhand] === undefined) continue;
+		out[longhand] = expanded[longhand];
+		decomposed = true;
+	}
+	if (!decomposed) return null;
+	for (const longhand of longhands) {
+		if (longhand in out) continue;
+		const initial = CSS_INITIAL_VALUES[longhand];
+		if (initial) out[longhand] = initial;
+	}
+	// Longhand order follows the shorthand's grammar, not the fill order.
+	const ordered: Record<string, string> = {};
+	for (const longhand of longhands) {
+		if (longhand in out) ordered[longhand] = out[longhand];
+	}
+	return ordered;
+}
+
+/** The four values of a box shorthand, collapsed to the shortest equivalent. */
+function collapseSides(values: string[]): string {
+	const [top, right, bottom, left] = values;
+	if (left !== right) return `${top} ${right} ${bottom} ${left}`;
+	if (bottom !== top) return `${top} ${right} ${bottom}`;
+	if (right !== top) return `${top} ${right}`;
+	return top;
+}
+
+/**
+ * The longhands of `shorthand` grouped by the side or corner each names, in
+ * the order the shorthand's grammar writes them, or null when the longhands
+ * are not a box.
+ */
+function boxOrder(
+	shorthand: string,
+	longhands: readonly string[],
+	parts: readonly string[],
+): string[] | null {
+	if (longhands.length !== parts.length) return null;
+	const byPart = new Map<string, string>();
+	let stem: string | null = null;
+	for (const longhand of longhands) {
+		let matched: string | null = null;
+		for (const part of parts) {
+			const pattern = new RegExp(`(^|-)${part}(-|$)`);
+			if (!pattern.test(longhand)) continue;
+			if (matched === null || part.length > matched.length) matched = part;
+		}
+		if (matched === null) return null;
+		const rest = longhand.replace(new RegExp(`(^|-)${matched}(-|$)`), "$1$2");
+		if (stem === null) stem = rest;
+		else if (stem !== rest) return null;
+		if (byPart.has(matched)) return null;
+		byPart.set(matched, longhand);
+	}
+	const ordered = parts.map((part) => byPart.get(part));
+	return ordered.every((name): name is string => name !== undefined)
+		? ordered
+		: null;
+}
+
+/** A shorthand's value, reconstructed from its longhands' values. */
+function serializeShorthandValue(
+	shorthand: string,
+	longhands: readonly string[],
+	valueOf: (longhand: string) => string,
+): string {
+	const values = longhands.map(valueOf);
+	// A CSS-wide keyword serializes as itself only when every longhand holds
+	// the same one; one longhand overridden and the shorthand has no value.
+	if (values.some((value) => CSS_WIDE_KEYWORDS.has(value))) {
+		return values.every((value) => value === values[0]) ? values[0] : "";
+	}
+
+	switch (SHORTHAND_SHAPES.get(shorthand)) {
+		case "box":
+			return collapseSides(values);
+		// `border` and its logical twins are three uniform boxes -- widths,
+		// styles and colors -- and serialize only when every side agrees.
+		case "border": {
+			const components: Array<[string, string]> = [];
+			for (const kind of LINE_COMPONENTS) {
+				const sides = longhands.filter((longhand) =>
+					longhand.endsWith(`-${kind}`),
+				);
+				const sideValues = sides.map(valueOf);
+				if (sideValues.some((value) => value !== sideValues[0])) return "";
+				components.push([sides[0], sideValues[0]]);
+			}
+			return dropInitials(components, 1);
+		}
+		// `border-top`, `outline`, `column-rule`: a line's width, style and
+		// color, of which the style is the component that says the line is there
+		// at all and so is written even when it is the initial `none`.
+		case "line":
+			return dropInitials(
+				longhands.map((longhand, index) => [longhand, values[index]] as const),
+				1,
+			);
+		case "pair":
+			return values[0] === values[1] ? values[0] : values.join(" ");
+		default:
+			return dropInitials(
+				longhands.map((longhand, index) => [longhand, values[index]] as const),
+			);
+	}
+}
+
+/**
+ * A shorthand's components with the ones left at their initial value omitted,
+ * which is what makes `border-top: 1px solid` serialize without its color.
+ * `required` names a component index written whatever its value.
+ */
+function dropInitials(
+	components: ReadonlyArray<readonly [string, string]>,
+	required = -1,
+): string {
+	const kept = components
+		.filter(([longhand, value], index) => {
+			if (index === required) return true;
+			const initial = CSS_INITIAL_VALUES[longhand];
+			return !initial || value !== initial;
+		})
+		.map(([, value]) => value);
+	if (kept.length > 0) return kept.join(" ");
+	return components.length > 0 ? components[0][1] : "";
+}
+
+/**
+ * The CSSOM algorithm turning a property name into the IDL attribute that
+ * reflects it: `font-size` to `fontSize`, and -- with the lowercase-first flag
+ * a `-webkit-` property also carries -- `-webkit-mask` to `webkitMask` as well
+ * as `WebkitMask`.
+ */
+function camelCaseProperty(property: string, lowercaseFirst = false): string {
+	const source = lowercaseFirst ? property.slice(1) : property;
+	return source.replace(/-([a-z])/g, (_, letter: string) =>
 		letter.toUpperCase(),
 	);
 }
@@ -708,26 +1359,35 @@ function camelCaseProperty(property: string): string {
 /**
  * The inline style objects, one per element, that `element.style` hands out.
  */
-const inlineStyles = new WeakMap<Element, InlineStyleDeclaration>();
+const inlineStyles = new WeakMap<Element, CSSStyleDeclaration>();
 
 /** Marks a prototype whose `style` accessor is already the engine's. */
 const kInlineStyleInstalled = Symbol("termdom.inlineStyle");
 
 /**
- * The CSSOM behind `element.style`: the declarations an author writes, stored
- * as authored and serialized back to the `style` attribute on every change.
+ * A CSS declaration block: what `element.style`, a style rule's `style`, and
+ * every other CSSOM block are.
  *
- * Attribute and object are one store seen from two sides. A write serializes
- * through setAttribute, so an attribute mutation record -- what invalidation
- * listens to -- fires for a property write exactly as for an attribute write;
- * a write to the attribute (or its removal) reparses into the object on the
- * next read, recognized by the text differing from what this object last
- * serialized.
+ * Declarations are stored as longhands, so a shorthand write expands and a
+ * shorthand read reconstructs -- `style.margin = "1px"` answers
+ * `style.marginTop === "1px"`, and `style.marginTop = "2px"` answers
+ * `style.margin === "1px 1px 1px 2px"`.
+ *
+ * An element-owned block and the element's `style` attribute are one store
+ * seen from two sides. A write serializes through setAttribute, so the
+ * attribute mutation record invalidation listens to fires for a property write
+ * exactly as for an attribute write; a write to the attribute (or its removal)
+ * reparses into the object on the next read, recognized by the text differing
+ * from what this object last serialized.
  */
-export class InlineStyleDeclaration implements DeclarationSource {
+export class CSSStyleDeclaration implements DeclarationSource {
 	[index: number]: string;
-	#element: Element;
-	#declarations: InlineDeclaration[] = [];
+	#element: Element | null;
+	#parentRule: CSSRule | null;
+	#onChange: (() => void) | null;
+	/** Whether this block holds an at-rule's descriptors rather than properties. */
+	#descriptors = false;
+	#declarations: CSSDeclaration[] = [];
 	/** The `style` attribute text this object last serialized or parsed. */
 	#attributeText: string | null = null;
 	/** The declarations expanded to longhands for the cascade. */
@@ -735,33 +1395,70 @@ export class InlineStyleDeclaration implements DeclarationSource {
 	/** How many numeric index properties currently name a declaration. */
 	#indexed = 0;
 
-	constructor(element: Element) {
-		this.#element = element;
+	constructor(
+		owner: {
+			element?: Element;
+			parentRule?: CSSRule;
+			onChange?: () => void;
+			descriptors?: boolean;
+		} = {},
+	) {
+		this.#element = owner.element ?? null;
+		this.#parentRule = owner.parentRule ?? null;
+		this.#onChange = owner.onChange ?? null;
+		this.#descriptors = Boolean(owner.descriptors);
 	}
 
 	/** Adopt the `style` attribute when it says something this object did not write. */
 	#sync(): void {
+		if (!this.#element) return;
 		const text = this.#element.getAttribute("style") ?? "";
 		if (text === this.#attributeText) return;
 		this.#attributeText = text;
-		this.#declarations = parseInlineDeclarations(text);
+		this.#declarations = [];
+		for (const declaration of parseDeclarationText(text)) {
+			this.#apply(declaration.name, declaration.value, declaration.important);
+		}
 		this.#invalidate();
 	}
 
+	/** Serialize a CSS declaration block: shorthands reconstructed, priority kept. */
 	#serialize(): string {
-		return this.#declarations
-			.map(
-				({name, value, important}) =>
-					`${name}: ${value}${important ? " !important" : ""};`,
-			)
-			.join(" ");
+		const parts: string[] = [];
+		const serialized = new Set<string>();
+		for (const declaration of this.#declarations) {
+			if (serialized.has(declaration.name)) continue;
+			let text = "";
+			for (const shorthand of LONGHAND_SHORTHANDS.get(declaration.name) ?? []) {
+				const longhands = SHORTHAND_LONGHANDS.get(shorthand)!;
+				// A shorthand covering more properties than the block holds
+				// cannot be serialized from it, and `all` covers hundreds.
+				if (longhands.length > this.#declarations.length) continue;
+				const value = this.#shorthandValue(shorthand, longhands);
+				if (!value) continue;
+				const important = this.#find(longhands[0])!.important;
+				text = `${shorthand}: ${value}${important ? " !important" : ""};`;
+				for (const longhand of longhands) serialized.add(longhand);
+				break;
+			}
+			if (!text) {
+				const priority = declaration.important ? " !important" : "";
+				text = `${declaration.name}: ${declaration.value}${priority};`;
+				serialized.add(declaration.name);
+			}
+			parts.push(text);
+		}
+		return parts.join(" ");
 	}
 
 	/** Serialize to the `style` attribute, which is what invalidation observes. */
 	#flush(): void {
 		this.#invalidate();
-		this.#attributeText = this.#serialize();
-		this.#element.setAttribute("style", this.#attributeText);
+		if (this.#element) {
+			this.#attributeText = this.#serialize();
+			this.#element.setAttribute("style", this.#attributeText);
+		}
+		this.#onChange?.();
 	}
 
 	#invalidate(): void {
@@ -775,15 +1472,117 @@ export class InlineStyleDeclaration implements DeclarationSource {
 		}
 	}
 
-	#find(property: string): InlineDeclaration | undefined {
+	#find(property: string): CSSDeclaration | undefined {
 		return this.#declarations.find((entry) => entry.name === property);
+	}
+
+	/**
+	 * Whether this block may hold `name`: a supported CSS property or a custom
+	 * property, or -- in an at-rule's block -- any descriptor it names, since
+	 * the property index does not describe descriptors.
+	 */
+	#supports(name: string): boolean {
+		if (this.#descriptors) return name !== "";
+		return name.startsWith("--") || SUPPORTED_PROPERTIES.has(name);
+	}
+
+	/** Store one declaration in place; returns whether anything changed. */
+	#store(name: string, value: string, important: boolean): boolean {
+		const declared = this.#find(name);
+		if (!declared) {
+			this.#declarations.push({name, value, important});
+			return true;
+		}
+		if (declared.value === value && declared.important === important) {
+			return false;
+		}
+		declared.value = value;
+		declared.important = important;
+		return true;
+	}
+
+	#remove(name: string): boolean {
+		const index = this.#declarations.findIndex((entry) => entry.name === name);
+		if (index === -1) return false;
+		this.#declarations.splice(index, 1);
+		return true;
+	}
+
+	/** Store a property as its longhands, or as itself; returns whether it changed. */
+	#apply(name: string, value: string, important: boolean): boolean {
+		// A declaration whose value does not parse is not stored at all, so a
+		// shorthand with one bad component drops whole rather than leaving its
+		// good components behind.
+		if (!isValidDeclaration(name, value)) return false;
+		const expanded = expandShorthandValue(name, value);
+		if (!expanded) return this.#store(name, value, important);
+		let changed = this.#remove(name);
+		for (const longhand of SHORTHAND_LONGHANDS.get(name)!) {
+			if (longhand in expanded) continue;
+			changed = this.#remove(longhand) || changed;
+		}
+		for (const [longhand, longhandValue] of Object.entries(expanded)) {
+			changed = this.#store(longhand, longhandValue, important) || changed;
+		}
+		return changed;
+	}
+
+	/** The shorthand's value, or "" when its longhands do not agree on one. */
+	#shorthandValue(shorthand: string, longhands: readonly string[]): string {
+		let important: boolean | null = null;
+		for (const longhand of longhands) {
+			const declared = this.#find(longhand);
+			if (!declared) return "";
+			if (important === null) important = declared.important;
+			else if (important !== declared.important) return "";
+		}
+		return serializeShorthandValue(
+			shorthand,
+			longhands,
+			(longhand) => this.#find(longhand)!.value,
+		);
 	}
 
 	/** The declarations as the cascade consumes them: longhands, importance included. */
 	declarationBlock(): DeclarationBlock {
 		this.#sync();
 		if (this.#declarations.length === 0) return EMPTY_DECLARATIONS;
-		return (this.#block ??= expandDeclarations(this));
+		if (this.#block) return this.#block;
+
+		const declarations: Record<string, string> = {};
+		const important: Record<string, boolean> = {};
+		const importantValues: Record<string, string> = {};
+		let undecomposed = false;
+		for (const entry of this.#declarations) {
+			// An invalid declaration never enters the cascade: dropping it is
+			// what lets a lower-priority rule keep winning, as a browser does.
+			if (!isValidDeclaration(entry.name, entry.value)) continue;
+			declarations[entry.name] = entry.value;
+			if (entry.important) {
+				important[entry.name] = true;
+				importantValues[entry.name] = entry.value;
+			}
+			if (SHORTHAND_LONGHANDS.has(entry.name)) undecomposed = true;
+		}
+
+		// The block holds longhands, which is what the cascade consults --
+		// except for a shorthand whose grammar this engine does not decompose,
+		// which reaches the cascade as whatever longhands it can name, its
+		// importance covering each of them.
+		if (undecomposed) {
+			for (const property of Object.keys(expandShorthands(importantValues))) {
+				important[property] = true;
+			}
+			return (this.#block = {
+				declarations: expandShorthands(declarations),
+				important,
+			});
+		}
+		return (this.#block = {declarations, important});
+	}
+
+	get parentRule(): CSSRule | null {
+		return this.#parentRule;
 	}
 
 	get length(): number {
@@ -796,51 +1595,61 @@ export class InlineStyleDeclaration implements DeclarationSource {
 		return this.#declarations[index]?.name ?? "";
 	}
 
+	[Symbol.iterator](): IterableIterator<string> {
+		this.#sync();
+		return this.#declarations.map((entry) => entry.name)[Symbol.iterator]();
+	}
+
 	getPropertyValue(property: string): string {
 		this.#sync();
 		const name = normalizePropertyName(property);
 		const declared = this.#find(name);
 		if (declared) return declared.value;
-		// A longhand a shorthand declares reads back from the shorthand, as
-		// `style.border = "1px solid"` then `style.borderTopWidth` does.
-		return this.declarationBlock().declarations[name] ?? "";
+		const longhands = SHORTHAND_LONGHANDS.get(name);
+		return longhands ? this.#shorthandValue(name, longhands) : "";
 	}
 
 	getPropertyPriority(property: string): string {
 		this.#sync();
-		return this.#find(normalizePropertyName(property))?.important
-			? "important"
-			: "";
+		const name = normalizePropertyName(property);
+		const declared = this.#find(name);
+		if (declared) return declared.important ? "important" : "";
+		const longhands = SHORTHAND_LONGHANDS.get(name);
+		if (
+			longhands &&
+			longhands.every((longhand) => this.#find(longhand)?.important)
+		) {
+			return "important";
+		}
+		return "";
 	}
 
 	setProperty(property: string, value: string, priority?: string): void {
 		this.#sync();
 		const name = normalizePropertyName(property);
-		const text = value == null ? "" : String(value).trim();
+		if (!this.#supports(name)) return;
+		const text = serializeCSSValue(value == null ? "" : String(value));
 		if (text === "") {
 			this.removeProperty(name);
 			return;
 		}
-		const important = String(priority ?? "").toLowerCase() === "important";
-		const declared = this.#find(name);
-		if (declared) {
-			if (declared.value === text && declared.important === important) return;
-			declared.value = text;
-			declared.important = important;
-		} else {
-			this.#declarations.push({name, value: text, important});
+		const priorityText = String(priority ?? "").toLowerCase();
+		if (priorityText !== "" && priorityText !== "important") return;
+		if (this.#apply(name, text, priorityText === "important")) {
+			this.#flush();
 		}
-		this.#flush();
 	}
 
 	removeProperty(property: string): string {
 		this.#sync();
 		const name = normalizePropertyName(property);
-		const index = this.#declarations.findIndex((entry) => entry.name === name);
-		if (index === -1) return "";
-		const [removed] = this.#declarations.splice(index, 1);
-		this.#flush();
-		return removed.value;
+		const previous = this.getPropertyValue(name);
+		let changed = this.#remove(name);
+		for (const longhand of SHORTHAND_LONGHANDS.get(name) ?? []) {
+			changed = this.#remove(longhand) || changed;
+		}
+		if (changed) this.#flush();
+		return previous;
 	}
 
 	get cssText(): string {
@@ -849,7 +1658,12 @@ export class InlineStyleDeclaration implements DeclarationSource {
 	}
 
 	set cssText(text: string) {
-		this.#declarations = parseInlineDeclarations(text ?? "");
+		this.#sync();
+		this.#declarations = [];
+		for (const declaration of parseDeclarationText(text ?? "")) {
+			if (!this.#supports(declaration.name)) continue;
+			this.#apply(declaration.name, declaration.value, declaration.important);
+		}
 		this.#flush();
 	}
 }
@@ -860,60 +1674,27 @@ function normalizePropertyName(property: string): string {
 	return name.startsWith("--") ? name : name.toLowerCase();
 }
 
-/**
- * The declarations of a `style` attribute (or a cssText assignment), parsed by
- * the same CSSOM that parses stylesheet rules. Anything after a stray `}` --
- * the one way attribute text could reach past its own block -- parses into
- * rules that are dropped here.
- */
-function parseInlineDeclarations(text: string): InlineDeclaration[] {
-	if (!text.trim()) return [];
-	const rule = CSSOM.parse(`*{${text}}`).cssRules[0] as
-		| CSSStyleRule
-		| undefined;
-	const style = rule?.style as DeclarationSource | undefined;
-	if (!style) return [];
-	const declarations: InlineDeclaration[] = [];
-	for (let i = 0; i < style.length; i++) {
-		const name = normalizePropertyName((style as any)[i]);
-		const value = style.getPropertyValue(name).trim();
-		if (!value) continue;
-		declarations.push({
-			name,
-			value,
-			important: style.getPropertyPriority(name) === "important",
-		});
-	}
-	return declarations;
-}
-
-for (const property of INLINE_STYLE_ACCESSORS) {
+for (const property of CSS_PROPERTIES) {
 	const descriptor: PropertyDescriptor = {
-		get(this: InlineStyleDeclaration) {
+		get(this: CSSStyleDeclaration) {
 			return this.getPropertyValue(property);
 		},
-		set(this: InlineStyleDeclaration, value: unknown) {
+		set(this: CSSStyleDeclaration, value: unknown) {
 			this.setProperty(property, value == null ? "" : String(value));
 		},
 		configurable: true,
 		enumerable: true,
 	};
-	const camelCase = camelCaseProperty(property);
-	Object.defineProperty(
-		InlineStyleDeclaration.prototype,
-		camelCase,
-		descriptor,
-	);
-	if (camelCase !== property) {
-		Object.defineProperty(InlineStyleDeclaration.prototype, property, {
-			...descriptor,
-			enumerable: false,
-		});
+	const names = [camelCaseProperty(property)];
+	if (property.startsWith("-webkit-")) {
+		names.push(camelCaseProperty(property, true));
 	}
-	if (property === "float") {
-		Object.defineProperty(InlineStyleDeclaration.prototype, "cssFloat", {
+	if (property !== names[0]) names.push(property);
+	if (property === "float") names.push("cssFloat");
+	for (const [index, name] of names.entries()) {
+		Object.defineProperty(CSSStyleDeclaration.prototype, name, {
 			...descriptor,
-			enumerable: false,
+			enumerable: index === 0,
 		});
 	}
 }
@@ -939,7 +1720,7 @@ export function installInlineStyle(window: DOMWindow): void {
 			get(this: Element) {
 				let style = inlineStyles.get(this);
 				if (!style) {
-					style = new InlineStyleDeclaration(this);
+					style = new CSSStyleDeclaration({element: this});
 					inlineStyles.set(this, style);
 				}
 				return style;
@@ -953,9 +1734,2569 @@ export function installInlineStyle(window: DOMWindow): void {
 	}
 }
 
-export class ComputedStyleDeclaration {
+// ============================================================================
+// CSSOM: STYLESHEETS AND RULES
+// ============================================================================
+
+/**
+ * The window whose CSSOM was installed last.
+ *
+ * An error thrown out of a stylesheet has to be the document's own
+ * DOMException -- one from another global is not the error an author catches.
+ * A sheet reaches its document through its owner node; a constructed one has
+ * none, and takes the window its constructor came from.
+ */
+let cssomWindow: DOMWindow | null = null;
+
+function typeError(message: string, sheet?: CSSStyleSheet | null): TypeError {
+	const view =
+		sheet?.ownerNode?.ownerDocument?.defaultView ?? cssomWindow ?? undefined;
+	const Constructor =
+		(view as unknown as {TypeError?: typeof TypeError} | undefined)
+			?.TypeError ?? TypeError;
+	return new Constructor(message);
+}
+
+function domException(
+	message: string,
+	name: string,
+	sheet?: CSSStyleSheet | null,
+): DOMException {
+	const view =
+		sheet?.ownerNode?.ownerDocument?.defaultView ?? cssomWindow ?? undefined;
+	const Exception =
+		(view as unknown as {DOMException?: typeof DOMException} | undefined)
+			?.DOMException ?? DOMException;
+	return new Exception(message, name);
+}
+
+/** The rule types CSSRule's legacy constants name. */
+const RULE_TYPES = {
+	STYLE_RULE: 1,
+	CHARSET_RULE: 2,
+	IMPORT_RULE: 3,
+	MEDIA_RULE: 4,
+	FONT_FACE_RULE: 5,
+	PAGE_RULE: 6,
+	KEYFRAMES_RULE: 7,
+	KEYFRAME_RULE: 8,
+	NAMESPACE_RULE: 10,
+	COUNTER_STYLE_RULE: 11,
+	SUPPORTS_RULE: 12,
+	FONT_FEATURE_VALUES_RULE: 14,
+} as const;
+
+/**
+ * What a sheet does when its rules -- or a declaration inside one of them --
+ * change: tell whoever consumes it. Registered per sheet rather than exposed
+ * on it, so a rule can reach its sheet's consumer without the sheet carrying
+ * a method no author should see.
+ */
+const sheetNotifiers = new WeakMap<CSSStyleSheet, () => void>();
+
+function sheetChanged(sheet: CSSStyleSheet | null | undefined): void {
+	if (sheet) sheetNotifiers.get(sheet)?.();
+}
+
+/** An indexed CSSOM collection: `list[0]` alongside `list.item(0)`. */
+function indexed<T extends object>(list: T, items: readonly unknown[]): T {
+	return new Proxy(list, {
+		get(target, property) {
+			if (typeof property === "string" && /^\d+$/.test(property)) {
+				return items[Number(property)];
+			}
+			// The list itself is the receiver: its accessors and methods read
+			// private fields, which a proxy receiver cannot reach.
+			const value = Reflect.get(target, property, target);
+			return typeof value === "function" ? value.bind(target) : value;
+		},
+		has(target, property) {
+			if (typeof property === "string" && /^\d+$/.test(property)) {
+				return Number(property) < items.length;
+			}
+			return Reflect.has(target, property);
+		},
+		ownKeys(target) {
+			return [
+				...items.map((_, index) => String(index)),
+				...Reflect.ownKeys(target),
+			];
+		},
+		getOwnPropertyDescriptor(target, property) {
+			if (typeof property === "string" && /^\d+$/.test(property)) {
+				const index = Number(property);
+				if (index < items.length) {
+					return {
+						value: items[index],
+						writable: false,
+						enumerable: true,
+						configurable: true,
+					};
+				}
+			}
+			return Reflect.getOwnPropertyDescriptor(target, property);
+		},
+	});
+}
+
+/** The media queries a sheet or an `@media` rule applies under. */
+export class MediaList {
+	#media: string[] = [];
+	#onChange: (() => void) | null;
+
+	constructor(mediaText = "", onChange?: () => void) {
+		this.#onChange = onChange ?? null;
+		this.#parse(mediaText);
+	}
+
+	#parse(text: string): void {
+		this.#media = String(text ?? "")
+			.split(",")
+			.map((query) => query.trim())
+			.filter(Boolean);
+	}
+
+	get mediaText(): string {
+		return this.#media.join(", ");
+	}
+
+	set mediaText(text: string) {
+		this.#parse(text);
+		this.#onChange?.();
+	}
+
+	get length(): number {
+		return this.#media.length;
+	}
+
+	item(index: number): string | null {
+		return this.#media[index] ?? null;
+	}
+
+	appendMedium(medium: string): void {
+		const query = String(medium).trim();
+		if (!query || this.#media.includes(query)) return;
+		this.#media.push(query);
+		this.#onChange?.();
+	}
+
+	deleteMedium(medium: string): void {
+		const index = this.#media.indexOf(String(medium).trim());
+		if (index === -1) {
+			throw domException(`No such medium: ${medium}`, "NotFoundError");
+		}
+		this.#media.splice(index, 1);
+		this.#onChange?.();
+	}
+
+	[Symbol.iterator](): IterableIterator<string> {
+		return this.#media[Symbol.iterator]();
+	}
+
+	toString(): string {
+		return this.mediaText;
+	}
+}
+
+/** A rule of a stylesheet: the base every rule type shares. */
+/**
+ * A rule's owning sheet, held beside the rule so that deleting a rule can cut
+ * the link -- a removed rule belongs to no stylesheet, and says so.
+ */
+const ruleSheets = new WeakMap<CSSRule, CSSStyleSheet | null>();
+
+/** Cut a removed rule, and everything under it, loose from its sheet. */
+function detachRule(rule: CSSRule): void {
+	ruleSheets.set(rule, null);
+	const group = rule as {cssRules?: CSSRuleList};
+	if (group.cssRules) {
+		for (const child of Array.from(group.cssRules)) detachRule(child);
+	}
+}
+
+export abstract class CSSRule {
+	static readonly STYLE_RULE = RULE_TYPES.STYLE_RULE;
+	static readonly CHARSET_RULE = RULE_TYPES.CHARSET_RULE;
+	static readonly IMPORT_RULE = RULE_TYPES.IMPORT_RULE;
+	static readonly MEDIA_RULE = RULE_TYPES.MEDIA_RULE;
+	static readonly FONT_FACE_RULE = RULE_TYPES.FONT_FACE_RULE;
+	static readonly PAGE_RULE = RULE_TYPES.PAGE_RULE;
+	static readonly KEYFRAMES_RULE = RULE_TYPES.KEYFRAMES_RULE;
+	static readonly KEYFRAME_RULE = RULE_TYPES.KEYFRAME_RULE;
+	static readonly NAMESPACE_RULE = RULE_TYPES.NAMESPACE_RULE;
+	static readonly COUNTER_STYLE_RULE = RULE_TYPES.COUNTER_STYLE_RULE;
+	static readonly SUPPORTS_RULE = RULE_TYPES.SUPPORTS_RULE;
+	static readonly FONT_FEATURE_VALUES_RULE =
+		RULE_TYPES.FONT_FEATURE_VALUES_RULE;
+
+	#parentRule: CSSRule | null;
+
+	constructor(
+		parentStyleSheet: CSSStyleSheet | null,
+		parentRule: CSSRule | null,
+	) {
+		ruleSheets.set(this, parentStyleSheet);
+		this.#parentRule = parentRule;
+	}
+
+	abstract get type(): number;
+	abstract get cssText(): string;
+
+	get parentRule(): CSSRule | null {
+		return this.#parentRule;
+	}
+
+	get parentStyleSheet(): CSSStyleSheet | null {
+		return ruleSheets.get(this) ?? null;
+	}
+}
+
+for (const [name, value] of Object.entries(RULE_TYPES)) {
+	Object.defineProperty(CSSRule.prototype, name, {
+		value,
+		enumerable: true,
+	});
+}
+
+/** Tell the sheet -- and so the cascade -- that a rule changed. */
+function notifyRule(rule: CSSRule): void {
+	sheetChanged(rule.parentStyleSheet);
+}
+
+/** A rule with a rule list of its own: `@media`, `@supports`, `@layer`. */
+export abstract class CSSGroupingRule extends CSSRule {
+	#rules: CSSRule[] = [];
+	#ruleList: CSSRuleList;
+
+	constructor(
+		parentStyleSheet: CSSStyleSheet | null,
+		parentRule: CSSRule | null,
+		build?: (group: CSSGroupingRule) => CSSRule[],
+	) {
+		super(parentStyleSheet, parentRule);
+		this.#ruleList = createRuleList(this.#rules);
+		if (build) this.#rules.push(...build(this));
+	}
+
+	get cssRules(): CSSRuleList {
+		return this.#ruleList;
+	}
+
+	insertRule(text: string, index = 0): number {
+		if (arguments.length === 0) {
+			throw typeError(
+				"insertRule requires a rule",
+				this.parentStyleSheet ?? undefined,
+			);
+		}
+		if (index > this.#rules.length) {
+			throw domException(
+				`Cannot insert at index ${index}`,
+				"IndexSizeError",
+				this.parentStyleSheet,
+			);
+		}
+		const inserted = parseRuleText(text, this.parentStyleSheet, this);
+		if (
+			inserted instanceof CSSImportRule ||
+			inserted instanceof CSSNamespaceRule
+		) {
+			throw domException(
+				"Only a stylesheet may hold that rule",
+				"HierarchyRequestError",
+				this.parentStyleSheet,
+			);
+		}
+		this.#rules.splice(index, 0, inserted);
+		notifyRule(this);
+		return index;
+	}
+
+	deleteRule(index: number): void {
+		if (arguments.length === 0) {
+			throw typeError(
+				"deleteRule requires an index",
+				this.parentStyleSheet ?? undefined,
+			);
+		}
+		if (index >= this.#rules.length) {
+			throw domException(
+				`Cannot delete at index ${index}`,
+				"IndexSizeError",
+				this.parentStyleSheet,
+			);
+		}
+		detachRule(this.#rules[index]);
+		this.#rules.splice(index, 1);
+		notifyRule(this);
+	}
+}
+
+/** A group's rules, serialized one per line and indented one level. */
+function serializeGroupRules(group: CSSGroupingRule): string {
+	return Array.from(group.cssRules)
+		.map((rule) => `\n  ${rule.cssText.replace(/\n/g, "\n  ")}`)
+		.join("");
+}
+
+/** A grouping rule gated on a condition: `@media`, `@supports`. */
+export abstract class CSSConditionRule extends CSSGroupingRule {
+	abstract get conditionText(): string;
+}
+
+/** A style rule: a selector and the declaration block it applies. */
+export class CSSStyleRule extends CSSGroupingRule {
+	#selectors: SelectorNode;
+	#selectorText: string | null = null;
+	#style: CSSStyleDeclaration;
+
+	constructor(
+		selectors: SelectorNode,
+		cssText: string,
+		parentStyleSheet: CSSStyleSheet | null,
+		parentRule: CSSRule | null,
+		build?: (group: CSSGroupingRule) => CSSRule[],
+	) {
+		super(parentStyleSheet, parentRule, build);
+		this.#selectors = selectors;
+		this.#style = new CSSStyleDeclaration({
+			parentRule: this,
+			onChange: () => notifyRule(this),
+		});
+		this.#style.cssText = cssText;
+	}
+
+	get type(): number {
+		return RULE_TYPES.STYLE_RULE;
+	}
+
+	/**
+	 * Serialized on first read rather than at construction: whether `*|E` keeps
+	 * its prefix depends on the sheet declaring a default namespace, and the
+	 * sheet's `@namespace` rules are only in place once parsing finishes.
+	 */
+	get selectorText(): string {
+		return (this.#selectorText ??= serializeSelectorList(
+			this.#selectors,
+			sheetNamespaces(this.parentStyleSheet),
+		));
+	}
+
+	/** A selector that does not parse leaves the rule as it was. */
+	set selectorText(selector: string) {
+		const selectors = parseSelectorList(selector);
+		if (!selectors) return;
+		this.#selectors = selectors;
+		this.#selectorText = null;
+		notifyRule(this);
+	}
+
+	/** The parsed selector, which the cascade matches against. */
+	get selectors(): SelectorNode {
+		return this.#selectors;
+	}
+
+	get style(): CSSStyleDeclaration {
+		return this.#style;
+	}
+
+	/** `[PutForwards=cssText]`: assigning a block assigns its text. */
+	set style(text: string) {
+		this.#style.cssText = String(text);
+	}
+
+	get cssText(): string {
+		const declarations = this.#style.cssText;
+		const nested = serializeGroupRules(this);
+		const selector = this.selectorText;
+		if (nested) return `${selector} { ${declarations}${nested}\n}`;
+		return declarations ? `${selector} { ${declarations} }` : `${selector} { }`;
+	}
+}
+
+/** The namespaces a sheet's `@namespace` rules declare. */
+function sheetNamespaces(sheet: CSSStyleSheet | null): SelectorNamespaces {
+	if (!sheet) return NO_NAMESPACES;
+	const namespaces: SelectorNamespaces = {default: null, prefixes: new Map()};
+	for (const rule of Array.from(sheet.cssRules)) {
+		if (!(rule instanceof CSSNamespaceRule)) continue;
+		if (rule.prefix === "") namespaces.default = rule.namespaceURI;
+		else namespaces.prefixes.set(rule.prefix, rule.namespaceURI);
+	}
+	return namespaces;
+}
+
+/** A rule whose body is a declaration block rather than a rule list. */
+export abstract class CSSDeclarationBlockRule extends CSSRule {
+	#style: CSSStyleDeclaration;
+
+	constructor(
+		cssText: string,
+		parentStyleSheet: CSSStyleSheet | null,
+		parentRule: CSSRule | null,
+	) {
+		super(parentStyleSheet, parentRule);
+		this.#style = new CSSStyleDeclaration({
+			parentRule: this,
+			onChange: () => notifyRule(this),
+			// A descriptor block declares descriptors, not CSS properties, so
+			// the property index does not gate what it may hold.
+			descriptors: true,
+		});
+		this.#style.cssText = cssText;
+	}
+
+	get style(): CSSStyleDeclaration {
+		return this.#style;
+	}
+
+	/** `[PutForwards=cssText]`: assigning a block assigns its text. */
+	set style(text: string) {
+		this.#style.cssText = String(text);
+	}
+
+	/** The at-keyword and prelude this rule's text opens with. */
+	abstract get prelude(): string;
+
+	get cssText(): string {
+		const declarations = this.#style.cssText;
+		return declarations
+			? `${this.prelude} { ${declarations} }`
+			: `${this.prelude} { }`;
+	}
+}
+
+/** `@font-face`: the descriptors of a font this terminal will never load. */
+export class CSSFontFaceRule extends CSSDeclarationBlockRule {
+	get type(): number {
+		return RULE_TYPES.FONT_FACE_RULE;
+	}
+
+	get prelude(): string {
+		return "@font-face";
+	}
+}
+
+/** `@page`: the page selector and its descriptors. */
+export class CSSPageRule extends CSSDeclarationBlockRule {
+	#selectorText: string;
+
+	constructor(
+		selectorText: string,
+		cssText: string,
+		parentStyleSheet: CSSStyleSheet | null,
+		parentRule: CSSRule | null,
+	) {
+		super(cssText, parentStyleSheet, parentRule);
+		this.#selectorText = serializePageSelector(selectorText);
+	}
+
+	get type(): number {
+		return RULE_TYPES.PAGE_RULE;
+	}
+
+	get selectorText(): string {
+		return this.#selectorText;
+	}
+
+	set selectorText(selector: string) {
+		this.#selectorText = serializePageSelector(String(selector));
+		notifyRule(this);
+	}
+
+	get prelude(): string {
+		return this.#selectorText ? `@page ${this.#selectorText}` : "@page";
+	}
+}
+
+/** The page pseudo-classes a `@page` selector may name. */
+const PAGE_PSEUDO_CLASSES = new Set(["first", "left", "right", "blank"]);
+
+/**
+ * A page selector -- an optional page name followed by page pseudo-classes,
+ * with no whitespace between them -- or "" when it names no valid page.
+ */
+function serializePageSelector(selector: string): string {
+	const text = String(selector).trim();
+	if (!text) return "";
+	const match = /^([^\s:]*)((?::[^\s:]+)*)$/.exec(text);
+	if (!match) return "";
+	const pseudos = match[2] ? match[2].slice(1).split(":") : [];
+	for (const pseudo of pseudos) {
+		if (!PAGE_PSEUDO_CLASSES.has(pseudo.toLowerCase())) return "";
+	}
+	const name = match[1] ? serializeCSSIdentifier(match[1]) : "";
+	return name + pseudos.map((pseudo) => `:${pseudo.toLowerCase()}`).join("");
+}
+
+/** `@counter-style`: a counter's name and the descriptors that define it. */
+export class CSSCounterStyleRule extends CSSDeclarationBlockRule {
+	#name: string;
+
+	constructor(
+		name: string,
+		cssText: string,
+		parentStyleSheet: CSSStyleSheet | null,
+	) {
+		super(cssText, parentStyleSheet, null);
+		this.#name = name.trim();
+	}
+
+	get type(): number {
+		return RULE_TYPES.COUNTER_STYLE_RULE;
+	}
+
+	get name(): string {
+		return this.#name;
+	}
+
+	set name(name: string) {
+		const text = String(name).trim();
+		if (!text) return;
+		this.#name = text;
+		notifyRule(this);
+	}
+
+	get prelude(): string {
+		return `@counter-style ${this.#name}`;
+	}
+}
+
+/** `@property`: a custom property's registration. */
+export class CSSPropertyRule extends CSSDeclarationBlockRule {
+	#name: string;
+
+	constructor(
+		name: string,
+		cssText: string,
+		parentStyleSheet: CSSStyleSheet | null,
+	) {
+		super(cssText, parentStyleSheet, null);
+		this.#name = name.trim();
+	}
+
+	get type(): number {
+		return 0;
+	}
+
+	get name(): string {
+		return this.#name;
+	}
+
+	get syntax(): string {
+		return this.style.getPropertyValue("syntax");
+	}
+
+	get inherits(): boolean {
+		return this.style.getPropertyValue("inherits") === "true";
+	}
+
+	get initialValue(): string | null {
+		return this.style.getPropertyValue("initial-value") || null;
+	}
+
+	get prelude(): string {
+		return `@property ${this.#name}`;
+	}
+}
+
+/** `@font-palette-values`: a palette's name and its descriptors. */
+export class CSSFontPaletteValuesRule extends CSSDeclarationBlockRule {
+	#name: string;
+
+	constructor(
+		name: string,
+		cssText: string,
+		parentStyleSheet: CSSStyleSheet | null,
+	) {
+		super(cssText, parentStyleSheet, null);
+		this.#name = name.trim();
+	}
+
+	get type(): number {
+		return 0;
+	}
+
+	get name(): string {
+		return this.#name;
+	}
+
+	get fontFamily(): string {
+		return this.style.getPropertyValue("font-family");
+	}
+
+	get basePalette(): string {
+		return this.style.getPropertyValue("base-palette");
+	}
+
+	get overrideColors(): string {
+		return this.style.getPropertyValue("override-colors");
+	}
+
+	get prelude(): string {
+		return `@font-palette-values ${this.#name}`;
+	}
+}
+
+/** One keyframe of an `@keyframes` rule: its offsets and its declarations. */
+export class CSSKeyframeRule extends CSSDeclarationBlockRule {
+	#keyText: string;
+
+	constructor(
+		keyText: string,
+		cssText: string,
+		parentStyleSheet: CSSStyleSheet | null,
+		parentRule: CSSRule | null,
+	) {
+		super(cssText, parentStyleSheet, parentRule);
+		this.#keyText = serializeKeyText(keyText);
+	}
+
+	get type(): number {
+		return RULE_TYPES.KEYFRAME_RULE;
+	}
+
+	get keyText(): string {
+		return this.#keyText;
+	}
+
+	set keyText(text: string) {
+		const serialized = serializeKeyText(String(text));
+		if (!serialized) {
+			throw domException(
+				`Cannot parse keyText: ${text}`,
+				"SyntaxError",
+				this.parentStyleSheet,
+			);
+		}
+		this.#keyText = serialized;
+		notifyRule(this);
+	}
+
+	get prelude(): string {
+		return this.#keyText;
+	}
+}
+
+/** A keyframe's selector, as percentages: `from` is 0%, `to` is 100%. */
+function serializeKeyText(text: string): string {
+	const keys: string[] = [];
+	for (const part of String(text).split(",")) {
+		const key = part.trim().toLowerCase();
+		if (key === "from") keys.push("0%");
+		else if (key === "to") keys.push("100%");
+		else if (/^[+-]?(\d+\.?\d*|\.\d+)%$/.test(key)) {
+			keys.push(`${serializeCSSNumber(key.slice(0, -1))}%`);
+		} else return "";
+	}
+	return keys.join(", ");
+}
+
+/** `@media`: the rules that apply when the viewport matches. */
+export class CSSMediaRule extends CSSConditionRule {
+	#media: MediaList;
+
+	constructor(
+		mediaText: string,
+		parentStyleSheet: CSSStyleSheet | null,
+		parentRule: CSSRule | null,
+		build?: (group: CSSGroupingRule) => CSSRule[],
+	) {
+		super(parentStyleSheet, parentRule, build);
+		this.#media = new MediaList(mediaText, () => notifyRule(this));
+	}
+
+	get type(): number {
+		return RULE_TYPES.MEDIA_RULE;
+	}
+
+	get media(): MediaList {
+		return this.#media;
+	}
+
+	/** `[PutForwards=mediaText]`: assigning a media list assigns its text. */
+	set media(text: string) {
+		this.#media.mediaText = String(text);
+	}
+
+	get conditionText(): string {
+		return this.#media.mediaText;
+	}
+
+	set conditionText(text: string) {
+		this.#media.mediaText = text;
+	}
+
+	get cssText(): string {
+		return `@media ${this.conditionText} {${serializeGroupRules(this)}\n}`;
+	}
+}
+
+/** A grouping rule whose condition is a text this engine keeps as authored. */
+abstract class CSSTextConditionRule extends CSSConditionRule {
+	#conditionText: string;
+
+	constructor(
+		conditionText: string,
+		parentStyleSheet: CSSStyleSheet | null,
+		parentRule: CSSRule | null,
+		build?: (group: CSSGroupingRule) => CSSRule[],
+	) {
+		super(parentStyleSheet, parentRule, build);
+		this.#conditionText = conditionText.trim();
+	}
+
+	get conditionText(): string {
+		return this.#conditionText;
+	}
+
+	abstract get atKeyword(): string;
+
+	get cssText(): string {
+		const condition = this.#conditionText ? ` ${this.#conditionText}` : "";
+		return `${this.atKeyword}${condition} {${serializeGroupRules(this)}\n}`;
+	}
+}
+
+/** `@supports`: its rules apply, since what this engine supports it renders. */
+export class CSSSupportsRule extends CSSTextConditionRule {
+	get type(): number {
+		return RULE_TYPES.SUPPORTS_RULE;
+	}
+
+	get atKeyword(): string {
+		return "@supports";
+	}
+}
+
+/** `@container`: parsed, with no container query engine behind it. */
+export class CSSContainerRule extends CSSTextConditionRule {
+	get type(): number {
+		return 0;
+	}
+
+	get atKeyword(): string {
+		return "@container";
+	}
+
+	get containerName(): string {
+		const match = /^([a-zA-Z_-][\w-]*)\s+/.exec(this.conditionText);
+		return match?.[1] ?? "";
+	}
+
+	get containerQuery(): string {
+		const name = this.containerName;
+		return name
+			? this.conditionText.slice(name.length).trim()
+			: this.conditionText;
+	}
+}
+
+/** `@scope`: parsed, and its rules apply unscoped. */
+export class CSSScopeRule extends CSSGroupingRule {
+	#prelude: string;
+
+	constructor(
+		prelude: string,
+		parentStyleSheet: CSSStyleSheet | null,
+		parentRule: CSSRule | null,
+		build?: (group: CSSGroupingRule) => CSSRule[],
+	) {
+		super(parentStyleSheet, parentRule, build);
+		this.#prelude = prelude.trim();
+	}
+
+	get type(): number {
+		return 0;
+	}
+
+	get start(): string | null {
+		const match = /^\(([^)]*)\)/.exec(this.#prelude);
+		return match?.[1].trim() ?? null;
+	}
+
+	get end(): string | null {
+		const match = /\bto\s*\(([^)]*)\)/.exec(this.#prelude);
+		return match?.[1].trim() ?? null;
+	}
+
+	get cssText(): string {
+		const prelude = this.#prelude ? ` ${this.#prelude}` : "";
+		return `@scope${prelude} {${serializeGroupRules(this)}\n}`;
+	}
+}
+
+/** `@starting-style`: parsed, with no transitions behind it. */
+export class CSSStartingStyleRule extends CSSGroupingRule {
+	get type(): number {
+		return 0;
+	}
+
+	get cssText(): string {
+		return `@starting-style {${serializeGroupRules(this)}\n}`;
+	}
+}
+
+/** `@layer name { ... }`: its rules cascade in source order. */
+export class CSSLayerBlockRule extends CSSGroupingRule {
+	#name: string;
+
+	constructor(
+		name: string,
+		parentStyleSheet: CSSStyleSheet | null,
+		parentRule: CSSRule | null,
+		build?: (group: CSSGroupingRule) => CSSRule[],
+	) {
+		super(parentStyleSheet, parentRule, build);
+		this.#name = name.trim();
+	}
+
+	get type(): number {
+		return 0;
+	}
+
+	get name(): string {
+		return this.#name;
+	}
+
+	get cssText(): string {
+		const name = this.#name ? ` ${this.#name}` : "";
+		return `@layer${name} {${serializeGroupRules(this)}\n}`;
+	}
+}
+
+/** `@layer a, b;`: the layer order, declared without a block. */
+export class CSSLayerStatementRule extends CSSRule {
+	#names: string[];
+
+	constructor(
+		prelude: string,
+		parentStyleSheet: CSSStyleSheet | null,
+		parentRule: CSSRule | null,
+	) {
+		super(parentStyleSheet, parentRule);
+		this.#names = prelude
+			.split(",")
+			.map((name) => name.trim())
+			.filter(Boolean);
+	}
+
+	get type(): number {
+		return 0;
+	}
+
+	get nameList(): readonly string[] {
+		return this.#names;
+	}
+
+	get cssText(): string {
+		return `@layer ${this.#names.join(", ")};`;
+	}
+}
+
+/** `@namespace`: a prefix bound to a namespace URI. */
+export class CSSNamespaceRule extends CSSRule {
+	#prefix: string;
+	#namespaceURI: string;
+
+	constructor(
+		prefix: string,
+		namespaceURI: string,
+		parentStyleSheet: CSSStyleSheet | null,
+	) {
+		super(parentStyleSheet, null);
+		this.#prefix = prefix;
+		this.#namespaceURI = namespaceURI;
+	}
+
+	get type(): number {
+		return RULE_TYPES.NAMESPACE_RULE;
+	}
+
+	get prefix(): string {
+		return this.#prefix;
+	}
+
+	get namespaceURI(): string {
+		return this.#namespaceURI;
+	}
+
+	get cssText(): string {
+		const prefix = this.#prefix ? `${this.#prefix} ` : "";
+		return `@namespace ${prefix}url(${serializeCSSString(this.#namespaceURI)});`;
+	}
+}
+
+/**
+ * `@import`: parsed into an object with its href, layer, supports condition
+ * and media, whose styleSheet is null. There is no network behind a terminal
+ * document, so nothing is fetched and the rule declares nothing.
+ */
+export class CSSImportRule extends CSSRule {
+	#href: string;
+	#media: MediaList;
+	#layerName: string | null;
+	#supportsText: string | null;
+
+	constructor(
+		href: string,
+		mediaText: string,
+		layerName: string | null,
+		supportsText: string | null,
+		parentStyleSheet: CSSStyleSheet | null,
+	) {
+		super(parentStyleSheet, null);
+		this.#href = href;
+		this.#media = new MediaList(mediaText);
+		this.#layerName = layerName;
+		this.#supportsText = supportsText;
+	}
+
+	get type(): number {
+		return RULE_TYPES.IMPORT_RULE;
+	}
+
+	get href(): string {
+		return this.#href;
+	}
+
+	get media(): MediaList {
+		return this.#media;
+	}
+
+	/** `[PutForwards=mediaText]`: assigning a media list assigns its text. */
+	set media(text: string) {
+		this.#media.mediaText = String(text);
+	}
+
+	get layerName(): string | null {
+		return this.#layerName;
+	}
+
+	get supportsText(): string | null {
+		return this.#supportsText;
+	}
+
+	get styleSheet(): CSSStyleSheet | null {
+		return null;
+	}
+
+	get cssText(): string {
+		let out = `@import url(${serializeCSSString(this.#href)})`;
+		if (this.#layerName !== null) {
+			out += this.#layerName ? ` layer(${this.#layerName})` : " layer";
+		}
+		if (this.#supportsText !== null) out += ` supports(${this.#supportsText})`;
+		const media = this.#media.mediaText;
+		if (media) out += ` ${media}`;
+		return `${out};`;
+	}
+}
+
+/** `@font-feature-values`: a font family and the feature blocks it names. */
+export class CSSFontFeatureValuesRule extends CSSRule {
+	#fontFamily: string;
+	#blocks = new Map<string, CSSStyleDeclaration>();
+
+	constructor(
+		fontFamily: string,
+		node: ParsedNode,
+		parentStyleSheet: CSSStyleSheet | null,
+	) {
+		super(parentStyleSheet, null);
+		this.#fontFamily = fontFamily.trim();
+		for (const child of nodesOf(node.block ?? {})) {
+			if (child.type !== "Atrule" || !child.name) continue;
+			const block = new CSSStyleDeclaration({
+				parentRule: this,
+				onChange: () => notifyRule(this),
+				descriptors: true,
+			});
+			block.cssText = blockText(child);
+			this.#blocks.set(child.name.toLowerCase(), block);
+		}
+	}
+
+	get type(): number {
+		return RULE_TYPES.FONT_FEATURE_VALUES_RULE;
+	}
+
+	get fontFamily(): string {
+		return this.#fontFamily;
+	}
+
+	set fontFamily(family: string) {
+		this.#fontFamily = String(family).trim();
+		notifyRule(this);
+	}
+
+	/** One feature block's values, or an empty block when it was not written. */
+	#block(name: string): CSSStyleDeclaration {
+		let block = this.#blocks.get(name);
+		if (!block) {
+			block = new CSSStyleDeclaration({
+				parentRule: this,
+				onChange: () => notifyRule(this),
+				descriptors: true,
+			});
+			this.#blocks.set(name, block);
+		}
+		return block;
+	}
+
+	get annotation(): CSSStyleDeclaration {
+		return this.#block("annotation");
+	}
+
+	get ornaments(): CSSStyleDeclaration {
+		return this.#block("ornaments");
+	}
+
+	get stylistic(): CSSStyleDeclaration {
+		return this.#block("stylistic");
+	}
+
+	get swash(): CSSStyleDeclaration {
+		return this.#block("swash");
+	}
+
+	get characterVariant(): CSSStyleDeclaration {
+		return this.#block("character-variant");
+	}
+
+	get styleset(): CSSStyleDeclaration {
+		return this.#block("styleset");
+	}
+
+	get cssText(): string {
+		const blocks: string[] = [];
+		for (const [name, block] of this.#blocks) {
+			const declarations = block.cssText;
+			if (declarations) blocks.push(`\n  @${name} { ${declarations} }`);
+		}
+		return `@font-feature-values ${this.#fontFamily} {${blocks.join("")}\n}`;
+	}
+}
+
+/** `@keyframes`: its name and the keyframes it holds. */
+export class CSSKeyframesRule extends CSSRule {
+	#name: string;
+	#rules: CSSRule[] = [];
+	#ruleList: CSSRuleList;
+
+	constructor(
+		name: string,
+		parentStyleSheet: CSSStyleSheet | null,
+		build?: (rule: CSSKeyframesRule) => CSSRule[],
+	) {
+		super(parentStyleSheet, null);
+		this.#name = name.trim();
+		this.#ruleList = createRuleList(this.#rules);
+		if (build) this.#rules.push(...build(this));
+	}
+
+	get type(): number {
+		return RULE_TYPES.KEYFRAMES_RULE;
+	}
+
+	get name(): string {
+		return this.#name;
+	}
+
+	set name(name: string) {
+		this.#name = String(name);
+		notifyRule(this);
+	}
+
+	get cssRules(): CSSRuleList {
+		return this.#ruleList;
+	}
+
+	get length(): number {
+		return this.#rules.length;
+	}
+
+	appendRule(text: string): void {
+		const rule = parseRuleText(
+			`@keyframes k { ${text} }`,
+			this.parentStyleSheet,
+			this,
+		);
+		if (rule instanceof CSSKeyframesRule) {
+			this.#rules.push(...Array.from(rule.cssRules));
+			notifyRule(this);
+		}
+	}
+
+	deleteRule(select: string): void {
+		const key = serializeKeyText(String(select));
+		for (let index = this.#rules.length - 1; index >= 0; index--) {
+			if ((this.#rules[index] as CSSKeyframeRule).keyText !== key) continue;
+			this.#rules.splice(index, 1);
+			notifyRule(this);
+			return;
+		}
+	}
+
+	findRule(select: string): CSSKeyframeRule | null {
+		const key = serializeKeyText(String(select));
+		for (let index = this.#rules.length - 1; index >= 0; index--) {
+			const rule = this.#rules[index] as CSSKeyframeRule;
+			if (rule.keyText === key) return rule;
+		}
+		return null;
+	}
+
+	get cssText(): string {
+		const frames = this.#rules.map((rule) => `\n  ${rule.cssText}`).join("");
+		return `@keyframes ${this.#name} {${frames}\n}`;
+	}
+}
+
+/** The rules of a stylesheet or a grouping rule. */
+export class CSSRuleList {
+	#rules: readonly CSSRule[];
+
+	constructor(rules: readonly CSSRule[]) {
+		this.#rules = rules;
+	}
+
+	get length(): number {
+		return this.#rules.length;
+	}
+
+	item(index: number): CSSRule | null {
+		return this.#rules[index] ?? null;
+	}
+
+	[Symbol.iterator](): IterableIterator<CSSRule> {
+		return this.#rules[Symbol.iterator]();
+	}
+}
+
+function createRuleList(rules: readonly CSSRule[]): CSSRuleList {
+	return indexed(new CSSRuleList(rules), rules);
+}
+
+/** The stylesheets of a document or a shadow root. */
+export class StyleSheetList {
+	#sheets: readonly CSSStyleSheet[];
+
+	constructor(sheets: readonly CSSStyleSheet[]) {
+		this.#sheets = sheets;
+	}
+
+	get length(): number {
+		return this.#sheets.length;
+	}
+
+	item(index: number): CSSStyleSheet | null {
+		return this.#sheets[index] ?? null;
+	}
+
+	[Symbol.iterator](): IterableIterator<CSSStyleSheet> {
+		return this.#sheets[Symbol.iterator]();
+	}
+}
+
+/**
+ * A stylesheet: the rules of a `<style>` element, or a constructed sheet a
+ * document adopts.
+ *
+ * The rules are this object's own -- the cascade reads them rather than
+ * re-parsing text -- so insertRule, deleteRule, replaceSync and a write to any
+ * rule's declaration block all reach the render through the same invalidation
+ * a `<style>` text change does.
+ */
+export class CSSStyleSheet {
+	#rules: CSSRule[] = [];
+	#ruleList: CSSRuleList;
+	#media: MediaList;
+	#ownerNode: Element | null = null;
+	#ownerRule: CSSRule | null = null;
+	#constructed: boolean;
+	#disabled = false;
+	#href: string | null;
+	#title: string | null;
+	/** The owner node's text this sheet last parsed. */
+	#text: string | null = null;
+
+	/**
+	 * A sheet with an owner element is one the document parsed: replace and
+	 * replaceSync are refused on it, and its rules follow the element's text.
+	 * The exposed constructor takes options alone, so author code only ever
+	 * makes the constructed kind.
+	 */
+	constructor(
+		options: {media?: string; title?: string; disabled?: boolean} = {},
+		ownerNode: Element | null = null,
+	) {
+		this.#ownerNode = ownerNode;
+		this.#constructed = ownerNode === null;
+		if (this.#constructed) constructedSheets.add(this);
+		this.#href = ownerNode?.getAttribute("href") ?? null;
+		this.#title = ownerNode?.getAttribute("title") ?? options.title ?? null;
+		this.#disabled = Boolean(options.disabled);
+		this.#media = new MediaList(
+			ownerNode?.getAttribute("media") ?? options.media ?? "",
+			() => this.#changed(),
+		);
+		this.#ruleList = createRuleList(this.#rules);
+	}
+
+	#changed(): void {
+		sheetNotifiers.get(this)?.();
+	}
+
+	/** Reparse the owner element's text when it says something new. */
+	#sync(): void {
+		const node = this.#ownerNode;
+		if (!node || node.tagName !== "STYLE") return;
+		const text = node.textContent ?? "";
+		if (text === this.#text) return;
+		this.#text = text;
+		this.#rules.length = 0;
+		this.#rules.push(...parseRules(text, this, null));
+	}
+
+	get cssRules(): CSSRuleList {
+		this.#sync();
+		return this.#ruleList;
+	}
+
+	/** The legacy alias every engine still answers to. */
+	get rules(): CSSRuleList {
+		return this.cssRules;
+	}
+
+	get type(): string {
+		return "text/css";
+	}
+
+	get href(): string | null {
+		return this.#href;
+	}
+
+	get title(): string | null {
+		return this.#title;
+	}
+
+	get ownerNode(): Element | null {
+		return this.#ownerNode;
+	}
+
+	get ownerRule(): CSSRule | null {
+		return this.#ownerRule;
+	}
+
+	get parentStyleSheet(): CSSStyleSheet | null {
+		return this.#ownerRule?.parentStyleSheet ?? null;
+	}
+
+	get media(): MediaList {
+		return this.#media;
+	}
+
+	/** `[PutForwards=mediaText]`: assigning a media list assigns its text. */
+	set media(text: string) {
+		this.#media.mediaText = String(text);
+	}
+
+	get disabled(): boolean {
+		return this.#disabled;
+	}
+
+	set disabled(disabled: boolean) {
+		const value = Boolean(disabled);
+		if (value === this.#disabled) return;
+		this.#disabled = value;
+		this.#changed();
+	}
+
+	insertRule(text: string, index = 0): number {
+		if (arguments.length === 0) {
+			throw typeError("insertRule requires a rule", this);
+		}
+		this.#sync();
+		if (index > this.#rules.length) {
+			throw domException(
+				`Cannot insert at index ${index}`,
+				"IndexSizeError",
+				this,
+			);
+		}
+		this.#rules.splice(index, 0, parseRuleText(text, this, null));
+		this.#changed();
+		return index;
+	}
+
+	deleteRule(index: number): void {
+		if (arguments.length === 0) {
+			throw typeError("deleteRule requires an index", this);
+		}
+		this.#sync();
+		if (index >= this.#rules.length) {
+			throw domException(
+				`Cannot delete at index ${index}`,
+				"IndexSizeError",
+				this,
+			);
+		}
+		detachRule(this.#rules[index]);
+		this.#rules.splice(index, 1);
+		this.#changed();
+	}
+
+	/** The legacy IE spellings, defined in terms of the modern pair. */
+	addRule(selector = "undefined", block = "", index?: number): number {
+		this.insertRule(`${selector} { ${block} }`, index ?? this.cssRules.length);
+		return -1;
+	}
+
+	removeRule(index = 0): void {
+		this.#sync();
+		if (index >= this.cssRules.length) {
+			throw domException(
+				`Cannot delete at index ${index}`,
+				"IndexSizeError",
+				this,
+			);
+		}
+		this.deleteRule(index);
+	}
+
+	replaceSync(text: string): void {
+		if (!this.#constructed) {
+			throw domException(
+				"replaceSync is only allowed on a constructed stylesheet",
+				"NotAllowedError",
+				this,
+			);
+		}
+		// An adopted sheet cannot pull in another: `@import` is dropped rather
+		// than parsed, per the constructable-stylesheet rules.
+		this.#rules.length = 0;
+		this.#rules.push(
+			...parseRules(String(text ?? ""), this, null).filter(
+				(rule) => !(rule instanceof CSSImportRule),
+			),
+		);
+		this.#changed();
+	}
+
+	replace(text: string): Promise<CSSStyleSheet> {
+		try {
+			this.replaceSync(text);
+		} catch (error) {
+			return Promise.reject(error);
+		}
+		return Promise.resolve(this);
+	}
+}
+
+/** Whether a sheet may be adopted: only a constructed one, per spec. */
+const constructedSheets = new WeakSet<CSSStyleSheet>();
+
+// ---- Selectors -------------------------------------------------------------
+
+/**
+ * The pseudo-classes and pseudo-elements a selector may name. A selector
+ * naming anything else does not parse, which is what makes `:gibberish`
+ * invalid rather than merely unmatched.
+ */
+const PSEUDO_CLASSES = new Set([
+	"active",
+	"any-link",
+	"autofill",
+	"blank",
+	"buffering",
+	"checked",
+	"current",
+	"default",
+	"defined",
+	"dir",
+	"disabled",
+	"empty",
+	"enabled",
+	"first",
+	"first-child",
+	"first-of-type",
+	"focus",
+	"focus-visible",
+	"focus-within",
+	"fullscreen",
+	"future",
+	"has",
+	"host",
+	"host-context",
+	"hover",
+	"in-range",
+	"indeterminate",
+	"invalid",
+	"is",
+	"lang",
+	"last-child",
+	"last-of-type",
+	"left",
+	"link",
+	"local-link",
+	"modal",
+	"muted",
+	"not",
+	"nth-child",
+	"nth-col",
+	"nth-last-child",
+	"nth-last-col",
+	"nth-last-of-type",
+	"nth-of-type",
+	"only-child",
+	"only-of-type",
+	"open",
+	"optional",
+	"out-of-range",
+	"past",
+	"paused",
+	"picture-in-picture",
+	"placeholder-shown",
+	"playing",
+	"popover-open",
+	"read-only",
+	"read-write",
+	"required",
+	"right",
+	"root",
+	"scope",
+	"seeking",
+	"stalled",
+	"state",
+	"target",
+	"target-current",
+	"target-within",
+	"user-invalid",
+	"user-valid",
+	"valid",
+	"visited",
+	"volume-locked",
+	"where",
+	"window-inactive",
+]);
+
+const PSEUDO_ELEMENTS = new Set([
+	"after",
+	"backdrop",
+	"before",
+	"checkmark",
+	"column",
+	"cue",
+	"cue-region",
+	"details-content",
+	"file-selector-button",
+	"first-letter",
+	"first-line",
+	"grammar-error",
+	"highlight",
+	"marker",
+	"part",
+	"picker",
+	"picker-icon",
+	"placeholder",
+	"scroll-button",
+	"scroll-marker",
+	"scroll-marker-group",
+	"selection",
+	"slotted",
+	"spelling-error",
+	"target-text",
+	"view-transition",
+	"view-transition-group",
+	"view-transition-image-pair",
+	"view-transition-new",
+	"view-transition-old",
+]);
+
+/**
+ * The pseudo-elements whose selector takes an argument, and so are written
+ * only in functional form -- `::part(name)`, never a bare `::part`.
+ */
+const FUNCTIONAL_PSEUDO_ELEMENTS = new Set([
+	"part",
+	"highlight",
+	"slotted",
+	"picker",
+	"scroll-button",
+	"view-transition-group",
+	"view-transition-image-pair",
+	"view-transition-new",
+	"view-transition-old",
+]);
+
+/** The pseudo-elements that may also be written with one colon, from CSS 2. */
+const LEGACY_PSEUDO_ELEMENTS = new Set([
+	"after",
+	"before",
+	"first-letter",
+	"first-line",
+]);
+
+/** A selector AST node, as the CSS parser hands it over. */
+interface SelectorNode {
+	type: string;
+	name?: string | {type: string; name: string};
+	matcher?: string | null;
+	value?: {type: string; value?: string; name?: string} | null;
+	flags?: string | null;
+	children?: {toArray(): SelectorNode[]} | SelectorNode[] | null;
+	nth?: SelectorNode | null;
+	selector?: SelectorNode | null;
+	a?: string | null;
+	b?: string | null;
+}
+
+function childrenOf(node: SelectorNode): SelectorNode[] {
+	const children = node.children;
+	if (!children) return [];
+	return Array.isArray(children) ? children : children.toArray();
+}
+
+/**
+ * A qualified name -- `ns|local`, `*|local`, `local` -- with each part
+ * serialized as an identifier and `*` left as itself.
+ */
+function serializeQualifiedName(
+	name: string,
+	namespaces: SelectorNamespaces,
+): string {
+	const bar = name.lastIndexOf("|");
+	const local = bar === -1 ? name : name.slice(bar + 1);
+	const prefix = bar === -1 ? null : name.slice(0, bar);
+	const localText = local === "*" ? "*" : serializeIdentifierSource(local);
+	if (prefix === null) return localText;
+	// A prefix is written only where it says something an unprefixed name does
+	// not: `*|E` says "any namespace", which is what `E` already means with no
+	// default namespace declared, and a prefix bound to the default namespace
+	// resolves to the same namespace `E` does.
+	if (prefix === "*") {
+		return namespaces.default === null ? localText : `*|${localText}`;
+	}
+	if (prefix === "") {
+		// `|E` says "no namespace", which is not what a bare `E` says whether or
+		// not a default namespace was declared -- so the bar stays. An
+		// attribute is the exception: an unprefixed one is already in no
+		// namespace, so `[|attr]` and `[attr]` are the same selector.
+		return namespaces === ATTRIBUTE_NAMESPACES ? localText : `|${localText}`;
+	}
+	const decoded = cssTree.ident.decode(prefix);
+	if (
+		namespaces.default !== null &&
+		namespaces.prefixes.get(decoded) === namespaces.default
+	) {
+		return localText;
+	}
+	return `${serializeCSSIdentifier(decoded)}|${localText}`;
+}
+
+/**
+ * The namespaces a selector is read against: the sheet's default namespace, if
+ * it declared one, and the prefixes it bound.
+ */
+interface SelectorNamespaces {
+	default: string | null;
+	prefixes: Map<string, string>;
+}
+
+const NO_NAMESPACES: SelectorNamespaces = {default: null, prefixes: new Map()};
+
+/**
+ * An attribute selector's name is never read against the default namespace: an
+ * unprefixed attribute is always in no namespace.
+ */
+const ATTRIBUTE_NAMESPACES: SelectorNamespaces = {
+	default: "",
+	prefixes: new Map(),
+};
+
+/** An identifier as the selector source spelled it, re-escaped canonically. */
+function serializeIdentifierSource(name: string): string {
+	return serializeCSSIdentifier(cssTree.ident.decode(name));
+}
+
+/**
+ * Serialize a group of selectors, per CSSOM: the selectors joined by ", ",
+ * each simple selector in its canonical spelling -- identifiers escaped,
+ * attribute values quoted, combinators spaced, An+B reduced.
+ */
+function serializeSelectorList(
+	list: SelectorNode,
+	namespaces: SelectorNamespaces = NO_NAMESPACES,
+): string {
+	return childrenOf(list)
+		.map((selector) => serializeSelector(selector, namespaces))
+		.join(", ");
+}
+
+function serializeSelector(
+	selector: SelectorNode,
+	namespaces: SelectorNamespaces = NO_NAMESPACES,
+): string {
+	let out = "";
+	// A universal selector is written only when it stands alone in its
+	// compound, or carries a namespace prefix.
+	const parts = childrenOf(selector);
+	for (const [index, part] of parts.entries()) {
+		// A universal selector says nothing that the compound around it does
+		// not already say, so it is written only when it stands alone.
+		if (part.type === "TypeSelector") {
+			const text = serializeQualifiedName(part.name as string, namespaces);
+			const next = parts[index + 1];
+			const alone = !next || next.type === "Combinator";
+			if (text === "*" && !alone) continue;
+			out += text;
+			continue;
+		}
+		out += serializeSimpleSelector(part, namespaces);
+	}
+	return out;
+}
+
+function serializeSimpleSelector(
+	node: SelectorNode,
+	namespaces: SelectorNamespaces,
+): string {
+	switch (node.type) {
+		case "TypeSelector":
+			return serializeQualifiedName(node.name as string, namespaces);
+		case "ClassSelector":
+			return `.${serializeIdentifierSource(node.name as string)}`;
+		case "IdSelector":
+			return `#${serializeIdentifierSource(node.name as string)}`;
+		case "NestingSelector":
+			return "&";
+		case "Combinator": {
+			const name = node.name as string;
+			return name === " " ? " " : ` ${name} `;
+		}
+		case "AttributeSelector": {
+			const name = node.name as {name: string};
+			let out = `[${serializeQualifiedName(name.name, ATTRIBUTE_NAMESPACES)}`;
+			if (node.matcher && node.value) {
+				const value =
+					node.value.type === "String"
+						? (node.value.value ?? "")
+						: (node.value.name ?? "");
+				out += `${node.matcher}${serializeCSSString(value)}`;
+				if (node.flags) out += ` ${node.flags.toLowerCase()}`;
+			}
+			return `${out}]`;
+		}
+		case "PseudoClassSelector":
+		case "PseudoElementSelector": {
+			// A CSS 2 pseudo-element may be written with one colon; it
+			// serializes with two, which is the spelling every one of them has.
+			const element =
+				node.type === "PseudoElementSelector" ||
+				LEGACY_PSEUDO_ELEMENTS.has((node.name as string).toLowerCase());
+			const colons = element ? "::" : ":";
+			const name = serializeIdentifierSource(
+				(node.name as string).toLowerCase(),
+			);
+			const args = childrenOf(node);
+			if (args.length === 0) return `${colons}${name}`;
+			const text = args
+				.map((argument) => serializeSelectorArgument(argument, namespaces))
+				.join(", ");
+			return `${colons}${name}(${text})`;
+		}
+		default:
+			return "";
+	}
+}
+
+function serializeSelectorArgument(
+	node: SelectorNode,
+	namespaces: SelectorNamespaces,
+): string {
+	switch (node.type) {
+		case "SelectorList":
+			return serializeSelectorList(node, namespaces);
+		case "Selector":
+			return serializeSelector(node, namespaces);
+		case "Nth": {
+			const nth = node.nth
+				? serializeSelectorArgument(node.nth, namespaces)
+				: "";
+			const of = node.selector
+				? ` of ${serializeSelectorList(node.selector, namespaces)}`
+				: "";
+			return `${nth}${of}`;
+		}
+		case "AnPlusB":
+			return serializeAnPlusB(node.a ?? null, node.b ?? null);
+		case "Identifier": {
+			// `even` and `odd` are An+B written in words.
+			const word = ((node.name as string) ?? "").toLowerCase();
+			if (word === "even") return "2n";
+			if (word === "odd") return "2n+1";
+			return serializeIdentifierSource((node.name as string) ?? "");
+		}
+		case "String":
+			return serializeCSSString(node.value?.value ?? "");
+		case "Raw":
+			return String((node as {value?: string}).value ?? "").trim();
+		default:
+			return "";
+	}
+}
+
+/** `An+B` in the one spelling CSSOM writes: `2n`, `2n+1`, `-n+5`, `10`. */
+function serializeAnPlusB(a: string | null, b: string | null): string {
+	if (a === null) return String(Number(b ?? 0));
+	const step = Number(a);
+	let out = step === 1 ? "n" : step === -1 ? "-n" : `${step}n`;
+	const offset = Number(b ?? 0);
+	if (offset > 0) out += `+${offset}`;
+	else if (offset < 0) out += `${offset}`;
+	return out;
+}
+
+/**
+ * A `getComputedStyle` pseudo-element argument, in its canonical spelling.
+ *
+ * "" means the argument names no pseudo-element and is ignored -- an argument
+ * without a leading colon always is, which is how `getComputedStyle(el,
+ * "before")` answers with the element's own style. Null means the argument
+ * names something that is not a pseudo-element, for which an empty
+ * declaration is the answer.
+ */
+function parsePseudoElementArgument(text: string): string | null {
+	if (!text.startsWith(":")) return "";
+	const double = text.startsWith("::");
+	let name = text.slice(double ? 2 : 1);
+	// CSS tokenization closes a function left open at the end of the input, so
+	// `::highlight( name ` names the same pseudo-element `::highlight(name)`
+	// does. Anything after the name that is not inside a function is a
+	// trailing token, and a trailing token is not part of the selector.
+	let open = 0;
+	for (const char of name) {
+		if (char === "(") open++;
+		else if (char === ")") open--;
+	}
+	if (open > 0) name += ")".repeat(open);
+	else if (name !== name.trimEnd()) return null;
+	// One colon is the CSS 2 spelling, which only the four CSS 2
+	// pseudo-elements answer to.
+	if (!double && !LEGACY_PSEUDO_ELEMENTS.has(name.toLowerCase())) return null;
+	const selectors = parseSelectorList(`*::${name}`);
+	if (!selectors) return null;
+	// One pseudo-element, not a list of them.
+	const list = childrenOf(selectors);
+	if (list.length !== 1) return null;
+	const compound = childrenOf(list[0] ?? {type: ""});
+	const pseudo = compound[compound.length - 1];
+	if (
+		compound.length !== 2 ||
+		!pseudo ||
+		pseudo.type !== "PseudoElementSelector"
+	) {
+		return null;
+	}
+	return serializeSimpleSelector(pseudo, NO_NAMESPACES);
+}
+
+/**
+ * Parse a selector list, or null when it does not parse -- which includes a
+ * pseudo this engine does not know, since an unknown pseudo makes the whole
+ * selector invalid.
+ */
+/**
+ * A selector list's selectors: split on the commas that separate them, which
+ * are the ones no bracket, paren or string encloses.
+ */
+function splitSelectorList(text: string): string[] {
+	const selectors: string[] = [];
+	let depth = 0;
+	let start = 0;
+	let quote = "";
+	for (let index = 0; index < text.length; index++) {
+		const char = text[index];
+		if (quote) {
+			if (char === "\\") index++;
+			else if (char === quote) quote = "";
+		} else if (char === '"' || char === "'") {
+			quote = char;
+		} else if (char === "(" || char === "[") {
+			depth++;
+		} else if (char === ")" || char === "]") {
+			depth--;
+		} else if (char === "," && depth === 0) {
+			selectors.push(text.slice(start, index).trim());
+			start = index + 1;
+		}
+	}
+	selectors.push(text.slice(start).trim());
+	return selectors.filter(Boolean);
+}
+
+function parseSelectorList(text: string): SelectorNode | null {
+	let list: SelectorNode;
+	// A selector list has to select something: the empty string is not one.
+	if (!String(text).trim()) return null;
+	try {
+		list = cssTree.parse(String(text), {
+			context: "selectorList",
+			onParseError(error: Error) {
+				throw error;
+			},
+		}) as unknown as SelectorNode;
+	} catch {
+		return null;
+	}
+	if (list.type !== "SelectorList") return null;
+	let valid = true;
+	const checkSimple = (node: SelectorNode): void => {
+		if (!valid) return;
+		switch (node.type) {
+			case "PseudoClassSelector": {
+				const name = (node.name as string).toLowerCase();
+				// `:before` and friends are the CSS 2 spelling of a pseudo-element.
+				if (!PSEUDO_CLASSES.has(name) && !LEGACY_PSEUDO_ELEMENTS.has(name)) {
+					valid = false;
+					return;
+				}
+				break;
+			}
+			case "PseudoElementSelector": {
+				const name = (node.name as string).toLowerCase();
+				if (!PSEUDO_ELEMENTS.has(name)) {
+					valid = false;
+					return;
+				}
+				if (!validPseudoElementArguments(name, childrenOf(node))) {
+					valid = false;
+					return;
+				}
+				break;
+			}
+			// A chunk the parser could not read is not a simple selector.
+			case "Raw":
+				valid = false;
+				return;
+		}
+		// A functional pseudo's arguments are selectors only for the pseudos
+		// that take them; `::part(title)` and `:lang(ja)` name something else,
+		// and their arguments carry no selector to validate.
+		for (const child of childrenOf(node)) {
+			if (child.type === "SelectorList") checkList(child);
+			else if (child.type === "Selector") checkSelector(child);
+			else if (child.type === "Nth" && child.selector)
+				checkList(child.selector);
+		}
+	};
+	const checkSelector = (selector: SelectorNode): void => {
+		const parts = childrenOf(selector);
+		if (parts.length === 0) {
+			valid = false;
+			return;
+		}
+		for (const part of parts) checkSimple(part);
+	};
+	const checkList = (node: SelectorNode): void => {
+		for (const selector of childrenOf(node)) checkSelector(selector);
+	};
+	checkList(list);
+	return valid ? list : null;
+}
+
+/**
+ * Whether a pseudo-element's arguments fit its grammar: the functional ones
+ * take an identifier (or, for `::slotted`, a compound selector), and the rest
+ * take nothing at all.
+ */
+function validPseudoElementArguments(
+	name: string,
+	args: SelectorNode[],
+): boolean {
+	if (!FUNCTIONAL_PSEUDO_ELEMENTS.has(name)) return args.length === 0;
+	if (args.length === 0) return false;
+	if (name === "slotted") {
+		return args.every((argument) => argument.type === "Selector");
+	}
+	const text = args
+		.map((argument) =>
+			argument.type === "Raw"
+				? String((argument as {value?: string}).value ?? "")
+				: "",
+		)
+		.join("")
+		.trim();
+	// `::picker` names the element whose picker it is, and nothing else does.
+	if (name === "picker") return text === "select";
+	return /^[a-zA-Z_\u0080-\uFFFF-][\w\u0080-\uFFFF-]*$/.test(text);
+}
+
+// ---- The text parser -------------------------------------------------------
+
+/** A parsed rule, as the CSS parser hands it over. */
+interface ParsedNode {
+	type: string;
+	name?: string;
+	prelude?: {type: string; value?: string} | null;
+	block?: {children: {toArray(): ParsedNode[]}} | null;
+	property?: string;
+	value?: {type: string; value?: string} | null;
+	important?: boolean | string;
+	children?: {toArray(): ParsedNode[]} | null;
+}
+
+function nodesOf(container: {
+	children?: {toArray(): ParsedNode[]} | null;
+}): ParsedNode[] {
+	return container.children ? container.children.toArray() : [];
+}
+
+/** The declarations of a rule's block, in source order. */
+function blockDeclarations(node: ParsedNode): CSSDeclaration[] {
+	const declarations: CSSDeclaration[] = [];
+	if (!node.block) return declarations;
+	for (const child of nodesOf(node.block)) {
+		if (child.type !== "Declaration") continue;
+		const value = serializeCSSValue(cssTree.generate(child.value as never));
+		if (!value) continue;
+		declarations.push({
+			name: normalizePropertyName(child.property ?? ""),
+			value,
+			important: child.important === true,
+		});
+	}
+	return declarations;
+}
+
+/** A rule block's text, as a declaration block takes it. */
+function blockText(node: ParsedNode): string {
+	return blockDeclarations(node)
+		.map(
+			({name, value, important}) =>
+				`${name}: ${value}${important ? " !important" : ""};`,
+		)
+		.join(" ");
+}
+
+/** Parse a rule list, as a sheet's text or a grouping rule's body. */
+function parseRules(
+	text: string,
+	sheet: CSSStyleSheet | null,
+	parentRule: CSSRule | null,
+): CSSRule[] {
+	let ast: {children: {toArray(): ParsedNode[]}};
+	try {
+		ast = cssTree.parse(text, {
+			parseValue: false,
+			parseAtrulePrelude: false,
+			parseRulePrelude: false,
+			parseCustomProperty: false,
+		}) as never;
+	} catch {
+		return [];
+	}
+	return convertRules(ast.children.toArray(), sheet, parentRule);
+}
+
+/** One rule's text, as insertRule takes it. */
+function parseRuleText(
+	text: string,
+	sheet: CSSStyleSheet | null,
+	parentRule: CSSRule | null,
+): CSSRule {
+	const source = String(text ?? "");
+	let ast: {children: {toArray(): ParsedNode[]}};
+	try {
+		ast = cssTree.parse(source, {
+			parseValue: false,
+			parseAtrulePrelude: false,
+			parseRulePrelude: false,
+			parseCustomProperty: false,
+			onParseError(error: Error) {
+				throw error;
+			},
+		}) as never;
+	} catch {
+		throw domException(`Cannot parse rule: ${source}`, "SyntaxError", sheet);
+	}
+	const nodes = ast.children.toArray();
+	if (nodes.length !== 1) {
+		throw domException(`Cannot parse rule: ${source}`, "SyntaxError", sheet);
+	}
+	const rule = convertRule(nodes[0], sheet, parentRule);
+	if (!rule) {
+		throw domException(`Cannot parse rule: ${source}`, "SyntaxError", sheet);
+	}
+	return rule;
+}
+
+function convertRules(
+	source: readonly ParsedNode[],
+	sheet: CSSStyleSheet | null,
+	parentRule: CSSRule | null,
+): CSSRule[] {
+	const rules: CSSRule[] = [];
+	for (const node of source) {
+		const rule = convertRule(node, sheet, parentRule);
+		if (rule) rules.push(rule);
+	}
+	return rules;
+}
+
+/** An at-rule's prelude, as written. */
+function preludeText(node: ParsedNode): string {
+	return (node.prelude?.value ?? "").trim();
+}
+
+function convertRule(
+	node: ParsedNode,
+	sheet: CSSStyleSheet | null,
+	parentRule: CSSRule | null,
+): CSSRule | null {
+	if (node.type === "Rule") {
+		const selectors = parseSelectorList(preludeText(node));
+		if (!selectors) return null;
+		return new CSSStyleRule(
+			selectors,
+			blockText(node),
+			sheet,
+			parentRule,
+			(rule) => convertRules(nestedRules(node), sheet, rule),
+		);
+	}
+	if (node.type !== "Atrule") return null;
+	const prelude = preludeText(node);
+	switch ((node.name ?? "").toLowerCase()) {
+		case "media":
+			return new CSSMediaRule(prelude, sheet, parentRule, (group) =>
+				convertRules(nodesOf(node.block ?? {}), sheet, group),
+			);
+		case "supports":
+			return new CSSSupportsRule(prelude, sheet, parentRule, (group) =>
+				convertRules(nodesOf(node.block ?? {}), sheet, group),
+			);
+		case "container":
+			return new CSSContainerRule(prelude, sheet, parentRule, (group) =>
+				convertRules(nodesOf(node.block ?? {}), sheet, group),
+			);
+		case "scope":
+			return new CSSScopeRule(prelude, sheet, parentRule, (group) =>
+				convertRules(nodesOf(node.block ?? {}), sheet, group),
+			);
+		case "starting-style":
+			return new CSSStartingStyleRule(sheet, parentRule, (group) =>
+				convertRules(nodesOf(node.block ?? {}), sheet, group),
+			);
+		case "layer":
+			return node.block
+				? new CSSLayerBlockRule(prelude, sheet, parentRule, (group) =>
+						convertRules(nodesOf(node.block ?? {}), sheet, group),
+					)
+				: new CSSLayerStatementRule(prelude, sheet, parentRule);
+		case "import":
+			return convertImportRule(prelude, sheet);
+		case "namespace": {
+			const match = /^(?:([^\s]+)\s+)?(.*)$/.exec(prelude);
+			return new CSSNamespaceRule(
+				match?.[1] ?? "",
+				unwrapURL(match?.[2] ?? ""),
+				sheet,
+			);
+		}
+		case "font-face":
+			return new CSSFontFaceRule(blockText(node), sheet, parentRule);
+		case "page":
+			return new CSSPageRule(prelude, blockText(node), sheet, parentRule);
+		case "counter-style":
+			return new CSSCounterStyleRule(prelude, blockText(node), sheet);
+		case "property":
+			return new CSSPropertyRule(prelude, blockText(node), sheet);
+		case "font-feature-values":
+			return new CSSFontFeatureValuesRule(prelude, node, sheet);
+		case "font-palette-values":
+			return new CSSFontPaletteValuesRule(prelude, blockText(node), sheet);
+		case "keyframes":
+		case "-webkit-keyframes":
+			return new CSSKeyframesRule(prelude, sheet, (rule) =>
+				nodesOf(node.block ?? {})
+					.filter((frame) => frame.type === "Rule")
+					.map(
+						(frame) =>
+							new CSSKeyframeRule(
+								preludeText(frame),
+								blockText(frame),
+								sheet,
+								rule,
+							),
+					),
+			);
+		// A charset rule is not exposed in a sheet's rule list, per CSSOM.
+		case "charset":
+			return null;
+		default:
+			return null;
+	}
+}
+
+/** The style rules nested inside a style rule's own block. */
+function nestedRules(node: ParsedNode): ParsedNode[] {
+	return nodesOf(node.block ?? {}).filter(
+		(child) => child.type === "Rule" || child.type === "Atrule",
+	);
+}
+
+/** `url("x")` or `"x"` reduced to the URL it names. */
+function unwrapURL(text: string): string {
+	const trimmed = text.trim();
+	const url = /^url\(\s*(.*?)\s*\)$/i.exec(trimmed);
+	const body = url ? url[1] : trimmed;
+	return /^["']/.test(body) ? body.slice(1, -1) : body;
+}
+
+/** `@import <url> [layer] [supports()] [media]`, split into its parts. */
+function convertImportRule(
+	prelude: string,
+	sheet: CSSStyleSheet | null,
+): CSSImportRule {
+	let rest = prelude.trim();
+	const head = /^(url\(\s*(?:"[^"]*"|'[^']*'|[^)]*)\s*\)|"[^"]*"|'[^']*')/.exec(
+		rest,
+	);
+	const href = unwrapURL(head?.[1] ?? "");
+	rest = rest.slice(head?.[1].length ?? 0).trim();
+
+	let layerName: string | null = null;
+	const layer = /^layer(?:\(\s*([^)]*)\s*\))?/i.exec(rest);
+	if (layer) {
+		layerName = layer[1]?.trim() ?? "";
+		rest = rest.slice(layer[0].length).trim();
+	}
+
+	let supportsText: string | null = null;
+	if (/^supports\(/i.test(rest)) {
+		// The condition nests parentheses -- `supports((a: b) or (c: d))` --
+		// so its end is the parenthesis that closes the one it opened.
+		let depth = 0;
+		let end = rest.length;
+		for (let i = "supports(".length - 1; i < rest.length; i++) {
+			if (rest[i] === "(") depth++;
+			else if (rest[i] === ")" && --depth === 0) {
+				end = i;
+				break;
+			}
+		}
+		supportsText = rest.slice("supports(".length, end).trim();
+		rest = rest.slice(end + 1).trim();
+	}
+
+	return new CSSImportRule(href, rest, layerName, supportsText, sheet);
+}
+
+// Assigning a rule's text does nothing, as in every engine -- but the
+// attribute exists, so every rule type carries the setter alongside the
+// serialization its own class defines.
+for (const type of [
+	CSSStyleRule,
+	CSSMediaRule,
+	CSSSupportsRule,
+	CSSContainerRule,
+	CSSScopeRule,
+	CSSStartingStyleRule,
+	CSSLayerBlockRule,
+	CSSLayerStatementRule,
+	CSSNamespaceRule,
+	CSSImportRule,
+	CSSFontFaceRule,
+	CSSPageRule,
+	CSSCounterStyleRule,
+	CSSPropertyRule,
+	CSSFontPaletteValuesRule,
+	CSSKeyframeRule,
+	CSSFontFeatureValuesRule,
+	CSSKeyframesRule,
+]) {
+	// The getter may live on a base class, so the chain is walked for it.
+	let prototype: object | null = type.prototype;
+	let descriptor: PropertyDescriptor | undefined;
+	while (prototype && !descriptor) {
+		descriptor = Object.getOwnPropertyDescriptor(prototype, "cssText");
+		prototype = Object.getPrototypeOf(prototype);
+	}
+	if (!descriptor?.get) continue;
+	Object.defineProperty(type.prototype, "cssText", {
+		...descriptor,
+		set() {},
+	});
+}
+
+/** The one sheet a `<style>` (or `<link>`) element owns. */
+const elementSheets = new WeakMap<Element, CSSStyleSheet>();
+
+/** The sheets a document or shadow root has adopted. */
+const adoptedSheets = new WeakMap<Node, CSSStyleSheet[]>();
+
+/** The `document.styleSheets` getter jsdom installed, before it was replaced. */
+const nativeStyleSheets = new WeakMap<object, () => {length: number}>();
+
+/** Marks a prototype whose CSSOM accessors are already the engine's. */
+const kStyleSheetsInstalled = Symbol("termdom.styleSheets");
+
+function sheetFor(element: Element): CSSStyleSheet {
+	let sheet = elementSheets.get(element);
+	if (!sheet) {
+		sheet = new CSSStyleSheet({}, element);
+		sheetNotifiers.set(sheet, () => {
+			const window = element.ownerDocument?.defaultView;
+			if (window) styleManagers.get(window)?.refreshStylesheets();
+		});
+		elementSheets.set(element, sheet);
+	}
+	return sheet;
+}
+
+/** The list object jsdom keeps behind its own styleSheets accessor. */
+const nativeSheetLists = new WeakMap<Document, {length: number}>();
+
+/**
+ * The `<style>` elements a document holds, as a bare length to poll.
+ *
+ * jsdom maintains this list as it parses style elements, so a length read
+ * answers "has a sheet appeared" without walking the tree -- cheap enough to
+ * ask on every computed-style read. The real list lives on the wrapper's impl
+ * object, behind the "impl" symbol.
+ */
+export function documentStyleSheetList(document: Document): {length: number} {
+	let list = nativeSheetLists.get(document);
+	if (list === undefined) {
+		const native = nativeStyleSheets.get(document.constructor.prototype);
+		const wrapper = native ? native.call(document) : null;
+		const implSymbol = wrapper
+			? Object.getOwnPropertySymbols(wrapper).find(
+					(symbol) => symbol.description === "impl",
+				)
+			: undefined;
+		list = implSymbol
+			? ((wrapper as any)[implSymbol] as {length: number})
+			: (wrapper ?? {length: 0});
+		nativeSheetLists.set(document, list);
+	}
+	return list;
+}
+
+/**
+ * A document's stylesheets: one per `<style>` element in tree order, followed
+ * by what the document adopted. A `<link>` never resolves to a sheet -- there
+ * is no network behind a terminal document.
+ */
+export function documentStyleSheets(document: Document): CSSStyleSheet[] {
+	const sheets: CSSStyleSheet[] = [];
+	for (const element of document.querySelectorAll("style")) {
+		sheets.push(sheetFor(element));
+	}
+	sheets.push(...(adoptedSheets.get(document) ?? []));
+	return sheets;
+}
+
+/** A shadow root's stylesheets: its own `<style>` elements, then what it adopted. */
+export function shadowStyleSheets(root: ShadowRoot): CSSStyleSheet[] {
+	const sheets: CSSStyleSheet[] = [];
+	for (const element of root.querySelectorAll("style")) {
+		sheets.push(sheetFor(element));
+	}
+	sheets.push(...(adoptedSheets.get(root) ?? []));
+	return sheets;
+}
+
+/**
+ * Adopt a list of constructed sheets, and wire each one's later mutations to
+ * the cascade -- a constructed sheet has no consumer until something adopts it.
+ */
+function adopt(window: DOMWindow, target: Node, sheets: unknown): void {
+	const list: CSSStyleSheet[] = [];
+	for (const sheet of Array.from(sheets as Iterable<unknown>)) {
+		if (!(sheet instanceof CSSStyleSheet)) {
+			throw typeError("adoptedStyleSheets takes CSSStyleSheet objects");
+		}
+		if (!constructedSheets.has(sheet)) {
+			throw domException(
+				"Can't adopt a stylesheet that was not constructed",
+				"NotAllowedError",
+				sheet,
+			);
+		}
+		sheetNotifiers.set(sheet, () =>
+			styleManagers.get(window)?.refreshStylesheets(),
+		);
+		list.push(sheet);
+	}
+	adoptedSheets.set(target, list);
+}
+
+/**
+ * Put this engine's CSSOM behind the document's stylesheet surface: a style
+ * element's `sheet`, `document.styleSheets`, and the adopted lists.
+ */
+export function installStyleSheets(window: DOMWindow): void {
+	cssomWindow = window;
+	const owner = window as unknown as Record<string | symbol, unknown>;
+	if (owner[kStyleSheetsInstalled]) return;
+	owner[kStyleSheetsInstalled] = true;
+
+	const documentPrototype = window.Document.prototype;
+	const nativeGetter = Object.getOwnPropertyDescriptor(
+		documentPrototype,
+		"styleSheets",
+	)?.get;
+	if (nativeGetter) {
+		nativeStyleSheets.set(
+			documentPrototype,
+			nativeGetter as () => {length: number},
+		);
+	}
+
+	Object.defineProperty(documentPrototype, "styleSheets", {
+		get(this: Document) {
+			const sheets = documentStyleSheets(this);
+			return indexed(new StyleSheetList(sheets), sheets);
+		},
+		configurable: true,
+		enumerable: true,
+	});
+
+	for (const prototype of [documentPrototype, window.ShadowRoot?.prototype]) {
+		if (!prototype) continue;
+		Object.defineProperty(prototype, "adoptedStyleSheets", {
+			get(this: Node) {
+				let list = adoptedSheets.get(this);
+				if (!list) adoptedSheets.set(this, (list = []));
+				return list;
+			},
+			set(this: Node, sheets: unknown) {
+				adopt(window, this, sheets);
+				styleManagers.get(window)?.refreshStylesheets();
+			},
+			configurable: true,
+			enumerable: true,
+		});
+	}
+
+	if (window.ShadowRoot) {
+		Object.defineProperty(window.ShadowRoot.prototype, "styleSheets", {
+			get(this: ShadowRoot) {
+				const sheets = shadowStyleSheets(this);
+				return indexed(new StyleSheetList(sheets), sheets);
+			},
+			configurable: true,
+			enumerable: true,
+		});
+	}
+
+	Object.defineProperty(window.HTMLStyleElement.prototype, "sheet", {
+		get(this: Element) {
+			// A style element outside a tree has no sheet, as in a browser.
+			return this.parentNode ? sheetFor(this) : null;
+		},
+		configurable: true,
+		enumerable: true,
+	});
+
+	// Nothing is fetched over a terminal's document, so a link never resolves
+	// to a sheet.
+	Object.defineProperty(window.HTMLLinkElement.prototype, "sheet", {
+		get() {
+			return null;
+		},
+		configurable: true,
+		enumerable: true,
+	});
+
+	Object.assign(window, {
+		CSSStyleSheet,
+		StyleSheetList,
+		CSSRuleList,
+		CSSRule,
+		CSSStyleRule,
+		CSSGroupingRule,
+		CSSConditionRule,
+		CSSMediaRule,
+		CSSSupportsRule,
+		CSSImportRule,
+		CSSKeyframesRule,
+		MediaList,
+		CSSStyleDeclaration,
+		CSS: CSSNamespace,
+	});
+}
+
+/** The UA document sheet, parsed once: its rules never change. */
+let uaDocumentSheet: CSSStyleSheet | null = null;
+
+export function uaStyleSheet(): CSSStyleSheet {
+	if (!uaDocumentSheet) {
+		uaDocumentSheet = new CSSStyleSheet();
+		uaDocumentSheet.replaceSync(UA_DOCUMENT_STYLES);
+	}
+	return uaDocumentSheet;
+}
+
+/**
+ * The properties whose resolved value is the used value, per CSSOM: the box's
+ * own dimensions, its edges, and the offsets that place it. Everything else
+ * resolves to its computed value.
+ */
+const USED_VALUE_PROPERTIES = new Set([
+	"width",
+	"height",
+	"top",
+	"right",
+	"bottom",
+	"left",
+	"margin-top",
+	"margin-right",
+	"margin-bottom",
+	"margin-left",
+	"padding-top",
+	"padding-right",
+	"padding-bottom",
+	"padding-left",
+	"border-top-width",
+	"border-right-width",
+	"border-bottom-width",
+	"border-left-width",
+]);
+
+/** A used length in the one unit a terminal has: a cell, spelled `px`. */
+function usedLength(cells: number): string {
+	return `${Math.round(cells * 1000) / 1000}px`;
+}
+
+/** The two sizes whose `auto` names a minimum only some boxes have. */
+const MIN_SIZE_PROPERTIES = new Set(["min-width", "min-height"]);
+
+/** The containers whose children have an automatic minimum size. */
+const ITEM_DISPLAYS = new Set(["flex", "inline-flex", "grid", "inline-grid"]);
+
+/** The block-level display an inline-level box takes as a flex or grid item. */
+const BLOCKIFIED_DISPLAYS: Record<string, string> = {
+	inline: "block",
+	"inline-block": "block",
+	"inline-flex": "flex",
+	"inline-grid": "grid",
+	"inline-table": "table",
+};
+
+function blockified(display: string): string {
+	return BLOCKIFIED_DISPLAYS[display] ?? display;
+}
+
+/** The four properties that place a positioned box against its containing block. */
+const INSET_PROPERTIES = new Set(["top", "right", "bottom", "left"]);
+
+const OPPOSITE_INSET: Record<string, string> = {
+	top: "bottom",
+	bottom: "top",
+	left: "right",
+	right: "left",
+};
+
+/**
+ * A computed inset as a length in cells, with percentages -- and the one
+ * percentage a calc() can still carry -- resolved against the containing
+ * block. Null for `auto`, which is not a length but an instruction to
+ * measure.
+ */
+function insetLength(computed: string, basis: number): number | null {
+	if (!computed || computed === "auto") return null;
+	const calc = /^calc\(([+-]?[\d.]+)px ([+-]) ([\d.]+)%\)$/.exec(computed);
+	if (calc) {
+		const percentage = (parseFloat(calc[3]) / 100) * basis;
+		return parseFloat(calc[1]) + (calc[2] === "-" ? -percentage : percentage);
+	}
+	if (computed.endsWith("%")) return (parseFloat(computed) / 100) * basis;
+	const length = parseFloat(computed);
+	return Number.isFinite(length) ? length : null;
+}
+
+/**
+ * A computed style as the engine reads it: `computedValueOf` alone, answering
+ * the cascade's value with no resolved-value branch and no author-facing
+ * bookkeeping. Computed-only by construction, not by flag.
+ */
+export interface ComputedStyle {
+	computedValueOf(property: string): string;
+}
+
+/**
+ * An element's computed style, for the engine itself.
+ *
+ * Straight to the declaration the cascade caches: no `getComputedStyle` call,
+ * no pseudo-element parsing, no flat-tree walk, no used-value branch. This is
+ * the read layout and paint make thousands of times a frame.
+ */
+export function computedStyleOf(element: Element): ComputedStyle {
+	const document = element.ownerDocument;
+	if (!document) return EMPTY_COMPUTED_STYLE;
+	const manager = documentManagers.get(document);
+	if (manager) return manager.declarationFor(element);
+	// A document with no cascade of this engine's behind it -- a bare jsdom,
+	// which the tree walker is exercised against -- still answers, through
+	// whatever getComputedStyle it has.
+	const window = document.defaultView;
+	return window
+		? foreignComputedStyle(window.getComputedStyle(element))
+		: EMPTY_COMPUTED_STYLE;
+}
+
+function foreignComputedStyle(
+	declaration: globalThis.CSSStyleDeclaration,
+): ComputedStyle {
+	return {
+		computedValueOf: (property: string): string =>
+			declaration.getPropertyValue(property),
+	};
+}
+
+/** A pseudo-element's computed style, on the same internal read path. */
+export function pseudoStyleOf(
+	element: Element,
+	pseudoElement: string,
+): ComputedStyle {
+	const document = element.ownerDocument;
+	if (!document) return EMPTY_COMPUTED_STYLE;
+	const manager = documentManagers.get(document);
+	if (manager) return manager.pseudoDeclarationFor(element, pseudoElement);
+	const window = document.defaultView;
+	return window
+		? foreignComputedStyle(window.getComputedStyle(element, pseudoElement))
+		: EMPTY_COMPUTED_STYLE;
+}
+
+/** What a read answers before a document has a cascade behind it. */
+const EMPTY_COMPUTED_STYLE: ComputedStyle = {
+	computedValueOf(): string {
+		return "";
+	},
+};
+
+/** The epoch a declaration with no manager behind it watches: one that never moves. */
+const NO_STYLE_EPOCH = {value: 0};
+
+export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 	#element: Element;
 	#cssRules: ParsedCSSRule[];
+	/**
+	 * The manager to re-ask for matching rules, and the epoch it bumps when
+	 * every declaration goes stale at once. A computed style is LIVE: the
+	 * object an author holds keeps answering the element's current values
+	 * across class flips, rule insertions and sheet replacements, so it
+	 * re-resolves rather than being replaced.
+	 */
+	#manager: StyleManager | null = null;
+	#epoch = NO_STYLE_EPOCH;
+	#seenEpoch = 0;
+	#stale = false;
 	// Lazily resolved properties -- INCLUDING ones that resolved to "".
 	// Values here are COMPUTED strings, materialized once per property per
 	// generation; an initial-valued property (word-break, visibility, ...)
@@ -966,9 +4307,416 @@ export class ComputedStyleDeclaration {
 	// needs no invalidation of its own.
 	#resolved = new Map<string, string>();
 
-	constructor(element: Element, cssRules: ParsedCSSRule[] = []) {
+	constructor(
+		element: Element,
+		cssRules: ParsedCSSRule[] = [],
+		manager?: StyleManager,
+	) {
+		super();
 		this.#element = element;
 		this.#cssRules = cssRules;
+		if (manager) {
+			this.#manager = manager;
+			this.#epoch = manager.styleEpoch;
+			this.#seenEpoch = this.#epoch.value;
+		}
+	}
+
+	/**
+	 * Used values, memoized against the layout epoch they were measured in.
+	 * Made on the first resolved read: most elements are never asked for one,
+	 * and a map per element is a map per element.
+	 */
+	#used: Map<string, string> | null = null;
+	#usedEpoch = -1;
+
+	/**
+	 * A resolved value that is the used value: measured through the same flush
+	 * a geometry read takes, and memoized against the layout epoch so a
+	 * property-heavy caller measures once per layout rather than once per read.
+	 */
+	#usedValue(property: string): string {
+		const manager = this.#manager!;
+		const epoch = manager.layoutEpoch;
+		if (!this.#used) this.#used = new Map();
+		else if (epoch !== this.#usedEpoch) this.#used.clear();
+		this.#usedEpoch = epoch;
+		const memoized = this.#used.get(property);
+		if (memoized !== undefined) return memoized;
+
+		const computed = this.computedValueOf(property);
+		const value = this.#measure(property, computed);
+		this.#used.set(property, value);
+		return value;
+	}
+
+	/**
+	 * One property's computed value: the cascade's declaration, interned, and
+	 * absolutized against this element when the interned entry says only an
+	 * element can answer it. The memo both callers write into is the
+	 * per-element, per-generation cache that absolutization is paid into once.
+	 */
+	#computed(property: string): string {
+		const entry = computedEntry(property, this.#resolvePropertyValue(property));
+		if (!entry.contextual) return entry.value;
+		return absolutizeLengths(entry.value, this.#lengthContext(property));
+	}
+
+	/**
+	 * What a relative length on this element is worth.
+	 *
+	 * `font-size` measures against the PARENT's font size, so it is the one
+	 * property whose own computed value is not in its own context; every other
+	 * property measures against this element's font size, which therefore
+	 * computes first.
+	 */
+	#lengthContext(property: string): LengthContext {
+		const own = property === "font-size";
+		const parent = own ? compositionParentElement(this.#element) : null;
+		const font = own
+			? parent
+				? fontSizeOf(computedStyleOf(parent))
+				: INITIAL_FONT_SIZE
+			: fontSizeOf(this);
+		const root = this.#rootFontSize(own);
+		const viewport = this.#manager?.viewportSize();
+		return {
+			font,
+			root,
+			viewportWidth: viewport ? viewport.width : 0,
+			viewportHeight: viewport ? viewport.height : 0,
+			// A percentage is font-relative on exactly two properties: on
+			// `font-size` it is a share of the parent's, on `line-height` of
+			// this element's own. Everywhere else it stays a percentage until
+			// something uses it.
+			percent: FONT_RELATIVE_PERCENTAGES.has(property) ? font / 100 : null,
+		};
+	}
+
+	/** The font size `rem` measures against: the root element's. */
+	#rootFontSize(ownFontSize: boolean): number {
+		const root = this.#element.ownerDocument?.documentElement;
+		// `rem` in the root's own font-size is the initial value, not the
+		// value being computed.
+		if (!root || (ownFontSize && root === this.#element)) {
+			return INITIAL_FONT_SIZE;
+		}
+		return root === this.#element
+			? fontSizeOf(this)
+			: fontSizeOf(computedStyleOf(root));
+	}
+
+	/**
+	 * The computed value: what the cascade says, before any box exists. This
+	 * is what the engine's own geometry decisions read -- a used value there
+	 * would feed layout its own output.
+	 */
+	computedValueOf(property: string): string {
+		if (this.#stale || this.#epoch.value !== this.#seenEpoch) this.#refresh();
+		let value = this.#resolved.get(property);
+		if (value === undefined) {
+			// A shorthand answers as its longhands, each in its own computed
+			// spelling, collapsed: `margin: 10px 10px 10px 10px` is "10px".
+			const longhands = SHORTHAND_LONGHANDS.get(property);
+			value = longhands
+				? serializeShorthandValue(
+						property,
+						longhands,
+						(longhand) =>
+							this.computedValueOf(longhand) ||
+							CSS_INITIAL_VALUES[longhand] ||
+							"",
+					)
+				: this.#computed(property);
+			this.#resolved.set(property, value);
+		}
+		return value;
+	}
+
+	#measure(property: string, computed: string): string {
+		// A border with no style draws nothing and takes no space, whatever
+		// width it declares.
+		if (property.startsWith("border-") && property.endsWith("-width")) {
+			const style = this.getPropertyValue(
+				`${property.slice(0, -"-width".length)}-style`,
+			);
+			if (!style || style === "none" || style === "hidden") return "0px";
+		}
+		const inset = INSET_PROPERTIES.has(property);
+		// An inset only applies to a positioned box; on a static one it stays
+		// as declared.
+		const position = inset ? this.getPropertyValue("position") : "";
+		if (inset && position === "static") return computed;
+
+		const rect = this.#manager!.usedRect(this.#element);
+		// No box -- display:none, or a tree layout never reached -- so the
+		// computed value is the answer, exactly as CSSOM says.
+		if (!rect) return computed;
+
+		if (inset) return this.#usedInset(property, computed, rect, position);
+
+		if (property === "width" || property === "height") {
+			const vertical = property === "height";
+			const edges =
+				this.#edge(vertical ? "border-top-width" : "border-left-width") +
+				this.#edge(vertical ? "border-bottom-width" : "border-right-width") +
+				this.#edge(vertical ? "padding-top" : "padding-left") +
+				this.#edge(vertical ? "padding-bottom" : "padding-right");
+			const border = vertical ? rect.height : rect.width;
+			// `box-sizing: border-box` measures the border box itself.
+			const content =
+				this.getPropertyValue("box-sizing") === "border-box"
+					? border
+					: border - edges;
+			return usedLength(Math.max(0, content));
+		}
+
+		// An `auto` margin is whatever space the box was given: the distance
+		// between its border box and its containing block's content edge.
+		if (computed === "auto" && property.startsWith("margin-")) {
+			return usedLength(this.#autoMargin(property, rect));
+		}
+
+		// Every other used length is already absolute in this engine's own
+		// unit, so the computed value carries it; only a percentage still has
+		// to be resolved, against the containing block's width.
+		if (computed.endsWith("%")) {
+			const basis = this.#containingWidth();
+			if (basis === null) return computed;
+			return usedLength((parseFloat(computed) / 100) * basis);
+		}
+		return computed || "0px";
+	}
+
+	/**
+	 * A positioned box's inset, as used.
+	 *
+	 * A declared inset resolves where it stands -- a percentage against the
+	 * containing block, everything else as written -- which is also what CSSOM
+	 * asks for when the four insets over-constrain the box. `auto` is the one
+	 * that has to be measured: it is whatever distance the box ended up at.
+	 */
+	#usedInset(
+		property: string,
+		computed: string,
+		rect: DOMRect,
+		position: string,
+	): string {
+		const block = this.#containingBlockBox(position);
+		if (!block) return computed;
+		const vertical = property === "top" || property === "bottom";
+		const basis = vertical ? block.height : block.width;
+		const own = insetLength(computed, basis);
+		if (own !== null) return usedLength(own);
+		// A sticky box keeps its `auto`: it names an edge that constrains
+		// nothing, not a distance.
+		if (position === "sticky") return computed;
+
+		const opposite = OPPOSITE_INSET[property];
+		const other = insetLength(this.computedValueOf(opposite), basis);
+		// A relatively positioned box is offset from where it already was, so
+		// an `auto` inset is the negative of its opposite -- and zero when both
+		// are auto, which moves the box nowhere.
+		if (position === "relative") return usedLength(other === null ? 0 : -other);
+
+		// Out of flow: the box hangs in its containing block, so the used
+		// inset is the distance from that block's edge to the box's margin
+		// edge -- the far side of the box when the opposite inset placed it,
+		// and its static position when neither did.
+		const start = vertical ? "margin-top" : "margin-left";
+		const end = vertical ? "margin-bottom" : "margin-right";
+		if (other !== null) {
+			const size =
+				(vertical ? rect.height : rect.width) +
+				this.#edge(start) +
+				this.#edge(end);
+			return usedLength(basis - other - size);
+		}
+		switch (property) {
+			case "top":
+				return usedLength(rect.y - this.#edge(start) - block.y);
+			case "left":
+				return usedLength(rect.x - this.#edge(start) - block.x);
+			case "bottom":
+				return usedLength(
+					block.y + block.height - (rect.y + rect.height + this.#edge(end)),
+				);
+			default:
+				return usedLength(
+					block.x + block.width - (rect.x + rect.width + this.#edge(end)),
+				);
+		}
+	}
+
+	/**
+	 * The box this element's insets are measured against: the padding box of
+	 * the containing block an out-of-flow box hangs from, the scrollport a
+	 * sticky box is constrained by, and otherwise the content box of the box
+	 * this one flows in.
+	 */
+	#containingBlockBox(position: string): DOMRect | null {
+		if (position === "fixed") return this.#viewportBox();
+		if (position === "absolute") {
+			for (
+				let ancestor = compositionParentElement(this.#element);
+				ancestor;
+				ancestor = compositionParentElement(ancestor)
+			) {
+				const ancestorPosition =
+					computedStyleOf(ancestor).computedValueOf("position");
+				if (ancestorPosition && ancestorPosition !== "static") {
+					return this.#boxOf(ancestor, false);
+				}
+			}
+			return this.#viewportBox();
+		}
+		if (position === "sticky") {
+			for (
+				let ancestor = compositionParentElement(this.#element);
+				ancestor;
+				ancestor = compositionParentElement(ancestor)
+			) {
+				const overflow = computedStyleOf(ancestor).computedValueOf("overflow");
+				if (overflow && overflow !== "visible") {
+					return this.#boxOf(ancestor, true);
+				}
+			}
+		}
+		const parent = compositionParentElement(this.#element);
+		return parent ? this.#boxOf(parent, true) : this.#viewportBox();
+	}
+
+	/** An ancestor's padding box, or its content box, in the same coordinates as a rect. */
+	#boxOf(element: Element, content: boolean): DOMRect | null {
+		const rect = this.#manager!.usedRect(element);
+		if (!rect) return null;
+		const style = computedStyleOf(element);
+		const edge = (name: string): number =>
+			parseFloat(style.computedValueOf(name)) || 0;
+		let top = edge("border-top-width");
+		let left = edge("border-left-width");
+		let bottom = edge("border-bottom-width");
+		let right = edge("border-right-width");
+		if (content) {
+			top += edge("padding-top");
+			left += edge("padding-left");
+			bottom += edge("padding-bottom");
+			right += edge("padding-right");
+		}
+		return new (rect.constructor as typeof DOMRect)(
+			rect.x + left,
+			rect.y + top,
+			rect.width - left - right,
+			rect.height - top - bottom,
+		);
+	}
+
+	/** The initial containing block: the grid itself. */
+	#viewportBox(): DOMRect | null {
+		const viewport = this.#manager!.viewportSize();
+		if (!viewport) return null;
+		const rect = this.#manager!.usedRect(this.#element);
+		if (!rect) return null;
+		return new (rect.constructor as typeof DOMRect)(
+			0,
+			0,
+			viewport.width,
+			viewport.height,
+		);
+	}
+
+	/**
+	 * `min-width: auto` and `min-height: auto` as resolved.
+	 *
+	 * The keyword means "the box's automatic minimum size", which only a flex
+	 * or grid item, or a box with an aspect ratio, actually has; anywhere else
+	 * -- and for a box that was never generated -- it is zero, which is the
+	 * value CSSOM reports.
+	 */
+	#resolvedMinSize(computed: string): string {
+		if (computed !== "auto") return computed;
+		// A box that was never generated has no automatic minimum, whatever
+		// else its style says.
+		for (
+			let element: Element | null = this.#element;
+			element;
+			element = compositionParentElement(element)
+		) {
+			if (computedStyleOf(element).computedValueOf("display") === "none") {
+				return "0px";
+			}
+		}
+		if (this.computedValueOf("aspect-ratio") !== "auto") return "auto";
+		const parent = compositionParentElement(this.#element);
+		const display = parent
+			? computedStyleOf(parent).computedValueOf("display")
+			: "";
+		return ITEM_DISPLAYS.has(display) ? "auto" : "0px";
+	}
+
+	/** One edge length in cells, for the arithmetic above. */
+	#edge(property: string): number {
+		return parseFloat(this.getPropertyValue(property)) || 0;
+	}
+
+	/** The space an `auto` margin actually took, measured off the two boxes. */
+	#autoMargin(property: string, rect: DOMRect): number {
+		const parent = compositionParentElement(this.#element);
+		const parentRect = parent ? this.#manager!.usedRect(parent) : null;
+		if (!parent || !parentRect) return 0;
+		const parentStyle = computedStyleOf(parent);
+		const edge = (name: string): number =>
+			parseFloat(parentStyle.computedValueOf(name)) || 0;
+		const left =
+			parentRect.x + edge("border-left-width") + edge("padding-left");
+		const top = parentRect.y + edge("border-top-width") + edge("padding-top");
+		const right =
+			parentRect.x +
+			parentRect.width -
+			edge("border-right-width") -
+			edge("padding-right");
+		const bottom =
+			parentRect.y +
+			parentRect.height -
+			edge("border-bottom-width") -
+			edge("padding-bottom");
+		switch (property) {
+			case "margin-left":
+				return Math.max(0, rect.x - left);
+			case "margin-top":
+				return Math.max(0, rect.y - top);
+			case "margin-right":
+				return Math.max(0, right - (rect.x + rect.width));
+			default:
+				return Math.max(0, bottom - (rect.y + rect.height));
+		}
+	}
+
+	/** The width a percentage on this element resolves against. */
+	#containingWidth(): number | null {
+		const parent = compositionParentElement(this.#element);
+		if (!parent) return null;
+		const rect = this.#manager!.usedRect(parent);
+		return rect ? rect.width : null;
+	}
+
+	/** Mark this declaration's values as belonging to a cascade that has moved on. */
+	invalidate(): void {
+		this.#stale = true;
+	}
+
+	/**
+	 * Re-resolve against the current cascade. Reads take the two-field guard
+	 * inline and call this only when it has actually moved -- this sits on the
+	 * hottest path in the engine, under every property read of every element.
+	 */
+	#refresh(): void {
+		if (!this.#manager) return;
+		this.#stale = false;
+		this.#seenEpoch = this.#epoch.value;
+		this.#cssRules = this.#manager.matchingRules(this.#element);
+		this.#resolved.clear();
+		this.#used?.clear();
 	}
 
 	/**
@@ -980,17 +4728,16 @@ export class ComputedStyleDeclaration {
 	 */
 	#inlineDeclarations(): DeclarationBlock {
 		const style = (this.#element as HTMLElement).style;
-		return style instanceof InlineStyleDeclaration
+		return style instanceof CSSStyleDeclaration
 			? style.declarationBlock()
 			: EMPTY_DECLARATIONS;
 	}
 
-	/** This element's flat-tree parent's resolved value for `property`, or null at the root. */
+	/** This element's flat-tree parent's computed value for `property`, or null at the root. */
 	#resolveFromParent(property: string): string | null {
-		const window = this.#element.ownerDocument?.defaultView;
 		const parent = compositionParentElement(this.#element);
-		if (!window || !parent) return null;
-		return window.getComputedStyle(parent).getPropertyValue(property) || null;
+		if (!parent) return null;
+		return computedStyleOf(parent).computedValueOf(property) || null;
 	}
 
 	/**
@@ -1058,7 +4805,18 @@ export class ComputedStyleDeclaration {
 	 */
 	#resolvePropertyValue(property: string): string {
 		const raw = this.#resolvePropertyValueRaw(property);
-		return raw ? this.#substituteVar(raw) : raw;
+		const value = raw ? this.#substituteVar(raw) : raw;
+		// `currentcolor` is the element's own color, which is what a resolved
+		// value says; on `color` itself it means the parent's.
+		if (
+			value.toLowerCase() === "currentcolor" &&
+			COLOR_PROPERTIES.has(property)
+		) {
+			return property === "color"
+				? (this.#resolveFromParent("color") ?? "")
+				: this.getPropertyValue("color");
+		}
+		return value;
 	}
 
 	#resolvePropertyValueRaw(property: string): string {
@@ -1088,11 +4846,23 @@ export class ComputedStyleDeclaration {
 			}
 		}
 
+		// A CSS-wide keyword a rule declares is not a value: `inherit` takes the
+		// parent's, and the rest send resolution on to the defaults below, as
+		// though the declaration were not there.
+		const declaredByRule = (value: string): string | null => {
+			if (value === "inherit") return this.#resolveFromParent(property) ?? "";
+			return INITIAL_KEYWORDS.has(value) ? null : value;
+		};
+
 		if (inlineImportant) return inlineValue;
-		if (importantRuleValue) return importantRuleValue;
-		if (inlineUsable) return inlineValue;
-		if (ruleValue) {
-			return ruleValue;
+		if (importantRuleValue) {
+			const resolved = declaredByRule(importantRuleValue);
+			if (resolved !== null) return resolved;
+		} else if (inlineUsable) {
+			return inlineValue;
+		} else if (ruleValue) {
+			const resolved = declaredByRule(ruleValue);
+			if (resolved !== null) return resolved;
 		}
 
 		// 3. Check element-specific UA defaults (e.g., strong { font-weight: bold })
@@ -1143,9 +4913,7 @@ export class ComputedStyleDeclaration {
 					parent !== null;
 					parent = compositionParentElement(parent)
 				) {
-					const parentValue = window
-						.getComputedStyle(parent)
-						.getPropertyValue(property);
+					const parentValue = computedStyleOf(parent).computedValueOf(property);
 					if (parentValue) {
 						return parentValue;
 					}
@@ -1161,40 +4929,112 @@ export class ComputedStyleDeclaration {
 	// property resolves on first read, then answers from the memo. Most
 	// elements are only ever asked a handful of properties -- the
 	// composition walker asks each element `display` alone.
-	getPropertyValue(property: string): string {
+	override getPropertyValue(property: string): string {
+		if (this.#stale || this.#epoch.value !== this.#seenEpoch) this.#refresh();
+		if (this.#manager && USED_VALUE_PROPERTIES.has(property)) {
+			return this.#usedValue(property);
+		}
+		if (this.#manager && MIN_SIZE_PROPERTIES.has(property)) {
+			return this.#resolvedMinSize(this.computedValueOf(property));
+		}
 		let value = this.#resolved.get(property);
 		if (value === undefined) {
-			// A box shorthand answers as its four longhands, each in its own
-			// computed spelling: `margin: 10px` is "10px 10px 10px 10px".
-			const longhands = BOX_SHORTHAND_LONGHANDS.get(property);
+			// A shorthand answers as its longhands, each in its own computed
+			// spelling, collapsed: `margin: 10px 10px 10px 10px` is "10px".
+			const longhands = SHORTHAND_LONGHANDS.get(property);
 			value = longhands
-				? longhands
-						.map((longhand) => this.getPropertyValue(longhand) || "0px")
-						.join(" ")
-				: computedValue(property, this.#resolvePropertyValue(property));
+				? serializeShorthandValue(
+						property,
+						longhands,
+						(longhand) =>
+							this.getPropertyValue(longhand) ||
+							CSS_INITIAL_VALUES[longhand] ||
+							"",
+					)
+				: this.#computed(property);
 			this.#resolved.set(property, value);
 		}
 		return value;
 	}
 
-	/** Computed styles are read-only; the mutators exist for API shape alone. */
-	setProperty(): void {}
+	/** Computed styles are read-only; writing one is an error, not a no-op. */
+	override setProperty(): void {
+		throw readOnlyDeclaration(this.#element);
+	}
 
-	removeProperty(): string {
+	override removeProperty(): string {
+		throw readOnlyDeclaration(this.#element);
+	}
+
+	override getPropertyPriority(): string {
 		return "";
 	}
 
-	getPropertyPriority(): string {
+	/**
+	 * A computed style declares every supported longhand, so its indices name
+	 * them in the property index's order rather than the order reads happened
+	 * to resolve them in.
+	 */
+	override item(index: number): string {
+		return CSS_LONGHANDS[index] ?? "";
+	}
+
+	override get length(): number {
+		return CSS_LONGHANDS.length;
+	}
+
+	override [Symbol.iterator](): IterableIterator<string> {
+		return CSS_LONGHANDS[Symbol.iterator]();
+	}
+
+	override get cssText(): string {
 		return "";
 	}
 
-	item(index: number): string {
-		return [...this.#resolved.keys()][index] ?? "";
+	override set cssText(_text: string) {
+		throw readOnlyDeclaration(this.#element);
 	}
 
-	get length(): number {
-		return this.#resolved.size;
+	override get parentRule(): CSSRule | null {
+		return null;
 	}
+}
+
+/**
+ * Whether an element takes part in rendering: it is in a document, and the
+ * flat tree that document composes reaches it. A light-DOM child its host
+ * never slots is in neither, and has no computed style to report.
+ */
+function isBeingRendered(element: Element): boolean {
+	// Walk out through every shadow root the element sits under: a tree whose
+	// outermost root is the document is composed into the rendering, and one
+	// that ends in a bare fragment is not.
+	let node: Node = element;
+	for (let depth = 0; depth < 32; depth++) {
+		const root = node.getRootNode();
+		if (root === element.ownerDocument) break;
+		const host = (root as ShadowRoot).host;
+		if (!host) return false;
+		node = host;
+	}
+	// A light-DOM child an open shadow root never slots is outside the flat
+	// tree. A closed root is this engine's own widget internals, whose parts
+	// the widget itself reads styles for.
+	for (
+		let child: Element | null = element;
+		child;
+		child = child.parentElement
+	) {
+		const parent = child.parentElement;
+		if (
+			parent?.shadowRoot &&
+			parent.shadowRoot.mode === "open" &&
+			!(child as HTMLElement).assignedSlot
+		) {
+			return false;
+		}
+	}
+	return true;
 }
 
 /**
@@ -1202,40 +5042,137 @@ export class ComputedStyleDeclaration {
  * rules plus what it inherits from its originating element -- read through
  * the same computed-value boundary as an element's.
  */
-export class PseudoStyleDeclaration {
+export class PseudoStyleDeclaration extends CSSStyleDeclaration {
 	#declarations: Record<string, string>;
 	#resolved = new Map<string, string>();
 
 	constructor(declarations: Record<string, string>) {
+		super();
 		this.#declarations = declarations;
 	}
 
-	getPropertyValue(property: string): string {
+	/**
+	 * What the cascade declared for this pseudo-element, and nothing else.
+	 *
+	 * This is the engine's read: an empty answer means no rule reached the
+	 * pseudo-element, which is what the ::selection painter and the ::marker
+	 * painter decide on. The author read below completes the same declarations
+	 * with the initial values a computed style carries.
+	 */
+	computedValueOf(property: string): string {
 		let value = this.#resolved.get(property);
 		if (value === undefined) {
-			value = computedValue(property, this.#declarations[property] ?? "");
+			const longhands = SHORTHAND_LONGHANDS.get(property);
+			value =
+				longhands && this.#declarations[property] === undefined
+					? serializeShorthandValue(
+							property,
+							longhands,
+							(longhand) =>
+								this.computedValueOf(longhand) ||
+								CSS_INITIAL_VALUES[longhand] ||
+								"",
+						)
+					: computedValue(property, this.#declarations[property] ?? "");
 			this.#resolved.set(property, value);
 		}
 		return value;
 	}
 
-	setProperty(): void {}
+	override getPropertyValue(property: string): string {
+		return (
+			this.computedValueOf(property) ||
+			computedValue(property, getInitialStyle(null, property))
+		);
+	}
 
-	removeProperty(): string {
+	override setProperty(): void {
+		throw readOnlyDeclaration();
+	}
+
+	override removeProperty(): string {
+		throw readOnlyDeclaration();
+	}
+
+	override getPropertyPriority(): string {
 		return "";
 	}
 
-	getPropertyPriority(): string {
+	/**
+	 * A pseudo-element's computed style declares every supported longhand,
+	 * exactly as an element's does.
+	 */
+	override item(index: number): string {
+		return CSS_LONGHANDS[index] ?? "";
+	}
+
+	override get length(): number {
+		return CSS_LONGHANDS.length;
+	}
+
+	override get cssText(): string {
 		return "";
 	}
 
-	item(index: number): string {
-		return Object.keys(this.#declarations)[index] ?? "";
+	override set cssText(_text: string) {
+		throw readOnlyDeclaration();
+	}
+}
+
+/**
+ * The answer to a `getComputedStyle` pseudo-element argument that names no
+ * pseudo-element: a declaration of nothing, as CSSOM says.
+ */
+export class EmptyStyleDeclaration extends CSSStyleDeclaration {
+	override getPropertyValue(): string {
+		return "";
 	}
 
-	get length(): number {
-		return Object.keys(this.#declarations).length;
+	override getPropertyPriority(): string {
+		return "";
 	}
+
+	override setProperty(): void {
+		throw readOnlyDeclaration();
+	}
+
+	override removeProperty(): string {
+		throw readOnlyDeclaration();
+	}
+
+	override item(): string {
+		return "";
+	}
+
+	override get length(): number {
+		return 0;
+	}
+
+	override get cssText(): string {
+		return "";
+	}
+
+	override set cssText(_text: string) {
+		throw readOnlyDeclaration();
+	}
+}
+
+/**
+ * A computed style is read-only; writing one is an error, not a no-op. The
+ * error is the document's own DOMException where one is reachable -- an error
+ * from another global is not the one an author catches.
+ */
+function readOnlyDeclaration(element?: Element): DOMException {
+	const Exception =
+		(
+			element?.ownerDocument?.defaultView as unknown as {
+				DOMException?: typeof DOMException;
+			}
+		)?.DOMException ?? DOMException;
+	return new Exception(
+		"A computed style declaration is read-only",
+		"NoModificationAllowedError",
+	);
 }
 
 /**
@@ -1446,8 +5383,7 @@ export function resolveBorderStyles(element: Element): {
 	leftEdge: number;
 	hasAnyBorder: boolean;
 } {
-	const computedStyle =
-		element.ownerDocument.defaultView!.getComputedStyle(element);
+	const computedStyle = computedStyleOf(element);
 
 	// Helper to encode individual edge
 	const encodeEdge = (
@@ -1503,38 +5439,38 @@ export function resolveBorderStyles(element: Element): {
 
 	// Check for border-radius (applies to all corners)
 	const borderRadius = parseFloat(
-		computedStyle.getPropertyValue("border-radius"),
+		computedStyle.computedValueOf("border-radius"),
 	);
 	const hasRadius = !isNaN(borderRadius) && borderRadius > 0;
 
 	// Resolve individual edges
 	const topWidth =
-		computedStyle.getPropertyValue("border-top-width") ||
-		computedStyle.getPropertyValue("border-width");
+		computedStyle.computedValueOf("border-top-width") ||
+		computedStyle.computedValueOf("border-width");
 	const topStyle =
-		computedStyle.getPropertyValue("border-top-style") ||
-		computedStyle.getPropertyValue("border-style");
+		computedStyle.computedValueOf("border-top-style") ||
+		computedStyle.computedValueOf("border-style");
 
 	const rightWidth =
-		computedStyle.getPropertyValue("border-right-width") ||
-		computedStyle.getPropertyValue("border-width");
+		computedStyle.computedValueOf("border-right-width") ||
+		computedStyle.computedValueOf("border-width");
 	const rightStyle =
-		computedStyle.getPropertyValue("border-right-style") ||
-		computedStyle.getPropertyValue("border-style");
+		computedStyle.computedValueOf("border-right-style") ||
+		computedStyle.computedValueOf("border-style");
 
 	const bottomWidth =
-		computedStyle.getPropertyValue("border-bottom-width") ||
-		computedStyle.getPropertyValue("border-width");
+		computedStyle.computedValueOf("border-bottom-width") ||
+		computedStyle.computedValueOf("border-width");
 	const bottomStyle =
-		computedStyle.getPropertyValue("border-bottom-style") ||
-		computedStyle.getPropertyValue("border-style");
+		computedStyle.computedValueOf("border-bottom-style") ||
+		computedStyle.computedValueOf("border-style");
 
 	const leftWidth =
-		computedStyle.getPropertyValue("border-left-width") ||
-		computedStyle.getPropertyValue("border-width");
+		computedStyle.computedValueOf("border-left-width") ||
+		computedStyle.computedValueOf("border-width");
 	const leftStyle =
-		computedStyle.getPropertyValue("border-left-style") ||
-		computedStyle.getPropertyValue("border-style");
+		computedStyle.computedValueOf("border-left-style") ||
+		computedStyle.computedValueOf("border-style");
 
 	// Encode each edge
 	const topEdge = encodeEdge(topWidth, topStyle, hasRadius);
@@ -1683,12 +5619,8 @@ function formatOrdinal(ordinal: number, listStyleType: string): string {
  * list-style-type set on the `li` itself.
  */
 function getListMarker(listItem: Element, listParent: Element): string {
-	const window = listItem.ownerDocument.defaultView;
-	if (!window) return "";
-
-	const listStyleType = window
-		.getComputedStyle(listItem)
-		.getPropertyValue("list-style-type");
+	const listStyleType =
+		computedStyleOf(listItem).computedValueOf("list-style-type");
 
 	if (!listStyleType || listStyleType === "none") return "";
 
@@ -1752,6 +5684,12 @@ interface CounterScope {
 
 export class StyleManager {
 	#computedStyleCache = new WeakMap<Element, ComputedStyleDeclaration>();
+	/**
+	 * The counter every computed style watches. A bump means the whole cascade
+	 * changed -- new rules, a new sheet -- and every declaration handed out
+	 * must resolve again.
+	 */
+	#styleEpoch = {value: 0};
 	/**
 	 * Every shadow root whose <style> elements participate in the cascade.
 	 * jsdom never parses shadow stylesheets (shadowRoot.styleSheets does not
@@ -1820,12 +5758,87 @@ export class StyleManager {
 		// The list gutter is resolved inside the cascade, which cannot reach a
 		// StyleManager any other way. See getListGutterWidth().
 		styleManagers.set(window, this);
+		documentManagers.set(this.#document, this);
 
 		// Override window.getComputedStyle with our cached version
 		window.getComputedStyle = this.#getComputedStyle.bind(this);
 
 		// Hook into methods that should invalidate cached styles
 		this.#setupInvalidationHooks();
+	}
+
+	/** The epoch a computed style watches to know its values have gone stale. */
+	get styleEpoch(): {value: number} {
+		return this.#styleEpoch;
+	}
+
+	/** The rules matching an element, in cascade order. */
+	matchingRules(element: Element): ParsedCSSRule[] {
+		if (
+			this.#stylesheetsDirty ||
+			this.#styleSheetCount() !== this.#parsedStyleSheetCount
+		) {
+			this.#parseStylesheets();
+		}
+		return this.#getMatchingRules(element);
+	}
+
+	/**
+	 * The flush a geometry read takes before measuring: pending mutations
+	 * drained and layout brought up to date, synchronously. A resolved value
+	 * is a measurement, so it goes through the same door -- there is exactly
+	 * one place that decides what "laid out now" means.
+	 */
+	#layoutFlush: (() => boolean) | null = null;
+
+	setLayoutFlush(flush: () => boolean): void {
+		this.#layoutFlush = flush;
+	}
+
+	/**
+	 * The grid a viewport unit measures against, in cells. Null before a
+	 * layout engine is wired up, where `1vw` has nothing to be a hundredth of.
+	 */
+	viewportSize(): {width: number; height: number} | null {
+		if (!this.#layoutEngine) return null;
+		return {
+			width: this.#layoutEngine.terminalWidth,
+			height: this.#layoutEngine.terminalHeight,
+		};
+	}
+
+	/** The element's border-box rect, measured after that flush. */
+	usedRect(element: Element): DOMRect | null {
+		// Without a renderer there is no layout pass, and so no used value to
+		// report: the computed value is the answer, as it is for any element
+		// with no box.
+		if (!this.#layoutEngine || !this.#layoutFlush) return null;
+		// The flush is taken once per layout generation, not once per read: an
+		// invalidation moves the engine's epoch, and until it does the layout
+		// standing behind the last flush is still the answer. A caller reading
+		// four properties off two hundred elements pays one flush, not eight
+		// hundred. Nothing under the flush can reach back here -- layout reads
+		// the cascade through computedValueOf, which has no used value to ask
+		// for.
+		if (this.#layoutEngine.layoutEpoch !== this.#flushedEpoch) {
+			this.#layoutFlush();
+			this.#flushedEpoch = this.#layoutEngine.layoutEpoch;
+			this.#usedGeneration++;
+		}
+		return this.#layoutEngine.getRect(element);
+	}
+
+	/** The layout epoch the last resolved-value flush left behind. */
+	#flushedEpoch = -1;
+
+	/**
+	 * The generation a resolved value memoizes against: it moves when the
+	 * cascade is rebuilt or a flush finds work, and stands still otherwise.
+	 */
+	#usedGeneration = 0;
+
+	get layoutEpoch(): number {
+		return this.#usedGeneration;
 	}
 
 	setLayoutEngine(layoutEngine: LayoutEngine): void {
@@ -1963,29 +5976,17 @@ export class StyleManager {
 	 */
 
 	/**
-	 * document.styleSheets.length without jsdom's per-access list proxy.
-	 *
-	 * The length is polled on every computed-style read to catch a <style>
-	 * appended in the same tick, before the mutation observer delivers.
-	 * jsdom keeps the real list on the wrapper's impl object behind its
-	 * "impl" symbol; read it directly, and fall back to the wrapper if the
-	 * internals ever move.
+	 * The document's style-element list, held so the count below is a bare
+	 * length read. The count is polled on every computed-style read to catch
+	 * a <style> appended in the same tick, before the mutation observer
+	 * delivers; adopted sheets and a sheet's own mutations reach the cascade
+	 * through refreshStylesheets instead.
 	 */
-	#styleSheetListImpl: {length: number} | null | undefined;
+	#styleSheetList: {length: number} | null = null;
 
 	#styleSheetCount(): number {
-		if (this.#styleSheetListImpl === undefined) {
-			const list = this.#document.styleSheets;
-			const implSymbol = Object.getOwnPropertySymbols(list).find(
-				(symbol) => symbol.description === "impl",
-			);
-			this.#styleSheetListImpl = implSymbol
-				? ((list as any)[implSymbol] as {length: number})
-				: null;
-		}
-		return this.#styleSheetListImpl
-			? this.#styleSheetListImpl.length
-			: this.#document.styleSheets.length;
+		this.#styleSheetList ??= documentStyleSheetList(this.#document);
+		return this.#styleSheetList.length;
 	}
 
 	invalidationScopeFor(element: Element): Element {
@@ -2042,6 +6043,9 @@ export class StyleManager {
 	 * Invalidate cached styles for an element (invalidation approach)
 	 */
 	#invalidateElementCaches(element: Element): void {
+		// A computed style an author still holds is the one this cache handed
+		// out, so it is told the cascade moved on rather than merely dropped.
+		this.#computedStyleCache.get(element)?.invalidate();
 		this.#computedStyleCache.delete(element);
 		this.#pseudoElementStyleCache.delete(element);
 		this.#counterScopes.delete(element);
@@ -2086,57 +6090,107 @@ export class StyleManager {
 		) {
 			this.#parseStylesheets();
 		}
-		// Handle pseudo-element styles
+		// An element that is not being rendered has no style to report: it is
+		// out of the document, or out of the flat tree its document composes.
+		// Only an author read comes through here -- the engine reads through
+		// declarationFor, which asks nothing of the flat tree.
+		if (!isBeingRendered(element)) {
+			return new EmptyStyleDeclaration() as unknown as globalThis.CSSStyleDeclaration;
+		}
+
+		// The pseudo-element argument names a pseudo-element, names nothing
+		// (and is ignored), or names something that is not one -- for which an
+		// empty declaration is the answer.
+		let pseudoElement = "";
 		if (pseudoElt) {
-			// Check cache first
-			let elementCache = this.#pseudoElementStyleCache.get(element);
-			if (!elementCache) {
-				elementCache = new Map();
-				this.#pseudoElementStyleCache.set(element, elementCache);
+			const parsed = parsePseudoElementArgument(String(pseudoElt));
+			if (parsed === null) {
+				return new EmptyStyleDeclaration() as unknown as globalThis.CSSStyleDeclaration;
 			}
+			pseudoElement = parsed;
+		}
 
-			let pseudoStyle = elementCache.get(pseudoElt);
-			if (!pseudoStyle) {
-				// Compute pseudo-element style
-				pseudoStyle = this.#computePseudoElementStyle(element, pseudoElt);
-				elementCache.set(pseudoElt, pseudoStyle);
-			}
-
-			const declarations: Record<string, string> = {...pseudoStyle};
-			// Per CSS, a pseudo-element INHERITS from its originating element:
-			// a button's focus underline runs through its UA brackets, a
-			// .destroy's color reaches its ::after glyph. Rule declarations
-			// above win; inherited values only fill the gaps.
-			const hostStyle = this.#getComputedStyle(element);
-			for (const property of INHERITED_PROPERTIES) {
-				if (!declarations[property]) {
-					const inherited = hostStyle.getPropertyValue(property);
-					if (inherited) {
-						declarations[property] = inherited;
-					}
-				}
-			}
-			return new PseudoStyleDeclaration(
-				declarations,
+		if (pseudoElement) {
+			return this.pseudoDeclarationFor(
+				element,
+				pseudoElement,
 			) as unknown as globalThis.CSSStyleDeclaration;
 		}
 
-		// Check cache first for regular element styles
-		let computedStyle = this.#computedStyleCache.get(element);
-		if (!computedStyle) {
-			// Create new instance with stylesheet rules applied
-			computedStyle = new ComputedStyleDeclaration(
-				element,
-				this.#getMatchingRules(element),
-			);
-			this.#computedStyleCache.set(element, computedStyle);
-		}
-
-		return computedStyle as unknown as globalThis.CSSStyleDeclaration;
+		return this.declarationFor(
+			element,
+		) as unknown as globalThis.CSSStyleDeclaration;
 	}
 
 	/**
-	 * Parse all stylesheets in the document and extract rules
+	 * The declaration behind an element, for the engine itself.
+	 *
+	 * This is the internal read path: no pseudo-element parsing, no
+	 * being-rendered gate, no resolved-value branch -- the cascade's own answer,
+	 * which is what layout and paint decide geometry from. It is reached
+	 * thousands of times per frame, so it does the least it can.
+	 */
+	declarationFor(element: Element): ComputedStyleDeclaration {
+		let declaration = this.#computedStyleCache.get(element);
+		if (!declaration) {
+			if (
+				this.#stylesheetsDirty ||
+				this.#styleSheetCount() !== this.#parsedStyleSheetCount
+			) {
+				this.#parseStylesheets();
+			}
+			declaration = new ComputedStyleDeclaration(
+				element,
+				this.#getMatchingRules(element),
+				this,
+			);
+			this.#computedStyleCache.set(element, declaration);
+		}
+		return declaration;
+	}
+
+	/** A pseudo-element's declaration, on the same internal read path. */
+	pseudoDeclarationFor(
+		element: Element,
+		pseudoElement: string,
+	): PseudoStyleDeclaration {
+		let elementCache = this.#pseudoElementStyleCache.get(element);
+		if (!elementCache) {
+			elementCache = new Map();
+			this.#pseudoElementStyleCache.set(element, elementCache);
+		}
+		let pseudoStyle = elementCache.get(pseudoElement);
+		if (!pseudoStyle) {
+			pseudoStyle = this.#computePseudoElementStyle(element, pseudoElement);
+			elementCache.set(pseudoElement, pseudoStyle);
+		}
+		const declarations: Record<string, string> = {...pseudoStyle};
+		// Per CSS, a pseudo-element INHERITS from its originating element: a
+		// button's focus underline runs through its UA brackets, a .destroy's
+		// color reaches its ::after glyph. Rule declarations above win;
+		// inherited values only fill the gaps.
+		const hostStyle = this.declarationFor(element);
+		for (const property of INHERITED_PROPERTIES) {
+			if (!declarations[property]) {
+				const inherited = hostStyle.computedValueOf(property);
+				if (inherited) declarations[property] = inherited;
+			}
+		}
+		// A pseudo-element of a flex or grid container is one of its items, and
+		// an item's display blockifies -- including the `inline` it would
+		// otherwise take from the initial value.
+		if (ITEM_DISPLAYS.has(hostStyle.computedValueOf("display"))) {
+			declarations.display = blockified(
+				declarations.display || getInitialStyle(null, "display"),
+			);
+		}
+		return new PseudoStyleDeclaration(declarations);
+	}
+
+	/**
+	 * Walk the document's stylesheets -- this engine's own CSSOM objects, the
+	 * same ones an author reaches through `styleEl.sheet` -- and collect the
+	 * rules the cascade matches against.
 	 */
 	#parseStylesheets(): void {
 		invalidateStructure();
@@ -2148,29 +6202,22 @@ export class StyleManager {
 		this.#counterRulesExist = false;
 		this.#listItemRulesExist = false;
 		this.#stylesheetsDirty = false;
-		this.#parsedStyleSheetCount = document.styleSheets.length;
+		this.#parsedStyleSheetCount = this.#styleSheetCount();
 
 		// The UA document sheet parses first; origin ordering (not source
 		// order) is what keeps it beneath every author rule.
-		this.#parseStyleSheet(CSSOM.parse(UA_DOCUMENT_STYLES), undefined, true);
+		this.#parseStyleSheet(uaStyleSheet(), undefined, true);
 
-		// Parse all stylesheets
-		for (let i = 0; i < document.styleSheets.length; i++) {
-			const stylesheet = document.styleSheets[i] as CSSStyleSheet;
-			if (stylesheet.cssRules) {
-				this.#parseStyleSheet(stylesheet);
-			}
+		for (const sheet of documentStyleSheets(document)) {
+			this.#parseStyleSheet(sheet);
 		}
 
 		// Shadow-tree stylesheets, scoped to their root. Disconnected roots
 		// parse too: attach-populate-connect is the standard order, and a
 		// scope-gated rule matches nothing until its tree renders anyway.
 		for (const root of this.#shadowRoots) {
-			for (const styleElement of root.querySelectorAll("style")) {
-				const cssText = styleElement.textContent;
-				if (cssText) {
-					this.#parseStyleSheet(CSSOM.parse(cssText), root);
-				}
+			for (const sheet of shadowStyleSheets(root)) {
+				this.#parseStyleSheet(sheet, root);
 			}
 		}
 
@@ -2189,29 +6236,31 @@ export class StyleManager {
 	}
 
 	/**
-	 * Parse a stylesheet (or a @media block's own rule list) and add rules to
-	 * parsedRules. @media recurses into its nested rules when its condition
-	 * matches the terminal's current size; every other condition/at-rule
-	 * (@supports, @font-face, @keyframes, @import) has no terminal meaning and
-	 * stays dropped.
+	 * Collect the style rules of a stylesheet, or of a grouping rule's own
+	 * rule list. A disabled sheet, and a sheet or `@media` whose condition the
+	 * terminal viewport does not match, contribute nothing; `@supports`
+	 * contributes its rules, since what this engine supports is what it
+	 * renders. `@font-face`, `@keyframes` and `@import` have no terminal
+	 * rendering and declare nothing to the cascade.
 	 */
 	#parseStyleSheet(
-		stylesheet: {cssRules: CSSRuleList},
+		container: CSSStyleSheet | CSSGroupingRule,
 		scope?: Node,
 		uaOrigin?: boolean,
 	): void {
-		for (let i = 0; i < stylesheet.cssRules.length; i++) {
-			const rule = stylesheet.cssRules[i];
-			// TODO: use constructor.name
-			if (rule.type === 1) {
-				// CSSRule.STYLE_RULE
-				this.#parseStyleRule(rule as CSSStyleRule, scope, uaOrigin);
-			} else if (rule.type === 4) {
-				// CSSRule.MEDIA_RULE
-				const mediaRule = rule as CSSMediaRule;
-				if (this.mediaQueryMatches(mediaRule.media.mediaText)) {
-					this.#parseStyleSheet(mediaRule, scope, uaOrigin);
+		if (container instanceof CSSStyleSheet) {
+			if (container.disabled) return;
+			if (!this.mediaQueryMatches(container.media.mediaText)) return;
+		}
+		for (const rule of container.cssRules) {
+			if (rule instanceof CSSStyleRule) {
+				this.#parseStyleRule(rule, scope, uaOrigin);
+			} else if (rule instanceof CSSMediaRule) {
+				if (this.mediaQueryMatches(rule.conditionText)) {
+					this.#parseStyleSheet(rule, scope, uaOrigin);
 				}
+			} else if (rule instanceof CSSSupportsRule) {
+				this.#parseStyleSheet(rule, scope, uaOrigin);
 			}
 		}
 	}
@@ -2282,16 +6331,34 @@ export class StyleManager {
 		scope?: Node,
 		uaOriginSheet?: boolean,
 	): void {
-		const selector = styleRule.selectorText;
+		// A rule's selector list is a set of selectors that share a block, and
+		// each is matched -- and weighed -- on its own. `#a::before, #b` is one
+		// pseudo-element rule and one ordinary rule, not one of either.
+		const {declarations, important} = styleRule.style.declarationBlock();
+		for (const selector of splitSelectorList(styleRule.selectorText)) {
+			this.#parseSelector(
+				selector,
+				declarations,
+				important,
+				scope,
+				uaOriginSheet,
+			);
+		}
+	}
+
+	#parseSelector(
+		selector: string,
+		declarations: Record<string, string>,
+		important: Record<string, boolean>,
+		scope?: Node,
+		uaOriginSheet?: boolean,
+	): void {
 		if (selector.includes("+") || selector.includes("~")) {
 			this.#selectorsReachSiblings = true;
 		}
 		if (selector.includes(":has")) {
 			this.#selectorsReachAncestors = true;
 		}
-		const {declarations, important} = expandDeclarations(
-			styleRule.style as unknown as DeclarationSource,
-		);
 		if (
 			declarations["counter-reset"] ||
 			declarations["counter-increment"] ||
@@ -2339,14 +6406,19 @@ export class StyleManager {
 		// are widget-part pseudos: no content node ever attaches for them --
 		// they resolve onto the UA shadow tree's [part] elements (see
 		// #getMatchingRules) or the selection painter.
+		// Any pseudo-element, not just the ones this engine gives a box: a
+		// rule for `::highlight(x)` still has to answer through
+		// getComputedStyle, which is the whole of what CSSOM asks of it.
 		const pseudoMatch = selector.match(
-			/^(.+)(::(?:before|after|marker|first-line|first-letter|placeholder|selection|part\([^)]+\)))(.*)$/,
+			/^(.*?)(::[-\w]+(?:\([^)]*\))?)((?::[-\w]+(?:\([^)]*\))?)*)$/,
 		);
 
 		if (pseudoMatch) {
 			const [, baseSelector, pseudoElement] = pseudoMatch;
 			const rule: ParsedCSSRule = {
-				selector: baseSelector.trim(),
+				// A pseudo-element written with no originating selector
+				// originates on every element, which is what `*` names.
+				selector: baseSelector.trim() || "*",
 				declarations,
 				important,
 				specificity,
@@ -2549,7 +6621,7 @@ export class StyleManager {
 			return null;
 		}
 
-		const computedStyle = this.#window.getComputedStyle(hostElement);
+		const computedStyle = this.declarationFor(hostElement);
 		const display = computedStyle.getPropertyValue("display");
 
 		if (display !== "list-item") {
@@ -2601,7 +6673,7 @@ export class StyleManager {
 
 		// For ::marker pseudo-elements, generate default content if none specified
 		if (pseudoType === "::marker") {
-			const computedStyle = this.#window.getComputedStyle(hostElement);
+			const computedStyle = this.declarationFor(hostElement);
 			const display = computedStyle.getPropertyValue("display");
 
 			if (display === "list-item") {
@@ -2637,13 +6709,7 @@ export class StyleManager {
 		}
 
 		// Remove quotes from content string
-		let textContent = content;
-		if (
-			(textContent.startsWith('"') && textContent.endsWith('"')) ||
-			(textContent.startsWith("'") && textContent.endsWith("'"))
-		) {
-			textContent = textContent.slice(1, -1);
-		}
+		let textContent = unquoteContent(content);
 
 		// Resolve counter() functions in the content
 		textContent = this.resolveCounterFunction(hostElement, textContent);
@@ -2668,7 +6734,7 @@ export class StyleManager {
 	shouldCreatePseudoElement(element: Element, pseudoType: string): boolean {
 		// For ::marker pseudo-elements, only create them for inside positioning
 		if (pseudoType === "::marker") {
-			const computedStyle = this.#window.getComputedStyle(element);
+			const computedStyle = this.declarationFor(element);
 			const display = computedStyle.getPropertyValue("display");
 			const listStylePosition =
 				computedStyle.getPropertyValue("list-style-position") || "outside";
@@ -2775,7 +6841,7 @@ export class StyleManager {
 			'[style*="list-item"], li',
 		);
 		for (const element of listItems) {
-			const computedStyle = this.#window.getComputedStyle(element);
+			const computedStyle = this.declarationFor(element);
 			const display = computedStyle.getPropertyValue("display");
 			const listStylePosition =
 				computedStyle.getPropertyValue("list-style-position") || "outside";
@@ -2854,7 +6920,7 @@ export class StyleManager {
 
 		// Skip ::marker for elements without display: list-item or with outside positioning
 		if (pseudoType === "::marker") {
-			const computedStyle = this.#window.getComputedStyle(element);
+			const computedStyle = this.declarationFor(element);
 			const display = computedStyle.getPropertyValue("display");
 			const listStylePosition =
 				computedStyle.getPropertyValue("list-style-position") || "outside";
@@ -2948,6 +7014,7 @@ export class StyleManager {
 		// A property written through element.style lands on the style attribute,
 		// so the hooks above are the whole invalidation path for inline styles.
 		installInlineStyle(this.#window);
+		installStyleSheets(this.#window);
 	}
 
 	/**
@@ -2983,6 +7050,10 @@ export class StyleManager {
 	 * Clear all cached computed styles (nuclear option)
 	 */
 	clearCache(): void {
+		// Every computed style ever handed out re-resolves on its next read:
+		// there is no enumerating a WeakMap, so the epoch they all watch moves.
+		this.#styleEpoch.value++;
+		this.#usedGeneration++;
 		this.#computedStyleCache = new WeakMap();
 		this.#pseudoElementStyleCache = new WeakMap();
 		this.#counterScopes = new WeakMap();
@@ -3019,7 +7090,7 @@ export class StyleManager {
 			return;
 		}
 
-		const computedStyle = this.#window.getComputedStyle(element);
+		const computedStyle = this.declarationFor(element);
 		const counterReset = computedStyle.getPropertyValue("counter-reset");
 		const counterIncrement =
 			computedStyle.getPropertyValue("counter-increment");

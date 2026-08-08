@@ -168,6 +168,13 @@ test("inline styles and stylesheets compute identically", async () => {
 	const dom = new TermDOM({transport: terminal.transport});
 	const {document, window} = dom;
 
+	/** Properties whose resolved value is the used one, and so the box's place. */
+	const POSITION_DEPENDENT = new Set([
+		"margin-top",
+		"margin-right",
+		"margin-bottom",
+		"margin-left",
+	]);
 	const failures: string[] = [];
 	for (const declaration of DECLARATIONS) {
 		document.head.innerHTML = `<style>.probe { ${declaration}; }</style>`;
@@ -178,6 +185,11 @@ test("inline styles and stylesheets compute identically", async () => {
 		const sheet = window.getComputedStyle(document.getElementById("sheet")!);
 		const inline = window.getComputedStyle(document.getElementById("inline")!);
 		for (const prop of PROBE_PROPS) {
+			// The two probes sit at different places in the document, so a
+			// resolved-value property (the used length, not the declared one)
+			// legitimately differs between them. This test is about the
+			// declaration's spelling, not the box's position.
+			if (POSITION_DEPENDENT.has(prop)) continue;
 			const a = normalize(prop, sheet.getPropertyValue(prop), sheet);
 			const b = normalize(prop, inline.getPropertyValue(prop), inline);
 			if (a !== b) {

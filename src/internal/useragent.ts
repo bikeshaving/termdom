@@ -15,6 +15,7 @@
  * colors", which the selection painters translate to SGR 7. Delete that rule
  * and selections stop painting; it is load-bearing, not decorative.
  */
+import {CSS_INITIAL_VALUES} from "./cssproperties.js";
 import {stringWidth} from "./text.js";
 
 // ---- Shorthand expansion (the UA table is built on it) ----
@@ -310,7 +311,9 @@ const CSS_SPEC_DEFAULTS: Record<string, string> = {
 	"border-radius": "0",
 	"background-color": "transparent",
 	color: "#000000",
-	"font-size": "1rem",
+	// One cell tall: the terminal's font is the grid, and a length written in
+	// em is a length written in cells.
+	"font-size": "1px",
 	"font-weight": "normal",
 	"font-style": "normal",
 	"text-decoration": "none",
@@ -562,7 +565,7 @@ export function getElementDefaults(
 			...TERMINAL_ELEMENT_DEFAULTS.button,
 		};
 		if (element.ownerDocument?.activeElement === element) {
-			merged["text-decoration"] = "underline";
+			merged["text-decoration-line"] = "underline";
 		}
 		return merged;
 	}
@@ -580,7 +583,7 @@ export function getElementDefaults(
 			width: `${widest + 2}ch`,
 		};
 		if (select.ownerDocument?.activeElement === select) {
-			merged["text-decoration"] = "underline";
+			merged["text-decoration-line"] = "underline";
 		}
 		return merged;
 	}
@@ -596,7 +599,7 @@ export function getElementDefaults(
 			// The compact glyph is bare when blurred; focus underlines it --
 			// same live-wire language as the text field.
 			return focused
-				? {...CHECKBOX_DEFAULTS, "text-decoration": "underline"}
+				? {...CHECKBOX_DEFAULTS, "text-decoration-line": "underline"}
 				: CHECKBOX_DEFAULTS;
 		}
 		// The size attribute drives a text input's default width, one column
@@ -610,7 +613,7 @@ export function getElementDefaults(
 				merged.width = `${size}ch`;
 			}
 			if (focused) {
-				merged["text-decoration"] = "underline";
+				merged["text-decoration-line"] = "underline";
 			}
 			return merged;
 		}
@@ -632,6 +635,10 @@ export const INHERITED_PROPERTIES = new Set([
 	"line-height",
 	"text-align",
 	"text-decoration",
+	"text-decoration-color",
+	"text-decoration-line",
+	"text-decoration-style",
+	"text-decoration-thickness",
 	"text-indent",
 	"text-transform",
 	"white-space",
@@ -657,11 +664,16 @@ export const INITIAL_KEYWORDS = new Set([
 ]);
 
 /**
- * Get the initial/default value for a property on an element
+ * A property's initial value on an element, or -- with no element, as for a
+ * pseudo-element -- the initial value alone, which no element default has a
+ * say in.
  */
-export function getInitialStyle(element: Element, property: string): string {
+export function getInitialStyle(
+	element: Element | null,
+	property: string,
+): string {
 	// Check element-specific defaults first
-	const elementDefaults = getElementDefaults(element);
+	const elementDefaults = element ? getElementDefaults(element) : null;
 	if (elementDefaults && elementDefaults[property]) {
 		return elementDefaults[property];
 	}
@@ -672,8 +684,10 @@ export function getInitialStyle(element: Element, property: string): string {
 		return universalDefaults[property];
 	}
 
-	// Fall back to CSS spec default
-	return CSS_SPEC_DEFAULTS[property] || "";
+	// Fall back to CSS spec default, and past it to the property index --
+	// every longhand has an initial value, and a property this engine does not
+	// lay out still resolves to one.
+	return CSS_SPEC_DEFAULTS[property] || CSS_INITIAL_VALUES[property] || "";
 }
 
 // ---- UA document stylesheet ----

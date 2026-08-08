@@ -160,9 +160,9 @@ test("pseudo-element CSS content is available immediately after render", async (
 
 	// These should have content immediately, not be empty
 	expect(markerStyle.getPropertyValue("content")).toBe('"🎯 "');
-	expect(markerStyle.getPropertyValue("color")).toBe("red");
+	expect(markerStyle.getPropertyValue("color")).toBe("rgb(255, 0, 0)");
 	expect(beforeStyle.getPropertyValue("content")).toBe('"PREFIX: "');
-	expect(beforeStyle.getPropertyValue("color")).toBe("blue");
+	expect(beforeStyle.getPropertyValue("color")).toBe("rgb(0, 0, 255)");
 
 	termDOM.dispose();
 });
@@ -194,7 +194,7 @@ test("lists render correctly without requiring double-rendering", async () => {
 	for (const item of items) {
 		const markerStyle = termDOM.window.getComputedStyle(item, "::marker");
 		expect(markerStyle.getPropertyValue("content")).toBe('"→ "');
-		expect(markerStyle.getPropertyValue("color")).toBe("green");
+		expect(markerStyle.getPropertyValue("color")).toBe("rgb(0, 128, 0)");
 	}
 
 	termDOM.dispose();
@@ -229,7 +229,7 @@ test("pseudo-elements work on programmatic render without MutationObserver", asy
 
 	// With the broken pipeline, this should fail because CSS wasn't parsed before pseudo-element attachment
 	expect(markerStyle.getPropertyValue("content")).toBe('"★ "');
-	expect(markerStyle.getPropertyValue("color")).toBe("purple");
+	expect(markerStyle.getPropertyValue("color")).toBe("rgb(128, 0, 128)");
 
 	termDOM.dispose();
 });

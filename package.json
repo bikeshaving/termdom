@@ -64,9 +64,9 @@
   "dependencies": {
     "arabic-persian-reshaper": "1.0.1",
     "bidi-js": "1.0.3",
+    "css-tree": "^3.2.1",
     "jsdom": "^26.1.0",
-    "linebreak": "1.1.0",
-    "rrweb-cssom": "^0.8.0"
+    "linebreak": "1.1.0"
   },
   "devDependencies": {
     "@b9g/crank": "^0.7.1",

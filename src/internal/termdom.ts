@@ -473,6 +473,11 @@ export class TermDOM {
 		// Create layout engine after StyleManager overrides getComputedStyle
 		this[kLayoutEngine] = new LayoutEngine(this.#jsdom.window);
 		this.#styleManager.setLayoutEngine(this[kLayoutEngine]);
+		// A resolved value is a measurement, so it takes the same flush every
+		// other geometry read takes -- one door, not two.
+		this.#styleManager.setLayoutFlush(() =>
+			this.#processPendingMutationsAndRender(),
+		);
 		this[kLayoutEngine].resize(this.#width, this.#height);
 		this.#fullscreenManager = new FullscreenManager((output) => {
 			void this.#session.write(output);

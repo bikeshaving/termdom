@@ -23,6 +23,7 @@
 import type {DOMWindow} from "jsdom";
 import {compositionParentElement} from "./composition.js";
 import type {LayoutEngine} from "./layout.js";
+import {computedStyleOf} from "./styles.js";
 
 /**
  * The DOM `code` values for the keys whose physical identity a terminal escape
@@ -439,9 +440,7 @@ export function getFocusableElements(
 			ancestor;
 			ancestor = compositionParentElement(ancestor)
 		) {
-			if (
-				window.getComputedStyle(ancestor).getPropertyValue("display") === "none"
-			) {
+			if (computedStyleOf(ancestor).computedValueOf("display") === "none") {
 				return false;
 			}
 		}

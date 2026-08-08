@@ -1362,7 +1362,7 @@ test(":focus rules apply on focus and revert on blur", async () => {
 
 	const bg = (el: Element) =>
 		window.getComputedStyle(el).getPropertyValue("background-color");
-	expect(bg(a)).toBe("transparent");
+	expect(bg(a)).toBe("rgba(0, 0, 0, 0)");
 
 	a.focus();
 	expect(bg(a)).toBe("rgb(38, 79, 120)");
@@ -1371,11 +1371,11 @@ test(":focus rules apply on focus and revert on blur", async () => {
 
 	// Focus moving to b un-applies on a and applies on b.
 	b.focus();
-	expect(bg(a)).toBe("transparent");
+	expect(bg(a)).toBe("rgba(0, 0, 0, 0)");
 	expect(bg(b)).toBe("rgb(38, 79, 120)");
 
 	b.blur();
-	expect(bg(b)).toBe("transparent");
+	expect(bg(b)).toBe("rgba(0, 0, 0, 0)");
 
 	dom.dispose();
 });

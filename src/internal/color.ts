@@ -162,9 +162,10 @@ const NAMED_COLORS: Record<string, number> = {
 
 /**
  * Parse a CSS color to 24-bit RGB (0xRRGGBB): named colors, #hex, rgb()/rgba(),
- * and hsl()/hsla(). Returns null for anything unrecognized.
+ * and hsl()/hsla(). Returns null for anything unrecognized -- a system color
+ * among them, which stays a name until a painter reads it.
  */
-function parseColorFallback(color: string): number | null {
+export function parseCSSColor(color: string): number | null {
 	color = color.trim().toLowerCase();
 
 	// Named colors
@@ -235,6 +236,22 @@ function parseColorFallback(color: string): number | null {
  * Parse a CSS color string to 24-bit RGB (0xRRGGBB), or null if unrecognized.
  */
 /**
+ * Whether a color paints nothing: the `transparent` keyword, `none`, an empty
+ * value, or any color whose alpha has reached zero.
+ */
+export function isTransparentColor(color: string): boolean {
+	const text = color.trim().toLowerCase();
+	if (!text || text === "transparent" || text === "none") return true;
+	const functional = /^(?:rgba|hsla)\(([^)]*)\)$/.exec(text);
+	if (!functional) return false;
+	const parts = functional[1].split(/\s*[,/]\s*/);
+	if (parts.length !== 4) return false;
+	const raw = parts[3].trim();
+	const alpha = raw.endsWith("%") ? Number(raw.slice(0, -1)) : Number(raw);
+	return alpha === 0;
+}
+
+/**
  * Parse a CSS color to packed 24-bit RGB (0xRRGGBB). Empty, `transparent`, and
  * `none` -- and anything unrecognized -- resolve to 0: a painter has no null to
  * carry into a cell.
@@ -243,6 +260,6 @@ export function cssColorToNumber(cssColor: string): number {
 	if (!cssColor || cssColor === "transparent" || cssColor === "none") {
 		return 0;
 	}
-	const colorNumber = parseColorFallback(cssColor);
+	const colorNumber = parseCSSColor(cssColor);
 	return typeof colorNumber === "number" ? colorNumber : 0;
 }

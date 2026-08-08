@@ -9,6 +9,7 @@
  */
 
 import type {DOMWindow} from "jsdom";
+import {computedStyleOf} from "./styles.js";
 
 // Symbols for storing pseudo-elements and shadow roots on nodes
 export const SHADOW_ROOT_SYMBOL = Symbol.for("TermDOM.shadowRoot");
@@ -123,7 +124,7 @@ export function compositionBoxParentElement(node: Node): Element | null {
 		const window = parent.ownerDocument?.defaultView;
 		if (
 			!window ||
-			window.getComputedStyle(parent).getPropertyValue("display") !== "contents"
+			computedStyleOf(parent).computedValueOf("display") !== "contents"
 		) {
 			break;
 		}
@@ -466,9 +467,7 @@ export class ExpandedTreeWalker {
 	#isContents(node: Node): boolean {
 		if (node.nodeType !== node.ELEMENT_NODE) return false;
 		return (
-			this.#window
-				.getComputedStyle(node as Element)
-				.getPropertyValue("display") === "contents"
+			computedStyleOf(node as Element).computedValueOf("display") === "contents"
 		);
 	}
 
@@ -931,9 +930,7 @@ export class ExpandedTreeWalker {
 	 * Check if an element has display: list-item
 	 */
 	#hasListItemDisplay(element: Element): boolean {
-		const display = this.#window
-			.getComputedStyle(element)
-			.getPropertyValue("display");
+		const display = computedStyleOf(element).computedValueOf("display");
 		return display === "list-item";
 	}
 
