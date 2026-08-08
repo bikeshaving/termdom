@@ -27,8 +27,16 @@ const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const CACHE = join(ROOT, ".wpt");
 const RAW = "https://raw.githubusercontent.com/web-platform-tests/wpt/master";
 const SUITE = "css/cssom";
-/** A test that has not finished in this long is recorded as a timeout. */
-const TIMEOUT_MS = 5000;
+/**
+ * A test that has not finished in this long is recorded as a timeout.
+ *
+ * testharness.js runs a watchdog of its own -- ten seconds, after which it
+ * ends every unfinished subtest and reports the file. A subtest waiting on an
+ * event this environment never fires (a <link> load, say) is ended by that
+ * watchdog and its file still scores, so this outlasts it: a file recorded as
+ * a timeout here is one that never reached even testharness's own limit.
+ */
+const TIMEOUT_MS = 15000;
 
 async function cached(path: string): Promise<string | null> {
 	const file = join(CACHE, path);

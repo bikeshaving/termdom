@@ -1388,6 +1388,12 @@ export class CSSStyleDeclaration implements DeclarationSource {
 	/** Whether this block holds an at-rule's descriptors rather than properties. */
 	#descriptors = false;
 	#declarations: CSSDeclaration[] = [];
+	/**
+	 * The declarations by name. A block holds one declaration per property, so
+	 * a lookup is a map read; `all` expands to every longhand there is, and a
+	 * scan per lookup would make serializing such a block cubic in its size.
+	 */
+	#byName = new Map<string, CSSDeclaration>();
 	/** The `style` attribute text this object last serialized or parsed. */
 	#attributeText: string | null = null;
 	/** The declarations expanded to longhands for the cascade. */
@@ -1416,6 +1422,7 @@ export class CSSStyleDeclaration implements DeclarationSource {
 		if (text === this.#attributeText) return;
 		this.#attributeText = text;
 		this.#declarations = [];
+		this.#byName.clear();
 		for (const declaration of parseDeclarationText(text)) {
 			this.#apply(declaration.name, declaration.value, declaration.important);
 		}
@@ -1426,16 +1433,23 @@ export class CSSStyleDeclaration implements DeclarationSource {
 	#serialize(): string {
 		const parts: string[] = [];
 		const serialized = new Set<string>();
+		// A shorthand this block cannot express is one it cannot express at
+		// any of its longhands: the declarations do not change under the walk.
+		const unserializable = new Set<string>();
 		for (const declaration of this.#declarations) {
 			if (serialized.has(declaration.name)) continue;
 			let text = "";
 			for (const shorthand of LONGHAND_SHORTHANDS.get(declaration.name) ?? []) {
+				if (unserializable.has(shorthand)) continue;
 				const longhands = SHORTHAND_LONGHANDS.get(shorthand)!;
 				// A shorthand covering more properties than the block holds
 				// cannot be serialized from it, and `all` covers hundreds.
 				if (longhands.length > this.#declarations.length) continue;
 				const value = this.#shorthandValue(shorthand, longhands);
-				if (!value) continue;
+				if (!value) {
+					unserializable.add(shorthand);
+					continue;
+				}
 				const important = this.#find(longhands[0])!.important;
 				text = `${shorthand}: ${value}${important ? " !important" : ""};`;
 				for (const longhand of longhands) serialized.add(longhand);
@@ -1473,7 +1487,7 @@ export class CSSStyleDeclaration implements DeclarationSource {
 	}
 
 	#find(property: string): CSSDeclaration | undefined {
-		return this.#declarations.find((entry) => entry.name === property);
+		return this.#byName.get(property);
 	}
 
 	/**
@@ -1490,7 +1504,9 @@ export class CSSStyleDeclaration implements DeclarationSource {
 	#store(name: string, value: string, important: boolean): boolean {
 		const declared = this.#find(name);
 		if (!declared) {
-			this.#declarations.push({name, value, important});
+			const entry = {name, value, important};
+			this.#declarations.push(entry);
+			this.#byName.set(name, entry);
 			return true;
 		}
 		if (declared.value === value && declared.important === important) {
@@ -1505,6 +1521,7 @@ export class CSSStyleDeclaration implements DeclarationSource {
 		const index = this.#declarations.findIndex((entry) => entry.name === name);
 		if (index === -1) return false;
 		this.#declarations.splice(index, 1);
+		this.#byName.delete(name);
 		return true;
 	}
 
@@ -1660,6 +1677,7 @@ export class CSSStyleDeclaration implements DeclarationSource {
 	set cssText(text: string) {
 		this.#sync();
 		this.#declarations = [];
+		this.#byName.clear();
 		for (const declaration of parseDeclarationText(text ?? "")) {
 			if (!this.#supports(declaration.name)) continue;
 			this.#apply(declaration.name, declaration.value, declaration.important);
@@ -3321,6 +3339,15 @@ function serializeIdentifierSource(name: string): string {
 }
 
 /**
+ * A pseudo's name as it is compared and serialized: the identifier the source
+ * escapes spell, ASCII-lowercased. `::\000041fter` and `::AFTER` are both
+ * `::after`, and an escape is part of the spelling, not of the name.
+ */
+function pseudoName(name: string): string {
+	return cssTree.ident.decode(name).toLowerCase();
+}
+
+/**
  * Serialize a group of selectors, per CSSOM: the selectors joined by ", ",
  * each simple selector in its canonical spelling -- identifiers escaped,
  * attribute values quoted, combinators spaced, An+B reduced.
@@ -3392,13 +3419,12 @@ function serializeSimpleSelector(
 		case "PseudoElementSelector": {
 			// A CSS 2 pseudo-element may be written with one colon; it
 			// serializes with two, which is the spelling every one of them has.
+			const decoded = pseudoName(node.name as string);
 			const element =
 				node.type === "PseudoElementSelector" ||
-				LEGACY_PSEUDO_ELEMENTS.has((node.name as string).toLowerCase());
+				LEGACY_PSEUDO_ELEMENTS.has(decoded);
 			const colons = element ? "::" : ":";
-			const name = serializeIdentifierSource(
-				(node.name as string).toLowerCase(),
-			);
+			const name = serializeCSSIdentifier(decoded);
 			const args = childrenOf(node);
 			if (args.length === 0) return `${colons}${name}`;
 			const text = args
@@ -3440,8 +3466,15 @@ function serializeSelectorArgument(
 		}
 		case "String":
 			return serializeCSSString(node.value?.value ?? "");
-		case "Raw":
-			return String((node as {value?: string}).value ?? "").trim();
+		case "Raw": {
+			const text = String((node as {value?: string}).value ?? "").trim();
+			// An argument that is one identifier -- `::highlight(name)`,
+			// `:lang(ja)` -- serializes as the identifier its escapes spell.
+			// Anything else the parser handed over whole stays as written.
+			return /^-?(?:[-\w-￿]|\\[^\n])+$/.test(text) && !/^-?\d/.test(text)
+				? serializeIdentifierSource(text)
+				: text;
+		}
 		default:
 			return "";
 	}
@@ -3476,15 +3509,20 @@ function parsePseudoElementArgument(text: string): string | null {
 	// does. Anything after the name that is not inside a function is a
 	// trailing token, and a trailing token is not part of the selector.
 	let open = 0;
-	for (const char of name) {
-		if (char === "(") open++;
+	for (let index = 0; index < name.length; index++) {
+		const char = name[index];
+		if (char === "\\") index++;
+		else if (char === "(") open++;
 		else if (char === ")") open--;
+		// A comma outside the arguments starts a second selector, and a list
+		// of them names no one pseudo-element.
+		else if (char === "," && open === 0) return null;
 	}
 	if (open > 0) name += ")".repeat(open);
 	else if (name !== name.trimEnd()) return null;
 	// One colon is the CSS 2 spelling, which only the four CSS 2
 	// pseudo-elements answer to.
-	if (!double && !LEGACY_PSEUDO_ELEMENTS.has(name.toLowerCase())) return null;
+	if (!double && !LEGACY_PSEUDO_ELEMENTS.has(pseudoName(name))) return null;
 	const selectors = parseSelectorList(`*::${name}`);
 	if (!selectors) return null;
 	// One pseudo-element, not a list of them.
@@ -3556,7 +3594,7 @@ function parseSelectorList(text: string): SelectorNode | null {
 		if (!valid) return;
 		switch (node.type) {
 			case "PseudoClassSelector": {
-				const name = (node.name as string).toLowerCase();
+				const name = pseudoName(node.name as string);
 				// `:before` and friends are the CSS 2 spelling of a pseudo-element.
 				if (!PSEUDO_CLASSES.has(name) && !LEGACY_PSEUDO_ELEMENTS.has(name)) {
 					valid = false;
@@ -3565,7 +3603,7 @@ function parseSelectorList(text: string): SelectorNode | null {
 				break;
 			}
 			case "PseudoElementSelector": {
-				const name = (node.name as string).toLowerCase();
+				const name = pseudoName(node.name as string);
 				if (!PSEUDO_ELEMENTS.has(name)) {
 					valid = false;
 					return;
@@ -3628,9 +3666,12 @@ function validPseudoElementArguments(
 		)
 		.join("")
 		.trim();
+	// The argument is an identifier, so the escapes in it spell the name.
+	if (!/^(?:[\w\u0080-\uFFFF-]|\\[^\n])+$/.test(text)) return false;
+	const identifier = cssTree.ident.decode(text);
 	// `::picker` names the element whose picker it is, and nothing else does.
-	if (name === "picker") return text === "select";
-	return /^[a-zA-Z_\u0080-\uFFFF-][\w\u0080-\uFFFF-]*$/.test(text);
+	if (name === "picker") return identifier === "select";
+	return /^[a-zA-Z_\u0080-\uFFFF-][\w\u0080-\uFFFF-]*$/.test(identifier);
 }
 
 // ---- The text parser -------------------------------------------------------
@@ -5045,10 +5086,24 @@ function isBeingRendered(element: Element): boolean {
 export class PseudoStyleDeclaration extends CSSStyleDeclaration {
 	#declarations: Record<string, string>;
 	#resolved = new Map<string, string>();
+	/**
+	 * The element the pseudo-element originates from, and the manager whose
+	 * flush a resolved value is measured behind. Absent on the engine's own
+	 * reads (the ::selection and ::marker painters), which want the cascade's
+	 * declarations and never a used value.
+	 */
+	#element: Element | null;
+	#manager: StyleManager | null;
 
-	constructor(declarations: Record<string, string>) {
+	constructor(
+		declarations: Record<string, string>,
+		element?: Element,
+		manager?: StyleManager,
+	) {
 		super();
 		this.#declarations = declarations;
+		this.#element = element ?? null;
+		this.#manager = manager ?? null;
 	}
 
 	/**
@@ -5080,18 +5135,56 @@ export class PseudoStyleDeclaration extends CSSStyleDeclaration {
 	}
 
 	override getPropertyValue(property: string): string {
-		return (
+		const computed =
 			this.computedValueOf(property) ||
-			computedValue(property, getInitialStyle(null, property))
-		);
+			computedValue(property, getInitialStyle(null, property));
+		if (this.#manager && USED_VALUE_PROPERTIES.has(property)) {
+			return this.#usedValue(property, computed);
+		}
+		return computed;
+	}
+
+	/**
+	 * A pseudo-element's resolved value, measured behind the same flush an
+	 * element's is.
+	 *
+	 * A pseudo-element box hangs in the content box of the element it
+	 * originates from, which is what its percentages resolve against -- the
+	 * one measurement the layout it was composed into can answer for it. A
+	 * pseudo that generates no box (`display: none`, `display: contents`, an
+	 * originating element with no box of its own) keeps its computed value,
+	 * exactly as an element with no box does.
+	 */
+	#usedValue(property: string, computed: string): string {
+		if (!computed.endsWith("%")) return computed;
+		const display = this.getPropertyValue("display");
+		if (display === "none" || display === "contents") return computed;
+		// An originating element with `display: contents` generates no box of
+		// its own, so its pseudo-elements hang in the box its own parent
+		// makes -- the same box its children hang in.
+		let host: Element | null = this.#element;
+		while (
+			host &&
+			computedStyleOf(host).computedValueOf("display") === "contents"
+		) {
+			host = compositionParentElement(host);
+		}
+		const box = host && this.#manager!.contentBox(host);
+		if (!box) return computed;
+		// Every percentage but the block-axis sizes measures against the
+		// containing block's width, block direction included.
+		const vertical =
+			property === "height" || property === "top" || property === "bottom";
+		const basis = vertical ? box.height : box.width;
+		return usedLength((parseFloat(computed) / 100) * basis);
 	}
 
 	override setProperty(): void {
-		throw readOnlyDeclaration();
+		throw readOnlyDeclaration(this.#element ?? undefined);
 	}
 
 	override removeProperty(): string {
-		throw readOnlyDeclaration();
+		throw readOnlyDeclaration(this.#element ?? undefined);
 	}
 
 	override getPropertyPriority(): string {
@@ -5115,7 +5208,7 @@ export class PseudoStyleDeclaration extends CSSStyleDeclaration {
 	}
 
 	override set cssText(_text: string) {
-		throw readOnlyDeclaration();
+		throw readOnlyDeclaration(this.#element ?? undefined);
 	}
 }
 
@@ -5124,6 +5217,13 @@ export class PseudoStyleDeclaration extends CSSStyleDeclaration {
  * pseudo-element: a declaration of nothing, as CSSOM says.
  */
 export class EmptyStyleDeclaration extends CSSStyleDeclaration {
+	#element: Element | null;
+
+	constructor(element?: Element) {
+		super();
+		this.#element = element ?? null;
+	}
+
 	override getPropertyValue(): string {
 		return "";
 	}
@@ -5133,11 +5233,11 @@ export class EmptyStyleDeclaration extends CSSStyleDeclaration {
 	}
 
 	override setProperty(): void {
-		throw readOnlyDeclaration();
+		throw readOnlyDeclaration(this.#element ?? undefined);
 	}
 
 	override removeProperty(): string {
-		throw readOnlyDeclaration();
+		throw readOnlyDeclaration(this.#element ?? undefined);
 	}
 
 	override item(): string {
@@ -5153,7 +5253,7 @@ export class EmptyStyleDeclaration extends CSSStyleDeclaration {
 	}
 
 	override set cssText(_text: string) {
-		throw readOnlyDeclaration();
+		throw readOnlyDeclaration(this.#element ?? undefined);
 	}
 }
 
@@ -5828,6 +5928,28 @@ export class StyleManager {
 		return this.#layoutEngine.getRect(element);
 	}
 
+	/**
+	 * An element's content box, measured behind the same flush: the box a
+	 * child's -- or a pseudo-element's -- percentage resolves against.
+	 */
+	contentBox(element: Element): DOMRect | null {
+		const rect = this.usedRect(element);
+		if (!rect) return null;
+		const style = this.declarationFor(element);
+		const edge = (name: string): number =>
+			parseFloat(style.computedValueOf(name)) || 0;
+		const left = edge("border-left-width") + edge("padding-left");
+		const right = edge("border-right-width") + edge("padding-right");
+		const top = edge("border-top-width") + edge("padding-top");
+		const bottom = edge("border-bottom-width") + edge("padding-bottom");
+		return new (rect.constructor as typeof DOMRect)(
+			rect.x + left,
+			rect.y + top,
+			Math.max(0, rect.width - left - right),
+			Math.max(0, rect.height - top - bottom),
+		);
+	}
+
 	/** The layout epoch the last resolved-value flush left behind. */
 	#flushedEpoch = -1;
 
@@ -6101,7 +6223,9 @@ export class StyleManager {
 		// Only an author read comes through here -- the engine reads through
 		// declarationFor, which asks nothing of the flat tree.
 		if (!isBeingRendered(element)) {
-			return new EmptyStyleDeclaration() as unknown as globalThis.CSSStyleDeclaration;
+			return new EmptyStyleDeclaration(
+				element,
+			) as unknown as globalThis.CSSStyleDeclaration;
 		}
 
 		// The pseudo-element argument names a pseudo-element, names nothing
@@ -6111,7 +6235,9 @@ export class StyleManager {
 		if (pseudoElt) {
 			const parsed = parsePseudoElementArgument(String(pseudoElt));
 			if (parsed === null) {
-				return new EmptyStyleDeclaration() as unknown as globalThis.CSSStyleDeclaration;
+				return new EmptyStyleDeclaration(
+					element,
+				) as unknown as globalThis.CSSStyleDeclaration;
 			}
 			pseudoElement = parsed;
 		}
@@ -6190,7 +6316,7 @@ export class StyleManager {
 				declarations.display || getInitialStyle(null, "display"),
 			);
 		}
-		return new PseudoStyleDeclaration(declarations);
+		return new PseudoStyleDeclaration(declarations, element, this);
 	}
 
 	/**
@@ -6244,6 +6370,7 @@ export class StyleManager {
 			return this.#parsedRules.indexOf(a) - this.#parsedRules.indexOf(b);
 		});
 		this.clearCache();
+		this.#attachPseudoElements();
 	}
 
 	/**
@@ -6765,7 +6892,6 @@ export class StyleManager {
 	 */
 	refreshStylesheets(): void {
 		this.#parseStylesheets();
-		this.clearCache();
 
 		// Rules can change LAYOUT (a display flip, new dimensions), and boxes
 		// may already have been built under the pre-parse styles -- a
@@ -6776,12 +6902,20 @@ export class StyleManager {
 		if (body) {
 			this.#layoutEngine?.invalidate(body);
 		}
+	}
 
+	/**
+	 * Bring the document's pseudo-element nodes into line with the rules just
+	 * parsed: the ones a rule now reaches gain a node, the ones no rule
+	 * reaches lose theirs.
+	 */
+	#attachPseudoElements(): void {
 		// Re-evaluate existing pseudos IDENTITY-PRESERVINGLY -- never clear
 		// wholesale: layout keys a pseudo's boxes by node instance, and a
 		// fresh node per refresh strands every mapped one. Attach handles
 		// content updates in place and removal when a pseudo stops matching.
 		// TODO: Performance - walks every element on stylesheet change.
+		if (!this.#document.documentElement) return;
 		const walker = this.#document.createTreeWalker(
 			this.#document.documentElement,
 			this.#window.NodeFilter.SHOW_ELEMENT,
@@ -6795,7 +6929,6 @@ export class StyleManager {
 			element = walker.nextNode() as Element;
 		}
 
-		// After parsing rules, attach pseudo-elements to matching elements
 		this.attachPseudoElementsToDocument();
 	}
 
