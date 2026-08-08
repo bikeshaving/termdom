@@ -43,6 +43,11 @@ declare module "css-tree" {
 		error: Error | null;
 	}
 
+	export const ident: {
+		decode(text: string): string;
+		encode(text: string): string;
+	};
+
 	export const lexer: {
 		matchProperty(property: string, value: CSSTreeNode | string): MatchResult;
 		checkPropertyName(property: string): Error | undefined;

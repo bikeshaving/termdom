@@ -241,10 +241,21 @@ for (const outcome of outcomes) {
 	lines.push("");
 }
 
-writeFileSync(
-	join(ROOT, "docs", "cssom-conformance.md"),
-	`${lines.join("\n")}\n`,
-);
+// A filtered run is for looking at one suite, so it reports to the terminal;
+// only a whole run may rewrite the checked-in table.
+if (filter) {
+	for (const outcome of outcomes) {
+		for (const test of outcome.subtests) {
+			if (test.status === 0) continue;
+			console.info(`  ${outcome.file} :: ${test.name}: ${test.message ?? ""}`);
+		}
+	}
+} else {
+	writeFileSync(
+		join(ROOT, "docs", "cssom-conformance.md"),
+		`${lines.join("\n")}\n`,
+	);
+}
 console.info(
 	`\n${passed.length} passed, ${failed.length} failed across ${outcomes.length} files`,
 );

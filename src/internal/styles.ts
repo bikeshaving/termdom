@@ -1626,7 +1626,10 @@ export abstract class CSSGroupingRule extends CSSRule {
 				"IndexSizeError",
 			);
 		}
-		if (inserted instanceof CSSImportRule || inserted instanceof CSSNamespaceRule) {
+		if (
+			inserted instanceof CSSImportRule ||
+			inserted instanceof CSSNamespaceRule
+		) {
 			throw new DOMException(
 				"Only a stylesheet may hold that rule",
 				"HierarchyRequestError",
@@ -1664,7 +1667,7 @@ export abstract class CSSConditionRule extends CSSGroupingRule {
 /** A style rule: a selector and the declaration block it applies. */
 export class CSSStyleRule extends CSSGroupingRule {
 	#selectors: SelectorNode;
-	#selectorText: string;
+	#selectorText: string | null = null;
 	#style: CSSStyleDeclaration;
 
 	constructor(
@@ -1676,7 +1679,6 @@ export class CSSStyleRule extends CSSGroupingRule {
 	) {
 		super(parentStyleSheet, parentRule, build);
 		this.#selectors = selectors;
-		this.#selectorText = serializeSelectorList(selectors);
 		this.#style = new CSSStyleDeclaration({
 			parentRule: this,
 			onChange: () => notifyRule(this),
@@ -1688,8 +1690,16 @@ export class CSSStyleRule extends CSSGroupingRule {
 		return RULE_TYPES.STYLE_RULE;
 	}
 
+	/**
+	 * Serialized on first read rather than at construction: whether `*|E` keeps
+	 * its prefix depends on the sheet declaring a default namespace, and the
+	 * sheet's `@namespace` rules are only in place once parsing finishes.
+	 */
 	get selectorText(): string {
-		return this.#selectorText;
+		return (this.#selectorText ??= serializeSelectorList(
+			this.#selectors,
+			sheetNamespaces(this.parentStyleSheet),
+		));
 	}
 
 	/** A selector that does not parse leaves the rule as it was. */
@@ -1697,7 +1707,7 @@ export class CSSStyleRule extends CSSGroupingRule {
 		const selectors = parseSelectorList(selector);
 		if (!selectors) return;
 		this.#selectors = selectors;
-		this.#selectorText = serializeSelectorList(selectors);
+		this.#selectorText = null;
 		notifyRule(this);
 	}
 
@@ -1713,11 +1723,22 @@ export class CSSStyleRule extends CSSGroupingRule {
 	get cssText(): string {
 		const declarations = this.#style.cssText;
 		const nested = serializeGroupRules(this);
-		if (nested) return `${this.#selectorText} { ${declarations}${nested}\n}`;
-		return declarations
-			? `${this.#selectorText} { ${declarations} }`
-			: `${this.#selectorText} { }`;
+		const selector = this.selectorText;
+		if (nested) return `${selector} { ${declarations}${nested}\n}`;
+		return declarations ? `${selector} { ${declarations} }` : `${selector} { }`;
 	}
+}
+
+/** The namespaces a sheet's `@namespace` rules declare. */
+function sheetNamespaces(sheet: CSSStyleSheet | null): SelectorNamespaces {
+	if (!sheet) return NO_NAMESPACES;
+	const namespaces: SelectorNamespaces = {default: null, prefixes: new Map()};
+	for (const rule of Array.from(sheet.cssRules)) {
+		if (!(rule instanceof CSSNamespaceRule)) continue;
+		if (rule.prefix === "") namespaces.default = rule.namespaceURI;
+		else namespaces.prefixes.set(rule.prefix, rule.namespaceURI);
+	}
+	return namespaces;
 }
 
 /** A rule whose body is a declaration block rather than a rule list. */
@@ -2046,7 +2067,9 @@ export class CSSContainerRule extends CSSTextConditionRule {
 
 	get containerQuery(): string {
 		const name = this.containerName;
-		return name ? this.conditionText.slice(name.length).trim() : this.conditionText;
+		return name
+			? this.conditionText.slice(name.length).trim()
+			: this.conditionText;
 	}
 }
 
@@ -2401,9 +2424,7 @@ export class CSSKeyframesRule extends CSSRule {
 	}
 
 	get cssText(): string {
-		const frames = this.#rules
-			.map((rule) => `\n  ${rule.cssText}`)
-			.join("");
+		const frames = this.#rules.map((rule) => `\n  ${rule.cssText}`).join("");
 		return `@keyframes ${this.#name} {${frames}\n}`;
 	}
 }
@@ -2637,30 +2658,112 @@ const constructedSheets = new WeakSet<CSSStyleSheet>();
  * invalid rather than merely unmatched.
  */
 const PSEUDO_CLASSES = new Set([
-	"active", "any-link", "autofill", "blank", "buffering", "checked",
-	"current", "default", "defined", "dir", "disabled", "empty", "enabled",
-	"first", "first-child", "first-of-type", "focus", "focus-visible",
-	"focus-within", "fullscreen", "future", "has", "host", "host-context",
-	"hover", "in-range", "indeterminate", "invalid", "is", "lang",
-	"last-child", "last-of-type", "left", "link", "local-link", "modal",
-	"muted", "not", "nth-child", "nth-col", "nth-last-child",
-	"nth-last-col", "nth-last-of-type", "nth-of-type", "only-child",
-	"only-of-type", "open", "optional", "out-of-range", "past", "paused",
-	"picture-in-picture", "placeholder-shown", "playing", "popover-open",
-	"read-only", "read-write", "required", "right", "root", "scope",
-	"seeking", "stalled", "state", "target", "target-current",
-	"target-within", "user-invalid", "user-valid", "valid", "visited",
-	"volume-locked", "where", "window-inactive",
+	"active",
+	"any-link",
+	"autofill",
+	"blank",
+	"buffering",
+	"checked",
+	"current",
+	"default",
+	"defined",
+	"dir",
+	"disabled",
+	"empty",
+	"enabled",
+	"first",
+	"first-child",
+	"first-of-type",
+	"focus",
+	"focus-visible",
+	"focus-within",
+	"fullscreen",
+	"future",
+	"has",
+	"host",
+	"host-context",
+	"hover",
+	"in-range",
+	"indeterminate",
+	"invalid",
+	"is",
+	"lang",
+	"last-child",
+	"last-of-type",
+	"left",
+	"link",
+	"local-link",
+	"modal",
+	"muted",
+	"not",
+	"nth-child",
+	"nth-col",
+	"nth-last-child",
+	"nth-last-col",
+	"nth-last-of-type",
+	"nth-of-type",
+	"only-child",
+	"only-of-type",
+	"open",
+	"optional",
+	"out-of-range",
+	"past",
+	"paused",
+	"picture-in-picture",
+	"placeholder-shown",
+	"playing",
+	"popover-open",
+	"read-only",
+	"read-write",
+	"required",
+	"right",
+	"root",
+	"scope",
+	"seeking",
+	"stalled",
+	"state",
+	"target",
+	"target-current",
+	"target-within",
+	"user-invalid",
+	"user-valid",
+	"valid",
+	"visited",
+	"volume-locked",
+	"where",
+	"window-inactive",
 ]);
 
 const PSEUDO_ELEMENTS = new Set([
-	"after", "backdrop", "before", "checkmark", "column", "cue",
-	"cue-region", "details-content", "file-selector-button", "first-letter",
-	"first-line", "grammar-error", "highlight", "marker", "part",
-	"picker", "picker-icon", "placeholder", "scroll-button", "scroll-marker",
-	"scroll-marker-group", "selection", "slotted", "spelling-error",
-	"target-text", "view-transition", "view-transition-group",
-	"view-transition-image-pair", "view-transition-new",
+	"after",
+	"backdrop",
+	"before",
+	"checkmark",
+	"column",
+	"cue",
+	"cue-region",
+	"details-content",
+	"file-selector-button",
+	"first-letter",
+	"first-line",
+	"grammar-error",
+	"highlight",
+	"marker",
+	"part",
+	"picker",
+	"picker-icon",
+	"placeholder",
+	"scroll-button",
+	"scroll-marker",
+	"scroll-marker-group",
+	"selection",
+	"slotted",
+	"spelling-error",
+	"target-text",
+	"view-transition",
+	"view-transition-group",
+	"view-transition-image-pair",
+	"view-transition-new",
 	"view-transition-old",
 ]);
 
@@ -2696,14 +2799,59 @@ function childrenOf(node: SelectorNode): SelectorNode[] {
  * A qualified name -- `ns|local`, `*|local`, `local` -- with each part
  * serialized as an identifier and `*` left as itself.
  */
-function serializeQualifiedName(name: string): string {
+function serializeQualifiedName(
+	name: string,
+	namespaces: SelectorNamespaces,
+): string {
 	const bar = name.lastIndexOf("|");
 	const local = bar === -1 ? name : name.slice(bar + 1);
 	const prefix = bar === -1 ? null : name.slice(0, bar);
-	const localText = local === "*" ? "*" : serializeCSSIdentifier(local);
+	const localText = local === "*" ? "*" : serializeIdentifierSource(local);
 	if (prefix === null) return localText;
-	const prefixText = prefix === "*" ? "*" : serializeCSSIdentifier(prefix);
-	return `${prefixText}|${localText}`;
+	// A prefix is written only where it says something an unprefixed name does
+	// not: `*|E` says "any namespace", which is what `E` already means with no
+	// default namespace declared, and a prefix bound to the default namespace
+	// resolves to the same namespace `E` does.
+	if (prefix === "*") {
+		return namespaces.default === null ? localText : `*|${localText}`;
+	}
+	if (prefix === "") {
+		// `|E` says "no namespace", which `E` means only without a default.
+		return namespaces.default === null ? localText : `|${localText}`;
+	}
+	const decoded = cssTree.ident.decode(prefix);
+	if (
+		namespaces.default !== null &&
+		namespaces.prefixes.get(decoded) === namespaces.default
+	) {
+		return localText;
+	}
+	return `${serializeCSSIdentifier(decoded)}|${localText}`;
+}
+
+/**
+ * The namespaces a selector is read against: the sheet's default namespace, if
+ * it declared one, and the prefixes it bound.
+ */
+interface SelectorNamespaces {
+	default: string | null;
+	prefixes: Map<string, string>;
+}
+
+const NO_NAMESPACES: SelectorNamespaces = {default: null, prefixes: new Map()};
+
+/**
+ * An attribute selector's name is never read against the default namespace: an
+ * unprefixed attribute is always in no namespace.
+ */
+const ATTRIBUTE_NAMESPACES: SelectorNamespaces = {
+	default: "",
+	prefixes: new Map(),
+};
+
+/** An identifier as the selector source spelled it, re-escaped canonically. */
+function serializeIdentifierSource(name: string): string {
+	return serializeCSSIdentifier(cssTree.ident.decode(name));
 }
 
 /**
@@ -2711,37 +2859,50 @@ function serializeQualifiedName(name: string): string {
  * each simple selector in its canonical spelling -- identifiers escaped,
  * attribute values quoted, combinators spaced, An+B reduced.
  */
-function serializeSelectorList(list: SelectorNode): string {
-	return childrenOf(list).map(serializeSelector).join(", ");
+function serializeSelectorList(
+	list: SelectorNode,
+	namespaces: SelectorNamespaces = NO_NAMESPACES,
+): string {
+	return childrenOf(list)
+		.map((selector) => serializeSelector(selector, namespaces))
+		.join(", ");
 }
 
-function serializeSelector(selector: SelectorNode): string {
+function serializeSelector(
+	selector: SelectorNode,
+	namespaces: SelectorNamespaces = NO_NAMESPACES,
+): string {
 	let out = "";
 	// A universal selector is written only when it stands alone in its
 	// compound, or carries a namespace prefix.
 	const parts = childrenOf(selector);
 	for (const [index, part] of parts.entries()) {
-		if (part.type === "TypeSelector" && part.name === "*") {
+		// A universal selector says nothing that the compound around it does
+		// not already say, so it is written only when it stands alone.
+		if (part.type === "TypeSelector") {
+			const text = serializeQualifiedName(part.name as string, namespaces);
 			const next = parts[index + 1];
-			const alone =
-				!next ||
-				next.type === "Combinator" ||
-				next.type === "PseudoElementSelector";
-			if (!alone) continue;
+			const alone = !next || next.type === "Combinator";
+			if (text === "*" && !alone) continue;
+			out += text;
+			continue;
 		}
-		out += serializeSimpleSelector(part);
+		out += serializeSimpleSelector(part, namespaces);
 	}
 	return out;
 }
 
-function serializeSimpleSelector(node: SelectorNode): string {
+function serializeSimpleSelector(
+	node: SelectorNode,
+	namespaces: SelectorNamespaces,
+): string {
 	switch (node.type) {
 		case "TypeSelector":
-			return serializeQualifiedName(node.name as string);
+			return serializeQualifiedName(node.name as string, namespaces);
 		case "ClassSelector":
-			return `.${serializeCSSIdentifier(node.name as string)}`;
+			return `.${serializeIdentifierSource(node.name as string)}`;
 		case "IdSelector":
-			return `#${serializeCSSIdentifier(node.name as string)}`;
+			return `#${serializeIdentifierSource(node.name as string)}`;
 		case "NestingSelector":
 			return "&";
 		case "Combinator": {
@@ -2750,7 +2911,7 @@ function serializeSimpleSelector(node: SelectorNode): string {
 		}
 		case "AttributeSelector": {
 			const name = node.name as {name: string};
-			let out = `[${serializeQualifiedName(name.name)}`;
+			let out = `[${serializeQualifiedName(name.name, ATTRIBUTE_NAMESPACES)}`;
 			if (node.matcher && node.value) {
 				const value =
 					node.value.type === "String"
@@ -2764,35 +2925,48 @@ function serializeSimpleSelector(node: SelectorNode): string {
 		case "PseudoClassSelector":
 		case "PseudoElementSelector": {
 			const colons = node.type === "PseudoElementSelector" ? "::" : ":";
-			const name = serializeCSSIdentifier(
+			const name = serializeIdentifierSource(
 				(node.name as string).toLowerCase(),
 			);
 			const args = childrenOf(node);
 			if (args.length === 0) return `${colons}${name}`;
-			return `${colons}${name}(${args.map(serializeSelectorArgument).join(", ")})`;
+			const text = args
+				.map((argument) => serializeSelectorArgument(argument, namespaces))
+				.join(", ");
+			return `${colons}${name}(${text})`;
 		}
 		default:
 			return "";
 	}
 }
 
-function serializeSelectorArgument(node: SelectorNode): string {
+function serializeSelectorArgument(
+	node: SelectorNode,
+	namespaces: SelectorNamespaces,
+): string {
 	switch (node.type) {
 		case "SelectorList":
-			return serializeSelectorList(node);
+			return serializeSelectorList(node, namespaces);
 		case "Selector":
-			return serializeSelector(node);
+			return serializeSelector(node, namespaces);
 		case "Nth": {
-			const nth = node.nth ? serializeSimpleSelector(node.nth) : "";
+			const nth = node.nth
+				? serializeSelectorArgument(node.nth, namespaces)
+				: "";
 			const of = node.selector
-				? ` of ${serializeSelectorList(node.selector)}`
+				? ` of ${serializeSelectorList(node.selector, namespaces)}`
 				: "";
 			return `${nth}${of}`;
 		}
 		case "AnPlusB":
 			return serializeAnPlusB(node.a ?? null, node.b ?? null);
-		case "Identifier":
-			return serializeCSSIdentifier((node.name as string) ?? "");
+		case "Identifier": {
+			// `even` and `odd` are An+B written in words.
+			const word = ((node.name as string) ?? "").toLowerCase();
+			if (word === "even") return "2n";
+			if (word === "odd") return "2n+1";
+			return serializeIdentifierSource((node.name as string) ?? "");
+		}
 		case "String":
 			return serializeCSSString(node.value?.value ?? "");
 		case "Raw":
@@ -2861,7 +3035,8 @@ function parseSelectorList(text: string): SelectorNode | null {
 		for (const child of childrenOf(node)) {
 			if (child.type === "SelectorList") checkList(child);
 			else if (child.type === "Selector") checkSelector(child);
-			else if (child.type === "Nth" && child.selector) checkList(child.selector);
+			else if (child.type === "Nth" && child.selector)
+				checkList(child.selector);
 		}
 	};
 	const checkSelector = (selector: SelectorNode): void => {
@@ -2893,7 +3068,9 @@ interface ParsedNode {
 	children?: {toArray(): ParsedNode[]} | null;
 }
 
-function nodesOf(container: {children?: {toArray(): ParsedNode[]} | null}): ParsedNode[] {
+function nodesOf(container: {
+	children?: {toArray(): ParsedNode[]} | null;
+}): ParsedNode[] {
 	return container.children ? container.children.toArray() : [];
 }
 
@@ -3063,21 +3240,18 @@ function convertRule(
 			return new CSSFontPaletteValuesRule(prelude, blockText(node), sheet);
 		case "keyframes":
 		case "-webkit-keyframes":
-			return new CSSKeyframesRule(
-				prelude,
-				sheet,
-				(rule) =>
-					nodesOf(node.block ?? {})
-						.filter((frame) => frame.type === "Rule")
-						.map(
-							(frame) =>
-								new CSSKeyframeRule(
-									preludeText(frame),
-									blockText(frame),
-									sheet,
-									rule,
-								),
-						),
+			return new CSSKeyframesRule(prelude, sheet, (rule) =>
+				nodesOf(node.block ?? {})
+					.filter((frame) => frame.type === "Rule")
+					.map(
+						(frame) =>
+							new CSSKeyframeRule(
+								preludeText(frame),
+								blockText(frame),
+								sheet,
+								rule,
+							),
+					),
 			);
 		// A charset rule is not exposed in a sheet's rule list, per CSSOM.
 		case "charset":
@@ -3375,6 +3549,17 @@ export function uaStyleSheet(): CSSStyleSheet {
 export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 	#element: Element;
 	#cssRules: ParsedCSSRule[];
+	/**
+	 * The manager to re-ask for matching rules, and the epoch it bumps when
+	 * every declaration goes stale at once. A computed style is LIVE: the
+	 * object an author holds keeps answering the element's current values
+	 * across class flips, rule insertions and sheet replacements, so it
+	 * re-resolves rather than being replaced.
+	 */
+	#manager: StyleManager | null = null;
+	#epoch: {value: number} | null = null;
+	#seenEpoch = 0;
+	#stale = false;
 	// Lazily resolved properties -- INCLUDING ones that resolved to "".
 	// Values here are COMPUTED strings, materialized once per property per
 	// generation; an initial-valued property (word-break, visibility, ...)
@@ -3385,10 +3570,35 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 	// needs no invalidation of its own.
 	#resolved = new Map<string, string>();
 
-	constructor(element: Element, cssRules: ParsedCSSRule[] = []) {
+	constructor(
+		element: Element,
+		cssRules: ParsedCSSRule[] = [],
+		manager?: StyleManager,
+	) {
 		super();
 		this.#element = element;
 		this.#cssRules = cssRules;
+		if (manager) {
+			this.#manager = manager;
+			this.#epoch = manager.styleEpoch;
+			this.#seenEpoch = this.#epoch.value;
+		}
+	}
+
+	/** Mark this declaration's values as belonging to a cascade that has moved on. */
+	invalidate(): void {
+		this.#stale = true;
+	}
+
+	/** Re-resolve against the current cascade when anything has changed. */
+	#refresh(): void {
+		if (!this.#manager) return;
+		const epoch = this.#epoch!.value;
+		if (!this.#stale && epoch === this.#seenEpoch) return;
+		this.#stale = false;
+		this.#seenEpoch = epoch;
+		this.#cssRules = this.#manager.matchingRules(this.#element);
+		this.#resolved.clear();
 	}
 
 	/**
@@ -3594,6 +3804,7 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 	// elements are only ever asked a handful of properties -- the
 	// composition walker asks each element `display` alone.
 	override getPropertyValue(property: string): string {
+		this.#refresh();
 		let value = this.#resolved.get(property);
 		if (value === undefined) {
 			// A shorthand answers as its longhands, each in its own computed
@@ -4219,6 +4430,12 @@ interface CounterScope {
 export class StyleManager {
 	#computedStyleCache = new WeakMap<Element, ComputedStyleDeclaration>();
 	/**
+	 * The counter every computed style watches. A bump means the whole cascade
+	 * changed -- new rules, a new sheet -- and every declaration handed out
+	 * must resolve again.
+	 */
+	#styleEpoch = {value: 0};
+	/**
 	 * Every shadow root whose <style> elements participate in the cascade.
 	 * jsdom never parses shadow stylesheets (shadowRoot.styleSheets does not
 	 * exist), so parsing walks these and feeds each <style>'s text through
@@ -4292,6 +4509,22 @@ export class StyleManager {
 
 		// Hook into methods that should invalidate cached styles
 		this.#setupInvalidationHooks();
+	}
+
+	/** The epoch a computed style watches to know its values have gone stale. */
+	get styleEpoch(): {value: number} {
+		return this.#styleEpoch;
+	}
+
+	/** The rules matching an element, in cascade order. */
+	matchingRules(element: Element): ParsedCSSRule[] {
+		if (
+			this.#stylesheetsDirty ||
+			this.#styleSheetCount() !== this.#parsedStyleSheetCount
+		) {
+			this.#parseStylesheets();
+		}
+		return this.#getMatchingRules(element);
 	}
 
 	setLayoutEngine(layoutEngine: LayoutEngine): void {
@@ -4496,6 +4729,9 @@ export class StyleManager {
 	 * Invalidate cached styles for an element (invalidation approach)
 	 */
 	#invalidateElementCaches(element: Element): void {
+		// A computed style an author still holds is the one this cache handed
+		// out, so it is told the cascade moved on rather than merely dropped.
+		this.#computedStyleCache.get(element)?.invalidate();
 		this.#computedStyleCache.delete(element);
 		this.#pseudoElementStyleCache.delete(element);
 		this.#counterScopes.delete(element);
@@ -4582,6 +4818,7 @@ export class StyleManager {
 			computedStyle = new ComputedStyleDeclaration(
 				element,
 				this.#getMatchingRules(element),
+				this,
 			);
 			this.#computedStyleCache.set(element, computedStyle);
 		}
@@ -4789,13 +5026,15 @@ export class StyleManager {
 		// they resolve onto the UA shadow tree's [part] elements (see
 		// #getMatchingRules) or the selection painter.
 		const pseudoMatch = selector.match(
-			/^(.+)(::(?:before|after|marker|first-line|first-letter|placeholder|selection|part\([^)]+\)))(.*)$/,
+			/^(.*)(::(?:before|after|marker|first-line|first-letter|placeholder|selection|part\([^)]+\)))(.*)$/,
 		);
 
 		if (pseudoMatch) {
 			const [, baseSelector, pseudoElement] = pseudoMatch;
 			const rule: ParsedCSSRule = {
-				selector: baseSelector.trim(),
+				// A pseudo-element written with no originating selector
+				// originates on every element, which is what `*` names.
+				selector: baseSelector.trim() || "*",
 				declarations,
 				important,
 				specificity,
@@ -5427,6 +5666,9 @@ export class StyleManager {
 	 * Clear all cached computed styles (nuclear option)
 	 */
 	clearCache(): void {
+		// Every computed style ever handed out re-resolves on its next read:
+		// there is no enumerating a WeakMap, so the epoch they all watch moves.
+		this.#styleEpoch.value++;
 		this.#computedStyleCache = new WeakMap();
 		this.#pseudoElementStyleCache = new WeakMap();
 		this.#counterScopes = new WeakMap();
