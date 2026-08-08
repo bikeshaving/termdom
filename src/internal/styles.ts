@@ -1606,6 +1606,8 @@ export class CSSStyleDeclaration implements DeclarationSource {
 	 * its own at-rule's grammar can judge its value.
 	 */
 	#descriptors = "";
+	/** Whether this block is one keyframe of an animation. */
+	#keyframe = false;
 	#declarations: CSSDeclaration[] = [];
 	/**
 	 * The declarations by name. A block holds one declaration per property, so
@@ -1626,12 +1628,14 @@ export class CSSStyleDeclaration implements DeclarationSource {
 			parentRule?: CSSRule;
 			onChange?: () => void;
 			descriptors?: string;
+			keyframe?: boolean;
 		} = {},
 	) {
 		this.#element = owner.element ?? null;
 		this.#parentRule = owner.parentRule ?? null;
 		this.#onChange = owner.onChange ?? null;
 		this.#descriptors = owner.descriptors ?? "";
+		this.#keyframe = Boolean(owner.keyframe);
 	}
 
 	/** Adopt the `style` attribute when it says something this object did not write. */
@@ -1722,6 +1726,9 @@ export class CSSStyleDeclaration implements DeclarationSource {
 	 * the property index does not describe descriptors.
 	 */
 	#supports(name: string): boolean {
+		// A keyframe's block is a step of an animation, and the animation's own
+		// properties describe the whole rather than the step.
+		if (this.#keyframe && KEYFRAME_EXCLUDED.test(name)) return false;
 		if (this.#descriptors) {
 			// An at-rule's block holds its own descriptors. One this engine
 			// has no descriptor list for holds whatever it is given, which is
@@ -2682,6 +2689,7 @@ export abstract class CSSDeclarationBlockRule extends CSSRule {
 			// A descriptor block declares descriptors, not CSS properties, so
 			// the property index does not gate what it may hold.
 			descriptors: atRule ?? "",
+			keyframe: this instanceof CSSKeyframeRule,
 		});
 		this.#style.cssText = cssText;
 	}
@@ -2894,6 +2902,12 @@ export class CSSFontPaletteValuesRule extends CSSDeclarationBlockRule {
 }
 
 /** One keyframe of an `@keyframes` rule: its offsets and its declarations. */
+/**
+ * The properties a keyframe cannot declare: an animation's own, which describe
+ * the animation rather than a step of it.
+ */
+const KEYFRAME_EXCLUDED = /^animation(?:-|$)/;
+
 export class CSSKeyframeRule extends CSSDeclarationBlockRule {
 	#keyText: string;
 
@@ -3345,6 +3359,7 @@ export class CSSKeyframesRule extends CSSRule {
 		this.#name = name.trim();
 		this.#ruleList = createRuleList(this.#rules);
 		if (build) this.#rules.push(...build(this));
+		return indexed(this, this.#rules);
 	}
 
 	get type(): number {
@@ -3401,7 +3416,16 @@ export class CSSKeyframesRule extends CSSRule {
 
 	get cssText(): string {
 		const frames = this.#rules.map((rule) => `\n  ${rule.cssText}`).join("");
-		return `@keyframes ${this.#name} {${frames}\n}`;
+		// An animation's name is a <custom-ident> or a <string>; the words a
+		// <custom-ident> excludes -- the CSS-wide keywords and `none`, which
+		// animation-name spends on "no animation" -- are written as the
+		// strings they are.
+		const reserved = this.#name.toLowerCase();
+		const name =
+			CSS_WIDE_KEYWORDS.has(reserved) || reserved === "none"
+				? serializeCSSString(this.#name)
+				: serializeCSSIdentifier(this.#name);
+		return `@keyframes ${name} {${frames}\n}`;
 	}
 }
 
@@ -5064,6 +5088,35 @@ export function pseudoStyleOf(
 		: EMPTY_COMPUTED_STYLE;
 }
 
+/**
+ * A computed style that answers by index. The properties it enumerates are its
+ * own `item`s -- every longhand, then the custom properties in effect -- and a
+ * live style's list changes under it, so the indices are answered on demand
+ * rather than written onto the object.
+ */
+function indexedDeclaration<T extends CSSStyleDeclaration>(declaration: T): T {
+	return new Proxy(declaration, {
+		get(target, property) {
+			if (typeof property === "string" && /^\d+$/.test(property)) {
+				return target.item(Number(property)) || undefined;
+			}
+			// The declaration itself is the receiver: its accessors read
+			// private fields, which a proxy receiver cannot reach.
+			const value = Reflect.get(target, property, target);
+			return typeof value === "function" ? value.bind(target) : value;
+		},
+		set(target, property, value) {
+			return Reflect.set(target, property, value, target);
+		},
+		has(target, property) {
+			if (typeof property === "string" && /^\d+$/.test(property)) {
+				return Number(property) < target.length;
+			}
+			return Reflect.has(target, property);
+		},
+	});
+}
+
 /** What a read answers before a document has a cascade behind it. */
 const EMPTY_COMPUTED_STYLE: ComputedStyle = {
 	computedValueOf(): string {
@@ -5506,6 +5559,7 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 		this.#stale = false;
 		this.#seenEpoch = this.#epoch.value;
 		this.#cssRules = this.#manager.matchingRules(this.#element);
+		this.#custom = null;
 		this.#resolved.clear();
 		this.#used?.clear();
 	}
@@ -5776,18 +5830,62 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 	/**
 	 * A computed style declares every supported longhand, so its indices name
 	 * them in the property index's order rather than the order reads happened
-	 * to resolve them in.
+	 * to resolve them in -- followed by the custom properties in effect on the
+	 * element, which are declarations too and have no place in that index.
 	 */
 	override item(index: number): string {
-		return CSS_LONGHANDS[index] ?? "";
+		return (
+			CSS_LONGHANDS[index] ??
+			this.#customNames()[index - CSS_LONGHANDS.length] ??
+			""
+		);
 	}
 
 	override get length(): number {
-		return CSS_LONGHANDS.length;
+		return CSS_LONGHANDS.length + this.#customNames().length;
 	}
 
 	override [Symbol.iterator](): IterableIterator<string> {
-		return CSS_LONGHANDS[Symbol.iterator]();
+		return [...CSS_LONGHANDS, ...this.#customNames()][Symbol.iterator]();
+	}
+
+	/** The names of the custom properties declared for this element. */
+	declaredCustomProperties(): string[] {
+		const names: string[] = [];
+		for (const rule of this.#cssRules) {
+			for (const name of Object.keys(rule.declarations)) {
+				if (name.startsWith("--") && !names.includes(name)) names.push(name);
+			}
+		}
+		for (const name of Object.keys(this.#inlineDeclarations().declarations)) {
+			if (name.startsWith("--") && !names.includes(name)) names.push(name);
+		}
+		return names;
+	}
+
+	#custom: string[] | null = null;
+
+	/**
+	 * The custom properties in effect here: this element's own, and every one
+	 * an ancestor declared -- a custom property inherits, so it is part of
+	 * this element's computed style whichever element declared it.
+	 */
+	#customNames(): string[] {
+		if (this.#stale || this.#epoch.value !== this.#seenEpoch) this.#refresh();
+		if (this.#custom) return this.#custom;
+		const names = new Set<string>();
+		for (
+			let element: Element | null = this.#element;
+			element;
+			element = compositionParentElement(element)
+		) {
+			const declaration = this.#manager?.declarationFor(element);
+			for (const name of declaration?.declaredCustomProperties() ?? []) {
+				names.add(name);
+			}
+		}
+		this.#custom = [...names];
+		return this.#custom;
 	}
 
 	override get cssText(): string {
@@ -6553,6 +6651,14 @@ interface CounterScope {
 export class StyleManager {
 	#computedStyleCache = new WeakMap<Element, ComputedStyleDeclaration>();
 	/**
+	 * The by-index view of each element's computed style, held so an author
+	 * reading `getComputedStyle(el)` twice gets one object both times.
+	 */
+	#indexedStyles = new WeakMap<
+		Element,
+		{of: ComputedStyleDeclaration; proxy: ComputedStyleDeclaration}
+	>();
+	/**
 	 * The counter every computed style watches. A bump means the whole cascade
 	 * changed -- new rules, a new sheet -- and every declaration handed out
 	 * must resolve again.
@@ -7047,15 +7153,18 @@ export class StyleManager {
 		}
 
 		if (pseudoElement) {
-			return this.pseudoDeclarationFor(
-				element,
-				pseudoElement,
+			return indexedDeclaration(
+				this.pseudoDeclarationFor(element, pseudoElement),
 			) as unknown as globalThis.CSSStyleDeclaration;
 		}
 
-		return this.declarationFor(
-			element,
-		) as unknown as globalThis.CSSStyleDeclaration;
+		let indexedStyle = this.#indexedStyles.get(element);
+		const declaration = this.declarationFor(element);
+		if (!indexedStyle || indexedStyle.of !== declaration) {
+			indexedStyle = {of: declaration, proxy: indexedDeclaration(declaration)};
+			this.#indexedStyles.set(element, indexedStyle);
+		}
+		return indexedStyle.proxy as unknown as globalThis.CSSStyleDeclaration;
 	}
 
 	/**

@@ -221,7 +221,8 @@ test("getComputedStyle is read-only and enumerates the property index", async ()
 	);
 
 	expect(style.length).toBeGreaterThan(400);
-	expect(style.item(0)).toBe("-webkit-appearance");
+	// Lexicographic, with the vendor-prefixed properties after the rest.
+	expect(style.item(0)).toBe("accent-color");
 	expect([...style].length).toBe(style.length);
 	expect(style.getPropertyPriority("margin-top")).toBe("");
 	expect(style.parentRule).toBeNull();

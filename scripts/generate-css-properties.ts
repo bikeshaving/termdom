@@ -100,9 +100,20 @@ for (const [shorthand, reset] of Object.entries(resetOnly)) {
 	shorthands[shorthand] = [...shorthands[shorthand], ...reset];
 }
 
-const longhands = supported.filter(
-	(name) => name !== "all" && !(name in shorthands),
-);
+/**
+ * A computed style enumerates its properties in lexicographic order, with the
+ * vendor-prefixed ones after the rest: a name beginning with `-` sorts after
+ * every name that does not.
+ */
+function propertyOrder(a: string, b: string): number {
+	if (a.startsWith("-") !== b.startsWith("-"))
+		return a.startsWith("-") ? 1 : -1;
+	return a < b ? -1 : 1;
+}
+
+const longhands = supported
+	.filter((name) => name !== "all" && !(name in shorthands))
+	.sort(propertyOrder);
 
 // `all` resets every longhand except the two that carry a document's writing
 // direction, which it is defined to leave alone. Its mdn-data entry describes
