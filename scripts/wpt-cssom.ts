@@ -19,6 +19,7 @@ import {fileURLToPath} from "node:url";
 import {
 	getBoxModel,
 	installInlineStyle,
+	MediaList,
 	StyleManager,
 } from "../src/internal/styles.ts";
 import {LayoutEngine} from "../src/internal/layout.ts";
@@ -277,6 +278,15 @@ async function runFile(file: string): Promise<Outcome> {
 	// as the viewport the tests assume.
 	layoutEngine.resize(800, 600);
 	installGeometry(dom.window, styleManager);
+	// matchMedia, which TermDOM installs live off the same evaluator. There is
+	// no resize under this harness, so the list a query answers with is the
+	// one it is created with.
+	(dom.window as unknown as Record<string, unknown>).matchMedia = (
+		query: string,
+	): {media: string; matches: boolean} => ({
+		media: new MediaList(String(query)).mediaText,
+		matches: styleManager.mediaQueryMatches(String(query)),
+	});
 
 	const outcome: Outcome = {file, harness: "TIMEOUT", subtests: []};
 	const done = new Promise<void>((resolve) => {

@@ -1242,10 +1242,21 @@ function cssSupports(conditionOrProperty: string, value?: string): boolean {
 
 /** The `CSS` namespace object: identifier escaping and support queries. */
 const CSSNamespace = {
-	escape: serializeCSSIdentifier,
+	escape(ident: string): string {
+		if (arguments.length === 0) {
+			throw typeError("escape requires an identifier");
+		}
+		return serializeCSSIdentifier(String(ident));
+	},
 	supports: cssSupports,
-	[Symbol.toStringTag]: "CSS",
 };
+// A namespace object's class string is its name, and it is not writable.
+Object.defineProperty(CSSNamespace, Symbol.toStringTag, {
+	value: "CSS",
+	writable: false,
+	enumerable: false,
+	configurable: true,
+});
 
 /** The declarations of a `style` attribute, a `cssText`, or a rule's block. */
 function parseDeclarationText(text: string): CSSDeclaration[] {
@@ -2000,6 +2011,11 @@ function indexed<T extends object>(list: T, items: readonly unknown[]): T {
 			const value = Reflect.get(target, property, target);
 			return typeof value === "function" ? value.bind(target) : value;
 		},
+		set(target, property, value) {
+			// As with a read: the list itself is the receiver, so a setter
+			// reaches the private fields behind it.
+			return Reflect.set(target, property, value, target);
+		},
 		has(target, property) {
 			if (typeof property === "string" && /^\d+$/.test(property)) {
 				return Number(property) < items.length;
@@ -2030,20 +2046,112 @@ function indexed<T extends object>(list: T, items: readonly unknown[]): T {
 }
 
 /** The media queries a sheet or an `@media` rule applies under. */
+/**
+ * The top-level `and`-separated conditions of one media query. Whitespace
+ * inside a feature's parentheses belongs to the feature.
+ */
+function splitMediaConditions(text: string): string[] {
+	const parts: string[] = [];
+	let depth = 0;
+	let start = 0;
+	for (let index = 0; index < text.length; index++) {
+		const character = text[index];
+		if (character === "(") depth++;
+		else if (character === ")") depth--;
+		else if (depth === 0 && WHITESPACE.has(character)) {
+			const joiner = /^\s+and\s+/i.exec(text.slice(index));
+			if (!joiner) continue;
+			parts.push(text.slice(start, index));
+			index += joiner[0].length - 1;
+			start = index + 1;
+		}
+	}
+	parts.push(text.slice(start));
+	return parts.map((part) => part.trim()).filter(Boolean);
+}
+
+/** One media feature, in its canonical spelling: `(min-width: 480px)`. */
+function serializeMediaFeature(feature: string): string {
+	const body = feature.slice(1, -1).trim();
+	const colon = body.indexOf(":");
+	if (colon === -1) return `(${body.toLowerCase()})`;
+	const name = body.slice(0, colon).trim().toLowerCase();
+	return `(${name}: ${serializeCSSValue(body.slice(colon + 1))})`;
+}
+
+/**
+ * One media query, in the spelling CSSOM writes: the type and the feature
+ * names case-folded, one space after each colon, and the media type dropped
+ * where it says nothing -- `all and (color)` is the query `(color)` is, while
+ * `not all and (color)` negates the pair and keeps it.
+ */
+function serializeMediaQuery(query: string): string {
+	const text = String(query ?? "").trim();
+	if (!text) return "";
+	const parts = splitMediaConditions(text);
+	if (parts.length === 0) return "";
+	let head = parts[0];
+	let modifier = "";
+	const prefixed = /^(not|only)\s+([^]*)$/i.exec(head);
+	if (prefixed) {
+		modifier = `${prefixed[1].toLowerCase()} `;
+		head = prefixed[2].trim();
+	}
+	const conditions = parts
+		.slice(1)
+		.map((part) =>
+			part.startsWith("(") ? serializeMediaFeature(part) : part.toLowerCase(),
+		);
+	if (head.startsWith("(")) {
+		return (
+			modifier + [serializeMediaFeature(head), ...conditions].join(" and ")
+		);
+	}
+	const type = head.toLowerCase();
+	if (type === "all" && !modifier && conditions.length > 0) {
+		return conditions.join(" and ");
+	}
+	return modifier + [type, ...conditions].join(" and ");
+}
+
+/** A media query list's queries: split on the commas no parenthesis encloses. */
+function splitMediaQueryList(text: string): string[] {
+	const queries: string[] = [];
+	let depth = 0;
+	let start = 0;
+	for (let index = 0; index < text.length; index++) {
+		const character = text[index];
+		if (character === "(") depth++;
+		else if (character === ")") depth--;
+		else if (character === "," && depth === 0) {
+			queries.push(text.slice(start, index));
+			start = index + 1;
+		}
+	}
+	queries.push(text.slice(start));
+	return queries;
+}
+
 export class MediaList {
+	/**
+	 * The queries, in their canonical spelling. Mutated in place: the indexed
+	 * getter reads this array, and a list an author holds keeps answering.
+	 */
 	#media: string[] = [];
 	#onChange: (() => void) | null;
 
 	constructor(mediaText = "", onChange?: () => void) {
 		this.#onChange = onChange ?? null;
 		this.#parse(mediaText);
+		return indexed(this, this.#media);
 	}
 
 	#parse(text: string): void {
-		this.#media = String(text ?? "")
-			.split(",")
-			.map((query) => query.trim())
-			.filter(Boolean);
+		this.#media.length = 0;
+		for (const query of splitMediaQueryList(String(text ?? ""))) {
+			const serialized = serializeMediaQuery(query);
+			if (serialized) this.#media.push(serialized);
+		}
 	}
 
 	get mediaText(): string {
@@ -2063,19 +2171,37 @@ export class MediaList {
 		return this.#media[index] ?? null;
 	}
 
+	/**
+	 * Append one query. The argument is parsed as a SINGLE media query, so a
+	 * comma-separated list parses to nothing and the call does nothing; a
+	 * query the list already holds is not held twice.
+	 */
 	appendMedium(medium: string): void {
-		const query = String(medium).trim();
+		if (arguments.length === 0) {
+			throw typeError("appendMedium requires a medium");
+		}
+		const text = String(medium);
+		if (splitMediaQueryList(text).length !== 1) return;
+		const query = serializeMediaQuery(text);
 		if (!query || this.#media.includes(query)) return;
 		this.#media.push(query);
 		this.#onChange?.();
 	}
 
+	/** Delete every query equal to this one, or throw when the list holds none. */
 	deleteMedium(medium: string): void {
-		const index = this.#media.indexOf(String(medium).trim());
-		if (index === -1) {
+		if (arguments.length === 0) {
+			throw typeError("deleteMedium requires a medium");
+		}
+		const text = String(medium);
+		const query =
+			splitMediaQueryList(text).length === 1 ? serializeMediaQuery(text) : "";
+		const kept = this.#media.filter((entry) => entry !== query);
+		if (kept.length === this.#media.length) {
 			throw domException(`No such medium: ${medium}`, "NotFoundError");
 		}
-		this.#media.splice(index, 1);
+		this.#media.length = 0;
+		this.#media.push(...kept);
 		this.#onChange?.();
 	}
 
@@ -4403,6 +4529,19 @@ export function installStyleSheets(window: DOMWindow): void {
 		CSSSupportsRule,
 		CSSImportRule,
 		CSSKeyframesRule,
+		CSSKeyframeRule,
+		CSSNamespaceRule,
+		CSSPageRule,
+		CSSFontFaceRule,
+		CSSCounterStyleRule,
+		CSSPropertyRule,
+		CSSFontPaletteValuesRule,
+		CSSFontFeatureValuesRule,
+		CSSContainerRule,
+		CSSLayerBlockRule,
+		CSSLayerStatementRule,
+		CSSScopeRule,
+		CSSStartingStyleRule,
 		MediaList,
 		CSSStyleDeclaration,
 		CSS: CSSNamespace,
