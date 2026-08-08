@@ -10,11 +10,14 @@
 import {test, expect} from "@b9g/libuild/test";
 import {
 	createHTMLDocument,
+	customElements,
 	DOMParser,
 	Event as DOMEvent,
+	HTMLElement,
 	MutationObserver,
 	NodeFilter,
 	parseHTMLDocument,
+	setAmbientDocument,
 	Text,
 } from "../src/internal/dom.js";
 
@@ -804,4 +807,264 @@ test("a bare Text belongs to the document that made it", () => {
 	const text = document.createTextNode("x");
 	expect(text.ownerDocument).toBe(document);
 	expect(new Text("y") instanceof Text).toBe(true);
+});
+
+/* ------------------------------------------------------------ shadow trees */
+
+test("a slot is assigned the host children whose name it carries", () => {
+	const document = make();
+	const host = document.createElement("div");
+	document.body.appendChild(host);
+	const shadow = host.attachShadow({mode: "open"});
+	const named = document.createElement("slot");
+	named.setAttribute("name", "a");
+	const fallback = document.createElement("slot");
+	shadow.appendChild(named);
+	shadow.appendChild(fallback);
+	const first = document.createElement("span");
+	first.setAttribute("slot", "a");
+	const second = document.createElement("span");
+	host.appendChild(first);
+	host.appendChild(second);
+	expect(named.assignedNodes()).toEqual([first]);
+	expect(fallback.assignedNodes()).toEqual([second]);
+	expect(first.assignedSlot).toBe(named);
+	first.removeAttribute("slot");
+	expect(named.assignedNodes()).toEqual([]);
+	expect(fallback.assignedNodes()).toEqual([first, second]);
+});
+
+test("only a host's own child is slotted, and only into the first slot of a name", () => {
+	const document = make();
+	const host = document.createElement("div");
+	const shadow = host.attachShadow({mode: "open"});
+	const first = document.createElement("slot");
+	const second = document.createElement("slot");
+	shadow.appendChild(first);
+	shadow.appendChild(second);
+	const wrapper = document.createElement("div");
+	const grandchild = document.createElement("span");
+	wrapper.appendChild(grandchild);
+	host.appendChild(wrapper);
+	expect(first.assignedNodes()).toEqual([wrapper]);
+	expect(second.assignedNodes()).toEqual([]);
+	expect(grandchild.assignedSlot).toBe(null);
+});
+
+test("a flattened assignment falls back to the slot's own children", () => {
+	const document = make();
+	const host = document.createElement("div");
+	const shadow = host.attachShadow({mode: "open"});
+	const slot = document.createElement("slot");
+	const fallback = document.createElement("i");
+	slot.appendChild(fallback);
+	shadow.appendChild(slot);
+	expect(slot.assignedNodes()).toEqual([]);
+	expect(slot.assignedNodes({flatten: true})).toEqual([fallback]);
+	const child = document.createElement("b");
+	host.appendChild(child);
+	expect(slot.assignedNodes({flatten: true})).toEqual([child]);
+});
+
+test("a manual slot takes the nodes it was handed, and only the host's own", () => {
+	const document = make();
+	const host = document.createElement("div");
+	const shadow = host.attachShadow({mode: "open", slotAssignment: "manual"});
+	const slot = document.createElement("slot");
+	shadow.appendChild(slot);
+	const inside = document.createElement("b");
+	const outside = document.createElement("i");
+	host.appendChild(inside);
+	slot.assign(outside, inside);
+	expect(slot.assignedNodes()).toEqual([inside]);
+	host.appendChild(outside);
+	expect(slot.assignedNodes()).toEqual([outside, inside]);
+	expect(() => slot.assign(document.createComment("x"))).toThrow();
+});
+
+test("slotchange arrives on the microtask, after the observer's records", async () => {
+	const document = make();
+	const host = document.createElement("div");
+	document.body.appendChild(host);
+	const shadow = host.attachShadow({mode: "open"});
+	const slot = document.createElement("slot");
+	shadow.appendChild(slot);
+	const order: string[] = [];
+	const observer = new MutationObserver(() => order.push("records"));
+	observer.observe(host, {childList: true});
+	slot.addEventListener("slotchange", () => order.push("slotchange"));
+	host.appendChild(document.createElement("b"));
+	expect(order).toEqual([]);
+	await nextMicrotask();
+	expect(order).toEqual(["records", "slotchange"]);
+	observer.disconnect();
+});
+
+test("an event leaves a shadow tree through the host, and only when composed", () => {
+	const document = make();
+	const host = document.createElement("div");
+	document.body.appendChild(host);
+	const shadow = host.attachShadow({mode: "open"});
+	const inner = document.createElement("span");
+	shadow.appendChild(inner);
+	const seen: string[] = [];
+	document.body.addEventListener("ping", (event: any) => {
+		seen.push(event.target === host ? "host" : "other");
+	});
+	inner.dispatchEvent(new DOMEvent("ping", {bubbles: true, composed: true}));
+	expect(seen).toEqual(["host"]);
+	inner.dispatchEvent(new DOMEvent("ping", {bubbles: true}));
+	expect(seen).toEqual(["host"]);
+});
+
+test("a closed tree is hidden from a composed path taken outside it", () => {
+	const document = make();
+	const host = document.createElement("div");
+	document.body.appendChild(host);
+	const shadow = host.attachShadow({mode: "closed"});
+	const inner = document.createElement("span");
+	shadow.appendChild(inner);
+	let outside: any[] = [];
+	let inside: any[] = [];
+	document.body.addEventListener("ping", (event: any) => {
+		outside = event.composedPath();
+	});
+	inner.addEventListener("ping", (event: any) => {
+		inside = event.composedPath();
+	});
+	inner.dispatchEvent(new DOMEvent("ping", {bubbles: true, composed: true}));
+	expect(inside[0]).toBe(inner);
+	expect(inside.includes(host)).toBe(true);
+	expect(outside.includes(inner)).toBe(false);
+	expect(outside[0]).toBe(host);
+});
+
+test("a slotted node reaches its slot before its parent", () => {
+	const document = make();
+	const host = document.createElement("div");
+	document.body.appendChild(host);
+	const shadow = host.attachShadow({mode: "open"});
+	const slot = document.createElement("slot");
+	shadow.appendChild(slot);
+	const child = document.createElement("b");
+	host.appendChild(child);
+	const path: string[] = [];
+	slot.addEventListener("ping", () => path.push("slot"));
+	shadow.addEventListener("ping", () => path.push("shadow"));
+	host.addEventListener("ping", () => path.push("host"));
+	child.dispatchEvent(new DOMEvent("ping", {bubbles: true, composed: true}));
+	expect(path).toEqual(["slot", "shadow", "host"]);
+});
+
+test("a shadow root is cloned with its host only when it is clonable", () => {
+	const document = make();
+	const plain = document.createElement("div");
+	plain.attachShadow({mode: "open"}).appendChild(document.createElement("b"));
+	expect(plain.cloneNode(true).shadowRoot).toBe(null);
+	const clonable = document.createElement("div");
+	clonable
+		.attachShadow({mode: "open", clonable: true})
+		.appendChild(document.createElement("b"));
+	const copy = clonable.cloneNode(true);
+	expect(copy.shadowRoot.firstChild.localName).toBe("b");
+	expect(copy.shadowRoot.clonable).toBe(true);
+});
+
+/* --------------------------------------------------------- custom elements */
+
+test("a reaction runs after the mutation that enqueued it, in tree order", () => {
+	const document = make();
+	setAmbientDocument(document);
+	const order: string[] = [];
+	customElements.define(
+		"order-one",
+		class extends HTMLElement {
+			connectedCallback(): void {
+				order.push(`connected ${(this as any).id}`);
+			}
+		},
+	);
+	const outer = document.createElement("div");
+	const first = document.createElement("order-one");
+	first.id = "first";
+	const second = document.createElement("order-one");
+	second.id = "second";
+	outer.appendChild(first);
+	outer.appendChild(second);
+	expect(order).toEqual([]);
+	document.body.appendChild(outer);
+	expect(order).toEqual(["connected first", "connected second"]);
+});
+
+test("an attribute reaction is enqueued only for an observed name", () => {
+	const document = make();
+	setAmbientDocument(document);
+	const seen: unknown[][] = [];
+	customElements.define(
+		"order-two",
+		class extends HTMLElement {
+			static get observedAttributes(): string[] {
+				return ["watched"];
+			}
+			attributeChangedCallback(...args: unknown[]): void {
+				seen.push(args);
+			}
+		},
+	);
+	const element = document.createElement("order-two");
+	element.setAttribute("ignored", "1");
+	expect(seen).toEqual([]);
+	element.setAttribute("watched", "1");
+	expect(seen).toEqual([["watched", null, "1", null]]);
+	element.removeAttribute("watched");
+	expect(seen[1]).toEqual(["watched", "1", null, null]);
+});
+
+test("an upgrade replays the attributes and the connection it missed", () => {
+	const document = make();
+	setAmbientDocument(document);
+	const seen: string[] = [];
+	const element = document.createElement("order-three");
+	element.setAttribute("a", "1");
+	document.body.appendChild(element);
+	class OrderThree extends HTMLElement {
+		static get observedAttributes(): string[] {
+			return ["a"];
+		}
+		attributeChangedCallback(name: string): void {
+			seen.push(`attribute ${name}`);
+		}
+		connectedCallback(): void {
+			seen.push("connected");
+		}
+	}
+	expect(element instanceof OrderThree).toBe(false);
+	customElements.define("order-three", OrderThree);
+	expect(element instanceof OrderThree).toBe(true);
+	expect(seen).toEqual(["attribute a", "connected"]);
+});
+
+test("a definition is rejected by name and by a constructor already used", () => {
+	expect(() =>
+		customElements.define("nohyphen", class extends HTMLElement {}),
+	).toThrow();
+	const constructor = class extends HTMLElement {};
+	customElements.define("order-four", constructor);
+	expect(() => customElements.define("order-five", constructor)).toThrow();
+	expect(() =>
+		customElements.define("order-four", class extends HTMLElement {}),
+	).toThrow();
+	expect(customElements.get("order-four")).toBe(constructor);
+	expect(customElements.getName(constructor)).toBe("order-four");
+});
+
+test("a constructor called on its own builds an element of its own name", () => {
+	const document = make();
+	setAmbientDocument(document);
+	class OrderSix extends HTMLElement {}
+	customElements.define("order-six", OrderSix);
+	const element: any = new OrderSix();
+	expect(element.localName).toBe("order-six");
+	expect(element.ownerDocument).toBe(document);
+	expect(() => new HTMLElement()).toThrow();
 });
