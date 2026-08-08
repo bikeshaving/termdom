@@ -371,7 +371,7 @@ test("a click long after the previous one does not fire dblclick", async () => {
 	termdom.dispose();
 });
 
-test("dragging across text builds a real Selection, paints inverse, and copies via OSC 52", async () => {
+test("dragging across text builds a real Selection and paints inverse, without touching the clipboard", async () => {
 	const proc = new MockMouseProcess();
 	const termdom = new TermDOM({transport: transportFromProcess(proc as any)});
 	const {document, window} = termdom;
@@ -395,9 +395,13 @@ test("dragging across text builds a real Selection, paints inverse, and copies v
 	// The highlight paints as inverse video (SGR 7).
 	expect(proc.written).toMatch(/\x1b\[[\d;]*7m/);
 
-	// Release copies the selection to the clipboard via OSC 52.
+	// Releasing a drag is only a selection: the clipboard is written by
+	// navigator.clipboard.writeText(), never as a side effect.
 	await proc.stdin.send("\x1b[<0;6;1m");
+	expect(proc.written).not.toContain("\x1b]52;");
+
 	const payload = Buffer.from("hello", "utf8").toString("base64");
+	await window.navigator.clipboard.writeText(selection.toString());
 	expect(proc.written).toContain(`\x1b]52;c;${payload}\x07`);
 
 	termdom.dispose();

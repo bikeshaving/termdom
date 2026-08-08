@@ -62,10 +62,12 @@ measured in cells. `<input type="password">` masks its value.
 
 ## Selection and the clipboard
 
-Drag to select, in the document or inside a field. Selection is styled through
-`::selection` using the `Highlight`/`HighlightText` system colors, and the
-result goes to your system clipboard over OSC 52 — which works across SSH,
-since it travels in-band.
+Drag to select, in the document or inside a field. Selection is styled
+through `::selection`. Copying is explicit:
+`navigator.clipboard.writeText(text)` carries the text to the system
+clipboard over OSC 52, which travels in-band and works across SSH. The
+terminal's own select-to-copy remains available as Shift+drag, which
+bypasses mouse reporting.
 
 ## Scrolling and the camera
 

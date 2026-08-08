@@ -37,6 +37,9 @@ Two members reach the terminal:
   calls `preventDefault()` overrides it.
 - **`document.title`** — setting it sets the terminal window title (OSC 2).
   The previous title is saved on `attach()` and restored on `dispose()`.
+- **`navigator.clipboard.writeText(text)`** — writes the system clipboard
+  over OSC 52; resolves when the transport has the bytes. `readText()`
+  rejects: terminals do not answer clipboard reads.
 
 ### `term.attach(transport?)`
 

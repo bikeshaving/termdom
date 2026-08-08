@@ -3,8 +3,10 @@
 **Build terminal apps with HTML, CSS and the DOM.**
 
 TermDOM is a JavaScript library that displays HTML and CSS in the terminal. It
-renders actual DOM nodes to the screen, and redraws when they are mutated, so a
-TUI or interactive CLI application can be written with frontend web technologies.
+renders actual DOM nodes to the screen, and redraws on mutation just like the
+real DOM. Bridging the DOM and terminal output allows for TUIs or interactive
+CLIs to be written with nearly any frontend web library or even vanilla
+JavaScript.
 
 ```sh
 npm install @b9g/termdom
@@ -50,32 +52,29 @@ setInterval(() => {
 
 ## Features
 
-- **Stylesheets** CSS from `<style>` elements and `style` attributes
-  cascades and inherits like it does in the browser, and resolves to
-  terminal colors and text attributes.
-- **Layout** The CSS box model, flexbox, and table layout. Sizes resolve to
-  whole cells: `1ch` is one column, `1px` is one row.
+- **Stylesheets** CSS from `<style>` elements and `style` attributes cascade
+  and inherit like they do in the browser, and are transformed to ANSI commands
+  for colors and text decoration.
+- **Layout** The CSS box model, flexbox, and table layout are all supported.
 - **Text** CJK, emoji, and combining characters take their correct widths.
   Hebrew and Arabic render in visual order with contextual shaping, and the
   caret moves by grapheme.
 - **Scrolling** Documents taller than the terminal scroll with
-  `window.scrollTo()` and `element.scrollIntoView()`. Earlier output flows
-  into the terminal's own scrollback.
-- **Events** Events for keys, mouse, focus, and paste fire on elements, the
-  document, and the window, pulled from STDIN.
+  `window.scrollTo()` and `element.scrollIntoView()`.
+- **Events** Events for keys, mouse, focus, and paste fire on relevant
+  elements, the document, and the window, and are based on STDIN.
 - **DOM utilities** `document.querySelector()`, `MutationObserver`,
   `ResizeObserver`, `Element.getBoundingClientRect()` are hooked up to the
   layout engine and viewport, following browser standards.
 - **Forms** `<input>`, `<textarea>`, `<select>`, checkboxes, and radios come
   with default behavior and terminal-native looks, and can be restyled with
-  ordinary CSS.
+  ordinary CSS. Tab navigation and `:focus` styles are supported.
 - **Web Components** `customElements.define()`, `attachShadow()`, `<slot>`,
   `:host`, and scoped styles behave like the browser's. The built-in form
   controls are themselves shadow trees.
-- **Selection** Drag to select, styled with `::selection`. Selected text is
-  copied to the system clipboard over OSC 52, including across SSH.
-- **Fullscreen** `element.requestFullscreen()` takes the alternate screen.
-  Exiting restores the shell and its scrollback.
+- **Selection** Drag to select, styled with `::selection`.
+- **Fullscreen** `Element.requestFullscreen()` renders an element to the
+  alternate screen. Exiting restores the shell and its scrollback.
 
 ## Examples
 

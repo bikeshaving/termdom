@@ -764,6 +764,38 @@ export class TermDOM {
 			});
 		}
 
+		// navigator.clipboard: writeText() carries the text to the system
+		// clipboard over OSC 52, which travels in-band -- across SSH too.
+		// Terminals without OSC 52 ignore it; there is no way to know, so the
+		// promise resolves when the transport has the bytes. readText()
+		// rejects: terminals do not answer clipboard queries to untrusted
+		// programs, and pretending otherwise would hang.
+		Object.defineProperty(window.navigator, "clipboard", {
+			value: {
+				writeText: (text: string): Promise<void> => {
+					if (!termDOM.#attached || !termDOM.#interactive) {
+						return Promise.reject(
+							new (window as any).DOMException(
+								"clipboard requires an attached interactive terminal",
+								"NotAllowedError",
+							),
+						);
+					}
+					return termDOM.#session.write(
+						`\x1b]52;c;${Buffer.from(String(text), "utf8").toString("base64")}\x07`,
+					);
+				},
+				readText: (): Promise<string> =>
+					Promise.reject(
+						new (window as any).DOMException(
+							"the terminal does not expose clipboard reads",
+							"NotAllowedError",
+						),
+					),
+			},
+			configurable: true,
+		});
+
 		// document.close() finalizes the document: flush the live region into the
 		// terminal's scrollback and seal it -- the SSR res.end() of the terminal.
 		// A later DOM mutation starts a fresh document below the sealed block. This
@@ -2395,33 +2427,19 @@ export class TermDOM {
 		}
 
 		target.dispatchEvent(new this.window.MouseEvent("mouseup", eventInit));
-		// Releasing a selection drag offers the selected text to the system
-		// clipboard via OSC 52 -- select-to-copy, the terminal's own
-		// convention (a Cmd/Ctrl+C chord never reaches the PTY). Terminals
-		// without OSC 52 support ignore the sequence entirely.
+		// A selection is only a selection: writing the clipboard is a
+		// deliberate act, through navigator.clipboard. The terminal's own
+		// select-to-copy remains available as Shift+drag, which bypasses
+		// mouse reporting.
 		let selectedByDrag = false;
 		if (this.#fieldDragAnchor) {
-			// A field drag ends the same way: the field's selected text goes
-			// to the system clipboard, select-to-copy.
-			const {element: fieldElement} = this.#fieldDragAnchor;
 			this.#fieldDragAnchor = null;
-			const from = fieldElement.selectionStart ?? 0;
-			const to = fieldElement.selectionEnd ?? 0;
-			if (to > from) {
-				const text = fieldElement.value.slice(from, to);
-				void this.#session.write(
-					`\x1b]52;c;${Buffer.from(text, "utf8").toString("base64")}\x07`,
-				);
-			}
 		}
 		if (this.#selectionDragAnchor) {
 			this.#selectionDragAnchor = null;
 			const text = this.window.getSelection()?.toString() ?? "";
 			if (text.length > 0) {
 				selectedByDrag = true;
-				void this.#session.write(
-					`\x1b]52;c;${Buffer.from(text, "utf8").toString("base64")}\x07`,
-				);
 			}
 		}
 		// A drag that selected text is not a click: browsers suppress
