@@ -66,7 +66,9 @@
     "bidi-js": "1.0.3",
     "css-tree": "^3.2.1",
     "jsdom": "^26.1.0",
-    "linebreak": "1.1.0"
+    "linebreak": "1.1.0",
+    "nwsapi": "^2.2.21",
+    "parse5": "^7.3.0"
   },
   "devDependencies": {
     "@b9g/crank": "^0.7.1",

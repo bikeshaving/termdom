@@ -119,6 +119,28 @@ declare module "jsdom/lib/jsdom/living/helpers/custom-elements.js" {
 	export default customElements;
 }
 
+declare module "nwsapi" {
+	/**
+	 * The CSS Selectors engine dom.ts rents rather than writing a matcher.
+	 *
+	 * The factory takes the "global" a document lives in -- here an object
+	 * carrying the document and the DOMException constructor to throw with --
+	 * and returns the engine bound to it.
+	 */
+	export interface NWSAPI {
+		match(selector: string, element: unknown, callback?: unknown): boolean;
+		first(selector: string, context?: unknown, callback?: unknown): unknown;
+		select(selector: string, context?: unknown, callback?: unknown): unknown[];
+		ancestor(selector: string, context?: unknown, callback?: unknown): unknown;
+		configure(options: Record<string, boolean>): void;
+	}
+
+	export default function nwsapi(global: {
+		document: unknown;
+		DOMException?: unknown;
+	}): NWSAPI;
+}
+
 declare module "arabic-persian-reshaper" {
 	interface Shaper {
 		convertArabic(text: string): string;
