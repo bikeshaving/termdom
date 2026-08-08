@@ -566,16 +566,20 @@ function normalizeValue(property: string, declared: string): string {
  * handful of lengths, the same keywords on every element -- so the same pair
  * recurs across thousands of elements and every generation after the first.
  */
-const computedValues = new Map<string, string>();
+const computedValues = new Map<string, Map<string, string>>();
 
 function computedValue(property: string, declared: string): string {
 	if (!declared) return "";
-	const key = `${property} ${declared}`;
-	let value = computedValues.get(key);
+	let byValue = computedValues.get(property);
+	if (!byValue) {
+		byValue = new Map();
+		computedValues.set(property, byValue);
+	}
+	let value = byValue.get(declared);
 	if (value === undefined) {
 		value = normalizeValue(property, declared);
-		if (computedValues.size >= 8192) computedValues.clear();
-		computedValues.set(key, value);
+		if (byValue.size >= 512) byValue.clear();
+		byValue.set(declared, value);
 	}
 	return value;
 }
@@ -628,18 +632,20 @@ export class ComputedStyleDeclaration {
 			return (this.#inline = EMPTY_DECLARATIONS);
 		}
 		const authored: Record<string, string> = {};
-		const authoredImportant: Record<string, string> = {};
+		let authoredImportant: Record<string, string> | null = null;
 		for (let i = 0; i < style.length; i++) {
 			const property = style[i];
 			const value = style.getPropertyValue(property);
 			authored[property] = value;
 			if (style.getPropertyPriority(property) === "important") {
-				authoredImportant[property] = value;
+				(authoredImportant ??= {})[property] = value;
 			}
 		}
 		const important: Record<string, boolean> = {};
-		for (const property of Object.keys(expandShorthands(authoredImportant))) {
-			important[property] = true;
+		if (authoredImportant) {
+			for (const property of Object.keys(expandShorthands(authoredImportant))) {
+				important[property] = true;
+			}
 		}
 		return (this.#inline = {
 			declarations: expandShorthands(authored),
