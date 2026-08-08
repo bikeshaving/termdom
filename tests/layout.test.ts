@@ -2398,6 +2398,23 @@ test("an absolute box pinned on both sides fills the space between them", () => 
 	expect(layout.width).toBe(35);
 });
 
+test("an overlay with no insets paints on the row its flow position names", async () => {
+	const terminal = new MockProcess({cols: 30, rows: 8});
+	const termdom = new TermDOM({transport: terminal.transport});
+	termdom.document.body.innerHTML =
+		`<div style="position: relative;">` +
+		`<div>first</div><div>second</div>` +
+		`<div style="position: absolute;">OVERLAY</div>` +
+		`</div>`;
+	await nextFrame(termdom);
+
+	const rows = terminal.getPlainText().split("\n");
+	expect(rows[0]).toContain("first");
+	expect(rows[1]).toContain("second");
+	expect(rows[2]).toContain("OVERLAY");
+	termdom.dispose();
+});
+
 test("a resolved value measures the layout the last style write asked for", async () => {
 	const {termdom, document} = createTermDOM(`<div id="target">content</div>`);
 	await nextFrame(termdom);
