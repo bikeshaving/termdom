@@ -24,8 +24,7 @@ export default {
 			const cells = Math.round(n / 4);
 			document.getElementById("done")!.textContent = "█".repeat(cells);
 			document.getElementById("rest")!.textContent = "░".repeat(25 - cells);
-			document.getElementById("pct")!.textContent =
-				String(n).padStart(3) + "%";
+			document.getElementById("pct")!.textContent = String(n).padStart(3) + "%";
 		};
 		const interval = setInterval(tick, 50);
 		tick();
