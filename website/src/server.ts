@@ -26,6 +26,7 @@ import logo from "../static/logo.svg" with {assetBase: "/static/", assetName: "[
 
 // Recordings keep stable names: they are referenced from prose and are worth
 // being able to link to directly.
+import readmeCast from "../static/casts/readme.cast" with {assetBase: "/static/", assetName: "[name].[ext]"};
 import animatedCast from "../static/casts/animated.cast" with {assetBase: "/static/", assetName: "[name].[ext]"};
 import treeCast from "../static/casts/tree.cast" with {assetBase: "/static/", assetName: "[name].[ext]"};
 import formCast from "../static/casts/form.cast" with {assetBase: "/static/", assetName: "[name].[ext]"};
@@ -41,6 +42,7 @@ export const assets = {
 };
 
 export const staticURLs: Record<string, string> = {
+	"casts/readme.cast": readmeCast,
 	"casts/animated.cast": animatedCast,
 	"casts/tree.cast": treeCast,
 	"casts/form.cast": formCast,

@@ -7,7 +7,7 @@ properties. Every row is a probe -- the feature applied to a real
 document and rendered, with the row recording whether the output
 changed.
 
-93 features supported, 118 probed and unsupported,
+94 features supported, 117 probed and unsupported,
 301 CSS properties not yet probed.
 
 ## DOM APIs
@@ -196,7 +196,7 @@ changed.
 | `list-style-type` | yes |
 | `list-style-position` | yes |
 | `list-style` | yes |
-| `border-collapse` | no (no effect) |
+| `border-collapse` | yes |
 | `table-layout` | no (no effect) |
 | `vertical-align` | no (no effect) |
 | `content` | no (no effect) |

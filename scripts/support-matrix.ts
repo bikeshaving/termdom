@@ -224,7 +224,10 @@ const FEATURES: Record<string, Feature> = {
 			'<ul id="parent"><li id="probe">item</li><li id="sibling">two</li></ul>',
 	},
 	"border-collapse": {
-		value: "collapse",
+		// The engine collapses borders by default, so `collapse` matches the
+		// baseline and shows no change; `separate` is what the property has
+		// to move.
+		value: "separate",
 		target: "parent",
 		setup: "#parent td { border: 1px solid; }",
 		markup:
@@ -537,7 +540,12 @@ function cssProbe(property: string, feature: Feature, category: string): Probe {
 			? PROBE_MARKUP.replace("probe text", feature.text)
 			: PROBE_MARKUP);
 	const target = feature.target === "parent" ? "#parent" : "#probe";
-	const context = `${BASE_CSS} ${feature.setup ?? ""}`;
+	// BASE_CSS blocks out the default #parent; a probe that brings its own
+	// markup (a real <table>, say) brings its own context and must not have
+	// display: block forced onto its root.
+	const context = feature.markup
+		? (feature.setup ?? "")
+		: `${BASE_CSS} ${feature.setup ?? ""}`;
 	return {
 		name: property,
 		category,
