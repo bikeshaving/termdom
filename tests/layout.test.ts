@@ -2308,6 +2308,111 @@ test("percentage values in positioning", () => {
 	expect(layout.height).toBe(50);
 });
 
+// =============================================================================
+// STATIC POSITION AND SHRINK-TO-FIT
+// An out-of-flow box with no inset on an axis sits where it would have been in
+// flow (CSS 2 §10.3.7), and one with `width: auto` and an `auto` inset takes
+// shrink-to-fit width (§10.3.7 again, through the same measurement an
+// inline-block takes).
+// =============================================================================
+
+test("an absolute box with auto insets sits after its previous sibling", () => {
+	const {layoutEngine} = createLayoutEngine(`
+		<div style="position: relative;">
+			<div style="height: 3ch;">first</div>
+			<div id="target" style="position: absolute;">X</div>
+		</div>
+	`);
+
+	const target = layoutEngine.window.document.getElementById("target")!;
+	const layout = layoutEngine.nodeMap.get(target)!.getComputedLayout();
+
+	expect(layout.top).toBe(3);
+	expect(layout.left).toBe(0);
+});
+
+test("the static position is measured through the box's own flow parent", () => {
+	const {layoutEngine} = createLayoutEngine(`
+		<div style="position: relative; padding: 1ch;">
+			<div style="height: 2ch;">first</div>
+			<div style="margin-left: 3ch;">
+				<div id="target" style="position: absolute;">X</div>
+			</div>
+		</div>
+	`);
+
+	const target = layoutEngine.window.document.getElementById("target")!;
+	const layout = layoutEngine.nodeMap.get(target)!.getComputedLayout();
+
+	// The containing block's padding, the flow parent's margin, and the two
+	// rows the first sibling took.
+	expect(layout.left).toBe(4);
+	expect(layout.top).toBe(3);
+});
+
+test("an absolute box in an inline context takes the line's position", () => {
+	const {layoutEngine} = createLayoutEngine(
+		`<div style="position: relative;">word <span id="target" style="position: absolute;">X</span> rest</div>`,
+	);
+
+	const target = layoutEngine.window.document.getElementById("target")!;
+	const layout = layoutEngine.nodeMap.get(target)!.getComputedLayout();
+
+	// After "word ", on the line the box would have joined.
+	expect(layout.left).toBe(5);
+	expect(layout.top).toBe(0);
+	// Its own content is a run of its own: the box is blockified, so the line
+	// it left ends at its edge.
+	expect(layout.width).toBe(1);
+});
+
+test("an explicit inset still wins over the static position", () => {
+	const {layoutEngine} = createLayoutEngine(`
+		<div style="position: relative;">
+			<div style="height: 3ch;">first</div>
+			<div id="target" style="position: absolute; top: 0;">X</div>
+		</div>
+	`);
+
+	const target = layoutEngine.window.document.getElementById("target")!;
+	expect(layoutEngine.nodeMap.get(target)!.getComputedLayout().top).toBe(0);
+});
+
+test("an absolute box with an auto inset shrinks to fit its content", () => {
+	const {layoutEngine} = createLayoutEngine(
+		`<div style="position: relative; width: 40ch;"><div id="target" style="position: absolute; left: 0;">hello</div></div>`,
+	);
+
+	const target = layoutEngine.window.document.getElementById("target")!;
+	expect(layoutEngine.nodeMap.get(target)!.getComputedLayout().width).toBe(5);
+});
+
+test("an absolute box pinned on both sides fills the space between them", () => {
+	const {layoutEngine} = createLayoutEngine(
+		`<div style="position: relative; width: 40ch;"><div id="target" style="position: absolute; left: 2ch; right: 3ch;">hello</div></div>`,
+	);
+
+	const target = layoutEngine.window.document.getElementById("target")!;
+	const layout = layoutEngine.nodeMap.get(target)!.getComputedLayout();
+	expect(layout.left).toBe(2);
+	expect(layout.width).toBe(35);
+});
+
+test("a resolved value measures the layout the last style write asked for", async () => {
+	const {termdom, document} = createTermDOM(`<div id="target">content</div>`);
+	await nextFrame(termdom);
+	const {window} = termdom;
+	const target = document.getElementById("target")! as HTMLElement;
+
+	// A used value is measured, so the write before it has to reach layout:
+	// the read takes the same flush a rect read does.
+	target.style.paddingLeft = "4ch";
+	target.style.width = "10ch";
+	expect(window.getComputedStyle(target).width).toBe("10px");
+	target.style.width = "20ch";
+	expect(window.getComputedStyle(target).width).toBe("20px");
+});
+
 test("auto values reset positioning properties", () => {
 	const {layoutEngine} = createLayoutEngine(
 		`<div style="position: absolute; left: auto; top: auto; right: 10ch; bottom: 5ch;">Auto positioning</div>`,

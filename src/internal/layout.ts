@@ -2749,11 +2749,14 @@ export class LayoutEngine {
 
 	/**
 	 * A counter that moves whenever geometry could have: every layout pass and
-	 * every invalidation bumps it. A resolved value memoizes against it, the
-	 * way a rect read does.
+	 * every invalidation bumps it, and so does every cascade invalidation --
+	 * a style written and then measured has moved geometry the engine has not
+	 * been told about yet, and a counter that stood still there would hand the
+	 * reader the layout standing behind the write. A resolved value memoizes
+	 * against it, the way a rect read does.
 	 */
 	get layoutEpoch(): number {
-		return this.#boxEpoch;
+		return currentCompositionEpoch() + this.#boxEpoch;
 	}
 
 	/**
@@ -2966,7 +2969,9 @@ export class LayoutEngine {
 	): {left: number; top: number} | null {
 		const container = this.#runContainerOf(element);
 		if (!container) return null;
-		if (NO_STATIC_POSITION_DISPLAYS.has(getPropertyValue(container, "display"))) {
+		if (
+			NO_STATIC_POSITION_DISPLAYS.has(getPropertyValue(container, "display"))
+		) {
 			return null;
 		}
 		const containerNode =
@@ -3039,7 +3044,10 @@ export class LayoutEngine {
 	 * no box in it: the trailing edge of the last content placed before that
 	 * node, and the top of the line it landed on, relative to the run's box.
 	 */
-	#inlineCursorBefore(run: InlineBox, element: Element): {x: number; y: number} {
+	#inlineCursorBefore(
+		run: InlineBox,
+		element: Element,
+	): {x: number; y: number} {
 		const breakResult = run.breakResult;
 		if (!breakResult) return ZERO_OFFSET;
 		let cursor = ZERO_OFFSET;
