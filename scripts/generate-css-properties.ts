@@ -70,11 +70,16 @@ for (const name of directLonghands.keys()) {
 	}
 }
 
-const longhands = supported.filter((name) => !(name in shorthands));
+const longhands = supported.filter(
+	(name) => name !== "all" && !(name in shorthands),
+);
 
-// `all` is the shorthand of every longhand that is not a custom property. Its
-// mdn-data entry describes the behaviour in prose rather than a longhand list.
-shorthands["all"] = longhands.slice();
+// `all` resets every longhand except the two that carry a document's writing
+// direction, which it is defined to leave alone. Its mdn-data entry describes
+// the behaviour in prose rather than as a longhand list.
+shorthands["all"] = longhands.filter(
+	(name) => name !== "direction" && name !== "unicode-bidi",
+);
 
 const inherited = longhands.filter((name) => properties[name].inherited);
 

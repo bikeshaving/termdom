@@ -33,7 +33,7 @@ test("insertRule on a style element's sheet repaints", async () => {
 
 	const box = dom.document.querySelector(".box")!;
 	expect(dom.window.getComputedStyle(box).getPropertyValue("color")).toBe(
-		"red",
+		"rgb(255, 0, 0)",
 	);
 	expect(terminal.getScreenContents()).toContain("38;2;255;0;0");
 
@@ -56,7 +56,7 @@ test("adoptedStyleSheets with replaceSync repaints", async () => {
 
 	const box = dom.document.querySelector(".box")!;
 	expect(dom.window.getComputedStyle(box).getPropertyValue("color")).toBe(
-		"red",
+		"rgb(255, 0, 0)",
 	);
 	expect(terminal.getScreenContents()).toContain("38;2;255;0;0");
 
@@ -64,7 +64,7 @@ test("adoptedStyleSheets with replaceSync repaints", async () => {
 	sheet.replaceSync(".box { color: blue; }");
 	await nextFrame(dom);
 	expect(dom.window.getComputedStyle(box).getPropertyValue("color")).toBe(
-		"blue",
+		"rgb(0, 0, 255)",
 	);
 
 	dom.document.adoptedStyleSheets = [];
@@ -87,13 +87,13 @@ test("writing a rule's declaration block repaints", async () => {
 
 	const box = dom.document.querySelector(".box")!;
 	expect(dom.window.getComputedStyle(box).getPropertyValue("color")).toBe(
-		"blue",
+		"rgb(0, 0, 255)",
 	);
 
 	rule.selectorText = ".nothing";
 	await nextFrame(dom);
 	expect(dom.window.getComputedStyle(box).getPropertyValue("color")).not.toBe(
-		"blue",
+		"rgb(0, 0, 255)",
 	);
 
 	dom.dispose();
@@ -370,13 +370,13 @@ test("a disabled sheet contributes nothing to the cascade", async () => {
 	await nextFrame(dom);
 	const box = dom.document.querySelector(".box")!;
 	expect(dom.window.getComputedStyle(box).getPropertyValue("color")).toBe(
-		"red",
+		"rgb(255, 0, 0)",
 	);
 
 	style.sheet!.disabled = true;
 	await nextFrame(dom);
 	expect(dom.window.getComputedStyle(box).getPropertyValue("color")).not.toBe(
-		"red",
+		"rgb(255, 0, 0)",
 	);
 
 	dom.dispose();
@@ -393,7 +393,7 @@ test("a shadow root's stylesheets and adopted sheets are the same CSSOM", async 
 	expect(root.styleSheets[0]).toBe(root.querySelector("style")!.sheet);
 	const span = root.querySelector("span")!;
 	expect(dom.window.getComputedStyle(span).getPropertyValue("color")).toBe(
-		"red",
+		"rgb(255, 0, 0)",
 	);
 
 	const sheet = new dom.window.CSSStyleSheet();
@@ -402,7 +402,7 @@ test("a shadow root's stylesheets and adopted sheets are the same CSSOM", async 
 	await nextFrame(dom);
 	expect(root.adoptedStyleSheets[0]).toBe(sheet);
 	expect(dom.window.getComputedStyle(span).getPropertyValue("color")).toBe(
-		"blue",
+		"rgb(0, 0, 255)",
 	);
 
 	dom.dispose();

@@ -353,13 +353,13 @@ test("css: var() resolves custom properties, inherited from an ancestor", async 
 			`<style>:root{--fg:red} p{color:var(--fg)}</style><p>x</p>`,
 			"p",
 		),
-	).toBe("red");
+	).toBe("rgb(255, 0, 0)");
 });
 
 test("css: var() falls back when the custom property is unset", async () => {
 	expect(
 		await colorOf(`<p style="color:var(--missing, blue)">x</p>`, "p"),
-	).toBe("blue");
+	).toBe("rgb(0, 0, 255)");
 });
 
 test("css: !important wins the cascade over higher specificity", async () => {
@@ -368,7 +368,7 @@ test("css: !important wins the cascade over higher specificity", async () => {
 			`<style>p{color:blue!important} #a{color:green}</style><p id="a">x</p>`,
 			"#a",
 		),
-	).toBe("blue");
+	).toBe("rgb(0, 0, 255)");
 });
 
 test("css: an important inline style beats an important stylesheet rule", async () => {
@@ -377,13 +377,13 @@ test("css: an important inline style beats an important stylesheet rule", async 
 			`<style>p{color:blue!important}</style><p style="color:orange!important">x</p>`,
 			"p",
 		),
-	).toBe("orange");
+	).toBe("rgb(255, 165, 0)");
 });
 
 test("css: @media rules apply when the query matches", async () => {
 	expect(
 		await colorOf(`<style>@media all{p{color:orange}}</style><p>x</p>`, "p"),
-	).toBe("orange");
+	).toBe("rgb(255, 165, 0)");
 });
 
 test("css: @media rules do not apply when the query fails", async () => {
@@ -392,7 +392,7 @@ test("css: @media rules do not apply when the query fails", async () => {
 			`<style>@media (min-width: 999999px){p{color:orange}}</style><p>x</p>`,
 			"p",
 		),
-	).not.toBe("orange");
+	).not.toBe("rgb(255, 165, 0)");
 });
 
 test("css: color:inherit resolves the parent's value", async () => {
@@ -401,5 +401,5 @@ test("css: color:inherit resolves the parent's value", async () => {
 			`<div style="color:purple"><span id="s" style="color:inherit">x</span></div>`,
 			"#s",
 		),
-	).toBe("purple");
+	).toBe("rgb(128, 0, 128)");
 });

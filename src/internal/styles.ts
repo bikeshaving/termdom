@@ -7,6 +7,7 @@
 
 import {type DOMWindow} from "jsdom";
 import * as cssTree from "css-tree";
+import {parseCSSColor} from "./color.js";
 import {stringWidth} from "./text.js";
 import {
 	attachPseudoElement,
@@ -492,13 +493,42 @@ function normalizeValue(property: string, declared: string): string {
 		return value;
 	}
 	if (COLOR_PROPERTIES.has(property)) {
-		if (value.startsWith("#")) return hexColorToRgb(value) ?? value;
-		return IDENTIFIER_VALUE.test(value) ? value.toLowerCase() : value;
+		return serializeColor(value) ?? value;
 	}
 	if (LENGTH_PROPERTIES.has(property)) {
 		return value.split(/\s+/).map(computedNumber).join(" ");
 	}
 	return IDENTIFIER_VALUE.test(value) ? value.toLowerCase() : value;
+}
+
+/**
+ * A color's resolved spelling: `rgb(r, g, b)`, or `rgba(r, g, b, a)` when it
+ * is not opaque. Null for a value that names no color -- `currentcolor` before
+ * it resolves, a keyword this engine's color table does not carry.
+ */
+function serializeColor(value: string): string | null {
+	const text = value.trim();
+	if (!text || text.toLowerCase() === "currentcolor") return null;
+	if (/^transparent$/i.test(text)) return "rgba(0, 0, 0, 0)";
+	if (text.startsWith("#")) return hexColorToRgb(text);
+	const packed = parseCSSColor(text);
+	if (packed === null) return null;
+	const red = (packed >> 16) & 0xff;
+	const green = (packed >> 8) & 0xff;
+	const blue = packed & 0xff;
+	// An alpha component survives the 24-bit packing as its own text.
+	const functional = /^(?:rgba|hsla)\(([^)]*)\)$/i.exec(text);
+	const parts = functional ? functional[1].split(/\s*[,/]\s*/) : [];
+	if (parts.length === 4) {
+		const raw = parts[3].trim();
+		const opacity = raw.endsWith("%")
+			? Number(raw.slice(0, -1)) / 100
+			: Number(raw);
+		if (Number.isFinite(opacity) && opacity < 1) {
+			return `rgba(${red}, ${green}, ${blue}, ${opacity})`;
+		}
+	}
+	return `rgb(${red}, ${green}, ${blue})`;
 }
 
 /**
@@ -620,15 +650,14 @@ for (const [shorthand, indexed] of Object.entries(CSS_SHORTHANDS)) {
 }
 
 /**
- * The shorthands a longhand belongs to, widest first. Block serialization
- * prefers the shorthand covering the most declarations; `all` covers every
- * longhand and is never used as one.
+ * The shorthands a longhand belongs to, widest first: block serialization
+ * prefers the shorthand covering the most declarations, and `all` -- covering
+ * every longhand there is -- comes first of all.
  */
 const LONGHAND_SHORTHANDS = new Map<string, readonly string[]>();
 {
 	const byLonghand = new Map<string, string[]>();
 	for (const [shorthand, longhands] of SHORTHAND_LONGHANDS) {
-		if (shorthand === "all") continue;
 		for (const longhand of longhands) {
 			let shorthands = byLonghand.get(longhand);
 			if (!shorthands) byLonghand.set(longhand, (shorthands = []));
@@ -1120,6 +1149,9 @@ export class CSSStyleDeclaration implements DeclarationSource {
 			let text = "";
 			for (const shorthand of LONGHAND_SHORTHANDS.get(declaration.name) ?? []) {
 				const longhands = SHORTHAND_LONGHANDS.get(shorthand)!;
+				// A shorthand covering more properties than the block holds
+				// cannot be serialized from it, and `all` covers hundreds.
+				if (longhands.length > this.#declarations.length) continue;
 				const value = this.#shorthandValue(shorthand, longhands);
 				if (!value) continue;
 				const important = this.#find(longhands[0])!.important;
@@ -3811,7 +3843,18 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 	 */
 	#resolvePropertyValue(property: string): string {
 		const raw = this.#resolvePropertyValueRaw(property);
-		return raw ? this.#substituteVar(raw) : raw;
+		const value = raw ? this.#substituteVar(raw) : raw;
+		// `currentcolor` is the element's own color, which is what a resolved
+		// value says; on `color` itself it means the parent's.
+		if (
+			value.toLowerCase() === "currentcolor" &&
+			COLOR_PROPERTIES.has(property)
+		) {
+			return property === "color"
+				? (this.#resolveFromParent("color") ?? "")
+				: this.getPropertyValue("color");
+		}
+		return value;
 	}
 
 	#resolvePropertyValueRaw(property: string): string {

@@ -32,11 +32,11 @@ test("CSS specificity calculation", async () => {
 		return termdom.window.getComputedStyle(el).getPropertyValue("color");
 	};
 
-	expect(colorOf("", "")).toBe("red"); // div (000-000-001)
-	expect(colorOf("class", "")).toBe("yellow"); // div.class (000-001-001) beats .class
-	expect(colorOf("class other", "")).toBe("blue"); // .class.other (000-002-000)
-	expect(colorOf("", "id")).toBe("purple"); // #id (001-000-000)
-	expect(colorOf("class", "id")).toBe("orange"); // #id.class (001-001-000)
+	expect(colorOf("", "")).toBe("rgb(255, 0, 0)"); // div (000-000-001)
+	expect(colorOf("class", "")).toBe("rgb(255, 255, 0)"); // div.class (000-001-001) beats .class
+	expect(colorOf("class other", "")).toBe("rgb(0, 0, 255)"); // .class.other (000-002-000)
+	expect(colorOf("", "id")).toBe("rgb(128, 0, 128)"); // #id (001-000-000)
+	expect(colorOf("class", "id")).toBe("rgb(255, 165, 0)"); // #id.class (001-001-000)
 
 	termdom.dispose();
 });
@@ -65,12 +65,12 @@ test("CSS cascade resolution", async () => {
 
 	// Should resolve to blue (highest specificity: ID)
 	let computedStyle = termdom.window.getComputedStyle(div);
-	expect(computedStyle.getPropertyValue("color")).toBe("blue");
+	expect(computedStyle.getPropertyValue("color")).toBe("rgb(0, 0, 255)");
 
 	// Inline style should override everything
 	div.style.color = "yellow";
 	computedStyle = termdom.window.getComputedStyle(div);
-	expect(computedStyle.getPropertyValue("color")).toBe("yellow");
+	expect(computedStyle.getPropertyValue("color")).toBe("rgb(255, 255, 0)");
 });
 
 test("Pseudo-element CSS support", async () => {
@@ -103,18 +103,18 @@ test("Pseudo-element CSS support", async () => {
 	// Test pseudo-element computed styles
 	const beforeStyle = termdom.window.getComputedStyle(div, "::before");
 	expect(beforeStyle.getPropertyValue("content")).toBe('"Before: "');
-	expect(beforeStyle.getPropertyValue("color")).toBe("blue");
+	expect(beforeStyle.getPropertyValue("color")).toBe("rgb(0, 0, 255)");
 
 	const afterStyle = termdom.window.getComputedStyle(div, "::after");
 	expect(afterStyle.getPropertyValue("content")).toBe('" :After"');
-	expect(afterStyle.getPropertyValue("color")).toBe("green");
+	expect(afterStyle.getPropertyValue("color")).toBe("rgb(0, 128, 0)");
 
 	// Test list marker
 	const li = document.createElement("li");
 	document.body.appendChild(li);
 
 	const markerStyle = termdom.window.getComputedStyle(li, "::marker");
-	expect(markerStyle.getPropertyValue("color")).toBe("purple");
+	expect(markerStyle.getPropertyValue("color")).toBe("rgb(128, 0, 128)");
 });
 
 test("Pseudo-element specificity", async () => {
@@ -140,7 +140,7 @@ test("Pseudo-element specificity", async () => {
 	// Should resolve to blue (ID has highest specificity)
 	const beforeStyle = termdom.window.getComputedStyle(div, "::before");
 	expect(beforeStyle.getPropertyValue("content")).toBe('"id"');
-	expect(beforeStyle.getPropertyValue("color")).toBe("blue");
+	expect(beforeStyle.getPropertyValue("color")).toBe("rgb(0, 0, 255)");
 
 	termdom.dispose();
 });
@@ -168,7 +168,7 @@ test.todo("StyleManager auto-refresh on DOM changes", async () => {
 
 	// Should automatically pick up new styles
 	computedStyle = termdom.window.getComputedStyle(div);
-	expect(computedStyle.getPropertyValue("color")).toBe("red");
+	expect(computedStyle.getPropertyValue("color")).toBe("rgb(255, 0, 0)");
 
 	// Modify stylesheet content
 	style.textContent = ".test { color: blue; }";
@@ -178,7 +178,7 @@ test.todo("StyleManager auto-refresh on DOM changes", async () => {
 
 	// Should pick up modified styles
 	computedStyle = termdom.window.getComputedStyle(div);
-	expect(computedStyle.getPropertyValue("color")).toBe("blue");
+	expect(computedStyle.getPropertyValue("color")).toBe("rgb(0, 0, 255)");
 });
 
 test("StyleManager createPseudoElementNode", async () => {

@@ -21,7 +21,9 @@ describe("getComputedStyle - What We Support", () => {
 		expect(styles.getPropertyValue("padding")).toBe("0px");
 		expect(styles.getPropertyValue("border-width")).toBe("0px");
 		expect(styles.getPropertyValue("border-style")).toBe("none");
-		expect(styles.getPropertyValue("background-color")).toBe("transparent");
+		expect(styles.getPropertyValue("background-color")).toBe(
+			"rgba(0, 0, 0, 0)",
+		);
 		expect(styles.getPropertyValue("color")).toBe("rgb(0, 0, 0)");
 		expect(styles.getPropertyValue("font-size")).toBe("1rem");
 		expect(styles.getPropertyValue("white-space")).toBe("normal");
@@ -121,7 +123,7 @@ describe("getComputedStyle - What We Support", () => {
 		const element = dom.window.document.getElementById("test")!;
 		const styles = dom.window.getComputedStyle(element);
 
-		expect(styles.getPropertyValue("color")).toBe("red");
+		expect(styles.getPropertyValue("color")).toBe("rgb(255, 0, 0)");
 		expect(styles.getPropertyValue("margin")).toBe("10px");
 		expect(styles.getPropertyValue("display")).toBe("flex");
 		// Non-specified properties should still use defaults
@@ -186,7 +188,7 @@ describe("getComputedStyle - What We Support", () => {
 		const childStyles = dom.window.getComputedStyle(child);
 
 		// Inherited properties should inherit from parent
-		expect(childStyles.getPropertyValue("color")).toBe("blue");
+		expect(childStyles.getPropertyValue("color")).toBe("rgb(0, 0, 255)");
 		expect(childStyles.getPropertyValue("font-size")).toBe("16px");
 		// Non-inherited properties should use their own defaults
 		expect(childStyles.getPropertyValue("margin")).toBe("0px");
@@ -197,7 +199,9 @@ describe("getComputedStyle - What We Support", () => {
 			dom.window.getComputedStyle(childWithInherit);
 
 		// Explicit inherit should work
-		expect(childWithInheritStyles.getPropertyValue("color")).toBe("blue");
+		expect(childWithInheritStyles.getPropertyValue("color")).toBe(
+			"rgb(0, 0, 255)",
+		);
 		expect(childWithInheritStyles.getPropertyValue("font-size")).toBe("16px");
 	});
 
@@ -224,7 +228,7 @@ describe("getComputedStyle - What We Support", () => {
 		expect(typeof styles.removeProperty).toBe("function");
 
 		// Should work with standard CSS properties
-		expect(styles.getPropertyValue("color")).toBe("red");
+		expect(styles.getPropertyValue("color")).toBe("rgb(255, 0, 0)");
 		expect(styles.getPropertyValue("margin")).toBe("10px");
 	});
 
@@ -250,7 +254,7 @@ describe("getComputedStyle - What We Support", () => {
 
 		expect(styles.getPropertyValue("margin")).toBe("5px 10px 15px 20px");
 		expect(styles.getPropertyValue("padding")).toBe("1px 2px 3px 4px");
-		expect(styles.getPropertyValue("border")).toBe("2px solid black");
+		expect(styles.getPropertyValue("border")).toBe("2px solid rgb(0, 0, 0)");
 		expect(styles.getPropertyValue("width")).toBe("100px");
 		expect(styles.getPropertyValue("height")).toBe("50px");
 	});
@@ -279,19 +283,19 @@ describe("getComputedStyle - What We Don't Support (Failing Tests)", () => {
 		const styles = dom.window.getComputedStyle(element);
 
 		// Should resolve to inline style (highest specificity)
-		expect(styles.getPropertyValue("color")).toBe("yellow");
+		expect(styles.getPropertyValue("color")).toBe("rgb(255, 255, 0)");
 
 		// Without inline style, ID should win
 		element.style.removeProperty("color");
-		expect(styles.getPropertyValue("color")).toBe("red");
+		expect(styles.getPropertyValue("color")).toBe("rgb(255, 0, 0)");
 
 		// Without ID, class should win
 		element.removeAttribute("id");
-		expect(styles.getPropertyValue("color")).toBe("blue");
+		expect(styles.getPropertyValue("color")).toBe("rgb(0, 0, 255)");
 
 		// Without class, element selector should win
 		element.removeAttribute("class");
-		expect(styles.getPropertyValue("color")).toBe("green");
+		expect(styles.getPropertyValue("color")).toBe("rgb(0, 128, 0)");
 	});
 
 	test.todo("stylesheet parsing from <style> elements", () => {
@@ -322,7 +326,7 @@ describe("getComputedStyle - What We Don't Support (Failing Tests)", () => {
 		const styles = dom.window.getComputedStyle(element);
 
 		// Should apply styles from <style> element
-		expect(styles.getPropertyValue("color")).toBe("red");
+		expect(styles.getPropertyValue("color")).toBe("rgb(255, 0, 0)");
 		expect(styles.getPropertyValue("margin")).toBe("20px");
 		expect(styles.getPropertyValue("font-size")).toBe("14px");
 		expect(styles.getPropertyValue("padding")).toBe("10px");
@@ -352,7 +356,7 @@ describe("getComputedStyle - What We Don't Support (Failing Tests)", () => {
 		const styles = dom.window.getComputedStyle(element);
 
 		// Later stylesheet should win for same specificity
-		expect(styles.getPropertyValue("color")).toBe("blue");
+		expect(styles.getPropertyValue("color")).toBe("rgb(0, 0, 255)");
 		// Properties from both should apply
 		expect(styles.getPropertyValue("font-size")).toBe("12px");
 		expect(styles.getPropertyValue("margin")).toBe("10px");
@@ -379,7 +383,7 @@ describe("getComputedStyle - What We Don't Support (Failing Tests)", () => {
 		const styles = dom.window.getComputedStyle(element);
 
 		// !important should override everything except inline !important
-		expect(styles.getPropertyValue("color")).toBe("red");
+		expect(styles.getPropertyValue("color")).toBe("rgb(255, 0, 0)");
 	});
 
 	test.todo("complex selectors", () => {
@@ -410,7 +414,7 @@ describe("getComputedStyle - What We Don't Support (Failing Tests)", () => {
 		// Descendant selector
 		const child = dom.window.document.querySelector(".child")!;
 		expect(dom.window.getComputedStyle(child).getPropertyValue("color")).toBe(
-			"red",
+			"rgb(255, 0, 0)",
 		);
 
 		// Child selector
@@ -519,7 +523,7 @@ describe("getComputedStyle - What We Don't Support (Failing Tests)", () => {
 
 		expect(styles.getPropertyValue("border-width")).toBe("2px");
 		expect(styles.getPropertyValue("border-style")).toBe("solid");
-		expect(styles.getPropertyValue("border-color")).toBe("red");
+		expect(styles.getPropertyValue("border-color")).toBe("rgb(255, 0, 0)");
 
 		expect(styles.getPropertyValue("background-color")).toBe("#fff");
 		expect(styles.getPropertyValue("background-image")).toBe("url(bg.png)");
@@ -551,7 +555,7 @@ describe("getComputedStyle - What We Don't Support (Failing Tests)", () => {
 
 		// Should apply media query based on viewport size
 		// This would need viewport size simulation
-		expect(styles.getPropertyValue("color")).toBe("blue");
+		expect(styles.getPropertyValue("color")).toBe("rgb(0, 0, 255)");
 	});
 
 	test.todo("CSS custom properties (CSS variables)", () => {
@@ -581,11 +585,11 @@ describe("getComputedStyle - What We Don't Support (Failing Tests)", () => {
 		const styles = dom.window.getComputedStyle(element);
 
 		// Should resolve CSS custom properties
-		expect(styles.getPropertyValue("color")).toBe("blue");
+		expect(styles.getPropertyValue("color")).toBe("rgb(0, 0, 255)");
 		expect(styles.getPropertyValue("margin")).toBe("20px");
 
 		// Should also expose custom properties themselves
-		expect(styles.getPropertyValue("--primary-color")).toBe("blue");
+		expect(styles.getPropertyValue("--primary-color")).toBe("rgb(0, 0, 255)");
 		expect(styles.getPropertyValue("--spacing")).toBe("20px");
 	});
 });
@@ -767,7 +771,9 @@ test("style.background = 'none' overrides a stylesheet background", async () => 
 	const computed = dom.window.getComputedStyle(
 		dom.document.getElementById("box")!,
 	);
-	expect(computed.getPropertyValue("background-color")).toBe("transparent");
+	expect(computed.getPropertyValue("background-color")).toBe(
+		"rgba(0, 0, 0, 0)",
+	);
 	const cell = (terminal as any).terminal.buffer.active.getLine(0).getCell(0);
 	expect(cell.isBgDefault()).toBeTruthy();
 	dom.dispose();

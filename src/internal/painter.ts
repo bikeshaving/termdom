@@ -2,7 +2,7 @@ import {type DOMWindow} from "jsdom";
 import {type LayoutEngine, isPositioned} from "./layout.js";
 import {type Viewport} from "./viewport.js";
 import {type StyleManager, resolveBorderStyles, getBoxModel} from "./styles.js";
-import {cssColorToNumber} from "./color.js";
+import {cssColorToNumber, isTransparentColor} from "./color.js";
 import {stringWidth} from "./text.js";
 import {
 	compositionIsConnected,
@@ -145,7 +145,7 @@ function cellStyleFromComputed(
 		bg:
 			bgColor &&
 			bgColor !== "initial" &&
-			bgColor !== "transparent" &&
+			!isTransparentColor(bgColor) &&
 			!/^canvas$/i.test(bgColor.trim()) &&
 			!isSystemHighlightColor(bgColor)
 				? cssColorToNumber(bgColor)
@@ -379,7 +379,7 @@ export class Painter {
 				backgroundColor &&
 				!isCanvasBg &&
 				backgroundColor !== "initial" &&
-				backgroundColor !== "transparent" &&
+				!isTransparentColor(backgroundColor) &&
 				!isSystemHighlightColor(backgroundColor)
 					? cssColorToNumber(backgroundColor)
 					: undefined,
@@ -416,7 +416,7 @@ export class Painter {
 			for (const [edge, prop] of edgeColorProps) {
 				if (
 					borderStyles[edge] > 0 &&
-					computed.getPropertyValue(prop).trim().toLowerCase() === "transparent"
+					isTransparentColor(computed.getPropertyValue(prop))
 				) {
 					borderStyles[edge] = 0;
 				}

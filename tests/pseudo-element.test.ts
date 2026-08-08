@@ -296,9 +296,9 @@ test("Pseudo-elements with inline styles override", async () => {
 	const afterStyle = termdom.window.getComputedStyle(element, "::after");
 
 	expect(beforeStyle.getPropertyValue("content")).toBe('"CSS: "');
-	expect(beforeStyle.getPropertyValue("color")).toBe("red");
+	expect(beforeStyle.getPropertyValue("color")).toBe("rgb(255, 0, 0)");
 	expect(afterStyle.getPropertyValue("content")).toBe('" [end]"');
-	expect(afterStyle.getPropertyValue("color")).toBe("blue");
+	expect(afterStyle.getPropertyValue("color")).toBe("rgb(0, 0, 255)");
 });
 
 test.todo(

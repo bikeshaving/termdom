@@ -820,7 +820,7 @@ test("@media stylesheet rules re-evaluate when the terminal resizes", async () =
 	await nextFrame(dom);
 	const div = document.getElementById("d")!;
 	expect(window.getComputedStyle(div).getPropertyValue("color")).not.toBe(
-		"red",
+		"rgb(255, 0, 0)",
 	);
 
 	terminal.resize(50, 30);
@@ -828,7 +828,9 @@ test("@media stylesheet rules re-evaluate when the terminal resizes", async () =
 	await nextFrame(dom);
 	await new Promise((r) => setTimeout(r, 100));
 
-	expect(window.getComputedStyle(div).getPropertyValue("color")).toBe("red");
+	expect(window.getComputedStyle(div).getPropertyValue("color")).toBe(
+		"rgb(255, 0, 0)",
+	);
 
 	dom.dispose();
 });
