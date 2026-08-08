@@ -15,7 +15,9 @@ export default async function Support({url}: {url: string}) {
 	const repoDir = await self.directories.open("repo");
 	const fileHandle = await repoDir.getFileHandle("SUPPORT.md");
 	const file = await fileHandle.getFile();
-	const markdown = (await file.text()).replace(/^# Support\n+/, "");
+	// SUPPORT.md leads with a generated-by comment; strip its own "# Support"
+	// heading wherever it sits, since the page supplies one.
+	const markdown = (await file.text()).replace(/^# Support\n+/m, "");
 
 	return jsx`
 		<${Root}

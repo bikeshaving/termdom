@@ -20,11 +20,12 @@ export const components = {
 	 * view passes as a prop on Marked. */
 	image({token, rootProps}: any) {
 		const {href, text} = token;
-		if (href?.startsWith("cast:") && rootProps.casts?.[href.slice(5)]) {
+		const cast = href?.startsWith("cast:") && rootProps.casts?.[href.slice(5)];
+		if (cast) {
 			return jsx`<${CastPlayer}
-				src=${rootProps.casts[href.slice(5)]}
-				rows=${24}
-				cols=${78}
+				src=${cast.src}
+				rows=${cast.rows}
+				cols=${cast.cols}
 				caption=${text}
 			/>`;
 		}

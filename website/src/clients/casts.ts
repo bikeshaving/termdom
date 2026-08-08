@@ -26,6 +26,9 @@ if (boxes.length > 0) {
 			idleTimeLimit: Number(box.dataset.castIdle) || undefined,
 			preload: true,
 			fit: "width",
+			// Autoplaying loops read as animations; a control bar under each
+			// one is chrome nobody asked for.
+			controls: false,
 			terminalFontFamily: "inherit",
 		});
 	};

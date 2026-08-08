@@ -9,7 +9,6 @@ import {collectDocuments} from "./models/document.js";
 import HomeView from "./views/home.js";
 import GuideView from "./views/guide.js";
 import SupportView from "./views/support.js";
-import ExamplesView from "./views/examples.js";
 import NotFoundView from "./views/not-found.js";
 
 // Asset imports. Shovel bundles each one and hands back a content-hashed URL,
@@ -91,12 +90,6 @@ router
 		renderView(SupportView, new URL(request.url).pathname),
 	);
 
-router
-	.route("/examples/")
-	.get(async (request) =>
-		renderView(ExamplesView, new URL(request.url).pathname),
-	);
-
 router.route("/pagefind/:path*").get(async (request) => {
 	const url = new URL(request.url);
 	const path = url.pathname.replace("/pagefind/", "");
@@ -169,7 +162,7 @@ async function guideURLs(): Promise<string[]> {
 }
 
 async function allRoutes(): Promise<string[]> {
-	return ["/", "/support/", "/examples/", ...(await guideURLs())];
+	return ["/", "/support/", ...(await guideURLs())];
 }
 
 async function generateSitemap(): Promise<string> {

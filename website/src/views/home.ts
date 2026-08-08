@@ -64,9 +64,10 @@ export default async function Home({url}: {url: string}) {
 	// Resolved at call time: server.ts imports the views (the router), so a
 	// module-level read of its exports lands mid-cycle, before they exist.
 	const casts = {
-		animated: staticURLs["casts/animated.cast"],
-		tree: staticURLs["casts/tree.cast"],
-		form: staticURLs["casts/form.cast"],
+		readme: {src: staticURLs["casts/readme.cast"], cols: 44, rows: 5},
+		animated: {src: staticURLs["casts/animated.cast"], cols: 78, rows: 24},
+		tree: {src: staticURLs["casts/tree.cast"], cols: 78, rows: 24},
+		form: {src: staticURLs["casts/form.cast"], cols: 78, rows: 24},
 	};
 	const contentDir = await self.directories.open("content");
 	const file = await (await contentDir.getFileHandle("home.md")).getFile();

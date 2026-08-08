@@ -96,4 +96,5 @@ document.addEventListener("keydown", (e) => {
 - [Layout](/guides/layout/) — flexbox, tables and the box model on a grid.
 - [Events and input](/guides/events-and-input/) — keyboard, mouse, focus and
   form controls.
-- [Examples](/examples/) — runnable programs, from a file tree to TodoMVC.
+- [Examples on GitHub](https://github.com/bikeshaving/termdom/tree/main/examples)
+  — runnable programs, from a file tree to TodoMVC.

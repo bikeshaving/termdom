@@ -23,7 +23,6 @@ export function Footer() {
 			>
 				<a href="/guides/getting-started/">Guides</a>
 				<a href="/support/">Support</a>
-				<a href="/examples/">Examples</a>
 				<a href="https://github.com/bikeshaving/termdom">GitHub</a>
 				<a href="https://www.npmjs.com/package/@b9g/termdom">NPM</a>
 			</nav>
@@ -33,7 +32,7 @@ export function Footer() {
 					color: var(--muted-color);
 				`}
 			>
-				MIT Licensed ${"·"} A ${jsx`<a href="https://bikeshaving.com">bikeshaving</a>`} project
+				MIT Licensed ${"·"} A ${jsx`<a href="https://bikeshaving.org">bikeshaving</a>`} project
 			</p>
 		</footer>
 	`;
