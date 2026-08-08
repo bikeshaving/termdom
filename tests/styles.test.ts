@@ -881,16 +881,20 @@ test("writing the attribute reparses into element.style", async () => {
 	const el = dom.document.createElement("div");
 	dom.document.body.appendChild(el);
 
-	el.setAttribute("style", "color: blue; border: none; padding: 0 !important");
+	el.setAttribute(
+		"style",
+		"color: blue; border: 1px solid red; padding: 0 !important",
+	);
 	expect(el.style.color).toBe("blue");
 	// A shorthand is stored as the longhands it declares: one color, twelve
-	// border longhands, four paddings.
-	expect(el.style.length).toBe(17);
+	// border longhands, the five border-image longhands `border` also resets,
+	// four paddings.
+	expect(el.style.length).toBe(22);
 	expect(el.style.item(1)).toBe("border-top-width");
 	expect(el.style.getPropertyPriority("padding")).toBe("important");
-	expect(el.style.getPropertyValue("border-top-style")).toBe("none");
+	expect(el.style.getPropertyValue("border-top-style")).toBe("solid");
 	// A shorthand reads back reconstructed from those longhands.
-	expect(el.style.getPropertyValue("border")).toBe("none");
+	expect(el.style.getPropertyValue("border")).toBe("1px solid red");
 	expect(el.style.getPropertyValue("padding")).toBe("0");
 
 	el.style.removeProperty("border");

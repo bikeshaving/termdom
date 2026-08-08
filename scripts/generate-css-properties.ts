@@ -23,6 +23,10 @@ const properties = require("mdn-data/css/properties.json") as Record<
 		inherited: boolean;
 	}
 >;
+const atRules = require("mdn-data/css/at-rules.json") as Record<
+	string,
+	{descriptors?: Record<string, unknown>}
+>;
 
 /**
  * A property is supported when it is unprefixed -- including the ones the
@@ -70,9 +74,46 @@ for (const name of directLonghands.keys()) {
 	}
 }
 
-const longhands = supported.filter(
-	(name) => name !== "all" && !(name in shorthands),
-);
+/**
+ * Shorthands whose longhand order the property index states from an older
+ * level of the spec. CSS UI 4 writes `outline` as `<'outline-color'> ||
+ * <'outline-style'> || <'outline-width'>`, and a shorthand serializes in the
+ * order its grammar names its components.
+ */
+const grammarOrder: Record<string, string[]> = {
+	outline: ["outline-color", "outline-style", "outline-width"],
+};
+for (const [shorthand, order] of Object.entries(grammarOrder)) {
+	shorthands[shorthand] = order;
+}
+
+/**
+ * The longhands a shorthand resets without being able to state them: `border`
+ * resets the border-image longhands, so a block serializes as `border` only
+ * when all five stand at their initial values. The property index says so in
+ * prose rather than in the `computed` array, so it is named here.
+ */
+const resetOnly: Record<string, string[]> = {
+	border: shorthands["border-image"],
+};
+for (const [shorthand, reset] of Object.entries(resetOnly)) {
+	shorthands[shorthand] = [...shorthands[shorthand], ...reset];
+}
+
+/**
+ * A computed style enumerates its properties in lexicographic order, with the
+ * vendor-prefixed ones after the rest: a name beginning with `-` sorts after
+ * every name that does not.
+ */
+function propertyOrder(a: string, b: string): number {
+	if (a.startsWith("-") !== b.startsWith("-"))
+		return a.startsWith("-") ? 1 : -1;
+	return a < b ? -1 : 1;
+}
+
+const longhands = supported
+	.filter((name) => name !== "all" && !(name in shorthands))
+	.sort(propertyOrder);
 
 // `all` resets every longhand except the two that carry a document's writing
 // direction, which it is defined to leave alone. Its mdn-data entry describes
@@ -98,6 +139,39 @@ for (const name of longhands) {
 	)
 		continue;
 	initials[name] = initial;
+}
+
+/**
+ * The descriptors each at-rule's block may hold. A descriptor is not a
+ * property -- it is named only inside its own at-rule -- so it gets its
+ * accessors on that rule's own declaration block and nowhere else.
+ */
+const descriptors: Record<string, string[]> = {};
+/**
+ * Descriptors the property index leaves out. css-page-3 gives @page's block
+ * the page margins alongside its own descriptors, so they are named on
+ * CSSPageDescriptors and nowhere the index would put them.
+ */
+const extraDescriptors: Record<string, string[]> = {
+	"@page": [
+		"margin",
+		"margin-top",
+		"margin-right",
+		"margin-bottom",
+		"margin-left",
+	],
+};
+for (const name of new Set([
+	...Object.keys(atRules),
+	...Object.keys(extraDescriptors),
+])) {
+	const names = [
+		...Object.keys(atRules[name]?.descriptors ?? {}),
+		...(extraDescriptors[name] ?? []),
+	]
+		.filter((descriptor) => !descriptor.includes("("))
+		.sort();
+	if (names.length > 0) descriptors[name] = names;
 }
 
 function list(values: readonly string[]): string {
@@ -133,6 +207,20 @@ ${list(longhands)}
 /** Each shorthand's longhands, in the order the shorthand's grammar names them. */
 export const CSS_SHORTHANDS: Readonly<Record<string, readonly string[]>> = {
 ${record(shorthands)}
+};
+
+/** The longhands a shorthand resets but cannot state, per shorthand. */
+export const CSS_RESET_ONLY_LONGHANDS: Readonly<
+	Record<string, readonly string[]>
+> = {
+${record(resetOnly)}
+};
+
+/** Each at-rule's descriptors, which its own declaration block reflects. */
+export const CSS_AT_RULE_DESCRIPTORS: Readonly<
+	Record<string, readonly string[]>
+> = {
+${record(descriptors)}
 };
 
 /** Longhands whose value inherits from the parent element. */

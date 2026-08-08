@@ -10,7 +10,7 @@ import {
 	type TerminalTransport,
 } from "./terminalsession.js";
 import {Renderer} from "./ansi.js";
-import {StyleManager, getBoxModel} from "./styles.js";
+import {StyleManager, computedStyleOf, getBoxModel} from "./styles.js";
 import {stringWidth} from "./text.js";
 import {
 	ObserverManager,
@@ -872,10 +872,7 @@ export class TermDOM {
 				el;
 				el = compositionParentElement(el)
 			) {
-				if (
-					termDOM.window.getComputedStyle(el).getPropertyValue("position") ===
-					"fixed"
-				) {
+				if (computedStyleOf(el).computedValueOf("position") === "fixed") {
 					return true;
 				}
 			}
@@ -999,9 +996,7 @@ export class TermDOM {
 				ancestor;
 				ancestor = ancestor.parentElement
 			) {
-				const position = window
-					.getComputedStyle(ancestor)
-					.getPropertyValue("position");
+				const position = computedStyleOf(ancestor).computedValueOf("position");
 				if (position && position !== "static") {
 					return ancestor as HTMLElement;
 				}

@@ -19,6 +19,7 @@ import {fileURLToPath} from "node:url";
 import {
 	getBoxModel,
 	installInlineStyle,
+	MediaList,
 	StyleManager,
 } from "../src/internal/styles.ts";
 import {LayoutEngine} from "../src/internal/layout.ts";
@@ -27,8 +28,16 @@ const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const CACHE = join(ROOT, ".wpt");
 const RAW = "https://raw.githubusercontent.com/web-platform-tests/wpt/master";
 const SUITE = "css/cssom";
-/** A test that has not finished in this long is recorded as a timeout. */
-const TIMEOUT_MS = 5000;
+/**
+ * A test that has not finished in this long is recorded as a timeout.
+ *
+ * testharness.js runs a watchdog of its own -- ten seconds, after which it
+ * ends every unfinished subtest and reports the file. A subtest waiting on an
+ * event this environment never fires (a <link> load, say) is ended by that
+ * watchdog and its file still scores, so this outlasts it: a file recorded as
+ * a timeout here is one that never reached even testharness's own limit.
+ */
+const TIMEOUT_MS = 15000;
 
 async function cached(path: string): Promise<string | null> {
 	const file = join(CACHE, path);
@@ -115,6 +124,8 @@ const EXCLUSIONS: Record<string, string> = {
 	"HTMLLinkElement-load-event-002.html": "network: <link> load events",
 	"HTMLStyleElement-load-event.html":
 		"network: <style> load events, which fire only for fetched subresources",
+	"insertRule-charset-no-index.html":
+		"network: the rules are inserted into a <link> sheet",
 	"cssimportrule-parent.html": "network: the sheet an @import fetches",
 	"cssimportrule-sheet-identity.html": "network: the sheet an @import fetches",
 
@@ -149,7 +160,7 @@ const DEVIATIONS: Array<[string, string]> = [
 	],
 	[
 		"getComputedStyle-resolved-colors.html",
-		"System colors (Highlight, HighlightText, Canvas, menu) resolve to their names, not to rgb(). The UA sheet's `::selection { background-color: Highlight; color: HighlightText }` is this engine's spelling of \"swap the cell's colors\", which the selection painter turns into inverse video -- the terminal-native rendering. Resolving the pair to rgb() would erase the signal the painter reads.",
+		"A system color has no value here: `Menu`, `Highlight` and the rest name a desktop's palette, and a terminal states none -- so a declaration naming one is not a value this engine knows, and `box-shadow: 1px 1px Menu` declares no shadow. The UA sheet's `::selection { background-color: Highlight; color: HighlightText }` is this engine's spelling of \"swap the cell's colors\", which the selection painter turns into inverse video -- the terminal-native rendering. Giving the pair rgb() values would erase the signal the painter reads.",
 	],
 ];
 
@@ -273,6 +284,15 @@ async function runFile(file: string): Promise<Outcome> {
 	// as the viewport the tests assume.
 	layoutEngine.resize(800, 600);
 	installGeometry(dom.window, styleManager);
+	// matchMedia, which TermDOM installs live off the same evaluator. There is
+	// no resize under this harness, so the list a query answers with is the
+	// one it is created with.
+	(dom.window as unknown as Record<string, unknown>).matchMedia = (
+		query: string,
+	): {media: string; matches: boolean} => ({
+		media: new MediaList(String(query)).mediaText,
+		matches: styleManager.mediaQueryMatches(String(query)),
+	});
 
 	const outcome: Outcome = {file, harness: "TIMEOUT", subtests: []};
 	const done = new Promise<void>((resolve) => {
