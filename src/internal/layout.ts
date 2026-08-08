@@ -2668,19 +2668,24 @@ export class LayoutEngine {
 	 * Elements that generate no box in the flow (display:none, out of flow) take
 	 * no run position: they neither open nor close a run, and map to whichever
 	 * box is open around them so that content nested inside them still resolves.
+	 *
+	 * `boxes` is the same enumeration read as the container's child list: one
+	 * entry per box it lays out, anonymous ones represented by their head. It is
+	 * what layout counts to place a child among its siblings.
 	 */
 	#runHeadsByContainer = new WeakMap<
 		Element,
-		{epoch: number; heads: Map<Node, Node>}
+		{epoch: number; heads: Map<Node, Node>; boxes: Node[]}
 	>();
 	#runHeadEpoch = 0;
 
-	#containerRunHeads(container: Element): Map<Node, Node> {
+	#containerBoxes(container: Element): {heads: Map<Node, Node>; boxes: Node[]} {
 		const cached = this.#runHeadsByContainer.get(container);
 		const epoch = currentCompositionEpoch() + this.#runHeadEpoch;
-		if (cached && cached.epoch === epoch) return cached.heads;
+		if (cached && cached.epoch === epoch) return cached;
 
 		const heads = new Map<Node, Node>();
+		const boxes: Node[] = [];
 		// A flex container puts every element child in a box of its own and
 		// gathers only its contiguous text into anonymous ones.
 		const inFlex = getPropertyValue(container, "display") === "flex";
@@ -2689,28 +2694,43 @@ export class LayoutEngine {
 			if (child.nodeType === child.ELEMENT_NODE) {
 				const element = child as Element;
 				const display = getPropertyValue(element, "display");
+				const inlineLevel = display === "inline" || display === "inline-block";
 				if (display === "none" || this.#isOutOfFlow(element)) {
 					heads.set(child, head ?? child);
+					// A hidden block still holds a box slot; an out-of-flow one
+					// hangs from its containing block, and an inline that left the
+					// flow was never a box of this container's to begin with.
+					if (!inlineLevel) boxes.push(child);
 					continue;
 				}
-				if (display !== "inline" && display !== "inline-block") {
+				if (!inlineLevel) {
 					head = null; // block-level box: the run ends here
+					boxes.push(child);
 					continue;
 				}
 				if (inFlex) {
 					heads.set(child, child);
+					boxes.push(child);
 					head = null;
 					continue;
 				}
 			} else if (child.nodeType !== child.TEXT_NODE) {
 				continue;
 			}
-			if (head === null) head = child;
+			if (head === null) {
+				head = child;
+				boxes.push(child); // a fresh anonymous box, headed here
+			}
 			heads.set(child, head);
 		}
 
-		this.#runHeadsByContainer.set(container, {epoch, heads});
-		return heads;
+		const entry = {epoch, heads, boxes};
+		this.#runHeadsByContainer.set(container, entry);
+		return entry;
+	}
+
+	#containerRunHeads(container: Element): Map<Node, Node> {
+		return this.#containerBoxes(container).heads;
 	}
 
 	/** The flat-tree parent that can hold a box, pseudo-elements included. */
@@ -4113,13 +4133,12 @@ export class LayoutEngine {
 			}
 		}
 
-		// Use the same enumeration as addElementNode to ensure consistency. The
-		// full forward walk enumerates BOX siblings, so it roots at the box
-		// parent -- the slot a projected element sits in generates no box, and
-		// rooting there would miss its box siblings. It climbs out of inline
-		// wrappers for the same reason addElementNode descends through them: a
-		// block-level box inside an inline is a box of the CONTAINER, and its
-		// position is counted among the container's children.
+		// The container's own box list, so it roots at the box parent -- the slot
+		// a projected element sits in generates no box, and rooting there would
+		// miss its box siblings. It climbs out of inline wrappers for the same
+		// reason addElementNode descends through them: a block-level box inside
+		// an inline is a box of the CONTAINER, and its position is counted among
+		// the container's children.
 		let boxParent = compositionBoxParentElement(element) ?? compositionParent;
 		for (
 			let ancestor = compositionBoxParentElement(boxParent);
@@ -4129,32 +4148,13 @@ export class LayoutEngine {
 			boxParent = ancestor;
 		}
 
+		// Every box before this one that has reached the layout tree. Boxes are
+		// added as their DOM nodes arrive, so a sibling still to come holds no
+		// slot yet and must not be counted.
 		let flexIndex = 0;
-		for (const sibling of this.#flowChildren(boxParent)) {
+		for (const sibling of this.#containerBoxes(boxParent).boxes) {
 			if (sibling === element) break;
-			if (sibling.nodeType === sibling.ELEMENT_NODE) {
-				const siblingElement = sibling as Element;
-				const siblingDisplay = getPropertyValue(siblingElement, "display");
-
-				if (
-					(siblingDisplay === "inline" || siblingDisplay === "inline-block") &&
-					!this.isInlineRunHead(siblingElement)
-				) {
-					// Skip inline elements that aren't run heads
-				} else {
-					const siblingFlexNode = this.nodeMap.get(siblingElement);
-					if (siblingFlexNode) {
-						flexIndex++;
-					}
-				}
-			} else if (sibling.nodeType === sibling.TEXT_NODE) {
-				// Count text nodes that will be added to layout tree
-				const siblingFlexNode = this.nodeMap.get(sibling);
-				if (siblingFlexNode) {
-					flexIndex++;
-				}
-			}
-			// Note: Pseudo-elements will also be counted if they have layout nodes
+			if (this.nodeMap.has(sibling)) flexIndex++;
 		}
 
 		return flexIndex;
