@@ -7,7 +7,7 @@ properties. Every row is a probe -- the feature applied to a real
 document and rendered, with the row recording whether the output
 changed.
 
-101 features supported, 110 probed and unsupported,
+102 features supported, 109 probed and unsupported,
 301 CSS properties not yet probed.
 
 ## DOM APIs
@@ -237,7 +237,7 @@ changed.
 | `margin-inline` | no (no effect) |
 | `padding-inline` | no (no effect) |
 | `inset-inline` | no (no effect) |
-| `inset` | no (no effect) |
+| `inset` | yes |
 | `inline-size` | no (no effect) |
 | `block-size` | no (no effect) |
 | `min-inline-size` | no (no effect) |
