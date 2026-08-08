@@ -541,37 +541,6 @@ interface DeclarationSource {
 	getPropertyPriority(property: string): string;
 }
 
-/**
- * A declaration block as the cascade stores it: expanded longhands, alongside
- * which of them a `!important` covers.
- */
-function expandDeclarations(style: DeclarationSource): DeclarationBlock {
-	const authored: Record<string, string> = {};
-	const authoredImportant: Record<string, string> = {};
-	for (let i = 0; i < style.length; i++) {
-		const property = style[i];
-		const value = style.getPropertyValue(property);
-		// Invalid declarations never enter the cascade (see
-		// isValidDeclaration): dropping is what lets a lower-priority
-		// rule keep winning, exactly as a browser would.
-		if (!isValidDeclaration(property, value)) {
-			continue;
-		}
-		authored[property] = value;
-		if (style.getPropertyPriority(property) === "important") {
-			authoredImportant[property] = value;
-		}
-	}
-	// Declarations are consulted per-property downstream; a shorthand that stays
-	// a shorthand is invisible to the box model -- and its importance, which
-	// covers every longhand it declares, along with it.
-	const important: Record<string, boolean> = {};
-	for (const property of Object.keys(expandShorthands(authoredImportant))) {
-		important[property] = true;
-	}
-	return {declarations: expandShorthands(authored), important};
-}
-
 /** One declaration of a block: a longhand, or a shorthand kept undecomposed. */
 interface CSSDeclaration {
 	name: string;
@@ -604,19 +573,51 @@ const CORNER_NAMES = [
 ] as const;
 
 /**
+ * The shape of a shorthand's grammar, and so how its value serializes: a box
+ * of four sides or corners collapsed to one to four values, a pair collapsed
+ * when both agree, a line's width/style/color, `border`'s three uniform boxes,
+ * or a plain sequence of components.
+ */
+type ShorthandShape = "box" | "pair" | "line" | "border" | "sequence";
+
+/**
  * Each shorthand's longhands, in the order its grammar names them: the
  * property index lists a box's sides alphabetically, where the grammar --
  * and so the order the longhands are stored and serialized in -- runs
  * top, right, bottom, left.
  */
-const SHORTHAND_LONGHANDS = new Map<string, readonly string[]>(
-	Object.entries(CSS_SHORTHANDS).map(([shorthand, longhands]) => [
+const SHORTHAND_LONGHANDS = new Map<string, readonly string[]>();
+
+/** Each shorthand's shape, classified once rather than per serialization. */
+const SHORTHAND_SHAPES = new Map<string, ShorthandShape>();
+
+for (const [shorthand, indexed] of Object.entries(CSS_SHORTHANDS)) {
+	const box =
+		boxOrder(shorthand, indexed, EDGE_NAMES) ??
+		boxOrder(shorthand, indexed, CORNER_NAMES);
+	const longhands = box ?? indexed;
+	SHORTHAND_LONGHANDS.set(shorthand, longhands);
+	SHORTHAND_SHAPES.set(
 		shorthand,
-		boxOrder(shorthand, longhands, EDGE_NAMES) ??
-			boxOrder(shorthand, longhands, CORNER_NAMES) ??
-			longhands,
-	]),
-);
+		box
+			? "box"
+			: longhands.length === 12 &&
+				  LINE_COMPONENTS.every(
+						(kind) =>
+							longhands.filter((longhand) => longhand.endsWith(`-${kind}`))
+								.length === 4,
+				  )
+				? "border"
+				: longhands.length === LINE_COMPONENTS.length &&
+					  longhands.every((longhand, index) =>
+							longhand.endsWith(`-${LINE_COMPONENTS[index]}`),
+					  )
+					? "line"
+					: longhands.length === 2
+						? "pair"
+						: "sequence",
+	);
+}
 
 /**
  * The shorthands a longhand belongs to, widest first. Block serialization
@@ -966,62 +967,45 @@ function serializeShorthandValue(
 	longhands: readonly string[],
 	valueOf: (longhand: string) => string,
 ): string {
+	const values = longhands.map(valueOf);
 	// A CSS-wide keyword serializes as itself only when every longhand holds
 	// the same one; one longhand overridden and the shorthand has no value.
-	const keyworded = longhands.filter((longhand) =>
-		CSS_WIDE_KEYWORDS.has(valueOf(longhand)),
-	);
-	if (keyworded.length > 0) {
-		const keyword = valueOf(keyworded[0]);
-		return keyworded.length === longhands.length &&
-			longhands.every((longhand) => valueOf(longhand) === keyword)
-			? keyword
-			: "";
+	if (values.some((value) => CSS_WIDE_KEYWORDS.has(value))) {
+		return values.every((value) => value === values[0]) ? values[0] : "";
 	}
-	// `border` and its logical twins are three uniform boxes -- widths, styles
-	// and colors -- and serialize only when every side agrees.
-	if (longhands.length === 12) {
-		const components: Array<[string, string]> = [];
-		for (const kind of LINE_COMPONENTS) {
-			const sides = longhands.filter((longhand) =>
-				longhand.endsWith(`-${kind}`),
-			);
-			if (sides.length !== 4) return "";
-			const values = sides.map(valueOf);
-			if (values.some((value) => value !== values[0])) return "";
-			components.push([sides[0], values[0]]);
+
+	switch (SHORTHAND_SHAPES.get(shorthand)) {
+		case "box":
+			return collapseSides(values);
+		// `border` and its logical twins are three uniform boxes -- widths,
+		// styles and colors -- and serialize only when every side agrees.
+		case "border": {
+			const components: Array<[string, string]> = [];
+			for (const kind of LINE_COMPONENTS) {
+				const sides = longhands.filter((longhand) =>
+					longhand.endsWith(`-${kind}`),
+				);
+				const sideValues = sides.map(valueOf);
+				if (sideValues.some((value) => value !== sideValues[0])) return "";
+				components.push([sides[0], sideValues[0]]);
+			}
+			return dropInitials(components, 1);
 		}
-		return dropInitials(components, 1);
+		// `border-top`, `outline`, `column-rule`: a line's width, style and
+		// color, of which the style is the component that says the line is there
+		// at all and so is written even when it is the initial `none`.
+		case "line":
+			return dropInitials(
+				longhands.map((longhand, index) => [longhand, values[index]] as const),
+				1,
+			);
+		case "pair":
+			return values[0] === values[1] ? values[0] : values.join(" ");
+		default:
+			return dropInitials(
+				longhands.map((longhand, index) => [longhand, values[index]] as const),
+			);
 	}
-
-	// `border-top`, `outline`, `column-rule`: a line's width, style and color,
-	// of which the style is the component that says the line is there at all
-	// and so is written even when it is the initial `none`.
-	if (
-		longhands.length === LINE_COMPONENTS.length &&
-		longhands.every((longhand, index) =>
-			longhand.endsWith(`-${LINE_COMPONENTS[index]}`),
-		)
-	) {
-		return dropInitials(
-			longhands.map((longhand) => [longhand, valueOf(longhand)] as const),
-			1,
-		);
-	}
-
-	const box =
-		boxOrder(shorthand, longhands, EDGE_NAMES) ??
-		boxOrder(shorthand, longhands, CORNER_NAMES);
-	if (box) return collapseSides(box.map(valueOf));
-
-	if (longhands.length === 2) {
-		const values = longhands.map(valueOf);
-		return values[0] === values[1] ? values[0] : values.join(" ");
-	}
-
-	return dropInitials(
-		longhands.map((longhand) => [longhand, valueOf(longhand)] as const),
-	);
 }
 
 /**
@@ -1231,7 +1215,38 @@ export class CSSStyleDeclaration implements DeclarationSource {
 	declarationBlock(): DeclarationBlock {
 		this.#sync();
 		if (this.#declarations.length === 0) return EMPTY_DECLARATIONS;
-		return (this.#block ??= expandDeclarations(this));
+		if (this.#block) return this.#block;
+
+		const declarations: Record<string, string> = {};
+		const important: Record<string, boolean> = {};
+		const importantValues: Record<string, string> = {};
+		let undecomposed = false;
+		for (const entry of this.#declarations) {
+			// An invalid declaration never enters the cascade: dropping it is
+			// what lets a lower-priority rule keep winning, as a browser does.
+			if (!isValidDeclaration(entry.name, entry.value)) continue;
+			declarations[entry.name] = entry.value;
+			if (entry.important) {
+				important[entry.name] = true;
+				importantValues[entry.name] = entry.value;
+			}
+			if (SHORTHAND_LONGHANDS.has(entry.name)) undecomposed = true;
+		}
+
+		// The block holds longhands, which is what the cascade consults --
+		// except for a shorthand whose grammar this engine does not decompose,
+		// which reaches the cascade as whatever longhands it can name, its
+		// importance covering each of them.
+		if (undecomposed) {
+			for (const property of Object.keys(expandShorthands(importantValues))) {
+				important[property] = true;
+			}
+			return (this.#block = {
+				declarations: expandShorthands(declarations),
+				important,
+			});
+		}
+		return (this.#block = {declarations, important});
 	}
 
 	get parentRule(): CSSRule | null {
@@ -2263,14 +2278,14 @@ function sheetFor(element: Element): CSSStyleSheet {
 const nativeSheetLists = new WeakMap<Document, {length: number}>();
 
 /**
- * How many stylesheets a document holds, counted without building the list.
+ * The `<style>` elements a document holds, as a bare length to poll.
  *
- * The `<style>` elements are counted through the list jsdom maintains as it
- * parses them -- a length read, no walk -- which is what makes this cheap
- * enough to poll on every computed-style read. jsdom keeps the real list on
- * its wrapper's impl object behind the "impl" symbol.
+ * jsdom maintains this list as it parses style elements, so a length read
+ * answers "has a sheet appeared" without walking the tree -- cheap enough to
+ * ask on every computed-style read. The real list lives on the wrapper's impl
+ * object, behind the "impl" symbol.
  */
-export function documentStyleSheetCount(document: Document): number {
+export function documentStyleSheetList(document: Document): {length: number} {
 	let list = nativeSheetLists.get(document);
 	if (list === undefined) {
 		const native = nativeStyleSheets.get(document.constructor.prototype);
@@ -2285,7 +2300,7 @@ export function documentStyleSheetCount(document: Document): number {
 			: (wrapper ?? {length: 0});
 		nativeSheetLists.set(document, list);
 	}
-	return list.length + (adoptedSheets.get(document)?.length ?? 0);
+	return list;
 }
 
 /**
@@ -3499,14 +3514,17 @@ export class StyleManager {
 	 */
 
 	/**
-	 * How many stylesheets the document holds, counted without building the
-	 * list. The count is polled on every computed-style read to catch a
-	 * <style> appended in the same tick, before the mutation observer
-	 * delivers; a sheet's own mutations reach the cascade through
-	 * refreshStylesheets instead.
+	 * The document's style-element list, held so the count below is a bare
+	 * length read. The count is polled on every computed-style read to catch
+	 * a <style> appended in the same tick, before the mutation observer
+	 * delivers; adopted sheets and a sheet's own mutations reach the cascade
+	 * through refreshStylesheets instead.
 	 */
+	#styleSheetList: {length: number} | null = null;
+
 	#styleSheetCount(): number {
-		return documentStyleSheetCount(this.#document);
+		this.#styleSheetList ??= documentStyleSheetList(this.#document);
+		return this.#styleSheetList.length;
 	}
 
 	invalidationScopeFor(element: Element): Element {
@@ -3671,7 +3689,7 @@ export class StyleManager {
 		this.#counterRulesExist = false;
 		this.#listItemRulesExist = false;
 		this.#stylesheetsDirty = false;
-		this.#parsedStyleSheetCount = documentStyleSheetCount(document);
+		this.#parsedStyleSheetCount = this.#styleSheetCount();
 
 		// The UA document sheet parses first; origin ordering (not source
 		// order) is what keeps it beneath every author rule.
