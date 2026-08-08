@@ -20,6 +20,12 @@ import {
 } from "./composition.js";
 import {type LayoutEngine} from "./layout.js";
 import {
+	CSS_INITIAL_VALUES,
+	CSS_LONGHANDS,
+	CSS_PROPERTIES,
+	CSS_SHORTHANDS,
+} from "./cssproperties.js";
+import {
 	INHERITED_PROPERTIES,
 	INITIAL_KEYWORDS,
 	UA_DOCUMENT_STYLES,
@@ -565,142 +571,310 @@ function expandDeclarations(style: DeclarationSource): DeclarationBlock {
 	return {declarations: expandShorthands(authored), important};
 }
 
-/** One declaration as authored on an element's `style` attribute. */
-interface InlineDeclaration {
+/** One declaration of a block: a longhand, or a shorthand kept undecomposed. */
+interface CSSDeclaration {
 	name: string;
 	value: string;
 	important: boolean;
 }
 
-/**
- * The properties `element.style` exposes as camelCase (and dashed) accessors.
- * Anything outside the list is still reachable through setProperty and
- * getPropertyValue, as a custom property is.
- */
-const INLINE_STYLE_ACCESSORS = [
-	"align-content",
-	"align-items",
-	"align-self",
-	"appearance",
-	"background",
-	"background-clip",
-	"background-color",
-	"background-image",
-	"background-position",
-	"background-repeat",
-	"background-size",
-	"border",
-	"border-bottom",
-	"border-bottom-color",
-	"border-bottom-style",
-	"border-bottom-width",
-	"border-collapse",
-	"border-color",
-	"border-left",
-	"border-left-color",
-	"border-left-style",
-	"border-left-width",
-	"border-radius",
-	"border-right",
-	"border-right-color",
-	"border-right-style",
-	"border-right-width",
-	"border-spacing",
-	"border-style",
-	"border-top",
-	"border-top-color",
-	"border-top-style",
-	"border-top-width",
-	"border-width",
-	"bottom",
-	"box-sizing",
-	"caption-side",
-	"caret-color",
-	"clear",
-	"color",
-	"column-gap",
-	"content",
-	"cursor",
-	"direction",
-	"display",
-	"flex",
-	"flex-basis",
-	"flex-direction",
-	"flex-flow",
-	"flex-grow",
-	"flex-shrink",
-	"flex-wrap",
-	"float",
-	"font",
-	"font-family",
-	"font-size",
-	"font-style",
-	"font-weight",
-	"gap",
-	"height",
-	"inset",
-	"justify-content",
-	"left",
-	"letter-spacing",
-	"line-height",
-	"list-style",
-	"list-style-image",
-	"list-style-position",
-	"list-style-type",
-	"margin",
-	"margin-bottom",
-	"margin-left",
-	"margin-right",
-	"margin-top",
-	"max-height",
-	"max-width",
-	"min-height",
-	"min-width",
-	"opacity",
-	"order",
-	"outline",
-	"outline-color",
-	"outline-offset",
-	"outline-style",
-	"outline-width",
-	"overflow",
-	"overflow-wrap",
-	"overflow-x",
-	"overflow-y",
-	"padding",
-	"padding-bottom",
-	"padding-left",
-	"padding-right",
-	"padding-top",
-	"pointer-events",
-	"position",
-	"resize",
-	"right",
-	"row-gap",
-	"table-layout",
-	"text-align",
-	"text-decoration",
-	"text-decoration-color",
-	"text-decoration-line",
-	"text-decoration-style",
-	"text-indent",
-	"text-overflow",
-	"text-transform",
-	"top",
-	"unicode-bidi",
-	"user-select",
-	"vertical-align",
-	"visibility",
-	"white-space",
-	"width",
-	"word-break",
-	"word-spacing",
-	"writing-mode",
-	"z-index",
-];
+/** Every property CSSOM exposes, shorthands included. */
+const SUPPORTED_PROPERTIES = new Set(CSS_PROPERTIES);
 
-function camelCaseProperty(property: string): string {
-	return property.replace(/-([a-z])/g, (_, letter: string) =>
+/** Each shorthand's longhands, in the order its grammar names them. */
+const SHORTHAND_LONGHANDS = new Map<string, readonly string[]>(
+	Object.entries(CSS_SHORTHANDS),
+);
+
+/**
+ * The shorthands a longhand belongs to, widest first. Block serialization
+ * prefers the shorthand covering the most declarations; `all` covers every
+ * longhand and is never used as one.
+ */
+const LONGHAND_SHORTHANDS = new Map<string, readonly string[]>();
+{
+	const byLonghand = new Map<string, string[]>();
+	for (const [shorthand, longhands] of SHORTHAND_LONGHANDS) {
+		if (shorthand === "all") continue;
+		for (const longhand of longhands) {
+			let shorthands = byLonghand.get(longhand);
+			if (!shorthands) byLonghand.set(longhand, (shorthands = []));
+			shorthands.push(shorthand);
+		}
+	}
+	for (const [longhand, shorthands] of byLonghand) {
+		shorthands.sort(
+			(a, b) =>
+				SHORTHAND_LONGHANDS.get(b)!.length -
+					SHORTHAND_LONGHANDS.get(a)!.length || (a < b ? -1 : 1),
+		);
+		LONGHAND_SHORTHANDS.set(longhand, shorthands);
+	}
+}
+
+const EDGE_NAMES = ["top", "right", "bottom", "left"] as const;
+/** The components of a line shorthand, in the order its grammar writes them. */
+const LINE_COMPONENTS = ["width", "style", "color"] as const;
+
+const CORNER_NAMES = [
+	"top-left",
+	"top-right",
+	"bottom-right",
+	"bottom-left",
+] as const;
+
+/**
+ * A declared value in its CSSOM spelling: comments removed, runs of whitespace
+ * collapsed to one space, no space inside a function's parentheses except the
+ * single space that follows each comma. Strings pass through as authored.
+ */
+export function serializeCSSValue(input: string): string {
+	let out = "";
+	let space = false;
+	for (let i = 0; i < input.length; i++) {
+		const character = input[i];
+		if (character === "/" && input[i + 1] === "*") {
+			const end = input.indexOf("*/", i + 2);
+			i = end === -1 ? input.length : end + 1;
+			space = out !== "";
+			continue;
+		}
+		if (character === '"' || character === "'") {
+			const start = i++;
+			for (; i < input.length && input[i] !== character; i++) {
+				if (input[i] === "\\") i++;
+			}
+			if (space && out !== "") out += " ";
+			space = false;
+			out += input.slice(start, i + 1);
+			continue;
+		}
+		if (
+			character === " " ||
+			character === "\t" ||
+			character === "\n" ||
+			character === "\r" ||
+			character === "\f"
+		) {
+			space = out !== "";
+			continue;
+		}
+		if (character === "," || character === ")") {
+			out += character;
+			space = false;
+			continue;
+		}
+		if (out.endsWith(",")) {
+			out += " ";
+		} else if (space && !out.endsWith("(")) {
+			out += " ";
+		}
+		space = false;
+		out += character;
+	}
+	return out;
+}
+
+/** The declarations of a `style` attribute, a `cssText`, or a rule's block. */
+function parseDeclarationText(text: string): CSSDeclaration[] {
+	const declarations: CSSDeclaration[] = [];
+	let depth = 0;
+	let start = 0;
+	const push = (end: number): void => {
+		const source = text.slice(start, end);
+		start = end + 1;
+		const colon = source.indexOf(":");
+		if (colon === -1) return;
+		const name = normalizePropertyName(source.slice(0, colon));
+		if (!name) return;
+		let value = serializeCSSValue(source.slice(colon + 1));
+		let important = false;
+		const bang = value.toLowerCase().lastIndexOf("!important");
+		if (bang !== -1 && !value.slice(bang + 10).trim()) {
+			important = true;
+			value = value.slice(0, bang).trim();
+		}
+		if (!value) return;
+		declarations.push({name, value, important});
+	};
+	for (let i = 0; i < text.length; i++) {
+		const character = text[i];
+		if (character === "/" && text[i + 1] === "*") {
+			const end = text.indexOf("*/", i + 2);
+			i = end === -1 ? text.length : end + 1;
+		} else if (character === '"' || character === "'") {
+			for (i++; i < text.length && text[i] !== character; i++) {
+				if (text[i] === "\\") i++;
+			}
+		} else if (character === "(" || character === "[" || character === "{") {
+			depth++;
+		} else if (character === ")" || character === "]" || character === "}") {
+			depth--;
+		} else if (character === ";" && depth <= 0) {
+			push(i);
+		}
+	}
+	push(text.length);
+	return declarations;
+}
+
+/**
+ * A shorthand's value as its longhands, every longhand the shorthand covers
+ * given a value -- the ones its grammar leaves out reset to their initial
+ * value, as a browser's shorthand write does. Null for a shorthand whose
+ * grammar this engine does not decompose, which stays a declaration of its own.
+ */
+function expandShorthandValue(
+	property: string,
+	value: string,
+): Record<string, string> | null {
+	const longhands = SHORTHAND_LONGHANDS.get(property);
+	if (!longhands) return null;
+	const expanded = expandShorthands({[property]: value});
+	const out: Record<string, string> = {};
+	let decomposed = false;
+	for (const longhand of longhands) {
+		if (expanded[longhand] === undefined) continue;
+		out[longhand] = expanded[longhand];
+		decomposed = true;
+	}
+	if (!decomposed) return null;
+	for (const longhand of longhands) {
+		if (longhand in out) continue;
+		const initial = CSS_INITIAL_VALUES[longhand];
+		if (initial) out[longhand] = initial;
+	}
+	// Longhand order follows the shorthand's grammar, not the fill order.
+	const ordered: Record<string, string> = {};
+	for (const longhand of longhands) {
+		if (longhand in out) ordered[longhand] = out[longhand];
+	}
+	return ordered;
+}
+
+/** The four values of a box shorthand, collapsed to the shortest equivalent. */
+function collapseSides(values: string[]): string {
+	const [top, right, bottom, left] = values;
+	if (left !== right) return `${top} ${right} ${bottom} ${left}`;
+	if (bottom !== top) return `${top} ${right} ${bottom}`;
+	if (right !== top) return `${top} ${right}`;
+	return top;
+}
+
+/**
+ * The longhands of `shorthand` grouped by the side or corner each names, in
+ * the order the shorthand's grammar writes them, or null when the longhands
+ * are not a box.
+ */
+function boxOrder(
+	shorthand: string,
+	longhands: readonly string[],
+	parts: readonly string[],
+): string[] | null {
+	if (longhands.length !== parts.length) return null;
+	const byPart = new Map<string, string>();
+	let stem: string | null = null;
+	for (const longhand of longhands) {
+		let matched: string | null = null;
+		for (const part of parts) {
+			const pattern = new RegExp(`(^|-)${part}(-|$)`);
+			if (!pattern.test(longhand)) continue;
+			if (matched === null || part.length > matched.length) matched = part;
+		}
+		if (matched === null) return null;
+		const rest = longhand.replace(new RegExp(`(^|-)${matched}(-|$)`), "$1$2");
+		if (stem === null) stem = rest;
+		else if (stem !== rest) return null;
+		if (byPart.has(matched)) return null;
+		byPart.set(matched, longhand);
+	}
+	const ordered = parts.map((part) => byPart.get(part));
+	return ordered.every((name): name is string => name !== undefined)
+		? ordered
+		: null;
+}
+
+/** A shorthand's value, reconstructed from its longhands' values. */
+function serializeShorthandValue(
+	shorthand: string,
+	longhands: readonly string[],
+	valueOf: (longhand: string) => string,
+): string {
+	// `border` and its logical twins are three uniform boxes -- widths, styles
+	// and colors -- and serialize only when every side agrees.
+	if (longhands.length === 12) {
+		const components: Array<[string, string]> = [];
+		for (const kind of LINE_COMPONENTS) {
+			const sides = longhands.filter((longhand) =>
+				longhand.endsWith(`-${kind}`),
+			);
+			if (sides.length !== 4) return "";
+			const values = sides.map(valueOf);
+			if (values.some((value) => value !== values[0])) return "";
+			components.push([sides[0], values[0]]);
+		}
+		return dropInitials(components, 1);
+	}
+
+	// `border-top`, `outline`, `column-rule`: a line's width, style and color,
+	// of which the style is the component that says the line is there at all
+	// and so is written even when it is the initial `none`.
+	if (
+		longhands.length === LINE_COMPONENTS.length &&
+		longhands.every((longhand, index) =>
+			longhand.endsWith(`-${LINE_COMPONENTS[index]}`),
+		)
+	) {
+		return dropInitials(
+			longhands.map((longhand) => [longhand, valueOf(longhand)] as const),
+			1,
+		);
+	}
+
+	const box =
+		boxOrder(shorthand, longhands, EDGE_NAMES) ??
+		boxOrder(shorthand, longhands, CORNER_NAMES);
+	if (box) return collapseSides(box.map(valueOf));
+
+	if (longhands.length === 2) {
+		const values = longhands.map(valueOf);
+		return values[0] === values[1] ? values[0] : values.join(" ");
+	}
+
+	return dropInitials(
+		longhands.map((longhand) => [longhand, valueOf(longhand)] as const),
+	);
+}
+
+/**
+ * A shorthand's components with the ones left at their initial value omitted,
+ * which is what makes `border-top: 1px solid` serialize without its color.
+ * `required` names a component index written whatever its value.
+ */
+function dropInitials(
+	components: ReadonlyArray<readonly [string, string]>,
+	required = -1,
+): string {
+	const kept = components
+		.filter(([longhand, value], index) => {
+			if (index === required) return true;
+			const initial = CSS_INITIAL_VALUES[longhand];
+			return !initial || value !== initial;
+		})
+		.map(([, value]) => value);
+	if (kept.length > 0) return kept.join(" ");
+	return components.length > 0 ? components[0][1] : "";
+}
+
+/**
+ * The CSSOM algorithm turning a property name into the IDL attribute that
+ * reflects it: `font-size` to `fontSize`, and -- with the lowercase-first flag
+ * a `-webkit-` property also carries -- `-webkit-mask` to `webkitMask` as well
+ * as `WebkitMask`.
+ */
+function camelCaseProperty(property: string, lowercaseFirst = false): string {
+	const source = lowercaseFirst ? property.slice(1) : property;
+	return source.replace(/-([a-z])/g, (_, letter: string) =>
 		letter.toUpperCase(),
 	);
 }
@@ -708,26 +882,33 @@ function camelCaseProperty(property: string): string {
 /**
  * The inline style objects, one per element, that `element.style` hands out.
  */
-const inlineStyles = new WeakMap<Element, InlineStyleDeclaration>();
+const inlineStyles = new WeakMap<Element, CSSStyleDeclaration>();
 
 /** Marks a prototype whose `style` accessor is already the engine's. */
 const kInlineStyleInstalled = Symbol("termdom.inlineStyle");
 
 /**
- * The CSSOM behind `element.style`: the declarations an author writes, stored
- * as authored and serialized back to the `style` attribute on every change.
+ * A CSS declaration block: what `element.style`, a style rule's `style`, and
+ * every other CSSOM block are.
  *
- * Attribute and object are one store seen from two sides. A write serializes
- * through setAttribute, so an attribute mutation record -- what invalidation
- * listens to -- fires for a property write exactly as for an attribute write;
- * a write to the attribute (or its removal) reparses into the object on the
- * next read, recognized by the text differing from what this object last
- * serialized.
+ * Declarations are stored as longhands, so a shorthand write expands and a
+ * shorthand read reconstructs -- `style.margin = "1px"` answers
+ * `style.marginTop === "1px"`, and `style.marginTop = "2px"` answers
+ * `style.margin === "1px 1px 1px 2px"`.
+ *
+ * An element-owned block and the element's `style` attribute are one store
+ * seen from two sides. A write serializes through setAttribute, so the
+ * attribute mutation record invalidation listens to fires for a property write
+ * exactly as for an attribute write; a write to the attribute (or its removal)
+ * reparses into the object on the next read, recognized by the text differing
+ * from what this object last serialized.
  */
-export class InlineStyleDeclaration implements DeclarationSource {
+export class CSSStyleDeclaration implements DeclarationSource {
 	[index: number]: string;
-	#element: Element;
-	#declarations: InlineDeclaration[] = [];
+	#element: Element | null;
+	#parentRule: CSSRule | null;
+	#onChange: (() => void) | null;
+	#declarations: CSSDeclaration[] = [];
 	/** The `style` attribute text this object last serialized or parsed. */
 	#attributeText: string | null = null;
 	/** The declarations expanded to longhands for the cascade. */
@@ -735,33 +916,65 @@ export class InlineStyleDeclaration implements DeclarationSource {
 	/** How many numeric index properties currently name a declaration. */
 	#indexed = 0;
 
-	constructor(element: Element) {
-		this.#element = element;
+	constructor(
+		owner: {
+			element?: Element;
+			parentRule?: CSSRule;
+			onChange?: () => void;
+		} = {},
+	) {
+		this.#element = owner.element ?? null;
+		this.#parentRule = owner.parentRule ?? null;
+		this.#onChange = owner.onChange ?? null;
 	}
 
 	/** Adopt the `style` attribute when it says something this object did not write. */
 	#sync(): void {
+		if (!this.#element) return;
 		const text = this.#element.getAttribute("style") ?? "";
 		if (text === this.#attributeText) return;
 		this.#attributeText = text;
-		this.#declarations = parseInlineDeclarations(text);
+		this.#declarations = [];
+		for (const declaration of parseDeclarationText(text)) {
+			this.#apply(declaration.name, declaration.value, declaration.important);
+		}
 		this.#invalidate();
 	}
 
+	/** Serialize a CSS declaration block: shorthands reconstructed, priority kept. */
 	#serialize(): string {
-		return this.#declarations
-			.map(
-				({name, value, important}) =>
-					`${name}: ${value}${important ? " !important" : ""};`,
-			)
-			.join(" ");
+		const parts: string[] = [];
+		const serialized = new Set<string>();
+		for (const declaration of this.#declarations) {
+			if (serialized.has(declaration.name)) continue;
+			let text = "";
+			for (const shorthand of LONGHAND_SHORTHANDS.get(declaration.name) ?? []) {
+				const longhands = SHORTHAND_LONGHANDS.get(shorthand)!;
+				const value = this.#shorthandValue(shorthand, longhands);
+				if (!value) continue;
+				const important = this.#find(longhands[0])!.important;
+				text = `${shorthand}: ${value}${important ? " !important" : ""};`;
+				for (const longhand of longhands) serialized.add(longhand);
+				break;
+			}
+			if (!text) {
+				const priority = declaration.important ? " !important" : "";
+				text = `${declaration.name}: ${declaration.value}${priority};`;
+				serialized.add(declaration.name);
+			}
+			parts.push(text);
+		}
+		return parts.join(" ");
 	}
 
 	/** Serialize to the `style` attribute, which is what invalidation observes. */
 	#flush(): void {
 		this.#invalidate();
-		this.#attributeText = this.#serialize();
-		this.#element.setAttribute("style", this.#attributeText);
+		if (this.#element) {
+			this.#attributeText = this.#serialize();
+			this.#element.setAttribute("style", this.#attributeText);
+		}
+		this.#onChange?.();
 	}
 
 	#invalidate(): void {
@@ -775,8 +988,65 @@ export class InlineStyleDeclaration implements DeclarationSource {
 		}
 	}
 
-	#find(property: string): InlineDeclaration | undefined {
+	#find(property: string): CSSDeclaration | undefined {
 		return this.#declarations.find((entry) => entry.name === property);
+	}
+
+	/** Store one declaration in place; returns whether anything changed. */
+	#store(name: string, value: string, important: boolean): boolean {
+		const declared = this.#find(name);
+		if (!declared) {
+			this.#declarations.push({name, value, important});
+			return true;
+		}
+		if (declared.value === value && declared.important === important) {
+			return false;
+		}
+		declared.value = value;
+		declared.important = important;
+		return true;
+	}
+
+	#remove(name: string): boolean {
+		const index = this.#declarations.findIndex((entry) => entry.name === name);
+		if (index === -1) return false;
+		this.#declarations.splice(index, 1);
+		return true;
+	}
+
+	/** Store a property as its longhands, or as itself; returns whether it changed. */
+	#apply(name: string, value: string, important: boolean): boolean {
+		// A declaration whose value does not parse is not stored at all, so a
+		// shorthand with one bad component drops whole rather than leaving its
+		// good components behind.
+		if (!isValidDeclaration(name, value)) return false;
+		const expanded = expandShorthandValue(name, value);
+		if (!expanded) return this.#store(name, value, important);
+		let changed = this.#remove(name);
+		for (const longhand of SHORTHAND_LONGHANDS.get(name)!) {
+			if (longhand in expanded) continue;
+			changed = this.#remove(longhand) || changed;
+		}
+		for (const [longhand, longhandValue] of Object.entries(expanded)) {
+			changed = this.#store(longhand, longhandValue, important) || changed;
+		}
+		return changed;
+	}
+
+	/** The shorthand's value, or "" when its longhands do not agree on one. */
+	#shorthandValue(shorthand: string, longhands: readonly string[]): string {
+		let important: boolean | null = null;
+		for (const longhand of longhands) {
+			const declared = this.#find(longhand);
+			if (!declared) return "";
+			if (important === null) important = declared.important;
+			else if (important !== declared.important) return "";
+		}
+		return serializeShorthandValue(
+			shorthand,
+			longhands,
+			(longhand) => this.#find(longhand)!.value,
+		);
 	}
 
 	/** The declarations as the cascade consumes them: longhands, importance included. */
@@ -784,6 +1054,10 @@ export class InlineStyleDeclaration implements DeclarationSource {
 		this.#sync();
 		if (this.#declarations.length === 0) return EMPTY_DECLARATIONS;
 		return (this.#block ??= expandDeclarations(this));
+	}
+
+	get parentRule(): CSSRule | null {
+		return this.#parentRule;
 	}
 
 	get length(): number {
@@ -796,51 +1070,61 @@ export class InlineStyleDeclaration implements DeclarationSource {
 		return this.#declarations[index]?.name ?? "";
 	}
 
+	[Symbol.iterator](): IterableIterator<string> {
+		this.#sync();
+		return this.#declarations.map((entry) => entry.name)[Symbol.iterator]();
+	}
+
 	getPropertyValue(property: string): string {
 		this.#sync();
 		const name = normalizePropertyName(property);
 		const declared = this.#find(name);
 		if (declared) return declared.value;
-		// A longhand a shorthand declares reads back from the shorthand, as
-		// `style.border = "1px solid"` then `style.borderTopWidth` does.
-		return this.declarationBlock().declarations[name] ?? "";
+		const longhands = SHORTHAND_LONGHANDS.get(name);
+		return longhands ? this.#shorthandValue(name, longhands) : "";
 	}
 
 	getPropertyPriority(property: string): string {
 		this.#sync();
-		return this.#find(normalizePropertyName(property))?.important
-			? "important"
-			: "";
+		const name = normalizePropertyName(property);
+		const declared = this.#find(name);
+		if (declared) return declared.important ? "important" : "";
+		const longhands = SHORTHAND_LONGHANDS.get(name);
+		if (
+			longhands &&
+			longhands.every((longhand) => this.#find(longhand)?.important)
+		) {
+			return "important";
+		}
+		return "";
 	}
 
 	setProperty(property: string, value: string, priority?: string): void {
 		this.#sync();
 		const name = normalizePropertyName(property);
-		const text = value == null ? "" : String(value).trim();
+		if (!name.startsWith("--") && !SUPPORTED_PROPERTIES.has(name)) return;
+		const text = serializeCSSValue(value == null ? "" : String(value));
 		if (text === "") {
 			this.removeProperty(name);
 			return;
 		}
-		const important = String(priority ?? "").toLowerCase() === "important";
-		const declared = this.#find(name);
-		if (declared) {
-			if (declared.value === text && declared.important === important) return;
-			declared.value = text;
-			declared.important = important;
-		} else {
-			this.#declarations.push({name, value: text, important});
+		const priorityText = String(priority ?? "").toLowerCase();
+		if (priorityText !== "" && priorityText !== "important") return;
+		if (this.#apply(name, text, priorityText === "important")) {
+			this.#flush();
 		}
-		this.#flush();
 	}
 
 	removeProperty(property: string): string {
 		this.#sync();
 		const name = normalizePropertyName(property);
-		const index = this.#declarations.findIndex((entry) => entry.name === name);
-		if (index === -1) return "";
-		const [removed] = this.#declarations.splice(index, 1);
-		this.#flush();
-		return removed.value;
+		const previous = this.getPropertyValue(name);
+		let changed = this.#remove(name);
+		for (const longhand of SHORTHAND_LONGHANDS.get(name) ?? []) {
+			changed = this.#remove(longhand) || changed;
+		}
+		if (changed) this.#flush();
+		return previous;
 	}
 
 	get cssText(): string {
@@ -849,7 +1133,17 @@ export class InlineStyleDeclaration implements DeclarationSource {
 	}
 
 	set cssText(text: string) {
-		this.#declarations = parseInlineDeclarations(text ?? "");
+		this.#sync();
+		this.#declarations = [];
+		for (const declaration of parseDeclarationText(text ?? "")) {
+			if (
+				!declaration.name.startsWith("--") &&
+				!SUPPORTED_PROPERTIES.has(declaration.name)
+			) {
+				continue;
+			}
+			this.#apply(declaration.name, declaration.value, declaration.important);
+		}
 		this.#flush();
 	}
 }
@@ -860,60 +1154,27 @@ function normalizePropertyName(property: string): string {
 	return name.startsWith("--") ? name : name.toLowerCase();
 }
 
-/**
- * The declarations of a `style` attribute (or a cssText assignment), parsed by
- * the same CSSOM that parses stylesheet rules. Anything after a stray `}` --
- * the one way attribute text could reach past its own block -- parses into
- * rules that are dropped here.
- */
-function parseInlineDeclarations(text: string): InlineDeclaration[] {
-	if (!text.trim()) return [];
-	const rule = CSSOM.parse(`*{${text}}`).cssRules[0] as
-		| CSSStyleRule
-		| undefined;
-	const style = rule?.style as DeclarationSource | undefined;
-	if (!style) return [];
-	const declarations: InlineDeclaration[] = [];
-	for (let i = 0; i < style.length; i++) {
-		const name = normalizePropertyName((style as any)[i]);
-		const value = style.getPropertyValue(name).trim();
-		if (!value) continue;
-		declarations.push({
-			name,
-			value,
-			important: style.getPropertyPriority(name) === "important",
-		});
-	}
-	return declarations;
-}
-
-for (const property of INLINE_STYLE_ACCESSORS) {
+for (const property of CSS_PROPERTIES) {
 	const descriptor: PropertyDescriptor = {
-		get(this: InlineStyleDeclaration) {
+		get(this: CSSStyleDeclaration) {
 			return this.getPropertyValue(property);
 		},
-		set(this: InlineStyleDeclaration, value: unknown) {
+		set(this: CSSStyleDeclaration, value: unknown) {
 			this.setProperty(property, value == null ? "" : String(value));
 		},
 		configurable: true,
 		enumerable: true,
 	};
-	const camelCase = camelCaseProperty(property);
-	Object.defineProperty(
-		InlineStyleDeclaration.prototype,
-		camelCase,
-		descriptor,
-	);
-	if (camelCase !== property) {
-		Object.defineProperty(InlineStyleDeclaration.prototype, property, {
-			...descriptor,
-			enumerable: false,
-		});
+	const names = [camelCaseProperty(property)];
+	if (property.startsWith("-webkit-")) {
+		names.push(camelCaseProperty(property, true));
 	}
-	if (property === "float") {
-		Object.defineProperty(InlineStyleDeclaration.prototype, "cssFloat", {
+	if (property !== names[0]) names.push(property);
+	if (property === "float") names.push("cssFloat");
+	for (const [index, name] of names.entries()) {
+		Object.defineProperty(CSSStyleDeclaration.prototype, name, {
 			...descriptor,
-			enumerable: false,
+			enumerable: index === 0,
 		});
 	}
 }
@@ -939,7 +1200,7 @@ export function installInlineStyle(window: DOMWindow): void {
 			get(this: Element) {
 				let style = inlineStyles.get(this);
 				if (!style) {
-					style = new InlineStyleDeclaration(this);
+					style = new CSSStyleDeclaration({element: this});
 					inlineStyles.set(this, style);
 				}
 				return style;
@@ -980,7 +1241,7 @@ export class ComputedStyleDeclaration {
 	 */
 	#inlineDeclarations(): DeclarationBlock {
 		const style = (this.#element as HTMLElement).style;
-		return style instanceof InlineStyleDeclaration
+		return style instanceof CSSStyleDeclaration
 			? style.declarationBlock()
 			: EMPTY_DECLARATIONS;
 	}
@@ -1164,13 +1425,18 @@ export class ComputedStyleDeclaration {
 	getPropertyValue(property: string): string {
 		let value = this.#resolved.get(property);
 		if (value === undefined) {
-			// A box shorthand answers as its four longhands, each in its own
-			// computed spelling: `margin: 10px` is "10px 10px 10px 10px".
-			const longhands = BOX_SHORTHAND_LONGHANDS.get(property);
+			// A shorthand answers as its longhands, each in its own computed
+			// spelling, collapsed: `margin: 10px 10px 10px 10px` is "10px".
+			const longhands = SHORTHAND_LONGHANDS.get(property);
 			value = longhands
-				? longhands
-						.map((longhand) => this.getPropertyValue(longhand) || "0px")
-						.join(" ")
+				? serializeShorthandValue(
+						property,
+						longhands,
+						(longhand) =>
+							this.getPropertyValue(longhand) ||
+							CSS_INITIAL_VALUES[longhand] ||
+							"",
+					)
 				: computedValue(property, this.#resolvePropertyValue(property));
 			this.#resolved.set(property, value);
 		}
@@ -1188,12 +1454,29 @@ export class ComputedStyleDeclaration {
 		return "";
 	}
 
+	/**
+	 * A computed style declares every supported longhand, so its indices name
+	 * them in the property index's order rather than the order reads happened
+	 * to resolve them in.
+	 */
 	item(index: number): string {
-		return [...this.#resolved.keys()][index] ?? "";
+		return CSS_LONGHANDS[index] ?? "";
 	}
 
 	get length(): number {
-		return this.#resolved.size;
+		return CSS_LONGHANDS.length;
+	}
+
+	[Symbol.iterator](): IterableIterator<string> {
+		return CSS_LONGHANDS[Symbol.iterator]();
+	}
+
+	get cssText(): string {
+		return "";
+	}
+
+	get parentRule(): CSSRule | null {
+		return null;
 	}
 }
 
@@ -1213,7 +1496,18 @@ export class PseudoStyleDeclaration {
 	getPropertyValue(property: string): string {
 		let value = this.#resolved.get(property);
 		if (value === undefined) {
-			value = computedValue(property, this.#declarations[property] ?? "");
+			const longhands = SHORTHAND_LONGHANDS.get(property);
+			value =
+				longhands && this.#declarations[property] === undefined
+					? serializeShorthandValue(
+							property,
+							longhands,
+							(longhand) =>
+								this.getPropertyValue(longhand) ||
+								CSS_INITIAL_VALUES[longhand] ||
+								"",
+						)
+					: computedValue(property, this.#declarations[property] ?? "");
 			this.#resolved.set(property, value);
 		}
 		return value;
@@ -2289,9 +2583,9 @@ export class StyleManager {
 		if (selector.includes(":has")) {
 			this.#selectorsReachAncestors = true;
 		}
-		const {declarations, important} = expandDeclarations(
-			styleRule.style as unknown as DeclarationSource,
-		);
+		const block = new CSSStyleDeclaration();
+		block.cssText = styleRule.style.cssText;
+		const {declarations, important} = block.declarationBlock();
 		if (
 			declarations["counter-reset"] ||
 			declarations["counter-increment"] ||

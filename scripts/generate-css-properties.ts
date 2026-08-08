@@ -90,7 +90,10 @@ for (const name of longhands) {
 	const initial = properties[name].initial;
 	if (typeof initial !== "string") continue;
 	if (/[A-Z]/.test(initial) && !initial.includes(" ")) continue;
-	if (initial.includes(" ") && /^[a-z]+ [a-z]+ [a-z]+ [a-z]+ [a-z]/.test(initial))
+	if (
+		initial.includes(" ") &&
+		/^[a-z]+ [a-z]+ [a-z]+ [a-z]+ [a-z]/.test(initial)
+	)
 		continue;
 	initials[name] = initial;
 }
@@ -144,7 +147,19 @@ ${record(initials)}
 const out = fileURLToPath(
 	new URL("../src/internal/cssproperties.ts", import.meta.url),
 );
-writeFileSync(out, source);
+const prettier = require("prettier") as {
+	format(source: string, options: object): Promise<string>;
+	resolveConfig(path: string): Promise<object | null>;
+};
+writeFileSync(
+	out,
+	await prettier.format(source, {
+		...((await prettier.resolveConfig(out)) ?? {}),
+		parser: "typescript",
+		useTabs: true,
+		bracketSpacing: false,
+	}),
+);
 process.stdout.write(
 	`${supported.length} properties, ${longhands.length} longhands, ${
 		Object.keys(shorthands).length

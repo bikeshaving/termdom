@@ -17,8 +17,8 @@ describe("getComputedStyle - What We Support", () => {
 		const styles = dom.window.getComputedStyle(element);
 
 		// Test basic CSS spec defaults (computed values)
-		expect(styles.getPropertyValue("margin")).toBe("0px 0px 0px 0px");
-		expect(styles.getPropertyValue("padding")).toBe("0px 0px 0px 0px");
+		expect(styles.getPropertyValue("margin")).toBe("0px");
+		expect(styles.getPropertyValue("padding")).toBe("0px");
 		expect(styles.getPropertyValue("border-width")).toBe("0px");
 		expect(styles.getPropertyValue("border-style")).toBe("none");
 		expect(styles.getPropertyValue("background-color")).toBe("transparent");
@@ -122,10 +122,10 @@ describe("getComputedStyle - What We Support", () => {
 		const styles = dom.window.getComputedStyle(element);
 
 		expect(styles.getPropertyValue("color")).toBe("red");
-		expect(styles.getPropertyValue("margin")).toBe("10px 10px 10px 10px");
+		expect(styles.getPropertyValue("margin")).toBe("10px");
 		expect(styles.getPropertyValue("display")).toBe("flex");
 		// Non-specified properties should still use defaults
-		expect(styles.getPropertyValue("padding")).toBe("0px 0px 0px 0px");
+		expect(styles.getPropertyValue("padding")).toBe("0px");
 	});
 
 	test("CSS keywords - initial", () => {
@@ -144,7 +144,7 @@ describe("getComputedStyle - What We Support", () => {
 
 		// Should resolve to CSS spec defaults (computed values)
 		expect(styles.getPropertyValue("color")).toBe("rgb(0, 0, 0)");
-		expect(styles.getPropertyValue("margin")).toBe("0px 0px 0px 0px");
+		expect(styles.getPropertyValue("margin")).toBe("0px");
 	});
 
 	test("CSS keywords - unset, revert, revert-layer", () => {
@@ -163,8 +163,8 @@ describe("getComputedStyle - What We Support", () => {
 
 		// Should resolve to defaults (we treat these the same as initial for now)
 		expect(styles.getPropertyValue("color")).toBe("rgb(0, 0, 0)");
-		expect(styles.getPropertyValue("margin")).toBe("0px 0px 0px 0px");
-		expect(styles.getPropertyValue("padding")).toBe("0px 0px 0px 0px");
+		expect(styles.getPropertyValue("margin")).toBe("0px");
+		expect(styles.getPropertyValue("padding")).toBe("0px");
 	});
 
 	test.todo("property inheritance", () => {
@@ -189,7 +189,7 @@ describe("getComputedStyle - What We Support", () => {
 		expect(childStyles.getPropertyValue("color")).toBe("blue");
 		expect(childStyles.getPropertyValue("font-size")).toBe("16px");
 		// Non-inherited properties should use their own defaults
-		expect(childStyles.getPropertyValue("margin")).toBe("0px 0px 0px 0px");
+		expect(childStyles.getPropertyValue("margin")).toBe("0px");
 
 		const childWithInherit =
 			dom.window.document.getElementById("child-with-inherit")!;
@@ -225,7 +225,7 @@ describe("getComputedStyle - What We Support", () => {
 
 		// Should work with standard CSS properties
 		expect(styles.getPropertyValue("color")).toBe("red");
-		expect(styles.getPropertyValue("margin")).toBe("10px 10px 10px 10px");
+		expect(styles.getPropertyValue("margin")).toBe("10px");
 	});
 
 	test("box model properties", () => {
@@ -490,8 +490,8 @@ describe("getComputedStyle - What We Don't Support (Failing Tests)", () => {
 		expect(styles.getPropertyValue("padding-left")).toBe("15px");
 
 		// And the shorthand properties should return the expanded form
-		expect(styles.getPropertyValue("margin")).toBe("10px 20px 10px 20px");
-		expect(styles.getPropertyValue("padding")).toBe("5px 15px 25px 15px");
+		expect(styles.getPropertyValue("margin")).toBe("10px 20px");
+		expect(styles.getPropertyValue("padding")).toBe("5px 15px 25px");
 	});
 
 	test.todo("shorthand property expansion - border and background", () => {
@@ -874,11 +874,15 @@ test("writing the attribute reparses into element.style", async () => {
 
 	el.setAttribute("style", "color: blue; border: none; padding: 0 !important");
 	expect(el.style.color).toBe("blue");
-	expect(el.style.length).toBe(3);
-	expect(el.style.item(1)).toBe("border");
+	// A shorthand is stored as the longhands it declares: one color, twelve
+	// border longhands, four paddings.
+	expect(el.style.length).toBe(17);
+	expect(el.style.item(1)).toBe("border-top-width");
 	expect(el.style.getPropertyPriority("padding")).toBe("important");
-	// A longhand a shorthand declares reads back through it.
 	expect(el.style.getPropertyValue("border-top-style")).toBe("none");
+	// A shorthand reads back reconstructed from those longhands.
+	expect(el.style.getPropertyValue("border")).toBe("none");
+	expect(el.style.getPropertyValue("padding")).toBe("0");
 
 	el.style.removeProperty("border");
 	expect(el.getAttribute("style")).toBe("color: blue; padding: 0 !important;");

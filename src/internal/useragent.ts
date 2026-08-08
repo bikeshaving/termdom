@@ -562,7 +562,7 @@ export function getElementDefaults(
 			...TERMINAL_ELEMENT_DEFAULTS.button,
 		};
 		if (element.ownerDocument?.activeElement === element) {
-			merged["text-decoration"] = "underline";
+			merged["text-decoration-line"] = "underline";
 		}
 		return merged;
 	}
@@ -580,7 +580,7 @@ export function getElementDefaults(
 			width: `${widest + 2}ch`,
 		};
 		if (select.ownerDocument?.activeElement === select) {
-			merged["text-decoration"] = "underline";
+			merged["text-decoration-line"] = "underline";
 		}
 		return merged;
 	}
@@ -596,7 +596,7 @@ export function getElementDefaults(
 			// The compact glyph is bare when blurred; focus underlines it --
 			// same live-wire language as the text field.
 			return focused
-				? {...CHECKBOX_DEFAULTS, "text-decoration": "underline"}
+				? {...CHECKBOX_DEFAULTS, "text-decoration-line": "underline"}
 				: CHECKBOX_DEFAULTS;
 		}
 		// The size attribute drives a text input's default width, one column
@@ -610,7 +610,7 @@ export function getElementDefaults(
 				merged.width = `${size}ch`;
 			}
 			if (focused) {
-				merged["text-decoration"] = "underline";
+				merged["text-decoration-line"] = "underline";
 			}
 			return merged;
 		}
@@ -632,6 +632,10 @@ export const INHERITED_PROPERTIES = new Set([
 	"line-height",
 	"text-align",
 	"text-decoration",
+	"text-decoration-color",
+	"text-decoration-line",
+	"text-decoration-style",
+	"text-decoration-thickness",
 	"text-indent",
 	"text-transform",
 	"white-space",
