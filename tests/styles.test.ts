@@ -644,9 +644,12 @@ test("bare numbers stay valid where CSS says they are", async () => {
 	expect(value(".numeric", "z-index")).toBe("5");
 	expect(value(".numeric", "flex-grow")).toBe("2");
 	expect(value(".numeric", "font-weight")).toBe("700");
-	expect(value(".units", "width")).toBe("50%");
+	// width and margin are resolved-value properties: a rendered box reports
+	// the used length, which is how these units prove they were accepted.
+	expect(value(".units", "width")).toBe("15px");
 	expect(value(".units", "min-width")).toBe("10ch");
-	expect(value(".units", "margin-left")).toBe("auto");
+	// `margin: 0 auto` centres the box, and the used margin says by how much.
+	expect(value(".units", "margin-left")).toMatch(/^\d+(\.\d+)?px$/);
 	dom.dispose();
 });
 

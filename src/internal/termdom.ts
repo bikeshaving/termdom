@@ -10,7 +10,12 @@ import {
 	type TerminalTransport,
 } from "./terminalsession.js";
 import {Renderer} from "./ansi.js";
-import {StyleManager, getBoxModel} from "./styles.js";
+import {
+	StyleManager,
+	beginInternalStyleReads,
+	endInternalStyleReads,
+	getBoxModel,
+} from "./styles.js";
 import {stringWidth} from "./text.js";
 import {
 	ObserverManager,
@@ -473,6 +478,11 @@ export class TermDOM {
 		// Create layout engine after StyleManager overrides getComputedStyle
 		this[kLayoutEngine] = new LayoutEngine(this.#jsdom.window);
 		this.#styleManager.setLayoutEngine(this[kLayoutEngine]);
+		// A resolved value is a measurement, so it takes the same flush every
+		// other geometry read takes -- one door, not two.
+		this.#styleManager.setLayoutFlush(() => {
+			this.#processPendingMutationsAndRender();
+		});
 		this[kLayoutEngine].resize(this.#width, this.#height);
 		this.#fullscreenManager = new FullscreenManager((output) => {
 			void this.#session.write(output);
@@ -1699,12 +1709,21 @@ export class TermDOM {
 			await this.#attachBegun;
 			if (this.#disposed) return;
 		}
-		if (!this.#interactive) {
-			await this.#renderStatic();
-			return;
-		}
+		// A frame is the engine reading its own styles: layout and paint decide
+		// geometry from computed values, and a resolved (used) value inside a
+		// frame would feed layout its own output. Author code cannot run inside
+		// this window -- the engine owns the loop until the frame is written.
+		beginInternalStyleReads();
+		try {
+			if (!this.#interactive) {
+				await this.#renderStatic();
+				return;
+			}
 
-		await this.#renderInteractive();
+			await this.#renderInteractive();
+		} finally {
+			endInternalStyleReads();
+		}
 	}
 
 	/**

@@ -44,7 +44,16 @@ export function getPropertyValue(element: Element, property: string): string {
 	if (!window) {
 		throw new Error("Element does not have an associated window");
 	}
-	return window.getComputedStyle(element).getPropertyValue(property);
+	// The COMPUTED value, not the resolved one: layout and paint decide
+	// geometry from this, and a used value here would feed layout its own
+	// output. Resolved values belong to window.getComputedStyle, the public
+	// door, and nowhere inside the engine.
+	beginInternalStyleReads();
+	try {
+		return window.getComputedStyle(element).getPropertyValue(property);
+	} finally {
+		endInternalStyleReads();
+	}
 }
 
 /**
@@ -153,8 +162,16 @@ export function getBoxModel(element: Element): BoxModel {
 	if (!window) {
 		throw new Error("Element does not have an associated window");
 	}
+	beginInternalStyleReads();
 	const computedStyle = window.getComputedStyle(element);
+	try {
+		return readBoxModel(computedStyle);
+	} finally {
+		endInternalStyleReads();
+	}
+}
 
+function readBoxModel(computedStyle: globalThis.CSSStyleDeclaration): BoxModel {
 	// Parse explicit width/height
 	const widthValue = parseUnitValue(computedStyle.getPropertyValue("width"));
 	const heightValue = parseUnitValue(computedStyle.getPropertyValue("height"));
@@ -3736,6 +3753,102 @@ export function uaStyleSheet(): CSSStyleSheet {
 	return uaDocumentSheet;
 }
 
+/**
+ * The properties whose resolved value is the used value, per CSSOM: the box's
+ * own dimensions, its edges, and the offsets that place it. Everything else
+ * resolves to its computed value.
+ */
+const USED_VALUE_PROPERTIES = new Set([
+	"width",
+	"height",
+	"top",
+	"right",
+	"bottom",
+	"left",
+	"margin-top",
+	"margin-right",
+	"margin-bottom",
+	"margin-left",
+	"padding-top",
+	"padding-right",
+	"padding-bottom",
+	"padding-left",
+	"border-top-width",
+	"border-right-width",
+	"border-bottom-width",
+	"border-left-width",
+]);
+
+/**
+ * How deep the engine is inside its own style reads.
+ *
+ * Layout consumes computed styles to decide geometry, so a resolved value read
+ * from inside layout would feed layout its own output. While this is above
+ * zero -- during a layout pass, and during the flush a measurement takes --
+ * every property resolves to its computed value, which is what the cascade
+ * means and what layout needs.
+ */
+let internalStyleReads = 0;
+
+export function beginInternalStyleReads(): void {
+	internalStyleReads++;
+}
+
+export function endInternalStyleReads(): void {
+	internalStyleReads--;
+}
+
+/** A used length in the one unit a terminal has: a cell, spelled `px`. */
+function usedLength(cells: number): string {
+	return `${Math.round(cells * 1000) / 1000}px`;
+}
+
+/**
+ * An element's computed style, for the engine itself: the same declaration
+ * `getComputedStyle` hands out, read through its computed values rather than
+ * its resolved ones.
+ */
+export function computedStyleOf(
+	element: Element,
+	pseudoElement?: string | null,
+): globalThis.CSSStyleDeclaration {
+	const window = element.ownerDocument?.defaultView;
+	if (!window) {
+		throw new Error("Element does not have an associated window");
+	}
+	const declaration = window.getComputedStyle(element, pseudoElement);
+	return declaration instanceof ComputedStyleDeclaration
+		? (new ComputedStyleView(
+				declaration,
+			) as unknown as globalThis.CSSStyleDeclaration)
+		: declaration;
+}
+
+/** A computed-only reading of a declaration, for the engine's own use. */
+class ComputedStyleView {
+	#declaration: ComputedStyleDeclaration;
+
+	constructor(declaration: ComputedStyleDeclaration) {
+		this.#declaration = declaration;
+	}
+
+	getPropertyValue(property: string): string {
+		return this.#declaration.computedValueOf(property);
+	}
+
+	getPropertyPriority(): string {
+		return "";
+	}
+
+	item(index: number): string {
+		return this.#declaration.item(index);
+	}
+
+	get length(): number {
+		return this.#declaration.length;
+	}
+}
+
 /** The epoch a declaration with no manager behind it watches: one that never moves. */
 const NO_STYLE_EPOCH = {value: 0};
 
@@ -3778,6 +3891,150 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 		}
 	}
 
+	/** Used values, memoized against the layout epoch they were measured in. */
+	#used = new Map<string, string>();
+	#usedEpoch = -1;
+
+	/**
+	 * A resolved value that is the used value: measured through the same flush
+	 * a geometry read takes, and memoized against the layout epoch so a
+	 * property-heavy caller measures once per layout rather than once per read.
+	 */
+	#usedValue(property: string): string {
+		const manager = this.#manager!;
+		const epoch = manager.layoutEpoch;
+		if (epoch !== this.#usedEpoch) {
+			this.#used.clear();
+			this.#usedEpoch = epoch;
+		}
+		const memoized = this.#used.get(property);
+		if (memoized !== undefined) return memoized;
+
+		const computed = this.computedValueOf(property);
+		const value = this.#measure(property, computed);
+		this.#used.set(property, value);
+		return value;
+	}
+
+	/**
+	 * The computed value: what the cascade says, before any box exists. This
+	 * is what the engine's own geometry decisions read -- a used value there
+	 * would feed layout its own output.
+	 */
+	computedValueOf(property: string): string {
+		let value = this.#resolved.get(property);
+		if (value === undefined) {
+			value = computedValue(property, this.#resolvePropertyValue(property));
+			this.#resolved.set(property, value);
+		}
+		return value;
+	}
+
+	#measure(property: string, computed: string): string {
+		// A border with no style draws nothing and takes no space, whatever
+		// width it declares.
+		if (property.startsWith("border-") && property.endsWith("-width")) {
+			const style = this.getPropertyValue(
+				`${property.slice(0, -"-width".length)}-style`,
+			);
+			if (!style || style === "none" || style === "hidden") return "0px";
+		}
+		// An inset only applies to a positioned box; on a static one it stays
+		// as declared.
+		if (
+			(property === "top" ||
+				property === "right" ||
+				property === "bottom" ||
+				property === "left") &&
+			this.getPropertyValue("position") === "static"
+		) {
+			return computed;
+		}
+
+		const rect = this.#manager!.usedRect(this.#element);
+		// No box -- display:none, or a tree layout never reached -- so the
+		// computed value is the answer, exactly as CSSOM says.
+		if (!rect) return computed;
+
+		if (property === "width" || property === "height") {
+			const vertical = property === "height";
+			const edges =
+				this.#edge(vertical ? "border-top-width" : "border-left-width") +
+				this.#edge(vertical ? "border-bottom-width" : "border-right-width") +
+				this.#edge(vertical ? "padding-top" : "padding-left") +
+				this.#edge(vertical ? "padding-bottom" : "padding-right");
+			const border = vertical ? rect.height : rect.width;
+			// `box-sizing: border-box` measures the border box itself.
+			const content =
+				this.getPropertyValue("box-sizing") === "border-box"
+					? border
+					: border - edges;
+			return usedLength(Math.max(0, content));
+		}
+
+		// An `auto` margin is whatever space the box was given: the distance
+		// between its border box and its containing block's content edge.
+		if (computed === "auto" && property.startsWith("margin-")) {
+			return usedLength(this.#autoMargin(property, rect));
+		}
+
+		// Every other used length is already absolute in this engine's own
+		// unit, so the computed value carries it; only a percentage still has
+		// to be resolved, against the containing block's width.
+		if (computed.endsWith("%")) {
+			const basis = this.#containingWidth();
+			if (basis === null) return computed;
+			return usedLength((parseFloat(computed) / 100) * basis);
+		}
+		return computed || "0px";
+	}
+
+	/** One edge length in cells, for the arithmetic above. */
+	#edge(property: string): number {
+		return parseFloat(this.getPropertyValue(property)) || 0;
+	}
+
+	/** The space an `auto` margin actually took, measured off the two boxes. */
+	#autoMargin(property: string, rect: DOMRect): number {
+		const parent = compositionParentElement(this.#element);
+		const parentRect = parent ? this.#manager!.usedRect(parent) : null;
+		if (!parent || !parentRect) return 0;
+		const parentStyle = computedStyleOf(parent);
+		const edge = (name: string): number =>
+			parseFloat(parentStyle.getPropertyValue(name)) || 0;
+		const left =
+			parentRect.x + edge("border-left-width") + edge("padding-left");
+		const top = parentRect.y + edge("border-top-width") + edge("padding-top");
+		const right =
+			parentRect.x +
+			parentRect.width -
+			edge("border-right-width") -
+			edge("padding-right");
+		const bottom =
+			parentRect.y +
+			parentRect.height -
+			edge("border-bottom-width") -
+			edge("padding-bottom");
+		switch (property) {
+			case "margin-left":
+				return Math.max(0, rect.x - left);
+			case "margin-top":
+				return Math.max(0, rect.y - top);
+			case "margin-right":
+				return Math.max(0, right - (rect.x + rect.width));
+			default:
+				return Math.max(0, bottom - (rect.y + rect.height));
+		}
+	}
+
+	/** The width a percentage on this element resolves against. */
+	#containingWidth(): number | null {
+		const parent = compositionParentElement(this.#element);
+		if (!parent) return null;
+		const rect = this.#manager!.usedRect(parent);
+		return rect ? rect.width : null;
+	}
+
 	/** Mark this declaration's values as belonging to a cascade that has moved on. */
 	invalidate(): void {
 		this.#stale = true;
@@ -3794,6 +4051,7 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 		this.#seenEpoch = this.#epoch.value;
 		this.#cssRules = this.#manager.matchingRules(this.#element);
 		this.#resolved.clear();
+		this.#used.clear();
 	}
 
 	/**
@@ -4011,6 +4269,13 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 	// composition walker asks each element `display` alone.
 	override getPropertyValue(property: string): string {
 		if (this.#stale || this.#epoch.value !== this.#seenEpoch) this.#refresh();
+		if (
+			internalStyleReads === 0 &&
+			this.#manager &&
+			USED_VALUE_PROPERTIES.has(property)
+		) {
+			return this.#usedValue(property);
+		}
 		let value = this.#resolved.get(property);
 		if (value === undefined) {
 			// A shorthand answers as its longhands, each in its own computed
@@ -4834,6 +5099,38 @@ export class StyleManager {
 			this.#parseStylesheets();
 		}
 		return this.#getMatchingRules(element);
+	}
+
+	/**
+	 * The flush a geometry read takes before measuring: pending mutations
+	 * drained and layout brought up to date, synchronously. A resolved value
+	 * is a measurement, so it goes through the same door -- there is exactly
+	 * one place that decides what "laid out now" means.
+	 */
+	#layoutFlush: (() => void) | null = null;
+
+	setLayoutFlush(flush: () => void): void {
+		this.#layoutFlush = flush;
+	}
+
+	/** The element's border-box rect, measured after that flush. */
+	usedRect(element: Element): DOMRect | null {
+		// Without a renderer there is no layout pass, and so no used value to
+		// report: the computed value is the answer, as it is for any element
+		// with no box.
+		if (!this.#layoutEngine || !this.#layoutFlush) return null;
+		beginInternalStyleReads();
+		try {
+			this.#layoutFlush?.();
+			return this.#layoutEngine.getRect(element);
+		} finally {
+			endInternalStyleReads();
+		}
+	}
+
+	/** The epoch a resolved value memoizes against. */
+	get layoutEpoch(): number {
+		return this.#layoutEngine?.layoutEpoch ?? 0;
 	}
 
 	setLayoutEngine(layoutEngine: LayoutEngine): void {

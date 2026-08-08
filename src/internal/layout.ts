@@ -9,6 +9,9 @@ import {
 	type BoxModel,
 } from "./styles.js";
 import {
+	beginInternalStyleReads,
+	computedStyleOf,
+	endInternalStyleReads,
 	getPropertyValue,
 	parseUnitValue,
 	selectorInvalidationScope,
@@ -37,9 +40,7 @@ import {
  * consulted by the painter's in-flow walk, so it is exported.
  */
 export function isPositioned(window: DOMWindow, element: Element): boolean {
-	const position = window
-		.getComputedStyle(element)
-		.getPropertyValue("position");
+	const position = computedStyleOf(element).getPropertyValue("position");
 	return Boolean(position) && position !== "static";
 }
 
@@ -48,7 +49,7 @@ export function isPositioned(window: DOMWindow, element: Element): boolean {
  * -- auto paints in the same layer but does NOT form a context.
  */
 function zIndexValueOf(window: DOMWindow, element: Element): number | "auto" {
-	const zIndex = window.getComputedStyle(element).getPropertyValue("z-index");
+	const zIndex = computedStyleOf(element).getPropertyValue("z-index");
 	if (!zIndex || zIndex === "auto") return "auto";
 	const value = parseInt(zIndex, 10);
 	return Number.isFinite(value) ? value : "auto";
@@ -441,7 +442,7 @@ function styleFlexNode(
 	if (!window) {
 		throw new Error("Element must have an ownerDocument with defaultView");
 	}
-	const computedStyle = window.getComputedStyle(element);
+	const computedStyle = computedStyleOf(element);
 
 	// Skip box model properties for inline elements (not inline-block)
 	const display = computedStyle.getPropertyValue("display");
@@ -1359,6 +1360,15 @@ export class LayoutEngine {
 	}
 
 	calculateLayout() {
+		beginInternalStyleReads();
+		try {
+			this.#calculateLayout();
+		} finally {
+			endInternalStyleReads();
+		}
+	}
+
+	#calculateLayout() {
 		// The DOM may have changed since the last pass without an invalidate()
 		// (callers may mutate and then call this directly, with no observer in
 		// between), and run heads must reflect the tree as it stands NOW. One
@@ -2517,10 +2527,7 @@ export class LayoutEngine {
 	 */
 	formsStackingContext(element: Element): boolean {
 		if (element === this.window.document.body) return true;
-		if (
-			this.window.getComputedStyle(element).getPropertyValue("isolation") ===
-			"isolate"
-		) {
+		if (computedStyleOf(element).getPropertyValue("isolation") === "isolate") {
 			return true;
 		}
 		return (
@@ -2661,10 +2668,7 @@ export class LayoutEngine {
 	 */
 	#hitTestInFlow(element: Element, x: number, y: number): Element | null {
 		if (element.nodeType !== 1) return null;
-		if (
-			this.window.getComputedStyle(element).getPropertyValue("display") ===
-			"none"
-		) {
+		if (computedStyleOf(element).getPropertyValue("display") === "none") {
 			return null;
 		}
 		try {
@@ -2748,6 +2752,15 @@ export class LayoutEngine {
 		}
 	>();
 	#boxEpoch = 0;
+
+	/**
+	 * A counter that moves whenever geometry could have: every layout pass and
+	 * every invalidation bumps it. A resolved value memoizes against it, the
+	 * way a rect read does.
+	 */
+	get layoutEpoch(): number {
+		return this.#boxEpoch;
+	}
 
 	/**
 	 * Every live anonymous box, by the layout node it owns: the reverse of

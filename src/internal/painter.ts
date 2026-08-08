@@ -12,6 +12,7 @@ import {
 	fieldCaretRange,
 	getPseudoMetadata,
 } from "./composition.js";
+import {computedStyleOf} from "./styles.js";
 
 /**
  * A clip in EDGE coordinates, not origin+size, and deliberately not a DOMRect:
@@ -176,7 +177,7 @@ function selectionStyleFor(
 	element: Element,
 	base: import("./ansi.js").CellStyle,
 ): import("./ansi.js").CellStyle {
-	const declaration = window.getComputedStyle(element, "::selection");
+	const declaration = computedStyleOf(element, "::selection");
 	const fg = declaration.getPropertyValue("color");
 	const bg = declaration.getPropertyValue("background-color");
 	if (!fg && !bg) {
@@ -331,7 +332,7 @@ export class Painter {
 		// it last held.
 		// One computed-style read per element per paint; every property below
 		// comes off this declaration.
-		const computed = this.#window.getComputedStyle(element);
+		const computed = computedStyleOf(element);
 		if (computed.getPropertyValue("display") === "none") {
 			return;
 		}
@@ -601,15 +602,11 @@ export class Painter {
 		// overflow:hidden clips *descendants* to this element's own box -- never
 		// the element's own border/background painted above, which is why this is
 		// scoped to just the children, not the whole function.
-		const overflow = this.#window
-			.getComputedStyle(element)
-			.getPropertyValue("overflow");
+		const overflow = computedStyleOf(element).getPropertyValue("overflow");
 		const overflowX =
-			this.#window.getComputedStyle(element).getPropertyValue("overflow-x") ||
-			overflow;
+			computedStyleOf(element).getPropertyValue("overflow-x") || overflow;
 		const overflowY =
-			this.#window.getComputedStyle(element).getPropertyValue("overflow-y") ||
-			overflow;
+			computedStyleOf(element).getPropertyValue("overflow-y") || overflow;
 		const previousClip = ctx.clipRect;
 		ctx.clipRect = overflowClipRect(rect, overflowX, overflowY, previousClip);
 
@@ -639,7 +636,7 @@ export class Painter {
 		// underline along its bottom row in the same color. Bottom only:
 		// overline (SGR 53) is unreliable.
 		if (rect && visible) {
-			const computed = this.#window.getComputedStyle(element);
+			const computed = computedStyleOf(element);
 			const outlineStyle = computed.getPropertyValue("outline-style");
 			if (
 				outlineStyle &&
@@ -687,10 +684,7 @@ export class Painter {
 			el;
 			el = compositionParentElement(el)
 		) {
-			if (
-				this.#window.getComputedStyle(el).getPropertyValue("position") ===
-				"fixed"
-			) {
+			if (computedStyleOf(el).getPropertyValue("position") === "fixed") {
 				return true;
 			}
 		}
@@ -716,7 +710,7 @@ export class Painter {
 			ancestor = compositionParentElement(ancestor)
 		) {
 			if (!isPositioned(this.#window, ancestor)) continue;
-			const style = this.#window.getComputedStyle(ancestor);
+			const style = computedStyleOf(ancestor);
 			const overflow = style.getPropertyValue("overflow");
 			const overflowX = style.getPropertyValue("overflow-x") || overflow;
 			const overflowY = style.getPropertyValue("overflow-y") || overflow;
@@ -790,7 +784,7 @@ export class Painter {
 		element: Element,
 		ctx: import("./ansi.js").DrawingContext,
 	): void {
-		const computedStyle = this.#window.getComputedStyle(element);
+		const computedStyle = computedStyleOf(element);
 		const display = computedStyle.getPropertyValue("display");
 
 		// Only handle list items
@@ -829,7 +823,7 @@ export class Painter {
 		const markerWidth = stringWidth(markerContent);
 
 		// Get marker styles
-		const markerStyle = this.#window.getComputedStyle(element, "::marker");
+		const markerStyle = computedStyleOf(element, "::marker");
 		// ::marker inherits color from its originating element, so fall back to the
 		// list item's own color rather than rendering the marker unstyled.
 		const markerColor =
@@ -898,7 +892,7 @@ export class Painter {
 			contentX,
 			contentY,
 			mark,
-			cellStyleFromComputed(this.#window.getComputedStyle(glyphSpan)),
+			cellStyleFromComputed(computedStyleOf(glyphSpan)),
 		);
 		if (element === this.#document.activeElement) {
 			ctx.setCaret(contentX, contentY);
@@ -928,13 +922,13 @@ export class Painter {
 
 		if (pseudoMetadata) {
 			// For pseudo-elements, get the computed style with the pseudo-element selector
-			computedStyle = this.#window.getComputedStyle(
+			computedStyle = computedStyleOf(
 				pseudoMetadata.hostElement,
 				pseudoMetadata.pseudoType,
 			);
 		} else {
 			// For regular text nodes, use the parent element's style
-			computedStyle = this.#window.getComputedStyle(parentElement);
+			computedStyle = computedStyleOf(parentElement);
 		}
 
 		// visibility inherits, so the parent's own resolved value already accounts
