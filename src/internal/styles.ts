@@ -977,8 +977,15 @@ const LONGHAND_SHORTHANDS = new Map<string, readonly string[]>();
  * A declared value in its CSSOM spelling: comments removed, runs of whitespace
  * collapsed to one space, no space inside a function's parentheses except the
  * single space that follows each comma. Strings pass through as authored.
+ *
+ * `property` names the property the value is declared on, and its grammar
+ * decides the rest: a custom property is a stream of tokens and keeps every
+ * number as it was written, a family name that spells a run of identifiers
+ * drops its quotes, and a counter() naming the style every counter already
+ * has drops the argument.
  */
-export function serializeCSSValue(input: string): string {
+export function serializeCSSValue(input: string, property = ""): string {
+	const custom = property.startsWith("--");
 	let out = "";
 	let space = false;
 	const emit = (token: string): void => {
@@ -1019,7 +1026,7 @@ export function serializeCSSValue(input: string): string {
 			const unit = /^(?:%|[a-zA-Z\u0080-\uFFFF]+)/.exec(input.slice(i))?.[0];
 			if (unit) i += unit.length;
 			emit(
-				serializeCSSNumber(number) +
+				(custom ? number : serializeCSSNumber(number)) +
 					(unit === "%" ? "%" : (unit?.toLowerCase() ?? "")),
 			);
 			i--;
@@ -1053,6 +1060,79 @@ export function serializeCSSValue(input: string): string {
 		}
 		emit(character);
 	}
+	return custom ? out : canonicalizeValue(property, out);
+}
+
+/**
+ * A family name is a sequence of identifiers or a string, and the two spell
+ * one name: `"Twisty Tie"` and `Twisty Tie` are the same family. The
+ * identifier spelling is the canonical one, so a string that spells a valid
+ * sequence loses its quotes.
+ */
+const FAMILY_IDENTIFIERS =
+	/^[a-zA-Z_\u0080-\uffff-][\w\u0080-\uffff-]*(?: [a-zA-Z_\u0080-\uffff-][\w\u0080-\uffff-]*)*$/;
+
+/** The properties whose value may name a font family. */
+const FAMILY_PROPERTIES = new Set(["font", "font-family", "voice-family"]);
+
+/**
+ * The family names that name no family: the generic families and the reserved
+ * words a font-family list may not spell as identifiers. Quoted, each names a
+ * family of that name, so the quotes are what distinguishes it and it keeps
+ * them.
+ */
+const RESERVED_FAMILY_NAMES = new Set([
+	"serif",
+	"sans-serif",
+	"cursive",
+	"fantasy",
+	"monospace",
+	"system-ui",
+	"math",
+	"fangsong",
+	"ui-serif",
+	"ui-sans-serif",
+	"ui-monospace",
+	"ui-rounded",
+	"emoji",
+	"default",
+]);
+
+/** The counter style a `counter()` or `counters()` takes when told none. */
+const DEFAULT_COUNTER_STYLE = "decimal";
+
+/**
+ * The property-specific half of value serialization: what a value's own
+ * grammar says its canonical spelling is, once tokenization has given every
+ * value a uniform one.
+ */
+function canonicalizeValue(property: string, value: string): string {
+	let out = value;
+	if (FAMILY_PROPERTIES.has(property)) {
+		out = out.replace(/"((?:[^"\\]|\\.)*)"/g, (quoted, body: string) => {
+			const name = unescapeCSSString(body);
+			const lower = name.toLowerCase();
+			return FAMILY_IDENTIFIERS.test(name) &&
+				!CSS_WIDE_KEYWORDS.has(lower) &&
+				!RESERVED_FAMILY_NAMES.has(lower)
+				? name
+				: quoted;
+		});
+	}
+	// `counter(name, decimal)` counts what `counter(name)` counts, and the
+	// shorter spelling is the one CSSOM writes.
+	out = out.replace(
+		/\b(counters?)\(([^()]*)\)/gi,
+		(whole, name: string, args: string) => {
+			const parts = args.split(",").map((part) => part.trim());
+			const wanted = name.toLowerCase() === "counters" ? 3 : 2;
+			if (parts.length !== wanted) return whole;
+			if (parts[wanted - 1].toLowerCase() !== DEFAULT_COUNTER_STYLE) {
+				return whole;
+			}
+			return `${name}(${parts.slice(0, wanted - 1).join(", ")})`;
+		},
+	);
 	return out;
 }
 
@@ -1156,7 +1236,7 @@ function cssSupports(conditionOrProperty: string, value?: string): boolean {
 	const property = normalizePropertyName(conditionOrProperty);
 	if (property.startsWith("--")) return true;
 	if (!SUPPORTED_PROPERTIES.has(property)) return false;
-	const text = serializeCSSValue(String(value));
+	const text = serializeCSSValue(String(value), property);
 	return text !== "" && isValidDeclaration(property, text);
 }
 
@@ -1179,7 +1259,7 @@ function parseDeclarationText(text: string): CSSDeclaration[] {
 		if (colon === -1) return;
 		const name = normalizePropertyName(source.slice(0, colon));
 		if (!name) return;
-		let value = serializeCSSValue(source.slice(colon + 1));
+		let value = serializeCSSValue(source.slice(colon + 1), name);
 		let important = false;
 		const bang = value.toLowerCase().lastIndexOf("!important");
 		if (bang !== -1 && !value.slice(bang + 10).trim()) {
@@ -1704,7 +1784,7 @@ export class CSSStyleDeclaration implements DeclarationSource {
 		this.#sync();
 		const name = normalizePropertyName(property);
 		if (!this.#supports(name)) return;
-		const text = serializeCSSValue(value == null ? "" : String(value));
+		const text = serializeCSSValue(value == null ? "" : String(value), name);
 		if (text === "") {
 			this.removeProperty(name);
 			return;
@@ -3764,10 +3844,14 @@ function blockDeclarations(node: ParsedNode): CSSDeclaration[] {
 	if (!node.block) return declarations;
 	for (const child of nodesOf(node.block)) {
 		if (child.type !== "Declaration") continue;
-		const value = serializeCSSValue(cssTree.generate(child.value as never));
+		const name = normalizePropertyName(child.property ?? "");
+		const value = serializeCSSValue(
+			cssTree.generate(child.value as never),
+			name,
+		);
 		if (!value) continue;
 		declarations.push({
-			name: normalizePropertyName(child.property ?? ""),
+			name,
 			value,
 			important: child.important === true,
 		});
@@ -4910,7 +4994,14 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 	 */
 	#resolvePropertyValue(property: string): string {
 		const raw = this.#resolvePropertyValueRaw(property);
-		const value = raw ? this.#substituteVar(raw) : raw;
+		// A custom property holds the tokens it was given; substituting it
+		// into a property of its own grammar re-serializes them in that
+		// property's spelling.
+		const value = raw
+			? property.startsWith("--")
+				? this.#substituteVar(raw)
+				: serializeCSSValue(this.#substituteVar(raw), property)
+			: raw;
 		// `currentcolor` is the element's own color, which is what a resolved
 		// value says; on `color` itself it means the parent's.
 		if (
