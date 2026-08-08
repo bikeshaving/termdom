@@ -6081,6 +6081,12 @@ export class StyleManager {
 		element: Element,
 		pseudoElt?: string | null,
 	): globalThis.CSSStyleDeclaration {
+		// A computed style describes the DOM as it stands, so an author read
+		// goes through the same flush a geometry read does: pending mutations
+		// drained into the cascade, then layout. The drain is what makes a
+		// style read straight after a class flip answer for that flip; the
+		// layout is skipped when nothing is dirty.
+		if (this.#layoutFlush?.()) this.#usedGeneration++;
 		// Ensure stylesheets are parsed if the document's sheet list changed
 		// since the last parse, or a newly registered shadow root's sheet
 		// awaits
