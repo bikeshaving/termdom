@@ -1469,6 +1469,38 @@ export function installInlineStyle(window: DOMWindow): void {
 // CSSOM: STYLESHEETS AND RULES
 // ============================================================================
 
+/**
+ * The window whose CSSOM was installed last.
+ *
+ * An error thrown out of a stylesheet has to be the document's own
+ * DOMException -- one from another global is not the error an author catches.
+ * A sheet reaches its document through its owner node; a constructed one has
+ * none, and takes the window its constructor came from.
+ */
+let cssomWindow: DOMWindow | null = null;
+
+function typeError(message: string, sheet?: CSSStyleSheet | null): TypeError {
+	const view =
+		sheet?.ownerNode?.ownerDocument?.defaultView ?? cssomWindow ?? undefined;
+	const Constructor =
+		(view as unknown as {TypeError?: typeof TypeError} | undefined)
+			?.TypeError ?? TypeError;
+	return new Constructor(message);
+}
+
+function domException(
+	message: string,
+	name: string,
+	sheet?: CSSStyleSheet | null,
+): DOMException {
+	const view =
+		sheet?.ownerNode?.ownerDocument?.defaultView ?? cssomWindow ?? undefined;
+	const Exception =
+		(view as unknown as {DOMException?: typeof DOMException} | undefined)
+			?.DOMException ?? DOMException;
+	return new Exception(message, name);
+}
+
 /** The rule types CSSRule's legacy constants name. */
 const RULE_TYPES = {
 	STYLE_RULE: 1,
@@ -1582,7 +1614,7 @@ export class MediaList {
 	deleteMedium(medium: string): void {
 		const index = this.#media.indexOf(String(medium).trim());
 		if (index === -1) {
-			throw new DOMException(`No such medium: ${medium}`, "NotFoundError");
+			throw domException(`No such medium: ${medium}`, "NotFoundError");
 		}
 		this.#media.splice(index, 1);
 		this.#onChange?.();
@@ -1682,20 +1714,28 @@ export abstract class CSSGroupingRule extends CSSRule {
 	}
 
 	insertRule(text: string, index = 0): number {
-		const inserted = parseRuleText(text, this.parentStyleSheet, this);
-		if (index > this.#rules.length) {
-			throw new DOMException(
-				`Cannot insert at index ${index}`,
-				"IndexSizeError",
+		if (arguments.length === 0) {
+			throw typeError(
+				"insertRule requires a rule",
+				this.parentStyleSheet ?? undefined,
 			);
 		}
+		if (index > this.#rules.length) {
+			throw domException(
+				`Cannot insert at index ${index}`,
+				"IndexSizeError",
+				this.parentStyleSheet,
+			);
+		}
+		const inserted = parseRuleText(text, this.parentStyleSheet, this);
 		if (
 			inserted instanceof CSSImportRule ||
 			inserted instanceof CSSNamespaceRule
 		) {
-			throw new DOMException(
+			throw domException(
 				"Only a stylesheet may hold that rule",
 				"HierarchyRequestError",
+				this.parentStyleSheet,
 			);
 		}
 		this.#rules.splice(index, 0, inserted);
@@ -1704,10 +1744,17 @@ export abstract class CSSGroupingRule extends CSSRule {
 	}
 
 	deleteRule(index: number): void {
+		if (arguments.length === 0) {
+			throw typeError(
+				"deleteRule requires an index",
+				this.parentStyleSheet ?? undefined,
+			);
+		}
 		if (index >= this.#rules.length) {
-			throw new DOMException(
+			throw domException(
 				`Cannot delete at index ${index}`,
 				"IndexSizeError",
+				this.parentStyleSheet,
 			);
 		}
 		detachRule(this.#rules[index]);
@@ -2047,7 +2094,11 @@ export class CSSKeyframeRule extends CSSDeclarationBlockRule {
 	set keyText(text: string) {
 		const serialized = serializeKeyText(String(text));
 		if (!serialized) {
-			throw new DOMException(`Cannot parse keyText: ${text}`, "SyntaxError");
+			throw domException(
+				`Cannot parse keyText: ${text}`,
+				"SyntaxError",
+				this.parentStyleSheet,
+			);
 		}
 		this.#keyText = serialized;
 		notifyRule(this);
@@ -2694,11 +2745,15 @@ export class CSSStyleSheet {
 	}
 
 	insertRule(text: string, index = 0): number {
+		if (arguments.length === 0) {
+			throw typeError("insertRule requires a rule", this);
+		}
 		this.#sync();
 		if (index > this.#rules.length) {
-			throw new DOMException(
+			throw domException(
 				`Cannot insert at index ${index}`,
 				"IndexSizeError",
+				this,
 			);
 		}
 		this.#rules.splice(index, 0, parseRuleText(text, this, null));
@@ -2707,11 +2762,15 @@ export class CSSStyleSheet {
 	}
 
 	deleteRule(index: number): void {
+		if (arguments.length === 0) {
+			throw typeError("deleteRule requires an index", this);
+		}
 		this.#sync();
 		if (index >= this.#rules.length) {
-			throw new DOMException(
+			throw domException(
 				`Cannot delete at index ${index}`,
 				"IndexSizeError",
+				this,
 			);
 		}
 		detachRule(this.#rules[index]);
@@ -2720,20 +2779,29 @@ export class CSSStyleSheet {
 	}
 
 	/** The legacy IE spellings, defined in terms of the modern pair. */
-	addRule(selector = "undefined", block = "undefined", index?: number): number {
+	addRule(selector = "undefined", block = "", index?: number): number {
 		this.insertRule(`${selector} { ${block} }`, index ?? this.cssRules.length);
 		return -1;
 	}
 
 	removeRule(index = 0): void {
+		this.#sync();
+		if (index >= this.cssRules.length) {
+			throw domException(
+				`Cannot delete at index ${index}`,
+				"IndexSizeError",
+				this,
+			);
+		}
 		this.deleteRule(index);
 	}
 
 	replaceSync(text: string): void {
 		if (!this.#constructed) {
-			throw new DOMException(
+			throw domException(
 				"replaceSync is only allowed on a constructed stylesheet",
 				"NotAllowedError",
+				this,
 			);
 		}
 		// An adopted sheet cannot pull in another: `@import` is dropped rather
@@ -3329,15 +3397,15 @@ function parseRuleText(
 			},
 		}) as never;
 	} catch {
-		throw new DOMException(`Cannot parse rule: ${source}`, "SyntaxError");
+		throw domException(`Cannot parse rule: ${source}`, "SyntaxError", sheet);
 	}
 	const nodes = ast.children.toArray();
 	if (nodes.length !== 1) {
-		throw new DOMException(`Cannot parse rule: ${source}`, "SyntaxError");
+		throw domException(`Cannot parse rule: ${source}`, "SyntaxError", sheet);
 	}
 	const rule = convertRule(nodes[0], sheet, parentRule);
 	if (!rule) {
-		throw new DOMException(`Cannot parse rule: ${source}`, "SyntaxError");
+		throw domException(`Cannot parse rule: ${source}`, "SyntaxError", sheet);
 	}
 	return rule;
 }
@@ -3627,12 +3695,13 @@ function adopt(window: DOMWindow, target: Node, sheets: unknown): void {
 	const list: CSSStyleSheet[] = [];
 	for (const sheet of Array.from(sheets as Iterable<unknown>)) {
 		if (!(sheet instanceof CSSStyleSheet)) {
-			throw new TypeError("adoptedStyleSheets takes CSSStyleSheet objects");
+			throw typeError("adoptedStyleSheets takes CSSStyleSheet objects");
 		}
 		if (!constructedSheets.has(sheet)) {
-			throw new DOMException(
+			throw domException(
 				"Can't adopt a stylesheet that was not constructed",
 				"NotAllowedError",
+				sheet,
 			);
 		}
 		sheetNotifiers.set(sheet, () =>
@@ -3648,6 +3717,7 @@ function adopt(window: DOMWindow, target: Node, sheets: unknown): void {
  * element's `sheet`, `document.styleSheets`, and the adopted lists.
  */
 export function installStyleSheets(window: DOMWindow): void {
+	cssomWindow = window;
 	const owner = window as unknown as Record<string | symbol, unknown>;
 	if (owner[kStyleSheetsInstalled]) return;
 	owner[kStyleSheetsInstalled] = true;
