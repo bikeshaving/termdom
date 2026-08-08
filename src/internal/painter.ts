@@ -299,13 +299,12 @@ export class Painter {
 		// shaped, borders drawn -- and then discarded cell by cell. Skip it here
 		// and the paint costs what is on screen, not what is in the document.
 		// The enclosing band, for the child-enumeration queries below; the
-		// per-band check underneath culls precisely on recursion, and the
-		// context's cell mask makes any overshoot harmless.
+		// per-band check culls precisely on recursion, and the context's cell
+		// mask makes any overshoot harmless.
 		let bandTop = -ctx.viewportOffset;
 		let bandBottom = bandTop + ctx.rows;
 		if (ctx.paintBands) {
-			// A scroll-transform frame repaints only its bands: skip any
-			// subtree outside every one of them.
+			// Skip any subtree outside every band.
 			let inside = false;
 			bandTop = Infinity;
 			bandBottom = -Infinity;
@@ -333,10 +332,8 @@ export class Painter {
 		// CSS. Stray run state under a hidden subtree (an editing todo's
 		// hidden .view) could otherwise ghost-paint at whatever coordinates
 		// it last held.
-		// One computed-style read per element per paint: every property below
-		// comes off this declaration, not its own getComputedStyle call --
-		// each call re-checks stylesheet staleness through jsdom's list proxy,
-		// and this walk runs for everything on screen every frame.
+		// One computed-style read per element per paint; every property below
+		// comes off this declaration.
 		const computed = this.#window.getComputedStyle(element);
 		if (computed.getPropertyValue("display") === "none") {
 			return;

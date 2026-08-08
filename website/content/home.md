@@ -69,7 +69,7 @@ field.addEventListener("input", updatePreview);
 - **Real CSS layout** — flexbox and table layout written from the spec, on an integer cell grid.
 - **Form controls that behave** — inputs, textareas, selects and buttons, with focus traversal and real events.
 - **Selection you can copy** — drag to select, styled through `::selection`, onto your clipboard over OSC 52 — even across SSH.
-- **Scrollback-native output** — output lands in real scrollback: searchable, permanent, resize-safe, and still mutable.
+- **Scrollback-native output** — output lands in real scrollback: searchable, permanent, resize-safe.
 - **Bidirectional text** — Hebrew and Arabic in the right order, with contextual letter forms and a negotiated terminal contract.
 - **Framework-agnostic** — anything that renders to a DOM works unchanged, including TodoMVC on its own unmodified logic.
 - **No native code** — pure JavaScript all the way to the escape sequences, on Node, Bun and Deno alike — and it compiles to a single binary.

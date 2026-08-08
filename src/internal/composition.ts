@@ -14,18 +14,16 @@ import type {DOMWindow} from "jsdom";
 export const SHADOW_ROOT_SYMBOL = Symbol.for("TermDOM.shadowRoot");
 
 /**
- * The flat tree is DERIVED here -- jsdom maintains only the raw tree plus
- * slot assignment -- and deriving it per node is the paint walk's hottest
- * cost. Upward links (flat parent, flat box parent) are memoized per node,
- * and the whole memo is dropped by bumping one epoch whenever anything that
- * can move a node lands: a mutation batch, a style invalidation (display:
- * contents changes the box parent), or this module's own attachments.
- * Frames with no mutations -- scrolling, chiefly -- reuse every link.
+ * The flat tree is DERIVED -- jsdom maintains only the raw tree plus slot
+ * assignment. Upward links (flat parent, flat box parent) are memoized per
+ * node behind one epoch, dropped by anything that can move a node: a
+ * mutation batch, a style invalidation (display: contents changes the box
+ * parent), or this module's own attachments.
  *
- * Only UPWARD links are safe to cache this way: a child-list change makes
- * new nodes (cache misses) and removes old ones (never asked again), but
- * cannot silently change a surviving node's parent without a record from
- * an enrolled root or a call through this module.
+ * Only UPWARD links are safe to cache: a child-list change makes new nodes
+ * (misses) and removes old ones (never asked again), but cannot change a
+ * surviving node's parent without a record from an enrolled root or a call
+ * through this module.
  */
 interface CompositionLinks {
 	epoch: number;
@@ -45,11 +43,10 @@ export function invalidateComposition(): void {
 
 /**
  * An UNBOUNDED invalidation: a stylesheet reparse, a shadow attachment, a
- * pseudo-element change, the bidi reorder flip -- events whose damage no
- * per-element tracking can bound. Bumps the memo epoch too. Frames may only
- * take a banded repaint while this generation holds still; bounded damage
- * (mutation records, per-element style invalidation) is tracked by the
- * engine instead and does NOT come through here.
+ * pseudo-element change, the bidi reorder flip -- damage no per-element
+ * tracking can bound. Bumps the memo epoch too. Bounded damage (mutation
+ * records, per-element style invalidation) is tracked by the engine and
+ * does not come through here.
  */
 export function invalidateStructure(): void {
 	structuralGeneration++;
@@ -61,10 +58,8 @@ export function currentStructuralGeneration(): number {
 }
 
 /**
- * The current invalidation epoch. Everything that can change what a frame
- * looks like -- mutations, style invalidation, composition attachments --
- * bumps it, which is exactly the "nothing changed but the camera" signal
- * the scroll-transform fast path gates on.
+ * The current invalidation epoch: bumped by everything that can change
+ * what a frame looks like.
  */
 export function currentCompositionEpoch(): number {
 	return compositionEpoch;

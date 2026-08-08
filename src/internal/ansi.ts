@@ -708,10 +708,9 @@ export class DrawingContext {
 		bottom: number;
 	} | null = null;
 	// When set, only buffer rows inside these [start, end) bands accept
-	// writes: a scroll-transform frame repaints the exposed band and the
-	// fixed-content rows, and everything else is the shifted previous frame.
-	// Writes an element makes outside the bands are identical to the shifted
-	// content by construction, so dropping them loses nothing.
+	// writes; every other row is the seeded previous frame. Writes outside
+	// the bands are identical to the seeded content by construction, so
+	// dropping them loses nothing.
 	paintBands: Array<[number, number]> | null = null;
 
 	constructor(
@@ -762,10 +761,8 @@ export class DrawingContext {
 	setText(x: number, y: number, text: string, style?: CellStyle): number {
 		let currentX = x;
 
-		// Printable ASCII -- the overwhelmingly common case -- needs no
-		// grapheme segmentation: every char is its own one-cell grapheme.
-		// Segmenting anyway (worse, constructing a Segmenter per call)
-		// dominated the text painter's profile.
+		// Printable ASCII needs no grapheme segmentation: every char is its
+		// own one-cell grapheme.
 		if (asciiPrintable.test(text)) {
 			for (let i = 0; i < text.length; i++) {
 				if (currentX + 1 > this.cols) break;
@@ -1300,18 +1297,15 @@ export class Renderer {
 		// Setup: Create new frame buffer
 		const nextBuffer = createBuffer(frameRows, this.#cols);
 
-		// A pure camera move is a rigid transform the terminal can perform
-		// itself: DECSTBM pins the margins to our region (anything above --
-		// a shell prompt -- is outside them and untouchable), and DL/IL
-		// within margins move the rows without touching the scrollback in
-		// any terminal, unlike SU. The previous buffer shifts to match, the
-		// exposed band plus fixed-content rows repaint, and every other row
-		// is seeded from the shifted model so the diff leaves it alone.
-		// Anything impure -- a reset pending, a growth frame, no previous
-		// frame -- falls through to the ordinary full diff.
+		// A camera move is a rigid transform the terminal performs itself:
+		// DECSTBM pins the margins to our region (a shell prompt above is
+		// outside them), and DL/IL within margins move rows without touching
+		// the scrollback, unlike SU. The previous buffer shifts to match; the
+		// caller's bands repaint; every other row is seeded from the shifted
+		// model so the diff leaves it alone. Delta 0 is a banded repaint with
+		// no terminal scroll. A pending reset, a growth frame, or no previous
+		// frame falls through to the full diff.
 		let scrollPrefix = "";
-		// delta 0 is a banded repaint with no terminal scroll: mutations whose
-		// damage is bounded repaint their rows over a seeded, unshifted model.
 		const scrolling =
 			scroll !== undefined &&
 			Math.abs(scroll.delta) < this.#rows &&
@@ -1326,7 +1320,6 @@ export class Renderer {
 			const regionEnd = Math.min(regionRows ?? this.#rows, this.#rows);
 
 			// Shift the model: screen row r now shows what was at r + delta.
-			// A zero delta shifts nothing -- the model already matches.
 			const prev = this.#prevBuffer;
 			const shifted: CellBuffer = [];
 			for (let row = 0; row < prev.length; row++) {
@@ -1365,9 +1358,8 @@ export class Renderer {
 				}
 			}
 
-			// DECSTBM homes the cursor, so position after resetting margins is
-			// the standard prefix's problem (it always CUPs for this caller).
-			// A zero delta needs no terminal scroll at all.
+			// DECSTBM homes the cursor; the standard prefix always CUPs for
+			// this caller afterward.
 			if (delta !== 0) {
 				const count = Math.abs(delta);
 				scrollPrefix =

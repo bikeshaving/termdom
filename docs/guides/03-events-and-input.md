@@ -58,10 +58,7 @@ your own styles reach inside them predictably.
 
 The caret is the real terminal cursor. That is what makes IME composition work:
 CJK input methods compose in the field, anchored where the caret is and
-measured in cells.
-
-> `<input type="password">` renders its value in the clear. There is no masking
-> yet, so do not use it for secrets.
+measured in cells. `<input type="password">` masks its value.
 
 ## Selection and the clipboard
 
@@ -75,7 +72,7 @@ since it travels in-band.
 A TermDOM app starts where the command started and flows down, like any other
 command. When the document outgrows the room below it, earlier rows scroll
 away into the terminal's own scrollback, where they stay searchable and
-selectable — and still mutable, however far above the fold they are.
+selectable.
 
 A camera moves over the document:
 

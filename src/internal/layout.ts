@@ -1253,9 +1253,7 @@ export class LayoutEngine {
 	#terminalReordersText = false;
 
 	setTerminalReordersText(value: boolean): void {
-		// Flips the visual order of every RTL run without a mutation; the
-		// negotiation resolves long after attach, so the next frame must not
-		// be skipped as clean or banded.
+		// Flips the visual order of every RTL run without a mutation.
 		invalidateStructure();
 		if (this.#terminalReordersText === value) return;
 		this.#terminalReordersText = value;
@@ -1457,8 +1455,6 @@ export class LayoutEngine {
 	/**
 	 * The viewport rows occupied by fixed-position content: the hoisted
 	 * children of the viewport root, excluding the document's own subtree.
-	 * A scroll-transform frame must repaint exactly these rows -- the
-	 * terminal's region scroll moved them along with everything else.
 	 */
 	fixedRowBands(rows: number): Array<[number, number]> {
 		const bands: Array<[number, number]> = [];

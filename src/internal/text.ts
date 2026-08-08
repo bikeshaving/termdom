@@ -38,13 +38,11 @@ const COMBINING = /[\p{M}\p{Cf}]/u;
 /**
  * Every other LRU cache in the JavaScript ecosystem is insane.
  *
- * Two generations instead of per-hit reordering: a hit in the young
- * generation costs one Map.get and moves nothing -- the delete+set recency
- * shuffle showed up as whole percents of frame time at cell-cache rates.
- * When the young generation fills, it becomes the old one and the previous
- * old generation is dropped wholesale; anything still being asked for gets
- * promoted young again on its next hit. Recency is approximate, the bound
- * is exact: at most 2x the limit is ever held.
+ * Two generations instead of per-hit reordering: a young-generation hit is
+ * one Map.get and moves nothing. When the young generation fills it becomes
+ * the old one and the previous old generation drops wholesale; a key still
+ * wanted is promoted on its next hit. Recency is approximate, the bound is
+ * exact: at most 2x the limit is ever held.
  */
 export class LRUCache<TKey, TValue> {
 	declare limit: number;
@@ -60,8 +58,7 @@ export class LRUCache<TKey, TValue> {
 
 	get(key: TKey): TValue | undefined {
 		const val = this.map.get(key);
-		// One lookup answers most calls; the has() check only disambiguates a
-		// stored undefined from a miss.
+		// The has() check only disambiguates a stored undefined from a miss.
 		if (val !== undefined || this.map.has(key)) return val;
 		if (this.old.has(key)) {
 			const promoted = this.old.get(key)!;
@@ -122,13 +119,11 @@ export class LRUCache<TKey, TValue> {
 	}
 }
 
-// Printable ASCII is its own width, and most text is exactly that: one
-// regex test and a length read, against a full grapheme walk.
+// Printable ASCII is its own width.
 const PRINTABLE_ASCII = /^[\x20-\x7e]*$/;
 
-// Width is a pure property of the string, so results are memoized: a painted
-// frame re-measures the same runs every repaint. LRU-bounded so an endless
-// stream of unique strings (a logger) cannot grow it without limit.
+// Width is a pure property of the string. LRU-bounded so an endless stream
+// of unique strings (a logger) cannot grow the cache without limit.
 const widthCache = new LRUCache<string, number>(2 ** 14);
 
 /**

@@ -311,16 +311,12 @@ export class TermDOM {
 	// the stdin listener and the cursor query. Construction never touches the
 	// process -- attach() does, lazily on the first render or explicitly.
 	#attached = false;
-	// The camera position and invalidation epoch of the last painted frame:
-	// when neither the epoch nor anything else moved but the camera, the
-	// frame is a rigid scroll and the renderer can transform it instead of
-	// repainting everything.
+	// Frame-over-frame state the transform gate compares against.
 	#lastFrameScrollTop: number | null = null;
 	#lastFrameEpoch = -1;
 	// Reactive pseudo-state (:focus, :hover, :active) and document selection
-	// change without mutations; the architecture detects them by repainting
-	// and diffing. Every path that can flip them -- user input, focus moves
-	// -- bumps this, so the clean-frame skip below never swallows one.
+	// change without mutations; repaint-and-diff is what detects them, so
+	// every input path bumps this and the clean-frame skip compares it.
 	#inputGeneration = 0;
 	#lastFrameInputGeneration = -1;
 	#lastFrameActiveElement: Element | null = null;
@@ -332,10 +328,8 @@ export class TermDOM {
 	#lastFrameStructuralGeneration = -1;
 	#lastFrameSelectionLive = false;
 
-	// The elements this frame's mutations touched, with the layout rect each
-	// held BEFORE relayout -- the two positions a banded repaint must cover.
-	// Null once the damage stopped being worth bounding; a full repaint
-	// follows. Cleared after every painted frame.
+	// Elements this frame's mutations touched, with the layout rect each held
+	// BEFORE relayout. Null once the set overflowed; cleared per frame.
 	#frameDamage: Map<Element, DOMRect | null> | null = new Map();
 
 	#addFrameDamage(node: Node): void {
@@ -729,12 +723,10 @@ export class TermDOM {
 			return mql as MediaQueryList;
 		}) as typeof window.matchMedia;
 
-		// window.close() closes the terminal session, the way it closes the tab
-		// in a browser: dispose (final flush, mode restores, teardown), then
-		// close the transport -- which for the process transport is exit, for an
-		// SSH channel is end, and for an embedder is its own decision. Ctrl-C's
-		// default action calls exactly this. jsdom's own close (resource
-		// teardown) still runs inside dispose, through the saved original.
+		// window.close() closes the terminal session as it would close a
+		// browser tab: dispose, then close the transport. Ctrl-C's default
+		// action is this call. jsdom's own close still runs inside dispose,
+		// through the saved original.
 		termDOM.#nativeWindowClose = window.close.bind(window);
 		window.close = () => {
 			const wasAttached = termDOM.#attached;
@@ -748,10 +740,8 @@ export class TermDOM {
 			}
 		};
 
-		// document.title drives the terminal's window title, in-band: OSC 2
-		// down the same wire as every frame. A real terminal retitles itself,
-		// SSH passes it through to the client, xterm.js fires onTitleChange for
-		// its embedder. attach() pushes the old title; dispose() pops it.
+		// document.title sets the terminal's window title in-band (OSC 2).
+		// attach() pushes the previous title; dispose() pops it.
 		let nativeTitle: PropertyDescriptor | undefined;
 		for (
 			let proto = Object.getPrototypeOf(document);
@@ -1323,17 +1313,14 @@ export class TermDOM {
 		// Any observed mutation can move a node in the flat tree; drop the
 		// memoized composition links before anything reads through them.
 		invalidateComposition();
-		// Record the damage while the old layout still answers: the target's
-		// pre-mutation rows are half of what a banded repaint must cover.
+		// Record damage while the old layout still answers: a banded repaint
+		// must cover the target's pre-mutation rows too.
 		for (const mutation of mutations) {
 			this.#addFrameDamage(mutation.target);
 			if (mutation.type === "childList") {
 				for (const node of mutation.addedNodes) this.#addFrameDamage(node);
-				for (const node of mutation.removedNodes) {
-					// A removed node has no rect and no rows of its own left;
-					// its damage is its old parent's, already added above.
-					void node;
-				}
+				// Removed nodes have no rows of their own; their damage is the
+				// parent's, already added.
 			}
 		}
 		// Attribute records whose value did not actually change are dropped
@@ -2811,13 +2798,9 @@ export class TermDOM {
 			}
 		}
 
-		// A frame in which nothing observable moved: no mutations drained, no
-		// invalidation (the composition epoch hears mutations, style changes
-		// and attachments), no input since the last frame (input is what
-		// flips :focus/:hover/:active and drives selection), focus on the
-		// same element, no live selection, the camera unmoved, no reveal, no
-		// pending reset. An idle requestAnimationFrame tick lands here;
-		// painting would emit nothing, so don't pay for discovering that.
+		// Nothing observable moved: no mutations, no invalidation, no input,
+		// same focus, no live selection, camera unmoved, no reveal, no pending
+		// reset. Painting would emit nothing; don't pay to discover that.
 		const selection = this.window.getSelection?.();
 		if (
 			pending.length === 0 &&
@@ -2830,9 +2813,8 @@ export class TermDOM {
 			(!selection || selection.rangeCount === 0 || selection.isCollapsed) &&
 			!this.#renderer.needsRepaint
 		) {
-			// Skip the PAINT, not the frame: observers still run against the
-			// (unchanged) layout, so a fresh observe() gets its initial entry
-			// on the next tick exactly as it would from a painted frame.
+			// Skip the paint, not the frame: observers still run, so a fresh
+			// observe() gets its initial entry on the next tick.
 			this.#afterRender();
 			return;
 		}
@@ -2867,14 +2849,12 @@ export class TermDOM {
 		}
 
 		// A frame is a TRANSFORM when everything that changed since the last
-		// one is bounded: the camera (a rigid shift the terminal performs via
-		// DECSTBM + DL/IL, never touching the scrollback), plus mutations and
-		// style flips whose damage names its elements. The exposed band, the
-		// fixed rows (at real and shifted positions), the focused field, and
-		// every damaged element's old and new rows repaint; nothing else is
-		// even walked. Anything unbounded -- a structural event, mouse input
-		// (:hover can flip anywhere), a live selection, a drag, a geometry
-		// change that can cascade -- takes the full diff.
+		// one is bounded: a camera delta (the terminal scrolls the region via
+		// DECSTBM + DL/IL) plus damage that names its elements. Only the
+		// exposed band, fixed rows (real and shifted positions), the focused
+		// field, and damaged rows repaint. Anything unbounded -- a structural
+		// event, mouse input (:hover can flip anywhere), a live selection, a
+		// drag, a geometry change (cascades) -- takes the full diff.
 		let scroll: {delta: number; bands: Array<[number, number]>} | undefined;
 		const scrollTop = this.#viewport.scrollTop;
 		const styleDamage = this.#styleManager.drainStyleDamage();
@@ -2918,10 +2898,9 @@ export class TermDOM {
 			else if (delta < 0) addBand(0, -delta);
 			for (const band of this[kLayoutEngine].fixedRowBands(this.#height)) {
 				addBand(band[0], band[1]);
-				// The terminal's scroll moved fixed content along with everything
-				// else, leaving a stale copy at the shifted position; that row
-				// must repaint from the document too, or the ghost survives
-				// (model and screen agree on it, so the diff never corrects it).
+				// The scroll moved fixed content too, leaving a stale copy at
+				// the shifted position; model and screen agree on it, so only
+				// a repaint of that row corrects it.
 				if (delta !== 0) addBand(band[0] - delta, band[1] - delta);
 			}
 			// The focused field's rows repaint: its caret cell and the real
@@ -2945,9 +2924,8 @@ export class TermDOM {
 			}
 
 			for (const element of damaged) {
-				// The damage an element's change can reach is its selector
-				// invalidation scope; a scope of the whole document is unbounded,
-				// so the frame is not a transform.
+				// Damage reaches as far as the selector invalidation scope; the
+				// whole document is unbounded.
 				const scope = this.#styleManager.invalidationScopeFor(element);
 				if (
 					scope === this.document.body ||
@@ -2958,8 +2936,7 @@ export class TermDOM {
 				const before = frameDamage.get(element) ?? frameDamage.get(scope);
 				const after = this[kLayoutEngine].getRect(scope);
 				if (!after && !before) continue; // gone; the parent carries it
-				// A geometry change cascades: everything after the element may
-				// have moved, which no per-element damage can bound.
+				// A geometry change cascades to everything after the element.
 				if (
 					before &&
 					after &&
@@ -2984,7 +2961,7 @@ export class TermDOM {
 				}
 			}
 
-			// Past most of the region the transform stops paying for itself.
+			// Past most of the region the transform stops paying.
 			let coverage = 0;
 			for (const [start, end] of bands) coverage += end - start;
 			if (delta === 0 && bands.length === 0) break transform;
@@ -3073,10 +3050,9 @@ export class TermDOM {
 		return this.#viewport.screenTop;
 	}
 
-	// The scratch engine behind renderANSI/print, created on first use and
-	// sized from the transport; recreated if the transport's width changes.
-	// One jsdom document, reused across calls -- a program that prints many
-	// fragments pays construction once.
+	// The scratch engine behind renderANSI/print: created on first use,
+	// sized from the transport, recreated if the width changes, reused
+	// across calls.
 	#staticSibling: TermDOM | null = null;
 
 	#staticRenderer(): TermDOM {
@@ -3101,8 +3077,7 @@ export class TermDOM {
 	/**
 	 * Render an HTML string to an ANSI string at the transport's width:
 	 * colors and line breaks, no cursor controls, no modes. <style> elements
-	 * in the fragment join the cascade. The instance's own document is not
-	 * consulted or touched.
+	 * in the fragment join the cascade. The instance's document is untouched.
 	 */
 	renderANSI(html: string): string {
 		return this.#renderStaticHTML(html, "\n");
@@ -3115,10 +3090,9 @@ export class TermDOM {
 	}
 
 	/**
-	 * renderANSI(html) written through the transport, as ordinary command
-	 * output. Resolves when the bytes have reached the transport. CRLF while
-	 * a live raw-mode session holds the terminal; cooked mode translates
-	 * bare newlines itself.
+	 * renderANSI(html) written through the transport as ordinary command
+	 * output; resolves when the bytes have reached it. CRLF while a raw-mode
+	 * session holds the terminal, since raw mode does not translate newlines.
 	 */
 	print(html: string): Promise<void> {
 		const output = this.#renderStaticHTML(
@@ -3137,11 +3111,11 @@ export class TermDOM {
 	#disposed = false;
 
 	/**
-	 * Tear down and hand the terminal back. The returned promise resolves
-	 * when every queued restore has reached the transport -- await it before
-	 * writing your own output or exiting with a status code. (The process
-	 * transport also restores the shell-critical modes synchronously, so a
-	 * caller that exits without awaiting still leaves the shell usable.)
+	 * Tear down and hand the terminal back. Resolves when every queued
+	 * restore has reached the transport; await it before writing further
+	 * output or exiting with a status code. The process transport restores
+	 * shell-critical modes synchronously besides, so exiting without
+	 * awaiting still leaves the shell usable.
 	 */
 	dispose(): Promise<void> {
 		if (this.#disposed) return Promise.resolve();

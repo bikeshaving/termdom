@@ -1,12 +1,11 @@
-// TermDOM apps are CLI invocations: the module graph (jsdom above all) is
-// half their startup, and V8's compile cache removes most of it from every
-// run after the first. Namespace access, not a named import: runtimes with
-// their own cache (Bun) may not export it at all.
+// V8's compile cache: the module graph is most of a CLI invocation's
+// startup. Namespace access because runtimes with their own cache (Bun)
+// do not export it.
 import * as nodeModule from "node:module";
 try {
 	(nodeModule as {enableCompileCache?: () => void}).enableCompileCache?.();
 } catch {
-	// A runtime that objects still starts; it just recompiles.
+	// Nothing to do; the runtime just recompiles.
 }
 
 export {TermDOM} from "./internal/termdom.js";

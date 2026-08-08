@@ -4,15 +4,10 @@ import {type ColorDepth} from "./ansi.js";
 import {tokenizeInput} from "./events.js";
 
 /**
- * The wire between the engine and a terminal, modeled on the common subset of
- * WebTransport and WebSocketStream: a session already established, as duplex
- * streams plus lifecycle. Everything Node-flavored -- raw mode, signals, env
+ * The wire between the engine and a terminal: an established session as
+ * duplex streams plus lifecycle, the common subset of WebTransport and
+ * WebSocketStream. Everything Node-flavored -- raw mode, signals, env
  * sniffing -- belongs inside a wrapper, never in this contract.
- *
- * Three wrappers give it meaning: a Node process (`transportFromProcess`, the
- * default), an xterm.js instance in a browser, and an SSH PTY relay. The
- * transport powers the subset drops (datagrams, dynamic streams, priorities)
- * are relay internals, below this interface.
  */
 export interface TerminalSize {
 	cols: number;
@@ -132,12 +127,9 @@ function installCursorRestoreOnExit(): void {
 }
 
 /**
- * The default wrapper: a Node-process-shaped object as a TerminalTransport.
- *
- * Inert until used, which is what keeps construction inert upstream: raw mode,
- * the stdin listener, and the signal listeners all engage on the first read of
- * `readable`, and output only flows when something writes. Cancelling the
- * readable (session teardown) hands the tty back: raw mode off, stdin paused.
+ * A Node-process-shaped object as a TerminalTransport. Inert until used:
+ * raw mode, the stdin listener, and the signal listeners engage on the
+ * first read of `readable`. Cancelling the readable hands the tty back.
  */
 export function transportFromProcess(
 	proc: ProcessLike = process as unknown as ProcessLike,
@@ -156,12 +148,10 @@ export function transportFromProcess(
 		if (!engaged) return;
 		engaged = false;
 		undisposedProcesses.delete(proc);
-		// Restore the terminal SYNCHRONOUSLY: the engine's own restores ride
-		// the writable's queue, and `dispose(); process.exit()` -- a
-		// completely reasonable app -- exits before that queue flushes. These
-		// are the modes whose survival wrecks the user's shell (mouse
-		// reporting above all); each is idempotent, so the queued restores
-		// arriving later repeat them harmlessly.
+		// Restore SYNCHRONOUSLY: the engine's own restores ride the writable's
+		// queue, and `dispose(); process.exit()` exits before it flushes.
+		// These are the modes whose survival breaks the user's shell; each is
+		// idempotent, so the queued restores repeating them is harmless.
 		proc.stdout.write("[?1006l[?1002l[?25h[?2004l[23;0t");
 		if (dataListener && proc.stdin) {
 			proc.stdin.removeListener?.("data", dataListener);
@@ -390,13 +380,12 @@ export class TerminalSession {
 	}
 
 	/**
-	 * Queue output on the transport, in order. The writer engages lazily on the
-	 * first write: writing IS the takeover, so nothing is locked before it.
-	 * Returns the chunk's own flush promise; flush() awaits the queue's tail.
+	 * Queue output on the transport, in order. The writer engages lazily on
+	 * the first write. Returns the chunk's flush promise; flush() awaits the
+	 * queue's tail.
 	 */
 	write(output: string): Promise<void> {
-		// A disposed session has released the wire; late writers (teardown
-		// stragglers) get a resolved promise and their bytes dropped.
+		// A disposed session has released the wire; late writes are dropped.
 		if (this.#disposed && !this.#writer) return Promise.resolve();
 		if (!this.#writer) {
 			this.#writer = this.#transport.writable.getWriter();

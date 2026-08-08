@@ -12,9 +12,8 @@ paint to a terminal. You build a page; it renders in cells.
 npm install @b9g/termdom
 ```
 
-TermDOM runs on Node, Bun and Deno. It has no native or WASM dependency and
-nothing about it is tied to a particular runtime — which also means an app built
-on it compiles to a single binary with `bun build --compile`, if you want one.
+TermDOM runs on Node, Bun and Deno. It has no native or WASM dependency, and
+an app built on it compiles to a single binary with `bun build --compile`.
 
 ## Your first document
 
@@ -37,14 +36,12 @@ document.body.appendChild(box);
 
 `attach()` is the only call that takes the terminal — construction and DOM
 mutation are inert until it runs. A program that only wants static output
-never calls it: `term.renderANSI(html)` returns the ANSI string at the
-transport's width, and `term.print(html)` writes it through the transport
-as ordinary command output.
+never calls it: `term.renderANSI(html)` returns the ANSI string, and
+`term.print(html)` writes it as ordinary command output.
 
-After that there is no render call, and that is not a convenience — it is the
-same contract a browser gives you. Mutations are observed and painted on the
-next frame. Append a node, set a style, change some text: the frame that
-follows shows it.
+There is no render call. Mutations are observed and painted on the next
+frame, the same contract a browser gives you: append a node, set a style,
+change some text, and the frame that follows shows it.
 
 ## The one rule: everything is cells
 
@@ -59,10 +56,9 @@ that would land between cells are resolved to whole cells, because there is no
 such thing as half a cell to paint.
 
 This is also why a few CSS features are deliberately absent rather than
-approximated. `aspect-ratio` has no meaning on a grid whose cells are not
+approximated: `aspect-ratio` has no meaning on a grid whose cells are not
 square, and sub-cell sizing has nowhere to go. The
-[support matrix](/support/) records exactly what is and is not implemented,
-measured rather than asserted.
+[support matrix](/support/) records what is and is not implemented.
 
 ## Styling with a stylesheet
 
@@ -85,24 +81,20 @@ style.textContent = `
 document.head.appendChild(style);
 ```
 
-Selectors, specificity, inheritance, `@media` queries and custom properties all
-behave the way they do in a browser, because they are resolved by a real
-cascade rather than a lookalike.
+Selectors, specificity, inheritance, `@media` queries and custom properties
+behave the way they do in a browser.
 
-## Interactive apps
+## Quitting
 
-An interactive app hands the terminal back when it exits:
+`window.close()` ends the session: the final frame is flushed to scrollback,
+every terminal mode is restored, and the process exits. An unhandled Ctrl-C
+performs the same call. A quit key is one listener:
 
 ```ts
-process.on("SIGINT", () => {
-	term.dispose();
-	process.exit(0);
+document.addEventListener("keydown", (e) => {
+	if (e.key === "q") term.window.close();
 });
 ```
-
-`dispose()` restores the modes TermDOM negotiated on the way in — mouse
-reporting, bracketed paste, cursor visibility — so the shell you return to is
-the shell you left.
 
 ## Where to go next
 

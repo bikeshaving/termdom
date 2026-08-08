@@ -1689,11 +1689,10 @@ export class StyleManager {
 	 * document.styleSheets.length without jsdom's per-access list proxy.
 	 *
 	 * The length is polled on every computed-style read to catch a <style>
-	 * appended in the same tick, before the mutation observer delivers -- and
-	 * through the wrapper each poll pays the full LegacyPlatformObject proxy
-	 * walk, which dominated paint profiles. jsdom keeps the real list on the
-	 * wrapper's impl object behind its "impl" symbol; read it directly, and
-	 * fall back to the wrapper if the internals ever move.
+	 * appended in the same tick, before the mutation observer delivers.
+	 * jsdom keeps the real list on the wrapper's impl object behind its
+	 * "impl" symbol; read it directly, and fall back to the wrapper if the
+	 * internals ever move.
 	 */
 	#styleSheetListImpl: {length: number} | null | undefined;
 
@@ -2753,9 +2752,8 @@ export class StyleManager {
 	/**
 	 * Invalidate cached computed style for an element
 	 */
-	// Elements style-invalidated since the last drain; null once the count
-	// stopped being worth tracking. The engine drains this per frame to bound
-	// a banded repaint.
+	// Elements style-invalidated since the last drain; null once the set
+	// overflowed. The engine drains this per frame to bound a banded repaint.
 	#pendingStyleDamage: Set<Element> | null = new Set();
 
 	/**
