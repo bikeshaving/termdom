@@ -1068,3 +1068,289 @@ test("a constructor called on its own builds an element of its own name", () => 
 	expect(element.ownerDocument).toBe(document);
 	expect(() => new HTMLElement()).toThrow();
 });
+
+/* ------------------------------------------ live range boundary adjustment */
+
+/** A document with a paragraph of two text nodes, and a range over it. */
+function withRange(): any {
+	const document = make();
+	setAmbientDocument(document);
+	const paragraph = document.createElement("p");
+	paragraph.appendChild(document.createTextNode("abcdef"));
+	paragraph.appendChild(document.createElement("b"));
+	paragraph.appendChild(document.createTextNode("ghijkl"));
+	document.body.appendChild(paragraph);
+	return {document, paragraph, range: document.createRange()};
+}
+
+test("an insertion before a boundary point pushes it along by the count", () => {
+	const {document, paragraph, range} = withRange();
+	range.setStart(paragraph, 1);
+	range.setEnd(paragraph, 3);
+	paragraph.insertBefore(document.createElement("i"), paragraph.firstChild);
+	expect(range.startOffset).toBe(2);
+	expect(range.endOffset).toBe(4);
+	const fragment = document.createDocumentFragment();
+	fragment.appendChild(document.createElement("i"));
+	fragment.appendChild(document.createElement("i"));
+	paragraph.insertBefore(fragment, paragraph.firstChild);
+	expect(range.startOffset).toBe(4);
+	expect(range.endOffset).toBe(6);
+	// An insertion after the boundary points leaves them where they are.
+	paragraph.appendChild(document.createElement("i"));
+	expect(range.startOffset).toBe(4);
+	expect(range.endOffset).toBe(6);
+});
+
+test("a removal takes a boundary point inside it to the node's own place", () => {
+	const {paragraph, range} = withRange();
+	range.setStart(paragraph.firstChild, 2);
+	range.setEnd(paragraph.lastChild, 2);
+	paragraph.removeChild(paragraph.firstChild);
+	expect(range.startContainer).toBe(paragraph);
+	expect(range.startOffset).toBe(0);
+	expect(range.endContainer).toBe(paragraph.lastChild);
+	expect(range.endOffset).toBe(2);
+});
+
+test("a removal pulls back a boundary point after it in the same parent", () => {
+	const {paragraph, range} = withRange();
+	range.setStart(paragraph, 2);
+	range.setEnd(paragraph, 3);
+	paragraph.removeChild(paragraph.firstChild);
+	expect(range.startOffset).toBe(1);
+	expect(range.endOffset).toBe(2);
+});
+
+test("a removal takes a boundary point in a descendant with it", () => {
+	const {document, paragraph, range} = withRange();
+	const inner = paragraph.childNodes[1];
+	inner.appendChild(document.createTextNode("deep"));
+	range.setStart(inner.firstChild, 2);
+	range.collapse(true);
+	paragraph.removeChild(inner);
+	expect(range.startContainer).toBe(paragraph);
+	expect(range.startOffset).toBe(1);
+	expect(range.collapsed).toBe(true);
+});
+
+test("replacing data moves the boundary points inside and after the run", () => {
+	const {paragraph, range} = withRange();
+	const text = paragraph.firstChild;
+	range.setStart(text, 2);
+	range.setEnd(text, 5);
+	// A point inside the replaced run collapses onto its start.
+	text.replaceData(1, 3, "");
+	expect(range.startOffset).toBe(1);
+	expect(range.endOffset).toBe(2);
+	text.insertData(0, "xyz");
+	expect(range.startOffset).toBe(4);
+	expect(range.endOffset).toBe(5);
+});
+
+test("splitting a text node carries the boundary points past the split", () => {
+	const {paragraph, range} = withRange();
+	const text = paragraph.firstChild;
+	range.setStart(text, 1);
+	range.setEnd(text, 4);
+	const rest = text.splitText(2);
+	expect(range.startContainer).toBe(text);
+	expect(range.startOffset).toBe(1);
+	expect(range.endContainer).toBe(rest);
+	expect(range.endOffset).toBe(2);
+});
+
+test("splitting a text node pushes a point that named its next sibling", () => {
+	const {paragraph, range} = withRange();
+	const text = paragraph.firstChild;
+	range.setStart(paragraph, 1);
+	range.setEnd(paragraph, 1);
+	text.splitText(2);
+	expect(range.startOffset).toBe(2);
+	expect(range.endOffset).toBe(2);
+});
+
+test("normalize folds a boundary point into the node the data landed in", () => {
+	const {document, paragraph, range} = withRange();
+	paragraph.removeChild(paragraph.childNodes[1]);
+	const first = paragraph.firstChild;
+	const second = paragraph.lastChild;
+	const third = document.createTextNode("mno");
+	paragraph.appendChild(third);
+	range.setStart(second, 2);
+	range.setEnd(third, 1);
+	paragraph.normalize();
+	expect(range.startContainer).toBe(first);
+	expect(range.startOffset).toBe(8);
+	expect(range.endContainer).toBe(first);
+	expect(range.endOffset).toBe(13);
+});
+
+test("normalize takes a point that named a folded node in its parent", () => {
+	const {paragraph, range} = withRange();
+	paragraph.removeChild(paragraph.childNodes[1]);
+	range.setStart(paragraph, 1);
+	range.setEnd(paragraph, 2);
+	paragraph.normalize();
+	expect(range.startContainer).toBe(paragraph.firstChild);
+	expect(range.startOffset).toBe(6);
+	expect(range.endContainer).toBe(paragraph);
+	expect(range.endOffset).toBe(1);
+});
+
+/* -------------------------------------------------------- range extraction */
+
+test("extracting a partially contained node clones it around the split", () => {
+	const {document, paragraph, range} = withRange();
+	const bold = paragraph.childNodes[1];
+	bold.appendChild(document.createTextNode("BOLD"));
+	range.setStart(paragraph.firstChild, 4);
+	range.setEnd(bold.firstChild, 2);
+	const fragment = range.extractContents();
+	expect(fragment.childNodes.length).toBe(2);
+	expect(fragment.firstChild.data).toBe("ef");
+	expect(fragment.lastChild.localName).toBe("b");
+	expect(fragment.lastChild.firstChild.data).toBe("BO");
+	// What stays behind is the other side of both partial containments.
+	expect(paragraph.firstChild.data).toBe("abcd");
+	expect(bold.firstChild.data).toBe("LD");
+	// The range collapses just after the child it started inside.
+	expect(range.collapsed).toBe(true);
+	expect(range.startContainer).toBe(paragraph);
+	expect(range.startOffset).toBe(1);
+});
+
+test("cloning the contents leaves the tree alone", () => {
+	const {document, paragraph, range} = withRange();
+	const bold = paragraph.childNodes[1];
+	bold.appendChild(document.createTextNode("BOLD"));
+	range.setStart(paragraph.firstChild, 4);
+	range.setEnd(bold.firstChild, 2);
+	const fragment = range.cloneContents();
+	expect(fragment.firstChild.data).toBe("ef");
+	expect(fragment.lastChild.firstChild.data).toBe("BO");
+	expect(paragraph.firstChild.data).toBe("abcdef");
+	expect(bold.firstChild.data).toBe("BOLD");
+	expect(range.collapsed).toBe(false);
+});
+
+test("a whole contained child moves into the fragment, a doctype throws", () => {
+	const {document, paragraph, range} = withRange();
+	const bold = paragraph.childNodes[1];
+	range.setStart(paragraph, 1);
+	range.setEnd(paragraph, 2);
+	const fragment = range.extractContents();
+	expect(fragment.firstChild).toBe(bold);
+	expect(paragraph.childNodes.length).toBe(2);
+	const bare = document.implementation.createDocument(null, null, null);
+	bare.appendChild(bare.implementation.createDocumentType("html", "", ""));
+	bare.appendChild(bare.createElement("html"));
+	const over = bare.createRange();
+	over.selectNodeContents(bare);
+	expect(() => over.extractContents()).toThrow();
+	expect(bare.doctype).not.toBe(null);
+});
+
+test("inserting into a range splits the text it starts inside", () => {
+	const {document, paragraph, range} = withRange();
+	range.setStart(paragraph.firstChild, 3);
+	range.collapse(true);
+	range.insertNode(document.createElement("i"));
+	expect(paragraph.childNodes.length).toBe(5);
+	expect(paragraph.firstChild.data).toBe("abc");
+	expect(paragraph.childNodes[1].localName).toBe("i");
+	expect(paragraph.childNodes[2].data).toBe("def");
+	// A collapsed range grows to hold what was inserted into it.
+	expect(range.endContainer).toBe(paragraph);
+	expect(range.endOffset).toBe(2);
+});
+
+test("surrounding the contents refuses a partially contained element", () => {
+	const {document, paragraph, range} = withRange();
+	const bold = paragraph.childNodes[1];
+	bold.appendChild(document.createTextNode("BOLD"));
+	range.setStart(paragraph.firstChild, 2);
+	range.setEnd(bold.firstChild, 2);
+	expect(() => range.surroundContents(document.createElement("u"))).toThrow();
+	range.setEnd(paragraph.firstChild, 4);
+	range.surroundContents(document.createElement("u"));
+	expect(paragraph.childNodes[1].localName).toBe("u");
+	expect(paragraph.childNodes[1].textContent).toBe("cd");
+	expect(range.toString()).toBe("cd");
+});
+
+/* --------------------------------------------------------------- selection */
+
+test("the selection follows its range, and the range follows the tree", () => {
+	const {document, paragraph, range} = withRange();
+	const selection = document.getSelection();
+	expect(selection.rangeCount).toBe(0);
+	expect(selection.type).toBe("None");
+	range.setStart(paragraph.firstChild, 1);
+	range.setEnd(paragraph.firstChild, 4);
+	selection.addRange(range);
+	expect(selection.rangeCount).toBe(1);
+	expect(selection.getRangeAt(0)).toBe(range);
+	expect(selection.type).toBe("Range");
+	expect(selection.anchorNode).toBe(paragraph.firstChild);
+	expect(selection.anchorOffset).toBe(1);
+	expect(selection.toString()).toBe("bcd");
+	paragraph.firstChild.insertData(0, "xy");
+	expect(selection.anchorOffset).toBe(3);
+	expect(selection.toString()).toBe("bcd");
+	selection.removeAllRanges();
+	expect(selection.rangeCount).toBe(0);
+	expect(selection.anchorNode).toBe(null);
+});
+
+test("a backward selection reports its anchor at the range's end", () => {
+	const {document, paragraph} = withRange();
+	const selection = document.getSelection();
+	const text = paragraph.firstChild;
+	selection.setBaseAndExtent(text, 4, text, 1);
+	expect(selection.anchorOffset).toBe(4);
+	expect(selection.focusOffset).toBe(1);
+	expect(selection.direction).toBe("backward");
+	expect(selection.getRangeAt(0).startOffset).toBe(1);
+	selection.extend(text, 6);
+	expect(selection.direction).toBe("forward");
+	expect(selection.anchorOffset).toBe(4);
+	expect(selection.focusOffset).toBe(6);
+});
+
+test("a selection that crosses a shadow boundary keeps composed points", () => {
+	const {document, paragraph} = withRange();
+	const host = document.createElement("div");
+	document.body.appendChild(host);
+	const root = host.attachShadow({mode: "open"});
+	root.appendChild(document.createTextNode("inside"));
+	const selection = document.getSelection();
+	selection.setBaseAndExtent(paragraph.firstChild, 1, root.firstChild, 3);
+	// The range collapses where the two trees part; the composed range does not.
+	expect(selection.getRangeAt(0).collapsed).toBe(true);
+	const composed = selection.getComposedRanges({shadowRoots: [root]})[0];
+	expect(composed.startContainer).toBe(paragraph.firstChild);
+	expect(composed.startOffset).toBe(1);
+	expect(composed.endContainer).toBe(root.firstChild);
+	expect(composed.endOffset).toBe(3);
+	// With no shadow root given, the end rescopes to the host's own place.
+	const rescoped = selection.getComposedRanges()[0];
+	expect(rescoped.endContainer).toBe(document.body);
+	expect(rescoped.endOffset).toBe(2);
+});
+
+test("a selectionchange event is fired once a task, at the document", () => {
+	const {document, paragraph} = withRange();
+	const selection = document.getSelection();
+	let fired = 0;
+	document.addEventListener("selectionchange", () => fired++);
+	selection.collapse(paragraph.firstChild, 1);
+	selection.collapse(paragraph.firstChild, 2);
+	expect(fired).toBe(0);
+	return new Promise<void>((resolve) => {
+		setTimeout(() => {
+			expect(fired).toBe(1);
+			resolve();
+		}, 0);
+	});
+});

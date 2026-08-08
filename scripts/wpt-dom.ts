@@ -4,8 +4,9 @@
  * Each test is a testharness.js document. The document is parsed by this DOM's
  * own HTML parser, its globals are installed on the realm the harness runs in
  * -- so `document`, `Node`, `Element` and the rest are this implementation's --
- * and the file's scripts are evaluated in document order inside one function
- * scope. jsdom is not loaded.
+ * and the file's scripts are evaluated in document order inside one block at
+ * global scope, so that a name a script declares is a name the realm has, as
+ * it is in a browser. jsdom is not loaded.
  *
  * The suites are fetched into .wpt/ on first run and cached. Results are
  * written to docs/dom-conformance.md.
@@ -39,6 +40,7 @@ async function freshDOM(): Promise<DOMModule> {
 /** The names a test file expects to find on its global. */
 function domGlobals(dom: DOMModule): Record<string, unknown> {
 	const names = [
+		"AbstractRange",
 		"Attr",
 		"CDATASection",
 		"CharacterData",
@@ -68,6 +70,9 @@ function domGlobals(dom: DOMModule): Record<string, unknown> {
 		"NodeIterator",
 		"NodeList",
 		"ProcessingInstruction",
+		"Range",
+		"Selection",
+		"StaticRange",
 		"SVGElement",
 		"ShadowRoot",
 		"Text",
@@ -90,6 +95,8 @@ const SUITES = [
 	"dom/collections",
 	"dom/lists",
 	"dom/events",
+	"dom/ranges",
+	"selection",
 	"shadow-dom",
 	"custom-elements",
 ];
@@ -508,6 +515,94 @@ const EXCLUSIONS: Record<string, string> = {
 	"custom-elements/upgrading/Document-importNode-customized-builtins.html":
 		"customized built-ins: importing an element with an is value",
 
+	// requires-browsing-context: the case is run inside an iframe, whose
+	// document this DOM has no way to build.
+	"dom/ranges/Range-cloneContents.html":
+		"requires-browsing-context: the fixture is built in one iframe and compared against a reference document in another",
+	"dom/ranges/Range-deleteContents.html":
+		"requires-browsing-context: the fixture is built in one iframe and compared against a reference document in another",
+	"dom/ranges/Range-extractContents.html":
+		"requires-browsing-context: the fixture is built in one iframe and compared against a reference document in another",
+	"dom/ranges/Range-insertNode.html":
+		"requires-browsing-context: the fixture is built in one iframe and compared against a reference document in another",
+	"dom/ranges/Range-surroundContents.html":
+		"requires-browsing-context: the fixture is built in one iframe and compared against a reference document in another",
+	"dom/ranges/Range-extractContents-dynamic-end.html":
+		"requires-browsing-context: the end container is removed from inside an iframe's unload event",
+	"dom/ranges/Range-in-shadow-after-the-shadow-removed.html":
+		"requires-browsing-context: the shadow mode under test is read out of document.location, which is null without one",
+	"selection/getSelection.html":
+		"requires-browsing-context: every case is an iframe's selection, or asserts that the document's defaultView is not null",
+	"selection/Document-open.html":
+		"requires-browsing-context: the selection under test is an iframe's, across a document.open()",
+	"selection/deleteFromDocument.html":
+		"requires-browsing-context: the fixture is built in one iframe and compared against a reference document in another",
+
+	// requires-user-input: the selection under test is one a pointer or key
+	// action sequence makes, which testdriver asks the browser to synthesize.
+	"selection/anchor-removal.html":
+		"requires-user-input: the selection is dragged out with a pointer action sequence",
+	"selection/canvas-click.html":
+		"requires-user-input: a pointer action sequence over a canvas",
+	"selection/canvas-drag.html":
+		"requires-user-input: a pointer action sequence over a canvas",
+	"selection/drag-disabled-textarea-shadow-dom.html":
+		"requires-user-input: the selection is dragged out with a pointer action sequence",
+	"selection/drag-out-of-floated-content.html":
+		"requires-user-input: the selection is dragged out with a pointer action sequence",
+	"selection/drag-selection-contenteditable-to-out-of-flow-user-select-none.html":
+		"requires-user-input: the selection is dragged out with a pointer action sequence",
+	"selection/drag-selection-extend-to-user-select-none.html":
+		"requires-user-input: the selection is dragged out with a pointer action sequence",
+	"selection/extend-selection-in-shadow-tree.html":
+		"requires-user-input: the selection is dragged out with a pointer action sequence",
+	"selection/fire-selectionchange-event-on-deleting-single-character-inside-inline-element.html":
+		"requires-user-input: the character is deleted by a key action sequence",
+	"selection/fire-selectionchange-event-on-pressing-backspace.html":
+		"requires-user-input: the character is deleted by a key action sequence",
+	"selection/fire-selectionchange-event-on-textcontrol-element-on-pressing-backspace.html":
+		"requires-user-input: the character is deleted by a key action sequence",
+	"selection/move-by-word-korean.html":
+		"requires-user-input: the caret is moved by a key action sequence",
+	"selection/move-by-word-with-symbol.html":
+		"requires-user-input: the caret is moved by a key action sequence",
+	"selection/onselectstart-on-key-in-contenteditable.html":
+		"requires-user-input: the selection is made by a key action sequence",
+	"selection/select-end-of-line-image.tentative.html":
+		"requires-user-input: the selection is made by a pointer action sequence",
+	"selection/selection-direction-on-single-click.html":
+		"requires-user-input: the selection is made by a pointer action sequence",
+	"selection/selection-direction-on-double-click.tentative.html":
+		"requires-user-input: the selection is made by a pointer action sequence",
+	"selection/selection-direction-on-triple-click.tentative.html":
+		"requires-user-input: the selection is made by a pointer action sequence",
+	"selection/selection-focused-element-becomes-nonfocusable.html":
+		"requires-user-input: the element is focused by a pointer action sequence",
+	"selection/stringifier_editable_element.tentative.html":
+		"requires-user-input: the selection is made by a pointer action sequence",
+	"selection/user-select-on-input-and-contenteditable.html":
+		"requires-user-input: the selection is made by a pointer action sequence",
+	"selection/anonymous/details-ancestor.html":
+		"requires-user-input: the selection is made by a pointer action sequence",
+	"selection/anonymous/details-mutate.html":
+		"requires-user-input: the selection is made by a pointer action sequence",
+	"selection/caret/move-around-contenteditable-false.html":
+		"requires-user-input: the caret is moved by a key action sequence",
+	"selection/caret/move-around-generated-content.html":
+		"requires-user-input: the caret is moved by a key action sequence",
+	"selection/contenteditable/initial-selection-during-focus-event-propagation.html":
+		"requires-user-input: the editing host is focused by a pointer action sequence",
+	"selection/contenteditable/modifying-selection-with-primary-mouse-button.tentative.html":
+		"requires-user-input: the selection is modified by a pointer action sequence",
+	"selection/contenteditable/modifying-selection-with-non-primary-mouse-button.tentative.html":
+		"requires-user-input: the selection is modified by a pointer action sequence",
+	"selection/textcontrols/initial-selection-during-focus-event-propagation.html":
+		"requires-user-input: the control is focused by a pointer action sequence",
+	"selection/textcontrols/click-input-after-iframe-focus.html":
+		"requires-user-input: the control is clicked by a pointer action sequence",
+	"selection/textcontrols/focus.html":
+		"requires-user-input: the control is focused by a pointer action sequence",
+
 	// later-phase: scoped custom element registries -- a CustomElementRegistry
 	// an author constructs, an element's own registry, and the registry option
 	// on attachShadow, createElement and importNode. There is one registry
@@ -539,6 +634,10 @@ const EXCLUSIONS: Record<string, string> = {
  * every file one by one; this is where the reason is written once.
  */
 const EXCLUDED_DIRECTORIES: Array<[string, string]> = [
+	[
+		"dom/ranges/tentative/",
+		"not-a-standard: OpaqueRange and the createValueRange that builds one are a proposal, filed under tentative in the suite",
+	],
 	[
 		"dom/events/scrolling/",
 		"requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns",
@@ -623,8 +722,24 @@ const DEVIATIONS: Array<[string, string]> = [
 		"UIEvent, MouseEvent, KeyboardEvent and the rest of the UI Events interfaces do not exist here. The subtests that construct or initialize one fail; the Event and CustomEvent subtests in the same files pass. Dispatch already carries the hooks those interfaces need -- an event that is a mouse event, an activation behavior, the two legacy activation hooks -- so they slot in rather than being rebuilt.",
 	],
 	[
-		"dom/nodes/MutationObserver-characterData.html, MutationObserver-childList.html",
-		"Range is not implemented. Its mutations -- deleteContents, extractContents, insertNode, surroundContents -- are the tree changes those files also make through Node methods, which are observed correctly; what is missing is the interface that makes them, which is a section of the DOM Standard of its own.",
+		"dom/ranges/Range-getClientRects.html and every selection test that measures a box",
+		"Range.getClientRects() and Range.getBoundingClientRect() are absent. They are CSSOM View's, not the DOM Standard's, and they answer with boxes the layout engine owns; the engine reaches its own geometry through its layout tree rather than through this file. The same holds for everything the selection suite scores by rendering -- Selection.modify()'s line and paragraph granularities, toString() over user-select and display:none, the caret cases -- which fails here rather than being excluded.",
+	],
+	[
+		"selection/modify.tentative.html, bidi/modify-*.html, contenteditable/modify*.html, move-by-word-*.html",
+		'Selection.modify() is absent. Its "character" and "word" granularities could be answered from the tree, but "line", "lineboundary", "paragraph" and the rest are positions only layout knows, and a modify() that moved the focus for some granularities and ignored the others would be a subset wearing the name of the whole method.',
+	],
+	[
+		"selection/getSelection.html (excluded), and the defaultView sanity checks in it",
+		"`getSelection()` lives on Document here and always answers with that document's selection. The Selection API defines it to return null for a document with no browsing context, and to hang a forwarding copy off the Window. There is no Window in this DOM and no browsing context to have -- a document is the top of the tree -- so returning null would leave the interface unreachable. The harness supplies the Window's forwarding copy, exactly as it supplies element.style.",
+	],
+	[
+		"selection/shadow-dom/tentative/Selection-getComposedRanges-collapsed.html, Selection-getComposedRanges-range-update.html",
+		"A selection whose range is inside a shadow tree of the document still answers `rangeCount` 1 and hands that range to `getRangeAt(0)`. The suite contradicts itself here: Mozilla's cross-shadow-boundary-extend.html and shadow-dom/tentative/Range-isPointInRange.html, and WebKit's selection-at-nodes-not-part-of-flattened-tree.html, all read a range out of a selection that sits in a shadow tree, while Chromium's Selection-getComposedRanges-range-update.html expects getRangeAt to throw for the same shape. Two engines against one decided it; the one subtest that wants the throw is counted as a failure.",
+	],
+	[
+		"selection/shadow-dom/selection-at-nodes-not-part-of-flattened-tree.html",
+		"`containsNode` answers over the node tree, so a node that a shadow root leaves out of the flattened tree is still contained in a selection over its parent. The four subtests that expect false are scoring the flattened tree, which is a rendering question.",
 	],
 	[
 		"dom/nodes/querySelector-id-nth-child.html",
@@ -734,6 +849,11 @@ function installGlobals(
 		addEventListener: target.addEventListener.bind(target),
 		removeEventListener: target.removeEventListener.bind(target),
 		dispatchEvent: target.dispatchEvent.bind(target),
+		// The Selection API puts getSelection on both the Window and the
+		// Document, the Window's being defined as a call to the Document's.
+		// There is no Window here, so the environment supplies the one that
+		// forwards, exactly as it supplies element.style.
+		getSelection: () => document.getSelection(),
 	};
 	const values: Record<string, unknown> = {
 		...domGlobals(dom),
@@ -871,6 +991,10 @@ async function runFile(file: string): Promise<Outcome> {
 	const outcome: Outcome = {file, harness: "TIMEOUT", subtests: []};
 	const globals = installGlobals(dom, document, url);
 	const scope = globalThis as unknown as Record<string, unknown>;
+	// The names the realm had before the file ran. A classic script's `var` and
+	// function declarations become properties of the global, and the file's are
+	// dropped once it is done so the next file starts from a bare realm.
+	const before = new Set(Object.keys(scope));
 	try {
 		let settle: () => void = () => {};
 		const done = new Promise<void>((resolve) => {
@@ -894,9 +1018,13 @@ async function runFile(file: string): Promise<Outcome> {
 			"\n;\n",
 		)}\n;\nadd_completion_callback(__complete);`;
 		try {
-			// One function scope for the whole file: the harness and the test
-			// share it exactly as they share a document's script scope.
-			(0, eval)(`(function(){\n${body}\n})()`);
+			// One block at global scope for the whole file: the harness and the
+			// test share it exactly as they share a document's script scope. The
+			// block is what a browser gives a classic script -- `var` and
+			// function declarations land on the global, where a test that evals
+			// a name (`params.map(eval)`) finds them, while `let` and `const`
+			// stay in the file's own scope rather than the realm's.
+			(0, eval)(`{\n${body}\n}`);
 			(scope.dispatchEvent as (event: object) => boolean)(
 				new dom.Event("load"),
 			);
@@ -921,6 +1049,9 @@ async function runFile(file: string): Promise<Outcome> {
 	} finally {
 		delete scope.__complete;
 		globals.restore();
+		for (const name of Object.keys(scope)) {
+			if (!before.has(name)) delete scope[name];
+		}
 	}
 	return outcome;
 }
@@ -979,12 +1110,14 @@ const lines: string[] = [
 	"of the module, so a test that tampers with a prototype cannot reach the",
 	"next file. jsdom is not loaded.",
 	"",
-	"The harness supplies two things the environment would, neither of which is",
-	"part of this DOM: a `window` object carrying only addEventListener and its",
-	"pair, and an `element.style` scratch object, which several traversal tests",
-	"use to hide a fixture. CSSOM belongs to the engine, not to the tree. That",
-	"window is a bare event target, not a Window: an event path ends at the",
-	"document, as the spec says it does for a document with no browsing context.",
+	"The harness supplies three things the environment would, none of which is",
+	"part of this DOM: a `window` object carrying addEventListener, its pair,",
+	"and the `getSelection()` the Selection API defines as a call to the",
+	"document's own; and an `element.style` scratch object, which several",
+	"traversal tests use to hide a fixture. CSSOM belongs to the engine, not to",
+	"the tree. That window is a bare event target, not a Window: an event path",
+	"ends at the document, as the spec says it does for a document with no",
+	"browsing context.",
 	"",
 	`- Test files in the suites: ${outcomes.length}`,
 	`- Reference tests (no testharness, scored by pixels): ${reftests.length}`,
