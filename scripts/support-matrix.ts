@@ -464,199 +464,6 @@ function generatedFeatures(): Record<string, Feature> {
 	return out;
 }
 
-/**
- * Properties with no meaning on a character grid, by the reason they have none.
- * Stating the reason once per family is the honest alternative to probing 300
- * properties that could only ever answer "no": a cell is an indivisible unit of
- * a fixed-size monospace grid with no raster surface, so anything that needs
- * sub-cell geometry, imagery, or continuous time is out of scope by
- * construction rather than by omission.
- */
-const NOT_APPLICABLE: Array<{reason: string; match: (p: string) => boolean}> = [
-	{
-		reason: "raster imagery -- a cell holds one character, not pixels",
-		match: (p) =>
-			p.startsWith("border-image") ||
-			p.startsWith("object-") ||
-			p === "border-shape" ||
-			p.startsWith("background-") ||
-			p.startsWith("mask") ||
-			p.startsWith("image-") ||
-			p === "background" ||
-			p === "clip-path" ||
-			p === "clip",
-	},
-	{
-		reason: "SVG painting",
-		match: (p) =>
-			p.startsWith("stroke") ||
-			p.startsWith("marker-") ||
-			p === "marker" ||
-			p === "fill" ||
-			p === "fill-opacity" ||
-			p === "fill-rule" ||
-			p === "paint-order" ||
-			p === "vector-effect" ||
-			p === "d" ||
-			p.endsWith("-rendering") ||
-			p === "color-interpolation" ||
-			p === "dominant-baseline" ||
-			p === "alignment-baseline" ||
-			p === "baseline-shift" ||
-			p === "text-anchor" ||
-			p === "stop-color" ||
-			p === "stop-opacity" ||
-			p === "flood-color" ||
-			p === "flood-opacity" ||
-			p === "lighting-color" ||
-			p === "cx" ||
-			p === "cy" ||
-			p === "r" ||
-			p === "rx" ||
-			p === "ry" ||
-			p === "x" ||
-			p === "y" ||
-			p === "clip-rule" ||
-			p === "color-interpolation-filters",
-	},
-	{
-		reason: "continuous time -- frames are discrete and driven by rAF",
-		match: (p) =>
-			p.startsWith("animation") ||
-			p.startsWith("transition") ||
-			p.startsWith("timeline") ||
-			p.startsWith("view-timeline") ||
-			p.startsWith("scroll-timeline") ||
-			p.startsWith("offset") ||
-			p === "will-change" ||
-			p === "interpolate-size",
-	},
-	{
-		reason: "sub-cell geometry",
-		match: (p) =>
-			p.startsWith("transform") ||
-			p.startsWith("perspective") ||
-			p.startsWith("rotate") ||
-			p.startsWith("scale") ||
-			p.startsWith("translate") ||
-			p.startsWith("corner") ||
-			p.startsWith("border-radius") ||
-			p.endsWith("-radius") ||
-			p.startsWith("shape-") ||
-			p === "backface-visibility" ||
-			p === "zoom",
-	},
-	{
-		reason: "colour compositing -- cells composite by replacement",
-		match: (p) =>
-			p.startsWith("filter") ||
-			p.startsWith("backdrop-") ||
-			p === "mix-blend-mode" ||
-			p === "isolation" ||
-			p === "box-shadow" ||
-			p === "text-shadow" ||
-			p === "opacity" ||
-			p === "color-scheme" ||
-			p === "forced-color-adjust" ||
-			p === "print-color-adjust" ||
-			p === "accent-color",
-	},
-	{
-		reason: "the terminal owns scrolling; the document has one camera",
-		match: (p) =>
-			p.startsWith("scroll") ||
-			p.startsWith("overscroll") ||
-			p === "scrollbar-color" ||
-			p === "scrollbar-gutter" ||
-			p === "scrollbar-width" ||
-			p === "touch-action" ||
-			p === "overflow-anchor",
-	},
-	{
-		reason: "typography a fixed monospace grid cannot express",
-		match: (p) =>
-			p.startsWith("font-variant") ||
-			p.startsWith("font-feature") ||
-			p.startsWith("font-synthesis") ||
-			p.startsWith("font-palette") ||
-			p.startsWith("font-optical") ||
-			p.startsWith("font-size-adjust") ||
-			p.startsWith("font-stretch") ||
-			p.startsWith("font-width") ||
-			p.startsWith("font-kerning") ||
-			p.startsWith("font-language") ||
-			p.startsWith("font-smooth") ||
-			p.startsWith("text-emphasis") ||
-			p.startsWith("text-underline") ||
-			p.startsWith("text-decoration-thickness") ||
-			p.startsWith("text-box") ||
-			p.startsWith("ruby") ||
-			p.startsWith("hyphenate") ||
-			p === "hyphens" ||
-			p === "font-size-adjust" ||
-			p === "text-rendering" ||
-			p === "text-autospace" ||
-			p === "text-spacing-trim" ||
-			p === "hanging-punctuation" ||
-			p === "initial-letter" ||
-			p === "line-break" ||
-			p === "tab-size" ||
-			p === "text-justify" ||
-			p === "text-orientation" ||
-			p === "writing-mode" ||
-			p === "unicode-bidi" ||
-			p === "text-combine-upright" ||
-			p === "baseline-source" ||
-			p === "font-variation-settings" ||
-			p === "text-decoration-inset" ||
-			p === "text-decoration-skip-ink" ||
-			p === "text-wrap-style" ||
-			p === "dynamic-range-limit",
-	},
-	{
-		reason: "print pagination",
-		match: (p) =>
-			p.startsWith("break-") ||
-			p.startsWith("page") ||
-			p === "page" ||
-			p === "orphans" ||
-			p === "widows" ||
-			p.startsWith("column") ||
-			p === "columns" ||
-			p === "box-decoration-break",
-	},
-	{
-		reason: "browser chrome and input affordances with no terminal analogue",
-		match: (p) =>
-			p.startsWith("outline") ||
-			p.startsWith("caret") ||
-			p.startsWith("user-") ||
-			p.startsWith("appearance") ||
-			p.startsWith("pointer-") ||
-			p.startsWith("resize") ||
-			p.startsWith("field-sizing") ||
-			p.startsWith("contain") ||
-			p.startsWith("container") ||
-			p.startsWith("anchor") ||
-			p.startsWith("position-") ||
-			p.startsWith("view-transition") ||
-			p === "content-visibility" ||
-			p === "all" ||
-			p === "quotes" ||
-			p === "speak-as" ||
-			p === "nav-index" ||
-			p === "math-style" ||
-			p === "math-depth" ||
-			p === "math-shift" ||
-			p === "interactivity" ||
-			p.startsWith("interest-") ||
-			p === "trigger-scope" ||
-			p === "reading-flow" ||
-			p === "reading-order" ||
-			p === "frame-sizing" ||
-			p === "overflow-clip-margin",
-	},
-];
 
 /**
  * The document every probe renders. #probe is block-level on purpose: `width`
@@ -1103,23 +910,12 @@ async function main(): Promise<void> {
 		)
 		.sort();
 
-	const notApplicable = new Map<string, string[]>();
-	const unclassified: string[] = [];
+	const unprobed: string[] = [];
 	for (const property of standard) {
-		if (probed.has(property)) continue;
-		const rule = NOT_APPLICABLE.find((r) => r.match(property));
-		if (rule) {
-			notApplicable.set(rule.reason, [
-				...(notApplicable.get(rule.reason) ?? []),
-				property,
-			]);
-		} else {
-			unclassified.push(property);
-		}
+		if (!probed.has(property)) unprobed.push(property);
 	}
 
 	const supported = results.filter((r) => r.supported).length;
-	const naCount = [...notApplicable.values()].reduce((n, v) => n + v.length, 0);
 
 	const lines: string[] = [
 		"<!-- Generated by `bun run support`. Do not edit. -->",
@@ -1134,8 +930,7 @@ async function main(): Promise<void> {
 		"",
 		`- **${supported} supported**`,
 		`- **${results.length - supported} unsupported**`,
-		`- **${naCount} not applicable** to a character grid, for the reasons below`,
-		`- **${unclassified.length} unclassified**`,
+		`- **${unprobed.length} not yet probed**`,
 		"",
 		"Non-property features (selectors, at-rules, DOM APIs) are probed the same",
 		"way and counted in the first two figures.",
@@ -1164,32 +959,17 @@ async function main(): Promise<void> {
 		lines.push("");
 	}
 
-	lines.push("## Not applicable", "");
-	for (const [reason, props] of [...notApplicable].sort(
-		(a, b) => b[1].length - a[1].length,
-	)) {
+	if (unprobed.length > 0) {
 		lines.push(
-			`**${props.length}** — ${reason}`,
+			"## Not yet probed",
+			"",
+			"No probe exists for these; each is either a probe nobody has written",
+			"or a property that cannot apply to a character grid. Sorting out",
+			"which is which is open work.",
 			"",
 			"<details><summary>Show</summary>",
 			"",
-			props.map((p) => `\`${p}\``).join(", "),
-			"",
-			"</details>",
-			"",
-		);
-	}
-
-	if (unclassified.length > 0) {
-		lines.push(
-			"## Unclassified",
-			"",
-			"Neither probed nor ruled out: each is a probe nobody has written yet, or",
-			"a family that belongs above.",
-			"",
-			"<details><summary>Show</summary>",
-			"",
-			unclassified.map((p) => `\`${p}\``).join(", "),
+			unprobed.map((p) => `\`${p}\``).join(", "),
 			"",
 			"</details>",
 			"",
@@ -1214,7 +994,7 @@ async function main(): Promise<void> {
 	writeFileSync(target, output);
 	process.stdout.write(
 		`Wrote SUPPORT.md: ${supported}/${results.length} probed supported, ` +
-			`${naCount} not applicable, ${unclassified.length} unclassified.\n`,
+			`${unprobed.length} not yet probed.\n`,
 	);
 }
 

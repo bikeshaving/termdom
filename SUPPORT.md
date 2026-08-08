@@ -10,8 +10,7 @@ Of the 487 standard CSS properties in `mdn-data`:
 
 - **93 supported**
 - **118 unsupported**
-- **301 not applicable** to a character grid, for the reasons below
-- **0 unclassified**
+- **301 not yet probed**
 
 Non-property features (selectors, at-rules, DOM APIs) are probed the same
 way and counted in the first two figures.
@@ -282,76 +281,14 @@ way and counted in the first two figures.
 | `Selection / getSelection` | yes |
 | `Fullscreen API` | yes |
 
-## Not applicable
+## Not yet probed
 
-**50** — typography a fixed monospace grid cannot express
-
-<details><summary>Show</summary>
-
-`baseline-source`, `dynamic-range-limit`, `font-feature-settings`, `font-kerning`, `font-language-override`, `font-optical-sizing`, `font-palette`, `font-size-adjust`, `font-synthesis`, `font-synthesis-small-caps`, `font-synthesis-style`, `font-synthesis-weight`, `font-variant`, `font-variant-alternates`, `font-variant-caps`, `font-variant-east-asian`, `font-variant-emoji`, `font-variant-ligatures`, `font-variant-numeric`, `font-variant-position`, `font-variation-settings`, `hanging-punctuation`, `hyphenate-character`, `hyphenate-limit-chars`, `hyphens`, `initial-letter`, `line-break`, `ruby-align`, `ruby-overhang`, `ruby-position`, `tab-size`, `text-autospace`, `text-box`, `text-box-edge`, `text-box-trim`, `text-combine-upright`, `text-decoration-inset`, `text-decoration-skip-ink`, `text-decoration-thickness`, `text-emphasis`, `text-emphasis-color`, `text-emphasis-position`, `text-emphasis-style`, `text-justify`, `text-orientation`, `text-underline-offset`, `text-underline-position`, `text-wrap-style`, `unicode-bidi`, `writing-mode`
-
-</details>
-
-**40** — raster imagery -- a cell holds one character, not pixels
+No probe exists for these; each is either a probe nobody has written
+or a property that cannot apply to a character grid. Sorting out
+which is which is open work.
 
 <details><summary>Show</summary>
 
-`background`, `background-attachment`, `background-blend-mode`, `background-clip`, `background-image`, `background-origin`, `background-position`, `background-position-x`, `background-position-y`, `background-repeat`, `background-size`, `border-image`, `border-image-outset`, `border-image-repeat`, `border-image-slice`, `border-image-source`, `border-image-width`, `border-shape`, `clip-path`, `image-orientation`, `image-rendering`, `mask`, `mask-border`, `mask-border-mode`, `mask-border-outset`, `mask-border-repeat`, `mask-border-slice`, `mask-border-source`, `mask-border-width`, `mask-clip`, `mask-composite`, `mask-image`, `mask-mode`, `mask-origin`, `mask-position`, `mask-repeat`, `mask-size`, `mask-type`, `object-fit`, `object-position`
-
-</details>
-
-**39** — browser chrome and input affordances with no terminal analogue
-
-<details><summary>Show</summary>
-
-`all`, `appearance`, `caret`, `caret-animation`, `caret-color`, `caret-shape`, `contain`, `contain-intrinsic-block-size`, `contain-intrinsic-height`, `contain-intrinsic-inline-size`, `contain-intrinsic-size`, `contain-intrinsic-width`, `container`, `container-name`, `container-type`, `content-visibility`, `frame-sizing`, `interactivity`, `interest-delay`, `interest-delay-end`, `interest-delay-start`, `math-depth`, `math-style`, `outline`, `outline-color`, `outline-offset`, `outline-style`, `outline-width`, `overflow-clip-margin`, `pointer-events`, `quotes`, `reading-flow`, `reading-order`, `resize`, `trigger-scope`, `user-select`, `view-transition-class`, `view-transition-name`, `view-transition-scope`
-
-</details>
-
-**39** — sub-cell geometry
-
-<details><summary>Show</summary>
-
-`backface-visibility`, `border-bottom-left-radius`, `border-bottom-right-radius`, `border-end-end-radius`, `border-end-start-radius`, `border-radius`, `border-start-end-radius`, `border-start-start-radius`, `border-top-left-radius`, `border-top-right-radius`, `corner-block-end-shape`, `corner-block-start-shape`, `corner-bottom-left-shape`, `corner-bottom-right-shape`, `corner-bottom-shape`, `corner-end-end-shape`, `corner-end-start-shape`, `corner-inline-end-shape`, `corner-inline-start-shape`, `corner-left-shape`, `corner-right-shape`, `corner-shape`, `corner-start-end-shape`, `corner-start-start-shape`, `corner-top-left-shape`, `corner-top-right-shape`, `corner-top-shape`, `perspective`, `perspective-origin`, `rotate`, `scale`, `shape-image-threshold`, `shape-margin`, `shape-outside`, `transform-box`, `transform-origin`, `transform-style`, `translate`, `zoom`
-
-</details>
-
-**38** — SVG painting
-
-<details><summary>Show</summary>
-
-`alignment-baseline`, `baseline-shift`, `clip-rule`, `color-interpolation-filters`, `cx`, `cy`, `d`, `dominant-baseline`, `fill`, `fill-opacity`, `fill-rule`, `flood-color`, `flood-opacity`, `lighting-color`, `marker`, `marker-end`, `marker-mid`, `marker-start`, `paint-order`, `r`, `rx`, `ry`, `shape-rendering`, `stop-color`, `stop-opacity`, `stroke`, `stroke-dasharray`, `stroke-dashoffset`, `stroke-linecap`, `stroke-linejoin`, `stroke-miterlimit`, `stroke-opacity`, `stroke-width`, `text-anchor`, `text-rendering`, `vector-effect`, `x`, `y`
-
-</details>
-
-**38** — the terminal owns scrolling; the document has one camera
-
-<details><summary>Show</summary>
-
-`overflow-anchor`, `overscroll-behavior`, `overscroll-behavior-block`, `overscroll-behavior-inline`, `overscroll-behavior-x`, `overscroll-behavior-y`, `scroll-behavior`, `scroll-margin`, `scroll-margin-block`, `scroll-margin-block-end`, `scroll-margin-block-start`, `scroll-margin-bottom`, `scroll-margin-inline`, `scroll-margin-inline-end`, `scroll-margin-inline-start`, `scroll-margin-left`, `scroll-margin-right`, `scroll-margin-top`, `scroll-marker-group`, `scroll-padding`, `scroll-padding-block`, `scroll-padding-block-end`, `scroll-padding-block-start`, `scroll-padding-bottom`, `scroll-padding-inline`, `scroll-padding-inline-end`, `scroll-padding-inline-start`, `scroll-padding-left`, `scroll-padding-right`, `scroll-padding-top`, `scroll-snap-align`, `scroll-snap-stop`, `scroll-snap-type`, `scroll-target-group`, `scrollbar-color`, `scrollbar-gutter`, `scrollbar-width`, `touch-action`
-
-</details>
-
-**31** — continuous time -- frames are discrete and driven by rAF
-
-<details><summary>Show</summary>
-
-`animation-composition`, `animation-delay`, `animation-direction`, `animation-duration`, `animation-fill-mode`, `animation-iteration-count`, `animation-name`, `animation-play-state`, `animation-timing-function`, `animation-trigger`, `offset`, `offset-anchor`, `offset-distance`, `offset-path`, `offset-position`, `offset-rotate`, `timeline-trigger`, `timeline-trigger-activation-range`, `timeline-trigger-activation-range-end`, `timeline-trigger-activation-range-start`, `timeline-trigger-active-range`, `timeline-trigger-active-range-end`, `timeline-trigger-active-range-start`, `timeline-trigger-name`, `timeline-trigger-source`, `transition-behavior`, `transition-delay`, `transition-duration`, `transition-property`, `transition-timing-function`, `will-change`
-
-</details>
-
-**18** — print pagination
-
-<details><summary>Show</summary>
-
-`box-decoration-break`, `break-after`, `break-before`, `break-inside`, `column-count`, `column-fill`, `column-height`, `column-rule`, `column-rule-color`, `column-rule-style`, `column-rule-width`, `column-span`, `column-width`, `column-wrap`, `columns`, `orphans`, `page`, `widows`
-
-</details>
-
-**8** — colour compositing -- cells composite by replacement
-
-<details><summary>Show</summary>
-
-`accent-color`, `backdrop-filter`, `color-scheme`, `forced-color-adjust`, `isolation`, `mix-blend-mode`, `print-color-adjust`, `text-shadow`
+`accent-color`, `alignment-baseline`, `all`, `animation-composition`, `animation-delay`, `animation-direction`, `animation-duration`, `animation-fill-mode`, `animation-iteration-count`, `animation-name`, `animation-play-state`, `animation-timing-function`, `animation-trigger`, `appearance`, `backdrop-filter`, `backface-visibility`, `background`, `background-attachment`, `background-blend-mode`, `background-clip`, `background-image`, `background-origin`, `background-position`, `background-position-x`, `background-position-y`, `background-repeat`, `background-size`, `baseline-shift`, `baseline-source`, `border-bottom-left-radius`, `border-bottom-right-radius`, `border-end-end-radius`, `border-end-start-radius`, `border-image`, `border-image-outset`, `border-image-repeat`, `border-image-slice`, `border-image-source`, `border-image-width`, `border-radius`, `border-shape`, `border-start-end-radius`, `border-start-start-radius`, `border-top-left-radius`, `border-top-right-radius`, `box-decoration-break`, `break-after`, `break-before`, `break-inside`, `caret`, `caret-animation`, `caret-color`, `caret-shape`, `clip-path`, `clip-rule`, `color-interpolation-filters`, `color-scheme`, `column-count`, `column-fill`, `column-height`, `column-rule`, `column-rule-color`, `column-rule-style`, `column-rule-width`, `column-span`, `column-width`, `column-wrap`, `columns`, `contain`, `contain-intrinsic-block-size`, `contain-intrinsic-height`, `contain-intrinsic-inline-size`, `contain-intrinsic-size`, `contain-intrinsic-width`, `container`, `container-name`, `container-type`, `content-visibility`, `corner-block-end-shape`, `corner-block-start-shape`, `corner-bottom-left-shape`, `corner-bottom-right-shape`, `corner-bottom-shape`, `corner-end-end-shape`, `corner-end-start-shape`, `corner-inline-end-shape`, `corner-inline-start-shape`, `corner-left-shape`, `corner-right-shape`, `corner-shape`, `corner-start-end-shape`, `corner-start-start-shape`, `corner-top-left-shape`, `corner-top-right-shape`, `corner-top-shape`, `cx`, `cy`, `d`, `dominant-baseline`, `dynamic-range-limit`, `fill`, `fill-opacity`, `fill-rule`, `flood-color`, `flood-opacity`, `font-feature-settings`, `font-kerning`, `font-language-override`, `font-optical-sizing`, `font-palette`, `font-size-adjust`, `font-synthesis`, `font-synthesis-small-caps`, `font-synthesis-style`, `font-synthesis-weight`, `font-variant`, `font-variant-alternates`, `font-variant-caps`, `font-variant-east-asian`, `font-variant-emoji`, `font-variant-ligatures`, `font-variant-numeric`, `font-variant-position`, `font-variation-settings`, `forced-color-adjust`, `frame-sizing`, `hanging-punctuation`, `hyphenate-character`, `hyphenate-limit-chars`, `hyphens`, `image-orientation`, `image-rendering`, `initial-letter`, `interactivity`, `interest-delay`, `interest-delay-end`, `interest-delay-start`, `isolation`, `lighting-color`, `line-break`, `marker`, `marker-end`, `marker-mid`, `marker-start`, `mask`, `mask-border`, `mask-border-mode`, `mask-border-outset`, `mask-border-repeat`, `mask-border-slice`, `mask-border-source`, `mask-border-width`, `mask-clip`, `mask-composite`, `mask-image`, `mask-mode`, `mask-origin`, `mask-position`, `mask-repeat`, `mask-size`, `mask-type`, `math-depth`, `math-style`, `mix-blend-mode`, `object-fit`, `object-position`, `offset`, `offset-anchor`, `offset-distance`, `offset-path`, `offset-position`, `offset-rotate`, `orphans`, `outline`, `outline-color`, `outline-offset`, `outline-style`, `outline-width`, `overflow-anchor`, `overflow-clip-margin`, `overscroll-behavior`, `overscroll-behavior-block`, `overscroll-behavior-inline`, `overscroll-behavior-x`, `overscroll-behavior-y`, `page`, `paint-order`, `perspective`, `perspective-origin`, `pointer-events`, `print-color-adjust`, `quotes`, `r`, `reading-flow`, `reading-order`, `resize`, `rotate`, `ruby-align`, `ruby-overhang`, `ruby-position`, `rx`, `ry`, `scale`, `scroll-behavior`, `scroll-margin`, `scroll-margin-block`, `scroll-margin-block-end`, `scroll-margin-block-start`, `scroll-margin-bottom`, `scroll-margin-inline`, `scroll-margin-inline-end`, `scroll-margin-inline-start`, `scroll-margin-left`, `scroll-margin-right`, `scroll-margin-top`, `scroll-marker-group`, `scroll-padding`, `scroll-padding-block`, `scroll-padding-block-end`, `scroll-padding-block-start`, `scroll-padding-bottom`, `scroll-padding-inline`, `scroll-padding-inline-end`, `scroll-padding-inline-start`, `scroll-padding-left`, `scroll-padding-right`, `scroll-padding-top`, `scroll-snap-align`, `scroll-snap-stop`, `scroll-snap-type`, `scroll-target-group`, `scrollbar-color`, `scrollbar-gutter`, `scrollbar-width`, `shape-image-threshold`, `shape-margin`, `shape-outside`, `shape-rendering`, `stop-color`, `stop-opacity`, `stroke`, `stroke-dasharray`, `stroke-dashoffset`, `stroke-linecap`, `stroke-linejoin`, `stroke-miterlimit`, `stroke-opacity`, `stroke-width`, `tab-size`, `text-anchor`, `text-autospace`, `text-box`, `text-box-edge`, `text-box-trim`, `text-combine-upright`, `text-decoration-inset`, `text-decoration-skip-ink`, `text-decoration-thickness`, `text-emphasis`, `text-emphasis-color`, `text-emphasis-position`, `text-emphasis-style`, `text-justify`, `text-orientation`, `text-rendering`, `text-shadow`, `text-underline-offset`, `text-underline-position`, `text-wrap-style`, `timeline-trigger`, `timeline-trigger-activation-range`, `timeline-trigger-activation-range-end`, `timeline-trigger-activation-range-start`, `timeline-trigger-active-range`, `timeline-trigger-active-range-end`, `timeline-trigger-active-range-start`, `timeline-trigger-name`, `timeline-trigger-source`, `touch-action`, `transform-box`, `transform-origin`, `transform-style`, `transition-behavior`, `transition-delay`, `transition-duration`, `transition-property`, `transition-timing-function`, `translate`, `trigger-scope`, `unicode-bidi`, `user-select`, `vector-effect`, `view-transition-class`, `view-transition-name`, `view-transition-scope`, `widows`, `will-change`, `writing-mode`, `x`, `y`, `zoom`
 
 </details>

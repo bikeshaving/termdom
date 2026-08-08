@@ -18,27 +18,31 @@ term.attach(); // take the terminal -- the only call that does
 
 const {document} = term;
 document.body.innerHTML = `
-	<style>
-		.card { border: 1px solid #5fafff; padding: 0 1ch; width: 36ch; }
-		.title { color: #5fafff; font-weight: bold; }
-		.done { color: green; }
-		.rest { color: #444; }
-		.pct { color: #888; }
-	</style>
-	<div class="card">
-		<div class="title">Installing</div>
-		<div><span class="done" id="done"></span><span class="rest" id="rest"></span> <span class="pct" id="pct"></span></div>
-	</div>
+  <style>
+    .card { border: 1px solid #5fafff; padding: 0 1ch; width: 36ch; }
+    .title { color: #5fafff; font-weight: bold; }
+    .done { color: green; }
+    .rest { color: #444; }
+    .pct { color: #888; }
+  </style>
+  <div class="card">
+    <div class="title">Installing</div>
+    <div>
+      <span class="done" id="done"></span>
+      <span class="rest" id="rest"></span>
+      <span class="pct" id="pct"></span>
+    </div>
+  </div>
 `;
 
 // TermDOM observes mutations and repaints the next frame.
 let n = 0;
 setInterval(() => {
-	n = (n + 1) % 101;
-	const cells = Math.round(n / 4);
-	document.getElementById("done").textContent = "█".repeat(cells);
-	document.getElementById("rest").textContent = "░".repeat(25 - cells);
-	document.getElementById("pct").textContent = String(n).padStart(3) + "%";
+    n = (n + 1) % 101;
+    const cells = Math.round(n / 4);
+    document.getElementById("done").textContent = "█".repeat(cells);
+    document.getElementById("rest").textContent = "░".repeat(25 - cells);
+    document.getElementById("pct").textContent = String(n).padStart(3) + "%";
 }, 50);
 ```
 
@@ -49,23 +53,36 @@ setInterval(() => {
 - **Stylesheets** CSS from `<style>` elements and `style` attributes
   cascades and inherits like it does in the browser, and resolves to
   terminal colors and text attributes.
-- **Layout** Boxes have borders, padding, and marginsand can be laid out
-  with flexbox or a `<table>`. Text wraps to the column width.
-- **Forms** `<input>`, `<textarea>`, `<select>`, checkboxes, and radios
-  take focus and typing, place a real caret, and accept IME composition.
-  They restyle with ordinary CSS.
-- **Events** Events for keys, mouse, focus, and paste fire on elements,
-  the document, and the window, pulled from STDIN.
-- **A real DOM** `document.querySelector()`, `MutationObserver`,
-  `Element.getBoundingClientRect()`, and shadow DOM work like they do in
-  the browser.
+- **Layout** The CSS box model, flexbox, and table layout. Sizes resolve to
+  whole cells: `1ch` is one column, `1px` is one row.
+- **Text** CJK, emoji, and combining characters take their correct widths.
+  Hebrew and Arabic render in visual order with contextual shaping, and the
+  caret moves by grapheme.
+- **Scrolling** Documents taller than the terminal scroll with
+  `window.scrollTo()` and `element.scrollIntoView()`. Earlier output flows
+  into the terminal's own scrollback.
+- **Events** Events for keys, mouse, focus, and paste fire on elements, the
+  document, and the window, pulled from STDIN.
+- **DOM utilities** `document.querySelector()`, `MutationObserver`,
+  `ResizeObserver`, `Element.getBoundingClientRect()` are hooked up to the
+  layout engine and viewport, following browser standards.
+- **Forms** `<input>`, `<textarea>`, `<select>`, checkboxes, and radios come
+  with default behavior and terminal-native looks, and can be restyled with
+  ordinary CSS.
+- **Web Components** `customElements.define()`, `attachShadow()`, `<slot>`,
+  `:host`, and scoped styles behave like the browser's. The built-in form
+  controls are themselves shadow trees.
+- **Selection** Drag to select, styled with `::selection`. Selected text is
+  copied to the system clipboard over OSC 52, including across SSH.
+- **Fullscreen** `element.requestFullscreen()` takes the alternate screen.
+  Exiting restores the shell and its scrollback.
 
 ## Examples
 
 - [`markdown.ts`](./examples/markdown.ts) — a Markdown viewer that pages
   when the document is taller than the terminal.
-- [`chat.ts`](./examples/chat.ts) — a streaming LLM chat client with a
-  transcript and composer.
+- [`chat.ts`](./examples/chat.ts) — a streaming LLM chat client powered by
+  https://ch.at with a transcript and composer.
 - [`todomvc.ts`](./examples/todomvc.ts) — the official TodoMVC with its
   component logic unmodified; only the stylesheet was swapped.
 - [`fuzzy-finder.ts`](./examples/fuzzy-finder.ts) — a file picker that
