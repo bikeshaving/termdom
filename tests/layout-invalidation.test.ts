@@ -318,3 +318,37 @@ test("a no-op class flip on a block inside an inline repaints identically", asyn
 
 	dom.dispose();
 });
+
+test("a run's first node turning block-level takes a box of its own", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+
+	// The span opens the paragraph's only anonymous box. Flipping its display
+	// moves it out of that box and into one of its own, which only the
+	// container's box list knows about -- the style record names the span.
+	document.body.innerHTML = `<p><span id="s">head</span> tail</p>`;
+	await nextFrame(dom);
+	const lines = () =>
+		terminal
+			.getPlainText()
+			.split("\n")
+			.map((line) => line.trimEnd())
+			.filter(Boolean);
+	expect(lines()).toEqual(["head tail"]);
+
+	const span = document.getElementById("s")!;
+	span.style.display = "block";
+	await nextFrame(dom);
+	expect(lines()).toEqual(["head", " tail"]);
+
+	span.style.display = "none";
+	await nextFrame(dom);
+	expect(lines()).toEqual([" tail"]);
+
+	span.style.display = "inline";
+	await nextFrame(dom);
+	expect(lines()).toEqual(["head tail"]);
+
+	dom.dispose();
+});

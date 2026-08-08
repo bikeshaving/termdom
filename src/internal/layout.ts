@@ -2917,16 +2917,6 @@ export class LayoutEngine {
 		return this.breakResultMap.get(node);
 	}
 
-	/** Forget the lines of the run a node heads, so its measure runs again. */
-	#deleteRunBreakResult(node: Node): void {
-		const box = this.#boxOf(node);
-		if (box) {
-			if (box.head === node) box.breakResult = null;
-			return;
-		}
-		this.breakResultMap.delete(node);
-	}
-
 	/**
 	 * Bring a container's layout children into line with its box list: every
 	 * anonymous box owns a measuring layout node at its own position among the
@@ -2993,11 +2983,13 @@ export class LayoutEngine {
 				index++;
 				continue;
 			}
-			// A block-level box inside an inline reaches the layout tree only
-			// here: the container's own child walk never descends into the
-			// inline that holds it, so neither a fresh build nor a rebuild
-			// that severed the container's children ever names it.
-			if (!this.#isOutOfFlow(entry) && this.#boxParentOf(entry) !== container) {
+			// A box the container lays out but nothing has built: a block-level
+			// box inside an inline (the container's own child walk never
+			// descends into the inline that holds it, so neither a fresh build
+			// nor a rebuild that severed its children ever names it), or a
+			// child whose display just turned it from run content into a box.
+			// Out-of-flow boxes hang from their containing block instead.
+			if (!this.#isOutOfFlow(entry)) {
 				const existing = this.nodeMap.get(entry);
 				if (!existing || existing.getParent() !== containerFlexNode) {
 					this.#addNode(entry, containerFlexNode);
@@ -3222,6 +3214,10 @@ export class LayoutEngine {
 	 * break results on the way, and dirties it.
 	 */
 	#invalidateEnclosingMeasure(node: Node): void {
+		// Whatever restyled a node with no box of its own may have given it
+		// one, or taken one away: the container's box list is what says.
+		const runContainer = this.#runContainerOf(node);
+		if (runContainer) this.#dirtyRunContainers.add(runContainer);
 		const entry = this.#boxEntryOf(node);
 		if (entry instanceof InlineBox) {
 			if (entry.flexNode) {
