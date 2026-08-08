@@ -5,7 +5,6 @@
  * CSS property resolution. The core TermDOM class uses this to provide a custom CSS implementation.
  */
 
-import {CSSStyleDeclaration} from "cssstyle";
 import {type DOMWindow} from "jsdom";
 import * as CSSOM from "rrweb-cssom";
 import {stringWidth} from "./text.js";
@@ -24,7 +23,7 @@ import {
 	INHERITED_PROPERTIES,
 	INITIAL_KEYWORDS,
 	UA_DOCUMENT_STYLES,
-	expandBoxShorthands,
+	expandShorthands,
 	getElementDefaults,
 	getInitialStyle,
 } from "./useragent.js";
@@ -102,146 +101,34 @@ export interface BoxModel {
 	borderLeftWidth: number;
 }
 
-/**
- * Parse CSS box model properties from an element's computed style
- */
-// ---- cssstyle border:none shim ----
+// ---- cssstyle none-erasure shim ----
 //
 // Upstream cssstyle (jsdom's inline-style CSSOM; v4 nested under jsdom and
 // current v5 alike) treats `none` and `hidden` on every border property --
 // the `border` shorthand, the per-side shorthands, and even the style
 // longhands -- as "erase the declaration": its setters call
-// _setProperty(prop, "") instead of storing the keyword. Erasing an inline
-// declaration resurrects whatever sits below it in the cascade, so
-// `el.style.border = "none"` could never turn OFF a UA border. The raw
-// _setProperty primitive stores values verbatim, so the shim lets the
+// _setProperty(prop, "") instead of storing the keyword, and `background:
+// none` goes the same way. An erased declaration is one the cascade never
+// sees, so `el.style.border = "none"` could never turn OFF a UA border. The
+// raw _setProperty primitive stores values verbatim; the shim lets the
 // original setter run (its erasure doubles as the shorthand's reset), then
-// writes the style longhands the keyword actually declares. Paired with
-// getBoxModel's used-width gate, style:none alone releases both glyphs and
-// space, matching the browser.
+// re-stores the declaration as authored. Expansion into longhands is the
+// cascade's job either way -- see expandShorthands.
 const kNoneErasureShimmed = Symbol("termdom.noneErasureShim");
-const BORDER_KEYWORDS = new Set(["none", "hidden"]);
-const VISIBLE_BORDER_STYLES = new Set([
-	"dotted",
-	"dashed",
-	"solid",
-	"double",
-	"groove",
-	"ridge",
-	"inset",
-	"outset",
-]);
-const sideStyles = (keyword: string, sides: string[]) =>
-	Object.fromEntries(sides.map((s) => [`border-${s}-style`, keyword]));
-const ALL_SIDES = ["top", "right", "bottom", "left"];
-/**
- * Per broken setter: the keywords it erases, and the longhand declarations
- * the keyword actually means -- what the browser stores at inline weight.
- */
-const NONE_ERASURE_SHIMS: Record<
-	string,
-	{
-		keywords: Set<string>;
-		declares(keyword: string): Record<string, string>;
-		/** Sides whose width defaults to medium when the shorthand names a
-		 * style but no width -- cssstyle fills those widths with 0, turning
-		 * `border: solid` invisible where a browser shows a medium border. */
-		widthSides?: string[];
-	}
-> = {
-	border: {
-		keywords: BORDER_KEYWORDS,
-		declares: (kw) => sideStyles(kw, ALL_SIDES),
-		widthSides: ALL_SIDES,
-	},
-	borderStyle: {
-		keywords: BORDER_KEYWORDS,
-		declares: (kw) => sideStyles(kw, ALL_SIDES),
-	},
-	borderTop: {
-		keywords: BORDER_KEYWORDS,
-		declares: (kw) => sideStyles(kw, ["top"]),
-		widthSides: ["top"],
-	},
-	borderRight: {
-		keywords: BORDER_KEYWORDS,
-		declares: (kw) => sideStyles(kw, ["right"]),
-		widthSides: ["right"],
-	},
-	borderBottom: {
-		keywords: BORDER_KEYWORDS,
-		declares: (kw) => sideStyles(kw, ["bottom"]),
-		widthSides: ["bottom"],
-	},
-	borderLeft: {
-		keywords: BORDER_KEYWORDS,
-		declares: (kw) => sideStyles(kw, ["left"]),
-		widthSides: ["left"],
-	},
-	borderTopStyle: {
-		keywords: BORDER_KEYWORDS,
-		declares: (kw) => sideStyles(kw, ["top"]),
-	},
-	borderRightStyle: {
-		keywords: BORDER_KEYWORDS,
-		declares: (kw) => sideStyles(kw, ["right"]),
-	},
-	borderBottomStyle: {
-		keywords: BORDER_KEYWORDS,
-		declares: (kw) => sideStyles(kw, ["bottom"]),
-	},
-	borderLeftStyle: {
-		keywords: BORDER_KEYWORDS,
-		declares: (kw) => sideStyles(kw, ["left"]),
-	},
-	// `background: none` declares image none and color transparent (the
-	// initial) at inline weight -- both must be STORED, or a stylesheet
-	// background still wins over the inline none.
-	background: {
-		keywords: new Set(["none"]),
-		declares: () => ({
-			"background-image": "none",
-			"background-color": "transparent",
-		}),
-	},
+/** Per erasing setter, the keywords cssstyle drops instead of storing. */
+const NONE_ERASURE_SHIMS: Record<string, Set<string>> = {
+	border: new Set(["none", "hidden"]),
+	borderStyle: new Set(["none", "hidden"]),
+	borderTop: new Set(["none", "hidden"]),
+	borderRight: new Set(["none", "hidden"]),
+	borderBottom: new Set(["none", "hidden"]),
+	borderLeft: new Set(["none", "hidden"]),
+	borderTopStyle: new Set(["none", "hidden"]),
+	borderRightStyle: new Set(["none", "hidden"]),
+	borderBottomStyle: new Set(["none", "hidden"]),
+	borderLeftStyle: new Set(["none", "hidden"]),
+	background: new Set(["none"]),
 };
-
-/**
- * Longhand -> the shorthands whose stored !important covers it. cssstyle
- * keeps one priority entry per key a declaration was SET with, so a
- * shorthand's importance lives only under the shorthand's own name.
- */
-const PRIORITY_SHORTHANDS: Record<string, string[]> = (() => {
-	const map: Record<string, string[]> = {};
-	for (const side of ["top", "right", "bottom", "left"]) {
-		for (const part of ["width", "style", "color"]) {
-			map[`border-${side}-${part}`] = [
-				`border-${side}`,
-				`border-${part}`,
-				"border",
-			];
-		}
-		map[`margin-${side}`] = ["margin"];
-		map[`padding-${side}`] = ["padding"];
-	}
-	map["background-color"] = ["background"];
-	map["background-image"] = ["background"];
-	map["flex-grow"] = ["flex"];
-	map["flex-shrink"] = ["flex"];
-	map["flex-basis"] = ["flex"];
-	map["row-gap"] = ["gap"];
-	map["column-gap"] = ["gap"];
-	for (const part of ["style", "width", "color"]) {
-		map[`outline-${part}`] = ["outline"];
-	}
-	for (const part of ["type", "position", "image"]) {
-		map[`list-style-${part}`] = ["list-style"];
-	}
-	for (const part of ["line", "style", "color"]) {
-		map[`text-decoration-${part}`] = ["text-decoration"];
-	}
-	return map;
-})();
 
 /** Patch the CSSStyleDeclaration prototype behind `style`, once per class. */
 export function shimInlineNoneErasure(style: object): void {
@@ -252,7 +139,7 @@ export function shimInlineNoneErasure(style: object): void {
 	if (prototype[kNoneErasureShimmed]) return;
 	prototype[kNoneErasureShimmed] = true;
 
-	for (const [property, shim] of Object.entries(NONE_ERASURE_SHIMS)) {
+	for (const [property, keywords] of Object.entries(NONE_ERASURE_SHIMS)) {
 		// The dashed alias shares the camelCase accessor's functions; patching
 		// each descriptor found covers both spellings and setProperty, which
 		// dispatches through them.
@@ -266,37 +153,23 @@ export function shimInlineNoneErasure(style: object): void {
 				set(value: unknown) {
 					originalSet.call(this, value);
 					const raw = String(value).trim().toLowerCase();
+					if (!keywords.has(raw)) return;
 					const store = this as {
-						_setProperty(name: string, value: string): void;
+						_setProperty(name: string, value: string, priority?: string): void;
+						getPropertyPriority(name: string): string;
 					};
-					if (shim.keywords.has(raw)) {
-						const declarations = shim.declares(raw);
-						for (const [longhand, stored] of Object.entries(declarations)) {
-							store._setProperty(longhand, stored);
-						}
-						return;
-					}
-					if (shim.widthSides) {
-						const tokens = raw.split(/\s+/);
-						const hasStyle = tokens.some((t) => VISIBLE_BORDER_STYLES.has(t));
-						const hasWidth = tokens.some(
-							(t) =>
-								/^[\d.]/.test(t) ||
-								t === "thin" ||
-								t === "medium" ||
-								t === "thick",
-						);
-						if (hasStyle && !hasWidth) {
-							for (const side of shim.widthSides) {
-								store._setProperty(`border-${side}-width`, "medium");
-							}
-						}
-					}
+					// The priority survives the erasure under the property's own
+					// name, so an `!important` shorthand keeps its weight.
+					store._setProperty(dashed, raw, store.getPropertyPriority(dashed));
 				},
 			});
 		}
 	}
 }
+
+/**
+ * Parse CSS box model properties from an element's computed style
+ */
 
 /**
  * Lengths that may be negative: margins (and offsets). parseUnitValue's
@@ -583,10 +456,10 @@ function getListGutterWidth(listElement: Element): number {
 }
 
 /**
- * The box shorthands whose computed answers and defaults flow through their
- * longhands (see getPropertyValue). Border shorthands are excluded on
- * purpose: their expansion is a documented todo, and resolveBorderStyles
- * reads the longhands directly.
+ * The box shorthands whose computed answer is serialized from their four
+ * longhands rather than resolved in its own right. Border shorthands are
+ * excluded on purpose: resolveBorderStyles reads the longhands directly, and
+ * `border` answers what was authored.
  */
 const BOX_SHORTHAND_LONGHANDS = new Map<string, readonly string[]>([
 	["margin", ["margin-top", "margin-right", "margin-bottom", "margin-left"]],
@@ -595,31 +468,183 @@ const BOX_SHORTHAND_LONGHANDS = new Map<string, readonly string[]>([
 		["padding-top", "padding-right", "padding-bottom", "padding-left"],
 	],
 ]);
-const BOX_LONGHAND_SHORTHAND = new Map<string, string>(
-	[...BOX_SHORTHAND_LONGHANDS].flatMap(([shorthand, longhands]) =>
-		longhands.map((longhand): [string, string] => [longhand, shorthand]),
-	),
-);
 
-export class ComputedStyleDeclaration extends CSSStyleDeclaration {
+/** Properties whose value is a `<color>`. */
+const COLOR_PROPERTIES = new Set([
+	"color",
+	"background-color",
+	"border-top-color",
+	"border-right-color",
+	"border-bottom-color",
+	"border-left-color",
+	"outline-color",
+	"text-decoration-color",
+	"caret-color",
+	"column-rule-color",
+]);
+
+/**
+ * Properties whose value carries author text -- strings, family names,
+ * function bodies -- and so is never case-folded.
+ */
+const VERBATIM_PROPERTIES = new Set([
+	"content",
+	"font",
+	"font-family",
+	"quotes",
+	"counter-reset",
+	"counter-increment",
+	"background-image",
+	"list-style-image",
+]);
+
+/** A value that is one bare CSS identifier, which computes case-folded. */
+const IDENTIFIER_VALUE = /^[a-zA-Z][a-zA-Z0-9-]*$/;
+
+/**
+ * `#rgb`/`#rrggbb` (and their alpha forms) in the rgb()/rgba() serialization
+ * a computed color carries. Null for anything that is not a valid hex color.
+ */
+function hexColorToRgb(hex: string): string | null {
+	const digits = hex.slice(1);
+	if (!/^[0-9a-fA-F]+$/.test(digits)) return null;
+	const short = digits.length === 3 || digits.length === 4;
+	if (!short && digits.length !== 6 && digits.length !== 8) return null;
+	const size = short ? 1 : 2;
+	const channel = (index: number): number => {
+		const part = digits.substr(index * size, size);
+		return parseInt(short ? part + part : part, 16);
+	};
+	const rgb = `${channel(0)}, ${channel(1)}, ${channel(2)}`;
+	if (digits.length === 4 || digits.length === 8) {
+		const alpha = Math.round((channel(3) / 255) * 1000) / 1000;
+		return `rgba(${rgb}, ${alpha})`;
+	}
+	return `rgb(${rgb})`;
+}
+
+/**
+ * A numeric component in its computed spelling: the sign and any trailing
+ * zeros dropped, the unit case-folded, and a unitless zero given the `px` a
+ * length always computes to.
+ */
+function computedNumber(token: string): string {
+	const match = /^([+-]?(?:\d+\.?\d*|\.\d+))([a-zA-Z%]*)$/.exec(token);
+	if (!match) return token;
+	const number = parseFloat(match[1]);
+	if (!Number.isFinite(number)) return token;
+	const unit = match[2].toLowerCase() || (number === 0 ? "px" : "");
+	return `${number}${unit}`;
+}
+
+/**
+ * The computed spelling of a declared value: the one place a struct becomes
+ * a string, at the getPropertyValue boundary.
+ */
+function normalizeValue(property: string, declared: string): string {
+	const value = declared.trim();
+	if (
+		!value ||
+		property.startsWith("--") ||
+		VERBATIM_PROPERTIES.has(property)
+	) {
+		return value;
+	}
+	if (COLOR_PROPERTIES.has(property)) {
+		if (value.startsWith("#")) return hexColorToRgb(value) ?? value;
+		return IDENTIFIER_VALUE.test(value) ? value.toLowerCase() : value;
+	}
+	if (LENGTH_PROPERTIES.has(property)) {
+		return value.split(/\s+/).map(computedNumber).join(" ");
+	}
+	return IDENTIFIER_VALUE.test(value) ? value.toLowerCase() : value;
+}
+
+/**
+ * Computed strings interned by property and declared text. A document draws
+ * its declared values from a small vocabulary -- a handful of colors, a
+ * handful of lengths, the same keywords on every element -- so the same pair
+ * recurs across thousands of elements and every generation after the first.
+ */
+const computedValues = new Map<string, string>();
+
+function computedValue(property: string, declared: string): string {
+	if (!declared) return "";
+	const key = `${property} ${declared}`;
+	let value = computedValues.get(key);
+	if (value === undefined) {
+		value = normalizeValue(property, declared);
+		if (computedValues.size >= 8192) computedValues.clear();
+		computedValues.set(key, value);
+	}
+	return value;
+}
+
+/** A cascade level's declarations: expanded longhands, and which are `!important`. */
+interface DeclarationBlock {
+	declarations: Record<string, string>;
+	important: Record<string, boolean>;
+}
+
+const EMPTY_DECLARATIONS: DeclarationBlock = {declarations: {}, important: {}};
+
+export class ComputedStyleDeclaration {
 	#element: Element;
 	#cssRules: ParsedCSSRule[];
 	// Lazily resolved properties -- INCLUDING ones that resolved to "".
-	// The pre-populated store can only hold truthy values, so an
-	// initial-valued property (word-break, visibility, ...) used to
-	// re-resolve on EVERY read; for an inherited property that means
-	// re-walking the whole ancestor chain, and each ancestor's own read
-	// does the same -- thousands of full cascade resolutions per
-	// keystroke. The declaration is discarded wholesale on invalidation,
-	// so memoizing here needs no invalidation of its own.
+	// Values here are COMPUTED strings, materialized once per property per
+	// generation; an initial-valued property (word-break, visibility, ...)
+	// that re-resolved on every read would re-walk the whole ancestor chain
+	// for an inherited property, and each ancestor's own read does the same
+	// -- thousands of full cascade resolutions per keystroke. The
+	// declaration is discarded wholesale on invalidation, so memoizing here
+	// needs no invalidation of its own.
 	#resolved = new Map<string, string>();
+	/** The element's inline declarations, snapshotted on first consultation. */
+	#inline: DeclarationBlock | null = null;
 
 	constructor(element: Element, cssRules: ParsedCSSRule[] = []) {
-		// Initialize with no onChange callback since this is read-only computed style
-		super();
-
 		this.#element = element;
 		this.#cssRules = cssRules;
+	}
+
+	/**
+	 * The inline `style` declarations, expanded to longhands with this
+	 * engine's own tables.
+	 *
+	 * Authors write through jsdom's CSSStyleDeclaration, which stores a
+	 * shorthand under the shorthand's own name and keeps one priority entry
+	 * per key it was SET with. Reading it per property per element would ask
+	 * that store to re-parse and re-serialize on every cascade step; one
+	 * pass, expanded here, gives the longhands their declared values AND
+	 * carries a shorthand's `!important` onto every longhand it declares.
+	 */
+	#inlineDeclarations(): DeclarationBlock {
+		if (this.#inline) return this.#inline;
+		const style = (this.#element as HTMLElement).style as
+			| (globalThis.CSSStyleDeclaration & {[index: number]: string})
+			| undefined;
+		if (!style || style.length === 0) {
+			return (this.#inline = EMPTY_DECLARATIONS);
+		}
+		const authored: Record<string, string> = {};
+		const authoredImportant: Record<string, string> = {};
+		for (let i = 0; i < style.length; i++) {
+			const property = style[i];
+			const value = style.getPropertyValue(property);
+			authored[property] = value;
+			if (style.getPropertyPriority(property) === "important") {
+				authoredImportant[property] = value;
+			}
+		}
+		const important: Record<string, boolean> = {};
+		for (const property of Object.keys(expandShorthands(authoredImportant))) {
+			important[property] = true;
+		}
+		return (this.#inline = {
+			declarations: expandShorthands(authored),
+			important,
+		});
 	}
 
 	/** This element's flat-tree parent's resolved value for `property`, or null at the root. */
@@ -687,21 +712,6 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 		return this.#resolvePropertyValueRaw(name) || null;
 	}
 
-	/** An author-level shorthand value, inline first, then stylesheet rules. */
-	#resolveShorthand(property: string): string | null {
-		const style = (this.#element as HTMLElement).style;
-		const inline = style?.getPropertyValue(property).trim();
-		if (inline && !INITIAL_KEYWORDS.has(inline)) return inline;
-
-		let ruleValue: string | null = null;
-		for (const rule of this.#cssRules) {
-			if (rule.declarations[property]) {
-				ruleValue = rule.declarations[property];
-			}
-		}
-		return ruleValue;
-	}
-
 	/**
 	 * Resolve property value applying CSS cascade: inline styles > CSS rules >
 	 * defaults, with `!important` promoted above all of that (an important
@@ -714,21 +724,10 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 	}
 
 	#resolvePropertyValueRaw(property: string): string {
-		const style = (this.#element as HTMLElement).style;
-		const inlineValue = style?.getPropertyValue(property).trim();
+		const inline = this.#inlineDeclarations();
+		const inlineValue = inline.declarations[property]?.trim();
 		const inlineUsable = !!inlineValue && !INITIAL_KEYWORDS.has(inlineValue);
-		// cssstyle stores setProperty's priority under the key it was SET
-		// with; a shorthand's !important never appears on the longhands the
-		// cascade resolves. Consult the covering shorthands too. (Coarse by
-		// necessity: cssstyle keeps one priority per set key, so a later
-		// non-important longhand override inside an important shorthand is
-		// beyond recovering.)
-		const inlineImportant =
-			inlineUsable &&
-			(style.getPropertyPriority(property) === "important" ||
-				(PRIORITY_SHORTHANDS[property] ?? []).some(
-					(shorthand) => style.getPropertyPriority(shorthand) === "important",
-				));
+		const inlineImportant = inlineUsable && !!inline.important[property];
 
 		// `inherit` skips the rest of the cascade and goes straight to the parent's
 		// resolved value, regardless of whether this property normally inherits.
@@ -756,60 +755,6 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 		if (inlineUsable) return inlineValue;
 		if (ruleValue) {
 			return ruleValue;
-		}
-
-		// 2b. Author-level shorthands that cssstyle does not expand for us. They are
-		// consulted after the longhands -- an explicit `row-gap` beats the `gap` it
-		// appears with -- but before the defaults, or the default would silently win
-		// over the shorthand.
-		if (LIST_STYLE_LONGHANDS.has(property)) {
-			const shorthand = this.#resolveShorthand("list-style");
-			if (shorthand) {
-				const expanded =
-					expandListStyle(shorthand)[property as keyof ListStyleParts];
-				if (expanded) return expanded;
-			}
-		}
-
-		if (property === "row-gap" || property === "column-gap") {
-			const shorthand = this.#resolveShorthand("gap");
-			if (shorthand) {
-				// `gap: <row> <column>`, with a single value meaning both.
-				const parts = shorthand.trim().split(/\s+/);
-				const value =
-					property === "row-gap" ? parts[0] : (parts[1] ?? parts[0]);
-				if (value) return value;
-			}
-		}
-
-		if (
-			property === "flex-grow" ||
-			property === "flex-shrink" ||
-			property === "flex-basis"
-		) {
-			const shorthand = this.#resolveShorthand("flex");
-			if (shorthand) {
-				const expanded = expandFlexShorthand(shorthand);
-				const value = expanded?.[property as keyof FlexParts];
-				if (value) return value;
-			}
-		}
-
-		if (property === "background-color") {
-			// The full background shorthand covers images, positions and repeats
-			// that mean nothing in a terminal; honor the everyday
-			// `background: <color>` form and ignore the rest. `none` is the
-			// IMAGE component, never a color -- the color `background: none`
-			// declares is its initial, transparent.
-			const shorthand = this.#resolveShorthand("background");
-			if (shorthand && !shorthand.includes("url(")) {
-				const color = shorthand
-					.trim()
-					.split(/\s+/)
-					.filter((token) => token.toLowerCase() !== "none")
-					.join(" ");
-				return color || "transparent";
-			}
 		}
 
 		// 3. Check element-specific UA defaults (e.g., strong { font-weight: bold })
@@ -874,89 +819,166 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 		return getInitialStyle(this.#element, property);
 	}
 
-	// Override getPropertyValue to use our terminal-specific resolution.
 	// Resolution is fully lazy: construction populates nothing, and each
-	// property resolves on first read. Every consumer in the engine reads
-	// through here (nothing enumerates a computed style or reads its
-	// cssText), and most elements are only ever asked a handful of
-	// properties -- the composition walker asks each element `display`
-	// alone, and the eager pre-population this replaced made that one
-	// question cost ~0.2ms per element, the bulk of first-render time on a
-	// large document.
-	override getPropertyValue(property: string): string {
-		if (!this.#resolved.has(property)) {
-			const freshValue = this.#resolvePropertyValue(property);
-			this.#resolved.set(property, freshValue);
-			// Store through cssstyle so its shorthand semantics apply on
-			// read-back -- `margin: 10px` answers as "10px 10px 10px 10px",
-			// exactly as the eager pre-population produced. A value cssstyle
-			// rejects just stays in #resolved and is answered raw below.
-			if (freshValue) {
-				super.setProperty(property, freshValue);
-			}
-			// A box-shorthand answer is cssstyle's serialization of the four
-			// stored longhands, and a longhand with nothing declared takes
-			// its "0px" from the stored shorthand's default -- both worked
-			// by construction when every property was pre-populated. Pull
-			// the counterpart(s) in so the store holds what the read below
-			// serializes from. Marking `property` resolved above is what
-			// keeps this mutual pull finite.
+	// property resolves on first read, then answers from the memo. Most
+	// elements are only ever asked a handful of properties -- the
+	// composition walker asks each element `display` alone.
+	getPropertyValue(property: string): string {
+		let value = this.#resolved.get(property);
+		if (value === undefined) {
+			// A box shorthand answers as its four longhands, each in its own
+			// computed spelling: `margin: 10px` is "10px 10px 10px 10px".
 			const longhands = BOX_SHORTHAND_LONGHANDS.get(property);
-			if (longhands) {
-				for (const longhand of longhands) {
-					this.getPropertyValue(longhand);
-					// Re-assert a declared longhand over what this
-					// shorthand's own store just wrote: the store keeps only
-					// one value per slot, and the longhand is the cascade
-					// winner regardless of which was READ first.
-					const raw = this.#resolved.get(longhand);
-					if (raw) {
-						super.setProperty(longhand, raw);
-					}
-				}
-			} else if (!freshValue) {
-				const shorthand = BOX_LONGHAND_SHORTHAND.get(property);
-				if (shorthand) {
-					this.getPropertyValue(shorthand);
-				}
-			}
+			value = longhands
+				? longhands
+						.map((longhand) => this.getPropertyValue(longhand) || "0px")
+						.join(" ")
+				: computedValue(property, this.#resolvePropertyValue(property));
+			this.#resolved.set(property, value);
 		}
-		const storedValue = super.getPropertyValue(property);
-		if (storedValue) {
-			return this.#normalizeForTerminal(property, storedValue);
-		}
-		return this.#normalizeForTerminal(
-			property,
-			this.#resolved.get(property) ?? "",
-		);
+		return value;
 	}
 
-	/**
-	 * Apply terminal-specific normalization to computed values
-	 * This allows us to override cssstyle's default normalization
-	 */
-	#normalizeForTerminal(property: string, value: string): string {
-		if (!value) return value;
+	/** Computed styles are read-only; the mutators exist for API shape alone. */
+	setProperty(): void {}
 
-		// Handle shorthand property expansion
-		if (property === "margin") {
-			const top = super.getPropertyValue("margin-top") || "0px";
-			const right = super.getPropertyValue("margin-right") || "0px";
-			const bottom = super.getPropertyValue("margin-bottom") || "0px";
-			const left = super.getPropertyValue("margin-left") || "0px";
-			return `${top} ${right} ${bottom} ${left}`;
+	removeProperty(): string {
+		return "";
+	}
+
+	getPropertyPriority(): string {
+		return "";
+	}
+
+	item(index: number): string {
+		return [...this.#resolved.keys()][index] ?? "";
+	}
+
+	get length(): number {
+		return this.#resolved.size;
+	}
+}
+
+/**
+ * A pseudo-element's computed style: a flat declaration set -- the matched
+ * rules plus what it inherits from its originating element -- read through
+ * the same computed-value boundary as an element's.
+ */
+export class PseudoStyleDeclaration {
+	#declarations: Record<string, string>;
+	#resolved = new Map<string, string>();
+
+	constructor(declarations: Record<string, string>) {
+		this.#declarations = declarations;
+	}
+
+	getPropertyValue(property: string): string {
+		let value = this.#resolved.get(property);
+		if (value === undefined) {
+			value = computedValue(property, this.#declarations[property] ?? "");
+			this.#resolved.set(property, value);
 		}
-
-		if (property === "padding") {
-			const top = super.getPropertyValue("padding-top") || "0px";
-			const right = super.getPropertyValue("padding-right") || "0px";
-			const bottom = super.getPropertyValue("padding-bottom") || "0px";
-			const left = super.getPropertyValue("padding-left") || "0px";
-			return `${top} ${right} ${bottom} ${left}`;
-		}
-
-		// For now, return the value as-is (cssstyle normalization)
 		return value;
+	}
+
+	setProperty(): void {}
+
+	removeProperty(): string {
+		return "";
+	}
+
+	getPropertyPriority(): string {
+		return "";
+	}
+
+	item(index: number): string {
+		return Object.keys(this.#declarations)[index] ?? "";
+	}
+
+	get length(): number {
+		return Object.keys(this.#declarations).length;
+	}
+}
+
+/**
+ * The property accessors (`style.fontWeight`) callers reach for alongside
+ * getPropertyValue, installed once for the properties this engine resolves.
+ */
+const ACCESSOR_PROPERTIES = new Set<string>([
+	...LENGTH_PROPERTIES,
+	...COLOR_PROPERTIES,
+	...INHERITED_PROPERTIES,
+	...BOX_SHORTHAND_LONGHANDS.keys(),
+	"align-content",
+	"align-items",
+	"align-self",
+	"background",
+	"background-image",
+	"background-position",
+	"background-repeat",
+	"border",
+	"border-collapse",
+	"border-color",
+	"border-radius",
+	"border-style",
+	"border-bottom-color",
+	"border-bottom-style",
+	"border-left-color",
+	"border-left-style",
+	"border-right-color",
+	"border-right-style",
+	"border-top-color",
+	"border-top-style",
+	"box-sizing",
+	"clear",
+	"content",
+	"counter-increment",
+	"counter-reset",
+	"display",
+	"flex",
+	"flex-direction",
+	"flex-grow",
+	"flex-shrink",
+	"flex-wrap",
+	"float",
+	"gap",
+	"inset",
+	"isolation",
+	"justify-content",
+	"opacity",
+	"order",
+	"outline",
+	"outline-color",
+	"outline-style",
+	"overflow",
+	"overflow-x",
+	"overflow-y",
+	"position",
+	"table-layout",
+	"text-decoration-color",
+	"text-decoration-line",
+	"text-decoration-style",
+	"vertical-align",
+	"z-index",
+]);
+
+for (const property of ACCESSOR_PROPERTIES) {
+	const camelCase = property.replace(/-([a-z])/g, (_, letter: string) =>
+		letter.toUpperCase(),
+	);
+	for (const name of new Set([property, camelCase])) {
+		for (const prototype of [
+			ComputedStyleDeclaration.prototype,
+			PseudoStyleDeclaration.prototype,
+		]) {
+			if (name in prototype) continue;
+			Object.defineProperty(prototype, name, {
+				get(this: ComputedStyleDeclaration | PseudoStyleDeclaration) {
+					return this.getPropertyValue(property);
+				},
+				configurable: true,
+			});
+		}
 	}
 }
 
@@ -1221,89 +1243,6 @@ function toRoman(num: number): string {
 	return result;
 }
 
-interface ListStyleParts {
-	"list-style-type"?: string;
-	"list-style-position"?: string;
-	"list-style-image"?: string;
-}
-
-const LIST_STYLE_LONGHANDS = new Set([
-	"list-style-type",
-	"list-style-position",
-	"list-style-image",
-]);
-
-const LIST_STYLE_POSITIONS = new Set(["inside", "outside"]);
-
-/**
- * Expand the `list-style` shorthand, whose components may appear in any order.
- *
- * `none` is ambiguous -- it sets whichever of type/image has not been given --
- * but for a terminal there are no images, so it always means "no marker".
- */
-function expandListStyle(value: string): ListStyleParts {
-	const parts: ListStyleParts = {};
-
-	for (const token of value.trim().split(/\s+/)) {
-		if (!token) continue;
-		if (LIST_STYLE_POSITIONS.has(token)) {
-			parts["list-style-position"] = token;
-		} else if (token.startsWith("url(")) {
-			parts["list-style-image"] = token;
-		} else {
-			parts["list-style-type"] = token;
-		}
-	}
-
-	return parts;
-}
-
-interface FlexParts {
-	"flex-grow": string;
-	"flex-shrink": string;
-	"flex-basis": string;
-}
-
-/**
- * Expand the `flex` shorthand (css-flexbox-1 §7.1.1): `none` is 0 0 auto,
- * `auto` 1 1 auto, `initial` 0 1 auto; otherwise the first number is grow,
- * a second number is shrink, anything else is the basis -- and a one-value
- * numeric form (`flex: 1`) sets the basis to 0%, which is what makes it the
- * everyday grow-to-fill declaration.
- */
-function expandFlexShorthand(value: string): FlexParts | null {
-	const v = value.trim();
-	if (v === "none") {
-		return {"flex-grow": "0", "flex-shrink": "0", "flex-basis": "auto"};
-	}
-	if (v === "auto") {
-		return {"flex-grow": "1", "flex-shrink": "1", "flex-basis": "auto"};
-	}
-	if (v === "initial") {
-		return {"flex-grow": "0", "flex-shrink": "1", "flex-basis": "auto"};
-	}
-	let grow: string | undefined;
-	let shrink: string | undefined;
-	let basis: string | undefined;
-	for (const token of v.split(/\s+/)) {
-		if (/^[\d.]+$/.test(token)) {
-			if (grow === undefined) grow = token;
-			else if (shrink === undefined) shrink = token;
-			else return null;
-		} else if (basis === undefined) {
-			basis = token;
-		} else {
-			return null;
-		}
-	}
-	if (grow === undefined && basis === undefined) return null;
-	return {
-		"flex-grow": grow ?? "1",
-		"flex-shrink": shrink ?? "1",
-		"flex-basis": basis ?? (grow !== undefined ? "0%" : "auto"),
-	};
-}
-
 /** How many lists this element is nested inside, not counting itself. */
 function listNestingDepth(element: Element): number {
 	let depth = 0;
@@ -1474,7 +1413,7 @@ interface CounterScope {
 }
 
 export class StyleManager {
-	#computedStyleCache = new WeakMap<Element, CSSStyleDeclaration>();
+	#computedStyleCache = new WeakMap<Element, ComputedStyleDeclaration>();
 	/**
 	 * Every shadow root whose <style> elements participate in the cascade.
 	 * jsdom never parses shadow stylesheets (shadowRoot.styleSheets does not
@@ -1825,25 +1764,23 @@ export class StyleManager {
 				elementCache.set(pseudoElt, pseudoStyle);
 			}
 
-			// Create a CSSStyleDeclaration-like object - inline createPseudoStyleDeclaration
-			const declaration = new CSSStyleDeclaration();
-			for (const [property, value] of Object.entries(pseudoStyle)) {
-				declaration.setProperty(property, value);
-			}
+			const declarations: Record<string, string> = {...pseudoStyle};
 			// Per CSS, a pseudo-element INHERITS from its originating element:
 			// a button's focus underline runs through its UA brackets, a
 			// .destroy's color reaches its ::after glyph. Rule declarations
 			// above win; inherited values only fill the gaps.
 			const hostStyle = this.#getComputedStyle(element);
 			for (const property of INHERITED_PROPERTIES) {
-				if (!declaration.getPropertyValue(property)) {
+				if (!declarations[property]) {
 					const inherited = hostStyle.getPropertyValue(property);
 					if (inherited) {
-						declaration.setProperty(property, inherited);
+						declarations[property] = inherited;
 					}
 				}
 			}
-			return declaration as unknown as globalThis.CSSStyleDeclaration;
+			return new PseudoStyleDeclaration(
+				declarations,
+			) as unknown as globalThis.CSSStyleDeclaration;
 		}
 
 		// Check cache first for regular element styles
@@ -2094,15 +2031,12 @@ export class StyleManager {
 	}
 
 	/**
-	 * Parse CSSStyleDeclaration into a plain object, alongside which of its
-	 * properties were declared `!important`.
+	 * A rule's declaration block as the cascade stores it: expanded longhands,
+	 * alongside which of them a `!important` covers.
 	 */
-	#parseDeclarations(style: any): {
-		declarations: Record<string, string>;
-		important: Record<string, boolean>;
-	} {
-		const declarations: Record<string, string> = {};
-		const important: Record<string, boolean> = {};
+	#parseDeclarations(style: any): DeclarationBlock {
+		const authored: Record<string, string> = {};
+		const authoredImportant: Record<string, string> = {};
 		for (let i = 0; i < style.length; i++) {
 			const property = style[i];
 			const value = style.getPropertyValue(property);
@@ -2112,14 +2046,19 @@ export class StyleManager {
 			if (!isValidDeclaration(property, value)) {
 				continue;
 			}
-			declarations[property] = value;
+			authored[property] = value;
 			if (style.getPropertyPriority(property) === "important") {
-				important[property] = true;
+				authoredImportant[property] = value;
 			}
 		}
-		// Rules are consulted per-property downstream; a border/padding/margin
-		// shorthand that stays a shorthand is invisible to the box model.
-		return {declarations: expandBoxShorthands(declarations), important};
+		// Rules are consulted per-property downstream; a shorthand that stays a
+		// shorthand is invisible to the box model -- and its importance, which
+		// covers every longhand it declares, along with it.
+		const important: Record<string, boolean> = {};
+		for (const property of Object.keys(expandShorthands(authoredImportant))) {
+			important[property] = true;
+		}
+		return {declarations: expandShorthands(authored), important};
 	}
 
 	/**
