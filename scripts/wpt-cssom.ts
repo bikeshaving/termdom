@@ -231,6 +231,13 @@ async function runFile(file: string): Promise<Outcome> {
 		handle: number,
 	): void => clearTimeout(handle as unknown as NodeJS.Timeout);
 
+	// A terminal loads no fonts, so the font set a test waits on is ready the
+	// moment it is asked for.
+	Object.defineProperty(dom.window.document, "fonts", {
+		value: {ready: Promise.resolve()},
+		configurable: true,
+	});
+
 	installInlineStyle(dom.window);
 	const styleManager = new StyleManager(dom.window);
 	const layoutEngine = new LayoutEngine(dom.window);
