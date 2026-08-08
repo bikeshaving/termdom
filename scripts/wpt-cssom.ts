@@ -117,7 +117,33 @@ const EXCLUSIONS: Record<string, string> = {
 	// The WebIDL harness needs /resources/WebIDLParser.js, which is not part
 	// of the suite fetched here.
 	"idlharness.html": "idlharness: needs WebIDLParser",
+
+	// Nested browsing contexts: a terminal document has no frames, so there is
+	// no second window to carry a CSSOM of its own.
+	"insertRule-across-context.html":
+		"frames: rule constructors from an iframe's window",
+	"style-attr-update-across-documents.html":
+		"frames: a style attribute moved between documents",
+	"getComputedStyle-dynamic-subdoc.html":
+		"frames: media queries inside a sub-document",
+	"CSSStyleSheet-constructable-baseURL.html":
+		"frames: a sheet constructed in an iframe's window",
+	"CSSStyleSheet-template-adoption.html":
+		"frames: adoption across a template's document",
+	"cssom-getPropertyValue-common-checks.html":
+		"frames: the checks run inside a sub-document",
 };
+
+/**
+ * Failures this engine owns as design, not as gaps. They stay counted in the
+ * table; this is what they are and why.
+ */
+const DEVIATIONS: Array<[string, string]> = [
+	[
+		"getComputedStyle-resolved-colors.html",
+		"System colors (Highlight, HighlightText, Canvas, menu) resolve to their names, not to rgb(). The UA sheet's `::selection { background-color: Highlight; color: HighlightText }` is this engine's spelling of \"swap the cell's colors\", which the selection painter turns into inverse video -- the terminal-native rendering. Resolving the pair to rgb() would erase the signal the painter reads.",
+	],
+];
 
 interface Subtest {
 	name: string;
@@ -297,6 +323,12 @@ const lines: string[] = [
 		(outcome) => `| ${outcome.file} | reftest: scored by pixel comparison |`,
 	),
 	"",
+	"## Deliberate deviations",
+	"",
+	"These are failures this engine owns as design. They are counted as",
+	"failures above, not excluded, so the number stays honest.",
+	"",
+	...DEVIATIONS.flatMap(([file, reason]) => [`### ${file}`, "", reason, ""]),
 	"## Files",
 	"",
 	"| File | Harness | Passed | Failed |",

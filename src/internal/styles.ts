@@ -4075,6 +4075,43 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 }
 
 /**
+ * Whether an element takes part in rendering: it is in a document, and the
+ * flat tree that document composes reaches it. A light-DOM child its host
+ * never slots is in neither, and has no computed style to report.
+ */
+function isBeingRendered(element: Element): boolean {
+	// Walk out through every shadow root the element sits under: a tree whose
+	// outermost root is the document is composed into the rendering, and one
+	// that ends in a bare fragment is not.
+	let node: Node = element;
+	for (let depth = 0; depth < 32; depth++) {
+		const root = node.getRootNode();
+		if (root === element.ownerDocument) break;
+		const host = (root as ShadowRoot).host;
+		if (!host) return false;
+		node = host;
+	}
+	// A light-DOM child an open shadow root never slots is outside the flat
+	// tree. A closed root is this engine's own widget internals, whose parts
+	// the widget itself reads styles for.
+	for (
+		let child: Element | null = element;
+		child;
+		child = child.parentElement
+	) {
+		const parent = child.parentElement;
+		if (
+			parent?.shadowRoot &&
+			parent.shadowRoot.mode === "open" &&
+			!(child as HTMLElement).assignedSlot
+		) {
+			return false;
+		}
+	}
+	return true;
+}
+
+/**
  * A pseudo-element's computed style: a flat declaration set -- the matched
  * rules plus what it inherits from its originating element -- read through
  * the same computed-value boundary as an element's.
@@ -5048,6 +5085,12 @@ export class StyleManager {
 		) {
 			this.#parseStylesheets();
 		}
+		// An element that is not being rendered has no style to report: it is
+		// out of the document, or out of the flat tree its document composes.
+		if (!isBeingRendered(element)) {
+			return new EmptyStyleDeclaration() as unknown as globalThis.CSSStyleDeclaration;
+		}
+
 		// The pseudo-element argument names a pseudo-element, names nothing
 		// (and is ignored), or names something that is not one -- for which an
 		// empty declaration is the answer.

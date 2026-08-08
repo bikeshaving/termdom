@@ -15,6 +15,7 @@
  * colors", which the selection painters translate to SGR 7. Delete that rule
  * and selections stop painting; it is load-bearing, not decorative.
  */
+import {CSS_INITIAL_VALUES} from "./cssproperties.js";
 import {stringWidth} from "./text.js";
 
 // ---- Shorthand expansion (the UA table is built on it) ----
@@ -676,8 +677,10 @@ export function getInitialStyle(element: Element, property: string): string {
 		return universalDefaults[property];
 	}
 
-	// Fall back to CSS spec default
-	return CSS_SPEC_DEFAULTS[property] || "";
+	// Fall back to CSS spec default, and past it to the property index --
+	// every longhand has an initial value, and a property this engine does not
+	// lay out still resolves to one.
+	return CSS_SPEC_DEFAULTS[property] || CSS_INITIAL_VALUES[property] || "";
 }
 
 // ---- UA document stylesheet ----
