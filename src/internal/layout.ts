@@ -2070,86 +2070,126 @@ export class LayoutEngine {
 
 		const rectTexts: RectText[] = [];
 
-		// Helper function to recursively find target text nodes in segments
-		const findTargetTextInSegments = (
-			segments: any[],
-			baseX: number,
-			baseY: number,
-		): Array<{x: number; width: number; text: string}> => {
-			const results: Array<{x: number; width: number; text: string}> = [];
+		// The break result's text index: which line each text node's fragments
+		// landed on, at what x, in what order. Built once per break result and
+		// keyed on the result object itself, so a re-break (always a fresh
+		// object) invalidates it for free. Without it every text node's lookup
+		// scanned every segment of its run -- painting a run of N boxes cost
+		// O(N^2) segment visits per frame.
+		const index = this.#breakResultTextIndex(breakResult);
 
+		// Merge fragments per line that belong to this node, in segment order.
+		const byLine = new Map<
+			number,
+			Array<{x: number; width: number; text: string; ord: number}>
+		>();
+		for (const textNode of targetTextNodes) {
+			const entries = index.get(textNode);
+			if (!entries) continue;
+			for (const entry of entries) {
+				let bucket = byLine.get(entry.line);
+				if (!bucket) byLine.set(entry.line, (bucket = []));
+				bucket.push(entry);
+			}
+		}
+
+		for (const [lineIndex, bucket] of [...byLine].sort((a, b) => a[0] - b[0])) {
+			const line = breakResult.lines[lineIndex];
+			bucket.sort((a, b) => a.ord - b.ord);
+
+			let minX = Infinity;
+			let maxX = -Infinity;
+			let concatenatedText = "";
+			for (const targetText of bucket) {
+				minX = Math.min(minX, targetText.x);
+				maxX = Math.max(maxX, targetText.x + targetText.width);
+				concatenatedText += targetText.text;
+			}
+
+			const alignOffset = lineAlignOffset(
+				alignContainer,
+				currentBreakResult.containerWidth,
+				line.width,
+			);
+			const indent = lineIndent(
+				line === currentBreakResult.lines[0],
+				alignContainer,
+				currentBreakResult.containerWidth,
+			);
+
+			const rect = new this.DOMRect(
+				containerX + minX + alignOffset + indent,
+				containerY + line.y,
+				maxX - minX,
+				line.height,
+			);
+			rectTexts.push({
+				rect,
+				text: concatenatedText,
+			});
+		}
+
+		return rectTexts;
+	}
+
+	// Text-fragment index per break result: text node -> the fragments the
+	// breaker placed for it, each with its OUTER line index, x offset (nested
+	// inline-block content already shifted by its box's position and padding,
+	// as the merge in getRectTexts expects), width, processed text, and a
+	// global ordinal preserving segment order. WeakMap-keyed on the break
+	// result object: re-breaking builds a fresh object, so entries can never
+	// go stale.
+	#rectTextIndices = new WeakMap<
+		object,
+		Map<
+			Text,
+			Array<{line: number; x: number; width: number; text: string; ord: number}>
+		>
+	>();
+
+	#breakResultTextIndex(
+		breakResult: BreakResult,
+	): Map<
+		Text,
+		Array<{line: number; x: number; width: number; text: string; ord: number}>
+	> {
+		let index = this.#rectTextIndices.get(breakResult);
+		if (index) return index;
+		index = new Map();
+		let ord = 0;
+		const visit = (segments: any[], baseX: number, lineIndex: number): void => {
 			for (const segment of segments) {
-				if (
-					segment.leaf.type === "text" &&
-					targetTextNodes.has(segment.leaf.node as Text)
-				) {
-					results.push({
+				if (segment.leaf.type === "text") {
+					const textNode = segment.leaf.node as Text;
+					let entries = index!.get(textNode);
+					if (!entries) index!.set(textNode, (entries = []));
+					entries.push({
+						line: lineIndex,
 						x: baseX + segment.x,
 						width: segment.width,
 						text: segment.processedText,
+						ord: ord++,
 					});
 				} else if (
 					segment.leaf.type === "inline-block" &&
 					segment.leaf.breakResult
 				) {
-					// Recursively search within nested inline-block
 					const paddingLeft = segment.leaf.boxModel.paddingLeft;
-					const paddingTop = segment.leaf.boxModel.paddingTop;
-
 					for (const nestedLine of segment.leaf.breakResult.lines) {
-						const nestedResults = findTargetTextInSegments(
+						visit(
 							nestedLine.segments,
 							baseX + segment.x + paddingLeft,
-							baseY + paddingTop + nestedLine.y,
+							lineIndex,
 						);
-						results.push(...nestedResults);
 					}
 				}
 			}
-
-			return results;
 		};
-
-		// Merge segments per line that belong to this node
-		for (const line of breakResult.lines) {
-			const targetTexts = findTargetTextInSegments(line.segments, 0, line.y);
-
-			if (targetTexts.length > 0) {
-				let minX = Infinity;
-				let maxX = -Infinity;
-				let concatenatedText = "";
-
-				for (const targetText of targetTexts) {
-					minX = Math.min(minX, targetText.x);
-					maxX = Math.max(maxX, targetText.x + targetText.width);
-					concatenatedText += targetText.text;
-				}
-
-				const alignOffset = lineAlignOffset(
-					alignContainer,
-					currentBreakResult.containerWidth,
-					line.width,
-				);
-				const indent = lineIndent(
-					line === currentBreakResult.lines[0],
-					alignContainer,
-					currentBreakResult.containerWidth,
-				);
-
-				const rect = new this.DOMRect(
-					containerX + minX + alignOffset + indent,
-					containerY + line.y,
-					maxX - minX,
-					line.height,
-				);
-				rectTexts.push({
-					rect,
-					text: concatenatedText,
-				});
-			}
+		for (let i = 0; i < breakResult.lines.length; i++) {
+			visit(breakResult.lines[i].segments, 0, i);
 		}
-
-		return rectTexts;
+		this.#rectTextIndices.set(breakResult, index);
+		return index;
 	}
 
 	getRects(node: Node): DOMRect[] {
@@ -3621,9 +3661,6 @@ export class LayoutEngine {
 		parentFlexNode: FlexTypes.Node | null = null,
 	): void {
 		const outOfFlow = this.#isOutOfFlow(element);
-		const flexIndex = outOfFlow
-			? (parentFlexNode?.children.length ?? 0)
-			: this.#getFlexIndex(element, parentFlexNode);
 		const display = getPropertyValue(element, "display");
 
 		// For inline elements, we need to find or create the run head --
@@ -3646,6 +3683,13 @@ export class LayoutEngine {
 			}
 			// If runHead === element, this is the run head - proceed to create layout node
 		}
+
+		// After the run-member return: members never insert a node of their
+		// own, and the index is a backward sibling walk -- paying it for every
+		// member makes adding a run of N boxes O(N^2).
+		const flexIndex = outOfFlow
+			? (parentFlexNode?.children.length ?? 0)
+			: this.#getFlexIndex(element, parentFlexNode);
 
 		let flexNode = this.nodeMap.get(element);
 		if (!flexNode) {
