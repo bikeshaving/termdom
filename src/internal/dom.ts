@@ -261,6 +261,19 @@ const kReactionQueue = Symbol("custom element reaction queue");
 const kPseudoElements = Symbol("user-agent pseudo-element slots");
 const kTemplateContent = Symbol("template content");
 
+/**
+ * A range's boundary points, the selection a range belongs to, and a
+ * document's selection and its pending selectionchange event.
+ */
+const kStartNode = Symbol("range start node");
+const kStartOffset = Symbol("range start offset");
+const kEndNode = Symbol("range end node");
+const kEndOffset = Symbol("range end offset");
+const kRangeSelection = Symbol("the selection whose range this is");
+const kSelectionChanged = Symbol("the selection's range or direction changed");
+const kSelection = Symbol("the document's selection");
+const kSelectionChangeScheduled = Symbol("has scheduled selectionchange event");
+
 /* ------------------------------------------------------------------ events */
 
 export interface EventInit {
@@ -1384,6 +1397,7 @@ export class Node extends EventTarget {
 				removeNode(text);
 				continue;
 			}
+			let length = (text as CharacterData)[kData].length;
 			let data = "";
 			let sibling = text[kNext];
 			while (sibling !== null && isExclusiveText(sibling)) {
@@ -1391,14 +1405,15 @@ export class Node extends EventTarget {
 				sibling = sibling[kNext];
 			}
 			if (data !== "") {
-				replaceData(
-					text as CharacterData,
-					(text as CharacterData)[kData].length,
-					0,
-					data,
-				);
+				replaceData(text as CharacterData, length, 0, data);
 			}
 			let current = text[kNext];
+			while (current !== null && isExclusiveText(current)) {
+				liveRangeNormalizeSteps(text, current as Text, length);
+				length += (current as CharacterData)[kData].length;
+				current = current[kNext];
+			}
+			current = text[kNext];
 			while (current !== null && isExclusiveText(current)) {
 				const next = current[kNext];
 				removeNode(current);
@@ -1860,6 +1875,7 @@ function insertNode(
 		for (const child_ of nodes) removeNode(child_, true);
 		queueTreeMutationRecord(node, [], nodes, null, null);
 	}
+	if (child !== null) liveRangeInsertSteps(parent, child, count);
 	const previousSibling =
 		child !== null ? child[kPrevious] : parent[kLastChild];
 	const document = parent[kDocument];
@@ -2101,6 +2117,7 @@ function preRemove(child: Node, parent: Node): Node {
 function removeNode(node: Node, suppressObservers = false): void {
 	const parent = node[kParent];
 	if (parent === null) return;
+	liveRangePreRemoveSteps(node);
 	for (const reference of node[kDocument][kNodeIterators]) {
 		const iterator = reference.deref();
 		if (iterator !== undefined) preRemoveFromIterator(iterator, node);
@@ -2898,6 +2915,11 @@ function toUnsignedLong(value: unknown): number {
 	return ((truncated % 4294967296) + 4294967296) % 4294967296;
 }
 
+/** A WebIDL unsigned short: the unsigned long, wrapped into 16 bits. */
+function toUnsignedShort(value: unknown): number {
+	return toUnsignedLong(value) % 65536;
+}
+
 function createChildNodeList(node: Node): NodeList {
 	const list = new NodeList(() => childNodeArray(node), true);
 	list[kEnsure]();
@@ -3348,6 +3370,7 @@ function replaceData(
 	const oldValue = node[kData];
 	node[kData] =
 		oldValue.slice(0, offset) + data + oldValue.slice(offset + size);
+	liveRangeReplaceDataSteps(node, offset, size, data.length);
 	queueCharacterDataMutationRecord(node, oldValue);
 	bumpVersion();
 	const parent = node[kParent];
@@ -3410,6 +3433,7 @@ export class Text extends CharacterData {
 		const parent = this[kParent];
 		if (parent !== null) {
 			insertNode(created, parent, this[kNext], false);
+			liveRangeSplitSteps(this, created, start, parent);
 		}
 		replaceData(this, start, count, "");
 		return created;
@@ -6175,6 +6199,8 @@ export class Document extends Node {
 	[kEncoding] = "UTF-8";
 	[kIdMap] = new Map<string, Element[]>();
 	[kNodeIterators]: Array<WeakRef<NodeIterator>> = [];
+	[kSelection]: Selection | null = null;
+	[kSelectionChangeScheduled] = false;
 	[kNwsapi]: ReturnType<typeof NWSAPI> | null = null;
 	[kChildren]: HTMLCollection | null = null;
 
@@ -6577,6 +6603,29 @@ export class Document extends Node {
 		}
 		event[kDispatchState].initialized = false;
 		return event;
+	}
+
+	createRange(): Range {
+		const range = new Range();
+		setRangePoints(range, this, 0, this, 0);
+		return range;
+	}
+
+	/**
+	 * The selection over this document.
+	 *
+	 * The Selection API hangs this off the Window as well, and returns null for
+	 * a document with no browsing context. There is no Window here and no
+	 * browsing context to have: a document is the top of this DOM, so the
+	 * selection is the document's and this is the only door to it.
+	 */
+	getSelection(): Selection {
+		let selection = this[kSelection];
+		if (selection === null) {
+			selection = createSelection(this);
+			this[kSelection] = selection;
+		}
+		return selection;
 	}
 
 	createNodeIterator(
@@ -7306,6 +7355,1645 @@ function locateNamespace(node: Node, prefix: string | null): string | null {
 		}
 	}
 }
+
+/* ----------------------------------------------------------------- ranges */
+
+/** A boundary point's position relative to another boundary point. */
+const BEFORE = -1;
+const EQUAL = 0;
+const AFTER = 1;
+
+/** A node's index: the number of siblings that precede it. */
+function nodeIndex(node: Node): number {
+	let index = 0;
+	for (
+		let previous = node[kPrevious];
+		previous !== null;
+		previous = previous[kPrevious]
+	) {
+		index++;
+	}
+	return index;
+}
+
+/**
+ * A node's length: zero for a doctype, the length of the data for character
+ * data, and the number of children for everything else.
+ */
+function nodeLength(node: Node): number {
+	if (node.nodeType === DOCUMENT_TYPE_NODE) return 0;
+	if (isCharacterData(node)) return (node as CharacterData)[kData].length;
+	let length = 0;
+	for (let child = node[kFirstChild]; child !== null; child = child[kNext]) {
+		length++;
+	}
+	return length;
+}
+
+/** The chain from a node's root down to the node itself. */
+function ancestorChain(node: Node): Node[] {
+	const chain: Node[] = [];
+	for (
+		let current: Node | null = node;
+		current !== null;
+		current = current[kParent]
+	) {
+		chain.push(current);
+	}
+	chain.reverse();
+	return chain;
+}
+
+/** Whether a node precedes one of its siblings. */
+function precedesSibling(node: Node, other: Node): boolean {
+	for (let next = node[kNext]; next !== null; next = next[kNext]) {
+		if (next === other) return true;
+	}
+	return false;
+}
+
+/**
+ * The position of the boundary point (nodeA, offsetA) relative to (nodeB,
+ * offsetB): before, equal or after. The two nodes have the same root.
+ */
+function comparePoints(
+	nodeA: Node,
+	offsetA: number,
+	nodeB: Node,
+	offsetB: number,
+): number {
+	if (nodeA === nodeB) {
+		if (offsetA === offsetB) return EQUAL;
+		return offsetA < offsetB ? BEFORE : AFTER;
+	}
+	const chainA = ancestorChain(nodeA);
+	const chainB = ancestorChain(nodeB);
+	let depth = 0;
+	while (
+		depth < chainA.length &&
+		depth < chainB.length &&
+		chainA[depth] === chainB[depth]
+	) {
+		depth++;
+	}
+	// One node is an ancestor of the other: the ancestor's offset is compared
+	// against the index of the child it holds the other node under.
+	if (depth === chainA.length) {
+		return nodeIndex(chainB[depth]) < offsetA ? AFTER : BEFORE;
+	}
+	if (depth === chainB.length) {
+		return nodeIndex(chainA[depth]) < offsetB ? BEFORE : AFTER;
+	}
+	return precedesSibling(chainA[depth], chainB[depth]) ? BEFORE : AFTER;
+}
+
+/**
+ * Every live range, weakly held.
+ *
+ * The tree mutation algorithms move the boundary points of every live range
+ * over the part of the tree they change, so each of them walks this list. A
+ * range is registered when it is constructed and drops out of the list once
+ * nothing else holds it.
+ */
+const liveRanges: Array<WeakRef<Range>> = [];
+
+function registerLiveRange(range: Range): void {
+	let write = 0;
+	for (let read = 0; read < liveRanges.length; read++) {
+		if (liveRanges[read].deref() !== undefined) {
+			liveRanges[write++] = liveRanges[read];
+		}
+	}
+	liveRanges.length = write;
+	liveRanges.push(new WeakRef(range));
+}
+
+/** Run steps over every live range that is still reachable. */
+function forEachLiveRange(steps: (range: Range) => void): void {
+	for (let index = 0; index < liveRanges.length; index++) {
+		const range = liveRanges[index].deref();
+		if (range !== undefined) steps(range);
+	}
+}
+
+/**
+ * The boundary point steps the insert algorithm runs: a node inserted before a
+ * child pushes along every boundary point in the parent past that child.
+ */
+function liveRangeInsertSteps(parent: Node, child: Node, count: number): void {
+	if (liveRanges.length === 0) return;
+	const index = nodeIndex(child);
+	forEachLiveRange((range) => {
+		if (range[kStartNode] === parent && range[kStartOffset] > index) {
+			range[kStartOffset] += count;
+		}
+		if (range[kEndNode] === parent && range[kEndOffset] > index) {
+			range[kEndOffset] += count;
+		}
+	});
+}
+
+/**
+ * The live range pre-remove steps: a boundary point inside the node being
+ * removed collapses onto the node's own position, and one after it in the
+ * parent moves back by one.
+ */
+function liveRangePreRemoveSteps(node: Node): void {
+	if (liveRanges.length === 0) return;
+	const parent = node[kParent] as Node;
+	const index = nodeIndex(node);
+	forEachLiveRange((range) => {
+		if (isInclusiveAncestor(node, range[kStartNode])) {
+			range[kStartNode] = parent;
+			range[kStartOffset] = index;
+		}
+		if (isInclusiveAncestor(node, range[kEndNode])) {
+			range[kEndNode] = parent;
+			range[kEndOffset] = index;
+		}
+		if (range[kStartNode] === parent && range[kStartOffset] > index) {
+			range[kStartOffset] -= 1;
+		}
+		if (range[kEndNode] === parent && range[kEndOffset] > index) {
+			range[kEndOffset] -= 1;
+		}
+	});
+}
+
+/**
+ * The boundary point steps the replace data algorithm runs: a point inside the
+ * replaced run collapses to its start, and one after the run moves by the
+ * difference in length.
+ */
+function liveRangeReplaceDataSteps(
+	node: CharacterData,
+	offset: number,
+	count: number,
+	length: number,
+): void {
+	if (liveRanges.length === 0) return;
+	forEachLiveRange((range) => {
+		if (
+			range[kStartNode] === node &&
+			range[kStartOffset] > offset &&
+			range[kStartOffset] <= offset + count
+		) {
+			range[kStartOffset] = offset;
+		}
+		if (
+			range[kEndNode] === node &&
+			range[kEndOffset] > offset &&
+			range[kEndOffset] <= offset + count
+		) {
+			range[kEndOffset] = offset;
+		}
+		if (range[kStartNode] === node && range[kStartOffset] > offset + count) {
+			range[kStartOffset] += length - count;
+		}
+		if (range[kEndNode] === node && range[kEndOffset] > offset + count) {
+			range[kEndOffset] += length - count;
+		}
+	});
+}
+
+/**
+ * The boundary point steps the split algorithm runs: a point past the split
+ * moves into the new node, and one that sat just after the node in its parent
+ * moves past the new node as well.
+ */
+function liveRangeSplitSteps(
+	node: Text,
+	newNode: Text,
+	offset: number,
+	parent: Node,
+): void {
+	if (liveRanges.length === 0) return;
+	const index = nodeIndex(node);
+	forEachLiveRange((range) => {
+		if (range[kStartNode] === node && range[kStartOffset] > offset) {
+			range[kStartNode] = newNode;
+			range[kStartOffset] -= offset;
+		}
+		if (range[kEndNode] === node && range[kEndOffset] > offset) {
+			range[kEndNode] = newNode;
+			range[kEndOffset] -= offset;
+		}
+		if (range[kStartNode] === parent && range[kStartOffset] === index + 1) {
+			range[kStartOffset] += 1;
+		}
+		if (range[kEndNode] === parent && range[kEndOffset] === index + 1) {
+			range[kEndOffset] += 1;
+		}
+	});
+}
+
+/**
+ * The boundary point steps normalize runs for each text node it folds into the
+ * one before it: a point in the folded node, or one that named it in its
+ * parent, moves to where its data landed.
+ */
+function liveRangeNormalizeSteps(
+	node: Text,
+	currentNode: Text,
+	length: number,
+): void {
+	if (liveRanges.length === 0) return;
+	const parent = currentNode[kParent] as Node;
+	const index = nodeIndex(currentNode);
+	forEachLiveRange((range) => {
+		if (range[kStartNode] === currentNode) {
+			range[kStartNode] = node;
+			range[kStartOffset] += length;
+		}
+		if (range[kEndNode] === currentNode) {
+			range[kEndNode] = node;
+			range[kEndOffset] += length;
+		}
+		if (range[kStartNode] === parent && range[kStartOffset] === index) {
+			range[kStartNode] = node;
+			range[kStartOffset] = length;
+		}
+		if (range[kEndNode] === parent && range[kEndOffset] === index) {
+			range[kEndNode] = node;
+			range[kEndOffset] = length;
+		}
+	});
+}
+
+export class AbstractRange {
+	[kStartNode]: Node;
+	[kStartOffset]: number;
+	[kEndNode]: Node;
+	[kEndOffset]: number;
+
+	constructor(
+		startNode: Node,
+		startOffset: number,
+		endNode: Node,
+		endOffset: number,
+	) {
+		if (new.target === AbstractRange) {
+			throw new TypeError("AbstractRange cannot be constructed");
+		}
+		this[kStartNode] = startNode;
+		this[kStartOffset] = startOffset;
+		this[kEndNode] = endNode;
+		this[kEndOffset] = endOffset;
+	}
+
+	get startContainer(): Node {
+		return this[kStartNode];
+	}
+
+	get startOffset(): number {
+		return this[kStartOffset];
+	}
+
+	get endContainer(): Node {
+		return this[kEndNode];
+	}
+
+	get endOffset(): number {
+		return this[kEndOffset];
+	}
+
+	get collapsed(): boolean {
+		return (
+			this[kStartNode] === this[kEndNode] &&
+			this[kStartOffset] === this[kEndOffset]
+		);
+	}
+}
+
+Object.defineProperty(AbstractRange.prototype, Symbol.toStringTag, {
+	value: "AbstractRange",
+	configurable: true,
+});
+
+export interface StaticRangeInit {
+	startContainer: Node;
+	startOffset: number;
+	endContainer: Node;
+	endOffset: number;
+}
+
+/** The boundary points a StaticRange is constructed from. */
+function staticRangePoints(init: unknown): [Node, number, Node, number] {
+	const dictionary = toDictionary<Partial<StaticRangeInit>>(
+		init,
+		"StaticRange",
+	);
+	const members = [
+		"startContainer",
+		"startOffset",
+		"endContainer",
+		"endOffset",
+	] as const;
+	for (const member of members) {
+		if (dictionary[member] === undefined) {
+			throw new TypeError(`StaticRange needs a ${member}`);
+		}
+	}
+	const startContainer = dictionary.startContainer as Node;
+	const endContainer = dictionary.endContainer as Node;
+	for (const container of [startContainer, endContainer]) {
+		if (!(container instanceof Node)) {
+			throw new TypeError("That is not a node");
+		}
+		if (
+			container.nodeType === DOCUMENT_TYPE_NODE ||
+			container.nodeType === ATTRIBUTE_NODE
+		) {
+			throw domError(
+				"InvalidNodeTypeError",
+				"A boundary point cannot be a doctype or an attribute",
+			);
+		}
+	}
+	return [
+		startContainer,
+		toUnsignedLong(dictionary.startOffset),
+		endContainer,
+		toUnsignedLong(dictionary.endOffset),
+	];
+}
+
+export class StaticRange extends AbstractRange {
+	constructor(init: StaticRangeInit) {
+		super(...staticRangePoints(init));
+	}
+}
+
+Object.defineProperty(StaticRange.prototype, Symbol.toStringTag, {
+	value: "StaticRange",
+	configurable: true,
+});
+
+const START_TO_START = 0;
+const START_TO_END = 1;
+const END_TO_END = 2;
+const END_TO_START = 3;
+
+/** A live range's root: the root of its start node. */
+function rangeRoot(range: Range): Node {
+	return getRoot(range[kStartNode]);
+}
+
+/** Whether a node is contained in a live range. */
+function isContained(node: Node, range: Range): boolean {
+	if (getRoot(node) !== rangeRoot(range)) return false;
+	return (
+		comparePoints(node, 0, range[kStartNode], range[kStartOffset]) === AFTER &&
+		comparePoints(
+			node,
+			nodeLength(node),
+			range[kEndNode],
+			range[kEndOffset],
+		) === BEFORE
+	);
+}
+
+/** Whether a node is partially contained in a live range. */
+function isPartiallyContained(node: Node, range: Range): boolean {
+	const holdsStart = isInclusiveAncestor(node, range[kStartNode]);
+	const holdsEnd = isInclusiveAncestor(node, range[kEndNode]);
+	return holdsStart !== holdsEnd;
+}
+
+/** The node, furthest from the root, that holds both boundary points. */
+function commonAncestorOf(range: Range): Node {
+	let container = range[kStartNode];
+	while (!isInclusiveAncestor(container, range[kEndNode])) {
+		container = container[kParent] as Node;
+	}
+	return container;
+}
+
+/** A range's boundary points, as the Range API sets them. */
+function setRangePoints(
+	range: Range,
+	startNode: Node,
+	startOffset: number,
+	endNode: Node,
+	endOffset: number,
+): void {
+	range[kStartNode] = startNode;
+	range[kStartOffset] = startOffset;
+	range[kEndNode] = endNode;
+	range[kEndOffset] = endOffset;
+	rangeBoundaryPointsChanged(range, "both");
+}
+
+/** The spec's "set the start" and "set the end" of a range. */
+function setRangeBoundary(
+	range: Range,
+	node: Node,
+	offset: number,
+	isStart: boolean,
+): void {
+	if (!(node instanceof Node)) throw new TypeError("That is not a node");
+	if (node.nodeType === DOCUMENT_TYPE_NODE) {
+		throw domError(
+			"InvalidNodeTypeError",
+			"A boundary point cannot be a doctype",
+		);
+	}
+	const at = toUnsignedLong(offset);
+	if (at > nodeLength(node)) {
+		throw indexSizeError("The offset is past the end of the node");
+	}
+	if (isStart) {
+		if (
+			rangeRoot(range) !== getRoot(node) ||
+			comparePoints(node, at, range[kEndNode], range[kEndOffset]) === AFTER
+		) {
+			range[kEndNode] = node;
+			range[kEndOffset] = at;
+		}
+		range[kStartNode] = node;
+		range[kStartOffset] = at;
+	} else {
+		if (
+			rangeRoot(range) !== getRoot(node) ||
+			comparePoints(node, at, range[kStartNode], range[kStartOffset]) === BEFORE
+		) {
+			range[kStartNode] = node;
+			range[kStartOffset] = at;
+		}
+		range[kEndNode] = node;
+		range[kEndOffset] = at;
+	}
+	rangeBoundaryPointsChanged(range, isStart ? "start" : "end");
+}
+
+/** The parent a boundary point is set relative to, for the -Before/-After set. */
+function boundaryParent(node: unknown): Node {
+	if (!(node instanceof Node)) throw new TypeError("That is not a node");
+	const parent = node[kParent];
+	if (parent === null) {
+		throw domError(
+			"InvalidNodeTypeError",
+			"That node has no parent to take a boundary point in",
+		);
+	}
+	return parent;
+}
+
+/** Select a node within a range. */
+function selectNodeWithin(range: Range, node: Node): void {
+	const parent = boundaryParent(node);
+	const index = nodeIndex(node);
+	setRangePoints(range, parent, index, parent, index + 1);
+}
+
+/** A document fragment of a document, which the extraction algorithms fill. */
+function createFragment(document: Document): DocumentFragment {
+	const fragment = new DocumentFragment();
+	fragment[kDocument] = document;
+	return fragment;
+}
+
+/** The children of a range's common ancestor the extraction algorithms move. */
+interface ExtractionShape {
+	commonAncestor: Node;
+	firstPartiallyContained: Node | null;
+	lastPartiallyContained: Node | null;
+	containedChildren: Node[];
+}
+
+/**
+ * The children of the common ancestor a range covers: the one it starts inside
+ * of, the ones it holds whole, and the one it ends inside of.
+ */
+function extractionShape(range: Range): ExtractionShape {
+	const commonAncestor = commonAncestorOf(range);
+	const startNode = range[kStartNode];
+	const endNode = range[kEndNode];
+	let firstPartiallyContained: Node | null = null;
+	if (!isInclusiveAncestor(startNode, endNode)) {
+		for (
+			let child = commonAncestor[kFirstChild];
+			child !== null;
+			child = child[kNext]
+		) {
+			if (isPartiallyContained(child, range)) {
+				firstPartiallyContained = child;
+				break;
+			}
+		}
+	}
+	let lastPartiallyContained: Node | null = null;
+	if (!isInclusiveAncestor(endNode, startNode)) {
+		for (
+			let child = commonAncestor[kLastChild];
+			child !== null;
+			child = child[kPrevious]
+		) {
+			if (isPartiallyContained(child, range)) {
+				lastPartiallyContained = child;
+				break;
+			}
+		}
+	}
+	const containedChildren: Node[] = [];
+	for (
+		let child = commonAncestor[kFirstChild];
+		child !== null;
+		child = child[kNext]
+	) {
+		if (!isContained(child, range)) continue;
+		if (child.nodeType === DOCUMENT_TYPE_NODE) {
+			throw hierarchyRequestError("A doctype cannot be taken out of a range");
+		}
+		containedChildren.push(child);
+	}
+	return {
+		commonAncestor,
+		firstPartiallyContained,
+		lastPartiallyContained,
+		containedChildren,
+	};
+}
+
+/** Where a range collapses to once its contents leave the tree. */
+function pointAfterExtraction(range: Range): [Node, number] {
+	const startNode = range[kStartNode];
+	if (isInclusiveAncestor(startNode, range[kEndNode])) {
+		return [startNode, range[kStartOffset]];
+	}
+	let reference = startNode;
+	while (
+		reference[kParent] !== null &&
+		!isInclusiveAncestor(reference[kParent] as Node, range[kEndNode])
+	) {
+		reference = reference[kParent] as Node;
+	}
+	return [reference[kParent] as Node, nodeIndex(reference) + 1];
+}
+
+/** A shallow clone of character data, carrying part of the original's data. */
+function characterDataSlice(
+	node: CharacterData,
+	offset: number,
+	count: number,
+): CharacterData {
+	const clone = cloneNode(node, undefined, false) as CharacterData;
+	clone[kData] = node[kData].slice(offset, offset + count);
+	return clone;
+}
+
+/** The spec's "extract" of a live range. */
+function extractRange(range: Range): DocumentFragment {
+	const fragment = createFragment(range[kStartNode][kDocument]);
+	if (range.collapsed) return fragment;
+	const startNode = range[kStartNode];
+	const startOffset = range[kStartOffset];
+	const endNode = range[kEndNode];
+	const endOffset = range[kEndOffset];
+	if (startNode === endNode && isCharacterData(startNode)) {
+		const data = startNode as CharacterData;
+		appendNode(
+			characterDataSlice(data, startOffset, endOffset - startOffset),
+			fragment,
+		);
+		replaceData(data, startOffset, endOffset - startOffset, "");
+		return fragment;
+	}
+	const shape = extractionShape(range);
+	const [newNode, newOffset] = pointAfterExtraction(range);
+	setRangePoints(range, newNode, newOffset, newNode, newOffset);
+	const first = shape.firstPartiallyContained;
+	if (first !== null && isCharacterData(first)) {
+		const data = startNode as CharacterData;
+		const count = data[kData].length - startOffset;
+		appendNode(characterDataSlice(data, startOffset, count), fragment);
+		replaceData(data, startOffset, count, "");
+	} else if (first !== null) {
+		const clone = cloneNode(first, undefined, false);
+		appendNode(clone, fragment);
+		const subrange = new Range();
+		setRangePoints(subrange, startNode, startOffset, first, nodeLength(first));
+		appendNode(extractRange(subrange), clone);
+	}
+	for (const child of shape.containedChildren) appendNode(child, fragment);
+	const last = shape.lastPartiallyContained;
+	if (last !== null && isCharacterData(last)) {
+		const data = endNode as CharacterData;
+		appendNode(characterDataSlice(data, 0, endOffset), fragment);
+		replaceData(data, 0, endOffset, "");
+	} else if (last !== null) {
+		const clone = cloneNode(last, undefined, false);
+		appendNode(clone, fragment);
+		const subrange = new Range();
+		setRangePoints(subrange, last, 0, endNode, endOffset);
+		appendNode(extractRange(subrange), clone);
+	}
+	return fragment;
+}
+
+/** The spec's "clone the contents" of a live range. */
+function cloneRangeContents(range: Range): DocumentFragment {
+	const fragment = createFragment(range[kStartNode][kDocument]);
+	if (range.collapsed) return fragment;
+	const startNode = range[kStartNode];
+	const startOffset = range[kStartOffset];
+	const endNode = range[kEndNode];
+	const endOffset = range[kEndOffset];
+	if (startNode === endNode && isCharacterData(startNode)) {
+		const data = startNode as CharacterData;
+		appendNode(
+			characterDataSlice(data, startOffset, endOffset - startOffset),
+			fragment,
+		);
+		return fragment;
+	}
+	const shape = extractionShape(range);
+	const first = shape.firstPartiallyContained;
+	if (first !== null && isCharacterData(first)) {
+		const data = startNode as CharacterData;
+		const count = data[kData].length - startOffset;
+		appendNode(characterDataSlice(data, startOffset, count), fragment);
+	} else if (first !== null) {
+		const clone = cloneNode(first, undefined, false);
+		appendNode(clone, fragment);
+		const subrange = new Range();
+		setRangePoints(subrange, startNode, startOffset, first, nodeLength(first));
+		appendNode(cloneRangeContents(subrange), clone);
+	}
+	for (const child of shape.containedChildren) {
+		appendNode(cloneNode(child, undefined, true), fragment);
+	}
+	const last = shape.lastPartiallyContained;
+	if (last !== null && isCharacterData(last)) {
+		const data = endNode as CharacterData;
+		appendNode(characterDataSlice(data, 0, endOffset), fragment);
+	} else if (last !== null) {
+		const clone = cloneNode(last, undefined, false);
+		appendNode(clone, fragment);
+		const subrange = new Range();
+		setRangePoints(subrange, last, 0, endNode, endOffset);
+		appendNode(cloneRangeContents(subrange), clone);
+	}
+	return fragment;
+}
+
+/** The spec's "insert" of a node into a live range. */
+function insertIntoRange(range: Range, node: Node): void {
+	if (!(node instanceof Node)) throw new TypeError("That is not a node");
+	const startNode = range[kStartNode];
+	const type = startNode.nodeType;
+	if (
+		type === PROCESSING_INSTRUCTION_NODE ||
+		type === COMMENT_NODE ||
+		(startNode instanceof Text && startNode[kParent] === null) ||
+		startNode === node
+	) {
+		throw hierarchyRequestError("That range cannot take an inserted node");
+	}
+	let referenceNode: Node | null = null;
+	if (startNode instanceof Text) {
+		referenceNode = startNode;
+	} else {
+		let child = startNode[kFirstChild];
+		for (
+			let index = 0;
+			index < range[kStartOffset] && child !== null;
+			index++
+		) {
+			child = child[kNext];
+		}
+		referenceNode = child;
+	}
+	const parent =
+		referenceNode === null ? startNode : (referenceNode[kParent] as Node);
+	ensurePreInsertionValidity(node, parent, referenceNode);
+	if (startNode instanceof Text) {
+		referenceNode = startNode.splitText(range[kStartOffset]);
+	}
+	if (node === referenceNode) referenceNode = node[kNext];
+	if (node[kParent] !== null) removeNode(node);
+	let newOffset =
+		referenceNode === null ? nodeLength(parent) : nodeIndex(referenceNode);
+	newOffset += node.nodeType === DOCUMENT_FRAGMENT_NODE ? nodeLength(node) : 1;
+	preInsert(node, parent, referenceNode);
+	if (range.collapsed) {
+		range[kEndNode] = parent;
+		range[kEndOffset] = newOffset;
+		rangeBoundaryPointsChanged(range, "end");
+	}
+}
+
+export class Range extends AbstractRange {
+	[kRangeSelection]: Selection | null = null;
+
+	static readonly START_TO_START = START_TO_START;
+	static readonly START_TO_END = START_TO_END;
+	static readonly END_TO_END = END_TO_END;
+	static readonly END_TO_START = END_TO_START;
+
+	constructor() {
+		const document = currentDocument();
+		super(document, 0, document, 0);
+		registerLiveRange(this);
+	}
+
+	get commonAncestorContainer(): Node {
+		return commonAncestorOf(this);
+	}
+
+	setStart(node: Node, offset: number): void {
+		if (arguments.length < 2) {
+			throw new TypeError("setStart needs a node and an offset");
+		}
+		setRangeBoundary(this, node, offset, true);
+	}
+
+	setEnd(node: Node, offset: number): void {
+		if (arguments.length < 2) {
+			throw new TypeError("setEnd needs a node and an offset");
+		}
+		setRangeBoundary(this, node, offset, false);
+	}
+
+	setStartBefore(node: Node): void {
+		if (arguments.length < 1)
+			throw new TypeError("setStartBefore needs a node");
+		const parent = boundaryParent(node);
+		setRangeBoundary(this, parent, nodeIndex(node), true);
+	}
+
+	setStartAfter(node: Node): void {
+		if (arguments.length < 1) throw new TypeError("setStartAfter needs a node");
+		const parent = boundaryParent(node);
+		setRangeBoundary(this, parent, nodeIndex(node) + 1, true);
+	}
+
+	setEndBefore(node: Node): void {
+		if (arguments.length < 1) throw new TypeError("setEndBefore needs a node");
+		const parent = boundaryParent(node);
+		setRangeBoundary(this, parent, nodeIndex(node), false);
+	}
+
+	setEndAfter(node: Node): void {
+		if (arguments.length < 1) throw new TypeError("setEndAfter needs a node");
+		const parent = boundaryParent(node);
+		setRangeBoundary(this, parent, nodeIndex(node) + 1, false);
+	}
+
+	collapse(toStart = false): void {
+		if (toStart) {
+			setRangePoints(
+				this,
+				this[kStartNode],
+				this[kStartOffset],
+				this[kStartNode],
+				this[kStartOffset],
+			);
+		} else {
+			setRangePoints(
+				this,
+				this[kEndNode],
+				this[kEndOffset],
+				this[kEndNode],
+				this[kEndOffset],
+			);
+		}
+	}
+
+	selectNode(node: Node): void {
+		if (arguments.length < 1) throw new TypeError("selectNode needs a node");
+		selectNodeWithin(this, node);
+	}
+
+	selectNodeContents(node: Node): void {
+		if (arguments.length < 1) {
+			throw new TypeError("selectNodeContents needs a node");
+		}
+		if (!(node instanceof Node)) throw new TypeError("That is not a node");
+		if (node.nodeType === DOCUMENT_TYPE_NODE) {
+			throw domError(
+				"InvalidNodeTypeError",
+				"A boundary point cannot be a doctype",
+			);
+		}
+		setRangePoints(this, node, 0, node, nodeLength(node));
+	}
+
+	compareBoundaryPoints(how: number, sourceRange: Range): number {
+		if (arguments.length < 2) {
+			throw new TypeError("compareBoundaryPoints needs a how and a range");
+		}
+		if (!(sourceRange instanceof Range)) {
+			throw new TypeError("That is not a range");
+		}
+		const which = toUnsignedShort(how);
+		if (
+			which !== START_TO_START &&
+			which !== START_TO_END &&
+			which !== END_TO_END &&
+			which !== END_TO_START
+		) {
+			throw domError(
+				"NotSupportedError",
+				"That is not one of the boundary point comparisons",
+			);
+		}
+		if (rangeRoot(this) !== rangeRoot(sourceRange)) {
+			throw domError(
+				"WrongDocumentError",
+				"The two ranges are in different trees",
+			);
+		}
+		const thisAtStart = which === START_TO_START || which === END_TO_START;
+		const sourceAtStart = which === START_TO_START || which === START_TO_END;
+		return comparePoints(
+			thisAtStart ? this[kStartNode] : this[kEndNode],
+			thisAtStart ? this[kStartOffset] : this[kEndOffset],
+			sourceAtStart ? sourceRange[kStartNode] : sourceRange[kEndNode],
+			sourceAtStart ? sourceRange[kStartOffset] : sourceRange[kEndOffset],
+		);
+	}
+
+	deleteContents(): void {
+		if (this.collapsed) return;
+		const startNode = this[kStartNode];
+		const startOffset = this[kStartOffset];
+		const endNode = this[kEndNode];
+		const endOffset = this[kEndOffset];
+		if (startNode === endNode && isCharacterData(startNode)) {
+			replaceData(
+				startNode as CharacterData,
+				startOffset,
+				endOffset - startOffset,
+				"",
+			);
+			return;
+		}
+		const nodesToRemove: Node[] = [];
+		for (const node of descendants(commonAncestorOf(this))) {
+			if (!isContained(node, this)) continue;
+			const parent = node[kParent];
+			if (parent !== null && isContained(parent, this)) continue;
+			nodesToRemove.push(node);
+		}
+		const [newNode, newOffset] = pointAfterExtraction(this);
+		setRangePoints(this, newNode, newOffset, newNode, newOffset);
+		if (isCharacterData(startNode)) {
+			const data = startNode as CharacterData;
+			replaceData(data, startOffset, data[kData].length - startOffset, "");
+		}
+		for (const node of nodesToRemove) removeNode(node);
+		if (isCharacterData(endNode)) {
+			replaceData(endNode as CharacterData, 0, endOffset, "");
+		}
+	}
+
+	extractContents(): DocumentFragment {
+		return extractRange(this);
+	}
+
+	cloneContents(): DocumentFragment {
+		return cloneRangeContents(this);
+	}
+
+	insertNode(node: Node): void {
+		if (arguments.length < 1) throw new TypeError("insertNode needs a node");
+		insertIntoRange(this, node);
+	}
+
+	surroundContents(newParent: Node): void {
+		if (arguments.length < 1) {
+			throw new TypeError("surroundContents needs a node");
+		}
+		if (!(newParent instanceof Node)) throw new TypeError("That is not a node");
+		for (const node of [this[kStartNode], this[kEndNode]]) {
+			let current: Node | null = node;
+			while (current !== null) {
+				if (isPartiallyContained(current, this) && !(current instanceof Text)) {
+					throw domError(
+						"InvalidStateError",
+						"The range starts or ends inside a node it does not cover",
+					);
+				}
+				current = current[kParent];
+			}
+		}
+		const type = newParent.nodeType;
+		if (
+			type === DOCUMENT_NODE ||
+			type === DOCUMENT_TYPE_NODE ||
+			type === DOCUMENT_FRAGMENT_NODE
+		) {
+			throw domError(
+				"InvalidNodeTypeError",
+				"That node cannot be the parent of a range's contents",
+			);
+		}
+		const fragment = extractRange(this);
+		if (newParent[kFirstChild] !== null) replaceAll(null, newParent);
+		insertIntoRange(this, newParent);
+		appendNode(fragment, newParent);
+		selectNodeWithin(this, newParent);
+	}
+
+	cloneRange(): Range {
+		const range = new Range();
+		setRangePoints(
+			range,
+			this[kStartNode],
+			this[kStartOffset],
+			this[kEndNode],
+			this[kEndOffset],
+		);
+		return range;
+	}
+
+	detach(): void {
+		// The method's functionality was removed; it is kept for compatibility.
+	}
+
+	isPointInRange(node: Node, offset: number): boolean {
+		if (arguments.length < 2) {
+			throw new TypeError("isPointInRange needs a node and an offset");
+		}
+		if (!(node instanceof Node)) throw new TypeError("That is not a node");
+		if (getRoot(node) !== rangeRoot(this)) return false;
+		if (node.nodeType === DOCUMENT_TYPE_NODE) {
+			throw domError(
+				"InvalidNodeTypeError",
+				"A boundary point cannot be a doctype",
+			);
+		}
+		const at = toUnsignedLong(offset);
+		if (at > nodeLength(node)) {
+			throw indexSizeError("The offset is past the end of the node");
+		}
+		if (
+			comparePoints(node, at, this[kStartNode], this[kStartOffset]) ===
+				BEFORE ||
+			comparePoints(node, at, this[kEndNode], this[kEndOffset]) === AFTER
+		) {
+			return false;
+		}
+		return true;
+	}
+
+	comparePoint(node: Node, offset: number): number {
+		if (arguments.length < 2) {
+			throw new TypeError("comparePoint needs a node and an offset");
+		}
+		if (!(node instanceof Node)) throw new TypeError("That is not a node");
+		if (getRoot(node) !== rangeRoot(this)) {
+			throw domError(
+				"WrongDocumentError",
+				"The point is in a different tree from the range",
+			);
+		}
+		if (node.nodeType === DOCUMENT_TYPE_NODE) {
+			throw domError(
+				"InvalidNodeTypeError",
+				"A boundary point cannot be a doctype",
+			);
+		}
+		const at = toUnsignedLong(offset);
+		if (at > nodeLength(node)) {
+			throw indexSizeError("The offset is past the end of the node");
+		}
+		if (
+			comparePoints(node, at, this[kStartNode], this[kStartOffset]) === BEFORE
+		) {
+			return -1;
+		}
+		if (comparePoints(node, at, this[kEndNode], this[kEndOffset]) === AFTER) {
+			return 1;
+		}
+		return 0;
+	}
+
+	intersectsNode(node: Node): boolean {
+		if (arguments.length < 1) {
+			throw new TypeError("intersectsNode needs a node");
+		}
+		if (!(node instanceof Node)) throw new TypeError("That is not a node");
+		if (getRoot(node) !== rangeRoot(this)) return false;
+		const parent = node[kParent];
+		if (parent === null) return true;
+		const offset = nodeIndex(node);
+		return (
+			comparePoints(parent, offset, this[kEndNode], this[kEndOffset]) ===
+				BEFORE &&
+			comparePoints(
+				parent,
+				offset + 1,
+				this[kStartNode],
+				this[kStartOffset],
+			) === AFTER
+		);
+	}
+
+	override toString(): string {
+		const startNode = this[kStartNode];
+		const endNode = this[kEndNode];
+		if (startNode === endNode && startNode instanceof Text) {
+			return startNode[kData].slice(this[kStartOffset], this[kEndOffset]);
+		}
+		let string = "";
+		if (startNode instanceof Text) {
+			string += startNode[kData].slice(this[kStartOffset]);
+		}
+		for (const node of descendants(commonAncestorOf(this))) {
+			if (!(node instanceof Text)) continue;
+			if (isContained(node, this)) string += node[kData];
+		}
+		if (endNode instanceof Text) {
+			string += endNode[kData].slice(0, this[kEndOffset]);
+		}
+		return string;
+	}
+}
+
+for (const [name, value] of [
+	["START_TO_START", START_TO_START],
+	["START_TO_END", START_TO_END],
+	["END_TO_END", END_TO_END],
+	["END_TO_START", END_TO_START],
+] as Array<[string, number]>) {
+	Object.defineProperty(Range.prototype, name, {value, enumerable: true});
+}
+
+ceReactions(Range.prototype, [
+	"deleteContents",
+	"extractContents",
+	"cloneContents",
+	"insertNode",
+	"surroundContents",
+]);
+
+Object.defineProperty(Range.prototype, Symbol.toStringTag, {
+	value: "Range",
+	configurable: true,
+});
+
+/* -------------------------------------------------------------- selection */
+
+/**
+ * The selection whose range this is takes a selectionchange event from every
+ * change the Range API makes to that range's boundary points.
+ */
+function rangeBoundaryPointsChanged(
+	range: Range,
+	which: "start" | "end" | "both",
+): void {
+	const selection = range[kRangeSelection];
+	if (selection !== null) selection[kSelectionChanged](which);
+}
+
+/** Schedule a selectionchange event at a document, at most one per task. */
+function scheduleSelectionChange(document: Document): void {
+	if (document[kSelectionChangeScheduled]) return;
+	document[kSelectionChangeScheduled] = true;
+	setTimeout(() => {
+		document[kSelectionChangeScheduled] = false;
+		document.dispatchEvent(new Event("selectionchange"));
+	}, 0);
+}
+
+/**
+ * A node's composed parent: its parent, or the host of the shadow root it is.
+ * A shadow root sits at its host, before the host's children, so that a
+ * boundary point in a shadow tree orders against one in the light tree.
+ */
+function composedParent(node: Node): Node | null {
+	const parent = node[kParent];
+	if (parent !== null) return parent;
+	return isShadowRoot(node) ? ((node as ShadowRoot)[kHost] as Node) : null;
+}
+
+/** The chain from a node's composed root down to the node itself. */
+function composedChain(node: Node): Node[] {
+	const chain: Node[] = [];
+	for (
+		let current: Node | null = node;
+		current !== null;
+		current = composedParent(current)
+	) {
+		chain.push(current);
+	}
+	chain.reverse();
+	return chain;
+}
+
+/** A node's composed index, where a shadow root precedes its host's children. */
+function composedIndex(node: Node): number {
+	return node[kParent] === null && isShadowRoot(node) ? -1 : nodeIndex(node);
+}
+
+/**
+ * The position of one boundary point relative to another, counting a shadow
+ * tree as part of the tree its host is in.
+ */
+function compareComposedPoints(
+	nodeA: Node,
+	offsetA: number,
+	nodeB: Node,
+	offsetB: number,
+): number {
+	if (nodeA === nodeB) {
+		if (offsetA === offsetB) return EQUAL;
+		return offsetA < offsetB ? BEFORE : AFTER;
+	}
+	const chainA = composedChain(nodeA);
+	const chainB = composedChain(nodeB);
+	let depth = 0;
+	while (
+		depth < chainA.length &&
+		depth < chainB.length &&
+		chainA[depth] === chainB[depth]
+	) {
+		depth++;
+	}
+	if (depth === chainA.length) {
+		return composedIndex(chainB[depth]) < offsetA ? AFTER : BEFORE;
+	}
+	if (depth === chainB.length) {
+		return composedIndex(chainA[depth]) < offsetB ? BEFORE : AFTER;
+	}
+	return composedIndex(chainA[depth]) < composedIndex(chainB[depth])
+		? BEFORE
+		: AFTER;
+}
+
+/** A collapsed live range, which is how a selection holds a boundary point. */
+function livePoint(node: Node, offset: number): Range {
+	const point = new Range();
+	point[kStartNode] = node;
+	point[kStartOffset] = offset;
+	point[kEndNode] = node;
+	point[kEndOffset] = offset;
+	return point;
+}
+
+/** The document a selection is being created for, which only a document does. */
+let selectionUnderConstruction: Document | null = null;
+
+/** The selection of a document, which is the only way one is made. */
+function createSelection(document: Document): Selection {
+	selectionUnderConstruction = document;
+	try {
+		return new Selection();
+	} finally {
+		selectionUnderConstruction = null;
+	}
+}
+
+export class Selection {
+	#document: Document;
+	/** The range the Range API sees, which lives in a single tree. */
+	#range: Range | null = null;
+	/**
+	 * The composed boundary points, in tree order and each held as a collapsed
+	 * live range so that a tree mutation moves it. A selection that crosses a
+	 * shadow boundary keeps both of these while its range collapses.
+	 */
+	#start: Range | null = null;
+	#end: Range | null = null;
+	#direction: "forwards" | "backwards" | "directionless" = "directionless";
+
+	constructor() {
+		if (selectionUnderConstruction === null) {
+			throw new TypeError("Selection cannot be constructed");
+		}
+		this.#document = selectionUnderConstruction;
+	}
+
+	/** Whether a node is in the selection's document, shadow trees included. */
+	#inDocument(node: Node): boolean {
+		return shadowIncludingRoot(node) === this.#document;
+	}
+
+	/**
+	 * The range the Range API is allowed to see: the selection has one while
+	 * its range is in the document, a shadow tree of the document included. A
+	 * range that has left the document is not one the selection answers with.
+	 */
+	#documentRange(): Range | null {
+		const range = this.#range;
+		if (range === null) return null;
+		return this.#inDocument(range[kStartNode]) ? range : null;
+	}
+
+	#anchorPoint(): [Node, number] | null {
+		const range = this.#range;
+		if (range === null) return null;
+		return this.#direction === "forwards"
+			? [range[kStartNode], range[kStartOffset]]
+			: [range[kEndNode], range[kEndOffset]];
+	}
+
+	#focusPoint(): [Node, number] | null {
+		const range = this.#range;
+		if (range === null) return null;
+		return this.#direction === "forwards"
+			? [range[kEndNode], range[kEndOffset]]
+			: [range[kStartNode], range[kStartOffset]];
+	}
+
+	/** The range the Range API builds from an ordered pair of points. */
+	#rangeFor(start: [Node, number], end: [Node, number]): Range {
+		const range = new Range();
+		setRangeBoundary(range, start[0], start[1], true);
+		setRangeBoundary(range, end[0], end[1], false);
+		return range;
+	}
+
+	/** Take a range, and the composed points it was built from, as the own. */
+	#associate(
+		range: Range,
+		anchor: [Node, number],
+		focus: [Node, number],
+		direction: "forwards" | "backwards" | "directionless",
+	): void {
+		const previous = this.#range;
+		if (previous !== null) previous[kRangeSelection] = null;
+		this.#range = range;
+		range[kRangeSelection] = this;
+		const anchorFirst =
+			compareComposedPoints(anchor[0], anchor[1], focus[0], focus[1]) !== AFTER;
+		const start = anchorFirst ? anchor : focus;
+		const end = anchorFirst ? focus : anchor;
+		this.#start = livePoint(start[0], start[1]);
+		this.#end = livePoint(end[0], end[1]);
+		this.#direction = direction;
+		scheduleSelectionChange(this.#document);
+	}
+
+	/**
+	 * The steps a change to the selection's range through the Range API takes:
+	 * the composed point the change moved follows it, and a range that leaves
+	 * the document takes the selection with it.
+	 */
+	[kSelectionChanged](which: "start" | "end" | "both"): void {
+		const range = this.#range;
+		if (range === null) return;
+		if (!this.#inDocument(range[kStartNode])) {
+			this.removeAllRanges();
+			return;
+		}
+		const start = livePoint(range[kStartNode], range[kStartOffset]);
+		const end = livePoint(range[kEndNode], range[kEndOffset]);
+		if (which === "both" || this.#start === null || this.#end === null) {
+			this.#start = start;
+			this.#end = end;
+		} else if (which === "start") {
+			this.#start = start;
+			if (this.#composedOrder(start, this.#end) === AFTER) this.#end = start;
+		} else {
+			this.#end = end;
+			if (this.#composedOrder(end, this.#start) === BEFORE) this.#start = end;
+		}
+		scheduleSelectionChange(this.#document);
+	}
+
+	#composedOrder(point: Range, other: Range): number {
+		return compareComposedPoints(
+			point[kStartNode],
+			point[kStartOffset],
+			other[kStartNode],
+			other[kStartOffset],
+		);
+	}
+
+	get anchorNode(): Node | null {
+		const anchor = this.#anchorPoint();
+		if (anchor === null || !this.#inDocument(anchor[0])) return null;
+		return anchor[0];
+	}
+
+	get anchorOffset(): number {
+		const anchor = this.#anchorPoint();
+		if (anchor === null || !this.#inDocument(anchor[0])) return 0;
+		return anchor[1];
+	}
+
+	get focusNode(): Node | null {
+		const focus = this.#focusPoint();
+		if (focus === null || !this.#inDocument(focus[0])) return null;
+		return focus[0];
+	}
+
+	get focusOffset(): number {
+		const focus = this.#focusPoint();
+		if (focus === null || !this.#inDocument(focus[0])) return 0;
+		return focus[1];
+	}
+
+	get isCollapsed(): boolean {
+		const range = this.#range;
+		return range === null || range.collapsed;
+	}
+
+	get rangeCount(): number {
+		return this.#documentRange() === null ? 0 : 1;
+	}
+
+	get type(): string {
+		const range = this.#documentRange();
+		if (range === null) return "None";
+		return range.collapsed ? "Caret" : "Range";
+	}
+
+	get direction(): string {
+		if (this.#range === null) return "none";
+		if (this.#direction === "forwards") return "forward";
+		if (this.#direction === "backwards") return "backward";
+		return "none";
+	}
+
+	getRangeAt(index: number): Range {
+		if (arguments.length < 1) throw new TypeError("getRangeAt needs an index");
+		const range = this.#documentRange();
+		if (toUnsignedLong(index) !== 0 || range === null) {
+			throw indexSizeError("The selection has no range at that index");
+		}
+		return range;
+	}
+
+	addRange(range: Range): void {
+		if (arguments.length < 1) throw new TypeError("addRange needs a range");
+		if (!(range instanceof Range)) throw new TypeError("That is not a range");
+		if (!this.#inDocument(range[kStartNode])) return;
+		if (this.rangeCount !== 0) return;
+		this.#associate(
+			range,
+			[range[kStartNode], range[kStartOffset]],
+			[range[kEndNode], range[kEndOffset]],
+			"forwards",
+		);
+	}
+
+	removeRange(range: Range): void {
+		if (arguments.length < 1) throw new TypeError("removeRange needs a range");
+		if (!(range instanceof Range)) throw new TypeError("That is not a range");
+		if (range !== this.#range) {
+			throw notFoundError("That range is not the selection's range");
+		}
+		this.removeAllRanges();
+	}
+
+	removeAllRanges(): void {
+		const range = this.#range;
+		if (range === null) return;
+		range[kRangeSelection] = null;
+		this.#range = null;
+		this.#start = null;
+		this.#end = null;
+		this.#direction = "directionless";
+		scheduleSelectionChange(this.#document);
+	}
+
+	empty(): void {
+		this.removeAllRanges();
+	}
+
+	getComposedRanges(options?: {shadowRoots?: ShadowRoot[]}): StaticRange[] {
+		const dictionary = toDictionary<{shadowRoots?: unknown}>(
+			options,
+			"getComposedRanges",
+		);
+		const roots: ShadowRoot[] = [];
+		if (
+			dictionary.shadowRoots !== undefined &&
+			dictionary.shadowRoots !== null
+		) {
+			for (const root of dictionary.shadowRoots as Iterable<unknown>) {
+				if (!(root instanceof ShadowRoot)) {
+					throw new TypeError("That is not a shadow root");
+				}
+				roots.push(root);
+			}
+		}
+		const start = this.#start;
+		const end = this.#end;
+		if (start === null || end === null) return [];
+		const rescope = (
+			node: Node,
+			offset: number,
+			after: boolean,
+		): [Node, number] => {
+			let current = node;
+			let at = offset;
+			for (;;) {
+				const root = getRoot(current);
+				if (!isShadowRoot(root)) break;
+				if (
+					roots.some((given) => isShadowIncludingInclusiveAncestor(root, given))
+				) {
+					break;
+				}
+				const host = (root as ShadowRoot)[kHost] as Element;
+				at = nodeIndex(host) + (after ? 1 : 0);
+				const parent = host[kParent];
+				if (parent === null) break;
+				current = parent;
+			}
+			return [current, at];
+		};
+		const [startNode, startOffset] = rescope(
+			start[kStartNode],
+			start[kStartOffset],
+			false,
+		);
+		const [endNode, endOffset] = rescope(end[kEndNode], end[kEndOffset], true);
+		return [
+			new StaticRange({
+				startContainer: startNode,
+				startOffset,
+				endContainer: endNode,
+				endOffset,
+			}),
+		];
+	}
+
+	collapse(node: Node | null, offset = 0): void {
+		if (arguments.length < 1) throw new TypeError("collapse needs a node");
+		if (node === null || node === undefined) {
+			this.removeAllRanges();
+			return;
+		}
+		if (!(node instanceof Node)) throw new TypeError("That is not a node");
+		if (node.nodeType === DOCUMENT_TYPE_NODE) {
+			throw domError(
+				"InvalidNodeTypeError",
+				"A boundary point cannot be a doctype",
+			);
+		}
+		const at = toUnsignedLong(offset);
+		if (at > nodeLength(node)) {
+			throw indexSizeError("The offset is past the end of the node");
+		}
+		if (!isShadowIncludingInclusiveAncestor(this.#document, node)) return;
+		const point: [Node, number] = [node, at];
+		this.#associate(
+			this.#rangeFor(point, point),
+			point,
+			point,
+			this.#direction,
+		);
+	}
+
+	setPosition(node: Node | null, offset = 0): void {
+		if (arguments.length < 1) throw new TypeError("setPosition needs a node");
+		this.collapse(node, offset);
+	}
+
+	collapseToStart(): void {
+		const range = this.#range;
+		if (range === null) {
+			throw domError("InvalidStateError", "The selection has no range");
+		}
+		const point: [Node, number] = [range[kStartNode], range[kStartOffset]];
+		this.#associate(
+			this.#rangeFor(point, point),
+			point,
+			point,
+			this.#direction,
+		);
+	}
+
+	collapseToEnd(): void {
+		const range = this.#range;
+		if (range === null) {
+			throw domError("InvalidStateError", "The selection has no range");
+		}
+		const point: [Node, number] = [range[kEndNode], range[kEndOffset]];
+		this.#associate(
+			this.#rangeFor(point, point),
+			point,
+			point,
+			this.#direction,
+		);
+	}
+
+	extend(node: Node, offset = 0): void {
+		if (arguments.length < 1) throw new TypeError("extend needs a node");
+		if (!(node instanceof Node)) throw new TypeError("That is not a node");
+		if (!isShadowIncludingInclusiveAncestor(this.#document, node)) return;
+		if (this.#range === null) {
+			throw domError("InvalidStateError", "The selection has no range");
+		}
+		const anchor = this.#anchorPoint() as [Node, number];
+		const focus: [Node, number] = [node, toUnsignedLong(offset)];
+		const anchorFirst =
+			compareComposedPoints(anchor[0], anchor[1], focus[0], focus[1]) !== AFTER;
+		const range = anchorFirst
+			? this.#rangeFor(anchor, focus)
+			: this.#rangeFor(focus, anchor);
+		this.#associate(
+			range,
+			anchor,
+			focus,
+			anchorFirst ? "forwards" : "backwards",
+		);
+	}
+
+	setBaseAndExtent(
+		anchorNode: Node,
+		anchorOffset: number,
+		focusNode: Node,
+		focusOffset: number,
+	): void {
+		if (arguments.length < 4) {
+			throw new TypeError("setBaseAndExtent needs two boundary points");
+		}
+		if (!(anchorNode instanceof Node) || !(focusNode instanceof Node)) {
+			throw new TypeError("That is not a node");
+		}
+		const anchorAt = toUnsignedLong(anchorOffset);
+		const focusAt = toUnsignedLong(focusOffset);
+		if (anchorAt > nodeLength(anchorNode) || focusAt > nodeLength(focusNode)) {
+			throw indexSizeError("The offset is past the end of the node");
+		}
+		if (
+			!isShadowIncludingInclusiveAncestor(this.#document, anchorNode) ||
+			!isShadowIncludingInclusiveAncestor(this.#document, focusNode)
+		) {
+			return;
+		}
+		const anchor: [Node, number] = [anchorNode, anchorAt];
+		const focus: [Node, number] = [focusNode, focusAt];
+		const anchorFirst =
+			compareComposedPoints(anchorNode, anchorAt, focusNode, focusAt) !== AFTER;
+		const range = anchorFirst
+			? this.#rangeFor(anchor, focus)
+			: this.#rangeFor(focus, anchor);
+		this.#associate(
+			range,
+			anchor,
+			focus,
+			anchorFirst ? "forwards" : "backwards",
+		);
+	}
+
+	selectAllChildren(node: Node): void {
+		if (arguments.length < 1) {
+			throw new TypeError("selectAllChildren needs a node");
+		}
+		if (!(node instanceof Node)) throw new TypeError("That is not a node");
+		if (node.nodeType === DOCUMENT_TYPE_NODE) {
+			throw domError(
+				"InvalidNodeTypeError",
+				"A boundary point cannot be a doctype",
+			);
+		}
+		if (getRoot(node) !== this.#document) return;
+		let childCount = 0;
+		for (let child = node[kFirstChild]; child !== null; child = child[kNext]) {
+			childCount++;
+		}
+		const anchor: [Node, number] = [node, 0];
+		const focus: [Node, number] = [node, childCount];
+		this.#associate(this.#rangeFor(anchor, focus), anchor, focus, "forwards");
+	}
+
+	deleteFromDocument(): void {
+		const range = this.#documentRange();
+		if (range === null) return;
+		range.deleteContents();
+	}
+
+	containsNode(node: Node, allowPartialContainment = false): boolean {
+		if (arguments.length < 1) throw new TypeError("containsNode needs a node");
+		if (!(node instanceof Node)) throw new TypeError("That is not a node");
+		const range = this.#range;
+		if (range === null || getRoot(node) !== this.#document) return false;
+		if (rangeRoot(range) !== this.#document) return false;
+		const length = nodeLength(node);
+		if (allowPartialContainment) {
+			return (
+				comparePoints(range[kStartNode], range[kStartOffset], node, length) !==
+					AFTER &&
+				comparePoints(range[kEndNode], range[kEndOffset], node, 0) !== BEFORE
+			);
+		}
+		return (
+			comparePoints(range[kStartNode], range[kStartOffset], node, 0) !==
+				AFTER &&
+			comparePoints(range[kEndNode], range[kEndOffset], node, length) !== BEFORE
+		);
+	}
+
+	toString(): string {
+		const range = this.#range;
+		return range === null ? "" : range.toString();
+	}
+}
+
+ceReactions(Selection.prototype, ["deleteFromDocument"]);
+
+Object.defineProperty(Selection.prototype, Symbol.toStringTag, {
+	value: "Selection",
+	configurable: true,
+});
 
 /* -------------------------------------------------------------- traversal */
 
