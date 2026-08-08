@@ -124,7 +124,7 @@ export function compositionBoxParentElement(node: Node): Element | null {
 		const window = parent.ownerDocument?.defaultView;
 		if (
 			!window ||
-			computedStyleOf(parent).getPropertyValue("display") !== "contents"
+			computedStyleOf(parent).computedValueOf("display") !== "contents"
 		) {
 			break;
 		}
@@ -467,8 +467,7 @@ export class ExpandedTreeWalker {
 	#isContents(node: Node): boolean {
 		if (node.nodeType !== node.ELEMENT_NODE) return false;
 		return (
-			computedStyleOf(node as Element).getPropertyValue("display") ===
-			"contents"
+			computedStyleOf(node as Element).computedValueOf("display") === "contents"
 		);
 	}
 
@@ -931,7 +930,7 @@ export class ExpandedTreeWalker {
 	 * Check if an element has display: list-item
 	 */
 	#hasListItemDisplay(element: Element): boolean {
-		const display = computedStyleOf(element).getPropertyValue("display");
+		const display = computedStyleOf(element).computedValueOf("display");
 		return display === "list-item";
 	}
 

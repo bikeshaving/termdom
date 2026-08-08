@@ -40,21 +40,13 @@ import {
  * Works with both regular DOM and JSDOM environments.
  */
 export function getPropertyValue(element: Element, property: string): string {
-	const window = element.ownerDocument?.defaultView;
-	if (!window) {
-		throw new Error("Element does not have an associated window");
-	}
 	// The COMPUTED value, not the resolved one: layout and paint decide
 	// geometry from this, and a used value here would feed layout its own
-	// output. The guard also says this read is the engine's own, so an element
-	// it is still deciding about answers with its styles rather than with the
-	// empty declaration an author's read would get.
-	beginInternalStyleReads();
-	try {
-		return computedStyleOf(element).getPropertyValue(property);
-	} finally {
-		endInternalStyleReads();
-	}
+	// output. It is the internal path by construction -- computedStyleOf
+	// reaches the cascade's declaration directly -- so there is no branch to
+	// guard, nothing to unwind, and nothing between here and the value but
+	// two map lookups.
+	return computedStyleOf(element).computedValueOf(property);
 }
 
 /**
@@ -159,60 +151,53 @@ export function parseBorderWidthValue(
 }
 
 export function getBoxModel(element: Element): BoxModel {
-	const window = element.ownerDocument?.defaultView;
-	if (!window) {
-		throw new Error("Element does not have an associated window");
-	}
-	beginInternalStyleReads();
-	const computedStyle = window.getComputedStyle(element);
-	try {
-		return readBoxModel(computedStyle);
-	} finally {
-		endInternalStyleReads();
-	}
+	// The engine's own read: the cascade's declaration, straight, with none of
+	// the author path's resolved-value work between here and the values layout
+	// is about to decide geometry from.
+	return readBoxModel(computedStyleOf(element));
 }
 
-function readBoxModel(computedStyle: globalThis.CSSStyleDeclaration): BoxModel {
+function readBoxModel(computedStyle: ComputedStyle): BoxModel {
 	// Parse explicit width/height
-	const widthValue = parseUnitValue(computedStyle.getPropertyValue("width"));
-	const heightValue = parseUnitValue(computedStyle.getPropertyValue("height"));
+	const widthValue = parseUnitValue(computedStyle.computedValueOf("width"));
+	const heightValue = parseUnitValue(computedStyle.computedValueOf("height"));
 
 	// Parse padding
 	const paddingTop = parseUnitValue(
-		computedStyle.getPropertyValue("padding-top"),
+		computedStyle.computedValueOf("padding-top"),
 	);
 	const paddingRight = parseUnitValue(
-		computedStyle.getPropertyValue("padding-right"),
+		computedStyle.computedValueOf("padding-right"),
 	);
 	const paddingBottom = parseUnitValue(
-		computedStyle.getPropertyValue("padding-bottom"),
+		computedStyle.computedValueOf("padding-bottom"),
 	);
 	const paddingLeft = parseUnitValue(
-		computedStyle.getPropertyValue("padding-left"),
+		computedStyle.computedValueOf("padding-left"),
 	);
 
 	// Parse margin
 	const marginTop = parseSignedUnitValue(
-		computedStyle.getPropertyValue("margin-top"),
+		computedStyle.computedValueOf("margin-top"),
 	);
 	const marginRight = parseSignedUnitValue(
-		computedStyle.getPropertyValue("margin-right"),
+		computedStyle.computedValueOf("margin-right"),
 	);
 	const marginBottom = parseSignedUnitValue(
-		computedStyle.getPropertyValue("margin-bottom"),
+		computedStyle.computedValueOf("margin-bottom"),
 	);
 	const marginLeft = parseSignedUnitValue(
-		computedStyle.getPropertyValue("margin-left"),
+		computedStyle.computedValueOf("margin-left"),
 	);
 
 	// Parse border. The USED width is 0 when the side's style is none or
 	// hidden (css-backgrounds §3.3), however wide the width property says --
 	// `border-style: none` must release the space, not just the glyphs.
 	const borderWidthFor = (side: string) => {
-		const style = computedStyle.getPropertyValue(`border-${side}-style`);
+		const style = computedStyle.computedValueOf(`border-${side}-style`);
 		if (!style || style === "none" || style === "hidden") return null;
 		return parseBorderWidthValue(
-			computedStyle.getPropertyValue(`border-${side}-width`),
+			computedStyle.computedValueOf(`border-${side}-width`),
 		);
 	};
 	const borderTopWidth = borderWidthFor("top");
@@ -326,6 +311,16 @@ const listGutterInProgress = new WeakSet<Element>();
  * the renderer will draw -- and only the StyleManager can produce that.
  */
 const styleManagers = new WeakMap<object, StyleManager>();
+
+/**
+ * The same registry keyed by DOCUMENT rather than window.
+ *
+ * jsdom's window is a global proxy: every property read through it, and every
+ * WeakMap lookup keyed on it, pays for the trap. The internal read path takes
+ * this door instead -- the document is a plain object, and an element already
+ * holds one.
+ */
+const documentManagers = new WeakMap<object, StyleManager>();
 
 /** A marker is separated from its item's text by one cell. */
 function withMarkerSeparator(marker: string): string {
@@ -3780,84 +3775,71 @@ const USED_VALUE_PROPERTIES = new Set([
 	"border-left-width",
 ]);
 
-/**
- * How deep the engine is inside its own style reads.
- *
- * Layout consumes computed styles to decide geometry, so a resolved value read
- * from inside layout would feed layout its own output. While this is above
- * zero -- during a layout pass, and during the flush a measurement takes --
- * every property resolves to its computed value, which is what the cascade
- * means and what layout needs.
- */
-let internalStyleReads = 0;
-
-export function beginInternalStyleReads(): void {
-	internalStyleReads++;
-}
-
-export function endInternalStyleReads(): void {
-	internalStyleReads--;
-}
-
 /** A used length in the one unit a terminal has: a cell, spelled `px`. */
 function usedLength(cells: number): string {
 	return `${Math.round(cells * 1000) / 1000}px`;
 }
 
 /**
- * An element's computed style, for the engine itself: the same declaration
- * `getComputedStyle` hands out, read through its computed values rather than
- * its resolved ones.
+ * A computed style as the engine reads it: `computedValueOf` alone, answering
+ * the cascade's value with no resolved-value branch and no author-facing
+ * bookkeeping. Computed-only by construction, not by flag.
  */
-export function computedStyleOf(
+export interface ComputedStyle {
+	computedValueOf(property: string): string;
+}
+
+/**
+ * An element's computed style, for the engine itself.
+ *
+ * Straight to the declaration the cascade caches: no `getComputedStyle` call,
+ * no pseudo-element parsing, no flat-tree walk, no used-value branch. This is
+ * the read layout and paint make thousands of times a frame.
+ */
+export function computedStyleOf(element: Element): ComputedStyle {
+	const document = element.ownerDocument;
+	if (!document) return EMPTY_COMPUTED_STYLE;
+	const manager = documentManagers.get(document);
+	if (manager) return manager.declarationFor(element);
+	// A document with no cascade of this engine's behind it -- a bare jsdom,
+	// which the tree walker is exercised against -- still answers, through
+	// whatever getComputedStyle it has.
+	const window = document.defaultView;
+	return window
+		? foreignComputedStyle(window.getComputedStyle(element))
+		: EMPTY_COMPUTED_STYLE;
+}
+
+function foreignComputedStyle(
+	declaration: globalThis.CSSStyleDeclaration,
+): ComputedStyle {
+	return {
+		computedValueOf: (property: string): string =>
+			declaration.getPropertyValue(property),
+	};
+}
+
+/** A pseudo-element's computed style, on the same internal read path. */
+export function pseudoStyleOf(
 	element: Element,
-	pseudoElement?: string | null,
-): globalThis.CSSStyleDeclaration {
-	const window = element.ownerDocument?.defaultView;
-	if (!window) {
-		throw new Error("Element does not have an associated window");
-	}
-	const declaration = window.getComputedStyle(element, pseudoElement);
-	if (!(declaration instanceof ComputedStyleDeclaration)) return declaration;
-	// One view per declaration: this sits inside layout's and paint's hottest
-	// loops, where an allocation per read is an allocation per property.
-	let view = computedStyleViews.get(declaration);
-	if (!view) {
-		view = new ComputedStyleView(declaration);
-		computedStyleViews.set(declaration, view);
-	}
-	return view as unknown as globalThis.CSSStyleDeclaration;
+	pseudoElement: string,
+): ComputedStyle {
+	const document = element.ownerDocument;
+	if (!document) return EMPTY_COMPUTED_STYLE;
+	const manager = documentManagers.get(document);
+	if (manager) return manager.pseudoDeclarationFor(element, pseudoElement);
+	const window = document.defaultView;
+	return window
+		? foreignComputedStyle(window.getComputedStyle(element, pseudoElement))
+		: EMPTY_COMPUTED_STYLE;
 }
 
-const computedStyleViews = new WeakMap<
-	ComputedStyleDeclaration,
-	ComputedStyleView
->();
-
-/** A computed-only reading of a declaration, for the engine's own use. */
-class ComputedStyleView {
-	#declaration: ComputedStyleDeclaration;
-
-	constructor(declaration: ComputedStyleDeclaration) {
-		this.#declaration = declaration;
-	}
-
-	getPropertyValue(property: string): string {
-		return this.#declaration.computedValueOf(property);
-	}
-
-	getPropertyPriority(): string {
+/** What a read answers before a document has a cascade behind it. */
+const EMPTY_COMPUTED_STYLE: ComputedStyle = {
+	computedValueOf(): string {
 		return "";
-	}
-
-	item(index: number): string {
-		return this.#declaration.item(index);
-	}
-
-	get length(): number {
-		return this.#declaration.length;
-	}
-}
+	},
+};
 
 /** The epoch a declaration with no manager behind it watches: one that never moves. */
 const NO_STYLE_EPOCH = {value: 0};
@@ -3901,8 +3883,12 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 		}
 	}
 
-	/** Used values, memoized against the layout epoch they were measured in. */
-	#used: Map<string, string> | null = new Map();
+	/**
+	 * Used values, memoized against the layout epoch they were measured in.
+	 * Made on the first resolved read: most elements are never asked for one,
+	 * and a map per element is a map per element.
+	 */
+	#used: Map<string, string> | null = null;
 	#usedEpoch = -1;
 
 	/**
@@ -4023,7 +4009,7 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 		if (!parent || !parentRect) return 0;
 		const parentStyle = computedStyleOf(parent);
 		const edge = (name: string): number =>
-			parseFloat(parentStyle.getPropertyValue(name)) || 0;
+			parseFloat(parentStyle.computedValueOf(name)) || 0;
 		const left =
 			parentRect.x + edge("border-left-width") + edge("padding-left");
 		const top = parentRect.y + edge("border-top-width") + edge("padding-top");
@@ -4090,12 +4076,11 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 			: EMPTY_DECLARATIONS;
 	}
 
-	/** This element's flat-tree parent's resolved value for `property`, or null at the root. */
+	/** This element's flat-tree parent's computed value for `property`, or null at the root. */
 	#resolveFromParent(property: string): string | null {
-		const window = this.#element.ownerDocument?.defaultView;
 		const parent = compositionParentElement(this.#element);
-		if (!window || !parent) return null;
-		return window.getComputedStyle(parent).getPropertyValue(property) || null;
+		if (!parent) return null;
+		return computedStyleOf(parent).computedValueOf(property) || null;
 	}
 
 	/**
@@ -4271,9 +4256,7 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 					parent !== null;
 					parent = compositionParentElement(parent)
 				) {
-					const parentValue = window
-						.getComputedStyle(parent)
-						.getPropertyValue(property);
+					const parentValue = computedStyleOf(parent).computedValueOf(property);
 					if (parentValue) {
 						return parentValue;
 					}
@@ -4291,11 +4274,7 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 	// composition walker asks each element `display` alone.
 	override getPropertyValue(property: string): string {
 		if (this.#stale || this.#epoch.value !== this.#seenEpoch) this.#refresh();
-		if (
-			internalStyleReads === 0 &&
-			this.#manager &&
-			USED_VALUE_PROPERTIES.has(property)
-		) {
+		if (this.#manager && USED_VALUE_PROPERTIES.has(property)) {
 			return this.#usedValue(property);
 		}
 		let value = this.#resolved.get(property);
@@ -4410,6 +4389,11 @@ export class PseudoStyleDeclaration extends CSSStyleDeclaration {
 	constructor(declarations: Record<string, string>) {
 		super();
 		this.#declarations = declarations;
+	}
+
+	/** A pseudo-element's computed style is all it has; the two reads are one. */
+	computedValueOf(property: string): string {
+		return this.getPropertyValue(property);
 	}
 
 	override getPropertyValue(property: string): string {
@@ -4729,8 +4713,7 @@ export function resolveBorderStyles(element: Element): {
 	leftEdge: number;
 	hasAnyBorder: boolean;
 } {
-	const computedStyle =
-		element.ownerDocument.defaultView!.getComputedStyle(element);
+	const computedStyle = computedStyleOf(element);
 
 	// Helper to encode individual edge
 	const encodeEdge = (
@@ -4786,38 +4769,38 @@ export function resolveBorderStyles(element: Element): {
 
 	// Check for border-radius (applies to all corners)
 	const borderRadius = parseFloat(
-		computedStyle.getPropertyValue("border-radius"),
+		computedStyle.computedValueOf("border-radius"),
 	);
 	const hasRadius = !isNaN(borderRadius) && borderRadius > 0;
 
 	// Resolve individual edges
 	const topWidth =
-		computedStyle.getPropertyValue("border-top-width") ||
-		computedStyle.getPropertyValue("border-width");
+		computedStyle.computedValueOf("border-top-width") ||
+		computedStyle.computedValueOf("border-width");
 	const topStyle =
-		computedStyle.getPropertyValue("border-top-style") ||
-		computedStyle.getPropertyValue("border-style");
+		computedStyle.computedValueOf("border-top-style") ||
+		computedStyle.computedValueOf("border-style");
 
 	const rightWidth =
-		computedStyle.getPropertyValue("border-right-width") ||
-		computedStyle.getPropertyValue("border-width");
+		computedStyle.computedValueOf("border-right-width") ||
+		computedStyle.computedValueOf("border-width");
 	const rightStyle =
-		computedStyle.getPropertyValue("border-right-style") ||
-		computedStyle.getPropertyValue("border-style");
+		computedStyle.computedValueOf("border-right-style") ||
+		computedStyle.computedValueOf("border-style");
 
 	const bottomWidth =
-		computedStyle.getPropertyValue("border-bottom-width") ||
-		computedStyle.getPropertyValue("border-width");
+		computedStyle.computedValueOf("border-bottom-width") ||
+		computedStyle.computedValueOf("border-width");
 	const bottomStyle =
-		computedStyle.getPropertyValue("border-bottom-style") ||
-		computedStyle.getPropertyValue("border-style");
+		computedStyle.computedValueOf("border-bottom-style") ||
+		computedStyle.computedValueOf("border-style");
 
 	const leftWidth =
-		computedStyle.getPropertyValue("border-left-width") ||
-		computedStyle.getPropertyValue("border-width");
+		computedStyle.computedValueOf("border-left-width") ||
+		computedStyle.computedValueOf("border-width");
 	const leftStyle =
-		computedStyle.getPropertyValue("border-left-style") ||
-		computedStyle.getPropertyValue("border-style");
+		computedStyle.computedValueOf("border-left-style") ||
+		computedStyle.computedValueOf("border-style");
 
 	// Encode each edge
 	const topEdge = encodeEdge(topWidth, topStyle, hasRadius);
@@ -4966,12 +4949,8 @@ function formatOrdinal(ordinal: number, listStyleType: string): string {
  * list-style-type set on the `li` itself.
  */
 function getListMarker(listItem: Element, listParent: Element): string {
-	const window = listItem.ownerDocument.defaultView;
-	if (!window) return "";
-
-	const listStyleType = window
-		.getComputedStyle(listItem)
-		.getPropertyValue("list-style-type");
+	const listStyleType =
+		computedStyleOf(listItem).computedValueOf("list-style-type");
 
 	if (!listStyleType || listStyleType === "none") return "";
 
@@ -5109,6 +5088,7 @@ export class StyleManager {
 		// The list gutter is resolved inside the cascade, which cannot reach a
 		// StyleManager any other way. See getListGutterWidth().
 		styleManagers.set(window, this);
+		documentManagers.set(this.#document, this);
 
 		// Override window.getComputedStyle with our cached version
 		window.getComputedStyle = this.#getComputedStyle.bind(this);
@@ -5151,22 +5131,19 @@ export class StyleManager {
 		// report: the computed value is the answer, as it is for any element
 		// with no box.
 		if (!this.#layoutEngine || !this.#layoutFlush) return null;
-		beginInternalStyleReads();
-		try {
-			// The flush is taken once per layout generation, not once per read:
-			// an invalidation moves the engine's epoch, and until it does the
-			// layout standing behind the last flush is still the answer. A
-			// caller reading four properties off two hundred elements pays one
-			// flush, not eight hundred.
-			if (this.#layoutEngine.layoutEpoch !== this.#flushedEpoch) {
-				this.#layoutFlush();
-				this.#flushedEpoch = this.#layoutEngine.layoutEpoch;
-				this.#usedGeneration++;
-			}
-			return this.#layoutEngine.getRect(element);
-		} finally {
-			endInternalStyleReads();
+		// The flush is taken once per layout generation, not once per read: an
+		// invalidation moves the engine's epoch, and until it does the layout
+		// standing behind the last flush is still the answer. A caller reading
+		// four properties off two hundred elements pays one flush, not eight
+		// hundred. Nothing under the flush can reach back here -- layout reads
+		// the cascade through computedValueOf, which has no used value to ask
+		// for.
+		if (this.#layoutEngine.layoutEpoch !== this.#flushedEpoch) {
+			this.#layoutFlush();
+			this.#flushedEpoch = this.#layoutEngine.layoutEpoch;
+			this.#usedGeneration++;
 		}
+		return this.#layoutEngine.getRect(element);
 	}
 
 	/** The layout epoch the last resolved-value flush left behind. */
@@ -5433,9 +5410,9 @@ export class StyleManager {
 		}
 		// An element that is not being rendered has no style to report: it is
 		// out of the document, or out of the flat tree its document composes.
-		// Only an author read asks this -- the engine reads styles for nodes it
-		// is still deciding about, and the walk is too costly for the frame.
-		if (internalStyleReads === 0 && !isBeingRendered(element)) {
+		// Only an author read comes through here -- the engine reads through
+		// declarationFor, which asks nothing of the flat tree.
+		if (!isBeingRendered(element)) {
 			return new EmptyStyleDeclaration() as unknown as globalThis.CSSStyleDeclaration;
 		}
 
@@ -5452,53 +5429,72 @@ export class StyleManager {
 		}
 
 		if (pseudoElement) {
-			pseudoElt = pseudoElement;
-			// Check cache first
-			let elementCache = this.#pseudoElementStyleCache.get(element);
-			if (!elementCache) {
-				elementCache = new Map();
-				this.#pseudoElementStyleCache.set(element, elementCache);
-			}
-
-			let pseudoStyle = elementCache.get(pseudoElt);
-			if (!pseudoStyle) {
-				// Compute pseudo-element style
-				pseudoStyle = this.#computePseudoElementStyle(element, pseudoElt);
-				elementCache.set(pseudoElt, pseudoStyle);
-			}
-
-			const declarations: Record<string, string> = {...pseudoStyle};
-			// Per CSS, a pseudo-element INHERITS from its originating element:
-			// a button's focus underline runs through its UA brackets, a
-			// .destroy's color reaches its ::after glyph. Rule declarations
-			// above win; inherited values only fill the gaps.
-			const hostStyle = this.#getComputedStyle(element);
-			for (const property of INHERITED_PROPERTIES) {
-				if (!declarations[property]) {
-					const inherited = hostStyle.getPropertyValue(property);
-					if (inherited) {
-						declarations[property] = inherited;
-					}
-				}
-			}
-			return new PseudoStyleDeclaration(
-				declarations,
+			return this.pseudoDeclarationFor(
+				element,
+				pseudoElement,
 			) as unknown as globalThis.CSSStyleDeclaration;
 		}
 
-		// Check cache first for regular element styles
-		let computedStyle = this.#computedStyleCache.get(element);
-		if (!computedStyle) {
-			// Create new instance with stylesheet rules applied
-			computedStyle = new ComputedStyleDeclaration(
+		return this.declarationFor(
+			element,
+		) as unknown as globalThis.CSSStyleDeclaration;
+	}
+
+	/**
+	 * The declaration behind an element, for the engine itself.
+	 *
+	 * This is the internal read path: no pseudo-element parsing, no
+	 * being-rendered gate, no resolved-value branch -- the cascade's own answer,
+	 * which is what layout and paint decide geometry from. It is reached
+	 * thousands of times per frame, so it does the least it can.
+	 */
+	declarationFor(element: Element): ComputedStyleDeclaration {
+		let declaration = this.#computedStyleCache.get(element);
+		if (!declaration) {
+			if (
+				this.#stylesheetsDirty ||
+				this.#styleSheetCount() !== this.#parsedStyleSheetCount
+			) {
+				this.#parseStylesheets();
+			}
+			declaration = new ComputedStyleDeclaration(
 				element,
 				this.#getMatchingRules(element),
 				this,
 			);
-			this.#computedStyleCache.set(element, computedStyle);
+			this.#computedStyleCache.set(element, declaration);
 		}
+		return declaration;
+	}
 
-		return computedStyle as unknown as globalThis.CSSStyleDeclaration;
+	/** A pseudo-element's declaration, on the same internal read path. */
+	pseudoDeclarationFor(
+		element: Element,
+		pseudoElement: string,
+	): PseudoStyleDeclaration {
+		let elementCache = this.#pseudoElementStyleCache.get(element);
+		if (!elementCache) {
+			elementCache = new Map();
+			this.#pseudoElementStyleCache.set(element, elementCache);
+		}
+		let pseudoStyle = elementCache.get(pseudoElement);
+		if (!pseudoStyle) {
+			pseudoStyle = this.#computePseudoElementStyle(element, pseudoElement);
+			elementCache.set(pseudoElement, pseudoStyle);
+		}
+		const declarations: Record<string, string> = {...pseudoStyle};
+		// Per CSS, a pseudo-element INHERITS from its originating element: a
+		// button's focus underline runs through its UA brackets, a .destroy's
+		// color reaches its ::after glyph. Rule declarations above win;
+		// inherited values only fill the gaps.
+		const hostStyle = this.declarationFor(element);
+		for (const property of INHERITED_PROPERTIES) {
+			if (!declarations[property]) {
+				const inherited = hostStyle.computedValueOf(property);
+				if (inherited) declarations[property] = inherited;
+			}
+		}
+		return new PseudoStyleDeclaration(declarations);
 	}
 
 	/**
@@ -5915,7 +5911,7 @@ export class StyleManager {
 			return null;
 		}
 
-		const computedStyle = this.#window.getComputedStyle(hostElement);
+		const computedStyle = this.declarationFor(hostElement);
 		const display = computedStyle.getPropertyValue("display");
 
 		if (display !== "list-item") {
@@ -5967,7 +5963,7 @@ export class StyleManager {
 
 		// For ::marker pseudo-elements, generate default content if none specified
 		if (pseudoType === "::marker") {
-			const computedStyle = this.#window.getComputedStyle(hostElement);
+			const computedStyle = this.declarationFor(hostElement);
 			const display = computedStyle.getPropertyValue("display");
 
 			if (display === "list-item") {
@@ -6028,7 +6024,7 @@ export class StyleManager {
 	shouldCreatePseudoElement(element: Element, pseudoType: string): boolean {
 		// For ::marker pseudo-elements, only create them for inside positioning
 		if (pseudoType === "::marker") {
-			const computedStyle = this.#window.getComputedStyle(element);
+			const computedStyle = this.declarationFor(element);
 			const display = computedStyle.getPropertyValue("display");
 			const listStylePosition =
 				computedStyle.getPropertyValue("list-style-position") || "outside";
@@ -6135,7 +6131,7 @@ export class StyleManager {
 			'[style*="list-item"], li',
 		);
 		for (const element of listItems) {
-			const computedStyle = this.#window.getComputedStyle(element);
+			const computedStyle = this.declarationFor(element);
 			const display = computedStyle.getPropertyValue("display");
 			const listStylePosition =
 				computedStyle.getPropertyValue("list-style-position") || "outside";
@@ -6214,7 +6210,7 @@ export class StyleManager {
 
 		// Skip ::marker for elements without display: list-item or with outside positioning
 		if (pseudoType === "::marker") {
-			const computedStyle = this.#window.getComputedStyle(element);
+			const computedStyle = this.declarationFor(element);
 			const display = computedStyle.getPropertyValue("display");
 			const listStylePosition =
 				computedStyle.getPropertyValue("list-style-position") || "outside";
@@ -6384,7 +6380,7 @@ export class StyleManager {
 			return;
 		}
 
-		const computedStyle = this.#window.getComputedStyle(element);
+		const computedStyle = this.declarationFor(element);
 		const counterReset = computedStyle.getPropertyValue("counter-reset");
 		const counterIncrement =
 			computedStyle.getPropertyValue("counter-increment");

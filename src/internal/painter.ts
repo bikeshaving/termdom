@@ -12,7 +12,7 @@ import {
 	fieldCaretRange,
 	getPseudoMetadata,
 } from "./composition.js";
-import {computedStyleOf} from "./styles.js";
+import {computedStyleOf, pseudoStyleOf, type ComputedStyle} from "./styles.js";
 
 /**
  * A clip in EDGE coordinates, not origin+size, and deliberately not a DOMRect:
@@ -32,15 +32,13 @@ type ClipRect = {left: number; top: number; right: number; bottom: number};
  * nothing at all. Read the longhand first, since it is where the value is, and
  * fall back to the shorthand for the styles that set it that way.
  */
-function hasUnderline(style: CSSStyleDeclaration): boolean {
-	return style.getPropertyValue("text-decoration-line").includes("underline");
+function hasUnderline(style: ComputedStyle): boolean {
+	return style.computedValueOf("text-decoration-line").includes("underline");
 }
 
 /** Whether a computed style asks for a line-through (SGR strikethrough). */
-function hasLineThrough(style: CSSStyleDeclaration): boolean {
-	return style
-		.getPropertyValue("text-decoration-line")
-		.includes("line-through");
+function hasLineThrough(style: ComputedStyle): boolean {
+	return style.computedValueOf("text-decoration-line").includes("line-through");
 }
 
 /** A textarea or text-ish input (not a checkbox/radio or hidden input). */
@@ -122,12 +120,12 @@ function isSystemHighlightColor(value: string): boolean {
  * shared by text nodes and the input painter's shadow parts.
  */
 function cellStyleFromComputed(
-	computedStyle: CSSStyleDeclaration,
+	computedStyle: ComputedStyle,
 ): import("./ansi.js").CellStyle {
-	const color = computedStyle.getPropertyValue("color");
-	const bgColor = computedStyle.getPropertyValue("background-color");
+	const color = computedStyle.computedValueOf("color");
+	const bgColor = computedStyle.computedValueOf("background-color");
 	const {bold, dim} = resolveFontWeight(
-		computedStyle.getPropertyValue("font-weight"),
+		computedStyle.computedValueOf("font-weight"),
 	);
 	// background-color: Highlight is CSS's spelling of "swap the cell's
 	// colors": SGR inverse, the terminal-native highlight with no color
@@ -152,10 +150,10 @@ function cellStyleFromComputed(
 		inverse: isHighlightPair || undefined,
 		bold,
 		dim,
-		italic: computedStyle.getPropertyValue("font-style") === "italic",
+		italic: computedStyle.computedValueOf("font-style") === "italic",
 		underline: hasUnderline(computedStyle),
 		underlineStyle:
-			computedStyle.getPropertyValue("text-decoration-style") === "double"
+			computedStyle.computedValueOf("text-decoration-style") === "double"
 				? ("double" as const)
 				: undefined,
 		strikethrough: hasLineThrough(computedStyle),
@@ -177,9 +175,9 @@ function selectionStyleFor(
 	element: Element,
 	base: import("./ansi.js").CellStyle,
 ): import("./ansi.js").CellStyle {
-	const declaration = computedStyleOf(element, "::selection");
-	const fg = declaration.getPropertyValue("color");
-	const bg = declaration.getPropertyValue("background-color");
+	const declaration = pseudoStyleOf(element, "::selection");
+	const fg = declaration.computedValueOf("color");
+	const bg = declaration.computedValueOf("background-color");
 	if (!fg && !bg) {
 		return base;
 	}
@@ -333,28 +331,28 @@ export class Painter {
 		// One computed-style read per element per paint; every property below
 		// comes off this declaration.
 		const computed = computedStyleOf(element);
-		if (computed.getPropertyValue("display") === "none") {
+		if (computed.computedValueOf("display") === "none") {
 			return;
 		}
 
 		const rect = this.#layout.getRect(element);
 
-		const color = computed.getPropertyValue("color");
-		const backgroundColor = computed.getPropertyValue("background-color");
+		const color = computed.computedValueOf("color");
+		const backgroundColor = computed.computedValueOf("background-color");
 		const {bold, dim} = resolveFontWeight(
-			computed.getPropertyValue("font-weight"),
+			computed.computedValueOf("font-weight"),
 		);
-		const italic = computed.getPropertyValue("font-style") === "italic";
+		const italic = computed.computedValueOf("font-style") === "italic";
 		const underline = hasUnderline(computed);
 		const underlineStyle =
-			computed.getPropertyValue("text-decoration-style") === "double"
+			computed.computedValueOf("text-decoration-style") === "double"
 				? ("double" as const)
 				: undefined;
 		// visibility:hidden reserves the box (layout is untouched) but paints
 		// nothing of it -- unlike display:none, which removes the box entirely. A
 		// descendant that sets visibility:visible still paints, since visibility
 		// inherits and each element resolves its own computed value here.
-		const visible = computed.getPropertyValue("visibility") !== "hidden";
+		const visible = computed.computedValueOf("visibility") !== "hidden";
 
 		// background-color: Canvas -- the CSS system color for the document
 		// background -- clears the box to the terminal's DEFAULT background:
@@ -415,7 +413,7 @@ export class Painter {
 			for (const [edge, prop] of edgeColorProps) {
 				if (
 					borderStyles[edge] > 0 &&
-					isTransparentColor(computed.getPropertyValue(prop))
+					isTransparentColor(computed.computedValueOf(prop))
 				) {
 					borderStyles[edge] = 0;
 				}
@@ -432,7 +430,7 @@ export class Painter {
 				// foreground. Never a hardcoded white: no theme-safe color
 				// exists, and forcing one breaks light terminals.
 				const edgeCellStyle = (prop: string): import("./ansi.js").CellStyle => {
-					const borderColor = computed.getPropertyValue(prop);
+					const borderColor = computed.computedValueOf(prop);
 					return {
 						fg:
 							borderColor &&
@@ -602,11 +600,11 @@ export class Painter {
 		// overflow:hidden clips *descendants* to this element's own box -- never
 		// the element's own border/background painted above, which is why this is
 		// scoped to just the children, not the whole function.
-		const overflow = computedStyleOf(element).getPropertyValue("overflow");
+		const overflow = computedStyleOf(element).computedValueOf("overflow");
 		const overflowX =
-			computedStyleOf(element).getPropertyValue("overflow-x") || overflow;
+			computedStyleOf(element).computedValueOf("overflow-x") || overflow;
 		const overflowY =
-			computedStyleOf(element).getPropertyValue("overflow-y") || overflow;
+			computedStyleOf(element).computedValueOf("overflow-y") || overflow;
 		const previousClip = ctx.clipRect;
 		ctx.clipRect = overflowClipRect(rect, overflowX, overflowY, previousClip);
 
@@ -637,14 +635,14 @@ export class Painter {
 		// overline (SGR 53) is unreliable.
 		if (rect && visible) {
 			const computed = computedStyleOf(element);
-			const outlineStyle = computed.getPropertyValue("outline-style");
+			const outlineStyle = computed.computedValueOf("outline-style");
 			if (
 				outlineStyle &&
 				outlineStyle !== "none" &&
-				parseFloat(computed.getPropertyValue("outline-width")) !== 0
+				parseFloat(computed.computedValueOf("outline-width")) !== 0
 			) {
 				const outlineColor = computed
-					.getPropertyValue("outline-color")
+					.computedValueOf("outline-color")
 					.trim()
 					.toLowerCase();
 				const hasColor =
@@ -684,7 +682,7 @@ export class Painter {
 			el;
 			el = compositionParentElement(el)
 		) {
-			if (computedStyleOf(el).getPropertyValue("position") === "fixed") {
+			if (computedStyleOf(el).computedValueOf("position") === "fixed") {
 				return true;
 			}
 		}
@@ -711,9 +709,9 @@ export class Painter {
 		) {
 			if (!isPositioned(this.#window, ancestor)) continue;
 			const style = computedStyleOf(ancestor);
-			const overflow = style.getPropertyValue("overflow");
-			const overflowX = style.getPropertyValue("overflow-x") || overflow;
-			const overflowY = style.getPropertyValue("overflow-y") || overflow;
+			const overflow = style.computedValueOf("overflow");
+			const overflowX = style.computedValueOf("overflow-x") || overflow;
+			const overflowY = style.computedValueOf("overflow-y") || overflow;
 			if (overflowX === "hidden" || overflowY === "hidden") {
 				const rect = this.#layout.getRect(ancestor);
 				if (rect) {
@@ -785,7 +783,7 @@ export class Painter {
 		ctx: import("./ansi.js").DrawingContext,
 	): void {
 		const computedStyle = computedStyleOf(element);
-		const display = computedStyle.getPropertyValue("display");
+		const display = computedStyle.computedValueOf("display");
 
 		// Only handle list items
 		if (display !== "list-item") {
@@ -793,7 +791,7 @@ export class Painter {
 		}
 
 		const listStylePosition =
-			computedStyle.getPropertyValue("list-style-position") || "outside";
+			computedStyle.computedValueOf("list-style-position") || "outside";
 
 		// Only handle outside positioning
 		if (listStylePosition !== "outside") {
@@ -823,17 +821,16 @@ export class Painter {
 		const markerWidth = stringWidth(markerContent);
 
 		// Get marker styles
-		const markerStyle = computedStyleOf(element, "::marker");
+		const markerStyle = pseudoStyleOf(element, "::marker");
 		// ::marker inherits color from its originating element, so fall back to the
 		// list item's own color rather than rendering the marker unstyled.
 		const markerColor =
-			markerStyle.getPropertyValue("color") ||
-			computedStyle.getPropertyValue("color");
+			markerStyle.computedValueOf("color") ||
+			computedStyle.computedValueOf("color");
 		const {bold: markerBold, dim: markerDim} = resolveFontWeight(
-			markerStyle.getPropertyValue("font-weight"),
+			markerStyle.computedValueOf("font-weight"),
 		);
-		const markerItalic =
-			markerStyle.getPropertyValue("font-style") === "italic";
+		const markerItalic = markerStyle.computedValueOf("font-style") === "italic";
 		const markerUnderline = hasUnderline(markerStyle);
 
 		const markerTextStyle = {
@@ -918,11 +915,11 @@ export class Painter {
 			: compositionParentElement(textNode);
 		if (!parentElement) return;
 
-		let computedStyle: CSSStyleDeclaration;
+		let computedStyle: ComputedStyle;
 
 		if (pseudoMetadata) {
 			// For pseudo-elements, get the computed style with the pseudo-element selector
-			computedStyle = computedStyleOf(
+			computedStyle = pseudoStyleOf(
 				pseudoMetadata.hostElement,
 				pseudoMetadata.pseudoType,
 			);
@@ -933,9 +930,9 @@ export class Painter {
 
 		// visibility inherits, so the parent's own resolved value already accounts
 		// for a closer ancestor overriding back to visible.
-		if (computedStyle.getPropertyValue("visibility") === "hidden") return;
+		if (computedStyle.computedValueOf("visibility") === "hidden") return;
 
-		const textTransform = computedStyle.getPropertyValue("text-transform");
+		const textTransform = computedStyle.computedValueOf("text-transform");
 		const textStyle = cellStyleFromComputed(computedStyle);
 
 		const rectTexts = this.#layout.getRectTexts(textNode);

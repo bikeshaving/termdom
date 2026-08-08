@@ -440,7 +440,7 @@ export function getFocusableElements(
 			ancestor;
 			ancestor = compositionParentElement(ancestor)
 		) {
-			if (computedStyleOf(ancestor).getPropertyValue("display") === "none") {
+			if (computedStyleOf(ancestor).computedValueOf("display") === "none") {
 				return false;
 			}
 		}

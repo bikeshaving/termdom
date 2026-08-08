@@ -10,12 +10,7 @@ import {
 	type TerminalTransport,
 } from "./terminalsession.js";
 import {Renderer} from "./ansi.js";
-import {
-	StyleManager,
-	beginInternalStyleReads,
-	endInternalStyleReads,
-	getBoxModel,
-} from "./styles.js";
+import {StyleManager, getBoxModel} from "./styles.js";
 import {stringWidth} from "./text.js";
 import {
 	ObserverManager,
@@ -1709,21 +1704,12 @@ export class TermDOM {
 			await this.#attachBegun;
 			if (this.#disposed) return;
 		}
-		// A frame is the engine reading its own styles: layout and paint decide
-		// geometry from computed values, and a resolved (used) value inside a
-		// frame would feed layout its own output. Author code cannot run inside
-		// this window -- the engine owns the loop until the frame is written.
-		beginInternalStyleReads();
-		try {
-			if (!this.#interactive) {
-				await this.#renderStatic();
-				return;
-			}
-
-			await this.#renderInteractive();
-		} finally {
-			endInternalStyleReads();
+		if (!this.#interactive) {
+			await this.#renderStatic();
+			return;
 		}
+
+		await this.#renderInteractive();
 	}
 
 	/**
