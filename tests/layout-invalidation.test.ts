@@ -227,7 +227,7 @@ test("an absolutely positioned overlay among many siblings still paints, scrolle
 	}
 	const overlay = document.createElement("div");
 	overlay.style.position = "absolute";
-	overlay.style.top = "1";
+	overlay.style.top = "1px";
 	overlay.style.left = "0";
 	overlay.textContent = "OVERLAY";
 	container.appendChild(overlay);
