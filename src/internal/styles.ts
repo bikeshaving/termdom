@@ -6191,6 +6191,10 @@ export class StyleManager {
 	 * Walk the document's stylesheets -- this engine's own CSSOM objects, the
 	 * same ones an author reaches through `styleEl.sheet` -- and collect the
 	 * rules the cascade matches against.
+	 *
+	 * Every style cached against the previous rule set is dropped: a
+	 * declaration built before this parse was resolved against rules that no
+	 * longer describe the cascade, and nothing else would ever tell it so.
 	 */
 	#parseStylesheets(): void {
 		invalidateStructure();
@@ -6233,6 +6237,7 @@ export class StyleManager {
 			// Use array index as source order tie-breaker
 			return this.#parsedRules.indexOf(a) - this.#parsedRules.indexOf(b);
 		});
+		this.clearCache();
 	}
 
 	/**
