@@ -1331,7 +1331,11 @@ test("ExpandedTreeWalker skips comments rather than halting on them", () => {
 		const walker = createExpandedTreeWalker(window as any, root);
 		const out: string[] = [];
 		for (let n = walker.firstChild(); n; n = walker.nextSibling()) {
-			out.push(n.nodeType === n.ELEMENT_NODE ? (n as Element).tagName : (n as Text).data);
+			out.push(
+				n.nodeType === n.ELEMENT_NODE
+					? (n as Element).tagName
+					: (n as Text).data,
+			);
 		}
 		return out;
 	};
