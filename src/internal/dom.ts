@@ -1,10 +1,22 @@
 /**
  * The DOM Standard's node tree, standalone.
  *
- * This is TermDOM's own implementation of the tree half of the DOM: Node and
- * its subclasses, the mutation algorithms, attributes, live collections,
- * traversal, the ParentNode/ChildNode mixins, HTML parsing and serialization
- * through parse5, and selector matching through nwsapi.
+ * This is TermDOM's own implementation of the DOM: Node and its subclasses,
+ * the mutation algorithms, attributes, live collections, traversal, the
+ * ParentNode/ChildNode mixins, events and their dispatch, mutation observers,
+ * HTML parsing and serialization through parse5, and selector matching through
+ * nwsapi.
+ *
+ * Dispatch builds the spec's event path -- one struct per invocation target,
+ * each carrying the target a listener there sees -- and walks it twice. The
+ * members of that struct that only shadow trees fill in are present and
+ * inert, so retargeting has somewhere to go rather than something to replace.
+ *
+ * A mutation record is queued where the spec queues one, and reaches the
+ * observers that asked for it through the registered observer list of every
+ * inclusive ancestor of the mutated node. A node carries copies of those
+ * registrations out of the tree when it is removed, so the mutations that
+ * follow inside it still arrive.
  *
  * The spec's "insertion steps", "removing steps", "adopting steps", "attribute
  * change steps", "children changed steps" and "cloning steps" each exist here
@@ -206,6 +218,14 @@ const kCloningSteps = Symbol("cloning steps");
 const kCloneSingle = Symbol("clone a single node");
 const kDispatchState = Symbol("event dispatch state");
 const kListeners = Symbol("event listener list");
+const kGetTheParent = Symbol("get the parent");
+const kSetEventType = Symbol("set event type");
+const kIsMouseEvent = Symbol("is a mouse event");
+const kActivationBehavior = Symbol("activation behavior");
+const kLegacyPreActivationBehavior = Symbol("legacy-pre-activation behavior");
+const kLegacyCanceledActivationBehavior = Symbol(
+	"legacy-canceled activation behavior",
+);
 
 /**
  * A node's tree state. These are module-scoped symbols rather than #private
@@ -222,6 +242,7 @@ const kChildNodes = Symbol("childNodes");
 const kChildren = Symbol("children");
 const kCollectionCaches = Symbol("collection caches");
 const kHost = Symbol("host");
+const kRegisteredObservers = Symbol("registered observer list");
 
 /* ------------------------------------------------------------------ events */
 
@@ -240,41 +261,122 @@ const CAPTURING_PHASE = 1;
 const AT_TARGET = 2;
 const BUBBLING_PHASE = 3;
 
+/**
+ * One struct of an event's path.
+ *
+ * The shadow members -- the shadow-adjusted target and the two closed-tree
+ * flags -- are what composedPath() reads to decide how much of a path a
+ * listener may see. Shadow trees are a later phase, so every invocation target
+ * is in a document tree and both flags are false; retargeting and the
+ * assigned-slot walk fill them in where the algorithm already reads them.
+ */
+interface PathItem {
+	invocationTarget: EventTarget;
+	invocationTargetInShadowTree: boolean;
+	shadowAdjustedTarget: EventTarget | null;
+	relatedTarget: EventTarget | null;
+	rootOfClosedTree: boolean;
+	slotInClosedTree: boolean;
+}
+
+/**
+ * An event's dispatch-time state: the spec's internal slots and flags.
+ *
+ * They live in one object behind a module symbol because dispatch is a module
+ * function that reads and writes them across every target in a path, which no
+ * one class body can reach.
+ */
 interface DispatchState {
 	target: EventTarget | null;
+	relatedTarget: EventTarget | null;
 	currentTarget: EventTarget | null;
 	eventPhase: number;
-	path: EventTarget[];
+	path: PathItem[];
+	initialized: boolean;
 	dispatch: boolean;
 	stopPropagation: boolean;
 	stopImmediate: boolean;
+	canceled: boolean;
+	inPassiveListener: boolean;
 	trusted: boolean;
 }
 
 /**
- * An event, with a dispatch that walks the tree.
+ * The types a trusted event falls back to when nothing listened for its own.
  *
- * Phase 1 carries the propagation path, the three phases, and the flags a
- * listener sets. The parts of the dispatch algorithm that exist for shadow
- * trees, activation behavior and the event loop belong to later phases.
+ * An animation or transition event whose modern type found no listener at a
+ * target is offered again there under the prefixed name.
  */
+const LEGACY_EVENT_TYPES = new Map([
+	["animationend", "webkitAnimationEnd"],
+	["animationiteration", "webkitAnimationIteration"],
+	["animationstart", "webkitAnimationStart"],
+	["transitionend", "webkitTransitionEnd"],
+]);
+
+/**
+ * The activation behavior an event target runs when a click dispatch reaches
+ * it uncanceled, and the two legacy hooks around it that a checkbox and a
+ * radio button need.
+ *
+ * They are the spec's hooks: an element that has one is an activation target,
+ * and dispatch runs it after the path is walked. The elements that have them
+ * -- links, form controls -- are the HTML Standard's, so nothing here defines
+ * one yet; dispatch consults them where the spec does.
+ */
+interface ActivationTarget {
+	[kActivationBehavior]?: (event: Event) => void;
+	[kLegacyPreActivationBehavior]?: () => void;
+	[kLegacyCanceledActivationBehavior]?: () => void;
+}
+
+/** A dictionary argument, per Web IDL: absent, null, or an object. */
+function toDictionary<T extends object>(value: unknown, what: string): T {
+	if (value === undefined || value === null) return {} as T;
+	if (typeof value !== "object" && typeof value !== "function") {
+		throw new TypeError(`${what} must be an object`);
+	}
+	return value as T;
+}
+
+/**
+ * isTrusted is one accessor shared by every event, installed as an own
+ * property of each: the interface declares it unforgeable, so it is not on
+ * the prototype and cannot be redefined away.
+ */
+function isTrustedGetter(this: Event): boolean {
+	return this[kDispatchState].trusted;
+}
+
+const isTrustedProperty: PropertyDescriptor = {
+	get: isTrustedGetter,
+	enumerable: true,
+	configurable: false,
+};
+
+/** An event, and the flags a listener sets on it while it is dispatched. */
 export class Event {
 	#type: string;
 	#bubbles: boolean;
 	#cancelable: boolean;
 	#composed: boolean;
-	#defaultPrevented = false;
 	#timeStamp: number;
 	#state: DispatchState = {
 		target: null,
+		relatedTarget: null,
 		currentTarget: null,
 		eventPhase: NONE,
 		path: [],
+		initialized: false,
 		dispatch: false,
 		stopPropagation: false,
 		stopImmediate: false,
+		canceled: false,
+		inPassiveListener: false,
 		trusted: false,
 	};
+
+	declare readonly isTrusted: boolean;
 
 	static readonly NONE = NONE;
 	static readonly CAPTURING_PHASE = CAPTURING_PHASE;
@@ -286,14 +388,31 @@ export class Event {
 			throw new TypeError("Event constructor needs a type");
 		}
 		this.#type = String(type);
-		this.#bubbles = Boolean(eventInitDict && eventInitDict.bubbles);
-		this.#cancelable = Boolean(eventInitDict && eventInitDict.cancelable);
-		this.#composed = Boolean(eventInitDict && eventInitDict.composed);
-		this.#timeStamp = Date.now();
+		const init = toDictionary<EventInit>(eventInitDict, "An event init");
+		this.#bubbles = Boolean(init.bubbles);
+		this.#cancelable = Boolean(init.cancelable);
+		this.#composed = Boolean(init.composed);
+		this.#timeStamp = performance.now();
+		this.#state.initialized = true;
+		Object.defineProperty(this, "isTrusted", isTrustedProperty);
 	}
 
 	get [kDispatchState](): DispatchState {
 		return this.#state;
+	}
+
+	/** Swap the type a dispatch invokes listeners under, for the legacy pass. */
+	[kSetEventType](type: string): void {
+		this.#type = type;
+	}
+
+	/**
+	 * Whether this is a MouseEvent, which is what makes a "click" the event
+	 * that runs activation behavior. MouseEvent belongs to UI Events, a later
+	 * phase, and overrides this when it lands.
+	 */
+	get [kIsMouseEvent](): boolean {
+		return false;
 	}
 
 	get type(): string {
@@ -329,11 +448,7 @@ export class Event {
 	}
 
 	get defaultPrevented(): boolean {
-		return this.#defaultPrevented;
-	}
-
-	get isTrusted(): boolean {
-		return this.#state.trusted;
+		return this.#state.canceled;
 	}
 
 	get timeStamp(): number {
@@ -341,11 +456,11 @@ export class Event {
 	}
 
 	get returnValue(): boolean {
-		return !this.#defaultPrevented;
+		return !this.#state.canceled;
 	}
 
 	set returnValue(value: boolean) {
-		if (!value) this.preventDefault();
+		if (!value) setCanceledFlag(this);
 	}
 
 	get cancelBubble(): boolean {
@@ -357,7 +472,7 @@ export class Event {
 	}
 
 	composedPath(): EventTarget[] {
-		return this.#state.path.slice();
+		return composedPath(this.#state);
 	}
 
 	stopPropagation(): void {
@@ -370,18 +485,23 @@ export class Event {
 	}
 
 	preventDefault(): void {
-		if (this.#cancelable) this.#defaultPrevented = true;
+		setCanceledFlag(this);
 	}
 
 	initEvent(type: string, bubbles = false, cancelable = false): void {
+		if (arguments.length < 1) {
+			throw new TypeError("initEvent needs a type");
+		}
 		if (this.#state.dispatch) return;
 		this.#type = String(type);
 		this.#bubbles = Boolean(bubbles);
 		this.#cancelable = Boolean(cancelable);
-		this.#state.target = null;
-		this.#defaultPrevented = false;
+		this.#state.initialized = true;
 		this.#state.stopPropagation = false;
 		this.#state.stopImmediate = false;
+		this.#state.canceled = false;
+		this.#state.trusted = false;
+		this.#state.target = null;
 	}
 }
 
@@ -393,12 +513,73 @@ Object.defineProperties(Event.prototype, {
 	[Symbol.toStringTag]: {value: "Event", configurable: true},
 });
 
+/** An event is canceled only where it is cancelable and nothing is passive. */
+function setCanceledFlag(event: Event): void {
+	const state = event[kDispatchState];
+	if (event.cancelable && !state.inPassiveListener) state.canceled = true;
+}
+
+/**
+ * The path as the target that is running sees it.
+ *
+ * A listener sees every struct it is allowed to: the walk out from the
+ * current target stops crossing into a closed tree it did not start inside,
+ * counting the closed roots and slots it passes.
+ */
+function composedPath(state: DispatchState): EventTarget[] {
+	const path = state.path;
+	if (path.length === 0) return [];
+	const currentTarget = state.currentTarget as EventTarget;
+	const composed: EventTarget[] = [currentTarget];
+	let currentTargetIndex = 0;
+	let currentTargetHiddenSubtreeLevel = 0;
+	for (let index = path.length - 1; index >= 0; index--) {
+		if (path[index].rootOfClosedTree) currentTargetHiddenSubtreeLevel++;
+		if (path[index].invocationTarget === currentTarget) {
+			currentTargetIndex = index;
+			break;
+		}
+		if (path[index].slotInClosedTree) currentTargetHiddenSubtreeLevel--;
+	}
+	let currentHiddenLevel = currentTargetHiddenSubtreeLevel;
+	let maxHiddenLevel = currentTargetHiddenSubtreeLevel;
+	for (let index = currentTargetIndex - 1; index >= 0; index--) {
+		if (path[index].rootOfClosedTree) currentHiddenLevel++;
+		if (currentHiddenLevel <= maxHiddenLevel) {
+			composed.unshift(path[index].invocationTarget);
+		}
+		if (path[index].slotInClosedTree) {
+			currentHiddenLevel--;
+			if (currentHiddenLevel < maxHiddenLevel)
+				maxHiddenLevel = currentHiddenLevel;
+		}
+	}
+	currentHiddenLevel = currentTargetHiddenSubtreeLevel;
+	maxHiddenLevel = currentTargetHiddenSubtreeLevel;
+	for (let index = currentTargetIndex + 1; index < path.length; index++) {
+		if (path[index].slotInClosedTree) currentHiddenLevel++;
+		if (currentHiddenLevel <= maxHiddenLevel) {
+			composed.push(path[index].invocationTarget);
+		}
+		if (path[index].rootOfClosedTree) {
+			currentHiddenLevel--;
+			if (currentHiddenLevel < maxHiddenLevel)
+				maxHiddenLevel = currentHiddenLevel;
+		}
+	}
+	return composed;
+}
+
 export class CustomEvent<T = unknown> extends Event {
 	#detail: T | null;
 
 	constructor(type: string, eventInitDict: CustomEventInit<T> = {}) {
 		super(type, eventInitDict);
-		this.#detail = (eventInitDict && eventInitDict.detail) ?? null;
+		const init = toDictionary<CustomEventInit<T>>(
+			eventInitDict,
+			"An event init",
+		);
+		this.#detail = init.detail ?? null;
 	}
 
 	get detail(): T | null {
@@ -411,23 +592,39 @@ export class CustomEvent<T = unknown> extends Event {
 		cancelable = false,
 		detail: T | null = null,
 	): void {
+		if (arguments.length < 1) {
+			throw new TypeError("initCustomEvent needs a type");
+		}
+		if (this[kDispatchState].dispatch) return;
 		this.initEvent(type, bubbles, cancelable);
 		this.#detail = detail;
 	}
 }
 
+Object.defineProperty(CustomEvent.prototype, Symbol.toStringTag, {
+	value: "CustomEvent",
+	configurable: true,
+});
+
 export type EventListenerOrEventListenerObject =
 	| ((event: Event) => void)
 	| {handleEvent(event: Event): void};
+
+/** What an AbortSignal has to be for a listener to hang off it. */
+interface ListenerSignal {
+	aborted: boolean;
+	addEventListener(type: string, callback: () => void): void;
+}
 
 export interface AddEventListenerOptions {
 	capture?: boolean;
 	once?: boolean;
 	passive?: boolean;
-	signal?: {
-		aborted: boolean;
-		addEventListener(type: string, cb: () => void): void;
-	};
+	signal?: ListenerSignal;
+}
+
+export interface EventListenerOptions {
+	capture?: boolean;
 }
 
 interface Listener {
@@ -439,34 +636,116 @@ interface Listener {
 	removed: boolean;
 }
 
-function normalizeOptions(
-	options: boolean | AddEventListenerOptions | undefined,
-): {
+/** The AbortSignal the platform supplies, which a listener's signal must be. */
+const PlatformAbortSignal = (
+	globalThis as unknown as {AbortSignal?: new () => ListenerSignal}
+).AbortSignal;
+
+interface FlatOptions {
 	capture: boolean;
 	once: boolean;
-	passive: boolean;
-	signal: AddEventListenerOptions["signal"];
-} {
-	if (typeof options === "boolean" || options == null) {
-		return {
-			capture: Boolean(options),
-			once: false,
-			passive: false,
-			signal: undefined,
-		};
-	}
-	return {
-		capture: Boolean(options.capture),
-		once: Boolean(options.once),
-		passive: Boolean(options.passive),
-		signal: options.signal,
-	};
+	/** Null until the type and target decide, which is what the spec defers. */
+	passive: boolean | null;
+	signal: ListenerSignal | null;
 }
 
 /**
- * An event target: a listener list, and a dispatch that walks the ancestor
- * chain of a node.
+ * An options argument, which is either a dictionary or a capture boolean.
+ *
+ * The union resolves the way Web IDL resolves it: null, undefined and objects
+ * are the dictionary, and anything else is the boolean.
  */
+function flattenMore(
+	options: boolean | AddEventListenerOptions | undefined,
+): FlatOptions {
+	if (
+		options !== null &&
+		options !== undefined &&
+		typeof options !== "object" &&
+		typeof options !== "function"
+	) {
+		return {
+			capture: Boolean(options),
+			once: false,
+			passive: null,
+			signal: null,
+		};
+	}
+	const dictionary = toDictionary<AddEventListenerOptions>(
+		options,
+		"Listener options",
+	);
+	let signal: ListenerSignal | null = null;
+	if (dictionary.signal !== undefined) {
+		if (
+			PlatformAbortSignal === undefined ||
+			!(dictionary.signal instanceof PlatformAbortSignal)
+		) {
+			throw new TypeError("A listener's signal must be an AbortSignal");
+		}
+		signal = dictionary.signal;
+	}
+	return {
+		capture: Boolean(dictionary.capture),
+		once: Boolean(dictionary.once),
+		passive:
+			dictionary.passive === undefined ? null : Boolean(dictionary.passive),
+		signal,
+	};
+}
+
+/** A capture-only options argument, for removeEventListener. */
+function flattenCapture(
+	options: boolean | EventListenerOptions | undefined,
+): boolean {
+	if (
+		options !== null &&
+		options !== undefined &&
+		typeof options !== "object" &&
+		typeof options !== "function"
+	) {
+		return Boolean(options);
+	}
+	return Boolean(
+		toDictionary<EventListenerOptions>(options, "Listener options").capture,
+	);
+}
+
+/** A listener callback, per Web IDL: null, or an object that may be called. */
+function toEventListener(
+	callback: unknown,
+): EventListenerOrEventListenerObject | null {
+	if (callback === null || callback === undefined) return null;
+	if (typeof callback === "function" || typeof callback === "object") {
+		return callback as EventListenerOrEventListenerObject;
+	}
+	throw new TypeError("An event listener must be an object or a function");
+}
+
+/**
+ * The scroll-blocking types, which are passive by default at the roots a page
+ * scrolls through, so that a listener there cannot cancel a scroll it was
+ * only meant to watch.
+ */
+function defaultPassiveValue(type: string, target: EventTarget): boolean {
+	if (
+		type !== "touchstart" &&
+		type !== "touchmove" &&
+		type !== "wheel" &&
+		type !== "mousewheel"
+	) {
+		return false;
+	}
+	if (!(target instanceof Node)) return false;
+	const document = target[kDocument];
+	return (
+		target === (document as EventTarget) ||
+		target === (document.documentElement as EventTarget | null) ||
+		target === (document.body as EventTarget | null)
+	);
+}
+
+/** An event target: a listener list, and the parent a dispatch walks to. */
 export class EventTarget {
 	#listeners: Listener[] = [];
 
@@ -478,34 +757,34 @@ export class EventTarget {
 		if (arguments.length < 2) {
 			throw new TypeError("addEventListener needs a type and a callback");
 		}
-		if (callback == null) return;
-		const {capture, once, passive, signal} = normalizeOptions(options);
-		if (signal && signal.aborted) return;
 		const name = String(type);
-		for (const listener of this.#listeners) {
+		const listenerCallback = toEventListener(callback);
+		const flat = flattenMore(options);
+		if (flat.signal !== null && flat.signal.aborted) return;
+		if (listenerCallback === null) return;
+		const passive =
+			flat.passive === null ? defaultPassiveValue(name, this) : flat.passive;
+		for (const existing of this.#listeners) {
 			if (
-				listener.type === name &&
-				listener.callback === callback &&
-				listener.capture === capture &&
-				!listener.removed
+				existing.type === name &&
+				existing.callback === listenerCallback &&
+				existing.capture === flat.capture
 			) {
 				return;
 			}
 		}
 		const listener: Listener = {
 			type: name,
-			callback,
-			capture,
-			once,
+			callback: listenerCallback,
+			capture: flat.capture,
+			once: flat.once,
 			passive,
 			removed: false,
 		};
 		this.#listeners.push(listener);
-		if (signal) {
-			signal.addEventListener("abort", () => {
-				listener.removed = true;
-				const index = this.#listeners.indexOf(listener);
-				if (index !== -1) this.#listeners.splice(index, 1);
+		if (flat.signal !== null) {
+			flat.signal.addEventListener("abort", () => {
+				removeListener(this.#listeners, listener);
 			});
 		}
 	}
@@ -513,23 +792,22 @@ export class EventTarget {
 	removeEventListener(
 		type: string,
 		callback: EventListenerOrEventListenerObject | null,
-		options?: boolean | AddEventListenerOptions,
+		options?: boolean | EventListenerOptions,
 	): void {
 		if (arguments.length < 2) {
 			throw new TypeError("removeEventListener needs a type and a callback");
 		}
-		if (callback == null) return;
-		const {capture} = normalizeOptions(options);
 		const name = String(type);
-		for (let i = 0; i < this.#listeners.length; i++) {
-			const listener = this.#listeners[i];
+		const listenerCallback = toEventListener(callback);
+		const capture = flattenCapture(options);
+		if (listenerCallback === null) return;
+		for (const listener of this.#listeners) {
 			if (
 				listener.type === name &&
-				listener.callback === callback &&
+				listener.callback === listenerCallback &&
 				listener.capture === capture
 			) {
-				listener.removed = true;
-				this.#listeners.splice(i, 1);
+				removeListener(this.#listeners, listener);
 				return;
 			}
 		}
@@ -540,19 +818,27 @@ export class EventTarget {
 			throw new TypeError("dispatchEvent needs an Event");
 		}
 		const state = event[kDispatchState];
-		if (state.dispatch || state.eventPhase !== NONE) {
+		if (state.dispatch || !state.initialized) {
 			throw domError(
 				"InvalidStateError",
 				"That event is already being dispatched",
 			);
 		}
 		state.trusted = false;
-		return dispatchEvent(this, event);
+		return dispatch(this, event);
 	}
 
 	/** The listeners this target holds, for the dispatch algorithm. */
 	get [kListeners](): Listener[] {
 		return this.#listeners;
+	}
+
+	/**
+	 * The target a dispatch reaches next. A bare event target is the end of a
+	 * path; a node hands back its parent.
+	 */
+	[kGetTheParent](_event: Event): EventTarget | null {
+		return null;
 	}
 }
 
@@ -561,50 +847,262 @@ Object.defineProperty(EventTarget.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-/** The propagation path: the target and its ancestors, root last. */
-function eventPath(target: EventTarget): EventTarget[] {
-	const path: EventTarget[] = [target];
-	let current: unknown = target;
-	while (current instanceof Node) {
-		const parent: Node | null = current.parentNode;
-		if (parent === null) break;
-		path.push(parent);
-		current = parent;
-	}
-	return path;
+/** Take a listener out of a list, marking it so a live dispatch skips it. */
+function removeListener(listeners: Listener[], listener: Listener): void {
+	listener.removed = true;
+	const index = listeners.indexOf(listener);
+	if (index !== -1) listeners.splice(index, 1);
 }
 
-function invokeListeners(
-	event: Event,
-	target: EventTarget,
-	phase: number,
+/**
+ * Retarget an object against another: walk out of the shadow trees the other
+ * object cannot see into.
+ *
+ * Shadow trees are a later phase, so no root is a shadow root and an object
+ * retargets to itself.
+ */
+function retarget(
+	object: EventTarget | null,
+	against: EventTarget,
+): EventTarget | null {
+	let current = object;
+	for (;;) {
+		if (!(current instanceof Node)) return current;
+		const root = getRoot(current);
+		if (!isShadowRoot(root)) return current;
+		if (against instanceof Node && isInclusiveAncestor(root, against)) {
+			return current;
+		}
+		current = (root as DocumentFragment)[kHost];
+	}
+}
+
+/**
+ * Whether a root is a shadow root. Shadow trees are a later phase; until one
+ * exists, a node's root is the tree root and nothing is hidden behind a host.
+ */
+function isShadowRoot(_root: Node): boolean {
+	return false;
+}
+
+function appendToPath(
+	state: DispatchState,
+	invocationTarget: EventTarget,
+	shadowAdjustedTarget: EventTarget | null,
+	relatedTarget: EventTarget | null,
+	slotInClosedTree: boolean,
 ): void {
+	const inShadowTree =
+		invocationTarget instanceof Node && isShadowRoot(getRoot(invocationTarget));
+	state.path.push({
+		invocationTarget,
+		invocationTargetInShadowTree: inShadowTree,
+		shadowAdjustedTarget,
+		relatedTarget,
+		rootOfClosedTree: false,
+		slotInClosedTree,
+	});
+}
+
+/**
+ * Dispatch an event at a target.
+ *
+ * The path is built once, from the target outward, and then walked twice: in
+ * from the far end for the capture phase and out again for the bubble phase.
+ * A struct that carries a shadow-adjusted target is a target of this dispatch
+ * and is walked in both directions whether or not the event bubbles.
+ *
+ * The spec threads a legacy target override flag through here for HTML's load
+ * event, which retargets to a Window; there is no Window in this DOM.
+ */
+function dispatch(target: EventTarget, event: Event): boolean {
 	const state = event[kDispatchState];
-	state.currentTarget = target;
-	state.eventPhase = phase;
-	const listeners = target[kListeners].slice();
+	state.dispatch = true;
+	let activationTarget: EventTarget | null = null;
+	let relatedTarget = retarget(state.relatedTarget, target);
+	let clearTargets = false;
+	if (target !== relatedTarget || target === state.relatedTarget) {
+		let eventTarget = target;
+		const isActivationEvent = event[kIsMouseEvent] && event.type === "click";
+		appendToPath(state, eventTarget, eventTarget, relatedTarget, false);
+		if (isActivationEvent && hasActivationBehavior(eventTarget)) {
+			activationTarget = eventTarget;
+		}
+		let parent = eventTarget[kGetTheParent](event);
+		while (parent !== null) {
+			relatedTarget = retarget(state.relatedTarget, parent);
+			if (
+				parent instanceof Node &&
+				eventTarget instanceof Node &&
+				isInclusiveAncestor(getRoot(eventTarget), parent)
+			) {
+				if (
+					isActivationEvent &&
+					event.bubbles &&
+					activationTarget === null &&
+					hasActivationBehavior(parent)
+				) {
+					activationTarget = parent;
+				}
+				appendToPath(state, parent, null, relatedTarget, false);
+			} else if (parent === relatedTarget) {
+				parent = null;
+			} else {
+				eventTarget = parent;
+				if (
+					isActivationEvent &&
+					activationTarget === null &&
+					hasActivationBehavior(eventTarget)
+				) {
+					activationTarget = eventTarget;
+				}
+				appendToPath(state, parent, eventTarget, relatedTarget, false);
+			}
+			if (parent !== null) parent = parent[kGetTheParent](event);
+		}
+		for (let index = state.path.length - 1; index >= 0; index--) {
+			const struct = state.path[index];
+			if (struct.shadowAdjustedTarget !== null) {
+				if (isShadowRootTarget(struct.shadowAdjustedTarget))
+					clearTargets = true;
+				if (isShadowRootTarget(struct.relatedTarget)) clearTargets = true;
+				break;
+			}
+		}
+		if (activationTarget !== null) {
+			(activationTarget as ActivationTarget)[kLegacyPreActivationBehavior]?.();
+		}
+		for (let index = state.path.length - 1; index >= 0; index--) {
+			const struct = state.path[index];
+			state.eventPhase =
+				struct.shadowAdjustedTarget !== null ? AT_TARGET : CAPTURING_PHASE;
+			invoke(event, index, true);
+		}
+		for (let index = 0; index < state.path.length; index++) {
+			const struct = state.path[index];
+			if (struct.shadowAdjustedTarget !== null) {
+				state.eventPhase = AT_TARGET;
+			} else {
+				if (!event.bubbles) continue;
+				state.eventPhase = BUBBLING_PHASE;
+			}
+			invoke(event, index, false);
+		}
+	}
+	state.eventPhase = NONE;
+	state.currentTarget = null;
+	state.path = [];
+	state.dispatch = false;
+	state.stopPropagation = false;
+	state.stopImmediate = false;
+	if (clearTargets) {
+		state.target = null;
+		state.relatedTarget = null;
+	}
+	if (activationTarget !== null) {
+		const behaviors = activationTarget as ActivationTarget;
+		if (!state.canceled) {
+			behaviors[kActivationBehavior]?.(event);
+		} else {
+			behaviors[kLegacyCanceledActivationBehavior]?.();
+		}
+	}
+	return !state.canceled;
+}
+
+/** Whether a target is a node sitting inside a shadow tree. */
+function isShadowRootTarget(target: EventTarget | null): boolean {
+	return target instanceof Node && isShadowRoot(getRoot(target));
+}
+
+function hasActivationBehavior(target: EventTarget): boolean {
+	return (target as ActivationTarget)[kActivationBehavior] !== undefined;
+}
+
+/**
+ * Run one struct of the path.
+ *
+ * The event's target is the nearest target at or before this struct, so a
+ * listener on an ancestor sees the node the event was dispatched at.
+ */
+function invoke(event: Event, index: number, capturing: boolean): void {
+	const state = event[kDispatchState];
+	const struct = state.path[index];
+	for (let i = index; i >= 0; i--) {
+		const adjusted = state.path[i].shadowAdjustedTarget;
+		if (adjusted !== null) {
+			state.target = adjusted;
+			break;
+		}
+	}
+	state.relatedTarget = struct.relatedTarget;
+	if (state.stopPropagation) return;
+	state.currentTarget = struct.invocationTarget;
+	const listeners = struct.invocationTarget[kListeners].slice();
+	const found = innerInvoke(event, listeners, capturing);
+	if (!found && state.trusted) {
+		const legacyType = LEGACY_EVENT_TYPES.get(event.type);
+		if (legacyType !== undefined) {
+			const originalType = event.type;
+			event[kSetEventType](legacyType);
+			innerInvoke(event, listeners, capturing);
+			event[kSetEventType](originalType);
+		}
+	}
+}
+
+/**
+ * Call the listeners of one target, and report whether any of them was
+ * listening for this type at all -- a target that heard nothing is where a
+ * trusted event is offered again under its legacy type.
+ */
+function innerInvoke(
+	event: Event,
+	listeners: Listener[],
+	capturing: boolean,
+): boolean {
+	const state = event[kDispatchState];
+	let found = false;
 	for (const listener of listeners) {
 		if (listener.removed) continue;
 		if (listener.type !== event.type) continue;
-		if (phase === CAPTURING_PHASE && !listener.capture) continue;
-		if (phase === BUBBLING_PHASE && listener.capture) continue;
+		found = true;
+		if (capturing && !listener.capture) continue;
+		if (!capturing && listener.capture) continue;
 		if (listener.once) {
-			listener.removed = true;
-			const live = target[kListeners];
-			const index = live.indexOf(listener);
-			if (index !== -1) live.splice(index, 1);
+			const target = state.currentTarget as EventTarget;
+			removeListener(target[kListeners], listener);
 		}
+		if (listener.passive) state.inPassiveListener = true;
 		try {
-			if (typeof listener.callback === "function") {
-				listener.callback.call(target, event);
-			} else {
-				listener.callback.handleEvent(event);
-			}
+			callListener(listener.callback, state.currentTarget, event);
 		} catch (error) {
 			reportError(error);
 		}
-		if (state.stopImmediate) return;
+		state.inPassiveListener = false;
+		if (state.stopImmediate) break;
 	}
+	return found;
+}
+
+/**
+ * Call a listener: a function with the current target as its this, or an
+ * object whose handleEvent is looked up at the moment of the call.
+ */
+function callListener(
+	callback: EventListenerOrEventListenerObject,
+	thisArg: EventTarget | null,
+	event: Event,
+): void {
+	if (typeof callback === "function") {
+		callback.call(thisArg, event);
+		return;
+	}
+	const handleEvent = (callback as {handleEvent?: unknown}).handleEvent;
+	if (typeof handleEvent !== "function") {
+		throw new TypeError("An event listener object needs a handleEvent method");
+	}
+	(handleEvent as (event: Event) => void).call(callback, event);
 }
 
 function reportError(error: unknown): void {
@@ -616,38 +1114,6 @@ function reportError(error: unknown): void {
 		// eslint-disable-next-line no-console
 		console.error(error);
 	}
-}
-
-/** Dispatch an event at a target, walking the ancestor chain both ways. */
-function dispatchEvent(target: EventTarget, event: Event): boolean {
-	const state = event[kDispatchState];
-	state.dispatch = true;
-	state.target = target;
-	state.stopPropagation = false;
-	state.stopImmediate = false;
-	const path = eventPath(target);
-	state.path = path;
-	for (let i = path.length - 1; i > 0; i--) {
-		if (state.stopPropagation) break;
-		invokeListeners(event, path[i], CAPTURING_PHASE);
-		state.stopImmediate = false;
-	}
-	if (!state.stopPropagation) {
-		invokeListeners(event, target, AT_TARGET);
-		state.stopImmediate = false;
-	}
-	if (event.bubbles) {
-		for (let i = 1; i < path.length; i++) {
-			if (state.stopPropagation) break;
-			invokeListeners(event, path[i], BUBBLING_PHASE);
-			state.stopImmediate = false;
-		}
-	}
-	state.eventPhase = NONE;
-	state.currentTarget = null;
-	state.dispatch = false;
-	state.path = [];
-	return !event.defaultPrevented;
 }
 
 /* ------------------------------------------------------------- live tables */
@@ -735,6 +1201,7 @@ export class Node extends EventTarget {
 	[kDocument]: Document;
 	[kChildNodes]: NodeList | null = null;
 	[kSerial]: number = ++nodeSerial;
+	[kRegisteredObservers]: RegisteredObserver[] | null = null;
 
 	static readonly ELEMENT_NODE = ELEMENT_NODE;
 	static readonly ATTRIBUTE_NODE = ATTRIBUTE_NODE;
@@ -766,6 +1233,14 @@ export class Node extends EventTarget {
 		// A Document is its own node document; every other node is given one by
 		// the algorithm that creates it.
 		this[kDocument] = this as unknown as Document;
+	}
+
+	/**
+	 * The target a dispatch reaches next: a node's assigned slot if it has
+	 * one, and otherwise its parent. Slot assignment is a later phase.
+	 */
+	override [kGetTheParent](_event: Event): EventTarget | null {
+		return this[kParent];
 	}
 
 	get nodeType(): number {
@@ -1441,6 +1916,11 @@ function replaceChild(child: Node, node: Node, parent: Node): Node {
 	if (referenceChild === node) referenceChild = node[kNext];
 	const previousSibling = child[kPrevious];
 	const removedNodes: Node[] = [];
+	// Adopting takes the replacement out of the tree it is in now, which is a
+	// removal of its own and is reported as one. It happens before the
+	// replaced child leaves, so that removal's siblings are the ones an
+	// observer saw before any of this began.
+	adoptNode(node, parent[kDocument]);
 	if (child[kParent] !== null) {
 		removedNodes.push(child);
 		removeNode(child, true);
@@ -1517,6 +1997,7 @@ function removeNode(node: Node, suppressObservers = false): void {
 		current = nextInTree(current, node);
 	}
 	bumpVersion();
+	addTransientObservers(node, parent);
 	if (!suppressObservers) {
 		queueTreeMutationRecord(
 			parent,
@@ -1548,22 +2029,496 @@ function adoptNode(node: Node, document: Document): void {
 	}
 }
 
+/* ----------------------------------------------------- mutation observers */
+
+const kObserveNode = Symbol("add a node to an observer's node list");
+const kEnqueueRecord = Symbol("enqueue a record");
+const kNotifyObserver = Symbol("deliver an observer's records");
+
+export interface MutationObserverInit {
+	childList?: boolean;
+	attributes?: boolean;
+	characterData?: boolean;
+	subtree?: boolean;
+	attributeOldValue?: boolean;
+	characterDataOldValue?: boolean;
+	attributeFilter?: Iterable<string>;
+}
+
+export type MutationCallback = (
+	records: MutationRecord[],
+	observer: MutationObserver,
+) => void;
+
+/**
+ * An observe() dictionary once observe() has defaulted it.
+ *
+ * attributes, characterData and their old-value members stay tri-state:
+ * a member that was never given is not the same as one given as false, and
+ * both the defaulting rules and the record filter read the difference.
+ */
+interface ObserverOptions {
+	childList: boolean;
+	attributes: boolean | undefined;
+	characterData: boolean | undefined;
+	subtree: boolean;
+	attributeOldValue: boolean | undefined;
+	characterDataOldValue: boolean | undefined;
+	attributeFilter: string[] | undefined;
+}
+
+/**
+ * One entry of a node's registered observer list.
+ *
+ * An entry with a source is transient: it was copied onto a node as that node
+ * was removed from a tree an observer was watching with subtree, so mutations
+ * inside the removed subtree still reach that observer until it is next
+ * notified.
+ */
+interface RegisteredObserver {
+	observer: MutationObserver;
+	options: ObserverOptions;
+	source: RegisteredObserver | null;
+}
+
+/**
+ * How many registered observers exist, transient ones included.
+ *
+ * While it is zero the three queueing call sites return before walking any
+ * ancestors, so a tree nobody observes pays nothing for the machinery.
+ */
+let registeredObserverCount = 0;
+
+/** The agent's "mutation observer microtask queued" flag. */
+let mutationObserverMicrotaskQueued = false;
+
+/** The agent's pending mutation observers. */
+const pendingMutationObservers = new Set<MutationObserver>();
+
+function queueMutationObserverMicrotask(): void {
+	if (mutationObserverMicrotaskQueued) return;
+	mutationObserverMicrotaskQueued = true;
+	queueMicrotask(notifyMutationObservers);
+}
+
+/**
+ * Deliver every pending observer's records.
+ *
+ * This runs as a microtask, so a script sees the records of everything it did
+ * before it yields, in one callback per observer.
+ */
+function notifyMutationObservers(): void {
+	mutationObserverMicrotaskQueued = false;
+	const notifySet = [...pendingMutationObservers];
+	pendingMutationObservers.clear();
+	for (const observer of notifySet) observer[kNotifyObserver]();
+}
+
+function registeredObserverList(node: Node): RegisteredObserver[] {
+	let list = node[kRegisteredObservers];
+	if (list === null) {
+		list = [];
+		node[kRegisteredObservers] = list;
+	}
+	return list;
+}
+
+/**
+ * Copy every subtree registration above a node onto the node itself, as it
+ * leaves the tree.
+ *
+ * One transient entry per source is enough: two entries with the same source
+ * would report the same mutation to the same observer, which the record queue
+ * collapses anyway.
+ */
+function addTransientObservers(node: Node, parent: Node): void {
+	if (registeredObserverCount === 0) return;
+	for (
+		let ancestor: Node | null = parent;
+		ancestor !== null;
+		ancestor = ancestor[kParent]
+	) {
+		const list = ancestor[kRegisteredObservers];
+		if (list === null) continue;
+		for (const registered of list) {
+			if (registered.options.subtree !== true) continue;
+			appendTransientObserver(node, registered);
+		}
+	}
+}
+
+function appendTransientObserver(node: Node, source: RegisteredObserver): void {
+	const list = registeredObserverList(node);
+	for (const existing of list) {
+		if (existing.source === source) return;
+	}
+	list.push({observer: source.observer, options: source.options, source});
+	registeredObserverCount++;
+	source.observer[kObserveNode](node);
+}
+
+/** Drop the transient entries of a node's list that a predicate names. */
+function removeTransientObservers(
+	node: Node,
+	matches: (registered: RegisteredObserver) => boolean,
+): void {
+	const list = node[kRegisteredObservers];
+	if (list === null) return;
+	for (let index = list.length - 1; index >= 0; index--) {
+		const registered = list[index];
+		if (registered.source === null || !matches(registered)) continue;
+		list.splice(index, 1);
+		registeredObserverCount--;
+	}
+}
+
+/** A record of one mutation, as an observer's callback receives it. */
+export class MutationRecord {
+	#type: string;
+	#target: Node;
+	#addedNodes: NodeList;
+	#removedNodes: NodeList;
+	#previousSibling: Node | null;
+	#nextSibling: Node | null;
+	#attributeName: string | null;
+	#attributeNamespace: string | null;
+	#oldValue: string | null;
+
+	constructor(
+		type: string,
+		target: Node,
+		attributeName: string | null,
+		attributeNamespace: string | null,
+		oldValue: string | null,
+		addedNodes: Node[],
+		removedNodes: Node[],
+		previousSibling: Node | null,
+		nextSibling: Node | null,
+	) {
+		this.#type = type;
+		this.#target = target;
+		this.#attributeName = attributeName;
+		this.#attributeNamespace = attributeNamespace;
+		this.#oldValue = oldValue;
+		this.#addedNodes = createStaticNodeList(addedNodes);
+		this.#removedNodes = createStaticNodeList(removedNodes);
+		this.#previousSibling = previousSibling;
+		this.#nextSibling = nextSibling;
+	}
+
+	get type(): string {
+		return this.#type;
+	}
+
+	get target(): Node {
+		return this.#target;
+	}
+
+	get addedNodes(): NodeList {
+		return this.#addedNodes;
+	}
+
+	get removedNodes(): NodeList {
+		return this.#removedNodes;
+	}
+
+	get previousSibling(): Node | null {
+		return this.#previousSibling;
+	}
+
+	get nextSibling(): Node | null {
+		return this.#nextSibling;
+	}
+
+	get attributeName(): string | null {
+		return this.#attributeName;
+	}
+
+	get attributeNamespace(): string | null {
+		return this.#attributeNamespace;
+	}
+
+	get oldValue(): string | null {
+		return this.#oldValue;
+	}
+}
+
+Object.defineProperty(MutationRecord.prototype, Symbol.toStringTag, {
+	value: "MutationRecord",
+	configurable: true,
+});
+
+/**
+ * An observe() options argument, defaulted and checked.
+ *
+ * Giving an old value or a filter is a way of asking for the mutations it
+ * describes, so it turns its own kind of observation on; asking for an old
+ * value of something explicitly not observed is a contradiction and throws.
+ */
+function normalizeObserverOptions(
+	options: MutationObserverInit,
+): ObserverOptions {
+	const init = toDictionary<MutationObserverInit>(options, "Observe options");
+	const attributeFilter =
+		init.attributeFilter === undefined
+			? undefined
+			: toStringSequence(init.attributeFilter);
+	const attributeOldValue =
+		init.attributeOldValue === undefined
+			? undefined
+			: Boolean(init.attributeOldValue);
+	const characterDataOldValue =
+		init.characterDataOldValue === undefined
+			? undefined
+			: Boolean(init.characterDataOldValue);
+	let attributes =
+		init.attributes === undefined ? undefined : Boolean(init.attributes);
+	let characterData =
+		init.characterData === undefined ? undefined : Boolean(init.characterData);
+	const childList = Boolean(init.childList);
+	if (
+		(attributeOldValue !== undefined || attributeFilter !== undefined) &&
+		attributes === undefined
+	) {
+		attributes = true;
+	}
+	if (characterDataOldValue !== undefined && characterData === undefined) {
+		characterData = true;
+	}
+	if (!childList && attributes !== true && characterData !== true) {
+		throw new TypeError("observe needs childList, attributes or characterData");
+	}
+	if (attributeOldValue === true && attributes === false) {
+		throw new TypeError("attributeOldValue needs attributes");
+	}
+	if (attributeFilter !== undefined && attributes === false) {
+		throw new TypeError("attributeFilter needs attributes");
+	}
+	if (characterDataOldValue === true && characterData === false) {
+		throw new TypeError("characterDataOldValue needs characterData");
+	}
+	return {
+		childList,
+		attributes,
+		characterData,
+		subtree: Boolean(init.subtree),
+		attributeOldValue,
+		characterDataOldValue,
+		attributeFilter,
+	};
+}
+
+/** A sequence<DOMString> argument, per Web IDL: anything iterable. */
+function toStringSequence(value: Iterable<string>): string[] {
+	if (
+		value === null ||
+		typeof value !== "object" ||
+		typeof (value as {[Symbol.iterator]?: unknown})[Symbol.iterator] !==
+			"function"
+	) {
+		throw new TypeError("That is not a sequence of strings");
+	}
+	return [...value].map((entry) => String(entry));
+}
+
+/** An observer of a tree: what it watches, and the records it has to deliver. */
+export class MutationObserver {
+	#callback: MutationCallback;
+	#nodes: Array<WeakRef<Node>> = [];
+	#records: MutationRecord[] = [];
+
+	constructor(callback: MutationCallback) {
+		if (arguments.length < 1) {
+			throw new TypeError("MutationObserver needs a callback");
+		}
+		if (typeof callback !== "function") {
+			throw new TypeError("A MutationObserver callback must be a function");
+		}
+		this.#callback = callback;
+	}
+
+	observe(target: Node, options: MutationObserverInit = {}): void {
+		if (arguments.length < 1) {
+			throw new TypeError("observe needs a target");
+		}
+		if (!(target instanceof Node)) {
+			throw new TypeError("That is not a node");
+		}
+		const normalized = normalizeObserverOptions(options);
+		const list = registeredObserverList(target);
+		for (const registered of list) {
+			if (registered.observer !== this || registered.source !== null) continue;
+			for (const node of this.#liveNodes()) {
+				removeTransientObservers(node, (entry) => entry.source === registered);
+			}
+			registered.options = normalized;
+			return;
+		}
+		list.push({observer: this, options: normalized, source: null});
+		registeredObserverCount++;
+		this[kObserveNode](target);
+	}
+
+	disconnect(): void {
+		for (const node of this.#liveNodes()) {
+			const list = node[kRegisteredObservers];
+			if (list === null) continue;
+			for (let index = list.length - 1; index >= 0; index--) {
+				if (list[index].observer !== this) continue;
+				list.splice(index, 1);
+				registeredObserverCount--;
+			}
+		}
+		this.#nodes.length = 0;
+		this.#records.length = 0;
+	}
+
+	takeRecords(): MutationRecord[] {
+		const records = this.#records;
+		this.#records = [];
+		return records;
+	}
+
+	/** The nodes still alive whose registered observer list names this one. */
+	#liveNodes(): Node[] {
+		const nodes: Node[] = [];
+		let write = 0;
+		for (let read = 0; read < this.#nodes.length; read++) {
+			const node = this.#nodes[read].deref();
+			if (node === undefined) continue;
+			this.#nodes[write++] = this.#nodes[read];
+			nodes.push(node);
+		}
+		this.#nodes.length = write;
+		return nodes;
+	}
+
+	[kObserveNode](node: Node): void {
+		for (const reference of this.#nodes) {
+			if (reference.deref() === node) return;
+		}
+		this.#nodes.push(new WeakRef(node));
+	}
+
+	[kEnqueueRecord](record: MutationRecord): void {
+		this.#records.push(record);
+	}
+
+	[kNotifyObserver](): void {
+		const records = this.#records;
+		this.#records = [];
+		for (const node of this.#liveNodes()) {
+			removeTransientObservers(node, () => true);
+		}
+		if (records.length === 0) return;
+		try {
+			this.#callback.call(this, records, this);
+		} catch (error) {
+			reportError(error);
+		}
+	}
+}
+
+Object.defineProperty(MutationObserver.prototype, Symbol.toStringTag, {
+	value: "MutationObserver",
+	configurable: true,
+});
+
 /* --------------------------------------------------------- mutation record */
 
 /**
- * Where a queued mutation record goes.
+ * Queue a record with every observer that asked for this kind of mutation.
  *
- * MutationObserver is a later phase; the call sites the spec names exist here
- * so that phase has one place to land, and so the engine can observe a tree
- * change without a second traversal.
+ * The walk is up the ancestor chain from the mutated node: a registration on
+ * the node itself always matches, and one further up matches only if it was
+ * made with subtree. An observer that matches more than once still gets one
+ * record, carrying an old value if any of its matching registrations asked
+ * for one.
  */
+function queueMutationRecord(
+	type: string,
+	target: Node,
+	name: string | null,
+	namespace: string | null,
+	oldValue: string | null,
+	addedNodes: Node[],
+	removedNodes: Node[],
+	previousSibling: Node | null,
+	nextSibling: Node | null,
+): void {
+	if (registeredObserverCount === 0) return;
+	let interested: Map<MutationObserver, string | null> | null = null;
+	for (let node: Node | null = target; node !== null; node = node[kParent]) {
+		const list = node[kRegisteredObservers];
+		if (list === null) continue;
+		for (const registered of list) {
+			const options = registered.options;
+			if (node !== target && options.subtree !== true) continue;
+			if (type === "attributes") {
+				if (options.attributes !== true) continue;
+				if (
+					options.attributeFilter !== undefined &&
+					(namespace !== null ||
+						!options.attributeFilter.includes(name as string))
+				) {
+					continue;
+				}
+			} else if (type === "characterData") {
+				if (options.characterData !== true) continue;
+			} else if (!options.childList) {
+				continue;
+			}
+			const observer = registered.observer;
+			if (interested === null) interested = new Map();
+			if (!interested.has(observer)) interested.set(observer, null);
+			if (
+				(type === "attributes" && options.attributeOldValue === true) ||
+				(type === "characterData" && options.characterDataOldValue === true)
+			) {
+				interested.set(observer, oldValue);
+			}
+		}
+	}
+	if (interested === null) return;
+	for (const [observer, mappedOldValue] of interested) {
+		observer[kEnqueueRecord](
+			new MutationRecord(
+				type,
+				target,
+				name,
+				namespace,
+				mappedOldValue,
+				addedNodes,
+				removedNodes,
+				previousSibling,
+				nextSibling,
+			),
+		);
+		pendingMutationObservers.add(observer);
+	}
+	queueMutationObserverMicrotask();
+}
+
+/** Queue a record for a change to a node's children. */
 function queueTreeMutationRecord(
-	_target: Node,
-	_addedNodes: Node[],
-	_removedNodes: Node[],
-	_previousSibling: Node | null,
-	_nextSibling: Node | null,
-): void {}
+	target: Node,
+	addedNodes: Node[],
+	removedNodes: Node[],
+	previousSibling: Node | null,
+	nextSibling: Node | null,
+): void {
+	queueMutationRecord(
+		"childList",
+		target,
+		null,
+		null,
+		null,
+		addedNodes,
+		removedNodes,
+		previousSibling,
+		nextSibling,
+	);
+}
 
 /* ------------------------------------------------------- live collections */
 
@@ -2238,14 +3193,23 @@ function replaceData(
 	if (parent !== null) parent[kChildrenChanged]();
 }
 
-/**
- * Where a queued character data record goes. MutationObserver is a later
- * phase; the call site the spec names exists here.
- */
+/** Queue a record for a change to a node's data. */
 function queueCharacterDataMutationRecord(
-	_node: CharacterData,
-	_oldValue: string,
-): void {}
+	node: CharacterData,
+	oldValue: string,
+): void {
+	queueMutationRecord(
+		"characterData",
+		node,
+		null,
+		null,
+		oldValue,
+		[],
+		[],
+		null,
+		null,
+	);
+}
 
 export class Text extends CharacterData {
 	constructor(data = "") {
@@ -2694,15 +3658,24 @@ function replaceAttribute(
 	bumpVersion();
 }
 
-/**
- * Where a queued attribute record goes. MutationObserver is a later phase;
- * the call site the spec names exists here.
- */
+/** Queue a record for a change to an element's attribute. */
 function queueAttributeMutationRecord(
-	_element: Element,
-	_attribute: Attr,
-	_oldValue: string | null,
-): void {}
+	element: Element,
+	attribute: Attr,
+	oldValue: string | null,
+): void {
+	queueMutationRecord(
+		"attributes",
+		element,
+		attribute[kLocalName],
+		attribute[kNamespace],
+		oldValue,
+		[],
+		[],
+		null,
+		null,
+	);
+}
 
 function getAttributeByName(
 	element: Element,
@@ -4055,16 +5028,35 @@ export class Document extends Node {
 		return attribute;
 	}
 
+	/**
+	 * Build an uninitialized event of a legacy interface name.
+	 *
+	 * The event comes back with an empty type and its initialized flag unset,
+	 * so it cannot be dispatched until initEvent gives it one.
+	 */
 	createEvent(interfaceName: string): Event {
-		const name = asciiLowercase(String(interfaceName));
-		if (name === "customevent") return new CustomEvent("");
-		if (name === "event" || name === "events" || name === "htmlevents") {
-			return new Event("");
+		if (arguments.length < 1) {
+			throw new TypeError("createEvent needs an interface name");
 		}
-		throw domError(
-			"NotSupportedError",
-			`No event interface is named "${interfaceName}"`,
-		);
+		const name = asciiLowercase(String(interfaceName));
+		let event: Event;
+		if (name === "customevent") {
+			event = new CustomEvent("");
+		} else if (
+			name === "event" ||
+			name === "events" ||
+			name === "htmlevents" ||
+			name === "svgevents"
+		) {
+			event = new Event("");
+		} else {
+			throw domError(
+				"NotSupportedError",
+				`No event interface is named "${interfaceName}"`,
+			);
+		}
+		event[kDispatchState].initialized = false;
+		return event;
 	}
 
 	createNodeIterator(

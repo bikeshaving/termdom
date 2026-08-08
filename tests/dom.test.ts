@@ -12,6 +12,7 @@ import {
 	createHTMLDocument,
 	DOMParser,
 	Event as DOMEvent,
+	MutationObserver,
 	NodeFilter,
 	parseHTMLDocument,
 	Text,
@@ -530,6 +531,261 @@ test("an event dispatched on a node walks its ancestors both ways", () => {
 	inner.addEventListener("ping", () => seen.push("target"));
 	inner.dispatchEvent(new DOMEvent("ping", {bubbles: true}));
 	expect(seen).toEqual(["capture", "target", "bubble"]);
+});
+
+test("a listener list is snapshotted, and a once listener is gone before it runs", () => {
+	const document = make();
+	const target = document.createElement("div");
+	const seen: string[] = [];
+	target.addEventListener("ping", () => {
+		seen.push("first");
+		target.addEventListener("ping", () => seen.push("added"));
+	});
+	target.addEventListener("ping", () => seen.push("second"), {once: true});
+	target.dispatchEvent(new DOMEvent("ping"));
+	expect(seen).toEqual(["first", "second"]);
+	target.dispatchEvent(new DOMEvent("ping"));
+	expect(seen).toEqual(["first", "second", "first", "added"]);
+});
+
+test("a stopped event stays stopped until it is initialized again", () => {
+	const document = make();
+	const target = document.createElement("div");
+	let calls = 0;
+	target.addEventListener("ping", () => calls++);
+	const event = document.createEvent("Event");
+	event.initEvent("ping", true, false);
+	event.stopPropagation();
+	target.dispatchEvent(event);
+	expect(calls).toBe(0);
+	event.initEvent("ping", true, false);
+	target.dispatchEvent(event);
+	expect(calls).toBe(1);
+});
+
+test("an uninitialized event cannot be dispatched", () => {
+	const document = make();
+	const target = document.createElement("div");
+	const event = document.createEvent("Event");
+	expect(() => target.dispatchEvent(event)).toThrow();
+	event.initEvent("ping");
+	expect(() => target.dispatchEvent(event)).not.toThrow();
+});
+
+test("a passive listener cannot cancel the event it hears", () => {
+	const document = make();
+	const target = document.createElement("div");
+	target.addEventListener("ping", (event: any) => event.preventDefault(), {
+		passive: true,
+	});
+	const passive = new DOMEvent("ping", {cancelable: true});
+	expect(target.dispatchEvent(passive)).toBe(true);
+	target.addEventListener("pong", (event: any) => event.preventDefault());
+	const active = new DOMEvent("pong", {cancelable: true});
+	expect(target.dispatchEvent(active)).toBe(false);
+});
+
+test("an aborted signal takes its listener with it", () => {
+	const document = make();
+	const target = document.createElement("div");
+	const controller = new AbortController();
+	let calls = 0;
+	target.addEventListener("ping", () => calls++, {signal: controller.signal});
+	target.dispatchEvent(new DOMEvent("ping"));
+	controller.abort();
+	target.dispatchEvent(new DOMEvent("ping"));
+	expect(calls).toBe(1);
+	expect(() =>
+		target.addEventListener("ping", () => {}, {signal: {} as any}),
+	).toThrow();
+});
+
+test("composedPath is the whole path while dispatching, and empty after", () => {
+	const document = make();
+	const outer = document.createElement("div");
+	const inner = document.createElement("span");
+	outer.appendChild(inner);
+	document.body.appendChild(outer);
+	let path: unknown[] = [];
+	const event = new DOMEvent("ping", {bubbles: true});
+	outer.addEventListener("ping", (e: any) => {
+		path = e.composedPath();
+	});
+	inner.dispatchEvent(event);
+	expect(path).toEqual([
+		inner,
+		outer,
+		document.body,
+		document.documentElement,
+		document,
+	]);
+	expect(event.composedPath()).toEqual([]);
+});
+
+test("a listener object's handleEvent is looked up at every dispatch", () => {
+	const document = make();
+	const target = document.createElement("div");
+	let lookups = 0;
+	let calls = 0;
+	target.addEventListener("ping", {
+		get handleEvent() {
+			lookups++;
+			return () => calls++;
+		},
+	} as any);
+	expect(lookups).toBe(0);
+	target.dispatchEvent(new DOMEvent("ping"));
+	target.dispatchEvent(new DOMEvent("ping"));
+	expect(lookups).toBe(2);
+	expect(calls).toBe(2);
+});
+
+/* ------------------------------------------------------- mutation observers */
+
+/** Let the mutation observer microtask run. */
+function nextMicrotask(): Promise<void> {
+	return new Promise((resolve) => queueMicrotask(() => resolve()));
+}
+
+test("records arrive in a microtask, batched into one callback", async () => {
+	const document = make();
+	const parent = document.createElement("div");
+	document.body.appendChild(parent);
+	const batches: any[][] = [];
+	const observer = new MutationObserver((records: any) =>
+		batches.push(records),
+	);
+	observer.observe(parent, {childList: true, attributes: true});
+	parent.appendChild(document.createElement("span"));
+	parent.setAttribute("id", "x");
+	expect(batches.length).toBe(0);
+	await nextMicrotask();
+	expect(batches.length).toBe(1);
+	expect(batches[0].map((record: any) => record.type)).toEqual([
+		"childList",
+		"attributes",
+	]);
+	observer.disconnect();
+});
+
+test("takeRecords empties the queue, and the callback then has nothing to say", async () => {
+	const document = make();
+	const parent = document.createElement("div");
+	const observer = new MutationObserver(() => {
+		throw new Error("the callback must not run");
+	});
+	observer.observe(parent, {childList: true});
+	parent.appendChild(document.createElement("span"));
+	const records = observer.takeRecords();
+	expect(records.length).toBe(1);
+	expect(observer.takeRecords()).toEqual([]);
+	await nextMicrotask();
+	observer.disconnect();
+});
+
+test("disconnect drops the records queued before it", async () => {
+	const document = make();
+	const parent = document.createElement("div");
+	let calls = 0;
+	const observer = new MutationObserver(() => calls++);
+	observer.observe(parent, {childList: true});
+	parent.appendChild(document.createElement("span"));
+	observer.disconnect();
+	await nextMicrotask();
+	expect(calls).toBe(0);
+	expect(observer.takeRecords()).toEqual([]);
+});
+
+test("a removed subtree is still observed until the callback runs", async () => {
+	const document = make();
+	const parent = document.createElement("div");
+	const child = document.createElement("span");
+	parent.appendChild(child);
+	document.body.appendChild(parent);
+	const types: string[] = [];
+	const observer = new MutationObserver((records: any) => {
+		for (const record of records) types.push(`${record.type}`);
+	});
+	observer.observe(parent, {childList: true, subtree: true});
+	parent.removeChild(child);
+	// The removed child carries a transient registration, so what happens
+	// inside it before the callback runs is still reported.
+	child.appendChild(document.createElement("b"));
+	await nextMicrotask();
+	expect(types).toEqual(["childList", "childList"]);
+	// The transient registration is dropped as the records are delivered.
+	child.appendChild(document.createElement("i"));
+	await nextMicrotask();
+	expect(types).toEqual(["childList", "childList"]);
+	observer.disconnect();
+});
+
+test("old values are recorded only where they were asked for", async () => {
+	const document = make();
+	const element = document.createElement("div");
+	const text = document.createTextNode("one");
+	element.appendChild(text);
+	element.setAttribute("id", "before");
+	const records: any[] = [];
+	const observer = new MutationObserver((batch: any) => records.push(...batch));
+	observer.observe(element, {
+		attributes: true,
+		attributeOldValue: true,
+		attributeFilter: ["id"],
+	});
+	const plain = new MutationObserver((batch: any) => records.push(...batch));
+	plain.observe(text, {characterData: true});
+	element.setAttribute("id", "after");
+	element.setAttribute("class", "ignored");
+	text.data = "two";
+	await nextMicrotask();
+	expect(records.length).toBe(2);
+	expect(records[0].attributeName).toBe("id");
+	expect(records[0].oldValue).toBe("before");
+	expect(records[1].type).toBe("characterData");
+	expect(records[1].oldValue).toBe(null);
+	observer.disconnect();
+	plain.disconnect();
+});
+
+test("observe rejects options that ask for nothing, or for the impossible", () => {
+	const document = make();
+	const element = document.createElement("div");
+	const observer = new MutationObserver(() => {});
+	expect(() => observer.observe(element, {})).toThrow();
+	expect(() => observer.observe(element, {subtree: true})).toThrow();
+	expect(() =>
+		observer.observe(element, {attributes: false, attributeOldValue: true}),
+	).toThrow();
+	expect(() =>
+		observer.observe(element, {attributes: false, attributeFilter: ["id"]}),
+	).toThrow();
+	expect(() =>
+		observer.observe(element, {
+			characterData: false,
+			characterDataOldValue: true,
+		}),
+	).toThrow();
+	// An old value or a filter turns its own kind of observation on.
+	expect(() =>
+		observer.observe(element, {attributeOldValue: true}),
+	).not.toThrow();
+	observer.disconnect();
+});
+
+test("observing a node twice replaces the options it was observed with", async () => {
+	const document = make();
+	const element = document.createElement("div");
+	const records: any[] = [];
+	const observer = new MutationObserver((batch: any) => records.push(...batch));
+	observer.observe(element, {attributes: true, attributeOldValue: true});
+	observer.observe(element, {attributes: true});
+	element.setAttribute("id", "x");
+	element.setAttribute("id", "y");
+	await nextMicrotask();
+	expect(records.length).toBe(2);
+	expect(records[1].oldValue).toBe(null);
+	observer.disconnect();
 });
 
 /* -------------------------------------------------------------- serializing */
