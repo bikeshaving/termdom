@@ -1328,7 +1328,7 @@ export class LayoutEngine {
 		// the O(N^2) this cache exists for is intra-pass -- and the pass's
 		// entries remain valid afterward for paint and hit-testing, until the
 		// next mutation or pass.
-		this.#runHeadEpoch++;
+		this.#boxEpoch++;
 		// Nothing marked dirty and nothing awaiting re-add: the previous layout
 		// still holds, and even the pruning sweep below -- O(nodes) isConnected
 		// checks -- is not worth paying. Every mutation path dirties the tree on
@@ -2673,15 +2673,15 @@ export class LayoutEngine {
 	 * entry per box it lays out, anonymous ones represented by their head. It is
 	 * what layout counts to place a child among its siblings.
 	 */
-	#runHeadsByContainer = new WeakMap<
+	#boxesByContainer = new WeakMap<
 		Element,
 		{epoch: number; heads: Map<Node, Node>; boxes: Node[]}
 	>();
-	#runHeadEpoch = 0;
+	#boxEpoch = 0;
 
 	#containerBoxes(container: Element): {heads: Map<Node, Node>; boxes: Node[]} {
-		const cached = this.#runHeadsByContainer.get(container);
-		const epoch = currentCompositionEpoch() + this.#runHeadEpoch;
+		const cached = this.#boxesByContainer.get(container);
+		const epoch = currentCompositionEpoch() + this.#boxEpoch;
 		if (cached && cached.epoch === epoch) return cached;
 
 		const heads = new Map<Node, Node>();
@@ -2725,12 +2725,8 @@ export class LayoutEngine {
 		}
 
 		const entry = {epoch, heads, boxes};
-		this.#runHeadsByContainer.set(container, entry);
+		this.#boxesByContainer.set(container, entry);
 		return entry;
-	}
-
-	#containerRunHeads(container: Element): Map<Node, Node> {
-		return this.#containerBoxes(container).heads;
 	}
 
 	/** The flat-tree parent that can hold a box, pseudo-elements included. */
@@ -2799,7 +2795,7 @@ export class LayoutEngine {
 
 		const container = this.#runContainerOf(node);
 		if (!container) return node;
-		const heads = this.#containerRunHeads(container);
+		const {heads} = this.#containerBoxes(container);
 		// Up from the node to whichever of its ancestors the container counts
 		// among its own flow children: that is the box the content falls under.
 		for (let current: Node = node; current !== container; ) {
@@ -2826,7 +2822,7 @@ export class LayoutEngine {
 		// displace, a run head); drop every enumerated container. Once for the
 		// whole subtree below: invalidation rearranges layout nodes, never the
 		// DOM or the cascade the enumeration reads.
-		this.#runHeadEpoch++;
+		this.#boxEpoch++;
 		this.#invalidateNode(node);
 	}
 
