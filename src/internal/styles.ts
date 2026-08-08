@@ -5590,6 +5590,11 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 	// elements are only ever asked a handful of properties -- the
 	// composition walker asks each element `display` alone.
 	override getPropertyValue(property: string): string {
+		// The author's read, and the DOM it describes is the DOM as it stands:
+		// a style object held across a class flip answers for the flip. The
+		// engine reads through computedValueOf, which takes no flush -- style
+		// is resolved from inside layout, which this would re-enter.
+		this.#manager?.flushStyle();
 		if (this.#stale || this.#epoch.value !== this.#seenEpoch) this.#refresh();
 		if (this.#manager && USED_VALUE_PROPERTIES.has(property)) {
 			return this.#usedValue(property);
@@ -5754,6 +5759,7 @@ export class PseudoStyleDeclaration extends CSSStyleDeclaration {
 	}
 
 	override getPropertyValue(property: string): string {
+		this.#manager?.flushStyle();
 		const computed =
 			this.computedValueOf(property) ||
 			computedValue(property, getInitialStyle(null, property));
@@ -6520,6 +6526,27 @@ export class StyleManager {
 	}
 
 	/**
+	 * Take that flush: pending mutations drained into the cascade and layout,
+	 * then layout brought up to date. Every author-facing style read goes
+	 * through it, so a value read straight after a DOM change describes that
+	 * change; the engine's own reads (computedValueOf) never do.
+	 */
+	flushStyle(): void {
+		// Not re-entrant: layout and paint resolve styles as they run, and a
+		// read taken from inside the flush sees the layout being computed --
+		// asking for it again would compute it inside itself.
+		if (this.#flushing || !this.#layoutFlush) return;
+		this.#flushing = true;
+		try {
+			if (this.#layoutFlush()) this.#usedGeneration++;
+		} finally {
+			this.#flushing = false;
+		}
+	}
+
+	#flushing = false;
+
+	/**
 	 * The grid a viewport unit measures against, in cells. Null before a
 	 * layout engine is wired up, where `1vw` has nothing to be a hundredth of.
 	 */
@@ -6670,12 +6697,7 @@ export class StyleManager {
 				// (.editing .view {display:none} is exactly the TodoMVC edit
 				// row), and the descendants' cached styles know nothing of it.
 				const element = mutation.target as Element;
-				this.#invalidateElementCaches(element);
-				this.attachPseudoElementsToElement(element);
-				for (const descendant of element.querySelectorAll("*")) {
-					this.#invalidateElementCaches(descendant);
-					this.attachPseudoElementsToElement(descendant);
-				}
+				this.#invalidateSubtree(element);
 				// Sibling combinators reach right: `.on ~ .light` matches (or
 				// stops matching) a FOLLOWING sibling when this element's
 				// attributes change, and that sibling's cached styles know
@@ -6690,12 +6712,7 @@ export class StyleManager {
 						sibling;
 						sibling = sibling.nextElementSibling
 					) {
-						this.#invalidateElementCaches(sibling);
-						this.attachPseudoElementsToElement(sibling);
-						for (const descendant of sibling.querySelectorAll("*")) {
-							this.#invalidateElementCaches(descendant);
-							this.attachPseudoElementsToElement(descendant);
-						}
+						this.#invalidateSubtree(sibling);
 					}
 				}
 			} else if (mutation.type === "characterData") {
@@ -6788,6 +6805,26 @@ export class StyleManager {
 	/**
 	 * Invalidate cached styles for an element (invalidation approach)
 	 */
+	/**
+	 * Invalidate an element and everything whose style it reaches: its
+	 * descendants, and the shadow tree it hosts -- inheritance crosses that
+	 * boundary, so a color set on a host reaches the tree it composes.
+	 */
+	#invalidateSubtree(element: Element): void {
+		this.#invalidateElementCaches(element);
+		this.attachPseudoElementsToElement(element);
+		for (const descendant of element.querySelectorAll("*")) {
+			this.#invalidateElementCaches(descendant);
+			this.attachPseudoElementsToElement(descendant);
+		}
+		const root = element.shadowRoot;
+		if (root) {
+			for (const descendant of root.querySelectorAll("*")) {
+				this.#invalidateSubtree(descendant);
+			}
+		}
+	}
+
 	#invalidateElementCaches(element: Element): void {
 		// A computed style an author still holds is the one this cache handed
 		// out, so it is told the cascade moved on rather than merely dropped.
@@ -6828,11 +6865,8 @@ export class StyleManager {
 		pseudoElt?: string | null,
 	): globalThis.CSSStyleDeclaration {
 		// A computed style describes the DOM as it stands, so an author read
-		// goes through the same flush a geometry read does: pending mutations
-		// drained into the cascade, then layout. The drain is what makes a
-		// style read straight after a class flip answer for that flip; the
-		// layout is skipped when nothing is dirty.
-		if (this.#layoutFlush?.()) this.#usedGeneration++;
+		// goes through the flush a geometry read does.
+		this.flushStyle();
 		// Ensure stylesheets are parsed if the document's sheet list changed
 		// since the last parse, or a newly registered shadow root's sheet
 		// awaits
@@ -7404,7 +7438,7 @@ export class StyleManager {
 		}
 
 		const computedStyle = this.declarationFor(hostElement);
-		const display = computedStyle.getPropertyValue("display");
+		const display = computedStyle.computedValueOf("display");
 
 		if (display !== "list-item") {
 			return null;
@@ -7456,12 +7490,12 @@ export class StyleManager {
 		// For ::marker pseudo-elements, generate default content if none specified
 		if (pseudoType === "::marker") {
 			const computedStyle = this.declarationFor(hostElement);
-			const display = computedStyle.getPropertyValue("display");
+			const display = computedStyle.computedValueOf("display");
 
 			if (display === "list-item") {
 				// Check if explicitly set to outside positioning
 				const listStylePosition =
-					computedStyle.getPropertyValue("list-style-position") || "outside";
+					computedStyle.computedValueOf("list-style-position") || "outside";
 
 				// Skip inline marker creation for outside positioning (the default)
 				if (listStylePosition === "outside") {
@@ -7517,9 +7551,9 @@ export class StyleManager {
 		// For ::marker pseudo-elements, only create them for inside positioning
 		if (pseudoType === "::marker") {
 			const computedStyle = this.declarationFor(element);
-			const display = computedStyle.getPropertyValue("display");
+			const display = computedStyle.computedValueOf("display");
 			const listStylePosition =
-				computedStyle.getPropertyValue("list-style-position") || "outside";
+				computedStyle.computedValueOf("list-style-position") || "outside";
 
 			if (display === "list-item" && listStylePosition !== "outside") {
 				return true; // Only create inline markers for inside positioning
@@ -7630,9 +7664,9 @@ export class StyleManager {
 		);
 		for (const element of listItems) {
 			const computedStyle = this.declarationFor(element);
-			const display = computedStyle.getPropertyValue("display");
+			const display = computedStyle.computedValueOf("display");
 			const listStylePosition =
-				computedStyle.getPropertyValue("list-style-position") || "outside";
+				computedStyle.computedValueOf("list-style-position") || "outside";
 
 			// Only create inline markers for inside positioning
 			if (display === "list-item" && listStylePosition !== "outside") {
@@ -7709,9 +7743,9 @@ export class StyleManager {
 		// Skip ::marker for elements without display: list-item or with outside positioning
 		if (pseudoType === "::marker") {
 			const computedStyle = this.declarationFor(element);
-			const display = computedStyle.getPropertyValue("display");
+			const display = computedStyle.computedValueOf("display");
 			const listStylePosition =
-				computedStyle.getPropertyValue("list-style-position") || "outside";
+				computedStyle.computedValueOf("list-style-position") || "outside";
 
 			if (display !== "list-item") {
 				return;
@@ -7837,6 +7871,9 @@ export class StyleManager {
 	}
 
 	invalidateElement(element: Element): void {
+		// A computed style an author still holds is the one this cache handed
+		// out, so it is told the cascade moved on rather than merely dropped.
+		this.#computedStyleCache.get(element)?.invalidate();
 		this.#computedStyleCache.delete(element);
 		this.#pseudoElementStyleCache.delete(element);
 		if (this.#pendingStyleDamage) {
@@ -7893,9 +7930,8 @@ export class StyleManager {
 		}
 
 		const computedStyle = this.declarationFor(element);
-		const counterReset = computedStyle.getPropertyValue("counter-reset");
-		const counterIncrement =
-			computedStyle.getPropertyValue("counter-increment");
+		const counterReset = computedStyle.computedValueOf("counter-reset");
+		const counterIncrement = computedStyle.computedValueOf("counter-increment");
 
 		// Get parent scope if parent exists (but don't recursively initialize parents)
 		const parentElement = element.parentElement;
