@@ -101,72 +101,6 @@ export interface BoxModel {
 	borderLeftWidth: number;
 }
 
-// ---- cssstyle none-erasure shim ----
-//
-// Upstream cssstyle (jsdom's inline-style CSSOM; v4 nested under jsdom and
-// current v5 alike) treats `none` and `hidden` on every border property --
-// the `border` shorthand, the per-side shorthands, and even the style
-// longhands -- as "erase the declaration": its setters call
-// _setProperty(prop, "") instead of storing the keyword. An erased
-// declaration is one the cascade never sees, so `el.style.border = "none"`
-// could never turn OFF a UA border. The raw _setProperty primitive stores
-// values verbatim; the shim lets the original setter run (its erasure
-// doubles as the shorthand's reset), then re-stores the declaration as
-// authored, priority included. Expansion into longhands is the cascade's job
-// either way -- see expandShorthands.
-const kNoneErasureShimmed = Symbol("termdom.noneErasureShim");
-const ERASED_BORDER_KEYWORDS = new Set(["none", "hidden"]);
-/** Per erasing setter, the keywords cssstyle drops instead of storing. */
-const NONE_ERASURE_SHIMS: Record<string, Set<string>> = {
-	border: ERASED_BORDER_KEYWORDS,
-	borderStyle: ERASED_BORDER_KEYWORDS,
-	borderTop: ERASED_BORDER_KEYWORDS,
-	borderRight: ERASED_BORDER_KEYWORDS,
-	borderBottom: ERASED_BORDER_KEYWORDS,
-	borderLeft: ERASED_BORDER_KEYWORDS,
-	borderTopStyle: ERASED_BORDER_KEYWORDS,
-	borderRightStyle: ERASED_BORDER_KEYWORDS,
-	borderBottomStyle: ERASED_BORDER_KEYWORDS,
-	borderLeftStyle: ERASED_BORDER_KEYWORDS,
-};
-
-/** Patch the CSSStyleDeclaration prototype behind `style`, once per class. */
-export function shimInlineNoneErasure(style: object): void {
-	const prototype = Object.getPrototypeOf(style) as Record<
-		string | symbol,
-		unknown
-	>;
-	if (prototype[kNoneErasureShimmed]) return;
-	prototype[kNoneErasureShimmed] = true;
-
-	for (const [property, keywords] of Object.entries(NONE_ERASURE_SHIMS)) {
-		// The dashed alias shares the camelCase accessor's functions; patching
-		// each descriptor found covers both spellings and setProperty, which
-		// dispatches through them.
-		const dashed = property.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
-		for (const name of [property, dashed]) {
-			const descriptor = Object.getOwnPropertyDescriptor(prototype, name);
-			if (!descriptor?.set) continue;
-			const originalSet = descriptor.set;
-			Object.defineProperty(prototype, name, {
-				...descriptor,
-				set(value: unknown) {
-					originalSet.call(this, value);
-					const raw = String(value).trim().toLowerCase();
-					if (!keywords.has(raw)) return;
-					const store = this as {
-						_setProperty(name: string, value: string, priority?: string): void;
-						getPropertyPriority(name: string): string;
-					};
-					// The priority survives the erasure under the property's own
-					// name, so an `!important` shorthand keeps its weight.
-					store._setProperty(dashed, raw, store.getPropertyPriority(dashed));
-				},
-			});
-		}
-	}
-}
-
 /**
  * Parse CSS box model properties from an element's computed style
  */
@@ -592,6 +526,434 @@ interface DeclarationBlock {
 
 const EMPTY_DECLARATIONS: DeclarationBlock = {declarations: {}, important: {}};
 
+/** The CSSOM shape a declaration block is read through: a rule's, or an element's. */
+interface DeclarationSource {
+	readonly [index: number]: string;
+	readonly length: number;
+	getPropertyValue(property: string): string;
+	getPropertyPriority(property: string): string;
+}
+
+/**
+ * A declaration block as the cascade stores it: expanded longhands, alongside
+ * which of them a `!important` covers.
+ */
+function expandDeclarations(style: DeclarationSource): DeclarationBlock {
+	const authored: Record<string, string> = {};
+	const authoredImportant: Record<string, string> = {};
+	for (let i = 0; i < style.length; i++) {
+		const property = style[i];
+		const value = style.getPropertyValue(property);
+		// Invalid declarations never enter the cascade (see
+		// isValidDeclaration): dropping is what lets a lower-priority
+		// rule keep winning, exactly as a browser would.
+		if (!isValidDeclaration(property, value)) {
+			continue;
+		}
+		authored[property] = value;
+		if (style.getPropertyPriority(property) === "important") {
+			authoredImportant[property] = value;
+		}
+	}
+	// Declarations are consulted per-property downstream; a shorthand that stays
+	// a shorthand is invisible to the box model -- and its importance, which
+	// covers every longhand it declares, along with it.
+	const important: Record<string, boolean> = {};
+	for (const property of Object.keys(expandShorthands(authoredImportant))) {
+		important[property] = true;
+	}
+	return {declarations: expandShorthands(authored), important};
+}
+
+/** One declaration as authored on an element's `style` attribute. */
+interface InlineDeclaration {
+	name: string;
+	value: string;
+	important: boolean;
+}
+
+/**
+ * The properties `element.style` exposes as camelCase (and dashed) accessors.
+ * Anything outside the list is still reachable through setProperty and
+ * getPropertyValue, as a custom property is.
+ */
+const INLINE_STYLE_ACCESSORS = [
+	"align-content",
+	"align-items",
+	"align-self",
+	"appearance",
+	"background",
+	"background-clip",
+	"background-color",
+	"background-image",
+	"background-position",
+	"background-repeat",
+	"background-size",
+	"border",
+	"border-bottom",
+	"border-bottom-color",
+	"border-bottom-style",
+	"border-bottom-width",
+	"border-collapse",
+	"border-color",
+	"border-left",
+	"border-left-color",
+	"border-left-style",
+	"border-left-width",
+	"border-radius",
+	"border-right",
+	"border-right-color",
+	"border-right-style",
+	"border-right-width",
+	"border-spacing",
+	"border-style",
+	"border-top",
+	"border-top-color",
+	"border-top-style",
+	"border-top-width",
+	"border-width",
+	"bottom",
+	"box-sizing",
+	"caption-side",
+	"caret-color",
+	"clear",
+	"color",
+	"column-gap",
+	"content",
+	"cursor",
+	"direction",
+	"display",
+	"flex",
+	"flex-basis",
+	"flex-direction",
+	"flex-flow",
+	"flex-grow",
+	"flex-shrink",
+	"flex-wrap",
+	"float",
+	"font",
+	"font-family",
+	"font-size",
+	"font-style",
+	"font-weight",
+	"gap",
+	"height",
+	"inset",
+	"justify-content",
+	"left",
+	"letter-spacing",
+	"line-height",
+	"list-style",
+	"list-style-image",
+	"list-style-position",
+	"list-style-type",
+	"margin",
+	"margin-bottom",
+	"margin-left",
+	"margin-right",
+	"margin-top",
+	"max-height",
+	"max-width",
+	"min-height",
+	"min-width",
+	"opacity",
+	"order",
+	"outline",
+	"outline-color",
+	"outline-offset",
+	"outline-style",
+	"outline-width",
+	"overflow",
+	"overflow-wrap",
+	"overflow-x",
+	"overflow-y",
+	"padding",
+	"padding-bottom",
+	"padding-left",
+	"padding-right",
+	"padding-top",
+	"pointer-events",
+	"position",
+	"resize",
+	"right",
+	"row-gap",
+	"table-layout",
+	"text-align",
+	"text-decoration",
+	"text-decoration-color",
+	"text-decoration-line",
+	"text-decoration-style",
+	"text-indent",
+	"text-overflow",
+	"text-transform",
+	"top",
+	"unicode-bidi",
+	"user-select",
+	"vertical-align",
+	"visibility",
+	"white-space",
+	"width",
+	"word-break",
+	"word-spacing",
+	"writing-mode",
+	"z-index",
+];
+
+function camelCaseProperty(property: string): string {
+	return property.replace(/-([a-z])/g, (_, letter: string) =>
+		letter.toUpperCase(),
+	);
+}
+
+/**
+ * The inline style objects, one per element, that `element.style` hands out.
+ */
+const inlineStyles = new WeakMap<Element, InlineStyleDeclaration>();
+
+/** Marks a prototype whose `style` accessor is already the engine's. */
+const kInlineStyleInstalled = Symbol("termdom.inlineStyle");
+
+/**
+ * The CSSOM behind `element.style`: the declarations an author writes, stored
+ * as authored and serialized back to the `style` attribute on every change.
+ *
+ * Attribute and object are one store seen from two sides. A write serializes
+ * through setAttribute, so an attribute mutation record -- what invalidation
+ * listens to -- fires for a property write exactly as for an attribute write;
+ * a write to the attribute (or its removal) reparses into the object on the
+ * next read, recognized by the text differing from what this object last
+ * serialized.
+ */
+export class InlineStyleDeclaration implements DeclarationSource {
+	[index: number]: string;
+	#element: Element;
+	#declarations: InlineDeclaration[] = [];
+	/** The `style` attribute text this object last serialized or parsed. */
+	#attributeText: string | null = null;
+	/** The declarations expanded to longhands for the cascade. */
+	#block: DeclarationBlock | null = null;
+	/** How many numeric index properties currently name a declaration. */
+	#indexed = 0;
+
+	constructor(element: Element) {
+		this.#element = element;
+	}
+
+	/** Adopt the `style` attribute when it says something this object did not write. */
+	#sync(): void {
+		const text = this.#element.getAttribute("style") ?? "";
+		if (text === this.#attributeText) return;
+		this.#attributeText = text;
+		this.#declarations = parseInlineDeclarations(text);
+		this.#invalidate();
+	}
+
+	/** Serialize to the `style` attribute, which is what invalidation observes. */
+	#flush(): void {
+		this.#invalidate();
+		this.#attributeText = this.#declarations
+			.map(
+				({name, value, important}) =>
+					`${name}: ${value}${important ? " !important" : ""};`,
+			)
+			.join(" ");
+		this.#element.setAttribute("style", this.#attributeText);
+	}
+
+	#invalidate(): void {
+		this.#block = null;
+		for (let i = 0; i < this.#indexed; i++) {
+			delete this[i];
+		}
+		this.#indexed = this.#declarations.length;
+		for (let i = 0; i < this.#indexed; i++) {
+			this[i] = this.#declarations[i].name;
+		}
+	}
+
+	#find(property: string): InlineDeclaration | undefined {
+		return this.#declarations.find((entry) => entry.name === property);
+	}
+
+	/** The declarations as the cascade consumes them: longhands, importance included. */
+	declarationBlock(): DeclarationBlock {
+		this.#sync();
+		if (this.#declarations.length === 0) return EMPTY_DECLARATIONS;
+		return (this.#block ??= expandDeclarations(this));
+	}
+
+	get length(): number {
+		this.#sync();
+		return this.#declarations.length;
+	}
+
+	item(index: number): string {
+		this.#sync();
+		return this.#declarations[index]?.name ?? "";
+	}
+
+	getPropertyValue(property: string): string {
+		this.#sync();
+		const name = normalizePropertyName(property);
+		const declared = this.#find(name);
+		if (declared) return declared.value;
+		// A longhand a shorthand declares reads back from the shorthand, as
+		// `style.border = "1px solid"` then `style.borderTopWidth` does.
+		return this.declarationBlock().declarations[name] ?? "";
+	}
+
+	getPropertyPriority(property: string): string {
+		this.#sync();
+		return this.#find(normalizePropertyName(property))?.important
+			? "important"
+			: "";
+	}
+
+	setProperty(property: string, value: string, priority?: string): void {
+		this.#sync();
+		const name = normalizePropertyName(property);
+		const text = value == null ? "" : String(value).trim();
+		if (text === "") {
+			this.removeProperty(name);
+			return;
+		}
+		const important = String(priority ?? "").toLowerCase() === "important";
+		const declared = this.#find(name);
+		if (declared) {
+			if (declared.value === text && declared.important === important) return;
+			declared.value = text;
+			declared.important = important;
+		} else {
+			this.#declarations.push({name, value: text, important});
+		}
+		this.#flush();
+	}
+
+	removeProperty(property: string): string {
+		this.#sync();
+		const name = normalizePropertyName(property);
+		const index = this.#declarations.findIndex((entry) => entry.name === name);
+		if (index === -1) return "";
+		const [removed] = this.#declarations.splice(index, 1);
+		this.#flush();
+		return removed.value;
+	}
+
+	get cssText(): string {
+		this.#sync();
+		return this.#declarations
+			.map(
+				({name, value, important}) =>
+					`${name}: ${value}${important ? " !important" : ""};`,
+			)
+			.join(" ");
+	}
+
+	set cssText(text: string) {
+		this.#declarations = parseInlineDeclarations(text ?? "");
+		this.#flush();
+	}
+}
+
+/** Custom properties keep their case; everything else is ASCII-lowercased. */
+function normalizePropertyName(property: string): string {
+	const name = String(property).trim();
+	return name.startsWith("--") ? name : name.toLowerCase();
+}
+
+/**
+ * The declarations of a `style` attribute (or a cssText assignment), parsed by
+ * the same CSSOM that parses stylesheet rules. Anything after a stray `}` --
+ * the one way attribute text could reach past its own block -- parses into
+ * rules that are dropped here.
+ */
+function parseInlineDeclarations(text: string): InlineDeclaration[] {
+	if (!text.trim()) return [];
+	const rule = CSSOM.parse(`*{${text}}`).cssRules[0] as
+		| CSSStyleRule
+		| undefined;
+	const style = rule?.style as DeclarationSource | undefined;
+	if (!style) return [];
+	const declarations: InlineDeclaration[] = [];
+	for (let i = 0; i < style.length; i++) {
+		const name = normalizePropertyName((style as any)[i]);
+		const value = style.getPropertyValue(name).trim();
+		if (!value) continue;
+		declarations.push({
+			name,
+			value,
+			important: style.getPropertyPriority(name) === "important",
+		});
+	}
+	return declarations;
+}
+
+for (const property of INLINE_STYLE_ACCESSORS) {
+	const descriptor: PropertyDescriptor = {
+		get(this: InlineStyleDeclaration) {
+			return this.getPropertyValue(property);
+		},
+		set(this: InlineStyleDeclaration, value: unknown) {
+			this.setProperty(property, value == null ? "" : String(value));
+		},
+		configurable: true,
+		enumerable: true,
+	};
+	const camelCase = camelCaseProperty(property);
+	Object.defineProperty(
+		InlineStyleDeclaration.prototype,
+		camelCase,
+		descriptor,
+	);
+	if (camelCase !== property) {
+		Object.defineProperty(InlineStyleDeclaration.prototype, property, {
+			...descriptor,
+			enumerable: false,
+		});
+	}
+	if (property === "float") {
+		Object.defineProperty(InlineStyleDeclaration.prototype, "cssFloat", {
+			...descriptor,
+			enumerable: false,
+		});
+	}
+}
+
+/**
+ * Put this engine's CSSOM behind `element.style`, on whichever prototype in the
+ * HTML and SVG element chains declares the accessor (jsdom mixes it in from
+ * ElementCSSInlineStyle).
+ */
+export function installInlineStyle(window: DOMWindow): void {
+	const roots = [window.HTMLElement?.prototype, window.SVGElement?.prototype];
+	for (const root of roots) {
+		let prototype: object | null = root ?? null;
+		while (prototype) {
+			if (Object.prototype.hasOwnProperty.call(prototype, "style")) break;
+			prototype = Object.getPrototypeOf(prototype);
+		}
+		if (!prototype) continue;
+		const owner = prototype as Record<string | symbol, unknown>;
+		if (owner[kInlineStyleInstalled]) continue;
+		owner[kInlineStyleInstalled] = true;
+		Object.defineProperty(prototype, "style", {
+			get(this: Element) {
+				let style = inlineStyles.get(this);
+				if (!style) {
+					style = new InlineStyleDeclaration(this);
+					inlineStyles.set(this, style);
+				}
+				return style;
+			},
+			set(this: Element, value: unknown) {
+				(this as HTMLElement).style.cssText = value == null ? "" : `${value}`;
+			},
+			configurable: true,
+			enumerable: true,
+		});
+	}
+}
+
 export class ComputedStyleDeclaration {
 	#element: Element;
 	#cssRules: ParsedCSSRule[];
@@ -604,8 +966,6 @@ export class ComputedStyleDeclaration {
 	// declaration is discarded wholesale on invalidation, so memoizing here
 	// needs no invalidation of its own.
 	#resolved = new Map<string, string>();
-	/** The element's inline declarations, snapshotted on first consultation. */
-	#inline: DeclarationBlock | null = null;
 
 	constructor(element: Element, cssRules: ParsedCSSRule[] = []) {
 		this.#element = element;
@@ -613,44 +973,17 @@ export class ComputedStyleDeclaration {
 	}
 
 	/**
-	 * The inline `style` declarations, expanded to longhands with this
-	 * engine's own tables.
+	 * The element's inline declarations, expanded to longhands.
 	 *
-	 * Authors write through jsdom's CSSStyleDeclaration, which stores a
-	 * shorthand under the shorthand's own name and keeps one priority entry
-	 * per key it was SET with. Reading it per property per element would ask
-	 * that store to re-parse and re-serialize on every cascade step; one
-	 * pass, expanded here, gives the longhands their declared values AND
-	 * carries a shorthand's `!important` onto every longhand it declares.
+	 * The store behind `element.style` is this engine's own CSSOM, which keeps
+	 * a declaration as authored and hands the cascade the expanded block --
+	 * so a shorthand's `!important` covers every longhand it declares.
 	 */
 	#inlineDeclarations(): DeclarationBlock {
-		if (this.#inline) return this.#inline;
-		const style = (this.#element as HTMLElement).style as
-			| (globalThis.CSSStyleDeclaration & {[index: number]: string})
-			| undefined;
-		if (!style || style.length === 0) {
-			return (this.#inline = EMPTY_DECLARATIONS);
-		}
-		const authored: Record<string, string> = {};
-		let authoredImportant: Record<string, string> | null = null;
-		for (let i = 0; i < style.length; i++) {
-			const property = style[i];
-			const value = style.getPropertyValue(property);
-			authored[property] = value;
-			if (style.getPropertyPriority(property) === "important") {
-				(authoredImportant ??= {})[property] = value;
-			}
-		}
-		const important: Record<string, boolean> = {};
-		if (authoredImportant) {
-			for (const property of Object.keys(expandShorthands(authoredImportant))) {
-				important[property] = true;
-			}
-		}
-		return (this.#inline = {
-			declarations: expandShorthands(authored),
-			important,
-		});
+		const style = (this.#element as HTMLElement).style;
+		return style instanceof InlineStyleDeclaration
+			? style.declarationBlock()
+			: EMPTY_DECLARATIONS;
 	}
 
 	/** This element's flat-tree parent's resolved value for `property`, or null at the root. */
@@ -1957,7 +2290,9 @@ export class StyleManager {
 		if (selector.includes(":has")) {
 			this.#selectorsReachAncestors = true;
 		}
-		const {declarations, important} = this.#parseDeclarations(styleRule.style);
+		const {declarations, important} = expandDeclarations(
+			styleRule.style as unknown as DeclarationSource,
+		);
 		if (
 			declarations["counter-reset"] ||
 			declarations["counter-increment"] ||
@@ -2034,37 +2369,6 @@ export class StyleManager {
 				uaOrigin,
 			});
 		}
-	}
-
-	/**
-	 * A rule's declaration block as the cascade stores it: expanded longhands,
-	 * alongside which of them a `!important` covers.
-	 */
-	#parseDeclarations(style: any): DeclarationBlock {
-		const authored: Record<string, string> = {};
-		const authoredImportant: Record<string, string> = {};
-		for (let i = 0; i < style.length; i++) {
-			const property = style[i];
-			const value = style.getPropertyValue(property);
-			// Invalid declarations never enter the cascade (see
-			// isValidDeclaration): dropping is what lets a lower-priority
-			// rule keep winning, exactly as a browser would.
-			if (!isValidDeclaration(property, value)) {
-				continue;
-			}
-			authored[property] = value;
-			if (style.getPropertyPriority(property) === "important") {
-				authoredImportant[property] = value;
-			}
-		}
-		// Rules are consulted per-property downstream; a shorthand that stays a
-		// shorthand is invisible to the box model -- and its importance, which
-		// covers every longhand it declares, along with it.
-		const important: Record<string, boolean> = {};
-		for (const property of Object.keys(expandShorthands(authoredImportant))) {
-			important[property] = true;
-		}
-		return {declarations: expandShorthands(authored), important};
 	}
 
 	/**
@@ -2642,56 +2946,9 @@ export class StyleManager {
 			return result;
 		};
 
-		// Store wrapped styles to avoid double-wrapping
-		const wrappedStyles = new WeakSet();
-
-		// Find where the style property is defined in the prototype chain
-		let stylePropertyOwner = null;
-		let proto = this.#window.HTMLElement.prototype;
-		while (proto) {
-			if (Object.prototype.hasOwnProperty.call(proto, "style")) {
-				stylePropertyOwner = proto;
-				break;
-			}
-			proto = Object.getPrototypeOf(proto);
-		}
-
-		if (stylePropertyOwner) {
-			const originalStyleGetter = Object.getOwnPropertyDescriptor(
-				stylePropertyOwner,
-				"style",
-			)?.get;
-
-			if (originalStyleGetter) {
-				Object.defineProperty(stylePropertyOwner, "style", {
-					get() {
-						const style = originalStyleGetter.call(this);
-
-						// Wrap the onChange callback if not already wrapped
-						if (style && !wrappedStyles.has(style)) {
-							wrappedStyles.add(style);
-
-							// Save reference to element for the callback
-							const element = this;
-
-							// Wrap the existing onChange callback
-							const originalOnChange = style._onChange;
-							style._onChange = function (cssText: string) {
-								// Call original onChange first (which updates the style attribute)
-								if (originalOnChange) {
-									originalOnChange.call(this, cssText);
-								}
-								// Then invalidate our cache
-								styleManager.invalidateElement(element);
-							};
-						}
-
-						return style;
-					},
-					configurable: true,
-				});
-			}
-		}
+		// A property written through element.style lands on the style attribute,
+		// so the hooks above are the whole invalidation path for inline styles.
+		installInlineStyle(this.#window);
 	}
 
 	/**
