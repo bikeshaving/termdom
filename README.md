@@ -15,8 +15,9 @@ npm install @b9g/termdom
 import {TermDOM} from "@b9g/termdom";
 
 const term = new TermDOM();
-term.attach(); // take the terminal -- the only call that does
+term.attach();
 
+// The document is a real DOM document.
 const {document} = term;
 document.body.innerHTML = `
   <style>
@@ -35,7 +36,7 @@ document.body.innerHTML = `
   </div>
 `;
 
-// TermDOM observes mutations and repaints the next frame.
+// TermDOM observes mutations and re-renders automatically.
 let n = 0;
 setInterval(() => {
   n = (n + 1) % 101;
