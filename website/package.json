@@ -21,7 +21,6 @@
 		"@b9g/shovel": "^0.2.21",
 		"@emotion/css": "^11.13.5",
 		"@emotion/server": "^11.11.0",
-		"asciinema-player": "^3.17.0",
 		"front-matter": "^4.0.2",
 		"gh-pages": "^6.3.0",
 		"normalize.css": "^8.0.1",

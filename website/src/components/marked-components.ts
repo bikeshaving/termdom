@@ -1,7 +1,6 @@
 import {jsx} from "@b9g/crank/standalone";
 
 import {CodeBlock} from "./code-block.js";
-import {CastPlayer} from "./cast-player.js";
 
 /**
  * Overrides for the markdown renderer.
@@ -20,14 +19,9 @@ export const components = {
 	 * view passes as a prop on Marked. */
 	image({token, rootProps}: any) {
 		const {href, text} = token;
-		const cast = href?.startsWith("cast:") && rootProps.casts?.[href.slice(5)];
-		if (cast) {
-			return jsx`<${CastPlayer}
-				src=${cast.src}
-				rows=${cast.rows}
-				cols=${cast.cols}
-				caption=${text}
-			/>`;
+		const gif = href?.startsWith("cast:") && rootProps.casts?.[href.slice(5)];
+		if (gif) {
+			return jsx`<figure class="cast"><img src=${gif} alt=${text} loading="lazy" /></figure>`;
 		}
 		return jsx`<img src=${href} alt=${text} />`;
 	},

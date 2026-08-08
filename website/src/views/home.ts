@@ -4,7 +4,7 @@ import {Marked} from "@b9g/crankdown";
 
 import {Root} from "../components/root.js";
 import {components} from "../components/marked-components.js";
-import {staticURLs} from "../server.js";
+import {castGifs} from "../server.js";
 
 const container = css`
 	max-width: 900px;
@@ -35,6 +35,16 @@ const heroNote = css`
    The one structural opinion: the "Why it can do this" list renders as a
    two-column feature grid. */
 const content = css`
+	figure.cast {
+		margin: 1.5rem 0;
+	}
+
+	figure.cast img {
+		display: block;
+		max-width: 100%;
+		border-radius: 6px;
+	}
+
 	ul {
 		list-style: none;
 		padding: 0;
@@ -63,12 +73,7 @@ const content = css`
 export default async function Home({url}: {url: string}) {
 	// Resolved at call time: server.ts imports the views (the router), so a
 	// module-level read of its exports lands mid-cycle, before they exist.
-	const casts = {
-		readme: {src: staticURLs["casts/readme.cast"], cols: 44, rows: 5},
-		animated: {src: staticURLs["casts/animated.cast"], cols: 78, rows: 24},
-		tree: {src: staticURLs["casts/tree.cast"], cols: 78, rows: 24},
-		form: {src: staticURLs["casts/form.cast"], cols: 78, rows: 24},
-	};
+	const casts = castGifs;
 	const contentDir = await self.directories.open("content");
 	const file = await (await contentDir.getFileHandle("home.md")).getFile();
 	const body = await file.text();

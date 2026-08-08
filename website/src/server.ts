@@ -17,35 +17,31 @@ import clientCSS from "./styles/client.css" with {assetBase: "/static/"};
 // The player's stylesheet ships as a real <link>: a dynamic import() of a
 // .css file bundles to a no-op module, which left the player unstyled --
 // giant raw SVG controls and a collapsed terminal box.
-import asciinemaCSS from "asciinema-player/dist/bundle/asciinema-player.css" with {assetBase: "/static/"};
 import navbarScript from "./clients/navbar.ts" with {assetBase: "/static/"};
-import castsScript from "./clients/casts.ts" with {assetBase: "/static/"};
 import searchScript from "./clients/search.ts" with {assetBase: "/static/"};
 import favicon from "../static/favicon.ico" with {assetBase: "/", assetName: "favicon.ico"};
 import logo from "../static/logo.svg" with {assetBase: "/static/", assetName: "[name].[ext]"};
 
-// Recordings keep stable names: they are referenced from prose and are worth
-// being able to link to directly.
-import readmeCast from "../static/casts/readme.cast" with {assetBase: "/static/", assetName: "[name].[ext]"};
-import animatedCast from "../static/casts/animated.cast" with {assetBase: "/static/", assetName: "[name].[ext]"};
-import treeCast from "../static/casts/tree.cast" with {assetBase: "/static/", assetName: "[name].[ext]"};
-import formCast from "../static/casts/form.cast" with {assetBase: "/static/", assetName: "[name].[ext]"};
+// Recorded terminal sessions, rendered to GIF so they play in any browser
+// with no client JavaScript.
+import readmeGif from "../static/casts/readme.gif" with {assetBase: "/static/", assetName: "[name].[ext]"};
+import animatedGif from "../static/casts/animated.gif" with {assetBase: "/static/", assetName: "[name].[ext]"};
+import treeGif from "../static/casts/tree.gif" with {assetBase: "/static/", assetName: "[name].[ext]"};
+import formGif from "../static/casts/form.gif" with {assetBase: "/static/", assetName: "[name].[ext]"};
 
 export const assets = {
 	clientCSS,
-	asciinemaCSS,
 	navbarScript,
-	castsScript,
 	searchScript,
 	favicon,
 	logo,
 };
 
-export const staticURLs: Record<string, string> = {
-	"casts/readme.cast": readmeCast,
-	"casts/animated.cast": animatedCast,
-	"casts/tree.cast": treeCast,
-	"casts/form.cast": formCast,
+export const castGifs: Record<string, string> = {
+	readme: readmeGif,
+	animated: animatedGif,
+	tree: treeGif,
+	form: formGif,
 };
 
 const SITE = "https://termdom.org";
