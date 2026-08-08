@@ -171,6 +171,45 @@ test("the whole CSSOM an author can reach is this engine's", async () => {
 	document.head.appendChild(link);
 	expect(link.sheet).toBeNull();
 
+	// Walk every sheet, every rule and every block a document can reach: not
+	// one of them may be an object the cascade does not read.
+	const foreign: string[] = [];
+	const walkRules = (rules: CSSRuleList, where: string): void => {
+		for (const rule of Array.from(rules)) {
+			if (!isOurs(rule, "CSSRule")) foreign.push(`${where} rule`);
+			const block = (rule as CSSStyleRule).style;
+			if (block && !isOurs(block, "CSSStyleDeclaration")) {
+				foreign.push(`${where} rule.style`);
+			}
+			if (
+				rule.parentStyleSheet &&
+				!isOurs(rule.parentStyleSheet, "CSSStyleSheet")
+			) {
+				foreign.push(`${where} rule.parentStyleSheet`);
+			}
+			const nested = (rule as CSSMediaRule).cssRules;
+			if (nested) walkRules(nested, `${where} >`);
+		}
+	};
+	for (const [where, sheets] of [
+		["styleSheets", Array.from(document.styleSheets)],
+		["adoptedStyleSheets", document.adoptedStyleSheets],
+	] as const) {
+		for (const sheet of sheets) {
+			if (!isOurs(sheet, "CSSStyleSheet")) foreign.push(where);
+			walkRules(sheet.cssRules, where);
+		}
+	}
+	for (const element of document.querySelectorAll("*")) {
+		if (!isOurs((element as HTMLElement).style, "CSSStyleDeclaration")) {
+			foreign.push(`${element.tagName}.style`);
+		}
+		if (!isOurs(window.getComputedStyle(element), "CSSStyleDeclaration")) {
+			foreign.push(`getComputedStyle(${element.tagName})`);
+		}
+	}
+	expect(foreign).toEqual([]);
+
 	dom.dispose();
 });
 
