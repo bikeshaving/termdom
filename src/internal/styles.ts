@@ -1257,7 +1257,7 @@ function parseDeclarationText(text: string): CSSDeclaration[] {
 		start = end + 1;
 		const colon = source.indexOf(":");
 		if (colon === -1) return;
-		const name = normalizePropertyName(source.slice(0, colon));
+		const name = parsePropertyName(source.slice(0, colon));
 		if (!name) return;
 		let value = serializeCSSValue(source.slice(colon + 1), name);
 		let important = false;
@@ -1271,7 +1271,9 @@ function parseDeclarationText(text: string): CSSDeclaration[] {
 	};
 	for (let i = 0; i < text.length; i++) {
 		const character = text[i];
-		if (character === "/" && text[i + 1] === "*") {
+		if (character === "\\") {
+			i++;
+		} else if (character === "/" && text[i + 1] === "*") {
 			const end = text.indexOf("*/", i + 2);
 			i = end === -1 ? text.length : end + 1;
 		} else if (character === '"' || character === "'") {
@@ -1576,7 +1578,9 @@ export class CSSStyleDeclaration implements DeclarationSource {
 			}
 			if (!text) {
 				const priority = declaration.important ? " !important" : "";
-				text = `${declaration.name}: ${declaration.value}${priority};`;
+				text = `${serializePropertyName(declaration.name)}: ${
+					declaration.value
+				}${priority};`;
 				serialized.add(declaration.name);
 			}
 			parts.push(text);
@@ -1834,6 +1838,30 @@ export class CSSStyleDeclaration implements DeclarationSource {
 function normalizePropertyName(property: string): string {
 	const name = String(property).trim();
 	return name.startsWith("--") ? name : name.toLowerCase();
+}
+
+/**
+ * A property name as CSS source spells it. A custom property's name is an
+ * identifier, so the escapes in it spell characters that could not otherwise
+ * stand there: the source `--a\;b` names the property `--a;b`.
+ */
+function parsePropertyName(source: string): string {
+	const name = String(source).trim();
+	if (!name.startsWith("--")) return normalizePropertyName(name);
+	return name.includes("\\")
+		? `--${cssTree.ident.decode(name.slice(2))}`
+		: name;
+}
+
+/**
+ * A property name as a declaration block writes it: a custom property's name
+ * escaped so that reparsing the block names the same property, every other
+ * name already an identifier.
+ */
+function serializePropertyName(property: string): string {
+	return property.startsWith("--")
+		? `--${serializeCSSIdentifier(property.slice(2))}`
+		: property;
 }
 
 for (const property of CSS_PROPERTIES) {
@@ -2277,6 +2305,68 @@ export class CSSStyleRule extends CSSGroupingRule {
 }
 
 /** The namespaces a sheet's `@namespace` rules declare. */
+/**
+ * A selector's namespace constraint, and the selector with the prefixes that
+ * state it taken off.
+ *
+ * CSS Namespaces 2: a compound selector with no type selector is qualified by
+ * the default namespace all the same, so with an HTML default namespace
+ * declared `.style1` selects no SVG element -- `.style1` means `*|*.style1`
+ * only where no default namespace was declared. The DOM's own matcher knows
+ * nothing of a sheet's namespace map, so the constraint is answered here and
+ * the prefixes come off the text handed to that matcher.
+ *
+ * `namespace` is the URI the subject must be in, null for no namespace at all,
+ * and undefined when any will do. It constrains the SUBJECT of the selector;
+ * an ancestor written with a prefix is matched on its local name alone.
+ */
+function selectorNamespace(
+	selector: string,
+	namespaces: SelectorNamespaces,
+): {selector: string; namespace?: string | null; valid: boolean} {
+	const list = parseSelectorList(selector);
+	if (!list) return {selector, valid: true};
+	let subject: string | null | undefined;
+	let subjectStated = false;
+	let sawPrefix = false;
+	let valid = true;
+	for (const one of childrenOf(list)) {
+		const parts = childrenOf(one);
+		let start = 0;
+		for (const [index, part] of parts.entries()) {
+			if (part.type === "Combinator") start = index + 1;
+		}
+		for (const [index, part] of parts.entries()) {
+			if (part.type !== "TypeSelector") continue;
+			const name = part.name as string;
+			const bar = name.lastIndexOf("|");
+			if (bar === -1) continue;
+			sawPrefix = true;
+			part.name = name.slice(bar + 1);
+			const prefix = name.slice(0, bar);
+			let uri: string | null | undefined;
+			if (prefix === "") {
+				uri = null;
+			} else if (prefix !== "*") {
+				uri = namespaces.prefixes.get(cssTree.ident.decode(prefix));
+				// A prefix no @namespace declared makes the selector invalid,
+				// and an invalid selector matches nothing.
+				if (uri === undefined) valid = false;
+			}
+			if (index >= start) {
+				subject = uri;
+				subjectStated = true;
+			}
+		}
+	}
+	if (!subjectStated) subject = namespaces.default ?? undefined;
+	return {
+		selector: sawPrefix ? serializeSelectorList(list) : selector,
+		namespace: subject,
+		valid,
+	};
+}
+
 function sheetNamespaces(sheet: CSSStyleSheet | null): SelectorNamespaces {
 	if (!sheet) return NO_NAMESPACES;
 	const namespaces: SelectorNamespaces = {default: null, prefixes: new Map()};
@@ -3844,7 +3934,7 @@ function blockDeclarations(node: ParsedNode): CSSDeclaration[] {
 	if (!node.block) return declarations;
 	for (const child of nodesOf(node.block)) {
 		if (child.type !== "Declaration") continue;
-		const name = normalizePropertyName(child.property ?? "");
+		const name = parsePropertyName(child.property ?? "");
 		const value = serializeCSSValue(
 			cssTree.generate(child.value as never),
 			name,
@@ -5917,6 +6007,11 @@ interface ParsedCSSRule {
 	 */
 	host?: {predicate: string | null; rest: string | null; child: boolean};
 	/**
+	 * The namespace the selector's subject must be in: a URI, null for no
+	 * namespace, absent when the selector names none and any will do.
+	 */
+	namespace?: string | null;
+	/**
 	 * True for rules declared by a UA-internal shadow tree's stylesheet.
 	 * Cascade ORIGIN, the tier above specificity: every author rule beats
 	 * every UA rule, which is what lets `input::placeholder { color }`
@@ -6628,6 +6723,7 @@ export class StyleManager {
 		// each is matched -- and weighed -- on its own. `#a::before, #b` is one
 		// pseudo-element rule and one ordinary rule, not one of either.
 		const {declarations, important} = styleRule.style.declarationBlock();
+		const namespaces = sheetNamespaces(styleRule.parentStyleSheet);
 		for (const selector of splitSelectorList(styleRule.selectorText)) {
 			this.#parseSelector(
 				selector,
@@ -6635,6 +6731,7 @@ export class StyleManager {
 				important,
 				scope,
 				uaOriginSheet,
+				namespaces,
 			);
 		}
 	}
@@ -6645,7 +6742,15 @@ export class StyleManager {
 		important: Record<string, boolean>,
 		scope?: Node,
 		uaOriginSheet?: boolean,
+		sheetNamespaces: SelectorNamespaces = NO_NAMESPACES,
 	): void {
+		let namespace: string | null | undefined;
+		if (sheetNamespaces !== NO_NAMESPACES || selector.includes("|")) {
+			const resolved = selectorNamespace(selector, sheetNamespaces);
+			if (!resolved.valid) return;
+			selector = resolved.selector;
+			namespace = resolved.namespace;
+		}
 		if (selector.includes("+") || selector.includes("~")) {
 			this.#selectorsReachSiblings = true;
 		}
@@ -6718,6 +6823,7 @@ export class StyleManager {
 				pseudoElement,
 				scope,
 				uaOrigin,
+				namespace,
 			};
 			this.#parsedRules.push(rule);
 			const byType = this.#pseudoRulesByType.get(pseudoElement);
@@ -6731,6 +6837,7 @@ export class StyleManager {
 				specificity,
 				scope,
 				uaOrigin,
+				namespace,
 			});
 		}
 	}
@@ -6844,6 +6951,14 @@ export class StyleManager {
 	 */
 	#ruleMatches(element: Element, rule: ParsedCSSRule): boolean {
 		try {
+			// The namespace the selector qualifies its subject with, which the
+			// DOM's own matcher cannot answer.
+			if (
+				rule.namespace !== undefined &&
+				element.namespaceURI !== rule.namespace
+			) {
+				return false;
+			}
 			// jsdom treats `:focus-visible` as `:focus`, so gate it on our own flag.
 			if (
 				!this.#focusVisibleActive &&
