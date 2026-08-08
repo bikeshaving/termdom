@@ -48,10 +48,21 @@ declare module "css-tree" {
 		encode(text: string): string;
 	};
 
-	export const lexer: {
+	export interface Lexer {
 		matchProperty(property: string, value: CSSTreeNode | string): MatchResult;
 		checkPropertyName(property: string): Error | undefined;
-	};
+	}
+
+	export const lexer: Lexer;
+
+	/**
+	 * A css-tree with an amended grammar dictionary. A syntax beginning with
+	 * `|` extends the entry the property index states rather than replacing it.
+	 */
+	export function fork(extension: {
+		properties?: Record<string, string>;
+		types?: Record<string, string>;
+	}): {lexer: Lexer};
 }
 
 declare module "bidi-js" {

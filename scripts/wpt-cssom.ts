@@ -124,6 +124,8 @@ const EXCLUSIONS: Record<string, string> = {
 	"HTMLLinkElement-load-event-002.html": "network: <link> load events",
 	"HTMLStyleElement-load-event.html":
 		"network: <style> load events, which fire only for fetched subresources",
+	"insertRule-charset-no-index.html":
+		"network: the rules are inserted into a <link> sheet",
 	"cssimportrule-parent.html": "network: the sheet an @import fetches",
 	"cssimportrule-sheet-identity.html": "network: the sheet an @import fetches",
 

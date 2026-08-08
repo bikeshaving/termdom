@@ -281,6 +281,7 @@ const LENGTH_PROPERTIES = new Set([
  * `padding-top: 1px` means one cell.
  */
 function isValidDeclaration(property: string, value: string): boolean {
+	if (!matchesGrammar(property, value)) return false;
 	if (!LENGTH_PROPERTIES.has(property)) {
 		return true;
 	}
@@ -296,6 +297,65 @@ function isValidDeclaration(property: string, value: string): boolean {
 			}
 			return parseFloat(token) === 0; // bare 0 is the one legal bare number
 		});
+}
+
+/**
+ * The grammars a value is matched against: the property index's, with the
+ * entries it states from an older level of the specs brought up to date.
+ * `generic()` family names, the SVG baseline keywords and `outline-color:
+ * invert` are all in the current specs and missing from the index.
+ */
+const grammarLexer = cssTree.fork({
+	properties: {
+		"alignment-baseline": "| text-bottom | text-top",
+		"baseline-shift": "| top | center | bottom",
+		"outline-color": "| invert",
+	},
+	types: {
+		"family-name":
+			"| generic( <custom-ident>+ ) | -webkit-generic( <custom-ident>+ )",
+	},
+}).lexer;
+
+/**
+ * Whether a value fits its property's grammar, memoized: a declaration is
+ * parsed once for every element that declares it, and the same handful of
+ * values recur across a whole document.
+ */
+const grammarMatches = new Map<string, boolean>();
+
+/**
+ * Whether a declared value matches the property's grammar, as the property
+ * index states it. A value that does not is not a declaration at all: it
+ * leaves whatever stood there standing, which is what makes `color: notacolor`
+ * a no-op rather than a value.
+ *
+ * A value carrying a substitution is not judged: what it means depends on what
+ * the custom property holds, which is not known here.
+ */
+function matchesGrammar(property: string, value: string): boolean {
+	if (property.startsWith("--") || !SUPPORTED_PROPERTIES.has(property)) {
+		return true;
+	}
+	const text = value.trim();
+	if (!text || CSS_WIDE_KEYWORDS.has(text.toLowerCase())) return true;
+	if (/\b(?:var|env|attr)\(/i.test(text)) return true;
+	const key = `${property}|${text}`;
+	const memoized = grammarMatches.get(key);
+	if (memoized !== undefined) return memoized;
+	let valid = true;
+	try {
+		const match = grammarLexer.matchProperty(property, text);
+		// A property the grammars do not describe is one this cannot judge.
+		valid =
+			match.matched !== null ||
+			/Unknown property/i.test(match.error?.message ?? "");
+	} catch {
+		valid = true;
+	}
+	if (grammarMatches.size > 4096) grammarMatches.clear();
+	grammarMatches.set(key, valid);
+	return valid;
 }
 
 /** Minimum gutter a UL/OL reserves for its markers, in cells. */
@@ -1170,7 +1230,26 @@ export function serializeCSSNumber(text: string): string {
 	const value = Number(text);
 	if (!Number.isFinite(value)) return text;
 	if (Object.is(value, -0)) return "0";
-	return String(value);
+	const out = String(value);
+	return out.includes("e") ? expandExponential(out) : out;
+}
+
+/**
+ * A number written in base ten, however large or small: CSS has no scientific
+ * notation, so `1e24` is written with its twenty-four zeros.
+ */
+function expandExponential(text: string): string {
+	const parts = /^([+-]?)(\d+)(?:\.(\d+))?e([+-]?\d+)$/i.exec(text);
+	if (!parts) return text;
+	const [, sign, whole, fraction = "", exponentText] = parts;
+	const exponent = Number(exponentText);
+	const digits = whole + fraction;
+	const point = whole.length + exponent;
+	if (point <= 0) return `${sign}0.${"0".repeat(-point)}${digits}`;
+	if (point >= digits.length) {
+		return `${sign}${digits}${"0".repeat(point - digits.length)}`;
+	}
+	return `${sign}${digits.slice(0, point)}.${digits.slice(point)}`;
 }
 
 /** Serialize a string: double-quoted, with quotes and backslashes escaped. */
@@ -1272,10 +1351,12 @@ function parseDeclarationText(text: string): CSSDeclaration[] {
 		if (!name) return;
 		let value = serializeCSSValue(source.slice(colon + 1), name);
 		let important = false;
-		const bang = value.toLowerCase().lastIndexOf("!important");
-		if (bang !== -1 && !value.slice(bang + 10).trim()) {
+		// `!` and `important` are two tokens, and whitespace or a comment may
+		// stand between them.
+		const bang = /!\s*important\s*$/i.exec(value);
+		if (bang) {
 			important = true;
-			value = value.slice(0, bang).trim();
+			value = value.slice(0, bang.index).trim();
 		}
 		if (!value) return;
 		declarations.push({name, value, important});
@@ -1799,7 +1880,10 @@ export class CSSStyleDeclaration implements DeclarationSource {
 		this.#sync();
 		const name = normalizePropertyName(property);
 		if (!this.#supports(name)) return;
-		const text = serializeCSSValue(value == null ? "" : String(value), name);
+		// `[LegacyNullToEmptyString]`: null names the empty value, which removes
+		// the declaration. Every other value is stringified, and `undefined`
+		// stringifies to a value no property has -- so the call does nothing.
+		const text = serializeCSSValue(value === null ? "" : String(value), name);
 		if (text === "") {
 			this.removeProperty(name);
 			return;
@@ -2797,12 +2881,9 @@ export class CSSMediaRule extends CSSConditionRule {
 		this.#media.mediaText = String(text);
 	}
 
+	/** A condition is read: the media list behind it is what an author sets. */
 	get conditionText(): string {
 		return this.#media.mediaText;
-	}
-
-	set conditionText(text: string) {
-		this.#media.mediaText = text;
 	}
 
 	get cssText(): string {
@@ -3403,9 +3484,62 @@ export class CSSStyleSheet {
 				this,
 			);
 		}
-		this.#rules.splice(index, 0, parseRuleText(text, this, null));
+		const inserted = parseRuleText(text, this, null);
+		// A sheet an author constructed pulls in no other: `@import` is not a
+		// rule it can be given.
+		if (inserted instanceof CSSImportRule && this.#constructed) {
+			throw domException(
+				"A constructed stylesheet holds no @import rule",
+				"SyntaxError",
+				this,
+			);
+		}
+		this.#checkRuleOrder(inserted, index);
+		this.#rules.splice(index, 0, inserted);
 		this.#changed();
 		return index;
+	}
+
+	/**
+	 * Whether a rule may stand at `index`.
+	 *
+	 * `@import` precedes every rule but another `@import`, and `@namespace`
+	 * every rule but those two -- which is as much a constraint on the rule
+	 * being inserted as on the ones already there. A `@namespace` additionally
+	 * needs a sheet that holds nothing else: a namespace declared after a
+	 * selector has been parsed cannot reach it.
+	 */
+	#checkRuleOrder(rule: CSSRule, index: number): void {
+		const hierarchy = (): never => {
+			throw domException(
+				"That rule cannot stand at that index",
+				"HierarchyRequestError",
+				this,
+			);
+		};
+		const prelude = (other: CSSRule): boolean =>
+			other instanceof CSSImportRule || other instanceof CSSNamespaceRule;
+		const before = this.#rules.slice(0, index);
+		const after = this.#rules.slice(index);
+		if (rule instanceof CSSImportRule) {
+			if (before.some((other) => !(other instanceof CSSImportRule))) {
+				hierarchy();
+			}
+			return;
+		}
+		if (rule instanceof CSSNamespaceRule) {
+			if (before.some((other) => !prelude(other))) hierarchy();
+			if (after.some((other) => other instanceof CSSImportRule)) hierarchy();
+			if (this.#rules.some((other) => !prelude(other))) {
+				throw domException(
+					"A @namespace rule needs a sheet of nothing but @import and @namespace rules",
+					"InvalidStateError",
+					this,
+				);
+			}
+			return;
+		}
+		if (after.some(prelude)) hierarchy();
 	}
 
 	deleteRule(index: number): void {
@@ -3420,7 +3554,26 @@ export class CSSStyleSheet {
 				this,
 			);
 		}
-		detachRule(this.#rules[index]);
+		const removed = this.#rules[index];
+		// Removing a namespace declaration would change what the selectors
+		// already parsed against it mean, so a sheet holding any other rule
+		// keeps it.
+		if (
+			removed instanceof CSSNamespaceRule &&
+			this.#rules.some(
+				(other) =>
+					!(
+						other instanceof CSSImportRule || other instanceof CSSNamespaceRule
+					),
+			)
+		) {
+			throw domException(
+				"A @namespace rule cannot be removed from a sheet that holds other rules",
+				"InvalidStateError",
+				this,
+			);
+		}
+		detachRule(removed);
 		this.#rules.splice(index, 1);
 		this.#changed();
 	}
