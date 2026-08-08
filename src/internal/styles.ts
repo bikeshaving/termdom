@@ -581,9 +581,31 @@ interface CSSDeclaration {
 /** Every property CSSOM exposes, shorthands included. */
 const SUPPORTED_PROPERTIES = new Set(CSS_PROPERTIES);
 
-/** Each shorthand's longhands, in the order its grammar names them. */
+const EDGE_NAMES = ["top", "right", "bottom", "left"] as const;
+
+/** The components of a line shorthand, in the order its grammar writes them. */
+const LINE_COMPONENTS = ["width", "style", "color"] as const;
+
+const CORNER_NAMES = [
+	"top-left",
+	"top-right",
+	"bottom-right",
+	"bottom-left",
+] as const;
+
+/**
+ * Each shorthand's longhands, in the order its grammar names them: the
+ * property index lists a box's sides alphabetically, where the grammar --
+ * and so the order the longhands are stored and serialized in -- runs
+ * top, right, bottom, left.
+ */
 const SHORTHAND_LONGHANDS = new Map<string, readonly string[]>(
-	Object.entries(CSS_SHORTHANDS),
+	Object.entries(CSS_SHORTHANDS).map(([shorthand, longhands]) => [
+		shorthand,
+		boxOrder(shorthand, longhands, EDGE_NAMES) ??
+			boxOrder(shorthand, longhands, CORNER_NAMES) ??
+			longhands,
+	]),
 );
 
 /**
@@ -611,17 +633,6 @@ const LONGHAND_SHORTHANDS = new Map<string, readonly string[]>();
 		LONGHAND_SHORTHANDS.set(longhand, shorthands);
 	}
 }
-
-const EDGE_NAMES = ["top", "right", "bottom", "left"] as const;
-/** The components of a line shorthand, in the order its grammar writes them. */
-const LINE_COMPONENTS = ["width", "style", "color"] as const;
-
-const CORNER_NAMES = [
-	"top-left",
-	"top-right",
-	"bottom-right",
-	"bottom-left",
-] as const;
 
 /**
  * A declared value in its CSSOM spelling: comments removed, runs of whitespace
@@ -1214,7 +1225,1056 @@ export function installInlineStyle(window: DOMWindow): void {
 	}
 }
 
-export class ComputedStyleDeclaration {
+// ============================================================================
+// CSSOM: STYLESHEETS AND RULES
+// ============================================================================
+
+/** The rule types CSSRule's legacy constants name. */
+const RULE_TYPES = {
+	STYLE_RULE: 1,
+	CHARSET_RULE: 2,
+	IMPORT_RULE: 3,
+	MEDIA_RULE: 4,
+	FONT_FACE_RULE: 5,
+	PAGE_RULE: 6,
+	KEYFRAMES_RULE: 7,
+	KEYFRAME_RULE: 8,
+	NAMESPACE_RULE: 10,
+	COUNTER_STYLE_RULE: 11,
+	SUPPORTS_RULE: 12,
+	FONT_FEATURE_VALUES_RULE: 14,
+} as const;
+
+/**
+ * What a sheet does when its rules -- or a declaration inside one of them --
+ * change: tell whoever consumes it. Registered per sheet rather than exposed
+ * on it, so a rule can reach its sheet's consumer without the sheet carrying
+ * a method no author should see.
+ */
+const sheetNotifiers = new WeakMap<CSSStyleSheet, () => void>();
+
+function sheetChanged(sheet: CSSStyleSheet | null | undefined): void {
+	if (sheet) sheetNotifiers.get(sheet)?.();
+}
+
+/** An indexed CSSOM collection: `list[0]` alongside `list.item(0)`. */
+function indexed<T extends object>(list: T, items: readonly unknown[]): T {
+	return new Proxy(list, {
+		get(target, property) {
+			if (typeof property === "string" && /^\d+$/.test(property)) {
+				return items[Number(property)];
+			}
+			// The list itself is the receiver: its accessors and methods read
+			// private fields, which a proxy receiver cannot reach.
+			const value = Reflect.get(target, property, target);
+			return typeof value === "function" ? value.bind(target) : value;
+		},
+		has(target, property) {
+			if (typeof property === "string" && /^\d+$/.test(property)) {
+				return Number(property) < items.length;
+			}
+			return Reflect.has(target, property);
+		},
+		ownKeys(target) {
+			return [
+				...items.map((_, index) => String(index)),
+				...Reflect.ownKeys(target),
+			];
+		},
+		getOwnPropertyDescriptor(target, property) {
+			if (typeof property === "string" && /^\d+$/.test(property)) {
+				const index = Number(property);
+				if (index < items.length) {
+					return {
+						value: items[index],
+						writable: false,
+						enumerable: true,
+						configurable: true,
+					};
+				}
+			}
+			return Reflect.getOwnPropertyDescriptor(target, property);
+		},
+	});
+}
+
+/** The media queries a sheet or an `@media` rule applies under. */
+export class MediaList {
+	#media: string[] = [];
+	#onChange: (() => void) | null;
+
+	constructor(mediaText = "", onChange?: () => void) {
+		this.#onChange = onChange ?? null;
+		this.#parse(mediaText);
+	}
+
+	#parse(text: string): void {
+		this.#media = String(text ?? "")
+			.split(",")
+			.map((query) => query.trim())
+			.filter(Boolean);
+	}
+
+	get mediaText(): string {
+		return this.#media.join(", ");
+	}
+
+	set mediaText(text: string) {
+		this.#parse(text);
+		this.#onChange?.();
+	}
+
+	get length(): number {
+		return this.#media.length;
+	}
+
+	item(index: number): string | null {
+		return this.#media[index] ?? null;
+	}
+
+	appendMedium(medium: string): void {
+		const query = String(medium).trim();
+		if (!query || this.#media.includes(query)) return;
+		this.#media.push(query);
+		this.#onChange?.();
+	}
+
+	deleteMedium(medium: string): void {
+		const index = this.#media.indexOf(String(medium).trim());
+		if (index === -1) {
+			throw new DOMException(`No such medium: ${medium}`, "NotFoundError");
+		}
+		this.#media.splice(index, 1);
+		this.#onChange?.();
+	}
+
+	[Symbol.iterator](): IterableIterator<string> {
+		return this.#media[Symbol.iterator]();
+	}
+
+	toString(): string {
+		return this.mediaText;
+	}
+}
+
+/** A rule of a stylesheet: the base every rule type shares. */
+export abstract class CSSRule {
+	static readonly STYLE_RULE = RULE_TYPES.STYLE_RULE;
+	static readonly CHARSET_RULE = RULE_TYPES.CHARSET_RULE;
+	static readonly IMPORT_RULE = RULE_TYPES.IMPORT_RULE;
+	static readonly MEDIA_RULE = RULE_TYPES.MEDIA_RULE;
+	static readonly FONT_FACE_RULE = RULE_TYPES.FONT_FACE_RULE;
+	static readonly PAGE_RULE = RULE_TYPES.PAGE_RULE;
+	static readonly KEYFRAMES_RULE = RULE_TYPES.KEYFRAMES_RULE;
+	static readonly KEYFRAME_RULE = RULE_TYPES.KEYFRAME_RULE;
+	static readonly NAMESPACE_RULE = RULE_TYPES.NAMESPACE_RULE;
+	static readonly COUNTER_STYLE_RULE = RULE_TYPES.COUNTER_STYLE_RULE;
+	static readonly SUPPORTS_RULE = RULE_TYPES.SUPPORTS_RULE;
+	static readonly FONT_FEATURE_VALUES_RULE =
+		RULE_TYPES.FONT_FEATURE_VALUES_RULE;
+
+	#parentStyleSheet: CSSStyleSheet | null;
+	#parentRule: CSSRule | null;
+
+	constructor(
+		parentStyleSheet: CSSStyleSheet | null,
+		parentRule: CSSRule | null,
+	) {
+		this.#parentStyleSheet = parentStyleSheet;
+		this.#parentRule = parentRule;
+	}
+
+	abstract get type(): number;
+	abstract get cssText(): string;
+
+	get parentRule(): CSSRule | null {
+		return this.#parentRule;
+	}
+
+	get parentStyleSheet(): CSSStyleSheet | null {
+		return this.#parentStyleSheet;
+	}
+}
+
+for (const [name, value] of Object.entries(RULE_TYPES)) {
+	Object.defineProperty(CSSRule.prototype, name, {
+		value,
+		enumerable: true,
+	});
+}
+
+/** Tell the sheet -- and so the cascade -- that a rule changed. */
+function notifyRule(rule: CSSRule): void {
+	sheetChanged(rule.parentStyleSheet);
+}
+
+/** A style rule: a selector and the declaration block it applies. */
+export class CSSStyleRule extends CSSRule {
+	#selectorText: string;
+	#style: CSSStyleDeclaration;
+
+	constructor(
+		selectorText: string,
+		cssText: string,
+		parentStyleSheet: CSSStyleSheet | null,
+		parentRule: CSSRule | null,
+	) {
+		super(parentStyleSheet, parentRule);
+		this.#selectorText = selectorText;
+		this.#style = new CSSStyleDeclaration({
+			parentRule: this,
+			onChange: () => notifyRule(this),
+		});
+		this.#style.cssText = cssText;
+	}
+
+	get type(): number {
+		return RULE_TYPES.STYLE_RULE;
+	}
+
+	get selectorText(): string {
+		return this.#selectorText;
+	}
+
+	set selectorText(selector: string) {
+		const text = String(selector).trim();
+		if (!text || text === this.#selectorText) return;
+		this.#selectorText = text;
+		notifyRule(this);
+	}
+
+	get style(): CSSStyleDeclaration {
+		return this.#style;
+	}
+
+	get cssText(): string {
+		const declarations = this.#style.cssText;
+		return declarations
+			? `${this.#selectorText} { ${declarations} }`
+			: `${this.#selectorText} { }`;
+	}
+}
+
+/** A rule with a rule list of its own: `@media`, `@supports`, `@layer`. */
+export abstract class CSSGroupingRule extends CSSRule {
+	#rules: CSSRule[] = [];
+	#ruleList: CSSRuleList;
+
+	constructor(
+		parentStyleSheet: CSSStyleSheet | null,
+		parentRule: CSSRule | null,
+		build?: (group: CSSGroupingRule) => CSSRule[],
+	) {
+		super(parentStyleSheet, parentRule);
+		this.#ruleList = createRuleList(this.#rules);
+		if (build) this.#rules.push(...build(this));
+	}
+
+	get cssRules(): CSSRuleList {
+		return this.#ruleList;
+	}
+
+	insertRule(text: string, index = 0): number {
+		const inserted = parseRuleText(text, this.parentStyleSheet, this);
+		if (index > this.#rules.length) {
+			throw new DOMException(
+				`Cannot insert at index ${index}`,
+				"IndexSizeError",
+			);
+		}
+		this.#rules.splice(index, 0, inserted);
+		notifyRule(this);
+		return index;
+	}
+
+	deleteRule(index: number): void {
+		if (index >= this.#rules.length) {
+			throw new DOMException(
+				`Cannot delete at index ${index}`,
+				"IndexSizeError",
+			);
+		}
+		this.#rules.splice(index, 1);
+		notifyRule(this);
+	}
+}
+
+/** A group's rules, serialized one per line and indented one level. */
+function serializeGroupRules(group: CSSGroupingRule): string {
+	return Array.from(group.cssRules)
+		.map((rule) => `\n  ${rule.cssText.replace(/\n/g, "\n  ")}`)
+		.join("");
+}
+
+/** A grouping rule gated on a condition: `@media`, `@supports`. */
+export abstract class CSSConditionRule extends CSSGroupingRule {
+	abstract get conditionText(): string;
+}
+
+/** `@media`: the rules that apply when the viewport matches. */
+export class CSSMediaRule extends CSSConditionRule {
+	#media: MediaList;
+
+	constructor(
+		mediaText: string,
+		parentStyleSheet: CSSStyleSheet | null,
+		parentRule: CSSRule | null,
+		build?: (group: CSSGroupingRule) => CSSRule[],
+	) {
+		super(parentStyleSheet, parentRule, build);
+		this.#media = new MediaList(mediaText, () => notifyRule(this));
+	}
+
+	get type(): number {
+		return RULE_TYPES.MEDIA_RULE;
+	}
+
+	get media(): MediaList {
+		return this.#media;
+	}
+
+	get conditionText(): string {
+		return this.#media.mediaText;
+	}
+
+	set conditionText(text: string) {
+		this.#media.mediaText = text;
+	}
+
+	get cssText(): string {
+		return `@media ${this.conditionText} {${serializeGroupRules(this)}\n}`;
+	}
+}
+
+/** `@supports`: parsed, and inert -- a terminal supports what this engine does. */
+export class CSSSupportsRule extends CSSConditionRule {
+	#conditionText: string;
+
+	constructor(
+		conditionText: string,
+		parentStyleSheet: CSSStyleSheet | null,
+		parentRule: CSSRule | null,
+		build?: (group: CSSGroupingRule) => CSSRule[],
+	) {
+		super(parentStyleSheet, parentRule, build);
+		this.#conditionText = conditionText;
+	}
+
+	get type(): number {
+		return RULE_TYPES.SUPPORTS_RULE;
+	}
+
+	get conditionText(): string {
+		return this.#conditionText;
+	}
+
+	get cssText(): string {
+		return `@supports ${this.#conditionText} {${serializeGroupRules(this)}\n}`;
+	}
+}
+
+/**
+ * `@import`: parsed into an object with its href and media, whose styleSheet
+ * is null. There is no network in a terminal document, so nothing is fetched
+ * and the rule contributes no declarations.
+ */
+export class CSSImportRule extends CSSRule {
+	#href: string;
+	#media: MediaList;
+	#layerName: string | null;
+
+	constructor(
+		href: string,
+		mediaText: string,
+		layerName: string | null,
+		parentStyleSheet: CSSStyleSheet | null,
+	) {
+		super(parentStyleSheet, null);
+		this.#href = href;
+		this.#media = new MediaList(mediaText);
+		this.#layerName = layerName;
+	}
+
+	get type(): number {
+		return RULE_TYPES.IMPORT_RULE;
+	}
+
+	get href(): string {
+		return this.#href;
+	}
+
+	get media(): MediaList {
+		return this.#media;
+	}
+
+	get layerName(): string | null {
+		return this.#layerName;
+	}
+
+	get styleSheet(): CSSStyleSheet | null {
+		return null;
+	}
+
+	get cssText(): string {
+		const media = this.#media.mediaText;
+		return `@import url("${this.#href}")${media ? ` ${media}` : ""};`;
+	}
+}
+
+/** A rule this engine parses but gives no rendering: `@font-face`, `@page`. */
+export class CSSDeclarationAtRule extends CSSRule {
+	#type: number;
+	#prelude: string;
+	#style: CSSStyleDeclaration;
+
+	constructor(
+		type: number,
+		prelude: string,
+		cssText: string,
+		parentStyleSheet: CSSStyleSheet | null,
+		parentRule: CSSRule | null,
+	) {
+		super(parentStyleSheet, parentRule);
+		this.#type = type;
+		this.#prelude = prelude;
+		this.#style = new CSSStyleDeclaration({
+			parentRule: this,
+			onChange: () => notifyRule(this),
+		});
+		this.#style.cssText = cssText;
+	}
+
+	get type(): number {
+		return this.#type;
+	}
+
+	get style(): CSSStyleDeclaration {
+		return this.#style;
+	}
+
+	/** `@font-face`'s and `@page`'s prelude: the at-keyword and its selector. */
+	get keyText(): string {
+		return this.#prelude;
+	}
+
+	get cssText(): string {
+		return `${this.#prelude} { ${this.#style.cssText} }`;
+	}
+}
+
+/** `@keyframes`: its name and the keyframes it holds. */
+export class CSSKeyframesRule extends CSSRule {
+	#name: string;
+	#rules: CSSRule[];
+	#ruleList: CSSRuleList;
+
+	constructor(
+		name: string,
+		rules: CSSRule[],
+		parentStyleSheet: CSSStyleSheet | null,
+	) {
+		super(parentStyleSheet, null);
+		this.#name = name;
+		this.#rules = rules;
+		this.#ruleList = createRuleList(this.#rules);
+	}
+
+	get type(): number {
+		return RULE_TYPES.KEYFRAMES_RULE;
+	}
+
+	get name(): string {
+		return this.#name;
+	}
+
+	set name(name: string) {
+		this.#name = String(name);
+		notifyRule(this);
+	}
+
+	get cssRules(): CSSRuleList {
+		return this.#ruleList;
+	}
+
+	get cssText(): string {
+		const frames = this.#rules.map((rule) => `\n  ${rule.cssText}`).join("");
+		return `@keyframes ${this.#name} {${frames}\n}`;
+	}
+}
+
+/** The rules of a stylesheet or a grouping rule. */
+export class CSSRuleList {
+	#rules: readonly CSSRule[];
+
+	constructor(rules: readonly CSSRule[]) {
+		this.#rules = rules;
+	}
+
+	get length(): number {
+		return this.#rules.length;
+	}
+
+	item(index: number): CSSRule | null {
+		return this.#rules[index] ?? null;
+	}
+
+	[Symbol.iterator](): IterableIterator<CSSRule> {
+		return this.#rules[Symbol.iterator]();
+	}
+}
+
+function createRuleList(rules: readonly CSSRule[]): CSSRuleList {
+	return indexed(new CSSRuleList(rules), rules);
+}
+
+/** The stylesheets of a document or a shadow root. */
+export class StyleSheetList {
+	#sheets: readonly CSSStyleSheet[];
+
+	constructor(sheets: readonly CSSStyleSheet[]) {
+		this.#sheets = sheets;
+	}
+
+	get length(): number {
+		return this.#sheets.length;
+	}
+
+	item(index: number): CSSStyleSheet | null {
+		return this.#sheets[index] ?? null;
+	}
+
+	[Symbol.iterator](): IterableIterator<CSSStyleSheet> {
+		return this.#sheets[Symbol.iterator]();
+	}
+}
+
+/**
+ * A stylesheet: the rules of a `<style>` element, or a constructed sheet a
+ * document adopts.
+ *
+ * The rules are this object's own -- the cascade reads them rather than
+ * re-parsing text -- so insertRule, deleteRule, replaceSync and a write to any
+ * rule's declaration block all reach the render through the same invalidation
+ * a `<style>` text change does.
+ */
+export class CSSStyleSheet {
+	#rules: CSSRule[] = [];
+	#ruleList: CSSRuleList;
+	#media: MediaList;
+	#ownerNode: Element | null = null;
+	#ownerRule: CSSRule | null = null;
+	#constructed: boolean;
+	#disabled = false;
+	#href: string | null;
+	#title: string | null;
+	/** The owner node's text this sheet last parsed. */
+	#text: string | null = null;
+
+	/**
+	 * A sheet with an owner element is one the document parsed: replace and
+	 * replaceSync are refused on it, and its rules follow the element's text.
+	 * The exposed constructor takes options alone, so author code only ever
+	 * makes the constructed kind.
+	 */
+	constructor(
+		options: {media?: string; title?: string; disabled?: boolean} = {},
+		ownerNode: Element | null = null,
+	) {
+		this.#ownerNode = ownerNode;
+		this.#constructed = ownerNode === null;
+		if (this.#constructed) constructedSheets.add(this);
+		this.#href = ownerNode?.getAttribute("href") ?? null;
+		this.#title = ownerNode?.getAttribute("title") ?? options.title ?? null;
+		this.#disabled = Boolean(options.disabled);
+		this.#media = new MediaList(
+			ownerNode?.getAttribute("media") ?? options.media ?? "",
+			() => this.#changed(),
+		);
+		this.#ruleList = createRuleList(this.#rules);
+	}
+
+	#changed(): void {
+		sheetNotifiers.get(this)?.();
+	}
+
+	/** Reparse the owner element's text when it says something new. */
+	#sync(): void {
+		const node = this.#ownerNode;
+		if (!node || node.tagName !== "STYLE") return;
+		const text = node.textContent ?? "";
+		if (text === this.#text) return;
+		this.#text = text;
+		this.#rules.length = 0;
+		this.#rules.push(...parseRules(text, this, null));
+	}
+
+	get cssRules(): CSSRuleList {
+		this.#sync();
+		return this.#ruleList;
+	}
+
+	/** The legacy alias every engine still answers to. */
+	get rules(): CSSRuleList {
+		return this.cssRules;
+	}
+
+	get type(): string {
+		return "text/css";
+	}
+
+	get href(): string | null {
+		return this.#href;
+	}
+
+	get title(): string | null {
+		return this.#title;
+	}
+
+	get ownerNode(): Element | null {
+		return this.#ownerNode;
+	}
+
+	get ownerRule(): CSSRule | null {
+		return this.#ownerRule;
+	}
+
+	get parentStyleSheet(): CSSStyleSheet | null {
+		return this.#ownerRule?.parentStyleSheet ?? null;
+	}
+
+	get media(): MediaList {
+		return this.#media;
+	}
+
+	get disabled(): boolean {
+		return this.#disabled;
+	}
+
+	set disabled(disabled: boolean) {
+		const value = Boolean(disabled);
+		if (value === this.#disabled) return;
+		this.#disabled = value;
+		this.#changed();
+	}
+
+	insertRule(text: string, index = 0): number {
+		this.#sync();
+		if (index > this.#rules.length) {
+			throw new DOMException(
+				`Cannot insert at index ${index}`,
+				"IndexSizeError",
+			);
+		}
+		this.#rules.splice(index, 0, parseRuleText(text, this, null));
+		this.#changed();
+		return index;
+	}
+
+	deleteRule(index: number): void {
+		this.#sync();
+		if (index >= this.#rules.length) {
+			throw new DOMException(
+				`Cannot delete at index ${index}`,
+				"IndexSizeError",
+			);
+		}
+		this.#rules.splice(index, 1);
+		this.#changed();
+	}
+
+	/** The legacy IE spellings, defined in terms of the modern pair. */
+	addRule(selector = "undefined", block = "undefined", index?: number): number {
+		this.insertRule(`${selector} { ${block} }`, index ?? this.cssRules.length);
+		return -1;
+	}
+
+	removeRule(index = 0): void {
+		this.deleteRule(index);
+	}
+
+	replaceSync(text: string): void {
+		if (!this.#constructed) {
+			throw new DOMException(
+				"replaceSync is only allowed on a constructed stylesheet",
+				"NotAllowedError",
+			);
+		}
+		// An adopted sheet cannot pull in another: `@import` is dropped rather
+		// than parsed, per the constructable-stylesheet rules.
+		this.#rules.length = 0;
+		this.#rules.push(
+			...parseRules(String(text ?? ""), this, null).filter(
+				(rule) => !(rule instanceof CSSImportRule),
+			),
+		);
+		this.#changed();
+	}
+
+	replace(text: string): Promise<CSSStyleSheet> {
+		try {
+			this.replaceSync(text);
+		} catch (error) {
+			return Promise.reject(error);
+		}
+		return Promise.resolve(this);
+	}
+}
+
+/** Whether a sheet may be adopted: only a constructed one, per spec. */
+const constructedSheets = new WeakSet<CSSStyleSheet>();
+
+/** Parse a rule list, as a sheet's text or a grouping rule's body. */
+function parseRules(
+	text: string,
+	sheet: CSSStyleSheet | null,
+	parentRule: CSSRule | null,
+): CSSRule[] {
+	let parsed: {cssRules: unknown[]};
+	try {
+		parsed = CSSOM.parse(text) as unknown as {cssRules: unknown[]};
+	} catch {
+		return [];
+	}
+	return convertRules(parsed.cssRules, sheet, parentRule);
+}
+
+/** One rule's text, as insertRule takes it. */
+function parseRuleText(
+	text: string,
+	sheet: CSSStyleSheet | null,
+	parentRule: CSSRule | null,
+): CSSRule {
+	const rules = parseRules(String(text ?? ""), sheet, parentRule);
+	if (rules.length !== 1) {
+		throw new DOMException(`Cannot parse rule: ${text}`, "SyntaxError");
+	}
+	return rules[0];
+}
+
+/** Turn the text parser's rules into this engine's own. */
+function convertRules(
+	source: readonly unknown[],
+	sheet: CSSStyleSheet | null,
+	parentRule: CSSRule | null,
+): CSSRule[] {
+	const rules: CSSRule[] = [];
+	for (const raw of source) {
+		const rule = convertRule(raw as ParsedRule, sheet, parentRule);
+		if (rule) rules.push(rule);
+	}
+	return rules;
+}
+
+/** The shape the text parser hands back for one rule. */
+interface ParsedRule {
+	type: number;
+	selectorText?: string;
+	href?: string;
+	name?: string;
+	keyText?: string;
+	conditionText?: string;
+	layerName?: string;
+	style?: {cssText: string};
+	media?: {mediaText: string};
+	cssRules?: unknown[];
+}
+
+function convertRule(
+	raw: ParsedRule,
+	sheet: CSSStyleSheet | null,
+	parentRule: CSSRule | null,
+): CSSRule | null {
+	switch (raw.type) {
+		case RULE_TYPES.STYLE_RULE:
+			return new CSSStyleRule(
+				raw.selectorText ?? "",
+				raw.style?.cssText ?? "",
+				sheet,
+				parentRule,
+			);
+		case RULE_TYPES.MEDIA_RULE:
+			return new CSSMediaRule(
+				raw.media?.mediaText ?? "",
+				sheet,
+				parentRule,
+				(group) => convertRules(raw.cssRules ?? [], sheet, group),
+			);
+		case RULE_TYPES.SUPPORTS_RULE:
+			return new CSSSupportsRule(
+				raw.conditionText ?? "",
+				sheet,
+				parentRule,
+				(group) => convertRules(raw.cssRules ?? [], sheet, group),
+			);
+		case RULE_TYPES.IMPORT_RULE:
+			return new CSSImportRule(
+				raw.href ?? "",
+				raw.media?.mediaText ?? "",
+				raw.layerName ?? null,
+				sheet,
+			);
+		case RULE_TYPES.FONT_FACE_RULE:
+			return new CSSDeclarationAtRule(
+				RULE_TYPES.FONT_FACE_RULE,
+				"@font-face",
+				raw.style?.cssText ?? "",
+				sheet,
+				parentRule,
+			);
+		case RULE_TYPES.PAGE_RULE:
+			return new CSSDeclarationAtRule(
+				RULE_TYPES.PAGE_RULE,
+				`@page ${raw.selectorText ?? ""}`.trim(),
+				raw.style?.cssText ?? "",
+				sheet,
+				parentRule,
+			);
+		case RULE_TYPES.KEYFRAME_RULE:
+			return new CSSDeclarationAtRule(
+				RULE_TYPES.KEYFRAME_RULE,
+				raw.keyText ?? "",
+				raw.style?.cssText ?? "",
+				sheet,
+				parentRule,
+			);
+		case RULE_TYPES.KEYFRAMES_RULE: {
+			const frames = convertRules(raw.cssRules ?? [], sheet, null);
+			return new CSSKeyframesRule(raw.name ?? "", frames, sheet);
+		}
+		default:
+			return null;
+	}
+}
+
+// Assigning a rule's text does nothing, as in every engine -- but the
+// attribute exists, so every rule type carries the setter alongside the
+// serialization its own class defines.
+for (const type of [
+	CSSStyleRule,
+	CSSMediaRule,
+	CSSSupportsRule,
+	CSSImportRule,
+	CSSDeclarationAtRule,
+	CSSKeyframesRule,
+]) {
+	const descriptor = Object.getOwnPropertyDescriptor(
+		type.prototype,
+		"cssText",
+	)!;
+	Object.defineProperty(type.prototype, "cssText", {
+		...descriptor,
+		set() {},
+	});
+}
+
+/** The one sheet a `<style>` (or `<link>`) element owns. */
+const elementSheets = new WeakMap<Element, CSSStyleSheet>();
+
+/** The sheets a document or shadow root has adopted. */
+const adoptedSheets = new WeakMap<Node, CSSStyleSheet[]>();
+
+/** The `document.styleSheets` getter jsdom installed, before it was replaced. */
+const nativeStyleSheets = new WeakMap<object, () => {length: number}>();
+
+/** Marks a prototype whose CSSOM accessors are already the engine's. */
+const kStyleSheetsInstalled = Symbol("termdom.styleSheets");
+
+function sheetFor(element: Element): CSSStyleSheet {
+	let sheet = elementSheets.get(element);
+	if (!sheet) {
+		sheet = new CSSStyleSheet({}, element);
+		sheetNotifiers.set(sheet, () => {
+			const window = element.ownerDocument?.defaultView;
+			if (window) styleManagers.get(window)?.refreshStylesheets();
+		});
+		elementSheets.set(element, sheet);
+	}
+	return sheet;
+}
+
+/** The list object jsdom keeps behind its own styleSheets accessor. */
+const nativeSheetLists = new WeakMap<Document, {length: number}>();
+
+/**
+ * How many stylesheets a document holds, counted without building the list.
+ *
+ * The `<style>` elements are counted through the list jsdom maintains as it
+ * parses them -- a length read, no walk -- which is what makes this cheap
+ * enough to poll on every computed-style read. jsdom keeps the real list on
+ * its wrapper's impl object behind the "impl" symbol.
+ */
+export function documentStyleSheetCount(document: Document): number {
+	let list = nativeSheetLists.get(document);
+	if (list === undefined) {
+		const native = nativeStyleSheets.get(document.constructor.prototype);
+		const wrapper = native ? native.call(document) : null;
+		const implSymbol = wrapper
+			? Object.getOwnPropertySymbols(wrapper).find(
+					(symbol) => symbol.description === "impl",
+				)
+			: undefined;
+		list = implSymbol
+			? ((wrapper as any)[implSymbol] as {length: number})
+			: (wrapper ?? {length: 0});
+		nativeSheetLists.set(document, list);
+	}
+	return list.length + (adoptedSheets.get(document)?.length ?? 0);
+}
+
+/**
+ * A document's stylesheets: one per `<style>` element in tree order, followed
+ * by what the document adopted. A `<link>` never resolves to a sheet -- there
+ * is no network behind a terminal document.
+ */
+export function documentStyleSheets(document: Document): CSSStyleSheet[] {
+	const sheets: CSSStyleSheet[] = [];
+	for (const element of document.querySelectorAll("style")) {
+		sheets.push(sheetFor(element));
+	}
+	sheets.push(...(adoptedSheets.get(document) ?? []));
+	return sheets;
+}
+
+/** A shadow root's stylesheets: its own `<style>` elements, then what it adopted. */
+export function shadowStyleSheets(root: ShadowRoot): CSSStyleSheet[] {
+	const sheets: CSSStyleSheet[] = [];
+	for (const element of root.querySelectorAll("style")) {
+		sheets.push(sheetFor(element));
+	}
+	sheets.push(...(adoptedSheets.get(root) ?? []));
+	return sheets;
+}
+
+/**
+ * Adopt a list of constructed sheets, and wire each one's later mutations to
+ * the cascade -- a constructed sheet has no consumer until something adopts it.
+ */
+function adopt(window: DOMWindow, target: Node, sheets: unknown): void {
+	const list: CSSStyleSheet[] = [];
+	for (const sheet of Array.from(sheets as Iterable<unknown>)) {
+		if (!(sheet instanceof CSSStyleSheet)) {
+			throw new TypeError("adoptedStyleSheets takes CSSStyleSheet objects");
+		}
+		if (!constructedSheets.has(sheet)) {
+			throw new DOMException(
+				"Can't adopt a stylesheet that was not constructed",
+				"NotAllowedError",
+			);
+		}
+		sheetNotifiers.set(sheet, () =>
+			styleManagers.get(window)?.refreshStylesheets(),
+		);
+		list.push(sheet);
+	}
+	adoptedSheets.set(target, list);
+}
+
+/**
+ * Put this engine's CSSOM behind the document's stylesheet surface: a style
+ * element's `sheet`, `document.styleSheets`, and the adopted lists.
+ */
+export function installStyleSheets(window: DOMWindow): void {
+	const owner = window as unknown as Record<string | symbol, unknown>;
+	if (owner[kStyleSheetsInstalled]) return;
+	owner[kStyleSheetsInstalled] = true;
+
+	const documentPrototype = window.Document.prototype;
+	const nativeGetter = Object.getOwnPropertyDescriptor(
+		documentPrototype,
+		"styleSheets",
+	)?.get;
+	if (nativeGetter) {
+		nativeStyleSheets.set(
+			documentPrototype,
+			nativeGetter as () => {length: number},
+		);
+	}
+
+	Object.defineProperty(documentPrototype, "styleSheets", {
+		get(this: Document) {
+			const sheets = documentStyleSheets(this);
+			return indexed(new StyleSheetList(sheets), sheets);
+		},
+		configurable: true,
+		enumerable: true,
+	});
+
+	for (const prototype of [documentPrototype, window.ShadowRoot?.prototype]) {
+		if (!prototype) continue;
+		Object.defineProperty(prototype, "adoptedStyleSheets", {
+			get(this: Node) {
+				let list = adoptedSheets.get(this);
+				if (!list) adoptedSheets.set(this, (list = []));
+				return list;
+			},
+			set(this: Node, sheets: unknown) {
+				adopt(window, this, sheets);
+				styleManagers.get(window)?.refreshStylesheets();
+			},
+			configurable: true,
+			enumerable: true,
+		});
+	}
+
+	if (window.ShadowRoot) {
+		Object.defineProperty(window.ShadowRoot.prototype, "styleSheets", {
+			get(this: ShadowRoot) {
+				const sheets = shadowStyleSheets(this);
+				return indexed(new StyleSheetList(sheets), sheets);
+			},
+			configurable: true,
+			enumerable: true,
+		});
+	}
+
+	Object.defineProperty(window.HTMLStyleElement.prototype, "sheet", {
+		get(this: Element) {
+			// A style element outside a tree has no sheet, as in a browser.
+			return this.parentNode ? sheetFor(this) : null;
+		},
+		configurable: true,
+		enumerable: true,
+	});
+
+	// Nothing is fetched over a terminal's document, so a link never resolves
+	// to a sheet.
+	Object.defineProperty(window.HTMLLinkElement.prototype, "sheet", {
+		get() {
+			return null;
+		},
+		configurable: true,
+		enumerable: true,
+	});
+
+	Object.assign(window, {
+		CSSStyleSheet,
+		StyleSheetList,
+		CSSRuleList,
+		CSSRule,
+		CSSStyleRule,
+		CSSGroupingRule,
+		CSSConditionRule,
+		CSSMediaRule,
+		CSSSupportsRule,
+		CSSImportRule,
+		CSSKeyframesRule,
+		MediaList,
+		CSSStyleDeclaration,
+	});
+}
+
+/** The UA document sheet, parsed once: its rules never change. */
+let uaDocumentSheet: CSSStyleSheet | null = null;
+
+export function uaStyleSheet(): CSSStyleSheet {
+	if (!uaDocumentSheet) {
+		uaDocumentSheet = new CSSStyleSheet();
+		uaDocumentSheet.replaceSync(UA_DOCUMENT_STYLES);
+	}
+	return uaDocumentSheet;
+}
+
+export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 	#element: Element;
 	#cssRules: ParsedCSSRule[];
 	// Lazily resolved properties -- INCLUDING ones that resolved to "".
@@ -1228,6 +2288,7 @@ export class ComputedStyleDeclaration {
 	#resolved = new Map<string, string>();
 
 	constructor(element: Element, cssRules: ParsedCSSRule[] = []) {
+		super();
 		this.#element = element;
 		this.#cssRules = cssRules;
 	}
@@ -1422,7 +2483,7 @@ export class ComputedStyleDeclaration {
 	// property resolves on first read, then answers from the memo. Most
 	// elements are only ever asked a handful of properties -- the
 	// composition walker asks each element `display` alone.
-	getPropertyValue(property: string): string {
+	override getPropertyValue(property: string): string {
 		let value = this.#resolved.get(property);
 		if (value === undefined) {
 			// A shorthand answers as its longhands, each in its own computed
@@ -1444,13 +2505,13 @@ export class ComputedStyleDeclaration {
 	}
 
 	/** Computed styles are read-only; the mutators exist for API shape alone. */
-	setProperty(): void {}
+	override setProperty(): void {}
 
-	removeProperty(): string {
+	override removeProperty(): string {
 		return "";
 	}
 
-	getPropertyPriority(): string {
+	override getPropertyPriority(): string {
 		return "";
 	}
 
@@ -1459,23 +2520,23 @@ export class ComputedStyleDeclaration {
 	 * them in the property index's order rather than the order reads happened
 	 * to resolve them in.
 	 */
-	item(index: number): string {
+	override item(index: number): string {
 		return CSS_LONGHANDS[index] ?? "";
 	}
 
-	get length(): number {
+	override get length(): number {
 		return CSS_LONGHANDS.length;
 	}
 
-	[Symbol.iterator](): IterableIterator<string> {
+	override [Symbol.iterator](): IterableIterator<string> {
 		return CSS_LONGHANDS[Symbol.iterator]();
 	}
 
-	get cssText(): string {
+	override get cssText(): string {
 		return "";
 	}
 
-	get parentRule(): CSSRule | null {
+	override get parentRule(): CSSRule | null {
 		return null;
 	}
 }
@@ -1485,15 +2546,16 @@ export class ComputedStyleDeclaration {
  * rules plus what it inherits from its originating element -- read through
  * the same computed-value boundary as an element's.
  */
-export class PseudoStyleDeclaration {
+export class PseudoStyleDeclaration extends CSSStyleDeclaration {
 	#declarations: Record<string, string>;
 	#resolved = new Map<string, string>();
 
 	constructor(declarations: Record<string, string>) {
+		super();
 		this.#declarations = declarations;
 	}
 
-	getPropertyValue(property: string): string {
+	override getPropertyValue(property: string): string {
 		let value = this.#resolved.get(property);
 		if (value === undefined) {
 			const longhands = SHORTHAND_LONGHANDS.get(property);
@@ -1513,21 +2575,21 @@ export class PseudoStyleDeclaration {
 		return value;
 	}
 
-	setProperty(): void {}
+	override setProperty(): void {}
 
-	removeProperty(): string {
+	override removeProperty(): string {
 		return "";
 	}
 
-	getPropertyPriority(): string {
+	override getPropertyPriority(): string {
 		return "";
 	}
 
-	item(index: number): string {
+	override item(index: number): string {
 		return Object.keys(this.#declarations)[index] ?? "";
 	}
 
-	get length(): number {
+	override get length(): number {
 		return Object.keys(this.#declarations).length;
 	}
 }
@@ -2257,29 +3319,14 @@ export class StyleManager {
 	 */
 
 	/**
-	 * document.styleSheets.length without jsdom's per-access list proxy.
-	 *
-	 * The length is polled on every computed-style read to catch a <style>
-	 * appended in the same tick, before the mutation observer delivers.
-	 * jsdom keeps the real list on the wrapper's impl object behind its
-	 * "impl" symbol; read it directly, and fall back to the wrapper if the
-	 * internals ever move.
+	 * How many stylesheets the document holds, counted without building the
+	 * list. The count is polled on every computed-style read to catch a
+	 * <style> appended in the same tick, before the mutation observer
+	 * delivers; a sheet's own mutations reach the cascade through
+	 * refreshStylesheets instead.
 	 */
-	#styleSheetListImpl: {length: number} | null | undefined;
-
 	#styleSheetCount(): number {
-		if (this.#styleSheetListImpl === undefined) {
-			const list = this.#document.styleSheets;
-			const implSymbol = Object.getOwnPropertySymbols(list).find(
-				(symbol) => symbol.description === "impl",
-			);
-			this.#styleSheetListImpl = implSymbol
-				? ((list as any)[implSymbol] as {length: number})
-				: null;
-		}
-		return this.#styleSheetListImpl
-			? this.#styleSheetListImpl.length
-			: this.#document.styleSheets.length;
+		return documentStyleSheetCount(this.#document);
 	}
 
 	invalidationScopeFor(element: Element): Element {
@@ -2430,7 +3477,9 @@ export class StyleManager {
 	}
 
 	/**
-	 * Parse all stylesheets in the document and extract rules
+	 * Walk the document's stylesheets -- this engine's own CSSOM objects, the
+	 * same ones an author reaches through `styleEl.sheet` -- and collect the
+	 * rules the cascade matches against.
 	 */
 	#parseStylesheets(): void {
 		invalidateStructure();
@@ -2442,29 +3491,22 @@ export class StyleManager {
 		this.#counterRulesExist = false;
 		this.#listItemRulesExist = false;
 		this.#stylesheetsDirty = false;
-		this.#parsedStyleSheetCount = document.styleSheets.length;
+		this.#parsedStyleSheetCount = documentStyleSheetCount(document);
 
 		// The UA document sheet parses first; origin ordering (not source
 		// order) is what keeps it beneath every author rule.
-		this.#parseStyleSheet(CSSOM.parse(UA_DOCUMENT_STYLES), undefined, true);
+		this.#parseStyleSheet(uaStyleSheet(), undefined, true);
 
-		// Parse all stylesheets
-		for (let i = 0; i < document.styleSheets.length; i++) {
-			const stylesheet = document.styleSheets[i] as CSSStyleSheet;
-			if (stylesheet.cssRules) {
-				this.#parseStyleSheet(stylesheet);
-			}
+		for (const sheet of documentStyleSheets(document)) {
+			this.#parseStyleSheet(sheet);
 		}
 
 		// Shadow-tree stylesheets, scoped to their root. Disconnected roots
 		// parse too: attach-populate-connect is the standard order, and a
 		// scope-gated rule matches nothing until its tree renders anyway.
 		for (const root of this.#shadowRoots) {
-			for (const styleElement of root.querySelectorAll("style")) {
-				const cssText = styleElement.textContent;
-				if (cssText) {
-					this.#parseStyleSheet(CSSOM.parse(cssText), root);
-				}
+			for (const sheet of shadowStyleSheets(root)) {
+				this.#parseStyleSheet(sheet, root);
 			}
 		}
 
@@ -2483,29 +3525,31 @@ export class StyleManager {
 	}
 
 	/**
-	 * Parse a stylesheet (or a @media block's own rule list) and add rules to
-	 * parsedRules. @media recurses into its nested rules when its condition
-	 * matches the terminal's current size; every other condition/at-rule
-	 * (@supports, @font-face, @keyframes, @import) has no terminal meaning and
-	 * stays dropped.
+	 * Collect the style rules of a stylesheet, or of a grouping rule's own
+	 * rule list. A disabled sheet, and a sheet or `@media` whose condition the
+	 * terminal viewport does not match, contribute nothing; `@supports`
+	 * contributes its rules, since what this engine supports is what it
+	 * renders. `@font-face`, `@keyframes` and `@import` have no terminal
+	 * rendering and declare nothing to the cascade.
 	 */
 	#parseStyleSheet(
-		stylesheet: {cssRules: CSSRuleList},
+		container: CSSStyleSheet | CSSGroupingRule,
 		scope?: Node,
 		uaOrigin?: boolean,
 	): void {
-		for (let i = 0; i < stylesheet.cssRules.length; i++) {
-			const rule = stylesheet.cssRules[i];
-			// TODO: use constructor.name
-			if (rule.type === 1) {
-				// CSSRule.STYLE_RULE
-				this.#parseStyleRule(rule as CSSStyleRule, scope, uaOrigin);
-			} else if (rule.type === 4) {
-				// CSSRule.MEDIA_RULE
-				const mediaRule = rule as CSSMediaRule;
-				if (this.mediaQueryMatches(mediaRule.media.mediaText)) {
-					this.#parseStyleSheet(mediaRule, scope, uaOrigin);
+		if (container instanceof CSSStyleSheet) {
+			if (container.disabled) return;
+			if (!this.mediaQueryMatches(container.media.mediaText)) return;
+		}
+		for (const rule of container.cssRules) {
+			if (rule instanceof CSSStyleRule) {
+				this.#parseStyleRule(rule, scope, uaOrigin);
+			} else if (rule instanceof CSSMediaRule) {
+				if (this.mediaQueryMatches(rule.conditionText)) {
+					this.#parseStyleSheet(rule, scope, uaOrigin);
 				}
+			} else if (rule instanceof CSSSupportsRule) {
+				this.#parseStyleSheet(rule, scope, uaOrigin);
 			}
 		}
 	}
@@ -2583,9 +3627,7 @@ export class StyleManager {
 		if (selector.includes(":has")) {
 			this.#selectorsReachAncestors = true;
 		}
-		const block = new CSSStyleDeclaration();
-		block.cssText = styleRule.style.cssText;
-		const {declarations, important} = block.declarationBlock();
+		const {declarations, important} = styleRule.style.declarationBlock();
 		if (
 			declarations["counter-reset"] ||
 			declarations["counter-increment"] ||
@@ -3242,6 +4284,7 @@ export class StyleManager {
 		// A property written through element.style lands on the style attribute,
 		// so the hooks above are the whole invalidation path for inline styles.
 		installInlineStyle(this.#window);
+		installStyleSheets(this.#window);
 	}
 
 	/**
