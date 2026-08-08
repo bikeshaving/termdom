@@ -20,7 +20,10 @@ interface CastEvent {
 	data: string;
 }
 
-function makeRecorder(): {
+function makeRecorder(
+	cols = COLS,
+	rows = ROWS,
+): {
 	proc: ProcessLike;
 	events: CastEvent[];
 	pressKey: (key: string) => void;
@@ -31,8 +34,8 @@ function makeRecorder(): {
 
 	const stdout = {
 		isTTY: true,
-		columns: COLS,
-		rows: ROWS,
+		columns: cols,
+		rows: rows,
 		write(chunk: any, encoding?: any, callback?: any): boolean {
 			if (typeof encoding === "function") callback = encoding;
 			events.push({time: clock.now, data: String(chunk)});
@@ -83,8 +86,10 @@ type Step = number | string | (() => void | Promise<void>);
 async function record(
 	setup: (termdom: TermDOM) => void | Promise<void> | (() => void),
 	steps: Step[],
+	cols = COLS,
+	rows = ROWS,
 ): Promise<void> {
-	const {proc, events, pressKey, clock} = makeRecorder();
+	const {proc, events, pressKey, clock} = makeRecorder(cols, rows);
 	const termdom = new TermDOM({transport: transportFromProcess(proc as any)});
 	termdom.attach();
 	const teardown = await setup(termdom);
@@ -108,8 +113,8 @@ async function record(
 
 	const header = {
 		version: 2,
-		width: COLS,
-		height: ROWS,
+		width: cols,
+		height: rows,
 		env: {TERM: "xterm-256color"},
 	};
 	const lines = [JSON.stringify(header)];
@@ -132,6 +137,10 @@ const demos: Record<string, () => Promise<void>> = {
 	async animated() {
 		const {default: run} = await import("./record-demos/animated.js");
 		await record(run.setup, run.steps);
+	},
+	async readme() {
+		const {default: run} = await import("./record-demos/readme.js");
+		await record(run.setup, run.steps, 44, 5);
 	},
 };
 
