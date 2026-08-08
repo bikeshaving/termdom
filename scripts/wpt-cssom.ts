@@ -189,7 +189,10 @@ async function runFile(file: string): Promise<Outcome> {
 	// The flush a resolved value takes. TermDOM's own is
 	// #processPendingMutationsAndRender; here, with no render loop, laying out
 	// synchronously is the same seam without the paint.
-	styleManager.setLayoutFlush(() => layoutEngine.calculateLayout());
+	styleManager.setLayoutFlush(() => {
+		layoutEngine.calculateLayout();
+		return false;
+	});
 	// The suite is written against a browser viewport in CSS pixels; this
 	// engine's pixel is a cell, so the harness gives it a grid the same size
 	// as the viewport the tests assume.

@@ -46,11 +46,12 @@ export function getPropertyValue(element: Element, property: string): string {
 	}
 	// The COMPUTED value, not the resolved one: layout and paint decide
 	// geometry from this, and a used value here would feed layout its own
-	// output. Resolved values belong to window.getComputedStyle, the public
-	// door, and nowhere inside the engine.
+	// output. The guard also says this read is the engine's own, so an element
+	// it is still deciding about answers with its styles rather than with the
+	// empty declaration an author's read would get.
 	beginInternalStyleReads();
 	try {
-		return window.getComputedStyle(element).getPropertyValue(property);
+		return computedStyleOf(element).getPropertyValue(property);
 	} finally {
 		endInternalStyleReads();
 	}
@@ -3817,12 +3818,21 @@ export function computedStyleOf(
 		throw new Error("Element does not have an associated window");
 	}
 	const declaration = window.getComputedStyle(element, pseudoElement);
-	return declaration instanceof ComputedStyleDeclaration
-		? (new ComputedStyleView(
-				declaration,
-			) as unknown as globalThis.CSSStyleDeclaration)
-		: declaration;
+	if (!(declaration instanceof ComputedStyleDeclaration)) return declaration;
+	// One view per declaration: this sits inside layout's and paint's hottest
+	// loops, where an allocation per read is an allocation per property.
+	let view = computedStyleViews.get(declaration);
+	if (!view) {
+		view = new ComputedStyleView(declaration);
+		computedStyleViews.set(declaration, view);
+	}
+	return view as unknown as globalThis.CSSStyleDeclaration;
 }
+
+const computedStyleViews = new WeakMap<
+	ComputedStyleDeclaration,
+	ComputedStyleView
+>();
 
 /** A computed-only reading of a declaration, for the engine's own use. */
 class ComputedStyleView {
@@ -3892,7 +3902,7 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 	}
 
 	/** Used values, memoized against the layout epoch they were measured in. */
-	#used = new Map<string, string>();
+	#used: Map<string, string> | null = new Map();
 	#usedEpoch = -1;
 
 	/**
@@ -3903,10 +3913,9 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 	#usedValue(property: string): string {
 		const manager = this.#manager!;
 		const epoch = manager.layoutEpoch;
-		if (epoch !== this.#usedEpoch) {
-			this.#used.clear();
-			this.#usedEpoch = epoch;
-		}
+		if (!this.#used) this.#used = new Map();
+		else if (epoch !== this.#usedEpoch) this.#used.clear();
+		this.#usedEpoch = epoch;
 		const memoized = this.#used.get(property);
 		if (memoized !== undefined) return memoized;
 
@@ -3922,9 +3931,22 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 	 * would feed layout its own output.
 	 */
 	computedValueOf(property: string): string {
+		if (this.#stale || this.#epoch.value !== this.#seenEpoch) this.#refresh();
 		let value = this.#resolved.get(property);
 		if (value === undefined) {
-			value = computedValue(property, this.#resolvePropertyValue(property));
+			// A shorthand answers as its longhands, each in its own computed
+			// spelling, collapsed: `margin: 10px 10px 10px 10px` is "10px".
+			const longhands = SHORTHAND_LONGHANDS.get(property);
+			value = longhands
+				? serializeShorthandValue(
+						property,
+						longhands,
+						(longhand) =>
+							this.computedValueOf(longhand) ||
+							CSS_INITIAL_VALUES[longhand] ||
+							"",
+					)
+				: computedValue(property, this.#resolvePropertyValue(property));
 			this.#resolved.set(property, value);
 		}
 		return value;
@@ -4051,7 +4073,7 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 		this.#seenEpoch = this.#epoch.value;
 		this.#cssRules = this.#manager.matchingRules(this.#element);
 		this.#resolved.clear();
-		this.#used.clear();
+		this.#used?.clear();
 	}
 
 	/**
@@ -5117,9 +5139,9 @@ export class StyleManager {
 	 * is a measurement, so it goes through the same door -- there is exactly
 	 * one place that decides what "laid out now" means.
 	 */
-	#layoutFlush: (() => void) | null = null;
+	#layoutFlush: (() => boolean) | null = null;
 
-	setLayoutFlush(flush: () => void): void {
+	setLayoutFlush(flush: () => boolean): void {
 		this.#layoutFlush = flush;
 	}
 
@@ -5131,16 +5153,33 @@ export class StyleManager {
 		if (!this.#layoutEngine || !this.#layoutFlush) return null;
 		beginInternalStyleReads();
 		try {
-			this.#layoutFlush?.();
+			// The flush is taken once per layout generation, not once per read:
+			// an invalidation moves the engine's epoch, and until it does the
+			// layout standing behind the last flush is still the answer. A
+			// caller reading four properties off two hundred elements pays one
+			// flush, not eight hundred.
+			if (this.#layoutEngine.layoutEpoch !== this.#flushedEpoch) {
+				this.#layoutFlush();
+				this.#flushedEpoch = this.#layoutEngine.layoutEpoch;
+				this.#usedGeneration++;
+			}
 			return this.#layoutEngine.getRect(element);
 		} finally {
 			endInternalStyleReads();
 		}
 	}
 
-	/** The epoch a resolved value memoizes against. */
+	/** The layout epoch the last resolved-value flush left behind. */
+	#flushedEpoch = -1;
+
+	/**
+	 * The generation a resolved value memoizes against: it moves when the
+	 * cascade is rebuilt or a flush finds work, and stands still otherwise.
+	 */
+	#usedGeneration = 0;
+
 	get layoutEpoch(): number {
-		return this.#layoutEngine?.layoutEpoch ?? 0;
+		return this.#usedGeneration;
 	}
 
 	setLayoutEngine(layoutEngine: LayoutEngine): void {
@@ -5394,7 +5433,9 @@ export class StyleManager {
 		}
 		// An element that is not being rendered has no style to report: it is
 		// out of the document, or out of the flat tree its document composes.
-		if (!isBeingRendered(element)) {
+		// Only an author read asks this -- the engine reads styles for nodes it
+		// is still deciding about, and the walk is too costly for the frame.
+		if (internalStyleReads === 0 && !isBeingRendered(element)) {
 			return new EmptyStyleDeclaration() as unknown as globalThis.CSSStyleDeclaration;
 		}
 
@@ -6306,6 +6347,7 @@ export class StyleManager {
 		// Every computed style ever handed out re-resolves on its next read:
 		// there is no enumerating a WeakMap, so the epoch they all watch moves.
 		this.#styleEpoch.value++;
+		this.#usedGeneration++;
 		this.#computedStyleCache = new WeakMap();
 		this.#pseudoElementStyleCache = new WeakMap();
 		this.#counterScopes = new WeakMap();
