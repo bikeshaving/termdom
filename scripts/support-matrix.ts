@@ -21,8 +21,9 @@
  * on is not support, and this will say so.
  *
  * The package.json script runs this under BUN_JSC_useFTLJIT=false: at this
- * probe count, Bun's top JIT tier miscompiles a loop in cssstyle's value
- * parser into an infinite allocating spin (oven-sh/bun#36798). The flag costs
+ * probe count, Bun's top JIT tier miscompiles a loop in the value parser of
+ * cssstyle -- jsdom's own inline CSSOM, which every style attribute still
+ * passes through -- into an infinite allocating spin (oven-sh/bun#36798). The flag costs
  * a few seconds; remove it when the upstream fix ships. The per-probe
  * watchdog below exists for the same reason in reverse -- if a probe ever
  * stalls again, fail loudly with its name instead of dying silently.

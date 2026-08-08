@@ -685,14 +685,12 @@ test("the text-decoration longhand underlines, not just the shorthand", async ()
 	dom.dispose();
 });
 
-// ---- Inline border:none (the cssstyle none-erasure, shimmed) ----
+// ---- Inline border:none ----
 //
-// Upstream cssstyle (jsdom's inline CSSOM, v4 and v5 alike) treats `none` and
-// `hidden` on every border property -- shorthand or longhand -- as "erase the
-// declaration". Erasing an inline declaration resurrects whatever sits below
-// it in the cascade, so an author could never turn OFF a UA border from
-// element.style. The engine shims the affected setters to store the style
-// keyword for real.
+// `none` and `hidden` are declarations like any other: element.style stores
+// them, and the cascade sees them. A border keyword that went unstored would
+// resurrect whatever sits below it in the cascade, so an author could never
+// turn OFF a UA border from element.style.
 
 test("style.border = 'none' overrides the UA textarea border", async () => {
 	const terminal = new MockProcess({cols: 60, rows: 10});
@@ -758,9 +756,8 @@ test("a single side turns off: style.borderTop = 'none'", async () => {
 });
 
 test("style.background = 'none' overrides a stylesheet background", async () => {
-	// The same cssstyle erasure as the border family: `background: none`
-	// cleared the inline longhands instead of declaring image none and color
-	// transparent, so a class background always won. The shim stores both.
+	// `background: none` declares image none and color transparent, both of
+	// which have to reach the cascade to beat a class background.
 	const terminal = new MockProcess({cols: 20, rows: 4});
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.head.innerHTML = `<style>.paint { background: red; }</style>`;
@@ -777,8 +774,8 @@ test("style.background = 'none' overrides a stylesheet background", async () => 
 });
 
 test("toggling border none -> solid -> none through element.style survives", async () => {
-	// The shim stores longhands with the raw primitive; a later ordinary set
-	// must overwrite them, and a return to none must erase the border again.
+	// A later set overwrites the declaration in place, and a return to none
+	// erases the border again.
 	const terminal = new MockProcess({cols: 40, rows: 8});
 	const dom = new TermDOM({transport: terminal.transport});
 	const el = dom.document.createElement("div");
@@ -804,10 +801,9 @@ test("toggling border none -> solid -> none through element.style survives", asy
 });
 
 test("an inline shorthand's !important carries to its longhands", async () => {
-	// cssstyle stores setProperty's priority under the SHORTHAND key; the
-	// cascade resolves longhands. Without consulting the covering shorthand's
-	// priority, every inline `setProperty(shorthand, v, "important")` lost to
-	// an important stylesheet rule -- border: none included.
+	// setProperty records a priority under the SHORTHAND key while the cascade
+	// resolves longhands, so the covering shorthand's priority has to carry
+	// onto every longhand it declares.
 	const terminal = new MockProcess({cols: 40, rows: 8});
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.head.innerHTML = `<style>
@@ -835,8 +831,7 @@ test("an inline shorthand's !important carries to its longhands", async () => {
 test("border: solid means a visible medium border, sheet and inline alike", async () => {
 	// A style keyword with no width leaves the width at its initial, medium
 	// -- which is a real, visible border (one cell; the grid cannot grade
-	// thin/medium/thick). Both parsers must agree: the sheet path kept the
-	// keyword no reader understood, and cssstyle fills the width with 0.
+	// thin/medium/thick). The stylesheet and inline paths must agree on it.
 	const terminal = new MockProcess({cols: 40, rows: 10});
 	const dom = new TermDOM({transport: terminal.transport});
 	dom.document.head.innerHTML = `<style>#sheet { border: solid; }</style>`;
@@ -848,5 +843,54 @@ test("border: solid means a visible medium border, sheet and inline alike", asyn
 		expect(el.getBoundingClientRect().height).toBe(3);
 	}
 	expect(terminal.getVisibleText()).toContain("┌");
+	dom.dispose();
+});
+
+// ---- element.style and the style attribute ----
+
+test("a property write reflects into the attribute and repaints", async () => {
+	const terminal = new MockProcess({cols: 20, rows: 4});
+	const dom = new TermDOM({transport: terminal.transport});
+	const el = dom.document.createElement("div");
+	el.textContent = "text";
+	dom.document.body.appendChild(el);
+	await nextFrame(dom);
+	expect(terminal.getScreenContents()).not.toMatch(/\x1b\[38;2;255;0;0/);
+
+	// The attribute is the store: serializing to it is what produces the
+	// mutation record invalidation listens for.
+	el.style.color = "red";
+	expect(el.getAttribute("style")).toBe("color: red;");
+	await nextFrame(dom);
+	expect(terminal.getScreenContents()).toMatch(/\x1b\[38;2;255;0;0/);
+	dom.dispose();
+});
+
+test("writing the attribute reparses into element.style", async () => {
+	const terminal = new MockProcess({cols: 20, rows: 4});
+	const dom = new TermDOM({transport: terminal.transport});
+	const el = dom.document.createElement("div");
+	dom.document.body.appendChild(el);
+
+	el.setAttribute("style", "color: blue; border: none; padding: 0 !important");
+	expect(el.style.color).toBe("blue");
+	expect(el.style.length).toBe(3);
+	expect(el.style.item(1)).toBe("border");
+	expect(el.style.getPropertyPriority("padding")).toBe("important");
+	// A longhand a shorthand declares reads back through it.
+	expect(el.style.getPropertyValue("border-top-style")).toBe("none");
+
+	el.style.removeProperty("border");
+	expect(el.getAttribute("style")).toBe("color: blue; padding: 0 !important;");
+
+	el.removeAttribute("style");
+	expect(el.style.length).toBe(0);
+	expect(el.style.color).toBe("");
+
+	el.style.cssText = "display: flex";
+	expect(el.getAttribute("style")).toBe("display: flex;");
+	expect(dom.window.getComputedStyle(el).getPropertyValue("display")).toBe(
+		"flex",
+	);
 	dom.dispose();
 });

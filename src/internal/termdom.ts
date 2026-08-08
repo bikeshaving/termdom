@@ -10,7 +10,7 @@ import {
 	type TerminalTransport,
 } from "./terminalsession.js";
 import {Renderer} from "./ansi.js";
-import {StyleManager, getBoxModel, shimInlineNoneErasure} from "./styles.js";
+import {StyleManager, getBoxModel} from "./styles.js";
 import {stringWidth} from "./text.js";
 import {
 	ObserverManager,
@@ -452,10 +452,6 @@ export class TermDOM {
 
 		this.window = this.#jsdom.window;
 		this.document = this.#jsdom.window.document;
-
-		// cssstyle erases inline border and background declarations set to none
-		// instead of storing them; see the shim for the full pathology.
-		shimInlineNoneErasure(this.document.body.style);
 
 		// Setup DOM inspector
 		setupInspectMethods(this.window);

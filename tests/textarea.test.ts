@@ -442,9 +442,8 @@ test("rows/cols size the CONTENT: removing the UA chrome shrinks the box", async
 	const terminal = new MockProcess({rows: 10, cols: 60});
 	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
-	// A stylesheet, not inline styles: cssstyle drops the inline
-	// `border: none` shorthand outright (accepts `border: 0` and full
-	// triplets), an upstream parsing gap this test must not depend on.
+	// A stylesheet rather than inline styles: the inline route is covered in
+	// styles.test.ts, and the UA defaults must yield to either.
 	document.head.innerHTML = `<style>textarea { border: none; padding: 0; }</style>`;
 	const textarea = document.createElement("textarea");
 	textarea.setAttribute("rows", "1");
