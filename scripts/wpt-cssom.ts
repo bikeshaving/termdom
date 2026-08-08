@@ -184,7 +184,16 @@ async function runFile(file: string): Promise<Outcome> {
 
 	installInlineStyle(dom.window);
 	const styleManager = new StyleManager(dom.window);
-	styleManager.setLayoutEngine(new LayoutEngine(dom.window));
+	const layoutEngine = new LayoutEngine(dom.window);
+	styleManager.setLayoutEngine(layoutEngine);
+	// The flush a resolved value takes. TermDOM's own is
+	// #processPendingMutationsAndRender; here, with no render loop, laying out
+	// synchronously is the same seam without the paint.
+	styleManager.setLayoutFlush(() => layoutEngine.calculateLayout());
+	// The suite is written against a browser viewport in CSS pixels; this
+	// engine's pixel is a cell, so the harness gives it a grid the same size
+	// as the viewport the tests assume.
+	layoutEngine.resize(800, 600);
 
 	const outcome: Outcome = {file, harness: "TIMEOUT", subtests: []};
 	const done = new Promise<void>((resolve) => {

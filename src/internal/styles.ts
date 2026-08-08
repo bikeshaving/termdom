@@ -4298,11 +4298,11 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 
 	/** Computed styles are read-only; writing one is an error, not a no-op. */
 	override setProperty(): void {
-		throw readOnlyDeclaration();
+		throw readOnlyDeclaration(this.#element);
 	}
 
 	override removeProperty(): string {
-		throw readOnlyDeclaration();
+		throw readOnlyDeclaration(this.#element);
 	}
 
 	override getPropertyPriority(): string {
@@ -4331,7 +4331,7 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 	}
 
 	override set cssText(_text: string) {
-		throw readOnlyDeclaration();
+		throw readOnlyDeclaration(this.#element);
 	}
 
 	override get parentRule(): CSSRule | null {
@@ -4481,9 +4481,19 @@ export class EmptyStyleDeclaration extends CSSStyleDeclaration {
 	}
 }
 
-/** A computed style is read-only; writing one is an error, not a no-op. */
-function readOnlyDeclaration(): DOMException {
-	return new DOMException(
+/**
+ * A computed style is read-only; writing one is an error, not a no-op. The
+ * error is the document's own DOMException where one is reachable -- an error
+ * from another global is not the one an author catches.
+ */
+function readOnlyDeclaration(element?: Element): DOMException {
+	const Exception =
+		(
+			element?.ownerDocument?.defaultView as unknown as {
+				DOMException?: typeof DOMException;
+			}
+		)?.DOMException ?? DOMException;
+	return new Exception(
 		"A computed style declaration is read-only",
 		"NoModificationAllowedError",
 	);
