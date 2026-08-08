@@ -556,11 +556,13 @@ test("block insertion splits inline run", () => {
 	expect(layoutEngine.findInlineRunHead(spans[1])).toBe(spans[1]); // Finds itself as head
 });
 
-test("inline head deletion promotes next element", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+test("a run whose first node is removed re-measures from the next", () => {
+	const {jsdom, layoutEngine, processMutationsAndLayout} = createLayoutEngine(
 		`<div><span>head</span><span>second</span><span>third</span></div>`,
 	);
+	const container = jsdom.window.document.querySelector("div")!;
 	const spans = Array.from(jsdom.window.document.querySelectorAll("span"));
+	processMutationsAndLayout();
 
 	// Initially: first is head, others join
 	expect(layoutEngine.isInlineRunHead(spans[0])).toBe(true);
@@ -570,12 +572,21 @@ test("inline head deletion promotes next element", () => {
 
 	// Remove head element
 	spans[0].remove();
-	layoutEngine.calculateLayout();
+	processMutationsAndLayout();
 
-	// Second span should become new head
+	// The box the run laid out in is the same one, measured from the node
+	// that opens it now: the text that remains starts at the container's
+	// content edge rather than where "head" left off.
 	expect(layoutEngine.isInlineRunHead(spans[1])).toBe(true);
 	expect(layoutEngine.isInlineRunHead(spans[2])).toBe(false);
 	expect(layoutEngine.findInlineRunHead(spans[2])).toBe(spans[1]);
+
+	const containerRect = layoutEngine.getRect(container)!;
+	const rectTexts = layoutEngine.getRectTexts(container.firstChild!);
+	expect(rectTexts.length).toBe(1);
+	expect(rectTexts[0].text).toBe("second");
+	expect(rectTexts[0].rect.x).toBe(containerRect.x);
+	expect(rectTexts[0].rect.y).toBe(containerRect.y);
 });
 
 test("findInlineRunHead - text node inside inline element should find element", () => {
@@ -1783,24 +1794,21 @@ test("Block child positioned after parent text content", () => {
 	const child = parent.querySelector("div")!;
 	const textNode = parent.firstChild!;
 
-	const parentYoga = layoutEngine.nodeMap.get(parent);
-	const childYoga = layoutEngine.nodeMap.get(child);
-	const textYoga = layoutEngine.nodeMap.get(textNode);
-
-	const parentLayout = parentYoga!.getComputedLayout();
-	const childLayout = childYoga!.getComputedLayout();
-	const textLayout = textYoga!.getComputedLayout();
+	const parentRect = layoutEngine.getRect(parent)!;
+	const childRect = layoutEngine.getRect(child)!;
+	const textRects = layoutEngine.getRectTexts(textNode);
 
 	// Parent should have height for text + child
-	expect(parentLayout.height).toBe(2);
+	expect(parentRect.height).toBe(2);
 
 	// Text should be positioned first (at parent origin)
-	expect(textLayout.top).toBe(0);
-	expect(textLayout.height).toBe(1);
+	expect(textRects.length).toBe(1);
+	expect(textRects[0].rect.y).toBe(parentRect.y);
+	expect(textRects[0].rect.height).toBe(1);
 
 	// Child should be positioned after text
-	expect(childLayout.top).toBe(1);
-	expect(childLayout.height).toBe(1);
+	expect(childRect.y).toBe(parentRect.y + 1);
+	expect(childRect.height).toBe(1);
 });
 
 test("Multiple block children positioned sequentially after parent text", () => {
