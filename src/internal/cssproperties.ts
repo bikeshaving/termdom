@@ -1685,6 +1685,11 @@ export const CSS_SHORTHANDS: Readonly<Record<string, readonly string[]>> = {
 		"border-right-color",
 		"border-bottom-color",
 		"border-left-color",
+		"border-image-source",
+		"border-image-slice",
+		"border-image-width",
+		"border-image-outset",
+		"border-image-repeat",
 	],
 	"border-block": [
 		"border-block-start-width",
@@ -1890,7 +1895,7 @@ export const CSS_SHORTHANDS: Readonly<Record<string, readonly string[]>> = {
 		"offset-anchor",
 		"offset-rotate",
 	],
-	outline: ["outline-width", "outline-style", "outline-color"],
+	outline: ["outline-color", "outline-style", "outline-width"],
 	overflow: ["overflow-x", "overflow-y"],
 	"overscroll-behavior": ["overscroll-behavior-x", "overscroll-behavior-y"],
 	padding: ["padding-bottom", "padding-left", "padding-right", "padding-top"],
@@ -1961,6 +1966,19 @@ export const CSS_SHORTHANDS: Readonly<Record<string, readonly string[]>> = {
 		"transition-behavior",
 	],
 	"view-timeline": ["view-timeline-name", "view-timeline-axis"],
+};
+
+/** The longhands a shorthand resets but cannot state, per shorthand. */
+export const CSS_RESET_ONLY_LONGHANDS: Readonly<
+	Record<string, readonly string[]>
+> = {
+	border: [
+		"border-image-source",
+		"border-image-slice",
+		"border-image-width",
+		"border-image-outset",
+		"border-image-repeat",
+	],
 };
 
 /** Longhands whose value inherits from the parent element. */

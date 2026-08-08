@@ -70,6 +70,32 @@ for (const name of directLonghands.keys()) {
 	}
 }
 
+/**
+ * Shorthands whose longhand order the property index states from an older
+ * level of the spec. CSS UI 4 writes `outline` as `<'outline-color'> ||
+ * <'outline-style'> || <'outline-width'>`, and a shorthand serializes in the
+ * order its grammar names its components.
+ */
+const grammarOrder: Record<string, string[]> = {
+	outline: ["outline-color", "outline-style", "outline-width"],
+};
+for (const [shorthand, order] of Object.entries(grammarOrder)) {
+	shorthands[shorthand] = order;
+}
+
+/**
+ * The longhands a shorthand resets without being able to state them: `border`
+ * resets the border-image longhands, so a block serializes as `border` only
+ * when all five stand at their initial values. The property index says so in
+ * prose rather than in the `computed` array, so it is named here.
+ */
+const resetOnly: Record<string, string[]> = {
+	border: shorthands["border-image"],
+};
+for (const [shorthand, reset] of Object.entries(resetOnly)) {
+	shorthands[shorthand] = [...shorthands[shorthand], ...reset];
+}
+
 const longhands = supported.filter(
 	(name) => name !== "all" && !(name in shorthands),
 );
@@ -133,6 +159,13 @@ ${list(longhands)}
 /** Each shorthand's longhands, in the order the shorthand's grammar names them. */
 export const CSS_SHORTHANDS: Readonly<Record<string, readonly string[]>> = {
 ${record(shorthands)}
+};
+
+/** The longhands a shorthand resets but cannot state, per shorthand. */
+export const CSS_RESET_ONLY_LONGHANDS: Readonly<
+	Record<string, readonly string[]>
+> = {
+${record(resetOnly)}
 };
 
 /** Longhands whose value inherits from the parent element. */

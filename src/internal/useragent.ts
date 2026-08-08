@@ -166,6 +166,40 @@ function expandBackground(value: string): Record<string, string> {
 	};
 }
 
+/** The four ways a border image tiles, which name the repeat component. */
+const BORDER_IMAGE_REPEATS = new Set(["stretch", "repeat", "round", "space"]);
+
+/** An image value: a function that produces one, or the keyword for none. */
+const IMAGE_VALUE =
+	/^(?:none$|(?:url|(?:repeating-)?(?:linear|radial|conic)-gradient|image|image-set|element|cross-fade|paint)\()/i;
+
+/**
+ * Expand the `border-image` shorthand, whose slash-separated groups are the
+ * slice, the width and the outset, and whose first group holds the source,
+ * the slice and the repeat in any order.
+ *
+ * A terminal draws no border image, so nothing here reaches the painter. The
+ * `border` shorthand resets these five longhands and serializes only while
+ * they stand at their initial values, so a declaration block has to know what
+ * they hold.
+ */
+function expandBorderImage(value: string): Record<string, string> {
+	const out: Record<string, string> = {};
+	const groups = value.split("/").map((group) => group.trim());
+	const slice: string[] = [];
+	const repeat: string[] = [];
+	for (const token of splitComponents(groups[0] ?? "")) {
+		if (BORDER_IMAGE_REPEATS.has(token.toLowerCase())) repeat.push(token);
+		else if (IMAGE_VALUE.test(token)) out["border-image-source"] = token;
+		else slice.push(token);
+	}
+	if (slice.length > 0) out["border-image-slice"] = slice.join(" ");
+	if (repeat.length > 0) out["border-image-repeat"] = repeat.join(" ");
+	if (groups[1]) out["border-image-width"] = groups[1];
+	if (groups[2]) out["border-image-outset"] = groups[2];
+	return out;
+}
+
 /**
  * Expand CSS SHORTHANDS into the longhands everything downstream reads.
  * Declarations are consulted per-property, so a `border: 1px solid` that
@@ -199,6 +233,9 @@ export function expandShorthands(
 				if (color) setEdges("color", [color]);
 				break;
 			}
+			case "border-image":
+				Object.assign(out, expandBorderImage(value));
+				break;
 			case "border-width":
 				setEdges("width", values);
 				break;

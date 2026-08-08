@@ -24,6 +24,7 @@ import {
 	CSS_INITIAL_VALUES,
 	CSS_LONGHANDS,
 	CSS_PROPERTIES,
+	CSS_RESET_ONLY_LONGHANDS,
 	CSS_SHORTHANDS,
 } from "./cssproperties.js";
 import {
@@ -903,29 +904,45 @@ const SHORTHAND_LONGHANDS = new Map<string, readonly string[]>();
 /** Each shorthand's shape, classified once rather than per serialization. */
 const SHORTHAND_SHAPES = new Map<string, ShorthandShape>();
 
-for (const [shorthand, indexed] of Object.entries(CSS_SHORTHANDS)) {
+/**
+ * The longhands a shorthand resets but whose values its own grammar cannot
+ * state: a block missing them cannot serialize as the shorthand, and they
+ * take no place in the value it writes.
+ */
+const RESET_ONLY_LONGHANDS = new Map<string, ReadonlySet<string>>(
+	Object.entries(CSS_RESET_ONLY_LONGHANDS).map(([shorthand, longhands]) => [
+		shorthand,
+		new Set(longhands),
+	]),
+);
+
+for (const [shorthand, all] of Object.entries(CSS_SHORTHANDS)) {
+	const reset = CSS_RESET_ONLY_LONGHANDS[shorthand];
+	const indexed = reset
+		? all.filter((longhand) => !reset.includes(longhand))
+		: all;
 	const box =
 		boxOrder(shorthand, indexed, EDGE_NAMES) ??
 		boxOrder(shorthand, indexed, CORNER_NAMES);
-	const longhands = box ?? indexed;
+	const longhands = box ? [...box, ...(reset ?? [])] : all;
 	SHORTHAND_LONGHANDS.set(shorthand, longhands);
 	SHORTHAND_SHAPES.set(
 		shorthand,
 		box
 			? "box"
-			: longhands.length === 12 &&
+			: indexed.length === 12 &&
 				  LINE_COMPONENTS.every(
 						(kind) =>
-							longhands.filter((longhand) => longhand.endsWith(`-${kind}`))
+							indexed.filter((longhand) => longhand.endsWith(`-${kind}`))
 								.length === 4,
 				  )
 				? "border"
-				: longhands.length === LINE_COMPONENTS.length &&
-					  longhands.every((longhand, index) =>
+				: indexed.length === LINE_COMPONENTS.length &&
+					  indexed.every((longhand, index) =>
 							longhand.endsWith(`-${LINE_COMPONENTS[index]}`),
 					  )
 					? "line"
-					: longhands.length === 2
+					: indexed.length === 2
 						? "pair"
 						: "sequence",
 	);
@@ -1282,12 +1299,31 @@ function serializeShorthandValue(
 	longhands: readonly string[],
 	valueOf: (longhand: string) => string,
 ): string {
-	const values = longhands.map(valueOf);
+	const all = longhands.map(valueOf);
 	// A CSS-wide keyword serializes as itself only when every longhand holds
 	// the same one; one longhand overridden and the shorthand has no value.
-	if (values.some((value) => CSS_WIDE_KEYWORDS.has(value))) {
-		return values.every((value) => value === values[0]) ? values[0] : "";
+	if (all.some((value) => CSS_WIDE_KEYWORDS.has(value))) {
+		return all.every((value) => value === all[0]) ? all[0] : "";
 	}
+
+	// A longhand the shorthand resets without stating -- border-image under
+	// `border` -- takes no place in the value written, and a value of its own
+	// that the shorthand cannot express means it cannot be written at all.
+	const reset = RESET_ONLY_LONGHANDS.get(shorthand);
+	if (reset) {
+		for (const longhand of longhands) {
+			if (
+				reset.has(longhand) &&
+				valueOf(longhand) !== CSS_INITIAL_VALUES[longhand]
+			) {
+				return "";
+			}
+		}
+	}
+	const stated = reset
+		? longhands.filter((longhand) => !reset.has(longhand))
+		: longhands;
+	const values = reset ? stated.map(valueOf) : all;
 
 	switch (SHORTHAND_SHAPES.get(shorthand)) {
 		case "box":
@@ -1297,28 +1333,26 @@ function serializeShorthandValue(
 		case "border": {
 			const components: Array<[string, string]> = [];
 			for (const kind of LINE_COMPONENTS) {
-				const sides = longhands.filter((longhand) =>
+				const sides = stated.filter((longhand) =>
 					longhand.endsWith(`-${kind}`),
 				);
 				const sideValues = sides.map(valueOf);
 				if (sideValues.some((value) => value !== sideValues[0])) return "";
 				components.push([sides[0], sideValues[0]]);
 			}
-			return dropInitials(components, 1);
+			return dropInitials(components);
 		}
 		// `border-top`, `outline`, `column-rule`: a line's width, style and
-		// color, of which the style is the component that says the line is there
-		// at all and so is written even when it is the initial `none`.
+		// color.
 		case "line":
 			return dropInitials(
-				longhands.map((longhand, index) => [longhand, values[index]] as const),
-				1,
+				stated.map((longhand, index) => [longhand, values[index]] as const),
 			);
 		case "pair":
 			return values[0] === values[1] ? values[0] : values.join(" ");
 		default:
 			return dropInitials(
-				longhands.map((longhand, index) => [longhand, values[index]] as const),
+				stated.map((longhand, index) => [longhand, values[index]] as const),
 			);
 	}
 }
@@ -1424,7 +1458,12 @@ export class CSSStyleDeclaration implements DeclarationSource {
 		this.#declarations = [];
 		this.#byName.clear();
 		for (const declaration of parseDeclarationText(text)) {
-			this.#apply(declaration.name, declaration.value, declaration.important);
+			this.#apply(
+				declaration.name,
+				declaration.value,
+				declaration.important,
+				true,
+			);
 		}
 		this.#invalidate();
 	}
@@ -1500,20 +1539,33 @@ export class CSSStyleDeclaration implements DeclarationSource {
 		return name.startsWith("--") || SUPPORTED_PROPERTIES.has(name);
 	}
 
-	/** Store one declaration in place; returns whether anything changed. */
-	#store(name: string, value: string, important: boolean): boolean {
+	/**
+	 * Store one declaration; returns whether anything changed.
+	 *
+	 * A declaration that says something new is the LAST declaration in the
+	 * block: it was written after the ones already there, and the order the
+	 * block serializes in is the order its declarations were made. Restating
+	 * a declaration unchanged leaves it where it stands.
+	 */
+	#store(
+		name: string,
+		value: string,
+		important: boolean,
+		cascade = false,
+	): boolean {
 		const declared = this.#find(name);
-		if (!declared) {
-			const entry = {name, value, important};
-			this.#declarations.push(entry);
-			this.#byName.set(name, entry);
-			return true;
+		if (declared) {
+			// Parsing a block is a cascade in miniature: a normal declaration
+			// does not displace the important one already standing there.
+			if (cascade && declared.important && !important) return false;
+			if (declared.value === value && declared.important === important) {
+				return false;
+			}
+			this.#remove(name);
 		}
-		if (declared.value === value && declared.important === important) {
-			return false;
-		}
-		declared.value = value;
-		declared.important = important;
+		const entry = {name, value, important};
+		this.#declarations.push(entry);
+		this.#byName.set(name, entry);
 		return true;
 	}
 
@@ -1526,20 +1578,27 @@ export class CSSStyleDeclaration implements DeclarationSource {
 	}
 
 	/** Store a property as its longhands, or as itself; returns whether it changed. */
-	#apply(name: string, value: string, important: boolean): boolean {
+	#apply(
+		name: string,
+		value: string,
+		important: boolean,
+		cascade = false,
+	): boolean {
 		// A declaration whose value does not parse is not stored at all, so a
 		// shorthand with one bad component drops whole rather than leaving its
 		// good components behind.
 		if (!isValidDeclaration(name, value)) return false;
 		const expanded = expandShorthandValue(name, value);
-		if (!expanded) return this.#store(name, value, important);
+		if (!expanded) return this.#store(name, value, important, cascade);
 		let changed = this.#remove(name);
 		for (const longhand of SHORTHAND_LONGHANDS.get(name)!) {
 			if (longhand in expanded) continue;
+			if (cascade && this.#find(longhand)?.important && !important) continue;
 			changed = this.#remove(longhand) || changed;
 		}
 		for (const [longhand, longhandValue] of Object.entries(expanded)) {
-			changed = this.#store(longhand, longhandValue, important) || changed;
+			changed =
+				this.#store(longhand, longhandValue, important, cascade) || changed;
 		}
 		return changed;
 	}
@@ -1680,7 +1739,12 @@ export class CSSStyleDeclaration implements DeclarationSource {
 		this.#byName.clear();
 		for (const declaration of parseDeclarationText(text ?? "")) {
 			if (!this.#supports(declaration.name)) continue;
-			this.#apply(declaration.name, declaration.value, declaration.important);
+			this.#apply(
+				declaration.name,
+				declaration.value,
+				declaration.important,
+				true,
+			);
 		}
 		this.#flush();
 	}
