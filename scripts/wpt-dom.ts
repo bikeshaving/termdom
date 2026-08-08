@@ -537,8 +537,6 @@ const EXCLUSIONS: Record<string, string> = {
 		"requires-browsing-context: the selection under test is an iframe's, across a document.open()",
 	"selection/deleteFromDocument.html":
 		"requires-browsing-context: the fixture is built in one iframe and compared against a reference document in another",
-	"selection/deleteFromDocument-HTMLDetails.html":
-		"requires-browsing-context: the fixture is built in one iframe and compared against a reference document in another",
 
 	// requires-user-input: the selection under test is one a pointer or key
 	// action sequence makes, which testdriver asks the browser to synthesize.
