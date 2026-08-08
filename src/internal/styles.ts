@@ -2583,7 +2583,12 @@ function sheetNamespaces(sheet: CSSStyleSheet | null): SelectorNamespaces {
 	for (const rule of Array.from(sheet.cssRules)) {
 		if (!(rule instanceof CSSNamespaceRule)) continue;
 		if (rule.prefix === "") namespaces.default = rule.namespaceURI;
-		else namespaces.prefixes.set(rule.prefix, rule.namespaceURI);
+		else {
+			namespaces.prefixes.set(
+				cssTree.ident.decode(rule.prefix),
+				rule.namespaceURI,
+			);
+		}
 	}
 	return namespaces;
 }
@@ -4283,22 +4288,41 @@ function parseRuleText(
 	if (nodes.length !== 1) {
 		throw domException(`Cannot parse rule: ${source}`, "SyntaxError", sheet);
 	}
-	const rule = convertRule(nodes[0], sheet, parentRule);
+	const rule = convertRule(nodes[0], sheet, parentRule, sheetNamespaces(sheet));
 	if (!rule) {
 		throw domException(`Cannot parse rule: ${source}`, "SyntaxError", sheet);
 	}
 	return rule;
 }
 
+/**
+ * A sheet's rules, in source order.
+ *
+ * The namespaces a selector resolves against are the ones declared BEFORE it:
+ * a sheet is read top to bottom, and an @namespace reaches only the rules that
+ * follow it. The map is therefore built as the walk goes rather than read back
+ * off a sheet that is still being built.
+ */
 function convertRules(
 	source: readonly ParsedNode[],
 	sheet: CSSStyleSheet | null,
 	parentRule: CSSRule | null,
+	namespaces: SelectorNamespaces = {default: null, prefixes: new Map()},
 ): CSSRule[] {
 	const rules: CSSRule[] = [];
 	for (const node of source) {
-		const rule = convertRule(node, sheet, parentRule);
-		if (rule) rules.push(rule);
+		const rule = convertRule(node, sheet, parentRule, namespaces);
+		if (!rule) continue;
+		if (rule instanceof CSSNamespaceRule) {
+			if (rule.prefix === "") namespaces.default = rule.namespaceURI;
+			else {
+				namespaces.prefixes.set(
+					cssTree.ident.decode(rule.prefix),
+					rule.namespaceURI,
+				);
+			}
+		}
+		rules.push(rule);
 	}
 	return rules;
 }
@@ -4312,16 +4336,26 @@ function convertRule(
 	node: ParsedNode,
 	sheet: CSSStyleSheet | null,
 	parentRule: CSSRule | null,
+	namespaces: SelectorNamespaces = NO_NAMESPACES,
 ): CSSRule | null {
 	if (node.type === "Rule") {
-		const selectors = parseSelectorList(preludeText(node));
+		const prelude = preludeText(node);
+		const selectors = parseSelectorList(prelude);
 		if (!selectors) return null;
+		// A prefix no @namespace declared names no namespace, and a selector
+		// naming one does not parse.
+		if (
+			prelude.includes("|") &&
+			!selectorNamespace(prelude, namespaces).valid
+		) {
+			return null;
+		}
 		return new CSSStyleRule(
 			selectors,
 			blockText(node),
 			sheet,
 			parentRule,
-			(rule) => convertRules(nestedRules(node), sheet, rule),
+			(rule) => convertRules(nestedRules(node), sheet, rule, namespaces),
 		);
 	}
 	if (node.type !== "Atrule") return null;
@@ -4329,28 +4363,28 @@ function convertRule(
 	switch ((node.name ?? "").toLowerCase()) {
 		case "media":
 			return new CSSMediaRule(prelude, sheet, parentRule, (group) =>
-				convertRules(nodesOf(node.block ?? {}), sheet, group),
+				convertRules(nodesOf(node.block ?? {}), sheet, group, namespaces),
 			);
 		case "supports":
 			return new CSSSupportsRule(prelude, sheet, parentRule, (group) =>
-				convertRules(nodesOf(node.block ?? {}), sheet, group),
+				convertRules(nodesOf(node.block ?? {}), sheet, group, namespaces),
 			);
 		case "container":
 			return new CSSContainerRule(prelude, sheet, parentRule, (group) =>
-				convertRules(nodesOf(node.block ?? {}), sheet, group),
+				convertRules(nodesOf(node.block ?? {}), sheet, group, namespaces),
 			);
 		case "scope":
 			return new CSSScopeRule(prelude, sheet, parentRule, (group) =>
-				convertRules(nodesOf(node.block ?? {}), sheet, group),
+				convertRules(nodesOf(node.block ?? {}), sheet, group, namespaces),
 			);
 		case "starting-style":
 			return new CSSStartingStyleRule(sheet, parentRule, (group) =>
-				convertRules(nodesOf(node.block ?? {}), sheet, group),
+				convertRules(nodesOf(node.block ?? {}), sheet, group, namespaces),
 			);
 		case "layer":
 			return node.block
 				? new CSSLayerBlockRule(prelude, sheet, parentRule, (group) =>
-						convertRules(nodesOf(node.block ?? {}), sheet, group),
+						convertRules(nodesOf(node.block ?? {}), sheet, group, namespaces),
 					)
 				: new CSSLayerStatementRule(prelude, sheet, parentRule);
 		case "import":
@@ -4548,48 +4582,96 @@ export function documentStyleSheetList(document: Document): {length: number} {
  * by what the document adopted. A `<link>` never resolves to a sheet -- there
  * is no network behind a terminal document.
  */
+/**
+ * The sheets a tree's own elements declare, which is what `styleSheets`
+ * lists. An adopted sheet belongs to no element and is not one of them.
+ */
+export function declaredStyleSheets(root: Document | ShadowRoot) {
+	return Array.from(root.querySelectorAll("style"), sheetFor);
+}
+
 export function documentStyleSheets(document: Document): CSSStyleSheet[] {
-	const sheets: CSSStyleSheet[] = [];
-	for (const element of document.querySelectorAll("style")) {
-		sheets.push(sheetFor(element));
-	}
-	sheets.push(...(adoptedSheets.get(document) ?? []));
-	return sheets;
+	return [
+		...declaredStyleSheets(document),
+		...(adoptedSheets.get(document) ?? []),
+	];
 }
 
 /** A shadow root's stylesheets: its own `<style>` elements, then what it adopted. */
 export function shadowStyleSheets(root: ShadowRoot): CSSStyleSheet[] {
-	const sheets: CSSStyleSheet[] = [];
-	for (const element of root.querySelectorAll("style")) {
-		sheets.push(sheetFor(element));
-	}
-	sheets.push(...(adoptedSheets.get(root) ?? []));
-	return sheets;
+	return [...declaredStyleSheets(root), ...(adoptedSheets.get(root) ?? [])];
 }
 
 /**
  * Adopt a list of constructed sheets, and wire each one's later mutations to
  * the cascade -- a constructed sheet has no consumer until something adopts it.
  */
-function adopt(window: DOMWindow, target: Node, sheets: unknown): void {
-	const list: CSSStyleSheet[] = [];
-	for (const sheet of Array.from(sheets as Iterable<unknown>)) {
-		if (!(sheet instanceof CSSStyleSheet)) {
-			throw typeError("adoptedStyleSheets takes CSSStyleSheet objects");
-		}
-		if (!constructedSheets.has(sheet)) {
-			throw domException(
-				"Can't adopt a stylesheet that was not constructed",
-				"NotAllowedError",
-				sheet,
-			);
-		}
-		sheetNotifiers.set(sheet, () =>
-			styleManagers.get(window)?.refreshStylesheets(),
-		);
-		list.push(sheet);
+/** A sheet a tree may adopt: one an author constructed, and nothing else. */
+function checkAdoptable(window: DOMWindow, sheet: unknown): CSSStyleSheet {
+	if (!(sheet instanceof CSSStyleSheet)) {
+		throw typeError("adoptedStyleSheets takes CSSStyleSheet objects");
 	}
-	adoptedSheets.set(target, list);
+	if (!constructedSheets.has(sheet)) {
+		throw domException(
+			"Can't adopt a stylesheet that was not constructed",
+			"NotAllowedError",
+			sheet,
+		);
+	}
+	sheetNotifiers.set(sheet, () =>
+		styleManagers.get(window)?.refreshStylesheets(),
+	);
+	return sheet;
+}
+
+function adopt(window: DOMWindow, target: Node, sheets: unknown): void {
+	const adopted = Array.from(sheets as Iterable<unknown>).map((sheet) =>
+		checkAdoptable(window, sheet),
+	);
+	// One array per tree, replaced in place: the observable array an author
+	// already holds is the same object after a whole reassignment.
+	let list = adoptedSheets.get(target);
+	if (!list) adoptedSheets.set(target, (list = []));
+	list.length = 0;
+	list.push(...adopted);
+}
+
+/** The observable array behind one tree's `adoptedStyleSheets`. */
+const adoptedProxies = new WeakMap<Node, CSSStyleSheet[]>();
+
+/**
+ * `adoptedStyleSheets` as an ObservableArray: the list an author holds is the
+ * list the cascade reads, so `push`, `splice` and an indexed write all take
+ * effect where a whole reassignment would -- and each is checked as one.
+ */
+function observableAdopted(
+	window: DOMWindow,
+	target: Node,
+	list: CSSStyleSheet[],
+): CSSStyleSheet[] {
+	let proxy = adoptedProxies.get(target);
+	if (proxy) return proxy;
+	const changed = (): void => {
+		styleManagers.get(window)?.refreshStylesheets();
+	};
+	proxy = new Proxy(list, {
+		set(array, property, value) {
+			if (typeof property === "string" && /^\d+$/.test(property)) {
+				checkAdoptable(window, value);
+			}
+			const ok = Reflect.set(array, property, value);
+			if (ok) changed();
+			return ok;
+		},
+		deleteProperty(array, property) {
+			// No notification: an array method that deletes an index (`pop`,
+			// `shift`) writes the new length straight after, and the cascade
+			// must not read the list between the two.
+			return Reflect.deleteProperty(array, property);
+		},
+	});
+	adoptedProxies.set(target, proxy);
+	return proxy;
 }
 
 /**
@@ -4616,7 +4698,7 @@ export function installStyleSheets(window: DOMWindow): void {
 
 	Object.defineProperty(documentPrototype, "styleSheets", {
 		get(this: Document) {
-			const sheets = documentStyleSheets(this);
+			const sheets = declaredStyleSheets(this);
 			return indexed(new StyleSheetList(sheets), sheets);
 		},
 		configurable: true,
@@ -4629,7 +4711,7 @@ export function installStyleSheets(window: DOMWindow): void {
 			get(this: Node) {
 				let list = adoptedSheets.get(this);
 				if (!list) adoptedSheets.set(this, (list = []));
-				return list;
+				return observableAdopted(window, this, list);
 			},
 			set(this: Node, sheets: unknown) {
 				adopt(window, this, sheets);
@@ -4643,7 +4725,7 @@ export function installStyleSheets(window: DOMWindow): void {
 	if (window.ShadowRoot) {
 		Object.defineProperty(window.ShadowRoot.prototype, "styleSheets", {
 			get(this: ShadowRoot) {
-				const sheets = shadowStyleSheets(this);
+				const sheets = declaredStyleSheets(this);
 				return indexed(new StyleSheetList(sheets), sheets);
 			},
 			configurable: true,
@@ -7684,6 +7766,20 @@ export class StyleManager {
 		const Element = this.#window.Element;
 		const originalSetAttribute = Element.prototype.setAttribute;
 		const originalRemoveAttribute = Element.prototype.removeAttribute;
+
+		// A shadow root is a tree scope of the cascade: the rules its own
+		// <style> elements and adopted sheets declare reach its elements and
+		// no others, so the cascade has to be told the tree exists the moment
+		// it does.
+		const originalAttachShadow = Element.prototype.attachShadow;
+		Element.prototype.attachShadow = function (
+			this: Element,
+			init: ShadowRootInit,
+		): ShadowRoot {
+			const root = originalAttachShadow.call(this, init);
+			styleManager.registerShadowRoot(root);
+			return root;
+		};
 
 		// Hook setAttribute to catch style attribute changes
 		Element.prototype.setAttribute = function (name: string, value: string) {
