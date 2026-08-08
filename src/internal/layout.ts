@@ -1274,10 +1274,11 @@ export class LayoutEngine {
 	#measureNodes: Set<FlexTypes.Node>;
 
 	/**
-	 * Inline boxes a block-level box broke apart (see #addSplitFragments). They
-	 * paint boxes that live OUTSIDE their own layout subtree, so paint culling
-	 * cannot trust their extents. Add-only and weak: an element that stops
-	 * splitting merely stops being culled, which costs a walk, never a frame.
+	 * Inline boxes a block-level box broke apart, noted as the container
+	 * enumerates its flow children through them. They paint boxes that live
+	 * OUTSIDE their own layout subtree, so paint culling cannot trust their
+	 * extents. Add-only and weak: an element that stops splitting merely stops
+	 * being culled, which costs a walk, never a frame.
 	 */
 	#brokenInlines = new WeakSet<Element>();
 
@@ -1300,10 +1301,10 @@ export class LayoutEngine {
 	}
 
 	/**
-	 * Containers a broken inline handed boxes to, which is what makes their
-	 * children[] stop corresponding to their childNodes. Add-only, like
-	 * #brokenInlines: a container that stops holding split boxes only loses a
-	 * paint fast path.
+	 * Containers whose box list reaches through a broken inline, which is what
+	 * makes their children[] stop corresponding to their childNodes. Add-only,
+	 * like #brokenInlines: a container that stops holding split boxes only
+	 * loses a paint fast path.
 	 */
 	#splitContainers = new WeakSet<Element>();
 
@@ -1542,7 +1543,9 @@ export class LayoutEngine {
 	}
 
 	isSubtreeOutsideBand(element: Element, top: number, bottom: number): boolean {
-		const node = this.nodeMap.get(element);
+		// An element with no box of its own is culled by the anonymous box that
+		// lays its content out, whose extent covers the whole run it opens.
+		const node = this.nodeMap.get(element) ?? this.#runFlexNode(element);
 		if (!node) return false;
 		if (node.extentBottom > top && node.extentTop < bottom) return false;
 		// An inline broken around a block-level box paints boxes that are NOT
@@ -2705,36 +2708,35 @@ export class LayoutEngine {
 	 * A block container with inline content lays that content out in anonymous
 	 * boxes -- one per contiguous run of inline-level flow children (CSS2
 	 * §9.2.1.1). The flex engine only takes a measure function on a leaf, so
-	 * each anonymous box is identified by its first node, the "run head": that
-	 * node carries the layout node with the measure function and owns the run's
-	 * break result, and every other node in the run resolves through it.
+	 * each anonymous box is a leaf whose measure breaks the run into lines,
+	 * starting from the flow child that opens it.
 	 *
 	 * Examples:
-	 * - "Hello" + <span>world</span>: the "Hello" text node heads the box
-	 * - <em>text</em> + "more": the <em> element heads it
-	 * - <div>text</div>: "text" heads the div's only box
+	 * - "Hello" + <span>world</span>: one box, opened by the "Hello" text node
+	 * - <em>text</em> + "more": one box, opened by the <em>
+	 * - <div>text</div>: the div's only box, opened by "text"
 	 * - In flex containers: every element child is a box of its own
 	 * - <span>text</span><div>block</div><span>more</span>: three boxes, the
 	 *   block-level one between two anonymous ones
 	 *
 	 * Pseudo-elements (::before, ::marker, ::after) take run positions exactly
 	 * as the text they generate would.
-	 */
-	/**
-	 * The anonymous boxes of a block container, keyed by the flow-child node
-	 * each one covers: every contiguous group of inline-level flow children is
-	 * one anonymous box, and the box's first node is what layout hangs its
-	 * measurement off. Built from the container's own child order, so run
-	 * membership is a parent-side lookup rather than a walk backward through
-	 * siblings -- a run of N boxes costs one enumeration, not N of them.
+	 *
+	 * The enumeration is what every membership question reads: `heads` maps each
+	 * flow child (and, through the walk in #boxEntryOf, everything nested inside
+	 * one) to the box it falls under, so membership is a parent-side lookup
+	 * rather than a walk backward through siblings -- a run of N boxes costs one
+	 * enumeration, not N of them. `boxes` is the same enumeration read as the
+	 * container's ordered child list, which is what places a box among its
+	 * siblings.
 	 *
 	 * Elements that generate no box in the flow (display:none, out of flow) take
 	 * no run position: they neither open nor close a run, and map to whichever
 	 * box is open around them so that content nested inside them still resolves.
 	 *
-	 * `boxes` is the same enumeration read as the container's child list: one
-	 * entry per box it lays out, anonymous ones represented by their head. It is
-	 * what layout counts to place a child among its siblings.
+	 * The epoch stamps the enumeration as derived data, dropped whenever the
+	 * tree or the cascade under it may have moved. The boxes themselves outlive
+	 * it: a rebuild reconciles against the entry it replaces.
 	 */
 	#boxesByContainer = new WeakMap<
 		Element,
@@ -4143,9 +4145,8 @@ export class LayoutEngine {
 	 */
 	#buildBlockContent(element: Element): void {
 		// Only an inline-block, never a plain inline: an inline containing a
-		// block is BROKEN around it (#addSplitFragments), and building a
-		// content tree here would steal back the boxes the split just handed to
-		// the container.
+		// block is BROKEN around it, and building a content tree here would
+		// steal back the boxes that belong to its container.
 		if (
 			getPropertyValue(element, "display") !== "inline-block" ||
 			!this.#containsBlockLevelBox(element)

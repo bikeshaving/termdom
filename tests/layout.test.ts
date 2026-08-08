@@ -556,11 +556,13 @@ test("block insertion splits inline run", () => {
 	expect(layoutEngine.findInlineRunHead(spans[1])).toBe(spans[1]); // Finds itself as head
 });
 
-test("inline head deletion promotes next element", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+test("a run whose first node is removed re-measures from the next", () => {
+	const {jsdom, layoutEngine, processMutationsAndLayout} = createLayoutEngine(
 		`<div><span>head</span><span>second</span><span>third</span></div>`,
 	);
+	const container = jsdom.window.document.querySelector("div")!;
 	const spans = Array.from(jsdom.window.document.querySelectorAll("span"));
+	processMutationsAndLayout();
 
 	// Initially: first is head, others join
 	expect(layoutEngine.isInlineRunHead(spans[0])).toBe(true);
@@ -570,12 +572,21 @@ test("inline head deletion promotes next element", () => {
 
 	// Remove head element
 	spans[0].remove();
-	layoutEngine.calculateLayout();
+	processMutationsAndLayout();
 
-	// Second span should become new head
+	// The box the run laid out in is the same one, measured from the node
+	// that opens it now: the text that remains starts at the container's
+	// content edge rather than where "head" left off.
 	expect(layoutEngine.isInlineRunHead(spans[1])).toBe(true);
 	expect(layoutEngine.isInlineRunHead(spans[2])).toBe(false);
 	expect(layoutEngine.findInlineRunHead(spans[2])).toBe(spans[1]);
+
+	const containerRect = layoutEngine.getRect(container)!;
+	const rectTexts = layoutEngine.getRectTexts(container.firstChild!);
+	expect(rectTexts.length).toBe(1);
+	expect(rectTexts[0].text).toBe("second");
+	expect(rectTexts[0].rect.x).toBe(containerRect.x);
+	expect(rectTexts[0].rect.y).toBe(containerRect.y);
 });
 
 test("findInlineRunHead - text node inside inline element should find element", () => {
