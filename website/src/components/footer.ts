@@ -22,7 +22,7 @@ export function Footer() {
 				`}
 			>
 				<a href="/guides/getting-started/">Guides</a>
-				<a href="/support/">Support</a>
+				<a href="/compatibility/">Compatibility</a>
 				<a href="https://github.com/bikeshaving/termdom">GitHub</a>
 				<a href="https://www.npmjs.com/package/@b9g/termdom">NPM</a>
 			</nav>

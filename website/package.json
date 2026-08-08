@@ -3,7 +3,7 @@
 	"type": "module",
 	"scripts": {
 		"develop": "shovel develop src/server.ts --port 1337 --platform bun",
-		"static": "MODE=production shovel build src/server.ts --platform bun --lifecycle && bun run pagefind",
+		"static": "MODE=production shovel build src/server.ts --platform node --lifecycle && npm run pagefind",
 		"pagefind": "pagefind --site dist/public",
 		"check-links": "bun run scripts/check-links.ts",
 		"predeploy": "npm run static && npm run check-links",

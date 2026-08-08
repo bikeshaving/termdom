@@ -22,7 +22,7 @@ Changes to rendering, resize, or exit behavior should pass the suite and both
 `verify:` harnesses — the xterm mock, tmux, and Terminal.app have each
 disagreed with the others before.
 
-## SUPPORT.md
+## COMPATIBILITY.md
 
 Generated, never edited:
 

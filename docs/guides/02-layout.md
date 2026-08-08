@@ -47,4 +47,4 @@ contexts. `overflow: hidden` clips to the box.
 
 ## Not implemented
 
-CSS Grid and floats. The [support matrix](/support/) has the full list.
+CSS Grid and floats. The [compatibility matrix](/compatibility/) has the full list.

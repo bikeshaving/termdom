@@ -17,7 +17,7 @@ export default function NotFound({url}: {url: string}) {
 				</p>
 				<p>
 					Try the <a href="/guides/getting-started/">guides</a>, the
-					<a href="/support/">support matrix</a>, or
+					<a href="/compatibility/">compatibility matrix</a>, or
 					<a href="/">the home page</a>.
 				</p>
 			</main>

@@ -85,7 +85,7 @@ router
 	);
 
 router
-	.route("/support/")
+	.route("/compatibility/")
 	.get(async (request) =>
 		renderView(SupportView, new URL(request.url).pathname),
 	);
@@ -162,7 +162,7 @@ async function guideURLs(): Promise<string[]> {
 }
 
 async function allRoutes(): Promise<string[]> {
-	return ["/", "/support/", ...(await guideURLs())];
+	return ["/", "/compatibility/", ...(await guideURLs())];
 }
 
 async function generateSitemap(): Promise<string> {

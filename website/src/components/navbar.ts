@@ -90,9 +90,9 @@ export function Navbar({url}: {url: string}) {
 					aria-current=${url.startsWith("/guides") && "page"}
 				>Guides</a>
 				<a
-					href="/support/"
-					aria-current=${url.startsWith("/support") && "page"}
-				>Support</a>
+					href="/compatibility/"
+					aria-current=${url.startsWith("/compatibility") && "page"}
+				>Compatibility</a>
 			</div>
 			<div class=${navbarGroupLayout}>
 				<a href="https://github.com/bikeshaving/termdom">GitHub</a>
