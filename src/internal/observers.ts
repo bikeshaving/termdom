@@ -23,7 +23,7 @@
  */
 
 import {type LayoutEngine} from "./layout.js";
-import {getBoxModel} from "./styles.js";
+import {computedStyleOf, getBoxModel} from "./styles.js";
 
 /**
  * An element's content box: its size, plus the offset of its top-left corner
@@ -74,11 +74,7 @@ function contentBoxOf(
 	element: Element,
 	layoutEngine: LayoutEngine,
 ): ContentBox | null {
-	const window = element.ownerDocument?.defaultView;
-	if (
-		window &&
-		window.getComputedStyle(element).getPropertyValue("display") === "none"
-	) {
+	if (computedStyleOf(element).computedValueOf("display") === "none") {
 		return null;
 	}
 	const rect = layoutEngine.getRect(element);
