@@ -3279,8 +3279,11 @@ function serializeQualifiedName(
 		return namespaces.default === null ? localText : `*|${localText}`;
 	}
 	if (prefix === "") {
-		// `|E` says "no namespace", which `E` means only without a default.
-		return namespaces.default === null ? localText : `|${localText}`;
+		// `|E` says "no namespace", which is not what a bare `E` says whether or
+		// not a default namespace was declared -- so the bar stays. An
+		// attribute is the exception: an unprefixed one is already in no
+		// namespace, so `[|attr]` and `[attr]` are the same selector.
+		return namespaces === ATTRIBUTE_NAMESPACES ? localText : `|${localText}`;
 	}
 	const decoded = cssTree.ident.decode(prefix);
 	if (
@@ -3387,7 +3390,12 @@ function serializeSimpleSelector(
 		}
 		case "PseudoClassSelector":
 		case "PseudoElementSelector": {
-			const colons = node.type === "PseudoElementSelector" ? "::" : ":";
+			// A CSS 2 pseudo-element may be written with one colon; it
+			// serializes with two, which is the spelling every one of them has.
+			const element =
+				node.type === "PseudoElementSelector" ||
+				LEGACY_PSEUDO_ELEMENTS.has((node.name as string).toLowerCase());
+			const colons = element ? "::" : ":";
 			const name = serializeIdentifierSource(
 				(node.name as string).toLowerCase(),
 			);
@@ -3487,6 +3495,8 @@ function parsePseudoElementArgument(text: string): string | null {
  */
 function parseSelectorList(text: string): SelectorNode | null {
 	let list: SelectorNode;
+	// A selector list has to select something: the empty string is not one.
+	if (!String(text).trim()) return null;
 	try {
 		list = cssTree.parse(String(text), {
 			context: "selectorList",
@@ -4119,6 +4129,12 @@ function usedLength(cells: number): string {
 	return `${Math.round(cells * 1000) / 1000}px`;
 }
 
+/** The two sizes whose `auto` names a minimum only some boxes have. */
+const MIN_SIZE_PROPERTIES = new Set(["min-width", "min-height"]);
+
+/** The containers whose children have an automatic minimum size. */
+const ITEM_DISPLAYS = new Set(["flex", "inline-flex", "grid", "inline-grid"]);
+
 /** The four properties that place a positioned box against its containing block. */
 const INSET_PROPERTIES = new Set(["top", "right", "bottom", "left"]);
 
@@ -4553,6 +4569,35 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 		);
 	}
 
+	/**
+	 * `min-width: auto` and `min-height: auto` as resolved.
+	 *
+	 * The keyword means "the box's automatic minimum size", which only a flex
+	 * or grid item, or a box with an aspect ratio, actually has; anywhere else
+	 * -- and for a box that was never generated -- it is zero, which is the
+	 * value CSSOM reports.
+	 */
+	#resolvedMinSize(computed: string): string {
+		if (computed !== "auto") return computed;
+		// A box that was never generated has no automatic minimum, whatever
+		// else its style says.
+		for (
+			let element: Element | null = this.#element;
+			element;
+			element = compositionParentElement(element)
+		) {
+			if (computedStyleOf(element).computedValueOf("display") === "none") {
+				return "0px";
+			}
+		}
+		if (this.computedValueOf("aspect-ratio") !== "auto") return "auto";
+		const parent = compositionParentElement(this.#element);
+		const display = parent
+			? computedStyleOf(parent).computedValueOf("display")
+			: "";
+		return ITEM_DISPLAYS.has(display) ? "auto" : "0px";
+	}
+
 	/** One edge length in cells, for the arithmetic above. */
 	#edge(property: string): number {
 		return parseFloat(this.getPropertyValue(property)) || 0;
@@ -4832,6 +4877,9 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 		if (this.#stale || this.#epoch.value !== this.#seenEpoch) this.#refresh();
 		if (this.#manager && USED_VALUE_PROPERTIES.has(property)) {
 			return this.#usedValue(property);
+		}
+		if (this.#manager && MIN_SIZE_PROPERTIES.has(property)) {
+			return this.#resolvedMinSize(this.computedValueOf(property));
 		}
 		let value = this.#resolved.get(property);
 		if (value === undefined) {
