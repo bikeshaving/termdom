@@ -130,14 +130,13 @@ function cellStyleFromComputed(
 	const {bold, dim} = resolveFontWeight(
 		computedStyle.getPropertyValue("font-weight"),
 	);
-	// The Highlight/HighlightText system-color pair is CSS's spelling of
-	// "swap the cell's colors": it translates to SGR inverse, the
-	// terminal-native highlight with no color assumptions -- the same
-	// translation ::selection's resolver makes. Either name alone (the
-	// other overridden by an author color) can't mean "swap", so the
-	// system side simply resolves to nothing.
-	const isHighlightPair =
-		isSystemHighlightColor(bgColor) && isSystemHighlightColor(color);
+	// background-color: Highlight is CSS's spelling of "swap the cell's
+	// colors": SGR inverse, the terminal-native highlight with no color
+	// assumptions -- the same translation ::selection's resolver makes.
+	// The background alone carries the signal, so an author color on the
+	// element (a restyled link keeping its UA focus ring) does not defeat
+	// it; color: HighlightText alone resolves to nothing.
+	const isHighlightPair = isSystemHighlightColor(bgColor);
 	return {
 		fg:
 			color && color !== "initial" && !isSystemHighlightColor(color)
@@ -362,17 +361,15 @@ export class Painter {
 		// background -- clears the box to the terminal's DEFAULT background:
 		// opaque in every theme without asserting any color, the same
 		// system-color translation ::selection's Highlight pair uses. The UA
-		// picker sheet relies on it; authors can too. The Highlight/
-		// HighlightText pair fills the box with SGR inverse instead -- the
-		// browser's blue dropdown row, in the terminal's own colors (the UA
-		// select sheet's highlighted option rides this).
+		// picker sheet relies on it; authors can too. background-color:
+		// Highlight fills the box with SGR inverse instead -- the browser's
+		// blue dropdown row, in the terminal's own colors. The background
+		// alone carries the signal: an author color on the element (a
+		// restyled link keeping its UA focus ring) must not defeat it.
 		const isCanvasBg =
 			Boolean(backgroundColor) && /^canvas$/i.test(backgroundColor.trim());
 		const isHighlightBox =
-			Boolean(backgroundColor) &&
-			isSystemHighlightColor(backgroundColor) &&
-			Boolean(color) &&
-			isSystemHighlightColor(color);
+			Boolean(backgroundColor) && isSystemHighlightColor(backgroundColor);
 		const style = {
 			fg:
 				color && color !== "initial" && !isSystemHighlightColor(color)

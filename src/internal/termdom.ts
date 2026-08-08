@@ -2935,7 +2935,13 @@ export class TermDOM {
 				}
 				const before = frameDamage.get(element) ?? frameDamage.get(scope);
 				const after = this[kLayoutEngine].getRect(scope);
-				if (!after && !before) continue; // gone; the parent carries it
+				if (!after && !before) {
+					// An inline element has no box of its own, so its rows are
+					// not recoverable here: unbounded. A removed element's
+					// damage is its parent's, already recorded.
+					if (scope.isConnected) break transform;
+					continue;
+				}
 				// A geometry change cascades to everything after the element.
 				if (
 					before &&

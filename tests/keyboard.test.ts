@@ -1607,6 +1607,28 @@ test("non-mouse nav: a link underlines at rest and inverts on Tab focus", async 
 	dom.dispose();
 });
 
+test("an author-colored link keeps its focus ring", async () => {
+	// The UA ring is background-color: Highlight; the background alone
+	// carries the inverse signal, so an author restyling the link's color
+	// (every TodoMVC does) must not defeat it.
+	const terminal = new MockProcess({rows: 4, cols: 40});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
+	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
+	dom.document.head.innerHTML = `<style>.filters a { color: #777 }</style>`;
+	dom.document.body.innerHTML = `<input id="i"><div class="filters"><a href="#/">All</a></div>`;
+	dom.document.getElementById("i")!.focus();
+	await nextFrame(dom);
+
+	(terminal.stdin as any).emit("data", Buffer.from("\t"));
+	await new Promise((r) => setTimeout(r, 0));
+	await nextFrame(dom);
+	expect(dom.document.activeElement?.textContent).toBe("All");
+	const cell = (terminal as any).terminal.buffer.active.getLine(1).getCell(0);
+	expect(cell.isInverse()).toBeTruthy();
+	dom.dispose();
+});
+
 test("non-mouse nav: a button takes the outline underline across its whole box on focus", async () => {
 	// A button isn't underlined at rest (it wears [ ] brackets), so it uses the
 	// same `outline` focus as a field -- and the merge op lines the WHOLE box,
