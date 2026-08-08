@@ -2731,8 +2731,8 @@ export class TermDOM {
 	/**
 	 * The document as an ANSI string: colors and line breaks, no cursor
 	 * controls, no modes. Feeds the quit payout (CRLF: raw mode does not
-	 * translate bare newlines) and the renderANSI() module entry; not part
-	 * of the class's public surface.
+	 * translate bare newlines) and the scratch sibling behind renderANSI();
+	 * not part of the class's public surface.
 	 */
 	[kRenderStatic](lineEnding: "\n" | "\r\n"): string {
 		this.#processPendingMutationsAndRender();
