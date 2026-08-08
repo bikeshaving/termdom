@@ -40,3 +40,6 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 # Finder (MacOS) folder config
 .DS_Store
 .sshkeys/
+
+# WPT suite cache (scripts/wpt-cssom.ts)
+.wpt

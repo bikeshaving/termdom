@@ -330,12 +330,13 @@ function unquoteContent(content: string): string {
 		const char = content[index];
 
 		if (char === '"' || char === "'") {
-			const close = content.indexOf(char, index + 1);
-			if (close === -1) {
-				out += content.slice(index + 1);
-				break;
+			// A quote or a backslash inside the string carries a backslash of
+			// its own, which is spelling, not content.
+			let close = index + 1;
+			for (; close < content.length && content[close] !== char; close++) {
+				if (content[close] === "\\") close++;
 			}
-			out += content.slice(index + 1, close);
+			out += content.slice(index + 1, close).replace(/\\(.)/g, "$1");
 			index = close + 1;
 		} else if (/\s/.test(char)) {
 			// Whitespace *between* components is not rendered.
@@ -642,8 +643,19 @@ const LONGHAND_SHORTHANDS = new Map<string, readonly string[]>();
 export function serializeCSSValue(input: string): string {
 	let out = "";
 	let space = false;
+	const emit = (token: string): void => {
+		if (out.endsWith(",")) out += " ";
+		else if (space && out !== "" && !out.endsWith("(")) out += " ";
+		space = false;
+		out += token;
+	};
+
 	for (let i = 0; i < input.length; i++) {
 		const character = input[i];
+		if (WHITESPACE.has(character)) {
+			space = out !== "";
+			continue;
+		}
 		if (character === "/" && input[i + 1] === "*") {
 			const end = input.indexOf("*/", i + 2);
 			i = end === -1 ? input.length : end + 1;
@@ -651,23 +663,9 @@ export function serializeCSSValue(input: string): string {
 			continue;
 		}
 		if (character === '"' || character === "'") {
-			const start = i++;
-			for (; i < input.length && input[i] !== character; i++) {
-				if (input[i] === "\\") i++;
-			}
-			if (space && out !== "") out += " ";
-			space = false;
-			out += input.slice(start, i + 1);
-			continue;
-		}
-		if (
-			character === " " ||
-			character === "\t" ||
-			character === "\n" ||
-			character === "\r" ||
-			character === "\f"
-		) {
-			space = out !== "";
+			const end = endOfString(input, i);
+			emit(serializeCSSString(unescapeCSSString(input.slice(i + 1, end))));
+			i = end;
 			continue;
 		}
 		if (character === "," || character === ")") {
@@ -675,16 +673,157 @@ export function serializeCSSValue(input: string): string {
 			space = false;
 			continue;
 		}
-		if (out.endsWith(",")) {
-			out += " ";
-		} else if (space && !out.endsWith("(")) {
-			out += " ";
+		if (startsNumber(input, i)) {
+			const number = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?/.exec(
+				input.slice(i),
+			)![0];
+			i += number.length;
+			const unit = /^(?:%|[a-zA-Z\u0080-\uFFFF]+)/.exec(input.slice(i))?.[0];
+			if (unit) i += unit.length;
+			emit(
+				serializeCSSNumber(number) +
+					(unit === "%" ? "%" : (unit?.toLowerCase() ?? "")),
+			);
+			i--;
+			continue;
 		}
-		space = false;
-		out += character;
+		if (startsIdentifier(input, i)) {
+			const name = /^[a-zA-Z0-9_\u0080-\uFFFF\\-]+/.exec(input.slice(i))![0];
+			i += name.length;
+			// A url() token's body is not an identifier list: it runs to the
+			// closing parenthesis, quoted or not, and serializes quoted.
+			if (name.toLowerCase() === "url" && input[i] === "(") {
+				const end = input.indexOf(")", i);
+				const body = input.slice(i + 1, end === -1 ? input.length : end).trim();
+				const url =
+					body.startsWith('"') || body.startsWith("'")
+						? unescapeCSSString(body.slice(1, -1))
+						: unescapeCSSString(body);
+				emit(`url(${serializeCSSString(url)})`);
+				i = end === -1 ? input.length : end;
+				continue;
+			}
+			emit(name);
+			i--;
+			continue;
+		}
+		if (character === "#") {
+			const name = /^#[a-zA-Z0-9_\u0080-\uFFFF\\-]*/.exec(input.slice(i))![0];
+			emit(name);
+			i += name.length - 1;
+			continue;
+		}
+		emit(character);
 	}
 	return out;
 }
+
+const WHITESPACE = new Set([" ", "\t", "\n", "\r", "\f"]);
+
+function endOfString(input: string, start: number): number {
+	const quote = input[start];
+	for (let i = start + 1; i < input.length; i++) {
+		if (input[i] === "\\") i++;
+		else if (input[i] === quote) return i;
+	}
+	return input.length;
+}
+
+function unescapeCSSString(text: string): string {
+	return text.replace(/\\(.)/g, "$1");
+}
+
+/** Whether a number token begins at `index`. */
+function startsNumber(input: string, index: number): boolean {
+	const rest = input.slice(index, index + 3);
+	return /^[+-]?(\d|\.\d)/.test(rest);
+}
+
+/** Whether an identifier begins at `index`. */
+function startsIdentifier(input: string, index: number): boolean {
+	return /^[a-zA-Z_\u0080-\uFFFF\\-]/.test(input[index]);
+}
+
+/**
+ * Serialize a number as CSSOM says: the shortest form that round-trips, with
+ * no leading `+`, no bare leading `.`, and no negative zero.
+ */
+export function serializeCSSNumber(text: string): string {
+	const value = Number(text);
+	if (!Number.isFinite(value)) return text;
+	if (Object.is(value, -0)) return "0";
+	return String(value);
+}
+
+/** Serialize a string: double-quoted, with quotes and backslashes escaped. */
+export function serializeCSSString(text: string): string {
+	return `"${text.replace(/[\\"]/g, "\\$&")}"`;
+}
+
+/**
+ * Serialize an identifier: what `CSS.escape` answers. A code point that could
+ * not stand in an identifier is written as a hex escape, and one that merely
+ * needs quoting takes a backslash.
+ */
+export function serializeCSSIdentifier(value: string): string {
+	const text = String(value);
+	let out = "";
+	for (let i = 0; i < text.length; i++) {
+		const code = text.charCodeAt(i);
+		const character = text[i];
+		if (code === 0) {
+			out += "�";
+		} else if (
+			(code >= 0x1 && code <= 0x1f) ||
+			code === 0x7f ||
+			(i === 0 && code >= 0x30 && code <= 0x39) ||
+			(i === 1 && code >= 0x30 && code <= 0x39 && text.charCodeAt(0) === 0x2d)
+		) {
+			out += `\\${code.toString(16)} `;
+		} else if (i === 0 && code === 0x2d && text.length === 1) {
+			out += `\\${character}`;
+		} else if (
+			code >= 0x80 ||
+			code === 0x2d ||
+			code === 0x5f ||
+			(code >= 0x30 && code <= 0x39) ||
+			(code >= 0x41 && code <= 0x5a) ||
+			(code >= 0x61 && code <= 0x7a)
+		) {
+			out += character;
+		} else {
+			out += `\\${character}`;
+		}
+	}
+	return out;
+}
+
+/**
+ * Whether a declaration would be honoured: `CSS.supports(property, value)`, and
+ * the one-argument form that takes a `@supports` condition.
+ */
+function cssSupports(conditionOrProperty: string, value?: string): boolean {
+	if (value === undefined) {
+		const condition = String(conditionOrProperty).trim();
+		if (!condition.startsWith("(") || !condition.endsWith(")")) return false;
+		const inner = condition.slice(1, -1);
+		const colon = inner.indexOf(":");
+		if (colon === -1) return false;
+		return cssSupports(inner.slice(0, colon), inner.slice(colon + 1));
+	}
+	const property = normalizePropertyName(conditionOrProperty);
+	if (property.startsWith("--")) return true;
+	if (!SUPPORTED_PROPERTIES.has(property)) return false;
+	const text = serializeCSSValue(String(value));
+	return text !== "" && isValidDeclaration(property, text);
+}
+
+/** The `CSS` namespace object: identifier escaping and support queries. */
+const CSSNamespace = {
+	escape: serializeCSSIdentifier,
+	supports: cssSupports,
+	[Symbol.toStringTag]: "CSS",
+};
 
 /** The declarations of a `style` attribute, a `cssText`, or a rule's block. */
 function parseDeclarationText(text: string): CSSDeclaration[] {
@@ -2260,6 +2399,7 @@ export function installStyleSheets(window: DOMWindow): void {
 		CSSKeyframesRule,
 		MediaList,
 		CSSStyleDeclaration,
+		CSS: CSSNamespace,
 	});
 }
 
@@ -3973,13 +4113,7 @@ export class StyleManager {
 		}
 
 		// Remove quotes from content string
-		let textContent = content;
-		if (
-			(textContent.startsWith('"') && textContent.endsWith('"')) ||
-			(textContent.startsWith("'") && textContent.endsWith("'"))
-		) {
-			textContent = textContent.slice(1, -1);
-		}
+		let textContent = unquoteContent(content);
 
 		// Resolve counter() functions in the content
 		textContent = this.resolveCounterFunction(hostElement, textContent);
