@@ -182,6 +182,16 @@ async function runFile(file: string): Promise<Outcome> {
 	const window = dom.window as unknown as Window &
 		typeof globalThis & {eval(source: string): unknown};
 
+	// jsdom supplies no animation frames, and a test that waits for one waits
+	// forever. The harness runs them on the macrotask queue, which is what a
+	// frame is here.
+	(window as unknown as Record<string, unknown>).requestAnimationFrame = (
+		callback: (time: number) => void,
+	): number => Number(setTimeout(() => callback(Date.now()), 0));
+	(window as unknown as Record<string, unknown>).cancelAnimationFrame = (
+		handle: number,
+	): void => clearTimeout(handle as unknown as NodeJS.Timeout);
+
 	installInlineStyle(dom.window);
 	const styleManager = new StyleManager(dom.window);
 	const layoutEngine = new LayoutEngine(dom.window);
@@ -234,6 +244,17 @@ async function runFile(file: string): Promise<Outcome> {
 				};
 			}
 			sources.push(text);
+		} else if (script.getAttribute("type") === "module") {
+			const flattened = await flattenModule(script.textContent ?? "", file);
+			if (flattened === null) {
+				return {
+					file,
+					harness: "ERROR",
+					subtests: [],
+					error: "unresolved module import",
+				};
+			}
+			sources.push(flattened);
 		} else {
 			sources.push(script.textContent ?? "");
 		}
@@ -264,6 +285,46 @@ async function runFile(file: string): Promise<Outcome> {
 	await done;
 	dom.window.close();
 	return outcome;
+}
+
+/**
+ * A module script as one classic script.
+ *
+ * There is no module loader behind window.eval, so each `import` is replaced by
+ * the module it names, evaluated ahead of the script that imports it and with
+ * its `export` keywords stripped -- which is all these test modules need, since
+ * they only ever export functions the test then calls.
+ */
+async function flattenModule(
+	source: string,
+	file: string,
+): Promise<string | null> {
+	const imports = [
+		...source.matchAll(/^\s*import\s+[^;]*?from\s*["']([^"']+)["'];?/gm),
+	];
+	let out = source.replace(/^\s*import\s+[^;]*?from\s*["'][^"']+["'];?/gm, "");
+	const prefix: string[] = [];
+	for (const match of imports) {
+		const specifier = match[1];
+		const path = specifier.startsWith("/")
+			? specifier.slice(1)
+			: `${SUITE}/${specifier.replace(/^\.\//, "")}`;
+		const text = await cached(path);
+		if (text === null) return null;
+		const nested = await flattenModule(text, file);
+		if (nested === null) return null;
+		prefix.push(nested);
+	}
+	out = `${prefix.join("\n")}\n${out}`;
+	// `export function f()` becomes `function f()`: the names land on the same
+	// scope the importing script is evaluated in.
+	return out
+		.replace(/^\s*export\s+default\s+/gm, "const __default = ")
+		.replace(
+			/^\s*export\s+(?=(?:async\s+)?(?:function|class|const|let|var)\b)/gm,
+			"",
+		)
+		.replace(/^\s*export\s*\{[^}]*\};?/gm, "");
 }
 
 const filter = process.argv[2];
