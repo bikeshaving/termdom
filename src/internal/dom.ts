@@ -4680,6 +4680,7 @@ export class Element extends Node {
 			this[kNamespace],
 			this[kPrefix],
 			this[kIsValue],
+			false,
 		);
 		for (const attribute of this[kAttributeList]) {
 			const copiedAttribute = new Attr(
@@ -4717,8 +4718,14 @@ Object.defineProperty(Element.prototype, Symbol.toStringTag, {
  */
 export class HTMLElement extends Element {
 	constructor() {
-		super();
-		if (internalConstruction) return;
+		if (internalConstruction) {
+			super();
+			return;
+		}
+		// The checks come before the object. A constructor that names no
+		// definition throws without anything having been allocated, and an
+		// upgrade never allocates at all: it hands back the element already in
+		// the tree, so super() runs only on the branch that builds one.
 		const target = new.target as unknown as CustomElementConstructor;
 		if (target === (HTMLElement as unknown as CustomElementConstructor)) {
 			throw new TypeError("Illegal constructor");
@@ -4733,27 +4740,33 @@ export class HTMLElement extends Element {
 			);
 		}
 		const stack = definition.constructionStack;
-		if (stack.length === 0) {
-			this[kDocument] = currentDocument();
-			this[kNamespace] = HTML_NAMESPACE;
-			this[kPrefix] = null;
-			this[kLocalName] = definition.localName;
-			this[kCustomState] = "custom";
-			this[kDefinition] = definition;
-			this[kIsValue] = null;
-			return;
+		if (stack.length > 0) {
+			// A prototype that is not an object is the interface's own, which is
+			// what allocating from this constructor would have given the element.
+			const named = (target as unknown as {prototype: unknown}).prototype;
+			const prototype =
+				named !== null && typeof named === "object"
+					? (named as object)
+					: HTMLElement.prototype;
+			const element = stack[stack.length - 1];
+			if (element === alreadyConstructed) {
+				throw domError(
+					"InvalidStateError",
+					"That custom element is already being constructed",
+				);
+			}
+			Object.setPrototypeOf(element, prototype);
+			stack[stack.length - 1] = alreadyConstructed;
+			// eslint-disable-next-line no-constructor-return
+			return element as HTMLElement;
 		}
-		const element = stack[stack.length - 1];
-		if (element === alreadyConstructed) {
-			throw domError(
-				"InvalidStateError",
-				"That custom element is already being constructed",
-			);
-		}
-		stack[stack.length - 1] = alreadyConstructed;
-		Object.setPrototypeOf(element, target.prototype as object);
-		// eslint-disable-next-line no-constructor-return
-		return element as HTMLElement;
+		super();
+		this[kNamespace] = HTML_NAMESPACE;
+		this[kPrefix] = null;
+		this[kLocalName] = definition.localName;
+		this[kCustomState] = "custom";
+		this[kDefinition] = definition;
+		this[kIsValue] = null;
 	}
 }
 
@@ -4960,8 +4973,6 @@ function createElementInternal(
 	return element;
 }
 
-const CUSTOM_NAME_RE =
-	/^[a-z][-._0-9a-z·À-῿‌-‍‿-⁀⁰-↏Ⰰ-⿯、-퟿豈-﷏ﷰ-�]*-[-._0-9a-z·À-῿‌-‍‿-⁀⁰-↏Ⰰ-⿯、-퟿豈-﷏ﷰ-�]*$/;
 const RESERVED_CUSTOM_NAMES = new Set([
 	"annotation-xml",
 	"color-profile",
@@ -4973,8 +4984,20 @@ const RESERVED_CUSTOM_NAMES = new Set([
 	"missing-glyph",
 ]);
 
+/**
+ * A valid custom element name: a local name the parser will read as a tag,
+ * beginning with a lower-case letter, carrying a hyphen and no upper-case
+ * letter, and not one of the hyphenated names SVG and MathML already own.
+ */
 function isValidCustomElementName(name: string): boolean {
-	return CUSTOM_NAME_RE.test(name) && !RESERVED_CUSTOM_NAMES.has(name);
+	return (
+		VALID_ELEMENT_LOCAL_NAME.test(name) &&
+		name.charCodeAt(0) >= 0x61 &&
+		name.charCodeAt(0) <= 0x7a &&
+		!/[A-Z]/.test(name) &&
+		name.includes("-") &&
+		!RESERVED_CUSTOM_NAMES.has(name)
+	);
 }
 
 /* --------------------------------------------------- custom element reactions */
@@ -5259,7 +5282,10 @@ export class CustomElementRegistry {
 		try {
 			const source = constructor as unknown as Record<string, unknown>;
 			const prototype = source.prototype;
-			if (prototype === null || typeof prototype !== "object") {
+			if (
+				prototype === null ||
+				(typeof prototype !== "object" && typeof prototype !== "function")
+			) {
 				throw new TypeError("That constructor has no prototype object");
 			}
 			const proto = prototype as Record<string, unknown>;
@@ -5473,8 +5499,12 @@ function upgradeElement(
 			throw new TypeError("That constructor built a different element");
 		}
 	} catch (error) {
+		// A constructor that threw leaves the element failed, with the callbacks
+		// it had not run yet dropped. The definition stays: the element is that
+		// definition's, and failed is a state of it rather than the absence of
+		// one. The exception is reported by whoever runs the reaction.
 		definition.constructionStack.pop();
-		element[kDefinition] = null;
+		element[kCustomState] = "failed";
 		element[kReactionQueue] = null;
 		throw error;
 	}
@@ -5983,7 +6013,10 @@ export class HTMLTemplateElement extends HTMLElement {
 	}
 
 	get shadowRootMode(): string {
-		return this.getAttribute("shadowrootmode") ?? "";
+		const value = this.getAttribute("shadowrootmode");
+		if (value === null) return "";
+		const mode = asciiLowercase(value);
+		return mode === "open" || mode === "closed" ? mode : "";
 	}
 
 	set shadowRootMode(value: string) {
@@ -6027,7 +6060,11 @@ export class HTMLTemplateElement extends HTMLElement {
 		const content = this[kTemplateContent];
 		if (content === null) return;
 		const target = (copy as HTMLTemplateElement).content;
-		for (let child = content[kFirstChild]; child !== null; child = child[kNext]) {
+		for (
+			let child = content[kFirstChild];
+			child !== null;
+			child = child[kNext]
+		) {
 			appendNode(cloneNode(child, document, true), target);
 		}
 	}
@@ -7915,45 +7952,53 @@ function treeAdapterFor(document: Document | null) {
  * the parser's own error handling.
  */
 function attachDeclarativeShadowRoots(root: Node): void {
-	const templates: Element[] = [];
-	for (const node of descendants(root)) {
-		if (node.nodeType !== ELEMENT_NODE) continue;
-		const element = node as Element;
-		if (element[kNamespace] !== HTML_NAMESPACE) continue;
-		if (element[kLocalName] !== "template") continue;
-		if (element.getAttribute("shadowrootmode") === null) continue;
-		templates.push(element);
-	}
-	for (const template of templates) {
-		const host = template[kParent];
-		if (host === null || host.nodeType !== ELEMENT_NODE) continue;
-		const mode = asciiLowercase(
-			template.getAttribute("shadowrootmode") as string,
-		);
-		if (mode !== "open" && mode !== "closed") continue;
-		try {
-			attachShadowRoot(
-				host as Element,
-				mode,
-				template.hasAttribute("shadowrootclonable"),
-				template.hasAttribute("shadowrootserializable"),
-				template.hasAttribute("shadowrootdelegatesfocus"),
-				"named",
-			);
-		} catch {
+	for (const child of childNodeArray(root)) {
+		if (child.nodeType !== ELEMENT_NODE) continue;
+		const element = child as Element;
+		if (
+			element[kNamespace] === HTML_NAMESPACE &&
+			element[kLocalName] === "template"
+		) {
+			if (!attachDeclarativeShadowRoot(element as HTMLTemplateElement)) {
+				attachDeclarativeShadowRoots((element as HTMLTemplateElement).content);
+			}
 			continue;
 		}
-		const shadow = (host as Element)[kShadowRoot] as ShadowRoot;
-		shadow[kDeclarative] = true;
-		const content = (template as HTMLTemplateElement)[kTemplateContent];
-		removeNode(template);
-		if (content !== null && content !== undefined) {
-			for (const child of childNodeArray(content)) {
-				insertNode(child, shadow, null, true);
-			}
-		}
-		attachDeclarativeShadowRoots(shadow);
+		attachDeclarativeShadowRoots(element);
 	}
+}
+
+/** Turn one template into its host's shadow root, if it names a mode. */
+function attachDeclarativeShadowRoot(template: HTMLTemplateElement): boolean {
+	const named = template.getAttribute("shadowrootmode");
+	if (named === null) return false;
+	const mode = asciiLowercase(named);
+	if (mode !== "open" && mode !== "closed") return false;
+	const host = template[kParent];
+	if (host === null || host.nodeType !== ELEMENT_NODE) return false;
+	try {
+		attachShadowRoot(
+			host as Element,
+			mode,
+			template.hasAttribute("shadowrootclonable"),
+			template.hasAttribute("shadowrootserializable"),
+			template.hasAttribute("shadowrootdelegatesfocus"),
+			"named",
+		);
+	} catch {
+		return false;
+	}
+	const shadow = (host as Element)[kShadowRoot] as ShadowRoot;
+	shadow[kDeclarative] = true;
+	const content = template[kTemplateContent];
+	removeNode(template);
+	if (content !== null) {
+		for (const child of childNodeArray(content)) {
+			insertNode(child, shadow, null, true);
+		}
+	}
+	attachDeclarativeShadowRoots(shadow);
+	return true;
 }
 
 /** Parse an HTML document, per the HTML Standard's parsing algorithm. */
@@ -8124,6 +8169,16 @@ function serializeFragment(
 		if (content !== null && content !== undefined) children = content;
 	}
 	let html = "";
+	if (node.nodeType === ELEMENT_NODE) {
+		const shadow = (node as Element)[kShadowRoot];
+		if (
+			shadow !== null &&
+			((serializableShadowRoots && shadow[kSerializable]) ||
+				shadowRoots.includes(shadow))
+		) {
+			html += serializeShadowRoot(shadow, serializableShadowRoots, shadowRoots);
+		}
+	}
 	for (
 		let child = children[kFirstChild];
 		child !== null;
@@ -8178,18 +8233,6 @@ function serializeNode(
 			html += ">";
 			if (namespace === HTML_NAMESPACE && VOID_ELEMENTS.has(tagName)) {
 				return html;
-			}
-			const shadow = element[kShadowRoot];
-			if (
-				shadow !== null &&
-				((serializableShadowRoots && shadow[kSerializable]) ||
-					shadowRoots.includes(shadow))
-			) {
-				html += serializeShadowRoot(
-					shadow,
-					serializableShadowRoots,
-					shadowRoots,
-				);
 			}
 			html += serializeFragment(element, serializableShadowRoots, shadowRoots);
 			html += `</${tagName}>`;
@@ -8313,7 +8356,7 @@ ceReactions(DocumentType.prototype, [
 	"remove",
 	"replaceWith",
 ]);
-ceReactions(Attr.prototype, ["value"]);
+ceReactions(Attr.prototype, ["nodeValue", "textContent", "value"]);
 ceReactions(NamedNodeMap.prototype, [
 	"removeNamedItem",
 	"removeNamedItemNS",
@@ -8327,3 +8370,4 @@ ceReactions(DOMTokenList.prototype, [
 	"toggle",
 	"value",
 ]);
+ceReactions(CustomElementRegistry.prototype, ["define", "upgrade"]);
