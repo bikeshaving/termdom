@@ -16,12 +16,12 @@ window is a bare event target, not a Window: an event path ends at the
 document, as the spec says it does for a document with no browsing context.
 
 - Test files in the suites: 966
-- Reference tests (no testharness, scored by pixels): 25
-- Excluded, each with its reason below: 597
-- Files whose harness completed: 296
-- Files whose harness did not complete: 48
-- Subtests passed: 20322
-- Subtests failed: 823
+- Reference tests (no testharness, scored by pixels): 26
+- Excluded, each with its reason below: 512
+- Files whose harness completed: 376
+- Files whose harness did not complete: 52
+- Subtests passed: 20369
+- Subtests failed: 1747
 
 ## Exclusions
 
@@ -29,16 +29,9 @@ document, as the spec says it does for a document with no browsing context.
 | --- | --- |
 | custom-elements/Document-createElement-customized-builtins.html | customized built-ins: createElement with an is option |
 | custom-elements/Document-createElementNS-customized-builtins.html | customized built-ins: createElementNS with an is option |
-| custom-elements/ElementInternals-accessibility.html | later-phase: ElementInternals and ARIA reflection |
-| custom-elements/ElementInternals-accessibility.tentative.html | later-phase: ElementInternals and ARIA reflection |
-| custom-elements/ElementInternals-role.html | later-phase: ElementInternals and the ARIA role it reflects |
-| custom-elements/HTMLElement-attachInternals.html | later-phase: attachInternals and ElementInternals, which are HTML's |
 | custom-elements/HTMLElement-constructor-customized-builtins.html | customized built-ins: a constructor that extends a built-in interface |
 | custom-elements/connected-callbacks-template.html | requires-script-execution: the definition is registered by a script the parser runs inside the template |
 | custom-elements/custom-element-reaction-queue.html | requires-script-execution: the reaction order under test is the parser's own |
-| custom-elements/element-internals-aria-element-reflection.html | later-phase: ElementInternals and ARIA element reflection |
-| custom-elements/element-internals-behaviors.tentative.html | later-phase: ElementInternals and the default behaviors it declares |
-| custom-elements/element-internals-shadowroot.html | later-phase: ElementInternals.shadowRoot |
 | custom-elements/form-associated/ElementInternals-NotSupportedError.html | later-phase: form-associated custom elements, whose form owner, submission, validation and ElementInternals machinery is the HTML Standard's |
 | custom-elements/form-associated/ElementInternals-behavior-accessibility.tentative.html | later-phase: form-associated custom elements, whose form owner, submission, validation and ElementInternals machinery is the HTML Standard's |
 | custom-elements/form-associated/ElementInternals-form.html | later-phase: form-associated custom elements, whose form owner, submission, validation and ElementInternals machinery is the HTML Standard's |
@@ -69,16 +62,6 @@ document, as the spec says it does for a document with no browsing context.
 | custom-elements/parser/parser-sets-attributes-and-children.html | requires-script-execution: the reactions counted are the ones the parser enqueues between tags |
 | custom-elements/parser/parser-uses-constructed-element.html | requires-script-execution: the element is observed by a script the parser runs between tags |
 | custom-elements/parser/serializing-html-fragments-customized-builtins.html | customized built-ins: serializing an is attribute |
-| custom-elements/range-and-constructors.html | later-phase: Range, a section of the DOM Standard of its own |
-| custom-elements/reactions/Animation.html | later-phase: the Web Animations interface |
-| custom-elements/reactions/AriaMixin-element-attributes.html | later-phase: AriaMixin, an ARIA interface reflected on Element |
-| custom-elements/reactions/AriaMixin-string-attributes.html | later-phase: AriaMixin, an ARIA interface reflected on Element |
-| custom-elements/reactions/AriaMixin-string-attributes.tentative.html | later-phase: AriaMixin, an ARIA interface reflected on Element |
-| custom-elements/reactions/DOMStringMap.html | later-phase: HTMLElement.dataset, an HTML Standard interface |
-| custom-elements/reactions/ElementContentEditable.html | later-phase: contentEditable, an HTML Standard interface |
-| custom-elements/reactions/HTMLElement.html | later-phase: the reflected IDL attributes of HTMLElement, which are the HTML Standard's |
-| custom-elements/reactions/Range.html | later-phase: Range, a section of the DOM Standard of its own |
-| custom-elements/reactions/Selection.html | later-phase: Selection, which belongs to the selection API |
 | custom-elements/reactions/customized-builtins/HTMLAreaElement.html | customized built-ins: the is= form of a custom element, which this DOM declares dead (see the deviation below) |
 | custom-elements/reactions/customized-builtins/HTMLBaseElement.html | customized built-ins: the is= form of a custom element, which this DOM declares dead (see the deviation below) |
 | custom-elements/reactions/customized-builtins/HTMLButtonElement.html | customized built-ins: the is= form of a custom element, which this DOM declares dead (see the deviation below) |
@@ -107,38 +90,14 @@ document, as the spec says it does for a document with no browsing context.
 | custom-elements/reactions/customized-builtins/HTMLTableCellElement.html | customized built-ins: the is= form of a custom element, which this DOM declares dead (see the deviation below) |
 | custom-elements/reactions/customized-builtins/HTMLTableColElement.html | customized built-ins: the is= form of a custom element, which this DOM declares dead (see the deviation below) |
 | custom-elements/reactions/customized-builtins/HTMLTimeElement.html | customized built-ins: the is= form of a custom element, which this DOM declares dead (see the deviation below) |
-| custom-elements/registries/Construct.html | later-phase: scoped custom element registries (which registry a constructor is read against) |
-| custom-elements/registries/CustomElementRegistry-initialize.html | later-phase: scoped custom element registries (initialize) |
-| custom-elements/registries/CustomElementRegistry-upgrade.html | later-phase: scoped custom element registries (upgrade against a scoped registry) |
-| custom-elements/registries/Document-createElement.html | later-phase: scoped custom element registries (the registry option on createElement) |
-| custom-elements/registries/Document-createElementNS.html | later-phase: scoped custom element registries (the registry option on createElementNS) |
-| custom-elements/registries/Document-customElementRegistry.html | later-phase: scoped custom element registries (Document.customElementRegistry) |
 | custom-elements/registries/Document-importNode-cross-document.window.js | later-phase: scoped custom element registries (importing across documents with a scoped registry) |
-| custom-elements/registries/Document-importNode.html | later-phase: scoped custom element registries (the registry option on importNode) |
-| custom-elements/registries/Element-customElementRegistry-exceptions.html | later-phase: scoped custom element registries (Element.customElementRegistry) |
-| custom-elements/registries/Element-customElementRegistry.html | later-phase: scoped custom element registries (Element.customElementRegistry) |
-| custom-elements/registries/Element-innerHTML.html | later-phase: scoped custom element registries (which registry innerHTML builds against) |
-| custom-elements/registries/ShadowRoot-init-customElementRegistry.html | later-phase: scoped custom element registries (the registry option on attachShadow) |
-| custom-elements/registries/ShadowRoot-init-declarative.html | later-phase: scoped custom element registries (the registry a declarative shadow root takes) |
-| custom-elements/registries/ShadowRoot-innerHTML.html | later-phase: scoped custom element registries (which registry a shadow root's innerHTML builds against) |
 | custom-elements/registries/adoption.window.js | later-phase: scoped custom element registries (which registry survives adoption) |
 | custom-elements/registries/constructor-direct-call-fallback-registry.window.js | later-phase: scoped custom element registries (the fallback registry of a direct construction) |
 | custom-elements/registries/constructor-reentry-createElement.window.js | later-phase: scoped custom element registries (re-entrant createElement against a scoped registry) |
-| custom-elements/registries/constructor-reentry-with-different-definition.html | later-phase: scoped custom element registries (re-entry with a definition from another registry) |
-| custom-elements/registries/element-mutation-null-registry-removal.html | later-phase: scoped custom element registries (removing an element with a null registry) |
-| custom-elements/registries/element-mutation.html | later-phase: scoped custom element registries (the registry an inserted element inherits) |
 | custom-elements/registries/global.window.js | later-phase: scoped custom element registries (the global registry beside a scoped one) |
 | custom-elements/registries/initial-about-blank.window.js | later-phase: scoped custom element registries (the registry of the initial about:blank document) |
 | custom-elements/registries/pseudo-class-defined.window.js | later-phase: scoped custom element registries (:defined against a scoped registry) |
-| custom-elements/registries/scoped-registry-append.html | later-phase: scoped custom element registries |
-| custom-elements/registries/scoped-registry-define-upgrade-criteria.html | later-phase: scoped custom element registries |
-| custom-elements/registries/scoped-registry-define-upgrade-order.html | later-phase: scoped custom element registries |
-| custom-elements/registries/scoped-registry-effective-global-registry.html | later-phase: scoped custom element registries |
-| custom-elements/registries/scoped-registry-initialize-upgrades.html | later-phase: scoped custom element registries |
-| custom-elements/registries/scoped-registry-initialize.html | later-phase: scoped custom element registries |
-| custom-elements/registries/scoped-registry-registry-define-get-etc.html | later-phase: scoped custom element registries |
 | custom-elements/registries/template.window.js | later-phase: scoped custom element registries (a template's registry) |
-| custom-elements/registries/upgrade.html | later-phase: scoped custom element registries (upgrade against a scoped registry) |
 | custom-elements/state/ElementInternals-states.html | later-phase: ElementInternals and its CustomStateSet, an HTML interface reached through a CSS :state() selector |
 | custom-elements/state/state-css-selector-nth-of.html | later-phase: ElementInternals and its CustomStateSet, an HTML interface reached through a CSS :state() selector |
 | custom-elements/state/state-css-selector-shadow-dom.html | later-phase: ElementInternals and its CustomStateSet, an HTML interface reached through a CSS :state() selector |
@@ -149,28 +108,17 @@ document, as the spec says it does for a document with no browsing context.
 | custom-elements/upgrading/Node-cloneNode-customized-builtins.html | customized built-ins: cloning an element with an is value |
 | custom-elements/upgrading/upgrade-custom-element-error-event.html | requires-browsing-context: the failure is counted as an error event at the window |
 | custom-elements/upgrading/upgrading-parser-created-element.html | requires-script-execution: the element under test is one the parser created around a script it ran |
-| dom/collections/domstringmap-supported-property-names.html | later-phase: HTMLElement.dataset, an HTML Standard interface |
-| dom/events/Body-FrameSet-Event-Handlers.html | later-phase: HTMLBodyElement and its event handler attributes, which are HTML's |
-| dom/events/Event-dispatch-click.html | later-phase: UI Events (a MouseEvent, and the activation behavior of a checkbox, a radio and a link) |
-| dom/events/Event-dispatch-click.tentative.html | later-phase: UI Events (a MouseEvent through a label's activation behavior) |
-| dom/events/Event-dispatch-detached-input-and-change.html | later-phase: UI Events (the input and change events an activation behavior fires) |
 | dom/events/Event-dispatch-handlers-changed.html | requires-browsing-context: the expected propagation path begins at the window |
 | dom/events/Event-dispatch-multiple-cancelBubble.html | requires-browsing-context: the expected propagation path begins at the window |
 | dom/events/Event-dispatch-multiple-stopPropagation.html | requires-browsing-context: the expected propagation path begins at the window |
 | dom/events/Event-dispatch-omitted-capture.html | requires-browsing-context: the expected propagation path begins at the window |
-| dom/events/Event-dispatch-on-disabled-elements.html | later-phase: UI Events (clicks on disabled form controls) |
 | dom/events/Event-dispatch-redispatch.html | requires-browsing-context: the redispatched events are the window's own load and the browser's mouseup |
 | dom/events/Event-dispatch-reenter.html | requires-browsing-context: the expected propagation path begins at the window |
-| dom/events/Event-dispatch-single-activation-behavior.html | later-phase: UI Events (which target in a path runs its activation behavior) |
 | dom/events/Event-dispatch-target-moved.html | requires-browsing-context: the expected propagation path begins at the window |
 | dom/events/Event-dispatch-target-removed.html | requires-browsing-context: the expected propagation path begins at the window |
 | dom/events/Event-dispatch-throwing-multiple-globals.html | requires-browsing-context: which global an error event is fired at, across frames |
 | dom/events/Event-dispatch-throwing.html | requires-browsing-context: a listener's exception is counted as an error event at the window |
-| dom/events/Event-stopPropagation-cancel-bubbling.html | later-phase: UI Events (a MouseEvent constructed by the test) |
 | dom/events/Event-timestamp-cross-realm-getter.html | requires-browsing-context: a timeStamp getter taken from a frame's realm |
-| dom/events/Event-timestamp-high-resolution.html | later-phase: UI Events (the timeStamp of a MouseEvent, KeyboardEvent, WheelEvent and FocusEvent) |
-| dom/events/Event-timestamp-high-resolution.https.html | later-phase: UI Events (the timeStamp of a GamepadEvent) |
-| dom/events/Event-timestamp-safe-resolution.html | later-phase: UI Events (the timeStamp of a MouseEvent) |
 | dom/events/EventListener-addEventListener.sub.window.js | requires-browsing-context: a listener that is a cross-origin window |
 | dom/events/EventListener-handleEvent-cross-realm.html | requires-browsing-context: listener objects built in a frame's realm |
 | dom/events/EventListener-incumbent-global-1.sub.html | requires-browsing-context: which global a listener is called with, across frames |
@@ -179,9 +127,7 @@ document, as the spec says it does for a document with no browsing context.
 | dom/events/EventListener-incumbent-global-subframe-2.sub.html | requires-browsing-context: a subframe of the incumbent-global test |
 | dom/events/EventListener-incumbent-global-subsubframe.sub.html | requires-browsing-context: a subframe of the incumbent-global test |
 | dom/events/EventListener-invoke-legacy.html | requires-css-animations: the legacy prefixed types are only reached by a trusted animation or transition event |
-| dom/events/KeyEvent-initKeyEvent.html | later-phase: UI Events (KeyboardEvent and its legacy initKeyEvent) |
 | dom/events/click-on-absolute-pseudo.html | requires-user-input: a pointer action sequence over a pseudo-element |
-| dom/events/event-disabled-dynamic.html | later-phase: UI Events (clicks on a form control as its disabled attribute changes) |
 | dom/events/event-global-extra.window.js | requires-browsing-context: window.event across frames |
 | dom/events/event-global-is-still-set-when-coercing-beforeunload-result.html | requires-browsing-context: window.event during a beforeunload the window fires |
 | dom/events/event-global-is-still-set-when-reporting-exception-onerror.html | requires-browsing-context: window.event inside window.onerror |
@@ -189,9 +135,7 @@ document, as the spec says it does for a document with no browsing context.
 | dom/events/event-global.html | requires-browsing-context: window.event, which is the window's own slot |
 | dom/events/focus-event-document-move.html | requires-user-input: a pointer action sequence that moves the node it presses |
 | dom/events/handler-count.html | requires-user-input: pointer action sequences against a running CSS animation |
-| dom/events/label-default-action.html | later-phase: UI Events (a label's activation behavior) |
 | dom/events/legacy-pre-activation-behavior.window.js | later-phase: UI Events (a MouseEvent through a checkbox's legacy-pre-activation behavior) |
-| dom/events/mouse-event-retarget.html | later-phase: UI Events (a MouseEvent's offsetX) |
 | dom/events/no-focus-events-at-clicking-editable-content-in-link.html | requires-user-input: clicks on editable content, and the focus events HTML fires from them |
 | dom/events/non-cancelable-when-passive/generic-events-stay-cancelable.html | requires-user-input: each case drives a touch or wheel action sequence through testdriver |
 | dom/events/non-cancelable-when-passive/non-passive-mousewheel-event-listener-on-body.html | requires-user-input: each case drives a touch or wheel action sequence through testdriver |
@@ -236,7 +180,6 @@ document, as the spec says it does for a document with no browsing context.
 | dom/events/non-cancelable-when-passive/passive-wheel-event-listener-on-window.html | requires-user-input: each case drives a touch or wheel action sequence through testdriver |
 | dom/events/non-cancelable-when-passive/synthetic-events-cancelable.html | requires-user-input: each case drives a touch or wheel action sequence through testdriver |
 | dom/events/pointer-event-document-move.html | requires-user-input: a pointer action sequence that moves the node it presses |
-| dom/events/preventDefault-during-activation-behavior.html | later-phase: UI Events (preventDefault inside a button's activation behavior) |
 | dom/events/scrolling/iframe-chains.html | requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns |
 | dom/events/scrolling/input-text-scroll-event-when-using-arrow-keys.html | requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns |
 | dom/events/scrolling/save-iframe-scroll-offset-when-display-none.html | requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns |
@@ -411,12 +354,6 @@ document, as the spec says it does for a document with no browsing context.
 | dom/traversal/TreeWalker-acceptNode-filter-cross-realm-null-browsing-context.html | requires-browsing-context: a filter from a detached frame's realm |
 | dom/traversal/TreeWalker-acceptNode-filter-cross-realm.html | requires-browsing-context: filters that are objects from another realm |
 | dom/traversal/TreeWalker-realm.html | requires-browsing-context: a TreeWalker built in another realm |
-| shadow-dom/Document-caretPositionFromPoint.tentative.html | requires-layout: a caret position resolved from a point |
-| shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html | requires-layout: the element painted at a point |
-| shadow-dom/HighlightRegistry-highlightsFromPoint.html | requires-layout: the CSS highlights painted at a point |
-| shadow-dom/MouseEvent-prototype-offsetX-offsetY.html | later-phase: UI Events (a MouseEvent's offsetX) |
-| shadow-dom/Range-prototype-insertNode.html | later-phase: Range, a section of the DOM Standard of its own |
-| shadow-dom/accesskey.tentative.html | later-phase: the accesskey attribute and the activation it triggers, which are HTML's |
 | shadow-dom/declarative/declarative-after-attachshadow.html | requires-script-execution: a script inside the document attaches a shadow root before the parser reaches the declarative one |
 | shadow-dom/declarative/declarative-parser-interaction.html | requires-script-execution: the case is what a script sees while the parser is still inside the template |
 | shadow-dom/declarative/declarative-shadow-dom-opt-in.html | requires-script-execution: the opt-in is read by a script the parser runs |
@@ -464,12 +401,6 @@ document, as the spec says it does for a document with no browsing context.
 | shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-placeholder-identity.html | later-phase: adoptedStyleSheets, a CSSOM interface the engine owns |
 | shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-same-document.html | later-phase: adoptedStyleSheets, a CSSOM interface the engine owns |
 | shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-serialization.html | later-phase: adoptedStyleSheets, a CSSOM interface the engine owns |
-| shadow-dom/dragenter-related-target.html | later-phase: UI Events (a DragEvent's relatedTarget) |
-| shadow-dom/dragleave-related-target.html | later-phase: UI Events (a DragEvent's relatedTarget) |
-| shadow-dom/event-composed-path-with-related-target.html | later-phase: UI Events (every case dispatches a FocusEvent) |
-| shadow-dom/event-dispatch-order.tentative.html | later-phase: UI Events (the order a click's events are dispatched in) |
-| shadow-dom/event-with-related-target.html | later-phase: UI Events (every case dispatches a MouseEvent) |
-| shadow-dom/execcommand-insertList-in-shadow.html | later-phase: document.execCommand, an editing interface |
 | shadow-dom/focus-navigation/delegatesFocus-highlight-sibling.html | later-phase: HTML's sequential focus navigation order across shadow trees |
 | shadow-dom/focus-navigation/focus-navigation-slot-fallback-default-tabindex.html | later-phase: HTML's sequential focus navigation order across shadow trees |
 | shadow-dom/focus-navigation/focus-navigation-slot-fallback.html | later-phase: HTML's sequential focus navigation order across shadow trees |
@@ -555,18 +486,9 @@ document, as the spec says it does for a document with no browsing context.
 | shadow-dom/focus/text-selection-with-delegatesFocus-on-slotted-content.html | later-phase: HTML focus -- focusable areas, the focus fixup rules and delegatesFocus -- which is the HTML Standard's |
 | shadow-dom/focus/text-selection-with-delegatesFocus-text-control.html | later-phase: HTML focus -- focusable areas, the focus fixup rules and delegatesFocus -- which is the HTML Standard's |
 | shadow-dom/focus/text-selection-with-delegatesFocus.html | later-phase: HTML focus -- focusable areas, the focus fixup rules and delegatesFocus -- which is the HTML Standard's |
-| shadow-dom/form-control-form-attribute.html | later-phase: a form control's form owner, which is the HTML Standard's |
-| shadow-dom/imperative-slot-fallback-clear.html | requires-layout: whether a slot's fallback content took up space |
-| shadow-dom/imperative-slot-initial-fallback.html | requires-layout: whether a slot's fallback content took up space |
-| shadow-dom/imperative-slot-layout-invalidation-001.html | requires-layout: whether reassigning a slot invalidated the box it fed |
-| shadow-dom/input-element-list.html | later-phase: HTMLFormElement.elements |
-| shadow-dom/input-type-radio.html | later-phase: a radio button group, which is HTML's |
-| shadow-dom/leaktests/html-collection.html | later-phase: document.images, .links, .forms and the rest of HTML's named document collections |
 | shadow-dom/leaktests/selection.html | requires-browsing-context: a Selection over a rendered frame |
 | shadow-dom/leaktests/window-frames.html | requires-browsing-context: whether a shadow tree's nodes leak into window.frames |
 | shadow-dom/nested-hover-pseudo-class-removal.html | requires-user-input: a pointer action sequence over a :hover rule |
-| shadow-dom/offsetParent-across-shadow-boundaries.html | requires-layout: offsetParent, which is an offset from a laid-out box |
-| shadow-dom/offsetTop-offsetLeft-across-shadow-boundaries.html | requires-layout: offsetTop and offsetLeft |
 | shadow-dom/reference-target/tentative/aria-labelledby.html | not-a-standard: shadowrootreferencetarget is a WICG incubation, filed under tentative in the suite |
 | shadow-dom/reference-target/tentative/commandfor.html | not-a-standard: shadowrootreferencetarget is a WICG incubation, filed under tentative in the suite |
 | shadow-dom/reference-target/tentative/dom-mutation.html | not-a-standard: shadowrootreferencetarget is a WICG incubation, filed under tentative in the suite |
@@ -582,7 +504,6 @@ document, as the spec says it does for a document with no browsing context.
 | shadow-dom/reference-target/tentative/property-reflection.html | not-a-standard: shadowrootreferencetarget is a WICG incubation, filed under tentative in the suite |
 | shadow-dom/reference-target/tentative/reference-target-basics.html | not-a-standard: shadowrootreferencetarget is a WICG incubation, filed under tentative in the suite |
 | shadow-dom/reference-target/tentative/shadowrootreferencetarget-idl-reflection.html | not-a-standard: shadowrootreferencetarget is a WICG incubation, filed under tentative in the suite |
-| shadow-dom/scroll-restore-shadow.html | requires-layout: a scroll position restored across a navigation |
 | shadow-dom/touch-event-retargeting-leak.html | requires-user-input: a touch action sequence driven through testdriver |
 | shadow-dom/untriaged/elements-and-dom-objects/extensions-to-element-interface/methods/test-002.html | requires-browsing-context: the fixture is a rendered document in a frame |
 | shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-attributes/activeElement-confirm-return-null.html | requires-browsing-context: the fixture is a rendered document in a frame |
@@ -593,8 +514,6 @@ document, as the spec says it does for a document with no browsing context.
 | shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-attributes/test-012.html | requires-browsing-context: the fixture is a rendered document in a frame |
 | shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-attributes/test-013.html | requires-browsing-context: the fixture is a rendered document in a frame |
 | shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods/test-004.html | requires-browsing-context: the fixture is a rendered document in a frame |
-| shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods/test-006.html | requires-layout: ShadowRoot.elementFromPoint |
-| shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods/test-007.html | requires-layout: ShadowRoot.elementsFromPoint |
 | shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods/test-010.html | requires-browsing-context: the fixture is a rendered document in a frame |
 | shadow-dom/untriaged/events/event-dispatch/test-002.html | requires-browsing-context: the fixture is a rendered document in a frame |
 | shadow-dom/untriaged/events/event-dispatch/test-003.html | requires-browsing-context: the fixture is a rendered document in a frame |
@@ -607,12 +526,8 @@ document, as the spec says it does for a document with no browsing context.
 | shadow-dom/untriaged/events/retargeting-relatedtarget/test-002.html | requires-browsing-context: the fixture is a rendered document in a frame |
 | shadow-dom/untriaged/events/retargeting-relatedtarget/test-003.html | requires-browsing-context: the fixture is a rendered document in a frame |
 | shadow-dom/untriaged/events/test-001.html | requires-browsing-context: the fixture is a rendered document in a frame |
-| shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-003.html | later-phase: a form's controls, which are the HTML Standard's |
 | shadow-dom/untriaged/html-elements-in-shadow-trees/inert-html-elements/test-001.html | requires-browsing-context: the fixture is a rendered document in a frame |
 | shadow-dom/untriaged/html-elements-in-shadow-trees/inert-html-elements/test-002.html | requires-browsing-context: the fixture is a rendered document in a frame |
-| shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/dom-tree-accessors-001.html | later-phase: document.images, .links, .forms and the rest of HTML's named document collections |
-| shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/test-005.html | later-phase: label.control and button.form, HTML element interfaces |
-| shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/test-007.html | later-phase: label.control and button.form, HTML element interfaces |
 | shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/test-011.html | requires-browsing-context: the fixture is a rendered document in a frame |
 | shadow-dom/untriaged/styles/test-001.html | requires-browsing-context: styles applied in a rendered document in a frame |
 | shadow-dom/untriaged/styles/test-003.html | requires-browsing-context: styles applied in a rendered document in a frame |
@@ -830,8 +745,8 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 | dom/nodes/NodeList-static-length-getter-tampered-1.html | OK | 1 | 0 |
 | dom/nodes/NodeList-static-length-getter-tampered-2.html | OK | 1 | 0 |
 | dom/nodes/NodeList-static-length-getter-tampered-3.html | OK | 1 | 0 |
-| dom/nodes/NodeList-static-length-getter-tampered-indexOf-1.html | TIMEOUT | 1 | 0 |
-| dom/nodes/NodeList-static-length-getter-tampered-indexOf-2.html | TIMEOUT | 1 | 0 |
+| dom/nodes/NodeList-static-length-getter-tampered-indexOf-1.html | OK | 1 | 0 |
+| dom/nodes/NodeList-static-length-getter-tampered-indexOf-2.html | OK | 1 | 0 |
 | dom/nodes/NodeList-static-length-getter-tampered-indexOf-3.html | OK | 1 | 0 |
 | dom/nodes/ParentNode-append.html | OK | 25 | 0 |
 | dom/nodes/ParentNode-children.html | OK | 1 | 0 |
@@ -979,7 +894,7 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 | dom/collections/HTMLCollection-own-props.html | OK | 6 | 2 |
 | dom/collections/HTMLCollection-supported-property-indices.html | OK | 2 | 5 |
 | dom/collections/HTMLCollection-supported-property-names.html | OK | 4 | 2 |
-| dom/collections/domstringmap-supported-property-names.html | EXCLUDED (later-phase: HTMLElement.dataset, an HTML Standard interface) | 0 | 0 |
+| dom/collections/domstringmap-supported-property-names.html | OK | 0 | 5 |
 | dom/collections/namednodemap-supported-property-names.html | OK | 3 | 0 |
 | dom/lists/DOMTokenList-Iterable.html | OK | 6 | 0 |
 | dom/lists/DOMTokenList-coverage-for-attributes.html | OK | 168 | 7 |
@@ -989,7 +904,7 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 | dom/events/AddEventListenerOptions-once.any.js | OK | 4 | 0 |
 | dom/events/AddEventListenerOptions-passive.any.js | OK | 5 | 0 |
 | dom/events/AddEventListenerOptions-signal.any.js | OK | 11 | 0 |
-| dom/events/Body-FrameSet-Event-Handlers.html | EXCLUDED (later-phase: HTMLBodyElement and its event handler attributes, which are HTML's) | 0 | 0 |
+| dom/events/Body-FrameSet-Event-Handlers.html | ERROR (HTMLBodyElement is not defined) | 0 | 0 |
 | dom/events/CustomEvent.html | OK | 3 | 0 |
 | dom/events/Event-cancelBubble.html | OK | 8 | 0 |
 | dom/events/Event-constants.html | OK | 4 | 0 |
@@ -999,23 +914,23 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 | dom/events/Event-dispatch-bubble-canceled.html | OK | 1 | 0 |
 | dom/events/Event-dispatch-bubbles-false.html | OK | 4 | 1 |
 | dom/events/Event-dispatch-bubbles-true.html | OK | 4 | 1 |
-| dom/events/Event-dispatch-click.html | EXCLUDED (later-phase: UI Events (a MouseEvent, and the activation behavior of a checkbox, a radio and a link)) | 0 | 0 |
-| dom/events/Event-dispatch-click.tentative.html | EXCLUDED (later-phase: UI Events (a MouseEvent through a label's activation behavior)) | 0 | 0 |
+| dom/events/Event-dispatch-click.html | TIMEOUT | 0 | 33 |
+| dom/events/Event-dispatch-click.tentative.html | OK | 0 | 6 |
 | dom/events/Event-dispatch-detached-click.html | OK | 2 | 0 |
-| dom/events/Event-dispatch-detached-input-and-change.html | EXCLUDED (later-phase: UI Events (the input and change events an activation behavior fires)) | 0 | 0 |
+| dom/events/Event-dispatch-detached-input-and-change.html | OK | 0 | 12 |
 | dom/events/Event-dispatch-handlers-changed.html | EXCLUDED (requires-browsing-context: the expected propagation path begins at the window) | 0 | 0 |
 | dom/events/Event-dispatch-listener-order.window.js | OK | 1 | 0 |
 | dom/events/Event-dispatch-multiple-cancelBubble.html | EXCLUDED (requires-browsing-context: the expected propagation path begins at the window) | 0 | 0 |
 | dom/events/Event-dispatch-multiple-stopPropagation.html | EXCLUDED (requires-browsing-context: the expected propagation path begins at the window) | 0 | 0 |
 | dom/events/Event-dispatch-omitted-capture.html | EXCLUDED (requires-browsing-context: the expected propagation path begins at the window) | 0 | 0 |
-| dom/events/Event-dispatch-on-disabled-elements.html | EXCLUDED (later-phase: UI Events (clicks on disabled form controls)) | 0 | 0 |
+| dom/events/Event-dispatch-on-disabled-elements.html | TIMEOUT | 3 | 6 |
 | dom/events/Event-dispatch-order-at-target.html | OK | 1 | 0 |
 | dom/events/Event-dispatch-order.html | OK | 1 | 0 |
 | dom/events/Event-dispatch-other-document.html | OK | 1 | 0 |
 | dom/events/Event-dispatch-propagation-stopped.html | OK | 1 | 0 |
 | dom/events/Event-dispatch-redispatch.html | EXCLUDED (requires-browsing-context: the redispatched events are the window's own load and the browser's mouseup) | 0 | 0 |
 | dom/events/Event-dispatch-reenter.html | EXCLUDED (requires-browsing-context: the expected propagation path begins at the window) | 0 | 0 |
-| dom/events/Event-dispatch-single-activation-behavior.html | EXCLUDED (later-phase: UI Events (which target in a path runs its activation behavior)) | 0 | 0 |
+| dom/events/Event-dispatch-single-activation-behavior.html | ERROR | 0 | 132 |
 | dom/events/Event-dispatch-target-moved.html | EXCLUDED (requires-browsing-context: the expected propagation path begins at the window) | 0 | 0 |
 | dom/events/Event-dispatch-target-removed.html | EXCLUDED (requires-browsing-context: the expected propagation path begins at the window) | 0 | 0 |
 | dom/events/Event-dispatch-throwing-multiple-globals.html | EXCLUDED (requires-browsing-context: which global an error event is fired at, across frames) | 0 | 0 |
@@ -1026,12 +941,12 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 | dom/events/Event-propagation.html | OK | 7 | 0 |
 | dom/events/Event-returnValue.html | OK | 7 | 0 |
 | dom/events/Event-stopImmediatePropagation.html | OK | 1 | 0 |
-| dom/events/Event-stopPropagation-cancel-bubbling.html | EXCLUDED (later-phase: UI Events (a MouseEvent constructed by the test)) | 0 | 0 |
+| dom/events/Event-stopPropagation-cancel-bubbling.html | OK | 0 | 1 |
 | dom/events/Event-subclasses-constructors.html | OK | 12 | 37 |
 | dom/events/Event-timestamp-cross-realm-getter.html | EXCLUDED (requires-browsing-context: a timeStamp getter taken from a frame's realm) | 0 | 0 |
-| dom/events/Event-timestamp-high-resolution.html | EXCLUDED (later-phase: UI Events (the timeStamp of a MouseEvent, KeyboardEvent, WheelEvent and FocusEvent)) | 0 | 0 |
-| dom/events/Event-timestamp-high-resolution.https.html | EXCLUDED (later-phase: UI Events (the timeStamp of a GamepadEvent)) | 0 | 0 |
-| dom/events/Event-timestamp-safe-resolution.html | EXCLUDED (later-phase: UI Events (the timeStamp of a MouseEvent)) | 0 | 0 |
+| dom/events/Event-timestamp-high-resolution.html | OK | 0 | 4 |
+| dom/events/Event-timestamp-high-resolution.https.html | OK | 0 | 1 |
+| dom/events/Event-timestamp-safe-resolution.html | OK | 0 | 1 |
 | dom/events/Event-type-empty.html | OK | 2 | 0 |
 | dom/events/Event-type.html | OK | 3 | 0 |
 | dom/events/EventListener-addEventListener.sub.window.js | EXCLUDED (requires-browsing-context: a listener that is a cross-origin window) | 0 | 0 |
@@ -1044,7 +959,7 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 | dom/events/EventListener-incumbent-global-subsubframe.sub.html | EXCLUDED (requires-browsing-context: a subframe of the incumbent-global test) | 0 | 0 |
 | dom/events/EventListener-invoke-legacy.html | EXCLUDED (requires-css-animations: the legacy prefixed types are only reached by a trusted animation or transition event) | 0 | 0 |
 | dom/events/EventListenerOptions-capture.html | OK | 4 | 0 |
-| dom/events/EventTarget-add-listener-platform-object.html | ERROR (customElement.click is not a function) | 0 | 0 |
+| dom/events/EventTarget-add-listener-platform-object.html | ERROR (customElement.click is not a function. (In 'customElement.click()', 'customElement.click' is undefined)) | 0 | 0 |
 | dom/events/EventTarget-add-remove-listener.any.js | OK | 1 | 0 |
 | dom/events/EventTarget-addEventListener.any.js | OK | 1 | 0 |
 | dom/events/EventTarget-constructible.any.js | OK | 3 | 0 |
@@ -1052,9 +967,9 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 | dom/events/EventTarget-dispatchEvent.html | OK | 10 | 15 |
 | dom/events/EventTarget-removeEventListener.any.js | OK | 1 | 0 |
 | dom/events/EventTarget-this-of-listener.html | OK | 6 | 0 |
-| dom/events/KeyEvent-initKeyEvent.html | EXCLUDED (later-phase: UI Events (KeyboardEvent and its legacy initKeyEvent)) | 0 | 0 |
+| dom/events/KeyEvent-initKeyEvent.html | OK | 0 | 3 |
 | dom/events/click-on-absolute-pseudo.html | EXCLUDED (requires-user-input: a pointer action sequence over a pseudo-element) | 0 | 0 |
-| dom/events/event-disabled-dynamic.html | EXCLUDED (later-phase: UI Events (clicks on a form control as its disabled attribute changes)) | 0 | 0 |
+| dom/events/event-disabled-dynamic.html | OK | 0 | 1 |
 | dom/events/event-global-extra.window.js | EXCLUDED (requires-browsing-context: window.event across frames) | 0 | 0 |
 | dom/events/event-global-is-still-set-when-coercing-beforeunload-result.html | EXCLUDED (requires-browsing-context: window.event during a beforeunload the window fires) | 0 | 0 |
 | dom/events/event-global-is-still-set-when-reporting-exception-onerror.html | EXCLUDED (requires-browsing-context: window.event inside window.onerror) | 0 | 0 |
@@ -1064,9 +979,9 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 | dom/events/event-src-element-nullable.html | OK | 1 | 0 |
 | dom/events/focus-event-document-move.html | EXCLUDED (requires-user-input: a pointer action sequence that moves the node it presses) | 0 | 0 |
 | dom/events/handler-count.html | EXCLUDED (requires-user-input: pointer action sequences against a running CSS animation) | 0 | 0 |
-| dom/events/label-default-action.html | EXCLUDED (later-phase: UI Events (a label's activation behavior)) | 0 | 0 |
+| dom/events/label-default-action.html | OK | 0 | 1 |
 | dom/events/legacy-pre-activation-behavior.window.js | EXCLUDED (later-phase: UI Events (a MouseEvent through a checkbox's legacy-pre-activation behavior)) | 0 | 0 |
-| dom/events/mouse-event-retarget.html | EXCLUDED (later-phase: UI Events (a MouseEvent's offsetX)) | 0 | 0 |
+| dom/events/mouse-event-retarget.html | OK | 0 | 1 |
 | dom/events/no-focus-events-at-clicking-editable-content-in-link.html | EXCLUDED (requires-user-input: clicks on editable content, and the focus events HTML fires from them) | 0 | 0 |
 | dom/events/non-cancelable-when-passive/generic-events-stay-cancelable.html | EXCLUDED (requires-user-input: each case drives a touch or wheel action sequence through testdriver) | 0 | 0 |
 | dom/events/non-cancelable-when-passive/non-passive-mousewheel-event-listener-on-body.html | EXCLUDED (requires-user-input: each case drives a touch or wheel action sequence through testdriver) | 0 | 0 |
@@ -1112,7 +1027,7 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 | dom/events/non-cancelable-when-passive/synthetic-events-cancelable.html | EXCLUDED (requires-user-input: each case drives a touch or wheel action sequence through testdriver) | 0 | 0 |
 | dom/events/passive-by-default.html | ERROR | 92 | 8 |
 | dom/events/pointer-event-document-move.html | EXCLUDED (requires-user-input: a pointer action sequence that moves the node it presses) | 0 | 0 |
-| dom/events/preventDefault-during-activation-behavior.html | EXCLUDED (later-phase: UI Events (preventDefault inside a button's activation behavior)) | 0 | 0 |
+| dom/events/preventDefault-during-activation-behavior.html | OK | 0 | 1 |
 | dom/events/relatedTarget.window.js | OK | 0 | 6 |
 | dom/events/remove-all-listeners.html | OK | 2 | 0 |
 | dom/events/scrolling/iframe-chains.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
@@ -1160,23 +1075,23 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 | dom/events/webkit-transition-end-event.html | EXCLUDED (requires-css-animations: a running CSS transition) | 0 | 0 |
 | dom/events/window-composed-path.html | OK | 1 | 0 |
 | dom/events/window-event-restored-after-throwing-onerror.html | EXCLUDED (requires-browsing-context: window.event inside window.onerror) | 0 | 0 |
-| shadow-dom/Document-caretPositionFromPoint.tentative.html | EXCLUDED (requires-layout: a caret position resolved from a point) | 0 | 0 |
+| shadow-dom/Document-caretPositionFromPoint.tentative.html | OK | 1 | 13 |
 | shadow-dom/Document-prototype-adoptNode.html | OK | 2 | 0 |
 | shadow-dom/Document-prototype-currentScript.html | TIMEOUT | 2 | 6 |
 | shadow-dom/Document-prototype-importNode.html | OK | 2 | 0 |
-| shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html | EXCLUDED (requires-layout: the element painted at a point) | 0 | 0 |
+| shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html | OK | 0 | 41 |
 | shadow-dom/Element-interface-attachShadow-custom-element.html | ERROR (HTMLInputElement is not defined) | 0 | 0 |
 | shadow-dom/Element-interface-attachShadow.html | OK | 6 | 0 |
 | shadow-dom/Element-interface-shadowRoot-attribute.html | OK | 3 | 0 |
 | shadow-dom/Extensions-to-Event-Interface.html | OK | 8 | 8 |
 | shadow-dom/HTMLSlotElement-interface.html | OK | 18 | 0 |
-| shadow-dom/HighlightRegistry-highlightsFromPoint.html | EXCLUDED (requires-layout: the CSS highlights painted at a point) | 0 | 0 |
-| shadow-dom/MouseEvent-prototype-offsetX-offsetY.html | EXCLUDED (later-phase: UI Events (a MouseEvent's offsetX)) | 0 | 0 |
+| shadow-dom/HighlightRegistry-highlightsFromPoint.html | OK | 0 | 4 |
+| shadow-dom/MouseEvent-prototype-offsetX-offsetY.html | OK | 0 | 3 |
 | shadow-dom/Node-prototype-cloneNode.html | OK | 4 | 0 |
-| shadow-dom/Range-prototype-insertNode.html | EXCLUDED (later-phase: Range, a section of the DOM Standard of its own) | 0 | 0 |
+| shadow-dom/Range-prototype-insertNode.html | OK | 0 | 1 |
 | shadow-dom/ShadowRoot-interface.html | OK | 8 | 4 |
 | shadow-dom/Slottable-mixin.html | OK | 4 | 0 |
-| shadow-dom/accesskey.tentative.html | EXCLUDED (later-phase: the accesskey attribute and the activation it triggers, which are HTML's) | 0 | 0 |
+| shadow-dom/accesskey.tentative.html | OK | 0 | 2 |
 | shadow-dom/assign-slottables-after-removing-shadow-tree-from-document.html | OK | 1 | 0 |
 | shadow-dom/attach-shadow-non-html-namespace.html | OK | 304 | 0 |
 | shadow-dom/attachShadow-with-ShadowRoot.html | OK | 2 | 0 |
@@ -1240,19 +1155,19 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 | shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-serialization.html | EXCLUDED (later-phase: adoptedStyleSheets, a CSSOM interface the engine owns) | 0 | 0 |
 | shadow-dom/directionality-001.tentative.html | REFTEST | 0 | 0 |
 | shadow-dom/directionality-002.tentative.html | REFTEST | 0 | 0 |
-| shadow-dom/dragenter-related-target.html | EXCLUDED (later-phase: UI Events (a DragEvent's relatedTarget)) | 0 | 0 |
-| shadow-dom/dragleave-related-target.html | EXCLUDED (later-phase: UI Events (a DragEvent's relatedTarget)) | 0 | 0 |
+| shadow-dom/dragenter-related-target.html | TIMEOUT | 0 | 1 |
+| shadow-dom/dragleave-related-target.html | TIMEOUT | 0 | 1 |
 | shadow-dom/event-composed-path-after-dom-mutation.html | OK | 2 | 0 |
-| shadow-dom/event-composed-path-with-related-target.html | EXCLUDED (later-phase: UI Events (every case dispatches a FocusEvent)) | 0 | 0 |
+| shadow-dom/event-composed-path-with-related-target.html | OK | 0 | 13 |
 | shadow-dom/event-composed-path.html | OK | 11 | 0 |
 | shadow-dom/event-composed.html | OK | 4 | 5 |
-| shadow-dom/event-dispatch-order.tentative.html | EXCLUDED (later-phase: UI Events (the order a click's events are dispatched in)) | 0 | 0 |
+| shadow-dom/event-dispatch-order.tentative.html | OK | 1 | 0 |
 | shadow-dom/event-inside-shadow-tree.html | OK | 12 | 0 |
 | shadow-dom/event-inside-slotted-node.html | OK | 20 | 0 |
 | shadow-dom/event-post-dispatch-no-listeners.html | OK | 5 | 0 |
 | shadow-dom/event-post-dispatch.html | OK | 8 | 8 |
-| shadow-dom/event-with-related-target.html | EXCLUDED (later-phase: UI Events (every case dispatches a MouseEvent)) | 0 | 0 |
-| shadow-dom/execcommand-insertList-in-shadow.html | EXCLUDED (later-phase: document.execCommand, an editing interface) | 0 | 0 |
+| shadow-dom/event-with-related-target.html | OK | 0 | 18 |
+| shadow-dom/execcommand-insertList-in-shadow.html | OK | 0 | 1 |
 | shadow-dom/focus-navigation/delegatesFocus-highlight-sibling.html | EXCLUDED (later-phase: HTML's sequential focus navigation order across shadow trees) | 0 | 0 |
 | shadow-dom/focus-navigation/focus-navigation-slot-fallback-default-tabindex.html | EXCLUDED (later-phase: HTML's sequential focus navigation order across shadow trees) | 0 | 0 |
 | shadow-dom/focus-navigation/focus-navigation-slot-fallback.html | EXCLUDED (later-phase: HTML's sequential focus navigation order across shadow trees) | 0 | 0 |
@@ -1339,7 +1254,7 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 | shadow-dom/focus/text-selection-with-delegatesFocus-on-slotted-content.html | EXCLUDED (later-phase: HTML focus -- focusable areas, the focus fixup rules and delegatesFocus -- which is the HTML Standard's) | 0 | 0 |
 | shadow-dom/focus/text-selection-with-delegatesFocus-text-control.html | EXCLUDED (later-phase: HTML focus -- focusable areas, the focus fixup rules and delegatesFocus -- which is the HTML Standard's) | 0 | 0 |
 | shadow-dom/focus/text-selection-with-delegatesFocus.html | EXCLUDED (later-phase: HTML focus -- focusable areas, the focus fixup rules and delegatesFocus -- which is the HTML Standard's) | 0 | 0 |
-| shadow-dom/form-control-form-attribute.html | EXCLUDED (later-phase: a form control's form owner, which is the HTML Standard's) | 0 | 0 |
+| shadow-dom/form-control-form-attribute.html | OK | 0 | 3 |
 | shadow-dom/getElementById-dynamic-001.html | OK | 1 | 0 |
 | shadow-dom/getElementById-dynamic-002.html | OK | 1 | 0 |
 | shadow-dom/historical.html | OK | 5 | 0 |
@@ -1347,23 +1262,23 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 | shadow-dom/imperative-slot-api-disconnected.html | OK | 1 | 0 |
 | shadow-dom/imperative-slot-api-slotchange.html | OK | 13 | 0 |
 | shadow-dom/imperative-slot-api.html | OK | 16 | 0 |
-| shadow-dom/imperative-slot-fallback-clear.html | EXCLUDED (requires-layout: whether a slot's fallback content took up space) | 0 | 0 |
-| shadow-dom/imperative-slot-initial-fallback.html | EXCLUDED (requires-layout: whether a slot's fallback content took up space) | 0 | 0 |
-| shadow-dom/imperative-slot-layout-invalidation-001.html | EXCLUDED (requires-layout: whether reassigning a slot invalidated the box it fed) | 0 | 0 |
-| shadow-dom/input-element-list.html | EXCLUDED (later-phase: HTMLFormElement.elements) | 0 | 0 |
-| shadow-dom/input-type-radio.html | EXCLUDED (later-phase: a radio button group, which is HTML's) | 0 | 0 |
+| shadow-dom/imperative-slot-fallback-clear.html | OK | 0 | 2 |
+| shadow-dom/imperative-slot-initial-fallback.html | OK | 0 | 2 |
+| shadow-dom/imperative-slot-layout-invalidation-001.html | REFTEST | 0 | 0 |
+| shadow-dom/input-element-list.html | OK | 0 | 2 |
+| shadow-dom/input-type-radio.html | OK | 0 | 1 |
 | shadow-dom/inserting-fragment-under-shadow-host.html | OK | 1 | 0 |
 | shadow-dom/invalidate-sibling-different-slots.html | REFTEST | 0 | 0 |
 | shadow-dom/layout-slot-no-longer-assigned.html | REFTEST | 0 | 0 |
 | shadow-dom/layout-slot-no-longer-fallback.html | REFTEST | 0 | 0 |
 | shadow-dom/leaktests/get-elements.html | OK | 4 | 1 |
-| shadow-dom/leaktests/html-collection.html | EXCLUDED (later-phase: document.images, .links, .forms and the rest of HTML's named document collections) | 0 | 0 |
+| shadow-dom/leaktests/html-collection.html | OK | 0 | 9 |
 | shadow-dom/leaktests/selection.html | EXCLUDED (requires-browsing-context: a Selection over a rendered frame) | 0 | 0 |
 | shadow-dom/leaktests/window-frames.html | EXCLUDED (requires-browsing-context: whether a shadow tree's nodes leak into window.frames) | 0 | 0 |
 | shadow-dom/manual-slot-assignment-no-wrong-unassign.html | REFTEST | 0 | 0 |
 | shadow-dom/nested-hover-pseudo-class-removal.html | EXCLUDED (requires-user-input: a pointer action sequence over a :hover rule) | 0 | 0 |
-| shadow-dom/offsetParent-across-shadow-boundaries.html | EXCLUDED (requires-layout: offsetParent, which is an offset from a laid-out box) | 0 | 0 |
-| shadow-dom/offsetTop-offsetLeft-across-shadow-boundaries.html | EXCLUDED (requires-layout: offsetTop and offsetLeft) | 0 | 0 |
+| shadow-dom/offsetParent-across-shadow-boundaries.html | OK | 0 | 22 |
+| shadow-dom/offsetTop-offsetLeft-across-shadow-boundaries.html | OK | 0 | 3 |
 | shadow-dom/reference-target/tentative/aria-labelledby.html | EXCLUDED (not-a-standard: shadowrootreferencetarget is a WICG incubation, filed under tentative in the suite) | 0 | 0 |
 | shadow-dom/reference-target/tentative/commandfor.html | EXCLUDED (not-a-standard: shadowrootreferencetarget is a WICG incubation, filed under tentative in the suite) | 0 | 0 |
 | shadow-dom/reference-target/tentative/dom-mutation.html | EXCLUDED (not-a-standard: shadowrootreferencetarget is a WICG incubation, filed under tentative in the suite) | 0 | 0 |
@@ -1380,8 +1295,8 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 | shadow-dom/reference-target/tentative/reference-target-basics.html | EXCLUDED (not-a-standard: shadowrootreferencetarget is a WICG incubation, filed under tentative in the suite) | 0 | 0 |
 | shadow-dom/reference-target/tentative/shadowrootreferencetarget-idl-reflection.html | EXCLUDED (not-a-standard: shadowrootreferencetarget is a WICG incubation, filed under tentative in the suite) | 0 | 0 |
 | shadow-dom/reference/empty.html | REFTEST | 0 | 0 |
-| shadow-dom/scroll-restore-shadow.html | EXCLUDED (requires-layout: a scroll position restored across a navigation) | 0 | 0 |
-| shadow-dom/scroll-to-the-fragment-in-shadow-tree.html | ERROR (window.scrollTo is not a function) | 0 | 0 |
+| shadow-dom/scroll-restore-shadow.html | OK | 0 | 1 |
+| shadow-dom/scroll-to-the-fragment-in-shadow-tree.html | ERROR (window.scrollTo is not a function. (In 'window.scrollTo(0, 0)', 'window.scrollTo' is undefined)) | 0 | 0 |
 | shadow-dom/shadow-root-clonable.html | OK | 6 | 0 |
 | shadow-dom/shadow-style-invalidation-vw-units.html | REFTEST | 0 | 0 |
 | shadow-dom/slot-fallback-content-001.html | REFTEST | 0 | 0 |
@@ -1413,8 +1328,8 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 | shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-attributes/test-013.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
 | shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods/test-001.html | OK | 2 | 0 |
 | shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods/test-004.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
-| shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods/test-006.html | EXCLUDED (requires-layout: ShadowRoot.elementFromPoint) | 0 | 0 |
-| shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods/test-007.html | EXCLUDED (requires-layout: ShadowRoot.elementsFromPoint) | 0 | 0 |
+| shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods/test-006.html | OK | 1 | 1 |
+| shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods/test-007.html | OK | 0 | 2 |
 | shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods/test-010.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
 | shadow-dom/untriaged/events/event-dispatch/test-002.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
 | shadow-dom/untriaged/events/event-dispatch/test-003.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
@@ -1429,22 +1344,22 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 | shadow-dom/untriaged/events/test-001.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
 | shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-001.html | OK | 2 | 0 |
 | shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-002.html | OK | 3 | 0 |
-| shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-003.html | EXCLUDED (later-phase: a form's controls, which are the HTML Standard's) | 0 | 0 |
+| shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-003.html | OK | 0 | 1 |
 | shadow-dom/untriaged/html-elements-in-shadow-trees/inert-html-elements/test-001.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
 | shadow-dom/untriaged/html-elements-in-shadow-trees/inert-html-elements/test-002.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
 | shadow-dom/untriaged/shadow-trees/nested-shadow-trees/nested_tree_reftest.html | REFTEST | 0 | 0 |
 | shadow-dom/untriaged/shadow-trees/reprojection/reprojection-001.html | REFTEST | 0 | 0 |
 | shadow-dom/untriaged/shadow-trees/shadow-root-001.html | REFTEST | 0 | 0 |
 | shadow-dom/untriaged/shadow-trees/shadow-root-002.html | REFTEST | 0 | 0 |
-| shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/dom-tree-accessors-001.html | EXCLUDED (later-phase: document.images, .links, .forms and the rest of HTML's named document collections) | 0 | 0 |
+| shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/dom-tree-accessors-001.html | OK | 5 | 9 |
 | shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/dom-tree-accessors-002.html | OK | 3 | 0 |
 | shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/ownerdocument-001.html | OK | 6 | 0 |
 | shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/ownerdocument-002.html | OK | 18 | 0 |
 | shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/selectors-api-001.html | OK | 2 | 0 |
 | shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/selectors-api-002.html | OK | 2 | 0 |
 | shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/shadow-root-001.html | OK | 4 | 0 |
-| shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/test-005.html | EXCLUDED (later-phase: label.control and button.form, HTML element interfaces) | 0 | 0 |
-| shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/test-007.html | EXCLUDED (later-phase: label.control and button.form, HTML element interfaces) | 0 | 0 |
+| shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/test-005.html | OK | 0 | 2 |
+| shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/test-007.html | OK | 0 | 2 |
 | shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/test-009.html | OK | 14 | 0 |
 | shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/test-011.html | EXCLUDED (requires-browsing-context: the fixture is a rendered document in a frame) | 0 | 0 |
 | shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/window-named-properties-001.html | OK | 1 | 0 |
@@ -1469,10 +1384,10 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 | custom-elements/Document-createElementNS-customized-builtins.html | EXCLUDED (customized built-ins: createElementNS with an is option) | 0 | 0 |
 | custom-elements/Document-createElementNS-prefix-timing.html | OK | 3 | 0 |
 | custom-elements/Document-createElementNS.html | OK | 4 | 0 |
-| custom-elements/ElementInternals-accessibility.html | EXCLUDED (later-phase: ElementInternals and ARIA reflection) | 0 | 0 |
-| custom-elements/ElementInternals-accessibility.tentative.html | EXCLUDED (later-phase: ElementInternals and ARIA reflection) | 0 | 0 |
-| custom-elements/ElementInternals-role.html | EXCLUDED (later-phase: ElementInternals and the ARIA role it reflects) | 0 | 0 |
-| custom-elements/HTMLElement-attachInternals.html | EXCLUDED (later-phase: attachInternals and ElementInternals, which are HTML's) | 0 | 0 |
+| custom-elements/ElementInternals-accessibility.html | OK | 0 | 50 |
+| custom-elements/ElementInternals-accessibility.tentative.html | OK | 0 | 3 |
+| custom-elements/ElementInternals-role.html | OK | 0 | 68 |
+| custom-elements/HTMLElement-attachInternals.html | OK | 0 | 4 |
 | custom-elements/HTMLElement-constructor-customized-builtins.html | EXCLUDED (customized built-ins: a constructor that extends a built-in interface) | 0 | 0 |
 | custom-elements/HTMLElement-constructor.html | OK | 10 | 2 |
 | custom-elements/adopted-callback.html | TIMEOUT | 42 | 29 |
@@ -1482,13 +1397,13 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 | custom-elements/connected-callbacks-template.html | EXCLUDED (requires-script-execution: the definition is registered by a script the parser runs inside the template) | 0 | 0 |
 | custom-elements/connected-callbacks.html | TIMEOUT | 30 | 10 |
 | custom-elements/createElement-reentrant-construction.window.js | OK | 2 | 0 |
-| custom-elements/cross-realm-callback-report-exception.html | ERROR (Cannot set properties of undefined (setting 'onerror')) | 0 | 0 |
+| custom-elements/cross-realm-callback-report-exception.html | ERROR (undefined is not an object (evaluating 'frames[0].onerror = () => { onerrorCalls.push("frame0"); }')) | 0 | 0 |
 | custom-elements/custom-element-reaction-queue.html | EXCLUDED (requires-script-execution: the reaction order under test is the parser's own) | 0 | 0 |
 | custom-elements/customized-built-in-constructor-exceptions.html | ERROR (HTMLParagraphElement is not defined) | 0 | 0 |
 | custom-elements/disconnected-callbacks.html | TIMEOUT | 30 | 10 |
-| custom-elements/element-internals-aria-element-reflection.html | EXCLUDED (later-phase: ElementInternals and ARIA element reflection) | 0 | 0 |
-| custom-elements/element-internals-behaviors.tentative.html | EXCLUDED (later-phase: ElementInternals and the default behaviors it declares) | 0 | 0 |
-| custom-elements/element-internals-shadowroot.html | EXCLUDED (later-phase: ElementInternals.shadowRoot) | 0 | 0 |
+| custom-elements/element-internals-aria-element-reflection.html | OK | 0 | 9 |
+| custom-elements/element-internals-behaviors.tentative.html | OK | 6 | 9 |
+| custom-elements/element-internals-shadowroot.html | OK | 0 | 7 |
 | custom-elements/enqueue-custom-element-callback-reactions-inside-another-callback.html | TIMEOUT | 0 | 8 |
 | custom-elements/form-associated/ElementInternals-NotSupportedError.html | EXCLUDED (later-phase: form-associated custom elements, whose form owner, submission, validation and ElementInternals machinery is the HTML Standard's) | 0 | 0 |
 | custom-elements/form-associated/ElementInternals-behavior-accessibility.tentative.html | EXCLUDED (later-phase: form-associated custom elements, whose form owner, submission, validation and ElementInternals machinery is the HTML Standard's) | 0 | 0 |
@@ -1517,7 +1432,7 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 | custom-elements/htmlconstructor/newtarget.html | TIMEOUT | 0 | 10 |
 | custom-elements/microtasks-and-constructors.html | EXCLUDED (requires-script-execution: the case is which microtasks run while the parser is inside an element) | 0 | 0 |
 | custom-elements/overwritten-customElements-global.html | OK | 4 | 0 |
-| custom-elements/parser/parser-constructs-custom-element-in-document-write.html | ERROR (document.write is not a function) | 0 | 0 |
+| custom-elements/parser/parser-constructs-custom-element-in-document-write.html | ERROR (document.write is not a function. (In 'document.write('<my-custom-element>hello <b>world</b></my-custom-element>')', 'document.write' is undefined)) | 0 | 0 |
 | custom-elements/parser/parser-constructs-custom-element-synchronously.html | EXCLUDED (requires-script-execution: the definition is registered, and the element observed, by scripts the parser runs between tags) | 0 | 0 |
 | custom-elements/parser/parser-constructs-custom-elements-with-is.html | EXCLUDED (customized built-ins: the parser reading an is attribute) | 0 | 0 |
 | custom-elements/parser/parser-constructs-custom-elements.html | EXCLUDED (requires-script-execution: the definition is registered, and the element observed, by scripts the parser runs between tags) | 0 | 0 |
@@ -1525,28 +1440,28 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 | custom-elements/parser/parser-fallsback-to-unknown-element.html | EXCLUDED (requires-script-execution: the element is observed by a script the parser runs between tags) | 0 | 0 |
 | custom-elements/parser/parser-sets-attributes-and-children.html | EXCLUDED (requires-script-execution: the reactions counted are the ones the parser enqueues between tags) | 0 | 0 |
 | custom-elements/parser/parser-uses-constructed-element.html | EXCLUDED (requires-script-execution: the element is observed by a script the parser runs between tags) | 0 | 0 |
-| custom-elements/parser/parser-uses-registry-of-owner-document.html | ERROR (document.write is not a function) | 0 | 0 |
+| custom-elements/parser/parser-uses-registry-of-owner-document.html | ERROR (document.write is not a function. (In 'document.write('<template><my-custom-element></my-custom-element></template>')', 'document.write' is undefined)) | 0 | 0 |
 | custom-elements/parser/serializing-html-fragments-customized-builtins.html | EXCLUDED (customized built-ins: serializing an is attribute) | 0 | 0 |
 | custom-elements/perform-microtask-checkpoint-before-construction.html | TIMEOUT | 0 | 2 |
 | custom-elements/pseudo-class-defined-customized-builtins.html | TIMEOUT | 0 | 0 |
 | custom-elements/pseudo-class-defined-print.html | REFTEST | 0 | 0 |
 | custom-elements/pseudo-class-defined.html | TIMEOUT | 0 | 1 |
-| custom-elements/range-and-constructors.html | EXCLUDED (later-phase: Range, a section of the DOM Standard of its own) | 0 | 0 |
+| custom-elements/range-and-constructors.html | OK | 0 | 2 |
 | custom-elements/reaction-timing.html | OK | 3 | 0 |
-| custom-elements/reactions/Animation.html | EXCLUDED (later-phase: the Web Animations interface) | 0 | 0 |
-| custom-elements/reactions/AriaMixin-element-attributes.html | EXCLUDED (later-phase: AriaMixin, an ARIA interface reflected on Element) | 0 | 0 |
-| custom-elements/reactions/AriaMixin-string-attributes.html | EXCLUDED (later-phase: AriaMixin, an ARIA interface reflected on Element) | 0 | 0 |
-| custom-elements/reactions/AriaMixin-string-attributes.tentative.html | EXCLUDED (later-phase: AriaMixin, an ARIA interface reflected on Element) | 0 | 0 |
+| custom-elements/reactions/Animation.html | OK | 0 | 3 |
+| custom-elements/reactions/AriaMixin-element-attributes.html | OK | 0 | 16 |
+| custom-elements/reactions/AriaMixin-string-attributes.html | OK | 0 | 80 |
+| custom-elements/reactions/AriaMixin-string-attributes.tentative.html | OK | 0 | 8 |
 | custom-elements/reactions/Attr.html | OK | 2 | 0 |
 | custom-elements/reactions/CSSStyleDeclaration.html | ERROR (CSSStyleDeclaration is not defined) | 0 | 0 |
 | custom-elements/reactions/ChildNode.html | OK | 7 | 0 |
-| custom-elements/reactions/DOMStringMap.html | EXCLUDED (later-phase: HTMLElement.dataset, an HTML Standard interface) | 0 | 0 |
+| custom-elements/reactions/DOMStringMap.html | OK | 0 | 8 |
 | custom-elements/reactions/DOMTokenList.html | OK | 19 | 0 |
 | custom-elements/reactions/Document.html | TIMEOUT | 0 | 12 |
 | custom-elements/reactions/Element.html | OK | 47 | 0 |
-| custom-elements/reactions/ElementContentEditable.html | EXCLUDED (later-phase: contentEditable, an HTML Standard interface) | 0 | 0 |
+| custom-elements/reactions/ElementContentEditable.html | OK | 0 | 2 |
 | custom-elements/reactions/HTMLAnchorElement.html | TIMEOUT | 0 | 1 |
-| custom-elements/reactions/HTMLElement.html | EXCLUDED (later-phase: the reflected IDL attributes of HTMLElement, which are the HTML Standard's) | 0 | 0 |
+| custom-elements/reactions/HTMLElement.html | OK | 0 | 22 |
 | custom-elements/reactions/HTMLOptionElement.html | TIMEOUT | 0 | 1 |
 | custom-elements/reactions/HTMLOptionsCollection.html | TIMEOUT | 0 | 5 |
 | custom-elements/reactions/HTMLOutputElement.html | TIMEOUT | 0 | 2 |
@@ -1558,8 +1473,8 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 | custom-elements/reactions/NamedNodeMap.html | OK | 14 | 0 |
 | custom-elements/reactions/Node.html | OK | 14 | 0 |
 | custom-elements/reactions/ParentNode.html | OK | 4 | 0 |
-| custom-elements/reactions/Range.html | EXCLUDED (later-phase: Range, a section of the DOM Standard of its own) | 0 | 0 |
-| custom-elements/reactions/Selection.html | EXCLUDED (later-phase: Selection, which belongs to the selection API) | 0 | 0 |
+| custom-elements/reactions/Range.html | OK | 0 | 10 |
+| custom-elements/reactions/Selection.html | OK | 0 | 1 |
 | custom-elements/reactions/ShadowRoot.html | TIMEOUT | 0 | 3 |
 | custom-elements/reactions/customized-builtins/HTMLAreaElement.html | EXCLUDED (customized built-ins: the is= form of a custom element, which this DOM declares dead (see the deviation below)) | 0 | 0 |
 | custom-elements/reactions/customized-builtins/HTMLBaseElement.html | EXCLUDED (customized built-ins: the is= form of a custom element, which this DOM declares dead (see the deviation below)) | 0 | 0 |
@@ -1590,44 +1505,44 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 | custom-elements/reactions/customized-builtins/HTMLTableColElement.html | EXCLUDED (customized built-ins: the is= form of a custom element, which this DOM declares dead (see the deviation below)) | 0 | 0 |
 | custom-elements/reactions/customized-builtins/HTMLTimeElement.html | EXCLUDED (customized built-ins: the is= form of a custom element, which this DOM declares dead (see the deviation below)) | 0 | 0 |
 | custom-elements/reactions/with-exceptions.html | TIMEOUT | 0 | 1 |
-| custom-elements/registries/Construct.html | EXCLUDED (later-phase: scoped custom element registries (which registry a constructor is read against)) | 0 | 0 |
+| custom-elements/registries/Construct.html | OK | 2 | 1 |
 | custom-elements/registries/CustomElementRegistry-define.html | OK | 3 | 0 |
-| custom-elements/registries/CustomElementRegistry-initialize.html | EXCLUDED (later-phase: scoped custom element registries (initialize)) | 0 | 0 |
+| custom-elements/registries/CustomElementRegistry-initialize.html | OK | 0 | 13 |
 | custom-elements/registries/CustomElementRegistry-multi-register.html | OK | 2 | 0 |
-| custom-elements/registries/CustomElementRegistry-upgrade.html | EXCLUDED (later-phase: scoped custom element registries (upgrade against a scoped registry)) | 0 | 0 |
-| custom-elements/registries/Document-createElement.html | EXCLUDED (later-phase: scoped custom element registries (the registry option on createElement)) | 0 | 0 |
-| custom-elements/registries/Document-createElementNS.html | EXCLUDED (later-phase: scoped custom element registries (the registry option on createElementNS)) | 0 | 0 |
-| custom-elements/registries/Document-customElementRegistry.html | EXCLUDED (later-phase: scoped custom element registries (Document.customElementRegistry)) | 0 | 0 |
+| custom-elements/registries/CustomElementRegistry-upgrade.html | OK | 1 | 4 |
+| custom-elements/registries/Document-createElement.html | OK | 2 | 8 |
+| custom-elements/registries/Document-createElementNS.html | OK | 2 | 8 |
+| custom-elements/registries/Document-customElementRegistry.html | OK | 0 | 4 |
 | custom-elements/registries/Document-importNode-cross-document.window.js | EXCLUDED (later-phase: scoped custom element registries (importing across documents with a scoped registry)) | 0 | 0 |
-| custom-elements/registries/Document-importNode.html | EXCLUDED (later-phase: scoped custom element registries (the registry option on importNode)) | 0 | 0 |
-| custom-elements/registries/Element-customElementRegistry-exceptions.html | EXCLUDED (later-phase: scoped custom element registries (Element.customElementRegistry)) | 0 | 0 |
-| custom-elements/registries/Element-customElementRegistry.html | EXCLUDED (later-phase: scoped custom element registries (Element.customElementRegistry)) | 0 | 0 |
-| custom-elements/registries/Element-innerHTML.html | EXCLUDED (later-phase: scoped custom element registries (which registry innerHTML builds against)) | 0 | 0 |
-| custom-elements/registries/ShadowRoot-init-customElementRegistry.html | EXCLUDED (later-phase: scoped custom element registries (the registry option on attachShadow)) | 0 | 0 |
-| custom-elements/registries/ShadowRoot-init-declarative.html | EXCLUDED (later-phase: scoped custom element registries (the registry a declarative shadow root takes)) | 0 | 0 |
-| custom-elements/registries/ShadowRoot-innerHTML.html | EXCLUDED (later-phase: scoped custom element registries (which registry a shadow root's innerHTML builds against)) | 0 | 0 |
+| custom-elements/registries/Document-importNode.html | OK | 9 | 11 |
+| custom-elements/registries/Element-customElementRegistry-exceptions.html | OK | 0 | 3 |
+| custom-elements/registries/Element-customElementRegistry.html | OK | 0 | 11 |
+| custom-elements/registries/Element-innerHTML.html | OK | 0 | 12 |
+| custom-elements/registries/ShadowRoot-init-customElementRegistry.html | OK | 0 | 12 |
+| custom-elements/registries/ShadowRoot-init-declarative.html | OK | 0 | 3 |
+| custom-elements/registries/ShadowRoot-innerHTML.html | OK | 0 | 4 |
 | custom-elements/registries/adoption.window.js | EXCLUDED (later-phase: scoped custom element registries (which registry survives adoption)) | 0 | 0 |
 | custom-elements/registries/constructor-direct-call-fallback-registry.window.js | EXCLUDED (later-phase: scoped custom element registries (the fallback registry of a direct construction)) | 0 | 0 |
 | custom-elements/registries/constructor-reentry-createElement.window.js | EXCLUDED (later-phase: scoped custom element registries (re-entrant createElement against a scoped registry)) | 0 | 0 |
-| custom-elements/registries/constructor-reentry-with-different-definition.html | EXCLUDED (later-phase: scoped custom element registries (re-entry with a definition from another registry)) | 0 | 0 |
-| custom-elements/registries/define-customized-builtins.html | ERROR (Cannot read properties of undefined (reading 'defaultView')) | 0 | 0 |
-| custom-elements/registries/define.html | ERROR (Cannot read properties of undefined (reading 'defaultView')) | 0 | 0 |
-| custom-elements/registries/element-mutation-null-registry-removal.html | EXCLUDED (later-phase: scoped custom element registries (removing an element with a null registry)) | 0 | 0 |
-| custom-elements/registries/element-mutation.html | EXCLUDED (later-phase: scoped custom element registries (the registry an inserted element inherits)) | 0 | 0 |
+| custom-elements/registries/constructor-reentry-with-different-definition.html | OK | 0 | 4 |
+| custom-elements/registries/define-customized-builtins.html | ERROR (undefined is not an object (evaluating 'iframe.contentDocument.defaultView')) | 0 | 0 |
+| custom-elements/registries/define.html | ERROR (undefined is not an object (evaluating 'iframe.contentDocument.defaultView')) | 0 | 0 |
+| custom-elements/registries/element-mutation-null-registry-removal.html | OK | 0 | 1 |
+| custom-elements/registries/element-mutation.html | OK | 0 | 15 |
 | custom-elements/registries/global.window.js | EXCLUDED (later-phase: scoped custom element registries (the global registry beside a scoped one)) | 0 | 0 |
 | custom-elements/registries/initial-about-blank.window.js | EXCLUDED (later-phase: scoped custom element registries (the registry of the initial about:blank document)) | 0 | 0 |
 | custom-elements/registries/per-document.html | TIMEOUT | 0 | 3 |
 | custom-elements/registries/pseudo-class-defined.window.js | EXCLUDED (later-phase: scoped custom element registries (:defined against a scoped registry)) | 0 | 0 |
 | custom-elements/registries/scoped-custom-element-registry-customelementregistry-attribute.html | TIMEOUT | 0 | 23 |
-| custom-elements/registries/scoped-registry-append.html | EXCLUDED (later-phase: scoped custom element registries) | 0 | 0 |
-| custom-elements/registries/scoped-registry-define-upgrade-criteria.html | EXCLUDED (later-phase: scoped custom element registries) | 0 | 0 |
-| custom-elements/registries/scoped-registry-define-upgrade-order.html | EXCLUDED (later-phase: scoped custom element registries) | 0 | 0 |
-| custom-elements/registries/scoped-registry-effective-global-registry.html | EXCLUDED (later-phase: scoped custom element registries) | 0 | 0 |
-| custom-elements/registries/scoped-registry-initialize-upgrades.html | EXCLUDED (later-phase: scoped custom element registries) | 0 | 0 |
-| custom-elements/registries/scoped-registry-initialize.html | EXCLUDED (later-phase: scoped custom element registries) | 0 | 0 |
-| custom-elements/registries/scoped-registry-registry-define-get-etc.html | EXCLUDED (later-phase: scoped custom element registries) | 0 | 0 |
+| custom-elements/registries/scoped-registry-append.html | OK | 0 | 16 |
+| custom-elements/registries/scoped-registry-define-upgrade-criteria.html | OK | 3 | 11 |
+| custom-elements/registries/scoped-registry-define-upgrade-order.html | OK | 0 | 7 |
+| custom-elements/registries/scoped-registry-effective-global-registry.html | OK | 0 | 66 |
+| custom-elements/registries/scoped-registry-initialize-upgrades.html | OK | 0 | 12 |
+| custom-elements/registries/scoped-registry-initialize.html | OK | 0 | 27 |
+| custom-elements/registries/scoped-registry-registry-define-get-etc.html | OK | 6 | 1 |
 | custom-elements/registries/template.window.js | EXCLUDED (later-phase: scoped custom element registries (a template's registry)) | 0 | 0 |
-| custom-elements/registries/upgrade.html | EXCLUDED (later-phase: scoped custom element registries (upgrade against a scoped registry)) | 0 | 0 |
+| custom-elements/registries/upgrade.html | OK | 5 | 0 |
 | custom-elements/registries/valid-custom-element-names.html | OK | 1975 | 0 |
 | custom-elements/state/ElementInternals-states.html | EXCLUDED (later-phase: ElementInternals and its CustomStateSet, an HTML interface reached through a CSS :state() selector) | 0 | 0 |
 | custom-elements/state/state-css-selector-nth-of.html | EXCLUDED (later-phase: ElementInternals and its CustomStateSet, an HTML interface reached through a CSS :state() selector) | 0 | 0 |
@@ -1666,197 +1581,197 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 ### dom/nodes/Document-createElement.html
 
-- createElement(undefined) in XML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement(undefined) in XHTML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement(null) in XML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement(null) in XHTML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("foo") in XML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("foo") in XHTML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("f1oo") in XML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("f1oo") in XHTML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("foo1") in XML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("foo1") in XHTML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("fெ") in XML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("fெ") in XHTML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("fooெ") in XML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("fooெ") in XHTML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement(":") in XML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement(":") in XHTML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement(":foo") in XML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement(":foo") in XHTML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("f:oo") in XML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("f:oo") in XHTML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("foo:") in XML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("foo:") in XHTML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("f:o:o") in XML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("f:o:o") in XHTML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("f::oo") in XML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("f::oo") in XHTML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("f::oo:") in XML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("f::oo:") in XHTML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("foo:0") in XML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("foo:0") in XHTML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("foo:_") in XML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("foo:_") in XHTML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("foo:ெ") in XML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("foo:ெ") in XHTML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("foo:fooெ") in XML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("foo:fooெ") in XHTML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("fooெ:foo") in XML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("fooெ:foo") in XHTML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("xml") in XML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("xml") in XHTML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("xmlns") in XML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("xmlns") in XHTML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("xmlfoo") in XML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("xmlfoo") in XHTML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("xml:foo") in XML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("xml:foo") in XHTML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("xmlns:foo") in XML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("xmlns:foo") in XHTML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("xmlfoo:bar") in XML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("xmlfoo:bar") in XHTML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("svg") in XML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("svg") in XHTML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("math") in XML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("math") in XHTML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("FOO") in XML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("FOO") in XHTML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("marK") in XML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("marK") in XHTML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("İnput") in XML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("İnput") in XHTML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("ınput") in XML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("ınput") in XHTML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("̀foo") in XML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("̀foo") in XHTML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("f}oo") in XML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("f}oo") in XHTML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("foo}") in XML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("foo}") in XHTML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("\ufffffoo") in XML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("\ufffffoo") in XHTML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("f\uffffoo") in XML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("f\uffffoo") in XHTML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("foo\uffff") in XML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("foo\uffff") in XHTML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("f<oo") in XML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("f<oo") in XHTML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("̀") in XML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("̀") in XHTML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("") in XML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("") in XHTML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("1foo") in XML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("1foo") in XHTML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("1:foo") in XML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("1:foo") in XHTML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("fo o") in XML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("fo o") in XHTML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("}foo") in XML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("}foo") in XHTML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("<foo") in XML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("<foo") in XHTML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("foo>") in XML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("foo>") in XHTML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("<foo>") in XML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("<foo>") in XHTML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("-foo") in XML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement("-foo") in XHTML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement(".foo") in XML document: Cannot read properties of undefined (reading 'documentElement')
-- createElement(".foo") in XHTML document: Cannot read properties of undefined (reading 'documentElement')
+- createElement(undefined) in XML document: undefined is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement(undefined) in XHTML document: undefined is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement(null) in XML document: undefined is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement(null) in XHTML document: undefined is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("foo") in XML document: undefined is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("foo") in XHTML document: undefined is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("f1oo") in XML document: undefined is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("f1oo") in XHTML document: undefined is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("foo1") in XML document: undefined is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("foo1") in XHTML document: undefined is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("fெ") in XML document: undefined is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("fெ") in XHTML document: undefined is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("fooெ") in XML document: undefined is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("fooெ") in XHTML document: undefined is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement(":") in XML document: undefined is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement(":") in XHTML document: undefined is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement(":foo") in XML document: undefined is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement(":foo") in XHTML document: undefined is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("f:oo") in XML document: undefined is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("f:oo") in XHTML document: undefined is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("foo:") in XML document: undefined is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("foo:") in XHTML document: undefined is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("f:o:o") in XML document: undefined is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("f:o:o") in XHTML document: undefined is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("f::oo") in XML document: undefined is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("f::oo") in XHTML document: undefined is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("f::oo:") in XML document: undefined is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("f::oo:") in XHTML document: undefined is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("foo:0") in XML document: undefined is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("foo:0") in XHTML document: undefined is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("foo:_") in XML document: undefined is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("foo:_") in XHTML document: undefined is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("foo:ெ") in XML document: undefined is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("foo:ெ") in XHTML document: undefined is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("foo:fooெ") in XML document: undefined is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("foo:fooெ") in XHTML document: undefined is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("fooெ:foo") in XML document: undefined is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("fooெ:foo") in XHTML document: undefined is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("xml") in XML document: undefined is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("xml") in XHTML document: undefined is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("xmlns") in XML document: undefined is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("xmlns") in XHTML document: undefined is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("xmlfoo") in XML document: undefined is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("xmlfoo") in XHTML document: undefined is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("xml:foo") in XML document: undefined is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("xml:foo") in XHTML document: undefined is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("xmlns:foo") in XML document: undefined is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("xmlns:foo") in XHTML document: undefined is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("xmlfoo:bar") in XML document: undefined is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("xmlfoo:bar") in XHTML document: undefined is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("svg") in XML document: undefined is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("svg") in XHTML document: undefined is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("math") in XML document: undefined is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("math") in XHTML document: undefined is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("FOO") in XML document: undefined is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("FOO") in XHTML document: undefined is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("marK") in XML document: undefined is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("marK") in XHTML document: undefined is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("İnput") in XML document: undefined is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("İnput") in XHTML document: undefined is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("ınput") in XML document: undefined is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("ınput") in XHTML document: undefined is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("̀foo") in XML document: undefined is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("̀foo") in XHTML document: undefined is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("f}oo") in XML document: undefined is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("f}oo") in XHTML document: undefined is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("foo}") in XML document: undefined is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("foo}") in XHTML document: undefined is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("\ufffffoo") in XML document: undefined is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("\ufffffoo") in XHTML document: undefined is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("f\uffffoo") in XML document: undefined is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("f\uffffoo") in XHTML document: undefined is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("foo\uffff") in XML document: undefined is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("foo\uffff") in XHTML document: undefined is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("f<oo") in XML document: undefined is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("f<oo") in XHTML document: undefined is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("̀") in XML document: undefined is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("̀") in XHTML document: undefined is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("") in XML document: undefined is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("") in XHTML document: undefined is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("1foo") in XML document: undefined is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("1foo") in XHTML document: undefined is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("1:foo") in XML document: undefined is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("1:foo") in XHTML document: undefined is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("fo o") in XML document: undefined is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("fo o") in XHTML document: undefined is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("}foo") in XML document: undefined is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("}foo") in XHTML document: undefined is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("<foo") in XML document: undefined is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("<foo") in XHTML document: undefined is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("foo>") in XML document: undefined is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("foo>") in XHTML document: undefined is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("<foo>") in XML document: undefined is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("<foo>") in XHTML document: undefined is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("-foo") in XML document: undefined is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("-foo") in XHTML document: undefined is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement(".foo") in XML document: undefined is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement(".foo") in XHTML document: undefined is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
 
 ### dom/nodes/Document-createEvent.https.html
 
 - BeforeUnloadEvent should be an alias for BeforeUnloadEvent.: No event interface is named "BeforeUnloadEvent"
-- createEvent('BeforeUnloadEvent') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('BeforeUnloadEvent') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - beforeunloadevent should be an alias for BeforeUnloadEvent.: No event interface is named "beforeunloadevent"
-- createEvent('beforeunloadevent') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('beforeunloadevent') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - BEFOREUNLOADEVENT should be an alias for BeforeUnloadEvent.: No event interface is named "BEFOREUNLOADEVENT"
-- createEvent('BEFOREUNLOADEVENT') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('BEFOREUNLOADEVENT') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - CompositionEvent should be an alias for CompositionEvent.: No event interface is named "CompositionEvent"
-- createEvent('CompositionEvent') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('CompositionEvent') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - compositionevent should be an alias for CompositionEvent.: No event interface is named "compositionevent"
-- createEvent('compositionevent') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('compositionevent') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - COMPOSITIONEVENT should be an alias for CompositionEvent.: No event interface is named "COMPOSITIONEVENT"
-- createEvent('COMPOSITIONEVENT') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('COMPOSITIONEVENT') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - DeviceMotionEvent should be an alias for DeviceMotionEvent.: No event interface is named "DeviceMotionEvent"
-- createEvent('DeviceMotionEvent') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('DeviceMotionEvent') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - devicemotionevent should be an alias for DeviceMotionEvent.: No event interface is named "devicemotionevent"
-- createEvent('devicemotionevent') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('devicemotionevent') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - DEVICEMOTIONEVENT should be an alias for DeviceMotionEvent.: No event interface is named "DEVICEMOTIONEVENT"
-- createEvent('DEVICEMOTIONEVENT') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('DEVICEMOTIONEVENT') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - DeviceOrientationEvent should be an alias for DeviceOrientationEvent.: No event interface is named "DeviceOrientationEvent"
-- createEvent('DeviceOrientationEvent') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('DeviceOrientationEvent') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - deviceorientationevent should be an alias for DeviceOrientationEvent.: No event interface is named "deviceorientationevent"
-- createEvent('deviceorientationevent') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('deviceorientationevent') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - DEVICEORIENTATIONEVENT should be an alias for DeviceOrientationEvent.: No event interface is named "DEVICEORIENTATIONEVENT"
-- createEvent('DEVICEORIENTATIONEVENT') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('DEVICEORIENTATIONEVENT') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - DragEvent should be an alias for DragEvent.: No event interface is named "DragEvent"
-- createEvent('DragEvent') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('DragEvent') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - dragevent should be an alias for DragEvent.: No event interface is named "dragevent"
-- createEvent('dragevent') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('dragevent') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - DRAGEVENT should be an alias for DragEvent.: No event interface is named "DRAGEVENT"
-- createEvent('DRAGEVENT') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('DRAGEVENT') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - FocusEvent should be an alias for FocusEvent.: No event interface is named "FocusEvent"
-- createEvent('FocusEvent') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('FocusEvent') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - focusevent should be an alias for FocusEvent.: No event interface is named "focusevent"
-- createEvent('focusevent') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('focusevent') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - FOCUSEVENT should be an alias for FocusEvent.: No event interface is named "FOCUSEVENT"
-- createEvent('FOCUSEVENT') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('FOCUSEVENT') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - HashChangeEvent should be an alias for HashChangeEvent.: No event interface is named "HashChangeEvent"
-- createEvent('HashChangeEvent') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('HashChangeEvent') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - hashchangeevent should be an alias for HashChangeEvent.: No event interface is named "hashchangeevent"
-- createEvent('hashchangeevent') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('hashchangeevent') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - HASHCHANGEEVENT should be an alias for HashChangeEvent.: No event interface is named "HASHCHANGEEVENT"
-- createEvent('HASHCHANGEEVENT') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('HASHCHANGEEVENT') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - KeyboardEvent should be an alias for KeyboardEvent.: No event interface is named "KeyboardEvent"
-- createEvent('KeyboardEvent') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('KeyboardEvent') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - keyboardevent should be an alias for KeyboardEvent.: No event interface is named "keyboardevent"
-- createEvent('keyboardevent') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('keyboardevent') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - KEYBOARDEVENT should be an alias for KeyboardEvent.: No event interface is named "KEYBOARDEVENT"
-- createEvent('KEYBOARDEVENT') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('KEYBOARDEVENT') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - MessageEvent should be an alias for MessageEvent.: No event interface is named "MessageEvent"
-- createEvent('MessageEvent') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('MessageEvent') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - messageevent should be an alias for MessageEvent.: No event interface is named "messageevent"
-- createEvent('messageevent') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('messageevent') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - MESSAGEEVENT should be an alias for MessageEvent.: No event interface is named "MESSAGEEVENT"
-- createEvent('MESSAGEEVENT') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('MESSAGEEVENT') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - MouseEvent should be an alias for MouseEvent.: No event interface is named "MouseEvent"
-- createEvent('MouseEvent') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('MouseEvent') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - mouseevent should be an alias for MouseEvent.: No event interface is named "mouseevent"
-- createEvent('mouseevent') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('mouseevent') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - MOUSEEVENT should be an alias for MouseEvent.: No event interface is named "MOUSEEVENT"
-- createEvent('MOUSEEVENT') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('MOUSEEVENT') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - MouseEvents should be an alias for MouseEvent.: No event interface is named "MouseEvents"
-- createEvent('MouseEvents') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('MouseEvents') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - mouseevents should be an alias for MouseEvent.: No event interface is named "mouseevents"
-- createEvent('mouseevents') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('mouseevents') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - MOUSEEVENTS should be an alias for MouseEvent.: No event interface is named "MOUSEEVENTS"
-- createEvent('MOUSEEVENTS') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('MOUSEEVENTS') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - StorageEvent should be an alias for StorageEvent.: No event interface is named "StorageEvent"
-- createEvent('StorageEvent') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('StorageEvent') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - storageevent should be an alias for StorageEvent.: No event interface is named "storageevent"
-- createEvent('storageevent') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('storageevent') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - STORAGEEVENT should be an alias for StorageEvent.: No event interface is named "STORAGEEVENT"
-- createEvent('STORAGEEVENT') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('STORAGEEVENT') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - TextEvent should be an alias for TextEvent.: No event interface is named "TextEvent"
-- createEvent('TextEvent') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('TextEvent') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - textevent should be an alias for TextEvent.: No event interface is named "textevent"
-- createEvent('textevent') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('textevent') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - TEXTEVENT should be an alias for TextEvent.: No event interface is named "TEXTEVENT"
-- createEvent('TEXTEVENT') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('TEXTEVENT') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - UIEvent should be an alias for UIEvent.: No event interface is named "UIEvent"
-- createEvent('UIEvent') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('UIEvent') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - uievent should be an alias for UIEvent.: No event interface is named "uievent"
-- createEvent('uievent') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('uievent') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - UIEVENT should be an alias for UIEvent.: No event interface is named "UIEVENT"
-- createEvent('UIEVENT') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('UIEVENT') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - UIEvents should be an alias for UIEvent.: No event interface is named "UIEvents"
-- createEvent('UIEvents') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('UIEvents') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - uievents should be an alias for UIEvent.: No event interface is named "uievents"
-- createEvent('uievents') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('uievents') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - UIEVENTS should be an alias for UIEvent.: No event interface is named "UIEVENTS"
-- createEvent('UIEVENTS') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('UIEVENTS') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - TouchEvent should be an alias for TouchEvent.: 'expose legacy touch event APIs'
 - createEvent('TouchEvent') should be initialized correctly.: 'expose legacy touch event APIs'
 - touchevent should be an alias for TouchEvent.: 'expose legacy touch event APIs'
@@ -1878,7 +1793,7 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 ### dom/nodes/Element-closest.html
 
-- Element.closest with context node 'test11' and selector ':invalid': e.checkValidity is not a function
+- Element.closest with context node 'test11' and selector ':invalid': e.checkValidity is not a function. (In 'e.checkValidity()', 'e.checkValidity' is undefined)
 - Element.closest with context node 'test4' and selector ':scope': assert_equals: :scope expected "test4" but got "test2"
 - Element.closest with context node 'test4' and selector 'select > :scope': assert_equals: select > :scope expected "test4" but got ""
 - Element.closest with context node 'test4' and selector ':has(> :scope)': assert_equals: :has(> :scope) expected "test3" but got "test5"
@@ -1903,31 +1818,31 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 ### dom/nodes/MutationObserver-characterData.html
 
-- Range (r70) is created: document.createRange is not a function
-- characterData Range.deleteContents: child and data removal mutation: Cannot read properties of null (reading 'deleteContents')
-- Range (r71) is created: document.createRange is not a function
-- characterData Range.deleteContents: child and data removal mutation (2): Cannot read properties of null (reading 'deleteContents')
-- Range (r80) is created: document.createRange is not a function
-- characterData Range.extractContents: child and data removal mutation: Cannot read properties of null (reading 'extractContents')
-- Range (r81) is created: document.createRange is not a function
-- characterData Range.extractContents: child and data removal mutation (2): Cannot read properties of null (reading 'extractContents')
+- Range (r70) is created: document.createRange is not a function. (In 'document.createRange()', 'document.createRange' is undefined)
+- characterData Range.deleteContents: child and data removal mutation: null is not an object (evaluating 'r70.deleteContents')
+- Range (r71) is created: document.createRange is not a function. (In 'document.createRange()', 'document.createRange' is undefined)
+- characterData Range.deleteContents: child and data removal mutation (2): null is not an object (evaluating 'r71.deleteContents')
+- Range (r80) is created: document.createRange is not a function. (In 'document.createRange()', 'document.createRange' is undefined)
+- characterData Range.extractContents: child and data removal mutation: null is not an object (evaluating 'r80.extractContents')
+- Range (r81) is created: document.createRange is not a function. (In 'document.createRange()', 'document.createRange' is undefined)
+- characterData Range.extractContents: child and data removal mutation (2): null is not an object (evaluating 'r81.extractContents')
 
 ### dom/nodes/MutationObserver-childList.html
 
-- Range (r70) is created: document.createRange is not a function
-- childList Range.deleteContents: child removal mutation: Cannot read properties of null (reading 'deleteContents')
-- Range (r71) is created: document.createRange is not a function
-- childList Range.deleteContents: child and data removal mutation: Cannot read properties of null (reading 'deleteContents')
-- Range (r80) is created: document.createRange is not a function
-- childList Range.extractContents: child removal mutation: Cannot read properties of null (reading 'extractContents')
-- Range (r81) is created: document.createRange is not a function
-- childList Range.extractContents: child and data removal mutation: Cannot read properties of null (reading 'extractContents')
-- Range (r90) is created: document.createRange is not a function
-- childList Range.insertNode: child insertion mutation: Cannot read properties of null (reading 'insertNode')
-- Range (r91) is created: document.createRange is not a function
-- childList Range.insertNode: children insertion mutation: Cannot read properties of null (reading 'insertNode')
-- Range (r100) is created: document.createRange is not a function
-- childList Range.surroundContents: children removal and addition mutation: Cannot read properties of null (reading 'surroundContents')
+- Range (r70) is created: document.createRange is not a function. (In 'document.createRange()', 'document.createRange' is undefined)
+- childList Range.deleteContents: child removal mutation: null is not an object (evaluating 'r70.deleteContents')
+- Range (r71) is created: document.createRange is not a function. (In 'document.createRange()', 'document.createRange' is undefined)
+- childList Range.deleteContents: child and data removal mutation: null is not an object (evaluating 'r71.deleteContents')
+- Range (r80) is created: document.createRange is not a function. (In 'document.createRange()', 'document.createRange' is undefined)
+- childList Range.extractContents: child removal mutation: null is not an object (evaluating 'r80.extractContents')
+- Range (r81) is created: document.createRange is not a function. (In 'document.createRange()', 'document.createRange' is undefined)
+- childList Range.extractContents: child and data removal mutation: null is not an object (evaluating 'r81.extractContents')
+- Range (r90) is created: document.createRange is not a function. (In 'document.createRange()', 'document.createRange' is undefined)
+- childList Range.insertNode: child insertion mutation: null is not an object (evaluating 'r90.insertNode')
+- Range (r91) is created: document.createRange is not a function. (In 'document.createRange()', 'document.createRange' is undefined)
+- childList Range.insertNode: children insertion mutation: null is not an object (evaluating 'r91.insertNode')
+- Range (r100) is created: document.createRange is not a function. (In 'document.createRange()', 'document.createRange' is undefined)
+- childList Range.surroundContents: children removal and addition mutation: null is not an object (evaluating 'r100.surroundContents')
 
 ### dom/nodes/Node-appendChild-cereactions-vs-script.window.js
 
@@ -1935,13 +1850,13 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 ### dom/nodes/Node-appendChild.html
 
-- Appending a document: Cannot read properties of undefined (reading 'document')
-- Adopting an orphan: Cannot read properties of undefined (reading 'document')
-- Adopting a non-orphan: Cannot read properties of undefined (reading 'document')
+- Appending a document: undefined is not an object (evaluating 'frames[0].document')
+- Adopting an orphan: undefined is not an object (evaluating 'frames[0].document')
+- Adopting a non-orphan: undefined is not an object (evaluating 'frames[0].document')
 
 ### dom/nodes/Node-cloneNode-document-allow-declarative-shadow-roots.window.js
 
-- cloneNode() and document's allow declarative shadow roots: doc.write is not a function
+- cloneNode() and document's allow declarative shadow roots: doc.write is not a function. (In 'doc.write('<div><template shadowrootmode=open>test</template></div>')', 'doc.write' is undefined)
 
 ### dom/nodes/Node-cloneNode.html
 
@@ -2024,15 +1939,15 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 ### dom/nodes/Node-removeChild.html
 
-- Passing a detached element from a frame document to removeChild should not affect it.: Cannot read properties of undefined (reading 'document')
-- Passing a non-detached element from a frame document to removeChild should not affect it.: Cannot read properties of undefined (reading 'document')
-- Calling removeChild on a element from a frame document with no children should throw NOT_FOUND_ERR.: Cannot read properties of undefined (reading 'document')
-- Passing a detached text from a frame document to removeChild should not affect it.: Cannot read properties of undefined (reading 'document')
-- Passing a non-detached text from a frame document to removeChild should not affect it.: Cannot read properties of undefined (reading 'document')
-- Calling removeChild on a text from a frame document with no children should throw NOT_FOUND_ERR.: Cannot read properties of undefined (reading 'document')
-- Passing a detached comment from a frame document to removeChild should not affect it.: Cannot read properties of undefined (reading 'document')
-- Passing a non-detached comment from a frame document to removeChild should not affect it.: Cannot read properties of undefined (reading 'document')
-- Calling removeChild on a comment from a frame document with no children should throw NOT_FOUND_ERR.: Cannot read properties of undefined (reading 'document')
+- Passing a detached element from a frame document to removeChild should not affect it.: undefined is not an object (evaluating 'frames[0].document')
+- Passing a non-detached element from a frame document to removeChild should not affect it.: undefined is not an object (evaluating 'frames[0].document')
+- Calling removeChild on a element from a frame document with no children should throw NOT_FOUND_ERR.: undefined is not an object (evaluating 'frames[0].document')
+- Passing a detached text from a frame document to removeChild should not affect it.: undefined is not an object (evaluating 'frames[0].document')
+- Passing a non-detached text from a frame document to removeChild should not affect it.: undefined is not an object (evaluating 'frames[0].document')
+- Calling removeChild on a text from a frame document with no children should throw NOT_FOUND_ERR.: undefined is not an object (evaluating 'frames[0].document')
+- Passing a detached comment from a frame document to removeChild should not affect it.: undefined is not an object (evaluating 'frames[0].document')
+- Passing a non-detached comment from a frame document to removeChild should not affect it.: undefined is not an object (evaluating 'frames[0].document')
+- Calling removeChild on a comment from a frame document with no children should throw NOT_FOUND_ERR.: undefined is not an object (evaluating 'frames[0].document')
 
 ### dom/nodes/adoption.window.js
 
@@ -2085,6 +2000,14 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 - Trying to set an expando that would shadow an already-existing named property: assert_throws_js: function "function() {
 - Trying to set an expando that shadows a named property that gets added later: assert_equals: expected (object) Element node <span id="new-id"></span> but got (undefined) undefined
 
+### dom/collections/domstringmap-supported-property-names.html
+
+- Object.getOwnPropertyNames on DOMStringMap, empty data attribute: undefined is not an object (evaluating 'Object.getOwnPropertyNames(element.dataset)')
+- Object.getOwnPropertyNames on DOMStringMap, data attribute trailing hyphen: undefined is not an object (evaluating 'Object.getOwnPropertyNames(element.dataset)')
+- Object.getOwnPropertyNames on DOMStringMap, multiple data attributes: undefined is not an object (evaluating 'Object.getOwnPropertyNames(element.dataset)')
+- Object.getOwnPropertyNames on DOMStringMap, attribute set on dataset in JS: undefined is not an object (evaluating 'element.dataset.middleName = "mark"')
+- Object.getOwnPropertyNames on DOMStringMap, attribute set on element in JS: undefined is not an object (evaluating 'Object.getOwnPropertyNames(element.dataset)')
+
 ### dom/lists/DOMTokenList-coverage-for-attributes.html
 
 - a.relList in http://www.w3.org/1999/xhtml namespace should be DOMTokenList.: assert_class_string: expected "[object DOMTokenList]" but got "[object Undefined]"
@@ -2097,11 +2020,215 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 ### dom/events/Event-dispatch-bubbles-false.html
 
-- In window.document with click event: assert_array_equals: targets lengths differ, expected array [object "[object global]", Document node with 2 children, Element node <html><head><meta charset="utf-8">
+- In window.document with click event: assert_array_equals: targets lengths differ, expected array [object "[object Object]", Document node with 2 children, Element node <html><head><meta charset="utf-8">
 
 ### dom/events/Event-dispatch-bubbles-true.html
 
-- In window.document with click event: assert_array_equals: targets lengths differ, expected array [object "[object global]", Document node with 2 children, Element node <html><head><meta charset="utf-8">
+- In window.document with click event: assert_array_equals: targets lengths differ, expected array [object "[object Object]", Document node with 2 children, Element node <html><head><meta charset="utf-8">
+
+### dom/events/Event-dispatch-click.html
+
+- basic with click(): input.click is not a function. (In 'input.click()', 'input.click' is undefined)
+- basic with dispatchEvent(): MouseEvent is not defined
+- basic with wrong event class: Test timed out
+- look at parents only when event bubbles: MouseEvent is not defined
+- look at parents when event bubbles: MouseEvent is not defined
+- pick the first with activation behavior <input type=checkbox>: MouseEvent is not defined
+- pick the first with activation behavior <a href>: MouseEvent is not defined
+- pick the first with activation behavior <input type=radio>: MouseEvent is not defined
+- event state during post-click handling: MouseEvent is not defined
+- redispatch during post-click handling: MouseEvent is not defined
+- disabled checkbox still has activation behavior: child.click is not a function. (In 'child.click()', 'child.click' is undefined)
+- disabled checkbox still has activation behavior, part 2: checkbox.click is not a function. (In 'checkbox.click()', 'checkbox.click' is undefined)
+- disabled radio still has activation behavior: radio.click is not a function. (In 'radio.click()', 'radio.click' is undefined)
+- disconnected checkbox should be checked: input.click is not a function. (In 'input.click()', 'input.click' is undefined)
+- disconnected radio should be checked: input.click is not a function. (In 'input.click()', 'input.click' is undefined)
+- disconnected checkbox should be checked from dispatchEvent(new MouseEvent('click')): MouseEvent is not defined
+- disconnected radio should be checked from dispatchEvent(new MouseEvent('click')): MouseEvent is not defined
+- disabled checkbox should be checked from dispatchEvent(new MouseEvent("click")): MouseEvent is not defined
+- disabled radio should be checked from dispatchEvent(new MouseEvent("click")): MouseEvent is not defined
+- disabled checkbox should fire onclick: MouseEvent is not defined
+- disabled radio should fire onclick: MouseEvent is not defined
+- disabled checkbox should get legacy-canceled-activation behavior: MouseEvent is not defined
+- disabled radio should get legacy-canceled-activation behavior: MouseEvent is not defined
+- disabled checkbox should get legacy-canceled-activation behavior 2: MouseEvent is not defined
+- disabled radio should get legacy-canceled-activation behavior 2: MouseEvent is not defined
+- disabling checkbox in onclick listener shouldn't suppress oninput: input.click is not a function. (In 'input.click()', 'input.click' is undefined)
+- disabling checkbox in onclick listener shouldn't suppress onchange: input.click is not a function. (In 'input.click()', 'input.click' is undefined)
+- disabling radio in onclick listener shouldn't suppress oninput: input.click is not a function. (In 'input.click()', 'input.click' is undefined)
+- disabling radio in onclick listener shouldn't suppress onchange: input.click is not a function. (In 'input.click()', 'input.click' is undefined)
+- disconnected form should not submit: input.click is not a function. (In 'input.click()', 'input.click' is undefined)
+- disabled submit button should not activate: MouseEvent is not defined
+- submit button should not activate if the event listener disables it: MouseEvent is not defined
+- submit button that morphed from checkbox should not activate: input.click is not a function. (In 'input.click()', 'input.click' is undefined)
+
+### dom/events/Event-dispatch-click.tentative.html
+
+- disabled checkbox should not be checked from label click: label.click is not a function. (In 'label.click()', 'label.click' is undefined)
+- disabled radio should not be checked from label click: label.click is not a function. (In 'label.click()', 'label.click' is undefined)
+- disabled checkbox should not be checked from label click by dispatchEvent: MouseEvent is not defined
+- disabled radio should not be checked from label click by dispatchEvent: MouseEvent is not defined
+- checkbox morphed into another type should not mutate checked state: MouseEvent is not defined
+- radio morphed into another type should not steal the existing checked state: MouseEvent is not defined
+
+### dom/events/Event-dispatch-detached-input-and-change.html
+
+- detached checkbox should not emit input or change events on click().: input.click is not a function. (In 'input.click()', 'input.click' is undefined)
+- detached radio should not emit input or change events on click().: input.click is not a function. (In 'input.click()', 'input.click' is undefined)
+- detached checkbox should not emit input or change events on dispatchEvent(new MouseEvent('click')).: MouseEvent is not defined
+- detached radio should not emit input or change events on dispatchEvent(new MouseEvent('click')).: MouseEvent is not defined
+- attached checkbox should emit input and change events on click().: input.click is not a function. (In 'input.click()', 'input.click' is undefined)
+- attached radio should emit input and change events on click().: input.click is not a function. (In 'input.click()', 'input.click' is undefined)
+- attached checkbox should emit input and change events on dispatchEvent(new MouseEvent('click')).: MouseEvent is not defined
+- attached radio should emit input and change events on dispatchEvent(new MouseEvent('click')).: MouseEvent is not defined
+- attached to shadow dom checkbox should emit input and change events on click().: input.click is not a function. (In 'input.click()', 'input.click' is undefined)
+- attached to shadow dom radio should emit input and change events on click().: input.click is not a function. (In 'input.click()', 'input.click' is undefined)
+- attached to shadow dom checkbox should emit input and change events on dispatchEvent(new MouseEvent('click')).: MouseEvent is not defined
+- attached to shadow dom radio should emit input and change events on dispatchEvent(new MouseEvent('click')).: MouseEvent is not defined
+
+### dom/events/Event-dispatch-on-disabled-elements.html
+
+- Calling click() on disabled elements must not dispatch events.: elem.click is not a function. (In 'elem.click()', 'elem.click' is undefined)
+- CSS Transitions transitionrun, transitionstart, transitionend events fire on disabled form elements: promise_test: Unhandled rejection with value: object "ReferenceError: getComputedStyle is not defined"
+- CSS Transitions transitioncancel event fires on disabled form elements: promise_test: Unhandled rejection with value: object "ReferenceError: getComputedStyle is not defined"
+- CSS Animation animationstart, animationiteration, animationend fire on disabled form elements: Test timed out
+- CSS Animation's animationcancel event fires on disabled form elements: 
+- Real clicks on disabled elements must not dispatch events.: 
+
+### dom/events/Event-dispatch-single-activation-behavior.html
+
+- When clicking child <INPUT></INPUT> of parent <INPUT></INPUT>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <INPUT></INPUT> of parent <FORM><INPUT></INPUT></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <INPUT></INPUT> of parent <FORM><INPUT></INPUT></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <INPUT></INPUT> of parent <FORM><INPUT></INPUT></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <INPUT></INPUT> of parent <FORM><BUTTON></BUTTON></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <INPUT></INPUT> of parent <FORM><BUTTON></BUTTON></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <INPUT></INPUT> of parent <A></A>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <INPUT></INPUT> of parent <AREA></AREA>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <INPUT></INPUT> of parent <DETAILS><SUMMARY></SUMMARY></DETAILS>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <INPUT></INPUT> of parent <LABEL><INPUT></INPUT><SPAN></SPAN></LABEL>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <INPUT></INPUT> of parent <LABEL><BUTTON></BUTTON></LABEL>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <INPUT></INPUT> of parent <INPUT></INPUT>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <INPUT></INPUT> of parent <FORM><INPUT></INPUT></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <INPUT></INPUT> of parent <FORM><INPUT></INPUT></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <INPUT></INPUT> of parent <FORM><INPUT></INPUT></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <INPUT></INPUT> of parent <FORM><BUTTON></BUTTON></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <INPUT></INPUT> of parent <FORM><BUTTON></BUTTON></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <INPUT></INPUT> of parent <A></A>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <INPUT></INPUT> of parent <AREA></AREA>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <INPUT></INPUT> of parent <DETAILS><SUMMARY></SUMMARY></DETAILS>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <INPUT></INPUT> of parent <LABEL><INPUT></INPUT><SPAN></SPAN></LABEL>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <INPUT></INPUT> of parent <LABEL><BUTTON></BUTTON></LABEL>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><INPUT></INPUT></FORM> of parent <INPUT></INPUT>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><INPUT></INPUT></FORM> of parent <INPUT></INPUT>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><INPUT></INPUT></FORM> of parent <FORM><INPUT></INPUT></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><INPUT></INPUT></FORM> of parent <FORM><INPUT></INPUT></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><INPUT></INPUT></FORM> of parent <FORM><BUTTON></BUTTON></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><INPUT></INPUT></FORM> of parent <FORM><BUTTON></BUTTON></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><INPUT></INPUT></FORM> of parent <A></A>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><INPUT></INPUT></FORM> of parent <AREA></AREA>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><INPUT></INPUT></FORM> of parent <DETAILS><SUMMARY></SUMMARY></DETAILS>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><INPUT></INPUT></FORM> of parent <LABEL><INPUT></INPUT><SPAN></SPAN></LABEL>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><INPUT></INPUT></FORM> of parent <LABEL><BUTTON></BUTTON></LABEL>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><INPUT></INPUT></FORM> of parent <INPUT></INPUT>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><INPUT></INPUT></FORM> of parent <INPUT></INPUT>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><INPUT></INPUT></FORM> of parent <FORM><INPUT></INPUT></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><INPUT></INPUT></FORM> of parent <FORM><INPUT></INPUT></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><INPUT></INPUT></FORM> of parent <FORM><BUTTON></BUTTON></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><INPUT></INPUT></FORM> of parent <FORM><BUTTON></BUTTON></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><INPUT></INPUT></FORM> of parent <A></A>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><INPUT></INPUT></FORM> of parent <AREA></AREA>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><INPUT></INPUT></FORM> of parent <DETAILS><SUMMARY></SUMMARY></DETAILS>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><INPUT></INPUT></FORM> of parent <LABEL><INPUT></INPUT><SPAN></SPAN></LABEL>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><INPUT></INPUT></FORM> of parent <LABEL><BUTTON></BUTTON></LABEL>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><INPUT></INPUT></FORM> of parent <INPUT></INPUT>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><INPUT></INPUT></FORM> of parent <INPUT></INPUT>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><INPUT></INPUT></FORM> of parent <FORM><INPUT></INPUT></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><INPUT></INPUT></FORM> of parent <FORM><INPUT></INPUT></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><INPUT></INPUT></FORM> of parent <FORM><BUTTON></BUTTON></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><INPUT></INPUT></FORM> of parent <FORM><BUTTON></BUTTON></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><INPUT></INPUT></FORM> of parent <A></A>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><INPUT></INPUT></FORM> of parent <AREA></AREA>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><INPUT></INPUT></FORM> of parent <DETAILS><SUMMARY></SUMMARY></DETAILS>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><INPUT></INPUT></FORM> of parent <LABEL><INPUT></INPUT><SPAN></SPAN></LABEL>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><INPUT></INPUT></FORM> of parent <LABEL><BUTTON></BUTTON></LABEL>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><BUTTON></BUTTON></FORM> of parent <INPUT></INPUT>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><BUTTON></BUTTON></FORM> of parent <INPUT></INPUT>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><BUTTON></BUTTON></FORM> of parent <FORM><INPUT></INPUT></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><BUTTON></BUTTON></FORM> of parent <FORM><INPUT></INPUT></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><BUTTON></BUTTON></FORM> of parent <FORM><INPUT></INPUT></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><BUTTON></BUTTON></FORM> of parent <FORM><BUTTON></BUTTON></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><BUTTON></BUTTON></FORM> of parent <A></A>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><BUTTON></BUTTON></FORM> of parent <AREA></AREA>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><BUTTON></BUTTON></FORM> of parent <DETAILS><SUMMARY></SUMMARY></DETAILS>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><BUTTON></BUTTON></FORM> of parent <LABEL><INPUT></INPUT><SPAN></SPAN></LABEL>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><BUTTON></BUTTON></FORM> of parent <LABEL><BUTTON></BUTTON></LABEL>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><BUTTON></BUTTON></FORM> of parent <INPUT></INPUT>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><BUTTON></BUTTON></FORM> of parent <INPUT></INPUT>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><BUTTON></BUTTON></FORM> of parent <FORM><INPUT></INPUT></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><BUTTON></BUTTON></FORM> of parent <FORM><INPUT></INPUT></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><BUTTON></BUTTON></FORM> of parent <FORM><INPUT></INPUT></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><BUTTON></BUTTON></FORM> of parent <FORM><BUTTON></BUTTON></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><BUTTON></BUTTON></FORM> of parent <A></A>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><BUTTON></BUTTON></FORM> of parent <AREA></AREA>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><BUTTON></BUTTON></FORM> of parent <DETAILS><SUMMARY></SUMMARY></DETAILS>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><BUTTON></BUTTON></FORM> of parent <LABEL><INPUT></INPUT><SPAN></SPAN></LABEL>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <FORM><BUTTON></BUTTON></FORM> of parent <LABEL><BUTTON></BUTTON></LABEL>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <A></A> of parent <INPUT></INPUT>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <A></A> of parent <INPUT></INPUT>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <A></A> of parent <FORM><INPUT></INPUT></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <A></A> of parent <FORM><INPUT></INPUT></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <A></A> of parent <FORM><INPUT></INPUT></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <A></A> of parent <FORM><BUTTON></BUTTON></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <A></A> of parent <FORM><BUTTON></BUTTON></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <A></A> of parent <AREA></AREA>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <A></A> of parent <DETAILS><SUMMARY></SUMMARY></DETAILS>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <A></A> of parent <LABEL><INPUT></INPUT><SPAN></SPAN></LABEL>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <A></A> of parent <LABEL><BUTTON></BUTTON></LABEL>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <AREA></AREA> of parent <INPUT></INPUT>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <AREA></AREA> of parent <INPUT></INPUT>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <AREA></AREA> of parent <FORM><INPUT></INPUT></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <AREA></AREA> of parent <FORM><INPUT></INPUT></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <AREA></AREA> of parent <FORM><INPUT></INPUT></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <AREA></AREA> of parent <FORM><BUTTON></BUTTON></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <AREA></AREA> of parent <FORM><BUTTON></BUTTON></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <AREA></AREA> of parent <A></A>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <AREA></AREA> of parent <DETAILS><SUMMARY></SUMMARY></DETAILS>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <AREA></AREA> of parent <LABEL><INPUT></INPUT><SPAN></SPAN></LABEL>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <AREA></AREA> of parent <LABEL><BUTTON></BUTTON></LABEL>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <DETAILS><SUMMARY></SUMMARY></DETAILS> of parent <INPUT></INPUT>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <DETAILS><SUMMARY></SUMMARY></DETAILS> of parent <INPUT></INPUT>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <DETAILS><SUMMARY></SUMMARY></DETAILS> of parent <FORM><INPUT></INPUT></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <DETAILS><SUMMARY></SUMMARY></DETAILS> of parent <FORM><INPUT></INPUT></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <DETAILS><SUMMARY></SUMMARY></DETAILS> of parent <FORM><INPUT></INPUT></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <DETAILS><SUMMARY></SUMMARY></DETAILS> of parent <FORM><BUTTON></BUTTON></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <DETAILS><SUMMARY></SUMMARY></DETAILS> of parent <FORM><BUTTON></BUTTON></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <DETAILS><SUMMARY></SUMMARY></DETAILS> of parent <A></A>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <DETAILS><SUMMARY></SUMMARY></DETAILS> of parent <AREA></AREA>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <DETAILS><SUMMARY></SUMMARY></DETAILS> of parent <LABEL><INPUT></INPUT><SPAN></SPAN></LABEL>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <DETAILS><SUMMARY></SUMMARY></DETAILS> of parent <LABEL><BUTTON></BUTTON></LABEL>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <LABEL><INPUT></INPUT><SPAN></SPAN></LABEL> of parent <INPUT></INPUT>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <LABEL><INPUT></INPUT><SPAN></SPAN></LABEL> of parent <INPUT></INPUT>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <LABEL><INPUT></INPUT><SPAN></SPAN></LABEL> of parent <FORM><INPUT></INPUT></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <LABEL><INPUT></INPUT><SPAN></SPAN></LABEL> of parent <FORM><INPUT></INPUT></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <LABEL><INPUT></INPUT><SPAN></SPAN></LABEL> of parent <FORM><INPUT></INPUT></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <LABEL><INPUT></INPUT><SPAN></SPAN></LABEL> of parent <FORM><BUTTON></BUTTON></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <LABEL><INPUT></INPUT><SPAN></SPAN></LABEL> of parent <FORM><BUTTON></BUTTON></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <LABEL><INPUT></INPUT><SPAN></SPAN></LABEL> of parent <A></A>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <LABEL><INPUT></INPUT><SPAN></SPAN></LABEL> of parent <AREA></AREA>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <LABEL><INPUT></INPUT><SPAN></SPAN></LABEL> of parent <DETAILS><SUMMARY></SUMMARY></DETAILS>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <LABEL><INPUT></INPUT><SPAN></SPAN></LABEL> of parent <LABEL><BUTTON></BUTTON></LABEL>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <LABEL><BUTTON></BUTTON></LABEL> of parent <INPUT></INPUT>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <LABEL><BUTTON></BUTTON></LABEL> of parent <INPUT></INPUT>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <LABEL><BUTTON></BUTTON></LABEL> of parent <FORM><INPUT></INPUT></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <LABEL><BUTTON></BUTTON></LABEL> of parent <FORM><INPUT></INPUT></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <LABEL><BUTTON></BUTTON></LABEL> of parent <FORM><INPUT></INPUT></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <LABEL><BUTTON></BUTTON></LABEL> of parent <FORM><BUTTON></BUTTON></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <LABEL><BUTTON></BUTTON></LABEL> of parent <FORM><BUTTON></BUTTON></FORM>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <LABEL><BUTTON></BUTTON></LABEL> of parent <A></A>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <LABEL><BUTTON></BUTTON></LABEL> of parent <AREA></AREA>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <LABEL><BUTTON></BUTTON></LABEL> of parent <DETAILS><SUMMARY></SUMMARY></DETAILS>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
+- When clicking child <LABEL><BUTTON></BUTTON></LABEL> of parent <LABEL><INPUT></INPUT><SPAN></SPAN></LABEL>, only child should be activated.: promise_test: Unhandled rejection with value: object "TypeError: getClickTarget(target).click is not a function. (In 'getClickTarget(target).click()', 'getClickTarget(target).click' is undefined)"
 
 ### dom/events/Event-init-while-dispatching.html
 
@@ -2109,45 +2236,64 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 - Calling initMouseEvent while dispatching.: MouseEvent is not defined
 - Calling initUIEvent while dispatching.: UIEvent is not defined
 
+### dom/events/Event-stopPropagation-cancel-bubbling.html
+
+- Event-stopPropagation-cancel-bubbling: MouseEvent is not defined
+
 ### dom/events/Event-subclasses-constructors.html
 
-- UIEvent constructor (no argument): self[iface] is not a constructor
-- UIEvent constructor (undefined argument): self[iface] is not a constructor
-- UIEvent constructor (null argument): self[iface] is not a constructor
-- UIEvent constructor (empty argument): self[iface] is not a constructor
-- UIEvent constructor (argument with default values): self[iface] is not a constructor
-- UIEvent constructor (argument with non-default values): self[iface] is not a constructor
-- FocusEvent constructor (no argument): self[iface] is not a constructor
-- FocusEvent constructor (undefined argument): self[iface] is not a constructor
-- FocusEvent constructor (null argument): self[iface] is not a constructor
-- FocusEvent constructor (empty argument): self[iface] is not a constructor
-- FocusEvent constructor (argument with default values): self[iface] is not a constructor
-- FocusEvent constructor (argument with non-default values): self[iface] is not a constructor
-- MouseEvent constructor (no argument): self[iface] is not a constructor
-- MouseEvent constructor (undefined argument): self[iface] is not a constructor
-- MouseEvent constructor (null argument): self[iface] is not a constructor
-- MouseEvent constructor (empty argument): self[iface] is not a constructor
-- MouseEvent constructor (argument with default values): self[iface] is not a constructor
-- MouseEvent constructor (argument with non-default values): self[iface] is not a constructor
-- WheelEvent constructor (no argument): self[iface] is not a constructor
-- WheelEvent constructor (undefined argument): self[iface] is not a constructor
-- WheelEvent constructor (null argument): self[iface] is not a constructor
-- WheelEvent constructor (empty argument): self[iface] is not a constructor
-- WheelEvent constructor (argument with default values): self[iface] is not a constructor
-- WheelEvent constructor (argument with non-default values): self[iface] is not a constructor
-- KeyboardEvent constructor (no argument): self[iface] is not a constructor
-- KeyboardEvent constructor (undefined argument): self[iface] is not a constructor
-- KeyboardEvent constructor (null argument): self[iface] is not a constructor
-- KeyboardEvent constructor (empty argument): self[iface] is not a constructor
-- KeyboardEvent constructor (argument with default values): self[iface] is not a constructor
-- KeyboardEvent constructor (argument with non-default values): self[iface] is not a constructor
-- CompositionEvent constructor (no argument): self[iface] is not a constructor
-- CompositionEvent constructor (undefined argument): self[iface] is not a constructor
-- CompositionEvent constructor (null argument): self[iface] is not a constructor
-- CompositionEvent constructor (empty argument): self[iface] is not a constructor
-- CompositionEvent constructor (argument with default values): self[iface] is not a constructor
-- CompositionEvent constructor (argument with non-default values): self[iface] is not a constructor
+- UIEvent constructor (no argument): undefined is not a constructor (evaluating 'new self[iface]("type")')
+- UIEvent constructor (undefined argument): undefined is not a constructor (evaluating 'new self[iface]("type", undefined)')
+- UIEvent constructor (null argument): undefined is not a constructor (evaluating 'new self[iface]("type", null)')
+- UIEvent constructor (empty argument): undefined is not a constructor (evaluating 'new self[iface]("type", {})')
+- UIEvent constructor (argument with default values): undefined is not a constructor (evaluating 'new self[iface]("type", dictionary)')
+- UIEvent constructor (argument with non-default values): undefined is not a constructor (evaluating 'new self[iface]("type", dictionary)')
+- FocusEvent constructor (no argument): undefined is not a constructor (evaluating 'new self[iface]("type")')
+- FocusEvent constructor (undefined argument): undefined is not a constructor (evaluating 'new self[iface]("type", undefined)')
+- FocusEvent constructor (null argument): undefined is not a constructor (evaluating 'new self[iface]("type", null)')
+- FocusEvent constructor (empty argument): undefined is not a constructor (evaluating 'new self[iface]("type", {})')
+- FocusEvent constructor (argument with default values): undefined is not a constructor (evaluating 'new self[iface]("type", dictionary)')
+- FocusEvent constructor (argument with non-default values): undefined is not a constructor (evaluating 'new self[iface]("type", dictionary)')
+- MouseEvent constructor (no argument): undefined is not a constructor (evaluating 'new self[iface]("type")')
+- MouseEvent constructor (undefined argument): undefined is not a constructor (evaluating 'new self[iface]("type", undefined)')
+- MouseEvent constructor (null argument): undefined is not a constructor (evaluating 'new self[iface]("type", null)')
+- MouseEvent constructor (empty argument): undefined is not a constructor (evaluating 'new self[iface]("type", {})')
+- MouseEvent constructor (argument with default values): undefined is not a constructor (evaluating 'new self[iface]("type", dictionary)')
+- MouseEvent constructor (argument with non-default values): undefined is not a constructor (evaluating 'new self[iface]("type", dictionary)')
+- WheelEvent constructor (no argument): undefined is not a constructor (evaluating 'new self[iface]("type")')
+- WheelEvent constructor (undefined argument): undefined is not a constructor (evaluating 'new self[iface]("type", undefined)')
+- WheelEvent constructor (null argument): undefined is not a constructor (evaluating 'new self[iface]("type", null)')
+- WheelEvent constructor (empty argument): undefined is not a constructor (evaluating 'new self[iface]("type", {})')
+- WheelEvent constructor (argument with default values): undefined is not a constructor (evaluating 'new self[iface]("type", dictionary)')
+- WheelEvent constructor (argument with non-default values): undefined is not a constructor (evaluating 'new self[iface]("type", dictionary)')
+- KeyboardEvent constructor (no argument): undefined is not a constructor (evaluating 'new self[iface]("type")')
+- KeyboardEvent constructor (undefined argument): undefined is not a constructor (evaluating 'new self[iface]("type", undefined)')
+- KeyboardEvent constructor (null argument): undefined is not a constructor (evaluating 'new self[iface]("type", null)')
+- KeyboardEvent constructor (empty argument): undefined is not a constructor (evaluating 'new self[iface]("type", {})')
+- KeyboardEvent constructor (argument with default values): undefined is not a constructor (evaluating 'new self[iface]("type", dictionary)')
+- KeyboardEvent constructor (argument with non-default values): undefined is not a constructor (evaluating 'new self[iface]("type", dictionary)')
+- CompositionEvent constructor (no argument): undefined is not a constructor (evaluating 'new self[iface]("type")')
+- CompositionEvent constructor (undefined argument): undefined is not a constructor (evaluating 'new self[iface]("type", undefined)')
+- CompositionEvent constructor (null argument): undefined is not a constructor (evaluating 'new self[iface]("type", null)')
+- CompositionEvent constructor (empty argument): undefined is not a constructor (evaluating 'new self[iface]("type", {})')
+- CompositionEvent constructor (argument with default values): undefined is not a constructor (evaluating 'new self[iface]("type", dictionary)')
+- CompositionEvent constructor (argument with non-default values): undefined is not a constructor (evaluating 'new self[iface]("type", dictionary)')
 - UIEvent constructor (view argument with wrong type): assert_throws_js: function "function() {
+
+### dom/events/Event-timestamp-high-resolution.html
+
+- Constructed MouseEvent timestamp should be high resolution and have the same time origin as performance.now(): undefined is not a constructor (evaluating 'new window[eventType]('test')')
+- Constructed KeyboardEvent timestamp should be high resolution and have the same time origin as performance.now(): undefined is not a constructor (evaluating 'new window[eventType]('test')')
+- Constructed WheelEvent timestamp should be high resolution and have the same time origin as performance.now(): undefined is not a constructor (evaluating 'new window[eventType]('test')')
+- Constructed FocusEvent timestamp should be high resolution and have the same time origin as performance.now(): undefined is not a constructor (evaluating 'new window[eventType]('test')')
+
+### dom/events/Event-timestamp-high-resolution.https.html
+
+- Constructed GamepadEvent timestamp should be high resolution and have the same time origin as performance.now(): undefined is not a constructor (evaluating 'new window[eventType]('test')')
+
+### dom/events/Event-timestamp-safe-resolution.html
+
+- Event timestamp should not have a resolution better than 5 microseconds: MouseEvent is not defined
 
 ### dom/events/EventListener-handleEvent.html
 
@@ -2173,6 +2319,24 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 - If the event's initialized flag is not set, an InvalidStateError must be thrown (UIEvent).: No event interface is named "UIEvent"
 - If the event's initialized flag is not set, an InvalidStateError must be thrown (UIEvents).: No event interface is named "UIEvents"
 
+### dom/events/KeyEvent-initKeyEvent.html
+
+- KeyboardEvent.initKeyEvent shouldn't be defined (created by createEvent("KeyboardEvent"): No event interface is named "KeyboardEvent"
+- KeyboardEvent.initKeyEvent shouldn't be defined (created by constructor): KeyboardEvent is not defined
+- KeyboardEvent.prototype.initKeyEvent shouldn't be defined: KeyboardEvent is not defined
+
+### dom/events/event-disabled-dynamic.html
+
+- disabled is honored properly in presence of dynamic changes: e.click is not a function. (In 'e.click()', 'e.click' is undefined)
+
+### dom/events/label-default-action.html
+
+- Label default action should not trigger when clicked button removes itself: button.click is not a function. (In 'button.click()', 'button.click' is undefined)
+
+### dom/events/mouse-event-retarget.html
+
+- offsetX is correctly adjusted: MouseEvent is not defined
+
 ### dom/events/passive-by-default.html
 
 - touchstart listener is passive by default for Object: assert_equals: defaultPrevented expected false but got true
@@ -2183,6 +2347,10 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 - wheel listener is passive with {passive:undefined} for Object: assert_equals: defaultPrevented expected false but got true
 - mousewheel listener is passive by default for Object: assert_equals: defaultPrevented expected false but got true
 - mousewheel listener is passive with {passive:undefined} for Object: assert_equals: defaultPrevented expected false but got true
+
+### dom/events/preventDefault-during-activation-behavior.html
+
+- behavior of preventDefault during activation behavior: promise_test: Unhandled rejection with value: object "TypeError: button.click is not a function. (In 'button.click()', 'button.click' is undefined)"
 
 ### dom/events/relatedTarget.window.js
 
@@ -2195,8 +2363,24 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 ### dom/events/shadow-relatedTarget.html
 
-- relatedTarget should not leak at capturing phase, at window object.: root.getElementById(...).focus is not a function
-- relatedTarget should not leak at target.: root.getElementById(...).focus is not a function
+- relatedTarget should not leak at capturing phase, at window object.: root.getElementById("shadowInput").focus is not a function. (In 'root.getElementById("shadowInput").focus()', 'root.getElementById("shadowInput").focus' is undefined)
+- relatedTarget should not leak at target.: root.getElementById("shadowInput").focus is not a function. (In 'root.getElementById("shadowInput").focus()', 'root.getElementById("shadowInput").focus' is undefined)
+
+### shadow-dom/Document-caretPositionFromPoint.tentative.html
+
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location: container.firstChild.getBoundingClientRect is not a function. (In 'container.firstChild.getBoundingClientRect()', 'container.firstChild.getBoundingClientRect' is undefined)
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to an input element which is the offsetNode.: container.firstChild.getBoundingClientRect is not a function. (In 'container.firstChild.getBoundingClientRect()', 'container.firstChild.getBoundingClientRect' is undefined)
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to a textarea element which is the offsetNode.: promise_test: Unhandled rejection with value: object "TypeError: undefined is not an object (evaluating 'document.fonts.ready')"
+- document.caretPositionFromPoint() for a point after a forced break should return a CaretPosition at the specified location pointing to a textarea element which is the offsetNode.: promise_test: Unhandled rejection with value: object "TypeError: undefined is not an object (evaluating 'document.fonts.ready')"
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to a closed shadow tree when the shadow tree is specified as an argument: host is not defined
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location when the non-intersecting shadow tree is specified as an argument: host is not defined
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to an input element when the shadow tree is specified as an argument.: host is not defined
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the input element's shadow host's parent when the shadow tree is not specified as an argument.: host is not defined
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the shadow host's parent when the shadow tree is not specified as an argument: host is not defined
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the outer shadow host's parent when the point is in an inner shadow tree and no shadow tree is specified as an argument: outerHost is not defined
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the inner shadow tree when the point is in an inner shadow tree and the inner shadow tree is specified as an argument: outerHost is not defined
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the outer shadow tree when the point is in an inner shadow tree and the outer shadow tree is specified as an argument: outerHost is not defined
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to the inner shadow tree when the point is in an inner shadow tree and the inner shadow tree and the outer shadow tree are specified as an argument: outerHost is not defined
 
 ### shadow-dom/Document-prototype-currentScript.html
 
@@ -2206,6 +2390,50 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 - document.currentScript must not be set to a script element that loads an external script in a closed shadow tree: 
 - document.currentScript must be set to a script element that loads an external script that was in an open shadow tree and then removed: 
 - document.currentScript must be set to a script element that loads an external script that was in a closed shadow tree and then removed: 
+
+### shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html
+
+- document.elementFromPoint and shadow.ElementFromPoint must return the shadow host of the hit-tested text node when the hit-tested text node is a direct child of the root and the host has display: inline: document.elementFromPoint is not a function. (In 'document.elementFromPoint(...pointInElement(host))', 'document.elementFromPoint' is undefined)
+- document.elementFromPoint and shadow.ElementFromPoint must return the shadow host of the hit-tested text node when the hit-tested text node is a direct child of the root and the host has display: block: document.elementFromPoint is not a function. (In 'document.elementFromPoint(...pointInElement(host))', 'document.elementFromPoint' is undefined)
+- document.elementFromPoint and shadow.ElementFromPoint must return the shadow host of the hit-tested text node when the hit-tested text node is a direct child of the root and the host has display: inline-block: document.elementFromPoint is not a function. (In 'document.elementFromPoint(...pointInElement(host))', 'document.elementFromPoint' is undefined)
+- document.elementFromPoint and shadowRoot.elementFromPoint must return the shadow host when the hit-tested text node is assigned to a slot and the host has display: inline: document.elementFromPoint is not a function. (In 'document.elementFromPoint(...pointInElement(host))', 'document.elementFromPoint' is undefined)
+- document.elementFromPoint and shadowRoot.elementFromPoint must return the shadow host when the hit-tested text node is assigned to a slot and the host has display: block: document.elementFromPoint is not a function. (In 'document.elementFromPoint(...pointInElement(host))', 'document.elementFromPoint' is undefined)
+- document.elementFromPoint and shadowRoot.elementFromPoint must return the shadow host when the hit-tested text node is assigned to a slot and the host has display: inline-block: document.elementFromPoint is not a function. (In 'document.elementFromPoint(...pointInElement(host))', 'document.elementFromPoint' is undefined)
+- document.elementFromPoint and shadowRoot.elementFromPoint must return the element assigned to a slot when hit-tested text node under an element is assigned to a slot in the shadow tree and the shadow host of the slot has display: inline: document.elementFromPoint is not a function. (In 'document.elementFromPoint(...pointInElement(host))', 'document.elementFromPoint' is undefined)
+- document.elementFromPoint and shadowRoot.elementFromPoint must return the element assigned to a slot when hit-tested text node under an element is assigned to a slot in the shadow tree and the shadow host of the slot has display: block: document.elementFromPoint is not a function. (In 'document.elementFromPoint(...pointInElement(host))', 'document.elementFromPoint' is undefined)
+- document.elementFromPoint and shadowRoot.elementFromPoint must return the element assigned to a slot when hit-tested text node under an element is assigned to a slot in the shadow tree and the shadow host of the slot has display: inline-block: document.elementFromPoint is not a function. (In 'document.elementFromPoint(...pointInElement(host))', 'document.elementFromPoint' is undefined)
+- document.elementFromPoint must return the shadow host of the hit-tested element under a shadow root and shadowRoot.elementFromPoint must return the element parent of the hit-tested text node under the point when the shadow host has display: inline: document.elementFromPoint is not a function. (In 'document.elementFromPoint(...pointInElement(host))', 'document.elementFromPoint' is undefined)
+- document.elementFromPoint must return the shadow host of the hit-tested element under a shadow root and shadowRoot.elementFromPoint must return the element parent of the hit-tested text node under the point when the shadow host has display: block: document.elementFromPoint is not a function. (In 'document.elementFromPoint(...pointInElement(host))', 'document.elementFromPoint' is undefined)
+- document.elementFromPoint must return the shadow host of the hit-tested element under a shadow root and shadowRoot.elementFromPoint must return the element parent of the hit-tested text node under the point when the shadow host has display: inline-block: document.elementFromPoint is not a function. (In 'document.elementFromPoint(...pointInElement(host))', 'document.elementFromPoint' is undefined)
+- document.elementFromPoint must return the shadow host and shadowRoot.elementFromPoint must return the slot parent of the fallback text when the hit-tested text node is a fallback content and the host has display: inline: document.elementFromPoint is not a function. (In 'document.elementFromPoint(...pointInElement(host))', 'document.elementFromPoint' is undefined)
+- document.elementFromPoint must return the shadow host and shadowRoot.elementFromPoint must return the slot parent of the fallback text when the hit-tested text node is a fallback content and the host has display: block: document.elementFromPoint is not a function. (In 'document.elementFromPoint(...pointInElement(host))', 'document.elementFromPoint' is undefined)
+- document.elementFromPoint must return the shadow host and shadowRoot.elementFromPoint must return the slot parent of the fallback text when the hit-tested text node is a fallback content and the host has display: inline-block: document.elementFromPoint is not a function. (In 'document.elementFromPoint(...pointInElement(host))', 'document.elementFromPoint' is undefined)
+- document.elementFromPoint, shadowRoot.elementFromPoint, innerShadow.elementFromPoint must return a child element assigned to a slot when the hit-tested text node is assigned to a slot in the shadow tree of the child element and the outer shadow host has display: inline: document.elementFromPoint is not a function. (In 'document.elementFromPoint(...pointInElement(host))', 'document.elementFromPoint' is undefined)
+- document.elementFromPoint, shadowRoot.elementFromPoint, innerShadow.elementFromPoint must return a child element assigned to a slot when the hit-tested text node is assigned to a slot in the shadow tree of the child element and the outer shadow host has display: block: document.elementFromPoint is not a function. (In 'document.elementFromPoint(...pointInElement(host))', 'document.elementFromPoint' is undefined)
+- document.elementFromPoint, shadowRoot.elementFromPoint, innerShadow.elementFromPoint must return a child element assigned to a slot when the hit-tested text node is assigned to a slot in the shadow tree of the child element and the outer shadow host has display: inline-block: document.elementFromPoint is not a function. (In 'document.elementFromPoint(...pointInElement(host))', 'document.elementFromPoint' is undefined)
+- document.elementFromPoint, shadowRoot.elementFromPoint, innerShadow.elementFromPoint must return a child element with its own shadow tree assigned to a slot when the hit-tested text node is its direct child and the outer shadow host has display: inline: document.elementFromPoint is not a function. (In 'document.elementFromPoint(...pointInElement(host))', 'document.elementFromPoint' is undefined)
+- document.elementFromPoint, shadowRoot.elementFromPoint, innerShadow.elementFromPoint must return a child element with its own shadow tree assigned to a slot when the hit-tested text node is its direct child and the outer shadow host has display: block: document.elementFromPoint is not a function. (In 'document.elementFromPoint(...pointInElement(host))', 'document.elementFromPoint' is undefined)
+- document.elementFromPoint, shadowRoot.elementFromPoint, innerShadow.elementFromPoint must return a child element with its own shadow tree assigned to a slot when the hit-tested text node is its direct child and the outer shadow host has display: inline-block: document.elementFromPoint is not a function. (In 'document.elementFromPoint(...pointInElement(host))', 'document.elementFromPoint' is undefined)
+- document.elementFromPoint, shadowRoot.elementFromPoint must return a child element with its own shadow tree assigned to a slot when the hit-tested text node is a child of another element and innerShadow.elementFromPoint must return the parent element of the hit-tested text node under it when the outer shadow host has display: inline: document.elementFromPoint is not a function. (In 'document.elementFromPoint(...pointInElement(host))', 'document.elementFromPoint' is undefined)
+- document.elementFromPoint, shadowRoot.elementFromPoint must return a child element with its own shadow tree assigned to a slot when the hit-tested text node is a child of another element and innerShadow.elementFromPoint must return the parent element of the hit-tested text node under it when the outer shadow host has display: block: document.elementFromPoint is not a function. (In 'document.elementFromPoint(...pointInElement(host))', 'document.elementFromPoint' is undefined)
+- document.elementFromPoint, shadowRoot.elementFromPoint must return a child element with its own shadow tree assigned to a slot when the hit-tested text node is a child of another element and innerShadow.elementFromPoint must return the parent element of the hit-tested text node under it when the outer shadow host has display: inline-block: document.elementFromPoint is not a function. (In 'document.elementFromPoint(...pointInElement(host))', 'document.elementFromPoint' is undefined)
+- document.elementsFromPoint and shadow.elementsFromPoint must return the shadow host and its ancestors of the hit-tested text node when the hit-tested text node is a direct child of the root and the host has display: inline: document.elementsFromPoint is not a function. (In 'document.elementsFromPoint(...pointInElement(host))', 'document.elementsFromPoint' is undefined)
+- document.elementsFromPoint and shadow.elementsFromPoint must return the shadow host and its ancestors of the hit-tested text node when the hit-tested text node is a direct child of the root and the host has display: block: document.elementsFromPoint is not a function. (In 'document.elementsFromPoint(...pointInElement(host))', 'document.elementsFromPoint' is undefined)
+- document.elementsFromPoint and shadow.elementsFromPoint must return the shadow host and its ancestors of the hit-tested text node when the hit-tested text node is a direct child of the root and the host has display: inline-block: document.elementsFromPoint is not a function. (In 'document.elementsFromPoint(...pointInElement(host))', 'document.elementsFromPoint' is undefined)
+- document.elementsFromPoint and shadowRoot.elementsFromPoint must return the shadow host and its ancestors when the hit-tested text node is assigned to a slot and the host has display: inline: document.elementsFromPoint is not a function. (In 'document.elementsFromPoint(...pointInElement(host))', 'document.elementsFromPoint' is undefined)
+- document.elementsFromPoint and shadowRoot.elementsFromPoint must return the shadow host and its ancestors when the hit-tested text node is assigned to a slot and the host has display: block: document.elementsFromPoint is not a function. (In 'document.elementsFromPoint(...pointInElement(host))', 'document.elementsFromPoint' is undefined)
+- document.elementsFromPoint and shadowRoot.elementsFromPoint must return the shadow host and its ancestors when the hit-tested text node is assigned to a slot and the host has display: inline-block: document.elementsFromPoint is not a function. (In 'document.elementsFromPoint(...pointInElement(host))', 'document.elementsFromPoint' is undefined)
+- document.elementsFromPoint and shadowRoot.elementsFromPoint must return the element assigned to a slot and its non-shadow ancestors when hit-tested text node under an element is assigned to a slot in the shadow tree and the shadow host of the slot has display: inline: document.elementsFromPoint is not a function. (In 'document.elementsFromPoint(...pointInElement(host))', 'document.elementsFromPoint' is undefined)
+- document.elementsFromPoint and shadowRoot.elementsFromPoint must return the element assigned to a slot and its non-shadow ancestors when hit-tested text node under an element is assigned to a slot in the shadow tree and the shadow host of the slot has display: block: document.elementsFromPoint is not a function. (In 'document.elementsFromPoint(...pointInElement(host))', 'document.elementsFromPoint' is undefined)
+- document.elementsFromPoint and shadowRoot.elementsFromPoint must return the element assigned to a slot and its non-shadow ancestors when hit-tested text node under an element is assigned to a slot in the shadow tree and the shadow host of the slot has display: inline-block: document.elementsFromPoint is not a function. (In 'document.elementsFromPoint(...pointInElement(host))', 'document.elementsFromPoint' is undefined)
+- document.elementsFromPoint must return the shadow host and its ancestors of the hit-tested element under a shadow root andshadowRoot.elementsFromPoint must return the element parent and its non-shadow ancestors of the hit-tested text node under the point when the shadow host has display: inline: document.elementsFromPoint is not a function. (In 'document.elementsFromPoint(...pointInElement(host))', 'document.elementsFromPoint' is undefined)
+- document.elementsFromPoint must return the shadow host and its ancestors of the hit-tested element under a shadow root andshadowRoot.elementsFromPoint must return the element parent and its non-shadow ancestors of the hit-tested text node under the point when the shadow host has display: block: document.elementsFromPoint is not a function. (In 'document.elementsFromPoint(...pointInElement(host))', 'document.elementsFromPoint' is undefined)
+- document.elementsFromPoint must return the shadow host and its ancestors of the hit-tested element under a shadow root andshadowRoot.elementsFromPoint must return the element parent and its non-shadow ancestors of the hit-tested text node under the point when the shadow host has display: inline-block: document.elementsFromPoint is not a function. (In 'document.elementsFromPoint(...pointInElement(host))', 'document.elementsFromPoint' is undefined)
+- document.elementsFromPoint must return the shadow host and its ancestors and shadowRoot.elementsFromPoint must return the slot parent of the fallback text and its non-shadow ancestors when the hit-tested text node is a fallback content and the host has display: inline: document.elementsFromPoint is not a function. (In 'document.elementsFromPoint(...pointInElement(host))', 'document.elementsFromPoint' is undefined)
+- document.elementsFromPoint must return the shadow host and its ancestors and shadowRoot.elementsFromPoint must return the slot parent of the fallback text and its non-shadow ancestors when the hit-tested text node is a fallback content and the host has display: block: document.elementsFromPoint is not a function. (In 'document.elementsFromPoint(...pointInElement(host))', 'document.elementsFromPoint' is undefined)
+- document.elementsFromPoint must return the shadow host and its ancestors and shadowRoot.elementsFromPoint must return the slot parent of the fallback text and its non-shadow ancestors when the hit-tested text node is a fallback content and the host has display: inline-block: document.elementsFromPoint is not a function. (In 'document.elementsFromPoint(...pointInElement(host))', 'document.elementsFromPoint' is undefined)
+- shadowRoot.elementsFromPoint must behave the same with document.elementsFromPoint regarding HTML element: host.getBoundingClientRect is not a function. (In 'host.getBoundingClientRect()', 'host.getBoundingClientRect' is undefined)
+- elementsFromPoint should return all elements under a point, even when context object is not connected: document.elementsFromPoint is not a function. (In 'document.elementsFromPoint(...pointInElement(span))', 'document.elementsFromPoint' is undefined)
 
 ### shadow-dom/Extensions-to-Event-Interface.html
 
@@ -2218,12 +2446,34 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 - composedPath() must contain and only contain the unclosed nodes of target in open mode shadow trees: MouseEvent is not defined
 - composedPath() must contain and only contain the unclosed nodes of target in closed mode shadow trees: MouseEvent is not defined
 
+### shadow-dom/HighlightRegistry-highlightsFromPoint.html
+
+- CSS.highlights.highlightsFromPoint() should throw when called with nodes that are not ShadowRoot objects in options.: assert_throws_js: function "() => { CSS.highlights.highlightsFromPoint(10, 10, {shadowRoots: [container]}); }" threw object "ReferenceError: CSS is not defined" ("ReferenceError") expected instance of function "function TypeError() { [native code] }" ("TypeError")
+- CSS.highlights.highlightsFromPoint() returns Highlights present at a given point inside a shadow tree in the right order.: host is not defined
+- CSS.highlights.highlightsFromPoint() doesn't return Highlights that are not painted at the given coordinates even when they fall inside the Highlights' ranges: spanInShadowDOM.getBoundingClientRect is not a function. (In 'spanInShadowDOM.getBoundingClientRect()', 'spanInShadowDOM.getBoundingClientRect' is undefined)
+- CSS.highlights.highlightsFromPoint() handles slotted light DOM content correctly.: CSS is not defined
+
+### shadow-dom/MouseEvent-prototype-offsetX-offsetY.html
+
+- MouseEvent's offsetX and offsetY attributes must be relative to the target.: MouseEvent is not defined
+- MouseEvent's offsetX and offsetY attributes must be relative to the shadow host when an event is dispatched inside its shadow tree.: MouseEvent is not defined
+- MouseEvent's offsetX and offsetY attributes must be relative to the target when an event is dispatched on a slotted content.: MouseEvent is not defined
+
+### shadow-dom/Range-prototype-insertNode.html
+
+- Test if Range.prototype.insertNode() should accept ShadowRoot input.: document.createRange is not a function. (In 'document.createRange()', 'document.createRange' is undefined)
+
 ### shadow-dom/ShadowRoot-interface.html
 
 - ShadowRoot.activeElement must return the focused element of the context object when shadow root is open.: assert_equals: ShadowRoot.host must return null if an open shadow tree does not have a focused element expected (object) null but got (undefined) undefined
 - ShadowRoot.activeElement must return the focused element of the context object when shadow root is closed.: assert_equals: ShadowRoot.host must return null if an closed shadow tree does not have a focused element expected (object) null but got (undefined) undefined
-- ShadowRoot.styleSheets must return a StyleSheetList sequence containing the shadow root style sheets when shadow root is open.: Cannot read properties of undefined (reading 'length')
-- ShadowRoot.styleSheets must return a StyleSheetList sequence containing the shadow root style sheets when shadow root is closed.: Cannot read properties of undefined (reading 'length')
+- ShadowRoot.styleSheets must return a StyleSheetList sequence containing the shadow root style sheets when shadow root is open.: undefined is not an object (evaluating 'shadowRoot.styleSheets.length')
+- ShadowRoot.styleSheets must return a StyleSheetList sequence containing the shadow root style sheets when shadow root is closed.: undefined is not an object (evaluating 'shadowRoot.styleSheets.length')
+
+### shadow-dom/accesskey.tentative.html
+
+- button element with accesskey in the shadow tree of open mode: promise_test: Unhandled rejection with value: object "Error: action_sequence() is not implemented by testdriver-vendor.js"
+- button element with accesskey in the shadow tree of closed mode: promise_test: Unhandled rejection with value: object "Error: action_sequence() is not implemented by testdriver-vendor.js"
 
 ### shadow-dom/declarative/declarative-shadow-dom-repeats-slot-assignment.html
 
@@ -2241,7 +2491,31 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 - shadowrootslotassignment reflection, setter: assert_equals: expected (string) "manual" but got (object) null
 - Declarative Shadow DOM: shadowrootslotassignment=manual: assert_equals: slotAssignment should be "manual" expected "manual" but got "named"
 - Declarative Shadow DOM: shadowrootslotassignment is case insensitive: assert_equals: slotAssignment should be "manual" (case insensitive) expected "manual" but got "named"
-- Declarative Shadow DOM: shadowrootslotassignment on closed shadows can be set to manual: promise_test: Unhandled rejection with value: object "TypeError: host.attachInternals is not a function"
+- Declarative Shadow DOM: shadowrootslotassignment on closed shadows can be set to manual: promise_test: Unhandled rejection with value: object "TypeError: host.attachInternals is not a function. (In 'host.attachInternals()', 'host.attachInternals' is undefined)"
+
+### shadow-dom/dragenter-related-target.html
+
+- dragleave relatedTarget should be retargeted to shadow host when entering shadow DOM: Test timed out
+
+### shadow-dom/dragleave-related-target.html
+
+- dragleave relatedTarget should be retargeted to shadow host when entering shadow DOM: Test timed out
+
+### shadow-dom/event-composed-path-with-related-target.html
+
+- Event path for an event with a relatedTarget. relatedTarget != target.: FocusEvent is not defined
+- Event path for an event with a relatedTarget. Event should be dispatched even when target and relatedTarget are same.: FocusEvent is not defined
+- Event path for an event with a relatedTarget. Event should stop at the shadow root: FocusEvent is not defined
+- Event path for an event with a relatedTarget which is identical to target. Event should be dispatched and should stop at the shadow root.: FocusEvent is not defined
+- Event path for an event with a relatedTarget. target and relaterTarget do not share any shadow-including ancestor. target is in a shadow tree.: FocusEvent is not defined
+- Event path for an event with a relatedTarget. target and relaterTarget do not share any shadow-including ancestor. target is not in a shadow tree: FocusEvent is not defined
+- Event path for an event with a relatedTarget. target and relaterTarget share the same shadow-including ancestor. Both are in shadow trees.: FocusEvent is not defined
+- Event path for an event with a relatedTarget. relatedTarget is a shadow-including ancestor of target.: FocusEvent is not defined
+- Event path for an event with a relatedTarget. target is a shadow-including ancestor of relatedTarget.: FocusEvent is not defined
+- Event path for an event with a relatedTarget. target is assigned to a slot.: FocusEvent is not defined
+- Event path for an event with a relatedTarget. relatedTarget is assigned to a slot.: FocusEvent is not defined
+- Event path for an event with a relatedTarget. Event should be dispatched at every slots.: FocusEvent is not defined
+- Event path for an event with a relatedTarget. Event should be dispatched at every slots. relatedTarget should be correctly retargeted.: FocusEvent is not defined
 
 ### shadow-dom/event-composed.html
 
@@ -2249,7 +2523,7 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 - A synthetic MouseEvent with composed=true should not be scoped: MouseEvent is not defined
 - A synthetic FocusEvent should be scoped by default: FocusEvent is not defined
 - A synthetic FocusEvent with composed=true should not be scoped: FocusEvent is not defined
-- A UA click event should not be scoped: target.click is not a function
+- A UA click event should not be scoped: target.click is not a function. (In 'target.click()', 'target.click' is undefined)
 
 ### shadow-dom/event-post-dispatch.html
 
@@ -2262,17 +2536,114 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 - Event properties post dispatch when target get moved out of the shadow tree by event listener: MouseEvent is not defined
 - Event properties post dispatch when target get moved into the shadow tree by event listener: MouseEvent is not defined
 
+### shadow-dom/event-with-related-target.html
+
+- Firing an event at B1a with relatedNode at B1 with open mode shadow trees: MouseEvent is not defined
+- Firing an event at B1a with relatedNode at B1 with closed mode shadow trees: MouseEvent is not defined
+- Firing an event at B1a with relatedNode at B1b1 with open mode shadow trees: MouseEvent is not defined
+- Firing an event at B1a with relatedNode at B1b1 with closed mode shadow trees: MouseEvent is not defined
+- Firing an event at B1b1 with relatedNode at B1a with open mode shadow trees: MouseEvent is not defined
+- Firing an event at B1b1 with relatedNode at B1a with closed mode shadow trees: MouseEvent is not defined
+- Firing an event at B1a with relatedNode at D1 with open mode shadow trees: MouseEvent is not defined
+- Firing an event at B1a with relatedNode at D1 with closed mode shadow trees: MouseEvent is not defined
+- Firing an event at D1 with relatedNode at B1a with open mode shadow trees: MouseEvent is not defined
+- Firing an event at D1 with relatedNode at B1a with closed mode shadow trees: MouseEvent is not defined
+- Firing an event at B1a with relatedNode at A1a with open mode shadow trees: MouseEvent is not defined
+- Firing an event at B1a with relatedNode at A1a with closed mode shadow trees: MouseEvent is not defined
+- Firing an event at A1a with relatedNode at B1a with open mode shadow trees: MouseEvent is not defined
+- Firing an event at A1a with relatedNode at B1a with closed mode shadow trees: MouseEvent is not defined
+- Firing an event at B1a with relatedNode at A1a (detached) with open mode shadow trees: MouseEvent is not defined
+- Firing an event at B1a with relatedNode at A1a (detached) with closed mode shadow trees: MouseEvent is not defined
+- Firing an event at A1a with relatedNode at B1a (detached) with open mode shadow trees: MouseEvent is not defined
+- Firing an event at A1a with relatedNode at B1a (detached) with closed mode shadow trees: MouseEvent is not defined
+
+### shadow-dom/execcommand-insertList-in-shadow.html
+
+- Toggle off List for all the child nodes in the ShadowRoot: promise_test: Unhandled rejection with value: object "Error: action_sequence() is not implemented by testdriver-vendor.js"
+
 ### shadow-dom/focus-within-shadow.html
 
-- Don't clear focus within shadow root if light DOM children are cleared: shadowButton.focus is not a function
+- Don't clear focus within shadow root if light DOM children are cleared: shadowButton.focus is not a function. (In 'shadowButton.focus()', 'shadowButton.focus' is undefined)
+
+### shadow-dom/form-control-form-attribute.html
+
+- Form control's form attribute should point to the form element.: assert_equals: expected (object) Element node <form id="form">form</form> but got (undefined) undefined
+- Shadow form control's form attribute should work also in shadow DOM.: assert_equals: expected (object) null but got (undefined) undefined
+- Form element as form control's ancestor should work also in shadow DOM.: assert_equals: expected (object) Element node <form id="form"><input id="input"></form> but got (undefined) undefined
 
 ### shadow-dom/imperative-slot-api-cross-shadow-root.html
 
 - HTMLSlotElement.assign drops DidSlotChange for previous_slot in different shadow root: assert_equals: slotB slotchange should fire because it gained its assigned node (even if not rendered) expected 1 but got 0
 
+### shadow-dom/imperative-slot-fallback-clear.html
+
+- Text node fallback should be cleared in a subsequently layout: assert_equals: Fallback content should not be rendered expected (number) 0 but got (undefined) undefined
+- Element fallback should be cleared in a subsequent layout: assert_equals: Fallback content should not be rendered expected (number) 0 but got (undefined) undefined
+
+### shadow-dom/imperative-slot-initial-fallback.html
+
+- Unassigned imperative slot can render text node as the initial fallback: assert_greater_than: Fallback content should be rendered expected a number but got a "undefined"
+- Unassigned imperative slot can render element as the initial fallback: assert_greater_than: Fallback content should be rendered expected a number but got a "undefined"
+
+### shadow-dom/input-element-list.html
+
+- Input element's list attribute should point to the datalist element.: assert_equals: expected (object) null but got (undefined) undefined
+- Input element's list attribute should point to the datalist element in Shadow DOM.: assert_equals: expected (object) null but got (undefined) undefined
+
+### shadow-dom/input-type-radio.html
+
+- input type=radio elements should form a group inside shadow DOM.: assert_false: expected false got undefined
+
 ### shadow-dom/leaktests/get-elements.html
 
-- getElementsByName() should not leak nodes in shadow tree: document.getElementsByName is not a function
+- getElementsByName() should not leak nodes in shadow tree: document.getElementsByName is not a function. (In 'document.getElementsByName('baz')', 'document.getElementsByName' is undefined)
+
+### shadow-dom/leaktests/html-collection.html
+
+- document.scripts should not contain shadow nodes: undefined is not an object (evaluating 'elements.length')
+- document.all should not contain shadow nodes: undefined is not an object (evaluating 'elements.length')
+- document.forms should not contain shadow nodes: undefined is not an object (evaluating 'elements.length')
+- document.images should not contain shadow nodes: undefined is not an object (evaluating 'elements.length')
+- document.links should not contain shadow nodes: undefined is not an object (evaluating 'elements.length')
+- document.anchors should not contain shadow nodes: undefined is not an object (evaluating 'elements.length')
+- document.embeds should not contain shadow nodes: undefined is not an object (evaluating 'elements.length')
+- document.plugins should not contain shadow nodes: undefined is not an object (evaluating 'elements.length')
+- document.applets should not contain any nodes: undefined is not an object (evaluating 'document.applets.length')
+
+### shadow-dom/offsetParent-across-shadow-boundaries.html
+
+- offsetParent must return the offset parent in the same shadow tree of open mode: HTMLDivElement is not defined
+- offsetParent must return the offset parent in the same shadow tree of closed mode: HTMLDivElement is not defined
+- offsetParent must return the offset parent in the same shadow tree of open mode even when nested: HTMLDivElement is not defined
+- offsetParent must return the offset parent in the same shadow tree of closed mode even when nested: HTMLDivElement is not defined
+- offsetParent must skip offset parents of an element when the context object is assigned to a slot in a shadow tree of open mode: assert_equals: expected (object) Element node <div id="container" style="position: relative"><div><div ... but got (undefined) undefined
+- offsetParent must skip offset parents of an element when the context object is assigned to a slot in a shadow tree of closed mode: assert_equals: expected (object) Element node <div id="container" style="position: relative"><div><div ... but got (undefined) undefined
+- offsetParent must return the fixed position containing block of an element when the context object is assigned to a slot within a fixed containing block in shadow tree of open mode: assert_equals: expected (object) Element node <div id="container" style="position: relative"><div><div ... but got (undefined) undefined
+- offsetParent must return the fixed position containing block of an element when the context object is assigned to a slot within a fixed containing block in shadow tree of closed mode: assert_equals: expected (object) Element node <div id="container" style="position: relative"><div><div ... but got (undefined) undefined
+- offsetParent must return the fixed position containing block of a fixed element when the context object is assigned to a slot within a fixed containing block in shadow tree of open mode: assert_equals: expected (object) Element node <div id="container" style="position: relative"><div><div ... but got (undefined) undefined
+- offsetParent must return the fixed position containing block of a fixed element when the context object is assigned to a slot within a fixed containing block in shadow tree of closed mode: assert_equals: expected (object) Element node <div id="container" style="position: relative"><div><div ... but got (undefined) undefined
+- offsetParent must return null when the context object is assigned to a slot without a fixed containing block in shadow tree of open mode: assert_equals: expected (object) null but got (undefined) undefined
+- offsetParent must return null when the context object is assigned to a slot without a fixed containing block in shadow tree of closed mode: assert_equals: expected (object) null but got (undefined) undefined
+- offsetParent must skip multiple offset parents of an element when the context object is assigned to a slot in a shadow tree of open mode: assert_equals: expected (object) Element node <div id="container" style="position: relative"><div></div... but got (undefined) undefined
+- offsetParent must skip multiple offset parents of an element when the context object is assigned to a slot in a shadow tree of closed mode: assert_equals: expected (object) Element node <div id="container" style="position: relative"><div></div... but got (undefined) undefined
+- offsetParent must skip offset parents of an element when the context object is assigned to a slot in nested shadow trees of open mode: assert_equals: expected (object) Element node <div id="container" style="position: relative"><section><... but got (undefined) undefined
+- offsetParent must skip offset parents of an element when the context object is assigned to a slot in nested shadow trees of closed mode: assert_equals: expected (object) Element node <div id="container" style="position: relative"><section><... but got (undefined) undefined
+- offsetParent must find the first offset parent which is a shadow-including ancestor of the context object even some shadow tree of open mode did not have any offset parent: assert_equals: expected (object) Element node <div id="container" style="position: relative"><section><... but got (undefined) undefined
+- offsetParent must find the first offset parent which is a shadow-including ancestor of the context object even some shadow tree of closed mode did not have any offset parent: assert_equals: expected (object) Element node <div id="container" style="position: relative"><section><... but got (undefined) undefined
+- offsetParent must return null on a child element of a shadow host for the shadow tree in open mode which is not assigned to any slot: assert_equals: expected (object) null but got (undefined) undefined
+- offsetParent must return null on a child element of a shadow host for the shadow tree in closed mode which is not assigned to any slot: assert_equals: expected (object) null but got (undefined) undefined
+- offsetParent must return null on a child element of a shadow host for the shadow tree in open mode which is not in the flat tree: assert_equals: expected (object) null but got (undefined) undefined
+- offsetParent must return null on a child element of a shadow host for the shadow tree in closed mode which is not in the flat tree: assert_equals: expected (object) null but got (undefined) undefined
+
+### shadow-dom/offsetTop-offsetLeft-across-shadow-boundaries.html
+
+- Verifies that HTMLElement.offsetTop accounts for shadow boundaries.: assert_equals: expected (number) 38 but got (undefined) undefined
+- Verifies that HTMLElement.offsetLeft accounts for shadow boundaries.: assert_equals: expected (number) 8 but got (undefined) undefined
+- Verifies that HTMLElement.offsetTop accounts for shadow boundaries when nested in multiple shadow roots.: assert_equals: expected (number) 88 but got (undefined) undefined
+
+### shadow-dom/scroll-restore-shadow.html
+
+- Scroll position restore on shadow tree: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
 
 ### shadow-dom/slotchange-customelements.html
 
@@ -2282,9 +2653,44 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 - slotchange event: Append a child to a host (onslotchange).: Test timed out
 
+### shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods/test-006.html
+
+- A_10_01_02_06_01_T02: s.elementFromPoint is not a function. (In 's.elementFromPoint(1, 1)', 's.elementFromPoint' is undefined)
+
+### shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods/test-007.html
+
+- A_10_01_02_06_02_T01: s.elementFromPoint is not a function. (In 's.elementFromPoint(-1, 1)', 's.elementFromPoint' is undefined)
+- A_10_01_02_06_02_T02: s.elementFromPoint is not a function. (In 's.elementFromPoint(1, -1)', 's.elementFromPoint' is undefined)
+
+### shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-003.html
+
+- A_08_02_03_T01: assert_true: Failed to create new rendered document expected true got false
+
+### shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/dom-tree-accessors-001.html
+
+- Elements in a shadow tree should not be accessible from owner document's "images" attribute.: undefined is not an object (evaluating 'collection.length')
+- Elements in a shadow tree should not be accessible from owner document's "embeds" attribute.: undefined is not an object (evaluating 'collection.length')
+- Elements in a shadow tree should not be accessible from owner document's "plugins" attribute.: undefined is not an object (evaluating 'collection.length')
+- Elements in a shadow tree should not be accessible from owner document's "links" attribute.: undefined is not an object (evaluating 'collection.length')
+- Elements in a shadow tree should not be accessible from owner document's "forms" attribute.: undefined is not an object (evaluating 'collection.length')
+- Elements in a shadow tree should not be accessible from owner document's "scripts" attribute.: undefined is not an object (evaluating 'collection.length')
+- Elements in a shadow tree should not be accessible from owner document's getElementsByName() method.: doc.getElementsByName is not a function. (In 'doc.getElementsByName('test-name')', 'doc.getElementsByName' is undefined)
+- Elements in a shadow tree should not be accessible from owner document's "anchors" attribute.: undefined is not an object (evaluating 'collection.length')
+- Elements in a shadow tree should not be accessible from owner document's "all" attribute.: undefined is not an object (evaluating 'collection.length')
+
+### shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/test-005.html
+
+- A_04_01_05_T01: assert_equals: Elements in shadow DOM must not be accessible from owner's document label.for attribute expected (object) null but got (undefined) undefined
+- A_04_01_05_T02: assert_equals: Elements in shadow DOM must not be accessible from owner's document button.form attribute expected (object) null but got (undefined) undefined
+
+### shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/test-007.html
+
+- A_04_01_07_T01: assert_equals: Elements in shadow DOM must be accessible from shadow document label.for attribute expected (object) Element node <input type="text" id="input_id"></input> but got (undefined) undefined
+- A_04_01_07_T02: assert_equals: Elements in shadow DOM must be accessible from shadow document button.form attribute expected (object) Element node <form id="form_id"></form> but got (undefined) undefined
+
 ### custom-elements/CustomElementRegistry-constructor-and-callbacks-are-held-strongly.html
 
-- adoptedCallback: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of undefined (reading 'adoptNode')"
+- adoptedCallback: promise_test: Unhandled rejection with value: object "TypeError: undefined is not an object (evaluating 'emptyIframe.contentDocument.adoptNode')"
 
 ### custom-elements/CustomElementRegistry-getName.html
 
@@ -2314,24 +2720,24 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 ### custom-elements/Document-createElement.html
 
-- document.createElement must report a TypeError when the result of Construct is not a DOM node: Cannot read properties of null (reading 'name')
-- document.createElement must report a TypeError when the result of Construct is a TextNode: Cannot read properties of null (reading 'name')
-- document.createElement must report a NotSupportedError when attribute is added by setAttribute during construction: Cannot read properties of null (reading 'name')
-- document.createElement must report a NotSupportedError when attribute is added by attributes.setNamedItem during construction: Cannot read properties of null (reading 'name')
-- document.createElement must report a NotSupportedError when a Text child is added during construction: Cannot read properties of null (reading 'name')
-- document.createElement must report a NotSupportedError when a Comment child is added during construction: Cannot read properties of null (reading 'name')
-- document.createElement must report a NotSupportedError when an element child is added during construction: Cannot read properties of null (reading 'name')
-- document.createElement must report a NotSupportedError when the element gets inserted into another element during construction: Cannot read properties of null (reading 'name')
-- document.createElement must report a NotSupportedError when the element is adopted into a the document of the template elements during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
-- document.createElement must report a NotSupportedError when the element is inserted into a the document of the template elements during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
-- document.createElement must report a NotSupportedError when the element is adopted into a a new document during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
-- document.createElement must report a NotSupportedError when the element is inserted into a a new document during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
-- document.createElement must report a NotSupportedError when the element is adopted into a a cloned document during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
-- document.createElement must report a NotSupportedError when the element is inserted into a a cloned document during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
-- document.createElement must report a NotSupportedError when the element is adopted into a a document created by createHTMLDocument during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
-- document.createElement must report a NotSupportedError when the element is inserted into a a document created by createHTMLDocument during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
-- document.createElement must report a NotSupportedError when the element is adopted into a an HTML document created by createDocument during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
-- document.createElement must report a NotSupportedError when the element is inserted into a an HTML document created by createDocument during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
+- document.createElement must report a TypeError when the result of Construct is not a DOM node: null is not an object (evaluating 'uncaughtError.name')
+- document.createElement must report a TypeError when the result of Construct is a TextNode: null is not an object (evaluating 'uncaughtError.name')
+- document.createElement must report a NotSupportedError when attribute is added by setAttribute during construction: null is not an object (evaluating 'uncaughtError.name')
+- document.createElement must report a NotSupportedError when attribute is added by attributes.setNamedItem during construction: null is not an object (evaluating 'uncaughtError.name')
+- document.createElement must report a NotSupportedError when a Text child is added during construction: null is not an object (evaluating 'uncaughtError.name')
+- document.createElement must report a NotSupportedError when a Comment child is added during construction: null is not an object (evaluating 'uncaughtError.name')
+- document.createElement must report a NotSupportedError when an element child is added during construction: null is not an object (evaluating 'uncaughtError.name')
+- document.createElement must report a NotSupportedError when the element gets inserted into another element during construction: null is not an object (evaluating 'uncaughtError.name')
+- document.createElement must report a NotSupportedError when the element is adopted into a the document of the template elements during construction: promise_test: Unhandled rejection with value: object "TypeError: null is not an object (evaluating 'uncaughtError.name')"
+- document.createElement must report a NotSupportedError when the element is inserted into a the document of the template elements during construction: promise_test: Unhandled rejection with value: object "TypeError: null is not an object (evaluating 'uncaughtError.name')"
+- document.createElement must report a NotSupportedError when the element is adopted into a a new document during construction: promise_test: Unhandled rejection with value: object "TypeError: null is not an object (evaluating 'uncaughtError.name')"
+- document.createElement must report a NotSupportedError when the element is inserted into a a new document during construction: promise_test: Unhandled rejection with value: object "TypeError: null is not an object (evaluating 'uncaughtError.name')"
+- document.createElement must report a NotSupportedError when the element is adopted into a a cloned document during construction: promise_test: Unhandled rejection with value: object "TypeError: null is not an object (evaluating 'uncaughtError.name')"
+- document.createElement must report a NotSupportedError when the element is inserted into a a cloned document during construction: promise_test: Unhandled rejection with value: object "TypeError: null is not an object (evaluating 'uncaughtError.name')"
+- document.createElement must report a NotSupportedError when the element is adopted into a a document created by createHTMLDocument during construction: promise_test: Unhandled rejection with value: object "TypeError: null is not an object (evaluating 'uncaughtError.name')"
+- document.createElement must report a NotSupportedError when the element is inserted into a a document created by createHTMLDocument during construction: promise_test: Unhandled rejection with value: object "TypeError: null is not an object (evaluating 'uncaughtError.name')"
+- document.createElement must report a NotSupportedError when the element is adopted into a an HTML document created by createDocument during construction: promise_test: Unhandled rejection with value: object "TypeError: null is not an object (evaluating 'uncaughtError.name')"
+- document.createElement must report a NotSupportedError when the element is inserted into a an HTML document created by createDocument during construction: promise_test: Unhandled rejection with value: object "TypeError: null is not an object (evaluating 'uncaughtError.name')"
 - document.createElement must report a NotSupportedError when the element is adopted into a the document of an iframe during construction: Test timed out
 - document.createElement must report a NotSupportedError when the element is inserted into a the document of an iframe during construction: 
 - document.createElement must not report a NotSupportedError when the element is adopted back from a the document of an iframe during construction: 
@@ -2339,7 +2745,144 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 - document.createElement must report a NotSupportedError when the element is inserted into a an HTML document fetched by XHR during construction: 
 - document.createElement must not report a NotSupportedError when the element is adopted back from a an HTML document fetched by XHR during construction: 
 - document.createElement must report a NotSupportedError when the local name of the element does not match that of the custom element: HTMLDivElement is not defined
-- document.createElement must report an exception thrown by a custom element constructor: Cannot read properties of null (reading 'name')
+- document.createElement must report an exception thrown by a custom element constructor: null is not an object (evaluating 'uncaughtError.name')
+
+### custom-elements/ElementInternals-accessibility.html
+
+- role is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaActiveDescendantElement is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaAtomic is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaAutoComplete is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaBrailleLabel is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaBrailleRoleDescription is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaBusy is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaChecked is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaColCount is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaColIndex is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaColSpan is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaControlsElements is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaCurrent is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaDescribedByElements is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaDetailsElements is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaDisabled is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaErrorMessageElements is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaExpanded is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaFlowToElements is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaHasPopup is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaHidden is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaInvalid is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaKeyShortcuts is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaLabel is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaLabelledByElements is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaLevel is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaLive is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaModal is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaMultiLine is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaMultiSelectable is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaOrientation is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaOwnsElements is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaPlaceholder is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaPosInSet is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaPressed is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaReadOnly is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaRelevant is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaRequired is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaRoleDescription is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaRowCount is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaRowIndex is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaRowSpan is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaSelected is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaSetSize is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaSort is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaValueMax is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaValueMin is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaValueNow is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaValueText is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaErrorMessageElement is not defined in ElementInternals: undefined is not an Object. (evaluating ''ariaErrorMessageElement' in element.internals')
+
+### custom-elements/ElementInternals-accessibility.tentative.html
+
+- ariaColIndexText is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaDescription is defined in ElementInternals: assert_inherits: provided value is not an object
+- ariaRowIndexText is defined in ElementInternals: assert_inherits: provided value is not an object
+
+### custom-elements/ElementInternals-role.html
+
+- Applies "alert" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "alertdialog" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "application" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "article" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "banner" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "button" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "cell" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "checkbox" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "combobox" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "complementary" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "contentinfo" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "definition" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "dialog" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "directory" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "document" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "figure" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "form" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "grid" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "group" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "heading" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "img" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "feed" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "link" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "list" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "listbox" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "log" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "main" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "marquee" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "math" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "menu" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "menubar" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "meter" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "navigation" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "note" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "progressbar" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "radio" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "radiogroup" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "region" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "scrollbar" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "search" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "searchbox" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "separator" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "slider" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "spinbutton" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "status" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "switch" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "table" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "tablist" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "tabpanel" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "term" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "textbox" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "timer" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "toolbar" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "tooltip" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "tree" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies "treegrid" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies parent/child relationship of "table"/"row"/"columnheader" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies parent/child relationship of "grid"/"row"/"gridcell" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies parent/child relationship of "list"/"listitem" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies parent/child relationship of "menu"/"menuitem" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies parent/child relationship of "menu"/"menuitemcheckbox" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies parent/child relationship of "menu"/"menuitemradio" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies parent/child relationship of "listbox"/"option" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies parent/child relationship of "table"/"row" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies parent/child relationship of "table"/"rowgroup" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies parent/child relationship of "table"/"row"/"rowheader" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies parent/child relationship of "tablist"/"tab" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+- Applies parent/child relationship of "tree"/"treeitem" via Element Internals: promise_test: Unhandled rejection with value: object "Error: get_computed_role is a testdriver.js function which cannot be run in this context."
+
+### custom-elements/HTMLElement-attachInternals.html
+
+- Successful attachInternals() and the second call.: element.attachInternals is not a function. (In 'element.attachInternals()', 'element.attachInternals' is undefined)
+- attachInternals() throws a NotSupportedError if it is called for a customized built-in element: HTMLDivElement is not defined
+- If a custom element definition for the local name of the element doesn't exist, throw an NotSupportedError: assert_throws_dom: function "() => { builtin.attachInternals() }" threw object "TypeError: builtin.attachInternals is not a function. (In 'builtin.attachInternals()', 'builtin.attachInternals' is undefined)" that is not a DOMException NotSupportedError: property "code" is equal to undefined, expected 9
+- If a custom element definition for the local name of the element has disable internals flag, throw a NotSupportedError: assert_throws_dom: function "() => {
 
 ### custom-elements/HTMLElement-constructor.html
 
@@ -2381,8 +2924,8 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 ### custom-elements/attribute-changed-callback.html
 
 - attributedChangedCallback must be enqueued for style attribute change by mutating inline style declaration: assert_equals: expected 1 but got 0
-- attributedChangedCallback must not be enqueued when mutating inline style declaration if the style attribute is not observed: Cannot read properties of undefined (reading 'type')
-- Upgrading a cloned element must enqueue and invoke attributeChangedCallback for an HTML attribute: Cannot read properties of undefined (reading 'type')
+- attributedChangedCallback must not be enqueued when mutating inline style declaration if the style attribute is not observed: undefined is not an object (evaluating 'log.type')
+- Upgrading a cloned element must enqueue and invoke attributeChangedCallback for an HTML attribute: undefined is not an object (evaluating 'log.type')
 
 ### custom-elements/builtin-coverage.html
 
@@ -2527,6 +3070,40 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 - Removing the shadow host of a custom element from aan HTML document fetched by XHR must enqueue and invoke disconnectedCallback: 
 - Removing a custom element from a detached shadow tree that belongs to an HTML document fetched by XHR must not enqueue and invoke disconnectedCallback: 
 
+### custom-elements/element-internals-aria-element-reflection.html
+
+- Getting previously-unset ARIA element reflection properties on ElementInternals should return null.: undefined is not an object (evaluating 'custom.i[property]')
+- Getting ARIA element reflection properties on ElementInternals should return the value that was set.: undefined is not an object (evaluating 'custom.i[property] = related')
+- Setting ARIA element reflection properties to an empty array should work as expected.: undefined is not an object (evaluating 'custom.i[property] = []')
+- Reading an ARIA element reflection array property that was set to an empty array, on an ElementInternals with no previously cached value, should return an empty array.: undefined is not an object (evaluating 'custom.i[property] = []')
+- Setting ARIA element reflection properties on ElementInternals to null should delete any previous value, and not crash: undefined is not an object (evaluating 'custom.i[property] = related')
+- Setting ariaLabelledByElements on ElementInternals should change the accessible name of the custom element: promise_test: Unhandled rejection with value: object "TypeError: undefined is not an object (evaluating 'custom.i.ariaLabelledByElements = null')"
+- Setting aria-labelledby or ariaLabelledByElements on the custom element should supersede the value of ariaLabelledByElements on ElementInternals: promise_test: Unhandled rejection with value: object "TypeError: undefined is not an object (evaluating 'custom.i.ariaLabelledByElements = null')"
+- Caching invariant different attributes.: undefined is not an object (evaluating 'cachingInvariantMain.i.ariaControlsElements = [cachingInvariantElement1, cachingInvariantElement2]')
+- Caching invariant different elements.: undefined is not an object (evaluating 'cachingInvariantMain1.i.ariaDescribedByElements = [cachingInvariantElement1, cachingInvariantElement2]')
+
+### custom-elements/element-internals-behaviors.tentative.html
+
+- attachInternals({ behaviors: [] }) accepts empty behaviors array: element.attachInternals is not a function. (In 'element.attachInternals({ behaviors: [] })', 'element.attachInternals' is undefined)
+- behaviors returns empty array when no behaviors configured: element.attachInternals is not a function. (In 'element.attachInternals()', 'element.attachInternals' is undefined)
+- behaviors is a read-only frozen array: HTMLSubmitButtonBehavior is not defined
+- behaviors array cannot be modified after attachment: HTMLSubmitButtonBehavior is not defined
+- HTMLSubmitButtonBehavior cannot be subclassed: HTMLSubmitButtonBehavior is not defined
+- attachInternals throws TypeError for duplicate behavior instance: HTMLSubmitButtonBehavior is not defined
+- attachInternals throws TypeError for multiple instances of same behavior type: assert_throws_js: function "() => element.attachInternals({
+- attachInternals throws TypeError when behavior is already attached to another element: HTMLSubmitButtonBehavior is not defined
+- Behavior state is preserved across disconnect and reconnect: HTMLSubmitButtonBehavior is not defined
+
+### custom-elements/element-internals-shadowroot.html
+
+- ElementInternals.shadowRoot allows access to open shadow root: assert_true: expected true got false
+- ElementInternals.shadowRoot allows access to closed shadow root: assert_true: expected true got false
+- ElementInternals cannot be called before constructor, upgrade case: assert_throws_dom: attachInternals cannot be called before definition exists function "() => element.attachInternals()" threw object "TypeError: element.attachInternals is not a function. (In 'element.attachInternals()', 'element.attachInternals' is undefined)" that is not a DOMException NotSupportedError: property "code" is equal to undefined, expected 9
+- ElementInternals *can* be called after constructor, upgrade case: assert_throws_dom: attachInternals cannot be called before constructor function "() => element.attachInternals()" threw object "TypeError: element.attachInternals is not a function. (In 'element.attachInternals()', 'element.attachInternals' is undefined)" that is not a DOMException NotSupportedError: property "code" is equal to undefined, expected 9
+- ElementInternals cannot be called after constructor calls it, create case: assert_true: expected true got false
+- ElementInternals disabled by disabledFeatures: assert_throws_dom: attachInternals forbidden by disabledFeatures, pre-upgrade function "() => element.attachInternals()" threw object "TypeError: element.attachInternals is not a function. (In 'element.attachInternals()', 'element.attachInternals' is undefined)" that is not a DOMException NotSupportedError: property "code" is equal to undefined, expected 9
+- ElementInternals.shadowRoot doesn't reveal pre-attached closed shadowRoot: assert_true: Failed to construct - test failed expected true got false
+
 ### custom-elements/enqueue-custom-element-callback-reactions-inside-another-callback.html
 
 - Disconnecting an element with disconnectedCallback while it has a connectedCallback in its custom element reaction queue must result in connectedCallback getting invoked before the removal completes: Test timed out
@@ -2571,7 +3148,142 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 ### custom-elements/pseudo-class-defined.html
 
-- this.matches(:defined) should not match during an upgrade: Cannot read properties of null (reading 'customElements')
+- this.matches(:defined) should not match during an upgrade: null is not an object (evaluating 's.doc.defaultView.customElements')
+
+### custom-elements/range-and-constructors.html
+
+- Range.cloneContents should invoke constructor in tree order: Range is not defined
+- Range.extractContents should invoke constructor in tree order: Range is not defined
+
+### custom-elements/reactions/Animation.html
+
+- Animation.animate must enqueue an attributeChanged reaction when it adds the observed style attribute: instance.animate is not a function. (In 'instance.animate([{'borderColor': 'rgb(0, 0, 255)'}], 1)', 'instance.animate' is undefined)
+- Animation.animate must enqueue an attributeChanged reaction when it mutates the observed style attribute: instance.animate is not a function. (In 'instance.animate([{'borderColor': 'rgb(0, 0, 255)'}], 1)', 'instance.animate' is undefined)
+- Animation.animate must not enqueue an attributeChanged reaction when it mutates the style attribute but the style attribute is not observed: instance.animate is not a function. (In 'instance.animate([{'borderColor': 'rgb(0, 0, 255)'}], 1)', 'instance.animate' is undefined)
+
+### custom-elements/reactions/AriaMixin-element-attributes.html
+
+- ariaActiveDescendantElement in Element must enqueue an attributeChanged reaction when adding aria-activedescendant content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaActiveDescendantElement in Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "connected", "attributeChanged"] length 3, got ["constructed", "connected"] length 2
+- ariaControlsElements in Element must enqueue an attributeChanged reaction when adding aria-controls content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaControlsElements in Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "connected", "attributeChanged"] length 3, got ["constructed", "connected"] length 2
+- ariaDescribedByElements in Element must enqueue an attributeChanged reaction when adding aria-describedby content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaDescribedByElements in Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "connected", "attributeChanged"] length 3, got ["constructed", "connected"] length 2
+- ariaDetailsElements in Element must enqueue an attributeChanged reaction when adding aria-details content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaDetailsElements in Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "connected", "attributeChanged"] length 3, got ["constructed", "connected"] length 2
+- ariaErrorMessageElements in Element must enqueue an attributeChanged reaction when adding aria-errormessage content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaErrorMessageElements in Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "connected", "attributeChanged"] length 3, got ["constructed", "connected"] length 2
+- ariaFlowToElements in Element must enqueue an attributeChanged reaction when adding aria-flowto content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaFlowToElements in Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "connected", "attributeChanged"] length 3, got ["constructed", "connected"] length 2
+- ariaLabelledByElements in Element must enqueue an attributeChanged reaction when adding aria-labelledby content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaLabelledByElements in Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "connected", "attributeChanged"] length 3, got ["constructed", "connected"] length 2
+- ariaOwnsElements in Element must enqueue an attributeChanged reaction when adding aria-owns content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaOwnsElements in Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "connected", "attributeChanged"] length 3, got ["constructed", "connected"] length 2
+
+### custom-elements/reactions/AriaMixin-string-attributes.html
+
+- ariaAtomic on Element must enqueue an attributeChanged reaction when adding aria-atomic content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaAtomic on Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- ariaAutoComplete on Element must enqueue an attributeChanged reaction when adding aria-autocomplete content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaAutoComplete on Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- ariaBrailleLabel on Element must enqueue an attributeChanged reaction when adding aria-braillelabel content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaBrailleLabel on Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- ariaBrailleRoleDescription on Element must enqueue an attributeChanged reaction when adding aria-brailleroledescription content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaBrailleRoleDescription on Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- ariaBusy on Element must enqueue an attributeChanged reaction when adding aria-busy content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaBusy on Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- ariaChecked on Element must enqueue an attributeChanged reaction when adding aria-checked content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaChecked on Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- ariaColCount on Element must enqueue an attributeChanged reaction when adding aria-colcount content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaColCount on Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- ariaColIndex on Element must enqueue an attributeChanged reaction when adding aria-colindex content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaColIndex on Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- ariaColSpan on Element must enqueue an attributeChanged reaction when adding aria-colspan content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaColSpan on Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- ariaCurrent on Element must enqueue an attributeChanged reaction when adding aria-current content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaCurrent on Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- ariaDisabled on Element must enqueue an attributeChanged reaction when adding aria-disabled content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaDisabled on Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- ariaExpanded on Element must enqueue an attributeChanged reaction when adding aria-expanded content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaExpanded on Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- ariaHasPopup on Element must enqueue an attributeChanged reaction when adding aria-haspopup content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaHasPopup on Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- ariaHidden on Element must enqueue an attributeChanged reaction when adding aria-hidden content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaHidden on Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- ariaInvalid on Element must enqueue an attributeChanged reaction when adding aria-invalid content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaInvalid on Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- ariaKeyShortcuts on Element must enqueue an attributeChanged reaction when adding aria-keyshortcuts content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaKeyShortcuts on Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- ariaLabel on Element must enqueue an attributeChanged reaction when adding aria-label content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaLabel on Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- ariaLevel on Element must enqueue an attributeChanged reaction when adding aria-level content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaLevel on Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- ariaLive on Element must enqueue an attributeChanged reaction when adding aria-live content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaLive on Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- ariaModal on Element must enqueue an attributeChanged reaction when adding aria-modal content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaModal on Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- ariaMultiLine on Element must enqueue an attributeChanged reaction when adding aria-multiline content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaMultiLine on Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- ariaMultiSelectable on Element must enqueue an attributeChanged reaction when adding aria-multiselectable content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaMultiSelectable on Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- ariaOrientation on Element must enqueue an attributeChanged reaction when adding aria-orientation content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaOrientation on Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- ariaPlaceholder on Element must enqueue an attributeChanged reaction when adding aria-placeholder content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaPlaceholder on Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- ariaPosInSet on Element must enqueue an attributeChanged reaction when adding aria-posinset content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaPosInSet on Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- ariaPressed on Element must enqueue an attributeChanged reaction when adding aria-pressed content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaPressed on Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- ariaReadOnly on Element must enqueue an attributeChanged reaction when adding aria-readonly content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaReadOnly on Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- ariaRelevant on Element must enqueue an attributeChanged reaction when adding aria-relevant content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaRelevant on Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- ariaRequired on Element must enqueue an attributeChanged reaction when adding aria-required content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaRequired on Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- ariaRoleDescription on Element must enqueue an attributeChanged reaction when adding aria-roledescription content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaRoleDescription on Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- ariaRowCount on Element must enqueue an attributeChanged reaction when adding aria-rowcount content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaRowCount on Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- ariaRowIndex on Element must enqueue an attributeChanged reaction when adding aria-rowindex content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaRowIndex on Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- ariaRowSpan on Element must enqueue an attributeChanged reaction when adding aria-rowspan content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaRowSpan on Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- ariaSelected on Element must enqueue an attributeChanged reaction when adding aria-selected content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaSelected on Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- ariaSetSize on Element must enqueue an attributeChanged reaction when adding aria-setsize content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaSetSize on Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- ariaSort on Element must enqueue an attributeChanged reaction when adding aria-sort content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaSort on Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- ariaValueMax on Element must enqueue an attributeChanged reaction when adding aria-valuemax content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaValueMax on Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- ariaValueMin on Element must enqueue an attributeChanged reaction when adding aria-valuemin content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaValueMin on Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- ariaValueNow on Element must enqueue an attributeChanged reaction when adding aria-valuenow content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaValueNow on Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- ariaValueText on Element must enqueue an attributeChanged reaction when adding aria-valuetext content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaValueText on Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+
+### custom-elements/reactions/AriaMixin-string-attributes.tentative.html
+
+- role on Element must enqueue an attributeChanged reaction when adding role content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- role on Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- ariaColIndexText on Element must enqueue an attributeChanged reaction when adding aria-colindextext content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaColIndexText on Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- ariaDescription on Element must enqueue an attributeChanged reaction when adding aria-description content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaDescription on Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- ariaRowIndexText on Element must enqueue an attributeChanged reaction when adding aria-rowindextext content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- ariaRowIndexText on Element must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+
+### custom-elements/reactions/DOMStringMap.html
+
+- setter on DOMStringMap must enqueue an attributeChanged reaction when adding an observed data attribute: undefined is not an object (evaluating 'instance.dataset.foo = 'bar'')
+- setter on DOMStringMap must not enqueue an attributeChanged reaction when adding an unobserved data attribute: undefined is not an object (evaluating 'instance.dataset.foo = 'bar'')
+- setter on DOMStringMap must enqueue an attributeChanged reaction when mutating the value of an observed data attribute: undefined is not an object (evaluating 'instance.dataset.foo = 'bar'')
+- setter on DOMStringMap must enqueue an attributeChanged reaction when mutating the value of an observed data attribute to the same value: undefined is not an object (evaluating 'instance.dataset.foo = 'bar'')
+- setter on DOMStringMap must not enqueue an attributeChanged reaction when mutating the value of an unobserved data attribute: undefined is not an object (evaluating 'instance.dataset.foo = 'bar'')
+- deleter on DOMStringMap must enqueue an attributeChanged reaction when removing an observed data attribute: undefined is not an object (evaluating 'instance.dataset.foo = 'bar'')
+- deleter on DOMStringMap must not enqueue an attributeChanged reaction when removing an unobserved data attribute: undefined is not an object (evaluating 'instance.dataset.foo = 'bar'')
+- deleter on DOMStringMap must not enqueue an attributeChanged reaction when it does not remove a data attribute: undefined is not an object (evaluating 'delete instance.dataset.foo')
 
 ### custom-elements/reactions/Document.html
 
@@ -2588,9 +3300,39 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 - writeln on Document must enqueue disconnectedCallback when removing a custom element: 
 - writeln on Document must enqueue connectedCallback after constructing a custom element: 
 
+### custom-elements/reactions/ElementContentEditable.html
+
+- contentEditable on ElementContentEditable must enqueue an attributeChanged reaction when adding contenteditable content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- contentEditable on ElementContentEditable must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+
 ### custom-elements/reactions/HTMLAnchorElement.html
 
 - text on HTMLAnchorElement must enqueue disconnectedCallback when removing a custom element: Test timed out
+
+### custom-elements/reactions/HTMLElement.html
+
+- title on HTMLElement must enqueue an attributeChanged reaction when adding title content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- title on HTMLElement must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- lang on HTMLElement must enqueue an attributeChanged reaction when adding lang content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- lang on HTMLElement must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- translate on HTMLElement must enqueue an attributeChanged reaction when adding translate content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- translate on HTMLElement must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- dir on HTMLElement must enqueue an attributeChanged reaction when adding dir content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- dir on HTMLElement must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- hidden on HTMLElement must enqueue an attributeChanged reaction when adding hidden content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- hidden on HTMLElement must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- tabIndex on HTMLElement must enqueue an attributeChanged reaction when adding tabindex content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- tabIndex on HTMLElement must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- accessKey on HTMLElement must enqueue an attributeChanged reaction when adding accesskey content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- accessKey on HTMLElement must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- draggable on HTMLElement must enqueue an attributeChanged reaction when adding draggable content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- draggable on HTMLElement must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- spellcheck on HTMLElement must enqueue an attributeChanged reaction when adding spellcheck content attribute: assert_array_equals: lengths differ, expected array ["attributeChanged"] length 1, got [] length 0
+- spellcheck on HTMLElement must enqueue an attributeChanged reaction when replacing an existing attribute: assert_array_equals: lengths differ, expected array ["constructed", "attributeChanged"] length 2, got ["constructed"] length 1
+- popover on HTMLElement must enqueue an attributeChanged reaction when adding popover content attribute: undefined
+- popover on HTMLElement must enqueue an attributeChanged reaction when replacing an existing attribute: undefined
+- innerText on HTMLElement must enqueue a disconnected reaction: assert_array_equals: lengths differ, expected array ["disconnected"] length 1, got [] length 0
+- outerText on HTMLElement must enqueue a disconnected reaction: assert_array_equals: lengths differ, expected array ["disconnected"] length 1, got [] length 0
 
 ### custom-elements/reactions/HTMLOptionElement.html
 
@@ -2643,6 +3385,23 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 - text on HTMLTitleElement must enqueue disconnectedCallback when removing a custom element: Test timed out
 
+### custom-elements/reactions/Range.html
+
+- deleteContents on Range must enqueue a disconnected reaction: document.createRange is not a function. (In 'document.createRange()', 'document.createRange' is undefined)
+- extractContents on Range must enqueue a disconnected reaction: document.createRange is not a function. (In 'document.createRange()', 'document.createRange' is undefined)
+- cloneContents on Range must enqueue an attributeChanged reaction when cloning an element with an observed attribute: document.createRange is not a function. (In 'document.createRange()', 'document.createRange' is undefined)
+- cloneContents on Range must not enqueue an attributeChanged reaction when cloning an element with an unobserved attribute: document.createRange is not a function. (In 'document.createRange()', 'document.createRange' is undefined)
+- cloneContents on Range must enqueue an attributeChanged reaction when cloning an element only for observed attributes: document.createRange is not a function. (In 'document.createRange()', 'document.createRange' is undefined)
+- insertNode on Range must enqueue a connected reaction: document.createRange is not a function. (In 'document.createRange()', 'document.createRange' is undefined)
+- insertNode on Range must enqueue a disconnected reaction, an adopted reaction, and a connected reaction when the custom element was in another document: document.createRange is not a function. (In 'document.createRange()', 'document.createRange' is undefined)
+- surroundContents on Range must enqueue a connected reaction: document.createRange is not a function. (In 'document.createRange()', 'document.createRange' is undefined)
+- surroundContents on Range must enqueue a disconnected reaction, an adopted reaction, and a connected reaction when the custom element was in another document: document.createRange is not a function. (In 'document.createRange()', 'document.createRange' is undefined)
+- createContextualFragment on Range must construct a custom element: document.createRange is not a function. (In 'document.createRange()', 'document.createRange' is undefined)
+
+### custom-elements/reactions/Selection.html
+
+- deleteFromDocument on Selection must enqueue a disconnected reaction: window.getSelection is not a function. (In 'window.getSelection()', 'window.getSelection' is undefined)
+
 ### custom-elements/reactions/ShadowRoot.html
 
 - innerHTML on ShadowRoot must upgrade a custom element: Test timed out
@@ -2653,25 +3412,187 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 - Reaction must run even after the exception is thrown: Test timed out
 
+### custom-elements/registries/Construct.html
+
+- A constructor creating an element from another registry before or after super call should work: assert_true: expected true got false
+
+### custom-elements/registries/CustomElementRegistry-initialize.html
+
+- initialize throws when the registry scoped is false and the root is the document.: assert_throws_dom: function "() => window.customElements.initialize(document)" threw object "TypeError: window.customElements.initialize is not a function. (In 'window.customElements.initialize(document)', 'window.customElements.initialize' is undefined)" that is not a DOMException NotSupportedError: property "code" is equal to undefined, expected 9
+- initialize throws when the registry scoped is false and the root document already has another registry: registry.initialize is not a function. (In 'registry.initialize(document)', 'registry.initialize' is undefined)
+- initialize is a function on both global and scoped CustomElementRegistry: assert_equals: expected "function" but got "undefined"
+- initialize sets element.customElementRegistry to the global registry: assert_equals: expected (object) null but got (undefined) undefined
+- initialize does not set the registry of nested shadow tree to the global registry: assert_equals: expected (object) null but got (undefined) undefined
+- initialize sets element.customElementRegistry to a scoped registry: assert_equals: expected (object) null but got (undefined) undefined
+- initialize does not set descendants whose customElementRegistry already uses a different registry: assert_equals: expected (object) null but got (undefined) undefined
+- initialize does not set the registry of nested shadow tree to a scoped registry: assert_equals: expected (object) null but got (undefined) undefined
+- initialize sets element.customElementRegistry permantently: assert_equals: expected (object) null but got (undefined) undefined
+- initialize is no-op on a subtree with a non-null registry: assert_equals: expected (object) object "[object CustomElementRegistry]" but got (undefined) undefined
+- initialize works on Document: assert_equals: expected (object) null but got (undefined) undefined
+- initialize works on DocumentFragment: assert_equals: expected (object) null but got (undefined) undefined
+- initialize sets registry on shadow root descendants with no registry: registry.initialize is not a function. (In 'registry.initialize(ab)', 'registry.initialize' is undefined)
+
+### custom-elements/registries/CustomElementRegistry-upgrade.html
+
+- upgrade is a no-op when called on a shadow root with no association: undefined is not an object (evaluating 'clone.elementInternals.shadowRoot')
+- upgrade is a no-op when called on an element associated with a different registry: null is not an object (evaluating 's.doc.defaultView.customElements')
+- upgrade should upgrade a candidate element when called on a shadow root with an association: undefined is not an object (evaluating 'clone.elementInternals.shadowRoot')
+- upgrade should not upgrade a candidate element not associated with a registry: undefined is not an object (evaluating 'clone.elementInternals.shadowRoot')
+
+### custom-elements/registries/Document-createElement.html
+
+- createElement should use the specified scoped registry: assert_true: expected true got false
+- createElement should create a builtin element regardless of a custom element registry specified: HTMLDivElement is not defined
+- createElement should create an upgrade candidate when there is no matching definition in the specified registry: assert_equals: expected "HTMLElement" but got "GlobalABElement"
+- document.createElement should create a builtin element with null registry if customElementRegistry is set to null: assert_equals: expected (object) null but got (undefined) undefined
+- document.createElement should create a custom element candidate with null registry if customElementRegistry is set to null: assert_equals: expected (object) null but got (undefined) undefined
+- document.createElement should create a custom element candidate with null registry if customElementRegistry is set to null even if there is a custom element of the same name in the glboal registry: assert_equals: expected (object) null but got (undefined) undefined
+- createElement should create an upgrade candidate and the candidate should be upgraded when the element is defined: assert_true: expected true got false
+- createElement on a non-HTML document should still handle registries correctly: assert_equals: expected (object) object "[object CustomElementRegistry]" but got (undefined) undefined
+
+### custom-elements/registries/Document-createElementNS.html
+
+- createElementNS should use the specified scoped registry: assert_true: expected true got false
+- createElementNS should create a builtin element regardless of a custom element registry specified: HTMLDivElement is not defined
+- createElementNS should create an upgrade candidate when there is no matching definition in the specified registry: assert_equals: expected "HTMLElement" but got "GlobalABElement"
+- document.createElement should create a builtin element with null registry if customElement is set to null: assert_equals: expected (object) null but got (undefined) undefined
+- document.createElement should create a custom element candidate with null registry if customElement is set to null: assert_equals: expected (object) null but got (undefined) undefined
+- document.createElement should create a defined custom element with null registry if customElement is set to null: assert_equals: expected (object) null but got (undefined) undefined
+- createElementNS should create an upgrade candidate and the candidate should be upgraded when the element is defined: assert_true: expected true got false
+- createElementNS on a non-HTML document should still handle registries correctly: assert_equals: expected (object) object "[object CustomElementRegistry]" but got (undefined) undefined
+
+### custom-elements/registries/Document-customElementRegistry.html
+
+- customElementRegistry on a document should return window.customElements by default: assert_equals: expected (object) object "[object CustomElementRegistry]" but got (undefined) undefined
+- customElementRegistry on a document without a browsing context should return null: assert_equals: expected (object) null but got (undefined) undefined
+- customElementRegistry on a document of a connected iframe should return contentWindow.customElements: undefined is not an object (evaluating 'frame.contentDocument.customElementRegistry')
+- customElementRegistry on a document of a disconnected iframe should return contentWindow.customElements: undefined is not an object (evaluating 'frame.contentWindow.customElements')
+
+### custom-elements/registries/Document-importNode.html
+
+- importNode should clone using the specified registry if target's registry is null: assert_true: expected true got false
+- importNode should preserve null-ness of custom element registry: assert_equals: expected "HTMLElement" but got "GlobalSomeElement"
+- importNode should clone a shadow host with a declarative shadow DOM using the global registry by default: assert_equals: expected (object) object "[object CustomElementRegistry]" but got (undefined) undefined
+- importNode should clone a shadow host with a declarative shadow DOM using a specified scoped registry: assert_equals: expected (object) object "[object CustomElementRegistry]" but got (undefined) undefined
+- importNode should clone using target's registry if non-null, including when it's not the global registry: assert_equals: expected (object) object "[object CustomElementRegistry]" but got (undefined) undefined
+- importNode should clone a template content using the global registry by default: null is not an object (evaluating 'template.content.querySelector('some-element').__proto__')
+- importNode should clone a template content using a specified scoped registry: null is not an object (evaluating 'template.content.querySelector('some-element').__proto__')
+- importNode should clone a template content with a nested template element using a scoped registry: null is not an object (evaluating 'template.content.querySelector('some-element').__proto__')
+- importNode: pass options argument with value { selfOnly: true }: assert_false: expected false got true
+- importNode: pass options argument with value { customElementRegistry: null }: assert_throws_js: function "() => document.importNode(root, { customElementRegistry: null })" did not throw
+- importNode should use the provided fallback registry for null-registry descendants nested under non-null-registry ancestors: assert_equals: expected (object) null but got (undefined) undefined
+
+### custom-elements/registries/Element-customElementRegistry-exceptions.html
+
+- customElementRegistry on a failed custom element created by calling createElement on CustomElementRegistry should return the registry: assert_equals: expected (object) object "[object CustomElementRegistry]" but got (undefined) undefined
+- customElementRegistry on a failed custom element created by setting innerHTML should return the associated scoped registry: assert_equals: expected (object) object "[object CustomElementRegistry]" but got (undefined) undefined
+- customElementRegistry on a failed custom element created by parser should return the specified custom regsitry: undefined is not an object (evaluating 'frame.contentDocument.open')
+
+### custom-elements/registries/Element-customElementRegistry.html
+
+- customElementRegistry on a newly constrcuted element should return window.customElements by default: assert_equals: expected (object) object "[object CustomElementRegistry]" but got (undefined) undefined
+- customElementRegistry on an element inside a declarative shadow DOM should return window.customElements by default: assert_equals: expected (object) object "[object CustomElementRegistry]" but got (undefined) undefined
+- customElementRegistry on an element inside a declarative shadow DOM with shadowrootcustomelementregistry should return null: assert_equals: expected (object) null but got (undefined) undefined
+- customElementRegistry on a clone of a declarative shadow tree with shadowrootcustomelementregistry should return null: assert_equals: expected (object) null but got (undefined) undefined
+- customElementRegistry on a clone of a declarative shadow tree with shadowrootcustomelementregistry should return the global registry after getting inserted into a document: assert_equals: expected (object) null but got (undefined) undefined
+- customElementRegistry on an element inside a declarative shadow DOM with shadowrootcustomelementregistry should return the scoped registry after calling initialize: registry.initialize is not a function. (In 'registry.initialize(sr)', 'registry.initialize' is undefined)
+- customElementRegistry on a builtin element created by calling createElement on CustomElementRegistry should return the registry: assert_equals: expected (object) object "[object CustomElementRegistry]" but got (undefined) undefined
+- customElementRegistry on an upgarde candidate created by calling createElement on CustomElementRegistry should return the registry: assert_equals: expected (object) object "[object CustomElementRegistry]" but got (undefined) undefined
+- customElementRegistry on an unknown element created by calling createElement on CustomElementRegistry should return the registry: assert_equals: expected (object) object "[object CustomElementRegistry]" but got (undefined) undefined
+- customElementRegistry on a defined custom element created by calling createElement on CustomElementRegistry should return the registry: assert_equals: expected (object) object "[object CustomElementRegistry]" but got (undefined) undefined
+- customElementRegistry inside a custom element constructor should return the correct registry: assert_equals: expected object "[object CustomElementRegistry]" but got null
+
+### custom-elements/registries/Element-innerHTML.html
+
+- innerHTML on a disconnected element should use the scoped registry it was created with: assert_true: expected true got false
+- nested descendants in innerHTML on a disconnected element should use the scoped registry the element was created with: assert_true: expected true got false
+- innerHTML on a disconnected element should use the scoped registry it was created with when parsing a simple HTML: assert_equals: expected (object) object "[object CustomElementRegistry]" but got (undefined) undefined
+- innerHTML on an inserted element should continue to use the scoped registry it was created with: assert_true: expected true got false
+- nested descendants in innerHTML should use the null registry when the container element has null registry: assert_equals: expected (object) null but got (undefined) undefined
+- insertAdjacentHTML should use the element's registry even when the registry is null: assert_equals: expected (object) null but got (undefined) undefined
+- createContextualFragment on a range inside a template should use null registry even when the template has a scoped registry: assert_equals: expected (object) object "[object CustomElementRegistry]" but got (undefined) undefined
+- innerHTML on a template with a scoped registry should use the scoped registry of the document: assert_equals: expected (object) object "[object CustomElementRegistry]" but got (undefined) undefined
+- createContextualFragment on a range inside an element with scoped registry should use the scoped registry of the element: assert_equals: expected (object) object "[object CustomElementRegistry]" but got (undefined) undefined
+- insertAdjacentHTML with beforebegin should use the containing scope's registry: assert_equals: expected (object) object "[object CustomElementRegistry]" but got (undefined) undefined
+- insertAdjacentHTML with afterend should use the containing scope's registry: assert_equals: expected (object) object "[object CustomElementRegistry]" but got (undefined) undefined
+- outerHTML setter should use the parent scope's registry, not the replaced element's: assert_equals: expected (object) object "[object CustomElementRegistry]" but got (undefined) undefined
+
+### custom-elements/registries/ShadowRoot-init-customElementRegistry.html
+
+- A newly attached disconnected ShadowRoot should use the global registry by default: assert_equals: expected (object) object "[object CustomElementRegistry]" but got (undefined) undefined
+- A newly attached connected ShadowRoot should use the global registry by default: assert_equals: expected (object) object "[object CustomElementRegistry]" but got (undefined) undefined
+- A newly attached ShadowRoot should use the global registry by default even if the host uses a custom registry: assert_equals: expected (object) object "[object CustomElementRegistry]" but got (undefined) undefined
+- A newly attached ShadowRoot should use the global registry by default even if the host is within another shadow tree that uses a custom registry: assert_equals: expected (object) object "[object CustomElementRegistry]" but got (undefined) undefined
+- A newly attached disconnected ShadowRoot should use the scoped registry if explicitly specified in attachShadow: assert_equals: expected (object) object "[object CustomElementRegistry]" but got (undefined) undefined
+- A newly attached connected ShadowRoot should use the scoped registry if explicitly specified in attachShadow: assert_equals: expected (object) object "[object CustomElementRegistry]" but got (undefined) undefined
+- attachShadow() should use null registry when customElementRegistry is null (host uses global registry): assert_equals: expected (object) null but got (undefined) undefined
+- attachShadow() should use null registry when customElementRegistry is null (host uses custom registry): assert_equals: expected (object) null but got (undefined) undefined
+- attchShadow on a builtin element with null customElementRegistry should create a ShadowRoot with null registry: assert_equals: expected (object) null but got (undefined) undefined
+- attchShadow on a custom elememnt candidate with null customElementRegistry should create a ShadowRoot with null registry: assert_equals: expected (object) null but got (undefined) undefined
+- attchShadow on a custom elememnt with null customElementRegistry should create a ShadowRoot with null registry: assert_equals: expected (object) null but got (undefined) undefined
+- attachShadow() should use the null registry when the shadow host uses null registry and customElementRegistry is null: null is not an object (evaluating 'host.customElementRegistry')
+
+### custom-elements/registries/ShadowRoot-init-declarative.html
+
+- Custom element inside 'shadowrootcustomelementregistry' declarative shadow root should use document's registry as attachShadow default registry: assert_equals: expected (object) null but got (undefined) undefined
+- Built-in element inside 'shadowrootcustomelementregistry' declarative shadow root should use document's registry as attachShadow default registry: assert_equals: expected (object) null but got (undefined) undefined
+- Built-in element inside 'shadowrootcustomelementregistry' shadow root parsed via setHTMLUnsafe should use null registry: assert_equals: expected (object) null but got (undefined) undefined
+
+### custom-elements/registries/ShadowRoot-innerHTML.html
+
+- innerHTML on a shadow root should use the scoped registry: assert_true: expected true got false
+- innerHTML on a connected shadow root should use the associated scoped registry: assert_true: expected true got false
+- innerHTML on a connected shadow root should not upgrade a custom element inside a template element: assert_equals: expected "SomeElement" but got "SomeElement1"
+- innerHTML on a connected shadow root should be able to create an unknown element: assert_equals: expected (object) object "[object CustomElementRegistry]" but got (undefined) undefined
+
+### custom-elements/registries/constructor-reentry-with-different-definition.html
+
+- Re-entry via upgrade before calling super(): assert_true: expected true got false
+- Re-entry via upgrade after calling super(): assert_true: expected true got false
+- Re-entry via direct constructor call before calling super(): assert_true: expected true got false
+- Re-entry via direct constructor call after calling super(): assert_true: expected true got false
+
+### custom-elements/registries/element-mutation-null-registry-removal.html
+
+- An element's null customElementRegistry should not mutate after removal from a declarative shadow root with shadowrootcustomelementregistry.: assert_equals: customElementRegistry should be null while in null-registry shadow root expected (object) null but got (undefined) undefined
+
+### custom-elements/registries/element-mutation.html
+
+- An element with global registry should not change its registry when run append into a shadow tree with scoped registry.: assert_equals: expected (object) object "[object CustomElementRegistry]" but got (undefined) undefined
+- An element with scoped registry should not change its registry when run append out of the shadow tree.: registry1.initialize is not a function. (In 'registry1.initialize(shadowRoot1)', 'registry1.initialize' is undefined)
+- An element with scoped registry should not change its registry when run append into another shadow tree with different scoped registry.: registry1.initialize is not a function. (In 'registry1.initialize(shadowRoot1)', 'registry1.initialize' is undefined)
+- A freshly created element should preserve global registry after append into and removal from a scoped shadow root.: assert_equals: Before insertion, child should have the global registry expected (object) object "[object CustomElementRegistry]" but got (undefined) undefined
+- A freshly created element should preserve global registry when run append between scoped shadow roots.: assert_equals: After insertion into shadow root A, child should retain the global registry expected (object) object "[object CustomElementRegistry]" but got (undefined) undefined
+- An element with global registry should not change its registry when run appendChild into a shadow tree with scoped registry.: assert_equals: expected (object) object "[object CustomElementRegistry]" but got (undefined) undefined
+- An element with scoped registry should not change its registry when run appendChild out of the shadow tree.: registry1.initialize is not a function. (In 'registry1.initialize(shadowRoot1)', 'registry1.initialize' is undefined)
+- An element with scoped registry should not change its registry when run appendChild into another shadow tree with different scoped registry.: registry1.initialize is not a function. (In 'registry1.initialize(shadowRoot1)', 'registry1.initialize' is undefined)
+- A freshly created element should preserve global registry after appendChild into and removal from a scoped shadow root.: assert_equals: Before insertion, child should have the global registry expected (object) object "[object CustomElementRegistry]" but got (undefined) undefined
+- A freshly created element should preserve global registry when run appendChild between scoped shadow roots.: assert_equals: After insertion into shadow root A, child should retain the global registry expected (object) object "[object CustomElementRegistry]" but got (undefined) undefined
+- An element with global registry should not change its registry when run prepend into a shadow tree with scoped registry.: assert_equals: expected (object) object "[object CustomElementRegistry]" but got (undefined) undefined
+- An element with scoped registry should not change its registry when run prepend out of the shadow tree.: registry1.initialize is not a function. (In 'registry1.initialize(shadowRoot1)', 'registry1.initialize' is undefined)
+- An element with scoped registry should not change its registry when run prepend into another shadow tree with different scoped registry.: registry1.initialize is not a function. (In 'registry1.initialize(shadowRoot1)', 'registry1.initialize' is undefined)
+- A freshly created element should preserve global registry after prepend into and removal from a scoped shadow root.: assert_equals: Before insertion, child should have the global registry expected (object) object "[object CustomElementRegistry]" but got (undefined) undefined
+- A freshly created element should preserve global registry when run prepend between scoped shadow roots.: assert_equals: After insertion into shadow root A, child should retain the global registry expected (object) object "[object CustomElementRegistry]" but got (undefined) undefined
+
 ### custom-elements/registries/per-document.html
 
-- Navigating from the initial about:blank must replace window.customElements: Cannot read properties of undefined (reading 'customElements')
-- Discarding the browsing context must not change window.customElements: Cannot read properties of undefined (reading 'customElements')
+- Navigating from the initial about:blank must replace window.customElements: undefined is not an object (evaluating 'frame[propertyName]')
+- Discarding the browsing context must not change window.customElements: undefined is not an object (evaluating 'frame[propertyName]')
 - document.open() must not replace window.customElements: Test timed out
 
 ### custom-elements/registries/scoped-custom-element-registry-customelementregistry-attribute.html
 
-- HTML parser should create a builtin element with null registry if customelementregistry is set: Cannot read properties of undefined (reading 'documentElement')
-- Setting customelementregistry content attribute after a builtin element had finishsed parsing should not set null registry: Cannot read properties of undefined (reading 'createElement')
-- Cloning a builtin element with null regsitry should create an element with null registry: Cannot read properties of undefined (reading 'createElement')
-- HTML parser should create a custom element candidate with null registry if customelementregistry is set: Cannot read properties of undefined (reading 'documentElement')
-- Setting customelementregistry content attribute after a custom element candidate had finishsed parsing should not set null registry: Cannot read properties of undefined (reading 'createElement')
-- Cloning a custom element candidate with null regsitry should create an element with null registry: Cannot read properties of undefined (reading 'createElement')
-- HTML parser should create a custom element with null registry if customelementregistry is set: Cannot read properties of undefined (reading 'customElements')
-- Setting customelementregistry content attribute after a custom element had finishsed parsing should not set null registry: Cannot read properties of undefined (reading 'customElements')
-- Cloning a custom element with null regsitry should create an element with null registry: Cannot read properties of undefined (reading 'customElements')
-- Descendants of an element with customelementregistry should use null registry: Cannot read properties of undefined (reading 'customElements')
-- Setting customelementregistry content attribute during constructor should not make it use null registry: Cannot read properties of undefined (reading 'createElement')
+- HTML parser should create a builtin element with null registry if customelementregistry is set: undefined is not an object (evaluating 'doc.documentElement')
+- Setting customelementregistry content attribute after a builtin element had finishsed parsing should not set null registry: undefined is not an object (evaluating 'doc.createElement')
+- Cloning a builtin element with null regsitry should create an element with null registry: undefined is not an object (evaluating 'doc.createElement')
+- HTML parser should create a custom element candidate with null registry if customelementregistry is set: undefined is not an object (evaluating 'doc.documentElement')
+- Setting customelementregistry content attribute after a custom element candidate had finishsed parsing should not set null registry: undefined is not an object (evaluating 'doc.createElement')
+- Cloning a custom element candidate with null regsitry should create an element with null registry: undefined is not an object (evaluating 'doc.createElement')
+- HTML parser should create a custom element with null registry if customelementregistry is set: undefined is not an object (evaluating 'win.customElements')
+- Setting customelementregistry content attribute after a custom element had finishsed parsing should not set null registry: undefined is not an object (evaluating 'win.customElements')
+- Cloning a custom element with null regsitry should create an element with null registry: undefined is not an object (evaluating 'win.customElements')
+- Descendants of an element with customelementregistry should use null registry: undefined is not an object (evaluating 'win.customElements')
+- Setting customelementregistry content attribute during constructor should not make it use null registry: undefined is not an object (evaluating 'doc.createElement')
 - Body with customelementregistry attribute during initial parse should have null registry and propagate to children: Test timed out
 - Custom element candidate child of body with customelementregistry should have null registry during initial parse: 
 - Descendants of body with customelementregistry should all have null registry during initial parse: 
@@ -2684,6 +3605,167 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 - Initial parse: custom element candidate child inherits null registry from parent: assert_equals: Custom element candidate child of element with customelementregistry should have null registry expected (object) null but got (undefined) undefined
 - Initial parse: deeply nested descendant inherits null registry: assert_equals: Deeply nested custom element candidate should have null registry expected (object) null but got (undefined) undefined
 - Initial parse: global registry define only upgrades elements without customelementregistry: assert_equals: Custom element candidate with null registry should still not be upgraded after defining in global registry expected function "class HTMLElement extends Element {
+
+### custom-elements/registries/scoped-registry-append.html
+
+- customElementRegistry of an upgrade candidate created in a document without a browsing context uses null regsitry by default: assert_equals: expected (object) null but got (undefined) undefined
+- Connecting a custom element candiate in a shadow root with a scoped custom element registry has null registry by default: undefined is not an object (evaluating 'doc.documentElement')
+- Connecting a custom element candiate with null registry does not set the registry: undefined is not an object (evaluating 'doc.documentElement')
+- Connecting a custom element candiate with a scoped custom element registry does not change the registry: undefined is not an object (evaluating 'doc.documentElement')
+- Inserting a custom element candiate with null registry does not change the registry: undefined is not an object (evaluating 'doc.documentElement')
+- Inserting the shadow host of a shadow root with a scoped custom element registry does not change the registry: undefined is not an object (evaluating 'doc.createElement')
+- Inserting a node from another document with global registry results in the custom element registry to be set and upgraded.: undefined is not an object (evaluating 'win2.HTMLElement')
+- Inserting a node from another document with null registry results in the custom element registry to be set and upgraded.: assert_equals: expected (object) null but got (undefined) undefined
+- Inserting a node cloned from a template with null registry into a scoped shadow root should set global registry: undefined is not an object (evaluating 'doc.documentElement')
+- adoptNode then inserting into a scoped shadow root should preserve global registry: undefined is not an object (evaluating 'doc.documentElement')
+- Declarative shadow DOM without shadowrootcustomelementregistry attribute without registry initialized should gain effective global registry after adoption.: undefined is not an object (evaluating 'doc.body')
+- Declarative shadow DOM with shadowrootcustomelementregistry attribute without registry initialized should remain null registry after adoption.: undefined is not an object (evaluating 'doc.body')
+- Null registry element should gain effective global registry of global registry from its parent upon adoption.: undefined is not an object (evaluating 'win.customElements')
+- Null registry element should gain effective global registry of null from its parent upon adoption.: undefined is not an object (evaluating 'win.customElements')
+- Null registry element should gain effective global registry of scoped registry from its parent upon adoption.: registry.initialize is not a function. (In 'registry.initialize(clone.querySelector('#template-host-2').shadowRoot)', 'registry.initialize' is undefined)
+- Global registry element should gain effective global registry of scoped registry from its parent upon adoption.: registry.initialize is not a function. (In 'registry.initialize(clone.querySelector('#template-host-2').shadowRoot)', 'registry.initialize' is undefined)
+
+### custom-elements/registries/scoped-registry-define-upgrade-criteria.html
+
+- Adding definition to scoped registry should upgrade nodes associated with the registry.: assert_true: expected true got false
+- Adding definition to global registry should not affect shadow roots using scoped registry: assert_false: expected false got true
+- Adding definition to scoped registry should affect all associated shadow roots: assert_true: expected true got false
+- Adding definition to scoped registry should not affect document tree scope: assert_true: expected true got false
+- Adding definition to scoped registry should not affect shadow roots using other registries: assert_true: expected true got false
+- Adding definition to scoped registry should upgrade nodes even after the node is moved into a separate shadow tree.: assert_true: expected true got false
+- Adding definition to scoped registry should upgrade nodes even after the node is moved to a separate shadow tree using a different registry.: assert_true: expected true got false
+- Adding definition to scoped registry affects associated shadow roots in all iframes: undefined is not an object (evaluating 'iframe.contentDocument.body')
+- Adding definition to scoped registry affects associated shadow roots in other frame trees: window.open is not a function. (In 'window.open('about:blank')', 'window.open' is undefined)
+- Adding definition to scoped registry should not upgrade nodes in detached frames: undefined is not an object (evaluating 'iframe.contentDocument.body')
+- Adding definition to scoped registry should not upgrade nodes in closed windows: promise_test: Unhandled rejection with value: object "TypeError: window.open is not a function. (In 'window.open('about:blank')', 'window.open' is undefined)"
+
+### custom-elements/registries/scoped-registry-define-upgrade-order.html
+
+- Upgrade in tree order in the same tree scope: assert_array_equals: lengths differ, expected array ["a", "b", "c"] length 3, got [] length 0
+- Upgrade in shadow-including tree order across tree scopes: assert_array_equals: lengths differ, expected array ["a", "b", "c"] length 3, got [] length 0
+- Upgrade order does not depend on shadow root attach order: assert_array_equals: lengths differ, expected array ["a", "c", "b"] length 3, got [] length 0
+- Upgrade in association order across documents, then tree order in each document: undefined is not an object (evaluating 'iframe.contentDocument.body')
+- Upgrade order is not affected by DOM order between child frames: undefined is not an object (evaluating 'iframe.contentDocument.body')
+- Upgrade order is affected by shadow tree adoption across documents: undefined is not an object (evaluating 'iframe.contentDocument.body')
+- Elements in the "owner" window of a scoped registry are not always upgraded first: undefined is not an object (evaluating 'iframe.contentDocument.body')
+
+### custom-elements/registries/scoped-registry-effective-global-registry.html
+
+- Null registry element with element parent without custom element registry attribute (null registry) appended to new document: undefined is not an object (evaluating 'iframe.contentDocument.body')
+- Null registry element with element parent without custom element registry attribute (global registry) appended to new document: undefined is not an object (evaluating 'iframe.contentDocument.body')
+- Null registry element with element parent without custom element registry attribute (scoped registry) appended to new document: undefined is not an object (evaluating 'iframe.contentDocument.body')
+- Null registry element with declarative shadow root parent without custom element registry attribute appended to new document: undefined is not an object (evaluating 'iframe.contentDocument.body')
+- Null registry element with declarative shadow root parent with custom element registry attribute (null registry) appended to new document: undefined is not an object (evaluating 'iframe.contentDocument.body')
+- Null registry element with declarative shadow root parent with custom element registry attribute (global registry) appended to new document: registry.initialize is not a function. (In 'registry.initialize(shadowRoot)', 'registry.initialize' is undefined)
+- Null registry element with declarative shadow root parent with custom element registry attribute (scoped registry) appended to new document: registry.initialize is not a function. (In 'registry.initialize(shadowRoot)', 'registry.initialize' is undefined)
+- Null registry element with imperative shadow root parent (null registry) appended to new document: undefined is not an object (evaluating 'iframe.contentDocument.body')
+- Null registry element with imperative shadow root parent (global registry) appended to new document: undefined is not an object (evaluating 'iframe.contentDocument.body')
+- Null registry element with imperative shadow root parent (scoped registry) appended to new document: undefined is not an object (evaluating 'iframe.contentDocument.body')
+- Global registry element with element parent without custom element registry attribute (null registry) appended to new document: undefined is not an object (evaluating 'iframe.contentDocument.body')
+- Global registry element with element parent without custom element registry attribute (global registry) appended to new document: undefined is not an object (evaluating 'iframe.contentDocument.body')
+- Global registry element with element parent without custom element registry attribute (scoped registry) appended to new document: undefined is not an object (evaluating 'iframe.contentDocument.body')
+- Global registry element with declarative shadow root parent without custom element registry attribute appended to new document: undefined is not an object (evaluating 'iframe.contentDocument.body')
+- Global registry element with declarative shadow root parent with custom element registry attribute (null registry) appended to new document: undefined is not an object (evaluating 'iframe.contentDocument.body')
+- Global registry element with declarative shadow root parent with custom element registry attribute (global registry) appended to new document: registry.initialize is not a function. (In 'registry.initialize(shadowRoot)', 'registry.initialize' is undefined)
+- Global registry element with declarative shadow root parent with custom element registry attribute (scoped registry) appended to new document: registry.initialize is not a function. (In 'registry.initialize(shadowRoot)', 'registry.initialize' is undefined)
+- Global registry element with imperative shadow root parent (null registry) appended to new document: undefined is not an object (evaluating 'iframe.contentDocument.body')
+- Global registry element with imperative shadow root parent (global registry) appended to new document: undefined is not an object (evaluating 'iframe.contentDocument.body')
+- Global registry element with imperative shadow root parent (scoped registry) appended to new document: undefined is not an object (evaluating 'iframe.contentDocument.body')
+- Scoped registry element with element parent without custom element registry attribute (null registry) appended to new document: undefined is not an object (evaluating 'iframe.contentDocument.body')
+- Scoped registry element with element parent without custom element registry attribute (global registry) appended to new document: undefined is not an object (evaluating 'iframe.contentDocument.body')
+- Scoped registry element with element parent without custom element registry attribute (scoped registry) appended to new document: undefined is not an object (evaluating 'iframe.contentDocument.body')
+- Scoped registry element with declarative shadow root parent without custom element registry attribute appended to new document: undefined is not an object (evaluating 'iframe.contentDocument.body')
+- Scoped registry element with declarative shadow root parent with custom element registry attribute (null registry) appended to new document: undefined is not an object (evaluating 'iframe.contentDocument.body')
+- Scoped registry element with declarative shadow root parent with custom element registry attribute (global registry) appended to new document: registry.initialize is not a function. (In 'registry.initialize(shadowRoot)', 'registry.initialize' is undefined)
+- Scoped registry element with declarative shadow root parent with custom element registry attribute (scoped registry) appended to new document: registry.initialize is not a function. (In 'registry.initialize(shadowRoot)', 'registry.initialize' is undefined)
+- Scoped registry element with imperative shadow root parent (null registry) appended to new document: undefined is not an object (evaluating 'iframe.contentDocument.body')
+- Scoped registry element with imperative shadow root parent (global registry) appended to new document: undefined is not an object (evaluating 'iframe.contentDocument.body')
+- Scoped registry element with imperative shadow root parent (scoped registry) appended to new document: undefined is not an object (evaluating 'iframe.contentDocument.body')
+- Null registry element with element parent without custom element registry attribute (null registry) adopted by new document: undefined is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Null registry element with element parent without custom element registry attribute (global registry) adopted by new document: undefined is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Null registry element with element parent without custom element registry attribute (scoped registry) adopted by new document: undefined is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Null registry element with declarative shadow root parent without custom element registry attribute adopted by new document: undefined is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Null registry element with declarative shadow root parent with custom element registry attribute (null registry) adopted by new document: undefined is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Null registry element with declarative shadow root parent with custom element registry attribute (global registry) adopted by new document: registry.initialize is not a function. (In 'registry.initialize(shadowRoot)', 'registry.initialize' is undefined)
+- Null registry element with declarative shadow root parent with custom element registry attribute (scoped registry) adopted by new document: registry.initialize is not a function. (In 'registry.initialize(shadowRoot)', 'registry.initialize' is undefined)
+- Null registry element with imperative shadow root parent (null registry) adopted by new document: undefined is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Null registry element with imperative shadow root parent (global registry) adopted by new document: undefined is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Null registry element with imperative shadow root parent (scoped registry) adopted by new document: undefined is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Global registry element with element parent without custom element registry attribute (null registry) adopted by new document: undefined is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Global registry element with element parent without custom element registry attribute (global registry) adopted by new document: undefined is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Global registry element with element parent without custom element registry attribute (scoped registry) adopted by new document: undefined is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Global registry element with declarative shadow root parent without custom element registry attribute adopted by new document: undefined is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Global registry element with declarative shadow root parent with custom element registry attribute (null registry) adopted by new document: undefined is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Global registry element with declarative shadow root parent with custom element registry attribute (global registry) adopted by new document: registry.initialize is not a function. (In 'registry.initialize(shadowRoot)', 'registry.initialize' is undefined)
+- Global registry element with declarative shadow root parent with custom element registry attribute (scoped registry) adopted by new document: registry.initialize is not a function. (In 'registry.initialize(shadowRoot)', 'registry.initialize' is undefined)
+- Global registry element with imperative shadow root parent (null registry) adopted by new document: undefined is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Global registry element with imperative shadow root parent (global registry) adopted by new document: undefined is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Global registry element with imperative shadow root parent (scoped registry) adopted by new document: undefined is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Scoped registry element with element parent without custom element registry attribute (null registry) adopted by new document: undefined is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Scoped registry element with element parent without custom element registry attribute (global registry) adopted by new document: undefined is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Scoped registry element with element parent without custom element registry attribute (scoped registry) adopted by new document: undefined is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Scoped registry element with declarative shadow root parent without custom element registry attribute adopted by new document: undefined is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Scoped registry element with declarative shadow root parent with custom element registry attribute (null registry) adopted by new document: undefined is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Scoped registry element with declarative shadow root parent with custom element registry attribute (global registry) adopted by new document: registry.initialize is not a function. (In 'registry.initialize(shadowRoot)', 'registry.initialize' is undefined)
+- Scoped registry element with declarative shadow root parent with custom element registry attribute (scoped registry) adopted by new document: registry.initialize is not a function. (In 'registry.initialize(shadowRoot)', 'registry.initialize' is undefined)
+- Scoped registry element with imperative shadow root parent (null registry) adopted by new document: undefined is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Scoped registry element with imperative shadow root parent (global registry) adopted by new document: undefined is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Scoped registry element with imperative shadow root parent (scoped registry) adopted by new document: undefined is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Null registry element with exclusive DocumentFragment parent appended to new document: undefined is not an object (evaluating 'iframe.contentDocument.body')
+- Global registry element with exclusive DocumentFragment parent appended to new document: undefined is not an object (evaluating 'iframe.contentDocument.body')
+- Scoped registry element with exclusive DocumentFragment parent appended to new document: undefined is not an object (evaluating 'iframe.contentDocument.body')
+- Null registry element with exclusive DocumentFragment parent adopted by new document: undefined is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Global registry element with exclusive DocumentFragment parent adopted by new document: undefined is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Scoped registry element with exclusive DocumentFragment parent adopted by new document: undefined is not an object (evaluating 'iframe.contentDocument.adoptNode')
+
+### custom-elements/registries/scoped-registry-initialize-upgrades.html
+
+- Document: CustomElementRegistry.prototype.initialize should upgrade the element given to the first argument: assert_equals: expected (object) null but got (undefined) undefined
+- Document: CustomElementRegistry.prototype.initialize should upgrade elements in tree order: assert_equals: expected (object) null but got (undefined) undefined
+- Document: CustomElementRegistry.prototype.initialize only upgrades elements beloning to the registry: assert_equals: expected (object) null but got (undefined) undefined
+- HTMLDocument: CustomElementRegistry.prototype.initialize should upgrade the element given to the first argument: assert_equals: expected (object) null but got (undefined) undefined
+- HTMLDocument: CustomElementRegistry.prototype.initialize should upgrade elements in tree order: assert_equals: expected (object) null but got (undefined) undefined
+- HTMLDocument: CustomElementRegistry.prototype.initialize only upgrades elements beloning to the registry: assert_equals: expected (object) null but got (undefined) undefined
+- XHTMLDocument: CustomElementRegistry.prototype.initialize should upgrade the element given to the first argument: assert_equals: expected (object) null but got (undefined) undefined
+- XHTMLDocument: CustomElementRegistry.prototype.initialize should upgrade elements in tree order: assert_equals: expected (object) null but got (undefined) undefined
+- XHTMLDocument: CustomElementRegistry.prototype.initialize only upgrades elements beloning to the registry: assert_equals: expected (object) null but got (undefined) undefined
+- CustomElementRegistry.prototype.initialize upgrades already initialized elements: assert_equals: expected (object) object "[object CustomElementRegistry]" but got (undefined) undefined
+- CustomElementRegistry.prototype.initialize upgrades custom elements in declarative shadow root when initialize() runs before define(): assert_equals: expected (object) null but got (undefined) undefined
+- CustomElementRegistry.prototype.initialize upgrades custom elements in imperative shadow root when inserted before define(): assert_equals: expected (object) object "[object CustomElementRegistry]" but got (undefined) undefined
+
+### custom-elements/registries/scoped-registry-initialize.html
+
+- Document: customElementRegistry of an upgrade candidate created with a document without a browsing context uses null regsitry by default: assert_equals: expected (object) null but got (undefined) undefined
+- Document: customElementRegistry of an upgrade candidate after calling CustomElementRegistry.prototype.initialize should return the registry: customElementRegistry.initialize is not a function. (In 'customElementRegistry.initialize(element)', 'customElementRegistry.initialize' is undefined)
+- Document: customElementRegistry of an upgrade candidate created with an explicit customElementRegistry argument should return the registry: customElementRegistry.initialize is not a function. (In 'customElementRegistry.initialize(element)', 'customElementRegistry.initialize' is undefined)
+- Document: customElementRegistry of an unknown element created with a document without a browsing context uses null regsitry by default: assert_equals: expected (object) null but got (undefined) undefined
+- Document: customElementRegistry of an unknown element after calling CustomElementRegistry.prototype.initialize should return the registry: customElementRegistry.initialize is not a function. (In 'customElementRegistry.initialize(element)', 'customElementRegistry.initialize' is undefined)
+- Document: customElementRegistry of an unknown element created with an explicit customElementRegistry argument should return the registry: assert_equals: expected (object) object "[object CustomElementRegistry]" but got (undefined) undefined
+- Document: customElementRegistry of an upgrade candidate connected to a document without a browsing context uses null regsitry by default: assert_equals: expected (object) null but got (undefined) undefined
+- Document: customElementRegistry of document and an upgrade candidate after calling CustomElementRegistry.prototype.initialize should return the registry: customElementRegistry.initialize is not a function. (In 'customElementRegistry.initialize(doc)', 'customElementRegistry.initialize' is undefined)
+- Document: customElementRegistry of an element created after calling CustomElementRegistry.prototype.initialize should return the registry: customElementRegistry.initialize is not a function. (In 'customElementRegistry.initialize(doc)', 'customElementRegistry.initialize' is undefined)
+- HTMLDocument: customElementRegistry of an upgrade candidate created with a document without a browsing context uses null regsitry by default: assert_equals: expected (object) null but got (undefined) undefined
+- HTMLDocument: customElementRegistry of an upgrade candidate after calling CustomElementRegistry.prototype.initialize should return the registry: customElementRegistry.initialize is not a function. (In 'customElementRegistry.initialize(element)', 'customElementRegistry.initialize' is undefined)
+- HTMLDocument: customElementRegistry of an upgrade candidate created with an explicit customElementRegistry argument should return the registry: customElementRegistry.initialize is not a function. (In 'customElementRegistry.initialize(element)', 'customElementRegistry.initialize' is undefined)
+- HTMLDocument: customElementRegistry of an unknown element created with a document without a browsing context uses null regsitry by default: assert_equals: expected (object) null but got (undefined) undefined
+- HTMLDocument: customElementRegistry of an unknown element after calling CustomElementRegistry.prototype.initialize should return the registry: customElementRegistry.initialize is not a function. (In 'customElementRegistry.initialize(element)', 'customElementRegistry.initialize' is undefined)
+- HTMLDocument: customElementRegistry of an unknown element created with an explicit customElementRegistry argument should return the registry: assert_equals: expected (object) object "[object CustomElementRegistry]" but got (undefined) undefined
+- HTMLDocument: customElementRegistry of an upgrade candidate connected to a document without a browsing context uses null regsitry by default: assert_equals: expected (object) null but got (undefined) undefined
+- HTMLDocument: customElementRegistry of document and an upgrade candidate after calling CustomElementRegistry.prototype.initialize should return the registry: customElementRegistry.initialize is not a function. (In 'customElementRegistry.initialize(doc)', 'customElementRegistry.initialize' is undefined)
+- HTMLDocument: customElementRegistry of an element created after calling CustomElementRegistry.prototype.initialize should return the registry: customElementRegistry.initialize is not a function. (In 'customElementRegistry.initialize(doc)', 'customElementRegistry.initialize' is undefined)
+- XHTMLDocument: customElementRegistry of an upgrade candidate created with a document without a browsing context uses null regsitry by default: assert_equals: expected (object) null but got (undefined) undefined
+- XHTMLDocument: customElementRegistry of an upgrade candidate after calling CustomElementRegistry.prototype.initialize should return the registry: customElementRegistry.initialize is not a function. (In 'customElementRegistry.initialize(element)', 'customElementRegistry.initialize' is undefined)
+- XHTMLDocument: customElementRegistry of an upgrade candidate created with an explicit customElementRegistry argument should return the registry: customElementRegistry.initialize is not a function. (In 'customElementRegistry.initialize(element)', 'customElementRegistry.initialize' is undefined)
+- XHTMLDocument: customElementRegistry of an unknown element created with a document without a browsing context uses null regsitry by default: assert_equals: expected (object) null but got (undefined) undefined
+- XHTMLDocument: customElementRegistry of an unknown element after calling CustomElementRegistry.prototype.initialize should return the registry: customElementRegistry.initialize is not a function. (In 'customElementRegistry.initialize(element)', 'customElementRegistry.initialize' is undefined)
+- XHTMLDocument: customElementRegistry of an unknown element created with an explicit customElementRegistry argument should return the registry: assert_equals: expected (object) object "[object CustomElementRegistry]" but got (undefined) undefined
+- XHTMLDocument: customElementRegistry of an upgrade candidate connected to a document without a browsing context uses null regsitry by default: assert_equals: expected (object) null but got (undefined) undefined
+- XHTMLDocument: customElementRegistry of document and an upgrade candidate after calling CustomElementRegistry.prototype.initialize should return the registry: customElementRegistry.initialize is not a function. (In 'customElementRegistry.initialize(doc)', 'customElementRegistry.initialize' is undefined)
+- XHTMLDocument: customElementRegistry of an element created after calling CustomElementRegistry.prototype.initialize should return the registry: customElementRegistry.initialize is not a function. (In 'customElementRegistry.initialize(doc)', 'customElementRegistry.initialize' is undefined)
+
+### custom-elements/registries/scoped-registry-registry-define-get-etc.html
+
+- Scoped Custom element registry getters do not resolve globally registered classes from whenDefined: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
 
 ### custom-elements/throw-on-dynamic-markup-insertion-counter-construct.html
 
@@ -2723,8 +3805,8 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 - Node.prototype.cloneNode(false) must be able to clone a custom element inside an iframe: Test timed out
 - Node.prototype.cloneNode(true) must be able to clone a descendent custom element: 
 - Node.prototype.cloneNode(true) must set parentNode, previousSibling, and nextSibling before upgrading custom elements: 
-- HTMLElement constructor must throw an TypeError when the top of the construction stack is marked AlreadyConstructed due to a custom element constructor constructing itself after super() call: Cannot read properties of undefined (reading 'name')
-- HTMLElement constructor must throw an TypeError when the top of the construction stack is marked AlreadyConstructed due to a custom element constructor constructing itself before super() call: Cannot read properties of undefined (reading 'name')
-- Upgrading a custom element must throw TypeError when the custom element's constructor returns another element: Cannot read properties of undefined (reading 'name')
+- HTMLElement constructor must throw an TypeError when the top of the construction stack is marked AlreadyConstructed due to a custom element constructor constructing itself after super() call: undefined is not an object (evaluating 'uncaughtError.name')
+- HTMLElement constructor must throw an TypeError when the top of the construction stack is marked AlreadyConstructed due to a custom element constructor constructing itself before super() call: undefined is not an object (evaluating 'uncaughtError.name')
+- Upgrading a custom element must throw TypeError when the custom element's constructor returns another element: undefined is not an object (evaluating 'uncaughtError.name')
 - Inserting an element must not try to upgrade a custom element when it had already failed to upgrade once: assert_equals: expected (string) "bad" but got (undefined) undefined
 
