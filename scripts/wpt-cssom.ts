@@ -156,7 +156,7 @@ const EXCLUSIONS: Record<string, string> = {
 const DEVIATIONS: Array<[string, string]> = [
 	[
 		"getComputedStyle-resolved-colors.html",
-		"System colors (Highlight, HighlightText, Canvas, menu) resolve to their names, not to rgb(). The UA sheet's `::selection { background-color: Highlight; color: HighlightText }` is this engine's spelling of \"swap the cell's colors\", which the selection painter turns into inverse video -- the terminal-native rendering. Resolving the pair to rgb() would erase the signal the painter reads.",
+		"A system color has no value here: `Menu`, `Highlight` and the rest name a desktop's palette, and a terminal states none -- so a declaration naming one is not a value this engine knows, and `box-shadow: 1px 1px Menu` declares no shadow. The UA sheet's `::selection { background-color: Highlight; color: HighlightText }` is this engine's spelling of \"swap the cell's colors\", which the selection painter turns into inverse video -- the terminal-native rendering. Giving the pair rgb() values would erase the signal the painter reads.",
 	],
 ];
 

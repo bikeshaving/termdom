@@ -500,10 +500,16 @@ const COLOR_PROPERTIES = new Set([
 	"border-right-color",
 	"border-bottom-color",
 	"border-left-color",
+	"border-block-start-color",
+	"border-block-end-color",
+	"border-inline-start-color",
+	"border-inline-end-color",
 	"outline-color",
 	"text-decoration-color",
+	"text-emphasis-color",
 	"caret-color",
 	"column-rule-color",
+	"accent-color",
 ]);
 
 /**
@@ -4987,6 +4993,13 @@ function usedLength(cells: number): string {
 	return `${Math.round(cells * 1000) / 1000}px`;
 }
 
+/**
+ * The colors whose `auto` names the element's own color: a caret is drawn in
+ * the text's color, and an outline whose color was left to the UA takes it
+ * too. The resolved value CSSOM reports is that used color.
+ */
+const AUTO_COLOR_PROPERTIES = new Set(["caret-color", "outline-color"]);
+
 /** The two sizes whose `auto` names a minimum only some boxes have. */
 const MIN_SIZE_PROPERTIES = new Set(["min-width", "min-height"]);
 
@@ -5793,6 +5806,10 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 		}
 		if (this.#manager && MIN_SIZE_PROPERTIES.has(property)) {
 			return this.#resolvedMinSize(this.computedValueOf(property));
+		}
+		if (AUTO_COLOR_PROPERTIES.has(property)) {
+			const computed = this.computedValueOf(property);
+			return computed === "auto" ? this.getPropertyValue("color") : computed;
 		}
 		let value = this.#resolved.get(property);
 		if (value === undefined) {
