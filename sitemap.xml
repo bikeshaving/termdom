@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemap.org/schemas/sitemap/0.9">
+	<url>
+		<loc>https://termdom.org/</loc>
+	</url>
+	<url>
+		<loc>https://termdom.org/compatibility/</loc>
+	</url>
+	<url>
+		<loc>https://termdom.org/guides/getting-started/</loc>
+	</url>
+	<url>
+		<loc>https://termdom.org/guides/layout/</loc>
+	</url>
+	<url>
+		<loc>https://termdom.org/guides/events-and-input/</loc>
+	</url>
+	<url>
+		<loc>https://termdom.org/guides/api/</loc>
+	</url>
+</urlset>
