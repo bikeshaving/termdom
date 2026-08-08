@@ -64,7 +64,6 @@
   "dependencies": {
     "arabic-persian-reshaper": "1.0.1",
     "bidi-js": "1.0.3",
-    "cssstyle": "^5.2.1",
     "jsdom": "^26.1.0",
     "linebreak": "1.1.0",
     "rrweb-cssom": "^0.8.0"
@@ -74,7 +73,6 @@
     "@b9g/libuild": "^0.2.14",
     "@tanstack/table-core": "^8.21.3",
     "@types/bun": "^1.2.21",
-    "@types/cssstyle": "^2.2.4",
     "@types/jsdom": "^21.1.7",
     "@types/prismjs": "^1.26.6",
     "@types/ssh2": "^1.15.5",

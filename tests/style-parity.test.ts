@@ -1,12 +1,10 @@
 /**
  * Inline/stylesheet parity: the same declaration must compute the same way
- * through element.style (cssstyle, jsdom's inline CSSOM) and through a
- * stylesheet (the engine's own parser and cascade). The two are different
- * code paths with a history of disagreeing in BOTH directions -- cssstyle
- * erased `border: none` (shimmed in styles.ts), the engine ignored the
- * stylesheet `flex` shorthand -- and every disagreement is a silent wrong
- * render. This sweep turns parity into an invariant: add a declaration here
- * when a new one is supported.
+ * through element.style and through a stylesheet. The two reach the cascade
+ * by different routes -- an attribute the inline CSSOM parses, a rule the
+ * stylesheet parser does -- and every disagreement is a silent wrong render.
+ * This sweep turns parity into an invariant: add a declaration here when a
+ * new one is supported.
  */
 import {test, expect} from "@b9g/libuild/test";
 import {MockProcess, nextFrame} from "./test-utils";

@@ -62,8 +62,8 @@ test("list-style-type on the li itself wins", async () => {
 });
 
 test("the list-style shorthand is expanded", async () => {
-	// cssstyle does not expand `list-style`, so nothing populated list-style-type
-	// and the default marker was drawn regardless.
+	// An unexpanded `list-style` leaves list-style-type undeclared, and the
+	// default marker is drawn regardless of what the author wrote.
 	expect(
 		await renderRows(`<ul style="list-style: none"><li>A</li></ul>`),
 	).toEqual(["    A"]);
