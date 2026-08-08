@@ -14,11 +14,39 @@ declare module "linebreak" {
 	}
 }
 
-declare module "rrweb-cssom" {
-	// The CSSOM parser jsdom itself uses. Only parse() is consumed, and its
-	// output is shaped like a CSSStyleSheet (cssRules with selectorText/style/
-	// media), which #parseStyleSheet already speaks.
-	export function parse(cssText: string): {cssRules: CSSRuleList};
+declare module "css-tree" {
+	// The CSS text parser behind this engine's CSSOM: it turns stylesheet,
+	// selector and value text into ASTs, which styles.ts serializes per the
+	// CSSOM algorithms and matches the cascade against. Only the parse,
+	// generate and lexer surface is consumed.
+	export interface CSSTreeNode {
+		type: string;
+		[key: string]: unknown;
+	}
+
+	export interface ParseOptions {
+		context?: string;
+		positions?: boolean;
+		parseAtrulePrelude?: boolean;
+		parseRulePrelude?: boolean;
+		parseValue?: boolean;
+		parseCustomProperty?: boolean;
+		onParseError?(error: Error): void;
+	}
+
+	export function parse(text: string, options?: ParseOptions): CSSTreeNode;
+	export function generate(node: CSSTreeNode): string;
+	export function toPlainObject(node: CSSTreeNode): CSSTreeNode;
+
+	export interface MatchResult {
+		matched: unknown;
+		error: Error | null;
+	}
+
+	export const lexer: {
+		matchProperty(property: string, value: CSSTreeNode | string): MatchResult;
+		checkPropertyName(property: string): Error | undefined;
+	};
 }
 
 declare module "bidi-js" {

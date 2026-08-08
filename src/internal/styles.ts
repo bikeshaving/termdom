@@ -6,7 +6,7 @@
  */
 
 import {type DOMWindow} from "jsdom";
-import * as CSSOM from "rrweb-cssom";
+import * as cssTree from "css-tree";
 import {stringWidth} from "./text.js";
 import {
 	attachPseudoElement,
@@ -1070,6 +1070,8 @@ export class CSSStyleDeclaration implements DeclarationSource {
 	#element: Element | null;
 	#parentRule: CSSRule | null;
 	#onChange: (() => void) | null;
+	/** Whether this block holds an at-rule's descriptors rather than properties. */
+	#descriptors = false;
 	#declarations: CSSDeclaration[] = [];
 	/** The `style` attribute text this object last serialized or parsed. */
 	#attributeText: string | null = null;
@@ -1083,11 +1085,13 @@ export class CSSStyleDeclaration implements DeclarationSource {
 			element?: Element;
 			parentRule?: CSSRule;
 			onChange?: () => void;
+			descriptors?: boolean;
 		} = {},
 	) {
 		this.#element = owner.element ?? null;
 		this.#parentRule = owner.parentRule ?? null;
 		this.#onChange = owner.onChange ?? null;
+		this.#descriptors = Boolean(owner.descriptors);
 	}
 
 	/** Adopt the `style` attribute when it says something this object did not write. */
@@ -1152,6 +1156,16 @@ export class CSSStyleDeclaration implements DeclarationSource {
 
 	#find(property: string): CSSDeclaration | undefined {
 		return this.#declarations.find((entry) => entry.name === property);
+	}
+
+	/**
+	 * Whether this block may hold `name`: a supported CSS property or a custom
+	 * property, or -- in an at-rule's block -- any descriptor it names, since
+	 * the property index does not describe descriptors.
+	 */
+	#supports(name: string): boolean {
+		if (this.#descriptors) return name !== "";
+		return name.startsWith("--") || SUPPORTED_PROPERTIES.has(name);
 	}
 
 	/** Store one declaration in place; returns whether anything changed. */
@@ -1295,7 +1309,7 @@ export class CSSStyleDeclaration implements DeclarationSource {
 	setProperty(property: string, value: string, priority?: string): void {
 		this.#sync();
 		const name = normalizePropertyName(property);
-		if (!name.startsWith("--") && !SUPPORTED_PROPERTIES.has(name)) return;
+		if (!this.#supports(name)) return;
 		const text = serializeCSSValue(value == null ? "" : String(value));
 		if (text === "") {
 			this.removeProperty(name);
@@ -1329,12 +1343,7 @@ export class CSSStyleDeclaration implements DeclarationSource {
 		this.#sync();
 		this.#declarations = [];
 		for (const declaration of parseDeclarationText(text ?? "")) {
-			if (
-				!declaration.name.startsWith("--") &&
-				!SUPPORTED_PROPERTIES.has(declaration.name)
-			) {
-				continue;
-			}
+			if (!this.#supports(declaration.name)) continue;
 			this.#apply(declaration.name, declaration.value, declaration.important);
 		}
 		this.#flush();
@@ -1590,53 +1599,6 @@ function notifyRule(rule: CSSRule): void {
 	sheetChanged(rule.parentStyleSheet);
 }
 
-/** A style rule: a selector and the declaration block it applies. */
-export class CSSStyleRule extends CSSRule {
-	#selectorText: string;
-	#style: CSSStyleDeclaration;
-
-	constructor(
-		selectorText: string,
-		cssText: string,
-		parentStyleSheet: CSSStyleSheet | null,
-		parentRule: CSSRule | null,
-	) {
-		super(parentStyleSheet, parentRule);
-		this.#selectorText = selectorText;
-		this.#style = new CSSStyleDeclaration({
-			parentRule: this,
-			onChange: () => notifyRule(this),
-		});
-		this.#style.cssText = cssText;
-	}
-
-	get type(): number {
-		return RULE_TYPES.STYLE_RULE;
-	}
-
-	get selectorText(): string {
-		return this.#selectorText;
-	}
-
-	set selectorText(selector: string) {
-		const text = String(selector).trim();
-		if (!text || text === this.#selectorText) return;
-		this.#selectorText = text;
-		notifyRule(this);
-	}
-
-	get style(): CSSStyleDeclaration {
-		return this.#style;
-	}
-
-	get cssText(): string {
-		const declarations = this.#style.cssText;
-		return declarations
-			? `${this.#selectorText} { ${declarations} }`
-			: `${this.#selectorText} { }`;
-	}
-}
-
 /** A rule with a rule list of its own: `@media`, `@supports`, `@layer`. */
 export abstract class CSSGroupingRule extends CSSRule {
 	#rules: CSSRule[] = [];
@@ -1662,6 +1624,12 @@ export abstract class CSSGroupingRule extends CSSRule {
 			throw new DOMException(
 				`Cannot insert at index ${index}`,
 				"IndexSizeError",
+			);
+		}
+		if (inserted instanceof CSSImportRule || inserted instanceof CSSNamespaceRule) {
+			throw new DOMException(
+				"Only a stylesheet may hold that rule",
+				"HierarchyRequestError",
 			);
 		}
 		this.#rules.splice(index, 0, inserted);
@@ -1691,6 +1659,302 @@ function serializeGroupRules(group: CSSGroupingRule): string {
 /** A grouping rule gated on a condition: `@media`, `@supports`. */
 export abstract class CSSConditionRule extends CSSGroupingRule {
 	abstract get conditionText(): string;
+}
+
+/** A style rule: a selector and the declaration block it applies. */
+export class CSSStyleRule extends CSSGroupingRule {
+	#selectors: SelectorNode;
+	#selectorText: string;
+	#style: CSSStyleDeclaration;
+
+	constructor(
+		selectors: SelectorNode,
+		cssText: string,
+		parentStyleSheet: CSSStyleSheet | null,
+		parentRule: CSSRule | null,
+		build?: (group: CSSGroupingRule) => CSSRule[],
+	) {
+		super(parentStyleSheet, parentRule, build);
+		this.#selectors = selectors;
+		this.#selectorText = serializeSelectorList(selectors);
+		this.#style = new CSSStyleDeclaration({
+			parentRule: this,
+			onChange: () => notifyRule(this),
+		});
+		this.#style.cssText = cssText;
+	}
+
+	get type(): number {
+		return RULE_TYPES.STYLE_RULE;
+	}
+
+	get selectorText(): string {
+		return this.#selectorText;
+	}
+
+	/** A selector that does not parse leaves the rule as it was. */
+	set selectorText(selector: string) {
+		const selectors = parseSelectorList(selector);
+		if (!selectors) return;
+		this.#selectors = selectors;
+		this.#selectorText = serializeSelectorList(selectors);
+		notifyRule(this);
+	}
+
+	/** The parsed selector, which the cascade matches against. */
+	get selectors(): SelectorNode {
+		return this.#selectors;
+	}
+
+	get style(): CSSStyleDeclaration {
+		return this.#style;
+	}
+
+	get cssText(): string {
+		const declarations = this.#style.cssText;
+		const nested = serializeGroupRules(this);
+		if (nested) return `${this.#selectorText} { ${declarations}${nested}\n}`;
+		return declarations
+			? `${this.#selectorText} { ${declarations} }`
+			: `${this.#selectorText} { }`;
+	}
+}
+
+/** A rule whose body is a declaration block rather than a rule list. */
+export abstract class CSSDeclarationBlockRule extends CSSRule {
+	#style: CSSStyleDeclaration;
+
+	constructor(
+		cssText: string,
+		parentStyleSheet: CSSStyleSheet | null,
+		parentRule: CSSRule | null,
+	) {
+		super(parentStyleSheet, parentRule);
+		this.#style = new CSSStyleDeclaration({
+			parentRule: this,
+			onChange: () => notifyRule(this),
+			// A descriptor block declares descriptors, not CSS properties, so
+			// the property index does not gate what it may hold.
+			descriptors: true,
+		});
+		this.#style.cssText = cssText;
+	}
+
+	get style(): CSSStyleDeclaration {
+		return this.#style;
+	}
+
+	/** The at-keyword and prelude this rule's text opens with. */
+	abstract get prelude(): string;
+
+	get cssText(): string {
+		const declarations = this.#style.cssText;
+		return declarations
+			? `${this.prelude} { ${declarations} }`
+			: `${this.prelude} { }`;
+	}
+}
+
+/** `@font-face`: the descriptors of a font this terminal will never load. */
+export class CSSFontFaceRule extends CSSDeclarationBlockRule {
+	get type(): number {
+		return RULE_TYPES.FONT_FACE_RULE;
+	}
+
+	get prelude(): string {
+		return "@font-face";
+	}
+}
+
+/** `@page`: the page selector and its descriptors. */
+export class CSSPageRule extends CSSDeclarationBlockRule {
+	#selectorText: string;
+
+	constructor(
+		selectorText: string,
+		cssText: string,
+		parentStyleSheet: CSSStyleSheet | null,
+		parentRule: CSSRule | null,
+	) {
+		super(cssText, parentStyleSheet, parentRule);
+		this.#selectorText = selectorText.trim();
+	}
+
+	get type(): number {
+		return RULE_TYPES.PAGE_RULE;
+	}
+
+	get selectorText(): string {
+		return this.#selectorText;
+	}
+
+	set selectorText(selector: string) {
+		this.#selectorText = String(selector).trim();
+		notifyRule(this);
+	}
+
+	get prelude(): string {
+		return this.#selectorText ? `@page ${this.#selectorText}` : "@page";
+	}
+}
+
+/** `@counter-style`: a counter's name and the descriptors that define it. */
+export class CSSCounterStyleRule extends CSSDeclarationBlockRule {
+	#name: string;
+
+	constructor(
+		name: string,
+		cssText: string,
+		parentStyleSheet: CSSStyleSheet | null,
+	) {
+		super(cssText, parentStyleSheet, null);
+		this.#name = name.trim();
+	}
+
+	get type(): number {
+		return RULE_TYPES.COUNTER_STYLE_RULE;
+	}
+
+	get name(): string {
+		return this.#name;
+	}
+
+	set name(name: string) {
+		const text = String(name).trim();
+		if (!text) return;
+		this.#name = text;
+		notifyRule(this);
+	}
+
+	get prelude(): string {
+		return `@counter-style ${this.#name}`;
+	}
+}
+
+/** `@property`: a custom property's registration. */
+export class CSSPropertyRule extends CSSDeclarationBlockRule {
+	#name: string;
+
+	constructor(
+		name: string,
+		cssText: string,
+		parentStyleSheet: CSSStyleSheet | null,
+	) {
+		super(cssText, parentStyleSheet, null);
+		this.#name = name.trim();
+	}
+
+	get type(): number {
+		return 0;
+	}
+
+	get name(): string {
+		return this.#name;
+	}
+
+	get syntax(): string {
+		return this.style.getPropertyValue("syntax");
+	}
+
+	get inherits(): boolean {
+		return this.style.getPropertyValue("inherits") === "true";
+	}
+
+	get initialValue(): string | null {
+		return this.style.getPropertyValue("initial-value") || null;
+	}
+
+	get prelude(): string {
+		return `@property ${this.#name}`;
+	}
+}
+
+/** `@font-palette-values`: a palette's name and its descriptors. */
+export class CSSFontPaletteValuesRule extends CSSDeclarationBlockRule {
+	#name: string;
+
+	constructor(
+		name: string,
+		cssText: string,
+		parentStyleSheet: CSSStyleSheet | null,
+	) {
+		super(cssText, parentStyleSheet, null);
+		this.#name = name.trim();
+	}
+
+	get type(): number {
+		return 0;
+	}
+
+	get name(): string {
+		return this.#name;
+	}
+
+	get fontFamily(): string {
+		return this.style.getPropertyValue("font-family");
+	}
+
+	get basePalette(): string {
+		return this.style.getPropertyValue("base-palette");
+	}
+
+	get overrideColors(): string {
+		return this.style.getPropertyValue("override-colors");
+	}
+
+	get prelude(): string {
+		return `@font-palette-values ${this.#name}`;
+	}
+}
+
+/** One keyframe of an `@keyframes` rule: its offsets and its declarations. */
+export class CSSKeyframeRule extends CSSDeclarationBlockRule {
+	#keyText: string;
+
+	constructor(
+		keyText: string,
+		cssText: string,
+		parentStyleSheet: CSSStyleSheet | null,
+		parentRule: CSSRule | null,
+	) {
+		super(cssText, parentStyleSheet, parentRule);
+		this.#keyText = serializeKeyText(keyText);
+	}
+
+	get type(): number {
+		return RULE_TYPES.KEYFRAME_RULE;
+	}
+
+	get keyText(): string {
+		return this.#keyText;
+	}
+
+	set keyText(text: string) {
+		const serialized = serializeKeyText(String(text));
+		if (!serialized) {
+			throw new DOMException(`Cannot parse keyText: ${text}`, "SyntaxError");
+		}
+		this.#keyText = serialized;
+		notifyRule(this);
+	}
+
+	get prelude(): string {
+		return this.#keyText;
+	}
+}
+
+/** A keyframe's selector, as percentages: `from` is 0%, `to` is 100%. */
+function serializeKeyText(text: string): string {
+	const keys: string[] = [];
+	for (const part of String(text).split(",")) {
+		const key = part.trim().toLowerCase();
+		if (key === "from") keys.push("0%");
+		else if (key === "to") keys.push("100%");
+		else if (/^[+-]?(\d+\.?\d*|\.\d+)%$/.test(key)) {
+			keys.push(`${serializeCSSNumber(key.slice(0, -1))}%`);
+		} else return "";
+	}
+	return keys.join(", ");
 }
 
 /** `@media`: the rules that apply when the viewport matches. */
@@ -1728,8 +1992,8 @@ export class CSSMediaRule extends CSSConditionRule {
 	}
 }
 
-/** `@supports`: parsed, and inert -- a terminal supports what this engine does. */
-export class CSSSupportsRule extends CSSConditionRule {
+/** A grouping rule whose condition is a text this engine keeps as authored. */
+abstract class CSSTextConditionRule extends CSSConditionRule {
 	#conditionText: string;
 
 	constructor(
@@ -1739,42 +2003,211 @@ export class CSSSupportsRule extends CSSConditionRule {
 		build?: (group: CSSGroupingRule) => CSSRule[],
 	) {
 		super(parentStyleSheet, parentRule, build);
-		this.#conditionText = conditionText;
-	}
-
-	get type(): number {
-		return RULE_TYPES.SUPPORTS_RULE;
+		this.#conditionText = conditionText.trim();
 	}
 
 	get conditionText(): string {
 		return this.#conditionText;
 	}
 
+	abstract get atKeyword(): string;
+
 	get cssText(): string {
-		return `@supports ${this.#conditionText} {${serializeGroupRules(this)}\n}`;
+		const condition = this.#conditionText ? ` ${this.#conditionText}` : "";
+		return `${this.atKeyword}${condition} {${serializeGroupRules(this)}\n}`;
+	}
+}
+
+/** `@supports`: its rules apply, since what this engine supports it renders. */
+export class CSSSupportsRule extends CSSTextConditionRule {
+	get type(): number {
+		return RULE_TYPES.SUPPORTS_RULE;
+	}
+
+	get atKeyword(): string {
+		return "@supports";
+	}
+}
+
+/** `@container`: parsed, with no container query engine behind it. */
+export class CSSContainerRule extends CSSTextConditionRule {
+	get type(): number {
+		return 0;
+	}
+
+	get atKeyword(): string {
+		return "@container";
+	}
+
+	get containerName(): string {
+		const match = /^([a-zA-Z_-][\w-]*)\s+/.exec(this.conditionText);
+		return match?.[1] ?? "";
+	}
+
+	get containerQuery(): string {
+		const name = this.containerName;
+		return name ? this.conditionText.slice(name.length).trim() : this.conditionText;
+	}
+}
+
+/** `@scope`: parsed, and its rules apply unscoped. */
+export class CSSScopeRule extends CSSGroupingRule {
+	#prelude: string;
+
+	constructor(
+		prelude: string,
+		parentStyleSheet: CSSStyleSheet | null,
+		parentRule: CSSRule | null,
+		build?: (group: CSSGroupingRule) => CSSRule[],
+	) {
+		super(parentStyleSheet, parentRule, build);
+		this.#prelude = prelude.trim();
+	}
+
+	get type(): number {
+		return 0;
+	}
+
+	get start(): string | null {
+		const match = /^\(([^)]*)\)/.exec(this.#prelude);
+		return match?.[1].trim() ?? null;
+	}
+
+	get end(): string | null {
+		const match = /\bto\s*\(([^)]*)\)/.exec(this.#prelude);
+		return match?.[1].trim() ?? null;
+	}
+
+	get cssText(): string {
+		const prelude = this.#prelude ? ` ${this.#prelude}` : "";
+		return `@scope${prelude} {${serializeGroupRules(this)}\n}`;
+	}
+}
+
+/** `@starting-style`: parsed, with no transitions behind it. */
+export class CSSStartingStyleRule extends CSSGroupingRule {
+	get type(): number {
+		return 0;
+	}
+
+	get cssText(): string {
+		return `@starting-style {${serializeGroupRules(this)}\n}`;
+	}
+}
+
+/** `@layer name { ... }`: its rules cascade in source order. */
+export class CSSLayerBlockRule extends CSSGroupingRule {
+	#name: string;
+
+	constructor(
+		name: string,
+		parentStyleSheet: CSSStyleSheet | null,
+		parentRule: CSSRule | null,
+		build?: (group: CSSGroupingRule) => CSSRule[],
+	) {
+		super(parentStyleSheet, parentRule, build);
+		this.#name = name.trim();
+	}
+
+	get type(): number {
+		return 0;
+	}
+
+	get name(): string {
+		return this.#name;
+	}
+
+	get cssText(): string {
+		const name = this.#name ? ` ${this.#name}` : "";
+		return `@layer${name} {${serializeGroupRules(this)}\n}`;
+	}
+}
+
+/** `@layer a, b;`: the layer order, declared without a block. */
+export class CSSLayerStatementRule extends CSSRule {
+	#names: string[];
+
+	constructor(
+		prelude: string,
+		parentStyleSheet: CSSStyleSheet | null,
+		parentRule: CSSRule | null,
+	) {
+		super(parentStyleSheet, parentRule);
+		this.#names = prelude
+			.split(",")
+			.map((name) => name.trim())
+			.filter(Boolean);
+	}
+
+	get type(): number {
+		return 0;
+	}
+
+	get nameList(): readonly string[] {
+		return this.#names;
+	}
+
+	get cssText(): string {
+		return `@layer ${this.#names.join(", ")};`;
+	}
+}
+
+/** `@namespace`: a prefix bound to a namespace URI. */
+export class CSSNamespaceRule extends CSSRule {
+	#prefix: string;
+	#namespaceURI: string;
+
+	constructor(
+		prefix: string,
+		namespaceURI: string,
+		parentStyleSheet: CSSStyleSheet | null,
+	) {
+		super(parentStyleSheet, null);
+		this.#prefix = prefix;
+		this.#namespaceURI = namespaceURI;
+	}
+
+	get type(): number {
+		return RULE_TYPES.NAMESPACE_RULE;
+	}
+
+	get prefix(): string {
+		return this.#prefix;
+	}
+
+	get namespaceURI(): string {
+		return this.#namespaceURI;
+	}
+
+	get cssText(): string {
+		const prefix = this.#prefix ? `${this.#prefix} ` : "";
+		return `@namespace ${prefix}url("${this.#namespaceURI}");`;
 	}
 }
 
 /**
- * `@import`: parsed into an object with its href and media, whose styleSheet
- * is null. There is no network in a terminal document, so nothing is fetched
- * and the rule contributes no declarations.
+ * `@import`: parsed into an object with its href, layer, supports condition
+ * and media, whose styleSheet is null. There is no network behind a terminal
+ * document, so nothing is fetched and the rule declares nothing.
  */
 export class CSSImportRule extends CSSRule {
 	#href: string;
 	#media: MediaList;
 	#layerName: string | null;
+	#supportsText: string | null;
 
 	constructor(
 		href: string,
 		mediaText: string,
 		layerName: string | null,
+		supportsText: string | null,
 		parentStyleSheet: CSSStyleSheet | null,
 	) {
 		super(parentStyleSheet, null);
 		this.#href = href;
 		this.#media = new MediaList(mediaText);
 		this.#layerName = layerName;
+		this.#supportsText = supportsText;
 	}
 
 	get type(): number {
@@ -1793,72 +2226,126 @@ export class CSSImportRule extends CSSRule {
 		return this.#layerName;
 	}
 
+	get supportsText(): string | null {
+		return this.#supportsText;
+	}
+
 	get styleSheet(): CSSStyleSheet | null {
 		return null;
 	}
 
 	get cssText(): string {
+		let out = `@import url("${this.#href}")`;
+		if (this.#layerName !== null) {
+			out += this.#layerName ? ` layer(${this.#layerName})` : " layer";
+		}
+		if (this.#supportsText !== null) out += ` supports(${this.#supportsText})`;
 		const media = this.#media.mediaText;
-		return `@import url("${this.#href}")${media ? ` ${media}` : ""};`;
+		if (media) out += ` ${media}`;
+		return `${out};`;
 	}
 }
 
-/** A rule this engine parses but gives no rendering: `@font-face`, `@page`. */
-export class CSSDeclarationAtRule extends CSSRule {
-	#type: number;
-	#prelude: string;
-	#style: CSSStyleDeclaration;
+/** `@font-feature-values`: a font family and the feature blocks it names. */
+export class CSSFontFeatureValuesRule extends CSSRule {
+	#fontFamily: string;
+	#blocks = new Map<string, CSSStyleDeclaration>();
 
 	constructor(
-		type: number,
-		prelude: string,
-		cssText: string,
+		fontFamily: string,
+		node: ParsedNode,
 		parentStyleSheet: CSSStyleSheet | null,
-		parentRule: CSSRule | null,
 	) {
-		super(parentStyleSheet, parentRule);
-		this.#type = type;
-		this.#prelude = prelude;
-		this.#style = new CSSStyleDeclaration({
-			parentRule: this,
-			onChange: () => notifyRule(this),
-		});
-		this.#style.cssText = cssText;
+		super(parentStyleSheet, null);
+		this.#fontFamily = fontFamily.trim();
+		for (const child of nodesOf(node.block ?? {})) {
+			if (child.type !== "Atrule" || !child.name) continue;
+			const block = new CSSStyleDeclaration({
+				parentRule: this,
+				onChange: () => notifyRule(this),
+				descriptors: true,
+			});
+			block.cssText = blockText(child);
+			this.#blocks.set(child.name.toLowerCase(), block);
+		}
 	}
 
 	get type(): number {
-		return this.#type;
+		return RULE_TYPES.FONT_FEATURE_VALUES_RULE;
 	}
 
-	get style(): CSSStyleDeclaration {
-		return this.#style;
+	get fontFamily(): string {
+		return this.#fontFamily;
 	}
 
-	/** `@font-face`'s and `@page`'s prelude: the at-keyword and its selector. */
-	get keyText(): string {
-		return this.#prelude;
+	set fontFamily(family: string) {
+		this.#fontFamily = String(family).trim();
+		notifyRule(this);
+	}
+
+	/** One feature block's values, or an empty block when it was not written. */
+	#block(name: string): CSSStyleDeclaration {
+		let block = this.#blocks.get(name);
+		if (!block) {
+			block = new CSSStyleDeclaration({
+				parentRule: this,
+				onChange: () => notifyRule(this),
+				descriptors: true,
+			});
+			this.#blocks.set(name, block);
+		}
+		return block;
+	}
+
+	get annotation(): CSSStyleDeclaration {
+		return this.#block("annotation");
+	}
+
+	get ornaments(): CSSStyleDeclaration {
+		return this.#block("ornaments");
+	}
+
+	get stylistic(): CSSStyleDeclaration {
+		return this.#block("stylistic");
+	}
+
+	get swash(): CSSStyleDeclaration {
+		return this.#block("swash");
+	}
+
+	get characterVariant(): CSSStyleDeclaration {
+		return this.#block("character-variant");
+	}
+
+	get styleset(): CSSStyleDeclaration {
+		return this.#block("styleset");
 	}
 
 	get cssText(): string {
-		return `${this.#prelude} { ${this.#style.cssText} }`;
+		const blocks: string[] = [];
+		for (const [name, block] of this.#blocks) {
+			const declarations = block.cssText;
+			if (declarations) blocks.push(`\n  @${name} { ${declarations} }`);
+		}
+		return `@font-feature-values ${this.#fontFamily} {${blocks.join("")}\n}`;
 	}
 }
 
 /** `@keyframes`: its name and the keyframes it holds. */
 export class CSSKeyframesRule extends CSSRule {
 	#name: string;
-	#rules: CSSRule[];
+	#rules: CSSRule[] = [];
 	#ruleList: CSSRuleList;
 
 	constructor(
 		name: string,
-		rules: CSSRule[],
 		parentStyleSheet: CSSStyleSheet | null,
+		build?: (rule: CSSKeyframesRule) => CSSRule[],
 	) {
 		super(parentStyleSheet, null);
-		this.#name = name;
-		this.#rules = rules;
+		this.#name = name.trim();
 		this.#ruleList = createRuleList(this.#rules);
+		if (build) this.#rules.push(...build(this));
 	}
 
 	get type(): number {
@@ -1878,8 +2365,45 @@ export class CSSKeyframesRule extends CSSRule {
 		return this.#ruleList;
 	}
 
+	get length(): number {
+		return this.#rules.length;
+	}
+
+	appendRule(text: string): void {
+		const rule = parseRuleText(
+			`@keyframes k { ${text} }`,
+			this.parentStyleSheet,
+			this,
+		);
+		if (rule instanceof CSSKeyframesRule) {
+			this.#rules.push(...Array.from(rule.cssRules));
+			notifyRule(this);
+		}
+	}
+
+	deleteRule(select: string): void {
+		const key = serializeKeyText(String(select));
+		for (let index = this.#rules.length - 1; index >= 0; index--) {
+			if ((this.#rules[index] as CSSKeyframeRule).keyText !== key) continue;
+			this.#rules.splice(index, 1);
+			notifyRule(this);
+			return;
+		}
+	}
+
+	findRule(select: string): CSSKeyframeRule | null {
+		const key = serializeKeyText(String(select));
+		for (let index = this.#rules.length - 1; index >= 0; index--) {
+			const rule = this.#rules[index] as CSSKeyframeRule;
+			if (rule.keyText === key) return rule;
+		}
+		return null;
+	}
+
 	get cssText(): string {
-		const frames = this.#rules.map((rule) => `\n  ${rule.cssText}`).join("");
+		const frames = this.#rules
+			.map((rule) => `\n  ${rule.cssText}`)
+			.join("");
 		return `@keyframes ${this.#name} {${frames}\n}`;
 	}
 }
@@ -2105,19 +2629,319 @@ export class CSSStyleSheet {
 /** Whether a sheet may be adopted: only a constructed one, per spec. */
 const constructedSheets = new WeakSet<CSSStyleSheet>();
 
+// ---- Selectors -------------------------------------------------------------
+
+/**
+ * The pseudo-classes and pseudo-elements a selector may name. A selector
+ * naming anything else does not parse, which is what makes `:gibberish`
+ * invalid rather than merely unmatched.
+ */
+const PSEUDO_CLASSES = new Set([
+	"active", "any-link", "autofill", "blank", "buffering", "checked",
+	"current", "default", "defined", "dir", "disabled", "empty", "enabled",
+	"first", "first-child", "first-of-type", "focus", "focus-visible",
+	"focus-within", "fullscreen", "future", "has", "host", "host-context",
+	"hover", "in-range", "indeterminate", "invalid", "is", "lang",
+	"last-child", "last-of-type", "left", "link", "local-link", "modal",
+	"muted", "not", "nth-child", "nth-col", "nth-last-child",
+	"nth-last-col", "nth-last-of-type", "nth-of-type", "only-child",
+	"only-of-type", "open", "optional", "out-of-range", "past", "paused",
+	"picture-in-picture", "placeholder-shown", "playing", "popover-open",
+	"read-only", "read-write", "required", "right", "root", "scope",
+	"seeking", "stalled", "state", "target", "target-current",
+	"target-within", "user-invalid", "user-valid", "valid", "visited",
+	"volume-locked", "where", "window-inactive",
+]);
+
+const PSEUDO_ELEMENTS = new Set([
+	"after", "backdrop", "before", "checkmark", "column", "cue",
+	"cue-region", "details-content", "file-selector-button", "first-letter",
+	"first-line", "grammar-error", "highlight", "marker", "part",
+	"picker", "picker-icon", "placeholder", "scroll-button", "scroll-marker",
+	"scroll-marker-group", "selection", "slotted", "spelling-error",
+	"target-text", "view-transition", "view-transition-group",
+	"view-transition-image-pair", "view-transition-new",
+	"view-transition-old",
+]);
+
+/** The pseudo-elements that may also be written with one colon, from CSS 2. */
+const LEGACY_PSEUDO_ELEMENTS = new Set([
+	"after",
+	"before",
+	"first-letter",
+	"first-line",
+]);
+
+/** A selector AST node, as the CSS parser hands it over. */
+interface SelectorNode {
+	type: string;
+	name?: string | {type: string; name: string};
+	matcher?: string | null;
+	value?: {type: string; value?: string; name?: string} | null;
+	flags?: string | null;
+	children?: {toArray(): SelectorNode[]} | SelectorNode[] | null;
+	nth?: SelectorNode | null;
+	selector?: SelectorNode | null;
+	a?: string | null;
+	b?: string | null;
+}
+
+function childrenOf(node: SelectorNode): SelectorNode[] {
+	const children = node.children;
+	if (!children) return [];
+	return Array.isArray(children) ? children : children.toArray();
+}
+
+/**
+ * A qualified name -- `ns|local`, `*|local`, `local` -- with each part
+ * serialized as an identifier and `*` left as itself.
+ */
+function serializeQualifiedName(name: string): string {
+	const bar = name.lastIndexOf("|");
+	const local = bar === -1 ? name : name.slice(bar + 1);
+	const prefix = bar === -1 ? null : name.slice(0, bar);
+	const localText = local === "*" ? "*" : serializeCSSIdentifier(local);
+	if (prefix === null) return localText;
+	const prefixText = prefix === "*" ? "*" : serializeCSSIdentifier(prefix);
+	return `${prefixText}|${localText}`;
+}
+
+/**
+ * Serialize a group of selectors, per CSSOM: the selectors joined by ", ",
+ * each simple selector in its canonical spelling -- identifiers escaped,
+ * attribute values quoted, combinators spaced, An+B reduced.
+ */
+function serializeSelectorList(list: SelectorNode): string {
+	return childrenOf(list).map(serializeSelector).join(", ");
+}
+
+function serializeSelector(selector: SelectorNode): string {
+	let out = "";
+	// A universal selector is written only when it stands alone in its
+	// compound, or carries a namespace prefix.
+	const parts = childrenOf(selector);
+	for (const [index, part] of parts.entries()) {
+		if (part.type === "TypeSelector" && part.name === "*") {
+			const next = parts[index + 1];
+			const alone =
+				!next ||
+				next.type === "Combinator" ||
+				next.type === "PseudoElementSelector";
+			if (!alone) continue;
+		}
+		out += serializeSimpleSelector(part);
+	}
+	return out;
+}
+
+function serializeSimpleSelector(node: SelectorNode): string {
+	switch (node.type) {
+		case "TypeSelector":
+			return serializeQualifiedName(node.name as string);
+		case "ClassSelector":
+			return `.${serializeCSSIdentifier(node.name as string)}`;
+		case "IdSelector":
+			return `#${serializeCSSIdentifier(node.name as string)}`;
+		case "NestingSelector":
+			return "&";
+		case "Combinator": {
+			const name = node.name as string;
+			return name === " " ? " " : ` ${name} `;
+		}
+		case "AttributeSelector": {
+			const name = node.name as {name: string};
+			let out = `[${serializeQualifiedName(name.name)}`;
+			if (node.matcher && node.value) {
+				const value =
+					node.value.type === "String"
+						? (node.value.value ?? "")
+						: (node.value.name ?? "");
+				out += `${node.matcher}${serializeCSSString(value)}`;
+				if (node.flags) out += ` ${node.flags.toLowerCase()}`;
+			}
+			return `${out}]`;
+		}
+		case "PseudoClassSelector":
+		case "PseudoElementSelector": {
+			const colons = node.type === "PseudoElementSelector" ? "::" : ":";
+			const name = serializeCSSIdentifier(
+				(node.name as string).toLowerCase(),
+			);
+			const args = childrenOf(node);
+			if (args.length === 0) return `${colons}${name}`;
+			return `${colons}${name}(${args.map(serializeSelectorArgument).join(", ")})`;
+		}
+		default:
+			return "";
+	}
+}
+
+function serializeSelectorArgument(node: SelectorNode): string {
+	switch (node.type) {
+		case "SelectorList":
+			return serializeSelectorList(node);
+		case "Selector":
+			return serializeSelector(node);
+		case "Nth": {
+			const nth = node.nth ? serializeSimpleSelector(node.nth) : "";
+			const of = node.selector
+				? ` of ${serializeSelectorList(node.selector)}`
+				: "";
+			return `${nth}${of}`;
+		}
+		case "AnPlusB":
+			return serializeAnPlusB(node.a ?? null, node.b ?? null);
+		case "Identifier":
+			return serializeCSSIdentifier((node.name as string) ?? "");
+		case "String":
+			return serializeCSSString(node.value?.value ?? "");
+		case "Raw":
+			return String((node as {value?: string}).value ?? "").trim();
+		default:
+			return "";
+	}
+}
+
+/** `An+B` in the one spelling CSSOM writes: `2n`, `2n+1`, `-n+5`, `10`. */
+function serializeAnPlusB(a: string | null, b: string | null): string {
+	if (a === null) return String(Number(b ?? 0));
+	const step = Number(a);
+	let out = step === 1 ? "n" : step === -1 ? "-n" : `${step}n`;
+	const offset = Number(b ?? 0);
+	if (offset > 0) out += `+${offset}`;
+	else if (offset < 0) out += `${offset}`;
+	return out;
+}
+
+/**
+ * Parse a selector list, or null when it does not parse -- which includes a
+ * pseudo this engine does not know, since an unknown pseudo makes the whole
+ * selector invalid.
+ */
+function parseSelectorList(text: string): SelectorNode | null {
+	let list: SelectorNode;
+	try {
+		list = cssTree.parse(String(text), {
+			context: "selectorList",
+			onParseError(error: Error) {
+				throw error;
+			},
+		}) as unknown as SelectorNode;
+	} catch {
+		return null;
+	}
+	if (list.type !== "SelectorList") return null;
+	let valid = true;
+	const checkSimple = (node: SelectorNode): void => {
+		if (!valid) return;
+		switch (node.type) {
+			case "PseudoClassSelector": {
+				const name = (node.name as string).toLowerCase();
+				// `:before` and friends are the CSS 2 spelling of a pseudo-element.
+				if (!PSEUDO_CLASSES.has(name) && !LEGACY_PSEUDO_ELEMENTS.has(name)) {
+					valid = false;
+					return;
+				}
+				break;
+			}
+			case "PseudoElementSelector":
+				if (!PSEUDO_ELEMENTS.has((node.name as string).toLowerCase())) {
+					valid = false;
+					return;
+				}
+				break;
+			// A chunk the parser could not read is not a simple selector.
+			case "Raw":
+				valid = false;
+				return;
+		}
+		// A functional pseudo's arguments are selectors only for the pseudos
+		// that take them; `::part(title)` and `:lang(ja)` name something else,
+		// and their arguments carry no selector to validate.
+		for (const child of childrenOf(node)) {
+			if (child.type === "SelectorList") checkList(child);
+			else if (child.type === "Selector") checkSelector(child);
+			else if (child.type === "Nth" && child.selector) checkList(child.selector);
+		}
+	};
+	const checkSelector = (selector: SelectorNode): void => {
+		const parts = childrenOf(selector);
+		if (parts.length === 0) {
+			valid = false;
+			return;
+		}
+		for (const part of parts) checkSimple(part);
+	};
+	const checkList = (node: SelectorNode): void => {
+		for (const selector of childrenOf(node)) checkSelector(selector);
+	};
+	checkList(list);
+	return valid ? list : null;
+}
+
+// ---- The text parser -------------------------------------------------------
+
+/** A parsed rule, as the CSS parser hands it over. */
+interface ParsedNode {
+	type: string;
+	name?: string;
+	prelude?: {type: string; value?: string} | null;
+	block?: {children: {toArray(): ParsedNode[]}} | null;
+	property?: string;
+	value?: {type: string; value?: string} | null;
+	important?: boolean | string;
+	children?: {toArray(): ParsedNode[]} | null;
+}
+
+function nodesOf(container: {children?: {toArray(): ParsedNode[]} | null}): ParsedNode[] {
+	return container.children ? container.children.toArray() : [];
+}
+
+/** The declarations of a rule's block, in source order. */
+function blockDeclarations(node: ParsedNode): CSSDeclaration[] {
+	const declarations: CSSDeclaration[] = [];
+	if (!node.block) return declarations;
+	for (const child of nodesOf(node.block)) {
+		if (child.type !== "Declaration") continue;
+		const value = serializeCSSValue(cssTree.generate(child.value as never));
+		if (!value) continue;
+		declarations.push({
+			name: normalizePropertyName(child.property ?? ""),
+			value,
+			important: child.important === true,
+		});
+	}
+	return declarations;
+}
+
+/** A rule block's text, as a declaration block takes it. */
+function blockText(node: ParsedNode): string {
+	return blockDeclarations(node)
+		.map(
+			({name, value, important}) =>
+				`${name}: ${value}${important ? " !important" : ""};`,
+		)
+		.join(" ");
+}
+
 /** Parse a rule list, as a sheet's text or a grouping rule's body. */
 function parseRules(
 	text: string,
 	sheet: CSSStyleSheet | null,
 	parentRule: CSSRule | null,
 ): CSSRule[] {
-	let parsed: {cssRules: unknown[]};
+	let ast: {children: {toArray(): ParsedNode[]}};
 	try {
-		parsed = CSSOM.parse(text) as unknown as {cssRules: unknown[]};
+		ast = cssTree.parse(text, {
+			parseValue: false,
+			parseAtrulePrelude: false,
+			parseRulePrelude: false,
+			parseCustomProperty: false,
+		}) as never;
 	} catch {
 		return [];
 	}
-	return convertRules(parsed.cssRules, sheet, parentRule);
+	return convertRules(ast.children.toArray(), sheet, parentRule);
 }
 
 /** One rule's text, as insertRule takes it. */
@@ -2126,106 +2950,185 @@ function parseRuleText(
 	sheet: CSSStyleSheet | null,
 	parentRule: CSSRule | null,
 ): CSSRule {
-	const rules = parseRules(String(text ?? ""), sheet, parentRule);
-	if (rules.length !== 1) {
-		throw new DOMException(`Cannot parse rule: ${text}`, "SyntaxError");
+	const source = String(text ?? "");
+	let ast: {children: {toArray(): ParsedNode[]}};
+	try {
+		ast = cssTree.parse(source, {
+			parseValue: false,
+			parseAtrulePrelude: false,
+			parseRulePrelude: false,
+			parseCustomProperty: false,
+			onParseError(error: Error) {
+				throw error;
+			},
+		}) as never;
+	} catch {
+		throw new DOMException(`Cannot parse rule: ${source}`, "SyntaxError");
 	}
-	return rules[0];
+	const nodes = ast.children.toArray();
+	if (nodes.length !== 1) {
+		throw new DOMException(`Cannot parse rule: ${source}`, "SyntaxError");
+	}
+	const rule = convertRule(nodes[0], sheet, parentRule);
+	if (!rule) {
+		throw new DOMException(`Cannot parse rule: ${source}`, "SyntaxError");
+	}
+	return rule;
 }
 
-/** Turn the text parser's rules into this engine's own. */
 function convertRules(
-	source: readonly unknown[],
+	source: readonly ParsedNode[],
 	sheet: CSSStyleSheet | null,
 	parentRule: CSSRule | null,
 ): CSSRule[] {
 	const rules: CSSRule[] = [];
-	for (const raw of source) {
-		const rule = convertRule(raw as ParsedRule, sheet, parentRule);
+	for (const node of source) {
+		const rule = convertRule(node, sheet, parentRule);
 		if (rule) rules.push(rule);
 	}
 	return rules;
 }
 
-/** The shape the text parser hands back for one rule. */
-interface ParsedRule {
-	type: number;
-	selectorText?: string;
-	href?: string;
-	name?: string;
-	keyText?: string;
-	conditionText?: string;
-	layerName?: string;
-	style?: {cssText: string};
-	media?: {mediaText: string};
-	cssRules?: unknown[];
+/** An at-rule's prelude, as written. */
+function preludeText(node: ParsedNode): string {
+	return (node.prelude?.value ?? "").trim();
 }
 
 function convertRule(
-	raw: ParsedRule,
+	node: ParsedNode,
 	sheet: CSSStyleSheet | null,
 	parentRule: CSSRule | null,
 ): CSSRule | null {
-	switch (raw.type) {
-		case RULE_TYPES.STYLE_RULE:
-			return new CSSStyleRule(
-				raw.selectorText ?? "",
-				raw.style?.cssText ?? "",
-				sheet,
-				parentRule,
+	if (node.type === "Rule") {
+		const selectors = parseSelectorList(preludeText(node));
+		if (!selectors) return null;
+		return new CSSStyleRule(
+			selectors,
+			blockText(node),
+			sheet,
+			parentRule,
+			(rule) => convertRules(nestedRules(node), sheet, rule),
+		);
+	}
+	if (node.type !== "Atrule") return null;
+	const prelude = preludeText(node);
+	switch ((node.name ?? "").toLowerCase()) {
+		case "media":
+			return new CSSMediaRule(prelude, sheet, parentRule, (group) =>
+				convertRules(nodesOf(node.block ?? {}), sheet, group),
 			);
-		case RULE_TYPES.MEDIA_RULE:
-			return new CSSMediaRule(
-				raw.media?.mediaText ?? "",
-				sheet,
-				parentRule,
-				(group) => convertRules(raw.cssRules ?? [], sheet, group),
+		case "supports":
+			return new CSSSupportsRule(prelude, sheet, parentRule, (group) =>
+				convertRules(nodesOf(node.block ?? {}), sheet, group),
 			);
-		case RULE_TYPES.SUPPORTS_RULE:
-			return new CSSSupportsRule(
-				raw.conditionText ?? "",
-				sheet,
-				parentRule,
-				(group) => convertRules(raw.cssRules ?? [], sheet, group),
+		case "container":
+			return new CSSContainerRule(prelude, sheet, parentRule, (group) =>
+				convertRules(nodesOf(node.block ?? {}), sheet, group),
 			);
-		case RULE_TYPES.IMPORT_RULE:
-			return new CSSImportRule(
-				raw.href ?? "",
-				raw.media?.mediaText ?? "",
-				raw.layerName ?? null,
+		case "scope":
+			return new CSSScopeRule(prelude, sheet, parentRule, (group) =>
+				convertRules(nodesOf(node.block ?? {}), sheet, group),
+			);
+		case "starting-style":
+			return new CSSStartingStyleRule(sheet, parentRule, (group) =>
+				convertRules(nodesOf(node.block ?? {}), sheet, group),
+			);
+		case "layer":
+			return node.block
+				? new CSSLayerBlockRule(prelude, sheet, parentRule, (group) =>
+						convertRules(nodesOf(node.block ?? {}), sheet, group),
+					)
+				: new CSSLayerStatementRule(prelude, sheet, parentRule);
+		case "import":
+			return convertImportRule(prelude, sheet);
+		case "namespace": {
+			const match = /^(?:([^\s]+)\s+)?(.*)$/.exec(prelude);
+			return new CSSNamespaceRule(
+				match?.[1] ?? "",
+				unwrapURL(match?.[2] ?? ""),
 				sheet,
 			);
-		case RULE_TYPES.FONT_FACE_RULE:
-			return new CSSDeclarationAtRule(
-				RULE_TYPES.FONT_FACE_RULE,
-				"@font-face",
-				raw.style?.cssText ?? "",
-				sheet,
-				parentRule,
-			);
-		case RULE_TYPES.PAGE_RULE:
-			return new CSSDeclarationAtRule(
-				RULE_TYPES.PAGE_RULE,
-				`@page ${raw.selectorText ?? ""}`.trim(),
-				raw.style?.cssText ?? "",
-				sheet,
-				parentRule,
-			);
-		case RULE_TYPES.KEYFRAME_RULE:
-			return new CSSDeclarationAtRule(
-				RULE_TYPES.KEYFRAME_RULE,
-				raw.keyText ?? "",
-				raw.style?.cssText ?? "",
-				sheet,
-				parentRule,
-			);
-		case RULE_TYPES.KEYFRAMES_RULE: {
-			const frames = convertRules(raw.cssRules ?? [], sheet, null);
-			return new CSSKeyframesRule(raw.name ?? "", frames, sheet);
 		}
+		case "font-face":
+			return new CSSFontFaceRule(blockText(node), sheet, parentRule);
+		case "page":
+			return new CSSPageRule(prelude, blockText(node), sheet, parentRule);
+		case "counter-style":
+			return new CSSCounterStyleRule(prelude, blockText(node), sheet);
+		case "property":
+			return new CSSPropertyRule(prelude, blockText(node), sheet);
+		case "font-feature-values":
+			return new CSSFontFeatureValuesRule(prelude, node, sheet);
+		case "font-palette-values":
+			return new CSSFontPaletteValuesRule(prelude, blockText(node), sheet);
+		case "keyframes":
+		case "-webkit-keyframes":
+			return new CSSKeyframesRule(
+				prelude,
+				sheet,
+				(rule) =>
+					nodesOf(node.block ?? {})
+						.filter((frame) => frame.type === "Rule")
+						.map(
+							(frame) =>
+								new CSSKeyframeRule(
+									preludeText(frame),
+									blockText(frame),
+									sheet,
+									rule,
+								),
+						),
+			);
+		// A charset rule is not exposed in a sheet's rule list, per CSSOM.
+		case "charset":
+			return null;
 		default:
 			return null;
 	}
+}
+
+/** The style rules nested inside a style rule's own block. */
+function nestedRules(node: ParsedNode): ParsedNode[] {
+	return nodesOf(node.block ?? {}).filter(
+		(child) => child.type === "Rule" || child.type === "Atrule",
+	);
+}
+
+/** `url("x")` or `"x"` reduced to the URL it names. */
+function unwrapURL(text: string): string {
+	const trimmed = text.trim();
+	const url = /^url\(\s*(.*?)\s*\)$/i.exec(trimmed);
+	const body = url ? url[1] : trimmed;
+	return /^["']/.test(body) ? body.slice(1, -1) : body;
+}
+
+/** `@import <url> [layer] [supports()] [media]`, split into its parts. */
+function convertImportRule(
+	prelude: string,
+	sheet: CSSStyleSheet | null,
+): CSSImportRule {
+	let rest = prelude.trim();
+	const head = /^(url\(\s*(?:"[^"]*"|'[^']*'|[^)]*)\s*\)|"[^"]*"|'[^']*')/.exec(
+		rest,
+	);
+	const href = unwrapURL(head?.[1] ?? "");
+	rest = rest.slice(head?.[1].length ?? 0).trim();
+
+	let layerName: string | null = null;
+	const layer = /^layer(?:\(\s*([^)]*)\s*\))?/i.exec(rest);
+	if (layer) {
+		layerName = layer[1]?.trim() ?? "";
+		rest = rest.slice(layer[0].length).trim();
+	}
+
+	let supportsText: string | null = null;
+	const supports = /^supports\(\s*(.*?)\s*\)/i.exec(rest);
+	if (supports) {
+		supportsText = supports[1];
+		rest = rest.slice(supports[0].length).trim();
+	}
+
+	return new CSSImportRule(href, rest, layerName, supportsText, sheet);
 }
 
 // Assigning a rule's text does nothing, as in every engine -- but the
@@ -2235,8 +3138,20 @@ for (const type of [
 	CSSStyleRule,
 	CSSMediaRule,
 	CSSSupportsRule,
+	CSSContainerRule,
+	CSSScopeRule,
+	CSSStartingStyleRule,
+	CSSLayerBlockRule,
+	CSSLayerStatementRule,
+	CSSNamespaceRule,
 	CSSImportRule,
-	CSSDeclarationAtRule,
+	CSSFontFaceRule,
+	CSSPageRule,
+	CSSCounterStyleRule,
+	CSSPropertyRule,
+	CSSFontPaletteValuesRule,
+	CSSKeyframeRule,
+	CSSFontFeatureValuesRule,
 	CSSKeyframesRule,
 ]) {
 	const descriptor = Object.getOwnPropertyDescriptor(
