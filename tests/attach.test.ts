@@ -186,3 +186,29 @@ test("awaiting dispose() means the final flush has landed", async () => {
 	// resolves; a write issued now lands after it.
 	expect(terminal.getVisibleText()).toContain("document payout line");
 });
+
+test("window.close() before the first frame leaves prior screen content alone", async () => {
+	// An immediate close must not pay out at a stale anchor: with no frame
+	// ever painted, the payout's cursor moves and erases would land on rows
+	// the app never owned -- the shell prompt above.
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	await new Promise<void>((r) => {
+		terminal.stdout.write("PROMPT-LINE\r\n\x1b[5;1H", () => r());
+	});
+	const shared = terminal.sharedTransport;
+	const transport = {
+		...shared,
+		cols: shared.cols,
+		rows: shared.rows,
+		close: () => {},
+	};
+	const dom = new TermDOM({transport});
+	dom.attach();
+	dom.document.body.innerHTML = `<div>closing content</div>`;
+	dom.window.close();
+	await new Promise((r) => setTimeout(r, 150));
+
+	const text = terminal.getVisibleText();
+	expect(text).toContain("PROMPT-LINE");
+	expect(text).toContain("closing content");
+});

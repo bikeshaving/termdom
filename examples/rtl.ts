@@ -1,25 +1,3 @@
-/**
- * Right-to-left text: Hebrew and Arabic, beside their left-to-right equivalents.
- *
- *   node examples/rtl.ts
- *
- * Terminals do not run the Unicode bidirectional algorithm, so termdom asks for
- * ECMA-48 explicit mode (BDSM, `CSI 8 l`), asks back what it got (`CSI 8 $ p`),
- * and hands over cells already in visual order: UAX #9 reordering via bidi-js,
- * and contextual Arabic shaping (joined letterforms, lam-alef ligatures) via
- * arabic-persian-reshaper, applied after measurement so caret offsets stay
- * logical.
- *
- * What termdom guarantees is the CELL layout: every character in its correct
- * column. How joined and evenly spaced the result LOOKS depends on the
- * terminal font's presentation-form glyphs, which most monospace fonts take
- * from system fallback at uneven advance widths. Some emulators (Terminal.app)
- * even lay a whole Arabic run out with those font advances and paint the REST
- * OF THE ROW from where the run's pixels ended -- a bent border on an
- * otherwise perfect grid. Both user-side fixes work: an emulator that clamps
- * glyphs to their cells (kitty, Alacritty), or a monospaced Arabic font.
- */
-
 import {TermDOM} from "@b9g/termdom";
 
 const term = new TermDOM();
@@ -74,3 +52,5 @@ app.innerHTML = `
 	</section>
 `;
 document.body.appendChild(app);
+
+//window.close();

@@ -5,6 +5,8 @@ import {Painter} from "./painter.js";
 import {
 	TerminalSession,
 	transportFromProcess,
+	type TerminalCloseInfo,
+	type TerminalSize,
 	type TerminalTransport,
 } from "./terminalsession.js";
 import {Renderer} from "./ansi.js";
@@ -436,15 +438,9 @@ export class TermDOM {
 	// asserts a terminal exists on the other end.
 	#interactive: boolean;
 
-	// Command-start anchoring is a shell-sharing concern: only the default
-	// process transport starts below a prompt it does not own. Injected
-	// transports (tests, xterm.js, SSH) own their screen from row 0.
-	#defaultedTransport: boolean;
-
 	constructor(options: TermDOMOptions = {}) {
-		this.#defaultedTransport = !options.transport;
 		this.#transport = options.transport ?? transportFromProcess();
-		this.#interactive = this.#transport.interactive ?? true;
+		this.#interactive = this.#transport.interactive;
 
 		this.#width = this.#transport.cols;
 		this.#height = this.#transport.rows;
@@ -472,7 +468,7 @@ export class TermDOM {
 		this.#renderer = new Renderer(
 			this.#height,
 			this.#width,
-			this.#transport.colorDepth ?? "rgb",
+			this.#transport.colorDepth,
 		);
 
 		// Setup style management FIRST to override getComputedStyle before LayoutEngine uses it
@@ -730,14 +726,16 @@ export class TermDOM {
 		termDOM.#nativeWindowClose = window.close.bind(window);
 		window.close = () => {
 			const wasAttached = termDOM.#attached;
-			// Everything dispose queued must reach the wire before the
+			// An immediate close must not tear down mid-establishment: wait
+			// for attach to finish (anchor found, first frame painted) so the
+			// payout lands where the frame was, not at a stale row 0. Then
+			// everything dispose queued must reach the wire before the
 			// transport acts on the close (a process transport exits).
-			const flushed = termDOM.dispose();
-			if (wasAttached) {
-				void flushed.then(() => {
-					termDOM.#transport.close?.({code: 0});
-				});
-			}
+			void (async () => {
+				if (wasAttached) await termDOM.#attachReady;
+				await termDOM.dispose();
+				if (wasAttached) termDOM.#transport.close?.({status: 0});
+			})();
 		};
 
 		// document.title sets the terminal's window title in-band (OSC 2).
@@ -1424,7 +1422,7 @@ export class TermDOM {
 			viewport: this.#viewport,
 			layout: this[kLayoutEngine],
 			interactive: this.#interactive,
-			anchorDetection: this.#transport.sharesScreen ?? this.#defaultedTransport,
+			anchorDetection: this.#transport.sharesScreen,
 			handlers: {
 				onKeys: (keyInput) => {
 					this.#inputGeneration++;
@@ -1478,7 +1476,17 @@ export class TermDOM {
 	 * Rebinding is only allowed before the first attach; re-attaching a live
 	 * instance to another terminal needs teardown that does not exist yet.
 	 */
-	attach(transport: TerminalTransport = this.#transport): void {
+	#attachReady: Promise<void> = Promise.resolve();
+	// Resolves once attach()'s begin phase has run (session started, cursor
+	// detection initialized): a render triggered between attach() and that
+	// phase -- a requestAnimationFrame, a mutation -- must not paint an
+	// unanchored first frame. The flag keeps steady-state renders fully
+	// synchronous: an unconditional await would defer every frame a
+	// microtask, and the scrollTop clamp is synchronous by contract.
+	#attachBegun: Promise<void> = Promise.resolve();
+	#attachBeginning = false;
+
+	attach(transport: TerminalTransport = this.#transport): Promise<void> {
 		const rebinding = transport !== this.#transport;
 		if (this.#attached) {
 			if (rebinding) {
@@ -1487,34 +1495,54 @@ export class TermDOM {
 						"transport; attach once, before the first render.",
 				);
 			}
-			return;
+			return this.#attachReady;
 		}
 		if (rebinding) this.#rebindTransport(transport);
 		this.#attached = true;
 
-		this.#session.start();
-		if (this.#interactive) {
-			// Bracketed paste on: pasted text arrives fenced, as one insertion.
-			void this.#session.write("\x1b[?2004h");
-			// Save the terminal's title, so dispose can hand it back; the
-			// document.title setter emits the replacement.
-			void this.#session.write("\x1b[22;0t");
-			if (this.document.title) {
-				void this.#session.write(`\x1b]2;${this.document.title}\x07`);
+		// Begin once the transport is established (a process tty already is;
+		// an SSH wrapper's channel may still be opening), then paint whatever
+		// the document holds. The returned promise resolves when that first
+		// frame has been written; negotiations are excluded deliberately --
+		// their silence timeouts must never hold a first paint hostage.
+		this.#attachBeginning = true;
+		let begun!: () => void;
+		this.#attachBegun = new Promise<void>((resolve) => {
+			begun = resolve;
+		});
+		this.#attachReady = (async () => {
+			await this.#transport.ready;
+			if (this.#disposed || !this.#attached) {
+				this.#attachBeginning = false;
+				begun();
+				return;
 			}
-		}
-		this.#updateMouseReporting();
-		this.#session.initializeCursorDetection();
-		void this.#session.negotiateBidi();
-		void this.#session.negotiateGraphemeClusters();
 
-		// Paint whatever the document already holds: an app may build its DOM
-		// first and attach last, and nothing after this call would otherwise
-		// trigger the first frame. Deferred a microtask so the render does not
-		// occupy the re-entrancy guard while synchronous code right after
-		// attach() (append, focus, keystrokes) still expects its own render
-		// calls to drain mutations inline.
-		queueMicrotask(() => void this.#render());
+			this.#session.start();
+			if (this.#interactive) {
+				// Bracketed paste on: pasted text arrives fenced, one insertion.
+				void this.#session.write("\x1b[?2004h");
+				// Save the terminal's title, so dispose can hand it back; the
+				// document.title setter emits the replacement.
+				void this.#session.write("\x1b[22;0t");
+				if (this.document.title) {
+					void this.#session.write(`\x1b]2;${this.document.title}\x07`);
+				}
+			}
+			this.#updateMouseReporting();
+			this.#session.initializeCursorDetection();
+			void this.#session.negotiateBidi();
+			void this.#session.negotiateGraphemeClusters();
+			this.#attachBeginning = false;
+			begun();
+
+			// Deferred a microtask so the render does not occupy the
+			// re-entrancy guard while synchronous code right after attach()
+			// still expects its own render calls to drain mutations inline.
+			await new Promise<void>((resolve) => queueMicrotask(resolve));
+			await this.#render();
+		})();
+		return this.#attachReady;
 	}
 
 	/**
@@ -1528,13 +1556,12 @@ export class TermDOM {
 	 */
 	#rebindTransport(transport: TerminalTransport): void {
 		this.#transport = transport;
-		this.#defaultedTransport = false;
-		this.#interactive = transport.interactive ?? true;
+		this.#interactive = transport.interactive;
 		this.#applyTerminalSize(transport.cols, transport.rows);
 		this.#renderer = new Renderer(
 			this.#height,
 			this.#width,
-			transport.colorDepth ?? "rgb",
+			transport.colorDepth,
 		);
 		this.#session = this.#buildSession();
 	}
@@ -1672,6 +1699,10 @@ export class TermDOM {
 		// An in-flight render loop can outlive dispose() by one queued frame;
 		// everything below assumes a live document.
 		if (this.#disposed) return;
+		if (this.#attachBeginning) {
+			await this.#attachBegun;
+			if (this.#disposed) return;
+		}
 		if (!this.#interactive) {
 			await this.#renderStatic();
 			return;
@@ -3091,8 +3122,12 @@ export class TermDOM {
 				rows: 24,
 				readable: new ReadableStream<string>({}, {highWaterMark: 0}),
 				writable: new WritableStream<string>({}),
-				closed: new Promise<void>(() => {}),
+				resizes: new ReadableStream<TerminalSize>({}, {highWaterMark: 0}),
+				closed: new Promise<TerminalCloseInfo>(() => {}),
+				ready: Promise.resolve(),
+				colorDepth: "rgb",
 				interactive: false,
+				sharesScreen: false,
 			},
 		});
 		return this.#staticSibling;
@@ -3150,9 +3185,12 @@ export class TermDOM {
 		const wasAttached = this.#attached;
 		this.#attached = false;
 
-		// Document mode has been painting a window in place, so nothing it showed
-		// has reached the terminal's scrollback. Pay it all out now.
-		if (wasAttached) this.#flushDocument();
+		// Document mode has been painting a window in place, so nothing it
+		// showed has reached the terminal's scrollback. Pay it all out now --
+		// but only if a frame was ever painted: with none, there is nothing
+		// of ours on screen, and the payout's cursor moves and erases would
+		// land on someone else's rows.
+		if (wasAttached && this.#renderCount > 0) this.#flushDocument();
 
 		// Frames keep the terminal cursor hidden (it is parked for resize
 		// bookkeeping, not UI); hand it back visible on the way out. The mouse

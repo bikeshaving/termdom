@@ -55,11 +55,6 @@ So `width: 12ch` is twelve columns, and `height: 3px` is three rows. Lengths
 that would land between cells are resolved to whole cells, because there is no
 such thing as half a cell to paint.
 
-This is also why a few CSS features are deliberately absent rather than
-approximated: `aspect-ratio` has no meaning on a grid whose cells are not
-square, and sub-cell sizing has nowhere to go. The
-[support matrix](/support/) records what is and is not implemented.
-
 ## Styling with a stylesheet
 
 Inline styles work, but a stylesheet is usually what you want, and the cascade

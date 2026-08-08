@@ -15,38 +15,55 @@ export interface TerminalSize {
 }
 
 export interface TerminalCloseInfo {
-	/** Exit status; the process wrapper hands it to process.exit. */
-	code?: number;
+	/** Exit status, process semantics: the process wrapper hands it to
+	 * process.exit; an SSH wrapper sends it as exit-status. */
+	status?: number;
+	/** The signal that ended the session ("SIGHUP", "SIGTERM"), when one did. */
+	signal?: string;
 	reason?: string;
 }
 
 export interface TerminalTransport {
-	/** Geometry now; changes arrive on `resizes`. */
+	/**
+	 * The current size, as LIVE getters: after `resizes` emits, these answer
+	 * with the new size. `resizes` is the notification, these are the value.
+	 */
 	readonly cols: number;
 	readonly rows: number;
-	/** Absent means full color: a transport that knows less says so. */
-	colorDepth?: ColorDepth;
-	/** User input: keys, replies to queries, paste bursts -- one byte stream. */
+	/** What the terminal can display; the wrapper knows its terminal. */
+	readonly colorDepth: ColorDepth;
+	/**
+	 * User input: keys, replies to queries, paste bursts. Chunks are strings,
+	 * so code points never split; escape sequences MAY split across chunks
+	 * (a network transport fragments arbitrarily), and the session
+	 * reassembles them.
+	 */
 	readonly readable: ReadableStream<string>;
 	/** Frames out. */
 	readonly writable: WritableStream<string>;
-	readonly resizes?: ReadableStream<TerminalSize>;
+	readonly resizes: ReadableStream<TerminalSize>;
 	/**
 	 * The screen holds prior content the app must not paint over (a shell
 	 * prompt above), so rendering anchors at the cursor rather than row 0.
-	 * Absent means the engine decides: true for the defaulted process
-	 * transport, false for injected ones, which own their screen.
+	 * True for a terminal shared with a shell; false for one the app owns
+	 * from row 0 (an xterm embed, a fresh SSH pty).
 	 */
-	readonly sharesScreen?: boolean;
+	readonly sharesScreen: boolean;
 	/**
 	 * Whether the far end is a screen that interprets cursor movement.
-	 * Absent means true -- xterm.js and SSH ptys always are; the process
-	 * wrapper reports false when stdout is a pipe, and rendering degrades to
-	 * plain appended lines.
+	 * False for a pipe or a file; rendering degrades to plain appended
+	 * lines.
 	 */
-	readonly interactive?: boolean;
-	/** The terminal went away: hangup, disconnect, process exit. */
-	readonly closed: Promise<TerminalCloseInfo | void>;
+	readonly interactive: boolean;
+	/**
+	 * Resolves when the transport is established. A process's tty and an
+	 * xterm instance are established at construction (Promise.resolve());
+	 * an SSH wrapper resolves it when its channel opens.
+	 */
+	readonly ready: Promise<void>;
+	/** The terminal went away: hangup, disconnect, process exit. Always
+	 * fulfills with a TerminalCloseInfo; fields may be absent. */
+	readonly closed: Promise<TerminalCloseInfo>;
 	/** The app is done with the terminal (window.close()'s last act). */
 	close?(info?: TerminalCloseInfo): void;
 }
@@ -87,6 +104,29 @@ export interface ProcessLike {
 	removeListener?(event: ProcessSignal, listener: () => void): unknown;
 	exit(code?: number): never;
 	env: Record<string, string | undefined>;
+}
+
+/**
+ * The length of an incomplete escape sequence at the end of `chunk`, or 0.
+ * Incomplete means a CSI (ESC [) whose final byte (0x40-0x7e) has not
+ * arrived, or an SS3 (ESC O) missing its one final character. A bare
+ * trailing ESC reports 0: see #partialEscape.
+ */
+function splitTrailingEscape(chunk: string): number {
+	const esc = chunk.lastIndexOf("\x1b");
+	if (esc === -1 || esc === chunk.length - 1) return 0;
+	const kind = chunk[esc + 1];
+	if (kind === "[") {
+		for (let i = esc + 2; i < chunk.length; i++) {
+			const code = chunk.charCodeAt(i);
+			if (code >= 0x40 && code <= 0x7e) return 0; // finished
+		}
+		return chunk.length - esc;
+	}
+	if (kind === "O" && esc + 2 >= chunk.length) {
+		return chunk.length - esc;
+	}
+	return 0;
 }
 
 function detectColorDepth(proc: ProcessLike): ColorDepth {
@@ -133,10 +173,14 @@ function installCursorRestoreOnExit(): void {
  */
 export function transportFromProcess(
 	proc: ProcessLike = process as unknown as ProcessLike,
+	// The global process sits below a shell; a wrapped mock or relay owns
+	// its screen unless the caller says otherwise.
 	options: {sharesScreen?: boolean} = {},
 ): TerminalTransport {
-	let closedResolve!: (info: TerminalCloseInfo | void) => void;
-	const closed = new Promise<TerminalCloseInfo | void>((resolve) => {
+	const sharesScreen =
+		options.sharesScreen ?? proc === (process as unknown as ProcessLike);
+	let closedResolve!: (info: TerminalCloseInfo) => void;
+	const closed = new Promise<TerminalCloseInfo>((resolve) => {
 		closedResolve = resolve;
 	});
 
@@ -192,7 +236,7 @@ export function transportFromProcess(
 				// the process runtime handling the actual termination.
 				const closeOn = (signal: ProcessSignal, exitAfter: boolean) => {
 					const listener = () => {
-						closedResolve(undefined);
+						closedResolve({reason: signal});
 						if (exitAfter) setImmediate(() => proc.exit(0));
 					};
 					signalListeners.push([signal, listener]);
@@ -255,16 +299,17 @@ export function transportFromProcess(
 		get rows() {
 			return proc.stdout.rows || 24;
 		},
-		sharesScreen: options.sharesScreen,
+		sharesScreen,
 		interactive: proc.stdout.isTTY !== false,
 		colorDepth: detectColorDepth(proc),
+		ready: Promise.resolve(),
 		readable,
 		writable,
 		resizes,
 		closed,
 		close(info?: TerminalCloseInfo) {
 			disengage();
-			proc.exit(info?.code ?? 0);
+			proc.exit(info?.status ?? 0);
 		},
 	};
 }
@@ -298,7 +343,7 @@ export interface TerminalSessionHandlers {
 	/** Ctrl-C with no listener claiming it: the default action is window.close(). */
 	onCloseRequest(): void;
 	/** The transport's `closed` settled: the terminal is gone. */
-	onClosed(info: TerminalCloseInfo | void): void;
+	onClosed(info: TerminalCloseInfo): void;
 }
 
 export class TerminalSession {
@@ -320,6 +365,11 @@ export class TerminalSession {
 	// Body of a bracketed paste (ESC[200~..ESC[201~) across chunks; null when
 	// no paste is in flight.
 	#pasteBuffer: string | null = null;
+	// A trailing incomplete escape sequence, held for the next chunk: network
+	// transports fragment arbitrarily, and half a CSI decodes as garbage
+	// keystrokes. A bare trailing ESC is NOT held -- it is the Escape key
+	// far more often than a split, and holding it would delay every Escape.
+	#partialEscape = "";
 
 	// Command start was resolved (even if at row 1). The resize re-anchor saves
 	// and restores this around its redraw.
@@ -413,10 +463,8 @@ export class TerminalSession {
 		this.#reader = this.#transport.readable.getReader();
 		void this.#readLoop(this.#reader);
 
-		if (this.#transport.resizes) {
-			this.#resizeReader = this.#transport.resizes.getReader();
-			void this.#resizeLoop(this.#resizeReader);
-		}
+		this.#resizeReader = this.#transport.resizes.getReader();
+		void this.#resizeLoop(this.#resizeReader);
 
 		void this.#transport.closed.then((info) => {
 			if (!this.#disposed) this.#handlers.onClosed(info);
@@ -428,7 +476,15 @@ export class TerminalSession {
 			for (;;) {
 				const {done, value} = await reader.read();
 				if (done) return;
-				if (value) this.#route(value);
+				if (!value) continue;
+				let chunk = this.#partialEscape + value;
+				this.#partialEscape = "";
+				const held = splitTrailingEscape(chunk);
+				if (held > 0 && held <= 32) {
+					this.#partialEscape = chunk.slice(-held);
+					chunk = chunk.slice(0, -held);
+				}
+				if (chunk) this.#route(chunk);
 			}
 		} catch {
 			// Reader cancelled by dispose, or the transport died; either way the

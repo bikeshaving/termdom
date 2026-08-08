@@ -1,82 +1,50 @@
 ---
 title: Layout
-description: Flexbox, tables, the box model and positioning, implemented from the CSS specs on an integer cell grid.
+description: The box model, flexbox, and tables on a cell grid.
 ---
 
-TermDOM implements the parts of CSS layout that mean something on a
-character grid, written from the specifications.
+Sizes are in cells: `1ch` is one column, `1px` is one row. Lengths that land
+between cells resolve to whole cells.
 
-## The box model
-
-`width`, `height`, `min-*`/`max-*`, `padding`, `border`, `margin` and
-`box-sizing` all behave as specified, resolved to whole cells. Borders are
-drawn with box-drawing characters and occupy a cell on each side they appear.
+## Boxes
 
 ```ts
 box.style.width = "24ch";
 box.style.padding = "0 2ch";
 box.style.border = "1px solid";
+box.style.margin = "1px 0";
 ```
 
-Border styles map onto the box-drawing repertoire: `solid`, `double`, and
-`none`/`hidden`. Adjacent borders join at corners and intersections the way
-the characters allow.
+Borders are drawn with box-drawing characters (`solid` and `double`) and
+take one cell per side.
 
 ## Flexbox
 
-Flexbox is implemented from `css-flexbox-1`: `flex-shrink`, automatic
-minimum sizes, wrap, and the alignment properties on both axes.
-
 ```ts
-const row = document.createElement("div");
 row.style.display = "flex";
 row.style.gap = "2ch";
 row.style.justifyContent = "space-between";
 row.style.alignItems = "center";
 ```
 
-Items are blockified as `css-display-3` requires, so `width` applies to an
-inline child once it becomes a flex item, and text between two flex items
-forms its own anonymous item.
+`flex-grow`, `flex-shrink`, `flex-wrap`, `order`, and the alignment
+properties all work.
 
 ## Tables
 
-CSS tables work, with shared column widths across rows, `colspan` and
-`rowspan`, and `border-collapse`. A `<table>` of real `<tr>` and `<td>`
-elements lays out as a table, which is why libraries that render tables —
-TanStack Table, for instance — work unchanged.
+A `<table>` of `<tr>` and `<td>` elements lays out as a table: shared column
+widths across rows, `colspan` and `rowspan`, `border-collapse`.
 
-## Inline layout
+## Text
 
-Inline boxes, inline-block sub-layout, and block-in-inline splitting are all
-implemented. When a block-level box appears inside an inline one, CSS says
-the inline box breaks around it.
+Text wraps at the box's width; `white-space`, `word-break`, and
+`overflow-wrap` apply. Wide characters — CJK, emoji — take two cells.
 
-```html
-<a href="..."><div>card</div></a>
-```
+## Positioning
 
-That renders as a card.
+`position: relative`, `absolute`, and `fixed`, with `z-index` and stacking
+contexts. `overflow: hidden` clips to the box.
 
-Text wrapping uses a real line breaker (UAX #14), and `white-space`,
-`word-break` and `overflow-wrap` all apply. Wide characters — CJK, emoji —
-take two cells; combining marks take none; spacing marks take one, following
-POSIX `wcwidth`.
+## Not implemented
 
-## Positioning and layers
-
-`position: relative`, `absolute` and `fixed` are supported, along with
-`z-index` and real stacking contexts. `overflow: hidden` clips to the box.
-
-An absolutely positioned box is laid out against its containing block, exactly
-as in CSS — the nearest positioned ancestor, or the viewport for `fixed`.
-
-## What is not implemented
-
-**CSS Grid** is not implemented. Flexbox and table layout are, and between
-them they cover most terminal layouts.
-
-**Floats** (`float`, `clear`) are not implemented.
-
-The [support matrix](/support/) lists every property: what works, what is
-missing, and what cannot apply to a character grid, with the reason.
+CSS Grid and floats. The [support matrix](/support/) has the full list.
