@@ -748,15 +748,19 @@ export class InlineStyleDeclaration implements DeclarationSource {
 		this.#invalidate();
 	}
 
-	/** Serialize to the `style` attribute, which is what invalidation observes. */
-	#flush(): void {
-		this.#invalidate();
-		this.#attributeText = this.#declarations
+	#serialize(): string {
+		return this.#declarations
 			.map(
 				({name, value, important}) =>
 					`${name}: ${value}${important ? " !important" : ""};`,
 			)
 			.join(" ");
+	}
+
+	/** Serialize to the `style` attribute, which is what invalidation observes. */
+	#flush(): void {
+		this.#invalidate();
+		this.#attributeText = this.#serialize();
 		this.#element.setAttribute("style", this.#attributeText);
 	}
 
@@ -841,12 +845,7 @@ export class InlineStyleDeclaration implements DeclarationSource {
 
 	get cssText(): string {
 		this.#sync();
-		return this.#declarations
-			.map(
-				({name, value, important}) =>
-					`${name}: ${value}${important ? " !important" : ""};`,
-			)
-			.join(" ");
+		return this.#serialize();
 	}
 
 	set cssText(text: string) {
