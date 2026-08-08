@@ -24,6 +24,7 @@ import {
 	CSS_INITIAL_VALUES,
 	CSS_LONGHANDS,
 	CSS_PROPERTIES,
+	CSS_AT_RULE_DESCRIPTORS,
 	CSS_RESET_ONLY_LONGHANDS,
 	CSS_SHORTHANDS,
 } from "./cssproperties.js";
@@ -280,8 +281,12 @@ const LENGTH_PROPERTIES = new Set([
  * cell here, so the check earns its keep: `padding-top: 1` means nothing,
  * `padding-top: 1px` means one cell.
  */
-function isValidDeclaration(property: string, value: string): boolean {
-	if (!matchesGrammar(property, value)) return false;
+function isValidDeclaration(
+	property: string,
+	value: string,
+	atRule = "",
+): boolean {
+	if (!matchesGrammar(property, value, atRule)) return false;
 	if (!LENGTH_PROPERTIES.has(property)) {
 		return true;
 	}
@@ -333,23 +338,25 @@ const grammarMatches = new Map<string, boolean>();
  * A value carrying a substitution is not judged: what it means depends on what
  * the custom property holds, which is not known here.
  */
-function matchesGrammar(property: string, value: string): boolean {
-	if (property.startsWith("--") || !SUPPORTED_PROPERTIES.has(property)) {
-		return true;
-	}
+function matchesGrammar(property: string, value: string, atRule = ""): boolean {
+	if (property.startsWith("--")) return true;
+	if (!atRule && !SUPPORTED_PROPERTIES.has(property)) return true;
 	const text = value.trim();
 	if (!text || CSS_WIDE_KEYWORDS.has(text.toLowerCase())) return true;
 	if (/\b(?:var|env|attr)\(/i.test(text)) return true;
-	const key = `${property}|${text}`;
+	const key = `${atRule}|${property}|${text}`;
 	const memoized = grammarMatches.get(key);
 	if (memoized !== undefined) return memoized;
 	let valid = true;
 	try {
-		const match = grammarLexer.matchProperty(property, text);
-		// A property the grammars do not describe is one this cannot judge.
+		const match = atRule
+			? grammarLexer.matchAtruleDescriptor(atRule.slice(1), property, text)
+			: grammarLexer.matchProperty(property, text);
+		// A descriptor or property the grammars do not describe is one this
+		// cannot judge.
 		valid =
 			match.matched !== null ||
-			/Unknown property/i.test(match.error?.message ?? "");
+			/Unknown (?:property|at-rule)/i.test(match.error?.message ?? "");
 	} catch {
 		valid = true;
 	}
@@ -1593,8 +1600,12 @@ export class CSSStyleDeclaration implements DeclarationSource {
 	#element: Element | null;
 	#parentRule: CSSRule | null;
 	#onChange: (() => void) | null;
-	/** Whether this block holds an at-rule's descriptors rather than properties. */
-	#descriptors = false;
+	/**
+	 * The at-rule whose descriptors this block holds, empty for a block of CSS
+	 * properties. A descriptor is named only inside its own at-rule, and only
+	 * its own at-rule's grammar can judge its value.
+	 */
+	#descriptors = "";
 	#declarations: CSSDeclaration[] = [];
 	/**
 	 * The declarations by name. A block holds one declaration per property, so
@@ -1614,13 +1625,13 @@ export class CSSStyleDeclaration implements DeclarationSource {
 			element?: Element;
 			parentRule?: CSSRule;
 			onChange?: () => void;
-			descriptors?: boolean;
+			descriptors?: string;
 		} = {},
 	) {
 		this.#element = owner.element ?? null;
 		this.#parentRule = owner.parentRule ?? null;
 		this.#onChange = owner.onChange ?? null;
-		this.#descriptors = Boolean(owner.descriptors);
+		this.#descriptors = owner.descriptors ?? "";
 	}
 
 	/** Adopt the `style` attribute when it says something this object did not write. */
@@ -1711,7 +1722,14 @@ export class CSSStyleDeclaration implements DeclarationSource {
 	 * the property index does not describe descriptors.
 	 */
 	#supports(name: string): boolean {
-		if (this.#descriptors) return name !== "";
+		if (this.#descriptors) {
+			// An at-rule's block holds its own descriptors. One this engine
+			// has no descriptor list for holds whatever it is given, which is
+			// what keeps @font-feature-values' feature blocks working.
+			const names = DESCRIPTOR_NAMES.get(this.#descriptors);
+			return names ? names.has(name) : name !== "";
+		}
+
 		return name.startsWith("--") || SUPPORTED_PROPERTIES.has(name);
 	}
 
@@ -1763,7 +1781,7 @@ export class CSSStyleDeclaration implements DeclarationSource {
 		// A declaration whose value does not parse is not stored at all, so a
 		// shorthand with one bad component drops whole rather than leaving its
 		// good components behind.
-		if (!isValidDeclaration(name, value)) return false;
+		if (!isValidDeclaration(name, value, this.#descriptors)) return false;
 		const expanded = expandShorthandValue(name, value);
 		if (!expanded) return this.#store(name, value, important, cascade);
 		let changed = this.#remove(name);
@@ -1930,6 +1948,14 @@ export class CSSStyleDeclaration implements DeclarationSource {
 }
 
 /** Custom properties keep their case; everything else is ASCII-lowercased. */
+/**
+ * The declaration block of CSS PROPERTIES: an element's inline style, a style
+ * rule's block, a keyframe's. It reflects every property in the index as an
+ * IDL attribute, which is what separates it from the descriptor blocks an
+ * at-rule holds -- `cssFloat` reaches a style rule's block and no @page's.
+ */
+export class CSSStyleProperties extends CSSStyleDeclaration {}
+
 function normalizePropertyName(property: string): string {
 	const name = String(property).trim();
 	return name.startsWith("--") ? name : name.toLowerCase();
@@ -1977,7 +2003,7 @@ for (const property of CSS_PROPERTIES) {
 	if (property !== names[0]) names.push(property);
 	if (property === "float") names.push("cssFloat");
 	for (const [index, name] of names.entries()) {
-		Object.defineProperty(CSSStyleDeclaration.prototype, name, {
+		Object.defineProperty(CSSStyleProperties.prototype, name, {
 			...descriptor,
 			enumerable: index === 0,
 		});
@@ -2005,7 +2031,7 @@ export function installInlineStyle(window: DOMWindow): void {
 			get(this: Element) {
 				let style = inlineStyles.get(this);
 				if (!style) {
-					style = new CSSStyleDeclaration({element: this});
+					style = new CSSStyleProperties({element: this});
 					inlineStyles.set(this, style);
 				}
 				return style;
@@ -2459,7 +2485,7 @@ export class CSSStyleRule extends CSSGroupingRule {
 	) {
 		super(parentStyleSheet, parentRule, build);
 		this.#selectors = selectors;
-		this.#style = new CSSStyleDeclaration({
+		this.#style = new CSSStyleProperties({
 			parentRule: this,
 			onChange: () => notifyRule(this),
 		});
@@ -2594,6 +2620,49 @@ function sheetNamespaces(sheet: CSSStyleSheet | null): SelectorNamespaces {
 }
 
 /** A rule whose body is a declaration block rather than a rule list. */
+/**
+ * The declaration blocks at-rules hold: one class per at-rule that declares
+ * descriptors, each reflecting its own descriptors as IDL attributes and
+ * naming itself as the interface it is. A descriptor is not a property -- it
+ * is named only inside its own at-rule -- so `src` reaches
+ * `CSSFontFaceDescriptors` and nothing else.
+ */
+const DESCRIPTOR_BLOCKS = new Map<string, typeof CSSStyleDeclaration>();
+
+/** The descriptor names each at-rule's block may hold, and no others. */
+const DESCRIPTOR_NAMES = new Map<string, ReadonlySet<string>>();
+for (const [atRule, descriptors] of Object.entries(CSS_AT_RULE_DESCRIPTORS)) {
+	const name = `CSS${atRule
+		.slice(1)
+		.replace(/(?:^|-)([a-z])/g, (_, letter: string) =>
+			letter.toUpperCase(),
+		)}Descriptors`;
+	const block = class extends CSSStyleDeclaration {};
+	DESCRIPTOR_NAMES.set(atRule, new Set(descriptors));
+	Object.defineProperty(block, "name", {value: name, configurable: true});
+	Object.defineProperty(block.prototype, Symbol.toStringTag, {
+		value: name,
+		configurable: true,
+	});
+	for (const descriptor of descriptors) {
+		const attribute = camelCaseProperty(descriptor);
+		for (const [index, key] of [attribute, descriptor].entries()) {
+			if (index === 1 && key === attribute) continue;
+			Object.defineProperty(block.prototype, key, {
+				get(this: CSSStyleDeclaration) {
+					return this.getPropertyValue(descriptor);
+				},
+				set(this: CSSStyleDeclaration, value: unknown) {
+					this.setProperty(descriptor, value == null ? "" : String(value));
+				},
+				configurable: true,
+				enumerable: index === 0,
+			});
+		}
+	}
+	DESCRIPTOR_BLOCKS.set(atRule, block);
+}
+
 export abstract class CSSDeclarationBlockRule extends CSSRule {
 	#style: CSSStyleDeclaration;
 
@@ -2603,12 +2672,16 @@ export abstract class CSSDeclarationBlockRule extends CSSRule {
 		parentRule: CSSRule | null,
 	) {
 		super(parentStyleSheet, parentRule);
-		this.#style = new CSSStyleDeclaration({
+		const atRule = (this.constructor as unknown as {atRule?: string}).atRule;
+		const Block =
+			(atRule ? DESCRIPTOR_BLOCKS.get(atRule) : undefined) ??
+			CSSStyleProperties;
+		this.#style = new Block({
 			parentRule: this,
 			onChange: () => notifyRule(this),
 			// A descriptor block declares descriptors, not CSS properties, so
 			// the property index does not gate what it may hold.
-			descriptors: true,
+			descriptors: atRule ?? "",
 		});
 		this.#style.cssText = cssText;
 	}
@@ -2635,6 +2708,9 @@ export abstract class CSSDeclarationBlockRule extends CSSRule {
 
 /** `@font-face`: the descriptors of a font this terminal will never load. */
 export class CSSFontFaceRule extends CSSDeclarationBlockRule {
+	/** The at-rule whose descriptors this rule's block holds. */
+	static readonly atRule = "@font-face";
+
 	get type(): number {
 		return RULE_TYPES.FONT_FACE_RULE;
 	}
@@ -2646,6 +2722,9 @@ export class CSSFontFaceRule extends CSSDeclarationBlockRule {
 
 /** `@page`: the page selector and its descriptors. */
 export class CSSPageRule extends CSSDeclarationBlockRule {
+	/** The at-rule whose descriptors this rule's block holds. */
+	static readonly atRule = "@page";
+
 	#selectorText: string;
 
 	constructor(
@@ -2698,6 +2777,9 @@ function serializePageSelector(selector: string): string {
 
 /** `@counter-style`: a counter's name and the descriptors that define it. */
 export class CSSCounterStyleRule extends CSSDeclarationBlockRule {
+	/** The at-rule whose descriptors this rule's block holds. */
+	static readonly atRule = "@counter-style";
+
 	#name: string;
 
 	constructor(
@@ -2731,6 +2813,9 @@ export class CSSCounterStyleRule extends CSSDeclarationBlockRule {
 
 /** `@property`: a custom property's registration. */
 export class CSSPropertyRule extends CSSDeclarationBlockRule {
+	/** The at-rule whose descriptors this rule's block holds. */
+	static readonly atRule = "@property";
+
 	#name: string;
 
 	constructor(
@@ -2769,6 +2854,9 @@ export class CSSPropertyRule extends CSSDeclarationBlockRule {
 
 /** `@font-palette-values`: a palette's name and its descriptors. */
 export class CSSFontPaletteValuesRule extends CSSDeclarationBlockRule {
+	/** The at-rule whose descriptors this rule's block holds. */
+	static readonly atRule = "@font-palette-values";
+
 	#name: string;
 
 	constructor(
@@ -3174,7 +3262,7 @@ export class CSSFontFeatureValuesRule extends CSSRule {
 			const block = new CSSStyleDeclaration({
 				parentRule: this,
 				onChange: () => notifyRule(this),
-				descriptors: true,
+				descriptors: "@font-feature-values",
 			});
 			block.cssText = blockText(child);
 			this.#blocks.set(child.name.toLowerCase(), block);
@@ -3201,7 +3289,7 @@ export class CSSFontFeatureValuesRule extends CSSRule {
 			block = new CSSStyleDeclaration({
 				parentRule: this,
 				onChange: () => notifyRule(this),
-				descriptors: true,
+				descriptors: "@font-feature-values",
 			});
 			this.#blocks.set(name, block);
 		}
@@ -3421,6 +3509,15 @@ export class CSSStyleSheet {
 		this.#text = text;
 		this.#rules.length = 0;
 		this.#rules.push(...parseRules(text, this, null));
+	}
+
+	/**
+	 * Forget what the owner element last said, so the next read reparses it.
+	 * A <style> element's child list IS its stylesheet: changing it replaces
+	 * the sheet's rules even when the text it spells out is the same.
+	 */
+	reparseOwnerText(): void {
+		this.#text = null;
 	}
 
 	get cssRules(): CSSRuleList {
@@ -4779,8 +4876,49 @@ export function installStyleSheets(window: DOMWindow): void {
 		CSSStartingStyleRule,
 		MediaList,
 		CSSStyleDeclaration,
+		CSSStyleProperties,
 		CSS: CSSNamespace,
 	});
+}
+
+/**
+ * Every CSSOM interface names itself: `Object.prototype.toString` on one of
+ * its objects gives the interface name, as it does for any platform object.
+ */
+for (const [name, type] of Object.entries({
+	CSSStyleSheet,
+	StyleSheetList,
+	CSSRuleList,
+	CSSRule,
+	CSSStyleRule,
+	CSSGroupingRule,
+	CSSConditionRule,
+	CSSMediaRule,
+	CSSSupportsRule,
+	CSSContainerRule,
+	CSSImportRule,
+	CSSNamespaceRule,
+	CSSKeyframesRule,
+	CSSKeyframeRule,
+	CSSFontFaceRule,
+	CSSPageRule,
+	CSSCounterStyleRule,
+	CSSPropertyRule,
+	CSSFontPaletteValuesRule,
+	CSSFontFeatureValuesRule,
+	CSSLayerBlockRule,
+	CSSLayerStatementRule,
+	CSSScopeRule,
+	CSSStartingStyleRule,
+	MediaList,
+	CSSStyleDeclaration,
+	CSSStyleProperties,
+})) {
+	Object.defineProperty(
+		(type as {prototype: object}).prototype,
+		Symbol.toStringTag,
+		{value: name, configurable: true},
+	);
 }
 
 /** The UA document sheet, parsed once: its rules never change. */
@@ -4936,7 +5074,7 @@ const EMPTY_COMPUTED_STYLE: ComputedStyle = {
 /** The epoch a declaration with no manager behind it watches: one that never moves. */
 const NO_STYLE_EPOCH = {value: 0};
 
-export class ComputedStyleDeclaration extends CSSStyleDeclaration {
+export class ComputedStyleDeclaration extends CSSStyleProperties {
 	#element: Element;
 	#cssRules: ParsedCSSRule[];
 	/**
@@ -5707,7 +5845,7 @@ function isBeingRendered(element: Element): boolean {
  * rules plus what it inherits from its originating element -- read through
  * the same computed-value boundary as an element's.
  */
-export class PseudoStyleDeclaration extends CSSStyleDeclaration {
+export class PseudoStyleDeclaration extends CSSStyleProperties {
 	#declarations: Record<string, string>;
 	#resolved = new Map<string, string>();
 	/**
@@ -5841,7 +5979,7 @@ export class PseudoStyleDeclaration extends CSSStyleDeclaration {
  * The answer to a `getComputedStyle` pseudo-element argument that names no
  * pseudo-element: a declaration of nothing, as CSSOM says.
  */
-export class EmptyStyleDeclaration extends CSSStyleDeclaration {
+export class EmptyStyleDeclaration extends CSSStyleProperties {
 	#element: Element | null;
 
 	constructor(element?: Element) {
@@ -5970,7 +6108,7 @@ for (const property of ACCESSOR_PROPERTIES) {
 		for (const prototype of [
 			ComputedStyleDeclaration.prototype,
 			PseudoStyleDeclaration.prototype,
-		]) {
+		] as object[]) {
 			if (name in prototype) continue;
 			Object.defineProperty(prototype, name, {
 				get(this: ComputedStyleDeclaration | PseudoStyleDeclaration) {
@@ -6644,6 +6782,12 @@ export class StyleManager {
 
 		for (const mutation of mutations) {
 			if (mutation.type === "childList") {
+				// A <style> element's children ARE its stylesheet text, so
+				// adding or removing one reparses the sheet.
+				if ((mutation.target as Element).tagName === "STYLE") {
+					sheetFor(mutation.target as Element).reparseOwnerText();
+					shouldRefreshStylesheets = true;
+				}
 				// A list's marker gutter is derived from its children, so adding or
 				// removing an item invalidates the *list*, not just the item that
 				// moved. Without this the gutter stays at whatever the original items
@@ -6717,7 +6861,9 @@ export class StyleManager {
 				}
 			} else if (mutation.type === "characterData") {
 				// Check for changes to <style> element content
-				if (mutation.target.parentElement?.tagName === "STYLE") {
+				const owner = mutation.target.parentElement;
+				if (owner?.tagName === "STYLE") {
+					sheetFor(owner).reparseOwnerText();
 					shouldRefreshStylesheets = true;
 				}
 			}

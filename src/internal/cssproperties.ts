@@ -1981,6 +1981,53 @@ export const CSS_RESET_ONLY_LONGHANDS: Readonly<
 	],
 };
 
+/** Each at-rule's descriptors, which its own declaration block reflects. */
+export const CSS_AT_RULE_DESCRIPTORS: Readonly<
+	Record<string, readonly string[]>
+> = {
+	"@counter-style": [
+		"additive-symbols",
+		"fallback",
+		"negative",
+		"pad",
+		"prefix",
+		"range",
+		"speak-as",
+		"suffix",
+		"symbols",
+		"system",
+	],
+	"@font-face": [
+		"ascent-override",
+		"descent-override",
+		"font-display",
+		"font-family",
+		"font-feature-settings",
+		"font-stretch",
+		"font-style",
+		"font-variation-settings",
+		"font-weight",
+		"line-gap-override",
+		"size-adjust",
+		"src",
+		"unicode-range",
+	],
+	"@font-palette-values": ["base-palette", "font-family", "override-colors"],
+	"@page": [
+		"bleed",
+		"margin",
+		"margin-bottom",
+		"margin-left",
+		"margin-right",
+		"margin-top",
+		"marks",
+		"page-orientation",
+		"size",
+	],
+	"@property": ["inherits", "initial-value", "syntax"],
+	"@view-transition": ["navigation", "types"],
+};
+
 /** Longhands whose value inherits from the parent element. */
 export const CSS_INHERITED_PROPERTIES: readonly string[] = [
 	"-webkit-overflow-scrolling",

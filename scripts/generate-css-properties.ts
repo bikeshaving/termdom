@@ -23,6 +23,10 @@ const properties = require("mdn-data/css/properties.json") as Record<
 		inherited: boolean;
 	}
 >;
+const atRules = require("mdn-data/css/at-rules.json") as Record<
+	string,
+	{descriptors?: Record<string, unknown>}
+>;
 
 /**
  * A property is supported when it is unprefixed -- including the ones the
@@ -126,6 +130,39 @@ for (const name of longhands) {
 	initials[name] = initial;
 }
 
+/**
+ * The descriptors each at-rule's block may hold. A descriptor is not a
+ * property -- it is named only inside its own at-rule -- so it gets its
+ * accessors on that rule's own declaration block and nowhere else.
+ */
+const descriptors: Record<string, string[]> = {};
+/**
+ * Descriptors the property index leaves out. css-page-3 gives @page's block
+ * the page margins alongside its own descriptors, so they are named on
+ * CSSPageDescriptors and nowhere the index would put them.
+ */
+const extraDescriptors: Record<string, string[]> = {
+	"@page": [
+		"margin",
+		"margin-top",
+		"margin-right",
+		"margin-bottom",
+		"margin-left",
+	],
+};
+for (const name of new Set([
+	...Object.keys(atRules),
+	...Object.keys(extraDescriptors),
+])) {
+	const names = [
+		...Object.keys(atRules[name]?.descriptors ?? {}),
+		...(extraDescriptors[name] ?? []),
+	]
+		.filter((descriptor) => !descriptor.includes("("))
+		.sort();
+	if (names.length > 0) descriptors[name] = names;
+}
+
 function list(values: readonly string[]): string {
 	return values.map((value) => `\t${JSON.stringify(value)},`).join("\n");
 }
@@ -166,6 +203,13 @@ export const CSS_RESET_ONLY_LONGHANDS: Readonly<
 	Record<string, readonly string[]>
 > = {
 ${record(resetOnly)}
+};
+
+/** Each at-rule's descriptors, which its own declaration block reflects. */
+export const CSS_AT_RULE_DESCRIPTORS: Readonly<
+	Record<string, readonly string[]>
+> = {
+${record(descriptors)}
 };
 
 /** Longhands whose value inherits from the parent element. */

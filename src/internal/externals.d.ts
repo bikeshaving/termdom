@@ -50,6 +50,11 @@ declare module "css-tree" {
 
 	export interface Lexer {
 		matchProperty(property: string, value: CSSTreeNode | string): MatchResult;
+		matchAtruleDescriptor(
+			atRule: string,
+			descriptor: string,
+			value: CSSTreeNode | string,
+		): MatchResult;
 		checkPropertyName(property: string): Error | undefined;
 	}
 
