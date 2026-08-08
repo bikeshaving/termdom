@@ -107,27 +107,27 @@ export interface BoxModel {
 // current v5 alike) treats `none` and `hidden` on every border property --
 // the `border` shorthand, the per-side shorthands, and even the style
 // longhands -- as "erase the declaration": its setters call
-// _setProperty(prop, "") instead of storing the keyword, and `background:
-// none` goes the same way. An erased declaration is one the cascade never
-// sees, so `el.style.border = "none"` could never turn OFF a UA border. The
-// raw _setProperty primitive stores values verbatim; the shim lets the
-// original setter run (its erasure doubles as the shorthand's reset), then
-// re-stores the declaration as authored. Expansion into longhands is the
-// cascade's job either way -- see expandShorthands.
+// _setProperty(prop, "") instead of storing the keyword. An erased
+// declaration is one the cascade never sees, so `el.style.border = "none"`
+// could never turn OFF a UA border. The raw _setProperty primitive stores
+// values verbatim; the shim lets the original setter run (its erasure
+// doubles as the shorthand's reset), then re-stores the declaration as
+// authored, priority included. Expansion into longhands is the cascade's job
+// either way -- see expandShorthands.
 const kNoneErasureShimmed = Symbol("termdom.noneErasureShim");
+const ERASED_BORDER_KEYWORDS = new Set(["none", "hidden"]);
 /** Per erasing setter, the keywords cssstyle drops instead of storing. */
 const NONE_ERASURE_SHIMS: Record<string, Set<string>> = {
-	border: new Set(["none", "hidden"]),
-	borderStyle: new Set(["none", "hidden"]),
-	borderTop: new Set(["none", "hidden"]),
-	borderRight: new Set(["none", "hidden"]),
-	borderBottom: new Set(["none", "hidden"]),
-	borderLeft: new Set(["none", "hidden"]),
-	borderTopStyle: new Set(["none", "hidden"]),
-	borderRightStyle: new Set(["none", "hidden"]),
-	borderBottomStyle: new Set(["none", "hidden"]),
-	borderLeftStyle: new Set(["none", "hidden"]),
-	background: new Set(["none"]),
+	border: ERASED_BORDER_KEYWORDS,
+	borderStyle: ERASED_BORDER_KEYWORDS,
+	borderTop: ERASED_BORDER_KEYWORDS,
+	borderRight: ERASED_BORDER_KEYWORDS,
+	borderBottom: ERASED_BORDER_KEYWORDS,
+	borderLeft: ERASED_BORDER_KEYWORDS,
+	borderTopStyle: ERASED_BORDER_KEYWORDS,
+	borderRightStyle: ERASED_BORDER_KEYWORDS,
+	borderBottomStyle: ERASED_BORDER_KEYWORDS,
+	borderLeftStyle: ERASED_BORDER_KEYWORDS,
 };
 
 /** Patch the CSSStyleDeclaration prototype behind `style`, once per class. */
