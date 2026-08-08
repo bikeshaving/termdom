@@ -664,11 +664,16 @@ export const INITIAL_KEYWORDS = new Set([
 ]);
 
 /**
- * Get the initial/default value for a property on an element
+ * A property's initial value on an element, or -- with no element, as for a
+ * pseudo-element -- the initial value alone, which no element default has a
+ * say in.
  */
-export function getInitialStyle(element: Element, property: string): string {
+export function getInitialStyle(
+	element: Element | null,
+	property: string,
+): string {
 	// Check element-specific defaults first
-	const elementDefaults = getElementDefaults(element);
+	const elementDefaults = element ? getElementDefaults(element) : null;
 	if (elementDefaults && elementDefaults[property]) {
 		return elementDefaults[property];
 	}

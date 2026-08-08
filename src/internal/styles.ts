@@ -3470,13 +3470,27 @@ function serializeAnPlusB(a: string | null, b: string | null): string {
 function parsePseudoElementArgument(text: string): string | null {
 	if (!text.startsWith(":")) return "";
 	const double = text.startsWith("::");
-	const name = text.slice(double ? 2 : 1);
+	let name = text.slice(double ? 2 : 1);
+	// CSS tokenization closes a function left open at the end of the input, so
+	// `::highlight( name ` names the same pseudo-element `::highlight(name)`
+	// does. Anything after the name that is not inside a function is a
+	// trailing token, and a trailing token is not part of the selector.
+	let open = 0;
+	for (const char of name) {
+		if (char === "(") open++;
+		else if (char === ")") open--;
+	}
+	if (open > 0) name += ")".repeat(open);
+	else if (name !== name.trimEnd()) return null;
 	// One colon is the CSS 2 spelling, which only the four CSS 2
 	// pseudo-elements answer to.
 	if (!double && !LEGACY_PSEUDO_ELEMENTS.has(name.toLowerCase())) return null;
 	const selectors = parseSelectorList(`*::${name}`);
 	if (!selectors) return null;
-	const compound = childrenOf(childrenOf(selectors)[0] ?? {type: ""});
+	// One pseudo-element, not a list of them.
+	const list = childrenOf(selectors);
+	if (list.length !== 1) return null;
+	const compound = childrenOf(list[0] ?? {type: ""});
 	const pseudo = compound[compound.length - 1];
 	if (
 		compound.length !== 2 ||
@@ -3493,6 +3507,35 @@ function parsePseudoElementArgument(text: string): string | null {
  * pseudo this engine does not know, since an unknown pseudo makes the whole
  * selector invalid.
  */
+/**
+ * A selector list's selectors: split on the commas that separate them, which
+ * are the ones no bracket, paren or string encloses.
+ */
+function splitSelectorList(text: string): string[] {
+	const selectors: string[] = [];
+	let depth = 0;
+	let start = 0;
+	let quote = "";
+	for (let index = 0; index < text.length; index++) {
+		const char = text[index];
+		if (quote) {
+			if (char === "\\") index++;
+			else if (char === quote) quote = "";
+		} else if (char === '"' || char === "'") {
+			quote = char;
+		} else if (char === "(" || char === "[") {
+			depth++;
+		} else if (char === ")" || char === "]") {
+			depth--;
+		} else if (char === "," && depth === 0) {
+			selectors.push(text.slice(start, index).trim());
+			start = index + 1;
+		}
+	}
+	selectors.push(text.slice(start).trim());
+	return selectors.filter(Boolean);
+}
+
 function parseSelectorList(text: string): SelectorNode | null {
 	let list: SelectorNode;
 	// A selector list has to select something: the empty string is not one.
@@ -4134,6 +4177,19 @@ const MIN_SIZE_PROPERTIES = new Set(["min-width", "min-height"]);
 
 /** The containers whose children have an automatic minimum size. */
 const ITEM_DISPLAYS = new Set(["flex", "inline-flex", "grid", "inline-grid"]);
+
+/** The block-level display an inline-level box takes as a flex or grid item. */
+const BLOCKIFIED_DISPLAYS: Record<string, string> = {
+	inline: "block",
+	"inline-block": "block",
+	"inline-flex": "flex",
+	"inline-grid": "grid",
+	"inline-table": "table",
+};
+
+function blockified(display: string): string {
+	return BLOCKIFIED_DISPLAYS[display] ?? display;
+}
 
 /** The four properties that place a positioned box against its containing block. */
 const INSET_PROPERTIES = new Set(["top", "right", "bottom", "left"]);
@@ -4995,12 +5051,15 @@ export class PseudoStyleDeclaration extends CSSStyleDeclaration {
 		this.#declarations = declarations;
 	}
 
-	/** A pseudo-element's computed style is all it has; the two reads are one. */
+	/**
+	 * What the cascade declared for this pseudo-element, and nothing else.
+	 *
+	 * This is the engine's read: an empty answer means no rule reached the
+	 * pseudo-element, which is what the ::selection painter and the ::marker
+	 * painter decide on. The author read below completes the same declarations
+	 * with the initial values a computed style carries.
+	 */
 	computedValueOf(property: string): string {
-		return this.getPropertyValue(property);
-	}
-
-	override getPropertyValue(property: string): string {
 		let value = this.#resolved.get(property);
 		if (value === undefined) {
 			const longhands = SHORTHAND_LONGHANDS.get(property);
@@ -5010,7 +5069,7 @@ export class PseudoStyleDeclaration extends CSSStyleDeclaration {
 							property,
 							longhands,
 							(longhand) =>
-								this.getPropertyValue(longhand) ||
+								this.computedValueOf(longhand) ||
 								CSS_INITIAL_VALUES[longhand] ||
 								"",
 						)
@@ -5018,6 +5077,13 @@ export class PseudoStyleDeclaration extends CSSStyleDeclaration {
 			this.#resolved.set(property, value);
 		}
 		return value;
+	}
+
+	override getPropertyValue(property: string): string {
+		return (
+			this.computedValueOf(property) ||
+			computedValue(property, getInitialStyle(null, property))
+		);
 	}
 
 	override setProperty(): void {
@@ -6110,6 +6176,14 @@ export class StyleManager {
 				if (inherited) declarations[property] = inherited;
 			}
 		}
+		// A pseudo-element of a flex or grid container is one of its items, and
+		// an item's display blockifies -- including the `inline` it would
+		// otherwise take from the initial value.
+		if (ITEM_DISPLAYS.has(hostStyle.computedValueOf("display"))) {
+			declarations.display = blockified(
+				declarations.display || getInitialStyle(null, "display"),
+			);
+		}
 		return new PseudoStyleDeclaration(declarations);
 	}
 
@@ -6257,14 +6331,34 @@ export class StyleManager {
 		scope?: Node,
 		uaOriginSheet?: boolean,
 	): void {
-		const selector = styleRule.selectorText;
+		// A rule's selector list is a set of selectors that share a block, and
+		// each is matched -- and weighed -- on its own. `#a::before, #b` is one
+		// pseudo-element rule and one ordinary rule, not one of either.
+		const {declarations, important} = styleRule.style.declarationBlock();
+		for (const selector of splitSelectorList(styleRule.selectorText)) {
+			this.#parseSelector(
+				selector,
+				declarations,
+				important,
+				scope,
+				uaOriginSheet,
+			);
+		}
+	}
+
+	#parseSelector(
+		selector: string,
+		declarations: Record<string, string>,
+		important: Record<string, boolean>,
+		scope?: Node,
+		uaOriginSheet?: boolean,
+	): void {
 		if (selector.includes("+") || selector.includes("~")) {
 			this.#selectorsReachSiblings = true;
 		}
 		if (selector.includes(":has")) {
 			this.#selectorsReachAncestors = true;
 		}
-		const {declarations, important} = styleRule.style.declarationBlock();
 		if (
 			declarations["counter-reset"] ||
 			declarations["counter-increment"] ||
