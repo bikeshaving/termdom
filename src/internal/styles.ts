@@ -815,6 +815,10 @@ export function serializeCSSIdentifier(value: string): string {
 function cssSupports(conditionOrProperty: string, value?: string): boolean {
 	if (value === undefined) {
 		const condition = String(conditionOrProperty).trim();
+		// `selector(...)` asks whether a selector parses, which is exactly
+		// what the cascade's own selector parser answers.
+		const selector = /^selector\(([\s\S]*)\)$/.exec(condition);
+		if (selector) return parseSelectorList(selector[1]) !== null;
 		if (!condition.startsWith("(") || !condition.endsWith(")")) return false;
 		const inner = condition.slice(1, -1);
 		const colon = inner.indexOf(":");
@@ -2767,6 +2771,22 @@ const PSEUDO_ELEMENTS = new Set([
 	"view-transition-old",
 ]);
 
+/**
+ * The pseudo-elements whose selector takes an argument, and so are written
+ * only in functional form -- `::part(name)`, never a bare `::part`.
+ */
+const FUNCTIONAL_PSEUDO_ELEMENTS = new Set([
+	"part",
+	"highlight",
+	"slotted",
+	"picker",
+	"scroll-button",
+	"view-transition-group",
+	"view-transition-image-pair",
+	"view-transition-new",
+	"view-transition-old",
+]);
+
 /** The pseudo-elements that may also be written with one colon, from CSS 2. */
 const LEGACY_PSEUDO_ELEMENTS = new Set([
 	"after",
@@ -2988,6 +3008,36 @@ function serializeAnPlusB(a: string | null, b: string | null): string {
 }
 
 /**
+ * A `getComputedStyle` pseudo-element argument, in its canonical spelling.
+ *
+ * "" means the argument names no pseudo-element and is ignored -- an argument
+ * without a leading colon always is, which is how `getComputedStyle(el,
+ * "before")` answers with the element's own style. Null means the argument
+ * names something that is not a pseudo-element, for which an empty
+ * declaration is the answer.
+ */
+function parsePseudoElementArgument(text: string): string | null {
+	if (!text.startsWith(":")) return "";
+	const double = text.startsWith("::");
+	const name = text.slice(double ? 2 : 1);
+	// One colon is the CSS 2 spelling, which only the four CSS 2
+	// pseudo-elements answer to.
+	if (!double && !LEGACY_PSEUDO_ELEMENTS.has(name.toLowerCase())) return null;
+	const selectors = parseSelectorList(`*::${name}`);
+	if (!selectors) return null;
+	const compound = childrenOf(childrenOf(selectors)[0] ?? {type: ""});
+	const pseudo = compound[compound.length - 1];
+	if (
+		compound.length !== 2 ||
+		!pseudo ||
+		pseudo.type !== "PseudoElementSelector"
+	) {
+		return null;
+	}
+	return serializeSimpleSelector(pseudo, NO_NAMESPACES);
+}
+
+/**
  * Parse a selector list, or null when it does not parse -- which includes a
  * pseudo this engine does not know, since an unknown pseudo makes the whole
  * selector invalid.
@@ -3018,12 +3068,18 @@ function parseSelectorList(text: string): SelectorNode | null {
 				}
 				break;
 			}
-			case "PseudoElementSelector":
-				if (!PSEUDO_ELEMENTS.has((node.name as string).toLowerCase())) {
+			case "PseudoElementSelector": {
+				const name = (node.name as string).toLowerCase();
+				if (!PSEUDO_ELEMENTS.has(name)) {
+					valid = false;
+					return;
+				}
+				if (!validPseudoElementArguments(name, childrenOf(node))) {
 					valid = false;
 					return;
 				}
 				break;
+			}
 			// A chunk the parser could not read is not a simple selector.
 			case "Raw":
 				valid = false;
@@ -3052,6 +3108,33 @@ function parseSelectorList(text: string): SelectorNode | null {
 	};
 	checkList(list);
 	return valid ? list : null;
+}
+
+/**
+ * Whether a pseudo-element's arguments fit its grammar: the functional ones
+ * take an identifier (or, for `::slotted`, a compound selector), and the rest
+ * take nothing at all.
+ */
+function validPseudoElementArguments(
+	name: string,
+	args: SelectorNode[],
+): boolean {
+	if (!FUNCTIONAL_PSEUDO_ELEMENTS.has(name)) return args.length === 0;
+	if (args.length === 0) return false;
+	if (name === "slotted") {
+		return args.every((argument) => argument.type === "Selector");
+	}
+	const text = args
+		.map((argument) =>
+			argument.type === "Raw"
+				? String((argument as {value?: string}).value ?? "")
+				: "",
+		)
+		.join("")
+		.trim();
+	// `::picker` names the element whose picker it is, and nothing else does.
+	if (name === "picker") return text === "select";
+	return /^[a-zA-Z_\u0080-\uFFFF-][\w\u0080-\uFFFF-]*$/.test(text);
 }
 
 // ---- The text parser -------------------------------------------------------
@@ -3825,11 +3908,13 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 		return value;
 	}
 
-	/** Computed styles are read-only; the mutators exist for API shape alone. */
-	override setProperty(): void {}
+	/** Computed styles are read-only; writing one is an error, not a no-op. */
+	override setProperty(): void {
+		throw readOnlyDeclaration();
+	}
 
 	override removeProperty(): string {
-		return "";
+		throw readOnlyDeclaration();
 	}
 
 	override getPropertyPriority(): string {
@@ -3855,6 +3940,10 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 
 	override get cssText(): string {
 		return "";
+	}
+
+	override set cssText(_text: string) {
+		throw readOnlyDeclaration();
 	}
 
 	override get parentRule(): CSSRule | null {
@@ -3896,9 +3985,45 @@ export class PseudoStyleDeclaration extends CSSStyleDeclaration {
 		return value;
 	}
 
-	override setProperty(): void {}
+	override setProperty(): void {
+		throw readOnlyDeclaration();
+	}
 
 	override removeProperty(): string {
+		throw readOnlyDeclaration();
+	}
+
+	override getPropertyPriority(): string {
+		return "";
+	}
+
+	/**
+	 * A pseudo-element's computed style declares every supported longhand,
+	 * exactly as an element's does.
+	 */
+	override item(index: number): string {
+		return CSS_LONGHANDS[index] ?? "";
+	}
+
+	override get length(): number {
+		return CSS_LONGHANDS.length;
+	}
+
+	override get cssText(): string {
+		return "";
+	}
+
+	override set cssText(_text: string) {
+		throw readOnlyDeclaration();
+	}
+}
+
+/**
+ * The answer to a `getComputedStyle` pseudo-element argument that names no
+ * pseudo-element: a declaration of nothing, as CSSOM says.
+ */
+export class EmptyStyleDeclaration extends CSSStyleDeclaration {
+	override getPropertyValue(): string {
 		return "";
 	}
 
@@ -3906,13 +4031,37 @@ export class PseudoStyleDeclaration extends CSSStyleDeclaration {
 		return "";
 	}
 
-	override item(index: number): string {
-		return Object.keys(this.#declarations)[index] ?? "";
+	override setProperty(): void {
+		throw readOnlyDeclaration();
+	}
+
+	override removeProperty(): string {
+		throw readOnlyDeclaration();
+	}
+
+	override item(): string {
+		return "";
 	}
 
 	override get length(): number {
-		return Object.keys(this.#declarations).length;
+		return 0;
 	}
+
+	override get cssText(): string {
+		return "";
+	}
+
+	override set cssText(_text: string) {
+		throw readOnlyDeclaration();
+	}
+}
+
+/** A computed style is read-only; writing one is an error, not a no-op. */
+function readOnlyDeclaration(): DOMException {
+	return new DOMException(
+		"A computed style declaration is read-only",
+		"NoModificationAllowedError",
+	);
 }
 
 /**
@@ -4776,8 +4925,20 @@ export class StyleManager {
 		) {
 			this.#parseStylesheets();
 		}
-		// Handle pseudo-element styles
+		// The pseudo-element argument names a pseudo-element, names nothing
+		// (and is ignored), or names something that is not one -- for which an
+		// empty declaration is the answer.
+		let pseudoElement = "";
 		if (pseudoElt) {
+			const parsed = parsePseudoElementArgument(String(pseudoElt));
+			if (parsed === null) {
+				return new EmptyStyleDeclaration() as unknown as globalThis.CSSStyleDeclaration;
+			}
+			pseudoElement = parsed;
+		}
+
+		if (pseudoElement) {
+			pseudoElt = pseudoElement;
 			// Check cache first
 			let elementCache = this.#pseudoElementStyleCache.get(element);
 			if (!elementCache) {
@@ -5025,8 +5186,11 @@ export class StyleManager {
 		// are widget-part pseudos: no content node ever attaches for them --
 		// they resolve onto the UA shadow tree's [part] elements (see
 		// #getMatchingRules) or the selection painter.
+		// Any pseudo-element, not just the ones this engine gives a box: a
+		// rule for `::highlight(x)` still has to answer through
+		// getComputedStyle, which is the whole of what CSSOM asks of it.
 		const pseudoMatch = selector.match(
-			/^(.*)(::(?:before|after|marker|first-line|first-letter|placeholder|selection|part\([^)]+\)))(.*)$/,
+			/^(.*?)(::[-\w]+(?:\([^)]*\))?)((?::[-\w]+(?:\([^)]*\))?)*)$/,
 		);
 
 		if (pseudoMatch) {

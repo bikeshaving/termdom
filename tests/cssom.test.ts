@@ -226,9 +226,12 @@ test("getComputedStyle is read-only and enumerates the property index", async ()
 	expect(style.getPropertyPriority("margin-top")).toBe("");
 	expect(style.parentRule).toBeNull();
 
-	style.setProperty("color", "red");
-	expect(style.getPropertyValue("color")).not.toBe("red");
-	expect(style.removeProperty("margin-top")).toBe("");
+	// A computed style is read-only: writing one throws rather than lying.
+	expect(() => style.setProperty("color", "red")).toThrow();
+	expect(() => style.removeProperty("margin-top")).toThrow();
+	expect(() => {
+		style.cssText = "color: red";
+	}).toThrow();
 
 	dom.dispose();
 });
