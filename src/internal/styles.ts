@@ -587,6 +587,15 @@ const EDGE_NAMES = ["top", "right", "bottom", "left"] as const;
 /** The components of a line shorthand, in the order its grammar writes them. */
 const LINE_COMPONENTS = ["width", "style", "color"] as const;
 
+/** The keywords every property accepts, whatever its own grammar. */
+const CSS_WIDE_KEYWORDS = new Set([
+	"initial",
+	"inherit",
+	"unset",
+	"revert",
+	"revert-layer",
+]);
+
 const CORNER_NAMES = [
 	"top-left",
 	"top-right",
@@ -880,6 +889,13 @@ function expandShorthandValue(
 ): Record<string, string> | null {
 	const longhands = SHORTHAND_LONGHANDS.get(property);
 	if (!longhands) return null;
+	// A CSS-wide keyword is the whole value of every longhand the shorthand
+	// covers -- which is all of them, for `all`.
+	if (CSS_WIDE_KEYWORDS.has(value.toLowerCase())) {
+		return Object.fromEntries(
+			longhands.map((longhand) => [longhand, value.toLowerCase()]),
+		);
+	}
 	const expanded = expandShorthands({[property]: value});
 	const out: Record<string, string> = {};
 	let decomposed = false;
@@ -950,6 +966,18 @@ function serializeShorthandValue(
 	longhands: readonly string[],
 	valueOf: (longhand: string) => string,
 ): string {
+	// A CSS-wide keyword serializes as itself only when every longhand holds
+	// the same one; one longhand overridden and the shorthand has no value.
+	const keyworded = longhands.filter((longhand) =>
+		CSS_WIDE_KEYWORDS.has(valueOf(longhand)),
+	);
+	if (keyworded.length > 0) {
+		const keyword = valueOf(keyworded[0]);
+		return keyworded.length === longhands.length &&
+			longhands.every((longhand) => valueOf(longhand) === keyword)
+			? keyword
+			: "";
+	}
 	// `border` and its logical twins are three uniform boxes -- widths, styles
 	// and colors -- and serialize only when every side agrees.
 	if (longhands.length === 12) {
@@ -2550,11 +2578,23 @@ export class ComputedStyleDeclaration extends CSSStyleDeclaration {
 			}
 		}
 
+		// A CSS-wide keyword a rule declares is not a value: `inherit` takes the
+		// parent's, and the rest send resolution on to the defaults below, as
+		// though the declaration were not there.
+		const declaredByRule = (value: string): string | null => {
+			if (value === "inherit") return this.#resolveFromParent(property) ?? "";
+			return INITIAL_KEYWORDS.has(value) ? null : value;
+		};
+
 		if (inlineImportant) return inlineValue;
-		if (importantRuleValue) return importantRuleValue;
-		if (inlineUsable) return inlineValue;
-		if (ruleValue) {
-			return ruleValue;
+		if (importantRuleValue) {
+			const resolved = declaredByRule(importantRuleValue);
+			if (resolved !== null) return resolved;
+		} else if (inlineUsable) {
+			return inlineValue;
+		} else if (ruleValue) {
+			const resolved = declaredByRule(ruleValue);
+			if (resolved !== null) return resolved;
 		}
 
 		// 3. Check element-specific UA defaults (e.g., strong { font-weight: bold })
