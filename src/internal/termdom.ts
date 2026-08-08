@@ -1887,7 +1887,7 @@ export class TermDOM {
 		if (cursor < scrollOffset) scrollOffset = cursor;
 		while (
 			scrollOffset < cursor &&
-			stringWidth(shown.slice(scrollOffset, cursor)) >= contentWidth
+			stringWidth(shown.slice(scrollOffset, cursor)) > contentWidth
 		) {
 			scrollOffset++;
 		}

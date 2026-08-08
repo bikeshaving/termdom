@@ -1978,6 +1978,12 @@ export class LayoutEngine {
 			const parent = compositionParentElement(currentNode)!;
 
 			if (getPropertyValue(parent, "display") === "inline-block") {
+				// An overflow-scrolled inline-block (a field's windowed value,
+				// scrollLeft set by the caret-follow) shifts its content by its
+				// own scroll, so the caret stays in view. A property of the box,
+				// independent of whether its segment is found below.
+				accumulatedOffsetX -= (parent as Element).scrollLeft || 0;
+				accumulatedOffsetY -= (parent as Element).scrollTop || 0;
 				// Find this inline-block in current breakResult
 				let found = false;
 				for (const line of currentBreakResult.lines) {
@@ -4443,8 +4449,25 @@ export class LayoutEngine {
 					const maxWidthValue = parseUnitValue(
 						getPropertyValue(element, "max-width"),
 					);
+					// A percentage resolves against the containing block's content
+					// width -- the run's available width -- as `width` does above.
+					// Without it a `max-width: 100%` value part (every text field's
+					// own) breaks at its natural width and overflows its field rather
+					// than clipping to it. Indefinite width leaves nothing to resolve
+					// against, so it falls through.
+					let maxWidthCap: number | undefined;
 					if (typeof maxWidthValue === "number") {
-						const cap = Math.max(0, maxWidthValue - horizontalBoxSpace);
+						maxWidthCap = maxWidthValue;
+					} else if (
+						maxWidthValue &&
+						"percentage" in maxWidthValue &&
+						Number.isFinite(availableWidth) &&
+						availableWidth < Number.MAX_SAFE_INTEGER
+					) {
+						maxWidthCap = (maxWidthValue.percentage / 100) * availableWidth;
+					}
+					if (maxWidthCap !== undefined) {
+						const cap = Math.max(0, maxWidthCap - horizontalBoxSpace);
 						if (cap < contentWidth) {
 							contentWidth = cap;
 							if (contentWidthMode === Flex.MEASURE_MODE_UNDEFINED) {
@@ -4498,6 +4521,19 @@ export class LayoutEngine {
 						}
 						finalContentWidth = inlineBlockResult?.maxLineWidth ?? 0;
 						finalContentHeight = inlineBlockResult?.totalHeight ?? 0;
+					}
+
+					// max-width caps the REPORTED box, not just the width content
+					// broke against: content that cannot wrap to fit (a single-line
+					// field's pre text, an unbreakable word) overflows the capped
+					// box and is clipped by overflow:hidden, rather than stretching
+					// it. Without this the box grows to its content and there is
+					// nothing for the field's horizontal scroll to window.
+					if (maxWidthCap !== undefined) {
+						finalContentWidth = Math.min(
+							finalContentWidth,
+							Math.max(0, maxWidthCap - horizontalBoxSpace),
+						);
 					}
 
 					// Void elements (input, br, etc.) with no LIGHT children keep a

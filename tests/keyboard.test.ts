@@ -2053,3 +2053,30 @@ test("a password input paints masked bullets, never the real value", async () =>
 
 	dom.dispose();
 });
+
+test("a constrained input scrolls horizontally to follow the caret", async () => {
+	// Typing past a fixed-width field's width windows the value so the caret
+	// stays in view: the box clips to its width (max-width on the value part),
+	// and the value scrolls under it.
+	const terminal = new MockProcess({rows: 4, cols: 30});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
+	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
+	dom.document.body.innerHTML = `<input id="i" style="width:10ch">`;
+	const input = dom.document.getElementById("i") as HTMLInputElement;
+	input.focus();
+	await nextFrame(dom);
+
+	for (const c of "abcdefghijklmnop") {
+		(terminal.stdin as any).emit("data", Buffer.from(c));
+		await new Promise((r) => setTimeout(r, 0));
+		await nextFrame(dom);
+	}
+
+	// The field shows the last ten cells, caret at the trailing edge -- not the
+	// leading "abcdef", and never wider than the field.
+	const row = terminal.getPlainText().split("\n")[0];
+	expect(row.startsWith("ghijklmnop")).toBe(true);
+	expect(row).not.toContain("abcdef");
+	dom.dispose();
+});
