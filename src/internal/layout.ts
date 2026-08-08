@@ -2639,51 +2639,125 @@ export class LayoutEngine {
 	}
 
 	/**
-	 * A "run head" is the first node in a contiguous run of inline-level
-	 * elements. This is a TermDOM implementation detail for implementing CSS
-	 * inline layout with measure functions.
-	 *
-	 * The run head node:
-	 * - Gets the layout node with a measure function
-	 * - Assigns a breakResult entry
-	 * - Other inline nodes in the run delegate their layout to this head
+	 * A block container with inline content lays that content out in anonymous
+	 * boxes -- one per contiguous run of inline-level flow children (CSS2
+	 * §9.2.1.1). The flex engine only takes a measure function on a leaf, so
+	 * each anonymous box is identified by its first node, the "run head": that
+	 * node carries the layout node with the measure function and owns the run's
+	 * break result, and every other node in the run resolves through it.
 	 *
 	 * Examples:
-	 * - "Hello" + <span>world</span>: "Hello" text node is run head
-	 * - <em>text</em> + "more": <em> element is run head
-	 * - <div>text</div>: "text" is run head (block creates new context)
-	 * - In flex containers: each flex item gets its own run head
-	 * - Block interruption: <span>text</span><div>block</div><span>more</span>
-	 *   creates separate runs with separate heads
+	 * - "Hello" + <span>world</span>: the "Hello" text node heads the box
+	 * - <em>text</em> + "more": the <em> element heads it
+	 * - <div>text</div>: "text" heads the div's only box
+	 * - In flex containers: every element child is a box of its own
+	 * - <span>text</span><div>block</div><span>more</span>: three boxes, the
+	 *   block-level one between two anonymous ones
 	 *
-	 * Note: Pseudo-elements (::before, ::marker, ::after) are treated as
-	 * text nodes and can participate in inline runs.
+	 * Pseudo-elements (::before, ::marker, ::after) take run positions exactly
+	 * as the text they generate would.
 	 */
-	// The run head of a node, memoized. Finding it walks backward to the run's
-	// first node -- O(run length) -- and layout asks for every node in a run,
-	// so without this a run of N inline boxes costs O(N^2). Two counters guard
-	// staleness, both bumped exactly when run membership can move: the
-	// composition epoch (mutations, shadow/slot changes) and the engine's own
-	// invalidation counter (direct invalidate() calls, which callers may make
-	// before any observer has advanced the epoch).
-	#runHeadCache = new WeakMap<Node, {epoch: number; head: Node | null}>();
+	/**
+	 * The anonymous boxes of a block container, keyed by the flow-child node
+	 * each one covers: every contiguous group of inline-level flow children is
+	 * one anonymous box, and the box's first node is what layout hangs its
+	 * measurement off. Built from the container's own child order, so run
+	 * membership is a parent-side lookup rather than a walk backward through
+	 * siblings -- a run of N boxes costs one enumeration, not N of them.
+	 *
+	 * Elements that generate no box in the flow (display:none, out of flow) take
+	 * no run position: they neither open nor close a run, and map to whichever
+	 * box is open around them so that content nested inside them still resolves.
+	 */
+	#runHeadsByContainer = new WeakMap<
+		Element,
+		{epoch: number; heads: Map<Node, Node>}
+	>();
 	#runHeadEpoch = 0;
 
-	findInlineRunHead(node: Node): Node | null {
-		const cached = this.#runHeadCache.get(node);
+	#containerRunHeads(container: Element): Map<Node, Node> {
+		const cached = this.#runHeadsByContainer.get(container);
 		const epoch = currentCompositionEpoch() + this.#runHeadEpoch;
-		if (cached && cached.epoch === epoch) return cached.head;
-		const head = this.#computeInlineRunHead(node);
-		this.#runHeadCache.set(node, {epoch, head});
-		return head;
+		if (cached && cached.epoch === epoch) return cached.heads;
+
+		const heads = new Map<Node, Node>();
+		// A flex container puts every element child in a box of its own and
+		// gathers only its contiguous text into anonymous ones.
+		const inFlex = getPropertyValue(container, "display") === "flex";
+		let head: Node | null = null;
+		for (const child of this.#flowChildren(container)) {
+			if (child.nodeType === child.ELEMENT_NODE) {
+				const element = child as Element;
+				const display = getPropertyValue(element, "display");
+				if (display === "none" || this.#isOutOfFlow(element)) {
+					heads.set(child, head ?? child);
+					continue;
+				}
+				if (display !== "inline" && display !== "inline-block") {
+					head = null; // block-level box: the run ends here
+					continue;
+				}
+				if (inFlex) {
+					heads.set(child, child);
+					head = null;
+					continue;
+				}
+			} else if (child.nodeType !== child.TEXT_NODE) {
+				continue;
+			}
+			if (head === null) head = child;
+			heads.set(child, head);
+		}
+
+		this.#runHeadsByContainer.set(container, {epoch, heads});
+		return heads;
 	}
 
-	#computeInlineRunHead(node: Node): Node | null {
-		// 1. Validate input. Composition-connected, not isConnected: a UA
-		// shadow tree's parts live in a fragment and are never DOM-connected,
-		// but they render (and measure, and invalidate) like anything else.
+	/** The flat-tree parent that can hold a box, pseudo-elements included. */
+	#boxParentOf(node: Node): Element | null {
+		const pseudoMetadata = getPseudoMetadata(node);
+		if (pseudoMetadata) return pseudoMetadata.hostElement;
+		return compositionBoxParentElement(node);
+	}
+
+	/**
+	 * The block container whose anonymous boxes a node's content falls under.
+	 * Inline boxes are transparent -- their content belongs to the run around
+	 * them -- and so is an inline-block whose content is all inline, since the
+	 * run measures such a box as one unit and its interior coordinates live in
+	 * that run's break result. An inline-block that holds block-level content is
+	 * a block container in its own right, and so is an out-of-flow box.
+	 */
+	#runContainerOf(node: Node): Element | null {
+		const startsOwnRun =
+			node.nodeType === node.ELEMENT_NODE &&
+			getPropertyValue(node as Element, "display") !== "inline";
+		for (let current: Node = node; ; ) {
+			const parent = this.#boxParentOf(current);
+			if (!parent) return null;
+			if (this.#isOutOfFlow(parent)) return parent;
+			const display = getPropertyValue(parent, "display");
+			if (display === "inline") {
+				current = parent;
+				continue;
+			}
+			if (display === "inline-block") {
+				// A box with a layout tree of its own establishes a block
+				// container; and an inline-block nested in one starts a run
+				// there rather than joining the run its host sits in.
+				if (this.#blockContentRoots.has(parent) || startsOwnRun) return parent;
+				current = parent;
+				continue;
+			}
+			return parent;
+		}
+	}
+
+	findInlineRunHead(node: Node): Node | null {
+		// Composition-connected, not isConnected: a UA shadow tree's parts live
+		// in a fragment and are never DOM-connected, but they render (and
+		// measure, and invalidate) like anything else.
 		if (!compositionIsConnected(node)) {
-			// For pseudo elements, check if the host element is connected
 			const pseudoMetadata = getPseudoMetadata(node);
 			if (!pseudoMetadata || !pseudoMetadata.hostElement.isConnected) {
 				return null;
@@ -2696,192 +2770,26 @@ export class LayoutEngine {
 			// left the flow entirely. Letting run invalidation "ensure" it a
 			// bare layout node makes later rebuilds skip its full build, so its
 			// pseudo-only content vanishes on a runtime class flip.
-			if (this.#isOutOfFlow(element)) {
-				return null;
-			}
+			if (this.#isOutOfFlow(element)) return null;
 			const display = getPropertyValue(element, "display");
-			if (display !== "inline" && display !== "inline-block") {
-				return null;
-			}
+			if (display !== "inline" && display !== "inline-block") return null;
 		} else if (node.nodeType !== node.TEXT_NODE) {
 			return null;
 		}
 
-		// 2. Walk BACKWARD through the flow from the node, in flat document
-		// order, until the run's first node is reached. Sideways while
-		// siblings share the run, up when an inline box's own start is inside
-		// it, down into a sibling that a block-level box split -- the run
-		// begins after that block, which may be several levels deep.
-		const walker = createExpandedTreeWalker(
-			this.window,
-			node.ownerDocument || this.window.document,
-		);
-
-		let current = node;
-		const epoch = currentCompositionEpoch() + this.#runHeadEpoch;
-		for (;;) {
-			const previous = this.#previousRunNode(current, walker);
-			if (previous === "boundary") {
-				return current;
-			}
-			if (previous !== null) {
-				// A preceding node in the same run shares this node's head; its
-				// memoized answer, when fresh, ends the walk here. This is what
-				// keeps a cold pass over a run of N boxes O(N) amortized instead
-				// of O(N^2) -- each node's walk reaches at most one uncached step
-				// back before hitting the run's already-resolved prefix.
-				const cached = this.#runHeadCache.get(previous);
-				if (cached && cached.epoch === epoch && cached.head) {
-					return cached.head;
-				}
-				current = previous;
-				continue;
-			}
-
-			// Nothing before it at this level: the enclosing inline box opened
-			// inside this run, so the box itself is part of it. Through the
-			// walker, whose parent hop resolves a pseudo-element to its host --
-			// a ::after has no parentElement of its own.
-			walker.currentNode = current;
-			const parentNode = walker.parentNode();
-			if (!parentNode || parentNode.nodeType !== parentNode.ELEMENT_NODE) {
-				return current;
-			}
-			const parent = parentNode as Element;
-			if (this.#isOutOfFlow(parent)) {
-				return current;
-			}
-			const parentDisplay = getPropertyValue(parent, "display");
-			if (parentDisplay === "inline") {
-				current = parent;
-				continue;
-			}
-			if (parentDisplay === "inline-block") {
-				// Unless the box holds block-level content, in which case it is
-				// a block container with a layout tree of its own: its inline
-				// content forms anonymous blocks INSIDE it and runs from there,
-				// never from the box. Climbing anyway makes the leading content
-				// a member of the box's own run -- the one that stops at the
-				// first block -- and it paints nothing.
-				if (this.#blockContentRoots.has(parent)) {
-					return current;
-				}
-				// An inline-block's content is its own formatting context: text
-				// inside it runs from the box, but a nested inline-block box is
-				// where its own run starts.
-				if (
-					node.nodeType === node.ELEMENT_NODE &&
-					getPropertyValue(node as Element, "display") !== "inline"
-				) {
-					return current;
-				}
-				current = parent;
-				continue;
-			}
-			return current;
+		const container = this.#runContainerOf(node);
+		if (!container) return node;
+		const heads = this.#containerRunHeads(container);
+		// Up from the node to whichever of its ancestors the container counts
+		// among its own flow children: that is the box the content falls under.
+		for (let current: Node = node; current !== container; ) {
+			const head = heads.get(current);
+			if (head) return head;
+			const parent = this.#boxParentOf(current);
+			if (!parent) return current;
+			current = parent;
 		}
-	}
-
-	/**
-	 * The node before `current` within its inline run, or "boundary" when the
-	 * run starts at `current` -- because a block-level box precedes it (CSS
-	 * splits an inline around block-level content into separate anonymous
-	 * blocks), or because a flex container puts every item in its own run.
-	 * Null means the level is exhausted and the caller should climb.
-	 */
-	#previousRunNode(
-		current: Node,
-		walker: ExpandedTreeWalker,
-	): Node | "boundary" | null {
-		walker.currentNode = current;
-		if (!walker.previousSibling()) {
-			return null; // Nothing precedes it here; the caller climbs.
-		}
-
-		// Asked once, and only now that a sibling exists to judge: a flex
-		// container puts every item in a run of its own. Above the loop rather
-		// than inside it because the answer is a property of this LEVEL, and
-		// this walk runs thousands of times per keystroke -- re-reading the
-		// container's display per sibling, or per ancestor hop, costs about a
-		// millisecond of the frame on its own.
-		const boxParent = compositionBoxParentElement(current);
-		const inFlex =
-			boxParent !== null && getPropertyValue(boxParent, "display") === "flex";
-		const isElement = current.nodeType === current.ELEMENT_NODE;
-
-		do {
-			const previous = walker.currentNode;
-			if (previous.nodeType !== previous.ELEMENT_NODE) {
-				// Text shares the run, unless flex made this element an item.
-				return inFlex && isElement ? "boundary" : previous;
-			}
-
-			const element = previous as Element;
-			if (this.#isOutOfFlow(element)) continue; // takes no run position
-			const display = getPropertyValue(element, "display");
-			if (display === "none") continue; // generates no box at all
-			if (inFlex) return "boundary"; // Stop at any element in flex
-			if (display !== "inline" && display !== "inline-block") {
-				return "boundary";
-			}
-			// The run continues into this sibling -- but only as far back as
-			// its own last fragment, since a block inside it split it too.
-			return this.#lastRunNodeWithin(element, walker) ?? "boundary";
-		} while (walker.previousSibling());
-
-		return null;
-	}
-
-	/**
-	 * The last node of the run that ends inside an inline box, in flat order:
-	 * its deepest final inline descendant. Null when its content ends in a
-	 * block-level box, which means the run the caller is tracing back does not
-	 * reach inside at all -- it begins after that block.
-	 */
-	#lastRunNodeWithin(
-		element: Element,
-		walker: ExpandedTreeWalker,
-	): Node | null {
-		let current: Node = element;
-		for (;;) {
-			// An inline-block is opaque: the box itself is the run member, and
-			// its contents form runs of their own.
-			if (
-				current.nodeType === current.ELEMENT_NODE &&
-				current !== element &&
-				getPropertyValue(current as Element, "display") === "inline-block"
-			) {
-				return current;
-			}
-			if (
-				current === element &&
-				getPropertyValue(element, "display") === "inline-block"
-			) {
-				return element;
-			}
-
-			walker.currentNode = current;
-			let last = walker.lastChild();
-			while (last) {
-				if (last.nodeType !== last.ELEMENT_NODE) break;
-				const lastElement = last as Element;
-				if (
-					!this.#isOutOfFlow(lastElement) &&
-					getPropertyValue(lastElement, "display") !== "none"
-				) {
-					break;
-				}
-				last = walker.previousSibling(); // no box here; keep looking back
-			}
-			if (!last) return current;
-			if (last.nodeType === last.ELEMENT_NODE) {
-				const display = getPropertyValue(last as Element, "display");
-				if (display !== "inline" && display !== "inline-block") {
-					return null; // ends in a block: the run starts after it
-				}
-			}
-			current = last;
-		}
+		return node;
 	}
 
 	isInlineRunHead(node: Node): boolean {
