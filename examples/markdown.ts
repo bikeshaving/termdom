@@ -171,8 +171,9 @@ style.textContent = `
 
 	/* The pager's status line: position: fixed pins it to the VIEWPORT, so
 	   the camera scrolls the document underneath it -- the same contract as
-	   a web page's sticky footer. The percentage is position: absolute
-	   against the bar, flushed to its right edge. */
+	   a web page's sticky footer. The body pads for it, as a web page pads
+	   for its own fixed footer, so the last line can scroll clear of it. */
+	body { padding-bottom: 1px; }
 	.status {
 		position: fixed;
 		bottom: 0;

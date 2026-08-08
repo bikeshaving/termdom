@@ -251,8 +251,6 @@ container.appendChild(mixedSection);
 
 document.body.appendChild(container);
 
-// One frame: by the time a requestAnimationFrame callback runs, the frame
-// including every pending mutation has been painted. Two is superstition.
-await new Promise<void>((r) => term.window.requestAnimationFrame(() => r()));
-
-process.exit(0);
+// close() paints the frame, pays the whole document out to scrollback,
+// restores the terminal, and exits.
+term.window.close();
