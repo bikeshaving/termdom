@@ -1553,6 +1553,21 @@ export class MediaList {
 }
 
 /** A rule of a stylesheet: the base every rule type shares. */
+/**
+ * A rule's owning sheet, held beside the rule so that deleting a rule can cut
+ * the link -- a removed rule belongs to no stylesheet, and says so.
+ */
+const ruleSheets = new WeakMap<CSSRule, CSSStyleSheet | null>();
+
+/** Cut a removed rule, and everything under it, loose from its sheet. */
+function detachRule(rule: CSSRule): void {
+	ruleSheets.set(rule, null);
+	const group = rule as {cssRules?: CSSRuleList};
+	if (group.cssRules) {
+		for (const child of Array.from(group.cssRules)) detachRule(child);
+	}
+}
+
 export abstract class CSSRule {
 	static readonly STYLE_RULE = RULE_TYPES.STYLE_RULE;
 	static readonly CHARSET_RULE = RULE_TYPES.CHARSET_RULE;
@@ -1568,14 +1583,13 @@ export abstract class CSSRule {
 	static readonly FONT_FEATURE_VALUES_RULE =
 		RULE_TYPES.FONT_FEATURE_VALUES_RULE;
 
-	#parentStyleSheet: CSSStyleSheet | null;
 	#parentRule: CSSRule | null;
 
 	constructor(
 		parentStyleSheet: CSSStyleSheet | null,
 		parentRule: CSSRule | null,
 	) {
-		this.#parentStyleSheet = parentStyleSheet;
+		ruleSheets.set(this, parentStyleSheet);
 		this.#parentRule = parentRule;
 	}
 
@@ -1587,7 +1601,7 @@ export abstract class CSSRule {
 	}
 
 	get parentStyleSheet(): CSSStyleSheet | null {
-		return this.#parentStyleSheet;
+		return ruleSheets.get(this) ?? null;
 	}
 }
 
@@ -1651,6 +1665,7 @@ export abstract class CSSGroupingRule extends CSSRule {
 				"IndexSizeError",
 			);
 		}
+		detachRule(this.#rules[index]);
 		this.#rules.splice(index, 1);
 		notifyRule(this);
 	}
@@ -1802,7 +1817,7 @@ export class CSSPageRule extends CSSDeclarationBlockRule {
 		parentRule: CSSRule | null,
 	) {
 		super(cssText, parentStyleSheet, parentRule);
-		this.#selectorText = selectorText.trim();
+		this.#selectorText = serializePageSelector(selectorText);
 	}
 
 	get type(): number {
@@ -1814,13 +1829,33 @@ export class CSSPageRule extends CSSDeclarationBlockRule {
 	}
 
 	set selectorText(selector: string) {
-		this.#selectorText = String(selector).trim();
+		this.#selectorText = serializePageSelector(String(selector));
 		notifyRule(this);
 	}
 
 	get prelude(): string {
 		return this.#selectorText ? `@page ${this.#selectorText}` : "@page";
 	}
+}
+
+/** The page pseudo-classes a `@page` selector may name. */
+const PAGE_PSEUDO_CLASSES = new Set(["first", "left", "right", "blank"]);
+
+/**
+ * A page selector -- an optional page name followed by page pseudo-classes,
+ * with no whitespace between them -- or "" when it names no valid page.
+ */
+function serializePageSelector(selector: string): string {
+	const text = String(selector).trim();
+	if (!text) return "";
+	const match = /^([^\s:]*)((?::[^\s:]+)*)$/.exec(text);
+	if (!match) return "";
+	const pseudos = match[2] ? match[2].slice(1).split(":") : [];
+	for (const pseudo of pseudos) {
+		if (!PAGE_PSEUDO_CLASSES.has(pseudo.toLowerCase())) return "";
+	}
+	const name = match[1] ? serializeCSSIdentifier(match[1]) : "";
+	return name + pseudos.map((pseudo) => `:${pseudo.toLowerCase()}`).join("");
 }
 
 /** `@counter-style`: a counter's name and the descriptors that define it. */
@@ -2609,6 +2644,7 @@ export class CSSStyleSheet {
 				"IndexSizeError",
 			);
 		}
+		detachRule(this.#rules[index]);
 		this.#rules.splice(index, 1);
 		this.#changed();
 	}
@@ -3411,10 +3447,14 @@ for (const type of [
 	CSSFontFeatureValuesRule,
 	CSSKeyframesRule,
 ]) {
-	const descriptor = Object.getOwnPropertyDescriptor(
-		type.prototype,
-		"cssText",
-	)!;
+	// The getter may live on a base class, so the chain is walked for it.
+	let prototype: object | null = type.prototype;
+	let descriptor: PropertyDescriptor | undefined;
+	while (prototype && !descriptor) {
+		descriptor = Object.getOwnPropertyDescriptor(prototype, "cssText");
+		prototype = Object.getPrototypeOf(prototype);
+	}
+	if (!descriptor?.get) continue;
 	Object.defineProperty(type.prototype, "cssText", {
 		...descriptor,
 		set() {},

@@ -21,26 +21,23 @@ const properties = require("mdn-data/css/properties.json") as Record<
 		computed: string | string[];
 		initial: string | string[];
 		inherited: boolean;
-		status: string;
 	}
 >;
 
 /**
- * A property is supported when it is standard or experimental, or when it
- * carries the `-webkit-` prefix browsers ship regardless of standing. Vendor
- * prefixes no engine implements (`-ms-`, `-moz-`) and the custom-property
- * placeholder are not properties an author can name.
+ * A property is supported when it is unprefixed -- including the ones the
+ * index marks obsolete, since `clip` and `page-break-after` are properties
+ * every engine still answers to -- or when it carries the `-webkit-` prefix
+ * browsers ship. Vendor prefixes no engine implements (`-ms-`, `-moz-`) and
+ * the custom-property placeholder are not properties an author can name.
  */
-function isSupported(name: string, status: string): boolean {
+function isSupported(name: string): boolean {
 	if (name === "--*") return false;
 	if (name.startsWith("-webkit-")) return true;
-	if (name.startsWith("-")) return false;
-	return status === "standard" || status === "experimental";
+	return !name.startsWith("-");
 }
 
-const supported = Object.keys(properties)
-	.filter((name) => isSupported(name, properties[name].status))
-	.sort();
+const supported = Object.keys(properties).filter(isSupported).sort();
 
 const directLonghands = new Map<string, string[]>();
 for (const name of supported) {
