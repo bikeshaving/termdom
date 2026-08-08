@@ -144,6 +144,10 @@ const EXCLUSIONS: Record<string, string> = {
  */
 const DEVIATIONS: Array<[string, string]> = [
 	[
+		"getComputedStyle-insets-fixed.html",
+		"No CSS transforms. A transformed ancestor is the containing block of a fixed box, so every subtest of this file that resolves an inset against `#container-for-fixed` (`transform: scale(1)`) expects that box and gets the viewport, which is what a fixed box hangs from here: 216 of its 324 subtests. A character grid has no transforms to give -- cells do not rotate, scale, or translate by fractions -- so the containing block a transform would establish never exists.",
+	],
+	[
 		"getComputedStyle-resolved-colors.html",
 		"System colors (Highlight, HighlightText, Canvas, menu) resolve to their names, not to rgb(). The UA sheet's `::selection { background-color: Highlight; color: HighlightText }` is this engine's spelling of \"swap the cell's colors\", which the selection painter turns into inverse video -- the terminal-native rendering. Resolving the pair to rgb() would erase the signal the painter reads.",
 	],

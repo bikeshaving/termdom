@@ -105,6 +105,17 @@ export type MeasureFunction = (
 	heightMode: MeasureMode,
 ) => Size;
 
+/**
+ * Where an out-of-flow box would have sat had it stayed in flow: the origin of
+ * CSS 2 §10.3.7's hypothetical box, in the containing block's border-box
+ * coordinates. Only the flow the box left knows this, so the owner of that
+ * flow supplies it; null means it has no static position to offer, and the
+ * containing block's own alignment places the box instead.
+ */
+export type StaticPositionFunction = (
+	containingBlock: Node,
+) => {left: number; top: number} | null;
+
 // ---------------------------------------------------------------------------
 // Values
 // ---------------------------------------------------------------------------
@@ -414,6 +425,7 @@ export class Node {
 	children: Node[] = [];
 	parent: Node | null = null;
 	measureFunc: MeasureFunction | null = null;
+	staticPositionFunc: StaticPositionFunction | null = null;
 	config: Config;
 	dirty = true;
 	// The vertical span this node's subtree can paint, in absolute document
@@ -511,6 +523,7 @@ export class Node {
 		this.children = [];
 		this.parent = null;
 		this.measureFunc = null;
+		this.staticPositionFunc = null;
 	}
 
 	markDirty(): void {
@@ -540,6 +553,11 @@ export class Node {
 
 	setMeasureFunc(fn: MeasureFunction | null): void {
 		this.measureFunc = fn;
+		this.markDirty();
+	}
+
+	setStaticPositionFunc(fn: StaticPositionFunction | null): void {
+		this.staticPositionFunc = fn;
 		this.markDirty();
 	}
 
@@ -2389,7 +2407,11 @@ function mirrorWithinContentBox(
 	}
 }
 
-/** Absolute children: size from style or content, then place against the insets. */
+/**
+ * Absolute children: size from style or content, then place against the
+ * insets -- and where an axis has no inset at all, at the static position the
+ * flow the box left reports for it (CSS 2 §10.3.7).
+ */
 function layoutAbsoluteChild(
 	node: Node,
 	child: Node,
@@ -2473,12 +2495,22 @@ function layoutAbsoluteChild(
 		true,
 	);
 
+	// An axis with insets on neither side falls back to the static position;
+	// one with an inset on either side is pinned and never asks for it.
+	const staticPosition =
+		(!isDefined(left) && !isDefined(right)) ||
+		(!isDefined(top) && !isDefined(bottom))
+			? (child.staticPositionFunc?.(node) ?? null)
+			: null;
+
 	// Horizontal placement.
 	if (isDefined(left)) {
 		child.layout.left = borderLeft + left + marginLeft;
 	} else if (isDefined(right)) {
 		child.layout.left =
 			parentWidth - borderRight - child.layout.width - right - marginRight;
+	} else if (staticPosition) {
+		child.layout.left = staticPosition.left + marginLeft;
 	} else {
 		const align = node.style.justifyContent;
 		const free = parentWidth - borderLeft - borderRight - child.layout.width;
@@ -2498,6 +2530,8 @@ function layoutAbsoluteChild(
 	} else if (isDefined(bottom)) {
 		child.layout.top =
 			parentHeight - borderBottom - child.layout.height - bottom - marginBottom;
+	} else if (staticPosition) {
+		child.layout.top = staticPosition.top + marginTop;
 	} else {
 		const align = node.style.alignItems;
 		const free = parentHeight - borderTop - borderBottom - child.layout.height;

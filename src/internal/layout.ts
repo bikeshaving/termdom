@@ -129,6 +129,18 @@ function parseSpanAttribute(element: Element, name: string): number {
 
 const ZERO_OFFSET = {x: 0, y: 0};
 
+/**
+ * Containers that lay out no flow an out-of-flow child could have taken a
+ * position in: its static position is the container's own content-box corner,
+ * as its alignment properties place it (css-flexbox-1 §4.1, css-grid-2 §9).
+ */
+const NO_STATIC_POSITION_DISPLAYS = new Set([
+	"flex",
+	"inline-flex",
+	"grid",
+	"inline-grid",
+]);
+
 /** The line and segment a break result placed an inline-block box on. */
 function findInlineBlockSegment(
 	breakResult: BreakResult,
@@ -1786,17 +1798,20 @@ export class LayoutEngine {
 	getRect(element: Element): DOMRect | null {
 		const display = getPropertyValue(element, "display");
 
-		// A blockified flex item's box is the item the container sized, not the
+		// A blockified box's box is the one the layout tree sized, not the
 		// extent of the text it happens to hold: its layout node is the truth,
-		// and the run machinery below would report the text union instead.
-		const isFlexItem =
+		// and the run machinery below would report the text union instead. Two
+		// kinds blockify (css-display-3 §2.7): a flex container's children, and
+		// an out-of-flow box, which no run holds any record of at all.
+		const isBlockified =
 			(display === "inline" || display === "inline-block") &&
 			this.nodeMap.has(element) &&
-			element.parentElement !== null &&
-			getPropertyValue(element.parentElement, "display") === "flex";
+			(this.#isOutOfFlow(element) ||
+				(element.parentElement !== null &&
+					getPropertyValue(element.parentElement, "display") === "flex"));
 
 		// For inline/inline-block elements, check if they appear in breakResults
-		if (!isFlexItem && (display === "inline" || display === "inline-block")) {
+		if (!isBlockified && (display === "inline" || display === "inline-block")) {
 			// For inline-block elements, search through all breakResults to find this element
 			if (display === "inline-block") {
 				const rect = this.#inlineBlockRect(element);
@@ -2734,11 +2749,14 @@ export class LayoutEngine {
 
 	/**
 	 * A counter that moves whenever geometry could have: every layout pass and
-	 * every invalidation bumps it. A resolved value memoizes against it, the
-	 * way a rect read does.
+	 * every invalidation bumps it, and so does every cascade invalidation --
+	 * a style written and then measured has moved geometry the engine has not
+	 * been told about yet, and a counter that stood still there would hand the
+	 * reader the layout standing behind the write. A resolved value memoizes
+	 * against it, the way a rect read does.
 	 */
 	get layoutEpoch(): number {
-		return this.#boxEpoch;
+		return currentCompositionEpoch() + this.#boxEpoch;
 	}
 
 	/**
@@ -2907,6 +2925,140 @@ export class LayoutEngine {
 			return box.head === node ? (box.breakResult ?? undefined) : undefined;
 		}
 		return this.breakResultMap.get(node);
+	}
+
+	/**
+	 * Apply an element's style to the layout node that carries its box, and
+	 * keep the one thing that style alone cannot answer wired up: an
+	 * out-of-flow box is placed by its containing block, which asks the flow
+	 * the box left where it would have been. Nothing in flow is ever asked, so
+	 * nothing in flow carries the question.
+	 */
+	#styleNode(element: Element, flexNode: FlexTypes.Node): void {
+		styleFlexNode(element, flexNode, this.positionedElements);
+		if (this.#isOutOfFlow(element)) {
+			flexNode.setStaticPositionFunc((containingBlock) =>
+				this.#staticPosition(element, containingBlock),
+			);
+		} else if (flexNode.staticPositionFunc) {
+			flexNode.setStaticPositionFunc(null);
+		}
+	}
+
+	/**
+	 * Where an out-of-flow box would have been had it stayed in flow: the
+	 * origin of CSS 2 §10.3.7's hypothetical box, in the containing block's
+	 * border-box coordinates. The containing block places the box there on any
+	 * axis whose two insets are both `auto`.
+	 *
+	 * The flow the box left is what knows the answer, so it is read off the
+	 * container that enumerates the box among its flow children: after the
+	 * previous box of a block container, or at the inline position in the line
+	 * the box would have joined. A flex container has no such point -- an
+	 * out-of-flow child of one aligns against the container's own content box
+	 * (css-flexbox-1 §4.1) -- and reports none, leaving that placement to the
+	 * containing block's alignment.
+	 *
+	 * Called during the containing block's layout, when every in-flow box
+	 * between the two is already placed. The containing block's own offset is
+	 * not yet final, but it stands in both sums and cancels in the difference.
+	 */
+	#staticPosition(
+		element: Element,
+		containingBlock: FlexTypes.Node,
+	): {left: number; top: number} | null {
+		const container = this.#runContainerOf(element);
+		if (!container) return null;
+		if (
+			NO_STATIC_POSITION_DISPLAYS.has(getPropertyValue(container, "display"))
+		) {
+			return null;
+		}
+		const containerNode =
+			this.#blockContentRoots.get(container) ?? this.nodeMap.get(container);
+		if (!containerNode) return null;
+
+		const origin = this.#absolutePosition(containerNode);
+		const containingOrigin = this.#absolutePosition(containingBlock);
+		const offsetLeft = origin.x - containingOrigin.x;
+		const offsetTop = origin.y - containingOrigin.y;
+		// The flow starts inside the container's border and padding.
+		const contentLeft =
+			containerNode.layout.border[Flex.EDGE_LEFT] +
+			containerNode.layout.padding[Flex.EDGE_LEFT];
+		const contentTop =
+			containerNode.layout.border[Flex.EDGE_TOP] +
+			containerNode.layout.padding[Flex.EDGE_TOP];
+
+		const {boxes, heads} = this.#containerBoxes(container);
+		let entry: ContainerBox | null = null;
+		for (let current: Node = element; current !== container; ) {
+			const found = heads.get(current);
+			if (found) {
+				entry = found;
+				break;
+			}
+			const parent = this.#boxParentOf(current);
+			if (!parent) break;
+			current = parent;
+		}
+
+		// In an inline formatting context the box takes the position the line
+		// had reached: after everything already on it, on the line that would
+		// have carried it.
+		if (entry instanceof InlineBox) {
+			const runNode = entry.flexNode;
+			if (runNode) {
+				const runOrigin = this.#absolutePosition(runNode);
+				const cursor = this.#inlineCursorBefore(entry, element);
+				return {
+					left: runOrigin.x - containingOrigin.x + cursor.x,
+					top: runOrigin.y - containingOrigin.y + cursor.y,
+				};
+			}
+		}
+
+		// A block container: after the last box that took a position before it.
+		const index = boxes.indexOf(entry ?? element);
+		for (let i = index - 1; i >= 0; i--) {
+			const previous = boxes[i];
+			const previousNode =
+				previous instanceof InlineBox
+					? previous.flexNode
+					: (this.nodeMap.get(previous) ?? null);
+			if (!previousNode || previousNode.getParent() !== containerNode) continue;
+			return {
+				left: offsetLeft + contentLeft,
+				top:
+					offsetTop +
+					previousNode.getComputedTop() +
+					previousNode.getComputedHeight() +
+					previousNode.layout.margin[Flex.EDGE_BOTTOM],
+			};
+		}
+		return {left: offsetLeft + contentLeft, top: offsetTop + contentTop};
+	}
+
+	/**
+	 * How far a run's line had advanced when it reached a node that generates
+	 * no box in it: the trailing edge of the last content placed before that
+	 * node, and the top of the line it landed on, relative to the run's box.
+	 */
+	#inlineCursorBefore(
+		run: InlineBox,
+		element: Element,
+	): {x: number; y: number} {
+		const breakResult = run.breakResult;
+		if (!breakResult) return ZERO_OFFSET;
+		let cursor = ZERO_OFFSET;
+		for (const line of breakResult.lines) {
+			for (const segment of line.segments) {
+				const position = element.compareDocumentPosition(segment.leaf.node);
+				if (!(position & element.DOCUMENT_POSITION_PRECEDING)) return cursor;
+				cursor = {x: segment.x + segment.width, y: line.y};
+			}
+		}
+		return cursor;
 	}
 
 	/**
@@ -3090,7 +3242,7 @@ export class LayoutEngine {
 					// have changed them. A list's padding-left is derived from its items'
 					// markers, so appending a wider item changes the parent's computed
 					// padding, and reusing the node as-is would keep the stale gutter.
-					styleFlexNode(node as Element, flexNode, this.positionedElements);
+					this.#styleNode(node as Element, flexNode);
 
 					// Sever its current flex CHILDREN too: this element's composed
 					// child set may have changed wholesale (attachShadow on a host
@@ -3370,7 +3522,7 @@ export class LayoutEngine {
 					const element = record.target as Element;
 					const flexNode = this.nodeMap.get(element);
 					if (flexNode) {
-						styleFlexNode(element, flexNode, this.positionedElements);
+						this.#styleNode(element, flexNode);
 						// Invalidate inline runs if style changes might affect layout
 						this[kInvalidateInlineRun](element);
 					} else {
@@ -3750,7 +3902,7 @@ export class LayoutEngine {
 				}
 				// Whatever moved the node may also have restyled it (the flip
 				// that hoists a box to its containing block usually did).
-				styleFlexNode(element, existingFlexNode, this.positionedElements);
+				this.#styleNode(element, existingFlexNode);
 			}
 			if (existingFlexNode && parentFlexNode) {
 				// Check if it's already a child of the correct parent
@@ -3828,7 +3980,7 @@ export class LayoutEngine {
 			this.#trackNode(element, flexNode);
 		}
 
-		styleFlexNode(element, flexNode, this.positionedElements);
+		this.#styleNode(element, flexNode);
 
 		if (display === "none") {
 			flexNode.setDisplay(Flex.DISPLAY_NONE);
@@ -4455,10 +4607,15 @@ export class LayoutEngine {
 			// INSIDE an inline box -- the fragment after a block-level box split
 			// it -- carries on past that box's end. `<span>a<div/>b</span>c`
 			// puts "b" and "c" on one line, so the walk cannot stop at </span>.
+			// An out-of-flow inline is where the climb stops: it is blockified
+			// (css-display-3 §2.7) and lays its own content out, so the run
+			// inside it is its own and ends with it.
 			let root: Element = parentElement;
 			for (
 				let ancestor = compositionBoxParentElement(root);
-				ancestor && getPropertyValue(root, "display") === "inline";
+				ancestor &&
+				getPropertyValue(root, "display") === "inline" &&
+				!this.#isOutOfFlow(root);
 				ancestor = compositionBoxParentElement(root)
 			) {
 				root = ancestor;
