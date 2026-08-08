@@ -1771,6 +1771,11 @@ export class CSSStyleRule extends CSSGroupingRule {
 		return this.#style;
 	}
 
+	/** `[PutForwards=cssText]`: assigning a block assigns its text. */
+	set style(text: string) {
+		this.#style.cssText = String(text);
+	}
+
 	get cssText(): string {
 		const declarations = this.#style.cssText;
 		const nested = serializeGroupRules(this);
@@ -1814,6 +1819,11 @@ export abstract class CSSDeclarationBlockRule extends CSSRule {
 
 	get style(): CSSStyleDeclaration {
 		return this.#style;
+	}
+
+	/** `[PutForwards=cssText]`: assigning a block assigns its text. */
+	set style(text: string) {
+		this.#style.cssText = String(text);
 	}
 
 	/** The at-keyword and prelude this rule's text opens with. */
@@ -2071,6 +2081,11 @@ export class CSSMediaRule extends CSSConditionRule {
 		return this.#media;
 	}
 
+	/** `[PutForwards=mediaText]`: assigning a media list assigns its text. */
+	set media(text: string) {
+		this.#media.mediaText = String(text);
+	}
+
 	get conditionText(): string {
 		return this.#media.mediaText;
 	}
@@ -2275,7 +2290,7 @@ export class CSSNamespaceRule extends CSSRule {
 
 	get cssText(): string {
 		const prefix = this.#prefix ? `${this.#prefix} ` : "";
-		return `@namespace ${prefix}url("${this.#namespaceURI}");`;
+		return `@namespace ${prefix}url(${serializeCSSString(this.#namespaceURI)});`;
 	}
 }
 
@@ -2316,6 +2331,11 @@ export class CSSImportRule extends CSSRule {
 		return this.#media;
 	}
 
+	/** `[PutForwards=mediaText]`: assigning a media list assigns its text. */
+	set media(text: string) {
+		this.#media.mediaText = String(text);
+	}
+
 	get layerName(): string | null {
 		return this.#layerName;
 	}
@@ -2329,7 +2349,7 @@ export class CSSImportRule extends CSSRule {
 	}
 
 	get cssText(): string {
-		let out = `@import url("${this.#href}")`;
+		let out = `@import url(${serializeCSSString(this.#href)})`;
 		if (this.#layerName !== null) {
 			out += this.#layerName ? ` layer(${this.#layerName})` : " layer";
 		}
@@ -2642,6 +2662,11 @@ export class CSSStyleSheet {
 
 	get media(): MediaList {
 		return this.#media;
+	}
+
+	/** `[PutForwards=mediaText]`: assigning a media list assigns its text. */
+	set media(text: string) {
+		this.#media.mediaText = String(text);
 	}
 
 	get disabled(): boolean {
@@ -3447,10 +3472,20 @@ function convertImportRule(
 	}
 
 	let supportsText: string | null = null;
-	const supports = /^supports\(\s*(.*?)\s*\)/i.exec(rest);
-	if (supports) {
-		supportsText = supports[1];
-		rest = rest.slice(supports[0].length).trim();
+	if (/^supports\(/i.test(rest)) {
+		// The condition nests parentheses -- `supports((a: b) or (c: d))` --
+		// so its end is the parenthesis that closes the one it opened.
+		let depth = 0;
+		let end = rest.length;
+		for (let i = "supports(".length - 1; i < rest.length; i++) {
+			if (rest[i] === "(") depth++;
+			else if (rest[i] === ")" && --depth === 0) {
+				end = i;
+				break;
+			}
+		}
+		supportsText = rest.slice("supports(".length, end).trim();
+		rest = rest.slice(end + 1).trim();
 	}
 
 	return new CSSImportRule(href, rest, layerName, supportsText, sheet);
