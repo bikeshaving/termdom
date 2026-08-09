@@ -4812,7 +4812,31 @@ function adopt(target: Node, sheets: unknown): void {
 	let list = adoptedSheets.get(target);
 	if (!list) adoptedSheets.set(target, (list = []));
 	list.length = 0;
-	list.push(...adopted);
+	for (const [index, sheet] of adopted.entries())
+		defineIndex(list, index, sheet);
+}
+
+/**
+ * Write one index of a backing list.
+ *
+ * An ObservableArray's backing list is not a JavaScript object: it has no
+ * prototype behind it, and an index write to it consults nothing. A plain
+ * assignment to an array does consult the prototype chain, so an accessor
+ * installed at `Array.prototype[1]` would run with the backing list as its
+ * receiver -- handing an author the list itself and swallowing the write.
+ * Defining the property is the write with no chain behind it.
+ */
+function defineIndex(
+	list: CSSStyleSheet[],
+	index: number | string,
+	sheet: unknown,
+): boolean {
+	return Reflect.defineProperty(list, index, {
+		value: sheet,
+		writable: true,
+		enumerable: true,
+		configurable: true,
+	});
 }
 
 /** The observable array behind one tree's `adoptedStyleSheets`. */
@@ -4836,6 +4860,9 @@ function observableAdopted(
 		set(array, property, value) {
 			if (typeof property === "string" && /^\d+$/.test(property)) {
 				checkAdoptable(target, value);
+				const defined = defineIndex(array, property, value);
+				if (defined) changed();
+				return defined;
 			}
 			const ok = Reflect.set(array, property, value);
 			if (ok) changed();

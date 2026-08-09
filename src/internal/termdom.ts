@@ -390,6 +390,10 @@ function createEngineWindow(document: DOM.Document): EngineWindow {
 		document,
 		customElements: DOM.customElements,
 		NodeFilter: DOM.NodeFilter,
+		// The platform's, which is the one the DOM and the CSSOM throw: a
+		// caller's `instanceof DOMException` has to name the same class the
+		// engine builds its errors out of.
+		DOMException: globalThis.DOMException,
 		navigator: {
 			userAgent: "TermDOM",
 			language: "en-US",
