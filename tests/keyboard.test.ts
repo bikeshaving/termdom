@@ -2080,3 +2080,96 @@ test("a constrained input scrolls horizontally to follow the caret", async () =>
 	expect(row).not.toContain("abcdef");
 	dom.dispose();
 });
+
+test("a printable key runs keydown, keypress, input, keyup in that order", async () => {
+	// The browser's order: the character is inserted as the keypress default
+	// action, so `input` follows keypress rather than landing between keydown
+	// and it. Each step reads the live value, which is the old one until the
+	// insertion has run.
+	const terminal = new MockProcess({rows: 6, cols: 40});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
+	dom.document.body.innerHTML = `<input id="a" type="text" value="a" autofocus>`;
+	const input = dom.document.getElementById("a") as HTMLInputElement;
+	await nextFrame(dom);
+
+	input.setSelectionRange(1, 1);
+	const seen: Array<[string, string]> = [];
+	for (const type of ["keydown", "keypress", "input", "keyup"]) {
+		input.addEventListener(type, () => seen.push([type, input.value]));
+	}
+
+	(terminal.stdin as any).emit("data", Buffer.from("b"));
+	await new Promise((r) => setTimeout(r, 0));
+
+	expect(seen).toEqual([
+		["keydown", "a"],
+		["keypress", "a"],
+		["input", "ab"],
+		["keyup", "ab"],
+	]);
+
+	dom.dispose();
+});
+
+test("a canceled keypress inserts nothing", async () => {
+	const terminal = new MockProcess({rows: 6, cols: 40});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
+	dom.document.body.innerHTML = `<input id="a" type="text" value="a" autofocus>`;
+	const input = dom.document.getElementById("a") as HTMLInputElement;
+	await nextFrame(dom);
+
+	input.addEventListener("keypress", (event) => event.preventDefault());
+	(terminal.stdin as any).emit("data", Buffer.from("b"));
+	await new Promise((r) => setTimeout(r, 0));
+
+	expect(input.value).toBe("a");
+
+	dom.dispose();
+});
+
+test("a non-ASCII printable key fires keypress and is inserted", async () => {
+	const terminal = new MockProcess({rows: 6, cols: 40});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
+	dom.document.body.innerHTML = `<input id="a" type="text" autofocus>`;
+	const input = dom.document.getElementById("a") as HTMLInputElement;
+	await nextFrame(dom);
+
+	const seen: string[] = [];
+	input.addEventListener("keypress", (event) =>
+		seen.push((event as KeyboardEvent).key),
+	);
+	(terminal.stdin as any).emit("data", Buffer.from("é"));
+	await new Promise((r) => setTimeout(r, 0));
+
+	expect(seen).toEqual(["é"]);
+	expect(input.value).toBe("é");
+
+	dom.dispose();
+});
+
+test("an onkeydown handler assigned by property runs, and can cancel the edit", async () => {
+	// A framework that probes `"onkeydown" in node` assigns the property
+	// instead of calling addEventListener; the handler has to be a real
+	// listener, cancellation and all.
+	const terminal = new MockProcess({rows: 6, cols: 40});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
+	dom.document.body.innerHTML = `<input id="a" type="text" autofocus>`;
+	const input = dom.document.getElementById("a") as any;
+	await nextFrame(dom);
+
+	expect("onkeydown" in input).toBe(true);
+	const keys: string[] = [];
+	input.onkeydown = (event: KeyboardEvent) => {
+		keys.push(event.key);
+		return false;
+	};
+	(terminal.stdin as any).emit("data", Buffer.from("x"));
+	await new Promise((r) => setTimeout(r, 0));
+
+	expect(keys).toEqual(["x"]);
+	// Returning false canceled keydown, and a canceled keydown fires no
+	// keypress, so nothing was typed.
+	expect(input.value).toBe("");
+
+	dom.dispose();
+});
