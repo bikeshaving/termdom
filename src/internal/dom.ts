@@ -48,6 +48,71 @@ export const XLINK_NAMESPACE = "http://www.w3.org/1999/xlink";
 export const XML_NAMESPACE = "http://www.w3.org/XML/1998/namespace";
 export const XMLNS_NAMESPACE = "http://www.w3.org/2000/xmlns/";
 
+/* ------------------------------------------------------ user-agent widgets */
+
+/**
+ * The user-agent widget behind a form control: the shadow tree a control
+ * renders through.
+ *
+ * A control's rendered content model is not its children -- an input has none
+ * -- but a tree the user agent owns, built from the control's own value,
+ * placeholder and selection. Only the control knows when those move, so it
+ * tells its widget, and the widget brings the tree back into step.
+ */
+export interface UAWidget {
+	reconcile(): void;
+}
+
+const kUASelection = Symbol("a control's selection, whatever its type");
+const kSetUASelection = Symbol("move a control's selection, whatever its type");
+
+/** A text control's selection, read past the type gate the author meets. */
+export function uaSelectionOf(control: object): {
+	start: number;
+	end: number;
+	direction: string;
+} {
+	return (control as {[kUASelection](): ReturnType<typeof uaSelectionOf>})[
+		kUASelection
+	]();
+}
+
+/** Move a text control's selection, past the type gate the author meets. */
+export function setUASelection(
+	control: object,
+	start: number,
+	end: number,
+	direction?: string,
+): void {
+	(
+		control as {
+			[kSetUASelection](start: number, end: number, direction?: string): void;
+		}
+	)[kSetUASelection](start, end, direction);
+}
+
+const uaWidgets = new WeakMap<object, UAWidget>();
+
+/** Whether any control has a widget, so a control without one costs nothing. */
+let anyUAWidgets = false;
+
+/** Put a widget behind a control, which is what makes the control render. */
+export function attachUAWidget(element: object, widget: UAWidget): void {
+	uaWidgets.set(element, widget);
+	anyUAWidgets = true;
+}
+
+/** The widget behind a control, if it has been given one. */
+export function uaWidgetOf(element: object): UAWidget | null {
+	return uaWidgets.get(element) ?? null;
+}
+
+/** Tell a control's widget that the control's own state moved. */
+function widgetChanged(element: object): void {
+	if (!anyUAWidgets) return;
+	uaWidgets.get(element)?.reconcile();
+}
+
 /* ------------------------------------------------------------------ errors */
 
 /**
@@ -1950,8 +2015,19 @@ interface Materializable {
 	[kSync](): void;
 }
 
-/** Live collections that have materialized indexed properties. */
-const materialized: Array<WeakRef<Materializable>> = [];
+/**
+ * Live collections that have materialized indexed properties, each with the
+ * document whose trees it lists.
+ *
+ * A mutation can only change what a collection over another document holds by
+ * moving a node between the two, which adopts the node and so runs in the
+ * destination's document. Every other document's collections are left alone,
+ * which is what keeps one document's cost its own.
+ */
+const materialized: Array<{
+	ref: WeakRef<Materializable>;
+	document: Document | null;
+}> = [];
 let materializedCompactAt = 8;
 
 /**
@@ -1961,12 +2037,18 @@ let materializedCompactAt = 8;
  * that has ever been indexed into is resynchronized as part of the mutation
  * that would otherwise leave those properties stale.
  */
-function registerMaterialized(collection: Materializable): void {
-	materialized.push(new WeakRef(collection));
+function registerMaterialized(
+	collection: Materializable,
+	owner: Node | null,
+): void {
+	materialized.push({
+		ref: new WeakRef(collection),
+		document: owner === null ? null : owner[kDocument],
+	});
 	if (materialized.length >= materializedCompactAt) {
 		let write = 0;
 		for (let read = 0; read < materialized.length; read++) {
-			if (materialized[read].deref() !== undefined) {
+			if (materialized[read].ref.deref() !== undefined) {
 				materialized[write++] = materialized[read];
 			}
 		}
@@ -1975,10 +2057,12 @@ function registerMaterialized(collection: Materializable): void {
 	}
 }
 
-function bumpVersion(): void {
+function bumpVersion(document: Document): void {
 	treeVersion++;
 	for (let i = 0; i < materialized.length; i++) {
-		const collection = materialized[i].deref();
+		const entry = materialized[i];
+		if (entry.document !== null && entry.document !== document) continue;
+		const collection = entry.ref.deref();
 		if (collection !== undefined) syncMethod.call(collection);
 	}
 }
@@ -2682,7 +2766,7 @@ function insertNode(
 			}
 		}
 	}
-	bumpVersion();
+	bumpVersion(parent[kDocument]);
 	if (!suppressObservers) {
 		queueTreeMutationRecord(parent, nodes, [], previousSibling, child);
 	}
@@ -2926,7 +3010,7 @@ function removeNode(node: Node, suppressObservers = false): void {
 			);
 		}
 	}
-	bumpVersion();
+	bumpVersion(parent[kDocument]);
 	addTransientObservers(node, parent);
 	if (!suppressObservers) {
 		queueTreeMutationRecord(
@@ -3482,9 +3566,11 @@ abstract class LiveList implements Materializable {
 	#defined = 0;
 	#registered = false;
 	#live: boolean;
+	#owner: Node | null;
 
-	constructor(live: boolean) {
+	constructor(live: boolean, owner: Node | null = null) {
 		this.#live = live;
+		this.#owner = owner;
 	}
 
 	abstract compute(): Node[];
@@ -3507,7 +3593,7 @@ abstract class LiveList implements Materializable {
 		}
 		if (!this.#registered) {
 			this.#registered = true;
-			registerMaterialized(this);
+			registerMaterialized(this, this.#owner);
 		}
 		if (this.#version !== treeVersion) {
 			this.#version = treeVersion;
@@ -3587,8 +3673,8 @@ export class NodeList extends LiveList {
 
 	#compute: () => Node[];
 
-	constructor(compute: () => Node[], live: boolean) {
-		super(live);
+	constructor(compute: () => Node[], live: boolean, owner: Node | null = null) {
+		super(live, owner);
 		this.#compute = compute;
 	}
 
@@ -3617,8 +3703,8 @@ export class HTMLCollection extends LiveList {
 
 	#compute: () => Element[];
 
-	constructor(compute: () => Element[]) {
-		super(true);
+	constructor(compute: () => Element[], owner: Node | null = null) {
+		super(true, owner);
 		this.#compute = compute;
 	}
 
@@ -3687,7 +3773,7 @@ function toUnsignedShort(value: unknown): number {
 }
 
 function createChildNodeList(node: Node): NodeList {
-	const list = new NodeList(() => childNodeArray(node), true);
+	const list = new NodeList(() => childNodeArray(node), true, node);
 	list[kEnsure]();
 	return list;
 }
@@ -3741,7 +3827,7 @@ function elementsByTagName(root: Node, qualifiedName: string): HTMLCollection {
 				}
 			}
 			return found;
-		});
+		}, root);
 		collection[kEnsure]();
 		cache.set(key, collection);
 	}
@@ -3766,7 +3852,7 @@ function elementsByTagNameNS(
 				found.push(element);
 			}
 			return found;
-		});
+		}, root);
 		collection[kEnsure]();
 		cache.set(key, collection);
 	}
@@ -3804,7 +3890,7 @@ function elementsByClassName(root: Node, classNames: string): HTMLCollection {
 				if (all) found.push(element);
 			}
 			return found;
-		});
+		}, root);
 		collection[kEnsure]();
 		cache.set(key, collection);
 	}
@@ -3848,7 +3934,7 @@ export class DOMTokenList extends LiveList {
 	#supported: Set<string> | null;
 
 	constructor(element: Element, attribute: string, supported?: string[]) {
-		super(true);
+		super(true, element);
 		this.#element = element;
 		this.#attribute = attribute;
 		this.#supported = supported === undefined ? null : new Set(supported);
@@ -4138,7 +4224,7 @@ function replaceData(
 		oldValue.slice(0, offset) + data + oldValue.slice(offset + size);
 	liveRangeReplaceDataSteps(node, offset, size, data.length);
 	queueCharacterDataMutationRecord(node, oldValue);
-	bumpVersion();
+	bumpVersion(node[kDocument]);
 	const parent = node[kParent];
 	if (parent !== null) parent[kChildrenChanged]();
 }
@@ -4571,7 +4657,7 @@ function changeAttribute(attribute: Attr, value: string): void {
 		attribute[kNamespace],
 	);
 	attribute[kValue] = value;
-	bumpVersion();
+	bumpVersion(element[kDocument]);
 }
 
 function appendAttribute(element: Element, attribute: Attr): void {
@@ -4584,7 +4670,7 @@ function appendAttribute(element: Element, attribute: Attr): void {
 	);
 	element[kAttributeList].push(attribute);
 	attribute[kOwnerElement] = element;
-	bumpVersion();
+	bumpVersion(element[kDocument]);
 }
 
 function removeAttributeNode(element: Element, attribute: Attr): void {
@@ -4599,7 +4685,7 @@ function removeAttributeNode(element: Element, attribute: Attr): void {
 	const index = list.indexOf(attribute);
 	if (index !== -1) list.splice(index, 1);
 	attribute[kOwnerElement] = null;
-	bumpVersion();
+	bumpVersion(element[kDocument]);
 }
 
 function replaceAttribute(
@@ -4618,7 +4704,7 @@ function replaceAttribute(
 	list[list.indexOf(oldAttribute)] = newAttribute;
 	newAttribute[kOwnerElement] = element;
 	oldAttribute[kOwnerElement] = null;
-	bumpVersion();
+	bumpVersion(element[kDocument]);
 }
 
 /** Queue a record for a change to an element's attribute. */
@@ -4701,7 +4787,7 @@ export class NamedNodeMap extends LiveList {
 	#element: Element;
 
 	constructor(element: Element) {
-		super(true);
+		super(true, element);
 		this.#element = element;
 	}
 
@@ -5368,6 +5454,7 @@ export class Element extends Node {
 				namespace,
 			]);
 		}
+		widgetChanged(this);
 	}
 
 	override [kCloneSingle](document: Document): Node {
@@ -5667,6 +5754,44 @@ export class HTMLElement extends Element {
 	attachInternals(): ElementInternals {
 		return attachElementInternals(this);
 	}
+
+	/**
+	 * Make the element the document's focused area.
+	 *
+	 * Only the focus STATE moves here. The focus/blur/focusin/focusout events
+	 * are the environment's to fire, because their order interleaves with
+	 * whatever else a move of focus does -- a repaint, a caret reveal -- and
+	 * this DOM has no window to fire them at.
+	 */
+	focus(): void {
+		if (!isFocusableArea(this)) return;
+		const document = this[kDocument];
+		if (getRoot(this).nodeType !== DOCUMENT_NODE) return;
+		document[kActiveElement] = this;
+	}
+
+	/** Give up focus, which returns it to the document's body. */
+	blur(): void {
+		const document = this[kDocument];
+		if (document[kActiveElement] === this) {
+			document[kActiveElement] = null;
+		}
+	}
+}
+
+/**
+ * Whether an element can be the document's focused area.
+ *
+ * A tabindex attribute makes any element focusable whatever its value says --
+ * a negative one only takes the element out of sequential navigation, not out
+ * of focus() -- and the elements that are focusable without one say so through
+ * their default tabindex. A disabled control is focusable by neither route.
+ */
+function isFocusableArea(element: Element): boolean {
+	if (isActuallyDisabled(element)) return false;
+	if (element.hasAttribute("tabindex")) return true;
+	if (element.hasAttribute("contenteditable")) return true;
+	return defaultTabIndex(element) >= 0;
 }
 
 Object.defineProperty(HTMLElement.prototype, Symbol.toStringTag, {
@@ -7442,7 +7567,7 @@ export class HTMLDataListElement extends HTMLElement {
 					if (node instanceof HTMLOptionElement) found.push(node);
 				}
 				return found;
-			});
+			}, this);
 			this.#options = options;
 		}
 		return options;
@@ -7524,6 +7649,38 @@ export class HTMLStyleElement extends HTMLElement {
 	set disabled(_value: boolean) {
 		void _value;
 	}
+
+	override [kInsertionSteps](): void {
+		super[kInsertionSteps]();
+		this[kDocument][kStyleElements]++;
+	}
+
+	override [kRemovingSteps](oldParent: Node): void {
+		super[kRemovingSteps](oldParent);
+		this[kDocument][kStyleElements]--;
+	}
+}
+
+/**
+ * How many style elements a document's trees hold, as a number that changes
+ * whenever one joins or leaves. A cascade polls this to notice a sheet that
+ * appeared since it last parsed, which is cheaper than walking for one.
+ */
+export function styleElementCount(document: Document): number {
+	return document[kStyleElements];
+}
+
+/** Mount a document in a window, which is what gives it a `defaultView`. */
+export function setDefaultView(document: Document, view: object | null): void {
+	document[kDefaultView] = view;
+}
+
+/** The element focus is on, set without firing the events a move fires. */
+export function setActiveElement(
+	document: Document,
+	element: Element | null,
+): void {
+	document[kActiveElement] = element;
 }
 /**
  * The members a hyperlink carries: the URL its href names, taken apart.
@@ -7951,7 +8108,7 @@ export class HTMLMapElement extends HTMLElement {
 					if (node instanceof HTMLAreaElement) found.push(node);
 				}
 				return found;
-			});
+			}, this);
 			this.#areas = areas;
 		}
 		return areas;
@@ -8068,7 +8225,10 @@ export class HTMLTableElement extends HTMLElement {
 	get tBodies(): HTMLCollection {
 		let bodies = this.#tBodies;
 		if (bodies === null) {
-			bodies = new HTMLCollection(() => childElementsNamed(this, "tbody"));
+			bodies = new HTMLCollection(
+				() => childElementsNamed(this, "tbody"),
+				this,
+			);
 			this.#tBodies = bodies;
 		}
 		return bodies;
@@ -8089,7 +8249,7 @@ export class HTMLTableElement extends HTMLElement {
 	get rows(): HTMLCollection {
 		let rows = this.#rows;
 		if (rows === null) {
-			rows = new HTMLCollection(() => tableRows(this));
+			rows = new HTMLCollection(() => tableRows(this), this);
 			this.#rows = rows;
 		}
 		return rows;
@@ -8191,7 +8351,7 @@ export class HTMLTableSectionElement extends HTMLElement {
 	get rows(): HTMLCollection {
 		let rows = this.#rows;
 		if (rows === null) {
-			rows = new HTMLCollection(() => childElementsNamed(this, "tr"));
+			rows = new HTMLCollection(() => childElementsNamed(this, "tr"), this);
 			this.#rows = rows;
 		}
 		return rows;
@@ -8236,7 +8396,7 @@ export class HTMLTableRowElement extends HTMLElement {
 	get cells(): HTMLCollection {
 		let cells = this.#cells;
 		if (cells === null) {
-			cells = new HTMLCollection(() => rowCells(this));
+			cells = new HTMLCollection(() => rowCells(this), this);
 			this.#cells = cells;
 		}
 		return cells;
@@ -8308,7 +8468,10 @@ export class HTMLFormElement extends HTMLElement {
 	get elements(): HTMLFormControlsCollection {
 		let elements = this.#elements;
 		if (elements === null) {
-			elements = new HTMLFormControlsCollection(() => listedControls(this));
+			elements = new HTMLFormControlsCollection(
+				() => listedControls(this),
+				this,
+			);
 			this.#elements = elements;
 		}
 		return elements;
@@ -8442,6 +8605,13 @@ Object.defineProperty(SubmitEvent.prototype, Symbol.toStringTag, {
  * it: one element, or a list of the radio buttons that share it.
  */
 export class HTMLFormControlsCollection extends HTMLCollection {
+	#owner: Node | null;
+
+	constructor(compute: () => Element[], owner: Node | null = null) {
+		super(compute, owner);
+		this.#owner = owner;
+	}
+
 	override namedItem(name: string): Element | null {
 		const key = String(name);
 		if (key === "") return null;
@@ -8450,7 +8620,10 @@ export class HTMLFormControlsCollection extends HTMLCollection {
 		if (matches.length === 1) return matches[0] as Element;
 		// The list is what the interface answers with for a shared name; the
 		// declared type is the collection's, which has no way to say so.
-		return new RadioNodeList(() => this.#matching(key)) as unknown as Element;
+		return new RadioNodeList(
+			() => this.#matching(key),
+			this.#owner,
+		) as unknown as Element;
 	}
 
 	override namedProperties(items: Node[]): Map<string, Node> {
@@ -8476,7 +8649,10 @@ export class HTMLFormControlsCollection extends HTMLCollection {
 				key,
 				list.length === 1
 					? list[0]
-					: (new RadioNodeList(() => this.#matching(key)) as unknown as Node),
+					: (new RadioNodeList(
+							() => this.#matching(key),
+							this.#owner,
+						) as unknown as Node),
 			);
 		}
 		return named;
@@ -8505,8 +8681,8 @@ Object.defineProperty(
 
 /** The radio buttons that share a name, and the value the checked one has. */
 export class RadioNodeList extends NodeList {
-	constructor(compute: () => Node[]) {
-		super(compute, true);
+	constructor(compute: () => Node[], owner: Node | null = null) {
+		super(compute, true, owner);
 	}
 
 	get value(): string {
@@ -8765,6 +8941,7 @@ export class HTMLInputElement extends HTMLElement {
 			default:
 				this.setAttribute("value", string);
 		}
+		widgetChanged(this);
 	}
 
 	get checked(): boolean {
@@ -8837,6 +9014,26 @@ export class HTMLInputElement extends HTMLElement {
 			throw new TypeError("setSelectionRange needs a start and an end");
 		}
 		this.#requireSelectable();
+		this[kSetUASelection](start, end, direction);
+	}
+
+	/**
+	 * The selection every input carries, whatever its type says.
+	 *
+	 * The selection APIs answer for the five types the HTML Standard lists,
+	 * and throw for the rest -- but the caret in an email or a number field is
+	 * real, and the widget behind the control edits through it. This is that
+	 * door: the same algorithm, without the type gate an author meets.
+	 */
+	[kUASelection](): {start: number; end: number; direction: string} {
+		return {
+			start: this.#selectionStart,
+			end: this.#selectionEnd,
+			direction: this.#selectionDirection,
+		};
+	}
+
+	[kSetUASelection](start: number, end: number, direction?: string): void {
 		setTextSelection(
 			this,
 			toUnsignedLong(start),
@@ -8875,6 +9072,7 @@ export class HTMLInputElement extends HTMLElement {
 		this.#selectionStart = result.start;
 		this.#selectionEnd = result.end;
 		this.#selectionDirection = "none";
+		widgetChanged(this);
 		scheduleTextSelectionChange(this);
 	}
 
@@ -8909,6 +9107,7 @@ export class HTMLInputElement extends HTMLElement {
 		this.#checked = this.hasAttribute("checked");
 		this.#dirtyChecked = false;
 		this.#indeterminate = false;
+		widgetChanged(this);
 	}
 
 	/**
@@ -8960,9 +9159,13 @@ export class HTMLInputElement extends HTMLElement {
 	/** Set checkedness, unchecking the rest of a radio button's group. */
 	#setCheckedness(checked: boolean): void {
 		this.#checked = checked;
+		widgetChanged(this);
 		if (!checked || this.type !== "radio") return;
 		for (const other of radioGroupOf(this)) {
-			if (other !== this) other.#checked = false;
+			if (other !== this) {
+				other.#checked = false;
+				widgetChanged(other);
+			}
 		}
 	}
 
@@ -9170,8 +9373,9 @@ export class HTMLSelectElement extends HTMLElement {
 	get selectedOptions(): HTMLCollection {
 		let selected = this.#selectedOptions;
 		if (selected === null) {
-			selected = new HTMLCollection(() =>
-				optionsOf(this).filter((option) => option[kSelectedness]),
+			selected = new HTMLCollection(
+				() => optionsOf(this).filter((option) => option[kSelectedness]),
+				this,
 			);
 			this.#selectedOptions = selected;
 		}
@@ -9194,6 +9398,7 @@ export class HTMLSelectElement extends HTMLElement {
 		if (index >= 0 && index < options.length) {
 			options[index][kSelectedness] = true;
 		}
+		widgetChanged(this);
 	}
 
 	get value(): string {
@@ -9217,6 +9422,7 @@ export class HTMLSelectElement extends HTMLElement {
 				option[kSelectedness] = false;
 			}
 		}
+		widgetChanged(this);
 	}
 
 	[kResetControl](): void {
@@ -9225,6 +9431,7 @@ export class HTMLSelectElement extends HTMLElement {
 			option[kOptionDirty] = false;
 		}
 		askForAReset(this);
+		widgetChanged(this);
 	}
 }
 
@@ -9295,7 +9502,7 @@ export class HTMLOptionsCollection extends HTMLCollection {
 	#select: HTMLSelectElement;
 
 	constructor(select: HTMLSelectElement) {
-		super(() => optionsOf(select));
+		super(() => optionsOf(select), select);
 		this.#select = select;
 	}
 
@@ -9441,6 +9648,7 @@ export class HTMLOptionElement extends HTMLElement {
 			}
 		}
 		askForAReset(select);
+		widgetChanged(select);
 	}
 
 	override [kAttributeChanged](
@@ -9453,6 +9661,8 @@ export class HTMLOptionElement extends HTMLElement {
 		if (namespace === null && localName === "selected" && !this[kOptionDirty]) {
 			this[kSelectedness] = value !== null;
 		}
+		const select = selectOf(this);
+		if (select !== null) widgetChanged(select);
 	}
 
 	override [kCloningSteps](copy: Node): void {
@@ -9502,6 +9712,7 @@ export class HTMLTextAreaElement extends HTMLElement {
 			this.#selectionEnd = this.#value.length;
 			this.#selectionDirection = "none";
 		}
+		widgetChanged(this);
 	}
 
 	get textLength(): number {
@@ -9553,6 +9764,19 @@ export class HTMLTextAreaElement extends HTMLElement {
 		if (arguments.length < 2) {
 			throw new TypeError("setSelectionRange needs a start and an end");
 		}
+		this[kSetUASelection](start, end, direction);
+	}
+
+	/** A textarea's selection is always its own; see the input's door. */
+	[kUASelection](): {start: number; end: number; direction: string} {
+		return {
+			start: this.#selectionStart,
+			end: this.#selectionEnd,
+			direction: this.#selectionDirection,
+		};
+	}
+
+	[kSetUASelection](start: number, end: number, direction?: string): void {
 		setTextSelection(
 			this,
 			toUnsignedLong(start),
@@ -9590,6 +9814,7 @@ export class HTMLTextAreaElement extends HTMLElement {
 		this.#selectionStart = result.start;
 		this.#selectionEnd = result.end;
 		this.#selectionDirection = "none";
+		widgetChanged(this);
 		scheduleTextSelectionChange(this);
 	}
 
@@ -9602,6 +9827,7 @@ export class HTMLTextAreaElement extends HTMLElement {
 	[kResetControl](): void {
 		this.#value = "";
 		this.#dirty = false;
+		widgetChanged(this);
 	}
 }
 
@@ -9766,7 +9992,7 @@ export class HTMLFieldSetElement extends HTMLElement {
 					if (isListed(node as Element)) listed.push(node as Element);
 				}
 				return listed;
-			});
+			}, this);
 			this.#elements = elements;
 		}
 		return elements;
@@ -10982,6 +11208,135 @@ export function clearPseudoElement(host: Element, name: string): void {
 	host[kPseudoElements]?.delete(name);
 }
 
+/* --------------------------------------------------------------- geometry */
+
+const kRectValues = Symbol("rectangle origin and size");
+
+/**
+ * A rectangle, as Geometry Interfaces defines it: an origin and a size, with
+ * the four edges derived. A negative width or height puts left right of right,
+ * so the edges take the minimum and the maximum rather than assuming an order.
+ */
+export class DOMRectReadOnly {
+	[kRectValues]: {x: number; y: number; width: number; height: number};
+
+	constructor(x = 0, y = 0, width = 0, height = 0) {
+		this[kRectValues] = {
+			x: Number(x) || 0,
+			y: Number(y) || 0,
+			width: Number(width) || 0,
+			height: Number(height) || 0,
+		};
+	}
+
+	static fromRect(other: DOMRectInit = {}): DOMRectReadOnly {
+		return new DOMRectReadOnly(other.x, other.y, other.width, other.height);
+	}
+
+	get x(): number {
+		return this[kRectValues].x;
+	}
+
+	get y(): number {
+		return this[kRectValues].y;
+	}
+
+	get width(): number {
+		return this[kRectValues].width;
+	}
+
+	get height(): number {
+		return this[kRectValues].height;
+	}
+
+	get top(): number {
+		const {y, height} = this[kRectValues];
+		return Math.min(y, y + height);
+	}
+
+	get right(): number {
+		const {x, width} = this[kRectValues];
+		return Math.max(x, x + width);
+	}
+
+	get bottom(): number {
+		const {y, height} = this[kRectValues];
+		return Math.max(y, y + height);
+	}
+
+	get left(): number {
+		const {x, width} = this[kRectValues];
+		return Math.min(x, x + width);
+	}
+
+	toJSON(): DOMRectInit & {
+		top: number;
+		right: number;
+		bottom: number;
+		left: number;
+	} {
+		return {
+			x: this.x,
+			y: this.y,
+			width: this.width,
+			height: this.height,
+			top: this.top,
+			right: this.right,
+			bottom: this.bottom,
+			left: this.left,
+		};
+	}
+}
+
+Object.defineProperty(DOMRectReadOnly.prototype, Symbol.toStringTag, {
+	value: "DOMRectReadOnly",
+	configurable: true,
+});
+
+/** A rectangle whose origin and size can be written. */
+export class DOMRect extends DOMRectReadOnly {
+	static override fromRect(other: DOMRectInit = {}): DOMRect {
+		return new DOMRect(other.x, other.y, other.width, other.height);
+	}
+
+	override get x(): number {
+		return this[kRectValues].x;
+	}
+
+	override set x(value: number) {
+		this[kRectValues].x = Number(value) || 0;
+	}
+
+	override get y(): number {
+		return this[kRectValues].y;
+	}
+
+	override set y(value: number) {
+		this[kRectValues].y = Number(value) || 0;
+	}
+
+	override get width(): number {
+		return this[kRectValues].width;
+	}
+
+	override set width(value: number) {
+		this[kRectValues].width = Number(value) || 0;
+	}
+
+	override get height(): number {
+		return this[kRectValues].height;
+	}
+
+	override set height(value: number) {
+		this[kRectValues].height = Number(value) || 0;
+	}
+}
+
+Object.defineProperty(DOMRect.prototype, Symbol.toStringTag, {
+	value: "DOMRect",
+	configurable: true,
+});
+
 /* --------------------------------------------------------------- document */
 
 const kDocumentURL = Symbol("document URL");
@@ -10992,6 +11347,9 @@ const kEncoding = Symbol("encoding");
 const kIdMap = Symbol("id map");
 const kNodeIterators = Symbol("node iterators");
 const kNwsapi = Symbol("selector engine");
+const kActiveElement = Symbol("focused area");
+const kDefaultView = Symbol("the window this document is displayed in");
+const kStyleElements = Symbol("how many style elements the tree holds");
 
 let currentDocumentForConstruction: Document | null = null;
 let ambientDocument: Document | null = null;
@@ -11034,6 +11392,9 @@ export class Document extends Node {
 	[kSelection]: Selection | null = null;
 	[kSelectionChangeScheduled] = false;
 	[kNwsapi]: ReturnType<typeof NWSAPI> | null = null;
+	[kActiveElement]: Element | null = null;
+	[kDefaultView]: object | null = null;
+	[kStyleElements] = 0;
 	[kChildren]: HTMLCollection | null = null;
 
 	/** Parse a document, declarative shadow roots included. */
@@ -11095,9 +11456,38 @@ export class Document extends Node {
 		return null;
 	}
 
-	get defaultView(): null {
-		return null;
+	/**
+	 * The window this document is displayed in, which is null until an
+	 * environment mounts the document in one. A document with no browsing
+	 * context has none, and nothing in this DOM creates one.
+	 */
+	get defaultView(): object | null {
+		return this[kDefaultView];
 	}
+
+	/**
+	 * The element focus is on, which is the body whenever nothing else holds
+	 * it. An element that leaves the tree takes focus with it and hands it
+	 * back to the body.
+	 */
+	get activeElement(): Element | null {
+		const active = this[kActiveElement];
+		if (active !== null && getRoot(active) === (this as Node)) return active;
+		this[kActiveElement] = null;
+		return this.body;
+	}
+
+	/** Whether the document's window has the system focus, which it always has. */
+	hasFocus(): boolean {
+		return true;
+	}
+
+	/**
+	 * Close the document, which flushes an open parse.
+	 *
+	 * There is no document.open() here, so there is never a parse to flush.
+	 */
+	close(): void {}
 
 	get customElementRegistry(): CustomElementRegistry | null {
 		return this[kRegistry];
@@ -11741,7 +12131,7 @@ const parentNodeMembers = {
 			const owner = this as unknown as Record<symbol, HTMLCollection | null>;
 			let collection = owner[kChildren];
 			if (collection == null) {
-				collection = new HTMLCollection(() => elementChildren(this));
+				collection = new HTMLCollection(() => elementChildren(this), this);
 				collection[kEnsure]();
 				owner[kChildren] = collection;
 			}
@@ -12010,7 +12400,42 @@ Object.defineProperties(Element.prototype, {
 		enumerable: true,
 		writable: true,
 	},
+	// How far a box is scrolled from its content's origin. The number is the
+	// box's own; what it means for what the box shows is the environment's,
+	// which is why writing one scrolls nothing here.
+	scrollLeft: {
+		get(this: Element): number {
+			return scrollOffsets.get(this)?.left ?? 0;
+		},
+		set(this: Element, value: number) {
+			scrollOffsetsOf(this).left = toDouble(value);
+		},
+		configurable: true,
+		enumerable: true,
+	},
+	scrollTop: {
+		get(this: Element): number {
+			return scrollOffsets.get(this)?.top ?? 0;
+		},
+		set(this: Element, value: number) {
+			scrollOffsetsOf(this).top = toDouble(value);
+		},
+		configurable: true,
+		enumerable: true,
+	},
 });
+
+/** The scroll offsets of the boxes that have been scrolled at all. */
+const scrollOffsets = new WeakMap<Element, {left: number; top: number}>();
+
+function scrollOffsetsOf(element: Element): {left: number; top: number} {
+	let offsets = scrollOffsets.get(element);
+	if (offsets === undefined) {
+		offsets = {left: 0, top: 0};
+		scrollOffsets.set(element, offsets);
+	}
+	return offsets;
+}
 
 /** The spec's "insert adjacent" algorithm, shared by element and text. */
 function insertAdjacent(

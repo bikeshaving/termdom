@@ -1,4 +1,4 @@
-import type {DOMWindow} from "jsdom";
+import type {EngineWindow} from "./termdom.js";
 import Flex from "./flex.js";
 import type * as FlexTypes from "./flex.js";
 import LineBreaker from "linebreak";
@@ -37,7 +37,7 @@ import {
  * containing-block chain and stacking-context collection are built on. Also
  * consulted by the painter's in-flow walk, so it is exported.
  */
-export function isPositioned(window: DOMWindow, element: Element): boolean {
+export function isPositioned(window: EngineWindow, element: Element): boolean {
 	const position = computedStyleOf(element).computedValueOf("position");
 	return Boolean(position) && position !== "static";
 }
@@ -46,7 +46,10 @@ export function isPositioned(window: DOMWindow, element: Element): boolean {
  * z-index only means anything on a positioned box; "auto" stays distinct from 0
  * -- auto paints in the same layer but does NOT form a context.
  */
-function zIndexValueOf(window: DOMWindow, element: Element): number | "auto" {
+function zIndexValueOf(
+	window: EngineWindow,
+	element: Element,
+): number | "auto" {
 	const zIndex = computedStyleOf(element).computedValueOf("z-index");
 	if (!zIndex || zIndex === "auto") return "auto";
 	const value = parseInt(zIndex, 10);
@@ -1242,7 +1245,7 @@ export {kInvalidateInlineRun};
 export class LayoutEngine {
 	declare DOMRect: typeof DOMRect;
 	declare rootElement: Element;
-	declare window: DOMWindow;
+	declare window: EngineWindow;
 
 	declare terminalWidth: number;
 	declare terminalHeight: number;
@@ -1318,7 +1321,7 @@ export class LayoutEngine {
 	#blockContentRoots = new Map<Element, FlexTypes.Node>();
 	#blockContentHosts = new Map<FlexTypes.Node, Element>();
 
-	constructor(window: DOMWindow) {
+	constructor(window: EngineWindow) {
 		this.window = window;
 		this.DOMRect = window.DOMRect;
 		this.rootElement = window.document.documentElement;

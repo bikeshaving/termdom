@@ -8,7 +8,8 @@
  * - All symbols and utilities for DOM composition
  */
 
-import type {DOMWindow} from "jsdom";
+import {uaSelectionOf} from "./dom.js";
+import type {EngineWindow} from "./termdom.js";
 import {computedStyleOf} from "./styles.js";
 
 // Symbols for storing pseudo-elements and shadow roots on nodes
@@ -172,10 +173,9 @@ export function fieldCaretRange(
 ): Range | null {
 	const valueText = fieldValueText(field);
 	if (!valueText) return null;
+	const selection = uaSelectionOf(field);
 	const caret =
-		field.selectionDirection === "backward"
-			? (field.selectionStart ?? valueText.data.length)
-			: (field.selectionEnd ?? valueText.data.length);
+		selection.direction === "backward" ? selection.start : selection.end;
 	const range = field.ownerDocument.createRange();
 	range.setStart(
 		valueText,
@@ -223,10 +223,10 @@ export class ExpandedTreeWalker {
 	// TypeScript declarations only
 	declare readonly root: Node;
 	currentNode: Node;
-	#window!: DOMWindow;
+	#window!: EngineWindow;
 
 	// Private fields (defined in constructor)
-	constructor(window: DOMWindow, root: Node) {
+	constructor(window: EngineWindow, root: Node) {
 		// Define readonly properties
 		Object.defineProperty(this, "root", {
 			value: root,
@@ -1087,7 +1087,7 @@ export function createUAShadowRoot(host: Element): ShadowRoot {
  * Factory function to create an ExpandedTreeWalker
  */
 export function createExpandedTreeWalker(
-	window: DOMWindow,
+	window: EngineWindow,
 	root: Node,
 ): ExpandedTreeWalker {
 	return new ExpandedTreeWalker(window, root);

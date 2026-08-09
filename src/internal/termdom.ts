@@ -1,4 +1,5 @@
-import {type DOMWindow, JSDOM} from "jsdom";
+import * as DOM from "./dom.js";
+import {setUASelection, uaSelectionOf} from "./dom.js";
 import {LayoutEngine, visualToDataOffsets} from "./layout.js";
 import {Viewport} from "./viewport.js";
 import {Painter} from "./painter.js";
@@ -46,6 +47,11 @@ const RESIZE_DEBOUNCE_MS = 40;
 
 // The built-in tags that upgrade to a UA widget on connect.
 const UPGRADEABLE_CONTROLS = new Set(["INPUT", "TEXTAREA", "SELECT"]);
+
+// The engine each document is mounted in. The DOM prototypes are the realm's,
+// shared by every document; a patched member finds its engine here rather than
+// closing over one.
+const engines = new WeakMap<object, TermDOM>();
 
 export {
 	transportFromProcess,
@@ -229,28 +235,201 @@ export class FullscreenManager {
 }
 
 /**
- * Everything the jsdom patches below need from the TermDOM that installed
+ * The window a TermDOM document is displayed in.
+ *
+ * A terminal has one screen and no browsing context, so this is a plain
+ * object rather than a global: the DOM interfaces of `./dom.js`, the
+ * scrolling and sizing the camera answers, and the handful of APIs an author
+ * reaches for through `window`. Everything on it is either a DOM constructor
+ * or something the engine itself serves.
+ */
+export interface EngineWindow extends EventTarget {
+	readonly document: Document;
+	readonly window: EngineWindow;
+	readonly self: EngineWindow;
+	readonly navigator: Navigator;
+
+	readonly innerWidth: number;
+	readonly innerHeight: number;
+	readonly outerWidth: number;
+	readonly outerHeight: number;
+	readonly screenTop: number;
+	readonly scrollX: number;
+	readonly scrollY: number;
+	readonly pageXOffset: number;
+	readonly pageYOffset: number;
+	scroll(options?: ScrollToOptions): void;
+	scroll(x: number, y: number): void;
+	scrollTo(options?: ScrollToOptions): void;
+	scrollTo(x: number, y: number): void;
+	scrollBy(options?: ScrollToOptions): void;
+	scrollBy(x: number, y: number): void;
+
+	getComputedStyle(
+		element: Element,
+		pseudoElement?: string | null,
+	): CSSStyleDeclaration;
+	getSelection(): Selection | null;
+	matchMedia(query: string): MediaQueryList;
+	requestAnimationFrame(callback: FrameRequestCallback): number;
+	cancelAnimationFrame(handle: number): void;
+	setTimeout: typeof globalThis.setTimeout;
+	clearTimeout: typeof globalThis.clearTimeout;
+	setInterval: typeof globalThis.setInterval;
+	clearInterval: typeof globalThis.clearInterval;
+	queueMicrotask: typeof globalThis.queueMicrotask;
+	close(): void;
+
+	readonly customElements: CustomElementRegistry;
+	readonly NodeFilter: typeof globalThis.NodeFilter;
+
+	EventTarget: typeof globalThis.EventTarget;
+	Event: typeof globalThis.Event;
+	CustomEvent: typeof globalThis.CustomEvent;
+	UIEvent: typeof globalThis.UIEvent;
+	MouseEvent: typeof globalThis.MouseEvent;
+	PointerEvent: typeof globalThis.PointerEvent;
+	WheelEvent: typeof globalThis.WheelEvent;
+	KeyboardEvent: typeof globalThis.KeyboardEvent;
+	FocusEvent: typeof globalThis.FocusEvent;
+	InputEvent: typeof globalThis.InputEvent;
+	CompositionEvent: typeof globalThis.CompositionEvent;
+	DOMException: typeof globalThis.DOMException;
+	Node: typeof globalThis.Node;
+	Element: typeof globalThis.Element;
+	Attr: typeof globalThis.Attr;
+	CharacterData: typeof globalThis.CharacterData;
+	Text: typeof globalThis.Text;
+	Comment: typeof globalThis.Comment;
+	CDATASection: typeof globalThis.CDATASection;
+	ProcessingInstruction: typeof globalThis.ProcessingInstruction;
+	DocumentType: typeof globalThis.DocumentType;
+	Document: typeof globalThis.Document;
+	XMLDocument: typeof globalThis.XMLDocument;
+	DocumentFragment: typeof globalThis.DocumentFragment;
+	ShadowRoot: typeof globalThis.ShadowRoot;
+	DOMImplementation: typeof globalThis.DOMImplementation;
+	DOMParser: typeof globalThis.DOMParser;
+	NodeList: typeof globalThis.NodeList;
+	HTMLCollection: typeof globalThis.HTMLCollection;
+	NamedNodeMap: typeof globalThis.NamedNodeMap;
+	DOMTokenList: typeof globalThis.DOMTokenList;
+	DOMStringMap: typeof globalThis.DOMStringMap;
+	MutationObserver: typeof globalThis.MutationObserver;
+	MutationRecord: typeof globalThis.MutationRecord;
+	NodeIterator: typeof globalThis.NodeIterator;
+	TreeWalker: typeof globalThis.TreeWalker;
+	AbstractRange: typeof globalThis.AbstractRange;
+	StaticRange: typeof globalThis.StaticRange;
+	Range: typeof globalThis.Range;
+	Selection: typeof globalThis.Selection;
+	DOMRect: typeof globalThis.DOMRect;
+	DOMRectReadOnly: typeof globalThis.DOMRectReadOnly;
+	CustomElementRegistry: typeof globalThis.CustomElementRegistry;
+	ElementInternals: typeof globalThis.ElementInternals;
+	ValidityState: typeof globalThis.ValidityState;
+	SVGElement: typeof globalThis.SVGElement;
+	MathMLElement: typeof globalThis.MathMLElement;
+	HTMLElement: typeof globalThis.HTMLElement;
+	HTMLInputElement: typeof globalThis.HTMLInputElement;
+	HTMLTextAreaElement: typeof globalThis.HTMLTextAreaElement;
+	HTMLSelectElement: typeof globalThis.HTMLSelectElement;
+	HTMLOptionElement: typeof globalThis.HTMLOptionElement;
+	HTMLButtonElement: typeof globalThis.HTMLButtonElement;
+	HTMLLabelElement: typeof globalThis.HTMLLabelElement;
+	HTMLAnchorElement: typeof globalThis.HTMLAnchorElement;
+	HTMLStyleElement: typeof globalThis.HTMLStyleElement;
+	HTMLLinkElement: typeof globalThis.HTMLLinkElement;
+	HTMLFormElement: typeof globalThis.HTMLFormElement;
+	HTMLDetailsElement: typeof globalThis.HTMLDetailsElement;
+	HTMLDialogElement: typeof globalThis.HTMLDialogElement;
+	HTMLTemplateElement: typeof globalThis.HTMLTemplateElement;
+	HTMLSlotElement: typeof globalThis.HTMLSlotElement;
+	CSSStyleDeclaration: typeof globalThis.CSSStyleDeclaration;
+	CSSStyleSheet: typeof globalThis.CSSStyleSheet;
+	ResizeObserver: typeof globalThis.ResizeObserver;
+	IntersectionObserver: typeof globalThis.IntersectionObserver;
+}
+
+/**
+ * The DOM interfaces a window names, which are the classes of `./dom.js`
+ * under the names WebIDL gives them.
+ */
+function domInterfaces(): Record<string, unknown> {
+	const named: Record<string, unknown> = {};
+	for (const [name, value] of Object.entries(DOM)) {
+		if (typeof value !== "function") continue;
+		// A module export is an interface when it is a class: an interface
+		// has a prototype object of its own, and a plain function does not.
+		const prototype = (value as {prototype?: unknown}).prototype;
+		if (prototype === undefined || prototype === null) continue;
+		if (!/^[A-Z]/.test(name)) continue;
+		named[name] = value;
+	}
+	return named;
+}
+
+/** The window class, whose instances are windows: an EventTarget, and DOM-aware. */
+class Window extends DOM.EventTarget {}
+
+/**
+ * Build the window a document is displayed in and mount the document in it.
+ *
+ * The engine fills in the rest -- sizing, scrolling, animation frames, the
+ * clipboard -- as it installs itself over the document; what a window is born
+ * with is its DOM and the timers any script expects to find.
+ */
+function createEngineWindow(document: DOM.Document): EngineWindow {
+	const window = new Window() as unknown as Record<string, unknown>;
+	Object.assign(window, domInterfaces(), {
+		document,
+		customElements: DOM.customElements,
+		NodeFilter: DOM.NodeFilter,
+		navigator: {
+			userAgent: "TermDOM",
+			language: "en-US",
+			languages: Object.freeze(["en-US"]),
+			platform: "",
+		},
+		setTimeout: globalThis.setTimeout.bind(globalThis),
+		clearTimeout: globalThis.clearTimeout.bind(globalThis),
+		setInterval: globalThis.setInterval.bind(globalThis),
+		clearInterval: globalThis.clearInterval.bind(globalThis),
+		queueMicrotask: globalThis.queueMicrotask.bind(globalThis),
+		// The Selection API defines the window's getSelection as a call to the
+		// document's, and this is that call.
+		getSelection: () => document.getSelection(),
+		// Replaced by the engine, which closes the terminal session with it.
+		close: () => {},
+	});
+	window.window = window;
+	window.self = window;
+	DOM.setDefaultView(document, window);
+	DOM.setAmbientDocument(document);
+	return window as unknown as EngineWindow;
+}
+
+/**
+ * Everything the window installers below need from the TermDOM that installed
  * them -- the whole seam, in one place, instead of a closure over the
  * instance.
  *
- * Getters and callbacks, never values. The patches are installed once and
- * then live for as long as the document does: prototype methods, property
- * getters and event plumbing that run long after the constructor returned.
- * Most of what they reach for does not exist yet when they are installed --
- * the renderer, the style manager, the layout engine and the mutation
- * observer are all assigned later in the same constructor -- and the rest
- * (the camera, the anchor, the frame counter) moves while the program runs.
- * A captured value would freeze `undefined` for half of these and a stale
- * number for the other half.
+ * Getters and callbacks, never values. The installers run once and then live
+ * for as long as the document does: prototype methods, property getters and
+ * event plumbing that run long after the constructor returned. Most of what
+ * they reach for does not exist yet when they are installed -- the renderer,
+ * the style manager, the layout engine and the mutation observer are all
+ * assigned later in the same constructor -- and the rest (the camera, the
+ * anchor, the frame counter) moves while the program runs. A captured value
+ * would freeze `undefined` for half of these and a stale number for the other
+ * half.
  */
 export class TermDOM {
 	readonly document: Document;
-	readonly window: DOMWindow;
+	readonly window: EngineWindow;
 
 	#renderer: Renderer;
 	[kLayoutEngine]: LayoutEngine;
-	// TODO: Should we expose the JSDOM instance?
-	#jsdom: JSDOM;
 	[kObserver]: MutationObserver;
 	#fullscreenManager: FullscreenManager;
 	#observerManager: ObserverManager;
@@ -427,10 +606,6 @@ export class TermDOM {
 	// grapheme clusters) queries whose replies arrive interleaved with typing.
 	#session: TerminalSession;
 
-	// The unpatched jsdom window.close, for dispose(): the patched one closes
-	// the terminal session, and dispose is what it calls to do that.
-	#nativeWindowClose: (() => void) | null = null;
-
 	// A defaulted transport over a piped stdout -- a pipe, a file, a CI log --
 	// has no viewport, no cursor, no scrollback and no resize. It cannot
 	// interpret cursor movement either, so the interactive frame would write
@@ -445,13 +620,11 @@ export class TermDOM {
 		this.#width = this.#transport.cols;
 		this.#height = this.#transport.rows;
 
-		this.#jsdom = new JSDOM(
+		const document = DOM.parseHTMLDocument(
 			"<!DOCTYPE html><html><head></head><body></body></html>",
-			{pretendToBeVisual: true},
 		);
-
-		this.window = this.#jsdom.window;
-		this.document = this.#jsdom.window.document;
+		this.window = createEngineWindow(document);
+		this.document = document as unknown as Document;
 
 		// Setup DOM inspector
 		setupInspectMethods(this.window);
@@ -460,7 +633,8 @@ export class TermDOM {
 		// the window below. Built here, before the fields it exposes exist:
 		// nothing reads through it until a patched API is actually called.
 
-		this.#installConstructorExtensions();
+		engines.set(document, this);
+		TermDOM.#installPrototypes(this.window);
 		this.#renderer = new Renderer(
 			this.#height,
 			this.#width,
@@ -471,7 +645,7 @@ export class TermDOM {
 		this.#styleManager = new StyleManager(this.window);
 
 		// Create layout engine after StyleManager overrides getComputedStyle
-		this[kLayoutEngine] = new LayoutEngine(this.#jsdom.window);
+		this[kLayoutEngine] = new LayoutEngine(this.window);
 		this.#styleManager.setLayoutEngine(this[kLayoutEngine]);
 		// A resolved value is a measurement, so it takes the same flush every
 		// other geometry read takes -- one door, not two.
@@ -507,14 +681,19 @@ export class TermDOM {
 		});
 		this.#session = this.#buildSession();
 
-		// A field edit -- text (input/select events) or a checkbox/radio toggle
-		// (change) -- announces itself with standard events. The render loop
-		// keeps the caret in view and repaints in response to those, rather than
-		// each edit path reaching back into it. Capture, so it lands however the
-		// event bubbles.
+		// A field edit -- text (input), a caret or selection move
+		// (select/selectionchange), or a checkbox/radio toggle (change) --
+		// announces itself with standard events. The render loop keeps the caret
+		// in view and repaints in response to those, rather than each edit path
+		// reaching back into it. Capture, so it lands however the event bubbles.
 		this.document.addEventListener("input", this.#onFieldEditEvent, true);
 		this.document.addEventListener("select", this.#onFieldEditEvent, true);
 		this.document.addEventListener("change", this.#onFieldEditEvent, true);
+		this.document.addEventListener(
+			"selectionchange",
+			this.#onFieldEditEvent,
+			true,
+		);
 
 		// Initial processing of all elements is handled by StyleManager's constructor
 	}
@@ -724,7 +903,6 @@ export class TermDOM {
 		// browser tab: dispose, then close the transport. Ctrl-C's default
 		// action is this call. jsdom's own close still runs inside dispose,
 		// through the saved original.
-		termDOM.#nativeWindowClose = window.close.bind(window);
 		window.close = () => {
 			const wasAttached = termDOM.#attached;
 			// An immediate close must not tear down mid-establishment: wait
@@ -845,11 +1023,33 @@ export class TermDOM {
 		});
 	}
 
-	#installConstructorExtensions(): void {
-		const termDOM = this;
-		const window = termDOM.window;
+	/**
+	 * Put the engine behind the DOM's measurement, focus and fullscreen
+	 * surfaces.
+	 *
+	 * The prototypes are the realm's, shared by every document in it, so this
+	 * runs once and each call finds the engine its node belongs to rather than
+	 * closing over one. Installing per instance would stack a wrapper on a
+	 * wrapper and leave every earlier engine on the chain.
+	 */
+	static #prototypesInstalled = false;
+
+	static #installPrototypes(window: EngineWindow): void {
+		if (TermDOM.#prototypesInstalled) return;
+		TermDOM.#prototypesInstalled = true;
 		const {Element, Document, Range} = window;
-		const document = window.document;
+
+		/** The engine that mounted a node's document. */
+		const engineOf = (node: Node): TermDOM => {
+			const document = (
+				node.nodeType === node.DOCUMENT_NODE ? node : node.ownerDocument
+			) as Document;
+			const engine = engines.get(document);
+			if (engine === undefined) {
+				throw new Error("That node's document is not mounted in a terminal");
+			}
+			return engine;
+		};
 
 		// getRect()/getRects() (the layout engine's own primitives) are
 		// document-relative -- the coordinate space rendering already works in,
@@ -878,7 +1078,11 @@ export class TermDOM {
 			}
 			return false;
 		};
-		const toViewportRect = (rect: DOMRect, element?: Element): DOMRect =>
+		const toViewportRect = (
+			termDOM: TermDOM,
+			rect: DOMRect,
+			element?: Element,
+		): DOMRect =>
 			element && inFixedSpace(element)
 				? rect
 				: termDOM[kLayoutEngine].createDOMRect(
@@ -891,6 +1095,7 @@ export class TermDOM {
 		Element.prototype.getBoundingClientRect = function (
 			this: Element,
 		): DOMRect {
+			const termDOM = engineOf(this);
 			if (!this.isConnected) {
 				return termDOM[kLayoutEngine].createDOMRect(0, 0, 0, 0);
 			}
@@ -899,12 +1104,14 @@ export class TermDOM {
 
 			const rect = termDOM[kLayoutEngine].getRect(this);
 			return toViewportRect(
+				termDOM,
 				rect || termDOM[kLayoutEngine].createDOMRect(),
 				this,
 			);
 		};
 
-		Element.prototype.getClientRects = function (): DOMRectList {
+		Element.prototype.getClientRects = function (this: Element): DOMRectList {
+			const termDOM = engineOf(this);
 			if (!this.isConnected) {
 				return termDOM[kLayoutEngine].createDOMRectList();
 			}
@@ -913,7 +1120,7 @@ export class TermDOM {
 
 			const rects = termDOM[kLayoutEngine]
 				.getRects(this)
-				.map((rect) => toViewportRect(rect, this));
+				.map((rect) => toViewportRect(termDOM, rect, this));
 			return termDOM[kLayoutEngine].createDOMRectList(rects);
 		};
 
@@ -923,6 +1130,7 @@ export class TermDOM {
 		// caret and selection painters read the document-relative
 		// getRangeRects() directly, the way scrollIntoView reads getRect().
 		Range.prototype.getClientRects = function (this: Range): DOMRectList {
+			const termDOM = engineOf(this.startContainer);
 			termDOM.#processPendingMutationsAndRender();
 			const container = this.startContainer;
 			const anchor =
@@ -931,11 +1139,12 @@ export class TermDOM {
 					: (container.parentElement ?? undefined);
 			const rects = termDOM[kLayoutEngine]
 				.getRangeRects(this)
-				.map((rect) => toViewportRect(rect, anchor));
+				.map((rect) => toViewportRect(termDOM, rect, anchor));
 			return termDOM[kLayoutEngine].createDOMRectList(rects);
 		};
 
 		Range.prototype.getBoundingClientRect = function (this: Range): DOMRect {
+			const termDOM = engineOf(this.startContainer);
 			termDOM.#processPendingMutationsAndRender();
 			const container = this.startContainer;
 			const anchor =
@@ -944,7 +1153,11 @@ export class TermDOM {
 					: (container.parentElement ?? undefined);
 			const rects = termDOM[kLayoutEngine].getRangeRects(this);
 			if (rects.length === 0) {
-				return toViewportRect(termDOM[kLayoutEngine].createDOMRect(), anchor);
+				return toViewportRect(
+					termDOM,
+					termDOM[kLayoutEngine].createDOMRect(),
+					anchor,
+				);
 			}
 			let left = Infinity;
 			let top = Infinity;
@@ -957,6 +1170,7 @@ export class TermDOM {
 				bottom = Math.max(bottom, rect.y + rect.height);
 			}
 			return toViewportRect(
+				termDOM,
 				termDOM[kLayoutEngine].createDOMRect(
 					left,
 					top,
@@ -983,6 +1197,7 @@ export class TermDOM {
 		// rounding here first would double-round and drift by a cell).
 		const layoutRectOf = (element: Element): DOMRect | null => {
 			if (!element.isConnected) return null;
+			const termDOM = engineOf(element);
 			termDOM.#processPendingMutationsAndRender();
 			return termDOM[kLayoutEngine].getRect(element);
 		};
@@ -1001,7 +1216,8 @@ export class TermDOM {
 					return ancestor as HTMLElement;
 				}
 			}
-			return document.body === element ? null : document.body;
+			const body = engineOf(element).document.body;
+			return body === element ? null : body;
 		};
 
 		// The content+padding box (border-box rect minus border widths), which
@@ -1115,6 +1331,7 @@ export class TermDOM {
 			this: Element,
 			init: ShadowRootInit,
 		): ShadowRoot {
+			const termDOM = engineOf(this);
 			const root = originalAttachShadow.call(this, init);
 			termDOM[kObserver].observe(root, {
 				childList: true,
@@ -1146,6 +1363,7 @@ export class TermDOM {
 			this: Element,
 			options?: FullscreenOptions,
 		): Promise<void> {
+			const termDOM = engineOf(this);
 			// Fullscreen writes the alternate-screen switch; attach() is the
 			// only consent for that. A browser rejects without a user gesture,
 			// and this is the terminal's equivalent precondition.
@@ -1184,6 +1402,7 @@ export class TermDOM {
 		Document.prototype.exitFullscreen = function (
 			this: Document,
 		): Promise<void> {
+			const termDOM = engineOf(this);
 			return (async () => {
 				const element = termDOM.#fullscreenManager.fullscreenElement;
 				termDOM.#screenSwitching = true;
@@ -1211,15 +1430,19 @@ export class TermDOM {
 			get: function (this: Document) {
 				// Style computation consults this during construction, before
 				// the manager field is assigned.
+				const termDOM = engines.get(this);
+				if (termDOM === undefined) return null;
 				return termDOM.#fullscreenManager?.fullscreenElement ?? null;
 			},
 			configurable: true,
 		});
 
 		Document.prototype.elementFromPoint = function (
+			this: Document,
 			x: number,
 			y: number,
 		): Element | null {
+			const termDOM = engineOf(this);
 			// Per CSSOM View, x/y are viewport-relative -- convert to the
 			// document-relative space hit-testing works in, the same conversion
 			// getBoundingClientRect's toViewportRect makes in the other direction.
@@ -1229,15 +1452,18 @@ export class TermDOM {
 			);
 		};
 
-		// Override focus/blur to dispatch proper events
+		// Moving focus is the DOM's; firing the events a move fires, and
+		// repainting for the :focus rules it brings in, are the engine's.
 		const HTMLElement = window.HTMLElement;
 		const originalFocus = HTMLElement.prototype.focus;
 		const originalBlur = HTMLElement.prototype.blur;
 
 		HTMLElement.prototype.focus = function (this: HTMLElement) {
+			const termDOM = engineOf(this);
+			const document = termDOM.document;
 			const prev = document.activeElement;
 			originalFocus.call(this);
-			if (prev !== this) {
+			if (prev !== this && document.activeElement === this) {
 				// :focus rules match live, but computed styles are cached and
 				// focus is not a mutation -- both moved elements must drop
 				// their caches, and the repaint must happen even when no
@@ -1274,7 +1500,8 @@ export class TermDOM {
 		};
 
 		HTMLElement.prototype.blur = function (this: HTMLElement) {
-			const wasFocused = document.activeElement === this;
+			const termDOM = engineOf(this);
+			const wasFocused = termDOM.document.activeElement === this;
 			originalBlur.call(this);
 			if (wasFocused) {
 				termDOM.#styleManager.handleFocusChange(this);
@@ -1300,6 +1527,7 @@ export class TermDOM {
 			_arg?: boolean | ScrollIntoViewOptions,
 		) {
 			if (!this.isConnected) return;
+			const termDOM = engineOf(this);
 			termDOM.#processPendingMutationsAndRender();
 
 			// Document-relative, not getBoundingClientRect's viewport-relative --
@@ -1313,7 +1541,7 @@ export class TermDOM {
 			// standard block: "nearest" behavior.
 			const regionHeight = Math.min(
 				termDOM.#height,
-				document.body.scrollHeight,
+				termDOM.document.body.scrollHeight,
 			);
 			const top = termDOM.#viewport.scrollTop;
 			if (rect.top < top) {
@@ -1582,8 +1810,6 @@ export class TermDOM {
 			writable: false,
 			configurable: true,
 		});
-
-		this.window._terminalSize = {width: newWidth, height: newHeight};
 
 		// The viewport changed, so every @media answer may have: re-parse the
 		// stylesheets against the new size (they were parsed against the old one
@@ -1876,9 +2102,8 @@ export class TermDOM {
 			scrollOffset++;
 		}
 		// The caret sits at the selection's moving end.
-		const start = input.selectionStart ?? shown.length;
-		const end = input.selectionEnd ?? shown.length;
-		const cursor = input.selectionDirection === "backward" ? start : end;
+		const {start, end, direction} = uaSelectionOf(input);
+		const cursor = direction === "backward" ? start : end;
 		// Keep the caret's cell in the box, then pull back when a deletion left slack.
 		if (cursor < scrollOffset) scrollOffset = cursor;
 		while (
@@ -2334,7 +2559,8 @@ export class TermDOM {
 				const {element: fieldElement, offset: anchor} = this.#fieldDragAnchor;
 				const focus = this.#fieldOffsetAtPoint(fieldElement, x, y);
 				if (focus !== null && focus !== undefined) {
-					fieldElement.setSelectionRange(
+					setUASelection(
+						fieldElement,
 						Math.min(anchor, focus),
 						Math.max(anchor, focus),
 						focus < anchor ? "backward" : "forward",
@@ -2411,7 +2637,7 @@ export class TermDOM {
 				if (field) {
 					const offset = this.#fieldOffsetAtPoint(field, x, y);
 					if (offset !== null) {
-						field.setSelectionRange(offset, offset);
+						setUASelection(field, offset, offset);
 						this.#fieldDragAnchor = {element: field, offset};
 						// The DOCUMENT selection still clears on entry -- a page
 						// selection doesn't stay highlighted behind a field click
@@ -3232,11 +3458,6 @@ export class TermDOM {
 		this.#styleManager.dispose();
 		this[kLayoutEngine].dispose();
 		this.#observerManager.dispose();
-		const flushed = this.#session.flush();
-		(
-			this.#nativeWindowClose ??
-			this.#jsdom.window.close.bind(this.#jsdom.window)
-		)();
-		return flushed;
+		return this.#session.flush();
 	}
 }

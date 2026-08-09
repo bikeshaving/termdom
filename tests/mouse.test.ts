@@ -104,10 +104,16 @@ test("wheel dispatches a cancelable WheelEvent; preventDefault stops the camera"
 	await nextFrame(termdom);
 
 	const seen: Array<{deltaY: number; deltaMode: number}> = [];
-	document.body.addEventListener("wheel", (event: any) => {
-		seen.push({deltaY: event.deltaY, deltaMode: event.deltaMode});
-		event.preventDefault();
-	});
+	// A wheel listener on the body is passive by default, as in a browser:
+	// canceling the scroll takes the explicit opt-out.
+	document.body.addEventListener(
+		"wheel",
+		(event: any) => {
+			seen.push({deltaY: event.deltaY, deltaMode: event.deltaMode});
+			event.preventDefault();
+		},
+		{passive: false},
+	);
 
 	await proc.stdin.send("\x1b[<65;5;3M");
 	expect(seen).toEqual([{deltaY: 3, deltaMode: 1}]);
@@ -195,9 +201,13 @@ test("preventDefault on wheel opts out of scroll chaining", async () => {
 	const {proc, termdom, document} = makeDocumentModeApp();
 	await nextFrame(termdom);
 
-	document.body.addEventListener("wheel", (event: any) => {
-		event.preventDefault();
-	});
+	document.body.addEventListener(
+		"wheel",
+		(event: any) => {
+			event.preventDefault();
+		},
+		{passive: false},
+	);
 
 	await proc.stdin.send("\x1b[<64;5;3M"); // wheel up at the top
 	expect(proc.output.filter((c) => c.includes(DISABLE)).length).toBe(0);

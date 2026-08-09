@@ -20,7 +20,7 @@
  * TermDOM, because that half IS the render loop.
  */
 
-import type {DOMWindow} from "jsdom";
+import type {EngineWindow} from "./termdom.js";
 import {compositionParentElement} from "./composition.js";
 import type {LayoutEngine} from "./layout.js";
 import {computedStyleOf} from "./styles.js";
@@ -425,7 +425,7 @@ export const FOCUSABLE_SELECTOR =
  */
 export function getFocusableElements(
 	document: Document,
-	window: DOMWindow,
+	window: EngineWindow,
 	layoutEngine: LayoutEngine,
 ): Element[] {
 	const elements = Array.from(
