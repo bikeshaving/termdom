@@ -329,6 +329,7 @@ const kSlotAssignment = Symbol("slot assignment");
 const kClonable = Symbol("clonable");
 const kSerializable = Symbol("serializable");
 const kDeclarative = Symbol("declarative");
+const kUAInternal = Symbol("user-agent shadow root");
 const kAvailableToInternals = Symbol("available to element internals");
 const kSlotName = Symbol("slot name");
 const kSlottableName = Symbol("slottable name");
@@ -338,6 +339,8 @@ const kManualAssignment = Symbol("manually assigned nodes");
 const kManualSlot = Symbol("manual slot assignment");
 const kReactionQueue = Symbol("custom element reaction queue");
 const kPseudoElements = Symbol("user-agent pseudo-element slots");
+const kPseudoHost = Symbol("the element a pseudo-element originates from");
+const kPseudoName = Symbol("the pseudo-element a slot node fills");
 const kTemplateContent = Symbol("template content");
 const kRegistry = Symbol("custom element registry");
 
@@ -2251,9 +2254,15 @@ function reportError(error: unknown): void {
 let treeVersion = 0;
 
 const kSync = Symbol("resynchronize own properties");
+const kListRoot = Symbol("the node a collection lists under");
 
 interface Materializable {
 	[kSync](): void;
+	/**
+	 * The node this collection lists the descendants of, or null when it
+	 * lists something no node contains.
+	 */
+	[kListRoot](): Node | null;
 }
 
 /**
@@ -2297,19 +2306,29 @@ function bumpVersion(): void {
 }
 
 /**
- * Record a change to a tree's shape, and resynchronize what it moved.
+ * Record a change to a tree's shape at `point`, and resynchronize what it
+ * moved.
  *
- * A change to the shape of a tree can move any collection over it, and none
- * of them can rule the change out from what it holds, so each one that has
- * materialized own properties recomputes here.
+ * A change to the shape of a tree can move any collection over that tree, and
+ * none of them can rule the change out from what it holds, so each one that
+ * has materialized own properties recomputes here. A collection lists the
+ * descendants of one node, so the ones this reaches are the ones whose node
+ * contains the change: the rest hold what they held, and their own properties
+ * are already exact. This is what keeps the document's collections out of the
+ * trees a document composes but does not contain -- a subtree being built
+ * before it is inserted, a shadow tree, the node a pseudo-element renders
+ * from.
  */
-function bumpTreeVersion(document: Document): void {
+function bumpTreeVersion(document: Document, point: Node): void {
 	treeVersion++;
 	for (let i = 0; i < materialized.length; i++) {
 		const entry = materialized[i];
 		if (entry.document !== null && entry.document !== document) continue;
 		const collection = entry.ref.deref();
-		if (collection !== undefined) syncMethod.call(collection);
+		if (collection === undefined) continue;
+		const root = rootMethod.call(collection);
+		if (root !== null && !isInclusiveAncestor(root, point)) continue;
+		syncMethod.call(collection);
 	}
 }
 
@@ -3046,7 +3065,7 @@ function insertNode(
 			}
 		}
 	}
-	bumpTreeVersion(parent[kDocument]);
+	bumpTreeVersion(parent[kDocument], parent);
 	if (!suppressObservers) {
 		queueTreeMutationRecord(parent, nodes, [], previousSibling, child);
 	}
@@ -3290,7 +3309,7 @@ function removeNode(node: Node, suppressObservers = false): void {
 			);
 		}
 	}
-	bumpTreeVersion(parent[kDocument]);
+	bumpTreeVersion(parent[kDocument], parent);
 	addTransientObservers(node, parent);
 	if (!suppressObservers) {
 		queueTreeMutationRecord(
@@ -3900,6 +3919,10 @@ abstract class LiveList implements Materializable {
 		return this.#items;
 	}
 
+	[kListRoot](): Node | null {
+		return this.#owner;
+	}
+
 	/**
 	 * Bring the collection back in step with an attribute that changed.
 	 *
@@ -3961,6 +3984,9 @@ const ensureMethod = (
 const syncMethod = (
 	LiveList.prototype as unknown as Record<symbol, () => void>
 )[kSync];
+const rootMethod = (
+	LiveList.prototype as unknown as Record<symbol, () => Node | null>
+)[kListRoot];
 
 export class NodeList extends LiveList {
 	declare forEach: (
@@ -4582,7 +4608,7 @@ function replaceData(
 		oldValue.slice(0, offset) + data + oldValue.slice(offset + size);
 	liveRangeReplaceDataSteps(node, offset, size, data.length);
 	queueCharacterDataMutationRecord(node, oldValue);
-	bumpTreeVersion(node[kDocument]);
+	bumpTreeVersion(node[kDocument], node);
 	const parent = node[kParent];
 	if (parent !== null) parent[kChildrenChanged]();
 }
@@ -5310,6 +5336,8 @@ export class Element extends Node {
 	[kManualSlot]: HTMLSlotElement | null = null;
 	[kReactionQueue]: Reaction[] | null = null;
 	[kPseudoElements]: Map<string, Element> | null = null;
+	[kPseudoHost]: Element | null = null;
+	[kPseudoName]: string | null = null;
 
 	constructor() {
 		super();
@@ -7150,6 +7178,7 @@ interface ShadowRootInit {
  */
 export class ShadowRoot extends DocumentFragment {
 	[kShadowMode]: "open" | "closed" = "open";
+	[kUAInternal] = false;
 	[kDelegatesFocus] = false;
 	[kSlotAssignment]: "named" | "manual" = "named";
 	[kClonable] = false;
@@ -7327,6 +7356,56 @@ function attachShadowRoot(
 	shadow[kSerializable] = serializable;
 	shadow[kRegistry] = registry;
 	element[kShadowRoot] = shadow;
+}
+
+/**
+ * Give a form control the closed shadow tree its widget renders in.
+ *
+ * The tree is the same ShadowRoot an author's attachShadow builds -- slot
+ * assignment, retargeting, `isConnected`, the selector engine's tree scoping
+ * all work across it -- attached past the check that stops an author from
+ * hosting a tree on an `<input>`. It is closed and unmarked as a declarative
+ * or clonable root, so `element.shadowRoot` stays null, `attachShadow` on the
+ * same element still throws the NotSupportedError the specification demands,
+ * `cloneNode` copies nothing, and serialization never names it: the tree is
+ * reachable only through {@link uaShadowRootOf} and the widget that built it.
+ */
+export function attachUAShadowRoot<T>(target: object): T {
+	const host = target as Element;
+	const previous = internalConstruction;
+	internalConstruction = true;
+	let shadow: ShadowRoot;
+	try {
+		shadow = new ShadowRoot();
+	} finally {
+		internalConstruction = previous;
+	}
+	shadow[kDocument] = host[kDocument];
+	shadow[kHost] = host;
+	shadow[kShadowMode] = "closed";
+	shadow[kUAInternal] = true;
+	shadow[kRegistry] = globalCustomElements;
+	host[kShadowRoot] = shadow;
+	return shadow as T;
+}
+
+/**
+ * Whether a node is a user-agent shadow root. The cascade asks: a rule from a
+ * stylesheet of such a tree is a UA rule, which every author rule outranks
+ * whatever its specificity.
+ */
+export function isUAShadowRoot(node: object): boolean {
+	return node instanceof ShadowRoot && node[kUAInternal];
+}
+
+/**
+ * The shadow tree an element renders, closed ones included: a control's
+ * user-agent tree, or the tree an author attached. The engine composes through
+ * this; `Element.shadowRoot` is the author-facing view, which shows an open
+ * tree and nothing else.
+ */
+export function shadowRootOf<T>(element: object): T | null {
+	return ((element as Element)[kShadowRoot] as T) ?? null;
 }
 
 /* ---------------------------------------------------------------------- slots */
@@ -11545,11 +11624,31 @@ function checkValidity(element: Element): boolean {
  * everything the engine already does with an element -- computed style, a box,
  * text children -- works on it unchanged.
  */
-export function pseudoElement(host: Element, name: string): Element | null {
-	const slots = host[kPseudoElements];
-	return slots === undefined || slots === null
+export function pseudoElement<T>(host: object, name: string): T | null {
+	const slots = (host as Element)[kPseudoElements];
+	return slots === null || slots === undefined
 		? null
-		: (slots.get(name) ?? null);
+		: ((slots.get(name) as T) ?? null);
+}
+
+/** How many pseudo-element nodes an element carries. */
+export function pseudoElementCount(host: object): number {
+	const slots = (host as Element)[kPseudoElements];
+	return slots === null || slots === undefined ? 0 : slots.size;
+}
+
+/**
+ * The element a pseudo-element slot belongs to, and the name it fills. Null for
+ * every other node: this is what tells a pseudo-element node apart, and where
+ * the flat tree finds the parent a node with no parent renders inside.
+ */
+export function pseudoHostOf<T>(node: object): T | null {
+	return ((node as Element)[kPseudoHost] as T) ?? null;
+}
+
+/** The pseudo-element name a slot node fills, such as "::before". */
+export function pseudoNameOf(node: object): string | null {
+	return (node as Element)[kPseudoName];
 }
 
 /**
@@ -11557,7 +11656,8 @@ export function pseudoElement(host: Element, name: string): Element | null {
  * time it is asked for. The node is an element named after the pseudo-element
  * so a debugger's dump reads plainly; it is never serialized.
  */
-export function ensurePseudoElement(host: Element, name: string): Element {
+export function ensurePseudoElement<T>(target: object, name: string): T {
+	const host = target as Element;
 	let slots = host[kPseudoElements];
 	if (slots === null) {
 		slots = new Map<string, Element>();
@@ -11566,14 +11666,552 @@ export function ensurePseudoElement(host: Element, name: string): Element {
 	let element = slots.get(name);
 	if (element === undefined) {
 		element = createElementInternal(host[kDocument], name, HTML_NAMESPACE);
+		element[kPseudoHost] = host;
+		element[kPseudoName] = name;
 		slots.set(name, element);
 	}
-	return element;
+	return element as T;
 }
 
 /** Drop an element's pseudo-element node for a name. */
-export function clearPseudoElement(host: Element, name: string): void {
-	host[kPseudoElements]?.delete(name);
+export function clearPseudoElement(host: object, name: string): void {
+	(host as Element)[kPseudoElements]?.delete(name);
+}
+
+/* -------------------------------------------------------------- flat tree */
+
+/**
+ * The flat tree: the tree a renderer draws, which the DOM Standard's node tree
+ * is only one input to. Four things separate it from the node tree, and all
+ * four are answered here rather than by any caller:
+ *
+ * - a host's children are its shadow tree's, and only those;
+ * - a slot's children are the nodes assigned to it, and its own children only
+ *   as the fallback shown when nothing is;
+ * - a pseudo-element slot's node stands between an element and its children,
+ *   ::marker first, then ::before, with ::after after the last of them;
+ * - a node the box tree DISSOLVES contributes its children in its own place.
+ *
+ * Nothing is memoized. Every hop reads the same links the mutation algorithms
+ * maintain -- the stored slot assignment, not the recomputed one an author's
+ * `assignedSlot` reports -- so a walk cannot answer from a tree that has moved.
+ */
+
+/** The slot a node is assigned to: the stored assignment, closed trees too. */
+function assignedSlotOf(node: Node): HTMLSlotElement | null {
+	const type = node.nodeType;
+	return type === ELEMENT_NODE || type === TEXT_NODE
+		? (node as Slottable)[kAssignedSlot]
+		: null;
+}
+
+/**
+ * The FLAT-TREE parent element of a node: the element it renders inside, which
+ * is also the element style inheritance flows from. Three cases diverge from
+ * parentElement -- a projected node's flat parent is its SLOT, a shadow root's
+ * child resolves to the HOST, and a pseudo-element node's is the element it
+ * originates from -- and everything else is parentElement.
+ */
+export function flatParentElement<T>(target: object): T | null {
+	const node = target as Node;
+	const slot = assignedSlotOf(node);
+	if (slot !== null) return slot as unknown as T;
+	const parent = node[kParent];
+	if (parent !== null) {
+		if (parent.nodeType === ELEMENT_NODE) return parent as unknown as T;
+		return isShadowRoot(parent)
+			? ((parent as ShadowRoot)[kHost] as unknown as T)
+			: null;
+	}
+	return ((node as Element)[kPseudoHost] as T) ?? null;
+}
+
+/**
+ * Whether a node renders: it is in the document, or the flat tree above it
+ * reaches one. A pseudo-element node and a UA shadow tree's contents are both
+ * outside the node tree that answers `isConnected` and both render.
+ */
+export function flatIsConnected(target: object): boolean {
+	let node: Node | null = target as Node;
+	while (node !== null) {
+		if (isConnectedNode(node)) return true;
+		node = flatParentElement<Node>(node);
+	}
+	return false;
+}
+
+/**
+ * A walk of the flat tree, with the TreeWalker interface the DOM's own walkers
+ * carry. Comments, processing instructions and every other node type that
+ * generates no box are SKIPPED -- the traversal steps past one rather than
+ * halting on it, so a comment cannot hide the content around it.
+ *
+ * `dissolved` names the elements the caller's box tree splices away, whose
+ * children take their place in the sequence. The DOM has no opinion on which
+ * those are; the box tree that asks does.
+ */
+export interface FlatTreeWalker<N> {
+	readonly root: N;
+	currentNode: N;
+	nextNode(): N | null;
+	previousNode(): N | null;
+	parentNode(): N | null;
+	firstChild(): N | null;
+	lastChild(): N | null;
+	nextSibling(): N | null;
+	previousSibling(): N | null;
+}
+
+export function createFlatTreeWalker<N>(
+	root: N,
+	dissolved?: (node: N) => boolean,
+): FlatTreeWalker<N> {
+	return new FlatWalker(
+		root as unknown as Node,
+		dissolved as ((node: Node) => boolean) | undefined,
+	) as unknown as FlatTreeWalker<N>;
+}
+
+class FlatWalker {
+	declare readonly root: Node;
+	currentNode: Node;
+	#dissolved: ((node: Node) => boolean) | null;
+
+	constructor(root: Node, dissolved?: (node: Node) => boolean) {
+		Object.defineProperty(this, "root", {value: root, enumerable: true});
+		this.currentNode = root;
+		this.#dissolved = dissolved ?? null;
+	}
+
+	nextNode(): Node | null {
+		let node = this.currentNode;
+		for (;;) {
+			const firstChild = this.#firstChild(node);
+			if (firstChild !== null) {
+				if (accepts(firstChild)) {
+					this.currentNode = firstChild;
+					return firstChild;
+				}
+				node = firstChild;
+				continue;
+			}
+
+			// A walker rooted at a node never visits that node's siblings. Back
+			// at the root with nothing to descend into, the subtree is
+			// exhausted: returning the root's sibling would escape it, which is
+			// how an empty inline element measured its next sibling's width.
+			if (node === this.root) return null;
+
+			const nextSibling = this.#nextSibling(node);
+			if (nextSibling !== null) {
+				if (accepts(nextSibling)) {
+					this.currentNode = nextSibling;
+					return nextSibling;
+				}
+				node = nextSibling;
+				continue;
+			}
+
+			let parent = this.#parent(node);
+			while (parent !== null && parent !== this.root) {
+				// An element's ::after follows the last of its content.
+				if (parent.nodeType === ELEMENT_NODE) {
+					const after = pseudoSlot(parent as Element, "::after");
+					if (after !== null && this.#isLastContent(node, parent as Element)) {
+						if (accepts(after)) {
+							this.currentNode = after;
+							return after;
+						}
+						node = after;
+						continue;
+					}
+				}
+				const parentNextSibling = this.#nextSibling(parent);
+				if (parentNextSibling !== null) {
+					if (accepts(parentNextSibling)) {
+						this.currentNode = parentNextSibling;
+						return parentNextSibling;
+					}
+					node = parentNextSibling;
+					break;
+				}
+				parent = this.#parent(parent);
+			}
+
+			if (parent === null || parent === this.root) return null;
+		}
+	}
+
+	previousNode(): Node | null {
+		let node = this.currentNode;
+		if (node === this.root) return null;
+		for (;;) {
+			const previousSibling = this.#previousSibling(node);
+			if (previousSibling !== null) {
+				const lastDescendant = this.#lastDescendant(previousSibling);
+				if (accepts(lastDescendant)) {
+					this.currentNode = lastDescendant;
+					return lastDescendant;
+				}
+				node = lastDescendant;
+				continue;
+			}
+			const parent = this.#parent(node);
+			if (parent === null) return null;
+			if (accepts(parent)) {
+				this.currentNode = parent;
+				return parent;
+			}
+			if (parent === this.root) return null;
+			node = parent;
+		}
+	}
+
+	parentNode(): Node | null {
+		let node: Node | null = this.currentNode;
+		while (node !== null && node !== this.root) {
+			const parent = this.#parent(node);
+			if (parent !== null && accepts(parent)) {
+				this.currentNode = parent;
+				return parent;
+			}
+			node = parent;
+		}
+		return null;
+	}
+
+	firstChild(): Node | null {
+		let child = this.#firstChild(this.currentNode);
+		while (child !== null && !accepts(child)) child = this.#nextSibling(child);
+		if (child === null) return null;
+		this.currentNode = child;
+		return child;
+	}
+
+	lastChild(): Node | null {
+		let child = this.#lastChild(this.currentNode);
+		while (child !== null && !accepts(child)) {
+			child = this.#previousSibling(child);
+		}
+		if (child === null) return null;
+		this.currentNode = child;
+		return child;
+	}
+
+	/**
+	 * Per the TreeWalker spec's traverse-siblings algorithm, the root has no
+	 * siblings within the walk: returning the root's flat sibling escapes the
+	 * subtree the walker was scoped to. (An inline-block flex item is its own
+	 * inline-run head, and collecting its leaves ends with a nextSibling()
+	 * skip -- without this guard that skip walked out of the item and swallowed
+	 * the next flex item's text into its measurement.)
+	 */
+	nextSibling(): Node | null {
+		if (this.currentNode === this.root) return null;
+		let sibling = this.#nextSibling(this.currentNode);
+		while (sibling !== null && !accepts(sibling)) {
+			sibling = this.#nextSibling(sibling);
+		}
+		if (sibling === null) return null;
+		this.currentNode = sibling;
+		return sibling;
+	}
+
+	/** Root-guarded like nextSibling, per spec. */
+	previousSibling(): Node | null {
+		if (this.currentNode === this.root) return null;
+		let sibling = this.#previousSibling(this.currentNode);
+		while (sibling !== null && !accepts(sibling)) {
+			sibling = this.#previousSibling(sibling);
+		}
+		if (sibling === null) return null;
+		this.currentNode = sibling;
+		return sibling;
+	}
+
+	/* The dissolving layer: composed hops with the caller's dissolved elements
+	   spliced away, so their children join the parent's child sequence. This is
+	   how a <slot> disappears from a box tree while its projected content flows
+	   through. */
+
+	#isDissolved(node: Node): boolean {
+		return (
+			this.#dissolved !== null &&
+			node.nodeType === ELEMENT_NODE &&
+			this.#dissolved(node)
+		);
+	}
+
+	/** The first undissolved node at a node's position, or null if it has none. */
+	#head(node: Node): Node | null {
+		if (!this.#isDissolved(node)) return node;
+		for (let child = composedFirstChild(node); child !== null; ) {
+			const head = this.#head(child);
+			if (head !== null) return head;
+			child = composedNextSibling(child);
+		}
+		return null;
+	}
+
+	/** Mirror of #head: the last undissolved node at a node's position. */
+	#tail(node: Node): Node | null {
+		if (!this.#isDissolved(node)) return node;
+		for (let child = composedLastChild(node); child !== null; ) {
+			const tail = this.#tail(child);
+			if (tail !== null) return tail;
+			child = composedPreviousSibling(child);
+		}
+		return null;
+	}
+
+	#firstChild(node: Node): Node | null {
+		for (let child = composedFirstChild(node); child !== null; ) {
+			const head = this.#head(child);
+			if (head !== null) return head;
+			child = composedNextSibling(child);
+		}
+		return null;
+	}
+
+	#lastChild(node: Node): Node | null {
+		for (let child = composedLastChild(node); child !== null; ) {
+			const tail = this.#tail(child);
+			if (tail !== null) return tail;
+			child = composedPreviousSibling(child);
+		}
+		return null;
+	}
+
+	#nextSibling(node: Node): Node | null {
+		let current = node;
+		for (;;) {
+			for (
+				let sibling = composedNextSibling(current);
+				sibling !== null;
+				sibling = composedNextSibling(sibling)
+			) {
+				const head = this.#head(sibling);
+				if (head !== null) return head;
+			}
+			// Out of composed siblings: a dissolved parent's siblings continue
+			// the sequence.
+			const parent = composedParentNode(current);
+			if (parent === null || !this.#isDissolved(parent)) return null;
+			current = parent;
+		}
+	}
+
+	#previousSibling(node: Node): Node | null {
+		let current = node;
+		for (;;) {
+			for (
+				let sibling = composedPreviousSibling(current);
+				sibling !== null;
+				sibling = composedPreviousSibling(sibling)
+			) {
+				const tail = this.#tail(sibling);
+				if (tail !== null) return tail;
+			}
+			const parent = composedParentNode(current);
+			if (parent === null || !this.#isDissolved(parent)) return null;
+			current = parent;
+		}
+	}
+
+	#parent(node: Node): Node | null {
+		let parent = composedParentNode(node);
+		while (parent !== null && this.#isDissolved(parent)) {
+			parent = composedParentNode(parent);
+		}
+		return parent;
+	}
+
+	#lastDescendant(node: Node): Node {
+		let current = node;
+		for (
+			let child = this.#lastChild(current);
+			child !== null;
+			child = this.#lastChild(current)
+		) {
+			current = child;
+		}
+		return current;
+	}
+
+	/** Whether a node ends an element's content, ::after aside. */
+	#isLastContent(node: Node, element: Element): boolean {
+		const shadow = element[kShadowRoot];
+		const last = shadow !== null ? shadow[kLastChild] : element[kLastChild];
+		if (last === null) return false;
+		if (node === last) return true;
+		for (
+			let ancestor = composedParentNode(node);
+			ancestor !== null;
+			ancestor = composedParentNode(ancestor)
+		) {
+			if (ancestor === last) return true;
+		}
+		return false;
+	}
+}
+
+/** Only elements and text generate boxes; every other node type is skipped. */
+function accepts(node: Node): boolean {
+	const type = node.nodeType;
+	return type === ELEMENT_NODE || type === TEXT_NODE;
+}
+
+function pseudoSlot(element: Element, name: string): Element | null {
+	const slots = element[kPseudoElements];
+	return slots === null ? null : (slots.get(name) ?? null);
+}
+
+/* The composed hops: the flat tree before any dissolving. */
+
+function composedFirstChild(node: Node): Node | null {
+	if (node.nodeType !== ELEMENT_NODE) return node[kFirstChild];
+	const element = node as Element;
+	const slots = element[kPseudoElements];
+	if (slots !== null) {
+		// ::marker precedes ::before, and both precede the element's content.
+		const marker = slots.get("::marker");
+		if (marker !== undefined) return marker;
+		const before = slots.get("::before");
+		if (before !== undefined) return before;
+	}
+	const composed = composedContentFirstChild(element);
+	if (composed !== null) return composed;
+	// A CHILDLESS element still renders its ::after: the sibling transition
+	// only reaches ::after from a last child, which there is none of here, so
+	// for an empty element the pseudo-element IS the content.
+	return slots === null ? null : (slots.get("::after") ?? null);
+}
+
+/**
+ * An element's composed content, pseudo-elements aside: its shadow tree's
+ * children when it hosts one -- and ONLY those, an empty tree meaning an empty
+ * element, since light children render solely through slots -- a slot's
+ * assigned nodes when it has any, and its own children otherwise (which for a
+ * slot is the fallback content).
+ */
+function composedContentFirstChild(element: Element): Node | null {
+	const shadow = element[kShadowRoot];
+	if (shadow !== null) return shadow[kFirstChild];
+	if (element instanceof HTMLSlotElement) {
+		const assigned = element[kAssignedNodes];
+		if (assigned.length > 0) return assigned[0];
+	}
+	return element[kFirstChild];
+}
+
+function composedLastChild(node: Node): Node | null {
+	if (node.nodeType !== ELEMENT_NODE) return node[kLastChild];
+	const element = node as Element;
+	const slots = element[kPseudoElements];
+	if (slots !== null) {
+		const after = slots.get("::after");
+		if (after !== undefined) return after;
+	}
+	const shadow = element[kShadowRoot];
+	if (shadow !== null) return shadow[kLastChild];
+	if (element instanceof HTMLSlotElement) {
+		const assigned = element[kAssignedNodes];
+		if (assigned.length > 0) return assigned[assigned.length - 1];
+	}
+	const child = element[kLastChild];
+	if (child !== null) return child;
+	if (slots !== null) {
+		const before = slots.get("::before");
+		if (before !== undefined) return before;
+		const marker = slots.get("::marker");
+		if (marker !== undefined) return marker;
+	}
+	return null;
+}
+
+function composedNextSibling(node: Node): Node | null {
+	const host = (node as Element)[kPseudoHost];
+	if (host !== null && host !== undefined) {
+		const name = (node as Element)[kPseudoName];
+		if (name === "::marker") {
+			const before = pseudoSlot(host, "::before");
+			if (before !== null) return before;
+		}
+		if (name !== "::after") {
+			const content = composedContentFirstChild(host);
+			return content !== null ? content : pseudoSlot(host, "::after");
+		}
+		return null;
+	}
+
+	// A projected node's composed siblings are its neighbours in the slot's
+	// assigned-node list, NOT its light-tree siblings: the light nextSibling
+	// may be assigned to a different slot, or to none.
+	const slot = assignedSlotOf(node);
+	if (slot !== null) {
+		const assigned = slot[kAssignedNodes];
+		const index = assigned.indexOf(node as Slottable);
+		return index >= 0 && index < assigned.length - 1
+			? assigned[index + 1]
+			: null;
+	}
+
+	const next = node[kNext];
+	if (next !== null) return next;
+
+	// The last of an element's content is followed by its ::after.
+	const parent = node[kParent];
+	if (parent !== null && parent.nodeType === ELEMENT_NODE) {
+		return pseudoSlot(parent as Element, "::after");
+	}
+	return null;
+}
+
+function composedPreviousSibling(node: Node): Node | null {
+	const host = (node as Element)[kPseudoHost];
+	if (host !== null && host !== undefined) {
+		const name = (node as Element)[kPseudoName];
+		if (name === "::after") {
+			const shadow = host[kShadowRoot];
+			const last = shadow !== null ? shadow[kLastChild] : host[kLastChild];
+			if (last !== null) return last;
+			const before = pseudoSlot(host, "::before");
+			if (before !== null) return before;
+			return pseudoSlot(host, "::marker");
+		}
+		if (name === "::before") return pseudoSlot(host, "::marker");
+		return null;
+	}
+
+	const slot = assignedSlotOf(node);
+	if (slot !== null) {
+		const assigned = slot[kAssignedNodes];
+		const index = assigned.indexOf(node as Slottable);
+		return index > 0 ? assigned[index - 1] : null;
+	}
+
+	const previous = node[kPrevious];
+	if (previous !== null) return previous;
+
+	const parent = node[kParent];
+	if (parent !== null && parent.nodeType === ELEMENT_NODE) {
+		const before = pseudoSlot(parent as Element, "::before");
+		if (before !== null) return before;
+		return pseudoSlot(parent as Element, "::marker");
+	}
+	return null;
+}
+
+function composedParentNode(node: Node): Node | null {
+	const host = (node as Element)[kPseudoHost];
+	if (host !== null && host !== undefined) return host;
+	const slot = assignedSlotOf(node);
+	if (slot !== null) return slot;
+	const parent = node[kParent];
+	if (parent !== null && isShadowRoot(parent)) {
+		return (parent as ShadowRoot)[kHost];
+	}
+	return parent;
 }
 
 /* --------------------------------------------------------------- geometry */

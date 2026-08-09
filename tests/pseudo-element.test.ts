@@ -1,10 +1,8 @@
 import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame, styleManagerFor} from "./test-utils.js";
-import {
-	getPseudoElement,
-	createExpandedTreeWalker,
-} from "../src/internal/composition.js";
+import {pseudoElement} from "../src/internal/dom.js";
+import {flowWalker} from "../src/internal/layout.js";
 
 test("::before and ::after content rendering", async () => {
 	const terminal = new MockProcess();
@@ -60,8 +58,8 @@ test("::before and ::after content rendering", async () => {
 	styleManagerFor(termdom).refreshStylesheets();
 
 	// Check the actual attached pseudo elements using the composition API
-	const beforeQuoteNode = getPseudoElement(quote, "::before");
-	const afterQuoteNode = getPseudoElement(quote, "::after");
+	const beforeQuoteNode = pseudoElement<Element>(quote, "::before");
+	const afterQuoteNode = pseudoElement<Element>(quote, "::after");
 
 	// Render to terminal
 	await nextFrame(termdom);
@@ -79,10 +77,7 @@ test("::before and ::after content rendering", async () => {
 	expect(afterQuoteNode).not.toBeNull();
 	expect(afterQuoteNode!.textContent).toBe('"');
 
-	const beforePrefixNode = styleManagerFor(termdom).createPseudoElementNode(
-		note,
-		"::before",
-	);
+	const beforePrefixNode = pseudoElement<Element>(note, "::before");
 	expect(beforePrefixNode).not.toBeNull();
 	expect(beforePrefixNode!.textContent).toBe("Note: ");
 });
@@ -337,7 +332,7 @@ test.todo(
 		list.appendChild(listItem);
 
 		// Use ExpandedTreeWalker to traverse and collect all content
-		const walker = createExpandedTreeWalker(termdom.window as any, container);
+		const walker = flowWalker(container);
 
 		const traversedContent: string[] = [];
 		let currentNode = walker.nextNode();

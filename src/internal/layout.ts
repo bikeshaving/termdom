@@ -1,4 +1,5 @@
 import type {EngineWindow} from "./termdom.js";
+import {currentInvalidationEpoch, invalidateStructure} from "./termdom.js";
 import Flex from "./flex.js";
 import type * as FlexTypes from "./flex.js";
 import LineBreaker from "linebreak";
@@ -15,16 +16,13 @@ import {
 	selectorInvalidationScope,
 } from "./styles.js";
 import {
-	compositionBoxParentElement,
-	compositionIsConnected,
-	compositionParentElement,
-	compositionShadowRoot,
-	createExpandedTreeWalker,
-	currentCompositionEpoch,
-	ExpandedTreeWalker,
-	getPseudoMetadata,
-	invalidateStructure,
-} from "./composition.js";
+	createFlatTreeWalker,
+	pseudoElementCount,
+	type FlatTreeWalker,
+	flatIsConnected,
+	flatParentElement,
+	shadowRootOf,
+} from "./dom.js";
 import {
 	hasRTL,
 	inferParagraphDirection,
@@ -179,7 +177,56 @@ function findInlineBlockSegment(
  * at the parent's last child instead drops every leaf after a nested
  * inline-block (or a display:none/absolute box) from the line.
  */
-function skipSubtree(walker: ExpandedTreeWalker): boolean {
+/**
+ * A `display: contents` element generates no box: the box tree splices it away
+ * and its children take its place. This is the whole of what the flat tree's
+ * consumers need to know about it -- a slot disappears from layout this way
+ * (UA default `slot { display: contents }`, as in browsers) while its projected
+ * content flows through.
+ */
+function dissolvesIntoChildren(node: Node): boolean {
+	return getPropertyValue(node as Element, "display") === "contents";
+}
+
+/**
+ * Put a flex node at a position under a parent. A node is one child of one
+ * parent: one already under this parent is MOVED, because a build that reaches
+ * the same element twice -- a deferred re-add drained by the layout pass, then
+ * the mutation record that deferred it -- would otherwise leave the flex tree
+ * holding it twice and lay its box out twice over.
+ */
+function placeChild(
+	parent: FlexTypes.Node,
+	child: FlexTypes.Node,
+	index: number,
+): void {
+	if (child.getParent() === parent) {
+		if (parent.getChildIndex(child) === index) return;
+		parent.removeChild(child);
+	}
+	parent.insertChild(child, index);
+}
+
+/** A walk of the boxes a node's content lays out from. */
+export function flowWalker(root: Node): FlatTreeWalker<Node> {
+	return createFlatTreeWalker<Node>(root, dissolvesIntoChildren);
+}
+
+/**
+ * The flat-tree parent that generates a box: the flat parent, skipping the
+ * elements that generate none. A projected node's box lives under the slot's
+ * own box parent, and rooting an inline-run walk at the slot would truncate
+ * the run at the slot's edge.
+ */
+export function boxParentElement(node: Node): Element | null {
+	let parent = flatParentElement<Element>(node);
+	while (parent !== null && dissolvesIntoChildren(parent)) {
+		parent = flatParentElement<Element>(parent);
+	}
+	return parent;
+}
+
+function skipSubtree(walker: FlatTreeWalker<Node>): boolean {
 	while (!walker.nextSibling()) {
 		if (!walker.parentNode()) return false;
 	}
@@ -1399,7 +1446,7 @@ export class LayoutEngine {
 				// the flattening walker, so never retired) can still hold a
 				// stale severed node -- attaching under it strands the child
 				// in an orphan subtree.
-				let parent = compositionBoxParentElement(node);
+				let parent = boxParentElement(node);
 				while (parent) {
 					const parentFlexNode = this.nodeMap.get(parent);
 					if (parentFlexNode) {
@@ -1415,7 +1462,7 @@ export class LayoutEngine {
 					if (this.#isInlineLevel(parent) && !this.#brokenInlines.has(parent)) {
 						break;
 					}
-					parent = compositionBoxParentElement(parent);
+					parent = boxParentElement(parent);
 				}
 			}
 		}
@@ -1457,13 +1504,10 @@ export class LayoutEngine {
 	 * which are never "connected" themselves -- if its host element is.
 	 */
 	#isNodeLive(node: Node): boolean {
-		// Composition-connected, not isConnected: a UA shadow tree's nodes
-		// live in a fragment and are never DOM-connected, but ones with
-		// layout presence (a hoisted picker part) render like anything else
-		// -- the prune sweep must not reap them every frame.
-		if (compositionIsConnected(node)) return true;
-		const pseudoMetadata = getPseudoMetadata(node);
-		return Boolean(pseudoMetadata?.hostElement.isConnected);
+		// Flat-tree connectivity: a pseudo-element node and a control's
+		// shadow parts are outside the node tree and still render, so the
+		// prune sweep must not reap them every frame.
+		return flatIsConnected(node);
 	}
 
 	#pruneDisconnectedNodes(): void {
@@ -1596,16 +1640,19 @@ export class LayoutEngine {
 			// through the run head's text) never gets its own flex node either;
 			// it's counted zero times here despite being a real DOM child. Cheap
 			// proxy for "every DOM child has exactly one children[] entry,"
-			// without walking to find out: pseudo-elements/shadow content
-			// widen this the other way (present in children[], absent from
-			// childNodes), so it's an equality check, not just child count.
-			element.childNodes.length !== flexNode.children.length ||
+			// without walking to find out. A pseudo-element is a child of the
+			// box tree with no childNodes entry behind it, so it is counted in:
+			// without it, an element whose one child is text and whose ::before
+			// heads the run collides at one and one, and the fast path paints
+			// the pseudo-element alone.
+			element.childNodes.length + pseudoElementCount(element) !==
+				flexNode.children.length ||
 			// A shadow host's childNodes are its LIGHT children, unrelated to
 			// the composed children the layout tree holds -- the counts can
 			// collide by accident (1 light child, 1 run head) and the fast
 			// path then paints an incomplete child list. Hosts always take the
 			// walker.
-			compositionShadowRoot(element) !== null ||
+			shadowRootOf<ShadowRoot>(element) !== null ||
 			// So can a container that a broken inline handed boxes to: those
 			// boxes are children[] entries whose DOM node lives a level DOWN,
 			// while this element's own later children own no entry at all.
@@ -1682,7 +1729,7 @@ export class LayoutEngine {
 		let runFlexNode = runHead ? this.#runFlexNode(runHead) : undefined;
 		let breakResult = runHead ? this.#runBreakResult(runHead) : undefined;
 		while (runHead && !(runFlexNode && breakResult)) {
-			const parent = compositionBoxParentElement(runHead);
+			const parent = boxParentElement(runHead);
 			if (!parent) return null;
 			runHead = this.findInlineRunHead(parent) ?? parent;
 			runFlexNode = this.#runFlexNode(runHead);
@@ -1704,9 +1751,9 @@ export class LayoutEngine {
 		// the content it wraps lives one break result further down.
 		const enclosing: Element[] = [];
 		for (
-			let ancestor = compositionParentElement(element);
+			let ancestor = flatParentElement<Element>(element);
 			ancestor;
-			ancestor = compositionParentElement(ancestor)
+			ancestor = flatParentElement<Element>(ancestor)
 		) {
 			enclosing.unshift(ancestor);
 			if (ancestor === runHead) break;
@@ -2051,13 +2098,13 @@ export class LayoutEngine {
 		// block container normally, but an inline-block's own style once the walk
 		// below descends into its nested breakResult, since that's a fresh inline
 		// formatting context with its own alignment.
-		let alignContainer: Element | null = compositionParentElement(runHead);
+		let alignContainer: Element | null = flatParentElement<Element>(runHead);
 
 		// COMPOSITION parents: a widget's UA shadow text has no parentElement
 		// chain to its host at all, so a parentElement walk dies at the shadow
 		// boundary and the value resolves to zero fragments.
-		while (currentNode !== runHead && compositionParentElement(currentNode)) {
-			const parent = compositionParentElement(currentNode)!;
+		while (currentNode !== runHead && flatParentElement<Element>(currentNode)) {
+			const parent = flatParentElement<Element>(currentNode)!;
 
 			if (getPropertyValue(parent, "display") === "inline-block") {
 				// An overflow-scrolled inline-block (a field's windowed value,
@@ -2111,9 +2158,9 @@ export class LayoutEngine {
 			let ancestor =
 				node.nodeType === node.ELEMENT_NODE
 					? (node as Element)
-					: compositionParentElement(node);
+					: flatParentElement<Element>(node);
 			ancestor && ancestor !== runHead && !this.nodeMap.has(ancestor);
-			ancestor = compositionParentElement(ancestor)
+			ancestor = flatParentElement<Element>(ancestor)
 		) {
 			if (getPropertyValue(ancestor, "position") === "relative") {
 				const left = parseUnitValue(getPropertyValue(ancestor, "left"));
@@ -2132,8 +2179,7 @@ export class LayoutEngine {
 			// For element nodes, collect all descendant text nodes
 			targetTextNodes = new Set<Text>();
 
-			// Use ExpandedTreeWalker for traversal
-			const walker = createExpandedTreeWalker(this.window, node);
+			const walker = flowWalker(node);
 
 			let textNode;
 			while ((textNode = walker.nextNode())) {
@@ -2558,9 +2604,9 @@ export class LayoutEngine {
 			if (!isPositioned(this.window, element)) continue; // stale registry entry
 			let root: Element = body;
 			for (
-				let ancestor = compositionParentElement(element);
+				let ancestor = flatParentElement<Element>(element);
 				ancestor;
-				ancestor = compositionParentElement(ancestor)
+				ancestor = flatParentElement<Element>(ancestor)
 			) {
 				if (this.formsStackingContext(ancestor)) {
 					root = ancestor;
@@ -2612,7 +2658,7 @@ export class LayoutEngine {
 		if (!document?.body) return null;
 		const paintRoot = root === document.documentElement ? document.body : root;
 		for (const element of [...topLayer].reverse()) {
-			if (!compositionIsConnected(element)) continue;
+			if (!flatIsConnected(element)) continue;
 			const hit = this.#hitTestContext(element, x, y, layers, cameraScrollTop);
 			if (hit) return hit;
 		}
@@ -2675,7 +2721,7 @@ export class LayoutEngine {
 			return null;
 		}
 		const children: Element[] = [];
-		const walker = createExpandedTreeWalker(this.window, element);
+		const walker = flowWalker(element);
 		for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
 			if (child.nodeType !== 1) continue;
 			if (isPositioned(this.window, child as Element)) continue;
@@ -2759,7 +2805,7 @@ export class LayoutEngine {
 	 * against it, the way a rect read does.
 	 */
 	get layoutEpoch(): number {
-		return currentCompositionEpoch() + this.#boxEpoch;
+		return currentInvalidationEpoch() + this.#boxEpoch;
 	}
 
 	/**
@@ -2784,7 +2830,7 @@ export class LayoutEngine {
 		runs: InlineBox[];
 	} {
 		const cached = this.#boxesByContainer.get(container);
-		const epoch = currentCompositionEpoch() + this.#boxEpoch;
+		const epoch = currentInvalidationEpoch() + this.#boxEpoch;
 		if (cached && cached.epoch === epoch) return cached;
 
 		const heads = new Map<Node, ContainerBox>();
@@ -2875,12 +2921,7 @@ export class LayoutEngine {
 
 	/** The container box entry a node's content falls under. */
 	#boxEntryOf(node: Node): ContainerBox | null {
-		if (!compositionIsConnected(node)) {
-			const pseudoMetadata = getPseudoMetadata(node);
-			if (!pseudoMetadata || !pseudoMetadata.hostElement.isConnected) {
-				return null;
-			}
-		}
+		if (!flatIsConnected(node)) return null;
 
 		if (node.nodeType === node.ELEMENT_NODE) {
 			const element = node as Element;
@@ -3149,9 +3190,7 @@ export class LayoutEngine {
 
 	/** The flat-tree parent that can hold a box, pseudo-elements included. */
 	#boxParentOf(node: Node): Element | null {
-		const pseudoMetadata = getPseudoMetadata(node);
-		if (pseudoMetadata) return pseudoMetadata.hostElement;
-		return compositionBoxParentElement(node);
+		return boxParentElement(node);
 	}
 
 	/**
@@ -3163,28 +3202,45 @@ export class LayoutEngine {
 	 * a block container in its own right, and so is an out-of-flow box.
 	 */
 	#runContainerOf(node: Node): Element | null {
+		const parent = this.#boxParentOf(node);
+		if (!parent) return null;
 		const startsOwnRun =
 			node.nodeType === node.ELEMENT_NODE &&
 			getPropertyValue(node as Element, "display") !== "inline";
-		for (let current: Node = node; ; ) {
-			const parent = this.#boxParentOf(current);
-			if (!parent) return null;
-			if (this.#isOutOfFlow(parent)) return parent;
-			const display = getPropertyValue(parent, "display");
-			if (display === "inline") {
-				current = parent;
-				continue;
-			}
+		return this.#runContainerFrom(parent, startsOwnRun);
+	}
+
+	/**
+	 * The block container the boxes directly inside an element fall under:
+	 * that element when it establishes one, and otherwise the container its
+	 * own box joins. This is the answer {@link #runContainerOf} gives for a
+	 * node whose box parent is known without the node itself -- which is how a
+	 * node that has LEFT the tree is answered for, since a removed node has no
+	 * parent left to climb from.
+	 */
+	#runContainerFrom(box: Element, startsOwnRun: boolean): Element | null {
+		for (
+			let current: Element | null = box;
+			current;
+			current = this.#boxParentOf(current)
+		) {
+			if (this.#isOutOfFlow(current)) return current;
+			const display = getPropertyValue(current, "display");
+			// An inline box is transparent: its content belongs to the run
+			// around it.
+			if (display === "inline") continue;
 			if (display === "inline-block") {
 				// A box with a layout tree of its own establishes a block
 				// container; and an inline-block nested in one starts a run
 				// there rather than joining the run its host sits in.
-				if (this.#blockContentRoots.has(parent) || startsOwnRun) return parent;
-				current = parent;
+				if (this.#blockContentRoots.has(current) || startsOwnRun) {
+					return current;
+				}
 				continue;
 			}
-			return parent;
+			return current;
 		}
+		return null;
 	}
 
 	/** The node an inline-level node's box is measured from. */
@@ -3275,7 +3331,7 @@ export class LayoutEngine {
 	 * Recursively invalidate all children of an element
 	 */
 	#invalidateNodeChildren(element: Element): void {
-		const walker = createExpandedTreeWalker(this.window, element);
+		const walker = flowWalker(element);
 		let child = walker.firstChild();
 
 		while (child) {
@@ -3384,7 +3440,7 @@ export class LayoutEngine {
 				return;
 			}
 		}
-		let current = compositionBoxParentElement(node);
+		let current = boxParentElement(node);
 		while (current) {
 			const flexNode = this.nodeMap.get(current);
 			if (flexNode) {
@@ -3396,7 +3452,7 @@ export class LayoutEngine {
 				if (host) this.#invalidateEnclosingMeasure(host);
 				return;
 			}
-			current = compositionBoxParentElement(current);
+			current = boxParentElement(current);
 		}
 	}
 
@@ -3598,7 +3654,7 @@ export class LayoutEngine {
 					// already reassigned), so rebuild the host's whole composed
 					// subtree; slot reassignment is rare enough for the hammer.
 					const host = (record.target as Element).parentElement;
-					if (host && compositionShadowRoot(host)) {
+					if (host && shadowRootOf<ShadowRoot>(host)) {
 						this.invalidate(host);
 					}
 				}
@@ -3750,7 +3806,7 @@ export class LayoutEngine {
 		for (
 			let el: Element | null = element;
 			el;
-			el = compositionParentElement(el)
+			el = flatParentElement<Element>(el)
 		) {
 			if (getPropertyValue(el, "position") === "fixed") return true;
 		}
@@ -3759,9 +3815,9 @@ export class LayoutEngine {
 
 	#containingBlockFlexNode(element: Element): FlexTypes.Node | null {
 		for (
-			let ancestor = compositionParentElement(element);
+			let ancestor = flatParentElement<Element>(element);
 			ancestor;
-			ancestor = compositionParentElement(ancestor)
+			ancestor = flatParentElement<Element>(ancestor)
 		) {
 			const position = getPropertyValue(ancestor, "position");
 			if (position && position !== "static") {
@@ -3778,9 +3834,9 @@ export class LayoutEngine {
 	/** Hidden by an ancestor's display:none anywhere up the flat tree. */
 	#hiddenByAncestor(node: Node): boolean {
 		for (
-			let ancestor = compositionParentElement(node);
+			let ancestor = flatParentElement<Element>(node);
 			ancestor;
-			ancestor = compositionParentElement(ancestor)
+			ancestor = flatParentElement<Element>(ancestor)
 		) {
 			if (getPropertyValue(ancestor, "display") === "none") return true;
 		}
@@ -3939,7 +3995,7 @@ export class LayoutEngine {
 	 * run machinery skips them, so this is the only path that finds them.
 	 */
 	#adoptOutOfFlowDescendants(element: Element): void {
-		const walker = createExpandedTreeWalker(this.window, element);
+		const walker = flowWalker(element);
 		for (let node = walker.nextNode(); node; node = walker.nextNode()) {
 			if (node.nodeType === node.ELEMENT_NODE && this.#isOutOfFlow(node)) {
 				this.#addNode(node, null);
@@ -3988,7 +4044,7 @@ export class LayoutEngine {
 		if (display === "none") {
 			flexNode.setDisplay(Flex.DISPLAY_NONE);
 			if (flexNode && parentFlexNode) {
-				parentFlexNode.insertChild(flexNode, flexIndex);
+				placeChild(parentFlexNode, flexNode, flexIndex);
 			}
 			return;
 		} else if (
@@ -4009,7 +4065,7 @@ export class LayoutEngine {
 			// Note: Automatic minimum size for flex items is now handled in measureInlineRun
 
 			if (flexNode && parentFlexNode) {
-				parentFlexNode.insertChild(flexNode, flexIndex);
+				placeChild(parentFlexNode, flexNode, flexIndex);
 			}
 
 			this.#adoptOutOfFlowDescendants(element);
@@ -4025,11 +4081,10 @@ export class LayoutEngine {
 			return;
 		}
 
-		// Use ExpandedTreeWalker to traverse children including pseudo-elements.
 		// Only DIRECT children: an inline child broken apart by a block-level
 		// box holds boxes this container lays out, and those reach the tree
 		// through its own box reconciliation.
-		const walker = createExpandedTreeWalker(this.window, element);
+		const walker = flowWalker(element);
 		for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
 			if (
 				child.nodeType === child.ELEMENT_NODE ||
@@ -4049,7 +4104,7 @@ export class LayoutEngine {
 		}
 
 		if (flexNode && parentFlexNode) {
-			parentFlexNode.insertChild(flexNode, flexIndex);
+			placeChild(parentFlexNode, flexNode, flexIndex);
 		}
 	}
 
@@ -4138,6 +4193,19 @@ export class LayoutEngine {
 	 * Remove a node from the layout tree, handling both elements and text nodes
 	 */
 	#removeNode(node: Node, parent: Element): void {
+		// The container's flow children are not what its box list says they
+		// are: an anonymous box the departing node HEADED still names it, and
+		// an anonymous box measures whatever heads it now -- so a container
+		// left unreconciled measures a node that has left the tree, which has
+		// no parent to collect leaves from. The siblings a mutation record
+		// carries do not cover this: a container whose only child leaves
+		// records no sibling at all.
+		const container = this.#runContainerFrom(
+			parent,
+			node.nodeType === node.ELEMENT_NODE &&
+				getPropertyValue(node as Element, "display") !== "inline",
+		);
+		if (container) this.#dirtyRunContainers.add(container);
 		if (node.nodeType === node.ELEMENT_NODE) {
 			this.#removeElement(node as Element, parent);
 		} else if (node.nodeType === node.TEXT_NODE) {
@@ -4169,10 +4237,6 @@ export class LayoutEngine {
 			// Check if element was actually removed vs just moved
 			if (!element.isConnected) {
 				// Element was truly removed from DOM - free it
-				const pseudoMeta = getPseudoMetadata(element);
-				if (pseudoMeta) {
-					// Removing pseudo element from nodeMap during mutation removal
-				}
 				this.#measureNodes.delete(flexNode);
 				flexNode.freeRecursive();
 				this.#untrackNode(element);
@@ -4228,7 +4292,7 @@ export class LayoutEngine {
 	 */
 	#invalidateBlockRemoval(parent: Element): void {
 		// Use tree walker to find all inline children that need invalidation
-		const walker = createExpandedTreeWalker(this.window, parent);
+		const walker = flowWalker(parent);
 		let child = walker.firstChild();
 
 		while (child) {
@@ -4255,7 +4319,7 @@ export class LayoutEngine {
 		into: Node[] = [],
 		root = container,
 	): Node[] {
-		const walker = createExpandedTreeWalker(this.window, container);
+		const walker = flowWalker(container);
 		for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
 			into.push(child);
 			if (
@@ -4307,7 +4371,7 @@ export class LayoutEngine {
 			this.#blockContentHosts.set(root, element);
 		}
 
-		const walker = createExpandedTreeWalker(this.window, element);
+		const walker = flowWalker(element);
 		for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
 			if (
 				child.nodeType === child.ELEMENT_NODE ||
@@ -4396,7 +4460,7 @@ export class LayoutEngine {
 	}
 
 	#containsBlockLevelBox(element: Element): boolean {
-		const walker = createExpandedTreeWalker(this.window, element);
+		const walker = flowWalker(element);
 		for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
 			if (child.nodeType !== child.ELEMENT_NODE) continue;
 			const childElement = child as Element;
@@ -4425,7 +4489,7 @@ export class LayoutEngine {
 		// consult it), and the box-parent resolution -- a computed-style read
 		// per ancestor -- is deferred to the slow path, off the hot
 		// sequential-append route.
-		const compositionParent = compositionParentElement(element);
+		const compositionParent = flatParentElement<Element>(element);
 		if (!compositionParent) {
 			return 0;
 		}
@@ -4445,7 +4509,7 @@ export class LayoutEngine {
 		// the front, or a run of skipped inline elements) -- correctness
 		// matches it exactly, since both count only siblings with a flex node.
 		if (parentFlexNode) {
-			const backward = createExpandedTreeWalker(this.window, compositionParent);
+			const backward = flowWalker(compositionParent);
 			backward.currentNode = element;
 			let prev = backward.previousSibling();
 			while (prev) {
@@ -4479,11 +4543,11 @@ export class LayoutEngine {
 		// reason addElementNode descends through them: a block-level box inside
 		// an inline is a box of the CONTAINER, and its position is counted among
 		// the container's children.
-		let boxParent = compositionBoxParentElement(element) ?? compositionParent;
+		let boxParent = boxParentElement(element) ?? compositionParent;
 		for (
-			let ancestor = compositionBoxParentElement(boxParent);
+			let ancestor = boxParentElement(boxParent);
 			ancestor && this.#splitsAroundBlock(boxParent);
-			ancestor = compositionBoxParentElement(boxParent)
+			ancestor = boxParentElement(boxParent)
 		) {
 			boxParent = ancestor;
 		}
@@ -4547,7 +4611,7 @@ export class LayoutEngine {
 	 * terminate leaf collection at position zero.
 	 */
 	#firstComposedRenderableChild(element: Element): Node | null {
-		const walker = createExpandedTreeWalker(this.window, element);
+		const walker = flowWalker(element);
 		for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
 			if (
 				child.nodeType === child.ELEMENT_NODE &&
@@ -4567,7 +4631,7 @@ export class LayoutEngine {
 	 * CSS width -- owns its used width.
 	 */
 	#isRowFlexItem(element: Element): boolean {
-		const parent = compositionParentElement(element);
+		const parent = flatParentElement<Element>(element);
 		if (!parent) return false;
 		const display = getPropertyValue(parent, "display");
 		if (display !== "flex" && display !== "inline-flex") return false;
@@ -4582,16 +4646,12 @@ export class LayoutEngine {
 	): Leaf[] {
 		const leafNodes: Leaf[] = [];
 
-		// For pseudo elements, use the host element as the parent
-		const pseudoMetadata = getPseudoMetadata(runHead);
-		const parentElement = pseudoMetadata
-			? pseudoMetadata.hostElement
-			: compositionBoxParentElement(runHead);
+		const parentElement = boxParentElement(runHead);
 
 		// Inline run heads should always have a parent element (a shadow
 		// root's direct child resolves to its HOST -- a ShadowRoot is not an
 		// Element, and this exact spot crashed on native attachShadow content
-		// before compositionParentElement existed). The BOX parent: rooting
+		// before the flat parent was resolved here). The BOX parent: rooting
 		// the walk at a display:contents slot would truncate the run at the
 		// slot's edge, and the run may extend past it.
 		if (!parentElement) {
@@ -4615,11 +4675,11 @@ export class LayoutEngine {
 			// inside it is its own and ends with it.
 			let root: Element = parentElement;
 			for (
-				let ancestor = compositionBoxParentElement(root);
+				let ancestor = boxParentElement(root);
 				ancestor &&
 				getPropertyValue(root, "display") === "inline" &&
 				!this.#isOutOfFlow(root);
-				ancestor = compositionBoxParentElement(root)
+				ancestor = boxParentElement(root)
 			) {
 				root = ancestor;
 			}
@@ -4636,7 +4696,7 @@ export class LayoutEngine {
 			parentDisplay === "flex" && runHead.nodeType === runHead.TEXT_NODE;
 
 		// Use ExpandedTreeWalker for traversal
-		const walker = createExpandedTreeWalker(this.window, traversalRoot);
+		const walker = flowWalker(traversalRoot);
 
 		walker.currentNode = runHead;
 		while (walker.currentNode) {
@@ -5016,13 +5076,11 @@ export class LayoutEngine {
 			return {lines: [], totalHeight: 0, maxLineWidth: 0};
 		}
 
-		// Get CSS properties from the appropriate element
-		// For pseudo elements, use the host element, otherwise use parent for text nodes
-		const pseudoMetadata = getPseudoMetadata(runHead);
-		const styleElement = pseudoMetadata
-			? pseudoMetadata.hostElement
-			: runHead.nodeType === runHead.TEXT_NODE
-				? compositionParentElement(runHead)!
+		// A text node styles from its flat-tree parent, which for the text of a
+		// pseudo-element is the pseudo-element's own node.
+		const styleElement =
+			runHead.nodeType === runHead.TEXT_NODE
+				? flatParentElement<Element>(runHead)!
 				: (runHead as Element);
 
 		// Get default CSS properties from the run head element

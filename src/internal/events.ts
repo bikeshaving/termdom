@@ -21,7 +21,7 @@
  */
 
 import type {EngineWindow} from "./termdom.js";
-import {compositionParentElement} from "./composition.js";
+import {flatParentElement} from "./dom.js";
 import type {LayoutEngine} from "./layout.js";
 import {computedStyleOf} from "./styles.js";
 
@@ -438,7 +438,7 @@ export function getFocusableElements(
 		for (
 			let ancestor: Element | null = element;
 			ancestor;
-			ancestor = compositionParentElement(ancestor)
+			ancestor = flatParentElement<Element>(ancestor)
 		) {
 			if (computedStyleOf(ancestor).computedValueOf("display") === "none") {
 				return false;
