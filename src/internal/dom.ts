@@ -2009,20 +2009,20 @@ function reportError(error: unknown): void {
  */
 let treeVersion = 0;
 
-const kSync = Symbol("sync indexed properties");
+const kSync = Symbol("resynchronize own properties");
 
 interface Materializable {
 	[kSync](): void;
 }
 
 /**
- * Live collections that have materialized indexed properties, each with the
- * document whose trees it lists.
+ * The live collections that have materialized own properties.
  *
- * A mutation can only change what a collection over another document holds by
- * moving a node between the two, which adopts the node and so runs in the
- * destination's document. Every other document's collections are left alone,
- * which is what keeps one document's cost its own.
+ * A collection's indexed and named properties are own properties rather than
+ * proxy traps, and those are observable without reading the collection:
+ * Object.getOwnPropertyNames answers with them, and an assignment to an index
+ * is a no-op only where the index is defined. A collection that has ever been
+ * read is held here so that a change to a tree's shape can resynchronize it.
  */
 const materialized: Array<{
 	ref: WeakRef<Materializable>;
@@ -2030,13 +2030,6 @@ const materialized: Array<{
 }> = [];
 let materializedCompactAt = 8;
 
-/**
- * Register a collection whose indexed properties must track the tree.
- *
- * Indexed access is a plain own property, not a proxy trap, so a collection
- * that has ever been indexed into is resynchronized as part of the mutation
- * that would otherwise leave those properties stale.
- */
 function registerMaterialized(
 	collection: Materializable,
 	owner: Node | null,
@@ -2057,13 +2050,54 @@ function registerMaterialized(
 	}
 }
 
-function bumpVersion(document: Document): void {
+/** Record a change that every live collection must see on its next read. */
+function bumpVersion(): void {
+	treeVersion++;
+}
+
+/**
+ * Record a change to a tree's shape, and resynchronize what it moved.
+ *
+ * A change to the shape of a tree can move any collection over it, and none
+ * of them can rule the change out from what it holds, so each one that has
+ * materialized own properties recomputes here.
+ */
+function bumpTreeVersion(document: Document): void {
 	treeVersion++;
 	for (let i = 0; i < materialized.length; i++) {
 		const entry = materialized[i];
 		if (entry.document !== null && entry.document !== document) continue;
 		const collection = entry.ref.deref();
 		if (collection !== undefined) syncMethod.call(collection);
+	}
+}
+
+/**
+ * Resynchronize the collections an attribute change can have moved.
+ *
+ * An attribute is an input to three kinds of collection: the element's own
+ * attribute map, the token lists over its attributes, and the collections
+ * cached on the trees it sits in, which are asked about the one element that
+ * changed rather than walked. A collection of children, of rows, of cells --
+ * anything an attribute is no input to -- is left alone.
+ */
+function syncAttributeCollections(element: Element, localName: string): void {
+	const map = element[kAttributesMap];
+	if (map !== null) syncMethod.call(map);
+	const classList = element[kClassList];
+	if (classList !== null) syncMethod.call(classList);
+	const lists = element[kTokenLists];
+	if (lists !== null) {
+		for (const list of lists.values()) syncMethod.call(list);
+	}
+	for (let node: Node | null = element; node !== null; node = node[kParent]) {
+		const cache = (node as unknown as Record<symbol, unknown>)[
+			kCollectionCaches
+		] as Map<string, HTMLCollection> | undefined;
+		if (cache === undefined) continue;
+		for (const collection of cache.values()) {
+			collection[kAttributeSync](element, localName);
+		}
 	}
 }
 
@@ -2753,7 +2787,12 @@ function insertNode(
 		) {
 			signalASlotChange(parent);
 		}
-		assignSlottablesForTree(getRoot(inserted));
+		// A slot assigns the host's children, which this insertion left alone
+		// unless it brought slots of its own into the tree: those are the only
+		// assignments in the root that the insertion can have changed.
+		if (hasInclusiveDescendantSlot(inserted)) {
+			assignSlottablesForTree(getRoot(inserted));
+		}
 		for (const descendant of shadowIncludingInclusiveDescendants(inserted)) {
 			descendant[kInsertionSteps]();
 			if (!descendant.isConnected) continue;
@@ -2766,7 +2805,7 @@ function insertNode(
 			}
 		}
 	}
-	bumpVersion(parent[kDocument]);
+	bumpTreeVersion(parent[kDocument]);
 	if (!suppressObservers) {
 		queueTreeMutationRecord(parent, nodes, [], previousSibling, child);
 	}
@@ -3010,7 +3049,7 @@ function removeNode(node: Node, suppressObservers = false): void {
 			);
 		}
 	}
-	bumpVersion(parent[kDocument]);
+	bumpTreeVersion(parent[kDocument]);
 	addTransientObservers(node, parent);
 	if (!suppressObservers) {
 		queueTreeMutationRecord(
@@ -3551,14 +3590,19 @@ function queueTreeMutationRecord(
 /* ------------------------------------------------------- live collections */
 
 const kEnsure = Symbol("recompute if stale");
+const kComputed = Symbol("the list as last computed");
+const kAttributeSync = Symbol("resynchronize after an attribute change");
 
 /**
  * The list behind a live NodeList or HTMLCollection.
  *
- * Indexed access is an own accessor property rather than a proxy trap, so the
- * set of defined indices is resynchronized whenever the tree changes: a
- * collection that has been read once is registered, and every later mutation
- * recomputes it.
+ * The list is recomputed on read: a collection carries the tree version its
+ * list was computed at, and any read whose version is older recomputes first.
+ * Indexed access is an own accessor property rather than a proxy trap, and
+ * those accessors run the same check before answering, so the collection is
+ * as live as reading it can tell. The own properties themselves -- which
+ * indices and names are defined -- are what a change to a tree's shape
+ * resynchronizes, since those can be observed without a read.
  */
 abstract class LiveList implements Materializable {
 	#version = -1;
@@ -3604,10 +3648,26 @@ abstract class LiveList implements Materializable {
 	}
 
 	[kSync](): void {
-		if (!this.#registered) return;
+		if (!this.#registered || this.#version === treeVersion) return;
 		this.#version = treeVersion;
 		this.#items = this.compute();
 		this.#materialize();
+	}
+
+	/** The list as it was last computed, without recomputing it. */
+	[kComputed](): Node[] {
+		return this.#items;
+	}
+
+	/**
+	 * Bring the collection back in step with an attribute that changed.
+	 *
+	 * An attribute is an input to what a collection holds -- a name it answers
+	 * to, a class it collects -- so the list is recomputed unless a collection
+	 * can say that this attribute on this element is none of its business.
+	 */
+	[kAttributeSync](_element: Element, _localName: string): void {
+		this[kSync]();
 	}
 
 	#materialize(): void {
@@ -3805,29 +3865,77 @@ function elementChildren(parent: Node): Element[] {
 	return elements;
 }
 
+/**
+ * The elements of a tree that pass a test, cached on the tree they walk.
+ *
+ * The test answers for one element, so an attribute change asks about the one
+ * element that changed rather than walking the tree again: a collection that
+ * element neither joined nor left holds what it held before.
+ */
+class MatchingCollection extends HTMLCollection {
+	#root: Node;
+	#watched: string | null;
+	#matches: (element: Element) => boolean;
+	#members = new Set<Node>();
+	#membersOf: Node[] | null = null;
+
+	/**
+	 * @param watched - the attribute the test reads, if it reads one.
+	 */
+	constructor(
+		root: Node,
+		watched: string | null,
+		matches: (element: Element) => boolean,
+	) {
+		super(() => {
+			const found: Element[] = [];
+			for (const element of descendantElements(root, [])) {
+				if (matches(element)) found.push(element);
+			}
+			return found;
+		}, root);
+		this.#root = root;
+		this.#watched = watched;
+		this.#matches = matches;
+	}
+
+	override [kAttributeSync](element: Element, localName: string): void {
+		// A collection answers to the id and the name of what it holds, so a
+		// change to either moves its named properties whatever the test says.
+		if (localName !== "id" && localName !== "name") {
+			if (localName !== this.#watched) return;
+			const items = this[kComputed]();
+			if (this.#membersOf !== items) {
+				this.#members = new Set(items);
+				this.#membersOf = items;
+			}
+			if (
+				this.#matches(element) === this.#members.has(element) ||
+				!isInclusiveAncestor(this.#root, element)
+			) {
+				return;
+			}
+		}
+		this[kSync]();
+	}
+}
+
 function elementsByTagName(root: Node, qualifiedName: string): HTMLCollection {
 	const cache = collectionCache(root);
 	const key = `tag:${qualifiedName}`;
 	let collection = cache.get(key);
 	if (collection === undefined) {
 		const lowered = asciiLowercase(qualifiedName);
-		collection = new HTMLCollection(() => {
-			const all = descendantElements(root, []);
-			if (qualifiedName === "*") return all;
-			const found: Element[] = [];
-			for (const element of all) {
-				const name =
-					element[kPrefix] === null
-						? element[kLocalName]
-						: `${element[kPrefix]}:${element[kLocalName]}`;
-				if (element[kNamespace] === HTML_NAMESPACE) {
-					if (name === lowered) found.push(element);
-				} else if (name === qualifiedName) {
-					found.push(element);
-				}
-			}
-			return found;
-		}, root);
+		collection = new MatchingCollection(root, null, (element) => {
+			if (qualifiedName === "*") return true;
+			const name =
+				element[kPrefix] === null
+					? element[kLocalName]
+					: `${element[kPrefix]}:${element[kLocalName]}`;
+			return element[kNamespace] === HTML_NAMESPACE
+				? name === lowered
+				: name === qualifiedName;
+		});
 		collection[kEnsure]();
 		cache.set(key, collection);
 	}
@@ -3844,19 +3952,34 @@ function elementsByTagNameNS(
 	const key = `tagns:${ns}:${localName}`;
 	let collection = cache.get(key);
 	if (collection === undefined) {
-		collection = new HTMLCollection(() => {
-			const found: Element[] = [];
-			for (const element of descendantElements(root, [])) {
-				if (ns !== "*" && element[kNamespace] !== ns) continue;
-				if (localName !== "*" && element[kLocalName] !== localName) continue;
-				found.push(element);
-			}
-			return found;
-		}, root);
+		collection = new MatchingCollection(
+			root,
+			null,
+			(element) =>
+				(ns === "*" || element[kNamespace] === ns) &&
+				(localName === "*" || element[kLocalName] === localName),
+		);
 		collection[kEnsure]();
 		cache.set(key, collection);
 	}
 	return collection;
+}
+
+/**
+ * The tokens of an element's class attribute.
+ *
+ * The parse is kept on the element and thrown away by the class attribute's
+ * change steps, so a walk that asks every element for its classes pays for
+ * the attributes that changed rather than for the ones it passes.
+ */
+function classTokens(element: Element): ReadonlySet<string> {
+	let tokens = element[kClassTokens];
+	if (tokens === null) {
+		const value = element.getAttribute("class");
+		tokens = new Set(value === null ? [] : splitOnAsciiWhitespace(value));
+		element[kClassTokens] = tokens;
+	}
+	return tokens;
 }
 
 function elementsByClassName(root: Node, classNames: string): HTMLCollection {
@@ -3869,28 +3992,22 @@ function elementsByClassName(root: Node, classNames: string): HTMLCollection {
 			root[kDocument][kMode] === "quirks"
 				? classes.map((name) => asciiLowercase(name))
 				: classes;
-		collection = new HTMLCollection(() => {
-			const found: Element[] = [];
-			if (classes.length === 0) return found;
+		collection = new MatchingCollection(root, "class", (element) => {
+			if (classes.length === 0) return false;
 			const isQuirks = root[kDocument][kMode] === "quirks";
-			const wanted = isQuirks ? quirks : classes;
-			for (const element of descendantElements(root, [])) {
+			let tokens: ReadonlySet<string>;
+			if (isQuirks) {
 				const value = element.getAttribute("class");
-				if (value === null) continue;
-				const tokens = splitOnAsciiWhitespace(
-					isQuirks ? asciiLowercase(value) : value,
-				);
-				let all = true;
-				for (const name of wanted) {
-					if (!tokens.includes(name)) {
-						all = false;
-						break;
-					}
-				}
-				if (all) found.push(element);
+				if (value === null) return false;
+				tokens = new Set(splitOnAsciiWhitespace(asciiLowercase(value)));
+			} else {
+				tokens = classTokens(element);
 			}
-			return found;
-		}, root);
+			for (const name of isQuirks ? quirks : classes) {
+				if (!tokens.has(name)) return false;
+			}
+			return true;
+		});
 		collection[kEnsure]();
 		cache.set(key, collection);
 	}
@@ -4224,7 +4341,7 @@ function replaceData(
 		oldValue.slice(0, offset) + data + oldValue.slice(offset + size);
 	liveRangeReplaceDataSteps(node, offset, size, data.length);
 	queueCharacterDataMutationRecord(node, oldValue);
-	bumpVersion(node[kDocument]);
+	bumpTreeVersion(node[kDocument]);
 	const parent = node[kParent];
 	if (parent !== null) parent[kChildrenChanged]();
 }
@@ -4657,7 +4774,8 @@ function changeAttribute(attribute: Attr, value: string): void {
 		attribute[kNamespace],
 	);
 	attribute[kValue] = value;
-	bumpVersion(element[kDocument]);
+	bumpVersion();
+	syncAttributeCollections(element, attribute[kLocalName]);
 }
 
 function appendAttribute(element: Element, attribute: Attr): void {
@@ -4670,7 +4788,8 @@ function appendAttribute(element: Element, attribute: Attr): void {
 	);
 	element[kAttributeList].push(attribute);
 	attribute[kOwnerElement] = element;
-	bumpVersion(element[kDocument]);
+	bumpVersion();
+	syncAttributeCollections(element, attribute[kLocalName]);
 }
 
 function removeAttributeNode(element: Element, attribute: Attr): void {
@@ -4685,7 +4804,8 @@ function removeAttributeNode(element: Element, attribute: Attr): void {
 	const index = list.indexOf(attribute);
 	if (index !== -1) list.splice(index, 1);
 	attribute[kOwnerElement] = null;
-	bumpVersion(element[kDocument]);
+	bumpVersion();
+	syncAttributeCollections(element, attribute[kLocalName]);
 }
 
 function replaceAttribute(
@@ -4704,7 +4824,8 @@ function replaceAttribute(
 	list[list.indexOf(oldAttribute)] = newAttribute;
 	newAttribute[kOwnerElement] = element;
 	oldAttribute[kOwnerElement] = null;
-	bumpVersion(element[kDocument]);
+	bumpVersion();
+	syncAttributeCollections(element, newAttribute[kLocalName]);
 }
 
 /** Queue a record for a change to an element's attribute. */
@@ -4870,6 +4991,7 @@ const kCustomState = Symbol("custom element state");
 const kDefinition = Symbol("element definition");
 const kIsValue = Symbol("is value");
 const kClassList = Symbol("classList");
+const kClassTokens = Symbol("the parsed class attribute");
 const kAttributesMap = Symbol("attributes");
 const kTokenLists = Symbol("reflected token lists");
 const kAriaElements = Symbol("explicitly set attr-elements");
@@ -4933,6 +5055,7 @@ export class Element extends Node {
 	[kDefinition]: CustomElementDefinition | null = null;
 	[kIsValue]: string | null = null;
 	[kClassList]: DOMTokenList | null = null;
+	[kClassTokens]: Set<string> | null = null;
 	[kTokenLists]: Map<string, DOMTokenList> | null = null;
 	[kAriaElements]: Map<string, Element[]> | null = null;
 	[kDataset]: DOMStringMap | null = null;
@@ -5416,6 +5539,9 @@ export class Element extends Node {
 		value: string | null,
 		namespace: string | null,
 	): void {
+		if (localName === "class" && namespace === null) {
+			this[kClassTokens] = null;
+		}
 		if (localName === "id" && namespace === null) {
 			const root = getRoot(this);
 			if (root.nodeType === DOCUMENT_NODE) {
@@ -6986,9 +7112,10 @@ function slottableName(slottable: Slottable): string {
 }
 
 function hasInclusiveDescendantSlot(node: Node): boolean {
-	if (node instanceof HTMLSlotElement) return true;
-	for (const descendant of descendants(node)) {
-		if (descendant instanceof HTMLSlotElement) return true;
+	let current: Node | null = node;
+	while (current !== null) {
+		if (current instanceof HTMLSlotElement) return true;
+		current = nextInTree(current, node);
 	}
 	return false;
 }
