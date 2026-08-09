@@ -10,6 +10,11 @@
 
 import {uaSelectionOf} from "./dom.js";
 import type {EngineWindow} from "./termdom.js";
+import {
+	currentInvalidationEpoch,
+	invalidateFrame,
+	invalidateStructure,
+} from "./termdom.js";
 import {computedStyleOf} from "./styles.js";
 
 // Symbols for storing pseudo-elements and shadow roots on nodes
@@ -35,37 +40,6 @@ interface CompositionLinks {
 	hasBoxParent: boolean;
 }
 const linkCache = new WeakMap<Node, CompositionLinks>();
-let compositionEpoch = 0;
-let structuralGeneration = 0;
-
-/** Drop every memoized flat-tree link; cheap, and correctness's big hammer. */
-export function invalidateComposition(): void {
-	compositionEpoch++;
-}
-
-/**
- * An UNBOUNDED invalidation: a stylesheet reparse, a shadow attachment, a
- * pseudo-element change, the bidi reorder flip -- damage no per-element
- * tracking can bound. Bumps the memo epoch too. Bounded damage (mutation
- * records, per-element style invalidation) is tracked by the engine and
- * does not come through here.
- */
-export function invalidateStructure(): void {
-	structuralGeneration++;
-	compositionEpoch++;
-}
-
-export function currentStructuralGeneration(): number {
-	return structuralGeneration;
-}
-
-/**
- * The current invalidation epoch: bumped by everything that can change
- * what a frame looks like.
- */
-export function currentCompositionEpoch(): number {
-	return compositionEpoch;
-}
 
 /**
  * The FLAT-TREE parent element of a node: the element it renders inside,
@@ -78,13 +52,13 @@ export function currentCompositionEpoch(): number {
  */
 export function compositionParentElement(node: Node): Element | null {
 	let links = linkCache.get(node);
-	if (links && links.epoch === compositionEpoch && links.hasParent) {
+	if (links && links.epoch === currentInvalidationEpoch() && links.hasParent) {
 		return links.parent;
 	}
 	const parent = uncachedCompositionParentElement(node);
-	if (!links || links.epoch !== compositionEpoch) {
+	if (!links || links.epoch !== currentInvalidationEpoch()) {
 		links = {
-			epoch: compositionEpoch,
+			epoch: currentInvalidationEpoch(),
 			parent: null,
 			hasParent: false,
 			boxParent: null,
@@ -117,7 +91,7 @@ function uncachedCompositionParentElement(node: Node): Element | null {
  */
 export function compositionBoxParentElement(node: Node): Element | null {
 	const links = linkCache.get(node);
-	if (links && links.epoch === compositionEpoch && links.hasBoxParent) {
+	if (links && links.epoch === currentInvalidationEpoch() && links.hasBoxParent) {
 		return links.boxParent;
 	}
 	let parent = compositionParentElement(node);

@@ -1,4 +1,5 @@
 import type {EngineWindow} from "./termdom.js";
+import {currentInvalidationEpoch, invalidateStructure} from "./termdom.js";
 import Flex from "./flex.js";
 import type * as FlexTypes from "./flex.js";
 import LineBreaker from "linebreak";
@@ -20,10 +21,8 @@ import {
 	compositionParentElement,
 	compositionShadowRoot,
 	createExpandedTreeWalker,
-	currentCompositionEpoch,
 	ExpandedTreeWalker,
 	getPseudoMetadata,
-	invalidateStructure,
 } from "./composition.js";
 import {
 	hasRTL,
@@ -2759,7 +2758,7 @@ export class LayoutEngine {
 	 * against it, the way a rect read does.
 	 */
 	get layoutEpoch(): number {
-		return currentCompositionEpoch() + this.#boxEpoch;
+		return currentInvalidationEpoch() + this.#boxEpoch;
 	}
 
 	/**
@@ -2784,7 +2783,7 @@ export class LayoutEngine {
 		runs: InlineBox[];
 	} {
 		const cached = this.#boxesByContainer.get(container);
-		const epoch = currentCompositionEpoch() + this.#boxEpoch;
+		const epoch = currentInvalidationEpoch() + this.#boxEpoch;
 		if (cached && cached.epoch === epoch) return cached;
 
 		const heads = new Map<Node, ContainerBox>();

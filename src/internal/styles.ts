@@ -6,6 +6,7 @@
  */
 
 import type {EngineWindow} from "./termdom.js";
+import {invalidateFrame, invalidateStructure} from "./termdom.js";
 import {type Document as DOMDocument, styleElementCount} from "./dom.js";
 import * as cssTree from "css-tree";
 import {parseCSSColor} from "./color.js";
@@ -17,8 +18,6 @@ import {
 	getAllPseudoElements,
 	getPseudoElement,
 	removePseudoElement,
-	invalidateComposition,
-	invalidateStructure,
 } from "./composition.js";
 import {type LayoutEngine} from "./layout.js";
 import {
@@ -8174,8 +8173,9 @@ export class StyleManager {
 			if (this.#pendingStyleDamage.size > 24) this.#pendingStyleDamage = null;
 		}
 		// A style change can flip display: contents, which moves the node's
-		// flat-tree BOX parent; the composition memo must not outlive it.
-		invalidateComposition();
+		// flat-tree BOX parent, so every box enumeration keyed on the epoch is
+		// stale from here.
+		invalidateFrame();
 	}
 
 	/**

@@ -32,14 +32,50 @@ import {
 import {
 	compositionIsConnected,
 	compositionParentElement,
-	currentCompositionEpoch,
-	currentStructuralGeneration,
 	fieldCaretRange,
 	fieldValueText,
-	invalidateComposition,
-	invalidateStructure,
 } from "./composition.js";
 import {type UAWidgetController, defineUAWidgets} from "./widgets.js";
+
+/* --------------------------------------------------------- invalidation */
+
+let invalidationEpoch = 0;
+let structuralGeneration = 0;
+
+/**
+ * Note that something a frame is derived from has moved. Every cache the
+ * engine keys on {@link currentInvalidationEpoch} -- the box enumerations, the
+ * resolved geometry, the frame-skip check -- is stale from here on.
+ *
+ * Mutation records come through the observer drain below, which bumps this
+ * once per batch; the cascade bumps it for the style changes no record
+ * describes.
+ */
+export function invalidateFrame(): void {
+	invalidationEpoch++;
+}
+
+/**
+ * Note an UNBOUNDED change: a stylesheet reparse, a shadow attachment, a
+ * pseudo-element change, the bidi reorder flip -- damage no per-element
+ * tracking can bound, so a banded repaint has to cover the whole screen.
+ * Bounded damage (mutation records, per-element style invalidation) is tracked
+ * per element and does not come through here.
+ */
+export function invalidateStructure(): void {
+	structuralGeneration++;
+	invalidationEpoch++;
+}
+
+/** The generation of the last unbounded change. */
+export function currentStructuralGeneration(): number {
+	return structuralGeneration;
+}
+
+/** The current invalidation epoch: bumped by everything a frame reads. */
+export function currentInvalidationEpoch(): number {
+	return invalidationEpoch;
+}
 
 // How long to wait for a resize drag to settle before redrawing. Long enough to
 // coalesce the burst of SIGWINCHes a drag fires, short enough to feel immediate.
@@ -1574,7 +1610,7 @@ export class TermDOM {
 	#handlePendingMutations(mutations: MutationRecord[]): void {
 		// Any observed mutation can move a node in the flat tree; drop the
 		// memoized composition links before anything reads through them.
-		invalidateComposition();
+		invalidateFrame();
 		// Record damage while the old layout still answers: a banded repaint
 		// must cover the target's pre-mutation rows too.
 		for (const mutation of mutations) {
@@ -3085,7 +3121,7 @@ export class TermDOM {
 			!revealed &&
 			this.#lastFrameScrollTop !== null &&
 			this.#viewport.scrollTop === this.#lastFrameScrollTop &&
-			currentCompositionEpoch() === this.#lastFrameEpoch &&
+			currentInvalidationEpoch() === this.#lastFrameEpoch &&
 			this.#inputGeneration === this.#lastFrameInputGeneration &&
 			this.document.activeElement === this.#lastFrameActiveElement &&
 			(!selection || selection.rangeCount === 0 || selection.isCollapsed) &&
@@ -3264,7 +3300,7 @@ export class TermDOM {
 			scroll,
 		);
 		this.#lastFrameScrollTop = scrollTop;
-		this.#lastFrameEpoch = currentCompositionEpoch();
+		this.#lastFrameEpoch = currentInvalidationEpoch();
 		this.#lastFrameInputGeneration = this.#inputGeneration;
 		this.#lastFrameMouseGeneration = this.#mouseGeneration;
 		this.#lastFrameStructuralGeneration = currentStructuralGeneration();
