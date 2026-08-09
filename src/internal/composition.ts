@@ -8,7 +8,7 @@
  * - All symbols and utilities for DOM composition
  */
 
-import {uaSelectionOf} from "./dom.js";
+import {shadowRootOf, uaSelectionOf} from "./dom.js";
 import type {EngineWindow} from "./termdom.js";
 import {
 	currentInvalidationEpoch,
@@ -16,9 +16,6 @@ import {
 	invalidateStructure,
 } from "./termdom.js";
 import {computedStyleOf} from "./styles.js";
-
-// Symbols for storing pseudo-elements and shadow roots on nodes
-export const SHADOW_ROOT_SYMBOL = Symbol.for("TermDOM.shadowRoot");
 
 /**
  * The flat tree is DERIVED -- the DOM maintains only the raw tree plus slot
@@ -115,13 +112,11 @@ export const PSEUDO_ELEMENTS_SYMBOL = Symbol.for("TermDOM.pseudoElements");
 export const PSEUDO_METADATA_SYMBOL = Symbol.for("TermDOM.pseudoMetadata");
 
 /**
- * The shadow root an element renders, whichever mechanism attached it: the
- * symbol slot is the UA-INTERNAL tree (closed to DOM APIs, like a browser
- * input's internals -- element.shadowRoot never exposes it), native
- * attachShadow() is the AUTHOR tree. UA wins when both exist.
+ * The shadow root an element renders: a control's closed user-agent tree or an
+ * author's, whichever it has.
  */
 export function compositionShadowRoot(element: Element): ShadowRoot | null {
-	return (element as any)[SHADOW_ROOT_SYMBOL] || element.shadowRoot || null;
+	return shadowRootOf<ShadowRoot>(element);
 }
 
 /**
@@ -160,20 +155,12 @@ export function fieldCaretRange(
 }
 
 /**
- * Connectivity through the COMPOSED tree: a UA-internal shadow root is a
- * DocumentFragment, so its children are never "connected" in the DOM
- * sense even while the host renders on screen -- isConnected alone would
- * gate every UA part out of the inline-run machinery. A node is
- * composition-connected when its own tree reaches the document, or its
- * root is a shadow root whose host does.
+ * Connectivity through the COMPOSED tree. `isConnected` is shadow-including,
+ * so a node inside a shadow tree whose host renders is connected; a
+ * pseudo-element node is not, and its callers ask its host instead.
  */
 export function compositionIsConnected(node: Node): boolean {
-	if (node.isConnected) return true;
-	const root = node.getRootNode();
-	if (root.nodeType === 11 && (root as ShadowRoot).host) {
-		return compositionIsConnected((root as ShadowRoot).host);
-	}
-	return false;
+	return node.isConnected;
 }
 
 /**
@@ -1019,42 +1006,6 @@ export function getAllPseudoElements(element: Element): Record<string, Node> {
 	return (element as any)[PSEUDO_ELEMENTS_SYMBOL] || {};
 }
 
-/**
- * Shadow DOM Management utilities
- */
-
-/**
- * Create a UA-INTERNAL shadow root on an element: a real DocumentFragment
- * (functional DOM -- appendChild, querySelector, live text nodes) tagged
- * with the host, stored in the symbol slot, and invisible to every DOM API
- * an author can reach: element.shadowRoot stays null, and attachShadow on
- * the same element keeps throwing exactly as the spec demands for form
- * controls. This is how a browser input's own internals work, and it is
- * the mechanism the widget painters hang their trees on.
- *
- * There is deliberately NO attachShadow polyfill: the DOM's own
- * attachShadow is the author path, including its NotSupportedError on
- * built-ins like <input> -- swallowing that throw would hide a spec
- * behavior authors are entitled to observe.
- */
-export function createUAShadowRoot(host: Element): ShadowRoot {
-	invalidateStructure();
-	const document = host.ownerDocument;
-	if (!document) {
-		throw new Error("UA shadow root host must belong to a document");
-	}
-	const root = document.createDocumentFragment() as unknown as ShadowRoot;
-	Object.defineProperties(root, {
-		host: {value: host},
-		mode: {value: "closed"},
-		// Cascade-origin marker: rules from this root's stylesheets are UA
-		// rules, which every author rule outranks regardless of specificity.
-		uaInternal: {value: true},
-	});
-	setShadowRoot(host, root);
-	return root;
-}
-
 // Tree walker and testing utilities
 
 /**
@@ -1065,14 +1016,6 @@ export function createExpandedTreeWalker(
 	root: Node,
 ): ExpandedTreeWalker {
 	return new ExpandedTreeWalker(window, root);
-}
-
-/**
- * Set shadow root on an element using symbol storage
- */
-export function setShadowRoot(element: Element, shadowRoot: ShadowRoot): void {
-	invalidateStructure();
-	(element as any)[SHADOW_ROOT_SYMBOL] = shadowRoot;
 }
 
 /**

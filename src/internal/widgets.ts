@@ -15,13 +15,15 @@
  */
 
 import {
+	attachUAShadowRoot,
 	attachUAWidget,
 	setUASelection,
 	uaSelectionOf,
 	uaWidgetOf,
 } from "./dom.js";
 import type {EngineWindow} from "./termdom.js";
-import {createUAShadowRoot, fieldValueText} from "./composition.js";
+import {invalidateStructure} from "./termdom.js";
+import {fieldValueText} from "./composition.js";
 import {type LayoutEngine, isPointInRects} from "./layout.js";
 import {type StyleManager} from "./styles.js";
 import {
@@ -309,7 +311,8 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 		 */
 		constructor(host: HTMLTextAreaElement) {
 			this.#host = host;
-			const root = createUAShadowRoot(host);
+			const root = attachUAShadowRoot<ShadowRoot>(host);
+			invalidateStructure();
 			observer.observe(root, {
 				childList: true,
 				subtree: true,
@@ -518,7 +521,8 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 		 */
 		#build(): void {
 			const host = this.#host;
-			const root = this.#root ?? createUAShadowRoot(host);
+			const root = this.#root ?? attachUAShadowRoot<ShadowRoot>(host);
+			invalidateStructure();
 			while (root.firstChild) root.removeChild(root.firstChild);
 			this.#root = root;
 			this.#kind = this.#kindFor();
@@ -666,7 +670,8 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 		 * the normal pipeline, and composition hides the light option list.
 		 */
 		#build(): void {
-			const root = createUAShadowRoot(this.#host);
+			const root = attachUAShadowRoot<ShadowRoot>(this.#host);
+			invalidateStructure();
 			this.#root = root;
 			observer.observe(root, {
 				childList: true,

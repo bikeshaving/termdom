@@ -324,6 +324,7 @@ const kSlotAssignment = Symbol("slot assignment");
 const kClonable = Symbol("clonable");
 const kSerializable = Symbol("serializable");
 const kDeclarative = Symbol("declarative");
+const kUAInternal = Symbol("user-agent shadow root");
 const kAvailableToInternals = Symbol("available to element internals");
 const kSlotName = Symbol("slot name");
 const kSlottableName = Symbol("slottable name");
@@ -6783,6 +6784,7 @@ interface ShadowRootInit {
  */
 export class ShadowRoot extends DocumentFragment {
 	[kShadowMode]: "open" | "closed" = "open";
+	[kUAInternal] = false;
 	[kDelegatesFocus] = false;
 	[kSlotAssignment]: "named" | "manual" = "named";
 	[kClonable] = false;
@@ -6960,6 +6962,56 @@ function attachShadowRoot(
 	shadow[kSerializable] = serializable;
 	shadow[kRegistry] = registry;
 	element[kShadowRoot] = shadow;
+}
+
+/**
+ * Give a form control the closed shadow tree its widget renders in.
+ *
+ * The tree is the same ShadowRoot an author's attachShadow builds -- slot
+ * assignment, retargeting, `isConnected`, the selector engine's tree scoping
+ * all work across it -- attached past the check that stops an author from
+ * hosting a tree on an `<input>`. It is closed and unmarked as a declarative
+ * or clonable root, so `element.shadowRoot` stays null, `attachShadow` on the
+ * same element still throws the NotSupportedError the specification demands,
+ * `cloneNode` copies nothing, and serialization never names it: the tree is
+ * reachable only through {@link uaShadowRootOf} and the widget that built it.
+ */
+export function attachUAShadowRoot<T>(target: object): T {
+	const host = target as Element;
+	const previous = internalConstruction;
+	internalConstruction = true;
+	let shadow: ShadowRoot;
+	try {
+		shadow = new ShadowRoot();
+	} finally {
+		internalConstruction = previous;
+	}
+	shadow[kDocument] = host[kDocument];
+	shadow[kHost] = host;
+	shadow[kShadowMode] = "closed";
+	shadow[kUAInternal] = true;
+	shadow[kRegistry] = globalCustomElements;
+	host[kShadowRoot] = shadow;
+	return shadow as T;
+}
+
+/**
+ * Whether a node is a user-agent shadow root. The cascade asks: a rule from a
+ * stylesheet of such a tree is a UA rule, which every author rule outranks
+ * whatever its specificity.
+ */
+export function isUAShadowRoot(node: object): boolean {
+	return node instanceof ShadowRoot && node[kUAInternal];
+}
+
+/**
+ * The shadow tree an element renders, closed ones included: a control's
+ * user-agent tree, or the tree an author attached. The engine composes through
+ * this; `Element.shadowRoot` is the author-facing view, which shows an open
+ * tree and nothing else.
+ */
+export function shadowRootOf<T>(element: object): T | null {
+	return ((element as Element)[kShadowRoot] as T) ?? null;
 }
 
 /* ---------------------------------------------------------------------- slots */

@@ -3,7 +3,6 @@ import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame, styleManagerFor} from "./test-utils.js";
 import {
 	createExpandedTreeWalker,
-	setShadowRoot,
 	attachPseudoElement,
 	createPseudoNode,
 	isPseudoNode,
@@ -25,7 +24,10 @@ function documentWindow(html: string) {
 	window.getComputedStyle = ((element: Element) =>
 		({
 			getPropertyValue: (property: string) =>
-				property === "display" && element.tagName === "LI" ? "list-item" : "",
+				property === "display" &&
+				(element.tagName === "LI" || element.hasAttribute("data-list-item"))
+					? "list-item"
+					: "",
 		}) as unknown as CSSStyleDeclaration) as typeof window.getComputedStyle;
 	return {window};
 }
@@ -125,33 +127,11 @@ test("A bare document - ExpandedTreeWalker shadow DOM traversal", () => {
 	host.id = "shadow-host";
 	document.body.appendChild(host);
 
-	// Create shadow root mock
-	const shadowRoot = {
-		mode: "open",
-		host: host,
-		firstChild: null,
-		lastChild: null,
-		childNodes: [],
-		nodeType: 11,
-		nodeName: "#document-fragment",
-	} as any;
-
-	// Create shadow content
+	const shadowRoot = host.attachShadow({mode: "open"});
 	const shadowDiv = document.createElement("div");
 	shadowDiv.textContent = "Shadow content";
 	shadowDiv.className = "shadow-element";
-
-	// Set up shadow DOM structure
-	shadowRoot.firstChild = shadowDiv;
-	shadowRoot.lastChild = shadowDiv;
-	shadowRoot.childNodes = [shadowDiv];
-	Object.defineProperty(shadowDiv, "parentNode", {
-		value: shadowRoot,
-		writable: true,
-		configurable: true,
-	});
-
-	setShadowRoot(host, shadowRoot);
+	shadowRoot.appendChild(shadowDiv);
 
 	const walker = createExpandedTreeWalker(window as any, document.body);
 
@@ -186,37 +166,9 @@ test("A bare document - ExpandedTreeWalker slot content traversal", () => {
 	host.innerHTML = `<span class="light-content">Light DOM content</span>`;
 	document.body.appendChild(host);
 
-	// Create shadow root with slot
-	const shadowRoot = {
-		mode: "open",
-		host: host,
-		firstChild: null,
-		lastChild: null,
-		childNodes: [],
-		nodeType: 11,
-	} as any;
-
+	const shadowRoot = host.attachShadow({mode: "open"});
 	const slot = document.createElement("slot");
-	slot.name = "content";
-
-	// Mock assignedNodes for the slot
-	const lightNodes = Array.from(host.childNodes);
-	Object.defineProperty(slot, "assignedNodes", {
-		value: () => lightNodes,
-		writable: true,
-		configurable: true,
-	});
-
-	shadowRoot.firstChild = slot;
-	shadowRoot.lastChild = slot;
-	shadowRoot.childNodes = [slot];
-	Object.defineProperty(slot, "parentNode", {
-		value: shadowRoot,
-		writable: true,
-		configurable: true,
-	});
-
-	setShadowRoot(host, shadowRoot);
+	shadowRoot.appendChild(slot);
 
 	const walker = createExpandedTreeWalker(window as any, document.body);
 
@@ -349,54 +301,19 @@ test("A bare document - ExpandedTreeWalker nested shadow roots", () => {
 	outerHost.className = "outer-host";
 	document.body.appendChild(outerHost);
 
-	// Create outer shadow root
-	const outerShadowRoot = {
-		mode: "open",
-		host: outerHost,
-		childNodes: [],
-		nodeType: 11,
-	} as any;
+	const outerShadowRoot = outerHost.attachShadow({mode: "open"});
 
-	// Create inner custom element inside outer shadow
+	// An inner custom element inside the outer shadow, hosting a tree of its own.
 	const innerHost = document.createElement("inner-element");
 	innerHost.className = "inner-host";
 	innerHost.textContent = "Inner host content";
+	outerShadowRoot.appendChild(innerHost);
 
-	// Create inner shadow root
-	const innerShadowRoot = {
-		mode: "open",
-		host: innerHost,
-		childNodes: [],
-		nodeType: 11,
-	} as any;
-
-	// Add content to inner shadow
+	const innerShadowRoot = innerHost.attachShadow({mode: "open"});
 	const deepContent = document.createElement("div");
 	deepContent.className = "deep-content";
 	deepContent.textContent = "Deep shadow content";
-
-	// Set up inner shadow DOM structure
-	innerShadowRoot.childNodes = [deepContent];
-	innerShadowRoot.firstChild = deepContent;
-	innerShadowRoot.lastChild = deepContent;
-	Object.defineProperty(deepContent, "parentNode", {
-		value: innerShadowRoot,
-		writable: true,
-		configurable: true,
-	});
-
-	// Set up outer shadow DOM structure with inner host
-	outerShadowRoot.childNodes = [innerHost];
-	outerShadowRoot.firstChild = innerHost;
-	outerShadowRoot.lastChild = innerHost;
-	Object.defineProperty(innerHost, "parentNode", {
-		value: outerShadowRoot,
-		writable: true,
-		configurable: true,
-	});
-
-	setShadowRoot(outerHost, outerShadowRoot);
-	setShadowRoot(innerHost, innerShadowRoot);
+	innerShadowRoot.appendChild(deepContent);
 
 	const walker = createExpandedTreeWalker(window as any, document.body);
 
@@ -447,58 +364,18 @@ test("A bare document - ExpandedTreeWalker shadow roots in slot assigned nodes",
 	assignedElement.textContent = "Assigned element content";
 	host.appendChild(assignedElement);
 
-	// Create shadow root for the assigned element
-	const assignedShadowRoot = {
-		mode: "open",
-		host: assignedElement,
-		childNodes: [],
-		nodeType: 11,
-	} as any;
-
+	const assignedShadowRoot = assignedElement.attachShadow({mode: "open"});
 	const shadowContent = document.createElement("div");
 	shadowContent.className = "shadow-in-assigned";
 	shadowContent.textContent = "Shadow content in assigned node";
-
-	assignedShadowRoot.childNodes = [shadowContent];
-	assignedShadowRoot.firstChild = shadowContent;
-	assignedShadowRoot.lastChild = shadowContent;
-	Object.defineProperty(shadowContent, "parentNode", {
-		value: assignedShadowRoot,
-		writable: true,
-		configurable: true,
-	});
-
-	setShadowRoot(assignedElement, assignedShadowRoot);
+	assignedShadowRoot.appendChild(shadowContent);
 
 	document.body.appendChild(host);
 
-	// Create host's shadow root with slot
-	const hostShadowRoot = {
-		mode: "open",
-		host: host,
-		childNodes: [],
-		nodeType: 11,
-	} as any;
-
+	const hostShadowRoot = host.attachShadow({mode: "open"});
 	const slot = document.createElement("slot");
 	slot.name = "content";
-	const assignedNodes = [assignedElement];
-	Object.defineProperty(slot, "assignedNodes", {
-		value: () => assignedNodes,
-		writable: true,
-		configurable: true,
-	});
-
-	hostShadowRoot.childNodes = [slot];
-	hostShadowRoot.firstChild = slot;
-	hostShadowRoot.lastChild = slot;
-	Object.defineProperty(slot, "parentNode", {
-		value: hostShadowRoot,
-		writable: true,
-		configurable: true,
-	});
-
-	setShadowRoot(host, hostShadowRoot);
+	hostShadowRoot.appendChild(slot);
 
 	const walker = createExpandedTreeWalker(window as any, document.body);
 
@@ -551,8 +428,9 @@ test("A bare document - ExpandedTreeWalker complex nested scenario with pseudo-e
 
 	// Create a complex scenario:
 	// List item with pseudo-elements → shadow root → slot with assigned content → assigned content has shadow root
-	const li = document.createElement("li");
+	const li = document.createElement("div");
 	li.className = "complex-list-item";
+	li.setAttribute("data-list-item", "");
 	li.textContent = "List item";
 
 	// Add pseudo-elements to list item
@@ -564,66 +442,23 @@ test("A bare document - ExpandedTreeWalker complex nested scenario with pseudo-e
 	attachPseudoElement(li, beforeNode, "::before");
 	attachPseudoElement(li, afterNode, "::after");
 
-	// Create shadow root for list item
-	const liShadowRoot = {
-		mode: "open",
-		host: li,
-		childNodes: [],
-		nodeType: 11,
-	} as any;
-
-	// Create slot in shadow root
-	const slot = document.createElement("slot");
-	slot.name = "content";
-
-	// Create assigned content with its own shadow root
+	// The assigned content carries a shadow tree of its own.
 	const assignedContent = document.createElement("div");
 	assignedContent.className = "assigned-content";
 	assignedContent.setAttribute("slot", "content");
 	assignedContent.textContent = "Assigned content";
 	li.appendChild(assignedContent);
 
-	const assignedShadowRoot = {
-		mode: "open",
-		host: assignedContent,
-		childNodes: [],
-		nodeType: 11,
-	} as any;
-
+	const assignedShadowRoot = assignedContent.attachShadow({mode: "open"});
 	const deepShadowContent = document.createElement("span");
 	deepShadowContent.className = "deep-shadow";
 	deepShadowContent.textContent = "Deep shadow content";
+	assignedShadowRoot.appendChild(deepShadowContent);
 
-	// Set up assigned element's shadow root
-	assignedShadowRoot.childNodes = [deepShadowContent];
-	assignedShadowRoot.firstChild = deepShadowContent;
-	assignedShadowRoot.lastChild = deepShadowContent;
-	Object.defineProperty(deepShadowContent, "parentNode", {
-		value: assignedShadowRoot,
-		writable: true,
-		configurable: true,
-	});
-
-	setShadowRoot(assignedContent, assignedShadowRoot);
-
-	// Set up slot assigned nodes
-	Object.defineProperty(slot, "assignedNodes", {
-		value: () => [assignedContent],
-		writable: true,
-		configurable: true,
-	});
-
-	// Set up list item's shadow root
-	liShadowRoot.childNodes = [slot];
-	liShadowRoot.firstChild = slot;
-	liShadowRoot.lastChild = slot;
-	Object.defineProperty(slot, "parentNode", {
-		value: liShadowRoot,
-		writable: true,
-		configurable: true,
-	});
-
-	setShadowRoot(li, liShadowRoot);
+	const liShadowRoot = li.attachShadow({mode: "open"});
+	const slot = document.createElement("slot");
+	slot.name = "content";
+	liShadowRoot.appendChild(slot);
 
 	document.body.appendChild(li);
 

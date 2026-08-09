@@ -7,7 +7,11 @@
 
 import type {EngineWindow} from "./termdom.js";
 import {invalidateFrame, invalidateStructure} from "./termdom.js";
-import {type Document as DOMDocument, styleElementCount} from "./dom.js";
+import {
+	type Document as DOMDocument,
+	isUAShadowRoot,
+	styleElementCount,
+} from "./dom.js";
 import * as cssTree from "css-tree";
 import {parseCSSColor} from "./color.js";
 import {stringWidth} from "./text.js";
@@ -7518,7 +7522,7 @@ export class StyleManager {
 		}
 		const specificity = this.#calculateSpecificity(selector);
 		const uaOrigin = Boolean(
-			uaOriginSheet || (scope && (scope as any).uaInternal),
+			uaOriginSheet || (scope != null && isUAShadowRoot(scope)),
 		);
 
 		// :host selectors only mean anything inside a shadow tree's own
@@ -7678,11 +7682,7 @@ export class StyleManager {
 	 */
 	#partPseudoFor(element: Element): string | null {
 		const root = element.getRootNode();
-		if (
-			root.nodeType === 11 &&
-			(root as any).uaInternal &&
-			(root as ShadowRoot).host
-		) {
+		if (isUAShadowRoot(root)) {
 			const part = element.getAttribute("part");
 			if (part === "placeholder" || part === "selection") {
 				return `::${part}`;
