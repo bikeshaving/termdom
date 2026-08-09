@@ -1354,3 +1354,198 @@ test("a selectionchange event is fired once a task, at the document", () => {
 		}, 0);
 	});
 });
+
+/* --------------------------------------------------- the input value model */
+
+test("an input answers with its attribute until something writes a value", () => {
+	const document = make();
+	const input = document.createElement("input");
+	input.setAttribute("value", "from the attribute");
+	expect(input.value).toBe("from the attribute");
+	expect(input.defaultValue).toBe("from the attribute");
+	input.setAttribute("value", "still the attribute");
+	expect(input.value).toBe("still the attribute");
+	input.value = "written";
+	expect(input.value).toBe("written");
+	expect(input.defaultValue).toBe("still the attribute");
+	input.setAttribute("value", "ignored now");
+	expect(input.value).toBe("written");
+	expect(input.defaultValue).toBe("ignored now");
+});
+
+test("a form reset puts a dirty input back to its attribute", () => {
+	const document = make();
+	document.body.innerHTML =
+		"<form><input name=a value=default><input type=checkbox checked></form>";
+	const form = document.querySelector("form");
+	const [text, box] = form.elements;
+	text.value = "typed";
+	box.checked = false;
+	expect(text.value).toBe("typed");
+	expect(box.checked).toBe(false);
+	form.reset();
+	expect(text.value).toBe("default");
+	expect(box.checked).toBe(true);
+});
+
+test("a checkbox's checked attribute stops moving once checked is written", () => {
+	const document = make();
+	const box = document.createElement("input");
+	box.type = "checkbox";
+	expect(box.checked).toBe(false);
+	box.setAttribute("checked", "");
+	expect(box.checked).toBe(true);
+	box.checked = false;
+	box.removeAttribute("checked");
+	box.setAttribute("checked", "");
+	expect(box.checked).toBe(false);
+	expect(box.defaultChecked).toBe(true);
+});
+
+test("a clone carries the value and the checkedness that were written", () => {
+	const document = make();
+	const input = document.createElement("input");
+	input.value = "typed";
+	const box = document.createElement("input");
+	box.type = "checkbox";
+	box.checked = true;
+	expect(input.cloneNode().value).toBe("typed");
+	expect(box.cloneNode().checked).toBe(true);
+	const plain = document.createElement("input");
+	plain.setAttribute("value", "attribute");
+	expect(plain.cloneNode().value).toBe("attribute");
+});
+
+test("checking one radio button unchecks the rest of its group", () => {
+	const document = make();
+	document.body.innerHTML =
+		"<form><input type=radio name=g value=1><input type=radio name=g value=2>" +
+		"<input type=radio name=other value=3></form>";
+	const [first, second, other] = document.querySelectorAll("input");
+	first.checked = true;
+	other.checked = true;
+	expect(first.checked).toBe(true);
+	second.checked = true;
+	expect(first.checked).toBe(false);
+	expect(second.checked).toBe(true);
+	expect(other.checked).toBe(true);
+});
+
+/* ------------------------------------------------------------- form owners */
+
+test("a control's form owner is the form above it", () => {
+	const document = make();
+	document.body.innerHTML = "<form id=f><fieldset><input></fieldset></form>";
+	const form = document.getElementById("f");
+	const input = document.querySelector("input");
+	expect(input.form).toBe(form);
+	expect(form.elements.length).toBe(2);
+});
+
+test("a form attribute names the owner, and an unknown one leaves none", () => {
+	const document = make();
+	document.body.innerHTML =
+		"<form id=outer><input id=a form=other></form><form id=other></form>" +
+		"<input id=b form=missing>";
+	const other = document.getElementById("other");
+	expect(document.getElementById("a").form).toBe(other);
+	expect(document.getElementById("b").form).toBe(null);
+	expect(other.elements.length).toBe(1);
+	expect(document.getElementById("outer").elements.length).toBe(0);
+});
+
+test("a disconnected control has no owner, and gains one on insertion", () => {
+	const document = make();
+	document.body.innerHTML = "<form id=f></form>";
+	const form = document.getElementById("f");
+	const input = document.createElement("input");
+	expect(input.form).toBe(null);
+	form.appendChild(input);
+	expect(input.form).toBe(form);
+	input.remove();
+	expect(input.form).toBe(null);
+});
+
+test("a label reaches its control by for, and by containing it", () => {
+	const document = make();
+	document.body.innerHTML =
+		"<label for=c>one</label><input id=c><label>two<input id=d></label>";
+	const [byFor, byContent] = document.querySelectorAll("label");
+	expect(byFor.control).toBe(document.getElementById("c"));
+	expect(byContent.control).toBe(document.getElementById("d"));
+	expect([...document.getElementById("c").labels]).toEqual([byFor]);
+});
+
+test("a label's click is its control's click", () => {
+	const document = make();
+	document.body.innerHTML = "<label><input type=checkbox></label>";
+	const label = document.querySelector("label");
+	const box = document.querySelector("input");
+	label.click();
+	expect(box.checked).toBe(true);
+});
+
+test("a disabled fieldset disables what its legend does not hold", () => {
+	const document = make();
+	document.body.innerHTML =
+		"<fieldset disabled><legend><input id=inLegend></legend>" +
+		"<input id=inBody></fieldset>";
+	const inLegend = document.getElementById("inLegend");
+	const inBody = document.getElementById("inBody");
+	let clicked = 0;
+	inBody.addEventListener("click", () => clicked++);
+	inBody.click();
+	expect(clicked).toBe(0);
+	let allowed = 0;
+	inLegend.addEventListener("click", () => allowed++);
+	inLegend.click();
+	expect(allowed).toBe(1);
+});
+
+/* -------------------------------------------------------- template content */
+
+test("a template's children are parsed into its content, not into the tree", () => {
+	const document = parseHTMLDocument(
+		"<body><template><div id=inside>text</div></template></body>",
+	) as any;
+	const template = document.querySelector("template");
+	expect(template.childNodes.length).toBe(0);
+	expect(template.content.childNodes.length).toBe(1);
+	expect(document.getElementById("inside")).toBe(null);
+	expect(template.content.firstChild.id).toBe("inside");
+});
+
+test("cloning a template deep-clones the content it holds", () => {
+	const document = make();
+	const template = document.createElement("template");
+	template.innerHTML = "<span>one</span><span>two</span>";
+	const shallow = template.cloneNode();
+	expect(shallow.content.childNodes.length).toBe(2);
+	expect(shallow.content.firstChild).not.toBe(template.content.firstChild);
+	expect(shallow.content.firstChild.textContent).toBe("one");
+	const deep = template.cloneNode(true);
+	expect(deep.childNodes.length).toBe(0);
+	expect(deep.content.childNodes.length).toBe(2);
+});
+
+test("a template inside a template clones the whole nest", () => {
+	const document = make();
+	const template = document.createElement("template");
+	template.innerHTML = "<template><b>deep</b></template>";
+	const copy = template.cloneNode(true);
+	const inner = copy.content.firstChild;
+	expect(inner.content.firstChild.textContent).toBe("deep");
+	expect(inner.content.firstChild).not.toBe(
+		template.content.firstChild.content.firstChild,
+	);
+});
+
+test("a template's content moves with it to another document", () => {
+	const document = make();
+	const other = createHTMLDocument("") as any;
+	const template = document.createElement("template");
+	template.innerHTML = "<i>moved</i>";
+	other.adoptNode(template);
+	expect(template.content.ownerDocument).toBe(other);
+	expect(template.content.firstChild.ownerDocument).toBe(other);
+});

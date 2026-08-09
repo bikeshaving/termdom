@@ -45,23 +45,101 @@ function domGlobals(dom: DOMModule): Record<string, unknown> {
 		"CDATASection",
 		"CharacterData",
 		"Comment",
+		"CompositionEvent",
 		"CustomElementRegistry",
+		"customElements",
 		"CustomEvent",
+		"CustomStateSet",
 		"Document",
 		"DocumentFragment",
 		"DocumentType",
 		"DOMImplementation",
 		"DOMParser",
+		"DOMStringMap",
 		"DOMTokenList",
 		"Element",
+		"ElementInternals",
 		"Event",
 		"EventTarget",
+		"FocusEvent",
+		"HTMLAnchorElement",
+		"HTMLAreaElement",
+		"HTMLAudioElement",
+		"HTMLBaseElement",
+		"HTMLBodyElement",
+		"HTMLBRElement",
+		"HTMLButtonElement",
+		"HTMLCanvasElement",
 		"HTMLCollection",
+		"HTMLDataElement",
+		"HTMLDataListElement",
+		"HTMLDetailsElement",
+		"HTMLDialogElement",
+		"HTMLDirectoryElement",
+		"HTMLDivElement",
+		"HTMLDListElement",
 		"HTMLElement",
+		"HTMLEmbedElement",
+		"HTMLFieldSetElement",
+		"HTMLFontElement",
+		"HTMLFormControlsCollection",
+		"HTMLFormElement",
+		"HTMLFrameElement",
+		"HTMLFrameSetElement",
+		"HTMLHeadElement",
+		"HTMLHeadingElement",
+		"HTMLHRElement",
+		"HTMLHtmlElement",
+		"HTMLIFrameElement",
+		"HTMLImageElement",
+		"HTMLInputElement",
+		"HTMLLabelElement",
+		"HTMLLegendElement",
+		"HTMLLIElement",
+		"HTMLLinkElement",
+		"HTMLMapElement",
+		"HTMLMarqueeElement",
+		"HTMLMediaElement",
+		"HTMLMenuElement",
+		"HTMLMetaElement",
+		"HTMLMeterElement",
+		"HTMLModElement",
+		"HTMLObjectElement",
+		"HTMLOListElement",
+		"HTMLOptGroupElement",
+		"HTMLOptionElement",
+		"HTMLOptionsCollection",
+		"HTMLOutputElement",
+		"HTMLParagraphElement",
+		"HTMLParamElement",
+		"HTMLPictureElement",
+		"HTMLPreElement",
+		"HTMLProgressElement",
+		"HTMLQuoteElement",
+		"HTMLScriptElement",
+		"HTMLSelectElement",
 		"HTMLSlotElement",
+		"HTMLSourceElement",
+		"HTMLSpanElement",
+		"HTMLStyleElement",
+		"HTMLTableCaptionElement",
+		"HTMLTableCellElement",
+		"HTMLTableColElement",
+		"HTMLTableElement",
+		"HTMLTableRowElement",
+		"HTMLTableSectionElement",
 		"HTMLTemplateElement",
+		"HTMLTextAreaElement",
+		"HTMLTimeElement",
+		"HTMLTitleElement",
+		"HTMLTrackElement",
+		"HTMLUListElement",
 		"HTMLUnknownElement",
+		"HTMLVideoElement",
+		"InputEvent",
+		"KeyboardEvent",
 		"MathMLElement",
+		"MouseEvent",
 		"MutationObserver",
 		"MutationRecord",
 		"NamedNodeMap",
@@ -69,16 +147,22 @@ function domGlobals(dom: DOMModule): Record<string, unknown> {
 		"NodeFilter",
 		"NodeIterator",
 		"NodeList",
+		"PointerEvent",
 		"ProcessingInstruction",
+		"RadioNodeList",
 		"Range",
 		"Selection",
-		"StaticRange",
-		"SVGElement",
 		"ShadowRoot",
+		"StaticRange",
+		"SubmitEvent",
+		"SVGElement",
 		"Text",
+		"ToggleEvent",
 		"TreeWalker",
+		"UIEvent",
+		"ValidityState",
+		"WheelEvent",
 		"XMLDocument",
-		"customElements",
 	];
 	const globals: Record<string, unknown> = {};
 	const source = dom as unknown as Record<string, unknown>;
@@ -183,10 +267,10 @@ async function suiteFiles(suite: string): Promise<string[]> {
  * The tests this DOM does not run, each with the one reason it does not.
  *
  * Every reason names something outside the tree: a browsing context, a script
- * the document's own parser must execute, a network fetch, an XML parser, or
- * an interface that belongs to a later phase of this DOM. "Hard" is not a
- * reason -- everything else either passes or is a failure this table does not
- * hide.
+ * the document's own parser must execute, a user action, a network fetch, an
+ * XML parser, a testdriver call into the browser itself, or a proposal that is
+ * not a standard. "Hard" is not a reason, and neither is "later" -- everything
+ * else either passes or is a failure this table does not hide.
  */
 const EXCLUSIONS: Record<string, string> = {
 	// requires-browsing-context: the test reaches a second document through a
@@ -332,7 +416,6 @@ const EXCLUSIONS: Record<string, string> = {
 	"dom/events/webkit-transition-end-event.html":
 		"requires-css-animations: a running CSS transition",
 
-	// later-phase: the interface exists in a phase after the tree. Each is
 	// revisited when that phase lands.
 	"dom/nodes/attach-shadow-realm-after-adoption.html":
 		"requires-browsing-context: the shadow host is adopted out of a frame's document",
@@ -341,11 +424,8 @@ const EXCLUSIONS: Record<string, string> = {
 	"dom/nodes/MutationObserver-cross-realm-callback-report-exception.html":
 		"requires-browsing-context: a callback taken from a frame's realm, and which global its exception is reported to",
 
-	// later-phase: UI Events. MouseEvent, KeyboardEvent and the rest are the
 	// UI Events standard's, and the activation behavior they run belongs to
 	// HTML's elements. Dispatch has the hooks; nothing fills them in yet.
-	"dom/events/legacy-pre-activation-behavior.window.js":
-		"later-phase: UI Events (a MouseEvent through a checkbox's legacy-pre-activation behavior)",
 
 	// no-xml-parser: there is no XML parser here, and none is planned; XML
 	// nodes are built through the DOM instead.
@@ -432,10 +512,8 @@ const EXCLUSIONS: Record<string, string> = {
 	"shadow-dom/untriaged/user-interaction/ranges-and-selections/test-002.html":
 		"requires-browsing-context: a Selection over a rendered document in a frame",
 
-	// later-phase: HTML interfaces a shadow tree is asked about. The tree
 	// behavior is this DOM's; the interface the test reads it through is not.
 
-	// later-phase: UI Events. The whole file's events are MouseEvent,
 	// FocusEvent or a pointer action; none of those interfaces exists here.
 	"shadow-dom/touch-event-retargeting-leak.html":
 		"requires-user-input: a touch action sequence driven through testdriver",
@@ -490,10 +568,8 @@ const EXCLUSIONS: Record<string, string> = {
 	"custom-elements/upgrading/upgrade-custom-element-error-event.html":
 		"requires-browsing-context: the failure is counted as an error event at the window",
 
-	// later-phase: ElementInternals, an HTML interface, and the ARIA
 	// reflection it carries.
 
-	// later-phase: the interface the reactions are counted through belongs to
 	// another standard. The reaction machinery itself is covered by the files
 	// that use DOM interfaces.
 
@@ -603,26 +679,23 @@ const EXCLUSIONS: Record<string, string> = {
 	"selection/textcontrols/focus.html":
 		"requires-user-input: the control is focused by a pointer action sequence",
 
-	// later-phase: scoped custom element registries -- a CustomElementRegistry
-	// an author constructs, an element's own registry, and the registry option
-	// on attachShadow, createElement and importNode. There is one registry
-	// here, which is the shape the interface had until 2025.
-	"custom-elements/registries/constructor-direct-call-fallback-registry.window.js":
-		"later-phase: scoped custom element registries (the fallback registry of a direct construction)",
-	"custom-elements/registries/constructor-reentry-createElement.window.js":
-		"later-phase: scoped custom element registries (re-entrant createElement against a scoped registry)",
-	"custom-elements/registries/Document-importNode-cross-document.window.js":
-		"later-phase: scoped custom element registries (importing across documents with a scoped registry)",
-	"custom-elements/registries/adoption.window.js":
-		"later-phase: scoped custom element registries (which registry survives adoption)",
-	"custom-elements/registries/global.window.js":
-		"later-phase: scoped custom element registries (the global registry beside a scoped one)",
-	"custom-elements/registries/initial-about-blank.window.js":
-		"later-phase: scoped custom element registries (the registry of the initial about:blank document)",
-	"custom-elements/registries/pseudo-class-defined.window.js":
-		"later-phase: scoped custom element registries (:defined against a scoped registry)",
-	"custom-elements/registries/template.window.js":
-		"later-phase: scoped custom element registries (a template's registry)",
+	// Every subtest of each of these is outside this DOM by construction.
+	"custom-elements/builtin-coverage.html":
+		"customized built-ins: every case defines one with an extends option before it asserts anything",
+	"custom-elements/ElementInternals-role.html":
+		"requires-testdriver: every case reads a computed role out of the browser's own accessibility tree through testdriver.js",
+	"custom-elements/element-internals-behaviors.tentative.html":
+		"not-a-standard: HTMLSubmitButtonBehavior and the behaviors option on attachInternals are a proposal, filed under tentative in the suite",
+	"custom-elements/form-associated/ElementInternals-behavior-accessibility.tentative.html":
+		"not-a-standard: HTMLSubmitButtonBehavior and the behaviors option on attachInternals are a proposal, filed under tentative in the suite",
+	"custom-elements/form-associated/ElementInternals-submit-behavior.tentative.html":
+		"not-a-standard: HTMLSubmitButtonBehavior and the behaviors option on attachInternals are a proposal, filed under tentative in the suite",
+	"custom-elements/form-associated/ElementInternals-submit-behavior-dialog.tentative.html":
+		"not-a-standard: HTMLSubmitButtonBehavior and the behaviors option on attachInternals are a proposal, filed under tentative in the suite",
+	"dom/events/Event-dispatch-single-activation-behavior.html":
+		"requires-script-execution: every activation under test is observed through an inline on* content attribute, which becomes a handler only by compiling it as script",
+	"dom/events/event-disabled-dynamic.html":
+		"requires-browsing-context: the case runs inside the window's load event",
 };
 
 /**
@@ -647,10 +720,6 @@ const EXCLUDED_DIRECTORIES: Array<[string, string]> = [
 		"requires-user-input: each case drives a touch or wheel action sequence through testdriver",
 	],
 	[
-		"dom/nodes/moveBefore/",
-		"later-phase: Node.moveBefore, the DOM Standard's state-preserving atomic move, which this DOM's mutation algorithms do not yet carry",
-	],
-	[
 		"dom/nodes/Document-contentType/",
 		"requires-fetch: the document's content type comes from the response that delivered it",
 	],
@@ -660,31 +729,11 @@ const EXCLUDED_DIRECTORIES: Array<[string, string]> = [
 	],
 	[
 		"dom/nodes/insertion-removing-steps/",
-		"later-phase: the insertion steps under test are HTML's own -- a script that runs, an iframe that navigates, a style that applies",
-	],
-	[
-		"shadow-dom/focus/",
-		"later-phase: HTML focus -- focusable areas, the focus fixup rules and delegatesFocus -- which is the HTML Standard's",
-	],
-	[
-		"shadow-dom/focus-navigation/",
-		"later-phase: HTML's sequential focus navigation order across shadow trees",
+		"requires-script-execution: each case counts the steps of a script the parser runs, an iframe that navigates, or a style sheet that applies",
 	],
 	[
 		"shadow-dom/reference-target/",
 		"not-a-standard: shadowrootreferencetarget is a WICG incubation, filed under tentative in the suite",
-	],
-	[
-		"shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/",
-		"later-phase: adoptedStyleSheets, a CSSOM interface the engine owns",
-	],
-	[
-		"custom-elements/form-associated/",
-		"later-phase: form-associated custom elements, whose form owner, submission, validation and ElementInternals machinery is the HTML Standard's",
-	],
-	[
-		"custom-elements/state/",
-		"later-phase: ElementInternals and its CustomStateSet, an HTML interface reached through a CSS :state() selector",
 	],
 	[
 		"custom-elements/reactions/customized-builtins/",
@@ -706,20 +755,16 @@ const DEVIATIONS: Array<[string, string]> = [
 		"A collection's indexed and named properties are ordinary own accessors, not a legacy platform object's exotic ones, because this tree uses no Proxy anywhere -- the reason it is faster than the DOM it replaces. Reads and writes through them are correct and live; what differs is the meta-level: `delete collection.name` succeeds until the next mutation redefines it, `Object.defineProperty` over an existing index does not throw, and an index past the end can be shadowed by an expando.",
 	],
 	[
-		"dom/nodes/Node-cloneNode.html, Document-createElement.html, Document-getElementById.html, DOMImplementation-createHTMLDocument.html, Node-properties.html, MutationObserver-attributes.html",
-		"Every HTML element is an HTMLElement (or an HTMLUnknownElement for a name HTML does not know). The per-element interfaces -- HTMLDivElement, HTMLAnchorElement and the rest -- belong to the HTML Standard, not the DOM Standard, and an interface with none of its own attributes would be a subset. The subtests that assert them fail; the tree behavior around them passes.",
-	],
-	[
-		"dom/nodes/Document-createEvent.https.html, dom/events/EventTarget-dispatchEvent.html",
-		'createEvent builds every name in the legacy table whose interface exists here: "event", "events", "htmlevents", "svgevents" and "customevent". The rest of the table\'s names -- UIEvent, MouseEvent, KeyboardEvent, FocusEvent, CompositionEvent, DragEvent, HashChangeEvent, MessageEvent, StorageEvent, TextEvent, TouchEvent, BeforeUnloadEvent, DeviceMotionEvent and DeviceOrientationEvent -- are UI Events and HTML interfaces, which are a later phase; each throws NotSupportedError until then, because a createEvent that returned a bare Event under those names would be a lie about what it built.',
+		"dom/nodes/Document-createEvent.https.html",
+		"createEvent builds every name in the legacy table whose interface exists here: the Event and CustomEvent names, and the UI Events ones -- UIEvent, MouseEvent, KeyboardEvent, FocusEvent, CompositionEvent, and the TextEvent alias for a composition event. The names that map to interfaces of other specifications -- DragEvent, HashChangeEvent, MessageEvent, StorageEvent, TouchEvent, BeforeUnloadEvent, DeviceMotionEvent and DeviceOrientationEvent -- throw NotSupportedError, because a createEvent that answered them with an event of some other interface would be a lie about what it built.",
 	],
 	[
 		"dom/events/Event-dispatch-bubbles-false.html, Event-dispatch-bubbles-true.html, passive-by-default.html, EventListener-handleEvent.html",
-		"A propagation path ends at the document. The spec continues it to the Window when the document has a browsing context, and there is no Window in this DOM: the harness supplies a bare event target under that name so the test files load. The subtests that fail are the ones that put the window in an expected path, that expect a scroll-blocking listener on the window to be passive by default, or that expect a listener's exception to arrive as an error event at the window; every other subtest in those files passes. passive-by-default.html names its subtests after its target's interface, so its harness also reports duplicates: the document element and the body are both HTMLElement here, which is the deviation above.",
+		"A propagation path ends at the document. The spec continues it to the Window when the document has a browsing context, and there is no Window in this DOM: the harness supplies a bare event target under that name so the test files load. The subtests that fail are the ones that put the window in an expected path, that expect a scroll-blocking listener on the window to be passive by default, or that expect a listener's exception to arrive as an error event at the window; every other subtest in those files passes.",
 	],
 	[
-		"dom/events/Event-subclasses-constructors.html, Event-init-while-dispatching.html",
-		"UIEvent, MouseEvent, KeyboardEvent and the rest of the UI Events interfaces do not exist here. The subtests that construct or initialize one fail; the Event and CustomEvent subtests in the same files pass. Dispatch already carries the hooks those interfaces need -- an event that is a mouse event, an activation behavior, the two legacy activation hooks -- so they slot in rather than being rebuilt.",
+		"dom/events/Event-subclasses-constructors.html",
+		"The UI Events interfaces are here: UIEvent, MouseEvent, KeyboardEvent, FocusEvent, InputEvent, CompositionEvent, WheelEvent, and the PointerEvent a synthetic click is built through. The subtests that still fail construct interfaces of other specifications, which are not.",
 	],
 	[
 		"dom/ranges/Range-getClientRects.html and every selection test that measures a box",
@@ -746,16 +791,36 @@ const DEVIATIONS: Array<[string, string]> = [
 		"An element's id does not become a property of a global. Window is not part of this DOM, and its named property access is the one place the spec's own text calls a legacy quirk; the document stands alone with `defaultView` null.",
 	],
 	[
-		"dom/lists/DOMTokenList-coverage-for-attributes.html",
-		"`classList` is the only reflected token list here. `relList`, `htmlFor`, `sandbox` and `sizes` are attributes of HTML element interfaces, which are the HTML Standard's, not the DOM Standard's.",
-	],
-	[
 		"dom/nodes/Element-matches-namespaced-elements.html, querySelector-mixed-case.html",
 		"A selector with an explicit namespace prefix (`*|name`, `svg|circle`) is rejected. The selector engine is nwsapi, rented rather than written, and it does not carry a namespace prefix map.",
 	],
 	[
 		"dom/nodes/Element-closest.html",
 		"`:scope` inside matches() and closest() resolves against the document, not the element the method was called on. The selector engine is nwsapi, rented rather than written, and its match entry point takes no scoping root.",
+	],
+	[
+		"dom/events/Body-FrameSet-Event-Handlers.html, and every subtest that reads an on* IDL attribute",
+		"The event handler IDL attributes -- onclick and its ninety-odd siblings -- are absent. Getting one is defined as getting the current value of an event handler, which compiles the content attribute as a script, and this DOM never executes script; a pair that answered only the property half would be a subset of the member the specification defines.",
+	],
+	[
+		"dom/collections/domstringmap-supported-property-names.html, custom-elements/reactions/DOMStringMap.html",
+		"`dataset` answers with a DOMStringMap whose properties are ordinary own accessors, one per data-* attribute, for the same reason a collection's indexed properties are: this tree uses no Proxy anywhere. Reading and writing a name the element already carries goes straight through to the attribute; assigning a name it does not carry yet creates an ordinary property instead of the attribute, which is the one thing a proxy would have caught.",
+	],
+	[
+		"custom-elements/HTMLElement-attachInternals.html, and the constraint validation members of the built-in controls",
+		"`willValidate`, `validity`, `validationMessage`, `checkValidity`, `reportValidity` and `setCustomValidity` are on ElementInternals, where the flags are the author's own, and absent from input, select, textarea, button, fieldset, object and output. Computing them for a built-in control means the input value-space algorithms -- converting a value to a number or a date per type, the step base and the allowed value step -- and a validity that answered false to constraints it never checked would be worse than none.",
+	],
+	[
+		"the focus members, and every subtest that calls focus() or blur()",
+		"`focus()`, `blur()` and `document.activeElement` are absent. A focusable area is defined over elements that are being rendered, and nothing is rendered here; a focus() that could never focus anything is not the method the specification defines. The same holds for the popover members, whose showing puts an element in the top layer.",
+	],
+	[
+		"SVG and MathML elements",
+		"An element in the SVG or MathML namespace is an SVGElement or a MathMLElement and nothing more: the SVGGraphicsElement and MathMLMathElement hierarchies, and the geometry and presentation interfaces under them, are other specifications' and describe a rendering this DOM does not do. Every tree operation over a foreign element -- creation, namespace, cloning, serialization, selectors -- is the DOM Standard's and is here.",
+	],
+	[
+		"shadow-dom/declarative/declarative-shadow-dom-attachment.html",
+		"All 654 subtests pass and the harness reports a timeout: the file builds 654 declarative shadow trees in one document, and every live collection materialized along the way is resynchronized on every mutation after it, which is the cost of indexed properties that are accessors rather than a proxy's traps. The cost is quadratic in the number of collections the file has read, and this file reads enough of them to pass testharness's own ten seconds.",
 	],
 	[
 		"dom/nodes/NodeList-static-length-getter-tampered-*.html",
