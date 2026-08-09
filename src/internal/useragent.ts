@@ -571,12 +571,19 @@ const CHECKBOX_DEFAULTS: Record<string, string> = {
 export function getElementDefaults(
 	element: Element,
 ): Record<string, string> | undefined {
+	// The defaults are keyed by the element's own name, which is what the
+	// table is indexed by and what every branch below asks about. `tagName`
+	// answers the same question in the document's case convention, deriving a
+	// fresh string every time it is read; this is read once, per property, per
+	// element, on the resolution path.
+	const name = element.localName;
+	const document = element.ownerDocument;
 	// The browser's UA :fullscreen treatment: the fullscreen element fills
 	// the viewport. Explicit cells rather than percentages -- the alternate
 	// screen IS the containing geometry, and innerWidth/Height are its size.
-	if (element.ownerDocument?.fullscreenElement === element) {
-		const window = element.ownerDocument.defaultView;
-		const base = TERMINAL_ELEMENT_DEFAULTS[element.tagName.toLowerCase()] ?? {};
+	if (document !== null && document.fullscreenElement === element) {
+		const window = document.defaultView;
+		const base = TERMINAL_ELEMENT_DEFAULTS[name] ?? {};
 		if (window) {
 			return {
 				...base,
@@ -597,16 +604,16 @@ export function getElementDefaults(
 	// left on the element to add around it. Baking the UA chrome into a
 	// min-height/width constant left authors unable to unbake it with
 	// `border: none`. See the textarea leaf sizing in layout.ts.
-	if (element.tagName === "BUTTON") {
+	if (name === "button") {
 		const merged: Record<string, string> = {
 			...TERMINAL_ELEMENT_DEFAULTS.button,
 		};
-		if (element.ownerDocument?.activeElement === element) {
+		if (document?.activeElement === element) {
 			merged["text-decoration-line"] = "underline";
 		}
 		return merged;
 	}
-	if (element.tagName === "SELECT") {
+	if (name === "select") {
 		// Sized to the LONGEST option label plus the indicator, exactly as a
 		// browser sizes a closed select -- so the field's width never jumps
 		// as the selection changes.
@@ -619,19 +626,19 @@ export function getElementDefaults(
 			...TERMINAL_ELEMENT_DEFAULTS.select,
 			width: `${widest + 2}ch`,
 		};
-		if (select.ownerDocument?.activeElement === select) {
+		if (document?.activeElement === select) {
 			merged["text-decoration-line"] = "underline";
 		}
 		return merged;
 	}
-	if (element.tagName === "INPUT") {
+	if (name === "input") {
 		const input = element as HTMLInputElement;
 		// The FOCUSED field gets the underline -- the UA "this is the live
 		// one" signal, in plain SGR 4, the one underline every terminal and
 		// every intermediary renders. Focus changes invalidate the
 		// computed-style cache (see handleFocusChange), so this is
 		// re-consulted at the right moments.
-		const focused = input.ownerDocument?.activeElement === input;
+		const focused = document?.activeElement === input;
 		if (input.type === "checkbox" || input.type === "radio") {
 			// The compact glyph is bare when blurred; focus underlines it --
 			// same live-wire language as the text field.
@@ -655,7 +662,7 @@ export function getElementDefaults(
 			return merged;
 		}
 	}
-	return TERMINAL_ELEMENT_DEFAULTS[element.tagName.toLowerCase()];
+	return TERMINAL_ELEMENT_DEFAULTS[name];
 }
 
 // ---- Inheritance / initial-value tables ----

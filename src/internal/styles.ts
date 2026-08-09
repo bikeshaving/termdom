@@ -7362,12 +7362,9 @@ export class StyleManager {
 		element: Element,
 		pseudoElement: string,
 	): PseudoStyleDeclaration {
-		let elementCache = this.#pseudoElementStyleCache.get(element);
-		if (!elementCache) {
-			elementCache = new Map();
-			this.#pseudoElementStyleCache.set(element, elementCache);
-		}
-		const cached = elementCache.get(pseudoElement);
+		const cached = this.#pseudoElementStyleCache
+			.get(element)
+			?.get(pseudoElement);
 		if (cached) return cached;
 		const declarations: Record<string, string> = {
 			...this.#computePseudoElementStyle(element, pseudoElement),
@@ -7392,6 +7389,16 @@ export class StyleManager {
 			);
 		}
 		const declaration = new PseudoStyleDeclaration(declarations, element, this);
+		// The cache is reached HERE, not before the work: resolving the host's
+		// style above can reparse the stylesheets, and a reparse replaces every
+		// cache on this manager. A map taken before that is an orphan, and
+		// storing into it caches nothing -- every read recomputes the
+		// declaration, and with it the host's inherited properties.
+		let elementCache = this.#pseudoElementStyleCache.get(element);
+		if (!elementCache) {
+			elementCache = new Map();
+			this.#pseudoElementStyleCache.set(element, elementCache);
+		}
 		elementCache.set(pseudoElement, declaration);
 		return declaration;
 	}
