@@ -3202,28 +3202,45 @@ export class LayoutEngine {
 	 * a block container in its own right, and so is an out-of-flow box.
 	 */
 	#runContainerOf(node: Node): Element | null {
+		const parent = this.#boxParentOf(node);
+		if (!parent) return null;
 		const startsOwnRun =
 			node.nodeType === node.ELEMENT_NODE &&
 			getPropertyValue(node as Element, "display") !== "inline";
-		for (let current: Node = node; ; ) {
-			const parent = this.#boxParentOf(current);
-			if (!parent) return null;
-			if (this.#isOutOfFlow(parent)) return parent;
-			const display = getPropertyValue(parent, "display");
-			if (display === "inline") {
-				current = parent;
-				continue;
-			}
+		return this.#runContainerFrom(parent, startsOwnRun);
+	}
+
+	/**
+	 * The block container the boxes directly inside an element fall under:
+	 * that element when it establishes one, and otherwise the container its
+	 * own box joins. This is the answer {@link #runContainerOf} gives for a
+	 * node whose box parent is known without the node itself -- which is how a
+	 * node that has LEFT the tree is answered for, since a removed node has no
+	 * parent left to climb from.
+	 */
+	#runContainerFrom(box: Element, startsOwnRun: boolean): Element | null {
+		for (
+			let current: Element | null = box;
+			current;
+			current = this.#boxParentOf(current)
+		) {
+			if (this.#isOutOfFlow(current)) return current;
+			const display = getPropertyValue(current, "display");
+			// An inline box is transparent: its content belongs to the run
+			// around it.
+			if (display === "inline") continue;
 			if (display === "inline-block") {
 				// A box with a layout tree of its own establishes a block
 				// container; and an inline-block nested in one starts a run
 				// there rather than joining the run its host sits in.
-				if (this.#blockContentRoots.has(parent) || startsOwnRun) return parent;
-				current = parent;
+				if (this.#blockContentRoots.has(current) || startsOwnRun) {
+					return current;
+				}
 				continue;
 			}
-			return parent;
+			return current;
 		}
+		return null;
 	}
 
 	/** The node an inline-level node's box is measured from. */
@@ -4176,6 +4193,19 @@ export class LayoutEngine {
 	 * Remove a node from the layout tree, handling both elements and text nodes
 	 */
 	#removeNode(node: Node, parent: Element): void {
+		// The container's flow children are not what its box list says they
+		// are: an anonymous box the departing node HEADED still names it, and
+		// an anonymous box measures whatever heads it now -- so a container
+		// left unreconciled measures a node that has left the tree, which has
+		// no parent to collect leaves from. The siblings a mutation record
+		// carries do not cover this: a container whose only child leaves
+		// records no sibling at all.
+		const container = this.#runContainerFrom(
+			parent,
+			node.nodeType === node.ELEMENT_NODE &&
+				getPropertyValue(node as Element, "display") !== "inline",
+		);
+		if (container) this.#dirtyRunContainers.add(container);
 		if (node.nodeType === node.ELEMENT_NODE) {
 			this.#removeElement(node as Element, parent);
 		} else if (node.nodeType === node.TEXT_NODE) {

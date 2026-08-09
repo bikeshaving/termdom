@@ -20,8 +20,8 @@ browsing context.
 - Test files in the suites: 1159
 - Reference tests (no testharness, scored by pixels): 52
 - Excluded, each with its reason below: 370
-- Files whose harness completed: 627
-- Files whose harness did not complete: 110
+- Files whose harness completed: 629
+- Files whose harness did not complete: 108
 - Subtests passed: 94776
 - Subtests failed: 1568
 
@@ -1184,7 +1184,7 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 | shadow-dom/capturing-and-bubbling-event-listeners-across-shadow-trees.html | OK | 5 | 0 |
 | shadow-dom/declarative/declarative-after-attachshadow.html | EXCLUDED (requires-script-execution: a script inside the document attaches a shadow root before the parser reaches the declarative one) | 0 | 0 |
 | shadow-dom/declarative/declarative-parser-interaction.html | EXCLUDED (requires-script-execution: the case is what a script sees while the parser is still inside the template) | 0 | 0 |
-| shadow-dom/declarative/declarative-shadow-dom-attachment.html | TIMEOUT | 654 | 0 |
+| shadow-dom/declarative/declarative-shadow-dom-attachment.html | OK | 654 | 0 |
 | shadow-dom/declarative/declarative-shadow-dom-available-to-element-internals.html | TIMEOUT | 0 | 0 |
 | shadow-dom/declarative/declarative-shadow-dom-basic.html | OK | 22 | 0 |
 | shadow-dom/declarative/declarative-shadow-dom-opt-in.html | EXCLUDED (requires-script-execution: the opt-in is read by a script the parser runs) | 0 | 0 |
@@ -1197,7 +1197,7 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 | shadow-dom/declarative/declarative-shadow-dom-write-to-iframe.html | EXCLUDED (requires-browsing-context: the markup is written into a frame's document) | 0 | 0 |
 | shadow-dom/declarative/declarative-with-disabled-shadow.html | EXCLUDED (requires-script-execution: the definition that disables shadow roots is registered by a script the parser runs) | 0 | 0 |
 | shadow-dom/declarative/gethtml-ordering.html | EXCLUDED (requires-script-execution: the serialization order is read by a script the parser runs mid-document) | 0 | 0 |
-| shadow-dom/declarative/gethtml.html | TIMEOUT | 6908 | 0 |
+| shadow-dom/declarative/gethtml.html | OK | 6908 | 0 |
 | shadow-dom/declarative/innerhtml-before-closing-tag.html | EXCLUDED (requires-script-execution: innerHTML is set by a script the parser runs before the closing tag) | 0 | 0 |
 | shadow-dom/declarative/innerhtml-on-ordinary-template.html | EXCLUDED (requires-script-execution: the fixture is named by a script the parser runs mid-document) | 0 | 0 |
 | shadow-dom/declarative/move-template-before-closing-tag.html | EXCLUDED (requires-script-execution: the template is moved by a script the parser runs before the closing tag) | 0 | 0 |
