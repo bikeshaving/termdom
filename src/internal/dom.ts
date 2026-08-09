@@ -2013,9 +2013,12 @@ function reportError(error: unknown): void {
 let treeVersion = 0;
 
 const kSync = Symbol("sync indexed properties");
+const kListRoot = Symbol("the tree a collection lists");
 
 interface Materializable {
 	[kSync](): void;
+	/** The root of the tree this collection lists, or null when it lists none. */
+	[kListRoot](): Node | null;
 }
 
 /**
@@ -2060,13 +2063,27 @@ function registerMaterialized(
 	}
 }
 
-function bumpVersion(document: Document): void {
+/**
+ * Note a mutation in the tree rooted at `root`.
+ *
+ * The counter every live collection reads is bumped for all of them; the
+ * eager resynchronization -- which recomputes a collection to define the
+ * indices it gained -- is only for the collections that list this tree. A
+ * collection holds the descendants of ITS root, so a mutation in another tree
+ * cannot change what it holds: the document's collections do not see a
+ * detached subtree being built, nor a shadow tree, nor the node a
+ * pseudo-element renders from.
+ */
+function bumpVersion(document: Document, root: Node): void {
 	treeVersion++;
 	for (let i = 0; i < materialized.length; i++) {
 		const entry = materialized[i];
 		if (entry.document !== null && entry.document !== document) continue;
 		const collection = entry.ref.deref();
-		if (collection !== undefined) syncMethod.call(collection);
+		if (collection === undefined) continue;
+		const listRoot = rootMethod.call(collection);
+		if (listRoot !== null && listRoot !== root) continue;
+		syncMethod.call(collection);
 	}
 }
 
@@ -2769,7 +2786,7 @@ function insertNode(
 			}
 		}
 	}
-	bumpVersion(parent[kDocument]);
+	bumpVersion(parent[kDocument], getRoot(parent));
 	if (!suppressObservers) {
 		queueTreeMutationRecord(parent, nodes, [], previousSibling, child);
 	}
@@ -3013,7 +3030,7 @@ function removeNode(node: Node, suppressObservers = false): void {
 			);
 		}
 	}
-	bumpVersion(parent[kDocument]);
+	bumpVersion(parent[kDocument], getRoot(parent));
 	addTransientObservers(node, parent);
 	if (!suppressObservers) {
 		queueTreeMutationRecord(
@@ -3613,6 +3630,10 @@ abstract class LiveList implements Materializable {
 		this.#materialize();
 	}
 
+	[kListRoot](): Node | null {
+		return this.#owner === null ? null : getRoot(this.#owner);
+	}
+
 	#materialize(): void {
 		const items = this.#items;
 		const self = this as unknown as Record<number | string, unknown>;
@@ -3663,6 +3684,9 @@ const ensureMethod = (
 const syncMethod = (
 	LiveList.prototype as unknown as Record<symbol, () => void>
 )[kSync];
+const rootMethod = (
+	LiveList.prototype as unknown as Record<symbol, () => Node | null>
+)[kListRoot];
 
 export class NodeList extends LiveList {
 	declare forEach: (
@@ -4227,7 +4251,7 @@ function replaceData(
 		oldValue.slice(0, offset) + data + oldValue.slice(offset + size);
 	liveRangeReplaceDataSteps(node, offset, size, data.length);
 	queueCharacterDataMutationRecord(node, oldValue);
-	bumpVersion(node[kDocument]);
+	bumpVersion(node[kDocument], getRoot(node));
 	const parent = node[kParent];
 	if (parent !== null) parent[kChildrenChanged]();
 }
@@ -4660,7 +4684,7 @@ function changeAttribute(attribute: Attr, value: string): void {
 		attribute[kNamespace],
 	);
 	attribute[kValue] = value;
-	bumpVersion(element[kDocument]);
+	bumpVersion(element[kDocument], getRoot(element));
 }
 
 function appendAttribute(element: Element, attribute: Attr): void {
@@ -4673,7 +4697,7 @@ function appendAttribute(element: Element, attribute: Attr): void {
 	);
 	element[kAttributeList].push(attribute);
 	attribute[kOwnerElement] = element;
-	bumpVersion(element[kDocument]);
+	bumpVersion(element[kDocument], getRoot(element));
 }
 
 function removeAttributeNode(element: Element, attribute: Attr): void {
@@ -4688,7 +4712,7 @@ function removeAttributeNode(element: Element, attribute: Attr): void {
 	const index = list.indexOf(attribute);
 	if (index !== -1) list.splice(index, 1);
 	attribute[kOwnerElement] = null;
-	bumpVersion(element[kDocument]);
+	bumpVersion(element[kDocument], getRoot(element));
 }
 
 function replaceAttribute(
@@ -4707,7 +4731,7 @@ function replaceAttribute(
 	list[list.indexOf(oldAttribute)] = newAttribute;
 	newAttribute[kOwnerElement] = element;
 	oldAttribute[kOwnerElement] = null;
-	bumpVersion(element[kDocument]);
+	bumpVersion(element[kDocument], getRoot(element));
 }
 
 /** Queue a record for a change to an element's attribute. */
