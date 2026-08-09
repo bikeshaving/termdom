@@ -412,6 +412,13 @@ function domInterfaces(): Record<string, unknown> {
 /** The window class, whose instances are windows: an EventTarget, and DOM-aware. */
 class Window extends DOM.EventTarget {}
 
+// A window carries both event handler mixins the HTML Standard gives it:
+// GlobalEventHandlers, which it shares with elements and documents, and
+// WindowEventHandlers, whose members exist as attributes whether or not this
+// engine has anything that fires them.
+DOM.installEventHandlers(Window.prototype, DOM.GLOBAL_EVENT_HANDLERS);
+DOM.installEventHandlers(Window.prototype, DOM.WINDOW_EVENT_HANDLERS);
+
 /** A document parsed from markup, displayed in a window of its own. */
 export function createDocumentWindow(html: string, url?: string): EngineWindow {
 	return createEngineWindow(DOM.parseHTMLDocument(html, url));
@@ -2821,6 +2828,28 @@ export class TermDOM {
 		void this.#render();
 	}
 
+	/**
+	 * Deliver a typed character to a field as an `insertText` beforeinput; its
+	 * own listener does the edit.
+	 *
+	 * This is the keypress default action, and it runs where a default action
+	 * runs: after the dispatch it belongs to. That is what puts a field's
+	 * `input` after its `keypress` rather than between keydown and it. Only a
+	 * field takes text -- nothing else in this engine is an editing host.
+	 */
+	#dispatchInsertText(target: Element, text: string): void {
+		const tag = target.tagName;
+		if (tag !== "INPUT" && tag !== "TEXTAREA") return;
+		target.dispatchEvent(
+			new this.window.InputEvent("beforeinput", {
+				inputType: "insertText",
+				data: text,
+				bubbles: true,
+				cancelable: true,
+			}),
+		);
+	}
+
 	#dispatchGlobalKeyboardEvent(chunk: Buffer): void {
 		const key = chunk.toString("utf8");
 
@@ -2919,8 +2948,13 @@ export class TermDOM {
 			// own keydown listener, run during dispatch above -- not here.
 		}
 
-		// If keydown wasn't canceled and it's a printable character, dispatch keypress
-		if (notCanceled && key.length === 1 && charCode >= 32 && charCode < 127) {
+		// A character-producing key fires keypress between keydown and keyup,
+		// and inserting the character is that event's default action -- so a
+		// field's `input` arrives after keypress, as it does in a browser, and a
+		// keypress a listener cancels inserts nothing. Every printable
+		// character, not only the ASCII ones: charCode is the character's own
+		// code, and DEL and the control codes are the keys named elsewhere.
+		if (notCanceled && key.length === 1 && charCode >= 32 && charCode !== 127) {
 			const keypressEvent = new this.window.KeyboardEvent("keypress", {
 				key: key,
 				code: domCodeFor(key),
@@ -2934,7 +2968,9 @@ export class TermDOM {
 				bubbles: true,
 				cancelable: true,
 			});
-			targetElement.dispatchEvent(keypressEvent);
+			if (targetElement.dispatchEvent(keypressEvent)) {
+				this.#dispatchInsertText(targetElement, key);
+			}
 		}
 
 		// Always dispatch keyup

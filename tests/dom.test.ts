@@ -18,6 +18,7 @@ import {
 	NodeFilter,
 	parseHTMLDocument,
 	setAmbientDocument,
+	setDefaultView,
 	Text,
 } from "../src/internal/dom.js";
 
@@ -1548,4 +1549,137 @@ test("a template's content moves with it to another document", () => {
 	other.adoptNode(template);
 	expect(template.content.ownerDocument).toBe(other);
 	expect(template.content.firstChild.ownerDocument).toBe(other);
+});
+
+/* ------------------------------------------- event handler IDL attributes */
+
+test("the handler attributes answer `in` on the interfaces that carry them", () => {
+	const document = make();
+	const div = document.createElement("div");
+	const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+	// A framework picks property assignment over addEventListener by probing
+	// exactly this, so a name the mixin defines has to be there before
+	// anything is assigned to it.
+	for (const name of ["onclick", "onkeydown", "oninput", "onwheel"]) {
+		expect(name in div).toBe(true);
+		expect(name in svg).toBe(true);
+		expect(name in document).toBe(true);
+	}
+	// The mixin is the whole table, not the popular part of it.
+	expect("onanimationstart" in div).toBe(true);
+	expect("onpointerrawupdate" in div).toBe(true);
+	expect("onsecuritypolicyviolation" in div).toBe(true);
+	expect("oncopy" in div).toBe(true);
+	// Document's own, and the Fullscreen API's.
+	expect("onreadystatechange" in document).toBe(true);
+	expect("onfullscreenchange" in document).toBe(true);
+	// A handler attribute is a member of the interface, not of the instance.
+	expect(Object.prototype.hasOwnProperty.call(div, "onclick")).toBe(false);
+	// The window handlers are the window's; an ordinary element has none.
+	expect("onhashchange" in div).toBe(false);
+});
+
+test("an assigned handler runs with the event, and reads back as itself", () => {
+	const document = make();
+	const div = document.createElement("div");
+	expect(div.onclick).toBe(null);
+	const seen: any[] = [];
+	const handler = (event: any) => seen.push(event.type);
+	div.onclick = handler;
+	expect(div.onclick).toBe(handler);
+	div.dispatchEvent(new DOMEvent("click"));
+	expect(seen).toEqual(["click"]);
+});
+
+test("a handler keeps its place among the listeners around it", () => {
+	const document = make();
+	const div = document.createElement("div");
+	const order: string[] = [];
+	div.addEventListener("click", () => order.push("before"));
+	div.onclick = () => order.push("first handler");
+	div.addEventListener("click", () => order.push("after"));
+	// Reassignment changes what runs, never when it runs.
+	div.onclick = () => order.push("second handler");
+	div.dispatchEvent(new DOMEvent("click"));
+	expect(order).toEqual(["before", "second handler", "after"]);
+
+	// Null removes the listener, so the next assignment starts a new place --
+	// at the end, behind the listener that was added after it.
+	order.length = 0;
+	div.onclick = null;
+	expect(div.onclick).toBe(null);
+	div.dispatchEvent(new DOMEvent("click"));
+	expect(order).toEqual(["before", "after"]);
+
+	order.length = 0;
+	div.onclick = () => order.push("third handler");
+	div.dispatchEvent(new DOMEvent("click"));
+	expect(order).toEqual(["before", "after", "third handler"]);
+});
+
+test("a handler that answers false cancels the event", () => {
+	const document = make();
+	const div = document.createElement("div");
+	div.onclick = () => false;
+	const canceled = new DOMEvent("click", {cancelable: true});
+	expect(div.dispatchEvent(canceled)).toBe(false);
+	expect(canceled.defaultPrevented).toBe(true);
+	// Anything else is not an answer: only false cancels.
+	div.onclick = () => 0;
+	const uncanceled = new DOMEvent("click", {cancelable: true});
+	expect(div.dispatchEvent(uncanceled)).toBe(true);
+});
+
+test("a handler that throws reports rather than throwing out of the dispatch", () => {
+	const document = make();
+	const div = document.createElement("div");
+	const after: string[] = [];
+	div.onclick = () => {
+		throw new Error("handler");
+	};
+	div.addEventListener("click", () => after.push("ran"));
+	const reported: unknown[] = [];
+	const original = (globalThis as any).reportError;
+	(globalThis as any).reportError = (error: unknown) => reported.push(error);
+	try {
+		expect(() => div.dispatchEvent(new DOMEvent("click"))).not.toThrow();
+	} finally {
+		(globalThis as any).reportError = original;
+	}
+	expect(reported.length).toBe(1);
+	expect(after).toEqual(["ran"]);
+});
+
+test("a value that is not an object is null, per the callback's legacy rule", () => {
+	const document = make();
+	const div = document.createElement("div");
+	div.onclick = () => {};
+	div.onclick = 5 as any;
+	expect(div.onclick).toBe(null);
+	div.dispatchEvent(new DOMEvent("click"));
+	// An object that is not callable is held, and throws when the event
+	// arrives -- which is reported, not thrown.
+	const object = {};
+	div.onclick = object as any;
+	expect(div.onclick).toBe(object);
+});
+
+test("a body's window handlers are its window's, and are dropped without one", () => {
+	const document = make();
+	const body = document.body as any;
+	// The set that forwards; the rest of the mixin stays the element's own.
+	expect("onload" in body).toBe(true);
+	expect("onhashchange" in body).toBe(true);
+	// A document with no window has no event handler target at all, so the
+	// write goes nowhere and the read answers null.
+	expect(body.onload).toBe(null);
+	body.onload = () => {};
+	expect(body.onload).toBe(null);
+
+	const handler = () => {};
+	const view: any = {};
+	setDefaultView(document, view);
+	body.onload = handler;
+	expect(view.onload).toBe(handler);
+	expect(body.onload).toBe(handler);
 });

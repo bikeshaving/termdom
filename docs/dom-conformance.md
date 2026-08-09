@@ -20,10 +20,10 @@ browsing context.
 - Test files in the suites: 1159
 - Reference tests (no testharness, scored by pixels): 52
 - Excluded, each with its reason below: 370
-- Files whose harness completed: 629
-- Files whose harness did not complete: 108
-- Subtests passed: 94776
-- Subtests failed: 1568
+- Files whose harness completed: 627
+- Files whose harness did not complete: 110
+- Subtests passed: 94804
+- Subtests failed: 1540
 
 ## Exclusions
 
@@ -453,9 +453,9 @@ A selector with an explicit namespace prefix (`*|name`, `svg|circle`) is rejecte
 
 `:scope` inside matches() and closest() resolves against the document, not the element the method was called on. The selector engine is nwsapi, rented rather than written, and its match entry point takes no scoping root.
 
-### dom/events/Body-FrameSet-Event-Handlers.html, and every subtest that reads an on* IDL attribute
+### dom/events/Body-FrameSet-Event-Handlers.html, and every subtest that reads an on* content attribute
 
-The event handler IDL attributes -- onclick and its ninety-odd siblings -- are absent. Getting one is defined as getting the current value of an event handler, which compiles the content attribute as a script, and this DOM never executes script; a pair that answered only the property half would be a subset of the member the specification defines.
+The event handler IDL attributes -- onclick and its ninety-odd siblings -- are here, on HTMLElement, SVGElement, MathMLElement and Document. Their content-attribute half is not: `onclick="..."` in markup is a function compiled from the attribute's value, and this DOM never executes script, so the attribute sets no handler and the IDL attribute reads back null. The subtests that still fail in this file are the ones that compile a content attribute, and the ones that expect a body's or a frameset's forwarded handler to land on a Window: a document with no browsing context has no event handler target for the forwarded set, so the write is dropped and the read answers null -- which is what the algorithm says of it -- and the harness's window is a bare event target.
 
 ### dom/collections/domstringmap-supported-property-names.html, custom-elements/reactions/DOMStringMap.html
 
@@ -796,7 +796,7 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 | dom/events/AddEventListenerOptions-once.any.js | OK | 4 | 0 |
 | dom/events/AddEventListenerOptions-passive.any.js | OK | 5 | 0 |
 | dom/events/AddEventListenerOptions-signal.any.js | OK | 11 | 0 |
-| dom/events/Body-FrameSet-Event-Handlers.html | OK | 0 | 48 |
+| dom/events/Body-FrameSet-Event-Handlers.html | OK | 12 | 36 |
 | dom/events/CustomEvent.html | OK | 3 | 0 |
 | dom/events/Event-cancelBubble.html | OK | 8 | 0 |
 | dom/events/Event-constants.html | OK | 4 | 0 |
@@ -806,7 +806,7 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 | dom/events/Event-dispatch-bubble-canceled.html | OK | 1 | 0 |
 | dom/events/Event-dispatch-bubbles-false.html | OK | 4 | 1 |
 | dom/events/Event-dispatch-bubbles-true.html | OK | 4 | 1 |
-| dom/events/Event-dispatch-click.html | TIMEOUT | 12 | 21 |
+| dom/events/Event-dispatch-click.html | TIMEOUT | 27 | 6 |
 | dom/events/Event-dispatch-click.tentative.html | OK | 4 | 2 |
 | dom/events/Event-dispatch-detached-click.html | OK | 2 | 0 |
 | dom/events/Event-dispatch-detached-input-and-change.html | OK | 8 | 4 |
@@ -815,7 +815,7 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 | dom/events/Event-dispatch-multiple-cancelBubble.html | EXCLUDED (requires-browsing-context: the expected propagation path begins at the window) | 0 | 0 |
 | dom/events/Event-dispatch-multiple-stopPropagation.html | EXCLUDED (requires-browsing-context: the expected propagation path begins at the window) | 0 | 0 |
 | dom/events/Event-dispatch-omitted-capture.html | EXCLUDED (requires-browsing-context: the expected propagation path begins at the window) | 0 | 0 |
-| dom/events/Event-dispatch-on-disabled-elements.html | TIMEOUT | 3 | 6 |
+| dom/events/Event-dispatch-on-disabled-elements.html | TIMEOUT | 4 | 5 |
 | dom/events/Event-dispatch-order-at-target.html | OK | 1 | 0 |
 | dom/events/Event-dispatch-order.html | OK | 1 | 0 |
 | dom/events/Event-dispatch-other-document.html | OK | 1 | 0 |
@@ -1184,7 +1184,7 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 | shadow-dom/capturing-and-bubbling-event-listeners-across-shadow-trees.html | OK | 5 | 0 |
 | shadow-dom/declarative/declarative-after-attachshadow.html | EXCLUDED (requires-script-execution: a script inside the document attaches a shadow root before the parser reaches the declarative one) | 0 | 0 |
 | shadow-dom/declarative/declarative-parser-interaction.html | EXCLUDED (requires-script-execution: the case is what a script sees while the parser is still inside the template) | 0 | 0 |
-| shadow-dom/declarative/declarative-shadow-dom-attachment.html | OK | 654 | 0 |
+| shadow-dom/declarative/declarative-shadow-dom-attachment.html | TIMEOUT | 654 | 0 |
 | shadow-dom/declarative/declarative-shadow-dom-available-to-element-internals.html | TIMEOUT | 0 | 0 |
 | shadow-dom/declarative/declarative-shadow-dom-basic.html | OK | 22 | 0 |
 | shadow-dom/declarative/declarative-shadow-dom-opt-in.html | EXCLUDED (requires-script-execution: the opt-in is read by a script the parser runs) | 0 | 0 |
@@ -1197,7 +1197,7 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 | shadow-dom/declarative/declarative-shadow-dom-write-to-iframe.html | EXCLUDED (requires-browsing-context: the markup is written into a frame's document) | 0 | 0 |
 | shadow-dom/declarative/declarative-with-disabled-shadow.html | EXCLUDED (requires-script-execution: the definition that disables shadow roots is registered by a script the parser runs) | 0 | 0 |
 | shadow-dom/declarative/gethtml-ordering.html | EXCLUDED (requires-script-execution: the serialization order is read by a script the parser runs mid-document) | 0 | 0 |
-| shadow-dom/declarative/gethtml.html | OK | 6908 | 0 |
+| shadow-dom/declarative/gethtml.html | TIMEOUT | 6908 | 0 |
 | shadow-dom/declarative/innerhtml-before-closing-tag.html | EXCLUDED (requires-script-execution: innerHTML is set by a script the parser runs before the closing tag) | 0 | 0 |
 | shadow-dom/declarative/innerhtml-on-ordinary-template.html | EXCLUDED (requires-script-execution: the fixture is named by a script the parser runs mid-document) | 0 | 0 |
 | shadow-dom/declarative/move-template-before-closing-tag.html | EXCLUDED (requires-script-execution: the template is moved by a script the parser runs before the closing tag) | 0 | 0 |
@@ -2184,53 +2184,41 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 ### dom/events/Body-FrameSet-Event-Handlers.html
 
-- Set HTMLBodyElement.onblur: assert_equals: Initially null expected (object) null but got (undefined) undefined
-- Enumerate HTMLBodyElement.onblur: assert_true: expected true got undefined
-- Reflect HTMLBodyElement.onblur: assert_equals: Convert to function expected "function" but got "undefined"
+- Set HTMLBodyElement.onblur: assert_equals: Return same function expected (function) function "function nop() {}" but got (object) null
+- Reflect HTMLBodyElement.onblur: assert_equals: Convert to function expected "function" but got "object"
 - Forward HTMLBodyElement.onblur to Window: assert_equals: Convert to function expected "function" but got "object"
-- Set HTMLFrameSetElement.onblur: assert_equals: Initially null expected (object) null but got (undefined) undefined
-- Enumerate HTMLFrameSetElement.onblur: assert_true: expected true got undefined
-- Reflect HTMLFrameSetElement.onblur: assert_equals: Convert to function expected "function" but got "undefined"
+- Set HTMLFrameSetElement.onblur: assert_equals: Return same function expected (function) function "function nop() {}" but got (object) null
+- Reflect HTMLFrameSetElement.onblur: assert_equals: Convert to function expected "function" but got "object"
 - Forward HTMLFrameSetElement.onblur to Window: assert_equals: Convert to function expected "function" but got "object"
-- Set HTMLBodyElement.onerror: assert_equals: Initially null expected (object) null but got (undefined) undefined
-- Enumerate HTMLBodyElement.onerror: assert_true: expected true got undefined
-- Reflect HTMLBodyElement.onerror: assert_equals: Convert to function expected "function" but got "undefined"
+- Set HTMLBodyElement.onerror: assert_equals: Return same function expected (function) function "function nop() {}" but got (object) null
+- Reflect HTMLBodyElement.onerror: assert_equals: Convert to function expected "function" but got "object"
 - Forward HTMLBodyElement.onerror to Window: assert_equals: Convert to function expected "function" but got "object"
-- Set HTMLFrameSetElement.onerror: assert_equals: Initially null expected (object) null but got (undefined) undefined
-- Enumerate HTMLFrameSetElement.onerror: assert_true: expected true got undefined
-- Reflect HTMLFrameSetElement.onerror: assert_equals: Convert to function expected "function" but got "undefined"
+- Set HTMLFrameSetElement.onerror: assert_equals: Return same function expected (function) function "function nop() {}" but got (object) null
+- Reflect HTMLFrameSetElement.onerror: assert_equals: Convert to function expected "function" but got "object"
 - Forward HTMLFrameSetElement.onerror to Window: assert_equals: Convert to function expected "function" but got "object"
-- Set HTMLBodyElement.onfocus: assert_equals: Initially null expected (object) null but got (undefined) undefined
-- Enumerate HTMLBodyElement.onfocus: assert_true: expected true got undefined
-- Reflect HTMLBodyElement.onfocus: assert_equals: Convert to function expected "function" but got "undefined"
+- Set HTMLBodyElement.onfocus: assert_equals: Return same function expected (function) function "function nop() {}" but got (object) null
+- Reflect HTMLBodyElement.onfocus: assert_equals: Convert to function expected "function" but got "object"
 - Forward HTMLBodyElement.onfocus to Window: assert_equals: Convert to function expected "function" but got "object"
-- Set HTMLFrameSetElement.onfocus: assert_equals: Initially null expected (object) null but got (undefined) undefined
-- Enumerate HTMLFrameSetElement.onfocus: assert_true: expected true got undefined
-- Reflect HTMLFrameSetElement.onfocus: assert_equals: Convert to function expected "function" but got "undefined"
+- Set HTMLFrameSetElement.onfocus: assert_equals: Return same function expected (function) function "function nop() {}" but got (object) null
+- Reflect HTMLFrameSetElement.onfocus: assert_equals: Convert to function expected "function" but got "object"
 - Forward HTMLFrameSetElement.onfocus to Window: assert_equals: Convert to function expected "function" but got "object"
-- Set HTMLBodyElement.onload: assert_equals: Initially null expected (object) null but got (undefined) undefined
-- Enumerate HTMLBodyElement.onload: assert_true: expected true got undefined
-- Reflect HTMLBodyElement.onload: assert_equals: Convert to function expected "function" but got "undefined"
+- Set HTMLBodyElement.onload: assert_equals: Return same function expected (function) function "function nop() {}" but got (object) null
+- Reflect HTMLBodyElement.onload: assert_equals: Convert to function expected "function" but got "object"
 - Forward HTMLBodyElement.onload to Window: assert_equals: Convert to function expected "function" but got "object"
-- Set HTMLFrameSetElement.onload: assert_equals: Initially null expected (object) null but got (undefined) undefined
-- Enumerate HTMLFrameSetElement.onload: assert_true: expected true got undefined
-- Reflect HTMLFrameSetElement.onload: assert_equals: Convert to function expected "function" but got "undefined"
+- Set HTMLFrameSetElement.onload: assert_equals: Return same function expected (function) function "function nop() {}" but got (object) null
+- Reflect HTMLFrameSetElement.onload: assert_equals: Convert to function expected "function" but got "object"
 - Forward HTMLFrameSetElement.onload to Window: assert_equals: Convert to function expected "function" but got "object"
-- Set HTMLBodyElement.onscroll: assert_equals: Initially null expected (object) null but got (undefined) undefined
-- Enumerate HTMLBodyElement.onscroll: assert_true: expected true got undefined
-- Reflect HTMLBodyElement.onscroll: assert_equals: Convert to function expected "function" but got "undefined"
+- Set HTMLBodyElement.onscroll: assert_equals: Return same function expected (function) function "function nop() {}" but got (object) null
+- Reflect HTMLBodyElement.onscroll: assert_equals: Convert to function expected "function" but got "object"
 - Forward HTMLBodyElement.onscroll to Window: assert_equals: Convert to function expected "function" but got "object"
-- Set HTMLFrameSetElement.onscroll: assert_equals: Initially null expected (object) null but got (undefined) undefined
-- Enumerate HTMLFrameSetElement.onscroll: assert_true: expected true got undefined
-- Reflect HTMLFrameSetElement.onscroll: assert_equals: Convert to function expected "function" but got "undefined"
+- Set HTMLFrameSetElement.onscroll: assert_equals: Return same function expected (function) function "function nop() {}" but got (object) null
+- Reflect HTMLFrameSetElement.onscroll: assert_equals: Convert to function expected "function" but got "object"
 - Forward HTMLFrameSetElement.onscroll to Window: assert_equals: Convert to function expected "function" but got "object"
-- Set HTMLBodyElement.onresize: assert_equals: Initially null expected (object) null but got (undefined) undefined
-- Enumerate HTMLBodyElement.onresize: assert_true: expected true got undefined
-- Reflect HTMLBodyElement.onresize: assert_equals: Convert to function expected "function" but got "undefined"
+- Set HTMLBodyElement.onresize: assert_equals: Return same function expected (function) function "function nop() {}" but got (object) null
+- Reflect HTMLBodyElement.onresize: assert_equals: Convert to function expected "function" but got "object"
 - Forward HTMLBodyElement.onresize to Window: assert_equals: Convert to function expected "function" but got "object"
-- Set HTMLFrameSetElement.onresize: assert_equals: Initially null expected (object) null but got (undefined) undefined
-- Enumerate HTMLFrameSetElement.onresize: assert_true: expected true got undefined
-- Reflect HTMLFrameSetElement.onresize: assert_equals: Convert to function expected "function" but got "undefined"
+- Set HTMLFrameSetElement.onresize: assert_equals: Return same function expected (function) function "function nop() {}" but got (object) null
+- Reflect HTMLFrameSetElement.onresize: assert_equals: Convert to function expected "function" but got "object"
 - Forward HTMLFrameSetElement.onresize to Window: assert_equals: Convert to function expected "function" but got "object"
 
 ### dom/events/Event-dispatch-bubbles-false.html
@@ -2243,27 +2231,12 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 ### dom/events/Event-dispatch-click.html
 
-- basic with click(): Test timed out
-- basic with dispatchEvent(): Test timed out
-- basic with wrong event class: Test timed out
-- look at parents when event bubbles: Test timed out
 - pick the first with activation behavior <a href>: Test timed out
-- event state during post-click handling: Test timed out
-- redispatch during post-click handling: Test timed out
-- disabled checkbox still has activation behavior, part 2: assert_equals: expected "done" but got "form"
-- disabled radio still has activation behavior: assert_equals: expected "done" but got "form"
-- disconnected checkbox should be checked: Test timed out
-- disconnected radio should be checked: Test timed out
-- disconnected checkbox should be checked from dispatchEvent(new MouseEvent('click')): Test timed out
-- disconnected radio should be checked from dispatchEvent(new MouseEvent('click')): Test timed out
-- disabled checkbox should fire onclick: Test timed out
-- disabled radio should fire onclick: Test timed out
-- disabled checkbox should get legacy-canceled-activation behavior: Test timed out
-- disabled radio should get legacy-canceled-activation behavior: Test timed out
 - disabling checkbox in onclick listener shouldn't suppress oninput: Test timed out
 - disabling checkbox in onclick listener shouldn't suppress onchange: Test timed out
 - disabling radio in onclick listener shouldn't suppress oninput: Test timed out
 - disabling radio in onclick listener shouldn't suppress onchange: Test timed out
+- disconnected form should not submit: assert_false: expected false got true
 
 ### dom/events/Event-dispatch-click.tentative.html
 
@@ -2279,7 +2252,6 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 ### dom/events/Event-dispatch-on-disabled-elements.html
 
-- Calling click() on disabled elements must not dispatch events.: assert_true: .click() must dispatch "click" event on enabled HTMLButtonElement. expected true got false
 - CSS Transitions transitionrun, transitionstart, transitionend events fire on disabled form elements: promise_test: Unhandled rejection with value: object "ReferenceError: getComputedStyle is not defined"
 - CSS Transitions transitioncancel event fires on disabled form elements: promise_test: Unhandled rejection with value: object "ReferenceError: getComputedStyle is not defined"
 - CSS Animation animationstart, animationiteration, animationend fire on disabled form elements: Test timed out
@@ -2344,7 +2316,7 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 - Retarget a shadow-tree relatedTarget: XMLHttpRequest is not defined
 - Reset if target pointed to a shadow tree pre-dispatch: XMLHttpRequest is not defined
 - Reset targets on early return: assert_equals: expected null but got DocumentFragment node with 2 children
-- Reset targets before activation behavior: assert_true: expected true got false
+- Reset targets before activation behavior: assert_equals: expected null but got Element node <input type="checkbox"></input>
 
 ### dom/events/shadow-relatedTarget.html
 

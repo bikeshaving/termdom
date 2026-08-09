@@ -34,6 +34,10 @@ import NWSAPI from "nwsapi";
 import {
 	ARIA_ELEMENT_REFLECTIONS,
 	ARIA_STRING_REFLECTIONS,
+	DOCUMENT_AND_ELEMENT_EVENT_HANDLERS,
+	DOCUMENT_EVENT_HANDLERS,
+	FORWARDED_BODY_EVENT_HANDLERS,
+	GLOBAL_EVENT_HANDLERS,
 	HTML_ELEMENT_REFLECTIONS,
 	HTML_ELEMENT_TAGS,
 	HTML_INTERFACES,
@@ -292,6 +296,7 @@ const kCloningSteps = Symbol("cloning steps");
 const kCloneSingle = Symbol("clone a single node");
 const kDispatchState = Symbol("event dispatch state");
 const kListeners = Symbol("event listener list");
+const kEventHandlerMap = Symbol("event handler map");
 const kGetTheParent = Symbol("get the parent");
 const kSetEventType = Symbol("set event type");
 const kIsMouseEvent = Symbol("is a mouse event");
@@ -1611,6 +1616,8 @@ function defaultPassiveValue(type: string, target: EventTarget): boolean {
 /** An event target: a listener list, and the parent a dispatch walks to. */
 export class EventTarget {
 	#listeners: Listener[] = [];
+	/** Null until this target is given an event handler, which most never are. */
+	#handlers: Map<string, EventHandlerRecord> | null = null;
 
 	addEventListener(
 		type: string,
@@ -1697,6 +1704,16 @@ export class EventTarget {
 	}
 
 	/**
+	 * The event handler map, for the handler IDL attributes. Created only when
+	 * a handler is being set: reading a handler off a target that has none
+	 * allocates nothing.
+	 */
+	[kEventHandlerMap](create: boolean): Map<string, EventHandlerRecord> | null {
+		if (this.#handlers === null && create) this.#handlers = new Map();
+		return this.#handlers;
+	}
+
+	/**
 	 * The target a dispatch reaches next. A bare event target is the end of a
 	 * path; a node hands back its parent.
 	 */
@@ -1715,6 +1732,230 @@ function removeListener(listeners: Listener[], listener: Listener): void {
 	listener.removed = true;
 	const index = listeners.indexOf(listener);
 	if (index !== -1) listeners.splice(index, 1);
+}
+
+/* -------------------------------------------- event handler IDL attributes */
+
+/**
+ * What an event handler attribute holds: a callback, or an object that is not
+ * one.
+ *
+ * Web IDL's EventHandler is a callback type with LegacyTreatNonObjectAsNull,
+ * so anything that is not an object is stored as null, and an object that
+ * turns out not to be callable is stored and throws when the event arrives.
+ */
+type EventHandlerValue = ((event: Event) => unknown) | object;
+
+/**
+ * An event handler: the value the attribute holds, and the listener standing
+ * in for it in its target's listener list.
+ *
+ * The listener is registered at the first non-null assignment and stays
+ * registered across every later one, which is what fixes a handler's place
+ * among the listeners added around it: reassigning `onclick` changes what
+ * runs, never when it runs. A null assignment removes the listener, so a
+ * later assignment takes a new place at the end of the list.
+ */
+interface EventHandlerRecord {
+	value: EventHandlerValue | null;
+	listener: Listener | null;
+}
+
+/** The value an event handler attribute holds, or null where it holds none. */
+function eventHandlerValue(
+	target: EventTarget,
+	type: string,
+): EventHandlerValue | null {
+	const handlers = target[kEventHandlerMap](false);
+	if (handlers === null) return null;
+	return handlers.get(type)?.value ?? null;
+}
+
+/**
+ * Set an event handler attribute: activate the handler on a value, deactivate
+ * it on null.
+ */
+function setEventHandler(
+	target: EventTarget,
+	type: string,
+	value: unknown,
+): void {
+	const handler =
+		typeof value === "function" || (typeof value === "object" && value !== null)
+			? (value as EventHandlerValue)
+			: null;
+	const handlers = target[kEventHandlerMap](handler !== null);
+	if (handlers === null) return;
+	const record = handlers.get(type);
+	if (handler === null) {
+		if (record === undefined) return;
+		record.value = null;
+		if (record.listener !== null) {
+			removeListener(target[kListeners], record.listener);
+			record.listener = null;
+		}
+		return;
+	}
+	if (record !== undefined) {
+		record.value = handler;
+		if (record.listener === null) {
+			record.listener = registerHandlerListener(target, type, record);
+		}
+		return;
+	}
+	const created: EventHandlerRecord = {value: handler, listener: null};
+	handlers.set(type, created);
+	created.listener = registerHandlerListener(target, type, created);
+}
+
+/**
+ * Put the handler's listener in the target's listener list, at the end, where
+ * it stays for as long as the handler is non-null.
+ *
+ * The list is written directly, as the spec's "add an event listener" is: a
+ * handler is not an addEventListener call, and does not go through one.
+ */
+function registerHandlerListener(
+	target: EventTarget,
+	type: string,
+	record: EventHandlerRecord,
+): Listener {
+	const listener: Listener = {
+		type,
+		callback: (event: Event): void => {
+			invokeEventHandler(target, type, record, event);
+		},
+		capture: false,
+		once: false,
+		passive: false,
+		removed: false,
+	};
+	target[kListeners].push(listener);
+	return listener;
+}
+
+/**
+ * An ErrorEvent, which a window's error handler is called with as five
+ * arguments rather than one.
+ *
+ * This DOM defines no ErrorEvent interface -- nothing here reports an error as
+ * an event -- so the test is the shape the interface has, which is what an
+ * ErrorEvent dispatched from outside carries.
+ */
+function isErrorEvent(event: Event): boolean {
+	return (
+		"message" in event &&
+		"filename" in event &&
+		"lineno" in event &&
+		"colno" in event &&
+		"error" in event
+	);
+}
+
+/**
+ * The event handler processing algorithm: call the handler's current value
+ * with the event, and read the answer it hands back as a cancellation.
+ *
+ * A handler that throws reports its exception rather than letting it out into
+ * the dispatch that called it.
+ */
+function invokeEventHandler(
+	target: EventTarget,
+	type: string,
+	record: EventHandlerRecord,
+	event: Event,
+): void {
+	const callback = record.value;
+	if (callback === null) return;
+	// A window's error handler takes an ErrorEvent apart into arguments and
+	// answers a cancellation with true, the inverse of every other handler. A
+	// document's or an element's error handler is an ordinary one.
+	const errorHandling =
+		type === "error" && !(target instanceof Node) && isErrorEvent(event);
+	let result: unknown;
+	try {
+		const called = callback as (...args: unknown[]) => unknown;
+		result = errorHandling
+			? called.call(
+					target,
+					(event as unknown as {message: unknown}).message,
+					(event as unknown as {filename: unknown}).filename,
+					(event as unknown as {lineno: unknown}).lineno,
+					(event as unknown as {colno: unknown}).colno,
+					(event as unknown as {error: unknown}).error,
+				)
+			: called.call(target, event);
+	} catch (error) {
+		reportError(error);
+		return;
+	}
+	if (errorHandling ? result === true : result === false) {
+		setCanceledFlag(event);
+	}
+}
+
+/**
+ * Install one event handler IDL attribute on an interface's prototype.
+ *
+ * On the prototype, once per interface: the accessor pair is the interface's,
+ * and what an instance holds is the handler map it only grows when something
+ * actually sets a handler on it.
+ */
+function installEventHandler(prototype: object, name: string): void {
+	const type = name.slice(2);
+	Object.defineProperty(prototype, name, {
+		get(this: EventTarget): EventHandlerValue | null {
+			return eventHandlerValue(this, type);
+		},
+		set(this: EventTarget, value: unknown): void {
+			setEventHandler(this, type, value);
+		},
+		enumerable: true,
+		configurable: true,
+	});
+}
+
+/**
+ * Install every event handler IDL attribute in a table on an interface's
+ * prototype.
+ */
+export function installEventHandlers(
+	prototype: object,
+	names: readonly string[],
+): void {
+	for (const name of names) installEventHandler(prototype, name);
+}
+
+/** The tables a window's own interface is installed from, which the engine owns. */
+export {GLOBAL_EVENT_HANDLERS, WINDOW_EVENT_HANDLERS} from "./domhtml.ts";
+
+/**
+ * Install an event handler attribute that belongs to the element's window
+ * rather than to the element -- the set a `body` and a `frameset` forward.
+ *
+ * An element whose document has no window has no event handler target at all,
+ * and the algorithm's answer for that is to drop the write and read back null.
+ */
+function installForwardedEventHandler(prototype: object, name: string): void {
+	Object.defineProperty(prototype, name, {
+		get(this: Element): unknown {
+			const view = this[kDocument][kDefaultView] as Record<
+				string,
+				unknown
+			> | null;
+			return view === null ? null : (view[name] ?? null);
+		},
+		set(this: Element, value: unknown): void {
+			const view = this[kDocument][kDefaultView] as Record<
+				string,
+				unknown
+			> | null;
+			if (view === null) return;
+			view[name] = value;
+		},
+		enumerable: true,
+		configurable: true,
+	});
 }
 
 /**
@@ -2012,23 +2253,26 @@ function reportError(error: unknown): void {
  */
 let treeVersion = 0;
 
-const kSync = Symbol("sync indexed properties");
-const kListRoot = Symbol("the tree a collection lists");
+const kSync = Symbol("resynchronize own properties");
+const kListRoot = Symbol("the node a collection lists under");
 
 interface Materializable {
 	[kSync](): void;
-	/** The root of the tree this collection lists, or null when it lists none. */
+	/**
+	 * The node this collection lists the descendants of, or null when it
+	 * lists something no node contains.
+	 */
 	[kListRoot](): Node | null;
 }
 
 /**
- * Live collections that have materialized indexed properties, each with the
- * document whose trees it lists.
+ * The live collections that have materialized own properties.
  *
- * A mutation can only change what a collection over another document holds by
- * moving a node between the two, which adopts the node and so runs in the
- * destination's document. Every other document's collections are left alone,
- * which is what keeps one document's cost its own.
+ * A collection's indexed and named properties are own properties rather than
+ * proxy traps, and those are observable without reading the collection:
+ * Object.getOwnPropertyNames answers with them, and an assignment to an index
+ * is a no-op only where the index is defined. A collection that has ever been
+ * read is held here so that a change to a tree's shape can resynchronize it.
  */
 const materialized: Array<{
 	ref: WeakRef<Materializable>;
@@ -2036,13 +2280,6 @@ const materialized: Array<{
 }> = [];
 let materializedCompactAt = 8;
 
-/**
- * Register a collection whose indexed properties must track the tree.
- *
- * Indexed access is a plain own property, not a proxy trap, so a collection
- * that has ever been indexed into is resynchronized as part of the mutation
- * that would otherwise leave those properties stale.
- */
 function registerMaterialized(
 	collection: Materializable,
 	owner: Node | null,
@@ -2063,27 +2300,64 @@ function registerMaterialized(
 	}
 }
 
+/** Record a change that every live collection must see on its next read. */
+function bumpVersion(): void {
+	treeVersion++;
+}
+
 /**
- * Note a mutation in the tree rooted at `root`.
+ * Record a change to a tree's shape at `point`, and resynchronize what it
+ * moved.
  *
- * The counter every live collection reads is bumped for all of them; the
- * eager resynchronization -- which recomputes a collection to define the
- * indices it gained -- is only for the collections that list this tree. A
- * collection holds the descendants of ITS root, so a mutation in another tree
- * cannot change what it holds: the document's collections do not see a
- * detached subtree being built, nor a shadow tree, nor the node a
- * pseudo-element renders from.
+ * A change to the shape of a tree can move any collection over that tree, and
+ * none of them can rule the change out from what it holds, so each one that
+ * has materialized own properties recomputes here. A collection lists the
+ * descendants of one node, so the ones this reaches are the ones whose node
+ * contains the change: the rest hold what they held, and their own properties
+ * are already exact. This is what keeps the document's collections out of the
+ * trees a document composes but does not contain -- a subtree being built
+ * before it is inserted, a shadow tree, the node a pseudo-element renders
+ * from.
  */
-function bumpVersion(document: Document, root: Node): void {
+function bumpTreeVersion(document: Document, point: Node): void {
 	treeVersion++;
 	for (let i = 0; i < materialized.length; i++) {
 		const entry = materialized[i];
 		if (entry.document !== null && entry.document !== document) continue;
 		const collection = entry.ref.deref();
 		if (collection === undefined) continue;
-		const listRoot = rootMethod.call(collection);
-		if (listRoot !== null && listRoot !== root) continue;
+		const root = rootMethod.call(collection);
+		if (root !== null && !isInclusiveAncestor(root, point)) continue;
 		syncMethod.call(collection);
+	}
+}
+
+/**
+ * Resynchronize the collections an attribute change can have moved.
+ *
+ * An attribute is an input to three kinds of collection: the element's own
+ * attribute map, the token lists over its attributes, and the collections
+ * cached on the trees it sits in, which are asked about the one element that
+ * changed rather than walked. A collection of children, of rows, of cells --
+ * anything an attribute is no input to -- is left alone.
+ */
+function syncAttributeCollections(element: Element, localName: string): void {
+	const map = element[kAttributesMap];
+	if (map !== null) syncMethod.call(map);
+	const classList = element[kClassList];
+	if (classList !== null) syncMethod.call(classList);
+	const lists = element[kTokenLists];
+	if (lists !== null) {
+		for (const list of lists.values()) syncMethod.call(list);
+	}
+	for (let node: Node | null = element; node !== null; node = node[kParent]) {
+		const cache = (node as unknown as Record<symbol, unknown>)[
+			kCollectionCaches
+		] as Map<string, HTMLCollection> | undefined;
+		if (cache === undefined) continue;
+		for (const collection of cache.values()) {
+			collection[kAttributeSync](element, localName);
+		}
 	}
 }
 
@@ -2773,7 +3047,12 @@ function insertNode(
 		) {
 			signalASlotChange(parent);
 		}
-		assignSlottablesForTree(getRoot(inserted));
+		// A slot assigns the host's children, which this insertion left alone
+		// unless it brought slots of its own into the tree: those are the only
+		// assignments in the root that the insertion can have changed.
+		if (hasInclusiveDescendantSlot(inserted)) {
+			assignSlottablesForTree(getRoot(inserted));
+		}
 		for (const descendant of shadowIncludingInclusiveDescendants(inserted)) {
 			descendant[kInsertionSteps]();
 			if (!descendant.isConnected) continue;
@@ -2786,7 +3065,7 @@ function insertNode(
 			}
 		}
 	}
-	bumpVersion(parent[kDocument], getRoot(parent));
+	bumpTreeVersion(parent[kDocument], parent);
 	if (!suppressObservers) {
 		queueTreeMutationRecord(parent, nodes, [], previousSibling, child);
 	}
@@ -3030,7 +3309,7 @@ function removeNode(node: Node, suppressObservers = false): void {
 			);
 		}
 	}
-	bumpVersion(parent[kDocument], getRoot(parent));
+	bumpTreeVersion(parent[kDocument], parent);
 	addTransientObservers(node, parent);
 	if (!suppressObservers) {
 		queueTreeMutationRecord(
@@ -3571,14 +3850,19 @@ function queueTreeMutationRecord(
 /* ------------------------------------------------------- live collections */
 
 const kEnsure = Symbol("recompute if stale");
+const kComputed = Symbol("the list as last computed");
+const kAttributeSync = Symbol("resynchronize after an attribute change");
 
 /**
  * The list behind a live NodeList or HTMLCollection.
  *
- * Indexed access is an own accessor property rather than a proxy trap, so the
- * set of defined indices is resynchronized whenever the tree changes: a
- * collection that has been read once is registered, and every later mutation
- * recomputes it.
+ * The list is recomputed on read: a collection carries the tree version its
+ * list was computed at, and any read whose version is older recomputes first.
+ * Indexed access is an own accessor property rather than a proxy trap, and
+ * those accessors run the same check before answering, so the collection is
+ * as live as reading it can tell. The own properties themselves -- which
+ * indices and names are defined -- are what a change to a tree's shape
+ * resynchronizes, since those can be observed without a read.
  */
 abstract class LiveList implements Materializable {
 	#version = -1;
@@ -3624,14 +3908,30 @@ abstract class LiveList implements Materializable {
 	}
 
 	[kSync](): void {
-		if (!this.#registered) return;
+		if (!this.#registered || this.#version === treeVersion) return;
 		this.#version = treeVersion;
 		this.#items = this.compute();
 		this.#materialize();
 	}
 
+	/** The list as it was last computed, without recomputing it. */
+	[kComputed](): Node[] {
+		return this.#items;
+	}
+
 	[kListRoot](): Node | null {
-		return this.#owner === null ? null : getRoot(this.#owner);
+		return this.#owner;
+	}
+
+	/**
+	 * Bring the collection back in step with an attribute that changed.
+	 *
+	 * An attribute is an input to what a collection holds -- a name it answers
+	 * to, a class it collects -- so the list is recomputed unless a collection
+	 * can say that this attribute on this element is none of its business.
+	 */
+	[kAttributeSync](_element: Element, _localName: string): void {
+		this[kSync]();
 	}
 
 	#materialize(): void {
@@ -3832,29 +4132,77 @@ function elementChildren(parent: Node): Element[] {
 	return elements;
 }
 
+/**
+ * The elements of a tree that pass a test, cached on the tree they walk.
+ *
+ * The test answers for one element, so an attribute change asks about the one
+ * element that changed rather than walking the tree again: a collection that
+ * element neither joined nor left holds what it held before.
+ */
+class MatchingCollection extends HTMLCollection {
+	#root: Node;
+	#watched: string | null;
+	#matches: (element: Element) => boolean;
+	#members = new Set<Node>();
+	#membersOf: Node[] | null = null;
+
+	/**
+	 * @param watched - the attribute the test reads, if it reads one.
+	 */
+	constructor(
+		root: Node,
+		watched: string | null,
+		matches: (element: Element) => boolean,
+	) {
+		super(() => {
+			const found: Element[] = [];
+			for (const element of descendantElements(root, [])) {
+				if (matches(element)) found.push(element);
+			}
+			return found;
+		}, root);
+		this.#root = root;
+		this.#watched = watched;
+		this.#matches = matches;
+	}
+
+	override [kAttributeSync](element: Element, localName: string): void {
+		// A collection answers to the id and the name of what it holds, so a
+		// change to either moves its named properties whatever the test says.
+		if (localName !== "id" && localName !== "name") {
+			if (localName !== this.#watched) return;
+			const items = this[kComputed]();
+			if (this.#membersOf !== items) {
+				this.#members = new Set(items);
+				this.#membersOf = items;
+			}
+			if (
+				this.#matches(element) === this.#members.has(element) ||
+				!isInclusiveAncestor(this.#root, element)
+			) {
+				return;
+			}
+		}
+		this[kSync]();
+	}
+}
+
 function elementsByTagName(root: Node, qualifiedName: string): HTMLCollection {
 	const cache = collectionCache(root);
 	const key = `tag:${qualifiedName}`;
 	let collection = cache.get(key);
 	if (collection === undefined) {
 		const lowered = asciiLowercase(qualifiedName);
-		collection = new HTMLCollection(() => {
-			const all = descendantElements(root, []);
-			if (qualifiedName === "*") return all;
-			const found: Element[] = [];
-			for (const element of all) {
-				const name =
-					element[kPrefix] === null
-						? element[kLocalName]
-						: `${element[kPrefix]}:${element[kLocalName]}`;
-				if (element[kNamespace] === HTML_NAMESPACE) {
-					if (name === lowered) found.push(element);
-				} else if (name === qualifiedName) {
-					found.push(element);
-				}
-			}
-			return found;
-		}, root);
+		collection = new MatchingCollection(root, null, (element) => {
+			if (qualifiedName === "*") return true;
+			const name =
+				element[kPrefix] === null
+					? element[kLocalName]
+					: `${element[kPrefix]}:${element[kLocalName]}`;
+			return element[kNamespace] === HTML_NAMESPACE
+				? name === lowered
+				: name === qualifiedName;
+		});
 		collection[kEnsure]();
 		cache.set(key, collection);
 	}
@@ -3871,19 +4219,34 @@ function elementsByTagNameNS(
 	const key = `tagns:${ns}:${localName}`;
 	let collection = cache.get(key);
 	if (collection === undefined) {
-		collection = new HTMLCollection(() => {
-			const found: Element[] = [];
-			for (const element of descendantElements(root, [])) {
-				if (ns !== "*" && element[kNamespace] !== ns) continue;
-				if (localName !== "*" && element[kLocalName] !== localName) continue;
-				found.push(element);
-			}
-			return found;
-		}, root);
+		collection = new MatchingCollection(
+			root,
+			null,
+			(element) =>
+				(ns === "*" || element[kNamespace] === ns) &&
+				(localName === "*" || element[kLocalName] === localName),
+		);
 		collection[kEnsure]();
 		cache.set(key, collection);
 	}
 	return collection;
+}
+
+/**
+ * The tokens of an element's class attribute.
+ *
+ * The parse is kept on the element and thrown away by the class attribute's
+ * change steps, so a walk that asks every element for its classes pays for
+ * the attributes that changed rather than for the ones it passes.
+ */
+function classTokens(element: Element): ReadonlySet<string> {
+	let tokens = element[kClassTokens];
+	if (tokens === null) {
+		const value = element.getAttribute("class");
+		tokens = new Set(value === null ? [] : splitOnAsciiWhitespace(value));
+		element[kClassTokens] = tokens;
+	}
+	return tokens;
 }
 
 function elementsByClassName(root: Node, classNames: string): HTMLCollection {
@@ -3896,28 +4259,22 @@ function elementsByClassName(root: Node, classNames: string): HTMLCollection {
 			root[kDocument][kMode] === "quirks"
 				? classes.map((name) => asciiLowercase(name))
 				: classes;
-		collection = new HTMLCollection(() => {
-			const found: Element[] = [];
-			if (classes.length === 0) return found;
+		collection = new MatchingCollection(root, "class", (element) => {
+			if (classes.length === 0) return false;
 			const isQuirks = root[kDocument][kMode] === "quirks";
-			const wanted = isQuirks ? quirks : classes;
-			for (const element of descendantElements(root, [])) {
+			let tokens: ReadonlySet<string>;
+			if (isQuirks) {
 				const value = element.getAttribute("class");
-				if (value === null) continue;
-				const tokens = splitOnAsciiWhitespace(
-					isQuirks ? asciiLowercase(value) : value,
-				);
-				let all = true;
-				for (const name of wanted) {
-					if (!tokens.includes(name)) {
-						all = false;
-						break;
-					}
-				}
-				if (all) found.push(element);
+				if (value === null) return false;
+				tokens = new Set(splitOnAsciiWhitespace(asciiLowercase(value)));
+			} else {
+				tokens = classTokens(element);
 			}
-			return found;
-		}, root);
+			for (const name of isQuirks ? quirks : classes) {
+				if (!tokens.has(name)) return false;
+			}
+			return true;
+		});
 		collection[kEnsure]();
 		cache.set(key, collection);
 	}
@@ -4251,7 +4608,7 @@ function replaceData(
 		oldValue.slice(0, offset) + data + oldValue.slice(offset + size);
 	liveRangeReplaceDataSteps(node, offset, size, data.length);
 	queueCharacterDataMutationRecord(node, oldValue);
-	bumpVersion(node[kDocument], getRoot(node));
+	bumpTreeVersion(node[kDocument], node);
 	const parent = node[kParent];
 	if (parent !== null) parent[kChildrenChanged]();
 }
@@ -4684,7 +5041,8 @@ function changeAttribute(attribute: Attr, value: string): void {
 		attribute[kNamespace],
 	);
 	attribute[kValue] = value;
-	bumpVersion(element[kDocument], getRoot(element));
+	bumpVersion();
+	syncAttributeCollections(element, attribute[kLocalName]);
 }
 
 function appendAttribute(element: Element, attribute: Attr): void {
@@ -4697,7 +5055,8 @@ function appendAttribute(element: Element, attribute: Attr): void {
 	);
 	element[kAttributeList].push(attribute);
 	attribute[kOwnerElement] = element;
-	bumpVersion(element[kDocument], getRoot(element));
+	bumpVersion();
+	syncAttributeCollections(element, attribute[kLocalName]);
 }
 
 function removeAttributeNode(element: Element, attribute: Attr): void {
@@ -4712,7 +5071,8 @@ function removeAttributeNode(element: Element, attribute: Attr): void {
 	const index = list.indexOf(attribute);
 	if (index !== -1) list.splice(index, 1);
 	attribute[kOwnerElement] = null;
-	bumpVersion(element[kDocument], getRoot(element));
+	bumpVersion();
+	syncAttributeCollections(element, attribute[kLocalName]);
 }
 
 function replaceAttribute(
@@ -4731,7 +5091,8 @@ function replaceAttribute(
 	list[list.indexOf(oldAttribute)] = newAttribute;
 	newAttribute[kOwnerElement] = element;
 	oldAttribute[kOwnerElement] = null;
-	bumpVersion(element[kDocument], getRoot(element));
+	bumpVersion();
+	syncAttributeCollections(element, newAttribute[kLocalName]);
 }
 
 /** Queue a record for a change to an element's attribute. */
@@ -4897,6 +5258,7 @@ const kCustomState = Symbol("custom element state");
 const kDefinition = Symbol("element definition");
 const kIsValue = Symbol("is value");
 const kClassList = Symbol("classList");
+const kClassTokens = Symbol("the parsed class attribute");
 const kAttributesMap = Symbol("attributes");
 const kTokenLists = Symbol("reflected token lists");
 const kAriaElements = Symbol("explicitly set attr-elements");
@@ -4960,6 +5322,7 @@ export class Element extends Node {
 	[kDefinition]: CustomElementDefinition | null = null;
 	[kIsValue]: string | null = null;
 	[kClassList]: DOMTokenList | null = null;
+	[kClassTokens]: Set<string> | null = null;
 	[kTokenLists]: Map<string, DOMTokenList> | null = null;
 	[kAriaElements]: Map<string, Element[]> | null = null;
 	[kDataset]: DOMStringMap | null = null;
@@ -5445,6 +5808,9 @@ export class Element extends Node {
 		value: string | null,
 		namespace: string | null,
 	): void {
+		if (localName === "class" && namespace === null) {
+			this[kClassTokens] = null;
+		}
 		if (localName === "id" && namespace === null) {
 			const root = getRoot(this);
 			if (root.nodeType === DOCUMENT_NODE) {
@@ -7066,9 +7432,10 @@ function slottableName(slottable: Slottable): string {
 }
 
 function hasInclusiveDescendantSlot(node: Node): boolean {
-	if (node instanceof HTMLSlotElement) return true;
-	for (const descendant of descendants(node)) {
-		if (descendant instanceof HTMLSlotElement) return true;
+	let current: Node | null = node;
+	while (current !== null) {
+		if (current instanceof HTMLSlotElement) return true;
+		current = nextInTree(current, node);
 	}
 	return false;
 }
@@ -16134,3 +16501,33 @@ ceReactions(HTMLDialogElement.prototype, [
 	"show",
 	"showModal",
 ]);
+
+/**
+ * The event handler IDL attributes, on the interfaces that include each mixin.
+ *
+ * GlobalEventHandlers and DocumentAndElementEventHandlers are included by the
+ * three element interfaces HTML, SVG and MathML define and by Document; the
+ * WindowEventHandlers set belongs to the window, which the engine builds, and
+ * is forwarded from `body` and `frameset` to it.
+ *
+ * Only the content-attribute half of the feature is missing: `onclick="..."`
+ * in markup is a function compiled from source, and this DOM never executes
+ * script.
+ */
+for (const prototype of [
+	HTMLElement.prototype,
+	SVGElement.prototype,
+	MathMLElement.prototype,
+	Document.prototype,
+]) {
+	installEventHandlers(prototype, GLOBAL_EVENT_HANDLERS);
+	installEventHandlers(prototype, DOCUMENT_AND_ELEMENT_EVENT_HANDLERS);
+}
+
+installEventHandlers(Document.prototype, DOCUMENT_EVENT_HANDLERS);
+
+for (const constructor of [HTMLBodyElement, HTMLFrameSetElement]) {
+	for (const name of FORWARDED_BODY_EVENT_HANDLERS) {
+		installForwardedEventHandler(constructor.prototype, name);
+	}
+}

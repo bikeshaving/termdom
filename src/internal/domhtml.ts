@@ -1126,3 +1126,178 @@ export const ARIA_ELEMENT_REFLECTIONS: ReadonlyArray<
 	["ariaLabelledByElements", "aria-labelledby", true],
 	["ariaOwnsElements", "aria-owns", true],
 ];
+
+/* ------------------------------------------- event handler IDL attributes */
+
+/**
+ * The GlobalEventHandlers mixin: the event handler IDL attributes every
+ * element, document and window carries.
+ *
+ * The set is the HTML Standard's table in full, plus the partials other
+ * specifications add to the same mixin: Pointer Events, CSS Animations, CSS
+ * Transitions and the Selection API. Membership is the attribute surface a
+ * script probes with `"onclick" in element`, not a claim that the event
+ * fires here -- a table with holes in it answers that probe wrongly, which is
+ * the whole reason the attributes exist.
+ *
+ * A handler's event type is its name without the `on`; every name in these
+ * tables has a lowercase type, so no mapping is needed.
+ *
+ * The partials of specifications this DOM has no notion of at all -- Touch
+ * Events, DeviceOrientation, Media Capture, the scroll-snap events -- are not
+ * here: they would name event types nothing in the engine can ever produce.
+ */
+export const GLOBAL_EVENT_HANDLERS: readonly string[] = [
+	"onabort",
+	"onanimationcancel",
+	"onanimationend",
+	"onanimationiteration",
+	"onanimationstart",
+	"onauxclick",
+	"onbeforeinput",
+	"onbeforematch",
+	"onbeforetoggle",
+	"onblur",
+	"oncancel",
+	"oncanplay",
+	"oncanplaythrough",
+	"onchange",
+	"onclick",
+	"onclose",
+	"oncommand",
+	"oncontextlost",
+	"oncontextmenu",
+	"oncontextrestored",
+	"oncuechange",
+	"ondblclick",
+	"ondrag",
+	"ondragend",
+	"ondragenter",
+	"ondragleave",
+	"ondragover",
+	"ondragstart",
+	"ondrop",
+	"ondurationchange",
+	"onemptied",
+	"onended",
+	"onerror",
+	"onfocus",
+	"onformdata",
+	"ongotpointercapture",
+	"oninput",
+	"oninvalid",
+	"onkeydown",
+	"onkeypress",
+	"onkeyup",
+	"onload",
+	"onloadeddata",
+	"onloadedmetadata",
+	"onloadstart",
+	"onlostpointercapture",
+	"onmousedown",
+	"onmouseenter",
+	"onmouseleave",
+	"onmousemove",
+	"onmouseout",
+	"onmouseover",
+	"onmouseup",
+	"onpause",
+	"onplay",
+	"onplaying",
+	"onpointercancel",
+	"onpointerdown",
+	"onpointerenter",
+	"onpointerleave",
+	"onpointermove",
+	"onpointerout",
+	"onpointerover",
+	"onpointerrawupdate",
+	"onpointerup",
+	"onprogress",
+	"onratechange",
+	"onreset",
+	"onresize",
+	"onscroll",
+	"onscrollend",
+	"onsecuritypolicyviolation",
+	"onseeked",
+	"onseeking",
+	"onselect",
+	"onselectionchange",
+	"onselectstart",
+	"onslotchange",
+	"onstalled",
+	"onsubmit",
+	"onsuspend",
+	"ontimeupdate",
+	"ontoggle",
+	"ontransitioncancel",
+	"ontransitionend",
+	"ontransitionrun",
+	"ontransitionstart",
+	"onvolumechange",
+	"onwaiting",
+	"onwheel",
+];
+
+/**
+ * The WindowEventHandlers mixin: the handlers a window carries, and that a
+ * `body` and a `frameset` forward to their window.
+ */
+export const WINDOW_EVENT_HANDLERS: readonly string[] = [
+	"onafterprint",
+	"onbeforeprint",
+	"onbeforeunload",
+	"onhashchange",
+	"onlanguagechange",
+	"onmessage",
+	"onmessageerror",
+	"onoffline",
+	"ononline",
+	"onpagehide",
+	"onpagereveal",
+	"onpageshow",
+	"onpageswap",
+	"onpopstate",
+	"onrejectionhandled",
+	"onstorage",
+	"onunhandledrejection",
+	"onunload",
+];
+
+/** The DocumentAndElementEventHandlers mixin: the clipboard's three. */
+export const DOCUMENT_AND_ELEMENT_EVENT_HANDLERS: readonly string[] = [
+	"oncopy",
+	"oncut",
+	"onpaste",
+];
+
+/**
+ * The handlers a document carries beyond the mixins: its own two, and the
+ * pair the Fullscreen API adds -- an API the engine implements.
+ */
+export const DOCUMENT_EVENT_HANDLERS: readonly string[] = [
+	"onfullscreenchange",
+	"onfullscreenerror",
+	"onreadystatechange",
+	"onvisibilitychange",
+];
+
+/**
+ * The handlers a `body` and a `frameset` do not own: setting one of these
+ * sets it on the element's window instead, and getting one reads it back from
+ * there. An element in a document with no window drops the write, which is
+ * what the algorithm's null event handler target does.
+ *
+ * WindowEventHandlers is forwarded whole; these six are the GlobalEventHandlers
+ * members the HTML Standard names alongside it.
+ */
+export const FORWARDED_BODY_EVENT_HANDLERS: readonly string[] = [
+	"onblur",
+	"onerror",
+	"onfocus",
+	"onload",
+	"onresize",
+	"onscroll",
+	...WINDOW_EVENT_HANDLERS,
+];
