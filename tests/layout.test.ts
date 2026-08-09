@@ -1,5 +1,4 @@
 import {test, expect} from "@b9g/libuild/test";
-import {JSDOM} from "jsdom";
 import {LayoutEngine, kInvalidateInlineRun} from "../src/internal/layout.js";
 import {StyleManager} from "../src/internal/styles.js";
 import {TermDOM, kLayoutEngine} from "../src/internal/termdom.js";
@@ -8,25 +7,31 @@ import {
 	createPseudoNode,
 } from "../src/internal/composition.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
+import {createDocumentWindow} from "../src/internal/termdom.js";
+
+/** A document of this DOM, from markup, displayed in a window of its own. */
+function documentWindow(html: string) {
+	return {window: createDocumentWindow(html)};
+}
 
 function createLayoutEngine(html: string = "<div></div>") {
-	const jsdom = new JSDOM(`<!DOCTYPE html><html><head><style>
+	const dom = documentWindow(`<!DOCTYPE html><html><head><style>
 		* { margin: 0; padding: 0; box-sizing: border-box; }
 		html, body { width: 100%; }
 		body { min-height: 100%; }
 	</style></head><body>${html}</body></html>`);
 	// Setup terminal-specific getComputedStyle
-	const styleManager = new StyleManager(jsdom.window);
-	const layoutEngine = new LayoutEngine(jsdom.window);
+	const styleManager = new StyleManager(dom.window);
+	const layoutEngine = new LayoutEngine(dom.window);
 	styleManager.setLayoutEngine(layoutEngine);
 
 	// Setup MutationObserver to simulate TermDOM behavior
-	const observer = new jsdom.window.MutationObserver((mutations) => {
+	const observer = new dom.window.MutationObserver((mutations) => {
 		styleManager.handleMutations(mutations);
 		layoutEngine.handleMutations(mutations);
 	});
 
-	observer.observe(jsdom.window.document.documentElement, {
+	observer.observe(dom.window.document.documentElement, {
 		childList: true,
 		subtree: true,
 		attributes: true,
@@ -46,15 +51,15 @@ function createLayoutEngine(html: string = "<div></div>") {
 		layoutEngine.calculateLayout();
 	};
 
-	return {jsdom, layoutEngine, observer, processMutationsAndLayout};
+	return {dom, layoutEngine, observer, processMutationsAndLayout};
 }
 
 // CSS-to-Yoga property mapping tests
 test("styleYogaNode - basic layout", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine} = createLayoutEngine(
 		`<div style="width: 100px; height: 50px;"></div>`,
 	);
-	const div = jsdom.window.document.querySelector("div")!;
+	const div = dom.window.document.querySelector("div")!;
 	const rect = layoutEngine.getRect(div);
 
 	// Should have valid rect (exact values depend on CSS parsing)
@@ -64,10 +69,10 @@ test("styleYogaNode - basic layout", () => {
 });
 
 test("styleYogaNode - percentage dimensions", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine} = createLayoutEngine(
 		`<div style="width: 50%;"></div>`,
 	);
-	const div = jsdom.window.document.querySelector("div")!;
+	const div = dom.window.document.querySelector("div")!;
 	const rect = layoutEngine.getRect(div);
 
 	// Should handle percentage (exact calculation depends on parent sizing)
@@ -76,10 +81,10 @@ test("styleYogaNode - percentage dimensions", () => {
 });
 
 test("styleYogaNode - margins", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine} = createLayoutEngine(
 		`<div style="margin: 10px;"></div>`,
 	);
-	const div = jsdom.window.document.querySelector("div")!;
+	const div = dom.window.document.querySelector("div")!;
 	const rect = layoutEngine.getRect(div);
 
 	// Should handle margin properties (exact positioning depends on layout calculation)
@@ -87,14 +92,14 @@ test("styleYogaNode - margins", () => {
 });
 
 test("styleYogaNode - flexbox container", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(`
+	const {dom, layoutEngine} = createLayoutEngine(`
 		<div style="display: flex;">
 			<div style="flex: 1;"></div>
 			<div style="flex: 2;"></div>
 		</div>
 	`);
 
-	const container = jsdom.window.document.querySelector("div")!;
+	const container = dom.window.document.querySelector("div")!;
 	const children = Array.from(container.children);
 
 	const child1Rect = layoutEngine.getRect(children[0] as Element);
@@ -108,9 +113,9 @@ test("styleYogaNode - flexbox container", () => {
 
 // Tree construction tests
 test("addNode - basic element creation", () => {
-	const {jsdom, layoutEngine, processMutationsAndLayout} = createLayoutEngine();
-	const div = jsdom.window.document.createElement("div");
-	jsdom.window.document.body.appendChild(div);
+	const {dom, layoutEngine, processMutationsAndLayout} = createLayoutEngine();
+	const div = dom.window.document.createElement("div");
+	dom.window.document.body.appendChild(div);
 
 	// Process mutations and calculate layout
 	processMutationsAndLayout();
@@ -121,12 +126,12 @@ test("addNode - basic element creation", () => {
 });
 
 test("addNode - nested elements", () => {
-	const {jsdom, layoutEngine, processMutationsAndLayout} = createLayoutEngine();
-	const parent = jsdom.window.document.createElement("div");
-	const child = jsdom.window.document.createElement("span");
+	const {dom, layoutEngine, processMutationsAndLayout} = createLayoutEngine();
+	const parent = dom.window.document.createElement("div");
+	const child = dom.window.document.createElement("span");
 
 	parent.appendChild(child);
-	jsdom.window.document.body.appendChild(parent);
+	dom.window.document.body.appendChild(parent);
 
 	// Process mutations and calculate layout
 	processMutationsAndLayout();
@@ -137,10 +142,10 @@ test("addNode - nested elements", () => {
 });
 
 test("addNode - text nodes", () => {
-	const {jsdom, layoutEngine, processMutationsAndLayout} = createLayoutEngine();
-	const div = jsdom.window.document.createElement("div");
+	const {dom, layoutEngine, processMutationsAndLayout} = createLayoutEngine();
+	const div = dom.window.document.createElement("div");
 	div.textContent = "Hello world";
-	jsdom.window.document.body.appendChild(div);
+	dom.window.document.body.appendChild(div);
 
 	// Process mutations and calculate layout
 	processMutationsAndLayout();
@@ -152,14 +157,14 @@ test("addNode - text nodes", () => {
 
 // Inline run tests
 test("inline elements join runs correctly", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(`
+	const {dom, layoutEngine} = createLayoutEngine(`
 		<div>
 			<span>first</span><span>second</span>
 		</div>
 	`);
 
-	const container = jsdom.window.document.querySelector("div")!;
-	const _spans = Array.from(jsdom.window.document.querySelectorAll("span"));
+	const container = dom.window.document.querySelector("div")!;
+	const _spans = Array.from(dom.window.document.querySelectorAll("span"));
 
 	// Container should have rect
 	expect(layoutEngine.getRect(container)).not.toBeNull();
@@ -169,14 +174,14 @@ test("inline elements join runs correctly", () => {
 });
 
 test("block elements have separate yoga nodes", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(`
+	const {dom, layoutEngine} = createLayoutEngine(`
 		<div>
 			<div>first block</div>
 			<div>second block</div>
 		</div>
 	`);
 
-	const divs = Array.from(jsdom.window.document.querySelectorAll("div"));
+	const divs = Array.from(dom.window.document.querySelectorAll("div"));
 	const innerDivs = divs.slice(1); // Skip the container div
 
 	// Each block div should have its own rect
@@ -186,10 +191,10 @@ test("block elements have separate yoga nodes", () => {
 
 // Mutation handling tests
 test("style changes trigger layout updates", () => {
-	const {jsdom, layoutEngine, processMutationsAndLayout} = createLayoutEngine(
+	const {dom, layoutEngine, processMutationsAndLayout} = createLayoutEngine(
 		`<div style="width: 100px;"></div>`,
 	);
-	const div = jsdom.window.document.querySelector("div")!;
+	const div = dom.window.document.querySelector("div")!;
 
 	// Initial rect
 	let rect = layoutEngine.getRect(div);
@@ -205,11 +210,11 @@ test("style changes trigger layout updates", () => {
 });
 
 test("element removal cleans up yoga nodes", () => {
-	const {jsdom, layoutEngine, processMutationsAndLayout} = createLayoutEngine(
+	const {dom, layoutEngine, processMutationsAndLayout} = createLayoutEngine(
 		`<div><span>test</span></div>`,
 	);
-	const div = jsdom.window.document.querySelector("div")!;
-	const span = jsdom.window.document.querySelector("span")!;
+	const div = dom.window.document.querySelector("div")!;
+	const span = dom.window.document.querySelector("span")!;
 
 	// Both should have rects initially
 	expect(layoutEngine.getRect(div)).not.toBeNull();
@@ -226,10 +231,10 @@ test("element removal cleans up yoga nodes", () => {
 
 // Edge cases
 test("display none elements", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine} = createLayoutEngine(
 		`<div style="display: none;"></div>`,
 	);
-	const div = jsdom.window.document.querySelector("div")!;
+	const div = dom.window.document.querySelector("div")!;
 
 	const rect = layoutEngine.getRect(div);
 	// Should still have a rect but with zero dimensions or be positioned off-screen
@@ -238,10 +243,10 @@ test("display none elements", () => {
 });
 
 test("resize updates layout", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine} = createLayoutEngine(
 		`<div style="width: 100%;"></div>`,
 	);
-	const div = jsdom.window.document.querySelector("div")!;
+	const div = dom.window.document.querySelector("div")!;
 
 	// Initial size
 	layoutEngine.resize(200, 100);
@@ -258,37 +263,37 @@ test("resize updates layout", () => {
 
 // Static inline run tests
 test("isInlineRunHead - single inline element", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(`<span>text</span>`);
-	const span = jsdom.window.document.querySelector("span")!;
+	const {dom, layoutEngine} = createLayoutEngine(`<span>text</span>`);
+	const span = dom.window.document.querySelector("span")!;
 
 	expect(layoutEngine.isInlineRunHead(span)).toBe(true);
 });
 
 test("isInlineRunHead - first of multiple inline elements", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine} = createLayoutEngine(
 		`<span>first</span><span>second</span>`,
 	);
-	const firstSpan = jsdom.window.document.querySelector("span")!;
+	const firstSpan = dom.window.document.querySelector("span")!;
 
 	expect(layoutEngine.isInlineRunHead(firstSpan)).toBe(true);
 });
 
 test("isInlineRunHead - second of multiple inline elements", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine} = createLayoutEngine(
 		`<span>first</span><span>second</span>`,
 	);
-	const spans = Array.from(jsdom.window.document.querySelectorAll("span"));
+	const spans = Array.from(dom.window.document.querySelectorAll("span"));
 
 	expect(layoutEngine.isInlineRunHead(spans[1])).toBe(false);
 });
 
 test("isInlineRunHead - text node as head", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine} = createLayoutEngine(
 		`Text content <span>element</span>`,
 	);
-	const walker = jsdom.window.document.createTreeWalker(
-		jsdom.window.document.body,
-		jsdom.window.NodeFilter.SHOW_TEXT,
+	const walker = dom.window.document.createTreeWalker(
+		dom.window.document.body,
+		dom.window.NodeFilter.SHOW_TEXT,
 	);
 	let textNode: Text | null = null;
 	let node;
@@ -303,12 +308,12 @@ test("isInlineRunHead - text node as head", () => {
 });
 
 test("isInlineRunHead - text node not head", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine} = createLayoutEngine(
 		`<span>element</span> text content`,
 	);
-	const walker = jsdom.window.document.createTreeWalker(
-		jsdom.window.document.body,
-		jsdom.window.NodeFilter.SHOW_TEXT,
+	const walker = dom.window.document.createTreeWalker(
+		dom.window.document.body,
+		dom.window.NodeFilter.SHOW_TEXT,
 	);
 	let textNode: Text | null = null;
 	let node;
@@ -323,51 +328,51 @@ test("isInlineRunHead - text node not head", () => {
 });
 
 test("isInlineRunHead - inline in flex container", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine} = createLayoutEngine(
 		`<div style="display: flex"><span>item</span></div>`,
 	);
-	const span = jsdom.window.document.querySelector("span")!;
+	const span = dom.window.document.querySelector("span")!;
 
 	expect(layoutEngine.isInlineRunHead(span)).toBe(true);
 });
 
 test("isInlineRunHead - multiple inlines in flex container", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine} = createLayoutEngine(
 		`<div style="display: flex"><span>first</span><span>second</span></div>`,
 	);
-	const spans = Array.from(jsdom.window.document.querySelectorAll("span"));
+	const spans = Array.from(dom.window.document.querySelectorAll("span"));
 
 	expect(layoutEngine.isInlineRunHead(spans[0])).toBe(true);
 	expect(layoutEngine.isInlineRunHead(spans[1])).toBe(true); // Each flex item is its own head
 });
 
 test("isInlineRunHead - block element breaks run", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine} = createLayoutEngine(
 		`<span>first</span><div>block</div><span>after</span>`,
 	);
-	const spans = Array.from(jsdom.window.document.querySelectorAll("span"));
+	const spans = Array.from(dom.window.document.querySelectorAll("span"));
 
 	expect(layoutEngine.isInlineRunHead(spans[0])).toBe(true); // First run head
 	expect(layoutEngine.isInlineRunHead(spans[1])).toBe(true); // New run head after block
 });
 
 test("findInlineRunHead - simple case", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine} = createLayoutEngine(
 		`<span>first</span><span>second</span>`,
 	);
-	const spans = Array.from(jsdom.window.document.querySelectorAll("span"));
+	const spans = Array.from(dom.window.document.querySelectorAll("span"));
 
 	expect(layoutEngine.findInlineRunHead(spans[0])).toBe(spans[0]); // Head finds itself
 	expect(layoutEngine.findInlineRunHead(spans[1])).toBe(spans[0]); // Second finds first
 });
 
 test("findInlineRunHead - text node head", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine} = createLayoutEngine(
 		`Text content <span>element</span>`,
 	);
-	const walker = jsdom.window.document.createTreeWalker(
-		jsdom.window.document.body,
-		jsdom.window.NodeFilter.SHOW_TEXT,
+	const walker = dom.window.document.createTreeWalker(
+		dom.window.document.body,
+		dom.window.NodeFilter.SHOW_TEXT,
 	);
 	let textNode: Text | null = null;
 	let node;
@@ -377,19 +382,19 @@ test("findInlineRunHead - text node head", () => {
 			break;
 		}
 	}
-	const span = jsdom.window.document.querySelector("span")!;
+	const span = dom.window.document.querySelector("span")!;
 
 	expect(layoutEngine.findInlineRunHead(textNode!)).toBe(textNode); // Text head finds itself
 	expect(layoutEngine.findInlineRunHead(span)).toBe(textNode); // Element finds text head
 });
 
 test("findInlineRunHead - mixed content", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine} = createLayoutEngine(
 		`Text <span>element</span> more text <em>emphasis</em>`,
 	);
-	const walker = jsdom.window.document.createTreeWalker(
-		jsdom.window.document.body,
-		jsdom.window.NodeFilter.SHOW_TEXT,
+	const walker = dom.window.document.createTreeWalker(
+		dom.window.document.body,
+		dom.window.NodeFilter.SHOW_TEXT,
 	);
 	let textNode: Text | null = null;
 	let moreText: Text | null = null;
@@ -402,8 +407,8 @@ test("findInlineRunHead - mixed content", () => {
 			moreText = node as Text;
 		}
 	}
-	const span = jsdom.window.document.querySelector("span")!;
-	const em = jsdom.window.document.querySelector("em")!;
+	const span = dom.window.document.querySelector("span")!;
+	const em = dom.window.document.querySelector("em")!;
 
 	expect(layoutEngine.findInlineRunHead(em)).toBe(textNode); // All should find the first text node as head
 	expect(layoutEngine.findInlineRunHead(span)).toBe(textNode);
@@ -411,20 +416,20 @@ test("findInlineRunHead - mixed content", () => {
 });
 
 test("findInlineRunHead - block element", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(`<div>block</div>`);
-	const div = jsdom.window.document.querySelector("div")!;
+	const {dom, layoutEngine} = createLayoutEngine(`<div>block</div>`);
+	const div = dom.window.document.querySelector("div")!;
 
 	expect(layoutEngine.findInlineRunHead(div)).toBe(null); // Block elements don't have inline heads
 });
 
 // Edge cases from CSS spec research
 test("anonymous inline boxes - direct text in block", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine} = createLayoutEngine(
 		`<div>Direct text content</div>`,
 	);
-	const walker = jsdom.window.document.createTreeWalker(
-		jsdom.window.document.body,
-		jsdom.window.NodeFilter.SHOW_TEXT,
+	const walker = dom.window.document.createTreeWalker(
+		dom.window.document.body,
+		dom.window.NodeFilter.SHOW_TEXT,
 	);
 	let textNode: Text | null = null;
 	let node;
@@ -441,10 +446,10 @@ test("anonymous inline boxes - direct text in block", () => {
 });
 
 test("white space only text nodes", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine} = createLayoutEngine(
 		`<div><span>first</span>   <span>second</span></div>`,
 	);
-	const spans = Array.from(jsdom.window.document.querySelectorAll("span"));
+	const spans = Array.from(dom.window.document.querySelectorAll("span"));
 	const whitespaceNode = spans[0].nextSibling as Text; // The "   " between spans
 
 	// White space nodes still participate in inline formatting
@@ -455,11 +460,11 @@ test("white space only text nodes", () => {
 });
 
 test("nested inline elements", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine} = createLayoutEngine(
 		`<div><span>outer <em>nested</em> text</span></div>`,
 	);
-	const span = jsdom.window.document.querySelector("span")!;
-	const em = jsdom.window.document.querySelector("em")!;
+	const span = dom.window.document.querySelector("span")!;
+	const em = dom.window.document.querySelector("em")!;
 
 	// Nested inline elements - span is the head
 	expect(layoutEngine.isInlineRunHead(span)).toBe(true);
@@ -468,10 +473,10 @@ test("nested inline elements", () => {
 });
 
 test("inline-block vs inline behavior", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine} = createLayoutEngine(
 		`<div><span style="display: inline">inline</span><span style="display: inline-block">inline-block</span></div>`,
 	);
-	const spans = Array.from(jsdom.window.document.querySelectorAll("span"));
+	const spans = Array.from(dom.window.document.querySelectorAll("span"));
 
 	// Both inline and inline-block elements form runs
 	expect(layoutEngine.isInlineRunHead(spans[0])).toBe(true); // First is head
@@ -480,12 +485,12 @@ test("inline-block vs inline behavior", () => {
 });
 
 test("mixed content with line breaks", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine} = createLayoutEngine(
 		`<div>Text<br><span>after break</span></div>`,
 	);
-	const walker = jsdom.window.document.createTreeWalker(
-		jsdom.window.document.body,
-		jsdom.window.NodeFilter.SHOW_TEXT,
+	const walker = dom.window.document.createTreeWalker(
+		dom.window.document.body,
+		dom.window.NodeFilter.SHOW_TEXT,
 	);
 	let textNode: Text | null = null;
 	let node;
@@ -495,7 +500,7 @@ test("mixed content with line breaks", () => {
 			break;
 		}
 	}
-	const span = jsdom.window.document.querySelector("span")!;
+	const span = dom.window.document.querySelector("span")!;
 
 	// <br> does NOT break inline runs - it's just inline content with newline
 	expect(layoutEngine.isInlineRunHead(textNode!)).toBe(true); // Text starts the run
@@ -504,13 +509,13 @@ test("mixed content with line breaks", () => {
 });
 
 test("text node with inline precedent in flex container", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine} = createLayoutEngine(
 		`<div style="display: flex"><span>element</span> text content</div>`,
 	);
-	const span = jsdom.window.document.querySelector("span")!;
-	const walker = jsdom.window.document.createTreeWalker(
-		jsdom.window.document.body,
-		jsdom.window.NodeFilter.SHOW_TEXT,
+	const span = dom.window.document.querySelector("span")!;
+	const walker = dom.window.document.createTreeWalker(
+		dom.window.document.body,
+		dom.window.NodeFilter.SHOW_TEXT,
 	);
 	let textNode: Text | null = null;
 	let node;
@@ -533,11 +538,11 @@ test("text node with inline precedent in flex container", () => {
 // === MUTATION TESTS ===
 
 test("block insertion splits inline run", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine} = createLayoutEngine(
 		`<div><span>first</span><span>second</span></div>`,
 	);
-	const container = jsdom.window.document.querySelector("div")!;
-	const spans = Array.from(jsdom.window.document.querySelectorAll("span"));
+	const container = dom.window.document.querySelector("div")!;
+	const spans = Array.from(dom.window.document.querySelectorAll("span"));
 
 	// Initially: first span is head, second joins run
 	expect(layoutEngine.isInlineRunHead(spans[0])).toBe(true);
@@ -545,7 +550,7 @@ test("block insertion splits inline run", () => {
 	expect(layoutEngine.findInlineRunHead(spans[1])).toBe(spans[0]);
 
 	// Insert block element between spans
-	const blockDiv = jsdom.window.document.createElement("div");
+	const blockDiv = dom.window.document.createElement("div");
 	blockDiv.textContent = "block";
 	container.insertBefore(blockDiv, spans[1]);
 	layoutEngine.calculateLayout();
@@ -557,11 +562,11 @@ test("block insertion splits inline run", () => {
 });
 
 test("a run whose first node is removed re-measures from the next", () => {
-	const {jsdom, layoutEngine, processMutationsAndLayout} = createLayoutEngine(
+	const {dom, layoutEngine, processMutationsAndLayout} = createLayoutEngine(
 		`<div><span>head</span><span>second</span><span>third</span></div>`,
 	);
-	const container = jsdom.window.document.querySelector("div")!;
-	const spans = Array.from(jsdom.window.document.querySelectorAll("span"));
+	const container = dom.window.document.querySelector("div")!;
+	const spans = Array.from(dom.window.document.querySelectorAll("span"));
 	processMutationsAndLayout();
 
 	// Initially: first is head, others join
@@ -590,9 +595,9 @@ test("a run whose first node is removed re-measures from the next", () => {
 });
 
 test("findInlineRunHead - text node inside inline element should find element", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(`<span>🚀</span>`);
+	const {dom, layoutEngine} = createLayoutEngine(`<span>🚀</span>`);
 
-	const span = jsdom.window.document.querySelector("span")!;
+	const span = dom.window.document.querySelector("span")!;
 	const textNode = span.firstChild as Text;
 
 	// The text node should find the SPAN as its run head, not itself
@@ -605,13 +610,13 @@ test("findInlineRunHead - text node inside inline element should find element", 
 // === COMPREHENSIVE EDGE CASE TESTS FOR findInlineRunHead ===
 
 test("findInlineRunHead - nested inline elements", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine} = createLayoutEngine(
 		`<span>outer <em>nested <strong>deep</strong></em> text</span>`,
 	);
 
-	const span = jsdom.window.document.querySelector("span")!;
-	const em = jsdom.window.document.querySelector("em")!;
-	const strong = jsdom.window.document.querySelector("strong")!;
+	const span = dom.window.document.querySelector("span")!;
+	const em = dom.window.document.querySelector("em")!;
+	const strong = dom.window.document.querySelector("strong")!;
 
 	// All nested inline elements should find the outermost span as run head
 	expect(layoutEngine.findInlineRunHead(span)).toBe(span);
@@ -624,13 +629,13 @@ test("findInlineRunHead - nested inline elements", () => {
 });
 
 test("findInlineRunHead - text nodes after br elements", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine} = createLayoutEngine(
 		`<div>Start<br>After break</div>`,
 	);
 
-	const walker = jsdom.window.document.createTreeWalker(
-		jsdom.window.document.body,
-		jsdom.window.NodeFilter.SHOW_TEXT,
+	const walker = dom.window.document.createTreeWalker(
+		dom.window.document.body,
+		dom.window.NodeFilter.SHOW_TEXT,
 	);
 
 	let startText: Text | null = null;
@@ -651,12 +656,12 @@ test("findInlineRunHead - text nodes after br elements", () => {
 });
 
 test("findInlineRunHead - inline elements in flex container", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine} = createLayoutEngine(
 		`<div style="display: flex"><span>first</span><span>second</span><em>third</em></div>`,
 	);
 
-	const spans = Array.from(jsdom.window.document.querySelectorAll("span"));
-	const em = jsdom.window.document.querySelector("em")!;
+	const spans = Array.from(dom.window.document.querySelectorAll("span"));
+	const em = dom.window.document.querySelector("em")!;
 
 	// In flex containers, each inline element is its own run head
 	expect(layoutEngine.findInlineRunHead(spans[0])).toBe(spans[0]);
@@ -671,14 +676,14 @@ test("findInlineRunHead - inline elements in flex container", () => {
 });
 
 test("findInlineRunHead - mixed text and inline elements in flex", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine} = createLayoutEngine(
 		`<div style="display: flex">Text node<span>element</span>More text</div>`,
 	);
 
-	const span = jsdom.window.document.querySelector("span")!;
-	const walker = jsdom.window.document.createTreeWalker(
-		jsdom.window.document.body,
-		jsdom.window.NodeFilter.SHOW_TEXT,
+	const span = dom.window.document.querySelector("span")!;
+	const walker = dom.window.document.createTreeWalker(
+		dom.window.document.body,
+		dom.window.NodeFilter.SHOW_TEXT,
 	);
 
 	let textNode: Text | null = null;
@@ -700,11 +705,11 @@ test("findInlineRunHead - mixed text and inline elements in flex", () => {
 });
 
 test("findInlineRunHead - inline-block elements", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine} = createLayoutEngine(
 		`<div><span style="display: inline-block">block1</span><span style="display: inline-block">block2</span></div>`,
 	);
 
-	const spans = Array.from(jsdom.window.document.querySelectorAll("span"));
+	const spans = Array.from(dom.window.document.querySelectorAll("span"));
 
 	// First inline-block is run head, second joins the run
 	expect(layoutEngine.findInlineRunHead(spans[0])).toBe(spans[0]);
@@ -718,12 +723,12 @@ test("findInlineRunHead - inline-block elements", () => {
 });
 
 test("findInlineRunHead - empty text nodes and whitespace", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine} = createLayoutEngine(
 		`<div><span>content</span>   <em>more</em></div>`,
 	);
 
-	const span = jsdom.window.document.querySelector("span")!;
-	const em = jsdom.window.document.querySelector("em")!;
+	const span = dom.window.document.querySelector("span")!;
+	const em = dom.window.document.querySelector("em")!;
 	const whitespaceNode = span.nextSibling as Text; // The "   " between spans
 
 	// Whitespace text nodes should find the run head
@@ -733,13 +738,13 @@ test("findInlineRunHead - empty text nodes and whitespace", () => {
 });
 
 test("findInlineRunHead - block elements return null", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine} = createLayoutEngine(
 		`<div><p>paragraph</p><h1>heading</h1></div>`,
 	);
 
-	const p = jsdom.window.document.querySelector("p")!;
-	const h1 = jsdom.window.document.querySelector("h1")!;
-	const div = jsdom.window.document.querySelector("div")!;
+	const p = dom.window.document.querySelector("p")!;
+	const h1 = dom.window.document.querySelector("h1")!;
+	const div = dom.window.document.querySelector("div")!;
 
 	// Block elements should return null
 	expect(layoutEngine.findInlineRunHead(p)).toBe(null);
@@ -748,12 +753,12 @@ test("findInlineRunHead - block elements return null", () => {
 });
 
 test("findInlineRunHead - inline elements after block elements", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine} = createLayoutEngine(
 		`<div><span>first run</span><p>block breaks run</p><span>second run</span><em>continues second</em></div>`,
 	);
 
-	const spans = Array.from(jsdom.window.document.querySelectorAll("span"));
-	const em = jsdom.window.document.querySelector("em")!;
+	const spans = Array.from(dom.window.document.querySelectorAll("span"));
+	const em = dom.window.document.querySelector("em")!;
 
 	// First span is its own run head
 	expect(layoutEngine.findInlineRunHead(spans[0])).toBe(spans[0]);
@@ -764,14 +769,14 @@ test("findInlineRunHead - inline elements after block elements", () => {
 });
 
 test("findInlineRunHead - deeply nested inline elements", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine} = createLayoutEngine(
 		`<div><span><em><strong><code>deeply nested</code></strong></em></span></div>`,
 	);
 
-	const span = jsdom.window.document.querySelector("span")!;
-	const em = jsdom.window.document.querySelector("em")!;
-	const strong = jsdom.window.document.querySelector("strong")!;
-	const code = jsdom.window.document.querySelector("code")!;
+	const span = dom.window.document.querySelector("span")!;
+	const em = dom.window.document.querySelector("em")!;
+	const strong = dom.window.document.querySelector("strong")!;
+	const code = dom.window.document.querySelector("code")!;
 
 	// All should find the outermost span as run head
 	expect(layoutEngine.findInlineRunHead(span)).toBe(span);
@@ -785,21 +790,19 @@ test("findInlineRunHead - deeply nested inline elements", () => {
 });
 
 test("findInlineRunHead - text node orphan (no parent)", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(`<div></div>`);
+	const {dom, layoutEngine} = createLayoutEngine(`<div></div>`);
 
 	// Create orphaned text node
-	const textNode = jsdom.window.document.createTextNode("orphan");
+	const textNode = dom.window.document.createTextNode("orphan");
 
 	// Orphaned text node should return null (not connected to document)
 	expect(layoutEngine.findInlineRunHead(textNode)).toBe(null);
 });
 
 test("findInlineRunHead - comment nodes and other node types", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
-		`<div><!-- comment --></div>`,
-	);
+	const {dom, layoutEngine} = createLayoutEngine(`<div><!-- comment --></div>`);
 
-	const comment = jsdom.window.document.querySelector("div")!.firstChild!;
+	const comment = dom.window.document.querySelector("div")!.firstChild!;
 
 	// Comment nodes should return null (not text or element)
 	expect(layoutEngine.findInlineRunHead(comment)).toBe(null);
@@ -807,13 +810,13 @@ test("findInlineRunHead - comment nodes and other node types", () => {
 
 test("findInlineRunHead - whitespace behavior (expected: finds whitespace text node)", () => {
 	// This demonstrates that whitespace text nodes are correctly found as run heads
-	const {jsdom, layoutEngine} = createLayoutEngine(`
+	const {dom, layoutEngine} = createLayoutEngine(`
 		<div>
 			<span style="display: inline-block">block1</span>
 		</div>
 	`);
 
-	const span = jsdom.window.document.querySelector("span")!;
+	const span = dom.window.document.querySelector("span")!;
 	const result = layoutEngine.findInlineRunHead(span);
 
 	// Should find the whitespace text node before the span
@@ -824,11 +827,11 @@ test("findInlineRunHead - whitespace behavior (expected: finds whitespace text n
 });
 
 test("emoji text RectLengths preserve character boundaries", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine} = createLayoutEngine(
 		`<span>🎨 Colorful Text 🌈</span>`,
 	);
 
-	const span = jsdom.window.document.querySelector("span")!;
+	const span = dom.window.document.querySelector("span")!;
 	const textNode = span.firstChild as Text;
 	const originalText = textNode.textContent!;
 
@@ -851,11 +854,11 @@ test("emoji text RectLengths preserve character boundaries", () => {
 });
 
 test("RectLength text slicing mismatch with whitespace", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine} = createLayoutEngine(
 		`<div style="width: 20ch;"><span>Hello   </span><span>World</span></div>`,
 	);
 
-	const spans = Array.from(jsdom.window.document.querySelectorAll("span"));
+	const spans = Array.from(dom.window.document.querySelectorAll("span"));
 	const firstSpan = spans[0];
 	const secondSpan = spans[1];
 
@@ -882,7 +885,7 @@ test("RectLength text slicing mismatch with whitespace", () => {
 test("whitespace processing produces correct measurements", () => {
 	// Test that our whitespace processing fixes work correctly
 	// Use regular block layout to avoid flexbox complexity
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine} = createLayoutEngine(
 		`<div>
 			<span>Text </span>
 			<span>🚀</span>
@@ -891,7 +894,7 @@ test("whitespace processing produces correct measurements", () => {
 	);
 
 	// The container should have a valid rect since it contains the inline content
-	const container = jsdom.window.document.querySelector("div")!;
+	const container = dom.window.document.querySelector("div")!;
 	const containerRect = layoutEngine.getRect(container);
 
 	// The inline content should be measured correctly by our fixed whitespace processing
@@ -902,16 +905,16 @@ test("whitespace processing produces correct measurements", () => {
 });
 
 test("inline-block elements should get individual rects", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine} = createLayoutEngine(
 		`<div>
 			<div style="display: inline-block;">Block1</div>
 			<div style="display: inline-block;">Block2</div>
 		</div>`,
 	);
 
-	const container = jsdom.window.document.querySelector("div")!;
+	const container = dom.window.document.querySelector("div")!;
 	const inlineBlocks = Array.from(
-		jsdom.window.document.querySelectorAll("div"),
+		dom.window.document.querySelectorAll("div"),
 	).slice(1);
 
 	// Container should have a rect
@@ -929,11 +932,11 @@ test("inline-block elements should get individual rects", () => {
 });
 
 test("inline head element gets incorrect rect from yoga node", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine} = createLayoutEngine(
 		`<div><span>Head</span><span>Tail</span></div>`,
 	);
 
-	const spans = Array.from(jsdom.window.document.querySelectorAll("span"));
+	const spans = Array.from(dom.window.document.querySelectorAll("span"));
 
 	// The head should report width of just its content (4), not the entire run (8)
 	// But currently it reports the width of the entire run because it uses the Yoga node
@@ -948,7 +951,7 @@ test("inline head element gets incorrect rect from yoga node", () => {
 });
 
 test("inline run with mixed content - whitespace handling", () => {
-	const {jsdom, layoutEngine: _layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine: _layoutEngine} = createLayoutEngine(
 		`<div>Start <span>middle  </span> <em>end</em></div>`,
 	);
 
@@ -958,18 +961,18 @@ test("inline run with mixed content - whitespace handling", () => {
 
 	// Test passes if no errors are thrown during layout calculation
 	// This demonstrates that the whitespace processing works correctly
-	const container = jsdom.window.document.querySelector("div")!;
+	const container = dom.window.document.querySelector("div")!;
 	expect(container).not.toBeNull(); // Layout calculation completed successfully
 });
 
 test("text truncation due to RectLength accumulation error", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine} = createLayoutEngine(
 		`<div style="width: 12ch;">
 			<span>First   </span><span>Second   </span><span>Third</span>
 		</div>`,
 	);
 
-	const spans = Array.from(jsdom.window.document.querySelectorAll("span"));
+	const spans = Array.from(dom.window.document.querySelectorAll("span"));
 
 	// Each span's trailing spaces get trimmed in processing
 	// This creates an accumulating error in width calculations
@@ -994,11 +997,11 @@ test("text truncation due to RectLength accumulation error", () => {
 // === GETRECTEXTS WITH INLINE-BLOCK TESTS ===
 
 test("getRectTexts - regular inline element (baseline)", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine} = createLayoutEngine(
 		`<div><span>RegularInline</span></div>`,
 	);
 
-	const span = jsdom.window.document.querySelector("span")!;
+	const span = dom.window.document.querySelector("span")!;
 	const rectTexts = layoutEngine.getRectTexts(span);
 
 	// Regular inline elements should work
@@ -1008,11 +1011,11 @@ test("getRectTexts - regular inline element (baseline)", () => {
 });
 
 test("getRectTexts - text node in regular inline element", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine} = createLayoutEngine(
 		`<div><span>TextContent</span></div>`,
 	);
 
-	const span = jsdom.window.document.querySelector("span")!;
+	const span = dom.window.document.querySelector("span")!;
 	const textNode = span.firstChild as Text;
 	const rectTexts = layoutEngine.getRectTexts(textNode);
 
@@ -1022,11 +1025,11 @@ test("getRectTexts - text node in regular inline element", () => {
 });
 
 test("getRectTexts - element inside inline-block container", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine} = createLayoutEngine(
 		`<div><div style="display: inline-block;"><span>InsideBlock</span></div></div>`,
 	);
 
-	const span = jsdom.window.document.querySelector("span")!;
+	const span = dom.window.document.querySelector("span")!;
 	const rectTexts = layoutEngine.getRectTexts(span);
 
 	// This was the main broken case - should now work
@@ -1036,11 +1039,11 @@ test("getRectTexts - element inside inline-block container", () => {
 });
 
 test("getRectTexts - text node inside inline-block container", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine} = createLayoutEngine(
 		`<div><div style="display: inline-block;"><span>BlockText</span></div></div>`,
 	);
 
-	const span = jsdom.window.document.querySelector("span")!;
+	const span = dom.window.document.querySelector("span")!;
 	const textNode = span.firstChild as Text;
 	const rectTexts = layoutEngine.getRectTexts(textNode);
 
@@ -1050,11 +1053,11 @@ test("getRectTexts - text node inside inline-block container", () => {
 });
 
 test("getRectTexts - nested elements inside inline-block", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine} = createLayoutEngine(
 		`<div><div style="display: inline-block;"><span><em>Nested</em></span></div></div>`,
 	);
 
-	const em = jsdom.window.document.querySelector("em")!;
+	const em = dom.window.document.querySelector("em")!;
 	const rectTexts = layoutEngine.getRectTexts(em);
 
 	// Nested elements inside inline-blocks should work
@@ -1063,11 +1066,11 @@ test("getRectTexts - nested elements inside inline-block", () => {
 });
 
 test("getRectTexts - multiple children in inline-block", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine} = createLayoutEngine(
 		`<div><div style="display: inline-block;"><span>First</span><span>Second</span></div></div>`,
 	);
 
-	const spans = Array.from(jsdom.window.document.querySelectorAll("span"));
+	const spans = Array.from(dom.window.document.querySelectorAll("span"));
 	const firstRects = layoutEngine.getRectTexts(spans[0]);
 	const secondRects = layoutEngine.getRectTexts(spans[1]);
 
@@ -1079,7 +1082,7 @@ test("getRectTexts - multiple children in inline-block", () => {
 });
 
 test.todo("getRectTexts - deeply nested inline-block", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine} = createLayoutEngine(
 		`<div>
 			<div style="display: inline-block;">
 				<div><span><em>DeepNested</em></span></div>
@@ -1087,7 +1090,7 @@ test.todo("getRectTexts - deeply nested inline-block", () => {
 		</div>`,
 	);
 
-	const em = jsdom.window.document.querySelector("em")!;
+	const em = dom.window.document.querySelector("em")!;
 	const rectTexts = layoutEngine.getRectTexts(em);
 
 	// Deep nesting should work
@@ -1096,7 +1099,7 @@ test.todo("getRectTexts - deeply nested inline-block", () => {
 });
 
 test("getRectTexts - inline-block with mixed content", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine} = createLayoutEngine(
 		`<div>
 			<div style="display: inline-block;">
 				Text <span>element</span> more text
@@ -1104,7 +1107,7 @@ test("getRectTexts - inline-block with mixed content", () => {
 		</div>`,
 	);
 
-	const span = jsdom.window.document.querySelector("span")!;
+	const span = dom.window.document.querySelector("span")!;
 	const rectTexts = layoutEngine.getRectTexts(span);
 
 	// Element in mixed content should work
@@ -1113,14 +1116,14 @@ test("getRectTexts - inline-block with mixed content", () => {
 });
 
 test("getRectTexts - multiple inline-blocks", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine} = createLayoutEngine(
 		`<div>
 			<div style="display: inline-block;"><span>Block1</span></div>
 			<div style="display: inline-block;"><span>Block2</span></div>
 		</div>`,
 	);
 
-	const spans = Array.from(jsdom.window.document.querySelectorAll("span"));
+	const spans = Array.from(dom.window.document.querySelectorAll("span"));
 	const rects1 = layoutEngine.getRectTexts(spans[0]);
 	const rects2 = layoutEngine.getRectTexts(spans[1]);
 
@@ -1132,11 +1135,11 @@ test("getRectTexts - multiple inline-blocks", () => {
 });
 
 test("getRectTexts - inline-block container element itself", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine} = createLayoutEngine(
 		`<div><div style="display: inline-block;">Container</div></div>`,
 	);
 
-	const inlineBlock = jsdom.window.document.querySelector("div[style]")!;
+	const inlineBlock = dom.window.document.querySelector("div[style]")!;
 	const rectTexts = layoutEngine.getRectTexts(inlineBlock);
 
 	// Inline-block container itself should work (all its text content)
@@ -1145,7 +1148,7 @@ test("getRectTexts - inline-block container element itself", () => {
 });
 
 test("getRectTexts - position accuracy in inline-block", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine} = createLayoutEngine(
 		`<div>
 			<div style="display: inline-block; padding: 2px;">
 				<span>Padded</span>
@@ -1153,7 +1156,7 @@ test("getRectTexts - position accuracy in inline-block", () => {
 		</div>`,
 	);
 
-	const span = jsdom.window.document.querySelector("span")!;
+	const span = dom.window.document.querySelector("span")!;
 	const rectTexts = layoutEngine.getRectTexts(span);
 
 	// Should work and have reasonable position (accounting for padding)
@@ -1164,7 +1167,7 @@ test("getRectTexts - position accuracy in inline-block", () => {
 });
 
 test("getRectTexts - maintains backward compatibility", () => {
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine} = createLayoutEngine(
 		`<div>
 			<span>Regular</span>
 			<div style="display: inline-block;"><span>InBlock</span></div>
@@ -1172,7 +1175,7 @@ test("getRectTexts - maintains backward compatibility", () => {
 		</div>`,
 	);
 
-	const spans = Array.from(jsdom.window.document.querySelectorAll("span"));
+	const spans = Array.from(dom.window.document.querySelectorAll("span"));
 	const regularRects = layoutEngine.getRectTexts(spans[0]); // Regular inline
 	const blockRects = layoutEngine.getRectTexts(spans[1]); // Inside inline-block
 	const normalRects = layoutEngine.getRectTexts(spans[2]); // Regular inline
@@ -1632,23 +1635,28 @@ test.todo("Complex inline run with mixed content types", async () => {
 // These tests verify how pseudo elements interact with inline run head detection
 
 function createLayoutEngineWithPseudos(html: string = "<div></div>") {
-	const jsdom = new JSDOM(`<!DOCTYPE html><html><body>${html}</body></html>`);
+	const dom = documentWindow(
+		`<!DOCTYPE html><html><body>${html}</body></html>`,
+	);
 
-	const layoutEngine = new LayoutEngine(jsdom.window);
-	const styleManager = new StyleManager(jsdom.window, layoutEngine);
+	// The cascade first: the layout engine measures through getComputedStyle,
+	// which is the cascade's to answer.
+	const styleManager = new StyleManager(dom.window);
+	const layoutEngine = new LayoutEngine(dom.window);
+	styleManager.setLayoutEngine(layoutEngine);
 
 	layoutEngine.resize(300, 200);
 	layoutEngine.calculateLayout();
 
-	return {jsdom, layoutEngine, styleManager};
+	return {dom, layoutEngine, styleManager};
 }
 
 test("::before pseudo element becomes run head", () => {
-	const {jsdom, layoutEngine} = createLayoutEngineWithPseudos(
+	const {dom, layoutEngine} = createLayoutEngineWithPseudos(
 		`<div class="quote">Hello World</div>`,
 	);
 
-	const quote = jsdom.window.document.querySelector(".quote")!;
+	const quote = dom.window.document.querySelector(".quote")!;
 
 	// Add ::before pseudo element
 	const beforeNode = createPseudoNode(quote, "::before", '"');
@@ -1664,11 +1672,11 @@ test("::before pseudo element becomes run head", () => {
 });
 
 test("::marker appears before ::before in run head order", () => {
-	const {jsdom, layoutEngine} = createLayoutEngineWithPseudos(
+	const {dom, layoutEngine} = createLayoutEngineWithPseudos(
 		`<ul><li class="decorated">Item text</li></ul>`,
 	);
 
-	const listItem = jsdom.window.document.querySelector(".decorated")!;
+	const listItem = dom.window.document.querySelector(".decorated")!;
 	const textNode = listItem.firstChild as Text;
 
 	// Add all pseudo element types (CSS order: ::marker, ::before, content, ::after)
@@ -1694,11 +1702,11 @@ test("::marker appears before ::before in run head order", () => {
 });
 
 test("Dynamic pseudo element addition affects run heads", () => {
-	const {jsdom, layoutEngine} = createLayoutEngineWithPseudos(
+	const {dom, layoutEngine} = createLayoutEngineWithPseudos(
 		`<div class="dynamic">Text</div>`,
 	);
 
-	const div = jsdom.window.document.querySelector(".dynamic")!;
+	const div = dom.window.document.querySelector(".dynamic")!;
 	const textNode = div.firstChild as Text;
 
 	// Initially, text node should be run head (div is block, not inline)
@@ -2780,11 +2788,11 @@ test("an empty inline element measures zero, not its container's width", async (
 	// used to fall through to the layout node and report the containing block's
 	// width. `<div style="width:30ch"><span></span></div>` measured the span at
 	// 30 columns instead of 0.
-	const {jsdom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine} = createLayoutEngine(
 		`<div style="width:30ch"><span id="e"></span><span id="n"><b>hi</b></span></div>`,
 	);
-	const empty = jsdom.window.document.getElementById("e")!;
-	const nested = jsdom.window.document.getElementById("n")!;
+	const empty = dom.window.document.getElementById("e")!;
+	const nested = dom.window.document.getElementById("n")!;
 
 	expect(layoutEngine.getRect(empty)?.width).toBe(0);
 	// An inline whose text lives in a nested inline still measures that text.

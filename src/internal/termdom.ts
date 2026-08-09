@@ -372,6 +372,11 @@ function domInterfaces(): Record<string, unknown> {
 /** The window class, whose instances are windows: an EventTarget, and DOM-aware. */
 class Window extends DOM.EventTarget {}
 
+/** A document parsed from markup, displayed in a window of its own. */
+export function createDocumentWindow(html: string, url?: string): EngineWindow {
+	return createEngineWindow(DOM.parseHTMLDocument(html, url));
+}
+
 /**
  * Build the window a document is displayed in and mount the document in it.
  *
@@ -620,11 +625,11 @@ export class TermDOM {
 		this.#width = this.#transport.cols;
 		this.#height = this.#transport.rows;
 
-		const document = DOM.parseHTMLDocument(
+		this.window = createDocumentWindow(
 			"<!DOCTYPE html><html><head></head><body></body></html>",
 		);
-		this.window = createEngineWindow(document);
-		this.document = document as unknown as Document;
+		const document = this.window.document as unknown as DOM.Document;
+		this.document = this.window.document;
 
 		// Setup DOM inspector
 		setupInspectMethods(this.window);
@@ -724,9 +729,8 @@ export class TermDOM {
 	};
 
 	/**
-	 * The seam between this instance and the jsdom patches installed over its
-	 * window: see DOMPatchHost for why every member is a getter or a callback
-	 * rather than a value.
+	 * The frame handle a requestAnimationFrame callback is keyed by, so a
+	 * cancelAnimationFrame can name the callback it cancels.
 	 */
 	#allocateFrameHandle(): number {
 		return this.#nextRafId++;
@@ -827,8 +831,8 @@ export class TermDOM {
 		}
 
 		// requestAnimationFrame is the only way to await a painted frame -- render()
-		// is private. jsdom's pretendToBeVisual rAF is a bare timer, decoupled from
-		// our (async) paint, so a callback could fire before the frame is written.
+		// is private. A bare timer would be decoupled from our (async) paint, so a
+		// callback could fire before the frame is written.
 		// Route it through the render loop: schedule a render and fire the callback
 		// once it completes, so "await a frame" always means the frame that includes
 		// your pending mutations has landed.
@@ -901,8 +905,7 @@ export class TermDOM {
 
 		// window.close() closes the terminal session as it would close a
 		// browser tab: dispose, then close the transport. Ctrl-C's default
-		// action is this call. jsdom's own close still runs inside dispose,
-		// through the saved original.
+		// action is this call.
 		window.close = () => {
 			const wasAttached = termDOM.#attached;
 			// An immediate close must not tear down mid-establishment: wait
@@ -980,9 +983,9 @@ export class TermDOM {
 		const nativeDocumentClose = document.close.bind(document);
 		document.close = () => {
 			nativeDocumentClose();
-			// dispose() tears down via jsdom's window.close(), which calls
-			// document.close() -- but it has already set attached=false, so we skip
-			// the seal there. A real seal is a close() from a live, painted session.
+			// dispose() has already set attached=false by the time it reaches here,
+			// so we skip the seal. A real seal is a close() from a live, painted
+			// session.
 			if (termDOM.#attached && termDOM.#renderCount > 0) {
 				termDOM.#sealToScrollback();
 			}
@@ -1124,8 +1127,8 @@ export class TermDOM {
 			return termDOM[kLayoutEngine].createDOMRectList(rects);
 		};
 
-		// Range geometry. jsdom does no layout, so Range.getClientRects/
-		// getBoundingClientRect are absent -- these supply them from the same
+		// Range geometry. The DOM does no layout, so Range.getClientRects/
+		// getBoundingClientRect are the engine's to answer -- from the same
 		// layout the element wrappers use, viewport-converted identically. The
 		// caret and selection painters read the document-relative
 		// getRangeRects() directly, the way scrollIntoView reads getRect().
@@ -1184,7 +1187,8 @@ export class TermDOM {
 		// offsetWidth/offsetHeight/offsetTop/offsetLeft/offsetParent/clientWidth/
 		// clientHeight/scrollWidth/scrollHeight -- the most commonly reached-for
 		// measurement APIs, and previously entirely unimplemented (always
-		// 0/null via jsdom's defaults). Every one of them is derived from
+		// 0/null, the value a DOM with no layout behind it has). Every one of
+		// them is derived from
 		// layoutRectOf, the single place that decides "is this element
 		// connected, has layout settled, what is its border-box rect" -- so
 		// offsetWidth and clientWidth can never quietly disagree about which
@@ -1594,10 +1598,9 @@ export class TermDOM {
 		if (relevant.length === 0) return;
 		// Upgrade UA form controls the moment they connect -- before layout reads
 		// their shadow and before the painter walks it -- the way a browser
-		// upgrades a custom element on connect, not lazily at first paint. (jsdom
-		// won't auto-upgrade a plain built-in, so the shell drives it here, the
-		// one place every insert -- observer-driven or drained from a synchronous
-		// render -- passes through.)
+		// upgrades a custom element on connect, not lazily at first paint. The
+		// shell drives it here, the one place every insert -- observer-driven or
+		// drained from a synchronous render -- passes through.
 		for (const record of relevant) {
 			if (record.type !== "childList") continue;
 			for (const added of record.addedNodes) {
@@ -2708,14 +2711,14 @@ export class TermDOM {
 			target.dispatchEvent(
 				new this.window.MouseEvent("click", {...eventInit, buttons: 0}),
 			);
-			// A checkbox/radio's .checked already flipped -- jsdom's own click
+			// A checkbox/radio's .checked already flipped -- the activation behavior's
 			// activation behavior handles that directly, and forwards it from a
 			// <label for> or wrapping label the same way (honoring
 			// preventDefault in both cases) -- but that's a property change,
 			// invisible to the MutationObserver that would otherwise repaint it,
 			// same as .value on a text input. Focus also needs an explicit push
 			// here for the label case: a real browser's "focusing steps" move
-			// focus to the label's associated control, which jsdom's dispatch
+			// focus to the label's associated control, which the activation behavior's
 			// alone does not simulate (the direct-click case is already
 			// focused via mousedown's own default action above, so this is a
 			// harmless no-op there).
@@ -2803,7 +2806,7 @@ export class TermDOM {
 		// Find the focused element. document.activeElement defaults to body when
 		// nothing is focused, so it can't be used with `||` to detect "nothing
 		// focused". In fullscreen, a browser moves focus to the fullscreen
-		// element as part of entering it -- but jsdom's own focus() only takes
+		// element as part of entering it -- but focus() only takes
 		// elements that are already focusable (tabindex, form controls, etc.),
 		// so an arbitrary fullscreen container is otherwise unreachable here.
 		// Fall back to it (before document.body) so keydown still lands on it,

@@ -411,7 +411,7 @@ function inspectFragment(
 }
 
 /**
- * Inspect a CSSStyleDeclaration - much more concise than JSDOM's default
+ * Inspect a CSSStyleDeclaration, as the properties it actually declares
  */
 export function inspectCSSStyleDeclaration(
 	styles: any,
@@ -625,7 +625,7 @@ export function setupInspectMethods(window: any): void {
 		};
 	}
 
-	// CSSStyleDeclaration - JSDOM's default is way too verbose
+	// CSSStyleDeclaration, as the properties it actually declares
 	if (
 		window.CSSStyleDeclaration &&
 		!window.CSSStyleDeclaration.prototype[inspect]

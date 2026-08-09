@@ -1,5 +1,4 @@
 import {test, expect} from "@b9g/libuild/test";
-import {JSDOM} from "jsdom";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame, styleManagerFor} from "./test-utils.js";
 import {
@@ -11,11 +10,30 @@ import {
 	getPseudoMetadata,
 	getPseudoElement,
 } from "../src/internal/composition.js";
+import {createDocumentWindow} from "../src/internal/termdom.js";
 
-// Pure JSDOM Tests (no TermDOM dependency)
+/**
+ * A document of this DOM, from markup, displayed in a window of its own.
+ *
+ * The walker asks the window for computed styles -- it dissolves
+ * `display: contents` and looks for `display: list-item` -- so the window
+ * answers with the initial value of every property. The pseudo-elements here
+ * are the test's own, hand-attached; a cascade would own them instead.
+ */
+function documentWindow(html: string) {
+	const window = createDocumentWindow(html);
+	window.getComputedStyle = ((element: Element) =>
+		({
+			getPropertyValue: (property: string) =>
+				property === "display" && element.tagName === "LI" ? "list-item" : "",
+		}) as unknown as CSSStyleDeclaration) as typeof window.getComputedStyle;
+	return {window};
+}
 
-test("Pure JSDOM - ExpandedTreeWalker basic functionality", () => {
-	const dom = new JSDOM("<!DOCTYPE html><html><body></body></html>");
+// Tests over a bare document, with no TermDOM behind it.
+
+test("A bare document - ExpandedTreeWalker basic functionality", () => {
+	const dom = documentWindow("<!DOCTYPE html><html><body></body></html>");
 	const window = dom.window;
 	const document = window.document;
 
@@ -37,8 +55,8 @@ test("Pure JSDOM - ExpandedTreeWalker basic functionality", () => {
 	expect(secondNode?.textContent).toBe("Hello World");
 });
 
-test("Pure JSDOM - ExpandedTreeWalker pseudo-element traversal", () => {
-	const dom = new JSDOM("<!DOCTYPE html><html><body></body></html>");
+test("A bare document - ExpandedTreeWalker pseudo-element traversal", () => {
+	const dom = documentWindow("<!DOCTYPE html><html><body></body></html>");
 	const window = dom.window;
 	const document = window.document;
 
@@ -98,8 +116,8 @@ test("Pure JSDOM - ExpandedTreeWalker pseudo-element traversal", () => {
 	).toBe(true);
 });
 
-test("Pure JSDOM - ExpandedTreeWalker shadow DOM traversal", () => {
-	const dom = new JSDOM("<!DOCTYPE html><html><body></body></html>");
+test("A bare document - ExpandedTreeWalker shadow DOM traversal", () => {
+	const dom = documentWindow("<!DOCTYPE html><html><body></body></html>");
 	const window = dom.window;
 	const document = window.document;
 
@@ -159,8 +177,8 @@ test("Pure JSDOM - ExpandedTreeWalker shadow DOM traversal", () => {
 	expect(nodes.some((n) => n.className === "shadow-element")).toBe(true);
 });
 
-test("Pure JSDOM - ExpandedTreeWalker slot content traversal", () => {
-	const dom = new JSDOM("<!DOCTYPE html><html><body></body></html>");
+test("A bare document - ExpandedTreeWalker slot content traversal", () => {
+	const dom = documentWindow("<!DOCTYPE html><html><body></body></html>");
 	const window = dom.window;
 	const document = window.document;
 
@@ -225,8 +243,8 @@ test("Pure JSDOM - ExpandedTreeWalker slot content traversal", () => {
 	expect(nodes.some((n) => n.content === "Light DOM content")).toBe(true);
 });
 
-test("Pure JSDOM - ExpandedTreeWalker utility functions", () => {
-	const dom = new JSDOM("<!DOCTYPE html><html><body></body></html>");
+test("A bare document - ExpandedTreeWalker utility functions", () => {
+	const dom = documentWindow("<!DOCTYPE html><html><body></body></html>");
 	const window = dom.window;
 	const document = window.document;
 
@@ -248,8 +266,8 @@ test("Pure JSDOM - ExpandedTreeWalker utility functions", () => {
 	expect(isPseudoNode(div)).toBe(false);
 });
 
-test("Pure JSDOM - ExpandedTreeWalker ::marker pseudo-element traversal", () => {
-	const dom = new JSDOM("<!DOCTYPE html><html><body></body></html>");
+test("A bare document - ExpandedTreeWalker ::marker pseudo-element traversal", () => {
+	const dom = documentWindow("<!DOCTYPE html><html><body></body></html>");
 	const window = dom.window;
 	const document = window.document;
 
@@ -321,8 +339,8 @@ test("Pure JSDOM - ExpandedTreeWalker ::marker pseudo-element traversal", () => 
 	expect(contentTextIndex).toBeLessThan(afterIndex);
 });
 
-test("Pure JSDOM - ExpandedTreeWalker nested shadow roots", () => {
-	const dom = new JSDOM("<!DOCTYPE html><html><body></body></html>");
+test("A bare document - ExpandedTreeWalker nested shadow roots", () => {
+	const dom = documentWindow("<!DOCTYPE html><html><body></body></html>");
 	const window = dom.window;
 	const document = window.document;
 
@@ -413,8 +431,8 @@ test("Pure JSDOM - ExpandedTreeWalker nested shadow roots", () => {
 	expect(innerIndex).toBeLessThan(deepIndex);
 });
 
-test("Pure JSDOM - ExpandedTreeWalker shadow roots in slot assigned nodes", () => {
-	const dom = new JSDOM("<!DOCTYPE html><html><body></body></html>");
+test("A bare document - ExpandedTreeWalker shadow roots in slot assigned nodes", () => {
+	const dom = documentWindow("<!DOCTYPE html><html><body></body></html>");
 	const window = dom.window;
 	const document = window.document;
 
@@ -526,8 +544,8 @@ test("Pure JSDOM - ExpandedTreeWalker shadow roots in slot assigned nodes", () =
 	expect(assignedIndex).toBeLessThan(shadowInAssignedIndex);
 });
 
-test("Pure JSDOM - ExpandedTreeWalker complex nested scenario with pseudo-elements", () => {
-	const dom = new JSDOM("<!DOCTYPE html><html><body></body></html>");
+test("A bare document - ExpandedTreeWalker complex nested scenario with pseudo-elements", () => {
+	const dom = documentWindow("<!DOCTYPE html><html><body></body></html>");
 	const window = dom.window;
 	const document = window.document;
 
@@ -759,7 +777,7 @@ test("TermDOM - ExpandedTreeWalker basic traversal", () => {
 });
 
 test("ExpandedTreeWalker flattens named slots into composed order", () => {
-	// Native shadow DOM end-to-end: jsdom performs the real slot assignment,
+	// Native shadow DOM end-to-end: the DOM performs the real slot assignment,
 	// and the walker's flat-tree layer dissolves the slots (UA default
 	// `slot { display: contents }`) -- projected content appears at each
 	// slot's position, unassigned-slot fallback stays hidden, and no SLOT
@@ -803,8 +821,8 @@ test("ExpandedTreeWalker flattens named slots into composed order", () => {
 	]);
 });
 
-test("Pure JSDOM - ExpandedTreeWalker respects root boundary", () => {
-	const dom = new JSDOM("<!DOCTYPE html><html><body></body></html>");
+test("A bare document - ExpandedTreeWalker respects root boundary", () => {
+	const dom = documentWindow("<!DOCTYPE html><html><body></body></html>");
 	const window = dom.window;
 	const document = window.document;
 
@@ -851,8 +869,8 @@ test("Pure JSDOM - ExpandedTreeWalker respects root boundary", () => {
 	expect(nodes.length).toBeLessThanOrEqual(3); // P, SPAN, #text
 });
 
-test("Pure JSDOM - ExpandedTreeWalker previousNode respects root boundary", () => {
-	const dom = new JSDOM("<!DOCTYPE html><html><body></body></html>");
+test("A bare document - ExpandedTreeWalker previousNode respects root boundary", () => {
+	const dom = documentWindow("<!DOCTYPE html><html><body></body></html>");
 	const window = dom.window;
 	const document = window.document;
 
@@ -901,8 +919,8 @@ test("Pure JSDOM - ExpandedTreeWalker previousNode respects root boundary", () =
 	expect(nodes.some((n) => n.name === "BODY")).toBe(false);
 });
 
-test("Pure JSDOM - ExpandedTreeWalker parentNode respects root boundary", () => {
-	const dom = new JSDOM("<!DOCTYPE html><html><body></body></html>");
+test("A bare document - ExpandedTreeWalker parentNode respects root boundary", () => {
+	const dom = documentWindow("<!DOCTYPE html><html><body></body></html>");
 	const window = dom.window;
 	const document = window.document;
 
@@ -946,7 +964,7 @@ test("Pure JSDOM - ExpandedTreeWalker parentNode respects root boundary", () => 
 });
 
 test("FAILING - ExpandedTreeWalker ::after elements in layout engine pattern", () => {
-	const dom = new JSDOM("<!DOCTYPE html><html><body></body></html>");
+	const dom = documentWindow("<!DOCTYPE html><html><body></body></html>");
 	const window = dom.window;
 	const document = window.document;
 
@@ -1002,8 +1020,8 @@ test("FAILING - ExpandedTreeWalker ::after elements in layout engine pattern", (
 	expect(textIndex).toBeLessThan(afterIndex);
 });
 
-test("Pure JSDOM - ExpandedTreeWalker manual currentNode setting respects root", () => {
-	const dom = new JSDOM("<!DOCTYPE html><html><body></body></html>");
+test("A bare document - ExpandedTreeWalker manual currentNode setting respects root", () => {
+	const dom = documentWindow("<!DOCTYPE html><html><body></body></html>");
 	const window = dom.window;
 	const document = window.document;
 
@@ -1293,7 +1311,7 @@ test("TermDOM - ::marker rendering test", async () => {
 	expect(output.includes(expectedPattern)).toBe(true);
 });
 
-test("Pure JSDOM - nextSibling/previousSibling at the root return null, per spec", () => {
+test("A bare document - nextSibling/previousSibling at the root return null, per spec", () => {
 	// The TreeWalker spec's traverse-siblings algorithm returns null when the
 	// current node is the root: a walker never visits its root's siblings.
 	// Without this guard, a walker rooted at an element whose subtree was
@@ -1301,7 +1319,7 @@ test("Pure JSDOM - nextSibling/previousSibling at the root return null, per spec
 	// inline-block flex item (its own inline-run head) "skipped its children"
 	// via nextSibling() and swallowed the NEXT flex item's text into its own
 	// measurement, misplacing every later sibling on the main axis.
-	const dom = new JSDOM(
+	const dom = documentWindow(
 		"<!DOCTYPE html><html><body><span id='a'>x</span><span id='b'>y</span></body></html>",
 	);
 	const window = dom.window;
@@ -1323,7 +1341,7 @@ test("ExpandedTreeWalker skips comments rather than halting on them", () => {
 	// leading comment used to make firstChild() return null, collapsing the
 	// whole container to nothing -- a Markdown file starting with an HTML
 	// comment rendered blank.
-	const dom = new JSDOM("<!DOCTYPE html><html><body></body></html>");
+	const dom = documentWindow("<!DOCTYPE html><html><body></body></html>");
 	const window = dom.window;
 	const document = window.document;
 

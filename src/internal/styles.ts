@@ -40,7 +40,6 @@ import {
 
 /**
  * Helper to get computed style property value for an element.
- * Works with both regular DOM and JSDOM environments.
  */
 export function getPropertyValue(element: Element, property: string): string {
 	// The COMPUTED value, not the resolved one: layout and paint decide
@@ -384,10 +383,9 @@ const styleManagers = new WeakMap<object, StyleManager>();
 /**
  * The same registry keyed by DOCUMENT rather than window.
  *
- * jsdom's window is a global proxy: every property read through it, and every
- * WeakMap lookup keyed on it, pays for the trap. The internal read path takes
- * this door instead -- the document is a plain object, and an element already
- * holds one.
+ * A window is one object per document, and an element holds its document
+ * rather than its window: the internal read path takes this door so that a
+ * cascade is found from a node without a hop through the window.
  */
 const documentManagers = new WeakMap<object, StyleManager>();
 
@@ -5118,7 +5116,7 @@ export function computedStyleOf(element: Element): ComputedStyle {
 	if (!document) return EMPTY_COMPUTED_STYLE;
 	const manager = documentManagers.get(document);
 	if (manager) return manager.declarationFor(element);
-	// A document with no cascade of this engine's behind it -- a bare jsdom,
+	// A document with no cascade of this engine's behind it -- a bare document,
 	// which the tree walker is exercised against -- still answers, through
 	// whatever getComputedStyle it has.
 	const window = document.defaultView;
@@ -6733,9 +6731,8 @@ export class StyleManager {
 	#styleEpoch = {value: 0};
 	/**
 	 * Every shadow root whose <style> elements participate in the cascade.
-	 * jsdom never parses shadow stylesheets (shadowRoot.styleSheets does not
-	 * exist), so parsing walks these and feeds each <style>'s text through
-	 * the same CSSOM parser jsdom uses for document sheets.
+	 * Nothing else parses a shadow tree's stylesheets, so parsing walks these
+	 * and feeds each <style>'s text through the parser document sheets take.
 	 */
 	#shadowRoots = new Set<ShadowRoot>();
 	#pseudoElementStyleCache = new WeakMap<
@@ -6782,11 +6779,7 @@ export class StyleManager {
 	#counterScopes = new WeakMap<Element, CounterScope>();
 
 	// The document is fixed for the window's lifetime, so hold it directly rather
-	// than reaching through window.document on every access. JSDOM's window is a
-	// global proxy whose .document getter can transiently resolve to undefined
-	// under a fast async render loop (a mutation-observer-driven animation), which
-	// crashed style computation mid-frame. The Document object itself stays valid,
-	// so a direct reference sidesteps the flaky getter.
+	// than reaching through window.document on every access.
 	#document: Document;
 	#window: EngineWindow;
 	#layoutEngine?: LayoutEngine;
@@ -7092,7 +7085,7 @@ export class StyleManager {
 	 * gained and lost focus hold rule sets matched BEFORE the move, so a
 	 * `:focus` rule would never apply (or, symmetrically, never stop
 	 * applying) -- focus is not a mutation, and nothing else invalidates.
-	 * Selector matching itself is live (jsdom's matches(":focus") follows
+	 * Selector matching itself is live (matches(":focus") follows
 	 * activeElement); only these caches go stale. Scoped to the two moved
 	 * elements: `:focus-within` on ancestors would need chain invalidation,
 	 * which nothing supports or tests yet.
@@ -7503,7 +7496,7 @@ export class StyleManager {
 		);
 
 		// :host selectors only mean anything inside a shadow tree's own
-		// stylesheet; jsdom's matches() rejects them outright, so they parse
+		// stylesheet; the selector engine rejects them outright, so they parse
 		// into a structured predicate matched by #ruleMatches instead.
 		// Supported forms: `:host`, `:host(sel)`, `:host:focus`, and any of
 		// those followed by a descendant (or `>` child) selector.
@@ -7689,7 +7682,8 @@ export class StyleManager {
 			) {
 				return false;
 			}
-			// jsdom treats `:focus-visible` as `:focus`, so gate it on our own flag.
+			// The selector engine treats `:focus-visible` as `:focus`, so gate it
+			// on our own flag.
 			if (
 				!this.#focusVisibleActive &&
 				rule.selector.includes(":focus-visible")

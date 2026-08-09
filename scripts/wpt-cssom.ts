@@ -1,10 +1,12 @@
 /**
  * Run the web-platform-tests css/cssom suite against this engine's CSSOM.
  *
- * Each test is a testharness.js document. It runs in a jsdom window with the
- * engine's CSSOM installed -- the same installInlineStyle + StyleManager a
- * TermDOM builds -- and its harness scripts are evaluated in document order,
- * because jsdom itself never runs a document's scripts here.
+ * Each test is a testharness.js document of this engine's own DOM, displayed
+ * in a window with the engine's CSSOM installed -- the same installInlineStyle
+ * + StyleManager a TermDOM builds. Its harness scripts are evaluated in
+ * document order at global scope, with the realm's globals swapped for the
+ * file's for as long as it runs, because nothing here runs a document's
+ * scripts on its own.
  *
  * The suite is fetched into .wpt/ on first run and cached. Results are written
  * to docs/cssom-conformance.md.
@@ -12,7 +14,6 @@
  * Run: bun scripts/wpt-cssom.ts [name-filter]
  */
 
-import {type DOMWindow, JSDOM, VirtualConsole} from "jsdom";
 import {existsSync, mkdirSync, readFileSync, writeFileSync} from "node:fs";
 import {dirname, join} from "node:path";
 import {fileURLToPath} from "node:url";
@@ -23,6 +24,10 @@ import {
 	StyleManager,
 } from "../src/internal/styles.ts";
 import {LayoutEngine} from "../src/internal/layout.ts";
+import {
+	createDocumentWindow,
+	type EngineWindow,
+} from "../src/internal/termdom.ts";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const CACHE = join(ROOT, ".wpt");
@@ -186,7 +191,10 @@ interface Outcome {
  * harness installs the same padding-box measurement rather than leaving
  * jsdom's constant zero standing in for the engine's geometry.
  */
-function installGeometry(window: DOMWindow, styleManager: StyleManager): void {
+function installGeometry(
+	window: EngineWindow,
+	styleManager: StyleManager,
+): void {
 	const clientBox = (
 		element: Element,
 	): {width: number; height: number} | null => {
@@ -227,18 +235,12 @@ async function runFile(file: string): Promise<Outcome> {
 		return {file, harness: "ERROR", subtests: [], error: "not fetched"};
 	}
 
-	const virtualConsole = new VirtualConsole();
-	const dom = new JSDOM(html, {
-		runScripts: "outside-only",
-		url: `http://web-platform.test/${SUITE}/${file}`,
-		virtualConsole,
-	});
-	const window = dom.window as unknown as Window &
-		typeof globalThis & {eval(source: string): unknown};
+	const url = `http://web-platform.test/${SUITE}/${file}`;
+	const window = createDocumentWindow(html, url);
+	const document = window.document;
 
-	// jsdom supplies no animation frames, and a test that waits for one waits
-	// forever. The harness runs them on the macrotask queue, which is what a
-	// frame is here.
+	// There is no render loop behind this harness, so a frame is the next
+	// macrotask -- which is what a test that waits for one is really waiting on.
 	(window as unknown as Record<string, unknown>).requestAnimationFrame = (
 		callback: (time: number) => void,
 	): number => Number(setTimeout(() => callback(Date.now()), 0));
@@ -248,22 +250,22 @@ async function runFile(file: string): Promise<Outcome> {
 
 	// A terminal loads no fonts, so the font set a test waits on is ready the
 	// moment it is asked for.
-	Object.defineProperty(dom.window.document, "fonts", {
+	Object.defineProperty(document, "fonts", {
 		value: {ready: Promise.resolve()},
 		configurable: true,
 	});
 
-	installInlineStyle(dom.window);
-	const styleManager = new StyleManager(dom.window);
-	const layoutEngine = new LayoutEngine(dom.window);
+	installInlineStyle(window);
+	const styleManager = new StyleManager(window);
+	const layoutEngine = new LayoutEngine(window);
 	styleManager.setLayoutEngine(layoutEngine);
 	// The flush a resolved value takes. TermDOM's own is
 	// #processPendingMutationsAndRender: pending mutations drained into the
 	// style and layout engines, then a synchronous layout. Here, with no
 	// render loop, it is the same seam without the paint -- and the drain is
 	// what makes a value read straight after a DOM build measure that build.
-	const observer = new dom.window.MutationObserver(() => {});
-	observer.observe(dom.window.document, {
+	const observer = new window.MutationObserver(() => {});
+	observer.observe(document, {
 		childList: true,
 		subtree: true,
 		attributes: true,
@@ -283,11 +285,11 @@ async function runFile(file: string): Promise<Outcome> {
 	// engine's pixel is a cell, so the harness gives it a grid the same size
 	// as the viewport the tests assume.
 	layoutEngine.resize(800, 600);
-	installGeometry(dom.window, styleManager);
+	installGeometry(window, styleManager);
 	// matchMedia, which TermDOM installs live off the same evaluator. There is
 	// no resize under this harness, so the list a query answers with is the
 	// one it is created with.
-	(dom.window as unknown as Record<string, unknown>).matchMedia = (
+	(window as unknown as Record<string, unknown>).matchMedia = (
 		query: string,
 	): {media: string; matches: boolean} => ({
 		media: new MediaList(String(query)).mediaText,
@@ -295,6 +297,7 @@ async function runFile(file: string): Promise<Outcome> {
 	});
 
 	const outcome: Outcome = {file, harness: "TIMEOUT", subtests: []};
+	let timer: ReturnType<typeof setTimeout> | null = null;
 	const done = new Promise<void>((resolve) => {
 		(window as any).__complete = (
 			tests: Subtest[],
@@ -310,12 +313,13 @@ async function runFile(file: string): Promise<Outcome> {
 			}));
 			resolve();
 		};
-		setTimeout(resolve, TIMEOUT_MS).unref?.();
+		timer = setTimeout(resolve, TIMEOUT_MS);
+		timer.unref?.();
 	});
 
 	const sources: string[] = [];
 	let harnessLoaded = false;
-	for (const script of dom.window.document.querySelectorAll("script")) {
+	for (const script of document.querySelectorAll("script")) {
 		const src = script.getAttribute("src");
 		if (src) {
 			if (/testharnessreport\.js$/.test(src)) continue;
@@ -352,14 +356,19 @@ async function runFile(file: string): Promise<Outcome> {
 		return {file, harness: "REFTEST", subtests: []};
 	}
 
+	const realm = installGlobals(window, url);
 	try {
-		for (const source of sources) {
-			window.eval(source);
-		}
-		window.eval("add_completion_callback(window.__complete)");
-		dom.window.document.dispatchEvent(new dom.window.Event("DOMContentLoaded"));
-		dom.window.dispatchEvent(new dom.window.Event("load"));
+		// One block at global scope for the whole file: the harness and the test
+		// share it exactly as they share a document's script scope. `var` and
+		// function declarations land on the global, where a test that evals a
+		// name finds them; `let` and `const` stay in the file's own scope.
+		(0, eval)(
+			`{\n${sources.join("\n;\n")}\n;\nadd_completion_callback(__complete);\n}`,
+		);
+		document.dispatchEvent(new window.Event("DOMContentLoaded"));
+		window.dispatchEvent(new window.Event("load"));
 	} catch (error) {
+		realm.restore();
 		return {
 			file,
 			harness: "ERROR",
@@ -369,14 +378,79 @@ async function runFile(file: string): Promise<Outcome> {
 	}
 
 	await done;
-	dom.window.close();
+	if (timer !== null) clearTimeout(timer);
+	// The harness reports its results from a callback of its own after the
+	// completion one; the realm stays the file's until that has run.
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	realm.restore();
 	return outcome;
+}
+
+/**
+ * Make a window's document the realm's, and hand back the undo.
+ *
+ * A classic script reads `document`, `window` and the CSSOM interfaces off its
+ * global. There is one realm here and a file at a time runs in it, so the
+ * file's window is installed over the realm's globals for as long as it runs
+ * and every name it left behind is dropped afterwards.
+ */
+function installGlobals(window: EngineWindow, url: string): {restore(): void} {
+	const scope = globalThis as unknown as Record<string, unknown>;
+	const saved = new Map<string, {had: boolean; value: unknown}>();
+	const before = new Set(Object.keys(scope));
+	const values: Record<string, unknown> = {
+		...(window as unknown as Record<string, unknown>),
+		document: window.document,
+		location: {
+			href: url,
+			search: "",
+			hash: "",
+			pathname: new URL(url).pathname,
+			origin: new URL(url).origin,
+			toString: () => url,
+		},
+		addEventListener: window.addEventListener.bind(window),
+		removeEventListener: window.removeEventListener.bind(window),
+		dispatchEvent: window.dispatchEvent.bind(window),
+	};
+	for (const [name, value] of Object.entries(values)) {
+		if (name === "window" || name === "self") continue;
+		saved.set(name, {
+			had: Object.prototype.hasOwnProperty.call(scope, name),
+			value: scope[name],
+		});
+		scope[name] = value;
+	}
+	// The realm IS the window for as long as the file runs: a script that
+	// writes `window.foo` and later reads a bare `foo` has to find it.
+	for (const name of ["window", "self", "parent", "top"]) {
+		saved.set(name, {
+			had: Object.prototype.hasOwnProperty.call(scope, name),
+			value: scope[name],
+		});
+		scope[name] = scope;
+	}
+	return {
+		restore(): void {
+			for (const name of Object.keys(scope)) {
+				if (!before.has(name) && !saved.has(name)) delete scope[name];
+			}
+			for (const [name, entry] of saved) {
+				if (entry.had) {
+					scope[name] = entry.value;
+				} else {
+					delete scope[name];
+				}
+			}
+		},
+	};
 }
 
 /**
  * A module script as one classic script.
  *
- * There is no module loader behind window.eval, so each `import` is replaced by
+ * There is no module loader behind the evaluation, so each `import` is
+ * replaced by
  * the module it names, evaluated ahead of the script that imports it and with
  * its `export` keywords stripped -- which is all these test modules need, since
  * they only ever export functions the test then calls.

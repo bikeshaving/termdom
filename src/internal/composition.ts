@@ -16,7 +16,7 @@ import {computedStyleOf} from "./styles.js";
 export const SHADOW_ROOT_SYMBOL = Symbol.for("TermDOM.shadowRoot");
 
 /**
- * The flat tree is DERIVED -- jsdom maintains only the raw tree plus slot
+ * The flat tree is DERIVED -- the DOM maintains only the raw tree plus slot
  * assignment. Upward links (flat parent, flat box parent) are memoized per
  * node behind one epoch, dropped by anything that can move a node: a
  * mutation batch, a style invalidation (display: contents changes the box
@@ -203,7 +203,7 @@ export function compositionIsConnected(node: Node): boolean {
 }
 
 /**
- * The slot a node is assigned to, if any. Projection rides on jsdom's live
+ * The slot a node is assigned to, if any. Projection rides on the DOM's live
  * slot assignment (per spec: Element.assignedSlot / Text.assignedSlot),
  * not on any cached mapping of our own -- the walker stays stateless. Only
  * elements and text can be assigned; everything else navigates normally.
@@ -935,7 +935,7 @@ export class ExpandedTreeWalker {
 	}
 
 	/**
-	 * A slot's assigned nodes (jsdom keeps the assignment live). Empty for a
+	 * A slot's assigned nodes (the DOM keeps the assignment live). Empty for a
 	 * slot outside any shadow tree -- its fallback children render instead.
 	 */
 	#getSlotContent(slot: HTMLSlotElement): Node[] {
@@ -1058,7 +1058,7 @@ export function getAllPseudoElements(element: Element): Record<string, Node> {
  * controls. This is how a browser input's own internals work, and it is
  * the mechanism the widget painters hang their trees on.
  *
- * There is deliberately NO attachShadow polyfill: jsdom's native
+ * There is deliberately NO attachShadow polyfill: the DOM's own
  * attachShadow is the author path, including its NotSupportedError on
  * built-ins like <input> -- swallowing that throw would hide a spec
  * behavior authors are entitled to observe.

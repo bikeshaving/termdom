@@ -3594,7 +3594,7 @@ export class LayoutEngine {
 					// Reassigning a slot moves the node in the COMPOSED tree while
 					// the light tree stands still -- no childList record will ever
 					// arrive. Both the run it left and the run it joined are stale,
-					// and the old slot isn't recoverable statelessly (jsdom has
+					// and the old slot isn't recoverable statelessly (the DOM has
 					// already reassigned), so rebuild the host's whole composed
 					// subtree; slot reassignment is rare enough for the hammer.
 					const host = (record.target as Element).parentElement;

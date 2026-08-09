@@ -220,7 +220,7 @@ function applyTextTransform(text: string, transform: string): string {
 /**
  * The paint walk: the pure transformation of a laid-out DOM tree into terminal
  * cells. It reads geometry from the {@link LayoutEngine}, computed styles from
- * the {@link StyleManager} and jsdom, and form controls' shadow parts and caret
+ * the {@link StyleManager} and the DOM, and form controls' shadow parts and caret
  * from the composed tree (the shell upgrades the widgets on connect, so their
  * shadow is already there), then draws into a `DrawingContext`. It owns no
  * scheduling and mutates no DOM -- callers hand it a fresh context and call
@@ -235,9 +235,8 @@ function applyTextTransform(text: string, transform: string): string {
 export class Painter {
 	#window: EngineWindow;
 	// The document, cached the way TermDOM caches it: a stray post-dispose frame
-	// paints against this stale reference rather than crashing on window.document,
-	// which jsdom nulls when the window closes. The live window still serves
-	// getComputedStyle/getSelection, which tolerate a torn-down document.
+	// paints against this reference rather than reaching through a torn-down
+	// window. The live window still serves getComputedStyle/getSelection.
 	#document: Document;
 	#layout: LayoutEngine;
 	#styleManager: StyleManager;
@@ -528,7 +527,6 @@ export class Painter {
 			if (input.type === "hidden") return;
 		}
 
-		// Note: JSDOM automatically calls connectedCallback() when elements are added to DOM
 		// No manual lifecycle management needed
 
 		// The stacking-context painter slots its negative-z layer here: after

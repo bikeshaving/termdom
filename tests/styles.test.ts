@@ -1,13 +1,18 @@
 import {test, expect, describe} from "@b9g/libuild/test";
-import {JSDOM} from "jsdom";
 import {StyleManager} from "../src/internal/styles.js";
 import {LayoutEngine} from "../src/internal/layout.js";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
+import {createDocumentWindow} from "../src/internal/termdom.js";
+
+/** A document of this DOM, from markup, displayed in a window of its own. */
+function documentWindow(html: string) {
+	return {window: createDocumentWindow(html)};
+}
 
 describe("getComputedStyle - What We Support", () => {
 	test("CSS spec defaults", () => {
-		const dom = new JSDOM(
+		const dom = documentWindow(
 			`<!DOCTYPE html><html><body><div id="test"></div></body></html>`,
 		);
 		const styleManager = new StyleManager(dom.window);
@@ -33,7 +38,7 @@ describe("getComputedStyle - What We Support", () => {
 	});
 
 	test("terminal element defaults", () => {
-		const dom = new JSDOM(`<!DOCTYPE html>
+		const dom = documentWindow(`<!DOCTYPE html>
 			<html>
 				<body>
 					<div id="div"></div>
@@ -110,7 +115,7 @@ describe("getComputedStyle - What We Support", () => {
 	});
 
 	test("inline styles override defaults", () => {
-		const dom = new JSDOM(`<!DOCTYPE html>
+		const dom = documentWindow(`<!DOCTYPE html>
 			<html>
 				<body>
 					<div id="test" style="color: red; margin: 10px; display: flex;"></div>
@@ -131,7 +136,7 @@ describe("getComputedStyle - What We Support", () => {
 	});
 
 	test("CSS keywords - initial", () => {
-		const dom = new JSDOM(`<!DOCTYPE html>
+		const dom = documentWindow(`<!DOCTYPE html>
 			<html>
 				<body>
 					<div id="test" style="color: initial; margin: initial;"></div>
@@ -150,7 +155,7 @@ describe("getComputedStyle - What We Support", () => {
 	});
 
 	test("CSS keywords - unset, revert, revert-layer", () => {
-		const dom = new JSDOM(`<!DOCTYPE html>
+		const dom = documentWindow(`<!DOCTYPE html>
 			<html>
 				<body>
 					<div id="test" style="color: unset; margin: revert; padding: revert-layer;"></div>
@@ -170,7 +175,7 @@ describe("getComputedStyle - What We Support", () => {
 	});
 
 	test.todo("property inheritance", () => {
-		const dom = new JSDOM(`<!DOCTYPE html>
+		const dom = documentWindow(`<!DOCTYPE html>
 			<html>
 				<body>
 					<div id="parent" style="color: blue; font-size: 16px; margin: 20px;">
@@ -206,7 +211,7 @@ describe("getComputedStyle - What We Support", () => {
 	});
 
 	test("CSSStyleDeclaration interface compatibility", () => {
-		const dom = new JSDOM(`<!DOCTYPE html>
+		const dom = documentWindow(`<!DOCTYPE html>
 			<html>
 				<body>
 					<div id="test" style="color: red; margin: 10px;"></div>
@@ -233,7 +238,7 @@ describe("getComputedStyle - What We Support", () => {
 	});
 
 	test("box model properties", () => {
-		const dom = new JSDOM(`<!DOCTYPE html>
+		const dom = documentWindow(`<!DOCTYPE html>
 			<html>
 				<body>
 					<div id="test" style="
@@ -262,7 +267,7 @@ describe("getComputedStyle - What We Support", () => {
 
 describe("getComputedStyle - What We Don't Support (Failing Tests)", () => {
 	test.todo("CSS specificity calculation", () => {
-		const dom = new JSDOM(`<!DOCTYPE html>
+		const dom = documentWindow(`<!DOCTYPE html>
 			<html>
 				<head>
 					<style>
@@ -299,7 +304,7 @@ describe("getComputedStyle - What We Don't Support (Failing Tests)", () => {
 	});
 
 	test.todo("stylesheet parsing from <style> elements", () => {
-		const dom = new JSDOM(`<!DOCTYPE html>
+		const dom = documentWindow(`<!DOCTYPE html>
 			<html>
 				<head>
 					<style>
@@ -334,7 +339,7 @@ describe("getComputedStyle - What We Don't Support (Failing Tests)", () => {
 	});
 
 	test.todo("multiple stylesheets with cascade resolution", () => {
-		const dom = new JSDOM(`<!DOCTYPE html>
+		const dom = documentWindow(`<!DOCTYPE html>
 			<html>
 				<head>
 					<style>
@@ -363,7 +368,7 @@ describe("getComputedStyle - What We Don't Support (Failing Tests)", () => {
 	});
 
 	test.todo("!important declarations", () => {
-		const dom = new JSDOM(`<!DOCTYPE html>
+		const dom = documentWindow(`<!DOCTYPE html>
 			<html>
 				<head>
 					<style>
@@ -387,7 +392,7 @@ describe("getComputedStyle - What We Don't Support (Failing Tests)", () => {
 	});
 
 	test.todo("complex selectors", () => {
-		const dom = new JSDOM(`<!DOCTYPE html>
+		const dom = documentWindow(`<!DOCTYPE html>
 			<html>
 				<head>
 					<style>
@@ -438,7 +443,7 @@ describe("getComputedStyle - What We Don't Support (Failing Tests)", () => {
 
 	test.todo("external stylesheets", () => {
 		// This would require implementing <link> element support
-		const dom = new JSDOM(`<!DOCTYPE html>
+		const dom = documentWindow(`<!DOCTYPE html>
 			<html>
 				<head>
 					<link rel="stylesheet" href="styles.css">
@@ -460,7 +465,7 @@ describe("getComputedStyle - What We Don't Support (Failing Tests)", () => {
 	});
 
 	test("shorthand property expansion - margin and padding", () => {
-		const dom = new JSDOM(`<!DOCTYPE html>
+		const dom = documentWindow(`<!DOCTYPE html>
 			<html>
 				<head>
 					<style>
@@ -500,7 +505,7 @@ describe("getComputedStyle - What We Don't Support (Failing Tests)", () => {
 
 	test.todo("shorthand property expansion - border and background", () => {
 		// TODO: Implement border and background shorthand expansion
-		const dom = new JSDOM(`<!DOCTYPE html>
+		const dom = documentWindow(`<!DOCTYPE html>
 			<html>
 				<head>
 					<style>
@@ -532,7 +537,7 @@ describe("getComputedStyle - What We Don't Support (Failing Tests)", () => {
 	});
 
 	test.todo("CSS media queries", () => {
-		const dom = new JSDOM(`<!DOCTYPE html>
+		const dom = documentWindow(`<!DOCTYPE html>
 			<html>
 				<head>
 					<style>
@@ -559,7 +564,7 @@ describe("getComputedStyle - What We Don't Support (Failing Tests)", () => {
 	});
 
 	test.todo("CSS custom properties (CSS variables)", () => {
-		const dom = new JSDOM(`<!DOCTYPE html>
+		const dom = documentWindow(`<!DOCTYPE html>
 			<html>
 				<head>
 					<style>
