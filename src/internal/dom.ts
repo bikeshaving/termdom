@@ -11240,10 +11240,10 @@ export function pseudoElement<T>(host: object, name: string): T | null {
 		: ((slots.get(name) as T) ?? null);
 }
 
-/** Whether an element carries any pseudo-element slot at all. */
-export function hasPseudoElements(host: object): boolean {
+/** How many pseudo-element nodes an element carries. */
+export function pseudoElementCount(host: object): number {
 	const slots = (host as Element)[kPseudoElements];
-	return slots !== null && slots !== undefined && slots.size > 0;
+	return slots === null || slots === undefined ? 0 : slots.size;
 }
 
 /**

@@ -17,7 +17,7 @@ import {
 } from "./styles.js";
 import {
 	createFlatTreeWalker,
-	hasPseudoElements,
+	pseudoElementCount,
 	type FlatTreeWalker,
 	flatIsConnected,
 	flatParentElement,
@@ -1640,14 +1640,13 @@ export class LayoutEngine {
 			// through the run head's text) never gets its own flex node either;
 			// it's counted zero times here despite being a real DOM child. Cheap
 			// proxy for "every DOM child has exactly one children[] entry,"
-			// without walking to find out.
-			element.childNodes.length !== flexNode.children.length ||
-			// A pseudo-element is a children[] entry with no childNodes entry
-			// behind it, so the counts can coincide while the lists do not: an
-			// element whose one child is text and whose ::before heads the run
-			// collides at one and one, and the fast path then paints the
-			// pseudo-element alone.
-			hasPseudoElements(element) ||
+			// without walking to find out. A pseudo-element is a child of the
+			// box tree with no childNodes entry behind it, so it is counted in:
+			// without it, an element whose one child is text and whose ::before
+			// heads the run collides at one and one, and the fast path paints
+			// the pseudo-element alone.
+			element.childNodes.length + pseudoElementCount(element) !==
+				flexNode.children.length ||
 			// A shadow host's childNodes are its LIGHT children, unrelated to
 			// the composed children the layout tree holds -- the counts can
 			// collide by accident (1 light child, 1 run head) and the fast

@@ -12,7 +12,7 @@ import {
 	type Document as DOMDocument,
 	flatParentElement,
 	ensurePseudoElement,
-	hasPseudoElements,
+	pseudoElementCount,
 	isUAShadowRoot,
 	pseudoElement,
 	pseudoHostOf,
@@ -5082,6 +5082,8 @@ const AUTO_COLOR_PROPERTIES = new Set(["caret-color", "outline-color"]);
 const MIN_SIZE_PROPERTIES = new Set(["min-width", "min-height"]);
 
 /** The containers whose children have an automatic minimum size. */
+const PSEUDO_ELEMENT_NAMES = ["::before", "::after", "::marker"];
+
 const ITEM_DISPLAYS = new Set(["flex", "inline-flex", "grid", "inline-grid"]);
 
 /** The block-level display an inline-level box takes as a flex or grid item. */
@@ -5151,7 +5153,7 @@ export function computedStyleOf(element: Element): ComputedStyle {
 			? documentManagers.get(host.ownerDocument)
 			: undefined;
 		return manager
-			? manager.pseudoDeclarationFor(host, name).nodeStyle
+			? manager.pseudoNodeStyleFor(element, host, name)
 			: pseudoStyleOf(host, name);
 	}
 	const document = element.ownerDocument;
@@ -7216,6 +7218,13 @@ export class StyleManager {
 		this.#computedStyleCache.get(element)?.invalidate();
 		this.#computedStyleCache.delete(element);
 		this.#pseudoElementStyleCache.delete(element);
+		// The pseudo-element nodes read through the declarations just dropped.
+		if (pseudoElementCount(element) > 0) {
+			for (const name of PSEUDO_ELEMENT_NAMES) {
+				const node = pseudoElement<Element>(element, name);
+				if (node) this.#pseudoNodeStyles.delete(node);
+			}
+		}
 		this.#counterScopes.delete(element);
 	}
 
@@ -7326,6 +7335,27 @@ export class StyleManager {
 		}
 		return declaration;
 	}
+
+	/**
+	 * The style a pseudo-element's own node is laid out and painted from, on
+	 * the same one-lookup read path an element's style takes: layout and paint
+	 * ask per property per frame, and rebuilding the view from the host's
+	 * declaration each time would put four map hops in front of every read.
+	 */
+	pseudoNodeStyleFor(
+		node: Element,
+		host: Element,
+		name: string,
+	): ComputedStyle {
+		let style = this.#pseudoNodeStyles.get(node);
+		if (style === undefined) {
+			style = this.pseudoDeclarationFor(host, name).nodeStyle;
+			this.#pseudoNodeStyles.set(node, style);
+		}
+		return style;
+	}
+
+	#pseudoNodeStyles = new WeakMap<Element, ComputedStyle>();
 
 	/** A pseudo-element's declaration, on the same internal read path. */
 	pseudoDeclarationFor(
@@ -7971,7 +8001,7 @@ export class StyleManager {
 		);
 		let element = walker.nextNode() as Element;
 		while (element) {
-			if (hasPseudoElements(element)) {
+			if (pseudoElementCount(element) > 0) {
 				this.attachPseudoElementsToElement(element);
 			}
 			element = walker.nextNode() as Element;
@@ -8216,6 +8246,7 @@ export class StyleManager {
 		this.#usedGeneration++;
 		this.#computedStyleCache = new WeakMap();
 		this.#pseudoElementStyleCache = new WeakMap();
+		this.#pseudoNodeStyles = new WeakMap();
 		this.#counterScopes = new WeakMap();
 	}
 
@@ -8432,6 +8463,7 @@ export class StyleManager {
 	dispose(): void {
 		this.#computedStyleCache = new WeakMap();
 		this.#pseudoElementStyleCache = new WeakMap();
+		this.#pseudoNodeStyles = new WeakMap();
 		this.#counterScopes = new WeakMap();
 	}
 }
