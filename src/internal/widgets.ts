@@ -18,12 +18,47 @@ import {
 	attachUAShadowRoot,
 	attachUAWidget,
 	setUASelection,
+	shadowRootOf,
 	uaSelectionOf,
 	uaWidgetOf,
 } from "./dom.js";
+
+/**
+ * The value part's text node inside a form control's user-agent shadow tree,
+ * or null before the tree is built. The control's editable text lives at its
+ * `[part="value"]`, reached through the closed tree the way a browser's own
+ * editing internals reach it: the renderer reads it to place the caret, the
+ * editing path to hit-test a point.
+ */
+export function fieldValueText(field: object): Text | null {
+	const span = shadowRootOf<ShadowRoot>(field)?.querySelector('[part="value"]');
+	return (span?.firstChild as Text) ?? null;
+}
+
+/**
+ * A collapsed Range at a focused control's caret, inside that value text. Its
+ * geometry is then whatever the layout already placed the offset at -- no
+ * bespoke caret walk. Backward selections carry the caret at the start,
+ * forward ones at the end, matching the DOM.
+ */
+export function fieldCaretRange(
+	field: HTMLInputElement | HTMLTextAreaElement,
+): Range | null {
+	const valueText = fieldValueText(field);
+	if (!valueText) return null;
+	const selection = uaSelectionOf(field);
+	const caret =
+		selection.direction === "backward" ? selection.start : selection.end;
+	const range = field.ownerDocument.createRange();
+	range.setStart(
+		valueText,
+		Math.max(0, Math.min(caret, valueText.data.length)),
+	);
+	range.collapse(true);
+	return range;
+}
 import type {EngineWindow} from "./termdom.js";
 import {invalidateStructure} from "./termdom.js";
-import {fieldValueText} from "./composition.js";
 import {type LayoutEngine, isPointInRects} from "./layout.js";
 import {type StyleManager} from "./styles.js";
 import {

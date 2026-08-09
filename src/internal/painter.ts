@@ -1,18 +1,12 @@
 import {uaSelectionOf} from "./dom.js";
 import type {EngineWindow} from "./termdom.js";
-import {type LayoutEngine, isPositioned} from "./layout.js";
+import {type LayoutEngine, flowWalker, isPositioned} from "./layout.js";
 import {type Viewport} from "./viewport.js";
 import {type StyleManager, resolveBorderStyles, getBoxModel} from "./styles.js";
 import {cssColorToNumber, isTransparentColor} from "./color.js";
 import {stringWidth} from "./text.js";
-import {
-	compositionIsConnected,
-	compositionParentElement,
-	compositionShadowRoot,
-	createExpandedTreeWalker,
-	fieldCaretRange,
-	getPseudoMetadata,
-} from "./composition.js";
+import {flatIsConnected, flatParentElement, shadowRootOf} from "./dom.js";
+import {fieldCaretRange} from "./widgets.js";
 import {computedStyleOf, pseudoStyleOf, type ComputedStyle} from "./styles.js";
 
 /**
@@ -270,7 +264,7 @@ export class Painter {
 		for (const element of this.#topLayer) {
 			// COMPOSITION-connected: a UA part (the select's picker) lives in
 			// a fragment and is never DOM-connected while very much on screen.
-			if (!compositionIsConnected(element)) {
+			if (!flatIsConnected(element)) {
 				this.#topLayer.delete(element);
 				continue;
 			}
@@ -493,7 +487,7 @@ export class Painter {
 		if (element.tagName === "SELECT" && rect) {
 			const select = element as HTMLSelectElement;
 			const picker =
-				compositionShadowRoot(select)?.querySelector<HTMLElement>(
+				shadowRootOf<ShadowRoot>(select)?.querySelector<HTMLElement>(
 					'[part="picker"]',
 				);
 			// The widget flips the picker's display inline on open/close, so its
@@ -562,7 +556,7 @@ export class Painter {
 			}
 		} else {
 			// Use ExpandedTreeWalker to render all children including pseudo-elements and shadow DOM
-			const walker = createExpandedTreeWalker(this.#window, element);
+			const walker = flowWalker(element);
 			for (
 				let childNode = walker.firstChild();
 				childNode;
@@ -679,7 +673,7 @@ export class Painter {
 		for (
 			let el: Element | null = element;
 			el;
-			el = compositionParentElement(el)
+			el = flatParentElement<Element>(el)
 		) {
 			if (computedStyleOf(el).computedValueOf("position") === "fixed") {
 				return true;
@@ -702,9 +696,9 @@ export class Painter {
 	): import("./ansi.js").DrawingContext["clipRect"] {
 		let clip = contextClip;
 		for (
-			let ancestor = compositionParentElement(element);
+			let ancestor = flatParentElement<Element>(element);
 			ancestor && ancestor !== contextRoot;
-			ancestor = compositionParentElement(ancestor)
+			ancestor = flatParentElement<Element>(ancestor)
 		) {
 			if (!isPositioned(this.#window, ancestor)) continue;
 			const style = computedStyleOf(ancestor);
@@ -861,7 +855,7 @@ export class Painter {
 		rect: DOMRect,
 		ctx: import("./ansi.js").DrawingContext,
 	): void {
-		const root = compositionShadowRoot(element);
+		const root = shadowRootOf<ShadowRoot>(element);
 		if (!root) return;
 		const boxModel = getBoxModel(element);
 		const contentX =
@@ -902,30 +896,13 @@ export class Painter {
 		const textContent = textNode.data;
 		if (!textContent) return;
 
-		// Check if this is a pseudo-element node
-		const pseudoMetadata = getPseudoMetadata(textNode);
-
-		// For pseudo elements, we don't have a parentElement, but we have
-		// hostElement. Everything else styles from the FLAT-tree parent:
-		// slotted bare text draws its inherited styles through the slot's
-		// shadow chain, not from the host it came from.
-		const parentElement = pseudoMetadata
-			? pseudoMetadata.hostElement
-			: compositionParentElement(textNode);
+		// The FLAT-tree parent: slotted bare text draws its inherited styles
+		// through the slot's shadow chain, not from the host it came from, and
+		// the text of a pseudo-element draws the pseudo-element's own.
+		const parentElement = flatParentElement<Element>(textNode);
 		if (!parentElement) return;
 
-		let computedStyle: ComputedStyle;
-
-		if (pseudoMetadata) {
-			// For pseudo-elements, get the computed style with the pseudo-element selector
-			computedStyle = pseudoStyleOf(
-				pseudoMetadata.hostElement,
-				pseudoMetadata.pseudoType,
-			);
-		} else {
-			// For regular text nodes, use the parent element's style
-			computedStyle = computedStyleOf(parentElement);
-		}
+		const computedStyle: ComputedStyle = computedStyleOf(parentElement);
 
 		// visibility inherits, so the parent's own resolved value already accounts
 		// for a closer ancestor overriding back to visible.
@@ -990,9 +967,7 @@ export class Painter {
 		const to =
 			range.endContainer === textNode ? range.endOffset : textNode.data.length;
 		if (to <= from) return null;
-		const selectionParent =
-			getPseudoMetadata(textNode)?.hostElement ??
-			compositionParentElement(textNode);
+		const selectionParent = flatParentElement<Element>(textNode);
 		if (!selectionParent) return null;
 		return {from, to, selectionParent};
 	}

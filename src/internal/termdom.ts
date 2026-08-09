@@ -1,5 +1,10 @@
 import * as DOM from "./dom.js";
-import {setUASelection, uaSelectionOf} from "./dom.js";
+import {
+	flatIsConnected,
+	flatParentElement,
+	setUASelection,
+	uaSelectionOf,
+} from "./dom.js";
 import {LayoutEngine, visualToDataOffsets} from "./layout.js";
 import {Viewport} from "./viewport.js";
 import {Painter} from "./painter.js";
@@ -30,12 +35,11 @@ import {
 	tokenizeInput,
 } from "./events.js";
 import {
-	compositionIsConnected,
-	compositionParentElement,
+	type UAWidgetController,
+	defineUAWidgets,
 	fieldCaretRange,
 	fieldValueText,
-} from "./composition.js";
-import {type UAWidgetController, defineUAWidgets} from "./widgets.js";
+} from "./widgets.js";
 
 /* --------------------------------------------------------- invalidation */
 
@@ -1113,7 +1117,7 @@ export class TermDOM {
 			for (
 				let el: Element | null = element;
 				el;
-				el = compositionParentElement(el)
+				el = flatParentElement<Element>(el)
 			) {
 				if (computedStyleOf(el).computedValueOf("position") === "fixed") {
 					return true;
@@ -1985,7 +1989,7 @@ export class TermDOM {
 	#documentPaintHeight(): number {
 		let height = this.document.body.scrollHeight;
 		for (const element of this.#topLayer) {
-			if (!compositionIsConnected(element)) continue;
+			if (!flatIsConnected(element)) continue;
 			const rect = this[kLayoutEngine].getRect(element);
 			if (rect) height = Math.max(height, Math.ceil(rect.bottom));
 		}

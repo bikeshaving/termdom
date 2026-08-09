@@ -8,21 +8,21 @@
 import type {EngineWindow} from "./termdom.js";
 import {invalidateFrame, invalidateStructure} from "./termdom.js";
 import {
+	clearPseudoElement,
 	type Document as DOMDocument,
+	flatParentElement,
+	ensurePseudoElement,
+	hasPseudoElements,
 	isUAShadowRoot,
+	pseudoElement,
+	pseudoHostOf,
+	pseudoNameOf,
+	shadowRootOf,
 	styleElementCount,
 } from "./dom.js";
 import * as cssTree from "css-tree";
 import {parseCSSColor} from "./color.js";
 import {stringWidth} from "./text.js";
-import {
-	attachPseudoElement,
-	compositionParentElement,
-	compositionShadowRoot,
-	getAllPseudoElements,
-	getPseudoElement,
-	removePseudoElement,
-} from "./composition.js";
 import {type LayoutEngine} from "./layout.js";
 import {
 	CSS_INITIAL_VALUES,
@@ -5142,6 +5142,18 @@ export interface ComputedStyle {
  * the read layout and paint make thousands of times a frame.
  */
 export function computedStyleOf(element: Element): ComputedStyle {
+	// A pseudo-element node's style is its host's declaration for the
+	// pseudo-element it fills; it matches no selector of its own.
+	const host = pseudoHostOf<Element>(element);
+	if (host !== null) {
+		const name = pseudoNameOf(element) as string;
+		const manager = host.ownerDocument
+			? documentManagers.get(host.ownerDocument)
+			: undefined;
+		return manager
+			? manager.pseudoDeclarationFor(host, name).nodeStyle
+			: pseudoStyleOf(host, name);
+	}
 	const document = element.ownerDocument;
 	if (!document) return EMPTY_COMPUTED_STYLE;
 	const manager = documentManagers.get(document);
@@ -5307,7 +5319,7 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 	 */
 	#lengthContext(property: string): LengthContext {
 		const own = property === "font-size";
-		const parent = own ? compositionParentElement(this.#element) : null;
+		const parent = own ? flatParentElement<Element>(this.#element) : null;
 		const font = own
 			? parent
 				? fontSizeOf(computedStyleOf(parent))
@@ -5493,9 +5505,9 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 		if (position === "fixed") return this.#viewportBox();
 		if (position === "absolute") {
 			for (
-				let ancestor = compositionParentElement(this.#element);
+				let ancestor = flatParentElement<Element>(this.#element);
 				ancestor;
-				ancestor = compositionParentElement(ancestor)
+				ancestor = flatParentElement<Element>(ancestor)
 			) {
 				const ancestorPosition =
 					computedStyleOf(ancestor).computedValueOf("position");
@@ -5507,9 +5519,9 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 		}
 		if (position === "sticky") {
 			for (
-				let ancestor = compositionParentElement(this.#element);
+				let ancestor = flatParentElement<Element>(this.#element);
 				ancestor;
-				ancestor = compositionParentElement(ancestor)
+				ancestor = flatParentElement<Element>(ancestor)
 			) {
 				const overflow = computedStyleOf(ancestor).computedValueOf("overflow");
 				if (overflow && overflow !== "visible") {
@@ -5517,7 +5529,7 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 				}
 			}
 		}
-		const parent = compositionParentElement(this.#element);
+		const parent = flatParentElement<Element>(this.#element);
 		return parent ? this.#boxOf(parent, true) : this.#viewportBox();
 	}
 
@@ -5575,14 +5587,14 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 		for (
 			let element: Element | null = this.#element;
 			element;
-			element = compositionParentElement(element)
+			element = flatParentElement<Element>(element)
 		) {
 			if (computedStyleOf(element).computedValueOf("display") === "none") {
 				return "0px";
 			}
 		}
 		if (this.computedValueOf("aspect-ratio") !== "auto") return "auto";
-		const parent = compositionParentElement(this.#element);
+		const parent = flatParentElement<Element>(this.#element);
 		const display = parent
 			? computedStyleOf(parent).computedValueOf("display")
 			: "";
@@ -5596,7 +5608,7 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 
 	/** The space an `auto` margin actually took, measured off the two boxes. */
 	#autoMargin(property: string, rect: DOMRect): number {
-		const parent = compositionParentElement(this.#element);
+		const parent = flatParentElement<Element>(this.#element);
 		const parentRect = parent ? this.#manager!.usedRect(parent) : null;
 		if (!parent || !parentRect) return 0;
 		const parentStyle = computedStyleOf(parent);
@@ -5629,7 +5641,7 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 
 	/** The width a percentage on this element resolves against. */
 	#containingWidth(): number | null {
-		const parent = compositionParentElement(this.#element);
+		const parent = flatParentElement<Element>(this.#element);
 		if (!parent) return null;
 		const rect = this.#manager!.usedRect(parent);
 		return rect ? rect.width : null;
@@ -5671,7 +5683,7 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 
 	/** This element's flat-tree parent's computed value for `property`, or null at the root. */
 	#resolveFromParent(property: string): string | null {
-		const parent = compositionParentElement(this.#element);
+		const parent = flatParentElement<Element>(this.#element);
 		if (!parent) return null;
 		return computedStyleOf(parent).computedValueOf(property) || null;
 	}
@@ -5852,9 +5864,9 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 				// (host -> shadow child) and reaches slotted content through
 				// its slot's chain, exactly as in a browser.
 				for (
-					let parent = compositionParentElement(this.#element);
+					let parent = flatParentElement<Element>(this.#element);
 					parent !== null;
-					parent = compositionParentElement(parent)
+					parent = flatParentElement<Element>(parent)
 				) {
 					const parentValue = computedStyleOf(parent).computedValueOf(property);
 					if (parentValue) {
@@ -5972,7 +5984,7 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 		for (
 			let element: Element | null = this.#element;
 			element;
-			element = compositionParentElement(element)
+			element = flatParentElement<Element>(element)
 		) {
 			const declaration = this.#manager?.declarationFor(element);
 			for (const name of declaration?.declaredCustomProperties() ?? []) {
@@ -6089,6 +6101,37 @@ export class PseudoStyleDeclaration extends CSSStyleProperties {
 		return value;
 	}
 
+	/**
+	 * The style of the NODE a pseudo-element generates: the same declarations,
+	 * completed with the initial value of everything no rule and no
+	 * inheritance gave a value. A box is laid out and painted from this -- an
+	 * empty answer would leave it with no `display` at all -- while the
+	 * cascade read above stays the bare declarations the ::selection and
+	 * ::marker painters decide on.
+	 */
+	get nodeStyle(): ComputedStyle {
+		let style = this.#nodeStyle;
+		if (style === null) {
+			const resolved = new Map<string, string>();
+			style = {
+				computedValueOf: (property: string): string => {
+					let value = resolved.get(property);
+					if (value === undefined) {
+						value =
+							this.computedValueOf(property) ||
+							computedValue(property, getInitialStyle(null, property));
+						resolved.set(property, value);
+					}
+					return value;
+				},
+			};
+			this.#nodeStyle = style;
+		}
+		return style;
+	}
+
+	#nodeStyle: ComputedStyle | null = null;
+
 	override getPropertyValue(property: string): string {
 		this.#manager?.flushStyle();
 		const computed =
@@ -6123,7 +6166,7 @@ export class PseudoStyleDeclaration extends CSSStyleProperties {
 			host &&
 			computedStyleOf(host).computedValueOf("display") === "contents"
 		) {
-			host = compositionParentElement(host);
+			host = flatParentElement<Element>(host);
 		}
 		const box = host && this.#manager!.contentBox(host);
 		if (!box) return computed;
@@ -6767,7 +6810,7 @@ export class StyleManager {
 	#shadowRoots = new Set<ShadowRoot>();
 	#pseudoElementStyleCache = new WeakMap<
 		Element,
-		Map<string, Record<string, string>>
+		Map<string, PseudoStyleDeclaration>
 	>();
 	#parsedRules: ParsedCSSRule[] = [];
 	#stylesheetsDirty = false;
@@ -7127,7 +7170,7 @@ export class StyleManager {
 				// A host's focus state reaches into its shadow tree through
 				// :host(:focus) rules (and inheritance from whatever they
 				// set), so the tree's cached styles go stale with it.
-				const shadowRoot = compositionShadowRoot(element);
+				const shadowRoot = shadowRootOf<ShadowRoot>(element);
 				if (shadowRoot) {
 					for (const descendant of shadowRoot.querySelectorAll("*")) {
 						this.#invalidateElementCaches(descendant);
@@ -7294,12 +7337,11 @@ export class StyleManager {
 			elementCache = new Map();
 			this.#pseudoElementStyleCache.set(element, elementCache);
 		}
-		let pseudoStyle = elementCache.get(pseudoElement);
-		if (!pseudoStyle) {
-			pseudoStyle = this.#computePseudoElementStyle(element, pseudoElement);
-			elementCache.set(pseudoElement, pseudoStyle);
-		}
-		const declarations: Record<string, string> = {...pseudoStyle};
+		const cached = elementCache.get(pseudoElement);
+		if (cached) return cached;
+		const declarations: Record<string, string> = {
+			...this.#computePseudoElementStyle(element, pseudoElement),
+		};
 		// Per CSS, a pseudo-element INHERITS from its originating element: a
 		// button's focus underline runs through its UA brackets, a .destroy's
 		// color reaches its ::after glyph. Rule declarations above win;
@@ -7319,7 +7361,9 @@ export class StyleManager {
 				declarations.display || getInitialStyle(null, "display"),
 			);
 		}
-		return new PseudoStyleDeclaration(declarations, element, this);
+		const declaration = new PseudoStyleDeclaration(declarations, element, this);
+		elementCache.set(pseudoElement, declaration);
+		return declaration;
 	}
 
 	/**
@@ -7819,13 +7863,10 @@ export class StyleManager {
 	}
 
 	/**
-	 * Create pseudo-element node with CSS content applied
-	 * This integrates with ExpandedTreeWalker for automatic pseudo-element creation
+	 * The text a pseudo-element holds, or null when it holds none -- no rule
+	 * declared `content`, or the one that did declared `none`.
 	 */
-	createPseudoElementNode(
-		hostElement: Element,
-		pseudoType: string,
-	): Text | null {
+	#pseudoContentFor(hostElement: Element, pseudoType: string): string | null {
 		const styles = this.#computePseudoElementStyle(hostElement, pseudoType);
 		let content = styles.content;
 
@@ -7870,20 +7911,7 @@ export class StyleManager {
 		let textContent = unquoteContent(content);
 
 		// Resolve counter() functions in the content
-		textContent = this.resolveCounterFunction(hostElement, textContent);
-
-		// Create text node with the content
-		const doc = hostElement.ownerDocument;
-		const textNode = doc.createTextNode(textContent);
-
-		// Store metadata for ExpandedTreeWalker
-		(textNode as any).pseudoMetadata = {
-			pseudoType,
-			hostElement,
-			styles,
-		};
-
-		return textNode;
+		return this.resolveCounterFunction(hostElement, textContent);
 	}
 
 	/**
@@ -7943,7 +7971,7 @@ export class StyleManager {
 		);
 		let element = walker.nextNode() as Element;
 		while (element) {
-			if (Object.keys(getAllPseudoElements(element)).length > 0) {
+			if (hasPseudoElements(element)) {
 				this.attachPseudoElementsToElement(element);
 			}
 			element = walker.nextNode() as Element;
@@ -8074,7 +8102,7 @@ export class StyleManager {
 		// path so a rule that STOPPED matching removes it.)
 		if (
 			!this.#pseudoRuleCouldMatch(element, pseudoType) &&
-			!getPseudoElement(element, pseudoType)
+			!pseudoElement(element, pseudoType)
 		) {
 			return;
 		}
@@ -8095,46 +8123,46 @@ export class StyleManager {
 
 			// Remove inline markers for outside positioning
 			if (listStylePosition === "outside") {
-				removePseudoElement(element, "::marker");
+				this.#removePseudoElement(element, "::marker");
 				return;
 			}
 		}
 
 		// Compute what the pseudo should hold now; null means "none".
-		const candidate = this.shouldCreatePseudoElement(element, pseudoType)
-			? this.createPseudoElementNode(element, pseudoType)
+		const content = this.shouldCreatePseudoElement(element, pseudoType)
+			? this.#pseudoContentFor(element, pseudoType)
 			: null;
-		const existing = getPseudoElement(element, pseudoType) as Text | null;
+		const existing = pseudoElement<Element>(element, pseudoType);
 
 		// Pseudo NODE IDENTITY is stable: attaches re-run on every element
 		// addition and attribute invalidation, and layout keys the pseudo's
 		// boxes by instance -- a fresh node per attach strands the mapped one
 		// (an absolutely positioned button's ::after glyph simply vanished).
-		// Reuse the node; update its text in place; remove when content goes.
-		if (existing && candidate) {
-			if (existing.data !== candidate.data) {
-				existing.data = candidate.data;
+		// The slot keeps the node; only its text changes.
+		if (content === null) {
+			if (existing) this.#removePseudoElement(element, pseudoType);
+			return;
+		}
+		if (existing) {
+			const text = existing.firstChild as Text;
+			if (text.data !== content) {
+				text.data = content;
 				this.#layoutEngine?.invalidate(element);
 			}
-			(existing as any).pseudoMetadata = {
-				...((existing as any).pseudoMetadata || {}),
-				styles: this.#computePseudoElementStyle(element, pseudoType),
-			};
 			return;
 		}
-		if (existing && !candidate) {
-			removePseudoElement(element, pseudoType);
-			this.#layoutEngine?.invalidate(element);
-			return;
-		}
-		if (candidate) {
-			attachPseudoElement(element, candidate, pseudoType);
-			(candidate as any).pseudoMetadata = {
-				...((candidate as any).pseudoMetadata || {}),
-				styles: this.#computePseudoElementStyle(element, pseudoType),
-			};
-			this.#layoutEngine?.invalidate(element);
-		}
+		const node = ensurePseudoElement<Element>(element, pseudoType);
+		node.appendChild(element.ownerDocument.createTextNode(content));
+		invalidateStructure();
+		this.#layoutEngine?.invalidate(element);
+	}
+
+	/** Drop an element's pseudo-element node, and the boxes it held. */
+	#removePseudoElement(element: Element, pseudoType: string): void {
+		if (!pseudoElement(element, pseudoType)) return;
+		clearPseudoElement(element, pseudoType);
+		invalidateStructure();
+		this.#layoutEngine?.invalidate(element);
 	}
 
 	#setupInvalidationHooks(): void {
