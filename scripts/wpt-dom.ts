@@ -799,8 +799,8 @@ const DEVIATIONS: Array<[string, string]> = [
 		"`:scope` inside matches() and closest() resolves against the document, not the element the method was called on. The selector engine is nwsapi, rented rather than written, and its match entry point takes no scoping root.",
 	],
 	[
-		"dom/events/Body-FrameSet-Event-Handlers.html, and every subtest that reads an on* IDL attribute",
-		"The event handler IDL attributes -- onclick and its ninety-odd siblings -- are absent. Getting one is defined as getting the current value of an event handler, which compiles the content attribute as a script, and this DOM never executes script; a pair that answered only the property half would be a subset of the member the specification defines.",
+		"dom/events/Body-FrameSet-Event-Handlers.html, and every subtest that reads an on* content attribute",
+		"The event handler IDL attributes -- onclick and its ninety-odd siblings -- are here, on HTMLElement, SVGElement, MathMLElement and Document. Their content-attribute half is not: `onclick=\"...\"` in markup is a function compiled from the attribute's value, and this DOM never executes script, so the attribute sets no handler and the IDL attribute reads back null. The subtests that still fail in this file are the ones that compile a content attribute, and the ones that expect a body's or a frameset's forwarded handler to land on a Window: a document with no browsing context has no event handler target for the forwarded set, so the write is dropped and the read answers null -- which is what the algorithm says of it -- and the harness's window is a bare event target.",
 	],
 	[
 		"dom/collections/domstringmap-supported-property-names.html, custom-elements/reactions/DOMStringMap.html",
