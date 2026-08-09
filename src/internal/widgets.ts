@@ -122,11 +122,11 @@ function fieldSelectionMove(
 
 /**
  * The field-editing keys shared by <input> and <textarea>: select-all,
- * Backspace/Delete, the horizontal arrows (Shift extending the selection), and
- * printable insertion -- grapheme-aware, following the browser's anchor/focus
- * model. `key` is the DOM key value (`event.key`). Returns the new
- * value+selection, or null if the key is not one of these -- the field-specific
- * keys (Enter, vertical motion, Home/End) belong to the caller.
+ * Backspace/Delete and the horizontal arrows (Shift extending the selection),
+ * grapheme-aware, following the browser's anchor/focus model. `key` is the DOM
+ * key value (`event.key`). Returns the new value+selection, or null if the key
+ * is not one of these -- the field-specific keys (Enter, vertical motion,
+ * Home/End) belong to the caller, and printable insertion is a keypress action.
  */
 function applySharedFieldEdit(
 	field: HTMLInputElement | HTMLTextAreaElement,
@@ -192,15 +192,26 @@ function applySharedFieldEdit(
 		const target = hasSelection ? end : nextGraphemeBoundary(value, caret);
 		return fieldSelectionMove(value, anchor, target, false);
 	}
-	// A printable character replaces the selection. Ctrl chords never insert --
-	// their raw byte carried no printable character in the first place.
-	if (key.length === 1 && key.charCodeAt(0) >= 32 && !ctrlKey) {
-		return collapsedEdit(
-			value.slice(0, start) + key + value.slice(end),
-			start + 1,
-		);
-	}
 	return null;
+}
+
+/**
+ * A typed character replacing the field's selection.
+ *
+ * Reached from `beforeinput`, which is where a browser reaches it: the
+ * insertion is the keypress default action, so it runs after keypress has been
+ * delivered rather than during keydown, and the field's `input` follows both.
+ */
+function printableFieldEdit(
+	field: HTMLInputElement | HTMLTextAreaElement,
+	text: string,
+): FieldEditResult {
+	const value = field.value;
+	const {start, end} = uaSelectionOf(field);
+	return collapsedEdit(
+		value.slice(0, start) + text + value.slice(end),
+		start + text.length,
+	);
 }
 
 /** An edit result whose selection is a caret collapsed at `pos`. */
@@ -346,9 +357,15 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 			this.reconcile();
 		}
 
-		// A textarea keeps a paste's newlines.
+		// A typed character arrives as an insertText; a paste keeps its newlines.
 		#onBeforeInput = (event: InputEvent): void => {
-			if (event.inputType !== "insertFromPaste" || event.data == null) return;
+			if (event.defaultPrevented || event.data == null) return;
+			if (event.inputType === "insertText") {
+				event.preventDefault();
+				applyFieldEdit(this.#host, printableFieldEdit(this.#host, event.data));
+				return;
+			}
+			if (event.inputType !== "insertFromPaste") return;
 			event.preventDefault();
 			insertPaste(this.#host, event.data);
 		};
@@ -485,7 +502,9 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 			this.#host = host;
 			this.#build();
 			// Editing is the widget's own default action, like a browser input's
-			// -- a keydown listener; paste is a beforeinput listener.
+			// -- a keydown listener; typed characters and pastes arrive as
+			// beforeinput, which is the default action of the keypress and of the
+			// paste that produced them.
 			host.addEventListener("keydown", this.#onKeydown as EventListener);
 			host.addEventListener(
 				"beforeinput",
@@ -499,11 +518,20 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 			return type === "checkbox" || type === "radio" ? "toggle" : "field";
 		}
 
-		// A single-line input strips a paste's line breaks (HTML value sanitization).
+		/**
+		 * A typed character arrives as an insertText; a paste as an
+		 * insertFromPaste, whose line breaks a single-line input strips (HTML
+		 * value sanitization). A toggle takes neither: it holds no text.
+		 */
 		#onBeforeInput = (event: InputEvent): void => {
-			if (event.inputType !== "insertFromPaste" || event.data == null) return;
-			const type = this.#host.type;
-			if (type === "checkbox" || type === "radio") return;
+			if (event.defaultPrevented || event.data == null) return;
+			if (this.#kindFor() !== "field") return;
+			if (event.inputType === "insertText") {
+				event.preventDefault();
+				applyFieldEdit(this.#host, printableFieldEdit(this.#host, event.data));
+				return;
+			}
+			if (event.inputType !== "insertFromPaste") return;
 			event.preventDefault();
 			insertPaste(this.#host, event.data.replace(/[\r\n]+/g, ""));
 		};

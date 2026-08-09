@@ -34,6 +34,10 @@ import NWSAPI from "nwsapi";
 import {
 	ARIA_ELEMENT_REFLECTIONS,
 	ARIA_STRING_REFLECTIONS,
+	DOCUMENT_AND_ELEMENT_EVENT_HANDLERS,
+	DOCUMENT_EVENT_HANDLERS,
+	FORWARDED_BODY_EVENT_HANDLERS,
+	GLOBAL_EVENT_HANDLERS,
 	HTML_ELEMENT_REFLECTIONS,
 	HTML_ELEMENT_TAGS,
 	HTML_INTERFACES,
@@ -292,6 +296,7 @@ const kCloningSteps = Symbol("cloning steps");
 const kCloneSingle = Symbol("clone a single node");
 const kDispatchState = Symbol("event dispatch state");
 const kListeners = Symbol("event listener list");
+const kEventHandlerMap = Symbol("event handler map");
 const kGetTheParent = Symbol("get the parent");
 const kSetEventType = Symbol("set event type");
 const kIsMouseEvent = Symbol("is a mouse event");
@@ -1608,6 +1613,8 @@ function defaultPassiveValue(type: string, target: EventTarget): boolean {
 /** An event target: a listener list, and the parent a dispatch walks to. */
 export class EventTarget {
 	#listeners: Listener[] = [];
+	/** Null until this target is given an event handler, which most never are. */
+	#handlers: Map<string, EventHandlerRecord> | null = null;
 
 	addEventListener(
 		type: string,
@@ -1694,6 +1701,16 @@ export class EventTarget {
 	}
 
 	/**
+	 * The event handler map, for the handler IDL attributes. Created only when
+	 * a handler is being set: reading a handler off a target that has none
+	 * allocates nothing.
+	 */
+	[kEventHandlerMap](create: boolean): Map<string, EventHandlerRecord> | null {
+		if (this.#handlers === null && create) this.#handlers = new Map();
+		return this.#handlers;
+	}
+
+	/**
 	 * The target a dispatch reaches next. A bare event target is the end of a
 	 * path; a node hands back its parent.
 	 */
@@ -1712,6 +1729,230 @@ function removeListener(listeners: Listener[], listener: Listener): void {
 	listener.removed = true;
 	const index = listeners.indexOf(listener);
 	if (index !== -1) listeners.splice(index, 1);
+}
+
+/* -------------------------------------------- event handler IDL attributes */
+
+/**
+ * What an event handler attribute holds: a callback, or an object that is not
+ * one.
+ *
+ * Web IDL's EventHandler is a callback type with LegacyTreatNonObjectAsNull,
+ * so anything that is not an object is stored as null, and an object that
+ * turns out not to be callable is stored and throws when the event arrives.
+ */
+type EventHandlerValue = ((event: Event) => unknown) | object;
+
+/**
+ * An event handler: the value the attribute holds, and the listener standing
+ * in for it in its target's listener list.
+ *
+ * The listener is registered at the first non-null assignment and stays
+ * registered across every later one, which is what fixes a handler's place
+ * among the listeners added around it: reassigning `onclick` changes what
+ * runs, never when it runs. A null assignment removes the listener, so a
+ * later assignment takes a new place at the end of the list.
+ */
+interface EventHandlerRecord {
+	value: EventHandlerValue | null;
+	listener: Listener | null;
+}
+
+/** The value an event handler attribute holds, or null where it holds none. */
+function eventHandlerValue(
+	target: EventTarget,
+	type: string,
+): EventHandlerValue | null {
+	const handlers = target[kEventHandlerMap](false);
+	if (handlers === null) return null;
+	return handlers.get(type)?.value ?? null;
+}
+
+/**
+ * Set an event handler attribute: activate the handler on a value, deactivate
+ * it on null.
+ */
+function setEventHandler(
+	target: EventTarget,
+	type: string,
+	value: unknown,
+): void {
+	const handler =
+		typeof value === "function" || (typeof value === "object" && value !== null)
+			? (value as EventHandlerValue)
+			: null;
+	const handlers = target[kEventHandlerMap](handler !== null);
+	if (handlers === null) return;
+	const record = handlers.get(type);
+	if (handler === null) {
+		if (record === undefined) return;
+		record.value = null;
+		if (record.listener !== null) {
+			removeListener(target[kListeners], record.listener);
+			record.listener = null;
+		}
+		return;
+	}
+	if (record !== undefined) {
+		record.value = handler;
+		if (record.listener === null) {
+			record.listener = registerHandlerListener(target, type, record);
+		}
+		return;
+	}
+	const created: EventHandlerRecord = {value: handler, listener: null};
+	handlers.set(type, created);
+	created.listener = registerHandlerListener(target, type, created);
+}
+
+/**
+ * Put the handler's listener in the target's listener list, at the end, where
+ * it stays for as long as the handler is non-null.
+ *
+ * The list is written directly, as the spec's "add an event listener" is: a
+ * handler is not an addEventListener call, and does not go through one.
+ */
+function registerHandlerListener(
+	target: EventTarget,
+	type: string,
+	record: EventHandlerRecord,
+): Listener {
+	const listener: Listener = {
+		type,
+		callback: (event: Event): void => {
+			invokeEventHandler(target, type, record, event);
+		},
+		capture: false,
+		once: false,
+		passive: false,
+		removed: false,
+	};
+	target[kListeners].push(listener);
+	return listener;
+}
+
+/**
+ * An ErrorEvent, which a window's error handler is called with as five
+ * arguments rather than one.
+ *
+ * This DOM defines no ErrorEvent interface -- nothing here reports an error as
+ * an event -- so the test is the shape the interface has, which is what an
+ * ErrorEvent dispatched from outside carries.
+ */
+function isErrorEvent(event: Event): boolean {
+	return (
+		"message" in event &&
+		"filename" in event &&
+		"lineno" in event &&
+		"colno" in event &&
+		"error" in event
+	);
+}
+
+/**
+ * The event handler processing algorithm: call the handler's current value
+ * with the event, and read the answer it hands back as a cancellation.
+ *
+ * A handler that throws reports its exception rather than letting it out into
+ * the dispatch that called it.
+ */
+function invokeEventHandler(
+	target: EventTarget,
+	type: string,
+	record: EventHandlerRecord,
+	event: Event,
+): void {
+	const callback = record.value;
+	if (callback === null) return;
+	// A window's error handler takes an ErrorEvent apart into arguments and
+	// answers a cancellation with true, the inverse of every other handler. A
+	// document's or an element's error handler is an ordinary one.
+	const errorHandling =
+		type === "error" && !(target instanceof Node) && isErrorEvent(event);
+	let result: unknown;
+	try {
+		const called = callback as (...args: unknown[]) => unknown;
+		result = errorHandling
+			? called.call(
+					target,
+					(event as unknown as {message: unknown}).message,
+					(event as unknown as {filename: unknown}).filename,
+					(event as unknown as {lineno: unknown}).lineno,
+					(event as unknown as {colno: unknown}).colno,
+					(event as unknown as {error: unknown}).error,
+				)
+			: called.call(target, event);
+	} catch (error) {
+		reportError(error);
+		return;
+	}
+	if (errorHandling ? result === true : result === false) {
+		setCanceledFlag(event);
+	}
+}
+
+/**
+ * Install one event handler IDL attribute on an interface's prototype.
+ *
+ * On the prototype, once per interface: the accessor pair is the interface's,
+ * and what an instance holds is the handler map it only grows when something
+ * actually sets a handler on it.
+ */
+function installEventHandler(prototype: object, name: string): void {
+	const type = name.slice(2);
+	Object.defineProperty(prototype, name, {
+		get(this: EventTarget): EventHandlerValue | null {
+			return eventHandlerValue(this, type);
+		},
+		set(this: EventTarget, value: unknown): void {
+			setEventHandler(this, type, value);
+		},
+		enumerable: true,
+		configurable: true,
+	});
+}
+
+/**
+ * Install every event handler IDL attribute in a table on an interface's
+ * prototype.
+ */
+export function installEventHandlers(
+	prototype: object,
+	names: readonly string[],
+): void {
+	for (const name of names) installEventHandler(prototype, name);
+}
+
+/** The tables a window's own interface is installed from, which the engine owns. */
+export {GLOBAL_EVENT_HANDLERS, WINDOW_EVENT_HANDLERS} from "./domhtml.ts";
+
+/**
+ * Install an event handler attribute that belongs to the element's window
+ * rather than to the element -- the set a `body` and a `frameset` forward.
+ *
+ * An element whose document has no window has no event handler target at all,
+ * and the algorithm's answer for that is to drop the write and read back null.
+ */
+function installForwardedEventHandler(prototype: object, name: string): void {
+	Object.defineProperty(prototype, name, {
+		get(this: Element): unknown {
+			const view = this[kDocument][kDefaultView] as Record<
+				string,
+				unknown
+			> | null;
+			return view === null ? null : (view[name] ?? null);
+		},
+		set(this: Element, value: unknown): void {
+			const view = this[kDocument][kDefaultView] as Record<
+				string,
+				unknown
+			> | null;
+			if (view === null) return;
+			view[name] = value;
+		},
+		enumerable: true,
+		configurable: true,
+	});
 }
 
 /**
@@ -15622,3 +15863,33 @@ ceReactions(HTMLDialogElement.prototype, [
 	"show",
 	"showModal",
 ]);
+
+/**
+ * The event handler IDL attributes, on the interfaces that include each mixin.
+ *
+ * GlobalEventHandlers and DocumentAndElementEventHandlers are included by the
+ * three element interfaces HTML, SVG and MathML define and by Document; the
+ * WindowEventHandlers set belongs to the window, which the engine builds, and
+ * is forwarded from `body` and `frameset` to it.
+ *
+ * Only the content-attribute half of the feature is missing: `onclick="..."`
+ * in markup is a function compiled from source, and this DOM never executes
+ * script.
+ */
+for (const prototype of [
+	HTMLElement.prototype,
+	SVGElement.prototype,
+	MathMLElement.prototype,
+	Document.prototype,
+]) {
+	installEventHandlers(prototype, GLOBAL_EVENT_HANDLERS);
+	installEventHandlers(prototype, DOCUMENT_AND_ELEMENT_EVENT_HANDLERS);
+}
+
+installEventHandlers(Document.prototype, DOCUMENT_EVENT_HANDLERS);
+
+for (const constructor of [HTMLBodyElement, HTMLFrameSetElement]) {
+	for (const name of FORWARDED_BODY_EVENT_HANDLERS) {
+		installForwardedEventHandler(constructor.prototype, name);
+	}
+}
