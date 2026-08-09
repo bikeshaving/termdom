@@ -11,7 +11,7 @@
  * for those the assertion is scrollback content and a clean exit.
  */
 import {execSync} from "node:child_process";
-import {readdirSync} from "node:fs";
+import {existsSync, readdirSync} from "node:fs";
 
 const SOCKET = "termdom-test";
 const SESSION = "verify-examples";
@@ -133,6 +133,10 @@ for (const file of readdirSync("examples").sort()) {
 	});
 }
 
+// A WPT harness cache in the working tree pollutes examples that index it.
+const wptAside = existsSync(".wpt");
+if (wptAside) execSync("mv .wpt /tmp/verify-examples-wpt-aside");
+
 let failed = 0;
 for (const check of checks) {
 	const failure = await check.run();
@@ -144,5 +148,6 @@ for (const check of checks) {
 	}
 }
 tmux(`kill-session -t ${SESSION} 2>/dev/null`);
+if (wptAside) execSync("mv /tmp/verify-examples-wpt-aside .wpt");
 console.log(`\n${checks.length - failed}/${checks.length} examples verified`);
 process.exit(failed === 0 ? 0 : 1);
