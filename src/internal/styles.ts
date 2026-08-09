@@ -5386,7 +5386,7 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 		// A border with no style draws nothing and takes no space, whatever
 		// width it declares.
 		if (property.startsWith("border-") && property.endsWith("-width")) {
-			const style = this.getPropertyValue(
+			const style = this.computedValueOf(
 				`${property.slice(0, -"-width".length)}-style`,
 			);
 			if (!style || style === "none" || style === "hidden") return "0px";
@@ -5769,9 +5769,14 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 			value.toLowerCase() === "currentcolor" &&
 			COLOR_PROPERTIES.has(property)
 		) {
+			// The COMPUTED color, on the engine's own read path: this is the
+			// cascade resolving a value, and the author path flushes -- which
+			// drains mutations and lays the document out, from inside the
+			// resolution of a style that layout is waiting on. `color` has no
+			// used value to wait for, so the two answer alike.
 			return property === "color"
 				? (this.#resolveFromParent("color") ?? "")
-				: this.getPropertyValue("color");
+				: this.computedValueOf("color");
 		}
 		return value;
 	}
