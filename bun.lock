@@ -8,8 +8,9 @@
         "arabic-persian-reshaper": "1.0.1",
         "bidi-js": "1.0.3",
         "css-tree": "^3.2.1",
-        "jsdom": "^26.1.0",
         "linebreak": "1.1.0",
+        "nwsapi": "^2.2.21",
+        "parse5": "^7.3.0",
       },
       "devDependencies": {
         "@b9g/crank": "^0.7.1",
@@ -25,6 +26,7 @@
         "eslint": "^8.57.1",
         "eslint-config-prettier": "^9.1.0",
         "eslint-plugin-prettier": "^5.2.6",
+        "jsdom": "^26.1.0",
         "marked": "^18.0.9",
         "marked-highlight": "^2.2.4",
         "mdn-data": "2.29.0",
