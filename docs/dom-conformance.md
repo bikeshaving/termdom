@@ -20,10 +20,10 @@ browsing context.
 - Test files in the suites: 1159
 - Reference tests (no testharness, scored by pixels): 52
 - Excluded, each with its reason below: 370
-- Files whose harness completed: 628
-- Files whose harness did not complete: 109
-- Subtests passed: 94716
-- Subtests failed: 1612
+- Files whose harness completed: 627
+- Files whose harness did not complete: 110
+- Subtests passed: 94776
+- Subtests failed: 1568
 
 ## Exclusions
 
@@ -415,7 +415,7 @@ createEvent builds every name in the legacy table whose interface exists here: t
 
 ### dom/events/Event-dispatch-bubbles-false.html, Event-dispatch-bubbles-true.html, passive-by-default.html, EventListener-handleEvent.html
 
-A propagation path ends at the document. The spec continues it to the Window when the document has a browsing context, and there is no Window in this DOM: the harness supplies a bare event target under that name so the test files load. The subtests that fail are the ones that put the window in an expected path, that expect a scroll-blocking listener on the window to be passive by default, or that expect a listener's exception to arrive as an error event at the window; every other subtest in those files passes. passive-by-default.html names its subtests after its target's interface, so its harness also reports duplicates: the document element and the body are both HTMLElement here, which is the deviation above.
+A propagation path ends at the document. The spec continues it to the Window when the document has a browsing context, and there is no Window in this DOM: the harness supplies a bare event target under that name so the test files load. The subtests that fail are the ones that put the window in an expected path, that expect a scroll-blocking listener on the window to be passive by default, or that expect a listener's exception to arrive as an error event at the window; every other subtest in those files passes.
 
 ### dom/events/Event-subclasses-constructors.html
 
@@ -455,7 +455,7 @@ A selector with an explicit namespace prefix (`*|name`, `svg|circle`) is rejecte
 
 ### dom/events/Body-FrameSet-Event-Handlers.html, and every subtest that reads an on* IDL attribute
 
-The event handler IDL attributes -- onclick and its ninety-odd siblings -- are absent. Getting one is defined as getting the current value of an event handler, which compiles the content attribute as a script, and this DOM never executes script; a pair that answered only the property half would be a subset of the member the specification defines. The file ran to an error before the interfaces of this phase existed, so its subtests are counted for the first time here.
+The event handler IDL attributes -- onclick and its ninety-odd siblings -- are absent. Getting one is defined as getting the current value of an event handler, which compiles the content attribute as a script, and this DOM never executes script; a pair that answered only the property half would be a subset of the member the specification defines.
 
 ### dom/collections/domstringmap-supported-property-names.html, custom-elements/reactions/DOMStringMap.html
 
@@ -475,7 +475,7 @@ An element in the SVG or MathML namespace is an SVGElement or a MathMLElement an
 
 ### shadow-dom/declarative/declarative-shadow-dom-attachment.html
 
-All 654 subtests pass and the harness reports a timeout: the file builds 654 declarative shadow trees in one document, and every live collection materialized along the way is resynchronized on every mutation after it, which is the cost of indexed properties that are accessors rather than a proxy's traps. The file sat just inside testharness's own ten seconds before this phase and just outside it after.
+All 654 subtests pass and the harness reports a timeout: the file builds 654 declarative shadow trees in one document, and every live collection materialized along the way is resynchronized on every mutation after it, which is the cost of indexed properties that are accessors rather than a proxy's traps. The cost is quadratic in the number of collections the file has read, and this file reads enough of them to pass testharness's own ten seconds.
 
 ### dom/nodes/NodeList-static-length-getter-tampered-*.html
 
@@ -960,7 +960,7 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 | dom/events/scrolling/wheel-event-transactions-target-move.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
 | dom/events/scrolling/wheel-event-transactions-target-removal.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
 | dom/events/scrolling/wheel-event-transactions-target-resize.html | EXCLUDED (requires-layout: a scroll event needs a scroller, a viewport and a scroll position, all of which the engine owns) | 0 | 0 |
-| dom/events/shadow-relatedTarget.html | OK | 0 | 2 |
+| dom/events/shadow-relatedTarget.html | TIMEOUT | 0 | 2 |
 | dom/events/webkit-animation-end-event.html | EXCLUDED (requires-css-animations: a running CSS animation) | 0 | 0 |
 | dom/events/webkit-animation-iteration-event.html | EXCLUDED (requires-css-animations: a running CSS animation) | 0 | 0 |
 | dom/events/webkit-animation-start-event.html | EXCLUDED (requires-css-animations: a running CSS animation) | 0 | 0 |
@@ -1067,9 +1067,9 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 | selection/contenteditable/cefalse-on-boundaries.html | OK | 4 | 0 |
 | selection/contenteditable/collapse.html | OK | 0 | 3 |
 | selection/contenteditable/initial-selection-during-focus-event-propagation.html | EXCLUDED (requires-user-input: the editing host is focused by a pointer action sequence) | 0 | 0 |
-| selection/contenteditable/initial-selection-on-focus.tentative.html | ERROR (Cannot read properties of null (reading 'search')) | 0 | 0 |
+| selection/contenteditable/initial-selection-on-focus.tentative.html | ERROR (null is not an object (evaluating 'document.location.search')) | 0 | 0 |
 | selection/contenteditable/modify-around-inline-element-boundary.tentative.html | OK | 0 | 36 |
-| selection/contenteditable/modify-around-non-editable-span.html | TIMEOUT | 0 | 0 |
+| selection/contenteditable/modify-around-non-editable-span.html | OK | 0 | 16 |
 | selection/contenteditable/modify.tentative.html | OK | 0 | 15 |
 | selection/contenteditable/modifying-selection-with-non-primary-mouse-button.tentative.html | EXCLUDED (requires-user-input: the selection is modified by a pointer action sequence) | 0 | 0 |
 | selection/contenteditable/modifying-selection-with-primary-mouse-button.tentative.html | EXCLUDED (requires-user-input: the selection is modified by a pointer action sequence) | 0 | 0 |
@@ -1120,7 +1120,7 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 | selection/selection-incremental-change-repaint.html | REFTEST | 0 | 0 |
 | selection/selection-modify-extend-word-generated-content.html | OK | 0 | 2 |
 | selection/selection-nested-video.html | OK | 1 | 0 |
-| selection/selection-range-after-editinghost-removed.html | OK | 0 | 4 |
+| selection/selection-range-after-editinghost-removed.html | OK | 4 | 0 |
 | selection/selection-range-after-textcontrol-removed.html | TIMEOUT | 0 | 0 |
 | selection/selection-range-in-shadow-after-the-shadow-removed.tentative.html | TIMEOUT | 0 | 0 |
 | selection/selection-shadow-dom-crash-print.html | REFTEST | 0 | 0 |
@@ -1140,7 +1140,7 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 | selection/shadow-dom/tentative/Selection-collapse-and-extend.html | OK | 4 | 0 |
 | selection/shadow-dom/tentative/Selection-direction.html | OK | 3 | 4 |
 | selection/shadow-dom/tentative/Selection-getComposedRanges-collapsed.html | OK | 1 | 0 |
-| selection/shadow-dom/tentative/Selection-getComposedRanges-dom-mutations-removal.html | ERROR (Cannot read properties of null (reading 'search')) | 0 | 0 |
+| selection/shadow-dom/tentative/Selection-getComposedRanges-dom-mutations-removal.html | ERROR (null is not an object (evaluating 'document.location.search')) | 0 | 0 |
 | selection/shadow-dom/tentative/Selection-getComposedRanges-range-update.html | OK | 8 | 1 |
 | selection/shadow-dom/tentative/Selection-getComposedRanges-slot.html | OK | 0 | 3 |
 | selection/shadow-dom/tentative/Selection-getComposedRanges.html | OK | 12 | 0 |
@@ -1153,9 +1153,9 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 | selection/textcontrols/focus.html | EXCLUDED (requires-user-input: the control is focused by a pointer action sequence) | 0 | 0 |
 | selection/textcontrols/initial-selection-during-focus-event-propagation.html | EXCLUDED (requires-user-input: the control is focused by a pointer action sequence) | 0 | 0 |
 | selection/textcontrols/onselectionchange-content-attribute.html | TIMEOUT | 0 | 2 |
-| selection/textcontrols/selectionchange-bubble.html | OK | 2 | 2 |
+| selection/textcontrols/selectionchange-bubble.html | OK | 4 | 0 |
 | selection/textcontrols/selectionchange-on-shadow-dom.html | OK | 0 | 1 |
-| selection/textcontrols/selectionchange.html | OK | 0 | 60 |
+| selection/textcontrols/selectionchange.html | OK | 44 | 16 |
 | selection/toString-ff-bug-001.html | OK | 1 | 0 |
 | selection/toString-user-select-none.html | OK | 0 | 3 |
 | selection/type.html | OK | 29 | 0 |
@@ -1197,7 +1197,7 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 | shadow-dom/declarative/declarative-shadow-dom-write-to-iframe.html | EXCLUDED (requires-browsing-context: the markup is written into a frame's document) | 0 | 0 |
 | shadow-dom/declarative/declarative-with-disabled-shadow.html | EXCLUDED (requires-script-execution: the definition that disables shadow roots is registered by a script the parser runs) | 0 | 0 |
 | shadow-dom/declarative/gethtml-ordering.html | EXCLUDED (requires-script-execution: the serialization order is read by a script the parser runs mid-document) | 0 | 0 |
-| shadow-dom/declarative/gethtml.html | OK | 6908 | 0 |
+| shadow-dom/declarative/gethtml.html | TIMEOUT | 6908 | 0 |
 | shadow-dom/declarative/innerhtml-before-closing-tag.html | EXCLUDED (requires-script-execution: innerHTML is set by a script the parser runs before the closing tag) | 0 | 0 |
 | shadow-dom/declarative/innerhtml-on-ordinary-template.html | EXCLUDED (requires-script-execution: the fixture is named by a script the parser runs mid-document) | 0 | 0 |
 | shadow-dom/declarative/move-template-before-closing-tag.html | EXCLUDED (requires-script-execution: the template is moved by a script the parser runs before the closing tag) | 0 | 0 |
@@ -1318,7 +1318,7 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 | shadow-dom/focus/focus-pseudo-on-shadow-host-2.html | REFTEST | 0 | 0 |
 | shadow-dom/focus/focus-pseudo-on-shadow-host-3.html | REFTEST | 0 | 0 |
 | shadow-dom/focus/focus-scroll-under-delegatesFocus.html | OK | 0 | 1 |
-| shadow-dom/focus/focus-selector-delegatesFocus.html | OK | 0 | 12 |
+| shadow-dom/focus/focus-selector-delegatesFocus.html | OK | 6 | 6 |
 | shadow-dom/focus/focus-shadowhost-display-none.html | OK | 0 | 2 |
 | shadow-dom/focus/focus-slot-box-generated-tabindex-0.html | OK | 0 | 1 |
 | shadow-dom/focus/focus-tab-on-shadow-host.html | OK | 0 | 1 |
@@ -1381,7 +1381,7 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 | shadow-dom/reference-target/tentative/shadowrootreferencetarget-idl-reflection.html | EXCLUDED (not-a-standard: shadowrootreferencetarget is a WICG incubation, filed under tentative in the suite) | 0 | 0 |
 | shadow-dom/reference/empty.html | REFTEST | 0 | 0 |
 | shadow-dom/scroll-restore-shadow.html | OK | 0 | 1 |
-| shadow-dom/scroll-to-the-fragment-in-shadow-tree.html | ERROR (window.scrollTo is not a function) | 0 | 0 |
+| shadow-dom/scroll-to-the-fragment-in-shadow-tree.html | ERROR (window.scrollTo is not a function. (In 'window.scrollTo(0, 0)', 'window.scrollTo' is undefined)) | 0 | 0 |
 | shadow-dom/shadow-root-clonable.html | OK | 6 | 0 |
 | shadow-dom/shadow-style-invalidation-vw-units.html | REFTEST | 0 | 0 |
 | shadow-dom/slot-fallback-content-001.html | REFTEST | 0 | 0 |
@@ -1482,7 +1482,7 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 | custom-elements/connected-callbacks-template.html | EXCLUDED (requires-script-execution: the definition is registered by a script the parser runs inside the template) | 0 | 0 |
 | custom-elements/connected-callbacks.html | TIMEOUT | 30 | 10 |
 | custom-elements/createElement-reentrant-construction.window.js | OK | 2 | 0 |
-| custom-elements/cross-realm-callback-report-exception.html | ERROR (Cannot set properties of undefined (setting 'onerror')) | 0 | 0 |
+| custom-elements/cross-realm-callback-report-exception.html | ERROR (undefined is not an object (evaluating 'frames[0].onerror = () => { onerrorCalls.push("frame0"); }')) | 0 | 0 |
 | custom-elements/custom-element-reaction-queue.html | EXCLUDED (requires-script-execution: the reaction order under test is the parser's own) | 0 | 0 |
 | custom-elements/customized-built-in-constructor-exceptions.html | ERROR (A customized built-in element is not implemented here) | 0 | 0 |
 | custom-elements/disconnected-callbacks.html | TIMEOUT | 30 | 10 |
@@ -1498,17 +1498,17 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 | custom-elements/form-associated/ElementInternals-reportValidity-bubble.html | REFTEST | 0 | 0 |
 | custom-elements/form-associated/ElementInternals-reportValidity-delegatesFocus-notref.html | REFTEST | 0 | 0 |
 | custom-elements/form-associated/ElementInternals-reportValidity-delegatesFocus.html | REFTEST | 0 | 0 |
-| custom-elements/form-associated/ElementInternals-setFormValue-nullish-value.html | OK | 0 | 2 |
+| custom-elements/form-associated/ElementInternals-setFormValue-nullish-value.html | OK | 2 | 0 |
 | custom-elements/form-associated/ElementInternals-setFormValue.html | TIMEOUT | 1 | 54 |
 | custom-elements/form-associated/ElementInternals-submit-behavior-dialog.tentative.html | EXCLUDED (not-a-standard: HTMLSubmitButtonBehavior and the behaviors option on attachInternals are a proposal, filed under tentative in the suite) | 0 | 0 |
 | custom-elements/form-associated/ElementInternals-submit-behavior.tentative.html | EXCLUDED (not-a-standard: HTMLSubmitButtonBehavior and the behaviors option on attachInternals are a proposal, filed under tentative in the suite) | 0 | 0 |
 | custom-elements/form-associated/ElementInternals-target-element-is-held-strongly.html | OK | 1 | 0 |
-| custom-elements/form-associated/ElementInternals-validation.html | OK | 9 | 5 |
+| custom-elements/form-associated/ElementInternals-validation.html | OK | 10 | 4 |
 | custom-elements/form-associated/disabled-delegatesFocus.html | OK | 0 | 1 |
 | custom-elements/form-associated/fieldset-elements.html | OK | 0 | 1 |
 | custom-elements/form-associated/focusability.html | OK | 0 | 1 |
 | custom-elements/form-associated/form-associated-callback.html | OK | 1 | 4 |
-| custom-elements/form-associated/form-disabled-callback.html | OK | 0 | 10 |
+| custom-elements/form-associated/form-disabled-callback.html | OK | 1 | 9 |
 | custom-elements/form-associated/form-elements-namedItem.html | OK | 0 | 3 |
 | custom-elements/form-associated/form-reset-callback.html | OK | 2 | 1 |
 | custom-elements/form-associated/label-delegatesFocus.html | TIMEOUT | 0 | 0 |
@@ -1517,7 +1517,7 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 | custom-elements/htmlconstructor/newtarget.html | TIMEOUT | 0 | 10 |
 | custom-elements/microtasks-and-constructors.html | EXCLUDED (requires-script-execution: the case is which microtasks run while the parser is inside an element) | 0 | 0 |
 | custom-elements/overwritten-customElements-global.html | OK | 4 | 0 |
-| custom-elements/parser/parser-constructs-custom-element-in-document-write.html | ERROR (document.write is not a function) | 0 | 0 |
+| custom-elements/parser/parser-constructs-custom-element-in-document-write.html | ERROR (document.write is not a function. (In 'document.write('<my-custom-element>hello <b>world</b></my-custom-element>')', 'document.write' is undefined)) | 0 | 0 |
 | custom-elements/parser/parser-constructs-custom-element-synchronously.html | EXCLUDED (requires-script-execution: the definition is registered, and the element observed, by scripts the parser runs between tags) | 0 | 0 |
 | custom-elements/parser/parser-constructs-custom-elements-with-is.html | EXCLUDED (customized built-ins: the parser reading an is attribute) | 0 | 0 |
 | custom-elements/parser/parser-constructs-custom-elements.html | EXCLUDED (requires-script-execution: the definition is registered, and the element observed, by scripts the parser runs between tags) | 0 | 0 |
@@ -1525,7 +1525,7 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 | custom-elements/parser/parser-fallsback-to-unknown-element.html | EXCLUDED (requires-script-execution: the element is observed by a script the parser runs between tags) | 0 | 0 |
 | custom-elements/parser/parser-sets-attributes-and-children.html | EXCLUDED (requires-script-execution: the reactions counted are the ones the parser enqueues between tags) | 0 | 0 |
 | custom-elements/parser/parser-uses-constructed-element.html | EXCLUDED (requires-script-execution: the element is observed by a script the parser runs between tags) | 0 | 0 |
-| custom-elements/parser/parser-uses-registry-of-owner-document.html | ERROR (document.write is not a function) | 0 | 0 |
+| custom-elements/parser/parser-uses-registry-of-owner-document.html | ERROR (document.write is not a function. (In 'document.write('<template><my-custom-element></my-custom-element></template>')', 'document.write' is undefined)) | 0 | 0 |
 | custom-elements/parser/serializing-html-fragments-customized-builtins.html | EXCLUDED (customized built-ins: serializing an is attribute) | 0 | 0 |
 | custom-elements/perform-microtask-checkpoint-before-construction.html | TIMEOUT | 0 | 2 |
 | custom-elements/pseudo-class-defined-customized-builtins.html | TIMEOUT | 0 | 0 |
@@ -1610,8 +1610,8 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 | custom-elements/registries/constructor-direct-call-fallback-registry.window.js | OK | 0 | 2 |
 | custom-elements/registries/constructor-reentry-createElement.window.js | OK | 2 | 2 |
 | custom-elements/registries/constructor-reentry-with-different-definition.html | OK | 0 | 4 |
-| custom-elements/registries/define-customized-builtins.html | ERROR (Cannot read properties of null (reading 'defaultView')) | 0 | 0 |
-| custom-elements/registries/define.html | ERROR (Cannot read properties of null (reading 'defaultView')) | 0 | 0 |
+| custom-elements/registries/define-customized-builtins.html | ERROR (null is not an object (evaluating 'iframe.contentDocument.defaultView')) | 0 | 0 |
+| custom-elements/registries/define.html | ERROR (null is not an object (evaluating 'iframe.contentDocument.defaultView')) | 0 | 0 |
 | custom-elements/registries/element-mutation-null-registry-removal.html | OK | 1 | 0 |
 | custom-elements/registries/element-mutation.html | OK | 15 | 0 |
 | custom-elements/registries/global.window.js | OK | 0 | 5 |
@@ -1649,152 +1649,152 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 ### dom/nodes/Document-createElement.html
 
-- createElement(undefined) in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement(undefined) in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement(null) in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement(null) in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("foo") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("foo") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("f1oo") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("f1oo") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("foo1") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("foo1") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("fெ") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("fெ") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("fooெ") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("fooெ") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement(":") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement(":") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement(":foo") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement(":foo") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("f:oo") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("f:oo") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("foo:") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("foo:") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("f:o:o") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("f:o:o") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("f::oo") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("f::oo") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("f::oo:") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("f::oo:") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("foo:0") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("foo:0") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("foo:_") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("foo:_") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("foo:ெ") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("foo:ெ") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("foo:fooெ") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("foo:fooெ") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("fooெ:foo") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("fooெ:foo") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("xml") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("xml") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("xmlns") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("xmlns") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("xmlfoo") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("xmlfoo") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("xml:foo") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("xml:foo") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("xmlns:foo") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("xmlns:foo") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("xmlfoo:bar") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("xmlfoo:bar") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("svg") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("svg") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("math") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("math") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("FOO") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("FOO") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("marK") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("marK") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("İnput") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("İnput") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("ınput") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("ınput") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("̀foo") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("̀foo") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("f}oo") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("f}oo") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("foo}") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("foo}") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("\ufffffoo") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("\ufffffoo") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("f\uffffoo") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("f\uffffoo") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("foo\uffff") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("foo\uffff") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("f<oo") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("f<oo") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("̀") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("̀") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("1foo") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("1foo") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("1:foo") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("1:foo") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("fo o") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("fo o") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("}foo") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("}foo") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("<foo") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("<foo") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("foo>") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("foo>") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("<foo>") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("<foo>") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement("-foo") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement("-foo") in XHTML document: Cannot read properties of null (reading 'documentElement')
-- createElement(".foo") in XML document: Cannot read properties of null (reading 'documentElement')
-- createElement(".foo") in XHTML document: Cannot read properties of null (reading 'documentElement')
+- createElement(undefined) in XML document: null is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement(undefined) in XHTML document: null is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement(null) in XML document: null is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement(null) in XHTML document: null is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("foo") in XML document: null is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("foo") in XHTML document: null is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("f1oo") in XML document: null is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("f1oo") in XHTML document: null is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("foo1") in XML document: null is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("foo1") in XHTML document: null is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("fெ") in XML document: null is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("fெ") in XHTML document: null is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("fooெ") in XML document: null is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("fooெ") in XHTML document: null is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement(":") in XML document: null is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement(":") in XHTML document: null is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement(":foo") in XML document: null is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement(":foo") in XHTML document: null is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("f:oo") in XML document: null is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("f:oo") in XHTML document: null is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("foo:") in XML document: null is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("foo:") in XHTML document: null is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("f:o:o") in XML document: null is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("f:o:o") in XHTML document: null is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("f::oo") in XML document: null is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("f::oo") in XHTML document: null is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("f::oo:") in XML document: null is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("f::oo:") in XHTML document: null is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("foo:0") in XML document: null is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("foo:0") in XHTML document: null is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("foo:_") in XML document: null is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("foo:_") in XHTML document: null is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("foo:ெ") in XML document: null is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("foo:ெ") in XHTML document: null is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("foo:fooெ") in XML document: null is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("foo:fooெ") in XHTML document: null is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("fooெ:foo") in XML document: null is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("fooெ:foo") in XHTML document: null is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("xml") in XML document: null is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("xml") in XHTML document: null is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("xmlns") in XML document: null is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("xmlns") in XHTML document: null is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("xmlfoo") in XML document: null is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("xmlfoo") in XHTML document: null is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("xml:foo") in XML document: null is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("xml:foo") in XHTML document: null is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("xmlns:foo") in XML document: null is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("xmlns:foo") in XHTML document: null is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("xmlfoo:bar") in XML document: null is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("xmlfoo:bar") in XHTML document: null is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("svg") in XML document: null is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("svg") in XHTML document: null is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("math") in XML document: null is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("math") in XHTML document: null is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("FOO") in XML document: null is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("FOO") in XHTML document: null is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("marK") in XML document: null is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("marK") in XHTML document: null is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("İnput") in XML document: null is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("İnput") in XHTML document: null is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("ınput") in XML document: null is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("ınput") in XHTML document: null is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("̀foo") in XML document: null is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("̀foo") in XHTML document: null is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("f}oo") in XML document: null is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("f}oo") in XHTML document: null is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("foo}") in XML document: null is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("foo}") in XHTML document: null is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("\ufffffoo") in XML document: null is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("\ufffffoo") in XHTML document: null is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("f\uffffoo") in XML document: null is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("f\uffffoo") in XHTML document: null is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("foo\uffff") in XML document: null is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("foo\uffff") in XHTML document: null is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("f<oo") in XML document: null is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("f<oo") in XHTML document: null is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("̀") in XML document: null is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("̀") in XHTML document: null is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("") in XML document: null is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("") in XHTML document: null is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("1foo") in XML document: null is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("1foo") in XHTML document: null is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("1:foo") in XML document: null is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("1:foo") in XHTML document: null is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("fo o") in XML document: null is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("fo o") in XHTML document: null is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("}foo") in XML document: null is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("}foo") in XHTML document: null is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("<foo") in XML document: null is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("<foo") in XHTML document: null is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("foo>") in XML document: null is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("foo>") in XHTML document: null is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("<foo>") in XML document: null is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("<foo>") in XHTML document: null is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement("-foo") in XML document: null is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement("-foo") in XHTML document: null is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
+- createElement(".foo") in XML document: null is not an object (evaluating 'xmlIframe.contentDocument.documentElement')
+- createElement(".foo") in XHTML document: null is not an object (evaluating 'xhtmlIframe.contentDocument.documentElement')
 
 ### dom/nodes/Document-createEvent.https.html
 
 - BeforeUnloadEvent should be an alias for BeforeUnloadEvent.: No event interface is named "BeforeUnloadEvent"
-- createEvent('BeforeUnloadEvent') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('BeforeUnloadEvent') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - beforeunloadevent should be an alias for BeforeUnloadEvent.: No event interface is named "beforeunloadevent"
-- createEvent('beforeunloadevent') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('beforeunloadevent') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - BEFOREUNLOADEVENT should be an alias for BeforeUnloadEvent.: No event interface is named "BEFOREUNLOADEVENT"
-- createEvent('BEFOREUNLOADEVENT') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('BEFOREUNLOADEVENT') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - DeviceMotionEvent should be an alias for DeviceMotionEvent.: No event interface is named "DeviceMotionEvent"
-- createEvent('DeviceMotionEvent') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('DeviceMotionEvent') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - devicemotionevent should be an alias for DeviceMotionEvent.: No event interface is named "devicemotionevent"
-- createEvent('devicemotionevent') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('devicemotionevent') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - DEVICEMOTIONEVENT should be an alias for DeviceMotionEvent.: No event interface is named "DEVICEMOTIONEVENT"
-- createEvent('DEVICEMOTIONEVENT') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('DEVICEMOTIONEVENT') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - DeviceOrientationEvent should be an alias for DeviceOrientationEvent.: No event interface is named "DeviceOrientationEvent"
-- createEvent('DeviceOrientationEvent') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('DeviceOrientationEvent') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - deviceorientationevent should be an alias for DeviceOrientationEvent.: No event interface is named "deviceorientationevent"
-- createEvent('deviceorientationevent') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('deviceorientationevent') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - DEVICEORIENTATIONEVENT should be an alias for DeviceOrientationEvent.: No event interface is named "DEVICEORIENTATIONEVENT"
-- createEvent('DEVICEORIENTATIONEVENT') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('DEVICEORIENTATIONEVENT') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - DragEvent should be an alias for DragEvent.: No event interface is named "DragEvent"
-- createEvent('DragEvent') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('DragEvent') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - dragevent should be an alias for DragEvent.: No event interface is named "dragevent"
-- createEvent('dragevent') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('dragevent') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - DRAGEVENT should be an alias for DragEvent.: No event interface is named "DRAGEVENT"
-- createEvent('DRAGEVENT') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('DRAGEVENT') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - HashChangeEvent should be an alias for HashChangeEvent.: No event interface is named "HashChangeEvent"
-- createEvent('HashChangeEvent') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('HashChangeEvent') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - hashchangeevent should be an alias for HashChangeEvent.: No event interface is named "hashchangeevent"
-- createEvent('hashchangeevent') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('hashchangeevent') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - HASHCHANGEEVENT should be an alias for HashChangeEvent.: No event interface is named "HASHCHANGEEVENT"
-- createEvent('HASHCHANGEEVENT') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('HASHCHANGEEVENT') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - MessageEvent should be an alias for MessageEvent.: No event interface is named "MessageEvent"
-- createEvent('MessageEvent') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('MessageEvent') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - messageevent should be an alias for MessageEvent.: No event interface is named "messageevent"
-- createEvent('messageevent') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('messageevent') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - MESSAGEEVENT should be an alias for MessageEvent.: No event interface is named "MESSAGEEVENT"
-- createEvent('MESSAGEEVENT') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('MESSAGEEVENT') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - StorageEvent should be an alias for StorageEvent.: No event interface is named "StorageEvent"
-- createEvent('StorageEvent') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('StorageEvent') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - storageevent should be an alias for StorageEvent.: No event interface is named "storageevent"
-- createEvent('storageevent') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
+- createEvent('storageevent') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
 - STORAGEEVENT should be an alias for StorageEvent.: No event interface is named "STORAGEEVENT"
-- createEvent('STORAGEEVENT') should be initialized correctly.: Cannot read properties of undefined (reading 'type')
-- TextEvent should be an alias for TextEvent.: Cannot read properties of undefined (reading 'prototype')
-- textevent should be an alias for TextEvent.: Cannot read properties of undefined (reading 'prototype')
-- TEXTEVENT should be an alias for TextEvent.: Cannot read properties of undefined (reading 'prototype')
+- createEvent('STORAGEEVENT') should be initialized correctly.: undefined is not an object (evaluating 'ev.type')
+- TextEvent should be an alias for TextEvent.: undefined is not an object (evaluating 'window[iface].prototype')
+- textevent should be an alias for TextEvent.: undefined is not an object (evaluating 'window[iface].prototype')
+- TEXTEVENT should be an alias for TextEvent.: undefined is not an object (evaluating 'window[iface].prototype')
 - TouchEvent should be an alias for TouchEvent.: 'expose legacy touch event APIs'
 - createEvent('TouchEvent') should be initialized correctly.: 'expose legacy touch event APIs'
 - touchevent should be an alias for TouchEvent.: 'expose legacy touch event APIs'
@@ -1809,7 +1809,7 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 ### dom/nodes/Element-closest.html
 
-- Element.closest with context node 'test11' and selector ':invalid': e.checkValidity is not a function
+- Element.closest with context node 'test11' and selector ':invalid': e.checkValidity is not a function. (In 'e.checkValidity()', 'e.checkValidity' is undefined)
 - Element.closest with context node 'test4' and selector ':scope': assert_equals: :scope expected "test4" but got "test2"
 - Element.closest with context node 'test4' and selector 'select > :scope': assert_equals: select > :scope expected "test4" but got ""
 - Element.closest with context node 'test4' and selector ':has(> :scope)': assert_equals: :has(> :scope) expected "test3" but got "test5"
@@ -1834,13 +1834,13 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 ### dom/nodes/Node-appendChild.html
 
-- Appending a document: Cannot read properties of undefined (reading 'document')
-- Adopting an orphan: Cannot read properties of undefined (reading 'document')
-- Adopting a non-orphan: Cannot read properties of undefined (reading 'document')
+- Appending a document: undefined is not an object (evaluating 'frames[0].document')
+- Adopting an orphan: undefined is not an object (evaluating 'frames[0].document')
+- Adopting a non-orphan: undefined is not an object (evaluating 'frames[0].document')
 
 ### dom/nodes/Node-cloneNode-document-allow-declarative-shadow-roots.window.js
 
-- cloneNode() and document's allow declarative shadow roots: doc.write is not a function
+- cloneNode() and document's allow declarative shadow roots: doc.write is not a function. (In 'doc.write('<div><template shadowrootmode=open>test</template></div>')', 'doc.write' is undefined)
 
 ### dom/nodes/Node-normalize.html
 
@@ -1848,15 +1848,15 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 ### dom/nodes/Node-removeChild.html
 
-- Passing a detached element from a frame document to removeChild should not affect it.: Cannot read properties of undefined (reading 'document')
-- Passing a non-detached element from a frame document to removeChild should not affect it.: Cannot read properties of undefined (reading 'document')
-- Calling removeChild on a element from a frame document with no children should throw NOT_FOUND_ERR.: Cannot read properties of undefined (reading 'document')
-- Passing a detached text from a frame document to removeChild should not affect it.: Cannot read properties of undefined (reading 'document')
-- Passing a non-detached text from a frame document to removeChild should not affect it.: Cannot read properties of undefined (reading 'document')
-- Calling removeChild on a text from a frame document with no children should throw NOT_FOUND_ERR.: Cannot read properties of undefined (reading 'document')
-- Passing a detached comment from a frame document to removeChild should not affect it.: Cannot read properties of undefined (reading 'document')
-- Passing a non-detached comment from a frame document to removeChild should not affect it.: Cannot read properties of undefined (reading 'document')
-- Calling removeChild on a comment from a frame document with no children should throw NOT_FOUND_ERR.: Cannot read properties of undefined (reading 'document')
+- Passing a detached element from a frame document to removeChild should not affect it.: undefined is not an object (evaluating 'frames[0].document')
+- Passing a non-detached element from a frame document to removeChild should not affect it.: undefined is not an object (evaluating 'frames[0].document')
+- Calling removeChild on a element from a frame document with no children should throw NOT_FOUND_ERR.: undefined is not an object (evaluating 'frames[0].document')
+- Passing a detached text from a frame document to removeChild should not affect it.: undefined is not an object (evaluating 'frames[0].document')
+- Passing a non-detached text from a frame document to removeChild should not affect it.: undefined is not an object (evaluating 'frames[0].document')
+- Calling removeChild on a text from a frame document with no children should throw NOT_FOUND_ERR.: undefined is not an object (evaluating 'frames[0].document')
+- Passing a detached comment from a frame document to removeChild should not affect it.: undefined is not an object (evaluating 'frames[0].document')
+- Passing a non-detached comment from a frame document to removeChild should not affect it.: undefined is not an object (evaluating 'frames[0].document')
+- Calling removeChild on a comment from a frame document with no children should throw NOT_FOUND_ERR.: undefined is not an object (evaluating 'frames[0].document')
 
 ### dom/nodes/adoption.window.js
 
@@ -1874,39 +1874,39 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 ### dom/nodes/moveBefore/Node-moveBefore.html
 
-- If node is a host-including inclusive ancestor of parent, then throw a HierarchyRequestError DOMException.: assert_throws_dom: function "() => insert(doc.body, doc.body)" threw object "TypeError: Cannot read properties of undefined (reading 'length')" that is not a DOMException HierarchyRequestError: property "code" is equal to undefined, expected 3
-- If node is not a DocumentFragment, DocumentType, Element, Text, ProcessingInstruction, or Comment node, then throw a HierarchyRequestError DOMException.: assert_throws_dom: function "() => insert(doc, doc2)" threw object "TypeError: Cannot read properties of undefined (reading 'length')" that is not a DOMException HierarchyRequestError: property "code" is equal to undefined, expected 3
-- If node is a Text node and parent is a document, then throw a HierarchyRequestError DOMException.: assert_throws_dom: function "() => insert(doc, doc.createTextNode("text"))" threw object "TypeError: Cannot read properties of undefined (reading 'length')" that is not a DOMException HierarchyRequestError: property "code" is equal to undefined, expected 3
-- If node is a doctype and parent is not a document, then throw a HierarchyRequestError DOMException.: assert_throws_dom: function "() => insert(doc.createElement("a"), doctype)" threw object "TypeError: Cannot read properties of undefined (reading 'length')" that is not a DOMException HierarchyRequestError: property "code" is equal to undefined, expected 3
-- If node is a DocumentFragment with multiple elements and parent is a document, then throw a HierarchyRequestError DOMException.: assert_throws_dom: function "() => insert(doc, df)" threw object "TypeError: Cannot read properties of undefined (reading 'length')" that is not a DOMException HierarchyRequestError: property "code" is equal to undefined, expected 3
-- If node is a DocumentFragment with an element and parent is a document with another element, then throw a HierarchyRequestError DOMException.: assert_throws_dom: function "() => insert(doc, df)" threw object "TypeError: Cannot read properties of undefined (reading 'length')" that is not a DOMException HierarchyRequestError: property "code" is equal to undefined, expected 3
-- If node is an Element and parent is a document with another element, then throw a HierarchyRequestError DOMException.: assert_throws_dom: function "() => insert(doc, el)" threw object "TypeError: Cannot read properties of undefined (reading 'length')" that is not a DOMException HierarchyRequestError: property "code" is equal to undefined, expected 3
-- If node is a doctype and parent is a document with another doctype, then throw a HierarchyRequestError DOMException.: assert_throws_dom: function "() => insert(doc, doctype)" threw object "TypeError: Cannot read properties of undefined (reading 'length')" that is not a DOMException HierarchyRequestError: property "code" is equal to undefined, expected 3
-- If node is a doctype and parent is a document with an element, then throw a HierarchyRequestError DOMException.: assert_throws_dom: function "() => insert(doc, doctype)" threw object "TypeError: Cannot read properties of undefined (reading 'length')" that is not a DOMException HierarchyRequestError: property "code" is equal to undefined, expected 3
+- If node is a host-including inclusive ancestor of parent, then throw a HierarchyRequestError DOMException.: assert_throws_dom: function "() => insert(doc.body, doc.body)" threw object "TypeError: undefined is not an object (evaluating 'parent[methodName].length')" that is not a DOMException HierarchyRequestError: property "code" is equal to undefined, expected 3
+- If node is not a DocumentFragment, DocumentType, Element, Text, ProcessingInstruction, or Comment node, then throw a HierarchyRequestError DOMException.: assert_throws_dom: function "() => insert(doc, doc2)" threw object "TypeError: undefined is not an object (evaluating 'parent[methodName].length')" that is not a DOMException HierarchyRequestError: property "code" is equal to undefined, expected 3
+- If node is a Text node and parent is a document, then throw a HierarchyRequestError DOMException.: assert_throws_dom: function "() => insert(doc, doc.createTextNode("text"))" threw object "TypeError: undefined is not an object (evaluating 'parent[methodName].length')" that is not a DOMException HierarchyRequestError: property "code" is equal to undefined, expected 3
+- If node is a doctype and parent is not a document, then throw a HierarchyRequestError DOMException.: assert_throws_dom: function "() => insert(doc.createElement("a"), doctype)" threw object "TypeError: undefined is not an object (evaluating 'parent[methodName].length')" that is not a DOMException HierarchyRequestError: property "code" is equal to undefined, expected 3
+- If node is a DocumentFragment with multiple elements and parent is a document, then throw a HierarchyRequestError DOMException.: assert_throws_dom: function "() => insert(doc, df)" threw object "TypeError: undefined is not an object (evaluating 'parent[methodName].length')" that is not a DOMException HierarchyRequestError: property "code" is equal to undefined, expected 3
+- If node is a DocumentFragment with an element and parent is a document with another element, then throw a HierarchyRequestError DOMException.: assert_throws_dom: function "() => insert(doc, df)" threw object "TypeError: undefined is not an object (evaluating 'parent[methodName].length')" that is not a DOMException HierarchyRequestError: property "code" is equal to undefined, expected 3
+- If node is an Element and parent is a document with another element, then throw a HierarchyRequestError DOMException.: assert_throws_dom: function "() => insert(doc, el)" threw object "TypeError: undefined is not an object (evaluating 'parent[methodName].length')" that is not a DOMException HierarchyRequestError: property "code" is equal to undefined, expected 3
+- If node is a doctype and parent is a document with another doctype, then throw a HierarchyRequestError DOMException.: assert_throws_dom: function "() => insert(doc, doctype)" threw object "TypeError: undefined is not an object (evaluating 'parent[methodName].length')" that is not a DOMException HierarchyRequestError: property "code" is equal to undefined, expected 3
+- If node is a doctype and parent is a document with an element, then throw a HierarchyRequestError DOMException.: assert_throws_dom: function "() => insert(doc, doctype)" threw object "TypeError: undefined is not an object (evaluating 'parent[methodName].length')" that is not a DOMException HierarchyRequestError: property "code" is equal to undefined, expected 3
 - moveBefore() on disconnected parent throws a HierarchyRequestError: assert_throws_dom: function "() => {
 - moveBefore() with disconnected target node throws a HierarchyRequestError: assert_throws_dom: function "() => {
-- moveBefore() on a cross-document target node throws a HierarchyRequestError: Cannot read properties of null (reading 'createElement')
-- moveBefore() into a Document throws a HierarchyRequestError: Cannot read properties of null (reading 'querySelector')
-- moveBefore() CharacterData into a Document: Cannot read properties of null (reading 'createComment')
+- moveBefore() on a cross-document target node throws a HierarchyRequestError: null is not an object (evaluating 'iframe.contentDocument.createElement')
+- moveBefore() into a Document throws a HierarchyRequestError: null is not an object (evaluating 'iframe.contentDocument.querySelector')
+- moveBefore() CharacterData into a Document: null is not an object (evaluating 'iframe.contentDocument.createComment')
 - moveBefore() with node being an inclusive ancestor of parent throws a HierarchyRequestError: assert_throws_dom: parent moving itself function "() => {
 - moveBefore() with a non-{Element, CharacterData} throws a HierarchyRequestError: assert_throws_dom: DocumentType throws function "() => {
 - moveBefore with an Element or CharacterData succeeds: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
-- moveBefore on a paragraph's Text node child: document.body.moveBefore is not a function
+- moveBefore on a paragraph's Text node child: document.body.moveBefore is not a function. (In 'document.body.moveBefore(p.firstChild, null)', 'document.body.moveBefore' is undefined)
 - moveBefore with reference child whose parent is NOT the destination parent (context node) throws a NotFoundError.: assert_throws_dom: function "() => {
-- moveBefore() returns undefined: a.moveBefore is not a function
-- Moving a node before itself should not move the node: a.moveBefore is not a function
+- moveBefore() returns undefined: a.moveBefore is not a function. (In 'a.moveBefore(c, b)', 'a.moveBefore' is undefined)
+- Moving a node before itself should not move the node: a.moveBefore is not a function. (In 'a.moveBefore(b, b)', 'a.moveBefore' is undefined)
 - Moving a node from a disconnected container to a disconnected new parent without a shared ancestor throws a HIERARCHY_REQUEST_ERR: assert_throws_dom: function "() => {
-- Moving a node from a disconnected container to a disconnected new parent in the same tree succeeds: disconnectedDestination.moveBefore is not a function
-- Moving a node from a disconnected container to a disconnected new parent in the same tree succeeds,also across shadow-roots: disconnectedDestination.moveBefore is not a function
-- Moving a node from disconnected->connected throws a HIERARCHY_REQUEST_ERR: assert_throws_dom: function "() => connectedDestination.moveBefore(p, null)" threw object "TypeError: connectedDestination.moveBefore is not a function" that is not a DOMException HIERARCHY_REQUEST_ERR: property "code" is equal to undefined, expected 3
-- Moving a node from connected->disconnected throws a HIERARCHY_REQUEST_ERR: assert_throws_dom: function "() => disconnectedDestination.moveBefore(p, null)" threw object "TypeError: disconnectedDestination.moveBefore is not a function" that is not a DOMException HIERARCHY_REQUEST_ERR: property "code" is equal to undefined, expected 3
-- No custom element callbacks are run during disconnected moveBefore(): promise_test: Unhandled rejection with value: object "TypeError: newParent.moveBefore is not a function"
-- Invalid node hierarchy with null old parent does not crash: assert_throws_dom: function "() => div.moveBefore(outer, null)" threw object "TypeError: div.moveBefore is not a function" that is not a DOMException HIERARCHY_REQUEST_ERR: property "code" is equal to undefined, expected 3
-- Move disconnected iframe does not crash: outerDiv.moveBefore is not a function
+- Moving a node from a disconnected container to a disconnected new parent in the same tree succeeds: disconnectedDestination.moveBefore is not a function. (In 'disconnectedDestination.moveBefore(p, null)', 'disconnectedDestination.moveBefore' is undefined)
+- Moving a node from a disconnected container to a disconnected new parent in the same tree succeeds,also across shadow-roots: disconnectedDestination.moveBefore is not a function. (In 'disconnectedDestination.moveBefore(p, null)', 'disconnectedDestination.moveBefore' is undefined)
+- Moving a node from disconnected->connected throws a HIERARCHY_REQUEST_ERR: assert_throws_dom: function "() => connectedDestination.moveBefore(p, null)" threw object "TypeError: connectedDestination.moveBefore is not a function. (In 'connectedDestination.moveBefore(p, null)', 'connectedDestination.moveBefore' is undefined)" that is not a DOMException HIERARCHY_REQUEST_ERR: property "code" is equal to undefined, expected 3
+- Moving a node from connected->disconnected throws a HIERARCHY_REQUEST_ERR: assert_throws_dom: function "() => disconnectedDestination.moveBefore(p, null)" threw object "TypeError: disconnectedDestination.moveBefore is not a function. (In 'disconnectedDestination.moveBefore(p, null)', 'disconnectedDestination.moveBefore' is undefined)" that is not a DOMException HIERARCHY_REQUEST_ERR: property "code" is equal to undefined, expected 3
+- No custom element callbacks are run during disconnected moveBefore(): promise_test: Unhandled rejection with value: object "TypeError: newParent.moveBefore is not a function. (In 'newParent.moveBefore(element, null)', 'newParent.moveBefore' is undefined)"
+- Invalid node hierarchy with null old parent does not crash: assert_throws_dom: function "() => div.moveBefore(outer, null)" threw object "TypeError: div.moveBefore is not a function. (In 'div.moveBefore(outer, null)', 'div.moveBefore' is undefined)" that is not a DOMException HIERARCHY_REQUEST_ERR: property "code" is equal to undefined, expected 3
+- Move disconnected iframe does not crash: outerDiv.moveBefore is not a function. (In 'outerDiv.moveBefore(iframe, null)', 'outerDiv.moveBefore' is undefined)
 
 ### dom/nodes/moveBefore/child-style-preserve.html
 
-- child-style-preserve: item.getBoundingClientRect is not a function
+- child-style-preserve: item.getBoundingClientRect is not a function. (In 'item.getBoundingClientRect()', 'item.getBoundingClientRect' is undefined)
 
 ### dom/nodes/moveBefore/continue-css-animation-left.html
 
@@ -1918,19 +1918,19 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 ### dom/nodes/moveBefore/continue-css-transition-left-pseudo.html
 
-- Node.moveBefore should preserve CSS transition state on pseudo-elements (left): promise_test: Unhandled rejection with value: object "TypeError: item.getBoundingClientRect is not a function"
+- Node.moveBefore should preserve CSS transition state on pseudo-elements (left): promise_test: Unhandled rejection with value: object "TypeError: item.getBoundingClientRect is not a function. (In 'item.getBoundingClientRect()', 'item.getBoundingClientRect' is undefined)"
 
 ### dom/nodes/moveBefore/continue-css-transition-left.html
 
-- Node.moveBefore should preserve CSS transition state (left): promise_test: Unhandled rejection with value: object "TypeError: item.getBoundingClientRect is not a function"
+- Node.moveBefore should preserve CSS transition state (left): promise_test: Unhandled rejection with value: object "TypeError: item.getBoundingClientRect is not a function. (In 'item.getBoundingClientRect()', 'item.getBoundingClientRect' is undefined)"
 
 ### dom/nodes/moveBefore/continue-css-transition-transform-pseudo.html
 
-- Node.moveBefore should preserve CSS transition state on pseudo-elements (transform): promise_test: Unhandled rejection with value: object "TypeError: item.getBoundingClientRect is not a function"
+- Node.moveBefore should preserve CSS transition state on pseudo-elements (transform): promise_test: Unhandled rejection with value: object "TypeError: item.getBoundingClientRect is not a function. (In 'item.getBoundingClientRect()', 'item.getBoundingClientRect' is undefined)"
 
 ### dom/nodes/moveBefore/continue-css-transition-transform.html
 
-- Node.moveBefore should preserve CSS transition state (transform): promise_test: Unhandled rejection with value: object "TypeError: item.getBoundingClientRect is not a function"
+- Node.moveBefore should preserve CSS transition state (transform): promise_test: Unhandled rejection with value: object "TypeError: item.getBoundingClientRect is not a function. (In 'item.getBoundingClientRect()', 'item.getBoundingClientRect' is undefined)"
 
 ### dom/nodes/moveBefore/css-animation-commit-styles.html
 
@@ -1942,60 +1942,60 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 ### dom/nodes/moveBefore/css-transition-cross-shadow.html
 
-- Moving an element with a transition across shadow boundaries preserves the transition: promise_test: Unhandled rejection with value: object "TypeError: item.getBoundingClientRect is not a function"
+- Moving an element with a transition across shadow boundaries preserves the transition: promise_test: Unhandled rejection with value: object "TypeError: item.getBoundingClientRect is not a function. (In 'item.getBoundingClientRect()', 'item.getBoundingClientRect' is undefined)"
 
 ### dom/nodes/moveBefore/css-transition-to-disconnected-document.html
 
-- Moving an element with a transition to a disconnected document should reset the transitionm state: promise_test: Unhandled rejection with value: object "TypeError: item.getBoundingClientRect is not a function"
+- Moving an element with a transition to a disconnected document should reset the transitionm state: promise_test: Unhandled rejection with value: object "TypeError: item.getBoundingClientRect is not a function. (In 'item.getBoundingClientRect()', 'item.getBoundingClientRect' is undefined)"
 
 ### dom/nodes/moveBefore/css-transition-trigger.html
 
-- Node.moveBefore should trigger CSS transition state (left) if needed: promise_test: Unhandled rejection with value: object "TypeError: item.getBoundingClientRect is not a function"
+- Node.moveBefore should trigger CSS transition state (left) if needed: promise_test: Unhandled rejection with value: object "TypeError: item.getBoundingClientRect is not a function. (In 'item.getBoundingClientRect()', 'item.getBoundingClientRect' is undefined)"
 
 ### dom/nodes/moveBefore/custom-element-move-reactions.html
 
-- the disconnected/connected callbacks should be called when no other callback is defined: promise_test: Unhandled rejection with value: object "TypeError: document.getElementById(...).moveBefore is not a function"
-- the element should stay connected during the callbacks: promise_test: Unhandled rejection with value: object "TypeError: document.getElementById(...).moveBefore is not a function"
-- When connectedMoveCallback is defined, it is called instead of disconnectedCallback/connectedCallback: promise_test: Unhandled rejection with value: object "TypeError: document.getElementById(...).moveBefore is not a function"
-- Reactions to atomic move are called in order of element, not in order of operation: promise_test: Unhandled rejection with value: object "TypeError: document.getElementById(...).moveBefore is not a function"
-- When connectedCallback is not defined, no crash: promise_test: Unhandled rejection with value: object "TypeError: document.getElementById(...).moveBefore is not a function"
-- When disconnectedCallback is not defined, no crash: promise_test: Unhandled rejection with value: object "TypeError: document.getElementById(...).moveBefore is not a function"
-- connectedMove runs when custom element is nested within a shadow root: promise_test: Unhandled rejection with value: object "TypeError: document.getElementById(...).moveBefore is not a function"
+- the disconnected/connected callbacks should be called when no other callback is defined: promise_test: Unhandled rejection with value: object "TypeError: document.getElementById("section").moveBefore is not a function. (In 'document.getElementById("section").moveBefore(element, null)', 'document.getElementById("section").moveBefore' is undefined)"
+- the element should stay connected during the callbacks: promise_test: Unhandled rejection with value: object "TypeError: document.getElementById("section").moveBefore is not a function. (In 'document.getElementById("section").moveBefore(element, null)', 'document.getElementById("section").moveBefore' is undefined)"
+- When connectedMoveCallback is defined, it is called instead of disconnectedCallback/connectedCallback: promise_test: Unhandled rejection with value: object "TypeError: document.getElementById("section").moveBefore is not a function. (In 'document.getElementById("section").moveBefore(element, null)', 'document.getElementById("section").moveBefore' is undefined)"
+- Reactions to atomic move are called in order of element, not in order of operation: promise_test: Unhandled rejection with value: object "TypeError: document.getElementById("section").moveBefore is not a function. (In 'document.getElementById("section").moveBefore(outer, null)', 'document.getElementById("section").moveBefore' is undefined)"
+- When connectedCallback is not defined, no crash: promise_test: Unhandled rejection with value: object "TypeError: document.getElementById("section").moveBefore is not a function. (In 'document.getElementById("section").moveBefore(element, null)', 'document.getElementById("section").moveBefore' is undefined)"
+- When disconnectedCallback is not defined, no crash: promise_test: Unhandled rejection with value: object "TypeError: document.getElementById("section").moveBefore is not a function. (In 'document.getElementById("section").moveBefore(element, null)', 'document.getElementById("section").moveBefore' is undefined)"
+- connectedMove runs when custom element is nested within a shadow root: promise_test: Unhandled rejection with value: object "TypeError: document.getElementById("section").moveBefore is not a function. (In 'document.getElementById("section").moveBefore(customElement, null)', 'document.getElementById("section").moveBefore' is undefined)"
 
 ### dom/nodes/moveBefore/fieldset-child-blur-event.html
 
-- The 'blur' event is not fired on children of HTMLFieldSetElement during moveBefore(): victim.focus is not a function
+- The 'blur' event is not fired on children of HTMLFieldSetElement during moveBefore(): fs.moveBefore is not a function. (In 'fs.moveBefore(L1, null)', 'fs.moveBefore' is undefined)
 
 ### dom/nodes/moveBefore/fieldset-child-date-input-blur-event.html
 
-- Neither 'blur' nor 'focusout' is fired on a focused <input type=date> child of HTMLFieldSetElement during moveBefore(): victim.focus is not a function
+- Neither 'blur' nor 'focusout' is fired on a focused <input type=date> child of HTMLFieldSetElement during moveBefore(): fs.moveBefore is not a function. (In 'fs.moveBefore(L1, null)', 'fs.moveBefore' is undefined)
 
 ### dom/nodes/moveBefore/fire-focusin-focusout.html
 
-- Don't fire focusin/out when reparenting focused element directly: button.focus is not a function
-- Don't fire focusin/out when reparenting an element that has focus within: button.focus is not a function
-- Don't fire focusin/out when moving to the same parent: button.focus is not a function
-- Don't fire focusin and then correct when moving to an inert subtree: promise_test: Unhandled rejection with value: object "TypeError: button.focus is not a function"
-- Don't fire focusin and then correct when moving to a tree that is made inert using style: promise_test: Unhandled rejection with value: object "TypeError: button.focus is not a function"
+- Don't fire focusin/out when reparenting focused element directly: assert_array_equals: lengths differ, expected array ["button.onfocusin"] length 1, got [] length 0
+- Don't fire focusin/out when reparenting an element that has focus within: new_parent.moveBefore is not a function. (In 'new_parent.moveBefore(old_parent, null)', 'new_parent.moveBefore' is undefined)
+- Don't fire focusin/out when moving to the same parent: old_parent.moveBefore is not a function. (In 'old_parent.moveBefore(button, null)', 'old_parent.moveBefore' is undefined)
+- Don't fire focusin and then correct when moving to an inert subtree: promise_test: Unhandled rejection with value: object "TypeError: inert_parent.moveBefore is not a function. (In 'inert_parent.moveBefore(button, null)', 'inert_parent.moveBefore' is undefined)"
+- Don't fire focusin and then correct when moving to a tree that is made inert using style: promise_test: Unhandled rejection with value: object "TypeError: inert_when_not_empty_parent.moveBefore is not a function. (In 'inert_when_not_empty_parent.moveBefore(button, null)', 'inert_when_not_empty_parent.moveBefore' is undefined)"
 
 ### dom/nodes/moveBefore/focus-preserve.html
 
-- when reparenting an element, don't automatically reset the document focus: button.focus is not a function
-- when reparenting a focused element into an inert parent, reset the document focus: promise_test: Unhandled rejection with value: object "TypeError: button.focus is not a function"
-- when reparenting a focused element into a hidden parent, reset the document focus: promise_test: Unhandled rejection with value: object "TypeError: button.focus is not a function"
-- when reparenting an ancestor of an focused element into a hidden parent, reset the document focus: promise_test: Unhandled rejection with value: object "TypeError: button.focus is not a function"
+- when reparenting an element, don't automatically reset the document focus: new_parent.moveBefore is not a function. (In 'new_parent.moveBefore(button, null)', 'new_parent.moveBefore' is undefined)
+- when reparenting a focused element into an inert parent, reset the document focus: promise_test: Unhandled rejection with value: object "TypeError: inert_parent.moveBefore is not a function. (In 'inert_parent.moveBefore(button, null)', 'inert_parent.moveBefore' is undefined)"
+- when reparenting a focused element into a hidden parent, reset the document focus: promise_test: Unhandled rejection with value: object "TypeError: hidden_parent.moveBefore is not a function. (In 'hidden_parent.moveBefore(button, null)', 'hidden_parent.moveBefore' is undefined)"
+- when reparenting an ancestor of an focused element into a hidden parent, reset the document focus: promise_test: Unhandled rejection with value: object "TypeError: hidden_parent.moveBefore is not a function. (In 'hidden_parent.moveBefore(old_parent, null)', 'hidden_parent.moveBefore' is undefined)"
 
 ### dom/nodes/moveBefore/focus-within.html
 
-- focus-within should be updated when reparenting focused element directly: button.focus is not a function
-- focus-within should be updated when reparenting an element that has focus within: button.focus is not a function
-- focus-within should remain the same when moving to the same parent: button.focus is not a function
-- :focus-within should be eventually up to date when moving to an inert subtree: promise_test: Unhandled rejection with value: object "TypeError: button.focus is not a function"
-- :focus-within should be eventually up to date when moving to a subtree that would become inert via style: promise_test: Unhandled rejection with value: object "TypeError: button.focus is not a function"
+- focus-within should be updated when reparenting focused element directly: assert_array_equals: lengths differ, expected array ["HTML", "BODY", "old_parent", "button"] length 4, got ["button"] length 1
+- focus-within should be updated when reparenting an element that has focus within: new_parent.moveBefore is not a function. (In 'new_parent.moveBefore(old_parent, null)', 'new_parent.moveBefore' is undefined)
+- focus-within should remain the same when moving to the same parent: old_parent.moveBefore is not a function. (In 'old_parent.moveBefore(button, null)', 'old_parent.moveBefore' is undefined)
+- :focus-within should be eventually up to date when moving to an inert subtree: promise_test: Unhandled rejection with value: object "TypeError: inert_parent.moveBefore is not a function. (In 'inert_parent.moveBefore(button, null)', 'inert_parent.moveBefore' is undefined)"
+- :focus-within should be eventually up to date when moving to a subtree that would become inert via style: promise_test: Unhandled rejection with value: object "TypeError: inert_when_not_empty_parent.moveBefore is not a function. (In 'inert_when_not_empty_parent.moveBefore(button, null)', 'inert_when_not_empty_parent.moveBefore' is undefined)"
 
 ### dom/nodes/moveBefore/fullscreen-preserve.html
 
-- Document#fullscreenElement: promise_test: Unhandled rejection with value: object "TypeError: element.getClientRects is not a function"
+- Document#fullscreenElement: promise_test: Unhandled rejection with value: object "TypeError: element.getClientRects is not a function. (In 'element.getClientRects()', 'element.getClientRects' is undefined)"
 
 ### dom/nodes/moveBefore/hover-style-update.html
 
@@ -2014,7 +2014,7 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 ### dom/nodes/moveBefore/listed-form-element-reset.html
 
-- Listed form element form owner is reset when a new form is moved closer before the listed element: document.body.moveBefore is not a function
+- Listed form element form owner is reset when a new form is moved closer before the listed element: document.body.moveBefore is not a function. (In 'document.body.moveBefore(form2, form)', 'document.body.moveBefore' is undefined)
 
 ### dom/nodes/moveBefore/live-range-updates.html
 
@@ -2028,65 +2028,65 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 ### dom/nodes/moveBefore/moveBefore-dir.html
 
-- moveBefore() correctly updates the computed dir for moved nodes: dest.moveBefore is not a function
+- moveBefore() correctly updates the computed dir for moved nodes: dest.moveBefore is not a function. (In 'dest.moveBefore(target, null)', 'dest.moveBefore' is undefined)
 
 ### dom/nodes/moveBefore/moveBefore-from-light-to-shadow.html
 
-- moveBefore-from-light-to-shadow: span.getBoundingClientRect is not a function
+- moveBefore-from-light-to-shadow: span.getBoundingClientRect is not a function. (In 'span.getBoundingClientRect()', 'span.getBoundingClientRect' is undefined)
 
 ### dom/nodes/moveBefore/moveBefore-id-map.html
 
-- moveBefore() correctly updates id map when moving into shadow root: div.moveBefore is not a function
-- moveBefore() correctly updates window map when moving id-mapped element into shadow root: div.moveBefore is not a function
-- moveBefore() correctly updates id map when moving between shadow roots: container2.moveBefore is not a function
-- moveBefore() correctly updates id map when swapping elements with duplicate ids: parent.moveBefore is not a function
+- moveBefore() correctly updates id map when moving into shadow root: div.moveBefore is not a function. (In 'div.moveBefore(target, null)', 'div.moveBefore' is undefined)
+- moveBefore() correctly updates window map when moving id-mapped element into shadow root: div.moveBefore is not a function. (In 'div.moveBefore(localTarget, null)', 'div.moveBefore' is undefined)
+- moveBefore() correctly updates id map when moving between shadow roots: container2.moveBefore is not a function. (In 'container2.moveBefore(div, null)', 'container2.moveBefore' is undefined)
+- moveBefore() correctly updates id map when swapping elements with duplicate ids: parent.moveBefore is not a function. (In 'parent.moveBefore(b, a)', 'parent.moveBefore' is undefined)
 
 ### dom/nodes/moveBefore/moveBefore-lang.html
 
-- moveBefore() correctly updates the computed lang for moved nodes: dest.moveBefore is not a function
+- moveBefore() correctly updates the computed lang for moved nodes: dest.moveBefore is not a function. (In 'dest.moveBefore(target, null)', 'dest.moveBefore' is undefined)
 
 ### dom/nodes/moveBefore/moveBefore-name-map.html
 
-- moveBefore() correctly updates name map when moving into shadow root: document.getElementsByName is not a function
+- moveBefore() correctly updates name map when moving into shadow root: document.getElementsByName is not a function. (In 'document.getElementsByName("target")', 'document.getElementsByName' is undefined)
 - moveBefore() correctly updates window map: assert_equals: expected (object) Element node <img name="target2" data-target2=""></img> but got (undefined) undefined
-- moveBefore() correctly updates name map ordering in document: document.getElementsByName is not a function
+- moveBefore() correctly updates name map ordering in document: document.getElementsByName is not a function. (In 'document.getElementsByName("duplicate")', 'document.getElementsByName' is undefined)
 
 ### dom/nodes/moveBefore/moveBefore-nodeiterator.html
 
-- moveBefore() runs NodeIterator pre-remove steps: newParent.moveBefore is not a function
+- moveBefore() runs NodeIterator pre-remove steps: newParent.moveBefore is not a function. (In 'newParent.moveBefore(target, null)', 'newParent.moveBefore' is undefined)
 
 ### dom/nodes/moveBefore/moveBefore-option-recalc-style.html
 
-- moveBefore() of an option element between two selects: move_to.moveBefore is not a function
+- moveBefore() of an option element between two selects: move_to.moveBefore is not a function. (In 'move_to.moveBefore(mv, null)', 'move_to.moveBefore' is undefined)
 
 ### dom/nodes/moveBefore/moveBefore-selector-matching.html
 
-- moveBefore() should invalidate target when descendant selector changes: new_parent.moveBefore is not a function
+- moveBefore() should invalidate target when descendant selector changes: new_parent.moveBefore is not a function. (In 'new_parent.moveBefore(mv, null)', 'new_parent.moveBefore' is undefined)
 
 ### dom/nodes/moveBefore/moveBefore-shadow-inside.html
 
-- moveBefore-shadow-inside: promise_test: Unhandled rejection with value: object "TypeError: document.querySelector(...).moveBefore is not a function"
+- moveBefore-shadow-inside: promise_test: Unhandled rejection with value: object "TypeError: document.querySelector("#section2").moveBefore is not a function. (In 'document.querySelector("#section2").moveBefore(item, null)', 'document.querySelector("#section2").moveBefore' is undefined)"
 
 ### dom/nodes/moveBefore/moveBefore-shadow-root.html
 
-- moveBefore() is allowed in ShadowRoots (i.e., connected DocumentFragments): shadowTarget.shadowRoot.moveBefore is not a function
+- moveBefore() is allowed in ShadowRoots (i.e., connected DocumentFragments): shadowTarget.shadowRoot.moveBefore is not a function. (In 'shadowTarget.shadowRoot.moveBefore(child2, child1)', 'shadowTarget.shadowRoot.moveBefore' is undefined)
 
 ### dom/nodes/moveBefore/moveBefore-size-query.html
 
-- moveBefore() between different size containers invalidates target: new_parent.moveBefore is not a function
+- moveBefore() between different size containers invalidates target: new_parent.moveBefore is not a function. (In 'new_parent.moveBefore(mv, null)', 'new_parent.moveBefore' is undefined)
 
 ### dom/nodes/moveBefore/mutation-observer.html
 
-- [Connected move] MutationObserver removal + insertion is tracked by moveBefore(): promise_test: Unhandled rejection with value: object "TypeError: newParent.moveBefore is not a function"
-- [Disconnected move] MutationObserver removal + insertion is tracked by moveBefore(): promise_test: Unhandled rejection with value: object "TypeError: newParent.moveBefore is not a function"
+- [Connected move] MutationObserver removal + insertion is tracked by moveBefore(): promise_test: Unhandled rejection with value: object "TypeError: newParent.moveBefore is not a function. (In 'newParent.moveBefore(target, null)', 'newParent.moveBefore' is undefined)"
+- [Disconnected move] MutationObserver removal + insertion is tracked by moveBefore(): promise_test: Unhandled rejection with value: object "TypeError: newParent.moveBefore is not a function. (In 'newParent.moveBefore(target, null)', 'newParent.moveBefore' is undefined)"
 
 ### dom/nodes/moveBefore/nonce.html
 
-- Element nonce content attribute is not cleared after move: new_parent.moveBefore is not a function
+- Element nonce content attribute is not cleared after move: new_parent.moveBefore is not a function. (In 'new_parent.moveBefore(div, null)', 'new_parent.moveBefore' is undefined)
 
 ### dom/nodes/moveBefore/object-crash-regression.html
 
-- Moving an object element does not crash: p.moveBefore is not a function
+- Moving an object element does not crash: p.moveBefore is not a function. (In 'p.moveBefore(p.lastChild, p.firstChild)', 'p.moveBefore' is undefined)
 
 ### dom/nodes/moveBefore/pointer-events.html
 
@@ -2094,7 +2094,7 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 ### dom/nodes/moveBefore/popover-preserve.html
 
-- when reparenting an open popover, it shouldn't be closed automatically: promise_test: Unhandled rejection with value: object "TypeError: popover.showPopover is not a function"
+- when reparenting an open popover, it shouldn't be closed automatically: promise_test: Unhandled rejection with value: object "TypeError: popover.showPopover is not a function. (In 'popover.showPopover()', 'popover.showPopover' is undefined)"
 
 ### dom/nodes/moveBefore/relevant-mutations.html
 
@@ -2107,13 +2107,13 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 ### dom/nodes/moveBefore/script-move-before.html
 
-- Synchronous script execution in HTMLScriptElement during moveBefore should be blocked: htmlScript.moveBefore is not a function
-- Synchronous script execution in SVGScriptElement during moveBefore should be blocked: svgScript.moveBefore is not a function
+- Synchronous script execution in HTMLScriptElement during moveBefore should be blocked: htmlScript.moveBefore is not a function. (In 'htmlScript.moveBefore(textNode, null)', 'htmlScript.moveBefore' is undefined)
+- Synchronous script execution in SVGScriptElement during moveBefore should be blocked: svgScript.moveBefore is not a function. (In 'svgScript.moveBefore(textNode, null)', 'svgScript.moveBefore' is undefined)
 
 ### dom/nodes/moveBefore/select-option-optgroup.html
 
-- Option selectedness is updated on option and optgroup DOM moves: document.body.moveBefore is not a function
-- Moving options between select elements.: selectTwo.moveBefore is not a function
+- Option selectedness is updated on option and optgroup DOM moves: document.body.moveBefore is not a function. (In 'document.body.moveBefore(optionA, null)', 'document.body.moveBefore' is undefined)
+- Moving options between select elements.: selectTwo.moveBefore is not a function. (In 'selectTwo.moveBefore(twoWrapper, null)', 'selectTwo.moveBefore' is undefined)
 
 ### dom/nodes/moveBefore/selection-preserve.html
 
@@ -2126,10 +2126,10 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 ### dom/nodes/moveBefore/slotchange-events.html
 
-- Moving default content into a slot fires 'slotchange' event: promise_test: Unhandled rejection with value: object "TypeError: slot.moveBefore is not a function"
-- Moving default content out of a slot fires 'slotchange' event: promise_test: Unhandled rejection with value: object "TypeError: customElement.shadowRoot.moveBefore is not a function"
-- Moving a slottable into and out out of a custom element fires 'slotchange' event: promise_test: Unhandled rejection with value: object "TypeError: customElement.moveBefore is not a function"
-- Moving a slot runs the assign slottables algorithm: promise_test: Unhandled rejection with value: object "TypeError: document.body.moveBefore is not a function"
+- Moving default content into a slot fires 'slotchange' event: promise_test: Unhandled rejection with value: object "TypeError: slot.moveBefore is not a function. (In 'slot.moveBefore(defaultContentP, null)', 'slot.moveBefore' is undefined)"
+- Moving default content out of a slot fires 'slotchange' event: promise_test: Unhandled rejection with value: object "TypeError: customElement.shadowRoot.moveBefore is not a function. (In 'customElement.shadowRoot.moveBefore(defaultContentP, null)', 'customElement.shadowRoot.moveBefore' is undefined)"
+- Moving a slottable into and out out of a custom element fires 'slotchange' event: promise_test: Unhandled rejection with value: object "TypeError: customElement.moveBefore is not a function. (In 'customElement.moveBefore(slottable, null)', 'customElement.moveBefore' is undefined)"
+- Moving a slot runs the assign slottables algorithm: promise_test: Unhandled rejection with value: object "TypeError: document.body.moveBefore is not a function. (In 'document.body.moveBefore(slot, null)', 'document.body.moveBefore' is undefined)"
 
 ### dom/nodes/moveBefore/style-applies.html
 
@@ -2137,7 +2137,7 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 ### dom/nodes/moveBefore/throws-exception.html
 
-- moveBefore() on a cross-document target node: Cannot read properties of null (reading 'createElement')
+- moveBefore() on a cross-document target node: null is not an object (evaluating 'iframe.contentDocument.createElement')
 
 ### dom/nodes/querySelector-mixed-case.html
 
@@ -2235,11 +2235,11 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 ### dom/events/Event-dispatch-bubbles-false.html
 
-- In window.document with click event: assert_array_equals: targets lengths differ, expected array [object "[object global]", Document node with 2 children, Element node <html><head><meta charset="utf-8">
+- In window.document with click event: assert_array_equals: targets lengths differ, expected array [object "[object Object]", Document node with 2 children, Element node <html><head><meta charset="utf-8">
 
 ### dom/events/Event-dispatch-bubbles-true.html
 
-- In window.document with click event: assert_array_equals: targets lengths differ, expected array [object "[object global]", Document node with 2 children, Element node <html><head><meta charset="utf-8">
+- In window.document with click event: assert_array_equals: targets lengths differ, expected array [object "[object Object]", Document node with 2 children, Element node <html><head><meta charset="utf-8">
 
 ### dom/events/Event-dispatch-click.html
 
@@ -2301,7 +2301,7 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 ### dom/events/Event-timestamp-high-resolution.https.html
 
-- Constructed GamepadEvent timestamp should be high resolution and have the same time origin as performance.now(): window[eventType] is not a constructor
+- Constructed GamepadEvent timestamp should be high resolution and have the same time origin as performance.now(): undefined is not a constructor (evaluating 'new window[eventType]('test')')
 
 ### dom/events/Event-timestamp-safe-resolution.html
 
@@ -2348,271 +2348,290 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 ### dom/events/shadow-relatedTarget.html
 
-- relatedTarget should not leak at capturing phase, at window object.: root.getElementById(...).focus is not a function
-- relatedTarget should not leak at target.: root.getElementById(...).focus is not a function
+- relatedTarget should not leak at capturing phase, at window object.: Test timed out
+- relatedTarget should not leak at target.: Test timed out
 
 ### selection/anonymous/setBaseAndExtent-start-or-end-in-anonymous-shadow-container.html
 
-- setBaseAndExtent(use, 0, use, 1) in "<svg><use><circle></circle></use></svg>": document.body.getBoundingClientRect is not a function
-- setBaseAndExtent(use, 0, circle, 0) in "<svg><use><circle></circle></use></svg>": document.body.getBoundingClientRect is not a function
-- setBaseAndExtent(use, 1, circle, 0) in "<svg><use>\n<circle></circle></use></svg>": document.body.getBoundingClientRect is not a function
-- setBaseAndExtent(circle, 0, use, 1) in "<svg><use><circle></circle></use></svg>": document.body.getBoundingClientRect is not a function
-- setBaseAndExtent(details, 0, summary, 0) in "<details><summary>ABC</summary>DEF</details>": document.body.getBoundingClientRect is not a function
-- setBaseAndExtent(details, 1, summary, 0) in "<details>\n<summary>ABC</summary>DEF</details>": document.body.getBoundingClientRect is not a function
-- setBaseAndExtent(details, 0, summary > #text, 0) in "<details><summary>ABC</summary>DEF</details>": document.body.getBoundingClientRect is not a function
-- setBaseAndExtent(details, 0, summary + #text, 0) in "<details><summary>ABC</summary>DEF</details>": document.body.getBoundingClientRect is not a function
-- setBaseAndExtent(details, 1, summary + #text, 0) in "<details>\n<summary>ABC</summary>DEF</details>": document.body.getBoundingClientRect is not a function
-- setBaseAndExtent(details, 0, p+p, 0) in "<details><summary>ABC</summary><p>DEF</p><p>GHI</p></details>": document.body.getBoundingClientRect is not a function
-- setBaseAndExtent(details, 1, p+p, 0) in "<details>\n<summary>ABC</summary><p>DEF</p><p>GHI</p></details>": document.body.getBoundingClientRect is not a function
+- setBaseAndExtent(use, 0, use, 1) in "<svg><use><circle></circle></use></svg>": document.body.getBoundingClientRect is not a function. (In 'document.body.getBoundingClientRect()', 'document.body.getBoundingClientRect' is undefined)
+- setBaseAndExtent(use, 0, circle, 0) in "<svg><use><circle></circle></use></svg>": document.body.getBoundingClientRect is not a function. (In 'document.body.getBoundingClientRect()', 'document.body.getBoundingClientRect' is undefined)
+- setBaseAndExtent(use, 1, circle, 0) in "<svg><use>\n<circle></circle></use></svg>": document.body.getBoundingClientRect is not a function. (In 'document.body.getBoundingClientRect()', 'document.body.getBoundingClientRect' is undefined)
+- setBaseAndExtent(circle, 0, use, 1) in "<svg><use><circle></circle></use></svg>": document.body.getBoundingClientRect is not a function. (In 'document.body.getBoundingClientRect()', 'document.body.getBoundingClientRect' is undefined)
+- setBaseAndExtent(details, 0, summary, 0) in "<details><summary>ABC</summary>DEF</details>": document.body.getBoundingClientRect is not a function. (In 'document.body.getBoundingClientRect()', 'document.body.getBoundingClientRect' is undefined)
+- setBaseAndExtent(details, 1, summary, 0) in "<details>\n<summary>ABC</summary>DEF</details>": document.body.getBoundingClientRect is not a function. (In 'document.body.getBoundingClientRect()', 'document.body.getBoundingClientRect' is undefined)
+- setBaseAndExtent(details, 0, summary > #text, 0) in "<details><summary>ABC</summary>DEF</details>": document.body.getBoundingClientRect is not a function. (In 'document.body.getBoundingClientRect()', 'document.body.getBoundingClientRect' is undefined)
+- setBaseAndExtent(details, 0, summary + #text, 0) in "<details><summary>ABC</summary>DEF</details>": document.body.getBoundingClientRect is not a function. (In 'document.body.getBoundingClientRect()', 'document.body.getBoundingClientRect' is undefined)
+- setBaseAndExtent(details, 1, summary + #text, 0) in "<details>\n<summary>ABC</summary>DEF</details>": document.body.getBoundingClientRect is not a function. (In 'document.body.getBoundingClientRect()', 'document.body.getBoundingClientRect' is undefined)
+- setBaseAndExtent(details, 0, p+p, 0) in "<details><summary>ABC</summary><p>DEF</p><p>GHI</p></details>": document.body.getBoundingClientRect is not a function. (In 'document.body.getBoundingClientRect()', 'document.body.getBoundingClientRect' is undefined)
+- setBaseAndExtent(details, 1, p+p, 0) in "<details>\n<summary>ABC</summary><p>DEF</p><p>GHI</p></details>": document.body.getBoundingClientRect is not a function. (In 'document.body.getBoundingClientRect()', 'document.body.getBoundingClientRect' is undefined)
 
 ### selection/bidi/modify-extend-by-character.html
 
-- LTR text in LTR paragraph: extend forward 2 chars: selection.modify is not a function
-- LTR text in LTR paragraph: extend backward 2 chars: selection.modify is not a function
-- RTL text in RTL paragraph: extend forward 2 chars: selection.modify is not a function
-- RTL text in RTL paragraph: extend backward 2 chars: selection.modify is not a function
-- RTL text in LTR paragraph: extend forward 2 chars: selection.modify is not a function
-- RTL text in LTR paragraph: extend backward 2 chars: selection.modify is not a function
-- LTR text in RTL paragraph: extend forward 2 chars: selection.modify is not a function
-- LTR text in RTL paragraph: extend backward 2 chars: selection.modify is not a function
-- LTR-RTL context in LTR paragraph: extend forward 3 chars: selection.modify is not a function
-- LTR-RTL context in LTR paragraph: extend backward 3 chars: selection.modify is not a function
-- RTL-LTR context in LTR paragraph: extend forward 3 chars: selection.modify is not a function
-- RTL-LTR context in LTR paragraph: extend backward 3 chars: selection.modify is not a function
-- Mixed context in auto-dir paragraph: extend forward 3 chars: selection.modify is not a function
-- Mixed context in auto-dir paragraph: extend backward 3 chars: selection.modify is not a function
-- LTR text in LTR paragraph: extend right 2 chars: selection.modify is not a function
-- LTR text in LTR paragraph: extend left 2 chars: selection.modify is not a function
-- RTL text in RTL paragraph: extend right 2 chars: selection.modify is not a function
-- RTL text in RTL paragraph: extend left 2 chars: selection.modify is not a function
-- RTL text in LTR paragraph: extend right 2 chars: selection.modify is not a function
-- RTL text in LTR paragraph: extend left 2 chars: selection.modify is not a function
-- LTR text in RTL paragraph: extend right 2 chars: selection.modify is not a function
-- LTR text in RTL paragraph: extend left 2 chars: selection.modify is not a function
-- LTR-RTL context in LTR paragraph: extend right 3 chars: selection.modify is not a function
-- LTR-RTL context in LTR paragraph: extend left 3 chars: selection.modify is not a function
-- RTL-LTR context in LTR paragraph: extend right 3 chars: selection.modify is not a function
-- RTL-LTR context in LTR paragraph: extend left 3 chars: selection.modify is not a function
-- Mixed context in auto-dir paragraph: extend right 3 chars: selection.modify is not a function
-- Mixed context in auto-dir paragraph: extend left 3 chars: selection.modify is not a function
+- LTR text in LTR paragraph: extend forward 2 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- LTR text in LTR paragraph: extend backward 2 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- RTL text in RTL paragraph: extend forward 2 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- RTL text in RTL paragraph: extend backward 2 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- RTL text in LTR paragraph: extend forward 2 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- RTL text in LTR paragraph: extend backward 2 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- LTR text in RTL paragraph: extend forward 2 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- LTR text in RTL paragraph: extend backward 2 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- LTR-RTL context in LTR paragraph: extend forward 3 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- LTR-RTL context in LTR paragraph: extend backward 3 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- RTL-LTR context in LTR paragraph: extend forward 3 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- RTL-LTR context in LTR paragraph: extend backward 3 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- Mixed context in auto-dir paragraph: extend forward 3 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- Mixed context in auto-dir paragraph: extend backward 3 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- LTR text in LTR paragraph: extend right 2 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- LTR text in LTR paragraph: extend left 2 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- RTL text in RTL paragraph: extend right 2 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- RTL text in RTL paragraph: extend left 2 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- RTL text in LTR paragraph: extend right 2 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- RTL text in LTR paragraph: extend left 2 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- LTR text in RTL paragraph: extend right 2 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- LTR text in RTL paragraph: extend left 2 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- LTR-RTL context in LTR paragraph: extend right 3 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- LTR-RTL context in LTR paragraph: extend left 3 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- RTL-LTR context in LTR paragraph: extend right 3 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- RTL-LTR context in LTR paragraph: extend left 3 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- Mixed context in auto-dir paragraph: extend right 3 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- Mixed context in auto-dir paragraph: extend left 3 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
 
 ### selection/bidi/modify-move-by-character.html
 
-- LTR text in LTR paragraph: move forward 2 chars: selection.modify is not a function
-- LTR text in LTR paragraph: move backward 2 chars: selection.modify is not a function
-- RTL text in RTL paragraph: move forward 2 chars: selection.modify is not a function
-- RTL text in RTL paragraph: move backward 2 chars: selection.modify is not a function
-- RTL text in LTR paragraph: move forward 2 chars: selection.modify is not a function
-- RTL text in LTR paragraph: move backward 2 chars: selection.modify is not a function
-- LTR text in RTL paragraph: move forward 2 chars: selection.modify is not a function
-- LTR text in RTL paragraph: move backward 2 chars: selection.modify is not a function
-- LTR-RTL context in LTR paragraph: move forward 3 chars: selection.modify is not a function
-- LTR-RTL context in LTR paragraph: move backward 3 chars: selection.modify is not a function
-- RTL-LTR context in LTR paragraph: move forward 3 chars: selection.modify is not a function
-- RTL-LTR context in LTR paragraph: move backward 3 chars: selection.modify is not a function
-- Mixed context in auto-dir paragraph: move forward 3 chars: selection.modify is not a function
-- Mixed context in auto-dir paragraph: move backward 3 chars: selection.modify is not a function
-- LTR text in LTR paragraph: move right 2 chars: selection.modify is not a function
-- LTR text in LTR paragraph: move left 2 chars: selection.modify is not a function
-- RTL text in RTL paragraph: move right 2 chars: selection.modify is not a function
-- RTL text in RTL paragraph: move left 2 chars: selection.modify is not a function
-- RTL text in LTR paragraph: move right 2 chars: selection.modify is not a function
-- RTL text in LTR paragraph: move left 2 chars: selection.modify is not a function
-- LTR text in RTL paragraph: move right 2 chars: selection.modify is not a function
-- LTR text in RTL paragraph: move left 2 chars: selection.modify is not a function
-- LTR-RTL context in LTR paragraph: move right 3 chars: selection.modify is not a function
-- LTR-RTL context in LTR paragraph: move left 3 chars: selection.modify is not a function
-- RTL-LTR context in LTR paragraph: move right 3 chars: selection.modify is not a function
-- RTL-LTR context in LTR paragraph: move left 3 chars: selection.modify is not a function
-- Mixed context in auto-dir paragraph: move right 3 chars: selection.modify is not a function
-- Mixed context in auto-dir paragraph: move left 3 chars: selection.modify is not a function
+- LTR text in LTR paragraph: move forward 2 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- LTR text in LTR paragraph: move backward 2 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- RTL text in RTL paragraph: move forward 2 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- RTL text in RTL paragraph: move backward 2 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- RTL text in LTR paragraph: move forward 2 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- RTL text in LTR paragraph: move backward 2 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- LTR text in RTL paragraph: move forward 2 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- LTR text in RTL paragraph: move backward 2 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- LTR-RTL context in LTR paragraph: move forward 3 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- LTR-RTL context in LTR paragraph: move backward 3 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- RTL-LTR context in LTR paragraph: move forward 3 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- RTL-LTR context in LTR paragraph: move backward 3 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- Mixed context in auto-dir paragraph: move forward 3 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- Mixed context in auto-dir paragraph: move backward 3 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- LTR text in LTR paragraph: move right 2 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- LTR text in LTR paragraph: move left 2 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- RTL text in RTL paragraph: move right 2 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- RTL text in RTL paragraph: move left 2 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- RTL text in LTR paragraph: move right 2 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- RTL text in LTR paragraph: move left 2 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- LTR text in RTL paragraph: move right 2 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- LTR text in RTL paragraph: move left 2 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- LTR-RTL context in LTR paragraph: move right 3 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- LTR-RTL context in LTR paragraph: move left 3 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- RTL-LTR context in LTR paragraph: move right 3 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- RTL-LTR context in LTR paragraph: move left 3 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- Mixed context in auto-dir paragraph: move right 3 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
+- Mixed context in auto-dir paragraph: move left 3 chars: selection.modify is not a function. (In 'selection.modify(alter, dir, "character")', 'selection.modify' is undefined)
 
 ### selection/bidi/modify.tentative.html
 
-- LTR text with left direction in ltr context: selection.modify is not a function
-- RTL text with left direction in ltr context: selection.modify is not a function
-- RTL+LTR text with left direction in ltr context: selection.modify is not a function
-- LTR+RTL text with left direction in ltr context: selection.modify is not a function
-- LTR+RTL+LTR text with left direction in ltr context: selection.modify is not a function
-- RTL+LTR+RTL text with left direction in ltr context: selection.modify is not a function
-- LTR text with right direction in ltr context: selection.modify is not a function
-- RTL text with right direction in ltr context: selection.modify is not a function
-- RTL+LTR text with right direction in ltr context: selection.modify is not a function
-- LTR+RTL text with right direction in ltr context: selection.modify is not a function
-- LTR+RTL+LTR text with right direction in ltr context: selection.modify is not a function
-- RTL+LTR+RTL text with right direction in ltr context: selection.modify is not a function
-- LTR text with left direction in rtl context: selection.modify is not a function
-- RTL text with left direction in rtl context: selection.modify is not a function
-- RTL+LTR text with left direction in rtl context: selection.modify is not a function
-- LTR+RTL text with left direction in rtl context: selection.modify is not a function
-- LTR+RTL+LTR text with left direction in rtl context: selection.modify is not a function
-- RTL+LTR+RTL text with left direction in rtl context: selection.modify is not a function
-- LTR text with right direction in rtl context: selection.modify is not a function
-- RTL text with right direction in rtl context: selection.modify is not a function
-- RTL+LTR text with right direction in rtl context: selection.modify is not a function
-- LTR+RTL text with right direction in rtl context: selection.modify is not a function
-- LTR+RTL+LTR text with right direction in rtl context: selection.modify is not a function
-- RTL+LTR+RTL text with right direction in rtl context: selection.modify is not a function
-- LTR text with left direction in ltr context (which was previously rtl): selection.modify is not a function
-- RTL text with left direction in ltr context (which was previously rtl): selection.modify is not a function
-- RTL+LTR text with left direction in ltr context (which was previously rtl): selection.modify is not a function
-- LTR+RTL text with left direction in ltr context (which was previously rtl): selection.modify is not a function
-- LTR+RTL+LTR text with left direction in ltr context (which was previously rtl): selection.modify is not a function
-- RTL+LTR+RTL text with left direction in ltr context (which was previously rtl): selection.modify is not a function
-- LTR text with right direction in ltr context (which was previously rtl): selection.modify is not a function
-- RTL text with right direction in ltr context (which was previously rtl): selection.modify is not a function
-- RTL+LTR text with right direction in ltr context (which was previously rtl): selection.modify is not a function
-- LTR+RTL text with right direction in ltr context (which was previously rtl): selection.modify is not a function
-- LTR+RTL+LTR text with right direction in ltr context (which was previously rtl): selection.modify is not a function
-- RTL+LTR+RTL text with right direction in ltr context (which was previously rtl): selection.modify is not a function
+- LTR text with left direction in ltr context: selection.modify is not a function. (In 'selection.modify("extend", direction, "lineboundary")', 'selection.modify' is undefined)
+- RTL text with left direction in ltr context: selection.modify is not a function. (In 'selection.modify("extend", direction, "lineboundary")', 'selection.modify' is undefined)
+- RTL+LTR text with left direction in ltr context: selection.modify is not a function. (In 'selection.modify("extend", direction, "lineboundary")', 'selection.modify' is undefined)
+- LTR+RTL text with left direction in ltr context: selection.modify is not a function. (In 'selection.modify("extend", direction, "lineboundary")', 'selection.modify' is undefined)
+- LTR+RTL+LTR text with left direction in ltr context: selection.modify is not a function. (In 'selection.modify("extend", direction, "lineboundary")', 'selection.modify' is undefined)
+- RTL+LTR+RTL text with left direction in ltr context: selection.modify is not a function. (In 'selection.modify("extend", direction, "lineboundary")', 'selection.modify' is undefined)
+- LTR text with right direction in ltr context: selection.modify is not a function. (In 'selection.modify("extend", direction, "lineboundary")', 'selection.modify' is undefined)
+- RTL text with right direction in ltr context: selection.modify is not a function. (In 'selection.modify("extend", direction, "lineboundary")', 'selection.modify' is undefined)
+- RTL+LTR text with right direction in ltr context: selection.modify is not a function. (In 'selection.modify("extend", direction, "lineboundary")', 'selection.modify' is undefined)
+- LTR+RTL text with right direction in ltr context: selection.modify is not a function. (In 'selection.modify("extend", direction, "lineboundary")', 'selection.modify' is undefined)
+- LTR+RTL+LTR text with right direction in ltr context: selection.modify is not a function. (In 'selection.modify("extend", direction, "lineboundary")', 'selection.modify' is undefined)
+- RTL+LTR+RTL text with right direction in ltr context: selection.modify is not a function. (In 'selection.modify("extend", direction, "lineboundary")', 'selection.modify' is undefined)
+- LTR text with left direction in rtl context: selection.modify is not a function. (In 'selection.modify("extend", direction, "lineboundary")', 'selection.modify' is undefined)
+- RTL text with left direction in rtl context: selection.modify is not a function. (In 'selection.modify("extend", direction, "lineboundary")', 'selection.modify' is undefined)
+- RTL+LTR text with left direction in rtl context: selection.modify is not a function. (In 'selection.modify("extend", direction, "lineboundary")', 'selection.modify' is undefined)
+- LTR+RTL text with left direction in rtl context: selection.modify is not a function. (In 'selection.modify("extend", direction, "lineboundary")', 'selection.modify' is undefined)
+- LTR+RTL+LTR text with left direction in rtl context: selection.modify is not a function. (In 'selection.modify("extend", direction, "lineboundary")', 'selection.modify' is undefined)
+- RTL+LTR+RTL text with left direction in rtl context: selection.modify is not a function. (In 'selection.modify("extend", direction, "lineboundary")', 'selection.modify' is undefined)
+- LTR text with right direction in rtl context: selection.modify is not a function. (In 'selection.modify("extend", direction, "lineboundary")', 'selection.modify' is undefined)
+- RTL text with right direction in rtl context: selection.modify is not a function. (In 'selection.modify("extend", direction, "lineboundary")', 'selection.modify' is undefined)
+- RTL+LTR text with right direction in rtl context: selection.modify is not a function. (In 'selection.modify("extend", direction, "lineboundary")', 'selection.modify' is undefined)
+- LTR+RTL text with right direction in rtl context: selection.modify is not a function. (In 'selection.modify("extend", direction, "lineboundary")', 'selection.modify' is undefined)
+- LTR+RTL+LTR text with right direction in rtl context: selection.modify is not a function. (In 'selection.modify("extend", direction, "lineboundary")', 'selection.modify' is undefined)
+- RTL+LTR+RTL text with right direction in rtl context: selection.modify is not a function. (In 'selection.modify("extend", direction, "lineboundary")', 'selection.modify' is undefined)
+- LTR text with left direction in ltr context (which was previously rtl): selection.modify is not a function. (In 'selection.modify("extend", direction, "lineboundary")', 'selection.modify' is undefined)
+- RTL text with left direction in ltr context (which was previously rtl): selection.modify is not a function. (In 'selection.modify("extend", direction, "lineboundary")', 'selection.modify' is undefined)
+- RTL+LTR text with left direction in ltr context (which was previously rtl): selection.modify is not a function. (In 'selection.modify("extend", direction, "lineboundary")', 'selection.modify' is undefined)
+- LTR+RTL text with left direction in ltr context (which was previously rtl): selection.modify is not a function. (In 'selection.modify("extend", direction, "lineboundary")', 'selection.modify' is undefined)
+- LTR+RTL+LTR text with left direction in ltr context (which was previously rtl): selection.modify is not a function. (In 'selection.modify("extend", direction, "lineboundary")', 'selection.modify' is undefined)
+- RTL+LTR+RTL text with left direction in ltr context (which was previously rtl): selection.modify is not a function. (In 'selection.modify("extend", direction, "lineboundary")', 'selection.modify' is undefined)
+- LTR text with right direction in ltr context (which was previously rtl): selection.modify is not a function. (In 'selection.modify("extend", direction, "lineboundary")', 'selection.modify' is undefined)
+- RTL text with right direction in ltr context (which was previously rtl): selection.modify is not a function. (In 'selection.modify("extend", direction, "lineboundary")', 'selection.modify' is undefined)
+- RTL+LTR text with right direction in ltr context (which was previously rtl): selection.modify is not a function. (In 'selection.modify("extend", direction, "lineboundary")', 'selection.modify' is undefined)
+- LTR+RTL text with right direction in ltr context (which was previously rtl): selection.modify is not a function. (In 'selection.modify("extend", direction, "lineboundary")', 'selection.modify' is undefined)
+- LTR+RTL+LTR text with right direction in ltr context (which was previously rtl): selection.modify is not a function. (In 'selection.modify("extend", direction, "lineboundary")', 'selection.modify' is undefined)
+- RTL+LTR+RTL text with right direction in ltr context (which was previously rtl): selection.modify is not a function. (In 'selection.modify("extend", direction, "lineboundary")', 'selection.modify' is undefined)
 
 ### selection/caret-position-should-be-correct-while-moveup-movedown.html
 
-- Caret position should be correct in moving up horizontal div when selection was left to right with line granularity: testData.elementUnderTest.focus is not a function
-- Caret position should be correct in moving up horizontal div when selection was right to left with line granularity: testData.elementUnderTest.focus is not a function
-- Caret position should be correct in moving down horizontal div when selection was left to right with line granularity: testData.elementUnderTest.focus is not a function
-- Caret position should be correct in moving down horizontal div when selection was right to left with line granularity: testData.elementUnderTest.focus is not a function
-- Caret position should be correct in moving up horizontal div when selection was left to right with paragraph granularity: testData.elementUnderTest.focus is not a function
-- Caret position should be correct in moving up horizontal div when selection was right to left with paragraph granularity: testData.elementUnderTest.focus is not a function
-- Caret position should be correct in moving down horizontal div when selection was left to right with paragraph granularity: testData.elementUnderTest.focus is not a function
-- Caret position should be correct in moving down horizontal div when selection was right to left with paragraph granularity: testData.elementUnderTest.focus is not a function
-- Caret position should be correct in move right with line granularity for vertical-lr div when selection was top to bottom: testData.elementUnderTest.focus is not a function
-- Caret position should be correct in move right with line granularity for vertical-lr div when selection was bottom to top: testData.elementUnderTest.focus is not a function
-- Caret position should be correct in move left with line granularity for vertical-lr div when selection was top to bottom: testData.elementUnderTest.focus is not a function
-- Caret position should be correct in move left with line granularity for vertical-lr div when selection was bottom to top: testData.elementUnderTest.focus is not a function
-- Caret position should be correct in move right with paragraph granularity for vertical-lr div when selection was top to bottom: testData.elementUnderTest.focus is not a function
-- Caret position should be correct in move right with paragraph granularity for vertical-lr div when selection was bottom to top: testData.elementUnderTest.focus is not a function
-- Caret position should be correct in move left with paragraph granularity for vertical-lr div when selection was top to bottom: testData.elementUnderTest.focus is not a function
-- Caret position should be correct in move left with paragraph granularity for vertical-lr div when selection was bottom to top: testData.elementUnderTest.focus is not a function
-- Caret position should be correct in move left with line granularity for vertical-rl div when selection was top to bottom: testData.elementUnderTest.focus is not a function
-- Caret position should be correct in move left with line granularity for vertical-rl div when selection was bottom to top: testData.elementUnderTest.focus is not a function
-- Caret position should be correct in move right with line granularity for vertical-rl div when selection was top to bottom: testData.elementUnderTest.focus is not a function
-- Caret position should be correct in move right with line granularity for vertical-rl div when selection was bottom to top: testData.elementUnderTest.focus is not a function
-- Caret position should be correct in move left with paragraph granularity for vertical-rl div when selection was top to bottom: testData.elementUnderTest.focus is not a function
-- Caret position should be correct in move left with paragraph granularity for vertical-rl div when selection was bottom to top: testData.elementUnderTest.focus is not a function
-- Caret position should be correct in move right with paragraph granularity for vertical-rl div when selection was top to bottom: testData.elementUnderTest.focus is not a function
-- Caret position should be correct in move right with paragraph granularity for vertical-rl div when selection was bottom to top: testData.elementUnderTest.focus is not a function
+- Caret position should be correct in moving up horizontal div when selection was left to right with line granularity: selection.modify is not a function. (In 'selection.modify(
+- Caret position should be correct in moving up horizontal div when selection was right to left with line granularity: selection.modify is not a function. (In 'selection.modify(
+- Caret position should be correct in moving down horizontal div when selection was left to right with line granularity: selection.modify is not a function. (In 'selection.modify(
+- Caret position should be correct in moving down horizontal div when selection was right to left with line granularity: selection.modify is not a function. (In 'selection.modify(
+- Caret position should be correct in moving up horizontal div when selection was left to right with paragraph granularity: selection.modify is not a function. (In 'selection.modify(
+- Caret position should be correct in moving up horizontal div when selection was right to left with paragraph granularity: selection.modify is not a function. (In 'selection.modify(
+- Caret position should be correct in moving down horizontal div when selection was left to right with paragraph granularity: selection.modify is not a function. (In 'selection.modify(
+- Caret position should be correct in moving down horizontal div when selection was right to left with paragraph granularity: selection.modify is not a function. (In 'selection.modify(
+- Caret position should be correct in move right with line granularity for vertical-lr div when selection was top to bottom: selection.modify is not a function. (In 'selection.modify(
+- Caret position should be correct in move right with line granularity for vertical-lr div when selection was bottom to top: selection.modify is not a function. (In 'selection.modify(
+- Caret position should be correct in move left with line granularity for vertical-lr div when selection was top to bottom: selection.modify is not a function. (In 'selection.modify(
+- Caret position should be correct in move left with line granularity for vertical-lr div when selection was bottom to top: selection.modify is not a function. (In 'selection.modify(
+- Caret position should be correct in move right with paragraph granularity for vertical-lr div when selection was top to bottom: selection.modify is not a function. (In 'selection.modify(
+- Caret position should be correct in move right with paragraph granularity for vertical-lr div when selection was bottom to top: selection.modify is not a function. (In 'selection.modify(
+- Caret position should be correct in move left with paragraph granularity for vertical-lr div when selection was top to bottom: selection.modify is not a function. (In 'selection.modify(
+- Caret position should be correct in move left with paragraph granularity for vertical-lr div when selection was bottom to top: selection.modify is not a function. (In 'selection.modify(
+- Caret position should be correct in move left with line granularity for vertical-rl div when selection was top to bottom: selection.modify is not a function. (In 'selection.modify(
+- Caret position should be correct in move left with line granularity for vertical-rl div when selection was bottom to top: selection.modify is not a function. (In 'selection.modify(
+- Caret position should be correct in move right with line granularity for vertical-rl div when selection was top to bottom: selection.modify is not a function. (In 'selection.modify(
+- Caret position should be correct in move right with line granularity for vertical-rl div when selection was bottom to top: selection.modify is not a function. (In 'selection.modify(
+- Caret position should be correct in move left with paragraph granularity for vertical-rl div when selection was top to bottom: selection.modify is not a function. (In 'selection.modify(
+- Caret position should be correct in move left with paragraph granularity for vertical-rl div when selection was bottom to top: selection.modify is not a function. (In 'selection.modify(
+- Caret position should be correct in move right with paragraph granularity for vertical-rl div when selection was top to bottom: selection.modify is not a function. (In 'selection.modify(
+- Caret position should be correct in move right with paragraph granularity for vertical-rl div when selection was bottom to top: selection.modify is not a function. (In 'selection.modify(
 
 ### selection/contenteditable/collapse.html
 
-- Selection.collapse() must succeed across siblings: button.focus is not a function
-- Selection.collapse() must succeed for the ancestor: button.focus is not a function
-- Selection.collapse() must succeed for the descendant: button.focus is not a function
+- Selection.collapse() must succeed across siblings: assert_equals: expected Element node <div contenteditable="" id="host1"></div> but got Element node <button id="button"></button>
+- Selection.collapse() must succeed for the ancestor: assert_equals: expected Element node <div contenteditable="" id="host4"></div> but got Element node <button id="button"></button>
+- Selection.collapse() must succeed for the descendant: assert_equals: expected Element node <div contenteditable="" id="host3">
 
 ### selection/contenteditable/modify-around-inline-element-boundary.tentative.html
 
-- Selection.modify("move", "right", "character") when "ab[]c<span>def</span>": Cannot read properties of null (reading 'test_driver')
-- Selection.modify("move", "right", "character") when "abc[]<span>def</span>": Cannot read properties of null (reading 'test_driver')
-- Selection.modify("move", "right", "character") when "<b>ab[]c</b><i>def</i>": Cannot read properties of null (reading 'test_driver')
-- Selection.modify("move", "right", "character") when "<b>abc[]</b><i>def</i>": Cannot read properties of null (reading 'test_driver')
-- Selection.modify("move", "left", "character") when "abc<span>d[]ef</span>": Cannot read properties of null (reading 'test_driver')
-- Selection.modify("move", "left", "character") when "abc<span>[]def</span>": Cannot read properties of null (reading 'test_driver')
-- Selection.modify("move", "left", "character") when "<b>abc</b><i>d[]ef</i>": Cannot read properties of null (reading 'test_driver')
-- Selection.modify("move", "left", "character") when "<b>abc</b><i>[]def</i>": Cannot read properties of null (reading 'test_driver')
-- Selection.modify("move", "right", "character") when "abc[] <span>def</span>": Cannot read properties of null (reading 'test_driver')
-- Selection.modify("move", "right", "character") when "abc[]<span> def</span>": Cannot read properties of null (reading 'test_driver')
-- Selection.modify("move", "left", "character") when "abc <span>[]def</span>": Cannot read properties of null (reading 'test_driver')
-- Selection.modify("move", "left", "character") when "abc<span> []def</span>": Cannot read properties of null (reading 'test_driver')
-- Selection.modify("move", "right", "character") when "abc[]  <span>def</span>": Cannot read properties of null (reading 'test_driver')
-- Selection.modify("move", "right", "character") when "abc[] <span> def</span>": Cannot read properties of null (reading 'test_driver')
-- Selection.modify("move", "right", "character") when "abc[]<span>  def</span>": Cannot read properties of null (reading 'test_driver')
-- Selection.modify("move", "right", "character") when "<span>abc[]  </span>def": Cannot read properties of null (reading 'test_driver')
-- Selection.modify("move", "right", "character") when "<span>abc[] </span> def": Cannot read properties of null (reading 'test_driver')
-- Selection.modify("move", "right", "character") when "<span>abc[]</span>  def": Cannot read properties of null (reading 'test_driver')
-- Selection.modify("move", "left", "character") when "abc  <span>[]def</span>": Cannot read properties of null (reading 'test_driver')
-- Selection.modify("move", "left", "character") when "abc <span> []def</span>": Cannot read properties of null (reading 'test_driver')
-- Selection.modify("move", "left", "character") when "abc<span>  []def</span>": Cannot read properties of null (reading 'test_driver')
-- Selection.modify("move", "left", "character") when "<span>abc  </span>[]def": Cannot read properties of null (reading 'test_driver')
-- Selection.modify("move", "left", "character") when "<span>abc </span> []def": Cannot read properties of null (reading 'test_driver')
-- Selection.modify("move", "left", "character") when "<span>abc</span>  []def": Cannot read properties of null (reading 'test_driver')
-- Selection.modify("move", "right", "character") (2 times) when "abc[]  <span>def</span>": Cannot read properties of null (reading 'test_driver')
-- Selection.modify("move", "right", "character") (2 times) when "abc[] <span> def</span>": Cannot read properties of null (reading 'test_driver')
-- Selection.modify("move", "right", "character") (2 times) when "abc[]<span>  def</span>": Cannot read properties of null (reading 'test_driver')
-- Selection.modify("move", "right", "character") (2 times) when "<span>abc[]  </span>def": Cannot read properties of null (reading 'test_driver')
-- Selection.modify("move", "right", "character") (2 times) when "<span>abc[] </span> def": Cannot read properties of null (reading 'test_driver')
-- Selection.modify("move", "right", "character") (2 times) when "<span>abc[]</span>  def": Cannot read properties of null (reading 'test_driver')
-- Selection.modify("move", "left", "character") (2 times) when "abc  <span>[]def</span>": Cannot read properties of null (reading 'test_driver')
-- Selection.modify("move", "left", "character") (2 times) when "abc <span> []def</span>": Cannot read properties of null (reading 'test_driver')
-- Selection.modify("move", "left", "character") (2 times) when "abc<span>  []def</span>": Cannot read properties of null (reading 'test_driver')
-- Selection.modify("move", "left", "character") (2 times) when "<span>abc  </span>[]def": Cannot read properties of null (reading 'test_driver')
-- Selection.modify("move", "left", "character") (2 times) when "<span>abc </span> []def": Cannot read properties of null (reading 'test_driver')
-- Selection.modify("move", "left", "character") (2 times) when "<span>abc</span>  []def": Cannot read properties of null (reading 'test_driver')
+- Selection.modify("move", "right", "character") when "ab[]c<span>def</span>": null is not an object (evaluating 'this.window.test_driver')
+- Selection.modify("move", "right", "character") when "abc[]<span>def</span>": null is not an object (evaluating 'this.window.test_driver')
+- Selection.modify("move", "right", "character") when "<b>ab[]c</b><i>def</i>": null is not an object (evaluating 'this.window.test_driver')
+- Selection.modify("move", "right", "character") when "<b>abc[]</b><i>def</i>": null is not an object (evaluating 'this.window.test_driver')
+- Selection.modify("move", "left", "character") when "abc<span>d[]ef</span>": null is not an object (evaluating 'this.window.test_driver')
+- Selection.modify("move", "left", "character") when "abc<span>[]def</span>": null is not an object (evaluating 'this.window.test_driver')
+- Selection.modify("move", "left", "character") when "<b>abc</b><i>d[]ef</i>": null is not an object (evaluating 'this.window.test_driver')
+- Selection.modify("move", "left", "character") when "<b>abc</b><i>[]def</i>": null is not an object (evaluating 'this.window.test_driver')
+- Selection.modify("move", "right", "character") when "abc[] <span>def</span>": null is not an object (evaluating 'this.window.test_driver')
+- Selection.modify("move", "right", "character") when "abc[]<span> def</span>": null is not an object (evaluating 'this.window.test_driver')
+- Selection.modify("move", "left", "character") when "abc <span>[]def</span>": null is not an object (evaluating 'this.window.test_driver')
+- Selection.modify("move", "left", "character") when "abc<span> []def</span>": null is not an object (evaluating 'this.window.test_driver')
+- Selection.modify("move", "right", "character") when "abc[]  <span>def</span>": null is not an object (evaluating 'this.window.test_driver')
+- Selection.modify("move", "right", "character") when "abc[] <span> def</span>": null is not an object (evaluating 'this.window.test_driver')
+- Selection.modify("move", "right", "character") when "abc[]<span>  def</span>": null is not an object (evaluating 'this.window.test_driver')
+- Selection.modify("move", "right", "character") when "<span>abc[]  </span>def": null is not an object (evaluating 'this.window.test_driver')
+- Selection.modify("move", "right", "character") when "<span>abc[] </span> def": null is not an object (evaluating 'this.window.test_driver')
+- Selection.modify("move", "right", "character") when "<span>abc[]</span>  def": null is not an object (evaluating 'this.window.test_driver')
+- Selection.modify("move", "left", "character") when "abc  <span>[]def</span>": null is not an object (evaluating 'this.window.test_driver')
+- Selection.modify("move", "left", "character") when "abc <span> []def</span>": null is not an object (evaluating 'this.window.test_driver')
+- Selection.modify("move", "left", "character") when "abc<span>  []def</span>": null is not an object (evaluating 'this.window.test_driver')
+- Selection.modify("move", "left", "character") when "<span>abc  </span>[]def": null is not an object (evaluating 'this.window.test_driver')
+- Selection.modify("move", "left", "character") when "<span>abc </span> []def": null is not an object (evaluating 'this.window.test_driver')
+- Selection.modify("move", "left", "character") when "<span>abc</span>  []def": null is not an object (evaluating 'this.window.test_driver')
+- Selection.modify("move", "right", "character") (2 times) when "abc[]  <span>def</span>": null is not an object (evaluating 'this.window.test_driver')
+- Selection.modify("move", "right", "character") (2 times) when "abc[] <span> def</span>": null is not an object (evaluating 'this.window.test_driver')
+- Selection.modify("move", "right", "character") (2 times) when "abc[]<span>  def</span>": null is not an object (evaluating 'this.window.test_driver')
+- Selection.modify("move", "right", "character") (2 times) when "<span>abc[]  </span>def": null is not an object (evaluating 'this.window.test_driver')
+- Selection.modify("move", "right", "character") (2 times) when "<span>abc[] </span> def": null is not an object (evaluating 'this.window.test_driver')
+- Selection.modify("move", "right", "character") (2 times) when "<span>abc[]</span>  def": null is not an object (evaluating 'this.window.test_driver')
+- Selection.modify("move", "left", "character") (2 times) when "abc  <span>[]def</span>": null is not an object (evaluating 'this.window.test_driver')
+- Selection.modify("move", "left", "character") (2 times) when "abc <span> []def</span>": null is not an object (evaluating 'this.window.test_driver')
+- Selection.modify("move", "left", "character") (2 times) when "abc<span>  []def</span>": null is not an object (evaluating 'this.window.test_driver')
+- Selection.modify("move", "left", "character") (2 times) when "<span>abc  </span>[]def": null is not an object (evaluating 'this.window.test_driver')
+- Selection.modify("move", "left", "character") (2 times) when "<span>abc </span> []def": null is not an object (evaluating 'this.window.test_driver')
+- Selection.modify("move", "left", "character") (2 times) when "<span>abc</span>  []def": null is not an object (evaluating 'this.window.test_driver')
+
+### selection/contenteditable/modify-around-non-editable-span.html
+
+- getSelection().modify("move", "forward", "character") when " []<span contenteditable=false>": getSelection().modify is not a function. (In 'getSelection().modify("move", direction, "character")', 'getSelection().modify' is undefined)
+- getSelection().modify("move", "forward", "character") when "editable[]<span contenteditable=false>": getSelection().modify is not a function. (In 'getSelection().modify("move", direction, "character")', 'getSelection().modify' is undefined)
+- getSelection().modify("move", "right", "character") when " []<span contenteditable=false>": getSelection().modify is not a function. (In 'getSelection().modify("move", direction, "character")', 'getSelection().modify' is undefined)
+- getSelection().modify("move", "right", "character") when "editable[]<span contenteditable=false>": getSelection().modify is not a function. (In 'getSelection().modify("move", direction, "character")', 'getSelection().modify' is undefined)
+- getSelection().modify("move", "backward", "character") when " <span contenteditable=false>...</span>[]editable": getSelection().modify is not a function. (In 'getSelection().modify("move", direction, "character")', 'getSelection().modify' is undefined)
+- getSelection().modify("move", "backward", "character") when "editable<span contenteditable=false>...</span>[] ": getSelection().modify is not a function. (In 'getSelection().modify("move", direction, "character")', 'getSelection().modify' is undefined)
+- getSelection().modify("move", "left", "character") when " <span contenteditable=false>...</span>[]editable": getSelection().modify is not a function. (In 'getSelection().modify("move", direction, "character")', 'getSelection().modify' is undefined)
+- getSelection().modify("move", "left", "character") when "editable<span contenteditable=false>...</span>[] ": getSelection().modify is not a function. (In 'getSelection().modify("move", direction, "character")', 'getSelection().modify' is undefined)
+- getSelection().modify("move", "forward", "character") after getSelection().selectAllChildren(editingHost) when " []<span contenteditable=false>": getSelection().modify is not a function. (In 'getSelection().modify("move", direction, "character")', 'getSelection().modify' is undefined)
+- getSelection().modify("move", "forward", "character") after getSelection().selectAllChildren(editingHost) when "editable[]<span contenteditable=false>": getSelection().modify is not a function. (In 'getSelection().modify("move", direction, "character")', 'getSelection().modify' is undefined)
+- getSelection().modify("move", "right", "character") after getSelection().selectAllChildren(editingHost) when " []<span contenteditable=false>": getSelection().modify is not a function. (In 'getSelection().modify("move", direction, "character")', 'getSelection().modify' is undefined)
+- getSelection().modify("move", "right", "character") after getSelection().selectAllChildren(editingHost) when "editable[]<span contenteditable=false>": getSelection().modify is not a function. (In 'getSelection().modify("move", direction, "character")', 'getSelection().modify' is undefined)
+- getSelection().modify("move", "backward", "character") after getSelection().selectAllChildren(editingHost) when " <span contenteditable=false>...</span>[]editable": getSelection().modify is not a function. (In 'getSelection().modify("move", direction, "character")', 'getSelection().modify' is undefined)
+- getSelection().modify("move", "backward", "character") after getSelection().selectAllChildren(editingHost) when "editable<span contenteditable=false>...</span>[] ": getSelection().modify is not a function. (In 'getSelection().modify("move", direction, "character")', 'getSelection().modify' is undefined)
+- getSelection().modify("move", "left", "character") after getSelection().selectAllChildren(editingHost) when " <span contenteditable=false>...</span>[]editable": getSelection().modify is not a function. (In 'getSelection().modify("move", direction, "character")', 'getSelection().modify' is undefined)
+- getSelection().modify("move", "left", "character") after getSelection().selectAllChildren(editingHost) when "editable<span contenteditable=false>...</span>[] ": getSelection().modify is not a function. (In 'getSelection().modify("move", direction, "character")', 'getSelection().modify' is undefined)
 
 ### selection/contenteditable/modify.tentative.html
 
-- Selection.modify() must not select outside of the host: selection.modify is not a function
-- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: inline: selection.modify is not a function
-- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: inline: selection.modify is not a function
-- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: inline-block: selection.modify is not a function
-- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: inline-block: selection.modify is not a function
-- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: suffix only: selection.modify is not a function
-- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: suffix only: selection.modify is not a function
-- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: prefix only: selection.modify is not a function
-- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: prefix only: selection.modify is not a function
-- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: standalone: selection.modify is not a function
-- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: standalone: selection.modify is not a function
-- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: inline linebreak: selection.modify is not a function
-- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: inline linebreak: selection.modify is not a function
-- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: inline-block linebreak: selection.modify is not a function
-- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: inline-block linebreak: selection.modify is not a function
+- Selection.modify() must not select outside of the host: selection.modify is not a function. (In 'selection.modify('extend', 'forward', 'word')', 'selection.modify' is undefined)
+- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: inline: selection.modify is not a function. (In 'selection.modify("move", "forward", "lineboundary")', 'selection.modify' is undefined)
+- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: inline: selection.modify is not a function. (In 'selection.modify("move", "backward", "lineboundary")', 'selection.modify' is undefined)
+- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: inline-block: selection.modify is not a function. (In 'selection.modify("move", "forward", "lineboundary")', 'selection.modify' is undefined)
+- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: inline-block: selection.modify is not a function. (In 'selection.modify("move", "backward", "lineboundary")', 'selection.modify' is undefined)
+- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: suffix only: selection.modify is not a function. (In 'selection.modify("move", "forward", "lineboundary")', 'selection.modify' is undefined)
+- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: suffix only: selection.modify is not a function. (In 'selection.modify("move", "backward", "lineboundary")', 'selection.modify' is undefined)
+- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: prefix only: selection.modify is not a function. (In 'selection.modify("move", "forward", "lineboundary")', 'selection.modify' is undefined)
+- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: prefix only: selection.modify is not a function. (In 'selection.modify("move", "backward", "lineboundary")', 'selection.modify' is undefined)
+- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: standalone: selection.modify is not a function. (In 'selection.modify("move", "forward", "lineboundary")', 'selection.modify' is undefined)
+- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: standalone: selection.modify is not a function. (In 'selection.modify("move", "backward", "lineboundary")', 'selection.modify' is undefined)
+- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: inline linebreak: selection.modify is not a function. (In 'selection.modify("move", "forward", "lineboundary")', 'selection.modify' is undefined)
+- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: inline linebreak: selection.modify is not a function. (In 'selection.modify("move", "backward", "lineboundary")', 'selection.modify' is undefined)
+- Selection.modify('move', 'forward', 'lineboundary') must be within the inline editing host: inline-block linebreak: selection.modify is not a function. (In 'selection.modify("move", "forward", "lineboundary")', 'selection.modify' is undefined)
+- Selection.modify('move', 'backward', 'lineboundary') must be within the inline editing host: inline-block linebreak: selection.modify is not a function. (In 'selection.modify("move", "backward", "lineboundary")', 'selection.modify' is undefined)
 
 ### selection/extend-selection-backward-on-input.html
 
-- Should not crash if block node is in an inline node and block_flow is a pseudo node: document.execCommand is not a function
+- Should not crash if block node is in an inline node and block_flow is a pseudo node: document.execCommand is not a function. (In 'document.execCommand("selectall")', 'document.execCommand' is undefined)
 
 ### selection/fire-selectionchange-event-on-document-if-textcontrol-element-is-in-shadow-tree.html
 
-- selectionchange event fired on the document in case TextControl element is in Shadow Tree: promise_test: Unhandled rejection with value: object "TypeError: element.focus is not a function"
+- selectionchange event fired on the document in case TextControl element is in Shadow Tree: promise_test: Unhandled rejection with value: object "TypeError: document.execCommand is not a function. (In 'document.execCommand("delete")', 'document.execCommand' is undefined)"
 
 ### selection/modify-extend-word-trailing-inline-block.tentative.html
 
-- Selection.modify: Extending a word towards the end of a line ended by an inline-block.: selection.modify is not a function
+- Selection.modify: Extending a word towards the end of a line ended by an inline-block.: selection.modify is not a function. (In 'selection.modify("extend", "forward", "word")', 'selection.modify' is undefined)
 
 ### selection/modify-line-flex-column.tentative.html
 
-- forward: selection.modify is not a function
-- backward: selection.modify is not a function
+- forward: selection.modify is not a function. (In 'selection.modify("extend", "forward", "line")', 'selection.modify' is undefined)
+- backward: selection.modify is not a function. (In 'selection.modify("extend", "backward", "line")', 'selection.modify' is undefined)
 
 ### selection/modify-line-flex-row.tentative.html
 
-- forward: selection.modify is not a function
-- backward: selection.modify is not a function
+- forward: selection.modify is not a function. (In 'selection.modify("extend", "forward", "line")', 'selection.modify' is undefined)
+- backward: selection.modify is not a function. (In 'selection.modify("extend", "backward", "line")', 'selection.modify' is undefined)
 
 ### selection/modify-line-grid-basic.tentative.html
 
-- forward: selection.modify is not a function
-- backward: selection.modify is not a function
+- forward: selection.modify is not a function. (In 'selection.modify("extend", "forward", "line")', 'selection.modify' is undefined)
+- backward: selection.modify is not a function. (In 'selection.modify("extend", "backward", "line")', 'selection.modify' is undefined)
 
 ### selection/modify.tentative.html
 
-- Stop at previous word boundary when whitespaces are trimmed: selection.modify is not a function
-- Jump linefeed forward: selection.modify is not a function
-- Jump linefeed backward: selection.modify is not a function
-- Jump <br> forward: selection.modify is not a function
-- Jump <br> backward: selection.modify is not a function
-- Jump <br> forward which follows a linefeed: selection.modify is not a function
-- Jump <br> backward which follows a linefeed: selection.modify is not a function
+- Stop at previous word boundary when whitespaces are trimmed: selection.modify is not a function. (In 'selection.modify("extend", "backward", "word")', 'selection.modify' is undefined)
+- Jump linefeed forward: selection.modify is not a function. (In 'selection.modify("move", "forward", "character")', 'selection.modify' is undefined)
+- Jump linefeed backward: selection.modify is not a function. (In 'selection.modify("move", "backward", "character")', 'selection.modify' is undefined)
+- Jump <br> forward: selection.modify is not a function. (In 'selection.modify("move", "forward", "character")', 'selection.modify' is undefined)
+- Jump <br> backward: selection.modify is not a function. (In 'selection.modify("move", "backward", "character")', 'selection.modify' is undefined)
+- Jump <br> forward which follows a linefeed: selection.modify is not a function. (In 'selection.modify("move", "forward", "character")', 'selection.modify' is undefined)
+- Jump <br> backward which follows a linefeed: selection.modify is not a function. (In 'selection.modify("move", "backward", "character")', 'selection.modify' is undefined)
 
 ### selection/move-paragraph-cross-editing-boundary.tentative.html
 
-- cross editing boundary: selection.modify is not a function
-- not cross editing boundary: selection.modify is not a function
+- cross editing boundary: selection.modify is not a function. (In 'selection.modify('move', 'backward', 'paragraph')', 'selection.modify' is undefined)
+- not cross editing boundary: selection.modify is not a function. (In 'selection.modify('move', 'backward', 'paragraph')', 'selection.modify' is undefined)
 
 ### selection/move-paragraphboundary-cross-editing-boundary.tentative.html
 
-- cross editing boundary: selection.modify is not a function
-- Selection.modify(): move by paragraphboundary cross editing boundary: selection.modify is not a function
+- cross editing boundary: selection.modify is not a function. (In 'selection.modify('move', 'backward', 'paragraphboundary')', 'selection.modify' is undefined)
+- Selection.modify(): move by paragraphboundary cross editing boundary: selection.modify is not a function. (In 'selection.modify('move', 'backward', 'paragraphboundary')', 'selection.modify' is undefined)
 
 ### selection/move-selection-range-into-different-root.tentative.html
 
-- Set selection range into a sub-document with selectNode: Cannot read properties of null (reading 'getElementById')
-- Set selection range into a sub-document with selectNodeContents: Cannot read properties of null (reading 'getElementById')
-- Set selection range into a sub-document with setEnd: Cannot read properties of null (reading 'getElementById')
-- Set selection range into a sub-document with setEndAfter: Cannot read properties of null (reading 'getElementById')
-- Set selection range into a sub-document with setEndBefore: Cannot read properties of null (reading 'getElementById')
-- Set selection range into a sub-document with setStart: Cannot read properties of null (reading 'getElementById')
-- Set selection range into a sub-document with setStartAfter: Cannot read properties of null (reading 'getElementById')
-- Set selection range into a sub-document with setStartBefore: Cannot read properties of null (reading 'getElementById')
+- Set selection range into a sub-document with selectNode: null is not an object (evaluating 'document.querySelector("iframe").contentDocument.getElementById')
+- Set selection range into a sub-document with selectNodeContents: null is not an object (evaluating 'document.querySelector("iframe").contentDocument.getElementById')
+- Set selection range into a sub-document with setEnd: null is not an object (evaluating 'document.querySelector("iframe").contentDocument.getElementById')
+- Set selection range into a sub-document with setEndAfter: null is not an object (evaluating 'document.querySelector("iframe").contentDocument.getElementById')
+- Set selection range into a sub-document with setEndBefore: null is not an object (evaluating 'document.querySelector("iframe").contentDocument.getElementById')
+- Set selection range into a sub-document with setStart: null is not an object (evaluating 'document.querySelector("iframe").contentDocument.getElementById')
+- Set selection range into a sub-document with setStartAfter: null is not an object (evaluating 'document.querySelector("iframe").contentDocument.getElementById')
+- Set selection range into a sub-document with setStartBefore: null is not an object (evaluating 'document.querySelector("iframe").contentDocument.getElementById')
 
 ### selection/selection-content-visibility-hidden.html
 
@@ -2620,15 +2639,8 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 ### selection/selection-modify-extend-word-generated-content.html
 
-- extending selection from middle of first word of the middle line shouldn't extend the range to the previous line: getSelection(...).modify is not a function
-- extending selection from middle of last word of the middle line shouldn't extend the range to the next line: getSelection(...).modify is not a function
-
-### selection/selection-range-after-editinghost-removed.html
-
-- Selection range in an editing host should be collapsed where the host was after it's removed: editingHost.focus is not a function
-- Selection range in an editing host should be collapsed where the host was after its parent is removed: editingHost.focus is not a function
-- Selection range in an editing host should be collapsed where the host was after it's replaced with itself (.replaceWith): editingHost.focus is not a function
-- Selection range in an editing host should be collapsed where the host was after it's replaced with itself (.replaceChild): editingHost.focus is not a function
+- extending selection from middle of first word of the middle line shouldn't extend the range to the previous line: getSelection().modify is not a function. (In 'getSelection().modify("extend", "backward", "word")', 'getSelection().modify' is undefined)
+- extending selection from middle of last word of the middle line shouldn't extend the range to the next line: getSelection().modify is not a function. (In 'getSelection().modify("extend", "forward", "word")', 'getSelection().modify' is undefined)
 
 ### selection/shadow-dom/selection-at-nodes-not-part-of-flattened-tree.html
 
@@ -2659,77 +2671,28 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 - handler set from parser: Test timed out
 - handler set via setAttribute(): 
 
-### selection/textcontrols/selectionchange-bubble.html
-
-- selectionchange bubbles from input when focused: promise_test: Unhandled rejection with value: object "TypeError: element.focus is not a function"
-- selectionchange bubbles from textarea when focused: promise_test: Unhandled rejection with value: object "TypeError: element.focus is not a function"
-
 ### selection/textcontrols/selectionchange-on-shadow-dom.html
 
-- selectionchange event fired on a shadow dom bubble to the document: promise_test: Unhandled rejection with value: object "TypeError: input.focus is not a function"
+- selectionchange event fired on a shadow dom bubble to the document: assert_equals: expected 1 but got 0
 
 ### selection/textcontrols/selectionchange.html
 
-- Modifying selectionStart value of the input element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Modifying selectionEnd value of the input element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Calling setSelectionRange() on the input element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Calling select() on the input element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Calling setRangeText() on the input element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Setting initial zero selectionStart value on the input element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Setting the same selectionStart value twice on the input element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Setting initial zero selectionEnd value on the input element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Setting the same selectionEnd value twice on the input element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Setting initial zero selection range on the input element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Setting the same selection range twice on the input element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Calling select() twice on the input element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Calling setRangeText() after select() on the input element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Calling setRangeText() repeatedly on the input element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Calling setRangeText() on empty the input element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Modifying selectionStart value of the disconnected input element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Modifying selectionEnd value of the disconnected input element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Calling setSelectionRange() on the disconnected input element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Calling select() on the disconnected input element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Calling setRangeText() on the disconnected input element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Setting initial zero selectionStart value on the disconnected input element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Setting the same selectionStart value twice on the disconnected input element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Setting initial zero selectionEnd value on the disconnected input element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Setting the same selectionEnd value twice on the disconnected input element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Setting initial zero selection range on the disconnected input element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Setting the same selection range twice on the disconnected input element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Calling select() twice on the disconnected input element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Calling setRangeText() after select() on the disconnected input element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Calling setRangeText() repeatedly on the disconnected input element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Calling setRangeText() on empty the disconnected input element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Modifying selectionStart value of the textarea element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Modifying selectionEnd value of the textarea element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Calling setSelectionRange() on the textarea element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Calling select() on the textarea element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Calling setRangeText() on the textarea element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Setting initial zero selectionStart value on the textarea element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Setting the same selectionStart value twice on the textarea element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Setting initial zero selectionEnd value on the textarea element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Setting the same selectionEnd value twice on the textarea element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Setting initial zero selection range on the textarea element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Setting the same selection range twice on the textarea element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Calling select() twice on the textarea element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Calling setRangeText() after select() on the textarea element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Calling setRangeText() repeatedly on the textarea element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Calling setRangeText() on empty the textarea element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Modifying selectionStart value of the disconnected textarea element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Modifying selectionEnd value of the disconnected textarea element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Calling setSelectionRange() on the disconnected textarea element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Calling select() on the disconnected textarea element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Calling setRangeText() on the disconnected textarea element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Setting initial zero selectionStart value on the disconnected textarea element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Setting the same selectionStart value twice on the disconnected textarea element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Setting initial zero selectionEnd value on the disconnected textarea element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Setting the same selectionEnd value twice on the disconnected textarea element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Setting initial zero selection range on the disconnected textarea element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Setting the same selection range twice on the disconnected textarea element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Calling select() twice on the disconnected textarea element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Calling setRangeText() after select() on the disconnected textarea element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Calling setRangeText() repeatedly on the disconnected textarea element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
-- Calling setRangeText() on empty the disconnected textarea element: promise_test: Unhandled rejection with value: object "TypeError: collector.target.blur is not a function"
+- Setting initial zero selectionStart value on the input element: assert_equals: expected 0 but got 1
+- Setting initial zero selectionEnd value on the input element: assert_equals: expected 0 but got 1
+- Setting initial zero selection range on the input element: assert_equals: expected 0 but got 1
+- Calling setRangeText() on empty the input element: assert_equals: expected 0 but got 1
+- Setting initial zero selectionStart value on the disconnected input element: assert_equals: expected 0 but got 1
+- Setting initial zero selectionEnd value on the disconnected input element: assert_equals: expected 0 but got 1
+- Setting initial zero selection range on the disconnected input element: assert_equals: expected 0 but got 1
+- Calling setRangeText() on empty the disconnected input element: assert_equals: expected 0 but got 1
+- Setting initial zero selectionStart value on the textarea element: assert_equals: expected 0 but got 1
+- Setting initial zero selectionEnd value on the textarea element: assert_equals: expected 0 but got 1
+- Setting initial zero selection range on the textarea element: assert_equals: expected 0 but got 1
+- Calling setRangeText() on empty the textarea element: assert_equals: expected 0 but got 1
+- Setting initial zero selectionStart value on the disconnected textarea element: assert_equals: expected 0 but got 1
+- Setting initial zero selectionEnd value on the disconnected textarea element: assert_equals: expected 0 but got 1
+- Setting initial zero selection range on the disconnected textarea element: assert_equals: expected 0 but got 1
+- Calling setRangeText() on empty the disconnected textarea element: assert_equals: expected 0 but got 1
 
 ### selection/toString-user-select-none.html
 
@@ -2739,10 +2702,10 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 ### shadow-dom/Document-caretPositionFromPoint.tentative.html
 
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location: container.firstChild.getBoundingClientRect is not a function
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to an input element which is the offsetNode.: container.firstChild.getBoundingClientRect is not a function
-- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to a textarea element which is the offsetNode.: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of undefined (reading 'ready')"
-- document.caretPositionFromPoint() for a point after a forced break should return a CaretPosition at the specified location pointing to a textarea element which is the offsetNode.: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of undefined (reading 'ready')"
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location: container.firstChild.getBoundingClientRect is not a function. (In 'container.firstChild.getBoundingClientRect()', 'container.firstChild.getBoundingClientRect' is undefined)
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to an input element which is the offsetNode.: container.firstChild.getBoundingClientRect is not a function. (In 'container.firstChild.getBoundingClientRect()', 'container.firstChild.getBoundingClientRect' is undefined)
+- document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to a textarea element which is the offsetNode.: promise_test: Unhandled rejection with value: object "TypeError: undefined is not an object (evaluating 'document.fonts.ready')"
+- document.caretPositionFromPoint() for a point after a forced break should return a CaretPosition at the specified location pointing to a textarea element which is the offsetNode.: promise_test: Unhandled rejection with value: object "TypeError: undefined is not an object (evaluating 'document.fonts.ready')"
 - document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to a closed shadow tree when the shadow tree is specified as an argument: host is not defined
 - document.caretPositionFromPoint() should return a CaretPosition at the specified location when the non-intersecting shadow tree is specified as an argument: host is not defined
 - document.caretPositionFromPoint() should return a CaretPosition at the specified location pointing to an input element when the shadow tree is specified as an argument.: host is not defined
@@ -2764,47 +2727,47 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 ### shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html
 
-- document.elementFromPoint and shadow.ElementFromPoint must return the shadow host of the hit-tested text node when the hit-tested text node is a direct child of the root and the host has display: inline: document.elementFromPoint is not a function
-- document.elementFromPoint and shadow.ElementFromPoint must return the shadow host of the hit-tested text node when the hit-tested text node is a direct child of the root and the host has display: block: document.elementFromPoint is not a function
-- document.elementFromPoint and shadow.ElementFromPoint must return the shadow host of the hit-tested text node when the hit-tested text node is a direct child of the root and the host has display: inline-block: document.elementFromPoint is not a function
-- document.elementFromPoint and shadowRoot.elementFromPoint must return the shadow host when the hit-tested text node is assigned to a slot and the host has display: inline: document.elementFromPoint is not a function
-- document.elementFromPoint and shadowRoot.elementFromPoint must return the shadow host when the hit-tested text node is assigned to a slot and the host has display: block: document.elementFromPoint is not a function
-- document.elementFromPoint and shadowRoot.elementFromPoint must return the shadow host when the hit-tested text node is assigned to a slot and the host has display: inline-block: document.elementFromPoint is not a function
-- document.elementFromPoint and shadowRoot.elementFromPoint must return the element assigned to a slot when hit-tested text node under an element is assigned to a slot in the shadow tree and the shadow host of the slot has display: inline: document.elementFromPoint is not a function
-- document.elementFromPoint and shadowRoot.elementFromPoint must return the element assigned to a slot when hit-tested text node under an element is assigned to a slot in the shadow tree and the shadow host of the slot has display: block: document.elementFromPoint is not a function
-- document.elementFromPoint and shadowRoot.elementFromPoint must return the element assigned to a slot when hit-tested text node under an element is assigned to a slot in the shadow tree and the shadow host of the slot has display: inline-block: document.elementFromPoint is not a function
-- document.elementFromPoint must return the shadow host of the hit-tested element under a shadow root and shadowRoot.elementFromPoint must return the element parent of the hit-tested text node under the point when the shadow host has display: inline: document.elementFromPoint is not a function
-- document.elementFromPoint must return the shadow host of the hit-tested element under a shadow root and shadowRoot.elementFromPoint must return the element parent of the hit-tested text node under the point when the shadow host has display: block: document.elementFromPoint is not a function
-- document.elementFromPoint must return the shadow host of the hit-tested element under a shadow root and shadowRoot.elementFromPoint must return the element parent of the hit-tested text node under the point when the shadow host has display: inline-block: document.elementFromPoint is not a function
-- document.elementFromPoint must return the shadow host and shadowRoot.elementFromPoint must return the slot parent of the fallback text when the hit-tested text node is a fallback content and the host has display: inline: document.elementFromPoint is not a function
-- document.elementFromPoint must return the shadow host and shadowRoot.elementFromPoint must return the slot parent of the fallback text when the hit-tested text node is a fallback content and the host has display: block: document.elementFromPoint is not a function
-- document.elementFromPoint must return the shadow host and shadowRoot.elementFromPoint must return the slot parent of the fallback text when the hit-tested text node is a fallback content and the host has display: inline-block: document.elementFromPoint is not a function
-- document.elementFromPoint, shadowRoot.elementFromPoint, innerShadow.elementFromPoint must return a child element assigned to a slot when the hit-tested text node is assigned to a slot in the shadow tree of the child element and the outer shadow host has display: inline: document.elementFromPoint is not a function
-- document.elementFromPoint, shadowRoot.elementFromPoint, innerShadow.elementFromPoint must return a child element assigned to a slot when the hit-tested text node is assigned to a slot in the shadow tree of the child element and the outer shadow host has display: block: document.elementFromPoint is not a function
-- document.elementFromPoint, shadowRoot.elementFromPoint, innerShadow.elementFromPoint must return a child element assigned to a slot when the hit-tested text node is assigned to a slot in the shadow tree of the child element and the outer shadow host has display: inline-block: document.elementFromPoint is not a function
-- document.elementFromPoint, shadowRoot.elementFromPoint, innerShadow.elementFromPoint must return a child element with its own shadow tree assigned to a slot when the hit-tested text node is its direct child and the outer shadow host has display: inline: document.elementFromPoint is not a function
-- document.elementFromPoint, shadowRoot.elementFromPoint, innerShadow.elementFromPoint must return a child element with its own shadow tree assigned to a slot when the hit-tested text node is its direct child and the outer shadow host has display: block: document.elementFromPoint is not a function
-- document.elementFromPoint, shadowRoot.elementFromPoint, innerShadow.elementFromPoint must return a child element with its own shadow tree assigned to a slot when the hit-tested text node is its direct child and the outer shadow host has display: inline-block: document.elementFromPoint is not a function
-- document.elementFromPoint, shadowRoot.elementFromPoint must return a child element with its own shadow tree assigned to a slot when the hit-tested text node is a child of another element and innerShadow.elementFromPoint must return the parent element of the hit-tested text node under it when the outer shadow host has display: inline: document.elementFromPoint is not a function
-- document.elementFromPoint, shadowRoot.elementFromPoint must return a child element with its own shadow tree assigned to a slot when the hit-tested text node is a child of another element and innerShadow.elementFromPoint must return the parent element of the hit-tested text node under it when the outer shadow host has display: block: document.elementFromPoint is not a function
-- document.elementFromPoint, shadowRoot.elementFromPoint must return a child element with its own shadow tree assigned to a slot when the hit-tested text node is a child of another element and innerShadow.elementFromPoint must return the parent element of the hit-tested text node under it when the outer shadow host has display: inline-block: document.elementFromPoint is not a function
-- document.elementsFromPoint and shadow.elementsFromPoint must return the shadow host and its ancestors of the hit-tested text node when the hit-tested text node is a direct child of the root and the host has display: inline: document.elementsFromPoint is not a function
-- document.elementsFromPoint and shadow.elementsFromPoint must return the shadow host and its ancestors of the hit-tested text node when the hit-tested text node is a direct child of the root and the host has display: block: document.elementsFromPoint is not a function
-- document.elementsFromPoint and shadow.elementsFromPoint must return the shadow host and its ancestors of the hit-tested text node when the hit-tested text node is a direct child of the root and the host has display: inline-block: document.elementsFromPoint is not a function
-- document.elementsFromPoint and shadowRoot.elementsFromPoint must return the shadow host and its ancestors when the hit-tested text node is assigned to a slot and the host has display: inline: document.elementsFromPoint is not a function
-- document.elementsFromPoint and shadowRoot.elementsFromPoint must return the shadow host and its ancestors when the hit-tested text node is assigned to a slot and the host has display: block: document.elementsFromPoint is not a function
-- document.elementsFromPoint and shadowRoot.elementsFromPoint must return the shadow host and its ancestors when the hit-tested text node is assigned to a slot and the host has display: inline-block: document.elementsFromPoint is not a function
-- document.elementsFromPoint and shadowRoot.elementsFromPoint must return the element assigned to a slot and its non-shadow ancestors when hit-tested text node under an element is assigned to a slot in the shadow tree and the shadow host of the slot has display: inline: document.elementsFromPoint is not a function
-- document.elementsFromPoint and shadowRoot.elementsFromPoint must return the element assigned to a slot and its non-shadow ancestors when hit-tested text node under an element is assigned to a slot in the shadow tree and the shadow host of the slot has display: block: document.elementsFromPoint is not a function
-- document.elementsFromPoint and shadowRoot.elementsFromPoint must return the element assigned to a slot and its non-shadow ancestors when hit-tested text node under an element is assigned to a slot in the shadow tree and the shadow host of the slot has display: inline-block: document.elementsFromPoint is not a function
-- document.elementsFromPoint must return the shadow host and its ancestors of the hit-tested element under a shadow root andshadowRoot.elementsFromPoint must return the element parent and its non-shadow ancestors of the hit-tested text node under the point when the shadow host has display: inline: document.elementsFromPoint is not a function
-- document.elementsFromPoint must return the shadow host and its ancestors of the hit-tested element under a shadow root andshadowRoot.elementsFromPoint must return the element parent and its non-shadow ancestors of the hit-tested text node under the point when the shadow host has display: block: document.elementsFromPoint is not a function
-- document.elementsFromPoint must return the shadow host and its ancestors of the hit-tested element under a shadow root andshadowRoot.elementsFromPoint must return the element parent and its non-shadow ancestors of the hit-tested text node under the point when the shadow host has display: inline-block: document.elementsFromPoint is not a function
-- document.elementsFromPoint must return the shadow host and its ancestors and shadowRoot.elementsFromPoint must return the slot parent of the fallback text and its non-shadow ancestors when the hit-tested text node is a fallback content and the host has display: inline: document.elementsFromPoint is not a function
-- document.elementsFromPoint must return the shadow host and its ancestors and shadowRoot.elementsFromPoint must return the slot parent of the fallback text and its non-shadow ancestors when the hit-tested text node is a fallback content and the host has display: block: document.elementsFromPoint is not a function
-- document.elementsFromPoint must return the shadow host and its ancestors and shadowRoot.elementsFromPoint must return the slot parent of the fallback text and its non-shadow ancestors when the hit-tested text node is a fallback content and the host has display: inline-block: document.elementsFromPoint is not a function
-- shadowRoot.elementsFromPoint must behave the same with document.elementsFromPoint regarding HTML element: host.getBoundingClientRect is not a function
-- elementsFromPoint should return all elements under a point, even when context object is not connected: document.elementsFromPoint is not a function
+- document.elementFromPoint and shadow.ElementFromPoint must return the shadow host of the hit-tested text node when the hit-tested text node is a direct child of the root and the host has display: inline: document.elementFromPoint is not a function. (In 'document.elementFromPoint(...pointInElement(host))', 'document.elementFromPoint' is undefined)
+- document.elementFromPoint and shadow.ElementFromPoint must return the shadow host of the hit-tested text node when the hit-tested text node is a direct child of the root and the host has display: block: document.elementFromPoint is not a function. (In 'document.elementFromPoint(...pointInElement(host))', 'document.elementFromPoint' is undefined)
+- document.elementFromPoint and shadow.ElementFromPoint must return the shadow host of the hit-tested text node when the hit-tested text node is a direct child of the root and the host has display: inline-block: document.elementFromPoint is not a function. (In 'document.elementFromPoint(...pointInElement(host))', 'document.elementFromPoint' is undefined)
+- document.elementFromPoint and shadowRoot.elementFromPoint must return the shadow host when the hit-tested text node is assigned to a slot and the host has display: inline: document.elementFromPoint is not a function. (In 'document.elementFromPoint(...pointInElement(host))', 'document.elementFromPoint' is undefined)
+- document.elementFromPoint and shadowRoot.elementFromPoint must return the shadow host when the hit-tested text node is assigned to a slot and the host has display: block: document.elementFromPoint is not a function. (In 'document.elementFromPoint(...pointInElement(host))', 'document.elementFromPoint' is undefined)
+- document.elementFromPoint and shadowRoot.elementFromPoint must return the shadow host when the hit-tested text node is assigned to a slot and the host has display: inline-block: document.elementFromPoint is not a function. (In 'document.elementFromPoint(...pointInElement(host))', 'document.elementFromPoint' is undefined)
+- document.elementFromPoint and shadowRoot.elementFromPoint must return the element assigned to a slot when hit-tested text node under an element is assigned to a slot in the shadow tree and the shadow host of the slot has display: inline: document.elementFromPoint is not a function. (In 'document.elementFromPoint(...pointInElement(host))', 'document.elementFromPoint' is undefined)
+- document.elementFromPoint and shadowRoot.elementFromPoint must return the element assigned to a slot when hit-tested text node under an element is assigned to a slot in the shadow tree and the shadow host of the slot has display: block: document.elementFromPoint is not a function. (In 'document.elementFromPoint(...pointInElement(host))', 'document.elementFromPoint' is undefined)
+- document.elementFromPoint and shadowRoot.elementFromPoint must return the element assigned to a slot when hit-tested text node under an element is assigned to a slot in the shadow tree and the shadow host of the slot has display: inline-block: document.elementFromPoint is not a function. (In 'document.elementFromPoint(...pointInElement(host))', 'document.elementFromPoint' is undefined)
+- document.elementFromPoint must return the shadow host of the hit-tested element under a shadow root and shadowRoot.elementFromPoint must return the element parent of the hit-tested text node under the point when the shadow host has display: inline: document.elementFromPoint is not a function. (In 'document.elementFromPoint(...pointInElement(host))', 'document.elementFromPoint' is undefined)
+- document.elementFromPoint must return the shadow host of the hit-tested element under a shadow root and shadowRoot.elementFromPoint must return the element parent of the hit-tested text node under the point when the shadow host has display: block: document.elementFromPoint is not a function. (In 'document.elementFromPoint(...pointInElement(host))', 'document.elementFromPoint' is undefined)
+- document.elementFromPoint must return the shadow host of the hit-tested element under a shadow root and shadowRoot.elementFromPoint must return the element parent of the hit-tested text node under the point when the shadow host has display: inline-block: document.elementFromPoint is not a function. (In 'document.elementFromPoint(...pointInElement(host))', 'document.elementFromPoint' is undefined)
+- document.elementFromPoint must return the shadow host and shadowRoot.elementFromPoint must return the slot parent of the fallback text when the hit-tested text node is a fallback content and the host has display: inline: document.elementFromPoint is not a function. (In 'document.elementFromPoint(...pointInElement(host))', 'document.elementFromPoint' is undefined)
+- document.elementFromPoint must return the shadow host and shadowRoot.elementFromPoint must return the slot parent of the fallback text when the hit-tested text node is a fallback content and the host has display: block: document.elementFromPoint is not a function. (In 'document.elementFromPoint(...pointInElement(host))', 'document.elementFromPoint' is undefined)
+- document.elementFromPoint must return the shadow host and shadowRoot.elementFromPoint must return the slot parent of the fallback text when the hit-tested text node is a fallback content and the host has display: inline-block: document.elementFromPoint is not a function. (In 'document.elementFromPoint(...pointInElement(host))', 'document.elementFromPoint' is undefined)
+- document.elementFromPoint, shadowRoot.elementFromPoint, innerShadow.elementFromPoint must return a child element assigned to a slot when the hit-tested text node is assigned to a slot in the shadow tree of the child element and the outer shadow host has display: inline: document.elementFromPoint is not a function. (In 'document.elementFromPoint(...pointInElement(host))', 'document.elementFromPoint' is undefined)
+- document.elementFromPoint, shadowRoot.elementFromPoint, innerShadow.elementFromPoint must return a child element assigned to a slot when the hit-tested text node is assigned to a slot in the shadow tree of the child element and the outer shadow host has display: block: document.elementFromPoint is not a function. (In 'document.elementFromPoint(...pointInElement(host))', 'document.elementFromPoint' is undefined)
+- document.elementFromPoint, shadowRoot.elementFromPoint, innerShadow.elementFromPoint must return a child element assigned to a slot when the hit-tested text node is assigned to a slot in the shadow tree of the child element and the outer shadow host has display: inline-block: document.elementFromPoint is not a function. (In 'document.elementFromPoint(...pointInElement(host))', 'document.elementFromPoint' is undefined)
+- document.elementFromPoint, shadowRoot.elementFromPoint, innerShadow.elementFromPoint must return a child element with its own shadow tree assigned to a slot when the hit-tested text node is its direct child and the outer shadow host has display: inline: document.elementFromPoint is not a function. (In 'document.elementFromPoint(...pointInElement(host))', 'document.elementFromPoint' is undefined)
+- document.elementFromPoint, shadowRoot.elementFromPoint, innerShadow.elementFromPoint must return a child element with its own shadow tree assigned to a slot when the hit-tested text node is its direct child and the outer shadow host has display: block: document.elementFromPoint is not a function. (In 'document.elementFromPoint(...pointInElement(host))', 'document.elementFromPoint' is undefined)
+- document.elementFromPoint, shadowRoot.elementFromPoint, innerShadow.elementFromPoint must return a child element with its own shadow tree assigned to a slot when the hit-tested text node is its direct child and the outer shadow host has display: inline-block: document.elementFromPoint is not a function. (In 'document.elementFromPoint(...pointInElement(host))', 'document.elementFromPoint' is undefined)
+- document.elementFromPoint, shadowRoot.elementFromPoint must return a child element with its own shadow tree assigned to a slot when the hit-tested text node is a child of another element and innerShadow.elementFromPoint must return the parent element of the hit-tested text node under it when the outer shadow host has display: inline: document.elementFromPoint is not a function. (In 'document.elementFromPoint(...pointInElement(host))', 'document.elementFromPoint' is undefined)
+- document.elementFromPoint, shadowRoot.elementFromPoint must return a child element with its own shadow tree assigned to a slot when the hit-tested text node is a child of another element and innerShadow.elementFromPoint must return the parent element of the hit-tested text node under it when the outer shadow host has display: block: document.elementFromPoint is not a function. (In 'document.elementFromPoint(...pointInElement(host))', 'document.elementFromPoint' is undefined)
+- document.elementFromPoint, shadowRoot.elementFromPoint must return a child element with its own shadow tree assigned to a slot when the hit-tested text node is a child of another element and innerShadow.elementFromPoint must return the parent element of the hit-tested text node under it when the outer shadow host has display: inline-block: document.elementFromPoint is not a function. (In 'document.elementFromPoint(...pointInElement(host))', 'document.elementFromPoint' is undefined)
+- document.elementsFromPoint and shadow.elementsFromPoint must return the shadow host and its ancestors of the hit-tested text node when the hit-tested text node is a direct child of the root and the host has display: inline: document.elementsFromPoint is not a function. (In 'document.elementsFromPoint(...pointInElement(host))', 'document.elementsFromPoint' is undefined)
+- document.elementsFromPoint and shadow.elementsFromPoint must return the shadow host and its ancestors of the hit-tested text node when the hit-tested text node is a direct child of the root and the host has display: block: document.elementsFromPoint is not a function. (In 'document.elementsFromPoint(...pointInElement(host))', 'document.elementsFromPoint' is undefined)
+- document.elementsFromPoint and shadow.elementsFromPoint must return the shadow host and its ancestors of the hit-tested text node when the hit-tested text node is a direct child of the root and the host has display: inline-block: document.elementsFromPoint is not a function. (In 'document.elementsFromPoint(...pointInElement(host))', 'document.elementsFromPoint' is undefined)
+- document.elementsFromPoint and shadowRoot.elementsFromPoint must return the shadow host and its ancestors when the hit-tested text node is assigned to a slot and the host has display: inline: document.elementsFromPoint is not a function. (In 'document.elementsFromPoint(...pointInElement(host))', 'document.elementsFromPoint' is undefined)
+- document.elementsFromPoint and shadowRoot.elementsFromPoint must return the shadow host and its ancestors when the hit-tested text node is assigned to a slot and the host has display: block: document.elementsFromPoint is not a function. (In 'document.elementsFromPoint(...pointInElement(host))', 'document.elementsFromPoint' is undefined)
+- document.elementsFromPoint and shadowRoot.elementsFromPoint must return the shadow host and its ancestors when the hit-tested text node is assigned to a slot and the host has display: inline-block: document.elementsFromPoint is not a function. (In 'document.elementsFromPoint(...pointInElement(host))', 'document.elementsFromPoint' is undefined)
+- document.elementsFromPoint and shadowRoot.elementsFromPoint must return the element assigned to a slot and its non-shadow ancestors when hit-tested text node under an element is assigned to a slot in the shadow tree and the shadow host of the slot has display: inline: document.elementsFromPoint is not a function. (In 'document.elementsFromPoint(...pointInElement(host))', 'document.elementsFromPoint' is undefined)
+- document.elementsFromPoint and shadowRoot.elementsFromPoint must return the element assigned to a slot and its non-shadow ancestors when hit-tested text node under an element is assigned to a slot in the shadow tree and the shadow host of the slot has display: block: document.elementsFromPoint is not a function. (In 'document.elementsFromPoint(...pointInElement(host))', 'document.elementsFromPoint' is undefined)
+- document.elementsFromPoint and shadowRoot.elementsFromPoint must return the element assigned to a slot and its non-shadow ancestors when hit-tested text node under an element is assigned to a slot in the shadow tree and the shadow host of the slot has display: inline-block: document.elementsFromPoint is not a function. (In 'document.elementsFromPoint(...pointInElement(host))', 'document.elementsFromPoint' is undefined)
+- document.elementsFromPoint must return the shadow host and its ancestors of the hit-tested element under a shadow root andshadowRoot.elementsFromPoint must return the element parent and its non-shadow ancestors of the hit-tested text node under the point when the shadow host has display: inline: document.elementsFromPoint is not a function. (In 'document.elementsFromPoint(...pointInElement(host))', 'document.elementsFromPoint' is undefined)
+- document.elementsFromPoint must return the shadow host and its ancestors of the hit-tested element under a shadow root andshadowRoot.elementsFromPoint must return the element parent and its non-shadow ancestors of the hit-tested text node under the point when the shadow host has display: block: document.elementsFromPoint is not a function. (In 'document.elementsFromPoint(...pointInElement(host))', 'document.elementsFromPoint' is undefined)
+- document.elementsFromPoint must return the shadow host and its ancestors of the hit-tested element under a shadow root andshadowRoot.elementsFromPoint must return the element parent and its non-shadow ancestors of the hit-tested text node under the point when the shadow host has display: inline-block: document.elementsFromPoint is not a function. (In 'document.elementsFromPoint(...pointInElement(host))', 'document.elementsFromPoint' is undefined)
+- document.elementsFromPoint must return the shadow host and its ancestors and shadowRoot.elementsFromPoint must return the slot parent of the fallback text and its non-shadow ancestors when the hit-tested text node is a fallback content and the host has display: inline: document.elementsFromPoint is not a function. (In 'document.elementsFromPoint(...pointInElement(host))', 'document.elementsFromPoint' is undefined)
+- document.elementsFromPoint must return the shadow host and its ancestors and shadowRoot.elementsFromPoint must return the slot parent of the fallback text and its non-shadow ancestors when the hit-tested text node is a fallback content and the host has display: block: document.elementsFromPoint is not a function. (In 'document.elementsFromPoint(...pointInElement(host))', 'document.elementsFromPoint' is undefined)
+- document.elementsFromPoint must return the shadow host and its ancestors and shadowRoot.elementsFromPoint must return the slot parent of the fallback text and its non-shadow ancestors when the hit-tested text node is a fallback content and the host has display: inline-block: document.elementsFromPoint is not a function. (In 'document.elementsFromPoint(...pointInElement(host))', 'document.elementsFromPoint' is undefined)
+- shadowRoot.elementsFromPoint must behave the same with document.elementsFromPoint regarding HTML element: host.getBoundingClientRect is not a function. (In 'host.getBoundingClientRect()', 'host.getBoundingClientRect' is undefined)
+- elementsFromPoint should return all elements under a point, even when context object is not connected: document.elementsFromPoint is not a function. (In 'document.elementsFromPoint(...pointInElement(span))', 'document.elementsFromPoint' is undefined)
 
 ### shadow-dom/Extensions-to-Event-Interface.html
 
@@ -2817,7 +2780,7 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 - CSS.highlights.highlightsFromPoint() should throw when called with nodes that are not ShadowRoot objects in options.: assert_throws_js: function "() => { CSS.highlights.highlightsFromPoint(10, 10, {shadowRoots: [container]}); }" threw object "ReferenceError: CSS is not defined" ("ReferenceError") expected instance of function "function TypeError() { [native code] }" ("TypeError")
 - CSS.highlights.highlightsFromPoint() returns Highlights present at a given point inside a shadow tree in the right order.: host is not defined
-- CSS.highlights.highlightsFromPoint() doesn't return Highlights that are not painted at the given coordinates even when they fall inside the Highlights' ranges: spanInShadowDOM.getBoundingClientRect is not a function
+- CSS.highlights.highlightsFromPoint() doesn't return Highlights that are not painted at the given coordinates even when they fall inside the Highlights' ranges: spanInShadowDOM.getBoundingClientRect is not a function. (In 'spanInShadowDOM.getBoundingClientRect()', 'spanInShadowDOM.getBoundingClientRect' is undefined)
 - CSS.highlights.highlightsFromPoint() handles slotted light DOM content correctly.: CSS is not defined
 
 ### shadow-dom/MouseEvent-prototype-offsetX-offsetY.html
@@ -2830,8 +2793,8 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 - ShadowRoot.activeElement must return the focused element of the context object when shadow root is open.: assert_equals: ShadowRoot.host must return null if an open shadow tree does not have a focused element expected (object) null but got (undefined) undefined
 - ShadowRoot.activeElement must return the focused element of the context object when shadow root is closed.: assert_equals: ShadowRoot.host must return null if an closed shadow tree does not have a focused element expected (object) null but got (undefined) undefined
-- ShadowRoot.styleSheets must return a StyleSheetList sequence containing the shadow root style sheets when shadow root is open.: Cannot read properties of undefined (reading 'length')
-- ShadowRoot.styleSheets must return a StyleSheetList sequence containing the shadow root style sheets when shadow root is closed.: Cannot read properties of undefined (reading 'length')
+- ShadowRoot.styleSheets must return a StyleSheetList sequence containing the shadow root style sheets when shadow root is open.: undefined is not an object (evaluating 'shadowRoot.styleSheets.length')
+- ShadowRoot.styleSheets must return a StyleSheetList sequence containing the shadow root style sheets when shadow root is closed.: undefined is not an object (evaluating 'shadowRoot.styleSheets.length')
 
 ### shadow-dom/accesskey.tentative.html
 
@@ -2896,250 +2859,250 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 ### shadow-dom/focus-navigation/delegatesFocus-highlight-sibling.html
 
-- crbug/474687 :focus style should properly be applied to shadow hosts.: promise_test: Unhandled rejection with value: object "TypeError: xmenu1.focus is not a function"
+- crbug/474687 :focus style should properly be applied to shadow hosts.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
 
 ### shadow-dom/focus-navigation/focus-navigation-slot-fallback-default-tabindex.html
 
-- Default tabindex for a slot node should be 0.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
+- Default tabindex for a slot node should be 0.: assert_true: Failed to focus host/i1 expected true got false
 
 ### shadow-dom/focus-navigation/focus-navigation-slot-fallback.html
 
-- Focus should jump to fallback elements when a slot does not have any assigned nodes.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
+- Focus should jump to fallback elements when a slot does not have any assigned nodes.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
 
 ### shadow-dom/focus-navigation/focus-navigation-slot-nested-2levels.html
 
-- Focus controller should treat each slot as a focus scope.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
+- Focus controller should treat each slot as a focus scope.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
 
 ### shadow-dom/focus-navigation/focus-navigation-slot-nested-delegatesFocus.html
 
-- Focus controller should treat each slot as a focus scope.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
+- Focus controller should treat each slot as a focus scope.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
 
 ### shadow-dom/focus-navigation/focus-navigation-slot-nested-fallback.html
 
-- Focus should cover assigned elements of an assigned slot espacially there are fallback contents.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
+- Focus should cover assigned elements of an assigned slot espacially there are fallback contents.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
 
 ### shadow-dom/focus-navigation/focus-navigation-slot-nested.html
 
-- Focus controller should treat each slot as a focus scope.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
+- Focus controller should treat each slot as a focus scope.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
 
 ### shadow-dom/focus-navigation/focus-navigation-slot-shadow-in-fallback.html
 
-- Focus should cover assigned elements of an assigned slot, as well as elements that are directly assigned to a slot.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
+- Focus should cover assigned elements of an assigned slot, as well as elements that are directly assigned to a slot.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
 
 ### shadow-dom/focus-navigation/focus-navigation-slot-shadow-in-slot.html
 
-- Focus should cover assigned elements of an assigned slot, as well as elements that are directly assigned to a slot.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
+- Focus should cover assigned elements of an assigned slot, as well as elements that are directly assigned to a slot.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
 
 ### shadow-dom/focus-navigation/focus-navigation-slot-with-tabindex.html
 
-- Slots tabindex should be considred in focus navigation.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
+- Slots tabindex should be considred in focus navigation.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
 
 ### shadow-dom/focus-navigation/focus-navigation-slots-in-slot.html
 
-- Focus should cover assigned nodes of slot, especially for nested slots in slot scope.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
+- Focus should cover assigned nodes of slot, especially for nested slots in slot scope.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
 
 ### shadow-dom/focus-navigation/focus-navigation-slots.html
 
-- Focus should cover assigned elements of an assigned slot, as well as elements that are directly assigned to a slot.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
+- Focus should cover assigned elements of an assigned slot, as well as elements that are directly assigned to a slot.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
 
 ### shadow-dom/focus-navigation/focus-navigation-web-component-radio.html
 
-- Focus for web component input type elements should be bound by <form> inside shadow DOM: promise_test: Unhandled rejection with value: object "TypeError: start.focus is not a function"
+- Focus for web component input type elements should be bound by <form> inside shadow DOM: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
 
 ### shadow-dom/focus-navigation/focus-navigation-with-delegatesFocus.html
 
-- Testing tab navigation order with mode open, no tabindex and delegatesFocus=false.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
-- Testing tab navigation order with mode open, no tabindex and delegatesFocus=true.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
-- Testing tab navigation order with mode open, tabindex=0 and delegatesFocus=false.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
-- Testing tab navigation order with mode open, tabindex=0 and delegatesFocus=true.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
-- Testing tab navigation order with mode open, tabindex=-1 and delegatesFocus=false.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
-- Testing tab navigation order with mode open, tabindex=-1 and delegatesFocus=true.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
-- Testing tab navigation order with mode open, tabindex=1 and delegatesFocus=false.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
-- Testing tab navigation order with mode open, tabindex=1 and delegatesFocus=true.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
-- Testing tab navigation order with mode closed, no tabindex and delegatesFocus=false.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
-- Testing tab navigation order with mode closed, no tabindex and delegatesFocus=true.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
-- Testing tab navigation order with mode closed, tabindex=0 and delegatesFocus=false.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
-- Testing tab navigation order with mode closed, tabindex=0 and delegatesFocus=true.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
-- Testing tab navigation order with mode closed, tabindex=-1 and delegatesFocus=false.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
-- Testing tab navigation order with mode closed, tabindex=-1 and delegatesFocus=true.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
-- Testing tab navigation order with mode closed, tabindex=1 and delegatesFocus=false.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
-- Testing tab navigation order with mode closed, tabindex=1 and delegatesFocus=true.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
+- Testing tab navigation order with mode open, no tabindex and delegatesFocus=false.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
+- Testing tab navigation order with mode open, no tabindex and delegatesFocus=true.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
+- Testing tab navigation order with mode open, tabindex=0 and delegatesFocus=false.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
+- Testing tab navigation order with mode open, tabindex=0 and delegatesFocus=true.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
+- Testing tab navigation order with mode open, tabindex=-1 and delegatesFocus=false.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
+- Testing tab navigation order with mode open, tabindex=-1 and delegatesFocus=true.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
+- Testing tab navigation order with mode open, tabindex=1 and delegatesFocus=false.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
+- Testing tab navigation order with mode open, tabindex=1 and delegatesFocus=true.: assert_true: Failed to focus host-div/inner-input expected true got false
+- Testing tab navigation order with mode closed, no tabindex and delegatesFocus=false.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
+- Testing tab navigation order with mode closed, no tabindex and delegatesFocus=true.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
+- Testing tab navigation order with mode closed, tabindex=0 and delegatesFocus=false.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
+- Testing tab navigation order with mode closed, tabindex=0 and delegatesFocus=true.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
+- Testing tab navigation order with mode closed, tabindex=-1 and delegatesFocus=false.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
+- Testing tab navigation order with mode closed, tabindex=-1 and delegatesFocus=true.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
+- Testing tab navigation order with mode closed, tabindex=1 and delegatesFocus=false.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
+- Testing tab navigation order with mode closed, tabindex=1 and delegatesFocus=true.: assert_true: Failed to focus inner-input expected true got false
 
 ### shadow-dom/focus-navigation/focus-navigation.html
 
-- Focus controller should treat slots as a focus scope.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
+- Focus controller should treat slots as a focus scope.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
 
 ### shadow-dom/focus-navigation/focus-nested-slots.html
 
-- Verifies that focus order goes in flat tree order with buttons inside nested slots which have a mixture of assigned and unassigned states.: promise_test: Unhandled rejection with value: object "TypeError: div1.focus is not a function"
+- Verifies that focus order goes in flat tree order with buttons inside nested slots which have a mixture of assigned and unassigned states.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
 
 ### shadow-dom/focus-navigation/focus-reverse-unassignable-slot.html
 
-- Verifies that focusing backwards from an input inside a slot which has no shadow root goes to the previous focusable element in light DOM.: promise_test: Unhandled rejection with value: object "TypeError: input2.focus is not a function"
+- Verifies that focusing backwards from an input inside a slot which has no shadow root goes to the previous focusable element in light DOM.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
 
 ### shadow-dom/focus-navigation/focus-reverse-unassigned-slot.html
 
-- Verifies that focusing backwards from a button inside a slot which has no assigned nodes goes to the previous focusable element.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
+- Verifies that focusing backwards from a button inside a slot which has no assigned nodes goes to the previous focusable element.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
 
 ### shadow-dom/focus-navigation/focus-unassignable-slot.html
 
-- Verifies that focusing forwards from an input inside a slot which has no shadow root goes to the next focusable element in light DOM.: promise_test: Unhandled rejection with value: object "TypeError: input1.focus is not a function"
+- Verifies that focusing forwards from an input inside a slot which has no shadow root goes to the next focusable element in light DOM.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
 
 ### shadow-dom/focus-navigation/focus-with-negative-index.html
 
-- Focus controller should treat slots as a focus scope.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
-- This is a regression test: After focusing negative tabindex-ed elements, focus moves in tree order.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
+- Focus controller should treat slots as a focus scope.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
+- This is a regression test: After focusing negative tabindex-ed elements, focus moves in tree order.: assert_true: Failed to focus x-foo/to-be-ignored-host/ignored-input-in-shadow-host1 expected true got false
 
 ### shadow-dom/focus-navigation/menu/tentative/focus-menu-elements.html
 
-- Focus navigation should skip over other menuitems in menubars.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
+- Focus navigation should skip over other menuitems in menubars.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
 
 ### shadow-dom/focus-navigation/reading-flow/tentative/carousel-grid-order.html
 
-- Grid items in carousel should follow grid-order reading flow: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
+- Grid items in carousel should follow grid-order reading flow: assert_true: Failed to focus scroller expected true got false
 
 ### shadow-dom/focus-navigation/reading-flow/tentative/flex-flow.html
 
-- Flex items in flexbox should follow flex-flow reading flow: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
-- Flex items in rtl flexbox should follow flex-flow reading flow: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
-- Flex items in vertical-lr flexbox should follow flex-flow reading flow: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
+- Flex items in flexbox should follow flex-flow reading flow: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
+- Flex items in rtl flexbox should follow flex-flow reading flow: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
+- Flex items in vertical-lr flexbox should follow flex-flow reading flow: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
 
 ### shadow-dom/focus-navigation/reading-flow/tentative/flex-visual-order.html
 
-- Flex items in flexbox should follow flex-visual reading flow: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
-- Flex items in row-reverse flexbox should follow flex-visual reading flow: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
-- Flex items in row-reverse rtl flexbox should follow flex-visual reading flow: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
-- Flex items in row-reverse and vertical-lr flexbox should follow flex-visual reading flow: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
+- Flex items in flexbox should follow flex-visual reading flow: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
+- Flex items in row-reverse flexbox should follow flex-visual reading flow: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
+- Flex items in row-reverse rtl flexbox should follow flex-visual reading flow: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
+- Flex items in row-reverse and vertical-lr flexbox should follow flex-visual reading flow: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
 
 ### shadow-dom/focus-navigation/reading-flow/tentative/grid-auto-flow-reading-order.html
 
-- Grid items should follow grid-rows reading flow, but let reading-order can move item's focus order to the top.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
-- Grid items should follow reading flow, mix of reading-order and order values.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
+- Grid items should follow grid-rows reading flow, but let reading-order can move item's focus order to the top.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
+- Grid items should follow reading flow, mix of reading-order and order values.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
 
 ### shadow-dom/focus-navigation/reading-flow/tentative/grid-columns.html
 
-- Grid items in grid template columns should follow grid-columns reading flow: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
+- Grid items in grid template columns should follow grid-columns reading flow: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
 
 ### shadow-dom/focus-navigation/reading-flow/tentative/grid-order-across-scopes.html
 
-- Grid items in shadow host that is a display contents grid item: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
+- Grid items in shadow host that is a display contents grid item: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
 
 ### shadow-dom/focus-navigation/reading-flow/tentative/grid-order-on-shadow-host.html
 
-- Grid items in shadow host with delegatesFocus: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
-- Grid items in shadow host without delegatesFocus: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
+- Grid items in shadow host with delegatesFocus: assert_true: Failed to focus host/B expected true got false
+- Grid items in shadow host without delegatesFocus: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
 
 ### shadow-dom/focus-navigation/reading-flow/tentative/grid-order-pseudo-elements.html
 
-- Grid pseudo items are not focusable: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
+- Grid pseudo items are not focusable: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
 
 ### shadow-dom/focus-navigation/reading-flow/tentative/grid-order-with-display-contents.html
 
-- Items in display contents are sorted in same grid container and are placed in the position where their first child resides.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
-- Items in display contents are sorted in same grid container and are placed in the position where their first child resides. The display contents have tabindex and should be focusable.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
-- Grid items are in nested display contents containers.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
+- Items in display contents are sorted in same grid container and are placed in the position where their first child resides.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
+- Items in display contents are sorted in same grid container and are placed in the position where their first child resides. The display contents have tabindex and should be focusable.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
+- Grid items are in nested display contents containers.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
 
 ### shadow-dom/focus-navigation/reading-flow/tentative/grid-order-with-nested-grids.html
 
-- Grid items are not grid containers.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
-- Grid items are grid containers.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
-- Only has grid containers.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
+- Grid items are not grid containers.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
+- Grid items are grid containers.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
+- Only has grid containers.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
 
 ### shadow-dom/focus-navigation/reading-flow/tentative/grid-order-with-popover.html
 
-- Popover is reading-flow item.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
-- Popover is reading-flow item and reading-flow container.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
+- Popover is reading-flow item.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
+- Popover is reading-flow item and reading-flow container.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
 
 ### shadow-dom/focus-navigation/reading-flow/tentative/grid-order-with-position-absolute.html
 
-- Items in position:absolute container are visited at the end of the focus sequence. reading-order can override DOM order.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
-- Items that have position:absolute are visited at the end of the focus sequence, in DOM order.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
+- Items in position:absolute container are visited at the end of the focus sequence. reading-order can override DOM order.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
+- Items that have position:absolute are visited at the end of the focus sequence, in DOM order.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
 
 ### shadow-dom/focus-navigation/reading-flow/tentative/grid-order-with-position-fixed.html
 
-- Items in position:fixed container are visited at the end of the focus sequence. reading-order can override DOM order.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
-- Items that have position:fixed are visited at the end of the focus sequence, in DOM order.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
+- Items in position:fixed container are visited at the end of the focus sequence. reading-order can override DOM order.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
+- Items that have position:fixed are visited at the end of the focus sequence, in DOM order.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
 
 ### shadow-dom/focus-navigation/reading-flow/tentative/grid-order-with-slots.html
 
-- Slot assigned element is a grid with reading-flow.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
-- Slot is a grid with reading-flow.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
-- Slot is inside a grid container with reading-flow.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
-- Slot is a grid with reading-flow inside a grid container with reading-flow.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
-- Slot is not inside a shadow host.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
-- Slot is a display contents inside a grid container.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
-- Slot is a display block inside a grid container.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
+- Slot assigned element is a grid with reading-flow.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
+- Slot is a grid with reading-flow.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
+- Slot is inside a grid container with reading-flow.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
+- Slot is a grid with reading-flow inside a grid container with reading-flow.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
+- Slot is not inside a shadow host.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
+- Slot is a display contents inside a grid container.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
+- Slot is a display block inside a grid container.: assert_true: Failed to focus host7/after expected true got false
 
 ### shadow-dom/focus-navigation/reading-flow/tentative/grid-order.html
 
-- Grid items without `order` property: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
-- Grid items with `order` property: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
-- Grid items with `order` property and tabindex. Positive tabindex doesn't reorder reading flow item, but can affect its descendants.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
-- Items in display block are not in parent grid container.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
+- Grid items without `order` property: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
+- Grid items with `order` property: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
+- Grid items with `order` property and tabindex. Positive tabindex doesn't reorder reading flow item, but can affect its descendants.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
+- Items in display block are not in parent grid container.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
 
 ### shadow-dom/focus-navigation/reading-flow/tentative/grid-rows.html
 
-- Grid items in grid template columns should follow grid-rows reading flow: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
+- Grid items in grid template columns should follow grid-rows reading flow: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
 
 ### shadow-dom/focus-navigation/reading-flow/tentative/normal.html
 
-- Grid items. Focus should be in DOM tabindexed-order.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
-- Block elements. Focus should be in DOM tabindexed-order.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
+- Grid items. Focus should be in DOM tabindexed-order.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
+- Block elements. Focus should be in DOM tabindexed-order.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
 
 ### shadow-dom/focus-navigation/reading-flow/tentative/source-order-invalid.html
 
-- Inline elements. Focus should be in DOM tabindexed-order.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
+- Inline elements. Focus should be in DOM tabindexed-order.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
 
 ### shadow-dom/focus-navigation/reading-flow/tentative/source-order-valid.html
 
-- Block elements. Focus should be in DOM tabindexed-order, but reading-order takes effect.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
-- Block inline elements. Focus should be in DOM tabindexed-order, but reading-order takes effect.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
-- Flex elements. Focus should be in DOM tabindexed-order, but reading-order takes effect.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
-- Grid elements. Focus should be in DOM tabindexed-order, but reading-order takes effect.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
-- Flow root elements. Focus should be in DOM tabindexed-order, but reading-order takes effect.: promise_test: Unhandled rejection with value: object "TypeError: fromElement.focus is not a function"
+- Block elements. Focus should be in DOM tabindexed-order, but reading-order takes effect.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
+- Block inline elements. Focus should be in DOM tabindexed-order, but reading-order takes effect.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
+- Flex elements. Focus should be in DOM tabindexed-order, but reading-order takes effect.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
+- Grid elements. Focus should be in DOM tabindexed-order, but reading-order takes effect.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
+- Flow root elements. Focus should be in DOM tabindexed-order, but reading-order takes effect.: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
 
 ### shadow-dom/focus-navigation/tentative/focus-navigation-scroller-interactive-child.html
 
-- While focusing a keyboard-focusable scroller, adding interactive content should not cancel focusability: promise_test: Unhandled rejection with value: object "TypeError: start.focus is not a function"
+- While focusing a keyboard-focusable scroller, adding interactive content should not cancel focusability: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
 
 ### shadow-dom/focus-navigation/tentative/focus-scroller-layout-update.html
 
-- When checking that element is a scroller, layout information should be up to date.: promise_test: Unhandled rejection with value: object "TypeError: scroller.focus is not a function"
+- When checking that element is a scroller, layout information should be up to date.: assert_equals: expected Element node <div id="scroller" style="overflow:scroll; width:50px; he... but got Element node <body><button id="button">Button</button>
 
 ### shadow-dom/focus-within-shadow.html
 
-- Don't clear focus within shadow root if light DOM children are cleared: shadowButton.focus is not a function
+- Don't clear focus within shadow root if light DOM children are cleared: assert_equals: nodes within shadow DOM aren't exposed expected Element node <div id="host">
 
 ### shadow-dom/focus/DocumentOrShadowRoot-activeElement.html
 
-- activeElement on document & shadow root when focused element is in the shadow tree: focused.focus is not a function
-- activeElement on document & shadow root when focused element is in the document: focused.focus is not a function
-- activeElement on document & shadow root when focused element is slotted: focused.focus is not a function
-- activeElement on a neighboring host when focused element is in another shadow tree: focused.focus is not a function
-- activeElement when focused element is in a nested shadow tree: focused.focus is not a function
-- activeElement when focused element is in a parent shadow tree: focused.focus is not a function
+- activeElement on document & shadow root when focused element is in the shadow tree: assert_equals: expected Element node <div></div> but got Element node <body>
+- activeElement on document & shadow root when focused element is in the document: assert_equals: expected (object) null but got (undefined) undefined
+- activeElement on document & shadow root when focused element is slotted: assert_equals: expected (object) null but got (undefined) undefined
+- activeElement on a neighboring host when focused element is in another shadow tree: assert_equals: expected Element node <div></div> but got Element node <div tabindex="0"></div>
+- activeElement when focused element is in a nested shadow tree: assert_equals: expected Element node <div></div> but got Element node <div tabindex="0"></div>
+- activeElement when focused element is in a parent shadow tree: assert_equals: expected Element node <div></div> but got Element node <div tabindex="0"></div>
 
 ### shadow-dom/focus/blur-on-shadow-host-delegatesFocus.html
 
-- Calling blur() on shadow host with delegatesFocus should remove the focus.: host.focus is not a function
-- Calling blur() on shadow host with delegatesFocus when the focus is on a slotted element should not remove the focus.: slotted.focus is not a function
+- Calling blur() on shadow host with delegatesFocus should remove the focus.: assert_equals: expected Element node <div id="host">
+- Calling blur() on shadow host with delegatesFocus when the focus is on a slotted element should not remove the focus.: assert_equals: expected (object) null but got (undefined) undefined
 
 ### shadow-dom/focus/click-focus-delegatesFocus-click.html
 
 - call click() on host with delegatesFocus, all tabindex=0: assert_equals: expected (object) null but got (undefined) undefined
 - call click() on slotted element in delegatesFocus shadow tree, all tabindex=0: assert_equals: expected (object) null but got (undefined) undefined
-- click on the host with delegatesFocus with another host with delegatesFocus and a focusable child: promise_test: Unhandled rejection with value: object "TypeError: element.getClientRects is not a function"
-- click on the host with delegatesFocus with another host with no delegatesFocus and a focusable child: promise_test: Unhandled rejection with value: object "TypeError: element.getClientRects is not a function"
-- click on the host with no delegatesFocus with another host with delegatesFocus and a focusable child: promise_test: Unhandled rejection with value: object "TypeError: element.getClientRects is not a function"
-- click on the host with no delegatesFocus with another host with no delegatesFocus and a focusable child: promise_test: Unhandled rejection with value: object "TypeError: element.getClientRects is not a function"
+- click on the host with delegatesFocus with another host with delegatesFocus and a focusable child: promise_test: Unhandled rejection with value: object "TypeError: element.getClientRects is not a function. (In 'element.getClientRects()', 'element.getClientRects' is undefined)"
+- click on the host with delegatesFocus with another host with no delegatesFocus and a focusable child: promise_test: Unhandled rejection with value: object "TypeError: element.getClientRects is not a function. (In 'element.getClientRects()', 'element.getClientRects' is undefined)"
+- click on the host with no delegatesFocus with another host with delegatesFocus and a focusable child: promise_test: Unhandled rejection with value: object "TypeError: element.getClientRects is not a function. (In 'element.getClientRects()', 'element.getClientRects' is undefined)"
+- click on the host with no delegatesFocus with another host with no delegatesFocus and a focusable child: promise_test: Unhandled rejection with value: object "TypeError: element.getClientRects is not a function. (In 'element.getClientRects()', 'element.getClientRects' is undefined)"
 
 ### shadow-dom/focus/click-focus-delegatesFocus-tabindex-varies.html
 
-- click on host with delegatesFocus, #aboveSlot tabindex = 2, #slot and #slotted tabindex = 1: promise_test: Unhandled rejection with value: object "TypeError: element.getClientRects is not a function"
+- click on host with delegatesFocus, #aboveSlot tabindex = 2, #slot and #slotted tabindex = 1: promise_test: Unhandled rejection with value: object "TypeError: element.getClientRects is not a function. (In 'element.getClientRects()', 'element.getClientRects' is undefined)"
 
 ### shadow-dom/focus/click-focus-delegatesFocus-tabindex-zero.html
 
-- click on host with delegatesFocus, all tabindex=0 except spacer: promise_test: Unhandled rejection with value: object "TypeError: element.getClientRects is not a function"
+- click on host with delegatesFocus, all tabindex=0 except spacer: promise_test: Unhandled rejection with value: object "TypeError: element.getClientRects is not a function. (In 'element.getClientRects()', 'element.getClientRects' is undefined)"
 
 ### shadow-dom/focus/click-focus-slot-ancestor.html
 
@@ -3149,129 +3112,123 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 ### shadow-dom/focus/delegatesFocus-tabindex-change.html
 
-- Setting tabindex on the shadow host of a focused element with delegatesFocus should not change focus.: host.focus is not a function
+- Setting tabindex on the shadow host of a focused element with delegatesFocus should not change focus.: assert_equals: The shadow host should be focused. expected Element node <div></div> but got Element node <body>
 
 ### shadow-dom/focus/focus-autofocus.html
 
-- The second input should be focused since it has autofocus: host.focus is not a function
-- Focus should not be delegated to the autofocus element because the inner host doesn't have delegates focus: host.focus is not a function
-- Focus should be delegated to the autofocus element when the inner host has delegates focus: host.focus is not a function
-- Focus should not be delegated to the slotted elements: host.focus is not a function
-- Focus should be delegated to the nested div which has autofocus based on the tree order: host.focus is not a function
+- The second input should be focused since it has autofocus: assert_equals: expected Element node <div id="host"></div> but got Element node <body>
+- Focus should not be delegated to the autofocus element because the inner host doesn't have delegates focus: assert_equals: expected (object) null but got (undefined) undefined
+- Focus should be delegated to the autofocus element when the inner host has delegates focus: assert_equals: expected Element node <div id="host"></div> but got Element node <body>
+- Focus should not be delegated to the slotted elements: assert_equals: expected Element node <div id="host"><div tabindex="0" autofocus="true"></div><... but got Element node <body>
+- Focus should be delegated to the nested div which has autofocus based on the tree order: assert_equals: expected Element node <div id="host"></div> but got Element node <body>
 
 ### shadow-dom/focus/focus-click-on-shadow-host.html
 
-- :focus should be applied to the host and the child node when the focus is moved by mouse click: assert_equals: expected (object) Element node <body>
+- :focus should be applied to the host and the child node when the focus is moved by mouse click: promise_test: Unhandled rejection with value: object "TypeError: element.getClientRects is not a function. (In 'element.getClientRects()', 'element.getClientRects' is undefined)"
 
 ### shadow-dom/focus/focus-method-delegatesFocus.html
 
-- focus() on host with delegatesFocus, all tabindex=0: host.focus is not a function
-- focus() on host with delegatesFocus & tabindex =-1, all other tabindex=0: host.focus is not a function
-- focus() on host with delegatesFocus & no tabindex, all other tabindex=0: host.focus is not a function
-- focus() on host with delegatesFocus & tabindex = 0, all other tabindex=-1: host.focus is not a function
-- focus() on host with delegatesFocus, all without tabindex: host.focus is not a function
-- focus() on host with delegatesFocus, all tabindex=-1: host.focus is not a function
-- focus() on host with delegatesFocus & tabindex=0, #belowSlots with tabindex=0: host.focus is not a function
-- focus() on host with delegatesFocus & tabindex=0, #outside with tabindex=0: host.focus is not a function
-- focus() on host with delegatesFocus & tabindex=0, #aboveSlots and #belowSlots with tabindex=0: host.focus is not a function
-- focus() on host with delegatesFocus & tabindex=0, #aboveSlots with tabindex=0 and #belowSlots with tabindex=1: host.focus is not a function
-- focus() on host with delegatesFocus & tabindex=0, #slottedToFirstSlot, #slottedToSecondSlot, #belowSlots  with tabindex=0: host.focus is not a function
-- focus() on host with delegatesFocus and already-focused non-first shadow descendant: belowSlots.focus is not a function
-- focus() on host with delegatesFocus with another host with no delegatesFocus and a focusable child: dom.outerHost.focus is not a function
-- focus() on host with delegatesFocus with another host with delegatesFocus and a focusable child: dom.outerHost.focus is not a function
-- focus() on host with delegatesFocus and slotted focusable children: host.focus is not a function
+- focus() on host with delegatesFocus, all tabindex=0: assert_equals: expected (object) Element node <div tabindex="0"></div> but got (undefined) undefined
+- focus() on host with delegatesFocus & tabindex =-1, all other tabindex=0: assert_equals: expected (object) Element node <div tabindex="0"></div> but got (undefined) undefined
+- focus() on host with delegatesFocus & no tabindex, all other tabindex=0: assert_equals: expected (object) Element node <div tabindex="0"></div> but got (undefined) undefined
+- focus() on host with delegatesFocus & tabindex = 0, all other tabindex=-1: assert_equals: expected (object) Element node <div tabindex="-1"></div> but got (undefined) undefined
+- focus() on host with delegatesFocus, all without tabindex: assert_equals: expected (object) null but got (undefined) undefined
+- focus() on host with delegatesFocus, all tabindex=-1: assert_equals: expected (object) Element node <div tabindex="-1"></div> but got (undefined) undefined
+- focus() on host with delegatesFocus & tabindex=0, #belowSlots with tabindex=0: assert_equals: expected (object) Element node <div tabindex="0"></div> but got (undefined) undefined
+- focus() on host with delegatesFocus & tabindex=0, #outside with tabindex=0: assert_equals: expected (object) null but got (undefined) undefined
+- focus() on host with delegatesFocus & tabindex=0, #aboveSlots and #belowSlots with tabindex=0: assert_equals: expected (object) Element node <div tabindex="0"></div> but got (undefined) undefined
+- focus() on host with delegatesFocus & tabindex=0, #aboveSlots with tabindex=0 and #belowSlots with tabindex=1: assert_equals: expected (object) Element node <div tabindex="0"></div> but got (undefined) undefined
+- focus() on host with delegatesFocus & tabindex=0, #slottedToFirstSlot, #slottedToSecondSlot, #belowSlots  with tabindex=0: assert_equals: expected (object) Element node <div tabindex="0"></div> but got (undefined) undefined
+- focus() on host with delegatesFocus and already-focused non-first shadow descendant: assert_equals: expected (object) Element node <div tabindex="0"></div> but got (undefined) undefined
+- focus() on host with delegatesFocus with another host with no delegatesFocus and a focusable child: assert_equals: expected Element node <div><input></div> but got Element node <body><div><input></div>
+- focus() on host with delegatesFocus with another host with delegatesFocus and a focusable child: assert_equals: expected Element node <div><input></div> but got Element node <body><div><input></div><div><input></div>
+- focus() on host with delegatesFocus and slotted focusable children: assert_equals: expected Element node <div><div><input></div></div> but got Element node <body><div><input></div><div><input></div>
 
 ### shadow-dom/focus/focus-preserved-on-slot-reorder.html
 
-- Reordering a slot wrapper in the shadow tree preserves focus on the slotted element: promise_test: Unhandled rejection with value: object "TypeError: input.focus is not a function"
+- Reordering a slot wrapper in the shadow tree preserves focus on the slotted element: promise_test: Unhandled rejection with value: object "ReferenceError: requestAnimationFrame is not defined"
 
 ### shadow-dom/focus/focus-scroll-under-delegatesFocus.html
 
-- delegatesFocus shouldn't cause extra focus steps: promise_test: Unhandled rejection with value: object "TypeError: element.getClientRects is not a function"
+- delegatesFocus shouldn't cause extra focus steps: promise_test: Unhandled rejection with value: object "TypeError: element.getClientRects is not a function. (In 'element.getClientRects()', 'element.getClientRects' is undefined)"
 
 ### shadow-dom/focus/focus-selector-delegatesFocus.html
 
-- :focus applies to host with delegatesFocus=true when the shadow root's descendant has focus: shadowChild.focus is not a function
-- :focus does not apply to host with delegatesFocus=true when slotted element has focus: slotted.focus is not a function
-- :focus applies to host with delegatesFocus=true when an element in a nested shadow tree with delegatesFocus=true is focused: nestedShadowChild.focus is not a function
-- :focus should be removed from hosts with delegatesFocus=true when none of the elements in a nested shadow tree with delegatesFocus=true is focused: nestedShadowChild.focus is not a function
-- :focus applies to host with delegatesFocus=true when an element in a nested shadow tree with delegatesFocus=false is focused: nestedShadowChild.focus is not a function
-- :focus should be removed from hosts with delegatesFocus=true when none of the elements in a nested shadow tree with delegatesFocus=false is focused: nestedShadowChild.focus is not a function
-- :focus applies to host with delegatesFocus=false when the shadow root's descendant has focus: shadowChild.focus is not a function
-- :focus does not apply to host with delegatesFocus=false when slotted element has focus: slotted.focus is not a function
-- :focus applies to host with delegatesFocus=false when an element in a nested shadow tree with delegatesFocus=true is focused: nestedShadowChild.focus is not a function
-- :focus should be removed from hosts with delegatesFocus=false when none of the elements in a nested shadow tree with delegatesFocus=true is focused: nestedShadowChild.focus is not a function
-- :focus applies to host with delegatesFocus=false when an element in a nested shadow tree with delegatesFocus=false is focused: nestedShadowChild.focus is not a function
-- :focus should be removed from hosts with delegatesFocus=false when none of the elements in a nested shadow tree with delegatesFocus=false is focused: nestedShadowChild.focus is not a function
+- :focus applies to host with delegatesFocus=true when the shadow root's descendant has focus: assert_true: element in shadow tree matches :focus expected true got false
+- :focus applies to host with delegatesFocus=true when an element in a nested shadow tree with delegatesFocus=true is focused: assert_true: element in nested shadow tree matches :focus expected true got false
+- :focus applies to host with delegatesFocus=true when an element in a nested shadow tree with delegatesFocus=false is focused: assert_true: element in nested shadow tree matches :focus expected true got false
+- :focus applies to host with delegatesFocus=false when the shadow root's descendant has focus: assert_true: element in shadow tree matches :focus expected true got false
+- :focus applies to host with delegatesFocus=false when an element in a nested shadow tree with delegatesFocus=true is focused: assert_true: element in nested shadow tree matches :focus expected true got false
+- :focus applies to host with delegatesFocus=false when an element in a nested shadow tree with delegatesFocus=false is focused: assert_true: element in nested shadow tree matches :focus expected true got false
 
 ### shadow-dom/focus/focus-shadowhost-display-none.html
 
-- when shadow host itself is focused, it should match display:none, lose focus then becomes display:block again.: promise_test: Unhandled rejection with value: object "TypeError: host.focus is not a function"
-- when shadow host with delegatesFocus=true has focused element inside the shadow, it should also match display:none, then lose focus and become display:block again.: promise_test: Unhandled rejection with value: object "TypeError: input.focus is not a function"
+- when shadow host itself is focused, it should match display:none, lose focus then becomes display:block again.: promise_test: Unhandled rejection with value: object "TypeError: window.getComputedStyle is not a function. (In 'window.getComputedStyle(host)', 'window.getComputedStyle' is undefined)"
+- when shadow host with delegatesFocus=true has focused element inside the shadow, it should also match display:none, then lose focus and become display:block again.: promise_test: Unhandled rejection with value: object "TypeError: window.getComputedStyle is not a function. (In 'window.getComputedStyle(host)', 'window.getComputedStyle' is undefined)"
 
 ### shadow-dom/focus/focus-slot-box-generated-tabindex-0.html
 
-- slot with tabindex=0 that generates a box should be focusable: promise_test: Unhandled rejection with value: object "TypeError: element.getClientRects is not a function"
+- slot with tabindex=0 that generates a box should be focusable: promise_test: Unhandled rejection with value: object "TypeError: element.getClientRects is not a function. (In 'element.getClientRects()', 'element.getClientRects' is undefined)"
 
 ### shadow-dom/focus/focus-tab-on-shadow-host.html
 
-- :focus should be applied to the host and :focus-visible should be applied to the child node when the focus is moved by <tab>: assert_equals: expected (object) Element node <body>
+- :focus should be applied to the host and :focus-visible should be applied to the child node when the focus is moved by <tab>: promise_test: Unhandled rejection with value: object "TypeError: element.getClientRects is not a function. (In 'element.getClientRects()', 'element.getClientRects' is undefined)"
 
 ### shadow-dom/focus/focus-tabindex-order-shadow-negative-delegatesFocus.html
 
-- Order when all tabindex=-1 is and delegatesFocus = true: promise_test: Unhandled rejection with value: object "TypeError: element.getClientRects is not a function"
+- Order when all tabindex=-1 is and delegatesFocus = true: promise_test: Unhandled rejection with value: object "TypeError: element.getClientRects is not a function. (In 'element.getClientRects()', 'element.getClientRects' is undefined)"
 
 ### shadow-dom/focus/focus-tabindex-order-shadow-negative.html
 
-- Order when all elements in shadow tree has negative tabindex: promise_test: Unhandled rejection with value: object "TypeError: element.getClientRects is not a function"
+- Order when all elements in shadow tree has negative tabindex: promise_test: Unhandled rejection with value: object "TypeError: element.getClientRects is not a function. (In 'element.getClientRects()', 'element.getClientRects' is undefined)"
 
 ### shadow-dom/focus/focus-tabindex-order-shadow-slot-one.html
 
-- Order when all tabindex=0, except for one slot that has tabindex=1: promise_test: Unhandled rejection with value: object "TypeError: element.getClientRects is not a function"
+- Order when all tabindex=0, except for one slot that has tabindex=1: promise_test: Unhandled rejection with value: object "TypeError: element.getClientRects is not a function. (In 'element.getClientRects()', 'element.getClientRects' is undefined)"
 
 ### shadow-dom/focus/focus-tabindex-order-shadow-varying-delegatesFocus.html
 
-- Order when tabindex varies and delegatesFocus = true: promise_test: Unhandled rejection with value: object "TypeError: element.getClientRects is not a function"
+- Order when tabindex varies and delegatesFocus = true: promise_test: Unhandled rejection with value: object "TypeError: element.getClientRects is not a function. (In 'element.getClientRects()', 'element.getClientRects' is undefined)"
 
 ### shadow-dom/focus/focus-tabindex-order-shadow-varying-tabindex-2.html
 
-- Order with different tabindex on host: promise_test: Unhandled rejection with value: object "TypeError: root1.querySelector(...).focus is not a function"
+- Order with different tabindex on host: assert_equals: expected Element node <div></div> but got Element node <body>
 
 ### shadow-dom/focus/focus-tabindex-order-shadow-varying-tabindex-3.html
 
-- Order with different tabindex on host: promise_test: Unhandled rejection with value: object "TypeError: root1.querySelector(...).focus is not a function"
+- Order with different tabindex on host: assert_equals: expected Element node <div></div> but got Element node <body>
 
 ### shadow-dom/focus/focus-tabindex-order-shadow-varying-tabindex.html
 
-- Order with various tabindex values: promise_test: Unhandled rejection with value: object "TypeError: element.getClientRects is not a function"
+- Order with various tabindex values: promise_test: Unhandled rejection with value: object "TypeError: element.getClientRects is not a function. (In 'element.getClientRects()', 'element.getClientRects' is undefined)"
 
 ### shadow-dom/focus/focus-tabindex-order-shadow-zero-delegatesFocus.html
 
-- Order when all tabindex=0 is and delegatesFocus = true: promise_test: Unhandled rejection with value: object "TypeError: element.getClientRects is not a function"
+- Order when all tabindex=0 is and delegatesFocus = true: promise_test: Unhandled rejection with value: object "TypeError: element.getClientRects is not a function. (In 'element.getClientRects()', 'element.getClientRects' is undefined)"
 
 ### shadow-dom/focus/focus-tabindex-order-shadow-zero-host-negative.html
 
-- Order when all tabindex=0 except for host, which has tabindex=-1: promise_test: Unhandled rejection with value: object "TypeError: element.getClientRects is not a function"
+- Order when all tabindex=0 except for host, which has tabindex=-1: promise_test: Unhandled rejection with value: object "TypeError: element.getClientRects is not a function. (In 'element.getClientRects()', 'element.getClientRects' is undefined)"
 
 ### shadow-dom/focus/focus-tabindex-order-shadow-zero-host-not-set-scrollable.html
 
-- Order when all tabindex=0 except scrollable host (tabindex not set): promise_test: Unhandled rejection with value: object "TypeError: element.getClientRects is not a function"
+- Order when all tabindex=0 except scrollable host (tabindex not set): promise_test: Unhandled rejection with value: object "TypeError: element.getClientRects is not a function. (In 'element.getClientRects()', 'element.getClientRects' is undefined)"
 
 ### shadow-dom/focus/focus-tabindex-order-shadow-zero-host-not-set.html
 
-- Order when all tabindex=0 except host (tabindex not set): promise_test: Unhandled rejection with value: object "TypeError: element.getClientRects is not a function"
+- Order when all tabindex=0 except host (tabindex not set): promise_test: Unhandled rejection with value: object "TypeError: element.getClientRects is not a function. (In 'element.getClientRects()', 'element.getClientRects' is undefined)"
 
 ### shadow-dom/focus/focus-tabindex-order-shadow-zero-host-one.html
 
-- Order when all tabindex=0 except for host, which has tabindex=1: promise_test: Unhandled rejection with value: object "TypeError: element.getClientRects is not a function"
+- Order when all tabindex=0 except for host, which has tabindex=1: promise_test: Unhandled rejection with value: object "TypeError: element.getClientRects is not a function. (In 'element.getClientRects()', 'element.getClientRects' is undefined)"
 
 ### shadow-dom/focus/focus-tabindex-order-shadow-zero-host-scrollable.html
 
-- Order when all tabindex=0 and host is scrollable: promise_test: Unhandled rejection with value: object "TypeError: element.getClientRects is not a function"
+- Order when all tabindex=0 and host is scrollable: promise_test: Unhandled rejection with value: object "TypeError: element.getClientRects is not a function. (In 'element.getClientRects()', 'element.getClientRects' is undefined)"
 
 ### shadow-dom/focus/focus-tabindex-order-shadow-zero.html
 
-- Order when all tabindex=0 is and delegatesFocus = false: promise_test: Unhandled rejection with value: object "TypeError: element.getClientRects is not a function"
+- Order when all tabindex=0 is and delegatesFocus = false: promise_test: Unhandled rejection with value: object "TypeError: element.getClientRects is not a function. (In 'element.getClientRects()', 'element.getClientRects' is undefined)"
 
 ### shadow-dom/focus/text-selection-with-delegatesFocus-on-slotted-content.html
 
@@ -3306,19 +3263,19 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 ### shadow-dom/leaktests/get-elements.html
 
-- getElementsByName() should not leak nodes in shadow tree: document.getElementsByName is not a function
+- getElementsByName() should not leak nodes in shadow tree: document.getElementsByName is not a function. (In 'document.getElementsByName('baz')', 'document.getElementsByName' is undefined)
 
 ### shadow-dom/leaktests/html-collection.html
 
-- document.scripts should not contain shadow nodes: Cannot read properties of undefined (reading 'length')
-- document.all should not contain shadow nodes: Cannot read properties of undefined (reading 'length')
-- document.forms should not contain shadow nodes: Cannot read properties of undefined (reading 'length')
-- document.images should not contain shadow nodes: Cannot read properties of undefined (reading 'length')
-- document.links should not contain shadow nodes: Cannot read properties of undefined (reading 'length')
-- document.anchors should not contain shadow nodes: Cannot read properties of undefined (reading 'length')
-- document.embeds should not contain shadow nodes: Cannot read properties of undefined (reading 'length')
-- document.plugins should not contain shadow nodes: Cannot read properties of undefined (reading 'length')
-- document.applets should not contain any nodes: Cannot read properties of undefined (reading 'length')
+- document.scripts should not contain shadow nodes: undefined is not an object (evaluating 'elements.length')
+- document.all should not contain shadow nodes: undefined is not an object (evaluating 'elements.length')
+- document.forms should not contain shadow nodes: undefined is not an object (evaluating 'elements.length')
+- document.images should not contain shadow nodes: undefined is not an object (evaluating 'elements.length')
+- document.links should not contain shadow nodes: undefined is not an object (evaluating 'elements.length')
+- document.anchors should not contain shadow nodes: undefined is not an object (evaluating 'elements.length')
+- document.embeds should not contain shadow nodes: undefined is not an object (evaluating 'elements.length')
+- document.plugins should not contain shadow nodes: undefined is not an object (evaluating 'elements.length')
+- document.applets should not contain any nodes: undefined is not an object (evaluating 'document.applets.length')
 
 ### shadow-dom/offsetParent-across-shadow-boundaries.html
 
@@ -3365,32 +3322,32 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 ### shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods/test-006.html
 
-- A_10_01_02_06_01_T02: s.elementFromPoint is not a function
+- A_10_01_02_06_01_T02: s.elementFromPoint is not a function. (In 's.elementFromPoint(1, 1)', 's.elementFromPoint' is undefined)
 
 ### shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods/test-007.html
 
-- A_10_01_02_06_02_T01: s.elementFromPoint is not a function
-- A_10_01_02_06_02_T02: s.elementFromPoint is not a function
+- A_10_01_02_06_02_T01: s.elementFromPoint is not a function. (In 's.elementFromPoint(-1, 1)', 's.elementFromPoint' is undefined)
+- A_10_01_02_06_02_T02: s.elementFromPoint is not a function. (In 's.elementFromPoint(1, -1)', 's.elementFromPoint' is undefined)
 
 ### shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-003.html
 
-- A_08_02_03_T01: Cannot read properties of null (reading 'document')
+- A_08_02_03_T01: null is not an object (evaluating 'iframe.contentWindow.document')
 
 ### shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/dom-tree-accessors-001.html
 
-- Elements in a shadow tree should not be accessible from owner document's "images" attribute.: Cannot read properties of undefined (reading 'length')
-- Elements in a shadow tree should not be accessible from owner document's "embeds" attribute.: Cannot read properties of undefined (reading 'length')
-- Elements in a shadow tree should not be accessible from owner document's "plugins" attribute.: Cannot read properties of undefined (reading 'length')
-- Elements in a shadow tree should not be accessible from owner document's "links" attribute.: Cannot read properties of undefined (reading 'length')
-- Elements in a shadow tree should not be accessible from owner document's "forms" attribute.: Cannot read properties of undefined (reading 'length')
-- Elements in a shadow tree should not be accessible from owner document's "scripts" attribute.: Cannot read properties of undefined (reading 'length')
-- Elements in a shadow tree should not be accessible from owner document's getElementsByName() method.: doc.getElementsByName is not a function
-- Elements in a shadow tree should not be accessible from owner document's "anchors" attribute.: Cannot read properties of undefined (reading 'length')
-- Elements in a shadow tree should not be accessible from owner document's "all" attribute.: Cannot read properties of undefined (reading 'length')
+- Elements in a shadow tree should not be accessible from owner document's "images" attribute.: undefined is not an object (evaluating 'collection.length')
+- Elements in a shadow tree should not be accessible from owner document's "embeds" attribute.: undefined is not an object (evaluating 'collection.length')
+- Elements in a shadow tree should not be accessible from owner document's "plugins" attribute.: undefined is not an object (evaluating 'collection.length')
+- Elements in a shadow tree should not be accessible from owner document's "links" attribute.: undefined is not an object (evaluating 'collection.length')
+- Elements in a shadow tree should not be accessible from owner document's "forms" attribute.: undefined is not an object (evaluating 'collection.length')
+- Elements in a shadow tree should not be accessible from owner document's "scripts" attribute.: undefined is not an object (evaluating 'collection.length')
+- Elements in a shadow tree should not be accessible from owner document's getElementsByName() method.: doc.getElementsByName is not a function. (In 'doc.getElementsByName('test-name')', 'doc.getElementsByName' is undefined)
+- Elements in a shadow tree should not be accessible from owner document's "anchors" attribute.: undefined is not an object (evaluating 'collection.length')
+- Elements in a shadow tree should not be accessible from owner document's "all" attribute.: undefined is not an object (evaluating 'collection.length')
 
 ### custom-elements/CustomElementRegistry-constructor-and-callbacks-are-held-strongly.html
 
-- adoptedCallback: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'adoptNode')"
+- adoptedCallback: promise_test: Unhandled rejection with value: object "TypeError: null is not an object (evaluating 'emptyIframe.contentDocument.adoptNode')"
 
 ### custom-elements/CustomElementRegistry-getName.html
 
@@ -3420,32 +3377,32 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 ### custom-elements/Document-createElement.html
 
-- document.createElement must report a TypeError when the result of Construct is not a DOM node: Cannot read properties of null (reading 'name')
-- document.createElement must report a TypeError when the result of Construct is a TextNode: Cannot read properties of null (reading 'name')
-- document.createElement must report a NotSupportedError when attribute is added by setAttribute during construction: Cannot read properties of null (reading 'name')
-- document.createElement must report a NotSupportedError when attribute is added by attributes.setNamedItem during construction: Cannot read properties of null (reading 'name')
-- document.createElement must report a NotSupportedError when a Text child is added during construction: Cannot read properties of null (reading 'name')
-- document.createElement must report a NotSupportedError when a Comment child is added during construction: Cannot read properties of null (reading 'name')
-- document.createElement must report a NotSupportedError when an element child is added during construction: Cannot read properties of null (reading 'name')
-- document.createElement must report a NotSupportedError when the element gets inserted into another element during construction: Cannot read properties of null (reading 'name')
-- document.createElement must report a NotSupportedError when the element is adopted into a the document of the template elements during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
-- document.createElement must report a NotSupportedError when the element is inserted into a the document of the template elements during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
-- document.createElement must report a NotSupportedError when the element is adopted into a a new document during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
-- document.createElement must report a NotSupportedError when the element is inserted into a a new document during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
-- document.createElement must report a NotSupportedError when the element is adopted into a a cloned document during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
-- document.createElement must report a NotSupportedError when the element is inserted into a a cloned document during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
-- document.createElement must report a NotSupportedError when the element is adopted into a a document created by createHTMLDocument during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
-- document.createElement must report a NotSupportedError when the element is inserted into a a document created by createHTMLDocument during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
-- document.createElement must report a NotSupportedError when the element is adopted into a an HTML document created by createDocument during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
-- document.createElement must report a NotSupportedError when the element is inserted into a an HTML document created by createDocument during construction: promise_test: Unhandled rejection with value: object "TypeError: Cannot read properties of null (reading 'name')"
+- document.createElement must report a TypeError when the result of Construct is not a DOM node: null is not an object (evaluating 'uncaughtError.name')
+- document.createElement must report a TypeError when the result of Construct is a TextNode: null is not an object (evaluating 'uncaughtError.name')
+- document.createElement must report a NotSupportedError when attribute is added by setAttribute during construction: null is not an object (evaluating 'uncaughtError.name')
+- document.createElement must report a NotSupportedError when attribute is added by attributes.setNamedItem during construction: null is not an object (evaluating 'uncaughtError.name')
+- document.createElement must report a NotSupportedError when a Text child is added during construction: null is not an object (evaluating 'uncaughtError.name')
+- document.createElement must report a NotSupportedError when a Comment child is added during construction: null is not an object (evaluating 'uncaughtError.name')
+- document.createElement must report a NotSupportedError when an element child is added during construction: null is not an object (evaluating 'uncaughtError.name')
+- document.createElement must report a NotSupportedError when the element gets inserted into another element during construction: null is not an object (evaluating 'uncaughtError.name')
+- document.createElement must report a NotSupportedError when the element is adopted into a the document of the template elements during construction: promise_test: Unhandled rejection with value: object "TypeError: null is not an object (evaluating 'uncaughtError.name')"
+- document.createElement must report a NotSupportedError when the element is inserted into a the document of the template elements during construction: promise_test: Unhandled rejection with value: object "TypeError: null is not an object (evaluating 'uncaughtError.name')"
+- document.createElement must report a NotSupportedError when the element is adopted into a a new document during construction: promise_test: Unhandled rejection with value: object "TypeError: null is not an object (evaluating 'uncaughtError.name')"
+- document.createElement must report a NotSupportedError when the element is inserted into a a new document during construction: promise_test: Unhandled rejection with value: object "TypeError: null is not an object (evaluating 'uncaughtError.name')"
+- document.createElement must report a NotSupportedError when the element is adopted into a a cloned document during construction: promise_test: Unhandled rejection with value: object "TypeError: null is not an object (evaluating 'uncaughtError.name')"
+- document.createElement must report a NotSupportedError when the element is inserted into a a cloned document during construction: promise_test: Unhandled rejection with value: object "TypeError: null is not an object (evaluating 'uncaughtError.name')"
+- document.createElement must report a NotSupportedError when the element is adopted into a a document created by createHTMLDocument during construction: promise_test: Unhandled rejection with value: object "TypeError: null is not an object (evaluating 'uncaughtError.name')"
+- document.createElement must report a NotSupportedError when the element is inserted into a a document created by createHTMLDocument during construction: promise_test: Unhandled rejection with value: object "TypeError: null is not an object (evaluating 'uncaughtError.name')"
+- document.createElement must report a NotSupportedError when the element is adopted into a an HTML document created by createDocument during construction: promise_test: Unhandled rejection with value: object "TypeError: null is not an object (evaluating 'uncaughtError.name')"
+- document.createElement must report a NotSupportedError when the element is inserted into a an HTML document created by createDocument during construction: promise_test: Unhandled rejection with value: object "TypeError: null is not an object (evaluating 'uncaughtError.name')"
 - document.createElement must report a NotSupportedError when the element is adopted into a the document of an iframe during construction: Test timed out
 - document.createElement must report a NotSupportedError when the element is inserted into a the document of an iframe during construction: 
 - document.createElement must not report a NotSupportedError when the element is adopted back from a the document of an iframe during construction: 
 - document.createElement must report a NotSupportedError when the element is adopted into a an HTML document fetched by XHR during construction: 
 - document.createElement must report a NotSupportedError when the element is inserted into a an HTML document fetched by XHR during construction: 
 - document.createElement must not report a NotSupportedError when the element is adopted back from a an HTML document fetched by XHR during construction: 
-- document.createElement must report a NotSupportedError when the local name of the element does not match that of the custom element: Cannot read properties of null (reading 'name')
-- document.createElement must report an exception thrown by a custom element constructor: Cannot read properties of null (reading 'name')
+- document.createElement must report a NotSupportedError when the local name of the element does not match that of the custom element: null is not an object (evaluating 'uncaughtError.name')
+- document.createElement must report an exception thrown by a custom element constructor: null is not an object (evaluating 'uncaughtError.name')
 
 ### custom-elements/HTMLElement-attachInternals.html
 
@@ -3528,8 +3485,8 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 - Getting previously-unset ARIA element reflection properties on ElementInternals should return null.: assert_equals: expected null but got []
 - Setting ARIA element reflection properties on ElementInternals to null should delete any previous value, and not crash: assert_equals: expected null but got []
-- Setting ariaLabelledByElements on ElementInternals should change the accessible name of the custom element: promise_test: Unhandled rejection with value: object "TypeError: window.test_driver_internal.get_computed_label is not a function"
-- Setting aria-labelledby or ariaLabelledByElements on the custom element should supersede the value of ariaLabelledByElements on ElementInternals: promise_test: Unhandled rejection with value: object "TypeError: window.test_driver_internal.get_computed_label is not a function"
+- Setting ariaLabelledByElements on ElementInternals should change the accessible name of the custom element: promise_test: Unhandled rejection with value: object "TypeError: window.test_driver_internal.get_computed_label is not a function. (In 'window.test_driver_internal.get_computed_label(element)', 'window.test_driver_internal.get_computed_label' is undefined)"
+- Setting aria-labelledby or ariaLabelledByElements on the custom element should supersede the value of ariaLabelledByElements on ElementInternals: promise_test: Unhandled rejection with value: object "TypeError: window.test_driver_internal.get_computed_label is not a function. (In 'window.test_driver_internal.get_computed_label(element)', 'window.test_driver_internal.get_computed_label' is undefined)"
 - Caching invariant different attributes.: assert_equals: Caching invariant for ariaControlsElements expected [Element node <div id="cachingInvariantElement1"></div>, Element node <div id="cachingInvariantElement2"></div>] but got [Element node <div id="cachingInvariantElement1"></div>, Element node <div id="cachingInvariantElement2"></div>]
 - Caching invariant different elements.: assert_equals: Caching invariant for ariaDescribedByElements in one elemnt expected [Element node <div id="cachingInvariantElement1"></div>, Element node <div id="cachingInvariantElement2"></div>] but got [Element node <div id="cachingInvariantElement1"></div>, Element node <div id="cachingInvariantElement2"></div>]
 
@@ -3552,12 +3509,7 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 ### custom-elements/form-associated/ElementInternals-form.html
 
-- ElementInternals.form should return the target element's form owner: Cannot read properties of undefined (reading '0')
-
-### custom-elements/form-associated/ElementInternals-setFormValue-nullish-value.html
-
-- ElementInternals.setFormValue(null) clears submission value: FormData constructor: Argument 1 could not be converted to: undefined.
-- ElementInternals.setFormValue(undefined) clears submission value: FormData constructor: Argument 1 could not be converted to: undefined.
+- ElementInternals.form should return the target element's form owner: undefined is not an object (evaluating 'document.forms[0]')
 
 ### custom-elements/form-associated/ElementInternals-setFormValue.html
 
@@ -3620,36 +3572,34 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 - willValidate: assert_true: FIELDSET becomes enabled expected true got false
 - "anchor" argument of setValidity(): assert_throws_dom: Not a descendant function "() => {
-- reportValidity(): control.blur is not a function
-- Custom control affects validation at the owner form: form.checkValidity is not a function
+- Custom control affects validation at the owner form: form.checkValidity is not a function. (In 'form.checkValidity()', 'form.checkValidity' is undefined)
 - Custom control affects :valid :invalid for FORM and FIELDSET: assert_true: expected true got false
 
 ### custom-elements/form-associated/disabled-delegatesFocus.html
 
-- Focus events fire on disabled form-associated custom elements with delegatesFocus: element.focus is not a function
+- Focus events fire on disabled form-associated custom elements with delegatesFocus: assert_true: Focus event fired on custom control expected true got false
 
 ### custom-elements/form-associated/fieldset-elements.html
 
-- Form associated custom elements should work with fieldset.elements: Cannot read properties of undefined (reading '0')
+- Form associated custom elements should work with fieldset.elements: undefined is not an object (evaluating 'document.forms[0]')
 
 ### custom-elements/form-associated/focusability.html
 
-- Focusability of form-associated custom elements: foo.focus is not a function
+- Focusability of form-associated custom elements: assert_false: Disabled FACE with tabindex is not focusable. expected false got true
 
 ### custom-elements/form-associated/form-associated-callback.html
 
 - Associate by parser, customized at element creation: assert_equals: fieldset.elements expected (object) Element node <pre-defined id="pd1"></pre-defined> but got (undefined) undefined
 - Parsed, connected, then upgraded: assert_equals: form.elements.length expected 3 but got 2
 - Updating "form" content attribute: assert_array_equals: lengths differ, expected array [Element node <form id="form1"></form>] length 1, got [] length 0
-- Updating "id" attribute of form element: undefined is not iterable (cannot read property Symbol(Symbol.iterator))
+- Updating "id" attribute of form element: undefined is not an object (evaluating 'document.forms')
 
 ### custom-elements/form-associated/form-disabled-callback.html
 
 - Adding/removing disabled content attribute: assert_true: expected true got false
 - Relationship with FIELDSET: assert_true: expected true got false
-- A disabled form-associated custom element should not provide an entry for it: FormData constructor: Argument 1 could not be converted to: undefined.
-- A disabled form-associated custom element should not submit an entry for it: promise_test: Unhandled rejection with value: object "TypeError: document.getElementsByName is not a function"
-- Disabled attribute affects focus-capability: control.focus is not a function
+- A disabled form-associated custom element should not submit an entry for it: promise_test: Unhandled rejection with value: object "TypeError: document.getElementsByName is not a function. (In 'document.getElementsByName(frameName)', 'document.getElementsByName' is undefined)"
+- Disabled attribute affects focus-capability: assert_not_equals: got disallowed value Element node <my-control tabindex="0" disabled=""></my-control>
 - Upgrading an element with disabled content attribute: assert_array_equals: value is undefined, expected array
 - Toggling "disabled" attribute on a custom element inside disabled <fieldset> does not trigger a callback: assert_array_equals: value is undefined, expected array
 - Toggling "disabled" attribute on a <fieldset> does not trigger a callback on disabled custom element descendant: assert_array_equals: value is undefined, expected array
@@ -3658,9 +3608,9 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 ### custom-elements/form-associated/form-elements-namedItem.html
 
-- Form associated custom elements should work with document.forms.elements.namedItem(): Cannot read properties of undefined (reading '0')
-- Form associated custom elements should work with document.forms.elements.namedItem() after upgrading: Cannot read properties of undefined (reading '0')
-- Form associated custom elements should work with document.forms.elements.namedItem() after updating the name attribute: Cannot read properties of undefined (reading '0')
+- Form associated custom elements should work with document.forms.elements.namedItem(): undefined is not an object (evaluating 'document.forms[0]')
+- Form associated custom elements should work with document.forms.elements.namedItem() after upgrading: undefined is not an object (evaluating 'document.forms[0]')
+- Form associated custom elements should work with document.forms.elements.namedItem() after updating the name attribute: undefined is not an object (evaluating 'document.forms[0]')
 
 ### custom-elements/form-associated/form-reset-callback.html
 
@@ -3699,13 +3649,13 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 ### custom-elements/pseudo-class-defined.html
 
-- this.matches(:defined) should not match during an upgrade: Cannot read properties of null (reading 'customElements')
+- this.matches(:defined) should not match during an upgrade: null is not an object (evaluating 's.doc.defaultView.customElements')
 
 ### custom-elements/reactions/Animation.html
 
-- Animation.animate must enqueue an attributeChanged reaction when it adds the observed style attribute: instance.animate is not a function
-- Animation.animate must enqueue an attributeChanged reaction when it mutates the observed style attribute: instance.animate is not a function
-- Animation.animate must not enqueue an attributeChanged reaction when it mutates the style attribute but the style attribute is not observed: instance.animate is not a function
+- Animation.animate must enqueue an attributeChanged reaction when it adds the observed style attribute: instance.animate is not a function. (In 'instance.animate([{'borderColor': 'rgb(0, 0, 255)'}], 1)', 'instance.animate' is undefined)
+- Animation.animate must enqueue an attributeChanged reaction when it mutates the observed style attribute: instance.animate is not a function. (In 'instance.animate([{'borderColor': 'rgb(0, 0, 255)'}], 1)', 'instance.animate' is undefined)
+- Animation.animate must not enqueue an attributeChanged reaction when it mutates the style attribute but the style attribute is not observed: instance.animate is not a function. (In 'instance.animate([{'borderColor': 'rgb(0, 0, 255)'}], 1)', 'instance.animate' is undefined)
 
 ### custom-elements/reactions/DOMStringMap.html
 
@@ -3791,7 +3741,7 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 ### custom-elements/reactions/Range.html
 
-- createContextualFragment on Range must construct a custom element: range.createContextualFragment is not a function
+- createContextualFragment on Range must construct a custom element: range.createContextualFragment is not a function. (In 'range.createContextualFragment(markup)', 'range.createContextualFragment' is undefined)
 
 ### custom-elements/reactions/ShadowRoot.html
 
@@ -3810,18 +3760,18 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 ### custom-elements/registries/CustomElementRegistry-upgrade.html
 
 - upgrade is a no-op when called on a shadow root with no association: That is not a node
-- upgrade is a no-op when called on an element associated with a different registry: Cannot read properties of null (reading 'customElements')
+- upgrade is a no-op when called on an element associated with a different registry: null is not an object (evaluating 's.doc.defaultView.customElements')
 - upgrade should upgrade a candidate element when called on a shadow root with an association: That is not a node
 - upgrade should not upgrade a candidate element not associated with a registry: That is not a node
 
 ### custom-elements/registries/Document-customElementRegistry.html
 
-- customElementRegistry on a document of a connected iframe should return contentWindow.customElements: Cannot read properties of null (reading 'customElementRegistry')
-- customElementRegistry on a document of a disconnected iframe should return contentWindow.customElements: Cannot read properties of null (reading 'customElements')
+- customElementRegistry on a document of a connected iframe should return contentWindow.customElements: null is not an object (evaluating 'frame.contentDocument.customElementRegistry')
+- customElementRegistry on a document of a disconnected iframe should return contentWindow.customElements: null is not an object (evaluating 'frame.contentWindow.customElements')
 
 ### custom-elements/registries/Document-importNode-cross-document.window.js
 
-- Cloning with global registry: Cannot read properties of null (reading 'importNode')
+- Cloning with global registry: null is not an object (evaluating 'contentDocument.importNode')
 - Cloning with explicit global registry: 
 - Cloning with scoped registry: 
 - Cloning including shadow tree with global registry: 
@@ -3851,7 +3801,7 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 ### custom-elements/registries/Element-customElementRegistry-exceptions.html
 
-- customElementRegistry on a failed custom element created by parser should return the specified custom regsitry: Cannot read properties of null (reading 'open')
+- customElementRegistry on a failed custom element created by parser should return the specified custom regsitry: null is not an object (evaluating 'frame.contentDocument.open')
 
 ### custom-elements/registries/Element-customElementRegistry.html
 
@@ -3860,9 +3810,9 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 ### custom-elements/registries/Element-innerHTML.html
 
 - insertAdjacentHTML should use the element's registry even when the registry is null: assert_equals: expected null but got object "[object CustomElementRegistry]"
-- createContextualFragment on a range inside a template should use null registry even when the template has a scoped registry: range.createContextualFragment is not a function
+- createContextualFragment on a range inside a template should use null registry even when the template has a scoped registry: range.createContextualFragment is not a function. (In 'range.createContextualFragment('<new-element><new-element></new-element></new-element>')', 'range.createContextualFragment' is undefined)
 - innerHTML on a template with a scoped registry should use the scoped registry of the document: assert_equals: expected object "[object CustomElementRegistry]" but got object "[object CustomElementRegistry]"
-- createContextualFragment on a range inside an element with scoped registry should use the scoped registry of the element: range.createContextualFragment is not a function
+- createContextualFragment on a range inside an element with scoped registry should use the scoped registry of the element: range.createContextualFragment is not a function. (In 'range.createContextualFragment('<new-element><new-element></new-element></new-element>')', 'range.createContextualFragment' is undefined)
 
 ### custom-elements/registries/ShadowRoot-init-customElementRegistry.html
 
@@ -3878,7 +3828,7 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 ### custom-elements/registries/adoption.window.js
 
-- Adoption with global registry: Cannot read properties of null (reading 'body')
+- Adoption with global registry: null is not an object (evaluating 'contentDocument.body')
 - Adoption with explicit global registry: 
 - Adoption with scoped registry: 
 - Adoption with global registry into a scoped registry: 
@@ -3942,33 +3892,33 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 ### custom-elements/registries/initial-about-blank.window.js
 
-- Each navigable document has its own registry: Cannot read properties of null (reading 'eval')
+- Each navigable document has its own registry: null is not an object (evaluating 'frame.contentWindow.eval')
 
 ### custom-elements/registries/per-document.html
 
-- Navigating from the initial about:blank must replace window.customElements: Cannot read properties of null (reading 'customElements')
-- Discarding the browsing context must not change window.customElements: Cannot read properties of null (reading 'customElements')
+- Navigating from the initial about:blank must replace window.customElements: null is not an object (evaluating 'frame[propertyName]')
+- Discarding the browsing context must not change window.customElements: null is not an object (evaluating 'frame[propertyName]')
 - document.open() must not replace window.customElements: Test timed out
 
 ### custom-elements/registries/pseudo-class-defined.window.js
 
-- "uncustomized" :defined doesn't care about your registry': Cannot read properties of null (reading 'customElements')
-- "custom" :defined doesn't care about your registry: Cannot read properties of null (reading 'customElements')
-- "custom" :defined should apply after initialize: Cannot read properties of null (reading 'customElements')
+- "uncustomized" :defined doesn't care about your registry': null is not an object (evaluating 's.doc.defaultView.customElements')
+- "custom" :defined doesn't care about your registry: null is not an object (evaluating 's.doc.defaultView.customElements')
+- "custom" :defined should apply after initialize: null is not an object (evaluating 's.doc.defaultView.customElements')
 
 ### custom-elements/registries/scoped-custom-element-registry-customelementregistry-attribute.html
 
-- HTML parser should create a builtin element with null registry if customelementregistry is set: Cannot read properties of null (reading 'documentElement')
-- Setting customelementregistry content attribute after a builtin element had finishsed parsing should not set null registry: Cannot read properties of null (reading 'createElement')
-- Cloning a builtin element with null regsitry should create an element with null registry: Cannot read properties of null (reading 'createElement')
-- HTML parser should create a custom element candidate with null registry if customelementregistry is set: Cannot read properties of null (reading 'documentElement')
-- Setting customelementregistry content attribute after a custom element candidate had finishsed parsing should not set null registry: Cannot read properties of null (reading 'createElement')
-- Cloning a custom element candidate with null regsitry should create an element with null registry: Cannot read properties of null (reading 'createElement')
-- HTML parser should create a custom element with null registry if customelementregistry is set: Cannot read properties of null (reading 'customElements')
-- Setting customelementregistry content attribute after a custom element had finishsed parsing should not set null registry: Cannot read properties of null (reading 'customElements')
-- Cloning a custom element with null regsitry should create an element with null registry: Cannot read properties of null (reading 'customElements')
-- Descendants of an element with customelementregistry should use null registry: Cannot read properties of null (reading 'customElements')
-- Setting customelementregistry content attribute during constructor should not make it use null registry: Cannot read properties of null (reading 'createElement')
+- HTML parser should create a builtin element with null registry if customelementregistry is set: null is not an object (evaluating 'doc.documentElement')
+- Setting customelementregistry content attribute after a builtin element had finishsed parsing should not set null registry: null is not an object (evaluating 'doc.createElement')
+- Cloning a builtin element with null regsitry should create an element with null registry: null is not an object (evaluating 'doc.createElement')
+- HTML parser should create a custom element candidate with null registry if customelementregistry is set: null is not an object (evaluating 'doc.documentElement')
+- Setting customelementregistry content attribute after a custom element candidate had finishsed parsing should not set null registry: null is not an object (evaluating 'doc.createElement')
+- Cloning a custom element candidate with null regsitry should create an element with null registry: null is not an object (evaluating 'doc.createElement')
+- HTML parser should create a custom element with null registry if customelementregistry is set: null is not an object (evaluating 'win.customElements')
+- Setting customelementregistry content attribute after a custom element had finishsed parsing should not set null registry: null is not an object (evaluating 'win.customElements')
+- Cloning a custom element with null regsitry should create an element with null registry: null is not an object (evaluating 'win.customElements')
+- Descendants of an element with customelementregistry should use null registry: null is not an object (evaluating 'win.customElements')
+- Setting customelementregistry content attribute during constructor should not make it use null registry: null is not an object (evaluating 'doc.createElement')
 - Body with customelementregistry attribute during initial parse should have null registry and propagate to children: Test timed out
 - Custom element candidate child of body with customelementregistry should have null registry during initial parse: 
 - Descendants of body with customelementregistry should all have null registry during initial parse: 
@@ -3982,20 +3932,20 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 ### custom-elements/registries/scoped-registry-append.html
 
-- Connecting a custom element candiate in a shadow root with a scoped custom element registry has null registry by default: Cannot read properties of null (reading 'documentElement')
-- Connecting a custom element candiate with null registry does not set the registry: Cannot read properties of null (reading 'documentElement')
-- Connecting a custom element candiate with a scoped custom element registry does not change the registry: Cannot read properties of null (reading 'documentElement')
-- Inserting a custom element candiate with null registry does not change the registry: Cannot read properties of null (reading 'documentElement')
-- Inserting the shadow host of a shadow root with a scoped custom element registry does not change the registry: Cannot read properties of null (reading 'createElement')
-- Inserting a node from another document with global registry results in the custom element registry to be set and upgraded.: Cannot read properties of null (reading 'HTMLElement')
-- Inserting a node cloned from a template with null registry into a scoped shadow root should set global registry: Cannot read properties of null (reading 'documentElement')
-- adoptNode then inserting into a scoped shadow root should preserve global registry: Cannot read properties of null (reading 'documentElement')
-- Declarative shadow DOM without shadowrootcustomelementregistry attribute without registry initialized should gain effective global registry after adoption.: Cannot read properties of null (reading 'body')
-- Declarative shadow DOM with shadowrootcustomelementregistry attribute without registry initialized should remain null registry after adoption.: Cannot read properties of null (reading 'body')
-- Null registry element should gain effective global registry of global registry from its parent upon adoption.: Cannot read properties of null (reading 'customElements')
-- Null registry element should gain effective global registry of null from its parent upon adoption.: Cannot read properties of null (reading 'customElements')
-- Null registry element should gain effective global registry of scoped registry from its parent upon adoption.: Cannot read properties of null (reading 'body')
-- Global registry element should gain effective global registry of scoped registry from its parent upon adoption.: Cannot read properties of null (reading 'body')
+- Connecting a custom element candiate in a shadow root with a scoped custom element registry has null registry by default: null is not an object (evaluating 'doc.documentElement')
+- Connecting a custom element candiate with null registry does not set the registry: null is not an object (evaluating 'doc.documentElement')
+- Connecting a custom element candiate with a scoped custom element registry does not change the registry: null is not an object (evaluating 'doc.documentElement')
+- Inserting a custom element candiate with null registry does not change the registry: null is not an object (evaluating 'doc.documentElement')
+- Inserting the shadow host of a shadow root with a scoped custom element registry does not change the registry: null is not an object (evaluating 'doc.createElement')
+- Inserting a node from another document with global registry results in the custom element registry to be set and upgraded.: null is not an object (evaluating 'win2.HTMLElement')
+- Inserting a node cloned from a template with null registry into a scoped shadow root should set global registry: null is not an object (evaluating 'doc.documentElement')
+- adoptNode then inserting into a scoped shadow root should preserve global registry: null is not an object (evaluating 'doc.documentElement')
+- Declarative shadow DOM without shadowrootcustomelementregistry attribute without registry initialized should gain effective global registry after adoption.: null is not an object (evaluating 'doc.body')
+- Declarative shadow DOM with shadowrootcustomelementregistry attribute without registry initialized should remain null registry after adoption.: null is not an object (evaluating 'doc.body')
+- Null registry element should gain effective global registry of global registry from its parent upon adoption.: null is not an object (evaluating 'win.customElements')
+- Null registry element should gain effective global registry of null from its parent upon adoption.: null is not an object (evaluating 'win.customElements')
+- Null registry element should gain effective global registry of scoped registry from its parent upon adoption.: null is not an object (evaluating 'doc.body')
+- Global registry element should gain effective global registry of scoped registry from its parent upon adoption.: null is not an object (evaluating 'doc.body')
 
 ### custom-elements/registries/scoped-registry-define-upgrade-criteria.html
 
@@ -4004,89 +3954,89 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 - Adding definition to scoped registry should not affect document tree scope: assert_true: expected true got false
 - Adding definition to scoped registry should not affect shadow roots using other registries: assert_true: expected true got false
 - Adding definition to scoped registry should upgrade nodes even after the node is moved to a separate shadow tree using a different registry.: assert_true: expected true got false
-- Adding definition to scoped registry affects associated shadow roots in all iframes: Cannot read properties of null (reading 'body')
-- Adding definition to scoped registry affects associated shadow roots in other frame trees: window.open is not a function
-- Adding definition to scoped registry should not upgrade nodes in detached frames: Cannot read properties of null (reading 'body')
-- Adding definition to scoped registry should not upgrade nodes in closed windows: promise_test: Unhandled rejection with value: object "TypeError: window.open is not a function"
+- Adding definition to scoped registry affects associated shadow roots in all iframes: null is not an object (evaluating 'iframe.contentDocument.body')
+- Adding definition to scoped registry affects associated shadow roots in other frame trees: window.open is not a function. (In 'window.open('about:blank')', 'window.open' is undefined)
+- Adding definition to scoped registry should not upgrade nodes in detached frames: null is not an object (evaluating 'iframe.contentDocument.body')
+- Adding definition to scoped registry should not upgrade nodes in closed windows: promise_test: Unhandled rejection with value: object "TypeError: window.open is not a function. (In 'window.open('about:blank')', 'window.open' is undefined)"
 
 ### custom-elements/registries/scoped-registry-define-upgrade-order.html
 
 - Upgrade in tree order in the same tree scope: assert_array_equals: lengths differ, expected array ["a", "b", "c"] length 3, got [] length 0
 - Upgrade in shadow-including tree order across tree scopes: assert_array_equals: lengths differ, expected array ["a", "b", "c"] length 3, got [] length 0
 - Upgrade order does not depend on shadow root attach order: assert_array_equals: lengths differ, expected array ["a", "c", "b"] length 3, got [] length 0
-- Upgrade in association order across documents, then tree order in each document: Cannot read properties of null (reading 'body')
-- Upgrade order is not affected by DOM order between child frames: Cannot read properties of null (reading 'body')
-- Upgrade order is affected by shadow tree adoption across documents: Cannot read properties of null (reading 'body')
-- Elements in the "owner" window of a scoped registry are not always upgraded first: Cannot read properties of null (reading 'body')
+- Upgrade in association order across documents, then tree order in each document: null is not an object (evaluating 'iframe.contentDocument.body')
+- Upgrade order is not affected by DOM order between child frames: null is not an object (evaluating 'iframe.contentDocument.body')
+- Upgrade order is affected by shadow tree adoption across documents: null is not an object (evaluating 'iframe.contentDocument.body')
+- Elements in the "owner" window of a scoped registry are not always upgraded first: null is not an object (evaluating 'iframe.contentDocument.body')
 
 ### custom-elements/registries/scoped-registry-effective-global-registry.html
 
-- Null registry element with element parent without custom element registry attribute (null registry) appended to new document: Cannot read properties of null (reading 'body')
-- Null registry element with element parent without custom element registry attribute (global registry) appended to new document: Cannot read properties of null (reading 'body')
-- Null registry element with element parent without custom element registry attribute (scoped registry) appended to new document: Cannot read properties of null (reading 'body')
-- Null registry element with declarative shadow root parent without custom element registry attribute appended to new document: Cannot read properties of null (reading 'body')
-- Null registry element with declarative shadow root parent with custom element registry attribute (null registry) appended to new document: Cannot read properties of null (reading 'body')
-- Null registry element with declarative shadow root parent with custom element registry attribute (global registry) appended to new document: Cannot read properties of null (reading 'body')
-- Null registry element with declarative shadow root parent with custom element registry attribute (scoped registry) appended to new document: Cannot read properties of null (reading 'body')
-- Null registry element with imperative shadow root parent (null registry) appended to new document: Cannot read properties of null (reading 'body')
-- Null registry element with imperative shadow root parent (global registry) appended to new document: Cannot read properties of null (reading 'body')
-- Null registry element with imperative shadow root parent (scoped registry) appended to new document: Cannot read properties of null (reading 'body')
-- Global registry element with element parent without custom element registry attribute (null registry) appended to new document: Cannot read properties of null (reading 'body')
-- Global registry element with element parent without custom element registry attribute (global registry) appended to new document: Cannot read properties of null (reading 'body')
-- Global registry element with element parent without custom element registry attribute (scoped registry) appended to new document: Cannot read properties of null (reading 'body')
-- Global registry element with declarative shadow root parent without custom element registry attribute appended to new document: Cannot read properties of null (reading 'body')
-- Global registry element with declarative shadow root parent with custom element registry attribute (null registry) appended to new document: Cannot read properties of null (reading 'body')
-- Global registry element with declarative shadow root parent with custom element registry attribute (global registry) appended to new document: Cannot read properties of null (reading 'body')
-- Global registry element with declarative shadow root parent with custom element registry attribute (scoped registry) appended to new document: Cannot read properties of null (reading 'body')
-- Global registry element with imperative shadow root parent (null registry) appended to new document: Cannot read properties of null (reading 'body')
-- Global registry element with imperative shadow root parent (global registry) appended to new document: Cannot read properties of null (reading 'body')
-- Global registry element with imperative shadow root parent (scoped registry) appended to new document: Cannot read properties of null (reading 'body')
-- Scoped registry element with element parent without custom element registry attribute (null registry) appended to new document: Cannot read properties of null (reading 'body')
-- Scoped registry element with element parent without custom element registry attribute (global registry) appended to new document: Cannot read properties of null (reading 'body')
-- Scoped registry element with element parent without custom element registry attribute (scoped registry) appended to new document: Cannot read properties of null (reading 'body')
-- Scoped registry element with declarative shadow root parent without custom element registry attribute appended to new document: Cannot read properties of null (reading 'body')
-- Scoped registry element with declarative shadow root parent with custom element registry attribute (null registry) appended to new document: Cannot read properties of null (reading 'body')
-- Scoped registry element with declarative shadow root parent with custom element registry attribute (global registry) appended to new document: Cannot read properties of null (reading 'body')
-- Scoped registry element with declarative shadow root parent with custom element registry attribute (scoped registry) appended to new document: Cannot read properties of null (reading 'body')
-- Scoped registry element with imperative shadow root parent (null registry) appended to new document: Cannot read properties of null (reading 'body')
-- Scoped registry element with imperative shadow root parent (global registry) appended to new document: Cannot read properties of null (reading 'body')
-- Scoped registry element with imperative shadow root parent (scoped registry) appended to new document: Cannot read properties of null (reading 'body')
-- Null registry element with element parent without custom element registry attribute (null registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Null registry element with element parent without custom element registry attribute (global registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Null registry element with element parent without custom element registry attribute (scoped registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Null registry element with declarative shadow root parent without custom element registry attribute adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Null registry element with declarative shadow root parent with custom element registry attribute (null registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Null registry element with declarative shadow root parent with custom element registry attribute (global registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Null registry element with declarative shadow root parent with custom element registry attribute (scoped registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Null registry element with imperative shadow root parent (null registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Null registry element with imperative shadow root parent (global registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Null registry element with imperative shadow root parent (scoped registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Global registry element with element parent without custom element registry attribute (null registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Global registry element with element parent without custom element registry attribute (global registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Global registry element with element parent without custom element registry attribute (scoped registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Global registry element with declarative shadow root parent without custom element registry attribute adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Global registry element with declarative shadow root parent with custom element registry attribute (null registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Global registry element with declarative shadow root parent with custom element registry attribute (global registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Global registry element with declarative shadow root parent with custom element registry attribute (scoped registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Global registry element with imperative shadow root parent (null registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Global registry element with imperative shadow root parent (global registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Global registry element with imperative shadow root parent (scoped registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Scoped registry element with element parent without custom element registry attribute (null registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Scoped registry element with element parent without custom element registry attribute (global registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Scoped registry element with element parent without custom element registry attribute (scoped registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Scoped registry element with declarative shadow root parent without custom element registry attribute adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Scoped registry element with declarative shadow root parent with custom element registry attribute (null registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Scoped registry element with declarative shadow root parent with custom element registry attribute (global registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Scoped registry element with declarative shadow root parent with custom element registry attribute (scoped registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Scoped registry element with imperative shadow root parent (null registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Scoped registry element with imperative shadow root parent (global registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Scoped registry element with imperative shadow root parent (scoped registry) adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Null registry element with exclusive DocumentFragment parent appended to new document: Cannot read properties of null (reading 'body')
-- Global registry element with exclusive DocumentFragment parent appended to new document: Cannot read properties of null (reading 'body')
-- Scoped registry element with exclusive DocumentFragment parent appended to new document: Cannot read properties of null (reading 'body')
-- Null registry element with exclusive DocumentFragment parent adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Global registry element with exclusive DocumentFragment parent adopted by new document: Cannot read properties of null (reading 'adoptNode')
-- Scoped registry element with exclusive DocumentFragment parent adopted by new document: Cannot read properties of null (reading 'adoptNode')
+- Null registry element with element parent without custom element registry attribute (null registry) appended to new document: null is not an object (evaluating 'iframe.contentDocument.body')
+- Null registry element with element parent without custom element registry attribute (global registry) appended to new document: null is not an object (evaluating 'iframe.contentDocument.body')
+- Null registry element with element parent without custom element registry attribute (scoped registry) appended to new document: null is not an object (evaluating 'iframe.contentDocument.body')
+- Null registry element with declarative shadow root parent without custom element registry attribute appended to new document: null is not an object (evaluating 'iframe.contentDocument.body')
+- Null registry element with declarative shadow root parent with custom element registry attribute (null registry) appended to new document: null is not an object (evaluating 'iframe.contentDocument.body')
+- Null registry element with declarative shadow root parent with custom element registry attribute (global registry) appended to new document: null is not an object (evaluating 'iframe.contentDocument.body')
+- Null registry element with declarative shadow root parent with custom element registry attribute (scoped registry) appended to new document: null is not an object (evaluating 'iframe.contentDocument.body')
+- Null registry element with imperative shadow root parent (null registry) appended to new document: null is not an object (evaluating 'iframe.contentDocument.body')
+- Null registry element with imperative shadow root parent (global registry) appended to new document: null is not an object (evaluating 'iframe.contentDocument.body')
+- Null registry element with imperative shadow root parent (scoped registry) appended to new document: null is not an object (evaluating 'iframe.contentDocument.body')
+- Global registry element with element parent without custom element registry attribute (null registry) appended to new document: null is not an object (evaluating 'iframe.contentDocument.body')
+- Global registry element with element parent without custom element registry attribute (global registry) appended to new document: null is not an object (evaluating 'iframe.contentDocument.body')
+- Global registry element with element parent without custom element registry attribute (scoped registry) appended to new document: null is not an object (evaluating 'iframe.contentDocument.body')
+- Global registry element with declarative shadow root parent without custom element registry attribute appended to new document: null is not an object (evaluating 'iframe.contentDocument.body')
+- Global registry element with declarative shadow root parent with custom element registry attribute (null registry) appended to new document: null is not an object (evaluating 'iframe.contentDocument.body')
+- Global registry element with declarative shadow root parent with custom element registry attribute (global registry) appended to new document: null is not an object (evaluating 'iframe.contentDocument.body')
+- Global registry element with declarative shadow root parent with custom element registry attribute (scoped registry) appended to new document: null is not an object (evaluating 'iframe.contentDocument.body')
+- Global registry element with imperative shadow root parent (null registry) appended to new document: null is not an object (evaluating 'iframe.contentDocument.body')
+- Global registry element with imperative shadow root parent (global registry) appended to new document: null is not an object (evaluating 'iframe.contentDocument.body')
+- Global registry element with imperative shadow root parent (scoped registry) appended to new document: null is not an object (evaluating 'iframe.contentDocument.body')
+- Scoped registry element with element parent without custom element registry attribute (null registry) appended to new document: null is not an object (evaluating 'iframe.contentDocument.body')
+- Scoped registry element with element parent without custom element registry attribute (global registry) appended to new document: null is not an object (evaluating 'iframe.contentDocument.body')
+- Scoped registry element with element parent without custom element registry attribute (scoped registry) appended to new document: null is not an object (evaluating 'iframe.contentDocument.body')
+- Scoped registry element with declarative shadow root parent without custom element registry attribute appended to new document: null is not an object (evaluating 'iframe.contentDocument.body')
+- Scoped registry element with declarative shadow root parent with custom element registry attribute (null registry) appended to new document: null is not an object (evaluating 'iframe.contentDocument.body')
+- Scoped registry element with declarative shadow root parent with custom element registry attribute (global registry) appended to new document: null is not an object (evaluating 'iframe.contentDocument.body')
+- Scoped registry element with declarative shadow root parent with custom element registry attribute (scoped registry) appended to new document: null is not an object (evaluating 'iframe.contentDocument.body')
+- Scoped registry element with imperative shadow root parent (null registry) appended to new document: null is not an object (evaluating 'iframe.contentDocument.body')
+- Scoped registry element with imperative shadow root parent (global registry) appended to new document: null is not an object (evaluating 'iframe.contentDocument.body')
+- Scoped registry element with imperative shadow root parent (scoped registry) appended to new document: null is not an object (evaluating 'iframe.contentDocument.body')
+- Null registry element with element parent without custom element registry attribute (null registry) adopted by new document: null is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Null registry element with element parent without custom element registry attribute (global registry) adopted by new document: null is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Null registry element with element parent without custom element registry attribute (scoped registry) adopted by new document: null is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Null registry element with declarative shadow root parent without custom element registry attribute adopted by new document: null is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Null registry element with declarative shadow root parent with custom element registry attribute (null registry) adopted by new document: null is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Null registry element with declarative shadow root parent with custom element registry attribute (global registry) adopted by new document: null is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Null registry element with declarative shadow root parent with custom element registry attribute (scoped registry) adopted by new document: null is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Null registry element with imperative shadow root parent (null registry) adopted by new document: null is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Null registry element with imperative shadow root parent (global registry) adopted by new document: null is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Null registry element with imperative shadow root parent (scoped registry) adopted by new document: null is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Global registry element with element parent without custom element registry attribute (null registry) adopted by new document: null is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Global registry element with element parent without custom element registry attribute (global registry) adopted by new document: null is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Global registry element with element parent without custom element registry attribute (scoped registry) adopted by new document: null is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Global registry element with declarative shadow root parent without custom element registry attribute adopted by new document: null is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Global registry element with declarative shadow root parent with custom element registry attribute (null registry) adopted by new document: null is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Global registry element with declarative shadow root parent with custom element registry attribute (global registry) adopted by new document: null is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Global registry element with declarative shadow root parent with custom element registry attribute (scoped registry) adopted by new document: null is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Global registry element with imperative shadow root parent (null registry) adopted by new document: null is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Global registry element with imperative shadow root parent (global registry) adopted by new document: null is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Global registry element with imperative shadow root parent (scoped registry) adopted by new document: null is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Scoped registry element with element parent without custom element registry attribute (null registry) adopted by new document: null is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Scoped registry element with element parent without custom element registry attribute (global registry) adopted by new document: null is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Scoped registry element with element parent without custom element registry attribute (scoped registry) adopted by new document: null is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Scoped registry element with declarative shadow root parent without custom element registry attribute adopted by new document: null is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Scoped registry element with declarative shadow root parent with custom element registry attribute (null registry) adopted by new document: null is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Scoped registry element with declarative shadow root parent with custom element registry attribute (global registry) adopted by new document: null is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Scoped registry element with declarative shadow root parent with custom element registry attribute (scoped registry) adopted by new document: null is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Scoped registry element with imperative shadow root parent (null registry) adopted by new document: null is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Scoped registry element with imperative shadow root parent (global registry) adopted by new document: null is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Scoped registry element with imperative shadow root parent (scoped registry) adopted by new document: null is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Null registry element with exclusive DocumentFragment parent appended to new document: null is not an object (evaluating 'iframe.contentDocument.body')
+- Global registry element with exclusive DocumentFragment parent appended to new document: null is not an object (evaluating 'iframe.contentDocument.body')
+- Scoped registry element with exclusive DocumentFragment parent appended to new document: null is not an object (evaluating 'iframe.contentDocument.body')
+- Null registry element with exclusive DocumentFragment parent adopted by new document: null is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Global registry element with exclusive DocumentFragment parent adopted by new document: null is not an object (evaluating 'iframe.contentDocument.adoptNode')
+- Scoped registry element with exclusive DocumentFragment parent adopted by new document: null is not an object (evaluating 'iframe.contentDocument.adoptNode')
 
 ### custom-elements/registries/scoped-registry-initialize-upgrades.html
 
@@ -4134,9 +4084,9 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 ### custom-elements/state/state-pseudo-class.html
 
 - :state() parsing passes: unknown pseudo-class selector ':state(foo)'
-- :state(foo) serialization: Cannot read properties of undefined (reading '0')
+- :state(foo) serialization: undefined is not an object (evaluating 'document.styleSheets[0]')
 - :state(foo) in simple cases: unknown pseudo-class selector ':state(foo)'
-- :state(foo) and other pseudo classes: element.focus is not a function
+- :state(foo) and other pseudo classes: unknown pseudo-class selector ':state(foo)'
 - :state(foo) and ::part(): getComputedStyle is not defined
 - :state(foo) and :host(): getComputedStyle is not defined
 
@@ -4178,8 +4128,8 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 - Node.prototype.cloneNode(false) must be able to clone a custom element inside an iframe: Test timed out
 - Node.prototype.cloneNode(true) must be able to clone a descendent custom element: 
 - Node.prototype.cloneNode(true) must set parentNode, previousSibling, and nextSibling before upgrading custom elements: 
-- HTMLElement constructor must throw an TypeError when the top of the construction stack is marked AlreadyConstructed due to a custom element constructor constructing itself after super() call: Cannot read properties of undefined (reading 'name')
-- HTMLElement constructor must throw an TypeError when the top of the construction stack is marked AlreadyConstructed due to a custom element constructor constructing itself before super() call: Cannot read properties of undefined (reading 'name')
-- Upgrading a custom element must throw TypeError when the custom element's constructor returns another element: Cannot read properties of undefined (reading 'name')
+- HTMLElement constructor must throw an TypeError when the top of the construction stack is marked AlreadyConstructed due to a custom element constructor constructing itself after super() call: undefined is not an object (evaluating 'uncaughtError.name')
+- HTMLElement constructor must throw an TypeError when the top of the construction stack is marked AlreadyConstructed due to a custom element constructor constructing itself before super() call: undefined is not an object (evaluating 'uncaughtError.name')
+- Upgrading a custom element must throw TypeError when the custom element's constructor returns another element: undefined is not an object (evaluating 'uncaughtError.name')
 - Inserting an element must not try to upgrade a custom element when it had already failed to upgrade once: assert_equals: expected (string) "bad" but got (undefined) undefined
 

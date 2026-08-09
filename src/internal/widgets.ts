@@ -1,25 +1,26 @@
 /**
- * The User Agent form widgets: <input>, <textarea>, and <select> as real
- * customized built-in elements, each owning its own internal shadow tree.
+ * The User Agent form widgets: the shadow tree behind <input>, <textarea> and
+ * <select>, and the editing that tree renders.
  *
- * A browser's form controls are UA custom elements -- upgraded in place, with
- * a closed shadow tree the page can't reach. jsdom already implements that
- * lifecycle; it just won't hand it to a built-in, because attachShadow and the
- * upgrade algorithm both refuse form controls without an author `is=` opt-in.
- * So defineUAWidgets registers a customized-built-in class per control and
- * upgrades each plain element through jsdom's own reactions machinery. The
- * result is the genuine article: connectedCallback builds the tree,
- * attributeChangedCallback reconciles it, the element keeps its identity and
- * its .value, and nothing leaks to author serialization.
+ * A browser's form controls are user-agent widgets: a closed shadow tree the
+ * page cannot reach, built from the control's own value and placeholder, and
+ * an editing default action on top of it. A widget here is an object beside
+ * its control rather than a subclass of it -- a control's state lives in the
+ * control, which tells its widget through {@link attachUAWidget} whenever that
+ * state moves, and the widget brings the tree back into step.
  *
  * Everything a widget is -- its UA stylesheet, its shadow structure, its
  * reconcile, its geometry -- lives on its class here, so "how a textarea works"
  * is one class, not a trail through the renderer.
  */
 
-import type {DOMWindow} from "jsdom";
-import jsdomUtils from "jsdom/lib/jsdom/living/generated/utils.js";
-import jsdomCustomElements from "jsdom/lib/jsdom/living/helpers/custom-elements.js";
+import {
+	attachUAWidget,
+	setUASelection,
+	uaSelectionOf,
+	uaWidgetOf,
+} from "./dom.js";
+import type {EngineWindow} from "./termdom.js";
 import {createUAShadowRoot, fieldValueText} from "./composition.js";
 import {type LayoutEngine, isPointInRects} from "./layout.js";
 import {type StyleManager} from "./styles.js";
@@ -134,9 +135,8 @@ function applySharedFieldEdit(
 	ctrlKey: boolean,
 ): FieldEditResult | null {
 	const value = field.value;
-	const start = field.selectionStart ?? value.length;
-	const end = field.selectionEnd ?? value.length;
-	const backward = field.selectionDirection === "backward";
+	const {start, end, direction} = uaSelectionOf(field);
+	const backward = direction === "backward";
 	const caret = backward ? start : end;
 	const anchor = backward ? end : start;
 	const hasSelection = start !== end;
@@ -211,31 +211,32 @@ function collapsedEdit(value: string, pos: number): FieldEditResult {
 
 /**
  * Apply an edit result to a field's own value and selection, firing `input` on
- * a real value change (the value setter reconciles the widget's tree). Order
- * matters: assigning `.value` collapses the selection to the end (per spec), so
- * the caret is set after. A selection-only change goes straight to
- * setSelectionRange, which fires `select` -- both events the render loop hears.
- * Shared by the field widgets; the window comes off the field's own document.
+ * a real value change (the value write reconciles the widget's tree) and
+ * `select` on a selection the user moved -- both events the render loop hears.
+ * Order matters: assigning `.value` collapses the selection to the end (per
+ * spec), so the caret is set after. The window comes off the field's own
+ * document.
  */
 function applyFieldEdit(
 	field: HTMLInputElement | HTMLTextAreaElement,
 	result: FieldEditResult,
 ): void {
 	const value = field.value;
-	const start = field.selectionStart ?? value.length;
-	const end = field.selectionEnd ?? value.length;
+	const {start, end, direction} = uaSelectionOf(field);
+	const Event = field.ownerDocument.defaultView!.Event;
 	if (result.value !== value) {
 		field.value = result.value;
-		field.setSelectionRange(result.start, result.end, result.direction);
-		const Event = field.ownerDocument.defaultView!.Event;
+		setUASelection(field, result.start, result.end, result.direction);
 		field.dispatchEvent(new Event("input", {bubbles: true, cancelable: false}));
 	} else if (
 		result.start !== start ||
 		result.end !== end ||
-		(result.start !== result.end &&
-			result.direction !== field.selectionDirection)
+		(result.start !== result.end && result.direction !== direction)
 	) {
-		field.setSelectionRange(result.start, result.end, result.direction);
+		setUASelection(field, result.start, result.end, result.direction);
+		field.dispatchEvent(
+			new Event("select", {bubbles: true, cancelable: false}),
+		);
 	}
 }
 
@@ -246,8 +247,7 @@ function insertPaste(
 ): void {
 	if (!text) return;
 	const value = field.value;
-	const start = field.selectionStart ?? value.length;
-	const end = field.selectionEnd ?? value.length;
+	const {start, end} = uaSelectionOf(field);
 	applyFieldEdit(
 		field,
 		collapsedEdit(
@@ -266,18 +266,18 @@ function addPart(root: ShadowRoot, part: string): HTMLElement {
 	return span;
 }
 
-/** Upgrades plain form controls to their UA widget classes, in place. */
+/** Puts the UA widget behind a form control, in place. */
 export interface UAWidgetController {
 	/**
-	 * Upgrade an element to its UA widget class if it has one and hasn't been
-	 * upgraded yet. Idempotent and synchronous: connectedCallback has run (the
-	 * shadow tree exists) by the time this returns.
+	 * Give an element its UA widget if it has one and does not have it yet.
+	 * Idempotent and synchronous: the shadow tree exists by the time this
+	 * returns.
 	 */
 	upgrade(element: Element): void;
 }
 
 interface UAWidgetDeps {
-	window: DOMWindow;
+	window: EngineWindow;
 	layoutEngine: LayoutEngine;
 	styleManager: StyleManager;
 	observer: {observe(target: Node, options: MutationObserverInit): void};
@@ -285,19 +285,16 @@ interface UAWidgetDeps {
 
 /**
  * Define the UA widget classes against a window and return the controller that
- * upgrades elements into them. Called once per document at setup; the deps are
- * captured in the classes' closure, so each widget reaches its collaborators
- * directly without a per-element handoff.
+ * puts them behind form controls. Called once per document at setup; the deps
+ * are captured in the classes' closure, so each widget reaches its
+ * collaborators directly without a per-element handoff.
  */
 export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 	const {window, layoutEngine, styleManager, observer} = deps;
 	const document = window.document;
 
-	class UATextarea extends window.HTMLTextAreaElement {
-		static get observedAttributes(): string[] {
-			return ["placeholder"];
-		}
-
+	class UATextarea {
+		#host: HTMLTextAreaElement;
 		#valueText!: Text;
 		#placeholderText!: Text;
 		#placeholderSpan!: HTMLElement;
@@ -310,12 +307,9 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 		 * lays out through the normal pipeline and layout must hear about every
 		 * change to it.
 		 */
-		connectedCallback(): void {
-			if (this.#valueText) {
-				this.#reconcile(); // Re-connect: tree already built.
-				return;
-			}
-			const root = createUAShadowRoot(this);
+		constructor(host: HTMLTextAreaElement) {
+			this.#host = host;
+			const root = createUAShadowRoot(host);
 			observer.observe(root, {
 				childList: true,
 				subtree: true,
@@ -341,45 +335,23 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 
 			// Editing is the widget's own default action, the same as a browser
 			// textarea's: its keydown listener does the edit. A listener, not a
-			// method the renderer reaches in to call -- the custom-element surface
-			// is the whole boundary.
-			this.addEventListener("keydown", this.#onKeydown);
-			this.addEventListener(
+			// method the renderer reaches in to call -- the widget listens to its
+			// control like anything else would.
+			host.addEventListener("keydown", this.#onKeydown as EventListener);
+			host.addEventListener(
 				"beforeinput",
 				this.#onBeforeInput as EventListener,
 			);
 
-			this.#reconcile();
+			this.reconcile();
 		}
 
 		// A textarea keeps a paste's newlines.
 		#onBeforeInput = (event: InputEvent): void => {
 			if (event.inputType !== "insertFromPaste" || event.data == null) return;
 			event.preventDefault();
-			insertPaste(this, event.data);
+			insertPaste(this.#host, event.data);
 		};
-
-		attributeChangedCallback(): void {
-			if (this.#valueText) this.#reconcile();
-		}
-
-		/**
-		 * Assigning `.value` -- from a framework, from setRangeText, from the
-		 * editing default action -- must push the new value into the UA tree, the
-		 * layout's only source for it. Intercepting the setter is what makes that
-		 * automatic: no caller has to remember to reconcile, and the reconcile's
-		 * characterData mutation is what schedules the frame (no observer hears a
-		 * `.value` write otherwise). jsdom's own internal writes go through the
-		 * impl, not this wrapper accessor, so they never reach here.
-		 */
-		override get value(): string {
-			return super.value;
-		}
-
-		override set value(next: string) {
-			super.value = next;
-			if (this.#valueText) this.#reconcile();
-		}
 
 		/**
 		 * Reconcile the UA tree with the element's own state -- the single
@@ -387,22 +359,30 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 		 * display:none), not painter logic: the normal pipeline then simply
 		 * never sees it.
 		 */
-		#reconcile(): void {
-			const value = this.value;
-			const placeholder = this.getAttribute("placeholder") ?? "";
-			if (this.#valueText.data !== value) this.#valueText.data = value;
+		reconcile(): void {
+			const host = this.#host;
+			const value = host.value;
+			const placeholder = host.getAttribute("placeholder") ?? "";
+			let changed = false;
+			if (this.#valueText.data !== value) {
+				this.#valueText.data = value;
+				changed = true;
+			}
 			if (this.#placeholderText.data !== placeholder) {
 				this.#placeholderText.data = placeholder;
+				changed = true;
 			}
 			const placeholderDisplay = value ? "none" : "";
 			if (this.#placeholderSpan.style.display !== placeholderDisplay) {
 				this.#placeholderSpan.style.display = placeholderDisplay;
+				changed = true;
 			}
+			if (!changed) return;
 			// The value text lays out through the normal pipeline. The observer
 			// hears its characterData change too, but only on a microtask -- an
 			// edit that reads the fresh geometry back the same tick (vertical
 			// motion, Home/End) needs the engine dirtied synchronously now.
-			layoutEngine.invalidate(this);
+			layoutEngine.invalidate(host);
 		}
 
 		/**
@@ -415,14 +395,14 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 			// Editing is a default action: an author's keydown preventDefault
 			// suppresses it, exactly as it suppresses a browser textarea's edit.
 			if (event.defaultPrevented) return;
+			const host = this.#host;
 			const {key, shiftKey, ctrlKey} = event;
 			// The goal column survives only an unbroken run of vertical moves.
 			if (key !== "ArrowUp" && key !== "ArrowDown") this.#goalColumn = null;
 
-			const value = this.value;
-			const start = this.selectionStart ?? value.length;
-			const end = this.selectionEnd ?? value.length;
-			const backward = this.selectionDirection === "backward";
+			const value = host.value;
+			const {start, end, direction} = uaSelectionOf(host);
+			const backward = direction === "backward";
 			const caret = backward ? start : end;
 			const anchor = backward ? end : start;
 
@@ -442,7 +422,7 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 				result = fieldSelectionMove(value, anchor, target, shiftKey);
 			} else if (key === "Home" || key === "End") {
 				layoutEngine.calculateLayout();
-				const visual = textareaVisualLines(this, layoutEngine);
+				const visual = textareaVisualLines(host, layoutEngine);
 				const line = visual
 					? visual.lines[textareaLineAt(visual.lines, caret)]
 					: null;
@@ -452,9 +432,9 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 						: (line?.endOffset ?? value.length);
 				result = fieldSelectionMove(value, anchor, target, shiftKey);
 			} else {
-				result = applySharedFieldEdit(this, key, shiftKey, ctrlKey);
+				result = applySharedFieldEdit(host, key, shiftKey, ctrlKey);
 			}
-			if (result) applyFieldEdit(this, result);
+			if (result) applyFieldEdit(host, result);
 		};
 
 		/**
@@ -464,7 +444,7 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 		 * line down to the end.
 		 */
 		#verticalTarget(caret: number, direction: 1 | -1): number {
-			const visual = textareaVisualLines(this, layoutEngine);
+			const visual = textareaVisualLines(this.#host, layoutEngine);
 			if (!visual) return caret;
 			const lineIndex = textareaLineAt(visual.lines, caret);
 			const targetIndex = lineIndex + direction;
@@ -492,15 +472,8 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 		}
 	}
 
-	window.customElements.define("ua-textarea", UATextarea, {
-		extends: "textarea",
-	});
-
-	class UAInput extends window.HTMLInputElement {
-		static get observedAttributes(): string[] {
-			return ["placeholder", "type"];
-		}
-
+	class UAInput {
+		#host: HTMLInputElement;
 		// "field" for a text-ish input, "toggle" for checkbox/radio; null until
 		// built. The two are different trees, so a type flip rebuilds.
 		#kind: "field" | "toggle" | null = null;
@@ -508,53 +481,32 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 		#valueText: Text | null = null;
 		#placeholderText: Text | null = null;
 
-		/** field for a text-ish input, toggle for checkbox/radio. */
-		#kindFor(): "field" | "toggle" {
-			return this.type === "checkbox" || this.type === "radio"
-				? "toggle"
-				: "field";
-		}
-
-		connectedCallback(): void {
-			if (this.#root) {
-				this.#reconcile(); // Re-connect: tree already built.
-				return;
-			}
+		constructor(host: HTMLInputElement) {
+			this.#host = host;
 			this.#build();
 			// Editing is the widget's own default action, like a browser input's
 			// -- a keydown listener; paste is a beforeinput listener.
-			this.addEventListener("keydown", this.#onKeydown);
-			this.addEventListener(
+			host.addEventListener("keydown", this.#onKeydown as EventListener);
+			host.addEventListener(
 				"beforeinput",
 				this.#onBeforeInput as EventListener,
 			);
 		}
 
+		/** field for a text-ish input, toggle for checkbox/radio. */
+		#kindFor(): "field" | "toggle" {
+			const type = this.#host.type;
+			return type === "checkbox" || type === "radio" ? "toggle" : "field";
+		}
+
 		// A single-line input strips a paste's line breaks (HTML value sanitization).
 		#onBeforeInput = (event: InputEvent): void => {
 			if (event.inputType !== "insertFromPaste" || event.data == null) return;
-			if (this.type === "checkbox" || this.type === "radio") return;
+			const type = this.#host.type;
+			if (type === "checkbox" || type === "radio") return;
 			event.preventDefault();
-			insertPaste(this, event.data.replace(/[\r\n]+/g, ""));
+			insertPaste(this.#host, event.data.replace(/[\r\n]+/g, ""));
 		};
-
-		attributeChangedCallback(name: string): void {
-			if (!this.#root) return;
-			if (name === "type" && this.#kindFor() !== this.#kind) {
-				this.#build(); // The type flipped between field and toggle.
-			} else {
-				this.#reconcile();
-			}
-		}
-
-		override get value(): string {
-			return super.value;
-		}
-
-		override set value(next: string) {
-			super.value = next;
-			if (this.#root) this.#reconcile();
-		}
 
 		/**
 		 * Build (or rebuild, on a type flip) the UA-internal shadow tree. The
@@ -565,7 +517,8 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 		 * schedules a frame, exactly like the textarea's tree.
 		 */
 		#build(): void {
-			const root = this.#root ?? createUAShadowRoot(this);
+			const host = this.#host;
+			const root = this.#root ?? createUAShadowRoot(host);
 			while (root.firstChild) root.removeChild(root.firstChild);
 			this.#root = root;
 			this.#kind = this.#kindFor();
@@ -588,7 +541,8 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 				this.#valueText = null;
 				addPart(root, "glyph"); // The painter fills it from live .checked.
 			}
-			this.#reconcile();
+			layoutEngine.invalidate(host);
+			this.reconcile();
 		}
 
 		/**
@@ -598,60 +552,73 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 		 * value is empty. A toggle has no text to reconcile; its glyph is the
 		 * painter's.
 		 */
-		#reconcile(): void {
-			if (this.#kind === "field" && this.#valueText) {
-				const value = this.value;
-				const placeholder = this.getAttribute("placeholder") ?? "";
-				// A password puts one bullet per code unit into the shadow, never
-				// the real value -- so what lays out, paints, and can be selected is
-				// only the mask; the value stays in .value alone. Offsets stay 1:1
-				// with .value on the BMP, keeping caret and scroll window aligned.
-				const shown =
-					this.type === "password" ? "•".repeat(value.length) : value;
-				if (this.#valueText.data !== shown) this.#valueText.data = shown;
-				if (this.#placeholderText!.data !== placeholder) {
-					this.#placeholderText!.data = placeholder;
-				}
-				// Exactly one occupies the slot: value when present, else placeholder.
-				(this.#valueText.parentElement as HTMLElement).style.display = value
-					? "inline-block"
-					: "none";
-				(this.#placeholderText!.parentElement as HTMLElement).style.display =
-					value ? "none" : "inline-block";
+		reconcile(): void {
+			const host = this.#host;
+			// A type flip is a different tree, not a different value.
+			if (this.#kindFor() !== this.#kind) {
+				this.#build();
+				return;
+			}
+			if (this.#kind !== "field" || !this.#valueText) return;
+			const value = host.value;
+			const placeholder = host.getAttribute("placeholder") ?? "";
+			// A password puts one bullet per code unit into the shadow, never
+			// the real value -- so what lays out, paints, and can be selected is
+			// only the mask; the value stays in .value alone. Offsets stay 1:1
+			// with .value on the BMP, keeping caret and scroll window aligned.
+			const shown = host.type === "password" ? "•".repeat(value.length) : value;
+			let changed = false;
+			if (this.#valueText.data !== shown) {
+				this.#valueText.data = shown;
+				changed = true;
+			}
+			if (this.#placeholderText!.data !== placeholder) {
+				this.#placeholderText!.data = placeholder;
+				changed = true;
+			}
+			// Exactly one occupies the slot: value when present, else placeholder.
+			const valueDisplay = value ? "inline-block" : "none";
+			const placeholderDisplay = value ? "none" : "inline-block";
+			const valueSpan = this.#valueText.parentElement as HTMLElement;
+			const placeholderSpan = this.#placeholderText!
+				.parentElement as HTMLElement;
+			if (valueSpan.style.display !== valueDisplay) {
+				valueSpan.style.display = valueDisplay;
+				changed = true;
+			}
+			if (placeholderSpan.style.display !== placeholderDisplay) {
+				placeholderSpan.style.display = placeholderDisplay;
+				changed = true;
 			}
 			// A width:auto input sizes to its composed content; nothing else
 			// invalidates the measure, and the observer would only hear it on a
 			// microtask.
-			layoutEngine.invalidate(this);
+			if (changed) layoutEngine.invalidate(host);
 		}
 
 		/**
-		 * The input's editing default action: a checkbox/radio toggles on Space
-		 * (never accepting typed text), Home/End go to the whole value's ends (an
-		 * input has no visual lines), everything else is the shared field logic.
+		 * The input's editing default action: a checkbox/radio activates on
+		 * Space (never accepting typed text), Home/End go to the whole value's
+		 * ends (an input has no visual lines), everything else is the shared
+		 * field logic.
 		 */
 		#onKeydown = (event: KeyboardEvent): void => {
 			if (event.defaultPrevented) return;
+			const host = this.#host;
 			const {key, shiftKey, ctrlKey} = event;
 
-			if (this.type === "checkbox" || this.type === "radio") {
-				// A checkbox toggles; a radio only ever checks (Space on an
-				// already-checked radio does nothing -- jsdom's checkedness setter
-				// unchecks the rest of the same-name group). Fires `change` only,
-				// never `input`, matching a browser's toggle.
-				if (key === " " && !(this.type === "radio" && this.checked)) {
-					this.checked = this.type === "checkbox" ? !this.checked : true;
-					this.dispatchEvent(
-						new window.Event("change", {bubbles: true, cancelable: false}),
-					);
-				}
+			if (host.type === "checkbox" || host.type === "radio") {
+				// Space activates the control, and activation is what toggles it:
+				// the pre-activation behavior flips the checkedness, the activation
+				// behavior fires input then change, and a canceled click puts the
+				// checkedness back.
+				if (key === " ") host.click();
 				return;
 			}
 
-			const value = this.value;
-			const start = this.selectionStart ?? value.length;
-			const end = this.selectionEnd ?? value.length;
-			const anchor = this.selectionDirection === "backward" ? end : start;
+			const value = host.value;
+			const {start, end, direction} = uaSelectionOf(host);
+			const anchor = direction === "backward" ? end : start;
 
 			let result: FieldEditResult | null;
 			if (key === "Home") {
@@ -659,58 +626,36 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 			} else if (key === "End") {
 				result = fieldSelectionMove(value, anchor, value.length, shiftKey);
 			} else {
-				result = applySharedFieldEdit(this, key, shiftKey, ctrlKey);
+				result = applySharedFieldEdit(host, key, shiftKey, ctrlKey);
 			}
-			if (result) applyFieldEdit(this, result);
+			if (result) applyFieldEdit(host, result);
 		};
 	}
 
-	window.customElements.define("ua-input", UAInput, {extends: "input"});
-
-	class UASelect extends window.HTMLSelectElement {
+	class UASelect {
+		#host: HTMLSelectElement;
 		#root: ShadowRoot | null = null;
 		#valueText: Text | null = null;
 		#picker: HTMLElement | null = null;
 		// The highlighted option index while the picker is OPEN; null = closed.
 		#highlight: number | null = null;
 
-		connectedCallback(): void {
-			if (this.#root) {
-				this.#reconcile(); // Re-connect: tree already built.
-				return;
-			}
+		constructor(host: HTMLSelectElement) {
+			this.#host = host;
 			this.#build();
-			this.addEventListener("keydown", this.#onKeydown);
-			this.addEventListener("mousedown", this.#onMousedown);
+			host.addEventListener("keydown", this.#onKeydown as EventListener);
+			host.addEventListener("mousedown", this.#onMousedown as EventListener);
 			// Losing focus closes the picker, as everywhere.
-			this.addEventListener("blur", this.#onBlur);
+			host.addEventListener("blur", this.#onBlur);
 			// The displayed label and picker rows track the option list; a
 			// framework mutating the options must re-reconcile. (Selection
-			// changes go through the value/selectedIndex setters below.)
-			observer.observe(this, {
+			// changes reach the widget through the control's own setters.)
+			observer.observe(host, {
 				childList: true,
 				subtree: true,
 				attributes: true,
 				characterData: true,
 			});
-		}
-
-		override get value(): string {
-			return super.value;
-		}
-
-		override set value(next: string) {
-			super.value = next;
-			if (this.#root) this.#reconcile();
-		}
-
-		override get selectedIndex(): number {
-			return super.selectedIndex;
-		}
-
-		override set selectedIndex(next: number) {
-			super.selectedIndex = next;
-			if (this.#root) this.#reconcile();
 		}
 
 		/**
@@ -721,7 +666,7 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 		 * the normal pipeline, and composition hides the light option list.
 		 */
 		#build(): void {
-			const root = createUAShadowRoot(this);
+			const root = createUAShadowRoot(this.#host);
 			this.#root = root;
 			observer.observe(root, {
 				childList: true,
@@ -736,23 +681,28 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 			style.textContent = SELECT_UA_STYLES;
 			root.appendChild(style);
 			this.#valueText = addPart(root, "value").firstChild as Text;
-			(addPart(root, "indicator").firstChild as Text).data = " ▾"; // " ▾"
+			(addPart(root, "indicator").firstChild as Text).data = " ▾";
 
 			const picker = document.createElement("div");
 			picker.setAttribute("part", "picker");
 			root.appendChild(picker);
 			this.#picker = picker;
 
-			this.#reconcile();
+			this.reconcile();
 		}
 
 		/** Reconcile the UA tree with the select's own selection/open state. */
-		#reconcile(): void {
-			const picker = this.#picker!;
+		reconcile(): void {
+			const host = this.#host;
+			const picker = this.#picker;
+			if (picker === null) return;
 			const selected =
-				this.selectedIndex >= 0 ? this.options[this.selectedIndex] : null;
+				host.selectedIndex >= 0 ? host.options[host.selectedIndex] : null;
 			const label = selected ? selected.label : "";
-			if (this.#valueText!.data !== label) this.#valueText!.data = label;
+			if (this.#valueText!.data !== label) {
+				this.#valueText!.data = label;
+				layoutEngine.invalidate(host);
+			}
 
 			if (this.#highlight === null) {
 				if (picker.style.display !== "none") picker.style.display = "none";
@@ -760,7 +710,7 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 			}
 
 			// Rebuild rows to match the option list; cheap at option-list scale.
-			const options = Array.from(this.options);
+			const options = Array.from(host.options);
 			while (picker.childNodes.length > options.length) {
 				picker.removeChild(picker.lastChild!);
 			}
@@ -788,7 +738,7 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 
 			// Anchor below the field in DOCUMENT coordinates (the picker's
 			// containing block is the ICB), matching the field's width.
-			const rect = layoutEngine.getRect(this);
+			const rect = layoutEngine.getRect(host);
 			if (rect) {
 				const top = `${Math.round(rect.bottom)}px`;
 				const left = `${Math.round(rect.left)}px`;
@@ -802,7 +752,7 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 
 		/** Step to the next enabled option in `direction`, or stay put. */
 		#step(from: number, direction: 1 | -1): number {
-			const options = this.options;
+			const options = this.#host.options;
 			for (
 				let i = from + direction;
 				i >= 0 && i < options.length;
@@ -815,22 +765,23 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 
 		/** Open the picker with the highlight on the current selection. */
 		#openPicker(): void {
-			const options = Array.from(this.options);
+			const options = Array.from(this.#host.options);
 			if (options.length === 0) return;
-			let index = this.selectedIndex;
+			let index = this.#host.selectedIndex;
 			if (index < 0) index = options.findIndex((o) => !o.disabled);
 			this.#highlight = index;
-			this.#reconcile();
+			this.reconcile();
 		}
 
 		/** Commit `index` as the selection, close, and fire input then change. */
 		#commit(index: number): void {
+			const host = this.#host;
 			this.#highlight = null;
-			this.selectedIndex = index; // The setter reconciles (closes + label).
-			this.dispatchEvent(
+			host.selectedIndex = index; // The setter reconciles (closes + label).
+			host.dispatchEvent(
 				new window.Event("input", {bubbles: true, cancelable: false}),
 			);
-			this.dispatchEvent(
+			host.dispatchEvent(
 				new window.Event("change", {bubbles: true, cancelable: false}),
 			);
 		}
@@ -843,10 +794,11 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 		 */
 		#onKeydown = (event: KeyboardEvent): void => {
 			if (event.defaultPrevented) return;
+			const host = this.#host;
 			const key = event.key;
-			const options = this.options;
+			const options = host.options;
 			if (options.length === 0) return;
-			const current = this.selectedIndex;
+			const current = host.selectedIndex;
 
 			if (this.#highlight !== null) {
 				const highlight = this.#highlight;
@@ -861,14 +813,14 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 						this.#commit(highlight);
 						return;
 					}
-					this.#reconcile(); // No change: just close.
+					this.reconcile(); // No change: just close.
 					return;
 				} else if (key === "Escape") {
 					this.#highlight = null;
 				} else {
 					return;
 				}
-				this.#reconcile();
+				this.reconcile();
 				return;
 			}
 
@@ -900,7 +852,8 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 		 */
 		#onMousedown = (event: MouseEvent): void => {
 			if (event.defaultPrevented || event.button !== 0) return;
-			this.focus(); // A press focuses the control, as in a browser.
+			const host = this.#host;
+			host.focus(); // A press focuses the control, as in a browser.
 			if (this.#highlight === null) {
 				this.#openPicker();
 				return;
@@ -913,10 +866,10 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 			});
 			if (index >= 0) {
 				// A disabled row is inert: the sheet stays up, nothing commits.
-				if (!this.options[index]?.disabled) {
+				if (!host.options[index]?.disabled) {
 					this.#highlight = null;
-					if (index !== this.selectedIndex) this.#commit(index);
-					else this.#reconcile(); // Re-press the selection: just close.
+					if (index !== host.selectedIndex) this.#commit(index);
+					else this.reconcile(); // Re-press the selection: just close.
 				}
 				return;
 			}
@@ -925,59 +878,36 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 			const pr = layoutEngine.getRect(this.#picker!);
 			if (!(pr && isPointInRects(x, y, pr))) {
 				this.#highlight = null;
-				this.#reconcile();
+				this.reconcile();
 			}
 		};
 
 		#onBlur = (): void => {
 			if (this.#highlight !== null) {
 				this.#highlight = null;
-				this.#reconcile();
+				this.reconcile();
 			}
 		};
 	}
 
-	window.customElements.define("ua-select", UASelect, {extends: "select"});
-
-	// The registry stores each definition once it is defined; fetch ours so the
-	// upgrade can hand it straight to the reactions algorithm without a name
-	// lookup (the built-in lookup only matches on an author `is=`, which a plain
-	// control never has).
-	const registryImpl = jsdomUtils.implForWrapper(
-		(window as unknown as {_customElementRegistry: object})
-			._customElementRegistry,
-	) as {_customElementDefinitions: Array<{name: string}>};
-	const definitions = new Map<string, unknown>();
-	for (const localName of ["ua-textarea", "ua-input", "ua-select"]) {
-		definitions.set(
-			localName,
-			registryImpl._customElementDefinitions.find((d) => d.name === localName),
-		);
-	}
-
-	const UPGRADE_BY_TAG: Record<string, string | undefined> = {
-		TEXTAREA: "ua-textarea",
-		INPUT: "ua-input",
-		SELECT: "ua-select",
-	};
-
 	function upgrade(element: Element): void {
-		const name = UPGRADE_BY_TAG[element.tagName];
-		if (!name) return;
-		const definition = definitions.get(name);
-		if (!definition) return;
-		const impl = jsdomUtils.implForWrapper(element) as {_ceState: string};
-		if (impl._ceState === "custom") return;
-		// Flip to the pending-candidate state jsdom gives an `is=` element before
-		// its upgrade; upgradeElement refuses anything already resolved. The
-		// pre/post steps bracket a synchronous reactions flush, so the shadow
-		// tree exists the moment this returns.
-		impl._ceState = "undefined";
-		jsdomCustomElements.ceReactionsPreSteps();
-		try {
-			jsdomCustomElements.upgradeElement(definition, impl);
-		} finally {
-			jsdomCustomElements.ceReactionsPostSteps();
+		const existing = uaWidgetOf(element);
+		if (existing !== null) {
+			// A control that left the tree and came back keeps its widget; only
+			// the state it drifted from needs catching up.
+			existing.reconcile();
+			return;
+		}
+		switch (element.tagName) {
+			case "TEXTAREA":
+				attachUAWidget(element, new UATextarea(element as HTMLTextAreaElement));
+				return;
+			case "INPUT":
+				attachUAWidget(element, new UAInput(element as HTMLInputElement));
+				return;
+			case "SELECT":
+				attachUAWidget(element, new UASelect(element as HTMLSelectElement));
+				return;
 		}
 	}
 
