@@ -8097,7 +8097,11 @@ export class HTMLFontElement extends HTMLElement {}
 export class HTMLFrameSetElement extends HTMLElement {}
 export class HTMLParamElement extends HTMLElement {}
 export class HTMLTableCaptionElement extends HTMLElement {}
-export class HTMLOptGroupElement extends HTMLElement {}
+export class HTMLOptGroupElement extends HTMLElement {
+	/** Installed from the element table, and read by the select's own tree. */
+	declare disabled: boolean;
+	declare label: string;
+}
 /** The document's title, which is the text this element holds. */
 export class HTMLTitleElement extends HTMLElement {
 	get text(): string {
@@ -10600,29 +10604,74 @@ export class HTMLSelectElement extends HTMLElement {
 	}
 
 	/**
-	 * Rebuild the picker's rows to match the option list; cheap at option-list
-	 * scale. Every row carries the index of the option it stands for, so a mouse
-	 * press resolves a row to its option whatever else the picker holds.
+	 * The rows the picker shows, in tree order: a heading for each option
+	 * group, and every option under the group it belongs to. A heading is not
+	 * an option, so it takes no index and cannot be picked.
+	 */
+	#pickerRows(): PickerRow[] {
+		askForAReset(this);
+		const rows: PickerRow[] = [];
+		let index = 0;
+		const addOption = (option: HTMLOptionElement, grouped: boolean): void => {
+			rows.push({
+				part: "option",
+				label: option.label,
+				disabled: optionIsDisabled(option),
+				grouped,
+				highlighted: index === this.#highlight,
+			});
+			index++;
+		};
+		for (let node = this[kFirstChild]; node !== null; node = node[kNext]) {
+			if (node instanceof HTMLOptionElement) {
+				addOption(node, false);
+			} else if (node instanceof HTMLOptGroupElement) {
+				rows.push({
+					part: "optgroup",
+					label: node.label,
+					disabled: node.disabled,
+					grouped: false,
+					highlighted: false,
+				});
+				for (
+					let child = node[kFirstChild];
+					child !== null;
+					child = child[kNext]
+				) {
+					if (child instanceof HTMLOptionElement) addOption(child, true);
+				}
+			}
+		}
+		return rows;
+	}
+
+	/**
+	 * Bring the picker's rows into step with the option list; cheap at
+	 * option-list scale. Rows are updated in place rather than rebuilt: this
+	 * root is observed, and a rebuild every reconcile is a frame that schedules
+	 * the next one.
 	 */
 	#reconcileRows(picker: UAElement): void {
 		const document = uaDocumentOf(this);
-		const options = this.#optionList();
-		while (picker.childNodes.length > options.length) {
+		const rows = this.#pickerRows();
+		while (picker.childNodes.length > rows.length) {
 			picker.removeChild(picker.lastChild!);
 		}
-		while (picker.childNodes.length < options.length) {
-			const row = document.createElement("div");
-			row.setAttribute("part", "option");
-			picker.appendChild(row);
+		while (picker.childNodes.length < rows.length) {
+			picker.appendChild(document.createElement("div"));
 		}
-		options.forEach((option, index) => {
-			const row = picker.childNodes[index] as UAElement;
-			if (row.textContent !== option.label) row.textContent = option.label;
+		rows.forEach((row, index) => {
+			const node = picker.childNodes[index] as UAElement;
 			// Attribute writes are guarded: setAttribute queues a mutation record
 			// even when unchanged, and this root is observed -- an unconditional
 			// write is an infinite render loop.
-			setRowFlag(row, "data-disabled", option.disabled);
-			setRowFlag(row, "data-highlighted", index === this.#highlight);
+			if (node.getAttribute("part") !== row.part) {
+				node.setAttribute("part", row.part);
+			}
+			if (node.textContent !== row.label) node.textContent = row.label;
+			setRowFlag(node, "data-disabled", row.disabled);
+			setRowFlag(node, "data-grouped", row.grouped);
+			setRowFlag(node, "data-highlighted", row.highlighted);
 		});
 	}
 
@@ -10634,7 +10683,7 @@ export class HTMLSelectElement extends HTMLElement {
 			i >= 0 && i < options.length;
 			i += direction
 		) {
-			if (!options[i].disabled) return i;
+			if (!optionIsDisabled(options[i])) return i;
 		}
 		return from;
 	}
@@ -10644,7 +10693,7 @@ export class HTMLSelectElement extends HTMLElement {
 		const options = this.#optionList();
 		if (options.length === 0) return;
 		let index = this.selectedIndex;
-		if (index < 0) index = options.findIndex((o) => !o.disabled);
+		if (index < 0) index = options.findIndex((o) => !optionIsDisabled(o));
 		this.#highlight = index;
 		this[kUAReconcile]();
 	}
@@ -10679,7 +10728,7 @@ export class HTMLSelectElement extends HTMLElement {
 				this.#highlight = this.#step(options.length, -1);
 			} else if (key === "Enter" || key === " ") {
 				this.#highlight = null;
-				if (highlight !== current && !options[highlight].disabled) {
+				if (highlight !== current && !optionIsDisabled(options[highlight])) {
 					this.#commit(highlight);
 					return;
 				}
@@ -10737,7 +10786,8 @@ export class HTMLSelectElement extends HTMLElement {
 		if (row) {
 			const index = optionIndexOfRow(picker, row);
 			// A disabled row is inert: the sheet stays up, nothing commits.
-			if (index >= 0 && !this.#optionList()[index]?.disabled) {
+			const option = this.#optionList()[index];
+			if (option && !optionIsDisabled(option)) {
 				this.#highlight = null;
 				if (index !== this.selectedIndex) this.#commit(index);
 				else this[kUAReconcile](); // Re-press the selection: just close.
@@ -10759,6 +10809,26 @@ export class HTMLSelectElement extends HTMLElement {
 			this[kUAReconcile]();
 		}
 	};
+}
+
+/** One row of a select's picker: an option, or a group's heading. */
+interface PickerRow {
+	part: "option" | "optgroup";
+	label: string;
+	disabled: boolean;
+	/** Whether the row sits under a group heading, which indents it. */
+	grouped: boolean;
+	highlighted: boolean;
+}
+
+/**
+ * Whether an option is disabled: its own attribute, or the group it belongs
+ * to carrying one -- the two the HTML Standard reads together.
+ */
+function optionIsDisabled(option: HTMLOptionElement): boolean {
+	if (option.disabled) return true;
+	const parent = option[kParent];
+	return parent instanceof HTMLOptGroupElement && parent.disabled;
 }
 
 /** Whether a document-space point falls inside a rect. */

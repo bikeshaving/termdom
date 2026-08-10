@@ -314,3 +314,91 @@ test("picker: the highlighted row is inverse video, the rest carry no underline"
 
 	dom.dispose();
 });
+
+function makeGroupedSelect(document: Document): HTMLSelectElement {
+	const select = document.createElement("select");
+	select.innerHTML =
+		`<option value="none">None</option>` +
+		`<optgroup label="Fruit">` +
+		`<option value="apple">Apple</option>` +
+		`<option value="pear" disabled>Pear</option>` +
+		`</optgroup>` +
+		`<optgroup label="Off" disabled>` +
+		`<option value="rock">Rock</option>` +
+		`</optgroup>`;
+	return select;
+}
+
+test("picker: a group is a heading with its options indented beneath it", async () => {
+	const terminal = new MockProcess({rows: 12, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.attach();
+	const {document} = dom;
+	const select = makeGroupedSelect(document);
+	document.body.appendChild(select);
+	select.focus();
+	await nextFrame(dom);
+	await type(terminal, " ");
+	await nextFrame(dom);
+
+	const rows = terminal.getPlainText().split("\n");
+	// Row 0 is the field, row 1 the picker's top border.
+	expect(rows[2]).toContain("None");
+	expect(rows[3]).toContain("Fruit");
+	expect(rows[4]).toContain("  Apple");
+	expect(rows[5]).toContain("  Pear");
+	expect(rows[6]).toContain("Off");
+	expect(rows[7]).toContain("  Rock");
+
+	dom.dispose();
+});
+
+test("picker: a heading cannot be picked, and a disabled group is inert", async () => {
+	const terminal = new MockProcess({rows: 12, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.attach();
+	const {document} = dom;
+	const select = makeGroupedSelect(document);
+	document.body.appendChild(select);
+	await nextFrame(dom);
+
+	await click(terminal, 2, 1); // open
+	await nextFrame(dom);
+	await click(terminal, 3, 4); // the "Fruit" heading: not an option
+	await nextFrame(dom);
+	expect(select.value).toBe("none");
+	expect(terminal.getPlainText()).toContain("┌");
+
+	await click(terminal, 3, 8); // "Rock", inside the disabled group
+	await nextFrame(dom);
+	expect(select.value).toBe("none");
+	expect(terminal.getPlainText()).toContain("┌");
+
+	await click(terminal, 3, 5); // "Apple"
+	await nextFrame(dom);
+	expect(select.value).toBe("apple");
+	expect(terminal.getPlainText()).not.toContain("┌");
+
+	dom.dispose();
+});
+
+test("arrows skip a disabled group's options", async () => {
+	const terminal = new MockProcess({rows: 12, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.attach();
+	const {document} = dom;
+	const select = makeGroupedSelect(document);
+	document.body.appendChild(select);
+	select.focus();
+	await nextFrame(dom);
+
+	await type(terminal, "\x1b[B"); // None -> Apple
+	await nextFrame(dom);
+	expect(select.value).toBe("apple");
+
+	await type(terminal, "\x1b[B"); // Pear disabled, Rock's group disabled: stays
+	await nextFrame(dom);
+	expect(select.value).toBe("apple");
+
+	dom.dispose();
+});

@@ -860,4 +860,6 @@ export const SELECT_UA_STYLES = `
 	[part="option"] { display: block; white-space: pre; }
 	[part="option"][data-highlighted] { background-color: Highlight; color: HighlightText; }
 	[part="option"][data-disabled] { font-weight: lighter; }
+	[part="optgroup"] { display: block; white-space: pre; font-weight: bold; }
+	[part="option"][data-grouped] { padding-left: 2ch; }
 `;
