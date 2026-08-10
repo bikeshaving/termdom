@@ -739,6 +739,9 @@ export const UA_DOCUMENT_STYLES = `
 	button::before { content: "[ "; }
 	button::after { content: " ]"; }
 	a[href] { text-decoration: underline; }
+	datalist { display: none; }
+	dialog:not([open]) { display: none; }
+	details:not([open]) > :not(summary) { display: none; }
 	a[href]:focus-visible { background-color: Highlight; color: HighlightText; }
 	button:focus-visible { outline-width: 1px; outline-style: solid; outline-color: #5fafff; }
 `;

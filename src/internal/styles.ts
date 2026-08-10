@@ -67,6 +67,20 @@ export function selectorInvalidationScope(element: Element): Element | null {
 	return styleManager ? styleManager.invalidationScopeFor(element) : null;
 }
 
+/**
+ * Whether any selector in the document's sheets keys on `name`, so a change to
+ * that attribute can change which rules match -- the same question class and id
+ * answer with an unconditional yes. The layout engine asks before rebuilding.
+ */
+export function selectorsKeyOnAttribute(
+	element: Element,
+	name: string,
+): boolean {
+	const window = element.ownerDocument?.defaultView;
+	const styleManager = window ? styleManagers.get(window) : undefined;
+	return styleManager ? styleManager.keysOnAttribute(name) : false;
+}
+
 export function parseUnitValue(
 	value: string,
 ): number | {percentage: number} | null {
@@ -4034,6 +4048,9 @@ interface SelectorNamespaces {
 
 const NO_NAMESPACES: SelectorNamespaces = {default: null, prefixes: new Map()};
 
+/** The attribute name an attribute selector opens with, whatever follows it. */
+const ATTRIBUTE_SELECTOR_NAME = /\[\s*([A-Za-z_][\w:.-]*)/g;
+
 /**
  * An attribute selector's name is never read against the default namespace: an
  * unprefixed attribute is always in no namespace.
@@ -6833,6 +6850,14 @@ export class StyleManager {
 	#selectorsReachSiblings = false;
 	#selectorsReachAncestors = false;
 	/**
+	 * The attribute names any parsed selector keys on. An attribute in this
+	 * set changes which rules match when it changes, exactly as class and id
+	 * do, so layout rebuilds the same scope for it. Collected loosely -- a
+	 * name read out of an attribute selector's opening bracket, whatever the
+	 * operator -- because a false positive only widens the rebuild.
+	 */
+	#selectorAttributes = new Set<string>();
+	/**
 	 * Rule-existence gates, also set during parsing. Attaching pseudos and
 	 * initializing counters both start by building full computed-style
 	 * declarations -- per element, on every insertion and attribute change.
@@ -7145,6 +7170,17 @@ export class StyleManager {
 		return this.#styleSheetList.length;
 	}
 
+	/** Whether any parsed selector keys on the named attribute. */
+	keysOnAttribute(name: string): boolean {
+		if (
+			this.#stylesheetsDirty ||
+			this.#styleSheetCount() !== this.#parsedStyleSheetCount
+		) {
+			this.#parseStylesheets();
+		}
+		return this.#selectorAttributes.has(name.toLowerCase());
+	}
+
 	invalidationScopeFor(element: Element): Element {
 		if (
 			this.#stylesheetsDirty ||
@@ -7424,6 +7460,7 @@ export class StyleManager {
 		this.#parsedRules = [];
 		this.#selectorsReachSiblings = false;
 		this.#selectorsReachAncestors = false;
+		this.#selectorAttributes.clear();
 		this.#pseudoRulesByType = new Map();
 		this.#counterRulesExist = false;
 		this.#listItemRulesExist = false;
@@ -7596,6 +7633,11 @@ export class StyleManager {
 		}
 		if (selector.includes(":has")) {
 			this.#selectorsReachAncestors = true;
+		}
+		if (selector.includes("[")) {
+			for (const match of selector.matchAll(ATTRIBUTE_SELECTOR_NAME)) {
+				this.#selectorAttributes.add(match[1].toLowerCase());
+			}
 		}
 		if (
 			declarations["counter-reset"] ||
