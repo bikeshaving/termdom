@@ -1,6 +1,6 @@
 import {test, expect} from "@b9g/libuild/test";
 import {TermDOM, transportFromProcess} from "../src/internal/termdom.js";
-import {nextFrame} from "./test-utils.js";
+import {MockProcess, nextFrame} from "./test-utils.js";
 import {EventEmitter} from "events";
 
 // A TTY-shaped process that records everything written to stdout, so tests
@@ -520,4 +520,41 @@ test("a click inside a widget's UA shadow content focuses the widget", async () 
 	await nextFrame(termdom);
 	expect(document.activeElement?.id).toBe("i");
 	termdom.dispose();
+});
+
+test("wheel scrolling moves the screen with a scroll region, not a redraw", async () => {
+	// What a mouse report changes names its elements, so a wheel scroll is as
+	// bounded as a keyboard one and keeps the scroll transform: the terminal
+	// is told to move its own rows, and only the exposed band is drawn.
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
+	dom.document.body.innerHTML = Array.from(
+		{length: 200},
+		(_, i) => `<div>row ${i}</div>`,
+	).join("");
+	await nextFrame(dom);
+
+	let emitted = "";
+	const write = terminal.stdout.write.bind(terminal.stdout);
+	(terminal.stdout as unknown as {write: unknown}).write = (
+		chunk: unknown,
+		enc?: unknown,
+		cb?: unknown,
+	) => {
+		emitted += String(chunk);
+		return (write as (...a: unknown[]) => unknown)(chunk, enc, cb);
+	};
+
+	(terminal.stdin as any).emit("data", Buffer.from("\x1b[<65;10;5M"));
+	await new Promise((r) => setTimeout(r, 0));
+	await nextFrame(dom);
+
+	// The region's margins are set, which only the transform path does.
+	expect(emitted).toMatch(/\x1b\[\d+;\d+r/);
+	// And the document actually moved.
+	expect(dom.window.scrollY).toBeGreaterThan(0);
+
+	dom.dispose();
 });

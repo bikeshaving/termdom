@@ -585,11 +585,6 @@ export class TermDOM {
 	#inputGeneration = 0;
 	#lastFrameInputGeneration = -1;
 	#lastFrameActiveElement: Element | null = null;
-	// Mouse input is tracked separately: it can flip :hover anywhere on the
-	// screen, which no damage set can bound. Keyboard input's reactive
-	// effects (:focus, :active) name their elements.
-	#mouseGeneration = 0;
-	#lastFrameMouseGeneration = -1;
 	#lastFrameStructuralGeneration = -1;
 	#lastFrameSelectionLive = false;
 
@@ -1752,7 +1747,6 @@ export class TermDOM {
 				},
 				onMouse: (button, x, y, release) => {
 					this.#inputGeneration++;
-					this.#mouseGeneration++;
 					this.#handleMouseReport(button, x, y, release);
 				},
 				onPaste: (text) => {
@@ -3259,8 +3253,13 @@ export class TermDOM {
 		// DECSTBM + DL/IL) plus damage that names its elements. Only the
 		// exposed band, fixed rows (real and shifted positions), the focused
 		// field, and damaged rows repaint. Anything unbounded -- a structural
-		// event, mouse input (:hover can flip anywhere), a live selection, a
-		// drag, a geometry change (cascades) -- takes the full diff.
+		// event, a live selection, a drag, a geometry change (cascades) --
+		// takes the full diff. What a mouse report changes names its elements:
+		// a click moves focus, which the cascade damages, and a drag holds an
+		// anchor this gate already reads. A pointer that flipped state
+		// anywhere on the screen would not, but no such state exists here --
+		// :hover matches nothing -- and adding one means damaging the chains
+		// it entered and left, not giving up the transform.
 		let scroll: {delta: number; bands: Array<[number, number]>} | undefined;
 		const scrollTop = this.#viewport.scrollTop;
 		const styleDamage = this.#styleManager.drainStyleDamage();
@@ -3278,7 +3277,6 @@ export class TermDOM {
 			regionHeight === this.#height &&
 			this.#lastFrameScrollTop !== null &&
 			currentStructuralGeneration() === this.#lastFrameStructuralGeneration &&
-			this.#mouseGeneration === this.#lastFrameMouseGeneration &&
 			!liveSelection &&
 			!this.#lastFrameSelectionLive &&
 			this.#selectionDragAnchor === null &&
@@ -3394,7 +3392,6 @@ export class TermDOM {
 		this.#lastFrameScrollTop = scrollTop;
 		this.#lastFrameEpoch = currentInvalidationEpoch();
 		this.#lastFrameInputGeneration = this.#inputGeneration;
-		this.#lastFrameMouseGeneration = this.#mouseGeneration;
 		this.#lastFrameStructuralGeneration = currentStructuralGeneration();
 		this.#lastFrameSelectionLive = liveSelection;
 		this.#lastFrameActiveElement = this.document.activeElement;
