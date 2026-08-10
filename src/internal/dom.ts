@@ -9867,11 +9867,12 @@ function uaDocumentOf(node: object): UADocument {
 	return (node as Node).ownerDocument as unknown as UADocument;
 }
 
-/** One visual (soft-wrapped or hard-broken) line of a laid-out textarea. */
+/**
+ * One visual (soft-wrapped or hard-broken) line of a laid-out textarea: the
+ * range of the value it covers. A value renders as pre-wrap, so the line's
+ * characters are that range of the value verbatim.
+ */
 type TextareaVisualLine = {
-	x: number;
-	y: number;
-	text: string;
 	/** Data offset of the line's first character / caret slot. */
 	startOffset: number;
 	/** Data offset of the caret slot AFTER the line's last character. */
@@ -11889,17 +11890,19 @@ export class HTMLTextAreaElement extends HTMLElement {
 		if (targetIndex < 0) return 0;
 		if (targetIndex >= visual.lines.length) return visual.value.length;
 		const line = visual.lines[lineIndex];
+		const lineText = visual.value.slice(line.startOffset, line.endOffset);
 		const currentColumn = stringWidth(
-			line.text.slice(0, Math.max(0, caret - line.startOffset)),
+			lineText.slice(0, Math.max(0, caret - line.startOffset)),
 		);
 		// Consecutive vertical moves aim for the column travel STARTED at, even
 		// across shorter lines that clamp the caret -- the browser's goal column.
 		const column = this.#goalColumn ?? currentColumn;
 		this.#goalColumn = column;
 		const target = visual.lines[targetIndex];
+		const targetText = visual.value.slice(target.startOffset, target.endOffset);
 		let cells = 0;
-		for (let i = 0; i < target.text.length; i++) {
-			const charCells = stringWidth(target.text[i]);
+		for (let i = 0; i < targetText.length; i++) {
+			const charCells = stringWidth(targetText[i]);
 			if (cells + charCells > column) {
 				return target.startOffset + i;
 			}

@@ -620,3 +620,171 @@ export function toVisualOrder(text: string, base: "ltr" | "rtl"): string {
 	const levels = bidi.getEmbeddingLevels(shaped, base);
 	return bidi.getReorderedString(shaped, levels);
 }
+
+/**
+ * Whether a `white-space` value keeps every space and tab as written
+ * (css-text-3 §4.1.1). `pre-line` does not: it collapses spaces and tabs and
+ * preserves only newlines.
+ */
+function preservesSpaces(whiteSpace: string): boolean {
+	return whiteSpace === "pre" || whiteSpace === "pre-wrap";
+}
+
+const COLLAPSIBLE_RUN = /\s+/g;
+const PRE_LINE_RUN = /[^\S\n]+/g;
+
+// Whether a rendering would change anything: two collapsible characters in a
+// row, or one that is not already the space it collapses to.
+const COLLAPSES = /\s\s|[^\S ]/;
+const PRE_LINE_COLLAPSES = /[^\S\n][^\S\n]|[^\S\n ]/;
+
+/**
+ * The runs a `white-space` value collapses to one space: every run the \s class
+ * matches, except that `pre-line` exempts the newline it preserves. Stateful
+ * (`g`), so a caller resets `lastIndex` before scanning with it.
+ */
+function collapsiblePattern(whiteSpace: string): RegExp {
+	return whiteSpace === "pre-line" ? PRE_LINE_RUN : COLLAPSIBLE_RUN;
+}
+
+/**
+ * A text node's data as it renders under a `white-space` value: each run of
+ * collapsible whitespace becomes one space, `pre` and `pre-wrap` render their
+ * data verbatim, and `pre-line` collapses spaces and tabs but keeps newlines.
+ *
+ * The single definition of that mapping. The line breaker renders whole text
+ * leaves through it and records, for each line fragment, the data range the
+ * fragment covers; the painter renders that range back through it to recover
+ * the characters to draw. The two agree because rendering a range equals the
+ * range of the rendering whenever the range begins and ends on a rendered
+ * character, which is how fragment offsets are defined.
+ */
+export function renderWhiteSpace(data: string, whiteSpace: string): string {
+	if (preservesSpaces(whiteSpace)) return data;
+	// Text whose collapsible whitespace is already single spaces renders as
+	// itself, which is most text: the question is worth asking before building
+	// a second string that would equal the first.
+	const collapses = whiteSpace === "pre-line" ? PRE_LINE_COLLAPSES : COLLAPSES;
+	if (!collapses.test(data)) return data;
+	return data.replace(collapsiblePattern(whiteSpace), " ");
+}
+
+/**
+ * The inverse of a whitespace rendering: which data offset each rendered code
+ * unit came from. Held as the collapsed runs alone -- everything between two
+ * runs maps across one-for-one -- so the mapping costs a few numbers per run
+ * rather than an entry per character, on text whose collapsible runs are a
+ * small fraction of its length.
+ *
+ * `base` is added to a rendered index before lookup, which is how a rendering
+ * that later loses a prefix (a run's leading whitespace, trimmed) keeps its
+ * mapping without rebuilding it.
+ */
+export interface RenderedOffsets {
+	/** Rendered index of each collapsed run's single space. */
+	spaceAt: Int32Array;
+	/** The data offset that space renders: the run's first character. */
+	runStart: Int32Array;
+	/** The data offset just past each run. */
+	runEnd: Int32Array;
+	base: number;
+}
+
+const NO_RUNS = new Int32Array(0);
+
+/**
+ * `renderWhiteSpace` plus the mapping back to data offsets, null when the
+ * rendering is verbatim and every offset maps to itself.
+ */
+export function renderWhiteSpaceOffsets(
+	data: string,
+	whiteSpace: string,
+): {text: string; offsets: RenderedOffsets | null} {
+	if (preservesSpaces(whiteSpace)) return {text: data, offsets: null};
+	const pattern = collapsiblePattern(whiteSpace);
+	pattern.lastIndex = 0;
+	const spaceAt: number[] = [];
+	const runStart: number[] = [];
+	const runEnd: number[] = [];
+	// Each run of length L renders as one space, so every later character sits
+	// L-1 places earlier than its data offset.
+	let dropped = 0;
+	// A one-character run leaves every offset where it was and still rewrites
+	// the character, since a tab or a newline renders as a space.
+	let rewritten = false;
+	let match: RegExpExecArray | null;
+	while ((match = pattern.exec(data))) {
+		spaceAt.push(match.index - dropped);
+		runStart.push(match.index);
+		runEnd.push(match.index + match[0].length);
+		dropped += match[0].length - 1;
+		if (match[0] !== " ") rewritten = true;
+	}
+	return {
+		text: dropped === 0 && !rewritten ? data : data.replace(pattern, " "),
+		offsets: {
+			spaceAt: Int32Array.from(spaceAt),
+			runStart: Int32Array.from(runStart),
+			runEnd: Int32Array.from(runEnd),
+			base: 0,
+		},
+	};
+}
+
+/** The data offset a rendered code unit came from. See RenderedOffsets. */
+export function dataOffsetAt(
+	offsets: RenderedOffsets | null,
+	index: number,
+): number {
+	if (!offsets) return index;
+	const rendered = index + offsets.base;
+	// The last collapsed run at or before the index: everything after that run
+	// maps across one-for-one from the data just past it.
+	const {spaceAt} = offsets;
+	let low = 0;
+	let high = spaceAt.length - 1;
+	let run = -1;
+	while (low <= high) {
+		const middle = (low + high) >> 1;
+		if (spaceAt[middle] <= rendered) {
+			run = middle;
+			low = middle + 1;
+		} else {
+			high = middle - 1;
+		}
+	}
+	if (run < 0) return rendered;
+	if (spaceAt[run] === rendered) return offsets.runStart[run];
+	return offsets.runEnd[run] + (rendered - spaceAt[run] - 1);
+}
+
+/**
+ * The same mapping over a rendering that lost its first `by` characters. A
+ * verbatim rendering needs a mapping of its own once it has: its offsets are no
+ * longer the identity.
+ */
+export function shiftRenderedOffsets(
+	offsets: RenderedOffsets | null,
+	by: number,
+): RenderedOffsets {
+	if (!offsets) {
+		return {spaceAt: NO_RUNS, runStart: NO_RUNS, runEnd: NO_RUNS, base: by};
+	}
+	return {...offsets, base: offsets.base + by};
+}
+
+/**
+ * The characters one line fragment paints: its data range rendered under the
+ * node's `white-space`, reordered into the visual order the line was laid out
+ * in when the line carries bidirectional text.
+ */
+export function renderTextFragment(
+	data: string,
+	whiteSpace: string,
+	startOffset: number,
+	endOffset: number,
+	visualBase?: "ltr" | "rtl" | null,
+): string {
+	const text = renderWhiteSpace(data.slice(startOffset, endOffset), whiteSpace);
+	return visualBase ? toVisualOrder(text, visualBase) : text;
+}

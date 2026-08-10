@@ -1,11 +1,12 @@
 /**
  * Tests for nested inline-block element handling
- * Specifically testing findInlineRunHead and getRectTexts logic
+ * Specifically testing findInlineRunHead and fragment-walk logic
  */
 
 import {test, expect} from "@b9g/libuild/test";
 import {MockProcess, nextFrame} from "./test-utils";
 import {TermDOM, kLayoutEngine} from "../src/internal/termdom.js";
+import {kRectTexts} from "../src/internal/layout.js";
 
 test("findInlineRunHead should find outer inline-block for nested text nodes", async () => {
 	const terminal = new MockProcess({cols: 50, rows: 10});
@@ -47,7 +48,7 @@ test("findInlineRunHead should find outer inline-block for nested text nodes", a
 	dom.dispose();
 });
 
-test("getRectTexts should work for text nodes in nested inline-blocks", async () => {
+test("line fragments should work for text nodes in nested inline-blocks", async () => {
 	const terminal = new MockProcess({cols: 50, rows: 10});
 	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
@@ -69,12 +70,12 @@ test("getRectTexts should work for text nodes in nested inline-blocks", async ()
 
 	const layoutEngine = dom[kLayoutEngine];
 
-	// Test getRectTexts on individual text nodes
+	// Test the fragment walk on individual text nodes
 	const spanTextNode = span.firstChild as Text;
 	const innerTextNode = inner.firstChild as Text;
 
-	const spanRects = layoutEngine.getRectTexts(spanTextNode);
-	const innerRects = layoutEngine.getRectTexts(innerTextNode);
+	const spanRects = layoutEngine[kRectTexts](spanTextNode);
+	const innerRects = layoutEngine[kRectTexts](innerTextNode);
 
 	// Both text nodes should return valid rects
 	expect(spanRects).toHaveLength(1);
@@ -158,9 +159,9 @@ test("deeply nested inline-blocks should work", async () => {
 	expect(visibleText).toContain("Middle");
 	expect(visibleText).toContain("Inner");
 
-	// Test getRectTexts on the deepest text node
+	// Test the fragment walk on the deepest text node
 	const innerTextNode = inner.firstChild as Text;
-	const innerRects = layoutEngine.getRectTexts(innerTextNode);
+	const innerRects = layoutEngine[kRectTexts](innerTextNode);
 
 	expect(innerRects).toHaveLength(1);
 	expect(innerRects[0].text).toBe("Inner");

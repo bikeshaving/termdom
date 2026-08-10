@@ -32,8 +32,13 @@ import {
 	shadowRootOf,
 } from "./dom.js";
 import {
+	dataOffsetAt,
 	hasRTL,
 	inferParagraphDirection,
+	renderTextFragment,
+	renderWhiteSpaceOffsets,
+	shiftRenderedOffsets,
+	type RenderedOffsets,
 	stringWidth as runtimeStringWidth,
 	toVisualOrder,
 	writeClusterWidths,
@@ -1209,6 +1214,21 @@ interface LineResult {
 		x: number;
 		width: number;
 		processedText: string;
+		/**
+		 * The range of the leaf text node's raw `data` this segment renders,
+		 * trimmed to begin and end on a rendered character: rendering it under
+		 * the node's `white-space` reproduces `processedText` exactly, which is
+		 * how a consumer holding nothing but the DOM recovers the characters
+		 * painted here. Both zero for a leaf that is not text.
+		 */
+		dataStart: number;
+		dataEnd: number;
+		/**
+		 * The paragraph direction this segment's characters were reordered into,
+		 * null while they stand in logical order (no bidirectional text on the
+		 * line, or a terminal that reorders for itself).
+		 */
+		visualBase: "ltr" | "rtl" | null;
 	}>;
 	y: number;
 	width: number;
@@ -1240,6 +1260,11 @@ interface ProcessedContent {
 		start: number;
 		end: number;
 		processedContent?: string;
+		/**
+		 * The mapping from `processedContent`'s code units back to offsets in
+		 * the leaf text node's raw `data`. Null where the two are the same.
+		 */
+		dataOffsets?: RenderedOffsets | null;
 	}>;
 	text: string;
 	/**
@@ -1299,9 +1324,54 @@ function prefixWidths(
 	return widths;
 }
 
+/**
+ * One laid-out line of a text node: its box, and the range of the node's raw
+ * `data` the line renders. The range begins and ends on a rendered character,
+ * so `renderTextFragment` over it reproduces the painted characters.
+ */
+export interface LineFragment {
+	rect: globalThis.DOMRect;
+	/** Data offset of the line's first character / caret slot. */
+	startOffset: number;
+	/** Data offset of the caret slot AFTER the line's last character. */
+	endOffset: number;
+	/** See LineResult segments: the visual order the line was laid out in. */
+	visualBase: "ltr" | "rtl" | null;
+}
+
+/** The `white-space` a text node renders under: its flat-tree parent's. */
+export function whiteSpaceOf(textNode: Text): string {
+	const parent = flatParentElement<Element>(textNode);
+	return parent ? getPropertyValue(parent, "white-space") : "normal";
+}
+
+/** One text node's placed fragment within a break result. See #rectTextIndices. */
+interface TextFragmentEntry {
+	line: number;
+	x: number;
+	width: number;
+	text: string;
+	startOffset: number;
+	endOffset: number;
+	visualBase: "ltr" | "rtl" | null;
+	ord: number;
+}
+
+/**
+ * One line of an inline box as the breaker left it: where it sits, the
+ * processed characters it placed there, and the range of raw `data` those
+ * characters were rendered from.
+ *
+ * A line asked for over an ELEMENT merges the fragments of every text node the
+ * element covers, so its offsets span from the first node's start to the last
+ * node's end -- a range of the run rather than of any one node's data.
+ */
 export interface RectText {
 	rect: DOMRect;
-	text: string; // Processed text to render (replaces textLength)
+	text: string;
+	startOffset: number;
+	endOffset: number;
+	visualBase: "ltr" | "rtl" | null;
 }
 
 const flexConfig = Flex.Config.create();
@@ -1356,6 +1426,14 @@ type ContainerBox = Node | InlineBox;
 // index.ts does not re-export it.
 const kInvalidateInlineRun = Symbol("invalidateInlineRun");
 export {kInvalidateInlineRun};
+
+// The breaker's own fragments, processed text and all: an inline box's lines as
+// the line breaker produced them. Symbol-keyed because nothing outside layout
+// may reason about processed text -- geometry consumers read `getRects`,
+// `getRangeRects` or `lineFragments`, whose fragments carry data offsets a
+// consumer can render for itself. The layout tests reach it through the symbol.
+const kRectTexts = Symbol("rectTexts");
+export {kRectTexts};
 
 export class LayoutEngine {
 	declare DOMRect: typeof DOMRect;
@@ -1948,8 +2026,8 @@ export class LayoutEngine {
 				}
 			}
 
-			// For inline elements, use getRectTexts
-			const rectTexts = this.getRectTexts(element);
+			// For inline elements, the fragments of its run
+			const rectTexts = this[kRectTexts](element);
 			if (rectTexts.length > 0) {
 				// Calculate bounding box from all rectTexts
 				let minX = Infinity;
@@ -2007,7 +2085,7 @@ export class LayoutEngine {
 		);
 	}
 
-	getRectTexts(node: Node): RectText[] {
+	[kRectTexts](node: Node): RectText[] {
 		// This method handles two main scenarios:
 		// 1. Direct calls on inline-block elements (special case below)
 		// 2. Calls on elements/text inside inline-blocks (general walk-up logic)
@@ -2022,7 +2100,7 @@ export class LayoutEngine {
 				return [];
 			}
 
-			// Special case: inline-block element called directly (e.g., getRectTexts(inlineBlockDiv))
+			// Special case: an inline-block element asked for directly.
 			// The element's breakResult contains itself as an inline-block segment with nested content
 			if (display === "inline-block" && this.isInlineRunHead(element)) {
 				const breakResult = this.#runBreakResult(element);
@@ -2059,6 +2137,9 @@ export class LayoutEngine {
 										if (nestedSegment.leaf.type === "text") {
 											rectTexts.push({
 												text: nestedSegment.processedText,
+												startOffset: nestedSegment.dataStart,
+												endOffset: nestedSegment.dataEnd,
+												visualBase: nestedSegment.visualBase,
 												rect: new this.DOMRect(
 													containerX +
 														segment.x +
@@ -2088,6 +2169,9 @@ export class LayoutEngine {
 													if (innerSegment.leaf.type === "text") {
 														rectTexts.push({
 															text: innerSegment.processedText,
+															startOffset: innerSegment.dataStart,
+															endOffset: innerSegment.dataEnd,
+															visualBase: innerSegment.visualBase,
 															rect: new this.DOMRect(
 																containerX +
 																	segment.x +
@@ -2167,7 +2251,7 @@ export class LayoutEngine {
 		}
 
 		// Walk from target node up to runHead, handling nested inline-blocks
-		// This handles the case where getRectTexts is called on elements/text inside inline-blocks
+		// This handles elements and text inside inline-blocks
 		let currentBreakResult = breakResult;
 		let accumulatedOffsetX = 0;
 		let accumulatedOffsetY = 0;
@@ -2276,10 +2360,7 @@ export class LayoutEngine {
 		const index = this.#breakResultTextIndex(breakResult);
 
 		// Merge fragments per line that belong to this node, in segment order.
-		const byLine = new Map<
-			number,
-			Array<{x: number; width: number; text: string; ord: number}>
-		>();
+		const byLine = new Map<number, TextFragmentEntry[]>();
 		for (const textNode of targetTextNodes) {
 			const entries = index.get(textNode);
 			if (!entries) continue;
@@ -2302,6 +2383,8 @@ export class LayoutEngine {
 				maxX = Math.max(maxX, targetText.x + targetText.width);
 				concatenatedText += targetText.text;
 			}
+			const first = bucket[0];
+			const last = bucket[bucket.length - 1];
 
 			const alignOffset = lineAlignOffset(
 				alignContainer,
@@ -2323,6 +2406,9 @@ export class LayoutEngine {
 			rectTexts.push({
 				rect,
 				text: concatenatedText,
+				startOffset: first.startOffset,
+				endOffset: last.endOffset,
+				visualBase: first.visualBase,
 			});
 		}
 
@@ -2332,24 +2418,15 @@ export class LayoutEngine {
 	// Text-fragment index per break result: text node -> the fragments the
 	// breaker placed for it, each with its OUTER line index, x offset (nested
 	// inline-block content already shifted by its box's position and padding,
-	// as the merge in getRectTexts expects), width, processed text, and a
-	// global ordinal preserving segment order. WeakMap-keyed on the break
-	// result object: re-breaking builds a fresh object, so entries can never
-	// go stale.
-	#rectTextIndices = new WeakMap<
-		object,
-		Map<
-			Text,
-			Array<{line: number; x: number; width: number; text: string; ord: number}>
-		>
-	>();
+	// as the merge in the rect-text walk expects), width, processed text, the
+	// data range that renders back to it, and a global ordinal preserving
+	// segment order. WeakMap-keyed on the break result object: re-breaking
+	// builds a fresh object, so entries can never go stale.
+	#rectTextIndices = new WeakMap<object, Map<Text, TextFragmentEntry[]>>();
 
 	#breakResultTextIndex(
 		breakResult: BreakResult,
-	): Map<
-		Text,
-		Array<{line: number; x: number; width: number; text: string; ord: number}>
-	> {
+	): Map<Text, TextFragmentEntry[]> {
 		let index = this.#rectTextIndices.get(breakResult);
 		if (index) return index;
 		index = new Map();
@@ -2365,6 +2442,9 @@ export class LayoutEngine {
 						x: baseX + segment.x,
 						width: segment.width,
 						text: segment.processedText,
+						startOffset: segment.dataStart,
+						endOffset: segment.dataEnd,
+						visualBase: segment.visualBase,
 						ord: ord++,
 					});
 				} else if (
@@ -2405,7 +2485,7 @@ export class LayoutEngine {
 		}
 
 		// Inline content is one rect per text run, one per line it spans.
-		return this.getRectTexts(node).map((rectText) => rectText.rect);
+		return this[kRectTexts](node).map((rectText) => rectText.rect);
 	}
 
 	/**
@@ -2417,12 +2497,11 @@ export class LayoutEngine {
 	 * the selection walk does: a node the range starts in uses its offset, one it
 	 * only passes through is covered whole.
 	 *
-	 * Two offset regimes, matched to the two callers. The caret path walks line
-	 * fragments annotated with their data range (a pre-wrap field value, blank
-	 * lines and all -- 1:1 offset<->column), so a caret lands on the right line
-	 * including empty ones. The selection path bridges each painted column back
-	 * to a data offset through visualToDataOffsets, so it stays correct over
-	 * collapsing whitespace, where column and offset diverge.
+	 * Both paths walk the node's line fragments, which carry the data range each
+	 * line renders: a caret lands on the line owning its offset, blank lines
+	 * included, and a selected run maps each painted column back to the offset it
+	 * renders -- correct over collapsing whitespace, where column and offset
+	 * diverge.
 	 */
 	getRangeRects(range: Range): globalThis.DOMRect[] {
 		const rects: globalThis.DOMRect[] = [];
@@ -2487,60 +2566,40 @@ export class LayoutEngine {
 	}
 
 	/**
-	 * Each laid-out line of a text node, annotated with the data range it spans.
-	 * A blank line between two newlines owns a real but EMPTY layout fragment
-	 * with no columns to place an offset by, so its offset is carried forward
-	 * through the hard separators the previous line's characters did not consume
-	 * -- the same accounting a caret in an empty line depends on.
+	 * Each laid-out line of a text node: where the line sits -- in raw layout
+	 * coordinates, which a caller placing cells rounds -- and the range of the
+	 * node's raw `data` it renders. Rendering that range through
+	 * `renderTextFragment` under the node's `white-space` gives back exactly the
+	 * characters the line paints, so a consumer needs no processed text of the
+	 * breaker's to draw, measure or address a line.
 	 *
-	 * The one place a text node's laid-out lines get their data ranges, shared by
-	 * range geometry here and the textarea's own visual-line navigation.
+	 * The one place a text node's laid-out lines get their data ranges: range
+	 * geometry, the caret, the painter's text pass and the textarea's own
+	 * visual-line navigation all read them from here. Two lines exist that no
+	 * layout fragment produces -- the row after a value's final newline, and the
+	 * sole row of an empty value -- because a caret rests on both.
 	 */
-	lineFragments(textNode: Text): Array<{
-		x: number;
-		y: number;
-		height: number;
-		text: string;
-		startOffset: number;
-		endOffset: number;
-	}> {
+	lineFragments(textNode: Text): LineFragment[] {
 		const data = textNode.data;
-		const rectTexts = this.getRectTexts(textNode);
-		const visToData = visualToDataOffsets(data, rectTexts);
-		const lines = [];
-		let visualBase = 0;
-		let cursor = 0;
-		for (const rectText of rectTexts) {
-			const length = rectText.text.length;
-			const startOffset = length > 0 ? visToData[visualBase] : cursor;
-			const endOffset =
-				length > 0 ? visToData[visualBase + length - 1] + 1 : startOffset;
+		const lines: LineFragment[] = [];
+		for (const rectText of this[kRectTexts](textNode)) {
 			lines.push({
-				x: Math.round(rectText.rect.x),
-				y: Math.round(rectText.rect.y),
-				height: rectText.rect.height,
-				text: rectText.text,
-				startOffset,
-				endOffset,
+				rect: rectText.rect,
+				startOffset: rectText.startOffset,
+				endOffset: rectText.endOffset,
+				visualBase: rectText.visualBase,
 			});
-			visualBase += length;
-			cursor =
-				endOffset < data.length && data[endOffset] === "\n"
-					? endOffset + 1
-					: endOffset;
 		}
 		// A value ending in a newline has an empty last line no fragment
 		// represents -- the caret's row after a final Enter. It sits one line
 		// below the last, at the same left edge.
 		if (lines.length > 0 && data.endsWith("\n")) {
-			const last = lines[lines.length - 1];
+			const last = lines[lines.length - 1].rect;
 			lines.push({
-				x: last.x,
-				y: last.y + last.height,
-				height: last.height,
-				text: "",
+				rect: this.createDOMRect(last.x, last.y + last.height, 0, last.height),
 				startOffset: data.length,
 				endOffset: data.length,
+				visualBase: null,
 			});
 		}
 		// Empty text has no fragment at all, so its one line sits at the
@@ -2552,18 +2611,19 @@ export class LayoutEngine {
 			if (rect && parent) {
 				const box = getBoxModel(parent);
 				lines.push({
-					x:
+					rect: this.createDOMRect(
 						Math.round(rect.x) +
-						(box.borderLeftWidth || 0) +
-						(box.paddingLeft || 0),
-					y:
+							(box.borderLeftWidth || 0) +
+							(box.paddingLeft || 0),
 						Math.round(rect.y) +
-						(box.borderTopWidth || 0) +
-						(box.paddingTop || 0),
-					height: rect.height || 1,
-					text: "",
+							(box.borderTopWidth || 0) +
+							(box.paddingTop || 0),
+						0,
+						rect.height || 1,
+					),
 					startOffset: 0,
 					endOffset: 0,
+					visualBase: null,
 				});
 			}
 		}
@@ -2586,12 +2646,16 @@ export class LayoutEngine {
 			}
 		}
 		const line = lines[lineIndex];
-		const within = Math.max(
-			0,
-			Math.min(offset, line.endOffset) - line.startOffset,
+		// The cells between the line's first character and the caret: the data
+		// up to the offset, rendered the way the line renders it.
+		const before = renderTextFragment(
+			textNode.data,
+			whiteSpaceOf(textNode),
+			line.startOffset,
+			Math.max(line.startOffset, Math.min(offset, line.endOffset)),
 		);
-		const x = line.x + runtimeStringWidth(line.text.slice(0, within));
-		return this.createDOMRect(x, line.y, 0, line.height);
+		const x = Math.round(line.rect.x) + runtimeStringWidth(before);
+		return this.createDOMRect(x, Math.round(line.rect.y), 0, line.rect.height);
 	}
 
 	/**
@@ -2606,36 +2670,45 @@ export class LayoutEngine {
 		to: number,
 	): Array<{rect: globalThis.DOMRect; text: string}> {
 		const runs: Array<{rect: globalThis.DOMRect; text: string}> = [];
-		const rectTexts = this.getRectTexts(textNode);
-		if (rectTexts.length === 0) return runs;
-		const visToData = visualToDataOffsets(textNode.data, rectTexts);
-		let visualBase = 0;
-		for (const rectText of rectTexts) {
+		const whiteSpace = whiteSpaceOf(textNode);
+		for (const fragment of this.lineFragments(textNode)) {
+			// The line's characters, and the data offset each of them renders --
+			// which is where a collapsing run makes column and offset diverge.
+			const {text, offsets} = renderWhiteSpaceOffsets(
+				textNode.data.slice(fragment.startOffset, fragment.endOffset),
+				whiteSpace,
+			);
 			let runStart = -1;
-			for (let i = 0; i <= rectText.text.length; i++) {
+			for (let i = 0; i <= text.length; i++) {
 				const dataOffset =
-					i < rectText.text.length ? visToData[visualBase + i] : -1;
+					i < text.length
+						? fragment.startOffset + dataOffsetAt(offsets, i)
+						: -1;
 				const selected = dataOffset >= from && dataOffset < to;
 				if (selected && runStart === -1) {
 					runStart = i;
 				} else if (!selected && runStart !== -1) {
 					const x =
-						Math.round(rectText.rect.x) +
-						runtimeStringWidth(rectText.text.slice(0, runStart));
-					const width = runtimeStringWidth(rectText.text.slice(runStart, i));
+						Math.round(fragment.rect.x) +
+						runtimeStringWidth(text.slice(0, runStart));
+					const width = runtimeStringWidth(text.slice(runStart, i));
 					runs.push({
 						rect: this.createDOMRect(
 							x,
-							Math.round(rectText.rect.y),
+							Math.round(fragment.rect.y),
 							width,
-							rectText.rect.height,
+							fragment.rect.height,
 						),
-						text: rectText.text.slice(runStart, i),
+						// Painted order, since the caller redraws these cells: a
+						// selected run of a bidirectional line reverses just as
+						// the line it sits on did.
+						text: fragment.visualBase
+							? toVisualOrder(text.slice(runStart, i), fragment.visualBase)
+							: text.slice(runStart, i),
 					});
 					runStart = -1;
 				}
 			}
-			visualBase += rectText.text.length;
 		}
 		return runs;
 	}
@@ -5235,23 +5308,38 @@ export class LayoutEngine {
 		};
 	}
 
-	#collapseWhitespace(text: string, whiteSpace: string): string {
-		if (whiteSpace === "pre" || whiteSpace === "pre-wrap") {
-			// Preserve all whitespace exactly as-is
-			return text;
+	/**
+	 * A text node's data rendered under a `white-space` value, held until either
+	 * changes. One inline run is broken several times per build -- once per
+	 * width the sizing pass tries -- and the rendering is the same every time.
+	 */
+	#renderedLeaves = new WeakMap<
+		Text,
+		{
+			data: string;
+			whiteSpace: string;
+			text: string;
+			offsets: RenderedOffsets | null;
 		}
+	>();
 
-		if (whiteSpace === "pre-line") {
-			// Preserve newlines, collapse other whitespace to single spaces
-			return text
-				.split("\n")
-				.map((line) => line.replace(/[ \t\r\f]+/g, " "))
-				.join("\n");
+	#renderLeaf(
+		textNode: Text,
+		whiteSpace: string,
+	): {text: string; offsets: RenderedOffsets | null} {
+		const data = textNode.data;
+		const cached = this.#renderedLeaves.get(textNode);
+		if (cached && cached.data === data && cached.whiteSpace === whiteSpace) {
+			return cached;
 		}
-
-		// For "normal" and "nowrap": collapse all whitespace sequences to single space
-		// This includes spaces, tabs, newlines, etc.
-		return text.replace(/\s+/g, " ");
+		const rendered = renderWhiteSpaceOffsets(data, whiteSpace);
+		this.#renderedLeaves.set(textNode, {
+			data,
+			whiteSpace,
+			text: rendered.text,
+			offsets: rendered.offsets,
+		});
+		return rendered;
 	}
 
 	#processWhitespace(leafNodes: Leaf[]): ProcessedContent {
@@ -5263,13 +5351,15 @@ export class LayoutEngine {
 			const start = text.length;
 
 			if (leaf.type === "text" && leaf.content) {
-				// Get the white-space property for this specific leaf's parent element
-				const leafWhiteSpace = leaf.node.parentElement
-					? getPropertyValue(leaf.node.parentElement, "white-space")
-					: "normal";
+				// The white-space this leaf renders under, read the way a painter
+				// reads it: from the flat-tree parent whose style it inherits.
+				const leafWhiteSpace = whiteSpaceOf(leaf.node);
 
-				// Process the text content according to its white-space property
-				let processed = this.#collapseWhitespace(leaf.content, leafWhiteSpace);
+				// Process the text content according to its white-space property,
+				// keeping the mapping back to raw data offsets.
+				const rendered = this.#renderLeaf(leaf.node, leafWhiteSpace);
+				let processed = rendered.text;
+				let dataOffsets = rendered.offsets;
 
 				// Handle boundary whitespace between adjacent text nodes
 				if (leafIndex > 0 && processed.length > 0) {
@@ -5283,6 +5373,7 @@ export class LayoutEngine {
 						if (prevEndsWithSpace && thisStartsWithSpace) {
 							// Remove the leading space to avoid double spaces at boundaries
 							processed = processed.substring(1);
+							dataOffsets = shiftRenderedOffsets(dataOffsets, 1);
 						}
 					}
 				}
@@ -5294,6 +5385,7 @@ export class LayoutEngine {
 					start: start,
 					end: text.length,
 					processedContent: processed,
+					dataOffsets,
 				});
 			} else if (leaf.type === "br") {
 				// BR elements always create a line break
@@ -5320,8 +5412,8 @@ export class LayoutEngine {
 		if (text.length > 0) {
 			// Check if any leaf has pre-style whitespace that should be preserved
 			const hasPreWhitespace = leafNodes.some((leaf) => {
-				if (leaf.type === "text" && leaf.node.parentElement) {
-					const ws = getPropertyValue(leaf.node.parentElement, "white-space");
+				if (leaf.type === "text") {
+					const ws = whiteSpaceOf(leaf.node);
 					return ws === "pre" || ws === "pre-wrap" || ws === "pre-line";
 				}
 				return false;
@@ -5362,6 +5454,10 @@ export class LayoutEngine {
 								clampedStart - item.start,
 								clampedEnd - item.start,
 							);
+							item.dataOffsets = shiftRenderedOffsets(
+								item.dataOffsets ?? null,
+								clampedStart - item.start,
+							);
 						}
 						item.start = clampedStart - trimStart;
 						item.end = clampedEnd - trimStart;
@@ -5376,12 +5472,8 @@ export class LayoutEngine {
 	/** Does ANY text leaf in the run carry white-space: nowrap? */
 	#hasNowrapLeaf(content: ProcessedContent): boolean {
 		return content.items.some((item) => {
-			if (item.leafNode.type === "text" && item.leafNode.node.parentElement) {
-				const leafWhiteSpace = getPropertyValue(
-					item.leafNode.node.parentElement,
-					"white-space",
-				);
-				return leafWhiteSpace === "nowrap";
+			if (item.leafNode.type === "text") {
+				return whiteSpaceOf(item.leafNode.node) === "nowrap";
 			}
 			return false;
 		});
@@ -5612,6 +5704,7 @@ export class LayoutEngine {
 		for (const segment of segments) {
 			if (segment.leaf.type === "text") {
 				segment.processedText = toVisualOrder(segment.processedText, base);
+				segment.visualBase = base;
 			}
 		}
 
@@ -5659,12 +5752,28 @@ export class LayoutEngine {
 					// right after it, so it can only ever sit at the segment's
 					// tail -- and a literal \n reaching the painter would feed
 					// the terminal a raw line feed, shifting every later cell
-					// of the frame (visualToDataOffsets already maps a break to
-					// "nothing", so offsets stay aligned).
+					// of the frame (a segment's data range ends on its last
+					// PAINTED character, so offsets stay aligned).
 					const portion = item.processedContent
 						.slice(relativeStart, relativeEnd)
 						.replace(/\n+$/, "");
 					width = runtimeStringWidth(portion);
+
+					// The data range that renders back to `portion`: from the
+					// offset its first character came from, through the end of
+					// the code unit its last one came from. A preserved newline
+					// the line broke on is outside it, as it is outside the
+					// painted text, but an empty fragment still reports where it
+					// sits -- the caret slot of a blank line.
+					const offsets = item.dataOffsets ?? null;
+					const dataStart =
+						relativeStart < item.processedContent.length
+							? dataOffsetAt(offsets, relativeStart)
+							: item.leafNode.node.data.length;
+					const dataEnd =
+						portion.length > 0
+							? dataOffsetAt(offsets, relativeStart + portion.length - 1) + 1
+							: dataStart;
 
 					nodes.push({
 						leaf: item.leafNode,
@@ -5673,6 +5782,9 @@ export class LayoutEngine {
 						x,
 						width,
 						processedText: portion,
+						dataStart,
+						dataEnd,
+						visualBase: null,
 					});
 				} else if (item.leafNode.type === "inline-block") {
 					width = inlineBlockWidth(item.leafNode);
@@ -5692,6 +5804,9 @@ export class LayoutEngine {
 						x,
 						width,
 						processedText,
+						dataStart: 0,
+						dataEnd: 0,
+						visualBase: null,
 					});
 				} else if (item.leafNode.type === "br") {
 					nodes.push({
@@ -5701,6 +5816,9 @@ export class LayoutEngine {
 						x,
 						width: 0,
 						processedText: "",
+						dataStart: 0,
+						dataEnd: 0,
+						visualBase: null,
 					});
 				}
 
@@ -5730,46 +5848,4 @@ export function isPointInRects(
 			y < rect.y + rect.height
 		);
 	});
-}
-
-/**
- * Map each painted (visual) character of a text node back to its code-unit
- * offset in node.data. The painted fragments are the node's text after
- * whitespace collapsing and line breaking, so they differ from the raw data
- * only in whitespace: a run of data whitespace becomes one visual space, or
- * nothing at a line break. Non-whitespace code units match one-for-one --
- * including surrogate halves, which is what keeps the returned offsets valid as
- * Range offsets (Ranges address code units, not glyphs).
- *
- * Selection needs this bridge in both directions: a mouse hit lands on a visual
- * cell and must become a Range offset into the data; painting walks the visual
- * fragments and must know which of them a data-offset Range covers. The
- * textarea widget reuses it to place a caret in its laid-out value.
- */
-export function visualToDataOffsets(
-	data: string,
-	fragments: Array<{text: string}>,
-): number[] {
-	const map: number[] = [];
-	let d = 0;
-	for (const fragment of fragments) {
-		// Code UNITS on both sides, not code points: surrogate halves of
-		// non-whitespace text are identical in data and fragment, so they align
-		// half-to-half, and the map stays indexable by the same positions
-		// String.prototype.slice uses.
-		for (let i = 0; i < fragment.text.length; i++) {
-			if (!/\s/.test(fragment.text[i])) {
-				// A visual char never comes from data whitespace -- skip any
-				// collapsed run to the next real char.
-				while (d < data.length && /\s/.test(data[d])) d++;
-				map.push(Math.min(d, Math.max(0, data.length - 1)));
-				d++;
-			} else {
-				// One visual space stands for the whole whitespace run.
-				map.push(Math.min(d, Math.max(0, data.length - 1)));
-				while (d < data.length && /\s/.test(data[d])) d++;
-			}
-		}
-	}
-	return map;
 }

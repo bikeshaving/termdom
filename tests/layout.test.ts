@@ -1,6 +1,11 @@
 import {test, expect} from "@b9g/libuild/test";
-import {LayoutEngine, kInvalidateInlineRun} from "../src/internal/layout.js";
+import {
+	LayoutEngine,
+	kInvalidateInlineRun,
+	kRectTexts,
+} from "../src/internal/layout.js";
 import {StyleManager} from "../src/internal/styles.js";
+import {renderTextFragment} from "../src/internal/text.js";
 import {TermDOM, kLayoutEngine} from "../src/internal/termdom.js";
 import {ensurePseudoElement} from "../src/internal/dom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
@@ -595,7 +600,7 @@ test("a run whose first node is removed re-measures from the next", () => {
 	expect(layoutEngine.findInlineRunHead(spans[2])).toBe(spans[1]);
 
 	const containerRect = layoutEngine.getRect(container)!;
-	const rectTexts = layoutEngine.getRectTexts(container.firstChild!);
+	const rectTexts = layoutEngine[kRectTexts](container.firstChild!);
 	expect(rectTexts.length).toBe(1);
 	expect(rectTexts[0].text).toBe("second");
 	expect(rectTexts[0].rect.x).toBe(containerRect.x);
@@ -844,7 +849,7 @@ test("emoji text RectLengths preserve character boundaries", () => {
 	const originalText = textNode.textContent!;
 
 	// Get the RectTexts for the text node
-	const rectTexts = layoutEngine.getRectTexts(textNode);
+	const rectTexts = layoutEngine[kRectTexts](textNode);
 
 	// Test that the processed text matches the original
 	let reconstructedText = "";
@@ -871,8 +876,8 @@ test("RectLength text slicing mismatch with whitespace", () => {
 	const secondSpan = spans[1];
 
 	// Get RectTexts for both spans
-	const rectTexts1 = layoutEngine.getRectTexts(firstSpan.firstChild as Text);
-	const rectTexts2 = layoutEngine.getRectTexts(secondSpan.firstChild as Text);
+	const rectTexts1 = layoutEngine[kRectTexts](firstSpan.firstChild as Text);
+	const rectTexts2 = layoutEngine[kRectTexts](secondSpan.firstChild as Text);
 
 	// The original DOM text vs processed text difference
 	const originalText1 = firstSpan.textContent!; // "Hello   " (8 chars)
@@ -987,7 +992,7 @@ test("text truncation due to RectLength accumulation error", () => {
 	// Later spans might get truncated due to insufficient allocated space
 
 	spans.forEach((span, _i) => {
-		const rectTexts = layoutEngine.getRectTexts(span.firstChild as Text);
+		const rectTexts = layoutEngine[kRectTexts](span.firstChild as Text);
 		const originalLength = span.textContent!.length;
 		const processedLength = rectTexts.reduce(
 			(sum, rt) => sum + rt.text.length,
@@ -1004,13 +1009,13 @@ test("text truncation due to RectLength accumulation error", () => {
 
 // === GETRECTEXTS WITH INLINE-BLOCK TESTS ===
 
-test("getRectTexts - regular inline element (baseline)", () => {
+test("line fragments - regular inline element (baseline)", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
 		`<div><span>RegularInline</span></div>`,
 	);
 
 	const span = dom.window.document.querySelector("span")!;
-	const rectTexts = layoutEngine.getRectTexts(span);
+	const rectTexts = layoutEngine[kRectTexts](span);
 
 	// Regular inline elements should work
 	expect(rectTexts).toHaveLength(1);
@@ -1018,27 +1023,27 @@ test("getRectTexts - regular inline element (baseline)", () => {
 	expect(rectTexts[0].rect.width).toBe(13); // "RegularInline" = 13 chars
 });
 
-test("getRectTexts - text node in regular inline element", () => {
+test("line fragments - text node in regular inline element", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
 		`<div><span>TextContent</span></div>`,
 	);
 
 	const span = dom.window.document.querySelector("span")!;
 	const textNode = span.firstChild as Text;
-	const rectTexts = layoutEngine.getRectTexts(textNode);
+	const rectTexts = layoutEngine[kRectTexts](textNode);
 
 	// Text nodes should work
 	expect(rectTexts).toHaveLength(1);
 	expect(rectTexts[0].text).toBe("TextContent");
 });
 
-test("getRectTexts - element inside inline-block container", () => {
+test("line fragments - element inside inline-block container", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
 		`<div><div style="display: inline-block;"><span>InsideBlock</span></div></div>`,
 	);
 
 	const span = dom.window.document.querySelector("span")!;
-	const rectTexts = layoutEngine.getRectTexts(span);
+	const rectTexts = layoutEngine[kRectTexts](span);
 
 	// This was the main broken case - should now work
 	expect(rectTexts).toHaveLength(1);
@@ -1046,41 +1051,41 @@ test("getRectTexts - element inside inline-block container", () => {
 	expect(rectTexts[0].rect.width).toBe(11); // "InsideBlock" = 11 chars
 });
 
-test("getRectTexts - text node inside inline-block container", () => {
+test("line fragments - text node inside inline-block container", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
 		`<div><div style="display: inline-block;"><span>BlockText</span></div></div>`,
 	);
 
 	const span = dom.window.document.querySelector("span")!;
 	const textNode = span.firstChild as Text;
-	const rectTexts = layoutEngine.getRectTexts(textNode);
+	const rectTexts = layoutEngine[kRectTexts](textNode);
 
 	// Text nodes inside inline-blocks should work
 	expect(rectTexts).toHaveLength(1);
 	expect(rectTexts[0].text).toBe("BlockText");
 });
 
-test("getRectTexts - nested elements inside inline-block", () => {
+test("line fragments - nested elements inside inline-block", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
 		`<div><div style="display: inline-block;"><span><em>Nested</em></span></div></div>`,
 	);
 
 	const em = dom.window.document.querySelector("em")!;
-	const rectTexts = layoutEngine.getRectTexts(em);
+	const rectTexts = layoutEngine[kRectTexts](em);
 
 	// Nested elements inside inline-blocks should work
 	expect(rectTexts).toHaveLength(1);
 	expect(rectTexts[0].text).toBe("Nested");
 });
 
-test("getRectTexts - multiple children in inline-block", () => {
+test("line fragments - multiple children in inline-block", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
 		`<div><div style="display: inline-block;"><span>First</span><span>Second</span></div></div>`,
 	);
 
 	const spans = Array.from(dom.window.document.querySelectorAll("span"));
-	const firstRects = layoutEngine.getRectTexts(spans[0]);
-	const secondRects = layoutEngine.getRectTexts(spans[1]);
+	const firstRects = layoutEngine[kRectTexts](spans[0]);
+	const secondRects = layoutEngine[kRectTexts](spans[1]);
 
 	// Both children should work independently
 	expect(firstRects).toHaveLength(1);
@@ -1089,7 +1094,7 @@ test("getRectTexts - multiple children in inline-block", () => {
 	expect(secondRects[0].text).toBe("Second");
 });
 
-test.todo("getRectTexts - deeply nested inline-block", () => {
+test.todo("line fragments - deeply nested inline-block", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
 		`<div>
 			<div style="display: inline-block;">
@@ -1099,14 +1104,14 @@ test.todo("getRectTexts - deeply nested inline-block", () => {
 	);
 
 	const em = dom.window.document.querySelector("em")!;
-	const rectTexts = layoutEngine.getRectTexts(em);
+	const rectTexts = layoutEngine[kRectTexts](em);
 
 	// Deep nesting should work
 	expect(rectTexts).toHaveLength(1);
 	expect(rectTexts[0].text).toBe("DeepNested");
 });
 
-test("getRectTexts - inline-block with mixed content", () => {
+test("line fragments - inline-block with mixed content", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
 		`<div>
 			<div style="display: inline-block;">
@@ -1116,14 +1121,14 @@ test("getRectTexts - inline-block with mixed content", () => {
 	);
 
 	const span = dom.window.document.querySelector("span")!;
-	const rectTexts = layoutEngine.getRectTexts(span);
+	const rectTexts = layoutEngine[kRectTexts](span);
 
 	// Element in mixed content should work
 	expect(rectTexts).toHaveLength(1);
 	expect(rectTexts[0].text).toBe("element");
 });
 
-test("getRectTexts - multiple inline-blocks", () => {
+test("line fragments - multiple inline-blocks", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
 		`<div>
 			<div style="display: inline-block;"><span>Block1</span></div>
@@ -1132,8 +1137,8 @@ test("getRectTexts - multiple inline-blocks", () => {
 	);
 
 	const spans = Array.from(dom.window.document.querySelectorAll("span"));
-	const rects1 = layoutEngine.getRectTexts(spans[0]);
-	const rects2 = layoutEngine.getRectTexts(spans[1]);
+	const rects1 = layoutEngine[kRectTexts](spans[0]);
+	const rects2 = layoutEngine[kRectTexts](spans[1]);
 
 	// Elements in separate inline-blocks should work
 	expect(rects1).toHaveLength(1);
@@ -1142,20 +1147,20 @@ test("getRectTexts - multiple inline-blocks", () => {
 	expect(rects2[0].text).toBe("Block2");
 });
 
-test("getRectTexts - inline-block container element itself", () => {
+test("line fragments - inline-block container element itself", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
 		`<div><div style="display: inline-block;">Container</div></div>`,
 	);
 
 	const inlineBlock = dom.window.document.querySelector("div[style]")!;
-	const rectTexts = layoutEngine.getRectTexts(inlineBlock);
+	const rectTexts = layoutEngine[kRectTexts](inlineBlock);
 
 	// Inline-block container itself should work (all its text content)
 	expect(rectTexts).toHaveLength(1);
 	expect(rectTexts[0].text).toBe("Container");
 });
 
-test("getRectTexts - position accuracy in inline-block", () => {
+test("line fragments - position accuracy in inline-block", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
 		`<div>
 			<div style="display: inline-block; padding: 2px;">
@@ -1165,7 +1170,7 @@ test("getRectTexts - position accuracy in inline-block", () => {
 	);
 
 	const span = dom.window.document.querySelector("span")!;
-	const rectTexts = layoutEngine.getRectTexts(span);
+	const rectTexts = layoutEngine[kRectTexts](span);
 
 	// Should work and have reasonable position (accounting for padding)
 	expect(rectTexts).toHaveLength(1);
@@ -1174,7 +1179,7 @@ test("getRectTexts - position accuracy in inline-block", () => {
 	expect(rectTexts[0].rect.y).toBeGreaterThanOrEqual(2);
 });
 
-test("getRectTexts - maintains backward compatibility", () => {
+test("line fragments - maintains backward compatibility", () => {
 	const {dom, layoutEngine} = createLayoutEngine(
 		`<div>
 			<span>Regular</span>
@@ -1184,9 +1189,9 @@ test("getRectTexts - maintains backward compatibility", () => {
 	);
 
 	const spans = Array.from(dom.window.document.querySelectorAll("span"));
-	const regularRects = layoutEngine.getRectTexts(spans[0]); // Regular inline
-	const blockRects = layoutEngine.getRectTexts(spans[1]); // Inside inline-block
-	const normalRects = layoutEngine.getRectTexts(spans[2]); // Regular inline
+	const regularRects = layoutEngine[kRectTexts](spans[0]); // Regular inline
+	const blockRects = layoutEngine[kRectTexts](spans[1]); // Inside inline-block
+	const normalRects = layoutEngine[kRectTexts](spans[2]); // Regular inline
 
 	// All should work correctly
 	expect(regularRects).toHaveLength(1);
@@ -1195,6 +1200,70 @@ test("getRectTexts - maintains backward compatibility", () => {
 	expect(blockRects[0].text).toBe("InBlock");
 	expect(normalRects).toHaveLength(1);
 	expect(normalRects[0].text).toBe("Normal");
+});
+
+// === LINE FRAGMENT DATA RANGES ===
+
+test("line fragment offsets render back to the text the line was broken into", () => {
+	const {dom, layoutEngine} = createLayoutEngine(
+		`<div style="width: 12ch;">The   quick
+			brown fox jumps over it</div>`,
+	);
+
+	const textNode = dom.window.document.querySelector("div")!.firstChild as Text;
+	const fragments = layoutEngine[kRectTexts](textNode);
+	expect(fragments.length).toBeGreaterThan(1);
+	for (const fragment of fragments) {
+		expect(
+			renderTextFragment(
+				textNode.data,
+				"normal",
+				fragment.startOffset,
+				fragment.endOffset,
+				fragment.visualBase,
+			),
+		).toBe(fragment.text);
+	}
+});
+
+test("line fragment offsets render back under pre-wrap", () => {
+	const {dom, layoutEngine} = createLayoutEngine(
+		`<div style="width: 10ch; white-space: pre-wrap;">a  b\nlong  line here</div>`,
+	);
+
+	const textNode = dom.window.document.querySelector("div")!.firstChild as Text;
+	const fragments = layoutEngine[kRectTexts](textNode);
+	expect(fragments.length).toBeGreaterThan(1);
+	for (const fragment of fragments) {
+		expect(
+			renderTextFragment(
+				textNode.data,
+				"pre-wrap",
+				fragment.startOffset,
+				fragment.endOffset,
+				fragment.visualBase,
+			),
+		).toBe(fragment.text);
+	}
+});
+
+test("a Range over a text node reports the rects of its line fragments", () => {
+	const {dom, layoutEngine} = createLayoutEngine(
+		`<div style="width: 12ch;">wrapping prose across several lines</div>`,
+	);
+
+	const textNode = dom.window.document.querySelector("div")!.firstChild as Text;
+	const range = dom.window.document.createRange();
+	range.setStart(textNode, 0);
+	range.setEnd(textNode, textNode.data.length);
+
+	const fragments = layoutEngine.lineFragments(textNode);
+	const rects = layoutEngine.getRangeRects(range);
+	expect(rects).toHaveLength(fragments.length);
+	for (let i = 0; i < rects.length; i++) {
+		expect(rects[i].x).toBe(fragments[i].rect.x);
+		expect(rects[i].y).toBe(fragments[i].rect.y);
+	}
 });
 
 // Dynamic Inline Run Management Tests
@@ -1806,7 +1875,7 @@ test("Block child positioned after parent text content", () => {
 
 	const parentRect = layoutEngine.getRect(parent)!;
 	const childRect = layoutEngine.getRect(child)!;
-	const textRects = layoutEngine.getRectTexts(textNode);
+	const textRects = layoutEngine[kRectTexts](textNode);
 
 	// Parent should have height for text + child
 	expect(parentRect.height).toBe(2);
@@ -2471,7 +2540,7 @@ function createTermDOM(html: string = "<div></div>") {
 
 function getPosition(layoutEngine: any, element: Element): number {
 	try {
-		const rects = layoutEngine.getRectTexts(element);
+		const rects = layoutEngine[kRectTexts](element);
 		return rects[0]?.rect.x ?? -1;
 	} catch {
 		return -1;
@@ -2583,7 +2652,7 @@ test("run head removal transfers to next inline element", async () => {
 
 	// span2 should become the new run head and have correct position
 	expect(layoutEngine.findInlineRunHead(span2)).toBe(span2);
-	const rects = layoutEngine.getRectTexts(span2);
+	const rects = layoutEngine[kRectTexts](span2);
 	expect(rects.length).toBeGreaterThan(0);
 	expect(rects[0].text).toBe("SECOND");
 	expect(rects[0].rect.x).toBe(0); // Should start at position 0
@@ -2596,8 +2665,8 @@ test("run head removal transfers to next inline element", async () => {
 	expect(layoutEngine.findInlineRunHead(span1)).toBe(span1);
 	expect(layoutEngine.findInlineRunHead(span2)).toBe(span1);
 
-	const rects1 = layoutEngine.getRectTexts(span1);
-	const rects2 = layoutEngine.getRectTexts(span2);
+	const rects1 = layoutEngine[kRectTexts](span1);
+	const rects2 = layoutEngine[kRectTexts](span2);
 
 	expect(rects1[0].rect.x).toBe(0); // FIRST at x=0
 	expect(rects2[0].rect.x).toBe(5); // SECOND at x=5 (after "FIRST")
@@ -2660,7 +2729,7 @@ test("text node removal invalidates inline runs", async () => {
 
 	// Both should be positioned correctly
 	expect(getPosition(layoutEngine, span)).toBe(0);
-	const spanRects = layoutEngine.getRectTexts(span);
+	const spanRects = layoutEngine[kRectTexts](span);
 	expect(spanRects[0].text).toBe("SPAN");
 
 	// Remove text node
@@ -2669,7 +2738,7 @@ test("text node removal invalidates inline runs", async () => {
 
 	// Span should still work correctly
 	expect(getPosition(layoutEngine, span)).toBe(0);
-	const newSpanRects = layoutEngine.getRectTexts(span);
+	const newSpanRects = layoutEngine[kRectTexts](span);
 	expect(newSpanRects[0].text).toBe("SPAN");
 });
 
