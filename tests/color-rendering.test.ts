@@ -251,3 +251,25 @@ test("each border side paints its own border color", async () => {
 
 	dom.dispose();
 });
+
+test("an inline background paints its fragments, not the box enclosing them", async () => {
+	// An inline box that breaks across lines has a fragment on each of them.
+	// Filling the rectangle that encloses those fragments covers the whole
+	// width of every line it spans, erasing the neighbours that own those
+	// cells -- the text before it on its first line, and after it on its last.
+	const terminal = new MockProcess({cols: 40, rows: 8});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	document.body.innerHTML =
+		`<p>aaaaaaaaaa <span id="s" style="background-color: #202020">` +
+		`bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb</span> cccccccccc</p>`;
+	await nextFrame(dom);
+
+	const text = terminal.getPlainText().split("\n");
+	// Everything before the inline box on its first line survives.
+	expect(text[0]).toContain("aaaaaaaaaa");
+	// And everything after it on its last line.
+	expect(text.join("\n")).toContain("cccccccccc");
+
+	dom.dispose();
+});

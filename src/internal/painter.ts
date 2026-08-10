@@ -391,13 +391,31 @@ export class Painter {
 		};
 
 		if (rect && visible && (style.bg != null || isCanvasBg || isHighlightBox)) {
-			ctx.fillRect(
-				rect.left,
-				rect.top,
-				rect.width,
-				rect.height,
-				isCanvasBg ? "default" : isHighlightBox ? "inverse" : style.bg,
-			);
+			const fill = isCanvasBg
+				? "default"
+				: isHighlightBox
+					? "inverse"
+					: style.bg;
+			// A box that broke across lines has a fragment on each of them, and
+			// its background belongs to those fragments rather than to the
+			// rectangle enclosing them: the enclosing one covers the whole width
+			// of every line it spans, including the cells before the box begins
+			// and after it ends, which are its neighbours' to paint. A box that
+			// did not break has one fragment and fills it.
+			const fragments = this.#layout.getRects(element);
+			if (fragments.length > 1) {
+				for (const fragment of fragments) {
+					ctx.fillRect(
+						fragment.left,
+						fragment.top,
+						fragment.width,
+						fragment.height,
+						fill,
+					);
+				}
+			} else {
+				ctx.fillRect(rect.left, rect.top, rect.width, rect.height, fill);
+			}
 		}
 
 		// Handle borders
