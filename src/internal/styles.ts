@@ -4052,6 +4052,39 @@ const NO_NAMESPACES: SelectorNamespaces = {default: null, prefixes: new Map()};
 const ATTRIBUTE_SELECTOR_NAME = /\[\s*([A-Za-z_][\w:.-]*)/g;
 
 /**
+ * The element type a selector's subject is anchored to, lowercased, or
+ * undefined when the subject names none -- a universal, a class, an id, an
+ * attribute or a bare pseudo-class can be any element, and so can anything this
+ * reading is not sure of.
+ *
+ * The subject is the last compound: everything after the final top-level
+ * combinator, counted outside brackets and parentheses so that the commas and
+ * spaces inside `:not(...)` or `[a=" "]` are not mistaken for one.
+ */
+function selectorSubjectTag(selector: string): string | undefined {
+	let depth = 0;
+	let start = 0;
+	for (let i = 0; i < selector.length; i++) {
+		const c = selector[i];
+		if (c === "(" || c === "[") depth++;
+		else if (c === ")" || c === "]") depth--;
+		else if (
+			depth === 0 &&
+			(c === " " || c === ">" || c === "+" || c === "~")
+		) {
+			start = i + 1;
+		}
+	}
+	const subject = selector.slice(start);
+	const name = /^[A-Za-z][\w-]*/.exec(subject);
+	if (!name) return undefined;
+	// A namespace prefix leaves the type after the bar, which the caller has
+	// already resolved away; anything still carrying one is not read here.
+	if (subject.includes("|")) return undefined;
+	return name[0].toLowerCase();
+}
+
+/**
  * An attribute selector's name is never read against the default namespace: an
  * unprefixed attribute is always in no namespace.
  */
@@ -6765,6 +6798,14 @@ function getListMarker(listItem: Element, listParent: Element): string {
 // TODO: Just use the CSSOM CSSRule interface from the DOM
 interface ParsedCSSRule {
 	selector: string;
+	/**
+	 * The element type the selector's subject is anchored to, lowercased --
+	 * absent when the subject names no type and any element could be it. Every
+	 * rule is tried against every element, so this is the reject that keeps a
+	 * document of divs from running the selector engine over a sheet's worth of
+	 * rules about summaries and legends.
+	 */
+	subjectTag?: string;
 	declarations: Record<string, string>;
 	/** Properties declared `!important` in this rule. */
 	important: Record<string, boolean>;
@@ -7657,6 +7698,8 @@ export class StyleManager {
 		// :host selectors only mean anything inside a shadow tree's own
 		// stylesheet; the selector engine rejects them outright, so they parse
 		// into a structured predicate matched by #ruleMatches instead.
+		const subjectTag = selectorSubjectTag(selector);
+
 		// Supported forms: `:host`, `:host(sel)`, `:host:focus`, and any of
 		// those followed by a descendant (or `>` child) selector.
 		if (scope && selector.startsWith(":host")) {
@@ -7699,6 +7742,7 @@ export class StyleManager {
 				// A pseudo-element written with no originating selector
 				// originates on every element, which is what `*` names.
 				selector: baseSelector.trim() || "*",
+				subjectTag: selectorSubjectTag(baseSelector.trim()),
 				declarations,
 				important,
 				specificity,
@@ -7714,6 +7758,7 @@ export class StyleManager {
 		} else {
 			this.#parsedRules.push({
 				selector,
+				subjectTag,
 				declarations,
 				important,
 				specificity,
@@ -7828,6 +7873,23 @@ export class StyleManager {
 	 * lets a shadow stylesheet style its own host.
 	 */
 	#ruleMatches(element: Element, rule: ParsedCSSRule): boolean {
+		// The subject's type, when the selector names one: every rule is tried
+		// against every element, and this is the reject that costs a string
+		// comparison instead of a selector match. A :host rule's subject is the
+		// host, which the branch below resolves for itself.
+		if (rule.subjectTag !== undefined && rule.host === undefined) {
+			const local = element.localName;
+			// A foreign element's local name keeps its case (feGaussianBlur), and
+			// the tag here is lowercased, so the reject only fires when neither
+			// reading matches -- the case-sensitivity a selector really has is
+			// then the matcher's to decide.
+			if (
+				local !== rule.subjectTag &&
+				local.toLowerCase() !== rule.subjectTag
+			) {
+				return false;
+			}
+		}
 		try {
 			// The namespace the selector qualifies its subject with, which the
 			// DOM's own matcher cannot answer.

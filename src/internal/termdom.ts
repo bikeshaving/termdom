@@ -90,8 +90,7 @@ export function currentInvalidationEpoch(): number {
 // coalesce the burst of SIGWINCHes a drag fires, short enough to feel immediate.
 const RESIZE_DEBOUNCE_MS = 40;
 
-// The built-in tags that upgrade to a UA widget on connect, as a tag set (for
-// the added element itself) and as a selector (for its descendants).
+// The built-in tags that upgrade to a UA widget on connect.
 const UPGRADEABLE_CONTROLS = new Set([
 	"INPUT",
 	"TEXTAREA",
@@ -99,7 +98,27 @@ const UPGRADEABLE_CONTROLS = new Set([
 	"PROGRESS",
 	"METER",
 ]);
-const UPGRADEABLE_SELECTOR = "input, textarea, select, progress, meter";
+
+/**
+ * Upgrade every control in a newly connected subtree, the element itself
+ * included. A walk over the subtree's own child links rather than a selector
+ * query: every insertion pays this, and a document of ordinary markup must pay
+ * as little as a tag comparison per element.
+ */
+function upgradeControlsIn(root: Element): void {
+	const stack: Element[] = [root];
+	while (stack.length > 0) {
+		const element = stack.pop()!;
+		if (UPGRADEABLE_CONTROLS.has(element.tagName)) upgradeUAWidget(element);
+		for (
+			let child = element.firstElementChild;
+			child !== null;
+			child = child.nextElementSibling
+		) {
+			stack.push(child);
+		}
+	}
+}
 
 // The engine each document is mounted in. The DOM prototypes are the realm's,
 // shared by every document; a patched member finds its engine here rather than
@@ -1668,13 +1687,7 @@ export class TermDOM {
 			if (record.type !== "childList") continue;
 			for (const added of record.addedNodes) {
 				if (added.nodeType !== added.ELEMENT_NODE) continue;
-				const element = added as Element;
-				if (UPGRADEABLE_CONTROLS.has(element.tagName)) {
-					upgradeUAWidget(element);
-				}
-				for (const control of element.querySelectorAll(UPGRADEABLE_SELECTOR)) {
-					upgradeUAWidget(control);
-				}
+				upgradeControlsIn(added as Element);
 			}
 		}
 		this.#styleManager.handleMutations(relevant);
