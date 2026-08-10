@@ -6,7 +6,11 @@
  * with, and every cell the painter places, comes from what it computed.
  */
 import type {EngineWindow} from "./termdom.js";
-import {currentInvalidationEpoch, invalidateStructure} from "./termdom.js";
+import {
+	currentInvalidationEpoch,
+	currentStructuralGeneration,
+	invalidateStructure,
+} from "./termdom.js";
 import Flex from "./flex.js";
 import type * as FlexTypes from "./flex.js";
 import LineBreaker from "linebreak";
@@ -1568,14 +1572,9 @@ export class LayoutEngine {
 	}
 
 	calculateLayout() {
-		// The DOM may have changed since the last pass without an invalidate()
-		// (callers may mutate and then call this directly, with no observer in
-		// between), and run heads must reflect the tree as it stands NOW. One
-		// bump serves the whole pass: entries memoized during it stay warm --
-		// the O(N^2) this cache exists for is intra-pass -- and the pass's
-		// entries remain valid afterward for paint and hit-testing, until the
-		// next mutation or pass.
-		this.#boxEpoch++;
+		// Geometry moves with the pass, so anything memoized against the layout
+		// epoch -- a resolved value, a rect -- re-measures after it.
+		this.#layoutPass++;
 		// Nothing marked dirty and nothing awaiting re-add: the previous layout
 		// still holds, and even the pruning sweep below -- O(nodes) isConnected
 		// checks -- is not worth paying. Every mutation path dirties the tree on
@@ -2932,31 +2931,48 @@ export class LayoutEngine {
 	 * no run position: they neither open nor close a run, and map to whichever
 	 * box is open around them so that content nested inside them still resolves.
 	 *
-	 * The epoch stamps the enumeration as derived data, dropped whenever the
-	 * tree or the cascade under it may have moved. The boxes themselves outlive
-	 * it: a rebuild reconciles against the entry it replaces.
+	 * An enumeration is derived data, and is dropped when the children it
+	 * describes may have moved: the containers named in {@link #staleContainers}
+	 * rebuild on their next read, and an unbounded change -- a stylesheet
+	 * reparse, a pseudo-element appearing, a shadow root attaching -- drops
+	 * every one of them by moving the structural generation the entry carries.
+	 * The boxes themselves outlive the entry: a rebuild reconciles against the
+	 * one it replaces.
 	 */
 	#boxesByContainer = new WeakMap<
 		Element,
 		{
-			epoch: number;
+			structure: number;
 			heads: Map<Node, ContainerBox>;
 			boxes: ContainerBox[];
 			runs: InlineBox[];
 		}
 	>();
-	#boxEpoch = 0;
 
 	/**
-	 * A counter that moves whenever geometry could have: every layout pass and
-	 * every invalidation bumps it, and so does every cascade invalidation --
-	 * a style written and then measured has moved geometry the engine has not
+	 * The containers whose enumeration no longer describes their children. A
+	 * mutation names them as it arrives -- the container a node's box sits in,
+	 * and the one an element's own children's boxes sit in -- so that flipping
+	 * a class on one row of a long list re-enumerates that row, and not the
+	 * nine hundred and ninety-five boxes around it.
+	 *
+	 * Weak, because a container named here may be the last thing a removed
+	 * subtree is held by, and a container never read again is never cleared.
+	 */
+	#staleContainers = new WeakSet<Element>();
+
+	#layoutPass = 0;
+
+	/**
+	 * A counter that moves whenever geometry could have: every layout pass
+	 * bumps it, and so does every cascade invalidation -- a style written and
+	 * then measured has moved geometry the engine has not
 	 * been told about yet, and a counter that stood still there would hand the
 	 * reader the layout standing behind the write. A resolved value memoizes
 	 * against it, the way a rect read does.
 	 */
 	get layoutEpoch(): number {
-		return currentInvalidationEpoch() + this.#boxEpoch;
+		return currentInvalidationEpoch() + this.#layoutPass;
 	}
 
 	/**
@@ -2981,8 +2997,15 @@ export class LayoutEngine {
 		runs: InlineBox[];
 	} {
 		const cached = this.#boxesByContainer.get(container);
-		const epoch = currentInvalidationEpoch() + this.#boxEpoch;
-		if (cached && cached.epoch === epoch) return cached;
+		const structure = currentStructuralGeneration();
+		if (
+			cached &&
+			cached.structure === structure &&
+			!this.#staleContainers.has(container)
+		) {
+			return cached;
+		}
+		this.#staleContainers.delete(container);
 
 		const heads = new Map<Node, ContainerBox>();
 		const boxes: ContainerBox[] = [];
@@ -3046,7 +3069,7 @@ export class LayoutEngine {
 			this.#retireInlineBox(previous[i]);
 		}
 
-		const entry = {epoch, heads, boxes, runs};
+		const entry = {structure, heads, boxes, runs};
 		this.#boxesByContainer.set(container, entry);
 		return entry;
 	}
@@ -3413,12 +3436,63 @@ export class LayoutEngine {
 	 * For block elements, invalidates their layout by removing from nodeMap
 	 */
 	invalidate(node: Node): void {
-		// Run membership may have moved (the invalidated node could be, or
-		// displace, a run head); drop every enumerated container. Once for the
-		// whole subtree below: invalidation rearranges layout nodes, never the
-		// DOM or the cascade the enumeration reads.
-		this.#boxEpoch++;
+		// Run membership may have moved: the invalidated node could be, or
+		// displace, a run head, and a restyle inside the subtree can change any
+		// descendant's display and with it the boxes its container holds. So
+		// the whole subtree re-enumerates -- which is what the invalidation
+		// itself is about to rebuild anyway.
+		this.#restageSubtree(node);
 		this.#invalidateNode(node);
+	}
+
+	/**
+	 * Note that a node's box may no longer sit where its container's
+	 * enumeration says.
+	 */
+	#restageBox(node: Node): void {
+		const container = this.#runContainerOf(node);
+		if (container) this.#staleContainers.add(container);
+	}
+
+	/**
+	 * Note that the boxes an element's children generate may no longer be the
+	 * ones its container's enumeration holds -- for an inline that is the
+	 * block container around it, since an inline's children belong to the run
+	 * the inline sits on.
+	 */
+	#restageChildren(parent: Element): void {
+		let box: Element | null = parent;
+		while (box && dissolvesIntoChildren(box)) box = boxParentElement(box);
+		if (!box) return;
+		this.#staleContainers.add(box);
+		const container = this.#runContainerFrom(box, false);
+		if (container) this.#staleContainers.add(container);
+	}
+
+	/** Note that every container in and around a subtree must re-enumerate. */
+	#restageSubtree(node: Node): void {
+		this.#restageBox(node);
+		if (node.nodeType !== node.ELEMENT_NODE) return;
+		this.#restageChildren(node as Element);
+		// A subtree layout has never seen holds no enumeration to unsettle, and
+		// the walk to discover that would cost more than the boxes it saves.
+		// Anything that HAS been laid out is reachable from its own record: a
+		// tree assembled off-document announces each piece as it is joined.
+		if (
+			!this.nodeMap.has(node) &&
+			!this.#boxesByContainer.has(node as Element)
+		) {
+			return;
+		}
+		// The flat tree, not the flow: which elements dissolve into their
+		// children is a question for the cascade, and marking one that turns
+		// out to generate no box costs nothing.
+		const walker = createFlatTreeWalker<Node>(node);
+		for (let child = walker.nextNode(); child; child = walker.nextNode()) {
+			if (child.nodeType === child.ELEMENT_NODE) {
+				this.#staleContainers.add(child as Element);
+			}
+		}
 	}
 
 	#invalidateNode(node: Node): void {
@@ -3727,9 +3801,44 @@ export class LayoutEngine {
 		this.#handleMutationRecords(mutations);
 	}
 
+	/** The containers a single mutation record can have unsettled. */
+	#restageForRecord(record: MutationRecord): void {
+		// A record on a shadow root describes the HOST's composed children.
+		const target =
+			record.target.nodeType === record.target.DOCUMENT_FRAGMENT_NODE
+				? ((record.target as ShadowRoot).host ?? null)
+				: record.target;
+		if (!target) return;
+		if (record.type === "attributes") {
+			// The element's own box may move between runs (its display could
+			// have changed), and so may the boxes of its children (a flex
+			// container gives each child a box of its own).
+			this.#restageBox(target);
+			this.#restageChildren(target as Element);
+			return;
+		}
+		if (record.type === "characterData") {
+			this.#restageBox(target);
+			return;
+		}
+		// Added and removed nodes both change the container's run structure --
+		// including the runs on either side of a block that left or arrived.
+		// The removed nodes are already detached, so the container is reached
+		// through the target rather than through them.
+		if (target.nodeType === target.ELEMENT_NODE) {
+			this.#restageChildren(target as Element);
+		}
+		for (const node of record.addedNodes) this.#restageSubtree(node);
+	}
+
 	#handleMutationRecords(mutations: MutationRecord[]): void {
 		for (let i = 0; i < mutations.length; i++) {
 			const record = mutations[i];
+			// Name the containers this record unsettles BEFORE anything reads an
+			// enumeration: the handling below asks which box a node has, and an
+			// enumeration answering from before the mutation would say "none"
+			// for a node just added -- and then nothing would ever correct it.
+			this.#restageForRecord(record);
 			if (record.type === "attributes") {
 				if (record.attributeName === "style") {
 					const element = record.target as Element;

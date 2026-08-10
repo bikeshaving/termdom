@@ -352,3 +352,64 @@ test("a run's first node turning block-level takes a box of its own", async () =
 
 	dom.dispose();
 });
+
+test("a class flip reaches the descendants its selectors reach", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+
+	// Three ways a flip on the row can reach the label below it: a rule that
+	// names the class on an ancestor, a property the label inherits, and a
+	// sibling combinator. A flip that reaches none of them still has to leave
+	// the label exactly as it was.
+	document.body.innerHTML =
+		`<style>` +
+		`.editing .view { display: none; }` +
+		`.dim { color: red; }` +
+		`.open ~ .note { display: none; }` +
+		`.boxed { background: blue; padding-left: 1px; }` +
+		`</style>` +
+		`<div id="row"><span class="view">label</span></div>` +
+		`<div class="note">note</div>`;
+	await nextFrame(dom);
+	const row = document.getElementById("row")!;
+	const label = document.querySelector(".view") as HTMLElement;
+	const plain = () => terminal.getPlainText().replace(/\s+/g, " ").trim();
+
+	expect(plain()).toContain("label");
+
+	// Reached by an ancestor-combinator rule.
+	row.classList.add("editing");
+	await nextFrame(dom);
+	expect(plain()).not.toContain("label");
+	row.classList.remove("editing");
+	await nextFrame(dom);
+	expect(plain()).toContain("label");
+
+	// Reached by inheritance: the rule names the row, the colour is the
+	// label's too.
+	row.classList.add("dim");
+	await nextFrame(dom);
+	expect(dom.window.getComputedStyle(label).color).toBe("rgb(255, 0, 0)");
+	row.classList.remove("dim");
+	await nextFrame(dom);
+	expect(dom.window.getComputedStyle(label).color).not.toBe("rgb(255, 0, 0)");
+
+	// Reaching nothing: `.boxed` declares only what a box keeps to itself, and
+	// names no descendant, so the label's own style is left standing -- which
+	// it must still be, exactly.
+	const labelColor = dom.window.getComputedStyle(label).color;
+	row.classList.add("boxed");
+	await nextFrame(dom);
+	expect(plain()).toContain("label");
+	expect(dom.window.getComputedStyle(label).color).toBe(labelColor);
+	expect(dom.window.getComputedStyle(label).display).toBe("inline");
+
+	// Reached sideways.
+	expect(plain()).toContain("note");
+	row.classList.add("open");
+	await nextFrame(dom);
+	expect(plain()).not.toContain("note");
+
+	dom.dispose();
+});

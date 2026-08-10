@@ -6,7 +6,11 @@ import {
 } from "../src/internal/layout.js";
 import {StyleManager} from "../src/internal/styles.js";
 import {renderTextFragment} from "../src/internal/text.js";
-import {TermDOM, kLayoutEngine} from "../src/internal/termdom.js";
+import {
+	TermDOM,
+	kLayoutEngine,
+	invalidateStructure,
+} from "../src/internal/termdom.js";
 import {ensurePseudoElement} from "../src/internal/dom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 import {createDocumentWindow} from "../src/internal/termdom.js";
@@ -14,11 +18,14 @@ import {createDocumentWindow} from "../src/internal/termdom.js";
 /**
  * Give an element the pseudo-element node the cascade would give it, holding
  * the text a `content` declaration would put there. The slots are the
- * engine's internal door to pseudo-elements; no author API reaches them.
+ * engine's internal door to pseudo-elements; no author API reaches them, and
+ * no mutation record describes them -- so this signals the structural change
+ * the cascade signals when a rule attaches one for real.
  */
 function attachPseudo(host: Element, name: string, content: string): Element {
 	const node = ensurePseudoElement<Element>(host, name);
 	node.textContent = content;
+	invalidateStructure();
 	return node;
 }
 
@@ -551,7 +558,7 @@ test("text node with inline precedent in flex container", () => {
 // === MUTATION TESTS ===
 
 test("block insertion splits inline run", () => {
-	const {dom, layoutEngine} = createLayoutEngine(
+	const {dom, layoutEngine, processMutationsAndLayout} = createLayoutEngine(
 		`<div><span>first</span><span>second</span></div>`,
 	);
 	const container = dom.window.document.querySelector("div")!;
@@ -566,7 +573,7 @@ test("block insertion splits inline run", () => {
 	const blockDiv = dom.window.document.createElement("div");
 	blockDiv.textContent = "block";
 	container.insertBefore(blockDiv, spans[1]);
-	layoutEngine.calculateLayout();
+	processMutationsAndLayout();
 
 	// After insertion: both spans should be heads of separate runs
 	expect(layoutEngine.isInlineRunHead(spans[0])).toBe(true); // Still head of first run

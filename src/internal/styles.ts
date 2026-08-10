@@ -4051,6 +4051,86 @@ const NO_NAMESPACES: SelectorNamespaces = {default: null, prefixes: new Map()};
 /** The attribute name an attribute selector opens with, whatever follows it. */
 const ATTRIBUTE_SELECTOR_NAME = /\[\s*([A-Za-z_][\w:.-]*)/g;
 
+/** The class names a compound selector tests, including inside :not()/:is(). */
+const SELECTOR_CLASS_NAME = /\.(-?[A-Za-z_][\w-]*)/g;
+
+/** The ids a compound selector tests. */
+const SELECTOR_ID_NAME = /#(-?[A-Za-z_][\w-]*)/g;
+
+/**
+ * The pseudo-classes an attribute can start or stop matching. A selector that
+ * tests one of these on an ancestor reaches the ancestor's descendants when the
+ * attribute behind it changes, and no attribute NAME in the selector says so.
+ */
+const STATE_PSEUDO_CLASSES =
+	/:(checked|disabled|enabled|required|optional|read-only|read-write|indeterminate|default|placeholder-shown|open|closed|link|any-link|visited|target|valid|invalid|in-range|out-of-range|defined|popover-open)\b/;
+
+/** The attributes those state pseudo-classes are driven by. */
+const STATE_ATTRIBUTES = new Set([
+	"checked",
+	"disabled",
+	"href",
+	"id",
+	"max",
+	"min",
+	"multiple",
+	"open",
+	"pattern",
+	"placeholder",
+	"popover",
+	"readonly",
+	"required",
+	"selected",
+	"type",
+	"value",
+]);
+
+/**
+ * A selector's compounds, in source order, split on top-level combinators.
+ * Descendant, child, and both sibling combinators all separate compounds;
+ * combinators inside parentheses or brackets do not, so `:is(a > b) c` reads as
+ * two compounds and `[title~="a b"]` as one.
+ */
+function selectorCompounds(selector: string): string[] {
+	const compounds: string[] = [];
+	let depth = 0;
+	let start = 0;
+	let inBracket = false;
+	let quote = "";
+	for (let i = 0; i < selector.length; i++) {
+		const char = selector[i];
+		if (quote) {
+			if (char === quote && selector[i - 1] !== "\\") quote = "";
+			continue;
+		}
+		if (char === '"' || char === "'") {
+			quote = char;
+		} else if (char === "(") {
+			depth++;
+		} else if (char === ")") {
+			depth--;
+		} else if (char === "[") {
+			inBracket = true;
+		} else if (char === "]") {
+			inBracket = false;
+		} else if (
+			depth === 0 &&
+			!inBracket &&
+			(char === " " ||
+				char === "\t" ||
+				char === "\n" ||
+				char === ">" ||
+				char === "+" ||
+				char === "~")
+		) {
+			if (i > start) compounds.push(selector.slice(start, i));
+			start = i + 1;
+		}
+	}
+	if (selector.length > start) compounds.push(selector.slice(start));
+	return compounds;
+}
+
 /**
  * The element type a selector's subject is anchored to, lowercased, or
  * undefined when the subject names none -- a universal, a class, an id, an
@@ -6899,6 +6979,28 @@ export class StyleManager {
 	 */
 	#selectorAttributes = new Set<string>();
 	/**
+	 * The keys a change to which can reach an element's DESCENDANTS: those a
+	 * selector tests left of a combinator (`.editing .view` is TodoMVC's edit
+	 * row), and those on rules declaring an inherited property, which the
+	 * descendants take their own value from. A class the sheets only ever
+	 * test on the subject of rules declaring `background` and `display`
+	 * (`.row.selected`) reaches nothing below.
+	 *
+	 * Collected loosely, by scanning compounds for `.name`, `#name` and
+	 * `[name`: keys inside :not()/:is() are read the same way, and a false
+	 * positive only widens the invalidation.
+	 */
+	#reachingClasses = new Set<string>();
+	#reachingIds = new Set<string>();
+	#reachingAttributes = new Set<string>();
+	/**
+	 * Whether any of those keys is a STATE pseudo-class (`:checked ~`,
+	 * `details[open] :not(summary)`) rather than a name. State pseudos are
+	 * driven by attributes whose names are not in the sets above, so a change
+	 * to any of {@link STATE_ATTRIBUTES} goes wide while this holds.
+	 */
+	#reachingStates = false;
+	/**
 	 * Rule-existence gates, also set during parsing. Attaching pseudos and
 	 * initializing counters both start by building full computed-style
 	 * declarations -- per element, on every insertion and attribute change.
@@ -7148,13 +7250,26 @@ export class StyleManager {
 					}
 				}
 			} else if (mutation.type === "attributes") {
-				// Invalidate caches for attribute changes (over-invalidation
-				// approach) -- INCLUDING descendants: a class flip on an
-				// ancestor changes which descendant-combinator rules match
-				// (.editing .view {display:none} is exactly the TodoMVC edit
-				// row), and the descendants' cached styles know nothing of it.
 				const element = mutation.target as Element;
-				this.#invalidateSubtree(element);
+				// A class flip on an ancestor changes which rules match its
+				// descendants -- `.editing .view {display:none}` is exactly the
+				// TodoMVC edit row -- and moves what they inherit. But only a
+				// flip the sheets USE that way does: when no rule tests the
+				// flipped class outside its own subject and none of the rules
+				// that test it declares an inherited property, the descendants'
+				// styles stand exactly as they were.
+				if (
+					this.#attributeReachesDescendants(
+						element,
+						mutation.attributeName!,
+						mutation.oldValue,
+					)
+				) {
+					this.#invalidateSubtree(element);
+				} else {
+					this.#invalidateElementCaches(element);
+					this.attachPseudoElementsToElement(element);
+				}
 				// Sibling combinators reach right: `.on ~ .light` matches (or
 				// stops matching) a FOLLOWING sibling when this element's
 				// attributes change, and that sibling's cached styles know
@@ -7502,7 +7617,12 @@ export class StyleManager {
 		this.#selectorsReachSiblings = false;
 		this.#selectorsReachAncestors = false;
 		this.#selectorAttributes.clear();
+		this.#reachingClasses.clear();
+		this.#reachingIds.clear();
+		this.#reachingAttributes.clear();
+		this.#reachingStates = false;
 		this.#pseudoRulesByType = new Map();
+		this.#pseudoSubjectTags = undefined;
 		this.#counterRulesExist = false;
 		this.#listItemRulesExist = false;
 		this.#stylesheetsDirty = false;
@@ -7654,6 +7774,103 @@ export class StyleManager {
 		}
 	}
 
+	/**
+	 * Record the keys a change to which can reach an element's descendants.
+	 *
+	 * Two ways it can: the key is tested on a NON-SUBJECT compound, so the
+	 * rule matches something below the element it names; or the rule declares
+	 * an INHERITED property, so starting or stopping it moves a value the
+	 * descendants take from the element. A key in neither position changes
+	 * nothing but the element's own box.
+	 */
+	#indexReachingKeys(
+		selector: string,
+		declarations: Record<string, string>,
+	): void {
+		let inherits = false;
+		for (const property in declarations) {
+			// A shorthand is stored as its longhands, so this reads longhands --
+			// except `all`, which stands for every property there is.
+			if (
+				property === "all" ||
+				property.startsWith("--") ||
+				INHERITED_PROPERTIES.has(property)
+			) {
+				inherits = true;
+				break;
+			}
+		}
+		const compounds = selectorCompounds(selector);
+		const last = inherits ? compounds.length : compounds.length - 1;
+		for (let i = 0; i < last; i++) {
+			const compound = compounds[i];
+			for (const match of compound.matchAll(SELECTOR_CLASS_NAME)) {
+				this.#reachingClasses.add(match[1]);
+			}
+			for (const match of compound.matchAll(SELECTOR_ID_NAME)) {
+				this.#reachingIds.add(match[1]);
+			}
+			for (const match of compound.matchAll(ATTRIBUTE_SELECTOR_NAME)) {
+				this.#reachingAttributes.add(match[1].toLowerCase());
+			}
+			if (STATE_PSEUDO_CLASSES.test(compound)) {
+				this.#reachingStates = true;
+			}
+		}
+	}
+
+	/**
+	 * Whether changing this attribute on this element can change the style of
+	 * its DESCENDANTS -- by starting or stopping a rule that matches one of
+	 * them, or by moving a value they inherit. When it can do neither, the
+	 * element's own cached style is the only one the cascade renders stale.
+	 *
+	 * An inline style is always taken to reach them: what it declares is not
+	 * known until it is parsed, and it is written where a value is meant to
+	 * change.
+	 */
+	#attributeReachesDescendants(
+		element: Element,
+		name: string,
+		oldValue: string | null,
+	): boolean {
+		if (name === "style") return true;
+		if (name === "class") {
+			if (this.#reachingAttributes.has("class")) return true;
+			if (this.#reachingClasses.size === 0) return false;
+			// A record with no old value can be one for an attribute that did
+			// not exist, or one from an observer that records none; the classes
+			// that LEFT are unknowable either way.
+			if (oldValue === null) return element.hasAttribute("class");
+			// Only the classes that came or went can have changed a match.
+			const before = new Set(oldValue.split(/\s+/));
+			const after = element.classList;
+			for (const token of after) {
+				if (!before.has(token) && this.#reachingClasses.has(token)) {
+					return true;
+				}
+			}
+			for (const token of before) {
+				if (
+					token !== "" &&
+					!after.contains(token) &&
+					this.#reachingClasses.has(token)
+				) {
+					return true;
+				}
+			}
+			return false;
+		}
+		if (name === "id") {
+			if (this.#reachingAttributes.has("id")) return true;
+			if (oldValue !== null && this.#reachingIds.has(oldValue)) return true;
+			const id = element.getAttribute("id");
+			return id !== null && this.#reachingIds.has(id);
+		}
+		if (this.#reachingAttributes.has(name)) return true;
+		return this.#reachingStates && STATE_ATTRIBUTES.has(name);
+	}
+
 	#parseSelector(
 		selector: string,
 		declarations: Record<string, string>,
@@ -7680,6 +7897,7 @@ export class StyleManager {
 				this.#selectorAttributes.add(match[1].toLowerCase());
 			}
 		}
+		this.#indexReachingKeys(selector, declarations);
 		if (
 			declarations["counter-reset"] ||
 			declarations["counter-increment"] ||
@@ -8193,9 +8411,51 @@ export class StyleManager {
 	}
 
 	/**
+	 * The element types a pseudo-element rule originates on, uppercased -- or
+	 * null where a rule reaches an element of any type, which is also what a
+	 * counter rule does through the scope chain. Built on demand, from the
+	 * subject each pseudo rule was parsed with.
+	 */
+	#pseudoSubjectTags: Set<string> | null | undefined;
+
+	#pseudoSubjects(): Set<string> | null {
+		if (this.#pseudoSubjectTags !== undefined) return this.#pseudoSubjectTags;
+		if (this.#counterRulesExist || this.#listItemRulesExist) {
+			return (this.#pseudoSubjectTags = null);
+		}
+		// A list carries the one counter no rule declares, and its items the
+		// markers that counter numbers.
+		const tags = new Set(["OL", "UL", "LI"]);
+		// Only the pseudos this attaches: ::marker reaches list items, named
+		// above, and ::placeholder, ::selection and ::part live on nodes the
+		// widget trees already hold.
+		for (const type of ["::before", "::after"]) {
+			for (const rule of this.#pseudoRulesByType.get(type) ?? []) {
+				if (!rule.subjectTag) return (this.#pseudoSubjectTags = null);
+				tags.add(rule.subjectTag.toUpperCase());
+			}
+		}
+		return (this.#pseudoSubjectTags = tags);
+	}
+
+	/**
 	 * Attach pseudo-element nodes to a specific element if it has matching pseudo-element rules
 	 */
 	attachPseudoElementsToElement(element: Element): void {
+		// No pseudo rule names this element's type, no counter scope reaches
+		// it, and it carries no pseudo of its own to reconsider: everything
+		// below would answer no, one matches() call per rule at a time. This is
+		// the whole cost of the walk over a subtree that just arrived.
+		const tags = this.#pseudoSubjects();
+		if (
+			tags !== null &&
+			!tags.has(element.tagName) &&
+			pseudoElementCount(element) === 0 &&
+			!this.#counterScopes.has(element.parentElement!) &&
+			!(element.getAttribute("style") ?? "").includes("list-item")
+		) {
+			return;
+		}
 		// Initialize counters for this element first
 		this.initializeCounters(element);
 
