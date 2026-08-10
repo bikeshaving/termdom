@@ -1,5 +1,11 @@
 import {describe, expect, test} from "@b9g/libuild/test";
-import {stringWidth, stringWidthFallback} from "../src/internal/text.js";
+import {
+	dataOffsetAt,
+	renderWhiteSpace,
+	renderWhiteSpaceOffsets,
+	stringWidth,
+	stringWidthFallback,
+} from "../src/internal/text.js";
 
 /**
  * termdom uses Bun.stringWidth when it is available and stringWidthFallback
@@ -108,10 +114,66 @@ const bunStringWidth =
 );
 
 /**
- * The one place the two deliberately DISAGREE, and why stringWidth() gates on
- * it: Bun.stringWidth charges a cell per code point, so a combining mark --
- * which renders onto the character before it and advances nothing -- is counted
- * as if it were a letter of its own.
+ * The invariant the painter rests on: a line fragment records the range of data
+ * it renders, and rendering that range gives back the characters the line
+ * paints. It holds because rendering a range equals the range of the rendering
+ * whenever the range begins and ends on a rendered character.
+ */
+describe("whitespace rendering", () => {
+	const cases: Array<[string, string]> = [
+		["plain words", "hello world"],
+		["a run of spaces", "a   b"],
+		["a lone tab", "a\tb"],
+		["a lone newline", "a\nb"],
+		["mixed whitespace", "a \n\t b  \r\nc"],
+		["leading and trailing", "  padded  "],
+		["a non-breaking space", "a b"],
+		["surrogate pairs", "a  \u{1f600}  b"],
+		["nothing", ""],
+	];
+
+	for (const whiteSpace of [
+		"normal",
+		"nowrap",
+		"pre-line",
+		"pre",
+		"pre-wrap",
+	]) {
+		for (const [name, data] of cases) {
+			test(`${whiteSpace}: ${name} maps every rendered character to its data`, () => {
+				const {text, offsets} = renderWhiteSpaceOffsets(data, whiteSpace);
+				expect(text).toBe(renderWhiteSpace(data, whiteSpace));
+				for (let i = 0; i < text.length; i++) {
+					const offset = dataOffsetAt(offsets, i);
+					expect(offset).toBeGreaterThanOrEqual(0);
+					expect(offset).toBeLessThan(data.length);
+					// A rendered character is either the data character it came
+					// from, or the single space a collapsed run renders as.
+					expect(text[i] === data[offset] || text[i] === " ").toBe(true);
+				}
+			});
+
+			test(`${whiteSpace}: ${name} renders a range as the range of the rendering`, () => {
+				const {text, offsets} = renderWhiteSpaceOffsets(data, whiteSpace);
+				for (let from = 0; from < text.length; from++) {
+					for (let to = from + 1; to <= text.length; to++) {
+						const start = dataOffsetAt(offsets, from);
+						const end = dataOffsetAt(offsets, to - 1) + 1;
+						expect(renderWhiteSpace(data.slice(start, end), whiteSpace)).toBe(
+							text.slice(from, to),
+						);
+					}
+				}
+			});
+		}
+	}
+});
+
+/**
+ * The one place stringWidth and Bun.stringWidth deliberately DISAGREE, and why
+ * stringWidth() gates on it: Bun.stringWidth charges a cell per code point, so a
+ * combining mark -- which renders onto the character before it and advances
+ * nothing -- is counted as if it were a letter of its own.
  */
 test("combining marks take the grapheme-aware path, not Bun's", () => {
 	// "שָׁלוֹם": four Hebrew letters carrying three niqqud. Four cells.

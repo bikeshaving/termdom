@@ -709,15 +709,19 @@ export function renderWhiteSpaceOffsets(
 	// Each run of length L renders as one space, so every later character sits
 	// L-1 places earlier than its data offset.
 	let dropped = 0;
+	// A one-character run leaves every offset where it was and still rewrites
+	// the character, since a tab or a newline renders as a space.
+	let rewritten = false;
 	let match: RegExpExecArray | null;
 	while ((match = pattern.exec(data))) {
 		spaceAt.push(match.index - dropped);
 		runStart.push(match.index);
 		runEnd.push(match.index + match[0].length);
 		dropped += match[0].length - 1;
+		if (match[0] !== " ") rewritten = true;
 	}
 	return {
-		text: dropped === 0 ? data : data.replace(pattern, " "),
+		text: dropped === 0 && !rewritten ? data : data.replace(pattern, " "),
 		offsets: {
 			spaceAt: Int32Array.from(spaceAt),
 			runStart: Int32Array.from(runStart),
