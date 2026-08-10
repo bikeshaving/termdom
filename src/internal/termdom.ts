@@ -781,9 +781,24 @@ export class TermDOM {
 			this.#onFieldEditEvent,
 			true,
 		);
+		// A disclosure that opens has just put its contents on the page, and a
+		// terminal's page is one screen tall: what it revealed is often below
+		// the fold that hid it. Bring it into view, the way moving focus does.
+		this.document.addEventListener("toggle", this.#onDisclosureToggle, true);
 
 		// Initial processing of all elements is handled by StyleManager's constructor
 	}
+
+	/**
+	 * Reveal what a disclosure opened. A details that closes has taken content
+	 * away rather than added it, so there is nothing to bring into view.
+	 */
+	#onDisclosureToggle = (event: Event): void => {
+		const details = event.target as HTMLElement | null;
+		if (details === null || !("open" in details)) return;
+		if (!(details as HTMLDetailsElement).open) return;
+		details.scrollIntoView({block: "nearest"});
+	};
 
 	/**
 	 * Keep a focused field's caret in view and repaint, on the standard
@@ -2412,7 +2427,13 @@ export class TermDOM {
 			nextIndex = currentIndex >= focusable.length - 1 ? 0 : currentIndex + 1;
 		}
 
-		(focusable[nextIndex] as HTMLElement).focus();
+		const next = focusable[nextIndex] as HTMLElement;
+		next.focus();
+		// A control the camera is not looking at cannot be typed into, so the
+		// move brings it into view -- what a browser does when focus leaves the
+		// scrollport, and what makes tabbing through a form longer than the
+		// screen work at all.
+		next.scrollIntoView({block: "nearest"});
 
 		// Focus is not a DOM mutation, so no observer will schedule a frame -- but
 		// :focus styling and the caret (the real terminal cursor, parked in the

@@ -2306,3 +2306,46 @@ test("line feed is the Ctrl+J chord, not Enter", async () => {
 
 	dom.dispose();
 });
+
+test("moving focus and opening a disclosure bring their target into view", async () => {
+	// A terminal shows one screen of a document, so a control the camera is not
+	// looking at cannot be used: tabbing to it, and opening a disclosure whose
+	// contents were below the fold, both have to move the camera.
+	const terminal = new MockProcess({rows: 8, cols: 40});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
+	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
+	const {document, window} = dom;
+	document.body.innerHTML =
+		`<input id="first">` +
+		Array.from({length: 40}, (_, i) => `<div>line ${i}</div>`).join("") +
+		`<input id="last">` +
+		`<details id="d"><summary>Show</summary>` +
+		Array.from({length: 20}, (_, i) => `<div>hidden ${i}</div>`).join("") +
+		`</details>`;
+	(document.getElementById("first") as HTMLElement).focus();
+	await nextFrame(dom);
+	expect(window.scrollY).toBe(0);
+
+	// Tab past the lines to the far input: the camera follows.
+	(terminal.stdin as any).emit("data", Buffer.from("\t"));
+	await new Promise((r) => setTimeout(r, 0));
+	await nextFrame(dom);
+	expect(document.activeElement?.id).toBe("last");
+	expect(window.scrollY).toBeGreaterThan(0);
+
+	// Opening the disclosure reveals what it added.
+	const scrolledBefore = window.scrollY;
+	const details = document.getElementById("d") as HTMLDetailsElement;
+	details
+		.querySelector("summary")!
+		.dispatchEvent(
+			new window.MouseEvent("click", {bubbles: true, cancelable: true}),
+		);
+	await new Promise((r) => setTimeout(r, 0));
+	await nextFrame(dom);
+	expect(details.open).toBe(true);
+	expect(window.scrollY).toBeGreaterThanOrEqual(scrolledBefore);
+
+	dom.dispose();
+});
