@@ -8343,10 +8343,10 @@ export class StyleManager {
 		this.#computedStyleCache.get(element)?.invalidate();
 		this.#computedStyleCache.delete(element);
 		this.#pseudoElementStyleCache.delete(element);
-		if (this.#pendingStyleDamage) {
-			this.#pendingStyleDamage.add(element);
-			if (this.#pendingStyleDamage.size > 24) this.#pendingStyleDamage = null;
-		}
+		// Kept until the rows it claims cover the screen, which the engine
+		// decides as it turns elements into bands: a count cannot tell a
+		// hundred one-row changes apart from one that reaches everything.
+		this.#pendingStyleDamage?.add(element);
 		// A style change can flip display: contents, which moves the node's
 		// flat-tree BOX parent, so every box enumeration keyed on the epoch is
 		// stale from here.

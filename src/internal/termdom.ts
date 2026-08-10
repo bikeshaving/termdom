@@ -3292,10 +3292,20 @@ export class TermDOM {
 			}
 
 			const bands: Array<[number, number]> = [];
+			// Past most of the region the transform stops paying, so the rows
+			// the bands claim are counted as they are added: damage that
+			// already covers the screen stops the walk instead of pricing
+			// every element that follows it. Overlap counts twice, which only
+			// makes the bail come sooner.
+			const bandBudget = regionHeight * 0.75;
+			let coverage = 0;
 			const addBand = (start: number, end: number): void => {
 				const clampedStart = Math.max(0, Math.floor(start));
 				const clampedEnd = Math.min(regionHeight, Math.ceil(end));
-				if (clampedEnd > clampedStart) bands.push([clampedStart, clampedEnd]);
+				if (clampedEnd > clampedStart) {
+					bands.push([clampedStart, clampedEnd]);
+					coverage += clampedEnd - clampedStart;
+				}
 			};
 
 			if (delta > 0) addBand(regionHeight - delta, regionHeight);
@@ -3328,6 +3338,7 @@ export class TermDOM {
 			}
 
 			for (const element of damaged) {
+				if (coverage > bandBudget) break transform;
 				// Damage reaches as far as the selector invalidation scope; the
 				// whole document is unbounded.
 				const scope = this.#styleManager.invalidationScopeFor(element);
@@ -3371,11 +3382,8 @@ export class TermDOM {
 				}
 			}
 
-			// Past most of the region the transform stops paying.
-			let coverage = 0;
-			for (const [start, end] of bands) coverage += end - start;
 			if (delta === 0 && bands.length === 0) break transform;
-			if (coverage > regionHeight * 0.75) break transform;
+			if (coverage > bandBudget) break transform;
 
 			scroll = {delta, bands};
 		}
