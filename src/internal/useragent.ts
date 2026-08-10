@@ -410,7 +410,21 @@ export const TERMINAL_ELEMENT_DEFAULTS: Record<
 	dt: {display: "block"},
 	dd: {display: "block"},
 	form: {display: "block"},
-	fieldset: {display: "block"},
+	// A group of controls in a labelled box, the way a browser draws one: a
+	// border around the group with the legend sitting IN the top border line.
+	// The legend gets there by rising one row onto the border and painting the
+	// terminal's own background over the cells it covers -- which is what
+	// "interrupting the border" is.
+	fieldset: {
+		display: "block",
+		border: "1px solid",
+		padding: "0 1ch",
+	},
+	legend: {
+		display: "block",
+		"margin-top": "-1px",
+		"font-weight": "bold",
+	},
 	// A disclosure and its summary are both blocks, so the summary owns its
 	// row and the body stacks under it. The marker and the open/closed glyph
 	// are ::before rules in the UA document stylesheet.
@@ -754,6 +768,7 @@ export const UA_DOCUMENT_STYLES = `
 	details > summary:first-of-type::before { content: "▸ "; }
 	details[open] > summary:first-of-type::before { content: "▾ "; }
 	summary:focus-visible { outline-width: 1px; outline-style: solid; outline-color: #5fafff; }
+	legend::before, legend::after { content: " "; white-space: pre; }
 	a[href]:focus-visible { background-color: Highlight; color: HighlightText; }
 	button:focus-visible { outline-width: 1px; outline-style: solid; outline-color: #5fafff; }
 `;

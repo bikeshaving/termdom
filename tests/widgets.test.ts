@@ -227,6 +227,39 @@ test("a meter's level reads its value against low, high and optimum", async () =
 	dom.dispose();
 });
 
+/* --------------------------------------------------- fieldset and legend */
+
+test("a fieldset draws a border its legend interrupts", async () => {
+	const terminal = new MockProcess({rows: 6, cols: 24});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML = `<fieldset><legend>Legend</legend>field body</fieldset>`;
+	await nextFrame(dom);
+
+	expect(terminal.getPlainText()).toBe(
+		"┌─ Legend ─────────────┐\n" +
+			"│ field body           │\n" +
+			"└──────────────────────┘\n",
+	);
+
+	dom.dispose();
+});
+
+test("a fieldset's blocks stack under the legend", async () => {
+	const terminal = new MockProcess({rows: 6, cols: 24});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML = `<fieldset><legend>Group</legend><div>one</div><div>two</div></fieldset>`;
+	await nextFrame(dom);
+
+	expect(terminal.getPlainText()).toBe(
+		"┌─ Group ──────────────┐\n" +
+			"│ one                  │\n" +
+			"│ two                  │\n" +
+			"└──────────────────────┘\n",
+	);
+
+	dom.dispose();
+});
+
 test("Tab reaches a summary", async () => {
 	const terminal = new MockProcess({rows: 6, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});
