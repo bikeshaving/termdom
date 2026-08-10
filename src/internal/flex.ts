@@ -411,6 +411,48 @@ function constraintsMatch(
 	);
 }
 
+/**
+ * Whether one axis of a cached SIZING answer still answers a new query, by
+ * Yoga's rules (yoga/algorithm/Cache.cpp, canUseCachedMeasurement). Beyond an
+ * identical constraint, three offers are answered by a size already computed:
+ *
+ *  - an EXACTLY offer of the size the node last reported: it was asked to be
+ *    that big and had already chosen to be;
+ *  - an AT_MOST bound over an answer computed under no bound at all -- the
+ *    natural size fits inside the bound, so the bound changes nothing;
+ *  - a TIGHTER AT_MOST bound than the one already answered, with the answer
+ *    still inside it.
+ *
+ * Each of these says the node's size under the new offer equals the size it
+ * already has, which is all a sizing pass asks for. It says nothing about the
+ * INTERNAL arrangement that produced it, so it holds for sizing answers only:
+ * a full layout placed children (and broke text into lines) against exact
+ * constraints, and a differently-shaped offer may place them elsewhere.
+ */
+function sizeStillAnswers(
+	cachedMode: MeasureMode,
+	cachedAvailable: number,
+	cachedComputed: number,
+	mode: MeasureMode,
+	available: number,
+): boolean {
+	if (cachedMode === mode && sameConstraint(cachedAvailable, available)) {
+		return true;
+	}
+	if (mode === MEASURE_MODE_EXACTLY && available === cachedComputed) {
+		return true;
+	}
+	if (mode === MEASURE_MODE_AT_MOST) {
+		if (cachedMode === MEASURE_MODE_UNDEFINED) {
+			return cachedComputed <= available;
+		}
+		if (cachedMode === MEASURE_MODE_AT_MOST) {
+			return cachedAvailable > available && cachedComputed <= available;
+		}
+	}
+	return false;
+}
+
 /** See Node#unstackedChildCount. */
 function breaksStacking(node: Node): boolean {
 	return (
@@ -3125,17 +3167,35 @@ function layoutNode(
 			)
 		) {
 			hit = node.cachedLayout;
-		} else if (!performLayout) {
+		} else if (!performLayout && node.cachedMeasures.length > 0) {
+			// Margins are outside the size a measurement answers with, so both the
+			// offer and the remembered offer come down to their content side
+			// before they are compared.
+			const marginRow = marginForAxis(node, FLEX_DIRECTION_ROW, ownerWidth);
+			const marginColumn = marginForAxis(
+				node,
+				FLEX_DIRECTION_COLUMN,
+				ownerWidth,
+			);
 			for (const cached of node.cachedMeasures) {
 				if (
-					constraintsMatch(
-						cached,
-						availableWidth,
-						availableHeight,
+					sameConstraint(cached.ownerWidth, ownerWidth) &&
+					sameConstraint(cached.ownerHeight, ownerHeight) &&
+					cached.width >= 0 &&
+					cached.height >= 0 &&
+					sizeStillAnswers(
+						cached.widthMode,
+						cached.availableWidth - marginRow,
+						cached.width,
 						widthMode,
+						availableWidth - marginRow,
+					) &&
+					sizeStillAnswers(
+						cached.heightMode,
+						cached.availableHeight - marginColumn,
+						cached.height,
 						heightMode,
-						ownerWidth,
-						ownerHeight,
+						availableHeight - marginColumn,
 					)
 				) {
 					hit = cached;
