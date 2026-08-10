@@ -5316,10 +5316,9 @@ export class LayoutEngine {
 			const start = text.length;
 
 			if (leaf.type === "text" && leaf.content) {
-				// Get the white-space property for this specific leaf's parent element
-				const leafWhiteSpace = leaf.node.parentElement
-					? getPropertyValue(leaf.node.parentElement, "white-space")
-					: "normal";
+				// The white-space this leaf renders under, read the way a painter
+				// reads it: from the flat-tree parent whose style it inherits.
+				const leafWhiteSpace = whiteSpaceOf(leaf.node);
 
 				// Process the text content according to its white-space property,
 				// keeping the raw data offset each rendered code unit came from.
@@ -5378,8 +5377,8 @@ export class LayoutEngine {
 		if (text.length > 0) {
 			// Check if any leaf has pre-style whitespace that should be preserved
 			const hasPreWhitespace = leafNodes.some((leaf) => {
-				if (leaf.type === "text" && leaf.node.parentElement) {
-					const ws = getPropertyValue(leaf.node.parentElement, "white-space");
+				if (leaf.type === "text") {
+					const ws = whiteSpaceOf(leaf.node);
 					return ws === "pre" || ws === "pre-wrap" || ws === "pre-line";
 				}
 				return false;
@@ -5438,12 +5437,8 @@ export class LayoutEngine {
 	/** Does ANY text leaf in the run carry white-space: nowrap? */
 	#hasNowrapLeaf(content: ProcessedContent): boolean {
 		return content.items.some((item) => {
-			if (item.leafNode.type === "text" && item.leafNode.node.parentElement) {
-				const leafWhiteSpace = getPropertyValue(
-					item.leafNode.node.parentElement,
-					"white-space",
-				);
-				return leafWhiteSpace === "nowrap";
+			if (item.leafNode.type === "text") {
+				return whiteSpaceOf(item.leafNode.node) === "nowrap";
 			}
 			return false;
 		});
