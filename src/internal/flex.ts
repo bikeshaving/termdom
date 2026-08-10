@@ -1,13 +1,16 @@
 /**
  * A pure-JS CSS flexbox implementation over an integer cell grid.
  *
- * This replaces yoga-layout (WASM/native). It implements CSS Flexible Box
- * Layout (CSS Box Alignment / css-flexbox-1) directly from the spec, and
- * exposes the subset of Yoga's node API that LayoutEngine actually calls.
+ * It implements CSS Flexible Box Layout (CSS Box Alignment / css-flexbox-1)
+ * directly from the spec, over the subset of Yoga's node API that
+ * LayoutEngine calls -- a shape the engine depends on, since some of these
+ * names are looked up dynamically.
  *
- * Deliberately omitted, because termdom does not use them: RTL/bidi, writing
- * modes, aspect-ratio, gap, baseline alignment, overflow:scroll semantics, and
- * sub-cell scaling (pointScaleFactor is always 1 -- the grid is integer cells).
+ * Omitted, because the engine resolves them elsewhere or a cell grid has no
+ * use for them: writing modes and the direction property -- bidi is resolved
+ * when text is shaped, not when boxes are placed -- aspect-ratio, scrollable
+ * overflow sizing, and sub-cell scaling, the grid being integer cells, so
+ * pointScaleFactor is always 1.
  *
  * Undefined values are represented as NaN throughout, matching the convention
  * that "undefined" is a distinct state from 0.
