@@ -151,6 +151,46 @@ export function stringWidth(str: string): number {
 }
 
 /**
+ * Write the per-code-unit widths of `str` into `out`, starting at `offset`.
+ *
+ * A grapheme cluster's whole width lands on its LAST code unit and every other
+ * position of the cluster gets zero, so summing any range whose ends are cluster
+ * boundaries gives that substring's width -- the property that lets a cumulative
+ * array answer a range measurement in constant time. A range that ends inside a
+ * cluster charges nothing for the partial cluster, which is the same answer the
+ * cluster-based measurement gives for a fragment with no base character.
+ *
+ * Terminal cell widths are additive because a cell is a cell: no kerning, no
+ * ligature across a break, nothing about the neighbours changes a cluster's
+ * column count.
+ */
+export function writeClusterWidths(
+	str: string,
+	out: Float64Array,
+	offset: number,
+): void {
+	if (PRINTABLE_ASCII.test(str)) {
+		for (let i = 0; i < str.length; i++) out[offset + i] = 1;
+		return;
+	}
+
+	if (segmenter) {
+		for (const {index, segment} of segmenter.segment(str)) {
+			out[offset + index + segment.length - 1] = graphemeWidth(segment);
+		}
+		return;
+	}
+
+	// No Intl.Segmenter: per-code-point, the same degradation stringWidthFallback
+	// takes.
+	let index = 0;
+	for (const char of str) {
+		index += char.length;
+		out[offset + index - 1] = graphemeWidth(char);
+	}
+}
+
+/**
  * Pure-JS string width, used on runtimes without Bun.
  *
  * Exported so tests can hold it against Bun.stringWidth directly: under Bun the
