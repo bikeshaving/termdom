@@ -26,7 +26,7 @@ export const recordedOutput: Record<string, string> = {
 	"clip rect with unbounded axes":
 		"\u001b[?25l\u001b[?2026h\u001b7\u001b[4C\r\u001b[K\u001b[4Czontally\r\n\r\n\r\u001b[Kkept by the row clip\r\n\r\n\r\n\r\u001b[Ktail\u001b8\u001b7\u001b[5B\r\u001b[?2026l",
 	"wrapped rows above the cursor park":
-		"{\"before\":[3,5,6,8],\"after\":[1,2,2,3]}",
+		'{"before":[3,5,6,8],"after":[1,2,2,3]}',
 	"edgeRow outline over existing cells":
 		"\u001b[?25l\u001b[?2026h\u001b7\r\n\r\u001b[K\u001b[38;2;255;0;0;1;4mboxed\u001b[38;2;95;175;255;22m       \u001b[0m\r\n\r\n\r\u001b[K\u001b[2;3;53mover\u001b[38;2;95;175;255;23m        \u001b[0m\u001b8\u001b7\u001b[3B\r\u001b[?2026l",
 	"incremental diff across frames":

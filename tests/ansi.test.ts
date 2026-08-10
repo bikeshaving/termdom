@@ -1,8 +1,7 @@
 import {describe, expect, test} from "@b9g/libuild/test";
 import {
-	Cell,
+	CellGrid,
 	type CellStyle,
-	createBuffer,
 	generateANSI,
 	getBorderChar,
 	mergeBorderEncodings,
@@ -11,133 +10,120 @@ import {
 import {BorderEdgeStyle} from "../src/internal/styles.js";
 import {stripControlCodes} from "./test-utils.js";
 
-describe("Cell", () => {
-	describe("constructor", () => {
-		test("throws on empty grapheme", () => {
-			expect(() => new Cell("")).toThrow(
-				"Cell grapheme cannot be empty. Use null instead.",
-			);
+describe("CellGrid", () => {
+	describe("planes", () => {
+		test("a new grid is entirely empty", () => {
+			const grid = new CellGrid(3, 5);
+
+			expect(grid.rows).toBe(3);
+			expect(grid.cols).toBe(5);
+			expect(grid.char.length).toBe(15);
+			for (let index = 0; index < 15; index++) {
+				expect(grid.graphemeAt(index)).toBe("");
+				expect(grid.widthAt(index)).toBe(0);
+			}
 		});
 
-		test("creates cell with character", () => {
-			const cell = new Cell("A");
-
-			expect(cell.grapheme).toBe("A");
-			expect(cell.getFgColor()).toBe(0);
-			expect(cell.getBgColor()).toBe(0);
-			const flags = cell.getStyleFlags();
-			expect(flags.bold).toBe(false);
-			expect(flags.italic).toBe(false);
-			expect(flags.underline).toBe(false);
-			expect(flags.strikethrough).toBe(false);
-			expect(flags.inverse).toBe(false);
-			expect(flags.blink).toBe(false);
-			expect(flags.dim).toBe(false);
-			expect(flags.overline).toBe(false);
-		});
-
-		test("creates cell with character and style", () => {
+		test("a cell records its grapheme, colors and style", () => {
 			const style: CellStyle = {
 				fg: 0xff0000,
 				bg: 0x00ff00,
 				bold: true,
 				italic: true,
 			};
-			const cell = new Cell({grapheme: "A", ...style});
+			const grid = new CellGrid(1, 1);
+			grid.setCell(0, "A", style);
 
-			expect(cell.grapheme).toBe("A");
-			expect(cell.getFgColor()).toBe(0xff0000);
-			expect(cell.getBgColor()).toBe(0x00ff00);
+			expect(grid.graphemeAt(0)).toBe("A");
+			expect(grid.fg[0]).toBe(0xff0000);
+			expect(grid.bg[0]).toBe(0x00ff00);
+			expect(grid.widthAt(0)).toBe(1);
+		});
 
-			const flags = cell.getStyleFlags();
-			expect(flags.bold).toBe(true);
-			expect(flags.italic).toBe(true);
-			expect(flags.underline).toBe(false);
-			expect(flags.strikethrough).toBe(false);
-			expect(flags.inverse).toBe(false);
-			expect(flags.blink).toBe(false);
-			expect(flags.dim).toBe(false);
-			expect(flags.overline).toBe(false);
+		test("a background override replaces the style's own", () => {
+			const grid = new CellGrid(1, 1);
+			grid.setCell(0, "A", {bg: 0x00ff00}, 0x0000ff);
+
+			expect(grid.bg[0]).toBe(0x0000ff);
+		});
+
+		test("a multi-code-point grapheme survives the round trip", () => {
+			const family = "\u{1f468}‍\u{1f469}‍\u{1f467}";
+			const grid = new CellGrid(1, 4);
+			grid.setCell(0, family);
+			grid.setCell(1, "é");
+			grid.setCell(2, "\u{1f1ef}\u{1f1f5}");
+			grid.setCell(3, "日");
+
+			expect(grid.graphemeAt(0)).toBe(family);
+			expect(grid.graphemeAt(1)).toBe("é");
+			expect(grid.graphemeAt(2)).toBe("\u{1f1ef}\u{1f1f5}");
+			expect(grid.graphemeAt(3)).toBe("日");
+			expect(grid.widthAt(0)).toBe(2);
+			expect(grid.widthAt(1)).toBe(1);
+			expect(grid.widthAt(2)).toBe(2);
+			expect(grid.widthAt(3)).toBe(2);
+		});
+
+		test("an interned grapheme keeps one id", () => {
+			const grid = new CellGrid(1, 2);
+			grid.setCell(0, "é");
+			grid.setCell(1, "é");
+
+			expect(grid.char[0]).toBe(grid.char[1]);
 		});
 	});
 
-	describe("Cell.create", () => {
-		test("returns null for empty string", () => {
-			const cell = Cell.create("");
-			expect(cell).toBeNull();
+	describe("comparison", () => {
+		test("equalCells compares content and styling", () => {
+			const grid = new CellGrid(1, 3);
+			grid.setCell(0, "A", {fg: 0xff0000, bold: true});
+			grid.setCell(1, "B", {fg: 0xff0000, bold: true});
+			grid.setCell(2, "A", {fg: 0x00ff00, bold: true});
+
+			expect(grid.equalCells(0, grid, 0)).toBe(true);
+			expect(grid.equalCells(0, grid, 1)).toBe(false);
+			expect(grid.equalCells(0, grid, 2)).toBe(false);
 		});
 
-		test("caches cells with same properties", () => {
-			const style: CellStyle = {
-				grapheme: "A",
-				fg: 0xff0000,
-				bold: true,
-			};
+		test("equalCells reaches across grids", () => {
+			const a = new CellGrid(1, 1);
+			const b = new CellGrid(1, 1);
+			a.setCell(0, "A", {fg: 0xff0000});
+			b.setCell(0, "A", {fg: 0xff0000});
 
-			const cell1 = Cell.create(style);
-			const cell2 = Cell.create(style);
-
-			expect(cell1).toBe(cell2); // Same reference due to caching
-		});
-	});
-
-	describe("methods", () => {
-		test("equals compares all properties", () => {
-			const cell1 = new Cell({grapheme: "A", fg: 0xff0000, bold: true});
-			const cell2 = new Cell({grapheme: "A", fg: 0xff0000, bold: true});
-			const cell3 = new Cell({grapheme: "B", fg: 0xff0000, bold: true});
-
-			expect(cell1.equals(cell2)).toBe(true);
-			expect(cell1.equals(cell3)).toBe(false);
-		});
-
-		test("styleEquals compares style properties only", () => {
-			const cell1 = new Cell({grapheme: "A", fg: 0xff0000, bold: true});
-			const cell2 = new Cell({grapheme: "B", fg: 0xff0000, bold: true});
-			const cell3 = new Cell({grapheme: "A", fg: 0x00ff00, bold: true});
-
-			expect(cell1.styleEquals(cell2)).toBe(true);
-			expect(cell1.styleEquals(cell3)).toBe(false);
-		});
-
-		test("width returns correct character width", () => {
-			const normal = new Cell("A");
-			const emoji = new Cell("👍");
-
-			expect(normal.width).toBe(1);
-			expect(emoji.width).toBe(2);
-		});
-
-		test("isWide identifies wide characters", () => {
-			const normal = new Cell("A");
-			const emoji = new Cell("👍");
-
-			expect(normal.isWide).toBe(false);
-			expect(emoji.isWide).toBe(true);
+			expect(a.equalCells(0, b, 0)).toBe(true);
 		});
 	});
-});
 
-describe("createBuffer", () => {
-	test("creates buffer with specified dimensions", () => {
-		const buffer = createBuffer(3, 5);
+	describe("bulk moves", () => {
+		test("moveRange shifts cells and clearRange blanks them", () => {
+			const grid = new CellGrid(3, 2);
+			grid.setCell(0, "a");
+			grid.setCell(2, "b");
+			grid.setCell(4, "c");
 
-		expect(buffer.length).toBe(3);
-		expect(buffer[0].length).toBe(5);
-		expect(buffer[1].length).toBe(5);
-		expect(buffer[2].length).toBe(5);
+			// Row r now shows what was at row r + 1.
+			grid.moveRange(0, 2, 6);
+			grid.clearRange(4, 6);
 
-		// All cells should be null initially
-		for (let row = 0; row < 3; row++) {
-			for (let col = 0; col < 5; col++) {
-				expect(buffer[row][col]).toBeNull();
-			}
-		}
-	});
+			expect(grid.graphemeAt(0)).toBe("b");
+			expect(grid.graphemeAt(2)).toBe("c");
+			expect(grid.graphemeAt(4)).toBe("");
+		});
 
-	test("creates empty buffer for zero dimensions", () => {
-		const empty = createBuffer(0, 0);
-		expect(empty.length).toBe(0);
+		test("bottomRows keeps only the last rows", () => {
+			const grid = new CellGrid(3, 1);
+			grid.setCell(0, "a");
+			grid.setCell(1, "b");
+			grid.setCell(2, "c");
+
+			const kept = grid.bottomRows(2);
+
+			expect(kept.rows).toBe(2);
+			expect(kept.graphemeAt(0)).toBe("b");
+			expect(kept.graphemeAt(1)).toBe("c");
+		});
 	});
 });
 
@@ -327,32 +313,27 @@ describe("Renderer with callback API", () => {
 
 describe("generateANSI", () => {
 	test("generates empty output for empty buffer", () => {
-		const buffer = createBuffer(3, 5);
-		const output = generateANSI(buffer);
+		const output = generateANSI(new CellGrid(3, 5));
 
 		expect(output).toBe("");
 	});
 
 	test("generates ANSI for simple text", () => {
-		const buffer = createBuffer(2, 5);
-		buffer[0][0] = new Cell("H");
-		buffer[0][1] = new Cell("i");
+		const grid = new CellGrid(2, 5);
+		grid.setCell(0, "H");
+		grid.setCell(1, "i");
 
-		const output = generateANSI(buffer);
+		const output = generateANSI(grid);
 
 		expect(output).toContain("Hi");
 		expect(output).toContain("\r\n"); // Line ending
 	});
 
 	test("generates color codes", () => {
-		const buffer = createBuffer(1, 1);
-		buffer[0][0] = new Cell({
-			grapheme: "X",
-			fg: 0xff0000,
-			bg: 0x00ff00,
-		});
+		const grid = new CellGrid(1, 1);
+		grid.setCell(0, "X", {fg: 0xff0000, bg: 0x00ff00});
 
-		const output = generateANSI(buffer);
+		const output = generateANSI(grid);
 
 		expect(output).toContain("38;2;255;0;0"); // Red foreground
 		expect(output).toContain("48;2;0;255;0"); // Green background
@@ -361,11 +342,11 @@ describe("generateANSI", () => {
 	});
 
 	test("handles wide characters", () => {
-		const buffer = createBuffer(1, 3);
-		buffer[0][0] = new Cell("👍"); // 2-width emoji
-		buffer[0][2] = new Cell("A"); // Normal char after emoji
+		const grid = new CellGrid(1, 3);
+		grid.setCell(0, "👍"); // 2-width emoji
+		grid.setCell(2, "A"); // Normal char after emoji
 
-		const output = generateANSI(buffer);
+		const output = generateANSI(grid);
 
 		expect(output).toContain("👍");
 		expect(output).toContain("A");

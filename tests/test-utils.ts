@@ -15,12 +15,7 @@ import {EventEmitter} from "events";
 import xtermPkg from "@xterm/headless";
 const {Terminal} = xtermPkg;
 type Terminal = InstanceType<typeof Terminal>;
-import {
-	type CellBuffer,
-	Cell,
-	createBuffer,
-	type ColorDepth,
-} from "../src/internal/ansi.js";
+import {CellGrid, type ColorDepth} from "../src/internal/ansi.js";
 import {generateANSI} from "../src/internal/ansi.js";
 import {stringWidth} from "../src/internal/text.js";
 import {StyleManager} from "../src/internal/styles.js";
@@ -248,11 +243,11 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 	}
 
 	/**
-	 * Convert xterm buffer to our CellBuffer format
+	 * Convert xterm buffer to our cell grid
 	 */
-	#xtermToCellBuffer(): CellBuffer {
+	#xtermToCellGrid(): CellGrid {
 		const buffer = this.terminal.buffer.active;
-		const cellBuffer = createBuffer(this.terminal.rows, this.terminal.cols);
+		const grid = new CellGrid(this.terminal.rows, this.terminal.cols);
 
 		for (let row = 0; row < this.terminal.rows; row++) {
 			const line = buffer.getLine(buffer.viewportY + row);
@@ -302,32 +297,33 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 				};
 
 				// Create the cell at the output position
-				cellBuffer[row][outputCol] = Cell.create({
-					grapheme: actualChars,
-					...cellStyle,
-				});
+				grid.setCell(
+					row * this.terminal.cols + outputCol,
+					actualChars,
+					cellStyle,
+				);
 				outputCol++;
 
-				// If this is a wide character, create a continuation cell at the next output position
+				// A wide character's continuation column stays empty; the glyph
+				// to its left already covers it.
 				const actualWidth = stringWidth(actualChars);
 				if (actualWidth === 2 && outputCol < this.terminal.cols) {
-					cellBuffer[row][outputCol] = null; // Continuation cell
 					outputCol++;
 				}
 			}
 		}
 
-		return cellBuffer;
+		return grid;
 	}
 
 	/**
 	 * Get static ANSI content using Renderer's generateANSI (no cursor movements)
 	 */
 	getStaticANSI(): string {
-		const cellBuffer = this.#xtermToCellBuffer();
+		const grid = this.#xtermToCellGrid();
 		// Use same color depth detection logic as TermDOM
 		const colorDepth = this.#detectColorDepth();
-		const fullOutput = generateANSI(cellBuffer, colorDepth);
+		const fullOutput = generateANSI(grid, colorDepth);
 		return stripControlCodes(fullOutput);
 	}
 
