@@ -30,10 +30,22 @@ export function fieldValueText(field: object): Text | null {
 }
 
 /**
+ * The range a document answers caret queries with.
+ *
+ * Every live range is walked by the tree mutation algorithms and held until
+ * nothing else refers to it, so a document reuses one range here rather than
+ * constructing one per caret read: the callers below read the geometry and are
+ * done with it, and a range per frame would grow that walk frame by frame.
+ */
+const caretRanges = new WeakMap<Document, Range>();
+
+/**
  * A collapsed Range at a focused control's caret, inside that value text. Its
  * geometry is then whatever the layout already placed the offset at -- no
  * bespoke caret walk. Backward selections carry the caret at the start,
  * forward ones at the end, matching the DOM.
+ *
+ * The range is the document's own, valid until the next caret read.
  */
 export function fieldCaretRange(
 	field: HTMLInputElement | HTMLTextAreaElement,
@@ -43,7 +55,12 @@ export function fieldCaretRange(
 	const selection = uaSelectionOf(field);
 	const caret =
 		selection.direction === "backward" ? selection.start : selection.end;
-	const range = field.ownerDocument.createRange();
+	const document = field.ownerDocument;
+	let range = caretRanges.get(document);
+	if (range === undefined) {
+		range = document.createRange();
+		caretRanges.set(document, range);
+	}
 	range.setStart(
 		valueText,
 		Math.max(0, Math.min(caret, valueText.data.length)),
