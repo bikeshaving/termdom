@@ -620,3 +620,87 @@ export function toVisualOrder(text: string, base: "ltr" | "rtl"): string {
 	const levels = bidi.getEmbeddingLevels(shaped, base);
 	return bidi.getReorderedString(shaped, levels);
 }
+
+/**
+ * Whether a `white-space` value keeps every space and tab as written
+ * (css-text-3 §4.1.1). `pre-line` does not: it collapses spaces and tabs and
+ * preserves only newlines.
+ */
+function preservesSpaces(whiteSpace: string): boolean {
+	return whiteSpace === "pre" || whiteSpace === "pre-wrap";
+}
+
+/**
+ * The characters a `white-space` value treats as collapsible: everything the
+ * \s class covers, except that `pre-line` exempts the newline it preserves.
+ */
+function isCollapsible(char: string, whiteSpace: string): boolean {
+	if (whiteSpace === "pre-line" && char === "\n") return false;
+	return /\s/.test(char);
+}
+
+/**
+ * A text node's data as it renders under a `white-space` value: each run of
+ * collapsible whitespace becomes one space, `pre` and `pre-wrap` render their
+ * data verbatim, and `pre-line` collapses spaces and tabs but keeps newlines.
+ *
+ * The single definition of that mapping. The line breaker renders whole text
+ * leaves through it and records, for each line fragment, the data range the
+ * fragment covers; the painter renders that range back through it to recover
+ * the characters to draw. The two agree because rendering a range equals the
+ * range of the rendering whenever the range begins and ends on a rendered
+ * character, which is how fragment offsets are defined.
+ */
+export function renderWhiteSpace(data: string, whiteSpace: string): string {
+	if (preservesSpaces(whiteSpace)) return data;
+	return whiteSpace === "pre-line"
+		? data.replace(/[^\S\n]+/g, " ")
+		: data.replace(/\s+/g, " ");
+}
+
+/**
+ * `renderWhiteSpace` plus, for each rendered code unit, the offset in `data` it
+ * came from -- a collapsed run reports the offset of its first character.
+ * Code units, not code points: a Range addresses code units, so the halves of a
+ * surrogate pair need offsets of their own.
+ */
+export function renderWhiteSpaceOffsets(
+	data: string,
+	whiteSpace: string,
+): {text: string; offsets: number[]} {
+	if (preservesSpaces(whiteSpace)) {
+		const offsets = new Array<number>(data.length);
+		for (let i = 0; i < data.length; i++) offsets[i] = i;
+		return {text: data, offsets};
+	}
+	let text = "";
+	const offsets: number[] = [];
+	for (let i = 0; i < data.length; ) {
+		const char = data[i];
+		offsets.push(i);
+		if (isCollapsible(char, whiteSpace)) {
+			text += " ";
+			while (i < data.length && isCollapsible(data[i], whiteSpace)) i++;
+		} else {
+			text += char;
+			i++;
+		}
+	}
+	return {text, offsets};
+}
+
+/**
+ * The characters one line fragment paints: its data range rendered under the
+ * node's `white-space`, reordered into the visual order the line was laid out
+ * in when the line carries bidirectional text.
+ */
+export function renderTextFragment(
+	data: string,
+	whiteSpace: string,
+	startOffset: number,
+	endOffset: number,
+	visualBase?: "ltr" | "rtl" | null,
+): string {
+	const text = renderWhiteSpace(data.slice(startOffset, endOffset), whiteSpace);
+	return visualBase ? toVisualOrder(text, visualBase) : text;
+}

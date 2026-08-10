@@ -16,7 +16,7 @@ import {
 	uaSelectionOf,
 	upgradeUAWidget,
 } from "./dom.js";
-import {LayoutEngine, visualToDataOffsets} from "./layout.js";
+import {LayoutEngine, whiteSpaceOf} from "./layout.js";
 import {Viewport} from "./viewport.js";
 import {Painter} from "./painter.js";
 import {
@@ -28,7 +28,7 @@ import {
 } from "./terminalsession.js";
 import {Renderer} from "./ansi.js";
 import {StyleManager, computedStyleOf, getBoxModel} from "./styles.js";
-import {stringWidth} from "./text.js";
+import {renderWhiteSpaceOffsets, stringWidth} from "./text.js";
 import {
 	ObserverManager,
 	ResizeObserver as TermResizeObserver,
@@ -2061,14 +2061,18 @@ export class TermDOM {
 			// the last to that.
 			let line = lines[0];
 			for (const candidate of lines) {
-				if (candidate.y > y) break;
+				if (candidate.rect.y > y) break;
 				line = candidate;
 			}
-			const rel = x - line.x;
+			const rel = x - line.rect.x;
 			if (rel <= 0) return line.startOffset;
 			let cells = 0;
 			let offset = 0;
-			for (const char of line.text) {
+			// A field value is pre-wrap: its line renders its data range verbatim.
+			for (const char of valueText.data.slice(
+				line.startOffset,
+				line.endOffset,
+			)) {
 				if (cells >= rel) break;
 				cells += stringWidth(char);
 				offset += char.length;
@@ -2479,8 +2483,8 @@ export class TermDOM {
 	 * code-unit offset into node.data) -- the way a browser's
 	 * caretPositionFromPoint does. Hit-tests the element, then scans its text
 	 * nodes' painted fragments for the one on the point's row; the x offset
-	 * becomes a visual character index (cell-width aware), and
-	 * visualToDataOffsets bridges that back to a Range-valid data offset.
+	 * becomes a visual character index (cell-width aware), which the fragment's
+	 * own data range bridges back to a Range-valid data offset.
 	 * Landing past a fragment's last character on its row means "after the
 	 * last character", so a drag can select through end-of-line. Returns null
 	 * over rows with no text (and over inputs, whose value is not document
@@ -2504,38 +2508,42 @@ export class TermDOM {
 			for (const child of Array.from(node.childNodes)) {
 				if (child.nodeType === child.TEXT_NODE) {
 					const textNode = child as Text;
-					const fragments = this[kLayoutEngine].getRectTexts(textNode);
-					if (fragments.length === 0) continue;
-					const visToData = visualToDataOffsets(textNode.data, fragments);
-					let visualBase = 0;
-					for (const fragment of fragments) {
+					const whiteSpace = whiteSpaceOf(textNode);
+					for (const fragment of this[kLayoutEngine].lineFragments(textNode)) {
+						if (fragment.endOffset <= fragment.startOffset) continue;
 						const rect = fragment.rect;
-						if (y >= rect.y && y < rect.y + Math.max(1, rect.height)) {
-							// Walk cells to the visual index under (or past) x.
-							let cellX = rect.x;
-							let index = 0;
-							while (index < fragment.text.length && cellX < x) {
-								const w = stringWidth(fragment.text[index]);
-								if (cellX + w > x) break;
-								cellX += w;
-								index++;
-							}
-							const distance =
-								x < rect.x
-									? rect.x - x
-									: x >= cellX && index === fragment.text.length
-										? x - cellX
-										: 0;
-							if (!best || distance < best.distance) {
-								const visual = visualBase + index;
-								const offset =
-									visual < visToData.length
-										? visToData[visual]
-										: textNode.data.length;
-								best = {node: textNode, offset, distance};
-							}
+						if (y < rect.y || y >= rect.y + Math.max(1, rect.height)) {
+							continue;
 						}
-						visualBase += fragment.text.length;
+						// The line's characters and, per character, the data offset
+						// it renders -- the bridge from a painted cell back to a
+						// Range-valid offset.
+						const {text, offsets} = renderWhiteSpaceOffsets(
+							textNode.data.slice(fragment.startOffset, fragment.endOffset),
+							whiteSpace,
+						);
+						// Walk cells to the visual index under (or past) x.
+						let cellX = rect.x;
+						let index = 0;
+						while (index < text.length && cellX < x) {
+							const w = stringWidth(text[index]);
+							if (cellX + w > x) break;
+							cellX += w;
+							index++;
+						}
+						const distance =
+							x < rect.x
+								? rect.x - x
+								: x >= cellX && index === text.length
+									? x - cellX
+									: 0;
+						if (!best || distance < best.distance) {
+							const offset =
+								index < text.length
+									? fragment.startOffset + offsets[index]
+									: fragment.endOffset;
+							best = {node: textNode, offset, distance};
+						}
 					}
 				} else if (child.nodeType === child.ELEMENT_NODE) {
 					visit(child);

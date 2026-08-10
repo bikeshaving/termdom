@@ -9,7 +9,7 @@ import {type LayoutEngine, flowWalker, isPositioned} from "./layout.js";
 import {type Viewport} from "./viewport.js";
 import {type StyleManager, resolveBorderStyles, getBoxModel} from "./styles.js";
 import {cssColorToNumber, isTransparentColor} from "./color.js";
-import {stringWidth} from "./text.js";
+import {renderTextFragment, stringWidth} from "./text.js";
 import {
 	caretRangeOf,
 	flatIsConnected,
@@ -938,18 +938,33 @@ export class Painter {
 		const textTransform = computedStyle.computedValueOf("text-transform");
 		const textStyle = cellStyleFromComputed(computedStyle);
 
-		const rectTexts = this.#layout.getRectTexts(textNode);
-		if (rectTexts.length > 0) {
-			for (const rectText of rectTexts) {
-				if (rectText.text.length > 0) {
-					ctx.setText(
-						Math.round(rectText.rect.x),
-						Math.round(rectText.rect.y),
-						applyTextTransform(rectText.text, textTransform),
-						textStyle,
-					);
-				}
-			}
+		// One fragment per line the node covers -- the same geometry
+		// `Range.getClientRects()` reports over the node -- each carrying the
+		// range of `data` its line renders. The characters to draw come from the
+		// node itself, rendered under its own `white-space` and then transformed:
+		// nothing of the line breaker's is read here.
+		const whiteSpace = computedStyle.computedValueOf("white-space");
+		const fragments = this.#layout.lineFragments(textNode);
+		let painted = false;
+		for (const fragment of fragments) {
+			if (fragment.endOffset <= fragment.startOffset) continue;
+			const text = renderTextFragment(
+				textContent,
+				whiteSpace,
+				fragment.startOffset,
+				fragment.endOffset,
+				fragment.visualBase,
+			);
+			if (!text) continue;
+			painted = true;
+			ctx.setText(
+				Math.round(fragment.rect.x),
+				Math.round(fragment.rect.y),
+				applyTextTransform(text, textTransform),
+				textStyle,
+			);
+		}
+		if (painted) {
 			this.#renderTextSelection(textNode, textStyle, textTransform, ctx);
 		}
 	}
