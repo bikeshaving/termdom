@@ -416,6 +416,10 @@ export const TERMINAL_ELEMENT_DEFAULTS: Record<
 	// are ::before rules in the UA document stylesheet.
 	details: {display: "block"},
 	summary: {display: "block", cursor: "pointer"},
+	// A gauge is a flat field in the input family, sized like a browser's own
+	// unstyled progress bar: a fixed track the fill is a fraction of.
+	progress: {display: "inline-block", width: "10ch", "white-space": "pre"},
+	meter: {display: "inline-block", width: "10ch", "white-space": "pre"},
 	figure: {display: "block"},
 	figcaption: {display: "block"},
 	hr: {display: "block", "border-top": "1px solid"},
@@ -782,6 +786,43 @@ export const FIELD_UA_STYLES = `
 	[part="value"], [part="placeholder"] { display: inline-block; white-space: pre; overflow: hidden; min-width: 1ch; max-width: 100%; vertical-align: top; }
 	[part="placeholder"] { color: #808080; }
 	:host(:focus) { outline-width: 1px; outline-style: solid; outline-color: #5fafff; }
+`;
+
+/**
+ * The UA stylesheet of a progress bar's internal shadow tree.
+ *
+ * The track is the full-width box that clips; the bar is an inline-block whose
+ * WIDTH is the fraction filled, so the fill is a real CSS length and the run of
+ * block glyphs behind it is ordinary text. What follows the bar inside the same
+ * clip is the groove, which is why an empty bar still reads as a bar.
+ */
+export const GAUGE_UA_STYLES = `
+	[part="track"] { display: inline-block; width: 100%; overflow: hidden; white-space: pre; vertical-align: top; }
+	[part="groove"] { color: #808080; font-weight: lighter; }
+	[part="bar"] { display: inline-block; overflow: hidden; white-space: pre; vertical-align: top; }
+`;
+
+/**
+ * The UA stylesheet of a progress bar, on top of the shared gauge rules: a
+ * determinate bar is the accent color, and an indeterminate one has no bar at
+ * all, so the groove alone shows.
+ */
+export const PROGRESS_UA_STYLES = `
+	${GAUGE_UA_STYLES}
+	[part="bar"] { color: #5fafff; }
+`;
+
+/**
+ * The UA stylesheet of a meter, on top of the shared gauge rules. A meter's
+ * value is read against its low/high/optimum ranges, and the level that reading
+ * produces is what colors the bar -- the browser's own three-way answer,
+ * spelled as an attribute a rule matches rather than a color the painter picks.
+ */
+export const METER_UA_STYLES = `
+	${GAUGE_UA_STYLES}
+	[part="bar"][data-level="optimum"] { color: #5faf5f; }
+	[part="bar"][data-level="suboptimum"] { color: #d7af5f; }
+	[part="bar"][data-level="even-less-good"] { color: #d75f5f; }
 `;
 
 /**

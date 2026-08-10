@@ -135,6 +135,98 @@ test("Enter on a focused summary toggles the disclosure", async () => {
 	dom.dispose();
 });
 
+/* ---------------------------------------------------------- the gauges */
+
+/** The row a gauge drew, trimmed of the screen's padding. */
+function bar(terminal: MockProcess): string {
+	return terminal.getPlainText().split("\n")[0].trimEnd();
+}
+
+test("a progress bar fills its track from value and max", async () => {
+	const terminal = new MockProcess({rows: 4, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML = `<progress value="4" max="10"></progress>`;
+	await nextFrame(dom);
+
+	expect(bar(terminal)).toBe("████░░░░░░");
+
+	dom.dispose();
+});
+
+test("a progress bar follows its value", async () => {
+	const terminal = new MockProcess({rows: 4, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	document.body.innerHTML = `<progress value="0" max="10"></progress>`;
+	await nextFrame(dom);
+	expect(bar(terminal)).toBe("░░░░░░░░░░");
+
+	(document.querySelector("progress") as HTMLProgressElement).value = 10;
+	await nextFrame(dom);
+	expect(bar(terminal)).toBe("██████████");
+
+	dom.dispose();
+});
+
+test("a progress bar with no value is an empty groove", async () => {
+	const terminal = new MockProcess({rows: 4, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML = `<progress></progress>`;
+	await nextFrame(dom);
+
+	expect(bar(terminal)).toBe("░░░░░░░░░░");
+
+	dom.dispose();
+});
+
+test("a gauge takes the width its author gives it", async () => {
+	const terminal = new MockProcess({rows: 4, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		`<style>progress { width: 20ch; }</style>` +
+		`<progress value="1" max="4"></progress>`;
+	await nextFrame(dom);
+
+	expect(bar(terminal)).toBe("█████░░░░░░░░░░░░░░░");
+
+	dom.dispose();
+});
+
+test("a meter fills between its min and max", async () => {
+	const terminal = new MockProcess({rows: 4, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML = `<meter min="10" max="20" value="15"></meter>`;
+	await nextFrame(dom);
+
+	expect(bar(terminal)).toBe("█████░░░░░");
+
+	dom.dispose();
+});
+
+test("a meter's level reads its value against low, high and optimum", async () => {
+	const terminal = new MockProcess({rows: 4, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	document.body.innerHTML = `<meter min="0" max="10" low="3" high="7" optimum="9" value="9"></meter>`;
+	await nextFrame(dom);
+
+	const meter = document.querySelector("meter") as HTMLMeterElement;
+	// The level is a color, so the three readings differ in SGR and nowhere
+	// else. Above high with the optimum above high is the good one; between
+	// low and high is one region away; below low is two.
+	const optimum = terminal.getStaticANSI();
+	meter.setAttribute("value", "5");
+	await nextFrame(dom);
+	const suboptimum = terminal.getStaticANSI();
+	meter.setAttribute("value", "1");
+	await nextFrame(dom);
+	const worst = terminal.getStaticANSI();
+
+	expect(new Set([optimum, suboptimum, worst]).size).toBe(3);
+
+	dom.dispose();
+});
+
 test("Tab reaches a summary", async () => {
 	const terminal = new MockProcess({rows: 6, cols: 40});
 	const dom = new TermDOM({transport: terminal.transport});

@@ -28,6 +28,8 @@ import {
 } from "./text.js";
 import {
 	FIELD_UA_STYLES,
+	METER_UA_STYLES,
+	PROGRESS_UA_STYLES,
 	SELECT_UA_STYLES,
 	TEXTAREA_UA_STYLES,
 } from "./useragent.js";
@@ -5085,47 +5087,53 @@ function setExistingAttributeValue(attribute: Attr, value: string): void {
 	changeAttribute(attribute, value);
 }
 
+/**
+ * The attribute change steps run AFTER the change lands, as the DOM Standard
+ * orders them: an element's own steps read the element, and what they must read
+ * is the tree the rest of the world will see.
+ */
 function changeAttribute(attribute: Attr, value: string): void {
 	const element = attribute[kOwnerElement] as Element;
 	const oldValue = attribute[kValue];
 	queueAttributeMutationRecord(element, attribute, oldValue);
+	attribute[kValue] = value;
 	element[kAttributeChanged](
 		attribute[kLocalName],
 		oldValue,
 		value,
 		attribute[kNamespace],
 	);
-	attribute[kValue] = value;
 	bumpVersion();
 	syncAttributeCollections(element, attribute[kLocalName]);
 }
 
 function appendAttribute(element: Element, attribute: Attr): void {
 	queueAttributeMutationRecord(element, attribute, null);
+	element[kAttributeList].push(attribute);
+	attribute[kOwnerElement] = element;
 	element[kAttributeChanged](
 		attribute[kLocalName],
 		null,
 		attribute[kValue],
 		attribute[kNamespace],
 	);
-	element[kAttributeList].push(attribute);
-	attribute[kOwnerElement] = element;
 	bumpVersion();
 	syncAttributeCollections(element, attribute[kLocalName]);
 }
 
 function removeAttributeNode(element: Element, attribute: Attr): void {
-	queueAttributeMutationRecord(element, attribute, attribute[kValue]);
-	element[kAttributeChanged](
-		attribute[kLocalName],
-		attribute[kValue],
-		null,
-		attribute[kNamespace],
-	);
+	const oldValue = attribute[kValue];
+	queueAttributeMutationRecord(element, attribute, oldValue);
 	const list = element[kAttributeList];
 	const index = list.indexOf(attribute);
 	if (index !== -1) list.splice(index, 1);
 	attribute[kOwnerElement] = null;
+	element[kAttributeChanged](
+		attribute[kLocalName],
+		oldValue,
+		null,
+		attribute[kNamespace],
+	);
 	bumpVersion();
 	syncAttributeCollections(element, attribute[kLocalName]);
 }
@@ -5136,16 +5144,16 @@ function replaceAttribute(
 	newAttribute: Attr,
 ): void {
 	queueAttributeMutationRecord(element, oldAttribute, oldAttribute[kValue]);
+	const list = element[kAttributeList];
+	list[list.indexOf(oldAttribute)] = newAttribute;
+	newAttribute[kOwnerElement] = element;
+	oldAttribute[kOwnerElement] = null;
 	element[kAttributeChanged](
 		newAttribute[kLocalName],
 		oldAttribute[kValue],
 		newAttribute[kValue],
 		newAttribute[kNamespace],
 	);
-	const list = element[kAttributeList];
-	list[list.indexOf(oldAttribute)] = newAttribute;
-	newAttribute[kOwnerElement] = element;
-	oldAttribute[kOwnerElement] = null;
 	bumpVersion();
 	syncAttributeCollections(element, newAttribute[kLocalName]);
 }
@@ -11428,8 +11436,115 @@ export class HTMLOutputElement extends HTMLElement {
 		this.#dirty = false;
 	}
 }
-/** A progress bar, whose value is read against the maximum it names. */
+/* ------------------------------------------------------------ the gauges */
+
+/**
+ * The glyphs a gauge is drawn in: a run of full blocks for the filled bar, a
+ * run of light shade for the groove behind it. Both are ordinary text in the
+ * shadow tree, clipped to the fraction CSS gives the bar.
+ */
+const GAUGE_BAR_GLYPH = "█";
+const GAUGE_GROOVE_GLYPH = "░";
+
+/** The attributes a meter's own rendering is read from. */
+const METER_ATTRIBUTES = new Set([
+	"value",
+	"min",
+	"max",
+	"low",
+	"high",
+	"optimum",
+]);
+
+/**
+ * The glyph run a gauge's parts are drawn from, long enough that no bar on
+ * this screen can outrun it.
+ */
+function gaugeRun(host: Element, glyph: string): string {
+	const view = (host.ownerDocument as {defaultView?: {innerWidth?: number}})
+		?.defaultView;
+	const width = view?.innerWidth;
+	return glyph.repeat(
+		Math.max(40, typeof width === "number" && width > 0 ? width : 40),
+	);
+}
+
+/**
+ * Build a gauge's closed shadow tree: a full-width track that clips, holding a
+ * bar whose width is the fraction filled and the groove that shows past it.
+ */
+function buildGaugeRoot(
+	host: Element,
+	engine: UAEngine,
+	styles: string,
+): {bar: UAElement; groove: UAText} {
+	const document = uaDocumentOf(host);
+	const root = buildUARoot(host, engine, styles);
+	const track = addPart(root, "track");
+	track.removeChild(track.firstChild!);
+	const bar = document.createElement("span");
+	bar.setAttribute("part", "bar");
+	bar.appendChild(document.createTextNode(gaugeRun(host, GAUGE_BAR_GLYPH)));
+	track.appendChild(bar);
+	const groove = document.createElement("span");
+	groove.setAttribute("part", "groove");
+	const grooveText = document.createTextNode(
+		gaugeRun(host, GAUGE_GROOVE_GLYPH),
+	);
+	groove.appendChild(grooveText);
+	track.appendChild(groove);
+	return {bar, groove: grooveText};
+}
+
+/** Set a gauge bar's filled fraction, writing the width only on a change. */
+function setGaugeFill(bar: UAElement, fraction: number | null): void {
+	const width =
+		fraction === null ? "0%" : `${Math.max(0, Math.min(1, fraction)) * 100}%`;
+	if (bar.style.width !== width) bar.style.width = width;
+}
+
+/**
+ * A progress bar, whose value is read against the maximum it names.
+ *
+ * It renders a closed shadow tree it owns: a run of block glyphs filled to
+ * `value`/`max`. A progress with no value attribute is indeterminate, which
+ * here is an empty bar over the full groove -- there is no animation to make
+ * the difference the way a browser does.
+ */
 export class HTMLProgressElement extends HTMLElement {
+	#engine: UAEngine | null = null;
+	#bar: UAElement | null = null;
+
+	[kUAUpgrade](): void {
+		if (this.#engine !== null) {
+			this[kUAReconcile]();
+			return;
+		}
+		const engine = uaEngineOf(this);
+		if (engine === undefined) return;
+		this.#engine = engine;
+		this.#bar = buildGaugeRoot(this, engine, PROGRESS_UA_STYLES).bar;
+		this[kUAReconcile]();
+	}
+
+	[kUAReconcile](): void {
+		if (this.#engine === null) return;
+		const position = this.position;
+		setGaugeFill(this.#bar!, position < 0 ? null : position);
+	}
+
+	override [kAttributeChanged](
+		localName: string,
+		oldValue: string | null,
+		value: string | null,
+		namespace: string | null,
+	): void {
+		super[kAttributeChanged](localName, oldValue, value, namespace);
+		if (namespace === null && (localName === "value" || localName === "max")) {
+			this[kUAReconcile]();
+		}
+	}
+
 	get value(): number {
 		const value = parseFloatingPoint(this.getAttribute("value") ?? "");
 		if (value === null || value < 0) return 0;
@@ -11457,8 +11572,73 @@ export class HTMLProgressElement extends HTMLElement {
 		return labelsOf(this);
 	}
 }
-/** A gauge, whose six numbers are each read inside the ones around them. */
+/**
+ * A gauge, whose six numbers are each read inside the ones around them.
+ *
+ * It renders a closed shadow tree it owns: a run of block glyphs filled to
+ * where `value` sits between `min` and `max`, carrying the level that reading
+ * against the low/high/optimum ranges produces -- which is what the UA sheet
+ * colors the bar from.
+ */
 export class HTMLMeterElement extends HTMLElement {
+	#engine: UAEngine | null = null;
+	#bar: UAElement | null = null;
+
+	[kUAUpgrade](): void {
+		if (this.#engine !== null) {
+			this[kUAReconcile]();
+			return;
+		}
+		const engine = uaEngineOf(this);
+		if (engine === undefined) return;
+		this.#engine = engine;
+		this.#bar = buildGaugeRoot(this, engine, METER_UA_STYLES).bar;
+		this[kUAReconcile]();
+	}
+
+	[kUAReconcile](): void {
+		if (this.#engine === null) return;
+		const bar = this.#bar!;
+		const min = this.min;
+		const span = this.max - min;
+		setGaugeFill(bar, span > 0 ? (this.value - min) / span : 0);
+		const level = this.#level();
+		if (bar.getAttribute("data-level") !== level) {
+			bar.setAttribute("data-level", level);
+		}
+	}
+
+	/**
+	 * Which of the three readings the value falls in, by the rendering rules
+	 * HTML gives: the optimum region is measured from where `optimum` sits
+	 * relative to `low` and `high`, and a value in it is optimum, one region
+	 * away suboptimum, two away even less good.
+	 */
+	#level(): string {
+		const {low, high, optimum, value} = this;
+		if (optimum < low) {
+			if (value < low) return "optimum";
+			return value <= high ? "suboptimum" : "even-less-good";
+		}
+		if (optimum > high) {
+			if (value > high) return "optimum";
+			return value >= low ? "suboptimum" : "even-less-good";
+		}
+		return value >= low && value <= high ? "optimum" : "suboptimum";
+	}
+
+	override [kAttributeChanged](
+		localName: string,
+		oldValue: string | null,
+		value: string | null,
+		namespace: string | null,
+	): void {
+		super[kAttributeChanged](localName, oldValue, value, namespace);
+		if (namespace === null && METER_ATTRIBUTES.has(localName)) {
+			this[kUAReconcile]();
+		}
+	}
+
 	get min(): number {
 		return parseFloatingPoint(this.getAttribute("min") ?? "") ?? 0;
 	}

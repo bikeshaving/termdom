@@ -3503,6 +3503,15 @@ export class LayoutEngine {
 				this.#invalidateBox(entry);
 				return;
 			}
+			// A run with no layout node of its own is measured INSIDE another
+			// run: an inline-block nested in an inline-block has no box the
+			// flex tree knows about -- its whole content is part of the one
+			// unit its host occupies out there. The measure to drop is that
+			// outer one, which the container it runs in is the way up to.
+			if (entry.container !== node) {
+				this.#invalidateEnclosingMeasure(entry.container);
+				return;
+			}
 		} else if (entry) {
 			const headFlexNode = this.nodeMap.get(entry);
 			if (headFlexNode && headFlexNode.measureFunc) {

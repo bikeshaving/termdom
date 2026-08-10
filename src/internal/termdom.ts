@@ -92,8 +92,14 @@ const RESIZE_DEBOUNCE_MS = 40;
 
 // The built-in tags that upgrade to a UA widget on connect, as a tag set (for
 // the added element itself) and as a selector (for its descendants).
-const UPGRADEABLE_CONTROLS = new Set(["INPUT", "TEXTAREA", "SELECT"]);
-const UPGRADEABLE_SELECTOR = "input, textarea, select";
+const UPGRADEABLE_CONTROLS = new Set([
+	"INPUT",
+	"TEXTAREA",
+	"SELECT",
+	"PROGRESS",
+	"METER",
+]);
+const UPGRADEABLE_SELECTOR = "input, textarea, select, progress, meter";
 
 // The engine each document is mounted in. The DOM prototypes are the realm's,
 // shared by every document; a patched member finds its engine here rather than
