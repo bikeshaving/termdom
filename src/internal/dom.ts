@@ -2384,9 +2384,15 @@ function reportError(error: unknown): void {
 let treeVersion = 0;
 
 const kSync = Symbol("resynchronize own properties");
+const kShapeSync = Symbol("resynchronize after a change to a tree's shape");
 
 interface Materializable {
 	[kSync](): void;
+	[kShapeSync](
+		point: Node,
+		changed: readonly Node[] | null,
+		added: boolean,
+	): void;
 }
 
 /**
@@ -2439,9 +2445,9 @@ function bumpVersion(): void {
  * Record a change to a tree's shape at `point`, and resynchronize what it
  * moved.
  *
- * A change to the shape of a tree can move any collection over that tree, and
- * none of them can rule the change out from what it holds, so each one that
- * has materialized own properties recomputes here. A collection lists the
+ * A change to the shape of a tree can move any collection over that tree, so
+ * each one that has materialized own properties is told of the change here,
+ * and answers it however cheaply it can. A collection lists the
  * descendants of one node, and is held by that node, so walking the change's
  * inclusive ancestors reaches exactly the collections whose node contains it:
  * the rest hold what they held, and their own properties are already exact.
@@ -2449,17 +2455,31 @@ function bumpVersion(): void {
  * composes but does not contain -- a subtree being built before it is
  * inserted, a shadow tree, the node a pseudo-element renders from -- and what
  * keeps a tree that has been discarded from costing anything at all.
+ *
+ * `changed` is the nodes `point` gained (`added`) or lost, and is empty where
+ * the change moved no node at all; null says only that something moved, and
+ * every collection reached recomputes. A collection that is given the nodes
+ * asks what they hold rather than walking the tree again, so a change costs
+ * what it moved rather than what it sits in.
  */
-function bumpTreeVersion(_document: Document, point: Node): void {
+function bumpTreeVersion(
+	point: Node,
+	changed: readonly Node[] | null,
+	added: boolean,
+): void {
 	treeVersion++;
 	for (let node: Node | null = point; node !== null; node = node[kParent]) {
 		const held = node[kLiveLists];
 		if (held === null) continue;
-		for (const collection of held) syncMethod.call(collection);
+		for (const collection of held) {
+			shapeSyncMethod.call(collection, point, changed, added);
+		}
 	}
 	for (let i = 0; i < rootlessMaterialized.length; i++) {
 		const collection = rootlessMaterialized[i].deref();
-		if (collection !== undefined) syncMethod.call(collection);
+		if (collection !== undefined) {
+			shapeSyncMethod.call(collection, point, changed, added);
+		}
 	}
 }
 
@@ -3197,7 +3217,7 @@ function insertNode(
 			}
 		}
 	}
-	bumpTreeVersion(parent[kDocument], parent);
+	bumpTreeVersion(parent, nodes, true);
 	if (!suppressObservers) {
 		queueTreeMutationRecord(parent, nodes, [], previousSibling, child);
 	}
@@ -3441,7 +3461,7 @@ function removeNode(node: Node, suppressObservers = false): void {
 			);
 		}
 	}
-	bumpTreeVersion(parent[kDocument], parent);
+	bumpTreeVersion(parent, [node], false);
 	addTransientObservers(node, parent);
 	if (!suppressObservers) {
 		queueTreeMutationRecord(
@@ -4023,6 +4043,7 @@ function queueTreeMutationRecord(
 
 const kEnsure = Symbol("recompute if stale");
 const kComputed = Symbol("the list as last computed");
+const kGeneration = Symbol("how many lists the collection has been");
 const kAttributeSync = Symbol("resynchronize after an attribute change");
 
 /**
@@ -4041,12 +4062,55 @@ abstract class LiveList implements Materializable {
 	#items: Node[] = [];
 	#defined = 0;
 	#registered = false;
+	#exact = false;
+	#generation = 0;
 	#live: boolean;
 	#owner: Node | null;
+	#childMember: ((node: Node) => boolean) | null;
+	#told: boolean;
 
-	constructor(live: boolean, owner: Node | null = null) {
+	/**
+	 * @param childMember - which of the owner's children the list holds, where
+	 * it draws from the children and from nothing deeper. A list that says so
+	 * is untouched by a change anywhere else in the owner's tree, and the
+	 * children a change carries are the members it carries.
+	 * @param told - whether every change that can move the list reaches it,
+	 * shape and attribute alike, so that a list left standing stands until a
+	 * change says otherwise. A list that is not told carries the tree's
+	 * version instead and computes again whenever the tree has moved on.
+	 */
+	constructor(
+		live: boolean,
+		owner: Node | null = null,
+		childMember: ((node: Node) => boolean) | null = null,
+		told = childMember !== null,
+	) {
 		this.#live = live;
 		this.#owner = owner;
+		this.#childMember = childMember;
+		this.#told = told;
+	}
+
+	/** Whether the list stands as the list the tree holds now. */
+	get #standing(): boolean {
+		return this.#exact && (this.#told || this.#version === treeVersion);
+	}
+
+	#recompute(): void {
+		this.#version = treeVersion;
+		this.#items = this.compute();
+		this.#exact = true;
+		this.#generation++;
+		this.#materialize();
+	}
+
+	/**
+	 * How many lists the collection has been, which is what tells a cache over
+	 * the list that the list under it is another one. The array itself is not:
+	 * a splice moves members within the one array the collection holds.
+	 */
+	[kGeneration](): number {
+		return this.#generation;
 	}
 
 	abstract compute(): Node[];
@@ -4056,39 +4120,128 @@ abstract class LiveList implements Materializable {
 		return null;
 	}
 
+	/**
+	 * The members the nodes a parent gained or lost carry, in tree order,
+	 * where the collection can answer from those nodes alone and can say that
+	 * its named properties are unmoved; null where it cannot, and the list has
+	 * to be computed again to find out.
+	 */
+	shapeMembers(changed: readonly Node[]): Node[] | null {
+		const member = this.#childMember;
+		if (member === null) return null;
+		const members: Node[] = [];
+		for (const node of changed) {
+			if (member(node)) members.push(node);
+		}
+		return members;
+	}
+
 	#names: string[] = [];
 
 	[kEnsure](): Node[] {
 		if (!this.#live) {
-			if (this.#version === -1) {
-				this.#version = 0;
-				this.#items = this.compute();
-				this.#materialize();
-			}
+			if (!this.#exact) this.#recompute();
 			return this.#items;
 		}
 		if (!this.#registered) {
 			this.#registered = true;
 			registerMaterialized(this, this.#owner);
 		}
-		if (this.#version !== treeVersion) {
-			this.#version = treeVersion;
-			this.#items = this.compute();
-			this.#materialize();
-		}
+		if (!this.#standing) this.#recompute();
 		return this.#items;
 	}
 
 	[kSync](): void {
-		if (!this.#registered || this.#version === treeVersion) return;
-		this.#version = treeVersion;
-		this.#items = this.compute();
-		this.#materialize();
+		if (!this.#registered) return;
+		this.#recompute();
 	}
 
-	/** The list as it was last computed, without recomputing it. */
-	[kComputed](): Node[] {
-		return this.#items;
+	/**
+	 * Bring the collection back in step with a change to a tree's shape.
+	 *
+	 * A collection over one node's children holds what it held when the change
+	 * was to some other node's, and a collection that can say what the changed
+	 * nodes carry holds what it held when they carry none of its members:
+	 * either way the list stands, and a read has nothing to do.
+	 *
+	 * Members the change carried are spliced in or out where the collection
+	 * can place them, which costs what moved rather than what the tree holds.
+	 * Everything else computes the list again.
+	 */
+	[kShapeSync](
+		point: Node,
+		changed: readonly Node[] | null,
+		added: boolean,
+	): void {
+		if (!this.#registered) return;
+		if (this.#standing) {
+			if (this.#childMember !== null && point !== this.#owner) return;
+			if (changed !== null) {
+				const members = this.shapeMembers(changed);
+				if (members !== null && this.#splice(point, changed, members, added)) {
+					this.#version = treeVersion;
+					return;
+				}
+			}
+		}
+		this.#recompute();
+	}
+
+	/**
+	 * Move members into or out of the list where their place in it follows
+	 * from the change alone. Answers whether it did.
+	 *
+	 * Members arriving sit where the sibling they were placed before sits,
+	 * since nothing but them comes between the two; placed last of their
+	 * parent's children they sit past every member the list holds, as long as
+	 * the last of those is under that parent. Anywhere else asks the tree
+	 * where they go. Members leaving take their place with them, and they sit
+	 * together, so the first of them finds the run.
+	 */
+	#splice(
+		point: Node,
+		changed: readonly Node[],
+		members: readonly Node[],
+		added: boolean,
+	): boolean {
+		const items = this.#items;
+		if (members.length === 0) return true;
+		if (added) {
+			const next = changed[changed.length - 1][kNext];
+			if (next !== null) {
+				const at = items.indexOf(next);
+				if (at === -1) return false;
+				// A member at a time: what a change carries has no bound, and a
+				// spread is an argument list.
+				const rest = items.splice(at);
+				for (const member of members) items.push(member);
+				for (const node of rest) items.push(node);
+			} else {
+				const last = items[items.length - 1];
+				if (last !== undefined && !isInclusiveAncestor(point, last)) {
+					return false;
+				}
+				for (const member of members) items.push(member);
+			}
+		} else {
+			const at = items.indexOf(members[0]);
+			if (at === -1) return false;
+			for (let i = 1; i < members.length; i++) {
+				if (items[at + i] !== members[i]) return false;
+			}
+			items.splice(at, members.length);
+		}
+		this.#generation++;
+		this.#defineIndices(items.length);
+		return true;
+	}
+
+	/**
+	 * The list as it was last computed, where that is still the list the tree
+	 * holds; null where the tree has moved on from it.
+	 */
+	[kComputed](): Node[] | null {
+		return this.#standing ? this.#items : null;
 	}
 
 	/**
@@ -4102,11 +4255,11 @@ abstract class LiveList implements Materializable {
 		this[kSync]();
 	}
 
-	#materialize(): void {
-		const items = this.#items;
+	/** Define an index for every member the collection has, and no more. */
+	#defineIndices(length: number): void {
 		const self = this as unknown as Record<number | string, unknown>;
 		const list = this;
-		for (let index = this.#defined; index < items.length; index++) {
+		for (let index = this.#defined; index < length; index++) {
 			const at = index;
 			Object.defineProperty(this, at, {
 				// The recompute is reached through the captured method, not
@@ -4119,10 +4272,16 @@ abstract class LiveList implements Materializable {
 				configurable: true,
 			});
 		}
-		for (let index = items.length; index < this.#defined; index++) {
+		for (let index = length; index < this.#defined; index++) {
 			delete self[index];
 		}
-		this.#defined = items.length;
+		this.#defined = length;
+	}
+
+	#materialize(): void {
+		const items = this.#items;
+		const self = this as unknown as Record<number | string, unknown>;
+		this.#defineIndices(items.length);
 		for (const name of this.#names) delete self[name];
 		this.#names = [];
 		const named = this.namedProperties(items);
@@ -4152,6 +4311,12 @@ const ensureMethod = (
 const syncMethod = (
 	LiveList.prototype as unknown as Record<symbol, () => void>
 )[kSync];
+const shapeSyncMethod = (
+	LiveList.prototype as unknown as Record<
+		symbol,
+		(point: Node, changed: readonly Node[] | null, added: boolean) => void
+	>
+)[kShapeSync];
 
 export class NodeList extends LiveList {
 	declare forEach: (
@@ -4165,8 +4330,14 @@ export class NodeList extends LiveList {
 
 	#compute: () => Node[];
 
-	constructor(compute: () => Node[], live: boolean, owner: Node | null = null) {
-		super(live, owner);
+	constructor(
+		compute: () => Node[],
+		live: boolean,
+		owner: Node | null = null,
+		childMember: ((node: Node) => boolean) | null = null,
+		told = childMember !== null,
+	) {
+		super(live, owner, childMember, told);
 		this.#compute = compute;
 	}
 
@@ -4195,13 +4366,24 @@ export class HTMLCollection extends LiveList {
 
 	#compute: () => Element[];
 
-	constructor(compute: () => Element[], owner: Node | null = null) {
-		super(true, owner);
+	constructor(
+		compute: () => Element[],
+		owner: Node | null = null,
+		childMember: ((node: Node) => boolean) | null = null,
+		told = childMember !== null,
+	) {
+		super(true, owner, childMember, told);
 		this.#compute = compute;
 	}
 
 	override compute(): Node[] {
 		return this.#compute();
+	}
+
+	override shapeMembers(changed: readonly Node[]): Node[] | null {
+		const members = super.shapeMembers(changed);
+		if (members === null || areNameless(members)) return members;
+		return null;
 	}
 
 	override namedProperties(items: Node[]): Map<string, Node> {
@@ -4265,7 +4447,12 @@ function toUnsignedShort(value: unknown): number {
 }
 
 function createChildNodeList(node: Node): NodeList {
-	const list = new NodeList(() => childNodeArray(node), true, node);
+	const list = new NodeList(
+		() => childNodeArray(node),
+		true,
+		node,
+		() => true,
+	);
 	list[kEnsure]();
 	return list;
 }
@@ -4298,6 +4485,24 @@ function elementChildren(parent: Node): Element[] {
 }
 
 /**
+ * Whether none of these nodes is a named property of a collection holding it.
+ *
+ * A name belongs to the first member carrying it in tree order, which is a
+ * question the whole list answers, so a collection splices members in and out
+ * only where no name is at stake.
+ */
+function areNameless(members: readonly Node[]): boolean {
+	for (const member of members) {
+		if (member.nodeType !== ELEMENT_NODE) continue;
+		for (const attribute of (member as Element)[kAttributeList]) {
+			const name = attribute[kLocalName];
+			if (name === "id" || name === "name") return false;
+		}
+	}
+	return true;
+}
+
+/**
  * The elements of a tree that pass a test, cached on the tree they walk.
  *
  * The test answers for one element, so an attribute change asks about the one
@@ -4309,7 +4514,7 @@ class MatchingCollection extends HTMLCollection {
 	#watched: string | null;
 	#matches: (element: Element) => boolean;
 	#members = new Set<Node>();
-	#membersOf: Node[] | null = null;
+	#membersOf = -1;
 
 	/**
 	 * @param watched - the attribute the test reads, if it reads one.
@@ -4319,16 +4524,39 @@ class MatchingCollection extends HTMLCollection {
 		watched: string | null,
 		matches: (element: Element) => boolean,
 	) {
-		super(() => {
-			const found: Element[] = [];
-			for (const element of descendantElements(root, [])) {
-				if (matches(element)) found.push(element);
-			}
-			return found;
-		}, root);
+		super(
+			() => {
+				const found: Element[] = [];
+				for (const element of descendantElements(root, [])) {
+					if (matches(element)) found.push(element);
+				}
+				return found;
+			},
+			root,
+			null,
+			true,
+		);
 		this.#root = root;
 		this.#watched = watched;
 		this.#matches = matches;
+	}
+
+	/**
+	 * The members a changed subtree carries, found by asking the test about the
+	 * subtree rather than about the tree it moved in or out of.
+	 */
+	override shapeMembers(changed: readonly Node[]): Node[] | null {
+		const members: Node[] = [];
+		for (const node of changed) {
+			const elements =
+				node.nodeType === ELEMENT_NODE
+					? descendantElements(node, [node as Element])
+					: descendantElements(node, []);
+			for (const element of elements) {
+				if (this.#matches(element)) members.push(element);
+			}
+		}
+		return areNameless(members) ? members : null;
 	}
 
 	override [kAttributeSync](element: Element, localName: string): void {
@@ -4337,9 +4565,13 @@ class MatchingCollection extends HTMLCollection {
 		if (localName !== "id" && localName !== "name") {
 			if (localName !== this.#watched) return;
 			const items = this[kComputed]();
-			if (this.#membersOf !== items) {
+			if (items === null) {
+				this[kSync]();
+				return;
+			}
+			if (this.#membersOf !== this[kGeneration]()) {
 				this.#members = new Set(items);
-				this.#membersOf = items;
+				this.#membersOf = this[kGeneration]();
 			}
 			if (
 				this.#matches(element) === this.#members.has(element) ||
@@ -4368,6 +4600,8 @@ function elementsByTagName(root: Node, qualifiedName: string): HTMLCollection {
 				? name === lowered
 				: name === qualifiedName;
 		});
+		// The indices a collection defines are observable without reading it,
+		// so a collection materializes them as it is made.
 		collection[kEnsure]();
 		cache.set(key, collection);
 	}
@@ -4391,6 +4625,8 @@ function elementsByTagNameNS(
 				(ns === "*" || element[kNamespace] === ns) &&
 				(localName === "*" || element[kLocalName] === localName),
 		);
+		// The indices a collection defines are observable without reading it,
+		// so a collection materializes them as it is made.
 		collection[kEnsure]();
 		cache.set(key, collection);
 	}
@@ -4440,6 +4676,8 @@ function elementsByClassName(root: Node, classNames: string): HTMLCollection {
 			}
 			return true;
 		});
+		// The indices a collection defines are observable without reading it,
+		// so a collection materializes them as it is made.
 		collection[kEnsure]();
 		cache.set(key, collection);
 	}
@@ -4483,10 +4721,15 @@ export class DOMTokenList extends LiveList {
 	#supported: Set<string> | null;
 
 	constructor(element: Element, attribute: string, supported?: string[]) {
-		super(true, element);
+		super(true, element, null, true);
 		this.#element = element;
 		this.#attribute = attribute;
 		this.#supported = supported === undefined ? null : new Set(supported);
+	}
+
+	/** An attribute's tokens are no part of the shape of a tree. */
+	override shapeMembers(): Node[] {
+		return [];
 	}
 
 	override compute(): Node[] {
@@ -4773,7 +5016,9 @@ function replaceData(
 		oldValue.slice(0, offset) + data + oldValue.slice(offset + size);
 	liveRangeReplaceDataSteps(node, offset, size, data.length);
 	queueCharacterDataMutationRecord(node, oldValue);
-	bumpTreeVersion(node[kDocument], node);
+	// A node's data is no part of the shape of a tree: the change carries no
+	// nodes, and a collection that lists nodes holds what it held.
+	bumpTreeVersion(node, [], false);
 	const parent = node[kParent];
 	if (parent !== null) parent[kChildrenChanged]();
 }
@@ -5340,8 +5585,13 @@ export class NamedNodeMap extends LiveList {
 	#element: Element;
 
 	constructor(element: Element) {
-		super(true, element);
+		super(true, element, null, true);
 		this.#element = element;
+	}
+
+	/** An element's attributes are no part of the shape of a tree. */
+	override shapeMembers(): Node[] {
+		return [];
 	}
 
 	override compute(): Node[] {
@@ -8840,6 +9090,7 @@ export class HTMLTableElement extends HTMLElement {
 			bodies = new HTMLCollection(
 				() => childElementsNamed(this, "tbody"),
 				this,
+				(node) => isHTMLElementNamed(node, "tbody"),
 			);
 			this.#tBodies = bodies;
 		}
@@ -8910,6 +9161,15 @@ export class HTMLTableElement extends HTMLElement {
 	}
 }
 
+/** Whether a node is an HTML element with a given local name. */
+function isHTMLElementNamed(node: Node, localName: string): boolean {
+	return (
+		node.nodeType === ELEMENT_NODE &&
+		(node as Element)[kNamespace] === HTML_NAMESPACE &&
+		(node as Element)[kLocalName] === localName
+	);
+}
+
 /** The child elements of a parent with a given HTML local name, in order. */
 function childElementsNamed(parent: Node, localName: string): Element[] {
 	const found: Element[] = [];
@@ -8963,7 +9223,11 @@ export class HTMLTableSectionElement extends HTMLElement {
 	get rows(): HTMLCollection {
 		let rows = this.#rows;
 		if (rows === null) {
-			rows = new HTMLCollection(() => childElementsNamed(this, "tr"), this);
+			rows = new HTMLCollection(
+				() => childElementsNamed(this, "tr"),
+				this,
+				(node) => isHTMLElementNamed(node, "tr"),
+			);
 			this.#rows = rows;
 		}
 		return rows;
@@ -9008,7 +9272,11 @@ export class HTMLTableRowElement extends HTMLElement {
 	get cells(): HTMLCollection {
 		let cells = this.#cells;
 		if (cells === null) {
-			cells = new HTMLCollection(() => rowCells(this), this);
+			cells = new HTMLCollection(
+				() => rowCells(this),
+				this,
+				(node) => node instanceof HTMLTableCellElement,
+			);
 			this.#cells = cells;
 		}
 		return cells;
@@ -13302,7 +13570,11 @@ const parentNodeMembers = {
 			const owner = this as unknown as Record<symbol, HTMLCollection | null>;
 			let collection = owner[kChildren];
 			if (collection == null) {
-				collection = new HTMLCollection(() => elementChildren(this), this);
+				collection = new HTMLCollection(
+					() => elementChildren(this),
+					this,
+					(node) => node.nodeType === ELEMENT_NODE,
+				);
 				collection[kEnsure]();
 				owner[kChildren] = collection;
 			}
