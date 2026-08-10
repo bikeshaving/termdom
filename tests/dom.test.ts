@@ -1683,3 +1683,43 @@ test("a body's window handlers are its window's, and are dropped without one", (
 	expect(view.onload).toBe(handler);
 	expect(body.onload).toBe(handler);
 });
+
+test("the selection APIs answer null where they do not apply, and throw when set", () => {
+	// HTML draws the line between reading and writing: a getter answers null
+	// for an input whose type the selection APIs do not apply to, while the
+	// setters and setSelectionRange throw.
+	const document = make();
+	const applies = ["text", "search", "url", "tel", "password"];
+	const doesNot = ["email", "number", "checkbox", "radio", "submit"];
+
+	for (const type of applies) {
+		const input = document.createElement("input");
+		input.type = type;
+		input.value = "abc";
+		expect(input.selectionStart).toBe(3);
+		expect(input.selectionEnd).toBe(3);
+		expect(input.selectionDirection).toBe("none");
+		input.setSelectionRange(1, 2);
+		expect(input.selectionStart).toBe(1);
+		input.selectionStart = 0;
+		expect(input.selectionStart).toBe(0);
+	}
+
+	for (const type of doesNot) {
+		const input = document.createElement("input");
+		input.type = type;
+		input.value = "abc";
+		expect(input.selectionStart).toBe(null);
+		expect(input.selectionEnd).toBe(null);
+		expect(input.selectionDirection).toBe(null);
+		expect(() => {
+			input.selectionStart = 1;
+		}).toThrow();
+		expect(() => {
+			input.selectionEnd = 1;
+		}).toThrow();
+		expect(() => input.setSelectionRange(0, 1)).toThrow();
+		// select() on an input it does not apply to is a no-op, not a throw.
+		input.select();
+	}
+});

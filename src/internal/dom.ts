@@ -9405,7 +9405,7 @@ export class HTMLInputElement extends HTMLElement {
 	}
 
 	get selectionStart(): number | null {
-		this.#requireSelectable();
+		if (!SELECTABLE_INPUT_TYPES.has(this.type)) return null;
 		return this.#selectionStart;
 	}
 
@@ -9420,7 +9420,7 @@ export class HTMLInputElement extends HTMLElement {
 	}
 
 	get selectionEnd(): number | null {
-		this.#requireSelectable();
+		if (!SELECTABLE_INPUT_TYPES.has(this.type)) return null;
 		return this.#selectionEnd;
 	}
 
@@ -9434,7 +9434,7 @@ export class HTMLInputElement extends HTMLElement {
 	}
 
 	get selectionDirection(): string | null {
-		this.#requireSelectable();
+		if (!SELECTABLE_INPUT_TYPES.has(this.type)) return null;
 		return this.#selectionDirection;
 	}
 
