@@ -410,7 +410,30 @@ export const TERMINAL_ELEMENT_DEFAULTS: Record<
 	dt: {display: "block"},
 	dd: {display: "block"},
 	form: {display: "block"},
-	fieldset: {display: "block"},
+	// A group of controls in a labelled box, the way a browser draws one: a
+	// border around the group with the legend sitting IN the top border line.
+	// The legend gets there by rising one row onto the border and painting the
+	// terminal's own background over the cells it covers -- which is what
+	// "interrupting the border" is.
+	fieldset: {
+		display: "block",
+		border: "1px solid",
+		padding: "0 1ch",
+	},
+	legend: {
+		display: "block",
+		"margin-top": "-1px",
+		"font-weight": "bold",
+	},
+	// A disclosure and its summary are both blocks, so the summary owns its
+	// row and the body stacks under it. The marker and the open/closed glyph
+	// are ::before rules in the UA document stylesheet.
+	details: {display: "block"},
+	summary: {display: "block", cursor: "pointer"},
+	// A gauge is a flat field in the input family, sized like a browser's own
+	// unstyled progress bar: a fixed track the fill is a fraction of.
+	progress: {display: "inline-block", width: "10ch", "white-space": "pre"},
+	meter: {display: "inline-block", width: "10ch", "white-space": "pre"},
 	figure: {display: "block"},
 	figcaption: {display: "block"},
 	hr: {display: "block", "border-top": "1px solid"},
@@ -739,6 +762,13 @@ export const UA_DOCUMENT_STYLES = `
 	button::before { content: "[ "; }
 	button::after { content: " ]"; }
 	a[href] { text-decoration: underline; }
+	datalist { display: none; }
+	dialog:not([open]) { display: none; }
+	details:not([open]) > :not(summary) { display: none; }
+	details > summary:first-of-type::before { content: "▸ "; }
+	details[open] > summary:first-of-type::before { content: "▾ "; }
+	summary:focus-visible { outline-width: 1px; outline-style: solid; outline-color: #5fafff; }
+	legend::before, legend::after { content: " "; white-space: pre; }
 	a[href]:focus-visible { background-color: Highlight; color: HighlightText; }
 	button:focus-visible { outline-width: 1px; outline-style: solid; outline-color: #5fafff; }
 `;
@@ -774,6 +804,43 @@ export const FIELD_UA_STYLES = `
 `;
 
 /**
+ * The UA stylesheet of a progress bar's internal shadow tree.
+ *
+ * The track is the full-width box that clips; the bar is an inline-block whose
+ * WIDTH is the fraction filled, so the fill is a real CSS length and the run of
+ * block glyphs behind it is ordinary text. What follows the bar inside the same
+ * clip is the groove, which is why an empty bar still reads as a bar.
+ */
+export const GAUGE_UA_STYLES = `
+	[part="track"] { display: inline-block; width: 100%; overflow: hidden; white-space: pre; vertical-align: top; }
+	[part="groove"] { color: #808080; font-weight: lighter; }
+	[part="bar"] { display: inline-block; overflow: hidden; white-space: pre; vertical-align: top; }
+`;
+
+/**
+ * The UA stylesheet of a progress bar, on top of the shared gauge rules: a
+ * determinate bar is the accent color, and an indeterminate one has no bar at
+ * all, so the groove alone shows.
+ */
+export const PROGRESS_UA_STYLES = `
+	${GAUGE_UA_STYLES}
+	[part="bar"] { color: #5fafff; }
+`;
+
+/**
+ * The UA stylesheet of a meter, on top of the shared gauge rules. A meter's
+ * value is read against its low/high/optimum ranges, and the level that reading
+ * produces is what colors the bar -- the browser's own three-way answer,
+ * spelled as an attribute a rule matches rather than a color the painter picks.
+ */
+export const METER_UA_STYLES = `
+	${GAUGE_UA_STYLES}
+	[part="bar"][data-level="optimum"] { color: #5faf5f; }
+	[part="bar"][data-level="suboptimum"] { color: #d7af5f; }
+	[part="bar"][data-level="even-less-good"] { color: #d75f5f; }
+`;
+
+/**
  * The UA stylesheet of a select's internal shadow tree: the ▾ indicator is
  * faint -- affordance, not content. Everything else (the focused field's
  * underline included) inherits from the host's own defaults.
@@ -793,4 +860,6 @@ export const SELECT_UA_STYLES = `
 	[part="option"] { display: block; white-space: pre; }
 	[part="option"][data-highlighted] { background-color: Highlight; color: HighlightText; }
 	[part="option"][data-disabled] { font-weight: lighter; }
+	[part="optgroup"] { display: block; white-space: pre; font-weight: bold; }
+	[part="option"][data-grouped] { padding-left: 2ch; }
 `;

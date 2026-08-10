@@ -7,10 +7,14 @@
  */
 import * as DOM from "./dom.js";
 import {
+	caretRangeOf,
+	fieldValueText,
 	flatIsConnected,
 	flatParentElement,
+	installUAEngine,
 	setUASelection,
 	uaSelectionOf,
+	upgradeUAWidget,
 } from "./dom.js";
 import {LayoutEngine, visualToDataOffsets} from "./layout.js";
 import {Viewport} from "./viewport.js";
@@ -41,12 +45,6 @@ import {
 	keyboardActivation,
 	tokenizeInput,
 } from "./events.js";
-import {
-	type UAWidgetController,
-	defineUAWidgets,
-	fieldCaretRange,
-	fieldValueText,
-} from "./widgets.js";
 
 /* --------------------------------------------------------- invalidation */
 
@@ -93,7 +91,34 @@ export function currentInvalidationEpoch(): number {
 const RESIZE_DEBOUNCE_MS = 40;
 
 // The built-in tags that upgrade to a UA widget on connect.
-const UPGRADEABLE_CONTROLS = new Set(["INPUT", "TEXTAREA", "SELECT"]);
+const UPGRADEABLE_CONTROLS = new Set([
+	"INPUT",
+	"TEXTAREA",
+	"SELECT",
+	"PROGRESS",
+	"METER",
+]);
+
+/**
+ * Upgrade every control in a newly connected subtree, the element itself
+ * included. A walk over the subtree's own child links rather than a selector
+ * query: every insertion pays this, and a document of ordinary markup must pay
+ * as little as a tag comparison per element.
+ */
+function upgradeControlsIn(root: Element): void {
+	const stack: Element[] = [root];
+	while (stack.length > 0) {
+		const element = stack.pop()!;
+		if (UPGRADEABLE_CONTROLS.has(element.tagName)) upgradeUAWidget(element);
+		for (
+			let child = element.firstElementChild;
+			child !== null;
+			child = child.nextElementSibling
+		) {
+			stack.push(child);
+		}
+	}
+}
 
 // The engine each document is mounted in. The DOM prototypes are the realm's,
 // shared by every document; a patched member finds its engine here rather than
@@ -497,7 +522,6 @@ export class TermDOM {
 	#fullscreenManager: FullscreenManager;
 	#observerManager: ObserverManager;
 	#styleManager: StyleManager;
-	#uaWidgets: UAWidgetController;
 	// The DOM-tree -> terminal-cells paint walk. Reads geometry/styles/widgets;
 	// owns no scheduling. Shares #topLayer by reference.
 	#painter: Painter;
@@ -530,10 +554,7 @@ export class TermDOM {
 
 	// An overflowed field's horizontal scroll lives on the value part's own
 	// scrollLeft (set by #scrollFieldCaretIntoView), not a side table.
-	// The UA-internal shadow trees behind input widgets, by host: the tree
-	// IS the field's content model (value text, placeholder, blank / toggle
-	// glyph), and the painter reads its computed styles instead of
-	// hardcoding the design. This map just caches the part references.
+
 	/**
 	 * The TOP LAYER: elements painted above every stacking context, in
 	 * insertion order, unclipped -- the foundation dialog/popover/::picker
@@ -728,11 +749,14 @@ export class TermDOM {
 
 		this[kObserver] = this.#setupMutationObserver();
 
-		this.#uaWidgets = defineUAWidgets({
-			window: this.window,
-			layoutEngine: this[kLayoutEngine],
-			styleManager: this.#styleManager,
+		// The collaborators a control's own shadow tree renders through. From
+		// here a control builds and keeps its tree itself; the shell only says
+		// when a newly connected one should be upgraded.
+		installUAEngine(this.document, {
+			layout: this[kLayoutEngine],
+			styles: this.#styleManager,
 			observer: this[kObserver],
+			invalidateStructure,
 		});
 		this.#painter = new Painter({
 			window: this.window,
@@ -1663,15 +1687,7 @@ export class TermDOM {
 			if (record.type !== "childList") continue;
 			for (const added of record.addedNodes) {
 				if (added.nodeType !== added.ELEMENT_NODE) continue;
-				const element = added as Element;
-				if (UPGRADEABLE_CONTROLS.has(element.tagName)) {
-					this.#uaWidgets.upgrade(element);
-				}
-				for (const control of element.querySelectorAll(
-					"input, textarea, select",
-				)) {
-					this.#uaWidgets.upgrade(control);
-				}
+				upgradeControlsIn(added as Element);
 			}
 		}
 		this.#styleManager.handleMutations(relevant);
@@ -2103,7 +2119,7 @@ export class TermDOM {
 		if (!rect) return;
 		let caretY = Math.round(rect.top);
 		if (element.tagName === "TEXTAREA") {
-			const range = fieldCaretRange(element as HTMLTextAreaElement);
+			const range = caretRangeOf(element);
 			const [caret] = range ? this[kLayoutEngine].getRangeRects(range) : [];
 			if (!caret) return;
 			caretY = caret.y;

@@ -10,8 +10,12 @@ import {type Viewport} from "./viewport.js";
 import {type StyleManager, resolveBorderStyles, getBoxModel} from "./styles.js";
 import {cssColorToNumber, isTransparentColor} from "./color.js";
 import {stringWidth} from "./text.js";
-import {flatIsConnected, flatParentElement, shadowRootOf} from "./dom.js";
-import {fieldCaretRange} from "./widgets.js";
+import {
+	caretRangeOf,
+	flatIsConnected,
+	flatParentElement,
+	shadowRootOf,
+} from "./dom.js";
 import {computedStyleOf, pseudoStyleOf, type ComputedStyle} from "./styles.js";
 
 /**
@@ -467,7 +471,7 @@ export class Painter {
 		if (rect && visible && isTextField(element)) {
 			const field = element as HTMLInputElement | HTMLTextAreaElement;
 			if (field === this.#document.activeElement) {
-				const range = fieldCaretRange(field);
+				const range = caretRangeOf(field);
 				const [caret] = range ? this.#layout.getRangeRects(range) : [];
 				if (caret) {
 					ctx.setCaret(caret.x, caret.y);

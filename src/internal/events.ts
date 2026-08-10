@@ -401,7 +401,7 @@ export function decodeMouseReport(
 // navigation link-shaped UI (TodoMVC's All/Active/Completed filters) reachable
 // only by mouse.
 export const FOCUSABLE_SELECTOR =
-	'a[href], input:not([disabled]), button:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+	'a[href], input:not([disabled]), button:not([disabled]), textarea:not([disabled]), select:not([disabled]), details > summary:first-of-type, [tabindex]:not([tabindex="-1"])';
 
 /**
  * Get all focusable elements in tab order
@@ -492,6 +492,12 @@ export function keyboardActivation(
 	}
 	if (tag === "A" && element.hasAttribute("href")) {
 		return {enter: true, space: false};
+	}
+	// A summary activates on both keys, and activation is what opens the
+	// disclosure; whether this summary is its details' summary is the
+	// activation behavior's own question.
+	if (tag === "SUMMARY") {
+		return {enter: true, space: true};
 	}
 	return null;
 }
