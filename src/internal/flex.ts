@@ -453,6 +453,45 @@ function sizeStillAnswers(
 	return false;
 }
 
+/**
+ * A min-content query: an upper bound of no room at all, which asks the box for
+ * the width it cannot go below.
+ */
+function isMinContent(mode: MeasureMode, available: number): boolean {
+	return mode === MEASURE_MODE_AT_MOST && available === 0;
+}
+
+const CACHE_SLOT_COUNT = 9;
+
+/**
+ * Which slot of the sizing cache holds the answer to a query, chosen by the
+ * query's SHAPE -- which axes are fixed, and whether an open axis is asking for
+ * min-content (Taffy's, src/tree/cache.rs compute_cache_slot).
+ *
+ * A shape only ever displaces its own kind, so the probes one pass makes of the
+ * same child cannot knock each other out: a min-content probe never lands where
+ * the max-content answer lives, and neither lands on the sizing answer for a
+ * fixed box.
+ */
+function cacheSlot(
+	availableWidth: number,
+	availableHeight: number,
+	widthMode: MeasureMode,
+	heightMode: MeasureMode,
+): number {
+	const knownWidth = widthMode === MEASURE_MODE_EXACTLY;
+	const knownHeight = heightMode === MEASURE_MODE_EXACTLY;
+	if (knownWidth && knownHeight) return 0;
+	if (knownWidth)
+		return 1 + (isMinContent(heightMode, availableHeight) ? 1 : 0);
+	if (knownHeight) return 3 + (isMinContent(widthMode, availableWidth) ? 1 : 0);
+	return (
+		5 +
+		(isMinContent(widthMode, availableWidth) ? 2 : 0) +
+		(isMinContent(heightMode, availableHeight) ? 1 : 0)
+	);
+}
+
 /** See Node#unstackedChildCount. */
 function breaksStacking(node: Node): boolean {
 	return (
@@ -490,17 +529,19 @@ export class Node {
 	// when this is 0, which is what lets paint-time culling skip straight to
 	// the visible range instead of visiting every child to rule it out.
 	unstackedChildCount = 0;
-	// Layout caches: the constraints of the last sizing pass and the last full
+	// Layout caches: the constraints of the last sizing passes and the last full
 	// layout pass, with the sizes they produced. A clean node asked again under
-	// identical constraints restores its size and skips its whole subtree -- so
-	// a one-line edit relays out its ancestor chain while every clean sibling
-	// returns in O(1). The ring holds 8 sizing answers because one placing
-	// pass probes a text child under as many as 5 distinct constraint pairs
-	// (flex basis, auto minimum, the placing probes); a smaller ring evicts
-	// this frame what the next frame asks for first, so a large list
-	// re-measures every clean row on every keystroke. Invalidation is the dirty flag,
-	// which every mutation path already sets on the way in.
-	cachedMeasures: CachedLayout[] = [];
+	// constraints it has already answered restores its size and skips its whole
+	// subtree -- so a one-line edit relays out its ancestor chain while every
+	// clean sibling returns in O(1). Sizing answers are held one per query SHAPE
+	// (see cacheSlot), so the several probes one placing pass makes of the same
+	// child -- flex basis, automatic minimum, the placing probe -- each keep
+	// their own slot and none displaces the answer the next probe wants.
+	// Invalidation is the dirty flag, which every mutation path already sets on
+	// the way in.
+	cachedMeasures: Array<CachedLayout | null> = new Array(CACHE_SLOT_COUNT).fill(
+		null,
+	);
 	cachedLayout: CachedLayout | null = null;
 
 	constructor(config: Config = defaultConfig) {
@@ -3167,7 +3208,7 @@ function layoutNode(
 			)
 		) {
 			hit = node.cachedLayout;
-		} else if (!performLayout && node.cachedMeasures.length > 0) {
+		} else if (!performLayout) {
 			// Margins are outside the size a measurement answers with, so both the
 			// offer and the remembered offer come down to their content side
 			// before they are compared.
@@ -3179,6 +3220,7 @@ function layoutNode(
 			);
 			for (const cached of node.cachedMeasures) {
 				if (
+					cached !== null &&
 					sameConstraint(cached.ownerWidth, ownerWidth) &&
 					sameConstraint(cached.ownerHeight, ownerHeight) &&
 					cached.width >= 0 &&
@@ -3214,7 +3256,7 @@ function layoutNode(
 	// slots before recomputing so stale entries cannot answer later queries.
 	if (node.dirty) {
 		node.cachedLayout = null;
-		node.cachedMeasures.length = 0;
+		node.cachedMeasures.fill(null);
 	}
 
 	layoutNodeImpl(
@@ -3241,11 +3283,9 @@ function layoutNode(
 	if (performLayout) {
 		node.cachedLayout = entry;
 	} else {
-		// Flex asks the same node under several constraint pairs per pass (a
-		// measuring probe and a placing probe, sometimes more); keep a small
-		// ring of answers so alternating probes both hit next frame.
-		if (node.cachedMeasures.length >= 8) node.cachedMeasures.shift();
-		node.cachedMeasures.push(entry);
+		node.cachedMeasures[
+			cacheSlot(availableWidth, availableHeight, widthMode, heightMode)
+		] = entry;
 	}
 	node.dirty = false;
 }
