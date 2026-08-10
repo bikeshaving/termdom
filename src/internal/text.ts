@@ -630,13 +630,21 @@ function preservesSpaces(whiteSpace: string): boolean {
 	return whiteSpace === "pre" || whiteSpace === "pre-wrap";
 }
 
+const COLLAPSIBLE_RUN = /\s+/g;
+const PRE_LINE_RUN = /[^\S\n]+/g;
+
+// Whether a rendering would change anything: two collapsible characters in a
+// row, or one that is not already the space it collapses to.
+const COLLAPSES = /\s\s|[^\S ]/;
+const PRE_LINE_COLLAPSES = /[^\S\n][^\S\n]|[^\S\n ]/;
+
 /**
- * The characters a `white-space` value treats as collapsible: everything the
- * \s class covers, except that `pre-line` exempts the newline it preserves.
+ * The runs a `white-space` value collapses to one space: every run the \s class
+ * matches, except that `pre-line` exempts the newline it preserves. Stateful
+ * (`g`), so a caller resets `lastIndex` before scanning with it.
  */
-function isCollapsible(char: string, whiteSpace: string): boolean {
-	if (whiteSpace === "pre-line" && char === "\n") return false;
-	return /\s/.test(char);
+function collapsiblePattern(whiteSpace: string): RegExp {
+	return whiteSpace === "pre-line" ? PRE_LINE_RUN : COLLAPSIBLE_RUN;
 }
 
 /**
@@ -653,40 +661,112 @@ function isCollapsible(char: string, whiteSpace: string): boolean {
  */
 export function renderWhiteSpace(data: string, whiteSpace: string): string {
 	if (preservesSpaces(whiteSpace)) return data;
-	return whiteSpace === "pre-line"
-		? data.replace(/[^\S\n]+/g, " ")
-		: data.replace(/\s+/g, " ");
+	// Text whose collapsible whitespace is already single spaces renders as
+	// itself, which is most text: the question is worth asking before building
+	// a second string that would equal the first.
+	const collapses = whiteSpace === "pre-line" ? PRE_LINE_COLLAPSES : COLLAPSES;
+	if (!collapses.test(data)) return data;
+	return data.replace(collapsiblePattern(whiteSpace), " ");
 }
 
 /**
- * `renderWhiteSpace` plus, for each rendered code unit, the offset in `data` it
- * came from -- a collapsed run reports the offset of its first character.
- * Code units, not code points: a Range addresses code units, so the halves of a
- * surrogate pair need offsets of their own.
+ * The inverse of a whitespace rendering: which data offset each rendered code
+ * unit came from. Held as the collapsed runs alone -- everything between two
+ * runs maps across one-for-one -- so the mapping costs a few numbers per run
+ * rather than an entry per character, on text whose collapsible runs are a
+ * small fraction of its length.
+ *
+ * `base` is added to a rendered index before lookup, which is how a rendering
+ * that later loses a prefix (a run's leading whitespace, trimmed) keeps its
+ * mapping without rebuilding it.
+ */
+export interface RenderedOffsets {
+	/** Rendered index of each collapsed run's single space. */
+	spaceAt: Int32Array;
+	/** The data offset that space renders: the run's first character. */
+	runStart: Int32Array;
+	/** The data offset just past each run. */
+	runEnd: Int32Array;
+	base: number;
+}
+
+const NO_RUNS = new Int32Array(0);
+
+/**
+ * `renderWhiteSpace` plus the mapping back to data offsets, null when the
+ * rendering is verbatim and every offset maps to itself.
  */
 export function renderWhiteSpaceOffsets(
 	data: string,
 	whiteSpace: string,
-): {text: string; offsets: number[]} {
-	if (preservesSpaces(whiteSpace)) {
-		const offsets = new Array<number>(data.length);
-		for (let i = 0; i < data.length; i++) offsets[i] = i;
-		return {text: data, offsets};
+): {text: string; offsets: RenderedOffsets | null} {
+	if (preservesSpaces(whiteSpace)) return {text: data, offsets: null};
+	const pattern = collapsiblePattern(whiteSpace);
+	pattern.lastIndex = 0;
+	const spaceAt: number[] = [];
+	const runStart: number[] = [];
+	const runEnd: number[] = [];
+	// Each run of length L renders as one space, so every later character sits
+	// L-1 places earlier than its data offset.
+	let dropped = 0;
+	let match: RegExpExecArray | null;
+	while ((match = pattern.exec(data))) {
+		spaceAt.push(match.index - dropped);
+		runStart.push(match.index);
+		runEnd.push(match.index + match[0].length);
+		dropped += match[0].length - 1;
 	}
-	let text = "";
-	const offsets: number[] = [];
-	for (let i = 0; i < data.length; ) {
-		const char = data[i];
-		offsets.push(i);
-		if (isCollapsible(char, whiteSpace)) {
-			text += " ";
-			while (i < data.length && isCollapsible(data[i], whiteSpace)) i++;
+	return {
+		text: dropped === 0 ? data : data.replace(pattern, " "),
+		offsets: {
+			spaceAt: Int32Array.from(spaceAt),
+			runStart: Int32Array.from(runStart),
+			runEnd: Int32Array.from(runEnd),
+			base: 0,
+		},
+	};
+}
+
+/** The data offset a rendered code unit came from. See RenderedOffsets. */
+export function dataOffsetAt(
+	offsets: RenderedOffsets | null,
+	index: number,
+): number {
+	if (!offsets) return index;
+	const rendered = index + offsets.base;
+	// The last collapsed run at or before the index: everything after that run
+	// maps across one-for-one from the data just past it.
+	const {spaceAt} = offsets;
+	let low = 0;
+	let high = spaceAt.length - 1;
+	let run = -1;
+	while (low <= high) {
+		const middle = (low + high) >> 1;
+		if (spaceAt[middle] <= rendered) {
+			run = middle;
+			low = middle + 1;
 		} else {
-			text += char;
-			i++;
+			high = middle - 1;
 		}
 	}
-	return {text, offsets};
+	if (run < 0) return rendered;
+	if (spaceAt[run] === rendered) return offsets.runStart[run];
+	return offsets.runEnd[run] + (rendered - spaceAt[run] - 1);
+}
+
+/**
+ * The same mapping over a rendering that lost its first `by` characters. A
+ * verbatim rendering needs a mapping of its own once it has: its offsets are no
+ * longer the identity.
+ */
+export function shiftRenderedOffsets(
+	offsets: RenderedOffsets | null,
+	by: number,
+): RenderedOffsets {
+	if (!offsets) {
+		return {spaceAt: NO_RUNS, runStart: NO_RUNS, runEnd: NO_RUNS, base: by};
+	}
+	return {...offsets, base: offsets.base + by};
 }
 
 /**

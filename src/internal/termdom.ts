@@ -28,7 +28,7 @@ import {
 } from "./terminalsession.js";
 import {Renderer} from "./ansi.js";
 import {StyleManager, computedStyleOf, getBoxModel} from "./styles.js";
-import {renderWhiteSpaceOffsets, stringWidth} from "./text.js";
+import {dataOffsetAt, renderWhiteSpaceOffsets, stringWidth} from "./text.js";
 import {
 	ObserverManager,
 	ResizeObserver as TermResizeObserver,
@@ -2061,10 +2061,10 @@ export class TermDOM {
 			// the last to that.
 			let line = lines[0];
 			for (const candidate of lines) {
-				if (candidate.rect.y > y) break;
+				if (Math.round(candidate.rect.y) > y) break;
 				line = candidate;
 			}
-			const rel = x - line.rect.x;
+			const rel = x - Math.round(line.rect.x);
 			if (rel <= 0) return line.startOffset;
 			let cells = 0;
 			let offset = 0;
@@ -2540,7 +2540,7 @@ export class TermDOM {
 						if (!best || distance < best.distance) {
 							const offset =
 								index < text.length
-									? fragment.startOffset + offsets[index]
+									? fragment.startOffset + dataOffsetAt(offsets, index)
 									: fragment.endOffset;
 							best = {node: textNode, offset, distance};
 						}

@@ -32,10 +32,13 @@ import {
 	shadowRootOf,
 } from "./dom.js";
 import {
+	dataOffsetAt,
 	hasRTL,
 	inferParagraphDirection,
 	renderTextFragment,
 	renderWhiteSpaceOffsets,
+	shiftRenderedOffsets,
+	type RenderedOffsets,
 	stringWidth as runtimeStringWidth,
 	toVisualOrder,
 	writeClusterWidths,
@@ -1258,11 +1261,10 @@ interface ProcessedContent {
 		end: number;
 		processedContent?: string;
 		/**
-		 * For each code unit of `processedContent`, the offset in the leaf text
-		 * node's raw `data` it was rendered from. A collapsed run of whitespace
-		 * reports the offset of its first character.
+		 * The mapping from `processedContent`'s code units back to offsets in
+		 * the leaf text node's raw `data`. Null where the two are the same.
 		 */
-		dataOffsets?: number[];
+		dataOffsets?: RenderedOffsets | null;
 	}>;
 	text: string;
 	/**
@@ -2564,8 +2566,9 @@ export class LayoutEngine {
 	}
 
 	/**
-	 * Each laid-out line of a text node: where the line sits, and the range of
-	 * the node's raw `data` it renders. Rendering that range through
+	 * Each laid-out line of a text node: where the line sits -- in raw layout
+	 * coordinates, which a caller placing cells rounds -- and the range of the
+	 * node's raw `data` it renders. Rendering that range through
 	 * `renderTextFragment` under the node's `white-space` gives back exactly the
 	 * characters the line paints, so a consumer needs no processed text of the
 	 * breaker's to draw, measure or address a line.
@@ -2581,12 +2584,7 @@ export class LayoutEngine {
 		const lines: LineFragment[] = [];
 		for (const rectText of this[kRectTexts](textNode)) {
 			lines.push({
-				rect: this.createDOMRect(
-					Math.round(rectText.rect.x),
-					Math.round(rectText.rect.y),
-					rectText.rect.width,
-					rectText.rect.height,
-				),
+				rect: rectText.rect,
 				startOffset: rectText.startOffset,
 				endOffset: rectText.endOffset,
 				visualBase: rectText.visualBase,
@@ -2656,8 +2654,8 @@ export class LayoutEngine {
 			line.startOffset,
 			Math.max(line.startOffset, Math.min(offset, line.endOffset)),
 		);
-		const x = line.rect.x + runtimeStringWidth(before);
-		return this.createDOMRect(x, line.rect.y, 0, line.rect.height);
+		const x = Math.round(line.rect.x) + runtimeStringWidth(before);
+		return this.createDOMRect(x, Math.round(line.rect.y), 0, line.rect.height);
 	}
 
 	/**
@@ -2683,18 +2681,21 @@ export class LayoutEngine {
 			let runStart = -1;
 			for (let i = 0; i <= text.length; i++) {
 				const dataOffset =
-					i < text.length ? fragment.startOffset + offsets[i] : -1;
+					i < text.length
+						? fragment.startOffset + dataOffsetAt(offsets, i)
+						: -1;
 				const selected = dataOffset >= from && dataOffset < to;
 				if (selected && runStart === -1) {
 					runStart = i;
 				} else if (!selected && runStart !== -1) {
 					const x =
-						fragment.rect.x + runtimeStringWidth(text.slice(0, runStart));
+						Math.round(fragment.rect.x) +
+						runtimeStringWidth(text.slice(0, runStart));
 					const width = runtimeStringWidth(text.slice(runStart, i));
 					runs.push({
 						rect: this.createDOMRect(
 							x,
-							fragment.rect.y,
+							Math.round(fragment.rect.y),
 							width,
 							fragment.rect.height,
 						),
@@ -5307,6 +5308,40 @@ export class LayoutEngine {
 		};
 	}
 
+	/**
+	 * A text node's data rendered under a `white-space` value, held until either
+	 * changes. One inline run is broken several times per build -- once per
+	 * width the sizing pass tries -- and the rendering is the same every time.
+	 */
+	#renderedLeaves = new WeakMap<
+		Text,
+		{
+			data: string;
+			whiteSpace: string;
+			text: string;
+			offsets: RenderedOffsets | null;
+		}
+	>();
+
+	#renderLeaf(
+		textNode: Text,
+		whiteSpace: string,
+	): {text: string; offsets: RenderedOffsets | null} {
+		const data = textNode.data;
+		const cached = this.#renderedLeaves.get(textNode);
+		if (cached && cached.data === data && cached.whiteSpace === whiteSpace) {
+			return cached;
+		}
+		const rendered = renderWhiteSpaceOffsets(data, whiteSpace);
+		this.#renderedLeaves.set(textNode, {
+			data,
+			whiteSpace,
+			text: rendered.text,
+			offsets: rendered.offsets,
+		});
+		return rendered;
+	}
+
 	#processWhitespace(leafNodes: Leaf[]): ProcessedContent {
 		const items: ProcessedContent["items"] = [];
 		let text = "";
@@ -5321,8 +5356,8 @@ export class LayoutEngine {
 				const leafWhiteSpace = whiteSpaceOf(leaf.node);
 
 				// Process the text content according to its white-space property,
-				// keeping the raw data offset each rendered code unit came from.
-				const rendered = renderWhiteSpaceOffsets(leaf.content, leafWhiteSpace);
+				// keeping the mapping back to raw data offsets.
+				const rendered = this.#renderLeaf(leaf.node, leafWhiteSpace);
 				let processed = rendered.text;
 				let dataOffsets = rendered.offsets;
 
@@ -5338,7 +5373,7 @@ export class LayoutEngine {
 						if (prevEndsWithSpace && thisStartsWithSpace) {
 							// Remove the leading space to avoid double spaces at boundaries
 							processed = processed.substring(1);
-							dataOffsets = dataOffsets.slice(1);
+							dataOffsets = shiftRenderedOffsets(dataOffsets, 1);
 						}
 					}
 				}
@@ -5419,9 +5454,9 @@ export class LayoutEngine {
 								clampedStart - item.start,
 								clampedEnd - item.start,
 							);
-							item.dataOffsets = item.dataOffsets?.slice(
+							item.dataOffsets = shiftRenderedOffsets(
+								item.dataOffsets ?? null,
 								clampedStart - item.start,
-								clampedEnd - item.start,
 							);
 						}
 						item.start = clampedStart - trimStart;
@@ -5730,12 +5765,14 @@ export class LayoutEngine {
 					// the line broke on is outside it, as it is outside the
 					// painted text, but an empty fragment still reports where it
 					// sits -- the caret slot of a blank line.
-					const offsets = item.dataOffsets ?? [];
+					const offsets = item.dataOffsets ?? null;
 					const dataStart =
-						offsets[relativeStart] ?? item.leafNode.node.data.length;
+						relativeStart < item.processedContent.length
+							? dataOffsetAt(offsets, relativeStart)
+							: item.leafNode.node.data.length;
 					const dataEnd =
 						portion.length > 0
-							? offsets[relativeStart + portion.length - 1] + 1
+							? dataOffsetAt(offsets, relativeStart + portion.length - 1) + 1
 							: dataStart;
 
 					nodes.push({
