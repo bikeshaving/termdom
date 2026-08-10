@@ -7,7 +7,7 @@ properties. Every row is a probe -- the feature applied to a real
 document and rendered, with the row recording whether the output
 changed.
 
-102 features supported, 109 probed and unsupported,
+103 features supported, 108 probed and unsupported,
 301 CSS properties not yet probed.
 
 ## DOM APIs
@@ -46,7 +46,7 @@ changed.
 | --- | --- |
 | `@media (width)` | yes |
 | `@media (height)` | yes |
-| `@supports` | no (no effect) |
+| `@supports` | yes |
 | `Custom properties (var)` | yes |
 | `!important` | yes |
 
