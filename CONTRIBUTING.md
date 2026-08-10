@@ -28,5 +28,5 @@ Generated, never edited:
 
 ```sh
 npm run support                                               # regenerate
-BUN_JSC_useFTLJIT=false bun scripts/support-matrix.ts --check # CI runs this
+bun scripts/support-matrix.ts --check # CI runs this
 ```
