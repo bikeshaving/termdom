@@ -10240,19 +10240,26 @@ export class HTMLInputElement extends HTMLElement {
 
 	/**
 	 * The input's editing default action: a checkbox/radio activates on Space
-	 * (never accepting typed text), Home/End go to the whole value's ends (an
-	 * input has no visual lines), everything else is the shared field logic.
+	 * or Enter (never accepting typed text), Home/End go to the whole value's
+	 * ends (an input has no visual lines), everything else is the shared field
+	 * logic.
 	 */
 	#onKeydown = (event: KeyboardEvent): void => {
 		if (event.defaultPrevented) return;
 		const {key, shiftKey, ctrlKey} = event;
 
 		if (this.type === "checkbox" || this.type === "radio") {
-			// Space activates the control, and activation is what toggles it: the
-			// pre-activation behavior flips the checkedness, the activation
+			// Either key activates the control, and activation is what toggles it:
+			// the pre-activation behavior flips the checkedness, the activation
 			// behavior fires input then change, and a canceled click puts the
 			// checkedness back.
-			if (key === " ") this.click();
+			//
+			// Enter toggles here where a browser leaves it dead. In a browser
+			// Enter on a checkbox submits the form the control belongs to, and
+			// does nothing at all outside one; a terminal has no implicit
+			// submission to inherit, so the key would simply be inert on a focused
+			// control. It toggles, for the same reason the readline chords edit.
+			if (key === " " || key === "Enter") this.click();
 			return;
 		}
 

@@ -995,8 +995,9 @@ test("Space toggles a focused checkbox and fires change; other keys are no-ops",
 	expect(checkbox.checked).toBe(true);
 	expect(changes).toEqual([true]);
 
-	// Checkboxes don't accept typed text -- every other key is a no-op.
-	(terminal.stdin as any).emit("data", Buffer.from("abc\r\x7f"));
+	// Checkboxes don't accept typed text -- every key but the two that
+	// activate is a no-op.
+	(terminal.stdin as any).emit("data", Buffer.from("abc\x7f"));
 	await new Promise((r) => setTimeout(r, 0));
 	expect(checkbox.checked).toBe(true);
 	expect(changes).toEqual([true]);
@@ -1007,6 +1008,90 @@ test("Space toggles a focused checkbox and fires change; other keys are no-ops",
 	await new Promise((r) => setTimeout(r, 0));
 	expect(checkbox.checked).toBe(false);
 	expect(changes).toEqual([true, false]);
+
+	dom.dispose();
+});
+
+test("Enter activates a checkbox and a radio, as Space does", async () => {
+	const terminal = new MockProcess({rows: 10, cols: 40});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
+	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
+	const {document} = dom;
+
+	document.body.innerHTML =
+		`<input type="checkbox" id="box">` + `<input type="radio" id="dot">`;
+	const checkbox = document.getElementById("box") as HTMLInputElement;
+	const radio = document.getElementById("dot") as HTMLInputElement;
+	const changes: string[] = [];
+	checkbox.addEventListener("change", () =>
+		changes.push(`box:${checkbox.checked}`),
+	);
+	radio.addEventListener("change", () => changes.push(`dot:${radio.checked}`));
+	checkbox.focus();
+	await nextFrame(dom);
+
+	const press = async (data: string) => {
+		(terminal.stdin as any).emit("data", Buffer.from(data));
+		await new Promise((r) => setTimeout(r, 0));
+		await new Promise((r) => setTimeout(r, 0));
+	};
+
+	await press("\r");
+	expect(checkbox.checked).toBe(true);
+	await press("\r");
+	expect(checkbox.checked).toBe(false);
+	// The two keys reach the same activation, so they alternate on one control.
+	await press(" ");
+	expect(checkbox.checked).toBe(true);
+	await press("\r");
+	expect(checkbox.checked).toBe(false);
+
+	radio.focus();
+	await nextFrame(dom);
+	await press("\r");
+	expect(radio.checked).toBe(true);
+
+	expect(changes).toEqual([
+		"box:true",
+		"box:false",
+		"box:true",
+		"box:false",
+		"dot:true",
+	]);
+
+	dom.dispose();
+});
+
+test("a canceled click puts a checkbox's checkedness back, whichever key pressed it", async () => {
+	const terminal = new MockProcess({rows: 10, cols: 40});
+	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
+	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
+	const {document} = dom;
+
+	const checkbox = document.createElement("input");
+	checkbox.type = "checkbox";
+	document.body.appendChild(checkbox);
+	// The click's default action is what toggles; canceling it reverts the
+	// checkedness the pre-activation behavior had already flipped.
+	checkbox.addEventListener("click", (event) => event.preventDefault());
+	const changes: boolean[] = [];
+	checkbox.addEventListener("change", () => changes.push(checkbox.checked));
+	checkbox.focus();
+	await nextFrame(dom);
+
+	const press = async (data: string) => {
+		(terminal.stdin as any).emit("data", Buffer.from(data));
+		await new Promise((r) => setTimeout(r, 0));
+		await new Promise((r) => setTimeout(r, 0));
+	};
+
+	await press("\r");
+	expect(checkbox.checked).toBe(false);
+	await press(" ");
+	expect(checkbox.checked).toBe(false);
+	expect(changes).toEqual([]);
 
 	dom.dispose();
 });
