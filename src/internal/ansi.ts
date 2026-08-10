@@ -1,5 +1,5 @@
 import {BOX_DRAWING, BorderEdgeStyle} from "./styles.js";
-import {LRUCache, stringWidth} from "./text.js";
+import {stringWidth} from "./text.js";
 
 /** One shared grapheme segmenter -- construction is expensive. */
 const graphemeSegmenter = new Intl.Segmenter("en", {granularity: "grapheme"});
@@ -10,29 +10,6 @@ export type ColorDepth = "ansi" | "rgb" | "256";
 
 const enum Color {
 	Mask = 0xffffff,
-}
-
-const enum FGStyle {
-	Bold = 0b00000001 << 24,
-	Italic = 0b00000010 << 24,
-	Underline = 0b00000100 << 24,
-	Strikethrough = 0b00001000 << 24,
-	Overline = 0b00010000 << 24,
-	// Styled underline (SGR 4:2, the kitty extension most modern terminals
-	// adopted). Only meaningful alongside Underline: emission sends plain 4
-	// first so a DIRECTLY connected terminal that ignores 4:2 keeps a single
-	// underline. That ordering cannot survive a re-encoding intermediary:
-	// tmux collapses the pair into one styled-underline attribute at parse
-	// time and forwards it to a client without the usstyle feature in a form
-	// Apple Terminal drops entirely. Author-land CSS for terminals known to
-	// support it -- the UA defaults deliberately never use it.
-	DoubleUnderline = 0b00100000 << 24,
-}
-
-const enum BGStyle {
-	Inverse = 0b00000001 << 24,
-	Blink = 0b00000010 << 24,
-	Dim = 0b00000100 << 24,
 }
 
 const enum BorderMask {
@@ -109,8 +86,6 @@ export function mergeBorderEncodings(
 	return merged;
 }
 
-export type CellBuffer = Array<Array<Cell | null>>;
-
 export interface CellStyle {
 	grapheme?: string;
 	fg?: number | null;
@@ -128,152 +103,296 @@ export interface CellStyle {
 	border?: number;
 }
 
-const cache = new LRUCache<string, Cell>(2 ** 12);
-
-export class Cell {
-	declare grapheme: string;
-	declare fg: number;
-	declare bg: number;
-	declare border: number;
-
-	constructor(options: string | CellStyle) {
-		let grapheme: string;
-		let cellStyle: CellStyle | undefined;
-
-		if (typeof options === "string") {
-			grapheme = options;
-			cellStyle = undefined;
-		} else {
-			grapheme = options.grapheme ?? "┼";
-			cellStyle = options;
-		}
-
-		if (grapheme === "") {
-			throw new Error("Cell grapheme cannot be empty. Use null instead.");
-		}
-
-		this.grapheme = grapheme;
-
-		let fg = (cellStyle?.fg ?? 0) & Color.Mask;
-		if (cellStyle?.bold) fg |= FGStyle.Bold;
-		if (cellStyle?.italic) fg |= FGStyle.Italic;
-		if (cellStyle?.underline) fg |= FGStyle.Underline;
-		if (cellStyle?.underline && cellStyle?.underlineStyle === "double")
-			fg |= FGStyle.DoubleUnderline;
-		if (cellStyle?.strikethrough) fg |= FGStyle.Strikethrough;
-		if (cellStyle?.overline) fg |= FGStyle.Overline;
-		this.fg = fg;
-
-		let bg = (cellStyle?.bg ?? 0) & Color.Mask;
-		if (cellStyle?.inverse) bg |= BGStyle.Inverse;
-		if (cellStyle?.blink) bg |= BGStyle.Blink;
-		if (cellStyle?.dim) bg |= BGStyle.Dim;
-		this.bg = bg;
-
-		this.border = cellStyle?.border ?? 0;
-
-		Object.freeze(this);
-	}
-
-	equals(other: Cell): boolean {
-		return (
-			this.grapheme === other.grapheme &&
-			this.fg === other.fg &&
-			this.bg === other.bg &&
-			this.border === other.border
-		);
-	}
-
-	styleEquals(other: Cell): boolean {
-		return (
-			this.fg === other.fg &&
-			this.bg === other.bg &&
-			this.border === other.border
-		);
-	}
-
-	get isWide(): boolean {
-		return this.grapheme ? stringWidth(this.grapheme) > 1 : false;
-	}
-
-	get width(): number {
-		return this.grapheme ? stringWidth(this.grapheme) : 0;
-	}
-
-	getStyleFlags() {
-		return {
-			bold: (this.fg & FGStyle.Bold) !== 0,
-			italic: (this.fg & FGStyle.Italic) !== 0,
-			underline: (this.fg & FGStyle.Underline) !== 0,
-			doubleUnderline: (this.fg & FGStyle.DoubleUnderline) !== 0,
-			strikethrough: (this.fg & FGStyle.Strikethrough) !== 0,
-			overline: (this.fg & FGStyle.Overline) !== 0,
-			inverse: (this.bg & BGStyle.Inverse) !== 0,
-			blink: (this.bg & BGStyle.Blink) !== 0,
-			dim: (this.bg & BGStyle.Dim) !== 0,
-		};
-	}
-
-	getFgColor(): number {
-		return this.fg & Color.Mask;
-	}
-
-	getBgColor(): number {
-		return this.bg & Color.Mask;
-	}
-
-	static create(options: string | CellStyle): Cell | null {
-		let grapheme: string;
-		let cellStyle: CellStyle | undefined;
-
-		if (typeof options === "string") {
-			if (options === "") return null;
-			grapheme = options;
-			cellStyle = undefined;
-		} else {
-			grapheme = options.grapheme ?? "┼";
-			if (grapheme === "") return null;
-			cellStyle = options;
-		}
-
-		let fg = (cellStyle?.fg ?? 0) & Color.Mask;
-		if (cellStyle?.bold) fg |= FGStyle.Bold;
-		if (cellStyle?.italic) fg |= FGStyle.Italic;
-		if (cellStyle?.underline) fg |= FGStyle.Underline;
-		if (cellStyle?.underline && cellStyle?.underlineStyle === "double")
-			fg |= FGStyle.DoubleUnderline;
-		if (cellStyle?.strikethrough) fg |= FGStyle.Strikethrough;
-		if (cellStyle?.overline) fg |= FGStyle.Overline;
-
-		let bg = (cellStyle?.bg ?? 0) & Color.Mask;
-		if (cellStyle?.inverse) bg |= BGStyle.Inverse;
-		if (cellStyle?.blink) bg |= BGStyle.Blink;
-		if (cellStyle?.dim) bg |= BGStyle.Dim;
-
-		const border = cellStyle?.border ?? 0;
-		const cacheKey = `${grapheme}:${fg}:${bg}:${border}`;
-
-		const cached = cache.get(cacheKey);
-		if (cached) {
-			return cached;
-		}
-
-		const cell = new Cell(options);
-		cache.set(cacheKey, cell);
-		return cell;
-	}
+/**
+ * Per-cell attribute bits.
+ *
+ * Bold through Overline are the bits the foreground word carries alongside its
+ * color; Inverse through Dim are the background word's. The SGR delta treats
+ * each group as one unit with its color -- a foreground change re-states every
+ * foreground attribute -- so the groups are named here as masks.
+ *
+ * Width is the grapheme's column count, recorded at write time so the emitter
+ * never re-measures. WidthWide is the escape for a cluster wider than the
+ * field (a base carrying many spacing marks); the emitter measures those.
+ */
+const enum Attr {
+	Bold = 1 << 0,
+	Italic = 1 << 1,
+	Underline = 1 << 2,
+	// Styled underline (SGR 4:2, the kitty extension most modern terminals
+	// adopted). Only meaningful alongside Underline: emission sends plain 4
+	// first so a DIRECTLY connected terminal that ignores 4:2 keeps a single
+	// underline. That ordering cannot survive a re-encoding intermediary:
+	// tmux collapses the pair into one styled-underline attribute at parse
+	// time and forwards it to a client without the usstyle feature in a form
+	// Apple Terminal drops entirely. Author-land CSS for terminals known to
+	// support it -- the UA defaults deliberately never use it.
+	DoubleUnderline = 1 << 3,
+	Strikethrough = 1 << 4,
+	Overline = 1 << 5,
+	Inverse = 1 << 6,
+	Blink = 1 << 7,
+	Dim = 1 << 8,
+	FGGroup = Bold |
+		Italic |
+		Underline |
+		DoubleUnderline |
+		Strikethrough |
+		Overline,
+	BGGroup = Inverse | Blink | Dim,
+	StyleMask = FGGroup | BGGroup,
+	WidthShift = 9,
+	WidthMask = 0x1f << 9,
+	WidthWide = 0x1f,
 }
 
-export function createBuffer(rows: number, cols: number): CellBuffer {
-	const buffer: CellBuffer = [];
-	for (let row = 0; row < rows; row++) {
-		const line: Array<Cell | null> = [];
-		for (let col = 0; col < cols; col++) {
-			line.push(null);
-		}
-		buffer.push(line);
+/**
+ * A char-plane value at or above this is an index into `internedGraphemes`
+ * rather than a code point; below it, the value IS the code point. Zero is the
+ * empty cell -- nothing has ever been written there, or a wide glyph to the
+ * left covers it.
+ */
+const CHAR_INTERNED = 0x8000_0000;
+
+/**
+ * Grapheme clusters of more than one code point -- ZWJ emoji, combining
+ * sequences, regional-indicator flags -- named by index so a cell stays one
+ * uint32.
+ *
+ * Append-only: an id, once handed out, names the same cluster for the life of
+ * the process, so a plane value copied between buffers by scroll or seed stays
+ * valid. The table's size is bounded by the number of DISTINCT multi-code-point
+ * clusters the document uses, which is a property of its script, not of how
+ * much text passes through.
+ */
+const internedGraphemes: string[] = [""];
+const internedIds = new Map<string, number>();
+
+function internGrapheme(grapheme: string): number {
+	let id = internedIds.get(grapheme);
+	if (id === undefined) {
+		id = internedGraphemes.length;
+		internedGraphemes.push(grapheme);
+		internedIds.set(grapheme, id);
 	}
-	return buffer;
+	return id;
+}
+
+/** The char-plane value for a grapheme cluster. */
+function encodeGrapheme(grapheme: string): number {
+	const code = grapheme.codePointAt(0)!;
+	if (grapheme.length === (code > 0xffff ? 2 : 1)) return code;
+	return CHAR_INTERNED | internGrapheme(grapheme);
+}
+
+/** The grapheme cluster a char-plane value names. */
+function decodeGrapheme(char: number): string {
+	return char >= CHAR_INTERNED
+		? internedGraphemes[char - CHAR_INTERNED]
+		: String.fromCodePoint(char);
+}
+
+/**
+ * Column count of a grapheme, skipping the width cache for printable ASCII --
+ * the overwhelmingly common case, and one whose answer is always 1.
+ */
+function graphemeColumns(grapheme: string): number {
+	const code = grapheme.charCodeAt(0);
+	if (grapheme.length === 1 && code >= 0x20 && code <= 0x7e) return 1;
+	return stringWidth(grapheme);
+}
+
+/** The style bits of a CellStyle, packed. Width is added by the caller. */
+function packAttrs(style: CellStyle | undefined): number {
+	if (!style) return 0;
+	let attrs = 0;
+	if (style.bold) attrs |= Attr.Bold;
+	if (style.italic) attrs |= Attr.Italic;
+	if (style.underline) {
+		attrs |= Attr.Underline;
+		if (style.underlineStyle === "double") attrs |= Attr.DoubleUnderline;
+	}
+	if (style.strikethrough) attrs |= Attr.Strikethrough;
+	if (style.overline) attrs |= Attr.Overline;
+	if (style.inverse) attrs |= Attr.Inverse;
+	if (style.blink) attrs |= Attr.Blink;
+	if (style.dim) attrs |= Attr.Dim;
+	return attrs;
+}
+
+/**
+ * The terminal grid, as parallel typed-array planes indexed by `row * cols +
+ * col`.
+ *
+ * Every per-cell datum has a plane: the grapheme (a code point, or an index
+ * into the intern table), the foreground and background colors, the style and
+ * width bits, and the border encoding. A color of 0 is the terminal's own
+ * default rather than black -- the sentinel the SGR emitter reads as 39/49.
+ *
+ * A cell is empty when its char plane is 0. The column to the right of a
+ * two-column glyph is empty in exactly that sense: the glyph's own width field
+ * is what tells the emitter to step over it.
+ *
+ * Planes are allocated once per size and reused. The renderer swaps whole
+ * grids between frames rather than copying them.
+ */
+export class CellGrid {
+	readonly rows: number;
+	readonly cols: number;
+	readonly char: Uint32Array;
+	readonly fg: Uint32Array;
+	readonly bg: Uint32Array;
+	readonly attrs: Uint16Array;
+	readonly border: Uint32Array;
+
+	constructor(rows: number, cols: number) {
+		this.rows = rows;
+		this.cols = cols;
+		const size = rows * cols;
+		this.char = new Uint32Array(size);
+		this.fg = new Uint32Array(size);
+		this.bg = new Uint32Array(size);
+		this.attrs = new Uint16Array(size);
+		this.border = new Uint32Array(size);
+	}
+
+	clear(): void {
+		this.char.fill(0);
+		this.fg.fill(0);
+		this.bg.fill(0);
+		this.attrs.fill(0);
+		this.border.fill(0);
+	}
+
+	/** Blank the cells in [start, end) of the flat index space. */
+	clearRange(start: number, end: number): void {
+		if (end <= start) return;
+		this.char.fill(0, start, end);
+		this.fg.fill(0, start, end);
+		this.bg.fill(0, start, end);
+		this.attrs.fill(0, start, end);
+		this.border.fill(0, start, end);
+	}
+
+	/** Copy [srcStart, srcEnd) of the flat index space to `dest`. */
+	moveRange(dest: number, srcStart: number, srcEnd: number): void {
+		this.char.copyWithin(dest, srcStart, srcEnd);
+		this.fg.copyWithin(dest, srcStart, srcEnd);
+		this.bg.copyWithin(dest, srcStart, srcEnd);
+		this.attrs.copyWithin(dest, srcStart, srcEnd);
+		this.border.copyWithin(dest, srcStart, srcEnd);
+	}
+
+	/** Copy [srcStart, srcEnd) of `source` to `dest` in this grid. */
+	copyFrom(
+		source: CellGrid,
+		dest: number,
+		srcStart: number,
+		srcEnd: number,
+	): void {
+		this.char.set(source.char.subarray(srcStart, srcEnd), dest);
+		this.fg.set(source.fg.subarray(srcStart, srcEnd), dest);
+		this.bg.set(source.bg.subarray(srcStart, srcEnd), dest);
+		this.attrs.set(source.attrs.subarray(srcStart, srcEnd), dest);
+		this.border.set(source.border.subarray(srcStart, srcEnd), dest);
+	}
+
+	/** The bottom `rows` rows, as a grid of their own. */
+	bottomRows(rows: number): CellGrid {
+		const kept = new CellGrid(rows, this.cols);
+		kept.copyFrom(
+			this,
+			0,
+			(this.rows - rows) * this.cols,
+			this.rows * this.cols,
+		);
+		return kept;
+	}
+
+	/**
+	 * Write one cell.
+	 *
+	 * `bgColor` overrides the style's background, for the caller that has
+	 * already resolved what an absent background inherits.
+	 */
+	setCell(
+		index: number,
+		grapheme: string,
+		style?: CellStyle,
+		bgColor?: number,
+	): void {
+		const width = graphemeColumns(grapheme);
+		this.char[index] = encodeGrapheme(grapheme);
+		this.fg[index] = (style?.fg ?? 0) & Color.Mask;
+		this.bg[index] =
+			bgColor !== undefined ? bgColor : (style?.bg ?? 0) & Color.Mask;
+		this.attrs[index] =
+			packAttrs(style) |
+			((width < Attr.WidthWide ? width : Attr.WidthWide) << Attr.WidthShift);
+		// A text cell carries no border encoding; setBorderCell is the only
+		// way one gets in.
+		this.border[index] = 0;
+	}
+
+	/**
+	 * Write one border cell. The glyph follows from the encoding at emit time,
+	 * so the cell stores the space that gives it its one-column width.
+	 *
+	 * Border cells carry no styled underline: the SGR 4:2 extension is
+	 * author-land only, and a border's style comes from the UA sheet.
+	 */
+	setBorderCell(index: number, border: number, style?: CellStyle): void {
+		this.char[index] = 0x20;
+		this.fg[index] = (style?.fg ?? 0) & Color.Mask;
+		this.bg[index] = (style?.bg ?? 0) & Color.Mask;
+		this.attrs[index] =
+			(packAttrs(style) & ~Attr.DoubleUnderline) | (1 << Attr.WidthShift);
+		this.border[index] = border;
+	}
+
+	/** Overwrite one cell with a plain space in the terminal's own colors. */
+	setBlank(index: number): void {
+		this.char[index] = 0x20;
+		this.fg[index] = 0;
+		this.bg[index] = 0;
+		this.attrs[index] = 1 << Attr.WidthShift;
+		this.border[index] = 0;
+	}
+
+	/** Copy one cell from another grid. */
+	setFrom(index: number, source: CellGrid, sourceIndex: number): void {
+		this.char[index] = source.char[sourceIndex];
+		this.fg[index] = source.fg[sourceIndex];
+		this.bg[index] = source.bg[sourceIndex];
+		this.attrs[index] = source.attrs[sourceIndex];
+		this.border[index] = source.border[sourceIndex];
+	}
+
+	/** Columns the cell's glyph occupies. */
+	widthAt(index: number): number {
+		const width = (this.attrs[index] & Attr.WidthMask) >>> Attr.WidthShift;
+		return width === Attr.WidthWide
+			? stringWidth(decodeGrapheme(this.char[index]))
+			: width;
+	}
+
+	/** The grapheme a cell holds, or "" when it is empty. */
+	graphemeAt(index: number): string {
+		const char = this.char[index];
+		return char === 0 ? "" : decodeGrapheme(char);
+	}
+
+	/** Whether two cells carry the same content and the same styling. */
+	equalCells(index: number, other: CellGrid, otherIndex: number): boolean {
+		return (
+			this.char[index] === other.char[otherIndex] &&
+			this.fg[index] === other.fg[otherIndex] &&
+			this.bg[index] === other.bg[otherIndex] &&
+			(this.attrs[index] & Attr.StyleMask) ===
+				(other.attrs[otherIndex] & Attr.StyleMask) &&
+			this.border[index] === other.border[otherIndex]
+		);
+	}
 }
 
 /**
@@ -402,141 +521,134 @@ function emitColor(
 	color: number,
 	isFg: boolean,
 	colorDepth: ColorDepth,
-): number[] {
-	const prefix = isFg ? 38 : 48;
-	const seq: number[] = [];
-
+): string {
 	switch (colorDepth) {
 		case "rgb": {
 			const r = (color >> 16) & 0xff;
 			const g = (color >> 8) & 0xff;
 			const b = color & 0xff;
-			seq.push(prefix, 2, r, g, b);
-			break;
+			return `${isFg ? 38 : 48};2;${r};${g};${b}`;
 		}
-		case "256": {
-			const colorIndex = rgbTo256(color);
-			seq.push(prefix, 5, colorIndex);
-			break;
-		}
-		case "ansi": {
-			const basicColor = rgbToBasic8(color);
-			seq.push((isFg ? 30 : 40) + basicColor);
-			break;
-		}
+		case "256":
+			return `${isFg ? 38 : 48};5;${rgbTo256(color)}`;
+		case "ansi":
+			return String((isFg ? 30 : 40) + rgbToBasic8(color));
 	}
-	return seq;
 }
 
-function getStyleDiff(
-	cell: Cell,
-	prev: Cell | null,
+/**
+ * The SGR parameters that take the terminal from the cell at `prev` to the
+ * cell at `index`, or "" when nothing needs to change. A `prev` of -1 means no
+ * cell precedes this one, so every attribute the cell carries is stated.
+ *
+ * Colors and their attribute group move together: a foreground change
+ * re-states bold, italic, underline, strikethrough and overline, and a
+ * background change re-states inverse, blink and dim. That is what lets a run
+ * of identically styled cells emit nothing at all.
+ */
+function styleDiff(
+	grid: CellGrid,
+	index: number,
+	prev: number,
 	colorDepth: ColorDepth,
-): Array<number | string> {
-	if (!prev) {
-		const seq: Array<number | string> = [];
+): string {
+	const fg = grid.fg[index];
+	const bg = grid.bg[index];
+	const attrs = grid.attrs[index] & Attr.StyleMask;
 
-		const fgColor = cell.getFgColor();
-		const bgColor = cell.getBgColor();
-
-		if (fgColor !== 0) {
-			seq.push(...emitColor(fgColor, true, colorDepth));
+	if (prev < 0) {
+		let seq = "";
+		if (fg !== 0) seq = emitColor(fg, true, colorDepth);
+		if (bg !== 0) {
+			const code = emitColor(bg, false, colorDepth);
+			seq = seq === "" ? code : `${seq};${code}`;
 		}
-		if (bgColor !== 0) {
-			seq.push(...emitColor(bgColor, false, colorDepth));
-		}
-
-		const flags = cell.getStyleFlags();
-		if (flags.bold) seq.push(1);
-		if (flags.dim) seq.push(2);
-		if (flags.italic) seq.push(3);
-		if (flags.underline) seq.push(4);
+		if (attrs & Attr.Bold) seq += seq === "" ? "1" : ";1";
+		if (attrs & Attr.Dim) seq += seq === "" ? "2" : ";2";
+		if (attrs & Attr.Italic) seq += seq === "" ? "3" : ";3";
+		if (attrs & Attr.Underline) seq += seq === "" ? "4" : ";4";
 		// After plain 4, so terminals without styled-underline support keep
 		// the single underline.
-		if (flags.doubleUnderline) seq.push("4:2");
-		if (flags.blink) seq.push(5);
-		if (flags.inverse) seq.push(7);
-		if (flags.strikethrough) seq.push(9);
-		if (flags.overline) seq.push(53);
-
+		if (attrs & Attr.DoubleUnderline) seq += seq === "" ? "4:2" : ";4:2";
+		if (attrs & Attr.Blink) seq += seq === "" ? "5" : ";5";
+		if (attrs & Attr.Inverse) seq += seq === "" ? "7" : ";7";
+		if (attrs & Attr.Strikethrough) seq += seq === "" ? "9" : ";9";
+		if (attrs & Attr.Overline) seq += seq === "" ? "53" : ";53";
 		return seq;
 	}
 
-	if (cell.styleEquals(prev)) {
-		return [];
+	const prevFg = grid.fg[prev];
+	const prevBg = grid.bg[prev];
+	const prevAttrs = grid.attrs[prev] & Attr.StyleMask;
+
+	if (
+		fg === prevFg &&
+		bg === prevBg &&
+		attrs === prevAttrs &&
+		grid.border[index] === grid.border[prev]
+	) {
+		return "";
 	}
 
-	const seq: Array<number | string> = [];
-	const isDefault = cell.fg === 0 && cell.bg === 0;
-	const wasDefault = prev.fg === 0 && prev.bg === 0;
-
-	if (isDefault && !wasDefault) {
-		seq.push(0);
-		return seq;
+	// Everything back to the terminal's own defaults is one code, not nine.
+	// Two cells that are both already default differ only in a border
+	// encoding, which the glyph carries rather than the SGR.
+	const wasDefault = prevFg === 0 && prevBg === 0 && prevAttrs === 0;
+	if (fg === 0 && bg === 0 && attrs === 0) {
+		return wasDefault ? "" : "0";
 	}
 
-	if (cell.fg !== prev.fg) {
-		const fgColor = cell.getFgColor();
-		if (fgColor === 0) {
-			seq.push(39);
-		} else {
-			seq.push(...emitColor(fgColor, true, colorDepth));
-		}
+	const fgChanged =
+		fg !== prevFg || (attrs & Attr.FGGroup) !== (prevAttrs & Attr.FGGroup);
+	const bgChanged =
+		bg !== prevBg || (attrs & Attr.BGGroup) !== (prevAttrs & Attr.BGGroup);
+
+	let seq = "";
+	const push = (code: string) => {
+		seq += seq === "" ? code : `;${code}`;
+	};
+
+	if (fgChanged) {
+		push(fg === 0 ? "39" : emitColor(fg, true, colorDepth));
+	}
+	if (bgChanged) {
+		push(bg === 0 ? "49" : emitColor(bg, false, colorDepth));
 	}
 
-	if (cell.bg !== prev.bg) {
-		const bgColor = cell.getBgColor();
-		if (bgColor === 0) {
-			seq.push(49);
-		} else {
-			seq.push(...emitColor(bgColor, false, colorDepth));
-		}
-	}
-
-	if (cell.fg !== prev.fg || cell.bg !== prev.bg) {
-		const cellFlags = cell.getStyleFlags();
-		const prevFlags = prev.getStyleFlags();
-
-		const diffFlag = (
-			current: boolean,
-			old: boolean,
-			on: number,
-			off: number,
-		) => {
-			if (current !== old) {
-				seq.push(current ? on : off);
-			}
+	if (fgChanged || bgChanged) {
+		const diffFlag = (bit: number, on: string, off: string) => {
+			if ((attrs & bit) !== (prevAttrs & bit)) push(attrs & bit ? on : off);
 		};
 
-		diffFlag(cellFlags.bold, prevFlags.bold, 1, 22);
-		diffFlag(cellFlags.dim, prevFlags.dim, 2, 22);
-		diffFlag(cellFlags.italic, prevFlags.italic, 3, 23);
+		diffFlag(Attr.Bold, "1", "22");
+		diffFlag(Attr.Dim, "2", "22");
+		diffFlag(Attr.Italic, "3", "23");
 		// Underline and its style diff as one attribute: 24 clears both, a
 		// bare 4 sets single (which also downgrades a previous double, per
 		// ECMA-48 and tmux's own tracking), and 4:2 upgrades to double --
 		// always after a plain 4 so unsupporting terminals degrade to single.
 		if (
-			cellFlags.underline !== prevFlags.underline ||
-			cellFlags.doubleUnderline !== prevFlags.doubleUnderline
+			(attrs & (Attr.Underline | Attr.DoubleUnderline)) !==
+			(prevAttrs & (Attr.Underline | Attr.DoubleUnderline))
 		) {
-			if (!cellFlags.underline) {
-				seq.push(24);
+			if (!(attrs & Attr.Underline)) {
+				push("24");
 			} else {
 				if (
-					!prevFlags.underline ||
-					(prevFlags.doubleUnderline && !cellFlags.doubleUnderline)
+					!(prevAttrs & Attr.Underline) ||
+					(prevAttrs & Attr.DoubleUnderline && !(attrs & Attr.DoubleUnderline))
 				) {
-					seq.push(4);
+					push("4");
 				}
-				if (cellFlags.doubleUnderline) {
-					seq.push("4:2");
+				if (attrs & Attr.DoubleUnderline) {
+					push("4:2");
 				}
 			}
 		}
-		diffFlag(cellFlags.blink, prevFlags.blink, 5, 25);
-		diffFlag(cellFlags.inverse, prevFlags.inverse, 7, 27);
-		diffFlag(cellFlags.strikethrough, prevFlags.strikethrough, 9, 29);
-		diffFlag(cellFlags.overline, prevFlags.overline, 53, 55);
+		diffFlag(Attr.Blink, "5", "25");
+		diffFlag(Attr.Inverse, "7", "27");
+		diffFlag(Attr.Strikethrough, "9", "29");
+		diffFlag(Attr.Overline, "53", "55");
 	}
 
 	return seq;
@@ -580,28 +692,38 @@ function moveCursor(
 	return [moveOutput, targetRow, targetCol];
 }
 
+/**
+ * Emit the grid as ANSI, row by row.
+ *
+ * Empty cells are skipped rather than painted, so the cursor jumps them with
+ * CUF and whatever the terminal already shows there survives. `renderedLines`
+ * names the rows that have been printed before; a row's first appearance opens
+ * with an erase so nothing of the terminal's own is left on it.
+ */
 export function generateANSI(
-	buffer: CellBuffer,
+	grid: CellGrid,
 	colorDepth: ColorDepth = "rgb",
 	renderedLines?: Set<number>,
 ): string {
-	const rows = buffer.length;
-	const cols = buffer[0]?.length || 0;
+	const {rows, cols, char, border} = grid;
 
 	let output = "";
 	let cursorRow = 0;
 	let cursorCol = 0;
-	let prevCell: Cell | null = null;
+	// Flat index of the last cell emitted, whose style the next cell diffs
+	// against. -1 while no cell precedes.
+	let prevIndex = -1;
 
-	let skipNextCol: number | null = null;
+	let skipNextCol = -1;
 
 	for (let row = 0; row < rows; row++) {
+		const rowStart = row * cols;
 		let rowHasContent = false;
 		let rowHasAnsi = false;
 		let isFirstRenderOfLine = false;
 
 		for (let col = 0; col < cols; col++) {
-			if (buffer[row][col] !== null) {
+			if (char[rowStart + col] !== 0) {
 				rowHasContent = true;
 				break;
 			}
@@ -615,18 +737,18 @@ export function generateANSI(
 		}
 
 		for (let col = 0; col < cols; col++) {
-			const cell = buffer[row][col];
+			const index = rowStart + col;
 
-			if (cell === null) {
+			if (char[index] === 0) {
 				continue;
 			}
 
-			if (skipNextCol !== null && row === cursorRow && col === skipNextCol) {
-				skipNextCol = null;
+			if (skipNextCol >= 0 && row === cursorRow && col === skipNextCol) {
+				skipNextCol = -1;
 				continue;
 			}
 
-			skipNextCol = null;
+			skipNextCol = -1;
 
 			if (row !== cursorRow || col !== cursorCol) {
 				const [moveSeq, newRow, newCol] = moveCursor(
@@ -649,30 +771,27 @@ export function generateANSI(
 				isFirstRenderOfLine = false;
 			}
 
-			const styleSeq = getStyleDiff(cell, prevCell, colorDepth);
-			if (styleSeq.length > 0) {
-				output += `\x1b[${styleSeq.join(";")}m`; // SGR - Select Graphic Rendition
+			const styleSeq = styleDiff(grid, index, prevIndex, colorDepth);
+			if (styleSeq !== "") {
+				output += `\x1b[${styleSeq}m`; // SGR - Select Graphic Rendition
 				rowHasAnsi = true;
 			}
 
-			let charToOutput;
-			if (cell.border > 0) {
-				charToOutput = getBorderChar(cell.border);
-			} else {
-				charToOutput = cell.grapheme;
-			}
+			const encoding = border[index];
+			output +=
+				encoding > 0 ? getBorderChar(encoding) : decodeGrapheme(char[index]);
 
-			output += charToOutput;
-			cursorCol += cell.width;
-			prevCell = cell;
+			const width = grid.widthAt(index);
+			cursorCol += width;
+			prevIndex = index;
 
-			if (cell.width === 2) {
+			if (width === 2) {
 				skipNextCol = col + 1;
 			}
 		}
 
 		if (rowHasContent) {
-			prevCell = null;
+			prevIndex = -1;
 			if (rowHasAnsi) {
 				output += "\x1b[0m"; // SGR - Reset all attributes
 			}
@@ -687,7 +806,7 @@ export function generateANSI(
 }
 
 export class DrawingContext {
-	buffer: CellBuffer;
+	grid: CellGrid;
 	rows: number;
 	cols: number;
 	viewportOffset: number;
@@ -714,12 +833,12 @@ export class DrawingContext {
 	paintBands: Array<[number, number]> | null = null;
 
 	constructor(
-		buffer: CellBuffer,
+		grid: CellGrid,
 		rows: number,
 		cols: number,
 		viewportOffset: number,
 	) {
-		this.buffer = buffer;
+		this.grid = grid;
 		this.rows = rows;
 		this.cols = cols;
 		this.viewportOffset = viewportOffset;
@@ -809,25 +928,29 @@ export class DrawingContext {
 	): void {
 		const terminalRow = y + this.viewportOffset;
 		if (terminalRow < 0 || terminalRow >= this.rows) return;
+		const grid = this.grid;
+		const rowStart = terminalRow * this.cols;
+		const edgeBit = edge === "underline" ? Attr.Underline : Attr.Overline;
 		for (let col = x; col < x + width; col++) {
 			if (col < 0 || col >= this.cols) continue;
 			if (this.clipRect && !this.#inClip(y, col)) continue;
-			const existing = this.buffer[terminalRow][col];
-			const flags = existing?.getStyleFlags();
-			this.buffer[terminalRow][col] = Cell.create({
-				grapheme: existing?.grapheme ?? " ",
-				fg: existing?.getFgColor() ?? style?.fg,
-				bg: existing?.getBgColor(),
-				bold: flags?.bold,
-				italic: flags?.italic,
-				underline: edge === "underline" || flags?.underline,
-				underlineStyle: flags?.doubleUnderline ? "double" : undefined,
-				strikethrough: flags?.strikethrough,
-				overline: edge === "overline" || flags?.overline,
-				inverse: flags?.inverse,
-				blink: flags?.blink,
-				dim: style?.dim ?? flags?.dim,
-			});
+			const index = rowStart + col;
+			if (grid.char[index] !== 0) {
+				let attrs = grid.attrs[index] | edgeBit;
+				if (style?.dim !== undefined) {
+					attrs = style.dim ? attrs | Attr.Dim : attrs & ~Attr.Dim;
+				}
+				grid.attrs[index] = attrs;
+			} else {
+				grid.char[index] = 0x20;
+				grid.fg[index] = (style?.fg ?? 0) & Color.Mask;
+				grid.bg[index] = 0;
+				grid.attrs[index] =
+					edgeBit | (style?.dim ? Attr.Dim : 0) | (1 << Attr.WidthShift);
+			}
+			// The edge replaces a box-drawing glyph with the space that cell
+			// measures as: an outline is a line of its own, not a junction.
+			grid.border[index] = 0;
 		}
 	}
 
@@ -977,37 +1100,18 @@ export class DrawingContext {
 
 		if (this.clipRect && !this.#inClip(row, col)) return;
 
-		row = terminalRow;
+		const grid = this.grid;
+		const index = terminalRow * this.cols + col;
 
-		let finalStyle = style;
-		if (style && style.bg == null) {
-			const existingCell = this.buffer[row][col];
-			if (existingCell) {
-				finalStyle = {...style, bg: existingCell.bg};
-			}
+		// A style that names no background of its own takes the one already in
+		// the cell: text painted over a filled box sits ON the fill rather than
+		// punching a default-colored hole through it.
+		let bgColor: number | undefined;
+		if (style && style.bg == null && grid.char[index] !== 0) {
+			bgColor = grid.bg[index];
 		}
 
-		const cellStyle = finalStyle
-			? {
-					fg: finalStyle.fg ?? undefined,
-					bg: finalStyle.bg ?? undefined,
-					bold: finalStyle.bold,
-					italic: finalStyle.italic,
-					underline: finalStyle.underline,
-					underlineStyle: finalStyle.underlineStyle,
-					strikethrough: finalStyle.strikethrough,
-					inverse: finalStyle.inverse,
-					dim: finalStyle.dim,
-					blink: finalStyle.blink,
-					overline: finalStyle.overline,
-				}
-			: undefined;
-
-		const newCell = Cell.create({
-			grapheme: char,
-			...cellStyle,
-		});
-		this.buffer[row][col] = newCell;
+		grid.setCell(index, char, style, bgColor);
 	}
 
 	#setBorderCell(
@@ -1027,50 +1131,29 @@ export class DrawingContext {
 		}
 		if (!this.#inClip(y, x)) return;
 
-		y = terminalY;
+		const grid = this.grid;
+		const index = terminalY * this.cols + x;
 
-		const existingCell = this.buffer[y][x];
-
-		if (existingCell && existingCell.border > 0) {
-			const mergedBorder = mergeBorderEncodings(
-				existingCell.border,
-				borderEncoding,
-			);
-			this.buffer[y][x] = new Cell({
-				grapheme: " ",
-				fg: style?.fg ?? undefined,
-				bg: style?.bg ?? undefined,
-				bold: style?.bold,
-				italic: style?.italic,
-				underline: style?.underline,
-				strikethrough: style?.strikethrough,
-				inverse: style?.inverse,
-				dim: style?.dim,
-				blink: style?.blink,
-				overline: style?.overline,
-				border: mergedBorder,
-			});
-		} else {
-			this.buffer[y][x] = new Cell({
-				grapheme: " ",
-				fg: style?.fg ?? undefined,
-				bg: style?.bg ?? undefined,
-				bold: style?.bold,
-				italic: style?.italic,
-				underline: style?.underline,
-				strikethrough: style?.strikethrough,
-				inverse: style?.inverse,
-				dim: style?.dim,
-				blink: style?.blink,
-				overline: style?.overline,
-				border: borderEncoding,
-			});
-		}
+		// Two boxes sharing a cell union their edges, so a shared wall lands on
+		// a tee or a cross rather than the later box's corner.
+		const existing = grid.border[index];
+		grid.setBorderCell(
+			index,
+			grid.char[index] !== 0 && existing > 0
+				? mergeBorderEncodings(existing, borderEncoding)
+				: borderEncoding,
+			style,
+		);
 	}
 }
 
 export class Renderer {
-	#prevBuffer: CellBuffer | null = null;
+	#prev: CellGrid | null = null;
+	// Retired grids kept for the next frame that wants their size: the frame
+	// buffer and the previous frame trade places rather than reallocating, and
+	// the diff is filled and cleared in place.
+	#spare: CellGrid | null = null;
+	#diff: CellGrid | null = null;
 	#renderedLines: Set<number> = new Set();
 	#prevContentHeight: number = 0;
 	// Where the last frame parked the cursor, in buffer coordinates. The resize
@@ -1122,13 +1205,13 @@ export class Renderer {
 	 * above the caret's line plus the caret's own wrap segment.
 	 */
 	wrappedRowsAboveCursorPark(cols: number): number | null {
-		if (!this.#prevBuffer || this.#prevContentHeight === 0 || cols <= 0) {
+		if (!this.#prev || this.#prevContentHeight === 0 || cols <= 0) {
 			return null;
 		}
 		const limit = Math.min(
 			this.#parkRow,
 			this.#prevContentHeight,
-			this.#prevBuffer.length,
+			this.#prev.rows,
 		);
 		let wrapped = 0;
 		for (let row = 0; row < limit; row++) {
@@ -1138,14 +1221,28 @@ export class Renderer {
 	}
 
 	#lineLength(row: number): number {
-		const line = this.#prevBuffer![row];
-		for (let col = line.length - 1; col >= 0; col--) {
-			const cell = line[col];
-			if (cell !== null) {
-				return col + cell.width;
+		const grid = this.#prev!;
+		const rowStart = row * grid.cols;
+		for (let col = grid.cols - 1; col >= 0; col--) {
+			const index = rowStart + col;
+			if (grid.char[index] !== 0) {
+				return col + grid.widthAt(index);
 			}
 		}
 		return 0;
+	}
+
+	/**
+	 * A cleared grid of the given size, reusing a retired one when it fits.
+	 */
+	#takeGrid(rows: number, cols: number): CellGrid {
+		const spare = this.#spare;
+		if (spare !== null && spare.rows === rows && spare.cols === cols) {
+			this.#spare = null;
+			spare.clear();
+			return spare;
+		}
+		return new CellGrid(rows, cols);
 	}
 
 	/**
@@ -1157,7 +1254,8 @@ export class Renderer {
 	 * corrected, so the only honest thing left is to print a fresh one below it.
 	 */
 	clearPreviousBuffer(): void {
-		this.#prevBuffer = null;
+		this.#spare = this.#prev;
+		this.#prev = null;
 		this.#prevContentHeight = 0;
 		this.#needsFullClear = true;
 		this.#renderedLines.clear();
@@ -1253,44 +1351,50 @@ export class Renderer {
 		const rows = Math.max(0, contentRows);
 		if (rows === 0) return "";
 
-		const buffer = createBuffer(rows, this.#cols);
-		drawCallback(new DrawingContext(buffer, rows, this.#cols, 0));
+		const cols = this.#cols;
+		const grid = new CellGrid(rows, cols);
+		drawCallback(new DrawingContext(grid, rows, cols, 0));
 
 		const lines: string[] = [];
 		for (let row = 0; row < rows; row++) {
+			const rowStart = row * cols;
 			// A file should not be padded out to the terminal width, so stop at the
 			// last cell that actually holds something.
 			let lastCol = -1;
-			for (let col = this.#cols - 1; col >= 0; col--) {
-				if (buffer[row][col] !== null) {
+			for (let col = cols - 1; col >= 0; col--) {
+				if (grid.char[rowStart + col] !== 0) {
 					lastCol = col;
 					break;
 				}
 			}
 
 			let line = "";
-			let previous: Cell | null = null;
+			let previous = -1;
 
 			for (let col = 0; col <= lastCol; col++) {
-				const cell = buffer[row][col];
-				if (cell === null) {
+				const index = rowStart + col;
+				if (grid.char[index] === 0) {
 					line += " ";
 					continue;
 				}
 
-				const style = getStyleDiff(cell, previous, this.#colorDepth);
-				if (style.length > 0) line += `\x1b[${style.join(";")}m`;
+				const style = styleDiff(grid, index, previous, this.#colorDepth);
+				if (style !== "") line += `\x1b[${style}m`;
 
-				line += cell.border > 0 ? getBorderChar(cell.border) : cell.grapheme;
-				previous = cell;
+				const encoding = grid.border[index];
+				line +=
+					encoding > 0
+						? getBorderChar(encoding)
+						: decodeGrapheme(grid.char[index]);
+				previous = index;
 
-				// A wide grapheme's continuation column is null in the buffer but
+				// A wide grapheme's continuation column is empty in the buffer but
 				// already covered by the glyph -- skip it, or the line grows a
 				// phantom space per wide character and shifts what follows.
-				if (cell.border === 0) col += stringWidth(cell.grapheme) - 1;
+				if (encoding === 0) col += grid.widthAt(index) - 1;
 			}
 
-			if (previous !== null) line += "\x1b[0m";
+			if (previous !== -1) line += "\x1b[0m";
 			lines.push(line);
 		}
 
@@ -1310,8 +1414,8 @@ export class Renderer {
 		const frameRows = Math.max(this.#rows, regionRows ?? this.#rows);
 		const overflowing = frameRows > this.#rows;
 
-		// Setup: Create new frame buffer
-		const nextBuffer = createBuffer(frameRows, this.#cols);
+		const cols = this.#cols;
+		const next = this.#takeGrid(frameRows, cols);
 
 		// A camera move is a rigid transform the terminal performs itself:
 		// DECSTBM pins the margins to our region (a shell prompt above is
@@ -1325,28 +1429,33 @@ export class Renderer {
 		const scrolling =
 			scroll !== undefined &&
 			Math.abs(scroll.delta) < this.#rows &&
-			this.#prevBuffer !== null &&
+			this.#prev !== null &&
+			// A rigid transform only makes sense between grids of one width.
+			this.#prev.cols === cols &&
 			!overflowing &&
 			!this.#needsScreenReset &&
 			!this.#needsFullClear &&
 			cursorPosition !== undefined;
-		if (scrolling && this.#prevBuffer && cursorPosition !== undefined) {
+		if (scrolling && this.#prev && cursorPosition !== undefined) {
 			const delta = scroll!.delta;
 			const regionTop = cursorPosition;
 			const regionEnd = Math.min(regionRows ?? this.#rows, this.#rows);
 
-			// Shift the model: screen row r now shows what was at r + delta.
-			const prev = this.#prevBuffer;
-			const shifted: CellBuffer = [];
-			for (let row = 0; row < prev.length; row++) {
-				const source = row + delta;
-				shifted.push(
-					source >= 0 && source < prev.length
-						? prev[source]
-						: new Array(this.#cols).fill(null),
-				);
+			// Shift the model in place: screen row r now shows what was at
+			// r + delta, and the rows scrolled in from beyond the edge are
+			// blank until the bands paint them.
+			const prev = this.#prev;
+			const prevCells = prev.rows * cols;
+			const shift = Math.abs(delta) * cols;
+			if (shift >= prevCells) {
+				prev.clear();
+			} else if (delta > 0) {
+				prev.moveRange(0, shift, prevCells);
+				prev.clearRange(prevCells - shift, prevCells);
+			} else if (delta < 0) {
+				prev.moveRange(shift, 0, prevCells - shift);
+				prev.clearRange(0, shift);
 			}
-			this.#prevBuffer = shifted;
 			const shiftedLines = new Set<number>();
 			for (const row of this.#renderedLines) {
 				const moved = row - delta;
@@ -1360,17 +1469,26 @@ export class Renderer {
 
 			// Seed everything outside the bands from the shifted model; the
 			// paint callback owns the bands (enforced by the context mask).
-			for (let row = 0; row < Math.min(frameRows, shifted.length); row++) {
-				let inBand = false;
-				for (const [start, end] of scroll!.bands) {
-					if (row >= start && row < end) {
-						inBand = true;
-						break;
+			// Contiguous non-band rows copy as one run per plane.
+			const seedEnd = Math.min(frameRows, prev.rows);
+			let runStart = -1;
+			for (let row = 0; row <= seedEnd; row++) {
+				let inBand = row === seedEnd;
+				if (!inBand) {
+					for (const [start, end] of scroll!.bands) {
+						if (row >= start && row < end) {
+							inBand = true;
+							break;
+						}
 					}
 				}
-				if (inBand) continue;
-				for (let col = 0; col < this.#cols; col++) {
-					nextBuffer[row][col] = shifted[row][col];
+				if (inBand) {
+					if (runStart >= 0) {
+						next.copyFrom(prev, runStart * cols, runStart * cols, row * cols);
+						runStart = -1;
+					}
+				} else if (runStart < 0) {
+					runStart = row;
 				}
 			}
 
@@ -1387,54 +1505,77 @@ export class Renderer {
 		}
 
 		// Create drawing context and execute drawing operations
-		const context = new DrawingContext(
-			nextBuffer,
-			frameRows,
-			this.#cols,
-			offset,
-		);
+		const context = new DrawingContext(next, frameRows, cols, offset);
 		if (scrolling) context.paintBands = scroll!.bands;
 		drawCallback(context);
 
-		// Create diff buffer. A frame taller than the terminal is a growth frame:
-		// the rows below the fold have never been on screen, so there is nothing to
-		// diff against -- print all of it.
-		const diffBuffer = createBuffer(frameRows, this.#cols);
-		if (!this.#prevBuffer || overflowing) {
-			for (let row = 0; row < frameRows; row++) {
-				for (let col = 0; col < this.#cols; col++) {
-					const currCell = nextBuffer[row][col];
-					diffBuffer[row][col] = currCell;
-				}
-			}
+		// Build the diff. A frame taller than the terminal is a growth frame:
+		// the rows below the fold have never been on screen, so there is nothing
+		// to diff against -- print all of it.
+		let diff = this.#diff;
+		if (diff === null || diff.rows !== frameRows || diff.cols !== cols) {
+			diff = new CellGrid(frameRows, cols);
+			this.#diff = diff;
 		} else {
-			const prevRows = this.#prevBuffer.length;
-			const prevCols = this.#prevBuffer[0]?.length || 0;
+			diff.clear();
+		}
+
+		const prev = this.#prev;
+		if (prev === null || overflowing) {
+			diff.copyFrom(next, 0, 0, frameRows * cols);
+		} else {
+			const prevRows = prev.rows;
+			const prevCols = prev.cols;
+			const aligned = prevCols === cols;
 
 			for (let row = 0; row < this.#rows; row++) {
-				for (let col = 0; col < this.#cols; col++) {
-					const prevCell =
-						row < prevRows && col < prevCols
-							? this.#prevBuffer[row][col]
-							: null;
-					const currCell = nextBuffer[row][col];
+				const nextRow = row * cols;
+				const prevRow = row * prevCols;
+				const rowInPrev = row < prevRows;
 
-					if (prevCell === null && currCell === null) {
+				// A row that did not change at all is the common case, so look
+				// for the first column that differs before touching the diff.
+				let col = 0;
+				if (aligned && rowInPrev) {
+					while (col < cols) {
+						const n = nextRow + col;
+						const p = prevRow + col;
+						if (
+							next.char[n] !== prev.char[p] ||
+							next.fg[n] !== prev.fg[p] ||
+							next.bg[n] !== prev.bg[p] ||
+							(next.attrs[n] & Attr.StyleMask) !==
+								(prev.attrs[p] & Attr.StyleMask) ||
+							next.border[n] !== prev.border[p]
+						) {
+							break;
+						}
+						col++;
+					}
+					if (col === cols) continue;
+				}
+
+				for (; col < cols; col++) {
+					const n = nextRow + col;
+					const nextChar = next.char[n];
+
+					if (!rowInPrev || col >= prevCols) {
+						if (nextChar !== 0) diff.setFrom(n, next, n);
 						continue;
 					}
 
-					if (prevCell === null && currCell !== null) {
-						diffBuffer[row][col] = currCell;
-						continue;
-					}
+					const p = prevRow + col;
+					const prevChar = prev.char[p];
 
-					if (prevCell !== null && currCell === null) {
-						diffBuffer[row][col] = Cell.create(" ");
-						continue;
-					}
-
-					if (!prevCell!.equals(currCell!)) {
-						diffBuffer[row][col] = currCell!;
+					if (prevChar === 0) {
+						if (nextChar !== 0) diff.setFrom(n, next, n);
+					} else if (nextChar === 0) {
+						// A cell the frame no longer paints has to be erased,
+						// not merely skipped: the terminal still shows the old
+						// glyph there.
+						diff.setBlank(n);
+					} else if (!next.equalCells(n, prev, p)) {
+						diff.setFrom(n, next, n);
 					}
 				}
 			}
@@ -1460,28 +1601,27 @@ export class Renderer {
 			const regionHeight = (regionRows ?? this.#rows) - anchorRow;
 			const seedRows = Math.min(frameRows, this.#rows, regionHeight);
 			for (let row = 0; row < seedRows; row++) {
+				const rowStart = row * cols;
 				let empty = true;
-				for (let col = 0; col < this.#cols; col++) {
-					if (diffBuffer[row][col] !== null) {
+				for (let col = 0; col < cols; col++) {
+					if (diff.char[rowStart + col] !== 0) {
 						empty = false;
 						break;
 					}
 				}
-				if (empty) diffBuffer[row][0] = Cell.create(" ");
+				if (empty) diff.setBlank(rowStart);
 			}
 		}
 
 		// Check for content
 		let hasContent = false;
 
-		for (let row = 0; row < frameRows; row++) {
-			for (let col = 0; col < this.#cols; col++) {
-				if (diffBuffer[row][col] !== null) {
-					hasContent = true;
-					break;
-				}
+		const diffCells = frameRows * cols;
+		for (let index = 0; index < diffCells; index++) {
+			if (diff.char[index] !== 0) {
+				hasContent = true;
+				break;
 			}
-			if (hasContent) break;
 		}
 
 		// A caret appearing, moving, or disappearing must emit a frame even when
@@ -1575,11 +1715,7 @@ export class Renderer {
 		}
 
 		// Generate ANSI and finalize
-		let output = generateANSI(
-			diffBuffer,
-			this.#colorDepth,
-			this.#renderedLines,
-		);
+		let output = generateANSI(diff, this.#colorDepth, this.#renderedLines);
 
 		// Strip trailing \r\n from generateANSI — in Renderer-managed mode,
 		// the trailing newline would scroll the terminal on each re-render,
@@ -1622,9 +1758,17 @@ export class Renderer {
 		// Update state for next frame. Anything above the last terminalHeight rows
 		// has scrolled into the scrollback and is no longer ours to redraw, so it is
 		// not worth remembering.
-		this.#prevBuffer = overflowing
-			? nextBuffer.slice(frameRows - this.#rows)
-			: nextBuffer;
+		// The frame buffer becomes the previous frame and the retired one goes
+		// back to be the next frame's, so a steady-size renderer allocates two
+		// grids for its whole life.
+		const retired = this.#prev;
+		if (overflowing) {
+			this.#prev = next.bottomRows(this.#rows);
+			this.#spare = next;
+		} else {
+			this.#prev = next;
+			this.#spare = retired;
+		}
 		this.#prevContentHeight = contentHeight;
 
 		// Park the cursor before the frame ends. A diff leaves the cursor wherever
