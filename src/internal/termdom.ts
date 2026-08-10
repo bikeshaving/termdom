@@ -7,7 +7,7 @@
  */
 import * as DOM from "./dom.js";
 import {
-	fieldCaretRange,
+	caretRangeOf,
 	fieldValueText,
 	flatIsConnected,
 	flatParentElement,
@@ -2106,7 +2106,7 @@ export class TermDOM {
 		if (!rect) return;
 		let caretY = Math.round(rect.top);
 		if (element.tagName === "TEXTAREA") {
-			const range = fieldCaretRange(element as HTMLTextAreaElement);
+			const range = caretRangeOf(element);
 			const [caret] = range ? this[kLayoutEngine].getRangeRects(range) : [];
 			if (!caret) return;
 			caretY = caret.y;

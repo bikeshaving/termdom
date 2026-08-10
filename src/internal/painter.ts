@@ -11,7 +11,7 @@ import {type StyleManager, resolveBorderStyles, getBoxModel} from "./styles.js";
 import {cssColorToNumber, isTransparentColor} from "./color.js";
 import {stringWidth} from "./text.js";
 import {
-	fieldCaretRange,
+	caretRangeOf,
 	flatIsConnected,
 	flatParentElement,
 	shadowRootOf,
@@ -471,7 +471,7 @@ export class Painter {
 		if (rect && visible && isTextField(element)) {
 			const field = element as HTMLInputElement | HTMLTextAreaElement;
 			if (field === this.#document.activeElement) {
-				const range = fieldCaretRange(field);
+				const range = caretRangeOf(field);
 				const [caret] = range ? this.#layout.getRangeRects(range) : [];
 				if (caret) {
 					ctx.setCaret(caret.x, caret.y);

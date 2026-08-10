@@ -102,6 +102,7 @@ const kUAReconcile = Symbol("bring a control's UA tree back into step");
 const kUAValueText = Symbol(
 	"the text node a control's editable value lives in",
 );
+const kUACaretRange = Symbol("where an element's own caret is");
 
 /** A listener as this file's own dispatch takes one. */
 type UAListener = (event: Event) => void;
@@ -9399,20 +9400,35 @@ export function fieldValueText(field: object): UAText | null {
 const caretRanges = new WeakMap<UADocument, UARange>();
 
 /**
- * A collapsed Range at a focused control's caret, inside that value text. Its
- * geometry is then whatever the layout already placed the offset at -- no
- * bespoke caret walk. Backward selections carry the caret at the start,
- * forward ones at the end, matching the DOM.
+ * Where an element's caret is, as a collapsed Range the caller can measure --
+ * or null for an element that has no caret of its own. The element answers;
+ * only it knows what it renders through.
  *
  * The range is the document's own, valid until the next caret read.
  */
-export function fieldCaretRange(field: object): UARange | null {
-	const valueText = fieldValueText(field);
+export function caretRangeOf(element: object): UARange | null {
+	return (
+		(element as Record<symbol, (() => UARange | null) | undefined>)[
+			kUACaretRange
+		]?.() ?? null
+	);
+}
+
+/**
+ * A collapsed Range at a text control's caret, inside the value text of the
+ * tree it renders. Its geometry is then whatever the layout already placed the
+ * offset at -- no bespoke caret walk. Backward selections carry the caret at
+ * the start, forward ones at the end, matching the DOM.
+ */
+function textCaretRange(
+	control: HTMLInputElement | HTMLTextAreaElement,
+	valueText: UAText | null,
+): UARange | null {
 	if (!valueText) return null;
-	const selection = uaSelectionOf(field);
+	const selection = uaSelectionOf(control);
 	const caret =
 		selection.direction === "backward" ? selection.start : selection.end;
-	const document = uaDocumentOf(field);
+	const document = uaDocumentOf(control);
 	let range = caretRanges.get(document);
 	if (range === undefined) {
 		range = document.createRange();
@@ -10090,6 +10106,10 @@ export class HTMLInputElement extends HTMLElement {
 
 	get [kUAValueText](): UAText | null {
 		return this.#valueText;
+	}
+
+	[kUACaretRange](): UARange | null {
+		return textCaretRange(this, this.#valueText);
 	}
 
 	[kUAUpgrade](): void {
@@ -11277,6 +11297,10 @@ export class HTMLTextAreaElement extends HTMLElement {
 
 	get [kUAValueText](): UAText | null {
 		return this.#valueText;
+	}
+
+	[kUACaretRange](): UARange | null {
+		return textCaretRange(this, this.#valueText);
 	}
 
 	[kUAUpgrade](): void {
