@@ -215,6 +215,72 @@ export const scenarios: Scenario[] = [
 		},
 	},
 	{
+		// A style that names no background takes the one already in the cell;
+		// one that names its own replaces it. And a cluster led by a combining
+		// mark occupies no columns, so the grapheme after it lands in the same
+		// cell.
+		name: "inherited background and zero-width graphemes",
+		run: () => {
+			const renderer = new Renderer(5, 20, "rgb");
+			return renderer.renderFrame(0, (ctx) => {
+				ctx.fillRect(0, 0, 12, 1, 0x004000);
+				ctx.setText(2, 0, "over", {fg: 0xffff00, bold: true});
+				ctx.fillRect(0, 1, 12, 1, 0x400000);
+				ctx.setText(2, 1, "own", {bg: 0x000040});
+				ctx.setText(0, 2, "\u0301abc");
+				ctx.setText(0, 3, "a\u0301bc");
+				// Inheritance reads the cell under the write, not the style run.
+				ctx.setText(0, 4, "\u0301x", {italic: true});
+			});
+		},
+	},
+	{
+		// An axis the element does not clip is +-Infinity, so only the other
+		// axis bounds the write.
+		name: "clip rect with unbounded axes",
+		run: () => {
+			const renderer = new Renderer(6, 24, "rgb");
+			return renderer.renderFrame(0, (ctx) => {
+				ctx.clipRect = {left: 4, top: -Infinity, right: 12, bottom: Infinity};
+				ctx.setText(0, 0, "horizontally bounded");
+				ctx.clipRect = {left: -Infinity, top: 2, right: Infinity, bottom: 4};
+				ctx.setText(0, 1, "dropped by the row clip");
+				ctx.setText(0, 2, "kept by the row clip");
+				ctx.clipRect = null;
+				ctx.setText(0, 5, "tail");
+			});
+		},
+	},
+	{
+		// The resize re-anchor measures the previous frame through the cell
+		// widths it recorded, so the number is a property of the buffer.
+		name: "wrapped rows above the cursor park",
+		run: () => {
+			const renderer = new Renderer(4, 20, "rgb");
+			renderer.renderFrame(0, (ctx) => {
+				ctx.setText(0, 0, "a short line");
+				ctx.setText(0, 1, "日本語 wide and long");
+				ctx.setText(0, 2, "x");
+				ctx.setText(0, 3, "last");
+			});
+			const before = [20, 10, 7, 5].map((cols) =>
+				renderer.wrappedRowsAboveCursorPark(cols),
+			);
+			// A caret park moves the measurement point.
+			renderer.renderFrame(0, (ctx) => {
+				ctx.setText(0, 0, "a short line");
+				ctx.setText(0, 1, "日本語 wide and long");
+				ctx.setText(0, 2, "x");
+				ctx.setText(0, 3, "last");
+				ctx.setCaret(3, 1);
+			});
+			const after = [20, 10, 7, 5].map((cols) =>
+				renderer.wrappedRowsAboveCursorPark(cols),
+			);
+			return JSON.stringify({before, after});
+		},
+	},
+	{
 		name: "edgeRow outline over existing cells",
 		run: () => {
 			const renderer = new Renderer(5, 20, "rgb");

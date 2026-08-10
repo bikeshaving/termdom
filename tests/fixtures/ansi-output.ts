@@ -21,6 +21,12 @@ export const recordedOutput: Record<string, string> = {
 		"\u001b[?25l\u001b[?2026h\u001b7\r\u001b[K┌────┬────┐\u001b[1C\u001b[38;2;0;255;0m┌──────┐\u001b[0m\r\n\r\u001b[K│A1\u001b[2C│\u001b[4C│\u001b[1C\u001b[38;2;255;0;255m│\u001b[6C\u001b[38;2;0;0;255m│\u001b[0m\r\n\r\u001b[K├────╬════╣\u001b[1C\u001b[38;2;255;0;255m│\u001b[6C\u001b[38;2;0;0;255m│\u001b[0m\r\n\r\u001b[K│\u001b[4C║B2\u001b[2C║\u001b[1C\u001b[38;2;255;0;255m│\u001b[6C\u001b[38;2;0;0;255m│\u001b[0m\r\n\r\u001b[K└────╩════╝\u001b[1C\u001b[38;2;255;255;0m└──────┘\u001b[0m\r\n\r\u001b[K│\u001b[11C╭╌╌╌╌╌╌╌╌┐\r\n\r\u001b[K│\u001b[11C│\u001b[8C┊\r\n\r\u001b[K│\u001b[11C│\u001b[8C┊\r\n\r\u001b[K│\u001b[11C┗━━━━━━━━┛\u001b8\u001b7\u001b[8B\r\u001b[?2026l",
 	"fillRect backgrounds, default and inverse":
 		"\u001b[?25l\u001b[?2026h\u001b7\r\u001b[K\u001b[48;2;32;32;32m \u001b[49;7m        \u001b[0m text\u001b[48;2;32;32;32m      \u001b[0m\r\n\r\u001b[K\u001b[48;2;32;32;32m                    \u001b[0m\r\n\r\n\r\u001b[K          \r\n\r\n\r\u001b[K\u001b[38;2;0;255;0munder\u001b[0m\u001b8\u001b7\u001b[5B\r\u001b[?2026l",
+	"inherited background and zero-width graphemes":
+		"\u001b[?25l\u001b[?2026h\u001b7\r\u001b[K\u001b[48;2;0;64;0m  \u001b[38;2;255;255;0;1mover\u001b[39;22m      \u001b[0m\r\n\r\u001b[K\u001b[48;2;64;0;0m  \u001b[48;2;0;0;64mown\u001b[48;2;64;0;0m       \u001b[0m\r\n\r\u001b[Kabc\r\n\r\u001b[Kábc\r\n\r\u001b[K\u001b[3mx\u001b[0m\u001b8\u001b7\u001b[4B\r\u001b[?2026l",
+	"clip rect with unbounded axes":
+		"\u001b[?25l\u001b[?2026h\u001b7\u001b[4C\r\u001b[K\u001b[4Czontally\r\n\r\n\r\u001b[Kkept by the row clip\r\n\r\n\r\n\r\u001b[Ktail\u001b8\u001b7\u001b[5B\r\u001b[?2026l",
+	"wrapped rows above the cursor park":
+		"{\"before\":[3,5,6,8],\"after\":[1,2,2,3]}",
 	"edgeRow outline over existing cells":
 		"\u001b[?25l\u001b[?2026h\u001b7\r\n\r\u001b[K\u001b[38;2;255;0;0;1;4mboxed\u001b[38;2;95;175;255;22m       \u001b[0m\r\n\r\n\r\u001b[K\u001b[2;3;53mover\u001b[38;2;95;175;255;23m        \u001b[0m\u001b8\u001b7\u001b[3B\r\u001b[?2026l",
 	"incremental diff across frames":
