@@ -21,6 +21,16 @@ import {
 	HTML_UNKNOWN_TAGS,
 	type ReflectSpec,
 } from "./domhtml.ts";
+import {
+	nextGraphemeBoundary,
+	prevGraphemeBoundary,
+	stringWidth,
+} from "./text.js";
+import {
+	FIELD_UA_STYLES,
+	SELECT_UA_STYLES,
+	TEXTAREA_UA_STYLES,
+} from "./useragent.js";
 
 export const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
 export const MATHML_NAMESPACE = "http://www.w3.org/1998/Math/MathML";
@@ -32,18 +42,67 @@ export const XMLNS_NAMESPACE = "http://www.w3.org/2000/xmlns/";
 /* ------------------------------------------------------ user-agent widgets */
 
 /**
- * The user-agent widget behind a form control: the shadow tree a control
- * renders through.
+ * The engine collaborators a user-agent widget renders through.
  *
  * A control's rendered content model is not its children -- an input has none
- * -- but a tree the user agent owns, built from the control's own value,
- * placeholder and selection. Only the control knows when those move, so it
- * tells its widget, and the widget brings the tree back into step.
+ * -- but a shadow tree the user agent owns, built from the control's own value,
+ * placeholder and selection. That tree lays out, cascades and paints like any
+ * other, so the control needs the same collaborators the document does. They
+ * are installed on a document once, at setup, and reached from there.
  */
-export interface UAWidget {
-	reconcile(): void;
+export interface UAEngine {
+	layout: {
+		invalidate(node: object): void;
+		calculateLayout(): void;
+		getRect(element: object): UARect | null;
+		lineFragments(text: object): TextareaVisualLine[];
+	};
+	styles: {registerShadowRoot(root: object): void};
+	observer: {observe(target: object, options: object): void};
+	/** Note the unbounded damage attaching a shadow tree is. */
+	invalidateStructure(): void;
 }
 
+/**
+ * A control's shadow tree as the engine above reads it.
+ *
+ * The classes in this file are the implementation of these interfaces, but most
+ * of their members arrive from the element tables at setup rather than from a
+ * class body, so the tree a control builds is named here by the platform
+ * interfaces every consumer of it already speaks.
+ */
+type UARoot = globalThis.ShadowRoot;
+type UAElement = globalThis.HTMLElement;
+type UAText = globalThis.Text;
+type UARange = globalThis.Range;
+type UARect = globalThis.DOMRect;
+type UADocument = globalThis.Document;
+
+const kUAEngine = Symbol("the engine a document's UA widgets render through");
+
+/** Give a document the collaborators its controls' shadow trees render through. */
+export function installUAEngine(document: object, engine: UAEngine): void {
+	(document as Record<symbol, UAEngine>)[kUAEngine] = engine;
+}
+
+/**
+ * Build a control's user-agent widget if it has one and does not have it yet.
+ * Idempotent and synchronous: the shadow tree exists by the time this returns,
+ * and a control that left the tree and came back only catches up the state it
+ * drifted from.
+ */
+export function upgradeUAWidget(element: object): void {
+	(element as Record<symbol, (() => void) | undefined>)[kUAUpgrade]?.();
+}
+
+const kUAUpgrade = Symbol("build a control's UA widget");
+const kUAReconcile = Symbol("bring a control's UA tree back into step");
+const kUAValueText = Symbol(
+	"the text node a control's editable value lives in",
+);
+
+/** A listener as this file's own dispatch takes one. */
+type UAListener = (event: Event) => void;
 const kUASelection = Symbol("a control's selection, whatever its type");
 const kSetUASelection = Symbol("move a control's selection, whatever its type");
 
@@ -72,26 +131,9 @@ export function setUASelection(
 	)[kSetUASelection](start, end, direction);
 }
 
-const uaWidgets = new WeakMap<object, UAWidget>();
-
-/** Whether any control has a widget, so a control without one costs nothing. */
-let anyUAWidgets = false;
-
-/** Put a widget behind a control, which is what makes the control render. */
-export function attachUAWidget(element: object, widget: UAWidget): void {
-	uaWidgets.set(element, widget);
-	anyUAWidgets = true;
-}
-
-/** The widget behind a control, if it has been given one. */
-export function uaWidgetOf(element: object): UAWidget | null {
-	return uaWidgets.get(element) ?? null;
-}
-
-/** Tell a control's widget that the control's own state moved. */
+/** Tell a control that its own state moved, so its UA tree follows. */
 function widgetChanged(element: object): void {
-	if (!anyUAWidgets) return;
-	uaWidgets.get(element)?.reconcile();
+	(element as Record<symbol, (() => void) | undefined>)[kUAReconcile]?.();
 }
 
 /* ------------------------------------------------------------------ errors */
@@ -7381,9 +7423,9 @@ function attachShadowRoot(
  * or clonable root, so `element.shadowRoot` stays null, `attachShadow` on the
  * same element still throws the NotSupportedError the specification demands,
  * `cloneNode` copies nothing, and serialization never names it: the tree is
- * reachable only through {@link uaShadowRootOf} and the widget that built it.
+ * reachable only through {@link shadowRootOf} and the control that built it.
  */
-export function attachUAShadowRoot<T>(target: object): T {
+function attachUAShadowRoot<T>(target: object): T {
 	const host = target as Element;
 	const previous = internalConstruction;
 	internalConstruction = true;
@@ -9319,12 +9361,397 @@ function clampRangeValue(input: HTMLInputElement, value: string): number {
 	return number;
 }
 
+/* ------------------------------------------- the text controls' UA editing */
+
+/**
+ * The value part's text node inside a form control's user-agent shadow tree,
+ * or null before the tree is built. The control's editable text lives at its
+ * `[part="value"]`, reached through the closed tree the way a browser's own
+ * editing internals reach it: the renderer reads it to place the caret, the
+ * editing path to hit-test a point.
+ */
+export function fieldValueText(field: object): UAText | null {
+	return (
+		(field as Record<symbol, UAText | null | undefined>)[kUAValueText] ?? null
+	);
+}
+
+/**
+ * The range a document answers caret queries with.
+ *
+ * Every live range is walked by the tree mutation algorithms and held until
+ * nothing else refers to it, so a document reuses one range here rather than
+ * constructing one per caret read: the callers below read the geometry and are
+ * done with it, and a range per frame would grow that walk frame by frame.
+ */
+const caretRanges = new WeakMap<UADocument, UARange>();
+
+/**
+ * A collapsed Range at a focused control's caret, inside that value text. Its
+ * geometry is then whatever the layout already placed the offset at -- no
+ * bespoke caret walk. Backward selections carry the caret at the start,
+ * forward ones at the end, matching the DOM.
+ *
+ * The range is the document's own, valid until the next caret read.
+ */
+export function fieldCaretRange(field: object): UARange | null {
+	const valueText = fieldValueText(field);
+	if (!valueText) return null;
+	const selection = uaSelectionOf(field);
+	const caret =
+		selection.direction === "backward" ? selection.start : selection.end;
+	const document = uaDocumentOf(field);
+	let range = caretRanges.get(document);
+	if (range === undefined) {
+		range = document.createRange();
+		caretRanges.set(document, range);
+	}
+	range.setStart(
+		valueText,
+		Math.max(0, Math.min(caret, valueText.data.length)),
+	);
+	range.collapse(true);
+	return range;
+}
+
+/** A node's own document, as the tree-building code below reads it. */
+function uaDocumentOf(node: object): UADocument {
+	return (node as Node).ownerDocument as unknown as UADocument;
+}
+
+/** One visual (soft-wrapped or hard-broken) line of a laid-out textarea. */
+type TextareaVisualLine = {
+	x: number;
+	y: number;
+	text: string;
+	/** Data offset of the line's first character / caret slot. */
+	startOffset: number;
+	/** Data offset of the caret slot AFTER the line's last character. */
+	endOffset: number;
+};
+
+/**
+ * The visual line index a caret offset sits on, given a textarea's visual
+ * lines.
+ */
+function textareaLineAt(
+	lines: Array<{startOffset: number; endOffset: number}>,
+	caret: number,
+): number {
+	for (let i = 0; i < lines.length; i++) {
+		// endOffset is a valid caret slot on this line; a caret exactly at a
+		// soft-wrap boundary belongs to the NEXT line's start (both lines claim
+		// the offset; later line wins), matching browsers.
+		if (caret <= lines[i].endOffset) {
+			const next = lines[i + 1];
+			if (next && next.startOffset <= caret) continue;
+			return i;
+		}
+	}
+	return lines.length - 1;
+}
+
+/**
+ * A textarea's laid-out visual lines with their data ranges -- a thin field
+ * view over the shared `lineFragments` primitive (the empty and trailing-newline
+ * lines included). Internal to the control's own Home/End and vertical-motion
+ * editing; geometry consumers read `lineFragments` or a `Range` directly.
+ */
+function textareaVisualLines(
+	field: HTMLTextAreaElement,
+	layout: UAEngine["layout"],
+): {value: string; lines: TextareaVisualLine[]} | null {
+	const valueText = fieldValueText(field);
+	if (!valueText) return null;
+	// The laid-out lines with their data ranges, including the empty lines no
+	// fragment represents (an empty value, a trailing newline) -- the same
+	// annotation range geometry reads, so the caret, a Range, and vertical
+	// navigation all agree on where an offset sits.
+	const lines = layout.lineFragments(valueText);
+	if (lines.length === 0) return null;
+	return {value: valueText.data, lines};
+}
+
+/** A field's value and selection after an editing key -- what to apply. */
+interface FieldEditResult {
+	value: string;
+	start: number;
+	end: number;
+	direction: "forward" | "backward" | "none";
+}
+
+/**
+ * The selection after a caret move to `target`: Shift extends from the fixed
+ * anchor (the browser's anchor/focus model), a plain move collapses there.
+ * Value is carried through unchanged -- a move never edits text.
+ */
+function fieldSelectionMove(
+	value: string,
+	anchor: number,
+	target: number,
+	shiftKey: boolean,
+): FieldEditResult {
+	const clamped = Math.max(0, Math.min(target, value.length));
+	if (shiftKey) {
+		return {
+			value,
+			start: Math.min(anchor, clamped),
+			end: Math.max(anchor, clamped),
+			direction: clamped < anchor ? "backward" : "forward",
+		};
+	}
+	return {value, start: clamped, end: clamped, direction: "none"};
+}
+
+/**
+ * The field-editing keys shared by <input> and <textarea>: Backspace/Delete
+ * and the horizontal arrows (Shift extending the selection), grapheme-aware,
+ * following the browser's anchor/focus model. `key` is the DOM key value
+ * (`event.key`). Returns the new value+selection, or null if the key is not one
+ * of these -- the field-specific keys (Enter, vertical motion, Home/End) belong
+ * to the caller, and printable insertion is a keypress action.
+ */
+function applySharedFieldEdit(
+	field: HTMLInputElement | HTMLTextAreaElement,
+	key: string,
+	shiftKey: boolean,
+	ctrlKey: boolean,
+): FieldEditResult | null {
+	const value = field.value;
+	const {start, end, direction} = uaSelectionOf(field);
+	const backward = direction === "backward";
+	const caret = backward ? start : end;
+	const anchor = backward ? end : start;
+	const hasSelection = start !== end;
+
+	// The chords a terminal user's hands expect, from readline: a caret motion
+	// or a deletion, never a browser shortcut. The ones a line bounds --
+	// Ctrl+A, Ctrl+E, Ctrl+K, Ctrl+U -- belong to the control, which knows where
+	// its lines end; these are the rest.
+	if (ctrlKey && key === "b") {
+		return fieldSelectionMove(
+			value,
+			anchor,
+			hasSelection ? start : prevGraphemeBoundary(value, caret),
+			false,
+		);
+	}
+	if (ctrlKey && key === "f") {
+		return fieldSelectionMove(
+			value,
+			anchor,
+			hasSelection ? end : nextGraphemeBoundary(value, caret),
+			false,
+		);
+	}
+	if (ctrlKey && key === "d") {
+		if (hasSelection) {
+			return collapsedEdit(value.slice(0, start) + value.slice(end), start);
+		}
+		if (caret < value.length) {
+			const to = nextGraphemeBoundary(value, caret);
+			return collapsedEdit(value.slice(0, caret) + value.slice(to), caret);
+		}
+		return {value, start, end, direction: "none"};
+	}
+	if (ctrlKey && key === "w") {
+		if (hasSelection) {
+			return collapsedEdit(value.slice(0, start) + value.slice(end), start);
+		}
+		const from = wordStartBefore(value, caret);
+		return collapsedEdit(value.slice(0, from) + value.slice(caret), from);
+	}
+	if (key === "Backspace") {
+		if (hasSelection) {
+			return collapsedEdit(value.slice(0, start) + value.slice(end), start);
+		}
+		if (caret > 0) {
+			const from = prevGraphemeBoundary(value, caret);
+			return collapsedEdit(value.slice(0, from) + value.slice(caret), from);
+		}
+		return {value, start, end, direction: "none"};
+	}
+	if (key === "Delete") {
+		if (hasSelection) {
+			return collapsedEdit(value.slice(0, start) + value.slice(end), start);
+		}
+		if (caret < value.length) {
+			const to = nextGraphemeBoundary(value, caret);
+			return collapsedEdit(value.slice(0, caret) + value.slice(to), caret);
+		}
+		return {value, start, end, direction: "none"};
+	}
+	if (key === "ArrowLeft") {
+		if (shiftKey) {
+			return fieldSelectionMove(
+				value,
+				anchor,
+				prevGraphemeBoundary(value, caret),
+				true,
+			);
+		}
+		// A plain arrow with a selection collapses to its matching edge, not one
+		// past it -- the browser behavior.
+		const target = hasSelection ? start : prevGraphemeBoundary(value, caret);
+		return fieldSelectionMove(value, anchor, target, false);
+	}
+	if (key === "ArrowRight") {
+		if (shiftKey) {
+			return fieldSelectionMove(
+				value,
+				anchor,
+				nextGraphemeBoundary(value, caret),
+				true,
+			);
+		}
+		const target = hasSelection ? end : nextGraphemeBoundary(value, caret);
+		return fieldSelectionMove(value, anchor, target, false);
+	}
+	return null;
+}
+
+/**
+ * A typed character replacing the field's selection.
+ *
+ * Reached from `beforeinput`, which is where a browser reaches it: the
+ * insertion is the keypress default action, so it runs after keypress has been
+ * delivered rather than during keydown, and the field's `input` follows both.
+ */
+function printableFieldEdit(
+	field: HTMLInputElement | HTMLTextAreaElement,
+	text: string,
+): FieldEditResult {
+	const value = field.value;
+	const {start, end} = uaSelectionOf(field);
+	return collapsedEdit(
+		value.slice(0, start) + text + value.slice(end),
+		start + text.length,
+	);
+}
+
+/**
+ * The offset a word-wise backward deletion stops at: the whitespace before the
+ * caret is consumed with the word, so a chord at the end of "one two " lands
+ * where "two" began.
+ */
+function wordStartBefore(value: string, caret: number): number {
+	let at = caret;
+	while (at > 0 && /\s/.test(value[at - 1])) at--;
+	while (at > 0 && !/\s/.test(value[at - 1])) at--;
+	return at;
+}
+
+/** An edit result whose selection is a caret collapsed at `pos`. */
+function collapsedEdit(value: string, pos: number): FieldEditResult {
+	const clamped = Math.max(0, Math.min(pos, value.length));
+	return {value, start: clamped, end: clamped, direction: "none"};
+}
+
+/**
+ * Apply an edit result to a field's own value and selection, firing `input` on
+ * a real value change (the value write reconciles the control's tree) and
+ * `select` on a selection the user moved -- both events the render loop hears.
+ * Order matters: assigning `.value` collapses the selection to the end (per
+ * spec), so the caret is set after.
+ */
+function applyFieldEdit(
+	field: HTMLInputElement | HTMLTextAreaElement,
+	result: FieldEditResult,
+): void {
+	const value = field.value;
+	const {start, end, direction} = uaSelectionOf(field);
+	if (result.value !== value) {
+		field.value = result.value;
+		field[kSetUASelection](result.start, result.end, result.direction);
+		dispatch(field, new Event("input", {bubbles: true, cancelable: false}));
+	} else if (
+		result.start !== start ||
+		result.end !== end ||
+		(result.start !== result.end && result.direction !== direction)
+	) {
+		field[kSetUASelection](result.start, result.end, result.direction);
+		dispatch(field, new Event("select", {bubbles: true, cancelable: false}));
+	}
+}
+
+/** Insert pasted `text` at the field's selection (one atomic edit). */
+function insertPaste(
+	field: HTMLInputElement | HTMLTextAreaElement,
+	text: string,
+): void {
+	if (!text) return;
+	const value = field.value;
+	const {start, end} = uaSelectionOf(field);
+	applyFieldEdit(
+		field,
+		collapsedEdit(
+			value.slice(0, start) + text + value.slice(end),
+			start + text.length,
+		),
+	);
+}
+
+/** Add a `part`-attributed span (holding one empty text node) to a UA root. */
+function addPart(root: UARoot, part: string): UAElement {
+	const document = uaDocumentOf(root);
+	const span = document.createElement("span");
+	span.setAttribute("part", part);
+	span.appendChild(document.createTextNode(""));
+	root.appendChild(span);
+	return span;
+}
+
+/**
+ * Give a control the closed shadow tree it renders through, enrolled in the
+ * document's mutation observer and its cascade.
+ *
+ * The root is enrolled BEFORE it is populated, so the population itself is the
+ * invalidation that swaps the composed tree in -- the parts lay out through the
+ * normal pipeline, and layout must hear about every change to them.
+ */
+function buildUARoot(host: Element, engine: UAEngine, styles: string): UARoot {
+	const root = attachUAShadowRoot<UARoot>(host);
+	engine.invalidateStructure();
+	engine.observer.observe(root, {
+		childList: true,
+		subtree: true,
+		attributes: true,
+		attributeOldValue: true,
+		characterData: true,
+	});
+	engine.styles.registerShadowRoot(root);
+	root.appendChild(uaStyleElement(host, styles));
+	return root;
+}
+
+/** The `<style>` element carrying a widget's UA stylesheet. */
+function uaStyleElement(host: Element, styles: string): UAElement {
+	const style = uaDocumentOf(host).createElement("style");
+	style.textContent = styles;
+	return style;
+}
+
+/** The engine a document's controls render through, if it has been installed. */
+function uaEngineOf(node: object): UAEngine | undefined {
+	const document = (node as Node).ownerDocument as unknown as Record<
+		symbol,
+		UAEngine
+	> | null;
+	return document?.[kUAEngine];
+}
+
 /**
  * A form control whose kind its type attribute names.
  *
  * The value model is the specification's: an attribute holds the default, a
  * separate value holds what was written, and a dirty flag says which of the
  * two the control answers with. Checkedness works the same way beside it.
+ *
+ * What it RENDERS is a closed shadow tree it owns: a value part and a
+ * placeholder part for a text-ish input, a single glyph part for a checkbox or
+ * a radio. The tree is derived -- the value above is the only state -- and the
+ * editing keys are the control's own default action, a keydown listener like a
+ * browser's editing internals.
  */
 export class HTMLInputElement extends HTMLElement {
 	/** Installed from the element table, and read by the algorithms below. */
@@ -9341,6 +9768,15 @@ export class HTMLInputElement extends HTMLElement {
 	#previouslyChecked = false;
 	#previouslyIndeterminate = false;
 	#previousRadio: HTMLInputElement | null = null;
+
+	// The rendered tree and what it was built for. "field" for a text-ish
+	// input, "toggle" for checkbox/radio; null until built. The two are
+	// different trees, so a type flip rebuilds.
+	#engine: UAEngine | null = null;
+	#kind: "field" | "toggle" | null = null;
+	#root: UARoot | null = null;
+	#valueText: UAText | null = null;
+	#placeholderText: UAText | null = null;
 
 	get form(): HTMLFormElement | null {
 		return formOwner(this);
@@ -9637,6 +10073,176 @@ export class HTMLInputElement extends HTMLElement {
 			);
 		}
 	}
+
+	/* --------------------------------------------------- the rendered tree */
+
+	get [kUAValueText](): UAText | null {
+		return this.#valueText;
+	}
+
+	[kUAUpgrade](): void {
+		if (this.#engine !== null) {
+			// A control that left the tree and came back keeps its tree; only the
+			// state it drifted from needs catching up.
+			this[kUAReconcile]();
+			return;
+		}
+		const engine = uaEngineOf(this);
+		if (engine === undefined) return;
+		this.#engine = engine;
+		this.#build();
+		// Editing is the control's own default action, like a browser input's --
+		// a keydown listener; typed characters and pastes arrive as beforeinput,
+		// which is the default action of the keypress and of the paste that
+		// produced them.
+		this.addEventListener("keydown", this.#onKeydown as UAListener);
+		this.addEventListener("beforeinput", this.#onBeforeInput as UAListener);
+	}
+
+	/** field for a text-ish input, toggle for checkbox/radio. */
+	#kindFor(): "field" | "toggle" {
+		const type = this.type;
+		return type === "checkbox" || type === "radio" ? "toggle" : "field";
+	}
+
+	/**
+	 * A typed character arrives as an insertText; a paste as an
+	 * insertFromPaste, whose line breaks a single-line input strips (HTML
+	 * value sanitization). A toggle takes neither: it holds no text.
+	 */
+	#onBeforeInput = (event: InputEvent): void => {
+		if (event.defaultPrevented || event.data == null) return;
+		if (this.#kindFor() !== "field") return;
+		if (event.inputType === "insertText") {
+			event.preventDefault();
+			applyFieldEdit(this, printableFieldEdit(this, event.data));
+			return;
+		}
+		if (event.inputType !== "insertFromPaste") return;
+		event.preventDefault();
+		insertPaste(this, event.data.replace(/[\r\n]+/g, ""));
+	};
+
+	/**
+	 * Build (or rebuild, on a type flip) the UA-internal shadow tree. The
+	 * field tree carries value / placeholder parts; the toggle tree a single
+	 * glyph part the painter fills from live `.checked` (a radio's group
+	 * exclusivity unchecks siblings with no hook to reconcile on).
+	 */
+	#build(): void {
+		const engine = this.#engine!;
+		let root = this.#root;
+		if (root === null) {
+			root = buildUARoot(this, engine, FIELD_UA_STYLES);
+		} else {
+			// A rebuild keeps the root -- and its enrollment -- and replaces only
+			// what hangs under it, the stylesheet included.
+			while (root.firstChild) root.removeChild(root.firstChild);
+			engine.invalidateStructure();
+			root.appendChild(uaStyleElement(this, FIELD_UA_STYLES));
+		}
+		this.#root = root;
+		this.#kind = this.#kindFor();
+
+		if (this.#kind === "field") {
+			this.#valueText = addPart(root, "value").firstChild as UAText;
+			this.#placeholderText = addPart(root, "placeholder").firstChild as UAText;
+		} else {
+			this.#valueText = null;
+			this.#placeholderText = null;
+			addPart(root, "glyph"); // The painter fills it from live .checked.
+		}
+		engine.layout.invalidate(this);
+		this[kUAReconcile]();
+	}
+
+	/**
+	 * Bring the field tree back into step with the input's own
+	 * value/placeholder -- the rendered content model a width:auto input
+	 * measures against. The value text paints through the normal walk; the
+	 * placeholder shows only when the value is empty. A toggle has no text to
+	 * reconcile; its glyph is the painter's.
+	 */
+	[kUAReconcile](): void {
+		if (this.#engine === null) return;
+		// A type flip is a different tree, not a different value.
+		if (this.#kindFor() !== this.#kind) {
+			this.#build();
+			return;
+		}
+		if (this.#kind !== "field" || !this.#valueText) return;
+		const value = this.value;
+		const placeholder = this.getAttribute("placeholder") ?? "";
+		// A password puts one bullet per code unit into the shadow, never the
+		// real value -- so what lays out, paints, and can be selected is only the
+		// mask; the value stays in .value alone. Offsets stay 1:1 with .value on
+		// the BMP, keeping caret and scroll window aligned.
+		const shown = this.type === "password" ? "•".repeat(value.length) : value;
+		let changed = false;
+		if (this.#valueText.data !== shown) {
+			this.#valueText.data = shown;
+			changed = true;
+		}
+		if (this.#placeholderText!.data !== placeholder) {
+			this.#placeholderText!.data = placeholder;
+			changed = true;
+		}
+		// Exactly one occupies the slot: value when present, else placeholder.
+		const valueDisplay = value ? "inline-block" : "none";
+		const placeholderDisplay = value ? "none" : "inline-block";
+		const valueSpan = this.#valueText.parentElement!;
+		const placeholderSpan = this.#placeholderText!.parentElement!;
+		if (valueSpan.style.display !== valueDisplay) {
+			valueSpan.style.display = valueDisplay;
+			changed = true;
+		}
+		if (placeholderSpan.style.display !== placeholderDisplay) {
+			placeholderSpan.style.display = placeholderDisplay;
+			changed = true;
+		}
+		// A width:auto input sizes to its composed content; nothing else
+		// invalidates the measure, and the observer would only hear it on a
+		// microtask.
+		if (changed) this.#engine.layout.invalidate(this);
+	}
+
+	/**
+	 * The input's editing default action: a checkbox/radio activates on Space
+	 * (never accepting typed text), Home/End go to the whole value's ends (an
+	 * input has no visual lines), everything else is the shared field logic.
+	 */
+	#onKeydown = (event: KeyboardEvent): void => {
+		if (event.defaultPrevented) return;
+		const {key, shiftKey, ctrlKey} = event;
+
+		if (this.type === "checkbox" || this.type === "radio") {
+			// Space activates the control, and activation is what toggles it: the
+			// pre-activation behavior flips the checkedness, the activation
+			// behavior fires input then change, and a canceled click puts the
+			// checkedness back.
+			if (key === " ") this.click();
+			return;
+		}
+
+		const value = this.value;
+		const {start, end, direction} = uaSelectionOf(this);
+		const anchor = direction === "backward" ? end : start;
+		const caret = direction === "backward" ? start : end;
+
+		let result: FieldEditResult | null;
+		if (key === "Home" || (ctrlKey && key === "a")) {
+			result = fieldSelectionMove(value, anchor, 0, shiftKey);
+		} else if (key === "End" || (ctrlKey && key === "e")) {
+			result = fieldSelectionMove(value, anchor, value.length, shiftKey);
+		} else if (ctrlKey && key === "k") {
+			result = collapsedEdit(value.slice(0, caret), caret);
+		} else if (ctrlKey && key === "u") {
+			result = collapsedEdit(value.slice(caret), 0);
+		} else {
+			result = applySharedFieldEdit(this, key, shiftKey, ctrlKey);
+		}
+		if (result) applyFieldEdit(this, result);
+	};
 }
 
 /** The radio buttons an input shares a group with: its name, form and tree. */
@@ -9775,10 +10381,21 @@ export class HTMLButtonElement extends HTMLElement {
  * Selectedness lives on the options; the select's own members read it, and
  * every read first runs the selectedness setting algorithm, which is what
  * keeps a single-selection select showing exactly one option.
+ *
+ * It renders a closed shadow tree it owns: the selected option's label, the ▾
+ * indicator, and a picker popover of option rows. The tree is derived from the
+ * selectedness above and the highlight below; the keyboard and mouse behavior
+ * is the control's own default action.
  */
 export class HTMLSelectElement extends HTMLElement {
 	#options: HTMLOptionsCollection | null = null;
 	#selectedOptions: HTMLCollection | null = null;
+
+	#engine: UAEngine | null = null;
+	#valueText: UAText | null = null;
+	#picker: UAElement | null = null;
+	// The highlighted option index while the picker is OPEN; null = closed.
+	#highlight: number | null = null;
 
 	get form(): HTMLFormElement | null {
 		return formOwner(this);
@@ -9893,6 +10510,278 @@ export class HTMLSelectElement extends HTMLElement {
 		askForAReset(this);
 		widgetChanged(this);
 	}
+
+	/* --------------------------------------------------- the rendered tree */
+
+	/** The options the tree renders: `options`, without building a collection. */
+	#optionList(): HTMLOptionElement[] {
+		askForAReset(this);
+		return optionsOf(this);
+	}
+
+	[kUAUpgrade](): void {
+		if (this.#engine !== null) {
+			this[kUAReconcile]();
+			return;
+		}
+		const engine = uaEngineOf(this);
+		if (engine === undefined) return;
+		this.#engine = engine;
+		const document = uaDocumentOf(this);
+		// The tree: the selected option's label (part=value), the ▾ indicator
+		// (part=indicator), and the picker popover (part=picker, holding one row
+		// per option). Composition hides the light option list.
+		const root = buildUARoot(this, engine, SELECT_UA_STYLES);
+		this.#valueText = addPart(root, "value").firstChild as UAText;
+		(addPart(root, "indicator").firstChild as UAText).data = " ▾";
+		const picker = document.createElement("div");
+		picker.setAttribute("part", "picker");
+		root.appendChild(picker);
+		this.#picker = picker;
+
+		this.addEventListener("keydown", this.#onKeydown as UAListener);
+		this.addEventListener("mousedown", this.#onMousedown as UAListener);
+		// Losing focus closes the picker, as everywhere.
+		this.addEventListener("blur", this.#onBlur);
+		// The displayed label and picker rows track the option list; a framework
+		// mutating the options must re-reconcile. (Selection changes reach the
+		// tree through the control's own setters.)
+		engine.observer.observe(this, {
+			childList: true,
+			subtree: true,
+			attributes: true,
+			characterData: true,
+		});
+
+		this[kUAReconcile]();
+	}
+
+	/** Bring the UA tree back into step with the selection and open state. */
+	[kUAReconcile](): void {
+		const engine = this.#engine;
+		const picker = this.#picker;
+		if (engine === null || picker === null) return;
+		const optionList = this.#optionList();
+		const selectedIndex = this.selectedIndex;
+		const selected = selectedIndex >= 0 ? optionList[selectedIndex] : null;
+		const label = selected ? selected.label : "";
+		if (this.#valueText!.data !== label) {
+			this.#valueText!.data = label;
+			engine.layout.invalidate(this);
+		}
+
+		if (this.#highlight === null) {
+			if (picker.style.display !== "none") picker.style.display = "none";
+			return;
+		}
+
+		this.#reconcileRows(picker);
+
+		// Anchor below the field in DOCUMENT coordinates (the picker's containing
+		// block is the ICB), matching the field's width.
+		const rect = engine.layout.getRect(this);
+		if (rect) {
+			const top = `${Math.round(rect.bottom)}px`;
+			const left = `${Math.round(rect.left)}px`;
+			const width = `${Math.max(4, Math.round(rect.width))}ch`;
+			if (picker.style.top !== top) picker.style.top = top;
+			if (picker.style.left !== left) picker.style.left = left;
+			if (picker.style.width !== width) picker.style.width = width;
+		}
+		if (picker.style.display !== "block") picker.style.display = "block";
+	}
+
+	/**
+	 * Rebuild the picker's rows to match the option list; cheap at option-list
+	 * scale. Every row carries the index of the option it stands for, so a mouse
+	 * press resolves a row to its option whatever else the picker holds.
+	 */
+	#reconcileRows(picker: UAElement): void {
+		const document = uaDocumentOf(this);
+		const options = this.#optionList();
+		while (picker.childNodes.length > options.length) {
+			picker.removeChild(picker.lastChild!);
+		}
+		while (picker.childNodes.length < options.length) {
+			const row = document.createElement("div");
+			row.setAttribute("part", "option");
+			picker.appendChild(row);
+		}
+		options.forEach((option, index) => {
+			const row = picker.childNodes[index] as UAElement;
+			if (row.textContent !== option.label) row.textContent = option.label;
+			// Attribute writes are guarded: setAttribute queues a mutation record
+			// even when unchanged, and this root is observed -- an unconditional
+			// write is an infinite render loop.
+			setRowFlag(row, "data-disabled", option.disabled);
+			setRowFlag(row, "data-highlighted", index === this.#highlight);
+		});
+	}
+
+	/** Step to the next enabled option in `direction`, or stay put. */
+	#step(from: number, direction: 1 | -1): number {
+		const options = this.#optionList();
+		for (
+			let i = from + direction;
+			i >= 0 && i < options.length;
+			i += direction
+		) {
+			if (!options[i].disabled) return i;
+		}
+		return from;
+	}
+
+	/** Open the picker with the highlight on the current selection. */
+	#openPicker(): void {
+		const options = this.#optionList();
+		if (options.length === 0) return;
+		let index = this.selectedIndex;
+		if (index < 0) index = options.findIndex((o) => !o.disabled);
+		this.#highlight = index;
+		this[kUAReconcile]();
+	}
+
+	/** Commit `index` as the selection, close, and fire input then change. */
+	#commit(index: number): void {
+		this.#highlight = null;
+		this.selectedIndex = index; // The setter reconciles (closes + label).
+		dispatch(this, new Event("input", {bubbles: true, cancelable: false}));
+		dispatch(this, new Event("change", {bubbles: true, cancelable: false}));
+	}
+
+	/**
+	 * The select's editing default action. OPEN: arrows move the highlight
+	 * without committing, Enter/Space commit, Escape dismisses. CLOSED:
+	 * Enter/Space open the picker; arrows change the selection in place -- the
+	 * browser's closed-select keyboard model, no popup to degrade.
+	 */
+	#onKeydown = (event: KeyboardEvent): void => {
+		if (event.defaultPrevented) return;
+		const key = event.key;
+		const options = this.#optionList();
+		if (options.length === 0) return;
+		const current = this.selectedIndex;
+
+		if (this.#highlight !== null) {
+			const highlight = this.#highlight;
+			if (key === "ArrowDown") this.#highlight = this.#step(highlight, 1);
+			else if (key === "ArrowUp") this.#highlight = this.#step(highlight, -1);
+			else if (key === "Home") this.#highlight = this.#step(-1, 1);
+			else if (key === "End") {
+				this.#highlight = this.#step(options.length, -1);
+			} else if (key === "Enter" || key === " ") {
+				this.#highlight = null;
+				if (highlight !== current && !options[highlight].disabled) {
+					this.#commit(highlight);
+					return;
+				}
+				this[kUAReconcile](); // No change: just close.
+				return;
+			} else if (key === "Escape") {
+				this.#highlight = null;
+			} else {
+				return;
+			}
+			this[kUAReconcile]();
+			return;
+		}
+
+		// CLOSED: Space or Enter opens; arrows change the value in place.
+		if (key === "Enter" || key === " ") {
+			this.#openPicker();
+			return;
+		}
+		let target = current;
+		if (key === "ArrowDown" || key === "ArrowRight") {
+			target = this.#step(current, 1);
+		} else if (key === "ArrowUp" || key === "ArrowLeft") {
+			target = this.#step(current, -1);
+		} else if (key === "Home") {
+			target = this.#step(-1, 1);
+		} else if (key === "End") {
+			target = this.#step(options.length, -1);
+		} else {
+			return;
+		}
+		if (target !== current && target >= 0) this.#commit(target);
+	};
+
+	/**
+	 * The mouse default action: a press opens a closed picker, and with the
+	 * picker open a press on an option row commits it (a disabled row is inert),
+	 * a press on the closed face dismisses. The row under the point is found
+	 * from the rows' own document rects -- no renderer hit-test.
+	 */
+	#onMousedown = (event: MouseEvent): void => {
+		if (event.defaultPrevented || event.button !== 0) return;
+		const engine = this.#engine!;
+		this.focus(); // A press focuses the control, as in a browser.
+		if (this.#highlight === null) {
+			this.#openPicker();
+			return;
+		}
+		const {clientX: x, clientY: y} = event;
+		const picker = this.#picker!;
+		const row = (Array.from(picker.childNodes) as UAElement[]).find((node) => {
+			const rect = engine.layout.getRect(node);
+			return rect ? rectContains(rect, x, y) : false;
+		});
+		if (row) {
+			const index = optionIndexOfRow(picker, row);
+			// A disabled row is inert: the sheet stays up, nothing commits.
+			if (index >= 0 && !this.#optionList()[index]?.disabled) {
+				this.#highlight = null;
+				if (index !== this.selectedIndex) this.#commit(index);
+				else this[kUAReconcile](); // Re-press the selection: just close.
+			}
+			return;
+		}
+		// Off every row: a press inside the picker's own padding does nothing; a
+		// press outside it (the closed face) dismisses.
+		const pickerRect = engine.layout.getRect(picker);
+		if (!(pickerRect && rectContains(pickerRect, x, y))) {
+			this.#highlight = null;
+			this[kUAReconcile]();
+		}
+	};
+
+	#onBlur = (): void => {
+		if (this.#highlight !== null) {
+			this.#highlight = null;
+			this[kUAReconcile]();
+		}
+	};
+}
+
+/** Whether a document-space point falls inside a rect. */
+function rectContains(rect: UARect, x: number, y: number): boolean {
+	return (
+		x >= rect.x &&
+		x < rect.x + rect.width &&
+		y >= rect.y &&
+		y < rect.y + rect.height
+	);
+}
+
+/** Set or clear a picker row's state attribute, writing only on a change. */
+function setRowFlag(row: UAElement, name: string, on: boolean): void {
+	if (on === row.hasAttribute(name)) return;
+	if (on) row.setAttribute(name, "");
+	else row.removeAttribute(name);
+}
+
+/**
+ * The index into a select's option list that a picker row stands for: the rows
+ * that are options, counted in tree order.
+ */
+function optionIndexOfRow(picker: UAElement, row: UAElement): number {
+	if (row.getAttribute("part") !== "option") return -1;
+	let index = 0;
+	for (const child of Array.from(picker.children)) {
+		if (child === row) return index;
+		if (child.getAttribute("part") === "option") index++;
+	}
+	return -1;
 }
 
 /** The options of a select: its option children, and its groups' children. */
@@ -10049,6 +10938,9 @@ const kOptionDirty = Symbol("an option's dirtiness");
 
 /** One choice of a select, whose selectedness is its own state. */
 export class HTMLOptionElement extends HTMLElement {
+	/** Installed from the element table, and read by the select's own tree. */
+	declare disabled: boolean;
+
 	[kSelectedness] = false;
 	[kOptionDirty] = false;
 
@@ -10131,13 +11023,26 @@ export class HTMLOptionElement extends HTMLElement {
 		clone[kOptionDirty] = this[kOptionDirty];
 	}
 }
-/** A multi-line control, whose default value is its child text. */
+/**
+ * A multi-line control, whose default value is its child text.
+ *
+ * It renders a closed shadow tree it owns: a value part -- laid out, wrapped
+ * and painted like any document text -- a placeholder part, and a trailing
+ * line-break anchor. The tree is derived from the value above, and the editing
+ * keys are the control's own default action.
+ */
 export class HTMLTextAreaElement extends HTMLElement {
 	#value = "";
 	#dirty = false;
 	#selectionStart = 0;
 	#selectionEnd = 0;
 	#selectionDirection = "none";
+
+	#engine: UAEngine | null = null;
+	#valueText: UAText | null = null;
+	#placeholderText: UAText | null = null;
+	#placeholderSpan: UAElement | null = null;
+	#goalColumn: number | null = null;
 
 	get form(): HTMLFormElement | null {
 		return formOwner(this);
@@ -10288,6 +11193,190 @@ export class HTMLTextAreaElement extends HTMLElement {
 		this.#value = "";
 		this.#dirty = false;
 		widgetChanged(this);
+	}
+
+	/* --------------------------------------------------- the rendered tree */
+
+	get [kUAValueText](): UAText | null {
+		return this.#valueText;
+	}
+
+	[kUAUpgrade](): void {
+		if (this.#engine !== null) {
+			this[kUAReconcile]();
+			return;
+		}
+		const engine = uaEngineOf(this);
+		if (engine === undefined) return;
+		this.#engine = engine;
+		const document = uaDocumentOf(this);
+		const root = buildUARoot(this, engine, TEXTAREA_UA_STYLES);
+		this.#valueText = addPart(root, "value").firstChild as UAText;
+		this.#placeholderSpan = addPart(root, "placeholder");
+		this.#placeholderText = this.#placeholderSpan.firstChild as UAText;
+		// The trailing <br> anchor, the same trick a browser's editor uses: it
+		// makes the run's content always end in exactly one line break, so the
+		// line count equals the LOGICAL line count -- the breaker never emits a
+		// line after a final newline, and without the anchor a value ending in
+		// "\n" measures one row short, parking the caret on the bottom border.
+		root.appendChild(document.createElement("br"));
+
+		// Editing is the control's own default action, the same as a browser
+		// textarea's: its keydown listener does the edit.
+		this.addEventListener("keydown", this.#onKeydown as UAListener);
+		this.addEventListener("beforeinput", this.#onBeforeInput as UAListener);
+
+		this[kUAReconcile]();
+	}
+
+	// A typed character arrives as an insertText; a paste keeps its newlines.
+	#onBeforeInput = (event: InputEvent): void => {
+		if (event.defaultPrevented || event.data == null) return;
+		if (event.inputType === "insertText") {
+			event.preventDefault();
+			applyFieldEdit(this, printableFieldEdit(this, event.data));
+			return;
+		}
+		if (event.inputType !== "insertFromPaste") return;
+		event.preventDefault();
+		insertPaste(this, event.data);
+	};
+
+	/**
+	 * Bring the UA tree back into step with the element's own state -- the
+	 * single source of truth. Placeholder visibility is real CSS (an inline
+	 * display:none), not painter logic: the normal pipeline then simply never
+	 * sees it.
+	 */
+	[kUAReconcile](): void {
+		const engine = this.#engine;
+		if (engine === null) return;
+		const value = this.value;
+		const placeholder = this.getAttribute("placeholder") ?? "";
+		let changed = false;
+		if (this.#valueText!.data !== value) {
+			this.#valueText!.data = value;
+			changed = true;
+		}
+		if (this.#placeholderText!.data !== placeholder) {
+			this.#placeholderText!.data = placeholder;
+			changed = true;
+		}
+		const placeholderDisplay = value ? "none" : "";
+		if (this.#placeholderSpan!.style.display !== placeholderDisplay) {
+			this.#placeholderSpan!.style.display = placeholderDisplay;
+			changed = true;
+		}
+		if (!changed) return;
+		// The value text lays out through the normal pipeline. The observer
+		// hears its characterData change too, but only on a microtask -- an edit
+		// that reads the fresh geometry back the same tick (vertical motion,
+		// Home/End) needs the engine dirtied synchronously now.
+		engine.layout.invalidate(this);
+	}
+
+	/**
+	 * The textarea's editing default action. Enter inserts a newline, the
+	 * vertical arrows and Home/End move by VISUAL line (soft wraps count, as in
+	 * a browser), and every other editing key is the shared field logic. Reads
+	 * back laid-out geometry, so it flushes layout first.
+	 */
+	#onKeydown = (event: KeyboardEvent): void => {
+		// Editing is a default action: an author's keydown preventDefault
+		// suppresses it, exactly as it suppresses a browser textarea's edit.
+		if (event.defaultPrevented) return;
+		const engine = this.#engine;
+		if (engine === null) return;
+		const {key, shiftKey, ctrlKey} = event;
+		// The goal column survives only an unbroken run of vertical moves.
+		if (key !== "ArrowUp" && key !== "ArrowDown") this.#goalColumn = null;
+
+		const value = this.value;
+		const {start, end, direction} = uaSelectionOf(this);
+		const backward = direction === "backward";
+		const caret = backward ? start : end;
+		const anchor = backward ? end : start;
+
+		let result: FieldEditResult | null;
+		if (key === "Enter" || (ctrlKey && key === "j")) {
+			// A newline, inserted like any typed character, replacing the
+			// selection. A terminal sends line feed for Ctrl+J, which is the chord
+			// that reaches a field whose Enter an application has taken.
+			const next = value.slice(0, start) + "\n" + value.slice(end);
+			const pos = start + 1;
+			result = {value: next, start: pos, end: pos, direction: "none"};
+		} else if (key === "ArrowUp" || key === "ArrowDown") {
+			engine.layout.calculateLayout();
+			const target = this.#verticalTarget(caret, key === "ArrowDown" ? 1 : -1);
+			result = fieldSelectionMove(value, anchor, target, shiftKey);
+		} else if (
+			key === "Home" ||
+			key === "End" ||
+			(ctrlKey && (key === "a" || key === "e" || key === "k" || key === "u"))
+		) {
+			engine.layout.calculateLayout();
+			const visual = textareaVisualLines(this, engine.layout);
+			const line = visual
+				? visual.lines[textareaLineAt(visual.lines, caret)]
+				: null;
+			const lineStart = line?.startOffset ?? 0;
+			const lineEnd = line?.endOffset ?? value.length;
+			if (ctrlKey && key === "k") {
+				result = collapsedEdit(
+					value.slice(0, caret) + value.slice(lineEnd),
+					caret,
+				);
+			} else if (ctrlKey && key === "u") {
+				result = collapsedEdit(
+					value.slice(0, lineStart) + value.slice(caret),
+					lineStart,
+				);
+			} else {
+				const toStart = key === "Home" || key === "a";
+				result = fieldSelectionMove(
+					value,
+					anchor,
+					toStart ? lineStart : lineEnd,
+					shiftKey,
+				);
+			}
+		} else {
+			result = applySharedFieldEdit(this, key, shiftKey, ctrlKey);
+		}
+		if (result) applyFieldEdit(this, result);
+	};
+
+	/**
+	 * The caret offset one visual line up or down from `caret`, keeping the
+	 * column (in cells) where the target line allows -- soft wraps count as
+	 * lines, exactly as in a browser. First line up collapses to 0, last line
+	 * down to the end.
+	 */
+	#verticalTarget(caret: number, direction: 1 | -1): number {
+		const visual = textareaVisualLines(this, this.#engine!.layout);
+		if (!visual) return caret;
+		const lineIndex = textareaLineAt(visual.lines, caret);
+		const targetIndex = lineIndex + direction;
+		if (targetIndex < 0) return 0;
+		if (targetIndex >= visual.lines.length) return visual.value.length;
+		const line = visual.lines[lineIndex];
+		const currentColumn = stringWidth(
+			line.text.slice(0, Math.max(0, caret - line.startOffset)),
+		);
+		// Consecutive vertical moves aim for the column travel STARTED at, even
+		// across shorter lines that clamp the caret -- the browser's goal column.
+		const column = this.#goalColumn ?? currentColumn;
+		this.#goalColumn = column;
+		const target = visual.lines[targetIndex];
+		let cells = 0;
+		for (let i = 0; i < target.text.length; i++) {
+			const charCells = stringWidth(target.text[i]);
+			if (cells + charCells > column) {
+				return target.startOffset + i;
+			}
+			cells += charCells;
+		}
+		return target.endOffset;
 	}
 }
 

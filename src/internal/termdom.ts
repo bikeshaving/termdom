@@ -7,10 +7,14 @@
  */
 import * as DOM from "./dom.js";
 import {
+	fieldCaretRange,
+	fieldValueText,
 	flatIsConnected,
 	flatParentElement,
+	installUAEngine,
 	setUASelection,
 	uaSelectionOf,
+	upgradeUAWidget,
 } from "./dom.js";
 import {LayoutEngine, visualToDataOffsets} from "./layout.js";
 import {Viewport} from "./viewport.js";
@@ -41,12 +45,6 @@ import {
 	keyboardActivation,
 	tokenizeInput,
 } from "./events.js";
-import {
-	type UAWidgetController,
-	defineUAWidgets,
-	fieldCaretRange,
-	fieldValueText,
-} from "./widgets.js";
 
 /* --------------------------------------------------------- invalidation */
 
@@ -92,8 +90,10 @@ export function currentInvalidationEpoch(): number {
 // coalesce the burst of SIGWINCHes a drag fires, short enough to feel immediate.
 const RESIZE_DEBOUNCE_MS = 40;
 
-// The built-in tags that upgrade to a UA widget on connect.
+// The built-in tags that upgrade to a UA widget on connect, as a tag set (for
+// the added element itself) and as a selector (for its descendants).
 const UPGRADEABLE_CONTROLS = new Set(["INPUT", "TEXTAREA", "SELECT"]);
+const UPGRADEABLE_SELECTOR = "input, textarea, select";
 
 // The engine each document is mounted in. The DOM prototypes are the realm's,
 // shared by every document; a patched member finds its engine here rather than
@@ -497,7 +497,6 @@ export class TermDOM {
 	#fullscreenManager: FullscreenManager;
 	#observerManager: ObserverManager;
 	#styleManager: StyleManager;
-	#uaWidgets: UAWidgetController;
 	// The DOM-tree -> terminal-cells paint walk. Reads geometry/styles/widgets;
 	// owns no scheduling. Shares #topLayer by reference.
 	#painter: Painter;
@@ -530,10 +529,7 @@ export class TermDOM {
 
 	// An overflowed field's horizontal scroll lives on the value part's own
 	// scrollLeft (set by #scrollFieldCaretIntoView), not a side table.
-	// The UA-internal shadow trees behind input widgets, by host: the tree
-	// IS the field's content model (value text, placeholder, blank / toggle
-	// glyph), and the painter reads its computed styles instead of
-	// hardcoding the design. This map just caches the part references.
+
 	/**
 	 * The TOP LAYER: elements painted above every stacking context, in
 	 * insertion order, unclipped -- the foundation dialog/popover/::picker
@@ -728,11 +724,14 @@ export class TermDOM {
 
 		this[kObserver] = this.#setupMutationObserver();
 
-		this.#uaWidgets = defineUAWidgets({
-			window: this.window,
-			layoutEngine: this[kLayoutEngine],
-			styleManager: this.#styleManager,
+		// The collaborators a control's own shadow tree renders through. From
+		// here a control builds and keeps its tree itself; the shell only says
+		// when a newly connected one should be upgraded.
+		installUAEngine(this.document, {
+			layout: this[kLayoutEngine],
+			styles: this.#styleManager,
 			observer: this[kObserver],
+			invalidateStructure,
 		});
 		this.#painter = new Painter({
 			window: this.window,
@@ -1665,12 +1664,10 @@ export class TermDOM {
 				if (added.nodeType !== added.ELEMENT_NODE) continue;
 				const element = added as Element;
 				if (UPGRADEABLE_CONTROLS.has(element.tagName)) {
-					this.#uaWidgets.upgrade(element);
+					upgradeUAWidget(element);
 				}
-				for (const control of element.querySelectorAll(
-					"input, textarea, select",
-				)) {
-					this.#uaWidgets.upgrade(control);
+				for (const control of element.querySelectorAll(UPGRADEABLE_SELECTOR)) {
+					upgradeUAWidget(control);
 				}
 			}
 		}
