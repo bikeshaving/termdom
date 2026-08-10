@@ -867,7 +867,7 @@ test("Shift+arrows extend a selection with the browser's anchor/focus model", as
 	dom.dispose();
 });
 
-test("Ctrl+A selects all; Backspace deletes the whole selection", async () => {
+test("the readline chords move and cut, as a terminal user expects", async () => {
 	const terminal = new MockProcess({rows: 6, cols: 40});
 	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.attach();
@@ -877,22 +877,37 @@ test("Ctrl+A selects all; Backspace deletes the whole selection", async () => {
 	document.body.appendChild(input);
 	input.focus();
 	await nextFrame(dom);
-	(terminal.stdin as any).emit("data", Buffer.from("some text"));
-	await new Promise((r) => setTimeout(r, 0));
+	const send = async (bytes: string) => {
+		(terminal.stdin as any).emit("data", Buffer.from(bytes));
+		await new Promise((r) => setTimeout(r, 0));
+		await new Promise((r) => setTimeout(r, 0));
+	};
 
-	(terminal.stdin as any).emit("data", Buffer.from([0x01]));
-	await new Promise((r) => setTimeout(r, 0));
-
-	await new Promise((r) => setTimeout(r, 0)); // Ctrl+A
-	expect([input.selectionStart, input.selectionEnd]).toEqual([0, 9]);
-	expect(input.value).toBe("some text"); // selected, not inserted
-
-	(terminal.stdin as any).emit("data", Buffer.from("\x7f"));
-	await new Promise((r) => setTimeout(r, 0));
-
-	await new Promise((r) => setTimeout(r, 0)); // Backspace
-	expect(input.value).toBe("");
+	await send("some text");
+	// Ctrl+A is the beginning of the line, not a selection of everything.
+	await send("\x01");
 	expect([input.selectionStart, input.selectionEnd]).toEqual([0, 0]);
+	expect(input.value).toBe("some text");
+	// Ctrl+E returns to the end; Ctrl+F and Ctrl+B step a character.
+	await send("\x05");
+	expect(input.selectionStart).toBe(9);
+	await send("\x02");
+	expect(input.selectionStart).toBe(8);
+	await send("\x06");
+	expect(input.selectionStart).toBe(9);
+	// Ctrl+W cuts the word behind the caret, Ctrl+U everything before it.
+	await send("\x17");
+	expect(input.value).toBe("some ");
+	await send("\x15");
+	expect(input.value).toBe("");
+
+	await send("abc");
+	await send("\x01");
+	// Ctrl+D deletes forward, Ctrl+K to the end of the line.
+	await send("\x04");
+	expect(input.value).toBe("bc");
+	await send("\x0b");
+	expect(input.value).toBe("");
 
 	dom.dispose();
 });
@@ -2200,8 +2215,9 @@ test("line feed is the Ctrl+J chord, not Enter", async () => {
 	await nextFrame(dom);
 
 	expect(keys).toEqual(["Enter", "j+ctrl"]);
-	// Enter inserts a newline in a textarea; the chord does not, as in a browser.
-	expect(field.value).toBe("\n");
+	// Both insert a newline in a textarea: the chord is what reaches a field
+	// whose Enter an application has taken for itself.
+	expect(field.value).toBe("\n\n");
 
 	dom.dispose();
 });

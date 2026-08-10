@@ -189,10 +189,42 @@ function applySharedFieldEdit(
 	const anchor = backward ? end : start;
 	const hasSelection = start !== end;
 
-	if (ctrlKey && key === "a") {
-		// Select all, the browser's Ctrl+A. (Never Cmd+A here: Cmd chords are
-		// consumed by the terminal app and don't reach the PTY.)
-		return {value, start: 0, end: value.length, direction: "forward"};
+	// The chords a terminal user's hands expect, from readline: a caret motion
+	// or a deletion, never a browser shortcut. The ones a line bounds --
+	// Ctrl+A, Ctrl+E, Ctrl+K, Ctrl+U -- belong to the widget, which knows where
+	// its lines end; these are the rest.
+	if (ctrlKey && key === "b") {
+		return fieldSelectionMove(
+			value,
+			anchor,
+			hasSelection ? start : prevGraphemeBoundary(value, caret),
+			false,
+		);
+	}
+	if (ctrlKey && key === "f") {
+		return fieldSelectionMove(
+			value,
+			anchor,
+			hasSelection ? end : nextGraphemeBoundary(value, caret),
+			false,
+		);
+	}
+	if (ctrlKey && key === "d") {
+		if (hasSelection) {
+			return collapsedEdit(value.slice(0, start) + value.slice(end), start);
+		}
+		if (caret < value.length) {
+			const to = nextGraphemeBoundary(value, caret);
+			return collapsedEdit(value.slice(0, caret) + value.slice(to), caret);
+		}
+		return {value, start, end, direction: "none"};
+	}
+	if (ctrlKey && key === "w") {
+		if (hasSelection) {
+			return collapsedEdit(value.slice(0, start) + value.slice(end), start);
+		}
+		const from = wordStartBefore(value, caret);
+		return collapsedEdit(value.slice(0, from) + value.slice(caret), from);
 	}
 	if (key === "Backspace") {
 		if (hasSelection) {
@@ -263,6 +295,18 @@ function printableFieldEdit(
 }
 
 /** An edit result whose selection is a caret collapsed at `pos`. */
+/**
+ * The offset a word-wise backward deletion stops at: the whitespace before the
+ * caret is consumed with the word, so a chord at the end of "one two " lands
+ * where "two" began.
+ */
+function wordStartBefore(value: string, caret: number): number {
+	let at = caret;
+	while (at > 0 && /\s/.test(value[at - 1])) at--;
+	while (at > 0 && !/\s/.test(value[at - 1])) at--;
+	return at;
+}
+
 function collapsedEdit(value: string, pos: number): FieldEditResult {
 	const clamped = Math.max(0, Math.min(pos, value.length));
 	return {value, start: clamped, end: clamped, direction: "none"};
@@ -473,9 +517,10 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 			const anchor = backward ? end : start;
 
 			let result: FieldEditResult | null;
-			if (key === "Enter") {
+			if (key === "Enter" || (ctrlKey && key === "j")) {
 				// A newline, inserted like any typed character, replacing the
-				// selection.
+				// selection. A terminal sends line feed for Ctrl+J, which is the
+				// chord that reaches a field whose Enter an application has taken.
 				const next = value.slice(0, start) + "\n" + value.slice(end);
 				const pos = start + 1;
 				result = {value: next, start: pos, end: pos, direction: "none"};
@@ -486,17 +531,37 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 					key === "ArrowDown" ? 1 : -1,
 				);
 				result = fieldSelectionMove(value, anchor, target, shiftKey);
-			} else if (key === "Home" || key === "End") {
+			} else if (
+				key === "Home" ||
+				key === "End" ||
+				(ctrlKey && (key === "a" || key === "e" || key === "k" || key === "u"))
+			) {
 				layoutEngine.calculateLayout();
 				const visual = textareaVisualLines(host, layoutEngine);
 				const line = visual
 					? visual.lines[textareaLineAt(visual.lines, caret)]
 					: null;
-				const target =
-					key === "Home"
-						? (line?.startOffset ?? 0)
-						: (line?.endOffset ?? value.length);
-				result = fieldSelectionMove(value, anchor, target, shiftKey);
+				const lineStart = line?.startOffset ?? 0;
+				const lineEnd = line?.endOffset ?? value.length;
+				if (ctrlKey && key === "k") {
+					result = collapsedEdit(
+						value.slice(0, caret) + value.slice(lineEnd),
+						caret,
+					);
+				} else if (ctrlKey && key === "u") {
+					result = collapsedEdit(
+						value.slice(0, lineStart) + value.slice(caret),
+						lineStart,
+					);
+				} else {
+					const toStart = key === "Home" || key === "a";
+					result = fieldSelectionMove(
+						value,
+						anchor,
+						toStart ? lineStart : lineEnd,
+						shiftKey,
+					);
+				}
 			} else {
 				result = applySharedFieldEdit(host, key, shiftKey, ctrlKey);
 			}
@@ -698,11 +763,18 @@ export function defineUAWidgets(deps: UAWidgetDeps): UAWidgetController {
 			const {start, end, direction} = uaSelectionOf(host);
 			const anchor = direction === "backward" ? end : start;
 
+			const {start: selStart, end: selEnd} = uaSelectionOf(host);
+			const caretAt = direction === "backward" ? selStart : selEnd;
+
 			let result: FieldEditResult | null;
-			if (key === "Home") {
+			if (key === "Home" || (ctrlKey && key === "a")) {
 				result = fieldSelectionMove(value, anchor, 0, shiftKey);
-			} else if (key === "End") {
+			} else if (key === "End" || (ctrlKey && key === "e")) {
 				result = fieldSelectionMove(value, anchor, value.length, shiftKey);
+			} else if (ctrlKey && key === "k") {
+				result = collapsedEdit(value.slice(0, caretAt), caretAt);
+			} else if (ctrlKey && key === "u") {
+				result = collapsedEdit(value.slice(caretAt), 0);
 			} else {
 				result = applySharedFieldEdit(host, key, shiftKey, ctrlKey);
 			}

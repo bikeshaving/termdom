@@ -393,7 +393,7 @@ test("the focused textarea paints its selection as inverse video", async () => {
 	textarea.focus();
 	await nextFrame(dom);
 
-	await type(terminal, "\x01"); // Ctrl+A: select all
+	textarea.setSelectionRange(0, 16);
 	await nextFrame(dom);
 	expect(textarea.selectionStart).toBe(0);
 	expect(textarea.selectionEnd).toBe(16);
