@@ -3420,6 +3420,18 @@ let mutationObserverMicrotaskQueued = false;
 /** The agent's pending mutation observers. */
 const pendingMutationObservers = new Set<MutationObserver>();
 
+/**
+ * The nodes carrying transient registered observers, held until the observers
+ * that would report on them have been notified.
+ *
+ * These are held strongly, where an observer's own node list holds weakly,
+ * because they turn over every checkpoint: constructing a WeakRef keeps its
+ * target alive for the rest of the surrounding job, so a weak entry per node
+ * leaving an observed tree would pin every one of them until the job ends,
+ * which for a render loop driving frames off promises is forever.
+ */
+const transientNodes: Node[] = [];
+
 function queueMutationObserverMicrotask(): void {
 	if (mutationObserverMicrotaskQueued) return;
 	mutationObserverMicrotaskQueued = true;
@@ -3438,6 +3450,24 @@ function notifyMutationObservers(): void {
 	pendingMutationObservers.clear();
 	const signalSet = signalSlots.splice(0, signalSlots.length);
 	for (const observer of notifySet) observer[kNotifyObserver]();
+	// What is left carries transient registrations of observers this checkpoint
+	// had nothing to deliver to. Those last until their observer is next
+	// notified: a node whose observer is already queued again waits here for
+	// that, and the rest go back to being held weakly, which is what the
+	// observer's own node list is for.
+	let write = 0;
+	for (const node of transientNodes) {
+		const list = node[kRegisteredObservers];
+		if (list === null) continue;
+		let queued = false;
+		for (const registered of list) {
+			if (registered.source === null) continue;
+			if (pendingMutationObservers.has(registered.observer)) queued = true;
+			else registered.observer[kObserveNode](node);
+		}
+		if (queued) transientNodes[write++] = node;
+	}
+	transientNodes.length = write;
 	for (const slot of signalSet) {
 		const event = new Event("slotchange", {bubbles: true});
 		dispatch(slot, event);
@@ -3484,7 +3514,12 @@ function appendTransientObserver(node: Node, source: RegisteredObserver): void {
 	}
 	list.push({observer: source.observer, options: source.options, source});
 	registeredObserverCount++;
-	source.observer[kObserveNode](node);
+	// The ancestor walk adds every source of one node in a row, so the node is
+	// already last here whenever it carries more than one transient entry.
+	if (transientNodes[transientNodes.length - 1] !== node) {
+		transientNodes.push(node);
+	}
+	queueMutationObserverMicrotask();
 }
 
 /** Drop the transient entries of a node's list that a predicate names. */
@@ -3654,6 +3689,8 @@ function toStringSequence(value: Iterable<string>): string[] {
 /** An observer of a tree: what it watches, and the records it has to deliver. */
 export class MutationObserver {
 	#callback: MutationCallback;
+	/** The targets observe() named, and the nodes whose transient
+	 * registrations outlived a checkpoint, all weakly held. */
 	#nodes: Array<WeakRef<Node>> = [];
 	#records: MutationRecord[] = [];
 
@@ -3678,7 +3715,7 @@ export class MutationObserver {
 		const list = registeredObserverList(target);
 		for (const registered of list) {
 			if (registered.observer !== this || registered.source !== null) continue;
-			for (const node of this.#liveNodes()) {
+			for (const node of [...this.#liveNodes(), ...transientNodes]) {
 				removeTransientObservers(node, (entry) => entry.source === registered);
 			}
 			registered.options = normalized;
@@ -3690,7 +3727,7 @@ export class MutationObserver {
 	}
 
 	disconnect(): void {
-		for (const node of this.#liveNodes()) {
+		for (const node of [...this.#liveNodes(), ...transientNodes]) {
 			const list = node[kRegisteredObservers];
 			if (list === null) continue;
 			for (let index = list.length - 1; index >= 0; index--) {
@@ -3739,6 +3776,9 @@ export class MutationObserver {
 		this.#records = [];
 		for (const node of this.#liveNodes()) {
 			removeTransientObservers(node, () => true);
+		}
+		for (const node of transientNodes) {
+			removeTransientObservers(node, (entry) => entry.observer === this);
 		}
 		if (records.length === 0) return;
 		try {
@@ -13756,8 +13796,13 @@ function comparePoints(
  * nothing else holds it.
  */
 const liveRanges: Array<WeakRef<Range>> = [];
+let liveRangeCompactAt = 8;
 
 function registerLiveRange(range: Range): void {
+	liveRanges.push(new WeakRef(range));
+	// Dropping the cleared entries costs a walk of the list, so the walk waits
+	// until the list has doubled: registering n ranges stays linear in n.
+	if (liveRanges.length < liveRangeCompactAt) return;
 	let write = 0;
 	for (let read = 0; read < liveRanges.length; read++) {
 		if (liveRanges[read].deref() !== undefined) {
@@ -13765,7 +13810,7 @@ function registerLiveRange(range: Range): void {
 		}
 	}
 	liveRanges.length = write;
-	liveRanges.push(new WeakRef(range));
+	liveRangeCompactAt = Math.max(8, write * 2);
 }
 
 /** Run steps over every live range that is still reachable. */
