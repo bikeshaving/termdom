@@ -1323,16 +1323,6 @@ function prefixWidths(
 }
 
 /**
- * One line of an inline box: where it sits, what it renders, and the range of
- * the text node's raw `data` it renders. The offsets are the fragment's
- * DOM-facing half -- `renderTextFragment` over that range reproduces `text` --
- * and are what `Range` geometry and the painter address the line by.
- *
- * A fragment merged across several text nodes (an element's rects) spans from
- * the first node's start offset to the last node's end offset, which is a range
- * of the run rather than of any one node's data.
- */
-/**
  * One laid-out line of a text node: its box, and the range of the node's raw
  * `data` the line renders. The range begins and ends on a rendered character,
  * so `renderTextFragment` over it reproduces the painted characters.
@@ -1365,6 +1355,15 @@ interface TextFragmentEntry {
 	ord: number;
 }
 
+/**
+ * One line of an inline box as the breaker left it: where it sits, the
+ * processed characters it placed there, and the range of raw `data` those
+ * characters were rendered from.
+ *
+ * A line asked for over an ELEMENT merges the fragments of every text node the
+ * element covers, so its offsets span from the first node's start to the last
+ * node's end -- a range of the run rather than of any one node's data.
+ */
 export interface RectText {
 	rect: DOMRect;
 	text: string;
@@ -2631,21 +2630,6 @@ export class LayoutEngine {
 			}
 		}
 		return lines;
-	}
-
-	/**
-	 * The characters one of this node's line fragments paints. The node's own
-	 * data rendered under its `white-space` -- nothing of the breaker's survives
-	 * into it.
-	 */
-	fragmentText(textNode: Text, fragment: LineFragment): string {
-		return renderTextFragment(
-			textNode.data,
-			whiteSpaceOf(textNode),
-			fragment.startOffset,
-			fragment.endOffset,
-			fragment.visualBase,
-		);
 	}
 
 	/** A zero-width caret rect at a data offset within a text node. */
