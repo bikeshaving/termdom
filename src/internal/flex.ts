@@ -98,12 +98,23 @@ export interface Size {
 	height: number;
 }
 
+/**
+ * What a measure function reports: the size, and whatever else that
+ * measurement produced. A measurement of text also decides where its lines
+ * break, and those lines belong to the size they produced -- so they travel
+ * with it into the layout cache and come back out with it, rather than being
+ * left somewhere for the caller to find.
+ */
+export interface MeasureResult extends Size {
+	payload?: unknown;
+}
+
 export type MeasureFunction = (
 	width: number,
 	widthMode: MeasureMode,
 	height: number,
 	heightMode: MeasureMode,
-) => Size;
+) => MeasureResult;
 
 /**
  * Where an out-of-flow box would have sat had it stayed in flow: the origin of
@@ -385,7 +396,18 @@ interface CachedLayout {
 	ownerHeight: number;
 	width: number;
 	height: number;
+	/** What the measure function produced with this size, if one ran. */
+	payload: unknown;
 }
+
+/**
+ * The payload the measure function reported during the layout of the node
+ * currently being computed, or NO_PAYLOAD when none ran. layoutNode clears it
+ * around each node it computes, so a container -- whose children each clear it
+ * again on their way out -- never picks up a descendant's.
+ */
+const NO_PAYLOAD = Symbol("no payload");
+let measuredPayload: unknown = NO_PAYLOAD;
 
 /** NaN-safe equality: undefined constraints are NaN, and NaN !== NaN. */
 function sameConstraint(a: number, b: number): boolean {
@@ -543,6 +565,19 @@ export class Node {
 		null,
 	);
 	cachedLayout: CachedLayout | null = null;
+
+	/**
+	 * What this node's measure function produced alongside the size it was
+	 * placed at -- the lines a text run was broken into, for whoever paints it.
+	 *
+	 * It is read out of the layout cache, so it always describes the box the
+	 * node currently has: a sizing probe's product goes into that probe's own
+	 * cache slot and is never mistaken for this, and a node whose cached layout
+	 * answered this pass hands back the product of the pass that placed it.
+	 */
+	get measuredPayload(): unknown {
+		return this.cachedLayout ? this.cachedLayout.payload : null;
+	}
 
 	constructor(config: Config = defaultConfig) {
 		this.config = config;
@@ -1228,6 +1263,7 @@ function layoutMeasureNode(
 		innerHeight,
 		heightMode,
 	);
+	measuredPayload = measured.payload ?? null;
 
 	const width =
 		widthMode === MEASURE_MODE_EXACTLY
@@ -3259,6 +3295,7 @@ function layoutNode(
 		node.cachedMeasures.fill(null);
 	}
 
+	measuredPayload = NO_PAYLOAD;
 	layoutNodeImpl(
 		node,
 		availableWidth,
@@ -3269,6 +3306,8 @@ function layoutNode(
 		ownerHeight,
 		performLayout,
 	);
+	const payload = measuredPayload;
+	measuredPayload = NO_PAYLOAD;
 
 	const entry: CachedLayout = {
 		availableWidth,
@@ -3279,6 +3318,9 @@ function layoutNode(
 		ownerHeight,
 		width: node.layout.width,
 		height: node.layout.height,
+		// A pass that consulted no measure function -- every container, and a box
+		// whose size was settled without asking -- has no product to record.
+		payload: payload === NO_PAYLOAD ? null : payload,
 	};
 	if (performLayout) {
 		node.cachedLayout = entry;
