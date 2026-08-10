@@ -411,6 +411,11 @@ export const TERMINAL_ELEMENT_DEFAULTS: Record<
 	dd: {display: "block"},
 	form: {display: "block"},
 	fieldset: {display: "block"},
+	// A disclosure and its summary are both blocks, so the summary owns its
+	// row and the body stacks under it. The marker and the open/closed glyph
+	// are ::before rules in the UA document stylesheet.
+	details: {display: "block"},
+	summary: {display: "block", cursor: "pointer"},
 	figure: {display: "block"},
 	figcaption: {display: "block"},
 	hr: {display: "block", "border-top": "1px solid"},
@@ -742,6 +747,9 @@ export const UA_DOCUMENT_STYLES = `
 	datalist { display: none; }
 	dialog:not([open]) { display: none; }
 	details:not([open]) > :not(summary) { display: none; }
+	details > summary:first-of-type::before { content: "▸ "; }
+	details[open] > summary:first-of-type::before { content: "▾ "; }
+	summary:focus-visible { outline-width: 1px; outline-style: solid; outline-color: #5fafff; }
 	a[href]:focus-visible { background-color: Highlight; color: HighlightText; }
 	button:focus-visible { outline-width: 1px; outline-style: solid; outline-color: #5fafff; }
 `;
