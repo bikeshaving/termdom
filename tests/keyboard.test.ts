@@ -2173,3 +2173,35 @@ test("an onkeydown handler assigned by property runs, and can cancel the edit", 
 
 	dom.dispose();
 });
+
+test("line feed is the Ctrl+J chord, not Enter", async () => {
+	// A terminal sends carriage return for Enter and line feed for Ctrl+J.
+	// Reporting both as Enter leaves an application no way to bind a soft
+	// newline where Enter already means something else.
+	const terminal = new MockProcess({rows: 6, cols: 30});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
+	dom.document.body.innerHTML = `<textarea id="t"></textarea>`;
+	const field = dom.document.getElementById("t") as HTMLTextAreaElement;
+	field.focus();
+	await nextFrame(dom);
+
+	const keys: string[] = [];
+	dom.document.addEventListener("keydown", (event) => {
+		const e = event as KeyboardEvent;
+		keys.push(`${e.key}${e.ctrlKey ? "+ctrl" : ""}`);
+	});
+
+	(terminal.stdin as any).emit("data", Buffer.from("\r"));
+	await new Promise((r) => setTimeout(r, 0));
+	(terminal.stdin as any).emit("data", Buffer.from("\n"));
+	await new Promise((r) => setTimeout(r, 0));
+	await nextFrame(dom);
+
+	expect(keys).toEqual(["Enter", "j+ctrl"]);
+	// Enter inserts a newline in a textarea; the chord does not, as in a browser.
+	expect(field.value).toBe("\n");
+
+	dom.dispose();
+});

@@ -31,8 +31,7 @@ title.className = "title";
 title.textContent = " ch.at";
 const hint = document.createElement("div");
 hint.className = "hint";
-hint.textContent =
-	" ask anything · Enter send · Shift+Enter newline · Esc quit";
+hint.textContent = " ask anything · Enter send · Ctrl+J newline · Esc quit";
 const log = document.createElement("div");
 const prompt = document.createElement("div");
 prompt.className = "prompt";
@@ -134,14 +133,21 @@ async function send(): Promise<void> {
 }
 
 // Capture phase, so preventDefault runs BEFORE the textarea's own keydown and
-// suppresses the newline it would otherwise insert: Enter sends, and Shift+Enter
-// falls through to the textarea to add a line to a multi-line message.
+// suppresses the newline it would otherwise insert: Enter sends the message,
+// and Ctrl+J adds a line to a multi-line one. A terminal cannot report
+// Shift+Enter -- it sends the same byte as Enter -- so the newline lives on the
+// chord it can report.
 document.addEventListener(
 	"keydown",
 	(event: Event) => {
 		const e = event as KeyboardEvent;
 		if (e.key === "Escape" || (e.ctrlKey && e.key === "c")) {
 			term.window.close();
+		} else if (e.ctrlKey && e.key === "j") {
+			e.preventDefault();
+			const at = input.selectionStart ?? input.value.length;
+			input.value = input.value.slice(0, at) + "\n" + input.value.slice(at);
+			input.setSelectionRange(at + 1, at + 1);
 		} else if (e.key === "Enter" && !e.shiftKey) {
 			e.preventDefault();
 			void send();

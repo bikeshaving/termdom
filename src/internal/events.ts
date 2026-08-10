@@ -142,20 +142,14 @@ export function decodeKey(token: string): KeyStroke | null {
 
 	// Ctrl+<letter> arrives as a single raw ASCII control byte (Ctrl+A=0x01
 	// ... Ctrl+Z=0x1A) -- there is no escape sequence, and no way to combine
-	// it with Shift (the terminal only ever sends the one byte). Tab(0x09)
-	// and Enter(0x0A/0x0D) are excluded even though they fall in this range:
-	// a raw terminal genuinely cannot distinguish the physical Enter/Tab keys
-	// from Ctrl+M/Ctrl+I, they are the identical byte, so the named key wins
-	// -- matching every other terminal app. Ctrl+C(0x03) never reaches here:
-	// it is intercepted earlier, unconditionally, for SIGINT.
+	// it with Shift (the terminal only ever sends the one byte). Tab(0x09) and
+	// Enter(0x0D) are excluded even though they fall in this range: those bytes
+	// are what the physical Tab and Enter keys send, indistinguishable from
+	// Ctrl+I and Ctrl+M, so the named key wins. Line feed(0x0A) collides with
+	// no key and stays the Ctrl+J chord. Ctrl+C(0x03) never reaches here: it is
+	// intercepted earlier, unconditionally, for SIGINT.
 	const modifiedArrow = token.match(/^\x1b\[1;(\d+)([ABCDHF])$/);
-	if (
-		charCode >= 1 &&
-		charCode <= 26 &&
-		charCode !== 9 &&
-		charCode !== 10 &&
-		charCode !== 13
-	) {
+	if (charCode >= 1 && charCode <= 26 && charCode !== 9 && charCode !== 13) {
 		keyName = String.fromCharCode(charCode + 96); // 0x01 -> 'a' ... 0x1A -> 'z'
 		keyCode = charCode + 64; // 'A'..'Z', the DOM keyCode for the letter itself
 		ctrlKey = true;
@@ -185,8 +179,11 @@ export function decodeKey(token: string): KeyStroke | null {
 		charCode = 0;
 	} else {
 		switch (token) {
+			// Enter is carriage return. Line feed is the Ctrl+J chord, which a
+			// terminal sends as its control byte like any other letter's, and
+			// which an application binds if it wants a soft newline where Enter
+			// already means something else.
 			case "\r":
-			case "\n":
 				keyName = "Enter";
 				keyCode = 13;
 				charCode = 13;
