@@ -1,21 +1,6 @@
 /**
- * The viewport: where the visible window is looking in the document, and the math that
- * maps a terminal cell back to a document point.
- *
- * TermDOM paints a moving window of the document into a region of the terminal.
- * Three numbers say where that window is:
- *
- * - scrollTop: how far down the document the viewport has scrolled -- the value
- *   `window.scrollY` / `pageYOffset` report.
- * - screenTop: the terminal row the painted region starts at (the command
- *   start), which drifts up as output scrolls into the shell's scrollback.
- * - anchorScrollTop: the fullscreen anchor, since the alternate screen owns
- *   row zero and its geometry is measured from there instead.
- *
- * A plain value object -- pure state and coordinate math, no terminal output
- * and no render loop. The render loop reads its position; callers that move it
- * (scrollBy) trigger their own repaint. Not a "Manager": it conforms to no API,
- * it is the internal source `window.scrollY` happens to read.
+ * Where the visible window is looking in the document, and the mapping between
+ * a terminal cell and a document point.
  */
 export class Viewport {
 	#scrollTop = 0;

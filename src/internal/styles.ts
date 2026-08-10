@@ -1,8 +1,9 @@
 /**
- * CSS System for Terminal DOM
+ * The cascade and the CSSOM: stylesheets, the values an element computes to,
+ * and the object model an author writes through.
  *
- * This module provides a way to override window.getComputedStyle() with terminal-appropriate
- * CSS property resolution. The core TermDOM class uses this to provide a custom CSS implementation.
+ * Nothing below this file decides what an element's style is. Layout and the
+ * painter read what it resolved.
  */
 
 import type {EngineWindow} from "./termdom.js";

@@ -1,3 +1,7 @@
+/**
+ * The screen: the cells the terminal is showing, the cells the next frame
+ * wants, and the shortest escape sequence between them.
+ */
 import {BOX_DRAWING, BorderEdgeStyle} from "./styles.js";
 import {stringWidth} from "./text.js";
 

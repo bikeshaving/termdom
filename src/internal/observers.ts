@@ -1,25 +1,6 @@
 /**
- * ResizeObserver and IntersectionObserver for the terminal.
- *
- * Both are driven the same way: after every layout, the manager measures each
- * observed element and fires a callback when what it watches has changed. That
- * is exactly the information the layout engine already produces each frame, so
- * these are thin -- they read boxes termdom computed anyway.
- *
- * - ResizeObserver watches an element's content-box size. Its headline use here
- *   is the terminal itself resizing: a component can react through the standard
- *   DOM API instead of listening for SIGWINCH.
- * - IntersectionObserver watches whether an element overlaps the root -- by
- *   default the visible cell grid. A terminal has a discrete, exact viewport, so
- *   "on screen" is a clean integer comparison rather than the approximation a
- *   browser makes.
- *
- * These objects are handed to author code as `window.ResizeObserver` and
- * `window.IntersectionObserver`, so their public surface has to be the DOM's and
- * nothing else. The measure hook the manager needs is therefore keyed by a
- * module-private symbol rather than named as a method: `observer.check(host)`
- * would show up in autocomplete, in `Object.keys`, and in any duck-typing
- * check, advertising an operation the DOM has never had.
+ * ResizeObserver and IntersectionObserver, over the boxes layout has already
+ * computed for the frame.
  */
 
 import {type LayoutEngine} from "./layout.js";

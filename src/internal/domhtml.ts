@@ -1,17 +1,6 @@
 /**
- * The HTML Standard's element table: which interface every tag is built
- * through, and the content attributes each interface reflects.
- *
- * This is data, not code. The classes the table names live in dom.ts, and
- * their members are installed from here, because each evaluation of that
- * module is its own realm -- a test that replaces
- * `HTMLDivElement.prototype.align` must not reach the next one -- and a class
- * built in this module would be shared by every realm at once. Immutable
- * tables can be shared; constructors cannot.
- *
- * The members that are not reflections -- an input's value, a form's element
- * list, an anchor's URL decomposition, an activation behavior -- are written
- * out in dom.ts beside the class they belong to.
+ * The HTML element interfaces over the tree: what each tag reflects, and what
+ * it does when activated.
  */
 
 /**

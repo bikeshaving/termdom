@@ -1,3 +1,10 @@
+/**
+ * The box tree: which boxes a document generates, and where they sit on the
+ * cell grid.
+ *
+ * It reads computed styles and produces geometry. Every rect the DOM answers
+ * with, and every cell the painter places, comes from what it computed.
+ */
 import type {EngineWindow} from "./termdom.js";
 import {currentInvalidationEpoch, invalidateStructure} from "./termdom.js";
 import Flex from "./flex.js";

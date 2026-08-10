@@ -1,17 +1,11 @@
 /**
- * The User Agent form widgets: the shadow tree behind <input>, <textarea> and
+ * The user-agent widgets: the closed shadow tree behind <input>, <textarea> and
  * <select>, and the editing that tree renders.
  *
- * A browser's form controls are user-agent widgets: a closed shadow tree the
- * page cannot reach, built from the control's own value and placeholder, and
- * an editing default action on top of it. A widget here is an object beside
- * its control rather than a subclass of it -- a control's state lives in the
- * control, which tells its widget through {@link attachUAWidget} whenever that
- * state moves, and the widget brings the tree back into step.
- *
- * Everything a widget is -- its UA stylesheet, its shadow structure, its
- * reconcile, its geometry -- lives on its class here, so "how a textarea works"
- * is one class, not a trail through the renderer.
+ * A widget is an object beside its control rather than a subclass of it: the
+ * control owns its state and tells its widget when that state moves. What a
+ * widget is -- its stylesheet, its structure, its reconcile, its geometry --
+ * lives on one class, so a control is one place to read.
  */
 
 import {

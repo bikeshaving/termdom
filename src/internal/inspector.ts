@@ -1,6 +1,5 @@
 /**
- * DOM Inspector Module
- * Pure functions to create string representations of DOM objects
+ * String renderings of DOM objects, for debugging.
  */
 
 // ANSI color codes for pretty printing

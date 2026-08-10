@@ -1,19 +1,11 @@
 /**
- * The terminal User Agent stylesheet -- the browser's html.css, terminal
- * edition, and the one home for TermDOM's default styling data.
+ * The user-agent stylesheet and the per-element defaults the cascade resolves
+ * against, including the sheets scoped to the form widgets' shadow trees.
  *
- * It holds the per-element default computed styles (TERMINAL_ELEMENT_DEFAULTS +
- * getElementDefaults), the CSS spec fallbacks and inheritance list the cascade
- * resolves against, the UA DOCUMENT sheet (::selection and the button
- * brackets), and the scoped stylesheets of the form widgets' internal shadow
- * trees. The cascade (styles.ts) and the widgets (widgets.ts) both read from
- * here; it depends only on text + the DOM, so it stays a leaf.
- *
- * The architectural invariant it anchors: no painter emits a terminal attribute
- * that didn't come from a computed style. Even the selection's inverse video is
- * DECLARED here -- Highlight/HighlightText is CSS's spelling of "swap the cell's
- * colors", which the selection painters translate to SGR 7. Delete that rule
- * and selections stop painting; it is load-bearing, not decorative.
+ * It anchors an invariant: no painter emits a terminal attribute that did not
+ * come from a computed style. A selection is inverse video because a rule here
+ * declares Highlight/HighlightText, which is CSS's spelling of swapping a
+ * cell's colors -- load-bearing, not decorative.
  */
 import {CSS_INITIAL_VALUES} from "./cssproperties.js";
 import {stringWidth} from "./text.js";

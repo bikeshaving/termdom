@@ -1,32 +1,9 @@
 /**
- * The DOM Standard's node tree, standalone.
+ * The DOM: the node tree, event dispatch, and the observers over them.
  *
- * This is TermDOM's own implementation of the DOM: Node and its subclasses,
- * the mutation algorithms, attributes, live collections, traversal, the
- * ParentNode/ChildNode mixins, events and their dispatch, mutation observers,
- * HTML parsing and serialization through parse5, and selector matching through
- * nwsapi.
- *
- * Dispatch builds the spec's event path -- one struct per invocation target,
- * each carrying the target a listener there sees -- and walks it twice. The
- * members of that struct that only shadow trees fill in are present and
- * inert, so retargeting has somewhere to go rather than something to replace.
- *
- * A mutation record is queued where the spec queues one, and reaches the
- * observers that asked for it through the registered observer list of every
- * inclusive ancestor of the mutated node. A node carries copies of those
- * registrations out of the tree when it is removed, so the mutations that
- * follow inside it still arrive.
- *
- * The spec's "insertion steps", "removing steps", "adopting steps", "attribute
- * change steps", "children changed steps" and "cloning steps" each exist here
- * as a symbol-keyed hook a subclass overrides and the mutation algorithms call
- * where the spec calls them. Nothing on the public surface names them.
- *
- * Every element is created through the same "create an element" algorithm and
- * looked up in an element-definition registry, so an element carries the shape
- * a custom element needs -- a definition, a state, and lifecycle reactions --
- * whether or not anything ever defines one.
+ * Everything above this file -- the cascade, layout, the painter -- reads a
+ * document through these interfaces and nothing else. The spec's per-node
+ * steps exist here as internal hooks, which is where invalidation attaches.
  */
 
 import {parseFragment, parse as parse5Parse} from "parse5";

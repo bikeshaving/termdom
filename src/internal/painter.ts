@@ -1,3 +1,8 @@
+/**
+ * The paint walk: a document's boxes in paint order, resolved to styled cells.
+ *
+ * It reads the DOM, computed styles and geometry, and writes nothing but cells.
+ */
 import {uaSelectionOf} from "./dom.js";
 import type {EngineWindow} from "./termdom.js";
 import {type LayoutEngine, flowWalker, isPositioned} from "./layout.js";

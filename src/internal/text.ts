@@ -2,18 +2,8 @@
  * The terminal's understanding of a run of text: how wide it is, where its
  * grapheme clusters break, and which direction it flows.
  *
- * Three Unicode algorithms in one leaf, because they are one concern -- a
- * renderer that addresses cells directly has to answer all three before it can
- * place a character:
- *
- * - width (UAX #11 East Asian Width): how many cells a cluster occupies.
- * - grapheme boundaries (UAX #29): where a user-perceived character starts and
- *   ends, so a caret step or a delete moves by a whole emoji, not half a pair.
- * - bidi + shaping (UAX #9 + Arabic contextual forms): the visual order and
- *   letterforms a terminal must be handed, since it will not reorder for us.
- *
- * The width path has a Bun fast path; everything else is pure JS. No internal
- * dependencies -- a foundation leaf.
+ * A renderer that addresses cells has to answer all three before it can place a
+ * character, so they live together, and depend on nothing else.
  */
 
 import bidiFactory from "bidi-js";
