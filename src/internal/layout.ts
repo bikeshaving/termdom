@@ -28,6 +28,7 @@ import {
 	inferParagraphDirection,
 	stringWidth as runtimeStringWidth,
 	toVisualOrder,
+	writeClusterWidths,
 } from "./text.js";
 
 /**
@@ -1233,11 +1234,61 @@ interface ProcessedContent {
 		processedContent?: string;
 	}>;
 	text: string;
+	/**
+	 * Cumulative cell widths over `text`: entry i is the width of text[0..i), so
+	 * any range measures as prefixWidths[end] - prefixWidths[start]. An
+	 * inline-block's whole box sits on its placeholder character, and a leading
+	 * or trailing fragment of a grapheme cluster carries none of the cluster's
+	 * width.
+	 */
+	prefixWidths: Float64Array;
 }
 
 interface BreakPoint {
 	position: number;
 	required: boolean;
+}
+
+/** An inline-block's margin box: what a line has to reserve for it. */
+function inlineBlockWidth(leaf: InlineBlockLeaf): number {
+	return (
+		leaf.contentWidth +
+		leaf.boxModel.paddingLeft +
+		leaf.boxModel.paddingRight +
+		leaf.boxModel.borderLeftWidth +
+		leaf.boxModel.borderRightWidth +
+		leaf.boxModel.marginLeft +
+		leaf.boxModel.marginRight
+	);
+}
+
+/** See ProcessedContent.prefixWidths. */
+function prefixWidths(
+	items: ProcessedContent["items"],
+	text: string,
+): Float64Array {
+	const widths = new Float64Array(text.length + 1);
+	for (const item of items) {
+		if (item.leafNode.type === "text") {
+			// Item offsets address the joined run text, which is what a
+			// measurement range addresses too; a leaf's processed text occupies
+			// exactly its own range of it.
+			writeClusterWidths(text.slice(item.start, item.end), widths, item.start);
+		} else if (item.leafNode.type === "inline-block") {
+			// The placeholder character stands for the whole margin box. A <br>'s
+			// newline stands for nothing and keeps its zero.
+			widths[item.end - 1] = inlineBlockWidth(item.leafNode);
+		}
+	}
+
+	let total = 0;
+	for (let i = 0; i < text.length; i++) {
+		const cell = widths[i];
+		widths[i] = total;
+		total += cell;
+	}
+	widths[text.length] = total;
+	return widths;
 }
 
 export interface RectText {
@@ -1267,8 +1318,17 @@ class InlineBox {
 	head: Node;
 	container: Element;
 	flexNode: FlexTypes.Node | null = null;
-	breakResult: BreakResult | null = null;
 	styledFrom: Element | null = null;
+
+	/**
+	 * The lines this run's last measurement broke it into, read back from the
+	 * layout node they were measured for. They are the product of the size the
+	 * box currently has -- a sizing probe at some other width never becomes what
+	 * the painter sees, and losing the layout node loses them with it.
+	 */
+	get breakResult(): BreakResult | null {
+		return (this.flexNode?.measuredPayload as BreakResult | null) ?? null;
+	}
 
 	constructor(container: Element, head: Node) {
 		this.container = container;
@@ -1300,9 +1360,27 @@ export class LayoutEngine {
 	// Viewport root node - represents terminal dimensions, no DOM element associated
 	declare viewportRootNode: FlexTypes.Node;
 
-	// Public Maps for debugging
+	// Public Map for debugging
 	nodeMap: Map<Node, FlexTypes.Node>;
-	breakResultMap: Map<Node, BreakResult>;
+
+	/**
+	 * Every run currently holding lines, and the lines it holds. Derived on
+	 * demand: the lines live in the layout node that measured them, one per run,
+	 * so a run that leaves the tree stops appearing here without anyone having to
+	 * remember to remove it.
+	 */
+	get breakResultMap(): Map<Node, BreakResult> {
+		const results = new Map<Node, BreakResult>();
+		for (const [node, flexNode] of this.nodeMap) {
+			const lines = flexNode.measuredPayload as BreakResult | null;
+			if (lines) results.set(node, lines);
+		}
+		for (const box of this.#inlineBoxes.values()) {
+			const lines = box.breakResult;
+			if (lines) results.set(box.head, lines);
+		}
+		return results;
+	}
 
 	// The reverse of nodeMap -- always kept in sync with it via #trackNode/
 	// #untrackNode, never written directly elsewhere. Lets paint-time culling
@@ -1345,9 +1423,7 @@ export class LayoutEngine {
 		invalidateStructure();
 		if (this.#terminalReordersText === value) return;
 		this.#terminalReordersText = value;
-		// Every cached line was built for the other contract.
-		this.breakResultMap = new Map();
-		for (const box of this.#inlineBoxes.values()) box.breakResult = null;
+		// Every measured line was built for the other contract.
 		for (const flexNode of this.#measureNodes) flexNode.markDirty();
 	}
 
@@ -1373,7 +1449,6 @@ export class LayoutEngine {
 		this.DOMRect = window.DOMRect;
 		this.rootElement = window.document.documentElement;
 		this.nodeMap = new Map<Node, FlexTypes.Node>();
-		this.breakResultMap = new Map<Node, BreakResult>();
 		this.#domNodeByFlexNode = new Map<FlexTypes.Node, Node>();
 		this.#invalidatedNodes = new Set<Node>();
 		this.#measureNodes = new Set<FlexTypes.Node>();
@@ -1395,12 +1470,9 @@ export class LayoutEngine {
 		this.viewportRootNode.setWidth(width);
 		this.viewportRootNode.setHeight(height);
 
-		// Clear all cached break results so text re-wraps at new width
-		this.breakResultMap.clear();
-		for (const box of this.#inlineBoxes.values()) box.breakResult = null;
-
 		// Mark all leaf nodes (those with measure functions) as dirty
-		// so the engine re-invokes their measure functions with the new available width
+		// so the engine re-invokes their measure functions with the new available
+		// width, dropping the lines measured against the old one
 		for (const flexNode of this.#measureNodes) {
 			flexNode.markDirty();
 		}
@@ -1528,7 +1600,6 @@ export class LayoutEngine {
 			this.#measureNodes.delete(flexNode);
 			flexNode.freeRecursive();
 			this.#untrackNode(node);
-			this.breakResultMap.delete(node);
 			this.#invalidatedNodes.delete(node);
 		}
 	}
@@ -1542,7 +1613,6 @@ export class LayoutEngine {
 
 		// Clear the maps (now regular Maps for debugging)
 		this.nodeMap = new Map();
-		this.breakResultMap = new Map();
 		this.#domNodeByFlexNode = new Map();
 		this.#invalidatedNodes = new Set();
 		this.#measureNodes = new Set();
@@ -2904,7 +2974,6 @@ export class LayoutEngine {
 	#retireInlineBox(box: InlineBox): void {
 		const flexNode = box.flexNode;
 		box.flexNode = null;
-		box.breakResult = null;
 		if (!flexNode) return;
 		flexNode.getParent()?.removeChild(flexNode);
 		this.#measureNodes.delete(flexNode);
@@ -2968,7 +3037,10 @@ export class LayoutEngine {
 		if (box) {
 			return box.head === node ? (box.breakResult ?? undefined) : undefined;
 		}
-		return this.breakResultMap.get(node);
+		return (
+			(this.nodeMap.get(node)?.measuredPayload as BreakResult | undefined) ??
+			undefined
+		);
 	}
 
 	/**
@@ -3345,10 +3417,8 @@ export class LayoutEngine {
 		if (entry instanceof InlineBox) {
 			this.#invalidateBox(entry);
 		} else if (entry) {
-			this.breakResultMap.delete(entry);
-			// Dirty the measure that refills it, always: a clean node keeps its
-			// cached height, so the run lays out at its old size and then paints
-			// nothing, having no break result left to paint FROM.
+			// Dirtying the measure is what drops the lines: they are the product of
+			// a size the layout cache holds, and a clean node keeps both.
 			this.#markRunMeasureDirty(entry);
 		}
 	}
@@ -3359,7 +3429,6 @@ export class LayoutEngine {
 	 * whose measure is the only thing that ever lays that tree out.
 	 */
 	#invalidateBox(box: InlineBox): void {
-		box.breakResult = null;
 		const flexNode = box.flexNode;
 		if (!flexNode) return;
 		flexNode.markDirty();
@@ -3378,8 +3447,7 @@ export class LayoutEngine {
 		for (const entry of this.#containerBoxes(container).boxes) {
 			if (entry instanceof InlineBox) {
 				this.#invalidateBox(entry);
-			} else if (this.breakResultMap.has(entry)) {
-				this.breakResultMap.delete(entry);
+			} else if (this.#runBreakResult(entry)) {
 				this.#markRunMeasureDirty(entry);
 			}
 		}
@@ -3427,9 +3495,7 @@ export class LayoutEngine {
 				this.#invalidateBox(entry);
 				return;
 			}
-			entry.breakResult = null;
 		} else if (entry) {
-			this.breakResultMap.delete(entry);
 			const headFlexNode = this.nodeMap.get(entry);
 			if (headFlexNode && headFlexNode.measureFunc) {
 				headFlexNode.markDirty();
@@ -3444,7 +3510,6 @@ export class LayoutEngine {
 		while (current) {
 			const flexNode = this.nodeMap.get(current);
 			if (flexNode) {
-				this.breakResultMap.delete(current);
 				if (flexNode.measureFunc) {
 					flexNode.markDirty();
 				}
@@ -3478,7 +3543,6 @@ export class LayoutEngine {
 		// children) measures only itself.
 		const container = this.#runContainerOf(entry);
 		if (container) this.#invalidateContainerBoxes(container);
-		this.breakResultMap.delete(entry);
 		this.nodeMap.get(entry)?.markDirty();
 	}
 
@@ -4574,7 +4638,7 @@ export class LayoutEngine {
 		widthMode: FlexTypes.MeasureMode,
 		height: number,
 		heightMode: FlexTypes.MeasureMode,
-	): {width: number; height: number} {
+	): FlexTypes.MeasureResult {
 		// An anonymous box measures from whatever opens it now, which is what
 		// makes losing a head a re-measure rather than a rebuild.
 		const node = box instanceof InlineBox ? box.head : box;
@@ -4589,19 +4653,13 @@ export class LayoutEngine {
 			breakResult.containerWidth = width;
 		}
 
-		// Store the BreakResult for later use by getRects()
-		if (box instanceof InlineBox) {
-			box.breakResult = breakResult;
-		} else {
-			this.breakResultMap.set(box, breakResult);
-		}
-
-		const result = {
+		// The lines go back with the size they produced, so whatever the layout
+		// cache answers with later comes with the lines that answer belongs to.
+		return {
 			width: breakResult.maxLineWidth,
 			height: breakResult.totalHeight,
+			payload: breakResult,
 		};
-
-		return result;
 	}
 
 	/**
@@ -5288,7 +5346,7 @@ export class LayoutEngine {
 			}
 		}
 
-		return {items, text};
+		return {items, text, prefixWidths: prefixWidths(items, text)};
 	}
 
 	/** Does ANY text leaf in the run carry white-space: nowrap? */
@@ -5365,33 +5423,53 @@ export class LayoutEngine {
 		const lines: LineResult[] = [];
 		let currentY = 0;
 		let lineStart = 0;
+		// Break positions ascend, and each line starts where the last one ended,
+		// so the candidates for a line are a suffix of the array: the cursor only
+		// ever moves forward, and no line rescans what an earlier one consumed.
+		let cursor = 0;
+		// The first required break at or after each index, so a line can tell
+		// whether a forced break falls inside the span that fits without walking
+		// the candidates one by one.
+		const nextRequired = new Int32Array(breaks.length + 1);
+		nextRequired[breaks.length] = breaks.length;
+		for (let i = breaks.length - 1; i >= 0; i--) {
+			nextRequired[i] = breaks[i].required ? i : nextRequired[i + 1];
+		}
 
 		while (lineStart < content.text.length) {
 			let bestBreak = lineStart;
 			let bestBreakWidth = 0;
 
-			for (const breakPoint of breaks) {
-				if (breakPoint.position <= lineStart) continue;
+			while (cursor < breaks.length && breaks[cursor].position <= lineStart) {
+				cursor++;
+			}
 
-				const width = this.#measureText(
-					content.text,
-					content.items,
-					lineStart,
-					breakPoint.position,
-				);
-
-				if (width <= maxWidth) {
-					bestBreak = breakPoint.position;
-					bestBreakWidth = width;
+			// Cumulative widths rise with position, so the candidates that fit are
+			// a run starting at the cursor -- bisect for its last member instead of
+			// measuring every one.
+			let low = cursor;
+			let high = breaks.length - 1;
+			let lastFitting = cursor - 1;
+			while (low <= high) {
+				const mid = (low + high) >> 1;
+				if (
+					this.#measureText(content, lineStart, breaks[mid].position) <=
+					maxWidth
+				) {
+					lastFitting = mid;
+					low = mid + 1;
 				} else {
-					break;
+					high = mid - 1;
 				}
+			}
 
-				if (breakPoint.required) {
-					bestBreak = breakPoint.position;
-					bestBreakWidth = width;
-					break;
-				}
+			// A required break inside the fitting run ends the line there, however
+			// much room is left.
+			const required = nextRequired[cursor];
+			const chosen = required <= lastFitting ? required : lastFitting;
+			if (chosen >= cursor) {
+				bestBreak = breaks[chosen].position;
+				bestBreakWidth = this.#measureText(content, lineStart, bestBreak);
 			}
 
 			// No break opportunity fits. Under overflow-wrap: normal the line
@@ -5399,14 +5477,11 @@ export class LayoutEngine {
 			// browser lets a long word escape its box; only break-word/
 			// anywhere/break-all may synthesize a break inside the word.
 			if (bestBreak === lineStart && !breakAnywhere) {
-				const next = breaks.find((b) => b.position > lineStart);
-				bestBreak = next ? next.position : content.text.length;
-				bestBreakWidth = this.#measureText(
-					content.text,
-					content.items,
-					lineStart,
-					bestBreak,
-				);
+				bestBreak =
+					cursor < breaks.length
+						? breaks[cursor].position
+						: content.text.length;
+				bestBreakWidth = this.#measureText(content, lineStart, bestBreak);
 			}
 
 			if (bestBreak === lineStart) {
@@ -5429,12 +5504,7 @@ export class LayoutEngine {
 						continue; // Try again with the new position
 					}
 
-					const width = this.#measureText(
-						content.text,
-						content.items,
-						lineStart,
-						pos,
-					);
+					const width = this.#measureText(content, lineStart, pos);
 					if (width > maxWidth && pos > lineStart + 1) {
 						pos--;
 						break;
@@ -5442,12 +5512,7 @@ export class LayoutEngine {
 					pos++;
 				}
 				bestBreak = Math.min(pos, content.text.length);
-				bestBreakWidth = this.#measureText(
-					content.text,
-					content.items,
-					lineStart,
-					bestBreak,
-				);
+				bestBreakWidth = this.#measureText(content, lineStart, bestBreak);
 			}
 
 			const lineNodes = this.#getNodesInRange(
@@ -5492,42 +5557,9 @@ export class LayoutEngine {
 		return lines;
 	}
 
-	#measureText(
-		text: string,
-		items: ProcessedContent["items"],
-		start: number,
-		end: number,
-	): number {
-		let width = 0;
-
-		for (const item of items) {
-			if (item.start >= end || item.end <= start) continue;
-
-			const itemStart = Math.max(item.start, start);
-			const itemEnd = Math.min(item.end, end);
-
-			if (item.leafNode.type === "text") {
-				const portion = text.slice(itemStart, itemEnd);
-				width += runtimeStringWidth(portion);
-			} else if (item.leafNode.type === "inline-block") {
-				// Only count inline-block width if we're measuring its full range
-				if (itemStart === item.start && itemEnd === item.end) {
-					const blockWidth =
-						item.leafNode.contentWidth +
-						item.leafNode.boxModel.paddingLeft +
-						item.leafNode.boxModel.paddingRight +
-						item.leafNode.boxModel.borderLeftWidth +
-						item.leafNode.boxModel.borderRightWidth +
-						item.leafNode.boxModel.marginLeft +
-						item.leafNode.boxModel.marginRight;
-					width += blockWidth;
-				} else {
-					// Partial inline-block measurement not supported
-				}
-			}
-		}
-
-		return width;
+	/** The width of text[start..end) of a run, in terminal cells. */
+	#measureText(content: ProcessedContent, start: number, end: number): number {
+		return content.prefixWidths[end] - content.prefixWidths[start];
 	}
 
 	/**
@@ -5619,14 +5651,7 @@ export class LayoutEngine {
 						processedText: portion,
 					});
 				} else if (item.leafNode.type === "inline-block") {
-					width =
-						item.leafNode.contentWidth +
-						item.leafNode.boxModel.paddingLeft +
-						item.leafNode.boxModel.paddingRight +
-						item.leafNode.boxModel.borderLeftWidth +
-						item.leafNode.boxModel.borderRightWidth +
-						item.leafNode.boxModel.marginLeft +
-						item.leafNode.boxModel.marginRight;
+					width = inlineBlockWidth(item.leafNode);
 					// Extract text content from the inline-block's breakResult
 					let processedText = "";
 					if (item.leafNode.breakResult) {

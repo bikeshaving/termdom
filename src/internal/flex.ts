@@ -98,12 +98,23 @@ export interface Size {
 	height: number;
 }
 
+/**
+ * What a measure function reports: the size, and whatever else that
+ * measurement produced. A measurement of text also decides where its lines
+ * break, and those lines belong to the size they produced -- so they travel
+ * with it into the layout cache and come back out with it, rather than being
+ * left somewhere for the caller to find.
+ */
+export interface MeasureResult extends Size {
+	payload?: unknown;
+}
+
 export type MeasureFunction = (
 	width: number,
 	widthMode: MeasureMode,
 	height: number,
 	heightMode: MeasureMode,
-) => Size;
+) => MeasureResult;
 
 /**
  * Where an out-of-flow box would have sat had it stayed in flow: the origin of
@@ -385,7 +396,18 @@ interface CachedLayout {
 	ownerHeight: number;
 	width: number;
 	height: number;
+	/** What the measure function produced with this size, if one ran. */
+	payload: unknown;
 }
+
+/**
+ * The payload the measure function reported during the layout of the node
+ * currently being computed, or NO_PAYLOAD when none ran. layoutNode clears it
+ * around each node it computes, so a container -- whose children each clear it
+ * again on their way out -- never picks up a descendant's.
+ */
+const NO_PAYLOAD = Symbol("no payload");
+let measuredPayload: unknown = NO_PAYLOAD;
 
 /** NaN-safe equality: undefined constraints are NaN, and NaN !== NaN. */
 function sameConstraint(a: number, b: number): boolean {
@@ -408,6 +430,87 @@ function constraintsMatch(
 		sameConstraint(cache.availableHeight, availableHeight) &&
 		sameConstraint(cache.ownerWidth, ownerWidth) &&
 		sameConstraint(cache.ownerHeight, ownerHeight)
+	);
+}
+
+/**
+ * Whether one axis of a cached SIZING answer still answers a new query, by
+ * Yoga's rules (yoga/algorithm/Cache.cpp, canUseCachedMeasurement). Beyond an
+ * identical constraint, three offers are answered by a size already computed:
+ *
+ *  - an EXACTLY offer of the size the node last reported: it was asked to be
+ *    that big and had already chosen to be;
+ *  - an AT_MOST bound over an answer computed under no bound at all -- the
+ *    natural size fits inside the bound, so the bound changes nothing;
+ *  - a TIGHTER AT_MOST bound than the one already answered, with the answer
+ *    still inside it.
+ *
+ * Each of these says the node's size under the new offer equals the size it
+ * already has, which is all a sizing pass asks for. It says nothing about the
+ * INTERNAL arrangement that produced it, so it holds for sizing answers only:
+ * a full layout placed children (and broke text into lines) against exact
+ * constraints, and a differently-shaped offer may place them elsewhere.
+ */
+function sizeStillAnswers(
+	cachedMode: MeasureMode,
+	cachedAvailable: number,
+	cachedComputed: number,
+	mode: MeasureMode,
+	available: number,
+): boolean {
+	if (cachedMode === mode && sameConstraint(cachedAvailable, available)) {
+		return true;
+	}
+	if (mode === MEASURE_MODE_EXACTLY && available === cachedComputed) {
+		return true;
+	}
+	if (mode === MEASURE_MODE_AT_MOST) {
+		if (cachedMode === MEASURE_MODE_UNDEFINED) {
+			return cachedComputed <= available;
+		}
+		if (cachedMode === MEASURE_MODE_AT_MOST) {
+			return cachedAvailable > available && cachedComputed <= available;
+		}
+	}
+	return false;
+}
+
+/**
+ * A min-content query: an upper bound of no room at all, which asks the box for
+ * the width it cannot go below.
+ */
+function isMinContent(mode: MeasureMode, available: number): boolean {
+	return mode === MEASURE_MODE_AT_MOST && available === 0;
+}
+
+const CACHE_SLOT_COUNT = 9;
+
+/**
+ * Which slot of the sizing cache holds the answer to a query, chosen by the
+ * query's SHAPE -- which axes are fixed, and whether an open axis is asking for
+ * min-content (Taffy's, src/tree/cache.rs compute_cache_slot).
+ *
+ * A shape only ever displaces its own kind, so the probes one pass makes of the
+ * same child cannot knock each other out: a min-content probe never lands where
+ * the max-content answer lives, and neither lands on the sizing answer for a
+ * fixed box.
+ */
+function cacheSlot(
+	availableWidth: number,
+	availableHeight: number,
+	widthMode: MeasureMode,
+	heightMode: MeasureMode,
+): number {
+	const knownWidth = widthMode === MEASURE_MODE_EXACTLY;
+	const knownHeight = heightMode === MEASURE_MODE_EXACTLY;
+	if (knownWidth && knownHeight) return 0;
+	if (knownWidth)
+		return 1 + (isMinContent(heightMode, availableHeight) ? 1 : 0);
+	if (knownHeight) return 3 + (isMinContent(widthMode, availableWidth) ? 1 : 0);
+	return (
+		5 +
+		(isMinContent(widthMode, availableWidth) ? 2 : 0) +
+		(isMinContent(heightMode, availableHeight) ? 1 : 0)
 	);
 }
 
@@ -448,18 +551,33 @@ export class Node {
 	// when this is 0, which is what lets paint-time culling skip straight to
 	// the visible range instead of visiting every child to rule it out.
 	unstackedChildCount = 0;
-	// Layout caches: the constraints of the last sizing pass and the last full
+	// Layout caches: the constraints of the last sizing passes and the last full
 	// layout pass, with the sizes they produced. A clean node asked again under
-	// identical constraints restores its size and skips its whole subtree -- so
-	// a one-line edit relays out its ancestor chain while every clean sibling
-	// returns in O(1). The ring holds 8 sizing answers because one placing
-	// pass probes a text child under as many as 5 distinct constraint pairs
-	// (flex basis, auto minimum, the placing probes); a smaller ring evicts
-	// this frame what the next frame asks for first, so a large list
-	// re-measures every clean row on every keystroke. Invalidation is the dirty flag,
-	// which every mutation path already sets on the way in.
-	cachedMeasures: CachedLayout[] = [];
+	// constraints it has already answered restores its size and skips its whole
+	// subtree -- so a one-line edit relays out its ancestor chain while every
+	// clean sibling returns in O(1). Sizing answers are held one per query SHAPE
+	// (see cacheSlot), so the several probes one placing pass makes of the same
+	// child -- flex basis, automatic minimum, the placing probe -- each keep
+	// their own slot and none displaces the answer the next probe wants.
+	// Invalidation is the dirty flag, which every mutation path already sets on
+	// the way in.
+	cachedMeasures: Array<CachedLayout | null> = new Array(CACHE_SLOT_COUNT).fill(
+		null,
+	);
 	cachedLayout: CachedLayout | null = null;
+
+	/**
+	 * What this node's measure function produced alongside the size it was
+	 * placed at -- the lines a text run was broken into, for whoever paints it.
+	 *
+	 * It is read out of the layout cache, so it always describes the box the
+	 * node currently has: a sizing probe's product goes into that probe's own
+	 * cache slot and is never mistaken for this, and a node whose cached layout
+	 * answered this pass hands back the product of the pass that placed it.
+	 */
+	get measuredPayload(): unknown {
+		return this.cachedLayout ? this.cachedLayout.payload : null;
+	}
 
 	constructor(config: Config = defaultConfig) {
 		this.config = config;
@@ -1145,6 +1263,7 @@ function layoutMeasureNode(
 		innerHeight,
 		heightMode,
 	);
+	measuredPayload = measured.payload ?? null;
 
 	const width =
 		widthMode === MEASURE_MODE_EXACTLY
@@ -3126,16 +3245,35 @@ function layoutNode(
 		) {
 			hit = node.cachedLayout;
 		} else if (!performLayout) {
+			// Margins are outside the size a measurement answers with, so both the
+			// offer and the remembered offer come down to their content side
+			// before they are compared.
+			const marginRow = marginForAxis(node, FLEX_DIRECTION_ROW, ownerWidth);
+			const marginColumn = marginForAxis(
+				node,
+				FLEX_DIRECTION_COLUMN,
+				ownerWidth,
+			);
 			for (const cached of node.cachedMeasures) {
 				if (
-					constraintsMatch(
-						cached,
-						availableWidth,
-						availableHeight,
+					cached !== null &&
+					sameConstraint(cached.ownerWidth, ownerWidth) &&
+					sameConstraint(cached.ownerHeight, ownerHeight) &&
+					cached.width >= 0 &&
+					cached.height >= 0 &&
+					sizeStillAnswers(
+						cached.widthMode,
+						cached.availableWidth - marginRow,
+						cached.width,
 						widthMode,
+						availableWidth - marginRow,
+					) &&
+					sizeStillAnswers(
+						cached.heightMode,
+						cached.availableHeight - marginColumn,
+						cached.height,
 						heightMode,
-						ownerWidth,
-						ownerHeight,
+						availableHeight - marginColumn,
 					)
 				) {
 					hit = cached;
@@ -3154,9 +3292,10 @@ function layoutNode(
 	// slots before recomputing so stale entries cannot answer later queries.
 	if (node.dirty) {
 		node.cachedLayout = null;
-		node.cachedMeasures.length = 0;
+		node.cachedMeasures.fill(null);
 	}
 
+	measuredPayload = NO_PAYLOAD;
 	layoutNodeImpl(
 		node,
 		availableWidth,
@@ -3167,6 +3306,8 @@ function layoutNode(
 		ownerHeight,
 		performLayout,
 	);
+	const payload = measuredPayload;
+	measuredPayload = NO_PAYLOAD;
 
 	const entry: CachedLayout = {
 		availableWidth,
@@ -3177,15 +3318,16 @@ function layoutNode(
 		ownerHeight,
 		width: node.layout.width,
 		height: node.layout.height,
+		// A pass that consulted no measure function -- every container, and a box
+		// whose size was settled without asking -- has no product to record.
+		payload: payload === NO_PAYLOAD ? null : payload,
 	};
 	if (performLayout) {
 		node.cachedLayout = entry;
 	} else {
-		// Flex asks the same node under several constraint pairs per pass (a
-		// measuring probe and a placing probe, sometimes more); keep a small
-		// ring of answers so alternating probes both hit next frame.
-		if (node.cachedMeasures.length >= 8) node.cachedMeasures.shift();
-		node.cachedMeasures.push(entry);
+		node.cachedMeasures[
+			cacheSlot(availableWidth, availableHeight, widthMode, heightMode)
+		] = entry;
 	}
 	node.dirty = false;
 }

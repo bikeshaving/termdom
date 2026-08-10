@@ -2785,6 +2785,36 @@ test("overflow-wrap: break-word wraps the long word inside the box", async () =>
 	dom.dispose();
 });
 
+test("a flex item that shrank paints the lines its own width was broken to", async () => {
+	// The row narrows, and the first item -- which was already down to its
+	// automatic minimum, its longest word -- keeps exactly the box it had. Its
+	// layout is therefore answered from cache, while the sizing probes that pass
+	// makes of it are answered at the row's full width. The lines it paints are
+	// the ones its own 4-cell box was broken to, not the ones a probe asked for.
+	const terminal = new MockProcess({rows: 8, cols: 30});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	document.body.innerHTML =
+		`<div id="row" style="display:flex;width:24ch">` +
+		`<div id="a">aaaa bbbb cccc dddd eeee</div>` +
+		`<div id="b" style="flex-shrink:0">wwww xxxx yyyy zzzz</div>` +
+		`</div>`;
+	await nextFrame(dom);
+
+	const row = document.getElementById("row")!;
+	row.style.width = "17ch";
+	await nextFrame(dom);
+
+	const painted = terminal
+		.getPlainText()
+		.split("\n")
+		.slice(0, 5)
+		.map((line) => line.slice(0, 4));
+	expect(painted).toEqual(["aaaa", "bbbb", "cccc", "dddd", "eeee"]);
+
+	dom.dispose();
+});
+
 test("an empty inline element measures zero, not its container's width", async () => {
 	// A pure inline element with no text has no inline box of its own; getRect
 	// used to fall through to the layout node and report the containing block's

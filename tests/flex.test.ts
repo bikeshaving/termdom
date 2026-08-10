@@ -671,3 +671,72 @@ describe("automatic minimum size (css-flexbox-1 §4.5)", () => {
 		expect(rect(wide).width).toBe(15);
 	});
 });
+
+describe("what a measurement produced, not only how big it was", () => {
+	// A measure function reports more than a size: a text measurement also
+	// decides where the lines break, and those lines are what gets painted. They
+	// belong to the size they produced, and travel with it through the cache.
+	const WORDS = ["aaaa", "bbbb", "cccc", "dddd", "eeee"];
+
+	/** Greedy line breaking, the rule a terminal text run follows. */
+	function breakWords(limit: number): string[] {
+		const lines: string[] = [];
+		let current = "";
+		for (const word of WORDS) {
+			const candidate = current ? `${current} ${word}` : word;
+			if (candidate.length > limit && current) {
+				lines.push(current);
+				current = word;
+			} else {
+				current = candidate;
+			}
+		}
+		if (current) lines.push(current);
+		return lines;
+	}
+
+	function textItem(parent: Node): Node {
+		const item = box(parent);
+		item.setMeasureFunc((width, widthMode) => {
+			const limit =
+				widthMode === Flex.MEASURE_MODE_UNDEFINED
+					? Number.MAX_SAFE_INTEGER
+					: width;
+			const lines = breakWords(limit);
+			return {
+				width: Math.max(...lines.map((line) => line.length)),
+				height: lines.length,
+				payload: lines,
+			};
+		});
+		return item;
+	}
+
+	test("an item that shrank holds the lines its own width was broken to", () => {
+		// Two text items in a 24-cell row, then the same row at 17. The first item
+		// shrinks to its automatic minimum -- its longest word, 4 -- in both, and
+		// nothing about the item itself changes between the passes, so its layout
+		// is answered from cache the second time. The sizing probes the second
+		// pass makes of it are answered at other widths (the row's whole 17 among
+		// them) and are no part of the box it ends up with.
+		const root = node();
+		root.setFlexDirection(Flex.FLEX_DIRECTION_ROW);
+		root.setWidth(24);
+
+		const shrinking = textItem(root);
+		shrinking.setFlexGrow(1);
+		const fixed = textItem(root);
+		fixed.setFlexShrink(0);
+
+		root.calculateLayout(NaN, NaN);
+		expect(rect(shrinking).width).toBe(4);
+		expect(shrinking.measuredPayload).toEqual(breakWords(4));
+
+		root.setWidth(17);
+		root.calculateLayout(NaN, NaN);
+
+		// Four cells wide: one word per line, and that is what it holds.
+		expect(rect(shrinking).width).toBe(4);
+		expect(shrinking.measuredPayload).toEqual(breakWords(4));
+	});
+});
