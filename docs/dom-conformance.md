@@ -20,10 +20,10 @@ browsing context.
 - Test files in the suites: 1159
 - Reference tests (no testharness, scored by pixels): 52
 - Excluded, each with its reason below: 370
-- Files whose harness completed: 627
-- Files whose harness did not complete: 110
-- Subtests passed: 94804
-- Subtests failed: 1540
+- Files whose harness completed: 629
+- Files whose harness did not complete: 108
+- Subtests passed: 94807
+- Subtests failed: 1537
 
 ## Exclusions
 
@@ -1184,7 +1184,7 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 | shadow-dom/capturing-and-bubbling-event-listeners-across-shadow-trees.html | OK | 5 | 0 |
 | shadow-dom/declarative/declarative-after-attachshadow.html | EXCLUDED (requires-script-execution: a script inside the document attaches a shadow root before the parser reaches the declarative one) | 0 | 0 |
 | shadow-dom/declarative/declarative-parser-interaction.html | EXCLUDED (requires-script-execution: the case is what a script sees while the parser is still inside the template) | 0 | 0 |
-| shadow-dom/declarative/declarative-shadow-dom-attachment.html | TIMEOUT | 654 | 0 |
+| shadow-dom/declarative/declarative-shadow-dom-attachment.html | OK | 654 | 0 |
 | shadow-dom/declarative/declarative-shadow-dom-available-to-element-internals.html | TIMEOUT | 0 | 0 |
 | shadow-dom/declarative/declarative-shadow-dom-basic.html | OK | 22 | 0 |
 | shadow-dom/declarative/declarative-shadow-dom-opt-in.html | EXCLUDED (requires-script-execution: the opt-in is read by a script the parser runs) | 0 | 0 |
@@ -1197,7 +1197,7 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 | shadow-dom/declarative/declarative-shadow-dom-write-to-iframe.html | EXCLUDED (requires-browsing-context: the markup is written into a frame's document) | 0 | 0 |
 | shadow-dom/declarative/declarative-with-disabled-shadow.html | EXCLUDED (requires-script-execution: the definition that disables shadow roots is registered by a script the parser runs) | 0 | 0 |
 | shadow-dom/declarative/gethtml-ordering.html | EXCLUDED (requires-script-execution: the serialization order is read by a script the parser runs mid-document) | 0 | 0 |
-| shadow-dom/declarative/gethtml.html | TIMEOUT | 6908 | 0 |
+| shadow-dom/declarative/gethtml.html | OK | 6908 | 0 |
 | shadow-dom/declarative/innerhtml-before-closing-tag.html | EXCLUDED (requires-script-execution: innerHTML is set by a script the parser runs before the closing tag) | 0 | 0 |
 | shadow-dom/declarative/innerhtml-on-ordinary-template.html | EXCLUDED (requires-script-execution: the fixture is named by a script the parser runs mid-document) | 0 | 0 |
 | shadow-dom/declarative/move-template-before-closing-tag.html | EXCLUDED (requires-script-execution: the template is moved by a script the parser runs before the closing tag) | 0 | 0 |
@@ -1503,12 +1503,12 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 | custom-elements/form-associated/ElementInternals-submit-behavior-dialog.tentative.html | EXCLUDED (not-a-standard: HTMLSubmitButtonBehavior and the behaviors option on attachInternals are a proposal, filed under tentative in the suite) | 0 | 0 |
 | custom-elements/form-associated/ElementInternals-submit-behavior.tentative.html | EXCLUDED (not-a-standard: HTMLSubmitButtonBehavior and the behaviors option on attachInternals are a proposal, filed under tentative in the suite) | 0 | 0 |
 | custom-elements/form-associated/ElementInternals-target-element-is-held-strongly.html | OK | 1 | 0 |
-| custom-elements/form-associated/ElementInternals-validation.html | OK | 10 | 4 |
+| custom-elements/form-associated/ElementInternals-validation.html | OK | 11 | 3 |
 | custom-elements/form-associated/disabled-delegatesFocus.html | OK | 0 | 1 |
 | custom-elements/form-associated/fieldset-elements.html | OK | 0 | 1 |
 | custom-elements/form-associated/focusability.html | OK | 0 | 1 |
-| custom-elements/form-associated/form-associated-callback.html | OK | 1 | 4 |
-| custom-elements/form-associated/form-disabled-callback.html | OK | 1 | 9 |
+| custom-elements/form-associated/form-associated-callback.html | OK | 2 | 3 |
+| custom-elements/form-associated/form-disabled-callback.html | OK | 2 | 8 |
 | custom-elements/form-associated/form-elements-namedItem.html | OK | 0 | 3 |
 | custom-elements/form-associated/form-reset-callback.html | OK | 2 | 1 |
 | custom-elements/form-associated/label-delegatesFocus.html | TIMEOUT | 0 | 0 |
@@ -3542,7 +3542,6 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 ### custom-elements/form-associated/ElementInternals-validation.html
 
-- willValidate: assert_true: FIELDSET becomes enabled expected true got false
 - "anchor" argument of setValidity(): assert_throws_dom: Not a descendant function "() => {
 - Custom control affects validation at the owner form: form.checkValidity is not a function. (In 'form.checkValidity()', 'form.checkValidity' is undefined)
 - Custom control affects :valid :invalid for FORM and FIELDSET: assert_true: expected true got false
@@ -3563,7 +3562,6 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 
 - Associate by parser, customized at element creation: assert_equals: fieldset.elements expected (object) Element node <pre-defined id="pd1"></pre-defined> but got (undefined) undefined
 - Parsed, connected, then upgraded: assert_equals: form.elements.length expected 3 but got 2
-- Updating "form" content attribute: assert_array_equals: lengths differ, expected array [Element node <form id="form1"></form>] length 1, got [] length 0
 - Updating "id" attribute of form element: undefined is not an object (evaluating 'document.forms')
 
 ### custom-elements/form-associated/form-disabled-callback.html
@@ -3571,7 +3569,6 @@ These pass their subtests but their harness times out: each is a 250-million-ite
 - Adding/removing disabled content attribute: assert_true: expected true got false
 - Relationship with FIELDSET: assert_true: expected true got false
 - A disabled form-associated custom element should not submit an entry for it: promise_test: Unhandled rejection with value: object "TypeError: document.getElementsByName is not a function. (In 'document.getElementsByName(frameName)', 'document.getElementsByName' is undefined)"
-- Disabled attribute affects focus-capability: assert_not_equals: got disallowed value Element node <my-control tabindex="0" disabled=""></my-control>
 - Upgrading an element with disabled content attribute: assert_array_equals: value is undefined, expected array
 - Toggling "disabled" attribute on a custom element inside disabled <fieldset> does not trigger a callback: assert_array_equals: value is undefined, expected array
 - Toggling "disabled" attribute on a <fieldset> does not trigger a callback on disabled custom element descendant: assert_array_equals: value is undefined, expected array
