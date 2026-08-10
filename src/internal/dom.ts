@@ -320,6 +320,7 @@ const kDocument = Symbol("node document");
 const kChildNodes = Symbol("childNodes");
 const kChildren = Symbol("children");
 const kCollectionCaches = Symbol("collection caches");
+const kLiveLists = Symbol("live collections this node is the root of");
 const kHost = Symbol("host");
 const kRegisteredObservers = Symbol("registered observer list");
 const kShadowRoot = Symbol("shadow root");
@@ -2254,49 +2255,49 @@ function reportError(error: unknown): void {
 let treeVersion = 0;
 
 const kSync = Symbol("resynchronize own properties");
-const kListRoot = Symbol("the node a collection lists under");
 
 interface Materializable {
 	[kSync](): void;
-	/**
-	 * The node this collection lists the descendants of, or null when it
-	 * lists something no node contains.
-	 */
-	[kListRoot](): Node | null;
 }
 
 /**
- * The live collections that have materialized own properties.
+ * The live collections that have materialized own properties and list
+ * something no node contains.
  *
  * A collection's indexed and named properties are own properties rather than
  * proxy traps, and those are observable without reading the collection:
  * Object.getOwnPropertyNames answers with them, and an assignment to an index
  * is a no-op only where the index is defined. A collection that has ever been
- * read is held here so that a change to a tree's shape can resynchronize it.
+ * read is therefore resynchronized when a tree it lists changes shape. One
+ * that lists a node's descendants is held by that node, under kLiveLists; the
+ * rootless few are held here.
  */
-const materialized: Array<{
-	ref: WeakRef<Materializable>;
-	document: Document | null;
-}> = [];
-let materializedCompactAt = 8;
+const rootlessMaterialized: Array<WeakRef<Materializable>> = [];
+let rootlessCompactAt = 8;
 
 function registerMaterialized(
 	collection: Materializable,
 	owner: Node | null,
 ): void {
-	materialized.push({
-		ref: new WeakRef(collection),
-		document: owner === null ? null : owner[kDocument],
-	});
-	if (materialized.length >= materializedCompactAt) {
+	if (owner !== null) {
+		const held = owner[kLiveLists];
+		if (held === null) {
+			owner[kLiveLists] = new Set([collection]);
+		} else {
+			held.add(collection);
+		}
+		return;
+	}
+	rootlessMaterialized.push(new WeakRef(collection));
+	if (rootlessMaterialized.length >= rootlessCompactAt) {
 		let write = 0;
-		for (let read = 0; read < materialized.length; read++) {
-			if (materialized[read].ref.deref() !== undefined) {
-				materialized[write++] = materialized[read];
+		for (let read = 0; read < rootlessMaterialized.length; read++) {
+			if (rootlessMaterialized[read].deref() !== undefined) {
+				rootlessMaterialized[write++] = rootlessMaterialized[read];
 			}
 		}
-		materialized.length = write;
-		materializedCompactAt = Math.max(8, write * 2);
+		rootlessMaterialized.length = write;
+		rootlessCompactAt = Math.max(8, write * 2);
 	}
 }
 
@@ -2312,23 +2313,24 @@ function bumpVersion(): void {
  * A change to the shape of a tree can move any collection over that tree, and
  * none of them can rule the change out from what it holds, so each one that
  * has materialized own properties recomputes here. A collection lists the
- * descendants of one node, so the ones this reaches are the ones whose node
- * contains the change: the rest hold what they held, and their own properties
- * are already exact. This is what keeps the document's collections out of the
- * trees a document composes but does not contain -- a subtree being built
- * before it is inserted, a shadow tree, the node a pseudo-element renders
- * from.
+ * descendants of one node, and is held by that node, so walking the change's
+ * inclusive ancestors reaches exactly the collections whose node contains it:
+ * the rest hold what they held, and their own properties are already exact.
+ * This is what keeps the document's collections out of the trees a document
+ * composes but does not contain -- a subtree being built before it is
+ * inserted, a shadow tree, the node a pseudo-element renders from -- and what
+ * keeps a tree that has been discarded from costing anything at all.
  */
-function bumpTreeVersion(document: Document, point: Node): void {
+function bumpTreeVersion(_document: Document, point: Node): void {
 	treeVersion++;
-	for (let i = 0; i < materialized.length; i++) {
-		const entry = materialized[i];
-		if (entry.document !== null && entry.document !== document) continue;
-		const collection = entry.ref.deref();
-		if (collection === undefined) continue;
-		const root = rootMethod.call(collection);
-		if (root !== null && !isInclusiveAncestor(root, point)) continue;
-		syncMethod.call(collection);
+	for (let node: Node | null = point; node !== null; node = node[kParent]) {
+		const held = node[kLiveLists];
+		if (held === null) continue;
+		for (const collection of held) syncMethod.call(collection);
+	}
+	for (let i = 0; i < rootlessMaterialized.length; i++) {
+		const collection = rootlessMaterialized[i].deref();
+		if (collection !== undefined) syncMethod.call(collection);
 	}
 }
 
@@ -2396,6 +2398,7 @@ export class Node extends EventTarget {
 	[kNext]: Node | null = null;
 	[kDocument]: Document;
 	[kChildNodes]: NodeList | null = null;
+	[kLiveLists]: Set<Materializable> | null = null;
 	[kSerial]: number = ++nodeSerial;
 	[kRegisteredObservers]: RegisteredObserver[] | null = null;
 
@@ -3919,10 +3922,6 @@ abstract class LiveList implements Materializable {
 		return this.#items;
 	}
 
-	[kListRoot](): Node | null {
-		return this.#owner;
-	}
-
 	/**
 	 * Bring the collection back in step with an attribute that changed.
 	 *
@@ -3984,9 +3983,6 @@ const ensureMethod = (
 const syncMethod = (
 	LiveList.prototype as unknown as Record<symbol, () => void>
 )[kSync];
-const rootMethod = (
-	LiveList.prototype as unknown as Record<symbol, () => Node | null>
-)[kListRoot];
 
 export class NodeList extends LiveList {
 	declare forEach: (
