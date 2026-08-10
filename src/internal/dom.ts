@@ -412,6 +412,12 @@ interface DispatchState {
 	canceled: boolean;
 	inPassiveListener: boolean;
 	trusted: boolean;
+	/**
+	 * Whether the event this belongs to is a platform event rather than one of
+	 * this DOM's, whose flags a listener sets on the platform half: dispatch
+	 * reads them back off the event after every listener it calls.
+	 */
+	foreign: boolean;
 }
 
 /**
@@ -453,6 +459,43 @@ function toDictionary<T extends object>(value: unknown, what: string): T {
 }
 
 /**
+ * The platform's event class, which the events here extend.
+ *
+ * An event constructed here is an instance of the global one, and an event
+ * constructed from the global one dispatches through this DOM: application
+ * code that reaches for the bare `Event` or `CustomEvent` global is holding
+ * an object both sides accept.
+ */
+const HostEvent = globalThis.Event as unknown as {
+	new (type: string, eventInitDict?: EventInit): HostEventInstance;
+	prototype: HostEventInstance;
+};
+
+/**
+ * The platform event surface this DOM's events inherit.
+ *
+ * The four members a dispatch owns are dropped: they are typed against the
+ * platform's own event target, and the event targets here are this DOM's.
+ */
+interface HostEventInstance
+	extends Omit<
+		globalThis.Event,
+		| "target"
+		| "srcElement"
+		| "currentTarget"
+		| "composedPath"
+		| "stopPropagation"
+		| "stopImmediatePropagation"
+		| "preventDefault"
+		| "initEvent"
+	> {
+	stopPropagation(): void;
+	stopImmediatePropagation(): void;
+	preventDefault(): void;
+	initEvent(type: string, bubbles?: boolean, cancelable?: boolean): void;
+}
+
+/**
  * isTrusted is one accessor shared by every event, installed as an own
  * property of each: the interface declares it unforgeable, so it is not on
  * the prototype and cannot be redefined away.
@@ -467,8 +510,22 @@ const isTrustedProperty: PropertyDescriptor = {
 	configurable: false,
 };
 
+/**
+ * Whether the platform's event constructor installs isTrusted itself, as an
+ * own property no one can redefine. Where it does, that property is the one
+ * every event carries and it reads false; where it does not, the constructor
+ * here installs the accessor above.
+ */
+const hostInstallsIsTrusted = ((): boolean => {
+	const descriptor = Object.getOwnPropertyDescriptor(
+		new HostEvent("x"),
+		"isTrusted",
+	);
+	return descriptor !== undefined && !descriptor.configurable;
+})();
+
 /** An event, and the flags a listener sets on it while it is dispatched. */
-export class Event {
+export class Event extends HostEvent {
 	#type: string;
 	#bubbles: boolean;
 	#cancelable: boolean;
@@ -487,9 +544,8 @@ export class Event {
 		canceled: false,
 		inPassiveListener: false,
 		trusted: false,
+		foreign: false,
 	};
-
-	declare readonly isTrusted: boolean;
 
 	static readonly NONE = NONE;
 	static readonly CAPTURING_PHASE = CAPTURING_PHASE;
@@ -500,14 +556,24 @@ export class Event {
 		if (arguments.length < 1) {
 			throw new TypeError("Event constructor needs a type");
 		}
-		this.#type = String(type);
+		// The dictionary is converted once, here, and the platform base is
+		// handed the converted members: a member that is an accessor is read
+		// the one time the conversion reads it.
+		const name = String(type);
 		const init = toDictionary<EventInit>(eventInitDict, "An event init");
-		this.#bubbles = Boolean(init.bubbles);
-		this.#cancelable = Boolean(init.cancelable);
-		this.#composed = Boolean(init.composed);
+		const bubbles = Boolean(init.bubbles);
+		const cancelable = Boolean(init.cancelable);
+		const composed = Boolean(init.composed);
+		super(name, {bubbles, cancelable, composed});
+		this.#type = name;
+		this.#bubbles = bubbles;
+		this.#cancelable = cancelable;
+		this.#composed = composed;
 		this.#timeStamp = performance.now();
 		this.#state.initialized = true;
-		Object.defineProperty(this, "isTrusted", isTrustedProperty);
+		if (!hostInstallsIsTrusted) {
+			Object.defineProperty(this, "isTrusted", isTrustedProperty);
+		}
 	}
 
 	get [kDispatchState](): DispatchState {
@@ -527,9 +593,14 @@ export class Event {
 		return false;
 	}
 
-	get type(): string {
+	override get type(): string {
 		return this.#type;
 	}
+
+	// The members a dispatch owns -- the path and the flags a listener sets --
+	// are read off the state this DOM keeps, and the platform base is told of
+	// the flags as well, so an event handed back to platform code answers the
+	// same way through either half of its interface.
 
 	get target(): EventTarget | null {
 		return this.#state.target;
@@ -543,64 +614,69 @@ export class Event {
 		return this.#state.currentTarget;
 	}
 
-	get eventPhase(): number {
+	override get eventPhase(): number {
 		return this.#state.eventPhase;
 	}
 
-	get bubbles(): boolean {
+	override get bubbles(): boolean {
 		return this.#bubbles;
 	}
 
-	get cancelable(): boolean {
+	override get cancelable(): boolean {
 		return this.#cancelable;
 	}
 
-	get composed(): boolean {
+	override get composed(): boolean {
 		return this.#composed;
 	}
 
-	get defaultPrevented(): boolean {
+	override get defaultPrevented(): boolean {
 		return this.#state.canceled;
 	}
 
-	get timeStamp(): number {
+	override get timeStamp(): number {
 		return this.#timeStamp;
 	}
 
-	get returnValue(): boolean {
+	override get returnValue(): boolean {
 		return !this.#state.canceled;
 	}
 
-	set returnValue(value: boolean) {
+	override set returnValue(value: boolean) {
 		if (!value) setCanceledFlag(this);
 	}
 
-	get cancelBubble(): boolean {
+	override get cancelBubble(): boolean {
 		return this.#state.stopPropagation;
 	}
 
-	set cancelBubble(value: boolean) {
-		if (value) this.#state.stopPropagation = true;
+	override set cancelBubble(value: boolean) {
+		if (value) {
+			this.#state.stopPropagation = true;
+			super.stopPropagation();
+		}
 	}
 
 	composedPath(): EventTarget[] {
 		return composedPath(this.#state);
 	}
 
-	stopPropagation(): void {
+	override stopPropagation(): void {
 		this.#state.stopPropagation = true;
+		super.stopPropagation();
 	}
 
-	stopImmediatePropagation(): void {
+	override stopImmediatePropagation(): void {
 		this.#state.stopPropagation = true;
 		this.#state.stopImmediate = true;
+		super.stopImmediatePropagation();
 	}
 
-	preventDefault(): void {
+	override preventDefault(): void {
 		setCanceledFlag(this);
 	}
 
-	initEvent(type: string, bubbles = false, cancelable = false): void {
+	override initEvent(type: string, bubbles = false, cancelable = false): void {
 		if (arguments.length < 1) {
 			throw new TypeError("initEvent needs a type");
 		}
@@ -628,7 +704,10 @@ Object.defineProperties(Event.prototype, {
 /** An event is canceled only where it is cancelable and nothing is passive. */
 function setCanceledFlag(event: Event): void {
 	const state = event[kDispatchState];
-	if (event.cancelable && !state.inPassiveListener) state.canceled = true;
+	if (event.cancelable && !state.inPassiveListener) {
+		state.canceled = true;
+		HostEvent.prototype.preventDefault.call(event);
+	}
 }
 
 /**
@@ -682,6 +761,14 @@ function composedPath(state: DispatchState): EventTarget[] {
 	return composed;
 }
 
+/**
+ * An event carrying a detail.
+ *
+ * CustomEvent inherits Event, and this DOM's Event is the one that carries
+ * the dispatch state, so this extends that rather than the platform's
+ * CustomEvent: an instance is an Event here and a platform Event, though not
+ * a platform CustomEvent.
+ */
 export class CustomEvent<T = unknown> extends Event {
 	#detail: T | null;
 
@@ -1685,9 +1772,10 @@ export class EventTarget {
 	}
 
 	dispatchEvent(event: Event): boolean {
-		if (!(event instanceof Event)) {
+		if (!(event instanceof HostEvent)) {
 			throw new TypeError("dispatchEvent needs an Event");
 		}
+		if (!(event instanceof Event)) adoptForeignEvent(event);
 		const state = event[kDispatchState];
 		if (state.dispatch || !state.initialized) {
 			throw domError(
@@ -2007,6 +2095,69 @@ function appendToPath(
 }
 
 /**
+ * Give a platform event the state a dispatch runs on, and the accessors that
+ * read it.
+ *
+ * A platform event carries the platform's prototype getters for the members a
+ * dispatch owns, and those know nothing of a tree; an own property shadows
+ * one, so a listener reads this dispatch's answer for the target it is at.
+ * The properties stay on the event afterwards, reading a state the dispatch
+ * has cleared: the event keeps the target it was dispatched at, its current
+ * target is null again and its path is empty.
+ */
+function adoptForeignEvent(event: Event): void {
+	if (Object.prototype.hasOwnProperty.call(event, kDispatchState)) return;
+	const state: DispatchState = {
+		target: null,
+		relatedTarget: null,
+		currentTarget: null,
+		eventPhase: NONE,
+		path: [],
+		initialized: true,
+		dispatch: false,
+		stopPropagation: false,
+		stopImmediate: false,
+		canceled: Boolean(event.defaultPrevented),
+		inPassiveListener: false,
+		trusted: false,
+		foreign: true,
+	};
+	Object.defineProperty(event, kDispatchState, {value: state});
+	defineDispatchAccessor(event, "target", () => state.target);
+	defineDispatchAccessor(event, "srcElement", () => state.target);
+	defineDispatchAccessor(event, "currentTarget", () => state.currentTarget);
+	defineDispatchAccessor(event, "eventPhase", () => state.eventPhase);
+	Object.defineProperty(event, "composedPath", {
+		value: () => composedPath(state),
+		configurable: true,
+	});
+}
+
+function defineDispatchAccessor(
+	event: Event,
+	name: string,
+	get: () => unknown,
+): void {
+	Object.defineProperty(event, name, {get, configurable: true});
+}
+
+/**
+ * Read back the flags a listener set on a platform event.
+ *
+ * A platform event's stopPropagation and preventDefault run on the platform
+ * half, where they are visible only as cancelBubble and defaultPrevented.
+ * stopImmediatePropagation is not visible apart from stopPropagation there,
+ * so it stops the dispatch at the targets past this one, and the listeners
+ * remaining at this one still run.
+ */
+function syncForeignFlags(event: Event, state: DispatchState): void {
+	if (event.defaultPrevented) setCanceledFlag(event);
+	if ((event as {cancelBubble?: boolean}).cancelBubble) {
+		state.stopPropagation = true;
+	}
+}
+
+/**
  * Dispatch an event at a target.
  *
  * The path is built once, from the target outward, and then walked twice: in
@@ -2206,6 +2357,7 @@ function innerInvoke(
 		} catch (error) {
 			reportError(error);
 		}
+		if (state.foreign) syncForeignFlags(event, state);
 		state.inPassiveListener = false;
 		if (state.stopImmediate) break;
 	}

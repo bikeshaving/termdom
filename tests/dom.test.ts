@@ -11,6 +11,7 @@ import {test, expect} from "@b9g/libuild/test";
 import {
 	createHTMLDocument,
 	customElements,
+	CustomEvent as DOMCustomEvent,
 	DOMParser,
 	Event as DOMEvent,
 	HTMLElement,
@@ -642,6 +643,130 @@ test("a listener object's handleEvent is looked up at every dispatch", () => {
 	target.dispatchEvent(new DOMEvent("ping"));
 	expect(lookups).toBe(2);
 	expect(calls).toBe(2);
+});
+
+/* ------------------------------------------------------- platform events */
+
+test("an event here is a platform event, and a custom event here is both", () => {
+	const event = new DOMEvent("ping");
+	expect(event instanceof globalThis.Event).toBe(true);
+	const custom = new DOMCustomEvent("ping", {detail: 1});
+	expect(custom instanceof DOMEvent).toBe(true);
+	expect(custom instanceof globalThis.Event).toBe(true);
+	expect(custom.detail).toBe(1);
+});
+
+test("isTrusted reads false and cannot be redefined", () => {
+	const event = new DOMEvent("ping");
+	expect(event.isTrusted).toBe(false);
+	expect(() =>
+		Object.defineProperty(event, "isTrusted", {value: true}),
+	).toThrow();
+	expect(event.isTrusted).toBe(false);
+});
+
+test("a platform CustomEvent dispatches through the tree", () => {
+	const document = make();
+	const outer = document.createElement("div");
+	const inner = document.createElement("span");
+	outer.appendChild(inner);
+	document.body.appendChild(outer);
+	const seen: string[] = [];
+	let path: unknown[] = [];
+	let detail: unknown = null;
+	let target: unknown = null;
+	outer.addEventListener(
+		"thing",
+		(event: any) => {
+			seen.push(`capture:${event.eventPhase}`);
+			path = event.composedPath();
+			target = event.target;
+		},
+		true,
+	);
+	inner.addEventListener("thing", (event: any) => {
+		seen.push(`target:${event.eventPhase}`);
+		detail = event.detail;
+		expect(event.currentTarget).toBe(inner);
+	});
+	outer.addEventListener("thing", (event: any) => {
+		seen.push(`bubble:${event.eventPhase}`);
+		expect(event.currentTarget).toBe(outer);
+	});
+	const event = new globalThis.CustomEvent("thing", {
+		bubbles: true,
+		detail: {ok: true},
+	});
+	expect(inner.dispatchEvent(event as any)).toBe(true);
+	expect(seen).toEqual(["capture:1", "target:2", "bubble:3"]);
+	expect(detail).toEqual({ok: true});
+	expect(target).toBe(inner);
+	expect(path).toEqual([
+		inner,
+		outer,
+		document.body,
+		document.documentElement,
+		document,
+	]);
+	expect(event.target).toBe(inner as any);
+	expect(event.currentTarget).toBe(null);
+	expect(event.eventPhase).toBe(0);
+	expect(event.composedPath()).toEqual([]);
+	expect(event.isTrusted).toBe(false);
+});
+
+test("preventDefault on a platform event is honored", () => {
+	const document = make();
+	const target = document.createElement("div");
+	target.addEventListener("thing", (event: any) => event.preventDefault());
+	const cancelable = new globalThis.CustomEvent("thing", {cancelable: true});
+	expect(target.dispatchEvent(cancelable as any)).toBe(false);
+	const uncancelable = new globalThis.CustomEvent("thing");
+	expect(target.dispatchEvent(uncancelable as any)).toBe(true);
+});
+
+test("stopPropagation on a platform event ends the walk", () => {
+	const document = make();
+	const outer = document.createElement("div");
+	const inner = document.createElement("span");
+	outer.appendChild(inner);
+	document.body.appendChild(outer);
+	const seen: string[] = [];
+	inner.addEventListener("thing", (event: any) => {
+		seen.push("target");
+		event.stopPropagation();
+	});
+	inner.addEventListener("thing", () => seen.push("also at target"));
+	outer.addEventListener("thing", () => seen.push("bubble"));
+	inner.dispatchEvent(
+		new globalThis.CustomEvent("thing", {bubbles: true}) as any,
+	);
+	expect(seen).toEqual(["target", "also at target"]);
+});
+
+test("a subclass of the platform CustomEvent dispatches", () => {
+	const document = make();
+	const target = document.createElement("div");
+	class ThingEvent extends globalThis.CustomEvent<{count: number}> {
+		constructor(count: number) {
+			super("thing", {bubbles: true, detail: {count}});
+		}
+	}
+	let heard: unknown = null;
+	document.body.appendChild(target);
+	document.body.addEventListener("thing", (event: any) => {
+		heard = event.detail;
+		expect(event.target).toBe(target);
+		expect(event instanceof ThingEvent).toBe(true);
+	});
+	target.dispatchEvent(new ThingEvent(3) as any);
+	expect(heard).toEqual({count: 3});
+});
+
+test("dispatchEvent takes nothing but an event", () => {
+	const document = make();
+	const target = document.createElement("div");
+	expect(() => target.dispatchEvent({type: "thing"} as any)).toThrow();
 });
 
 /* ------------------------------------------------------- mutation observers */
