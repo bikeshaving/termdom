@@ -873,9 +873,13 @@ export class Painter {
 	}
 
 	/**
-	 * Draw a checkbox/radio's glyph, read from live `.checked` at paint -- a
-	 * radio's group unchecks its siblings with no event to hook, so a paint-time
-	 * read is the only correct one.
+	 * Draw a checkbox or radio's glyph, and park the caret on it when it has
+	 * focus.
+	 *
+	 * The mark is a text node the control writes when its checkedness moves, so
+	 * what is drawn here is what the tree says rather than a state this read
+	 * discovers -- a checkedness that changes without an event still schedules
+	 * the frame that shows it.
 	 */
 	#renderToggleGlyph(
 		element: HTMLInputElement,
@@ -884,6 +888,9 @@ export class Painter {
 	): void {
 		const root = shadowRootOf<ShadowRoot>(element);
 		if (!root) return;
+		const glyphSpan = root.querySelector('[part="glyph"]') as HTMLElement;
+		const mark = (glyphSpan?.firstChild as Text | null)?.data;
+		if (!mark) return;
 		const boxModel = getBoxModel(element);
 		const contentX =
 			Math.round(rect.left) +
@@ -893,18 +900,6 @@ export class Painter {
 			Math.round(rect.top) +
 			(boxModel.borderTopWidth || 0) +
 			(boxModel.paddingTop || 0);
-
-		const glyphSpan = root.querySelector('[part="glyph"]') as HTMLElement;
-		const mark =
-			element.type === "checkbox"
-				? element.checked
-					? "[x]"
-					: "[ ]"
-				: element.checked
-					? "(x)"
-					: "( )";
-		const glyphText = glyphSpan.firstChild as Text;
-		if (glyphText.data !== mark) glyphText.data = mark;
 		ctx.setText(
 			contentX,
 			contentY,

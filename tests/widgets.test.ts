@@ -272,3 +272,36 @@ test("Tab reaches a summary", async () => {
 
 	dom.dispose();
 });
+
+test("a checkedness that changes on its own repaints, and unchecks its group", async () => {
+	// Setting .checked fires no event and mutates no attribute, so nothing
+	// would schedule a frame if the glyph were only read at paint time: the
+	// control writes its mark where the state moves, and that write is the
+	// mutation the frame follows.
+	const terminal = new MockProcess({rows: 5, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
+	dom.document.body.innerHTML =
+		`<input type="checkbox" id="c">` +
+		`<input type="radio" name="g" id="r1"><input type="radio" name="g" id="r2">`;
+	await nextFrame(dom);
+	expect(terminal.getPlainText()).toContain("[ ]");
+
+	const box = dom.document.getElementById("c") as HTMLInputElement;
+	box.checked = true;
+	// No frame is requested here: the repaint has to be the mutation's own.
+	await new Promise((r) => setTimeout(r, 30));
+	expect(terminal.getPlainText()).toContain("[x]");
+
+	const first = dom.document.getElementById("r1") as HTMLInputElement;
+	const second = dom.document.getElementById("r2") as HTMLInputElement;
+	second.checked = true;
+	await new Promise((r) => setTimeout(r, 30));
+	expect(second.checked).toBe(true);
+	expect(first.checked).toBe(false);
+	// The sibling the group unchecked shows it, with no event to have hooked.
+	expect(terminal.getPlainText()).toContain("( )(x)");
+
+	dom.dispose();
+});

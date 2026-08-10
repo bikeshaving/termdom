@@ -10226,6 +10226,7 @@ export class HTMLInputElement extends HTMLElement {
 	#root: UARoot | null = null;
 	#valueText: UAText | null = null;
 	#placeholderText: UAText | null = null;
+	#glyphText: UAText | null = null;
 
 	get form(): HTMLFormElement | null {
 		return formOwner(this);
@@ -10603,7 +10604,7 @@ export class HTMLInputElement extends HTMLElement {
 		} else {
 			this.#valueText = null;
 			this.#placeholderText = null;
-			addPart(root, "glyph"); // The painter fills it from live .checked.
+			this.#glyphText = addPart(root, "glyph").firstChild as UAText;
 		}
 		engine.layout.invalidate(this);
 		this[kUAReconcile]();
@@ -10613,8 +10614,10 @@ export class HTMLInputElement extends HTMLElement {
 	 * Bring the field tree back into step with the input's own
 	 * value/placeholder -- the rendered content model a width:auto input
 	 * measures against. The value text paints through the normal walk; the
-	 * placeholder shows only when the value is empty. A toggle has no text to
-	 * reconcile; its glyph is the painter's.
+	 * placeholder shows only when the value is empty. A toggle's glyph says
+	 * whether it is checked, which is state like any other: it is written here,
+	 * where the state moves, so the frame that shows it is scheduled by the
+	 * same mutation every other change is.
 	 */
 	[kUAReconcile](): void {
 		if (this.#engine === null) return;
@@ -10623,7 +10626,21 @@ export class HTMLInputElement extends HTMLElement {
 			this.#build();
 			return;
 		}
-		if (this.#kind !== "field" || !this.#valueText) return;
+		if (this.#kind !== "field") {
+			if (this.#glyphText) {
+				const mark =
+					this.type === "checkbox"
+						? this.checked
+							? "[x]"
+							: "[ ]"
+						: this.checked
+							? "(x)"
+							: "( )";
+				if (this.#glyphText.data !== mark) this.#glyphText.data = mark;
+			}
+			return;
+		}
+		if (!this.#valueText) return;
 		const value = this.value;
 		const placeholder = this.getAttribute("placeholder") ?? "";
 		// A password puts one bullet per code unit into the shadow, never the
