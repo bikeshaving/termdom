@@ -11,7 +11,10 @@
 //   up/dn  take more or fewer cards of the stack you are holding
 //   f      send what you are holding to its foundation
 //   a      send everything that fits to the foundations
-//   esc    put it back      u  undo      n  new game      q  quit
+//   esc    put it back    u undo    n new deal    r retry this deal    q quit
+//
+// The clock starts on the first move and stops on the win; a deal's best
+// time survives retries, which is what makes a deal number a speedrun.
 //
 // Clicking does the same: a card picks up, a pile drops, the stock deals, and
 // a double-click sends a card home.
@@ -326,6 +329,8 @@ style.textContent = `
      center it in whatever the terminal turned out to be. */
   .play { margin: 0 auto; }
   .bar { display: flex; flex-direction: row; gap: 2ch; }
+  /* A crowded bar overflows the felt rather than shrinking its words. */
+  .bar span { flex-shrink: 0; }
   .bar .title { color: #ffd75f; font-weight: bold; }
   .bar .score { color: #9ec5ab; }
   .bar .win { color: #ffd75f; font-weight: bold; }
@@ -375,6 +380,8 @@ document.head.appendChild(style);
 const HATCH_GLYPH = "▒";
 const TURN_GLYPH = "↻";
 const DOT = " · ";
+const MIDDOT = "·";
+const STAR = "★";
 const ARROWS = "↑↓";
 
 const blank = (width: number): string => " ".repeat(width);
@@ -468,11 +475,40 @@ function Slot({
 	`;
 }
 
+/** A run's clock, as a speedrunner reads it: m:ss. */
+function clock(ms: number): string {
+	const seconds = Math.floor(ms / 1000);
+	return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
 function* App(this: Context) {
 	let game = deal(opening);
 	let held: Held = null;
 	let history: Game[] = [];
 	let message = "";
+	// The clock runs from the first move to the win, and a best is the best
+	// for THIS deal -- retrying the same number is what a speedrun is.
+	let startedAt: number | null = null;
+	let finishedAt: number | null = null;
+	let best: {ms: number; moves: number} | null = null;
+
+	const ticker = setInterval(() => {
+		if (startedAt !== null && finishedAt === null) this.refresh();
+	}, 1000);
+	this.cleanup(() => clearInterval(ticker));
+
+	/** Back to the deal's opening position, clock unstarted. */
+	const reset = (number: number): void => {
+		this.refresh(() => {
+			if (number !== game.number) best = null;
+			game = deal(number);
+			history = [];
+			held = null;
+			message = "";
+			startedAt = null;
+			finishedAt = null;
+		});
+	};
 
 	/** Run a move, keeping the board undoable and the hold consistent. */
 	const act = (change: (game: Game) => boolean, note = ""): void => {
@@ -490,6 +526,15 @@ function* App(this: Context) {
 			if (history.length > 200) history.shift();
 			held = null;
 			message = "";
+			if (startedAt === null) startedAt = performance.now();
+			if (won(game) && finishedAt === null) {
+				finishedAt = performance.now();
+				const ms = finishedAt - startedAt;
+				if (!best || ms < best.ms) {
+					best = {ms, moves: game.moves};
+					message = `${STAR} best`;
+				}
+			}
 		});
 	};
 
@@ -586,15 +631,8 @@ function* App(this: Context) {
 			term.window.close();
 			return;
 		}
-		if (key === "n") {
-			this.refresh(() => {
-				game = deal(someDeal());
-				history = [];
-				held = null;
-				message = "";
-			});
-			return;
-		}
+		if (key === "n") return reset(someDeal());
+		if (key === "r") return reset(game.number);
 		if (key === "u") return undo();
 		if (key === "Escape") {
 			this.refresh(() => {
@@ -673,9 +711,12 @@ function* App(this: Context) {
 					<span class="score">
 						${game.moves} ${game.moves === 1 ? "move" : "moves"}
 					</span>
+					<span class="score">
+						${clock(startedAt === null ? 0 : (finishedAt ?? performance.now()) - startedAt)}
+					</span>
 					${
 						won(game)
-							? jsx`<span class="win">You win. Press n for a new deal.</span>`
+							? jsx`<span class="win">Won${message ? ` ${MIDDOT} ${message}` : ""}</span>`
 							: message && jsx`<span class="score">${message}</span>`
 					}
 				</div>
@@ -799,7 +840,7 @@ function* App(this: Context) {
 				</div>
 
 				</div>
-				<div class="hint"><b>space</b> draw${DOT}<b>1-7</b> pile${DOT}<b>d</b> discard${DOT}<b>${ARROWS}</b> more/less${DOT}<b>f</b> foundation${DOT}<b>a</b> auto${DOT}<b>u</b> undo${DOT}<b>n</b> new${DOT}<b>q</b> quit</div>
+				<div class="hint"><b>space</b> draw${DOT}<b>1-7</b> pile${DOT}<b>d</b> discard${DOT}<b>${ARROWS}</b> more/less${DOT}<b>f</b> foundation${DOT}<b>a</b> auto${DOT}<b>u</b> undo${DOT}<b>n</b> new${DOT}<b>r</b> retry${DOT}<b>q</b> quit</div>
 			</div>
 		`;
 	}
