@@ -7173,21 +7173,10 @@ export class StyleManager {
 	 * child's -- or a pseudo-element's -- percentage resolves against.
 	 */
 	contentBox(element: Element): DOMRect | null {
-		const rect = this.usedRect(element);
-		if (!rect) return null;
-		const style = this.declarationFor(element);
-		const edge = (name: string): number =>
-			parseFloat(style.computedValueOf(name)) || 0;
-		const left = edge("border-left-width") + edge("padding-left");
-		const right = edge("border-right-width") + edge("padding-right");
-		const top = edge("border-top-width") + edge("padding-top");
-		const bottom = edge("border-bottom-width") + edge("padding-bottom");
-		return new (rect.constructor as typeof DOMRect)(
-			rect.x + left,
-			rect.y + top,
-			Math.max(0, rect.width - left - right),
-			Math.max(0, rect.height - top - bottom),
-		);
+		// The flush first, since the engine's own derivation reads the layout
+		// and this read has to stand behind the same one.
+		if (!this.usedRect(element)) return null;
+		return this.#layoutEngine!.contentRect(element);
 	}
 
 	/** The layout epoch the last resolved-value flush left behind. */

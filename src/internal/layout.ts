@@ -15,7 +15,12 @@ import {
 	parseSignedUnitValue,
 	type BoxModel,
 } from "./styles.js";
-import {computedStyleOf, getPropertyValue, parseUnitValue} from "./styles.js";
+import {
+	computedStyleOf,
+	getPropertyValue,
+	parseUnitValue,
+	type ComputedStyle,
+} from "./styles.js";
 import {
 	caretRangeOf,
 	createFlatTreeWalker,
@@ -308,6 +313,70 @@ function skipSubtree(walker: FlatTreeWalker<Node>): boolean {
 	return true;
 }
 
+/**
+ * The min and max constraints on a box, from the cascade to the layout node.
+ *
+ * Left UNSET where the cascade leaves it, never pinned to 0: min-width
+ * defaults to `auto`, which on a flex item is its content-based minimum --
+ * pinning it to 0 lets the item shrink to nothing while its text stays as wide
+ * as its longest word, and paint straight over whatever is next to it.
+ */
+function applyMinMax(
+	flexNode: FlexTypes.Node,
+	computedStyle: ComputedStyle,
+): void {
+	const constraints = [
+		["min-width", flexNode.setMinWidth, flexNode.setMinWidthPercent],
+		["min-height", flexNode.setMinHeight, flexNode.setMinHeightPercent],
+		["max-width", flexNode.setMaxWidth, flexNode.setMaxWidthPercent],
+		["max-height", flexNode.setMaxHeight, flexNode.setMaxHeightPercent],
+	] as const;
+	for (const [property, setLength, setPercent] of constraints) {
+		const value = parseUnitValue(computedStyle.computedValueOf(property));
+		if (typeof value === "number") {
+			setLength.call(flexNode, value);
+		} else if (value && "percentage" in value) {
+			setPercent.call(flexNode, value.percentage);
+		} else {
+			setLength.call(flexNode, undefined);
+		}
+	}
+}
+
+/** The four insets, each with the edge it names. */
+const INSET_EDGES = [
+	["left", Flex.EDGE_LEFT],
+	["top", Flex.EDGE_TOP],
+	["right", Flex.EDGE_RIGHT],
+	["bottom", Flex.EDGE_BOTTOM],
+] as const;
+
+/**
+ * The insets on a positioned box, from the cascade to the layout node.
+ *
+ * `auto` is a declaration only an absolutely positioned box acts on -- there it
+ * says "wherever the box would have been", which the compute core has to be
+ * told; a relative or fixed box simply takes no offset on that edge.
+ */
+function applyInsets(
+	flexNode: FlexTypes.Node,
+	computedStyle: ComputedStyle,
+	edges: ReadonlyArray<readonly [string, number]>,
+	autoWhenUnset: boolean,
+): void {
+	for (const [property, edge] of edges) {
+		const value = parseUnitValue(computedStyle.computedValueOf(property));
+		if (typeof value === "number") {
+			flexNode.setPosition(edge, value);
+		} else if (value && "percentage" in value) {
+			flexNode.setPositionPercent(edge, value.percentage);
+		} else if (autoWhenUnset) {
+			const declared = computedStyle.computedValueOf(property);
+			if (declared === "auto" || !declared) flexNode.setPositionAuto(edge);
+		}
+	}
+}
+
 function styleFlexNode(
 	element: Element,
 	flexNode: FlexTypes.Node,
@@ -343,50 +412,7 @@ function styleFlexNode(
 		flexNode.setWidthAuto();
 		flexNode.setHeightAuto();
 
-		// Apply min/max constraints for inline-block elements (like block elements)
-		const minWidth = parseUnitValue(computedStyle.computedValueOf("min-width"));
-		if (typeof minWidth === "number") {
-			flexNode.setMinWidth(minWidth);
-		} else if (minWidth && "percentage" in minWidth) {
-			flexNode.setMinWidthPercent(minWidth.percentage);
-		} else {
-			// Leave it unset rather than forcing 0. min-width defaults to `auto`,
-			// which on a flex item means its content-based minimum -- pinning it to
-			// 0 lets the item shrink to nothing while its text stays as wide as its
-			// longest word, and paint straight over whatever is next to it.
-			flexNode.setMinWidth(undefined);
-		}
-
-		const minHeight = parseUnitValue(
-			computedStyle.computedValueOf("min-height"),
-		);
-		if (typeof minHeight === "number") {
-			flexNode.setMinHeight(minHeight);
-		} else if (minHeight && "percentage" in minHeight) {
-			flexNode.setMinHeightPercent(minHeight.percentage);
-		} else {
-			flexNode.setMinHeight(undefined);
-		}
-
-		const maxWidth = parseUnitValue(computedStyle.computedValueOf("max-width"));
-		if (typeof maxWidth === "number") {
-			flexNode.setMaxWidth(maxWidth);
-		} else if (maxWidth && "percentage" in maxWidth) {
-			flexNode.setMaxWidthPercent(maxWidth.percentage);
-		} else {
-			flexNode.setMaxWidth(undefined);
-		}
-
-		const maxHeight = parseUnitValue(
-			computedStyle.computedValueOf("max-height"),
-		);
-		if (typeof maxHeight === "number") {
-			flexNode.setMaxHeight(maxHeight);
-		} else if (maxHeight && "percentage" in maxHeight) {
-			flexNode.setMaxHeightPercent(maxHeight.percentage);
-		} else {
-			flexNode.setMaxHeight(undefined);
-		}
+		applyMinMax(flexNode, computedStyle);
 	} else {
 		// For block elements, apply explicit dimensions normally
 		const width = parseUnitValue(computedStyle.computedValueOf("width"));
@@ -407,50 +433,7 @@ function styleFlexNode(
 			flexNode.setHeightAuto();
 		}
 
-		// Apply min/max constraints for block elements
-		const minWidth = parseUnitValue(computedStyle.computedValueOf("min-width"));
-		if (typeof minWidth === "number") {
-			flexNode.setMinWidth(minWidth);
-		} else if (minWidth && "percentage" in minWidth) {
-			flexNode.setMinWidthPercent(minWidth.percentage);
-		} else {
-			// Leave it unset rather than forcing 0. min-width defaults to `auto`,
-			// which on a flex item means its content-based minimum -- pinning it to
-			// 0 lets the item shrink to nothing while its text stays as wide as its
-			// longest word, and paint straight over whatever is next to it.
-			flexNode.setMinWidth(undefined);
-		}
-
-		const minHeight = parseUnitValue(
-			computedStyle.computedValueOf("min-height"),
-		);
-		if (typeof minHeight === "number") {
-			flexNode.setMinHeight(minHeight);
-		} else if (minHeight && "percentage" in minHeight) {
-			flexNode.setMinHeightPercent(minHeight.percentage);
-		} else {
-			flexNode.setMinHeight(undefined);
-		}
-
-		const maxWidth = parseUnitValue(computedStyle.computedValueOf("max-width"));
-		if (typeof maxWidth === "number") {
-			flexNode.setMaxWidth(maxWidth);
-		} else if (maxWidth && "percentage" in maxWidth) {
-			flexNode.setMaxWidthPercent(maxWidth.percentage);
-		} else {
-			flexNode.setMaxWidth(undefined);
-		}
-
-		const maxHeight = parseUnitValue(
-			computedStyle.computedValueOf("max-height"),
-		);
-		if (typeof maxHeight === "number") {
-			flexNode.setMaxHeight(maxHeight);
-		} else if (maxHeight && "percentage" in maxHeight) {
-			flexNode.setMaxHeightPercent(maxHeight.percentage);
-		} else {
-			flexNode.setMaxHeight(undefined);
-		}
+		applyMinMax(flexNode, computedStyle);
 	}
 
 	// Box model properties: clear for inline elements, apply for block/
@@ -834,108 +817,19 @@ function styleFlexNode(
 	}
 	if (position === "absolute") {
 		flexNode.setPositionType(Flex.POSITION_TYPE_ABSOLUTE);
-
-		// Handle left positioning
-		const left = parseUnitValue(computedStyle.computedValueOf("left"));
-		if (typeof left === "number") {
-			flexNode.setPosition(Flex.EDGE_LEFT, left);
-		} else if (left && "percentage" in left) {
-			flexNode.setPositionPercent(Flex.EDGE_LEFT, left.percentage);
-		} else {
-			const originalLeft = computedStyle.computedValueOf("left");
-			if (originalLeft === "auto" || !originalLeft) {
-				flexNode.setPositionAuto(Flex.EDGE_LEFT);
-			}
-		}
-
-		// Handle top positioning
-		const top = parseUnitValue(computedStyle.computedValueOf("top"));
-		if (typeof top === "number") {
-			flexNode.setPosition(Flex.EDGE_TOP, top);
-		} else if (top && "percentage" in top) {
-			flexNode.setPositionPercent(Flex.EDGE_TOP, top.percentage);
-		} else {
-			const originalTop = computedStyle.computedValueOf("top");
-			if (originalTop === "auto" || !originalTop) {
-				flexNode.setPositionAuto(Flex.EDGE_TOP);
-			}
-		}
-
-		// Handle right positioning
-		const right = parseUnitValue(computedStyle.computedValueOf("right"));
-		if (typeof right === "number") {
-			flexNode.setPosition(Flex.EDGE_RIGHT, right);
-		} else if (right && "percentage" in right) {
-			flexNode.setPositionPercent(Flex.EDGE_RIGHT, right.percentage);
-		} else {
-			const originalRight = computedStyle.computedValueOf("right");
-			if (originalRight === "auto" || !originalRight) {
-				flexNode.setPositionAuto(Flex.EDGE_RIGHT);
-			}
-		}
-
-		// Handle bottom positioning
-		const bottom = parseUnitValue(computedStyle.computedValueOf("bottom"));
-		if (typeof bottom === "number") {
-			flexNode.setPosition(Flex.EDGE_BOTTOM, bottom);
-		} else if (bottom && "percentage" in bottom) {
-			flexNode.setPositionPercent(Flex.EDGE_BOTTOM, bottom.percentage);
-		} else {
-			const originalBottom = computedStyle.computedValueOf("bottom");
-			if (originalBottom === "auto" || !originalBottom) {
-				flexNode.setPositionAuto(Flex.EDGE_BOTTOM);
-			}
-		}
+		applyInsets(flexNode, computedStyle, INSET_EDGES, true);
 	} else if (position === "relative") {
 		flexNode.setPositionType(Flex.POSITION_TYPE_RELATIVE);
-		// For relative positioning, also apply left/top/right/bottom offsets
-		// (same pattern as absolute, but with relative position type)
-		const left = parseUnitValue(computedStyle.computedValueOf("left"));
-		if (typeof left === "number") {
-			flexNode.setPosition(Flex.EDGE_LEFT, left);
-		} else if (left && "percentage" in left) {
-			flexNode.setPositionPercent(Flex.EDGE_LEFT, left.percentage);
-		}
-
-		const top = parseUnitValue(computedStyle.computedValueOf("top"));
-		if (typeof top === "number") {
-			flexNode.setPosition(Flex.EDGE_TOP, top);
-		} else if (top && "percentage" in top) {
-			flexNode.setPositionPercent(Flex.EDGE_TOP, top.percentage);
-		}
+		// A relative box is offset from where it would have sat, and the offset
+		// this engine applies is the start-edge one: `right`/`bottom` alone do
+		// not move it.
+		applyInsets(flexNode, computedStyle, INSET_EDGES.slice(0, 2), false);
 	} else if (position === "fixed") {
-		// In terminal context, fixed positioning is treated like absolute
-		// positioning relative to the root element (the viewport).
-		// The engine has no fixed position type, so we use absolute.
+		// The viewport is the containing block, and there is no fixed position
+		// type in the compute core: absolute against the root is the same
+		// placement, and the camera is what keeps it still.
 		flexNode.setPositionType(Flex.POSITION_TYPE_ABSOLUTE);
-
-		const left = parseUnitValue(computedStyle.computedValueOf("left"));
-		if (typeof left === "number") {
-			flexNode.setPosition(Flex.EDGE_LEFT, left);
-		} else if (left && "percentage" in left) {
-			flexNode.setPositionPercent(Flex.EDGE_LEFT, left.percentage);
-		}
-
-		const top = parseUnitValue(computedStyle.computedValueOf("top"));
-		if (typeof top === "number") {
-			flexNode.setPosition(Flex.EDGE_TOP, top);
-		} else if (top && "percentage" in top) {
-			flexNode.setPositionPercent(Flex.EDGE_TOP, top.percentage);
-		}
-
-		const right = parseUnitValue(computedStyle.computedValueOf("right"));
-		if (typeof right === "number") {
-			flexNode.setPosition(Flex.EDGE_RIGHT, right);
-		} else if (right && "percentage" in right) {
-			flexNode.setPositionPercent(Flex.EDGE_RIGHT, right.percentage);
-		}
-
-		const bottom = parseUnitValue(computedStyle.computedValueOf("bottom"));
-		if (typeof bottom === "number") {
-			flexNode.setPosition(Flex.EDGE_BOTTOM, bottom);
-		} else if (bottom && "percentage" in bottom) {
-			flexNode.setPositionPercent(Flex.EDGE_BOTTOM, bottom.percentage);
-		}
+		applyInsets(flexNode, computedStyle, INSET_EDGES, false);
 	} else if (position === "static") {
 		flexNode.setPositionType(Flex.POSITION_TYPE_STATIC);
 	} else {
@@ -1114,6 +1008,17 @@ export interface LineFragment {
 }
 
 /** The `white-space` a text node renders under: its flat-tree parent's. */
+/** Every text node under a node, in tree order -- the node itself included. */
+function* textNodesUnder(root: Node): Generator<Text> {
+	if (root.nodeType === root.TEXT_NODE) {
+		yield root as Text;
+		return;
+	}
+	for (const child of Array.from(root.childNodes)) {
+		yield* textNodesUnder(child);
+	}
+}
+
 export function whiteSpaceOf(textNode: Text): string {
 	const parent = flatParentElement<Element>(textNode);
 	return parent ? getPropertyValue(parent, "white-space") : "normal";
@@ -1827,6 +1732,32 @@ export class LayoutEngine {
 		return {x, y};
 	}
 
+	/**
+	 * An element's CONTENT box in document coordinates: its border box inset by
+	 * the border and padding on every side. Null for an element that generates
+	 * no box.
+	 *
+	 * The one derivation of it. A caret parked at a field's content origin, the
+	 * rect an empty line takes, what a ResizeObserver reports and what a child's
+	 * percentage resolves against are the same four numbers, and were four
+	 * spellings of the same arithmetic.
+	 */
+	contentRect(element: Element): DOMRect | null {
+		const rect = this.getRect(element);
+		if (!rect) return null;
+		const box = getBoxModel(element);
+		const left = (box.borderLeftWidth || 0) + (box.paddingLeft || 0);
+		const top = (box.borderTopWidth || 0) + (box.paddingTop || 0);
+		const right = (box.borderRightWidth || 0) + (box.paddingRight || 0);
+		const bottom = (box.borderBottomWidth || 0) + (box.paddingBottom || 0);
+		return this.createDOMRect(
+			rect.x + left,
+			rect.y + top,
+			Math.max(0, rect.width - left - right),
+			Math.max(0, rect.height - top - bottom),
+		);
+	}
+
 	getRect(element: Element): DOMRect | null {
 		const display = getPropertyValue(element, "display");
 
@@ -2431,19 +2362,14 @@ export class LayoutEngine {
 		// empty field. Derived from the block itself, not any widget.
 		if (lines.length === 0) {
 			const parent = textNode.parentElement;
-			const rect = parent && this.getRect(parent);
-			if (rect && parent) {
-				const box = getBoxModel(parent);
+			const content = parent && this.contentRect(parent);
+			if (content && parent) {
 				lines.push({
 					rect: this.createDOMRect(
-						Math.round(rect.x) +
-							(box.borderLeftWidth || 0) +
-							(box.paddingLeft || 0),
-						Math.round(rect.y) +
-							(box.borderTopWidth || 0) +
-							(box.paddingTop || 0),
+						Math.round(content.x),
+						Math.round(content.y),
 						0,
-						rect.height || 1,
+						this.getRect(parent)!.height || 1,
 					),
 					startOffset: 0,
 					endOffset: 0,
@@ -2480,6 +2406,114 @@ export class LayoutEngine {
 		);
 		const x = Math.round(line.rect.x) + runtimeStringWidth(before);
 		return this.createDOMRect(x, Math.round(line.rect.y), 0, line.rect.height);
+	}
+
+	/**
+	 * The caret position under a document-space point: the text node whose
+	 * painted line covers the point, and the code-unit offset into its `data`
+	 * the point falls at -- what caretPositionFromPoint answers in a browser.
+	 *
+	 * The inversion of painting: a line's data range renders back to exactly
+	 * the characters it painted, so walking that rendering by cell width turns
+	 * a column into an offset, correctly over collapsing white space where the
+	 * two diverge. Landing past a line's last character means "after the last
+	 * character", so a drag selects through end-of-line.
+	 *
+	 * `root` bounds the search to one subtree -- the document element under the
+	 * pointer, or the text a control renders its value through. With
+	 * `clampToNearestLine`, a point on no line at all resolves to the nearest
+	 * line instead of nothing: a drag that leaves a field still tracks it,
+	 * which is the capture model a browser uses.
+	 */
+	caretPositionFromPoint(
+		x: number,
+		y: number,
+		root: Node,
+		clampToNearestLine = false,
+	): {node: Text; offset: number} | null {
+		let best: {node: Text; offset: number; distance: number} | null = null;
+		let nearest: {node: Text; fragment: LineFragment; rows: number} | null =
+			null;
+
+		for (const textNode of textNodesUnder(root)) {
+			const whiteSpace = whiteSpaceOf(textNode);
+			for (const fragment of this.lineFragments(textNode)) {
+				const rect = fragment.rect;
+				const height = Math.max(1, rect.height);
+				if (y < rect.y || y >= rect.y + height) {
+					if (clampToNearestLine) {
+						const rows = y < rect.y ? rect.y - y : y - (rect.y + height) + 1;
+						if (!nearest || rows < nearest.rows) {
+							nearest = {node: textNode, fragment, rows};
+						}
+					}
+					continue;
+				}
+				// An empty line is a caret slot in a control's value (a blank
+				// line in a textarea is clickable); in document text it renders
+				// nothing and owns no position.
+				if (!clampToNearestLine && fragment.endOffset <= fragment.startOffset) {
+					continue;
+				}
+				const found = this.#offsetInFragment(textNode, whiteSpace, fragment, x);
+				if (!best || found.distance < best.distance) {
+					best = {
+						node: textNode,
+						offset: found.offset,
+						distance: found.distance,
+					};
+				}
+			}
+		}
+
+		if (best) return {node: best.node, offset: best.offset};
+		if (!nearest) return null;
+		const found = this.#offsetInFragment(
+			nearest.node,
+			whiteSpaceOf(nearest.node),
+			nearest.fragment,
+			x,
+		);
+		return {node: nearest.node, offset: found.offset};
+	}
+
+	/**
+	 * Where a column falls within one painted line: the data offset under it,
+	 * and how far outside the line's own cells the column was -- zero when the
+	 * point landed on the line, which is what picks between two lines painted
+	 * on the same row.
+	 */
+	#offsetInFragment(
+		textNode: Text,
+		whiteSpace: string,
+		fragment: LineFragment,
+		x: number,
+	): {offset: number; distance: number} {
+		const {text, offsets} = renderWhiteSpaceOffsets(
+			textNode.data.slice(fragment.startOffset, fragment.endOffset),
+			whiteSpace,
+		);
+		let cellX = fragment.rect.x;
+		let index = 0;
+		while (index < text.length && cellX < x) {
+			const width = runtimeStringWidth(text[index]);
+			if (cellX + width > x) break;
+			cellX += width;
+			index++;
+		}
+		const distance =
+			x < fragment.rect.x
+				? fragment.rect.x - x
+				: x >= cellX && index === text.length
+					? x - cellX
+					: 0;
+		return {
+			offset:
+				index < text.length
+					? fragment.startOffset + dataOffsetAt(offsets, index)
+					: fragment.endOffset,
+			distance,
+		};
 	}
 
 	/**

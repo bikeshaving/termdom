@@ -4,7 +4,7 @@
  */
 
 import {type LayoutEngine} from "./layout.js";
-import {computedStyleOf, getBoxModel} from "./styles.js";
+import {computedStyleOf} from "./styles.js";
 
 /**
  * An element's content box: its size, plus the offset of its top-left corner
@@ -58,31 +58,15 @@ function contentBoxOf(
 	if (computedStyleOf(element).computedValueOf("display") === "none") {
 		return null;
 	}
-	const rect = layoutEngine.getRect(element);
-	if (!rect) return null;
-	const box = getBoxModel(element);
-	const width = Math.max(
-		0,
-		rect.width -
-			(box.paddingLeft || 0) -
-			(box.paddingRight || 0) -
-			(box.borderLeftWidth || 0) -
-			(box.borderRightWidth || 0),
-	);
-	const height = Math.max(
-		0,
-		rect.height -
-			(box.paddingTop || 0) -
-			(box.paddingBottom || 0) -
-			(box.borderTopWidth || 0) -
-			(box.borderBottomWidth || 0),
-	);
+	const border = layoutEngine.getRect(element);
+	const content = layoutEngine.contentRect(element);
+	if (!border || !content) return null;
 	// Origin relative to the border box: what precedes the content on each axis.
 	return {
-		width,
-		height,
-		top: (box.borderTopWidth || 0) + (box.paddingTop || 0),
-		left: (box.borderLeftWidth || 0) + (box.paddingLeft || 0),
+		width: content.width,
+		height: content.height,
+		top: content.y - border.y,
+		left: content.x - border.x,
 	};
 }
 

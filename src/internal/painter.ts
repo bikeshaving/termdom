@@ -7,7 +7,7 @@ import {isTextField, selectionRangeOf} from "./dom.js";
 import type {EngineWindow} from "./termdom.js";
 import {type LayoutEngine, flowWalker, isPositioned} from "./layout.js";
 import {type Viewport} from "./viewport.js";
-import {type StyleManager, resolveBorderStyles, getBoxModel} from "./styles.js";
+import {type StyleManager, resolveBorderStyles} from "./styles.js";
 import {cssColorToNumber, isTransparentColor} from "./color.js";
 import {renderTextFragment, stringWidth} from "./text.js";
 import {flatIsConnected, flatParentElement, shadowRootOf} from "./dom.js";
@@ -480,15 +480,10 @@ export class Painter {
 				if (caret) {
 					ctx.setCaret(caret.x, caret.y);
 				} else {
-					const boxModel = getBoxModel(field);
-					ctx.setCaret(
-						Math.round(rect.left) +
-							(boxModel.borderLeftWidth || 0) +
-							(boxModel.paddingLeft || 0),
-						Math.round(rect.top) +
-							(boxModel.borderTopWidth || 0) +
-							(boxModel.paddingTop || 0),
-					);
+					const content = this.#layout.contentRect(field);
+					if (content) {
+						ctx.setCaret(Math.round(content.x), Math.round(content.y));
+					}
 				}
 			}
 		}
@@ -511,15 +506,10 @@ export class Painter {
 				else this.#topLayer.delete(picker);
 			}
 			if (visible && select === this.#document.activeElement) {
-				const boxModel = getBoxModel(select);
-				ctx.setCaret(
-					Math.round(rect.left) +
-						(boxModel.borderLeftWidth || 0) +
-						(boxModel.paddingLeft || 0),
-					Math.round(rect.top) +
-						(boxModel.borderTopWidth || 0) +
-						(boxModel.paddingTop || 0),
-				);
+				const content = this.#layout.contentRect(select);
+				if (content) {
+					ctx.setCaret(Math.round(content.x), Math.round(content.y));
+				}
 			}
 		}
 
@@ -681,20 +671,6 @@ export class Painter {
 		}
 	}
 
-	/** Whether the element or any composed ancestor is position: fixed. */
-	#inFixedSpace(element: Element): boolean {
-		for (
-			let el: Element | null = element;
-			el;
-			el = flatParentElement<Element>(el)
-		) {
-			if (computedStyleOf(el).computedValueOf("position") === "fixed") {
-				return true;
-			}
-		}
-		return false;
-	}
-
 	/**
 	 * The clip a deferred positioned box paints under: the context root's
 	 * clip, intersected with every overflow-clipping box along the CSS
@@ -762,7 +738,7 @@ export class Painter {
 			// a property of the containing-block CHAIN: an absolute box inside
 			// a fixed bar is laid out against the bar's viewport coordinates
 			// and must ride with it, so the walk includes ancestors.
-			if (this.#inFixedSpace(element)) {
+			if (this.#layout.isInFixedSpace(element)) {
 				ctx.viewportOffset = previousOffset + this.#viewport.scrollTop;
 			}
 			try {
@@ -877,15 +853,10 @@ export class Painter {
 		const glyphSpan = root.querySelector('[part="glyph"]') as HTMLElement;
 		const mark = (glyphSpan?.firstChild as Text | null)?.data;
 		if (!mark) return;
-		const boxModel = getBoxModel(element);
-		const contentX =
-			Math.round(rect.left) +
-			(boxModel.borderLeftWidth || 0) +
-			(boxModel.paddingLeft || 0);
-		const contentY =
-			Math.round(rect.top) +
-			(boxModel.borderTopWidth || 0) +
-			(boxModel.paddingTop || 0);
+		const content = this.#layout.contentRect(element);
+		if (!content) return;
+		const contentX = Math.round(content.x);
+		const contentY = Math.round(content.y);
 		ctx.setText(
 			contentX,
 			contentY,

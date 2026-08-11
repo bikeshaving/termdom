@@ -16,7 +16,7 @@ import {
 	setUASelection,
 	upgradeUAWidget,
 } from "./dom.js";
-import {LayoutEngine, whiteSpaceOf} from "./layout.js";
+import {LayoutEngine} from "./layout.js";
 import {Viewport} from "./viewport.js";
 import {Painter} from "./painter.js";
 import {
@@ -28,7 +28,7 @@ import {
 } from "./terminalsession.js";
 import {Renderer} from "./ansi.js";
 import {StyleManager, computedStyleOf, getBoxModel} from "./styles.js";
-import {dataOffsetAt, renderWhiteSpaceOffsets, stringWidth} from "./text.js";
+import {stringWidth} from "./text.js";
 import {
 	ObserverManager,
 	ResizeObserver as TermResizeObserver,
@@ -1972,61 +1972,19 @@ export class TermDOM {
 		x: number,
 		y: number,
 	): number | null {
-		if (element.tagName === "TEXTAREA") {
-			const valueText = fieldValueText(element);
-			if (!valueText) return null;
-			const lines = this[kLayoutEngine].lineFragments(valueText);
-			if (lines.length === 0) return null;
-			// The pressed row's line; above the first clamps to it, below
-			// the last to that.
-			let line = lines[0];
-			for (const candidate of lines) {
-				if (Math.round(candidate.rect.y) > y) break;
-				line = candidate;
-			}
-			const rel = x - Math.round(line.rect.x);
-			if (rel <= 0) return line.startOffset;
-			let cells = 0;
-			let offset = 0;
-			// A field value is pre-wrap: its line renders its data range verbatim.
-			for (const char of valueText.data.slice(
-				line.startOffset,
-				line.endOffset,
-			)) {
-				if (cells >= rel) break;
-				cells += stringWidth(char);
-				offset += char.length;
-			}
-			return Math.min(line.startOffset + offset, line.endOffset);
-		}
-
-		const input = element as HTMLInputElement;
-		const rect = this[kLayoutEngine].getRect(input);
-		if (!rect) return null;
-		const boxModel = getBoxModel(input);
-		const contentX =
-			Math.round(rect.left) +
-			(boxModel.borderLeftWidth || 0) +
-			(boxModel.paddingLeft || 0);
-		const value = input.value || "";
-		// The click's target cell is its column plus the cells scrolled off the
-		// left (the value part's scrollLeft). SHOWN text = a password's bullets.
-		const valueText = fieldValueText(input);
-		const valueSpan = valueText?.parentElement as HTMLElement | null;
-		const shown = valueText?.data ?? value;
-		const scrollLeft = valueSpan
-			? Math.max(0, Math.round(valueSpan.scrollLeft))
-			: 0;
-		const targetCell = x - contentX + scrollLeft;
-		if (targetCell <= 0) return 0;
-		let cells = 0;
-		let offset = 0;
-		for (const char of shown) {
-			if (cells >= targetCell) break;
-			cells += stringWidth(char);
-			offset += char.length;
-		}
-		return Math.min(offset, value.length);
+		// The value's own text: a field's selection is measured in ITS offsets,
+		// and for a password that text is the bullets, which is what was
+		// painted and so what the point lands on.
+		const valueText = fieldValueText(element);
+		if (!valueText) return null;
+		const found = this[kLayoutEngine].caretPositionFromPoint(
+			x,
+			y,
+			valueText,
+			true,
+		);
+		if (!found) return null;
+		return Math.min(found.offset, valueText.data.length);
 	}
 
 	/**
@@ -2097,15 +2055,9 @@ export class TermDOM {
 		const valueText = fieldValueText(input);
 		const valueSpan = valueText?.parentElement as HTMLElement | null;
 		if (!valueText || !valueSpan) return;
-		const rect = this[kLayoutEngine].getRect(input);
-		if (!rect) return;
-		const boxModel = getBoxModel(input);
-		const contentWidth =
-			Math.round(rect.width) -
-			(boxModel.borderLeftWidth || 0) -
-			(boxModel.borderRightWidth || 0) -
-			(boxModel.paddingLeft || 0) -
-			(boxModel.paddingRight || 0);
+		const content = this[kLayoutEngine].contentRect(input);
+		if (!content) return;
+		const contentWidth = Math.round(content.width);
 		if (contentWidth <= 0) return;
 
 		const shown = valueText.data;
@@ -2409,16 +2361,13 @@ export class TermDOM {
 	}
 
 	/**
-	 * Resolve a document-relative point to a caret position -- (text node,
-	 * code-unit offset into node.data) -- the way a browser's
-	 * caretPositionFromPoint does. Hit-tests the element, then scans its text
-	 * nodes' painted fragments for the one on the point's row; the x offset
-	 * becomes a visual character index (cell-width aware), which the fragment's
-	 * own data range bridges back to a Range-valid data offset.
-	 * Landing past a fragment's last character on its row means "after the
-	 * last character", so a drag can select through end-of-line. Returns null
-	 * over rows with no text (and over inputs, whose value is not document
-	 * text -- their selection is the input's own selectionStart/End world).
+	 * The caret position under a document point: the element it hit-tests to,
+	 * asked of the engine.
+	 *
+	 * Null over a form control, whose value is not document text -- its
+	 * selection is the control's own bounded world, which #fieldOffsetAtPoint
+	 * asks about instead. The two never merge: getSelection() cannot see inside
+	 * a control, per spec.
 	 */
 	#documentPointToTextPosition(
 		x: number,
@@ -2432,58 +2381,7 @@ export class TermDOM {
 		) {
 			return null;
 		}
-
-		let best: {node: Text; offset: number; distance: number} | null = null;
-		const visit = (node: Node): void => {
-			for (const child of Array.from(node.childNodes)) {
-				if (child.nodeType === child.TEXT_NODE) {
-					const textNode = child as Text;
-					const whiteSpace = whiteSpaceOf(textNode);
-					for (const fragment of this[kLayoutEngine].lineFragments(textNode)) {
-						if (fragment.endOffset <= fragment.startOffset) continue;
-						const rect = fragment.rect;
-						if (y < rect.y || y >= rect.y + Math.max(1, rect.height)) {
-							continue;
-						}
-						// The line's characters and, per character, the data offset
-						// it renders -- the bridge from a painted cell back to a
-						// Range-valid offset.
-						const {text, offsets} = renderWhiteSpaceOffsets(
-							textNode.data.slice(fragment.startOffset, fragment.endOffset),
-							whiteSpace,
-						);
-						// Walk cells to the visual index under (or past) x.
-						let cellX = rect.x;
-						let index = 0;
-						while (index < text.length && cellX < x) {
-							const w = stringWidth(text[index]);
-							if (cellX + w > x) break;
-							cellX += w;
-							index++;
-						}
-						const distance =
-							x < rect.x
-								? rect.x - x
-								: x >= cellX && index === text.length
-									? x - cellX
-									: 0;
-						if (!best || distance < best.distance) {
-							const offset =
-								index < text.length
-									? fragment.startOffset + dataOffsetAt(offsets, index)
-									: fragment.endOffset;
-							best = {node: textNode, offset, distance};
-						}
-					}
-				} else if (child.nodeType === child.ELEMENT_NODE) {
-					visit(child);
-				}
-			}
-		};
-		visit(element);
-		return best
-			? {node: (best as any).node, offset: (best as any).offset}
-			: null;
+		return this[kLayoutEngine].caretPositionFromPoint(x, y, element);
 	}
 
 	/**
