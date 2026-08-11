@@ -449,11 +449,9 @@ function centered(text: string, width: number): string {
 
 /**
  * A card's face: its index across the top-left, its suit at the center on
- * any card wide enough to carry one, and the index again reading DOWN the
- * last column into the bottom-right corner -- the rotated corner of a real
- * card, evoked by orientation rather than by turned glyphs, which Unicode
- * only approximates ("6" turns into a 9's shape). The narrowest card has no
- * spare column, so its second index lies flat along the bottom.
+ * any card wide enough to carry one, and the mirrored index -- suit then
+ * rank -- reading into the bottom-right corner, the rotational symmetry of
+ * a real card's two indices.
  */
 function faceRows(card: Card, tier: Tier): string[] {
 	const {width, height} = tier;
@@ -466,17 +464,12 @@ function faceRows(card: Card, tier: Tier): string[] {
 	if (width > 3) {
 		grid[Math.floor(height / 2)][Math.floor(width / 2)] = SUITS[card.suit];
 	}
-	if (width === 3) {
-		for (let i = 0; i < index.length; i++) {
-			grid[height - 1][width - index.length + i] = index[i];
-		}
-	} else {
-		// A ten's three glyphs don't read as a ten stacked vertically, so the
-		// corner uses the card player's T -- the top index still teaches "10".
-		const corner = card.rank === 10 ? `T${SUITS[card.suit]}` : index;
-		for (let i = 0; i < corner.length; i++) {
-			grid[height - corner.length + i][width - 1] = corner[i];
-		}
+	// The bottom corner mirrors the top: suit then rank, reading into the
+	// corner -- the rotational symmetry of a real card's two indices, spelled
+	// by unit order rather than by turned glyphs.
+	const corner = `${SUITS[card.suit]}${RANKS[card.rank - 1]}`;
+	for (let i = 0; i < corner.length; i++) {
+		grid[height - 1][width - corner.length + i] = corner[i];
 	}
 	return grid.map((row) => row.join(""));
 }
