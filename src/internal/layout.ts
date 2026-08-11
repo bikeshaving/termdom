@@ -247,13 +247,6 @@ function usedDisplay(element: Element): string {
 	return isBlockifiedBox(element) ? "block" : display;
 }
 
-/** Whether a node has a box in the flow at all. */
-function generatesBox(node: Node): boolean {
-	if (node.nodeType !== node.ELEMENT_NODE) return true;
-	const display = getPropertyValue(node as Element, "display");
-	return display !== "none" && display !== "contents";
-}
-
 /**
  * Whether a node's box sits on a line of its container's rather than on rows of
  * its own. Text is always inline-level; an element is whatever its used display
