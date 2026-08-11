@@ -319,269 +319,6 @@ function skipSubtree(walker: FlatTreeWalker<Node>): boolean {
 	return true;
 }
 
-// ---- CSS 2.2 §8.3.1 margin collapsing (the block-emulation half) ----
-//
-// TODO(box-tree): block layout is emulated as column flex, which is why the
-// collapse happens here at style-application time instead of during layout,
-// and why self-collapsing and negative margins stay unmodeled. Phase C lays
-// block containers out directly and deletes this whole section.
-//
-// The flex engine SUMS adjacent margins; CSS block layout collapses them.
-// The collapse resolves here, at style-application time, as a pure function
-// of the DOM: the gap between siblings lives entirely on the lower box's
-// top margin, and a margin that collapses THROUGH a parent's edge is hoisted
-// into the ancestor whose edge stops it and zeroed where it was declared.
-// Not modeled: self-collapsing empty blocks (their two margins stay distinct).
-
-/** Adjoining margins combine as largest positive plus most negative. */
-function combineMargins(margins: number[]): number {
-	let maxPositive = 0;
-	let minNegative = 0;
-	for (const margin of margins) {
-		if (margin > maxPositive) maxPositive = margin;
-		if (margin < minNegative) minNegative = margin;
-	}
-	return maxPositive + minNegative;
-}
-
-function numericMargin(
-	element: Element,
-	property: "margin-top" | "margin-bottom",
-): number {
-	const value = parseSignedUnitValue(getPropertyValue(element, property));
-	return typeof value === "number" ? value : 0;
-}
-
-/** In the parent's flow: rendered, and not taken out by abs/fixed. */
-function isInFlow(element: Element): boolean {
-	return generatesBox(element) && !isOutOfFlow(element);
-}
-
-/** Block-LEVEL: occupies its own rows in a block formatting context. */
-function isBlockLevel(element: Element): boolean {
-	const display = usedDisplay(element);
-	return (
-		display === "block" ||
-		display === "list-item" ||
-		display === "flex" ||
-		display === "table"
-	);
-}
-
-/**
- * A new block formatting context contains its children's margins: nothing
- * collapses through its edges (css2 §8.3.1, §9.4.1).
- */
-function establishesBFC(element: Element): boolean {
-	return (
-		getPropertyValue(element, "overflow") !== "visible" || isOutOfFlow(element)
-	);
-}
-
-/**
- * The nearest in-flow block-level sibling in `direction`, or null when text
- * or an inline box sits between -- content separates the margins.
- */
-function adjacentBlockSibling(
-	element: Element,
-	direction: "previousSibling" | "nextSibling",
-): Element | null {
-	for (let node = element[direction]; node; node = node[direction]) {
-		if (node.nodeType === node.TEXT_NODE) {
-			if ((node as Text).data.trim() !== "") return null;
-			continue;
-		}
-		if (node.nodeType !== node.ELEMENT_NODE) continue;
-		const sibling = node as Element;
-		if (!isInFlow(sibling)) continue;
-		return isBlockLevel(sibling) ? sibling : null;
-	}
-	return null;
-}
-
-/**
- * The first (or last) in-flow child when it is block-level and no inline
- * content precedes (follows) it -- the child whose margin can adjoin the
- * parent's edge.
- */
-function edgeBlockChild(
-	element: Element,
-	edge: "top" | "bottom",
-): Element | null {
-	const [start, step] =
-		edge === "top"
-			? (["firstChild", "nextSibling"] as const)
-			: (["lastChild", "previousSibling"] as const);
-	for (let node = element[start]; node; node = node[step]) {
-		if (node.nodeType === node.TEXT_NODE) {
-			if ((node as Text).data.trim() !== "") return null;
-			continue;
-		}
-		if (node.nodeType !== node.ELEMENT_NODE) continue;
-		const child = node as Element;
-		if (!isInFlow(child)) continue;
-		return isBlockLevel(child) ? child : null;
-	}
-	return null;
-}
-
-/**
- * Whether `element`'s own margin at `edge` adjoins its edge-child's margin:
- * a block container with nothing at that edge -- no border, no padding, no
- * BFC, no inline content, and (for the bottom) no definite height. The BODY
- * is the outermost block; margins stop there rather than escaping the
- * document.
- */
-function collapsesThrough(element: Element, edge: "top" | "bottom"): boolean {
-	if (element.tagName === "BODY") return false;
-	const display = getPropertyValue(element, "display");
-	if (display !== "block" && display !== "list-item") return false;
-	if (establishesBFC(element)) return false;
-	const side = edge === "top" ? "top" : "bottom";
-	if (parseFloat(getPropertyValue(element, `border-${side}-width`)) > 0) {
-		return false;
-	}
-	const padding = parseUnitValue(getPropertyValue(element, `padding-${side}`));
-	if (typeof padding === "number" && padding > 0) return false;
-	if (edge === "bottom") {
-		const height = getPropertyValue(element, "height");
-		if (height && height !== "auto") return false;
-	}
-	return edgeBlockChild(element, edge) !== null;
-}
-
-/** All margins adjoining `element`'s `edge`: its own plus every descendant
- * margin that collapses through. */
-function adjoiningMargins(
-	element: Element,
-	edge: "top" | "bottom",
-	out: number[],
-): number[] {
-	out.push(
-		numericMargin(element, edge === "top" ? "margin-top" : "margin-bottom"),
-	);
-	if (collapsesThrough(element, edge)) {
-		adjoiningMargins(edgeBlockChild(element, edge)!, edge, out);
-	}
-	return out;
-}
-
-/**
- * A SELF-COLLAPSING block (css2 §8.3.1): zero-height, nothing at either
- * vertical edge -- its own top and bottom margins adjoin each other, and
- * the margins of its neighbors pass straight through it.
- */
-function isSelfCollapsing(element: Element): boolean {
-	if (!isInFlow(element)) return false;
-	const display = getPropertyValue(element, "display");
-	if (display !== "block" && display !== "list-item") return false;
-	if (establishesBFC(element)) return false;
-	for (const side of ["top", "bottom"]) {
-		if (parseFloat(getPropertyValue(element, `border-${side}-width`)) > 0) {
-			return false;
-		}
-		const padding = parseUnitValue(
-			getPropertyValue(element, `padding-${side}`),
-		);
-		if (typeof padding === "number" && padding > 0) return false;
-	}
-	const height = getPropertyValue(element, "height");
-	if (height && height !== "auto") return false;
-	const minHeight = parseUnitValue(getPropertyValue(element, "min-height"));
-	if (typeof minHeight === "number" && minHeight > 0) return false;
-	for (const node of element.childNodes) {
-		if (node.nodeType === node.TEXT_NODE) {
-			if ((node as Text).data.trim() !== "") return false;
-			continue;
-		}
-		if (node.nodeType !== node.ELEMENT_NODE) continue;
-		if (isInFlow(node as Element)) return false;
-	}
-	return true;
-}
-
-/**
- * Walk to the nearest NON-self-collapsing block sibling, gathering the
- * margins of every empty block passed through into `margins`.
- */
-function siblingThroughEmpties(
-	element: Element,
-	direction: "previousSibling" | "nextSibling",
-	margins: number[] | null,
-): Element | null {
-	let sibling = adjacentBlockSibling(element, direction);
-	while (sibling && isSelfCollapsing(sibling)) {
-		margins?.push(
-			numericMargin(sibling, "margin-top"),
-			numericMargin(sibling, "margin-bottom"),
-		);
-		sibling = adjacentBlockSibling(sibling, direction);
-	}
-	return sibling;
-}
-
-/** Whether `element`'s vertical margins are subject to collapsing at all:
- * an in-flow block-level box in a block container. Flex items never
- * collapse (css-flexbox-1 §4). */
-function marginCollapseApplies(element: Element): boolean {
-	const parent = element.parentElement;
-	if (!parent) return false;
-	const parentDisplay = getPropertyValue(parent, "display");
-	if (parentDisplay !== "block" && parentDisplay !== "list-item") return false;
-	return isBlockLevel(element) && isInFlow(element);
-}
-
-/** The used margin-top after collapsing, or null to keep the declared one. */
-function collapsedMarginTop(element: Element): number | null {
-	if (!marginCollapseApplies(element)) return null;
-	const parent = element.parentElement!;
-	// Absorbed into the parent's edge: the ancestor that stops the collapse
-	// carries the combined margin instead.
-	if (
-		collapsesThrough(parent, "top") &&
-		edgeBlockChild(parent, "top") === element
-	) {
-		return 0;
-	}
-	// A self-collapsing box between real siblings owns no gap: the following
-	// box's top margin gathers everything (both of the empty's margins
-	// included), so the empty contributes zero of its own.
-	if (
-		isSelfCollapsing(element) &&
-		siblingThroughEmpties(element, "nextSibling", null)
-	) {
-		return 0;
-	}
-	const margins = adjoiningMargins(element, "top", []);
-	if (isSelfCollapsing(element)) {
-		// Last in its run: nothing after it will gather, so this box carries
-		// the whole collapsed set -- both its own margins adjoin.
-		margins.push(numericMargin(element, "margin-bottom"));
-	}
-	const previous = siblingThroughEmpties(element, "previousSibling", margins);
-	if (previous) adjoiningMargins(previous, "bottom", margins);
-	return combineMargins(margins);
-}
-
-/** The used margin-bottom after collapsing, or null to keep the declared one. */
-function collapsedMarginBottom(element: Element): number | null {
-	if (!marginCollapseApplies(element)) return null;
-	const parent = element.parentElement!;
-	if (
-		collapsesThrough(parent, "bottom") &&
-		edgeBlockChild(parent, "bottom") === element
-	) {
-		return 0;
-	}
-	// A following sibling's top margin owns the whole collapsed gap (an
-	// empty follower still gathers: its own top walk collects this box's
-	// bottom chain) -- and a self-collapsing box's bottom is already counted
-	// wherever its top went.
-	if (isSelfCollapsing(element)) return 0;
-	if (adjacentBlockSibling(element, "nextSibling")) return 0;
-	return combineMargins(adjoiningMargins(element, "bottom", []));
-}
-
 function styleFlexNode(
 	element: Element,
 	flexNode: FlexTypes.Node,
@@ -816,17 +553,6 @@ function styleFlexNode(
 			}
 		}
 
-		// Vertical margins COLLAPSE in block layout (css2 §8.3.1); the raw
-		// values above are replaced with their used, collapsed forms.
-		const collapsedTop = collapsedMarginTop(element);
-		if (collapsedTop !== null) {
-			flexNode.setMargin(Flex.EDGE_TOP, collapsedTop);
-		}
-		const collapsedBottom = collapsedMarginBottom(element);
-		if (collapsedBottom !== null) {
-			flexNode.setMargin(Flex.EDGE_BOTTOM, collapsedBottom);
-		}
-
 		// Paddings
 		const paddingTop = parseUnitValue(
 			computedStyle.computedValueOf("padding-top"),
@@ -1015,14 +741,6 @@ function styleFlexNode(
 		flexNode.setBorderCollapse(
 			computedStyle.computedValueOf("border-collapse") === "collapse",
 		);
-
-		// A table shrink-wraps to its content instead of filling its container.
-		// Block layout here is a flex column with align-items: stretch, which would
-		// otherwise stretch the table to the full terminal width, so opt it out --
-		// unless the author aligned it themselves.
-		if (computedStyle.computedValueOf("align-self") === "auto") {
-			flexNode.setAlignSelf(Flex.ALIGN_FLEX_START);
-		}
 	} else if (display === "table-header-group") {
 		flexNode.setDisplay(Flex.DISPLAY_TABLE_HEADER_GROUP);
 	} else if (display === "table-footer-group") {
@@ -1031,9 +749,6 @@ function styleFlexNode(
 		flexNode.setDisplay(Flex.DISPLAY_TABLE_ROW_GROUP);
 	} else if (display === "table-caption") {
 		flexNode.setDisplay(Flex.DISPLAY_TABLE_CAPTION);
-		// The caption's own content is laid out as a block.
-		flexNode.setFlexDirection(Flex.FLEX_DIRECTION_COLUMN);
-		flexNode.setAlignItems(Flex.ALIGN_STRETCH);
 	} else if (display === "table-column" || display === "table-column-group") {
 		// Columns carry style, not a box of their own.
 		flexNode.setDisplay(Flex.DISPLAY_NONE);
@@ -1043,9 +758,6 @@ function styleFlexNode(
 		flexNode.setDisplay(Flex.DISPLAY_TABLE_CELL);
 		flexNode.setColSpan(parseSpanAttribute(element, "colspan"));
 		flexNode.setRowSpan(parseSpanAttribute(element, "rowspan"));
-		// A cell establishes a block formatting context for its own content.
-		flexNode.setFlexDirection(Flex.FLEX_DIRECTION_COLUMN);
-		flexNode.setAlignItems(Flex.ALIGN_STRETCH);
 
 		// Add default padding for table cells if not explicitly set
 		const paddingLeft = computedStyle.computedValueOf("padding-left");
@@ -1108,15 +820,27 @@ function styleFlexNode(
 			flexNode.setAlignContent(Flex.ALIGN_FLEX_START);
 		}
 	} else if (display !== "none" && !display.startsWith("table")) {
-		// Default block layout. Displays decided above (table parts, `none`)
-		// must not be overwritten here. Resetting a table-caption to flex
-		// leaves the table unable to find its own caption; resetting a
-		// runtime-hidden element (DISPLAY_NONE, set a hundred lines up) back to
-		// flex keeps its rows painting and pushes everything below it down.
-		flexNode.setDisplay(Flex.DISPLAY_FLEX);
-		flexNode.setFlexDirection(Flex.FLEX_DIRECTION_COLUMN);
-		flexNode.setAlignItems(Flex.ALIGN_STRETCH);
+		// Block layout. Displays decided above (table parts, `none`) must not be
+		// overwritten here. Resetting a table-caption to block leaves the table
+		// unable to find its own caption; resetting a runtime-hidden element
+		// (DISPLAY_NONE, set a hundred lines up) back keeps its rows painting
+		// and pushes everything below it down.
+		flexNode.setDisplay(Flex.DISPLAY_BLOCK);
 	}
+
+	// A block formatting context contains its children's margins: none of them
+	// collapses through its edges (css2 §8.3.1, §9.4.1). The document element is
+	// the outermost one, and BODY is the box the camera measures the document
+	// by, so margins stop there rather than escaping into the viewport.
+	flexNode.setBlockFormattingContext(
+		element === element.ownerDocument?.documentElement ||
+			element.tagName === "BODY" ||
+			display === "inline-block" ||
+			display.startsWith("table") ||
+			computedStyle.computedValueOf("overflow") !== "visible" ||
+			isOutOfFlow(element) ||
+			parentIsFlex,
+	);
 
 	// Handle positioning properties
 	const position = computedStyle.computedValueOf("position");
@@ -1896,8 +1620,7 @@ export class LayoutEngine {
 	 * instead of O(visible children). Returns null when that search can't be
 	 * trusted: children[] is only guaranteed sorted top-to-bottom by extentTop
 	 * when the container stacks its children vertically in document order
-	 * (flex-direction: column -- block flow's internal representation here,
-	 * see styleFlexNode) and none of them is position:relative/absolute
+	 * (a block container) and none of them is position:relative/absolute
 	 * (either can land anywhere regardless of DOM order). Callers fall back to
 	 * walking every child themselves in that case.
 	 */
@@ -1916,7 +1639,7 @@ export class LayoutEngine {
 			// children (e.g. the run head's own text) still need the walker below.
 			flexNode.measureFunc !== null ||
 			flexNode.unstackedChildCount !== 0 ||
-			flexNode.getFlexDirection() !== Flex.FLEX_DIRECTION_COLUMN ||
+			flexNode.getDisplay() !== Flex.DISPLAY_BLOCK ||
 			// A non-run-head member of an inline run (a plain <span> inside
 			// running text, but also -- unlike that span -- an inline-block
 			// sibling, which paints its own box independently rather than
@@ -4778,8 +4501,8 @@ export class LayoutEngine {
 		let root = box.contentRoot;
 		if (!root) {
 			root = Flex.Node.createWithConfig(flexConfig);
-			root.setFlexDirection(Flex.FLEX_DIRECTION_COLUMN);
-			root.setAlignItems(Flex.ALIGN_STRETCH);
+			root.setDisplay(Flex.DISPLAY_BLOCK);
+			root.setBlockFormattingContext(true);
 			box.contentRoot = root;
 		}
 

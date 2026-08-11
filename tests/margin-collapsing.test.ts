@@ -192,3 +192,60 @@ test("border or height stops self-collapse", async () => {
 	expect(b.top - a.bottom).toBe(3);
 	dom.dispose();
 });
+
+test("a self-collapsing block collapses its parent through both edges", async () => {
+	const {dom} = await layout(
+		`<div id="a">A</div>` +
+			`<div id="wrap"><div id="e" style="margin-top:2px;margin-bottom:3px"></div></div>` +
+			`<div id="b">B</div>`,
+	);
+	const a = rectOf(dom, dom.document.getElementById("a")!);
+	const wrap = rectOf(dom, dom.document.getElementById("wrap")!);
+	const e = rectOf(dom, dom.document.getElementById("e")!);
+	const b = rectOf(dom, dom.document.getElementById("b")!);
+	// Nothing separates any of the six margins: one set, largest positive wins.
+	expect(e.height).toBe(0);
+	expect(wrap.height).toBe(0);
+	expect(b.top - a.bottom).toBe(3);
+	dom.dispose();
+});
+
+test("a negative margin inside a self-collapsing block passes through", async () => {
+	const {dom} = await layout(
+		`<div id="a" style="margin-bottom:3px">A</div>` +
+			`<div id="e" style="margin-top:-1px;margin-bottom:1px"></div>` +
+			`<div id="b">B</div>`,
+	);
+	const a = rectOf(dom, dom.document.getElementById("a")!);
+	const b = rectOf(dom, dom.document.getElementById("b")!);
+	// {3, -1, 1, 0}: largest positive plus most negative.
+	expect(b.top - a.bottom).toBe(2);
+	dom.dispose();
+});
+
+test("a negative margin collapses through a parent's top edge", async () => {
+	const {dom} = await layout(
+		`<div id="a" style="margin-bottom:2px">A</div>` +
+			`<div id="wrap"><div id="c" style="margin-top:-1px">C</div></div>`,
+	);
+	const a = rectOf(dom, dom.document.getElementById("a")!);
+	const wrap = rectOf(dom, dom.document.getElementById("wrap")!);
+	const c = rectOf(dom, dom.document.getElementById("c")!);
+	expect(wrap.top - a.bottom).toBe(1);
+	expect(c.top).toBe(wrap.top);
+	dom.dispose();
+});
+
+test("a trailing self-collapsing child pushes the gap outside its parent", async () => {
+	const {dom} = await layout(
+		`<div id="wrap"><div id="c">C</div><div id="e" style="margin-top:2px"></div></div>` +
+			`<div id="after">after</div>`,
+	);
+	const wrap = rectOf(dom, dom.document.getElementById("wrap")!);
+	const c = rectOf(dom, dom.document.getElementById("c")!);
+	const after = rectOf(dom, dom.document.getElementById("after")!);
+	// The empty block's margins adjoin the parent's bottom edge and escape it.
+	expect(wrap.bottom).toBe(c.bottom);
+	expect(after.top - wrap.bottom).toBe(2);
+	dom.dispose();
+});

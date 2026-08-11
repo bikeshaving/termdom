@@ -56,6 +56,7 @@ export const GUTTER_ALL = 2;
 
 export const DISPLAY_FLEX = 0;
 export const DISPLAY_NONE = 1;
+export const DISPLAY_BLOCK = 2;
 export const DISPLAY_TABLE = 3;
 export const DISPLAY_TABLE_ROW_GROUP = 4;
 export const DISPLAY_TABLE_HEADER_GROUP = 5;
@@ -261,6 +262,13 @@ interface Style {
 	/** Set on the table itself; collapsed cells share their borders. */
 	borderCollapse: boolean;
 
+	/**
+	 * Whether the box establishes a block formatting context: its children's
+	 * margins are contained, so none of them collapses through its own top or
+	 * bottom edge (css2 §8.3.1, §9.4.1).
+	 */
+	blockFormattingContext: boolean;
+
 	flexGrow: number;
 	/** CSS order: items lay out in order-modified document order. */
 	order: number;
@@ -292,6 +300,24 @@ interface LayoutResult {
 	/** css-flexbox-1 §4.5 automatic minimum size, along the parent's main axis. */
 	autoMinMain: number;
 	lineIndex: number;
+
+	/**
+	 * The margins that adjoin the box's top and bottom edges from the inside and
+	 * escape them, each set as its largest positive and most negative member
+	 * (css2 §8.3.1). Block layout writes them; the block container above reads
+	 * them to place the box, which is how a collapse crosses a box edge.
+	 */
+	collapseTopPositive: number;
+	collapseTopNegative: number;
+	collapseBottomPositive: number;
+	collapseBottomNegative: number;
+
+	/**
+	 * Whether the box's own top and bottom margins adjoin each other: a
+	 * zero-height block with nothing at either vertical edge, which its
+	 * neighbours' margins pass straight through (css2 §8.3.1).
+	 */
+	selfCollapsing: boolean;
 }
 
 /**
@@ -315,6 +341,7 @@ function createStyle(): Style {
 		colSpan: 1,
 		rowSpan: 1,
 		borderCollapse: false,
+		blockFormattingContext: false,
 
 		flexGrow: NaN,
 		order: 0,
@@ -362,6 +389,11 @@ function createLayout(): LayoutResult {
 		computedFlexBasis: NaN,
 		autoMinMain: NaN,
 		lineIndex: 0,
+		collapseTopPositive: 0,
+		collapseTopNegative: 0,
+		collapseBottomPositive: 0,
+		collapseBottomNegative: 0,
+		selfCollapsing: false,
 	};
 }
 
@@ -720,6 +752,11 @@ export class Node {
 
 	setRowSpan(v: number): void {
 		this.style.rowSpan = Math.max(1, Math.floor(v) || 1);
+		this.markDirty();
+	}
+
+	setBlockFormattingContext(v: boolean): void {
+		this.style.blockFormattingContext = v;
 		this.markDirty();
 	}
 
@@ -2666,6 +2703,11 @@ function zeroLayout(node: Node): void {
 	node.layout.width = 0;
 	node.layout.height = 0;
 	node.layout.computedFlexBasis = 0;
+	node.layout.collapseTopPositive = 0;
+	node.layout.collapseTopNegative = 0;
+	node.layout.collapseBottomPositive = 0;
+	node.layout.collapseBottomNegative = 0;
+	node.layout.selfCollapsing = false;
 	for (const child of node.children) {
 		zeroLayout(child);
 	}
@@ -3209,6 +3251,403 @@ function layoutTable(
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Block layout (CSS 2.2 §9.4.1 and §10.3.3, with §8.3.1 margin collapsing)
+// ---------------------------------------------------------------------------
+
+/**
+ * A set of adjoining margins, held as its largest positive and most negative
+ * member. That pair is all a collapse needs: the used value is their sum, and
+ * two sets that come to adjoin merge edge-wise -- so a set can cross a box edge
+ * as two numbers rather than as the whole list of margins in it.
+ */
+interface MarginSet {
+	positive: number;
+	negative: number;
+}
+
+function marginSet(): MarginSet {
+	return {positive: 0, negative: 0};
+}
+
+function addMargin(set: MarginSet, margin: number): void {
+	if (margin > set.positive) set.positive = margin;
+	if (margin < set.negative) set.negative = margin;
+}
+
+function mergeMarginSet(set: MarginSet, other: MarginSet): void {
+	if (other.positive > set.positive) set.positive = other.positive;
+	if (other.negative < set.negative) set.negative = other.negative;
+}
+
+function clearMarginSet(set: MarginSet): void {
+	set.positive = 0;
+	set.negative = 0;
+}
+
+/** The used value of an adjoining set: largest positive plus most negative. */
+function collapsedMargin(set: MarginSet): number {
+	return set.positive + set.negative;
+}
+
+/** The margins that adjoin a child's top edge: its own, plus what escapes it. */
+function readCollapseTop(child: Node, into: MarginSet): void {
+	clearMarginSet(into);
+	addMargin(into, child.layout.margin[EDGE_TOP]);
+	into.positive = Math.max(into.positive, child.layout.collapseTopPositive);
+	into.negative = Math.min(into.negative, child.layout.collapseTopNegative);
+}
+
+/** The margins that adjoin a child's bottom edge: its own, plus what escapes it. */
+function readCollapseBottom(child: Node, into: MarginSet): void {
+	clearMarginSet(into);
+	addMargin(into, child.layout.margin[EDGE_BOTTOM]);
+	into.positive = Math.max(into.positive, child.layout.collapseBottomPositive);
+	into.negative = Math.min(into.negative, child.layout.collapseBottomNegative);
+}
+
+/** A box that wraps its own content rather than filling its container. */
+function shrinkWrapsWidth(node: Node): boolean {
+	return node.style.display === DISPLAY_TABLE;
+}
+
+/**
+ * Lay a block-level child out against the width its container offers it: an
+ * explicit width wins, a box that fills takes the whole content width, and one
+ * that wraps its content -- a table, or a box whose auto margins are waiting
+ * for space to absorb -- takes no more than it.
+ */
+function layoutBlockChild(
+	child: Node,
+	contentWidth: number,
+	fill: boolean,
+	ownerWidth: number,
+	ownerHeight: number,
+	performLayout: boolean,
+): void {
+	const marginRow = marginForAxis(child, FLEX_DIRECTION_ROW, ownerWidth);
+	const marginColumn = marginForAxis(child, FLEX_DIRECTION_COLUMN, ownerWidth);
+
+	const childWidth = {value: NaN, mode: MEASURE_MODE_UNDEFINED};
+	const childHeight = {value: NaN, mode: MEASURE_MODE_UNDEFINED};
+
+	if (styleDimIsDefined(child, FLEX_DIRECTION_ROW, ownerWidth)) {
+		childWidth.value =
+			boundAxisWithinMinMax(
+				child,
+				FLEX_DIRECTION_ROW,
+				resolveValue(child.style.width, ownerWidth),
+				contentWidth,
+			) + marginRow;
+		childWidth.mode = MEASURE_MODE_EXACTLY;
+	} else if (isDefined(contentWidth)) {
+		childWidth.value = contentWidth;
+		childWidth.mode = fill ? MEASURE_MODE_EXACTLY : MEASURE_MODE_AT_MOST;
+	}
+
+	if (styleDimIsDefined(child, FLEX_DIRECTION_COLUMN, ownerHeight)) {
+		childHeight.value =
+			resolveValue(child.style.height, ownerHeight) + marginColumn;
+		childHeight.mode = MEASURE_MODE_EXACTLY;
+	}
+
+	constrainMaxSizeForMode(child, FLEX_DIRECTION_ROW, ownerWidth, childWidth);
+	constrainMaxSizeForMode(
+		child,
+		FLEX_DIRECTION_COLUMN,
+		ownerHeight,
+		childHeight,
+	);
+
+	layoutNode(
+		child,
+		childWidth.value,
+		childHeight.value,
+		childWidth.mode,
+		childHeight.mode,
+		ownerWidth,
+		ownerHeight,
+		performLayout,
+	);
+}
+
+/**
+ * An anonymous box that broke into no line at all -- collapsible white space
+ * between two block boxes -- occupies nothing and separates nothing, so the
+ * margins on either side of it go on adjoining (css2 §9.4.2, §8.3.1).
+ */
+function generatesNoLine(child: Node): boolean {
+	return child.measureFunc !== null && child.layout.height === 0;
+}
+
+/** Whether a child fills the container's content width rather than wrapping. */
+function blockChildFills(child: Node): boolean {
+	return (
+		!shrinkWrapsWidth(child) &&
+		child.style.margin[EDGE_LEFT].unit !== UNIT_AUTO &&
+		child.style.margin[EDGE_RIGHT].unit !== UNIT_AUTO
+	);
+}
+
+/**
+ * Stack a block container's in-flow children down its content box, collapsing
+ * the margins between them.
+ *
+ * The collapse is one running set of adjoining margins. It starts open at the
+ * top edge when nothing separates the container's own margin from its first
+ * child's -- then those margins escape the box entirely, and the container
+ * above applies them. Anything at the edge (a border, padding, a new formatting
+ * context) closes it, and the set is spent as a gap the moment content lands
+ * under it. A self-collapsing child never closes the set: its two margins join
+ * it and the next box's margin adjoins them all.
+ */
+function layoutBlock(
+	node: Node,
+	availableWidth: number,
+	availableHeight: number,
+	widthMode: MeasureMode,
+	heightMode: MeasureMode,
+	ownerWidth: number,
+	ownerHeight: number,
+	performLayout: boolean,
+): void {
+	const paddingBorderRow = paddingAndBorderForAxis(
+		node,
+		FLEX_DIRECTION_ROW,
+		ownerWidth,
+	);
+	const paddingBorderColumn = paddingAndBorderForAxis(
+		node,
+		FLEX_DIRECTION_COLUMN,
+		ownerWidth,
+	);
+	const marginRow = marginForAxis(node, FLEX_DIRECTION_ROW, ownerWidth);
+	const marginColumn = marginForAxis(node, FLEX_DIRECTION_COLUMN, ownerWidth);
+	const leftPaddingBorder = paddingAndBorderForEdge(
+		node,
+		EDGE_LEFT,
+		ownerWidth,
+	);
+	const topPaddingBorder = paddingAndBorderForEdge(node, EDGE_TOP, ownerWidth);
+
+	// -- in-flow children ---------------------------------------------------
+
+	const inFlow: Node[] = [];
+	for (const child of node.children) {
+		if (child.style.display === DISPLAY_NONE) {
+			zeroLayout(child);
+			continue;
+		}
+		child.layout.margin[EDGE_LEFT] = resolveMargin(
+			child.style.margin[EDGE_LEFT],
+			ownerWidth,
+		);
+		child.layout.margin[EDGE_TOP] = resolveMargin(
+			child.style.margin[EDGE_TOP],
+			ownerWidth,
+		);
+		child.layout.margin[EDGE_RIGHT] = resolveMargin(
+			child.style.margin[EDGE_RIGHT],
+			ownerWidth,
+		);
+		child.layout.margin[EDGE_BOTTOM] = resolveMargin(
+			child.style.margin[EDGE_BOTTOM],
+			ownerWidth,
+		);
+		if (child.style.positionType === POSITION_TYPE_ABSOLUTE) continue;
+		inFlow.push(child);
+	}
+
+	const innerWidth = isDefined(availableWidth)
+		? Math.max(0, availableWidth - marginRow - paddingBorderRow)
+		: NaN;
+
+	// -- content width ------------------------------------------------------
+	//
+	// Resolved before the children are laid out, min/max included, so that each
+	// one is measured exactly once at the width it will keep.
+
+	let borderBoxWidth: number;
+	if (widthMode === MEASURE_MODE_EXACTLY) {
+		borderBoxWidth = availableWidth - marginRow;
+	} else {
+		// Shrink-to-fit: as wide as the widest child, within what is offered.
+		let widest = 0;
+		for (const child of inFlow) {
+			layoutBlockChild(
+				child,
+				innerWidth,
+				false,
+				ownerWidth,
+				ownerHeight,
+				false,
+			);
+			widest = Math.max(
+				widest,
+				child.layout.width +
+					marginForAxis(child, FLEX_DIRECTION_ROW, ownerWidth),
+			);
+		}
+		borderBoxWidth = widest + paddingBorderRow;
+	}
+	borderBoxWidth = boundAxis(
+		node,
+		FLEX_DIRECTION_ROW,
+		borderBoxWidth,
+		ownerWidth,
+		ownerWidth,
+	);
+	const contentWidth = Math.max(0, borderBoxWidth - paddingBorderRow);
+
+	// -- stacking -----------------------------------------------------------
+
+	const openTop =
+		!node.style.blockFormattingContext &&
+		paddingAndBorderForEdge(node, EDGE_TOP, ownerWidth) === 0;
+	const openBottom =
+		!node.style.blockFormattingContext &&
+		paddingAndBorderForEdge(node, EDGE_BOTTOM, ownerWidth) === 0 &&
+		heightMode !== MEASURE_MODE_EXACTLY &&
+		!styleDimIsDefined(node, FLEX_DIRECTION_COLUMN, ownerHeight);
+
+	const escapingTop = marginSet();
+	const escapingBottom = marginSet();
+	const adjoining = marginSet();
+	const childTop = marginSet();
+	const childBottom = marginSet();
+
+	// Content-box tops of the in-flow children, parallel to `inFlow`.
+	const tops = new Array<number>(inFlow.length).fill(0);
+	let collecting = openTop;
+	let cursor = 0;
+	let placedContent = false;
+
+	for (let i = 0; i < inFlow.length; i++) {
+		const child = inFlow[i];
+		layoutBlockChild(
+			child,
+			contentWidth,
+			blockChildFills(child),
+			ownerWidth,
+			ownerHeight,
+			performLayout,
+		);
+
+		readCollapseTop(child, childTop);
+		if (child.layout.selfCollapsing || generatesNoLine(child)) {
+			readCollapseBottom(child, childBottom);
+			mergeMarginSet(childTop, childBottom);
+			if (collecting) {
+				mergeMarginSet(escapingTop, childTop);
+				tops[i] = cursor;
+			} else {
+				mergeMarginSet(adjoining, childTop);
+				tops[i] = cursor + collapsedMargin(adjoining);
+			}
+			continue;
+		}
+
+		if (collecting) {
+			mergeMarginSet(escapingTop, childTop);
+			collecting = false;
+			tops[i] = cursor;
+		} else {
+			mergeMarginSet(adjoining, childTop);
+			tops[i] = cursor + collapsedMargin(adjoining);
+		}
+		clearMarginSet(adjoining);
+		cursor = tops[i] + child.layout.height;
+		placedContent = true;
+		readCollapseBottom(child, adjoining);
+	}
+
+	// The set still standing at the end either escapes the bottom edge or
+	// becomes the last of the container's own content.
+	let contentHeight: number;
+	if (openBottom) {
+		mergeMarginSet(escapingBottom, adjoining);
+		contentHeight = cursor;
+	} else {
+		contentHeight = cursor + collapsedMargin(adjoining);
+	}
+
+	const width =
+		widthMode === MEASURE_MODE_EXACTLY
+			? availableWidth - marginRow
+			: borderBoxWidth;
+	const height =
+		heightMode === MEASURE_MODE_EXACTLY
+			? availableHeight - marginColumn
+			: Math.max(0, contentHeight) + paddingBorderColumn;
+
+	setMeasuredDimensions(node, width, height, ownerWidth, ownerHeight);
+
+	// Nothing at either edge and nothing between them: the two escaping sets
+	// are one set, and the box is a gap its neighbours' margins pass through.
+	const selfCollapsing =
+		openTop && openBottom && !placedContent && node.layout.height === 0;
+	if (selfCollapsing) {
+		mergeMarginSet(escapingTop, escapingBottom);
+		mergeMarginSet(escapingBottom, escapingTop);
+	}
+	node.layout.collapseTopPositive = escapingTop.positive;
+	node.layout.collapseTopNegative = escapingTop.negative;
+	node.layout.collapseBottomPositive = escapingBottom.positive;
+	node.layout.collapseBottomNegative = escapingBottom.negative;
+	node.layout.selfCollapsing = selfCollapsing;
+
+	if (!performLayout) return;
+
+	// -- placement ----------------------------------------------------------
+
+	for (let i = 0; i < inFlow.length; i++) {
+		const child = inFlow[i];
+		const leading = child.layout.margin[EDGE_LEFT];
+		const trailing = child.layout.margin[EDGE_RIGHT];
+		const leadingAuto = child.style.margin[EDGE_LEFT].unit === UNIT_AUTO;
+		const trailingAuto = child.style.margin[EDGE_RIGHT].unit === UNIT_AUTO;
+		const free = contentWidth - child.layout.width - leading - trailing;
+
+		let offset = 0;
+		if (leadingAuto && trailingAuto) {
+			offset = Math.max(free, 0) / 2;
+		} else if (leadingAuto) {
+			offset = Math.max(free, 0);
+		}
+
+		child.layout.left = leftPaddingBorder + leading + offset;
+		child.layout.top = topPaddingBorder + tops[i];
+	}
+
+	// `position: relative` shifts a box from where the flow put it without
+	// moving anything else, so it runs after all flow placement is done.
+	const innerWidthFinal = node.layout.width - paddingBorderRow;
+	const innerHeightFinal = node.layout.height - paddingBorderColumn;
+	for (const child of inFlow) {
+		if (child.style.positionType !== POSITION_TYPE_RELATIVE) continue;
+		child.layout.left += relativeOffset(
+			child,
+			FLEX_DIRECTION_ROW,
+			innerWidthFinal,
+		);
+		child.layout.top += relativeOffset(
+			child,
+			FLEX_DIRECTION_COLUMN,
+			innerHeightFinal,
+		);
+	}
+
+	for (const child of node.children) {
+		if (
+			child.style.positionType !== POSITION_TYPE_ABSOLUTE ||
+			child.style.display === DISPLAY_NONE
+		) {
+			continue;
+		}
+		layoutAbsoluteChild(node, child, ownerWidth, ownerHeight);
+	}
+}
+
 function layoutNode(
 	node: Node,
 	availableWidth: number,
@@ -3361,6 +3800,14 @@ function layoutNodeImpl(
 		ownerWidth,
 	);
 
+	// A box that is not a block container escapes no margins: only block layout
+	// writes these, so every other mode has to say so for itself.
+	node.layout.collapseTopPositive = 0;
+	node.layout.collapseTopNegative = 0;
+	node.layout.collapseBottomPositive = 0;
+	node.layout.collapseBottomNegative = 0;
+	node.layout.selfCollapsing = false;
+
 	if (node.style.display === DISPLAY_NONE) {
 		zeroLayout(node);
 		return;
@@ -3382,6 +3829,26 @@ function layoutNodeImpl(
 
 	if (node.style.display === DISPLAY_TABLE) {
 		layoutTable(
+			node,
+			availableWidth,
+			availableHeight,
+			widthMode,
+			heightMode,
+			ownerWidth,
+			ownerHeight,
+			performLayout,
+		);
+		return;
+	}
+
+	// A table cell and a table caption are block containers for their own
+	// content, whatever the grid around them does with their boxes.
+	if (
+		node.style.display === DISPLAY_BLOCK ||
+		node.style.display === DISPLAY_TABLE_CELL ||
+		node.style.display === DISPLAY_TABLE_CAPTION
+	) {
+		layoutBlock(
 			node,
 			availableWidth,
 			availableHeight,
@@ -3545,6 +4012,7 @@ const Flex = {
 
 	DISPLAY_FLEX,
 	DISPLAY_NONE,
+	DISPLAY_BLOCK,
 	DISPLAY_TABLE,
 	DISPLAY_TABLE_ROW_GROUP,
 	DISPLAY_TABLE_HEADER_GROUP,

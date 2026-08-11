@@ -1948,7 +1948,7 @@ test("Inline children do not affect block child positioning", () => {
 });
 
 // Tests for block emulation with flexbox behavior
-test("Block display is emulated with flexbox and proper flex-shrink behavior", () => {
+test("Block display stacks children and keeps their specified heights", () => {
 	const {layoutEngine} = createLayoutEngine(`
 		<div id="container" style="height: 10px; display: block;">
 			<div id="child1" style="height: 5px;">Child 1</div>
@@ -1977,8 +1977,8 @@ test("Block display is emulated with flexbox and proper flex-shrink behavior", (
 	const child2Layout = child2Yoga!.getComputedLayout();
 	const listLayout = listYoga!.getComputedLayout();
 
-	// Block containers use flexbox with flex-direction: column
-	expect(containerYoga!.getFlexDirection()).toBe(0); // FLEX_DIRECTION_COLUMN value
+	// Block containers are laid out by the block algorithm, not by flex
+	expect(containerYoga!.getDisplay()).toBe(2); // DISPLAY_BLOCK value
 
 	// Children are stacked vertically (block behavior)
 	expect(child1Layout.top).toBe(0);
