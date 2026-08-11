@@ -212,3 +212,152 @@ test("window.close() before the first frame leaves prior screen content alone", 
 	expect(text).toContain("PROMPT-LINE");
 	expect(text).toContain("closing content");
 });
+
+/**
+ * A transport that counts the closes it is asked for, which is how a teardown
+ * that ran and one a beforeunload listener stopped tell apart.
+ */
+function closeCountingTransport(terminal: MockProcess): {
+	transport: any;
+	closes(): number;
+} {
+	const base = terminal.transport;
+	let closes = 0;
+	return {
+		transport: {
+			...base,
+			cols: base.cols,
+			rows: base.rows,
+			close: () => {
+				closes++;
+			},
+		},
+		closes: () => closes,
+	};
+}
+
+test("window.close() fires beforeunload, then tears down", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const watched = closeCountingTransport(terminal);
+	const dom = new TermDOM({transport: watched.transport});
+	dom.attach();
+	dom.document.body.innerHTML = `<div>still here</div>`;
+	await nextFrame(dom);
+
+	const events: any[] = [];
+	dom.window.addEventListener("beforeunload", (event) => events.push(event));
+	dom.window.close();
+	await new Promise((r) => setTimeout(r, 150));
+
+	expect(events.length).toBe(1);
+	expect(events[0].type).toBe("beforeunload");
+	expect(events[0].cancelable).toBe(true);
+	expect(events[0].returnValue).toBe("");
+	expect(watched.closes()).toBe(1);
+});
+
+test("a beforeunload listener that preventDefaults keeps the session", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const watched = closeCountingTransport(terminal);
+	const dom = new TermDOM({transport: watched.transport});
+	dom.attach();
+	dom.document.body.innerHTML = `<div>unsaved work</div>`;
+	await nextFrame(dom);
+
+	let asked = 0;
+	const listener = (event: any) => {
+		asked++;
+		event.preventDefault();
+	};
+	dom.window.addEventListener("beforeunload", listener);
+	dom.window.close();
+	await new Promise((r) => setTimeout(r, 150));
+
+	expect(asked).toBe(1);
+	expect(watched.closes()).toBe(0);
+	// The session is still live: a mutation after the canceled close paints.
+	dom.document.body.innerHTML = `<div>saved now</div>`;
+	await nextFrame(dom);
+	expect(terminal.getVisibleText()).toContain("saved now");
+
+	// Closing again asks again -- the app's own dialog said yes this time.
+	dom.window.removeEventListener("beforeunload", listener);
+	dom.window.close();
+	await new Promise((r) => setTimeout(r, 150));
+	expect(watched.closes()).toBe(1);
+});
+
+test("a beforeunload returnValue keeps the session", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const watched = closeCountingTransport(terminal);
+	const dom = new TermDOM({transport: watched.transport});
+	dom.attach();
+	dom.document.body.innerHTML = `<div>unsaved work</div>`;
+	await nextFrame(dom);
+
+	dom.window.addEventListener("beforeunload", (event: any) => {
+		event.returnValue = "Are you sure?";
+	});
+	dom.window.close();
+	await new Promise((r) => setTimeout(r, 150));
+
+	expect(watched.closes()).toBe(0);
+	await dom.dispose();
+});
+
+test("Ctrl-C fires beforeunload, and a listener can keep the session", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const watched = closeCountingTransport(terminal);
+	const dom = new TermDOM({transport: watched.transport});
+	dom.attach();
+	dom.document.body.innerHTML = `<div>unsaved work</div>`;
+	await nextFrame(dom);
+
+	let asked = 0;
+	const listener = (event: any) => {
+		asked++;
+		event.preventDefault();
+	};
+	dom.window.addEventListener("beforeunload", listener);
+	(terminal.stdin as any).emit("data", Buffer.from("\x03"));
+	await new Promise((r) => setTimeout(r, 150));
+
+	expect(asked).toBe(1);
+	expect(watched.closes()).toBe(0);
+
+	dom.window.removeEventListener("beforeunload", listener);
+	(terminal.stdin as any).emit("data", Buffer.from("\x03"));
+	await new Promise((r) => setTimeout(r, 150));
+	expect(watched.closes()).toBe(1);
+});
+
+test("BeforeUnloadEvent is the interface a browser exposes", async () => {
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	const watched = closeCountingTransport(terminal);
+	const dom = new TermDOM({transport: watched.transport});
+	dom.attach();
+	await nextFrame(dom);
+
+	// The interface declares no constructor: only a teardown makes one.
+	expect(() => new (dom.window as any).BeforeUnloadEvent()).toThrow(TypeError);
+
+	let fired: any = null;
+	dom.window.addEventListener("beforeunload", (event: any) => {
+		fired = event;
+		// returnValue is a DOMString, so anything set to it stringifies -- and
+		// anything but the empty string cancels.
+		event.returnValue = 42;
+	});
+	dom.window.close();
+	await new Promise((r) => setTimeout(r, 150));
+
+	expect(fired).not.toBe(null);
+	expect(fired instanceof dom.window.Event).toBe(true);
+	expect(Object.prototype.toString.call(fired)).toBe(
+		"[object BeforeUnloadEvent]",
+	);
+	expect(fired.returnValue).toBe("42");
+	expect(fired.defaultPrevented).toBe(false);
+	expect(watched.closes()).toBe(0);
+	await dom.dispose();
+});
