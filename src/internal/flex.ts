@@ -1198,6 +1198,26 @@ function constrainMaxSizeForMode(
 // Layout
 // ---------------------------------------------------------------------------
 
+/** Resolve a node's four margins against the width percentages are taken from. */
+function resolveNodeMargins(node: Node, ownerWidth: number): void {
+	node.layout.margin[EDGE_LEFT] = resolveMargin(
+		node.style.margin[EDGE_LEFT],
+		ownerWidth,
+	);
+	node.layout.margin[EDGE_TOP] = resolveMargin(
+		node.style.margin[EDGE_TOP],
+		ownerWidth,
+	);
+	node.layout.margin[EDGE_RIGHT] = resolveMargin(
+		node.style.margin[EDGE_RIGHT],
+		ownerWidth,
+	);
+	node.layout.margin[EDGE_BOTTOM] = resolveMargin(
+		node.style.margin[EDGE_BOTTOM],
+		ownerWidth,
+	);
+}
+
 function setMeasuredDimensions(
 	node: Node,
 	width: number,
@@ -1544,22 +1564,7 @@ function layoutFlexbox(
 			zeroLayout(child);
 			continue;
 		}
-		child.layout.margin[EDGE_LEFT] = resolveMargin(
-			child.style.margin[EDGE_LEFT],
-			ownerWidth,
-		);
-		child.layout.margin[EDGE_TOP] = resolveMargin(
-			child.style.margin[EDGE_TOP],
-			ownerWidth,
-		);
-		child.layout.margin[EDGE_RIGHT] = resolveMargin(
-			child.style.margin[EDGE_RIGHT],
-			ownerWidth,
-		);
-		child.layout.margin[EDGE_BOTTOM] = resolveMargin(
-			child.style.margin[EDGE_BOTTOM],
-			ownerWidth,
-		);
+		resolveNodeMargins(child, ownerWidth);
 
 		if (child.style.positionType === POSITION_TYPE_ABSOLUTE) continue;
 
@@ -3423,22 +3428,7 @@ function layoutBlock(
 			zeroLayout(child);
 			continue;
 		}
-		child.layout.margin[EDGE_LEFT] = resolveMargin(
-			child.style.margin[EDGE_LEFT],
-			ownerWidth,
-		);
-		child.layout.margin[EDGE_TOP] = resolveMargin(
-			child.style.margin[EDGE_TOP],
-			ownerWidth,
-		);
-		child.layout.margin[EDGE_RIGHT] = resolveMargin(
-			child.style.margin[EDGE_RIGHT],
-			ownerWidth,
-		);
-		child.layout.margin[EDGE_BOTTOM] = resolveMargin(
-			child.style.margin[EDGE_BOTTOM],
-			ownerWidth,
-		);
+		resolveNodeMargins(child, ownerWidth);
 		if (child.style.positionType === POSITION_TYPE_ABSOLUTE) continue;
 		inFlow.push(child);
 	}
@@ -3556,16 +3546,12 @@ function layoutBlock(
 		contentHeight = cursor + collapsedMargin(adjoining);
 	}
 
-	const width =
-		widthMode === MEASURE_MODE_EXACTLY
-			? availableWidth - marginRow
-			: borderBoxWidth;
 	const height =
 		heightMode === MEASURE_MODE_EXACTLY
 			? availableHeight - marginColumn
 			: Math.max(0, contentHeight) + paddingBorderColumn;
 
-	setMeasuredDimensions(node, width, height, ownerWidth, ownerHeight);
+	setMeasuredDimensions(node, borderBoxWidth, height, ownerWidth, ownerHeight);
 
 	// Nothing at either edge and nothing between them: the two escaping sets
 	// are one set, and the box is a gap its neighbours' margins pass through.
