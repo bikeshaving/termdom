@@ -256,10 +256,10 @@ test("display none elements", () => {
 	);
 	const div = dom.window.document.querySelector("div")!;
 
-	const rect = layoutEngine.getRect(div);
-	// Should still have a rect but with zero dimensions or be positioned off-screen
-	// (exact behavior depends on Yoga's display: none handling)
-	expect(rect).not.toBeNull();
+	// A display:none element generates no box, so there is no geometry to
+	// report: an empty client rect, and resolved values that are the computed
+	// ones.
+	expect(layoutEngine.getRect(div)).toBeNull();
 });
 
 test("resize updates layout", () => {

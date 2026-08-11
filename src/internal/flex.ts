@@ -570,6 +570,16 @@ export class Node {
 	cachedLayout: CachedLayout | null = null;
 
 	/**
+	 * Whether a sizing pass has run over this node since its last full layout.
+	 * A sizing pass answers with a size and leaves the children holding
+	 * whatever geometry the measurement happened to put there, so the cached
+	 * layout no longer describes them -- and a cached-layout hit, which skips
+	 * the subtree on the strength of exactly that, cannot be taken. A node with
+	 * no children has no such subtree, and keeps its cache.
+	 */
+	sizedSinceLayout = false;
+
+	/**
 	 * What this node's measure function produced alongside the size it was
 	 * placed at -- the lines a text run was broken into, for whoever paints it.
 	 *
@@ -3240,6 +3250,7 @@ function layoutNode(
 		let hit: CachedLayout | null = null;
 		if (
 			node.cachedLayout &&
+			!(performLayout && node.sizedSinceLayout && node.children.length > 0) &&
 			constraintsMatch(
 				node.cachedLayout,
 				availableWidth,
@@ -3331,10 +3342,12 @@ function layoutNode(
 	};
 	if (performLayout) {
 		node.cachedLayout = entry;
+		node.sizedSinceLayout = false;
 	} else {
 		node.cachedMeasures[
 			cacheSlot(availableWidth, availableHeight, widthMode, heightMode)
 		] = entry;
+		node.sizedSinceLayout = true;
 	}
 	node.dirty = false;
 }
