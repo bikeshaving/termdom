@@ -528,3 +528,119 @@ test("an element flipped to display: contents gives up its box", async () => {
 
 	dom.dispose();
 });
+
+test("a block inside an inline takes its padding from a class flip", async () => {
+	// An inline element's invalidation is its RUN's, and stops there: it never
+	// recurses into children, because a run measures everything under it. A
+	// block-level child breaks the inline apart and is laid out by a node of
+	// its own, whose margins and padding are the element's own style -- so the
+	// flip has to reach that node, and the cascade is what says it must.
+	const terminal = new MockProcess({cols: 30, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	document.body.innerHTML =
+		`<style>.pad { padding-left: 2ch; }</style><b><div id="d">AB</div></b>`;
+	await nextFrame(dom);
+	const line = () =>
+		terminal.getPlainText().split("\n")[0].replace(/\s+$/, "");
+	expect(line()).toBe("AB");
+
+	document.getElementById("d")!.classList.add("pad");
+	await nextFrame(dom);
+	expect(line()).toBe("  AB");
+
+	dom.dispose();
+});
+
+test("a block turned inline-block keeps the content it already had", async () => {
+	// The block's layout node is retired the moment an anonymous box takes
+	// over measuring it, and its children's nodes belong to other elements
+	// which go on pointing at them. Freeing the retired node without severing
+	// them first leaves every descendant holding a corpse, and an element
+	// measured through a freed node lays out nothing at all.
+	const terminal = new MockProcess({cols: 30, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	document.body.innerHTML = `<div id="d"><section>AB</section></div>`;
+	await nextFrame(dom);
+	const line = () =>
+		terminal.getPlainText().split("\n")[0].replace(/\s+$/, "");
+	expect(line()).toBe("AB");
+
+	document.getElementById("d")!.setAttribute("style", "display: inline-block");
+	await nextFrame(dom);
+	expect(line()).toBe("AB");
+
+	dom.dispose();
+});
+
+test("a restyle deep inside an inline-block re-measures the run holding it", async () => {
+	// An inline-block's block content is laid out in a DETACHED tree, run only
+	// by the measure of the box the inline-block sits on. The climb out of that
+	// tree has to be a DOM question: nothing between the restyled element and
+	// the inline-block owns a layout node, and the flex tree above the box is
+	// severed and rebuilt constantly, so a box asked which tree it is in can
+	// answer "none" and leave the only measure that runs it clean.
+	const terminal = new MockProcess({cols: 30, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	document.body.innerHTML =
+		`<style>.dim { color: #808080; } .on ~ .light { color: red; }</style>` +
+		`A<section style="display: inline-block"><section><b id="s">BC</b></section></section>`;
+	await nextFrame(dom);
+	const line = () =>
+		terminal.getPlainText().split("\n")[0].replace(/\s+$/, "");
+	expect(line()).toBe("ABC");
+
+	document.getElementById("s")!.classList.add("dim");
+	await nextFrame(dom);
+	expect(line()).toBe("ABC");
+
+	dom.dispose();
+});
+
+test("a flex item that stops being one gives up its layout node", async () => {
+	// A flex container gives each child a box of its own, so an inline child
+	// blockified into one owns a layout node. When the container stops being a
+	// flex container the child joins an anonymous box instead -- and the node
+	// it kept lays the same content out a second time, beside the box.
+	const terminal = new MockProcess({cols: 30, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	document.body.innerHTML =
+		`<style>.col { display: flex; flex-direction: column; }</style>` +
+		`<b><div id="d" class="col"><span>A</span></div>BC</b>`;
+	await nextFrame(dom);
+	const lines = () =>
+		terminal
+			.getPlainText()
+			.split("\n")
+			.map((line) => line.replace(/\s+$/, ""));
+	expect(lines().slice(0, 2)).toEqual(["A", "BC"]);
+
+	document.getElementById("d")!.classList.remove("col");
+	await nextFrame(dom);
+	expect(lines().slice(0, 2)).toEqual(["A", "BC"]);
+
+	dom.dispose();
+});
+
+test("a hidden run member gives up the width it reserved", async () => {
+	// A member that turns display:none changes what its box measures, and
+	// nothing about the space the box was offered says so: the box would go on
+	// reserving the hidden member's width forever.
+	const terminal = new MockProcess({cols: 30, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	document.body.innerHTML = `<span>A<em id="s">BBBB</em></span>C`;
+	await nextFrame(dom);
+	const line = () =>
+		terminal.getPlainText().split("\n")[0].replace(/\s+$/, "");
+	expect(line()).toBe("ABBBBC");
+
+	document.getElementById("s")!.setAttribute("style", "display: none");
+	await nextFrame(dom);
+	expect(line()).toBe("AC");
+
+	dom.dispose();
+});

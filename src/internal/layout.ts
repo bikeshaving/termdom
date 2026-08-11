@@ -1630,7 +1630,12 @@ export class LayoutEngine {
 				// in an orphan subtree.
 				let parent = boxParentElement(node);
 				while (parent) {
-					const parentFlexNode = this.nodeMap.get(parent);
+					// An inline-block holding block-level content lays it out in
+					// a detached tree of its own, and owns no layout node in the
+					// tree above -- the run measuring it does. That tree is
+					// where its children belong.
+					const parentFlexNode =
+						this.#blockContentRoots.get(parent) ?? this.nodeMap.get(parent);
 					if (parentFlexNode) {
 						this.#addNode(node, parentFlexNode);
 						break;
@@ -3644,11 +3649,27 @@ export class LayoutEngine {
 	 * whose measure is the only thing that ever lays that tree out.
 	 */
 	#invalidateBox(box: InlineBox): void {
-		const flexNode = box.flexNode;
-		if (!flexNode) return;
-		flexNode.markDirty();
-		const host = this.#hostOfContentRoot(flexNode);
+		box.flexNode?.markDirty();
+		const host = this.#enclosingContentRoot(box.container);
 		if (host) this.#invalidateEnclosingMeasure(host);
+	}
+
+	/**
+	 * The inline-block whose detached tree an element's boxes are laid out in,
+	 * the element itself included -- since a box directly inside a content root
+	 * lives in that root's tree.
+	 *
+	 * A DOM question, not a flex-tree one: the tree above a box is severed and
+	 * rebuilt constantly, and a box whose layout node is momentarily detached
+	 * would answer that it is in no tree at all -- leaving the only measure
+	 * that ever runs it un-dirtied.
+	 */
+	#enclosingContentRoot(from: Element | null): Element | null {
+		if (this.#blockContentRoots.size === 0) return null;
+		for (let current = from; current; current = boxParentElement(current)) {
+			if (this.#blockContentRoots.has(current)) return current;
+		}
+		return null;
 	}
 
 	/**
@@ -3736,19 +3757,28 @@ export class LayoutEngine {
 				headFlexNode.markDirty();
 				// Keep climbing out of any detached content tree this run sits
 				// in: only the box that owns the tree can run it again.
-				const host = this.#hostOfContentRoot(headFlexNode);
+				const host = this.#enclosingContentRoot(boxParentElement(entry));
 				if (host) this.#invalidateEnclosingMeasure(host);
 				return;
 			}
 		}
 		let current = boxParentElement(node);
 		while (current) {
+			// An ancestor that is itself a run member owns no layout node: the
+			// anonymous box holding it is what measures it, and everything
+			// nested inside it with it. Nothing further out ever re-runs that
+			// measure, so the climb ends here.
+			const enclosing = this.#boxEntryOf(current);
+			if (enclosing instanceof InlineBox && enclosing.flexNode) {
+				this.#invalidateBox(enclosing);
+				return;
+			}
 			const flexNode = this.nodeMap.get(current);
 			if (flexNode) {
 				if (flexNode.measureFunc) {
 					flexNode.markDirty();
 				}
-				const host = this.#hostOfContentRoot(flexNode);
+				const host = this.#enclosingContentRoot(boxParentElement(current));
 				if (host) this.#invalidateEnclosingMeasure(host);
 				return;
 			}
@@ -3768,6 +3798,12 @@ export class LayoutEngine {
 			const stale = this.nodeMap.get(node);
 			if (stale) {
 				stale.getParent()?.removeChild(stale);
+				// Sever the children before freeing: they belong to other DOM
+				// nodes, which keep pointing at them, and an element measured
+				// by a box that reuses a freed node lays out nothing at all.
+				while (stale.children.length > 0) {
+					stale.removeChild(stale.children[0]);
+				}
 				this.#measureNodes.delete(stale);
 				stale.freeRecursive();
 				this.#untrackNode(node);
@@ -3924,16 +3960,25 @@ export class LayoutEngine {
 				// boxes of its children.
 				this.#restageBox(element);
 				this.#restageChildren(element);
-				// A box built for the wrong KIND of element measures the wrong
-				// content -- a blockified inline holding a block would end at
-				// the first block inside it -- and no re-measurement corrects
-				// that, only a rebuild.
 				const flexNode = this.nodeMap.get(element);
-				if (
-					flexNode &&
-					this.#measuresAsRun(element) !== this.#measureNodes.has(flexNode)
-				) {
-					this.invalidate(element);
+				if (flexNode) {
+					// A box built for the wrong KIND of element measures the
+					// wrong content -- a blockified inline holding a block
+					// would end at the first block inside it -- and no
+					// re-measurement corrects that, only a rebuild.
+					// So does a node left over from when no anonymous box held
+					// this element: the box lays its content out, and the node
+					// lays the same content out a second time beside it.
+					if (
+						this.#measuresAsRun(element) !==
+							this.#measureNodes.has(flexNode) ||
+						(this.#isInlineLevel(element) && this.#boxOf(element) !== null)
+					) {
+						this.#invalidatedNodes.add(element);
+					}
+					// The layout node carries the element's own margins, padding
+					// and dimensions, which are the style that just went.
+					this.#styleNode(element, flexNode);
 				}
 				this.#invalidateEnclosingMeasure(element);
 				if (this.#boxesByContainer.has(element)) {
