@@ -6,19 +6,19 @@
 //   node examples/solitaire.ts            (opens the new-game menu)
 //   node examples/solitaire.ts <deal>     (skips the menu -- the speedrun door)
 //
-//   The menu chooses one-card or three-card draw; in three-card, the discard
+//   The menu chooses one-card or three-card draw; in three-card, the flip
 //   fans its last three and only the top is playable.
 //
-//   s      draw from the stock (or turn it over when empty; space works too)
-//          each foundation takes only the suit that labels it
+//   space  draw from the deck (or turn it over when empty; enter draws too
+//          while the cursor is hidden)
+//   f      pick up the flip's top card
 //   1-7    pick up a tableau pile, or drop what you are holding on it
-//   d      pick up the discard's top card
 //   arrows move the cursor anywhere on the board; enter takes the card
 //          under it (with its stack) or places what you are holding
-//   f      send what you are holding (or the first ready card) home
-//   S/H/D/C  send that suit's ready card home -- the player's pick where
-//          several are ready at once
-//   a      send everything that fits to the foundations
+//   s/h/d/c  send that suit's ready card home -- each home takes only the
+//          suit that labels it, and the letters are the player's pick
+//          where several cards are ready at once
+//   a      send everything that fits home
 //   enter on the held stack's own pile puts it back    u undo    q quit
 //   n new deal    r retry this deal
 //          (n and r mid-run ask first -- y or enter abandons, n stays)
@@ -26,7 +26,7 @@
 // The clock starts on the first move and stops on the win; a deal's best
 // time survives retries, which is what makes a deal number a speedrun.
 //
-// Clicking does the same: a card picks up, a pile drops, the stock deals, and
+// Clicking does the same: a card picks up, a pile drops, the deck deals, and
 // a double-click sends a card home.
 import {TermDOM} from "@b9g/termdom";
 import type {Context} from "@b9g/crank";
@@ -702,13 +702,13 @@ function* App(this: Context) {
 			return;
 		}
 		this.refresh(() => {
-			message = "Nothing is ready for a foundation.";
+			message = "Nothing is ready to go home.";
 		});
 	};
 
 	/**
-	 * Send a named suit's ready card to its foundation: the held card if it
-	 * is that suit, else the discard's top, else the first pile top. Where f
+	 * Send a named suit's ready card home: the held card if it is that suit,
+	 * else the flip's top, else the first pile top. Where a double-click
 	 * auto-picks among several ready cards, a suit key is the player's pick.
 	 */
 	const sendSuit = (suit: number): void => {
@@ -742,7 +742,7 @@ function* App(this: Context) {
 			}
 		}
 		this.refresh(() => {
-			message = `No ${SUIT_NAMES[suit]} is ready for its foundation.`;
+			message = `No ${SUIT_NAMES[suit]} is ready to go home.`;
 		});
 	};
 
@@ -760,7 +760,7 @@ function* App(this: Context) {
 	};
 
 	// The cursor is a place on the board, in the board's own geometry: seven
-	// columns, a top row (stock, discard, a gap, four foundations) and the
+	// columns, a top row (deck, flip, a gap, four suit homes) and the
 	// tableau below, where a column is a pile and the cursor can rest on any
 	// face-up card of it. Enter acts where the cursor is; the arrows move it,
 	// wrapping across columns.
@@ -824,7 +824,7 @@ function* App(this: Context) {
 	const activate = (): void => {
 		if (cur.row === "top") {
 			if (cur.col === 0)
-				return act(draw, "The stock and the discard are both empty.");
+				return act(draw, "The deck and the flip are both empty.");
 			if (cur.col === 1) {
 				if (held)
 					return void this.refresh(() => {
@@ -904,16 +904,15 @@ function* App(this: Context) {
 			});
 			return;
 		}
-		if (key === " " || key === "s") {
-			return act(draw, "The stock and the discard are both empty.");
+		if (key === " ") {
+			return act(draw, "The deck and the flip are both empty.");
 		}
-		if (key === "d" || key === "w") {
+		if (key === "f") {
 			if (top(game.waste)) grab({kind: "waste"});
 			return;
 		}
-		if (key === "f") return sendHome();
-		if (key === "S" || key === "H" || key === "D" || key === "C") {
-			return sendSuit({S: 0, H: 1, D: 2, C: 3}[key]!);
+		if (key === "s" || key === "h" || key === "d" || key === "c") {
+			return sendSuit({s: 0, h: 1, d: 2, c: 3}[key]!);
 		}
 		if (key === "a") {
 			act((game) => autoplay(game) > 0, "Nothing is ready for a foundation.");
@@ -951,7 +950,7 @@ function* App(this: Context) {
 			// player's right hand never leaves home row. With the cursor up,
 			// Enter takes and places at it.
 			if (!cursorShown) {
-				return act(draw, "The stock and the discard are both empty.");
+				return act(draw, "The deck and the flip are both empty.");
 			}
 			return activate();
 		}
@@ -1055,10 +1054,10 @@ function* App(this: Context) {
 				${
 					t === TIERS.grand &&
 					jsx`<div class="captions">
-						<span class="caption">${"[s]tock".padEnd(t.width)}</span>
-						<span class="caption">${"[d]iscard"}</span>
-						<span class="caption">${blank(2 * t.width - 9)}</span>
-						<span class="caption">${centered("[f]oundations", 4 * t.width + 3 * t.gap)}</span>
+						<span class="caption">${"deck".padEnd(t.width)}</span>
+						<span class="caption">${"[f]lip".padEnd(t.width)}</span>
+						<span class="caption">${blank(t.width)}</span>
+						<span class="caption">${centered("s/h/d/c home", 4 * t.width + 3 * t.gap)}</span>
 					</div>`
 				}
 				<div class="top">
@@ -1191,7 +1190,7 @@ function* App(this: Context) {
 						</dialog>
 					</div>`
 				}
-				<div class="hint"><b>S/H/D/C</b> by suit${DOT}<b>${ARROWS_ALL}</b>/<b>tab</b> move${DOT}<b>enter</b> take/place${DOT}<b>[a]</b>uto${DOT}<b>[u]</b>ndo${DOT}<b>[n]</b>ew${DOT}<b>[r]</b>etry${DOT}<b>[q]</b>uit</div>
+				<div class="hint"><b>s/h/d/c</b> home${DOT}<b>${ARROWS_ALL}</b>/<b>tab</b> move${DOT}<b>enter</b> take/place${DOT}<b>[a]</b>uto${DOT}<b>[u]</b>ndo${DOT}<b>[n]</b>ew${DOT}<b>[r]</b>etry${DOT}<b>[q]</b>uit</div>
 			</div>
 		`;
 	}

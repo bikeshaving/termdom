@@ -17,7 +17,7 @@ export default {
 	},
 	steps: [
 		1,
-		"f", // the ace of diamonds, straight home
+		"d", // the ace of diamonds, straight home
 		1.1,
 		RIGHT,
 		0.25,
@@ -47,11 +47,11 @@ export default {
 		0.45,
 		" ",
 		0.6, // three draws
-		"d",
+		"f",
 		0.5,
 		"6", // the four of spades, from the discard
 		1,
-		"f", // the ace of clubs the six uncovered
+		"c", // the ace of clubs the six uncovered
 		1.2,
 		"n",
 		1.3,
