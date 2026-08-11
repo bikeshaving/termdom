@@ -113,6 +113,25 @@ const {createApp} = await import("vue");
 createApp(App).mount(term.document.body);
 ```
 
+Svelte is a compiler, so its components compile first (`svelte/compiler`
+with `generate: "client"`, or any bundler's Svelte plugin), and its package
+exports resolve the client runtime under the `browser` condition:
+
+```sh
+node --conditions=browser app.js
+```
+
+```ts
+globalThis.Element = term.window.Element;
+globalThis.Node = term.window.Node;
+globalThis.Text = term.window.Text;
+globalThis.Comment = term.window.Comment;
+
+const {mount} = await import("svelte");
+const {default: App} = await import("./App.js"); // compiled from App.svelte
+mount(App, {target: term.document.body});
+```
+
 Crank needs `Node` and `document` — [`examples/todomvc.ts`](https://github.com/bikeshaving/termdom/blob/main/examples/todomvc.ts)
 and the solitaire example show it in full.
 
