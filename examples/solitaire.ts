@@ -471,8 +471,11 @@ function faceRows(card: Card, tier: Tier): string[] {
 			grid[height - 1][width - index.length + i] = index[i];
 		}
 	} else {
-		for (let i = 0; i < index.length; i++) {
-			grid[height - index.length + i][width - 1] = index[i];
+		// A ten's three glyphs don't read as a ten stacked vertically, so the
+		// corner uses the card player's T -- the top index still teaches "10".
+		const corner = card.rank === 10 ? `T${SUITS[card.suit]}` : index;
+		for (let i = 0; i < corner.length; i++) {
+			grid[height - corner.length + i][width - 1] = corner[i];
 		}
 	}
 	return grid.map((row) => row.join(""));
