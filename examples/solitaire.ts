@@ -11,7 +11,7 @@
 //
 //   space  draw from the deck (or turn it over when empty; enter draws too
 //          while the cursor is hidden)
-//   f      pick up the flip's top card
+//   f      pick up the flip's top card (0 works too -- the pile left of 1)
 //   1-7    pick up a tableau pile, or drop what you are holding on it
 //   arrows move the cursor anywhere on the board; enter takes the card
 //          under it (with its stack) or places what you are holding
@@ -907,7 +907,7 @@ function* App(this: Context) {
 		if (key === " ") {
 			return act(draw, "The deck and the flip are both empty.");
 		}
-		if (key === "f") {
+		if (key === "f" || key === "0") {
 			if (top(game.waste)) grab({kind: "waste"});
 			return;
 		}
