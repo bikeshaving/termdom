@@ -71,7 +71,7 @@ test("a <script> in rendered HTML is inert (no code execution)", async () => {
 	const t = new MockProcess({rows: 4, cols: 40});
 	const dom = new TermDOM({transport: t.transport});
 	(globalThis as unknown as {__termdomPwned?: boolean}).__termdomPwned = false;
-	// If jsdom ran scripts, either of these would flip the flag.
+	// If parsed scripts ran, either of these would flip the flag.
 	dom.document.body.innerHTML =
 		`<script>globalThis.__termdomPwned = true;</script>` +
 		`<img src="x" onerror="globalThis.__termdomPwned = true;">` +

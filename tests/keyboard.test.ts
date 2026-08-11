@@ -1173,7 +1173,7 @@ test("radios render as ( )/(x); Space checks but never unchecks; groups are excl
 	await new Promise((r) => setTimeout(r, 0));
 	expect(a.checked).toBe(true);
 
-	// Checking the sibling unchecks this one -- jsdom's own radio-group
+	// Checking the sibling unchecks this one -- the DOM's own radio-group
 	// exclusivity, surfaced through the same Space path.
 	b.focus();
 	(terminal.stdin as any).emit("data", Buffer.from(" "));
@@ -1489,7 +1489,7 @@ test("width:100% on an input fills its container instead of collapsing", async (
 });
 
 test(":focus rules apply on focus and revert on blur", async () => {
-	// Selector matching is live (jsdom's :focus follows activeElement), but
+	// Selector matching is live (:focus follows activeElement), but
 	// computed styles are cached per element and focus is not a mutation --
 	// the cache held a rule set matched before the focus moved, so a :focus
 	// rule never applied, and once focused would never have un-applied.
@@ -2011,7 +2011,7 @@ test("a focused button activates on Enter and on Space", async () => {
 		seen.push("btn");
 	});
 	document.getElementById("submit")!.addEventListener("click", (ev) => {
-		// No form to submit to, and jsdom would try to navigate.
+		// No form to submit to; submission would try to navigate.
 		ev.preventDefault();
 		seen.push("submit");
 	});

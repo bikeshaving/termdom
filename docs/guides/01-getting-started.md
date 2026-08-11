@@ -76,6 +76,46 @@ document.addEventListener("keydown", (e) => {
 });
 ```
 
+## Frameworks
+
+A frontend framework renders into TermDOM's document the way it renders into
+a browser's. Frameworks read browser globals, so assign the ones yours
+expects before it loads:
+
+```ts
+import {TermDOM} from "@b9g/termdom";
+
+const term = new TermDOM();
+term.attach();
+globalThis.document = term.document;
+globalThis.window = term.window;
+```
+
+React needs nothing further:
+
+```ts
+import {createRoot} from "react-dom/client";
+createRoot(term.document.body).render(<App />);
+```
+
+Vue also reads the DOM constructors for `instanceof` checks, and captures
+`document` when its module loads — so the globals go up first and Vue comes
+in by dynamic import:
+
+```ts
+globalThis.Element = term.window.Element;
+globalThis.Node = term.window.Node;
+globalThis.Text = term.window.Text;
+globalThis.Comment = term.window.Comment;
+globalThis.SVGElement = term.window.SVGElement;
+
+const {createApp} = await import("vue");
+createApp(App).mount(term.document.body);
+```
+
+Crank needs `Node` and `document` — [`examples/todomvc.ts`](https://github.com/bikeshaving/termdom/blob/main/examples/todomvc.ts)
+and the solitaire example show it in full.
+
 ## Next
 
 - [Layout](/guides/layout/) — the box model, flexbox, and tables.

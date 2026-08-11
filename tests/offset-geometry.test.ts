@@ -1,10 +1,9 @@
 /**
  * offsetWidth / offsetHeight / offsetTop / offsetLeft / offsetParent.
  *
- * The most commonly reached-for DOM measurement API, previously entirely
- * unimplemented (always 0/null, inherited from jsdom's defaults -- see the
- * spec-conformance audit). Border-box dimensions and position, from the same
- * layout rect getBoundingClientRect already uses.
+ * The most commonly reached-for DOM measurement API. Border-box dimensions
+ * and position, from the same layout rect getBoundingClientRect already
+ * uses.
  */
 
 import {test, expect} from "@b9g/libuild/test";

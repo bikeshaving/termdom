@@ -369,7 +369,7 @@ export class MockProcess extends EventEmitter implements ProcessLike {
  * Await the next painted frame. Rendering is automatic (the MutationObserver
  * drives it), so a test mutates the DOM and then awaits a frame -- exactly what a
  * page does with requestAnimationFrame, and the reason TermDOM has no public
- * render(). jsdom provides rAF via pretendToBeVisual.
+ * render(). The engine's own window provides requestAnimationFrame.
  */
 export function nextFrame(dom: {
 	window: {requestAnimationFrame(cb: () => void): number};

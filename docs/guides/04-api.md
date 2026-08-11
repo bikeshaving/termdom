@@ -41,8 +41,8 @@ these members are wired to the terminal:
   are delivered per rendered frame
 - `close()` — ends the session (detailed below)
 
-Anything not listed behaves as jsdom implements it, without terminal
-wiring.
+Anything not listed behaves as the DOM and CSSOM standards specify,
+without terminal wiring.
 
 `window.close()` ends the session: it flushes the final frame to
 scrollback, restores terminal modes, disposes the instance, and calls

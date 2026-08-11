@@ -6,7 +6,7 @@
  * -- so `document`, `Node`, `Element` and the rest are this implementation's --
  * and the file's scripts are evaluated in document order inside one block at
  * global scope, so that a name a script declares is a name the realm has, as
- * it is in a browser. jsdom is not loaded.
+ * it is in a browser.
  *
  * The suites are fetched into .wpt/ on first run and cached. Results are
  * written to docs/dom-conformance.md.
@@ -1173,7 +1173,7 @@ const lines: string[] = [
 	"that file's HTML parser, and `document`, `Node`, `Element` and the rest of",
 	"the realm's DOM globals are its classes. Each file gets its own evaluation",
 	"of the module, so a test that tampers with a prototype cannot reach the",
-	"next file. jsdom is not loaded.",
+	"next file.",
 	"",
 	"The harness supplies three things the environment would, none of which is",
 	"part of this DOM: a `window` object carrying addEventListener, its pair,",

@@ -1,6 +1,6 @@
 import {TermDOM} from "@b9g/termdom";
 
-// Create a TermDOM instance (like JSDOM, but for terminals)
+// Create a TermDOM instance and attach it to the terminal.
 const term = new TermDOM();
 term.attach();
 const {document} = term;

@@ -79,7 +79,7 @@ test("block structure inside a shadow root lays out normally", async () => {
 
 // Slot projection: the composed tree interleaves shadow chrome with light
 // children pulled through <slot>s. The walker's hops are stateless, so
-// projection rides on jsdom's live slot assignment (assignedSlot /
+// projection rides on the DOM's live slot assignment (assignedSlot /
 // assignedNodes) rather than any cached mapping.
 
 test("default slot projects light children between shadow siblings", async () => {

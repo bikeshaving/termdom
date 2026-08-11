@@ -2,8 +2,7 @@
  * ResizeObserver and IntersectionObserver.
  *
  * Both read boxes the layout engine already produces each frame, so the tests
- * drive real renders and assert the callbacks fire with the right values. JSDOM
- * ships neither observer, so before this they were simply `undefined`.
+ * drive real renders and assert the callbacks fire with the right values.
  */
 import {test, expect} from "@b9g/libuild/test";
 import {TermDOM} from "../src/internal/termdom.js";
