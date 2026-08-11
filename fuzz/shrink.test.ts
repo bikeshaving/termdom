@@ -13,8 +13,8 @@
  *
  * With no environment set, the seeds that have caught a bug before are replayed
  * as a regression net and any difference fails the test. `SCAN=600 WANT=20`
- * scans seeds 1..600 and stops after 20 failures; `SEEDS=133,149` replays a
- * chosen few. Either way the shrunk repros land in /tmp/tdfuzz/shrunk.txt.
+ * scans 600 seeds from `FROM` (1 by default) and stops after 20 failures;
+ * `SEEDS=133,149` replays a chosen few. Either way the shrunk repros land in /tmp/tdfuzz/shrunk.txt.
  *
  * SCAN=600 WANT=20 npx libuild test fuzz -p node
  */
@@ -378,8 +378,9 @@ test(
 	"shrink",
 	async () => {
 		const scan = Number(process.env.SCAN ?? 0);
+		const from = Number(process.env.FROM ?? 1);
 		const seeds = scan
-			? Array.from({length: scan}, (_, i) => i + 1)
+			? Array.from({length: scan}, (_, i) => from + i)
 			: process.env.SEEDS
 				? process.env.SEEDS.split(",").map((s) => Number(s.trim()))
 				: REGRESSION_SEEDS;

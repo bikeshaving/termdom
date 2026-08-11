@@ -644,3 +644,73 @@ test("a hidden run member gives up the width it reserved", async () => {
 
 	dom.dispose();
 });
+
+test("a box that stops being display:none is built with its content", async () => {
+	// A hidden box is built and switched off, and nothing under it is built at
+	// all -- there is nothing there for a measurement to find. Showing it again
+	// is a rebuild, not a re-measurement.
+	const terminal = new MockProcess({cols: 30, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	document.body.innerHTML = `<em id="s">AB</em>`;
+	await nextFrame(dom);
+	const line = () =>
+		terminal.getPlainText().split("\n")[0].replace(/\s+$/, "");
+
+	const em = document.getElementById("s")!;
+	em.setAttribute("style", "display: none");
+	await nextFrame(dom);
+	expect(line()).toBe("");
+
+	em.setAttribute("style", "display: block");
+	await nextFrame(dom);
+	expect(line()).toBe("AB");
+
+	dom.dispose();
+});
+
+test("an inline-block turned block gives up its detached content tree", async () => {
+	// An inline-block holding block-level content lays it out in a tree of its
+	// own, run only by the measure of the box the inline-block sits on. A
+	// block lays the same content out in the tree above -- and a content root
+	// left behind goes on claiming the children that belong there.
+	const terminal = new MockProcess({cols: 30, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	document.body.innerHTML =
+		`<style>.iblock { display: inline-block; }</style>` +
+		`<section id="s" class="iblock"><em><section>AB</section></em></section>`;
+	await nextFrame(dom);
+	const line = () =>
+		terminal.getPlainText().split("\n")[0].replace(/\s+$/, "");
+	expect(line()).toBe("AB");
+
+	document.getElementById("s")!.classList.remove("iblock");
+	await nextFrame(dom);
+	expect(line()).toBe("AB");
+
+	dom.dispose();
+});
+
+test("a block turned flex gives each child a box of its own", async () => {
+	// A flex container blockifies its children (css-display-3 §2.7): each is a
+	// box of its own, where a block container gathers the inline ones into
+	// anonymous boxes it shares. A ::before is one of those children, and its
+	// box has to be built the moment the container becomes a flex one.
+	const terminal = new MockProcess({cols: 30, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	document.body.innerHTML =
+		`<style>.mark::before { content: "* "; }</style>` +
+		`<section id="s" class="mark">AB</section>`;
+	await nextFrame(dom);
+	const line = () =>
+		terminal.getPlainText().split("\n")[0].replace(/\s+$/, "");
+	expect(line()).toBe("* AB");
+
+	document.getElementById("s")!.setAttribute("style", "display: flex");
+	await nextFrame(dom);
+	expect(line()).toBe("* AB");
+
+	dom.dispose();
+});

@@ -3961,28 +3961,47 @@ export class LayoutEngine {
 				this.#restageBox(element);
 				this.#restageChildren(element);
 				const flexNode = this.nodeMap.get(element);
-				if (flexNode) {
-					// A box built for the wrong KIND of element measures the
-					// wrong content -- a blockified inline holding a block
-					// would end at the first block inside it -- and no
-					// re-measurement corrects that, only a rebuild.
-					// So does a node left over from when no anonymous box held
-					// this element: the box lays its content out, and the node
-					// lays the same content out a second time beside it.
-					if (
-						this.#measuresAsRun(element) !==
-							this.#measureNodes.has(flexNode) ||
-						(this.#isInlineLevel(element) && this.#boxOf(element) !== null)
-					) {
-						this.#invalidatedNodes.add(element);
-					}
-					// The layout node carries the element's own margins, padding
-					// and dimensions, which are the style that just went.
-					this.#styleNode(element, flexNode);
+				// Which side of the line the element falls on: an anonymous box
+				// lays its content out, or it owns a layout node. A style change
+				// moves elements across that line, and a node left over on the
+				// wrong side lays the same content out a second time -- or, on
+				// the other side, there is no node to lay it out at all.
+				//
+				// An out-of-flow box is left alone: it hangs from its containing
+				// block, not from the tree it is written in, and rebuilding it
+				// from there is how it loses its place -- the select's picker
+				// sits in the top layer and simply vanished.
+				const boxed =
+					this.#measuresAsRun(element) && this.#boxOf(element) !== null;
+				if (
+					!this.#isOutOfFlow(element) &&
+					!dissolvesIntoChildren(element) &&
+					(boxed === (flexNode !== undefined) ||
+						(flexNode !== undefined &&
+							// A box built for the wrong KIND measures the wrong
+							// content -- a blockified inline holding a block
+							// would end at the first block inside it -- and a
+							// box built display:none is built with no content in
+							// it at all. Neither is a re-measurement away.
+							(this.#measuresAsRun(element) !==
+								this.#measureNodes.has(flexNode) ||
+								(getPropertyValue(element, "display") === "none") !==
+									(flexNode.getDisplay() === Flex.DISPLAY_NONE))))
+				) {
+					this.invalidate(element);
 				}
+				// The layout node carries the element's own margins, padding and
+				// dimensions, which are the style that just went.
+				if (flexNode) this.#styleNode(element, flexNode);
 				this.#invalidateEnclosingMeasure(element);
 				if (this.#boxesByContainer.has(element)) {
 					this.#invalidateContainerBoxes(element);
+					// The children of a flex container are each a box of their
+					// own, blockified (css-display-3 §2.7), where a block
+					// container gathers the inline ones into anonymous boxes it
+					// shares -- so an element that becomes one, or stops being
+					// one, holds a different set of boxes than it did.
+					this.#dirtyRunContainers.add(element);
 				}
 			}
 		}
@@ -4027,29 +4046,7 @@ export class LayoutEngine {
 			// for a node just added -- and then nothing would ever correct it.
 			this.#restageForRecord(record);
 			if (record.type === "attributes") {
-				if (record.attributeName === "style") {
-					const element = record.target as Element;
-					// What the style declares, and how far it reaches, is the
-					// cascade's question: an inline style always reaches the
-					// subtree, so every element under this one arrives through
-					// styleInvalidated and the boxes measuring them are dirtied
-					// there. What is left here is the layout node's own styles.
-					const flexNode = this.nodeMap.get(element);
-					if (flexNode) {
-						this.#styleNode(element, flexNode);
-						// Invalidate inline runs if style changes might affect layout
-						this[kInvalidateInlineRun](element);
-					} else {
-						// No flex node: an inline run MEMBER (or a shadow part).
-						// Its style feeds the enclosing measurement -- and the
-						// element itself may have just become display:none (a
-						// textarea's placeholder hiding), which makes its own
-						// run head unresolvable, so the walk starts from the
-						// box parent chain when needed.
-						this.#invalidateEnclosingMeasure(element);
-					}
-				} else if (
-					record.attributeName === "class" ||
+				if (record.attributeName === "class" ||
 					record.attributeName === "id" ||
 					selectorsKeyOnAttribute(
 						record.target as Element,
@@ -4659,6 +4656,12 @@ export class LayoutEngine {
 		if (measuresAsRun && display === "inline-block") {
 			return;
 		}
+
+		// A box laid out in the tree above has no use for a detached tree of
+		// its own: an element that stops being an inline-block lays its block
+		// content out here, and a content root left behind would go on
+		// claiming the same children.
+		this.#dropBlockContent(element);
 
 		// Only DIRECT children: an inline child broken apart by a block-level
 		// box holds boxes this container lays out, and those reach the tree

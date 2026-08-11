@@ -740,6 +740,10 @@ export class Node {
 		this.markDirty();
 	}
 
+	getDisplay(): Display {
+		return this.style.display;
+	}
+
 	setDisplay(v: Display): void {
 		const before = breaksStacking(this);
 		this.style.display = v;
