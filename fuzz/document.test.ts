@@ -25,7 +25,11 @@ import {MockProcess, nextFrame} from "../tests/test-utils.js";
 const NUM_RUNS = Number(process.env.FC_NUM_RUNS ?? 25);
 const SEED = process.env.FC_SEED ? Number(process.env.FC_SEED) : undefined;
 
-const assertOptions = {numRuns: NUM_RUNS, ...(SEED === undefined ? {} : {seed: SEED})};
+const assertOptions = {
+	numRuns: NUM_RUNS,
+	includeErrorInReport: true,
+	...(SEED === undefined ? {} : {seed: SEED}),
+};
 
 const SHEET = `
 	.hide { display: none; }
@@ -381,6 +385,18 @@ async function replay(dom: any, cols?: number, rows?: number) {
 	return made;
 }
 
+/** Enough of the cascade to catch a stale entry the frame happens to hide. */
+const SAMPLED_PROPERTIES = [
+	"display",
+	"position",
+	"color",
+	"background-color",
+	"width",
+	"white-space",
+	"font-weight",
+	"padding-left",
+];
+
 test("an incrementally mutated frame equals a frame rendered once", async () => {
 	await fc.assert(
 		fc.asyncProperty(runArbitrary, async (run: Run) => {
@@ -395,6 +411,53 @@ test("an incrementally mutated frame equals a frame rendered once", async () => 
 					`html: ${run.document.html}\n` +
 						`script: ${JSON.stringify(run.script)}\n` +
 						`--- incremental\n${incremental}\n--- fresh\n${once}`,
+				);
+			}
+		}),
+		assertOptions,
+	);
+}, 900000);
+
+test("computed styles survive mutation as they would a fresh cascade", async () => {
+	await fc.assert(
+		fc.asyncProperty(runArbitrary, async (run: Run) => {
+			const live = await play(run);
+			const fresh = await replay(live.dom);
+			const mutated = [
+				live.dom.document.body,
+				...(Array.from(live.dom.document.body.querySelectorAll("*")) as any[]),
+			];
+			const rendered = [
+				fresh.dom.document.body,
+				...(Array.from(fresh.dom.document.body.querySelectorAll("*")) as any[]),
+			];
+			const differences: string[] = [];
+			if (mutated.length !== rendered.length) {
+				differences.push(`${mutated.length} elements against ${rendered.length}`);
+			}
+			for (let i = 0; i < Math.min(mutated.length, rendered.length); i++) {
+				const a = live.dom.window.getComputedStyle(mutated[i]);
+				const b = fresh.dom.window.getComputedStyle(rendered[i]);
+				for (const property of SAMPLED_PROPERTIES) {
+					const one = a.getPropertyValue(property);
+					const other = b.getPropertyValue(property);
+					if (one !== other) {
+						differences.push(
+							`${mutated[i].tagName}[${mutated[i].getAttribute("data-f")}] ` +
+								`${property}: ${JSON.stringify(one)} against ` +
+								`${JSON.stringify(other)}`,
+						);
+					}
+				}
+			}
+			const tree = live.dom.document.body.innerHTML;
+			live.dom.dispose();
+			fresh.dom.dispose();
+			if (differences.length) {
+				throw new Error(
+					`html: ${run.document.html}\n` +
+						`script: ${JSON.stringify(run.script)}\n` +
+						`tree: ${tree}\n${differences.join("\n")}`,
 				);
 			}
 		}),
