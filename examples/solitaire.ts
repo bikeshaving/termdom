@@ -9,7 +9,8 @@
 //   The menu chooses one-card or three-card draw; in three-card, the discard
 //   fans its last three and only the top is playable.
 //
-//   space  draw from the stock (or turn it over when empty)
+//   s      draw from the stock (or turn it over when empty; space works too)
+//          each foundation takes only the suit that labels it
 //   1-7    pick up a tableau pile, or drop what you are holding on it
 //   d      pick up the discard's top card
 //   arrows move the cursor anywhere on the board; enter takes the card
@@ -224,6 +225,7 @@ function play(game: Game, held: Held, target: Target): boolean {
 	if (target.kind === "foundation") {
 		// A foundation takes one card, and only ever the last of a run.
 		if (cards.length !== 1) return false;
+		if (target.index !== cards[0].suit) return false;
 		if (!fitsFoundation(cards[0], game.foundations[target.index])) return false;
 		lift(game, held);
 		game.foundations[target.index].push(cards[0]);
@@ -239,13 +241,9 @@ function play(game: Game, held: Held, target: Target): boolean {
 
 /** The foundation a single card belongs on, if it is ready for it. */
 function foundationFor(game: Game, card: Card): number | null {
-	// Any ace may start any empty foundation, but the slots are labelled by
-	// suit -- an ace prefers its own label so the row reads true.
-	if (fitsFoundation(card, game.foundations[card.suit])) return card.suit;
-	for (let index = 0; index < 4; index++) {
-		if (fitsFoundation(card, game.foundations[index])) return index;
-	}
-	return null;
+	// Each foundation belongs to the suit that labels it, so a card has
+	// exactly one legal home and the row always reads true.
+	return fitsFoundation(card, game.foundations[card.suit]) ? card.suit : null;
 }
 
 /** Turn a card from the stock, or turn the whole waste back over. */
@@ -316,11 +314,11 @@ interface Tier {
 const TIERS = {
 	compact: {width: 3, height: 3, gap: 1},
 	roomy: {width: 5, height: 3, gap: 2},
-	grand: {width: 7, height: 4, gap: 3},
+	grand: {width: 7, height: 5, gap: 3},
 } as const;
 const ROOMY_MIN_WIDTH = 64;
 const GRAND_MIN_WIDTH = 96;
-const GRAND_MIN_HEIGHT = 30;
+const GRAND_MIN_HEIGHT = 32;
 const HINT_MIN_HEIGHT = 20;
 
 const sheet = (): string => {
@@ -408,8 +406,15 @@ const sheet = (): string => {
 // a template's RAW spans, and a runtime that reports raw text as an escape
 // sequence -- Bun does, for anything outside ASCII -- puts the six characters
 // of `▒` on the board instead of the hatch.
-const WEAVE_A = "▚";
-const WEAVE_B = "▞";
+const TL = "▛";
+const TR = "▜";
+const BL = "▙";
+const BR = "▟";
+const T = "▀";
+const B = "▄";
+const L = "▌";
+const R = "▐";
+const MOTIF = "♦";
 const TURN_GLYPH = "↻";
 const DOT = " · ";
 const MIDDOT = "·";
@@ -418,38 +423,22 @@ const ARROWS_ALL = "←↑↓→";
 
 const blank = (width: number): string => " ".repeat(width);
 
-/** A card back is a weave, not a flat fill: quadrant glyphs alternating. */
-const backRow = (width: number, row: number): string =>
-	Array.from({length: width}, (_, col) =>
-		(row + col) % 2 ? WEAVE_A : WEAVE_B,
-	).join("");
-
-// The bottom-right index reads rotated, the way a real card's does. Unicode
-// has a turned form for every rank in a single cell -- the popular flip
-// table's CJK picks (two cells wide) would shear the card -- and rotation
-// also reverses reading order, so the ten of hearts ends "♥0Ɩ". Suits have
-// no turned forms and stay upright.
-const TURNED: Record<string, string> = {
-	A: "∀",
-	J: "ſ",
-	Q: "Ό",
-	K: "ʞ",
-	"1": "Ɩ",
-	"2": "ᘔ",
-	"3": "Ɛ",
-	"4": "ᔭ",
-	"5": "ϛ",
-	"6": "9",
-	"7": "Ꞁ",
-	"8": "8",
-	"9": "6",
-	"0": "0",
-};
-const turned = (index: string): string =>
-	[...index]
-		.map((ch) => TURNED[ch] ?? ch)
-		.reverse()
-		.join("");
+/**
+ * A card back: a plate with solid half-block rails and a single motif at the
+ * center, the way a printed back reads. A covered card shows the plate's top
+ * rule, so a pile of backs is ruled lines rather than pattern noise.
+ */
+const backRows = (width: number, height: number): string[] =>
+	Array.from({length: height}, (_, row) => {
+		if (row === 0) return TL + T.repeat(width - 2) + TR;
+		if (row === height - 1) return BL + B.repeat(width - 2) + BR;
+		const inner = Array.from({length: width - 2}, (_, col) =>
+			row === Math.floor(height / 2) && col === Math.floor((width - 2) / 2)
+				? MOTIF
+				: " ",
+		).join("");
+		return L + inner + R;
+	});
 
 /** `text` centered in a field of `width` cells. */
 function centered(text: string, width: number): string {
@@ -459,28 +448,34 @@ function centered(text: string, width: number): string {
 }
 
 /**
- * A card's face: its index at the top left, the field, and the index again at
- * the bottom right, the way the corners of a real one read. The narrowest
- * tier's field is bare; a wider card carries its suit in the middle, and a
- * taller one more field below it. "10♥" is three cells, the narrowest a card
- * can be.
+ * A card's face: its index across the top-left, its suit at the center on
+ * any card wide enough to carry one, and the index again reading DOWN the
+ * last column into the bottom-right corner -- the rotated corner of a real
+ * card, evoked by orientation rather than by turned glyphs, which Unicode
+ * only approximates ("6" turns into a 9's shape). The narrowest card has no
+ * spare column, so its second index lies flat along the bottom.
  */
 function faceRows(card: Card, tier: Tier): string[] {
-	if (!card.up) {
-		return Array.from({length: tier.height}, (_, row) =>
-			backRow(tier.width, row),
-		);
-	}
-	const index = `${RANKS[card.rank - 1]}${SUITS[card.suit]}`;
-	const middles = Array.from({length: tier.height - 2}, () =>
-		blank(tier.width),
+	const {width, height} = tier;
+	if (!card.up) return backRows(width, height);
+	const grid = Array.from({length: height}, () =>
+		Array.from({length: width}, () => " "),
 	);
-	if (tier.width > 3) middles[0] = centered(SUITS[card.suit], tier.width);
-	return [
-		index.padEnd(tier.width, " "),
-		...middles,
-		turned(index).padStart(tier.width, " "),
-	];
+	const index = `${RANKS[card.rank - 1]}${SUITS[card.suit]}`;
+	for (let i = 0; i < index.length && i < width; i++) grid[0][i] = index[i];
+	if (width > 3) {
+		grid[Math.floor(height / 2)][Math.floor(width / 2)] = SUITS[card.suit];
+	}
+	if (width === 3) {
+		for (let i = 0; i < index.length; i++) {
+			grid[height - 1][width - index.length + i] = index[i];
+		}
+	} else {
+		for (let i = 0; i < index.length; i++) {
+			grid[height - index.length + i][width - 1] = index[i];
+		}
+	}
+	return grid.map((row) => row.join(""));
 }
 
 interface CardProps {
@@ -539,7 +534,9 @@ function Slot({
 	onclick?: (event: MouseEvent) => unknown;
 }) {
 	const rows = Array.from({length: tier.height}, (_, line) =>
-		line === 1 && mark ? centered(mark, tier.width) : blank(tier.width),
+		line === Math.floor(tier.height / 2) && mark
+			? centered(mark, tier.width)
+			: blank(tier.width),
 	);
 	const classes = ["slot"];
 	if (drop) classes.push("drop");
@@ -856,7 +853,7 @@ function* App(this: Context) {
 			});
 			return;
 		}
-		if (key === " ") {
+		if (key === " " || key === "s") {
 			return act(draw, "The stock and the discard are both empty.");
 		}
 		if (key === "d" || key === "w") {
@@ -896,11 +893,11 @@ function* App(this: Context) {
 		if (key === "ArrowLeft") return moveCursor(-1, 0);
 		if (key === "ArrowRight") return moveCursor(1, 0);
 		if (key === "Enter") {
+			// Until the arrows summon the cursor, Enter draws -- the typing
+			// player's right hand never leaves home row. With the cursor up,
+			// Enter takes and places at it.
 			if (!cursorShown) {
-				this.refresh(() => {
-					cursorShown = true;
-				});
-				return;
+				return act(draw, "The stock and the discard are both empty.");
 			}
 			return activate();
 		}
@@ -1140,7 +1137,7 @@ function* App(this: Context) {
 						</dialog>
 					</div>`
 				}
-				<div class="hint"><b>space</b> draw${DOT}<b>1-7</b> pile${DOT}<b>d</b> discard${DOT}<b>${ARROWS_ALL}</b>/<b>tab</b> move${DOT}<b>enter</b> take/place${DOT}<b>f</b> foundation${DOT}<b>a</b> auto${DOT}<b>u</b> undo${DOT}<b>n</b> new${DOT}<b>r</b> retry${DOT}<b>q</b> quit</div>
+				<div class="hint"><b>[s]</b>tock${DOT}<b>[d]</b>iscard${DOT}<b>[f]</b>oundation${DOT}<b>[1-7]</b> pile${DOT}<b>${ARROWS_ALL}</b>/<b>tab</b> move${DOT}<b>enter</b> take/place${DOT}<b>[a]</b>uto${DOT}<b>[u]</b>ndo${DOT}<b>[n]</b>ew${DOT}<b>[r]</b>etry${DOT}<b>[q]</b>uit</div>
 			</div>
 		`;
 	}
