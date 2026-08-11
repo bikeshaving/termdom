@@ -68,10 +68,10 @@ test("multiple list items render correctly", async () => {
 });
 
 test("a class change does not swallow later mutations in the same batch", async () => {
-	// #handleMutationRecords returned from the whole function on an attributes or
-	// characterData record instead of continuing to the next one, so a class flip
-	// followed by a sibling's text change dropped the text change: the sibling's
-	// new text node never entered the layout tree and the row rendered empty.
+	// Every record in a batch is restaged, whatever kind it is: a class flip
+	// followed by a sibling's text change must leave both the flipped row and
+	// the retexted one correct, not drop the second because the first was
+	// handled.
 	const terminal = new MockProcess({cols: 40, rows: 10});
 	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
@@ -98,14 +98,11 @@ test("a class change does not swallow later mutations in the same batch", async 
 });
 
 test("appending many rows one at a time preserves document order", async () => {
-	// LayoutEngine#getFlexIndex used to recompute a new node's position by
-	// re-walking every earlier sibling from the start on every single append --
-	// O(n) per append, O(n^2) for building a list of n rows this way. The fix
-	// (a backward walk that reuses the nearest already-placed sibling's cached
-	// position) has to produce the exact same order as the walk it replaced,
-	// not just be fast -- this is the correctness half of that fix, covering
-	// the sequential-build pattern real apps actually use (tree.ts's fill(),
-	// any list built with a push loop).
+	// A box is appended to its container's layout children as it is built, and
+	// its position among them is settled afterwards from the container's box
+	// list. Fifty rows pushed one at a time -- the sequential-build pattern
+	// real apps use (tree.ts's fill(), any list built with a push loop) -- must
+	// come out in document order.
 	const terminal = new MockProcess({cols: 40, rows: 60});
 	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
@@ -703,6 +700,34 @@ test("a block turned flex gives each child a box of its own", async () => {
 	document.getElementById("s")!.setAttribute("style", "display: flex");
 	await nextFrame(dom);
 	expect(line()).toBe("* AB");
+
+	dom.dispose();
+});
+
+test("an absolute box inside an appended inline subtree reaches its containing block", async () => {
+	// An out-of-flow box hangs from its containing block, not from the
+	// container it is written in, so no container's box list names it and no
+	// reconciliation builds it. Inside a subtree that arrives as run content
+	// nothing descends to it either -- an anonymous box measures its members
+	// and steps over what left the flow -- so the arrival itself is what has
+	// to find it.
+	const terminal = new MockProcess({cols: 40, rows: 8});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	document.body.innerHTML = `<div id="host" style="position: relative">base</div>`;
+	await nextFrame(dom);
+
+	const span = document.createElement("span");
+	span.innerHTML = `hi<i style="position:absolute; top:2px; left:0px">ABS</i>`;
+	document.getElementById("host")!.appendChild(span);
+	await nextFrame(dom);
+
+	const lines = terminal
+		.getPlainText()
+		.split("\n")
+		.map((line) => line.replace(/\s+$/, ""));
+	expect(lines[0]).toBe("basehi");
+	expect(lines[2]).toBe("ABS");
 
 	dom.dispose();
 });

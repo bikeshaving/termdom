@@ -2818,9 +2818,10 @@ test("break result cleanup prevents orphaned entries", async () => {
 	expect(getPosition(layoutEngine, span2)).toBe(1);
 });
 
-// These tests verify that the layout invalidation logic works correctly.
-// DOM mutations automatically trigger MutationObserver -> #removeNode -> #invalidateInlineRun
-// ensuring that break results are properly cleared and runs are recalculated.
+// These tests verify that the layout invalidation logic works correctly. A DOM
+// mutation reaches the layout engine through the MutationObserver, which
+// restages the containers it unsettled: their break results are cleared and
+// their runs recalculated on the next pass.
 
 test("overflow-wrap: normal lets a long word escape its box, as a browser does", async () => {
 	const terminal = new MockProcess({rows: 4, cols: 40});
