@@ -1054,10 +1054,13 @@ function* App(this: Context) {
 				${
 					t === TIERS.grand &&
 					jsx`<div class="captions">
-						<span class="caption">${"deck".padEnd(t.width)}</span>
-						<span class="caption">${"[f]lip".padEnd(t.width)}</span>
-						<span class="caption">${blank(t.width)}</span>
-						<span class="caption">${centered("s/h/d/c home", 4 * t.width + 3 * t.gap)}</span>
+						<span class="caption">${"[Space]".padEnd(t.width)}</span>
+						<span class="caption">${"[0]/[f]lip"}</span>
+						<span class="caption">${blank(t.width - 3)}</span>
+						<span class="caption">${centered("[s]", t.width)}</span>
+						<span class="caption">${centered("[h]", t.width)}</span>
+						<span class="caption">${centered("[d]", t.width)}</span>
+						<span class="caption">${centered("[c]", t.width)}</span>
 					</div>`
 				}
 				<div class="top">
@@ -1190,7 +1193,7 @@ function* App(this: Context) {
 						</dialog>
 					</div>`
 				}
-				<div class="hint"><b>s/h/d/c</b> home${DOT}<b>${ARROWS_ALL}</b>/<b>tab</b> move${DOT}<b>enter</b> take/place${DOT}<b>[a]</b>uto${DOT}<b>[u]</b>ndo${DOT}<b>[n]</b>ew${DOT}<b>[r]</b>etry${DOT}<b>[q]</b>uit</div>
+				<div class="hint"><b>${ARROWS_ALL}</b>/<b>tab</b> move${DOT}<b>enter</b> take/place${DOT}<b>[a]</b>uto${DOT}<b>[u]</b>ndo${DOT}<b>[n]</b>ew${DOT}<b>[r]</b>etry${DOT}<b>[q]</b>uit</div>
 			</div>
 		`;
 	}
