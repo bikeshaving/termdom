@@ -828,6 +828,51 @@ Object.defineProperty(CustomEvent.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
+/**
+ * The event fired before a document is unloaded, which a listener cancels to
+ * keep it.
+ *
+ * The interface declares no constructor: every instance is one the engine
+ * fired, so an author's `new` throws as it does in a browser, and
+ * createEvent("BeforeUnloadEvent") throws too -- the name is not in the
+ * legacy interface table.
+ *
+ * Cancellation has two spellings, both of which the teardown honors:
+ * preventDefault(), and a returnValue set to anything but the empty string.
+ */
+export class BeforeUnloadEvent extends Event {
+	#returnValue = "";
+
+	constructor() {
+		super("beforeunload", {cancelable: true});
+		if (!internalConstruction) throw new TypeError("Illegal constructor");
+	}
+
+	/**
+	 * The legacy message a browser would have shown, which shadows Event's
+	 * boolean returnValue with a DOMString. Its type is `any` because a
+	 * narrower one is not assignable over the boolean it shadows -- the same
+	 * resolution the platform's own type definitions reach.
+	 */
+	override get returnValue(): any {
+		return this.#returnValue;
+	}
+
+	override set returnValue(value: any) {
+		this.#returnValue = String(value);
+	}
+}
+
+Object.defineProperty(BeforeUnloadEvent.prototype, Symbol.toStringTag, {
+	value: "BeforeUnloadEvent",
+	configurable: true,
+});
+
+/** A beforeunload event, which only a teardown about to happen fires. */
+export function createBeforeUnloadEvent(): BeforeUnloadEvent {
+	return constructInternal(() => new BeforeUnloadEvent());
+}
+
 /* ------------------------------------------------------------- UI events */
 
 export interface UIEventInit extends EventInit {

@@ -321,6 +321,7 @@ export interface EngineWindow extends EventTarget {
 	FocusEvent: typeof globalThis.FocusEvent;
 	InputEvent: typeof globalThis.InputEvent;
 	CompositionEvent: typeof globalThis.CompositionEvent;
+	BeforeUnloadEvent: typeof globalThis.BeforeUnloadEvent;
 	DOMException: typeof globalThis.DOMException;
 	Node: typeof globalThis.Node;
 	Element: typeof globalThis.Element;
@@ -954,6 +955,19 @@ export class TermDOM {
 		// browser tab: dispose, then close the transport. Ctrl-C's default
 		// action is this call.
 		window.close = () => {
+			// beforeunload is the door out, and a listener that cancels keeps
+			// the session. A browser answers a canceled beforeunload with a
+			// prompt of its own; a terminal has no UA chrome to prompt with,
+			// so cancellation just stops the teardown, leaving the app to ask
+			// "are you sure?" however it likes and to close again once the
+			// user says yes. Every close asks: the event carries nothing from
+			// the last one.
+			const unloadEvent = DOM.createBeforeUnloadEvent();
+			(window as unknown as DOM.EventTarget).dispatchEvent(unloadEvent);
+			if (unloadEvent.defaultPrevented || unloadEvent.returnValue !== "") {
+				return;
+			}
+
 			const wasAttached = termDOM.#attached;
 			// An immediate close must not tear down mid-establishment: wait
 			// for attach to finish (anchor found, first frame painted) so the
