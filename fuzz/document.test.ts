@@ -23,12 +23,15 @@ import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "../tests/test-utils.js";
 
 const NUM_RUNS = Number(process.env.FC_NUM_RUNS ?? 25);
-const SEED = process.env.FC_SEED ? Number(process.env.FC_SEED) : undefined;
+// A fixed seed by default: the properties run inside `npm test`, where a
+// different sample every time is a different verdict every time. The searching
+// is done by widening the run or naming another seed.
+const SEED = Number(process.env.FC_SEED ?? 1);
 
 const assertOptions = {
 	numRuns: NUM_RUNS,
+	seed: SEED,
 	includeErrorInReport: true,
-	...(SEED === undefined ? {} : {seed: SEED}),
 };
 
 const SHEET = `
@@ -543,6 +546,80 @@ test("a painted token is where geometry and hit-testing say it is", async () => 
 				);
 			}
 		}),
+		assertOptions,
+	);
+}, 900000);
+
+/**
+ * Resize the terminal the way SIGWINCH does and wait for the redraw the
+ * debounce and the cursor query put at the end of it: the frame is settled
+ * once it stops changing.
+ */
+async function resizeTo(
+	dom: any,
+	terminal: any,
+	cols: number,
+	rows: number,
+): Promise<string> {
+	terminal.resize(cols, rows);
+	terminal.emit("SIGWINCH");
+	let last: string | null = null;
+	let stable = 0;
+	for (let tick = 0; tick < 40; tick++) {
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		await nextFrame(dom);
+		const frame = frameOf(terminal);
+		if (frame === last) {
+			if (++stable >= 2) break;
+		} else {
+			stable = 0;
+			last = frame;
+		}
+	}
+	return last ?? "";
+}
+
+const sizeArbitrary = fc.record({
+	cols: fc.integer({min: 20, max: 60}),
+	rows: fc.integer({min: 14, max: 30}),
+});
+
+test("a resize round trip lands back on the frame it left", async () => {
+	await fc.assert(
+		fc.asyncProperty(
+			runArbitrary,
+			sizeArbitrary,
+			sizeArbitrary,
+			async (run: Run, first: any, second: any) => {
+				fc.pre(first.cols !== second.cols || first.rows !== second.rows);
+				const live = await play(run, first.cols, first.rows);
+				const before = frameOf(live.terminal);
+				// Content taller than the terminal scrolls into the scrollback,
+				// which a resize cannot bring back and this property has nothing
+				// to say about.
+				const height = live.dom.document.body.scrollHeight;
+				if (height > Math.min(first.rows, second.rows)) {
+					live.dom.dispose();
+					return;
+				}
+				await resizeTo(live.dom, live.terminal, second.cols, second.rows);
+				const after = await resizeTo(
+					live.dom,
+					live.terminal,
+					first.cols,
+					first.rows,
+				);
+				live.dom.dispose();
+				if (after !== before) {
+					throw new Error(
+						`html: ${run.document.html}\n` +
+							`script: ${JSON.stringify(run.script)}\n` +
+							`${first.cols}x${first.rows} -> ${second.cols}x${second.rows} -> back\n` +
+							`--- before\n${before}\n--- after\n${after}`,
+					);
+				}
+			},
+		),
 		assertOptions,
 	);
 }, 900000);
