@@ -3,7 +3,11 @@
 // board is a flex row of flex columns, a card is a styled <span>, and every
 // move is a click or a keystroke on it.
 //
-//   node examples/solitaire.ts
+//   node examples/solitaire.ts            (opens the new-game menu)
+//   node examples/solitaire.ts <deal>     (skips the menu -- the speedrun door)
+//
+//   The menu chooses one-card or three-card draw; in three-card, the discard
+//   fans its last three and only the top is playable.
 //
 //   space  draw from the stock (or turn it over when empty)
 //   1-7    pick up a tableau pile, or drop what you are holding on it
@@ -58,6 +62,8 @@ const isRed = (card: Card): boolean => card.suit === 1 || card.suit === 2;
 interface Game {
 	/** The deal this game was shuffled from. */
 	number: number;
+	/** How many cards a turn of the stock flips: klondike's one or three. */
+	draw: number;
 	stock: Card[];
 	waste: Card[];
 	/** One pile per suit, in SUITS order, each running up from its ace. */
@@ -91,7 +97,7 @@ function shuffled(seed: number): Card[] {
 }
 
 /** Every deal has a number, so a game you liked can be played again. */
-function deal(number: number): Game {
+function deal(number: number, draw: number): Game {
 	const deck = shuffled(number);
 	const tableau: Card[][] = [];
 	for (let pile = 0; pile < 7; pile++) {
@@ -101,6 +107,7 @@ function deal(number: number): Game {
 	}
 	return {
 		number,
+		draw,
 		stock: deck,
 		waste: [],
 		foundations: [[], [], [], []],
@@ -116,6 +123,7 @@ function clone(game: Game): Game {
 	const pile = (cards: Card[]) => cards.map((card) => ({...card}));
 	return {
 		number: game.number,
+		draw: game.draw,
 		stock: pile(game.stock),
 		waste: pile(game.waste),
 		foundations: game.foundations.map(pile),
@@ -239,9 +247,11 @@ function foundationFor(game: Game, card: Card): number | null {
 /** Turn a card from the stock, or turn the whole waste back over. */
 function draw(game: Game): boolean {
 	if (game.stock.length > 0) {
-		const card = game.stock.pop()!;
-		card.up = true;
-		game.waste.push(card);
+		for (let i = 0; i < game.draw && game.stock.length > 0; i++) {
+			const card = game.stock.pop()!;
+			card.up = true;
+			game.waste.push(card);
+		}
 		game.moves++;
 		return true;
 	}
@@ -376,6 +386,10 @@ style.textContent = `
            background-color: #043016; color: #cfe8d8; padding: 1px 2ch; }
   dialog .ask { color: #ffd75f; font-weight: bold; }
   dialog .answers { color: #9ec5ab; padding-top: 1px; }
+  dialog .answers { display: flex; flex-direction: row; }
+  .pick { color: #9ec5ab; }
+  .pick.on { color: #ffd75f; font-weight: bold; }
+  .pickgap { width: 3ch; }
 
   .hint { padding-top: 1px; color: #7fae90; }
   .hint b { color: #cfe8d8; font-weight: bold; }
@@ -394,7 +408,8 @@ document.head.appendChild(style);
 // a template's RAW spans, and a runtime that reports raw text as an escape
 // sequence -- Bun does, for anything outside ASCII -- puts the six characters
 // of `▒` on the board instead of the hatch.
-const HATCH_GLYPH = "▒";
+const WEAVE_A = "▚";
+const WEAVE_B = "▞";
 const TURN_GLYPH = "↻";
 const DOT = " · ";
 const MIDDOT = "·";
@@ -402,6 +417,12 @@ const STAR = "★";
 const ARROWS_ALL = "←↑↓→";
 
 const blank = (width: number): string => " ".repeat(width);
+
+/** A card back is a weave, not a flat fill: quadrant glyphs alternating. */
+const backRow = (width: number, row: number): string =>
+	Array.from({length: width}, (_, col) =>
+		(row + col) % 2 ? WEAVE_A : WEAVE_B,
+	).join("");
 
 // The bottom-right index reads rotated, the way a real card's does. Unicode
 // has a turned form for every rank in a single cell -- the popular flip
@@ -429,7 +450,6 @@ const turned = (index: string): string =>
 		.map((ch) => TURNED[ch] ?? ch)
 		.reverse()
 		.join("");
-const hatch = (width: number): string => HATCH_GLYPH.repeat(width);
 
 /** `text` centered in a field of `width` cells. */
 function centered(text: string, width: number): string {
@@ -446,8 +466,11 @@ function centered(text: string, width: number): string {
  * can be.
  */
 function faceRows(card: Card, tier: Tier): string[] {
-	if (!card.up)
-		return Array.from({length: tier.height}, () => hatch(tier.width));
+	if (!card.up) {
+		return Array.from({length: tier.height}, (_, row) =>
+			backRow(tier.width, row),
+		);
+	}
 	const index = `${RANKS[card.rank - 1]}${SUITS[card.suit]}`;
 	const middles = Array.from({length: tier.height - 2}, () =>
 		blank(tier.width),
@@ -535,7 +558,12 @@ function clock(ms: number): string {
 }
 
 function* App(this: Context) {
-	let game = deal(opening);
+	// One or three cards per turn of the stock -- chosen on the menu, kept
+	// for every deal after. A deal named on the command line skips the menu:
+	// that is the speedrunner's and the verifier's door.
+	let mode: 1 | 3 = 1;
+	let menu = !(Number.isFinite(argument) && argument > 0);
+	let game = deal(opening, 1);
 	let held: Held = null;
 	let history: Game[] = [];
 	let message = "";
@@ -567,7 +595,7 @@ function* App(this: Context) {
 	const reset = (number: number): void => {
 		this.refresh(() => {
 			if (number !== game.number) best = null;
-			game = deal(number);
+			game = deal(number, mode);
 			history = [];
 			held = null;
 			message = "";
@@ -776,6 +804,23 @@ function* App(this: Context) {
 
 	const onkeydown = (event: KeyboardEvent): void => {
 		const key = event.key;
+		if (menu) {
+			if (key === "1" || key === "3") {
+				this.refresh(() => {
+					mode = key === "1" ? 1 : 3;
+				});
+			} else if (key === "Enter" || key === " " || key === "y") {
+				menu = false;
+				reset(someDeal());
+			} else if (key === "n" || key === "b") {
+				this.refresh(() => {
+					menu = false;
+				});
+			} else if (key === "q") {
+				term.window.close();
+			}
+			return;
+		}
 		if (confirming) {
 			if (key === "y" || key === "Enter") {
 				const number = confirming.number;
@@ -792,7 +837,12 @@ function* App(this: Context) {
 			term.window.close();
 			return;
 		}
-		if (key === "n") return guardedReset(someDeal(), "a fresh deal");
+		if (key === "n") {
+			this.refresh(() => {
+				menu = true;
+			});
+			return;
+		}
 		if (key === "r") return guardedReset(game.number, "this deal again");
 		if (key === "u") return undo();
 		if (key === "Escape") {
@@ -862,6 +912,8 @@ function* App(this: Context) {
 	// assign rather than the null this was declared with.
 	const holding = (): Held => held;
 	const asking = (): {number: number; label: string} | null => confirming;
+	const inMenu = (): boolean => menu;
+	const modeNow = (): 1 | 3 => mode;
 
 	// The tier is the terminal's answer, asked through the same evaluator the
 	// stylesheet's @media blocks use, and a resize that crosses a breakpoint
@@ -882,6 +934,24 @@ function* App(this: Context) {
 
 	// eslint-disable-next-line no-empty-pattern
 	for ({} of this) {
+		if (inMenu()) {
+			yield jsx`
+				<div class="table">
+					<div class="scrim">
+						<dialog open>
+							<div class="ask">Solitaire ${MIDDOT} new game</div>
+							<div class="answers">
+								<span class=${modeNow() === 1 ? "pick on" : "pick"}>${"[1] one card"}</span>
+								<span class="pickgap"> </span>
+								<span class=${modeNow() === 3 ? "pick on" : "pick"}>${"[3] three cards"}</span>
+							</div>
+							<div class="answers">enter deals ${MIDDOT} b back ${MIDDOT} q quit</div>
+						</dialog>
+					</div>
+				</div>
+			`;
+			continue;
+		}
 		const t = tier();
 		// The board the cursor was on may have shrunk under it.
 		if (cur.row === "board") {
@@ -944,14 +1014,18 @@ function* App(this: Context) {
 					<div class="pile">
 						${
 							wasteTop
-								? jsx`<${CardFace}
-										card=${wasteTop}
-										tier=${t}
-										held=${grip?.kind === "waste"}
-										cursor=${atTop(1)}
-										onclick=${() => grab({kind: "waste"})}
-										ondblclick=${() => sendHome({kind: "waste"})}
-									/>`
+								? game.waste.slice(-(game.draw === 3 ? 3 : 1)).map(
+										(card, at, fan) => jsx`<${CardFace}
+												key=${`${card.suit}-${card.rank}`}
+												card=${card}
+												tier=${t}
+												covered=${at < fan.length - 1}
+												held=${at === fan.length - 1 && grip?.kind === "waste"}
+												cursor=${at === fan.length - 1 && atTop(1)}
+												onclick=${at === fan.length - 1 ? () => grab({kind: "waste"}) : undefined}
+												ondblclick=${at === fan.length - 1 ? () => sendHome({kind: "waste"}) : undefined}
+											/>`,
+									)
 								: jsx`<${Slot} tier=${t} cursor=${atTop(1)} />`
 						}
 					</div>
