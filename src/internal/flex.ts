@@ -567,6 +567,11 @@ export class Node {
 	cachedMeasures: Array<CachedLayout | null> = new Array(CACHE_SLOT_COUNT).fill(
 		null,
 	);
+	// TODO(box-tree): these constraint-matched caches sit under every box in
+	// the document only because block layout is emulated as flex, and their
+	// validity takes three mechanisms to state (dirty, constraintsMatch,
+	// sizedSinceLayout). Phase C scopes them to display:flex containers and
+	// retires sizedSinceLayout; the no-new-caches rule forbids a fourth.
 	cachedLayout: CachedLayout | null = null;
 
 	/**
