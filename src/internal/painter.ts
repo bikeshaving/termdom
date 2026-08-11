@@ -982,6 +982,9 @@ export class Painter {
 			textNode.parentElement?.getAttribute("part") === "value"
 		) {
 			const field = host as HTMLTextAreaElement | HTMLInputElement;
+			// TODO(box-tree): reaches the widget's internal selection where the
+			// element's public selectionStart/selectionEnd answer the same --
+			// the painter's one remaining non-public DOM read.
 			const {start, end} = uaSelectionOf(field);
 			if (end <= start) return null;
 			const length = textNode.data.length;

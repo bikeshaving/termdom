@@ -321,6 +321,11 @@ function skipSubtree(walker: FlatTreeWalker<Node>): boolean {
 
 // ---- CSS 2.2 §8.3.1 margin collapsing (the block-emulation half) ----
 //
+// TODO(box-tree): block layout is emulated as column flex, which is why the
+// collapse happens here at style-application time instead of during layout,
+// and why self-collapsing and negative margins stay unmodeled. Phase C lays
+// block containers out directly and deletes this whole section.
+//
 // The flex engine SUMS adjacent margins; CSS block layout collapses them.
 // The collapse resolves here, at style-application time, as a pure function
 // of the DOM: the gap between siblings lives entirely on the lower box's
@@ -1485,6 +1490,10 @@ class InlineBox {
 	 * box currently has -- a sizing probe at some other width never becomes what
 	 * the painter sees, and losing the layout node loses them with it.
 	 */
+	// TODO(box-tree): the box's line fragments are stored as the flex
+	// engine's measurement payload, so layout's own output lives in another
+	// module's cache and dies with the flex node. Phase A moves fragments
+	// onto the box tree, keyed by the box that produced them.
 	get breakResult(): BreakResult | null {
 		return (this.flexNode?.measuredPayload as BreakResult | null) ?? null;
 	}
@@ -1607,6 +1616,10 @@ export class LayoutEngine {
 	 * reverse lookup runs per coordinate read, and `size` is what keeps that
 	 * check free for every document that has none.
 	 */
+	// TODO(box-tree): every inline-block holding block content is a DETACHED
+	// forest with its own lifecycle, stitched back by #enclosingContentRoot.
+	// Phase B makes atomic-inline measurement a recursive layout of the same
+	// box tree and deletes the forests and their bookkeeping.
 	#blockContentRoots = new Map<Element, FlexTypes.Node>();
 	#blockContentHosts = new Map<FlexTypes.Node, Element>();
 
@@ -2087,6 +2100,12 @@ export class LayoutEngine {
 
 	getRect(element: Element): DOMRect | null {
 		const display = getPropertyValue(element, "display");
+
+		// A display:none element generates no box, so there is no geometry to
+		// report -- the layout node it keeps is a placeholder holding its slot
+		// among its container's children, not a box. Its client rects are empty
+		// and its resolved values are the computed ones (CSSOM View §4).
+		if (display === "none") return null;
 
 		// A blockified box's box is the one the layout tree sized, not the
 		// extent of the text it happens to hold: its layout node is the truth,
@@ -3292,7 +3311,13 @@ export class LayoutEngine {
 	 * nothing in flow carries the question.
 	 */
 	#styleNode(element: Element, flexNode: FlexTypes.Node): void {
+		const wasHidden = flexNode.getDisplay() === Flex.DISPLAY_NONE;
 		styleFlexNode(element, flexNode, this.positionedElements);
+		// Turning display:none is what makes the whole subtree box-less, and
+		// this is the one place every path that restyles a box passes through.
+		if (!wasHidden && flexNode.getDisplay() === Flex.DISPLAY_NONE) {
+			this.#retireHiddenContent(element);
+		}
 		if (isOutOfFlow(element)) {
 			flexNode.setStaticPositionFunc((containingBlock) =>
 				this.#staticPosition(element, containingBlock),
@@ -3943,9 +3968,26 @@ export class LayoutEngine {
 			return false;
 		}
 
-		// Check if this whitespace is between block-level elements
-		const prevSibling = textNode.previousSibling;
-		const nextSibling = textNode.nextSibling;
+		// Check if this whitespace is between block-level elements. A comment
+		// generates no box, so it is never what the white space sits next to.
+		const rendered = (
+			node: Node | null,
+			step: (from: Node) => Node | null,
+		): Node | null => {
+			let current = node;
+			while (current && current.nodeType === current.COMMENT_NODE) {
+				current = step(current);
+			}
+			return current;
+		};
+		const prevSibling = rendered(
+			textNode.previousSibling,
+			(from) => from.previousSibling,
+		);
+		const nextSibling = rendered(
+			textNode.nextSibling,
+			(from) => from.nextSibling,
+		);
 
 		// Helper to check if a node is block-level
 		const isBlockLevel = (node: Node | null): boolean => {
@@ -4207,6 +4249,12 @@ export class LayoutEngine {
 		// sweeps must not smuggle descendants back in under the hidden
 		// container (the flex engine does not ignore them).
 		if (this.#hiddenByAncestor(node)) {
+			// Whatever boxes the node brought with it from where it was visible
+			// go with it: nothing under the boundary generates one.
+			this.#retireFlexNode(node);
+			if (node.nodeType === node.ELEMENT_NODE) {
+				this.#retireHiddenContent(node as Element);
+			}
 			return;
 		}
 
@@ -4465,6 +4513,32 @@ export class LayoutEngine {
 			// container's box list is what settles the order, so ask for it.
 			const container = this.#runContainerOf(element);
 			if (container) this.#dirtyRunContainers.add(container);
+		}
+	}
+
+	/**
+	 * Retire every box under a display:none element.
+	 *
+	 * Nothing in a display:none subtree generates a box, and layout never
+	 * descends past the boundary to say so: a node built while the subtree was
+	 * visible is never visited again, and goes on answering getRect -- and the
+	 * used values resolved off it -- with the geometry it had when it was last
+	 * laid out. Retiring them is what makes the subtree box-less.
+	 */
+	#retireHiddenContent(element: Element): void {
+		const runs = this.#boxesByContainer.get(element);
+		if (runs) {
+			for (const run of runs.runs) this.#retireInlineBox(run);
+			this.#boxesByContainer.delete(element);
+		}
+		this.#dirtyRunContainers.delete(element);
+		this.#dropBlockContent(element);
+		const walker = createFlatTreeWalker<Node>(element);
+		for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
+			this.#retireFlexNode(child);
+			if (child.nodeType === child.ELEMENT_NODE) {
+				this.#retireHiddenContent(child as Element);
+			}
 		}
 	}
 

@@ -7439,6 +7439,10 @@ export class StyleManager {
 	 * list changes. Only the *nearest* list is affected: a deeper list's items do
 	 * not contribute to an outer list's gutter.
 	 */
+	// TODO(box-tree): a list's gutter is a layout question -- the widest
+	// marker its items generate -- answered here in the cascade, which is why
+	// the cascade must watch child lists and reach into the layout engine.
+	// Phase C computes the gutter during block layout and deletes this.
 	#invalidateEnclosingList(target: Node): void {
 		let element: Element | null =
 			target.nodeType === this.#window.Node.ELEMENT_NODE
