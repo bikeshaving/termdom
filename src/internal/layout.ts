@@ -206,6 +206,15 @@ function dissolvesIntoChildren(node: Node): boolean {
 	return getPropertyValue(node as Element, "display") === "contents";
 }
 
+/** Whether a `white-space` value keeps a space as content rather than collapsing it. */
+function preservesSpaces(whiteSpace: string): boolean {
+	return (
+		whiteSpace === "pre" ||
+		whiteSpace === "pre-wrap" ||
+		whiteSpace === "break-spaces"
+	);
+}
+
 /**
  * Put a flex node at a position under a parent. A node is one child of one
  * parent: one already under this parent is MOVED, because a build that reaches
@@ -3360,7 +3369,18 @@ export class LayoutEngine {
 				}
 			}
 			const flexNode = this.nodeMap.get(entry);
-			if (flexNode && flexNode.getParent() === containerFlexNode) index++;
+			if (flexNode && flexNode.getParent() === containerFlexNode) {
+				// The box list is the order. A box placed among its DOM
+				// siblings knows nothing of the anonymous boxes between them --
+				// text between two blocks opens one, and the block after it was
+				// landing in its place -- so the position is settled here,
+				// where the whole list is in hand.
+				if (containerFlexNode.getChildIndex(flexNode) !== index) {
+					containerFlexNode.removeChild(flexNode);
+					containerFlexNode.insertChild(flexNode, index);
+				}
+				index++;
+			}
 		}
 	}
 
@@ -3755,6 +3775,18 @@ export class LayoutEngine {
 			return false;
 		}
 
+		// White space is collapsible only where the parent says it is. Under
+		// `pre`, `pre-wrap` and `break-spaces` a space is content, and a block
+		// holding nothing but spaces is a line tall; under `pre-line` the
+		// spaces still collapse, but a newline is a forced break and keeps its
+		// line. A card's blank middle row is three spaces, and this is what
+		// makes it a row.
+		const whiteSpace = getPropertyValue(parent, "white-space");
+		if (preservesSpaces(whiteSpace)) return false;
+		if (whiteSpace === "pre-line" && textNode.textContent.includes("\n")) {
+			return false;
+		}
+
 		// Check parent's display type - only collapse in block formatting contexts
 		const parentDisplay = getPropertyValue(parent, "display");
 		if (parentDisplay === "inline" || parentDisplay === "inline-block") {
@@ -3984,6 +4016,18 @@ export class LayoutEngine {
 						// trees hit this ordering routinely: attachShadow +
 						// populate fire records before the host's append.
 						continue;
+					} else if (this.#isInlineLevel(parentElement)) {
+						// A block-level box inside an inline BREAKS the inline
+						// (CSS2 §9.2.1.1): the container gains an anonymous
+						// block before it and another after, which is a change
+						// to the container's box list, not to the inline's. The
+						// re-add sweep below hangs the newcomer off the nearest
+						// laid-out ancestor and leaves the fragments unmade, so
+						// the block simply never gets drawn.
+						const container = this.#findInlineRunContainer(parentElement);
+						if (container) this.invalidate(container);
+						else this.#invalidatedNodes.add(node);
+						continue;
 					} else {
 						// Connected parent with no layout node: defer to the
 						// calculateLayout re-add sweep rather than throwing --
@@ -4040,6 +4084,17 @@ export class LayoutEngine {
 				}
 				if (record.nextSibling && this.#isInlineLevel(record.nextSibling)) {
 					this[kInvalidateInlineRun](record.nextSibling);
+				}
+				// A block-level box leaving an inline lets the fragments it
+				// broke apart merge back into one, which is again the
+				// container's box list and not the inline's.
+				if (
+					parent.nodeType === parent.ELEMENT_NODE &&
+					this.#isInlineLevel(parent) &&
+					!this.#isInlineLevel(node)
+				) {
+					const container = this.#findInlineRunContainer(parent);
+					if (container) this.invalidate(container);
 				}
 
 				this.#removeNode(node, parent);
@@ -4143,6 +4198,14 @@ export class LayoutEngine {
 				this.#measureNodes.delete(staleNode);
 				staleNode.freeRecursive();
 				this.#untrackNode(node);
+			}
+			// The children it dissolves into are the CONTAINER's boxes, and the
+			// container learns of them only by enumerating again: an element
+			// that generates no box announces nothing else on its way in.
+			const container = this.#runContainerOf(node);
+			if (container) {
+				this.#staleContainers.add(container);
+				this.#dirtyRunContainers.add(container);
 			}
 			return;
 		}
@@ -4391,8 +4454,7 @@ export class LayoutEngine {
 		if (!parent) return false;
 		const display = getPropertyValue(parent, "display");
 		if (display !== "flex" && display !== "inline-flex") return false;
-		const whiteSpace = getPropertyValue(parent, "white-space");
-		if (whiteSpace === "pre" || whiteSpace === "pre-wrap") return false;
+		if (preservesSpaces(getPropertyValue(parent, "white-space"))) return false;
 		for (let node: Node | null = text; node; node = node.nextSibling) {
 			if (node.nodeType === node.TEXT_NODE) {
 				if ((node as Text).data.trim() !== "") return false;

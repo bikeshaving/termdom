@@ -614,3 +614,27 @@ test("a comment node never collapses the block that holds it", async () => {
 
 	dom.dispose();
 });
+
+test("a preserved space is content, and keeps its line", async () => {
+	// White space collapses only where `white-space` says it may. A block
+	// holding nothing but spaces is a line tall under `pre`, and nothing at all
+	// under `normal` -- which is what makes a drawn row of blanks possible.
+	const terminal = new MockProcess({cols: 40, rows: 8});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.attach();
+
+	const height = async (style: string): Promise<number> => {
+		dom.document.body.innerHTML = `<main style="${style}"><div>ab</div><div>   </div><div>cd</div></main>`;
+		await nextFrame(dom);
+		return dom.document.body.scrollHeight;
+	};
+
+	expect(await height("white-space: normal")).toBe(2);
+	expect(await height("white-space: pre")).toBe(3);
+	expect(await height("white-space: pre-wrap")).toBe(3);
+	expect(await height("white-space: break-spaces")).toBe(3);
+	// pre-line collapses spaces, so a row of them is still nothing.
+	expect(await height("white-space: pre-line")).toBe(2);
+
+	dom.dispose();
+});

@@ -180,3 +180,55 @@ test("a widget in an inline-block does not take a box of its own", async () => {
 
 	dom.dispose();
 });
+
+test("text between two blocks keeps its place in the order", async () => {
+	// The three fragments are boxes of the CONTAINER, and the anonymous one
+	// holding the text sits between the two blocks. A box placed among its DOM
+	// siblings cannot see the anonymous boxes between them, so the second block
+	// was landing in the text's slot and rendering above it.
+	const {dom, lines} = await render(`<b><section>A</section>B<div>C</div></b>`);
+
+	expect(lines().slice(0, 3)).toEqual(["A", "B", "C"]);
+
+	dom.dispose();
+});
+
+test("a block added to an inline breaks it, and rejoins it on removal", async () => {
+	// The fragments are the container's, so an arriving block-level child
+	// changes a box list the inline itself never announces. Deferred to the
+	// re-add sweep, the block was hung off the nearest laid-out ancestor and
+	// never drawn at all.
+	const {dom, lines} = await render(`<section><em>A<b>B</b>C</em></section>`);
+	expect(lines()[0]).toBe("ABC");
+
+	const block = dom.document.createElement("div");
+	block.textContent = "D";
+	dom.document.querySelector("em")!.appendChild(block);
+	await nextFrame(dom);
+	expect(lines().slice(0, 2)).toEqual(["ABC", "D"]);
+
+	block.remove();
+	await nextFrame(dom);
+	expect(lines().slice(0, 2)).toEqual(["ABC", ""]);
+
+	dom.dispose();
+});
+
+test("a display: contents element added brings its children with it", async () => {
+	// It generates no box of its own, so nothing about it reaches layout: the
+	// container has to be told to enumerate again, or the children it
+	// dissolves into are never boxed.
+	const {dom, lines} = await render(
+		`<style>.c { display: contents; }</style><div>A</div>`,
+	);
+	expect(lines()[0]).toBe("A");
+
+	const wrapper = dom.document.createElement("span");
+	wrapper.className = "c";
+	wrapper.textContent = "B";
+	dom.document.body.appendChild(wrapper);
+	await nextFrame(dom);
+	expect(lines().slice(0, 2)).toEqual(["A", "B"]);
+
+	dom.dispose();
+});
