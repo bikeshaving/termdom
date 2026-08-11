@@ -22,6 +22,7 @@ import {
 } from "./styles.js";
 import {computedStyleOf, getPropertyValue, parseUnitValue} from "./styles.js";
 import {
+	caretRangeOf,
 	createFlatTreeWalker,
 	pseudoElementCount,
 	type FlatTreeWalker,
@@ -2722,6 +2723,20 @@ export class LayoutEngine {
 			if (hit) return hit;
 		}
 		return contained ? element : null;
+	}
+
+	/**
+	 * Where an element's own caret sits, as a rect -- the cell the terminal
+	 * cursor parks on, and the row the camera reveals on an edit. The element
+	 * answers WHERE its caret is, as a collapsed Range into the tree it
+	 * renders; this is that Range measured, so nothing outside asks the caret
+	 * question in two currencies. Null for an element with no caret, and for a
+	 * caret whose offset the layout placed nothing at.
+	 */
+	caretRectOf(element: Element): globalThis.DOMRect | null {
+		const range = caretRangeOf(element);
+		if (!range) return null;
+		return this.getRangeRects(range as unknown as Range)[0] ?? null;
 	}
 
 	createDOMRectList(rects?: globalThis.DOMRect[]): globalThis.DOMRectList {
