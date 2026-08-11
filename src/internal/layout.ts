@@ -24,8 +24,6 @@ import {
 	computedStyleOf,
 	getPropertyValue,
 	parseUnitValue,
-	attributeReachesDescendants,
-	declaresInheritedProperty,
 	selectorInvalidationScope,
 	selectorsKeyOnAttribute,
 } from "./styles.js";
@@ -204,19 +202,6 @@ function findInlineBlockSegment(
  * (UA default `slot { display: contents }`, as in browsers) while its projected
  * content flows through.
  */
-/**
- * The `display` an inline style declares, or "". Hiding and showing a box is
- * not a change of KIND -- a hidden box is built and then switched off -- so
- * `none` reads as no declaration at all here.
- */
-const DECLARED_DISPLAY = /(?:^|;)\s*display\s*:\s*([a-z- ]+)/i;
-function declaresBoxKind(cssText: string): boolean {
-	const match = cssText.match(DECLARED_DISPLAY);
-	if (!match) return false;
-	const value = match[1].trim().toLowerCase();
-	return value !== "" && value !== "none";
-}
-
 function dissolvesIntoChildren(node: Node): boolean {
 	return getPropertyValue(node as Element, "display") === "contents";
 }
@@ -1611,6 +1596,10 @@ export class LayoutEngine {
 		// Geometry moves with the pass, so anything memoized against the layout
 		// epoch -- a resolved value, a rect -- re-measures after it.
 		this.#layoutPass++;
+		// The cascade has finished for this frame, so the boxes it unsettled
+		// can be named against the styles that stand rather than the ones that
+		// were on their way out.
+		this.#applyRestyles();
 		// Nothing marked dirty and nothing awaiting re-add: the previous layout
 		// still holds, and even the pruning sweep below -- O(nodes) isConnected
 		// checks -- is not worth paying. Every mutation path dirties the tree on
@@ -3540,30 +3529,6 @@ export class LayoutEngine {
 		if (container) this.#staleContainers.add(container);
 	}
 
-	/**
-	 * Re-measure every run in a subtree.
-	 *
-	 * A run remembers the size it answered with, and the answer only changes
-	 * when its constraints do -- so a change to what it INHERITS, which moves
-	 * nothing about the space it was offered, is invisible to it. White space
-	 * that stops collapsing is the case: the same run, the same width, a
-	 * different measurement.
-	 */
-	#remeasureSubtree(element: Element): void {
-		if (this.#boxesByContainer.has(element)) {
-			this.#invalidateContainerBoxes(element);
-		}
-		const walker = createFlatTreeWalker<Node>(element);
-		for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-			if (
-				node.nodeType === node.ELEMENT_NODE &&
-				this.#boxesByContainer.has(node as Element)
-			) {
-				this.#invalidateContainerBoxes(node as Element);
-			}
-		}
-	}
-
 	/** Note that every container in and around a subtree must re-enumerate. */
 	#restageSubtree(node: Node): void {
 		this.#restageBox(node);
@@ -3919,6 +3884,65 @@ export class LayoutEngine {
 		this.#handleMutationRecords(mutations);
 	}
 
+	/**
+	 * Elements whose computed style the cascade has dropped, awaiting the work
+	 * that drop implies for layout. Collected rather than acted on: the cascade
+	 * announces them mid-invalidation, while descendants still hold the styles
+	 * they are about to lose, and every question layout asks here -- which box
+	 * holds this element, what kind of box it is -- is a question about the
+	 * styles that have not finished arriving.
+	 */
+	#restyled = new Set<Element>();
+
+	/**
+	 * The cascade dropped an element's computed style.
+	 *
+	 * Whatever measured that element measured it under the style that is gone,
+	 * and nothing about the space that measurement was offered says so: a
+	 * member that turns display:none leaves its width behind, one that changes
+	 * shape measures at a size nothing re-asked for, and a flex container
+	 * blockifies children whose boxes were built as inline ones. So the box is
+	 * dirtied and the enumerations around it restaged. Over-approximate by
+	 * construction -- a style change that moves no geometry costs a
+	 * re-measurement, and one that moves geometry is never missed.
+	 */
+	styleInvalidated(element: Element): void {
+		this.#restyled.add(element);
+	}
+
+	/**
+	 * Dirty what measures each restyled element, and restage the enumerations
+	 * that decide which box that is.
+	 */
+	#applyRestyles(): void {
+		while (this.#restyled.size > 0) {
+			const restyled = [...this.#restyled];
+			this.#restyled.clear();
+			for (const element of restyled) {
+				if (!flatIsConnected(element)) continue;
+				// The element's own box may move between runs, and so may the
+				// boxes of its children.
+				this.#restageBox(element);
+				this.#restageChildren(element);
+				// A box built for the wrong KIND of element measures the wrong
+				// content -- a blockified inline holding a block would end at
+				// the first block inside it -- and no re-measurement corrects
+				// that, only a rebuild.
+				const flexNode = this.nodeMap.get(element);
+				if (
+					flexNode &&
+					this.#measuresAsRun(element) !== this.#measureNodes.has(flexNode)
+				) {
+					this.invalidate(element);
+				}
+				this.#invalidateEnclosingMeasure(element);
+				if (this.#boxesByContainer.has(element)) {
+					this.#invalidateContainerBoxes(element);
+				}
+			}
+		}
+	}
+
 	/** The containers a single mutation record can have unsettled. */
 	#restageForRecord(record: MutationRecord): void {
 		// A record on a shadow root describes the HOST's composed children.
@@ -3960,39 +3984,11 @@ export class LayoutEngine {
 			if (record.type === "attributes") {
 				if (record.attributeName === "style") {
 					const element = record.target as Element;
-					// A property the descendants inherit changes what THEY
-					// measure -- white space collapses according to the value a
-					// text node's parent holds -- so the subtree rebuilds, the
-					// same answer a class flip gets. `display` is not inherited
-					// and reaches them anyway: it decides what KIND of box this
-					// element is, and a flex container blockifies its children
-					// (css-display-3 §2.7), which changes theirs. A style that
-					// declares neither reaches no further than its own box.
-					const before = record.oldValue ?? "";
-					const now = element.getAttribute("style") ?? "";
-					if (
-						declaresInheritedProperty(now) ||
-						declaresInheritedProperty(before) ||
-						((declaresBoxKind(now) || declaresBoxKind(before)) &&
-							// An out-of-flow box hangs from its containing
-							// block, not from the tree it is written in, and
-							// rebuilding it from there is how it loses its
-							// place -- the select's picker sits in the top
-							// layer and simply vanished.
-							!this.#isOutOfFlow(element))
-					) {
-						this.invalidate(element);
-						this.#remeasureSubtree(element);
-					}
-					// Whatever the style did, the box this element's content sits
-					// in measures something different now: a member that turned
-					// display:none leaves its width behind otherwise, and one
-					// that changed shape measures at a size nothing re-asked
-					// for. The box is told directly, because the space it is
-					// offered has not moved.
-					const box = this.#boxOf(element);
-					if (box) this.#invalidateBox(box);
-
+					// What the style declares, and how far it reaches, is the
+					// cascade's question: an inline style always reaches the
+					// subtree, so every element under this one arrives through
+					// styleInvalidated and the boxes measuring them are dirtied
+					// there. What is left here is the layout node's own styles.
 					const flexNode = this.nodeMap.get(element);
 					if (flexNode) {
 						this.#styleNode(element, flexNode);
@@ -4055,15 +4051,6 @@ export class LayoutEngine {
 							break;
 						}
 						scope = lifted ?? scope;
-					}
-					if (
-						attributeReachesDescendants(
-							element,
-							record.attributeName!,
-							record.oldValue,
-						)
-					) {
-						this.#remeasureSubtree(element);
 					}
 					if (scope) {
 						this.invalidate(scope);

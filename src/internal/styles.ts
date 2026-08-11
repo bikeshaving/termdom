@@ -81,51 +81,6 @@ export function selectorsKeyOnAttribute(
 	return styleManager ? styleManager.keysOnAttribute(name) : false;
 }
 
-/**
- * Whether an inline style's text declares a property its element's DESCENDANTS
- * take their own value from. What a descendant measures can hang on one: white
- * space collapses or does not according to the value it inherits, and a text
- * node consults its parent's, not its own. The layout engine asks before
- * deciding how much of a subtree a `style` attribute has unsettled.
- */
-export function declaresInheritedProperty(cssText: string): boolean {
-	if (!cssText) return false;
-	for (const declaration of cssText.split(";")) {
-		const colon = declaration.indexOf(":");
-		if (colon < 0) continue;
-		const name = declaration.slice(0, colon).trim().toLowerCase();
-		if (
-			name === "all" ||
-			name.startsWith("--") ||
-			INHERITED_PROPERTIES.has(name)
-		) {
-			return true;
-		}
-		const longhands = SHORTHAND_LONGHANDS.get(name);
-		if (longhands?.some((longhand) => INHERITED_PROPERTIES.has(longhand))) {
-			return true;
-		}
-	}
-	return false;
-}
-
-/**
- * Whether a change to this attribute can reach the element's descendants --
- * by starting or stopping a rule that matches one of them, or by moving a
- * value they inherit. The layout engine asks before re-measuring a subtree.
- */
-export function attributeReachesDescendants(
-	element: Element,
-	name: string,
-	oldValue: string | null,
-): boolean {
-	const window = element.ownerDocument?.defaultView;
-	const styleManager = window ? styleManagers.get(window) : undefined;
-	return styleManager
-		? styleManager.attributeReachesDescendants(element, name, oldValue)
-		: true;
-}
-
 export function parseUnitValue(
 	value: string,
 ): number | {percentage: number} | null {
@@ -7456,6 +7411,11 @@ export class StyleManager {
 	}
 
 	#invalidateElementCaches(element: Element): void {
+		// Layout measured this element under the style being dropped. This is
+		// the one place an element's computed style goes stale -- attribute
+		// flips, inline styles, subtree and sibling reach, focus all arrive
+		// here -- so it is the one place layout has to be told.
+		this.#layoutEngine?.styleInvalidated(element);
 		// A computed style an author still holds is the one this cache handed
 		// out, so it is told the cascade moved on rather than merely dropped.
 		this.#computedStyleCache.get(element)?.invalidate();
