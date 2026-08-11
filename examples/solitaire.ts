@@ -422,7 +422,7 @@ const TURN_GLYPH = "↻";
 const DOT = " · ";
 const MIDDOT = "·";
 const STAR = "★";
-const ARROWS_ALL = "←↑↓→";
+const ARROWS_ALL = "↑↓←→";
 
 const blank = (width: number): string => " ".repeat(width);
 
