@@ -4046,7 +4046,8 @@ export class LayoutEngine {
 			// for a node just added -- and then nothing would ever correct it.
 			this.#restageForRecord(record);
 			if (record.type === "attributes") {
-				if (record.attributeName === "class" ||
+				if (
+					record.attributeName === "class" ||
 					record.attributeName === "id" ||
 					selectorsKeyOnAttribute(
 						record.target as Element,

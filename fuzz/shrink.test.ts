@@ -44,8 +44,22 @@ const SHEET = `
 `;
 
 const CLASSES = [
-	"hide", "flex", "col", "contents", "inline", "iblock", "block",
-	"pad", "pre", "wide", "mark", "editing", "view", "on", "light", "dim",
+	"hide",
+	"flex",
+	"col",
+	"contents",
+	"inline",
+	"iblock",
+	"block",
+	"pad",
+	"pre",
+	"wide",
+	"mark",
+	"editing",
+	"view",
+	"on",
+	"light",
+	"dim",
 ];
 const TAGS = ["div", "span", "p", "b", "em", "section", "li"];
 
@@ -58,14 +72,21 @@ function rng(seed: number): () => number {
 		return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 	};
 }
-const pick = <T,>(next: () => number, items: T[]): T =>
+const pick = <T>(next: () => number, items: T[]): T =>
 	items[Math.floor(next() * items.length) % items.length];
 
 type Action =
 	| {kind: "class"; id: string; cls: string}
 	| {kind: "style"; id: string; value: string}
 	| {kind: "attr"; id: string; value: string}
-	| {kind: "append"; id: string; tag: string; cls: string; text: string; made: string}
+	| {
+			kind: "append";
+			id: string;
+			tag: string;
+			cls: string;
+			text: string;
+			made: string;
+	  }
 	| {kind: "prepend"; id: string; tag: string; text: string; made: string}
 	| {kind: "remove"; id: string}
 	| {kind: "move"; id: string; to: string}
@@ -102,7 +123,9 @@ const find = (document: any, id: string): any =>
 
 function tag(document: any): void {
 	let counter = 0;
-	for (const element of Array.from(document.body.querySelectorAll("*")) as any[]) {
+	for (const element of Array.from(
+		document.body.querySelectorAll("*"),
+	) as any[]) {
 		if (!element.hasAttribute("data-f")) {
 			element.setAttribute("data-f", `e${counter++}`);
 		}
@@ -129,7 +152,8 @@ function apply(document: any, action: Action): void {
 			if (action.kind === "append" && action.cls) child.className = action.cls;
 			if (action.text) child.textContent = action.text;
 			if (action.kind === "append") element.appendChild(child);
-			else if (element.firstChild) element.insertBefore(child, element.firstChild);
+			else if (element.firstChild)
+				element.insertBefore(child, element.firstChild);
 			else element.appendChild(child);
 			break;
 		}
@@ -195,7 +219,8 @@ function generate(next: () => number): string {
 		if (roll < 0.12) return "   ";
 		if (roll < 0.15) return "<!-- c -->";
 		if (roll < 0.2) return `<${pick(next, TAGS)}> </${pick(next, TAGS)}>`;
-		if (depth <= 0 || roll < 0.5) return `t${String(counter++).padStart(3, "0")}`;
+		if (depth <= 0 || roll < 0.5)
+			return `t${String(counter++).padStart(3, "0")}`;
 		const tagName = pick(next, TAGS);
 		const cls = next() < 0.5 ? pick(next, CLASSES) : "";
 		const count = 1 + Math.floor(next() * 3);
@@ -209,7 +234,9 @@ function generate(next: () => number): string {
 	return html;
 }
 
-async function record(seed: number): Promise<{html: string; actions: Action[]}> {
+async function record(
+	seed: number,
+): Promise<{html: string; actions: Action[]}> {
 	const next = rng(seed);
 	const html = generate(next);
 	const {dom} = makeDom();
@@ -237,9 +264,15 @@ async function record(seed: number): Promise<{html: string; actions: Action[]}> 
 				kind: "style",
 				id: pick(next, all),
 				value: pick(next, [
-					"", "display: none", "display: block", "display: inline",
-					"display: flex", "padding-left: 2ch", "width: 6ch",
-					"color: blue", "white-space: pre",
+					"",
+					"display: none",
+					"display: block",
+					"display: inline",
+					"display: flex",
+					"padding-left: 2ch",
+					"width: 6ch",
+					"color: blue",
+					"white-space: pre",
 				]),
 			};
 		} else if (kind === 2) {
@@ -262,12 +295,22 @@ async function record(seed: number): Promise<{html: string; actions: Action[]}> 
 		} else if (kind === 4 && all.length) {
 			action = {kind: "remove", id: pick(next, all)};
 		} else if (kind === 5 && all.length) {
-			action = {kind: "move", id: pick(next, all), to: pick(next, ["body", ...all])};
+			action = {
+				kind: "move",
+				id: pick(next, all),
+				to: pick(next, ["body", ...all]),
+			};
 		} else if (kind === 6 && all.length) {
 			action = {
 				kind: "html",
 				id: pick(next, all),
-				value: pick(next, ["", "   ", "<b>x</b>", "<div></div>", "<span>a</span><div>b</div>"]),
+				value: pick(next, [
+					"",
+					"   ",
+					"<b>x</b>",
+					"<div></div>",
+					"<span>a</span><div>b</div>",
+				]),
 			};
 		} else if (kind === 7 && all.length) {
 			action = {
@@ -277,7 +320,11 @@ async function record(seed: number): Promise<{html: string; actions: Action[]}> 
 				value: pick(next, ["", " ", "   ", "z", "zz zz"]),
 			};
 		} else if (all.length) {
-			action = {kind: "attr", id: pick(next, all), value: String(Math.floor(next() * 9))};
+			action = {
+				kind: "attr",
+				id: pick(next, all),
+				value: String(Math.floor(next() * 9)),
+			};
 		}
 		if (!action) continue;
 		actions.push(action);
@@ -370,42 +417,38 @@ async function shrink(
  * by default so a regression shows up in `npm test` without a scan.
  */
 const REGRESSION_SEEDS = [
-	2, 27, 30, 82, 93, 113, 115, 117, 120, 133, 142, 149, 155, 168, 193, 195,
-	205, 229, 232, 246, 252, 315, 400, 421, 451, 460, 471, 481, 524, 527, 586,
+	2, 27, 30, 82, 93, 113, 115, 117, 120, 133, 142, 149, 155, 168, 193, 195, 205,
+	229, 232, 246, 252, 315, 400, 421, 451, 460, 471, 481, 524, 527, 586,
 ];
 
-test(
-	"shrink",
-	async () => {
-		const scan = Number(process.env.SCAN ?? 0);
-		const from = Number(process.env.FROM ?? 1);
-		const seeds = scan
-			? Array.from({length: scan}, (_, i) => from + i)
-			: process.env.SEEDS
-				? process.env.SEEDS.split(",").map((s) => Number(s.trim()))
-				: REGRESSION_SEEDS;
-		const wanted = Number(process.env.WANT ?? seeds.length);
-		const report: string[] = [];
-		let found = 0;
-		let checked = 0;
-		for (const seed of seeds) {
-			if (found >= wanted) break;
-			checked++;
-			const {html, actions} = await record(seed);
-			if (!(await differs(html, actions)).differs) continue;
-			found++;
-			const small = await shrink(html, actions);
-			const result = await differs(small.html, small.actions);
-			report.push(
-				`== seed ${seed}\nhtml: ${small.html}\n` +
-					`actions:\n${small.actions.map((a) => `  ${describe(a)}`).join("\n")}\n` +
-					`--- incremental\n${result.incremental}\n--- fresh\n${result.fresh}\n`,
-			);
-		}
-		const summary = `${found} of ${checked} scanned\n\n${report.join("\n")}`;
-		mkdirSync(REPORT_DIR, {recursive: true});
-		writeFileSync(`${REPORT_DIR}/shrunk.txt`, summary);
-		if (found > 0) throw new Error(summary);
-	},
-	900000,
-);
+test("shrink", async () => {
+	const scan = Number(process.env.SCAN ?? 0);
+	const from = Number(process.env.FROM ?? 1);
+	const seeds = scan
+		? Array.from({length: scan}, (_, i) => from + i)
+		: process.env.SEEDS
+			? process.env.SEEDS.split(",").map((s) => Number(s.trim()))
+			: REGRESSION_SEEDS;
+	const wanted = Number(process.env.WANT ?? seeds.length);
+	const report: string[] = [];
+	let found = 0;
+	let checked = 0;
+	for (const seed of seeds) {
+		if (found >= wanted) break;
+		checked++;
+		const {html, actions} = await record(seed);
+		if (!(await differs(html, actions)).differs) continue;
+		found++;
+		const small = await shrink(html, actions);
+		const result = await differs(small.html, small.actions);
+		report.push(
+			`== seed ${seed}\nhtml: ${small.html}\n` +
+				`actions:\n${small.actions.map((a) => `  ${describe(a)}`).join("\n")}\n` +
+				`--- incremental\n${result.incremental}\n--- fresh\n${result.fresh}\n`,
+		);
+	}
+	const summary = `${found} of ${checked} scanned\n\n${report.join("\n")}`;
+	mkdirSync(REPORT_DIR, {recursive: true});
+	writeFileSync(`${REPORT_DIR}/shrunk.txt`, summary);
+	if (found > 0) throw new Error(summary);
+}, 900000);

@@ -538,11 +538,9 @@ test("a block inside an inline takes its padding from a class flip", async () =>
 	const terminal = new MockProcess({cols: 30, rows: 10});
 	const dom = new TermDOM({transport: terminal.transport});
 	const {document} = dom;
-	document.body.innerHTML =
-		`<style>.pad { padding-left: 2ch; }</style><b><div id="d">AB</div></b>`;
+	document.body.innerHTML = `<style>.pad { padding-left: 2ch; }</style><b><div id="d">AB</div></b>`;
 	await nextFrame(dom);
-	const line = () =>
-		terminal.getPlainText().split("\n")[0].replace(/\s+$/, "");
+	const line = () => terminal.getPlainText().split("\n")[0].replace(/\s+$/, "");
 	expect(line()).toBe("AB");
 
 	document.getElementById("d")!.classList.add("pad");
@@ -563,8 +561,7 @@ test("a block turned inline-block keeps the content it already had", async () =>
 	const {document} = dom;
 	document.body.innerHTML = `<div id="d"><section>AB</section></div>`;
 	await nextFrame(dom);
-	const line = () =>
-		terminal.getPlainText().split("\n")[0].replace(/\s+$/, "");
+	const line = () => terminal.getPlainText().split("\n")[0].replace(/\s+$/, "");
 	expect(line()).toBe("AB");
 
 	document.getElementById("d")!.setAttribute("style", "display: inline-block");
@@ -588,8 +585,7 @@ test("a restyle deep inside an inline-block re-measures the run holding it", asy
 		`<style>.dim { color: #808080; } .on ~ .light { color: red; }</style>` +
 		`A<section style="display: inline-block"><section><b id="s">BC</b></section></section>`;
 	await nextFrame(dom);
-	const line = () =>
-		terminal.getPlainText().split("\n")[0].replace(/\s+$/, "");
+	const line = () => terminal.getPlainText().split("\n")[0].replace(/\s+$/, "");
 	expect(line()).toBe("ABC");
 
 	document.getElementById("s")!.classList.add("dim");
@@ -634,8 +630,7 @@ test("a hidden run member gives up the width it reserved", async () => {
 	const {document} = dom;
 	document.body.innerHTML = `<span>A<em id="s">BBBB</em></span>C`;
 	await nextFrame(dom);
-	const line = () =>
-		terminal.getPlainText().split("\n")[0].replace(/\s+$/, "");
+	const line = () => terminal.getPlainText().split("\n")[0].replace(/\s+$/, "");
 	expect(line()).toBe("ABBBBC");
 
 	document.getElementById("s")!.setAttribute("style", "display: none");
@@ -654,8 +649,7 @@ test("a box that stops being display:none is built with its content", async () =
 	const {document} = dom;
 	document.body.innerHTML = `<em id="s">AB</em>`;
 	await nextFrame(dom);
-	const line = () =>
-		terminal.getPlainText().split("\n")[0].replace(/\s+$/, "");
+	const line = () => terminal.getPlainText().split("\n")[0].replace(/\s+$/, "");
 
 	const em = document.getElementById("s")!;
 	em.setAttribute("style", "display: none");
@@ -681,8 +675,7 @@ test("an inline-block turned block gives up its detached content tree", async ()
 		`<style>.iblock { display: inline-block; }</style>` +
 		`<section id="s" class="iblock"><em><section>AB</section></em></section>`;
 	await nextFrame(dom);
-	const line = () =>
-		terminal.getPlainText().split("\n")[0].replace(/\s+$/, "");
+	const line = () => terminal.getPlainText().split("\n")[0].replace(/\s+$/, "");
 	expect(line()).toBe("AB");
 
 	document.getElementById("s")!.classList.remove("iblock");
@@ -704,8 +697,7 @@ test("a block turned flex gives each child a box of its own", async () => {
 		`<style>.mark::before { content: "* "; }</style>` +
 		`<section id="s" class="mark">AB</section>`;
 	await nextFrame(dom);
-	const line = () =>
-		terminal.getPlainText().split("\n")[0].replace(/\s+$/, "");
+	const line = () => terminal.getPlainText().split("\n")[0].replace(/\s+$/, "");
 	expect(line()).toBe("* AB");
 
 	document.getElementById("s")!.setAttribute("style", "display: flex");
