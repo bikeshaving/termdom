@@ -1947,7 +1947,7 @@ test("Inline children do not affect block child positioning", () => {
 	expect(blockChildLayout.top).toBe(1); // Currently fails: at y=0
 });
 
-// Tests for block emulation with flexbox behavior
+// Tests for block stacking behavior
 test("Block display stacks children and keeps their specified heights", () => {
 	const {layoutEngine} = createLayoutEngine(`
 		<div id="container" style="height: 10px; display: block;">
@@ -2002,7 +2002,7 @@ test("Block display stacks children and keeps their specified heights", () => {
 	// which is the correct behavior for terminal layouts
 });
 
-test("Block children have flex-shrink: 0 to prevent content clipping", () => {
+test("Block children overflow a constrained container rather than shrink", () => {
 	const {layoutEngine} = createLayoutEngine(`
 		<div style="height: 3px; display: block;">
 			<div style="height: 2px;">Block child 1</div>
@@ -2029,7 +2029,7 @@ test("Block children have flex-shrink: 0 to prevent content clipping", () => {
 	expect(containerLayout.height).toBe(3);
 
 	// CRITICAL: Children maintain their requested heights despite container constraint
-	// This is because they have flex-shrink: 0 in block containers
+	// Block layout never distributes a container's deficit over its children
 	expect(childLayouts[0].height).toBe(2); // Child 1 maintains height
 	expect(childLayouts[1].height).toBe(2); // Child 2 maintains height
 
@@ -2041,12 +2041,6 @@ test("Block children have flex-shrink: 0 to prevent content clipping", () => {
 	const totalChildrenHeight = childLayouts[0].height + childLayouts[1].height;
 	expect(totalChildrenHeight).toBe(4); // 2 + 2 = 4
 	expect(totalChildrenHeight).toBeGreaterThan(containerLayout.height); // 4 > 3
-
-	// Verify children have flex-shrink: 0 (indirectly via maintained heights)
-	// If flex-shrink were 1, children would shrink to fit the 3px container
-	childYogaNodes.forEach((yoga) => {
-		expect(yoga.getFlexShrink()).toBe(0);
-	});
 });
 
 test("whitespace between block elements should be collapsed", async () => {

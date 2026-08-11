@@ -1,7 +1,6 @@
 /**
- * CSS 2.2 §8.3.1 margin collapsing, in the block emulation.
+ * CSS 2.2 §8.3.1 margin collapsing.
  *
- * The flex engine sums adjacent margins; CSS block layout collapses them.
  * These pin the cases that matter in real documents: adjacent siblings, a
  * margin collapsing THROUGH a parent's edge and escaping the box (the
  * blockquote whose border must start at its first text row), and the

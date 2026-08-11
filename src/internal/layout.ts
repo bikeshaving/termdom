@@ -649,65 +649,51 @@ function styleFlexNode(
 		}
 	}
 
-	const parentDisplay = element.parentElement
-		? getPropertyValue(element.parentElement, "display")
-		: null;
-
-	if (parentDisplay === "block") {
-		// We emulate display: block with flexbox, but this means we need the children
-		// to not have configurable flex properties, or surprising layout behavior
-		// might occur.
-		flexNode.setFlexGrow(0);
-		flexNode.setFlexShrink(0); // Prevent shrinking in block containers
-		flexNode.setFlexBasisAuto();
-		flexNode.setAlignSelf(Flex.ALIGN_AUTO);
-		flexNode.setOrder(undefined); // order only applies to flex items
+	// Flex item properties. A block container reads none of them -- they are
+	// applied whatever the parent is, and simply go unasked outside a flex
+	// container, which is what CSS says of them.
+	const flexGrow = computedStyle.computedValueOf("flex-grow");
+	const growValue = parseFloat(flexGrow);
+	if (!isNaN(growValue) && growValue >= 0) {
+		flexNode.setFlexGrow(growValue);
 	} else {
-		const flexGrow = computedStyle.computedValueOf("flex-grow");
-		const growValue = parseFloat(flexGrow);
-		if (!isNaN(growValue) && growValue >= 0) {
-			flexNode.setFlexGrow(growValue);
+		flexNode.setFlexGrow(undefined);
+	}
+
+	const orderValue = parseInt(computedStyle.computedValueOf("order"), 10);
+	flexNode.setOrder(Number.isNaN(orderValue) ? undefined : orderValue);
+
+	const flexShrink = computedStyle.computedValueOf("flex-shrink");
+	const shrinkValue = parseFloat(flexShrink);
+	if (!isNaN(shrinkValue) && shrinkValue >= 0) {
+		flexNode.setFlexShrink(shrinkValue);
+	} else {
+		flexNode.setFlexShrink(undefined);
+	}
+
+	const flexBasis = parseUnitValue(computedStyle.computedValueOf("flex-basis"));
+	if (typeof flexBasis === "number") {
+		flexNode.setFlexBasis(flexBasis);
+	} else if (flexBasis && "percentage" in flexBasis) {
+		flexNode.setFlexBasisPercent(flexBasis.percentage);
+	} else {
+		const originalValue = computedStyle.computedValueOf("flex-basis");
+		if (originalValue === "auto") {
+			flexNode.setFlexBasisAuto();
 		} else {
-			flexNode.setFlexGrow(undefined);
+			flexNode.setFlexBasis(undefined);
 		}
+	}
 
-		const orderValue = parseInt(computedStyle.computedValueOf("order"), 10);
-		flexNode.setOrder(Number.isNaN(orderValue) ? undefined : orderValue);
-
-		const flexShrink = computedStyle.computedValueOf("flex-shrink");
-		const shrinkValue = parseFloat(flexShrink);
-		if (!isNaN(shrinkValue) && shrinkValue >= 0) {
-			flexNode.setFlexShrink(shrinkValue);
+	const alignSelf = computedStyle.computedValueOf("align-self");
+	if (alignSelf === "auto") {
+		flexNode.setAlignSelf(Flex.ALIGN_AUTO);
+	} else {
+		const alignValue = getFlexConstant("align", alignSelf);
+		if (alignValue !== null) {
+			flexNode.setAlignSelf(alignValue);
 		} else {
-			flexNode.setFlexShrink(undefined);
-		}
-
-		const flexBasis = parseUnitValue(
-			computedStyle.computedValueOf("flex-basis"),
-		);
-		if (typeof flexBasis === "number") {
-			flexNode.setFlexBasis(flexBasis);
-		} else if (flexBasis && "percentage" in flexBasis) {
-			flexNode.setFlexBasisPercent(flexBasis.percentage);
-		} else {
-			const originalValue = computedStyle.computedValueOf("flex-basis");
-			if (originalValue === "auto") {
-				flexNode.setFlexBasisAuto();
-			} else {
-				flexNode.setFlexBasis(undefined);
-			}
-		}
-
-		const alignSelf = computedStyle.computedValueOf("align-self");
-		if (alignSelf === "auto") {
 			flexNode.setAlignSelf(Flex.ALIGN_AUTO);
-		} else {
-			const alignValue = getFlexConstant("align", alignSelf);
-			if (alignValue !== null) {
-				flexNode.setAlignSelf(alignValue);
-			} else {
-				flexNode.setAlignSelf(Flex.ALIGN_AUTO);
-			}
 		}
 	}
 
@@ -728,8 +714,8 @@ function styleFlexNode(
 	} else if (display === "flex") {
 		flexNode.setDisplay(Flex.DISPLAY_FLEX);
 	} else if (display === "table") {
-		// A real table layout mode, not a flex column: columns are shared across
-		// rows, which a flex row per <tr> structurally cannot express.
+		// A layout mode of its own: columns are shared across rows, which a box
+		// per <tr> stacked on its own structurally cannot express.
 		flexNode.setDisplay(Flex.DISPLAY_TABLE);
 		flexNode.setBorderCollapse(
 			computedStyle.computedValueOf("border-collapse") === "collapse",
@@ -1250,8 +1236,8 @@ class Box {
 
 	/**
 	 * The layout node an anonymous box owns. A principal box's layout node is
-	 * its DOM node's, held in `nodeMap`: the flex tree is keyed by node until
-	 * block layout stops being emulated as flex.
+	 * its DOM node's, held in `nodeMap`: the layout tree is keyed by node, and
+	 * only a box with no node of its own has one to keep here.
 	 */
 	flexNode: FlexTypes.Node | null = null;
 	styledFrom: Element | null = null;
@@ -4907,10 +4893,9 @@ export class LayoutEngine {
 					// §4.5 min-content floor offers 0) that wants the CONTENT's
 					// minimum, not the basis -- the engine clamps the floor by the
 					// specified size itself. Both break the content at the offer.
-					// Row flex items only: in column flex, width is the cross axis
-					// and a definite width wins over stretch; a block container is
-					// emulated as column flex, and its EXACTLY stretch offer
-					// describes the CONTAINER's width, not this element's own
+					// Row flex items only: everywhere else a definite width wins
+					// over the container's offer, and a block container's EXACTLY
+					// offer describes the CONTAINER's width, not this element's own
 					// resolution -- a definite-width inline-block in a narrow block
 					// overflows, it does not re-wrap.
 					let offerOwnsWidth = false;
