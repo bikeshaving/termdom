@@ -1858,21 +1858,7 @@ export class LayoutEngine {
 			// For inline elements, the fragments of its run
 			const rectTexts = this[kRectTexts](element);
 			if (rectTexts.length > 0) {
-				// Calculate bounding box from all rectTexts
-				let minX = Infinity;
-				let minY = Infinity;
-				let maxX = -Infinity;
-				let maxY = -Infinity;
-
-				for (const rectText of rectTexts) {
-					const rect = rectText.rect;
-					minX = Math.min(minX, rect.x);
-					minY = Math.min(minY, rect.y);
-					maxX = Math.max(maxX, rect.x + rect.width);
-					maxY = Math.max(maxY, rect.y + rect.height);
-				}
-
-				return new this.DOMRect(minX, minY, maxX - minX, maxY - minY);
+				return this.unionRect(rectTexts.map((rectText) => rectText.rect));
 			}
 
 			// A pure inline element with no text of its own has no inline box to
@@ -2346,21 +2332,16 @@ export class LayoutEngine {
 	 * diverge.
 	 */
 	getRangeRects(range: Range): globalThis.DOMRect[] {
+		if (!range.collapsed) {
+			return this.getRangeRuns(range).map((run) => run.rect);
+		}
 		const rects: globalThis.DOMRect[] = [];
 		for (const textNode of this.#rangeTextNodes(range)) {
-			const from = range.startContainer === textNode ? range.startOffset : 0;
-			const to =
-				range.endContainer === textNode
-					? range.endOffset
-					: textNode.data.length;
-			if (range.collapsed) {
-				const caret = this.#caretRect(textNode, from);
-				if (caret) rects.push(caret);
-			} else if (to > from) {
-				for (const run of this.#selectionRuns(textNode, from, to)) {
-					rects.push(run.rect);
-				}
-			}
+			const caret = this.#caretRect(
+				textNode,
+				range.startContainer === textNode ? range.startOffset : 0,
+			);
+			if (caret) rects.push(caret);
 		}
 		return rects;
 	}
@@ -2677,7 +2658,7 @@ export class LayoutEngine {
 			// document-space probe point for its whole subtree. Fixed-space is
 			// a property of the containing-block CHAIN, so the check walks
 			// ancestors -- an absolute box inside a fixed bar lives there too.
-			const probeY = this.#inFixedSpace(element) ? y - cameraScrollTop : y;
+			const probeY = this.isInFixedSpace(element) ? y - cameraScrollTop : y;
 			return this.formsStackingContext(element)
 				? this.#hitTestContext(element, x, probeY, layers, cameraScrollTop)
 				: this.#hitTestInFlow(element, x, probeY);
@@ -2758,6 +2739,27 @@ export class LayoutEngine {
 		height: number = 0,
 	): globalThis.DOMRect {
 		return new this.DOMRect(x, y, width, height);
+	}
+
+	/**
+	 * The smallest rect enclosing a set of fragments -- the bounding box a
+	 * broken inline reports for itself, and the one a Range reports over the
+	 * runs it covers. An empty set encloses nothing and gives a zero rect at
+	 * the origin, which is what both public APIs return for no geometry.
+	 */
+	unionRect(rects: readonly globalThis.DOMRect[]): globalThis.DOMRect {
+		if (rects.length === 0) return this.createDOMRect();
+		let left = Infinity;
+		let top = Infinity;
+		let right = -Infinity;
+		let bottom = -Infinity;
+		for (const rect of rects) {
+			left = Math.min(left, rect.x);
+			top = Math.min(top, rect.y);
+			right = Math.max(right, rect.x + rect.width);
+			bottom = Math.max(bottom, rect.y + rect.height);
+		}
+		return this.createDOMRect(left, top, right - left, bottom - top);
 	}
 
 	/**
@@ -3974,23 +3976,12 @@ export class LayoutEngine {
 	}
 
 	/**
-	 * The flex node an out-of-flow box belongs under: its CSS containing
-	 * block -- the nearest ancestor whose position isn't static -- or the
-	 * initial containing block (the document root) when there is none. This
-	 * is the hoist that makes absolute positioning containing-block-correct
-	 * (flex's own absolute type only knows its parent) AND what frees an
-	 * absolute box from a measure-function subtree: its layout node hangs
-	 * from the containing block, wherever its DOM sits. Paint order is
-	 * unaffected -- the stacking-context painter never uses flex order for
-	 * positioned boxes.
+	 * Whether the element's containing-block chain reaches a fixed box, which
+	 * is what puts its geometry in viewport space rather than document space.
+	 * The one answer to that question: hit-testing converts its probe point by
+	 * it, and the public client-rect wrappers skip the camera conversion by it.
 	 */
-	/** Whether the element or any composed ancestor is position: fixed. */
-	/** Whether the element's containing-block chain reaches a fixed box. */
 	isInFixedSpace(element: Element): boolean {
-		return this.#inFixedSpace(element);
-	}
-
-	#inFixedSpace(element: Element): boolean {
 		for (
 			let el: Element | null = element;
 			el;
@@ -4001,6 +3992,17 @@ export class LayoutEngine {
 		return false;
 	}
 
+	/**
+	 * The flex node an out-of-flow box belongs under: its CSS containing
+	 * block -- the nearest ancestor whose position isn't static -- or the
+	 * initial containing block (the document root) when there is none. This
+	 * is the hoist that makes absolute positioning containing-block-correct
+	 * (flex's own absolute type only knows its parent) AND what frees an
+	 * absolute box from a measure-function subtree: its layout node hangs
+	 * from the containing block, wherever its DOM sits. Paint order is
+	 * unaffected -- the stacking-context painter never uses flex order for
+	 * positioned boxes.
+	 */
 	#containingBlockFlexNode(element: Element): FlexTypes.Node | null {
 		for (
 			let ancestor = flatParentElement<Element>(element);

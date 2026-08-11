@@ -10,7 +10,6 @@ import {
 	caretRangeOf,
 	fieldValueText,
 	flatIsConnected,
-	flatParentElement,
 	installUAEngine,
 	pseudoHostOf,
 	setUASelection,
@@ -1162,24 +1161,12 @@ export class TermDOM {
 		// A box inside a position:fixed subtree is laid out in viewport space
 		// already -- subtracting the camera would double-convert it. Per spec
 		// its client rect is scroll-invariant.
-		const inFixedSpace = (element: Element): boolean => {
-			for (
-				let el: Element | null = element;
-				el;
-				el = flatParentElement<Element>(el)
-			) {
-				if (computedStyleOf(el).computedValueOf("position") === "fixed") {
-					return true;
-				}
-			}
-			return false;
-		};
 		const toViewportRect = (
 			termDOM: TermDOM,
 			rect: DOMRect,
 			element?: Element,
 		): DOMRect =>
-			element && inFixedSpace(element)
+			element && termDOM[kLayoutEngine].isInFixedSpace(element)
 				? rect
 				: termDOM[kLayoutEngine].createDOMRect(
 						rect.x,
@@ -1247,31 +1234,10 @@ export class TermDOM {
 				container.nodeType === container.ELEMENT_NODE
 					? (container as Element)
 					: (container.parentElement ?? undefined);
-			const rects = termDOM[kLayoutEngine].getRangeRects(this);
-			if (rects.length === 0) {
-				return toViewportRect(
-					termDOM,
-					termDOM[kLayoutEngine].createDOMRect(),
-					anchor,
-				);
-			}
-			let left = Infinity;
-			let top = Infinity;
-			let right = -Infinity;
-			let bottom = -Infinity;
-			for (const rect of rects) {
-				left = Math.min(left, rect.x);
-				top = Math.min(top, rect.y);
-				right = Math.max(right, rect.x + rect.width);
-				bottom = Math.max(bottom, rect.y + rect.height);
-			}
 			return toViewportRect(
 				termDOM,
-				termDOM[kLayoutEngine].createDOMRect(
-					left,
-					top,
-					right - left,
-					bottom - top,
+				termDOM[kLayoutEngine].unionRect(
+					termDOM[kLayoutEngine].getRangeRects(this),
 				),
 				anchor,
 			);
