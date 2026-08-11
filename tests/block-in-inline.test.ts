@@ -232,3 +232,38 @@ test("a display: contents element added brings its children with it", async () =
 
 	dom.dispose();
 });
+
+test("an inline flex item holding a block is a block container", async () => {
+	// A flex container blockifies its children (css-display-3 §2.7), so an
+	// inline one holding block-level content establishes a block container.
+	// Measured as a run instead, its content ends at the first block inside it
+	// -- and everything from there on, which here is everything, is dropped.
+	const {dom, lines} = await render(
+		`<b style="display: flex"><span><p>X</p></span></b>`,
+	);
+
+	expect(lines()[0]).toBe("X");
+
+	dom.dispose();
+});
+
+test("an inline-block inside an inline-block takes a block child", async () => {
+	// The inner one lays its block content out in a detached tree, built as
+	// the box is built. Only its run was dropped here, so the tree was never
+	// built again and the newcomer belonged to none.
+	const {dom, lines} = await render(
+		`<section style="display: inline-block">` +
+			`<b style="display: inline-block" id="s">A<div></div></b>` +
+			`</section>C`,
+	);
+	expect(lines()[0]).toBe("AC");
+
+	const block = dom.document.createElement("div");
+	block.textContent = "N";
+	const host = dom.document.getElementById("s")!;
+	host.insertBefore(block, host.firstChild);
+	await nextFrame(dom);
+	expect(lines().slice(0, 2)).toEqual(["NC", "A"]);
+
+	dom.dispose();
+});

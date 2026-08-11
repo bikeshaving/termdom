@@ -3080,6 +3080,13 @@ export class LayoutEngine {
 			this.#retireInlineBox(previous[i]);
 		}
 
+		// A dissolved element is FLATTENED by the walk above: the boxes it
+		// yields are its children's, and nothing there ever names the element
+		// itself. So a box it held under an earlier display would outlive the
+		// change -- a `display: contents` flip whose invalidation scope was an
+		// ancestor left the old box standing, holding rows nothing removed.
+		this.#retireDissolved(container);
+
 		const entry = {structure, heads, boxes, runs};
 		this.#boxesByContainer.set(container, entry);
 		return entry;
@@ -4052,6 +4059,15 @@ export class LayoutEngine {
 					// measure leaves it the wrong kind, holding the wrong tree.
 					if (!this.#isInlineLevel(node)) {
 						this.invalidate(parentElement);
+						// The detached tree an inline-block lays its block content
+						// out in is built as the box is built, and the box was
+						// not rebuilt here -- only its run was dropped. Build it
+						// again, or the newcomer belongs to no tree at all.
+						this.#buildBlockContent(parentElement);
+						// And the box that MEASURES it: an inline-block nested in
+						// another lays out inside its host's detached content
+						// tree, which holds the size the newcomer just changed.
+						this.#invalidateEnclosingMeasure(parentElement);
 						continue;
 					}
 					this.#invalidateEnclosingMeasure(parentElement);
@@ -4420,11 +4436,24 @@ export class LayoutEngine {
 	): void {
 		const outOfFlow = this.#isOutOfFlow(element);
 		const display = getPropertyValue(element, "display");
+		// Whether the box measures its content as one run. An inline is
+		// blockified by a flex container (css-display-3 §2.7), and a blockified
+		// one holding block-level content is a block CONTAINER: measured as a
+		// run instead, its content would end at the first block inside it and
+		// everything from there on would be dropped. A blockified inline
+		// holding only inline content still measures as a run -- that is what
+		// gives a flex item its intrinsic size.
+		const blockifiedByFlex =
+			display === "inline" && !outOfFlow && !this.#isInlineLevel(element);
+		const measuresAsRun =
+			!outOfFlow &&
+			(display === "inline" || display === "inline-block") &&
+			!(blockifiedByFlex && this.#containsBlockLevelBox(element));
 
 		// Inline-level content lays out in its container's anonymous boxes,
 		// which the container reconciles as a whole -- unless the box is out of
 		// flow, which blockifies it per CSS: it never joins a run.
-		if (!outOfFlow && (display === "inline" || display === "inline-block")) {
+		if (measuresAsRun) {
 			const box = this.#boxOf(element);
 			if (box) {
 				this.#invalidateBox(box);
@@ -4458,10 +4487,7 @@ export class LayoutEngine {
 				placeChild(parentFlexNode, flexNode, flexIndex);
 			}
 			return;
-		} else if (
-			!outOfFlow &&
-			(display === "inline" || display === "inline-block")
-		) {
+		} else if (measuresAsRun) {
 			flexNode.setMeasureFunc((width, widthMode, height, heightMode) => {
 				return this.#measureInlineRun(
 					element,
@@ -4488,7 +4514,7 @@ export class LayoutEngine {
 		// This prevents Flex constraint violations (nodes with measure functions cannot have children)
 
 		// Inline-block elements cannot have children in the layout tree because they use measure functions
-		if (!outOfFlow && display === "inline-block") {
+		if (measuresAsRun && display === "inline-block") {
 			return;
 		}
 
@@ -4516,6 +4542,26 @@ export class LayoutEngine {
 
 		if (flexNode && parentFlexNode) {
 			placeChild(parentFlexNode, flexNode, flexIndex);
+		}
+	}
+
+	/**
+	 * Retire the boxes of the dissolved elements under a container: those the
+	 * flattening walk steps over. Only dissolved elements are descended into,
+	 * so this costs what they cost and nothing for a tree without them.
+	 */
+	#retireDissolved(parent: Element): void {
+		const walker = createFlatTreeWalker<Node>(parent);
+		for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
+			if (
+				child.nodeType !== child.ELEMENT_NODE ||
+				!dissolvesIntoChildren(child as Element)
+			) {
+				continue;
+			}
+			// #addNode is what retires the box of a box-less element.
+			if (this.nodeMap.has(child)) this.#addNode(child, null);
+			this.#retireDissolved(child as Element);
 		}
 	}
 

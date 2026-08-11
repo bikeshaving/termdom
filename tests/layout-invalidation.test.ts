@@ -495,3 +495,36 @@ test("a block added inside a display: contents element keeps its siblings", asyn
 
 	dom.dispose();
 });
+
+test("an element flipped to display: contents gives up its box", async () => {
+	// The walk that builds boxes FLATTENS a dissolved element away, so nothing
+	// there ever names the element itself -- and a box it held under an earlier
+	// display outlived the flip whenever the flip's invalidation scope was an
+	// ancestor rather than the element. The stale box kept its rows, which only
+	// showed once its children changed underneath it.
+	const terminal = new MockProcess({cols: 30, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	// A sibling combinator anywhere in the sheets widens every class flip's
+	// scope to the parent, which is how the element stops being visited.
+	document.body.innerHTML =
+		`<style>.c { display: contents; } .on ~ .light { color: red; }</style>` +
+		`<li id="a">A<div id="b">B</div></li><p>C</p>`;
+	await nextFrame(dom);
+	const lines = () =>
+		terminal
+			.getPlainText()
+			.split("\n")
+			.map((line) => line.replace(/\s+$/, ""));
+	expect(lines().slice(0, 3)).toEqual(["A", "B", "C"]);
+
+	document.getElementById("a")!.classList.add("c");
+	await nextFrame(dom);
+	expect(document.getElementById("a")!.getBoundingClientRect().height).toBe(0);
+
+	document.getElementById("b")!.remove();
+	await nextFrame(dom);
+	expect(lines().slice(0, 2)).toEqual(["A", "C"]);
+
+	dom.dispose();
+});
