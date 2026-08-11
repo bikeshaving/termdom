@@ -98,6 +98,24 @@ const INTERACTIVE: Record<string, (cmd: string) => Promise<string | null>> = {
 		}
 		return null;
 	},
+	// Deal 7 opens with the jack of hearts alone on the first pile and the
+	// queen of clubs on the second, so "1 2" is a legal move and the jack has
+	// to end up under the queen.
+	"solitaire.ts": async (cmd) => {
+		await launch(`${cmd} 7`, 3000);
+		tmux(`send-keys -t ${SESSION} 1`);
+		await sleep(400);
+		tmux(`send-keys -t ${SESSION} 2`);
+		await sleep(1000);
+		const text = capture();
+		const rows = text.split("\n");
+		const queen = rows.findIndex((row) => row.includes("Q♣"));
+		const jack = rows.findIndex((row) => row.includes("J♥"));
+		if (queen < 0 || jack !== queen + 1) {
+			return `the jack did not move onto the queen:\n${text.slice(0, 600)}`;
+		}
+		return null;
+	},
 	"form.ts": async (cmd) => {
 		await launch(cmd, 3000);
 		tmux(`send-keys -t ${SESSION} "brian"`);

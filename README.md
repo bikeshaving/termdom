@@ -85,6 +85,8 @@ setInterval(() => {
   component logic unmodified; only the stylesheet was swapped.
 - [`fuzzy-finder.ts`](./examples/fuzzy-finder.ts) — a file picker that
   prints the selection to stdout.
+- [`solitaire.ts`](./examples/solitaire.ts) — Klondike, played with the
+  mouse or the keyboard; the board is flex rows and columns of styled spans.
 
 More runnable examples can be found in [`examples/`](./examples).
 
