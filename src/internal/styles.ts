@@ -7836,8 +7836,12 @@ export class StyleManager {
 		for (const property in declarations) {
 			// A shorthand is stored as its longhands, so this reads longhands --
 			// except `all`, which stands for every property there is.
+			// `display` is not inherited and reaches them anyway: a flex
+			// container blockifies its children (css-display-3 §2.7), which
+			// changes what KIND of box each of them is.
 			if (
 				property === "all" ||
+				property === "display" ||
 				property.startsWith("--") ||
 				INHERITED_PROPERTIES.has(property)
 			) {

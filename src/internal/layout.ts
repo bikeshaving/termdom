@@ -204,6 +204,19 @@ function findInlineBlockSegment(
  * (UA default `slot { display: contents }`, as in browsers) while its projected
  * content flows through.
  */
+/**
+ * The `display` an inline style declares, or "". Hiding and showing a box is
+ * not a change of KIND -- a hidden box is built and then switched off -- so
+ * `none` reads as no declaration at all here.
+ */
+const DECLARED_DISPLAY = /(?:^|;)\s*display\s*:\s*([a-z- ]+)/i;
+function declaresBoxKind(cssText: string): boolean {
+	const match = cssText.match(DECLARED_DISPLAY);
+	if (!match) return false;
+	const value = match[1].trim().toLowerCase();
+	return value !== "" && value !== "none";
+}
+
 function dissolvesIntoChildren(node: Node): boolean {
 	return getPropertyValue(node as Element, "display") === "contents";
 }
@@ -1408,10 +1421,23 @@ flexConfig.setPointScaleFactor(1.0);
  * does.
  */
 class InlineBox {
-	head: Node;
+	/**
+	 * The container-level nodes whose content this box lays out, in order.
+	 * The box OWNS them: they are what the container's enumeration put in it,
+	 * not something re-derived by walking the tree from a starting node. A
+	 * walk has to decide where the run ends -- a question the enumeration has
+	 * already answered -- and it asks a node that may since have left the
+	 * tree, which is a measurement of nothing at all.
+	 */
+	members: Node[] = [];
 	container: Element;
 	flexNode: FlexTypes.Node | null = null;
 	styledFrom: Element | null = null;
+
+	/** The node that opens the box: what its own styles, if any, come from. */
+	get head(): Node {
+		return this.members[0];
+	}
 
 	/**
 	 * The lines this run's last measurement broke it into, read back from the
@@ -1423,9 +1449,8 @@ class InlineBox {
 		return (this.flexNode?.measuredPayload as BreakResult | null) ?? null;
 	}
 
-	constructor(container: Element, head: Node) {
+	constructor(container: Element) {
 		this.container = container;
-		this.head = head;
 	}
 }
 
@@ -3028,6 +3053,8 @@ export class LayoutEngine {
 		// two, or leaving and merging two into one -- creates or retires a box.
 		const previous = cached ? cached.runs : [];
 		const runs: InlineBox[] = [];
+		// The membership each reused box had before this rebuild.
+		const opened = new Map<InlineBox, Node[]>();
 		// A flex container puts every element child in a box of its own and
 		// gathers only its contiguous text into anonymous ones.
 		const inFlex = getPropertyValue(container, "display") === "flex";
@@ -3066,12 +3093,27 @@ export class LayoutEngine {
 				continue;
 			}
 			if (run === null) {
-				run = previous[runs.length] ?? new InlineBox(container, child);
-				run.head = child;
+				run = previous[runs.length] ?? new InlineBox(container);
+				opened.set(run, run.members);
+				run.members = [];
 				runs.push(run);
 				boxes.push(run);
 			}
+			run.members.push(child);
 			heads.set(child, run);
+		}
+
+		// A box whose membership moved measures differently at the same width,
+		// and nothing about the space it is offered says so -- an anonymous box
+		// whose members left would go on reserving their width forever.
+		for (const [box, before] of opened) {
+			const now = box.members;
+			if (
+				before.length !== now.length ||
+				before.some((node, index) => node !== now[index])
+			) {
+				box.flexNode?.markDirty();
+			}
 		}
 
 		// Runs the container no longer has: their content merged into a
@@ -3697,7 +3739,18 @@ export class LayoutEngine {
 		// one, or taken one away: the container's box list is what says.
 		const runContainer = this.#runContainerOf(node);
 		if (runContainer) this.#dirtyRunContainers.add(runContainer);
-		const entry = this.#boxEntryOf(node);
+		// The box a node's content sits in may be its ANCESTOR's box: a node
+		// inside a run member is not itself a member, and the anonymous box
+		// holding it belongs to no DOM node, so the climb below -- which looks
+		// for a layout node with a measure function -- walks straight past it.
+		let entry = this.#boxEntryOf(node);
+		for (
+			let ancestor = entry === null ? boxParentElement(node) : null;
+			ancestor && entry === null;
+			ancestor = boxParentElement(ancestor)
+		) {
+			entry = this.#boxEntryOf(ancestor);
+		}
 		if (entry instanceof InlineBox) {
 			if (entry.flexNode) {
 				this.#invalidateBox(entry);
@@ -3910,15 +3963,36 @@ export class LayoutEngine {
 					// A property the descendants inherit changes what THEY
 					// measure -- white space collapses according to the value a
 					// text node's parent holds -- so the subtree rebuilds, the
-					// same answer a class flip gets. A style that declares none
-					// reaches no further than this element's own box.
+					// same answer a class flip gets. `display` is not inherited
+					// and reaches them anyway: it decides what KIND of box this
+					// element is, and a flex container blockifies its children
+					// (css-display-3 §2.7), which changes theirs. A style that
+					// declares neither reaches no further than its own box.
+					const before = record.oldValue ?? "";
+					const now = element.getAttribute("style") ?? "";
 					if (
-						declaresInheritedProperty(element.getAttribute("style") ?? "") ||
-						declaresInheritedProperty(record.oldValue ?? "")
+						declaresInheritedProperty(now) ||
+						declaresInheritedProperty(before) ||
+						((declaresBoxKind(now) || declaresBoxKind(before)) &&
+							// An out-of-flow box hangs from its containing
+							// block, not from the tree it is written in, and
+							// rebuilding it from there is how it loses its
+							// place -- the select's picker sits in the top
+							// layer and simply vanished.
+							!this.#isOutOfFlow(element))
 					) {
 						this.invalidate(element);
 						this.#remeasureSubtree(element);
 					}
+					// Whatever the style did, the box this element's content sits
+					// in measures something different now: a member that turned
+					// display:none leaves its width behind otherwise, and one
+					// that changed shape measures at a size nothing re-asked
+					// for. The box is told directly, because the space it is
+					// offered has not moved.
+					const box = this.#boxOf(element);
+					if (box) this.#invalidateBox(box);
+
 					const flexNode = this.nodeMap.get(element);
 					if (flexNode) {
 						this.#styleNode(element, flexNode);
@@ -4133,6 +4207,21 @@ export class LayoutEngine {
 
 				// Add the node to Flex layout
 				this.#addNode(node, parentFlexNode);
+				// An inline-block lays its block content out in a DETACHED tree
+				// built as the box is built, so an arrival anywhere inside it
+				// belongs to a tree that was built without it. The host is
+				// rebuilt, and the run holding its size re-measured.
+				for (
+					let host: Element | null = parentElement;
+					host;
+					host = boxParentElement(host)
+				) {
+					if (this.#blockContentRoots.has(host)) {
+						this.#buildBlockContent(host);
+						this.#invalidateEnclosingMeasure(host);
+						break;
+					}
+				}
 
 				// Invalidate inline runs that might be affected by this addition
 				if (this.#isInlineLevel(node)) {
@@ -4179,6 +4268,17 @@ export class LayoutEngine {
 				if (record.nextSibling && this.#isInlineLevel(record.nextSibling)) {
 					this[kInvalidateInlineRun](record.nextSibling);
 				}
+				// A departure from inside a run member changes what the run
+				// measures without changing the run's membership: the member
+				// is still there, holding less. Nothing about the space it is
+				// offered says so, so the box it sits in is told directly.
+				if (
+					parent.nodeType === parent.ELEMENT_NODE &&
+					this.#isInlineLevel(parent)
+				) {
+					this[kInvalidateInlineRun](parent);
+				}
+
 				// A block-level box leaving an inline lets the fragments it
 				// broke apart merge back into one, which is again the
 				// container's box list and not the inline's.
@@ -4369,10 +4469,9 @@ export class LayoutEngine {
 			// mismatched node and rebuild from scratch instead.
 			if (existingFlexNode && node.nodeType === node.ELEMENT_NODE) {
 				const element = node as Element;
-				const display = getPropertyValue(element, "display");
-				const needsMeasure =
-					!this.#isOutOfFlow(element) &&
-					(display === "inline" || display === "inline-block");
+				// The same question #addElementNode asks when it builds one:
+				// reuse is sound only while the box is still the same KIND.
+				const needsMeasure = this.#measuresAsRun(element);
 				if (needsMeasure !== this.#measureNodes.has(existingFlexNode)) {
 					existingFlexNode.getParent()?.removeChild(existingFlexNode);
 					// Sever children before freeing: they belong to other DOM
@@ -4403,6 +4502,11 @@ export class LayoutEngine {
 						? parentFlexNode.children.length
 						: this.#getFlexIndex(node as Element, parentFlexNode);
 					parentFlexNode.insertChild(existingFlexNode, flexIndex);
+					// Counted among the DOM siblings, which know nothing of the
+					// anonymous boxes between them: the container's box list is
+					// what settles the order.
+					const container = this.#runContainerOf(node);
+					if (container) this.#dirtyRunContainers.add(container);
 				}
 			}
 			return;
@@ -4430,25 +4534,31 @@ export class LayoutEngine {
 		}
 	}
 
+	/**
+	 * Whether an element's box measures its content as one run. An inline is
+	 * blockified by a flex container (css-display-3 §2.7), and a blockified one
+	 * holding block-level content is a block CONTAINER: measured as a run
+	 * instead, its content would end at the first block inside it and
+	 * everything from there on would be dropped. A blockified inline holding
+	 * only inline content still measures as a run -- that is what gives a flex
+	 * item its intrinsic size.
+	 */
+	#measuresAsRun(element: Element): boolean {
+		if (this.#isOutOfFlow(element)) return false;
+		const display = getPropertyValue(element, "display");
+		if (display !== "inline" && display !== "inline-block") return false;
+		if (display === "inline-block") return true;
+		if (this.#isInlineLevel(element)) return true;
+		return !this.#containsBlockLevelBox(element);
+	}
+
 	#addElementNode(
 		element: Element,
 		parentFlexNode: FlexTypes.Node | null = null,
 	): void {
 		const outOfFlow = this.#isOutOfFlow(element);
 		const display = getPropertyValue(element, "display");
-		// Whether the box measures its content as one run. An inline is
-		// blockified by a flex container (css-display-3 §2.7), and a blockified
-		// one holding block-level content is a block CONTAINER: measured as a
-		// run instead, its content would end at the first block inside it and
-		// everything from there on would be dropped. A blockified inline
-		// holding only inline content still measures as a run -- that is what
-		// gives a flex item its intrinsic size.
-		const blockifiedByFlex =
-			display === "inline" && !outOfFlow && !this.#isInlineLevel(element);
-		const measuresAsRun =
-			!outOfFlow &&
-			(display === "inline" || display === "inline-block") &&
-			!(blockifiedByFlex && this.#containsBlockLevelBox(element));
+		const measuresAsRun = this.#measuresAsRun(element);
 
 		// Inline-level content lays out in its container's anonymous boxes,
 		// which the container reconciles as a whole -- unless the box is out of
@@ -4542,6 +4652,11 @@ export class LayoutEngine {
 
 		if (flexNode && parentFlexNode) {
 			placeChild(parentFlexNode, flexNode, flexIndex);
+			// The index above is counted among the element's DOM siblings,
+			// which know nothing of the anonymous boxes between them. The
+			// container's box list is what settles the order, so ask for it.
+			const container = this.#runContainerOf(element);
+			if (container) this.#dirtyRunContainers.add(container);
 		}
 	}
 
@@ -5031,11 +5146,8 @@ export class LayoutEngine {
 		height: number,
 		heightMode: FlexTypes.MeasureMode,
 	): FlexTypes.MeasureResult {
-		// An anonymous box measures from whatever opens it now, which is what
-		// makes losing a head a re-measure rather than a rebuild.
-		const node = box instanceof InlineBox ? box.head : box;
 		const breakResult = this.#breakNodes(
-			node,
+			box,
 			width,
 			widthMode,
 			height,
@@ -5089,40 +5201,53 @@ export class LayoutEngine {
 		return direction === "row" || direction === "row-reverse";
 	}
 
+	/**
+	 * The leaves a box lays out: the text, the atomic boxes and the breaks
+	 * reachable through its members.
+	 *
+	 * The members are the box's own -- what the container's enumeration put in
+	 * it -- so nothing here decides where a run ends or walks past a member to
+	 * find out. Each member's subtree is collected in turn, which is the same
+	 * content the enumeration already assigned, and a member that has left the
+	 * tree is not among them.
+	 */
 	#collectLeafNodes(
-		runHead: Node,
+		source: Node | InlineBox,
 		availableWidth: number,
 		availableWidthMode: FlexTypes.MeasureMode = Flex.MEASURE_MODE_UNDEFINED,
 	): Leaf[] {
 		const leafNodes: Leaf[] = [];
-
-		const parentElement = boxParentElement(runHead);
-
-		// Inline run heads should always have a parent element (a shadow
-		// root's direct child resolves to its HOST -- a ShadowRoot is not an
-		// Element, and this exact spot crashed on native attachShadow content
-		// before the flat parent was resolved here). The BOX parent: rooting
-		// the walk at a display:contents slot would truncate the run at the
-		// slot's edge, and the run may extend past it.
-		if (!parentElement) {
-			throw new Error("Inline run head must have a parent element");
+		if (source instanceof InlineBox) {
+			// Each member's own subtree, and no further: the enumeration
+			// already said where this box's content ends.
+			for (const member of source.members) {
+				this.#collectLeavesUnder(
+					member,
+					member,
+					false,
+					leafNodes,
+					availableWidth,
+					availableWidthMode,
+				);
+			}
+			return leafNodes;
 		}
 
-		// Determine the appropriate traversal root based on parent display type
-		const parentDisplay = getPropertyValue(parentElement, "display");
+		const parentElement = boxParentElement(source);
+		if (!parentElement) return leafNodes;
 
+		// An element measuring its OWN content walks from itself, out through
+		// the block container that holds it: a run that starts inside an inline
+		// box -- the fragment after a block-level box split it -- carries on
+		// past that box's end. `<span>a<div/>b</span>c` puts "b" and "c" on one
+		// line, so the walk cannot stop at </span>. An out-of-flow inline is
+		// where the climb stops: it is blockified (css-display-3 §2.7) and lays
+		// its own content out.
+		const parentDisplay = getPropertyValue(parentElement, "display");
 		let traversalRoot: Node;
-		if (parentDisplay === "flex" && runHead.nodeType === runHead.ELEMENT_NODE) {
-			// For flex items that are elements, traverse only within that element
-			traversalRoot = runHead;
+		if (parentDisplay === "flex" && source.nodeType === source.ELEMENT_NODE) {
+			traversalRoot = source;
 		} else {
-			// The block container, not the immediate parent: a run that starts
-			// INSIDE an inline box -- the fragment after a block-level box split
-			// it -- carries on past that box's end. `<span>a<div/>b</span>c`
-			// puts "b" and "c" on one line, so the walk cannot stop at </span>.
-			// An out-of-flow inline is where the climb stops: it is blockified
-			// (css-display-3 §2.7) and lays its own content out, so the run
-			// inside it is its own and ends with it.
 			let root: Element = parentElement;
 			for (
 				let ancestor = boxParentElement(root);
@@ -5136,19 +5261,34 @@ export class LayoutEngine {
 			traversalRoot = root;
 		}
 
-		// Text directly inside a flex container forms an ANONYMOUS flex item out
-		// of the contiguous text runs, and every element child is an item of its
-		// own -- so this run ends at the first one. Without the stop, the text's
-		// item measured the following box into itself: `<p style="display:flex">
-		// text <input> more</p>` gave the text a 21-cell item, which pushed
-		// " more" off the far edge of a line it had room for.
+		// Text directly inside a flex container forms an ANONYMOUS flex item
+		// out of the contiguous text runs, and every element child is an item
+		// of its own -- so this one ends at the first element.
 		const stopsAtFlexItems =
-			parentDisplay === "flex" && runHead.nodeType === runHead.TEXT_NODE;
+			parentDisplay === "flex" && source.nodeType === source.TEXT_NODE;
 
-		// Use ExpandedTreeWalker for traversal
-		const walker = flowWalker(traversalRoot);
+		this.#collectLeavesUnder(
+			traversalRoot,
+			source,
+			stopsAtFlexItems,
+			leafNodes,
+			availableWidth,
+			availableWidthMode,
+		);
+		return leafNodes;
+	}
 
-		walker.currentNode = runHead;
+	/** Collect leaves from `start`, walking within `root`. */
+	#collectLeavesUnder(
+		root: Node,
+		start: Node,
+		stopsAtFlexItems: boolean,
+		leafNodes: Leaf[],
+		availableWidth: number,
+		availableWidthMode: FlexTypes.MeasureMode,
+	): void {
+		const walker = flowWalker(root);
+		walker.currentNode = start;
 		while (walker.currentNode) {
 			const node = walker.currentNode;
 			if (stopsAtFlexItems && node.nodeType === node.ELEMENT_NODE) {
@@ -5492,7 +5632,9 @@ export class LayoutEngine {
 					// Inline element - traverse into its children
 					if (!walker.nextNode()) break;
 				} else {
-					// Block element - stop traversal
+					// A block-level box is not this box's content: it broke the
+					// inline that holds it, and the fragments on either side are
+					// members of their own.
 					break;
 				}
 			} else {
@@ -5500,23 +5642,21 @@ export class LayoutEngine {
 				if (!walker.nextNode()) break;
 			}
 		}
-
-		return leafNodes;
 	}
 
 	#breakNodes(
-		runHead: Node,
+		source: Node | InlineBox,
 		width: number,
 		widthMode: FlexTypes.MeasureMode,
 		_height: number,
 		_heightMode: FlexTypes.MeasureMode,
 	): BreakResult {
-		// Collect leaf nodes from the run head. An UNDEFINED width offer means
-		// "measure your natural size" -- indefinite, so percentage widths in
-		// the run cannot resolve against it (NaN); any definite offer,
-		// including an AT_MOST 0 min-content probe, resolves them.
+		// An UNDEFINED width offer means "measure your natural size" --
+		// indefinite, so percentage widths in the content cannot resolve
+		// against it (NaN); any definite offer, including an AT_MOST 0
+		// min-content probe, resolves them.
 		const leafNodes = this.#collectLeafNodes(
-			runHead,
+			source,
 			widthMode === Flex.MEASURE_MODE_UNDEFINED ? NaN : width,
 			widthMode,
 		);
@@ -5526,14 +5666,16 @@ export class LayoutEngine {
 			return {lines: [], totalHeight: 0, maxLineWidth: 0};
 		}
 
-		// A text node styles from its flat-tree parent, which for the text of a
+		// The box's own text properties come from what opens it. A text node
+		// styles from its flat-tree parent, which for the text of a
 		// pseudo-element is the pseudo-element's own node.
+		const opener = source instanceof InlineBox ? source.head : source;
 		const styleElement =
-			runHead.nodeType === runHead.TEXT_NODE
-				? flatParentElement<Element>(runHead)!
-				: (runHead as Element);
+			opener.nodeType === opener.TEXT_NODE
+				? flatParentElement<Element>(opener)!
+				: (opener as Element);
 
-		// Get default CSS properties from the run head element
+		// Get default CSS properties from the opening element
 		const whiteSpace = getPropertyValue(styleElement, "white-space");
 		const wordBreak = getPropertyValue(styleElement, "word-break");
 		const overflowWrap = getPropertyValue(styleElement, "overflow-wrap");
