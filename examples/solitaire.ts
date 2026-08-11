@@ -12,7 +12,9 @@
 //          under it (with its stack) or places what you are holding
 //   f      send what you are holding to its foundation
 //   a      send everything that fits to the foundations
-//   esc    put it back    u undo    n new deal    r retry this deal    q quit
+//   enter on the held stack's own pile puts it back    u undo    q quit
+//   n new deal    r retry this deal
+//          (n and r mid-run ask first -- y or enter abandons, n stays)
 //
 // The clock starts on the first move and stops on the win; a deal's best
 // time survives retries, which is what makes a deal number a speedrun.
@@ -360,8 +362,20 @@ style.textContent = `
   .card.drop { background-color: #a9d7b7; }
   .slot { background-color: #05381a; color: #2f7a4a; }
   .slot.drop { background-color: #a9d7b7; color: #205c35; }
-  /* Where the keyboard is: composes with any card state by underlining. */
-  .cursor { text-decoration: underline; font-weight: bold; }
+  /* Where the keyboard is, and what it holds, are one effect: the gold
+     field. A card keeps its suit's colour under it either way. */
+  .cursor { background-color: #ffd75f; font-weight: bold; }
+  .card.down.cursor { color: #1d4f8f; }
+  .slot.cursor { background-color: #ffd75f; color: #6b5b1e; }
+
+  /* The confirm covers the screen and centers its dialog; the board stays
+     visible around the box, the way a modal reads. */
+  .scrim { position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+           display: flex; align-items: center; justify-content: center; }
+  dialog { display: block; width: 48ch; border: 1px solid; border-color: #ffd75f;
+           background-color: #043016; color: #cfe8d8; padding: 1px 2ch; }
+  dialog .ask { color: #ffd75f; font-weight: bold; }
+  dialog .answers { color: #9ec5ab; padding-top: 1px; }
 
   .hint { padding-top: 1px; color: #7fae90; }
   .hint b { color: #cfe8d8; font-weight: bold; }
@@ -388,6 +402,33 @@ const STAR = "★";
 const ARROWS_ALL = "←↑↓→";
 
 const blank = (width: number): string => " ".repeat(width);
+
+// The bottom-right index reads rotated, the way a real card's does. Unicode
+// has a turned form for every rank in a single cell -- the popular flip
+// table's CJK picks (two cells wide) would shear the card -- and rotation
+// also reverses reading order, so the ten of hearts ends "♥0Ɩ". Suits have
+// no turned forms and stay upright.
+const TURNED: Record<string, string> = {
+	A: "∀",
+	J: "ſ",
+	Q: "Ό",
+	K: "ʞ",
+	"1": "Ɩ",
+	"2": "ᘔ",
+	"3": "Ɛ",
+	"4": "ᔭ",
+	"5": "ϛ",
+	"6": "9",
+	"7": "Ꞁ",
+	"8": "8",
+	"9": "6",
+	"0": "0",
+};
+const turned = (index: string): string =>
+	[...index]
+		.map((ch) => TURNED[ch] ?? ch)
+		.reverse()
+		.join("");
 const hatch = (width: number): string => HATCH_GLYPH.repeat(width);
 
 /** `text` centered in a field of `width` cells. */
@@ -415,7 +456,7 @@ function faceRows(card: Card, tier: Tier): string[] {
 	return [
 		index.padEnd(tier.width, " "),
 		...middles,
-		index.padStart(tier.width, " "),
+		turned(index).padStart(tier.width, " "),
 	];
 }
 
@@ -509,6 +550,19 @@ function* App(this: Context) {
 	}, 1000);
 	this.cleanup(() => clearInterval(ticker));
 
+	// A run in progress is worth a question: n and r open a <dialog> instead
+	// of tearing the game down on one keystroke, and the dialog's keys are the
+	// only ones that answer while it shows.
+	let confirming: {number: number; label: string} | null = null;
+
+	const guardedReset = (number: number, label: string): void => {
+		const live = startedAt !== null && finishedAt === null && game.moves > 0;
+		if (!live) return reset(number);
+		this.refresh(() => {
+			confirming = {number, label};
+		});
+	};
+
 	/** Back to the deal's opening position, clock unstarted. */
 	const reset = (number: number): void => {
 		this.refresh(() => {
@@ -569,6 +623,15 @@ function* App(this: Context) {
 	/** Drop on a pile, or -- holding nothing -- pick that pile up instead. */
 	const target = (target: Target): void => {
 		if (held) {
+			// Its own pile takes a held stack BACK: in fullscreen the platform
+			// owns Escape (it exits), so releasing is a move like any other.
+			if (
+				held.kind === "tableau" &&
+				target.kind === "tableau" &&
+				held.pile === target.pile
+			) {
+				return grab(held);
+			}
 			act((game) => play(game, held, target));
 			return;
 		}
@@ -713,12 +776,24 @@ function* App(this: Context) {
 
 	const onkeydown = (event: KeyboardEvent): void => {
 		const key = event.key;
+		if (confirming) {
+			if (key === "y" || key === "Enter") {
+				const number = confirming.number;
+				confirming = null;
+				reset(number);
+			} else if (key === "n" || key === "Escape") {
+				this.refresh(() => {
+					confirming = null;
+				});
+			}
+			return;
+		}
 		if (key === "q") {
 			term.window.close();
 			return;
 		}
-		if (key === "n") return reset(someDeal());
-		if (key === "r") return reset(game.number);
+		if (key === "n") return guardedReset(someDeal(), "a fresh deal");
+		if (key === "r") return guardedReset(game.number, "this deal again");
 		if (key === "u") return undo();
 		if (key === "Escape") {
 			this.refresh(() => {
@@ -737,6 +812,28 @@ function* App(this: Context) {
 		if (key === "f") return sendHome();
 		if (key === "a") {
 			act((game) => autoplay(game) > 0, "Nothing is ready for a foundation.");
+			return;
+		}
+		if (key === "Tab") {
+			event.preventDefault();
+			const stops: Array<{row: "top" | "board"; col: number}> = [
+				...Array.from({length: 7}, (_, col) => ({row: "board" as const, col})),
+				...TOP_COLS.map((col) => ({row: "top" as const, col})),
+			];
+			const at = stops.findIndex(
+				(stop) => stop.row === cur.row && stop.col === cur.col,
+			);
+			const step = event.shiftKey ? -1 : 1;
+			const next = stops[(at + step + stops.length) % stops.length];
+			this.refresh(() => {
+				message = "";
+				cur = {
+					row: next.row,
+					col: next.col,
+					depth:
+						next.row === "board" ? Math.max(0, pileAt(next.col).length - 1) : 0,
+				};
+			});
 			return;
 		}
 		if (key === "ArrowUp") return moveCursor(0, -1);
@@ -764,6 +861,7 @@ function* App(this: Context) {
 	// Read through a call, so the render below sees what the closures above
 	// assign rather than the null this was declared with.
 	const holding = (): Held => held;
+	const asking = (): {number: number; label: string} | null => confirming;
 
 	// The tier is the terminal's answer, asked through the same evaluator the
 	// stylesheet's @media blocks use, and a resize that crosses a breakpoint
@@ -795,6 +893,7 @@ function* App(this: Context) {
 		const atTop = (col: number): boolean =>
 			cur.row === "top" && cur.col === col;
 		const grip = holding();
+		const ask = asking();
 		const carrying = heldCards(game, grip);
 		const card = carrying[0];
 		const wasteTop = top(game.waste);
@@ -945,7 +1044,16 @@ function* App(this: Context) {
 				</div>
 
 				</div>
-				<div class="hint"><b>space</b> draw${DOT}<b>1-7</b> pile${DOT}<b>d</b> discard${DOT}<b>${ARROWS_ALL}</b> move${DOT}<b>enter</b> take/place${DOT}<b>f</b> foundation${DOT}<b>a</b> auto${DOT}<b>u</b> undo${DOT}<b>n</b> new${DOT}<b>r</b> retry${DOT}<b>q</b> quit</div>
+				${
+					ask &&
+					jsx`<div class="scrim">
+						<dialog open>
+							<div class="ask">Abandon this run?</div>
+							<div class="answers">${"y"} starts ${ask.label} ${MIDDOT} ${"n"} keeps playing</div>
+						</dialog>
+					</div>`
+				}
+				<div class="hint"><b>space</b> draw${DOT}<b>1-7</b> pile${DOT}<b>d</b> discard${DOT}<b>${ARROWS_ALL}</b>/<b>tab</b> move${DOT}<b>enter</b> take/place${DOT}<b>f</b> foundation${DOT}<b>a</b> auto${DOT}<b>u</b> undo${DOT}<b>n</b> new${DOT}<b>r</b> retry${DOT}<b>q</b> quit</div>
 			</div>
 		`;
 	}
