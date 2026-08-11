@@ -20,11 +20,7 @@ import {
 	parseSignedUnitValue,
 	type BoxModel,
 } from "./styles.js";
-import {
-	computedStyleOf,
-	getPropertyValue,
-	parseUnitValue,
-} from "./styles.js";
+import {computedStyleOf, getPropertyValue, parseUnitValue} from "./styles.js";
 import {
 	createFlatTreeWalker,
 	pseudoElementCount,
@@ -372,7 +368,9 @@ function isBlockLevel(element: Element): boolean {
  * collapses through its edges (css2 §8.3.1, §9.4.1).
  */
 function establishesBFC(element: Element): boolean {
-	return getPropertyValue(element, "overflow") !== "visible" || isOutOfFlow(element);
+	return (
+		getPropertyValue(element, "overflow") !== "visible" || isOutOfFlow(element)
+	);
 }
 
 /**
