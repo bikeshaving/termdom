@@ -1238,6 +1238,22 @@ class Box {
 	structure = -1;
 
 	/**
+	 * Whether an inline box was broken around a block-level box, so that it lays
+	 * out none of its own content: the fragments on either side and the block
+	 * between them are boxes of its container (css2 §9.2.1.1). Written by the
+	 * container's enumeration, which is where the break is decided.
+	 */
+	broken = false;
+
+	/**
+	 * Whether the box holds fragments a broken inline handed over, which is what
+	 * makes its children stop corresponding to the child nodes it was written
+	 * with -- those boxes' nodes live a level down, and the inline's own later
+	 * children own no box here at all.
+	 */
+	holdsFragments = false;
+
+	/**
 	 * The layout node an anonymous box owns. A principal box's layout node is
 	 * its DOM node's, held in `nodeMap`: the flex tree is keyed by node until
 	 * block layout stops being emulated as flex.
@@ -1347,15 +1363,6 @@ export class LayoutEngine {
 	#measureNodes: Set<FlexTypes.Node>;
 
 	/**
-	 * Inline boxes a block-level box broke apart, noted as the container
-	 * enumerates its flow children through them. They paint boxes that live
-	 * OUTSIDE their own layout subtree, so paint culling cannot trust their
-	 * extents. Add-only and weak: an element that stops splitting merely stops
-	 * being culled, which costs a walk, never a frame.
-	 */
-	#brokenInlines = new WeakSet<Element>();
-
-	/**
 	 * Set when the terminal answered that it reorders bidirectional text itself
 	 * (see #negotiateBidi). Then lines stay in logical order: one reordering is
 	 * correct, two is a sentence backwards again.
@@ -1370,14 +1377,6 @@ export class LayoutEngine {
 		// Every measured line was built for the other contract.
 		for (const flexNode of this.#measureNodes) flexNode.markDirty();
 	}
-
-	/**
-	 * Containers whose box list reaches through a broken inline, which is what
-	 * makes their children[] stop corresponding to their childNodes. Add-only,
-	 * like #brokenInlines: a container that stops holding split boxes only
-	 * loses a paint fast path.
-	 */
-	#splitContainers = new WeakSet<Element>();
 
 	constructor(window: EngineWindow) {
 		this.window = window;
@@ -1468,7 +1467,7 @@ export class LayoutEngine {
 					// container, as a sibling of the line it belongs to. A
 					// BROKEN inline is the exception: its fragments really are
 					// the container's boxes.
-					if (isInlineLevel(parent) && !this.#brokenInlines.has(parent)) {
+					if (isInlineLevel(parent) && !this.#boxes.get(parent)?.broken) {
 						break;
 					}
 					parent = boxParentElement(parent);
@@ -1609,7 +1608,7 @@ export class LayoutEngine {
 		// The paint walk still reaches them through the DOM, and culling by
 		// this node's zero-height first fragment blanked the whole thing:
 		// `<a href="..."><div>card</div></a>` rendered empty.
-		return !this.#brokenInlines.has(element);
+		return !this.#boxes.get(element)?.broken;
 	}
 
 	/**
@@ -1665,7 +1664,7 @@ export class LayoutEngine {
 			// `<span>a<div/><span>c</span></span>d<input>` collides at three
 			// and three, and the fast path painted the fragments while
 			// dropping the text and the input after them.
-			this.#splitContainers.has(element)
+			this.#boxes.get(element)?.holdsFragments === true
 		) {
 			return null;
 		}
@@ -2851,6 +2850,9 @@ export class LayoutEngine {
 		// gathers only its contiguous text into anonymous ones.
 		const inFlex = getPropertyValue(container, "display") === "flex";
 		let run: Box | null = null;
+		// The enumeration below decides it again; a container that no longer
+		// reaches through a broken inline stops holding its fragments.
+		box.holdsFragments = false;
 		for (const child of this.#flowChildren(container)) {
 			if (child.nodeType === child.ELEMENT_NODE) {
 				const element = child as Element;
@@ -4461,15 +4463,16 @@ export class LayoutEngine {
 		const walker = flowWalker(container);
 		for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
 			into.push(child);
-			if (
-				child.nodeType === child.ELEMENT_NODE &&
-				this.#splitsAroundBlock(child as Element)
-			) {
-				// Remembered rather than recomputed: paint culling asks per
-				// element per frame, and re-walking an inline's subtree there
-				// would cost every off-screen row of a long list.
-				this.#brokenInlines.add(child as Element);
-				this.#splitContainers.add(root);
+			if (child.nodeType !== child.ELEMENT_NODE) continue;
+			// Written on the way past rather than recomputed by the readers:
+			// paint culling asks per element per frame, and re-walking an
+			// inline's subtree there would cost every off-screen row of a long
+			// list. An inline that stops splitting is told so here, by the
+			// enumeration that stops reaching through it.
+			const splits = this.#splitsAroundBlock(child as Element);
+			this.#principalBox(child).broken = splits;
+			if (splits) {
+				this.#principalBox(root).holdsFragments = true;
 				this.#flowChildren(child as Element, into, root);
 			}
 		}
