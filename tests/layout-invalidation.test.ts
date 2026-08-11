@@ -413,3 +413,85 @@ test("a class flip reaches the descendants its selectors reach", async () => {
 
 	dom.dispose();
 });
+
+test("a style that changes what descendants inherit re-measures them", async () => {
+	// A run remembers the size it answered with, and re-answers only when its
+	// constraints move. What it INHERITS moves neither: the same run at the
+	// same width measures differently once its white space stops collapsing,
+	// and nothing about the offer says so.
+	const terminal = new MockProcess({cols: 30, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	document.body.innerHTML =
+		`<style>.pre { white-space: pre; }</style>` +
+		`<span id="s"><em style="display: flex"><span>   x   </span></em></span>`;
+	await nextFrame(dom);
+	const line = () => terminal.getPlainText().split("\n")[0].replace(/\s+$/, "");
+	expect(line()).toBe(" x");
+
+	document.getElementById("s")!.classList.add("pre");
+	await nextFrame(dom);
+	expect(line()).toBe("   x");
+
+	// And an inline style says the same thing.
+	document.getElementById("s")!.classList.remove("pre");
+	await nextFrame(dom);
+	expect(line()).toBe(" x");
+	document.getElementById("s")!.setAttribute("style", "white-space: pre");
+	await nextFrame(dom);
+	expect(line()).toBe("   x");
+
+	dom.dispose();
+});
+
+test("a block arriving under a box that measures as a unit rebuilds it", async () => {
+	// An inline-block measuring its content as a run and one establishing a
+	// block container are different KINDS of box. Clearing the measure leaves
+	// the old kind in place, holding a tree that cannot lay the newcomer out.
+	const terminal = new MockProcess({cols: 30, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	document.body.innerHTML = `<span style="display: inline-block" id="s">A</span>B`;
+	await nextFrame(dom);
+	const lines = () =>
+		terminal
+			.getPlainText()
+			.split("\n")
+			.map((line) => line.replace(/\s+$/, ""));
+	expect(lines()[0]).toBe("AB");
+
+	const block = document.createElement("div");
+	block.textContent = "N";
+	const host = document.getElementById("s")!;
+	host.insertBefore(block, host.firstChild);
+	await nextFrame(dom);
+	expect(lines().slice(0, 2)).toEqual(["NB", "A"]);
+
+	dom.dispose();
+});
+
+test("a block added inside a display: contents element keeps its siblings", async () => {
+	// The element generates no box, so what arrives inside it is a box of the
+	// CONTAINER -- and so is the text already dissolved alongside it, which the
+	// arrival splits away from.
+	const terminal = new MockProcess({cols: 30, rows: 10});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	document.body.innerHTML = `<style>.c { display: contents; }</style>AB<p class="c" id="s">C</p>`;
+	await nextFrame(dom);
+	const lines = () =>
+		terminal
+			.getPlainText()
+			.split("\n")
+			.map((line) => line.replace(/\s+$/, ""));
+	expect(lines()[0]).toBe("ABC");
+
+	const block = document.createElement("div");
+	block.textContent = "N";
+	const host = document.getElementById("s")!;
+	host.insertBefore(block, host.firstChild);
+	await nextFrame(dom);
+	expect(lines().slice(0, 3)).toEqual(["AB", "N", "C"]);
+
+	dom.dispose();
+});

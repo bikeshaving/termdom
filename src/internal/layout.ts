@@ -24,6 +24,8 @@ import {
 	computedStyleOf,
 	getPropertyValue,
 	parseUnitValue,
+	attributeReachesDescendants,
+	declaresInheritedProperty,
 	selectorInvalidationScope,
 	selectorsKeyOnAttribute,
 } from "./styles.js";
@@ -3489,6 +3491,30 @@ export class LayoutEngine {
 		if (container) this.#staleContainers.add(container);
 	}
 
+	/**
+	 * Re-measure every run in a subtree.
+	 *
+	 * A run remembers the size it answered with, and the answer only changes
+	 * when its constraints do -- so a change to what it INHERITS, which moves
+	 * nothing about the space it was offered, is invisible to it. White space
+	 * that stops collapsing is the case: the same run, the same width, a
+	 * different measurement.
+	 */
+	#remeasureSubtree(element: Element): void {
+		if (this.#boxesByContainer.has(element)) {
+			this.#invalidateContainerBoxes(element);
+		}
+		const walker = createFlatTreeWalker<Node>(element);
+		for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+			if (
+				node.nodeType === node.ELEMENT_NODE &&
+				this.#boxesByContainer.has(node as Element)
+			) {
+				this.#invalidateContainerBoxes(node as Element);
+			}
+		}
+	}
+
 	/** Note that every container in and around a subtree must re-enumerate. */
 	#restageSubtree(node: Node): void {
 		this.#restageBox(node);
@@ -3874,6 +3900,18 @@ export class LayoutEngine {
 			if (record.type === "attributes") {
 				if (record.attributeName === "style") {
 					const element = record.target as Element;
+					// A property the descendants inherit changes what THEY
+					// measure -- white space collapses according to the value a
+					// text node's parent holds -- so the subtree rebuilds, the
+					// same answer a class flip gets. A style that declares none
+					// reaches no further than this element's own box.
+					if (
+						declaresInheritedProperty(element.getAttribute("style") ?? "") ||
+						declaresInheritedProperty(record.oldValue ?? "")
+					) {
+						this.invalidate(element);
+						this.#remeasureSubtree(element);
+					}
 					const flexNode = this.nodeMap.get(element);
 					if (flexNode) {
 						this.#styleNode(element, flexNode);
@@ -3937,6 +3975,15 @@ export class LayoutEngine {
 						}
 						scope = lifted ?? scope;
 					}
+					if (
+						attributeReachesDescendants(
+							element,
+							record.attributeName!,
+							record.oldValue,
+						)
+					) {
+						this.#remeasureSubtree(element);
+					}
 					if (scope) {
 						this.invalidate(scope);
 						if (scope === element) {
@@ -3998,7 +4045,29 @@ export class LayoutEngine {
 				// node of its own).
 				const parentDisplay = getPropertyValue(parentElement, "display");
 				if (parentDisplay === "inline-block") {
+					// Unless what arrived is block-level, which changes the KIND
+					// of box the inline-block is: one measuring its content as a
+					// run becomes one establishing a block container that lays
+					// that content out in a tree of its own. Clearing the
+					// measure leaves it the wrong kind, holding the wrong tree.
+					if (!this.#isInlineLevel(node)) {
+						this.invalidate(parentElement);
+						continue;
+					}
 					this.#invalidateEnclosingMeasure(parentElement);
+					continue;
+				}
+
+				// A parent that measures its content as one unit -- a run head,
+				// or a flex item blockified out of an inline -- cannot simply be
+				// given a block-level child: the box it is has to be built
+				// again around it.
+				if (
+					parentFlexNode?.measureFunc &&
+					!this.#isInlineLevel(node) &&
+					!this.#isOutOfFlow(node)
+				) {
+					this.invalidate(parentElement);
 					continue;
 				}
 
@@ -4025,6 +4094,15 @@ export class LayoutEngine {
 						// laid-out ancestor and leaves the fragments unmade, so
 						// the block simply never gets drawn.
 						const container = this.#findInlineRunContainer(parentElement);
+						if (container) this.invalidate(container);
+						else this.#invalidatedNodes.add(node);
+						continue;
+					} else if (dissolvesIntoChildren(parentElement)) {
+						// A parent that generates no box holds none of this: the
+						// newcomer, and everything already dissolved alongside
+						// it, are boxes of the CONTAINER, and the split the
+						// arrival makes in them is one only a rebuild produces.
+						const container = this.#runContainerOf(node);
 						if (container) this.invalidate(container);
 						else this.#invalidatedNodes.add(node);
 						continue;
