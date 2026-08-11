@@ -135,6 +135,46 @@ test("Enter on a focused summary toggles the disclosure", async () => {
 	dom.dispose();
 });
 
+/* ------------------------------------------------------------ the keycap */
+
+/** The cell at a screen position, for reading its attributes. */
+function cellAt(terminal: MockProcess, row: number, col: number): any {
+	return (terminal as any).terminal.buffer.active.getLine(row).getCell(col);
+}
+
+test("a kbd wears brackets and bold", async () => {
+	const terminal = new MockProcess({rows: 4, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML = `<kbd>x</kbd>`;
+	await nextFrame(dom);
+
+	expect(terminal.getPlainText()).toContain("[x]");
+	// The brackets are generated content of the kbd, so they carry its weight.
+	expect(cellAt(terminal, 0, 0).isBold()).toBeTruthy();
+	expect(cellAt(terminal, 0, 1).isBold()).toBeTruthy();
+	expect(cellAt(terminal, 0, 2).isBold()).toBeTruthy();
+
+	dom.dispose();
+});
+
+test("author rules replace the keycap's brackets and weight", async () => {
+	const terminal = new MockProcess({rows: 4, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.body.innerHTML =
+		`<style>` +
+		`kbd { font-weight: normal; }` +
+		`kbd::before { content: "<"; }` +
+		`kbd::after { content: ">"; }` +
+		`</style>` +
+		`<kbd>x</kbd>`;
+	await nextFrame(dom);
+
+	expect(terminal.getPlainText()).toContain("<x>");
+	expect(cellAt(terminal, 0, 1).isBold()).toBeFalsy();
+
+	dom.dispose();
+});
+
 /* ---------------------------------------------------------- the gauges */
 
 /** The row a gauge drew, trimmed of the screen's padding. */
