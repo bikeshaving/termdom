@@ -81,11 +81,7 @@ type Tree =
 const treeArbitrary = fc.letrec<{node: Tree}>((tie) => ({
 	node: fc.oneof(
 		{maxDepth: 3, depthIdentifier: "node"},
-		fc.constantFrom<Tree>(
-			{leaf: "text"},
-			{leaf: "space"},
-			{leaf: "comment"},
-		),
+		fc.constantFrom<Tree>({leaf: "text"}, {leaf: "space"}, {leaf: "comment"}),
 		fc.record({
 			tag: fc.constantFrom(...TAGS),
 			cls: fc.constantFrom("", ...CLASSES),
@@ -135,7 +131,14 @@ type Action =
 	| {kind: "class"; id: string; cls: string}
 	| {kind: "style"; id: string; value: string}
 	| {kind: "attr"; id: string; value: string}
-	| {kind: "append"; id: string; tag: string; cls: string; text: string; made: string}
+	| {
+			kind: "append";
+			id: string;
+			tag: string;
+			cls: string;
+			text: string;
+			made: string;
+	  }
 	| {kind: "prepend"; id: string; tag: string; text: string; made: string}
 	| {kind: "remove"; id: string}
 	| {kind: "move"; id: string; to: string}
@@ -186,7 +189,10 @@ const actionArbitrary: fc.Arbitrary<Action> = fc.oneof(
 		id: idArbitrary,
 		tag: fc.constantFrom(...TAGS),
 		cls: fc.constantFrom("", ...CLASSES),
-		text: fc.oneof(fc.constant(""), fc.integer({min: 0, max: 99}).map((n) => `n${n}`)),
+		text: fc.oneof(
+			fc.constant(""),
+			fc.integer({min: 0, max: 99}).map((n) => `n${n}`),
+		),
 		made: fc.integer({min: 0, max: 7}).map((n) => `m${n}`),
 	}),
 	fc.record({
@@ -268,7 +274,8 @@ const scriptArbitrary = fc
 			}
 			script.push(step.action);
 			const inverse = step.reversed ? inverseOf(step.action) : null;
-			if (inverse) pending.push({action: inverse, at: script.length + step.gap});
+			if (inverse)
+				pending.push({action: inverse, at: script.length + step.gap});
 		}
 		for (const {action} of pending) script.push(action);
 		return script;
@@ -330,7 +337,8 @@ function apply(dom: any, action: Action): void {
 			if (action.kind === "append" && action.cls) child.className = action.cls;
 			if (action.text) child.textContent = action.text;
 			if (action.kind === "append") element.appendChild(child);
-			else if (element.firstChild) element.insertBefore(child, element.firstChild);
+			else if (element.firstChild)
+				element.insertBefore(child, element.firstChild);
 			else element.appendChild(child);
 			break;
 		}
@@ -382,7 +390,9 @@ async function replay(dom: any, cols?: number, rows?: number) {
 		made.dom.document.body.setAttribute(attribute.name, attribute.value);
 	}
 	for (const child of Array.from(dom.document.body.childNodes) as any[]) {
-		made.dom.document.body.appendChild(made.dom.document.importNode(child, true));
+		made.dom.document.body.appendChild(
+			made.dom.document.importNode(child, true),
+		);
 	}
 	await nextFrame(made.dom);
 	return made;
@@ -436,7 +446,9 @@ test("computed styles survive mutation as they would a fresh cascade", async () 
 			];
 			const differences: string[] = [];
 			if (mutated.length !== rendered.length) {
-				differences.push(`${mutated.length} elements against ${rendered.length}`);
+				differences.push(
+					`${mutated.length} elements against ${rendered.length}`,
+				);
 			}
 			for (let i = 0; i < Math.min(mutated.length, rendered.length); i++) {
 				const a = live.dom.window.getComputedStyle(mutated[i]);
@@ -482,7 +494,10 @@ function textNodesOf(document: any): any[] {
 }
 
 /** Where a string starts on the screen, if it is there exactly once. */
-function cellOf(frame: string, token: string): {row: number; col: number} | null {
+function cellOf(
+	frame: string,
+	token: string,
+): {row: number; col: number} | null {
 	const lines = frame.split("\n");
 	let found: {row: number; col: number} | null = null;
 	for (let row = 0; row < lines.length; row++) {
@@ -528,7 +543,10 @@ test("a painted token is where geometry and hit-testing say it is", async () => 
 
 				const hit = document.elementFromPoint(cell.col, cell.row);
 				const parent = text.parentElement;
-				if (!hit || !(hit === parent || hit.contains(parent) || parent.contains(hit))) {
+				if (
+					!hit ||
+					!(hit === parent || hit.contains(parent) || parent.contains(hit))
+				) {
 					problems.push(
 						`${token} at ${cell.row},${cell.col} hit-tests to ` +
 							`${hit ? hit.tagName + "[" + hit.getAttribute("data-f") + "]" : "null"}, ` +

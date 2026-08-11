@@ -74,7 +74,8 @@ const cut = (model: Model, from: number, to: number): Model => ({
 });
 
 const insert = (model: Model, text: string): Model => ({
-	value: model.value.slice(0, model.caret) + text + model.value.slice(model.caret),
+	value:
+		model.value.slice(0, model.caret) + text + model.value.slice(model.caret),
 	caret: model.caret + text.length,
 });
 
@@ -119,7 +120,13 @@ function step(model: Model, command: Command, multiline: boolean): Model {
 }
 
 const commandArbitrary: fc.Arbitrary<Command> = fc.oneof(
-	{arbitrary: fc.record({kind: fc.constant("type" as const), text: fc.constantFrom("a", "b", " ", "z", "ab", "hello")}), weight: 4},
+	{
+		arbitrary: fc.record({
+			kind: fc.constant("type" as const),
+			text: fc.constantFrom("a", "b", " ", "z", "ab", "hello"),
+		}),
+		weight: 4,
+	},
 	fc.record({kind: fc.constant("left" as const)}),
 	fc.record({kind: fc.constant("right" as const)}),
 	fc.record({kind: fc.constant("home" as const)}),
@@ -138,7 +145,10 @@ const commandArbitrary: fc.Arbitrary<Command> = fc.oneof(
 	}),
 );
 
-const scriptArbitrary = fc.array(commandArbitrary, {minLength: 1, maxLength: 12});
+const scriptArbitrary = fc.array(commandArbitrary, {
+	minLength: 1,
+	maxLength: 12,
+});
 
 async function play(tag: "input" | "textarea", script: Command[]) {
 	const terminal = new MockProcess({cols: 40, rows: 12});
