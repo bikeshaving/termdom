@@ -2206,7 +2206,7 @@ export class LayoutEngine {
 			// its own (CSS2 §9.2.1.1). Its fragments are what its inline-level
 			// content occupies, which each know the run they sit on; the block
 			// between them belongs to the container, not to the inline.
-			if (this.#brokenInlines.has(element)) {
+			if (this.#splitsAroundBlock(element)) {
 				const fragments: RectText[] = [];
 				const walk = (parent: Element): void => {
 					for (const child of Array.from(parent.childNodes) as Node[]) {
@@ -3005,7 +3005,7 @@ export class LayoutEngine {
 			} catch {
 				return null;
 			}
-			if (!contained && !this.#brokenInlines.has(element)) return null;
+			if (!contained && !this.#splitsAroundBlock(element)) return null;
 		}
 		const children: Element[] = [];
 		const walker = flowWalker(element);
