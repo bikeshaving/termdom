@@ -6190,25 +6190,56 @@ function isBeingRendered(element: Element): boolean {
  */
 export class PseudoStyleDeclaration extends CSSStyleProperties {
 	#declarations: Record<string, string>;
+	// Lazily resolved properties, cleared by #refresh -- the same one-per
+	// -generation memo an element's declaration keeps, for the same reason.
 	#resolved = new Map<string, string>();
 	/**
-	 * The element the pseudo-element originates from, and the manager whose
-	 * flush a resolved value is measured behind. Absent on the engine's own
-	 * reads (the ::selection and ::marker painters), which want the cascade's
-	 * declarations and never a used value.
+	 * The element the pseudo-element originates from, which pseudo-element it
+	 * is, and the manager whose flush a resolved value is measured behind.
+	 * Absent on the engine's own reads (the ::selection and ::marker painters),
+	 * which want the cascade's declarations and never a used value -- and whose
+	 * declarations, handed in whole, are not the manager's to recompute.
 	 */
 	#element: Element | null;
+	#pseudoElement: string;
 	#manager: StyleManager | null;
+	/**
+	 * The epoch every declaration goes stale at once on. A pseudo-element's
+	 * computed style is LIVE for the same reason an element's is: the object an
+	 * author holds keeps answering the pseudo-element's current values across
+	 * class flips and sheet replacements.
+	 */
+	#epoch = NO_STYLE_EPOCH;
+	#seenEpoch = 0;
 
 	constructor(
 		declarations: Record<string, string>,
 		element?: Element,
 		manager?: StyleManager,
+		pseudoElement = "",
 	) {
 		super();
 		this.#declarations = declarations;
 		this.#element = element ?? null;
+		this.#pseudoElement = pseudoElement;
 		this.#manager = manager ?? null;
+		if (manager) {
+			this.#epoch = manager.styleEpoch;
+			this.#seenEpoch = this.#epoch.value;
+		}
+	}
+
+	/** Re-resolve against the current cascade, declarations and all. */
+	#refresh(): void {
+		this.#seenEpoch = this.#epoch.value;
+		if (this.#manager && this.#element && this.#pseudoElement) {
+			this.#declarations = this.#manager.pseudoDeclarations(
+				this.#element,
+				this.#pseudoElement,
+			);
+		}
+		this.#resolved.clear();
+		this.#nodeResolved.clear();
 	}
 
 	/**
@@ -6220,6 +6251,7 @@ export class PseudoStyleDeclaration extends CSSStyleProperties {
 	 * with the initial values a computed style carries.
 	 */
 	computedValueOf(property: string): string {
+		if (this.#epoch.value !== this.#seenEpoch) this.#refresh();
 		let value = this.#resolved.get(property);
 		if (value === undefined) {
 			const longhands = SHORTHAND_LONGHANDS.get(property);
@@ -6250,15 +6282,18 @@ export class PseudoStyleDeclaration extends CSSStyleProperties {
 	get nodeStyle(): ComputedStyle {
 		let style = this.#nodeStyle;
 		if (style === null) {
-			const resolved = new Map<string, string>();
+			// One object for the declaration's life: the memo behind it is a
+			// field #refresh clears, so a holder of this view sees the current
+			// cascade rather than the one it was first read under.
 			style = {
 				computedValueOf: (property: string): string => {
-					let value = resolved.get(property);
+					if (this.#epoch.value !== this.#seenEpoch) this.#refresh();
+					let value = this.#nodeResolved.get(property);
 					if (value === undefined) {
 						value =
 							this.computedValueOf(property) ||
 							computedValue(property, getInitialStyle(null, property));
-						resolved.set(property, value);
+						this.#nodeResolved.set(property, value);
 					}
 					return value;
 				},
@@ -6269,6 +6304,7 @@ export class PseudoStyleDeclaration extends CSSStyleProperties {
 	}
 
 	#nodeStyle: ComputedStyle | null = null;
+	#nodeResolved = new Map<string, string>();
 
 	override getPropertyValue(property: string): string {
 		this.#manager?.flushStyle();
@@ -7573,6 +7609,36 @@ export class StyleManager {
 			.get(element)
 			?.get(pseudoElement);
 		if (cached) return cached;
+		const declarations = this.pseudoDeclarations(element, pseudoElement);
+		const declaration = new PseudoStyleDeclaration(
+			declarations,
+			element,
+			this,
+			pseudoElement,
+		);
+		// The cache is reached HERE, not before the work: resolving the host's
+		// style above can reparse the stylesheets, and a reparse replaces every
+		// cache on this manager. A map taken before that is an orphan, and
+		// storing into it caches nothing -- every read recomputes the
+		// declaration, and with it the host's inherited properties.
+		let elementCache = this.#pseudoElementStyleCache.get(element);
+		if (!elementCache) {
+			elementCache = new Map();
+			this.#pseudoElementStyleCache.set(element, elementCache);
+		}
+		elementCache.set(pseudoElement, declaration);
+		return declaration;
+	}
+
+	/**
+	 * What the cascade declares for a pseudo-element: its matched rules,
+	 * completed by what it inherits from its originating element. A live
+	 * declaration re-asks this when the style epoch moves.
+	 */
+	pseudoDeclarations(
+		element: Element,
+		pseudoElement: string,
+	): Record<string, string> {
 		const declarations: Record<string, string> = {
 			...this.#computePseudoElementStyle(element, pseudoElement),
 		};
@@ -7595,19 +7661,7 @@ export class StyleManager {
 				declarations.display || getInitialStyle(null, "display"),
 			);
 		}
-		const declaration = new PseudoStyleDeclaration(declarations, element, this);
-		// The cache is reached HERE, not before the work: resolving the host's
-		// style above can reparse the stylesheets, and a reparse replaces every
-		// cache on this manager. A map taken before that is an orphan, and
-		// storing into it caches nothing -- every read recomputes the
-		// declaration, and with it the host's inherited properties.
-		let elementCache = this.#pseudoElementStyleCache.get(element);
-		if (!elementCache) {
-			elementCache = new Map();
-			this.#pseudoElementStyleCache.set(element, elementCache);
-		}
-		elementCache.set(pseudoElement, declaration);
-		return declaration;
+		return declarations;
 	}
 
 	/**

@@ -1863,14 +1863,18 @@ export class TermDOM {
 			configurable: true,
 		});
 
+		// The layout engine holds the viewport a `vw` is a hundredth of, so it
+		// learns the new size BEFORE any style is resolved against it.
+		this[kLayoutEngine].resize(newWidth, newHeight);
+
 		// The viewport changed, so every @media answer may have: re-parse the
 		// stylesheets against the new size (they were parsed against the old one
 		// and would stay stale), then let each live MediaQueryList re-evaluate
-		// and fire "change" if it flipped.
+		// and fire "change" if it flipped. The re-parse also moves the style
+		// epoch, which is what retires the viewport-relative values every
+		// computed style resolved under the old size.
 		this.#styleManager.refreshStylesheets();
 		for (const update of this.#mediaQueryUpdaters) update();
-
-		this[kLayoutEngine].resize(newWidth, newHeight);
 	}
 
 	/**

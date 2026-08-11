@@ -402,3 +402,33 @@ test("arrows skip a disabled group's options", async () => {
 
 	dom.dispose();
 });
+
+test("selectedOptions is live over the selection, not just over the tree", async () => {
+	const terminal = new MockProcess({rows: 12, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {document} = dom;
+	// Detached: no UA tree reconciles behind a selection change, so nothing
+	// but the selectedness itself moves what the collection revalidates on.
+	const select = document.createElement("select");
+	const options = ["a", "b", "c"].map((value) => {
+		const option = document.createElement("option");
+		option.value = value;
+		option.textContent = value;
+		select.appendChild(option);
+		return option;
+	});
+
+	const selected = select.selectedOptions;
+	expect(Array.from(selected).map((o: any) => o.value)).toEqual(["a"]);
+
+	select.value = "c";
+	expect(Array.from(selected).map((o: any) => o.value)).toEqual(["c"]);
+
+	select.selectedIndex = 1;
+	expect(Array.from(selected).map((o: any) => o.value)).toEqual(["b"]);
+
+	(options[2] as any).selected = true;
+	expect(Array.from(selected).map((o: any) => o.value)).toEqual(["c"]);
+
+	dom.dispose();
+});

@@ -11538,8 +11538,23 @@ export class HTMLOptionElement extends HTMLElement {
 	/** Installed from the element table, and read by the select's own tree. */
 	declare disabled: boolean;
 
-	[kSelectedness] = false;
+	#selectedness = false;
 	[kOptionDirty] = false;
+
+	/**
+	 * An option's selectedness. A select's `selectedOptions` is a live list
+	 * over it, and a live list revalidates against the tree's version, so
+	 * moving selectedness is moving the tree as far as that list can tell.
+	 */
+	get [kSelectedness](): boolean {
+		return this.#selectedness;
+	}
+
+	set [kSelectedness](value: boolean) {
+		if (this.#selectedness === value) return;
+		this.#selectedness = value;
+		bumpVersion();
+	}
 
 	get form(): HTMLFormElement | null {
 		const select = selectOf(this);

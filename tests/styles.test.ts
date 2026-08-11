@@ -916,3 +916,35 @@ test("writing the attribute reparses into element.style", async () => {
 	);
 	dom.dispose();
 });
+
+test("a viewport-relative length re-resolves when the terminal resizes", async () => {
+	const terminal = new MockProcess({rows: 10, cols: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.attach();
+	await new Promise((r) => setTimeout(r, 0));
+	const div = dom.document.createElement("div");
+	div.style.width = "50vw";
+	div.textContent = "x";
+	dom.document.body.appendChild(div);
+	await nextFrame(dom);
+
+	// A style an author holds is live across the resize, like any other.
+	const held = dom.window.getComputedStyle(div);
+	expect(held.width).toBe("20px");
+	expect(div.getBoundingClientRect().width).toBe(20);
+
+	terminal.resize(80, 10);
+	(terminal as any).emit("SIGWINCH");
+	const deadline = Date.now() + 2000;
+	while (dom.window.innerWidth !== 80 && Date.now() < deadline) {
+		await new Promise((r) => setTimeout(r, 10));
+	}
+	await nextFrame(dom);
+
+	expect(dom.window.innerWidth).toBe(80);
+	expect(held.width).toBe("40px");
+	expect(dom.window.getComputedStyle(div).width).toBe("40px");
+	expect(div.getBoundingClientRect().width).toBe(40);
+
+	dom.dispose();
+});
