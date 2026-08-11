@@ -5,10 +5,10 @@
 //
 //   node examples/solitaire.ts
 //
-//   space  deal from the stock (or turn it over when empty)
+//   space  draw from the stock (or turn it over when empty)
 //   1-7    pick up a tableau pile, or drop what you are holding on it
-//   w      pick up the waste's top card
-//   up/dn  take more or fewer cards of the run you are holding
+//   d      pick up the discard's top card
+//   up/dn  take more or fewer cards of the stack you are holding
 //   f      send what you are holding to its foundation
 //   a      send everything that fits to the foundations
 //   esc    put it back      u  undo      n  new game      q  quit
@@ -290,31 +290,61 @@ const {document} = term;
 globalThis.Node = term.window.Node;
 globalThis.document = term.document;
 
+/** How big a card is: the terminal's size decides, through the tiers below. */
+interface Tier {
+	width: number;
+	height: number;
+	gap: number;
+}
+
+const TIERS = {
+	compact: {width: 3, height: 3, gap: 1},
+	roomy: {width: 5, height: 3, gap: 2},
+	grand: {width: 7, height: 4, gap: 3},
+} as const;
+const ROOMY_MIN_WIDTH = 64;
+const GRAND_MIN_WIDTH = 96;
+const GRAND_MIN_HEIGHT = 30;
+const HINT_MIN_HEIGHT = 20;
+
 const style = document.createElement("style");
+// One set of numbers drives the stylesheet's @media blocks AND the matchMedia
+// lists the component re-renders on, so the CSS widths and the drawn card
+// faces can never disagree about the size of a card.
+const css = (tier: Tier) => `
+  .card, .slot { width: ${tier.width}ch; }
+  .number, .top .gap { width: ${tier.width}ch; }
+  .pile { width: ${tier.width}ch; }
+  .top, .numbers, .board, .captions { gap: ${tier.gap}ch; }
+  .play { width: ${7 * tier.width + 6 * tier.gap}ch; }
+`;
 style.textContent = `
   .table { padding: 0 1ch; background-color: #06421f; color: #cfe8d8; }
   /* The felt reaches the edges of the screen it was given. */
   .table:fullscreen { padding: 0 2ch; }
+  /* The playfield is as wide as its seven piles, and the auto margins
+     center it in whatever the terminal turned out to be. */
+  .play { margin: 0 auto; }
   .bar { display: flex; flex-direction: row; gap: 2ch; }
   .bar .title { color: #ffd75f; font-weight: bold; }
   .bar .score { color: #9ec5ab; }
   .bar .win { color: #ffd75f; font-weight: bold; }
 
-  .top { display: flex; flex-direction: row; gap: 1ch; padding-top: 1px; }
-  /* The gap the classic deal leaves between the talon and the foundations. */
-  .top .gap { width: 3ch; }
+  .top { display: flex; flex-direction: row; padding-top: 1px; }
+  /* Region names, on the deals wide enough to teach them. */
+  .captions { display: flex; flex-direction: row; padding-top: 1px; color: #4d8f66; }
+  .caption { white-space: pre; }
   /* The keys the piles answer to, over the piles they answer for. */
-  .numbers { display: flex; flex-direction: row; gap: 1ch; padding-top: 1px; }
-  .number { width: 3ch; color: #4d8f66; }
+  .numbers { display: flex; flex-direction: row; padding-top: 1px; }
+  .number { color: #4d8f66; }
   .number.drop { color: #ffd75f; font-weight: bold; }
-  .board { display: flex; flex-direction: row; gap: 1ch; }
-  .pile { display: flex; flex-direction: column; width: 3ch; }
+  .board { display: flex; flex-direction: row; }
+  .pile { display: flex; flex-direction: column; }
 
-  /* A card is three cells square. A covered one shows only the row its
-     index is on, which is what makes a pile a stack rather than a list. */
-  /* The rows are drawn, not written: a card's blank middle row is three
-     spaces, and collapsing them would leave the card two cells tall. */
-  .card, .slot { width: 3ch; white-space: pre; }
+  /* A card's rows are drawn, not written: the blank rows are spaces, and
+     collapsing them would shorten the card. A covered card shows only the
+     row its index is on, which is what makes a pile a stack. */
+  .card, .slot { white-space: pre; }
   .card { background-color: #f0f0e6; color: #202020; }
   .card.red { color: #c02020; }
   .card.down { background-color: #1d4f8f; color: #4f82c8; }
@@ -327,6 +357,12 @@ style.textContent = `
 
   .hint { padding-top: 1px; color: #7fae90; }
   .hint b { color: #cfe8d8; font-weight: bold; }
+
+  ${css(TIERS.compact)}
+  @media (min-width: ${ROOMY_MIN_WIDTH}ch) { ${css(TIERS.roomy)} }
+  @media (min-width: ${GRAND_MIN_WIDTH}ch) and (min-height: ${GRAND_MIN_HEIGHT}) { ${css(TIERS.grand)} }
+  /* A short terminal spends its rows on the cards. */
+  @media (max-height: ${HINT_MIN_HEIGHT - 1}) { .hint { display: none; } }
 `;
 document.head.appendChild(style);
 
@@ -336,26 +372,46 @@ document.head.appendChild(style);
 // a template's RAW spans, and a runtime that reports raw text as an escape
 // sequence -- Bun does, for anything outside ASCII -- puts the six characters
 // of `▒` on the board instead of the hatch.
-const HATCH = "▒▒▒";
-const TURN = " ↻ ";
-const BLANK = "   ";
+const HATCH_GLYPH = "▒";
+const TURN_GLYPH = "↻";
 const DOT = " · ";
 const ARROWS = "↑↓";
 
+const blank = (width: number): string => " ".repeat(width);
+const hatch = (width: number): string => HATCH_GLYPH.repeat(width);
+
+/** `text` centered in a field of `width` cells. */
+function centered(text: string, width: number): string {
+	const pad = Math.max(0, width - text.length);
+	const left = Math.floor(pad / 2);
+	return " ".repeat(left) + text + " ".repeat(pad - left);
+}
+
 /**
- * The three rows of a card's face: its index at the top left, the field, and
- * the index again at the bottom right, the way the corners of a real one read.
- * A rank and a suit are three cells at their widest ("10♥"), which is what
- * sets the card's size.
+ * A card's face: its index at the top left, the field, and the index again at
+ * the bottom right, the way the corners of a real one read. The narrowest
+ * tier's field is bare; a wider card carries its suit in the middle, and a
+ * taller one more field below it. "10♥" is three cells, the narrowest a card
+ * can be.
  */
-function faceRows(card: Card): string[] {
-	if (!card.up) return [HATCH, HATCH, HATCH];
+function faceRows(card: Card, tier: Tier): string[] {
+	if (!card.up)
+		return Array.from({length: tier.height}, () => hatch(tier.width));
 	const index = `${RANKS[card.rank - 1]}${SUITS[card.suit]}`;
-	return [index.padEnd(3, " "), BLANK, index.padStart(3, " ")];
+	const middles = Array.from({length: tier.height - 2}, () =>
+		blank(tier.width),
+	);
+	if (tier.width > 3) middles[0] = centered(SUITS[card.suit], tier.width);
+	return [
+		index.padEnd(tier.width, " "),
+		...middles,
+		index.padStart(tier.width, " "),
+	];
 }
 
 interface CardProps {
 	card: Card;
+	tier: Tier;
 	/** A card with another lying over it, showing its index row alone. */
 	covered?: boolean;
 	held?: boolean;
@@ -364,13 +420,21 @@ interface CardProps {
 	ondblclick?: (event: MouseEvent) => unknown;
 }
 
-function CardFace({card, covered, held, drop, onclick, ondblclick}: CardProps) {
+function CardFace({
+	card,
+	tier,
+	covered,
+	held,
+	drop,
+	onclick,
+	ondblclick,
+}: CardProps) {
 	const classes = ["card"];
 	if (!card.up) classes.push("down");
 	else if (isRed(card)) classes.push("red");
 	if (held) classes.push("held");
 	else if (drop) classes.push("drop");
-	const rows = faceRows(card);
+	const rows = faceRows(card, tier);
 	return jsx`
 		<div
 			class=${classes.join(" ")}
@@ -384,18 +448,23 @@ function CardFace({card, covered, held, drop, onclick, ondblclick}: CardProps) {
 
 /** An empty place on the board: the stock's turnover arrow, or a suit's home. */
 function Slot({
-	mark = BLANK,
+	tier,
+	mark,
 	drop,
 	onclick,
 }: {
+	tier: Tier;
 	mark?: string;
 	drop?: boolean;
 	onclick?: (event: MouseEvent) => unknown;
 }) {
+	const rows = Array.from({length: tier.height}, (_, line) =>
+		line === 1 && mark ? centered(mark, tier.width) : blank(tier.width),
+	);
 	return jsx`
-		<div class=${drop ? "slot drop" : "slot"} onclick=${onclick}>
-			<div>${BLANK}</div><div>${mark}</div><div>${BLANK}</div>
-		</div>
+		<div class=${drop ? "slot drop" : "slot"} onclick=${onclick}>${rows.map(
+			(row, line) => jsx`<div key=${line}>${row}</div>`,
+		)}</div>
 	`;
 }
 
@@ -534,9 +603,10 @@ function* App(this: Context) {
 			});
 			return;
 		}
-		if (key === " ")
-			return act(draw, "The stock and the waste are both empty.");
-		if (key === "w") {
+		if (key === " ") {
+			return act(draw, "The stock and the discard are both empty.");
+		}
+		if (key === "d" || key === "w") {
 			if (top(game.waste)) grab({kind: "waste"});
 			return;
 		}
@@ -568,8 +638,26 @@ function* App(this: Context) {
 	// assign rather than the null this was declared with.
 	const holding = (): Held => held;
 
+	// The tier is the terminal's answer, asked through the same evaluator the
+	// stylesheet's @media blocks use, and a resize that crosses a breakpoint
+	// re-renders the faces to the size the CSS just snapped to.
+	const roomy = term.window.matchMedia(`(min-width: ${ROOMY_MIN_WIDTH}ch)`);
+	const grand = term.window.matchMedia(
+		`(min-width: ${GRAND_MIN_WIDTH}ch) and (min-height: ${GRAND_MIN_HEIGHT})`,
+	);
+	const retier = () => this.refresh();
+	roomy.addEventListener("change", retier);
+	grand.addEventListener("change", retier);
+	this.cleanup(() => {
+		roomy.removeEventListener("change", retier);
+		grand.removeEventListener("change", retier);
+	});
+	const tier = (): Tier =>
+		grand.matches ? TIERS.grand : roomy.matches ? TIERS.roomy : TIERS.compact;
+
 	// eslint-disable-next-line no-empty-pattern
 	for ({} of this) {
+		const t = tier();
 		const grip = holding();
 		const carrying = heldCards(game, grip);
 		const card = carrying[0];
@@ -578,6 +666,7 @@ function* App(this: Context) {
 
 		yield jsx`
 			<div class="table">
+				<div class="play">
 				<div class="bar">
 					<span class="title">Solitaire</span>
 					<span class="score">deal ${game.number}</span>
@@ -591,15 +680,25 @@ function* App(this: Context) {
 					}
 				</div>
 
+				${
+					t === TIERS.grand &&
+					jsx`<div class="captions">
+						<span class="caption">${centered("stock", t.width)}</span>
+						<span class="caption">${centered("discard", t.width)}</span>
+						<span class="caption">${blank(t.width)}</span>
+						<span class="caption">${centered("foundations", 4 * t.width + 3 * t.gap)}</span>
+					</div>`
+				}
 				<div class="top">
 					<div class="pile">
 						${
 							game.stock.length > 0
 								? jsx`<${CardFace}
 										card=${{rank: 1, suit: 0, up: false}}
+										tier=${t}
 										onclick=${() => act(draw)}
 									/>`
-								: jsx`<${Slot} mark=${TURN} onclick=${() => act(draw)} />`
+								: jsx`<${Slot} tier=${t} mark=${TURN_GLYPH} onclick=${() => act(draw)} />`
 						}
 					</div>
 					<div class="pile">
@@ -607,11 +706,12 @@ function* App(this: Context) {
 							wasteTop
 								? jsx`<${CardFace}
 										card=${wasteTop}
+										tier=${t}
 										held=${grip?.kind === "waste"}
 										onclick=${() => grab({kind: "waste"})}
 										ondblclick=${() => sendHome({kind: "waste"})}
 									/>`
-								: jsx`<${Slot} />`
+								: jsx`<${Slot} tier=${t} />`
 						}
 					</div>
 					<div class="gap"></div>
@@ -622,12 +722,14 @@ function* App(this: Context) {
 									top(foundation)
 										? jsx`<${CardFace}
 												card=${top(foundation)}
+												tier=${t}
 												held=${grip?.kind === "foundation" && grip.index === index}
 												drop=${home === index}
 												onclick=${() => target({kind: "foundation", index})}
 											/>`
 										: jsx`<${Slot}
-												mark=${` ${SUITS[index]} `}
+												tier=${t}
+												mark=${SUITS[index]}
 												drop=${home === index}
 												onclick=${() => target({kind: "foundation", index})}
 											/>`
@@ -643,7 +745,7 @@ function* App(this: Context) {
 							<span
 								class=${Boolean(card) && fitsTableau(card, pile) ? "number drop" : "number"}
 								key=${`number-${index}`}
-							>${` ${index + 1} `}</span>
+							>${centered(String(index + 1), t.width)}</span>
 						`,
 					)}
 				</div>
@@ -654,6 +756,7 @@ function* App(this: Context) {
 								${
 									pile.length === 0
 										? jsx`<${Slot}
+												tier=${t}
 												drop=${Boolean(card) && fitsTableau(card, pile)}
 												onclick=${() => target({kind: "tableau", pile: index})}
 											/>`
@@ -662,6 +765,7 @@ function* App(this: Context) {
 													<${CardFace}
 														key=${`${each.suit}-${each.rank}`}
 														card=${each}
+														tier=${t}
 														covered=${depth < pile.length - 1}
 														held=${grip?.kind === "tableau" && grip.pile === index && depth >= grip.index}
 														drop=${depth === pile.length - 1 && Boolean(card) && fitsTableau(card, pile)}
@@ -694,7 +798,8 @@ function* App(this: Context) {
 					)}
 				</div>
 
-				<div class="hint"><b>space</b> deal${DOT}<b>1-7</b> pile${DOT}<b>w</b> waste${DOT}<b>${ARROWS}</b> reach${DOT}<b>f</b> home${DOT}<b>a</b> auto${DOT}<b>u</b> undo${DOT}<b>n</b> new${DOT}<b>q</b> quit</div>
+				</div>
+				<div class="hint"><b>space</b> draw${DOT}<b>1-7</b> pile${DOT}<b>d</b> discard${DOT}<b>${ARROWS}</b> more/less${DOT}<b>f</b> foundation${DOT}<b>a</b> auto${DOT}<b>u</b> undo${DOT}<b>n</b> new${DOT}<b>q</b> quit</div>
 			</div>
 		`;
 	}
