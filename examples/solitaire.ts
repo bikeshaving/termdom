@@ -1001,10 +1001,10 @@ function* App(this: Context) {
 				${
 					t === TIERS.grand &&
 					jsx`<div class="captions">
-						<span class="caption">${centered("stock", t.width)}</span>
-						<span class="caption">${centered("discard", t.width)}</span>
-						<span class="caption">${blank(t.width)}</span>
-						<span class="caption">${centered("foundations", 4 * t.width + 3 * t.gap)}</span>
+						<span class="caption">${"[s]tock".padEnd(t.width)}</span>
+						<span class="caption">${"[d]iscard"}</span>
+						<span class="caption">${blank(2 * t.width - 9)}</span>
+						<span class="caption">${centered("[f]oundations", 4 * t.width + 3 * t.gap)}</span>
 					</div>`
 				}
 				<div class="top">
