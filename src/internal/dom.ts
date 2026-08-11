@@ -103,6 +103,7 @@ const kUAValueText = Symbol(
 	"the text node a control's editable value lives in",
 );
 const kUACaretRange = Symbol("where an element's own caret is");
+const kUASelectionRange = Symbol("what an element's own selection covers");
 
 /** A listener as this file's own dispatch takes one. */
 type UAListener = (event: Event) => void;
@@ -9835,6 +9836,55 @@ export function caretRangeOf(element: object): UARange | null {
 }
 
 /**
+ * What an element's own selection covers, as a Range the caller can measure --
+ * or null for an element with no selection of its own, or none to show. The
+ * element answers; only it knows what it renders through.
+ *
+ * A form control's selection is invisible to getSelection() per spec, so this
+ * is the only way to measure it. It is the same shape a document selection
+ * hands out, so both reach geometry down one path.
+ *
+ * The range is the document's own, valid until the next selection read.
+ */
+export function selectionRangeOf(element: object): UARange | null {
+	return (
+		(element as Record<symbol, (() => UARange | null) | undefined>)[
+			kUASelectionRange
+		]?.() ?? null
+	);
+}
+
+/**
+ * The Range a text control's selection covers within the value text of the
+ * tree it renders, or null when the selection is collapsed -- there is nothing
+ * to highlight. Offsets are clamped into the text, so a selection recorded
+ * against a longer value still measures.
+ */
+function textSelectionRange(
+	control: HTMLInputElement | HTMLTextAreaElement,
+	valueText: UAText | null,
+): UARange | null {
+	if (!valueText) return null;
+	const {start, end} = uaSelectionOf(control);
+	const length = valueText.data.length;
+	const from = Math.max(0, Math.min(start, length));
+	const to = Math.max(0, Math.min(end, length));
+	if (to <= from) return null;
+	const document = uaDocumentOf(control);
+	let range = selectionRanges.get(document);
+	if (range === undefined) {
+		range = document.createRange();
+		selectionRanges.set(document, range);
+	}
+	range.setStart(valueText, from);
+	range.setEnd(valueText, to);
+	return range;
+}
+
+/** The range a document answers control-selection queries with. @see caretRanges */
+const selectionRanges = new WeakMap<UADocument, UARange>();
+
+/**
  * A collapsed Range at a text control's caret, inside the value text of the
  * tree it renders. Its geometry is then whatever the layout already placed the
  * offset at -- no bespoke caret walk. Backward selections carry the caret at
@@ -10532,6 +10582,10 @@ export class HTMLInputElement extends HTMLElement {
 
 	[kUACaretRange](): UARange | null {
 		return textCaretRange(this, this.#valueText);
+	}
+
+	[kUASelectionRange](): UARange | null {
+		return textSelectionRange(this, this.#valueText);
 	}
 
 	[kUAUpgrade](): void {
@@ -11746,6 +11800,10 @@ export class HTMLTextAreaElement extends HTMLElement {
 
 	[kUACaretRange](): UARange | null {
 		return textCaretRange(this, this.#valueText);
+	}
+
+	[kUASelectionRange](): UARange | null {
+		return textSelectionRange(this, this.#valueText);
 	}
 
 	[kUAUpgrade](): void {

@@ -7,12 +7,12 @@
  */
 import * as DOM from "./dom.js";
 import {
+	caretRangeOf,
 	fieldValueText,
 	flatIsConnected,
 	installUAEngine,
 	pseudoHostOf,
 	setUASelection,
-	uaSelectionOf,
 	upgradeUAWidget,
 } from "./dom.js";
 import {LayoutEngine, whiteSpaceOf} from "./layout.js";
@@ -2156,9 +2156,11 @@ export class TermDOM {
 			acc += stringWidth(shown[scrollOffset]);
 			scrollOffset++;
 		}
-		// The caret sits at the selection's moving end.
-		const {start, end, direction} = uaSelectionOf(input);
-		const cursor = direction === "backward" ? start : end;
+		// The caret is wherever the input renders it, in the value text's own
+		// offsets -- the same text `shown` is read from.
+		const caret = caretRangeOf(input);
+		if (!caret) return;
+		const cursor = caret.startOffset;
 		// Keep the caret's cell in the box, then pull back when a deletion left slack.
 		if (cursor < scrollOffset) scrollOffset = cursor;
 		while (

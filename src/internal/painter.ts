@@ -3,7 +3,7 @@
  *
  * It reads the DOM, computed styles and geometry, and writes nothing but cells.
  */
-import {uaSelectionOf} from "./dom.js";
+import {selectionRangeOf} from "./dom.js";
 import type {EngineWindow} from "./termdom.js";
 import {type LayoutEngine, flowWalker, isPositioned} from "./layout.js";
 import {type Viewport} from "./viewport.js";
@@ -959,57 +959,55 @@ export class Painter {
 	}
 
 	/**
-	 * The data-offset range to highlight over a text node, and the element whose
-	 * ::selection rules style it. Two sources, one shape: a focused form
-	 * control's own selection (selectionStart/End) when this text node is its
-	 * shadow value -- getSelection() cannot see inside a control, per spec, so
-	 * the painter reads the control directly -- otherwise the document selection.
+	 * The Range to highlight over a text node, and the element whose ::selection
+	 * rules style it. Two sources, one shape: a focused form control's own
+	 * selection when this text node is the one the control renders its value
+	 * through -- getSelection() cannot see inside a control, per spec, so the
+	 * control hands its selection out as a Range of its own -- otherwise the
+	 * document selection.
 	 */
 	#selectionRangeFor(
 		textNode: Text,
-	): {from: number; to: number; selectionParent: Element} | null {
-		const host = (textNode.getRootNode() as {host?: Element}).host;
-		if (
-			host &&
-			host === this.#document.activeElement &&
-			isTextField(host) &&
-			textNode.parentElement?.getAttribute("part") === "value"
-		) {
-			const field = host as HTMLTextAreaElement | HTMLInputElement;
-			// TODO(box-tree): reaches the widget's internal selection where the
-			// element's public selectionStart/selectionEnd answer the same --
-			// the painter's one remaining non-public DOM read.
-			const {start, end} = uaSelectionOf(field);
-			if (end <= start) return null;
-			const length = textNode.data.length;
-			return {
-				from: Math.max(0, Math.min(start, length)),
-				to: Math.max(0, Math.min(end, length)),
+	): {range: Range; selectionParent: Element} | null {
+		const active = this.#document.activeElement;
+		if (active && isTextField(active)) {
+			const fieldRange = selectionRangeOf(active);
+			// The control's range names the text it renders its value through, so
+			// node identity is the whole test -- no widget anatomy to know.
+			if (fieldRange && fieldRange.startContainer === textNode) {
 				// ::selection resolves on the field host (`input::selection`), not
 				// the shadow value span.
-				selectionParent: host,
-			};
+				return {range: fieldRange, selectionParent: active};
+			}
 		}
 
 		const selection = this.#window.getSelection();
 		if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
 			return null;
 		}
-		const range = selection.getRangeAt(0);
-		if (!range.intersectsNode(textNode)) return null;
-		const from = range.startContainer === textNode ? range.startOffset : 0;
-		const to =
-			range.endContainer === textNode ? range.endOffset : textNode.data.length;
-		if (to <= from) return null;
+		const documentRange = selection.getRangeAt(0);
+		if (!documentRange.intersectsNode(textNode)) return null;
 		const selectionParent = flatParentElement<Element>(textNode);
 		if (!selectionParent) return null;
-		return {from, to, selectionParent};
+		// Narrowed to this node: ::selection resolves per node's parent, so each
+		// node's share of the selection is painted in its own style.
+		const from =
+			documentRange.startContainer === textNode ? documentRange.startOffset : 0;
+		const to =
+			documentRange.endContainer === textNode
+				? documentRange.endOffset
+				: textNode.data.length;
+		if (to <= from) return null;
+		const range = textNode.ownerDocument.createRange();
+		range.setStart(textNode, from);
+		range.setEnd(textNode, to);
+		return {range, selectionParent};
 	}
 
 	/**
 	 * Overlay the selection on a text node as inverse video (or the author's
 	 * ::selection colors) by redrawing its selected runs in the highlight style.
-	 * The selected region comes from #selectionRangeFor; the runs' rects and text
+	 * The selected Range comes from #selectionRangeFor; the runs' rects and text
 	 * come from the layout's Range geometry, so the painter does no offset math.
 	 * Case transforms never change cell width, so transforming each run's raw
 	 * text repaints exactly the cells the base pass laid down.
@@ -1022,7 +1020,7 @@ export class Painter {
 	): void {
 		const found = this.#selectionRangeFor(textNode);
 		if (!found) return;
-		const {from, to, selectionParent} = found;
+		const {range, selectionParent} = found;
 		const selectionStyle = selectionStyleFor(
 			this.#window,
 			selectionParent,
@@ -1030,9 +1028,6 @@ export class Painter {
 		);
 		if (selectionStyle === textStyle) return; // no ::selection rule reaches here
 
-		const range = textNode.ownerDocument.createRange();
-		range.setStart(textNode, from);
-		range.setEnd(textNode, to);
 		for (const run of this.#layout.getRangeRuns(range)) {
 			ctx.setText(
 				run.rect.x,

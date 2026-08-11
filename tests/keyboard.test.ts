@@ -867,6 +867,50 @@ test("Shift+arrows extend a selection with the browser's anchor/focus model", as
 	dom.dispose();
 });
 
+test("a number field paints its selection exactly as a text field does", async () => {
+	// selectionStart/End answer null on number/email/date per spec, but browsers
+	// still highlight a selection in them -- the painter asks the field for the
+	// range it renders, not for the API the author is gated out of.
+	const inverseCells = async (type: string): Promise<string> => {
+		const terminal = new MockProcess({rows: 6, cols: 40});
+		const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
+		dom.attach();
+		await new Promise((r) => setTimeout(r, 0));
+		const input = dom.document.createElement("input");
+		input.type = type;
+		dom.document.body.appendChild(input);
+		input.focus();
+		await nextFrame(dom);
+		(terminal.stdin as any).emit("data", Buffer.from("12345"));
+		await new Promise((r) => setTimeout(r, 0));
+		(terminal.stdin as any).emit(
+			"data",
+			Buffer.from("\x1b[1;2D\x1b[1;2D\x1b[1;2D"),
+		);
+		await new Promise((r) => setTimeout(r, 0));
+		await nextFrame(dom);
+
+		const buffer = (terminal as any).terminal.buffer.active;
+		const marked: string[] = [];
+		for (let row = 0; row < 6; row++) {
+			const line = buffer.getLine(row);
+			if (!line) continue;
+			for (let col = 0; col < 40; col++) {
+				const cell = line.getCell(col);
+				if (cell?.isInverse()) marked.push(`${row},${col}:${cell.getChars()}`);
+			}
+		}
+		dom.dispose();
+		return marked.join(" ");
+	};
+
+	const text = await inverseCells("text");
+	// Three characters selected, so three highlighted cells.
+	expect(text.split(" ").filter(Boolean).length).toBe(3);
+	expect(text).toContain("3");
+	expect(await inverseCells("number")).toBe(text);
+});
+
 test("the readline chords move and cut, as a terminal user expects", async () => {
 	const terminal = new MockProcess({rows: 6, cols: 40});
 	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
