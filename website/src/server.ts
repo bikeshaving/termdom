@@ -28,6 +28,7 @@ import readmeGif from "../static/casts/readme.gif" with {assetBase: "/static/", 
 import animatedGif from "../static/casts/animated.gif" with {assetBase: "/static/", assetName: "[name].[ext]"};
 import treeGif from "../static/casts/tree.gif" with {assetBase: "/static/", assetName: "[name].[ext]"};
 import formGif from "../static/casts/form.gif" with {assetBase: "/static/", assetName: "[name].[ext]"};
+import solitaireGif from "../static/casts/solitaire.gif" with {assetBase: "/static/", assetName: "[name].[ext]"};
 
 export const assets = {
 	clientCSS,
@@ -42,6 +43,7 @@ export const castGifs: Record<string, string> = {
 	animated: animatedGif,
 	tree: treeGif,
 	form: formGif,
+	solitaire: solitaireGif,
 };
 
 const SITE = "https://termdom.org";
