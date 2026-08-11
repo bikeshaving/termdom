@@ -206,6 +206,71 @@ function dissolvesIntoChildren(node: Node): boolean {
 	return getPropertyValue(node as Element, "display") === "contents";
 }
 
+/**
+ * position:absolute (and fixed, approximated as absolute-to-ICB) takes a box
+ * out of normal flow entirely.
+ */
+function isOutOfFlow(node: Node): boolean {
+	if (node.nodeType !== node.ELEMENT_NODE) return false;
+	const position = getPropertyValue(node as Element, "position");
+	return position === "absolute" || position === "fixed";
+}
+
+/** Whether a display value puts a box on a line rather than on rows of its own. */
+function isInlineDisplay(display: string): boolean {
+	return display === "inline" || display === "inline-block";
+}
+
+/** Whether an element lays its children out as flex items. */
+function isFlexContainer(element: Element): boolean {
+	const display = getPropertyValue(element, "display");
+	return display === "flex" || display === "inline-flex";
+}
+
+/** Whether an element's box is a flex item of its parent's. */
+function hasFlexParent(element: Element): boolean {
+	const parent = element.parentElement;
+	return parent !== null && getPropertyValue(parent, "display") === "flex";
+}
+
+/**
+ * Whether an element's box is blockified (css-display-3 §2.7): an out-of-flow
+ * box takes a block's box model, and so does every child of a flex container,
+ * which has no lines for an inline-level box to sit on.
+ */
+function isBlockifiedBox(element: Element): boolean {
+	return isOutOfFlow(element) || hasFlexParent(element);
+}
+
+/**
+ * The display an element's box is generated with: its computed value, with
+ * blockification applied. `none` and `contents` generate no box of their own
+ * and stand as they compute.
+ */
+function usedDisplay(element: Element): string {
+	const display = getPropertyValue(element, "display");
+	if (!isInlineDisplay(display)) return display;
+	return isBlockifiedBox(element) ? "block" : display;
+}
+
+/** Whether a node has a box in the flow at all. */
+function generatesBox(node: Node): boolean {
+	if (node.nodeType !== node.ELEMENT_NODE) return true;
+	const display = getPropertyValue(node as Element, "display");
+	return display !== "none" && display !== "contents";
+}
+
+/**
+ * Whether a node's box sits on a line of its container's rather than on rows of
+ * its own. Text is always inline-level; an element is whatever its used display
+ * makes it.
+ */
+function isInlineLevel(node: Node): boolean {
+	if (node.nodeType === node.TEXT_NODE) return true;
+	if (node.nodeType !== node.ELEMENT_NODE) return false;
+	return isInlineDisplay(usedDisplay(node as Element));
+}
+
 /** Whether a `white-space` value keeps a space as content rather than collapsing it. */
 function preservesSpaces(whiteSpace: string): boolean {
 	return (
@@ -290,14 +355,12 @@ function numericMargin(
 
 /** In the parent's flow: rendered, and not taken out by abs/fixed. */
 function isInFlow(element: Element): boolean {
-	if (getPropertyValue(element, "display") === "none") return false;
-	const position = getPropertyValue(element, "position");
-	return position !== "absolute" && position !== "fixed";
+	return generatesBox(element) && !isOutOfFlow(element);
 }
 
 /** Block-LEVEL: occupies its own rows in a block formatting context. */
 function isBlockLevel(element: Element): boolean {
-	const display = getPropertyValue(element, "display");
+	const display = usedDisplay(element);
 	return (
 		display === "block" ||
 		display === "list-item" ||
@@ -311,9 +374,7 @@ function isBlockLevel(element: Element): boolean {
  * collapses through its edges (css2 §8.3.1, §9.4.1).
  */
 function establishesBFC(element: Element): boolean {
-	if (getPropertyValue(element, "overflow") !== "visible") return true;
-	const position = getPropertyValue(element, "position");
-	return position === "absolute" || position === "fixed";
+	return getPropertyValue(element, "overflow") !== "visible" || isOutOfFlow(element);
 }
 
 /**
@@ -538,9 +599,7 @@ function styleFlexNode(
 	// like any block's. Forcing them auto here let the measure function answer
 	// with the content size instead, and `<span style="width:30ch">` inside a
 	// flex row came out as wide as its text.
-	const parentIsFlex =
-		element.parentElement !== null &&
-		getPropertyValue(element.parentElement, "display") === "flex";
+	const parentIsFlex = hasFlexParent(element);
 	// Handle width/height based on display type
 	if (display === "inline" && !parentIsFlex) {
 		// For pure inline elements, unset dimensions since they handle dimensions in their measure function
@@ -1646,7 +1705,7 @@ export class LayoutEngine {
 					// container, as a sibling of the line it belongs to. A
 					// BROKEN inline is the exception: its fragments really are
 					// the container's boxes.
-					if (this.#isInlineLevel(parent) && !this.#brokenInlines.has(parent)) {
+					if (isInlineLevel(parent) && !this.#brokenInlines.has(parent)) {
 						break;
 					}
 					parent = boxParentElement(parent);
@@ -2039,14 +2098,12 @@ export class LayoutEngine {
 		// kinds blockify (css-display-3 §2.7): a flex container's children, and
 		// an out-of-flow box, which no run holds any record of at all.
 		const isBlockified =
-			(display === "inline" || display === "inline-block") &&
+			isInlineDisplay(display) &&
 			this.nodeMap.has(element) &&
-			(this.#isOutOfFlow(element) ||
-				(element.parentElement !== null &&
-					getPropertyValue(element.parentElement, "display") === "flex"));
+			isBlockifiedBox(element);
 
 		// For inline/inline-block elements, check if they appear in breakResults
-		if (!isBlockified && (display === "inline" || display === "inline-block")) {
+		if (!isBlockified && isInlineDisplay(display)) {
 			// For inline-block elements, search through all breakResults to find this element
 			if (display === "inline-block") {
 				const rect = this.#inlineBlockRect(element);
@@ -2125,7 +2182,7 @@ export class LayoutEngine {
 			const display = getPropertyValue(element, "display");
 
 			// For block elements, return empty array (no inline text layout)
-			if (display !== "inline" && display !== "inline-block") {
+			if (!isInlineDisplay(display)) {
 				return [];
 			}
 
@@ -2267,11 +2324,9 @@ export class LayoutEngine {
 		// run head is a text node with no box.
 		if (runHead.nodeType === runHead.ELEMENT_NODE) {
 			const runHeadElement = runHead as Element;
-			const parent = runHeadElement.parentElement;
 			if (
 				getPropertyValue(runHeadElement, "display") === "inline" &&
-				parent !== null &&
-				getPropertyValue(parent, "display") === "flex"
+				hasFlexParent(runHeadElement)
 			) {
 				const runHeadBox = getBoxModel(runHeadElement);
 				containerX += runHeadBox.paddingLeft + runHeadBox.borderLeftWidth;
@@ -2505,9 +2560,7 @@ export class LayoutEngine {
 		// all, and returning none made it invisible to elementFromPoint.
 		if (node.nodeType === node.ELEMENT_NODE) {
 			const element = node as Element;
-			const display = getPropertyValue(element, "display");
-
-			if (display !== "inline") {
+			if (usedDisplay(element) !== "inline") {
 				const rect = this.getRect(element);
 				return rect ? [rect] : [];
 			}
@@ -3057,8 +3110,8 @@ export class LayoutEngine {
 			if (child.nodeType === child.ELEMENT_NODE) {
 				const element = child as Element;
 				const display = getPropertyValue(element, "display");
-				const inlineLevel = display === "inline" || display === "inline-block";
-				if (display === "none" || this.#isOutOfFlow(element)) {
+				const inlineLevel = isInlineDisplay(display);
+				if (display === "none" || isOutOfFlow(element)) {
 					heads.set(child, run ?? child);
 					// A hidden block still holds a box slot; an out-of-flow one
 					// hangs from its containing block, and an inline that left the
@@ -3156,9 +3209,8 @@ export class LayoutEngine {
 			// left the flow entirely. Letting run invalidation "ensure" it a
 			// bare layout node makes later rebuilds skip its full build, so its
 			// pseudo-only content vanishes on a runtime class flip.
-			if (this.#isOutOfFlow(element)) return null;
-			const display = getPropertyValue(element, "display");
-			if (display !== "inline" && display !== "inline-block") return null;
+			if (isOutOfFlow(element)) return null;
+			if (!isInlineDisplay(getPropertyValue(element, "display"))) return null;
 		} else if (node.nodeType !== node.TEXT_NODE) {
 			return null;
 		}
@@ -3210,7 +3262,7 @@ export class LayoutEngine {
 	 */
 	#styleNode(element: Element, flexNode: FlexTypes.Node): void {
 		styleFlexNode(element, flexNode, this.positionedElements);
-		if (this.#isOutOfFlow(element)) {
+		if (isOutOfFlow(element)) {
 			flexNode.setStaticPositionFunc((containingBlock) =>
 				this.#staticPosition(element, containingBlock),
 			);
@@ -3407,7 +3459,7 @@ export class LayoutEngine {
 			// nor a rebuild that severed its children ever names it), or a
 			// child whose display just turned it from run content into a box.
 			// Out-of-flow boxes hang from their containing block instead.
-			if (!this.#isOutOfFlow(entry)) {
+			if (!isOutOfFlow(entry)) {
 				const existing = this.nodeMap.get(entry);
 				if (!existing || existing.getParent() !== containerFlexNode) {
 					this.#addNode(entry, containerFlexNode);
@@ -3465,7 +3517,7 @@ export class LayoutEngine {
 			current;
 			current = this.#boxParentOf(current)
 		) {
-			if (this.#isOutOfFlow(current)) return current;
+			if (isOutOfFlow(current)) return current;
 			const display = getPropertyValue(current, "display");
 			// An inline box is transparent: its content belongs to the run
 			// around it.
@@ -3565,7 +3617,7 @@ export class LayoutEngine {
 		this.#invalidatedNodes.add(node);
 
 		// If it's an inline-level node, invalidate the entire run
-		if (this.#isInlineLevel(node)) {
+		if (isInlineLevel(node)) {
 			this[kInvalidateInlineRun](node);
 		} else if (node.nodeType === node.ELEMENT_NODE) {
 			// For block-level elements, remove from nodeMap to force recreation
@@ -3817,35 +3869,6 @@ export class LayoutEngine {
 		this.nodeMap.get(entry)?.markDirty();
 	}
 
-	#isInlineLevel(node: Node): boolean {
-		if (node.nodeType === node.TEXT_NODE) {
-			// Regular text nodes and pseudo-element text nodes are inline-level
-			return true;
-		}
-
-		if (node.nodeType === node.ELEMENT_NODE) {
-			const element = node as Element;
-			const display = getPropertyValue(element, "display");
-			if (display !== "inline" && display !== "inline-block") return false;
-			// A flex item is BLOCKIFIED (css-display-3 §2.7): an inline child of
-			// a flex container is not inline-level -- it takes a block's box
-			// model (its own padding, its width/height) instead of being folded
-			// into an inline run that drops them. Mirrors styleFlexNode's
-			// blockify. inline-block already carries its padding, so leaving it
-			// inline-level here keeps its existing (correct) layout path.
-			if (
-				display === "inline" &&
-				element.parentElement !== null &&
-				getPropertyValue(element.parentElement, "display") === "flex"
-			) {
-				return false;
-			}
-			return true;
-		}
-
-		return false;
-	}
-
 	/**
 	 * Determines if a whitespace-only text node should be collapsed to nothing
 	 * according to CSS whitespace collapsing rules in block formatting contexts
@@ -3974,7 +3997,7 @@ export class LayoutEngine {
 				const boxed =
 					this.#measuresAsRun(element) && this.#boxOf(element) !== null;
 				if (
-					!this.#isOutOfFlow(element) &&
+					!isOutOfFlow(element) &&
 					!dissolvesIntoChildren(element) &&
 					(boxed === (flexNode !== undefined) ||
 						(flexNode !== undefined &&
@@ -4082,12 +4105,12 @@ export class LayoutEngine {
 						// out -- climb until the scope sits in block context.
 						let lifted: Element | null = scope;
 						while (lifted) {
-							if (this.#isInlineLevel(lifted)) {
+							if (isInlineLevel(lifted)) {
 								lifted = this.#findInlineRunContainer(lifted);
 								continue;
 							}
 							const parent: Element | null = lifted.parentElement;
-							if (parent && this.#isInlineLevel(parent)) {
+							if (parent && isInlineLevel(parent)) {
 								lifted = this.#findInlineRunContainer(parent);
 								continue;
 							}
@@ -4143,7 +4166,7 @@ export class LayoutEngine {
 				// An out-of-flow box doesn't care what its DOM parent is -- it
 				// hoists to its containing block (inside #addNode), even out of
 				// a measure-function subtree.
-				if (this.#isOutOfFlow(node)) {
+				if (isOutOfFlow(node)) {
 					this.#addNode(node, parentFlexNode ?? null);
 					continue;
 				}
@@ -4161,7 +4184,7 @@ export class LayoutEngine {
 					// run becomes one establishing a block container that lays
 					// that content out in a tree of its own. Clearing the
 					// measure leaves it the wrong kind, holding the wrong tree.
-					if (!this.#isInlineLevel(node)) {
+					if (!isInlineLevel(node)) {
 						this.invalidate(parentElement);
 						// The detached tree an inline-block lays its block content
 						// out in is built as the box is built, and the box was
@@ -4184,8 +4207,8 @@ export class LayoutEngine {
 				// again around it.
 				if (
 					parentFlexNode?.measureFunc &&
-					!this.#isInlineLevel(node) &&
-					!this.#isOutOfFlow(node)
+					!isInlineLevel(node) &&
+					!isOutOfFlow(node)
 				) {
 					this.invalidate(parentElement);
 					continue;
@@ -4194,7 +4217,7 @@ export class LayoutEngine {
 				if (!parentFlexNode) {
 					// If parent has no layout node, it might be an inline element that's part of a run
 					// Instead of adding to the layout tree, just invalidate the inline run
-					if (this.#isInlineLevel(node)) {
+					if (isInlineLevel(node)) {
 						this[kInvalidateInlineRun](node);
 						this[kInvalidateInlineRun](parentElement); // Also invalidate parent's run
 						continue; // Skip normal layout tree addition
@@ -4205,7 +4228,7 @@ export class LayoutEngine {
 						// trees hit this ordering routinely: attachShadow +
 						// populate fire records before the host's append.
 						continue;
-					} else if (this.#isInlineLevel(parentElement)) {
+					} else if (isInlineLevel(parentElement)) {
 						// A block-level box inside an inline BREAKS the inline
 						// (CSS2 §9.2.1.1): the container gains an anonymous
 						// block before it and another after, which is a change
@@ -4254,29 +4277,29 @@ export class LayoutEngine {
 				}
 
 				// Invalidate inline runs that might be affected by this addition
-				if (this.#isInlineLevel(node)) {
+				if (isInlineLevel(node)) {
 					// If adding an inline node, invalidate the run it joins
 					this[kInvalidateInlineRun](node);
 
 					// Also check if this changes the run head of existing runs
 					const nextSibling = node.nextSibling;
-					if (nextSibling && this.#isInlineLevel(nextSibling)) {
+					if (nextSibling && isInlineLevel(nextSibling)) {
 						this[kInvalidateInlineRun](nextSibling);
 					}
 
 					const prevSibling = node.previousSibling;
-					if (prevSibling && this.#isInlineLevel(prevSibling)) {
+					if (prevSibling && isInlineLevel(prevSibling)) {
 						this[kInvalidateInlineRun](prevSibling);
 					}
 				} else {
 					// Block element added - might split inline runs
 					const nextSibling = node.nextSibling;
-					if (nextSibling && this.#isInlineLevel(nextSibling)) {
+					if (nextSibling && isInlineLevel(nextSibling)) {
 						this[kInvalidateInlineRun](nextSibling);
 					}
 
 					const prevSibling = node.previousSibling;
-					if (prevSibling && this.#isInlineLevel(prevSibling)) {
+					if (prevSibling && isInlineLevel(prevSibling)) {
 						this[kInvalidateInlineRun](prevSibling);
 					}
 				}
@@ -4291,11 +4314,11 @@ export class LayoutEngine {
 				// Use MutationRecord siblings since the removed node is disconnected
 				if (
 					record.previousSibling &&
-					this.#isInlineLevel(record.previousSibling)
+					isInlineLevel(record.previousSibling)
 				) {
 					this[kInvalidateInlineRun](record.previousSibling);
 				}
-				if (record.nextSibling && this.#isInlineLevel(record.nextSibling)) {
+				if (record.nextSibling && isInlineLevel(record.nextSibling)) {
 					this[kInvalidateInlineRun](record.nextSibling);
 				}
 				// A departure from inside a run member changes what the run
@@ -4304,7 +4327,7 @@ export class LayoutEngine {
 				// offered says so, so the box it sits in is told directly.
 				if (
 					parent.nodeType === parent.ELEMENT_NODE &&
-					this.#isInlineLevel(parent)
+					isInlineLevel(parent)
 				) {
 					this[kInvalidateInlineRun](parent);
 				}
@@ -4314,8 +4337,8 @@ export class LayoutEngine {
 				// container's box list and not the inline's.
 				if (
 					parent.nodeType === parent.ELEMENT_NODE &&
-					this.#isInlineLevel(parent) &&
-					!this.#isInlineLevel(node)
+					isInlineLevel(parent) &&
+					!isInlineLevel(node)
 				) {
 					const container = this.#findInlineRunContainer(parent);
 					if (container) this.invalidate(container);
@@ -4324,14 +4347,6 @@ export class LayoutEngine {
 				this.#removeNode(node, parent);
 			}
 		}
-	}
-
-	/** position:absolute (and fixed, approximated as absolute-to-ICB) takes
-	 * a box out of normal flow entirely. */
-	#isOutOfFlow(node: Node): boolean {
-		if (node.nodeType !== node.ELEMENT_NODE) return false;
-		const position = getPropertyValue(node as Element, "position");
-		return position === "absolute" || position === "fixed";
 	}
 
 	/**
@@ -4405,10 +4420,7 @@ export class LayoutEngine {
 		// walker, and a REBUILD must not resurrect a stale box from an
 		// earlier display value -- its children re-add as the box parent's
 		// own. Retire whatever node it had.
-		if (
-			node.nodeType === node.ELEMENT_NODE &&
-			getPropertyValue(node as Element, "display") === "contents"
-		) {
+		if (node.nodeType === node.ELEMENT_NODE && dissolvesIntoChildren(node)) {
 			const staleNode = this.nodeMap.get(node);
 			if (staleNode) {
 				staleNode.getParent()?.removeChild(staleNode);
@@ -4441,7 +4453,7 @@ export class LayoutEngine {
 		// the box holds still under the camera -- which is the coordinate
 		// space the painter's camera-cancel and hit-testing's conversion
 		// always assumed.
-		if (this.#isOutOfFlow(node)) {
+		if (isOutOfFlow(node)) {
 			const containingBlock =
 				getPropertyValue(node as Element, "position") === "fixed"
 					? this.viewportRootNode
@@ -4476,7 +4488,7 @@ export class LayoutEngine {
 			// left from when this node was block-level, or headed a run under a
 			// shape the container no longer has, is retired here so the box is
 			// the only thing measuring it.
-			if (this.#isInlineLevel(node) && this.#boxOf(node)) {
+			if (isInlineLevel(node) && this.#boxOf(node)) {
 				existingFlexNode.getParent()?.removeChild(existingFlexNode);
 				while (existingFlexNode.children.length > 0) {
 					existingFlexNode.removeChild(existingFlexNode.children[0]);
@@ -4528,7 +4540,7 @@ export class LayoutEngine {
 						currentParent.removeChild(existingFlexNode);
 					}
 					// Add to new parent
-					const flexIndex = this.#isOutOfFlow(node)
+					const flexIndex = isOutOfFlow(node)
 						? parentFlexNode.children.length
 						: this.#getFlexIndex(node as Element, parentFlexNode);
 					parentFlexNode.insertChild(existingFlexNode, flexIndex);
@@ -4558,7 +4570,7 @@ export class LayoutEngine {
 	#adoptOutOfFlowDescendants(element: Element): void {
 		const walker = flowWalker(element);
 		for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-			if (node.nodeType === node.ELEMENT_NODE && this.#isOutOfFlow(node)) {
+			if (node.nodeType === node.ELEMENT_NODE && isOutOfFlow(node)) {
 				this.#addNode(node, null);
 			}
 		}
@@ -4574,11 +4586,11 @@ export class LayoutEngine {
 	 * item its intrinsic size.
 	 */
 	#measuresAsRun(element: Element): boolean {
-		if (this.#isOutOfFlow(element)) return false;
+		if (isOutOfFlow(element)) return false;
 		const display = getPropertyValue(element, "display");
-		if (display !== "inline" && display !== "inline-block") return false;
+		if (!isInlineDisplay(display)) return false;
 		if (display === "inline-block") return true;
-		if (this.#isInlineLevel(element)) return true;
+		if (isInlineLevel(element)) return true;
 		return !this.#containsBlockLevelBox(element);
 	}
 
@@ -4586,7 +4598,7 @@ export class LayoutEngine {
 		element: Element,
 		parentFlexNode: FlexTypes.Node | null = null,
 	): void {
-		const outOfFlow = this.#isOutOfFlow(element);
+		const outOfFlow = isOutOfFlow(element);
 		const display = getPropertyValue(element, "display");
 		const measuresAsRun = this.#measuresAsRun(element);
 
@@ -4727,8 +4739,7 @@ export class LayoutEngine {
 	#isSuppressedFlexWhitespace(text: Text): boolean {
 		const parent = text.parentElement;
 		if (!parent) return false;
-		const display = getPropertyValue(parent, "display");
-		if (display !== "flex" && display !== "inline-flex") return false;
+		if (!isFlexContainer(parent)) return false;
 		if (preservesSpaces(getPropertyValue(parent, "white-space"))) return false;
 		for (let node: Node | null = text; node; node = node.nextSibling) {
 			if (node.nodeType === node.TEXT_NODE) {
@@ -4741,9 +4752,7 @@ export class LayoutEngine {
 			if (siblingDisplay === "none") continue;
 			// An inline sibling joins this run and gives it content; anything
 			// block-level ends the run with only white space collected.
-			if (siblingDisplay === "inline" || siblingDisplay === "inline-block") {
-				return false;
-			}
+			if (isInlineDisplay(siblingDisplay)) return false;
 			break;
 		}
 		return true;
@@ -4825,7 +4834,7 @@ export class LayoutEngine {
 	 */
 	#removeElement(element: Element, parent: Element): void {
 		// Invalidate inline runs before removing the element
-		if (this.#isInlineLevel(element)) {
+		if (isInlineLevel(element)) {
 			this.#invalidateInlineRemoval(element);
 		} else {
 			this.#invalidateBlockRemoval(parent);
@@ -4903,7 +4912,7 @@ export class LayoutEngine {
 		let child = walker.firstChild();
 
 		while (child) {
-			if (this.#isInlineLevel(child)) {
+			if (isInlineLevel(child)) {
 				this[kInvalidateInlineRun](child);
 			}
 			child = walker.nextSibling();
@@ -5061,7 +5070,7 @@ export class LayoutEngine {
 
 	/** An inline box with block-level content inside it: CSS breaks it apart. */
 	#splitsAroundBlock(element: Element): boolean {
-		if (this.#isOutOfFlow(element)) return false;
+		if (isOutOfFlow(element)) return false;
 		if (getPropertyValue(element, "display") !== "inline") return false;
 		return this.#containsBlockLevelBox(element);
 	}
@@ -5071,7 +5080,7 @@ export class LayoutEngine {
 		for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
 			if (child.nodeType !== child.ELEMENT_NODE) continue;
 			const childElement = child as Element;
-			if (this.#isOutOfFlow(childElement)) continue;
+			if (isOutOfFlow(childElement)) continue;
 			const display = getPropertyValue(childElement, "display");
 			// An inline-block contains its own blocks without splitting anything.
 			if (display === "none" || display === "inline-block") continue;
@@ -5214,7 +5223,7 @@ export class LayoutEngine {
 			if (
 				child.nodeType === child.ELEMENT_NODE &&
 				(getPropertyValue(child as Element, "display") === "none" ||
-					this.#isOutOfFlow(child))
+					isOutOfFlow(child))
 			) {
 				continue;
 			}
@@ -5231,8 +5240,7 @@ export class LayoutEngine {
 	#isRowFlexItem(element: Element): boolean {
 		const parent = flatParentElement<Element>(element);
 		if (!parent) return false;
-		const display = getPropertyValue(parent, "display");
-		if (display !== "flex" && display !== "inline-flex") return false;
+		if (!isFlexContainer(parent)) return false;
 		const direction = getPropertyValue(parent, "flex-direction") || "row";
 		return direction === "row" || direction === "row-reverse";
 	}
@@ -5289,7 +5297,7 @@ export class LayoutEngine {
 				let ancestor = boxParentElement(root);
 				ancestor &&
 				getPropertyValue(root, "display") === "inline" &&
-				!this.#isOutOfFlow(root);
+				!isOutOfFlow(root);
 				ancestor = boxParentElement(root)
 			) {
 				root = ancestor;
@@ -5362,7 +5370,7 @@ export class LayoutEngine {
 
 				if (
 					getPropertyValue(element, "display") === "none" ||
-					this.#isOutOfFlow(element)
+					isOutOfFlow(element)
 				) {
 					// No box here (none) or a box ELSEWHERE (out of flow):
 					// neither occupies run space nor interrupts the run. Checked
