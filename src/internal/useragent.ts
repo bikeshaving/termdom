@@ -445,7 +445,13 @@ export const TERMINAL_ELEMENT_DEFAULTS: Record<
 	em: {display: "inline", "font-style": "italic"},
 	strong: {display: "inline", "font-weight": "bold"},
 	code: {display: "inline", "background-color": "rgba(0, 0, 0, 0.1)"},
-	kbd: {display: "inline"},
+	// A key is a keycap: bold text inside brackets, "[q]", the form every
+	// terminal help screen and man page uses for a key to press. A browser
+	// draws the cap with a border and a monospace face; a terminal is already
+	// monospace and cannot afford a box around one glyph, so the brackets are
+	// the cap. They are UA ::before/::after rules in the UA document
+	// stylesheet, so author content rules replace them.
+	kbd: {display: "inline", "font-weight": "bold"},
 	samp: {display: "inline"},
 	var: {display: "inline", "font-style": "italic"},
 	b: {display: "inline", "font-weight": "bold"},
@@ -766,6 +772,8 @@ export const UA_DOCUMENT_STYLES = `
 	*::selection { background-color: Highlight; color: HighlightText; }
 	button::before { content: "[ "; }
 	button::after { content: " ]"; }
+	kbd::before { content: "["; }
+	kbd::after { content: "]"; }
 	a[href] { text-decoration: underline; }
 	datalist { display: none; }
 	dialog:not([open]) { display: none; }
