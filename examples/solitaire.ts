@@ -293,6 +293,8 @@ globalThis.document = term.document;
 const style = document.createElement("style");
 style.textContent = `
   .table { padding: 0 1ch; background-color: #06421f; color: #cfe8d8; }
+  /* The felt reaches the edges of the screen it was given. */
+  .table:fullscreen { padding: 0 2ch; }
   .bar { display: flex; flex-direction: row; gap: 2ch; }
   .bar .title { color: #ffd75f; font-weight: bold; }
   .bar .score { color: #9ec5ab; }
@@ -300,21 +302,28 @@ style.textContent = `
 
   .top { display: flex; flex-direction: row; gap: 1ch; padding-top: 1px; }
   /* The gap the classic deal leaves between the talon and the foundations. */
-  .top .gap { width: 5ch; }
+  .top .gap { width: 3ch; }
   /* The keys the piles answer to, over the piles they answer for. */
   .numbers { display: flex; flex-direction: row; gap: 1ch; padding-top: 1px; }
-  .number { width: 4ch; color: #4d8f66; }
+  .number { width: 3ch; color: #4d8f66; }
   .number.drop { color: #ffd75f; font-weight: bold; }
   .board { display: flex; flex-direction: row; gap: 1ch; }
-  .pile { display: flex; flex-direction: column; width: 4ch; }
+  .pile { display: flex; flex-direction: column; width: 3ch; }
 
-  .card { width: 4ch; background-color: #f0f0e6; color: #202020; }
+  /* A card is three cells square. A covered one shows only the row its
+     index is on, which is what makes a pile a stack rather than a list. */
+  /* The rows are drawn, not written: a card's blank middle row is three
+     spaces, and collapsing them would leave the card two cells tall. */
+  .card, .slot { width: 3ch; white-space: pre; }
+  .card { background-color: #f0f0e6; color: #202020; }
   .card.red { color: #c02020; }
   .card.down { background-color: #1d4f8f; color: #4f82c8; }
-  /* What you are holding, and where it can go. */
-  .card.held, .slot.held { background-color: #ffd75f; color: #202020; font-weight: bold; }
-  .slot { width: 4ch; color: #2f7a4a; }
-  .slot.drop, .card.drop { color: #ffd75f; }
+  /* A held card keeps its suit's colour -- losing it is disorienting when the
+     colour is what the next move is chosen by -- and changes its FIELD. */
+  .card.held { background-color: #ffd75f; font-weight: bold; }
+  .card.drop { background-color: #a9d7b7; }
+  .slot { background-color: #05381a; color: #2f7a4a; }
+  .slot.drop { background-color: #a9d7b7; color: #205c35; }
 
   .hint { padding-top: 1px; color: #7fae90; }
   .hint b { color: #cfe8d8; font-weight: bold; }
@@ -323,47 +332,70 @@ document.head.appendChild(style);
 
 // ---- the board ---------------------------------------------------------------
 
+// Every glyph reaches the markup through an interpolation. The jsx tag parses
+// a template's RAW spans, and a runtime that reports raw text as an escape
+// sequence -- Bun does, for anything outside ASCII -- puts the six characters
+// of `▒` on the board instead of the hatch.
+const HATCH = "▒▒▒";
+const TURN = " ↻ ";
+const BLANK = "   ";
+const DOT = " · ";
+const ARROWS = "↑↓";
+
+/**
+ * The three rows of a card's face: its index at the top left, the field, and
+ * the index again at the bottom right, the way the corners of a real one read.
+ * A rank and a suit are three cells at their widest ("10♥"), which is what
+ * sets the card's size.
+ */
+function faceRows(card: Card): string[] {
+	if (!card.up) return [HATCH, HATCH, HATCH];
+	const index = `${RANKS[card.rank - 1]}${SUITS[card.suit]}`;
+	return [index.padEnd(3, " "), BLANK, index.padStart(3, " ")];
+}
+
 interface CardProps {
 	card: Card;
+	/** A card with another lying over it, showing its index row alone. */
+	covered?: boolean;
 	held?: boolean;
 	drop?: boolean;
 	onclick?: (event: MouseEvent) => unknown;
 	ondblclick?: (event: MouseEvent) => unknown;
 }
 
-function CardFace({card, held, drop, onclick, ondblclick}: CardProps) {
-	if (!card.up) {
-		return jsx`
-			<span class="card down" onclick=${onclick}>▒▒▒▒</span>
-		`;
-	}
+function CardFace({card, covered, held, drop, onclick, ondblclick}: CardProps) {
 	const classes = ["card"];
-	if (isRed(card)) classes.push("red");
+	if (!card.up) classes.push("down");
+	else if (isRed(card)) classes.push("red");
 	if (held) classes.push("held");
 	else if (drop) classes.push("drop");
-	// Two columns for the rank keeps the ten from shunting the suit along.
-	const text = `${RANKS[card.rank - 1].padStart(2, " ")}${SUITS[card.suit]} `;
+	const rows = faceRows(card);
 	return jsx`
-		<span
+		<div
 			class=${classes.join(" ")}
 			onclick=${onclick}
 			ondblclick=${ondblclick}
-		>${text}</span>
+		>${(covered ? rows.slice(0, 1) : rows).map(
+			(row, line) => jsx`<div key=${line}>${row}</div>`,
+		)}</div>
 	`;
 }
 
 /** An empty place on the board: the stock's turnover arrow, or a suit's home. */
 function Slot({
-	text,
+	mark = BLANK,
 	drop,
 	onclick,
 }: {
-	text: string;
+	mark?: string;
 	drop?: boolean;
 	onclick?: (event: MouseEvent) => unknown;
 }) {
 	return jsx`
-		<span class=${drop ? "slot drop" : "slot"} onclick=${onclick}>${text}</span>
+		<div class=${drop ? "slot drop" : "slot"} onclick=${onclick}>
+			<div>${BLANK}</div><div>${mark}</div><div>${BLANK}</div>
+		</div>
 	`;
 }
 
@@ -567,7 +599,7 @@ function* App(this: Context) {
 										card=${{rank: 1, suit: 0, up: false}}
 										onclick=${() => act(draw)}
 									/>`
-								: jsx`<${Slot} text="  ↻ " onclick=${() => act(draw)} />`
+								: jsx`<${Slot} mark=${TURN} onclick=${() => act(draw)} />`
 						}
 					</div>
 					<div class="pile">
@@ -579,7 +611,7 @@ function* App(this: Context) {
 										onclick=${() => grab({kind: "waste"})}
 										ondblclick=${() => sendHome({kind: "waste"})}
 									/>`
-								: jsx`<${Slot} text="    " />`
+								: jsx`<${Slot} />`
 						}
 					</div>
 					<div class="gap"></div>
@@ -595,7 +627,7 @@ function* App(this: Context) {
 												onclick=${() => target({kind: "foundation", index})}
 											/>`
 										: jsx`<${Slot}
-												text=${`  ${SUITS[index]} `}
+												mark=${` ${SUITS[index]} `}
 												drop=${home === index}
 												onclick=${() => target({kind: "foundation", index})}
 											/>`
@@ -611,7 +643,7 @@ function* App(this: Context) {
 							<span
 								class=${Boolean(card) && fitsTableau(card, pile) ? "number drop" : "number"}
 								key=${`number-${index}`}
-							>${`  ${index + 1} `}</span>
+							>${` ${index + 1} `}</span>
 						`,
 					)}
 				</div>
@@ -622,7 +654,6 @@ function* App(this: Context) {
 								${
 									pile.length === 0
 										? jsx`<${Slot}
-												text="    "
 												drop=${Boolean(card) && fitsTableau(card, pile)}
 												onclick=${() => target({kind: "tableau", pile: index})}
 											/>`
@@ -631,6 +662,7 @@ function* App(this: Context) {
 													<${CardFace}
 														key=${`${each.suit}-${each.rank}`}
 														card=${each}
+														covered=${depth < pile.length - 1}
 														held=${grip?.kind === "tableau" && grip.pile === index && depth >= grip.index}
 														drop=${depth === pile.length - 1 && Boolean(card) && fitsTableau(card, pile)}
 														onclick=${() => {
@@ -662,10 +694,16 @@ function* App(this: Context) {
 					)}
 				</div>
 
-				<div class="hint"><b>space</b> deal · <b>1-7</b> pile · <b>w</b> waste · <b>↑↓</b> reach · <b>f</b> home · <b>a</b> auto · <b>u</b> undo · <b>n</b> new · <b>q</b> quit</div>
+				<div class="hint"><b>space</b> deal${DOT}<b>1-7</b> pile${DOT}<b>w</b> waste${DOT}<b>${ARROWS}</b> reach${DOT}<b>f</b> home${DOT}<b>a</b> auto${DOT}<b>u</b> undo${DOT}<b>n</b> new${DOT}<b>q</b> quit</div>
 			</div>
 		`;
 	}
 }
 
 renderer.render(jsx`<${App} />`, document.body);
+
+// A game takes the screen. The alternate screen keeps the deal off the
+// scrollback -- the shell comes back exactly as it was left -- and gives the
+// board the whole terminal, which a pile grown past twenty cards needs.
+const table = document.querySelector(".table") as HTMLElement;
+await table.requestFullscreen();
