@@ -15,7 +15,9 @@
 //   d      pick up the discard's top card
 //   arrows move the cursor anywhere on the board; enter takes the card
 //          under it (with its stack) or places what you are holding
-//   f      send what you are holding to its foundation
+//   f      send what you are holding (or the first ready card) home
+//   S/H/D/C  send that suit's ready card home -- the player's pick where
+//          several are ready at once
 //   a      send everything that fits to the foundations
 //   enter on the held stack's own pile puts it back    u undo    q quit
 //   n new deal    r retry this deal
@@ -35,6 +37,7 @@ import {pathToFileURL} from "node:url";
 // ---- the deck ----------------------------------------------------------------
 
 const SUITS = ["♠", "♥", "♦", "♣"];
+const SUIT_NAMES = ["spade", "heart", "diamond", "club"];
 const RANKS = [
 	"A",
 	"2",
@@ -697,6 +700,46 @@ function* App(this: Context) {
 		});
 	};
 
+	/**
+	 * Send a named suit's ready card to its foundation: the held card if it
+	 * is that suit, else the discard's top, else the first pile top. Where f
+	 * auto-picks among several ready cards, a suit key is the player's pick.
+	 */
+	const sendSuit = (suit: number): void => {
+		const grip = held;
+		const home = {kind: "foundation" as const, index: suit};
+		if (grip) {
+			const card = heldCards(game, grip)[0];
+			if (card?.suit === suit) {
+				return act((game) => play(game, grip, home));
+			}
+		} else {
+			const wasteCard = top(game.waste);
+			if (
+				wasteCard?.suit === suit &&
+				fitsFoundation(wasteCard, game.foundations[suit])
+			) {
+				return act((game) => play(game, {kind: "waste"}, home));
+			}
+			for (let pile = 0; pile < 7; pile++) {
+				const cards = game.tableau[pile];
+				const card = top(cards);
+				if (
+					card?.up &&
+					card.suit === suit &&
+					fitsFoundation(card, game.foundations[suit])
+				) {
+					return act((game) =>
+						play(game, {kind: "tableau", pile, index: cards.length - 1}, home),
+					);
+				}
+			}
+		}
+		this.refresh(() => {
+			message = `No ${SUIT_NAMES[suit]} is ready for its foundation.`;
+		});
+	};
+
 	const undo = (): void => {
 		this.refresh(() => {
 			const before = history.pop();
@@ -857,6 +900,9 @@ function* App(this: Context) {
 			return;
 		}
 		if (key === "f") return sendHome();
+		if (key === "S" || key === "H" || key === "D" || key === "C") {
+			return sendSuit({S: 0, H: 1, D: 2, C: 3}[key]!);
+		}
 		if (key === "a") {
 			act((game) => autoplay(game) > 0, "Nothing is ready for a foundation.");
 			return;
@@ -1133,7 +1179,7 @@ function* App(this: Context) {
 						</dialog>
 					</div>`
 				}
-				<div class="hint"><b>[s]</b>tock${DOT}<b>[d]</b>iscard${DOT}<b>[f]</b>oundation${DOT}<b>[1-7]</b> pile${DOT}<b>${ARROWS_ALL}</b>/<b>tab</b> move${DOT}<b>enter</b> take/place${DOT}<b>[a]</b>uto${DOT}<b>[u]</b>ndo${DOT}<b>[n]</b>ew${DOT}<b>[r]</b>etry${DOT}<b>[q]</b>uit</div>
+				<div class="hint"><b>[s]</b>tock${DOT}<b>[d]</b>iscard${DOT}<b>[f]</b>oundation${DOT}<b>S/H/D/C</b> by suit${DOT}<b>[1-7]</b> pile${DOT}<b>${ARROWS_ALL}</b>/<b>tab</b> move${DOT}<b>enter</b> take/place${DOT}<b>[a]</b>uto${DOT}<b>[u]</b>ndo${DOT}<b>[n]</b>ew${DOT}<b>[r]</b>etry${DOT}<b>[q]</b>uit</div>
 			</div>
 		`;
 	}
