@@ -727,6 +727,9 @@ function* App(this: Context) {
 		col: 0,
 		depth: 0,
 	};
+	// The cursor exists once the keyboard asks for it -- the :focus-visible
+	// convention. A fresh deal shows no gold, and a mouse game never does.
+	let cursorShown = false;
 
 	/** The top row's occupied columns: the gap at column 2 holds nothing. */
 	const TOP_COLS = [0, 1, 3, 4, 5, 6];
@@ -741,6 +744,7 @@ function* App(this: Context) {
 	const moveCursor = (dx: number, dy: number): void => {
 		this.refresh(() => {
 			message = "";
+			cursorShown = true;
 			if (dx !== 0) {
 				if (cur.row === "top") {
 					const at = TOP_COLS.indexOf(cur.col);
@@ -877,6 +881,7 @@ function* App(this: Context) {
 			const next = stops[(at + step + stops.length) % stops.length];
 			this.refresh(() => {
 				message = "";
+				cursorShown = true;
 				cur = {
 					row: next.row,
 					col: next.col,
@@ -890,7 +895,15 @@ function* App(this: Context) {
 		if (key === "ArrowDown") return moveCursor(0, 1);
 		if (key === "ArrowLeft") return moveCursor(-1, 0);
 		if (key === "ArrowRight") return moveCursor(1, 0);
-		if (key === "Enter") return activate();
+		if (key === "Enter") {
+			if (!cursorShown) {
+				this.refresh(() => {
+					cursorShown = true;
+				});
+				return;
+			}
+			return activate();
+		}
 		if (key >= "1" && key <= "7") {
 			const pile = Number(key) - 1;
 			// Naming a pile you cannot reach from is a change of mind, not an
@@ -961,7 +974,7 @@ function* App(this: Context) {
 			};
 		}
 		const atTop = (col: number): boolean =>
-			cur.row === "top" && cur.col === col;
+			cursorShown && cur.row === "top" && cur.col === col;
 		const grip = holding();
 		const ask = asking();
 		const carrying = heldCards(game, grip);
@@ -1075,7 +1088,7 @@ function* App(this: Context) {
 										? jsx`<${Slot}
 												tier=${t}
 												drop=${Boolean(card) && fitsTableau(card, pile)}
-												cursor=${cur.row === "board" && cur.col === index}
+												cursor=${cursorShown && cur.row === "board" && cur.col === index}
 												onclick=${() => target({kind: "tableau", pile: index})}
 											/>`
 										: pile.map(
@@ -1085,7 +1098,7 @@ function* App(this: Context) {
 														card=${each}
 														tier=${t}
 														covered=${depth < pile.length - 1}
-														cursor=${cur.row === "board" && cur.col === index && cur.depth === depth}
+														cursor=${cursorShown && cur.row === "board" && cur.col === index && cur.depth === depth}
 														held=${grip?.kind === "tableau" && grip.pile === index && depth >= grip.index}
 														drop=${depth === pile.length - 1 && Boolean(card) && fitsTableau(card, pile)}
 														onclick=${() => {
