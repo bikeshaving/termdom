@@ -8,6 +8,7 @@
  * cell's colors -- load-bearing, not decorative.
  */
 import {CSS_INITIAL_VALUES} from "./cssproperties.js";
+import {HTML_NAMESPACE} from "./dom.js";
 import {stringWidth} from "./text.js";
 
 // ---- Shorthand expansion (the UA table is built on it) ----
@@ -591,6 +592,10 @@ export function getElementDefaults(
 	// answers the same question in the document's case convention, deriving a
 	// fresh string every time it is read; this is read once, per property, per
 	// element, on the resolution path.
+	// The sheet is HTML's. An element of the same local name in another
+	// namespace -- the <select> a stray `<svg>` puts its children under -- is
+	// not that element and has none of its interface.
+	if (element.namespaceURI !== HTML_NAMESPACE) return undefined;
 	const name = element.localName;
 	const document = element.ownerDocument;
 	// The browser's UA :fullscreen treatment: the fullscreen element fills
