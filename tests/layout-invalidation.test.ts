@@ -660,7 +660,7 @@ test("a box that stops being display:none is built with its content", async () =
 	dom.dispose();
 });
 
-test("an inline-block turned block gives up its detached content tree", async () => {
+test("an inline-block turned block gives up its content root", async () => {
 	// An inline-block holding block-level content lays it out in a tree of its
 	// own, run only by the measure of the box the inline-block sits on. A
 	// block lays the same content out in the tree above -- and a content root

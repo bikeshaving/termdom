@@ -148,8 +148,8 @@ test("a widget inside an inline-block's block content paints in place", async ()
 
 	const input = dom.document.querySelector("input")!;
 	const rect = input.getBoundingClientRect();
-	// Positions inside the detached tree mean nothing until the run places the
-	// box; the widget resolved to the document origin before they were anchored.
+	// Positions under a content root mean nothing until the run places the box
+	// that owns it; the widget's own rect is anchored to that box's content edge.
 	expect(rect.x).toBe(1);
 	expect(terminal.getPlainText()).toContain("typed");
 
@@ -158,7 +158,7 @@ test("a widget inside an inline-block's block content paints in place", async ()
 
 test("an inline-block's content survives sitting inside another inline", async () => {
 	// Nested this way the box is a run MEMBER, and #addElementNode is never
-	// called on one -- so nothing built its content tree until the measure did.
+	// called on one, so its measurement is what gives it a content root.
 	const {dom, lines} = await render(
 		`<span><span style="display: inline-block"><p>deep</p></span> tail</span>`,
 	);
@@ -248,9 +248,9 @@ test("an inline flex item holding a block is a block container", async () => {
 });
 
 test("an inline-block inside an inline-block takes a block child", async () => {
-	// The inner one lays its block content out in a detached tree, built as
-	// the box is built. Only its run was dropped here, so the tree was never
-	// built again and the newcomer belonged to none.
+	// The inner one lays its block content out under a content root of its
+	// own, and a block arriving there belongs to that box's children like any
+	// other.
 	const {dom, lines} = await render(
 		`<section style="display: inline-block">` +
 			`<b style="display: inline-block" id="s">A<div></div></b>` +
