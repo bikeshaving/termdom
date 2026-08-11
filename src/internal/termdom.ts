@@ -2861,6 +2861,12 @@ export class TermDOM {
 	 * its own listener does the edit. Dropped if nothing editable is focused.
 	 */
 	#dispatchPaste(text: string): void {
+		// A terminal transmits a pasted line break as CR -- the byte Enter
+		// sends (tmux's paste-buffer documents the LF-to-CR replacement) --
+		// while the DOM's paste carries newlines as LF. Converted here, at the
+		// boundary, so a multi-line paste into a textarea is multi-line and
+		// a field's own handlers never see a bare CR.
+		text = text.replace(/\r\n?/g, "\n");
 		const target = this.document.activeElement;
 		if (!target || target === this.document.body) return;
 		target.dispatchEvent(

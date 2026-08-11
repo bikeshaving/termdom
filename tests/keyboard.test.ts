@@ -1789,6 +1789,10 @@ test("bracketed paste into an input strips newlines and never replays as keys", 
 });
 
 test("bracketed paste into a textarea keeps its newlines", async () => {
+	// A terminal sends a pasted line break as CR, the byte Enter sends -- not
+	// LF. The paste must reach the field with LF newlines regardless, or the
+	// textarea inserts bare CRs that break no line and the paste renders as
+	// one run-together row.
 	const terminal = new MockProcess({rows: 6, cols: 40});
 	const dom = new TermDOM({transport: transportFromProcess(terminal as any)});
 	dom.document.body.innerHTML = `<textarea></textarea>`;
@@ -1799,11 +1803,11 @@ test("bracketed paste into a textarea keeps its newlines", async () => {
 
 	(terminal.stdin as unknown as {emit(e: string, d: Buffer): void}).emit(
 		"data",
-		Buffer.from("\x1b[200~line one\nline two\x1b[201~"),
+		Buffer.from("\x1b[200~line one\rline two\r\nline three\x1b[201~"),
 	);
 	await nextFrame(dom);
 
-	expect(ta.value).toBe("line one\nline two");
+	expect(ta.value).toBe("line one\nline two\nline three");
 	dom.dispose();
 });
 
