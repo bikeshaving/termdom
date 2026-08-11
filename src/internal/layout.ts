@@ -822,14 +822,16 @@ function styleFlexNode(
 	}
 
 	// A block formatting context contains its children's margins: none of them
-	// collapses through its edges (css2 §8.3.1, §9.4.1). The document element is
-	// the outermost one, and BODY is the box the camera measures the document
-	// by, so margins stop there rather than escaping into the viewport.
+	// collapses through its edges (css2 §8.3.1, §9.4.1). `block` and `list-item`
+	// are the only displays whose box joins the formatting context around it;
+	// every other one -- an atomic inline, a flex or grid container, a table
+	// part -- establishes its own. The document element is the outermost one,
+	// and BODY is the box the camera measures the document by, so margins stop
+	// there rather than escaping into the viewport.
 	flexNode.setBlockFormattingContext(
 		element === element.ownerDocument?.documentElement ||
 			element.tagName === "BODY" ||
-			display === "inline-block" ||
-			display.startsWith("table") ||
+			(display !== "block" && display !== "list-item") ||
 			computedStyle.computedValueOf("overflow") !== "visible" ||
 			isOutOfFlow(element) ||
 			parentIsFlex,
