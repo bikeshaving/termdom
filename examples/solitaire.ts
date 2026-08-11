@@ -1008,7 +1008,7 @@ function* App(this: Context) {
 								<span class="pickgap"> </span>
 								<span class=${modeNow() === 3 ? "pick on" : "pick"}>${"[3] three cards"}</span>
 							</div>
-							<div class="answers">enter deals ${MIDDOT} b back ${MIDDOT} q quit</div>
+							<div class="answers">[Enter] deals ${MIDDOT} [b]ack ${MIDDOT} [q]uit</div>
 						</dialog>
 					</div>
 				</div>
@@ -1189,11 +1189,11 @@ function* App(this: Context) {
 					jsx`<div class="scrim">
 						<dialog open>
 							<div class="ask">${ask.question}</div>
-							<div class="answers">${"y"} ${ask.yes} ${MIDDOT} ${"n"} keeps playing</div>
+							<div class="answers">[y] ${ask.yes} ${MIDDOT} [n] keeps playing</div>
 						</dialog>
 					</div>`
 				}
-				<div class="hint"><b>${ARROWS_ALL}</b>/<b>tab</b> move${DOT}<b>enter</b> take/place${DOT}<b>[a]</b>uto${DOT}<b>[u]</b>ndo${DOT}<b>[n]</b>ew${DOT}<b>[r]</b>etry${DOT}<b>[q]</b>uit</div>
+				<div class="hint"><b>${ARROWS_ALL}</b>/<b>[Tab]</b> move${DOT}<b>[Enter]</b> take/place${DOT}<b>[a]</b>uto${DOT}<b>[u]</b>ndo${DOT}<b>[n]</b>ew${DOT}<b>[r]</b>etry${DOT}<b>[q]</b>uit</div>
 			</div>
 		`;
 	}
