@@ -12,6 +12,7 @@ import {
 	flatIsConnected,
 	flatParentElement,
 	installUAEngine,
+	pseudoHostOf,
 	setUASelection,
 	uaSelectionOf,
 	upgradeUAWidget,
@@ -2456,6 +2457,15 @@ export class TermDOM {
 			this.#topLayer,
 			this.#viewport.scrollTop,
 		);
+		// A pseudo-element is not an element the DOM can hand out: the hit on
+		// the content it generates is a hit on the element it originates from.
+		for (
+			let host = element && pseudoHostOf<Element>(element);
+			host;
+			host = pseudoHostOf<Element>(element!)
+		) {
+			element = host;
+		}
 		// RETARGET out of shadow trees, per spec: from outside a shadow tree
 		// (and the document is always outside), the hit is the HOST -- a
 		// click on an input's internal value span is a click on the input.

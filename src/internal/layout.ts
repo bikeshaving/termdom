@@ -2201,6 +2201,29 @@ export class LayoutEngine {
 				return [];
 			}
 
+			// An inline broken around a block-level box is a member of no run:
+			// its container lays out the fragments on either side as boxes of
+			// its own (CSS2 §9.2.1.1). Its fragments are what its inline-level
+			// content occupies, which each know the run they sit on; the block
+			// between them belongs to the container, not to the inline.
+			if (this.#brokenInlines.has(element)) {
+				const fragments: RectText[] = [];
+				const walk = (parent: Element): void => {
+					for (const child of Array.from(parent.childNodes) as Node[]) {
+						if (child.nodeType === child.TEXT_NODE) {
+							fragments.push(...this[kRectTexts](child));
+						} else if (
+							child.nodeType === child.ELEMENT_NODE &&
+							isInlineDisplay(getPropertyValue(child as Element, "display"))
+						) {
+							walk(child as Element);
+						}
+					}
+				};
+				walk(element);
+				return fragments;
+			}
+
 			// Special case: an inline-block element asked for directly.
 			// The element's breakResult contains itself as an inline-block segment with nested content
 			if (display === "inline-block" && this.isInlineRunHead(element)) {
@@ -2904,7 +2927,13 @@ export class LayoutEngine {
 		const layers = this.collectStackingLayers(topLayer);
 		const document = this.window.document;
 		if (!document?.body) return null;
-		const paintRoot = root === document.documentElement ? document.body : root;
+		// Painting starts at the body, whose box covers everything in flow --
+		// unless the body generates no box of its own, and the box its content
+		// is laid out in is the root element's.
+		const paintRoot =
+			root === document.documentElement && !dissolvesIntoChildren(document.body)
+				? document.body
+				: root;
 		for (const element of [...topLayer].reverse()) {
 			if (!flatIsConnected(element)) continue;
 			const hit = this.#hitTestContext(element, x, y, layers, cameraScrollTop);
@@ -2962,11 +2991,21 @@ export class LayoutEngine {
 		if (computedStyleOf(element).computedValueOf("display") === "none") {
 			return null;
 		}
-		try {
-			const rects = this.getRects(element);
-			if (!isPointInRects(x, y, rects)) return null;
-		} catch {
-			return null;
+		// A display:contents element generates no box, so there is nothing to
+		// contain the point and nothing to hit: its children stand in its place
+		// and are probed as if they were the parent's own. An inline broken
+		// around a block-level box covers only its own fragments, and the block
+		// between them is nowhere near them -- so it cannot gate the descent
+		// either, though it is still hit on the fragments themselves.
+		const boxless = dissolvesIntoChildren(element);
+		let contained = false;
+		if (!boxless) {
+			try {
+				contained = isPointInRects(x, y, this.getRects(element));
+			} catch {
+				return null;
+			}
+			if (!contained && !this.#brokenInlines.has(element)) return null;
 		}
 		const children: Element[] = [];
 		const walker = flowWalker(element);
@@ -2979,7 +3018,7 @@ export class LayoutEngine {
 			const hit = this.#hitTestInFlow(children[i], x, y);
 			if (hit) return hit;
 		}
-		return element;
+		return contained ? element : null;
 	}
 
 	createDOMRectList(rects?: globalThis.DOMRect[]): globalThis.DOMRectList {
@@ -3466,6 +3505,10 @@ export class LayoutEngine {
 			getPropertyValue(container, "display") === "none" ||
 			this.#hiddenByAncestor(container)
 		) {
+			// Content that arrives under the boundary generates no box, and
+			// whatever boxes it brought from where it was visible are retired
+			// here: this is the only pass that ever visits a hidden container.
+			this.#retireHiddenContent(container);
 			return;
 		}
 		// An inline broken around a block-level box lays out none of its own
