@@ -37,7 +37,7 @@ export default {
 	},
 	steps: [
 		1.0,
-		..."김남제"
+		..."张三"
 			.split("")
 			.flatMap((c) => [c, 0.28] as [string, number])
 			.flat(),
