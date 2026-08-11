@@ -138,6 +138,10 @@ const demos: Record<string, () => Promise<void>> = {
 		const {default: run} = await import("./record-demos/animated.js");
 		await record(run.setup, run.steps);
 	},
+	async solitaire() {
+		const {default: run} = await import("./record-demos/solitaire.js");
+		await record(run.setup, run.steps, 100, 32);
+	},
 	async readme() {
 		const {default: run} = await import("./record-demos/readme.js");
 		await record(run.setup, run.steps, 44, 5);

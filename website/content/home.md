@@ -3,6 +3,8 @@ draws actual DOM nodes to terminal output and redraws the screen when they
 mutate, so TUIs and interactive CLIs can be written with vanilla JavaScript or
 any frontend web framework.
 
+![Klondike solitaire: a <dialog> menu, @media card sizes, flexbox piles, DOM events for every input — examples/solitaire.ts](cast:solitaire)
+
 ```ts
 import {TermDOM} from "@b9g/termdom";
 

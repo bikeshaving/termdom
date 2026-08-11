@@ -2,6 +2,13 @@
 
 **Build terminal apps with HTML, CSS and the DOM.**
 
+![Klondike solitaire rendered by TermDOM: a real DOM, styled with CSS, played with keyboard and mouse](./docs/solitaire.gif)
+
+The game above is [`examples/solitaire.ts`](./examples/solitaire.ts) — a
+`<dialog>` for its menu, `@media` queries resizing the cards with the
+terminal, flexbox for the board, and every input arriving as a DOM event.
+`node examples/solitaire.ts 13` deals that exact game.
+
 TermDOM is a JavaScript library that displays HTML and CSS in the terminal. It
 draws actual DOM nodes to terminal output and redraws the screen when they
 mutate, so TUIs and interactive CLIs can be written with vanilla JavaScript or
@@ -85,8 +92,9 @@ setInterval(() => {
   component logic unmodified; only the stylesheet was swapped.
 - [`fuzzy-finder.ts`](./examples/fuzzy-finder.ts) — a file picker that
   prints the selection to stdout.
-- [`solitaire.ts`](./examples/solitaire.ts) — Klondike, played with the
-  mouse or the keyboard; the board is flex rows and columns of styled spans.
+- [`solitaire.ts`](./examples/solitaire.ts) — the Klondike above: seeded,
+  speed-runnable deals, one- and three-card draw, responsive card sizes
+  through `@media`, and a cursor that goes everywhere the mouse does.
 
 More runnable examples can be found in [`examples/`](./examples).
 

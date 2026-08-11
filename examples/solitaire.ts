@@ -29,6 +29,7 @@ import {TermDOM} from "@b9g/termdom";
 import type {Context} from "@b9g/crank";
 import {jsx} from "@b9g/crank/standalone";
 import {renderer} from "@b9g/crank/dom";
+import {pathToFileURL} from "node:url";
 
 // ---- the deck ----------------------------------------------------------------
 
@@ -238,6 +239,9 @@ function play(game: Game, held: Held, target: Target): boolean {
 
 /** The foundation a single card belongs on, if it is ready for it. */
 function foundationFor(game: Game, card: Card): number | null {
+	// Any ace may start any empty foundation, but the slots are labelled by
+	// suit -- an ace prefers its own label so the row reads true.
+	if (fitsFoundation(card, game.foundations[card.suit])) return card.suit;
 	for (let index = 0; index < 4; index++) {
 		if (fitsFoundation(card, game.foundations[index])) return index;
 	}
@@ -295,16 +299,12 @@ const won = (game: Game): boolean =>
 
 // ---- the page ----------------------------------------------------------------
 
-// `node examples/solitaire.ts 4242` deals game 4242 again.
-const argument = Number(process.argv[2]);
-const opening =
-	Number.isFinite(argument) && argument > 0 ? argument : someDeal();
-
-const term = new TermDOM();
-term.attach();
-const {document} = term;
-globalThis.Node = term.window.Node;
-globalThis.document = term.document;
+// The game mounts onto a TermDOM it is handed, so the demo recorder can drive
+// it as easily as the command line does.
+let term: TermDOM;
+let document: TermDOM["document"];
+let opening: number;
+let startInMenu: boolean;
 
 /** How big a card is: the terminal's size decides, through the tiers below. */
 interface Tier {
@@ -323,18 +323,18 @@ const GRAND_MIN_WIDTH = 96;
 const GRAND_MIN_HEIGHT = 30;
 const HINT_MIN_HEIGHT = 20;
 
-const style = document.createElement("style");
-// One set of numbers drives the stylesheet's @media blocks AND the matchMedia
-// lists the component re-renders on, so the CSS widths and the drawn card
-// faces can never disagree about the size of a card.
-const css = (tier: Tier) => `
+const sheet = (): string => {
+	// One set of numbers drives the stylesheet's @media blocks AND the matchMedia
+	// lists the component re-renders on, so the CSS widths and the drawn card
+	// faces can never disagree about the size of a card.
+	const css = (tier: Tier) => `
   .card, .slot { width: ${tier.width}ch; }
   .number, .top .gap { width: ${tier.width}ch; }
   .pile { width: ${tier.width}ch; }
   .top, .numbers, .board, .captions { gap: ${tier.gap}ch; }
   .play { width: ${7 * tier.width + 6 * tier.gap}ch; }
 `;
-style.textContent = `
+	return `
   .table { padding: 0 1ch; background-color: #06421f; color: #cfe8d8; }
   /* The felt reaches the edges of the screen it was given. */
   .table:fullscreen { padding: 0 2ch; }
@@ -400,7 +400,7 @@ style.textContent = `
   /* A short terminal spends its rows on the cards. */
   @media (max-height: ${HINT_MIN_HEIGHT - 1}) { .hint { display: none; } }
 `;
-document.head.appendChild(style);
+};
 
 // ---- the board ---------------------------------------------------------------
 
@@ -562,7 +562,7 @@ function* App(this: Context) {
 	// for every deal after. A deal named on the command line skips the menu:
 	// that is the speedrunner's and the verifier's door.
 	let mode: 1 | 3 = 1;
-	let menu = !(Number.isFinite(argument) && argument > 0);
+	let menu = startInMenu;
 	let game = deal(opening, 1);
 	let held: Held = null;
 	let history: Game[] = [];
@@ -1133,10 +1133,33 @@ function* App(this: Context) {
 	}
 }
 
-renderer.render(jsx`<${App} />`, document.body);
+export function mount(host: TermDOM, options: {deal?: number} = {}): void {
+	term = host;
+	term.attach();
+	({document} = term);
+	globalThis.Node = term.window.Node;
+	globalThis.document = document as never;
+	startInMenu = options.deal === undefined;
+	opening = options.deal ?? someDeal();
+	const style = document.createElement("style");
+	style.textContent = sheet();
+	document.head.appendChild(style);
+	renderer.render(jsx`<${App} />`, document.body);
+	// A game takes the screen. The alternate screen keeps the deal off the
+	// scrollback -- the shell comes back exactly as it was left -- and gives
+	// the board the whole terminal.
+	const table = document.querySelector(".table") as HTMLElement;
+	void table.requestFullscreen();
+}
 
-// A game takes the screen. The alternate screen keeps the deal off the
-// scrollback -- the shell comes back exactly as it was left -- and gives the
-// board the whole terminal, which a pile grown past twenty cards needs.
-const table = document.querySelector(".table") as HTMLElement;
-await table.requestFullscreen();
+// `node examples/solitaire.ts 4242` deals game 4242 again, skipping the menu.
+if (
+	process.argv[1] &&
+	import.meta.url === pathToFileURL(process.argv[1]).href
+) {
+	const argument = Number(process.argv[2]);
+	mount(
+		new TermDOM(),
+		Number.isFinite(argument) && argument > 0 ? {deal: argument} : {},
+	);
+}
