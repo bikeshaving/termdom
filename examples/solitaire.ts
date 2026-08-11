@@ -574,16 +574,22 @@ function* App(this: Context) {
 	}, 1000);
 	this.cleanup(() => clearInterval(ticker));
 
-	// A run in progress is worth a question: n and r open a <dialog> instead
-	// of tearing the game down on one keystroke, and the dialog's keys are the
-	// only ones that answer while it shows.
-	let confirming: {number: number; label: string} | null = null;
+	// A run in progress is worth a question: n, r and q open a <dialog>
+	// instead of tearing the game down on one keystroke, and the dialog's
+	// keys are the only ones that answer while it shows.
+	let confirming: {question: string; yes: string; go: () => void} | null = null;
+
+	const liveRun = (): boolean =>
+		startedAt !== null && finishedAt === null && game.moves > 0;
 
 	const guardedReset = (number: number, label: string): void => {
-		const live = startedAt !== null && finishedAt === null && game.moves > 0;
-		if (!live) return reset(number);
+		if (!liveRun()) return reset(number);
 		this.refresh(() => {
-			confirming = {number, label};
+			confirming = {
+				question: "Abandon this run?",
+				yes: `starts ${label}`,
+				go: () => reset(number),
+			};
 		});
 	};
 
@@ -863,9 +869,9 @@ function* App(this: Context) {
 		}
 		if (confirming) {
 			if (key === "y" || key === "Enter") {
-				const number = confirming.number;
+				const go = confirming.go;
 				confirming = null;
-				reset(number);
+				go();
 			} else if (key === "n" || key === "Escape") {
 				this.refresh(() => {
 					confirming = null;
@@ -874,8 +880,14 @@ function* App(this: Context) {
 			return;
 		}
 		if (key === "q") {
-			term.window.close();
-			return;
+			if (!liveRun()) return term.window.close();
+			return this.refresh(() => {
+				confirming = {
+					question: "Quit in the middle of a run?",
+					yes: "quits",
+					go: () => term.window.close(),
+				};
+			});
 		}
 		if (key === "n") {
 			this.refresh(() => {
@@ -963,7 +975,7 @@ function* App(this: Context) {
 	// Read through a call, so the render below sees what the closures above
 	// assign rather than the null this was declared with.
 	const holding = (): Held => held;
-	const asking = (): {number: number; label: string} | null => confirming;
+	const asking = (): typeof confirming => confirming;
 	const inMenu = (): boolean => menu;
 	const modeNow = (): 1 | 3 => mode;
 
@@ -1114,7 +1126,7 @@ function* App(this: Context) {
 							<span
 								class=${Boolean(card) && fitsTableau(card, pile) ? "number drop" : "number"}
 								key=${`number-${index}`}
-							>${centered(String(index + 1), t.width)}</span>
+							>${centered(`[${index + 1}]`, t.width)}</span>
 						`,
 					)}
 				</div>
@@ -1174,12 +1186,12 @@ function* App(this: Context) {
 					ask &&
 					jsx`<div class="scrim">
 						<dialog open>
-							<div class="ask">Abandon this run?</div>
-							<div class="answers">${"y"} starts ${ask.label} ${MIDDOT} ${"n"} keeps playing</div>
+							<div class="ask">${ask.question}</div>
+							<div class="answers">${"y"} ${ask.yes} ${MIDDOT} ${"n"} keeps playing</div>
 						</dialog>
 					</div>`
 				}
-				<div class="hint"><b>[s]</b>tock${DOT}<b>[d]</b>iscard${DOT}<b>[f]</b>oundation${DOT}<b>S/H/D/C</b> by suit${DOT}<b>[1-7]</b> pile${DOT}<b>${ARROWS_ALL}</b>/<b>tab</b> move${DOT}<b>enter</b> take/place${DOT}<b>[a]</b>uto${DOT}<b>[u]</b>ndo${DOT}<b>[n]</b>ew${DOT}<b>[r]</b>etry${DOT}<b>[q]</b>uit</div>
+				<div class="hint"><b>S/H/D/C</b> by suit${DOT}<b>${ARROWS_ALL}</b>/<b>tab</b> move${DOT}<b>enter</b> take/place${DOT}<b>[a]</b>uto${DOT}<b>[u]</b>ndo${DOT}<b>[n]</b>ew${DOT}<b>[r]</b>etry${DOT}<b>[q]</b>uit</div>
 			</div>
 		`;
 	}
