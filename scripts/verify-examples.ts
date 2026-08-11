@@ -118,10 +118,10 @@ const INTERACTIVE: Record<string, (cmd: string) => Promise<string | null>> = {
 	},
 	"form.ts": async (cmd) => {
 		await launch(cmd, 3000);
-		tmux(`send-keys -t ${SESSION} "brian"`);
+		tmux(`send-keys -t ${SESSION} "John Doe"`);
 		await sleep(800);
 		const text = capture();
-		if (!text.includes("brian")) {
+		if (!text.includes("John Doe")) {
 			return `typed text did not appear in the field:\n${text.slice(0, 400)}`;
 		}
 		return null;

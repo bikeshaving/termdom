@@ -44,7 +44,7 @@ export default {
 		0.6,
 		"\t",
 		0.8,
-		..."briankim"
+		..."johndoe"
 			.split("")
 			.flatMap((c) => [c, 0.14] as [string, number])
 			.flat(),
