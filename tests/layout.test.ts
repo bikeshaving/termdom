@@ -6,11 +6,7 @@ import {
 } from "../src/internal/layout.js";
 import {StyleManager} from "../src/internal/styles.js";
 import {renderTextFragment} from "../src/internal/text.js";
-import {
-	TermDOM,
-	kLayoutEngine,
-	invalidateStructure,
-} from "../src/internal/termdom.js";
+import {TermDOM, kLayoutEngine} from "../src/internal/termdom.js";
 import {ensurePseudoElement} from "../src/internal/dom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 import {createDocumentWindow} from "../src/internal/termdom.js";
@@ -22,10 +18,15 @@ import {createDocumentWindow} from "../src/internal/termdom.js";
  * no mutation record describes them -- so this signals the structural change
  * the cascade signals when a rule attaches one for real.
  */
-function attachPseudo(host: Element, name: string, content: string): Element {
+function attachPseudo(
+	engine: LayoutEngine,
+	host: Element,
+	name: string,
+	content: string,
+): Element {
 	const node = ensurePseudoElement<Element>(host, name);
 	node.textContent = content;
-	invalidateStructure();
+	engine.invalidateStructure();
 	return node;
 }
 
@@ -1743,7 +1744,7 @@ test("::before pseudo element becomes run head", () => {
 	const quote = dom.window.document.querySelector(".quote")!;
 
 	// Add ::before pseudo element
-	const beforeNode = attachPseudo(quote, "::before", '"');
+	const beforeNode = attachPseudo(layoutEngine, quote, "::before", '"');
 
 	// ::before should be treated as the first child and become run head
 	expect(layoutEngine.isInlineRunHead(beforeNode)).toBe(true);
@@ -1763,9 +1764,9 @@ test("::marker appears before ::before in run head order", () => {
 	const textNode = listItem.firstChild as Text;
 
 	// Add all pseudo element types (CSS order: ::marker, ::before, content, ::after)
-	const markerNode = attachPseudo(listItem, "::marker", "• ");
-	const beforeNode = attachPseudo(listItem, "::before", "[");
-	const afterNode = attachPseudo(listItem, "::after", "]");
+	const markerNode = attachPseudo(layoutEngine, listItem, "::marker", "• ");
+	const beforeNode = attachPseudo(layoutEngine, listItem, "::before", "[");
+	const afterNode = attachPseudo(layoutEngine, listItem, "::after", "]");
 
 	// ::marker should be the run head (first in document order)
 	expect(layoutEngine.isInlineRunHead(markerNode)).toBe(true);
@@ -1793,7 +1794,7 @@ test("Dynamic pseudo element addition affects run heads", () => {
 	expect(layoutEngine.isInlineRunHead(textNode)).toBe(true);
 
 	// Add ::before pseudo element
-	const beforeNode = attachPseudo(div, "::before", "→ ");
+	const beforeNode = attachPseudo(layoutEngine, div, "::before", "→ ");
 
 	// Force recalculation
 	layoutEngine.calculateLayout();

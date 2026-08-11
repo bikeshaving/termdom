@@ -7,7 +7,6 @@
  */
 
 import type {EngineWindow} from "./termdom.js";
-import {invalidateFrame, invalidateStructure} from "./termdom.js";
 import {
 	clearPseudoElement,
 	type Document as DOMDocument,
@@ -7675,7 +7674,7 @@ export class StyleManager {
 	 * longer describe the cascade, and nothing else would ever tell it so.
 	 */
 	#parseStylesheets(): void {
-		invalidateStructure();
+		this.#layoutEngine?.invalidateStructure();
 		const document = this.#document;
 		this.#parsedRules = [];
 		this.#selectorsReachSiblings = false;
@@ -8628,7 +8627,7 @@ export class StyleManager {
 		}
 		const node = ensurePseudoElement<Element>(element, pseudoType);
 		node.appendChild(element.ownerDocument.createTextNode(content));
-		invalidateStructure();
+		this.#layoutEngine?.invalidateStructure();
 		this.#layoutEngine?.invalidate(element);
 	}
 
@@ -8636,7 +8635,7 @@ export class StyleManager {
 	#removePseudoElement(element: Element, pseudoType: string): void {
 		if (!pseudoElement(element, pseudoType)) return;
 		clearPseudoElement(element, pseudoType);
-		invalidateStructure();
+		this.#layoutEngine?.invalidateStructure();
 		this.#layoutEngine?.invalidate(element);
 	}
 
@@ -8678,7 +8677,7 @@ export class StyleManager {
 		// A style change can flip display: contents, which moves the node's
 		// flat-tree BOX parent, so every box enumeration keyed on the epoch is
 		// stale from here.
-		invalidateFrame();
+		this.#layoutEngine?.invalidateFrame();
 	}
 
 	/**

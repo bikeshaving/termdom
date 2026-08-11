@@ -6,11 +6,6 @@
  * with, and every cell the painter places, comes from what it computed.
  */
 import type {EngineWindow} from "./termdom.js";
-import {
-	currentInvalidationEpoch,
-	currentStructuralGeneration,
-	invalidateStructure,
-} from "./termdom.js";
 import Flex from "./flex.js";
 import type * as FlexTypes from "./flex.js";
 import LineBreaker from "linebreak";
@@ -1334,10 +1329,15 @@ export class LayoutEngine {
 	// Track nodes that were invalidated and need re-adding during calculateLayout
 	#invalidatedNodes: Set<Node>;
 	/**
-	 * Every element whose computed position is not static, maintained by
-	 * styleFlexNode. The paint side groups these under their stacking
-	 * contexts each frame -- positioned boxes are rare, so per-frame work
-	 * is O(positioned), never O(document).
+	 * Every element whose computed position was not static when styleFlexNode
+	 * last styled it.
+	 *
+	 * A SUPERSET hint, not a register of what is positioned now: an element
+	 * whose position went static without a restyle reaching its flex node is
+	 * still named here. So membership is never the answer on its own -- every
+	 * reader asks `isPositioned` as well, and takes the set only for the
+	 * enumeration it saves. Positioned boxes are rare, so the paint side's
+	 * per-frame grouping is O(positioned), never O(document).
 	 */
 	positionedElements = new Set<Element>();
 
@@ -1353,7 +1353,7 @@ export class LayoutEngine {
 
 	setTerminalReordersText(value: boolean): void {
 		// Flips the visual order of every RTL run without a mutation.
-		invalidateStructure();
+		this.invalidateStructure();
 		if (this.#terminalReordersText === value) return;
 		this.#terminalReordersText = value;
 		// Every measured line was built for the other contract.
@@ -2576,7 +2576,8 @@ export class LayoutEngine {
 		for (const element of this.positionedElements) {
 			if (!element.isConnected || element === body) continue;
 			if (topLayer.has(element)) continue; // painted above everything
-			if (!isPositioned(this.window, element)) continue; // stale registry entry
+			// The registry is a superset: re-ask before believing membership.
+			if (!isPositioned(this.window, element)) continue;
 			let root: Element = body;
 			for (
 				let ancestor = flatParentElement<Element>(element);
@@ -2821,7 +2822,7 @@ export class LayoutEngine {
 	 */
 	#containerBox(container: Element): Box {
 		const box = this.#principalBox(container);
-		const structure = currentStructuralGeneration();
+		const structure = this.#structuralGeneration;
 		if (
 			box.children &&
 			box.structure === structure &&
@@ -2972,6 +2973,44 @@ export class LayoutEngine {
 
 	#layoutPass = 0;
 
+	#invalidationEpoch = 0;
+	#structuralGeneration = 0;
+
+	/**
+	 * Note that something a frame is derived from has moved. Every cache the
+	 * engine keys on {@link invalidationEpoch} -- the box enumerations, the
+	 * resolved geometry, the frame-skip check -- is stale from here on.
+	 *
+	 * Mutation records come through the shell's observer drain, which bumps
+	 * this once per batch; the cascade bumps it for the style changes no
+	 * record describes.
+	 */
+	invalidateFrame(): void {
+		this.#invalidationEpoch++;
+	}
+
+	/**
+	 * Note an UNBOUNDED change: a stylesheet reparse, a shadow attachment, a
+	 * pseudo-element change, the bidi reorder flip -- damage no per-element
+	 * tracking can bound, so a banded repaint has to cover the whole screen.
+	 * Bounded damage (mutation records, per-element style invalidation) is
+	 * tracked per element and does not come through here.
+	 */
+	invalidateStructure(): void {
+		this.#structuralGeneration++;
+		this.#invalidationEpoch++;
+	}
+
+	/** The generation of the last unbounded change. */
+	get structuralGeneration(): number {
+		return this.#structuralGeneration;
+	}
+
+	/** The current invalidation epoch: bumped by everything a frame reads. */
+	get invalidationEpoch(): number {
+		return this.#invalidationEpoch;
+	}
+
 	/**
 	 * A counter that moves whenever geometry could have: every layout pass
 	 * bumps it, and so does every cascade invalidation -- a style written and
@@ -2981,7 +3020,7 @@ export class LayoutEngine {
 	 * against it, the way a rect read does.
 	 */
 	get layoutEpoch(): number {
-		return currentInvalidationEpoch() + this.#layoutPass;
+		return this.#invalidationEpoch + this.#layoutPass;
 	}
 
 	/**
@@ -3462,6 +3501,16 @@ export class LayoutEngine {
 	/**
 	 * Note that a container's box list is out of date, and that the layout
 	 * children it holds must be brought back into line with it.
+	 *
+	 * Both sets, because the two say different things. Stale says the
+	 * ENUMERATION is wrong -- which boxes the container has, and which node
+	 * each covers -- and only a change to what the container's children are, or
+	 * to a display that decides whether one takes a box, makes it so. Dirty
+	 * says only that the layout children must be reconciled against the
+	 * enumeration, which the far commoner change -- a box that moved, split or
+	 * remeasured within a list that still describes it -- needs on its own.
+	 * That is why the seven sites that dirty a container do not stale it: they
+	 * would throw away a correct enumeration and rebuild it, per mutation.
 	 */
 	#restageContainer(container: Element): void {
 		this.#staleContainers.add(container);
@@ -5240,11 +5289,17 @@ export class LayoutEngine {
 	 * changes. One inline run is broken several times per build -- once per
 	 * width the sizing pass tries -- and the rendering is the same every time.
 	 */
+	/**
+	 * The last rendering of each text node, under the one key its rendering is
+	 * a function of: the data and the white-space it was rendered under. A node
+	 * holds one, because a text node has one data and one white-space at a
+	 * time, and the previous rendering of a node whose data just changed is of
+	 * no use to anyone.
+	 */
 	#renderedLeaves = new WeakMap<
 		Text,
 		{
-			data: string;
-			whiteSpace: string;
+			key: string;
 			text: string;
 			offsets: RenderedOffsets | null;
 		}
@@ -5254,15 +5309,12 @@ export class LayoutEngine {
 		textNode: Text,
 		whiteSpace: string,
 	): {text: string; offsets: RenderedOffsets | null} {
-		const data = textNode.data;
+		const key = `${whiteSpace}\u0000${textNode.data}`;
 		const cached = this.#renderedLeaves.get(textNode);
-		if (cached && cached.data === data && cached.whiteSpace === whiteSpace) {
-			return cached;
-		}
-		const rendered = renderWhiteSpaceOffsets(data, whiteSpace);
+		if (cached?.key === key) return cached;
+		const rendered = renderWhiteSpaceOffsets(textNode.data, whiteSpace);
 		this.#renderedLeaves.set(textNode, {
-			data,
-			whiteSpace,
+			key,
 			text: rendered.text,
 			offsets: rendered.offsets,
 		});

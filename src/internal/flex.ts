@@ -561,8 +561,8 @@ export class Node {
 	extentTop = 0;
 	extentBottom = 0;
 	// How many direct children can't be trusted to keep children[] sorted
-	// top-to-bottom by extentTop -- incrementally maintained by insertChild/
-	// removeChild/setPositionType/setDisplay. Two ways a child breaks that:
+	// top-to-bottom by extentTop -- derived by computePaintExtents, alongside
+	// the extents it is a statement about. Two ways a child breaks that:
 	// position:relative/absolute (its own extent can land anywhere -- an
 	// offset, or full removal from flow -- regardless of DOM position), or
 	// display:none (skipped by flow layout entirely, so its layout.top is
@@ -606,9 +606,6 @@ export class Node {
 	insertChild(child: Node, index: number): void {
 		child.parent = this;
 		this.children.splice(index, 0, child);
-		if (breaksStacking(child)) {
-			this.unstackedChildCount++;
-		}
 		this.#markDirtyUpward();
 	}
 
@@ -617,9 +614,6 @@ export class Node {
 		if (index !== -1) {
 			this.children.splice(index, 1);
 			child.parent = null;
-			if (breaksStacking(child)) {
-				this.unstackedChildCount--;
-			}
 			this.#markDirtyUpward();
 		}
 	}
@@ -657,18 +651,26 @@ export class Node {
 		this.#markDirtyUpward();
 	}
 
-	/** Recompute paint extents for this subtree. See extentTop/extentBottom. */
+	/**
+	 * Recompute paint extents for this subtree, and with them the count of
+	 * children that break the sort. See extentTop/extentBottom and
+	 * unstackedChildCount -- both are derived from the same one visit of every
+	 * child, which is the visit that decides whether children[] is sorted.
+	 */
 	computePaintExtents(originTop: number): void {
 		const top = originTop + this.layout.top;
 		let extentTop = top;
 		let extentBottom = top + this.getComputedHeight();
+		let unstacked = 0;
 		for (const child of this.children) {
 			child.computePaintExtents(top);
+			if (breaksStacking(child)) unstacked++;
 			if (child.extentTop < extentTop) extentTop = child.extentTop;
 			if (child.extentBottom > extentBottom) extentBottom = child.extentBottom;
 		}
 		this.extentTop = extentTop;
 		this.extentBottom = extentBottom;
+		this.unstackedChildCount = unstacked;
 	}
 
 	#markDirtyUpward(): void {
@@ -710,9 +712,7 @@ export class Node {
 		this.markDirty();
 	}
 	setPositionType(v: PositionType): void {
-		const before = breaksStacking(this);
 		this.style.positionType = v;
-		this.#updateParentUnstackedCount(before);
 		this.markDirty();
 	}
 	setFlexWrap(v: Wrap): void {
@@ -755,18 +755,8 @@ export class Node {
 	}
 
 	setDisplay(v: Display): void {
-		const before = breaksStacking(this);
 		this.style.display = v;
-		this.#updateParentUnstackedCount(before);
 		this.markDirty();
-	}
-
-	/** Keeps the parent's unstackedChildCount correct after a style setter that can flip breaksStacking(this). */
-	#updateParentUnstackedCount(before: boolean): void {
-		const after = breaksStacking(this);
-		if (this.parent && before !== after) {
-			this.parent.unstackedChildCount += after ? 1 : -1;
-		}
 	}
 
 	setOrder(v: number | undefined): void {
