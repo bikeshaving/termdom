@@ -8556,7 +8556,13 @@ export class HTMLLinkElement extends HTMLElement {
  * none here, which is what makes `sheet` null and `disabled` false.
  */
 export class HTMLStyleElement extends HTMLElement {
-	get sheet(): null {
+	/**
+	 * A document with no cascade behind it parses no CSS, and so holds no
+	 * sheet. A window's cascade replaces this accessor with one that answers
+	 * the element's real CSSStyleSheet (see styles.ts's CSSOM installation),
+	 * which is what an author reaches through `styleEl.sheet`.
+	 */
+	get sheet(): CSSStyleSheet | null {
 		return null;
 	}
 
@@ -9796,6 +9802,25 @@ function clampRangeValue(input: HTMLInputElement, value: string): number {
 }
 
 /* ------------------------------------------- the text controls' UA editing */
+
+/**
+ * Whether an element edits text: a textarea, or an input of a type that
+ * renders a value the caret can sit in. checkbox and radio render a toggle
+ * instead, and hidden renders nothing at all -- a press on one is a press on
+ * no field.
+ *
+ * The one spelling of the question: the paint, the caret scroll and the
+ * press-to-park default action all have to agree on which elements are fields.
+ */
+export function isTextField(element: {
+	tagName: string;
+	type?: string;
+}): boolean {
+	if (element.tagName === "TEXTAREA") return true;
+	if (element.tagName !== "INPUT") return false;
+	const type = element.type;
+	return type !== "checkbox" && type !== "radio" && type !== "hidden";
+}
 
 /**
  * The value part's text node inside a form control's user-agent shadow tree,

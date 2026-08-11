@@ -356,3 +356,48 @@ test("IntersectionObserver exposes root, rootMargin and thresholds", () => {
 
 	dom.dispose();
 });
+
+test("observe({box}) chooses which box's change is worth reporting", async () => {
+	const {dom, document, window} = make() as any;
+	const box = document.createElement("div");
+	box.style.boxSizing = "border-box";
+	box.style.width = "20px";
+	box.style.height = "4px";
+	document.body.appendChild(box);
+
+	const content: string[] = [];
+	const border: string[] = [];
+	const record = (into: string[]) => (entries: any[]) => {
+		for (const e of entries) {
+			into.push(
+				`${e.contentBoxSize[0].inlineSize}/${e.borderBoxSize[0].inlineSize}`,
+			);
+		}
+	};
+	const contentRO = new window.ResizeObserver(record(content));
+	const borderRO = new window.ResizeObserver(record(border));
+	contentRO.observe(box, {box: "content-box"});
+	borderRO.observe(box, {box: "border-box"});
+	await nextFrame(dom);
+	expect(content).toEqual(["20/20"]);
+	expect(border).toEqual(["20/20"]);
+
+	// Padding moves the content box while border-box sizing pins the border box.
+	box.style.paddingLeft = "2px";
+	box.style.paddingRight = "2px";
+	await nextFrame(dom);
+	expect(content).toEqual(["20/20", "16/20"]);
+	expect(border).toEqual(["20/20"]);
+
+	dom.dispose();
+});
+
+test("observe() rejects a box name the DOM does not enumerate", () => {
+	const {dom, document, window} = make() as any;
+	const box = document.createElement("div");
+	document.body.appendChild(box);
+	const ro = new window.ResizeObserver(() => {});
+	expect(() => ro.observe(box, {box: "padding-box"})).toThrow(TypeError);
+	ro.observe(box, {box: "device-pixel-content-box"});
+	dom.dispose();
+});

@@ -5495,22 +5495,34 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 		if (this.#stale || this.#epoch.value !== this.#seenEpoch) this.#refresh();
 		let value = this.#resolved.get(property);
 		if (value === undefined) {
-			// A shorthand answers as its longhands, each in its own computed
-			// spelling, collapsed: `margin: 10px 10px 10px 10px` is "10px".
 			const longhands = SHORTHAND_LONGHANDS.get(property);
 			value = longhands
-				? serializeShorthandValue(
-						property,
-						longhands,
-						(longhand) =>
-							this.computedValueOf(longhand) ||
-							CSS_INITIAL_VALUES[longhand] ||
-							"",
+				? this.#shorthand(property, longhands, (longhand) =>
+						this.computedValueOf(longhand),
 					)
 				: this.#computed(property);
 			this.#resolved.set(property, value);
 		}
 		return value;
+	}
+
+	/**
+	 * A shorthand answers as its longhands, each in the spelling `read` gives
+	 * it, collapsed: `margin: 10px 10px 10px 10px` is "10px". The reader is the
+	 * caller's, because the computed and resolved value paths ask their
+	 * longhands different questions -- and their answers must not meet, which
+	 * is why only the computed one is memoized.
+	 */
+	#shorthand(
+		property: string,
+		longhands: readonly string[],
+		read: (longhand: string) => string,
+	): string {
+		return serializeShorthandValue(
+			property,
+			longhands,
+			(longhand) => read(longhand) || CSS_INITIAL_VALUES[longhand] || "",
+		);
 	}
 
 	#measure(property: string, computed: string): string {
@@ -6039,24 +6051,13 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 			const computed = this.computedValueOf(property);
 			return computed === "auto" ? this.getPropertyValue("color") : computed;
 		}
-		let value = this.#resolved.get(property);
-		if (value === undefined) {
-			// A shorthand answers as its longhands, each in its own computed
-			// spelling, collapsed: `margin: 10px 10px 10px 10px` is "10px".
-			const longhands = SHORTHAND_LONGHANDS.get(property);
-			value = longhands
-				? serializeShorthandValue(
-						property,
-						longhands,
-						(longhand) =>
-							this.getPropertyValue(longhand) ||
-							CSS_INITIAL_VALUES[longhand] ||
-							"",
-					)
-				: this.#computed(property);
-			this.#resolved.set(property, value);
+		const longhands = SHORTHAND_LONGHANDS.get(property);
+		if (longhands) {
+			return this.#shorthand(property, longhands, (longhand) =>
+				this.getPropertyValue(longhand),
+			);
 		}
-		return value;
+		return this.computedValueOf(property);
 	}
 
 	/** Computed styles are read-only; writing one is an error, not a no-op. */
@@ -8912,24 +8913,12 @@ export class StyleManager {
 	}
 }
 
+/**
+ * A counter's value in the counter style `counter()` named. A bullet style
+ * names a glyph and ignores the value; everything else is the ordinal a list
+ * marker of the same style would show, so `counter(x, lower-alpha)` and
+ * `list-style-type: lower-alpha` agree at every value.
+ */
 function formatCounterValue(value: number, style: string): string {
-	switch (style) {
-		case "decimal":
-		default:
-			return value.toString();
-		case "lower-alpha":
-			return String.fromCharCode(96 + ((value - 1) % 26) + 1);
-		case "upper-alpha":
-			return String.fromCharCode(64 + ((value - 1) % 26) + 1);
-		case "lower-roman":
-			return toRoman(value).toLowerCase();
-		case "upper-roman":
-			return toRoman(value);
-		case "disc":
-			return "•";
-		case "circle":
-			return "◦";
-		case "square":
-			return "▪";
-	}
+	return BULLET_MARKERS[style] ?? formatOrdinal(value, style);
 }

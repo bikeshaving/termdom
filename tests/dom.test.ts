@@ -15,6 +15,7 @@ import {
 	DOMParser,
 	Event as DOMEvent,
 	HTMLElement,
+	isTextField,
 	MutationObserver,
 	NodeFilter,
 	parseHTMLDocument,
@@ -1807,6 +1808,36 @@ test("a body's window handlers are its window's, and are dropped without one", (
 	body.onload = handler;
 	expect(view.onload).toBe(handler);
 	expect(body.onload).toBe(handler);
+});
+
+test("one predicate names the elements that edit text", () => {
+	// The paint, the caret scroll and the press-to-park default action all ask
+	// this question, and a spelling that forgot `hidden` sent a press on a
+	// hidden input down the field-drag path.
+	const document = make();
+	const field = (tag: string, type?: string) => {
+		const element = document.createElement(tag);
+		if (type !== undefined) (element as any).type = type;
+		return isTextField(element as any);
+	};
+
+	expect(field("textarea")).toBe(true);
+	for (const type of [
+		"text",
+		"search",
+		"url",
+		"tel",
+		"password",
+		"number",
+		"email",
+		"date",
+	]) {
+		expect(field("input", type)).toBe(true);
+	}
+	for (const type of ["checkbox", "radio", "hidden"]) {
+		expect(field("input", type)).toBe(false);
+	}
+	expect(field("div")).toBe(false);
 });
 
 test("the selection APIs answer null where they do not apply, and throw when set", () => {

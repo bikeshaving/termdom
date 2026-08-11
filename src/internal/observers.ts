@@ -86,21 +86,29 @@ function contentBoxOf(
 	};
 }
 
-abstract class LayoutObserver<TState, TEntry> {
+abstract class LayoutObserver<TState, TEntry, TOptions = void> {
 	#manager: ObserverManager;
-	/** Observed targets, each mapped to what was last reported for it. */
-	[kTargets] = new Map<Element, TState | null>();
+	/**
+	 * Observed targets, each mapped to how it was asked to be observed and to
+	 * what was last reported for it. One entry per target, as the DOM says: a
+	 * second observe() of the same target replaces the first's options.
+	 */
+	[kTargets] = new Map<
+		Element,
+		{options: TOptions | undefined; last: TState | null}
+	>();
 
 	constructor(manager: ObserverManager) {
 		this.#manager = manager;
 	}
 
-	observe(target: Element): void {
+	observe(target: Element, options?: TOptions): void {
 		// A fresh target has no last state, so its first measurement always counts
 		// as a change -- which is what fires the initial callback the DOM promises.
-		if (!this[kTargets].has(target)) {
-			this[kTargets].set(target, null);
-		}
+		this[kTargets].set(target, {
+			options,
+			last: this[kTargets].get(target)?.last ?? null,
+		});
 		this.#manager.register(this as unknown as AnyObserver);
 	}
 
@@ -132,22 +140,24 @@ abstract class LayoutObserver<TState, TEntry> {
 		layoutEngine: LayoutEngine,
 		viewport: DOMRect,
 		frame: number,
+		options: TOptions | undefined,
 	): {state: TState; entry: TEntry} | null;
 
 	abstract [kDeliver](entries: TEntry[]): void;
 
 	[kCheck](layoutEngine: LayoutEngine, viewport: DOMRect, frame: number): void {
 		const entries: TEntry[] = [];
-		for (const [target, last] of this[kTargets]) {
+		for (const [target, observation] of this[kTargets]) {
 			const result = this[kMeasure](
 				target,
-				last,
+				observation.last,
 				layoutEngine,
 				viewport,
 				frame,
+				observation.options,
 			);
 			if (!result) continue;
-			this[kTargets].set(target, result.state);
+			observation.last = result.state;
 			entries.push(result.entry);
 		}
 		if (entries.length > 0) this[kDeliver](entries);
@@ -185,9 +195,21 @@ interface ResizeSize {
 	height: number;
 }
 
+/** The boxes an observation can watch, as the DOM enumerates them. */
+const RESIZE_BOXES = new Set([
+	"content-box",
+	"border-box",
+	"device-pixel-content-box",
+]);
+
+interface ResizeObserverOptions {
+	box?: string;
+}
+
 export class ResizeObserver extends LayoutObserver<
 	ResizeSize,
-	ResizeObserverEntry
+	ResizeObserverEntry,
+	ResizeObserverOptions
 > {
 	#callback: ResizeObserverCallback;
 
@@ -196,10 +218,28 @@ export class ResizeObserver extends LayoutObserver<
 		this.#callback = callback;
 	}
 
+	/**
+	 * `box` names which box's size change is worth reporting; every entry still
+	 * carries all of them, as the DOM says. An unrecognized value is not a box
+	 * this DOM quietly ignores -- the enumeration rejects it, as WebIDL does.
+	 */
+	override observe(target: Element, options?: ResizeObserverOptions): void {
+		const box = options?.box;
+		if (box !== undefined && !RESIZE_BOXES.has(box)) {
+			throw new TypeError(
+				`Failed to execute 'observe' on 'ResizeObserver': The provided value '${box}' is not a valid enum value of type ResizeObserverBoxOptions.`,
+			);
+		}
+		super.observe(target, options);
+	}
+
 	[kMeasure](
 		target: Element,
 		last: ResizeSize | null,
 		layoutEngine: LayoutEngine,
+		_viewport: DOMRect,
+		_frame: number,
+		options: ResizeObserverOptions | undefined,
 	): {state: ResizeSize; entry: ResizeObserverEntry} | null {
 		// An element with no box -- display:none, or detached -- has a size, and
 		// that size is zero. Reporting it is how the DOM lets a component notice
@@ -211,10 +251,21 @@ export class ResizeObserver extends LayoutObserver<
 			left: 0,
 		};
 
+		const border = layoutEngine.getRect(target);
+		// device-pixel-content-box is the content box: a cell is the device
+		// pixel here, so the two can never diverge.
+		const watched =
+			options?.box === "border-box"
+				? {
+						width: border?.width ?? content.width,
+						height: border?.height ?? content.height,
+					}
+				: {width: content.width, height: content.height};
+
 		if (
 			last &&
-			last.width === content.width &&
-			last.height === content.height
+			last.width === watched.width &&
+			last.height === watched.height
 		) {
 			return null;
 		}
@@ -223,9 +274,8 @@ export class ResizeObserver extends LayoutObserver<
 			inlineSize: content.width,
 			blockSize: content.height,
 		};
-		const border = layoutEngine.getRect(target);
 		return {
-			state: {width: content.width, height: content.height},
+			state: watched,
 			entry: {
 				target,
 				// Origin is the content box's offset inside the border box -- the

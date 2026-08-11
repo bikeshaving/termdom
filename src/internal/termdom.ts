@@ -11,6 +11,7 @@ import {
 	fieldValueText,
 	flatIsConnected,
 	installUAEngine,
+	isTextField,
 	pseudoHostOf,
 	setUASelection,
 	upgradeUAWidget,
@@ -149,11 +150,6 @@ const kObserver = Symbol("observer");
 // like the test handles above.
 const kRenderStatic = Symbol("renderStatic");
 export {kLayoutEngine, kObserver, kRenderStatic};
-
-/** A text-ish input type (not checkbox/radio/hidden). */
-function isTextInputType(type: string): boolean {
-	return type !== "checkbox" && type !== "radio" && type !== "hidden";
-}
 
 /**
  * The Fullscreen API over the terminal's alternate screen. Lives here
@@ -2706,12 +2702,7 @@ export class TermDOM {
 				// field's own bounded selectionStart/End world, never the
 				// document selection: the same split a browser makes.
 				const field =
-					base === 0 &&
-					point &&
-					(target instanceof (this.window as any).HTMLTextAreaElement ||
-						(target instanceof (this.window as any).HTMLInputElement &&
-							(target as HTMLInputElement).type !== "checkbox" &&
-							(target as HTMLInputElement).type !== "radio"))
+					base === 0 && point && isTextField(target as Element)
 						? (target as HTMLInputElement | HTMLTextAreaElement)
 						: null;
 				if (field) {
@@ -3209,7 +3200,7 @@ export class TermDOM {
 		const activeField = this.document.activeElement;
 		if (
 			activeField instanceof (this.window as any).HTMLInputElement &&
-			isTextInputType((activeField as HTMLInputElement).type)
+			isTextField(activeField as HTMLInputElement)
 		) {
 			this.#scrollFieldCaretIntoView(activeField as HTMLInputElement);
 		}

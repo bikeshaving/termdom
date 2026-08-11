@@ -172,6 +172,27 @@ test("counter() in ::marker content keeps its quotes out of the output", async (
 	).toEqual([" 1) First"]);
 });
 
+test("counter() past 26 spells the ordinal list-style-type would", async () => {
+	// The 27th item is "aa", not "a" -- and lower-latin names the same style
+	// lower-alpha does.
+	const terminal = new MockProcess({cols: 40, rows: 40});
+	const dom = new TermDOM({transport: terminal.transport});
+	const items = Array.from({length: 27}, () => "<li>x</li>").join("");
+	dom.document.body.innerHTML =
+		`<style>li::marker{content:counter(list-item, lower-latin) ". ";}</style>` +
+		`<ol>${items}</ol>`;
+	await nextFrame(dom);
+	const rows = stripControlCodes(terminal.getStaticANSI())
+		.split("\n")
+		.map((line) => line.replace(/\s+$/, ""))
+		.filter((line) => line.length > 0);
+	dom.dispose();
+
+	expect(rows[0]).toBe(" a. x");
+	expect(rows[25]).toBe(" z. x");
+	expect(rows[26]).toBe("aa. x");
+});
+
 test("the gutter is recomputed when items are added", async () => {
 	// The gutter is derived from the list's children, so a childList mutation
 	// invalidates the list itself -- not just the item that moved. Without that

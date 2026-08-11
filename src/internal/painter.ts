@@ -3,7 +3,7 @@
  *
  * It reads the DOM, computed styles and geometry, and writes nothing but cells.
  */
-import {selectionRangeOf} from "./dom.js";
+import {isTextField, selectionRangeOf} from "./dom.js";
 import type {EngineWindow} from "./termdom.js";
 import {type LayoutEngine, flowWalker, isPositioned} from "./layout.js";
 import {type Viewport} from "./viewport.js";
@@ -38,14 +38,6 @@ function hasUnderline(style: ComputedStyle): boolean {
 /** Whether a computed style asks for a line-through (SGR strikethrough). */
 function hasLineThrough(style: ComputedStyle): boolean {
 	return style.computedValueOf("text-decoration-line").includes("line-through");
-}
-
-/** A textarea or text-ish input (not a checkbox/radio or hidden input). */
-function isTextField(element: Element): boolean {
-	if (element.tagName === "TEXTAREA") return true;
-	if (element.tagName !== "INPUT") return false;
-	const type = (element as HTMLInputElement).type;
-	return type !== "checkbox" && type !== "radio" && type !== "hidden";
 }
 
 /**
