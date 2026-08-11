@@ -72,7 +72,7 @@
 	},
 	"devDependencies": {
 		"@b9g/crank": "^0.7.1",
-		"@b9g/libuild": "^0.2.14",
+		"@b9g/libuild": "^0.2.16",
 		"@tanstack/table-core": "^8.21.3",
 		"@types/bun": "^1.2.21",
 		"@types/prismjs": "^1.26.6",
