@@ -464,3 +464,85 @@ test("computed styles survive mutation as they would a fresh cascade", async () 
 		assertOptions,
 	);
 }, 900000);
+
+/** Every text node under the body, in document order. */
+function textNodesOf(document: any): any[] {
+	const found: any[] = [];
+	const walk = (node: any): void => {
+		for (const child of Array.from(node.childNodes) as any[]) {
+			if (child.nodeType === 3) found.push(child);
+			else if (child.nodeType === 1) walk(child);
+		}
+	};
+	walk(document.body);
+	return found;
+}
+
+/** Where a string starts on the screen, if it is there exactly once. */
+function cellOf(frame: string, token: string): {row: number; col: number} | null {
+	const lines = frame.split("\n");
+	let found: {row: number; col: number} | null = null;
+	for (let row = 0; row < lines.length; row++) {
+		for (
+			let col = lines[row].indexOf(token);
+			col !== -1;
+			col = lines[row].indexOf(token, col + 1)
+		) {
+			if (found) return null;
+			found = {row, col};
+		}
+	}
+	return found;
+}
+
+test("a painted token is where geometry and hit-testing say it is", async () => {
+	await fc.assert(
+		fc.asyncProperty(runArbitrary, async (run: Run) => {
+			const live = await play(run);
+			const document = live.dom.document;
+			const frame = frameOf(live.terminal);
+			const texts = textNodesOf(document);
+			const problems: string[] = [];
+			for (const token of run.document.tokens) {
+				const holders = texts.filter((text) => text.data.includes(token));
+				if (holders.length !== 1) continue;
+				const text = holders[0];
+				const offset = text.data.indexOf(token);
+				if (text.data.indexOf(token, offset + 1) !== -1) continue;
+				const cell = cellOf(frame, token);
+				if (!cell) continue;
+
+				const range = document.createRange();
+				range.setStart(text, offset);
+				range.setEnd(text, offset + 1);
+				const rect = range.getBoundingClientRect();
+				if (rect.left !== cell.col || rect.top !== cell.row) {
+					problems.push(
+						`${token} painted at ${cell.row},${cell.col} ` +
+							`but its range reports ${rect.top},${rect.left}`,
+					);
+				}
+
+				const hit = document.elementFromPoint(cell.col, cell.row);
+				const parent = text.parentElement;
+				if (!hit || !(hit === parent || hit.contains(parent) || parent.contains(hit))) {
+					problems.push(
+						`${token} at ${cell.row},${cell.col} hit-tests to ` +
+							`${hit ? hit.tagName + "[" + hit.getAttribute("data-f") + "]" : "null"}, ` +
+							`outside <${parent.tagName} data-f="${parent.getAttribute("data-f")}">`,
+					);
+				}
+			}
+			const tree = document.body.innerHTML;
+			live.dom.dispose();
+			if (problems.length) {
+				throw new Error(
+					`html: ${run.document.html}\n` +
+						`script: ${JSON.stringify(run.script)}\n` +
+						`tree: ${tree}\n--- frame\n${frame}\n${problems.join("\n")}`,
+				);
+			}
+		}),
+		assertOptions,
+	);
+}, 900000);
