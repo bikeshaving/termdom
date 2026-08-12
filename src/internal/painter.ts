@@ -107,6 +107,19 @@ function isSystemHighlightColor(value: string): boolean {
 }
 
 /**
+ * A background-color as `fillRect` takes it: the two system colors keep their
+ * terminal meanings (Canvas the terminal's own background, Highlight a swap of
+ * each cell's colors), every other color is its cells' background, and a
+ * background that paints nothing answers null.
+ */
+function backgroundFill(value: string): number | "default" | "inverse" | null {
+	if (!value || value === "initial" || isTransparentColor(value)) return null;
+	if (/^canvas$/i.test(value.trim())) return "default";
+	if (isSystemHighlightColor(value)) return "inverse";
+	return cssColorToNumber(value);
+}
+
+/**
  * A computed style reduced to terminal cell attributes -- one mapping,
  * shared by text nodes and the input painter's shadow parts.
  */
@@ -267,11 +280,33 @@ export class Painter {
 			const previousClip = ctx.clipRect;
 			ctx.clipRect = null;
 			try {
+				this.#renderBackdrop(element, ctx);
 				this.#renderStackingContext(element, ctx, layers);
 			} finally {
 				ctx.clipRect = previousClip;
 			}
 		}
+	}
+
+	/**
+	 * The ::backdrop of a top-layer element: the box between it and everything
+	 * the document already painted, covering the viewport. Like ::selection,
+	 * it has no node of its own -- what it paints comes entirely from the
+	 * ::backdrop rules the cascade resolves, the UA sheet's included, so an
+	 * author writing `dialog::backdrop { background-color: ... }` replaces the
+	 * scrim and one writing `transparent` removes it.
+	 */
+	#renderBackdrop(
+		element: Element,
+		ctx: import("./ansi.js").DrawingContext,
+	): void {
+		const fill = backgroundFill(
+			pseudoStyleOf(element, "::backdrop").computedValueOf("background-color"),
+		);
+		if (fill === null) return;
+		// The viewport, in the document coordinates every draw call takes: the
+		// band the buffer holds, which is where a fixed box paints too.
+		ctx.fillRect(0, -ctx.viewportOffset, ctx.cols, ctx.rows, fill);
 	}
 
 	#renderElement(

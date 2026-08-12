@@ -2573,6 +2573,19 @@ function layoutAbsoluteChild(
 		parentWidth,
 	);
 
+	// An auto margin between an inset and the box is the box asking to be
+	// placed in the space the insets leave rather than stretched across it --
+	// the same reading the in-flow block path gives `margin: auto`, and what
+	// centers a modal dialog in the viewport.
+	const autoLeft = child.style.margin[EDGE_LEFT].unit === UNIT_AUTO;
+	const autoRight = child.style.margin[EDGE_RIGHT].unit === UNIT_AUTO;
+	const autoTop = child.style.margin[EDGE_TOP].unit === UNIT_AUTO;
+	const autoBottom = child.style.margin[EDGE_BOTTOM].unit === UNIT_AUTO;
+	const shrinkAcross =
+		isDefined(left) && isDefined(right) && autoLeft && autoRight;
+	const shrinkDown =
+		isDefined(top) && isDefined(bottom) && autoTop && autoBottom;
+
 	const childWidth = {value: NaN, mode: MEASURE_MODE_UNDEFINED};
 	const childHeight = {value: NaN, mode: MEASURE_MODE_UNDEFINED};
 
@@ -2580,6 +2593,11 @@ function layoutAbsoluteChild(
 		childWidth.value =
 			resolveValue(child.style.width, parentWidth) + marginLeft + marginRight;
 		childWidth.mode = MEASURE_MODE_EXACTLY;
+	} else if (shrinkAcross) {
+		// Auto margins on both sides: the insets bound the box, they do not
+		// size it, so it shrinks to its content within them.
+		childWidth.value = parentWidth - borderLeft - borderRight - left - right;
+		childWidth.mode = MEASURE_MODE_AT_MOST;
 	} else if (isDefined(left) && isDefined(right)) {
 		// Both insets pin the box, so its width is implied.
 		childWidth.value =
@@ -2600,6 +2618,9 @@ function layoutAbsoluteChild(
 		childHeight.value =
 			resolveValue(child.style.height, parentHeight) + marginTop + marginBottom;
 		childHeight.mode = MEASURE_MODE_EXACTLY;
+	} else if (shrinkDown) {
+		childHeight.value = parentHeight - borderTop - borderBottom - top - bottom;
+		childHeight.mode = MEASURE_MODE_AT_MOST;
 	} else if (isDefined(top) && isDefined(bottom)) {
 		childHeight.value =
 			parentHeight -
@@ -2635,7 +2656,18 @@ function layoutAbsoluteChild(
 			: null;
 
 	// Horizontal placement.
-	if (isDefined(left)) {
+	if (shrinkAcross) {
+		// The space the insets left, minus the box, goes to the auto margins:
+		// half each, which is centering.
+		const free =
+			parentWidth -
+			borderLeft -
+			borderRight -
+			left -
+			right -
+			child.layout.width;
+		child.layout.left = borderLeft + left + Math.max(free, 0) / 2;
+	} else if (isDefined(left)) {
 		child.layout.left = borderLeft + left + marginLeft;
 	} else if (isDefined(right)) {
 		child.layout.left =
@@ -2656,7 +2688,16 @@ function layoutAbsoluteChild(
 	}
 
 	// Vertical placement.
-	if (isDefined(top)) {
+	if (shrinkDown) {
+		const free =
+			parentHeight -
+			borderTop -
+			borderBottom -
+			top -
+			bottom -
+			child.layout.height;
+		child.layout.top = borderTop + top + Math.max(free, 0) / 2;
+	} else if (isDefined(top)) {
 		child.layout.top = borderTop + top + marginTop;
 	} else if (isDefined(bottom)) {
 		child.layout.top =
