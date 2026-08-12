@@ -422,6 +422,12 @@ const TURN_GLYPH = "↻";
 const DOT = " · ";
 const MIDDOT = "·";
 const STAR = "★";
+/** The key hints shrink with the cards, never past their own columns. */
+const deckKey = (t: Tier): string =>
+	t.width >= 7 ? "[Space]" : t.width >= 5 ? "[Spc]" : "[\u2423]";
+const flipKey = (t: Tier): string =>
+	t.width >= 7 ? "[0]/[f]lip" : t.width >= 5 ? "[0/f]" : "[0]";
+
 const ARROWS_ALL = "↑↓←→";
 
 const blank = (width: number): string => " ".repeat(width);
@@ -773,6 +779,18 @@ function* App(this: Context) {
 	// convention. A fresh deal shows no gold, and a mouse game never does.
 	let cursorShown = false;
 
+	/**
+	 * A key press is a cursor move too: whatever a letter or number acts on,
+	 * the cursor lands there, so tab and the arrows continue from the last
+	 * action instead of from a second, parallel position.
+	 */
+	const seat = (row: "top" | "board", col: number, depth = 0): void => {
+		this.refresh(() => {
+			cursorShown = true;
+			cur = {row, col, depth};
+		});
+	};
+
 	/** The top row's occupied columns: the gap at column 2 holds nothing. */
 	const TOP_COLS = [0, 1, 3, 4, 5, 6];
 
@@ -852,8 +870,16 @@ function* App(this: Context) {
 		const key = event.key;
 		if (menu) {
 			if (key === "1" || key === "3") {
+				// The number picks; the same number again deals, so the whole
+				// menu answers to two fingers.
+				const picked = key === "1" ? 1 : 3;
+				if (mode === picked) {
+					menu = false;
+					reset(someDeal());
+					return;
+				}
 				this.refresh(() => {
-					mode = key === "1" ? 1 : 3;
+					mode = picked;
 				});
 			} else if (key === "Enter" || key === " " || key === "y") {
 				menu = false;
@@ -905,14 +931,18 @@ function* App(this: Context) {
 			return;
 		}
 		if (key === " ") {
+			seat("top", 0);
 			return act(draw, "The deck and the flip are both empty.");
 		}
 		if (key === "f" || key === "0") {
+			seat("top", 1);
 			if (top(game.waste)) grab({kind: "waste"});
 			return;
 		}
 		if (key === "s" || key === "h" || key === "d" || key === "c") {
-			return sendSuit({s: 0, h: 1, d: 2, c: 3}[key]!);
+			const suit = {s: 0, h: 1, d: 2, c: 3}[key]!;
+			seat("top", 3 + suit);
+			return sendSuit(suit);
 		}
 		if (key === "a") {
 			act((game) => autoplay(game) > 0, "Nothing is ready for a foundation.");
@@ -946,10 +976,12 @@ function* App(this: Context) {
 		if (key === "ArrowLeft") return moveCursor(-1, 0);
 		if (key === "ArrowRight") return moveCursor(1, 0);
 		if (key === "Enter") {
-			// Until the arrows summon the cursor, Enter draws -- the typing
-			// player's right hand never leaves home row. With the cursor up,
-			// Enter takes and places at it.
+			// Until something summons the cursor, Enter draws -- the typing
+			// player's right hand never leaves home row -- and seats the
+			// cursor on the deck, where a second Enter draws again. With the
+			// cursor up, Enter takes and places at it.
 			if (!cursorShown) {
+				seat("top", 0);
 				return act(draw, "The deck and the flip are both empty.");
 			}
 			return activate();
@@ -962,10 +994,19 @@ function* App(this: Context) {
 				const cards = game.tableau[pile];
 				if (cards.length > 0) {
 					grab({kind: "tableau", pile, index: runStart(cards)});
+					seat("board", pile, runStart(cards));
 					return;
 				}
 			}
 			target({kind: "tableau", pile});
+			const grip = held;
+			seat(
+				"board",
+				pile,
+				grip?.kind === "tableau" && grip.pile === pile
+					? grip.index
+					: Math.max(0, lastOf(pileAt(pile))),
+			);
 		}
 	};
 	document.addEventListener("keydown", onkeydown);
@@ -1008,7 +1049,7 @@ function* App(this: Context) {
 								<span class="pickgap"> </span>
 								<span class=${modeNow() === 3 ? "pick on" : "pick"}>${"[3] three cards"}</span>
 							</div>
-							<div class="answers">[Enter] deals ${MIDDOT} [b]ack ${MIDDOT} [q]uit</div>
+							<div class="answers"><b>[Enter]</b>/again deals ${MIDDOT} [b]ack ${MIDDOT} [q]uit</div>
 						</dialog>
 					</div>
 				</div>
@@ -1051,18 +1092,15 @@ function* App(this: Context) {
 					}
 				</div>
 
-				${
-					t === TIERS.grand &&
-					jsx`<div class="captions">
-						<span class="caption">${"[Space]".padEnd(t.width)}</span>
-						<span class="caption">${"[0]/[f]lip"}</span>
-						<span class="caption">${blank(t.width - 3)}</span>
-						<span class="caption">${centered("[s]", t.width)}</span>
-						<span class="caption">${centered("[h]", t.width)}</span>
-						<span class="caption">${centered("[d]", t.width)}</span>
-						<span class="caption">${centered("[c]", t.width)}</span>
-					</div>`
-				}
+				<div class="captions">
+					<span class="caption">${deckKey(t).padEnd(t.width)}</span>
+					<span class="caption">${flipKey(t)}</span>
+					<span class="caption">${blank(2 * t.width - flipKey(t).length)}</span>
+					<span class="caption">${centered("[s]", t.width)}</span>
+					<span class="caption">${centered("[h]", t.width)}</span>
+					<span class="caption">${centered("[d]", t.width)}</span>
+					<span class="caption">${centered("[c]", t.width)}</span>
+				</div>
 				<div class="top">
 					<div class="pile">
 						${
