@@ -4,8 +4,9 @@
 
 ![Klondike solitaire rendered by TermDOM: a real DOM, styled with CSS, played with keyboard and mouse](./docs/solitaire.gif)
 
-The game above is [`examples/solitaire.ts`](./examples/solitaire.ts),
-an HTML document laid out with CSS and played through DOM events.
+The game above is [`examples/solitaire.ts`](./examples/solitaire.ts):
+flexbox lays out the board, a `<dialog>` runs the menus, and Tab
+navigation and keydown handlers drive play.
 
 TermDOM is a JavaScript library that displays HTML and CSS in the terminal. It
 draws actual DOM nodes to terminal output and redraws the screen when they
