@@ -9,6 +9,7 @@ import {collectDocuments} from "./models/document.js";
 import HomeView from "./views/home.js";
 import GuideView from "./views/guide.js";
 import SupportView from "./views/support.js";
+import PlaygroundView from "./views/playground.js";
 import NotFoundView from "./views/not-found.js";
 
 // Asset imports. Shovel bundles each one and hands back a content-hashed URL,
@@ -19,6 +20,9 @@ import clientCSS from "./styles/client.css" with {assetBase: "/static/"};
 // giant raw SVG controls and a collapsed terminal box.
 import navbarScript from "./clients/navbar.ts" with {assetBase: "/static/"};
 import searchScript from "./clients/search.ts" with {assetBase: "/static/"};
+import playgroundScript from "./clients/playground.ts" with {assetBase: "/static/"};
+// The terminal emulator's own stylesheet, linked from the playground alone.
+import xtermCSS from "@xterm/xterm/css/xterm.css" with {assetBase: "/static/"};
 import favicon from "../static/favicon.ico" with {assetBase: "/", assetName: "favicon.ico"};
 import logo from "../static/logo.svg" with {assetBase: "/static/", assetName: "[name].[ext]"};
 
@@ -34,6 +38,8 @@ export const assets = {
 	clientCSS,
 	navbarScript,
 	searchScript,
+	playgroundScript,
+	xtermCSS,
 	favicon,
 	logo,
 };
@@ -82,6 +88,12 @@ router
 	.route("/guides/:slug/")
 	.get(async (request, context) =>
 		renderView(GuideView, new URL(request.url).pathname, context.params),
+	);
+
+router
+	.route("/playground/")
+	.get(async (request) =>
+		renderView(PlaygroundView, new URL(request.url).pathname),
 	);
 
 router
@@ -162,7 +174,7 @@ async function guideURLs(): Promise<string[]> {
 }
 
 async function allRoutes(): Promise<string[]> {
-	return ["/", "/compatibility/", ...(await guideURLs())];
+	return ["/", "/playground/", "/compatibility/", ...(await guideURLs())];
 }
 
 async function generateSitemap(): Promise<string> {

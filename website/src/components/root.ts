@@ -23,6 +23,10 @@ export interface RootProps {
 	title: string;
 	url: string;
 	description?: string;
+	/** Stylesheets this page needs and no other does. */
+	stylesheets?: string[];
+	/** Module scripts this page needs and no other does. */
+	scripts?: string[];
 	children: unknown;
 }
 
@@ -36,9 +40,23 @@ export interface RootProps {
  */
 export function* Root(
 	this: Context,
-	{title, url, description = "", children}: RootProps,
+	{
+		title,
+		url,
+		description = "",
+		stylesheets = [],
+		scripts = [],
+		children,
+	}: RootProps,
 ) {
-	for ({title, url, description = "", children} of this) {
+	for ({
+		title,
+		url,
+		description = "",
+		stylesheets = [],
+		scripts = [],
+		children,
+	} of this) {
 		this.schedule(() => this.refresh());
 		const childrenHTML: string = yield jsx`
 			<div id="navbar-root">
@@ -59,6 +77,11 @@ export function* Root(
 					<link rel="shortcut icon" href=${assets.favicon} />
 					<style><${Raw} value=${css} /></style>
 					<link rel="stylesheet" type="text/css" href=${assets.clientCSS} />
+					${stylesheets.map(
+						(href) => jsx`
+							<link rel="stylesheet" type="text/css" href=${href} />
+						`,
+					)}
 					<meta name="description" content=${description} />
 					<meta property="og:type" content="website" />
 					<meta property="og:title" content=${title} />
@@ -89,6 +112,9 @@ export function* Root(
 					<${Raw} value=${html} />
 					<script type="module" src=${assets.navbarScript}></script>
 					<script type="module" src=${assets.searchScript}></script>
+					${scripts.map(
+						(src) => jsx`<script type="module" src=${src}></script>`,
+					)}
 				</body>
 			</html>
 		`;
