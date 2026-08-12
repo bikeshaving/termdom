@@ -175,6 +175,50 @@ for (const fx of FIXTURES) {
 	});
 }
 
+// A radius bends the corner GLYPH and nothing else: a cell grid has one
+// size of curve, so how large the radius is says nothing, and no cell is
+// clipped or moved by it.
+test("css: border-radius draws the rounded corner glyphs", async () => {
+	const {text} = await renderFixture({
+		name: "border-radius",
+		cols: 12,
+		rows: 5,
+		html: `<div style="border:1px solid; border-radius:1ch; width:4px; height:3px">ab</div>`,
+	});
+	expect(text.split("\n").filter(Boolean)).toEqual(["╭──╮", "│ab│", "╰──╯"]);
+});
+
+test("css: a corner longhand rounds its own corner alone", async () => {
+	const {text} = await renderFixture({
+		name: "border-radius-longhand",
+		cols: 12,
+		rows: 5,
+		html: `<div style="border:1px solid; border-bottom-right-radius:2px; width:4px; height:3px">ab</div>`,
+	});
+	expect(text.split("\n").filter(Boolean)).toEqual(["┌──┐", "│ab│", "└──╯"]);
+});
+
+test("css: border-radius leaves a double border's corners square", async () => {
+	const {text} = await renderFixture({
+		name: "border-radius-double",
+		cols: 12,
+		rows: 5,
+		html: `<div style="border:1px double; border-radius:1ch; width:4px; height:3px">ab</div>`,
+	});
+	// Unicode draws no rounded double corner, so the box keeps ╔╗╚╝.
+	expect(text.split("\n").filter(Boolean)).toEqual(["╔══╗", "║ab║", "╚══╝"]);
+});
+
+test("css: a zero radius leaves every corner square", async () => {
+	const {text} = await renderFixture({
+		name: "border-radius-zero",
+		cols: 12,
+		rows: 5,
+		html: `<div style="border:1px solid; border-radius:0; width:4px; height:3px">ab</div>`,
+	});
+	expect(text.split("\n").filter(Boolean)).toEqual(["┌──┐", "│ab│", "└──┘"]);
+});
+
 test("css: visibility:hidden paints nothing, but reserves its box", async () => {
 	const {text} = await renderFixture({
 		name: "visibility",

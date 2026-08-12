@@ -626,6 +626,47 @@ test("a nonzero length without a unit is invalid and never enters the cascade", 
 	dom.dispose();
 });
 
+test("a corner radius computes to a length pair and does not inherit", async () => {
+	const terminal = new MockProcess({rows: 6, cols: 30});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.document.head.innerHTML = `<style>
+		.cells { border-radius: 2ch; }
+		.ellipse { border-radius: 1px 2px / 3px 4px; }
+		.percent { border-radius: 50%; }
+		.reset { border-radius: 4px; border-radius: 0; }
+	</style>`;
+	dom.document.body.innerHTML = `<div class="cells">C<span class="child">K</span></div>
+		<div class="ellipse">E</div><div class="percent">P</div><div class="reset">R</div>`;
+	await nextFrame(dom);
+	const value = (sel: string, prop: string) =>
+		dom.window
+			.getComputedStyle(dom.document.querySelector(sel)!)
+			.getPropertyValue(prop);
+
+	// A cell is the terminal's unit of width, so a radius in ch computes to
+	// that many px like any other length.
+	expect(value(".cells", "border-top-left-radius")).toBe("2px");
+	expect(value(".cells", "border-radius")).toBe("2px");
+	// Radii are not inherited properties.
+	expect(value(".child", "border-top-left-radius")).toBe("0px");
+
+	// An elliptical corner keeps both radii, horizontal first.
+	expect(value(".ellipse", "border-top-left-radius")).toBe("1px 3px");
+	expect(value(".ellipse", "border-top-right-radius")).toBe("2px 4px");
+	// Two values name one diagonal each: bottom-right repeats top-left.
+	expect(value(".ellipse", "border-bottom-right-radius")).toBe("1px 3px");
+	expect(value(".ellipse", "border-bottom-left-radius")).toBe("2px 4px");
+	expect(value(".ellipse", "border-radius")).toBe("1px 2px / 3px 4px");
+
+	// A percentage resolves against the box when something uses it, so it
+	// computes as written.
+	expect(value(".percent", "border-top-right-radius")).toBe("50%");
+	expect(value(".percent", "border-radius")).toBe("50%");
+
+	expect(value(".reset", "border-radius")).toBe("0px");
+	dom.dispose();
+});
+
 test("bare numbers stay valid where CSS says they are", async () => {
 	// Zero needs no unit on any length, and the number-typed properties
 	// take bare numbers by spec -- the check is per-property, not a

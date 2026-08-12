@@ -280,6 +280,11 @@ const LENGTH_PROPERTIES = new Set([
 	"border-right-width",
 	"border-bottom-width",
 	"border-left-width",
+	"border-radius",
+	"border-top-left-radius",
+	"border-top-right-radius",
+	"border-bottom-right-radius",
+	"border-bottom-left-radius",
 	"font-size",
 	"text-indent",
 	"letter-spacing",
@@ -582,6 +587,23 @@ function computedNumber(token: string): string {
 	return `${number}${unit}`;
 }
 
+/** The corner radii, whose value is a horizontal radius and a vertical one. */
+const RADIUS_LONGHANDS = new Set([
+	"border-top-left-radius",
+	"border-top-right-radius",
+	"border-bottom-right-radius",
+	"border-bottom-left-radius",
+]);
+
+/**
+ * A corner radius with its second component dropped where the two agree: a
+ * circular corner states one radius, an elliptical one states both.
+ */
+function collapseRadius(value: string): string {
+	const parts = value.split(/\s+/).filter(Boolean);
+	return parts.length === 2 && parts[0] === parts[1] ? parts[0] : value;
+}
+
 /**
  * The computed spelling of a declared value: the one place a struct becomes
  * a string, at the getPropertyValue boundary.
@@ -599,7 +621,8 @@ function normalizeValue(property: string, declared: string): string {
 		return serializeColor(value) ?? value;
 	}
 	if (LENGTH_PROPERTIES.has(property)) {
-		return value.split(/\s+/).map(computedNumber).join(" ");
+		const lengths = value.split(/\s+/).map(computedNumber).join(" ");
+		return RADIUS_LONGHANDS.has(property) ? collapseRadius(lengths) : lengths;
 	}
 	return IDENTIFIER_VALUE.test(value) ? value.toLowerCase() : value;
 }
@@ -1100,11 +1123,18 @@ const CORNER_NAMES = [
 
 /**
  * The shape of a shorthand's grammar, and so how its value serializes: a box
- * of four sides or corners collapsed to one to four values, a pair collapsed
- * when both agree, a line's width/style/color, `border`'s three uniform boxes,
- * or a plain sequence of components.
+ * of four sides or corners collapsed to one to four values, a radius box
+ * whose corners each carry two values, a pair collapsed when both agree, a
+ * line's width/style/color, `border`'s three uniform boxes, or a plain
+ * sequence of components.
  */
-type ShorthandShape = "box" | "pair" | "line" | "border" | "sequence";
+type ShorthandShape =
+	| "box"
+	| "radius"
+	| "pair"
+	| "line"
+	| "border"
+	| "sequence";
 
 /**
  * Each shorthand's longhands, in the order its grammar names them: the
@@ -1139,10 +1169,16 @@ for (const [shorthand, all] of Object.entries(CSS_SHORTHANDS)) {
 		boxOrder(shorthand, indexed, CORNER_NAMES);
 	const longhands = box ? [...box, ...(reset ?? [])] : all;
 	SHORTHAND_LONGHANDS.set(shorthand, longhands);
+	// A corner box whose longhands are radii writes its two axes around a
+	// slash rather than one value per corner.
+	const radius =
+		box !== null && indexed.every((longhand) => longhand.endsWith("-radius"));
 	SHORTHAND_SHAPES.set(
 		shorthand,
 		box
-			? "box"
+			? radius
+				? "radius"
+				: "box"
 			: // A width, a style and a color stated once for several sides:
 				// four for `border`, the axis's two for `border-block` and
 				// `border-inline`.
@@ -1586,6 +1622,17 @@ function expandShorthandValue(
 	return ordered;
 }
 
+/**
+ * A corner radius as its two axes, the vertical one taken from the horizontal
+ * where the value states a single radius.
+ */
+function radiusAxes(value: string): [string, string] {
+	const [horizontal, vertical = horizontal] = value
+		.split(/\s+/)
+		.filter(Boolean);
+	return [horizontal ?? "0px", vertical ?? "0px"];
+}
+
 /** The four values of a box shorthand, collapsed to the shortest equivalent. */
 function collapseSides(values: string[]): string {
 	const [top, right, bottom, left] = values;
@@ -1663,6 +1710,15 @@ function serializeShorthandValue(
 	switch (SHORTHAND_SHAPES.get(shorthand)) {
 		case "box":
 			return collapseSides(values);
+		// `border-radius` writes the four horizontal radii, then the four
+		// vertical ones after a slash -- and drops the slash entirely where
+		// the two axes agree, which is every circular corner.
+		case "radius": {
+			const axes = values.map(radiusAxes);
+			const across = collapseSides(axes.map(([horizontal]) => horizontal));
+			const down = collapseSides(axes.map(([, vertical]) => vertical));
+			return across === down ? across : `${across} / ${down}`;
+		}
 		// `border` and its logical twins are three uniform boxes -- widths,
 		// styles and colors -- and serialize only when every side agrees.
 		case "border": {
@@ -5578,7 +5634,13 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 	#computed(property: string): string {
 		const entry = computedEntry(property, this.#resolvePropertyValue(property));
 		if (!entry.contextual) return entry.value;
-		return absolutizeLengths(entry.value, this.#lengthContext(property));
+		const absolute = absolutizeLengths(
+			entry.value,
+			this.#lengthContext(property),
+		);
+		// Two radii that differ as written -- `1ch 1px` -- can measure the same
+		// cell, and a corner whose radii agree states one of them.
+		return RADIUS_LONGHANDS.has(property) ? collapseRadius(absolute) : absolute;
 	}
 
 	/**
@@ -6731,6 +6793,8 @@ export enum BorderEdgeStyle {
 	Hidden = 0b1111,
 
 	// Flags (bit 4+)
+	// Set on the edges that meet in a corner cell whose radius rounds it, and
+	// on nothing else: the runs between corners are the same line either way.
 	Rounded = 0b00010000,
 }
 
@@ -6814,39 +6878,53 @@ export const BOX_DRAWING: Record<string, BoxCharSet> = {
 		rightTee: "├",
 		cross: "┼",
 	},
-	lightRounded: {
-		horizontal: "─",
-		vertical: "│",
-		topLeft: "╭",
-		topRight: "╮",
-		bottomLeft: "╰",
-		bottomRight: "╯",
-		topTee: "┬",
-		bottomTee: "┴",
-		leftTee: "┤",
-		rightTee: "├",
-		cross: "┼",
-	},
 };
 
 /**
- * Resolve border styles for an element, returning per-edge encoded data
+ * The rounded form of a corner glyph.
+ *
+ * Unicode draws rounded corners for the light single stroke alone, so this is
+ * the whole of what a terminal can bend: the light-cornered character sets --
+ * solid, dashed, dotted, ridge, inset, outset -- round, and double and heavy
+ * corners stay square because no glyph exists that bends those strokes. That
+ * is the deliberate adaptation: a radius on a double border is honored as far
+ * as the terminal's characters allow, which is not at all.
  */
-export function resolveBorderStyles(element: Element): {
+export const ROUNDED_CORNERS: Readonly<Record<string, string>> = {
+	"┌": "╭",
+	"┐": "╮",
+	"└": "╰",
+	"┘": "╯",
+};
+
+/** Which of a box's four corners a nonzero radius rounds. */
+export interface RoundedCorners {
+	topLeft: boolean;
+	topRight: boolean;
+	bottomRight: boolean;
+	bottomLeft: boolean;
+}
+
+/** An element's border as the painter draws it: per-edge encodings and corners. */
+export interface BorderStyles {
 	topEdge: number;
 	rightEdge: number;
 	bottomEdge: number;
 	leftEdge: number;
 	hasAnyBorder: boolean;
-} {
+	/** Absent where no radius was resolved, which squares every corner. */
+	roundedCorners?: RoundedCorners;
+}
+
+/**
+ * Resolve border styles for an element: per-edge encoded data, and which
+ * corners its radii round.
+ */
+export function resolveBorderStyles(element: Element): BorderStyles {
 	const computedStyle = computedStyleOf(element);
 
 	// Helper to encode individual edge
-	const encodeEdge = (
-		width: string,
-		style: string,
-		isRounded: boolean,
-	): number => {
+	const encodeEdge = (width: string, style: string): number => {
 		const parsed = parseBorderWidthValue(width);
 		const widthValue = typeof parsed === "number" ? parsed : NaN;
 		if (isNaN(widthValue) || widthValue <= 0 || !style || style === "none") {
@@ -6886,18 +6964,20 @@ export function resolveBorderStyles(element: Element): {
 				edgeValue = BorderEdgeStyle.Solid;
 		}
 
-		if (isRounded) {
-			edgeValue |= BorderEdgeStyle.Rounded;
-		}
-
 		return edgeValue;
 	};
 
-	// Check for border-radius (applies to all corners)
-	const borderRadius = parseFloat(
-		computedStyle.computedValueOf("border-radius"),
-	);
-	const hasRadius = !isNaN(borderRadius) && borderRadius > 0;
+	// A corner is rounded when its radius is nonzero on BOTH axes, exactly as
+	// a browser squares off a corner whose ellipse has collapsed. A cell grid
+	// has one size of curve, so how large the radius is says nothing further.
+	const isRounded = (corner: string): boolean => {
+		const radii = computedStyle
+			.computedValueOf(`border-${corner}-radius`)
+			.split(/\s+/)
+			.filter(Boolean);
+		if (radii.length === 0) return false;
+		return radii.every((radius) => parseFloat(radius) > 0);
+	};
 
 	// Resolve individual edges
 	const topWidth =
@@ -6929,10 +7009,10 @@ export function resolveBorderStyles(element: Element): {
 		computedStyle.computedValueOf("border-style");
 
 	// Encode each edge
-	const topEdge = encodeEdge(topWidth, topStyle, hasRadius);
-	const rightEdge = encodeEdge(rightWidth, rightStyle, hasRadius);
-	const bottomEdge = encodeEdge(bottomWidth, bottomStyle, hasRadius);
-	const leftEdge = encodeEdge(leftWidth, leftStyle, hasRadius);
+	const topEdge = encodeEdge(topWidth, topStyle);
+	const rightEdge = encodeEdge(rightWidth, rightStyle);
+	const bottomEdge = encodeEdge(bottomWidth, bottomStyle);
+	const leftEdge = encodeEdge(leftWidth, leftStyle);
 
 	return {
 		topEdge,
@@ -6941,6 +7021,12 @@ export function resolveBorderStyles(element: Element): {
 		leftEdge,
 		hasAnyBorder:
 			topEdge > 0 || rightEdge > 0 || bottomEdge > 0 || leftEdge > 0,
+		roundedCorners: {
+			topLeft: isRounded("top-left"),
+			topRight: isRounded("top-right"),
+			bottomRight: isRounded("bottom-right"),
+			bottomLeft: isRounded("bottom-left"),
+		},
 	};
 }
 

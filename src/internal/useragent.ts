@@ -28,9 +28,20 @@ const LINE_WIDTH_KEYWORDS = new Set(["thin", "medium", "thick"]);
 const EDGES = ["top", "right", "bottom", "left"] as const;
 /** The two ends of a flow-relative axis, in the order a pair shorthand states them. */
 const AXIS_ENDS = ["start", "end"] as const;
+
+const CORNERS = [
+	"top-left",
+	"top-right",
+	"bottom-right",
+	"bottom-left",
+] as const;
 const LIST_STYLE_POSITIONS = new Set(["inside", "outside"]);
 
-/** CSS 1-4 value expansion: [all], [v h], [t h b], [t r b l]. */
+/**
+ * CSS 1-4 value expansion: [all], [v h], [t h b], [t r b l]. The four corners
+ * fill by the same rule, running top-left, top-right, bottom-right,
+ * bottom-left.
+ */
 function perEdge(values: string[]): [string, string, string, string] {
 	const [a, b = a, c = a, d = b] = values;
 	return [a, b, c, d];
@@ -202,6 +213,30 @@ function expandBorderImage(value: string): Record<string, string> {
 }
 
 /**
+ * Expand the `border-radius` shorthand: up to four horizontal radii and,
+ * after a slash, up to four vertical ones, each list filled out by the CSS
+ * 1-4 rule. A corner is elliptical, so its longhand holds both radii -- and
+ * states one value where the two agree, which is how a radius serializes.
+ */
+function expandBorderRadius(value: string): Record<string, string> {
+	const [across, down] = value.split("/");
+	const horizontal = splitComponents(across ?? "");
+	if (horizontal.length === 0) return {};
+	const vertical = down === undefined ? horizontal : splitComponents(down);
+	const horizontalCorners = perEdge(horizontal);
+	const verticalCorners = perEdge(
+		vertical.length === 0 ? horizontal : vertical,
+	);
+	const out: Record<string, string> = {};
+	CORNERS.forEach((corner, i) => {
+		const h = horizontalCorners[i];
+		const v = verticalCorners[i];
+		out[`border-${corner}-radius`] = h === v ? h : `${h} ${v}`;
+	});
+	return out;
+}
+
+/**
  * Expand CSS SHORTHANDS into the longhands everything downstream reads.
  * Declarations are consulted per-property, so a `border: 1px solid` that
  * never becomes border-top-width etc. simply doesn't exist to the box model
@@ -209,9 +244,10 @@ function expandBorderImage(value: string): Record<string, string> {
  * longhand after a shorthand still overrides it.
  *
  * A shorthand keeps its own entry alongside the longhands it declares, so
- * `getPropertyValue("border")` still answers what was authored. `margin` and
- * `padding` are the exception: their computed answers are serialized from the
- * four longhands, so keeping the shorthand would shadow that.
+ * `getPropertyValue("border")` still answers what was authored. `margin`,
+ * `padding` and `border-radius` are the exception: their computed answers are
+ * serialized from the four longhands, so keeping the shorthand would shadow
+ * that.
  */
 export function expandShorthands(
 	declarations: Record<string, string>,
@@ -246,6 +282,13 @@ export function expandShorthands(
 			case "border-color":
 				setEdges("color", values);
 				break;
+			case "border-radius": {
+				const corners = expandBorderRadius(value);
+				if (Object.keys(corners).length === 0) break;
+				Object.assign(out, corners);
+				// The shorthand itself is serialized from these on read.
+				continue;
+			}
 			case "border-top":
 			case "border-right":
 			case "border-bottom":
@@ -402,7 +445,6 @@ const CSS_SPEC_DEFAULTS: Record<string, string> = {
 	"border-right-color": "currentColor",
 	"border-bottom-color": "currentColor",
 	"border-left-color": "currentColor",
-	"border-radius": "0",
 	"background-color": "transparent",
 	color: "#000000",
 	// One cell tall: the terminal's font is the grid, and a length written in
