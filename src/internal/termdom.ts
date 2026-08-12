@@ -50,6 +50,26 @@ import {
 // coalesce the burst of SIGWINCHes a drag fires, short enough to feel immediate.
 const RESIZE_DEBOUNCE_MS = 40;
 
+const BASE64_ALPHABET =
+	"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+/** UTF-8 base64 of a string, the payload OSC 52 carries to the clipboard. */
+function base64OfText(text: string): string {
+	const bytes = new TextEncoder().encode(text);
+	let out = "";
+	for (let i = 0; i < bytes.length; i += 3) {
+		const a = bytes[i];
+		const b = i + 1 < bytes.length ? bytes[i + 1] : 0;
+		const c = i + 2 < bytes.length ? bytes[i + 2] : 0;
+		out += BASE64_ALPHABET[a >> 2];
+		out += BASE64_ALPHABET[((a & 3) << 4) | (b >> 4)];
+		out +=
+			i + 1 < bytes.length ? BASE64_ALPHABET[((b & 15) << 2) | (c >> 6)] : "=";
+		out += i + 2 < bytes.length ? BASE64_ALPHABET[c & 63] : "=";
+	}
+	return out;
+}
+
 // The built-in tags that upgrade to a UA widget on connect.
 const UPGRADEABLE_CONTROLS = new Set([
 	"INPUT",
@@ -1009,7 +1029,7 @@ export class TermDOM {
 						);
 					}
 					return termDOM.#session.write(
-						`\x1b]52;c;${Buffer.from(String(text), "utf8").toString("base64")}\x07`,
+						`\x1b]52;c;${base64OfText(String(text))}\x07`,
 					);
 				},
 				readText: (): Promise<string> =>
@@ -1665,7 +1685,7 @@ export class TermDOM {
 					if (this.#mouseCaptureYielded) {
 						this.#reclaimMouseCapture();
 					}
-					this.#dispatchGlobalKeyboardEvent(Buffer.from(keyInput));
+					this.#dispatchGlobalKeyboardEvent(keyInput);
 				},
 				onMouse: (button, x, y, release) => {
 					this.#inputGeneration++;
@@ -2731,14 +2751,12 @@ export class TermDOM {
 		);
 	}
 
-	#dispatchGlobalKeyboardEvent(chunk: Buffer): void {
-		const key = chunk.toString("utf8");
-
+	#dispatchGlobalKeyboardEvent(key: string): void {
 		// Tokenize multi-key chunks and dispatch each token on its own.
 		const tokens = Array.from(tokenizeInput(key));
 		if (tokens.length > 1) {
 			for (const token of tokens) {
-				this.#dispatchGlobalKeyboardEvent(Buffer.from(token));
+				this.#dispatchGlobalKeyboardEvent(token);
 			}
 			return;
 		}
