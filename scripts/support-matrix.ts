@@ -92,6 +92,23 @@ const FEATURES: Record<string, Feature> = {
 	"border-right": {value: "1px solid red"},
 	"border-bottom": {value: "1px solid red"},
 	"border-left": {value: "1px solid red"},
+	"border-radius": {value: "1ch", setup: "#probe { border: 1px solid; }"},
+	"border-top-left-radius": {
+		value: "1ch",
+		setup: "#probe { border: 1px solid; }",
+	},
+	"border-top-right-radius": {
+		value: "1ch",
+		setup: "#probe { border: 1px solid; }",
+	},
+	"border-bottom-right-radius": {
+		value: "1ch",
+		setup: "#probe { border: 1px solid; }",
+	},
+	"border-bottom-left-radius": {
+		value: "1ch",
+		setup: "#probe { border: 1px solid; }",
+	},
 	"box-sizing": {
 		value: "border-box",
 		setup: "#probe { width: 12ch; padding: 0 2ch; border: 1px solid; }",
@@ -984,6 +1001,11 @@ const CATEGORIES: Array<[string, string[]]> = [
 			"border-right",
 			"border-bottom",
 			"border-left",
+			"border-radius",
+			"border-top-left-radius",
+			"border-top-right-radius",
+			"border-bottom-right-radius",
+			"border-bottom-left-radius",
 			"box-sizing",
 			"outline",
 			"outline-style",

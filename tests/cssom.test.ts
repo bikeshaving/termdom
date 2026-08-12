@@ -273,6 +273,66 @@ test("a declaration block stores longhands and serializes shorthands", () => {
 	dom.dispose();
 });
 
+test("border-radius stores its corners and serializes both axes", () => {
+	const {dom} = makeDOM(`<div id="box"></div>`);
+	const style = dom.document.getElementById("box")!.style;
+
+	style.borderRadius = "1px";
+	expect(style.length).toBe(4);
+	expect(style.item(0)).toBe("border-top-left-radius");
+	expect(style.borderTopLeftRadius).toBe("1px");
+	expect(style.cssText).toBe("border-radius: 1px;");
+
+	// Four corners, running top-left, top-right, bottom-right, bottom-left.
+	style.borderRadius = "1px 2px 3px 4px";
+	expect(style.borderTopRightRadius).toBe("2px");
+	expect(style.borderBottomRightRadius).toBe("3px");
+	expect(style.borderBottomLeftRadius).toBe("4px");
+
+	// Two corners named, the other two filled by the CSS 1-4 rule.
+	style.borderRadius = "1px 2px";
+	expect(style.borderBottomRightRadius).toBe("1px");
+	expect(style.borderBottomLeftRadius).toBe("2px");
+	expect(style.cssText).toBe("border-radius: 1px 2px;");
+
+	// The slash separates the horizontal radii from the vertical ones, and a
+	// corner holds the pair its two lists give it.
+	style.borderRadius = "1px 2px / 3px";
+	expect(style.borderTopLeftRadius).toBe("1px 3px");
+	expect(style.borderTopRightRadius).toBe("2px 3px");
+	expect(style.borderRadius).toBe("1px 2px / 3px");
+	expect(style.cssText).toBe("border-radius: 1px 2px / 3px;");
+
+	// A corner whose two radii agree writes one of them, and a box whose two
+	// axes agree writes no slash.
+	style.borderRadius = "2px / 2px";
+	expect(style.borderTopLeftRadius).toBe("2px");
+	expect(style.borderRadius).toBe("2px");
+
+	// Percentages are radii like any other length.
+	style.borderRadius = "50% 25%";
+	expect(style.borderTopLeftRadius).toBe("50%");
+	expect(style.borderRadius).toBe("50% 25%");
+
+	// A longhand overriding one corner reconstructs the shorthand around it.
+	style.borderRadius = "1px";
+	style.borderBottomLeftRadius = "5px";
+	expect(style.borderRadius).toBe("1px 1px 1px 5px");
+
+	// `border-radius: 0` resets every corner it had set.
+	style.borderRadius = "0";
+	expect(style.borderBottomLeftRadius).toBe("0");
+	expect(style.cssText).toBe("border-radius: 0;");
+
+	// One corner alone cannot serialize as the shorthand.
+	style.removeProperty("border-radius");
+	style.borderTopLeftRadius = "1px";
+	expect(style.borderRadius).toBe("");
+	expect(style.cssText).toBe("border-top-left-radius: 1px;");
+
+	dom.dispose();
+});
+
 test("the accessor surface follows the CSSOM attribute-mapping rules", () => {
 	const {dom} = makeDOM(`<div id="box"></div>`);
 	const style = dom.document.getElementById("box")!.style;

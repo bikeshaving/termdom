@@ -426,6 +426,18 @@ describe("Border Functions", () => {
 			// ╭ is the rounded ┌: rightward and downward.
 			const roundedTopLeft = (rounded << 8) | (rounded << 16);
 			expect(getBorderChar(roundedTopLeft)).toBe("╭");
+
+			// The dashes are the border style's; only the turn bends.
+			const dashed = BorderEdgeStyle.Dashed | BorderEdgeStyle.Rounded;
+			expect(getBorderChar((dashed << 16) | (dashed << 24))).toBe("╮");
+
+			// Unicode draws no rounded double corner, so the radius cannot
+			// reach this one.
+			const double = BorderEdgeStyle.Double | BorderEdgeStyle.Rounded;
+			expect(getBorderChar((double << 0) | (double << 8))).toBe("╚");
+
+			// A radius bends the corner, not the run leaving it.
+			expect(getBorderChar((rounded << 8) | (rounded << 24))).toBe("─");
 		});
 	});
 

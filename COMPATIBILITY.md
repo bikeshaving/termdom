@@ -7,10 +7,10 @@ properties. Every row is a probe -- the feature applied to a real
 document and rendered, with the row recording whether the output
 changed.
 
-157 features supported, 61 probed and unsupported,
+162 features supported, 61 probed and unsupported,
 156 CSS properties not applicable to a character grid,
 129 applicable and not implemented,
-9 not yet probed.
+4 not yet probed.
 
 ## DOM APIs
 
@@ -117,6 +117,11 @@ changed.
 | `border-right` | yes |
 | `border-bottom` | yes |
 | `border-left` | yes |
+| `border-radius` | yes |
+| `border-top-left-radius` | yes |
+| `border-top-right-radius` | yes |
+| `border-bottom-right-radius` | yes |
+| `border-bottom-left-radius` | yes |
 | `box-sizing` | no (no effect) |
 | `outline` | yes |
 | `outline-style` | yes |
@@ -314,4 +319,4 @@ not act on them.
 
 No probe covers these and they are unclassified.
 
-`border-bottom-left-radius`, `border-bottom-right-radius`, `border-end-end-radius`, `border-end-start-radius`, `border-radius`, `border-start-end-radius`, `border-start-start-radius`, `border-top-left-radius`, `border-top-right-radius`
+`border-end-end-radius`, `border-end-start-radius`, `border-start-end-radius`, `border-start-start-radius`

@@ -2,7 +2,12 @@
  * The screen: the cells the terminal is showing, the cells the next frame
  * wants, and the shortest escape sequence between them.
  */
-import {BOX_DRAWING, BorderEdgeStyle} from "./styles.js";
+import {
+	BOX_DRAWING,
+	BorderEdgeStyle,
+	ROUNDED_CORNERS,
+	type BorderStyles,
+} from "./styles.js";
 import {stringWidth} from "./text.js";
 
 /** One shared grapheme segmenter -- construction is expensive. */
@@ -426,6 +431,8 @@ export function getBorderChar(borderEncoding: number): string {
 	].filter((s) => s > 0);
 
 	const dominantStyle = Math.max(...styles);
+	// The radius rides the edges meeting in this cell, so a cell is a rounded
+	// corner exactly when the edges that made it one carry the flag.
 	const hasRounded =
 		(hasTop && getEdgeRounded(topEdge)) ||
 		(hasRight && getEdgeRounded(rightEdge)) ||
@@ -435,7 +442,7 @@ export function getBorderChar(borderEncoding: number): string {
 	let charSet;
 	switch (dominantStyle) {
 		case BorderEdgeStyle.Solid:
-			charSet = hasRounded ? BOX_DRAWING.lightRounded : BOX_DRAWING.light;
+			charSet = BOX_DRAWING.light;
 			break;
 		case BorderEdgeStyle.Double:
 			charSet = BOX_DRAWING.double;
@@ -454,7 +461,7 @@ export function getBorderChar(borderEncoding: number): string {
 			break;
 		case BorderEdgeStyle.Inset:
 		case BorderEdgeStyle.Outset:
-			charSet = hasRounded ? BOX_DRAWING.lightRounded : BOX_DRAWING.light;
+			charSet = BOX_DRAWING.light;
 			break;
 		case BorderEdgeStyle.Hidden:
 		case BorderEdgeStyle.None:
@@ -481,10 +488,23 @@ export function getBorderChar(borderEncoding: number): string {
 		return charSet.leftTee; // ┤
 	}
 
-	if (hasRight && hasBottom) return charSet.topLeft; // ┌
-	if (hasLeft && hasBottom) return charSet.topRight; // ┐
-	if (hasRight && hasTop) return charSet.bottomLeft; // └
-	if (hasLeft && hasTop) return charSet.bottomRight; // ┘
+	// A corner takes its rounded form where one exists. The character set is
+	// still the border style's -- a rounded dashed box keeps its dashes and
+	// bends only the four cells where the strokes turn -- and a style whose
+	// corner has no rounded glyph stays square; see ROUNDED_CORNERS.
+	const corner =
+		hasRight && hasBottom
+			? charSet.topLeft // ┌
+			: hasLeft && hasBottom
+				? charSet.topRight // ┐
+				: hasRight && hasTop
+					? charSet.bottomLeft // └
+					: hasLeft && hasTop
+						? charSet.bottomRight // ┘
+						: null;
+	if (corner !== null) {
+		return hasRounded ? (ROUNDED_CORNERS[corner] ?? corner) : corner;
+	}
 
 	if (hasLeft || hasRight) return charSet.horizontal; // ─
 	if (hasTop || hasBottom) return charSet.vertical; // │
@@ -963,13 +983,7 @@ export class DrawingContext {
 		y: number,
 		width: number,
 		height: number,
-		borderStyles: {
-			topEdge: number;
-			rightEdge: number;
-			bottomEdge: number;
-			leftEdge: number;
-			hasAnyBorder: boolean;
-		},
+		borderStyles: BorderStyles,
 		style?: CellStyle,
 		// Per-edge overrides for differently-colored sides. A corner cell's
 		// glyph spans two edges but holds one color; it takes the horizontal
@@ -988,7 +1002,8 @@ export class DrawingContext {
 		const right = x + width - 1;
 		const bottom = y + height - 1;
 
-		const {topEdge, rightEdge, bottomEdge, leftEdge} = borderStyles;
+		const {topEdge, rightEdge, bottomEdge, leftEdge, roundedCorners} =
+			borderStyles;
 		const hasTop = topEdge > 0;
 		const hasRight = rightEdge > 0;
 		const hasBottom = bottomEdge > 0;
@@ -1024,16 +1039,31 @@ export class DrawingContext {
 			this.#setBorderCell(col, row, encoding, edgeStyle ?? style);
 		};
 
+		// A radius bends one cell -- the corner where two edges turn -- so the
+		// flag rides only the edges written into that cell, and the runs between
+		// corners carry none of it.
+		const round = (edge: number, rounded: boolean) =>
+			edge > 0 && rounded ? edge | BorderEdgeStyle.Rounded : edge;
+
 		// Top edge: a horizontal run that turns down at whichever corners exist.
 		if (hasTop) {
 			for (let col = x; col <= right; col++) {
 				const atLeft = col === x && hasLeft;
 				const atRight = col === right && hasRight;
-				const down = atLeft ? leftEdge : atRight ? rightEdge : 0;
+				const rounded = atLeft
+					? Boolean(roundedCorners?.topLeft)
+					: atRight
+						? Boolean(roundedCorners?.topRight)
+						: false;
+				const across = round(topEdge, rounded);
+				const down = round(
+					atLeft ? leftEdge : atRight ? rightEdge : 0,
+					rounded,
+				);
 				put(
 					col,
 					y,
-					encode(0, atRight ? 0 : topEdge, down, atLeft ? 0 : topEdge),
+					encode(0, atRight ? 0 : across, down, atLeft ? 0 : across),
 					edgeStyles?.top,
 				);
 			}
@@ -1045,11 +1075,17 @@ export class DrawingContext {
 			for (let col = x; col <= right; col++) {
 				const atLeft = col === x && hasLeft;
 				const atRight = col === right && hasRight;
-				const up = atLeft ? leftEdge : atRight ? rightEdge : 0;
+				const rounded = atLeft
+					? Boolean(roundedCorners?.bottomLeft)
+					: atRight
+						? Boolean(roundedCorners?.bottomRight)
+						: false;
+				const across = round(bottomEdge, rounded);
+				const up = round(atLeft ? leftEdge : atRight ? rightEdge : 0, rounded);
 				put(
 					col,
 					bottom,
-					encode(up, atRight ? 0 : bottomEdge, 0, atLeft ? 0 : bottomEdge),
+					encode(up, atRight ? 0 : across, 0, atLeft ? 0 : across),
 					edgeStyles?.bottom,
 				);
 			}
