@@ -7,7 +7,7 @@ properties. Every row is a probe -- the feature applied to a real
 document and rendered, with the row recording whether the output
 changed.
 
-109 features supported, 109 probed and unsupported,
+157 features supported, 61 probed and unsupported,
 156 CSS properties not applicable to a character grid,
 129 applicable and not implemented,
 9 not yet probed.
@@ -68,30 +68,30 @@ changed.
 | `border-left-width` | yes |
 | `border-left-style` | yes |
 | `border-left-color` | yes |
-| `border-block-start-width` | no (no effect) |
-| `border-block-end-width` | no (no effect) |
-| `border-inline-start-width` | no (no effect) |
-| `border-inline-end-width` | no (no effect) |
-| `border-block-width` | no (no effect) |
-| `border-block-style` | no (no effect) |
-| `border-block-color` | no (no effect) |
-| `border-block` | no (no effect) |
-| `border-block-start` | no (no effect) |
-| `border-block-start-style` | no (no effect) |
-| `border-block-start-color` | no (no effect) |
-| `border-block-end` | no (no effect) |
-| `border-block-end-style` | no (no effect) |
-| `border-block-end-color` | no (no effect) |
-| `border-inline-width` | no (no effect) |
-| `border-inline-style` | no (no effect) |
-| `border-inline-color` | no (no effect) |
-| `border-inline` | no (no effect) |
-| `border-inline-start` | no (no effect) |
-| `border-inline-start-style` | no (no effect) |
-| `border-inline-start-color` | no (no effect) |
-| `border-inline-end` | no (no effect) |
-| `border-inline-end-style` | no (no effect) |
-| `border-inline-end-color` | no (no effect) |
+| `border-block-start-width` | yes |
+| `border-block-end-width` | yes |
+| `border-inline-start-width` | yes |
+| `border-inline-end-width` | yes |
+| `border-block-width` | yes |
+| `border-block-style` | yes |
+| `border-block-color` | yes |
+| `border-block` | yes |
+| `border-block-start` | yes |
+| `border-block-start-style` | yes |
+| `border-block-start-color` | yes |
+| `border-block-end` | yes |
+| `border-block-end-style` | yes |
+| `border-block-end-color` | yes |
+| `border-inline-width` | yes |
+| `border-inline-style` | yes |
+| `border-inline-color` | yes |
+| `border-inline` | yes |
+| `border-inline-start` | yes |
+| `border-inline-start-style` | yes |
+| `border-inline-start-color` | yes |
+| `border-inline-end` | yes |
+| `border-inline-end-style` | yes |
+| `border-inline-end-color` | yes |
 | `border-spacing` | no (no effect) |
 | `width` | yes |
 | `height` | yes |
@@ -228,31 +228,31 @@ changed.
 
 | feature | supported |
 | --- | --- |
-| `margin-block-start` | no (no effect) |
-| `padding-block-start` | no (no effect) |
-| `inset-block-start` | no (no effect) |
-| `margin-block-end` | no (no effect) |
-| `padding-block-end` | no (no effect) |
-| `inset-block-end` | no (no effect) |
-| `margin-inline-start` | no (no effect) |
-| `padding-inline-start` | no (no effect) |
-| `inset-inline-start` | no (no effect) |
-| `margin-inline-end` | no (no effect) |
-| `padding-inline-end` | no (no effect) |
-| `inset-inline-end` | no (no effect) |
-| `margin-block` | no (no effect) |
-| `padding-block` | no (no effect) |
-| `inset-block` | no (no effect) |
-| `margin-inline` | no (no effect) |
-| `padding-inline` | no (no effect) |
-| `inset-inline` | no (no effect) |
+| `margin-block-start` | yes |
+| `padding-block-start` | yes |
+| `inset-block-start` | yes |
+| `margin-block-end` | yes |
+| `padding-block-end` | yes |
+| `inset-block-end` | yes |
+| `margin-inline-start` | yes |
+| `padding-inline-start` | yes |
+| `inset-inline-start` | yes |
+| `margin-inline-end` | yes |
+| `padding-inline-end` | yes |
+| `inset-inline-end` | yes |
+| `margin-block` | yes |
+| `padding-block` | yes |
+| `inset-block` | yes |
+| `margin-inline` | yes |
+| `padding-inline` | yes |
+| `inset-inline` | yes |
 | `inset` | yes |
-| `inline-size` | no (no effect) |
-| `block-size` | no (no effect) |
-| `min-inline-size` | no (no effect) |
-| `max-inline-size` | no (no effect) |
-| `min-block-size` | no (no effect) |
-| `max-block-size` | no (no effect) |
+| `inline-size` | yes |
+| `block-size` | yes |
+| `min-inline-size` | yes |
+| `max-inline-size` | yes |
+| `min-block-size` | yes |
+| `max-block-size` | yes |
 | `flex-flow` | no (no effect) |
 | `place-content` | no (no effect) |
 | `place-items` | no (no effect) |

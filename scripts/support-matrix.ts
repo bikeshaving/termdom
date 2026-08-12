@@ -337,6 +337,9 @@ function generatedFeatures(): Record<string, Feature> {
 		};
 		out[`padding-${group}`] = {
 			value: physical === "left" || physical === "right" ? "3ch" : "2px",
+			// Padding on the END edge only moves cells inside a box whose
+			// width is stated, exactly as `padding-right` needs it to.
+			setup: physical === "right" ? NARROW : undefined,
 		};
 		out[`border-${group}-width`] = {
 			value: "1px",
@@ -349,7 +352,10 @@ function generatedFeatures(): Record<string, Feature> {
 	}
 	for (const axis of ["block", "inline"]) {
 		out[`margin-${axis}`] = {value: axis === "inline" ? "0 3ch" : "2px 0"};
-		out[`padding-${axis}`] = {value: axis === "inline" ? "0 3ch" : "2px 0"};
+		out[`padding-${axis}`] = {
+			value: axis === "inline" ? "0 3ch" : "2px 0",
+			setup: axis === "inline" ? NARROW : undefined,
+		};
 		out[`inset-${axis}`] = {
 			value: "2px",
 			setup: "#probe { position: absolute; }",

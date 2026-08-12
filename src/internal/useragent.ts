@@ -26,12 +26,20 @@ const BORDER_STYLE_KEYWORDS = new Set([
 ]);
 const LINE_WIDTH_KEYWORDS = new Set(["thin", "medium", "thick"]);
 const EDGES = ["top", "right", "bottom", "left"] as const;
+/** The two ends of a flow-relative axis, in the order a pair shorthand states them. */
+const AXIS_ENDS = ["start", "end"] as const;
 const LIST_STYLE_POSITIONS = new Set(["inside", "outside"]);
 
 /** CSS 1-4 value expansion: [all], [v h], [t h b], [t r b l]. */
 function perEdge(values: string[]): [string, string, string, string] {
 	const [a, b = a, c = a, d = b] = values;
 	return [a, b, c, d];
+}
+
+/** A flow-relative pair's two values: [both] or [start end]. */
+function perEnd(values: string[]): [string, string] {
+	const [a, b = a] = values;
+	return [a, b];
 }
 
 /**
@@ -254,6 +262,62 @@ export function expandShorthands(
 				out["outline-width"] = width ?? "medium";
 				out["outline-style"] = lineStyle ?? "none";
 				if (color) out["outline-color"] = color;
+				break;
+			}
+			// The flow-relative pairs (css-logical-1 §4): one value for both
+			// ends of the axis, or one for each. They state their longhands
+			// and, like `margin` and `padding`, are serialized back from them.
+			case "margin-block":
+			case "margin-inline":
+			case "padding-block":
+			case "padding-inline":
+			case "inset-block":
+			case "inset-inline": {
+				const axis = property.slice(property.lastIndexOf("-") + 1);
+				const kind = property.slice(0, property.lastIndexOf("-"));
+				const ends = perEnd(values);
+				AXIS_ENDS.forEach((end, i) => {
+					out[`${kind}-${axis}-${end}`] = ends[i];
+				});
+				continue;
+			}
+			// `border-block` / `border-inline`: one line drawn on both ends of
+			// the axis.
+			case "border-block":
+			case "border-inline": {
+				const axis = property.slice("border-".length);
+				const {width, lineStyle, color} = splitLineValue(value);
+				for (const end of AXIS_ENDS) {
+					out[`border-${axis}-${end}-width`] = width ?? "medium";
+					out[`border-${axis}-${end}-style`] = lineStyle ?? "none";
+					if (color) out[`border-${axis}-${end}-color`] = color;
+				}
+				break;
+			}
+			// One flow-relative edge's line: `border-inline-start: 1px solid`.
+			case "border-block-start":
+			case "border-block-end":
+			case "border-inline-start":
+			case "border-inline-end": {
+				const edge = property.slice("border-".length);
+				const {width, lineStyle, color} = splitLineValue(value);
+				out[`border-${edge}-width`] = width ?? "medium";
+				out[`border-${edge}-style`] = lineStyle ?? "none";
+				if (color) out[`border-${edge}-color`] = color;
+				break;
+			}
+			// One line component across an axis: `border-inline-width: 1px 2px`.
+			case "border-block-width":
+			case "border-block-style":
+			case "border-block-color":
+			case "border-inline-width":
+			case "border-inline-style":
+			case "border-inline-color": {
+				const [, axis, kind] = property.split("-");
+				const ends = perEnd(values);
+				AXIS_ENDS.forEach((end, i) => {
+					out[`border-${axis}-${end}-${kind}`] = ends[i];
+				});
 				break;
 			}
 			case "padding":

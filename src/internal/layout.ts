@@ -82,18 +82,14 @@ function lineAlignOffset(
 	if (!container || containerWidth === undefined) return 0;
 	const align = getPropertyValue(container, "text-align");
 	if (align === "center") return Math.max(0, (containerWidth - lineWidth) / 2);
-	if (align === "right" || align === "end") {
-		return Math.max(0, containerWidth - lineWidth);
-	}
-	// `start` is the start of the READING direction, so an RTL paragraph with no
-	// text-align of its own begins at the right edge. Unset behaves as start.
-	if (
-		(align === "" || align === "start") &&
-		getPropertyValue(container, "direction") === "rtl"
-	) {
-		return Math.max(0, containerWidth - lineWidth);
-	}
-	return 0;
+	if (align === "right") return Math.max(0, containerWidth - lineWidth);
+	if (align === "left") return 0;
+	// `start` and `end` name the READING direction's ends, so they trade sides
+	// in an RTL paragraph: an undeclared alignment is `start`, which puts an
+	// RTL line at the right edge, and `end` puts it at the left.
+	const rtl = getPropertyValue(container, "direction") === "rtl";
+	const atRightEdge = align === "end" ? !rtl : rtl;
+	return atRightEdge ? Math.max(0, containerWidth - lineWidth) : 0;
 }
 
 /**

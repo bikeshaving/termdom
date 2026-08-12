@@ -931,9 +931,45 @@ function evaluateCalc(body: string, context: LengthContext): CalcTerms | null {
 interface DeclarationBlock {
 	declarations: Record<string, string>;
 	important: Record<string, boolean>;
+	/**
+	 * Each declaration's position in the block, counting from the first. A
+	 * logical property and the physical property it maps to are two names for
+	 * one cascade slot, so which of them a block declares LAST decides the
+	 * value -- and only this says which that is.
+	 */
+	order: Record<string, number>;
 }
 
-const EMPTY_DECLARATIONS: DeclarationBlock = {declarations: {}, important: {}};
+const EMPTY_DECLARATIONS: DeclarationBlock = {
+	declarations: {},
+	important: {},
+	order: {},
+};
+
+/**
+ * Which of a cascade slot's names a block declares LAST at the given
+ * importance -- the declaration whose value the slot takes -- or null when it
+ * declares none of them. `accepts` rejects a flow-relative name that maps to
+ * the opposite physical edge under the element's direction.
+ */
+function declaredName(
+	block: DeclarationBlock,
+	names: readonly string[],
+	important: boolean,
+	accepts: (name: string) => boolean,
+): string | null {
+	let winner: string | null = null;
+	let winningOrder = -1;
+	for (const name of names) {
+		if (block.declarations[name] === undefined) continue;
+		if (Boolean(block.important[name]) !== important) continue;
+		const order = block.order[name] ?? 0;
+		if (order < winningOrder || !accepts(name)) continue;
+		winner = name;
+		winningOrder = order;
+	}
+	return winner;
+}
 
 /** The CSSOM shape a declaration block is read through: a rule's, or an element's. */
 interface DeclarationSource {
@@ -957,6 +993,94 @@ const EDGE_NAMES = ["top", "right", "bottom", "left"] as const;
 
 /** The components of a line shorthand, in the order its grammar writes them. */
 const LINE_COMPONENTS = ["width", "style", "color"] as const;
+
+/**
+ * Every flow-relative longhand and the physical longhand it maps to, one table
+ * per inline direction (css-logical-1 §2).
+ *
+ * This engine renders one writing mode -- `horizontal-tb`, the only one a
+ * terminal's row-major grid has -- so the block axis is always vertical and
+ * the inline axis always horizontal: block-start is the top edge, block-end
+ * the bottom, and `direction` alone decides which side the inline edges name.
+ * A `writing-mode` implementation would replace these two tables with four
+ * more; nothing else here would move.
+ */
+const LOGICAL_TO_PHYSICAL: Readonly<
+	Record<"ltr" | "rtl", Map<string, string>>
+> = {ltr: new Map(), rtl: new Map()};
+
+/**
+ * Each physical longhand and the flow-relative longhands that can name it --
+ * its block counterpart, or both inline ones, since which of those maps here
+ * is not known until an element states its direction.
+ */
+const PHYSICAL_TO_LOGICAL = new Map<string, readonly string[]>();
+
+{
+	const map = (logical: string, ltr: string, rtl = ltr) => {
+		LOGICAL_TO_PHYSICAL.ltr.set(logical, ltr);
+		LOGICAL_TO_PHYSICAL.rtl.set(logical, rtl);
+		for (const physical of ltr === rtl ? [ltr] : [ltr, rtl]) {
+			PHYSICAL_TO_LOGICAL.set(physical, [
+				...(PHYSICAL_TO_LOGICAL.get(physical) ?? []),
+				logical,
+			]);
+		}
+	};
+	for (const kind of ["margin", "padding"]) {
+		map(`${kind}-block-start`, `${kind}-top`);
+		map(`${kind}-block-end`, `${kind}-bottom`);
+		map(`${kind}-inline-start`, `${kind}-left`, `${kind}-right`);
+		map(`${kind}-inline-end`, `${kind}-right`, `${kind}-left`);
+	}
+	map("inset-block-start", "top");
+	map("inset-block-end", "bottom");
+	map("inset-inline-start", "left", "right");
+	map("inset-inline-end", "right", "left");
+	for (const component of LINE_COMPONENTS) {
+		map(`border-block-start-${component}`, `border-top-${component}`);
+		map(`border-block-end-${component}`, `border-bottom-${component}`);
+		map(
+			`border-inline-start-${component}`,
+			`border-left-${component}`,
+			`border-right-${component}`,
+		);
+		map(
+			`border-inline-end-${component}`,
+			`border-right-${component}`,
+			`border-left-${component}`,
+		);
+	}
+	// The flow-relative sizes name an axis and no edge, so `direction` does
+	// not reach them: only a vertical writing mode could.
+	for (const prefix of ["", "min-", "max-"]) {
+		map(`${prefix}block-size`, `${prefix}height`);
+		map(`${prefix}inline-size`, `${prefix}width`);
+	}
+}
+
+/** The physical longhand a flow-relative one names under `direction`, if it is one. */
+function physicalProperty(
+	property: string,
+	direction: string,
+): string | undefined {
+	return LOGICAL_TO_PHYSICAL[direction === "rtl" ? "rtl" : "ltr"].get(property);
+}
+
+/**
+ * The OTHER names of the cascade slot a longhand belongs to under `direction`:
+ * a flow-relative longhand's physical counterpart, or a physical longhand's
+ * flow-relative ones. Empty for a longhand that stands alone.
+ */
+function slotNames(property: string, direction: string): readonly string[] {
+	const physical = physicalProperty(property, direction);
+	if (physical) return [physical];
+	const logical = PHYSICAL_TO_LOGICAL.get(property);
+	if (!logical) return [];
+	return logical.filter(
+		(name) => physicalProperty(name, direction) === property,
+	);
+}
 
 /** The keywords every property accepts, whatever its own grammar. */
 const CSS_WIDE_KEYWORDS = new Set([
@@ -1019,11 +1143,15 @@ for (const [shorthand, all] of Object.entries(CSS_SHORTHANDS)) {
 		shorthand,
 		box
 			? "box"
-			: indexed.length === 12 &&
+			: // A width, a style and a color stated once for several sides:
+				// four for `border`, the axis's two for `border-block` and
+				// `border-inline`.
+				indexed.length >= 2 * LINE_COMPONENTS.length &&
 				  LINE_COMPONENTS.every(
 						(kind) =>
 							indexed.filter((longhand) => longhand.endsWith(`-${kind}`))
-								.length === 4,
+								.length ===
+							indexed.length / LINE_COMPONENTS.length,
 				  )
 				? "border"
 				: indexed.length === LINE_COMPONENTS.length &&
@@ -1040,7 +1168,9 @@ for (const [shorthand, all] of Object.entries(CSS_SHORTHANDS)) {
 /**
  * The shorthands a longhand belongs to, widest first: block serialization
  * prefers the shorthand covering the most declarations, and `all` -- covering
- * every longhand there is -- comes first of all.
+ * every longhand there is -- comes first of all. A vendor-prefixed shorthand
+ * comes last however wide it is: `-webkit-border-start` covers exactly the
+ * longhands `border-inline-start` does, and is not the name to write them as.
  */
 const LONGHAND_SHORTHANDS = new Map<string, readonly string[]>();
 {
@@ -1055,8 +1185,10 @@ const LONGHAND_SHORTHANDS = new Map<string, readonly string[]>();
 	for (const [longhand, shorthands] of byLonghand) {
 		shorthands.sort(
 			(a, b) =>
+				Number(a.startsWith("-")) - Number(b.startsWith("-")) ||
 				SHORTHAND_LONGHANDS.get(b)!.length -
-					SHORTHAND_LONGHANDS.get(a)!.length || (a < b ? -1 : 1),
+					SHORTHAND_LONGHANDS.get(a)!.length ||
+				(a < b ? -1 : 1),
 		);
 		LONGHAND_SHORTHANDS.set(longhand, shorthands);
 	}
@@ -1850,34 +1982,42 @@ export class CSSStyleDeclaration implements DeclarationSource {
 
 		const declarations: Record<string, string> = {};
 		const important: Record<string, boolean> = {};
+		const order: Record<string, number> = {};
 		const importantValues: Record<string, string> = {};
 		let undecomposed = false;
-		for (const entry of this.#declarations) {
+		this.#declarations.forEach((entry, index) => {
 			// An invalid declaration never enters the cascade: dropping it is
 			// what lets a lower-priority rule keep winning, as a browser does.
-			if (!isValidDeclaration(entry.name, entry.value)) continue;
+			if (!isValidDeclaration(entry.name, entry.value)) return;
 			declarations[entry.name] = entry.value;
+			order[entry.name] = index;
 			if (entry.important) {
 				important[entry.name] = true;
 				importantValues[entry.name] = entry.value;
 			}
 			if (SHORTHAND_LONGHANDS.has(entry.name)) undecomposed = true;
-		}
+		});
 
 		// The block holds longhands, which is what the cascade consults --
 		// except for a shorthand whose grammar this engine does not decompose,
 		// which reaches the cascade as whatever longhands it can name, its
-		// importance covering each of them.
+		// importance covering each of them. A longhand a shorthand states
+		// stands where the shorthand does.
 		if (undecomposed) {
 			for (const property of Object.keys(expandShorthands(importantValues))) {
 				important[property] = true;
 			}
+			this.#declarations.forEach((entry, index) => {
+				const expanded = expandShorthands({[entry.name]: entry.value});
+				for (const property in expanded) order[property] = index;
+			});
 			return (this.#block = {
 				declarations: expandShorthands(declarations),
 				important,
+				order,
 			});
 		}
-		return (this.#block = {declarations, important});
+		return (this.#block = {declarations, important, order});
 	}
 
 	get parentRule(): CSSRule | null {
@@ -5499,10 +5639,23 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 				? this.#shorthand(property, longhands, (longhand) =>
 						this.computedValueOf(longhand),
 					)
-				: this.#computed(property);
+				: // A flow-relative longhand shares its computed value with the
+					// physical longhand it maps to, so it is answered as that one.
+					this.#computed(this.#physicalOf(property));
 			this.#resolved.set(property, value);
 		}
 		return value;
+	}
+
+	/**
+	 * The name a longhand computes under: itself, or -- for a flow-relative
+	 * longhand -- the physical longhand this element's `direction` maps it to.
+	 */
+	#physicalOf(property: string): string {
+		if (!LOGICAL_TO_PHYSICAL.ltr.has(property)) return property;
+		return (
+			physicalProperty(property, this.computedValueOf("direction")) ?? property
+		);
 	}
 
 	/**
@@ -5924,14 +6077,42 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 	}
 
 	#resolvePropertyValueRaw(property: string): string {
+		// A physical property and the flow-relative properties that map to it
+		// are ONE cascade slot (css-logical-1 §2.1): every name in the slot
+		// computes to the value of the declaration that comes last in the
+		// cascade, whichever name that declaration used. Which flow-relative
+		// name maps here depends on the element's `direction`, so the slot's
+		// names are widened to both inline edges and narrowed by direction
+		// only once a block actually declares one of them.
+		const logical = PHYSICAL_TO_LOGICAL.get(property);
+		const names = logical ? [property, ...logical] : [property];
+		let direction: string | null = null;
+		const mapsHere = (name: string): boolean =>
+			name === property ||
+			physicalProperty(
+				name,
+				(direction ??= this.computedValueOf("direction")),
+			) === property;
+
 		const inline = this.#inlineDeclarations();
-		const inlineValue = inline.declarations[property]?.trim();
+		const inlineName = declaredName(inline, names, false, mapsHere);
+		const inlineValue = inlineName
+			? inline.declarations[inlineName].trim()
+			: undefined;
 		const inlineUsable = !!inlineValue && !INITIAL_KEYWORDS.has(inlineValue);
-		const inlineImportant = inlineUsable && !!inline.important[property];
+		const inlineImportantName = declaredName(inline, names, true, mapsHere);
+		const inlineImportantValue = inlineImportantName
+			? inline.declarations[inlineImportantName].trim()
+			: undefined;
+		const inlineImportant =
+			!!inlineImportantValue && !INITIAL_KEYWORDS.has(inlineImportantValue);
 
 		// `inherit` skips the rest of the cascade and goes straight to the parent's
 		// resolved value, regardless of whether this property normally inherits.
-		if (inlineUsable && inlineValue === "inherit") {
+		if (inlineImportant && inlineImportantValue === "inherit") {
+			return this.#resolveFromParent(property) ?? "";
+		}
+		if (!inlineImportant && inlineUsable && inlineValue === "inherit") {
 			return this.#resolveFromParent(property) ?? "";
 		}
 
@@ -5941,12 +6122,11 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 		let ruleValue: string | null = null;
 		let importantRuleValue: string | null = null;
 		for (const rule of this.#cssRules) {
-			const value = rule.declarations[property];
-			if (value === undefined) continue;
-			if (rule.important[property]) {
-				importantRuleValue = value;
-			} else {
-				ruleValue = value;
+			const name = declaredName(rule, names, false, mapsHere);
+			if (name !== null) ruleValue = rule.declarations[name];
+			const importantName = declaredName(rule, names, true, mapsHere);
+			if (importantName !== null) {
+				importantRuleValue = rule.declarations[importantName];
 			}
 		}
 
@@ -5958,12 +6138,12 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 			return INITIAL_KEYWORDS.has(value) ? null : value;
 		};
 
-		if (inlineImportant) return inlineValue;
+		if (inlineImportant) return inlineImportantValue!;
 		if (importantRuleValue) {
 			const resolved = declaredByRule(importantRuleValue);
 			if (resolved !== null) return resolved;
 		} else if (inlineUsable) {
-			return inlineValue;
+			return inlineValue!;
 		} else if (ruleValue) {
 			const resolved = declaredByRule(ruleValue);
 			if (resolved !== null) return resolved;
@@ -6040,6 +6220,9 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 		// is resolved from inside layout, which this would re-enter.
 		this.#manager?.flushStyle();
 		if (this.#stale || this.#epoch.value !== this.#seenEpoch) this.#refresh();
+		// A flow-relative longhand resolves as the physical longhand it maps
+		// to: same slot, same measurement, same answer.
+		property = this.#physicalOf(property);
 		if (this.#manager && USED_VALUE_PROPERTIES.has(property)) {
 			return this.#usedValue(property);
 		}
@@ -6925,6 +7108,8 @@ interface ParsedCSSRule {
 	declarations: Record<string, string>;
 	/** Properties declared `!important` in this rule. */
 	important: Record<string, boolean>;
+	/** Each declaration's position in the rule's block. See DeclarationBlock. */
+	order: Record<string, number>;
 	specificity: string; // Zero-padded string for lexicographic comparison
 	pseudoElement?: string;
 	/**
@@ -7812,17 +7997,10 @@ export class StyleManager {
 		// A rule's selector list is a set of selectors that share a block, and
 		// each is matched -- and weighed -- on its own. `#a::before, #b` is one
 		// pseudo-element rule and one ordinary rule, not one of either.
-		const {declarations, important} = styleRule.style.declarationBlock();
+		const block = styleRule.style.declarationBlock();
 		const namespaces = sheetNamespaces(styleRule.parentStyleSheet);
 		for (const selector of splitSelectorList(styleRule.selectorText)) {
-			this.#parseSelector(
-				selector,
-				declarations,
-				important,
-				scope,
-				uaOriginSheet,
-				namespaces,
-			);
+			this.#parseSelector(selector, block, scope, uaOriginSheet, namespaces);
 		}
 	}
 
@@ -7929,12 +8107,12 @@ export class StyleManager {
 
 	#parseSelector(
 		selector: string,
-		declarations: Record<string, string>,
-		important: Record<string, boolean>,
+		block: DeclarationBlock,
 		scope?: Node,
 		uaOriginSheet?: boolean,
 		sheetNamespaces: SelectorNamespaces = NO_NAMESPACES,
 	): void {
+		const {declarations, important, order} = block;
 		let namespace: string | null | undefined;
 		if (sheetNamespaces !== NO_NAMESPACES || selector.includes("|")) {
 			const resolved = selectorNamespace(selector, sheetNamespaces);
@@ -7990,6 +8168,7 @@ export class StyleManager {
 					selector,
 					declarations,
 					important,
+					order,
 					specificity,
 					scope,
 					host: {predicate, rest, child: Boolean(child)},
@@ -8019,6 +8198,7 @@ export class StyleManager {
 				subjectTag: selectorSubjectTag(baseSelector.trim()),
 				declarations,
 				important,
+				order,
 				specificity,
 				pseudoElement,
 				scope,
@@ -8035,6 +8215,7 @@ export class StyleManager {
 				subjectTag,
 				declarations,
 				important,
+				order,
 				specificity,
 				scope,
 				uaOrigin,
@@ -8226,10 +8407,31 @@ export class StyleManager {
 			return this.#ruleMatches(element, rule);
 		});
 
-		// Apply rules in cascade order
+		// Apply rules in cascade order. A pseudo-element's declarations are a
+		// flat record rather than a per-property cascade, so a flow-relative
+		// declaration fills BOTH names of its slot as it lands: the physical
+		// one everything downstream reads, and its own, which a later rule
+		// declaring either name overwrites in turn.
 		const computedStyle: Record<string, string> = {};
+		let direction: string | null = null;
 		for (const rule of matchingRules) {
-			Object.assign(computedStyle, rule.declarations);
+			const names = Object.keys(rule.declarations).sort(
+				(a, b) => (rule.order[a] ?? 0) - (rule.order[b] ?? 0),
+			);
+			for (const name of names) {
+				const value = rule.declarations[name];
+				computedStyle[name] = value;
+				if (
+					!LOGICAL_TO_PHYSICAL.ltr.has(name) &&
+					!PHYSICAL_TO_LOGICAL.has(name)
+				) {
+					continue;
+				}
+				direction ??= this.declarationFor(element).computedValueOf("direction");
+				for (const other of slotNames(name, direction)) {
+					computedStyle[other] = value;
+				}
+			}
 		}
 
 		return computedStyle;
