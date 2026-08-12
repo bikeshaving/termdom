@@ -79,7 +79,7 @@ export interface TerminalTransport {
 export interface TTYWriteStream {
 	write(
 		chunk: any,
-		encoding?: BufferEncoding | ((error?: Error) => void),
+		encoding?: string | ((error?: Error) => void),
 		callback?: (error?: Error) => void,
 	): boolean;
 	columns: number;
@@ -89,10 +89,13 @@ export interface TTYWriteStream {
 
 export interface TTYReadStream {
 	isTTY: boolean;
-	on(event: "data", listener: (chunk: string | Buffer) => void): unknown;
+	on(
+		event: "data",
+		listener: (chunk: string | Uint8Array | ArrayBuffer) => void,
+	): unknown;
 	removeListener?(
 		event: "data",
-		listener: (chunk: string | Buffer) => void,
+		listener: (chunk: string | Uint8Array | ArrayBuffer) => void,
 	): unknown;
 	setRawMode?(mode: boolean): this;
 	resume(): this;
@@ -190,7 +193,9 @@ export function transportFromProcess(
 	});
 
 	let engaged = false;
-	let dataListener: ((chunk: string | Buffer) => void) | null = null;
+	let dataListener:
+		| ((chunk: string | Uint8Array | ArrayBuffer) => void)
+		| null = null;
 	const signalListeners: Array<[ProcessSignal, () => void]> = [];
 
 	const disengage = () => {
@@ -224,9 +229,14 @@ export function transportFromProcess(
 				stdin.setRawMode?.(true);
 				stdin.resume();
 				stdin.setEncoding?.("utf8");
-				dataListener = (chunk: string | Buffer) => {
+				// Hosts without setEncoding deliver bytes; a streaming decoder
+				// keeps a code point split across two chunks whole.
+				const decoder = new TextDecoder();
+				dataListener = (chunk: string | Uint8Array | ArrayBuffer) => {
 					controller.enqueue(
-						typeof chunk === "string" ? chunk : chunk.toString("utf8"),
+						typeof chunk === "string"
+							? chunk
+							: decoder.decode(chunk, {stream: true}),
 					);
 				};
 				stdin.on("data", dataListener);
