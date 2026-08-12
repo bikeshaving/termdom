@@ -391,6 +391,8 @@ const sheet = (): string => {
   .pick { color: #9ec5ab; }
   .pick.on { color: #ffd75f; font-weight: bold; }
   .pickgap { width: 3ch; }
+  dialog .again { color: #7fae90; padding-top: 1px; }
+  dialog input { width: 12ch; }
 
   .hint { padding-top: 1px; color: #7fae90; }
   .hint b { color: #cfe8d8; font-weight: bold; }
@@ -599,7 +601,7 @@ function* App(this: Context) {
 		});
 	};
 
-	/** Back to the deal's opening position, clock unstarted. */
+	/** Back to the deal's opening position, clock unstarted, cursor down. */
 	const reset = (number: number): void => {
 		this.refresh(() => {
 			if (number !== game.number) best = null;
@@ -609,6 +611,8 @@ function* App(this: Context) {
 			message = "";
 			startedAt = null;
 			finishedAt = null;
+			cur = {row: "board", col: 0, depth: 0};
+			cursorShown = false;
 		});
 	};
 
@@ -869,22 +873,31 @@ function* App(this: Context) {
 	const onkeydown = (event: KeyboardEvent): void => {
 		const key = event.key;
 		if (menu) {
+			// While the seed field has focus, letters and digits belong to it;
+			// only Enter still deals.
+			const typing = (event.target as Element | null)?.tagName === "INPUT";
+			if (typing && key !== "Enter") return;
+			// The typed seed names the deal; empty or nonsense means any deal.
+			const dealFromMenu = (): void => {
+				const seedField = document.getElementById(
+					"seed",
+				) as HTMLInputElement | null;
+				const seed = Number.parseInt(seedField?.value ?? "", 10);
+				menu = false;
+				reset(Number.isFinite(seed) && seed > 0 ? seed : someDeal());
+			};
 			if (key === "1" || key === "3") {
 				// The number picks; the same number again deals, so the whole
 				// menu answers to two fingers.
 				const picked = key === "1" ? 1 : 3;
-				if (mode === picked) {
-					menu = false;
-					reset(someDeal());
-					return;
-				}
+				if (mode === picked) return dealFromMenu();
 				this.refresh(() => {
 					mode = picked;
 				});
 			} else if (key === "Enter" || key === " " || key === "y") {
-				menu = false;
-				reset(someDeal());
-			} else if (key === "n" || key === "b") {
+				dealFromMenu();
+			} else if ((key === "n" || key === "b") && startedAt !== null) {
+				// Back only leads somewhere when a game is behind the menu.
 				this.refresh(() => {
 					menu = false;
 				});
@@ -1049,7 +1062,11 @@ function* App(this: Context) {
 								<span class="pickgap"> </span>
 								<span class=${modeNow() === 3 ? "pick on" : "pick"}>${"[3] three cards"}</span>
 							</div>
-							<div class="answers"><b>[Enter]</b>/again deals ${MIDDOT} [b]ack ${MIDDOT} [q]uit</div>
+							<div class="again">(press [${modeNow()}] again to deal)</div>
+							<div class="answers">deal${" #"}<input id="seed" placeholder="random" /></div>
+							<div class="answers"><b>[Enter]</b>${" deals"}${
+								startedAt !== null ? jsx` ${MIDDOT} [b]ack` : ""
+							} ${MIDDOT} [q]uit</div>
 						</dialog>
 					</div>
 				</div>
