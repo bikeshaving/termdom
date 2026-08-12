@@ -3,12 +3,7 @@ draws actual DOM nodes to terminal output and redraws the screen when they
 mutate, so TUIs and interactive CLIs can be written with vanilla JavaScript or
 any frontend web framework.
 
-Not to be confused with [DomTerm](https://domterm.org), Per Bothner's
-terminal emulator built out of DOM elements. The two projects are each
-other's inverse: DomTerm puts a terminal in the DOM; TermDOM puts the DOM
-in a terminal.
-
-![Klondike solitaire: a <dialog> menu, @media card sizes, flexbox piles, DOM events for every input — examples/solitaire.ts](cast:solitaire)
+![Klondike solitaire — examples/solitaire.ts](cast:solitaire)
 
 ```ts
 import {TermDOM} from "@b9g/termdom";
@@ -117,3 +112,10 @@ npm install @b9g/termdom
 ```
 
 [Guides →](/guides/getting-started/) · [Examples on GitHub →](https://github.com/bikeshaving/termdom/tree/main/examples)
+
+## Name
+
+Not to be confused with [DomTerm](https://domterm.org), Per Bothner's
+terminal emulator built out of DOM elements. The two projects are each
+other's inverse: DomTerm puts a terminal in the DOM; TermDOM puts the DOM
+in a terminal.
