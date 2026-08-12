@@ -96,6 +96,16 @@ const FEATURES: Record<string, Feature> = {
 		value: "border-box",
 		setup: "#probe { width: 12ch; padding: 0 2ch; border: 1px solid; }",
 	},
+	outline: {value: "1px solid red"},
+	"outline-style": {value: "solid", setup: "#probe { outline-width: 1px; }"},
+	// The painted outline is present or absent; a zero width is the only width
+	// the grid can tell apart from the rest.
+	"outline-width": {
+		value: "1px",
+		setup: "#probe { outline-style: solid; outline-width: 0; }",
+	},
+	"outline-color": {value: "red", setup: "#probe { outline: 1px solid; }"},
+	"outline-offset": {value: "1px", setup: "#probe { outline: 1px solid red; }"},
 
 	// Display and positioning
 	display: {value: "none"},
@@ -109,6 +119,21 @@ const FEATURES: Record<string, Feature> = {
 		setup:
 			"#probe, #sibling { position: absolute; top: 0; left: 0; width: 8ch; }" +
 			" #probe { background-color: red; } #sibling { background-color: blue; }",
+	},
+	// #inner is above #sibling by z-index alone; `isolation` on #probe makes
+	// #probe a stacking context, which confines #inner to #probe's own place in
+	// the paint order and puts #sibling on top.
+	isolation: {
+		value: "isolate",
+		setup:
+			"#parent { display: block; position: relative; }" +
+			" #inner { position: absolute; top: 0; left: 0; width: 8ch;" +
+			" z-index: 5; background-color: red; }" +
+			" #sibling { position: absolute; top: 0; left: 0; width: 8ch;" +
+			" z-index: 2; background-color: blue; }",
+		markup:
+			'<div id="parent"><div id="probe"><div id="inner">inner</div></div>' +
+			'<div id="sibling">sibling</div></div>',
 	},
 	float: {value: "right"},
 	clear: {value: "both", setup: "#probe { float: left; }"},
@@ -192,6 +217,7 @@ const FEATURES: Record<string, Feature> = {
 	// Text and paint
 	color: {value: "red"},
 	"background-color": {value: "blue"},
+	background: {value: "blue"},
 	"font-weight": {value: "bold"},
 	"font-style": {value: "italic"},
 	"text-decoration": {value: "underline"},
@@ -482,6 +508,329 @@ function generatedFeatures(): Record<string, Feature> {
 }
 
 /**
+ * Properties with no probe, and why. A property is here because a probe would
+ * be measuring nothing: either the effect needs geometry, imagery or hardware
+ * a character grid does not have, or the effect is expressible in cells and
+ * nobody has built it. Anything absent from both lists falls through to the
+ * unclassified section; a name here that mdn-data does not list is a typo and
+ * stops the run.
+ */
+const NOT_APPLICABLE: Array<[string, string[]]> = [
+	[
+		"Transforms, 3D and motion paths, which need sub-cell geometry",
+		[
+			"backface-visibility",
+			"offset",
+			"offset-anchor",
+			"offset-distance",
+			"offset-path",
+			"offset-position",
+			"offset-rotate",
+			"perspective",
+			"perspective-origin",
+			"rotate",
+			"scale",
+			"transform-box",
+			"transform-origin",
+			"transform-style",
+			"translate",
+			"zoom",
+		],
+	],
+	[
+		"Raster imagery and compositing, which need pixels",
+		[
+			"backdrop-filter",
+			"background-attachment",
+			"background-blend-mode",
+			"background-image",
+			"background-origin",
+			"background-position",
+			"background-position-x",
+			"background-position-y",
+			"background-repeat",
+			"background-size",
+			"border-image",
+			"border-image-outset",
+			"border-image-repeat",
+			"border-image-slice",
+			"border-image-source",
+			"border-image-width",
+			"clip-path",
+			"dynamic-range-limit",
+			"image-orientation",
+			"image-rendering",
+			"mask",
+			"mask-border",
+			"mask-border-mode",
+			"mask-border-outset",
+			"mask-border-repeat",
+			"mask-border-slice",
+			"mask-border-source",
+			"mask-border-width",
+			"mask-clip",
+			"mask-composite",
+			"mask-image",
+			"mask-mode",
+			"mask-origin",
+			"mask-position",
+			"mask-repeat",
+			"mask-size",
+			"mix-blend-mode",
+			"object-fit",
+			"object-position",
+			"shape-image-threshold",
+			"shape-margin",
+			"shape-outside",
+		],
+	],
+	[
+		"SVG presentation attributes, for a rendering model with no cells",
+		[
+			"alignment-baseline",
+			"baseline-shift",
+			"baseline-source",
+			"clip-rule",
+			"color-interpolation-filters",
+			"cx",
+			"cy",
+			"d",
+			"dominant-baseline",
+			"fill",
+			"fill-opacity",
+			"fill-rule",
+			"flood-color",
+			"flood-opacity",
+			"lighting-color",
+			"marker",
+			"marker-end",
+			"marker-mid",
+			"marker-start",
+			"mask-type",
+			"paint-order",
+			"r",
+			"rx",
+			"ry",
+			"shape-rendering",
+			"stop-color",
+			"stop-opacity",
+			"stroke",
+			"stroke-dasharray",
+			"stroke-dashoffset",
+			"stroke-linecap",
+			"stroke-linejoin",
+			"stroke-miterlimit",
+			"stroke-opacity",
+			"stroke-width",
+			"text-anchor",
+			"vector-effect",
+			"x",
+			"y",
+		],
+	],
+	[
+		"Glyph rendering, which the terminal emulator owns",
+		[
+			"font-feature-settings",
+			"font-kerning",
+			"font-language-override",
+			"font-optical-sizing",
+			"font-palette",
+			"font-size-adjust",
+			"font-synthesis",
+			"font-synthesis-small-caps",
+			"font-synthesis-style",
+			"font-synthesis-weight",
+			"font-variant",
+			"font-variant-alternates",
+			"font-variant-caps",
+			"font-variant-east-asian",
+			"font-variant-emoji",
+			"font-variant-ligatures",
+			"font-variant-numeric",
+			"font-variant-position",
+			"font-variation-settings",
+			"math-depth",
+			"math-style",
+			"text-autospace",
+			"text-combine-upright",
+			"text-rendering",
+			"text-shadow",
+		],
+	],
+	[
+		"Decoration finer than one cell",
+		[
+			"border-shape",
+			"corner-block-end-shape",
+			"corner-block-start-shape",
+			"corner-bottom-left-shape",
+			"corner-bottom-right-shape",
+			"corner-bottom-shape",
+			"corner-end-end-shape",
+			"corner-end-start-shape",
+			"corner-inline-end-shape",
+			"corner-inline-start-shape",
+			"corner-left-shape",
+			"corner-right-shape",
+			"corner-shape",
+			"corner-start-end-shape",
+			"corner-start-start-shape",
+			"corner-top-left-shape",
+			"corner-top-right-shape",
+			"corner-top-shape",
+			"frame-sizing",
+			"initial-letter",
+			"text-box",
+			"text-box-edge",
+			"text-box-trim",
+			"text-decoration-inset",
+			"text-decoration-skip-ink",
+			"text-decoration-thickness",
+			"text-emphasis",
+			"text-emphasis-color",
+			"text-emphasis-position",
+			"text-emphasis-style",
+			"text-underline-offset",
+		],
+	],
+	["Print output", ["page", "print-color-adjust"]],
+	["Pointer hardware a terminal does not report", ["touch-action"]],
+];
+
+const NOT_IMPLEMENTED: string[] = [
+	"accent-color",
+	"all",
+	"animation-composition",
+	"animation-delay",
+	"animation-direction",
+	"animation-duration",
+	"animation-fill-mode",
+	"animation-iteration-count",
+	"animation-name",
+	"animation-play-state",
+	"animation-timing-function",
+	"animation-trigger",
+	"appearance",
+	"background-clip",
+	"box-decoration-break",
+	"break-after",
+	"break-before",
+	"break-inside",
+	"caret",
+	"caret-animation",
+	"caret-color",
+	"caret-shape",
+	"color-scheme",
+	"column-count",
+	"column-fill",
+	"column-height",
+	"column-rule",
+	"column-rule-color",
+	"column-rule-style",
+	"column-rule-width",
+	"column-span",
+	"column-width",
+	"column-wrap",
+	"columns",
+	"contain",
+	"contain-intrinsic-block-size",
+	"contain-intrinsic-height",
+	"contain-intrinsic-inline-size",
+	"contain-intrinsic-size",
+	"contain-intrinsic-width",
+	"container",
+	"container-name",
+	"container-type",
+	"content-visibility",
+	"forced-color-adjust",
+	"hanging-punctuation",
+	"hyphenate-character",
+	"hyphenate-limit-chars",
+	"hyphens",
+	"interactivity",
+	"interest-delay",
+	"interest-delay-end",
+	"interest-delay-start",
+	"line-break",
+	"orphans",
+	"overflow-anchor",
+	"overflow-clip-margin",
+	"overscroll-behavior",
+	"overscroll-behavior-block",
+	"overscroll-behavior-inline",
+	"overscroll-behavior-x",
+	"overscroll-behavior-y",
+	"pointer-events",
+	"quotes",
+	"reading-flow",
+	"reading-order",
+	"resize",
+	"ruby-align",
+	"ruby-overhang",
+	"ruby-position",
+	"scroll-behavior",
+	"scroll-margin",
+	"scroll-margin-block",
+	"scroll-margin-block-end",
+	"scroll-margin-block-start",
+	"scroll-margin-bottom",
+	"scroll-margin-inline",
+	"scroll-margin-inline-end",
+	"scroll-margin-inline-start",
+	"scroll-margin-left",
+	"scroll-margin-right",
+	"scroll-margin-top",
+	"scroll-marker-group",
+	"scroll-padding",
+	"scroll-padding-block",
+	"scroll-padding-block-end",
+	"scroll-padding-block-start",
+	"scroll-padding-bottom",
+	"scroll-padding-inline",
+	"scroll-padding-inline-end",
+	"scroll-padding-inline-start",
+	"scroll-padding-left",
+	"scroll-padding-right",
+	"scroll-padding-top",
+	"scroll-snap-align",
+	"scroll-snap-stop",
+	"scroll-snap-type",
+	"scroll-target-group",
+	"scrollbar-color",
+	"scrollbar-gutter",
+	"scrollbar-width",
+	"tab-size",
+	"text-justify",
+	"text-orientation",
+	"text-underline-position",
+	"text-wrap-style",
+	"timeline-trigger",
+	"timeline-trigger-activation-range",
+	"timeline-trigger-activation-range-end",
+	"timeline-trigger-activation-range-start",
+	"timeline-trigger-active-range",
+	"timeline-trigger-active-range-end",
+	"timeline-trigger-active-range-start",
+	"timeline-trigger-name",
+	"timeline-trigger-source",
+	"transition-behavior",
+	"transition-delay",
+	"transition-duration",
+	"transition-property",
+	"transition-timing-function",
+	"trigger-scope",
+	"unicode-bidi",
+	"user-select",
+	"view-transition-class",
+	"view-transition-name",
+	"view-transition-scope",
+	"widows",
+	"will-change",
+	"writing-mode",
+];
+
+/**
  * The document every probe renders. #probe is block-level on purpose: `width`
  * on an inline box correctly does nothing, so probing with a <span> reported
  * the entire box model as unsupported. #sibling is there to catch properties
@@ -630,6 +979,11 @@ const CATEGORIES: Array<[string, string[]]> = [
 			"border-bottom",
 			"border-left",
 			"box-sizing",
+			"outline",
+			"outline-style",
+			"outline-width",
+			"outline-color",
+			"outline-offset",
 		],
 	],
 	[
@@ -642,6 +996,7 @@ const CATEGORIES: Array<[string, string[]]> = [
 			"bottom",
 			"left",
 			"z-index",
+			"isolation",
 			"float",
 			"clear",
 			"overflow",
@@ -684,6 +1039,7 @@ const CATEGORIES: Array<[string, string[]]> = [
 		[
 			"color",
 			"background-color",
+			"background",
 			"font-weight",
 			"font-style",
 			"text-decoration",
@@ -937,7 +1293,37 @@ async function main(): Promise<void> {
 		if (!probed.has(property)) unprobed.push(property);
 	}
 
+	// A classification names a property that exists; anything else is a typo,
+	// and a typo would quietly leave a real property unclassified.
+	const known = new Set(standard);
+	const classified = new Set<string>();
+	for (const name of [
+		...NOT_APPLICABLE.flatMap(([, names]) => names),
+		...NOT_IMPLEMENTED,
+	]) {
+		if (!known.has(name)) {
+			throw new Error(
+				`classified property is not a standard property: ${name}`,
+			);
+		}
+		if (classified.has(name)) {
+			throw new Error(`property classified twice: ${name}`);
+		}
+		classified.add(name);
+	}
+	const notApplicable = NOT_APPLICABLE.map(
+		([reason, names]) =>
+			[reason, names.filter((n) => !probed.has(n))] as [string, string[]],
+	).filter(([, names]) => names.length > 0);
+	const notImplemented = NOT_IMPLEMENTED.filter((n) => !probed.has(n));
+	const notApplicableCount = notApplicable.reduce(
+		(total, [, names]) => total + names.length,
+		0,
+	);
+	const unclassified = unprobed.filter((p) => !classified.has(p));
+
 	const supported = results.filter((r) => r.supported).length;
+	const list = (names: string[]) => names.map((p) => `\`${p}\``).join(", ");
 
 	const lines: string[] = [
 		"<!-- Generated by `bun run support`. Do not edit. -->",
@@ -950,7 +1336,9 @@ async function main(): Promise<void> {
 		"changed.",
 		"",
 		`${supported} features supported, ${results.length - supported} probed and unsupported,`,
-		`${unprobed.length} CSS properties not yet probed.`,
+		`${notApplicableCount} CSS properties not applicable to a character grid,`,
+		`${notImplemented.length} applicable and not implemented,`,
+		`${unclassified.length} not yet probed.`,
 		"",
 	];
 
@@ -976,19 +1364,37 @@ async function main(): Promise<void> {
 		lines.push("");
 	}
 
-	if (unprobed.length > 0) {
+	if (notApplicable.length > 0) {
+		lines.push(
+			"## Not applicable to a character grid",
+			"",
+			"These properties have no rendering a grid of characters can carry.",
+			"",
+		);
+		for (const [reason, names] of notApplicable) {
+			lines.push(`**${reason}.** ${list(names)}`, "");
+		}
+	}
+
+	if (notImplemented.length > 0) {
+		lines.push(
+			"## Applicable, not implemented",
+			"",
+			"These properties have a meaning on a character grid and TermDOM does",
+			"not act on them.",
+			"",
+			list(notImplemented),
+			"",
+		);
+	}
+
+	if (unclassified.length > 0) {
 		lines.push(
 			"## Not yet probed",
 			"",
-			"No probe exists for these; each is either a probe nobody has written",
-			"or a property that cannot apply to a character grid. Sorting out",
-			"which is which is open work.",
+			"No probe covers these and they are unclassified.",
 			"",
-			"<details><summary>Show</summary>",
-			"",
-			unprobed.map((p) => `\`${p}\``).join(", "),
-			"",
-			"</details>",
+			list(unclassified),
 			"",
 		);
 	}
@@ -1011,7 +1417,7 @@ async function main(): Promise<void> {
 	writeFileSync(target, output);
 	process.stdout.write(
 		`Wrote COMPATIBILITY.md: ${supported}/${results.length} probed supported, ` +
-			`${unprobed.length} not yet probed.\n`,
+			`${unclassified.length} not yet probed.\n`,
 	);
 }
 
