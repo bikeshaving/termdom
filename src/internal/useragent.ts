@@ -505,6 +505,17 @@ export const TERMINAL_ELEMENT_DEFAULTS: Record<
 		// real content, and the painter's scroll-window handles overflow.
 		"white-space": "pre",
 	},
+	// A dialog is a box drawn over the page, so it is bordered and opaque:
+	// the border is what says where the dialog ends and the document it sits
+	// on begins, and Canvas -- the terminal's own background -- is what makes
+	// a non-modal one, which has no backdrop clearing the viewport for it,
+	// still hide the content it covers rather than tangle with it.
+	dialog: {
+		display: "block",
+		border: "1px solid",
+		padding: "0 1ch",
+		"background-color": "Canvas",
+	},
 	// A textarea preserves newlines and soft-wraps at its edge, exactly the
 	// browser default. Its UA shadow tree's value text lays out through the
 	// normal pipeline, so this is what makes multiline values multiline --
@@ -761,6 +772,16 @@ export function getInitialStyle(
  * browser's UA sheet styles shadow trees. The `::selection` rule is the
  * load-bearing one the header warns about: it is CSS's spelling of "swap the
  * cell's colors", which the selection painters translate to SGR 7.
+ *
+ * The two dialog rules are the same kind of load-bearing. A modal dialog is
+ * a fixed box with `inset: 0` and auto margins on all four sides, which is
+ * how a browser's own sheet centers one in the viewport -- the centering is
+ * CSS, not a constant in the painter. Its `::backdrop` fills the viewport
+ * with Canvas, the terminal's own background: a cell holds one color and
+ * cannot blend a browser's translucent scrim, so the terminal-native reading
+ * of "obscure the page" is to clear it. An author who wants a different one
+ * writes `dialog::backdrop { background-color: ... }`, and `transparent`
+ * removes it entirely.
  */
 export const UA_DOCUMENT_STYLES = `
 	*::selection { background-color: Highlight; color: HighlightText; }
@@ -769,6 +790,12 @@ export const UA_DOCUMENT_STYLES = `
 	a[href] { text-decoration: underline; }
 	datalist { display: none; }
 	dialog:not([open]) { display: none; }
+	dialog:modal {
+		position: fixed;
+		top: 0; right: 0; bottom: 0; left: 0;
+		margin: auto;
+	}
+	dialog::backdrop { background-color: Canvas; }
 	details:not([open]) > :not(summary) { display: none; }
 	details > summary:first-of-type::before { content: "▸ "; }
 	details[open] > summary:first-of-type::before { content: "▾ "; }

@@ -12459,15 +12459,39 @@ Object.defineProperty(HTMLElement.prototype, kActivationBehavior, {
 	configurable: true,
 });
 /**
+ * A document's TOP LAYER: the elements that render above every stacking
+ * context of the document, in the order they entered it. Membership is what
+ * `showModal` grants and `close` revokes, and what the renderer paints last.
+ */
+export function topLayerOf(document: object): Set<Element> {
+	return (document as Document)[kTopLayer];
+}
+
+/**
+ * Whether an element is showing modally -- the state `:modal` matches. A
+ * dialog is modal exactly while it is in its document's top layer: `show()`
+ * never puts one there and `close()` takes it out, so there is no second
+ * flag to keep in step with the first.
+ */
+export function isModalDialog(node: object): boolean {
+	return (
+		node instanceof HTMLDialogElement &&
+		topLayerOf(node[kDocument]).has(node as Element)
+	);
+}
+
+/**
  * A dialog.
  *
- * Showing one modally puts it in the top layer, which is a rendering concept
- * this DOM does not have; what is here is the state a caller can see -- the
- * open attribute, the return value, and the events closing one fires.
+ * Showing one modally puts it in the document's top layer, above every
+ * stacking context and outside the flow it was written in, and makes the rest
+ * of the document unreachable until it closes; showing one with `show()`
+ * leaves it exactly where it is, an ordinary box that happens to be visible.
  */
 export class HTMLDialogElement extends HTMLElement {
 	#returnValue = "";
-	#modal = false;
+	// Where focus was when the dialog took it, so closing can give it back.
+	#previouslyFocused: Element | null = null;
 
 	get returnValue(): string {
 		return this.#returnValue;
@@ -12479,7 +12503,7 @@ export class HTMLDialogElement extends HTMLElement {
 
 	show(): void {
 		if (this.hasAttribute("open")) {
-			if (this.#modal) {
+			if (isModalDialog(this)) {
 				throw domError(
 					"InvalidStateError",
 					"That dialog is already showing modally",
@@ -12500,8 +12524,49 @@ export class HTMLDialogElement extends HTMLElement {
 				"A dialog must be connected to show modally",
 			);
 		}
+		// The top layer is the modality: everything else -- `:modal`, the
+		// backdrop, the hit-testing that stops clicks reaching the page --
+		// reads membership rather than a flag of its own.
+		topLayerOf(this[kDocument]).add(this);
 		this.setAttribute("open", "");
-		this.#modal = true;
+		this.#focusDialog();
+	}
+
+	/**
+	 * HTML's dialog focusing steps: focus goes to the descendant asking for it
+	 * with `autofocus`, else to the first one that can take focus, else to the
+	 * dialog itself -- which is focusable for exactly as long as it is the
+	 * modal one, so a dialog of plain text still takes keys off the page.
+	 */
+	#focusDialog(): void {
+		this.#previouslyFocused = this[kDocument][kActiveElement];
+		const walker = shadowIncludingInclusiveDescendants(this);
+		let fallback: Element | null = null;
+		for (const node of walker) {
+			if (node === this || node.nodeType !== ELEMENT_NODE) continue;
+			const element = node as Element;
+			if (!isFocusableArea(element)) continue;
+			if (element.hasAttribute("autofocus")) {
+				(element as HTMLElement).focus();
+				return;
+			}
+			if (fallback === null) fallback = element;
+		}
+		if (fallback !== null) {
+			(fallback as HTMLElement).focus();
+			return;
+		}
+		this[kDocument][kActiveElement] = this;
+	}
+
+	/**
+	 * A modal dialog taken out of the document leaves the top layer with it:
+	 * nothing off the tree can render above it, and a detached dialog is no
+	 * longer modal.
+	 */
+	override [kRemovingSteps](oldParent: Node): void {
+		super[kRemovingSteps](oldParent);
+		topLayerOf(this[kDocument]).delete(this);
 	}
 
 	close(returnValue?: string): void {
@@ -12518,7 +12583,19 @@ export class HTMLDialogElement extends HTMLElement {
 	#close(returnValue: string | undefined, _fromRequest: boolean): void {
 		if (!this.hasAttribute("open")) return;
 		this.removeAttribute("open");
-		this.#modal = false;
+		topLayerOf(this[kDocument]).delete(this);
+		// The page gets its focus back where the dialog took it from, so the
+		// keyboard returns to what the user was doing before it opened.
+		if (this.#previouslyFocused !== null) {
+			const previous = this.#previouslyFocused;
+			this.#previouslyFocused = null;
+			if (
+				this[kDocument][kActiveElement] === this ||
+				this.contains(this[kDocument][kActiveElement])
+			) {
+				(previous as HTMLElement).focus();
+			}
+		}
 		if (returnValue !== undefined) this.#returnValue = String(returnValue);
 		dispatch(this, new Event("close"));
 	}
@@ -14277,6 +14354,7 @@ const kNwsapi = Symbol("selector engine");
 const kActiveElement = Symbol("focused area");
 const kDefaultView = Symbol("the window this document is displayed in");
 const kStyleElements = Symbol("how many style elements the tree holds");
+const kTopLayer = Symbol("the document's top layer");
 
 let currentDocumentForConstruction: Document | null = null;
 let ambientDocument: Document | null = null;
@@ -14323,6 +14401,7 @@ export class Document extends Node {
 	[kDefaultView]: object | null = null;
 	[kStyleElements] = 0;
 	[kChildren]: HTMLCollection | null = null;
+	[kTopLayer] = new Set<Element>();
 
 	/** Parse a document, declarative shadow roots included. */
 	static parseHTMLUnsafe(html: string): Document {
@@ -17658,6 +17737,20 @@ function selectorEngine(document: Document): SelectorEngine {
 			IDS_DUPES: true,
 			MIXEDCASE: true,
 		});
+		// `:modal` is a state no attribute records, so the engine cannot
+		// derive it from the tree: it asks the document's top layer, through
+		// the resolver object the compiled matchers already close over.
+		engine.Snapshot.isModal = isModalDialog;
+		engine.registerSelector(
+			":modal",
+			/^:modal(.*)/i,
+			(match: string[], source: string) => ({
+				match,
+				source: `if(s.isModal(e)){${source}}`,
+				status: true,
+				modvar: null,
+			}),
+		);
 		if (document.documentElement !== null) {
 			document[kNwsapi] = engine;
 		}

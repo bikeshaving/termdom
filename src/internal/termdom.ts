@@ -11,9 +11,11 @@ import {
 	fieldValueText,
 	flatIsConnected,
 	installUAEngine,
+	isModalDialog,
 	isTextField,
 	pseudoHostOf,
 	setUASelection,
+	topLayerOf,
 	upgradeUAWidget,
 } from "./dom.js";
 import {LayoutEngine} from "./layout.js";
@@ -513,9 +515,11 @@ export class TermDOM {
 	/**
 	 * The TOP LAYER: elements painted above every stacking context, in
 	 * insertion order, unclipped -- the foundation dialog/popover/::picker
-	 * share. Members are excluded from normal stacking collection.
+	 * share. Members are excluded from normal stacking collection. The set is
+	 * the DOCUMENT's, by reference: `showModal` puts a dialog in it with no
+	 * route through the renderer, and the renderer paints whatever is there.
 	 */
-	#topLayer = new Set<Element>();
+	#topLayer: Set<Element>;
 
 	// Timers that must be torn down in dispose(), or they keep the process
 	// alive after the app is done -- which, across a test suite, piles up
@@ -659,6 +663,7 @@ export class TermDOM {
 		);
 		const document = this.window.document as unknown as DOM.Document;
 		this.document = this.window.document;
+		this.#topLayer = topLayerOf(this.document) as unknown as Set<Element>;
 
 		// Setup DOM inspector
 		setupInspectMethods(this.window);
@@ -2284,11 +2289,28 @@ export class TermDOM {
 	}
 
 	/**
+	 * The modal dialog on top of the document, or null while none is showing.
+	 * Last in the top layer is topmost, and only a modal dialog is ever in it
+	 * by way of `showModal`.
+	 */
+	#topmostModalDialog(): HTMLDialogElement | null {
+		let modal: HTMLDialogElement | null = null;
+		for (const element of this.#topLayer) {
+			if (isModalDialog(element)) modal = element as HTMLDialogElement;
+		}
+		return modal;
+	}
+
+	/**
 	 * Focus the next or previous focusable element
 	 */
 	#moveFocus(reverse: boolean): void {
+		// A modal dialog makes the rest of the document inert, and the visible
+		// half of inertness is that Tab cannot leave the dialog: the sequential
+		// order is the dialog's own, and it wraps within it.
+		const scope = this.#topmostModalDialog() ?? this.document;
 		const focusable = getFocusableElements(
-			this.document,
+			scope,
 			this.window,
 			this[kLayoutEngine],
 		);
@@ -2356,6 +2378,15 @@ export class TermDOM {
 			} else {
 				break;
 			}
+		}
+		// A modal dialog makes the rest of the document inert: a point outside
+		// it lands on its backdrop, and a backdrop's hits are the DIALOG's --
+		// the target a browser reports for a click on the dim area, and the
+		// reason nothing behind a modal can be clicked or focused while it is
+		// up.
+		const modal = this.#topmostModalDialog();
+		if (modal !== null && (element === null || !modal.contains(element))) {
+			return modal as unknown as Element;
 		}
 		return element;
 	}
@@ -2797,6 +2828,22 @@ export class TermDOM {
 		});
 
 		const notCanceled = targetElement.dispatchEvent(keydownEvent);
+
+		// Escape is a CLOSE REQUEST on the topmost modal dialog: fire cancel,
+		// and close unless a listener took it. The dialog gets Escape only
+		// when nothing is fullscreen -- the branch above already returned --
+		// which is the browser's own precedence: the fullscreen exit is the
+		// user agent's guarantee, and only after it is spent does the key
+		// reach the page's own modality. Unlike Tab below, a preventDefault
+		// on keydown does not suppress it; `cancel` is the hook for that.
+		if (keyName === "Escape") {
+			const modal = this.#topmostModalDialog();
+			if (modal) {
+				modal.requestClose();
+				void this.#render();
+				return;
+			}
+		}
 
 		// Handle default actions if keydown wasn't canceled
 		if (notCanceled) {

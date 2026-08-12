@@ -404,16 +404,16 @@ export const FOCUSABLE_SELECTOR =
 	'a[href], input:not([disabled]), button:not([disabled]), textarea:not([disabled]), select:not([disabled]), details > summary:first-of-type, [tabindex]:not([tabindex="-1"])';
 
 /**
- * Get all focusable elements in tab order
+ * Get all focusable elements in tab order, within a root: the document, or
+ * the modal dialog whose subtree is the only reachable part of it.
  */
 export function getFocusableElements(
-	document: Document,
+	root: Document | Element,
 	window: EngineWindow,
 	layoutEngine: LayoutEngine,
 ): Element[] {
-	const elements = Array.from(
-		document.querySelectorAll(FOCUSABLE_SELECTOR),
-	).filter((element) => {
+	const candidates = root.querySelectorAll(FOCUSABLE_SELECTOR);
+	const elements = Array.from(candidates).filter((element) => {
 		// Browsers keep unrendered elements out of tab order: a hidden
 		// edit-row checkbox must not swallow a Tab press invisibly. An
 		// element is rendered when nothing on its flat-tree chain is
