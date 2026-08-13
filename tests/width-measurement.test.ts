@@ -126,11 +126,6 @@ test("the characters every terminal agrees about are never asked about", () => {
 	// code point is two, on every terminal there is. Asking would spend a query
 	// and a reply per distinct letter to be told what the tables already said.
 	const trusted = [
-		"\u00e9", // é, Latin beyond ASCII
-		"\u014b", // ŋ, Latin Extended
-		"\u0434", // д, Cyrillic
-		"\u03bb", // λ, Greek
-		"\u03a9", // Ω
 		"\u05d0", // א, Hebrew
 		"\u6f22", // 漢, CJK
 		"\ud55c", // 한, Hangul syllable
@@ -166,6 +161,9 @@ test("the characters terminals disagree about are all asked about", () => {
 		["skin-tone modifier", "\u{1F44D}\u{1F3FD}"], // 👍🏽
 		["combining mark", "e\u0301"], // é, decomposed
 		["degree sign", "\u00b0"], // °, East Asian Width Ambiguous
+		["precomposed e-acute", "\u00e9"], // é, Ambiguous Latin letter
+		["cyrillic de", "\u0434"], // д, Ambiguous
+		["greek lambda", "\u03bb"], // λ, Ambiguous
 		["plus-minus sign", "\u00b1"], // ±
 		["box drawing", "\u2500"], // ─
 		["block element", "\u2588"], // █
