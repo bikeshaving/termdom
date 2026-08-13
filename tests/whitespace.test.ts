@@ -638,3 +638,22 @@ test("a preserved space is content, and keeps its line", async () => {
 
 	dom.dispose();
 });
+
+test("preserved spaces survive inline element boundaries", async () => {
+	// A bar chart's empty cells are single-space spans: under `pre` each is
+	// one cell, and a run of them is as wide as it has spans.
+	const terminal = new MockProcess({cols: 40, rows: 6});
+	const dom = new TermDOM({transport: terminal.transport});
+	dom.attach();
+	dom.document.body.innerHTML =
+		'<div style="white-space: pre">|<span> </span><span> </span><span> </span>X</div>' +
+		'<div style="white-space: pre">|A<span> </span>B</div>' +
+		"<div>|<span> </span><span> </span>collapsed</div>";
+	await nextFrame(dom);
+	const lines = terminal.getVisibleText().split("\n");
+	expect(lines[0]).toContain("|   X");
+	expect(lines[1]).toContain("|A B");
+	// Under collapsing white-space the boundary rule still merges them.
+	expect(lines[2]).toContain("| collapsed");
+	dom.dispose();
+});

@@ -5374,17 +5374,22 @@ export class LayoutEngine {
 				let processed = rendered.text;
 				let dataOffsets = rendered.offsets;
 
-				// Handle boundary whitespace between adjacent text nodes
-				if (leafIndex > 0 && processed.length > 0) {
+				// Collapse boundary whitespace between adjacent text nodes -- but
+				// only where this leaf's white-space collapses at all. Under the
+				// preserving values every space is content, and a run of
+				// single-space spans is as wide as it has spans.
+				if (
+					leafIndex > 0 &&
+					processed.length > 0 &&
+					!preservesSpaces(leafWhiteSpace)
+				) {
 					const prevItem = items[items.length - 1];
 					if (prevItem && prevItem.leafNode.type === "text") {
-						// Check if we have adjacent spaces at the boundary
 						const prevEndsWithSpace =
 							text.length > 0 && text[text.length - 1] === " ";
 						const thisStartsWithSpace = processed[0] === " ";
 
 						if (prevEndsWithSpace && thisStartsWithSpace) {
-							// Remove the leading space to avoid double spaces at boundaries
 							processed = processed.substring(1);
 							dataOffsets = shiftRenderedOffsets(dataOffsets, 1);
 						}
