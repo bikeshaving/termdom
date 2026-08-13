@@ -24,6 +24,61 @@ import {writeFileSync, mkdirSync, existsSync} from "fs";
 import {join} from "path";
 
 /**
+ * The width tables, as the mock terminal's own measure.
+ *
+ * xterm-headless measures per code point out of the box, so a cluster of more
+ * than one -- a ZWJ sequence, an emoji with a presentation selector -- advances
+ * once per code point in it: 👨‍💻 takes four cells there and two here. A mock
+ * that measured that way would put every cluster in the test suite into
+ * standing disagreement with the engine, which is the one thing under test.
+ * Registering this makes the mock a terminal that agrees; a test that wants
+ * disagreement scripts the replies itself.
+ */
+const TABLE_UNICODE_VERSION = {
+	version: "table",
+	wcwidth(codepoint: number): 0 | 1 | 2 {
+		const width = stringWidth(String.fromCodePoint(codepoint));
+		return width <= 0 ? 0 : width >= 2 ? 2 : 1;
+	},
+	charProperties(codepoint: number, preceding: number): number {
+		// xterm packs a codepoint's verdict as kind << 3 | width << 1 | joins,
+		// and hands back the preceding codepoint's verdict so a cluster can be
+		// assembled one codepoint at a time. Joining means "this codepoint
+		// belongs to the cell before it, and the cluster's width is now what I
+		// return".
+		const precedingWidth = (preceding >> 1) & 3;
+		const precedingKind = preceding >> 3;
+		const width = TABLE_UNICODE_VERSION.wcwidth(codepoint);
+		const join = (clusterWidth: number, kind = 0) =>
+			(kind << 3) | ((clusterWidth & 3) << 1) | 1;
+
+		if (preceding !== 0) {
+			// A zero-width joiner keeps the cluster open and says so, so the
+			// codepoint after it -- wide in its own right -- knows to join too.
+			if (codepoint === 0x200d) return join(precedingWidth, ZWJ_PENDING);
+			if (precedingKind === ZWJ_PENDING) {
+				return join(Math.max(precedingWidth, width));
+			}
+			// The presentation selectors decide between the text form and the
+			// emoji form, and the emoji form is the wide one.
+			if (codepoint === 0xfe0f) return join(2);
+			if (codepoint === 0xfe0e) return join(1);
+			// Skin tone: part of the emoji before it, not a glyph of its own.
+			if (codepoint >= 0x1f3fb && codepoint <= 0x1f3ff) {
+				return join(precedingWidth);
+			}
+			// Combining marks and the rest of the zero-width kind.
+			if (width === 0 && precedingWidth !== 0) return join(precedingWidth);
+		}
+
+		return (width & 3) << 1;
+	},
+};
+
+/** charProperties kind: the cluster ended on a joiner and wants what follows. */
+const ZWJ_PENDING = 1;
+
+/**
  * Unified test terminal that handles process mocking and output capture
  */
 /**
@@ -168,6 +223,9 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 				background: "#000000",
 			},
 		});
+
+		this.terminal.unicode.register(TABLE_UNICODE_VERSION);
+		this.terminal.unicode.activeVersion = TABLE_UNICODE_VERSION.version;
 
 		// For headless mode, we need to manually initialize the terminal buffer
 		// The terminal should be ready to receive data without needing DOM

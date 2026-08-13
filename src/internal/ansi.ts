@@ -717,6 +717,29 @@ function moveCursor(
 }
 
 /**
+ * How the frame asks the terminal what a cluster's advance really is.
+ *
+ * The width tables predict; only the terminal knows. A frame is already
+ * painting each cluster at a column it computed, so the question costs one
+ * query appended to the glyph it is about -- no scratch area, no extra write.
+ * The session implements this: it holds the queries in flight and matches the
+ * replies.
+ */
+export interface WidthMeasurer {
+	/** Whether this cluster's advance is still unmeasured. */
+	wants(cluster: string): boolean;
+	/**
+	 * Take a probe for `cluster`, whose first cell is painted at 0-based
+	 * `column` and which the tables call `width` cells wide. `run` names the
+	 * contiguous emission the cluster belongs to: probes sharing a run reached
+	 * their columns by advancing through glyphs, so each one's divergence
+	 * carries into the next; a cursor move starts a new run and re-syncs the
+	 * column. Returns the bytes the frame appends after the glyph.
+	 */
+	probe(cluster: string, run: number, column: number, width: number): string;
+}
+
+/**
  * Emit the grid as ANSI, row by row.
  *
  * Empty cells are skipped rather than painted, so the cursor jumps them with
@@ -728,6 +751,7 @@ export function generateANSI(
 	grid: CellGrid,
 	colorDepth: ColorDepth = "rgb",
 	renderedLines?: Set<number>,
+	measurer?: WidthMeasurer,
 ): string {
 	const {rows, cols, char, border} = grid;
 
@@ -740,11 +764,20 @@ export function generateANSI(
 
 	let skipNextCol = -1;
 
+	// Measurement bookkeeping: whether to look at all, which emission run the
+	// cursor is in (every move ends one), and how many clusters of unknown
+	// advance this row has already painted -- each one can carry the real
+	// cursor a column either side of the predicted one.
+	const measuring = measurer !== undefined;
+	let run = 0;
+	let unknownInRow = 0;
+
 	for (let row = 0; row < rows; row++) {
 		const rowStart = row * cols;
 		let rowHasContent = false;
 		let rowHasAnsi = false;
 		let isFirstRenderOfLine = false;
+		unknownInRow = 0;
 
 		for (let col = 0; col < cols; col++) {
 			if (char[rowStart + col] !== 0) {
@@ -784,6 +817,12 @@ export function generateANSI(
 				output += moveSeq;
 				cursorRow = newRow;
 				cursorCol = newCol;
+				// A carriage return puts the cursor in a column named
+				// absolutely, so whatever the glyphs before it really did stops
+				// mattering and a new run begins. A bare cursor-forward does
+				// not: it steps from wherever the cursor actually is, carrying
+				// any divergence with it, and the run continues.
+				if (measuring && moveSeq.includes("\r")) run++;
 			}
 
 			if (isFirstRenderOfLine) {
@@ -793,6 +832,7 @@ export function generateANSI(
 				}
 				cursorCol = col;
 				isFirstRenderOfLine = false;
+				if (measuring) run++;
 			}
 
 			const styleSeq = styleDiff(grid, index, prevIndex, colorDepth);
@@ -802,10 +842,35 @@ export function generateANSI(
 			}
 
 			const encoding = border[index];
-			output +=
+			const glyph =
 				encoding > 0 ? getBorderChar(encoding) : decodeGrapheme(char[index]);
+			output += glyph;
 
 			const width = grid.widthAt(index);
+
+			// The cursor is sitting immediately after a cluster whose advance
+			// has never been checked against this terminal: ask now, while the
+			// column it started from is known. ASCII is exempt -- one cell
+			// everywhere, and probing it would buy nothing.
+			if (measuring && encoding === 0) {
+				const code = char[index];
+				if ((code > 0x7e || code < 0x20) && measurer!.wants(glyph)) {
+					// Near the right margin the answer is unreadable: a glyph
+					// that reaches the last column leaves the cursor there with
+					// wrap pending rather than past it, and the reply says the
+					// same column for two different advances. The room to leave
+					// is the widest advance a cluster can plausibly have, plus
+					// what the unmeasured clusters already on this row may have
+					// pushed the real cursor past the predicted one. Defer --
+					// the cluster keeps its place in line and gets measured
+					// wherever it next appears with room.
+					if (col + 4 + 2 * unknownInRow < cols) {
+						output += measurer!.probe(glyph, run, col, width);
+					}
+					unknownInRow++;
+				}
+			}
+
 			cursorCol += width;
 			prevIndex = index;
 
@@ -1450,6 +1515,7 @@ export class Renderer {
 		cursorPosition?: number,
 		regionRows?: number,
 		scroll?: {delta: number; bands: Array<[number, number]>},
+		measurer?: WidthMeasurer,
 	): string {
 		const frameRows = Math.max(this.#rows, regionRows ?? this.#rows);
 		const overflowing = frameRows > this.#rows;
@@ -1755,7 +1821,12 @@ export class Renderer {
 		}
 
 		// Generate ANSI and finalize
-		let output = generateANSI(diff, this.#colorDepth, this.#renderedLines);
+		let output = generateANSI(
+			diff,
+			this.#colorDepth,
+			this.#renderedLines,
+			measurer,
+		);
 
 		// Strip trailing \r\n from generateANSI — in Renderer-managed mode,
 		// the trailing newline would scroll the terminal on each re-render,

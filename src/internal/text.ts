@@ -117,6 +117,50 @@ const PRINTABLE_ASCII = /^[\x20-\x7e]*$/;
 const widthCache = new LRUCache<string, number>(2 ** 14);
 
 /**
+ * Cluster advances the terminal itself reported, and only those that DISAGREE
+ * with the tables below.
+ *
+ * The tables are a prediction: they say what a conforming terminal ought to do
+ * with a cluster, and every terminal has clusters it does otherwise -- an
+ * emoji-presentation selector advances one cell in Terminal.app for ☀️ and two
+ * for ⛅️, and no rule separates them. The renderer asks (DSR, in frame, once
+ * per distinct cluster) and writes the answer here.
+ *
+ * This is not a cache and must never be treated as one. A cache holds a copy
+ * of something derivable and needs invalidating when the original moves; this
+ * holds a measurement of the one terminal the process is attached to, taken
+ * once, true for as long as that terminal is on the other end. Entries are
+ * written once and never rewritten, nothing can make one stale, and there is
+ * no clear() -- the process ends and the ledger ends with it. A terminal whose
+ * advances match the tables leaves it empty, which is what keeps the fast
+ * paths below exactly as fast as they were.
+ */
+const clusterAdvances = new Map<string, number>();
+
+/**
+ * Record the terminal's advance for `cluster`. Answers whether the ledger
+ * changed: false when the cluster was already measured (append-only: the first
+ * answer stands) or when the terminal agrees with the tables, which is the
+ * common case and worth nothing to store.
+ */
+export function recordClusterAdvance(
+	cluster: string,
+	advance: number,
+): boolean {
+	if (clusterAdvances.has(cluster)) return false;
+	if (advance === graphemeWidth(cluster)) return false;
+	clusterAdvances.set(cluster, advance);
+	// Widths answered before this one were answered by the tables alone.
+	widthCache.clear();
+	return true;
+}
+
+/** The measured advance of `cluster`, or undefined where the tables stand. */
+export function clusterAdvance(cluster: string): number | undefined {
+	return clusterAdvances.get(cluster);
+}
+
+/**
  * Get the display width of a string in terminal columns.
  *
  * Bun.stringWidth is ~19x faster and is used wherever it is right, which is
@@ -132,8 +176,11 @@ export function stringWidth(str: string): number {
 	const cached = widthCache.get(str);
 	if (cached !== undefined) return cached;
 
+	// Bun.stringWidth knows the tables, not the ledger, so a session that has
+	// learned anything takes the cluster-by-cluster path -- which is where the
+	// ledger is consulted. An empty ledger costs one size read.
 	const width =
-		isBun && !COMBINING.test(str)
+		isBun && clusterAdvances.size === 0 && !COMBINING.test(str)
 			? Bun.stringWidth(str)
 			: stringWidthFallback(str);
 	widthCache.set(str, width);
@@ -225,6 +272,12 @@ const SPACING_MARK = /\p{Mc}/gu;
 
 /** Display width of a single grapheme cluster, in terminal cells. */
 function graphemeWidth(cluster: string): number {
+	// What the terminal was seen to do outranks what the tables say it should.
+	if (clusterAdvances.size !== 0) {
+		const measured = clusterAdvances.get(cluster);
+		if (measured !== undefined) return measured;
+	}
+
 	const code = cluster.codePointAt(0)!;
 
 	if (code === 0) return 0;

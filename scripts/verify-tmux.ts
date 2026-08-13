@@ -159,6 +159,25 @@ const scenarios: Scenario[] = [
 		},
 	},
 	{
+		// tmux measures these clusters the way the width tables do, so what it
+		// witnesses is the asking rather than the learning: a frame that appends
+		// DSR after emoji-presentation glyphs and repaints over itself must
+		// leave a row indistinguishable from one that never asked -- no reply
+		// echoed into the cells, no column pushed along by the query.
+		name: "emoji presentation: the queries a frame carries leave no mark",
+		command: "node scripts/fixtures/vs16-repaint.ts",
+		cols: 60,
+		settle: 3000,
+		run: async (pane) => {
+			const row = pane.screen().find((line) => line.includes("☀"));
+			assert(row !== undefined, "emoji row is not on screen");
+			assert(
+				row!.trimEnd() === "☀️☁️🌤️⛅️❤️ BBBB end",
+				`emoji row is not what was painted: ${JSON.stringify(row)}`,
+			);
+		},
+	},
+	{
 		name: "fuzzy-finder: navigation repaints on its own, keystrokes faster than frames",
 		command: "node examples/fuzzy-finder.ts",
 		cols: 70,

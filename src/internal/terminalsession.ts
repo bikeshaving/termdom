@@ -1,6 +1,7 @@
 import {type LayoutEngine} from "./layout.js";
 import {type Viewport} from "./viewport.js";
-import {type ColorDepth} from "./ansi.js";
+import {type ColorDepth, type WidthMeasurer} from "./ansi.js";
+import {recordClusterAdvance} from "./text.js";
 import {tokenizeInput} from "./events.js";
 
 /**
@@ -357,6 +358,12 @@ export interface TerminalSessionHandlers {
 	onResize(size: TerminalSize): void;
 	/** Ctrl-C with no listener claiming it: the default action is window.close(). */
 	onCloseRequest(): void;
+	/**
+	 * The terminal reported an advance the width tables did not predict. Every
+	 * width answered so far may have been answered wrongly, so the rows holding
+	 * that cluster need repainting against the corrected measurement.
+	 */
+	onWidthCorrection(): void;
 	/** The transport's `closed` settled: the terminal is gone. */
 	onClosed(info: TerminalCloseInfo): void;
 }
@@ -411,6 +418,189 @@ export class TerminalSession {
 	/** Whether the terminal agreed to grapheme-cluster widths (mode 2027). */
 	#graphemeClustersNegotiated = false;
 
+	/**
+	 * DSR queries in the order they went out. A terminal answers them in that
+	 * order, so the sequence number is what keeps cursor detection and width
+	 * measurement from taking each other's replies.
+	 */
+	#dsrSequence = 0;
+	/** The sequence number of the outstanding cursor query, if any. */
+	#cursorDetectionSequence = 0;
+	/** Width probes written and not yet answered, oldest first. */
+	#widthProbes: Array<{
+		cluster: string;
+		run: number;
+		epoch: number;
+		column: number;
+		width: number;
+		sequence: number;
+		sentAt: number;
+	}> = [];
+	/**
+	 * Clusters whose advance this session no longer wonders about: the terminal
+	 * answered for them, or answered unreadably and the tables keep them.
+	 *
+	 * A cluster leaves this set never, and enters it only on a reply -- not on
+	 * a probe. So a cluster the frame paints twice before either answer is
+	 * asked about twice, which is what keeps a run's column arithmetic whole:
+	 * every glyph whose advance is still in question carries its own query, and
+	 * the replies come back in the same order the glyphs were painted.
+	 */
+	#widthSettled = new Set<string>();
+	/** Whether frames may still probe. */
+	#widthProbing = true;
+	/** Whether the terminal has ever answered a width probe. */
+	#widthAnswered = false;
+	#widthProbeTimer: ReturnType<typeof setTimeout> | null = null;
+	// The emission run the running divergence belongs to, and the divergence
+	// itself: within one run each cluster's cells are reached by advancing
+	// through the ones before it, so an earlier miscount displaces every column
+	// after it by exactly this much. A reading that cannot be believed leaves
+	// the drift unknown, and the rest of that run unreadable with it.
+	#widthRunEpoch = -1;
+	#widthRun = -1;
+	#widthDrift = 0;
+	#widthRunLost = false;
+	// Bumped by every write, so probes taken while building one frame are told
+	// apart from probes taken while building the next.
+	#writeEpoch = 0;
+	/**
+	 * Generous: the reply crosses whatever the transport is, and a terminal
+	 * answering late is still answering. Only a session that gets NOTHING back
+	 * gives up probing, and it can afford to wait to be sure.
+	 */
+	static readonly #WIDTH_PROBE_TIMEOUT_MS = 2000;
+
+	#widthMeasurer: WidthMeasurer = {
+		wants: (cluster: string) => !this.#widthSettled.has(cluster),
+		probe: (cluster: string, run: number, column: number, width: number) => {
+			this.#widthProbes.push({
+				cluster,
+				run,
+				epoch: this.#writeEpoch,
+				column,
+				width,
+				sequence: this.#dsrSequence++,
+				sentAt: Date.now(),
+			});
+			this.#armWidthProbeTimer();
+			return "\x1b[6n";
+		},
+	};
+
+	/**
+	 * Keep a deadline running for as long as any probe is outstanding, timed
+	 * from the oldest of them.
+	 */
+	#armWidthProbeTimer(): void {
+		if (this.#widthProbeTimer !== null) return;
+		const oldest = this.#widthProbes[0];
+		if (oldest === undefined) return;
+		const remaining = Math.max(
+			0,
+			oldest.sentAt + TerminalSession.#WIDTH_PROBE_TIMEOUT_MS - Date.now(),
+		);
+		this.#widthProbeTimer = setTimeout(() => {
+			this.#widthProbeTimer = null;
+			// Unanswered this long is unanswered. The queue is what matches
+			// replies to probes, so an abandoned probe must leave it; its
+			// cluster keeps the tables' answer and is not asked again. Probes
+			// written since the deadline was set are not late yet and keep
+			// their place -- the deadline is per probe, and re-arms for the
+			// oldest one still waiting.
+			const deadline = Date.now() - TerminalSession.#WIDTH_PROBE_TIMEOUT_MS;
+			let expired = 0;
+			while (
+				expired < this.#widthProbes.length &&
+				this.#widthProbes[expired].sentAt <= deadline
+			) {
+				this.#widthSettled.add(this.#widthProbes[expired].cluster);
+				expired++;
+			}
+			// Nothing has ever come back: this terminal does not answer DSR,
+			// and asking it again each frame is asking forever. Fall open to
+			// the tables.
+			if (expired > 0 && !this.#widthAnswered) {
+				this.#widthProbing = false;
+				this.#widthProbes.length = 0;
+				return;
+			}
+			this.#widthProbes.splice(0, expired);
+			this.#armWidthProbeTimer();
+		}, remaining);
+	}
+
+	/**
+	 * The frame's channel for measuring cluster advances, or undefined where
+	 * there is nothing to learn: a transport with no terminal behind it, a
+	 * terminal that agreed to grapheme-cluster widths (mode 2027 makes it
+	 * measure the way we do, so the tables and the screen already agree), or
+	 * one that has proven it does not answer.
+	 */
+	get widthMeasurer(): WidthMeasurer | undefined {
+		if (!this.#interactive || !this.#widthProbing) return undefined;
+		if (this.#graphemeClustersNegotiated) return undefined;
+		return this.#widthMeasurer;
+	}
+
+	/**
+	 * Settle one width probe against the column the terminal reports.
+	 *
+	 * The probe rode the frame that painted the cluster, so the reply's column
+	 * minus the column the cluster started from IS the advance -- corrected by
+	 * the drift the earlier unmeasured clusters of the same run introduced,
+	 * which their own replies have just established.
+	 */
+	#settleWidthProbe(
+		probe: {
+			cluster: string;
+			run: number;
+			epoch: number;
+			column: number;
+			width: number;
+		},
+		replyColumn: number,
+	): void {
+		this.#widthAnswered = true;
+		// The deadline belonged to the probe just answered; whatever is still
+		// waiting gets its own.
+		if (this.#widthProbeTimer !== null) {
+			clearTimeout(this.#widthProbeTimer);
+			this.#widthProbeTimer = null;
+		}
+		this.#armWidthProbeTimer();
+
+		if (probe.epoch !== this.#widthRunEpoch || probe.run !== this.#widthRun) {
+			this.#widthRunEpoch = probe.epoch;
+			this.#widthRun = probe.run;
+			this.#widthDrift = 0;
+			this.#widthRunLost = false;
+		}
+
+		// An earlier reading in this run could not be believed, so the drift the
+		// glyphs before this one introduced is unknown and its column means
+		// nothing. Wait for a run whose arithmetic is whole.
+		if (this.#widthRunLost) return;
+
+		// Terminal columns are 1-based; the ledger counts cells.
+		const advance = replyColumn - 1 - (probe.column + this.#widthDrift);
+		// A reading no cluster could produce means the reply describes
+		// something else -- a screen that scrolled under the frame, a terminal
+		// answering out of turn. The tables keep the cluster, and the rest of
+		// the run is read against a drift this reading did not establish.
+		if (advance < 0 || advance > 4) {
+			this.#widthRunLost = true;
+			return;
+		}
+
+		this.#widthSettled.add(probe.cluster);
+		this.#widthDrift += advance - probe.width;
+		if (recordClusterAdvance(probe.cluster, advance)) {
+			this.#layout.invalidateTextMeasurement();
+			this.#handlers.onWidthCorrection();
+		}
+	}
+
 	constructor(deps: {
 		transport: TerminalTransport;
 		viewport: Viewport;
@@ -450,6 +640,9 @@ export class TerminalSession {
 	 * queue's tail.
 	 */
 	write(output: string): Promise<void> {
+		// Probes are taken while a frame is being built and go out with it, so
+		// each write ends the batch that can share a drift correction.
+		this.#writeEpoch++;
 		// A disposed session has released the wire; late writes are dropped.
 		if (this.#disposed && !this.#writer) return Promise.resolve();
 		if (!this.#writer) {
@@ -567,8 +760,8 @@ export class TerminalSession {
 			}
 		}
 
-		const report = dataStr.match(/\x1b\[\d+;\d+R/);
-		if (report && this.#feedCursorReport(report[0])) {
+		const report = dataStr.match(/\x1b\[(\d+);(\d+)R/);
+		if (report && this.#feedCursorReport(report[0], parseInt(report[2], 10))) {
 			const rest =
 				dataStr.slice(0, report.index) +
 				dataStr.slice((report.index ?? 0) + report[0].length);
@@ -613,11 +806,30 @@ export class TerminalSession {
 		return true;
 	}
 
-	/** Route a DSR cursor-position reply to the pending detection or query. */
-	#feedCursorReport(report: string): boolean {
-		if (!this.#cursorDetectionHandler) return false;
-		this.#cursorDetectionHandler(report);
-		return true;
+	/**
+	 * Route a DSR cursor-position reply to whichever query it answers.
+	 *
+	 * Two kinds of query share this reply shape -- the anchor queries (command
+	 * start, resize re-anchor) and the width probes a frame appends after a
+	 * cluster -- and a terminal answers DSR in the order it was asked. So the
+	 * oldest outstanding query owns the reply, and neither kind can take the
+	 * other's.
+	 */
+	#feedCursorReport(report: string, column: number): boolean {
+		const probe = this.#widthProbes[0];
+		if (
+			this.#cursorDetectionHandler !== null &&
+			(probe === undefined || this.#cursorDetectionSequence < probe.sequence)
+		) {
+			this.#cursorDetectionHandler(report);
+			return true;
+		}
+		if (probe !== undefined) {
+			this.#widthProbes.shift();
+			this.#settleWidthProbe(probe, column);
+			return true;
+		}
+		return false;
 	}
 
 	/**
@@ -786,6 +998,7 @@ export class TerminalSession {
 				}
 			};
 
+			this.#cursorDetectionSequence = this.#dsrSequence++;
 			void this.write("\x1b[6n");
 
 			// Timeout after 1000ms (reasonable balance for reliability). The
@@ -848,6 +1061,7 @@ export class TerminalSession {
 			// rejects it, and the caller's epoch check discards the stale result.
 			this.#cursorDetectionHandler = handler;
 
+			this.#cursorDetectionSequence = this.#dsrSequence++;
 			void this.write("\x1b[6n");
 
 			// Short timeout: the redraw should feel immediate, and a terminal
@@ -897,6 +1111,12 @@ export class TerminalSession {
 			this.#cursorDetectionTimer = null;
 		}
 		this.#cursorDetectionHandler = null;
+		if (this.#widthProbeTimer !== null) {
+			clearTimeout(this.#widthProbeTimer);
+			this.#widthProbeTimer = null;
+		}
+		this.#widthProbes.length = 0;
+		this.#widthProbing = false;
 
 		// Release the wire: cancelling the readable is what hands a process
 		// transport its tty back (raw mode off, stdin paused). The writer is

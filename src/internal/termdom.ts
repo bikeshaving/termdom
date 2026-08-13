@@ -1723,6 +1723,15 @@ export class TermDOM {
 				onCloseRequest: () => {
 					this.window.close();
 				},
+				// A cluster is wider or narrower on this terminal than the
+				// tables said, so every column after one on a painted row is
+				// off by the difference. The previous frame described a screen
+				// that was never drawn: drop it and paint the region again from
+				// the corrected measurements.
+				onWidthCorrection: () => {
+					this.#renderer.clearPreviousBuffer();
+					void this.#render();
+				},
 				// The terminal went away (hangup, disconnect, process exit):
 				// clean up this side. The transport is already closing; there
 				// is nothing to close back.
@@ -3311,6 +3320,7 @@ export class TermDOM {
 			top,
 			top + regionHeight,
 			scroll,
+			this.#session.widthMeasurer,
 		);
 		this.#lastFrameScrollTop = scrollTop;
 		this.#lastFrameEpoch = this[kLayoutEngine].invalidationEpoch;
