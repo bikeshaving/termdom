@@ -92,6 +92,8 @@ setInterval(() => {
   component logic unmodified; only the stylesheet was swapped.
 - [`fuzzy-finder.ts`](./examples/fuzzy-finder.ts) — a file picker that
   prints the selection to stdout.
+- [`weather.ts`](./examples/weather.ts) — an emoji forecast from
+  Open-Meteo, with a city search and flexbox day cards.
 - [`solitaire.ts`](./examples/solitaire.ts) — the Klondike solitaire above,
   with seeded deals playable by keyboard or mouse.
 
