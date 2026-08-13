@@ -2,9 +2,10 @@
  * In-frame width measurement.
  *
  * The width tables predict a cluster's advance; the terminal decides it. A
- * frame paints each unmeasured non-ASCII cluster at a column it computed, so a
- * DSR query appended to the glyph turns that column into a measurement, and the
- * answer corrects the tables for the rest of the session.
+ * frame paints each unmeasured cluster whose width terminals disagree about at
+ * a column it computed, so a DSR query appended to the glyph turns that column
+ * into a measurement, and the answer corrects the tables for the rest of the
+ * session.
  *
  * Every test here uses clusters of its own: the ledger is append-only and
  * lives as long as the process, which is the whole point of it.
@@ -98,7 +99,7 @@ function settle(ms = 60): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-test("a frame asks about each unmeasured non-ASCII cluster, once", () => {
+test("a frame asks about each unmeasured uncertain cluster, once", () => {
 	const grid = new CellGrid(1, 20);
 	grid.setCell(0, "\u{1F31E}"); // 🌞
 	grid.setCell(2, "a");
@@ -118,6 +119,72 @@ test("a frame asks about each unmeasured non-ASCII cluster, once", () => {
 	expect(output).toContain("\u{1F31E}\x1b[6n");
 	// ASCII buys nothing: it is one cell on every terminal there is.
 	expect(output.indexOf("a\x1b[6n")).toBe(-1);
+});
+
+test("the characters every terminal agrees about are never asked about", () => {
+	// Alphabets and ideographs: a letter is one cell and a Wide or Fullwidth
+	// code point is two, on every terminal there is. Asking would spend a query
+	// and a reply per distinct letter to be told what the tables already said.
+	const trusted = [
+		"\u00e9", // é, Latin beyond ASCII
+		"\u014b", // ŋ, Latin Extended
+		"\u0434", // д, Cyrillic
+		"\u03bb", // λ, Greek
+		"\u03a9", // Ω
+		"\u05d0", // א, Hebrew
+		"\u6f22", // 漢, CJK
+		"\ud55c", // 한, Hangul syllable
+		"\u3131", // ㄱ, Hangul compatibility jamo
+		"\u3042", // あ, hiragana
+		"\u30ab", // カ, katakana
+		"\uff21", // Ａ, fullwidth
+		"\uff71", // ｱ, halfwidth katakana
+		"\u2009", // thin space, Narrow General Punctuation
+		"\u2044", // ⁄, Narrow General Punctuation
+	];
+
+	const grid = new CellGrid(1, 200);
+	let col = 0;
+	for (const cluster of trusted) {
+		grid.setCell(col, cluster);
+		col += stringWidth(cluster);
+	}
+
+	const {probes, measurer} = recordingMeasurer();
+	const output = generateANSI(grid, "rgb", undefined, measurer);
+
+	expect(probes).toEqual([]);
+	expect(output).not.toContain("\x1b[6n");
+});
+
+test("the characters terminals disagree about are all asked about", () => {
+	const uncertain: Array<[string, string]> = [
+		["emoji presentation selector", "\u2764\uFE0F"], // ❤️
+		["text presentation selector", "\u26C5\uFE0E"], // ⛅︎
+		["ZWJ sequence", "\u{1F468}\u200D\u{1F4BB}"], // 👨‍💻
+		["regional indicator pair", "\u{1F1EF}\u{1F1F5}"], // 🇯🇵
+		["skin-tone modifier", "\u{1F44D}\u{1F3FD}"], // 👍🏽
+		["combining mark", "e\u0301"], // é, decomposed
+		["degree sign", "\u00b0"], // °, East Asian Width Ambiguous
+		["plus-minus sign", "\u00b1"], // ±
+		["box drawing", "\u2500"], // ─
+		["block element", "\u2588"], // █
+		["arrow", "\u2190"], // ←
+		["private use", "\ue0b0"], // a powerline glyph
+		["default emoji presentation", "\u{1F600}"], // 😀
+		["Arabic presentation form", "\ufedf"], // ﻟ, shaped lam
+	];
+
+	for (const [name, cluster] of uncertain) {
+		const grid = new CellGrid(1, 40);
+		grid.setCell(0, cluster);
+		const {probes, measurer} = recordingMeasurer();
+		generateANSI(grid, "rgb", undefined, measurer);
+		expect([name, probes.map((probe) => probe.cluster)]).toEqual([
+			name,
+			[cluster],
+		]);
+	}
 });
 
 test("a cluster at the right margin is left for a frame with room", () => {
