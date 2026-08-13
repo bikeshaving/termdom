@@ -4,7 +4,8 @@
 //   node examples/weather.ts Tokyo      (searches immediately)
 //
 //   type a city and Enter searches      /  focuses the search again
-//   u  toggles °C and °F                q  quits (while not typing)
+//   arrows (or a click) chart a day     u  toggles °C and °F
+//   q  quits (while not typing)
 import {TermDOM} from "@b9g/termdom";
 
 const term = new TermDOM();
@@ -33,12 +34,24 @@ style.textContent = `
 	.day .name { color: #5fafff; }
 	.day .hi { color: #ffd75f; }
 	.day .lo { color: #808080; }
+	.day.on { border-color: #ffd75f; }
+	.day.on .name { color: #ffd75f; }
+	.chart { margin-top: 1px; white-space: pre; }
+	.chart .label { color: #808080; }
+	.chart .t0 { color: #00d7ff; }
+	.chart .t1 { color: #5fafff; }
+	.chart .t2 { color: #ffffff; }
+	.chart .t3 { color: #ffd75f; }
+	.chart .t4 { color: #ff8700; }
+	.chart .t5 { color: #ff5f5f; }
+	.chart .rain { color: #5fafff; }
+	.chart .axis { color: #666666; }
 `;
 document.head.appendChild(style);
 
 document.body.innerHTML = `
 	<div class="title"> weather</div>
-	<div class="hint"> Enter search · / search again · [u]nits · [q]uit</div>
+	<div class="hint"> Enter search · / search again · ←→ chart a day · [u]nits · [q]uit</div>
 	<div class="prompt"><span class="sigil">⌂ </span><input placeholder="city…"></div>
 	<div id="report"></div>
 `;
@@ -77,6 +90,8 @@ let celsius = true;
 let lastPlace: {name: string; region: string; lat: number; lon: number} | null =
 	null;
 let searchGeneration = 0;
+let dayIndex = 0;
+let lastData: Forecast | null = null;
 
 function show(kind: "status" | "error", text: string): void {
 	report.innerHTML = `<div class="${kind}"></div>`;
@@ -116,10 +131,13 @@ async function forecast(generation: number): Promise<void> {
 		const data = await fetch(
 			`https://api.open-meteo.com/v1/forecast?latitude=${place.lat}&longitude=${place.lon}` +
 				"&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,wind_direction_10m,relative_humidity_2m" +
+				"&hourly=temperature_2m,precipitation_probability&forecast_days=7" +
 				"&daily=weather_code,temperature_2m_max,temperature_2m_min" +
 				`&temperature_unit=${unit}&timezone=auto`,
 		).then((res) => res.json());
 		if (generation !== searchGeneration) return;
+		lastData = data;
+		dayIndex = 0;
 		render(data);
 	} catch {
 		if (generation === searchGeneration) {
@@ -128,7 +146,7 @@ async function forecast(generation: number): Promise<void> {
 	}
 }
 
-function render(data: {
+interface Forecast {
 	current: {
 		temperature_2m: number;
 		apparent_temperature: number;
@@ -137,13 +155,73 @@ function render(data: {
 		wind_direction_10m: number;
 		relative_humidity_2m: number;
 	};
+	hourly: {
+		time: string[];
+		temperature_2m: number[];
+		precipitation_probability: number[];
+	};
 	daily: {
 		time: string[];
 		weather_code: number[];
 		temperature_2m_max: number[];
 		temperature_2m_min: number[];
 	};
-}): void {
+}
+
+/** The color bucket a temperature paints with, coldest to hottest. */
+function bucketOf(temp: number): string {
+	const c = celsius ? temp : ((temp - 32) * 5) / 9;
+	if (c < 0) return "t0";
+	if (c < 10) return "t1";
+	if (c < 20) return "t2";
+	if (c < 28) return "t3";
+	if (c < 35) return "t4";
+	return "t5";
+}
+
+const EIGHTHS = " ▁▂▃▄▅▆▇█";
+
+/**
+ * A block-glyph bar chart, one column per hour: full blocks up to the
+ * value, an eighth-block remainder at the top, colored by temperature.
+ */
+function temperatureChart(temps: number[]): string {
+	const min = Math.min(...temps);
+	const max = Math.max(...temps);
+	const span = Math.max(1, max - min);
+	const ROWS = 4;
+	const lines: string[] = [];
+	for (let row = ROWS - 1; row >= 0; row--) {
+		const cells = temps
+			.map((t) => {
+				const eighths = Math.round(((t - min) / span) * (ROWS * 8 - 1)) + 1;
+				const level = Math.max(0, Math.min(8, eighths - row * 8));
+				return `<span class="${bucketOf(t)}">${EIGHTHS[level]}</span>`;
+			})
+			.join("");
+		const label =
+			row === ROWS - 1
+				? String(Math.round(max)).padStart(4) + "° "
+				: row === 0
+					? String(Math.round(min)).padStart(4) + "° "
+					: "      ";
+		lines.push(`<div><span class="label">${label}</span>${cells}</div>`);
+	}
+	return lines.join("");
+}
+
+/** One sparkline row of rain chances, hidden when the day is dry. */
+function rainRow(chances: number[]): string {
+	if (Math.max(...chances) === 0) return "";
+	const cells = chances
+		.map(
+			(p) => `<span class="rain">${EIGHTHS[Math.ceil((p / 100) * 8)]}</span>`,
+		)
+		.join("");
+	return `<div><span class="label">  💧  </span>${cells}</div>`;
+}
+
+function render(data: Forecast): void {
 	const place = lastPlace!;
 	const degrees = celsius ? "°C" : "°F";
 	const now = data.current;
@@ -154,7 +232,7 @@ function render(data: {
 			const [dayGlyph] = glyphFor(data.daily.weather_code[i]);
 			// The spans sit flush together: whitespace between them would become
 			// anonymous rows inside the column flex card.
-			return `<div class="day"><span class="name">${name}</span><span>${dayGlyph}</span><span class="hi">${Math.round(data.daily.temperature_2m_max[i])}°</span><span class="lo">${Math.round(data.daily.temperature_2m_min[i])}°</span></div>`;
+			return `<div class="day${i === dayIndex ? " on" : ""}"><span class="name">${name}</span><span>${dayGlyph}</span><span class="hi">${Math.round(data.daily.temperature_2m_max[i])}°</span><span class="lo">${Math.round(data.daily.temperature_2m_min[i])}°</span></div>`;
 		})
 		.join("");
 	report.innerHTML = `
@@ -168,6 +246,11 @@ function render(data: {
 			<span>💧 ${now.relative_humidity_2m}%</span>
 		</div>
 		<div class="days">${days}</div>
+		<div class="chart">
+			${temperatureChart(data.hourly.temperature_2m.slice(dayIndex * 24, dayIndex * 24 + 24))}
+			${rainRow(data.hourly.precipitation_probability.slice(dayIndex * 24, dayIndex * 24 + 24))}
+			<div class="axis"><span class="label">      </span>0     6     12    18    </div>
+		</div>
 	`;
 }
 
@@ -187,6 +270,20 @@ document.addEventListener("keydown", (event) => {
 		celsius = !celsius;
 		if (lastPlace) void forecast(++searchGeneration);
 	}
+	if (key === "ArrowLeft" || key === "ArrowRight") {
+		if (!lastData) return;
+		const count = lastData.daily.time.length;
+		dayIndex = (dayIndex + (key === "ArrowRight" ? 1 : -1) + count) % count;
+		render(lastData);
+	}
+});
+
+// A click on a day card charts that day.
+report.addEventListener("click", (event) => {
+	const card = (event.target as Element | null)?.closest?.(".day");
+	if (!card || !lastData) return;
+	dayIndex = Array.from(card.parentElement!.children).indexOf(card);
+	render(lastData);
 });
 
 const argued = process.argv[2];
