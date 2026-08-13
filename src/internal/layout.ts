@@ -1252,6 +1252,16 @@ export class LayoutEngine {
 	 */
 	#terminalReordersText = false;
 
+	/**
+	 * A cluster's advance is now known from the terminal rather than predicted
+	 * from the width tables. Nothing in the DOM moved, but every line measured
+	 * before the correction was measured against the other answer.
+	 */
+	invalidateTextMeasurement(): void {
+		this.invalidateStructure();
+		for (const flexNode of this.#measureNodes) flexNode.markDirty();
+	}
+
 	setTerminalReordersText(value: boolean): void {
 		// Flips the visual order of every RTL run without a mutation.
 		this.invalidateStructure();

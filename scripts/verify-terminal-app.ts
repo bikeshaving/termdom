@@ -217,6 +217,27 @@ const scenarios: Scenario[] = [
 		},
 	},
 	{
+		name: "emoji presentation: a repaint lands in the terminal's own columns",
+		command: "node scripts/fixtures/vs16-repaint.ts",
+		cols: 60,
+		settle: 4000,
+		run: async (win) => {
+			const row = win
+				.contents()
+				.split(/\r?\n/)
+				.find((line) => line.includes("☀"));
+			assert(row !== undefined, "emoji row is not on screen");
+			assert(
+				row!.includes("BBBB end"),
+				`repaint did not keep the sentinel: ${JSON.stringify(row)}`,
+			);
+			assert(
+				!row!.includes("A"),
+				`repaint landed off its columns and left the old token: ${JSON.stringify(row)}`,
+			);
+		},
+	},
+	{
 		name: "resize: the frame survives a narrow-and-back without duplicating itself",
 		command: "node examples/flexbox.ts",
 		cols: 100,
