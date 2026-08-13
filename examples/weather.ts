@@ -6,7 +6,35 @@
 //   type a city and Enter searches      /  focuses the search again
 //   arrows (or a click) chart a day     u  toggles °C and °F
 //   q  quits (while not typing)
+import {mkdirSync, readFileSync, writeFileSync} from "node:fs";
+import {homedir} from "node:os";
+import {join} from "node:path";
 import {TermDOM} from "@b9g/termdom";
+
+// The last successful search, kept in the platform's state directory so a
+// bare launch reopens on the city you looked at last.
+const STATE_DIR = join(
+	process.env.XDG_STATE_HOME ?? join(homedir(), ".local", "state"),
+	"termdom-weather",
+);
+const CITY_FILE = join(STATE_DIR, "city");
+
+function rememberCity(name: string): void {
+	try {
+		mkdirSync(STATE_DIR, {recursive: true});
+		writeFileSync(CITY_FILE, name);
+	} catch {
+		// A read-only home just means the city is forgotten.
+	}
+}
+
+function rememberedCity(): string | null {
+	try {
+		return readFileSync(CITY_FILE, "utf8").trim() || null;
+	} catch {
+		return null;
+	}
+}
 
 const term = new TermDOM();
 term.attach();
@@ -115,6 +143,7 @@ async function search(query: string): Promise<void> {
 			lat: hit.latitude,
 			lon: hit.longitude,
 		};
+		rememberCity(hit.name);
 		await forecast(generation);
 	} catch {
 		if (generation === searchGeneration) {
@@ -131,7 +160,7 @@ async function forecast(generation: number): Promise<void> {
 		const data = await fetch(
 			`https://api.open-meteo.com/v1/forecast?latitude=${place.lat}&longitude=${place.lon}` +
 				"&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,wind_direction_10m,relative_humidity_2m" +
-				"&hourly=temperature_2m,precipitation_probability&forecast_days=7" +
+				"&hourly=temperature_2m,precipitation_probability,weather_code&forecast_days=7" +
 				"&daily=weather_code,temperature_2m_max,temperature_2m_min" +
 				`&temperature_unit=${unit}&timezone=auto`,
 		).then((res) => res.json());
@@ -159,6 +188,7 @@ interface Forecast {
 		time: string[];
 		temperature_2m: number[];
 		precipitation_probability: number[];
+		weather_code: number[];
 	};
 	daily: {
 		time: string[];
@@ -210,15 +240,16 @@ function temperatureChart(temps: number[]): string {
 	return lines.join("");
 }
 
-/** One sparkline row of rain chances, hidden when the day is dry. */
-function rainRow(chances: number[]): string {
-	if (Math.max(...chances) === 0) return "";
-	const cells = chances
-		.map(
-			(p) => `<span class="rain">${EIGHTHS[Math.ceil((p / 100) * 8)]}</span>`,
-		)
+/**
+ * The sky by hour as emoji -- sun cover, cloud, rain. Every second hour,
+ * because an emoji is two cells wide and the bars above are one per hour.
+ */
+function skyRow(codes: number[]): string {
+	const glyphs = codes
+		.filter((_, i) => i % 2 === 0)
+		.map((code) => glyphFor(code)[0])
 		.join("");
-	return `<div><span class="label">  💧  </span>${cells}</div>`;
+	return `<div><span class="label">      </span>${glyphs}</div>`;
 }
 
 function render(data: Forecast): void {
@@ -246,11 +277,11 @@ function render(data: Forecast): void {
 			<span>💧 ${now.relative_humidity_2m}%</span>
 		</div>
 		<div class="days">${days}</div>
-		<div class="chart">
-			${temperatureChart(data.hourly.temperature_2m.slice(dayIndex * 24, dayIndex * 24 + 24))}
-			${rainRow(data.hourly.precipitation_probability.slice(dayIndex * 24, dayIndex * 24 + 24))}
-			<div class="axis"><span class="label">      </span>0     6     12    18    </div>
-		</div>
+		<div class="chart">${temperatureChart(
+			data.hourly.temperature_2m.slice(dayIndex * 24, dayIndex * 24 + 24),
+		)}${skyRow(
+			data.hourly.weather_code.slice(dayIndex * 24, dayIndex * 24 + 24),
+		)}<div class="axis"><span class="label">      </span>0     6     12    18</div></div>
 	`;
 }
 
@@ -286,10 +317,10 @@ report.addEventListener("click", (event) => {
 	render(lastData);
 });
 
-const argued = process.argv[2];
-if (argued) {
-	(input as HTMLInputElement).value = argued;
-	void search(argued);
+const opening = process.argv[2] ?? rememberedCity();
+if (opening) {
+	(input as HTMLInputElement).value = opening;
+	void search(opening);
 } else {
 	(input as HTMLElement).focus();
 }
