@@ -4056,6 +4056,33 @@ const SELECTOR_CLASS_NAME = /\.(-?[A-Za-z_][\w-]*)/g;
 /** The ids a compound selector tests. */
 const SELECTOR_ID_NAME = /#(-?[A-Za-z_][\w-]*)/g;
 
+/** Matches a full attribute selector, e.g. `[data-id="#root"]`. */
+const ATTRIBUTE_SELECTOR_MATCHER = /\[[^\]]+\]/g;
+
+/** Matches a full pseudo-element expression, e.g. `::part(label)`. */
+const PSEUDO_ELEMENT_EXPRESSION_MATCHER = /::[^\s+>~.#[]+/g;
+
+/** Matches an id selector, e.g. `#root`. */
+const ID_SELECTOR_MATCHER = /#[^\s+>~.:[]+/g;
+
+/** Matches a class selector, e.g. `.item`. */
+const CLASS_SELECTOR_MATCHER = /\.[a-zA-Z][\w-]*/g;
+
+/** Matches a pseudo-class selector, e.g. `:focus`. */
+const PSEUDO_CLASS_SELECTOR_MATCHER = /:(?!:)[a-zA-Z][\w-]*/g;
+
+/** Matches a type selector with its leading boundary, e.g. `>button`. */
+const TYPE_SELECTOR_MATCHER = /(?:^|[\s+>~])[a-zA-Z][\w-]*/g;
+
+/** Matches a pseudo-element name, e.g. `::before`. */
+const PSEUDO_ELEMENT_NAME_MATCHER = /::[a-zA-Z][\w-]*/g;
+
+function determineMatchCount(text: string, matcher: RegExp): number {
+	const matches = text.match(matcher);
+	if (!matches) return 0;
+	return matches.length;
+}
+
 /**
  * The pseudo-classes an attribute can start or stop matching. A selector that
  * tests one of these on an ancestor reaches the ancestor's descendants when the
@@ -8048,37 +8075,42 @@ export class StyleManager {
 	 * Format: "000-000-000" (ids-classes-elements) for lexicographic comparison
 	 */
 	#calculateSpecificity(selector: string): string {
-		// Remove pseudo-elements first to avoid counting them as pseudo-classes
-		const withoutPseudoElements = selector.replace(/::[^\s+>~.#[]+/g, "");
+		const withoutAttributes = selector.replace(
+			ATTRIBUTE_SELECTOR_MATCHER,
+			"[]",
+		);
+		const withoutPseudoElements = withoutAttributes.replace(
+			PSEUDO_ELEMENT_EXPRESSION_MATCHER,
+			"",
+		);
+		const idCount = determineMatchCount(withoutAttributes, ID_SELECTOR_MATCHER);
+		const classCount = determineMatchCount(
+			withoutAttributes,
+			CLASS_SELECTOR_MATCHER,
+		);
+		const attributeCount = determineMatchCount(
+			selector,
+			ATTRIBUTE_SELECTOR_MATCHER,
+		);
+		const pseudoClassCount = determineMatchCount(
+			withoutPseudoElements,
+			PSEUDO_CLASS_SELECTOR_MATCHER,
+		);
+		const typeCount = determineMatchCount(
+			withoutAttributes,
+			TYPE_SELECTOR_MATCHER,
+		);
+		const pseudoElementCount = determineMatchCount(
+			withoutAttributes,
+			PSEUDO_ELEMENT_NAME_MATCHER,
+		);
+		const classTotal = classCount + attributeCount + pseudoClassCount;
+		const elementTotal = typeCount + pseudoElementCount;
+		const idSpecificity = idCount.toString().padStart(3, "0");
+		const classSpecificity = classTotal.toString().padStart(3, "0");
+		const elementSpecificity = elementTotal.toString().padStart(3, "0");
 
-		// Count IDs
-		const ids = (selector.match(/#[^\s+>~.:[]+/g) || []).length;
-
-		// Count classes (handle chained classes like .class.other)
-		const classMatches = selector.match(/\.[a-zA-Z][\w-]*/g) || [];
-		const classes = classMatches.length;
-
-		// Count attributes
-		const attributes = (selector.match(/\[[^\]]+\]/g) || []).length;
-
-		// Count pseudo-classes (but not pseudo-elements)
-		const pseudoClasses = (
-			withoutPseudoElements.match(/:(?!:)[a-zA-Z][\w-]*/g) || []
-		).length;
-
-		const classTotal = classes + attributes + pseudoClasses;
-
-		// Count elements
-		const elements = (selector.match(/(?:^|[\s+>~])[a-zA-Z][\w-]*/g) || [])
-			.length;
-
-		// Count pseudo-elements
-		const pseudoElements = (selector.match(/::[a-zA-Z][\w-]*/g) || []).length;
-
-		const elementTotal = elements + pseudoElements;
-
-		// Format as zero-padded string: "001-005-002"
-		return `${ids.toString().padStart(3, "0")}-${classTotal.toString().padStart(3, "0")}-${elementTotal.toString().padStart(3, "0")}`;
+		return `${idSpecificity}-${classSpecificity}-${elementSpecificity}`;
 	}
 
 	/**
