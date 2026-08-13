@@ -79,34 +79,33 @@ document.addEventListener("keydown", (e) => {
 ## Frameworks
 
 A frontend framework renders into TermDOM's document the way it renders into
-a browser's. Frameworks read browser globals, so assign the ones yours
-expects before it loads:
+a browser's. A framework reaches for a global wherever it reads the DOM
+without a node in hand; assign the globals it reads, and no others.
 
-```ts
-import {TermDOM} from "@b9g/termdom";
+| Framework | Globals required | Why |
+| --- | --- | --- |
+| React 19 | `document`, `window` | `react-dom` reads `window.event` to pick an update priority, and `document.documentMode` and `"TextEvent" in window` for its input feature detection |
+| Vue 3 | `document`, `window`, `Element`, `SVGElement` | `@vue/runtime-dom` captures `document` on load to create nodes, and `mount()` tests the container with `instanceof Element` and `instanceof SVGElement` |
+| Svelte 5 | `document`, `window`, `Node`, `Element`, `Text`, `Comment` | `init_operations()` takes the `firstChild` and `nextSibling` getters off `Node.prototype` and caches lookups on `Element.prototype` and `Text.prototype`; `Comment` identifies the anchor nodes the compiler emits |
+| Crank 0.7.1 | `document`, `Node` | `@b9g/crank/dom` creates nodes with `document.createElement` and `document.createTextNode`, and compares `nodeType` against `Node.ELEMENT_NODE` before rendering or patching |
 
-const term = new TermDOM();
-term.attach();
-globalThis.document = term.document;
-globalThis.window = term.window;
-```
-
-React needs nothing further:
+React:
 
 ```ts
 import {createRoot} from "react-dom/client";
+
+globalThis.document = term.document;
+globalThis.window = term.window;
 createRoot(term.document.body).render(<App />);
 ```
 
-Vue also reads the DOM constructors for `instanceof` checks, and captures
-`document` when its module loads — so the globals go up first and Vue comes
-in by dynamic import:
+Vue captures `document` when its module loads, so the globals go up first
+and Vue comes in by dynamic import:
 
 ```ts
+globalThis.document = term.document;
+globalThis.window = term.window;
 globalThis.Element = term.window.Element;
-globalThis.Node = term.window.Node;
-globalThis.Text = term.window.Text;
-globalThis.Comment = term.window.Comment;
 globalThis.SVGElement = term.window.SVGElement;
 
 const {createApp} = await import("vue");
@@ -122,18 +121,31 @@ node --conditions=browser app.js
 ```
 
 ```ts
-globalThis.Element = term.window.Element;
+import {mount} from "svelte";
+import App from "./App.js"; // compiled from App.svelte
+
+globalThis.document = term.document;
+globalThis.window = term.window;
 globalThis.Node = term.window.Node;
+globalThis.Element = term.window.Element;
 globalThis.Text = term.window.Text;
 globalThis.Comment = term.window.Comment;
 
-const {mount} = await import("svelte");
-const {default: App} = await import("./App.js"); // compiled from App.svelte
 mount(App, {target: term.document.body});
 ```
 
-Crank needs `Node` and `document` — [`examples/todomvc.ts`](https://github.com/bikeshaving/termdom/blob/main/examples/todomvc.ts)
-and the solitaire example show it in full.
+Crank:
+
+```ts
+import {renderer} from "@b9g/crank/dom";
+
+globalThis.document = term.document;
+globalThis.Node = term.window.Node;
+renderer.render(<App />, term.document.body);
+```
+
+[`examples/todomvc.ts`](https://github.com/bikeshaving/termdom/blob/main/examples/todomvc.ts)
+and the solitaire example show Crank in full.
 
 ## Next
 

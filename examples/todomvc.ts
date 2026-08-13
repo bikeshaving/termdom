@@ -8,6 +8,8 @@ const term = new TermDOM();
 
 term.attach();
 const document = term.document;
+// Crank's DOM renderer creates nodes with `document` and checks `nodeType`
+// against `Node.ELEMENT_NODE` on every render.
 globalThis.Node = term.window.Node;
 globalThis.document = term.document;
 

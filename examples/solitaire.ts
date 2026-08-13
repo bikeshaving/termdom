@@ -1258,6 +1258,8 @@ export function mount(host: TermDOM, options: {deal?: number} = {}): void {
 	term = host;
 	term.attach();
 	({document} = term);
+	// Crank's DOM renderer creates nodes with `document` and checks `nodeType`
+	// against `Node.ELEMENT_NODE` on every render.
 	globalThis.Node = term.window.Node;
 	globalThis.document = document as never;
 	startInMenu = options.deal === undefined;
