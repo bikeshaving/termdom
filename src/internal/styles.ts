@@ -7703,6 +7703,22 @@ export class StyleManager {
 		}
 	}
 
+	/**
+	 * A state no attribute records moved: a popover was shown or hidden. The
+	 * rules that test it (`:popover-open`, and the UA sheet's display among
+	 * them) matched before the move, and a popover that stops being displayed
+	 * takes its subtree's styles with it -- so the element and everything
+	 * whose style comes through it re-resolve.
+	 */
+	handleStateChange(element: Element): void {
+		this.#invalidateSubtree(element);
+		// No mutation record describes the move, so the frame that decides
+		// whether anything is worth painting is told here: the cascade moved,
+		// and the rows the element claims are the damage to repaint.
+		this.#pendingStyleDamage?.add(element);
+		this.#layoutEngine?.invalidateFrame();
+	}
+
 	/** Set the `:focus-visible` state; returns whether it changed. */
 	setFocusVisible(active: boolean): boolean {
 		if (this.#focusVisibleActive === active) return false;

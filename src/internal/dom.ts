@@ -60,6 +60,13 @@ export interface UAEngine {
 		lineFragments(text: object): TextareaVisualLine[];
 	};
 	styles: {registerShadowRoot(root: object): void};
+	/**
+	 * Note that a state no attribute records moved -- a popover shown or
+	 * hidden. Nothing about it is a mutation, so the rules that test it and
+	 * the frame that paints what they reveal have nothing else to hear it
+	 * from.
+	 */
+	stateChanged(element: object): void;
 	observer: {observe(target: object, options: object): void};
 	/** Note the unbounded damage attaching a shadow tree is. */
 	invalidateStructure(): void;
@@ -6684,6 +6691,91 @@ export class HTMLElement extends Element {
 			document[kActiveElement] = null;
 		}
 	}
+
+	/**
+	 * Show the element as a popover: it joins the top layer, over everything
+	 * the document paints, and the UA sheet stops hiding it.
+	 */
+	showPopover(options?: {source?: Element | null}): void {
+		const init =
+			options === undefined
+				? {}
+				: toDictionary<{source?: Element | null}>(options, "Show options");
+		showPopover(this, true, init.source ?? null);
+	}
+
+	/** Hide a showing popover, which leaves the top layer as it goes. */
+	hidePopover(): void {
+		hidePopover(this, true, true, true, null);
+	}
+
+	/**
+	 * Show a hidden popover or hide a showing one, and answer with whether it
+	 * is showing afterwards. A force of true only ever shows and one of false
+	 * only ever hides, so a caller that knows the state it wants says it.
+	 */
+	togglePopover(
+		options?: boolean | {force?: boolean; source?: Element | null},
+	): boolean {
+		let force: boolean | null = null;
+		let source: Element | null = null;
+		if (typeof options === "boolean") {
+			force = options;
+		} else if (options !== undefined) {
+			const init = toDictionary<{force?: boolean; source?: Element | null}>(
+				options,
+				"Toggle options",
+			);
+			if (init.force !== undefined) force = Boolean(init.force);
+			source = init.source ?? null;
+		}
+		const showing = isShowingPopover(this);
+		if (showing && force !== true) {
+			hidePopover(this, true, true, true, null);
+		} else if (!showing && force !== false) {
+			showPopover(this, true, source);
+		} else {
+			// Neither half runs, and the state still has to be a legal one:
+			// toggling something that is not a popover throws either way.
+			const validity = popoverValidity(this, showing, null);
+			if (isPopoverException(validity)) throw validity;
+		}
+		return isShowingPopover(this);
+	}
+
+	/**
+	 * A popover whose attribute changes state stops being the popover it was
+	 * showing as, so it closes -- silently, since the author who changed the
+	 * attribute is not asking to be told about the popover it used to be.
+	 */
+	override [kAttributeChanged](
+		localName: string,
+		oldValue: string | null,
+		value: string | null,
+		namespace: string | null,
+	): void {
+		super[kAttributeChanged](localName, oldValue, value, namespace);
+		if (namespace !== null || localName !== "popover") return;
+		if (popoverValueState(oldValue) === popoverValueState(value)) return;
+		if (!isShowingPopover(this)) return;
+		hidePopover(this, true, true, false, null);
+	}
+
+	/**
+	 * A popover taken out of the document is no longer showing: the top layer
+	 * holds nothing off the tree, and there is no page left for it to be over.
+	 */
+	override [kRemovingSteps](oldParent: Node): void {
+		super[kRemovingSteps](oldParent);
+		if (!isShowingPopover(this)) return;
+		const state = popoverStateOf(this);
+		topLayerOf(this[kDocument]).delete(this);
+		state.visibility = "hidden";
+		state.mode = null;
+		state.trigger = null;
+		state.previouslyFocused = null;
+		popoverStateChanged(this);
+	}
 }
 
 /**
@@ -8447,6 +8539,9 @@ function installReflection(prototype: object, spec: ReflectSpec): void {
 			get = function (this: Element): string | null {
 				const value = this.getAttribute(attribute);
 				if (value === null) return spec.nullable ? null : missing;
+				// An attribute whose empty string is one of its own keywords
+				// answers with the state that keyword names.
+				if (value === "" && spec.empty !== undefined) return spec.empty;
 				const lowered = asciiLowercase(value);
 				for (const candidate of keywords) {
 					if (asciiLowercase(candidate) === lowered) return candidate;
@@ -10605,7 +10700,20 @@ export class HTMLInputElement extends HTMLElement {
 		}
 	}
 
-	[kActivationBehavior](): void {
+	/**
+	 * The popover this input invokes when it is one of the types that render
+	 * as a button, which the attribute names by id or an author hands over as
+	 * an element.
+	 */
+	get popoverTargetElement(): Element | null {
+		return popoverTargetAttributeElement(this);
+	}
+
+	set popoverTargetElement(value: Element | null) {
+		setPopoverTargetAttributeElement(this, value);
+	}
+
+	[kActivationBehavior](event: Event): void {
 		if (isActuallyDisabled(this)) return;
 		const type = this.type;
 		if (type === "checkbox" || type === "radio") {
@@ -10614,12 +10722,14 @@ export class HTMLInputElement extends HTMLElement {
 			return;
 		}
 		const form = formOwner(this);
-		if (form === null) return;
-		if (type === "submit" || type === "image") {
-			submitForm(form, this, false);
-		} else if (type === "reset") {
-			form.reset();
+		if (form !== null) {
+			if (type === "submit" || type === "image") {
+				submitForm(form, this, false);
+			} else if (type === "reset") {
+				form.reset();
+			}
 		}
+		popoverTargetActivationBehavior(this, event.target);
 	}
 
 	/** Set checkedness, unchecking the rest of a radio button's group. */
@@ -10965,15 +11075,29 @@ export class HTMLButtonElement extends HTMLElement {
 		return labelsOf(this);
 	}
 
-	[kActivationBehavior](): void {
+	/**
+	 * The popover this button invokes, which the attribute names by id or an
+	 * author hands over as an element.
+	 */
+	get popoverTargetElement(): Element | null {
+		return popoverTargetAttributeElement(this);
+	}
+
+	set popoverTargetElement(value: Element | null) {
+		setPopoverTargetAttributeElement(this, value);
+	}
+
+	[kActivationBehavior](event: Event): void {
 		if (isActuallyDisabled(this)) return;
 		const form = formOwner(this);
-		if (form === null) return;
-		if (this.type === "submit") {
-			submitForm(form, this, false);
-		} else if (this.type === "reset") {
-			form.reset();
+		if (form !== null) {
+			if (this.type === "submit") {
+				submitForm(form, this, false);
+			} else if (this.type === "reset") {
+				form.reset();
+			}
 		}
+		popoverTargetActivationBehavior(this, event.target);
 	}
 }
 /**
@@ -12414,18 +12538,21 @@ export class HTMLFieldSetElement extends HTMLElement {
 export interface ToggleEventInit extends EventInit {
 	oldState?: string;
 	newState?: string;
+	source?: Element | null;
 }
 
 /** The event a details or a popover fires when it opens or closes. */
 export class ToggleEvent extends Event {
 	#oldState: string;
 	#newState: string;
+	#source: Element | null;
 
 	constructor(type: string, eventInitDict: ToggleEventInit = {}) {
 		super(type, eventInitDict);
 		const init = toDictionary<ToggleEventInit>(eventInitDict, "An event init");
 		this.#oldState = String(init.oldState ?? "");
 		this.#newState = String(init.newState ?? "");
+		this.#source = init.source ?? null;
 	}
 
 	get oldState(): string {
@@ -12434,6 +12561,11 @@ export class ToggleEvent extends Event {
 
 	get newState(): string {
 		return this.#newState;
+	}
+
+	/** The element whose activation opened or closed the popover, if any. */
+	get source(): Element | null {
+		return this.#source;
 	}
 }
 
@@ -12578,6 +12710,14 @@ export class HTMLDialogElement extends HTMLElement {
 	}
 
 	/**
+	 * The dialog focusing steps, as the popover focusing steps reach them: a
+	 * dialog shown as a popover focuses like a dialog, not like a popover.
+	 */
+	[kDialogFocusingSteps](): void {
+		this.#focusDialog();
+	}
+
+	/**
 	 * HTML's dialog focusing steps: focus goes to the descendant asking for it
 	 * with `autofocus`, else to the first one that can take focus, else to the
 	 * dialog itself -- which is focusable for exactly as long as it is the
@@ -12649,6 +12789,651 @@ export class HTMLDialogElement extends HTMLElement {
 /** Whether a node's root is a document, which is what connected means. */
 function isConnectedNode(node: Node): boolean {
 	return shadowIncludingRoot(node).nodeType === DOCUMENT_NODE;
+}
+
+/* ------------------------------------------------------------- popovers */
+
+const kDialogFocusingSteps = Symbol("the dialog focusing steps");
+const kPopoverShowing = Symbol("a popover is opening");
+const kPopoverHidingCount = Symbol("how many popovers are closing");
+
+/**
+ * A popover's state, which no attribute records.
+ *
+ * `mode` is the state the popover was OPENED in rather than the one its
+ * attribute names now: the attribute can change under a showing popover, and
+ * the stack it belongs to is the one it entered. `previouslyFocused` is set
+ * only for the popover that opened a stack, so closing the stack gives focus
+ * back once rather than once per popover.
+ */
+interface PopoverState {
+	visibility: "hidden" | "showing";
+	mode: "auto" | null;
+	trigger: Element | null;
+	previouslyFocused: Element | null;
+	hiding: boolean;
+	toggleTask: {oldState: string; canceled: boolean} | null;
+}
+
+/**
+ * The popover state of the elements that have one. HTML gives the slots to
+ * every HTML element; an element that was never a popover has no state to
+ * hold, and the state it would hold is the initial one.
+ */
+const popoverStates = new WeakMap<Element, PopoverState>();
+
+function popoverStateOf(element: Element): PopoverState {
+	let state = popoverStates.get(element);
+	if (state === undefined) {
+		state = {
+			visibility: "hidden",
+			mode: null,
+			trigger: null,
+			previouslyFocused: null,
+			hiding: false,
+			toggleTask: null,
+		};
+		popoverStates.set(element, state);
+	}
+	return state;
+}
+
+/**
+ * The state an element's popover attribute is in: auto for the empty string
+ * and `auto`, manual for `manual` and for every value the attribute does not
+ * know, and null -- not a popover -- when the attribute is absent.
+ *
+ * HTML's third state, Hint, is NOT implemented: a hint popover keeps a second
+ * stack that auto popovers close and that closes with the auto popover it
+ * hangs from, and every algorithm here would carry that second stack through
+ * it. `popover=hint` therefore takes the route the attribute defines for a
+ * value it does not know, the Manual state, and reflects as "manual".
+ */
+function popoverAttributeState(element: Element): "auto" | "manual" | null {
+	if (element[kNamespace] !== HTML_NAMESPACE) return null;
+	return popoverValueState(element.getAttribute("popover"));
+}
+
+/** The state a popover attribute VALUE is in, for comparing two of them. */
+function popoverValueState(value: string | null): "auto" | "manual" | null {
+	if (value === null) return null;
+	const keyword = asciiLowercase(value);
+	return keyword === "" || keyword === "auto" ? "auto" : "manual";
+}
+
+/** Whether an element is a popover in the showing state -- `:popover-open`. */
+export function isShowingPopover(node: object): boolean {
+	return (
+		node instanceof HTMLElement &&
+		popoverStates.get(node)?.visibility === "showing"
+	);
+}
+
+/**
+ * A document's showing auto popover list: the auto popovers in its top layer,
+ * in the order they entered it, which is the order they close in.
+ */
+function showingAutoPopovers(document: Document): Element[] {
+	const popovers: Element[] = [];
+	for (const element of topLayerOf(document)) {
+		const state = popoverStates.get(element);
+		if (state?.mode === "auto" && state.visibility === "showing") {
+			popovers.push(element);
+		}
+	}
+	return popovers;
+}
+
+/** The auto popover on top of a document's stack, or null while none is up. */
+export function topmostAutoPopover(document: object): Element | null {
+	const popovers = showingAutoPopovers(document as Document);
+	return popovers.length === 0 ? null : popovers[popovers.length - 1];
+}
+
+/**
+ * Tell the environment that a popover's state moved. Nothing about showing
+ * one is a mutation -- the attribute stands, the tree stands -- so the rules
+ * that test `:popover-open`, and the frame that would paint what they hide or
+ * reveal, have nothing else to hear it from.
+ */
+function popoverStateChanged(element: Element): void {
+	uaEngineOf(element)?.stateChanged(element);
+}
+
+/**
+ * Check popover validity, as the callers below hold the result: true, false
+ * for a call that is simply not to happen, or the exception the check threw,
+ * which a caller rethrows only where the specification says it does.
+ *
+ * HTML also refuses a popover whose fullscreen flag is set. Fullscreen is the
+ * renderer's, not the tree's -- this file knows nothing of it -- and the
+ * element that is fullscreen paints over the whole screen either way, so the
+ * check is the environment's if it ever wants one.
+ */
+function popoverValidity(
+	element: Element,
+	expectedToBeShowing: boolean,
+	expectedDocument: Document | null,
+): true | false | unknown {
+	if (popoverAttributeState(element) === null) {
+		return domError("NotSupportedError", "That element is not a popover");
+	}
+	const showing = popoverStateOf(element).visibility === "showing";
+	if (expectedToBeShowing !== showing) return false;
+	if (!isConnectedNode(element)) {
+		return domError("InvalidStateError", "That popover is not connected");
+	}
+	if (expectedDocument !== null && element[kDocument] !== expectedDocument) {
+		return domError("InvalidStateError", "That popover changed documents");
+	}
+	if (isModalDialog(element)) {
+		return domError(
+			"InvalidStateError",
+			"A dialog showing modally cannot also show as a popover",
+		);
+	}
+	return true;
+}
+
+/** Whether a validity result is the exception a throwing caller rethrows. */
+function isPopoverException(result: true | false | unknown): boolean {
+	return result !== true && result !== false;
+}
+
+/**
+ * HTML's show popover: the popover joins the top layer, and an auto one first
+ * closes every open auto popover it is not nested inside -- through the node
+ * tree or through the element that invoked it.
+ */
+function showPopover(
+	element: Element,
+	throwExceptions: boolean,
+	source: Element | null,
+): void {
+	const document = element[kDocument];
+	// Showing a popover from inside another popover's show or hide is a
+	// reentrancy the stack algorithms cannot unwind, so it is refused.
+	if (document[kPopoverShowing] || document[kPopoverHidingCount] !== 0) {
+		if (throwExceptions) {
+			throw domError(
+				"InvalidStateError",
+				"A popover cannot be shown while another is opening or closing",
+			);
+		}
+		return;
+	}
+	let validity = popoverValidity(element, false, null);
+	if (validity !== true) {
+		if (throwExceptions && isPopoverException(validity)) throw validity;
+		return;
+	}
+	const state = popoverStateOf(element);
+	document[kPopoverShowing] = true;
+	const cleanup = (): void => {
+		document[kPopoverShowing] = false;
+	};
+	const opening = new ToggleEvent("beforetoggle", {
+		cancelable: true,
+		oldState: "closed",
+		newState: "open",
+		source,
+	});
+	if (!dispatch(element, opening)) {
+		cleanup();
+		return;
+	}
+	// A beforetoggle listener can have disconnected the element or changed
+	// its popover attribute, so what was checked above is checked again.
+	validity = popoverValidity(element, false, document);
+	if (validity !== true) {
+		cleanup();
+		if (throwExceptions && isPopoverException(validity)) throw validity;
+		return;
+	}
+	let shouldRestoreFocus = false;
+	const originalType = popoverAttributeState(element);
+	if (originalType === "auto") {
+		const ancestor = topmostPopoverAncestor(element, source);
+		hidePopoverStackUntil(document, ancestor, false, true);
+		if (originalType !== popoverAttributeState(element)) {
+			cleanup();
+			if (throwExceptions) {
+				throw domError(
+					"InvalidStateError",
+					"That popover changed state while the ones over it closed",
+				);
+			}
+			return;
+		}
+		validity = popoverValidity(element, false, document);
+		if (validity !== true) {
+			cleanup();
+			if (throwExceptions && isPopoverException(validity)) throw validity;
+			return;
+		}
+		// Focus goes back to the page only for the popover that OPENED the
+		// stack, so unwinding one returns it once.
+		if (topmostAutoPopover(document) === null) shouldRestoreFocus = true;
+		state.mode = "auto";
+	}
+	state.previouslyFocused = null;
+	const originallyFocused = document[kActiveElement];
+	topLayerOf(document).add(element);
+	state.visibility = "showing";
+	state.trigger = source;
+	popoverFocusingSteps(element);
+	if (shouldRestoreFocus && popoverAttributeState(element) !== null) {
+		state.previouslyFocused = originallyFocused;
+	}
+	cleanup();
+	queuePopoverToggleEventTask(element, "closed", "open", source);
+	popoverStateChanged(element);
+}
+
+/**
+ * HTML's hide popover: the popover leaves the top layer, and an auto one
+ * takes the popovers stacked above it with it.
+ */
+function hidePopover(
+	element: Element,
+	focusPreviousElement: boolean,
+	fireEvents: boolean,
+	throwExceptions: boolean,
+	source: Element | null,
+): void {
+	let validity = popoverValidity(element, true, null);
+	if (validity !== true) {
+		if (throwExceptions && isPopoverException(validity)) throw validity;
+		return;
+	}
+	const document = element[kDocument];
+	const state = popoverStateOf(element);
+	const nestedHide = state.hiding;
+	state.hiding = true;
+	if (nestedHide) fireEvents = false;
+	document[kPopoverHidingCount]++;
+	const cleanup = (): void => {
+		if (!nestedHide) state.hiding = false;
+		document[kPopoverHidingCount]--;
+	};
+	if (state.mode === "auto") {
+		hidePopoverStackUntil(document, element, focusPreviousElement, fireEvents);
+		// Closing the popovers above this one can have disconnected it or
+		// changed its attribute, so validity is asked again.
+		validity = popoverValidity(element, true, null);
+		if (validity !== true) {
+			cleanup();
+			if (throwExceptions && isPopoverException(validity)) throw validity;
+			return;
+		}
+	}
+	if (fireEvents) {
+		dispatch(
+			element,
+			new ToggleEvent("beforetoggle", {
+				oldState: "open",
+				newState: "closed",
+				source,
+			}),
+		);
+		validity = popoverValidity(element, true, null);
+		if (validity !== true) {
+			cleanup();
+			if (throwExceptions && isPopoverException(validity)) throw validity;
+			return;
+		}
+	}
+	topLayerOf(document).delete(element);
+	state.trigger = null;
+	state.mode = null;
+	state.visibility = "hidden";
+	if (fireEvents) {
+		queuePopoverToggleEventTask(element, "open", "closed", source);
+	}
+	const previouslyFocused = state.previouslyFocused;
+	if (previouslyFocused !== null) {
+		state.previouslyFocused = null;
+		// Focus goes back only if the popover still holds it: an author who
+		// moved focus elsewhere while it was up keeps it there.
+		const active = document[kActiveElement];
+		if (
+			focusPreviousElement &&
+			active !== null &&
+			(active === element || element.contains(active))
+		) {
+			(previouslyFocused as HTMLElement).focus();
+		}
+	}
+	cleanup();
+	popoverStateChanged(element);
+}
+
+/**
+ * Close a popover the way a close request does -- Escape on the topmost auto
+ * popover -- which is a hide that gives focus back and fires its events.
+ */
+export function closePopover(element: object): void {
+	hidePopover(element as Element, true, true, false, null);
+}
+
+/**
+ * HTML's hide popover stack until: close the auto popovers stacked above an
+ * endpoint, topmost first, leaving the endpoint and everything under it. A
+ * null endpoint closes the whole stack.
+ *
+ * The second pass catches the popovers a beforetoggle listener showed while
+ * the stack was unwinding, which would otherwise be left over the endpoint.
+ */
+function hidePopoverStackUntil(
+	document: Document,
+	endpoint: Element | null,
+	focusPreviousElement: boolean,
+	fireEvents: boolean,
+): void {
+	const popovers = showingAutoPopovers(document);
+	const index = endpoint === null ? -1 : popovers.indexOf(endpoint);
+	const lastHideIndex = index === -1 ? 0 : index + 1;
+	const toHide = popovers.slice(lastHideIndex).reverse();
+	const toRemain = popovers.slice(0, lastHideIndex);
+	for (const popover of toHide) {
+		hidePopover(popover, focusPreviousElement, fireEvents, false, null);
+	}
+	for (const popover of showingAutoPopovers(document).reverse()) {
+		if (toRemain.includes(popover)) continue;
+		hidePopover(popover, focusPreviousElement, false, false, null);
+	}
+}
+
+/**
+ * HTML's hide popovers until, which is the stack unwind light dismiss and an
+ * opening popover both run. With no hint stack, it is the auto stack's.
+ */
+export function hidePopoversUntil(
+	document: object,
+	endpoint: object | null,
+	focusPreviousElement: boolean,
+	fireEvents: boolean,
+): void {
+	hidePopoverStackUntil(
+		document as Document,
+		endpoint as Element | null,
+		focusPreviousElement,
+		fireEvents,
+	);
+}
+
+/**
+ * HTML's topmost popover ancestor: the open auto popover a node hangs from,
+ * either by sitting inside it in the flat tree or by being invoked from
+ * inside it. The ancestor is the LAST such popover in the stack, so what
+ * closes above it is exactly what is unrelated to the node.
+ */
+function topmostPopoverAncestor(
+	node: Element,
+	source: Element | null,
+): Element | null {
+	const popovers = showingAutoPopovers(node[kDocument]);
+	const nodeIndex = lastFlatAncestorIndex(popovers, node);
+	const sourceIndex =
+		source === null ? -1 : lastFlatAncestorIndex(popovers, source);
+	const index = Math.max(nodeIndex, sourceIndex);
+	return index === -1 ? null : popovers[index];
+}
+
+/** The index of the last popover in a stack a node sits inside of. */
+function lastFlatAncestorIndex(popovers: Element[], node: Element): number {
+	for (let i = popovers.length - 1; i >= 0; i--) {
+		if (isFlatTreeDescendant(node, popovers[i])) return i;
+	}
+	return -1;
+}
+
+/** Whether a node renders inside an element, shadow trees crossed. */
+function isFlatTreeDescendant(node: Node, ancestor: Element): boolean {
+	for (
+		let current = flatParentElement<Node>(node);
+		current !== null;
+		current = flatParentElement<Node>(current)
+	) {
+		if (current === ancestor) return true;
+	}
+	return false;
+}
+
+/** HTML's nearest inclusive open popover: the auto popover a node is in. */
+function nearestInclusiveOpenPopover(node: Node): Element | null {
+	for (
+		let current: Node | null = node;
+		current !== null;
+		current = flatParentElement<Node>(current)
+	) {
+		const state = popoverStates.get(current as Element);
+		if (state?.mode === "auto" && state.visibility === "showing") {
+			return current as Element;
+		}
+	}
+	return null;
+}
+
+/**
+ * HTML's nearest inclusive target popover: the open auto popover the node, or
+ * an element it sits in, INVOKES. It is what keeps a click on a popover's own
+ * button from light-dismissing the popover it opened.
+ */
+function nearestInclusiveTargetPopover(node: Node): Element | null {
+	for (
+		let current: Node | null = node;
+		current !== null;
+		current = flatParentElement<Node>(current)
+	) {
+		const target = popoverTargetElementOf(current);
+		if (
+			target !== null &&
+			popoverAttributeState(target) === "auto" &&
+			isShowingPopover(target)
+		) {
+			return target;
+		}
+	}
+	return null;
+}
+
+/** Where a popover sits in its document's stack; zero for one not in it. */
+function popoverStackPosition(popover: Element | null): number {
+	if (popover === null) return 0;
+	const index = showingAutoPopovers(popover[kDocument]).indexOf(popover);
+	return index === -1 ? 0 : index + 1;
+}
+
+/**
+ * HTML's topmost clicked popover: the popover a click at a node belongs to,
+ * which is the deeper of the popover the node is in and the popover the node
+ * invokes. Light dismiss closes everything stacked above it.
+ */
+export function topmostClickedPopover(node: object): Element | null {
+	const clicked = nearestInclusiveOpenPopover(node as Node);
+	const target = nearestInclusiveTargetPopover(node as Node);
+	return popoverStackPosition(clicked) > popoverStackPosition(target)
+		? clicked
+		: target;
+}
+
+/**
+ * HTML's popover focusing steps. Unlike a dialog, a popover does not take
+ * focus off the page by opening: focus moves only where the content asks for
+ * it with autofocus.
+ */
+function popoverFocusingSteps(element: Element): void {
+	if (element instanceof HTMLDialogElement) {
+		element[kDialogFocusingSteps]();
+		return;
+	}
+	if (element.hasAttribute("autofocus")) {
+		(element as HTMLElement).focus();
+		return;
+	}
+	for (const node of shadowIncludingInclusiveDescendants(element)) {
+		if (node === element || node.nodeType !== ELEMENT_NODE) continue;
+		const descendant = node as Element;
+		if (!descendant.hasAttribute("autofocus")) continue;
+		if (!isFocusableArea(descendant)) continue;
+		(descendant as HTMLElement).focus();
+		return;
+	}
+}
+
+/**
+ * HTML's queue a popover toggle event task. A popover shown and hidden inside
+ * one turn reports the state it settled on: the pending task is dropped and
+ * its old state carried into the one that replaces it, so an author sees one
+ * toggle describing the whole run rather than a pair that cancel out.
+ */
+function queuePopoverToggleEventTask(
+	element: Element,
+	oldState: string,
+	newState: string,
+	source: Element | null,
+): void {
+	const state = popoverStateOf(element);
+	if (state.toggleTask !== null) {
+		oldState = state.toggleTask.oldState;
+		state.toggleTask.canceled = true;
+	}
+	const task = {oldState, canceled: false};
+	state.toggleTask = task;
+	queueMicrotask(() => {
+		if (task.canceled) return;
+		state.toggleTask = null;
+		dispatch(element, new ToggleEvent("toggle", {oldState, newState, source}));
+	});
+}
+
+/**
+ * The elements a popovertarget was set to as an ELEMENT rather than named by
+ * id. The attribute cannot hold one, so the reference is held beside it, and
+ * the getter answers with it only while the element it names is in a tree the
+ * invoker composes into.
+ */
+const explicitPopoverTargets = new WeakMap<Element, Element>();
+
+/**
+ * HTML's get the popovertarget-associated element: the explicitly set element
+ * if it is still reachable, otherwise the element the attribute names by id
+ * in the invoker's own tree.
+ */
+function popoverTargetAttributeElement(node: Node): Element | null {
+	if (node.nodeType !== ELEMENT_NODE) return null;
+	const element = node as Element;
+	const explicit = explicitPopoverTargets.get(element);
+	if (explicit !== undefined) {
+		// The reference stands while the target is in the invoker's own tree
+		// or in one that tree composes into; it goes stale, rather than
+		// dangling, when the target is moved out from under it.
+		for (let root: Node = getRoot(element); ; ) {
+			if (root.contains(explicit)) return explicit;
+			if (!isShadowRoot(root)) return null;
+			const host = (root as ShadowRoot)[kHost];
+			if (host === null) return null;
+			root = getRoot(host);
+		}
+	}
+	const id = element.getAttribute("popovertarget");
+	if (id === null) return null;
+	const root = getRoot(element);
+	if (root.nodeType !== DOCUMENT_NODE && !isShadowRoot(root)) return null;
+	return (root as Document | ShadowRoot).getElementById(id);
+}
+
+/** Set the element a popovertarget names, per HTML's element reflection. */
+function setPopoverTargetAttributeElement(
+	element: Element,
+	value: Element | null,
+): void {
+	if (value === null || value === undefined) {
+		explicitPopoverTargets.delete(element);
+		element.removeAttribute("popovertarget");
+		return;
+	}
+	explicitPopoverTargets.set(element, value);
+	element.setAttribute("popovertarget", "");
+}
+
+/**
+ * Whether a node is a BUTTON as the popover target attributes mean it: the
+ * button element, and the input types that render as buttons.
+ */
+function isPopoverInvokerButton(node: Node): boolean {
+	if (node instanceof HTMLButtonElement) return true;
+	if (!(node instanceof HTMLInputElement)) return false;
+	const type = node.type;
+	return (
+		type === "submit" ||
+		type === "reset" ||
+		type === "button" ||
+		type === "image"
+	);
+}
+
+/**
+ * HTML's get the popover target element: the popover a node invokes. A button
+ * that submits a form is not an invoker -- its activation is the submission,
+ * and the attribute on it does nothing.
+ */
+function popoverTargetElementOf(node: Node): Element | null {
+	if (!isPopoverInvokerButton(node)) return null;
+	const element = node as Element;
+	if (isActuallyDisabled(element)) return null;
+	if (formOwner(element) !== null && isSubmitButton(element)) return null;
+	const popover = popoverTargetAttributeElement(element);
+	if (popover === null) return null;
+	return popoverAttributeState(popover) === null ? null : popover;
+}
+
+/**
+ * HTML's popover target attribute activation behavior: what a button with
+ * popovertarget does when it is activated. `popovertargetaction` names which
+ * half of the toggle to run, and a button inside the popover it targets does
+ * nothing -- the click that reaches it is the popover's own.
+ */
+function popoverTargetActivationBehavior(node: Element, target: unknown): void {
+	const popover = popoverTargetElementOf(node);
+	if (popover === null) return;
+	if (
+		target instanceof Node &&
+		isShadowIncludingInclusiveDescendant(target, popover) &&
+		isShadowIncludingInclusiveDescendant(popover, node) &&
+		popover !== node
+	) {
+		return;
+	}
+	const action = asciiLowercase(
+		node.getAttribute("popovertargetaction") ?? "toggle",
+	);
+	const showing = isShowingPopover(popover);
+	if (action === "show" && showing) return;
+	if (action === "hide" && !showing) return;
+	if (showing) {
+		hidePopover(popover, true, true, false, node);
+		return;
+	}
+	if (popoverValidity(popover, false, null) === true) {
+		showPopover(popover, false, node);
+	}
+}
+
+/** Whether a node is the element itself or renders anywhere beneath it. */
+function isShadowIncludingInclusiveDescendant(
+	node: Node,
+	ancestor: Node,
+): boolean {
+	for (
+		let current: Node | null = node;
+		current !== null;
+		current = flatParentElement<Node>(current)
+	) {
+		if (current === ancestor) return true;
+	}
+	return false;
 }
 /**
  * A script, which never runs.
@@ -14447,6 +15232,10 @@ export class Document extends Node {
 	[kStyleElements] = 0;
 	[kChildren]: HTMLCollection | null = null;
 	[kTopLayer] = new Set<Element>();
+	// The reentrancy guards the popover algorithms hold on the document: one
+	// popover opening at a time, and a count of the ones closing under it.
+	[kPopoverShowing] = false;
+	[kPopoverHidingCount] = 0;
 
 	/** Parse a document, declarative shadow roots included. */
 	static parseHTMLUnsafe(html: string): Document {
@@ -17792,6 +18581,20 @@ function selectorEngine(document: Document): SelectorEngine {
 			(match: string[], source: string) => ({
 				match,
 				source: `if(s.isModal(e)){${source}}`,
+				status: true,
+				modvar: null,
+			}),
+		);
+		// `:popover-open` is the same kind of state: a popover's showing lives
+		// in the top layer and in nothing the tree records, so the engine asks
+		// rather than derives.
+		engine.Snapshot.isPopoverOpen = isShowingPopover;
+		engine.registerSelector(
+			":popover-open",
+			/^:popover-open(.*)/i,
+			(match: string[], source: string) => ({
+				match,
+				source: `if(s.isPopoverOpen(e)){${source}}`,
 				status: true,
 				modvar: null,
 			}),

@@ -39,6 +39,8 @@ export interface ReflectSpec {
 	missing?: string;
 	/** The state an enumerated attribute takes when its value is not known. */
 	invalid?: string;
+	/** The state an enumerated attribute takes when its value is empty. */
+	empty?: string;
 	/** Limited to only non-negative numbers: a negative set throws. */
 	nonNegative?: boolean;
 	/** Limited to only non-negative numbers greater than zero: a zero set throws. */
@@ -155,6 +157,16 @@ const REFERRER_POLICIES = [
 	"unsafe-url",
 ];
 
+/** Which half of the toggle a button with popovertarget runs. */
+const popoverTargetAction = (): ReflectSpec =>
+	keyword(
+		"popoverTargetAction",
+		"popovertargetaction",
+		["toggle", "show", "hide"],
+		"toggle",
+		"toggle",
+	);
+
 const referrerPolicy = (): ReflectSpec =>
 	keyword("referrerPolicy", "referrerpolicy", REFERRER_POLICIES, "", "");
 
@@ -237,13 +249,18 @@ export const HTML_ELEMENT_REFLECTIONS: readonly ReflectSpec[] = [
 		"true",
 		"true",
 	),
+	// The empty string is the popover attribute's own spelling of the auto
+	// state. HTML's third state, hint, is not implemented -- see the note on
+	// the popover algorithms -- so `popover=hint` takes the route the
+	// attribute defines for a value it does not know.
 	{
 		property: "popover",
 		attribute: "popover",
 		kind: "enum",
-		keywords: ["auto", "manual", "hint"],
+		keywords: ["auto", "manual"],
 		nullable: true,
 		missing: "",
+		empty: "auto",
 		invalid: "manual",
 	},
 ];
@@ -794,6 +811,7 @@ export const HTML_INTERFACES: readonly InterfaceSpec[] = [
 			str("align"),
 			ulong("height", "height", 0),
 			ulong("width", "width", 0),
+			popoverTargetAction(),
 		],
 	},
 	{
@@ -811,6 +829,7 @@ export const HTML_INTERFACES: readonly InterfaceSpec[] = [
 				"submit",
 			),
 			str("value"),
+			popoverTargetAction(),
 		],
 	},
 	{
