@@ -46,6 +46,31 @@ test("CSS specificity calculation", async () => {
 	termdom.dispose();
 });
 
+test("attribute values do not affect selector specificity", async () => {
+	const terminal = new MockProcess();
+	const termdom = new TermDOM({transport: terminal.transport});
+	const {document} = termdom;
+
+	const style = document.createElement("style");
+	style.textContent = `
+		[data-reference="#root .marker :focus div::before"] { color: red; }
+		.target { color: blue; }
+	`;
+	document.head.appendChild(style);
+
+	await new Promise((resolve) => setTimeout(resolve, 10));
+
+	const element = document.createElement("div");
+	element.className = "target";
+	element.setAttribute("data-reference", "#root .marker :focus div::before");
+	document.body.appendChild(element);
+
+	const computedStyle = termdom.window.getComputedStyle(element);
+	expect(computedStyle.getPropertyValue("color")).toBe("rgb(0, 0, 255)");
+
+	termdom.dispose();
+});
+
 test("CSS cascade resolution", async () => {
 	const terminal = new MockProcess();
 	const termdom = new TermDOM({transport: terminal.transport});
