@@ -10,12 +10,17 @@ import {
 	caretRangeOf,
 	fieldValueText,
 	flatIsConnected,
+	closePopover,
+	hidePopoversUntil,
 	installUAEngine,
 	isModalDialog,
+	isShowingPopover,
 	isTextField,
 	pseudoHostOf,
 	setUASelection,
 	topLayerOf,
+	topmostAutoPopover,
+	topmostClickedPopover,
 	upgradeUAWidget,
 } from "./dom.js";
 import {LayoutEngine} from "./layout.js";
@@ -631,6 +636,9 @@ export class TermDOM {
 	// becomes a click. (Browsers dispatch click at the nearest common
 	// ancestor; the same-element case is the one that matters on a cell grid.)
 	#mouseDownTarget: Element | null = null;
+	// The popover the last mousedown belonged to, which light dismiss compares
+	// the release against.
+	#popoverPressTarget: object | null = null;
 	// Where a left-button drag started selecting text, as a caret position --
 	// the selection's anchor. The focus end follows the drag; both feed
 	// Selection.setBaseAndExtent, which handles backward drags itself.
@@ -733,6 +741,14 @@ export class TermDOM {
 			styles: this.#styleManager,
 			observer: this[kObserver],
 			invalidateStructure: () => this[kLayoutEngine].invalidateStructure(),
+			// A popover shows and hides without touching the tree, so the
+			// rules that test `:popover-open` -- the UA sheet's own display
+			// among them -- are told here, and the frame that paints what
+			// they reveal is asked for here.
+			stateChanged: (element: object) => {
+				this.#styleManager.handleStateChange(element as Element);
+				void this.#render();
+			},
 		});
 		this.#painter = new Painter({
 			window: this.window,
@@ -2345,6 +2361,21 @@ export class TermDOM {
 	}
 
 	/**
+	 * What a close request closes: the modal dialog or auto popover last into
+	 * the top layer, which is the one the user sees on top. A manual popover
+	 * is not one -- it responds to neither Escape nor a click outside -- and
+	 * neither is anything else riding the layer.
+	 */
+	#topmostCloseRequestTarget(): Element | null {
+		const popover = topmostAutoPopover(this.document) as Element | null;
+		let target: Element | null = null;
+		for (const element of this.#topLayer) {
+			if (isModalDialog(element) || element === popover) target = element;
+		}
+		return target;
+	}
+
+	/**
 	 * Focus the next or previous focusable element
 	 */
 	#moveFocus(reverse: boolean): void {
@@ -2601,6 +2632,10 @@ export class TermDOM {
 
 		if (!isRelease) {
 			this.#mouseDownTarget = target;
+			// The popover a press belongs to, which the release compares
+			// against: light dismiss is a press and a release in the same
+			// place, so a drag out of a popover does not close it.
+			this.#popoverPressTarget = topmostClickedPopover(target);
 			this.#fieldDragAnchor = null;
 			// A pointer press suppresses the :focus-visible ring.
 			if (this.#styleManager.setFocusVisible(false)) {
@@ -2683,6 +2718,17 @@ export class TermDOM {
 		}
 
 		target.dispatchEvent(new this.window.MouseEvent("mouseup", eventInit));
+		// LIGHT DISMISS: a release closes every auto popover the released
+		// point is not inside of and did not open -- the invoker of a popover
+		// counts as part of it, so the click that follows toggles rather than
+		// reopens what this closed. It runs before the click, where a browser
+		// runs it, and no listener can prevent it.
+		const dismissAncestor = topmostClickedPopover(target);
+		const samePopoverPress = dismissAncestor === this.#popoverPressTarget;
+		this.#popoverPressTarget = null;
+		if (samePopoverPress && topmostAutoPopover(this.document) !== null) {
+			hidePopoversUntil(this.document, dismissAncestor, false, true);
+		}
 		// A selection is only a selection: writing the clipboard is a
 		// deliberate act, through navigator.clipboard. The terminal's own
 		// select-to-copy remains available as Shift+drag, which bypasses
@@ -2870,17 +2916,25 @@ export class TermDOM {
 
 		const notCanceled = targetElement.dispatchEvent(keydownEvent);
 
-		// Escape is a CLOSE REQUEST on the topmost modal dialog: fire cancel,
-		// and close unless a listener took it. The dialog gets Escape only
-		// when nothing is fullscreen -- the branch above already returned --
-		// which is the browser's own precedence: the fullscreen exit is the
-		// user agent's guarantee, and only after it is spent does the key
-		// reach the page's own modality. Unlike Tab below, a preventDefault
-		// on keydown does not suppress it; `cancel` is the hook for that.
+		// Escape is a CLOSE REQUEST on whatever is on top of the top layer and
+		// answers one: a modal dialog fires cancel and closes unless a
+		// listener takes it, an auto popover closes outright (nothing cancels
+		// a popover, which is why a manual one -- answering no close request
+		// -- is the way to keep one up). Whichever entered the layer last is
+		// the one the key reaches, so a popover over a dialog closes first.
+		// Both get Escape only when nothing is fullscreen -- the branch above
+		// already returned -- which is the browser's own precedence: the
+		// fullscreen exit is the user agent's guarantee, and only after it is
+		// spent does the key reach the page's own modality. Unlike Tab below,
+		// a preventDefault on keydown does not suppress it.
 		if (keyName === "Escape") {
-			const modal = this.#topmostModalDialog();
-			if (modal) {
-				modal.requestClose();
+			const target = this.#topmostCloseRequestTarget();
+			if (target !== null) {
+				if (isShowingPopover(target)) {
+					closePopover(target);
+				} else {
+					(target as HTMLDialogElement).requestClose();
+				}
 				void this.#render();
 				return;
 			}

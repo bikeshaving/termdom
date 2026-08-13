@@ -467,7 +467,7 @@ The event handler IDL attributes -- onclick and its ninety-odd siblings -- are h
 
 ### the focus members, and every subtest that calls focus() or blur()
 
-`focus()`, `blur()` and `document.activeElement` are absent. A focusable area is defined over elements that are being rendered, and nothing is rendered here; a focus() that could never focus anything is not the method the specification defines. The same holds for the popover members, whose showing puts an element in the top layer.
+`focus()`, `blur()` and `document.activeElement` are absent. A focusable area is defined over elements that are being rendered, and nothing is rendered here; a focus() that could never focus anything is not the method the specification defines.
 
 ### SVG and MathML elements
 

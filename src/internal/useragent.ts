@@ -894,6 +894,13 @@ export function getInitialStyle(
  * of "obscure the page" is to clear it. An author who wants a different one
  * writes `dialog::backdrop { background-color: ... }`, and `transparent`
  * removes it entirely.
+ *
+ * The popover rules are the dialog's, over an attribute instead of a method: a
+ * popover is hidden until it is showing, and a showing one is the same fixed,
+ * centered, bordered box on the terminal's own background. Its ::backdrop
+ * paints nothing -- a browser's is transparent too, because a popover is a
+ * thing over the page rather than a thing instead of it -- and the rule saying
+ * so is what keeps a dialog shown as a popover from clearing the viewport.
  */
 export const UA_DOCUMENT_STYLES = `
 	*::selection { background-color: Highlight; color: HighlightText; }
@@ -910,6 +917,17 @@ export const UA_DOCUMENT_STYLES = `
 		margin: auto;
 	}
 	dialog::backdrop { background-color: Canvas; }
+	[popover]:not(:popover-open):not(dialog[open]) { display: none; }
+	dialog:popover-open { display: block; }
+	[popover] {
+		position: fixed;
+		top: 0; right: 0; bottom: 0; left: 0;
+		margin: auto;
+		border: 1px solid;
+		padding: 0 1ch;
+		background-color: Canvas;
+	}
+	:popover-open::backdrop { background-color: transparent; }
 	details:not([open]) > :not(summary) { display: none; }
 	details > summary:first-of-type::before { content: "▸ "; }
 	details[open] > summary:first-of-type::before { content: "▾ "; }
