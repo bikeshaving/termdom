@@ -1,10 +1,16 @@
-import {jsx} from "@b9g/crank/standalone";
+import {jsx, Raw} from "@b9g/crank/standalone";
 import {css} from "@emotion/css";
 import {Marked} from "@b9g/crankdown";
 
 import {Root} from "../components/root.js";
 import {components} from "../components/marked-components.js";
-import {castGifs} from "../server.js";
+import {assets, castGifs} from "../server.js";
+import type {PlaygroundExample} from "../models/playground-examples.js";
+import {
+	collectExamples,
+	serializeExamples,
+	EXAMPLES_SCRIPT_ID,
+} from "../models/playground-examples.js";
 
 const container = css`
 	max-width: 900px;
@@ -45,6 +51,21 @@ const content = css`
 		border-radius: 6px;
 	}
 
+	/* A live embed: the program until it comes near, an editor and a terminal
+	   after. Both states are the same width as the prose above them. */
+	figure.playground {
+		margin: 1.5rem 0;
+		min-width: 0;
+	}
+
+	/* Held to about the height the editor takes, so hydrating an embed does
+	   not move the page under whoever is reading it. */
+	figure.playground > pre {
+		margin: 0;
+		max-height: 420px;
+		overflow: auto;
+	}
+
 	ul {
 		list-style: none;
 		padding: 0;
@@ -70,6 +91,33 @@ const content = css`
 	}
 `;
 
+/**
+ * The programs the page embeds live, keyed the way `playground:id` names them.
+ * A recording is still the right answer where the program cannot run in a
+ * browser: solitaire needs an import the runner cannot resolve, and the tree
+ * browser needs a filesystem.
+ */
+const EMBEDDED = ["animated", "form"];
+
+/**
+ * Fetch the playground bundle when the first embed comes near, rather than
+ * with the page. It carries the engine, an emulator and a highlighter, which
+ * is a lot to hand someone who came to read.
+ */
+function playgroundLoader(src: string): string {
+	return `
+const embeds = document.querySelectorAll("[data-playground]");
+if (embeds.length) {
+	const observer = new IntersectionObserver((entries) => {
+		if (!entries.some((entry) => entry.isIntersecting)) return;
+		observer.disconnect();
+		import(${JSON.stringify(src)});
+	}, {rootMargin: "600px"});
+	for (const embed of embeds) observer.observe(embed);
+}
+`;
+}
+
 export default async function Home({url}: {url: string}) {
 	// Resolved at call time: server.ts imports the views (the router), so a
 	// module-level read of its exports lands mid-cycle, before they exist.
@@ -78,11 +126,20 @@ export default async function Home({url}: {url: string}) {
 	const file = await (await contentDir.getFileHandle("home.md")).getFile();
 	const body = await file.text();
 
+	const examples = await collectExamples(
+		await self.directories.open("examples"),
+	);
+	const playgrounds: Record<string, PlaygroundExample> = {};
+	for (const example of examples) {
+		if (EMBEDDED.includes(example.id)) playgrounds[example.id] = example;
+	}
+
 	return jsx`
 		<${Root}
 			title="TermDOM | Build Terminal UIs with HTML, CSS and DOM"
 			url=${url}
 			description="A real DOM, a real cascade and a real CSS layout engine that paint to a terminal. No new API to learn, no native or WASM dependency."
+			stylesheets=${[assets.xtermCSS]}
 		>
 			<main data-pagefind-body class=${container}>
 				<h1 class=${css`
@@ -103,9 +160,20 @@ export default async function Home({url}: {url: string}) {
 				</p>
 
 				<div class=${content}>
-					<${Marked} markdown=${body} components=${components} casts=${casts} />
+					<${Marked}
+						markdown=${body}
+						components=${components}
+						casts=${casts}
+						playgrounds=${playgrounds}
+					/>
 				</div>
 			</main>
+			<script type="application/json" id=${EXAMPLES_SCRIPT_ID}>
+				<${Raw} value=${serializeExamples(Object.values(playgrounds))} />
+			</script>
+			<script type="module">
+				<${Raw} value=${playgroundLoader(assets.playgroundScript)} />
+			</script>
 		<//Root>
 	`;
 }

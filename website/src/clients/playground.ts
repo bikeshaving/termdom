@@ -16,7 +16,7 @@ import type {
 	TerminalSize,
 	TerminalCloseInfo,
 } from "../../../src/index.js";
-import {CodeEditor} from "../components/code-editor.js";
+import {CodeEditor, editorHeight} from "../components/code-editor.js";
 // The model is a build-time module -- it reads the repository's examples off
 // disk -- so only its type comes along; the programs themselves arrive in the
 // page, in the script element the view wrote them to.
@@ -34,8 +34,51 @@ function readExamples(): PlaygroundExample[] {
 	return script ? JSON.parse(script.textContent!) : [];
 }
 
-const COLS = 80;
-const ROWS = 24;
+/**
+ * How much terminal a context gets.
+ *
+ * The playground page is somewhere to work, so it gets the terminal the
+ * examples are written against: eighty columns, and twenty-four rows, which is
+ * one more than the tallest of them paints. An embed is a figure in an
+ * argument, and a pane far taller than its program is a black void with a
+ * program at the top of it -- the two programs embedded on the home page paint
+ * 11x35 and 7x45, so an embed gets 56x14 and the slack is deliberate rather
+ * than left over. `editorLines` is whole lines, so the box ends where a line
+ * does.
+ */
+const PAGE_GEOMETRY = {cols: 80, rows: 24, editorLines: 20};
+const EMBED_GEOMETRY = {cols: 56, rows: 14, editorLines: 13};
+
+const FONT_SIZE = 13;
+// The emulator's cell in the font stack below, measured rather than guessed.
+const CELL_WIDTH = 7.83;
+// What the pane adds around the emulator's own box: its padding and border.
+const PANE_CHROME = 15;
+const GAP = 16;
+// An editor is worth putting beside a terminal only if a line fits in it. The
+// examples' 95th-percentile line runs 56 to 124 columns; sixty-four is where
+// the shorter half of them stop needing a horizontal scroll, and it is a fair
+// half of any width that can hold both.
+const EDITOR_MIN_COLUMNS = 64;
+// The editor's own cell, and what its padding, gutter and border add.
+const EDITOR_CELL_WIDTH = 8.4;
+const EDITOR_CHROME = 80;
+
+/**
+ * The width at which the editor and a `cols`-wide terminal can sit side by
+ * side. Below it they stack, because the alternative is an editor clipped
+ * mid-token beside a terminal with room to spare.
+ */
+function sideBySideWidth(cols: number): number {
+	return Math.round(
+		cols * CELL_WIDTH +
+			PANE_CHROME +
+			GAP +
+			EDITOR_MIN_COLUMNS * EDITOR_CELL_WIDTH +
+			EDITOR_CHROME,
+	);
+}
+
 // The emulator keeps its own colours in either scheme: a terminal is a dark
 // screen, and a program's own background colours are read against this one.
 const TERMINAL_BACKGROUND = "#0d1117";
@@ -398,25 +441,36 @@ const pane = css`
  * The emulator, its element and the run loop all outlive any single program,
  * so this yields a `Copy` after the first render -- Crank never touches the
  * subtree xterm.js owns. A new `code` prop is a new program, run once the
- * typing stops; a new `runNonce` is the reader asking for one now. Either way
- * the running program is stopped and disposed before the next is compiled,
- * and `generation` settles the race where a run starts while an older one is
- * still tearing down.
+ * typing stops; a new `runNonce` is the reader asking for one now.
+ *
+ * Runs happen one after another, on a chain rather than in parallel: starting
+ * a program is asynchronous -- the engine attaches, and the code itself may
+ * await -- and a program that is stopped writes its way off the screen. Let
+ * two overlap and a slow program's teardown lands on top of the next one's
+ * first frame, leaving a blank pane and no error to show for it.
  */
 function* TerminalPane(
 	this: Context,
 	{
 		code,
+		cols,
+		rows,
 		runNonce,
 		onstatus,
-	}: {code: string; runNonce: number; onstatus: (status: Status) => void},
+	}: {
+		code: string;
+		cols: number;
+		rows: number;
+		runNonce: number;
+		onstatus: (status: Status) => void;
+	},
 ) {
 	const terminal = new Terminal({
-		cols: COLS,
-		rows: ROWS,
+		cols,
+		rows,
 		convertEol: false,
 		cursorBlink: false,
-		fontSize: 13,
+		fontSize: FONT_SIZE,
 		fontFamily:
 			'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
 		theme: {
@@ -427,36 +481,27 @@ function* TerminalPane(
 
 	let root!: HTMLDivElement;
 	let current: Run | null = null;
-	let generation = 0;
 	let autoRunTimer = 0;
+	let chain: Promise<void> = Promise.resolve();
 
-	const run = async (): Promise<void> => {
+	const run = (): Promise<void> => {
 		window.clearTimeout(autoRunTimer);
-		const mine = ++generation;
-		if (current) {
+		// `code` is read when the turn comes rather than when it is asked for,
+		// so a run queued behind another starts the latest text.
+		return (chain = chain.then(async () => {
 			const previous = current;
 			current = null;
-			await previous.stop();
-		}
-
-		// A newer run started while the last one was tearing down; that run
-		// owns the terminal now.
-		if (mine !== generation) return;
-		terminal.reset();
-		onstatus({message: "Running.", failed: false});
-		try {
-			const started = await runProgram(terminal, code, (error) =>
-				onstatus({message: describeError(error), failed: true}),
-			);
-			if (mine !== generation) {
-				await started.stop();
-				return;
+			await previous?.stop();
+			terminal.reset();
+			onstatus({message: "Running.", failed: false});
+			try {
+				current = await runProgram(terminal, code, (error) =>
+					onstatus({message: describeError(error), failed: true}),
+				);
+			} catch (error) {
+				onstatus({message: describeError(error), failed: true});
 			}
-
-			current = started;
-		} catch (error) {
-			onstatus({message: describeError(error), failed: true});
-		}
+		}));
 	};
 
 	const scheduleRun = (): void => {
@@ -466,8 +511,11 @@ function* TerminalPane(
 
 	this.cleanup(() => {
 		window.clearTimeout(autoRunTimer);
-		void current?.stop();
-		terminal.dispose();
+		chain = chain.then(async () => {
+			await current?.stop();
+			current = null;
+			terminal.dispose();
+		});
 	});
 
 	let initial = true;
@@ -480,12 +528,17 @@ function* TerminalPane(
 				void run();
 			});
 
+			// The pane is as wide as the emulator inside it and no wider: a
+			// terminal stretched to fill a column is a column of background.
 			yield jsx`
 				<div
 					ref=${(el: HTMLDivElement) => (root = el)}
 					class="${pane} ${css`
 						padding: 0.4rem;
+						width: max-content;
+						max-width: 100%;
 						overflow-x: auto;
+						justify-self: start;
 						background-color: ${TERMINAL_BACKGROUND};
 					`}"
 				/>
@@ -512,17 +565,20 @@ interface Status {
 }
 
 const container = css`
-	max-width: 1200px;
+	max-width: 1440px;
 	margin: 0 auto;
 	padding: 5rem 1.2rem 2rem;
 `;
 
-const controls = css`
+/* One row: whatever the page puts here, the run button, and the status the
+   run reports. The status shares the row rather than hanging below the panes,
+   so the workbench reads as a single block. */
+const toolbar = css`
 	display: flex;
 	flex-direction: row;
 	align-items: center;
-	gap: 0.75rem;
-	margin: 0 0 1rem;
+	gap: 0.6rem;
+	margin: 0 0 0.5rem;
 	flex-wrap: wrap;
 
 	select,
@@ -554,25 +610,43 @@ const controls = css`
 	}
 `;
 
-/* Editor and terminal sit side by side when there is room for eighty columns
-   plus an editor, and stack when there is not. */
-const panes = css`
-	display: grid;
-	gap: 1rem;
-	grid-template-columns: 1fr;
-	align-items: start;
+/**
+ * Editor beside terminal, or editor above terminal.
+ *
+ * Which one is a question about the width the workbench has, not the width
+ * the window has -- the same component sits in a 900px column on the home
+ * page and across the playground page -- so it is a container query, and the
+ * workbench is the container.
+ */
+function panes(cols: number) {
+	return css`
+		display: grid;
+		gap: ${GAP}px;
+		grid-template-columns: minmax(0, 1fr);
+		align-items: start;
 
-	@media screen and (min-width: 1100px) {
-		grid-template-columns: 1fr auto;
-	}
+		@container workbench (min-width: ${sideBySideWidth(cols)}px) {
+			grid-template-columns: minmax(0, 1fr) auto;
+		}
+	`;
+}
+
+const workbench = css`
+	container: workbench / inline-size;
+	margin: 0;
 `;
 
+/* In the toolbar rather than under the panes, taking the room the controls
+   leave and giving a long message an ellipsis rather than a second row. */
 const statusLine = css`
-	margin: 1rem 0 0;
+	flex: 1 1 12rem;
+	min-width: 0;
+	margin: 0;
 	font-size: 0.85rem;
 	color: var(--muted-color);
-	min-height: 1.4em;
-	white-space: pre-wrap;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
 
 	&[data-state="error"] {
 		color: #f85149;
@@ -580,39 +654,45 @@ const statusLine = css`
 `;
 
 /**
- * The page: the editor owns the text, the terminal pane owns the program, and
- * this owns the one string that passes between them.
+ * An editor, a terminal and the program that passes between them.
+ *
+ * The page and the embeds on the home page are the same thing rendered in two
+ * places: this owns the one string, the editor owns the text, and the terminal
+ * pane owns the running program. `controls` is whatever the surrounding page
+ * puts beside the run button -- the picker, on the playground page.
  *
  * The editor re-renders itself as it is typed in, so a keystroke arrives here
- * as `contentchange` and the editor is handed back a `Copy`; only a value this
- * component chose -- an example from the picker -- is rendered into it.
+ * as `contentchange` and the editor is handed back a `Copy`; only a value
+ * chosen from outside -- an example from the picker -- is rendered into it.
  */
-function* Playground(this: Context) {
-	const examples = readExamples();
-	let code = examples[0].code;
-	let exampleID = examples[0].id;
+function* Workbench(
+	this: Context,
+	{
+		value,
+		name,
+		geometry,
+		controls: extraControls,
+	}: {
+		value: string;
+		name: string;
+		geometry: {cols: number; rows: number; editorLines: number};
+		controls?: unknown;
+	},
+) {
+	let code = value;
+	let shown = value;
 	let updateEditor = true;
 	let status: Status = {message: "", failed: false};
 	// Bumped to ask the terminal pane for a run that does not wait out the
 	// typing delay. The button and the shortcut are the same request.
 	let runNonce = 0;
+	let root!: HTMLDivElement;
 
 	this.addEventListener("contentchange", (ev: any) => {
 		this.refresh(() => {
 			code = ev.target.value;
 		});
 	});
-
-	const onexamplechange = (ev: Event) => {
-		const id = (ev.target as HTMLSelectElement).value;
-		const example = examples.find((each) => each.id === id);
-		if (!example) return;
-		this.refresh(() => {
-			exampleID = example.id;
-			code = example.code;
-			updateEditor = true;
-		});
-	};
 
 	const onstatus = (next: Status) => {
 		this.refresh(() => {
@@ -627,10 +707,11 @@ function* Playground(this: Context) {
 	};
 
 	// Ctrl/Cmd-Enter runs without waiting out the delay, from either place the
-	// keyboard can be. It is a capture-phase listener on the window because
-	// both things that take keys here stop the event before it bubbles: the
-	// emulator cancels the keys it handles, and the editor turns Enter into an
-	// indented newline.
+	// keyboard can be. It listens in the capture phase, on this instance's own
+	// element: both things that take keys here stop the event before it
+	// bubbles -- the emulator cancels the keys it handles, and the editor turns
+	// Enter into an indented newline -- and a page can hold more than one of
+	// these, each answering for the keyboard inside it.
 	const onkeydown = (ev: KeyboardEvent) => {
 		if (ev.key !== "Enter" || !(ev.metaKey || ev.ctrlKey)) return;
 		ev.preventDefault();
@@ -638,45 +719,45 @@ function* Playground(this: Context) {
 		runNow();
 	};
 
-	window.addEventListener("keydown", onkeydown, true);
-	this.cleanup(() => window.removeEventListener("keydown", onkeydown, true));
+	this.after(() => {
+		root.addEventListener("keydown", onkeydown, true);
+		this.cleanup(() => root.removeEventListener("keydown", onkeydown, true));
+	});
 
-	for ({} of this) {
+	for ({value, name, geometry, controls: extraControls} of this) {
+		// A value from outside is a new program; a value this component's own
+		// editor produced is already in `code`.
+		if (value !== shown) {
+			shown = code = value;
+			updateEditor = true;
+		}
+
 		this.schedule(() => {
 			updateEditor = false;
 		});
 
 		yield jsx`
-			<main class=${container}>
-				<h1 class=${css`
-					font-size: 2.2rem;
-					margin: 0 0 2rem;
-				`}>Playground</h1>
-
-				<div class=${controls}>
-					<label for="playground-examples">Example</label>
-					<select
-						id="playground-examples"
-						value=${exampleID}
-						onchange=${onexamplechange}
-					>
-						${examples.map(
-							(example) => jsx`
-								<option key=${example.id} value=${example.id}>
-									${example.label}
-								</option>
-							`,
-						)}
-					</select>
-					<button id="playground-run" type="button" onclick=${runNow}>
+			<div ref=${(el: HTMLDivElement) => (root = el)} class=${workbench}>
+				<div class=${toolbar}>
+					${extraControls}
+					<button id=${`${name}-run`} type="button" onclick=${runNow}>
 						Run <kbd>${RUN_KEY_LABEL}</kbd>
 					</button>
+					<p
+						id=${`${name}-status`}
+						class="playground-status ${statusLine}"
+						data-state=${status.failed ? "error" : "ok"}>
+						${status.message}
+					</p>
 				</div>
 
-				<div class=${panes}>
+				<div class=${panes(geometry.cols)}>
 					<div class="${pane} ${css`
 						min-width: 0;
-						height: 420px;
+						/* The height is the editor's own box: the pane's border
+						   sits outside it, so the last row stays whole. */
+						box-sizing: content-box;
+						height: ${editorHeight(geometry.editorLines)};
 					`}">
 						<${CodeEditor}
 							copy=${!updateEditor}
@@ -687,23 +768,114 @@ function* Playground(this: Context) {
 					</div>
 					<${TerminalPane}
 						code=${code}
+						cols=${geometry.cols}
+						rows=${geometry.rows}
 						runNonce=${runNonce}
 						onstatus=${onstatus}
 					/>
 				</div>
+			</div>
+		`;
+	}
+}
 
-				<p
-					id="playground-status"
-					class=${statusLine}
-					data-state=${status.failed ? "error" : "ok"}>
-					${status.message}
-				</p>
+/** The playground page: the picker, and a workbench under it. */
+function* Playground(this: Context) {
+	const examples = readExamples();
+	let example = examples[0];
+
+	const onexamplechange = (ev: Event) => {
+		const id = (ev.target as HTMLSelectElement).value;
+		const chosen = examples.find((each) => each.id === id);
+		if (!chosen) return;
+		this.refresh(() => {
+			example = chosen;
+		});
+	};
+
+	const picker = jsx`
+		<label for="playground-examples">Example</label>
+		<select
+			id="playground-examples"
+			value=${example.id}
+			onchange=${onexamplechange}
+		>
+			${examples.map(
+				(each) => jsx`
+					<option key=${each.id} value=${each.id}>${each.label}</option>
+				`,
+			)}
+		</select>
+	`;
+
+	for ({} of this) {
+		yield jsx`
+			<main class=${container}>
+				<h1 class=${css`
+					font-size: 2.2rem;
+					margin: 0 0 1rem;
+				`}>Playground</h1>
+				<${Workbench}
+					value=${example.code}
+					name="playground"
+					geometry=${PAGE_GEOMETRY}
+					controls=${picker}
+				/>
 			</main>
 		`;
 	}
+}
+
+/**
+ * The embeds on the home page.
+ *
+ * Each `<figure data-playground="id">` holds the program, highlighted at build
+ * time, and stays that way until it comes near the viewport: five terminals
+ * booting at load is not what someone scrolling a home page asked for. What
+ * replaces it is the same workbench the playground page renders, with the
+ * program already in it.
+ */
+function hydrateEmbeds(): void {
+	const embeds = [
+		...document.querySelectorAll<HTMLElement>("[data-playground]"),
+	].filter((embed) => !embed.hasAttribute("data-playground-ready"));
+	if (!embeds.length) return;
+
+	const examples = readExamples();
+	const mount = (embed: HTMLElement): void => {
+		const example = examples.find((each) => each.id === embed.dataset.playground);
+		if (!example) return;
+		embed.setAttribute("data-playground-ready", "");
+		embed.textContent = "";
+		renderer.render(
+			jsx`
+				<${Workbench}
+					value=${example.code}
+					name=${`playground-${example.id}`}
+					geometry=${EMBED_GEOMETRY}
+				/>
+			`,
+			embed,
+		);
+	};
+
+	const observer = new IntersectionObserver(
+		(entries) => {
+			for (const entry of entries) {
+				if (!entry.isIntersecting) continue;
+				observer.unobserve(entry.target);
+				mount(entry.target as HTMLElement);
+			}
+		},
+		{rootMargin: "200px"},
+	);
+
+	for (const embed of embeds) observer.observe(embed);
 }
 
 const root = document.getElementById("playground");
 if (root) {
 	renderer.render(jsx`<${Playground} />`, root);
 }
+
+hydrateEmbeds();

@@ -58,7 +58,7 @@ setInterval(() => {
 }, 30);                               // no render call -- mutations paint
 ```
 
-![examples/animated.ts](cast:animated)
+![examples/animated.ts](playground:animated)
 
 ## Interactivity is just DOM events.
 
@@ -86,7 +86,7 @@ rows()[selected].scrollIntoView();
 field.addEventListener("input", updatePreview);
 ```
 
-![examples/form.ts](cast:form)
+![examples/form.ts](playground:form)
 
 ## Features
 

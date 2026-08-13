@@ -35,6 +35,19 @@ const LINE_HEIGHT = "22px";
 // One padding for both, so row 1 starts at the same y in both columns.
 const VERTICAL_PADDING = "1rem";
 
+/**
+ * The height of an editor showing `lines` whole lines. Sized here because the
+ * row height is the editor's own: a box that ends mid-row shows a line sliced
+ * through the middle, with a gutter number beside the half of it.
+ *
+ * One padding, not two: the box scrolls, so at the top of the document the
+ * padding above line one is inside the window and the padding below the last
+ * line is not.
+ */
+export function editorHeight(lines: number): string {
+	return `calc(${lines} * ${LINE_HEIGHT} + ${VERTICAL_PADDING})`;
+}
+
 /*** Prism ***/
 
 function wrapContent(
@@ -313,6 +326,7 @@ export function* CodeEditor(
 	let selectionRange: SelectionRange | undefined;
 	let renderSource: string | undefined;
 	let area!: ContentAreaElement;
+	let scroller!: HTMLDivElement;
 
 	{
 		// Keys track the text through an edit, except for the edits this
@@ -488,10 +502,23 @@ export function* CodeEditor(
 		// The document always ends in a newline, so the last line is a line.
 		value = value.match(/(?:\r|\n|\r\n)$/) ? value : value + "\n";
 
+		// A document handed in from outside is a document nobody has read yet,
+		// so it opens at its first line rather than wherever the last one was
+		// left.
+		if (renderSource === "update") {
+			this.after(() => {
+				scroller.scrollTop = 0;
+				scroller.scrollLeft = 0;
+			});
+		}
+
 		const lineTokens = tokenize(value, language || "javascript");
 		let index = 0;
 		yield jsx`
-			<div class=${editor}>
+			<div
+				class=${editor}
+				ref=${(el: HTMLDivElement) => (scroller = el)}
+			>
 				${showGutter && jsx`<${Gutter} length=${lineTokens.length} />`}
 				<${ContentArea}
 					ref=${(el: ContentAreaElement) => (area = el)}
