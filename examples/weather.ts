@@ -224,7 +224,9 @@ function temperatureChart(temps: number[]): string {
 	for (let row = ROWS - 1; row >= 0; row--) {
 		const cells = temps
 			.map((t) => {
-				const eighths = Math.round(((t - min) / span) * (ROWS * 8 - 1)) + 1;
+				// The floor is half a block, not an eighth: the day's minimum is
+				// still a temperature, and an eighth-block reads as a hole.
+				const eighths = Math.round(((t - min) / span) * (ROWS * 8 - 4)) + 4;
 				const level = Math.max(0, Math.min(8, eighths - row * 8));
 				return `<span class="${bucketOf(t)}">${EIGHTHS[level]}</span>`;
 			})
