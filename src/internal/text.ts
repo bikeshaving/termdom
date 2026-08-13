@@ -201,9 +201,12 @@ const DEFAULT_EMOJI_HIGH = 0x1faf8;
  * - Arabic presentation forms. Text goes out shaped, and a terminal that
  *   ligates a shaped form advances differently from one that draws it whole.
  *
- * Everything else is trusted: ASCII, Latin beyond it, Greek, Cyrillic, Hebrew,
- * the CJK, kana and Hangul blocks (Wide and Fullwidth are two cells wherever
- * they are drawn), halfwidth forms, and Narrow punctuation.
+ * Everything else is trusted: ASCII, the Narrow scripts (Hebrew, Thai, most
+ * punctuation), and the definite CJK, kana and Hangul blocks (Wide and
+ * Fullwidth are two cells wherever they are drawn) with their halfwidth
+ * forms. Latin outside ASCII, Greek and Cyrillic are NOT trusted where the
+ * category calls them Ambiguous: an ambiguous-wide emulator advances them
+ * two cells.
  *
  * This runs once per painted cell and allocates nothing: a code-point read, a
  * length compare, one bisection, and a regex confined to the two bands that
@@ -632,40 +635,74 @@ const ZERO_WIDTH_RANGES: ReadonlyArray<readonly [number, number]> = [
 ];
 
 /**
- * Codepoint ranges whose width the terminal's font decides: East Asian Width
- * Ambiguous, one cell in a Latin font and two in a CJK one.
- *
- * Sorted and non-overlapping, searched by bisection. Generated from the
- * Unicode East Asian Width data (EastAsianWidth-17.0.0), MINUS the blocks
- * whose advance is nominally ambiguous but never actually in question: Latin
- * letters beyond ASCII, Greek, Cyrillic, Hebrew, the Hangul jamo, the CJK,
- * kana and Yi blocks, CJK compatibility, and the fullwidth and halfwidth
- * forms. Those are alphabets and ideographs, drawn by every terminal at the
- * width their script implies, and probing them would ask a question with a
- * known answer once per distinct letter.
+ * East Asian Width category A, entire: EastAsianWidth-17.0.0.txt, the A
+ * lines merged. An ambiguous character is one cell on an ambiguous-narrow
+ * emulator and two on an ambiguous-wide one (common in CJK locales), so
+ * every member is a width no table can promise -- including the Latin,
+ * Greek and Cyrillic letters the category contains.
  */
 const UNCERTAIN_RANGES: ReadonlyArray<readonly [number, number]> = [
-	[0xa1, 0xa1],
-	[0xa4, 0xa4],
-	[0xa7, 0xa8],
-	[0xaa, 0xaa],
-	[0xad, 0xae],
-	[0xb0, 0xb4],
-	[0xb6, 0xba],
-	[0xbc, 0xbf],
-	[0xd7, 0xd7],
-	[0xf7, 0xf7],
-	[0x251, 0x251],
-	[0x261, 0x261],
-	[0x2c4, 0x2c4],
-	[0x2c7, 0x2c7],
-	[0x2c9, 0x2cb],
-	[0x2cd, 0x2cd],
-	[0x2d0, 0x2d0],
-	[0x2d8, 0x2db],
-	[0x2dd, 0x2dd],
-	[0x2df, 0x2df],
-	[0x300, 0x36f],
+	[0x00a1, 0x00a1],
+	[0x00a4, 0x00a4],
+	[0x00a7, 0x00a8],
+	[0x00aa, 0x00aa],
+	[0x00ad, 0x00ae],
+	[0x00b0, 0x00b4],
+	[0x00b6, 0x00ba],
+	[0x00bc, 0x00bf],
+	[0x00c6, 0x00c6],
+	[0x00d0, 0x00d0],
+	[0x00d7, 0x00d8],
+	[0x00de, 0x00e1],
+	[0x00e6, 0x00e6],
+	[0x00e8, 0x00ea],
+	[0x00ec, 0x00ed],
+	[0x00f0, 0x00f0],
+	[0x00f2, 0x00f3],
+	[0x00f7, 0x00fa],
+	[0x00fc, 0x00fc],
+	[0x00fe, 0x00fe],
+	[0x0101, 0x0101],
+	[0x0111, 0x0111],
+	[0x0113, 0x0113],
+	[0x011b, 0x011b],
+	[0x0126, 0x0127],
+	[0x012b, 0x012b],
+	[0x0131, 0x0133],
+	[0x0138, 0x0138],
+	[0x013f, 0x0142],
+	[0x0144, 0x0144],
+	[0x0148, 0x014b],
+	[0x014d, 0x014d],
+	[0x0152, 0x0153],
+	[0x0166, 0x0167],
+	[0x016b, 0x016b],
+	[0x01ce, 0x01ce],
+	[0x01d0, 0x01d0],
+	[0x01d2, 0x01d2],
+	[0x01d4, 0x01d4],
+	[0x01d6, 0x01d6],
+	[0x01d8, 0x01d8],
+	[0x01da, 0x01da],
+	[0x01dc, 0x01dc],
+	[0x0251, 0x0251],
+	[0x0261, 0x0261],
+	[0x02c4, 0x02c4],
+	[0x02c7, 0x02c7],
+	[0x02c9, 0x02cb],
+	[0x02cd, 0x02cd],
+	[0x02d0, 0x02d0],
+	[0x02d8, 0x02db],
+	[0x02dd, 0x02dd],
+	[0x02df, 0x02df],
+	[0x0300, 0x036f],
+	[0x0391, 0x03a1],
+	[0x03a3, 0x03a9],
+	[0x03b1, 0x03c1],
+	[0x03c3, 0x03c9],
+	[0x0401, 0x0401],
+	[0x0410, 0x044f],
+	[0x0451, 0x0451],
 	[0x2010, 0x2010],
 	[0x2013, 0x2016],
 	[0x2018, 0x2019],
