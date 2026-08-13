@@ -162,11 +162,11 @@ const EXCLUSIONS: Record<string, string> = {
 const DEVIATIONS: Array<[string, string]> = [
 	[
 		"getComputedStyle-insets-fixed.html",
-		"No CSS transforms. A transformed ancestor is the containing block of a fixed box, so every subtest of this file that resolves an inset against `#container-for-fixed` (`transform: scale(1)`) expects that box and gets the viewport, which is what a fixed box hangs from here: 216 of its 324 subtests. A character grid has no transforms to give -- cells do not rotate, scale, or translate by fractions -- so the containing block a transform would establish never exists.",
+		"CSS transforms are not implemented. A transformed ancestor is the containing block of a fixed box. Every subtest that resolves an inset against `#container-for-fixed` (`transform: scale(1)`) expects that box and gets the viewport, which is the containing block of a fixed box here. That is 216 of the file's 324 subtests. A character grid has no transforms, since cells do not rotate, scale or translate by fractions, so the containing block a transform would establish never exists.",
 	],
 	[
 		"getComputedStyle-resolved-colors.html",
-		"A system color has no value here: `Menu`, `Highlight` and the rest name a desktop's palette, and a terminal states none -- so a declaration naming one is not a value this engine knows, and `box-shadow: 1px 1px Menu` declares no shadow. The UA sheet's `::selection { background-color: Highlight; color: HighlightText }` is this engine's spelling of \"swap the cell's colors\", which the selection painter turns into inverse video -- the terminal-native rendering. Giving the pair rgb() values would erase the signal the painter reads.",
+		"A system color has no value here. `Menu`, `Highlight` and the rest name a desktop palette, and a terminal states none, so a declaration naming one is not a value this engine knows and `box-shadow: 1px 1px Menu` declares no shadow. The UA sheet's `::selection { background-color: Highlight; color: HighlightText }` is how this engine spells \"swap the cell's colors\", which the selection painter renders as inverse video. Giving the pair rgb() values would erase the signal the painter reads.",
 	],
 ];
 
@@ -761,7 +761,7 @@ const lines: string[] = [
 	"## Deliberate deviations",
 	"",
 	"These are failures this engine owns as design. They are counted as",
-	"failures above, not excluded, so the number stays honest.",
+	"failures above rather than excluded.",
 	"",
 	...DEVIATIONS.flatMap(([file, reason]) => [`### ${file}`, "", reason, ""]),
 	"## Files",

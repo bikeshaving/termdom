@@ -388,7 +388,7 @@ const EXCLUSIONS: Record<string, string> = {
 	"dom/nodes/remove-unscopable.html":
 		"requires-script-execution: the test reads its result out of an onclick content attribute",
 	"dom/nodes/MutationObserver-document.html":
-		"requires-script-execution: the records under test are the parser's own insertions, seen by an observer that a script the parser runs installs partway through the document",
+		"requires-script-execution: the observer is installed by a script the parser runs partway through the document, and the records under test are the parser's own insertions",
 
 	// requires-user-input: the test drives a real pointer or keyboard through
 	// testdriver, which asks the browser under test to synthesize input.
@@ -430,7 +430,7 @@ const EXCLUSIONS: Record<string, string> = {
 	// no-xml-parser: there is no XML parser here, and none is planned; XML
 	// nodes are built through the DOM instead.
 	"dom/nodes/processing-instruction-attributes.html":
-		"no-xml-parser: half the cases parse XML, and the other half test a WICG incubation (declarative-partial-updates) that gives processing instructions attributes, which the DOM Standard does not",
+		"no-xml-parser: half the cases parse XML. The rest test declarative-partial-updates, a WICG incubation that gives processing instructions attributes, which the DOM Standard does not",
 
 	// requires-layout: the test measures a box. There is no layout in this DOM
 	// -- the engine owns it -- so offsetTop, getBoundingClientRect,
@@ -574,8 +574,8 @@ const EXCLUSIONS: Record<string, string> = {
 	// that use DOM interfaces.
 
 	// customized built-ins: the is= form of a custom element. Safari never
-	// shipped it and this DOM declares it dead (see the deviation below); the
-	// files whose whole subject is that form are excluded rather than counted.
+	// shipped it and this DOM does not implement it; the files whose whole
+	// subject is that form are excluded rather than counted.
 	"custom-elements/Document-createElement-customized-builtins.html":
 		"customized built-ins: createElement with an is option",
 	"custom-elements/Document-createElementNS-customized-builtins.html":
@@ -606,7 +606,7 @@ const EXCLUSIONS: Record<string, string> = {
 	"dom/ranges/Range-extractContents-dynamic-end.html":
 		"requires-browsing-context: the end container is removed from inside an iframe's unload event",
 	"dom/ranges/Range-in-shadow-after-the-shadow-removed.html":
-		"requires-browsing-context: the shadow mode under test is read out of document.location, which is null without one",
+		"requires-browsing-context: the shadow mode under test is read out of document.location, which is null here",
 	"selection/getSelection.html":
 		"requires-browsing-context: every case is an iframe's selection, or asserts that the document's defaultView is not null",
 	"selection/Document-open.html":
@@ -681,7 +681,7 @@ const EXCLUSIONS: Record<string, string> = {
 
 	// Every subtest of each of these is outside this DOM by construction.
 	"custom-elements/builtin-coverage.html":
-		"customized built-ins: every case defines one with an extends option before it asserts anything",
+		"customized built-ins: every case defines a customized built-in with an extends option",
 	"custom-elements/ElementInternals-role.html":
 		"requires-testdriver: every case reads a computed role out of the browser's own accessibility tree through testdriver.js",
 	"custom-elements/element-internals-behaviors.tentative.html":
@@ -693,7 +693,7 @@ const EXCLUSIONS: Record<string, string> = {
 	"custom-elements/form-associated/ElementInternals-submit-behavior-dialog.tentative.html":
 		"not-a-standard: HTMLSubmitButtonBehavior and the behaviors option on attachInternals are a proposal, filed under tentative in the suite",
 	"dom/events/Event-dispatch-single-activation-behavior.html":
-		"requires-script-execution: every activation under test is observed through an inline on* content attribute, which becomes a handler only by compiling it as script",
+		"requires-script-execution: each activation is observed through an inline on* content attribute, which becomes a handler only when compiled as script",
 	"dom/events/event-disabled-dynamic.html":
 		"requires-browsing-context: the case runs inside the window's load event",
 };
@@ -737,7 +737,7 @@ const EXCLUDED_DIRECTORIES: Array<[string, string]> = [
 	],
 	[
 		"custom-elements/reactions/customized-builtins/",
-		"customized built-ins: the is= form of a custom element, which this DOM declares dead (see the deviation below)",
+		"customized built-ins: the is= form of a custom element, which this DOM does not implement",
 	],
 ];
 
@@ -752,79 +752,79 @@ function excludedDirectory(file: string): string | null {
 const DEVIATIONS: Array<[string, string]> = [
 	[
 		"dom/collections/HTMLCollection-own-props.html, HTMLCollection-delete.html, HTMLCollection-supported-property-indices.html, HTMLCollection-supported-property-names.html, HTMLCollection-as-prototype.html",
-		"A collection's indexed and named properties are ordinary own accessors, not a legacy platform object's exotic ones, because this tree uses no Proxy anywhere -- the reason it is faster than the DOM it replaces. Reads and writes through them are correct and live; what differs is the meta-level: `delete collection.name` succeeds until the next mutation redefines it, `Object.defineProperty` over an existing index does not throw, and an index past the end can be shadowed by an expando.",
+		"A collection's indexed and named properties are ordinary own accessors rather than a legacy platform object's exotic properties. This tree uses no Proxy anywhere. Reads and writes through the properties are correct and live. The differences are at the meta level. `delete collection.name` succeeds until the next mutation redefines it, `Object.defineProperty` over an existing index does not throw, and an index past the end can be shadowed by an expando.",
 	],
 	[
 		"dom/nodes/Document-createEvent.https.html",
-		"createEvent builds every name in the legacy table whose interface exists here: the Event and CustomEvent names, and the UI Events ones -- UIEvent, MouseEvent, KeyboardEvent, FocusEvent, CompositionEvent, and the TextEvent alias for a composition event. The names that map to interfaces of other specifications -- DragEvent, HashChangeEvent, MessageEvent, StorageEvent, TouchEvent, BeforeUnloadEvent, DeviceMotionEvent and DeviceOrientationEvent -- throw NotSupportedError, because a createEvent that answered them with an event of some other interface would be a lie about what it built.",
+		"createEvent builds every name in the legacy table whose interface exists here: the Event and CustomEvent names, and the UI Events ones (UIEvent, MouseEvent, KeyboardEvent, FocusEvent, CompositionEvent, and the TextEvent alias for a composition event). The names that map to interfaces of other specifications throw NotSupportedError: DragEvent, HashChangeEvent, MessageEvent, StorageEvent, TouchEvent, BeforeUnloadEvent, DeviceMotionEvent and DeviceOrientationEvent. Those interfaces are not implemented here.",
 	],
 	[
 		"dom/events/Event-dispatch-bubbles-false.html, Event-dispatch-bubbles-true.html, passive-by-default.html, EventListener-handleEvent.html",
-		"A propagation path ends at the document. The spec continues it to the Window when the document has a browsing context, and there is no Window in this DOM: the harness supplies a bare event target under that name so the test files load. The subtests that fail are the ones that put the window in an expected path, that expect a scroll-blocking listener on the window to be passive by default, or that expect a listener's exception to arrive as an error event at the window; every other subtest in those files passes.",
+		"A propagation path ends at the document. The spec continues it to the Window when the document has a browsing context. This DOM has no Window, so the harness supplies a bare event target under that name to let the test files load. The failing subtests are the ones that put the window in an expected path, expect a scroll-blocking listener on the window to be passive by default, or expect a listener's exception to arrive as an error event at the window. Every other subtest in these files passes.",
 	],
 	[
 		"dom/events/Event-subclasses-constructors.html",
-		"The UI Events interfaces are here: UIEvent, MouseEvent, KeyboardEvent, FocusEvent, InputEvent, CompositionEvent, WheelEvent, and the PointerEvent a synthetic click is built through. The subtests that still fail construct interfaces of other specifications, which are not.",
+		"The UI Events interfaces are implemented: UIEvent, MouseEvent, KeyboardEvent, FocusEvent, InputEvent, CompositionEvent, WheelEvent, and the PointerEvent a synthetic click is built through. The failing subtests construct event interfaces from other specifications, which are not implemented.",
 	],
 	[
 		"dom/ranges/Range-getClientRects.html and every selection test that measures a box",
-		"Range.getClientRects() and Range.getBoundingClientRect() are absent. They are CSSOM View's, not the DOM Standard's, and they answer with boxes the layout engine owns; the engine reaches its own geometry through its layout tree rather than through this file. The same holds for everything the selection suite scores by rendering -- Selection.modify()'s line and paragraph granularities, toString() over user-select and display:none, the caret cases -- which fails here rather than being excluded.",
+		"Range.getClientRects() and Range.getBoundingClientRect() are not implemented. They belong to CSSOM View rather than the DOM Standard, and they answer with boxes the layout engine owns. The engine reads its own geometry from its layout tree, not from this file. The selection tests that score by rendering fail here rather than being excluded: Selection.modify()'s line and paragraph granularities, toString() over user-select and display:none, and the caret cases.",
 	],
 	[
 		"selection/modify.tentative.html, bidi/modify-*.html, contenteditable/modify*.html, move-by-word-*.html",
-		'Selection.modify() is absent. Its "character" and "word" granularities could be answered from the tree, but "line", "lineboundary", "paragraph" and the rest are positions only layout knows, and a modify() that moved the focus for some granularities and ignored the others would be a subset wearing the name of the whole method.',
+		'Selection.modify() is not implemented. Its "character" and "word" granularities could be answered from the tree. Its "line", "lineboundary", "paragraph" and remaining granularities are positions only layout knows.',
 	],
 	[
 		"selection/getSelection.html (excluded), and the defaultView sanity checks in it",
-		"`getSelection()` lives on Document here and always answers with that document's selection. The Selection API defines it to return null for a document with no browsing context, and to hang a forwarding copy off the Window. There is no Window in this DOM and no browsing context to have -- a document is the top of the tree -- so returning null would leave the interface unreachable. The harness supplies the Window's forwarding copy, exactly as it supplies element.style.",
+		"`getSelection()` lives on Document here and always answers with that document's selection. The Selection API defines it to return null for a document with no browsing context, and to put a forwarding copy on the Window. This DOM has no Window and no browsing context, since a document is the top of the tree, so returning null would leave the interface unreachable. The harness supplies the Window's forwarding copy, as it supplies element.style.",
 	],
 	[
 		"selection/shadow-dom/tentative/Selection-getComposedRanges-collapsed.html, Selection-getComposedRanges-range-update.html",
-		"A selection whose range is inside a shadow tree of the document still answers `rangeCount` 1 and hands that range to `getRangeAt(0)`. The suite contradicts itself here: Mozilla's cross-shadow-boundary-extend.html and shadow-dom/tentative/Range-isPointInRange.html, and WebKit's selection-at-nodes-not-part-of-flattened-tree.html, all read a range out of a selection that sits in a shadow tree, while Chromium's Selection-getComposedRanges-range-update.html expects getRangeAt to throw for the same shape. Two engines against one decided it; the one subtest that wants the throw is counted as a failure.",
+		"A selection whose range is inside a shadow tree of the document still answers `rangeCount` 1 and hands that range to `getRangeAt(0)`. The suite disagrees with itself here. Mozilla's cross-shadow-boundary-extend.html and shadow-dom/tentative/Range-isPointInRange.html, and WebKit's selection-at-nodes-not-part-of-flattened-tree.html, all read a range out of a selection that sits in a shadow tree. Chromium's Selection-getComposedRanges-range-update.html expects getRangeAt to throw for the same shape. This DOM follows the two engines against the one, and the subtest that wants the throw is counted as a failure.",
 	],
 	[
 		"selection/shadow-dom/selection-at-nodes-not-part-of-flattened-tree.html",
-		"`containsNode` answers over the node tree, so a node that a shadow root leaves out of the flattened tree is still contained in a selection over its parent. The four subtests that expect false are scoring the flattened tree, which is a rendering question.",
+		"`containsNode` answers over the node tree, so a node that a shadow root leaves out of the flattened tree is still contained in a selection over its parent. The four failing subtests expect false, which scores the flattened tree. That is a rendering question.",
 	],
 	[
 		"dom/nodes/querySelector-id-nth-child.html",
-		"An element's id does not become a property of a global. Window is not part of this DOM, and its named property access is the one place the spec's own text calls a legacy quirk; the document stands alone with `defaultView` null.",
+		"An element's id does not become a property of a global. Window is not part of this DOM, and the spec's own text calls its named property access a legacy quirk. The document stands alone, with `defaultView` null.",
 	],
 	[
 		"dom/nodes/Element-matches-namespaced-elements.html, querySelector-mixed-case.html",
-		"A selector with an explicit namespace prefix (`*|name`, `svg|circle`) is rejected. The selector engine is nwsapi, rented rather than written, and it does not carry a namespace prefix map.",
+		"A selector with an explicit namespace prefix (`*|name`, `svg|circle`) is rejected. The selector engine is nwsapi, which carries no namespace prefix map.",
 	],
 	[
 		"dom/nodes/Element-closest.html",
-		"`:scope` inside matches() and closest() resolves against the document, not the element the method was called on. The selector engine is nwsapi, rented rather than written, and its match entry point takes no scoping root.",
+		"`:scope` inside matches() and closest() resolves against the document rather than the element the method was called on. The selector engine is nwsapi, and its match entry point takes no scoping root.",
 	],
 	[
 		"dom/events/Body-FrameSet-Event-Handlers.html, and every subtest that reads an on* content attribute",
-		"The event handler IDL attributes -- onclick and its ninety-odd siblings -- are here, on HTMLElement, SVGElement, MathMLElement and Document. Their content-attribute half is not: `onclick=\"...\"` in markup is a function compiled from the attribute's value, and this DOM never executes script, so the attribute sets no handler and the IDL attribute reads back null. The subtests that still fail in this file are the ones that compile a content attribute, and the ones that expect a body's or a frameset's forwarded handler to land on a Window: a document with no browsing context has no event handler target for the forwarded set, so the write is dropped and the read answers null -- which is what the algorithm says of it -- and the harness's window is a bare event target.",
+		"The event handler IDL attributes are implemented on HTMLElement, SVGElement, MathMLElement and Document. Their content-attribute half is not. `onclick=\"...\"` in markup is a function compiled from the attribute's value, and this DOM never executes script, so the attribute sets no handler and the IDL attribute reads back null. The failing subtests in this file either compile a content attribute, or expect a body's or a frameset's forwarded handler to land on a Window. A document with no browsing context has no event handler target for the forwarded set, so the write is dropped and the read answers null, and the harness's window is a bare event target.",
 	],
 	[
 		"dom/collections/domstringmap-supported-property-names.html, custom-elements/reactions/DOMStringMap.html",
-		"`dataset` answers with a DOMStringMap whose properties are ordinary own accessors, one per data-* attribute, for the same reason a collection's indexed properties are: this tree uses no Proxy anywhere. Reading and writing a name the element already carries goes straight through to the attribute; assigning a name it does not carry yet creates an ordinary property instead of the attribute, which is the one thing a proxy would have caught.",
+		"`dataset` answers with a DOMStringMap whose properties are ordinary own accessors, one per data-* attribute, for the same reason a collection's indexed properties are: this tree uses no Proxy anywhere. Reading and writing a name the element already carries goes straight through to the attribute. Assigning a name it does not carry yet creates an ordinary property instead of the attribute.",
 	],
 	[
 		"custom-elements/HTMLElement-attachInternals.html, and the constraint validation members of the built-in controls",
-		"`willValidate`, `validity`, `validationMessage`, `checkValidity`, `reportValidity` and `setCustomValidity` are on ElementInternals, where the flags are the author's own, and absent from input, select, textarea, button, fieldset, object and output. Computing them for a built-in control means the input value-space algorithms -- converting a value to a number or a date per type, the step base and the allowed value step -- and a validity that answered false to constraints it never checked would be worse than none.",
+		"`willValidate`, `validity`, `validationMessage`, `checkValidity`, `reportValidity` and `setCustomValidity` are on ElementInternals, where the flags are the author's own. They are absent from input, select, textarea, button, fieldset, object and output. Computing them for a built-in control needs the input value-space algorithms: converting a value to a number or a date per type, the step base, and the allowed value step. Those are not implemented.",
 	],
 	[
-		"the focus members, and every subtest that calls focus() or blur()",
-		"`focus()`, `blur()` and `document.activeElement` are absent. A focusable area is defined over elements that are being rendered, and nothing is rendered here; a focus() that could never focus anything is not the method the specification defines. The same holds for the popover members, whose showing puts an element in the top layer.",
+		"the focus members, and every subtest that moves focus",
+		"`focus()`, `blur()` and `document.activeElement` are implemented in `src/internal/dom.ts` and move the focus state only. The focus, blur, focusin and focusout events are fired by the engine, which also owns the repaint and the caret move that go with a focus change. The engine is not part of this harness, so no focus event is fired here. The autofocus attribute is handled by the engine too, and does nothing under this harness. Four things are absent from the DOM itself: `ShadowRoot.activeElement`, focus delegation through a host with `delegatesFocus`, retargeting of the document's focused area across a shadow boundary, and sequential focus navigation. The failing subtests read a shadow root's activeElement, focus an element inside a shadow tree, expect delegation, or wait for a focus event.",
 	],
 	[
 		"SVG and MathML elements",
-		"An element in the SVG or MathML namespace is an SVGElement or a MathMLElement and nothing more: the SVGGraphicsElement and MathMLMathElement hierarchies, and the geometry and presentation interfaces under them, are other specifications' and describe a rendering this DOM does not do. Every tree operation over a foreign element -- creation, namespace, cloning, serialization, selectors -- is the DOM Standard's and is here.",
+		"An element in the SVG or MathML namespace is an SVGElement or a MathMLElement and nothing more. The SVGGraphicsElement and MathMLMathElement hierarchies, and the geometry and presentation interfaces under them, belong to other specifications and describe rendering this DOM does not do. Every tree operation over a foreign element is implemented: creation, namespace, cloning, serialization and selectors.",
 	],
 	[
 		"shadow-dom/declarative/declarative-shadow-dom-attachment.html",
-		"All 654 subtests pass and the harness reports a timeout: the file builds 654 declarative shadow trees in one document, and every live collection materialized along the way is resynchronized on every mutation after it, which is the cost of indexed properties that are accessors rather than a proxy's traps. The cost is quadratic in the number of collections the file has read, and this file reads enough of them to pass testharness's own ten seconds.",
+		"All 654 subtests pass and the harness reports a timeout. The file builds 654 declarative shadow trees in one document, and every live collection materialized along the way is resynchronized on each later mutation, because indexed properties are accessors rather than a proxy's traps. That cost is quadratic in the number of collections the file has read, and this file reads enough of them to exceed testharness's own ten-second limit.",
 	],
 	[
 		"dom/nodes/NodeList-static-length-getter-tampered-*.html",
-		"These pass their subtests but their harness times out: each is a 250-million-iteration JIT stress loop over `nodeList[i]`, and an accessor property is slower to read than the exotic indexed getter a browser's binding layer generates.",
+		"These pass their subtests and their harness times out. Each is a 250-million-iteration JIT stress loop over `nodeList[i]`, and an accessor property is slower to read than the exotic indexed getter a browser's binding layer generates.",
 	],
 ];
 
@@ -1169,20 +1169,24 @@ const lines: string[] = [
 	"",
 	"Generated by `node --experimental-strip-types scripts/wpt-dom.ts`.",
 	"",
-	"Every test runs against `src/internal/dom.ts`: the document is built by",
+	"Every test runs against `src/internal/dom.ts`. The document is built by",
 	"that file's HTML parser, and `document`, `Node`, `Element` and the rest of",
 	"the realm's DOM globals are its classes. Each file gets its own evaluation",
 	"of the module, so a test that tampers with a prototype cannot reach the",
 	"next file.",
 	"",
-	"The harness supplies three things the environment would, none of which is",
-	"part of this DOM: a `window` object carrying addEventListener, its pair,",
-	"and the `getSelection()` the Selection API defines as a call to the",
-	"document's own; and an `element.style` scratch object, which several",
-	"traversal tests use to hide a fixture. CSSOM belongs to the engine, not to",
-	"the tree. That window is a bare event target, not a Window: an event path",
-	"ends at the document, as the spec says it does for a document with no",
-	"browsing context.",
+	"The harness supplies three things a browser environment would, none of",
+	"which is part of this DOM. A `window` object carrying addEventListener,",
+	"removeEventListener and dispatchEvent. The `getSelection()` the Selection",
+	"API defines as a call to the document's own. An `element.style` scratch",
+	"object, which several traversal tests use to hide a fixture. CSSOM belongs",
+	"to the engine rather than the tree. That window is a bare event target",
+	"rather than a Window, so an event path ends at the document, as the spec",
+	"says it does for a document with no browsing context.",
+	"",
+	"The engine that mounts on this DOM is not part of the harness. What the",
+	"engine owns is absent here: layout and the geometry read off it, painting,",
+	"the focus events, and the CSSOM.",
 	"",
 	`- Test files in the suites: ${outcomes.length}`,
 	`- Reference tests (no testharness, scored by pixels): ${reftests.length}`,
@@ -1203,7 +1207,7 @@ const lines: string[] = [
 	"## Deliberate deviations",
 	"",
 	"These are failures this DOM owns as design. They are counted as failures",
-	"above, not excluded, so the number stays honest.",
+	"above rather than excluded.",
 	"",
 	...DEVIATIONS.flatMap(([file, reason]) => [`### ${file}`, "", reason, ""]),
 	"## Files",
