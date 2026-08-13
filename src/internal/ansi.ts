@@ -8,7 +8,7 @@ import {
 	ROUNDED_CORNERS,
 	type BorderStyles,
 } from "./styles.js";
-import {stringWidth} from "./text.js";
+import {stringWidth, widthIsUncertain} from "./text.js";
 
 /** One shared grapheme segmenter -- construction is expensive. */
 const graphemeSegmenter = new Intl.Segmenter("en", {granularity: "grapheme"});
@@ -850,11 +850,17 @@ export function generateANSI(
 
 			// The cursor is sitting immediately after a cluster whose advance
 			// has never been checked against this terminal: ask now, while the
-			// column it started from is known. ASCII is exempt -- one cell
-			// everywhere, and probing it would buy nothing.
+			// column it started from is known. Only clusters terminals actually
+			// disagree about are asked at all; the char-plane test in front of
+			// widthIsUncertain keeps plain ASCII from reaching it, and a border
+			// glyph is drawn from a character this engine chose.
 			if (measuring && encoding === 0) {
 				const code = char[index];
-				if ((code > 0x7e || code < 0x20) && measurer!.wants(glyph)) {
+				if (
+					(code > 0x7e || code < 0x20) &&
+					widthIsUncertain(glyph) &&
+					measurer!.wants(glyph)
+				) {
 					// Near the right margin the answer is unreadable: a glyph
 					// that reaches the last column leaves the cursor there with
 					// wrap pending rather than past it, and the reply says the

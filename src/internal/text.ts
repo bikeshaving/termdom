@@ -161,6 +161,72 @@ export function clusterAdvance(cluster: string): number | undefined {
 }
 
 /**
+ * Emoji by default: a code point that renders as a colour glyph with no
+ * selector asking it to. That is the property a terminal disagrees about --
+ * whether such a glyph is one cell of text or two of emoji -- and it holds for
+ * the regional indicators and skin-tone modifiers too, which are emoji
+ * components rather than pictographs but diverge the same way on their own.
+ */
+const DEFAULT_EMOJI = /\p{Emoji_Presentation}/u;
+
+/**
+ * Where DEFAULT_EMOJI can possibly match: the property runs from U+231A to
+ * U+2B55 and from U+1F004 to U+1FAF8, with the whole of the CJK, Hangul and
+ * compatibility blocks in between holding none of it. Bounding the regex by
+ * two compares is what keeps a screenful of ideographs off it.
+ */
+const DEFAULT_EMOJI_LOW = 0x231a;
+const DEFAULT_EMOJI_BMP_HIGH = 0x2b55;
+const DEFAULT_EMOJI_ASTRAL_LOW = 0x1f004;
+const DEFAULT_EMOJI_HIGH = 0x1faf8;
+
+/**
+ * Whether this terminal's advance for `cluster` is worth asking about.
+ *
+ * Most characters have a width every terminal agrees on, and asking about them
+ * spends a query and a reply to be told what the tables already said. What is
+ * left over is the divergence zone, and it is small:
+ *
+ * - Any cluster of more than one code point. A variation selector asks for one
+ *   presentation or the other and terminals honour it unevenly; a ZWJ sequence
+ *   is one glyph to a terminal that ligates it and several to one that does
+ *   not; a regional-indicator pair is a flag or two letters; a skin-tone
+ *   modifier is absorbed or advances; and a combining mark is where the
+ *   zero-versus-one-cell disagreements live.
+ * - East Asian Width Ambiguous, less the scripts whose advance is not in doubt
+ *   (see UNCERTAIN_RANGES). Degree signs, arrows, box drawing, block elements,
+ *   geometric shapes, private use: one cell in a Latin font, two in a CJK one,
+ *   and the terminal's font decides.
+ * - Default emoji presentation, the class the ledger exists for.
+ * - Arabic presentation forms. Text goes out shaped, and a terminal that
+ *   ligates a shaped form advances differently from one that draws it whole.
+ *
+ * Everything else is trusted: ASCII, Latin beyond it, Greek, Cyrillic, Hebrew,
+ * the CJK, kana and Hangul blocks (Wide and Fullwidth are two cells wherever
+ * they are drawn), halfwidth forms, and Narrow punctuation.
+ *
+ * This runs once per painted cell and allocates nothing: a code-point read, a
+ * length compare, one bisection, and a regex confined to the two bands that
+ * can hold an emoji at all.
+ */
+export function widthIsUncertain(cluster: string): boolean {
+	const code = cluster.codePointAt(0)!;
+	// More than the base: a sequence, and sequences are the divergence zone.
+	if (cluster.length !== (code > 0xffff ? 2 : 1)) return true;
+	// ASCII and the C1 controls, on their own, are one cell or none anywhere.
+	if (code < 0xa1) return false;
+	if (inRanges(code, UNCERTAIN_RANGES)) return true;
+	// Arabic Presentation Forms-A and -B.
+	if (code >= 0xfb50 && code <= 0xfdff) return true;
+	if (code >= 0xfe70 && code <= 0xfeff) return true;
+	if (code < DEFAULT_EMOJI_LOW || code > DEFAULT_EMOJI_HIGH) return false;
+	if (code > DEFAULT_EMOJI_BMP_HIGH && code < DEFAULT_EMOJI_ASTRAL_LOW) {
+		return false;
+	}
+	return DEFAULT_EMOJI.test(cluster);
+}
+
+/**
  * Get the display width of a string in terminal columns.
  *
  * Bun.stringWidth is ~19x faster and is used wherever it is right, which is
@@ -563,6 +629,161 @@ const ZERO_WIDTH_RANGES: ReadonlyArray<readonly [number, number]> = [
 	[0xfe00, 0xfe0f],
 	[0xfe20, 0xfe2f],
 	[0xfeff, 0xfeff],
+];
+
+/**
+ * Codepoint ranges whose width the terminal's font decides: East Asian Width
+ * Ambiguous, one cell in a Latin font and two in a CJK one.
+ *
+ * Sorted and non-overlapping, searched by bisection. Generated from the
+ * Unicode East Asian Width data (EastAsianWidth-17.0.0), MINUS the blocks
+ * whose advance is nominally ambiguous but never actually in question: Latin
+ * letters beyond ASCII, Greek, Cyrillic, Hebrew, the Hangul jamo, the CJK,
+ * kana and Yi blocks, CJK compatibility, and the fullwidth and halfwidth
+ * forms. Those are alphabets and ideographs, drawn by every terminal at the
+ * width their script implies, and probing them would ask a question with a
+ * known answer once per distinct letter.
+ */
+const UNCERTAIN_RANGES: ReadonlyArray<readonly [number, number]> = [
+	[0xa1, 0xa1],
+	[0xa4, 0xa4],
+	[0xa7, 0xa8],
+	[0xaa, 0xaa],
+	[0xad, 0xae],
+	[0xb0, 0xb4],
+	[0xb6, 0xba],
+	[0xbc, 0xbf],
+	[0xd7, 0xd7],
+	[0xf7, 0xf7],
+	[0x251, 0x251],
+	[0x261, 0x261],
+	[0x2c4, 0x2c4],
+	[0x2c7, 0x2c7],
+	[0x2c9, 0x2cb],
+	[0x2cd, 0x2cd],
+	[0x2d0, 0x2d0],
+	[0x2d8, 0x2db],
+	[0x2dd, 0x2dd],
+	[0x2df, 0x2df],
+	[0x300, 0x36f],
+	[0x2010, 0x2010],
+	[0x2013, 0x2016],
+	[0x2018, 0x2019],
+	[0x201c, 0x201d],
+	[0x2020, 0x2022],
+	[0x2024, 0x2027],
+	[0x2030, 0x2030],
+	[0x2032, 0x2033],
+	[0x2035, 0x2035],
+	[0x203b, 0x203b],
+	[0x203e, 0x203e],
+	[0x2074, 0x2074],
+	[0x207f, 0x207f],
+	[0x2081, 0x2084],
+	[0x20ac, 0x20ac],
+	[0x2103, 0x2103],
+	[0x2105, 0x2105],
+	[0x2109, 0x2109],
+	[0x2113, 0x2113],
+	[0x2116, 0x2116],
+	[0x2121, 0x2122],
+	[0x2126, 0x2126],
+	[0x212b, 0x212b],
+	[0x2153, 0x2154],
+	[0x215b, 0x215e],
+	[0x2160, 0x216b],
+	[0x2170, 0x2179],
+	[0x2189, 0x2189],
+	[0x2190, 0x2199],
+	[0x21b8, 0x21b9],
+	[0x21d2, 0x21d2],
+	[0x21d4, 0x21d4],
+	[0x21e7, 0x21e7],
+	[0x2200, 0x2200],
+	[0x2202, 0x2203],
+	[0x2207, 0x2208],
+	[0x220b, 0x220b],
+	[0x220f, 0x220f],
+	[0x2211, 0x2211],
+	[0x2215, 0x2215],
+	[0x221a, 0x221a],
+	[0x221d, 0x2220],
+	[0x2223, 0x2223],
+	[0x2225, 0x2225],
+	[0x2227, 0x222c],
+	[0x222e, 0x222e],
+	[0x2234, 0x2237],
+	[0x223c, 0x223d],
+	[0x2248, 0x2248],
+	[0x224c, 0x224c],
+	[0x2252, 0x2252],
+	[0x2260, 0x2261],
+	[0x2264, 0x2267],
+	[0x226a, 0x226b],
+	[0x226e, 0x226f],
+	[0x2282, 0x2283],
+	[0x2286, 0x2287],
+	[0x2295, 0x2295],
+	[0x2299, 0x2299],
+	[0x22a5, 0x22a5],
+	[0x22bf, 0x22bf],
+	[0x2312, 0x2312],
+	[0x2460, 0x24e9],
+	[0x24eb, 0x254b],
+	[0x2550, 0x2573],
+	[0x2580, 0x258f],
+	[0x2592, 0x2595],
+	[0x25a0, 0x25a1],
+	[0x25a3, 0x25a9],
+	[0x25b2, 0x25b3],
+	[0x25b6, 0x25b7],
+	[0x25bc, 0x25bd],
+	[0x25c0, 0x25c1],
+	[0x25c6, 0x25c8],
+	[0x25cb, 0x25cb],
+	[0x25ce, 0x25d1],
+	[0x25e2, 0x25e5],
+	[0x25ef, 0x25ef],
+	[0x2605, 0x2606],
+	[0x2609, 0x2609],
+	[0x260e, 0x260f],
+	[0x261c, 0x261c],
+	[0x261e, 0x261e],
+	[0x2640, 0x2640],
+	[0x2642, 0x2642],
+	[0x2660, 0x2661],
+	[0x2663, 0x2665],
+	[0x2667, 0x266a],
+	[0x266c, 0x266d],
+	[0x266f, 0x266f],
+	[0x269e, 0x269f],
+	[0x26bf, 0x26bf],
+	[0x26c6, 0x26cd],
+	[0x26cf, 0x26d3],
+	[0x26d5, 0x26e1],
+	[0x26e3, 0x26e3],
+	[0x26e8, 0x26e9],
+	[0x26eb, 0x26f1],
+	[0x26f4, 0x26f4],
+	[0x26f6, 0x26f9],
+	[0x26fb, 0x26fc],
+	[0x26fe, 0x26ff],
+	[0x273d, 0x273d],
+	[0x2776, 0x277f],
+	[0x2b56, 0x2b59],
+	[0x3248, 0x324f],
+	[0xe000, 0xf8ff],
+	[0xfe00, 0xfe0f],
+	[0xfffd, 0xfffd],
+	[0x1f100, 0x1f10a],
+	[0x1f110, 0x1f12d],
+	[0x1f130, 0x1f169],
+	[0x1f170, 0x1f18d],
+	[0x1f18f, 0x1f190],
+	[0x1f19b, 0x1f1ac],
+	[0xe0100, 0xe01ef],
+	[0xf0000, 0xffffd],
+	[0x100000, 0x10fffd],
 ];
 
 /** Bisect a sorted, non-overlapping range table. */
