@@ -41,9 +41,29 @@ const SHEET = `
 	.editing .view { display: none; }
 	.on ~ .light { color: red; }
 	.dim { color: #808080; }
+	.box { border: 1px solid; }
+	.round { border-radius: 1ch; }
+	.center { display: flex; justify-content: center; align-items: center; }
+	.rtl { direction: rtl; }
+	.ltr { direction: ltr; }
+	.mis { margin-inline-start: 2ch; }
+	.mls { margin-left: 2ch; }
+	.pie { padding-inline-end: 2ch; }
+	.prewrap { white-space: pre-wrap; }
+	.nowrap { white-space: nowrap; }
+	.preline { white-space: pre-line; }
 `;
 
-const CLASSES = [
+/**
+ * The rules past `.dim` name classes and elements the default vocabulary never
+ * emits, so a default seed renders the same with them in the sheet as without
+ * and the regression net keeps meaning what it meant.
+ */
+
+/** `SHAPES=1` widens the vocabulary; without it the seed stream is unchanged. */
+const SHAPES = process.env.SHAPES === "1";
+
+const BASE_CLASSES = [
 	"hide",
 	"flex",
 	"col",
@@ -61,7 +81,55 @@ const CLASSES = [
 	"light",
 	"dim",
 ];
-const TAGS = ["div", "span", "p", "b", "em", "section", "li"];
+const BASE_TAGS = ["div", "span", "p", "b", "em", "section", "li"];
+
+/** Shapes that carry a box, a writing direction, or a whitespace rule. */
+const SHAPE_CLASSES = [
+	"box",
+	"round",
+	"center",
+	"rtl",
+	"ltr",
+	"mis",
+	"mls",
+	"pie",
+	"prewrap",
+	"nowrap",
+	"preline",
+];
+const SHAPE_TAGS = ["dialog"];
+
+const CLASSES = SHAPES ? [...BASE_CLASSES, ...SHAPE_CLASSES] : BASE_CLASSES;
+const TAGS = SHAPES ? [...BASE_TAGS, ...SHAPE_TAGS] : BASE_TAGS;
+
+/**
+ * Fragments a single roll drops in whole, for shapes the recursive generator
+ * reaches only by accident. The first two are consecutive whitespace-only
+ * inline elements under `white-space: pre`, the next two a bordered auto-width
+ * block with block children centered as a flex item; both are holes a shipped
+ * bug came through. The rest are corners, logical against physical offsets
+ * under a direction, bidi and width-uncertain runs inside a border, the
+ * whitespace values over an inline boundary, and the two top-layer states.
+ */
+const CLUSTERS = [
+	`<span class="pre"><b> </b><em> </em>x</span>`,
+	`<span class="pre"><b> </b><b> </b><b> </b>y</span>`,
+	`<div class="center"><div class="box"><div>aa</div><div>bbbb</div></div></div>`,
+	`<div class="center"><div class="box round"><div>aa</div><div>bbbb</div></div></div>`,
+	`<div class="box round" style="width: 8ch">ab</div>`,
+	`<div class="box" style="border-bottom-right-radius: 2ch; width: 7ch">abc</div>`,
+	`<div class="rtl box"><span class="mis">ab</span><span class="mls">cd</span></div>`,
+	`<div dir="rtl" class="box pie">الإصدار يعمل</div>`,
+	`<div class="box">اب <b>cd</b> ef</div>`,
+	`<div class="box">🙂🙂 <span>x</span></div>`,
+	`<div class="box" style="width: 6ch">ｗｉｄｅ ab</div>`,
+	`<span class="nowrap">aa bb cc</span><span class="prewrap">dd  ee</span>`,
+	`<span class="preline">a
+ b</span><span class="pre">c  d</span>`,
+	`<dialog open><p>hi</p></dialog>`,
+	`<div popover>pop</div>`,
+	`<div class="box ltr"><div class="rtl">ab<b>cd</b>ef</div></div>`,
+];
 
 function rng(seed: number): () => number {
 	let state = seed >>> 0;
@@ -91,7 +159,11 @@ type Action =
 	| {kind: "remove"; id: string}
 	| {kind: "move"; id: string; to: string}
 	| {kind: "html"; id: string; value: string}
-	| {kind: "text"; id: string; at: number; value: string};
+	| {kind: "text"; id: string; at: number; value: string}
+	| {kind: "dir"; id: string; value: string}
+	| {kind: "open"; id: string}
+	| {kind: "pop"; id: string; value: string}
+	| {kind: "flash"; id: string; mode: "modal" | "dialog" | "popover"};
 
 function describe(action: Action): string {
 	const {kind, ...rest} = action as any;
@@ -132,9 +204,59 @@ function tag(document: any): void {
 	}
 }
 
-function apply(document: any, action: Action): void {
+/**
+ * Run one action against the live document. Asynchronous for `flash`, which
+ * shows a dialog or a popover, gives it a frame of its own, and closes it: the
+ * top layer leaves no mark on the serialized tree, so what it can leave behind
+ * is a frame the close failed to repair.
+ */
+async function apply(dom: any, action: Action): Promise<void> {
+	const document = dom.document;
 	const element = find(document, action.id);
 	if (!element) return;
+	switch (action.kind) {
+		case "dir":
+			if (action.value) element.setAttribute("dir", action.value);
+			else element.removeAttribute("dir");
+			return;
+		case "open":
+			if (element.tagName !== "DIALOG") return;
+			element.toggleAttribute("open");
+			return;
+		case "pop":
+			if (action.value) element.setAttribute("popover", action.value);
+			else element.removeAttribute("popover");
+			return;
+		case "flash": {
+			// Showing what is already shown is a spec'd throw, not a finding, and
+			// the state that decides it is not always reachable from the markup.
+			if (action.mode === "popover") {
+				if (!element.hasAttribute("popover")) return;
+				try {
+					element.showPopover();
+				} catch {
+					return;
+				}
+				await nextFrame(dom);
+				try {
+					element.hidePopover();
+				} catch {
+					/* an auto popover may already have been dismissed */
+				}
+				return;
+			}
+			if (element.tagName !== "DIALOG" || element.hasAttribute("open")) return;
+			try {
+				if (action.mode === "modal") element.showModal();
+				else element.show();
+			} catch {
+				return;
+			}
+			await nextFrame(dom);
+			element.close();
+			return;
+		}
+	}
 	switch (action.kind) {
 		case "class":
 			element.classList.toggle(action.cls);
@@ -193,7 +315,7 @@ async function differs(
 	tag(dom.document);
 	await nextFrame(dom);
 	for (const action of actions) {
-		apply(dom.document, action);
+		await apply(dom, action);
 		await nextFrame(dom);
 	}
 	const incremental = frameOf(terminal);
@@ -219,6 +341,7 @@ function generate(next: () => number): string {
 		if (roll < 0.12) return "   ";
 		if (roll < 0.15) return "<!-- c -->";
 		if (roll < 0.2) return `<${pick(next, TAGS)}> </${pick(next, TAGS)}>`;
+		if (SHAPES && roll < 0.32) return pick(next, CLUSTERS);
 		if (depth <= 0 || roll < 0.5)
 			return `t${String(counter++).padStart(3, "0")}`;
 		const tagName = pick(next, TAGS);
@@ -255,8 +378,36 @@ async function record(
 	const steps = 1 + Math.floor(next() * 6);
 	for (let i = 0; i < steps; i++) {
 		const all = ids();
-		const kind = Math.floor(next() * 9);
+		const kind = Math.floor(next() * (SHAPES ? 13 : 9));
 		let action: Action | null = null;
+		if (kind >= 9 && all.length) {
+			if (kind === 9) {
+				action = {
+					kind: "dir",
+					id: pick(next, all),
+					value: pick(next, ["", "ltr", "rtl", "auto"]),
+				};
+			} else if (kind === 10) {
+				action = {kind: "open", id: pick(next, all)};
+			} else if (kind === 11) {
+				action = {
+					kind: "pop",
+					id: pick(next, all),
+					value: pick(next, ["", "auto", "manual"]),
+				};
+			} else {
+				action = {
+					kind: "flash",
+					id: pick(next, all),
+					mode: pick(next, ["modal", "dialog", "popover"] as const),
+				};
+			}
+			actions.push(action);
+			await apply(dom, action);
+			tag(dom.document);
+			await nextFrame(dom);
+			continue;
+		}
 		if (kind === 0 && all.length) {
 			action = {kind: "class", id: pick(next, all), cls: pick(next, CLASSES)};
 		} else if (kind === 1 && all.length) {
@@ -328,7 +479,7 @@ async function record(
 		}
 		if (!action) continue;
 		actions.push(action);
-		apply(dom.document, action);
+		await apply(dom, action);
 		tag(dom.document);
 		await nextFrame(dom);
 	}
