@@ -14,10 +14,13 @@ export function resolve(specifier, context, nextResolve) {
 	if (
 		specifier.startsWith(".") &&
 		specifier.endsWith(".js") &&
-		context.parentURL?.includes("/src/")
+		context.parentURL
 	) {
 		const asURL = new URL(specifier, context.parentURL);
-		if (!existsSync(fileURLToPath(asURL))) {
+		if (
+			asURL.pathname.includes("/src/") &&
+			!existsSync(fileURLToPath(asURL))
+		) {
 			const asTS = specifier.slice(0, -3) + ".ts";
 			return nextResolve(asTS, context);
 		}
