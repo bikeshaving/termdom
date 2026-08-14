@@ -19060,6 +19060,9 @@ const VOID_ELEMENTS = new Set([
 	"wbr",
 ]);
 
+/** The elements whose parser drops a newline that opens their content. */
+const NEWLINE_EATING_ELEMENTS = new Set(["pre", "textarea", "listing"]);
+
 const RAW_TEXT_PARENTS = new Set([
 	"style",
 	"script",
@@ -19186,6 +19189,22 @@ function serializeNode(
 			html += ">";
 			if (namespace === HTML_NAMESPACE && VOID_ELEMENTS.has(tagName)) {
 				return html;
+			}
+			// The parser drops a newline that opens a pre, textarea or listing,
+			// so serializing one writes a second newline for the parser to eat
+			// and the first to survive the round trip.
+			if (
+				namespace === HTML_NAMESPACE &&
+				NEWLINE_EATING_ELEMENTS.has(tagName)
+			) {
+				const first = element[kFirstChild];
+				if (
+					first !== null &&
+					first.nodeType === TEXT_NODE &&
+					(first as CharacterData)[kData].startsWith("\n")
+				) {
+					html += "\n";
+				}
 			}
 			html += serializeFragment(element, serializableShadowRoots, shadowRoots);
 			html += `</${tagName}>`;
