@@ -94,6 +94,8 @@ setInterval(() => {
   prints the selection to stdout.
 - [`weather.ts`](./examples/weather.ts) — an emoji forecast from
   Open-Meteo, with a city search and flexbox day cards.
+- [`popover.ts`](./examples/popover.ts) — a menu bar where every menu is
+  a declarative popover; open, dismiss and stacking are the platform's.
 - [`solitaire.ts`](./examples/solitaire.ts) — the Klondike solitaire above,
   with seeded deals playable by keyboard or mouse.
 
