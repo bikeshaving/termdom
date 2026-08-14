@@ -33,6 +33,12 @@ export const ALIGN_BASELINE = 5;
 export const ALIGN_SPACE_BETWEEN = 6;
 export const ALIGN_SPACE_AROUND = 7;
 export const ALIGN_SPACE_EVENLY = 8;
+/**
+ * css-align-3 `normal`, which names no behaviour of its own: it takes the
+ * meaning the layout mode gives it -- stretch for a grid item, flex-start for
+ * a flex container's lines.
+ */
+export const ALIGN_NORMAL = 9;
 
 export const JUSTIFY_FLEX_START = 0;
 export const JUSTIFY_CENTER = 1;
@@ -40,6 +46,9 @@ export const JUSTIFY_FLEX_END = 2;
 export const JUSTIFY_SPACE_BETWEEN = 3;
 export const JUSTIFY_SPACE_AROUND = 4;
 export const JUSTIFY_SPACE_EVENLY = 5;
+/** See ALIGN_NORMAL. */
+export const JUSTIFY_NORMAL = 6;
+export const JUSTIFY_STRETCH = 7;
 
 export const WRAP_NO_WRAP = 0;
 export const WRAP_WRAP = 1;
@@ -64,6 +73,7 @@ export const DISPLAY_TABLE_FOOTER_GROUP = 6;
 export const DISPLAY_TABLE_ROW = 7;
 export const DISPLAY_TABLE_CELL = 8;
 export const DISPLAY_TABLE_CAPTION = 9;
+export const DISPLAY_GRID = 10;
 
 export const POSITION_TYPE_STATIC = 0;
 export const POSITION_TYPE_RELATIVE = 1;
@@ -189,6 +199,96 @@ function resolveMargin(value: Value, ownerWidth: number): number {
 }
 
 // ---------------------------------------------------------------------------
+// Grid values (css-grid-2 §7, §8)
+//
+// The compute core takes these already parsed: a track list arrives as the
+// structure the grammar describes, never as CSS text. Lengths keep the Value
+// shape everything else here uses, so a percentage track resolves against the
+// grid container the same way a percentage width does.
+// ---------------------------------------------------------------------------
+
+/**
+ * A `<track-breadth>`: one end of a track's sizing function. `flex` is the
+ * `fr` unit, whose factor is a share of the leftover space rather than a
+ * length; the three keywords are intrinsic, and size from the items in them.
+ */
+export type TrackBreadth =
+	| {kind: "length"; value: Value}
+	| {kind: "flex"; factor: number}
+	| {kind: "auto"}
+	| {kind: "min-content"}
+	| {kind: "max-content"};
+
+/**
+ * A `<track-size>`: the minimum and maximum a track may take.
+ *
+ * `fit-content(x)` is `minmax(auto, max-content)` with the maximum clamped by
+ * `x` (css-grid-2 §7.2.3), so it is held as exactly that -- the clamp beside
+ * the pair, not a fourth kind of sizing function.
+ */
+export interface TrackSize {
+	min: TrackBreadth;
+	max: TrackBreadth;
+	fitContent?: Value;
+}
+
+/** One track of a track list, with the line names written before it. */
+export interface TrackListTrack {
+	names: string[];
+	size: TrackSize;
+}
+
+/**
+ * A `repeat()` group. `auto-fill` and `auto-fit` decide their own count from
+ * the space available; `auto-fit` then collapses the tracks that took no item
+ * (css-grid-2 §7.2.3.2).
+ */
+export interface TrackRepeat {
+	count: number | "auto-fill" | "auto-fit";
+	tracks: TrackListTrack[];
+	/** Line names written after the repeat group's last track. */
+	endNames: string[];
+}
+
+export type TrackListPart =
+	| {type: "track"; track: TrackListTrack}
+	| {type: "repeat"; repeat: TrackRepeat};
+
+/** A `<track-list>`: the tracks of one axis, with the lines named between them. */
+export interface TrackList {
+	parts: TrackListPart[];
+	/** Line names written after the last track. */
+	endNames: string[];
+}
+
+/**
+ * A `grid-template-areas` map: one entry per row, one name (or null for a `.`
+ * null cell) per column. Every row has `columnCount` entries.
+ */
+export interface GridAreaMap {
+	rows: Array<Array<string | null>>;
+	columnCount: number;
+}
+
+/**
+ * One `<grid-line>` (css-grid-2 §8.3). `auto` is index null with no name and
+ * no span; the rest are the grammar's three forms, which the parser has
+ * already told apart.
+ */
+export interface GridPlacement {
+	span: boolean;
+	index: number | null;
+	name: string | null;
+}
+
+const AUTO_PLACEMENT: GridPlacement = {span: false, index: null, name: null};
+
+/** The `auto` track size: the initial value of grid-auto-rows/columns. */
+const AUTO_TRACK: TrackSize = {min: {kind: "auto"}, max: {kind: "auto"}};
+
+const EMPTY_TRACK_LIST: TrackList = {parts: [], endNames: []};
+
+// ---------------------------------------------------------------------------
 // Axis helpers
 // ---------------------------------------------------------------------------
 
@@ -256,6 +356,30 @@ interface Style {
 	/** Gaps between items: [column, row]. */
 	gap: number[];
 
+	/**
+	 * css-align-3 §6: the inline-axis counterparts of align-items/align-self.
+	 * A flex container reads neither -- its inline axis is owned by
+	 * justify-content -- so they are grid's alone.
+	 */
+	justifyItems: Align;
+	justifySelf: Align;
+
+	// -- grid container (css-grid-2 §7, §8.5) --------------------------------
+	gridTemplateColumns: TrackList;
+	gridTemplateRows: TrackList;
+	gridTemplateAreas: GridAreaMap | null;
+	gridAutoColumns: TrackSize[];
+	gridAutoRows: TrackSize[];
+	/** grid-auto-flow: the axis the placement cursor advances along, and dense. */
+	gridAutoFlowColumn: boolean;
+	gridAutoFlowDense: boolean;
+
+	// -- grid item (css-grid-2 §8.3) -----------------------------------------
+	gridRowStart: GridPlacement;
+	gridRowEnd: GridPlacement;
+	gridColumnStart: GridPlacement;
+	gridColumnEnd: GridPlacement;
+
 	/** Table cell spans. 1 unless set; only meaningful on a table-cell. */
 	colSpan: number;
 	rowSpan: number;
@@ -302,6 +426,18 @@ interface LayoutResult {
 	lineIndex: number;
 
 	/**
+	 * The used sizes of a grid container's tracks, in the implicit grid's own
+	 * order (leading implicit tracks first). Null on a box that is not a grid
+	 * container; this is what `getComputedStyle` reports for
+	 * grid-template-columns/rows, which resolve to their used track sizes.
+	 */
+	gridColumns: number[] | null;
+	gridRows: number[] | null;
+	/** How many of gridColumns/gridRows sit BEFORE the explicit grid's first line. */
+	gridColumnOffset: number;
+	gridRowOffset: number;
+
+	/**
 	 * The margins that adjoin the box's top and bottom edges from the inside and
 	 * escape them, each set as its largest positive and most negative member
 	 * (css2 §8.3.1). Block layout writes them; the block container above reads
@@ -337,6 +473,22 @@ function createStyle(): Style {
 		display: DISPLAY_FLEX,
 
 		gap: [0, 0],
+
+		justifyItems: ALIGN_NORMAL,
+		justifySelf: ALIGN_AUTO,
+
+		gridTemplateColumns: EMPTY_TRACK_LIST,
+		gridTemplateRows: EMPTY_TRACK_LIST,
+		gridTemplateAreas: null,
+		gridAutoColumns: [AUTO_TRACK],
+		gridAutoRows: [AUTO_TRACK],
+		gridAutoFlowColumn: false,
+		gridAutoFlowDense: false,
+
+		gridRowStart: AUTO_PLACEMENT,
+		gridRowEnd: AUTO_PLACEMENT,
+		gridColumnStart: AUTO_PLACEMENT,
+		gridColumnEnd: AUTO_PLACEMENT,
 
 		colSpan: 1,
 		rowSpan: 1,
@@ -389,6 +541,10 @@ function createLayout(): LayoutResult {
 		computedFlexBasis: NaN,
 		autoMinMain: NaN,
 		lineIndex: 0,
+		gridColumns: null,
+		gridRows: null,
+		gridColumnOffset: 0,
+		gridRowOffset: 0,
 		collapseTopPositive: 0,
 		collapseTopNegative: 0,
 		collapseBottomPositive: 0,
@@ -730,6 +886,68 @@ export class Node {
 		this.markDirty();
 	}
 
+	setJustifyItems(v: Align): void {
+		this.style.justifyItems = v;
+		this.markDirty();
+	}
+	setJustifySelf(v: Align): void {
+		this.style.justifySelf = v;
+		this.markDirty();
+	}
+
+	setGridTemplateColumns(v: TrackList | null): void {
+		this.style.gridTemplateColumns = v ?? EMPTY_TRACK_LIST;
+		this.markDirty();
+	}
+	setGridTemplateRows(v: TrackList | null): void {
+		this.style.gridTemplateRows = v ?? EMPTY_TRACK_LIST;
+		this.markDirty();
+	}
+	setGridTemplateAreas(v: GridAreaMap | null): void {
+		this.style.gridTemplateAreas = v;
+		this.markDirty();
+	}
+	setGridAutoColumns(v: TrackSize[] | null): void {
+		this.style.gridAutoColumns = v && v.length > 0 ? v : [AUTO_TRACK];
+		this.markDirty();
+	}
+	setGridAutoRows(v: TrackSize[] | null): void {
+		this.style.gridAutoRows = v && v.length > 0 ? v : [AUTO_TRACK];
+		this.markDirty();
+	}
+	setGridAutoFlow(column: boolean, dense: boolean): void {
+		this.style.gridAutoFlowColumn = column;
+		this.style.gridAutoFlowDense = dense;
+		this.markDirty();
+	}
+
+	setGridRowStart(v: GridPlacement | null): void {
+		this.style.gridRowStart = v ?? AUTO_PLACEMENT;
+		this.markDirty();
+	}
+	setGridRowEnd(v: GridPlacement | null): void {
+		this.style.gridRowEnd = v ?? AUTO_PLACEMENT;
+		this.markDirty();
+	}
+	setGridColumnStart(v: GridPlacement | null): void {
+		this.style.gridColumnStart = v ?? AUTO_PLACEMENT;
+		this.markDirty();
+	}
+	setGridColumnEnd(v: GridPlacement | null): void {
+		this.style.gridColumnEnd = v ?? AUTO_PLACEMENT;
+		this.markDirty();
+	}
+
+	/** See LayoutResult.gridColumns: the used track sizes of the last layout. */
+	getComputedGridTracks(rows: boolean): {sizes: number[]; offset: number} | null {
+		const sizes = rows ? this.layout.gridRows : this.layout.gridColumns;
+		if (!sizes) return null;
+		return {
+			sizes,
+			offset: rows ? this.layout.gridRowOffset : this.layout.gridColumnOffset,
+		};
+	}
+
 	setColSpan(v: number): void {
 		this.style.colSpan = Math.max(1, Math.floor(v) || 1);
 		this.markDirty();
@@ -1016,9 +1234,12 @@ function resolveFlexBasis(node: Node, mainAxis: FlexDirection): Value {
 }
 
 function alignSelfOf(parent: Node, child: Node): Align {
-	return child.style.alignSelf === ALIGN_AUTO
-		? parent.style.alignItems
-		: child.style.alignSelf;
+	const align =
+		child.style.alignSelf === ALIGN_AUTO
+			? parent.style.alignItems
+			: child.style.alignSelf;
+	// `normal` behaves as `stretch` on a flex item (css-align-3 §4.2).
+	return align === ALIGN_NORMAL ? ALIGN_STRETCH : align;
 }
 
 /**
@@ -2541,6 +2762,7 @@ function layoutAbsoluteChild(
 	child: Node,
 	ownerWidth: number,
 	ownerHeight: number,
+	area: {left: number; top: number; width: number; height: number} | null = null,
 ): void {
 	const parentWidth = node.layout.width;
 	const parentHeight = node.layout.height;
@@ -2550,21 +2772,26 @@ function layoutAbsoluteChild(
 	const borderRight = node.style.border[EDGE_RIGHT];
 	const borderBottom = node.style.border[EDGE_BOTTOM];
 
-	const left = resolveValue(child.style.position[EDGE_LEFT], parentWidth);
-	const top = resolveValue(child.style.position[EDGE_TOP], parentHeight);
-	const right = resolveValue(child.style.position[EDGE_RIGHT], parentWidth);
-	const bottom = resolveValue(child.style.position[EDGE_BOTTOM], parentHeight);
+	// The containing block: the parent's padding box, or -- for a grid child
+	// the author placed on lines -- its grid area (css-grid-2 §9.2).
+	const blockLeft = area ? area.left : borderLeft;
+	const blockTop = area ? area.top : borderTop;
+	const blockWidth = area ? area.width : parentWidth - borderLeft - borderRight;
+	const blockHeight = area
+		? area.height
+		: parentHeight - borderTop - borderBottom;
+	const basisWidth = area ? area.width : parentWidth;
+	const basisHeight = area ? area.height : parentHeight;
 
-	const marginLeft = resolveMargin(child.style.margin[EDGE_LEFT], parentWidth);
-	const marginTop = resolveMargin(child.style.margin[EDGE_TOP], parentWidth);
-	const marginRight = resolveMargin(
-		child.style.margin[EDGE_RIGHT],
-		parentWidth,
-	);
-	const marginBottom = resolveMargin(
-		child.style.margin[EDGE_BOTTOM],
-		parentWidth,
-	);
+	const left = resolveValue(child.style.position[EDGE_LEFT], basisWidth);
+	const top = resolveValue(child.style.position[EDGE_TOP], basisHeight);
+	const right = resolveValue(child.style.position[EDGE_RIGHT], basisWidth);
+	const bottom = resolveValue(child.style.position[EDGE_BOTTOM], basisHeight);
+
+	const marginLeft = resolveMargin(child.style.margin[EDGE_LEFT], basisWidth);
+	const marginTop = resolveMargin(child.style.margin[EDGE_TOP], basisWidth);
+	const marginRight = resolveMargin(child.style.margin[EDGE_RIGHT], basisWidth);
+	const marginBottom = resolveMargin(child.style.margin[EDGE_BOTTOM], basisWidth);
 
 	// An auto margin between an inset and the box is the box asking to be
 	// placed in the space the insets leave rather than stretched across it --
@@ -2582,50 +2809,36 @@ function layoutAbsoluteChild(
 	const childWidth = {value: NaN, mode: MEASURE_MODE_UNDEFINED};
 	const childHeight = {value: NaN, mode: MEASURE_MODE_UNDEFINED};
 
-	if (styleDimIsDefined(child, FLEX_DIRECTION_ROW, parentWidth)) {
+	if (styleDimIsDefined(child, FLEX_DIRECTION_ROW, basisWidth)) {
 		childWidth.value =
-			resolveValue(child.style.width, parentWidth) + marginLeft + marginRight;
+			resolveValue(child.style.width, basisWidth) + marginLeft + marginRight;
 		childWidth.mode = MEASURE_MODE_EXACTLY;
 	} else if (shrinkAcross) {
 		// Auto margins on both sides: the insets bound the box, they do not
 		// size it, so it shrinks to its content within them.
-		childWidth.value = parentWidth - borderLeft - borderRight - left - right;
+		childWidth.value = blockWidth - left - right;
 		childWidth.mode = MEASURE_MODE_AT_MOST;
 	} else if (isDefined(left) && isDefined(right)) {
 		// Both insets pin the box, so its width is implied.
-		childWidth.value =
-			parentWidth -
-			borderLeft -
-			borderRight -
-			left -
-			right -
-			marginLeft -
-			marginRight;
+		childWidth.value = blockWidth - left - right - marginLeft - marginRight;
 		childWidth.mode = MEASURE_MODE_EXACTLY;
-	} else if (isDefined(parentWidth)) {
-		childWidth.value = parentWidth - borderLeft - borderRight;
+	} else if (isDefined(blockWidth)) {
+		childWidth.value = blockWidth;
 		childWidth.mode = MEASURE_MODE_AT_MOST;
 	}
 
-	if (styleDimIsDefined(child, FLEX_DIRECTION_COLUMN, parentHeight)) {
+	if (styleDimIsDefined(child, FLEX_DIRECTION_COLUMN, basisHeight)) {
 		childHeight.value =
-			resolveValue(child.style.height, parentHeight) + marginTop + marginBottom;
+			resolveValue(child.style.height, basisHeight) + marginTop + marginBottom;
 		childHeight.mode = MEASURE_MODE_EXACTLY;
 	} else if (shrinkDown) {
-		childHeight.value = parentHeight - borderTop - borderBottom - top - bottom;
+		childHeight.value = blockHeight - top - bottom;
 		childHeight.mode = MEASURE_MODE_AT_MOST;
 	} else if (isDefined(top) && isDefined(bottom)) {
-		childHeight.value =
-			parentHeight -
-			borderTop -
-			borderBottom -
-			top -
-			bottom -
-			marginTop -
-			marginBottom;
+		childHeight.value = blockHeight - top - bottom - marginTop - marginBottom;
 		childHeight.mode = MEASURE_MODE_EXACTLY;
-	} else if (isDefined(parentHeight)) {
-		childHeight.value = parentHeight - borderTop - borderBottom;
+	} else if (isDefined(blockHeight)) {
+		childHeight.value = blockHeight;
 		childHeight.mode = MEASURE_MODE_AT_MOST;
 	}
 
@@ -2648,65 +2861,71 @@ function layoutAbsoluteChild(
 			? (child.staticPositionFunc?.(node) ?? null)
 			: null;
 
+	const isGrid = node.style.display === DISPLAY_GRID;
+
 	// Horizontal placement.
 	if (shrinkAcross) {
 		// The space the insets left, minus the box, goes to the auto margins:
 		// half each, which is centering.
-		const free =
-			parentWidth -
-			borderLeft -
-			borderRight -
-			left -
-			right -
-			child.layout.width;
-		child.layout.left = borderLeft + left + Math.max(free, 0) / 2;
+		const free = blockWidth - left - right - child.layout.width;
+		child.layout.left = blockLeft + left + Math.max(free, 0) / 2;
 	} else if (isDefined(left)) {
-		child.layout.left = borderLeft + left + marginLeft;
+		child.layout.left = blockLeft + left + marginLeft;
 	} else if (isDefined(right)) {
 		child.layout.left =
-			parentWidth - borderRight - child.layout.width - right - marginRight;
+			blockLeft + blockWidth - child.layout.width - right - marginRight;
 	} else if (staticPosition) {
 		child.layout.left = staticPosition.left + marginLeft;
 	} else {
-		const align = node.style.justifyContent;
-		const free = parentWidth - borderLeft - borderRight - child.layout.width;
-		const isMainRow = isRow(node.style.flexDirection);
-		if (isMainRow && align === JUSTIFY_CENTER) {
-			child.layout.left = borderLeft + free / 2;
-		} else if (isMainRow && align === JUSTIFY_FLEX_END) {
-			child.layout.left = borderLeft + free;
+		const free = blockWidth - child.layout.width;
+		// A grid container aligns an out-of-flow box by the box's own
+		// justify-self, which is the alignment its area was going to give it.
+		const align = isGrid
+			? gridSelfAlign(node, child, true)
+			: isRow(node.style.flexDirection)
+				? node.style.justifyContent === JUSTIFY_CENTER
+					? ALIGN_CENTER
+					: node.style.justifyContent === JUSTIFY_FLEX_END
+						? ALIGN_FLEX_END
+						: ALIGN_FLEX_START
+				: ALIGN_FLEX_START;
+		if (align === ALIGN_CENTER) {
+			child.layout.left = blockLeft + free / 2;
+		} else if (align === ALIGN_FLEX_END) {
+			child.layout.left = blockLeft + free;
 		} else {
-			child.layout.left = borderLeft + marginLeft;
+			child.layout.left = blockLeft + marginLeft;
 		}
 	}
 
 	// Vertical placement.
 	if (shrinkDown) {
-		const free =
-			parentHeight -
-			borderTop -
-			borderBottom -
-			top -
-			bottom -
-			child.layout.height;
-		child.layout.top = borderTop + top + Math.max(free, 0) / 2;
+		const free = blockHeight - top - bottom - child.layout.height;
+		child.layout.top = blockTop + top + Math.max(free, 0) / 2;
 	} else if (isDefined(top)) {
-		child.layout.top = borderTop + top + marginTop;
+		child.layout.top = blockTop + top + marginTop;
 	} else if (isDefined(bottom)) {
 		child.layout.top =
-			parentHeight - borderBottom - child.layout.height - bottom - marginBottom;
+			blockTop + blockHeight - child.layout.height - bottom - marginBottom;
 	} else if (staticPosition) {
 		child.layout.top = staticPosition.top + marginTop;
 	} else {
-		const align = node.style.alignItems;
-		const free = parentHeight - borderTop - borderBottom - child.layout.height;
-		const isMainColumn = isColumn(node.style.flexDirection);
-		if (isMainColumn && align === ALIGN_CENTER) {
-			child.layout.top = borderTop + free / 2;
-		} else if (isMainColumn && align === ALIGN_FLEX_END) {
-			child.layout.top = borderTop + free;
+		const free = blockHeight - child.layout.height;
+		const align = isGrid
+			? gridSelfAlign(node, child, false)
+			: isColumn(node.style.flexDirection)
+				? node.style.alignItems === ALIGN_CENTER
+					? ALIGN_CENTER
+					: node.style.alignItems === ALIGN_FLEX_END
+						? ALIGN_FLEX_END
+						: ALIGN_FLEX_START
+				: ALIGN_FLEX_START;
+		if (align === ALIGN_CENTER) {
+			child.layout.top = blockTop + free / 2;
+		} else if (align === ALIGN_FLEX_END) {
+			child.layout.top = blockTop + free;
 		} else {
-			child.layout.top = borderTop + marginTop;
+			child.layout.top = blockTop + marginTop;
 		}
 	}
 }
@@ -3266,6 +3485,1850 @@ function layoutTable(
 }
 
 // ---------------------------------------------------------------------------
+// Grid layout (css-grid-2)
+//
+// A grid is not flexbox and not a table. Its defining property is that items
+// are placed onto a two-dimensional set of shared tracks: a track's size is
+// decided by every item that crosses it, and an item's position is decided by
+// lines that exist whether or not anything sits between them. Neither of the
+// other two modes can express that, so `display: grid` is its own layout mode.
+//
+// Excluded, and named rather than silently missing: `subgrid` (css-grid-2
+// §9.5), whose tracks come from an ancestor grid, and `masonry`
+// (css-grid-3), which is not a grid at all in the second axis. The track-list
+// parser refuses both.
+// ---------------------------------------------------------------------------
+
+/** A track as the sizing algorithm works on it (css-grid-2 §12.2). */
+interface GridTrack {
+	size: TrackSize;
+	/** The track's floor: what it has been grown to so far. */
+	base: number;
+	/** Infinity until §12.5 gives an intrinsic or flexible track a limit. */
+	growthLimit: number;
+	/** The `fit-content()` clamp; Infinity for every other sizing function. */
+	fitContentLimit: number;
+	/**
+	 * Whether the growth limit was set from a max-content contribution in this
+	 * pass, which lets the next distribution grow the track past it
+	 * (css-grid-2 §12.5.1, "infinitely growable").
+	 */
+	infinitelyGrowable: boolean;
+	/** Scratch space for one distribution pass: an increase not yet applied. */
+	planned: number;
+	/** The track's start edge within the container's content box. */
+	position: number;
+	/** An `auto-fit` track that took no item: it occupies no space at all. */
+	collapsed: boolean;
+}
+
+/** A grid item, with the lines its area sits between once placement is done. */
+interface GridItem {
+	node: Node;
+	/** Placement as authored: a start line (null when auto) and a span. */
+	column: {start: number | null; span: number};
+	row: {start: number | null; span: number};
+	/** Track indices, after the implicit grid is normalized to start at zero. */
+	columnStart: number;
+	columnEnd: number;
+	rowStart: number;
+	rowEnd: number;
+}
+
+/** A track breadth's length, or NaN when it is not one (or is an unresolvable %). */
+function trackLength(breadth: TrackBreadth, ownerSize: number): number {
+	if (breadth.kind !== "length") return NaN;
+	return resolveValue(breadth.value, ownerSize);
+}
+
+/**
+ * Whether a breadth sizes from the items in the track rather than from a
+ * length. A percentage against an indefinite size is one of them: it cannot be
+ * resolved, and css-grid-2 §7.2.1 says it then behaves as `auto`.
+ */
+function isIntrinsicBreadth(breadth: TrackBreadth, ownerSize: number): boolean {
+	return breadth.kind !== "flex" && !isDefined(trackLength(breadth, ownerSize));
+}
+
+/** The size a track takes for counting `repeat(auto-fill)` repetitions. */
+function definiteTrackSize(size: TrackSize, ownerSize: number): number {
+	const max = trackLength(size.max, ownerSize);
+	if (isDefined(max)) return Math.max(0, max);
+	const min = trackLength(size.min, ownerSize);
+	return isDefined(min) ? Math.max(0, min) : 0;
+}
+
+function createTrack(size: TrackSize, ownerSize: number): GridTrack {
+	const min = trackLength(size.min, ownerSize);
+	const max = trackLength(size.max, ownerSize);
+	const base = isDefined(min) ? Math.max(0, min) : 0;
+	const limit = isDefined(max) ? Math.max(0, max) : Infinity;
+	let fitContentLimit = Infinity;
+	if (size.fitContent) {
+		const clamp = resolveValue(size.fitContent, ownerSize);
+		if (isDefined(clamp)) fitContentLimit = Math.max(0, clamp);
+	}
+	return {
+		size,
+		base,
+		growthLimit: Math.max(limit, base),
+		fitContentLimit,
+		infinitelyGrowable: false,
+		planned: 0,
+		position: 0,
+		collapsed: false,
+	};
+}
+
+/** An expanded `<track-list>`: its tracks, and the names of the lines between them. */
+interface ExpandedTracks {
+	sizes: TrackSize[];
+	/** Names of line i, for i in [0, sizes.length]. */
+	lineNames: string[][];
+	/** The range an `auto-fit` repeat produced, whose empty tracks collapse. */
+	autoFit: {start: number; count: number} | null;
+}
+
+/**
+ * Expand a track list into tracks and line names, deciding the repetition
+ * count of an `auto-fill`/`auto-fit` group from the space available
+ * (css-grid-2 §7.2.3.2). With no definite space to fill, the group repeats
+ * once, which is what the spec says of an indefinite maximum.
+ */
+function expandTrackList(
+	list: TrackList,
+	availableSpace: number,
+	gap: number,
+	ownerSize: number,
+): ExpandedTracks {
+	const sizes: TrackSize[] = [];
+	const lineNames: string[][] = [];
+	let autoFit: ExpandedTracks["autoFit"] = null;
+
+	const autoPart = list.parts.find(
+		(part) => part.type === "repeat" && typeof part.repeat.count !== "number",
+	);
+
+	let repetitions = 1;
+	if (autoPart && autoPart.type === "repeat") {
+		let fixedSum = 0;
+		let fixedCount = 0;
+		for (const part of list.parts) {
+			if (part === autoPart) continue;
+			if (part.type === "track") {
+				fixedSum += definiteTrackSize(part.track.size, ownerSize);
+				fixedCount++;
+				continue;
+			}
+			const count = typeof part.repeat.count === "number" ? part.repeat.count : 1;
+			for (const track of part.repeat.tracks) {
+				fixedSum += count * definiteTrackSize(track.size, ownerSize);
+				fixedCount += count;
+			}
+		}
+		let repeatSum = 0;
+		for (const track of autoPart.repeat.tracks) {
+			repeatSum += definiteTrackSize(track.size, ownerSize);
+		}
+		const perRepetition = repeatSum + autoPart.repeat.tracks.length * gap;
+		if (isDefined(availableSpace) && perRepetition > 0) {
+			// n repetitions and the fixed tracks together take
+			//   fixedSum + n*repeatSum + (fixedCount + n*repeatTracks - 1)*gap
+			// which must not exceed the space; solved for n.
+			const room = availableSpace - fixedSum - fixedCount * gap + gap;
+			repetitions = Math.max(1, Math.floor(room / perRepetition));
+		}
+	}
+
+	let pending: string[] = [];
+	const emit = (track: TrackListTrack) => {
+		lineNames.push(pending.concat(track.names));
+		pending = [];
+		sizes.push(track.size);
+	};
+
+	for (const part of list.parts) {
+		if (part.type === "track") {
+			emit(part.track);
+			continue;
+		}
+		const repeat = part.repeat;
+		const count = typeof repeat.count === "number" ? repeat.count : repetitions;
+		const start = sizes.length;
+		for (let i = 0; i < count; i++) {
+			for (const track of repeat.tracks) emit(track);
+			pending = pending.concat(repeat.endNames);
+		}
+		if (repeat.count === "auto-fit") {
+			autoFit = {start, count: sizes.length - start};
+		}
+	}
+	lineNames.push(pending.concat(list.endNames));
+
+	return {sizes, lineNames, autoFit};
+}
+
+/**
+ * The implicit line names a `grid-template-areas` map generates: an area named
+ * `foo` names its four edges `foo-start` and `foo-end` on both axes
+ * (css-grid-2 §7.3).
+ */
+function areaLineNames(areas: GridAreaMap): {
+	columns: Map<string, number[]>;
+	rows: Map<string, number[]>;
+} {
+	const columns = new Map<string, number[]>();
+	const rows = new Map<string, number[]>();
+	const bounds = new Map<
+		string,
+		{top: number; left: number; bottom: number; right: number}
+	>();
+
+	areas.rows.forEach((row, rowIndex) => {
+		row.forEach((name, columnIndex) => {
+			if (name === null) return;
+			const found = bounds.get(name);
+			if (!found) {
+				bounds.set(name, {
+					top: rowIndex,
+					left: columnIndex,
+					bottom: rowIndex + 1,
+					right: columnIndex + 1,
+				});
+				return;
+			}
+			found.top = Math.min(found.top, rowIndex);
+			found.left = Math.min(found.left, columnIndex);
+			found.bottom = Math.max(found.bottom, rowIndex + 1);
+			found.right = Math.max(found.right, columnIndex + 1);
+		});
+	});
+
+	for (const [name, box] of bounds) {
+		addLineName(columns, `${name}-start`, box.left);
+		addLineName(columns, `${name}-end`, box.right);
+		addLineName(rows, `${name}-start`, box.top);
+		addLineName(rows, `${name}-end`, box.bottom);
+	}
+	return {columns, rows};
+}
+
+function addLineName(
+	into: Map<string, number[]>,
+	name: string,
+	line: number,
+): void {
+	const lines = into.get(name);
+	if (!lines) {
+		into.set(name, [line]);
+		return;
+	}
+	if (!lines.includes(line)) {
+		lines.push(line);
+		lines.sort((a, b) => a - b);
+	}
+}
+
+/** Every line name of one axis: the template's own, plus the areas' implicit ones. */
+function collectLineNames(
+	expanded: ExpandedTracks,
+	fromAreas: Map<string, number[]>,
+): Map<string, number[]> {
+	const names = new Map<string, number[]>();
+	expanded.lineNames.forEach((line, index) => {
+		for (const name of line) addLineName(names, name, index);
+	});
+	for (const [name, lines] of fromAreas) {
+		for (const line of lines) addLineName(names, name, line);
+	}
+	return names;
+}
+
+/** One `<grid-line>`, resolved as far as it can be without its opposite end. */
+type ResolvedLine =
+	| {kind: "auto"}
+	| {kind: "line"; index: number}
+	| {kind: "span"; count: number}
+	| {kind: "spanName"; name: string; count: number};
+
+/**
+ * The line a name and an ordinal name (css-grid-2 §8.3). Outside the explicit
+ * grid every implicit line answers to the name, which is what keeps a
+ * placement against a name that does not exist definite rather than dropped.
+ */
+function namedLine(
+	names: Map<string, number[]>,
+	name: string,
+	index: number,
+	explicitCount: number,
+): number {
+	const matches = names.get(name) ?? [];
+	if (index > 0) {
+		if (matches.length >= index) return matches[index - 1];
+		return explicitCount + (index - matches.length);
+	}
+	const from = matches.length + index;
+	if (from >= 0) return matches[from];
+	return from;
+}
+
+function resolveGridLine(
+	placement: GridPlacement,
+	names: Map<string, number[]>,
+	explicitCount: number,
+	edge: "start" | "end",
+): ResolvedLine {
+	if (placement.span) {
+		const count = Math.max(1, placement.index ?? 1);
+		if (placement.name !== null) {
+			return {kind: "spanName", name: placement.name, count};
+		}
+		return {kind: "span", count};
+	}
+	if (placement.name !== null) {
+		// A bare name is first read as a named AREA's edge: an area `foo` names
+		// the lines `foo-start` and `foo-end`, and `grid-row-start: foo` means
+		// the one on the side it is written on.
+		if (placement.index === null) {
+			const edgeName = `${placement.name}-${edge}`;
+			if (names.has(edgeName)) {
+				return {kind: "line", index: namedLine(names, edgeName, 1, explicitCount)};
+			}
+		}
+		return {
+			kind: "line",
+			index: namedLine(
+				names,
+				placement.name,
+				placement.index ?? 1,
+				explicitCount,
+			),
+		};
+	}
+	if (placement.index === null) return {kind: "auto"};
+	return {
+		kind: "line",
+		index:
+			placement.index > 0
+				? placement.index - 1
+				: explicitCount + placement.index + 1,
+	};
+}
+
+/** The `count`-th line named `name` on one side of `from`. */
+function spanToName(
+	names: Map<string, number[]>,
+	name: string,
+	count: number,
+	from: number,
+	forward: boolean,
+): number {
+	const matches = names.get(name) ?? [];
+	const ordered = forward
+		? matches.filter((line) => line > from)
+		: matches.filter((line) => line < from).reverse();
+	if (ordered.length >= count) return ordered[count - 1];
+	const shortfall = count - ordered.length;
+	const last = ordered.length > 0 ? ordered[ordered.length - 1] : from;
+	return forward ? last + shortfall : last - shortfall;
+}
+
+/**
+ * Pair a start and an end line into a definite position and a span
+ * (css-grid-2 §8.3). A start of null is an item the auto-placement pass has
+ * still to position; the span it carries is what that pass places.
+ */
+function pairGridLines(
+	startLine: ResolvedLine,
+	endLine: ResolvedLine,
+	names: Map<string, number[]>,
+): {start: number | null; span: number} {
+	let start = startLine;
+	let end = endLine;
+
+	const isSpan = (line: ResolvedLine) =>
+		line.kind === "span" || line.kind === "spanName";
+
+	// Two spans say nothing about where the item goes: the end one is dropped.
+	if (isSpan(start) && isSpan(end)) end = {kind: "auto"};
+
+	if (start.kind === "line" && end.kind === "line") {
+		let first = start.index;
+		let last = end.index;
+		if (last < first) {
+			const swap = first;
+			first = last;
+			last = swap;
+		}
+		// A zero-width area is one track tall: the end line is dropped.
+		if (last === first) last = first + 1;
+		return {start: first, span: last - first};
+	}
+
+	if (start.kind === "line") {
+		if (end.kind === "span") return {start: start.index, span: end.count};
+		if (end.kind === "spanName") {
+			const line = spanToName(names, end.name, end.count, start.index, true);
+			return {start: start.index, span: Math.max(1, line - start.index)};
+		}
+		return {start: start.index, span: 1};
+	}
+
+	if (end.kind === "line") {
+		if (start.kind === "span") {
+			return {start: end.index - start.count, span: start.count};
+		}
+		if (start.kind === "spanName") {
+			const line = spanToName(names, start.name, start.count, end.index, false);
+			return {start: line, span: Math.max(1, end.index - line)};
+		}
+		// Only an end line: the item is one track wide, ending there.
+		return {start: end.index - 1, span: 1};
+	}
+
+	const span =
+		start.kind === "span" || start.kind === "spanName"
+			? start.count
+			: end.kind === "span" || end.kind === "spanName"
+				? end.count
+				: 1;
+	return {start: null, span: Math.max(1, span)};
+}
+
+/**
+ * css-grid-2 §8.5: place the items whose position the author did not give.
+ *
+ * Written over a major and a minor axis so that `grid-auto-flow: column` is
+ * the same walk with the two swapped -- the cursor advances along the major
+ * axis and fills the minor one.
+ */
+function autoPlaceItems(
+	items: GridItem[],
+	explicitColumns: number,
+	explicitRows: number,
+	flowColumn: boolean,
+	dense: boolean,
+): void {
+	const major = (item: GridItem) => (flowColumn ? item.column : item.row);
+	const minor = (item: GridItem) => (flowColumn ? item.row : item.column);
+	const explicitMinor = flowColumn ? explicitRows : explicitColumns;
+
+	// The implicit grid starts at the start-most line anything was placed on.
+	let minorBase = 0;
+	let majorBase = 0;
+	for (const item of items) {
+		const min = minor(item).start;
+		const maj = major(item).start;
+		if (min !== null) minorBase = Math.min(minorBase, min);
+		if (maj !== null) majorBase = Math.min(majorBase, maj);
+	}
+
+	// §8.5 step 3: how far the minor axis reaches. Items with an auto minor
+	// position still widen it by their span, or they could never be placed.
+	let minorEnd = minorBase + explicitMinor;
+	for (const item of items) {
+		const line = minor(item);
+		if (line.start !== null) minorEnd = Math.max(minorEnd, line.start + line.span);
+		else minorEnd = Math.max(minorEnd, minorBase + line.span);
+	}
+
+	const occupied = new Set<string>();
+	const occupy = (item: GridItem) => {
+		const maj = major(item);
+		const min = minor(item);
+		for (let a = 0; a < maj.span; a++) {
+			for (let b = 0; b < min.span; b++) {
+				occupied.add(`${maj.start! + a}:${min.start! + b}`);
+			}
+		}
+	};
+	const fits = (
+		majorStart: number,
+		majorSpan: number,
+		minorStart: number,
+		minorSpan: number,
+	) => {
+		for (let a = 0; a < majorSpan; a++) {
+			for (let b = 0; b < minorSpan; b++) {
+				if (occupied.has(`${majorStart + a}:${minorStart + b}`)) return false;
+			}
+		}
+		return true;
+	};
+
+	// §8.5 step 1: everything the author placed on both axes.
+	for (const item of items) {
+		if (major(item).start !== null && minor(item).start !== null) occupy(item);
+	}
+
+	// §8.5 step 2: items locked to a major position, free along the minor one.
+	const rowCursors = new Map<number, number>();
+	for (const item of items) {
+		const maj = major(item);
+		const min = minor(item);
+		if (maj.start === null || min.start !== null) continue;
+		const from = dense ? minorBase : (rowCursors.get(maj.start) ?? minorBase);
+		let position = from;
+		while (!fits(maj.start, maj.span, position, min.span)) position++;
+		min.start = position;
+		if (!dense) rowCursors.set(maj.start, position + min.span);
+		occupy(item);
+		minorEnd = Math.max(minorEnd, position + min.span);
+	}
+
+	// §8.5 step 4: the rest, swept by a cursor over the whole implicit grid.
+	let cursorMajor = majorBase;
+	let cursorMinor = minorBase;
+	for (const item of items) {
+		const maj = major(item);
+		const min = minor(item);
+		if (maj.start !== null) continue;
+		if (dense) {
+			cursorMajor = majorBase;
+			cursorMinor = minorBase;
+		}
+		if (min.start !== null) {
+			// The minor position is fixed: sweep the major axis for room.
+			if (!dense && min.start < cursorMinor) cursorMajor++;
+			if (!dense) cursorMinor = min.start;
+			while (!fits(cursorMajor, maj.span, min.start, min.span)) cursorMajor++;
+			maj.start = cursorMajor;
+			occupy(item);
+			continue;
+		}
+		// An item wider than the whole minor axis still gets a row of its own.
+		const span = Math.min(min.span, Math.max(1, minorEnd - minorBase));
+		for (;;) {
+			if (cursorMinor + span > minorEnd) {
+				cursorMajor++;
+				cursorMinor = minorBase;
+				continue;
+			}
+			if (fits(cursorMajor, maj.span, cursorMinor, min.span)) break;
+			cursorMinor++;
+		}
+		maj.start = cursorMajor;
+		min.start = cursorMinor;
+		occupy(item);
+		if (!dense) cursorMinor += min.span;
+	}
+}
+
+// -- track sizing (css-grid-2 §12) ------------------------------------------
+
+/** What one axis of the track sizing algorithm works from. */
+interface TrackSizing {
+	node: Node;
+	tracks: GridTrack[];
+	items: GridItem[];
+	/** Whether this pass is sizing the inline axis. */
+	columns: boolean;
+	/** The space the tracks have to fill; NaN when the container is indefinite. */
+	availableSpace: number;
+	gap: number;
+	/** The size percentages in the track list resolve against. */
+	ownerSize: number;
+	ownerWidth: number;
+	ownerHeight: number;
+	/** The sized columns, which an item's height is measured against. */
+	columnSizes: number[] | null;
+	columnGap: number;
+	/** Whether the content alignment on this axis stretches auto tracks (§12.8). */
+	stretchesAutoTracks: boolean;
+}
+
+function itemTrackRange(sizing: TrackSizing, item: GridItem): [number, number] {
+	return sizing.columns
+		? [item.columnStart, item.columnEnd]
+		: [item.rowStart, item.rowEnd];
+}
+
+/** The room a run of tracks provides, gaps between them included. */
+function spanOfTracks(
+	sizes: number[],
+	gap: number,
+	start: number,
+	end: number,
+): number {
+	let total = 0;
+	for (let i = start; i < end && i < sizes.length; i++) total += sizes[i];
+	return total + gap * Math.max(0, end - start - 1);
+}
+
+/**
+ * An item's contribution along the axis being sized: the size it needs when it
+ * may wrap everywhere it can (min-content) or nowhere at all (max-content).
+ *
+ * A row-axis contribution is a HEIGHT, which only exists once the item knows
+ * how wide it is -- so the row pass measures every item at the width its
+ * columns came to, which is why columns are sized first.
+ */
+function gridItemContribution(
+	sizing: TrackSizing,
+	item: GridItem,
+	minContent: boolean,
+): number {
+	const child = item.node;
+	if (sizing.columns) {
+		layoutNode(
+			child,
+			minContent ? 0 : NaN,
+			NaN,
+			minContent ? MEASURE_MODE_AT_MOST : MEASURE_MODE_UNDEFINED,
+			MEASURE_MODE_UNDEFINED,
+			sizing.ownerWidth,
+			sizing.ownerHeight,
+			false,
+		);
+		return (
+			child.layout.width + marginForAxis(child, FLEX_DIRECTION_ROW, sizing.ownerWidth)
+		);
+	}
+	const width = spanOfTracks(
+		sizing.columnSizes!,
+		sizing.columnGap,
+		item.columnStart,
+		item.columnEnd,
+	);
+	layoutNode(
+		child,
+		width,
+		NaN,
+		MEASURE_MODE_EXACTLY,
+		MEASURE_MODE_UNDEFINED,
+		sizing.ownerWidth,
+		sizing.ownerHeight,
+		false,
+	);
+	return (
+		child.layout.height +
+		marginForAxis(child, FLEX_DIRECTION_COLUMN, sizing.ownerWidth)
+	);
+}
+
+/**
+ * css-grid-2 §6.6: an item's automatic minimum size -- its min-content
+ * contribution, except that a fixed maximum on the one track it sits in caps
+ * it, so an item never forces a track past a size the author wrote.
+ */
+function minimumContribution(
+	sizing: TrackSizing,
+	item: GridItem,
+	start: number,
+	end: number,
+): number {
+	const minContent = gridItemContribution(sizing, item, true);
+	if (end - start === 1) {
+		const max = trackLength(sizing.tracks[start].size.max, sizing.ownerSize);
+		if (isDefined(max)) return Math.min(minContent, Math.max(0, max));
+	}
+	return minContent;
+}
+
+const EPSILON = 0.0001;
+
+/**
+ * css-grid-2 §12.6: hand `space` to the tracks a spanning item crosses, equally
+ * and up to each one's limit, and give whatever no track could take to the ones
+ * that are allowed past theirs.
+ */
+function distributeExtraSpace(
+	tracks: GridTrack[],
+	indices: number[],
+	space: number,
+	toLimits: boolean,
+	affected: (track: GridTrack) => boolean,
+	beyondLimit: (track: GridTrack) => boolean,
+): void {
+	if (!(space > EPSILON)) return;
+	const receivers = indices.filter((index) => affected(tracks[index]));
+	if (receivers.length === 0) return;
+
+	for (const index of receivers) tracks[index].planned = 0;
+
+	const startOf = (track: GridTrack) =>
+		toLimits
+			? track.growthLimit === Infinity
+				? track.base
+				: track.growthLimit
+			: track.base;
+	const limitOf = (track: GridTrack) =>
+		toLimits ? track.fitContentLimit : track.growthLimit;
+
+	let remaining = space;
+	const frozen = new Set<number>();
+	while (remaining > EPSILON && frozen.size < receivers.length) {
+		const open = receivers.filter((index) => !frozen.has(index));
+		const share = remaining / open.length;
+		let used = 0;
+		for (const index of open) {
+			const track = tracks[index];
+			const limit = limitOf(track);
+			const room =
+				limit === Infinity
+					? Infinity
+					: Math.max(0, limit - startOf(track) - track.planned);
+			const growth = Math.min(share, room);
+			track.planned += growth;
+			used += growth;
+			if (growth < share - EPSILON) frozen.add(index);
+		}
+		remaining -= used;
+		if (used <= EPSILON) break;
+	}
+
+	if (remaining > EPSILON) {
+		const open = receivers.filter((index) => beyondLimit(tracks[index]));
+		if (open.length > 0) {
+			const share = remaining / open.length;
+			for (const index of open) tracks[index].planned += share;
+		}
+	}
+
+	for (const index of receivers) {
+		const track = tracks[index];
+		if (toLimits) {
+			const from = startOf(track);
+			track.growthLimit = Math.min(
+				from + track.planned,
+				track.fitContentLimit,
+			);
+			if (track.growthLimit < track.base) track.growthLimit = track.base;
+		} else {
+			track.base += track.planned;
+			if (track.growthLimit !== Infinity && track.growthLimit < track.base) {
+				track.growthLimit = track.base;
+			}
+		}
+		track.planned = 0;
+	}
+}
+
+/** css-grid-2 §12.5: size the tracks whose sizing function reads their content. */
+function resolveIntrinsicTrackSizes(sizing: TrackSizing): void {
+	const {tracks, items, ownerSize} = sizing;
+
+	const intrinsicMin = (track: GridTrack) =>
+		isIntrinsicBreadth(track.size.min, ownerSize);
+	const intrinsicMax = (track: GridTrack) =>
+		isIntrinsicBreadth(track.size.max, ownerSize);
+	const flexible = (track: GridTrack) => track.size.max.kind === "flex";
+
+	// -- items in a single track -------------------------------------------
+	const limits = new Array<number>(tracks.length).fill(-Infinity);
+	for (const item of items) {
+		const [start, end] = itemTrackRange(sizing, item);
+		if (end - start !== 1) continue;
+		const track = tracks[start];
+		if (track.collapsed) continue;
+		if (!intrinsicMin(track) && !intrinsicMax(track)) continue;
+
+		if (intrinsicMin(track)) {
+			const kind = track.size.min.kind;
+			const floor =
+				kind === "min-content"
+					? gridItemContribution(sizing, item, true)
+					: kind === "max-content"
+						? gridItemContribution(sizing, item, false)
+						: minimumContribution(sizing, item, start, end);
+			track.base = Math.max(track.base, floor);
+		}
+		if (intrinsicMax(track)) {
+			const limit =
+				track.size.max.kind === "min-content"
+					? gridItemContribution(sizing, item, true)
+					: gridItemContribution(sizing, item, false);
+			limits[start] = Math.max(limits[start], limit);
+		}
+	}
+	tracks.forEach((track, index) => {
+		if (track.collapsed || !intrinsicMax(track)) return;
+		if (limits[index] === -Infinity) return;
+		track.growthLimit = Math.min(limits[index], track.fitContentLimit);
+		if (track.growthLimit < track.base) track.growthLimit = track.base;
+		track.infinitelyGrowable = track.size.max.kind !== "min-content";
+	});
+
+	// -- items spanning more than one track, in span order ------------------
+	const spanning = items
+		.filter((item) => {
+			const [start, end] = itemTrackRange(sizing, item);
+			if (end - start < 2) return false;
+			for (let i = start; i < end; i++) {
+				if (flexible(tracks[i])) return false;
+			}
+			return true;
+		})
+		.sort((a, b) => {
+			const [aStart, aEnd] = itemTrackRange(sizing, a);
+			const [bStart, bEnd] = itemTrackRange(sizing, b);
+			return aEnd - aStart - (bEnd - bStart);
+		});
+
+	for (const item of spanning) {
+		const [start, end] = itemTrackRange(sizing, item);
+		const indices: number[] = [];
+		for (let i = start; i < end; i++) {
+			if (!tracks[i].collapsed) indices.push(i);
+		}
+		if (indices.length === 0) continue;
+		const gaps = sizing.gap * Math.max(0, indices.length - 1);
+		const baseSum = indices.reduce((sum, i) => sum + tracks[i].base, 0);
+		const limitSum = indices.reduce(
+			(sum, i) =>
+				sum + (tracks[i].growthLimit === Infinity ? tracks[i].base : tracks[i].growthLimit),
+			0,
+		);
+
+		const minContent = gridItemContribution(sizing, item, true);
+		const maxContent = gridItemContribution(sizing, item, false);
+		const minimum = minimumContribution(sizing, item, start, end);
+
+		// 1. intrinsic minimums
+		distributeExtraSpace(
+			tracks,
+			indices,
+			minimum - baseSum - gaps,
+			false,
+			intrinsicMin,
+			intrinsicMax,
+		);
+		// 2. content-based minimums
+		distributeExtraSpace(
+			tracks,
+			indices,
+			minContent - indices.reduce((sum, i) => sum + tracks[i].base, 0) - gaps,
+			false,
+			(track) =>
+				track.size.min.kind === "min-content" || track.size.min.kind === "auto",
+			intrinsicMax,
+		);
+		// 3. max-content minimums
+		distributeExtraSpace(
+			tracks,
+			indices,
+			maxContent - indices.reduce((sum, i) => sum + tracks[i].base, 0) - gaps,
+			false,
+			(track) => track.size.min.kind === "max-content",
+			intrinsicMax,
+		);
+		// 4. intrinsic maximums
+		distributeExtraSpace(
+			tracks,
+			indices,
+			minContent - limitSum - gaps,
+			true,
+			intrinsicMax,
+			intrinsicMax,
+		);
+		// 5. max-content maximums
+		distributeExtraSpace(
+			tracks,
+			indices,
+			maxContent -
+				indices.reduce(
+					(sum, i) =>
+						sum +
+						(tracks[i].growthLimit === Infinity
+							? tracks[i].base
+							: tracks[i].growthLimit),
+					0,
+				) -
+				gaps,
+			true,
+			(track) =>
+				track.size.max.kind === "max-content" || track.size.max.kind === "auto",
+			(track) => track.size.max.kind === "max-content",
+		);
+	}
+
+	// -- items crossing a flexible track ------------------------------------
+	// A flexible track's share of an item is decided by its flex factor, not
+	// shared out equally: §12.5.4 defers the rest to the fr resolution below.
+	for (const item of items) {
+		const [start, end] = itemTrackRange(sizing, item);
+		if (end - start < 2) continue;
+		let flexSum = 0;
+		for (let i = start; i < end; i++) {
+			if (flexible(tracks[i])) flexSum += (tracks[i].size.max as {factor: number}).factor;
+		}
+		if (flexSum <= 0) continue;
+		const gaps = sizing.gap * Math.max(0, end - start - 1);
+		let baseSum = 0;
+		for (let i = start; i < end; i++) baseSum += tracks[i].base;
+		const deficit = gridItemContribution(sizing, item, true) - baseSum - gaps;
+		if (deficit <= EPSILON) continue;
+		for (let i = start; i < end; i++) {
+			if (!flexible(tracks[i])) continue;
+			const factor = (tracks[i].size.max as {factor: number}).factor;
+			tracks[i].base += (deficit * factor) / flexSum;
+		}
+	}
+
+	// A growth limit still infinite has nothing to grow toward: it is the base.
+	for (const track of tracks) {
+		if (track.growthLimit === Infinity) track.growthLimit = track.base;
+	}
+}
+
+/**
+ * css-grid-2 §12.7.1: the size of one `fr` over a set of tracks, found by
+ * freezing every flexible track whose base size already exceeds its share and
+ * dividing what is left again -- the same freeze-and-redistribute shape as
+ * flexbox's §9.7.
+ */
+function findFrSize(
+	tracks: GridTrack[],
+	indices: number[],
+	spaceToFill: number,
+): number {
+	const inflexible = new Set<number>();
+	for (;;) {
+		let leftover = spaceToFill;
+		let factorSum = 0;
+		for (const index of indices) {
+			const track = tracks[index];
+			if (track.size.max.kind !== "flex" || inflexible.has(index)) {
+				leftover -= track.base;
+			} else {
+				factorSum += track.size.max.factor;
+			}
+		}
+		// A total flex factor below 1 leaves part of the space unclaimed, which
+		// is what makes `0.5fr` take half of what `1fr` would.
+		const hypothetical = leftover / Math.max(1, factorSum);
+		if (factorSum <= 0) return 0;
+
+		let restart = false;
+		for (const index of indices) {
+			const track = tracks[index];
+			if (track.size.max.kind !== "flex" || inflexible.has(index)) continue;
+			if (track.base > hypothetical * track.size.max.factor + EPSILON) {
+				inflexible.add(index);
+				restart = true;
+			}
+		}
+		if (!restart) return Math.max(0, hypothetical);
+	}
+}
+
+/** The whole of §12.3: initialize, resolve, maximize, expand, stretch. */
+function sizeTracks(sizing: TrackSizing): void {
+	const {tracks, availableSpace, gap} = sizing;
+	const live = tracks.filter((track) => !track.collapsed).length;
+	const gaps = gap * Math.max(0, live - 1);
+
+	resolveIntrinsicTrackSizes(sizing);
+
+	// §12.6 maximize tracks.
+	if (isDefined(availableSpace)) {
+		let used = gaps;
+		for (const track of tracks) used += track.base;
+		let free = availableSpace - used;
+		if (free > EPSILON) {
+			const open = tracks.filter(
+				(track) => !track.collapsed && track.growthLimit > track.base + EPSILON,
+			);
+			const frozen = new Set<GridTrack>();
+			while (free > EPSILON && frozen.size < open.length) {
+				const growing = open.filter((track) => !frozen.has(track));
+				const share = free / growing.length;
+				let taken = 0;
+				for (const track of growing) {
+					const room = track.growthLimit - track.base;
+					const growth = Math.min(share, room);
+					track.base += growth;
+					taken += growth;
+					if (growth < share - EPSILON) frozen.add(track);
+				}
+				free -= taken;
+				if (taken <= EPSILON) break;
+			}
+		}
+	} else {
+		// Indefinite space: a track takes everything its growth limit allows.
+		for (const track of tracks) {
+			if (track.growthLimit > track.base) track.base = track.growthLimit;
+		}
+	}
+
+	// §12.7 expand flexible tracks.
+	const flexIndices: number[] = [];
+	tracks.forEach((track, index) => {
+		if (!track.collapsed && track.size.max.kind === "flex") flexIndices.push(index);
+	});
+	if (flexIndices.length > 0) {
+		const all = tracks.map((_, index) => index).filter((index) => !tracks[index].collapsed);
+		let frSize: number;
+		if (isDefined(availableSpace)) {
+			frSize = findFrSize(tracks, all, availableSpace - gaps);
+		} else {
+			// §12.7.1 with an indefinite container: the fr is the largest any one
+			// flexible track already demands.
+			frSize = 0;
+			for (const index of flexIndices) {
+				const factor = (tracks[index].size.max as {factor: number}).factor;
+				frSize = Math.max(frSize, tracks[index].base / Math.max(factor, 1));
+			}
+			for (const item of sizing.items) {
+				const [start, end] = itemTrackRange(sizing, item);
+				let spansFlex = false;
+				for (let i = start; i < end; i++) {
+					if (tracks[i].size.max.kind === "flex") spansFlex = true;
+				}
+				if (!spansFlex) continue;
+				const indices: number[] = [];
+				for (let i = start; i < end; i++) {
+					if (!tracks[i].collapsed) indices.push(i);
+				}
+				const contribution = gridItemContribution(sizing, item, false);
+				frSize = Math.max(
+					frSize,
+					findFrSize(
+						tracks,
+						indices,
+						contribution - gap * Math.max(0, indices.length - 1),
+					),
+				);
+			}
+		}
+		for (const index of flexIndices) {
+			const factor = (tracks[index].size.max as {factor: number}).factor;
+			tracks[index].base = Math.max(tracks[index].base, frSize * factor);
+		}
+	}
+
+	// §12.8 expand stretched auto tracks.
+	if (sizing.stretchesAutoTracks && isDefined(availableSpace)) {
+		const stretchable = tracks.filter(
+			(track) => !track.collapsed && track.size.max.kind === "auto",
+		);
+		if (stretchable.length > 0) {
+			let used = gaps;
+			for (const track of tracks) used += track.base;
+			const free = availableSpace - used;
+			if (free > EPSILON) {
+				const share = free / stretchable.length;
+				for (const track of stretchable) track.base += share;
+			}
+		}
+	}
+}
+
+// -- alignment (css-align-3, as css-grid-2 §10 uses it) ----------------------
+
+const CONTENT_START = 0;
+const CONTENT_CENTER = 1;
+const CONTENT_END = 2;
+const CONTENT_SPACE_BETWEEN = 3;
+const CONTENT_SPACE_AROUND = 4;
+const CONTENT_SPACE_EVENLY = 5;
+/** `normal` and `stretch`: the tracks themselves take the free space (§12.8). */
+const CONTENT_STRETCH = 6;
+
+function inlineContentAlign(node: Node): number {
+	switch (node.style.justifyContent) {
+		case JUSTIFY_CENTER:
+			return CONTENT_CENTER;
+		case JUSTIFY_FLEX_END:
+			return CONTENT_END;
+		case JUSTIFY_SPACE_BETWEEN:
+			return CONTENT_SPACE_BETWEEN;
+		case JUSTIFY_SPACE_AROUND:
+			return CONTENT_SPACE_AROUND;
+		case JUSTIFY_SPACE_EVENLY:
+			return CONTENT_SPACE_EVENLY;
+		case JUSTIFY_NORMAL:
+		case JUSTIFY_STRETCH:
+			return CONTENT_STRETCH;
+		default:
+			return CONTENT_START;
+	}
+}
+
+function blockContentAlign(node: Node): number {
+	switch (node.style.alignContent) {
+		case ALIGN_CENTER:
+			return CONTENT_CENTER;
+		case ALIGN_FLEX_END:
+			return CONTENT_END;
+		case ALIGN_SPACE_BETWEEN:
+			return CONTENT_SPACE_BETWEEN;
+		case ALIGN_SPACE_AROUND:
+			return CONTENT_SPACE_AROUND;
+		case ALIGN_SPACE_EVENLY:
+			return CONTENT_SPACE_EVENLY;
+		case ALIGN_NORMAL:
+		case ALIGN_STRETCH:
+			return CONTENT_STRETCH;
+		default:
+			return CONTENT_START;
+	}
+}
+
+/**
+ * A grid item's alignment on one axis: its own `*-self`, or the container's
+ * `*-items` where that is `auto`. `normal` on a grid item means `stretch`
+ * (css-align-3 §4.2), which is why an item with no width fills its area.
+ */
+function gridSelfAlign(container: Node, item: Node, inline: boolean): Align {
+	const own = inline ? item.style.justifySelf : item.style.alignSelf;
+	const fallback = inline
+		? container.style.justifyItems
+		: container.style.alignItems;
+	const value = own === ALIGN_AUTO ? fallback : own;
+	return value === ALIGN_AUTO || value === ALIGN_NORMAL ? ALIGN_STRETCH : value;
+}
+
+/** Lay the tracks out across the content box, per justify-content/align-content. */
+function positionTracks(
+	tracks: GridTrack[],
+	free: number,
+	gap: number,
+	align: number,
+): void {
+	const count = tracks.filter((track) => !track.collapsed).length;
+	let leading = 0;
+	let between = 0;
+	switch (align) {
+		case CONTENT_CENTER:
+			leading = free / 2;
+			break;
+		case CONTENT_END:
+			leading = free;
+			break;
+		case CONTENT_SPACE_BETWEEN:
+			if (count > 1) between = Math.max(free, 0) / (count - 1);
+			break;
+		case CONTENT_SPACE_AROUND:
+			if (count > 0) {
+				between = Math.max(free, 0) / count;
+				leading = between / 2;
+			}
+			break;
+		case CONTENT_SPACE_EVENLY:
+			if (count > 0) {
+				between = Math.max(free, 0) / (count + 1);
+				leading = between;
+			}
+			break;
+		default:
+			leading = 0;
+	}
+
+	let cursor = leading;
+	for (const track of tracks) {
+		track.position = cursor;
+		if (track.collapsed) continue;
+		cursor += track.base + gap + between;
+	}
+}
+
+/** Lay one item out in its grid area, sized and placed by its own alignment. */
+function layoutGridItem(
+	node: Node,
+	item: GridItem,
+	areaLeft: number,
+	areaTop: number,
+	areaWidth: number,
+	areaHeight: number,
+	ownerWidth: number,
+	ownerHeight: number,
+	performLayout: boolean,
+): void {
+	const child = item.node;
+	const justify = gridSelfAlign(node, child, true);
+	const align = gridSelfAlign(node, child, false);
+
+	const autoLeft = child.style.margin[EDGE_LEFT].unit === UNIT_AUTO;
+	const autoRight = child.style.margin[EDGE_RIGHT].unit === UNIT_AUTO;
+	const autoTop = child.style.margin[EDGE_TOP].unit === UNIT_AUTO;
+	const autoBottom = child.style.margin[EDGE_BOTTOM].unit === UNIT_AUTO;
+
+	const marginRow = marginForAxis(child, FLEX_DIRECTION_ROW, ownerWidth);
+	const marginColumn = marginForAxis(child, FLEX_DIRECTION_COLUMN, ownerWidth);
+
+	const childWidth = {value: NaN, mode: MEASURE_MODE_UNDEFINED};
+	const childHeight = {value: NaN, mode: MEASURE_MODE_UNDEFINED};
+
+	if (styleDimIsDefined(child, FLEX_DIRECTION_ROW, ownerWidth)) {
+		childWidth.value =
+			boundAxisWithinMinMax(
+				child,
+				FLEX_DIRECTION_ROW,
+				resolveValue(child.style.width, ownerWidth),
+				areaWidth,
+			) + marginRow;
+		childWidth.mode = MEASURE_MODE_EXACTLY;
+	} else if (justify === ALIGN_STRETCH && !autoLeft && !autoRight) {
+		// An area is a definite size, so a stretched item takes all of it --
+		// the value offered includes the item's own margins, which the box
+		// takes off for itself.
+		childWidth.value = Math.max(0, areaWidth);
+		childWidth.mode = MEASURE_MODE_EXACTLY;
+	} else {
+		childWidth.value = Math.max(0, areaWidth);
+		childWidth.mode = MEASURE_MODE_AT_MOST;
+	}
+
+	if (styleDimIsDefined(child, FLEX_DIRECTION_COLUMN, ownerHeight)) {
+		childHeight.value =
+			boundAxisWithinMinMax(
+				child,
+				FLEX_DIRECTION_COLUMN,
+				resolveValue(child.style.height, ownerHeight),
+				areaHeight,
+			) + marginColumn;
+		childHeight.mode = MEASURE_MODE_EXACTLY;
+	} else if (align === ALIGN_STRETCH && !autoTop && !autoBottom) {
+		childHeight.value = Math.max(0, areaHeight);
+		childHeight.mode = MEASURE_MODE_EXACTLY;
+	} else {
+		childHeight.value = Math.max(0, areaHeight);
+		childHeight.mode = MEASURE_MODE_AT_MOST;
+	}
+
+	constrainMaxSizeForMode(child, FLEX_DIRECTION_ROW, ownerWidth, childWidth);
+	constrainMaxSizeForMode(child, FLEX_DIRECTION_COLUMN, ownerHeight, childHeight);
+
+	layoutNode(
+		child,
+		childWidth.value,
+		childHeight.value,
+		childWidth.mode,
+		childHeight.mode,
+		ownerWidth,
+		ownerHeight,
+		performLayout,
+	);
+
+	if (!performLayout) return;
+
+	const freeX = areaWidth - child.layout.width - marginRow;
+	const freeY = areaHeight - child.layout.height - marginColumn;
+
+	child.layout.left =
+		areaLeft +
+		alignmentOffset(justify, freeX, autoLeft, autoRight) +
+		resolveMargin(child.style.margin[EDGE_LEFT], ownerWidth);
+	child.layout.top =
+		areaTop +
+		alignmentOffset(align, freeY, autoTop, autoBottom) +
+		resolveMargin(child.style.margin[EDGE_TOP], ownerWidth);
+}
+
+/**
+ * Where a box sits in the free space of its area. Auto margins take the space
+ * before alignment does (css-align-3 §5.3): two of them center the box, one
+ * pushes it to the far edge.
+ */
+function alignmentOffset(
+	align: Align,
+	free: number,
+	leadingAuto: boolean,
+	trailingAuto: boolean,
+): number {
+	if (leadingAuto && trailingAuto) return Math.max(free, 0) / 2;
+	if (leadingAuto) return Math.max(free, 0);
+	if (trailingAuto) return 0;
+	switch (align) {
+		case ALIGN_CENTER:
+			return free / 2;
+		case ALIGN_FLEX_END:
+			return free;
+		default:
+			return 0;
+	}
+}
+
+/**
+ * css-grid-2 §10.1: within one row, the items asking for baseline alignment
+ * put their first baselines on a line -- which on a character grid means their
+ * first rows (see baselineWithinBorderBox).
+ */
+function alignGridBaselines(
+	node: Node,
+	items: GridItem[],
+	ownerWidth: number,
+): void {
+	const rows = new Map<number, GridItem[]>();
+	for (const item of items) {
+		if (gridSelfAlign(node, item.node, false) !== ALIGN_BASELINE) continue;
+		const group = rows.get(item.rowStart);
+		if (group) group.push(item);
+		else rows.set(item.rowStart, [item]);
+	}
+	for (const group of rows.values()) {
+		if (group.length < 2) continue;
+		let furthest = 0;
+		for (const item of group) {
+			furthest = Math.max(
+				furthest,
+				baselineWithinBorderBox(item.node, ownerWidth),
+			);
+		}
+		for (const item of group) {
+			item.node.layout.top +=
+				furthest - baselineWithinBorderBox(item.node, ownerWidth);
+		}
+	}
+}
+
+/** See LayoutResult.gridColumns: track sizes taken off rounded track edges. */
+function snapTrackSizes(tracks: GridTrack[], gap: number): number[] {
+	const sizes = new Array<number>(tracks.length).fill(0);
+	let edge = 0;
+	tracks.forEach((track, index) => {
+		const next = edge + track.base;
+		sizes[index] = Math.round(next) - Math.round(edge);
+		edge = track.collapsed ? next : next + gap;
+	});
+	return sizes;
+}
+
+/**
+ * The grid layout algorithm (css-grid-2 §12.1): place the items, size the
+ * columns, size the rows against those columns, then align everything.
+ *
+ * Columns come first because a row-axis contribution is a height, and a box's
+ * height is a function of how wide it is -- on a character grid more than
+ * anywhere, since a paragraph's row count is decided entirely by where its
+ * text wraps.
+ */
+function layoutGrid(
+	node: Node,
+	availableWidth: number,
+	availableHeight: number,
+	widthMode: MeasureMode,
+	heightMode: MeasureMode,
+	ownerWidth: number,
+	ownerHeight: number,
+	performLayout: boolean,
+): void {
+	const paddingBorderRow = paddingAndBorderForAxis(
+		node,
+		FLEX_DIRECTION_ROW,
+		ownerWidth,
+	);
+	const paddingBorderColumn = paddingAndBorderForAxis(
+		node,
+		FLEX_DIRECTION_COLUMN,
+		ownerWidth,
+	);
+	const marginRow = marginForAxis(node, FLEX_DIRECTION_ROW, ownerWidth);
+	const marginColumn = marginForAxis(node, FLEX_DIRECTION_COLUMN, ownerWidth);
+	const contentLeft = paddingAndBorderForEdge(node, EDGE_LEFT, ownerWidth);
+	const contentTop = paddingAndBorderForEdge(node, EDGE_TOP, ownerWidth);
+
+	const innerWidth = isDefined(availableWidth)
+		? Math.max(0, availableWidth - marginRow - paddingBorderRow)
+		: NaN;
+	const innerHeight = isDefined(availableHeight)
+		? Math.max(0, availableHeight - marginColumn - paddingBorderColumn)
+		: NaN;
+
+	const columnGap = node.style.gap[GUTTER_COLUMN];
+	const rowGap = node.style.gap[GUTTER_ROW];
+
+	const definiteWidth = widthMode === MEASURE_MODE_EXACTLY && isDefined(innerWidth);
+	const definiteHeight =
+		heightMode === MEASURE_MODE_EXACTLY && isDefined(innerHeight);
+
+	// -- grid items ---------------------------------------------------------
+	const children: Node[] = [];
+	for (const child of node.children) {
+		if (child.style.display === DISPLAY_NONE) {
+			zeroLayout(child);
+			continue;
+		}
+		resolveNodeMargins(child, ownerWidth);
+		if (child.style.positionType === POSITION_TYPE_ABSOLUTE) continue;
+		children.push(child);
+	}
+	// Auto-placement runs in ORDER-MODIFIED document order (css-grid-2 §8.5),
+	// so `order` moves an item's place on the grid, not merely its painting.
+	if (children.some((child) => child.style.order !== 0)) {
+		children.sort((a, b) => a.style.order - b.style.order);
+	}
+
+	// -- the explicit grid --------------------------------------------------
+	const areas = node.style.gridTemplateAreas;
+	const fromAreas = areas
+		? areaLineNames(areas)
+		: {columns: new Map<string, number[]>(), rows: new Map<string, number[]>()};
+
+	const columnTemplate = expandTrackList(
+		node.style.gridTemplateColumns,
+		definiteWidth ? innerWidth : NaN,
+		columnGap,
+		innerWidth,
+	);
+	const rowTemplate = expandTrackList(
+		node.style.gridTemplateRows,
+		definiteHeight ? innerHeight : NaN,
+		rowGap,
+		innerHeight,
+	);
+
+	const explicitColumns = Math.max(
+		columnTemplate.sizes.length,
+		areas ? areas.columnCount : 0,
+	);
+	const explicitRows = Math.max(
+		rowTemplate.sizes.length,
+		areas ? areas.rows.length : 0,
+	);
+
+	const columnNames = collectLineNames(columnTemplate, fromAreas.columns);
+	const rowNames = collectLineNames(rowTemplate, fromAreas.rows);
+
+	// -- placement ----------------------------------------------------------
+	const items: GridItem[] = children.map((child) => ({
+		node: child,
+		column: pairGridLines(
+			resolveGridLine(
+				child.style.gridColumnStart,
+				columnNames,
+				explicitColumns,
+				"start",
+			),
+			resolveGridLine(
+				child.style.gridColumnEnd,
+				columnNames,
+				explicitColumns,
+				"end",
+			),
+			columnNames,
+		),
+		row: pairGridLines(
+			resolveGridLine(child.style.gridRowStart, rowNames, explicitRows, "start"),
+			resolveGridLine(child.style.gridRowEnd, rowNames, explicitRows, "end"),
+			rowNames,
+		),
+		columnStart: 0,
+		columnEnd: 0,
+		rowStart: 0,
+		rowEnd: 0,
+	}));
+
+	autoPlaceItems(
+		items,
+		explicitColumns,
+		explicitRows,
+		node.style.gridAutoFlowColumn,
+		node.style.gridAutoFlowDense,
+	);
+
+	// The implicit grid, normalized so that track 0 is its start-most track.
+	let columnBase = 0;
+	let rowBase = 0;
+	let columnLast = explicitColumns;
+	let rowLast = explicitRows;
+	for (const item of items) {
+		columnBase = Math.min(columnBase, item.column.start!);
+		rowBase = Math.min(rowBase, item.row.start!);
+		columnLast = Math.max(columnLast, item.column.start! + item.column.span);
+		rowLast = Math.max(rowLast, item.row.start! + item.row.span);
+	}
+	const columnCount = Math.max(0, columnLast - columnBase);
+	const rowCount = Math.max(0, rowLast - rowBase);
+	for (const item of items) {
+		item.columnStart = item.column.start! - columnBase;
+		item.columnEnd = item.columnStart + item.column.span;
+		item.rowStart = item.row.start! - rowBase;
+		item.rowEnd = item.rowStart + item.row.span;
+	}
+
+	/**
+	 * The tracks of one axis: the template's where the explicit grid reaches,
+	 * and grid-auto-rows/columns cycling over every implicit one.
+	 */
+	const buildTracks = (
+		count: number,
+		base: number,
+		template: ExpandedTracks,
+		autoSizes: TrackSize[],
+		ownerSize: number,
+	): GridTrack[] => {
+		const tracks: GridTrack[] = [];
+		let implicit = 0;
+		for (let i = 0; i < count; i++) {
+			const line = base + i;
+			const explicit = line >= 0 && line < template.sizes.length;
+			const size = explicit
+				? template.sizes[line]
+				: autoSizes[implicit++ % autoSizes.length];
+			tracks.push(createTrack(size, ownerSize));
+		}
+		return tracks;
+	};
+
+	/** css-grid-2 §7.2.3.2: an `auto-fit` track with no item in it collapses. */
+	const collapseAutoFit = (
+		tracks: GridTrack[],
+		template: ExpandedTracks,
+		base: number,
+		occupiedTracks: Set<number>,
+	) => {
+		if (!template.autoFit) return;
+		for (let i = 0; i < template.autoFit.count; i++) {
+			const index = template.autoFit.start + i - base;
+			if (index < 0 || index >= tracks.length) continue;
+			if (occupiedTracks.has(index)) continue;
+			tracks[index].collapsed = true;
+			tracks[index].base = 0;
+			tracks[index].growthLimit = 0;
+		}
+	};
+
+	const occupiedColumns = new Set<number>();
+	const occupiedRows = new Set<number>();
+	for (const item of items) {
+		for (let i = item.columnStart; i < item.columnEnd; i++) occupiedColumns.add(i);
+		for (let i = item.rowStart; i < item.rowEnd; i++) occupiedRows.add(i);
+	}
+
+	const inlineAlign = inlineContentAlign(node);
+	const blockAlign = blockContentAlign(node);
+
+	// -- size the columns ---------------------------------------------------
+	const sizeColumns = (space: number): GridTrack[] => {
+		const tracks = buildTracks(
+			columnCount,
+			columnBase,
+			columnTemplate,
+			node.style.gridAutoColumns,
+			innerWidth,
+		);
+		collapseAutoFit(tracks, columnTemplate, columnBase, occupiedColumns);
+		sizeTracks({
+			node,
+			tracks,
+			items,
+			columns: true,
+			availableSpace: space,
+			gap: columnGap,
+			ownerSize: innerWidth,
+			ownerWidth,
+			ownerHeight,
+			columnSizes: null,
+			columnGap,
+			stretchesAutoTracks: inlineAlign === CONTENT_STRETCH,
+		});
+		return tracks;
+	};
+
+	let columnTracks = sizeColumns(definiteWidth ? innerWidth : NaN);
+	const totalOf = (tracks: GridTrack[], gap: number) => {
+		let total = 0;
+		let live = 0;
+		for (const track of tracks) {
+			if (track.collapsed) continue;
+			total += track.base;
+			live++;
+		}
+		return total + gap * Math.max(0, live - 1);
+	};
+
+	let columnsTotal = totalOf(columnTracks, columnGap);
+	// A shrink-to-fit grid that overflows its bound is re-sized against it:
+	// the bound is the space the tracks actually have to share out.
+	if (
+		widthMode === MEASURE_MODE_AT_MOST &&
+		isDefined(innerWidth) &&
+		columnsTotal > innerWidth + EPSILON
+	) {
+		columnTracks = sizeColumns(innerWidth);
+		columnsTotal = totalOf(columnTracks, columnGap);
+	}
+
+	const columnSizes = columnTracks.map((track) => track.base);
+
+	// -- size the rows ------------------------------------------------------
+	const sizeRows = (space: number): GridTrack[] => {
+		const tracks = buildTracks(
+			rowCount,
+			rowBase,
+			rowTemplate,
+			node.style.gridAutoRows,
+			innerHeight,
+		);
+		collapseAutoFit(tracks, rowTemplate, rowBase, occupiedRows);
+		sizeTracks({
+			node,
+			tracks,
+			items,
+			columns: false,
+			availableSpace: space,
+			gap: rowGap,
+			ownerSize: innerHeight,
+			ownerWidth,
+			ownerHeight,
+			columnSizes,
+			columnGap,
+			stretchesAutoTracks: blockAlign === CONTENT_STRETCH,
+		});
+		return tracks;
+	};
+
+	let rowTracks = sizeRows(definiteHeight ? innerHeight : NaN);
+	let rowsTotal = totalOf(rowTracks, rowGap);
+	if (
+		heightMode === MEASURE_MODE_AT_MOST &&
+		isDefined(innerHeight) &&
+		rowsTotal > innerHeight + EPSILON
+	) {
+		rowTracks = sizeRows(innerHeight);
+		rowsTotal = totalOf(rowTracks, rowGap);
+	}
+
+	// -- the grid container's own box ---------------------------------------
+	const width =
+		widthMode === MEASURE_MODE_EXACTLY
+			? availableWidth - marginRow
+			: boundAxis(
+					node,
+					FLEX_DIRECTION_ROW,
+					columnsTotal + paddingBorderRow,
+					ownerWidth,
+					ownerWidth,
+				);
+	const height =
+		heightMode === MEASURE_MODE_EXACTLY
+			? availableHeight - marginColumn
+			: boundAxis(
+					node,
+					FLEX_DIRECTION_COLUMN,
+					rowsTotal + paddingBorderColumn,
+					ownerHeight,
+					ownerWidth,
+				);
+
+	setMeasuredDimensions(node, width, height, ownerWidth, ownerHeight);
+
+	if (!performLayout) return;
+
+	// -- align the tracks in the content box --------------------------------
+	const usedInnerWidth = Math.max(0, node.layout.width - paddingBorderRow);
+	const usedInnerHeight = Math.max(0, node.layout.height - paddingBorderColumn);
+
+	positionTracks(
+		columnTracks,
+		usedInnerWidth - columnsTotal,
+		columnGap,
+		inlineAlign,
+	);
+	positionTracks(rowTracks, usedInnerHeight - rowsTotal, rowGap, blockAlign);
+
+	// The used track sizes as the grid is actually drawn: snapped the way
+	// roundToGrid snaps the boxes in them, by rounding the EDGES, so the
+	// reported sizes tile the container exactly rather than each rounding away
+	// from its neighbour.
+	node.layout.gridColumns = snapTrackSizes(columnTracks, columnGap);
+	node.layout.gridRows = snapTrackSizes(rowTracks, rowGap);
+	node.layout.gridColumnOffset = -columnBase || 0;
+	node.layout.gridRowOffset = -rowBase || 0;
+
+	/** The content-box position of grid line `line`, in track-array indices. */
+	const lineStart = (tracks: GridTrack[], line: number, total: number): number => {
+		if (tracks.length === 0) return 0;
+		if (line <= 0) return tracks[0].position;
+		if (line >= tracks.length) {
+			const last = tracks[tracks.length - 1];
+			return last.position + last.base;
+		}
+		return tracks[line].position;
+	};
+
+	// -- place the items ----------------------------------------------------
+	for (const item of items) {
+		const areaLeft = lineStart(columnTracks, item.columnStart, columnsTotal);
+		const areaRight = lineStart(columnTracks, item.columnEnd, columnsTotal);
+		const areaTop = lineStart(rowTracks, item.rowStart, rowsTotal);
+		const areaBottom = lineStart(rowTracks, item.rowEnd, rowsTotal);
+
+		layoutGridItem(
+			node,
+			item,
+			contentLeft + areaLeft,
+			contentTop + areaTop,
+			Math.max(0, areaRight - areaLeft),
+			Math.max(0, areaBottom - areaTop),
+			ownerWidth,
+			ownerHeight,
+			true,
+		);
+	}
+
+	alignGridBaselines(node, items, ownerWidth);
+
+	// -- relative offsets ---------------------------------------------------
+	for (const item of items) {
+		const child = item.node;
+		if (child.style.positionType !== POSITION_TYPE_RELATIVE) continue;
+		child.layout.left += relativeOffset(
+			child,
+			FLEX_DIRECTION_ROW,
+			usedInnerWidth,
+		);
+		child.layout.top += relativeOffset(
+			child,
+			FLEX_DIRECTION_COLUMN,
+			usedInnerHeight,
+		);
+	}
+
+	// -- absolutely positioned children (css-grid-2 §9) ---------------------
+	for (const child of node.children) {
+		if (
+			child.style.positionType !== POSITION_TYPE_ABSOLUTE ||
+			child.style.display === DISPLAY_NONE
+		) {
+			continue;
+		}
+		layoutAbsoluteChild(
+			node,
+			child,
+			ownerWidth,
+			ownerHeight,
+			absoluteGridArea(
+				node,
+				child,
+				columnTracks,
+				rowTracks,
+				columnNames,
+				rowNames,
+				explicitColumns,
+				explicitRows,
+				columnBase,
+				rowBase,
+				contentLeft,
+				contentTop,
+				lineStart,
+				columnsTotal,
+				rowsTotal,
+			),
+		);
+	}
+}
+
+/**
+ * css-grid-2 §9.2: an absolutely positioned child of a grid container whose
+ * grid-placement properties name lines is contained by that grid AREA rather
+ * than by the container's padding box. An `auto` line names the padding edge
+ * on that side, so `grid-column: 2 / auto` is bounded by the track on one side
+ * and the container on the other.
+ *
+ * Returns null when all four are `auto`, which is the padding box -- what the
+ * out-of-flow path already uses.
+ */
+function absoluteGridArea(
+	node: Node,
+	child: Node,
+	columnTracks: GridTrack[],
+	rowTracks: GridTrack[],
+	columnNames: Map<string, number[]>,
+	rowNames: Map<string, number[]>,
+	explicitColumns: number,
+	explicitRows: number,
+	columnBase: number,
+	rowBase: number,
+	contentLeft: number,
+	contentTop: number,
+	lineStart: (tracks: GridTrack[], line: number, total: number) => number,
+	columnsTotal: number,
+	rowsTotal: number,
+): {left: number; top: number; width: number; height: number} | null {
+	const style = child.style;
+	const placed =
+		style.gridColumnStart !== AUTO_PLACEMENT ||
+		style.gridColumnEnd !== AUTO_PLACEMENT ||
+		style.gridRowStart !== AUTO_PLACEMENT ||
+		style.gridRowEnd !== AUTO_PLACEMENT;
+	if (!placed) return null;
+
+	const paddingLeft = node.style.border[EDGE_LEFT];
+	const paddingTop = node.style.border[EDGE_TOP];
+	const paddingRight = Math.max(
+		0,
+		node.layout.width - node.style.border[EDGE_RIGHT],
+	);
+	const paddingBottom = Math.max(
+		0,
+		node.layout.height - node.style.border[EDGE_BOTTOM],
+	);
+
+	const edge = (
+		placement: GridPlacement,
+		names: Map<string, number[]>,
+		explicitCount: number,
+		tracks: GridTrack[],
+		base: number,
+		leading: number,
+		total: number,
+		fallback: number,
+		which: "start" | "end",
+	): number => {
+		if (placement === AUTO_PLACEMENT) return fallback;
+		const line = resolveGridLine(placement, names, explicitCount, which);
+		if (line.kind !== "line") return fallback;
+		return leading + lineStart(tracks, line.index - base, total);
+	};
+
+	const left = edge(
+		style.gridColumnStart,
+		columnNames,
+		explicitColumns,
+		columnTracks,
+		columnBase,
+		contentLeft,
+		columnsTotal,
+		paddingLeft,
+		"start",
+	);
+	const right = edge(
+		style.gridColumnEnd,
+		columnNames,
+		explicitColumns,
+		columnTracks,
+		columnBase,
+		contentLeft,
+		columnsTotal,
+		paddingRight,
+		"end",
+	);
+	const top = edge(
+		style.gridRowStart,
+		rowNames,
+		explicitRows,
+		rowTracks,
+		rowBase,
+		contentTop,
+		rowsTotal,
+		paddingTop,
+		"start",
+	);
+	const bottom = edge(
+		style.gridRowEnd,
+		rowNames,
+		explicitRows,
+		rowTracks,
+		rowBase,
+		contentTop,
+		rowsTotal,
+		paddingBottom,
+		"end",
+	);
+
+	return {
+		left: Math.min(left, right),
+		top: Math.min(top, bottom),
+		width: Math.abs(right - left),
+		height: Math.abs(bottom - top),
+	};
+}
+
+// ---------------------------------------------------------------------------
 // Block layout (CSS 2.2 §9.4.1 and §10.3.3, with §8.3.1 margin collapsing)
 // ---------------------------------------------------------------------------
 
@@ -3800,6 +5863,13 @@ function layoutNodeImpl(
 	node.layout.collapseBottomNegative = 0;
 	node.layout.selfCollapsing = false;
 
+	// Used track sizes belong to a grid container and nothing else: a box that
+	// stopped being one must stop reporting them.
+	if (node.style.display !== DISPLAY_GRID) {
+		node.layout.gridColumns = null;
+		node.layout.gridRows = null;
+	}
+
 	if (node.style.display === DISPLAY_NONE) {
 		zeroLayout(node);
 		return;
@@ -3807,6 +5877,20 @@ function layoutNodeImpl(
 
 	if (node.measureFunc) {
 		layoutMeasureNode(
+			node,
+			availableWidth,
+			availableHeight,
+			widthMode,
+			heightMode,
+			ownerWidth,
+			ownerHeight,
+			performLayout,
+		);
+		return;
+	}
+
+	if (node.style.display === DISPLAY_GRID) {
+		layoutGrid(
 			node,
 			availableWidth,
 			availableHeight,
@@ -3981,6 +6065,15 @@ const Flex = {
 	ALIGN_SPACE_BETWEEN,
 	ALIGN_SPACE_AROUND,
 	ALIGN_SPACE_EVENLY,
+	ALIGN_NORMAL,
+	// css-align-3 spells the flex-relative keywords `start` and `end` too, and
+	// on a horizontal-tb grid they name the same edges.
+	ALIGN_START: ALIGN_FLEX_START,
+	ALIGN_END: ALIGN_FLEX_END,
+	ALIGN_SELF_START: ALIGN_FLEX_START,
+	ALIGN_SELF_END: ALIGN_FLEX_END,
+	ALIGN_LEFT: ALIGN_FLEX_START,
+	ALIGN_RIGHT: ALIGN_FLEX_END,
 
 	JUSTIFY_FLEX_START,
 	JUSTIFY_CENTER,
@@ -3988,6 +6081,12 @@ const Flex = {
 	JUSTIFY_SPACE_BETWEEN,
 	JUSTIFY_SPACE_AROUND,
 	JUSTIFY_SPACE_EVENLY,
+	JUSTIFY_NORMAL,
+	JUSTIFY_STRETCH,
+	JUSTIFY_START: JUSTIFY_FLEX_START,
+	JUSTIFY_END: JUSTIFY_FLEX_END,
+	JUSTIFY_LEFT: JUSTIFY_FLEX_START,
+	JUSTIFY_RIGHT: JUSTIFY_FLEX_END,
 
 	WRAP_NO_WRAP,
 	WRAP_WRAP,
@@ -4012,6 +6111,7 @@ const Flex = {
 	DISPLAY_TABLE_ROW,
 	DISPLAY_TABLE_CELL,
 	DISPLAY_TABLE_CAPTION,
+	DISPLAY_GRID,
 
 	POSITION_TYPE_STATIC,
 	POSITION_TYPE_RELATIVE,
