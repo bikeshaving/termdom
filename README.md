@@ -89,7 +89,7 @@ has a graphics stack.
 
 - The document is TermDOM's own DOM implementation: nodes, events,
   mutation observers, shadow trees, custom elements. HTML is parsed with
-  parse5. jsdom is not involved.
+  parse5.
 - CSS from `<style>` elements and `style` attributes is parsed with
   css-tree and cascades, inherits, and computes per the CSS specifications.
   Selectors match through nwsapi.
