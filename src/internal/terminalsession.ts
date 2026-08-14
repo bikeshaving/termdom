@@ -949,6 +949,16 @@ export class TerminalSession {
 	 * measurements do not change, because they were already cluster-based; what
 	 * changes is only whether the terminal agrees with them.
 	 */
+	/**
+	 * A terminal that does not implement a mode report may echo the
+	 * request's final byte as text. Homing and erasing the line disposes
+	 * of any echo, so the first frame starts on a clean row.
+	 */
+	scrubProbeEcho(): void {
+		if (!this.#interactive) return;
+		void this.write("\r\x1b[K");
+	}
+
 	async negotiateGraphemeClusters(): Promise<void> {
 		if (!this.#interactive) return;
 
