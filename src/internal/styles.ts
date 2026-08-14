@@ -7599,6 +7599,8 @@ export class StyleManager {
 	#pseudoRulesByType = new Map<string, ParsedCSSRule[]>();
 	#counterRulesExist = false;
 	#listItemRulesExist = false;
+	/** Whether any rule is scoped, which is what puts proximity in the sort. */
+	#scopedRulesExist = false;
 	// The `:focus-visible` state, driven by TermDOM from the last input modality
 	// (keyboard true, pointer false). #ruleMatches gates such rules on it.
 	#focusVisibleActive = true;
@@ -8221,6 +8223,7 @@ export class StyleManager {
 		this.#pseudoSubjectTags = undefined;
 		this.#counterRulesExist = false;
 		this.#listItemRulesExist = false;
+		this.#scopedRulesExist = false;
 		this.#stylesheetsDirty = false;
 		this.#layerPaths = [];
 		this.#anonymousLayers = 0;
@@ -8593,7 +8596,11 @@ export class StyleManager {
 		// only known once every sheet has been read: the rank is filled in
 		// then, and this is the value it is filled in from.
 		const layer = context.layer;
-		const scopes = context.scopes.length > 0 ? context.scopes : undefined;
+		let scopes: readonly ScopeCondition[] | undefined;
+		if (context.scopes.length > 0) {
+			scopes = context.scopes;
+			this.#scopedRulesExist = true;
+		}
 		let namespace: string | null | undefined;
 		if (sheetNamespaces !== NO_NAMESPACES || selector.includes("|")) {
 			const resolved = selectorNamespace(selector, sheetNamespaces);
@@ -8754,7 +8761,7 @@ export class StyleManager {
 		// is infinitely far from one. The rules arrive in cascade order and
 		// the sort is stable, so a comparison that only answers for proximity
 		// leaves every other tier as it found it.
-		if (!matched.some((rule) => rule.scopes)) return matched;
+		if (!this.#scopedRulesExist) return matched;
 		const proximity = new Map(
 			matched.map(
 				(rule) =>
@@ -8770,6 +8777,21 @@ export class StyleManager {
 			if (a.specificity !== b.specificity) return 0;
 			return proximity.get(b)! - proximity.get(a)!;
 		});
+	}
+
+	/**
+	 * Whether an element matches one of a rule's selectors. A scoped rule's
+	 * selector is written relative to a scoping root and reaches only the
+	 * elements that root has in scope; every other rule's is matched by the
+	 * DOM outright.
+	 */
+	#matchesRule(
+		element: Element,
+		rule: ParsedCSSRule,
+		selector: string,
+	): boolean {
+		if (!rule.scopes) return element.matches(selector);
+		return this.#scopingRoot(element, {...rule, selector}) !== null;
 	}
 
 	/**
@@ -8883,12 +8905,6 @@ export class StyleManager {
 			) {
 				return false;
 			}
-			// A scoped rule's selector is written relative to a scoping root,
-			// and reaches only the elements that root has in scope.
-			const matchesRule = (selector: string): boolean =>
-				rule.scopes
-					? this.#scopingRoot(element, {...rule, selector}) !== null
-					: element.matches(selector);
 			// The selector engine treats `:focus-visible` as `:focus`, so gate it
 			// on our own flag.
 			if (
@@ -8910,12 +8926,14 @@ export class StyleManager {
 			}
 			const root = element.getRootNode();
 			if (rule.scope) {
-				return root === rule.scope && matchesRule(rule.selector);
+				return (
+					root === rule.scope && this.#matchesRule(element, rule, rule.selector)
+				);
 			}
 			// UA document rules apply in EVERY tree scope, as a browser's own
 			// UA sheet styles shadow trees.
 			if (rule.uaOrigin) {
-				return matchesRule(rule.selector);
+				return this.#matchesRule(element, rule, rule.selector);
 			}
 			// AUTHOR document rules match everything OUTSIDE shadow trees --
 			// including detached elements (styles resolve before insertion,
@@ -8923,7 +8941,7 @@ export class StyleManager {
 			// shadow root.
 			const inShadowTree =
 				root.nodeType === 11 && Boolean((root as ShadowRoot).host);
-			return !inShadowTree && matchesRule(rule.selector);
+			return !inShadowTree && this.#matchesRule(element, rule, rule.selector);
 		} catch (err) {
 			// Fallback for unsupported selectors
 			return false;
