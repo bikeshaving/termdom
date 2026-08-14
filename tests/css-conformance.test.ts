@@ -447,3 +447,171 @@ test("css: color:inherit resolves the parent's value", async () => {
 		),
 	).toBe("rgb(128, 0, 128)");
 });
+
+const RED = "rgb(255, 0, 0)";
+const BLUE = "rgb(0, 0, 255)";
+
+test("css: @layer rules lose to unlayered rules of the same origin", async () => {
+	expect(
+		await colorOf(
+			`<style>@layer base{#a{color:red}} p{color:blue}</style><p id="a">x</p>`,
+			"#a",
+		),
+	).toBe(BLUE);
+});
+
+test("css: layers cascade in the order their names were declared", async () => {
+	expect(
+		await colorOf(
+			`<style>@layer late{p{color:blue}} @layer early{p{color:red}}</style><p>x</p>`,
+			"p",
+		),
+	).toBe(RED);
+});
+
+test("css: a @layer statement declares the order rules later fall into", async () => {
+	expect(
+		await colorOf(
+			`<style>@layer early, late;` +
+				`@layer late{p{color:blue}} @layer early{p{color:red}}</style><p>x</p>`,
+			"p",
+		),
+	).toBe(BLUE);
+});
+
+test("css: a nested layer loses to its own layer's unnested rules", async () => {
+	expect(
+		await colorOf(
+			`<style>@layer outer{@layer inner{p{color:red}} p{color:blue}}</style>` +
+				`<p>x</p>`,
+			"p",
+		),
+	).toBe(BLUE);
+});
+
+test("css: each unnamed @layer block is a layer of its own", async () => {
+	expect(
+		await colorOf(
+			`<style>@layer{p{color:blue}}@layer{p{color:red}}</style><p>x</p>`,
+			"p",
+		),
+	).toBe(RED);
+});
+
+test("css: !important reverses the layer order", async () => {
+	expect(
+		await colorOf(
+			`<style>@layer a{p{color:red!important}} p{color:blue!important}</style>` +
+				`<p>x</p>`,
+			"p",
+		),
+	).toBe(RED);
+});
+
+test("css: !important makes the earliest layer win", async () => {
+	expect(
+		await colorOf(
+			`<style>@layer first, second;` +
+				`@layer second{p{color:blue!important}}` +
+				`@layer first{p{color:red!important}}</style><p>x</p>`,
+			"p",
+		),
+	).toBe(RED);
+});
+
+test("css: @scope rules apply inside their root", async () => {
+	expect(
+		await colorOf(
+			`<style>@scope (.card){p{color:red}}</style>` +
+				`<div class="card"><p>x</p></div>`,
+			"p",
+		),
+	).toBe(RED);
+});
+
+test("css: @scope rules do not apply outside their root", async () => {
+	expect(
+		await colorOf(
+			`<style>p{color:blue} @scope (.card){p{color:red}}</style>` +
+				`<div class="other"><p>x</p></div>`,
+			"p",
+		),
+	).toBe(BLUE);
+});
+
+test("css: a @scope limit ends the scope above the element", async () => {
+	expect(
+		await colorOf(
+			`<style>p{color:blue} @scope (.card) to (.inner){p{color:red}}</style>` +
+				`<div class="card"><div class="inner"><p>x</p></div></div>`,
+			"p",
+		),
+	).toBe(BLUE);
+});
+
+test("css: :scope selects the scoping root itself", async () => {
+	expect(
+		await colorOf(
+			`<style>@scope (.card){:scope{color:red}}</style>` +
+				`<div class="card"><p>x</p></div>`,
+			".card",
+		),
+	).toBe(RED);
+});
+
+test("css: a scoped selector may be written relative to its root", async () => {
+	expect(
+		await colorOf(
+			`<style>p{color:blue} @scope (.inner){> p{color:red}}</style>` +
+				`<div class="inner"><p>x</p></div>`,
+			"p",
+		),
+	).toBe(RED);
+});
+
+test("css: the nearer scoping root wins, whatever the source order", async () => {
+	expect(
+		await colorOf(
+			`<style>@scope (.inner){p{color:red}} @scope (.card){p{color:blue}}</style>` +
+				`<div class="card"><div class="inner"><p>x</p></div></div>`,
+			"p",
+		),
+	).toBe(RED);
+	expect(
+		await colorOf(
+			`<style>@scope (.card){p{color:blue}} @scope (.inner){p{color:red}}</style>` +
+				`<div class="card"><div class="inner"><p>x</p></div></div>`,
+			"p",
+		),
+	).toBe(RED);
+});
+
+test("css: specificity outranks scope proximity", async () => {
+	expect(
+		await colorOf(
+			`<style>@scope (.inner){p{color:red}} @scope (.card){p#a{color:blue}}</style>` +
+				`<div class="card"><div class="inner"><p id="a">x</p></div></div>`,
+			"#a",
+		),
+	).toBe(BLUE);
+});
+
+test("css: @starting-style declares nothing to the cascade", async () => {
+	expect(
+		await colorOf(
+			`<style>p{color:blue} @starting-style{p{color:red}}</style><p>x</p>`,
+			"p",
+		),
+	).toBe(BLUE);
+});
+
+test("css: an unrecognized grouping rule cascades its rules through", async () => {
+	// @container has no branch in the rule walk: its rules reach the cascade
+	// without its query, rather than not at all.
+	expect(
+		await colorOf(
+			`<style>@container (min-width: 1px){p{color:red}}</style><p>x</p>`,
+			"p",
+		),
+	).toBe(RED);
+});

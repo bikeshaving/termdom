@@ -6290,12 +6290,26 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 		// so within each tier the last match wins.
 		let ruleValue: string | null = null;
 		let importantRuleValue: string | null = null;
+		// `!important` reverses the layer order (css-cascade-5 §6.4.4): the
+		// EARLIEST layer wins, and unlayered declarations -- which win the
+		// normal cascade -- lose to every layer. The rules arrive with the
+		// earliest layer first, so the first layer to declare the property
+		// keeps it, and later ones only tie it within the same layer.
+		let importantOrigin = false;
+		let importantLayer = 0;
 		for (const rule of this.#cssRules) {
 			const name = declaredName(rule, names, false, mapsHere);
 			if (name !== null) ruleValue = rule.declarations[name];
 			const importantName = declaredName(rule, names, true, mapsHere);
-			if (importantName !== null) {
+			if (
+				importantName !== null &&
+				(importantRuleValue === null ||
+					Boolean(rule.uaOrigin) !== importantOrigin ||
+					rule.layerRank === importantLayer)
+			) {
 				importantRuleValue = rule.declarations[importantName];
+				importantOrigin = Boolean(rule.uaOrigin);
+				importantLayer = rule.layerRank;
 			}
 		}
 
@@ -7333,6 +7347,156 @@ interface ParsedCSSRule {
 	 * higher specificity -- exactly the browser's origin ordering.
 	 */
 	uaOrigin?: boolean;
+	/**
+	 * The cascade layer this rule was declared in, dot-joined through every
+	 * enclosing `@layer`, or null for a rule in no layer.
+	 */
+	layer: string | null;
+	/**
+	 * Where the rule's layer sorts, smallest first: layers in the order their
+	 * names were declared, then -- last, and so winning the normal cascade --
+	 * every unlayered rule. Filled in once the whole layer order is known.
+	 */
+	layerRank: number;
+	/**
+	 * The `@scope` conditions the rule was declared inside, outermost first.
+	 * Absent for a rule no `@scope` encloses, which is in scope everywhere.
+	 */
+	scopes?: readonly ScopeCondition[];
+}
+
+/**
+ * One `@scope (start) to (end)` prelude: the selector lists naming the scoping
+ * roots and the scoping limits. `start` is null for `@scope` written without a
+ * root, whose root is the element the stylesheet's owner node sits in.
+ */
+interface ScopeCondition {
+	start: string | null;
+	end: string | null;
+	/** The implicit scoping root, for a condition that names none. */
+	owner: Element | null;
+}
+
+/** The conditional rules a style rule was found inside, as the cascade reads them. */
+interface RuleContext {
+	layer: string | null;
+	scopes: readonly ScopeCondition[];
+}
+
+/** The context of a rule at the top level of a stylesheet. */
+const UNCONDITIONAL: RuleContext = {layer: null, scopes: []};
+
+/**
+ * The proximity of a declaration in no scope: farther from any element than
+ * any scoping root can be, and the same distance for every one of them.
+ */
+const UNSCOPED = Number.MAX_SAFE_INTEGER;
+
+/**
+ * Whether an element is a scoping root of this condition. A condition naming
+ * no root has one all the same: the element the stylesheet was written in.
+ */
+function scopeRootMatches(
+	element: Element,
+	condition: ScopeCondition,
+	outer: Element | null,
+): boolean {
+	if (condition.start === null) return element === condition.owner;
+	return splitSelectorList(condition.start).some((selector) =>
+		outer
+			? matchesInScope(element, selector, outer)
+			: matchesSelector(element, selector),
+	);
+}
+
+/**
+ * Whether an element is in the scope a root opens: inside it, and with no
+ * scoping limit between the two. The root is always in its own scope, limit
+ * or no limit.
+ */
+function inScopeOf(
+	element: Element,
+	root: Element,
+	condition: ScopeCondition,
+): boolean {
+	const limits = condition.end ? splitSelectorList(condition.end) : [];
+	let node: Element | null = element;
+	for (; node && node !== root; node = node.parentElement) {
+		if (limits.some((selector) => matchesInScope(node!, selector, root))) {
+			return false;
+		}
+	}
+	return node === root;
+}
+
+/** `element.matches`, with a selector the matcher rejects matching nothing. */
+function matchesSelector(element: Element, selector: string): boolean {
+	try {
+		return element.matches(selector);
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Whether an element matches a scoped selector, `:scope` standing for the
+ * given scoping root.
+ *
+ * A selector opening with a combinator is relative to the root, which is what
+ * `@scope { > .a { } }` means. The root's own subtree is the DOM's own scoping
+ * root, so a selector reaching down from `:scope` is matched by asking it for
+ * the elements it selects; a selector whose subject IS the root cannot be, and
+ * matches with `:scope` standing for any element -- the identity it asserts is
+ * already established.
+ */
+function matchesInScope(
+	element: Element,
+	selector: string,
+	root: Element,
+): boolean {
+	let text = selector.trim();
+	if (/^[>+~]/.test(text)) text = `:scope ${text}`;
+	try {
+		if (!text.includes(":scope")) return element.matches(text);
+		if (element === root) {
+			const subject = subjectCompoundStart(text);
+			// `:scope` on a non-subject compound asks the root to be a strict
+			// descendant of itself.
+			if (text.slice(0, subject).includes(":scope")) return false;
+			return element.matches(
+				text.slice(0, subject) + text.slice(subject).replaceAll(":scope", "*"),
+			);
+		}
+		for (const found of root.querySelectorAll(text)) {
+			if (found === element) return true;
+		}
+		return false;
+	} catch {
+		return false;
+	}
+}
+
+/** Where a complex selector's subject compound starts: past its last combinator. */
+function subjectCompoundStart(selector: string): number {
+	let depth = 0;
+	let quote = "";
+	let start = 0;
+	for (let index = 0; index < selector.length; index++) {
+		const char = selector[index];
+		if (quote) {
+			if (char === "\\") index++;
+			else if (char === quote) quote = "";
+		} else if (char === '"' || char === "'") {
+			quote = char;
+		} else if (char === "(" || char === "[") {
+			depth++;
+		} else if (char === ")" || char === "]") {
+			depth--;
+		} else if (depth === 0 && /[\s>+~]/.test(char)) {
+			start = index + 1;
+		}
+	}
+	return start;
 }
 
 // CSS Counter interfaces
@@ -8040,6 +8204,8 @@ export class StyleManager {
 		this.#counterRulesExist = false;
 		this.#listItemRulesExist = false;
 		this.#stylesheetsDirty = false;
+		this.#layerPaths = [];
+		this.#anonymousLayers = 0;
 		this.#parsedStyleSheetCount = this.#styleSheetCount();
 
 		// The UA document sheet parses first; origin ordering (not source
@@ -8059,20 +8225,83 @@ export class StyleManager {
 			}
 		}
 
+		const layerRanks = this.#rankLayers();
+		for (const rule of this.#parsedRules) {
+			rule.layerRank =
+				rule.layer === null
+					? this.#unlayeredRank
+					: (layerRanks.get(rule.layer) ?? this.#unlayeredRank);
+		}
+
 		// Sort rules for cascade resolution: origin first (UA rules sort
-		// below every author rule -- later wins), then specificity.
+		// below every author rule -- later wins), then cascade layer, then
+		// specificity, then the order the rules were read in.
+		const sourceOrder = new Map(
+			this.#parsedRules.map((rule, index) => [rule, index] as const),
+		);
 		this.#parsedRules.sort((a, b) => {
 			if (Boolean(a.uaOrigin) !== Boolean(b.uaOrigin)) {
 				return a.uaOrigin ? -1 : 1;
 			}
+			if (a.layerRank !== b.layerRank) return a.layerRank - b.layerRank;
 			if (a.specificity !== b.specificity) {
 				return a.specificity < b.specificity ? -1 : 1;
 			}
-			// Use array index as source order tie-breaker
-			return this.#parsedRules.indexOf(a) - this.#parsedRules.indexOf(b);
+			return sourceOrder.get(a)! - sourceOrder.get(b)!;
 		});
 		this.clearCache();
 		this.#attachPseudoElements();
+	}
+
+	/**
+	 * Every cascade layer, in the order its name was first declared: a
+	 * `@layer a, b;` statement, a `@layer a { }` block, or the anonymous layer
+	 * an unnamed block opens. A nested layer's path is dot-joined through its
+	 * ancestors, which is the name `@layer a.b` writes for itself.
+	 */
+	#layerPaths: string[] = [];
+	#anonymousLayers = 0;
+
+	/** Where an unlayered rule sorts: after every layer, and so above them. */
+	#unlayeredRank = 0;
+
+	/** Name a layer, and every layer its path nests inside, in declaration order. */
+	#declareLayer(outer: string | null, name: string): string {
+		const path = outer === null ? name : `${outer}.${name}`;
+		const segments = path.split(".");
+		for (let depth = 1; depth <= segments.length; depth++) {
+			const prefix = segments.slice(0, depth).join(".");
+			if (!this.#layerPaths.includes(prefix)) this.#layerPaths.push(prefix);
+		}
+		return path;
+	}
+
+	/**
+	 * Where each layer sorts. Layers sort in the order their names were
+	 * declared, and a layer's OWN rules sort after the rules of every layer
+	 * nested inside it -- the same relation unlayered rules have to layers,
+	 * one level down. Smallest first, so the last layer, and then the
+	 * unlayered rules above it, win the normal cascade; the important cascade
+	 * reads the same order backwards.
+	 */
+	#rankLayers(): Map<string, number> {
+		const nested = new Map<string, string[]>();
+		for (const path of this.#layerPaths) {
+			const dot = path.lastIndexOf(".");
+			const outer = dot === -1 ? "" : path.slice(0, dot);
+			const siblings = nested.get(outer);
+			if (siblings) siblings.push(path);
+			else nested.set(outer, [path]);
+		}
+		const ranks = new Map<string, number>();
+		let next = 0;
+		const rank = (path: string): void => {
+			for (const inner of nested.get(path) ?? []) rank(inner);
+			if (path !== "") ranks.set(path, next++);
+		};
+		rank("");
+		this.#unlayeredRank = next;
+		return ranks;
 	}
 
 	/**
@@ -8082,11 +8311,19 @@ export class StyleManager {
 	 * contributes its rules, since what this engine supports is what it
 	 * renders. `@font-face`, `@keyframes` and `@import` have no terminal
 	 * rendering and declare nothing to the cascade.
+	 *
+	 * A grouping rule this walk has no branch for is walked THROUGH: its rules
+	 * cascade without whatever its prelude says about them. For a conditional
+	 * rule that is the wrong answer where the condition is false -- a
+	 * `@container` query the box does not satisfy still paints -- and it is
+	 * the better wrong answer: a rule that applies too widely is one an author
+	 * can see, and one that vanishes with the whole at-rule is not.
 	 */
 	#parseStyleSheet(
 		container: CSSStyleSheet | CSSGroupingRule,
 		scope?: Node,
 		uaOrigin?: boolean,
+		context: RuleContext = UNCONDITIONAL,
 	): void {
 		if (container instanceof CSSStyleSheet) {
 			if (container.disabled) return;
@@ -8094,13 +8331,48 @@ export class StyleManager {
 		}
 		for (const rule of container.cssRules) {
 			if (rule instanceof CSSStyleRule) {
-				this.#parseStyleRule(rule, scope, uaOrigin);
+				this.#parseStyleRule(rule, scope, uaOrigin, context);
 			} else if (rule instanceof CSSMediaRule) {
 				if (this.mediaQueryMatches(rule.conditionText)) {
-					this.#parseStyleSheet(rule, scope, uaOrigin);
+					this.#parseStyleSheet(rule, scope, uaOrigin, context);
 				}
 			} else if (rule instanceof CSSSupportsRule) {
-				this.#parseStyleSheet(rule, scope, uaOrigin);
+				this.#parseStyleSheet(rule, scope, uaOrigin, context);
+			} else if (rule instanceof CSSLayerStatementRule) {
+				// `@layer a, b;` declares the order of layers whose rules come
+				// later, and declares nothing else.
+				for (const name of rule.nameList) {
+					this.#declareLayer(context.layer, name);
+				}
+			} else if (rule instanceof CSSLayerBlockRule) {
+				// An unnamed block opens a layer nothing else can name or reach,
+				// which is a layer of its own wherever it stands.
+				const layer = rule.name
+					? this.#declareLayer(context.layer, rule.name)
+					: this.#declareLayer(context.layer, ` ${this.#anonymousLayers++}`);
+				this.#parseStyleSheet(rule, scope, uaOrigin, {...context, layer});
+			} else if (rule instanceof CSSScopeRule) {
+				const owner = rule.parentStyleSheet?.ownerNode ?? null;
+				this.#parseStyleSheet(rule, scope, uaOrigin, {
+					...context,
+					scopes: [
+						...context.scopes,
+						{
+							start: rule.start,
+							end: rule.end,
+							owner: owner ? owner.parentElement : null,
+						},
+					],
+				});
+			} else if (rule instanceof CSSStartingStyleRule) {
+				// `@starting-style` declares the style a box starts a transition
+				// FROM. This engine runs no transitions, so a rule inside it
+				// would have no moment to stop applying in and would style the
+				// box for good: it parses into the CSSOM and reaches the
+				// cascade never.
+				continue;
+			} else if (rule instanceof CSSGroupingRule) {
+				this.#parseStyleSheet(rule, scope, uaOrigin, context);
 			}
 		}
 	}
@@ -8170,6 +8442,7 @@ export class StyleManager {
 		styleRule: CSSStyleRule,
 		scope?: Node,
 		uaOriginSheet?: boolean,
+		context: RuleContext = UNCONDITIONAL,
 	): void {
 		// A rule's selector list is a set of selectors that share a block, and
 		// each is matched -- and weighed -- on its own. `#a::before, #b` is one
@@ -8177,7 +8450,14 @@ export class StyleManager {
 		const block = styleRule.style.declarationBlock();
 		const namespaces = sheetNamespaces(styleRule.parentStyleSheet);
 		for (const selector of splitSelectorList(styleRule.selectorText)) {
-			this.#parseSelector(selector, block, scope, uaOriginSheet, namespaces);
+			this.#parseSelector(
+				selector,
+				block,
+				scope,
+				uaOriginSheet,
+				namespaces,
+				context,
+			);
 		}
 	}
 
@@ -8288,8 +8568,14 @@ export class StyleManager {
 		scope?: Node,
 		uaOriginSheet?: boolean,
 		sheetNamespaces: SelectorNamespaces = NO_NAMESPACES,
+		context: RuleContext = UNCONDITIONAL,
 	): void {
 		const {declarations, important, order} = block;
+		// A rule's layer decides where it sorts, and the whole layer order is
+		// only known once every sheet has been read: the rank is filled in
+		// then, and this is the value it is filled in from.
+		const layer = context.layer;
+		const scopes = context.scopes.length > 0 ? context.scopes : undefined;
 		let namespace: string | null | undefined;
 		if (sheetNamespaces !== NO_NAMESPACES || selector.includes("|")) {
 			const resolved = selectorNamespace(selector, sheetNamespaces);
@@ -8345,6 +8631,9 @@ export class StyleManager {
 					scope,
 					host: {predicate, rest, child: Boolean(child)},
 					uaOrigin,
+					layer,
+					layerRank: 0,
+					scopes,
 				});
 				return;
 			}
@@ -8376,6 +8665,9 @@ export class StyleManager {
 				scope,
 				uaOrigin,
 				namespace,
+				layer,
+				layerRank: 0,
+				scopes,
 			};
 			this.#parsedRules.push(rule);
 			const byType = this.#pseudoRulesByType.get(pseudoElement);
@@ -8392,6 +8684,9 @@ export class StyleManager {
 				scope,
 				uaOrigin,
 				namespace,
+				layer,
+				layerRank: 0,
+				scopes,
 			});
 		}
 	}
@@ -8411,7 +8706,7 @@ export class StyleManager {
 		const partNames = (element.getAttribute("part") ?? "")
 			.split(/\s+/)
 			.filter(Boolean);
-		return this.#parsedRules.filter((rule) => {
+		const matched = this.#parsedRules.filter((rule) => {
 			if (rule.pseudoElement) {
 				// ::part(name): an author styling an exposed shadow part from
 				// outside. The rule matches the shadow's HOST; its declarations
@@ -8435,6 +8730,88 @@ export class StyleManager {
 			}
 			return this.#ruleMatches(element, rule);
 		});
+		// Scope proximity sorts between specificity and order of appearance
+		// (css-cascade-6 §3.1.3), and unlike either it is a fact about THIS
+		// element: the closer scoping root wins, and a rule in no scope at all
+		// is infinitely far from one. The rules arrive in cascade order and
+		// the sort is stable, so a comparison that only answers for proximity
+		// leaves every other tier as it found it.
+		if (!matched.some((rule) => rule.scopes)) return matched;
+		const proximity = new Map(
+			matched.map(
+				(rule) =>
+					[
+						rule,
+						rule.scopes ? this.#scopeProximity(element, rule) : UNSCOPED,
+					] as const,
+			),
+		);
+		return matched.sort((a, b) => {
+			if (Boolean(a.uaOrigin) !== Boolean(b.uaOrigin)) return 0;
+			if (a.layerRank !== b.layerRank) return 0;
+			if (a.specificity !== b.specificity) return 0;
+			return proximity.get(b)! - proximity.get(a)!;
+		});
+	}
+
+	/**
+	 * How many generations lie between an element and the nearest scoping root
+	 * its rule applies from, or Infinity when the rule names no scope. Only
+	 * ever asked of a rule that matches, so a rule out of scope everywhere has
+	 * already been filtered out.
+	 */
+	#scopeProximity(element: Element, rule: ParsedCSSRule): number {
+		const root = this.#scopingRoot(element, rule);
+		if (!root) return UNSCOPED;
+		let generations = 0;
+		for (
+			let node: Element | null = element;
+			node && node !== root;
+			node = node.parentElement
+		) {
+			generations++;
+		}
+		return generations;
+	}
+
+	/**
+	 * The scoping root a scoped rule reaches this element from, or null when
+	 * no chain of roots puts the element in the rule's scope and matches its
+	 * selector.
+	 *
+	 * Every root is an inclusive ancestor of the element -- that is what being
+	 * in scope means -- so the chain is read outermost first, each condition
+	 * taking the HIGHEST root it can (which constrains the roots inside it
+	 * least), and the innermost taking the NEAREST, which is the one the
+	 * element's selector and its proximity are measured from.
+	 */
+	#scopingRoot(element: Element, rule: ParsedCSSRule): Element | null {
+		const conditions = rule.scopes!;
+		let outer: Element | null = null;
+		for (let index = 0; index < conditions.length; index++) {
+			const condition = conditions[index];
+			const innermost = index === conditions.length - 1;
+			let found: Element | null = null;
+			for (
+				let candidate: Element | null = element;
+				candidate;
+				candidate = candidate.parentElement
+			) {
+				if (outer && candidate !== outer && !outer.contains(candidate)) break;
+				if (!scopeRootMatches(candidate, condition, outer)) continue;
+				if (!inScopeOf(element, candidate, condition)) continue;
+				if (innermost) {
+					if (!matchesInScope(element, rule.selector, candidate)) continue;
+					// The nearest root the rule reaches the element from.
+					found = candidate;
+					break;
+				}
+				found = candidate;
+			}
+			if (!found) return null;
+			outer = found;
+		}
+		return outer;
 	}
 
 	/**
@@ -8488,6 +8865,12 @@ export class StyleManager {
 			) {
 				return false;
 			}
+			// A scoped rule's selector is written relative to a scoping root,
+			// and reaches only the elements that root has in scope.
+			const matchesRule = (selector: string): boolean =>
+				rule.scopes
+					? this.#scopingRoot(element, {...rule, selector}) !== null
+					: element.matches(selector);
 			// The selector engine treats `:focus-visible` as `:focus`, so gate it
 			// on our own flag.
 			if (
@@ -8509,12 +8892,12 @@ export class StyleManager {
 			}
 			const root = element.getRootNode();
 			if (rule.scope) {
-				return root === rule.scope && element.matches(rule.selector);
+				return root === rule.scope && matchesRule(rule.selector);
 			}
 			// UA document rules apply in EVERY tree scope, as a browser's own
 			// UA sheet styles shadow trees.
 			if (rule.uaOrigin) {
-				return element.matches(rule.selector);
+				return matchesRule(rule.selector);
 			}
 			// AUTHOR document rules match everything OUTSIDE shadow trees --
 			// including detached elements (styles resolve before insertion,
@@ -8522,7 +8905,7 @@ export class StyleManager {
 			// shadow root.
 			const inShadowTree =
 				root.nodeType === 11 && Boolean((root as ShadowRoot).host);
-			return !inShadowTree && element.matches(rule.selector);
+			return !inShadowTree && matchesRule(rule.selector);
 		} catch (err) {
 			// Fallback for unsupported selectors
 			return false;
