@@ -106,7 +106,7 @@ export function* tokenizeInput(input: string): Generator<string> {
 }
 
 /** A single decoded keystroke: the semantics of one key token. */
-export interface KeyStroke {
+interface KeyStroke {
 	/** The named key (`"ArrowUp"`, `"Enter"`, or the literal character). */
 	keyName: string;
 	keyCode: number;
@@ -338,7 +338,7 @@ export function decodeKey(token: string): KeyStroke | null {
 }
 
 /** A single decoded SGR mouse report: the semantics of the report bits. */
-export interface MouseReport {
+interface MouseReport {
 	shiftKey: boolean;
 	altKey: boolean;
 	ctrlKey: boolean;

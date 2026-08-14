@@ -17,7 +17,7 @@
  * - `tokenlist`: a DOMTokenList over the attribute's tokens.
  * - `nullable-string`: a DOMString?, null when the attribute is absent.
  */
-export type ReflectKind =
+type ReflectKind =
 	| "string"
 	| "nullable-string"
 	| "url"
@@ -54,7 +54,7 @@ export interface ReflectSpec {
 	nullable?: boolean;
 }
 
-export interface InterfaceSpec {
+interface InterfaceSpec {
 	/** The interface's name, which is also its Symbol.toStringTag. */
 	name: string;
 	/** The interface it inherits from; HTMLElement where this is absent. */

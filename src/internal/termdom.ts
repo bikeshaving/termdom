@@ -875,6 +875,17 @@ export class TermDOM {
 			configurable: true,
 			enumerable: true,
 		});
+		// A terminal document never scrolls sideways, so the X pair reads 0.
+		Object.defineProperty(window, "scrollX", {
+			get: () => 0,
+			configurable: true,
+			enumerable: true,
+		});
+		Object.defineProperty(window, "pageXOffset", {
+			get: () => 0,
+			configurable: true,
+			enumerable: true,
+		});
 		window.scrollBy = ((
 			xOrOptions?: number | ScrollToOptions,
 			y?: number,

@@ -17,7 +17,7 @@ import {computedStyleOf} from "./styles.js";
  * reports these four numbers as contentRect, which is where the confusion
  * comes from in the first place.
  */
-export interface ContentBox {
+interface ContentBox {
 	width: number;
 	height: number;
 	top: number;

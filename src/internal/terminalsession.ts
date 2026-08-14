@@ -350,7 +350,7 @@ export function transportFromProcess(
  * opinion, ours stands". Every timer is tracked so dispose() can clear it; a
  * live one keeps the event loop open, which across a test suite is fatal.
  */
-export interface TerminalSessionHandlers {
+interface TerminalSessionHandlers {
 	/** Decoded non-mouse input: batched keystrokes after the demux. */
 	onKeys(keyInput: string): void;
 	onMouse(button: number, x: number, y: number, release: boolean): void;

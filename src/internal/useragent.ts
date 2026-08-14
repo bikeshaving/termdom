@@ -478,10 +478,7 @@ const CSS_SPEC_DEFAULTS: Record<string, string> = {
 };
 
 // ---- Terminal element defaults ----
-export const TERMINAL_ELEMENT_DEFAULTS: Record<
-	string,
-	Record<string, string>
-> = {
+const TERMINAL_ELEMENT_DEFAULTS: Record<string, Record<string, string>> = {
 	// Metadata elements - never rendered in terminal
 	head: {display: "none"},
 	link: {display: "none"},
@@ -969,7 +966,7 @@ export const FIELD_UA_STYLES = `
  * block glyphs behind it is ordinary text. What follows the bar inside the same
  * clip is the groove, which is why an empty bar still reads as a bar.
  */
-export const GAUGE_UA_STYLES = `
+const GAUGE_UA_STYLES = `
 	[part="track"] { display: inline-block; width: 100%; overflow: hidden; white-space: pre; vertical-align: top; }
 	[part="groove"] { color: #808080; font-weight: lighter; }
 	[part="bar"] { display: inline-block; overflow: hidden; white-space: pre; vertical-align: top; }

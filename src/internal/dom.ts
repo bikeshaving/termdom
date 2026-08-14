@@ -35,11 +35,11 @@ import {
 } from "./useragent.js";
 
 export const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
-export const MATHML_NAMESPACE = "http://www.w3.org/1998/Math/MathML";
-export const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
-export const XLINK_NAMESPACE = "http://www.w3.org/1999/xlink";
-export const XML_NAMESPACE = "http://www.w3.org/XML/1998/namespace";
-export const XMLNS_NAMESPACE = "http://www.w3.org/2000/xmlns/";
+const MATHML_NAMESPACE = "http://www.w3.org/1998/Math/MathML";
+const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
+const XLINK_NAMESPACE = "http://www.w3.org/1999/xlink";
+const XML_NAMESPACE = "http://www.w3.org/XML/1998/namespace";
+const XMLNS_NAMESPACE = "http://www.w3.org/2000/xmlns/";
 
 /* ------------------------------------------------------ user-agent widgets */
 
@@ -9804,14 +9804,6 @@ export function styleElementCount(document: Document): number {
 export function setDefaultView(document: Document, view: object | null): void {
 	document[kDefaultView] = view;
 }
-/** The element focus is on, set without firing the events a move fires. */
-export function setActiveElement(
-	document: Document,
-	element: Element | null,
-): void {
-	document[kActiveElement] = element;
-}
-
 export class HTMLTableCaptionElement extends HTMLElement {}
 
 /** One cell of a row, which knows where in the row it sits. */
@@ -18146,7 +18138,7 @@ const FILTER_ACCEPT = 1;
 const FILTER_REJECT = 2;
 const FILTER_SKIP = 3;
 
-export type NodeFilterInput =
+type NodeFilterInput =
 	| ((node: Node) => number)
 	| {acceptNode(node: Node): number}
 	| null

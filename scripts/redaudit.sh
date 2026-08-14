@@ -57,4 +57,4 @@ audit 978fa57 tests/viewport.test.ts "parks at the content bottom" src/ansi.ts
 # Usage: add an `audit <fix-commit> <test-file> <test-pattern> <source-files...>`
 # line for each new bug fix. A regression test earns its place by failing on
 # the code it indicts: red on the pre-fix sources, green on HEAD.
-audit HEAD tests/document-mode.test.ts "keeps the diff aligned with the screen" src/_termdom.ts src/_ansi.ts
+audit HEAD tests/document-mode.test.ts "keeps the diff aligned with the screen" src/internal/termdom.ts src/internal/ansi.ts

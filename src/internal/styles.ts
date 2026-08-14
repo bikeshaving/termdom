@@ -1213,7 +1213,7 @@ const LONGHAND_SHORTHANDS = new Map<string, readonly string[]>();
  * drops its quotes, and a counter() naming the style every counter already
  * has drops the argument.
  */
-export function serializeCSSValue(input: string, property = ""): string {
+function serializeCSSValue(input: string, property = ""): string {
 	const custom = property.startsWith("--");
 	let out = "";
 	let space = false;
@@ -1395,7 +1395,7 @@ function startsIdentifier(input: string, index: number): boolean {
  * Serialize a number as CSSOM says: the shortest form that round-trips, with
  * no leading `+`, no bare leading `.`, and no negative zero.
  */
-export function serializeCSSNumber(text: string): string {
+function serializeCSSNumber(text: string): string {
 	const value = Number(text);
 	if (!Number.isFinite(value)) return text;
 	if (Object.is(value, -0)) return "0";
@@ -1422,7 +1422,7 @@ function expandExponential(text: string): string {
 }
 
 /** Serialize a string: double-quoted, with quotes and backslashes escaped. */
-export function serializeCSSString(text: string): string {
+function serializeCSSString(text: string): string {
 	return `"${text.replace(/[\\"]/g, "\\$&")}"`;
 }
 
@@ -1431,7 +1431,7 @@ export function serializeCSSString(text: string): string {
  * not stand in an identifier is written as a hex escape, and one that merely
  * needs quoting takes a backslash.
  */
-export function serializeCSSIdentifier(value: string): string {
+function serializeCSSIdentifier(value: string): string {
 	const text = String(value);
 	let out = "";
 	for (let i = 0; i < text.length; i++) {
@@ -5067,7 +5067,7 @@ function sheetFor(element: Element): CSSStyleSheet {
  * answers "has a sheet appeared" without walking for one -- cheap enough to
  * ask on every computed-style read.
  */
-export function documentStyleSheetList(document: Document): {length: number} {
+function documentStyleSheetList(document: Document): {length: number} {
 	const counted = document as unknown as DOMDocument;
 	return {
 		get length(): number {
@@ -5080,7 +5080,7 @@ export function documentStyleSheetList(document: Document): {length: number} {
  * The sheets a tree's own elements declare, which is what `styleSheets`
  * lists. An adopted sheet belongs to no element and is not one of them.
  */
-export function declaredStyleSheets(root: Document | ShadowRoot) {
+function declaredStyleSheets(root: Document | ShadowRoot) {
 	return Array.from(root.querySelectorAll("style"), sheetFor);
 }
 
@@ -5089,7 +5089,7 @@ export function declaredStyleSheets(root: Document | ShadowRoot) {
  * by what the document adopted. A `<link>` never resolves to a sheet -- there
  * is no network behind a terminal document.
  */
-export function documentStyleSheets(document: Document): CSSStyleSheet[] {
+function documentStyleSheets(document: Document): CSSStyleSheet[] {
 	return [
 		...declaredStyleSheets(document),
 		...(adoptedSheets.get(document) ?? []),
@@ -5097,7 +5097,7 @@ export function documentStyleSheets(document: Document): CSSStyleSheet[] {
 }
 
 /** A shadow root's stylesheets: its own `<style>` elements, then what it adopted. */
-export function shadowStyleSheets(root: ShadowRoot): CSSStyleSheet[] {
+function shadowStyleSheets(root: ShadowRoot): CSSStyleSheet[] {
 	return [...declaredStyleSheets(root), ...(adoptedSheets.get(root) ?? [])];
 }
 
@@ -5210,7 +5210,7 @@ function observableAdopted(
  * Put this engine's CSSOM behind the document's stylesheet surface: a style
  * element's `sheet`, `document.styleSheets`, and the adopted lists.
  */
-export function installStyleSheets(window: EngineWindow): void {
+function installStyleSheets(window: EngineWindow): void {
 	cssomWindow = window;
 
 	const documentPrototype = window.Document.prototype;
@@ -5356,7 +5356,7 @@ for (const [name, type] of Object.entries({
 /** The UA document sheet, parsed once: its rules never change. */
 let uaDocumentSheet: CSSStyleSheet | null = null;
 
-export function uaStyleSheet(): CSSStyleSheet {
+function uaStyleSheet(): CSSStyleSheet {
 	if (!uaDocumentSheet) {
 		uaDocumentSheet = new CSSStyleSheet();
 		uaDocumentSheet.replaceSync(UA_DOCUMENT_STYLES);
@@ -6896,7 +6896,7 @@ export const ROUNDED_CORNERS: Readonly<Record<string, string>> = {
 };
 
 /** Which of a box's four corners a nonzero radius rounds. */
-export interface RoundedCorners {
+interface RoundedCorners {
 	topLeft: boolean;
 	topRight: boolean;
 	bottomRight: boolean;

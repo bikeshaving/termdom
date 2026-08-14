@@ -14,7 +14,7 @@ const colors = {
 	value: "\x1b[32m", // Green for values
 };
 
-export interface InspectorOptions {
+interface InspectorOptions {
 	maxDepth?: number;
 	colorize?: boolean;
 	compact?: boolean;
@@ -412,7 +412,7 @@ function inspectFragment(
 /**
  * Inspect a CSSStyleDeclaration, as the properties it actually declares
  */
-export function inspectCSSStyleDeclaration(
+function inspectCSSStyleDeclaration(
 	styles: any,
 	options: InspectorOptions = {},
 ): string {
@@ -463,10 +463,7 @@ export function inspectCSSStyleDeclaration(
 /**
  * Inspect a DOMRect - much more concise than default
  */
-export function inspectDOMRect(
-	rect: any,
-	options: InspectorOptions = {},
-): string {
+function inspectDOMRect(rect: any, options: InspectorOptions = {}): string {
 	const {colorize = true} = options;
 	const c = colorize
 		? colors
@@ -487,7 +484,7 @@ export function inspectDOMRect(
 /**
  * Inspect a NodeList/HTMLCollection - more concise than default
  */
-export function inspectNodeList(
+function inspectNodeList(
 	nodeList: any,
 	options: InspectorOptions = {},
 ): string {
