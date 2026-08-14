@@ -2,12 +2,7 @@
 
 **Build terminal apps with HTML, CSS and the DOM.**
 
-![Klondike solitaire rendered by TermDOM: a real DOM, styled with CSS, played with keyboard and mouse](./docs/solitaire.gif)
-
-The game above is [`examples/solitaire.ts`](./examples/solitaire.ts):
-flexbox lays out the board, `@media` queries size the cards to the
-terminal, a `<dialog>` runs the menus, and Tab navigation and keydown
-handlers drive play.
+![Klondike solitaire rendered by TermDOM](./docs/solitaire.gif)
 
 TermDOM is a JavaScript library that displays HTML and CSS in the terminal. It
 draws actual DOM nodes to terminal output and redraws the screen when they
@@ -122,7 +117,7 @@ against the engine.
 
 ## Name
 
-Not to be confused with [DomTerm](https://domterm.org), a terminal
+Not to be confused with [DomTerm](https://domterm.org) by Per Bothner, a terminal
 emulator built out of DOM elements. The two projects are each
 other's inverse: DomTerm puts a terminal in the DOM; TermDOM puts the DOM
 in a terminal.
