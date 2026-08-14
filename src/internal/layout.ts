@@ -282,7 +282,7 @@ export function flowWalker(root: Node): FlatTreeWalker<Node> {
  * own box parent, and rooting an inline-run walk at the slot would truncate
  * the run at the slot's edge.
  */
-export function boxParentElement(node: Node): Element | null {
+function boxParentElement(node: Node): Element | null {
 	let parent = flatParentElement<Element>(node);
 	while (parent !== null && dissolvesIntoChildren(parent)) {
 		parent = flatParentElement<Element>(parent);
@@ -990,7 +990,7 @@ function prefixWidths(
  * `data` the line renders. The range begins and ends on a rendered character,
  * so `renderTextFragment` over it reproduces the painted characters.
  */
-export interface LineFragment {
+interface LineFragment {
 	rect: globalThis.DOMRect;
 	/** Data offset of the line's first character / caret slot. */
 	startOffset: number;
@@ -1012,7 +1012,7 @@ function* textNodesUnder(root: Node): Generator<Text> {
 	}
 }
 
-export function whiteSpaceOf(textNode: Text): string {
+function whiteSpaceOf(textNode: Text): string {
 	const parent = flatParentElement<Element>(textNode);
 	return parent ? getPropertyValue(parent, "white-space") : "normal";
 }
@@ -5844,7 +5844,7 @@ export class LayoutEngine {
 	}
 }
 
-export function isPointInRects(
+function isPointInRects(
 	x: number,
 	y: number,
 	...rects: Array<DOMRect | DOMRect[] | DOMRectList>
