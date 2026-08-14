@@ -78,9 +78,11 @@ document.addEventListener("keydown", (e) => {
 
 ## Frameworks
 
-A frontend framework renders into TermDOM's document the way it renders into
-a browser's. A framework reaches for a global wherever it reads the DOM
-without a node in hand; assign the globals it reads, and no others.
+A frontend framework can render into TermDOM's document. Most frameworks
+read browser globals such as `document`, `window`, and the DOM constructors
+instead of only using the nodes passed to them, so those globals have to be
+assigned from the TermDOM instance before the framework loads. The table
+below lists what each framework reads and why.
 
 | Framework | Globals required | Why |
 | --- | --- | --- |
