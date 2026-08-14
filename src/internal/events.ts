@@ -54,7 +54,7 @@ const NAMED_KEY_CODES: Record<string, string> = {
  * on US layout, but a different physical key entirely on others), never which
  * physical key+modifiers produced it -- there is no protocol-level signal for
  * that, unlike the modifier bits `ctrlKey`/`altKey`/`shiftKey` decode from.
- * Falls back to the previous (also approximate) `Key<X>` guess for those.
+ * Falls back to `Key<uppercased character>`, which is a guess.
  */
 export function domCodeFor(keyName: string): string {
 	const named = NAMED_KEY_CODES[keyName];

@@ -703,8 +703,8 @@ const EXCLUSIONS: Record<string, string> = {
  *
  * A directory is here only where its subject is a whole standard this DOM does
  * not implement -- HTML's focus model, its form machinery, a CSSOM interface,
- * an incubation that is in no standard at all. The table below still names
- * every file one by one; this is where the reason is written once.
+ * an incubation that is in no standard at all. The EXCLUSIONS table above
+ * still names every file one by one; this is where the reason is written once.
  */
 const EXCLUDED_DIRECTORIES: Array<[string, string]> = [
 	[

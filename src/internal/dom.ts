@@ -8595,13 +8595,6 @@ export class HTMLAnchorElement extends HTMLElement {
 		setDescendantText(this, String(value));
 	}
 }
-/**
- * The members a hyperlink carries: the URL its href names, taken apart.
- *
- * A link's activation behavior is to follow it, and this DOM does not
- * navigate; the behavior is here so that dispatch counts the link as an
- * activation target, and following it is the one step that does not happen.
- */
 /** One part of a hyperlink's URL, read from it and written back through it. */
 function hyperlinkPart(
 	read: (url: URL) => string,
@@ -14448,7 +14441,7 @@ function checkValidity(element: Element): boolean {
  * A ::before, ::after or ::marker box needs a node to hang style and children
  * off, and the engine's compositor needs to walk to it; the DOM Standard has
  * no such node, and an author must never find one. These live in a map keyed
- * by the pseudo-element's name, reachable only through the two functions
+ * by the pseudo-element's name, reachable only through the functions
  * below, which the engine's composition pass is the sole caller of. Nothing
  * links them into the tree: their parent stays null, so childNodes, the tree
  * walkers, the collections and the selector engine cannot reach them, and no
@@ -15898,7 +15891,6 @@ Object.defineProperty(DOMImplementation.prototype, Symbol.toStringTag, {
 	configurable: true,
 });
 
-/** A document with the html/head/body skeleton the HTML Standard builds. */
 /**
  * Build a document, which is the one document of a realm that has no parser
  * to build one: it carries the realm's registry, exactly as a parsed document
@@ -18622,13 +18614,6 @@ interface ParseAttribute {
 }
 
 /**
- * The tree adapter parse5 builds through.
- *
- * Every node it creates belongs to the document the adapter was made for, and
- * every insertion runs the same algorithm a script's appendChild runs, so a
- * parsed tree and a scripted tree are the same tree.
- */
-/**
  * The registry the parser gives what it builds.
  *
  * A fragment parsed into an element belongs to that element's registry, and a
@@ -18637,6 +18622,13 @@ interface ParseAttribute {
  */
 let parseRegistry: CustomElementRegistry | null | undefined = undefined;
 
+/**
+ * The tree adapter parse5 builds through.
+ *
+ * Every node it creates belongs to the document the adapter was made for, and
+ * every insertion runs the same algorithm a script's appendChild runs, so a
+ * parsed tree and a scripted tree are the same tree.
+ */
 function treeAdapterFor(document: Document | null) {
 	let target = document;
 	const adapter = {
@@ -18819,18 +18811,6 @@ function treeAdapterFor(document: Document | null) {
 }
 
 /**
- * Turn the templates a declarative shadow root was parsed as into shadow
- * trees.
- *
- * The HTML parser attaches a shadow root the moment it sees a template whose
- * shadowrootmode names a mode; parse5 has no such step, so the templates land
- * as templates and this walk converts them afterwards. The walk is depth-first
- * over the tree it is given and then over each shadow tree it creates, which
- * reaches a nested declarative root inside one. A template whose parent cannot
- * host a shadow tree, or whose parent already hosts one, stays a template --
- * the parser's own error handling.
- */
-/**
  * Take a subtree out of whatever registry the parse gave it.
  *
  * A declarative shadow root that asks to be scoped has no registry until one
@@ -18844,6 +18824,18 @@ function clearRegistry(node: Node): void {
 	}
 }
 
+/**
+ * Turn the templates a declarative shadow root was parsed as into shadow
+ * trees.
+ *
+ * The HTML parser attaches a shadow root the moment it sees a template whose
+ * shadowrootmode names a mode; parse5 has no such step, so the templates land
+ * as templates and this walk converts them afterwards. The walk is depth-first
+ * over the tree it is given and then over each shadow tree it creates, which
+ * reaches a nested declarative root inside one. A template whose parent cannot
+ * host a shadow tree, or whose parent already hosts one, stays a template --
+ * the parser's own error handling.
+ */
 function attachDeclarativeShadowRoots(root: Node): void {
 	for (const child of childNodeArray(root)) {
 		if (child.nodeType !== ELEMENT_NODE) continue;
@@ -18900,7 +18892,6 @@ function attachDeclarativeShadowRoot(template: HTMLTemplateElement): boolean {
 	return true;
 }
 
-/** Parse an HTML document, per the HTML Standard's parsing algorithm. */
 /**
  * Parse a document, which is the one document of this realm: it carries the
  * realm's registry, and every document an author builds carries none until a

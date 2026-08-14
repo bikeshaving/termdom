@@ -178,15 +178,6 @@ function findInlineBlockSegment(
 }
 
 /**
- * Advance a walker past the current node's subtree, in document order,
- * without descending into it. nextSibling() alone is not that: it gives up
- * the moment the skipped node is its parent's last child, and an inline run
- * does not end there. `<span><b>x</b></span> tail` collects the <b>, finds
- * no sibling inside the span, and must climb out to reach " tail". Stopping
- * at the parent's last child instead drops every leaf after a nested
- * inline-block (or a display:none/absolute box) from the line.
- */
-/**
  * A `display: contents` element generates no box: the box tree splices it away
  * and its children take its place. This is the whole of what the flat tree's
  * consumers need to know about it -- a slot disappears from layout this way
@@ -302,6 +293,15 @@ export function boxParentElement(node: Node): Element | null {
 	return parent;
 }
 
+/**
+ * Advance a walker past the current node's subtree, in document order,
+ * without descending into it. nextSibling() alone is not that: it gives up
+ * the moment the skipped node is its parent's last child, and an inline run
+ * does not end there. `<span><b>x</b></span> tail` collects the <b>, finds
+ * no sibling inside the span, and must climb out to reach " tail". Stopping
+ * at the parent's last child instead drops every leaf after a nested
+ * inline-block (or a display:none/absolute box) from the line.
+ */
 function skipSubtree(walker: FlatTreeWalker<Node>): boolean {
 	while (!walker.nextSibling()) {
 		if (!walker.parentNode()) return false;
@@ -1462,15 +1462,6 @@ export class LayoutEngine {
 	}
 
 	/**
-	 * True when nothing in the element's subtree can paint inside the document
-	 * rows [top, bottom) -- its cached paint extent (own box unioned with every
-	 * descendant's, absolutes included) lies entirely outside the band.
-	 *
-	 * Conservative: an element without its own layout node is never culled, and
-	 * a stale answer is impossible because extents are recomputed with layout
-	 * and layout is recomputed whenever the tree is dirty.
-	 */
-	/**
 	 * The viewport rows occupied by fixed-position content: the hoisted
 	 * children of the viewport root, excluding the document's own subtree.
 	 */
@@ -1489,6 +1480,15 @@ export class LayoutEngine {
 		return bands;
 	}
 
+	/**
+	 * True when nothing in the element's subtree can paint inside the document
+	 * rows [top, bottom) -- its cached paint extent (own box unioned with every
+	 * descendant's, absolutes included) lies entirely outside the band.
+	 *
+	 * Conservative: an element without its own layout node is never culled, and
+	 * a stale answer is impossible because extents are recomputed with layout
+	 * and layout is recomputed whenever the tree is dirty.
+	 */
 	isSubtreeOutsideBand(element: Element, top: number, bottom: number): boolean {
 		// An element with no box of its own is culled by the anonymous box that
 		// lays its content out, whose extent covers the whole run it opens.
@@ -1626,8 +1626,7 @@ export class LayoutEngine {
 		// own: a run measured inside an inline-block publishes no break result
 		// (it hangs off that box's leaf instead), and its head may still be
 		// holding a flex node left over from before it was absorbed -- one
-		// parked at 0,0, which is what an inline-block'd widget used to
-		// position itself by.
+		// parked at 0,0.
 		let runHead: Node | null = this.findInlineRunHead(element);
 		let runFlexNode = runHead ? this.#runFlexNode(runHead) : undefined;
 		let breakResult = runHead ? this.#runBreakResult(runHead) : undefined;
@@ -1783,9 +1782,7 @@ export class LayoutEngine {
 			this.nodeMap.has(element) &&
 			isBlockifiedBox(element);
 
-		// For inline/inline-block elements, check if they appear in breakResults
 		if (!isBlockified && isInlineDisplay(display)) {
-			// For inline-block elements, search through all breakResults to find this element
 			if (display === "inline-block") {
 				const rect = this.#inlineBlockRect(element);
 				if (rect) {
@@ -1997,14 +1994,14 @@ export class LayoutEngine {
 			flexNode,
 		);
 
-		// getAbsolutePosition gives the run head's BORDER box. A blockified
+		// #documentPosition gives the run head's BORDER box. A blockified
 		// inline flex item reserved its own padding and border in that box (see
 		// styleFlexNode's parentIsFlex exception) but its text ignored them,
 		// painting at the border edge instead of below the padding. Push the run
 		// in by that box. Scoped to exactly the blockified case: a normal inline
 		// has its flex-node box model cleared even when the author declared
 		// padding (so getBoxModel would over-report), an inline-block's content
-		// offset is already handled by #contentRootOffset above, and a block's
+		// offset is already handled by #documentPosition, and a block's
 		// run head is a text node with no box.
 		if (runHead.nodeType === runHead.ELEMENT_NODE) {
 			const runHeadElement = runHead as Element;
@@ -5272,9 +5269,9 @@ export class LayoutEngine {
 		// Process and break the content with dynamic per-element styling
 		const processedContent = this.#processWhitespace(leafNodes);
 		// `pre` suppresses wrapping exactly as `nowrap` does -- it differs only in
-		// preserving whitespace and honouring newlines, which #collapseWhitespace
-		// already handles. Treating it as wrappable meant a narrow box folded text
-		// that a browser lets overflow, and the bug hid behind `nowrap` working.
+		// preserving whitespace and honouring newlines, which #processWhitespace
+		// already handles. Treating it as wrappable folds text a browser lets
+		// overflow.
 		const preservesLines = whiteSpace === "pre";
 		const nowrap =
 			preservesLines ||

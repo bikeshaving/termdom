@@ -1,7 +1,6 @@
 /**
- * Test Utilities for TTYOM
- *
- * Shared utilities for terminal testing with unified TestTerminal class
+ * Test utilities: the mock process, streams and transport the suite drives
+ * TermDOM through, and the helpers that read a frame back off it.
  */
 
 import {
@@ -78,9 +77,6 @@ const TABLE_UNICODE_VERSION = {
 /** charProperties kind: the cluster ended on a joiner and wants what follows. */
 const ZWJ_PENDING = 1;
 
-/**
- * Unified test terminal that handles process mocking and output capture
- */
 /**
  * Mock WriteStream for testing that implements our minimal TTYWriteStream interface
  */
@@ -276,10 +272,7 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 		// buffer.getLine(y) is an absolute index into the whole scrollback
 		// buffer (0 = the first line ever written), not "row 0 of what's
 		// currently on screen" -- viewportY is the offset that gets you there.
-		// This only diverges from 0 once real scrollback exists, which nothing
-		// previously exercised: every existing render path avoided triggering
-		// it, so this returned the right answer by coincidence until push-up's
-		// scroll made it observable.
+		// It only diverges from 0 once the terminal has real scrollback.
 		for (let row = 0; row < this.terminal.rows; row++) {
 			const line = buffer.getLine(buffer.viewportY + row);
 			if (line) {

@@ -232,7 +232,7 @@ export function widthIsUncertain(cluster: string): boolean {
 /**
  * Get the display width of a string in terminal columns.
  *
- * Bun.stringWidth is ~19x faster and is used wherever it is right, which is
+ * Bun.stringWidth is faster and is used wherever it is right, which is
  * every string without combining marks. It is NOT right on strings with them:
  * it charges a cell per code point, so "שָׁלוֹם" -- four Hebrew letters carrying
  * three vowel points -- measures 7 instead of 4, and a box drawn round it comes
@@ -303,7 +303,7 @@ export function writeClusterWidths(
  * branch above skips this code for most strings, so little else would catch it
  * drifting. The two must agree everywhere Bun is still consulted -- width drives
  * wrapping and cell alignment, so a disagreement misrenders text on Node and
- * Deno only, which is the kind of bug nobody sees until a user reports it.
+ * Deno only.
  */
 export function stringWidthFallback(str: string): number {
 	// Width is a property of the grapheme cluster, not the code point: a ZWJ

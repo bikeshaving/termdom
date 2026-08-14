@@ -1293,19 +1293,6 @@ export class Renderer {
 	}
 
 	/**
-	 * How many terminal rows the previously painted frame occupies once the
-	 * terminal rewraps it at `cols` columns.
-	 *
-	 * Every painted row is its own hard line -- frames are written with explicit
-	 * positioning and never through the right margin -- so each rewraps
-	 * independently: an empty row stays one row, and a row whose text spans `len`
-	 * cells becomes ceil(len / cols) rows. Null when nothing has been painted.
-	 *
-	 * Used by the resize re-anchor: the cursor is parked at the frame's bottom,
-	 * so its post-rewrap row minus this height names the frame's new top row
-	 * exactly, no matter how anything above the frame reflowed.
-	 */
-	/**
 	 * How many terminal rows sit above the parked cursor once the terminal
 	 * rewraps the previously painted frame at `cols` columns.
 	 *
@@ -1428,19 +1415,6 @@ export class Renderer {
 	}
 
 	/**
-	 * Render one frame.
-	 *
-	 * `regionRows` lets the caller render a region *taller than the terminal*. That
-	 * is how content reaches the scrollback: the frame is emitted top to bottom
-	 * with newlines, and printing past the bottom margin is what makes the terminal
-	 * scroll -- and what puts the rows that scroll past into its scrollback, where
-	 * they remain readable. (`CSI n S` scrolls too, but discards them.)
-	 *
-	 * Rows that scroll off can never be addressed again, so only the last
-	 * `terminalHeight` of them are kept as the previous frame: they are the only
-	 * part still ours to redraw.
-	 */
-	/**
 	 * Render the whole document as plain lines, for a stdout that is not a
 	 * terminal.
 	 *
@@ -1515,6 +1489,19 @@ export class Renderer {
 		return lines.join(lineEnding) + lineEnding;
 	}
 
+	/**
+	 * Render one frame.
+	 *
+	 * `regionRows` lets the caller render a region *taller than the terminal*. That
+	 * is how content reaches the scrollback: the frame is emitted top to bottom
+	 * with newlines, and printing past the bottom margin is what makes the terminal
+	 * scroll -- and what puts the rows that scroll past into its scrollback, where
+	 * they remain readable. (`CSI n S` scrolls too, but discards them.)
+	 *
+	 * Rows that scroll off can never be addressed again, so only the last
+	 * `terminalHeight` of them are kept as the previous frame: they are the only
+	 * part still ours to redraw.
+	 */
 	renderFrame(
 		offset: number,
 		drawCallback: (ctx: DrawingContext) => void,

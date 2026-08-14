@@ -694,7 +694,7 @@ for (const [tag, declarations] of Object.entries(TERMINAL_ELEMENT_DEFAULTS)) {
 // input's own entry in TERMINAL_ELEMENT_DEFAULTS above (bordered box, 20ch
 // wide) is shaped for a text field, whose void-element content has nothing
 // else to size or paint a box from. A checkbox/radio renders as a compact
-// "[ ]"/"[x]" glyph instead (see #renderInputElement) -- same reasoning, same
+// "[ ]"/"[x]" glyph instead -- same reasoning, same
 // problem, opposite answer: 3 cells wide, no border, no padding to pad it
 // out further.
 const CHECKBOX_DEFAULTS: Record<string, string> = {

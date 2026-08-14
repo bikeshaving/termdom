@@ -628,8 +628,7 @@ export class TermDOM {
 	// than this window re-enables capture mid-scroll, which the very next
 	// tick immediately re-yields -- a disable/enable toggle on every gap for
 	// as long as the user keeps scrolling, not just a one-time early
-	// re-enable. Tried 1000ms live; it was short enough to hit that toggle
-	// and felt like lag. 3000ms tested flawless.
+	// re-enable.
 	static readonly #SCROLL_CHAIN_TIMEOUT_MS = 3000;
 	#scrollChainTimer: ReturnType<typeof setTimeout> | null = null;
 	// Where the last mousedown landed, so a mouseup on the same element
@@ -1604,12 +1603,12 @@ export class TermDOM {
 			termDOM.#processPendingMutationsAndRender();
 
 			// Document-relative, not getBoundingClientRect's viewport-relative --
-			// this compares directly against documentScrollTop below, so it needs
+			// this compares directly against the camera's scrollTop below, so it needs
 			// the same coordinate space getRect() already provides.
 			const rect = termDOM[kLayoutEngine].getRect(this);
 			if (!rect) return;
 
-			// The camera shows [documentScrollTop, documentScrollTop + region).
+			// The camera shows [scrollTop, scrollTop + region).
 			// Move it the minimal amount that brings the element into it -- the
 			// standard block: "nearest" behavior.
 			const regionHeight = Math.min(
@@ -3039,19 +3038,6 @@ export class TermDOM {
 		this.#afterRender();
 	}
 
-	/**
-	 * Scroll the command start upward when the content outgrows the room below it.
-	 *
-	 * A TermDOM app behaves like an ordinary command: its output begins wherever
-	 * the cursor was and flows down, and when it runs past the bottom of the
-	 * terminal the earlier rows scroll off into the terminal's own scrollback.
-	 * Emitting the newlines to make that happen is what keeps the output *in* the
-	 * scrollback -- searchable, selectable, copy-pasteable -- rather than trapped
-	 * in an alternate screen buffer.
-	 *
-	 * Without this, content past the bottom of the terminal is never drawn at
-	 * all.
-	 */
 	/**
 	 * Print the whole document to stdout, once, on the way out.
 	 *

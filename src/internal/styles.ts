@@ -130,10 +130,6 @@ export interface BoxModel {
 }
 
 /**
- * Parse CSS box model properties from an element's computed style
- */
-
-/**
  * Lengths that may be negative: margins (and offsets). parseUnitValue's
  * digit gate is the right default -- negative widths, paddings and borders
  * are invalid CSS and must stay rejected -- so the sign lives in a separate
@@ -168,6 +164,10 @@ export function parseBorderWidthValue(
 	}
 	return parseUnitValue(value);
 }
+
+/**
+ * Parse CSS box model properties from an element's computed style
+ */
 
 export function getBoxModel(element: Element): BoxModel {
 	// The engine's own read: the cascade's declaration, straight, with none of
@@ -4603,11 +4603,6 @@ function parsePseudoElementArgument(text: string): string | null {
 }
 
 /**
- * Parse a selector list, or null when it does not parse -- which includes a
- * pseudo this engine does not know, since an unknown pseudo makes the whole
- * selector invalid.
- */
-/**
  * A selector list's selectors: split on the commas that separate them, which
  * are the ones no bracket, paren or string encloses.
  */
@@ -4636,6 +4631,11 @@ function splitSelectorList(text: string): string[] {
 	return selectors.filter(Boolean);
 }
 
+/**
+ * Parse a selector list, or null when it does not parse -- which includes a
+ * pseudo this engine does not know, since an unknown pseudo makes the whole
+ * selector invalid.
+ */
 function parseSelectorList(text: string): SelectorNode | null {
 	let list: SelectorNode;
 	// A selector list has to select something: the empty string is not one.
@@ -5106,11 +5106,6 @@ export function documentStyleSheetList(document: Document): {length: number} {
 }
 
 /**
- * A document's stylesheets: one per `<style>` element in tree order, followed
- * by what the document adopted. A `<link>` never resolves to a sheet -- there
- * is no network behind a terminal document.
- */
-/**
  * The sheets a tree's own elements declare, which is what `styleSheets`
  * lists. An adopted sheet belongs to no element and is not one of them.
  */
@@ -5118,6 +5113,11 @@ export function declaredStyleSheets(root: Document | ShadowRoot) {
 	return Array.from(root.querySelectorAll("style"), sheetFor);
 }
 
+/**
+ * A document's stylesheets: one per `<style>` element in tree order, followed
+ * by what the document adopted. A `<link>` never resolves to a sheet -- there
+ * is no network behind a terminal document.
+ */
 export function documentStyleSheets(document: Document): CSSStyleSheet[] {
 	return [
 		...declaredStyleSheets(document),
@@ -5130,10 +5130,6 @@ export function shadowStyleSheets(root: ShadowRoot): CSSStyleSheet[] {
 	return [...declaredStyleSheets(root), ...(adoptedSheets.get(root) ?? [])];
 }
 
-/**
- * Adopt a list of constructed sheets, and wire each one's later mutations to
- * the cascade -- a constructed sheet has no consumer until something adopts it.
- */
 /** The cascade a tree's sheets belong to. */
 function managerForTree(tree: Node): StyleManager | undefined {
 	const document =
@@ -5159,6 +5155,10 @@ function checkAdoptable(tree: Node, sheet: unknown): CSSStyleSheet {
 	return sheet;
 }
 
+/**
+ * Adopt a list of constructed sheets, and wire each one's later mutations to
+ * the cascade -- a constructed sheet has no consumer until something adopts it.
+ */
 function adopt(target: Node, sheets: unknown): void {
 	const adopted = Array.from(sheets as Iterable<unknown>).map((sheet) =>
 		checkAdoptable(target, sheet),
@@ -7627,15 +7627,6 @@ export class StyleManager {
 	}
 
 	/**
-	 * The outermost element whose layout a class/id flip on `element` can
-	 * affect. Selectors reach the element itself and its descendants; a
-	 * sibling combinator anywhere in the sheets extends that to the parent's
-	 * subtree, and :has() extends it to the whole document. This is what
-	 * keeps a selection-highlight flip from rebuilding every box on the
-	 * page: rules for `.row.selected` can only reach the row.
-	 */
-
-	/**
 	 * The document's style-element list, held so the count below is a bare
 	 * length read. The count is polled on every computed-style read to catch
 	 * a <style> appended in the same tick, before the mutation observer
@@ -7726,9 +7717,6 @@ export class StyleManager {
 		return true;
 	}
 
-	/**
-	 * Invalidate cached styles for an element (invalidation approach)
-	 */
 	/**
 	 * Invalidate an element and everything whose style it reaches: its
 	 * descendants, and the shadow tree it hosts -- inheritance crosses that
@@ -8573,7 +8561,6 @@ export class StyleManager {
 
 	/**
 	 * Get marker content for outside positioning
-	 * This is separate from createPseudoElementNode to handle outside markers
 	 */
 	getMarkerContent(hostElement: Element): string | null {
 		if (!hostElement || hostElement.nodeType !== hostElement.ELEMENT_NODE) {
@@ -8719,7 +8706,7 @@ export class StyleManager {
 		// wholesale: layout keys a pseudo's boxes by node instance, and a
 		// fresh node per refresh strands every mapped one. Attach handles
 		// content updates in place and removal when a pseudo stops matching.
-		// TODO: Performance - walks every element on stylesheet change.
+		// Walks every element on stylesheet change.
 		if (!this.#document.documentElement) return;
 		const walker = this.#document.createTreeWalker(
 			this.#document.documentElement,
@@ -8859,9 +8846,6 @@ export class StyleManager {
 	}
 
 	/**
-	 * Attach a specific pseudo-element type to an element if it should have one
-	 */
-	/**
 	 * Could any parsed rule give this element a pseudo of this type? A few
 	 * matches() calls against only the rules that declare the pseudo --
 	 * instead of building the full pseudo style declaration per element per
@@ -8892,6 +8876,9 @@ export class StyleManager {
 		return false;
 	}
 
+	/**
+	 * Attach a specific pseudo-element type to an element if it should have one
+	 */
 	#attachPseudoElementToElementForType(
 		element: Element,
 		pseudoType: string,

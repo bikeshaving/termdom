@@ -1001,8 +1001,8 @@ export class TerminalSession {
 			this.#cursorDetectionSequence = this.#dsrSequence++;
 			void this.write("\x1b[6n");
 
-			// Timeout after 1000ms (reasonable balance for reliability). The
-			// timer is held so it can be cleared the moment a response arrives --
+			// Timeout after 1000ms. The timer is held so it can be cleared the
+			// moment a response arrives --
 			// otherwise it keeps the event loop alive a further second.
 			this.#cursorDetectionTimer = setTimeout(() => {
 				this.#cursorDetectionTimer = null;

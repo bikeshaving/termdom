@@ -133,8 +133,7 @@ test("can render HTML to terminal without errors", async () => {
 });
 
 test("pseudo-element CSS content is available immediately after render", async () => {
-	// Test the observable behavior: pseudo-element content should work on first render
-	// This was broken before the render pipeline fix - content would be empty until second render
+	// Pseudo-element content is there on the first render, not the second.
 
 	const terminal = new MockProcess();
 	const termDOM = new TermDOM({transport: terminal.transport});

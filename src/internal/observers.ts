@@ -35,18 +35,6 @@ const kMeasure = Symbol("measure");
 const kDeliver = Symbol("deliver");
 
 /**
- * What the manager needs from its host (TermDOM) to measure the world, kept as a
- * tiny interface so the observers do not reach into TermDOM internals.
- */
-
-/**
- * The half of an observer that is identical between the two: which elements are
- * watched, what was last reported for each, and registration with the manager.
- *
- * Subclasses supply only how to measure one target (#measure) and how to build
- * an entry from that measurement, which is the whole of what differs.
- */
-/**
  * ResizeObserver's contentRect: an element's content box, or null when it
  * generates no box at all (display:none or detached) -- reported as "nothing",
  * which the observer turns into an all-zero rect.
@@ -70,6 +58,13 @@ function contentBoxOf(
 	};
 }
 
+/**
+ * The half of an observer that is identical between the two: which elements are
+ * watched, what was last reported for each, and registration with the manager.
+ *
+ * Subclasses supply only how to measure one target (#measure) and how to build
+ * an entry from that measurement, which is the whole of what differs.
+ */
 abstract class LayoutObserver<TState, TEntry, TOptions = void> {
 	#manager: ObserverManager;
 	/**
