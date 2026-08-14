@@ -149,7 +149,7 @@ and the solitaire example show Crank in full.
 
 ## Next
 
-- [Layout](/guides/layout/) — the box model, flexbox, and tables.
+- [Layout](/guides/layout/) — the box model, flexbox, grid and tables.
 - [Events and input](/guides/events-and-input/) — keyboard, mouse, focus,
   and form controls.
 - [API](/guides/api/) — the full surface.

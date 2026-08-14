@@ -281,6 +281,52 @@ const scenarios: Scenario[] = [
 		},
 	},
 	{
+		name: "grid dashboard: the areas map lands where its picture says",
+		command: "node examples/grid.ts",
+		cols: 80,
+		rows: 24,
+		run: async (pane) => {
+			const screen = pane.screen();
+			const row = (needle: string) =>
+				screen.findIndex((line) => line.includes(needle));
+
+			const masthead = row("TermDOM grid");
+			const nav = row("Overview");
+			const status = row("q to quit");
+			assert(masthead === 0, `masthead is on row ${masthead}, not row 0`);
+			assert(nav > masthead, "the nav panel is not below the masthead");
+			assert(status > nav, "the status bar is not below the nav panel");
+
+			// "nav" spans two rows of the area map and "log" sits beside it, so
+			// the log's own rows have to start inside the nav panel's span.
+			const log = row("cache warmed");
+			assert(log > nav, "the log panel is not below the chart row");
+
+			// The masthead's clock is justify-self: end, so it finishes at the
+			// panel's right edge -- one cell of padding in from the terminal's.
+			const clockRow = screen[masthead];
+			assert(
+				/\d\d:\d\d:\d\d\s?$/.test(clockRow.replace(/\s+$/, "") + " "),
+				`the clock is not flush right: ${JSON.stringify(clockRow)}`,
+			);
+
+			// Every panel is bordered, and a bordered grid cell that did not
+			// tile would leave a broken run of box-drawing characters.
+			assert(
+				screen.some((line) => line.includes("┌") && line.includes("┐")),
+				"the panels drew no borders",
+			);
+
+			// The three status columns are repeat(3, 1fr) over the same box:
+			// left, centre and right all land on one row.
+			const statusRow = screen[status];
+			assert(
+				statusRow.includes("connected") && statusRow.includes("6 workers"),
+				`the status columns are not on one row: ${JSON.stringify(statusRow)}`,
+			);
+		},
+	},
+	{
 		name: "resize: a widening resize adds nothing to the scrollback",
 		command: "node examples/flexbox.ts",
 		cols: 60,

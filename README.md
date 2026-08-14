@@ -55,7 +55,7 @@ setInterval(() => {
 
 - **Stylesheets** CSS from `<style>` elements and `style` attributes cascades
   and inherits as in the browser, translated to ANSI color and decoration.
-- **Layout** The CSS box model, flexbox, and table layout, computed in whole
+- **Layout** The CSS box model, flexbox, grid and table layout, computed in whole
   terminal cells with margins, borders, and padding.
 - **Scrolling** Documents taller than the terminal scroll with
   `window.scrollTo()` and `element.scrollIntoView()`.
@@ -78,7 +78,7 @@ setInterval(() => {
 
 TermDOM implements the browser's rendering pipeline against a grid of
 character cells instead of pixels. CSS lengths map onto the grid — `1px`
-is one row, `1ch` is one column — so the box model, flexbox, and tables
+is one row, `1ch` is one column — so the box model, flexbox, grid and tables
 lay out in whole cells. On each frame the engine recomputes style and
 layout for whatever mutated, paints the result into a cell buffer, diffs
 it against the previous frame, and writes the difference to stdout as
