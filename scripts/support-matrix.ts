@@ -63,6 +63,8 @@ interface Feature {
 }
 
 const LONG = "the quick brown fox jumps over the lazy dog again and again";
+/** A word no line of the probe document is wide enough to hold. */
+const UNBREAKABLE = "supercalifragilisticexpialidocious";
 const FLEX = "#parent { display: flex; }";
 const NARROW = "#probe { width: 10ch; }";
 
@@ -247,11 +249,13 @@ const FEATURES: Record<string, Feature> = {
 	"text-align": {value: "right"},
 	"text-indent": {value: "4ch"},
 	"white-space": {value: "pre", setup: NARROW, text: LONG},
-	"word-break": {value: "break-all", setup: NARROW, text: LONG},
+	// Breaking inside a word takes a word too long for the line: every word of
+	// LONG fits in ten columns, so LONG measures nothing here.
+	"word-break": {value: "break-all", setup: NARROW, text: UNBREAKABLE},
 	"overflow-wrap": {
 		value: "break-word",
 		setup: NARROW,
-		markup: "supercalifragilisticexpialidocious",
+		text: UNBREAKABLE,
 	},
 	"line-height": {value: "2"},
 	direction: {value: "rtl"},
@@ -308,7 +312,6 @@ const FEATURES: Record<string, Feature> = {
 	"counter-increment": {value: "c 2"},
 
 	// Deliberately unsupported, probed so the claim stays honest
-	transform: {value: "rotate(45deg)"},
 	transition: {value: "color 1s"},
 	animation: {value: "spin 1s"},
 	"box-shadow": {value: "1px 1px red"},
@@ -474,11 +477,7 @@ function generatedFeatures(): Record<string, Feature> {
 	out["text-wrap"] = {value: "nowrap", setup: NARROW, text: LONG};
 	out["text-wrap-mode"] = {value: "nowrap", setup: NARROW, text: LONG};
 	out["white-space-collapse"] = {value: "preserve", setup: NARROW, text: LONG};
-	out["word-wrap"] = {
-		value: "break-word",
-		setup: NARROW,
-		text: "supercalifragilisticexpialidocious",
-	};
+	out["word-wrap"] = {value: "break-word", setup: NARROW, text: UNBREAKABLE};
 	out["line-clamp"] = {value: "1", setup: NARROW, text: LONG};
 	out["counter-set"] = {value: "c 3"};
 	out["font"] = {value: "bold 1px monospace"};
@@ -539,6 +538,11 @@ function generatedFeatures(): Record<string, Feature> {
  * stops the run.
  */
 const NOT_APPLICABLE: Array<[string, string[]]> = [
+	// `transform` is here rather than probed: a rotation or a scale has no
+	// reading on a grid of whole cells, and the one transform that would --
+	// translating a box by whole cells -- is refused, because supporting the
+	// property for the values that happen to land on the grid would report as
+	// support for the property.
 	[
 		"Transforms, 3D and motion paths, which need sub-cell geometry",
 		[
@@ -553,6 +557,7 @@ const NOT_APPLICABLE: Array<[string, string[]]> = [
 			"perspective-origin",
 			"rotate",
 			"scale",
+			"transform",
 			"transform-box",
 			"transform-origin",
 			"transform-style",
@@ -1105,7 +1110,6 @@ const CATEGORIES: Array<[string, string[]]> = [
 	[
 		"Graphical effects",
 		[
-			"transform",
 			"transition",
 			"animation",
 			"box-shadow",
@@ -1252,6 +1256,16 @@ function buildProbes(): Probe[] {
 		cssBlockProbe(
 			"@supports",
 			`@supports (color: red) { ${paints("#probe")} }`,
+			"At-rules",
+		),
+		cssBlockProbe(
+			"@layer",
+			`@layer base, theme; @layer theme { ${paints("#probe")} }`,
+			"At-rules",
+		),
+		cssBlockProbe(
+			"@scope",
+			`@scope (#parent) { ${paints("#probe")} }`,
 			"At-rules",
 		),
 		cssBlockProbe(

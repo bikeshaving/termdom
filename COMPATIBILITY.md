@@ -7,8 +7,8 @@ properties. Every row is a probe -- the feature applied to a real
 document and rendered, with the row recording whether the output
 changed.
 
-162 features supported, 61 probed and unsupported,
-156 CSS properties not applicable to a character grid,
+170 features supported, 54 probed and unsupported,
+157 CSS properties not applicable to a character grid,
 129 applicable and not implemented,
 4 not yet probed.
 
@@ -49,6 +49,8 @@ changed.
 | `@media (width)` | yes |
 | `@media (height)` | yes |
 | `@supports` | yes |
+| `@layer` | yes |
+| `@scope` | yes |
 | `Custom properties (var)` | yes |
 | `!important` | yes |
 
@@ -193,8 +195,8 @@ changed.
 | `text-align` | yes |
 | `text-indent` | yes |
 | `white-space` | yes |
-| `word-break` | no (no effect) |
-| `overflow-wrap` | no (no effect) |
+| `word-break` | yes |
+| `overflow-wrap` | yes |
 | `line-height` | no (no effect) |
 | `direction` | yes |
 | `opacity` | no (no effect) |
@@ -221,7 +223,6 @@ changed.
 
 | feature | supported |
 | --- | --- |
-| `transform` | no (no effect) |
 | `transition` | no (no effect) |
 | `animation` | no (no effect) |
 | `box-shadow` | no (no effect) |
@@ -258,10 +259,10 @@ changed.
 | `max-inline-size` | yes |
 | `min-block-size` | yes |
 | `max-block-size` | yes |
-| `flex-flow` | no (no effect) |
-| `place-content` | no (no effect) |
-| `place-items` | no (no effect) |
-| `place-self` | no (no effect) |
+| `flex-flow` | yes |
+| `place-content` | yes |
+| `place-items` | yes |
+| `place-self` | yes |
 | `justify-items` | no (no effect) |
 | `justify-self` | no (no effect) |
 | `caption-side` | no (no effect) |
@@ -294,7 +295,7 @@ changed.
 
 These properties have no rendering a grid of characters can carry.
 
-**Transforms, 3D and motion paths, which need sub-cell geometry.** `backface-visibility`, `offset`, `offset-anchor`, `offset-distance`, `offset-path`, `offset-position`, `offset-rotate`, `perspective`, `perspective-origin`, `rotate`, `scale`, `transform-box`, `transform-origin`, `transform-style`, `translate`, `zoom`
+**Transforms, 3D and motion paths, which need sub-cell geometry.** `backface-visibility`, `offset`, `offset-anchor`, `offset-distance`, `offset-path`, `offset-position`, `offset-rotate`, `perspective`, `perspective-origin`, `rotate`, `scale`, `transform`, `transform-box`, `transform-origin`, `transform-style`, `translate`, `zoom`
 
 **Raster imagery and compositing, which need pixels.** `backdrop-filter`, `background-attachment`, `background-blend-mode`, `background-image`, `background-origin`, `background-position`, `background-position-x`, `background-position-y`, `background-repeat`, `background-size`, `border-image`, `border-image-outset`, `border-image-repeat`, `border-image-slice`, `border-image-source`, `border-image-width`, `clip-path`, `dynamic-range-limit`, `image-orientation`, `image-rendering`, `mask`, `mask-border`, `mask-border-mode`, `mask-border-outset`, `mask-border-repeat`, `mask-border-slice`, `mask-border-source`, `mask-border-width`, `mask-clip`, `mask-composite`, `mask-image`, `mask-mode`, `mask-origin`, `mask-position`, `mask-repeat`, `mask-size`, `mix-blend-mode`, `object-fit`, `object-position`, `shape-image-threshold`, `shape-margin`, `shape-outside`
 
