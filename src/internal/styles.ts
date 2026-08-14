@@ -5561,6 +5561,16 @@ const AUTO_COLOR_PROPERTIES = new Set(["caret-color", "outline-color"]);
 /** The two sizes whose `auto` names a minimum only some boxes have. */
 const MIN_SIZE_PROPERTIES = new Set(["min-width", "min-height"]);
 
+/**
+ * The two track lists whose resolved value is the USED track sizes: what the
+ * grid came to, one length per track of the implicit grid, rather than the
+ * sizing functions the author wrote (css-grid-2 §7.2).
+ */
+const USED_TRACK_PROPERTIES = new Set([
+	"grid-template-columns",
+	"grid-template-rows",
+]);
+
 /** The containers whose children have an automatic minimum size. */
 const PSEUDO_ELEMENT_NAMES = ["::before", "::after", "::marker"];
 
@@ -6458,6 +6468,17 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 		}
 		if (this.#manager && MIN_SIZE_PROPERTIES.has(property)) {
 			return this.#resolvedMinSize(this.computedValueOf(property));
+		}
+		if (this.#manager && USED_TRACK_PROPERTIES.has(property)) {
+			const tracks = this.#manager.usedGridTracks(
+				this.#element,
+				property === "grid-template-rows",
+			);
+			if (tracks) {
+				return tracks.length > 0
+					? tracks.map(usedLength).join(" ")
+					: "none";
+			}
 		}
 		if (AUTO_COLOR_PROPERTIES.has(property)) {
 			const computed = this.computedValueOf(property);
@@ -7760,6 +7781,17 @@ export class StyleManager {
 		// and this read has to stand behind the same one.
 		if (!this.usedRect(element)) return null;
 		return this.#layoutEngine!.contentRect(element);
+	}
+
+	/**
+	 * A grid container's used track sizes, measured behind the same flush a
+	 * rect read takes. Null for a box that is not one -- the resolved value
+	 * then stays the computed track list, as CSSOM says of a grid property on
+	 * a box that generated no grid.
+	 */
+	usedGridTracks(element: Element, rows: boolean): number[] | null {
+		if (!this.usedRect(element)) return null;
+		return this.#layoutEngine!.gridTracks(element, rows);
 	}
 
 	/** The layout epoch the last resolved-value flush left behind. */

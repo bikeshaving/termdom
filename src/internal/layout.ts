@@ -520,9 +520,17 @@ function isOutOfFlow(node: Node): boolean {
 	return position === "absolute" || position === "fixed";
 }
 
+/**
+ * Whether a display makes an ATOMIC inline: a box that sits on a line whole,
+ * measured as one opaque unit, whatever it lays out inside itself.
+ */
+function isAtomicInline(display: string): boolean {
+	return display === "inline-block" || display === "inline-grid";
+}
+
 /** Whether a display value puts a box on a line rather than on rows of its own. */
 function isInlineDisplay(display: string): boolean {
-	return display === "inline" || display === "inline-block";
+	return display === "inline" || isAtomicInline(display);
 }
 
 /** Whether an element lays its children out as flex items. */
@@ -537,7 +545,7 @@ function isFlexContainer(element: Element): boolean {
  * one of them (css-display-3 §2.7).
  */
 function laysOutItems(display: string): boolean {
-	return display === "flex" || display === "grid";
+	return display === "flex" || display === "grid" || display === "inline-grid";
 }
 
 /** Whether an element's box is a flex item of its parent's. */
@@ -858,8 +866,8 @@ function styleFlexNode(
 		flexNode.setMinHeight(undefined);
 		flexNode.setMaxWidth(undefined);
 		flexNode.setMaxHeight(undefined);
-	} else if (display === "inline-block") {
-		// For inline-block elements, unset width/height but preserve min/max constraints
+	} else if (isAtomicInline(display)) {
+		// For atomic inline elements, unset width/height but preserve min/max constraints
 		// This allows the measure function to work while still respecting CSS constraints
 		flexNode.setWidthAuto();
 		flexNode.setHeightAuto();
@@ -2135,7 +2143,7 @@ export class LayoutEngine {
 		}
 		let descended = false;
 		for (const ancestor of enclosing) {
-			if (getPropertyValue(ancestor, "display") !== "inline-block") continue;
+			if (!isAtomicInline(getPropertyValue(ancestor, "display"))) continue;
 			const hop = findInlineBlockSegment(breakResult, ancestor);
 			if (!hop) continue;
 			// Border and padding both occupy cells, so the content edge is where
@@ -2224,6 +2232,16 @@ export class LayoutEngine {
 	 * percentage resolves against are the same four numbers, and were four
 	 * spellings of the same arithmetic.
 	 */
+	/**
+	 * A grid container's used track sizes, in the implicit grid's own order.
+	 * Null for a box that laid out no grid, which is every box but a grid
+	 * container -- and a grid container that has not been laid out yet.
+	 */
+	gridTracks(element: Element, rows: boolean): number[] | null {
+		const flexNode = this.#containerFlexNode(element);
+		return flexNode?.getComputedGridTracks(rows)?.sizes ?? null;
+	}
+
 	contentRect(element: Element): DOMRect | null {
 		const rect = this.getRect(element);
 		if (!rect) return null;
@@ -2260,7 +2278,7 @@ export class LayoutEngine {
 			isBlockifiedBox(element);
 
 		if (!isBlockified && isInlineDisplay(display)) {
-			if (display === "inline-block") {
+			if (isAtomicInline(display)) {
 				const rect = this.#inlineBlockRect(element);
 				if (rect) {
 					return rect;
@@ -2349,7 +2367,7 @@ export class LayoutEngine {
 
 			// Special case: an inline-block element asked for directly.
 			// The element's breakResult contains itself as an inline-block segment with nested content
-			if (display === "inline-block" && this.isInlineRunHead(element)) {
+			if (isAtomicInline(display) && this.isInlineRunHead(element)) {
 				const breakResult = this.#runBreakResult(element);
 				if (breakResult) {
 					// The breakResult contains this inline-block as a segment with nested content
@@ -2510,7 +2528,7 @@ export class LayoutEngine {
 		while (currentNode !== runHead && flatParentElement<Element>(currentNode)) {
 			const parent = flatParentElement<Element>(currentNode)!;
 
-			if (getPropertyValue(parent, "display") === "inline-block") {
+			if (isAtomicInline(getPropertyValue(parent, "display"))) {
 				// An overflow-scrolled inline-block (a field's windowed value,
 				// scrollLeft set by the caret-follow) shifts its content by its
 				// own scroll, so the caret stays in view. A property of the box,
@@ -3971,9 +3989,9 @@ export class LayoutEngine {
 			// An inline box is transparent: its content belongs to the run
 			// around it.
 			if (display === "inline") continue;
-			if (display === "inline-block") {
+			if (isAtomicInline(display)) {
 				// A box laying out children of its own establishes a block
-				// container; and an inline-block nested in one starts a run
+				// container; and an atomic inline nested in one starts a run
 				// there rather than joining the run its host sits in.
 				if (this.#boxes.get(current)?.contentRoot || startsOwnRun) {
 					return current;
@@ -4328,7 +4346,7 @@ export class LayoutEngine {
 
 		// Check parent's display type - only collapse in block formatting contexts
 		const parentDisplay = getPropertyValue(parent, "display");
-		if (parentDisplay === "inline" || parentDisplay === "inline-block") {
+		if (isInlineDisplay(parentDisplay)) {
 			// In inline contexts, preserve whitespace as spaces
 			return false;
 		}
@@ -4360,7 +4378,7 @@ export class LayoutEngine {
 				return false;
 			}
 			const display = getPropertyValue(node as Element, "display");
-			return display !== "inline" && display !== "inline-block";
+			return !isInlineDisplay(display);
 		};
 
 		// If whitespace is between two block elements, collapse it
@@ -4764,7 +4782,7 @@ export class LayoutEngine {
 		if (isOutOfFlow(element)) return false;
 		const display = getPropertyValue(element, "display");
 		if (!isInlineDisplay(display)) return false;
-		if (display === "inline-block") return true;
+		if (isAtomicInline(display)) return true;
 		if (isInlineLevel(element)) return true;
 		return !this.#containsBlockLevelBox(element);
 	}
@@ -4949,7 +4967,11 @@ export class LayoutEngine {
 			}
 			if (node.nodeType !== node.ELEMENT_NODE) continue;
 			const sibling = node as Element;
-			const siblingDisplay = getPropertyValue(sibling, "display");
+			// The USED display: an item of a flex or grid container is
+			// blockified (css-display-3 §2.7), so it opens a box of its own
+			// rather than joining this run -- which leaves the run holding
+			// nothing but the white space, and rendering nothing.
+			const siblingDisplay = usedDisplay(sibling);
 			if (siblingDisplay === "none") continue;
 			// An inline sibling joins this run and gives it content; anything
 			// block-level ends the run with only white space collected.
@@ -5047,12 +5069,19 @@ export class LayoutEngine {
 	 */
 	#syncContentRoot(element: Element): void {
 		const box = this.#principalBox(element);
-		// Only an inline-block, never a plain inline: an inline containing a
-		// block is BROKEN around it, and taking its content here would steal
-		// back the boxes that belong to its container.
+		const display = getPropertyValue(element, "display");
+		// An inline-grid ALWAYS lays its own content out: every one of its
+		// children is a grid item, and a grid is not something a line can
+		// contain piecemeal. An inline-block only needs a root of its own once
+		// it holds a block-level box.
+		//
+		// Never a plain inline: an inline containing a block is BROKEN around
+		// it, and taking its content here would steal back the boxes that
+		// belong to its container.
+		const grid = display === "inline-grid";
 		if (
-			getPropertyValue(element, "display") !== "inline-block" ||
-			!this.#containsBlockLevelBox(element)
+			!isAtomicInline(display) ||
+			(!grid && !this.#containsBlockLevelBox(element))
 		) {
 			this.#retireContentRoot(box);
 			return;
@@ -5061,9 +5090,25 @@ export class LayoutEngine {
 		let root = box.contentRoot;
 		if (!root) {
 			root = Flex.Node.createWithConfig(flexConfig);
-			root.setDisplay(Flex.DISPLAY_BLOCK);
 			root.setBlockFormattingContext(true);
 			box.contentRoot = root;
+		}
+		// The root IS the box's formatting context, so it wears the display
+		// and, for a grid, the container properties the element declares --
+		// the element's own layout node is the one the run measures.
+		root.setDisplay(grid ? Flex.DISPLAY_GRID : Flex.DISPLAY_BLOCK);
+		if (grid) {
+			applyGridContainer(root, computedStyleOf(element));
+			const gaps: Array<[string, number]> = [
+				["row-gap", Flex.GUTTER_ROW],
+				["column-gap", Flex.GUTTER_COLUMN],
+			];
+			for (const [property, gutter] of gaps) {
+				const gap = parseUnitValue(
+					computedStyleOf(element).computedValueOf(property),
+				);
+				root.setGap(gutter, typeof gap === "number" ? gap : 0);
+			}
 		}
 
 		const walker = flowWalker(element);
@@ -5169,8 +5214,8 @@ export class LayoutEngine {
 			const childElement = child as Element;
 			if (isOutOfFlow(childElement)) continue;
 			const display = getPropertyValue(childElement, "display");
-			// An inline-block contains its own blocks without splitting anything.
-			if (display === "none" || display === "inline-block") continue;
+			// An atomic inline contains its own blocks without splitting anything.
+			if (display === "none" || isAtomicInline(display)) continue;
 			if (display === "inline") {
 				if (this.#containsBlockLevelBox(childElement)) return true;
 				continue;
@@ -5389,7 +5434,7 @@ export class LayoutEngine {
 					});
 					// Continue with normal traversal
 					if (!walker.nextNode()) break;
-				} else if (display === "inline-block") {
+				} else if (isAtomicInline(display)) {
 					const ownBox = this.#principalBox(element);
 					// Before anything reads its size or asks what its content
 					// runs from: an inline-block nested inside another inline is
