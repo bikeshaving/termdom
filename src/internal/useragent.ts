@@ -976,6 +976,29 @@ export const UA_DOCUMENT_STYLES = `
 	kbd::before { content: "["; }
 	kbd::after { content: "]"; }
 	a[href] { text-decoration: underline; }
+	/*
+	 * The dir attribute, so it reaches layout as the direction property it
+	 * stands for. The Rendering section writes these over :dir() alone; the
+	 * explicit values are spelled as attribute selectors instead, which say
+	 * the same thing and leave an unrecognized value matching nothing, so it
+	 * inherits its parent's direction as the directionality algorithm says.
+	 * :dir() carries the cases that read the content: dir=auto, and a bdi
+	 * with no attribute at all. It reads the first character rather than the
+	 * first character with a strong direction, so auto content opening with
+	 * digits or punctuation reads left-to-right.
+	 *
+	 * The unicode-bidi halves of the same rules are NOT here, and are named
+	 * exclusions in tests/presentational-hints.test.ts: isolate on the flow
+	 * elements and on [dir], isolate-override on bdo, plaintext on an auto
+	 * input, textarea or pre, and bidi-override under ISO-8859-8. The property
+	 * parses and computes but nothing reads it: reordering here runs per line
+	 * over the paragraph direction, with no embedding levels for an isolate or
+	 * an override to add.
+	 */
+	[dir=ltr i] { direction: ltr; }
+	[dir=rtl i] { direction: rtl; }
+	[dir=auto i]:dir(ltr), bdi:dir(ltr), input[type=tel i]:dir(ltr) { direction: ltr; }
+	[dir=auto i]:dir(rtl), bdi:dir(rtl) { direction: rtl; }
 	datalist { display: none; }
 	dialog:not([open]) { display: none; }
 	dialog:modal {
