@@ -233,9 +233,6 @@ export function parseCSSColor(color: string): number | null {
 }
 
 /**
- * Parse a CSS color string to 24-bit RGB (0xRRGGBB), or null if unrecognized.
- */
-/**
  * Whether a color paints nothing: the `transparent` keyword, `none`, an empty
  * value, or any color whose alpha has reached zero.
  */
