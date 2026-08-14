@@ -1624,13 +1624,36 @@ export class LayoutEngine {
 		// (it hangs off that box's leaf instead), and its head may still be
 		// holding a flex node left over from before it was absorbed -- one
 		// parked at 0,0.
-		let runHead: Node | null = this.findInlineRunHead(element);
-		let runFlexNode = runHead ? this.#runFlexNode(runHead) : undefined;
-		let breakResult = runHead ? this.#runBreakResult(runHead) : undefined;
+		// The climb goes OUTWARD. A box's position is read out of the run that
+		// PLACED it, never out of a run inside it: the box's own content is
+		// positioned relative to the box, so a run in there answers with the
+		// coordinates of the very frame being resolved. An enumeration read
+		// before a mutation is reconciled still describes the tree as it stood,
+		// and can name a head that has since moved in here; following it walks
+		// in a circle. This is also what keeps #documentPosition's host search
+		// out of one -- the host of a box is never the box, so a run head from
+		// out here is never laid out under the content root of the box itself.
+		const outward = (node: Node): boolean => {
+			for (
+				let current: Node | null = node;
+				current;
+				current = boxParentElement(current)
+			) {
+				if (current === element) return false;
+			}
+			return true;
+		};
+		const headOutside = (node: Node): Node | null => {
+			const head = this.findInlineRunHead(node);
+			return head && outward(head) ? head : null;
+		};
+		let runHead: Node | null = headOutside(element) ?? element;
+		let runFlexNode = this.#runFlexNode(runHead);
+		let breakResult = this.#runBreakResult(runHead);
 		while (runHead && !(runFlexNode && breakResult)) {
 			const parent = boxParentElement(runHead);
 			if (!parent) return null;
-			runHead = this.findInlineRunHead(parent) ?? parent;
+			runHead = headOutside(parent) ?? parent;
 			runFlexNode = this.#runFlexNode(runHead);
 			breakResult = this.#runBreakResult(runHead);
 		}
@@ -2891,10 +2914,11 @@ export class LayoutEngine {
 				if (display === "none" || isOutOfFlow(element)) {
 					const own = this.#principalBox(child, box);
 					heads.set(child, run ?? own);
-					// A hidden block still holds a box slot; an out-of-flow one
-					// hangs from its containing block, and an inline that left the
-					// flow was never a box of this container's to begin with.
-					if (!inlineLevel) children.push(own);
+					// A hidden block still holds a box slot. An out-of-flow box
+					// holds none -- it hangs from its containing block, whatever
+					// display it computes -- and is named here so that the one path
+					// that builds a box reaches it there.
+					if (!inlineLevel || isOutOfFlow(element)) children.push(own);
 					continue;
 				}
 				if (!inlineLevel) {
@@ -2953,7 +2977,7 @@ export class LayoutEngine {
 		// itself. So a box it held under an earlier display would outlive the
 		// change -- a `display: contents` flip whose invalidation scope was an
 		// ancestor left the old box standing, holding rows nothing removed.
-		this.#retireDissolved(container);
+		this.#retireSteppedOver(container);
 
 		box.children = children;
 		box.heads = heads;
@@ -3325,11 +3349,6 @@ export class LayoutEngine {
 	 */
 	#syncContainerRuns(container: Element): void {
 		this.#dirtyRunContainers.delete(container);
-		const containerFlexNode = this.#containerFlexNode(container);
-		// No layout node, a node that measures its content as one opaque unit,
-		// or a subtree display:none removed from layout: nothing here lays out
-		// boxes of its own.
-		if (!containerFlexNode || containerFlexNode.measureFunc) return;
 		if (
 			getPropertyValue(container, "display") === "none" ||
 			this.#hiddenByAncestor(container)
@@ -3345,6 +3364,20 @@ export class LayoutEngine {
 		// CONTAINER (CSS2 §9.2.1.1), reconciled there. Taking them here steals
 		// them from the container that places them.
 		if (this.#splitsAroundBlock(container)) return;
+
+		const containerFlexNode = this.#containerFlexNode(container);
+		if (!containerFlexNode || containerFlexNode.measureFunc) {
+			// One box holds all of it -- the container's own, when it measures
+			// its content as one opaque unit, or the run it is a member of --
+			// except an out-of-flow box, which left that box for its containing
+			// block. No container's box list names such a box and no child walk
+			// descends into a run to find it, so the derivation that reaches it
+			// is this one.
+			if (containerFlexNode || this.#boxOf(container)) {
+				this.#retireRunContent(container);
+			}
+			return;
+		}
 
 		const children = this.#containerBox(container).children!;
 		let index = 0;
@@ -3392,35 +3425,21 @@ export class LayoutEngine {
 					containerFlexNode.insertChild(flexNode, index);
 				}
 				index++;
+				this.#syncRunMembers(entry);
 				continue;
 			}
-			// A box the container lays out but nothing has built: a block-level
-			// box inside an inline (the container's own child walk never
-			// descends into the inline that holds it, so neither a fresh build
-			// nor a rebuild that severed its children ever names it), or a
-			// child whose display just turned it from run content into a box.
-			// Out-of-flow boxes hang from their containing block instead.
+			// Every box the container lays out, built by the one path that
+			// builds a box: what it is made of -- whether it generates a box at
+			// all, which kind, the styles on it, what it holds in turn -- is
+			// derived there, from the styles that stand, however the box came to
+			// be named here. A box a fresh build would have made differently is
+			// remade; the rest is re-derived onto the node already standing.
 			const node = entry.node!;
-			if (!isOutOfFlow(node)) {
-				const existing = this.nodeMap.get(node);
-				// A box built for one kind cannot be re-measured into another:
-				// the element's display has moved it across the line between a
-				// node that measures its content as one run and a node that
-				// lays out boxes of its own, and only a rebuild follows.
-				if (
-					existing &&
-					node.nodeType === node.ELEMENT_NODE &&
-					!this.#boxKindMatches(node as Element, existing)
-				) {
-					this.#retireFlexNode(node);
-				}
-				if (
-					!this.nodeMap.has(node) ||
-					this.nodeMap.get(node)!.getParent() !== containerFlexNode
-				) {
-					this.#addNode(node, containerFlexNode);
-				}
-			}
+			this.#addNode(node, containerFlexNode);
+			// An out-of-flow box is not one of the container's: it hangs from its
+			// CONTAINING BLOCK, which the build above hoisted it to, and takes no
+			// place among the boxes counted here.
+			if (isOutOfFlow(node)) continue;
 			const flexNode = this.nodeMap.get(node);
 			if (flexNode && flexNode.getParent() === containerFlexNode) {
 				// The box list is the order. A box placed among its DOM
@@ -3447,6 +3466,26 @@ export class LayoutEngine {
 			const node = this.#domNodeByFlexNode.get(child);
 			if (node && isOutOfFlow(node)) continue;
 			containerFlexNode.removeChild(child);
+		}
+	}
+
+	/**
+	 * Derive what an anonymous box's members hold: one run measures them all as
+	 * a single unit, so no box under them is one the layout tree lays out, and
+	 * the only path that ever finds an out-of-flow box written among them is
+	 * this one -- no container's box list names it, and no child walk descends
+	 * into a run.
+	 */
+	#syncRunMembers(run: Box): void {
+		for (const member of run.members) {
+			if (member.nodeType !== member.ELEMENT_NODE) continue;
+			const element = member as Element;
+			if (isOutOfFlow(element)) {
+				this.#addNode(element, null);
+				continue;
+			}
+			if (!this.#boxes.get(element)?.contentRoot) this.#retireFlexNode(element);
+			this.#retireRunContent(element);
 		}
 	}
 
@@ -3940,6 +3979,12 @@ export class LayoutEngine {
 	/**
 	 * Dirty what measures each restyled element, and restage the enumerations
 	 * that decide which box that is.
+	 *
+	 * Nothing here builds or rebuilds a box. A restyle says only that the boxes
+	 * around an element may no longer be the ones its container's enumeration
+	 * names, and that whatever measured it measured it under a style that is
+	 * gone; what kind of box it now generates, what styles sit on it and what it
+	 * holds are derived where every box is derived, from the enumeration.
 	 */
 	#applyRestyles(): void {
 		while (this.#restyled.size > 0) {
@@ -3951,43 +3996,6 @@ export class LayoutEngine {
 				// boxes of its children.
 				this.#restageBox(element);
 				this.#restageChildren(element);
-				const flexNode = this.nodeMap.get(element);
-				// Which side of the line the element falls on: an anonymous box
-				// lays its content out, or it owns a layout node. A style change
-				// moves elements across that line, and a node left over on the
-				// wrong side lays the same content out a second time -- or, on
-				// the other side, there is no node to lay it out at all.
-				//
-				// An out-of-flow box is left alone: it hangs from its containing
-				// block, not from the tree it is written in, and rebuilding it
-				// from there is how it loses its place -- the select's picker
-				// sits in the top layer and simply vanished.
-				const boxed =
-					this.#measuresAsRun(element) && this.#boxOf(element) !== null;
-				if (isOutOfFlow(element)) {
-					// An out-of-flow box hangs from its containing block, and no
-					// container's box list names it -- so no reconciliation ever
-					// asks again what kind of box it is, and rebuilding it from
-					// the tree it is written in is how it loses its place: the
-					// select's picker sits in the top layer and simply vanished.
-					// Rebuilt where it hangs, or not at all.
-					if (flexNode && !this.#boxKindMatches(element, flexNode)) {
-						this.#retireFlexNode(element);
-						this.#addNode(element, null);
-					}
-				} else if (
-					!dissolvesIntoChildren(element) &&
-					(boxed === (flexNode !== undefined) ||
-						(flexNode !== undefined &&
-							!this.#boxKindMatches(element, flexNode)))
-				) {
-					this.invalidate(element);
-				}
-				// The layout node carries the element's own margins, padding and
-				// dimensions, which are the style that just went. Looked up
-				// again: a rebuild above freed whatever node was there before.
-				const boxNode = this.nodeMap.get(element);
-				if (boxNode) this.#styleNode(element, boxNode);
 				this.#invalidateEnclosingMeasure(element);
 				if (this.#boxes.get(element)?.children) {
 					this.#invalidateContainerBoxes(element);
@@ -4056,16 +4064,6 @@ export class LayoutEngine {
 		this.#invalidateEnclosingMeasure(target);
 		for (const node of record.addedNodes) {
 			this.#restageSubtree(node);
-			// An out-of-flow box hangs from its CONTAINING BLOCK, not from the
-			// container it is written in, so no container's box list ever names
-			// it and no reconciliation ever builds it. It is built where it
-			// arrives -- and so is every out-of-flow box inside a subtree that
-			// arrives as run content, which no child walk descends into.
-			if (isOutOfFlow(node)) {
-				this.#addNode(node, null);
-			} else if (node.nodeType === node.ELEMENT_NODE) {
-				this.#adoptOutOfFlowDescendants(node as Element);
-			}
 		}
 	}
 
@@ -4226,6 +4224,14 @@ export class LayoutEngine {
 				// Whatever moved the node may also have restyled it (the flip
 				// that hoists a box to its containing block usually did).
 				this.#styleNode(element, existingFlexNode);
+				// A box kept is a box re-derived: what an element that measures
+				// its content as one run holds -- a content root, or nothing at
+				// all -- is decided from the styles that stand, exactly as it
+				// would be for a node built here from scratch.
+				if (this.#measuresAsRun(element)) {
+					this.#syncContentRoot(element);
+					this.#retireRunContent(element);
+				}
 			}
 			if (existingFlexNode && parentFlexNode) {
 				// Check if it's already a child of the correct parent
@@ -4253,21 +4259,6 @@ export class LayoutEngine {
 			this.#addElementNode(node as Element, parentFlexNode);
 		} else if (node.nodeType === node.TEXT_NODE) {
 			this.#addTextNode(node as Text, parentFlexNode);
-		}
-	}
-
-	/**
-	 * Add layout nodes for every out-of-flow box in a subtree the child
-	 * walk will never descend into (an inline run member, an inline-block's
-	 * measured content). #addNode hoists each to its containing block; the
-	 * run machinery skips them, so this is the only path that finds them.
-	 */
-	#adoptOutOfFlowDescendants(element: Element): void {
-		const walker = flowWalker(element);
-		for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-			if (node.nodeType === node.ELEMENT_NODE && isOutOfFlow(node)) {
-				this.#addNode(node, null);
-			}
 		}
 	}
 
@@ -4304,8 +4295,8 @@ export class LayoutEngine {
 			if (box) {
 				this.#invalidateBox(box);
 				this.#dirtyRunContainers.add(box.container);
-				this.#adoptOutOfFlowDescendants(element);
 				this.#syncContentRoot(element);
+				this.#retireRunContent(element);
 				return;
 			}
 			// No anonymous box holds it: its own box is what lays it out (a
@@ -4351,8 +4342,8 @@ export class LayoutEngine {
 				placeChild(parentFlexNode, flexNode, flexIndex);
 			}
 
-			this.#adoptOutOfFlowDescendants(element);
 			this.#syncContentRoot(element);
+			this.#retireRunContent(element);
 			return;
 		}
 
@@ -4407,18 +4398,8 @@ export class LayoutEngine {
 	 * laid out. Retiring them is what makes the subtree box-less.
 	 */
 	#retireHiddenContent(element: Element): void {
+		this.#retireContainerBoxes(element);
 		const box = this.#boxes.get(element);
-		if (box?.children) {
-			for (const child of box.children) {
-				if (child.kind === "anonymous") this.#retireAnonymousBox(child);
-			}
-			// The children a hidden container holds are none, and a box that
-			// kept the ones it had would answer with them on the next read.
-			box.children = null;
-			box.heads = null;
-			box.structure = -1;
-		}
-		this.#dirtyRunContainers.delete(element);
 		if (box) this.#retireContentRoot(box);
 		const walker = createFlatTreeWalker<Node>(element);
 		for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
@@ -4430,22 +4411,79 @@ export class LayoutEngine {
 	}
 
 	/**
-	 * Retire the boxes of the dissolved elements under a container: those the
-	 * flattening walk steps over. Only dissolved elements are descended into,
-	 * so this costs what they cost and nothing for a tree without them.
+	 * Forget the boxes an element was holding: the box list, the runs gathered
+	 * into it, and the map from each flow child to the box its content fell
+	 * under. An element that lays out no boxes of its own -- hidden, dissolved,
+	 * or measured as one run -- holds none, and a list left standing is what the
+	 * next read is answered from.
 	 */
-	#retireDissolved(parent: Element): void {
+	#retireContainerBoxes(element: Element): void {
+		const box = this.#boxes.get(element);
+		if (box?.children) {
+			for (const child of box.children) {
+				if (child.kind === "anonymous") this.#retireAnonymousBox(child);
+			}
+			box.children = null;
+			box.heads = null;
+			box.structure = -1;
+		}
+		this.#dirtyRunContainers.delete(element);
+	}
+
+	/**
+	 * Take the layout nodes away from the content of a box that measures itself
+	 * as one run. There are none to have: a run measures everything inside it as
+	 * a single unit, positions and all, so no box in there is one the layout tree
+	 * lays out. A node left over from when the element was a block container is
+	 * laid out a second time, in a box the tree no longer has.
+	 *
+	 * Two subtrees are left alone, and they are the same exception twice -- a box
+	 * the run does not measure. An out-of-flow box hangs from its containing
+	 * block wherever it is written, so it is hoisted rather than retired; and an
+	 * atomic inline that establishes a block container of its own lays its
+	 * content out under a root only its own measurement reaches.
+	 */
+	#retireRunContent(element: Element): void {
+		if (this.#boxes.get(element)?.contentRoot) return;
+		this.#retireContainerBoxes(element);
+		const walker = flowWalker(element);
+		for (let node = walker.nextNode(); node; ) {
+			if (node.nodeType === node.ELEMENT_NODE) {
+				const child = node as Element;
+				if (isOutOfFlow(child)) {
+					this.#addNode(child, null);
+					node = skipSubtree(walker) ? walker.currentNode : null;
+					continue;
+				}
+				if (this.#boxes.get(child)?.contentRoot) {
+					node = skipSubtree(walker) ? walker.currentNode : null;
+					continue;
+				}
+				this.#retireContainerBoxes(child);
+			}
+			this.#retireFlexNode(node);
+			node = walker.nextNode();
+		}
+	}
+
+	/**
+	 * Retire the boxes of the elements a container's enumeration saw THROUGH:
+	 * one that dissolves into its children, and an inline broken around a block,
+	 * whose fragments are boxes of the container's own. Neither generates a box
+	 * of its own, and one left standing is laid out from a shape the container no
+	 * longer has. Only those elements are descended into, so this costs what they
+	 * cost and nothing for a tree without them.
+	 */
+	#retireSteppedOver(parent: Element): void {
 		const walker = createFlatTreeWalker<Node>(parent);
 		for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
-			if (
-				child.nodeType !== child.ELEMENT_NODE ||
-				!dissolvesIntoChildren(child as Element)
-			) {
-				continue;
-			}
+			if (child.nodeType !== child.ELEMENT_NODE) continue;
+			const element = child as Element;
+			const dissolves = dissolvesIntoChildren(element);
+			if (!dissolves && !this.#boxes.get(element)?.broken) continue;
 			// #addNode is what retires the box of a box-less element.
-			if (this.nodeMap.has(child)) this.#addNode(child, null);
-			this.#retireDissolved(child as Element);
+			if (dissolves && this.nodeMap.has(element)) this.#addNode(element, null);
+			this.#retireSteppedOver(element);
 		}
 	}
 
