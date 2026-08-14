@@ -354,7 +354,9 @@ function splitGridComponents(value: string): string[] {
 
 /** Whether a grid-placement component is a `<custom-ident>` and nothing else. */
 function isCustomIdent(value: string): boolean {
-	return /^-?[A-Za-z_][\w-]*$/.test(value) && value !== "auto" && value !== "span";
+	return (
+		/^-?[A-Za-z_][\w-]*$/.test(value) && value !== "auto" && value !== "span"
+	);
 }
 
 /**
@@ -446,7 +448,8 @@ function expandGridTemplate(value: string): Record<string, string> {
 		if (component.startsWith('"') || component.startsWith("'")) {
 			// A row's own track size follows its string; a row with none is
 			// `auto`, and is written out so the track list stays positional.
-			if (sawString && rowTracks.length < strings.length) rowTracks.push("auto");
+			if (sawString && rowTracks.length < strings.length)
+				rowTracks.push("auto");
 			strings.push(component);
 			rowTracks.push(...pendingNames);
 			pendingNames = [];

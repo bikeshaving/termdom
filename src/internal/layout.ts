@@ -101,7 +101,9 @@ function percentBreadth(percentage: number): FlexTypes.TrackBreadth {
 function parseTrackBreadth(node: CSSNode): FlexTypes.TrackBreadth | null {
 	if (node.type === "Dimension" && (node.unit ?? "").toLowerCase() === "fr") {
 		const factor = parseFloat(node.value ?? "");
-		return Number.isFinite(factor) && factor >= 0 ? {kind: "flex", factor} : null;
+		return Number.isFinite(factor) && factor >= 0
+			? {kind: "flex", factor}
+			: null;
 	}
 	const cells = trackCells(node);
 	if (cells !== null) return pointBreadth(cells);
@@ -190,7 +192,10 @@ function parseTrackList(value: string): FlexTypes.TrackList | null {
 			names = names.concat(bracketNames(node));
 			continue;
 		}
-		if (node.type === "Function" && (node.name ?? "").toLowerCase() === "repeat") {
+		if (
+			node.type === "Function" &&
+			(node.name ?? "").toLowerCase() === "repeat"
+		) {
 			const repeat = parseTrackRepeat(node);
 			if (!repeat) return null;
 			repeat.tracks[0].names = names.concat(repeat.tracks[0].names);

@@ -6475,9 +6475,7 @@ export class ComputedStyleDeclaration extends CSSStyleProperties {
 				property === "grid-template-rows",
 			);
 			if (tracks) {
-				return tracks.length > 0
-					? tracks.map(usedLength).join(" ")
-					: "none";
+				return tracks.length > 0 ? tracks.map(usedLength).join(" ") : "none";
 			}
 		}
 		if (AUTO_COLOR_PROPERTIES.has(property)) {

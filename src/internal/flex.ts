@@ -939,7 +939,9 @@ export class Node {
 	}
 
 	/** See LayoutResult.gridColumns: the used track sizes of the last layout. */
-	getComputedGridTracks(rows: boolean): {sizes: number[]; offset: number} | null {
+	getComputedGridTracks(
+		rows: boolean,
+	): {sizes: number[]; offset: number} | null {
 		const sizes = rows ? this.layout.gridRows : this.layout.gridColumns;
 		if (!sizes) return null;
 		return {
@@ -2762,7 +2764,12 @@ function layoutAbsoluteChild(
 	child: Node,
 	ownerWidth: number,
 	ownerHeight: number,
-	area: {left: number; top: number; width: number; height: number} | null = null,
+	area: {
+		left: number;
+		top: number;
+		width: number;
+		height: number;
+	} | null = null,
 ): void {
 	const parentWidth = node.layout.width;
 	const parentHeight = node.layout.height;
@@ -2791,7 +2798,10 @@ function layoutAbsoluteChild(
 	const marginLeft = resolveMargin(child.style.margin[EDGE_LEFT], basisWidth);
 	const marginTop = resolveMargin(child.style.margin[EDGE_TOP], basisWidth);
 	const marginRight = resolveMargin(child.style.margin[EDGE_RIGHT], basisWidth);
-	const marginBottom = resolveMargin(child.style.margin[EDGE_BOTTOM], basisWidth);
+	const marginBottom = resolveMargin(
+		child.style.margin[EDGE_BOTTOM],
+		basisWidth,
+	);
 
 	// An auto margin between an inset and the box is the box asking to be
 	// placed in the space the insets leave rather than stretched across it --
@@ -3620,7 +3630,8 @@ function expandTrackList(
 				fixedCount++;
 				continue;
 			}
-			const count = typeof part.repeat.count === "number" ? part.repeat.count : 1;
+			const count =
+				typeof part.repeat.count === "number" ? part.repeat.count : 1;
 			for (const track of part.repeat.tracks) {
 				fixedSum += count * definiteTrackSize(track.size, ownerSize);
 				fixedCount += count;
@@ -3792,7 +3803,10 @@ function resolveGridLine(
 		if (placement.index === null) {
 			const edgeName = `${placement.name}-${edge}`;
 			if (names.has(edgeName)) {
-				return {kind: "line", index: namedLine(names, edgeName, 1, explicitCount)};
+				return {
+					kind: "line",
+					index: namedLine(names, edgeName, 1, explicitCount),
+				};
 			}
 		}
 		return {
@@ -3928,7 +3942,8 @@ function autoPlaceItems(
 	let minorEnd = minorBase + explicitMinor;
 	for (const item of items) {
 		const line = minor(item);
-		if (line.start !== null) minorEnd = Math.max(minorEnd, line.start + line.span);
+		if (line.start !== null)
+			minorEnd = Math.max(minorEnd, line.start + line.span);
 		else minorEnd = Math.max(minorEnd, minorBase + line.span);
 	}
 
@@ -4081,7 +4096,8 @@ function gridItemContribution(
 			false,
 		);
 		return (
-			child.layout.width + marginForAxis(child, FLEX_DIRECTION_ROW, sizing.ownerWidth)
+			child.layout.width +
+			marginForAxis(child, FLEX_DIRECTION_ROW, sizing.ownerWidth)
 		);
 	}
 	const width = spanOfTracks(
@@ -4189,10 +4205,7 @@ function distributeExtraSpace(
 		const track = tracks[index];
 		if (toLimits) {
 			const from = startOf(track);
-			track.growthLimit = Math.min(
-				from + track.planned,
-				track.fitContentLimit,
-			);
+			track.growthLimit = Math.min(from + track.planned, track.fitContentLimit);
 			if (track.growthLimit < track.base) track.growthLimit = track.base;
 		} else {
 			track.base += track.planned;
@@ -4276,7 +4289,10 @@ function resolveIntrinsicTrackSizes(sizing: TrackSizing): void {
 		const baseSum = indices.reduce((sum, i) => sum + tracks[i].base, 0);
 		const limitSum = indices.reduce(
 			(sum, i) =>
-				sum + (tracks[i].growthLimit === Infinity ? tracks[i].base : tracks[i].growthLimit),
+				sum +
+				(tracks[i].growthLimit === Infinity
+					? tracks[i].base
+					: tracks[i].growthLimit),
 			0,
 		);
 
@@ -4350,7 +4366,8 @@ function resolveIntrinsicTrackSizes(sizing: TrackSizing): void {
 		if (end - start < 2) continue;
 		let flexSum = 0;
 		for (let i = start; i < end; i++) {
-			if (flexible(tracks[i])) flexSum += (tracks[i].size.max as {factor: number}).factor;
+			if (flexible(tracks[i]))
+				flexSum += (tracks[i].size.max as {factor: number}).factor;
 		}
 		if (flexSum <= 0) continue;
 		const gaps = sizing.gap * Math.max(0, end - start - 1);
@@ -4455,10 +4472,13 @@ function sizeTracks(sizing: TrackSizing): void {
 	// §12.7 expand flexible tracks.
 	const flexIndices: number[] = [];
 	tracks.forEach((track, index) => {
-		if (!track.collapsed && track.size.max.kind === "flex") flexIndices.push(index);
+		if (!track.collapsed && track.size.max.kind === "flex")
+			flexIndices.push(index);
 	});
 	if (flexIndices.length > 0) {
-		const all = tracks.map((_, index) => index).filter((index) => !tracks[index].collapsed);
+		const all = tracks
+			.map((_, index) => index)
+			.filter((index) => !tracks[index].collapsed);
 		let frSize: number;
 		if (isDefined(availableSpace)) {
 			frSize = findFrSize(tracks, all, availableSpace - gaps);
@@ -4689,7 +4709,12 @@ function layoutGridItem(
 	}
 
 	constrainMaxSizeForMode(child, FLEX_DIRECTION_ROW, ownerWidth, childWidth);
-	constrainMaxSizeForMode(child, FLEX_DIRECTION_COLUMN, ownerHeight, childHeight);
+	constrainMaxSizeForMode(
+		child,
+		FLEX_DIRECTION_COLUMN,
+		ownerHeight,
+		childHeight,
+	);
 
 	layoutNode(
 		child,
@@ -4830,7 +4855,8 @@ function layoutGrid(
 	const columnGap = node.style.gap[GUTTER_COLUMN];
 	const rowGap = node.style.gap[GUTTER_ROW];
 
-	const definiteWidth = widthMode === MEASURE_MODE_EXACTLY && isDefined(innerWidth);
+	const definiteWidth =
+		widthMode === MEASURE_MODE_EXACTLY && isDefined(innerWidth);
 	const definiteHeight =
 		heightMode === MEASURE_MODE_EXACTLY && isDefined(innerHeight);
 
@@ -4901,7 +4927,12 @@ function layoutGrid(
 			columnNames,
 		),
 		row: pairGridLines(
-			resolveGridLine(child.style.gridRowStart, rowNames, explicitRows, "start"),
+			resolveGridLine(
+				child.style.gridRowStart,
+				rowNames,
+				explicitRows,
+				"start",
+			),
 			resolveGridLine(child.style.gridRowEnd, rowNames, explicitRows, "end"),
 			rowNames,
 		),
@@ -4984,7 +5015,8 @@ function layoutGrid(
 	const occupiedColumns = new Set<number>();
 	const occupiedRows = new Set<number>();
 	for (const item of items) {
-		for (let i = item.columnStart; i < item.columnEnd; i++) occupiedColumns.add(i);
+		for (let i = item.columnStart; i < item.columnEnd; i++)
+			occupiedColumns.add(i);
 		for (let i = item.rowStart; i < item.rowEnd; i++) occupiedRows.add(i);
 	}
 
@@ -5130,7 +5162,7 @@ function layoutGrid(
 	node.layout.gridRowOffset = -rowBase || 0;
 
 	/** The content-box position of grid line `line`, in track-array indices. */
-	const lineStart = (tracks: GridTrack[], line: number, total: number): number => {
+	const lineStart = (tracks: GridTrack[], line: number): number => {
 		if (tracks.length === 0) return 0;
 		if (line <= 0) return tracks[0].position;
 		if (line >= tracks.length) {
@@ -5142,10 +5174,10 @@ function layoutGrid(
 
 	// -- place the items ----------------------------------------------------
 	for (const item of items) {
-		const areaLeft = lineStart(columnTracks, item.columnStart, columnsTotal);
-		const areaRight = lineStart(columnTracks, item.columnEnd, columnsTotal);
-		const areaTop = lineStart(rowTracks, item.rowStart, rowsTotal);
-		const areaBottom = lineStart(rowTracks, item.rowEnd, rowsTotal);
+		const areaLeft = lineStart(columnTracks, item.columnStart);
+		const areaRight = lineStart(columnTracks, item.columnEnd);
+		const areaTop = lineStart(rowTracks, item.rowStart);
+		const areaBottom = lineStart(rowTracks, item.rowEnd);
 
 		layoutGridItem(
 			node,
@@ -5205,8 +5237,6 @@ function layoutGrid(
 				contentLeft,
 				contentTop,
 				lineStart,
-				columnsTotal,
-				rowsTotal,
 			),
 		);
 	}
@@ -5235,9 +5265,7 @@ function absoluteGridArea(
 	rowBase: number,
 	contentLeft: number,
 	contentTop: number,
-	lineStart: (tracks: GridTrack[], line: number, total: number) => number,
-	columnsTotal: number,
-	rowsTotal: number,
+	lineStart: (tracks: GridTrack[], line: number) => number,
 ): {left: number; top: number; width: number; height: number} | null {
 	const style = child.style;
 	const placed =
@@ -5265,14 +5293,13 @@ function absoluteGridArea(
 		tracks: GridTrack[],
 		base: number,
 		leading: number,
-		total: number,
 		fallback: number,
 		which: "start" | "end",
 	): number => {
 		if (placement === AUTO_PLACEMENT) return fallback;
 		const line = resolveGridLine(placement, names, explicitCount, which);
 		if (line.kind !== "line") return fallback;
-		return leading + lineStart(tracks, line.index - base, total);
+		return leading + lineStart(tracks, line.index - base);
 	};
 
 	const left = edge(
@@ -5282,7 +5309,6 @@ function absoluteGridArea(
 		columnTracks,
 		columnBase,
 		contentLeft,
-		columnsTotal,
 		paddingLeft,
 		"start",
 	);
@@ -5293,7 +5319,6 @@ function absoluteGridArea(
 		columnTracks,
 		columnBase,
 		contentLeft,
-		columnsTotal,
 		paddingRight,
 		"end",
 	);
@@ -5304,7 +5329,6 @@ function absoluteGridArea(
 		rowTracks,
 		rowBase,
 		contentTop,
-		rowsTotal,
 		paddingTop,
 		"start",
 	);
@@ -5315,7 +5339,6 @@ function absoluteGridArea(
 		rowTracks,
 		rowBase,
 		contentTop,
-		rowsTotal,
 		paddingBottom,
 		"end",
 	);
