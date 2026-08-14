@@ -4,6 +4,8 @@ import {LayoutEngine} from "../src/internal/layout.js";
 import {TermDOM} from "../src/internal/termdom.js";
 import {MockProcess, nextFrame} from "./test-utils.js";
 import {createDocumentWindow} from "../src/internal/termdom.js";
+import {CSS_SHORTHANDS} from "../src/internal/cssproperties.js";
+import {expandShorthands} from "../src/internal/useragent.js";
 
 /** A document of this DOM, from markup, displayed in a window of its own. */
 function documentWindow(html: string) {
@@ -1010,4 +1012,145 @@ test("an author's shorthand read does not poison the computed value", async () =
 	expect(declaration.computedValueOf("margin-top")).toBe("50%");
 
 	dom.dispose();
+});
+
+/**
+ * A value for every shorthand `expandShorthands` decomposes, chosen to state
+ * something on each longhand the grammar names.
+ */
+const EXPANDED_SHORTHANDS: Record<string, string> = {
+	background: "red",
+	border: "1px solid red",
+	"border-block": "1px solid red",
+	"border-block-color": "red blue",
+	"border-block-end": "1px solid red",
+	"border-block-start": "1px solid red",
+	"border-block-style": "solid dashed",
+	"border-block-width": "1px 2px",
+	"border-bottom": "1px solid red",
+	"border-color": "red",
+	"border-image": "none",
+	"border-inline": "1px solid red",
+	"border-inline-color": "red blue",
+	"border-inline-end": "1px solid red",
+	"border-inline-start": "1px solid red",
+	"border-inline-style": "solid dashed",
+	"border-inline-width": "1px 2px",
+	"border-left": "1px solid red",
+	"border-radius": "1ch",
+	"border-right": "1px solid red",
+	"border-style": "solid",
+	"border-top": "1px solid red",
+	"border-width": "1px",
+	flex: "1 1 auto",
+	"flex-flow": "column wrap",
+	gap: "1px 2ch",
+	inset: "1px 2ch",
+	"inset-block": "1px 2px",
+	"inset-inline": "1ch 2ch",
+	"list-style": "square inside",
+	margin: "1px 2ch",
+	"margin-block": "1px 2px",
+	"margin-inline": "1ch 2ch",
+	outline: "1px solid red",
+	overflow: "hidden scroll",
+	padding: "1px 2ch",
+	"padding-block": "1px 2px",
+	"padding-inline": "1ch 2ch",
+	"place-content": "space-between center",
+	"place-items": "center start",
+	"place-self": "center start",
+	"text-decoration": "underline",
+};
+
+/**
+ * The shorthands that reach the cascade whole, each with what it is waiting
+ * for. A shorthand here declares nothing to its longhands: an author writing
+ * one gets the declaration back from CSSOM and no rendering from it.
+ */
+const UNEXPANDED_SHORTHANDS: Record<string, string> = {
+	"-webkit-border-after": "vendor alias for border-block-end",
+	"-webkit-border-before": "vendor alias for border-block-start",
+	"-webkit-border-end": "vendor alias for border-inline-end",
+	"-webkit-border-start": "vendor alias for border-inline-start",
+	"-webkit-mask": "vendor alias for mask, which needs pixels",
+	"-webkit-text-stroke": "glyph outlines, which the emulator owns",
+	all: "stands for every property there is; the cascade reads it directly",
+	animation: "no animation clock",
+	"animation-range": "no animation clock",
+	"background-position": "an image to position, which needs pixels",
+	caret: "the caret is the terminal's own cursor",
+	"column-rule": "multi-column layout",
+	columns: "multi-column layout",
+	"contain-intrinsic-size": "containment",
+	container: "container queries",
+	"corner-block-end-shape": "corner shapes are finer than a cell",
+	"corner-block-start-shape": "corner shapes are finer than a cell",
+	"corner-bottom-shape": "corner shapes are finer than a cell",
+	"corner-inline-end-shape": "corner shapes are finer than a cell",
+	"corner-inline-start-shape": "corner shapes are finer than a cell",
+	"corner-left-shape": "corner shapes are finer than a cell",
+	"corner-right-shape": "corner shapes are finer than a cell",
+	"corner-shape": "corner shapes are finer than a cell",
+	"corner-top-shape": "corner shapes are finer than a cell",
+	font: "system font keywords and a line-height the grid fixes",
+	grid: "grid layout",
+	"grid-area": "grid layout",
+	"grid-column": "grid layout",
+	"grid-gap": "grid layout",
+	"grid-row": "grid layout",
+	"grid-template": "grid layout",
+	"interest-delay": "no interest timers",
+	mask: "masking, which needs pixels",
+	"mask-border": "masking, which needs pixels",
+	offset: "motion paths, which need sub-cell geometry",
+	"overscroll-behavior": "overscroll behavior",
+	"position-try": "anchor positioning",
+	"scroll-margin": "scroll snapping",
+	"scroll-margin-block": "scroll snapping",
+	"scroll-margin-inline": "scroll snapping",
+	"scroll-padding": "scroll snapping",
+	"scroll-padding-block": "scroll snapping",
+	"scroll-padding-inline": "scroll snapping",
+	"scroll-timeline": "scroll-driven animations",
+	"text-emphasis": "emphasis marks are finer than a cell",
+	"text-wrap": "text-wrap-style, its second half",
+	"timeline-trigger": "no animation clock",
+	"timeline-trigger-activation-range": "no animation clock",
+	"timeline-trigger-active-range": "no animation clock",
+	transition: "no transitions",
+	"view-timeline": "scroll-driven animations",
+};
+
+test("every CSS shorthand is expanded or listed as unexpanded", () => {
+	// The property table is generated from mdn-data, so a shorthand the
+	// platform adds arrives here on its own. It is handled or it is named --
+	// and either way somebody looked at it.
+	for (const shorthand of Object.keys(CSS_SHORTHANDS)) {
+		const expanded = shorthand in EXPANDED_SHORTHANDS;
+		const unexpanded = shorthand in UNEXPANDED_SHORTHANDS;
+		expect(`${shorthand}: ${expanded !== unexpanded}`).toBe(
+			`${shorthand}: true`,
+		);
+		if (!expanded) continue;
+		const value = EXPANDED_SHORTHANDS[shorthand];
+		const longhands = Object.keys(
+			expandShorthands({[shorthand]: value}),
+		).filter((name) => name !== shorthand);
+		expect(`${shorthand} -> ${longhands.length > 0}`).toBe(
+			`${shorthand} -> true`,
+		);
+		for (const longhand of longhands) {
+			expect(`${shorthand} declares ${longhand}`).toBe(
+				`${shorthand} declares ${
+					CSS_SHORTHANDS[shorthand].includes(longhand) ? longhand : "?"
+				}`,
+			);
+		}
+	}
+	for (const shorthand of Object.keys(UNEXPANDED_SHORTHANDS)) {
+		expect(`${shorthand} is a shorthand: ${shorthand in CSS_SHORTHANDS}`).toBe(
+			`${shorthand} is a shorthand: true`,
+		);
+	}
 });

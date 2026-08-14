@@ -97,6 +97,66 @@ function splitLineValue(value: string): {
 	return {width, lineStyle, color};
 }
 
+/** The values `flex-direction` takes, which is how `flex-flow` knows one. */
+const FLEX_DIRECTIONS = new Set([
+	"row",
+	"row-reverse",
+	"column",
+	"column-reverse",
+]);
+
+/** The values `flex-wrap` takes. */
+const FLEX_WRAPS = new Set(["nowrap", "wrap", "wrap-reverse"]);
+
+/**
+ * The keywords that qualify the alignment keyword after them rather than
+ * standing as a value of their own: `safe center`, `first baseline`.
+ */
+const ALIGNMENT_QUALIFIERS = new Set(["safe", "unsafe", "first", "last"]);
+
+/**
+ * Expand `flex-flow` (css-flexbox-1 §7.1): a direction and a wrap in either
+ * order, either one omitted and left at its initial value.
+ */
+function expandFlexFlow(value: string): Record<string, string> {
+	const out: Record<string, string> = {
+		"flex-direction": "row",
+		"flex-wrap": "nowrap",
+	};
+	for (const token of splitComponents(value)) {
+		const keyword = token.toLowerCase();
+		if (FLEX_DIRECTIONS.has(keyword)) out["flex-direction"] = keyword;
+		else if (FLEX_WRAPS.has(keyword)) out["flex-wrap"] = keyword;
+	}
+	return out;
+}
+
+/**
+ * Expand a `place-*` shorthand (css-align-3 §10): the block axis first, then
+ * the inline axis, and one value stated for both when only one is written.
+ * A value is one keyword, or two where the first only qualifies the second.
+ */
+function expandPlace(
+	value: string,
+	block: string,
+	inline: string,
+): Record<string, string> {
+	const values: string[] = [];
+	for (const token of splitComponents(value)) {
+		const previous = values[values.length - 1];
+		if (
+			previous !== undefined &&
+			ALIGNMENT_QUALIFIERS.has(previous.toLowerCase())
+		) {
+			values[values.length - 1] = `${previous} ${token}`;
+		} else {
+			values.push(token);
+		}
+	}
+	if (values.length === 0) return {};
+	return {[block]: values[0], [inline]: values[1] ?? values[0]};
+}
+
 /**
  * Expand the `flex` shorthand (css-flexbox-1 §7.1.1): `none` is 0 0 auto,
  * `auto` 1 1 auto, `initial` 0 1 auto; otherwise the first number is grow,
@@ -393,6 +453,22 @@ export function expandShorthands(
 				Object.assign(out, expandFlex(value) ?? {});
 				break;
 			}
+			case "flex-flow": {
+				Object.assign(out, expandFlexFlow(value));
+				break;
+			}
+			case "place-content":
+				Object.assign(
+					out,
+					expandPlace(value, "align-content", "justify-content"),
+				);
+				break;
+			case "place-items":
+				Object.assign(out, expandPlace(value, "align-items", "justify-items"));
+				break;
+			case "place-self":
+				Object.assign(out, expandPlace(value, "align-self", "justify-self"));
+				break;
 			case "list-style":
 				Object.assign(out, expandListStyle(value));
 				break;
