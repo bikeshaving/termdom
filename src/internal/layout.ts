@@ -550,7 +550,12 @@ function isFlexContainer(element: Element): boolean {
  * one of them (css-display-3 §2.7).
  */
 function laysOutItems(display: string): boolean {
-	return display === "flex" || display === "grid" || display === "inline-grid";
+	return display === "flex" || isGridDisplay(display);
+}
+
+/** Whether a display makes a grid container. */
+function isGridDisplay(display: string): boolean {
+	return display === "grid" || display === "inline-grid";
 }
 
 /** Whether an element's box is a flex item of its parent's. */
@@ -5209,6 +5214,14 @@ export class LayoutEngine {
 	#splitsAroundBlock(element: Element): boolean {
 		if (isOutOfFlow(element)) return false;
 		if (getPropertyValue(element, "display") !== "inline") return false;
+		// A grid item is blockified (css-display-3 §2.7) and is a block
+		// container already: there is nothing to break it around, and handing
+		// its content to the grid would put the item's own children in cells
+		// of their own.
+		const parent = element.parentElement;
+		if (parent && isGridDisplay(getPropertyValue(parent, "display"))) {
+			return false;
+		}
 		return this.#containsBlockLevelBox(element);
 	}
 

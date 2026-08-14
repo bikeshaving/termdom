@@ -1137,6 +1137,8 @@ type ShorthandShape =
 	| "pair"
 	| "line"
 	| "border"
+	| "grid-line"
+	| "grid-template"
 	| "sequence";
 
 /**
@@ -1155,6 +1157,16 @@ const SHORTHAND_SHAPES = new Map<string, ShorthandShape>();
  * state: a block missing them cannot serialize as the shorthand, and they
  * take no place in the value it writes.
  */
+/** The placement shorthands, whose components are separated by slashes. */
+const GRID_LINE_SHORTHANDS = new Set(["grid-area", "grid-column", "grid-row"]);
+
+/** Whether a grid-placement component is a `<custom-ident>` and nothing else. */
+function isGridCustomIdent(value: string): boolean {
+	return (
+		/^-?[A-Za-z_][\w-]*$/.test(value) && value !== "auto" && value !== "span"
+	);
+}
+
 const RESET_ONLY_LONGHANDS = new Map<string, ReadonlySet<string>>(
 	Object.entries(CSS_RESET_ONLY_LONGHANDS).map(([shorthand, longhands]) => [
 		shorthand,
@@ -1176,29 +1188,35 @@ for (const [shorthand, all] of Object.entries(CSS_SHORTHANDS)) {
 		box !== null && indexed.every((longhand) => longhand.endsWith("-radius"));
 	SHORTHAND_SHAPES.set(
 		shorthand,
-		box
-			? radius
-				? "radius"
-				: "box"
-			: // A width, a style and a color stated once for several sides:
-				// four for `border`, the axis's two for `border-block` and
-				// `border-inline`.
-				indexed.length >= 2 * LINE_COMPONENTS.length &&
-				  LINE_COMPONENTS.every(
-						(kind) =>
-							indexed.filter((longhand) => longhand.endsWith(`-${kind}`))
-								.length ===
-							indexed.length / LINE_COMPONENTS.length,
-				  )
-				? "border"
-				: indexed.length === LINE_COMPONENTS.length &&
-					  indexed.every((longhand, index) =>
-							longhand.endsWith(`-${LINE_COMPONENTS[index]}`),
-					  )
-					? "line"
-					: indexed.length === 2 && axisPair(shorthand, indexed)
-						? "pair"
-						: "sequence",
+		// The grid shorthands write their components around slashes, which no
+		// other shorthand's grammar does.
+		GRID_LINE_SHORTHANDS.has(shorthand)
+			? "grid-line"
+			: shorthand === "grid" || shorthand === "grid-template"
+				? "grid-template"
+				: box
+					? radius
+						? "radius"
+						: "box"
+					: // A width, a style and a color stated once for several sides:
+						// four for `border`, the axis's two for `border-block` and
+						// `border-inline`.
+						indexed.length >= 2 * LINE_COMPONENTS.length &&
+						  LINE_COMPONENTS.every(
+								(kind) =>
+									indexed.filter((longhand) => longhand.endsWith(`-${kind}`))
+										.length ===
+									indexed.length / LINE_COMPONENTS.length,
+						  )
+						? "border"
+						: indexed.length === LINE_COMPONENTS.length &&
+							  indexed.every((longhand, index) =>
+									longhand.endsWith(`-${LINE_COMPONENTS[index]}`),
+							  )
+							? "line"
+							: indexed.length === 2 && axisPair(shorthand, indexed)
+								? "pair"
+								: "sequence",
 	);
 }
 
@@ -1759,6 +1777,42 @@ function serializeShorthandValue(
 			);
 		case "pair":
 			return values[0] === values[1] ? values[0] : values.join(" ");
+		// css-grid-2 §8.4: the components run start / end (and, for
+		// `grid-area`, both axes' of each), and a trailing one is dropped when
+		// it states the value the omission already implies -- the opposite
+		// component when that is a name, and `auto` otherwise.
+		case "grid-line": {
+			const implied = (from: string): string =>
+				isGridCustomIdent(from) ? from : "auto";
+			const kept = [...values];
+			// grid-area's four are [row-start, column-start, row-end,
+			// column-end]; the pair shorthands' two are [start, end].
+			const from = kept.length === 4 ? [-1, 0, 0, 1] : [-1, 0];
+			while (kept.length > 1) {
+				const index = kept.length - 1;
+				if (kept[index] !== implied(values[from[index]])) break;
+				kept.pop();
+			}
+			return kept.join(" / ");
+		}
+		// `grid-template` writes its rows and columns around a slash. Its
+		// third form -- the picture of the grid, whose strings and row sizes
+		// interleave -- states an area map, and no rows-and-columns spelling
+		// can carry one: a block holding one serializes as its longhands.
+		case "grid-template": {
+			const at = (longhand: string): string =>
+				values[stated.indexOf(longhand)] ?? "";
+			if (at("grid-template-areas") !== "none") return "";
+			for (const longhand of stated) {
+				if (longhand.startsWith("grid-auto-")) {
+					if (at(longhand) !== CSS_INITIAL_VALUES[longhand]) return "";
+				}
+			}
+			const rows = at("grid-template-rows");
+			const columns = at("grid-template-columns");
+			if (rows === "none" && columns === "none") return "none";
+			return `${rows} / ${columns}`;
+		}
 		default:
 			return dropInitials(
 				stated.map((longhand, index) => [longhand, values[index]] as const),

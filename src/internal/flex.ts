@@ -4356,14 +4356,18 @@ function resolveIntrinsicTrackSizes(sizing: TrackSizing): void {
 		if (indices.length === 0) continue;
 		const gaps = sizing.gap * Math.max(0, indices.length - 1);
 		const baseSum = indices.reduce((sum, i) => sum + tracks[i].base, 0);
-		const limitSum = indices.reduce(
-			(sum, i) =>
-				sum +
-				(tracks[i].growthLimit === Infinity
-					? tracks[i].base
-					: tracks[i].growthLimit),
-			0,
-		);
+		// Every step below measures what the item still needs against what the
+		// tracks provide AT THAT POINT: a sum taken before the step before it
+		// grew a track would count the same space twice.
+		const limitSum = () =>
+			indices.reduce(
+				(sum, i) =>
+					sum +
+					(tracks[i].growthLimit === Infinity
+						? tracks[i].base
+						: tracks[i].growthLimit),
+				0,
+			);
 
 		const minContent = gridItemContribution(sizing, item, true);
 		const maxContent = gridItemContribution(sizing, item, false);
@@ -4401,7 +4405,7 @@ function resolveIntrinsicTrackSizes(sizing: TrackSizing): void {
 		distributeExtraSpace(
 			tracks,
 			indices,
-			minContent - limitSum - gaps,
+			minContent - limitSum() - gaps,
 			true,
 			intrinsicMax,
 			intrinsicMax,
@@ -4410,16 +4414,7 @@ function resolveIntrinsicTrackSizes(sizing: TrackSizing): void {
 		distributeExtraSpace(
 			tracks,
 			indices,
-			maxContent -
-				indices.reduce(
-					(sum, i) =>
-						sum +
-						(tracks[i].growthLimit === Infinity
-							? tracks[i].base
-							: tracks[i].growthLimit),
-					0,
-				) -
-				gaps,
+			maxContent - limitSum() - gaps,
 			true,
 			(track) =>
 				track.size.max.kind === "max-content" || track.size.max.kind === "auto",
@@ -4721,10 +4716,13 @@ function layoutGridItem(
 	areaTop: number,
 	areaWidth: number,
 	areaHeight: number,
-	ownerWidth: number,
-	ownerHeight: number,
 	performLayout: boolean,
 ): void {
+	// The grid AREA is the item's containing block (css-grid-2 §6.4), so it is
+	// what the item's own percentages -- its size, its margins, its padding --
+	// are a share of, and what it hands down as its owner size.
+	const ownerWidth = areaWidth;
+	const ownerHeight = areaHeight;
 	const child = item.node;
 	const justify = gridSelfAlign(node, child, true);
 	const align = gridSelfAlign(node, child, false);
@@ -5277,8 +5275,6 @@ function layoutGrid(
 			contentTop + areaTop,
 			Math.max(0, areaRight - areaLeft),
 			Math.max(0, areaBottom - areaTop),
-			ownerWidth,
-			ownerHeight,
 			true,
 		);
 	}

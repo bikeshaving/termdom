@@ -184,7 +184,7 @@ const timer = setInterval(tick, 1000);
 document.addEventListener("keydown", (event) => {
 	if ((event as KeyboardEvent).key === "q") {
 		clearInterval(timer);
-		term.detach();
+		void term.dispose();
 		process.exit(0);
 	}
 });
