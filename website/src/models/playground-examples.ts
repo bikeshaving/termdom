@@ -31,6 +31,7 @@ const RUNNABLE = [
 	"form",
 	"fullscreen",
 	"lists",
+	"progress-bar",
 	"rtl",
 ];
 

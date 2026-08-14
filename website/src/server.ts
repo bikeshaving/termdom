@@ -26,12 +26,9 @@ import xtermCSS from "@xterm/xterm/css/xterm.css" with {assetBase: "/static/"};
 import favicon from "../static/favicon.ico" with {assetBase: "/", assetName: "favicon.ico"};
 import logo from "../static/logo.svg" with {assetBase: "/static/", assetName: "[name].[ext]"};
 
-// Recorded terminal sessions, rendered to GIF so they play in any browser
-// with no client JavaScript.
-import readmeGif from "../static/casts/readme.gif" with {assetBase: "/static/", assetName: "[name].[ext]"};
-import animatedGif from "../static/casts/animated.gif" with {assetBase: "/static/", assetName: "[name].[ext]"};
-import treeGif from "../static/casts/tree.gif" with {assetBase: "/static/", assetName: "[name].[ext]"};
-import formGif from "../static/casts/form.gif" with {assetBase: "/static/", assetName: "[name].[ext]"};
+// A recorded terminal session, rendered to GIF so it plays in any browser
+// with no client JavaScript. Solitaire is the one program the site shows
+// this way: every other figure is the program itself, running in the page.
 import solitaireGif from "../static/casts/solitaire.gif" with {assetBase: "/static/", assetName: "[name].[ext]"};
 
 export const assets = {
@@ -45,10 +42,6 @@ export const assets = {
 };
 
 export const castGifs: Record<string, string> = {
-	readme: readmeGif,
-	animated: animatedGif,
-	tree: treeGif,
-	form: formGif,
 	solitaire: solitaireGif,
 };
 

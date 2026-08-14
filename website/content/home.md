@@ -5,53 +5,21 @@ any frontend web framework.
 
 ![Klondike solitaire rendered by TermDOM](cast:solitaire)
 
-```ts
-import {TermDOM} from "@b9g/termdom";
+Everything below runs here. Each figure is a file from the repository's
+`examples/` directory, compiled and running in this page: edit the program and
+it runs again.
 
-const term = new TermDOM();
-term.attach();
-
-// The document is a real DOM document.
-const {document} = term;
-document.body.innerHTML = `
-  <style>
-    .card { border: 1px solid #5fafff; padding: 0 1ch; width: 36ch; }
-    .title { color: #5fafff; font-weight: bold; }
-    .done { color: green; }
-    .rest { color: #444; }
-    .pct { color: #888; }
-  </style>
-  <div class="card">
-    <div class="title">Installing</div>
-    <div>
-      <span class="done" id="done"></span><span class="rest" id="rest"></span>
-      <span class="pct" id="pct"></span>
-    </div>
-  </div>
-`;
-
-// TermDOM observes mutations and re-renders automatically.
-let n = 0;
-setInterval(() => {
-  n = (n + 1) % 101;
-  const cells = Math.round(n / 4);
-  document.getElementById("done").textContent = "█".repeat(cells);
-  document.getElementById("rest").textContent = "░".repeat(25 - cells);
-  document.getElementById("pct").textContent = String(n).padStart(3) + "%";
-}, 50);
-```
-
-![The card above, animating in a terminal](cast:readme)
+![examples/progress-bar.ts](playground:progress-bar)
 
 ## Write a web page. Get a TUI.
 
-Every glyph below is a DOM element. The spinner is a `<span>` whose `textContent` mutates; painting is automatic, like the browser. Edit the program and it runs again.
+Every glyph below is a DOM element. The spinner is a `<span>` whose `textContent` mutates; painting is automatic, like the browser.
 
 ![examples/animated.ts](playground:animated)
 
 ## Interactivity is just DOM events.
 
-A NERDTree-style file browser in ~200 lines of vanilla DOM: `querySelectorAll` for the rows, `classList` for the selection, `keydown` for the keys, and `scrollIntoView()` to move the camera.
+Keys, clicks, and focus arrive on elements, so a NERDTree-style file browser is `querySelectorAll` for the rows, `classList` for the selection, `keydown` for the keys, and `scrollIntoView()` to move the camera. [examples/tree.ts](https://github.com/bikeshaving/termdom/blob/main/examples/tree.ts) is ~200 lines of that, walking the filesystem of whatever directory you run it in.
 
 ```ts
 document.addEventListener("keydown", (ev) => {
@@ -60,8 +28,6 @@ document.addEventListener("keydown", (ev) => {
 });
 rows()[selected].scrollIntoView();
 ```
-
-![A file browser reading the repository, examples/tree.ts](cast:tree)
 
 ## Real text input. Real caret. Real IME.
 

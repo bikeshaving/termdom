@@ -41,9 +41,9 @@ function readExamples(): PlaygroundExample[] {
  * examples are written against: eighty columns, and twenty-four rows, which is
  * one more than the tallest of them paints. An embed is a figure in an
  * argument, and a pane far taller than its program is a black void with a
- * program at the top of it -- the two programs embedded on the home page paint
- * 11x35 and 7x45, so an embed gets 56x14 and the slack is deliberate rather
- * than left over. `editorLines` is whole lines, so the box ends where a line
+ * program at the top of it -- the three programs embedded on the home page
+ * paint 4x36, 11x35 and 7x45, so an embed gets 56x14 and the slack is
+ * deliberate rather than left over. `editorLines` is whole lines, so the box ends where a line
  * does.
  */
 const PAGE_GEOMETRY = {cols: 80, rows: 24, editorLines: 20};

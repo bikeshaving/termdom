@@ -114,11 +114,11 @@ const content = css`
 
 /**
  * The programs the page embeds live, keyed the way `playground:id` names them.
- * A recording is still the right answer where the program cannot run in a
- * browser: solitaire needs an import the runner cannot resolve, and the tree
- * browser needs a filesystem.
+ * Every figure on the page but one is a program running in the reader's
+ * browser; the exception is the solitaire recording at the top, whose
+ * program needs an import the runner cannot resolve.
  */
-const EMBEDDED = ["animated", "form"];
+const EMBEDDED = ["progress-bar", "animated", "form"];
 
 /**
  * Fetch the playground bundle when the first embed comes near, rather than
