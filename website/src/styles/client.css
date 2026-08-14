@@ -82,6 +82,26 @@ h3 {
 	margin: 2rem 0 0.5rem;
 }
 
+/*
+ * The link to a heading's own id. It belongs to whoever wants to copy it, not
+ * to the heading, so it is a mark beside the text rather than part of it, and
+ * it comes forward when the heading is under the pointer.
+ */
+.heading-anchor {
+	margin-left: 0.4em;
+	color: var(--muted-color);
+	opacity: 0;
+	transition: opacity 0.1s;
+}
+
+h1:hover .heading-anchor,
+h2:hover .heading-anchor,
+h3:hover .heading-anchor,
+h4:hover .heading-anchor,
+.heading-anchor:focus-visible {
+	opacity: 1;
+}
+
 code {
 	font-family: inherit;
 	font-size: 0.9em;

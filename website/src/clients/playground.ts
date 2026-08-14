@@ -52,9 +52,10 @@ const EMBED_GEOMETRY = {cols: 56, rows: 14, editorLines: 13};
 const FONT_SIZE = 13;
 // The emulator's cell in the font stack below, measured rather than guessed.
 const CELL_WIDTH = 7.83;
-// What the pane adds around the emulator's own box: its padding and border.
-const PANE_CHROME = 15;
-const GAP = 16;
+// What the pane adds around the emulator's own box: its padding.
+const PANE_CHROME = 16;
+// The rule between the two halves, which is all that separates them.
+const SEAM = 1;
 // An editor is worth putting beside a terminal only if a line fits in it. The
 // examples' 95th-percentile line runs 56 to 124 columns; sixty-four is where
 // the shorter half of them stop needing a horizontal scroll, and it is a fair
@@ -73,7 +74,7 @@ function sideBySideWidth(cols: number): number {
 	return Math.round(
 		cols * CELL_WIDTH +
 			PANE_CHROME +
-			GAP +
+			SEAM +
 			EDITOR_MIN_COLUMNS * EDITOR_CELL_WIDTH +
 			EDITOR_CHROME,
 	);
@@ -427,13 +428,6 @@ function describeError(error: unknown): string {
 
 /*** Components ***/
 
-const pane = css`
-	border: 1px solid var(--border-color);
-	border-radius: 6px;
-	overflow: hidden;
-	background-color: var(--surface-color);
-`;
-
 /**
  * The terminal half: an emulator opened once, and one program at a time
  * running against it.
@@ -528,19 +522,19 @@ function* TerminalPane(
 				void run();
 			});
 
-			// The pane is as wide as the emulator inside it and no wider: a
-			// terminal stretched to fill a column is a column of background.
+			// The half fills whatever the grid gives it, and the emulator sits
+			// at its top left. Where the terminal is the narrower of the two
+			// the surplus is terminal background, which is a screen with
+			// nothing painted on it rather than a hole in the workbench.
 			yield jsx`
 				<div
 					ref=${(el: HTMLDivElement) => (root = el)}
-					class="${pane} ${css`
-						padding: 0.4rem;
-						width: max-content;
-						max-width: 100%;
+					class=${css`
+						padding: 0.5rem;
+						min-width: 0;
 						overflow-x: auto;
-						justify-self: start;
 						background-color: ${TERMINAL_BACKGROUND};
-					`}"
+					`}
 				/>
 			`;
 			initial = false;
@@ -570,26 +564,38 @@ const container = css`
 	padding: 5rem 1.2rem 2rem;
 `;
 
-/* One row: whatever the page puts here, the run button, and the status the
-   run reports. The status shares the row rather than hanging below the panes,
-   so the workbench reads as a single block. */
+/* The workbench's title bar: whatever the page puts here, the run button, and
+   the status the run reports. It sits inside the frame, one step back from the
+   panes the way the page's background sits behind its surfaces, so the
+   workbench reads as a single block rather than a control loose above two
+   boxes. The controls are the site's own: a surface, a hairline border and the
+   radius `code` and `pre` are given. */
 const toolbar = css`
 	display: flex;
 	flex-direction: row;
 	align-items: center;
-	gap: 0.6rem;
-	margin: 0 0 0.5rem;
+	gap: 0.5rem;
+	margin: 0;
+	padding: 0.5rem 0.6rem;
 	flex-wrap: wrap;
+	background-color: var(--bg-color);
+	border-bottom: 1px solid var(--border-color);
+
+	label {
+		font-size: 0.8rem;
+		color: var(--muted-color);
+	}
 
 	select,
 	button {
 		font: inherit;
-		font-size: 0.9rem;
+		font-size: 0.85rem;
+		line-height: 1.4;
 		color: var(--text-color);
 		background-color: var(--surface-color);
 		border: 1px solid var(--border-color);
 		border-radius: 6px;
-		padding: 0.4rem 0.8rem;
+		padding: 0.25rem 0.7rem;
 	}
 
 	button {
@@ -597,9 +603,19 @@ const toolbar = css`
 		font-weight: bold;
 	}
 
+	select:hover,
+	button:hover {
+		border-color: var(--highlight-color);
+	}
+
 	button:hover {
 		color: var(--highlight-color);
-		border-color: var(--highlight-color);
+	}
+
+	select:focus-visible,
+	button:focus-visible {
+		outline: 2px solid var(--highlight-color);
+		outline-offset: 1px;
 	}
 
 	button kbd {
@@ -610,6 +626,15 @@ const toolbar = css`
 	}
 `;
 
+/* The name of the file in the editor, where an embed has no picker to carry
+   it. It is also what the static figure shows before the embed hydrates, in
+   the same place, so the bar does not change shape when it does. */
+const filename = css`
+	font-size: 0.8rem;
+	color: var(--muted-color);
+	margin: 0 0.2rem 0 0.1rem;
+`;
+
 /**
  * Editor beside terminal, or editor above terminal.
  *
@@ -617,24 +642,62 @@ const toolbar = css`
  * the window has -- the same component sits in a 900px column on the home
  * page and across the playground page -- so it is a container query, and the
  * workbench is the container.
+ *
+ * The two halves meet on a rule rather than across a gap: they are one
+ * instrument, and the frame around them draws the outside edge. The rule
+ * turns with the layout. Both halves stretch to the taller of them, so the
+ * frame closes on a straight edge whichever way they are stacked.
  */
 function panes(cols: number) {
 	return css`
 		display: grid;
-		gap: ${GAP}px;
 		grid-template-columns: minmax(0, 1fr);
-		align-items: start;
+		align-items: stretch;
+
+		> * + * {
+			border-top: 1px solid var(--border-color);
+		}
 
 		@container workbench (min-width: ${sideBySideWidth(cols)}px) {
 			grid-template-columns: minmax(0, 1fr) auto;
+
+			> * + * {
+				border-top: none;
+				border-left: 1px solid var(--border-color);
+			}
 		}
 	`;
 }
 
+/* The frame. The site draws a surface as a hairline border and an 8px radius
+   -- `pre`, the install command, the cast player -- and the workbench is one
+   surface, so it is drawn the same way and the panes inside it have no edges
+   of their own. */
 const workbench = css`
 	container: workbench / inline-size;
 	margin: 0;
+	border: 1px solid var(--border-color);
+	border-radius: 8px;
+	overflow: hidden;
+	background-color: var(--surface-color);
 `;
+
+/* The editor half. Its height is a whole number of the editor's own rows, and
+   the row of the grid is as tall as the taller half, so the terminal beside it
+   stretches to meet it and the frame closes on a straight edge. */
+function editorPane(lines: number) {
+	return css`
+		display: flex;
+		min-width: 0;
+		height: ${editorHeight(lines)};
+		background-color: var(--surface-color);
+
+		> * {
+			flex: 1 1 auto;
+			min-width: 0;
+		}
+	`;
+}
 
 /* In the toolbar rather than under the panes, taking the room the controls
    leave and giving a long message an ellipsis rather than a second row. */
@@ -670,11 +733,14 @@ function* Workbench(
 	{
 		value,
 		name,
+		title,
 		geometry,
 		controls: extraControls,
 	}: {
 		value: string;
 		name: string;
+		/** The file in the editor, where nothing else in the bar names it. */
+		title?: string;
 		geometry: {cols: number; rows: number; editorLines: number};
 		controls?: unknown;
 	},
@@ -724,7 +790,7 @@ function* Workbench(
 		this.cleanup(() => root.removeEventListener("keydown", onkeydown, true));
 	});
 
-	for ({value, name, geometry, controls: extraControls} of this) {
+	for ({value, name, title, geometry, controls: extraControls} of this) {
 		// A value from outside is a new program; a value this component's own
 		// editor produced is already in `code`.
 		if (value !== shown) {
@@ -739,6 +805,7 @@ function* Workbench(
 		yield jsx`
 			<div ref=${(el: HTMLDivElement) => (root = el)} class=${workbench}>
 				<div class=${toolbar}>
+					${title ? jsx`<span class=${filename}>${title}</span>` : null}
 					${extraControls}
 					<button id=${`${name}-run`} type="button" onclick=${runNow}>
 						Run <kbd>${RUN_KEY_LABEL}</kbd>
@@ -752,13 +819,7 @@ function* Workbench(
 				</div>
 
 				<div class=${panes(geometry.cols)}>
-					<div class="${pane} ${css`
-						min-width: 0;
-						/* The height is the editor's own box: the pane's border
-						   sits outside it, so the last row stays whole. */
-						box-sizing: content-box;
-						height: ${editorHeight(geometry.editorLines)};
-					`}">
+					<div class=${editorPane(geometry.editorLines)}>
 						<${CodeEditor}
 							copy=${!updateEditor}
 							value=${code}
@@ -852,6 +913,7 @@ function hydrateEmbeds(): void {
 				<${Workbench}
 					value=${example.code}
 					name=${`playground-${example.id}`}
+					title=${example.label}
 					geometry=${EMBED_GEOMETRY}
 				/>
 			`,

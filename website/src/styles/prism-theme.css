@@ -48,7 +48,9 @@ code[class*="language-"],
 pre[class*="language-"] {
 	color: var(--coldark05);
 	background: none;
-	font-family: Consolas, Monaco, "Andale Mono", "Ubuntu Mono", monospace;
+	/* The page is already set in the monospace the reader's system prefers;
+	   a stack of its own here puts the code samples in a second typeface. */
+	font-family: inherit;
 	text-align: left;
 	white-space: pre;
 	-moz-tab-size: 2;

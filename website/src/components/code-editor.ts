@@ -210,7 +210,11 @@ function* Gutter(this: Context<typeof Gutter>, {length}: {length: number}) {
 					user-select: none;
 					position: sticky;
 					left: 0;
-					background-color: var(--surface-color);
+					/* A step back from the code, the way the page's background
+					   sits behind its surfaces: the numbers are not the text,
+					   and the column they sit in says so without a second
+					   border. */
+					background-color: var(--bg-color);
 				`}
 			>
 				${lines.map(
