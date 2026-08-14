@@ -8586,165 +8586,14 @@ function installReflection(prototype: object, spec: ReflectSpec): void {
  * written in the class body. A class with an empty body reflects and does
  * nothing else, which is all its interface is.
  */
-export class HTMLHtmlElement extends HTMLElement {}
-export class HTMLHeadElement extends HTMLElement {}
-export class HTMLMetaElement extends HTMLElement {}
-export class HTMLBodyElement extends HTMLElement {}
-export class HTMLHeadingElement extends HTMLElement {}
-export class HTMLParagraphElement extends HTMLElement {}
-export class HTMLHRElement extends HTMLElement {}
-export class HTMLPreElement extends HTMLElement {}
-export class HTMLQuoteElement extends HTMLElement {}
-export class HTMLOListElement extends HTMLElement {}
-export class HTMLUListElement extends HTMLElement {}
-export class HTMLMenuElement extends HTMLElement {}
-export class HTMLLIElement extends HTMLElement {}
-export class HTMLDListElement extends HTMLElement {}
-export class HTMLDivElement extends HTMLElement {}
-export class HTMLDataElement extends HTMLElement {}
-export class HTMLTimeElement extends HTMLElement {}
-export class HTMLSpanElement extends HTMLElement {}
-export class HTMLBRElement extends HTMLElement {}
-export class HTMLModElement extends HTMLElement {}
-export class HTMLPictureElement extends HTMLElement {}
-export class HTMLSourceElement extends HTMLElement {}
-/** A list of suggestions, whose options an input reaches through it. */
-export class HTMLDataListElement extends HTMLElement {
-	#options: HTMLCollection | null = null;
-
-	get options(): HTMLCollection {
-		let options = this.#options;
-		if (options === null) {
-			options = new HTMLCollection(() => {
-				const found: Element[] = [];
-				for (const node of descendants(this)) {
-					if (node instanceof HTMLOptionElement) found.push(node);
-				}
-				return found;
-			}, this);
-			this.#options = options;
-		}
-		return options;
-	}
-}
-/** The caption of a fieldset, which names the form the fieldset belongs to. */
-export class HTMLLegendElement extends HTMLElement {
-	get form(): HTMLFormElement | null {
-		const parent = this[kParent];
-		if (parent === null || !(parent instanceof HTMLFieldSetElement))
-			return null;
-		return formOwner(parent);
-	}
-}
-export class HTMLDirectoryElement extends HTMLElement {}
-export class HTMLFontElement extends HTMLElement {}
-export class HTMLFrameSetElement extends HTMLElement {}
-export class HTMLParamElement extends HTMLElement {}
-export class HTMLTableCaptionElement extends HTMLElement {}
-export class HTMLOptGroupElement extends HTMLElement {
-	/** Installed from the element table, and read by the select's own tree. */
-	declare disabled: boolean;
-	declare label: string;
-}
-/** The document's title, which is the text this element holds. */
-export class HTMLTitleElement extends HTMLElement {
+export class HTMLAnchorElement extends HTMLElement {
 	get text(): string {
-		return childText(this);
+		return descendantText(this);
 	}
 
 	set text(value: string) {
 		setDescendantText(this, String(value));
 	}
-}
-
-/** The text of an element's Text children, which is not its descendants'. */
-function childText(element: Element): string {
-	let text = "";
-	for (let node = element[kFirstChild]; node !== null; node = node[kNext]) {
-		if (node.nodeType === TEXT_NODE) text += (node as Text).data;
-	}
-	return text;
-}
-/**
- * The element a document's relative URLs are resolved against.
- *
- * Its own href is the odd one out: it resolves against the document's URL
- * rather than against the base, because it is the base.
- */
-export class HTMLBaseElement extends HTMLElement {
-	get href(): string {
-		const value = this.getAttribute("href");
-		const fallback = this[kDocument][kDocumentURL];
-		if (value === null) return fallback;
-		return parseURL(value, fallback) ?? fallback;
-	}
-
-	set href(value: string) {
-		this.setAttribute("href", String(value));
-	}
-}
-/** A link to a resource, which is never fetched, so it never has a sheet. */
-export class HTMLLinkElement extends HTMLElement {
-	get sheet(): null {
-		return null;
-	}
-}
-/**
- * A style sheet written into the document.
- *
- * The sheet itself belongs to the engine's cascade, not to the tree: there is
- * none here, which is what makes `sheet` null and `disabled` false.
- */
-export class HTMLStyleElement extends HTMLElement {
-	/**
-	 * A document with no cascade behind it parses no CSS, and so holds no
-	 * sheet. A window's cascade replaces this accessor with one that answers
-	 * the element's real CSSStyleSheet (see styles.ts's CSSOM installation),
-	 * which is what an author reaches through `styleEl.sheet`.
-	 */
-	get sheet(): CSSStyleSheet | null {
-		return null;
-	}
-
-	get disabled(): boolean {
-		return false;
-	}
-
-	set disabled(_value: boolean) {
-		void _value;
-	}
-
-	override [kInsertionSteps](): void {
-		super[kInsertionSteps]();
-		this[kDocument][kStyleElements]++;
-	}
-
-	override [kRemovingSteps](oldParent: Node): void {
-		super[kRemovingSteps](oldParent);
-		this[kDocument][kStyleElements]--;
-	}
-}
-
-/**
- * How many style elements a document's trees hold, as a number that changes
- * whenever one joins or leaves. A cascade polls this to notice a sheet that
- * appeared since it last parsed, which is cheaper than walking for one.
- */
-export function styleElementCount(document: Document): number {
-	return document[kStyleElements];
-}
-
-/** Mount a document in a window, which is what gives it a `defaultView`. */
-export function setDefaultView(document: Document, view: object | null): void {
-	document[kDefaultView] = view;
-}
-
-/** The element focus is on, set without firing the events a move fires. */
-export function setActiveElement(
-	document: Document,
-	element: Element | null,
-): void {
-	document[kActiveElement] = element;
 }
 /**
  * The members a hyperlink carries: the URL its href names, taken apart.
@@ -8771,7 +8620,6 @@ function hyperlinkPart(
 		configurable: true,
 	};
 }
-
 /**
  * The members a hyperlink carries: its URL, and the parts of that URL.
  *
@@ -8881,7 +8729,6 @@ const hyperlinkMembers: PropertyDescriptorMap = {
 		configurable: true,
 	},
 };
-
 /** The URL a hyperlink's href names, or null where it names none. */
 function hyperlinkURL(element: Element): URL | null {
 	const value = element.getAttribute("href");
@@ -8893,7 +8740,6 @@ function hyperlinkURL(element: Element): URL | null {
 		return null;
 	}
 }
-
 /** Change one part of a hyperlink's URL and write the whole of it back. */
 function writeHyperlink(element: Element, change: (url: URL) => void): void {
 	const url = hyperlinkURL(element);
@@ -8905,21 +8751,653 @@ function writeHyperlink(element: Element, change: (url: URL) => void): void {
 	}
 	element.setAttribute("href", url.href);
 }
+Object.defineProperties(HTMLAnchorElement.prototype, hyperlinkMembers);
 
-export class HTMLAnchorElement extends HTMLElement {
-	get text(): string {
-		return descendantText(this);
+export class HTMLAreaElement extends HTMLElement {}
+Object.defineProperties(HTMLAreaElement.prototype, hyperlinkMembers);
+
+/**
+ * The element a document's relative URLs are resolved against.
+ *
+ * Its own href is the odd one out: it resolves against the document's URL
+ * rather than against the base, because it is the base.
+ */
+export class HTMLBaseElement extends HTMLElement {
+	get href(): string {
+		const value = this.getAttribute("href");
+		const fallback = this[kDocument][kDocumentURL];
+		if (value === null) return fallback;
+		return parseURL(value, fallback) ?? fallback;
 	}
 
-	set text(value: string) {
-		setDescendantText(this, String(value));
+	set href(value: string) {
+		this.setAttribute("href", String(value));
 	}
 }
 
-Object.defineProperties(HTMLAnchorElement.prototype, hyperlinkMembers);
-export class HTMLAreaElement extends HTMLElement {}
+export class HTMLBodyElement extends HTMLElement {}
 
-Object.defineProperties(HTMLAreaElement.prototype, hyperlinkMembers);
+export class HTMLBRElement extends HTMLElement {}
+
+/**
+ * A canvas.
+ *
+ * The element exists with the dimensions it reflects; a rendering context is
+ * a bitmap, and there is none, so getContext answers null exactly as it does
+ * for a context type an implementation does not support.
+ */
+export class HTMLCanvasElement extends HTMLElement {
+	getContext(contextId: string): null {
+		if (arguments.length < 1) {
+			throw new TypeError("getContext needs a context id");
+		}
+		void contextId;
+		return null;
+	}
+}
+
+export class HTMLDataElement extends HTMLElement {}
+
+/** A list of suggestions, whose options an input reaches through it. */
+export class HTMLDataListElement extends HTMLElement {
+	#options: HTMLCollection | null = null;
+
+	get options(): HTMLCollection {
+		let options = this.#options;
+		if (options === null) {
+			options = new HTMLCollection(() => {
+				const found: Element[] = [];
+				for (const node of descendants(this)) {
+					if (node instanceof HTMLOptionElement) found.push(node);
+				}
+				return found;
+			}, this);
+			this.#options = options;
+		}
+		return options;
+	}
+}
+
+/**
+ * A disclosure, whose open attribute is its whole state.
+ *
+ * The toggle event is queued rather than fired where the attribute changes,
+ * so a run of changes inside one turn reports the state it settled on.
+ */
+export class HTMLDetailsElement extends HTMLElement {
+	#toggleQueued = false;
+	#stateAtQueue = "closed";
+
+	override [kAttributeChanged](
+		localName: string,
+		oldValue: string | null,
+		value: string | null,
+		namespace: string | null,
+	): void {
+		super[kAttributeChanged](localName, oldValue, value, namespace);
+		if (namespace !== null || localName !== "open") return;
+		if ((oldValue === null) === (value === null)) return;
+		if (!this.#toggleQueued) {
+			this.#toggleQueued = true;
+			this.#stateAtQueue = oldValue === null ? "closed" : "open";
+			queueMicrotask(() => {
+				this.#toggleQueued = false;
+				const now = this.hasAttribute("open") ? "open" : "closed";
+				if (now === this.#stateAtQueue) return;
+				dispatch(
+					this,
+					new ToggleEvent("toggle", {
+						oldState: this.#stateAtQueue,
+						newState: now,
+					}),
+				);
+			});
+		}
+	}
+}
+/**
+ * A summary opens and closes the details it is the summary of.
+ *
+ * Only a summary has this behavior, and HTML gives a summary no interface of
+ * its own, so the hook answers for the elements that are one and for nothing
+ * else.
+ */
+Object.defineProperty(HTMLElement.prototype, kActivationBehavior, {
+	get(this: HTMLElement): (() => void) | undefined {
+		const parent = this[kParent];
+		if (this[kNamespace] !== HTML_NAMESPACE) return undefined;
+		if (this[kLocalName] !== "summary") return undefined;
+		if (parent === null || !(parent instanceof HTMLDetailsElement)) {
+			return undefined;
+		}
+		if (firstChildElement(parent, "summary") !== this) return undefined;
+		return function toggleTheDetails(this: HTMLElement): void {
+			const details = this[kParent] as HTMLDetailsElement;
+			details.toggleAttribute("open", !details.hasAttribute("open"));
+		};
+	},
+	configurable: true,
+});
+export interface ToggleEventInit extends EventInit {
+	oldState?: string;
+	newState?: string;
+	source?: Element | null;
+}
+/** The event a details or a popover fires when it opens or closes. */
+export class ToggleEvent extends Event {
+	#oldState: string;
+	#newState: string;
+	#source: Element | null;
+
+	constructor(type: string, eventInitDict: ToggleEventInit = {}) {
+		super(type, eventInitDict);
+		const init = toDictionary<ToggleEventInit>(eventInitDict, "An event init");
+		this.#oldState = String(init.oldState ?? "");
+		this.#newState = String(init.newState ?? "");
+		this.#source = init.source ?? null;
+	}
+
+	get oldState(): string {
+		return this.#oldState;
+	}
+
+	get newState(): string {
+		return this.#newState;
+	}
+
+	/** The element whose activation opened or closed the popover, if any. */
+	get source(): Element | null {
+		return this.#source;
+	}
+}
+Object.defineProperty(ToggleEvent.prototype, Symbol.toStringTag, {
+	value: "ToggleEvent",
+	configurable: true,
+});
+
+const kDialogFocusingSteps = Symbol("the dialog focusing steps");
+/**
+ * A dialog.
+ *
+ * Showing one modally puts it in the document's top layer, above every
+ * stacking context and outside the flow it was written in, and makes the rest
+ * of the document unreachable until it closes; showing one with `show()`
+ * leaves it exactly where it is, an ordinary box that happens to be visible.
+ */
+export class HTMLDialogElement extends HTMLElement {
+	#returnValue = "";
+	// Where focus was when the dialog took it, so closing can give it back.
+	#previouslyFocused: Element | null = null;
+
+	get returnValue(): string {
+		return this.#returnValue;
+	}
+
+	set returnValue(value: string) {
+		this.#returnValue = String(value);
+	}
+
+	show(): void {
+		if (this.hasAttribute("open")) {
+			if (isModalDialog(this)) {
+				throw domError(
+					"InvalidStateError",
+					"That dialog is already showing modally",
+				);
+			}
+			return;
+		}
+		this.setAttribute("open", "");
+	}
+
+	showModal(): void {
+		if (this.hasAttribute("open")) {
+			throw domError("InvalidStateError", "That dialog is already showing");
+		}
+		if (!isConnectedNode(this)) {
+			throw domError(
+				"InvalidStateError",
+				"A dialog must be connected to show modally",
+			);
+		}
+		// The top layer is the modality: everything else -- `:modal`, the
+		// backdrop, the hit-testing that stops clicks reaching the page --
+		// reads membership rather than a flag of its own.
+		topLayerOf(this[kDocument]).add(this);
+		this.setAttribute("open", "");
+		this.#focusDialog();
+	}
+
+	/**
+	 * The dialog focusing steps, as the popover focusing steps reach them: a
+	 * dialog shown as a popover focuses like a dialog, not like a popover.
+	 */
+	[kDialogFocusingSteps](): void {
+		this.#focusDialog();
+	}
+
+	/**
+	 * HTML's dialog focusing steps: focus goes to the descendant asking for it
+	 * with `autofocus`, else to the first one that can take focus, else to the
+	 * dialog itself -- which is focusable for exactly as long as it is the
+	 * modal one, so a dialog of plain text still takes keys off the page.
+	 */
+	#focusDialog(): void {
+		this.#previouslyFocused = this[kDocument][kActiveElement];
+		const walker = shadowIncludingInclusiveDescendants(this);
+		let fallback: Element | null = null;
+		for (const node of walker) {
+			if (node === this || node.nodeType !== ELEMENT_NODE) continue;
+			const element = node as Element;
+			if (!isFocusableArea(element)) continue;
+			if (element.hasAttribute("autofocus")) {
+				(element as HTMLElement).focus();
+				return;
+			}
+			if (fallback === null) fallback = element;
+		}
+		if (fallback !== null) {
+			(fallback as HTMLElement).focus();
+			return;
+		}
+		this[kDocument][kActiveElement] = this;
+	}
+
+	/**
+	 * A modal dialog taken out of the document leaves the top layer with it:
+	 * nothing off the tree can render above it, and a detached dialog is no
+	 * longer modal.
+	 */
+	override [kRemovingSteps](oldParent: Node): void {
+		super[kRemovingSteps](oldParent);
+		topLayerOf(this[kDocument]).delete(this);
+	}
+
+	close(returnValue?: string): void {
+		this.#close(returnValue, false);
+	}
+
+	requestClose(returnValue?: string): void {
+		if (!this.hasAttribute("open")) return;
+		const canceled = !dispatch(this, new Event("cancel", {cancelable: true}));
+		if (canceled) return;
+		this.#close(returnValue, false);
+	}
+
+	#close(returnValue: string | undefined, _fromRequest: boolean): void {
+		if (!this.hasAttribute("open")) return;
+		this.removeAttribute("open");
+		topLayerOf(this[kDocument]).delete(this);
+		// The page gets its focus back where the dialog took it from, so the
+		// keyboard returns to what the user was doing before it opened.
+		if (this.#previouslyFocused !== null) {
+			const previous = this.#previouslyFocused;
+			this.#previouslyFocused = null;
+			if (
+				this[kDocument][kActiveElement] === this ||
+				this.contains(this[kDocument][kActiveElement])
+			) {
+				(previous as HTMLElement).focus();
+			}
+		}
+		if (returnValue !== undefined) this.#returnValue = String(returnValue);
+		dispatch(this, new Event("close"));
+	}
+}
+/**
+ * A document's TOP LAYER: the elements that render above every stacking
+ * context of the document, in the order they entered it. Membership is what
+ * `showModal` grants and `close` revokes, and what the renderer paints last.
+ */
+export function topLayerOf(document: object): Set<Element> {
+	return (document as Document)[kTopLayer];
+}
+/**
+ * Whether an element is showing modally -- the state `:modal` matches. A
+ * dialog is modal exactly while it is in its document's top layer: `show()`
+ * never puts one there and `close()` takes it out, so there is no second
+ * flag to keep in step with the first.
+ */
+export function isModalDialog(node: object): boolean {
+	return (
+		node instanceof HTMLDialogElement &&
+		topLayerOf(node[kDocument]).has(node as Element)
+	);
+}
+/** Whether a node's root is a document, which is what connected means. */
+function isConnectedNode(node: Node): boolean {
+	return shadowIncludingRoot(node).nodeType === DOCUMENT_NODE;
+}
+
+export class HTMLDirectoryElement extends HTMLElement {}
+
+export class HTMLDivElement extends HTMLElement {}
+
+export class HTMLDListElement extends HTMLElement {}
+
+/** An embedded resource, which never loads, so it has no SVG document. */
+export class HTMLEmbedElement extends HTMLElement {
+	getSVGDocument(): null {
+		return null;
+	}
+}
+
+/** A group of controls, and the group's own disabling. */
+export class HTMLFieldSetElement extends HTMLElement {
+	#elements: HTMLCollection | null = null;
+
+	get form(): HTMLFormElement | null {
+		return formOwner(this);
+	}
+
+	get type(): string {
+		return "fieldset";
+	}
+
+	get elements(): HTMLCollection {
+		let elements = this.#elements;
+		if (elements === null) {
+			elements = new HTMLCollection(() => {
+				const listed: Element[] = [];
+				for (const node of descendants(this)) {
+					if (node.nodeType !== ELEMENT_NODE) continue;
+					if (isListed(node as Element)) listed.push(node as Element);
+				}
+				return listed;
+			}, this);
+			this.#elements = elements;
+		}
+		return elements;
+	}
+}
+
+export class HTMLFontElement extends HTMLElement {}
+
+/**
+ * A form, and the controls it owns.
+ *
+ * Submission navigates, and this DOM does not navigate: `submit()` runs the
+ * steps up to the navigation and stops, `requestSubmit()` fires the submit
+ * event those steps fire first, and `reset()` fires its event and restores
+ * every control it owns to its default.
+ */
+export class HTMLFormElement extends HTMLElement {
+	#elements: HTMLFormControlsCollection | null = null;
+	#firingReset = false;
+
+	get elements(): HTMLFormControlsCollection {
+		let elements = this.#elements;
+		if (elements === null) {
+			elements = new HTMLFormControlsCollection(
+				() => listedControls(this),
+				this,
+			);
+			this.#elements = elements;
+		}
+		return elements;
+	}
+
+	get length(): number {
+		return this.elements.length;
+	}
+
+	submit(): void {
+		submitForm(this, null, true);
+	}
+
+	requestSubmit(submitter: Element | null = null): void {
+		if (submitter !== null && submitter !== undefined) {
+			if (!(submitter instanceof Element) || !isSubmitButton(submitter)) {
+				throw new TypeError("That element is not a submit button");
+			}
+			if (formOwner(submitter) !== this) {
+				throw notFoundError("That button does not belong to this form");
+			}
+		} else {
+			submitter = null;
+		}
+		submitForm(this, submitter, false);
+	}
+
+	reset(): void {
+		if (this.#firingReset) return;
+		this.#firingReset = true;
+		let canceled: boolean;
+		try {
+			canceled = !dispatch(
+				this,
+				new Event("reset", {bubbles: true, cancelable: true}),
+			);
+		} finally {
+			this.#firingReset = false;
+		}
+		if (canceled) return;
+		for (const control of listedControls(this)) resetControl(control);
+	}
+}
+/** The listed controls a form owns, in tree order. */
+function listedControls(form: HTMLFormElement): Element[] {
+	const controls: Element[] = [];
+	const root = getRoot(form);
+	for (const node of descendants(root)) {
+		if (node.nodeType !== ELEMENT_NODE) continue;
+		const element = node as Element;
+		if (!isListed(element)) continue;
+		if (formOwner(element) !== form) continue;
+		if (element instanceof HTMLInputElement && element.type === "image") {
+			continue;
+		}
+		controls.push(element);
+	}
+	return controls;
+}
+/** Whether an element is a button that submits its form. */
+function isSubmitButton(element: Element): boolean {
+	if (element instanceof HTMLButtonElement) return element.type === "submit";
+	if (element instanceof HTMLInputElement) {
+		const type = element.type;
+		return type === "submit" || type === "image";
+	}
+	return false;
+}
+/**
+ * Submit a form.
+ *
+ * Everything up to the navigation runs: the submit event fires unless the
+ * caller was `submit()`, which the specification defines as skipping it. The
+ * navigation itself is the one step this DOM does not have.
+ */
+function submitForm(
+	form: HTMLFormElement,
+	submitter: Element | null,
+	skipEvent: boolean,
+): void {
+	if (skipEvent) return;
+	const event = new SubmitEvent("submit", {
+		bubbles: true,
+		cancelable: true,
+		submitter: submitter as HTMLElement | null,
+	});
+	dispatch(form, event);
+}
+const kResetControl = Symbol("put a control back to its default");
+/** Put a control back to the value its attributes name. */
+function resetControl(control: Element): void {
+	const resettable = control as unknown as Record<symbol, () => void>;
+	if (typeof resettable[kResetControl] === "function") {
+		resettable[kResetControl]();
+	} else if (isFormAssociatedCustom(control)) {
+		enqueueCallbackReaction(control, "formResetCallback", []);
+	}
+}
+export interface SubmitEventInit extends EventInit {
+	submitter?: HTMLElement | null;
+}
+/** The event a form fires before it is submitted, naming the button. */
+export class SubmitEvent extends Event {
+	#submitter: HTMLElement | null;
+
+	constructor(type: string, eventInitDict: SubmitEventInit = {}) {
+		super(type, eventInitDict);
+		const init = toDictionary<SubmitEventInit>(eventInitDict, "An event init");
+		this.#submitter = init.submitter ?? null;
+	}
+
+	get submitter(): HTMLElement | null {
+		return this.#submitter;
+	}
+}
+Object.defineProperty(SubmitEvent.prototype, Symbol.toStringTag, {
+	value: "SubmitEvent",
+	configurable: true,
+});
+/**
+ * The controls of a form, which answers a name with every control that has
+ * it: one element, or a list of the radio buttons that share it.
+ */
+export class HTMLFormControlsCollection extends HTMLCollection {
+	#owner: Node | null;
+
+	constructor(compute: () => Element[], owner: Node | null = null) {
+		super(compute, owner);
+		this.#owner = owner;
+	}
+
+	override namedItem(name: string): Element | null {
+		const key = String(name);
+		if (key === "") return null;
+		const matches = this.#matching(key);
+		if (matches.length === 0) return null;
+		if (matches.length === 1) return matches[0] as Element;
+		// The list is what the interface answers with for a shared name; the
+		// declared type is the collection's, which has no way to say so.
+		return new RadioNodeList(
+			() => this.#matching(key),
+			this.#owner,
+		) as unknown as Element;
+	}
+
+	override namedProperties(items: Node[]): Map<string, Node> {
+		const counts = new Map<string, Node[]>();
+		for (const item of items) {
+			const element = item as Element;
+			for (const key of [
+				element.getAttribute("id"),
+				element.getAttribute("name"),
+			]) {
+				if (key === null || key === "") continue;
+				const list = counts.get(key);
+				if (list === undefined) {
+					counts.set(key, [element]);
+				} else if (!list.includes(element)) {
+					list.push(element);
+				}
+			}
+		}
+		const named = new Map<string, Node>();
+		for (const [key, list] of counts) {
+			named.set(
+				key,
+				list.length === 1
+					? list[0]
+					: (new RadioNodeList(
+							() => this.#matching(key),
+							this.#owner,
+						) as unknown as Node),
+			);
+		}
+		return named;
+	}
+
+	#matching(key: string): Node[] {
+		const matches: Node[] = [];
+		for (const item of this[kEnsure]()) {
+			const element = item as Element;
+			if (
+				element.getAttribute("id") === key ||
+				element.getAttribute("name") === key
+			) {
+				matches.push(element);
+			}
+		}
+		return matches;
+	}
+}
+Object.defineProperty(
+	HTMLFormControlsCollection.prototype,
+	Symbol.toStringTag,
+	{value: "HTMLFormControlsCollection", configurable: true},
+);
+/** The radio buttons that share a name, and the value the checked one has. */
+export class RadioNodeList extends NodeList {
+	constructor(compute: () => Node[], owner: Node | null = null) {
+		super(compute, true, owner);
+	}
+
+	get value(): string {
+		for (const node of this[kEnsure]()) {
+			if (!(node instanceof HTMLInputElement)) continue;
+			if (node.type !== "radio" || !node.checked) continue;
+			return node.getAttribute("value") ?? "on";
+		}
+		return "";
+	}
+
+	set value(value: string) {
+		const wanted = String(value);
+		for (const node of this[kEnsure]()) {
+			if (!(node instanceof HTMLInputElement)) continue;
+			if (node.type !== "radio") continue;
+			if ((node.getAttribute("value") ?? "on") !== wanted) continue;
+			node.checked = true;
+			return;
+		}
+	}
+}
+Object.defineProperty(RadioNodeList.prototype, Symbol.toStringTag, {
+	value: "RadioNodeList",
+	configurable: true,
+});
+
+/** A frame, which names no browsing context here either. */
+export class HTMLFrameElement extends HTMLElement {
+	get contentDocument(): null {
+		return null;
+	}
+
+	get contentWindow(): null {
+		return null;
+	}
+}
+
+export class HTMLFrameSetElement extends HTMLElement {}
+
+export class HTMLHeadElement extends HTMLElement {}
+
+export class HTMLHeadingElement extends HTMLElement {}
+
+export class HTMLHRElement extends HTMLElement {}
+
+export class HTMLHtmlElement extends HTMLElement {}
+
+/**
+ * A nested browsing context, which this DOM does not have: the document, the
+ * window and the SVG document an iframe would name are all null.
+ */
+export class HTMLIFrameElement extends HTMLElement {
+	get contentDocument(): null {
+		return null;
+	}
+
+	get contentWindow(): null {
+		return null;
+	}
+
+	getSVGDocument(): null {
+		return null;
+	}
+}
+
 /**
  * An image.
  *
@@ -8951,53 +9429,99 @@ export class HTMLImageElement extends HTMLElement {
 		);
 	}
 }
-/**
- * A nested browsing context, which this DOM does not have: the document, the
- * window and the SVG document an iframe would name are all null.
- */
-export class HTMLIFrameElement extends HTMLElement {
-	get contentDocument(): null {
-		return null;
-	}
 
-	get contentWindow(): null {
-		return null;
-	}
-
-	getSVGDocument(): null {
-		return null;
-	}
-}
-/** An embedded resource, which never loads, so it has no SVG document. */
-export class HTMLEmbedElement extends HTMLElement {
-	getSVGDocument(): null {
-		return null;
-	}
-}
-/**
- * An embedded resource.
- *
- * Nothing is ever fetched here, so the object never gets a nested browsing
- * context: its document, its window and its SVG document are all null, which
- * is what they are for an object that loaded nothing.
- */
-export class HTMLObjectElement extends HTMLElement {
+/** A label, and the control its click reaches. */
+export class HTMLLabelElement extends HTMLElement {
 	get form(): HTMLFormElement | null {
-		return formOwner(this);
+		const control = this.control;
+		return control === null ? null : formOwner(control);
 	}
 
-	get contentDocument(): null {
+	/**
+	 * The control this label labels: the one its `for` attribute names, or the
+	 * first labelable element among its descendants.
+	 */
+	get control(): HTMLElement | null {
+		const id = this.getAttribute("for");
+		if (id !== null) {
+			if (id === "") return null;
+			const root = getRoot(this);
+			for (const node of descendants(root)) {
+				if (node.nodeType !== ELEMENT_NODE) continue;
+				const element = node as Element;
+				if (element.getAttribute("id") !== id) continue;
+				return isLabelable(element) ? (element as HTMLElement) : null;
+			}
+			return null;
+		}
+		for (const node of descendants(this)) {
+			if (node.nodeType !== ELEMENT_NODE) continue;
+			if (isLabelable(node as Element)) return node as HTMLElement;
+		}
 		return null;
 	}
 
-	get contentWindow(): null {
-		return null;
+	/**
+	 * A click on a label is a click on its control, unless the click already
+	 * came from inside that control.
+	 */
+	[kActivationBehavior](event: Event): void {
+		const control = this.control;
+		if (control === null) return;
+		for (const target of event.composedPath()) {
+			if (target === control) return;
+		}
+		if (control[kClickInProgress]) return;
+		control.click();
 	}
+}
 
-	getSVGDocument(): null {
+/** The caption of a fieldset, which names the form the fieldset belongs to. */
+export class HTMLLegendElement extends HTMLElement {
+	get form(): HTMLFormElement | null {
+		const parent = this[kParent];
+		if (parent === null || !(parent instanceof HTMLFieldSetElement))
+			return null;
+		return formOwner(parent);
+	}
+}
+
+export class HTMLLIElement extends HTMLElement {}
+
+/** A link to a resource, which is never fetched, so it never has a sheet. */
+export class HTMLLinkElement extends HTMLElement {
+	get sheet(): null {
 		return null;
 	}
 }
+
+/** An image map, and the areas inside it. */
+export class HTMLMapElement extends HTMLElement {
+	#areas: HTMLCollection | null = null;
+
+	get areas(): HTMLCollection {
+		let areas = this.#areas;
+		if (areas === null) {
+			areas = new HTMLCollection(() => {
+				const found: Element[] = [];
+				for (const node of descendants(this)) {
+					if (node instanceof HTMLAreaElement) found.push(node);
+				}
+				return found;
+			}, this);
+			this.#areas = areas;
+		}
+		return areas;
+	}
+}
+
+/** A marquee, whose scrolling is a rendering the tree does not do. */
+export class HTMLMarqueeElement extends HTMLElement {
+	start(): void {}
+
+	stop(): void {}
+}
+
 const NETWORK_EMPTY = 0;
 const NETWORK_IDLE = 1;
 const NETWORK_LOADING = 2;
@@ -9007,7 +9531,6 @@ const HAVE_METADATA = 1;
 const HAVE_CURRENT_DATA = 2;
 const HAVE_FUTURE_DATA = 3;
 const HAVE_ENOUGH_DATA = 4;
-
 /**
  * A media element.
  *
@@ -9135,7 +9658,6 @@ export class HTMLMediaElement extends HTMLElement {
 		);
 	}
 }
-
 Object.defineProperties(HTMLMediaElement.prototype, {
 	NETWORK_EMPTY: {value: NETWORK_EMPTY, enumerable: true},
 	NETWORK_IDLE: {value: NETWORK_IDLE, enumerable: true},
@@ -9147,6 +9669,7 @@ Object.defineProperties(HTMLMediaElement.prototype, {
 	HAVE_FUTURE_DATA: {value: HAVE_FUTURE_DATA, enumerable: true},
 	HAVE_ENOUGH_DATA: {value: HAVE_ENOUGH_DATA, enumerable: true},
 });
+export class HTMLAudioElement extends HTMLMediaElement {}
 /** A video, whose intrinsic dimensions are zero until one is decoded. */
 export class HTMLVideoElement extends HTMLMediaElement {
 	get videoWidth(): number {
@@ -9157,27 +9680,158 @@ export class HTMLVideoElement extends HTMLMediaElement {
 		return 0;
 	}
 }
-export class HTMLAudioElement extends HTMLMediaElement {}
-export class HTMLTrackElement extends HTMLElement {}
-/** An image map, and the areas inside it. */
-export class HTMLMapElement extends HTMLElement {
-	#areas: HTMLCollection | null = null;
 
-	get areas(): HTMLCollection {
-		let areas = this.#areas;
-		if (areas === null) {
-			areas = new HTMLCollection(() => {
-				const found: Element[] = [];
-				for (const node of descendants(this)) {
-					if (node instanceof HTMLAreaElement) found.push(node);
-				}
-				return found;
-			}, this);
-			this.#areas = areas;
-		}
-		return areas;
+export class HTMLMenuElement extends HTMLElement {}
+
+export class HTMLMetaElement extends HTMLElement {}
+
+export class HTMLModElement extends HTMLElement {}
+
+/**
+ * An embedded resource.
+ *
+ * Nothing is ever fetched here, so the object never gets a nested browsing
+ * context: its document, its window and its SVG document are all null, which
+ * is what they are for an object that loaded nothing.
+ */
+export class HTMLObjectElement extends HTMLElement {
+	get form(): HTMLFormElement | null {
+		return formOwner(this);
+	}
+
+	get contentDocument(): null {
+		return null;
+	}
+
+	get contentWindow(): null {
+		return null;
+	}
+
+	getSVGDocument(): null {
+		return null;
 	}
 }
+
+export class HTMLOListElement extends HTMLElement {}
+
+export class HTMLOptGroupElement extends HTMLElement {
+	/** Installed from the element table, and read by the select's own tree. */
+	declare disabled: boolean;
+	declare label: string;
+}
+
+export class HTMLParagraphElement extends HTMLElement {}
+
+export class HTMLParamElement extends HTMLElement {}
+
+export class HTMLPictureElement extends HTMLElement {}
+
+export class HTMLPreElement extends HTMLElement {}
+
+export class HTMLQuoteElement extends HTMLElement {}
+
+/**
+ * A script, which never runs.
+ *
+ * The element is the one the specification defines and its text is the text
+ * it holds; executing it is the step this DOM does not have.
+ */
+export class HTMLScriptElement extends HTMLElement {
+	static supports(type: string): boolean {
+		const named = String(type);
+		return named === "classic" || named === "module" || named === "importmap";
+	}
+
+	get text(): string {
+		return childText(this);
+	}
+
+	set text(value: string) {
+		setDescendantText(this, String(value));
+	}
+
+	/** Async is the one boolean whose IDL attribute a parser can force. */
+	get async(): boolean {
+		return this.hasAttribute("async");
+	}
+
+	set async(value: boolean) {
+		this.toggleAttribute("async", Boolean(value));
+	}
+}
+
+export class HTMLSourceElement extends HTMLElement {}
+
+export class HTMLSpanElement extends HTMLElement {}
+
+/**
+ * A style sheet written into the document.
+ *
+ * The sheet itself belongs to the engine's cascade, not to the tree: there is
+ * none here, which is what makes `sheet` null and `disabled` false.
+ */
+export class HTMLStyleElement extends HTMLElement {
+	/**
+	 * A document with no cascade behind it parses no CSS, and so holds no
+	 * sheet. A window's cascade replaces this accessor with one that answers
+	 * the element's real CSSStyleSheet (see styles.ts's CSSOM installation),
+	 * which is what an author reaches through `styleEl.sheet`.
+	 */
+	get sheet(): CSSStyleSheet | null {
+		return null;
+	}
+
+	get disabled(): boolean {
+		return false;
+	}
+
+	set disabled(_value: boolean) {
+		void _value;
+	}
+
+	override [kInsertionSteps](): void {
+		super[kInsertionSteps]();
+		this[kDocument][kStyleElements]++;
+	}
+
+	override [kRemovingSteps](oldParent: Node): void {
+		super[kRemovingSteps](oldParent);
+		this[kDocument][kStyleElements]--;
+	}
+}
+/**
+ * How many style elements a document's trees hold, as a number that changes
+ * whenever one joins or leaves. A cascade polls this to notice a sheet that
+ * appeared since it last parsed, which is cheaper than walking for one.
+ */
+export function styleElementCount(document: Document): number {
+	return document[kStyleElements];
+}
+/** Mount a document in a window, which is what gives it a `defaultView`. */
+export function setDefaultView(document: Document, view: object | null): void {
+	document[kDefaultView] = view;
+}
+/** The element focus is on, set without firing the events a move fires. */
+export function setActiveElement(
+	document: Document,
+	element: Element | null,
+): void {
+	document[kActiveElement] = element;
+}
+
+export class HTMLTableCaptionElement extends HTMLElement {}
+
+/** One cell of a row, which knows where in the row it sits. */
+export class HTMLTableCellElement extends HTMLElement {
+	get cellIndex(): number {
+		const parent = this[kParent];
+		if (!(parent instanceof HTMLTableRowElement)) return -1;
+		return rowCells(parent).indexOf(this);
+	}
+}
+
+export class HTMLTableColElement extends HTMLElement {}
+
 /** A table, and the rows and sections a caller reaches and builds. */
 export class HTMLTableElement extends HTMLElement {
 	#tBodies: HTMLCollection | null = null;
@@ -9362,7 +10016,6 @@ export class HTMLTableElement extends HTMLElement {
 		removeNode(rows[at]);
 	}
 }
-
 /** Whether a node is an HTML element with a given local name. */
 function isHTMLElementNamed(node: Node, localName: string): boolean {
 	return (
@@ -9371,7 +10024,6 @@ function isHTMLElementNamed(node: Node, localName: string): boolean {
 		(node as Element)[kLocalName] === localName
 	);
 }
-
 /** The child elements of a parent with a given HTML local name, in order. */
 function childElementsNamed(parent: Node, localName: string): Element[] {
 	const found: Element[] = [];
@@ -9387,7 +10039,6 @@ function childElementsNamed(parent: Node, localName: string): Element[] {
 	}
 	return found;
 }
-
 /**
  * A table's rows: the head's, then the ones the table holds itself and its
  * bodies hold, then the foot's.
@@ -9417,45 +10068,7 @@ function tableRows(table: Element): Element[] {
 	}
 	return [...head, ...middle, ...foot];
 }
-export class HTMLTableColElement extends HTMLElement {}
-/** A head, body or foot of a table, and the rows it holds. */
-export class HTMLTableSectionElement extends HTMLElement {
-	#rows: HTMLCollection | null = null;
 
-	get rows(): HTMLCollection {
-		let rows = this.#rows;
-		if (rows === null) {
-			rows = new HTMLCollection(
-				() => childElementsNamed(this, "tr"),
-				this,
-				(node) => isHTMLElementNamed(node, "tr"),
-			);
-			this.#rows = rows;
-		}
-		return rows;
-	}
-
-	insertRow(index = -1): Element {
-		const rows = childElementsNamed(this, "tr");
-		const at = toLong(index);
-		if (at < -1 || at > rows.length) {
-			throw indexSizeError("There is no row at that index");
-		}
-		const row = createElementInternal(this[kDocument], "tr", HTML_NAMESPACE);
-		preInsert(row, this, at === -1 || at === rows.length ? null : rows[at]);
-		return row;
-	}
-
-	deleteRow(index: number): void {
-		const rows = childElementsNamed(this, "tr");
-		let at = toLong(index);
-		if (at === -1) at = rows.length - 1;
-		if (at < 0 || at >= rows.length) {
-			throw indexSizeError("There is no row at that index");
-		}
-		removeNode(rows[at]);
-	}
-}
 /** One row of a table, and the cells it holds. */
 export class HTMLTableRowElement extends HTMLElement {
 	#cells: HTMLCollection | null = null;
@@ -9518,7 +10131,6 @@ export class HTMLTableRowElement extends HTMLElement {
 			: null;
 	}
 }
-
 /** The cells of a row: its td and th children, in order. */
 function rowCells(row: Element): Element[] {
 	const cells: Element[] = [];
@@ -9527,419 +10139,70 @@ function rowCells(row: Element): Element[] {
 	}
 	return cells;
 }
-/** One cell of a row, which knows where in the row it sits. */
-export class HTMLTableCellElement extends HTMLElement {
-	get cellIndex(): number {
-		const parent = this[kParent];
-		if (!(parent instanceof HTMLTableRowElement)) return -1;
-		return rowCells(parent).indexOf(this);
-	}
-}
-/**
- * A form, and the controls it owns.
- *
- * Submission navigates, and this DOM does not navigate: `submit()` runs the
- * steps up to the navigation and stops, `requestSubmit()` fires the submit
- * event those steps fire first, and `reset()` fires its event and restores
- * every control it owns to its default.
- */
-export class HTMLFormElement extends HTMLElement {
-	#elements: HTMLFormControlsCollection | null = null;
-	#firingReset = false;
 
-	get elements(): HTMLFormControlsCollection {
-		let elements = this.#elements;
-		if (elements === null) {
-			elements = new HTMLFormControlsCollection(
-				() => listedControls(this),
+/** A head, body or foot of a table, and the rows it holds. */
+export class HTMLTableSectionElement extends HTMLElement {
+	#rows: HTMLCollection | null = null;
+
+	get rows(): HTMLCollection {
+		let rows = this.#rows;
+		if (rows === null) {
+			rows = new HTMLCollection(
+				() => childElementsNamed(this, "tr"),
 				this,
+				(node) => isHTMLElementNamed(node, "tr"),
 			);
-			this.#elements = elements;
+			this.#rows = rows;
 		}
-		return elements;
+		return rows;
 	}
 
-	get length(): number {
-		return this.elements.length;
-	}
-
-	submit(): void {
-		submitForm(this, null, true);
-	}
-
-	requestSubmit(submitter: Element | null = null): void {
-		if (submitter !== null && submitter !== undefined) {
-			if (!(submitter instanceof Element) || !isSubmitButton(submitter)) {
-				throw new TypeError("That element is not a submit button");
-			}
-			if (formOwner(submitter) !== this) {
-				throw notFoundError("That button does not belong to this form");
-			}
-		} else {
-			submitter = null;
+	insertRow(index = -1): Element {
+		const rows = childElementsNamed(this, "tr");
+		const at = toLong(index);
+		if (at < -1 || at > rows.length) {
+			throw indexSizeError("There is no row at that index");
 		}
-		submitForm(this, submitter, false);
+		const row = createElementInternal(this[kDocument], "tr", HTML_NAMESPACE);
+		preInsert(row, this, at === -1 || at === rows.length ? null : rows[at]);
+		return row;
 	}
 
-	reset(): void {
-		if (this.#firingReset) return;
-		this.#firingReset = true;
-		let canceled: boolean;
-		try {
-			canceled = !dispatch(
-				this,
-				new Event("reset", {bubbles: true, cancelable: true}),
-			);
-		} finally {
-			this.#firingReset = false;
+	deleteRow(index: number): void {
+		const rows = childElementsNamed(this, "tr");
+		let at = toLong(index);
+		if (at === -1) at = rows.length - 1;
+		if (at < 0 || at >= rows.length) {
+			throw indexSizeError("There is no row at that index");
 		}
-		if (canceled) return;
-		for (const control of listedControls(this)) resetControl(control);
+		removeNode(rows[at]);
 	}
 }
 
-/** The listed controls a form owns, in tree order. */
-function listedControls(form: HTMLFormElement): Element[] {
-	const controls: Element[] = [];
-	const root = getRoot(form);
-	for (const node of descendants(root)) {
-		if (node.nodeType !== ELEMENT_NODE) continue;
-		const element = node as Element;
-		if (!isListed(element)) continue;
-		if (formOwner(element) !== form) continue;
-		if (element instanceof HTMLInputElement && element.type === "image") {
-			continue;
-		}
-		controls.push(element);
+export class HTMLTimeElement extends HTMLElement {}
+
+/** The document's title, which is the text this element holds. */
+export class HTMLTitleElement extends HTMLElement {
+	get text(): string {
+		return childText(this);
 	}
-	return controls;
-}
 
-/** Whether an element is a button that submits its form. */
-function isSubmitButton(element: Element): boolean {
-	if (element instanceof HTMLButtonElement) return element.type === "submit";
-	if (element instanceof HTMLInputElement) {
-		const type = element.type;
-		return type === "submit" || type === "image";
-	}
-	return false;
-}
-
-/**
- * Submit a form.
- *
- * Everything up to the navigation runs: the submit event fires unless the
- * caller was `submit()`, which the specification defines as skipping it. The
- * navigation itself is the one step this DOM does not have.
- */
-function submitForm(
-	form: HTMLFormElement,
-	submitter: Element | null,
-	skipEvent: boolean,
-): void {
-	if (skipEvent) return;
-	const event = new SubmitEvent("submit", {
-		bubbles: true,
-		cancelable: true,
-		submitter: submitter as HTMLElement | null,
-	});
-	dispatch(form, event);
-}
-
-const kResetControl = Symbol("put a control back to its default");
-
-/** Put a control back to the value its attributes name. */
-function resetControl(control: Element): void {
-	const resettable = control as unknown as Record<symbol, () => void>;
-	if (typeof resettable[kResetControl] === "function") {
-		resettable[kResetControl]();
-	} else if (isFormAssociatedCustom(control)) {
-		enqueueCallbackReaction(control, "formResetCallback", []);
+	set text(value: string) {
+		setDescendantText(this, String(value));
 	}
 }
-
-export interface SubmitEventInit extends EventInit {
-	submitter?: HTMLElement | null;
+/** The text of an element's Text children, which is not its descendants'. */
+function childText(element: Element): string {
+	let text = "";
+	for (let node = element[kFirstChild]; node !== null; node = node[kNext]) {
+		if (node.nodeType === TEXT_NODE) text += (node as Text).data;
+	}
+	return text;
 }
 
-/** The event a form fires before it is submitted, naming the button. */
-export class SubmitEvent extends Event {
-	#submitter: HTMLElement | null;
+export class HTMLTrackElement extends HTMLElement {}
 
-	constructor(type: string, eventInitDict: SubmitEventInit = {}) {
-		super(type, eventInitDict);
-		const init = toDictionary<SubmitEventInit>(eventInitDict, "An event init");
-		this.#submitter = init.submitter ?? null;
-	}
-
-	get submitter(): HTMLElement | null {
-		return this.#submitter;
-	}
-}
-
-Object.defineProperty(SubmitEvent.prototype, Symbol.toStringTag, {
-	value: "SubmitEvent",
-	configurable: true,
-});
-
-/**
- * The controls of a form, which answers a name with every control that has
- * it: one element, or a list of the radio buttons that share it.
- */
-export class HTMLFormControlsCollection extends HTMLCollection {
-	#owner: Node | null;
-
-	constructor(compute: () => Element[], owner: Node | null = null) {
-		super(compute, owner);
-		this.#owner = owner;
-	}
-
-	override namedItem(name: string): Element | null {
-		const key = String(name);
-		if (key === "") return null;
-		const matches = this.#matching(key);
-		if (matches.length === 0) return null;
-		if (matches.length === 1) return matches[0] as Element;
-		// The list is what the interface answers with for a shared name; the
-		// declared type is the collection's, which has no way to say so.
-		return new RadioNodeList(
-			() => this.#matching(key),
-			this.#owner,
-		) as unknown as Element;
-	}
-
-	override namedProperties(items: Node[]): Map<string, Node> {
-		const counts = new Map<string, Node[]>();
-		for (const item of items) {
-			const element = item as Element;
-			for (const key of [
-				element.getAttribute("id"),
-				element.getAttribute("name"),
-			]) {
-				if (key === null || key === "") continue;
-				const list = counts.get(key);
-				if (list === undefined) {
-					counts.set(key, [element]);
-				} else if (!list.includes(element)) {
-					list.push(element);
-				}
-			}
-		}
-		const named = new Map<string, Node>();
-		for (const [key, list] of counts) {
-			named.set(
-				key,
-				list.length === 1
-					? list[0]
-					: (new RadioNodeList(
-							() => this.#matching(key),
-							this.#owner,
-						) as unknown as Node),
-			);
-		}
-		return named;
-	}
-
-	#matching(key: string): Node[] {
-		const matches: Node[] = [];
-		for (const item of this[kEnsure]()) {
-			const element = item as Element;
-			if (
-				element.getAttribute("id") === key ||
-				element.getAttribute("name") === key
-			) {
-				matches.push(element);
-			}
-		}
-		return matches;
-	}
-}
-
-Object.defineProperty(
-	HTMLFormControlsCollection.prototype,
-	Symbol.toStringTag,
-	{value: "HTMLFormControlsCollection", configurable: true},
-);
-
-/** The radio buttons that share a name, and the value the checked one has. */
-export class RadioNodeList extends NodeList {
-	constructor(compute: () => Node[], owner: Node | null = null) {
-		super(compute, true, owner);
-	}
-
-	get value(): string {
-		for (const node of this[kEnsure]()) {
-			if (!(node instanceof HTMLInputElement)) continue;
-			if (node.type !== "radio" || !node.checked) continue;
-			return node.getAttribute("value") ?? "on";
-		}
-		return "";
-	}
-
-	set value(value: string) {
-		const wanted = String(value);
-		for (const node of this[kEnsure]()) {
-			if (!(node instanceof HTMLInputElement)) continue;
-			if (node.type !== "radio") continue;
-			if ((node.getAttribute("value") ?? "on") !== wanted) continue;
-			node.checked = true;
-			return;
-		}
-	}
-}
-
-Object.defineProperty(RadioNodeList.prototype, Symbol.toStringTag, {
-	value: "RadioNodeList",
-	configurable: true,
-});
-/** A label, and the control its click reaches. */
-export class HTMLLabelElement extends HTMLElement {
-	get form(): HTMLFormElement | null {
-		const control = this.control;
-		return control === null ? null : formOwner(control);
-	}
-
-	/**
-	 * The control this label labels: the one its `for` attribute names, or the
-	 * first labelable element among its descendants.
-	 */
-	get control(): HTMLElement | null {
-		const id = this.getAttribute("for");
-		if (id !== null) {
-			if (id === "") return null;
-			const root = getRoot(this);
-			for (const node of descendants(root)) {
-				if (node.nodeType !== ELEMENT_NODE) continue;
-				const element = node as Element;
-				if (element.getAttribute("id") !== id) continue;
-				return isLabelable(element) ? (element as HTMLElement) : null;
-			}
-			return null;
-		}
-		for (const node of descendants(this)) {
-			if (node.nodeType !== ELEMENT_NODE) continue;
-			if (isLabelable(node as Element)) return node as HTMLElement;
-		}
-		return null;
-	}
-
-	/**
-	 * A click on a label is a click on its control, unless the click already
-	 * came from inside that control.
-	 */
-	[kActivationBehavior](event: Event): void {
-		const control = this.control;
-		if (control === null) return;
-		for (const target of event.composedPath()) {
-			if (target === control) return;
-		}
-		if (control[kClickInProgress]) return;
-		control.click();
-	}
-}
-/** How an input's type reads and writes its value. */
-function inputValueMode(type: string): "value" | "default" | "on" | "filename" {
-	switch (type) {
-		case "hidden":
-		case "submit":
-		case "image":
-		case "reset":
-		case "button":
-			return "default";
-		case "checkbox":
-		case "radio":
-			return "on";
-		case "file":
-			return "filename";
-		default:
-			return "value";
-	}
-}
-
-/** The types whose value a caller can select a range of. */
-const SELECTABLE_INPUT_TYPES = new Set([
-	"text",
-	"search",
-	"url",
-	"tel",
-	"password",
-]);
-
-const VALID_DATE = /^[0-9]{4,}-[0-9]{2}-[0-9]{2}$/;
-const VALID_MONTH = /^[0-9]{4,}-[0-9]{2}$/;
-const VALID_WEEK = /^[0-9]{4,}-W[0-9]{2}$/;
-const VALID_TIME = /^[0-9]{2}:[0-9]{2}(:[0-9]{2}(\.[0-9]{1,3})?)?$/;
-const VALID_DATETIME_LOCAL =
-	/^[0-9]{4,}-[0-9]{2}-[0-9]{2}[T ][0-9]{2}:[0-9]{2}(:[0-9]{2}(\.[0-9]{1,3})?)?$/;
-const VALID_FLOAT = /^-?(?:[0-9]+|[0-9]*\.[0-9]+)(?:[eE][+-]?[0-9]+)?$/;
-const VALID_SIMPLE_COLOR = /^#[0-9a-fA-F]{6}$/;
-
-/** A floating-point number as the value space of the numeric types reads it. */
-function parseFloatingPoint(value: string): number | null {
-	if (!VALID_FLOAT.test(value)) return null;
-	const number = Number(value);
-	return Number.isFinite(number) ? number : null;
-}
-
-/**
- * The value an input stores for what was written to it.
- *
- * Each type names one sanitization algorithm, and every one of them is here:
- * a value that the type cannot hold becomes the empty string, or the nearest
- * value the type can hold.
- */
-function sanitizeInputValue(input: HTMLInputElement, value: string): string {
-	const stripped = value.replace(/[\r\n]/g, "");
-	switch (input.type) {
-		case "text":
-		case "search":
-		case "tel":
-		case "password":
-			return stripped;
-		case "url":
-			return stripped.replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, "");
-		case "email":
-			if (input.hasAttribute("multiple")) {
-				return stripped
-					.split(",")
-					.map((part) => part.replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, ""))
-					.join(",");
-			}
-			return stripped.replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, "");
-		case "date":
-			return VALID_DATE.test(value) ? value : "";
-		case "month":
-			return VALID_MONTH.test(value) ? value : "";
-		case "week":
-			return VALID_WEEK.test(value) ? value : "";
-		case "time":
-			return VALID_TIME.test(value) ? value : "";
-		case "datetime-local":
-			return VALID_DATETIME_LOCAL.test(value)
-				? value.replace(" ", "T").replace(/(:[0-9]{2})\.?0*$/, "$1")
-				: "";
-		case "number":
-			return parseFloatingPoint(value) === null ? "" : value;
-		case "range":
-			return String(clampRangeValue(input, value));
-		case "color":
-			return VALID_SIMPLE_COLOR.test(value) ? asciiLowercase(value) : "#000000";
-		default:
-			return value;
-	}
-}
-
-/** A range's value: the number it names, pulled inside the range it allows. */
-function clampRangeValue(input: HTMLInputElement, value: string): number {
-	const min = parseFloatingPoint(input.getAttribute("min") ?? "") ?? 0;
-	const max = parseFloatingPoint(input.getAttribute("max") ?? "") ?? 100;
-	const number = parseFloatingPoint(value);
-	const middle = max < min ? min : min + (max - min) / 2;
-	if (number === null) return middle;
-	if (number < min) return min;
-	if (max >= min && number > max) return max;
-	return number;
-}
+export class HTMLUListElement extends HTMLElement {}
 
 /* ------------------------------------------- the text controls' UA editing */
 
@@ -10080,60 +10343,6 @@ function textCaretRange(
 /** A node's own document, as the tree-building code below reads it. */
 function uaDocumentOf(node: object): UADocument {
 	return (node as Node).ownerDocument as unknown as UADocument;
-}
-
-/**
- * One visual (soft-wrapped or hard-broken) line of a laid-out textarea: the
- * range of the value it covers. A value renders as pre-wrap, so the line's
- * characters are that range of the value verbatim.
- */
-type TextareaVisualLine = {
-	/** Data offset of the line's first character / caret slot. */
-	startOffset: number;
-	/** Data offset of the caret slot AFTER the line's last character. */
-	endOffset: number;
-};
-
-/**
- * The visual line index a caret offset sits on, given a textarea's visual
- * lines.
- */
-function textareaLineAt(
-	lines: Array<{startOffset: number; endOffset: number}>,
-	caret: number,
-): number {
-	for (let i = 0; i < lines.length; i++) {
-		// endOffset is a valid caret slot on this line; a caret exactly at a
-		// soft-wrap boundary belongs to the NEXT line's start (both lines claim
-		// the offset; later line wins), matching browsers.
-		if (caret <= lines[i].endOffset) {
-			const next = lines[i + 1];
-			if (next && next.startOffset <= caret) continue;
-			return i;
-		}
-	}
-	return lines.length - 1;
-}
-
-/**
- * A textarea's laid-out visual lines with their data ranges -- a thin field
- * view over the shared `lineFragments` primitive (the empty and trailing-newline
- * lines included). Internal to the control's own Home/End and vertical-motion
- * editing; geometry consumers read `lineFragments` or a `Range` directly.
- */
-function textareaVisualLines(
-	field: HTMLTextAreaElement,
-	layout: UAEngine["layout"],
-): {value: string; lines: TextareaVisualLine[]} | null {
-	const valueText = fieldValueText(field);
-	if (!valueText) return null;
-	// The laid-out lines with their data ranges, including the empty lines no
-	// fragment represents (an empty value, a trailing newline) -- the same
-	// annotation range geometry reads, so the caret, a Range, and vertical
-	// navigation all agree on where an offset sits.
-	const lines = layout.lineFragments(valueText);
-	if (lines.length === 0) return null;
-	return {value: valueText.data, lines};
 }
 
 /** A field's value and selection after an editing key -- what to apply. */
@@ -10402,6 +10611,130 @@ function uaEngineOf(node: object): UAEngine | undefined {
 		UAEngine
 	> | null;
 	return document?.[kUAEngine];
+}
+
+const kTextSelectionChangeScheduled = Symbol("has scheduled selectionchange");
+
+/**
+ * Apply the text selection API's clamping and direction rules, and tell the
+ * control that its selection moved.
+ *
+ * The event is queued rather than fired: a run of writes inside one turn
+ * reports once, at the selection they settled on.
+ */
+function setTextSelection(
+	control: Element,
+	start: number,
+	end: number,
+	direction: string | undefined,
+	length: number,
+	store: (selection: [number, number, string]) => void,
+): void {
+	const clampedEnd = Math.min(end, length);
+	const clampedStart = Math.min(Math.min(start, length), clampedEnd);
+	const named = direction === undefined ? "none" : direction;
+	const kept =
+		named === "forward" || named === "backward" || named === "none"
+			? named
+			: "none";
+	store([clampedStart, clampedEnd, kept]);
+	scheduleTextSelectionChange(control);
+}
+
+/** Queue the selectionchange event a text control fires at itself. */
+function scheduleTextSelectionChange(control: Element): void {
+	const scheduled = control as unknown as Record<symbol, boolean>;
+	if (scheduled[kTextSelectionChangeScheduled]) return;
+	scheduled[kTextSelectionChangeScheduled] = true;
+	queueMicrotask(() => {
+		scheduled[kTextSelectionChangeScheduled] = false;
+		dispatch(control, new Event("selectionchange", {bubbles: true}));
+	});
+}
+
+/** The setRangeText algorithm over a raw value. */
+function replaceTextRange(
+	value: string,
+	replacement: string,
+	start: number,
+	end: number,
+	selectMode: string,
+	selectionStart: number,
+	selectionEnd: number,
+): {value: string; start: number; end: number} {
+	if (start > end) {
+		throw indexSizeError("A range cannot end before it starts");
+	}
+	const length = value.length;
+	let from = Math.min(start, length);
+	let to = Math.min(end, length);
+	let selectionFrom = selectionStart;
+	let selectionTo = selectionEnd;
+	const next = value.slice(0, from) + replacement + value.slice(to);
+	const newLength = replacement.length;
+	const oldLength = to - from;
+	const delta = newLength - oldLength;
+	if (selectionFrom > to) {
+		selectionFrom += delta;
+	} else if (selectionFrom > from) {
+		selectionFrom = from;
+	}
+	if (selectionTo > to) {
+		selectionTo += delta;
+	} else if (selectionTo > from) {
+		selectionTo = from + newLength;
+	}
+	switch (selectMode) {
+		case "select":
+			return {value: next, start: from, end: from + newLength};
+		case "start":
+			return {value: next, start: from, end: from};
+		case "end":
+			return {value: next, start: from + newLength, end: from + newLength};
+		case "preserve":
+			return {value: next, start: selectionFrom, end: selectionTo};
+		default:
+			throw new TypeError(`${selectMode} is not a selection mode`);
+	}
+}
+
+/** A button, whose activation submits or resets the form it belongs to. */
+export class HTMLButtonElement extends HTMLElement {
+	/** Installed from the element table, and read by the algorithms below. */
+	declare type: string;
+
+	get form(): HTMLFormElement | null {
+		return formOwner(this);
+	}
+
+	get labels(): NodeList {
+		return labelsOf(this);
+	}
+
+	/**
+	 * The popover this button invokes, which the attribute names by id or an
+	 * author hands over as an element.
+	 */
+	get popoverTargetElement(): Element | null {
+		return popoverTargetAttributeElement(this);
+	}
+
+	set popoverTargetElement(value: Element | null) {
+		setPopoverTargetAttributeElement(this, value);
+	}
+
+	[kActivationBehavior](event: Event): void {
+		if (isActuallyDisabled(this)) return;
+		const form = formOwner(this);
+		if (form !== null) {
+			if (this.type === "submit") {
+				submitForm(form, this, false);
+			} else if (this.type === "reset") {
+				form.reset();
+			}
+		}
+		popoverTargetActivationBehavior(this, event.target);
+	}
 }
 
 /**
@@ -10955,7 +11288,104 @@ export class HTMLInputElement extends HTMLElement {
 		if (result) applyFieldEdit(this, result);
 	};
 }
-
+/** How an input's type reads and writes its value. */
+function inputValueMode(type: string): "value" | "default" | "on" | "filename" {
+	switch (type) {
+		case "hidden":
+		case "submit":
+		case "image":
+		case "reset":
+		case "button":
+			return "default";
+		case "checkbox":
+		case "radio":
+			return "on";
+		case "file":
+			return "filename";
+		default:
+			return "value";
+	}
+}
+/** The types whose value a caller can select a range of. */
+const SELECTABLE_INPUT_TYPES = new Set([
+	"text",
+	"search",
+	"url",
+	"tel",
+	"password",
+]);
+const VALID_DATE = /^[0-9]{4,}-[0-9]{2}-[0-9]{2}$/;
+const VALID_MONTH = /^[0-9]{4,}-[0-9]{2}$/;
+const VALID_WEEK = /^[0-9]{4,}-W[0-9]{2}$/;
+const VALID_TIME = /^[0-9]{2}:[0-9]{2}(:[0-9]{2}(\.[0-9]{1,3})?)?$/;
+const VALID_DATETIME_LOCAL =
+	/^[0-9]{4,}-[0-9]{2}-[0-9]{2}[T ][0-9]{2}:[0-9]{2}(:[0-9]{2}(\.[0-9]{1,3})?)?$/;
+const VALID_FLOAT = /^-?(?:[0-9]+|[0-9]*\.[0-9]+)(?:[eE][+-]?[0-9]+)?$/;
+const VALID_SIMPLE_COLOR = /^#[0-9a-fA-F]{6}$/;
+/** A floating-point number as the value space of the numeric types reads it. */
+function parseFloatingPoint(value: string): number | null {
+	if (!VALID_FLOAT.test(value)) return null;
+	const number = Number(value);
+	return Number.isFinite(number) ? number : null;
+}
+/**
+ * The value an input stores for what was written to it.
+ *
+ * Each type names one sanitization algorithm, and every one of them is here:
+ * a value that the type cannot hold becomes the empty string, or the nearest
+ * value the type can hold.
+ */
+function sanitizeInputValue(input: HTMLInputElement, value: string): string {
+	const stripped = value.replace(/[\r\n]/g, "");
+	switch (input.type) {
+		case "text":
+		case "search":
+		case "tel":
+		case "password":
+			return stripped;
+		case "url":
+			return stripped.replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, "");
+		case "email":
+			if (input.hasAttribute("multiple")) {
+				return stripped
+					.split(",")
+					.map((part) => part.replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, ""))
+					.join(",");
+			}
+			return stripped.replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, "");
+		case "date":
+			return VALID_DATE.test(value) ? value : "";
+		case "month":
+			return VALID_MONTH.test(value) ? value : "";
+		case "week":
+			return VALID_WEEK.test(value) ? value : "";
+		case "time":
+			return VALID_TIME.test(value) ? value : "";
+		case "datetime-local":
+			return VALID_DATETIME_LOCAL.test(value)
+				? value.replace(" ", "T").replace(/(:[0-9]{2})\.?0*$/, "$1")
+				: "";
+		case "number":
+			return parseFloatingPoint(value) === null ? "" : value;
+		case "range":
+			return String(clampRangeValue(input, value));
+		case "color":
+			return VALID_SIMPLE_COLOR.test(value) ? asciiLowercase(value) : "#000000";
+		default:
+			return value;
+	}
+}
+/** A range's value: the number it names, pulled inside the range it allows. */
+function clampRangeValue(input: HTMLInputElement, value: string): number {
+	const min = parseFloatingPoint(input.getAttribute("min") ?? "") ?? 0;
+	const max = parseFloatingPoint(input.getAttribute("max") ?? "") ?? 100;
+	const number = parseFloatingPoint(value);
+	const middle = max < min ? min : min + (max - min) / 2;
+	if (number === null) return middle;
+	if (number < min) return min;
+	if (max >= min && number > max) return max;
+	return number;
+}
 /** The radio buttons an input shares a group with: its name, form and tree. */
 function radioGroupOf(input: HTMLInputElement): HTMLInputElement[] {
 	const name = input.getAttribute("name");
@@ -10972,134 +11402,259 @@ function radioGroupOf(input: HTMLInputElement): HTMLInputElement[] {
 	}
 	return group;
 }
-
 /** The radio button of a group that is checked, if one is. */
 function checkedRadioIn(input: HTMLInputElement): HTMLInputElement | undefined {
 	return radioGroupOf(input).find((radio) => radio.checked);
 }
 
-const kTextSelectionChangeScheduled = Symbol("has scheduled selectionchange");
+const kSelectedness = Symbol("an option's selectedness");
+const kOptionDirty = Symbol("an option's dirtiness");
+/** One choice of a select, whose selectedness is its own state. */
+export class HTMLOptionElement extends HTMLElement {
+	/** Installed from the element table, and read by the select's own tree. */
+	declare disabled: boolean;
 
-/**
- * Apply the text selection API's clamping and direction rules, and tell the
- * control that its selection moved.
- *
- * The event is queued rather than fired: a run of writes inside one turn
- * reports once, at the selection they settled on.
- */
-function setTextSelection(
-	control: Element,
-	start: number,
-	end: number,
-	direction: string | undefined,
-	length: number,
-	store: (selection: [number, number, string]) => void,
-): void {
-	const clampedEnd = Math.min(end, length);
-	const clampedStart = Math.min(Math.min(start, length), clampedEnd);
-	const named = direction === undefined ? "none" : direction;
-	const kept =
-		named === "forward" || named === "backward" || named === "none"
-			? named
-			: "none";
-	store([clampedStart, clampedEnd, kept]);
-	scheduleTextSelectionChange(control);
+	#selectedness = false;
+	[kOptionDirty] = false;
+
+	/**
+	 * An option's selectedness. A select's `selectedOptions` is a live list
+	 * over it, and a live list revalidates against the tree's version, so
+	 * moving selectedness is moving the tree as far as that list can tell.
+	 */
+	get [kSelectedness](): boolean {
+		return this.#selectedness;
+	}
+
+	set [kSelectedness](value: boolean) {
+		if (this.#selectedness === value) return;
+		this.#selectedness = value;
+		bumpVersion();
+	}
+
+	get form(): HTMLFormElement | null {
+		const select = selectOf(this);
+		return select === null ? null : formOwner(select);
+	}
+
+	/** The label an option shows: its attribute, or the text it holds. */
+	get label(): string {
+		const label = this.getAttribute("label");
+		return label === null ? this.text : label;
+	}
+
+	set label(value: string) {
+		this.setAttribute("label", String(value));
+	}
+
+	/** The value an option submits: its attribute, or the text it holds. */
+	get value(): string {
+		const value = this.getAttribute("value");
+		return value === null ? this.text : value;
+	}
+
+	set value(value: string) {
+		this.setAttribute("value", String(value));
+	}
+
+	get text(): string {
+		return stripAndCollapseWhitespace(descendantText(this));
+	}
+
+	set text(value: string) {
+		setDescendantText(this, String(value));
+	}
+
+	get index(): number {
+		const select = selectOf(this);
+		if (select === null) return 0;
+		return optionsOf(select).indexOf(this);
+	}
+
+	get selected(): boolean {
+		const select = selectOf(this);
+		if (select !== null) askForAReset(select);
+		return this[kSelectedness];
+	}
+
+	set selected(value: boolean) {
+		this[kOptionDirty] = true;
+		this[kSelectedness] = Boolean(value);
+		const select = selectOf(this);
+		if (select === null) return;
+		if (this[kSelectedness] && !select.hasAttribute("multiple")) {
+			for (const option of optionsOf(select)) {
+				if (option !== this) option[kSelectedness] = false;
+			}
+		}
+		askForAReset(select);
+		widgetChanged(select);
+	}
+
+	override [kAttributeChanged](
+		localName: string,
+		oldValue: string | null,
+		value: string | null,
+		namespace: string | null,
+	): void {
+		super[kAttributeChanged](localName, oldValue, value, namespace);
+		if (namespace === null && localName === "selected" && !this[kOptionDirty]) {
+			this[kSelectedness] = value !== null;
+		}
+		const select = selectOf(this);
+		if (select !== null) widgetChanged(select);
+	}
+
+	override [kCloningSteps](copy: Node): void {
+		const clone = copy as HTMLOptionElement;
+		clone[kSelectedness] = this[kSelectedness];
+		clone[kOptionDirty] = this[kOptionDirty];
+	}
+}
+/** The select an option belongs to, directly or through its group. */
+function selectOf(option: Element): HTMLSelectElement | null {
+	const parent = option[kParent];
+	if (parent === null) return null;
+	if (parent instanceof HTMLSelectElement) return parent;
+	if (parent instanceof HTMLOptGroupElement) {
+		const grandparent = parent[kParent];
+		if (grandparent instanceof HTMLSelectElement) return grandparent;
+	}
+	return null;
 }
 
-/** Queue the selectionchange event a text control fires at itself. */
-function scheduleTextSelectionChange(control: Element): void {
-	const scheduled = control as unknown as Record<symbol, boolean>;
-	if (scheduled[kTextSelectionChangeScheduled]) return;
-	scheduled[kTextSelectionChangeScheduled] = true;
-	queueMicrotask(() => {
-		scheduled[kTextSelectionChangeScheduled] = false;
-		dispatch(control, new Event("selectionchange", {bubbles: true}));
-	});
-}
+/** The options of a select, which can be added to and taken from by index. */
+export class HTMLOptionsCollection extends HTMLCollection {
+	#select: HTMLSelectElement;
 
-/** The setRangeText algorithm over a raw value. */
-function replaceTextRange(
-	value: string,
-	replacement: string,
-	start: number,
-	end: number,
-	selectMode: string,
-	selectionStart: number,
-	selectionEnd: number,
-): {value: string; start: number; end: number} {
-	if (start > end) {
-		throw indexSizeError("A range cannot end before it starts");
+	constructor(select: HTMLSelectElement) {
+		super(() => optionsOf(select), select);
+		this.#select = select;
 	}
-	const length = value.length;
-	let from = Math.min(start, length);
-	let to = Math.min(end, length);
-	let selectionFrom = selectionStart;
-	let selectionTo = selectionEnd;
-	const next = value.slice(0, from) + replacement + value.slice(to);
-	const newLength = replacement.length;
-	const oldLength = to - from;
-	const delta = newLength - oldLength;
-	if (selectionFrom > to) {
-		selectionFrom += delta;
-	} else if (selectionFrom > from) {
-		selectionFrom = from;
+
+	override get length(): number {
+		return this[kEnsure]().length;
 	}
-	if (selectionTo > to) {
-		selectionTo += delta;
-	} else if (selectionTo > from) {
-		selectionTo = from + newLength;
+
+	override set length(value: number) {
+		const wanted = toUnsignedLong(value);
+		const options = optionsOf(this.#select);
+		if (wanted > options.length) {
+			if (wanted > 100000) return;
+			for (let index = options.length; index < wanted; index++) {
+				const option = createElementInternal(
+					this.#select[kDocument],
+					"option",
+					HTML_NAMESPACE,
+				);
+				appendNode(option, this.#select);
+			}
+			return;
+		}
+		for (let index = options.length - 1; index >= wanted; index--) {
+			removeNode(options[index]);
+		}
 	}
-	switch (selectMode) {
-		case "select":
-			return {value: next, start: from, end: from + newLength};
-		case "start":
-			return {value: next, start: from, end: from};
-		case "end":
-			return {value: next, start: from + newLength, end: from + newLength};
-		case "preserve":
-			return {value: next, start: selectionFrom, end: selectionTo};
-		default:
-			throw new TypeError(`${selectMode} is not a selection mode`);
+
+	get selectedIndex(): number {
+		return this.#select.selectedIndex;
+	}
+
+	set selectedIndex(value: number) {
+		this.#select.selectedIndex = value;
+	}
+
+	add(element: Element, before?: Element | number | null): void {
+		if (
+			!(element instanceof HTMLOptionElement) &&
+			!(element instanceof HTMLOptGroupElement)
+		) {
+			throw new TypeError("Only an option or an option group can be added");
+		}
+		if (isInclusiveAncestor(element, this.#select)) {
+			throw hierarchyRequestError(
+				"A select cannot be put inside its own option",
+			);
+		}
+		let reference: Node | null = null;
+		if (before !== undefined && before !== null) {
+			if (typeof before === "number") {
+				const options = optionsOf(this.#select);
+				const index = toLong(before);
+				reference =
+					index >= 0 && index < options.length ? options[index] : null;
+			} else {
+				if (!(before instanceof Element)) {
+					throw new TypeError("That is not an element");
+				}
+				if (!optionsOf(this.#select).includes(before as HTMLOptionElement)) {
+					throw notFoundError("That option is not in this select");
+				}
+				reference = before;
+			}
+		}
+		const parent =
+			reference === null ? this.#select : (reference[kParent] as Node);
+		preInsert(element, parent, reference);
+	}
+
+	remove(index: number): void {
+		const options = optionsOf(this.#select);
+		const at = toLong(index);
+		if (at < 0 || at >= options.length) return;
+		removeNode(options[at]);
 	}
 }
-/** A button, whose activation submits or resets the form it belongs to. */
-export class HTMLButtonElement extends HTMLElement {
-	/** Installed from the element table, and read by the algorithms below. */
-	declare type: string;
+Object.defineProperty(HTMLOptionsCollection.prototype, Symbol.toStringTag, {
+	value: "HTMLOptionsCollection",
+	configurable: true,
+});
+
+/** The result of a calculation, whose value resets to its child text. */
+export class HTMLOutputElement extends HTMLElement {
+	#dirty = false;
+	#stored = "";
 
 	get form(): HTMLFormElement | null {
 		return formOwner(this);
+	}
+
+	get type(): string {
+		return "output";
 	}
 
 	get labels(): NodeList {
 		return labelsOf(this);
 	}
 
-	/**
-	 * The popover this button invokes, which the attribute names by id or an
-	 * author hands over as an element.
-	 */
-	get popoverTargetElement(): Element | null {
-		return popoverTargetAttributeElement(this);
+	get defaultValue(): string {
+		return this.#dirty ? this.#stored : descendantText(this);
 	}
 
-	set popoverTargetElement(value: Element | null) {
-		setPopoverTargetAttributeElement(this, value);
-	}
-
-	[kActivationBehavior](event: Event): void {
-		if (isActuallyDisabled(this)) return;
-		const form = formOwner(this);
-		if (form !== null) {
-			if (this.type === "submit") {
-				submitForm(form, this, false);
-			} else if (this.type === "reset") {
-				form.reset();
-			}
+	set defaultValue(value: string) {
+		if (this.#dirty) {
+			this.#stored = String(value);
+			return;
 		}
-		popoverTargetActivationBehavior(this, event.target);
+		setDescendantText(this, String(value));
+	}
+
+	get value(): string {
+		return descendantText(this);
+	}
+
+	set value(value: string) {
+		if (!this.#dirty) this.#stored = descendantText(this);
+		this.#dirty = true;
+		setDescendantText(this, String(value));
+	}
+
+	[kResetControl](): void {
+		if (this.#dirty) setDescendantText(this, this.#stored);
+		this.#dirty = false;
 	}
 }
+
 /**
  * A control that picks among its options.
  *
@@ -11523,7 +12078,6 @@ export class HTMLSelectElement extends HTMLElement {
 		}
 	};
 }
-
 /** One row of a select's picker: an option, or a group's heading. */
 interface PickerRow {
 	part: "option" | "optgroup";
@@ -11533,7 +12087,6 @@ interface PickerRow {
 	grouped: boolean;
 	highlighted: boolean;
 }
-
 /**
  * Whether an option is disabled: its own attribute, or the group it belongs
  * to carrying one -- the two the HTML Standard reads together.
@@ -11543,7 +12096,6 @@ function optionIsDisabled(option: HTMLOptionElement): boolean {
 	const parent = option[kParent];
 	return parent instanceof HTMLOptGroupElement && parent.disabled;
 }
-
 /** Whether a document-space point falls inside a rect. */
 function rectContains(rect: UARect, x: number, y: number): boolean {
 	return (
@@ -11553,14 +12105,12 @@ function rectContains(rect: UARect, x: number, y: number): boolean {
 		y < rect.y + rect.height
 	);
 }
-
 /** Set or clear a picker row's state attribute, writing only on a change. */
 function setRowFlag(row: UAElement, name: string, on: boolean): void {
 	if (on === row.hasAttribute(name)) return;
 	if (on) row.setAttribute(name, "");
 	else row.removeAttribute(name);
 }
-
 /**
  * The index into a select's option list that a picker row stands for: the rows
  * that are options, counted in tree order.
@@ -11574,7 +12124,6 @@ function optionIndexOfRow(picker: UAElement, row: UAElement): number {
 	}
 	return -1;
 }
-
 /** The options of a select: its option children, and its groups' children. */
 function optionsOf(select: Element): HTMLOptionElement[] {
 	const options: HTMLOptionElement[] = [];
@@ -11593,14 +12142,12 @@ function optionsOf(select: Element): HTMLOptionElement[] {
 	}
 	return options;
 }
-
 /** The number of rows a select shows, which its size attribute names. */
 function displaySize(select: HTMLSelectElement): number {
 	const value = select.getAttribute("size");
 	const parsed = value === null ? null : parseNonNegativeInteger(value);
 	return parsed === null || parsed === 0 ? 1 : parsed;
 }
-
 /**
  * The selectedness setting algorithm: a select that shows one row and has
  * nothing selected selects its first enabled option, and a select with more
@@ -11625,210 +12172,6 @@ function askForAReset(select: HTMLSelectElement): void {
 	}
 }
 
-/** The select an option belongs to, directly or through its group. */
-function selectOf(option: Element): HTMLSelectElement | null {
-	const parent = option[kParent];
-	if (parent === null) return null;
-	if (parent instanceof HTMLSelectElement) return parent;
-	if (parent instanceof HTMLOptGroupElement) {
-		const grandparent = parent[kParent];
-		if (grandparent instanceof HTMLSelectElement) return grandparent;
-	}
-	return null;
-}
-
-/** The options of a select, which can be added to and taken from by index. */
-export class HTMLOptionsCollection extends HTMLCollection {
-	#select: HTMLSelectElement;
-
-	constructor(select: HTMLSelectElement) {
-		super(() => optionsOf(select), select);
-		this.#select = select;
-	}
-
-	override get length(): number {
-		return this[kEnsure]().length;
-	}
-
-	override set length(value: number) {
-		const wanted = toUnsignedLong(value);
-		const options = optionsOf(this.#select);
-		if (wanted > options.length) {
-			if (wanted > 100000) return;
-			for (let index = options.length; index < wanted; index++) {
-				const option = createElementInternal(
-					this.#select[kDocument],
-					"option",
-					HTML_NAMESPACE,
-				);
-				appendNode(option, this.#select);
-			}
-			return;
-		}
-		for (let index = options.length - 1; index >= wanted; index--) {
-			removeNode(options[index]);
-		}
-	}
-
-	get selectedIndex(): number {
-		return this.#select.selectedIndex;
-	}
-
-	set selectedIndex(value: number) {
-		this.#select.selectedIndex = value;
-	}
-
-	add(element: Element, before?: Element | number | null): void {
-		if (
-			!(element instanceof HTMLOptionElement) &&
-			!(element instanceof HTMLOptGroupElement)
-		) {
-			throw new TypeError("Only an option or an option group can be added");
-		}
-		if (isInclusiveAncestor(element, this.#select)) {
-			throw hierarchyRequestError(
-				"A select cannot be put inside its own option",
-			);
-		}
-		let reference: Node | null = null;
-		if (before !== undefined && before !== null) {
-			if (typeof before === "number") {
-				const options = optionsOf(this.#select);
-				const index = toLong(before);
-				reference =
-					index >= 0 && index < options.length ? options[index] : null;
-			} else {
-				if (!(before instanceof Element)) {
-					throw new TypeError("That is not an element");
-				}
-				if (!optionsOf(this.#select).includes(before as HTMLOptionElement)) {
-					throw notFoundError("That option is not in this select");
-				}
-				reference = before;
-			}
-		}
-		const parent =
-			reference === null ? this.#select : (reference[kParent] as Node);
-		preInsert(element, parent, reference);
-	}
-
-	remove(index: number): void {
-		const options = optionsOf(this.#select);
-		const at = toLong(index);
-		if (at < 0 || at >= options.length) return;
-		removeNode(options[at]);
-	}
-}
-
-Object.defineProperty(HTMLOptionsCollection.prototype, Symbol.toStringTag, {
-	value: "HTMLOptionsCollection",
-	configurable: true,
-});
-const kSelectedness = Symbol("an option's selectedness");
-const kOptionDirty = Symbol("an option's dirtiness");
-
-/** One choice of a select, whose selectedness is its own state. */
-export class HTMLOptionElement extends HTMLElement {
-	/** Installed from the element table, and read by the select's own tree. */
-	declare disabled: boolean;
-
-	#selectedness = false;
-	[kOptionDirty] = false;
-
-	/**
-	 * An option's selectedness. A select's `selectedOptions` is a live list
-	 * over it, and a live list revalidates against the tree's version, so
-	 * moving selectedness is moving the tree as far as that list can tell.
-	 */
-	get [kSelectedness](): boolean {
-		return this.#selectedness;
-	}
-
-	set [kSelectedness](value: boolean) {
-		if (this.#selectedness === value) return;
-		this.#selectedness = value;
-		bumpVersion();
-	}
-
-	get form(): HTMLFormElement | null {
-		const select = selectOf(this);
-		return select === null ? null : formOwner(select);
-	}
-
-	/** The label an option shows: its attribute, or the text it holds. */
-	get label(): string {
-		const label = this.getAttribute("label");
-		return label === null ? this.text : label;
-	}
-
-	set label(value: string) {
-		this.setAttribute("label", String(value));
-	}
-
-	/** The value an option submits: its attribute, or the text it holds. */
-	get value(): string {
-		const value = this.getAttribute("value");
-		return value === null ? this.text : value;
-	}
-
-	set value(value: string) {
-		this.setAttribute("value", String(value));
-	}
-
-	get text(): string {
-		return stripAndCollapseWhitespace(descendantText(this));
-	}
-
-	set text(value: string) {
-		setDescendantText(this, String(value));
-	}
-
-	get index(): number {
-		const select = selectOf(this);
-		if (select === null) return 0;
-		return optionsOf(select).indexOf(this);
-	}
-
-	get selected(): boolean {
-		const select = selectOf(this);
-		if (select !== null) askForAReset(select);
-		return this[kSelectedness];
-	}
-
-	set selected(value: boolean) {
-		this[kOptionDirty] = true;
-		this[kSelectedness] = Boolean(value);
-		const select = selectOf(this);
-		if (select === null) return;
-		if (this[kSelectedness] && !select.hasAttribute("multiple")) {
-			for (const option of optionsOf(select)) {
-				if (option !== this) option[kSelectedness] = false;
-			}
-		}
-		askForAReset(select);
-		widgetChanged(select);
-	}
-
-	override [kAttributeChanged](
-		localName: string,
-		oldValue: string | null,
-		value: string | null,
-		namespace: string | null,
-	): void {
-		super[kAttributeChanged](localName, oldValue, value, namespace);
-		if (namespace === null && localName === "selected" && !this[kOptionDirty]) {
-			this[kSelectedness] = value !== null;
-		}
-		const select = selectOf(this);
-		if (select !== null) widgetChanged(select);
-	}
-
-	override [kCloningSteps](copy: Node): void {
-		const clone = copy as HTMLOptionElement;
-		clone[kSelectedness] = this[kSelectedness];
-		clone[kOptionDirty] = this[kOptionDirty];
-	}
-}
 /**
  * A multi-line control, whose default value is its child text.
  *
@@ -12195,55 +12538,62 @@ export class HTMLTextAreaElement extends HTMLElement {
 		return target.endOffset;
 	}
 }
-
+/**
+ * One visual (soft-wrapped or hard-broken) line of a laid-out textarea: the
+ * range of the value it covers. A value renders as pre-wrap, so the line's
+ * characters are that range of the value verbatim.
+ */
+type TextareaVisualLine = {
+	/** Data offset of the line's first character / caret slot. */
+	startOffset: number;
+	/** Data offset of the caret slot AFTER the line's last character. */
+	endOffset: number;
+};
+/**
+ * The visual line index a caret offset sits on, given a textarea's visual
+ * lines.
+ */
+function textareaLineAt(
+	lines: Array<{startOffset: number; endOffset: number}>,
+	caret: number,
+): number {
+	for (let i = 0; i < lines.length; i++) {
+		// endOffset is a valid caret slot on this line; a caret exactly at a
+		// soft-wrap boundary belongs to the NEXT line's start (both lines claim
+		// the offset; later line wins), matching browsers.
+		if (caret <= lines[i].endOffset) {
+			const next = lines[i + 1];
+			if (next && next.startOffset <= caret) continue;
+			return i;
+		}
+	}
+	return lines.length - 1;
+}
+/**
+ * A textarea's laid-out visual lines with their data ranges -- a thin field
+ * view over the shared `lineFragments` primitive (the empty and trailing-newline
+ * lines included). Internal to the control's own Home/End and vertical-motion
+ * editing; geometry consumers read `lineFragments` or a `Range` directly.
+ */
+function textareaVisualLines(
+	field: HTMLTextAreaElement,
+	layout: UAEngine["layout"],
+): {value: string; lines: TextareaVisualLine[]} | null {
+	const valueText = fieldValueText(field);
+	if (!valueText) return null;
+	// The laid-out lines with their data ranges, including the empty lines no
+	// fragment represents (an empty value, a trailing newline) -- the same
+	// annotation range geometry reads, so the caret, a Range, and vertical
+	// navigation all agree on where an offset sits.
+	const lines = layout.lineFragments(valueText);
+	if (lines.length === 0) return null;
+	return {value: valueText.data, lines};
+}
 /** A raw value holds line breaks as single line feeds. */
 function normalizeNewlines(value: string): string {
 	return value.replace(/\r\n?/g, "\n");
 }
-/** The result of a calculation, whose value resets to its child text. */
-export class HTMLOutputElement extends HTMLElement {
-	#dirty = false;
-	#stored = "";
 
-	get form(): HTMLFormElement | null {
-		return formOwner(this);
-	}
-
-	get type(): string {
-		return "output";
-	}
-
-	get labels(): NodeList {
-		return labelsOf(this);
-	}
-
-	get defaultValue(): string {
-		return this.#dirty ? this.#stored : descendantText(this);
-	}
-
-	set defaultValue(value: string) {
-		if (this.#dirty) {
-			this.#stored = String(value);
-			return;
-		}
-		setDescendantText(this, String(value));
-	}
-
-	get value(): string {
-		return descendantText(this);
-	}
-
-	set value(value: string) {
-		if (!this.#dirty) this.#stored = descendantText(this);
-		this.#dirty = true;
-		setDescendantText(this, String(value));
-	}
-
-	[kResetControl](): void {
-		if (this.#dirty) setDescendantText(this, this.#stored);
-		this.#dirty = false;
-	}
-}
 /* ------------------------------------------------------------ the gauges */
 
 /**
@@ -12252,17 +12602,8 @@ export class HTMLOutputElement extends HTMLElement {
  * shadow tree, clipped to the fraction CSS gives the bar.
  */
 const GAUGE_BAR_GLYPH = "█";
-const GAUGE_GROOVE_GLYPH = "░";
 
-/** The attributes a meter's own rendering is read from. */
-const METER_ATTRIBUTES = new Set([
-	"value",
-	"min",
-	"max",
-	"low",
-	"high",
-	"optimum",
-]);
+const GAUGE_GROOVE_GLYPH = "░";
 
 /**
  * The glyph run a gauge's parts are drawn from, long enough that no bar on
@@ -12311,75 +12652,6 @@ function setGaugeFill(bar: UAElement, fraction: number | null): void {
 	if (bar.style.width !== width) bar.style.width = width;
 }
 
-/**
- * A progress bar, whose value is read against the maximum it names.
- *
- * It renders a closed shadow tree it owns: a run of block glyphs filled to
- * `value`/`max`. A progress with no value attribute is indeterminate, which
- * here is an empty bar over the full groove -- there is no animation to make
- * the difference the way a browser does.
- */
-export class HTMLProgressElement extends HTMLElement {
-	#engine: UAEngine | null = null;
-	#bar: UAElement | null = null;
-
-	[kUAUpgrade](): void {
-		if (this.#engine !== null) {
-			this[kUAReconcile]();
-			return;
-		}
-		const engine = uaEngineOf(this);
-		if (engine === undefined) return;
-		this.#engine = engine;
-		this.#bar = buildGaugeRoot(this, engine, PROGRESS_UA_STYLES).bar;
-		this[kUAReconcile]();
-	}
-
-	[kUAReconcile](): void {
-		if (this.#engine === null) return;
-		const position = this.position;
-		setGaugeFill(this.#bar!, position < 0 ? null : position);
-	}
-
-	override [kAttributeChanged](
-		localName: string,
-		oldValue: string | null,
-		value: string | null,
-		namespace: string | null,
-	): void {
-		super[kAttributeChanged](localName, oldValue, value, namespace);
-		if (namespace === null && (localName === "value" || localName === "max")) {
-			this[kUAReconcile]();
-		}
-	}
-
-	get value(): number {
-		const value = parseFloatingPoint(this.getAttribute("value") ?? "");
-		if (value === null || value < 0) return 0;
-		return Math.min(value, this.max);
-	}
-
-	set value(value: number) {
-		this.setAttribute("value", String(toDouble(value)));
-	}
-
-	get max(): number {
-		const max = parseFloatingPoint(this.getAttribute("max") ?? "");
-		return max === null || max <= 0 ? 1 : max;
-	}
-
-	set max(value: number) {
-		this.setAttribute("max", String(toDouble(value)));
-	}
-
-	get position(): number {
-		return this.hasAttribute("value") ? this.value / this.max : -1;
-	}
-
-	get labels(): NodeList {
-		return labelsOf(this);
-	}
-}
 /**
  * A gauge, whose six numbers are each read inside the ones around them.
  *
@@ -12507,82 +12779,45 @@ export class HTMLMeterElement extends HTMLElement {
 		return labelsOf(this);
 	}
 }
-/** A group of controls, and the group's own disabling. */
-export class HTMLFieldSetElement extends HTMLElement {
-	#elements: HTMLCollection | null = null;
-
-	get form(): HTMLFormElement | null {
-		return formOwner(this);
-	}
-
-	get type(): string {
-		return "fieldset";
-	}
-
-	get elements(): HTMLCollection {
-		let elements = this.#elements;
-		if (elements === null) {
-			elements = new HTMLCollection(() => {
-				const listed: Element[] = [];
-				for (const node of descendants(this)) {
-					if (node.nodeType !== ELEMENT_NODE) continue;
-					if (isListed(node as Element)) listed.push(node as Element);
-				}
-				return listed;
-			}, this);
-			this.#elements = elements;
-		}
-		return elements;
-	}
-}
-export interface ToggleEventInit extends EventInit {
-	oldState?: string;
-	newState?: string;
-	source?: Element | null;
-}
-
-/** The event a details or a popover fires when it opens or closes. */
-export class ToggleEvent extends Event {
-	#oldState: string;
-	#newState: string;
-	#source: Element | null;
-
-	constructor(type: string, eventInitDict: ToggleEventInit = {}) {
-		super(type, eventInitDict);
-		const init = toDictionary<ToggleEventInit>(eventInitDict, "An event init");
-		this.#oldState = String(init.oldState ?? "");
-		this.#newState = String(init.newState ?? "");
-		this.#source = init.source ?? null;
-	}
-
-	get oldState(): string {
-		return this.#oldState;
-	}
-
-	get newState(): string {
-		return this.#newState;
-	}
-
-	/** The element whose activation opened or closed the popover, if any. */
-	get source(): Element | null {
-		return this.#source;
-	}
-}
-
-Object.defineProperty(ToggleEvent.prototype, Symbol.toStringTag, {
-	value: "ToggleEvent",
-	configurable: true,
-});
+/** The attributes a meter's own rendering is read from. */
+const METER_ATTRIBUTES = new Set([
+	"value",
+	"min",
+	"max",
+	"low",
+	"high",
+	"optimum",
+]);
 
 /**
- * A disclosure, whose open attribute is its whole state.
+ * A progress bar, whose value is read against the maximum it names.
  *
- * The toggle event is queued rather than fired where the attribute changes,
- * so a run of changes inside one turn reports the state it settled on.
+ * It renders a closed shadow tree it owns: a run of block glyphs filled to
+ * `value`/`max`. A progress with no value attribute is indeterminate, which
+ * here is an empty bar over the full groove -- there is no animation to make
+ * the difference the way a browser does.
  */
-export class HTMLDetailsElement extends HTMLElement {
-	#toggleQueued = false;
-	#stateAtQueue = "closed";
+export class HTMLProgressElement extends HTMLElement {
+	#engine: UAEngine | null = null;
+	#bar: UAElement | null = null;
+
+	[kUAUpgrade](): void {
+		if (this.#engine !== null) {
+			this[kUAReconcile]();
+			return;
+		}
+		const engine = uaEngineOf(this);
+		if (engine === undefined) return;
+		this.#engine = engine;
+		this.#bar = buildGaugeRoot(this, engine, PROGRESS_UA_STYLES).bar;
+		this[kUAReconcile]();
+	}
+
+	[kUAReconcile](): void {
+		if (this.#engine === null) return;
+		const position = this.position;
+		setGaugeFill(this.#bar!, position < 0 ? null : position);
+	}
 
 	override [kAttributeChanged](
 		localName: string,
@@ -12591,210 +12826,43 @@ export class HTMLDetailsElement extends HTMLElement {
 		namespace: string | null,
 	): void {
 		super[kAttributeChanged](localName, oldValue, value, namespace);
-		if (namespace !== null || localName !== "open") return;
-		if ((oldValue === null) === (value === null)) return;
-		if (!this.#toggleQueued) {
-			this.#toggleQueued = true;
-			this.#stateAtQueue = oldValue === null ? "closed" : "open";
-			queueMicrotask(() => {
-				this.#toggleQueued = false;
-				const now = this.hasAttribute("open") ? "open" : "closed";
-				if (now === this.#stateAtQueue) return;
-				dispatch(
-					this,
-					new ToggleEvent("toggle", {
-						oldState: this.#stateAtQueue,
-						newState: now,
-					}),
-				);
-			});
+		if (namespace === null && (localName === "value" || localName === "max")) {
+			this[kUAReconcile]();
 		}
 	}
-}
 
-/**
- * A summary opens and closes the details it is the summary of.
- *
- * Only a summary has this behavior, and HTML gives a summary no interface of
- * its own, so the hook answers for the elements that are one and for nothing
- * else.
- */
-Object.defineProperty(HTMLElement.prototype, kActivationBehavior, {
-	get(this: HTMLElement): (() => void) | undefined {
-		const parent = this[kParent];
-		if (this[kNamespace] !== HTML_NAMESPACE) return undefined;
-		if (this[kLocalName] !== "summary") return undefined;
-		if (parent === null || !(parent instanceof HTMLDetailsElement)) {
-			return undefined;
-		}
-		if (firstChildElement(parent, "summary") !== this) return undefined;
-		return function toggleTheDetails(this: HTMLElement): void {
-			const details = this[kParent] as HTMLDetailsElement;
-			details.toggleAttribute("open", !details.hasAttribute("open"));
-		};
-	},
-	configurable: true,
-});
-/**
- * A document's TOP LAYER: the elements that render above every stacking
- * context of the document, in the order they entered it. Membership is what
- * `showModal` grants and `close` revokes, and what the renderer paints last.
- */
-export function topLayerOf(document: object): Set<Element> {
-	return (document as Document)[kTopLayer];
-}
-
-/**
- * Whether an element is showing modally -- the state `:modal` matches. A
- * dialog is modal exactly while it is in its document's top layer: `show()`
- * never puts one there and `close()` takes it out, so there is no second
- * flag to keep in step with the first.
- */
-export function isModalDialog(node: object): boolean {
-	return (
-		node instanceof HTMLDialogElement &&
-		topLayerOf(node[kDocument]).has(node as Element)
-	);
-}
-
-/**
- * A dialog.
- *
- * Showing one modally puts it in the document's top layer, above every
- * stacking context and outside the flow it was written in, and makes the rest
- * of the document unreachable until it closes; showing one with `show()`
- * leaves it exactly where it is, an ordinary box that happens to be visible.
- */
-export class HTMLDialogElement extends HTMLElement {
-	#returnValue = "";
-	// Where focus was when the dialog took it, so closing can give it back.
-	#previouslyFocused: Element | null = null;
-
-	get returnValue(): string {
-		return this.#returnValue;
+	get value(): number {
+		const value = parseFloatingPoint(this.getAttribute("value") ?? "");
+		if (value === null || value < 0) return 0;
+		return Math.min(value, this.max);
 	}
 
-	set returnValue(value: string) {
-		this.#returnValue = String(value);
+	set value(value: number) {
+		this.setAttribute("value", String(toDouble(value)));
 	}
 
-	show(): void {
-		if (this.hasAttribute("open")) {
-			if (isModalDialog(this)) {
-				throw domError(
-					"InvalidStateError",
-					"That dialog is already showing modally",
-				);
-			}
-			return;
-		}
-		this.setAttribute("open", "");
+	get max(): number {
+		const max = parseFloatingPoint(this.getAttribute("max") ?? "");
+		return max === null || max <= 0 ? 1 : max;
 	}
 
-	showModal(): void {
-		if (this.hasAttribute("open")) {
-			throw domError("InvalidStateError", "That dialog is already showing");
-		}
-		if (!isConnectedNode(this)) {
-			throw domError(
-				"InvalidStateError",
-				"A dialog must be connected to show modally",
-			);
-		}
-		// The top layer is the modality: everything else -- `:modal`, the
-		// backdrop, the hit-testing that stops clicks reaching the page --
-		// reads membership rather than a flag of its own.
-		topLayerOf(this[kDocument]).add(this);
-		this.setAttribute("open", "");
-		this.#focusDialog();
+	set max(value: number) {
+		this.setAttribute("max", String(toDouble(value)));
 	}
 
-	/**
-	 * The dialog focusing steps, as the popover focusing steps reach them: a
-	 * dialog shown as a popover focuses like a dialog, not like a popover.
-	 */
-	[kDialogFocusingSteps](): void {
-		this.#focusDialog();
+	get position(): number {
+		return this.hasAttribute("value") ? this.value / this.max : -1;
 	}
 
-	/**
-	 * HTML's dialog focusing steps: focus goes to the descendant asking for it
-	 * with `autofocus`, else to the first one that can take focus, else to the
-	 * dialog itself -- which is focusable for exactly as long as it is the
-	 * modal one, so a dialog of plain text still takes keys off the page.
-	 */
-	#focusDialog(): void {
-		this.#previouslyFocused = this[kDocument][kActiveElement];
-		const walker = shadowIncludingInclusiveDescendants(this);
-		let fallback: Element | null = null;
-		for (const node of walker) {
-			if (node === this || node.nodeType !== ELEMENT_NODE) continue;
-			const element = node as Element;
-			if (!isFocusableArea(element)) continue;
-			if (element.hasAttribute("autofocus")) {
-				(element as HTMLElement).focus();
-				return;
-			}
-			if (fallback === null) fallback = element;
-		}
-		if (fallback !== null) {
-			(fallback as HTMLElement).focus();
-			return;
-		}
-		this[kDocument][kActiveElement] = this;
+	get labels(): NodeList {
+		return labelsOf(this);
 	}
-
-	/**
-	 * A modal dialog taken out of the document leaves the top layer with it:
-	 * nothing off the tree can render above it, and a detached dialog is no
-	 * longer modal.
-	 */
-	override [kRemovingSteps](oldParent: Node): void {
-		super[kRemovingSteps](oldParent);
-		topLayerOf(this[kDocument]).delete(this);
-	}
-
-	close(returnValue?: string): void {
-		this.#close(returnValue, false);
-	}
-
-	requestClose(returnValue?: string): void {
-		if (!this.hasAttribute("open")) return;
-		const canceled = !dispatch(this, new Event("cancel", {cancelable: true}));
-		if (canceled) return;
-		this.#close(returnValue, false);
-	}
-
-	#close(returnValue: string | undefined, _fromRequest: boolean): void {
-		if (!this.hasAttribute("open")) return;
-		this.removeAttribute("open");
-		topLayerOf(this[kDocument]).delete(this);
-		// The page gets its focus back where the dialog took it from, so the
-		// keyboard returns to what the user was doing before it opened.
-		if (this.#previouslyFocused !== null) {
-			const previous = this.#previouslyFocused;
-			this.#previouslyFocused = null;
-			if (
-				this[kDocument][kActiveElement] === this ||
-				this.contains(this[kDocument][kActiveElement])
-			) {
-				(previous as HTMLElement).focus();
-			}
-		}
-		if (returnValue !== undefined) this.#returnValue = String(returnValue);
-		dispatch(this, new Event("close"));
-	}
-}
-
-/** Whether a node's root is a document, which is what connected means. */
-function isConnectedNode(node: Node): boolean {
-	return shadowIncludingRoot(node).nodeType === DOCUMENT_NODE;
 }
 
 /* ------------------------------------------------------------- popovers */
 
-const kDialogFocusingSteps = Symbol("the dialog focusing steps");
 const kPopoverShowing = Symbol("a popover is opening");
+
 const kPopoverHidingCount = Symbol("how many popovers are closing");
 
 /**
@@ -13435,68 +13503,6 @@ function isShadowIncludingInclusiveDescendant(
 	}
 	return false;
 }
-/**
- * A script, which never runs.
- *
- * The element is the one the specification defines and its text is the text
- * it holds; executing it is the step this DOM does not have.
- */
-export class HTMLScriptElement extends HTMLElement {
-	static supports(type: string): boolean {
-		const named = String(type);
-		return named === "classic" || named === "module" || named === "importmap";
-	}
-
-	get text(): string {
-		return childText(this);
-	}
-
-	set text(value: string) {
-		setDescendantText(this, String(value));
-	}
-
-	/** Async is the one boolean whose IDL attribute a parser can force. */
-	get async(): boolean {
-		return this.hasAttribute("async");
-	}
-
-	set async(value: boolean) {
-		this.toggleAttribute("async", Boolean(value));
-	}
-}
-/**
- * A canvas.
- *
- * The element exists with the dimensions it reflects; a rendering context is
- * a bitmap, and there is none, so getContext answers null exactly as it does
- * for a context type an implementation does not support.
- */
-export class HTMLCanvasElement extends HTMLElement {
-	getContext(contextId: string): null {
-		if (arguments.length < 1) {
-			throw new TypeError("getContext needs a context id");
-		}
-		void contextId;
-		return null;
-	}
-}
-/** A frame, which names no browsing context here either. */
-export class HTMLFrameElement extends HTMLElement {
-	get contentDocument(): null {
-		return null;
-	}
-
-	get contentWindow(): null {
-		return null;
-	}
-}
-/** A marquee, whose scrolling is a rendering the tree does not do. */
-export class HTMLMarqueeElement extends HTMLElement {
-	start(): void {}
-
-	stop(): void {}
-}
-
 /** The class each entry of the element table names. */
 const HTML_INTERFACE_CLASSES: Record<string, typeof HTMLElement> = {
 	HTMLAnchorElement,
