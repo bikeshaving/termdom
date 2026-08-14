@@ -740,6 +740,34 @@ export interface WidthMeasurer {
 }
 
 /**
+ * Whether a glyph's leading code point is a strong right-to-left character
+ * as this engine emits text: Hebrew, Arabic and their extensions, and the
+ * shaped presentation forms.
+ */
+function isStrongRTL(glyph: string): boolean {
+	const code = glyph.codePointAt(0)!;
+	return (
+		(code >= 0x0590 && code <= 0x08ff) ||
+		(code >= 0xfb1d && code <= 0xfdff) ||
+		(code >= 0xfe70 && code <= 0xfeff) ||
+		(code >= 0x1e800 && code <= 0x1efff)
+	);
+}
+
+// A terminal that runs its own bidi algorithm would reorder the visual-order
+// text this engine emits a second time. Each contiguous right-to-left run is
+// wrapped in an explicit directional override (LRO ... PDF), which UAX #9
+// obliges such a terminal to display in the order given; a terminal without
+// bidi shows the format characters as nothing. The emission is the same for
+// every terminal, so no capability needs detecting.
+//
+// Nothing obliges a terminal to spend no cell on a format character, and some
+// do spend one, so every control is written on the cell of the glyph that
+// follows it and the column is named again before that glyph goes down.
+const LRO = "\u202d";
+const PDF = "\u202c";
+
+/**
  * Emit the grid as ANSI, row by row.
  *
  * Empty cells are skipped rather than painted, so the cursor jumps them with
@@ -752,6 +780,7 @@ export function generateANSI(
 	colorDepth: ColorDepth = "rgb",
 	renderedLines?: Set<number>,
 	measurer?: WidthMeasurer,
+	wrapRTL = true,
 ): string {
 	const {rows, cols, char, border} = grid;
 
@@ -763,6 +792,11 @@ export function generateANSI(
 	let prevIndex = -1;
 
 	let skipNextCol = -1;
+	// Whether the output is inside an open override. It opens and closes only
+	// in front of a glyph, never over a cell this frame leaves alone, and the
+	// end of the row closes whatever is still open: a line is a paragraph, and
+	// a paragraph terminates its own embeddings.
+	let rtlOpen = false;
 
 	// Measurement bookkeeping: whether to look at all, which emission run the
 	// cursor is in (every move ends one), and how many clusters of unknown
@@ -835,15 +869,30 @@ export function generateANSI(
 				if (measuring) run++;
 			}
 
+			const encoding = border[index];
+			const glyph =
+				encoding > 0 ? getBorderChar(encoding) : decodeGrapheme(char[index]);
+			const rtl = wrapRTL && encoding === 0 && isStrongRTL(glyph);
+			if (rtl !== rtlOpen) {
+				// A terminal that folds the control into the glyph before it
+				// spends nothing on it, and one that does not spends a cell --
+				// this cell, which the glyph below overwrites. Either way the
+				// column is named again before the glyph goes down, so the
+				// grid lands where it was computed to land.
+				output += rtl ? LRO : PDF;
+				output += `\x1b[${col + 1}G`; // CHA - Cursor Char Absolute
+				rtlOpen = rtl;
+				// An absolutely named column is a fresh start for the column
+				// arithmetic the width probes are read against.
+				if (measuring) run++;
+			}
+
 			const styleSeq = styleDiff(grid, index, prevIndex, colorDepth);
 			if (styleSeq !== "") {
 				output += `\x1b[${styleSeq}m`; // SGR - Select Graphic Rendition
 				rowHasAnsi = true;
 			}
 
-			const encoding = border[index];
-			const glyph =
-				encoding > 0 ? getBorderChar(encoding) : decodeGrapheme(char[index]);
 			output += glyph;
 
 			const width = grid.widthAt(index);
@@ -886,6 +935,7 @@ export function generateANSI(
 		}
 
 		if (rowHasContent) {
+			rtlOpen = false;
 			prevIndex = -1;
 			if (rowHasAnsi) {
 				output += "\x1b[0m"; // SGR - Reset all attributes
@@ -1509,6 +1559,7 @@ export class Renderer {
 		regionRows?: number,
 		scroll?: {delta: number; bands: Array<[number, number]>},
 		measurer?: WidthMeasurer,
+		wrapRTL = true,
 	): string {
 		const frameRows = Math.max(this.#rows, regionRows ?? this.#rows);
 		const overflowing = frameRows > this.#rows;
@@ -1819,6 +1870,7 @@ export class Renderer {
 			this.#colorDepth,
 			this.#renderedLines,
 			measurer,
+			wrapRTL,
 		);
 
 		// Strip trailing \r\n from generateANSI — in Renderer-managed mode,

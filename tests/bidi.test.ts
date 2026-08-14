@@ -291,3 +291,30 @@ test("shaped Arabic ends exactly at the RTL padding boundary", async () => {
 	expect(inner.trim().length).toBe(13);
 	dom.dispose();
 });
+
+test("engine-ordered RTL runs travel inside a directional override", async () => {
+	// A terminal running its own bidi would reorder visual-order text a
+	// second time; LRO...PDF around each run obliges it to display the
+	// order given, and a terminal without bidi shows the pair as nothing.
+	const terminal = new MockProcess({cols: 30, rows: 4});
+	let out = "";
+	const transport = {
+		...terminal.transport,
+		writable: new WritableStream<string>({
+			write(chunk) {
+				out += chunk;
+			},
+		}),
+	};
+	const dom = new TermDOM({transport});
+	dom.document.body.innerHTML = `<div>ab ${HEBREW} cd</div>`;
+	await nextFrame(dom);
+	// Every control is followed by CHA naming the column of the glyph behind
+	// it, so a terminal that spends a cell on the control still paints the
+	// run in the columns the engine chose.
+	const wrapped = out.match(/‭\x1b\[(\d+)G([֐-׿]+)‬\x1b\[(\d+)G/u);
+	expect(wrapped).not.toBe(null);
+	expect(wrapped![2]).toBe([...HEBREW].reverse().join(""));
+	expect(Number(wrapped![3]) - Number(wrapped![1])).toBe(HEBREW.length);
+	await dom.dispose();
+});

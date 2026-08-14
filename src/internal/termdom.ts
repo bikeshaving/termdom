@@ -3369,6 +3369,10 @@ export class TermDOM {
 			top + regionHeight,
 			scroll,
 			this.#session.widthMeasurer,
+			// A terminal that reorders bidi itself receives logical-order
+			// text; wrapping that in a directional override would force the
+			// logical order onto the screen literally.
+			!this[kLayoutEngine].terminalReordersText(),
 		);
 		this.#lastFrameScrollTop = scrollTop;
 		this.#lastFrameEpoch = this[kLayoutEngine].invalidationEpoch;

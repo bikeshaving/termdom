@@ -1259,6 +1259,11 @@ export class LayoutEngine {
 		for (const flexNode of this.#measureNodes) flexNode.markDirty();
 	}
 
+	/** Whether the terminal declared that it reorders bidi text itself. */
+	terminalReordersText(): boolean {
+		return this.#terminalReordersText;
+	}
+
 	setTerminalReordersText(value: boolean): void {
 		// Flips the visual order of every RTL run without a mutation.
 		this.invalidateStructure();

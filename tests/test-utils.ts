@@ -276,7 +276,12 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 		for (let row = 0; row < this.terminal.rows; row++) {
 			const line = buffer.getLine(buffer.viewportY + row);
 			if (line) {
-				const lineText = line.translateToString(true); // true = trim right
+				// The directional override controls are chrome for terminals
+				// that run their own bidi, and no part of the text on screen.
+				// Assertions about the controls read the byte stream instead.
+				const lineText = line
+					.translateToString(true) // true = trim right
+					.replace(/[\u202c\u202d]/g, "");
 				lines.push(lineText);
 			} else {
 				lines.push("");
