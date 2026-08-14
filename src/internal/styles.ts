@@ -1167,10 +1167,28 @@ for (const [shorthand, all] of Object.entries(CSS_SHORTHANDS)) {
 							longhand.endsWith(`-${LINE_COMPONENTS[index]}`),
 					  )
 					? "line"
-					: indexed.length === 2
+					: indexed.length === 2 && axisPair(shorthand, indexed)
 						? "pair"
 						: "sequence",
 	);
+}
+
+/**
+ * Whether a two-longhand shorthand states ONE property on two axes -- `gap`,
+ * `overflow`, `place-content`, `margin-inline` -- rather than two properties
+ * side by side. An axis pair writes one value where its two agree, and copies
+ * a single stated value to both; a shorthand like `flex-flow` writes each
+ * component it has and drops the ones left at their initial value.
+ *
+ * The two longhands of an axis pair name the shorthand's own property: they
+ * are built on it as a stem, or they end in the segment it ends in.
+ */
+function axisPair(shorthand: string, longhands: readonly string[]): boolean {
+	if (longhands.every((longhand) => longhand.startsWith(shorthand))) {
+		return true;
+	}
+	const segment = shorthand.slice(shorthand.lastIndexOf("-") + 1);
+	return longhands.every((longhand) => longhand.endsWith(`-${segment}`));
 }
 
 /**
