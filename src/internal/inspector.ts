@@ -4,14 +4,14 @@
 
 // ANSI color codes for pretty printing
 const colors = {
-	tag: "\x1b[35m", // Magenta for tags
 	attr: "\x1b[36m", // Cyan for attributes
-	value: "\x1b[32m", // Green for values
-	text: "\x1b[37m", // White for text content
-	comment: "\x1b[90m", // Gray for comments
-	reset: "\x1b[0m",
-	dim: "\x1b[2m",
 	bold: "\x1b[1m",
+	comment: "\x1b[90m", // Gray for comments
+	dim: "\x1b[2m",
+	reset: "\x1b[0m",
+	tag: "\x1b[35m", // Magenta for tags
+	text: "\x1b[37m", // White for text content
+	value: "\x1b[32m", // Green for values
 };
 
 export interface InspectorOptions {
@@ -129,16 +129,16 @@ function formatElement(
 
 	// Self-closing tags
 	const selfClosing = [
-		"img",
-		"input",
-		"br",
-		"hr",
-		"meta",
-		"link",
 		"area",
 		"base",
+		"br",
 		"col",
 		"embed",
+		"hr",
+		"img",
+		"input",
+		"link",
+		"meta",
 		"source",
 		"track",
 		"wbr",

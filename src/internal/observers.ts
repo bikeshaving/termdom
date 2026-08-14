@@ -181,8 +181,8 @@ interface ResizeSize {
 
 /** The boxes an observation can watch, as the DOM enumerates them. */
 const RESIZE_BOXES = new Set([
-	"content-box",
 	"border-box",
+	"content-box",
 	"device-pixel-content-box",
 ]);
 

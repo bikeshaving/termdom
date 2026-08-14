@@ -206,15 +206,15 @@ function selectionStyleFor(
  */
 function applyTextTransform(text: string, transform: string): string {
 	switch (transform) {
-		case "uppercase":
-			return text.toUpperCase();
-		case "lowercase":
-			return text.toLowerCase();
 		case "capitalize":
 			return text.replace(
 				/\p{L}[\p{L}\p{M}]*/gu,
 				(word) => (word[0]?.toUpperCase() ?? "") + word.slice(1),
 			);
+		case "lowercase":
+			return text.toLowerCase();
+		case "uppercase":
+			return text.toUpperCase();
 		default:
 			return text;
 	}

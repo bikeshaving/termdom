@@ -251,47 +251,47 @@ function readBoxModel(computedStyle: ComputedStyle): BoxModel {
  * opacity, font-weight) -- those are NOT listed here.
  */
 const LENGTH_PROPERTIES = new Set([
-	"padding",
-	"padding-top",
-	"padding-right",
-	"padding-bottom",
-	"padding-left",
-	"margin",
-	"margin-top",
-	"margin-right",
-	"margin-bottom",
-	"margin-left",
-	"inset",
-	"top",
-	"right",
-	"bottom",
-	"left",
-	"width",
-	"height",
-	"min-width",
-	"max-width",
-	"min-height",
-	"max-height",
-	"gap",
-	"column-gap",
-	"row-gap",
-	"border-width",
-	"border-top-width",
-	"border-right-width",
+	"border-bottom-left-radius",
+	"border-bottom-right-radius",
 	"border-bottom-width",
 	"border-left-width",
 	"border-radius",
+	"border-right-width",
 	"border-top-left-radius",
 	"border-top-right-radius",
-	"border-bottom-right-radius",
-	"border-bottom-left-radius",
-	"font-size",
-	"text-indent",
-	"letter-spacing",
-	"word-spacing",
+	"border-top-width",
+	"border-width",
+	"bottom",
+	"column-gap",
 	"flex-basis",
-	"outline-width",
+	"font-size",
+	"gap",
+	"height",
+	"inset",
+	"left",
+	"letter-spacing",
+	"margin",
+	"margin-bottom",
+	"margin-left",
+	"margin-right",
+	"margin-top",
+	"max-height",
+	"max-width",
+	"min-height",
+	"min-width",
 	"outline-offset",
+	"outline-width",
+	"padding",
+	"padding-bottom",
+	"padding-left",
+	"padding-right",
+	"padding-top",
+	"right",
+	"row-gap",
+	"text-indent",
+	"top",
+	"width",
+	"word-spacing",
 ]);
 
 /**
@@ -515,22 +515,22 @@ const BOX_SHORTHAND_LONGHANDS = new Map<string, readonly string[]>([
 
 /** Properties whose value is a `<color>`. */
 const COLOR_PROPERTIES = new Set([
-	"color",
+	"accent-color",
 	"background-color",
-	"border-top-color",
-	"border-right-color",
-	"border-bottom-color",
-	"border-left-color",
-	"border-block-start-color",
 	"border-block-end-color",
-	"border-inline-start-color",
+	"border-block-start-color",
+	"border-bottom-color",
 	"border-inline-end-color",
+	"border-inline-start-color",
+	"border-left-color",
+	"border-right-color",
+	"border-top-color",
+	"caret-color",
+	"color",
+	"column-rule-color",
 	"outline-color",
 	"text-decoration-color",
 	"text-emphasis-color",
-	"caret-color",
-	"column-rule-color",
-	"accent-color",
 ]);
 
 /**
@@ -538,14 +538,14 @@ const COLOR_PROPERTIES = new Set([
  * function bodies -- and so is never case-folded.
  */
 const VERBATIM_PROPERTIES = new Set([
+	"background-image",
 	"content",
+	"counter-increment",
+	"counter-reset",
 	"font",
 	"font-family",
-	"quotes",
-	"counter-reset",
-	"counter-increment",
-	"background-image",
 	"list-style-image",
+	"quotes",
 ]);
 
 /** A value that is one bare CSS identifier, which computes case-folded. */
@@ -665,10 +665,10 @@ function serializeColor(value: string): string | null {
  */
 const ABSOLUTIZED_PROPERTIES = new Set([
 	...LENGTH_PROPERTIES,
-	"line-height",
-	"vertical-align",
 	"border-spacing",
+	"line-height",
 	"text-underline-offset",
+	"vertical-align",
 ]);
 
 /**
@@ -1107,11 +1107,11 @@ function slotNames(property: string, direction: string): readonly string[] {
 
 /** The keywords every property accepts, whatever its own grammar. */
 const CSS_WIDE_KEYWORDS = new Set([
-	"initial",
 	"inherit",
-	"unset",
+	"initial",
 	"revert",
 	"revert-layer",
+	"unset",
 ]);
 
 const CORNER_NAMES = [
@@ -1339,20 +1339,20 @@ const FAMILY_PROPERTIES = new Set(["font", "font-family", "voice-family"]);
  * them.
  */
 const RESERVED_FAMILY_NAMES = new Set([
-	"serif",
-	"sans-serif",
 	"cursive",
-	"fantasy",
-	"monospace",
-	"system-ui",
-	"math",
+	"default",
+	"emoji",
 	"fangsong",
-	"ui-serif",
-	"ui-sans-serif",
+	"fantasy",
+	"math",
+	"monospace",
+	"sans-serif",
+	"serif",
+	"system-ui",
 	"ui-monospace",
 	"ui-rounded",
-	"emoji",
-	"default",
+	"ui-sans-serif",
+	"ui-serif",
 ]);
 
 /** The counter style a `counter()` or `counters()` takes when told none. */
@@ -3044,7 +3044,7 @@ export class CSSPageRule extends CSSDeclarationBlockRule {
 }
 
 /** The page pseudo-classes a `@page` selector may name. */
-const PAGE_PSEUDO_CLASSES = new Set(["first", "left", "right", "blank"]);
+const PAGE_PSEUDO_CLASSES = new Set(["blank", "first", "left", "right"]);
 
 /**
  * A page selector -- an optional page name followed by page pseudo-classes,
@@ -4156,11 +4156,11 @@ const PSEUDO_ELEMENTS = new Set([
  * only in functional form -- `::part(name)`, never a bare `::part`.
  */
 const FUNCTIONAL_PSEUDO_ELEMENTS = new Set([
-	"part",
 	"highlight",
-	"slotted",
+	"part",
 	"picker",
 	"scroll-button",
+	"slotted",
 	"view-transition-group",
 	"view-transition-image-pair",
 	"view-transition-new",
@@ -4905,54 +4905,23 @@ function convertRule(
 	if (node.type !== "Atrule") return null;
 	const prelude = preludeText(node);
 	switch ((node.name ?? "").toLowerCase()) {
-		case "media":
-			return new CSSMediaRule(prelude, sheet, parentRule, (group) =>
-				convertRules(nodesOf(node.block ?? {}), sheet, group, namespaces),
-			);
-		case "supports":
-			return new CSSSupportsRule(prelude, sheet, parentRule, (group) =>
-				convertRules(nodesOf(node.block ?? {}), sheet, group, namespaces),
-			);
+		// A charset rule is not exposed in a sheet's rule list, per CSSOM.
+		case "charset":
+			return null;
 		case "container":
 			return new CSSContainerRule(prelude, sheet, parentRule, (group) =>
 				convertRules(nodesOf(node.block ?? {}), sheet, group, namespaces),
 			);
-		case "scope":
-			return new CSSScopeRule(prelude, sheet, parentRule, (group) =>
-				convertRules(nodesOf(node.block ?? {}), sheet, group, namespaces),
-			);
-		case "starting-style":
-			return new CSSStartingStyleRule(sheet, parentRule, (group) =>
-				convertRules(nodesOf(node.block ?? {}), sheet, group, namespaces),
-			);
-		case "layer":
-			return node.block
-				? new CSSLayerBlockRule(prelude, sheet, parentRule, (group) =>
-						convertRules(nodesOf(node.block ?? {}), sheet, group, namespaces),
-					)
-				: new CSSLayerStatementRule(prelude, sheet, parentRule);
-		case "import":
-			return convertImportRule(prelude, sheet);
-		case "namespace": {
-			const match = /^(?:([^\s]+)\s+)?(.*)$/.exec(prelude);
-			return new CSSNamespaceRule(
-				match?.[1] ?? "",
-				unwrapURL(match?.[2] ?? ""),
-				sheet,
-			);
-		}
-		case "font-face":
-			return new CSSFontFaceRule(blockText(node), sheet, parentRule);
-		case "page":
-			return new CSSPageRule(prelude, blockText(node), sheet, parentRule);
 		case "counter-style":
 			return new CSSCounterStyleRule(prelude, blockText(node), sheet);
-		case "property":
-			return new CSSPropertyRule(prelude, blockText(node), sheet);
+		case "font-face":
+			return new CSSFontFaceRule(blockText(node), sheet, parentRule);
 		case "font-feature-values":
 			return new CSSFontFeatureValuesRule(prelude, node, sheet);
 		case "font-palette-values":
 			return new CSSFontPaletteValuesRule(prelude, blockText(node), sheet);
+		case "import":
+			return convertImportRule(prelude, sheet);
 		case "keyframes":
 		case "-webkit-keyframes":
 			return new CSSKeyframesRule(prelude, sheet, (rule) =>
@@ -4968,9 +4937,40 @@ function convertRule(
 							),
 					),
 			);
-		// A charset rule is not exposed in a sheet's rule list, per CSSOM.
-		case "charset":
-			return null;
+		case "layer":
+			return node.block
+				? new CSSLayerBlockRule(prelude, sheet, parentRule, (group) =>
+						convertRules(nodesOf(node.block ?? {}), sheet, group, namespaces),
+					)
+				: new CSSLayerStatementRule(prelude, sheet, parentRule);
+		case "media":
+			return new CSSMediaRule(prelude, sheet, parentRule, (group) =>
+				convertRules(nodesOf(node.block ?? {}), sheet, group, namespaces),
+			);
+		case "namespace": {
+			const match = /^(?:([^\s]+)\s+)?(.*)$/.exec(prelude);
+			return new CSSNamespaceRule(
+				match?.[1] ?? "",
+				unwrapURL(match?.[2] ?? ""),
+				sheet,
+			);
+		}
+		case "page":
+			return new CSSPageRule(prelude, blockText(node), sheet, parentRule);
+		case "property":
+			return new CSSPropertyRule(prelude, blockText(node), sheet);
+		case "scope":
+			return new CSSScopeRule(prelude, sheet, parentRule, (group) =>
+				convertRules(nodesOf(node.block ?? {}), sheet, group, namespaces),
+			);
+		case "starting-style":
+			return new CSSStartingStyleRule(sheet, parentRule, (group) =>
+				convertRules(nodesOf(node.block ?? {}), sheet, group, namespaces),
+			);
+		case "supports":
+			return new CSSSupportsRule(prelude, sheet, parentRule, (group) =>
+				convertRules(nodesOf(node.block ?? {}), sheet, group, namespaces),
+			);
 		default:
 			return null;
 	}
@@ -5399,24 +5399,24 @@ export function uaStyleSheet(): CSSStyleSheet {
  * resolves to its computed value.
  */
 const USED_VALUE_PROPERTIES = new Set([
-	"width",
-	"height",
-	"top",
-	"right",
-	"bottom",
-	"left",
-	"margin-top",
-	"margin-right",
-	"margin-bottom",
-	"margin-left",
-	"padding-top",
-	"padding-right",
-	"padding-bottom",
-	"padding-left",
-	"border-top-width",
-	"border-right-width",
 	"border-bottom-width",
 	"border-left-width",
+	"border-right-width",
+	"border-top-width",
+	"bottom",
+	"height",
+	"left",
+	"margin-bottom",
+	"margin-left",
+	"margin-right",
+	"margin-top",
+	"padding-bottom",
+	"padding-left",
+	"padding-right",
+	"padding-top",
+	"right",
+	"top",
+	"width",
 ]);
 
 /** A used length in the one unit a terminal has: a cell, spelled `px`. */
@@ -5437,7 +5437,7 @@ const MIN_SIZE_PROPERTIES = new Set(["min-width", "min-height"]);
 /** The containers whose children have an automatic minimum size. */
 const PSEUDO_ELEMENT_NAMES = ["::before", "::after", "::marker"];
 
-const ITEM_DISPLAYS = new Set(["flex", "inline-flex", "grid", "inline-grid"]);
+const ITEM_DISPLAYS = new Set(["flex", "grid", "inline-flex", "inline-grid"]);
 
 /** The block-level display an inline-level box takes as a flex or grid item. */
 const BLOCKIFIED_DISPLAYS: Record<string, string> = {
@@ -6737,16 +6737,16 @@ const ACCESSOR_PROPERTIES = new Set<string>([
 	"background-position",
 	"background-repeat",
 	"border",
-	"border-collapse",
-	"border-color",
-	"border-radius",
-	"border-style",
 	"border-bottom-color",
 	"border-bottom-style",
+	"border-collapse",
+	"border-color",
 	"border-left-color",
 	"border-left-style",
+	"border-radius",
 	"border-right-color",
 	"border-right-style",
+	"border-style",
 	"border-top-color",
 	"border-top-style",
 	"box-sizing",
@@ -6840,45 +6840,6 @@ interface BoxCharSet {
 }
 
 export const BOX_DRAWING: Record<string, BoxCharSet> = {
-	light: {
-		horizontal: "─",
-		vertical: "│",
-		topLeft: "┌",
-		topRight: "┐",
-		bottomLeft: "└",
-		bottomRight: "┘",
-		topTee: "┬",
-		bottomTee: "┴",
-		leftTee: "┤",
-		rightTee: "├",
-		cross: "┼",
-	},
-	heavy: {
-		horizontal: "━",
-		vertical: "┃",
-		topLeft: "┏",
-		topRight: "┓",
-		bottomLeft: "┗",
-		bottomRight: "┛",
-		topTee: "┳",
-		bottomTee: "┻",
-		leftTee: "┫",
-		rightTee: "┣",
-		cross: "╋",
-	},
-	double: {
-		horizontal: "═",
-		vertical: "║",
-		topLeft: "╔",
-		topRight: "╗",
-		bottomLeft: "╚",
-		bottomRight: "╝",
-		topTee: "╦",
-		bottomTee: "╩",
-		leftTee: "╣",
-		rightTee: "╠",
-		cross: "╬",
-	},
 	dashed: {
 		horizontal: "╌",
 		vertical: "┆",
@@ -6895,6 +6856,45 @@ export const BOX_DRAWING: Record<string, BoxCharSet> = {
 	dotted: {
 		horizontal: "┄",
 		vertical: "┊",
+		topLeft: "┌",
+		topRight: "┐",
+		bottomLeft: "└",
+		bottomRight: "┘",
+		topTee: "┬",
+		bottomTee: "┴",
+		leftTee: "┤",
+		rightTee: "├",
+		cross: "┼",
+	},
+	double: {
+		horizontal: "═",
+		vertical: "║",
+		topLeft: "╔",
+		topRight: "╗",
+		bottomLeft: "╚",
+		bottomRight: "╝",
+		topTee: "╦",
+		bottomTee: "╩",
+		leftTee: "╣",
+		rightTee: "╠",
+		cross: "╬",
+	},
+	heavy: {
+		horizontal: "━",
+		vertical: "┃",
+		topLeft: "┏",
+		topRight: "┓",
+		bottomLeft: "┗",
+		bottomRight: "┛",
+		topTee: "┳",
+		bottomTee: "┻",
+		leftTee: "┫",
+		rightTee: "┣",
+		cross: "╋",
+	},
+	light: {
+		horizontal: "─",
+		vertical: "│",
 		topLeft: "┌",
 		topRight: "┐",
 		bottomLeft: "└",
@@ -6960,23 +6960,20 @@ export function resolveBorderStyles(element: Element): BorderStyles {
 
 		let edgeValue = 0;
 		switch (style) {
-			case "solid":
-				edgeValue = BorderEdgeStyle.Solid;
-				break;
-			case "double":
-				edgeValue = BorderEdgeStyle.Double;
-				break;
 			case "dashed":
 				edgeValue = BorderEdgeStyle.Dashed;
 				break;
 			case "dotted":
 				edgeValue = BorderEdgeStyle.Dotted;
 				break;
+			case "double":
+				edgeValue = BorderEdgeStyle.Double;
+				break;
 			case "groove":
 				edgeValue = BorderEdgeStyle.Groove;
 				break;
-			case "ridge":
-				edgeValue = BorderEdgeStyle.Ridge;
+			case "hidden":
+				edgeValue = BorderEdgeStyle.Hidden;
 				break;
 			case "inset":
 				edgeValue = BorderEdgeStyle.Inset;
@@ -6984,8 +6981,11 @@ export function resolveBorderStyles(element: Element): BorderStyles {
 			case "outset":
 				edgeValue = BorderEdgeStyle.Outset;
 				break;
-			case "hidden":
-				edgeValue = BorderEdgeStyle.Hidden;
+			case "ridge":
+				edgeValue = BorderEdgeStyle.Ridge;
+				break;
+			case "solid":
+				edgeValue = BorderEdgeStyle.Solid;
 				break;
 			default:
 				edgeValue = BorderEdgeStyle.Solid;
@@ -7112,9 +7112,9 @@ const COUNTER_STYLES = new Set([
 	"decimal-leading-zero",
 	"lower-alpha",
 	"lower-latin",
+	"lower-roman",
 	"upper-alpha",
 	"upper-latin",
-	"lower-roman",
 	"upper-roman",
 ]);
 
@@ -7164,14 +7164,14 @@ function formatOrdinal(ordinal: number, listStyleType: string): string {
 		case "lower-alpha":
 		case "lower-latin":
 			return ordinal > 0 ? toAlpha(ordinal) : `${ordinal}`;
-		case "upper-alpha":
-		case "upper-latin":
-			return ordinal > 0 ? toAlpha(ordinal).toUpperCase() : `${ordinal}`;
 		case "lower-roman":
 			// Roman numerals are undefined outside 1-3999; CSS falls back to decimal.
 			return ordinal > 0 && ordinal < 4000
 				? toRoman(ordinal).toLowerCase()
 				: `${ordinal}`;
+		case "upper-alpha":
+		case "upper-latin":
+			return ordinal > 0 ? toAlpha(ordinal).toUpperCase() : `${ordinal}`;
 		case "upper-roman":
 			return ordinal > 0 && ordinal < 4000 ? toRoman(ordinal) : `${ordinal}`;
 		default:

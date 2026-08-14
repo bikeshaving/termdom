@@ -172,8 +172,8 @@ export function decodeKey(token: string): KeyStroke | null {
 			B: ["ArrowDown", 40],
 			C: ["ArrowRight", 39],
 			D: ["ArrowLeft", 37],
-			H: ["Home", 36],
 			F: ["End", 35],
+			H: ["Home", 36],
 		};
 		[keyName, keyCode] = cursorKeyByLetter[modifiedArrow[2]];
 		charCode = 0;
@@ -470,7 +470,7 @@ export function focusAutofocusedNodes(mutations: MutationRecord[]): void {
 }
 
 /** Input types that are buttons rather than fields. */
-const BUTTON_INPUT_TYPES = new Set(["submit", "button", "reset", "image"]);
+const BUTTON_INPUT_TYPES = new Set(["button", "image", "reset", "submit"]);
 
 /**
  * Does a keypress on this element activate it, the way a click would?

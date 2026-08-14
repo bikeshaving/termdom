@@ -91,32 +91,23 @@ async function suiteFiles(): Promise<string[]> {
  */
 const EXCLUSIONS: Record<string, string> = {
 	// CSSOM View -- a separate spec, hit-testing a rendered box tree.
-	"caretPositionFromPoint.html": "cssom-view: caret position from a point",
 	"caretPositionFromPoint-audioVideo.html":
 		"cssom-view: caret position over media elements",
 	"caretPositionFromPoint-in-flex-container.html":
 		"cssom-view: caret position inside a flex container",
 	"caretPositionFromPoint-with-transformation.html":
 		"cssom-view: caret position under a transform",
-	"caretRangeFromPoint.tentative.html": "cssom-view: caret range from a point",
-	"caretRangeFromPoint-textarea-transform.tentative.html":
-		"cssom-view: caret range in a transformed textarea",
+	"caretPositionFromPoint.html": "cssom-view: caret position from a point",
 	"caretRangeFromPoint-replace-document.tentative.html":
 		"cssom-view: caret range across a document replacement",
+	"caretRangeFromPoint-textarea-transform.tentative.html":
+		"cssom-view: caret range in a transformed textarea",
+	"caretRangeFromPoint.tentative.html": "cssom-view: caret range from a point",
 
 	// Stylesheets fetched over a network: a terminal document has none, and a
 	// <link> never resolves to a sheet.
-	"stylesheet-same-origin.sub.html": "network: same-origin sheet loading",
-	"stylesheet-cross-origin-redirect-quirks.sub.html":
-		"network: cross-origin sheet redirects",
-	"ttwf-cssom-doc-ext-load-count.html": "network: sheet load counting",
-	"ttwf-cssom-doc-ext-load-tree-order.html":
-		"network: loaded sheets in tree order",
-	"link-element-stylesheet-title.html": "network: <link> sheet titles",
-	"stylesheet-title.html": "network: <link> sheet titles",
-	"preferred-stylesheet-order.html": "network: alternate <link> sheet sets",
-	"preferred-stylesheet-reversed-order.html":
-		"network: alternate <link> sheet sets",
+	"cssimportrule-parent.html": "network: the sheet an @import fetches",
+	"cssimportrule-sheet-identity.html": "network: the sheet an @import fetches",
 	"HTMLLinkElement-disabled-001.html": "network: <link> sheet disabling",
 	"HTMLLinkElement-disabled-002.html": "network: <link> sheet disabling",
 	"HTMLLinkElement-disabled-003.html": "network: <link> sheet disabling",
@@ -126,14 +117,23 @@ const EXCLUSIONS: Record<string, string> = {
 	"HTMLLinkElement-disabled-007.html": "network: <link> sheet disabling",
 	"HTMLLinkElement-disabled-alternate.html":
 		"network: alternate <link> sheet disabling",
-	"HTMLLinkElement-load-event.html": "network: <link> load events",
 	"HTMLLinkElement-load-event-002.html": "network: <link> load events",
+	"HTMLLinkElement-load-event.html": "network: <link> load events",
 	"HTMLStyleElement-load-event.html":
 		"network: <style> load events, which fire only for fetched subresources",
 	"insertRule-charset-no-index.html":
 		"network: the rules are inserted into a <link> sheet",
-	"cssimportrule-parent.html": "network: the sheet an @import fetches",
-	"cssimportrule-sheet-identity.html": "network: the sheet an @import fetches",
+	"link-element-stylesheet-title.html": "network: <link> sheet titles",
+	"preferred-stylesheet-order.html": "network: alternate <link> sheet sets",
+	"preferred-stylesheet-reversed-order.html":
+		"network: alternate <link> sheet sets",
+	"stylesheet-cross-origin-redirect-quirks.sub.html":
+		"network: cross-origin sheet redirects",
+	"stylesheet-same-origin.sub.html": "network: same-origin sheet loading",
+	"stylesheet-title.html": "network: <link> sheet titles",
+	"ttwf-cssom-doc-ext-load-count.html": "network: sheet load counting",
+	"ttwf-cssom-doc-ext-load-tree-order.html":
+		"network: loaded sheets in tree order",
 
 	// The WebIDL harness needs /resources/WebIDLParser.js, which is not part
 	// of the suite fetched here.
@@ -141,18 +141,18 @@ const EXCLUSIONS: Record<string, string> = {
 
 	// Nested browsing contexts: a terminal document has no frames, so there is
 	// no second window to carry a CSSOM of its own.
-	"insertRule-across-context.html":
-		"frames: rule constructors from an iframe's window",
-	"style-attr-update-across-documents.html":
-		"frames: a style attribute moved between documents",
-	"getComputedStyle-dynamic-subdoc.html":
-		"frames: media queries inside a sub-document",
+	"cssom-getPropertyValue-common-checks.html":
+		"frames: the checks run inside a sub-document",
 	"CSSStyleSheet-constructable-baseURL.html":
 		"frames: a sheet constructed in an iframe's window",
 	"CSSStyleSheet-template-adoption.html":
 		"frames: adoption across a template's document",
-	"cssom-getPropertyValue-common-checks.html":
-		"frames: the checks run inside a sub-document",
+	"getComputedStyle-dynamic-subdoc.html":
+		"frames: media queries inside a sub-document",
+	"insertRule-across-context.html":
+		"frames: rule constructors from an iframe's window",
+	"style-attr-update-across-documents.html":
+		"frames: a style attribute moved between documents",
 };
 
 /**

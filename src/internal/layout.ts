@@ -146,8 +146,8 @@ const ZERO_OFFSET = {x: 0, y: 0};
  */
 const NO_STATIC_POSITION_DISPLAYS = new Set([
 	"flex",
-	"inline-flex",
 	"grid",
+	"inline-flex",
 	"inline-grid",
 ]);
 

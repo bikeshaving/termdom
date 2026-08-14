@@ -484,39 +484,26 @@ export const TERMINAL_ELEMENT_DEFAULTS: Record<
 > = {
 	// Metadata elements - never rendered in terminal
 	head: {display: "none"},
-	style: {display: "none"},
-	script: {display: "none"},
-	meta: {display: "none"},
-	title: {display: "none"},
 	link: {display: "none"},
+	meta: {display: "none"},
+	script: {display: "none"},
+	style: {display: "none"},
+	title: {display: "none"},
 
 	// Block elements
-	html: {display: "block"},
-	body: {display: "block"},
-	div: {display: "block"},
-	section: {display: "block"},
 	article: {display: "block"},
 	aside: {display: "block"},
-	header: {display: "block"},
-	footer: {display: "block"},
-	main: {display: "block"},
-	nav: {display: "block"},
-	h1: {display: "block"},
-	h2: {display: "block"},
-	h3: {display: "block"},
-	h4: {display: "block"},
-	h5: {display: "block"},
-	h6: {display: "block"},
-	p: {display: "block"},
 	blockquote: {display: "block"},
-	pre: {display: "block", "white-space": "pre"},
-	ul: {display: "block", "padding-left": "4ch"},
-	ol: {display: "block", "padding-left": "4ch"},
-	li: {display: "list-item"},
+	body: {display: "block"},
+	dd: {display: "block"},
+	// A disclosure and its summary are both blocks, so the summary owns its
+	// row and the body stacks under it. The marker and the open/closed glyph
+	// are ::before rules in the UA document stylesheet.
+	details: {display: "block"},
+	summary: {display: "block", cursor: "pointer"},
+	div: {display: "block"},
 	dl: {display: "block"},
 	dt: {display: "block"},
-	dd: {display: "block"},
-	form: {display: "block"},
 	// A group of controls in a labelled box, the way a browser draws one: a
 	// border around the group with the legend sitting IN the top border line.
 	// The legend gets there by rising one row onto the border and painting the
@@ -532,25 +519,42 @@ export const TERMINAL_ELEMENT_DEFAULTS: Record<
 		"margin-top": "-1px",
 		"font-weight": "bold",
 	},
-	// A disclosure and its summary are both blocks, so the summary owns its
-	// row and the body stacks under it. The marker and the open/closed glyph
-	// are ::before rules in the UA document stylesheet.
-	details: {display: "block"},
-	summary: {display: "block", cursor: "pointer"},
+	figcaption: {display: "block"},
+	figure: {display: "block"},
+	footer: {display: "block"},
+	form: {display: "block"},
+	h1: {display: "block"},
+	h2: {display: "block"},
+	h3: {display: "block"},
+	h4: {display: "block"},
+	h5: {display: "block"},
+	h6: {display: "block"},
+	header: {display: "block"},
+	hr: {display: "block", "border-top": "1px solid"},
+	html: {display: "block"},
+	li: {display: "list-item"},
+	main: {display: "block"},
+	nav: {display: "block"},
+	ol: {display: "block", "padding-left": "4ch"},
+	p: {display: "block"},
+	pre: {display: "block", "white-space": "pre"},
 	// A gauge is a flat field in the input family, sized like a browser's own
 	// unstyled progress bar: a fixed track the fill is a fraction of.
 	progress: {display: "inline-block", width: "10ch", "white-space": "pre"},
 	meter: {display: "inline-block", width: "10ch", "white-space": "pre"},
-	figure: {display: "block"},
-	figcaption: {display: "block"},
-	hr: {display: "block", "border-top": "1px solid"},
+	section: {display: "block"},
+	ul: {display: "block", "padding-left": "4ch"},
 
 	// Inline elements
-	span: {display: "inline"},
 	a: {display: "inline"},
-	em: {display: "inline", "font-style": "italic"},
-	strong: {display: "inline", "font-weight": "bold"},
+	abbr: {display: "inline"},
+	b: {display: "inline", "font-weight": "bold"},
+	br: {display: "inline"},
+	cite: {display: "inline", "font-style": "italic"},
 	code: {display: "inline", "background-color": "rgba(0, 0, 0, 0.1)"},
+	dfn: {display: "inline", "font-style": "italic"},
+	em: {display: "inline", "font-style": "italic"},
+	i: {display: "inline", "font-style": "italic"},
 	// A key is a keycap: bold text inside brackets, "[q]", the form every
 	// terminal help screen and man page uses for a key to press. A browser
 	// draws the cap with a border and a monospace face; a terminal is already
@@ -558,29 +562,25 @@ export const TERMINAL_ELEMENT_DEFAULTS: Record<
 	// the cap. They are UA ::before/::after rules in the UA document
 	// stylesheet, so author content rules replace them.
 	kbd: {display: "inline", "font-weight": "bold"},
-	samp: {display: "inline"},
-	var: {display: "inline", "font-style": "italic"},
-	b: {display: "inline", "font-weight": "bold"},
-	i: {display: "inline", "font-style": "italic"},
-	u: {display: "inline", "text-decoration": "underline"},
-	s: {display: "inline", "text-decoration": "line-through"},
-	sub: {display: "inline"},
-	sup: {display: "inline"},
-	// SGR faint is the terminal's small: same glyph cells, reduced ink.
-	small: {display: "inline", "font-weight": "lighter"},
-	abbr: {display: "inline"},
-	cite: {display: "inline", "font-style": "italic"},
-	dfn: {display: "inline", "font-style": "italic"},
-	mark: {display: "inline"},
-	time: {display: "inline"},
-	q: {display: "inline"},
 	label: {display: "inline"},
-	br: {display: "inline"},
+	mark: {display: "inline"},
+	q: {display: "inline"},
+	s: {display: "inline", "text-decoration": "line-through"},
+	samp: {display: "inline"},
 	// As in browsers: a slot generates no box of its own -- its projected
 	// (or fallback) content is spliced into the parent's child sequence by
 	// the walker's flat-tree layer (see composition.ts). Styling the slot
 	// still works for inherited properties, exactly the browser behavior.
 	slot: {display: "contents"},
+	// SGR faint is the terminal's small: same glyph cells, reduced ink.
+	small: {display: "inline", "font-weight": "lighter"},
+	span: {display: "inline"},
+	strong: {display: "inline", "font-weight": "bold"},
+	sub: {display: "inline"},
+	sup: {display: "inline"},
+	time: {display: "inline"},
+	u: {display: "inline", "text-decoration": "underline"},
+	var: {display: "inline", "font-style": "italic"},
 
 	// Terminal UI controls. The button joins the flat field family: no
 	// border (three rows and two columns per button, in a world of one-row
@@ -597,6 +597,17 @@ export const TERMINAL_ELEMENT_DEFAULTS: Record<
 	button: {
 		display: "inline-block",
 		cursor: "pointer",
+	},
+	// A dialog is a box drawn over the page, so it is bordered and opaque:
+	// the border is what says where the dialog ends and the document it sits
+	// on begins, and Canvas -- the terminal's own background -- is what makes
+	// a non-modal one, which has no backdrop clearing the viewport for it,
+	// still hide the content it covers rather than tangle with it.
+	dialog: {
+		display: "block",
+		border: "1px solid",
+		padding: "0 1ch",
+		"background-color": "Canvas",
 	},
 	// A text input is a flat field: bare when blurred (dim placeholder and
 	// the content are the affordance -- the convention of the entire
@@ -617,16 +628,12 @@ export const TERMINAL_ELEMENT_DEFAULTS: Record<
 		// real content, and the painter's scroll-window handles overflow.
 		"white-space": "pre",
 	},
-	// A dialog is a box drawn over the page, so it is bordered and opaque:
-	// the border is what says where the dialog ends and the document it sits
-	// on begins, and Canvas -- the terminal's own background -- is what makes
-	// a non-modal one, which has no backdrop clearing the viewport for it,
-	// still hide the content it covers rather than tangle with it.
-	dialog: {
-		display: "block",
-		border: "1px solid",
-		padding: "0 1ch",
-		"background-color": "Canvas",
+	// A select is a flat field in the input family: the selected option's
+	// label plus a dim indicator, underlined when focused (see
+	// getElementDefaults for the dynamic width and focus underline).
+	select: {
+		display: "inline-block",
+		"white-space": "pre",
 	},
 	// A textarea preserves newlines and soft-wraps at its edge, exactly the
 	// browser default. Its UA shadow tree's value text lays out through the
@@ -640,23 +647,13 @@ export const TERMINAL_ELEMENT_DEFAULTS: Record<
 		"white-space": "pre-wrap",
 		"overflow-wrap": "break-word",
 	},
-	// A select is a flat field in the input family: the selected option's
-	// label plus a dim indicator, underlined when focused (see
-	// getElementDefaults for the dynamic width and focus underline).
-	select: {
-		display: "inline-block",
-		"white-space": "pre",
-	},
 
 	// Tables
-	table: {display: "table", "border-collapse": "collapse"},
-	thead: {display: "table-header-group"},
-	tbody: {display: "table-row-group"},
-	tfoot: {display: "table-footer-group"},
-	tr: {display: "table-row"},
 	caption: {display: "table-caption"},
-	colgroup: {display: "table-column-group"},
 	col: {display: "table-column"},
+	colgroup: {display: "table-column-group"},
+	table: {display: "table", "border-collapse": "collapse"},
+	tbody: {display: "table-row-group"},
 	td: {
 		display: "table-cell",
 		"border-top-width": "1px",
@@ -670,6 +667,7 @@ export const TERMINAL_ELEMENT_DEFAULTS: Record<
 		"padding-left": "1ch",
 		"padding-right": "1ch",
 	},
+	tfoot: {display: "table-footer-group"},
 	th: {
 		display: "table-cell",
 		"border-top-width": "1px",
@@ -684,6 +682,8 @@ export const TERMINAL_ELEMENT_DEFAULTS: Record<
 		"padding-right": "1ch",
 		"font-weight": "bold",
 	},
+	thead: {display: "table-header-group"},
+	tr: {display: "table-row"},
 };
 
 // The defaults above may use shorthands; normalize them once so the
@@ -814,12 +814,21 @@ export function getElementDefaults(
  */
 export const INHERITED_PROPERTIES = new Set([
 	"color",
+	"cursor",
+	"direction",
 	"font-family",
 	"font-size",
 	"font-style",
 	"font-variant",
 	"font-weight",
+	"letter-spacing",
 	"line-height",
+	"list-style",
+	"list-style-image",
+	"list-style-position",
+	"list-style-type",
+	"overflow-wrap",
+	"quotes",
 	"text-align",
 	"text-decoration",
 	"text-decoration-color",
@@ -828,26 +837,17 @@ export const INHERITED_PROPERTIES = new Set([
 	"text-decoration-thickness",
 	"text-indent",
 	"text-transform",
+	"visibility",
 	"white-space",
 	"word-break",
-	"overflow-wrap",
-	"direction",
 	"word-spacing",
-	"letter-spacing",
-	"visibility",
-	"cursor",
-	"quotes",
-	"list-style",
-	"list-style-image",
-	"list-style-position",
-	"list-style-type",
 ]);
 
 export const INITIAL_KEYWORDS = new Set([
 	"initial",
-	"unset",
 	"revert",
 	"revert-layer",
+	"unset",
 ]);
 
 /**
