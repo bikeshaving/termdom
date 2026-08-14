@@ -14,6 +14,10 @@
  * Run: node --experimental-strip-types scripts/wpt-dom.ts [name-filter]
  */
 
+import {register} from "node:module";
+
+register("./ts-specifier-hooks.mjs", import.meta.url);
+
 import {existsSync, mkdirSync, readFileSync, writeFileSync} from "node:fs";
 import {dirname, join} from "node:path";
 import {fileURLToPath} from "node:url";

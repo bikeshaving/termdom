@@ -14,6 +14,10 @@
  * Run: bun scripts/wpt-cssom.ts [name-filter]
  */
 
+import {register} from "node:module";
+
+register("./ts-specifier-hooks.mjs", import.meta.url);
+
 import {existsSync, mkdirSync, readFileSync, writeFileSync} from "node:fs";
 import {createContext, runInContext} from "node:vm";
 import {dirname, join} from "node:path";
