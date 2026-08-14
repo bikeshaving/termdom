@@ -82,6 +82,33 @@ setInterval(() => {
 - **Fullscreen** `Element.requestFullscreen()` renders an element to the
   alternate screen. Exiting restores the shell and its scrollback.
 
+## How it works
+
+TermDOM is a DOM and CSS engine with a terminal renderer where a browser
+has a graphics stack.
+
+- The document is TermDOM's own DOM implementation: nodes, events,
+  mutation observers, shadow trees, custom elements. HTML is parsed with
+  parse5. jsdom is not involved.
+- CSS from `<style>` elements and `style` attributes is parsed with
+  css-tree and cascades, inherits, and computes per the CSS specifications.
+  Selectors match through nwsapi.
+- Layout builds a box tree and computes block, flexbox, and table layout
+  in integer terminal cells: `1px` is one row, `1ch` is one column.
+- The painter walks the layout and writes each cell's glyph and colors,
+  every attribute derived from a computed style.
+- The renderer diffs the cell grid against the previous frame and writes
+  the difference to stdout as ANSI escape sequences.
+- Escape sequences arriving on stdin are decoded into keyboard, mouse,
+  focus, and paste events and dispatched to DOM nodes with capture and
+  bubbling per the DOM specification.
+- DOM mutations mark work; each frame runs style, layout, paint, and
+  diff over what was marked.
+- Text is shaped and reordered before painting (Arabic joining, bidi
+  visual order) and measured in cells (CJK and emoji widths). Where
+  terminal emulators disagree about a width, the engine asks the
+  terminal where its cursor landed and corrects itself.
+
 ## Examples
 
 - [`markdown.ts`](./examples/markdown.ts) — a Markdown viewer that pages
