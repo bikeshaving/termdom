@@ -518,6 +518,21 @@ const VERBATIM_PROPERTIES = new Set([
 	"counter-reset",
 	"font",
 	"font-family",
+	// A grid value carries custom idents -- line names and area names, which
+	// are case-sensitive -- alongside its keywords, so it cannot be folded.
+	"grid-area",
+	"grid-auto-columns",
+	"grid-auto-rows",
+	"grid-column",
+	"grid-column-end",
+	"grid-column-start",
+	"grid-row",
+	"grid-row-end",
+	"grid-row-start",
+	"grid-template",
+	"grid-template-areas",
+	"grid-template-columns",
+	"grid-template-rows",
 	"list-style-image",
 	"quotes",
 ]);
@@ -640,6 +655,14 @@ function serializeColor(value: string): string | null {
 const ABSOLUTIZED_PROPERTIES = new Set([
 	...LENGTH_PROPERTIES,
 	"border-spacing",
+	// A track list holds lengths inside functions and among keywords, so it
+	// absolutizes by token rather than by the whitespace-separated split the
+	// length properties take.
+	"grid-auto-columns",
+	"grid-auto-rows",
+	"grid-template",
+	"grid-template-columns",
+	"grid-template-rows",
 	"line-height",
 	"text-underline-offset",
 	"vertical-align",
@@ -1054,6 +1077,12 @@ const PHYSICAL_TO_LOGICAL = new Map<string, readonly string[]>();
 		map(`${prefix}block-size`, `${prefix}height`);
 		map(`${prefix}inline-size`, `${prefix}width`);
 	}
+	// `grid-row-gap` and `grid-column-gap` are not flow-relative at all: they
+	// are the OLD SPELLING of the gap properties (css-align-3 §8.4). Sharing a
+	// cascade slot is what an alias is, though, so they are declared here --
+	// one slot, whichever of the two names the winning declaration used.
+	map("grid-row-gap", "row-gap");
+	map("grid-column-gap", "column-gap");
 }
 
 /** The physical longhand a flow-relative one names under `direction`, if it is one. */
