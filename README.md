@@ -59,55 +59,37 @@ setInterval(() => {
 ## Features
 
 - **Stylesheets** CSS from `<style>` elements and `style` attributes cascades
-  and inherits like it does in the browser, and is translated to ANSI escapes
-  for color and text decoration.
-- **Layout** The CSS box model, flexbox, and table layout are all supported.
+  and inherits as in the browser, translated to ANSI color and decoration.
+- **Layout** The CSS box model, flexbox, and table layout, computed in whole
+  terminal cells with margins, borders, and padding.
 - **Scrolling** Documents taller than the terminal scroll with
   `window.scrollTo()` and `element.scrollIntoView()`.
-- **Events** Events for keys, mouse, focus, and paste fire on elements, the
-  document, and the window, pulled from STDIN.
+- **Events** Keyboard, mouse, focus, and paste events fire on elements, the
+  document, and the window, decoded from stdin.
 - **DOM utilities** `document.querySelector()`, `MutationObserver`,
-  `ResizeObserver`, and `Element.getBoundingClientRect()` are hooked up to
-  the layout engine and viewport, following browser standards.
-- **Forms** `<input>`, `<textarea>`, `<select>`, checkboxes, and radios come
-  with default behavior and terminal-native looks, and can be restyled with
-  ordinary CSS. Tab navigation and `:focus` styles are supported.
+  `ResizeObserver`, and `getBoundingClientRect()` read the layout engine.
+- **Forms** `<input>`, `<textarea>`, `<select>`, checkboxes, and radios have
+  terminal-native looks, restylable with CSS; Tab and `:focus` work.
 - **Web Components** `customElements.define()`, `attachShadow()`, `<slot>`,
-  `:host`, and scoped styles behave like the browser's. The built-in form
-  controls are themselves shadow trees.
-- **Text** CJK, emoji, and combining characters take their correct widths.
-  Hebrew and Arabic render in visual order with contextual shaping, and the
-  caret moves by grapheme.
-- **Selection** Drag to select, styled with `::selection`.
-- **Fullscreen** `Element.requestFullscreen()` renders an element to the
-  alternate screen. Exiting restores the shell and its scrollback.
+  `:host`, and scoped styles; the built-in controls are shadow trees.
+- **Text** CJK, emoji, and combining characters take correct widths; Hebrew
+  and Arabic render in visual order with contextual shaping.
+- **Selection** Drag to select, styled with `::selection`; the caret moves
+  by grapheme.
+- **Fullscreen** `Element.requestFullscreen()` renders to the alternate
+  screen; exiting restores the shell and its scrollback.
 
 ## How it works
 
-TermDOM is a DOM and CSS engine with a terminal renderer where a browser
-has a graphics stack.
-
-- The document is TermDOM's own DOM implementation: nodes, events,
-  mutation observers, shadow trees, custom elements. HTML is parsed with
-  parse5.
-- CSS from `<style>` elements and `style` attributes is parsed with
-  css-tree and cascades, inherits, and computes per the CSS specifications.
-  Selectors match through nwsapi.
-- Layout builds a box tree and computes block, flexbox, and table layout
-  in integer terminal cells: `1px` is one row, `1ch` is one column.
-- The painter walks the layout and writes each cell's glyph and colors,
-  every attribute derived from a computed style.
-- The renderer diffs the cell grid against the previous frame and writes
-  the difference to stdout as ANSI escape sequences.
-- Escape sequences arriving on stdin are decoded into keyboard, mouse,
-  focus, and paste events and dispatched to DOM nodes with capture and
-  bubbling per the DOM specification.
-- DOM mutations mark work; each frame runs style, layout, paint, and
-  diff over what was marked.
-- Text is shaped and reordered before painting (Arabic joining, bidi
-  visual order) and measured in cells (CJK and emoji widths). Where
-  terminal emulators disagree about a width, the engine asks the
-  terminal where its cursor landed and corrects itself.
+TermDOM implements the browser's rendering pipeline against a grid of
+character cells instead of pixels. CSS lengths map onto the grid — `1px`
+is one row, `1ch` is one column — so the box model, flexbox, and tables
+lay out in whole cells. On each frame the engine recomputes style and
+layout for whatever mutated, paints the result into a cell buffer, diffs
+it against the previous frame, and writes the difference to stdout as
+ANSI escape sequences. Input runs the other way: escape sequences from
+stdin are decoded into keyboard, mouse, and paste events and dispatched
+to DOM nodes.
 
 ## Examples
 
@@ -140,8 +122,8 @@ against the engine.
 
 ## Name
 
-Not to be confused with [DomTerm](https://domterm.org), Per Bothner's
-terminal emulator built out of DOM elements. The two projects are each
+Not to be confused with [DomTerm](https://domterm.org), a terminal
+emulator built out of DOM elements. The two projects are each
 other's inverse: DomTerm puts a terminal in the DOM; TermDOM puts the DOM
 in a terminal.
 
