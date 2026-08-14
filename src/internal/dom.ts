@@ -5570,6 +5570,7 @@ function appendAttribute(element: Element, attribute: Attr): void {
 	queueAttributeMutationRecord(element, attribute, null);
 	element[kAttributeList].push(attribute);
 	attribute[kOwnerElement] = element;
+	attribute[kDocument] = element[kDocument];
 	element[kAttributeChanged](
 		attribute[kLocalName],
 		null,
@@ -5606,6 +5607,7 @@ function replaceAttribute(
 	const list = element[kAttributeList];
 	list[list.indexOf(oldAttribute)] = newAttribute;
 	newAttribute[kOwnerElement] = element;
+	newAttribute[kDocument] = element[kDocument];
 	oldAttribute[kOwnerElement] = null;
 	element[kAttributeChanged](
 		newAttribute[kLocalName],
@@ -7264,10 +7266,22 @@ function wrapWithReactions(
 
 /* ---------------------------------------------------- custom element registry */
 
+/**
+ * Whether a value has a [[Construct]] internal method.
+ *
+ * The construction runs against a proxy of the value whose own trap answers,
+ * so nothing on the value is read: a proxy is constructible exactly when its
+ * target is, and the trap returns before the object it would build needs a
+ * prototype. Constructing with the value as the new target would read its
+ * `prototype`, which the caller can see and the algorithm reads later, once.
+ */
 function isConstructor(value: unknown): boolean {
 	if (typeof value !== "function") return false;
 	try {
-		Reflect.construct(function () {}, [], value as new () => unknown);
+		Reflect.construct(
+			new Proxy(value as new () => unknown, {construct: () => ({})}),
+			[],
+		);
 		return true;
 	} catch {
 		return false;
@@ -7468,6 +7482,12 @@ export class CustomElementRegistry {
 	}
 
 	getName(constructor: CustomElementConstructor): string | null {
+		if (arguments.length < 1) {
+			throw new TypeError("getName needs a constructor");
+		}
+		if (typeof constructor !== "function") {
+			throw new TypeError("That is not a constructor");
+		}
 		const definition = this.#definitions.find(
 			(entry) => entry.constructor === constructor,
 		);
@@ -14318,9 +14338,11 @@ function isReachableAriaTarget(from: Element, target: Element): boolean {
 function ariaTargetsFromAttribute(
 	element: Element,
 	attribute: string,
-): Element[] {
+): Element[] | null {
 	const value = element.getAttribute(attribute);
-	if (value === null) return [];
+	// No attribute and no elements handed over is no reflected target at all,
+	// which reads back as null rather than as an empty list.
+	if (value === null) return null;
 	const root = getRoot(element);
 	const found: Element[] = [];
 	for (const id of splitOnAsciiWhitespace(value)) {
@@ -14339,7 +14361,7 @@ function ariaTargets(
 	element: Element,
 	property: string,
 	attribute: string,
-): Element[] {
+): Element[] | null {
 	const explicit = element[kAriaElements]?.get(property);
 	if (explicit === undefined)
 		return ariaTargetsFromAttribute(element, attribute);
@@ -14378,6 +14400,7 @@ for (const [property, attribute, many] of ARIA_ELEMENT_REFLECTIONS) {
 	const descriptor: PropertyDescriptor = {
 		get(this: Element): Element | readonly Element[] | null {
 			const targets = ariaTargets(this, property, attribute);
+			if (targets === null) return null;
 			if (many) return Object.freeze(targets);
 			return targets.length === 0 ? null : targets[0];
 		},
@@ -14410,6 +14433,7 @@ for (const [property, attribute, many] of ARIA_ELEMENT_REFLECTIONS) {
 		get(this: ElementInternals): Element | readonly Element[] | null {
 			const target = this[kElementInternalsTarget];
 			const targets = ariaTargets(target, property, attribute);
+			if (targets === null) return null;
 			if (many) return Object.freeze(targets);
 			return targets.length === 0 ? null : targets[0];
 		},
@@ -14438,11 +14462,14 @@ function constructInternal<T>(build: () => T): T {
 /** The internals of an element, which only a custom element's own class takes. */
 function attachElementInternals(element: HTMLElement): ElementInternals {
 	if (element[kIsValue] !== null) {
-		throw new TypeError("A customized built-in element has no internals");
+		throw domError(
+			"NotSupportedError",
+			"A customized built-in element has no internals",
+		);
 	}
 	const definition = element[kDefinition];
 	if (definition === null) {
-		throw new TypeError("That element is not a custom element");
+		throw domError("NotSupportedError", "That element is not a custom element");
 	}
 	if (definition.disableInternals) {
 		throw domError(
