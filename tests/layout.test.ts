@@ -185,7 +185,6 @@ test("inline elements join runs correctly", () => {
 	`);
 
 	const container = dom.window.document.querySelector("div")!;
-	const _spans = Array.from(dom.window.document.querySelectorAll("span"));
 
 	// Container should have rect
 	expect(layoutEngine.getRect(container)).not.toBeNull();
@@ -1314,7 +1313,6 @@ test("Inline run head changes - element to text", async () => {
 
 	// Initial render
 	await nextFrame(termdom);
-	const _initialOutput = terminal.getPlainText();
 
 	// Change run head from span to text
 	div.innerHTML = "New text content";
@@ -1504,7 +1502,6 @@ test("White-space handling in dynamic inline runs", async () => {
 
 	// Initial render
 	await nextFrame(termdom);
-	const _initialOutput = terminal.getPlainText();
 
 	// Remove the span
 	const span = div.querySelector("span")!;

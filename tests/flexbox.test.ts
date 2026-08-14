@@ -574,10 +574,6 @@ test("flexbox two columns: fixed width + flexible width with text wrapping", asy
 	// Flex column should start after fixed column
 	expect(flexRect.x).toBe(fixedRect.x + fixedRect.width);
 
-	// With flex-shrink: 0, flex column might extend beyond container bounds
-	// This behavior is documented but we don't need to assert it in this test
-	// expect(flexRect.x + flexRect.width).toBeLessThanOrEqual(containerRect.x + containerRect.width);
-
 	// Text should be present
 	expect(visibleText).toContain("Fixed");
 	expect(visibleText).toContain("This is a long text");

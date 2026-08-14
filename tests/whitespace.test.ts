@@ -154,7 +154,6 @@ test("white-space: nowrap vs normal text wrapping comparison", async () => {
 	const lines = visibleText.split("\n");
 
 	// Normal text should be broken across multiple lines
-	let _normalTextSpansLines = false;
 	let normalLineCount = 0;
 
 	for (const line of lines) {

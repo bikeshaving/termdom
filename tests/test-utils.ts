@@ -396,13 +396,6 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 	}
 
 	/**
-	 * Clear the terminal screen
-	 */
-	clear(): void {
-		this.terminal.clear();
-	}
-
-	/**
 	 * Write ANSI output to .ansi file after test passes
 	 */
 	writeANSI(testName: string): void {

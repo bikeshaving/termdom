@@ -74,9 +74,6 @@ describe("MockProcess", () => {
 			// Wait a bit for xterm to process and respond
 			await new Promise((resolve) => setTimeout(resolve, 100));
 
-			// console.log("Response received:", JSON.stringify(response));
-			// console.log("Terminal buffer content:", terminal.getPlainText());
-
 			// Should receive cursor position response
 			expect(response).toMatch(/\x1b\[\d+;\d+R/);
 		});

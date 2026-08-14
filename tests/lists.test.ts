@@ -423,11 +423,6 @@ test("list rerendering maintains correct layout", async () => {
 	expect(firstOutput).toContain("• Item 1");
 	expect(firstOutput).toContain("• Item 2");
 
-	// Clear terminal for second render
-	//terminal.clear();
-	// Also clear TermDOM's renderer buffer to stay in sync
-	//(dom as any).renderer.clearPreviousBuffer();
-
 	// Modify the list
 	const ul = document.querySelector("ul")!;
 	ul.innerHTML = `
