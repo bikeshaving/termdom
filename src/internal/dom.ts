@@ -118,7 +118,7 @@ const kUASelection = Symbol("a control's selection, whatever its type");
 const kSetUASelection = Symbol("move a control's selection, whatever its type");
 
 /** A text control's selection, read past the type gate the author meets. */
-export function uaSelectionOf(control: object): {
+function uaSelectionOf(control: object): {
 	start: number;
 	end: number;
 	direction: string;
@@ -18944,7 +18944,7 @@ function parseFragmentHTML(
 }
 
 /** Parse a whole document, declarative shadow roots and all. */
-export function parseHTMLUnsafe(html: string): Document {
+function parseHTMLUnsafe(html: string): Document {
 	return parseHTMLDocument(String(html), "about:blank", true, null);
 }
 
