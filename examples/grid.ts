@@ -45,16 +45,24 @@ style.textContent = `
 	#nav b {
 		color: #5fafff;
 	}
+	/*
+	 * A bar chart is a grid read sideways: the flow runs down each column, the
+	 * rows are the scale, and a bar is one item spanning from its own height
+	 * to the baseline.
+	 */
 	#chart {
 		grid-area: chart;
 		border: 1px solid #666666;
 		padding: 0 1ch;
 		display: grid;
-		grid-template-columns: repeat(auto-fill, 4ch);
-		align-items: end;
+		grid-auto-flow: column;
+		grid-template-rows: repeat(6, 1px);
+		grid-auto-columns: 2ch;
+		column-gap: 1ch;
+		justify-content: center;
 	}
 	#chart span {
-		color: #5fd7af;
+		background-color: #5fd7af;
 	}
 	#stats {
 		grid-area: stats;
@@ -123,10 +131,13 @@ panel(
 		.join(""),
 );
 
-const bars = [3, 6, 2, 7, 4, 5, 1, 6, 3, 7, 2, 4, 6, 5, 3, 7, 4, 2, 6, 5];
+const bars = [3, 6, 2, 5, 4, 5, 1, 6, 3, 5];
 panel(
 	"chart",
-	bars.map((height) => `<span>${"█".repeat(height)}</span>`).join(""),
+	// Row 7 is the baseline every bar ends on; where it starts is its height.
+	bars
+		.map((height) => `<span style="grid-row: ${7 - height} / 7"></span>`)
+		.join(""),
 );
 
 panel(
