@@ -54,32 +54,6 @@ export function getPropertyValue(element: Element, property: string): string {
 	return computedStyleOf(element).computedValueOf(property);
 }
 
-/**
- * invalidationScopeFor, reachable from the layout engine, which holds a
- * window but no StyleManager -- the same registry hop getListGutterWidth
- * makes from inside the cascade. Null when no manager is registered; the
- * caller falls back to rebuilding from body.
- */
-export function selectorInvalidationScope(element: Element): Element | null {
-	const window = element.ownerDocument?.defaultView;
-	const styleManager = window ? styleManagers.get(window) : undefined;
-	return styleManager ? styleManager.invalidationScopeFor(element) : null;
-}
-
-/**
- * Whether any selector in the document's sheets keys on `name`, so a change to
- * that attribute can change which rules match -- the same question class and id
- * answer with an unconditional yes. The layout engine asks before rebuilding.
- */
-export function selectorsKeyOnAttribute(
-	element: Element,
-	name: string,
-): boolean {
-	const window = element.ownerDocument?.defaultView;
-	const styleManager = window ? styleManagers.get(window) : undefined;
-	return styleManager ? styleManager.keysOnAttribute(name) : false;
-}
-
 export function parseUnitValue(
 	value: string,
 ): number | {percentage: number} | null {
@@ -7305,14 +7279,6 @@ export class StyleManager {
 	#selectorsReachSiblings = false;
 	#selectorsReachAncestors = false;
 	/**
-	 * The attribute names any parsed selector keys on. An attribute in this
-	 * set changes which rules match when it changes, exactly as class and id
-	 * do, so layout rebuilds the same scope for it. Collected loosely -- a
-	 * name read out of an attribute selector's opening bracket, whatever the
-	 * operator -- because a false positive only widens the rebuild.
-	 */
-	#selectorAttributes = new Set<string>();
-	/**
 	 * The keys a change to which can reach an element's DESCENDANTS: those a
 	 * selector tests left of a combinator (`.editing .view` is TodoMVC's edit
 	 * row), and those on rules declaring an inherited property, which the
@@ -7640,17 +7606,6 @@ export class StyleManager {
 		return this.#styleSheetList.length;
 	}
 
-	/** Whether any parsed selector keys on the named attribute. */
-	keysOnAttribute(name: string): boolean {
-		if (
-			this.#stylesheetsDirty ||
-			this.#styleSheetCount() !== this.#parsedStyleSheetCount
-		) {
-			this.#parseStylesheets();
-		}
-		return this.#selectorAttributes.has(name.toLowerCase());
-	}
-
 	invalidationScopeFor(element: Element): Element {
 		if (
 			this.#stylesheetsDirty ||
@@ -7970,7 +7925,6 @@ export class StyleManager {
 		this.#parsedRules = [];
 		this.#selectorsReachSiblings = false;
 		this.#selectorsReachAncestors = false;
-		this.#selectorAttributes.clear();
 		this.#reachingClasses.clear();
 		this.#reachingIds.clear();
 		this.#reachingAttributes.clear();
@@ -8242,11 +8196,6 @@ export class StyleManager {
 		}
 		if (selector.includes(":has")) {
 			this.#selectorsReachAncestors = true;
-		}
-		if (selector.includes("[")) {
-			for (const match of selector.matchAll(ATTRIBUTE_SELECTOR_NAME)) {
-				this.#selectorAttributes.add(match[1].toLowerCase());
-			}
 		}
 		this.#indexReachingKeys(selector, declarations);
 		if (
