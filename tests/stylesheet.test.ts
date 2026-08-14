@@ -46,6 +46,82 @@ test("CSS specificity calculation", async () => {
 	termdom.dispose();
 });
 
+test("selector-list pseudo-classes weigh their most specific argument", async () => {
+	const terminal = new MockProcess();
+	const termdom = new TermDOM({transport: terminal.transport});
+	const {document} = termdom;
+
+	const style = document.createElement("style");
+	// Each pair states the argument-weighted rule FIRST, so source order can
+	// only produce the second colour: the first wins on weight or not at all.
+	style.textContent = `
+		.is-target:is(#nothing, .other) { color: red; }
+		.is-target.a.b { color: blue; }
+
+		.where-target:where(#nothing) { color: red; }
+		.where-target.a { color: blue; }
+
+		.not-target:not(#nothing) { color: red; }
+		.not-target.a.b { color: blue; }
+
+		.has-target:has(#child) { color: red; }
+		.has-target.a.b { color: blue; }
+	`;
+	document.head.appendChild(style);
+	await new Promise((resolve) => setTimeout(resolve, 10));
+
+	const host = document.createElement("div");
+	host.innerHTML =
+		`<div class="is-target other a b"></div>` +
+		`<div class="where-target a"></div>` +
+		`<div class="not-target a b"></div>` +
+		`<div class="has-target a b"><span id="child"></span></div>`;
+	document.body.appendChild(host);
+
+	const colorOf = (selector: string): string =>
+		termdom.window
+			.getComputedStyle(document.querySelector(selector)!)
+			.getPropertyValue("color");
+
+	// :is() carries its #nothing branch: 001-001-000 beats 000-003-000.
+	expect(colorOf(".is-target")).toBe("rgb(255, 0, 0)");
+	// :where() carries nothing: 000-001-000 loses to 000-002-000.
+	expect(colorOf(".where-target")).toBe("rgb(0, 0, 255)");
+	// :not(#nothing) is an id's worth of weight.
+	expect(colorOf(".not-target")).toBe("rgb(255, 0, 0)");
+	// So is the id inside :has().
+	expect(colorOf(".has-target")).toBe("rgb(255, 0, 0)");
+
+	termdom.dispose();
+});
+
+test("the CSS 2 pseudo-element spelling weighs as an element", async () => {
+	const terminal = new MockProcess();
+	const termdom = new TermDOM({transport: terminal.transport});
+	const {document} = termdom;
+
+	const style = document.createElement("style");
+	style.textContent = `
+		div:before { content: "x"; color: red; }
+		.legacy::before { content: "x"; color: blue; }
+	`;
+	document.head.appendChild(style);
+	await new Promise((resolve) => setTimeout(resolve, 10));
+
+	const element = document.createElement("div");
+	element.className = "legacy";
+	document.body.appendChild(element);
+
+	// `div:before` is 000-000-002 and `.legacy::before` 000-001-001.
+	expect(
+		termdom.window
+			.getComputedStyle(element, "::before")
+			.getPropertyValue("color"),
+	).toBe("rgb(0, 0, 255)");
+
+	termdom.dispose();
+});
+
 test("attribute values do not affect selector specificity", async () => {
 	const terminal = new MockProcess();
 	const termdom = new TermDOM({transport: terminal.transport});
