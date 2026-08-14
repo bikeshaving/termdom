@@ -2137,7 +2137,13 @@ function retarget(
 		if (!(current instanceof Node)) return current;
 		const root = getRoot(current);
 		if (!isShadowRoot(root)) return current;
-		if (against instanceof Node && isInclusiveAncestor(root, against)) {
+		// Shadow-including ancestry, so a tree the other object reaches through
+		// a host of its own is a tree it can see into: a related target inside
+		// a nested shadow tree stays itself for a listener in the tree above it.
+		if (
+			against instanceof Node &&
+			isShadowIncludingInclusiveAncestor(root, against)
+		) {
 			return current;
 		}
 		current = (root as DocumentFragment)[kHost];
@@ -9207,6 +9213,10 @@ function submitForm(
 	submitter: Element | null,
 	skipEvent: boolean,
 ): void {
+	// A form that cannot navigate does not submit, and a form outside a
+	// document cannot: submission ends in a navigation, and there is nothing
+	// there to navigate. The submit event does not fire either.
+	if (!form.isConnected) return;
 	if (skipEvent) return;
 	const event = new SubmitEvent("submit", {
 		bubbles: true,
@@ -11025,6 +11035,9 @@ export class HTMLInputElement extends HTMLElement {
 	 * a listener sees the new state, and change back if the click is canceled.
 	 */
 	[kLegacyPreActivationBehavior](): void {
+		// The reference the canceled half puts back is this click's, so a run
+		// that takes none leaves none behind.
+		this.#previousRadio = null;
 		if (this.type === "checkbox") {
 			this.#previouslyChecked = this.#checked;
 			this.#previouslyIndeterminate = this.#indeterminate;
@@ -11038,14 +11051,27 @@ export class HTMLInputElement extends HTMLElement {
 		}
 	}
 
+	/**
+	 * Put back what the pre-activation behavior changed.
+	 *
+	 * The type is read again here rather than remembered: a listener may have
+	 * changed it during the click, and the state to restore is the state the
+	 * type it has now keeps. A radio button's reference is this click's and is
+	 * honored only while the button it names is still in the group this
+	 * element has now.
+	 */
 	[kLegacyCanceledActivationBehavior](): void {
 		if (this.type === "checkbox") {
 			this.#indeterminate = this.#previouslyIndeterminate;
 			this.#checked = this.#previouslyChecked;
-		} else if (this.type === "radio") {
-			this.#checked = false;
-			const previous = this.#previousRadio;
-			if (previous !== null) previous.#checked = true;
+			return;
+		}
+		if (this.type !== "radio") return;
+		const previous = this.#previousRadio;
+		this.#previousRadio = null;
+		this.#checked = false;
+		if (previous !== null && radioGroupOf(this).includes(previous)) {
+			previous.#checked = true;
 		}
 	}
 
@@ -11066,6 +11092,10 @@ export class HTMLInputElement extends HTMLElement {
 		if (isActuallyDisabled(this)) return;
 		const type = this.type;
 		if (type === "checkbox" || type === "radio") {
+			// A control outside a document reports nothing: the checkedness the
+			// legacy-pre-activation behavior already flipped stands, and the
+			// events that would announce it are not fired.
+			if (!this.isConnected) return;
 			dispatch(this, new Event("input", {bubbles: true, composed: true}));
 			dispatch(this, new Event("change", {bubbles: true}));
 			return;
