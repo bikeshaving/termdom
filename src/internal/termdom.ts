@@ -2382,11 +2382,7 @@ export class TermDOM {
 		// half of inertness is that Tab cannot leave the dialog: the sequential
 		// order is the dialog's own, and it wraps within it.
 		const scope = this.#topmostModalDialog() ?? this.document;
-		const focusable = getFocusableElements(
-			scope,
-			this.window,
-			this[kLayoutEngine],
-		);
+		const focusable = getFocusableElements(scope, this[kLayoutEngine]);
 		if (focusable.length === 0) return;
 
 		const current = this.document.activeElement;

@@ -6,7 +6,6 @@
  * dispatching them belongs to the engine, because that half is the render loop.
  */
 
-import type {EngineWindow} from "./termdom.js";
 import {flatParentElement} from "./dom.js";
 import type {LayoutEngine} from "./layout.js";
 import {computedStyleOf} from "./styles.js";
@@ -409,7 +408,6 @@ export const FOCUSABLE_SELECTOR =
  */
 export function getFocusableElements(
 	root: Document | Element,
-	window: EngineWindow,
 	layoutEngine: LayoutEngine,
 ): Element[] {
 	const candidates = root.querySelectorAll(FOCUSABLE_SELECTOR);

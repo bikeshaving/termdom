@@ -1138,9 +1138,7 @@ for (const [shorthand, all] of Object.entries(CSS_SHORTHANDS)) {
 	const indexed = reset
 		? all.filter((longhand) => !reset.includes(longhand))
 		: all;
-	const box =
-		boxOrder(shorthand, indexed, EDGE_NAMES) ??
-		boxOrder(shorthand, indexed, CORNER_NAMES);
+	const box = boxOrder(indexed, EDGE_NAMES) ?? boxOrder(indexed, CORNER_NAMES);
 	const longhands = box ? [...box, ...(reset ?? [])] : all;
 	SHORTHAND_LONGHANDS.set(shorthand, longhands);
 	// A corner box whose longhands are radii writes its two axes around a
@@ -1622,7 +1620,6 @@ function collapseSides(values: string[]): string {
  * are not a box.
  */
 function boxOrder(
-	shorthand: string,
 	longhands: readonly string[],
 	parts: readonly string[],
 ): string[] | null {

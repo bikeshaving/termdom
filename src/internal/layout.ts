@@ -48,7 +48,7 @@ import {
  * containing-block chain and stacking-context collection are built on. Also
  * consulted by the painter's in-flow walk, so it is exported.
  */
-export function isPositioned(window: EngineWindow, element: Element): boolean {
+export function isPositioned(element: Element): boolean {
 	const position = computedStyleOf(element).computedValueOf("position");
 	return Boolean(position) && position !== "static";
 }
@@ -57,10 +57,7 @@ export function isPositioned(window: EngineWindow, element: Element): boolean {
  * z-index only means anything on a positioned box; "auto" stays distinct from 0
  * -- auto paints in the same layer but does NOT form a context.
  */
-function zIndexValueOf(
-	window: EngineWindow,
-	element: Element,
-): number | "auto" {
+function zIndexValueOf(element: Element): number | "auto" {
 	const zIndex = computedStyleOf(element).computedValueOf("z-index");
 	if (!zIndex || zIndex === "auto") return "auto";
 	const value = parseInt(zIndex, 10);
@@ -2585,10 +2582,7 @@ export class LayoutEngine {
 		if (computedStyleOf(element).computedValueOf("isolation") === "isolate") {
 			return true;
 		}
-		return (
-			isPositioned(this.window, element) &&
-			zIndexValueOf(this.window, element) !== "auto"
-		);
+		return isPositioned(element) && zIndexValueOf(element) !== "auto";
 	}
 
 	/**
@@ -2614,7 +2608,7 @@ export class LayoutEngine {
 			if (!element.isConnected || element === body) continue;
 			if (topLayer.has(element)) continue; // painted above everything
 			// The registry is a superset: re-ask before believing membership.
-			if (!isPositioned(this.window, element)) continue;
+			if (!isPositioned(element)) continue;
 			let root: Element = body;
 			for (
 				let ancestor = flatParentElement<Element>(element);
@@ -2631,7 +2625,7 @@ export class LayoutEngine {
 				bucket = {neg: [], zero: [], pos: []};
 				layers.set(root, bucket);
 			}
-			const z = zIndexValueOf(this.window, element);
+			const z = zIndexValueOf(element);
 			if (z === "auto" || z === 0) bucket.zero.push(element);
 			else if (z < 0) bucket.neg.push(element);
 			else bucket.pos.push(element);
@@ -2640,8 +2634,8 @@ export class LayoutEngine {
 			a.compareDocumentPosition(b) & 4 ? -1 : 1; // 4: b follows a
 		for (const bucket of layers.values()) {
 			const byZ = (a: Element, b: Element) => {
-				const za = zIndexValueOf(this.window, a) as number;
-				const zb = zIndexValueOf(this.window, b) as number;
+				const za = zIndexValueOf(a) as number;
+				const zb = zIndexValueOf(b) as number;
 				return za !== zb ? za - zb : treeOrder(a, b);
 			};
 			bucket.neg.sort(byZ);
@@ -2753,7 +2747,7 @@ export class LayoutEngine {
 		const walker = flowWalker(element);
 		for (let child = walker.firstChild(); child; child = walker.nextSibling()) {
 			if (child.nodeType !== 1) continue;
-			if (isPositioned(this.window, child as Element)) continue;
+			if (isPositioned(child as Element)) continue;
 			children.push(child as Element);
 		}
 		for (let i = children.length - 1; i >= 0; i--) {

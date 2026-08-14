@@ -175,7 +175,6 @@ function cellStyleFromComputed(
  * no highlight at all -- the UA rule is load-bearing.
  */
 function selectionStyleFor(
-	window: EngineWindow,
 	element: Element,
 	base: import("./ansi.js").CellStyle,
 ): import("./ansi.js").CellStyle {
@@ -553,7 +552,7 @@ export class Painter {
 		if (element.tagName === "INPUT" && rect) {
 			const input = element as HTMLInputElement;
 			if (input.type === "checkbox" || input.type === "radio") {
-				if (visible) this.#renderToggleGlyph(input, rect, ctx);
+				if (visible) this.#renderToggleGlyph(input, ctx);
 				return;
 			}
 			if (input.type === "hidden") return;
@@ -615,7 +614,7 @@ export class Painter {
 				}
 				if (
 					childNode.nodeType === childNode.ELEMENT_NODE &&
-					isPositioned(this.#window, childNode as Element) &&
+					isPositioned(childNode as Element) &&
 					this.#layout.positionedElements.has(childNode as Element)
 				) {
 					// Hoisted to its stacking context. Registry membership is
@@ -724,7 +723,7 @@ export class Painter {
 			ancestor && ancestor !== contextRoot;
 			ancestor = flatParentElement<Element>(ancestor)
 		) {
-			if (!isPositioned(this.#window, ancestor)) continue;
+			if (!isPositioned(ancestor)) continue;
 			const style = computedStyleOf(ancestor);
 			const overflow = style.computedValueOf("overflow");
 			const overflowX = style.computedValueOf("overflow-x") || overflow;
@@ -880,7 +879,6 @@ export class Painter {
 	 */
 	#renderToggleGlyph(
 		element: HTMLInputElement,
-		rect: DOMRect,
 		ctx: import("./ansi.js").DrawingContext,
 	): void {
 		const root = shadowRootOf<ShadowRoot>(element);
@@ -1019,11 +1017,7 @@ export class Painter {
 		const found = this.#selectionRangeFor(textNode);
 		if (!found) return;
 		const {range, selectionParent} = found;
-		const selectionStyle = selectionStyleFor(
-			this.#window,
-			selectionParent,
-			textStyle,
-		);
+		const selectionStyle = selectionStyleFor(selectionParent, textStyle);
 		if (selectionStyle === textStyle) return; // no ::selection rule reaches here
 
 		for (const run of this.#layout.getRangeRuns(range)) {
