@@ -4223,31 +4223,140 @@ const SELECTOR_CLASS_NAME = /\.(-?[A-Za-z_][\w-]*)/g;
 /** The ids a compound selector tests. */
 const SELECTOR_ID_NAME = /#(-?[A-Za-z_][\w-]*)/g;
 
-/** Matches a full attribute selector, e.g. `[data-id="#root"]`. */
-const ATTRIBUTE_SELECTOR_MATCHER = /\[[^\]]+\]/g;
+/**
+ * A selector's weight, as the three counts selectors-4 §17 keeps: ids,
+ * then classes/attributes/pseudo-classes, then types/pseudo-elements.
+ */
+type Specificity = [number, number, number];
 
-/** Matches a full pseudo-element expression, e.g. `::part(label)`. */
-const PSEUDO_ELEMENT_EXPRESSION_MATCHER = /::[^\s+>~.#[]+/g;
+/**
+ * The pseudo-classes whose weight is the weight of their most specific
+ * argument, their own name counting for nothing.
+ */
+const ARGUMENT_WEIGHTED_PSEUDO_CLASSES = new Set([
+	"has",
+	"is",
+	"matches",
+	"not",
+	"-moz-any",
+	"-webkit-any",
+]);
 
-/** Matches an id selector, e.g. `#root`. */
-const ID_SELECTOR_MATCHER = /#[^\s+>~.:[]+/g;
+/**
+ * The pseudo-classes that weigh as a class AND take the weight of their most
+ * specific argument on top: `:host(.a)` is a pseudo-class testing a compound,
+ * and `:nth-child(2n of .a)` an index testing one.
+ */
+const COMPOUND_WEIGHTED_PSEUDO_CLASSES = new Set([
+	"host",
+	"host-context",
+	"nth-child",
+	"nth-last-child",
+]);
 
-/** Matches a class selector, e.g. `.item`. */
-const CLASS_SELECTOR_MATCHER = /\.[a-zA-Z][\w-]*/g;
+/** The weight of the heaviest selector in a list; zero for an empty one. */
+function listSpecificity(list: SelectorNode): Specificity {
+	let most: Specificity = [0, 0, 0];
+	for (const selector of childrenOf(list)) {
+		const weight = selectorSpecificityOf(selector);
+		if (
+			weight[0] > most[0] ||
+			(weight[0] === most[0] &&
+				(weight[1] > most[1] || (weight[1] === most[1] && weight[2] > most[2])))
+		) {
+			most = weight;
+		}
+	}
+	return most;
+}
 
-/** Matches a pseudo-class selector, e.g. `:focus`. */
-const PSEUDO_CLASS_SELECTOR_MATCHER = /:(?!:)[a-zA-Z][\w-]*/g;
+/** The weight of one complex selector: every simple selector in it, summed. */
+function selectorSpecificityOf(selector: SelectorNode): Specificity {
+	const total: Specificity = [0, 0, 0];
+	const add = (weight: Specificity): void => {
+		total[0] += weight[0];
+		total[1] += weight[1];
+		total[2] += weight[2];
+	};
+	const argumentWeight = (node: SelectorNode): Specificity => {
+		for (const child of childrenOf(node)) {
+			if (child.type === "SelectorList") return listSpecificity(child);
+			if (child.type === "Selector") return selectorSpecificityOf(child);
+			if (child.type === "Nth" && child.selector) {
+				return listSpecificity(child.selector);
+			}
+		}
+		return [0, 0, 0];
+	};
+	for (const part of childrenOf(selector)) {
+		switch (part.type) {
+			case "IdSelector":
+				total[0]++;
+				break;
+			case "ClassSelector":
+			case "AttributeSelector":
+				total[1]++;
+				break;
+			// The universal selector weighs nothing, in any namespace.
+			case "TypeSelector": {
+				const name = String(part.name ?? "");
+				if (!name.endsWith("*")) total[2]++;
+				break;
+			}
+			// `::slotted(.a)` and `::part(name)`: the pseudo-element weighs as
+			// an element, and a compound it takes weighs on top of that.
+			case "PseudoElementSelector":
+				total[2]++;
+				add(argumentWeight(part));
+				break;
+			case "PseudoClassSelector": {
+				const name = pseudoName(String(part.name ?? ""));
+				// `:before` is the CSS 2 spelling of a pseudo-element, and
+				// weighs as one.
+				if (LEGACY_PSEUDO_ELEMENTS.has(name)) {
+					total[2]++;
+					break;
+				}
+				// `:where()` contributes nothing at all, arguments included.
+				if (name === "where") break;
+				if (ARGUMENT_WEIGHTED_PSEUDO_CLASSES.has(name)) {
+					add(argumentWeight(part));
+					break;
+				}
+				total[1]++;
+				if (COMPOUND_WEIGHTED_PSEUDO_CLASSES.has(name)) {
+					add(argumentWeight(part));
+				}
+				break;
+			}
+		}
+	}
+	return total;
+}
 
-/** Matches a type selector with its leading boundary, e.g. `>button`. */
-const TYPE_SELECTOR_MATCHER = /(?:^|[\s+>~])[a-zA-Z][\w-]*/g;
-
-/** Matches a pseudo-element name, e.g. `::before`. */
-const PSEUDO_ELEMENT_NAME_MATCHER = /::[a-zA-Z][\w-]*/g;
-
-function determineMatchCount(text: string, matcher: RegExp): number {
-	const matches = text.match(matcher);
-	if (!matches) return 0;
-	return matches.length;
+/**
+ * A selector's specificity, zero-padded to "ids-classes-elements" so the
+ * cascade can compare two of them as strings.
+ *
+ * A selector the parser cannot read weighs nothing: the matcher may still
+ * accept it -- it reads a wider selector grammar than this parser does -- and
+ * a rule whose weight cannot be counted is the one that should lose a tie.
+ */
+function selectorSpecificity(selector: string): string {
+	let list: SelectorNode | null = null;
+	try {
+		list = cssTree.parse(selector, {
+			context: "selectorList",
+			onParseError(error: Error) {
+				throw error;
+			},
+		}) as unknown as SelectorNode;
+	} catch {
+		list = null;
+	}
+	const weight =
+		list && list.type === "SelectorList" ? listSpecificity(list) : [0, 0, 0];
+	return weight.map((count) => String(count).padStart(3, "0")).join("-");
 }
 
 /**
@@ -8205,7 +8314,7 @@ export class StyleManager {
 		if (declarations["display"] === "list-item") {
 			this.#listItemRulesExist = true;
 		}
-		const specificity = this.#calculateSpecificity(selector);
+		const specificity = selectorSpecificity(selector);
 		const uaOrigin = Boolean(
 			uaOriginSheet || (scope != null && isUAShadowRoot(scope)),
 		);
@@ -8285,49 +8394,6 @@ export class StyleManager {
 				namespace,
 			});
 		}
-	}
-
-	/**
-	 * Calculate CSS specificity for a selector as zero-padded string
-	 * Format: "000-000-000" (ids-classes-elements) for lexicographic comparison
-	 */
-	#calculateSpecificity(selector: string): string {
-		const withoutAttributes = selector.replace(
-			ATTRIBUTE_SELECTOR_MATCHER,
-			"[]",
-		);
-		const withoutPseudoElements = withoutAttributes.replace(
-			PSEUDO_ELEMENT_EXPRESSION_MATCHER,
-			"",
-		);
-		const idCount = determineMatchCount(withoutAttributes, ID_SELECTOR_MATCHER);
-		const classCount = determineMatchCount(
-			withoutAttributes,
-			CLASS_SELECTOR_MATCHER,
-		);
-		const attributeCount = determineMatchCount(
-			selector,
-			ATTRIBUTE_SELECTOR_MATCHER,
-		);
-		const pseudoClassCount = determineMatchCount(
-			withoutPseudoElements,
-			PSEUDO_CLASS_SELECTOR_MATCHER,
-		);
-		const typeCount = determineMatchCount(
-			withoutAttributes,
-			TYPE_SELECTOR_MATCHER,
-		);
-		const pseudoElementCount = determineMatchCount(
-			withoutAttributes,
-			PSEUDO_ELEMENT_NAME_MATCHER,
-		);
-		const classTotal = classCount + attributeCount + pseudoClassCount;
-		const elementTotal = typeCount + pseudoElementCount;
-		const idSpecificity = idCount.toString().padStart(3, "0");
-		const classSpecificity = classTotal.toString().padStart(3, "0");
-		const elementSpecificity = elementTotal.toString().padStart(3, "0");
-
-		return `${idSpecificity}-${classSpecificity}-${elementSpecificity}`;
 	}
 
 	/**
