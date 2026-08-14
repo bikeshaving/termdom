@@ -36,7 +36,6 @@ declare module "css-tree" {
 
 	export function parse(text: string, options?: ParseOptions): CSSTreeNode;
 	export function generate(node: CSSTreeNode): string;
-	export function toPlainObject(node: CSSTreeNode): CSSTreeNode;
 
 	export interface MatchResult {
 		matched: unknown;
@@ -55,7 +54,6 @@ declare module "css-tree" {
 			descriptor: string,
 			value: CSSTreeNode | string,
 		): MatchResult;
-		checkPropertyName(property: string): Error | undefined;
 	}
 
 	export const lexer: Lexer;
@@ -119,7 +117,6 @@ declare module "nwsapi" {
 		match(selector: string, element: unknown, callback?: unknown): boolean;
 		first(selector: string, context?: unknown, callback?: unknown): unknown;
 		select(selector: string, context?: unknown, callback?: unknown): unknown[];
-		ancestor(selector: string, context?: unknown, callback?: unknown): unknown;
 		configure(options: Record<string, boolean>): void;
 		/**
 		 * The resolver object every compiled matcher is handed as `s`: the

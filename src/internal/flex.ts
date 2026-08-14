@@ -931,9 +931,6 @@ export class Node {
 		};
 	}
 
-	getFlexDirection(): FlexDirection {
-		return this.style.flexDirection;
-	}
 	getPositionType(): PositionType {
 		return this.style.positionType;
 	}
@@ -941,10 +938,6 @@ export class Node {
 		return gutter === GUTTER_ROW
 			? this.style.gap[GUTTER_ROW]
 			: this.style.gap[GUTTER_COLUMN];
-	}
-
-	getFlexShrink(): number {
-		return resolveFlexShrink(this);
 	}
 
 	// -- entry point --------------------------------------------------------
