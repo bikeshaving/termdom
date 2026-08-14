@@ -2834,7 +2834,14 @@ function layoutAbsoluteChild(
 		childWidth.mode = MEASURE_MODE_EXACTLY;
 	} else if (isDefined(blockWidth)) {
 		childWidth.value = blockWidth;
-		childWidth.mode = MEASURE_MODE_AT_MOST;
+		// `stretch` (and the `normal` a grid area gives it) fills the alignment
+		// container when the box's size and both its insets are auto
+		// (css-align-3 §5.2). Nothing but a grid area has an alignment
+		// container to fill, so nothing else stretches.
+		childWidth.mode =
+			area && gridSelfAlign(node, child, true) === ALIGN_STRETCH
+				? MEASURE_MODE_EXACTLY
+				: MEASURE_MODE_AT_MOST;
 	}
 
 	if (styleDimIsDefined(child, FLEX_DIRECTION_COLUMN, basisHeight)) {
@@ -2849,7 +2856,10 @@ function layoutAbsoluteChild(
 		childHeight.mode = MEASURE_MODE_EXACTLY;
 	} else if (isDefined(blockHeight)) {
 		childHeight.value = blockHeight;
-		childHeight.mode = MEASURE_MODE_AT_MOST;
+		childHeight.mode =
+			area && gridSelfAlign(node, child, false) === ALIGN_STRETCH
+				? MEASURE_MODE_EXACTLY
+				: MEASURE_MODE_AT_MOST;
 	}
 
 	layoutNode(
@@ -4050,6 +4060,13 @@ interface TrackSizing {
 	columnGap: number;
 	/** Whether the content alignment on this axis stretches auto tracks (§12.8). */
 	stretchesAutoTracks: boolean;
+	/**
+	 * How much taller a baseline-aligned item makes its row than its own box
+	 * (css-grid-2 §12.5 step 1): the distance it will be pushed down to meet
+	 * the row's furthest baseline. Sizing a row without it leaves the row a
+	 * cell short of what the alignment then needs. Null on the column pass.
+	 */
+	baselineShims: Map<Node, number> | null;
 }
 
 function itemTrackRange(sizing: TrackSizing, item: GridItem): [number, number] {
@@ -4118,8 +4135,60 @@ function gridItemContribution(
 	);
 	return (
 		child.layout.height +
-		marginForAxis(child, FLEX_DIRECTION_COLUMN, sizing.ownerWidth)
+		marginForAxis(child, FLEX_DIRECTION_COLUMN, sizing.ownerWidth) +
+		(sizing.baselineShims?.get(child) ?? 0)
 	);
+}
+
+/**
+ * How far each baseline-aligned item will be pushed down within its row, from
+ * the item in that row whose first baseline sits furthest from its own top
+ * (css-grid-2 §10.1, over the baseline this engine has: see
+ * baselineWithinBorderBox).
+ */
+function measureBaselineShims(
+	node: Node,
+	items: GridItem[],
+	columnSizes: number[],
+	columnGap: number,
+	ownerWidth: number,
+	ownerHeight: number,
+): Map<Node, number> {
+	const shims = new Map<Node, number>();
+	const rows = new Map<number, GridItem[]>();
+	for (const item of items) {
+		if (gridSelfAlign(node, item.node, false) !== ALIGN_BASELINE) continue;
+		const group = rows.get(item.rowStart);
+		if (group) group.push(item);
+		else rows.set(item.rowStart, [item]);
+	}
+
+	for (const group of rows.values()) {
+		if (group.length < 2) continue;
+		const baselines = new Map<GridItem, number>();
+		let furthest = 0;
+		for (const item of group) {
+			layoutNode(
+				item.node,
+				spanOfTracks(columnSizes, columnGap, item.columnStart, item.columnEnd),
+				NaN,
+				MEASURE_MODE_EXACTLY,
+				MEASURE_MODE_UNDEFINED,
+				ownerWidth,
+				ownerHeight,
+				false,
+			);
+			const baseline =
+				resolveMargin(item.node.style.margin[EDGE_TOP], ownerWidth) +
+				baselineWithinBorderBox(item.node, ownerWidth);
+			baselines.set(item, baseline);
+			furthest = Math.max(furthest, baseline);
+		}
+		for (const item of group) {
+			shims.set(item.node, furthest - baselines.get(item)!);
+		}
+	}
+	return shims;
 }
 
 /**
@@ -5046,6 +5115,7 @@ function layoutGrid(
 			columnSizes: null,
 			columnGap,
 			stretchesAutoTracks: inlineAlign === CONTENT_STRETCH,
+			baselineShims: null,
 		});
 		return tracks;
 	};
@@ -5075,6 +5145,14 @@ function layoutGrid(
 	}
 
 	const columnSizes = columnTracks.map((track) => track.base);
+	const baselineShims = measureBaselineShims(
+		node,
+		items,
+		columnSizes,
+		columnGap,
+		ownerWidth,
+		ownerHeight,
+	);
 
 	// -- size the rows ------------------------------------------------------
 	const sizeRows = (space: number): GridTrack[] => {
@@ -5099,6 +5177,7 @@ function layoutGrid(
 			columnSizes,
 			columnGap,
 			stretchesAutoTracks: blockAlign === CONTENT_STRETCH,
+			baselineShims,
 		});
 		return tracks;
 	};
@@ -5161,23 +5240,35 @@ function layoutGrid(
 	node.layout.gridColumnOffset = -columnBase || 0;
 	node.layout.gridRowOffset = -rowBase || 0;
 
-	/** The content-box position of grid line `line`, in track-array indices. */
+	/**
+	 * The content-box position of a grid line, in track-array indices.
+	 *
+	 * A line has two positions once the tracks are spread apart by
+	 * justify-content or a gap: the far edge of the track before it, and the
+	 * near edge of the track after it. An area takes the INNER pair, so that
+	 * the space distributed between tracks stays between them and does not
+	 * become part of anybody's area.
+	 */
 	const lineStart = (tracks: GridTrack[], line: number): number => {
 		if (tracks.length === 0) return 0;
-		if (line <= 0) return tracks[0].position;
 		if (line >= tracks.length) {
 			const last = tracks[tracks.length - 1];
 			return last.position + last.base;
 		}
-		return tracks[line].position;
+		return tracks[Math.max(0, line)].position;
+	};
+	const lineEnd = (tracks: GridTrack[], line: number): number => {
+		if (tracks.length === 0) return 0;
+		const track = tracks[Math.min(Math.max(0, line - 1), tracks.length - 1)];
+		return track.position + track.base;
 	};
 
 	// -- place the items ----------------------------------------------------
 	for (const item of items) {
 		const areaLeft = lineStart(columnTracks, item.columnStart);
-		const areaRight = lineStart(columnTracks, item.columnEnd);
+		const areaRight = lineEnd(columnTracks, item.columnEnd);
 		const areaTop = lineStart(rowTracks, item.rowStart);
-		const areaBottom = lineStart(rowTracks, item.rowEnd);
+		const areaBottom = lineEnd(rowTracks, item.rowEnd);
 
 		layoutGridItem(
 			node,
@@ -5237,6 +5328,7 @@ function layoutGrid(
 				contentLeft,
 				contentTop,
 				lineStart,
+				lineEnd,
 			),
 		);
 	}
@@ -5266,6 +5358,7 @@ function absoluteGridArea(
 	contentLeft: number,
 	contentTop: number,
 	lineStart: (tracks: GridTrack[], line: number) => number,
+	lineEnd: (tracks: GridTrack[], line: number) => number,
 ): {left: number; top: number; width: number; height: number} | null {
 	const style = child.style;
 	const placed =
@@ -5299,7 +5392,8 @@ function absoluteGridArea(
 		if (placement === AUTO_PLACEMENT) return fallback;
 		const line = resolveGridLine(placement, names, explicitCount, which);
 		if (line.kind !== "line") return fallback;
-		return leading + lineStart(tracks, line.index - base);
+		const at = which === "start" ? lineStart : lineEnd;
+		return leading + at(tracks, line.index - base);
 	};
 
 	const left = edge(
