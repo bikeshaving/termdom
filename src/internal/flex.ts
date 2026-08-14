@@ -1720,7 +1720,7 @@ function layoutFlexbox(
 					node,
 					mainAxis,
 					maxMainDim + paddingBorderMain,
-					mainIsRow ? ownerWidth : ownerHeight,
+					ownerWidth,
 					ownerWidth,
 				)
 		: heightMode === MEASURE_MODE_EXACTLY

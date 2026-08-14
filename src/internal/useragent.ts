@@ -865,12 +865,6 @@ export function getInitialStyle(
 		return elementDefaults[property];
 	}
 
-	// Check universal defaults (*)
-	const universalDefaults = TERMINAL_ELEMENT_DEFAULTS["*"];
-	if (universalDefaults && universalDefaults[property]) {
-		return universalDefaults[property];
-	}
-
 	// Fall back to CSS spec default, and past it to the property index --
 	// every longhand has an initial value, and a property this engine does not
 	// lay out still resolves to one.

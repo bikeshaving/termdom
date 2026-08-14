@@ -4014,9 +4014,8 @@ export class LayoutEngine {
 		// A record on a shadow root describes the HOST's composed children.
 		const target =
 			record.target.nodeType === record.target.DOCUMENT_FRAGMENT_NODE
-				? ((record.target as ShadowRoot).host ?? null)
+				? (record.target as ShadowRoot).host
 				: record.target;
-		if (!target) return;
 		if (record.type === "attributes") {
 			// The element's own box may move between runs (its display could
 			// have changed), and so may the boxes of its children (a flex

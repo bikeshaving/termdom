@@ -1535,7 +1535,7 @@ export class Renderer {
 			!this.#needsScreenReset &&
 			!this.#needsFullClear &&
 			cursorPosition !== undefined;
-		if (scrolling && this.#prev && cursorPosition !== undefined) {
+		if (scrolling && this.#prev) {
 			const delta = scroll!.delta;
 			const regionTop = cursorPosition;
 			const regionEnd = Math.min(regionRows ?? this.#rows, this.#rows);
@@ -1890,7 +1890,7 @@ export class Renderer {
 		//   ordinary program's cursor rests after printing.
 		let parkOutput = "";
 		if (hasContent && contentHeight > 0) {
-			if (caretVisible && caret !== null && caretBufferRow !== null) {
+			if (caretVisible) {
 				this.#parkRow = caretBufferRow;
 				this.#parkCol = caret.col;
 				if (frameStartRow !== undefined) {

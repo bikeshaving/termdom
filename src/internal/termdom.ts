@@ -2592,7 +2592,7 @@ export class TermDOM {
 			if (this.#fieldDragAnchor && point) {
 				const {element: fieldElement, offset: anchor} = this.#fieldDragAnchor;
 				const focus = this.#fieldOffsetAtPoint(fieldElement, x, y);
-				if (focus !== null && focus !== undefined) {
+				if (focus !== null) {
 					setUASelection(
 						fieldElement,
 						Math.min(anchor, focus),
