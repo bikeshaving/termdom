@@ -98,7 +98,7 @@ export function* Root(
 								"@type": "SoftwareSourceCode",
 								name: "TermDOM",
 								description:
-									"HTML, CSS and the DOM for terminal emulators. Real CSS layout, no native or WASM dependency.",
+									"TermDOM is a JavaScript library that displays HTML and CSS in the terminal. It draws actual DOM nodes to terminal output and redraws the screen when they mutate.",
 								url: SITE,
 								codeRepository: "https://github.com/bikeshaving/termdom",
 								programmingLanguage: "TypeScript",

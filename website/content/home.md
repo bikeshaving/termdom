@@ -3,7 +3,7 @@ draws actual DOM nodes to terminal output and redraws the screen when they
 mutate, so TUIs and interactive CLIs can be written with vanilla JavaScript or
 any frontend web framework.
 
-![Klondike solitaire — examples/solitaire.ts](cast:solitaire)
+![Klondike solitaire rendered by TermDOM](cast:solitaire)
 
 ```ts
 import {TermDOM} from "@b9g/termdom";
@@ -41,22 +41,11 @@ setInterval(() => {
 }, 50);
 ```
 
-![The card above, running](cast:readme)
-
-One cell is `1ch` wide and `1px` tall. Every box lands on whole cells.
+![The card above, animating in a terminal](cast:readme)
 
 ## Write a web page. Get a TUI.
 
-Every glyph below is a DOM element. The spinner is a `<span>` whose `textContent` mutates; painting is automatic, like the browser.
-
-```ts
-const spinner = document.createElement("span");
-spinner.className = "spin";           // .spin { color: green }
-section.appendChild(spinner);
-setInterval(() => {
-  spinner.textContent = frames[n++ % frames.length];
-}, 30);                               // no render call -- mutations paint
-```
+Every glyph below is a DOM element. The spinner is a `<span>` whose `textContent` mutates; painting is automatic, like the browser. Edit the program and it runs again.
 
 ![examples/animated.ts](playground:animated)
 
@@ -72,34 +61,38 @@ document.addEventListener("keydown", (ev) => {
 rows()[selected].scrollIntoView();
 ```
 
-![examples/tree.ts](cast:tree)
+![A file browser reading the repository, examples/tree.ts](cast:tree)
 
 ## Real text input. Real caret. Real IME.
 
 `<input>` elements with focus traversal and `:focus` styling — and the caret is the real terminal cursor, so CJK input methods compose in the field, measured in cells.
 
-```html
-<div class="field">
-  <div class="label">Name</div><input id="name">
-</div>
-
-field.addEventListener("input", updatePreview);
-```
-
 ![examples/form.ts](playground:form)
 
 ## Features
 
-- **Stylesheets** CSS from `<style>` elements and `style` attributes cascades and inherits like it does in the browser, and is translated to ANSI escapes for color and text decoration.
-- **Layout** The CSS box model, flexbox, and table layout. Sizes resolve to whole cells.
-- **Text** CJK, emoji, and combining characters take their correct widths. Hebrew and Arabic render in visual order with contextual shaping, and the caret moves by grapheme.
+- **Stylesheets** CSS from `<style>` elements and `style` attributes cascades and inherits as in the browser, translated to ANSI color and decoration.
+- **Layout** The CSS box model, flexbox, and table layout, computed in whole terminal cells with margins, borders, and padding.
 - **Scrolling** Documents taller than the terminal scroll with `window.scrollTo()` and `element.scrollIntoView()`.
-- **Events** Events for keys, mouse, focus, and paste fire on elements, the document, and the window, pulled from STDIN.
-- **DOM utilities** `document.querySelector()`, `MutationObserver`, `ResizeObserver`, and `Element.getBoundingClientRect()` are hooked up to the layout engine and viewport, following browser standards.
-- **Forms** `<input>`, `<textarea>`, `<select>`, checkboxes, and radios come with default behavior and terminal-native looks, and can be restyled with ordinary CSS. Tab navigation and `:focus` styles are supported.
-- **Web Components** `customElements.define()`, `attachShadow()`, `<slot>`, `:host`, and scoped styles behave like the browser's. The built-in form controls are themselves shadow trees.
-- **Selection** Drag to select, styled with `::selection`.
-- **Fullscreen** `Element.requestFullscreen()` renders an element to the alternate screen. Exiting restores the shell and its scrollback.
+- **Events** Keyboard, mouse, focus, and paste events fire on elements, the document, and the window, decoded from stdin.
+- **DOM utilities** `document.querySelector()`, `MutationObserver`, `ResizeObserver`, and `getBoundingClientRect()` read the layout engine.
+- **Forms** `<input>`, `<textarea>`, `<select>`, checkboxes, and radios have terminal-native looks, restylable with CSS; Tab and `:focus` work.
+- **Web Components** `customElements.define()`, `attachShadow()`, `<slot>`, `:host`, and scoped styles; the built-in controls are shadow trees.
+- **Text** CJK, emoji, and combining characters take correct widths; Hebrew and Arabic render in visual order with contextual shaping.
+- **Selection** Drag to select, styled with `::selection`; the caret moves by grapheme.
+- **Fullscreen** `Element.requestFullscreen()` renders to the alternate screen; exiting restores the shell and its scrollback.
+
+## How it works
+
+TermDOM implements the browser's rendering pipeline against a grid of
+character cells instead of pixels. CSS lengths map onto the grid — `1px`
+is one row, `1ch` is one column — so the box model, flexbox, and tables
+lay out in whole cells. On each frame the engine recomputes style and
+layout for whatever mutated, paints the result into a cell buffer, diffs
+it against the previous frame, and writes the difference to stdout as
+ANSI escape sequences. Input runs the other way: escape sequences from
+stdin are decoded into keyboard, mouse, and paste events and dispatched
+to DOM nodes.
 
 ## Compatibility
 
@@ -115,7 +108,7 @@ npm install @b9g/termdom
 
 ## Name
 
-Not to be confused with [DomTerm](https://domterm.org), Per Bothner's
+Not to be confused with [DomTerm](https://domterm.org) by Per Bothner, a
 terminal emulator built out of DOM elements. The two projects are each
 other's inverse: DomTerm puts a terminal in the DOM; TermDOM puts the DOM
 in a terminal.

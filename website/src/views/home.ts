@@ -25,44 +25,65 @@ const heroCommand = css`
 	padding: 1.1rem 1.5rem;
 	font-size: 1.5rem;
 	text-align: center;
-	margin: 0;
+	margin: 0 0 3.5rem;
 	user-select: all;
 	color: var(--text-color);
 `;
 
-const heroNote = css`
-	color: var(--muted-color);
-	text-align: center;
-	font-size: 0.85rem;
-	margin: 0.75rem 0 3.5rem;
-`;
-
 /* The content is markdown (content/home.md); this styles what it emits.
-   The one structural opinion: the "Why it can do this" list renders as a
-   two-column feature grid. */
+   The one structural opinion: the "Features" list renders as a two-column
+   feature grid. */
 const content = css`
 	figure.cast {
-		margin: 1.5rem 0;
+		margin: 2rem 0;
 	}
 
 	figure.cast img {
 		display: block;
 		max-width: 100%;
-		border-radius: 6px;
+		border: 1px solid var(--border-color);
+		border-radius: 8px;
+	}
+
+	figure.cast figcaption {
+		margin-top: 0.5rem;
+		font-size: 0.8rem;
+		color: var(--muted-color);
 	}
 
 	/* A live embed: the program until it comes near, an editor and a terminal
-	   after. Both states are the same width as the prose above them. */
+	   after. Both states are the same width as the prose above them, and both
+	   are one framed surface with a titled bar across the top, so the swap
+	   changes what the figure does and not what it is. */
 	figure.playground {
-		margin: 1.5rem 0;
+		margin: 2rem 0;
 		min-width: 0;
 	}
 
+	.playground-preview {
+		border: 1px solid var(--border-color);
+		border-radius: 8px;
+		overflow: hidden;
+		background-color: var(--surface-color);
+	}
+
+	.playground-preview-bar {
+		padding: 0.5rem 0.7rem;
+		font-size: 0.8rem;
+		color: var(--muted-color);
+		background-color: var(--bg-color);
+		border-bottom: 1px solid var(--border-color);
+	}
+
 	/* Held to about the height the editor takes, so hydrating an embed does
-	   not move the page under whoever is reading it. */
-	figure.playground > pre {
+	   not move the page under whoever is reading it. Twenty whole lines and
+	   the padding above the first: the box ends where a line does rather than
+	   through the middle of one. */
+	.playground-preview > pre {
 		margin: 0;
-		max-height: 420px;
+		border: none;
+		border-radius: 0;
+		max-height: calc(1rem + 20 * 1.5em);
 		overflow: auto;
 	}
 
@@ -136,9 +157,9 @@ export default async function Home({url}: {url: string}) {
 
 	return jsx`
 		<${Root}
-			title="TermDOM | Build Terminal UIs with HTML, CSS and DOM"
+			title="TermDOM | Build terminal apps with HTML, CSS and the DOM"
 			url=${url}
-			description="A real DOM, a real cascade and a real CSS layout engine that paint to a terminal. No new API to learn, no native or WASM dependency."
+			description="TermDOM is a JavaScript library that displays HTML and CSS in the terminal. It draws actual DOM nodes to terminal output and redraws the screen when they mutate."
 			stylesheets=${[assets.xtermCSS]}
 		>
 			<main data-pagefind-body class=${container}>
@@ -151,13 +172,10 @@ export default async function Home({url}: {url: string}) {
 					margin: 0 0 2.5rem;
 					font-size: 1.05rem;
 				`}>
-					Build Terminal UIs with HTML, CSS and DOM.
+					Build terminal apps with HTML, CSS and the DOM.
 				</p>
 
 				<p class=${heroCommand}>npm install @b9g/termdom</p>
-				<p class=${heroNote}>
-					a real DOM, a real cascade, a real layout engine ${"—"} rendered to your terminal
-				</p>
 
 				<div class=${content}>
 					<${Marked}
