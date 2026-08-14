@@ -1839,6 +1839,10 @@ export class TermDOM {
 			this.#session.initializeCursorDetection();
 			void this.#session.negotiateBidi();
 			void this.#session.negotiateGraphemeClusters();
+			// A terminal that does not implement a mode report may echo the
+			// request's final byte as text. Homing and erasing the line
+			// disposes of any echo before the first frame claims the row.
+			void this.#session.write("\r\x1b[K");
 			this.#attachBeginning = false;
 			begun();
 

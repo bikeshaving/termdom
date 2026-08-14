@@ -361,3 +361,29 @@ test("BeforeUnloadEvent is the interface a browser exposes", async () => {
 	expect(watched.closes()).toBe(0);
 	await dom.dispose();
 });
+
+test("the mode probes are followed by an erase for any echoed final", async () => {
+	// A terminal without DECRQM can stop parsing at the $ intermediate and
+	// print the trailing p as text. The line erase after the probes makes
+	// that echo invisible whatever the terminal did with the requests.
+	const terminal = new MockProcess({cols: 40, rows: 10});
+	// The sink only records: the assertion is about byte order, and a
+	// capture-only stream behaves the same under node and bun.
+	let out = "";
+	const transport = {
+		...terminal.transport,
+		writable: new WritableStream<string>({
+			write(chunk) {
+				out += chunk;
+			},
+		}),
+	};
+	const dom = new TermDOM({transport});
+	dom.attach();
+	await nextFrame(dom);
+	const lastProbe = out.lastIndexOf("$p");
+	const scrub = out.indexOf("\r\x1b[K", lastProbe);
+	expect(lastProbe).toBeGreaterThan(-1);
+	expect(scrub).toBeGreaterThan(lastProbe);
+	await dom.dispose();
+});
