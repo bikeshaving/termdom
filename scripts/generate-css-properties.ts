@@ -122,8 +122,6 @@ shorthands["all"] = longhands.filter(
 	(name) => name !== "direction" && name !== "unicode-bidi",
 );
 
-const inherited = longhands.filter((name) => properties[name].inherited);
-
 /**
  * Initial values, for the longhands whose mdn-data initial is a value rather
  * than a prose description ("see individual properties").
@@ -223,10 +221,6 @@ export const CSS_AT_RULE_DESCRIPTORS: Readonly<
 ${record(descriptors)}
 };
 
-/** Longhands whose value inherits from the parent element. */
-export const CSS_INHERITED_PROPERTIES: readonly string[] = [
-${list(inherited)}
-];
 
 /** Each longhand's initial value, where the property index states one. */
 export const CSS_INITIAL_VALUES: Readonly<Record<string, string>> = {
