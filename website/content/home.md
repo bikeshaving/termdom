@@ -29,6 +29,10 @@ document.addEventListener("keydown", (ev) => {
 rows()[selected].scrollIntoView();
 ```
 
+Below, the same program browses an in-memory directory. `j`/`k` move, Enter opens, and the mouse works.
+
+![examples/tree.ts](playground:tree)
+
 ## Real text input. Real caret. Real IME.
 
 `<input>` elements with focus traversal and `:focus` styling — and the caret is the real terminal cursor, so CJK input methods compose in the field, measured in cells.

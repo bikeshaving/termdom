@@ -33,6 +33,7 @@ const RUNNABLE = [
 	"lists",
 	"progress-bar",
 	"rtl",
+	"tree",
 ];
 
 const SHEBANG = /^#!.*\r?\n/;
@@ -46,6 +47,10 @@ const CONSTRUCTION =
 const ATTACH = /^(?:await\s+)?term\.attach\(\);[ \t]*\r?\n/m;
 const URL_IMPORT =
 	/^import\s+\{\s*pathToFileURL\s*\}\s+from\s+["']node:url["'];?[ \t]*\r?\n/m;
+// node:fs and node:path imports come off whole: the runner binds the
+// imported names to the in-memory filesystem in virtual-fs.ts.
+const FS_IMPORTS =
+	/^import\s+\{[^}]*\}\s+from\s+["']node:(?:fs|path)["'];?[ \t]*\r?\n/gm;
 
 /**
  * Cut the `import.meta.url === pathToFileURL(process.argv[1])` block a
@@ -74,6 +79,7 @@ export function transformExample(source: string): string {
 	code = code.replace(SHEBANG, "");
 	code = code.replace(COMMENT_LINES, "");
 	code = code.replace(TERMDOM_IMPORT, "");
+	code = code.replace(FS_IMPORTS, "");
 	code = code.replace(CONSTRUCTION, "");
 	code = code.replace(ATTACH, "");
 	code = code.replace(URL_IMPORT, "");

@@ -22,6 +22,7 @@ import {installIMEQuirks} from "./ime.js";
 // disk -- so only its type comes along; the programs themselves arrive in the
 // page, in the script element the view wrote them to.
 import type {PlaygroundExample} from "../models/playground-examples.js";
+import {readdirSync, join, resolve} from "../models/virtual-fs.js";
 
 if (!window.customElements.get("content-area")) {
 	window.customElements.define("content-area", ContentAreaElement);
@@ -367,6 +368,13 @@ async function runProgram(
 		frames.delete(id);
 		(engineWindow.cancelAnimationFrame as (id: number) => void)?.(id);
 	});
+	// The names the build strips node:fs and node:path imports down to,
+	// served by the in-memory filesystem, plus the argv a command line would
+	// have carried.
+	bind("readdirSync", readdirSync);
+	bind("join", join);
+	bind("resolve", resolve);
+	bind("process", {argv: ["node", "example.ts"]});
 
 	// A name the terminal's window defines is a name the page must not
 	// supply. Accessors are skipped: `window.scrollY` has to stay live, and a
