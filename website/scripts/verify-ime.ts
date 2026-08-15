@@ -145,12 +145,62 @@ const BLINK_LATIN: Trace = {
 	expected: "a",
 };
 
+/**
+ * Recorded from Safari 26 (2026-08-15): events run input-first, with the
+ * keyCode-229 keydown AFTER each phase, and the engine re-announces the
+ * standing syllable as an IDENTICAL insertReplacementText at every syllable
+ * boundary and at commit. Composing 안영 and committing with ! must put
+ * each syllable on the wire exactly once.
+ */
+const WEBKIT_COMMIT_PUNCTUATION: Trace = {
+	name: "webkit: punctuation commits without doubling",
+	engine: "webkit",
+	steps: [
+		{kind: "input", inputType: "insertText", data: "ㅇ", value: "ㅇ"},
+		{kind: "keydown", key: "ㅇ", keyCode: 229},
+		{kind: "input", inputType: "insertReplacementText", data: "아", value: "아"},
+		{kind: "keydown", key: "ㅏ", keyCode: 229},
+		{kind: "input", inputType: "insertReplacementText", data: "안", value: "안"},
+		{kind: "keydown", key: "ㄴ", keyCode: 229},
+		{kind: "input", inputType: "insertReplacementText", data: "안", value: "안"},
+		{kind: "input", inputType: "insertText", data: "ㅇ", value: "안ㅇ"},
+		{kind: "keydown", key: "ㅇ", keyCode: 229},
+		{kind: "input", inputType: "insertReplacementText", data: "영", value: "안영"},
+		{kind: "keydown", key: "ㅕ", keyCode: 229},
+		{kind: "input", inputType: "insertReplacementText", data: "영", value: "안영"},
+		{kind: "keydown", key: "!", keyCode: 49},
+		{kind: "keydown", key: "Enter", keyCode: 13},
+	],
+	expected: "ㅇ\x7f아\x7f안ㅇ\x7f영!\r",
+};
+
+/**
+ * The same commit typed fast: the terminator's keydown lands BEFORE the
+ * identical-replacement re-announcement. The keydown flushes; the
+ * re-announcement that follows names a syllable already on the wire.
+ */
+const WEBKIT_COMMIT_KEYDOWN_FIRST: Trace = {
+	name: "webkit: keydown-first punctuation commit",
+	engine: "webkit",
+	steps: [
+		{kind: "input", inputType: "insertText", data: "ㅇ", value: "ㅇ"},
+		{kind: "keydown", key: "ㅇ", keyCode: 229},
+		{kind: "input", inputType: "insertReplacementText", data: "요", value: "요"},
+		{kind: "keydown", key: "ㅛ", keyCode: 229},
+		{kind: "keydown", key: "!", keyCode: 49},
+		{kind: "input", inputType: "insertReplacementText", data: "요", value: "요"},
+	],
+	expected: "ㅇ\x7f요!",
+};
+
 const TRACES: Trace[] = [
 	WEBKIT_HANGUL,
 	WEBKIT_BACKSPACE,
 	WEBKIT_COMPOSITION,
 	BLINK_HANGUL,
 	BLINK_LATIN,
+	WEBKIT_COMMIT_PUNCTUATION,
+	WEBKIT_COMMIT_KEYDOWN_FIRST,
 ];
 
 /** The page: an emulator, the IME work, and a log of what it sent. */

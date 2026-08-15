@@ -141,8 +141,15 @@ function forwardReplacementText(terminal: Terminal): void {
 		pending = "";
 	};
 
+	// The syllable a terminating key just committed, held for exactly one
+	// input event: the engine re-announces it as a plain insert, and the
+	// announcement arrives on either side of the terminator's keydown.
+	let announced = "";
+
 	const onInput = (event: Event): void => {
 		if (standDown || event.target !== textarea) return;
+		const wasAnnounced = announced;
+		announced = "";
 		const ev = event as InputEvent;
 		const data = ev.data;
 
@@ -151,12 +158,34 @@ function forwardReplacementText(terminal: Terminal): void {
 			// already holding. Anything else -- an autocorrection, say -- is
 			// left to xterm, which is to say dropped, as it is today.
 			if (!pending && !HANGUL.test(data)) return;
+			// The commit re-announcement arrives as a replacement too: the
+			// syllable a terminating key just flushed comes back, already on
+			// the wire, and must not be echoed again.
+			if (data === wasAnnounced && !/^[ᄀ-ᇿ㄰-㆏ꥠ-꥿]+$/.test(data)) {
+				flush();
+				event.stopPropagation();
+				return;
+			}
 			setPending(data);
 			event.stopPropagation();
 			return;
 		}
 
 		if (ev.inputType === "insertText" && data && HANGUL.test(data)) {
+			// Committing a syllable with a terminating character makes the
+			// engine re-announce the finished syllable as an ordinary insert,
+			// before or after the terminator's own keydown. The echo already
+			// sent it: a re-announcement ends the composition and nothing
+			// more. A NEW syllable begins with a bare jamo, never with the
+			// composed syllable that stands pending or was just committed.
+			if (
+				(data === pending || data === wasAnnounced) &&
+				!/^[ᄀ-ᇿ㄰-㆏ꥠ-꥿]+$/.test(data)
+			) {
+				flush();
+				event.stopPropagation();
+				return;
+			}
 			// A new syllable begins: whatever came before it is finished.
 			flush();
 			setPending(data);
@@ -201,6 +230,9 @@ function forwardReplacementText(terminal: Terminal): void {
 
 		// Any other key ends the composition. The syllable is already on
 		// screen; the key follows, and xterm handles it as it always does.
+		// The engine may still re-announce the syllable after this keydown,
+		// so it is remembered for the one input event that could carry that.
+		announced = pending;
 		flush();
 	};
 
