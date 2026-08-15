@@ -297,7 +297,21 @@ export class FullscreenManager {
  * reaches for through `window`. Everything on it is either a DOM constructor
  * or something the engine itself serves.
  */
-export interface EngineWindow extends EventTarget {
+/**
+ * The on* attributes a window carries. The two mixins are installed on
+ * Window.prototype whole, so the type names them whole -- every attribute both
+ * define exists, whether or not this engine has something that fires it. The
+ * listener pair comes from EventTarget; the mixins' redeclarations of it are
+ * dropped so the two agree.
+ */
+type WindowEventHandlerAttributes = Omit<
+	GlobalEventHandlers & WindowEventHandlers,
+	"addEventListener" | "removeEventListener"
+>;
+
+export interface EngineWindow
+	extends EventTarget,
+		WindowEventHandlerAttributes {
 	readonly document: Document;
 	readonly window: EngineWindow;
 	readonly self: EngineWindow;
@@ -955,11 +969,20 @@ export class TermDOM {
 		window.matchMedia = ((query: string): MediaQueryList => {
 			const media = String(query);
 			const mql = new (window as any).EventTarget();
-			let matches = termDOM.#styleManager.mediaQueryMatches(media);
+			// The value the last "change" reported. `matches` is evaluated on
+			// every read instead of answering with this, so a script that asks
+			// during the resize steps -- a "resize" listener, which the
+			// rendering steps run BEFORE media queries are reported -- gets the
+			// answer for the size it is being told about, not the previous one.
+			let notified = termDOM.#styleManager.mediaQueryMatches(media);
 			let onchange: ((ev: Event) => void) | null = null;
 			Object.defineProperties(mql, {
 				media: {get: () => media, enumerable: true, configurable: true},
-				matches: {get: () => matches, enumerable: true, configurable: true},
+				matches: {
+					get: () => termDOM.#styleManager.mediaQueryMatches(media),
+					enumerable: true,
+					configurable: true,
+				},
 				onchange: {
 					get: () => onchange,
 					set: (value: ((ev: Event) => void) | null) => {
@@ -990,8 +1013,8 @@ export class TermDOM {
 			});
 			termDOM.#mediaQueryUpdaters.add(() => {
 				const now = termDOM.#styleManager.mediaQueryMatches(media);
-				if (now === matches) return;
-				matches = now;
+				if (now === notified) return;
+				notified = now;
 				const event = new window.Event("change");
 				Object.defineProperties(event, {
 					matches: {value: now, enumerable: true},
@@ -1880,6 +1903,12 @@ export class TermDOM {
 	 * to the caller -- a resize resizes it in place, a rebind replaces it.
 	 */
 	#applyTerminalSize(newWidth: number, newHeight: number): void {
+		// The resize steps fire only when the viewport's width or height
+		// actually differs from the last time they ran. A SIGWINCH that reports
+		// the same terminal still takes the whole re-anchor path below -- the
+		// terminal may have rewrapped our frame regardless -- but nothing about
+		// the viewport changed, so no event is due.
+		const sizeChanged = newWidth !== this.#width || newHeight !== this.#height;
 		this.#width = newWidth;
 		this.#height = newHeight;
 
@@ -1905,6 +1934,20 @@ export class TermDOM {
 		// epoch, which is what retires the viewport-relative values every
 		// computed style resolved under the old size.
 		this.#styleManager.refreshStylesheets();
+
+		// Then the rendering steps, in their order: the resize steps first,
+		// media queries reported after. A "resize" listener therefore runs
+		// before any MediaQueryList "change" listener, and everything it can
+		// read -- innerWidth/innerHeight, document and body geometry, the
+		// layout engine's viewport, every matchMedia answer -- already
+		// describes the new size.
+		//
+		// The event coalesces exactly as the redraw does: SIGWINCH bursts are
+		// debounced by scheduleResize, so dragging a terminal's edge fires one
+		// resize event, carrying the size the drag settled on.
+		if (sizeChanged) {
+			this.window.dispatchEvent(new this.window.Event("resize"));
+		}
 		for (const update of this.#mediaQueryUpdaters) update();
 	}
 

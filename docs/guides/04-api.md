@@ -34,6 +34,8 @@ these members are wired to the terminal:
 - `requestAnimationFrame()`, `cancelAnimationFrame()` — the callback fires
   after the frame that includes your pending mutations has been written
 - `matchMedia()` — live `MediaQueryList`s, re-evaluated on resize
+- `resize` — fired at the window when the terminal size changes, before the
+  `MediaQueryList` `change` events for the same resize; `onresize` works too
 - `getSelection()` — the document selection
 - `navigator.clipboard.writeText()` — the system clipboard, over OSC 52;
   `readText()` rejects, since terminals do not answer clipboard reads

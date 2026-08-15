@@ -134,10 +134,29 @@ styles. Exiting restores the main screen and scrollback.
 
 ## Resizing
 
-A terminal resize re-evaluates `@media` rules and fires `change` on live
+A terminal resize fires `resize` at the window:
+
+```ts
+window.addEventListener("resize", () => {
+	draw(window.innerWidth, window.innerHeight);
+});
+```
+
+The event carries no dimensions; read them off the window, the document, or
+any element — the new size is in place before listeners run. `window.onresize`
+takes a handler too.
+
+The same resize re-evaluates `@media` rules and fires `change` on live
 `MediaQueryList` objects:
 
 ```ts
 const wide = window.matchMedia("(min-width: 80ch)");
 wide.addEventListener("change", relayout);
 ```
+
+`resize` runs before those `change` events, as in a browser; a `MediaQueryList`
+read from a `resize` listener already answers with the new size.
+
+A burst of resizes — dragging a terminal's edge — is coalesced into one
+redraw, and fires one `resize`, at the size the drag settled on. A resize
+notification that reports the same size fires nothing.
