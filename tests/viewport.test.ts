@@ -833,8 +833,6 @@ test("a terminal resize fires a resize event at the window", async () => {
 	(terminal as any).emit("SIGWINCH");
 	await new Promise((r) => setTimeout(r, 100));
 
-	// The event carries no size of its own; a listener reads it off the window,
-	// and every dimension it can reach already describes the new terminal.
 	expect(seen).toEqual([
 		{
 			type: "resize",
@@ -862,9 +860,6 @@ test("the resize event precedes MediaQueryList change, which already answers wit
 	await nextFrame(dom);
 
 	const order: string[] = [];
-	// The rendering steps run the resize steps before media queries are
-	// reported, so the resize listener runs first -- and matchMedia answers it
-	// with the size it is being told about, not the one that just went away.
 	window.addEventListener("resize", () => {
 		order.push(`resize matches=${mql.matches}`);
 	});
@@ -901,8 +896,6 @@ test("every resize listener runs, onresize among them, until it is removed", asy
 	await new Promise((r) => setTimeout(r, 100));
 	expect(calls).toEqual(["first:50", "second:50", "onresize:50"]);
 
-	// removeEventListener stops one listener and leaves the others; the
-	// onresize attribute is a listener like any other, and null removes it.
 	window.removeEventListener("resize", first);
 	window.onresize = null;
 	calls.length = 0;
@@ -927,9 +920,6 @@ test("a SIGWINCH reporting the same size fires no resize event", async () => {
 	let count = 0;
 	window.addEventListener("resize", () => count++);
 
-	// The pipeline delivers every SIGWINCH -- the terminal may have rewrapped
-	// the frame regardless -- and the re-anchored redraw runs. The viewport did
-	// not change, so the resize steps fire nothing.
 	(terminal as any).emit("SIGWINCH");
 	await new Promise((r) => setTimeout(r, 100));
 	expect(count).toBe(0);
@@ -953,8 +943,6 @@ test("a burst of SIGWINCHes fires one resize event, at the size it settled on", 
 	const widths: number[] = [];
 	window.addEventListener("resize", () => widths.push(window.innerWidth));
 
-	// Dragging an edge fires a SIGWINCH per column passed through. The redraw
-	// is debounced into one; the event rides that same debounce.
 	for (const cols of [90, 80, 70, 60]) {
 		terminal.resize(cols, 30);
 		(terminal as any).emit("SIGWINCH");
