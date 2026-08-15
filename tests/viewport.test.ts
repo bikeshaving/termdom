@@ -808,6 +808,164 @@ test("matchMedia answers with the stylesheet evaluator and goes live on resize",
 	dom.dispose();
 });
 
+test("a terminal resize fires a resize event at the window", async () => {
+	const terminal = new MockProcess({cols: 100, rows: 30});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {window, document} = dom;
+
+	document.body.innerHTML = `<div id="d" style="width: 100%">x</div>`;
+	await nextFrame(dom);
+
+	const seen: any[] = [];
+	window.addEventListener("resize", (event: any) => {
+		seen.push({
+			type: event.type,
+			bubbles: event.bubbles,
+			cancelable: event.cancelable,
+			isWindow: event.target === window,
+			innerWidth: window.innerWidth,
+			innerHeight: window.innerHeight,
+			divWidth: document.getElementById("d")!.getBoundingClientRect().width,
+		});
+	});
+
+	terminal.resize(50, 20);
+	(terminal as any).emit("SIGWINCH");
+	await new Promise((r) => setTimeout(r, 100));
+
+	// The event carries no size of its own; a listener reads it off the window,
+	// and every dimension it can reach already describes the new terminal.
+	expect(seen).toEqual([
+		{
+			type: "resize",
+			bubbles: false,
+			cancelable: false,
+			isWindow: true,
+			innerWidth: 50,
+			innerHeight: 20,
+			divWidth: 50,
+		},
+	]);
+
+	dom.dispose();
+});
+
+test("the resize event precedes MediaQueryList change, which already answers with the new size", async () => {
+	const terminal = new MockProcess({cols: 100, rows: 30});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {window, document} = dom;
+
+	const mql = window.matchMedia("(max-width: 60px)");
+	expect(mql.matches).toBe(false);
+
+	document.body.innerHTML = "<div>x</div>";
+	await nextFrame(dom);
+
+	const order: string[] = [];
+	// The rendering steps run the resize steps before media queries are
+	// reported, so the resize listener runs first -- and matchMedia answers it
+	// with the size it is being told about, not the one that just went away.
+	window.addEventListener("resize", () => {
+		order.push(`resize matches=${mql.matches}`);
+	});
+	mql.addEventListener("change", (event: any) => {
+		order.push(`change matches=${event.matches}`);
+	});
+
+	terminal.resize(50, 30);
+	(terminal as any).emit("SIGWINCH");
+	await new Promise((r) => setTimeout(r, 100));
+
+	expect(order).toEqual(["resize matches=true", "change matches=true"]);
+
+	dom.dispose();
+});
+
+test("every resize listener runs, onresize among them, until it is removed", async () => {
+	const terminal = new MockProcess({cols: 100, rows: 30});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {window, document} = dom;
+
+	document.body.innerHTML = "<div>x</div>";
+	await nextFrame(dom);
+
+	const calls: string[] = [];
+	const first = () => calls.push(`first:${window.innerWidth}`);
+	const second = () => calls.push(`second:${window.innerWidth}`);
+	window.addEventListener("resize", first);
+	window.addEventListener("resize", second);
+	window.onresize = () => calls.push(`onresize:${window.innerWidth}`);
+
+	terminal.resize(50, 30);
+	(terminal as any).emit("SIGWINCH");
+	await new Promise((r) => setTimeout(r, 100));
+	expect(calls).toEqual(["first:50", "second:50", "onresize:50"]);
+
+	// removeEventListener stops one listener and leaves the others; the
+	// onresize attribute is a listener like any other, and null removes it.
+	window.removeEventListener("resize", first);
+	window.onresize = null;
+	calls.length = 0;
+
+	terminal.resize(40, 30);
+	(terminal as any).emit("SIGWINCH");
+	await new Promise((r) => setTimeout(r, 100));
+	expect(calls).toEqual(["second:40"]);
+	expect(window.onresize).toBe(null);
+
+	dom.dispose();
+});
+
+test("a SIGWINCH reporting the same size fires no resize event", async () => {
+	const terminal = new MockProcess({cols: 100, rows: 30});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {window, document} = dom;
+
+	document.body.innerHTML = "<div>x</div>";
+	await nextFrame(dom);
+
+	let count = 0;
+	window.addEventListener("resize", () => count++);
+
+	// The pipeline delivers every SIGWINCH -- the terminal may have rewrapped
+	// the frame regardless -- and the re-anchored redraw runs. The viewport did
+	// not change, so the resize steps fire nothing.
+	(terminal as any).emit("SIGWINCH");
+	await new Promise((r) => setTimeout(r, 100));
+	expect(count).toBe(0);
+
+	terminal.resize(50, 30);
+	(terminal as any).emit("SIGWINCH");
+	await new Promise((r) => setTimeout(r, 100));
+	expect(count).toBe(1);
+
+	dom.dispose();
+});
+
+test("a burst of SIGWINCHes fires one resize event, at the size it settled on", async () => {
+	const terminal = new MockProcess({cols: 100, rows: 30});
+	const dom = new TermDOM({transport: terminal.transport});
+	const {window, document} = dom;
+
+	document.body.innerHTML = "<div>x</div>";
+	await nextFrame(dom);
+
+	const widths: number[] = [];
+	window.addEventListener("resize", () => widths.push(window.innerWidth));
+
+	// Dragging an edge fires a SIGWINCH per column passed through. The redraw
+	// is debounced into one; the event rides that same debounce.
+	for (const cols of [90, 80, 70, 60]) {
+		terminal.resize(cols, 30);
+		(terminal as any).emit("SIGWINCH");
+	}
+	await new Promise((r) => setTimeout(r, 100));
+
+	expect(widths).toEqual([60]);
+
+	dom.dispose();
+});
+
 test("@media stylesheet rules re-evaluate when the terminal resizes", async () => {
 	const terminal = new MockProcess({cols: 100, rows: 30});
 	const dom = new TermDOM({transport: terminal.transport});
