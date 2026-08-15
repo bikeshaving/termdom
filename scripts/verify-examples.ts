@@ -77,6 +77,21 @@ async function awaitRender(command: string): Promise<string> {
 
 const checks: Check[] = [];
 
+/** The zoo's shared assertion: one keypress moves the counter to 1. */
+async function counts(
+	command: string,
+	settleMs: number,
+): Promise<string | null> {
+	await launch(command, settleMs);
+	tmux(`send-keys -t ${SESSION} x`);
+	await sleep(800);
+	const text = capture();
+	if (!text.includes("Keys pressed: 1")) {
+		return `the keypress did not increment the counter:\n${text.slice(0, 400)}`;
+	}
+	return null;
+}
+
 const INTERACTIVE: Record<string, (cmd: string) => Promise<string | null>> = {
 	"todomvc.ts": async (cmd) => {
 		await launch(cmd, 3000);
@@ -118,6 +133,12 @@ const INTERACTIVE: Record<string, (cmd: string) => Promise<string | null>> = {
 		}
 		return null;
 	},
+	"hello-crank.ts": (cmd) => counts(cmd, 3000),
+	"hello-react.ts": (cmd) => counts(cmd, 3000),
+	"hello-vue.ts": (cmd) => counts(cmd, 3000),
+	// Svelte compiles its component and re-execs for the browser condition, so
+	// it needs longer to reach its first frame.
+	"hello-svelte.ts": (cmd) => counts(cmd, 6000),
 	"form.ts": async (cmd) => {
 		await launch(cmd, 3000);
 		tmux(`send-keys -t ${SESSION} "John Doe"`);

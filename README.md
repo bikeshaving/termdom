@@ -102,6 +102,8 @@ to DOM nodes.
   a declarative popover; open, dismiss and stacking are the platform's.
 - [`solitaire.ts`](./examples/solitaire.ts) — the Klondike solitaire above,
   with seeded deals playable by keyboard or mouse.
+- [`hello-{react,vue,svelte,crank}.ts`](./examples) — one greeting and
+  keypress counter apiece, each driving that framework's stock renderer.
 
 More runnable examples can be found in [`examples/`](./examples).
 
