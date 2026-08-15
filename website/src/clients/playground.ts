@@ -472,6 +472,19 @@ function* TerminalPane(
 			foreground: TERMINAL_FOREGROUND,
 		},
 	});
+	// Chromium on macOS delivers CJK-IME keys as ordinary keydowns (a real
+	// keyCode, not 229), so xterm emits the raw jamo and preventDefaults --
+	// which is what stops composition from ever starting (xterm.js#5348).
+	// Declining those keys lets the IME compose on xterm's own textarea, and
+	// xterm's composition path then emits the finished syllable.
+	const IME_CLAIMED = /[\u1100-\u11ff\u3130-\u318f\ua960-\ua97f\uac00-\ud7ff\u3040-\u30ff]/;
+	terminal.attachCustomKeyEventHandler((ev) => {
+		if (ev.type !== "keydown") return true;
+		if (ev.ctrlKey || ev.altKey || ev.metaKey) return true;
+		if (ev.isComposing || ev.keyCode === 229) return false;
+		if (ev.key.length === 1 && IME_CLAIMED.test(ev.key)) return false;
+		return true;
+	});
 
 	let root!: HTMLDivElement;
 	let current: Run | null = null;
