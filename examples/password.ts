@@ -9,8 +9,6 @@ const term = new TermDOM();
 
 term.attach();
 const document = term.document;
-globalThis.Node = term.window.Node;
-globalThis.document = term.document;
 
 const style = document.createElement("style");
 style.textContent = `

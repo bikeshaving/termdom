@@ -12,10 +12,6 @@ import {renderer} from "@b9g/crank/dom";
 const term = new TermDOM();
 term.attach();
 const {document} = term;
-// Crank's DOM renderer creates nodes with `document` and checks `nodeType`
-// against `Node.ELEMENT_NODE` on every render.
-globalThis.Node = term.window.Node;
-globalThis.document = document as never;
 
 const style = document.createElement("style");
 style.textContent = `
@@ -38,7 +34,7 @@ function* Hello(this: Context) {
 	});
 
 	// The empty pattern is Crank's idiom for a component that takes no props.
-	// eslint-disable-next-line no-empty-pattern
+
 	for ({} of this) {
 		yield jsx`
 			<div class="card">
