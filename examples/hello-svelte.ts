@@ -59,12 +59,12 @@ const {js} = compile(SOURCE, {generate: "client", name: "Hello"});
 const code = js.code.replace(
 	/(\bfrom\s*|\bimport\s*)(['"])([^'"]+)\2/g,
 	(match, keyword, quote, specifier) =>
-		/^[./]|^\w+:/.test(specifier)
-			? match
-			: `${keyword}${quote}${import.meta.resolve(specifier)}${quote}`,
+		/^[./]|^\w+:/.test(specifier) ?
+			match :
+			`${keyword}${quote}${import.meta.resolve(specifier)}${quote}`,
 );
 const {default: Hello} = await import(
-	`data:text/javascript;base64,${Buffer.from(code).toString("base64")}`
+	`data:text/javascript;base64,${Buffer.from(code).toString("base64")}`,
 );
 
 const term = new TermDOM();
