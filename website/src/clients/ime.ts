@@ -18,8 +18,10 @@
  *   `insertReplacementText`, which xterm drops (xterm.js#5704), while the
  *   keydowns carrying keyCode 229 make xterm's textarea-diff fallback send
  *   the half-built syllables one at a time. Nothing here composes anything:
- *   the syllable the engine has already composed is held, replaced in place
- *   as the engine replaces it, and sent when the composition ends.
+ *   the syllable the engine has already composed is echoed to the terminal
+ *   as it stands, and each replacement takes the last echo back with
+ *   backspaces -- the field previews the composition the way a browser's
+ *   own field does.
  *
  * Every other browser is left on stock xterm behaviour.
  */
@@ -86,11 +88,11 @@ function declineComposingKeys(terminal: Terminal): void {
 }
 
 /**
- * WebKit: send the syllable the engine composed, and only that.
+ * WebKit: echo the syllable the engine composed, and only that.
  *
  * The composition lives in the textarea, where the engine keeps it; this
- * holds a copy of it so it can be sent once, at the end. Every event that
- * would have made xterm send a piece of it early is stopped before xterm's
+ * mirrors it to the terminal, phase by phase. Every event that
+ * would have made xterm send a piece of it itself is stopped before xterm's
  * own listeners see it -- these listen on the element the textarea sits in,
  * during the capture phase, which is the one place a page can get in front of
  * a listener the emulator has already bound to the textarea itself.
@@ -105,16 +107,38 @@ function forwardReplacementText(terminal: Terminal): void {
 	const textarea = terminal.textarea;
 	if (!host || !textarea) return;
 
-	// The composed syllable, as the engine last had it. The textarea holds it
-	// too, and is left alone: an IME composes against what it put there, and
-	// rewriting it mid-composition is how a syllable gets lost.
+	// The composed syllable, as the engine last had it, echoed to the
+	// terminal as it changes: the field shows every phase of the syllable,
+	// which is the value a browser's own field holds mid-composition. A
+	// replacement takes back the previous state with backspaces before the
+	// new one goes down. The textarea holds the syllable too, and is left
+	// alone: an IME composes against what it put there, and rewriting it
+	// mid-composition is how a syllable gets lost.
 	let pending = "";
 	let standDown = false;
 
+	const setPending = (next: string): void => {
+		if (next === pending) return;
+		const prev = [...pending];
+		const chars = [...next];
+		let shared = 0;
+		while (
+			shared < prev.length &&
+			shared < chars.length &&
+			prev[shared] === chars[shared]
+		) {
+			shared++;
+		}
+		const taken = "\x7f".repeat(prev.length - shared);
+		const given = chars.slice(shared).join("");
+		if (taken || given) terminal.input(taken + given, true);
+		pending = next;
+	};
+
+	// The syllable is already on screen; ending the composition is only
+	// forgetting that it was provisional.
 	const flush = (): void => {
-		const text = pending;
 		pending = "";
-		if (text) terminal.input(text, true);
 	};
 
 	const onInput = (event: Event): void => {
@@ -127,7 +151,7 @@ function forwardReplacementText(terminal: Terminal): void {
 			// already holding. Anything else -- an autocorrection, say -- is
 			// left to xterm, which is to say dropped, as it is today.
 			if (!pending && !HANGUL.test(data)) return;
-			pending = data;
+			setPending(data);
 			event.stopPropagation();
 			return;
 		}
@@ -135,7 +159,7 @@ function forwardReplacementText(terminal: Terminal): void {
 		if (ev.inputType === "insertText" && data && HANGUL.test(data)) {
 			// A new syllable begins: whatever came before it is finished.
 			flush();
-			pending = data;
+			setPending(data);
 			event.stopPropagation();
 			return;
 		}
@@ -143,9 +167,9 @@ function forwardReplacementText(terminal: Terminal): void {
 		if (!pending) return;
 
 		if (!data) {
-			// The composition was deleted out from under itself. Nothing was
-			// sent, so there is nothing to take back.
-			pending = "";
+			// The composition was deleted out from under itself: take back
+			// what was echoed for it.
+			setPending("");
 			event.stopPropagation();
 			return;
 		}
@@ -169,21 +193,21 @@ function forwardReplacementText(terminal: Terminal): void {
 
 		if (pending && ev.key === "Backspace") {
 			// Backspace unbuilds the syllable rather than deleting a character
-			// on screen -- nothing of it has been sent. The engine does the
-			// unbuilding and says what is left in the input event that follows.
+			// of its own. The engine does the unbuilding and says what is left
+			// in the input event that follows, which mirrors it to the screen.
 			event.stopPropagation();
 			return;
 		}
 
-		// Any other key ends the composition. The syllable goes first, then
-		// the key, which xterm handles as it always does.
+		// Any other key ends the composition. The syllable is already on
+		// screen; the key follows, and xterm handles it as it always does.
 		flush();
 	};
 
 	const onCompositionStart = (event: Event): void => {
 		if (event.target !== textarea) return;
 		standDown = true;
-		pending = "";
+		flush();
 	};
 
 	const onCompositionEnd = (event: Event): void => {

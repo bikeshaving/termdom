@@ -66,13 +66,13 @@ const WEBKIT_HANGUL: Trace = {
 		{kind: "input", inputType: "insertReplacementText", data: "글", value: "한글"},
 		{kind: "keydown", key: "Enter", keyCode: 13},
 	],
-	expected: "한글\r",
+	expected: "ㅎ\x7f하\x7f한ㄱ\x7f그\x7f글\r",
 };
 
 /**
  * The syllable unbuilt: backspace during a composition takes a jamo back off
- * a syllable nothing has been sent for yet, so nothing may be sent for it
- * either -- not the deletion, and not the syllable as it stood.
+ * the syllable, and the wire mirrors the unbuild -- the echoed state comes
+ * back with a backspace and the reduced syllable goes down in its place.
  */
 const WEBKIT_BACKSPACE: Trace = {
 	name: "webkit: backspace unbuilds rather than deletes",
@@ -86,7 +86,7 @@ const WEBKIT_BACKSPACE: Trace = {
 		{kind: "input", inputType: "insertReplacementText", data: "하", value: "하"},
 		{kind: "keydown", key: "Enter", keyCode: 13},
 	],
-	expected: "하\r",
+	expected: "ㅎ\x7f한\x7f하\r",
 };
 
 /**
