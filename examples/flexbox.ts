@@ -1,138 +1,87 @@
+// A page layout in flexbox: masthead, sidebar, article, footer. The
+// sidebar is navigation: each entry selects an article.
+//
+//   node examples/flexbox.ts
+//
+//   ↑/↓  select a section
+//   q    quit
 import {TermDOM} from "@b9g/termdom";
+
 const term = new TermDOM();
 term.attach();
 const {document} = term;
 
-// Create main container with column layout
-const mainContainer = document.createElement("div");
-mainContainer.style.display = "flex";
-mainContainer.style.flexDirection = "column";
-mainContainer.style.padding = "1px 2px"; // top, right, bottom, left
-mainContainer.style.backgroundColor = "darkblue";
-document.body.appendChild(mainContainer);
-
-// Header section
-const header = document.createElement("div");
-header.style.display = "flex";
-header.style.flexDirection = "row";
-header.style.justifyContent = "space-between";
-header.style.backgroundColor = "magenta";
-header.style.padding = "1px 1px 1px 1px";
-mainContainer.appendChild(header);
-
-const headerTitle = document.createElement("span");
-headerTitle.textContent = "🚀 TermDOM flexbox";
-headerTitle.style.color = "white";
-header.appendChild(headerTitle);
-
-const headerSubtitle = document.createElement("span");
-headerSubtitle.textContent = "HTML · CSS · DOM → cells";
-headerSubtitle.style.textAlign = "right";
-headerSubtitle.style.color = "white";
-header.appendChild(headerSubtitle);
-
-// Content area with horizontal layout
-const contentArea = document.createElement("div");
-contentArea.style.display = "flex";
-contentArea.style.flexDirection = "row";
-contentArea.style.padding = "1px 0 0";
-mainContainer.appendChild(contentArea);
-
-// Left sidebar
-const sidebar = document.createElement("div");
-sidebar.style.display = "flex";
-sidebar.style.flexDirection = "column";
-sidebar.style.backgroundColor = "darkgreen";
-sidebar.style.padding = "1px";
-sidebar.style.whiteSpace = "nowrap";
-sidebar.style.flexShrink = "0"; // Prevent shrinking to preserve content
-contentArea.appendChild(sidebar);
-
-const sidebarTitle = document.createElement("span");
-sidebarTitle.textContent = "📋 Navigation";
-sidebarTitle.style.color = "white";
-sidebarTitle.style.textAlign = "center";
-sidebar.appendChild(sidebarTitle);
-
-const menuItems = ["• Home", "• About", "• Services", "• Contact"];
-for (const item of menuItems) {
-	const menuItem = document.createElement("span");
-	menuItem.textContent = item;
-	menuItem.style.color = "white";
-	menuItem.style.padding = "0px 1px 0px 1px";
-	sidebar.appendChild(menuItem);
-}
-
-// Main content area
-const mainContent = document.createElement("div");
-mainContent.style.display = "flex";
-mainContent.style.flexDirection = "column";
-mainContent.style.backgroundColor = "darkgray";
-mainContent.style.padding = "1px 2px 1px 2px";
-contentArea.appendChild(mainContent);
-
-const contentTitle = document.createElement("span");
-contentTitle.textContent = "📄 Main Content Area";
-contentTitle.style.color = "white";
-contentTitle.style.textAlign = "center";
-mainContent.appendChild(contentTitle);
-
-const contentText = document.createElement("span");
-contentText.textContent =
-	"Flex rows and columns, gap, grow and shrink -- resolved by a spec flexbox engine and painted to whole cells. Multi-line markup lays out as in a browser: whitespace between items is not an item.";
-contentText.style.color = "white";
-contentText.style.padding = "1px 0px 1px 0px";
-mainContent.appendChild(contentText);
-
-// Feature showcase area
-const featuresContainer = document.createElement("div");
-featuresContainer.style.display = "flex";
-featuresContainer.style.flexDirection = "row";
-featuresContainer.style.padding = "1px 0px 0px 0px";
-mainContent.appendChild(featuresContainer);
-
-const features = [
-	{title: "🎨 Styling", desc: "One cascade: sheets, inline, var(), :has()"},
-	{title: "📐 Layout", desc: "Flex, tables, margin collapsing"},
-	{title: "🧩 Widgets", desc: "Inputs and selects as UA shadow trees"},
+const SECTIONS = [
+	{
+		name: "Layout",
+		body: "Every box on this screen is a div. The masthead is a flex row with space-between, the sidebar and this article split another, and lengths compute to cells: 1ch wide, 1px tall.",
+	},
+	{
+		name: "Text",
+		body: "Text wraps at the edge of its box, takes color, weight and underline from CSS, and reflows when the terminal is resized.",
+	},
+	{
+		name: "Widgets",
+		body: "input, textarea and select are real form controls rendered through user-agent shadow trees, with a caret, a placeholder and focus styles.",
+	},
+	{
+		name: "Events",
+		body: "The arrow keys changing this page are a keydown listener on the document. Clicks, focus and input arrive the same way, on real targets.",
+	},
 ];
 
-for (const feature of features) {
-	const featureCard = document.createElement("div");
-	featureCard.style.display = "flex";
-	featureCard.style.flexDirection = "column";
-	featureCard.style.backgroundColor = "darkcyan";
-	featureCard.style.padding = "1px 1px 1px 1px";
-	featureCard.style.flex = "1"; // Make cards flexible to share available width equally
-	featuresContainer.appendChild(featureCard);
+document.body.innerHTML = `
+	<style>
+		.page { border: 1px solid #444; }
+		.masthead {
+			display: flex; flex-direction: row; justify-content: space-between;
+			padding: 0 1ch; border-bottom: 1px solid #444;
+		}
+		.brand { color: #5fafff; font-weight: bold; }
+		.masthead nav { color: #888; }
+		.middle { display: flex; flex-direction: row; }
+		.sidebar { width: 12ch; padding: 0 1ch; border-right: 1px solid #444; }
+		.sidebar div { color: #888; }
+		.sidebar div.selected { color: #5fafff; font-weight: bold; }
+		.article { flex: 1; padding: 0 1ch; }
+		.article h2 { color: white; font-weight: bold; }
+		.footer { color: #666; padding: 0 1ch; border-top: 1px solid #444; }
+	</style>
+	<div class="page">
+		<div class="masthead"><span class="brand">TermDOM</span><nav>docs · examples · github</nav></div>
+		<div class="middle">
+			<div class="sidebar"></div>
+			<div class="article"><h2></h2><p></p></div>
+		</div>
+		<div class="footer">↑/↓ select · q quits</div>
+	</div>
+`;
 
-	const featureTitle = document.createElement("span");
-	featureTitle.textContent = feature.title;
-	featureTitle.style.color = "white";
-	featureTitle.style.textAlign = "center";
-	featureCard.appendChild(featureTitle);
+const sidebar = document.querySelector(".sidebar")!;
+const heading = document.querySelector(".article h2")!;
+const body = document.querySelector(".article p")!;
 
-	const featureDesc = document.createElement("span");
-	featureDesc.textContent = feature.desc;
-	featureDesc.style.color = "white";
-	featureDesc.style.textAlign = "center";
-	featureCard.appendChild(featureDesc);
+for (const section of SECTIONS) {
+	const entry = document.createElement("div");
+	entry.textContent = section.name;
+	sidebar.appendChild(entry);
 }
 
-// Footer with reverse row layout
-const footer = document.createElement("div");
-footer.style.display = "flex";
-footer.style.flexDirection = "row-reverse";
-footer.style.backgroundColor = "darkred";
-footer.style.padding = "1px 2px 1px 2px";
-mainContainer.appendChild(footer);
+let selected = 0;
+function show(index: number): void {
+	selected = index;
+	const entries = sidebar.children;
+	for (let i = 0; i < entries.length; i++) {
+		entries[i].className = i === selected ? "selected" : "";
+	}
+	heading.textContent = SECTIONS[selected].name;
+	body.textContent = SECTIONS[selected].body;
+}
+show(0);
 
-const footerText = document.createElement("span");
-footerText.textContent = "© 2026 TermDOM";
-footerText.style.color = "white";
-footer.appendChild(footerText);
-
-const footerVersion = document.createElement("span");
-footerVersion.textContent = "v0.1.0";
-footerVersion.style.color = "white";
-footer.appendChild(footerVersion);
+document.addEventListener("keydown", (ev) => {
+	if (ev.key === "ArrowDown") show((selected + 1) % SECTIONS.length);
+	else if (ev.key === "ArrowUp") {
+		show((selected + SECTIONS.length - 1) % SECTIONS.length);
+	} else if (ev.key === "q") term.window.close();
+});

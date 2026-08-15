@@ -13,9 +13,9 @@ it runs again.
 
 ## Write a web page. Get a TUI.
 
-Every glyph below is a DOM element. The spinner is a `<span>` whose `textContent` mutates; painting is automatic, like the browser.
+Every glyph below is a DOM element: a masthead, a sidebar and an article, laid out by flexbox and styled by a stylesheet. The arrow keys are a `keydown` listener; painting is automatic, like the browser.
 
-![examples/animated.ts](playground:animated)
+![examples/flexbox.ts](playground:flexbox)
 
 ## Interactivity is just DOM events.
 
