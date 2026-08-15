@@ -71,7 +71,7 @@
     "parse5": "^7.3.0"
   },
   "devDependencies": {
-    "@b9g/crank": "^0.7.1",
+    "@b9g/crank": "^0.7.11",
     "@b9g/eslint-config": "^0.1.0",
     "@b9g/libuild": "^0.2.16",
     "@eslint/js": "^9.39.5",
@@ -79,6 +79,7 @@
     "@tanstack/table-core": "^8.21.3",
     "@types/bun": "^1.2.21",
     "@types/prismjs": "^1.26.6",
+    "@types/react-dom": "^19.2.4",
     "@typescript-eslint/eslint-plugin": "^8.67.0",
     "@typescript-eslint/parser": "^8.67.0",
     "@xterm/headless": "^5.5.0",
@@ -91,7 +92,11 @@
     "marked-highlight": "^2.2.4",
     "mdn-data": "2.29.0",
     "prismjs": "^1.30.0",
-    "typescript": "^5.9.2"
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "svelte": "^5.56.9",
+    "typescript": "^5.9.2",
+    "vue": "^3.5.41"
   },
   "module": "./dist/index.js"
 }
