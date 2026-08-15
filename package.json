@@ -60,7 +60,8 @@
     "verify:tmux": "node scripts/verify-tmux.ts",
     "verify:terminal": "node scripts/verify-terminal-app.ts",
     "prepublishOnly": "echo 'ERROR: Cannot publish from root directory. Use libuild publish instead.' && exit 1",
-    "verify:examples": "node scripts/verify-examples.ts"
+    "verify:examples": "node scripts/verify-examples.ts",
+    "verify:ime": "npm --prefix website run verify:ime"
   },
   "dependencies": {
     "arabic-persian-reshaper": "1.0.1",

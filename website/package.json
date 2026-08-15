@@ -6,6 +6,7 @@
 		"static": "MODE=production shovel build src/server.ts --platform node --lifecycle && npm run pagefind",
 		"pagefind": "pagefind --site dist/public",
 		"check-links": "bun run scripts/check-links.ts",
+		"verify:ime": "node scripts/verify-ime.ts",
 		"predeploy": "npm run static && npm run check-links",
 		"deploy": "gh-pages -d dist/public --nojekyll --cname termdom.org"
 	},
@@ -34,6 +35,8 @@
 	},
 	"devDependencies": {
 		"@types/prismjs": "^1.26.5",
+		"esbuild": "^0.27.7",
+		"playwright": "^1.62.1",
 		"svg-to-ico": "^2.0.0"
 	}
 }
