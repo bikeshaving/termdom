@@ -552,6 +552,56 @@ describe("Border Drawing", () => {
 			expect(output).toContain("│"); // Vertical border segments
 		});
 
+		test("weaves junctions where separate borders touch", () => {
+			const renderer = new Renderer(6, 12);
+
+			// A page box, and a rule running wall to wall inside it -- a
+			// masthead's border-bottom. The rule's ends reach the cells of the
+			// page's verticals, which take the connecting stub: ├ and ┤, as a
+			// browser's touching one-pixel lines would draw.
+			const output = renderer.renderFrame(0, (ctx) => {
+				ctx.drawBorder(0, 0, 10, 5, {
+					topEdge: BorderEdgeStyle.Solid,
+					rightEdge: BorderEdgeStyle.Solid,
+					bottomEdge: BorderEdgeStyle.Solid,
+					leftEdge: BorderEdgeStyle.Solid,
+					hasAnyBorder: true,
+				});
+				ctx.drawBorder(1, 2, 8, 1, {
+					topEdge: BorderEdgeStyle.Solid,
+					rightEdge: 0,
+					bottomEdge: 0,
+					leftEdge: 0,
+					hasAnyBorder: true,
+				});
+			});
+
+			expect(output).toContain("├────────┤");
+		});
+
+		test("boxes that sit flush stay separate", () => {
+			const renderer = new Renderer(4, 12);
+
+			// Two bordered siblings side by side: their verticals touch as
+			// parallel strokes, which meet nothing head-on. No junction forms
+			// -- the seam stays ┐┌, the way two browser boxes stay two boxes.
+			const output = renderer.renderFrame(0, (ctx) => {
+				const solid = {
+					topEdge: BorderEdgeStyle.Solid,
+					rightEdge: BorderEdgeStyle.Solid,
+					bottomEdge: BorderEdgeStyle.Solid,
+					leftEdge: BorderEdgeStyle.Solid,
+					hasAnyBorder: true,
+				};
+				ctx.drawBorder(0, 0, 4, 3, solid);
+				ctx.drawBorder(4, 0, 4, 3, solid);
+			});
+
+			expect(output).toContain("┐┌");
+			expect(output).toContain("┘└");
+			expect(output).not.toMatch(/[┬┴┼]/);
+		});
+
 		test("respects viewport offset", () => {
 			const renderer = new Renderer(5, 10);
 

@@ -359,6 +359,59 @@ export class CellGrid {
 		this.border[index] = border;
 	}
 
+	/**
+	 * Join the borders of boxes whose strokes touch. A stroke is drawn to
+	 * the edge of its cell, so a border cell beside another border cell
+	 * whose line runs at it would, in a browser's pixels, be touched by
+	 * that line -- the cell gains the connecting stub, in the neighbor's
+	 * style, and ├ ┬ ┼ form where one-pixel borders meet. Decisions read
+	 * the unwoven state, so a stub never begets another; parallel strokes
+	 * point along the shared edge, not across it, and adjacent boxes that
+	 * merely sit flush stay separate.
+	 */
+	weaveJunctions(): void {
+		const {rows, cols, border} = this;
+		const src = border.slice();
+		for (let row = 0; row < rows; row++) {
+			const rowStart = row * cols;
+			for (let col = 0; col < cols; col++) {
+				const index = rowStart + col;
+				const own = src[index];
+				if (own === 0) continue;
+				let woven = border[index];
+				if ((own & BorderMask.Top) === 0 && row > 0) {
+					const edge = getBorderEdge(src[index - cols], BorderMask.Bottom);
+					if (getEdgePresence(edge)) {
+						woven = setBorderEdge(woven, BorderMask.Top, getEdgeStyle(edge));
+					}
+				}
+				if ((own & BorderMask.Bottom) === 0 && row < rows - 1) {
+					const edge = getBorderEdge(src[index + cols], BorderMask.Top);
+					if (getEdgePresence(edge)) {
+						woven = setBorderEdge(
+							woven,
+							BorderMask.Bottom,
+							getEdgeStyle(edge),
+						);
+					}
+				}
+				if ((own & BorderMask.Left) === 0 && col > 0) {
+					const edge = getBorderEdge(src[index - 1], BorderMask.Right);
+					if (getEdgePresence(edge)) {
+						woven = setBorderEdge(woven, BorderMask.Left, getEdgeStyle(edge));
+					}
+				}
+				if ((own & BorderMask.Right) === 0 && col < cols - 1) {
+					const edge = getBorderEdge(src[index + 1], BorderMask.Left);
+					if (getEdgePresence(edge)) {
+						woven = setBorderEdge(woven, BorderMask.Right, getEdgeStyle(edge));
+					}
+				}
+				border[index] = woven;
+			}
+		}
+	}
+
 	/** Overwrite one cell with a plain space in the terminal's own colors. */
 	setBlank(index: number): void {
 		this.char[index] = 0x20;
@@ -1607,6 +1660,9 @@ export class Renderer {
 		const context = new DrawingContext(next, frameRows, cols, offset);
 		if (scrolling) context.paintBands = scroll!.bands;
 		drawCallback(context);
+		// The frame is complete: join the borders whose strokes touch, so the
+		// diff below sees a junction appear when only its neighbor changed.
+		next.weaveJunctions();
 
 		// Build the diff. A frame taller than the terminal is a growth frame:
 		// the rows below the fold have never been on screen, so there is nothing
