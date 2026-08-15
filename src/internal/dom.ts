@@ -116,6 +116,8 @@ const kUASelectionRange = Symbol("what an element's own selection covers");
 type UAListener = (event: Event) => void;
 const kUASelection = Symbol("a control's selection, whatever its type");
 const kSetUASelection = Symbol("move a control's selection, whatever its type");
+const kUAValue = Symbol("a text control's value, beneath the IDL attribute");
+const kSetUAValue = Symbol("write a text control's value, as a user edit does");
 
 /** A text control's selection, read past the type gate the author meets. */
 function uaSelectionOf(control: object): {
@@ -10375,7 +10377,7 @@ function applySharedFieldEdit(
 	shiftKey: boolean,
 	ctrlKey: boolean,
 ): FieldEditResult | null {
-	const value = field.value;
+	const value = field[kUAValue];
 	const {start, end, direction} = uaSelectionOf(field);
 	const backward = direction === "backward";
 	const caret = backward ? start : end;
@@ -10479,7 +10481,7 @@ function printableFieldEdit(
 	field: HTMLInputElement | HTMLTextAreaElement,
 	text: string,
 ): FieldEditResult {
-	const value = field.value;
+	const value = field[kUAValue];
 	const {start, end} = uaSelectionOf(field);
 	return collapsedEdit(
 		value.slice(0, start) + text + value.slice(end),
@@ -10509,17 +10511,22 @@ function collapsedEdit(value: string, pos: number): FieldEditResult {
  * Apply an edit result to a field's own value and selection, firing `input` on
  * a real value change (the value write reconciles the control's tree) and
  * `select` on a selection the user moved -- both events the render loop hears.
- * Order matters: assigning `.value` collapses the selection to the end (per
- * spec), so the caret is set after.
+ *
+ * The write lands on the control's value itself, never on the `value` IDL
+ * attribute over it -- a user edit in a browser changes the value without the
+ * setter running, which is how a page can tell what the user typed from what
+ * it assigned. (A framework that tracks user input replaces the accessor on
+ * the element and compares what it reads back; going through the setter would
+ * make every keystroke look like the page's own write.)
  */
 function applyFieldEdit(
 	field: HTMLInputElement | HTMLTextAreaElement,
 	result: FieldEditResult,
 ): void {
-	const value = field.value;
+	const value = field[kUAValue];
 	const {start, end, direction} = uaSelectionOf(field);
 	if (result.value !== value) {
-		field.value = result.value;
+		field[kSetUAValue](result.value);
 		field[kSetUASelection](result.start, result.end, result.direction);
 		dispatch(field, new Event("input", {bubbles: true, cancelable: false}));
 	} else if (
@@ -10538,7 +10545,7 @@ function insertPaste(
 	text: string,
 ): void {
 	if (!text) return;
-	const value = field.value;
+	const value = field[kUAValue];
 	const {start, end} = uaSelectionOf(field);
 	applyFieldEdit(
 		field,
@@ -10820,6 +10827,30 @@ export class HTMLInputElement extends HTMLElement {
 			default:
 				this.setAttribute("value", string);
 		}
+		widgetChanged(this);
+	}
+
+	/**
+	 * The control's value itself, which is what the widget below renders and
+	 * edits through. The IDL attribute above it answers with an attribute for
+	 * the types that have no value of their own; those types render no field,
+	 * so their value here is the empty string a caret would sit in.
+	 */
+	get [kUAValue](): string {
+		return inputValueMode(this.type) === "value" ? this.#value : "";
+	}
+
+	/**
+	 * Set the value from a user edit: the value changes and the dirty value
+	 * flag is set, and nothing else -- the selection is the edit's to place,
+	 * where the IDL setter would collapse it to the end. A control with no
+	 * value of its own (a file input's filename list) has nothing a keystroke
+	 * can write, as in a browser, where its UI accepts no typing at all.
+	 */
+	[kSetUAValue](value: string): void {
+		if (inputValueMode(this.type) !== "value") return;
+		this.#value = sanitizeInputValue(this, value);
+		this.#dirtyValue = true;
 		widgetChanged(this);
 	}
 
@@ -11193,7 +11224,7 @@ export class HTMLInputElement extends HTMLElement {
 			return;
 		}
 		if (!this.#valueText) return;
-		const value = this.value;
+		const value = this[kUAValue];
 		const placeholder = this.getAttribute("placeholder") ?? "";
 		// A password puts one bullet per code unit into the shadow, never the
 		// real value -- so what lays out, paints, and can be selected is only the
@@ -11253,7 +11284,7 @@ export class HTMLInputElement extends HTMLElement {
 			return;
 		}
 
-		const value = this.value;
+		const value = this[kUAValue];
 		const {start, end, direction} = uaSelectionOf(this);
 		const anchor = direction === "backward" ? end : start;
 		const caret = direction === "backward" ? start : end;
@@ -12199,11 +12230,11 @@ export class HTMLTextAreaElement extends HTMLElement {
 	}
 
 	get value(): string {
-		return this.#dirty ? this.#value : normalizeNewlines(descendantText(this));
+		return this[kUAValue];
 	}
 
 	set value(value: string) {
-		const previous = this.value;
+		const previous = this[kUAValue];
 		this.#value = normalizeNewlines(value === null ? "" : String(value));
 		this.#dirty = true;
 		if (previous !== this.#value) {
@@ -12211,6 +12242,25 @@ export class HTMLTextAreaElement extends HTMLElement {
 			this.#selectionEnd = this.#value.length;
 			this.#selectionDirection = "none";
 		}
+		widgetChanged(this);
+	}
+
+	/**
+	 * The control's value itself, which is what the widget below renders and
+	 * edits through: the raw value once the dirty flag is set, the child text
+	 * until then. @see HTMLInputElement's own door.
+	 */
+	get [kUAValue](): string {
+		return this.#dirty ? this.#value : normalizeNewlines(descendantText(this));
+	}
+
+	/**
+	 * Set the value from a user edit: the raw value changes and the dirty
+	 * value flag is set, leaving the selection to the edit that made it.
+	 */
+	[kSetUAValue](value: string): void {
+		this.#value = normalizeNewlines(value);
+		this.#dirty = true;
 		widgetChanged(this);
 	}
 
@@ -12281,7 +12331,7 @@ export class HTMLTextAreaElement extends HTMLElement {
 			toUnsignedLong(start),
 			toUnsignedLong(end),
 			direction,
-			this.value.length,
+			this[kUAValue].length,
 			(selection) => {
 				this.#selectionStart = selection[0];
 				this.#selectionEnd = selection[1];
@@ -12393,7 +12443,7 @@ export class HTMLTextAreaElement extends HTMLElement {
 	[kUAReconcile](): void {
 		const engine = this.#engine;
 		if (engine === null) return;
-		const value = this.value;
+		const value = this[kUAValue];
 		const placeholder = this.getAttribute("placeholder") ?? "";
 		let changed = false;
 		if (this.#valueText!.data !== value) {
@@ -12433,7 +12483,7 @@ export class HTMLTextAreaElement extends HTMLElement {
 		// The goal column survives only an unbroken run of vertical moves.
 		if (key !== "ArrowUp" && key !== "ArrowDown") this.#goalColumn = null;
 
-		const value = this.value;
+		const value = this[kUAValue];
 		const {start, end, direction} = uaSelectionOf(this);
 		const backward = direction === "backward";
 		const caret = backward ? start : end;
