@@ -12,6 +12,7 @@ import {cssColorToNumber, isTransparentColor} from "./color.js";
 import {renderTextFragment, stringWidth} from "./text.js";
 import {flatIsConnected, flatParentElement, shadowRootOf} from "./dom.js";
 import {computedStyleOf, pseudoStyleOf, type ComputedStyle} from "./styles.js";
+import type {CellRect} from "./ansi.js";
 
 /**
  * A clip in EDGE coordinates, not origin+size, and deliberately not a DOMRect:
@@ -21,6 +22,21 @@ import {computedStyleOf, pseudoStyleOf, type ComputedStyle} from "./styles.js";
  * intersection downstream would silently propagate.
  */
 type ClipRect = {left: number; top: number; right: number; bottom: number};
+
+/** A layout rect as the cell a drawing call starts from. */
+function roundedRect(rect: {
+	left: number;
+	top: number;
+	width: number;
+	height: number;
+}): CellRect {
+	return {
+		x: Math.round(rect.left),
+		y: Math.round(rect.top),
+		width: Math.round(rect.width),
+		height: Math.round(rect.height),
+	};
+}
 
 /**
  * Whether a computed style asks for an underline.
@@ -305,7 +321,10 @@ export class Painter {
 		if (fill === null) return;
 		// The viewport, in the document coordinates every draw call takes: the
 		// band the buffer holds, which is where a fixed box paints too.
-		ctx.fillRect(0, -ctx.viewportOffset, ctx.cols, ctx.rows, fill);
+		ctx.fillRect(
+			{x: 0, y: -ctx.viewportOffset, width: ctx.cols, height: ctx.rows},
+			fill,
+		);
 	}
 
 	#renderElement(
@@ -427,15 +446,20 @@ export class Painter {
 			if (fragments.length > 1) {
 				for (const fragment of fragments) {
 					ctx.fillRect(
-						fragment.left,
-						fragment.top,
-						fragment.width,
-						fragment.height,
+						{
+							x: fragment.left,
+							y: fragment.top,
+							width: fragment.width,
+							height: fragment.height,
+						},
 						fill,
 					);
 				}
 			} else {
-				ctx.fillRect(rect.left, rect.top, rect.width, rect.height, fill);
+				ctx.fillRect(
+					{x: rect.left, y: rect.top, width: rect.width, height: rect.height},
+					fill,
+				);
 			}
 		}
 
@@ -484,20 +508,16 @@ export class Painter {
 					};
 				};
 				const top = edgeCellStyle("border-top-color");
-				ctx.drawBorder(
-					Math.round(rect.left),
-					Math.round(rect.top),
-					Math.round(rect.width),
-					Math.round(rect.height),
-					borderStyles,
-					top,
-					{
+				ctx.drawBorder(roundedRect(rect), {
+					border: borderStyles,
+					style: top,
+					edges: {
 						top,
 						right: edgeCellStyle("border-right-color"),
 						bottom: edgeCellStyle("border-bottom-color"),
 						left: edgeCellStyle("border-left-color"),
 					},
-				);
+				});
 			}
 		}
 
@@ -683,22 +703,22 @@ export class Painter {
 				const borderStyles = resolveBorderStyles(element);
 				if (borderStyles.hasAnyBorder) {
 					if (hasColor) {
-						ctx.drawBorder(
-							Math.round(rect.left),
-							Math.round(rect.top),
-							Math.round(rect.width),
-							Math.round(rect.height),
-							borderStyles,
-							{fg: cssColorToNumber(outlineColor), bg: style.bg},
-						);
+						ctx.drawBorder(roundedRect(rect), {
+							border: borderStyles,
+							style: {fg: cssColorToNumber(outlineColor), bg: style.bg},
+						});
 					}
 				} else {
 					ctx.edgeRow(
 						Math.round(rect.left),
 						Math.round(rect.bottom) - 1,
 						Math.round(rect.width),
-						"underline",
-						hasColor ? {fg: cssColorToNumber(outlineColor)} : undefined,
+						{
+							edge: "underline",
+							style: hasColor
+								? {fg: cssColorToNumber(outlineColor)}
+								: undefined,
+						},
 					);
 				}
 			}

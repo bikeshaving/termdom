@@ -348,11 +348,9 @@ export class MockProcess extends EventEmitter implements ProcessLike {
 				};
 
 				// Create the cell at the output position
-				grid.setCell(
-					row * this.terminal.cols + outputCol,
-					actualChars,
-					cellStyle,
-				);
+				grid.setCell(row * this.terminal.cols + outputCol, actualChars, {
+					style: cellStyle,
+				});
 				outputCol++;
 
 				// A wide character's continuation column stays empty; the glyph
@@ -453,4 +451,31 @@ export function stripControlCodes(ansi: string): string {
 		.replace(/\x1b\[\d*[AB]/g, "") // Remove cursor up/down movement
 		.replace(/\x1b[78]/g, "") // Remove DECSC/DECRC (save/restore cursor)
 		.replace(/\r(?!\n)/g, ""); // Remove standalone carriage returns
+}
+
+/**
+ * Paint one frame and take its ANSI: what a test means by "render this".
+ *
+ * The module itself has no such call -- painting is the caller's, and a test
+ * is a caller with one painter and one frame.
+ */
+export function renderFrame(
+	renderer: {beginFrame(options: any): {context: any; end(): string}},
+	options: {offset: number} & Record<string, unknown>,
+	draw: (ctx: any) => void,
+): string {
+	const frame = renderer.beginFrame(options);
+	draw(frame.context);
+	return frame.end();
+}
+
+/** The same, for a frame that stands alone. */
+export function renderStatic(
+	renderer: {beginStatic(options: any): {context: any; end(): string}},
+	options: {rows: number} & Record<string, unknown>,
+	draw: (ctx: any) => void,
+): string {
+	const frame = renderer.beginStatic(options);
+	draw(frame.context);
+	return frame.end();
 }

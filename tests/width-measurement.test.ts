@@ -27,7 +27,12 @@ import {
 
 /** A measurer that records what it was offered instead of asking anything. */
 function recordingMeasurer(): {
-	probes: Array<{cluster: string; run: number; column: number; width: number}>;
+	probes: Array<{
+		cluster: string;
+		run: number;
+		column: number;
+		width: number;
+	}>;
 	measurer: WidthMeasurer;
 } {
 	const probes: Array<{

@@ -4230,7 +4230,10 @@ interface SelectorNamespaces {
 	prefixes: Map<string, string>;
 }
 
-const NO_NAMESPACES: SelectorNamespaces = {default: null, prefixes: new Map()};
+const NO_NAMESPACES: SelectorNamespaces = {
+	default: null,
+	prefixes: new Map(),
+};
 
 /** The attribute name an attribute selector opens with, whatever follows it. */
 const ATTRIBUTE_SELECTOR_NAME = /\[\s*([A-Za-z_][\w:.-]*)/g;
@@ -8082,7 +8085,10 @@ export class StyleManager {
 		let indexedStyle = this.#indexedStyles.get(element);
 		const declaration = this.declarationFor(element);
 		if (!indexedStyle || indexedStyle.of !== declaration) {
-			indexedStyle = {of: declaration, proxy: indexedDeclaration(declaration)};
+			indexedStyle = {
+				of: declaration,
+				proxy: indexedDeclaration(declaration),
+			};
 			this.#indexedStyles.set(element, indexedStyle);
 		}
 		return indexedStyle.proxy as unknown as globalThis.CSSStyleDeclaration;

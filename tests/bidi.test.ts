@@ -138,7 +138,9 @@ test("a terminal that insists on reordering gets logical order instead", async (
 			setTimeout(
 				() =>
 					(
-						terminal.stdin as unknown as {simulateResponse: (s: string) => void}
+						terminal.stdin as unknown as {
+							simulateResponse: (s: string) => void;
+						}
 					).simulateResponse("\x1b[8;3$y"),
 				0,
 			);
@@ -183,7 +185,9 @@ test("grapheme-cluster mode is negotiated, and given back on dispose", async () 
 			setTimeout(
 				() =>
 					(
-						terminal.stdin as unknown as {simulateResponse: (s: string) => void}
+						terminal.stdin as unknown as {
+							simulateResponse: (s: string) => void;
+						}
 					).simulateResponse("\x1b[?2027;1$y"),
 				0,
 			);

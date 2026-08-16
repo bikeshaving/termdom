@@ -3061,12 +3061,11 @@ export class TermDOM {
 
 		this[kLayoutEngine].calculateLayout();
 
-		const output = this.#renderer.renderStatic(
-			this.document.body.scrollHeight,
-			(ctx) => {
-				this.#painter.paint(ctx);
-			},
-		);
+		const frame = this.#renderer.beginStatic({
+			rows: this.document.body.scrollHeight,
+		});
+		this.#painter.paint(frame.context);
+		const output = frame.end();
 
 		if (output) await this.#write(output);
 		this.#afterRender();
@@ -3122,13 +3121,12 @@ export class TermDOM {
 		this.#processPendingMutationsAndRender();
 		const contentHeight = this.document.body.scrollHeight;
 		if (contentHeight === 0) return "";
-		return this.#renderer.renderStatic(
-			contentHeight,
-			(ctx) => {
-				this.#painter.paint(ctx);
-			},
+		const frame = this.#renderer.beginStatic({
+			rows: contentHeight,
 			lineEnding,
-		);
+		});
+		this.#painter.paint(frame.context);
+		return frame.end();
 	}
 
 	/** Write to the transport and wait for it to be flushed. */
@@ -3386,16 +3384,15 @@ export class TermDOM {
 			scroll = {delta, bands};
 		}
 
-		const ansi = this.#renderer.renderFrame(
-			-this.#viewport.scrollTop,
-			(ctx) => {
-				this.#painter.paint(ctx);
-			},
-			top,
-			top + regionHeight,
+		const frame = this.#renderer.beginFrame({
+			offset: -this.#viewport.scrollTop,
+			cursorRow: top,
+			regionRows: top + regionHeight,
 			scroll,
-			this.#session.widthMeasurer,
-		);
+			measurer: this.#session.widthMeasurer,
+		});
+		this.#painter.paint(frame.context);
+		const ansi = frame.end();
 		this.#lastFrameScrollTop = scrollTop;
 		this.#lastFrameEpoch = this[kLayoutEngine].invalidationEpoch;
 		this.#lastFrameInputGeneration = this.#inputGeneration;
