@@ -10,6 +10,7 @@ import {
 	collectExamples,
 	serializeExamples,
 	EXAMPLES_SCRIPT_ID,
+	SANDBOX_CONFIG_ID,
 } from "../models/playground-examples.js";
 
 const container = css`
@@ -188,6 +189,9 @@ export default async function Home({url}: {url: string}) {
 			</main>
 			<script type="application/json" id=${EXAMPLES_SCRIPT_ID}>
 				<${Raw} value=${serializeExamples(Object.values(playgrounds))} />
+			</script>
+			<script type="application/json" id=${SANDBOX_CONFIG_ID}>
+				<${Raw} value=${JSON.stringify({termdom: assets.sandboxTermdomScript, nodefs: assets.virtualFSScript})} />
 			</script>
 			<script type="module">
 				<${Raw} value=${playgroundLoader(assets.playgroundScript)} />

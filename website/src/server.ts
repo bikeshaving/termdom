@@ -21,6 +21,11 @@ import clientCSS from "./styles/client.css" with {assetBase: "/static/"};
 import navbarScript from "./clients/navbar.ts" with {assetBase: "/static/"};
 import searchScript from "./clients/search.ts" with {assetBase: "/static/"};
 import playgroundScript from "./clients/playground.ts" with {assetBase: "/static/"};
+// What the sandbox iframe's import map resolves bare specifiers to:
+// "@b9g/termdom" is the engine, "node:fs" and "node:path" are the in-memory
+// filesystem. Programs in the playground import them as written.
+import sandboxTermdomScript from "./clients/sandbox-termdom.ts" with {assetBase: "/static/"};
+import virtualFSScript from "./models/virtual-fs.ts" with {assetBase: "/static/"};
 // The terminal emulator's own stylesheet, linked from the playground alone.
 import xtermCSS from "@xterm/xterm/css/xterm.css" with {assetBase: "/static/"};
 import favicon from "../static/favicon.ico" with {assetBase: "/", assetName: "favicon.ico"};
@@ -36,6 +41,8 @@ export const assets = {
 	navbarScript,
 	searchScript,
 	playgroundScript,
+	sandboxTermdomScript,
+	virtualFSScript,
 	xtermCSS,
 	favicon,
 	logo,

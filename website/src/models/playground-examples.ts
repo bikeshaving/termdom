@@ -1,5 +1,3 @@
-import {stripTypeScriptTypes} from "node:module";
-
 /**
  * The programs the playground offers, read from the repository's own
  * `examples/` directory at build time. What a visitor edits is the file that
@@ -36,55 +34,13 @@ const RUNNABLE = [
 	"tree",
 ];
 
-const SHEBANG = /^#!.*\r?\n/;
-const COMMENT_LINES = /^(?:[ \t]*\/\/.*\r?\n)+/;
-const TERMDOM_IMPORT =
-	/^import\s+\{[^}]*\}\s+from\s+["']@b9g\/termdom["'];?[ \t]*\r?\n/m;
-// The construction takes any comment block written above it along with it:
-// it explains the two lines that are about to disappear.
-const CONSTRUCTION =
-	/^(?:[ \t]*\/\/.*\r?\n)*const\s+term\s*=\s*new\s+TermDOM\([\s\S]*?\);[ \t]*\r?\n/m;
-const ATTACH = /^(?:await\s+)?term\.attach\(\);[ \t]*\r?\n/m;
-const URL_IMPORT =
-	/^import\s+\{\s*pathToFileURL\s*\}\s+from\s+["']node:url["'];?[ \t]*\r?\n/m;
-// node:fs and node:path imports come off whole: the runner binds the
-// imported names to the in-memory filesystem in virtual-fs.ts.
-const FS_IMPORTS =
-	/^import\s+\{[^}]*\}\s+from\s+["']node:(?:fs|path)["'];?[ \t]*\r?\n/gm;
+/** The element the sandbox module URLs travel in, read by the client. */
+export const SANDBOX_CONFIG_ID = "playground-sandbox-config";
 
-/**
- * Cut the `import.meta.url === pathToFileURL(process.argv[1])` block a
- * runnable-and-importable example ends with. The block runs the program when
- * the file is the entry point, which the playground has already decided.
- */
-function dropMainGuard(code: string): string {
-	const use = code.lastIndexOf("pathToFileURL(");
-	if (use === -1) return code;
-	const guard = code.lastIndexOf("\nif (", use);
-	return guard === -1 ? code : code.slice(0, guard + 1);
-}
-
-/**
- * An example as the playground runs it.
- *
- * The runner hands a program an already-attached `term`, so the three lines
- * every example opens with -- the import, the construction and the attach --
- * are the playground's job and come off here. The file's own usage header
- * comes off too: it documents a command line the reader does not have. Node
- * strips the type annotations, which is what `node examples/*.ts` does to run
- * them in the first place. Everything else is the file verbatim.
- */
-export function transformExample(source: string): string {
-	let code = stripTypeScriptTypes(source, {mode: "strip"});
-	code = code.replace(SHEBANG, "");
-	code = code.replace(COMMENT_LINES, "");
-	code = code.replace(TERMDOM_IMPORT, "");
-	code = code.replace(FS_IMPORTS, "");
-	code = code.replace(CONSTRUCTION, "");
-	code = code.replace(ATTACH, "");
-	code = code.replace(URL_IMPORT, "");
-	code = dropMainGuard(code);
-	return code.replace(/^\s*\n/, "").replace(/[ \t]+$/gm, "").trimEnd() + "\n";
+/** What the sandbox's import map resolves each bare specifier to. */
+export interface SandboxConfig {
+	termdom: string;
+	nodefs: string;
 }
 
 /** The element a page's programs travel in, read by the client bundle. */
@@ -98,16 +54,32 @@ export function serializeExamples(examples: PlaygroundExample[]): string {
 	return JSON.stringify(examples).replace(/</g, "\\u003c");
 }
 
-/** Read and transform every runnable example under `dir`. */
+/**
+ * Read every runnable example under `dir`, as the playground shows and runs
+ * it: the file, with the type annotations stripped -- the same erasure
+ * `node examples/*.ts` applies -- and nothing else. The import, the
+ * construction and the attach all stay: the program in the editor is the
+ * program that runs, and the sandbox's import map resolves `@b9g/termdom`,
+ * `node:fs` and `node:path` to the page's own modules.
+ *
+ * `node:module` comes in dynamically so this module's top level stays pure
+ * enough for the client bundle, which imports the ids below.
+ */
 export async function collectExamples(
 	dir: FileSystemDirectoryHandle,
 ): Promise<PlaygroundExample[]> {
+	const {stripTypeScriptTypes} = await import("node:module");
 	const examples: PlaygroundExample[] = [];
 	for (const id of RUNNABLE) {
 		const label = `${id}.ts`;
 		const fileHandle = await dir.getFileHandle(label);
 		const file = await fileHandle.getFile();
-		examples.push({id, label, code: transformExample(await file.text())});
+		const code = stripTypeScriptTypes(await file.text(), {mode: "strip"});
+		examples.push({
+			id,
+			label,
+			code: code.replace(/[ \t]+$/gm, "").trimEnd() + "\n",
+		});
 	}
 
 	return examples;

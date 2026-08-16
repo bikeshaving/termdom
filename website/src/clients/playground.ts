@@ -10,7 +10,6 @@ import {css} from "@emotion/css";
 import {Terminal} from "@xterm/xterm";
 import {ContentAreaElement} from "@b9g/revise/contentarea.js";
 
-import {TermDOM} from "../../../src/index.js";
 import type {
 	TerminalTransport,
 	TerminalSize,
@@ -18,18 +17,20 @@ import type {
 } from "../../../src/index.js";
 import {CodeEditor, editorHeight} from "../components/code-editor.js";
 import {installIMEQuirks} from "./ime.js";
-// The model is a build-time module -- it reads the repository's examples off
-// disk -- so only its type comes along; the programs themselves arrive in the
-// page, in the script element the view wrote them to.
-import type {PlaygroundExample} from "../models/playground-examples.js";
-import {readdirSync, join, resolve} from "../models/virtual-fs.js";
+// The programs themselves arrive in the page, in the script element the view
+// wrote them to; the model exports the element ids both sides agree on.
+import {
+	EXAMPLES_SCRIPT_ID,
+	SANDBOX_CONFIG_ID,
+} from "../models/playground-examples.js";
+import type {
+	PlaygroundExample,
+	SandboxConfig,
+} from "../models/playground-examples.js";
 
 if (!window.customElements.get("content-area")) {
 	window.customElements.define("content-area", ContentAreaElement);
 }
-
-// Matches EXAMPLES_SCRIPT_ID in the model the view renders with.
-const EXAMPLES_SCRIPT_ID = "playground-examples-data";
 
 function readExamples(): PlaygroundExample[] {
 	const script = document.getElementById(EXAMPLES_SCRIPT_ID);
@@ -118,6 +119,9 @@ class XtermTransport implements TerminalTransport {
 
 	#terminal: Terminal;
 	#closeSession!: (info: TerminalCloseInfo) => void;
+	#dataSubscription: {dispose(): void} | null = null;
+	#resizeSubscription: {dispose(): void} | null = null;
+	#dead = false;
 
 	constructor(terminal: Terminal) {
 		this.#terminal = terminal;
@@ -128,45 +132,47 @@ class XtermTransport implements TerminalTransport {
 		// Both readable ends subscribe on the first pull and unsubscribe when
 		// cancelled, so a transport nobody reads never takes the emulator's
 		// input -- the same contract the process transport keeps with a tty.
-		let dataSubscription: {dispose(): void} | null = null;
 		this.readable = new ReadableStream<string>(
 			{
 				pull: (controller) => {
-					if (dataSubscription) return;
-					dataSubscription = terminal.onData((data) =>
+					if (this.#dataSubscription) return;
+					this.#dataSubscription = terminal.onData((data) =>
 						controller.enqueue(data),
 					);
 				},
 				cancel: () => {
-					dataSubscription?.dispose();
-					dataSubscription = null;
+					this.#dataSubscription?.dispose();
+					this.#dataSubscription = null;
 				},
 			},
 			{highWaterMark: 0},
 		);
 
-		let resizeSubscription: {dispose(): void} | null = null;
 		this.resizes = new ReadableStream<TerminalSize>(
 			{
 				pull: (controller) => {
-					if (resizeSubscription) return;
-					resizeSubscription = terminal.onResize(({cols, rows}) =>
+					if (this.#resizeSubscription) return;
+					this.#resizeSubscription = terminal.onResize(({cols, rows}) =>
 						controller.enqueue({cols, rows}),
 					);
 				},
 				cancel: () => {
-					resizeSubscription?.dispose();
-					resizeSubscription = null;
+					this.#resizeSubscription?.dispose();
+					this.#resizeSubscription = null;
 				},
 			},
 			{highWaterMark: 0},
 		);
 
 		// Resolve on the emulator's own callback: a written frame is one the
-		// emulator has parsed, which is what frame ordering rests on.
+		// emulator has parsed, which is what frame ordering rests on. A dead
+		// transport swallows writes: chunks its realm queued before dying must
+		// not drain onto the next program's screen.
 		this.writable = new WritableStream<string>({
-			write: (chunk) =>
-				new Promise<void>((resolve) => terminal.write(chunk, resolve)),
+			write: (chunk) => {
+				if (this.#dead) return Promise.resolve();
+				return new Promise<void>((resolve) => terminal.write(chunk, resolve));
+			},
 		});
 	}
 
@@ -186,238 +192,120 @@ class XtermTransport implements TerminalTransport {
 	close(info: TerminalCloseInfo = {}): void {
 		this.#closeSession(info);
 	}
+
+	/**
+	 * Cut the transport off from the emulator: no more input taken, no more
+	 * writes delivered. Stopping a run calls this before the pane resets, so
+	 * nothing a dead program queued lands on the next one's screen.
+	 */
+	abort(): void {
+		this.#dead = true;
+		this.#dataSubscription?.dispose();
+		this.#dataSubscription = null;
+		this.#resizeSubscription?.dispose();
+		this.#resizeSubscription = null;
+	}
 }
 
-/**
- * Page globals a program has no business reaching. Shadowed as parameters of
- * the function the code is compiled into, so a reference resolves to
- * `undefined` rather than to the playground's own page. Everything the
- * terminal's window defines shadows the page's equivalent as well (see
- * `runProgram`), which covers `document`, the DOM interfaces and the
- * observers; these are the names left over.
- */
-const BLOCKED_GLOBALS = [
-	"top",
-	"parent",
-	"frames",
-	"opener",
-	"frameElement",
-	"location",
-	"history",
-	"screen",
-	"localStorage",
-	"sessionStorage",
-	"indexedDB",
-	"caches",
-	"cookieStore",
-	"fetch",
-	"XMLHttpRequest",
-	"WebSocket",
-	"EventSource",
-	"Worker",
-	"SharedWorker",
-	"ServiceWorker",
-	"BroadcastChannel",
-	"Notification",
-	"alert",
-	"confirm",
-	"prompt",
-	"print",
-	"open",
-	"postMessage",
-	"importScripts",
-];
-
-const RESERVED_WORDS = new Set([
-	"break",
-	"case",
-	"catch",
-	"class",
-	"const",
-	"continue",
-	"debugger",
-	"default",
-	"delete",
-	"do",
-	"else",
-	"enum",
-	"export",
-	"extends",
-	"false",
-	"finally",
-	"for",
-	"function",
-	"if",
-	"implements",
-	"import",
-	"in",
-	"instanceof",
-	"interface",
-	"let",
-	"new",
-	"null",
-	"package",
-	"private",
-	"protected",
-	"public",
-	"return",
-	"static",
-	"super",
-	"switch",
-	"this",
-	"throw",
-	"true",
-	"try",
-	"typeof",
-	"var",
-	"void",
-	"while",
-	"with",
-	"yield",
-	"arguments",
-	"eval",
-]);
-
-const IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
-
-const AsyncFunction = Object.getPrototypeOf(async function () {})
-	.constructor as new (
-	...args: string[]
-) => (...args: unknown[]) => Promise<unknown>;
-
-/** One program's lifetime: its engine, its timers, and the way to end both. */
+/** One program's lifetime: its sandbox, and the way to end it. */
 interface Run {
 	stop(): Promise<void>;
 }
 
+interface SandboxWindow extends Window {
+	__start?: (url: string) => Promise<unknown>;
+	__transport?: TerminalTransport;
+}
+
+function readSandboxConfig(): SandboxConfig | null {
+	const script = document.getElementById(SANDBOX_CONFIG_ID);
+	return script ? (JSON.parse(script.textContent!) as SandboxConfig) : null;
+}
+
 /**
- * Compile `code` and run it against a fresh TermDOM attached to `terminal`.
+ * The sandbox document: an import map resolving the specifiers the examples
+ * use, and a bootstrap that runs a module URL on request. The CSP keeps the
+ * page's promise that nothing here talks to a server. `<` is escaped so no
+ * asset URL can close the script element it is written into.
+ */
+function sandboxHTML(config: SandboxConfig): string {
+	const importMap = JSON.stringify({
+		imports: {
+			"@b9g/termdom": config.termdom,
+			"node:fs": config.nodefs,
+			"node:path": config.nodefs,
+		},
+	}).replace(/</g, "\\u003c");
+	return [
+		"<!doctype html>",
+		'<meta charset="utf-8">',
+		'<meta http-equiv="Content-Security-Policy" content="connect-src \'none\'; worker-src \'none\'">',
+		'<script type="importmap">' + importMap + "</" + "script>",
+		'<script type="module">',
+		'globalThis.process = {argv: ["node", "example.ts"], env: {}};',
+		"window.__start = (url) => import(url);",
+		"</" + "script>",
+	].join("\n");
+}
+
+/**
+ * Run `code` as an ES module in a fresh same-origin iframe against
+ * `terminal`.
  *
- * The code is compiled into an async function whose parameters shadow the
- * page: `document` and `window` are the terminal's, the timer functions are
- * tracked so `stop()` can cancel them, and the globals that would reach the
- * playground's own page are bound to `undefined`. Callbacks are wrapped so a
- * throw from a timer reports rather than vanishing into the console.
+ * The code runs as written -- the import, the construction, the attach --
+ * because the iframe's import map resolves `@b9g/termdom` to a build of the
+ * engine whose parameterless construction takes the transport the workbench
+ * put on the sandbox's globalThis. Stopping a run removes the iframe, and
+ * the realm takes its timers, frames and listeners with it.
  */
 async function runProgram(
 	terminal: Terminal,
 	code: string,
 	report: (error: unknown) => void,
 ): Promise<Run> {
+	const config = readSandboxConfig();
+	if (!config) throw new Error("The page carries no sandbox configuration.");
 	const transport = new XtermTransport(terminal);
-	const term = new TermDOM({transport});
-	const engineWindow = term.window as unknown as Record<string, unknown>;
 
-	const timeouts = new Set<number>();
-	const intervals = new Set<number>();
-	const frames = new Set<number>();
+	const iframe = document.createElement("iframe");
+	iframe.style.display = "none";
+	iframe.setAttribute("aria-hidden", "true");
+	iframe.srcdoc = sandboxHTML(config);
+	const loaded = new Promise<void>((resolve) => {
+		iframe.addEventListener("load", () => resolve(), {once: true});
+	});
+	document.body.appendChild(iframe);
+	await loaded;
 
-	const guard =
-		(callback: (...args: unknown[]) => unknown) =>
-		(...args: unknown[]): unknown => {
-			try {
-				return callback(...args);
-			} catch (error) {
-				report(error);
-			}
-		};
-
-	const names: string[] = [];
-	const values: unknown[] = [];
-	const bind = (name: string, value: unknown): void => {
-		if (names.includes(name)) return;
-		names.push(name);
-		values.push(value);
-	};
-
-	// The first binding of a name wins, so the tracked timers below are bound
-	// before the terminal's window contributes its own untracked ones.
-	bind("term", term);
-	bind("document", term.document);
-	bind("window", term.window);
-	bind("self", term.window);
-	bind("globalThis", term.window);
-	bind("setTimeout", (callback: never, delay?: number, ...rest: unknown[]) => {
-		const id = window.setTimeout(guard(callback), delay, ...rest);
-		timeouts.add(id);
-		return id;
-	});
-	bind("clearTimeout", (id: number) => {
-		timeouts.delete(id);
-		window.clearTimeout(id);
-	});
-	bind("setInterval", (callback: never, delay?: number, ...rest: unknown[]) => {
-		const id = window.setInterval(guard(callback), delay, ...rest);
-		intervals.add(id);
-		return id;
-	});
-	bind("clearInterval", (id: number) => {
-		intervals.delete(id);
-		window.clearInterval(id);
-	});
-	// Animation frames come from the engine, not the browser: they are the
-	// hook a program uses to wait for a painted frame.
-	bind("requestAnimationFrame", (callback: never) => {
-		const id = (engineWindow.requestAnimationFrame as (cb: unknown) => number)(
-			guard(callback),
-		);
-		frames.add(id);
-		return id;
-	});
-	bind("cancelAnimationFrame", (id: number) => {
-		frames.delete(id);
-		(engineWindow.cancelAnimationFrame as (id: number) => void)?.(id);
-	});
-	// The names the build strips node:fs and node:path imports down to,
-	// served by the in-memory filesystem, plus the argv a command line would
-	// have carried.
-	bind("readdirSync", readdirSync);
-	bind("join", join);
-	bind("resolve", resolve);
-	bind("process", {argv: ["node", "example.ts"]});
-
-	// A name the terminal's window defines is a name the page must not
-	// supply. Accessors are skipped: `window.scrollY` has to stay live, and a
-	// parameter would freeze it at whatever it read when the program started.
-	for (const name of Object.getOwnPropertyNames(term.window)) {
-		if (!IDENTIFIER.test(name) || RESERVED_WORDS.has(name)) continue;
-		const descriptor = Object.getOwnPropertyDescriptor(term.window, name);
-		if (!descriptor || descriptor.get) continue;
-		bind(name, descriptor.value);
+	const sandbox = iframe.contentWindow as SandboxWindow | null;
+	if (!sandbox?.__start) {
+		iframe.remove();
+		throw new Error("The sandbox failed to boot.");
 	}
 
-	for (const name of BLOCKED_GLOBALS) bind(name, undefined);
+	sandbox.__transport = transport;
+	sandbox.addEventListener("error", (event) => {
+		const ev = event as ErrorEvent;
+		report(ev.error ?? ev.message);
+	});
+	sandbox.addEventListener("unhandledrejection", (event) => {
+		report((event as PromiseRejectionEvent).reason);
+	});
+
+	const url = URL.createObjectURL(new Blob([code], {type: "text/javascript"}));
 
 	let stopped = false;
 	const stop = async (): Promise<void> => {
 		if (stopped) return;
 		stopped = true;
-		for (const id of timeouts) window.clearTimeout(id);
-		for (const id of intervals) window.clearInterval(id);
-		for (const id of frames) {
-			(engineWindow.cancelAnimationFrame as (id: number) => void)?.(id);
-		}
-		timeouts.clear();
-		intervals.clear();
-		frames.clear();
-		await term.dispose();
+		URL.revokeObjectURL(url);
+		transport.abort();
+		iframe.remove();
 		transport.close();
 	};
 
-	// Compiled before attaching: a syntax error should surface without the
-	// terminal having been taken over and handed straight back.
-	//
-	// The code goes in a nested scope so that a `const document = ...` of its
-	// own shadows the parameter rather than colliding with it, which is what a
-	// declaration at the top level of a script does.
-	const program = new AsyncFunction(
-		...names,
-		`"use strict";\nreturn (async () => {\n${code}\n})();\n//# sourceURL=playground.js`,
-	);
-
 	try {
-		await term.attach();
-		await program(...values);
+		await sandbox.__start(url);
 	} catch (error) {
 		await stop();
 		throw error;

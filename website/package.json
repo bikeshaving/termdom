@@ -7,6 +7,7 @@
 		"pagefind": "pagefind --site dist/public",
 		"check-links": "bun run scripts/check-links.ts",
 		"verify:ime": "node scripts/verify-ime.ts",
+		"verify:playground": "node scripts/verify-playground.ts",
 		"predeploy": "npm run static && npm run check-links",
 		"deploy": "gh-pages -d dist/public --nojekyll --cname termdom.org"
 	},
