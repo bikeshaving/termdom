@@ -4,7 +4,6 @@ import {
 	type CellStyle,
 	generateANSI,
 	getBorderChar,
-	mergeBorderEncodings,
 	Renderer,
 } from "../src/internal/ansi.js";
 import {BorderEdgeStyle} from "../src/internal/styles.js";
@@ -441,44 +440,47 @@ describe("Border Functions", () => {
 		});
 	});
 
-	describe("mergeBorderEncodings", () => {
-		test("merges non-conflicting edges", () => {
-			const topEdge = BorderEdgeStyle.Solid << 0;
-			const leftEdge = BorderEdgeStyle.Solid << 24;
+	describe("edges that meet", () => {
+		// The same rule decides both ways borders meet, so both are read off
+		// the glyphs a frame paints rather than off the encoding.
+		const solid = {
+			topEdge: BorderEdgeStyle.Solid,
+			rightEdge: BorderEdgeStyle.Solid,
+			bottomEdge: BorderEdgeStyle.Solid,
+			leftEdge: BorderEdgeStyle.Solid,
+			hasAnyBorder: true,
+		};
 
-			const merged = mergeBorderEncodings(topEdge, leftEdge);
+		test("two boxes sharing a wall cross where the wall meets a run", () => {
+			const renderer = new Renderer(6, 14);
 
-			// Should have both edges (extract the edge values properly)
-			expect((merged & (0xff << 0)) >> 0).toBe(BorderEdgeStyle.Solid); // top
-			expect((merged & (0xff << 24)) >> 24).toBe(BorderEdgeStyle.Solid); // left
+			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
+				ctx.drawBorder({x: 0, y: 0, width: 6, height: 3}, {border: solid});
+				ctx.drawBorder({x: 5, y: 0, width: 6, height: 3}, {border: solid});
+				ctx.drawBorder({x: 0, y: 2, width: 6, height: 3}, {border: solid});
+			});
+
+			expect(output).toContain("┬");
+			expect(output).toContain("├");
 		});
 
-		test("chooses higher priority style for conflicting edges", () => {
-			const solidTop = BorderEdgeStyle.Solid << 0;
-			const doubleTop = BorderEdgeStyle.Double << 0;
+		test("the heavier style wins a shared wall", () => {
+			const renderer = new Renderer(6, 14);
+			const double = {
+				topEdge: BorderEdgeStyle.Double,
+				rightEdge: BorderEdgeStyle.Double,
+				bottomEdge: BorderEdgeStyle.Double,
+				leftEdge: BorderEdgeStyle.Double,
+				hasAnyBorder: true,
+			};
 
-			const merged = mergeBorderEncodings(solidTop, doubleTop);
+			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
+				ctx.drawBorder({x: 0, y: 0, width: 6, height: 3}, {border: solid});
+				ctx.drawBorder({x: 5, y: 0, width: 6, height: 3}, {border: double});
+			});
 
-			// Double has higher priority than solid
-			expect((merged & (0xff << 0)) >> 0).toBe(BorderEdgeStyle.Double);
-		});
-
-		test("preserves existing edges when incoming has none", () => {
-			const existing = BorderEdgeStyle.Solid << 0;
-			const incoming = 0;
-
-			const merged = mergeBorderEncodings(existing, incoming);
-
-			expect(merged).toBe(existing);
-		});
-
-		test("uses incoming edges when existing has none", () => {
-			const existing = 0;
-			const incoming = BorderEdgeStyle.Solid << 8;
-
-			const merged = mergeBorderEncodings(existing, incoming);
-
-			expect(merged).toBe(incoming);
+			// The shared column is drawn from the double box's edges.
+			expect(output).toMatch(/[╦╤╥]/);
 		});
 	});
 });

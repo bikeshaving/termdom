@@ -66,42 +66,80 @@ const getEdgeRounded = (edgeValue: number) =>
 /**
  * Merge two border encodings, choosing the higher precedence style for each edge
  */
-export function mergeBorderEncodings(
-	existing: number,
-	incoming: number,
-): number {
-	let merged = 0;
-
+/**
+ * The edges a cell holds once two strokes meet in it.
+ *
+ * Borders meet in two ways and this decides both: two boxes painting the same
+ * cell, and a box's stroke running at the cell beside it. An edge only one
+ * side draws is taken as it is; an edge both draw keeps the heavier style,
+ * which is what makes a double border win a shared wall.
+ */
+function meetEdges(existing: number, incoming: number): number {
+	let met = 0;
 	for (const {mask} of BORDER_EDGE_MASKS) {
-		const existingEdge = getBorderEdge(existing, mask);
-		const incomingEdge = getBorderEdge(incoming, mask);
-
-		if (!getEdgePresence(existingEdge)) {
-			merged = setBorderEdge(merged, mask, incomingEdge);
-		} else if (!getEdgePresence(incomingEdge)) {
-			merged = setBorderEdge(merged, mask, existingEdge);
+		const here = getBorderEdge(existing, mask);
+		const there = getBorderEdge(incoming, mask);
+		if (!getEdgePresence(here)) {
+			met = setBorderEdge(met, mask, there);
+		} else if (!getEdgePresence(there)) {
+			met = setBorderEdge(met, mask, here);
 		} else {
-			const existingStyle = getEdgeStyle(existingEdge);
-			const incomingStyle = getEdgeStyle(incomingEdge);
-
-			if (incomingStyle > existingStyle) {
-				merged = setBorderEdge(merged, mask, incomingEdge);
-			} else {
-				merged = setBorderEdge(merged, mask, existingEdge);
-			}
+			met = setBorderEdge(
+				met,
+				mask,
+				getEdgeStyle(there) > getEdgeStyle(here) ? there : here,
+			);
 		}
 	}
 
-	return merged;
+	return met;
 }
 
 /**
- * A rectangle in cells: the box a drawing call acts on.
+ * Join the borders in `grid` whose strokes touch.
  *
- * Calls in this module take their subject positionally -- a point as `x, y`,
- * a rectangle as one of these, the text to write -- and everything else in a
- * named object after it. A drawing callback comes last.
+ * A stroke is drawn to the edge of its cell, so a border cell beside another
+ * whose line runs at it would, in a browser's pixels, be touched by that
+ * line: the cell gains the connecting stub and `├ ┬ ┼` form where one-pixel
+ * borders meet. Every decision reads the grid as painted, so a stub never
+ * begets another; parallel strokes point along the shared edge rather than
+ * across it, so boxes that merely sit flush stay separate.
  */
+function joinTouchingBorders(grid: CellGrid): void {
+	const {rows, cols, border} = grid;
+	const painted = border.slice();
+	// Which neighbour to look at for each edge of a cell, and which of that
+	// neighbour's edges would run into this one.
+	const REACHES: Array<{mask: number; step: number; from: number}> = [
+		{mask: BorderMask.Top, step: -cols, from: BorderMask.Bottom},
+		{mask: BorderMask.Bottom, step: cols, from: BorderMask.Top},
+		{mask: BorderMask.Left, step: -1, from: BorderMask.Right},
+		{mask: BorderMask.Right, step: 1, from: BorderMask.Left},
+	];
+
+	for (let row = 0; row < rows; row++) {
+		for (let col = 0; col < cols; col++) {
+			const index = row * cols + col;
+			const own = painted[index];
+			if (own === 0) continue;
+			let joined = border[index];
+			for (const {mask, step, from} of REACHES) {
+				if ((own & mask) !== 0) continue;
+				const neighbour = index + step;
+				if (mask === BorderMask.Top && row === 0) continue;
+				if (mask === BorderMask.Bottom && row === rows - 1) continue;
+				if (mask === BorderMask.Left && col === 0) continue;
+				if (mask === BorderMask.Right && col === cols - 1) continue;
+				const edge = getBorderEdge(painted[neighbour], from);
+				if (!getEdgePresence(edge)) continue;
+				joined = meetEdges(joined, setBorderEdge(0, mask, edge));
+			}
+
+			border[index] = joined;
+		}
+	}
+}
+
 export interface CellRect {
 	x: number;
 	y: number;
@@ -380,56 +418,6 @@ export class CellGrid {
 		this.border[index] = border;
 	}
 
-	/**
-	 * Join the borders of boxes whose strokes touch. A stroke is drawn to
-	 * the edge of its cell, so a border cell beside another border cell
-	 * whose line runs at it would, in a browser's pixels, be touched by
-	 * that line -- the cell gains the connecting stub, in the neighbor's
-	 * style, and ├ ┬ ┼ form where one-pixel borders meet. Decisions read
-	 * the unwoven state, so a stub never begets another; parallel strokes
-	 * point along the shared edge, not across it, and adjacent boxes that
-	 * merely sit flush stay separate.
-	 */
-	weaveJunctions(): void {
-		const {rows, cols, border} = this;
-		const src = border.slice();
-		for (let row = 0; row < rows; row++) {
-			const rowStart = row * cols;
-			for (let col = 0; col < cols; col++) {
-				const index = rowStart + col;
-				const own = src[index];
-				if (own === 0) continue;
-				let woven = border[index];
-				if ((own & BorderMask.Top) === 0 && row > 0) {
-					const edge = getBorderEdge(src[index - cols], BorderMask.Bottom);
-					if (getEdgePresence(edge)) {
-						woven = setBorderEdge(woven, BorderMask.Top, getEdgeStyle(edge));
-					}
-				}
-				if ((own & BorderMask.Bottom) === 0 && row < rows - 1) {
-					const edge = getBorderEdge(src[index + cols], BorderMask.Top);
-					if (getEdgePresence(edge)) {
-						woven = setBorderEdge(woven, BorderMask.Bottom, getEdgeStyle(edge));
-					}
-				}
-				if ((own & BorderMask.Left) === 0 && col > 0) {
-					const edge = getBorderEdge(src[index - 1], BorderMask.Right);
-					if (getEdgePresence(edge)) {
-						woven = setBorderEdge(woven, BorderMask.Left, getEdgeStyle(edge));
-					}
-				}
-				if ((own & BorderMask.Right) === 0 && col < cols - 1) {
-					const edge = getBorderEdge(src[index + 1], BorderMask.Left);
-					if (getEdgePresence(edge)) {
-						woven = setBorderEdge(woven, BorderMask.Right, getEdgeStyle(edge));
-					}
-				}
-				border[index] = woven;
-			}
-		}
-	}
-
-	/** Overwrite one cell with a plain space in the terminal's own colors. */
 	setBlank(index: number): void {
 		this.char[index] = 0x20;
 		this.fg[index] = 0;
@@ -1326,7 +1314,7 @@ export class DrawingContext {
 		grid.setBorderCell(
 			index,
 			grid.char[index] !== 0 && existing > 0
-				? mergeBorderEncodings(existing, borderEncoding)
+				? meetEdges(existing, borderEncoding)
 				: borderEncoding,
 			style,
 		);
@@ -1717,9 +1705,10 @@ export class Renderer {
 		return {
 			context,
 			end: (): string => {
-				// The frame is complete: join the borders whose strokes touch, so the
-				// diff below sees a junction appear when only its neighbor changed.
-				next.weaveJunctions();
+				// The frame is complete: join the borders whose strokes touch,
+				// so the diff below sees a junction appear even when only its
+				// neighbour changed.
+				joinTouchingBorders(next);
 
 				// Build the diff. A frame taller than the terminal is a growth frame:
 				// the rows below the fold have never been on screen, so there is nothing
