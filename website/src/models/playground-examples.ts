@@ -29,8 +29,11 @@ const RUNNABLE = [
 	"form",
 	"fullscreen",
 	"lists",
+	"password",
 	"progress-bar",
 	"rtl",
+	"solitaire",
+	"todomvc",
 	"tree",
 ];
 
@@ -41,6 +44,8 @@ export const SANDBOX_CONFIG_ID = "playground-sandbox-config";
 export interface SandboxConfig {
 	termdom: string;
 	nodefs: string;
+	crankStandalone: string;
+	crankDom: string;
 }
 
 /** The element a page's programs travel in, read by the client bundle. */
@@ -55,31 +60,21 @@ export function serializeExamples(examples: PlaygroundExample[]): string {
 }
 
 /**
- * Read every runnable example under `dir`, as the playground shows and runs
- * it: the file, with the type annotations stripped -- the same erasure
- * `node examples/*.ts` applies -- and nothing else. The import, the
- * construction and the attach all stay: the program in the editor is the
- * program that runs, and the sandbox's import map resolves `@b9g/termdom`,
+ * Read every runnable example under `dir`, verbatim. What a visitor reads is
+ * the file that ships with the library -- the import, the construction, the
+ * attach, the types. The runner erases the types at run time, where nobody
+ * reads the result, and the sandbox's import map resolves `@b9g/termdom`,
  * `node:fs` and `node:path` to the page's own modules.
- *
- * `node:module` comes in dynamically so this module's top level stays pure
- * enough for the client bundle, which imports the ids below.
  */
 export async function collectExamples(
 	dir: FileSystemDirectoryHandle,
 ): Promise<PlaygroundExample[]> {
-	const {stripTypeScriptTypes} = await import("node:module");
 	const examples: PlaygroundExample[] = [];
 	for (const id of RUNNABLE) {
 		const label = `${id}.ts`;
 		const fileHandle = await dir.getFileHandle(label);
 		const file = await fileHandle.getFile();
-		const code = stripTypeScriptTypes(await file.text(), {mode: "strip"});
-		examples.push({
-			id,
-			label,
-			code: code.replace(/[ \t]+$/gm, "").trimEnd() + "\n",
-		});
+		examples.push({id, label, code: await file.text()});
 	}
 
 	return examples;

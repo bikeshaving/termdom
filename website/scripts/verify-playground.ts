@@ -63,6 +63,15 @@ const editor = await page.evaluate(
 report(editor.includes('import {TermDOM} from "@b9g/termdom"'), "editor shows the import");
 report(editor.includes("new TermDOM"), "editor shows the construction");
 report(editor.includes("term.attach()"), "editor shows the attach");
+report(editor.includes("index: number"), "editor shows the types, verbatim");
+
+// The crank examples run through the import map: todomvc renders its
+// header, and solitaire -- entered through its own main guard against the
+// sandbox's argv -- paints the new-game menu.
+await page.selectOption("select", "todomvc");
+report(await waitForText("todos"), "playground: todomvc renders through mapped crank");
+await page.selectOption("select", "solitaire");
+report(await waitForText("one card", 20000), "playground: solitaire boots through its main guard");
 
 // The homepage embeds hydrate as they come near and paint their programs.
 // The walk down the page mirrors a reader scrolling: each stop lets the

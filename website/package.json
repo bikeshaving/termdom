@@ -32,7 +32,8 @@
 		"postcss-nested": "^6.2.0",
 		"postcss-preset-env": "^8.5.1",
 		"prism-themes": "^1.9.0",
-		"prismjs": "^1.30.0"
+		"prismjs": "^1.30.0",
+		"sucrase": "^3.35.1"
 	},
 	"devDependencies": {
 		"@types/prismjs": "^1.26.5",

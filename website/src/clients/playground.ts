@@ -9,6 +9,7 @@ import {renderer} from "@b9g/crank/dom";
 import {css} from "@emotion/css";
 import {Terminal} from "@xterm/xterm";
 import {ContentAreaElement} from "@b9g/revise/contentarea.js";
+import {transform} from "sucrase";
 
 import type {
 	TerminalTransport,
@@ -234,6 +235,9 @@ function sandboxHTML(config: SandboxConfig): string {
 			"@b9g/termdom": config.termdom,
 			"node:fs": config.nodefs,
 			"node:path": config.nodefs,
+			"node:url": config.nodefs,
+			"@b9g/crank/standalone": config.crankStandalone,
+			"@b9g/crank/dom": config.crankDom,
 		},
 	}).replace(/</g, "\\u003c");
 	return [
@@ -292,7 +296,19 @@ async function runProgram(
 		report((event as PromiseRejectionEvent).reason);
 	});
 
-	const url = URL.createObjectURL(new Blob([code], {type: "text/javascript"}));
+	// The editor holds TypeScript, the way the repository does; the module
+	// that runs is the same text with the types erased. A type error is a
+	// parse error here, reported like any other.
+	const javascript = transform(code, {transforms: ["typescript"]}).code;
+	const url = URL.createObjectURL(
+		new Blob([javascript], {type: "text/javascript"}),
+	);
+
+	// The module about to run is the sandbox's entry point: the guard a
+	// runnable-and-importable example ends with compares itself to argv[1],
+	// and in this realm argv[1] is the workbench's blob.
+	(sandbox as SandboxWindow & {__mainModuleURL?: string}).__mainModuleURL =
+		url;
 
 	let stopped = false;
 	const stop = async (): Promise<void> => {
