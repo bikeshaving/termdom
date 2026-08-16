@@ -133,7 +133,7 @@ describe("Screen", () => {
 
 			// Test basic drawing functionality
 			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
-				ctx.fillText("X", 0, 0);
+				ctx.drawText("X", 0, 0);
 			});
 
 			expect(output).toContain("X");
@@ -143,7 +143,7 @@ describe("Screen", () => {
 			const renderer = new Screen(5, 10, "ansi");
 
 			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
-				ctx.fillText("X", 0, 0, {fg: 0xff0000});
+				ctx.drawText("X", 0, 0, {fg: 0xff0000});
 			});
 
 			// Should contain ANSI color codes for red
@@ -152,21 +152,21 @@ describe("Screen", () => {
 	});
 
 	describe("drawing operations", () => {
-		test("fillText draws text at position", () => {
+		test("drawText draws text at position", () => {
 			const renderer = new Screen(5, 10);
 
 			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
-				ctx.fillText("Hello", 1, 2);
+				ctx.drawText("Hello", 1, 2);
 			});
 
 			expect(output).toContain("Hello");
 		});
 
-		test("fillRect fills rectangular area", () => {
+		test("drawRect fills rectangular area", () => {
 			const renderer = new Screen(5, 10);
 
 			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
-				ctx.fillRect({x: 0, y: 0, width: 3, height: 2}, 0xff0000);
+				ctx.drawRect({x: 0, y: 0, width: 3, height: 2}, 0xff0000);
 			});
 
 			// Should contain background color ANSI codes
@@ -177,7 +177,7 @@ describe("Screen", () => {
 			const renderer = new Screen(5, 10);
 
 			const output = renderFrame(renderer, {offset: 2}, (ctx) => {
-				ctx.fillText("Test", 0, 0);
+				ctx.drawText("Test", 0, 0);
 			});
 
 			// Should contain cursor positioning for offset
@@ -190,7 +190,7 @@ describe("Screen", () => {
 			const renderer = new Screen(5, 10);
 
 			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
-				ctx.fillText("Test", 0, 0);
+				ctx.drawText("Test", 0, 0);
 			});
 
 			// Should hide cursor and enable sync mode. The cursor stays hidden
@@ -207,14 +207,14 @@ describe("Screen", () => {
 
 			// First frame
 			renderFrame(renderer, {offset: 0}, (ctx) => {
-				ctx.fillText("First", 0, 0);
+				ctx.drawText("First", 0, 0);
 			});
 
 			renderer.repaintAll();
 
 			// Second frame should render everything (no diff)
 			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
-				ctx.fillText("Second", 0, 0);
+				ctx.drawText("Second", 0, 0);
 			});
 
 			expect(output).toContain("Second");
@@ -230,11 +230,11 @@ describe("Screen", () => {
 			const renderer = new Screen(10, 40);
 
 			renderFrame(renderer, {offset: 0}, (ctx) => {
-				ctx.fillText("Initial", 0, 0);
+				ctx.drawText("Initial", 0, 0);
 			});
 
 			const output = renderFrame(renderer, {offset: 3}, (ctx) => {
-				ctx.fillText("Scrolled", 0, 0);
+				ctx.drawText("Scrolled", 0, 0);
 			});
 
 			expect(output).not.toContain("\x1b[3S");
@@ -246,11 +246,11 @@ describe("Screen", () => {
 			const renderer = new Screen(10, 40);
 
 			renderFrame(renderer, {offset: 3}, (ctx) => {
-				ctx.fillText("Initial", 0, 0);
+				ctx.drawText("Initial", 0, 0);
 			});
 
 			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
-				ctx.fillText("Scrolled", 0, 0);
+				ctx.drawText("Scrolled", 0, 0);
 			});
 
 			expect(output).not.toContain("\x1b[3T");
@@ -263,12 +263,12 @@ describe("Screen", () => {
 
 			// Frame 1
 			renderFrame(renderer, {offset: 2}, (ctx) => {
-				ctx.fillText("Frame1", 0, 0);
+				ctx.drawText("Frame1", 0, 0);
 			});
 
 			// Frame 2 with same offset
 			const output = renderFrame(renderer, {offset: 2}, (ctx) => {
-				ctx.fillText("Frame2", 0, 1);
+				ctx.drawText("Frame2", 0, 1);
 			});
 
 			expect(output).not.toContain("S");
@@ -292,14 +292,14 @@ describe("Screen", () => {
 
 			// First frame
 			renderFrame(renderer, {offset: 0}, (ctx) => {
-				ctx.fillText("Hello", 0, 0);
-				ctx.fillText("World", 1, 0);
+				ctx.drawText("Hello", 0, 0);
+				ctx.drawText("World", 1, 0);
 			});
 
 			// Second frame - only change second line
 			const output = renderFrame(renderer, {offset: 0}, (ctx) => {
-				ctx.fillText("Hello", 0, 0); // Same
-				ctx.fillText("Test", 1, 0); // Changed
+				ctx.drawText("Hello", 0, 0); // Same
+				ctx.drawText("Test", 1, 0); // Changed
 			});
 
 			// Should contain new content but not duplicate unchanged content
@@ -776,8 +776,8 @@ describe("Border Integration", () => {
 				},
 			);
 			// Fill inside to ensure proper spacing
-			ctx.fillText("    ", 2, 1);
-			ctx.fillText("    ", 2, 2);
+			ctx.drawText("    ", 2, 1);
+			ctx.drawText("    ", 2, 2);
 		});
 
 		// Strip control codes but keep ANSI colors for testing
@@ -807,7 +807,7 @@ describe("Border Integration", () => {
 			);
 
 			// Add text inside border
-			ctx.fillText("Hi", 2, 2);
+			ctx.drawText("Hi", 2, 2);
 		});
 
 		expect(output).toContain("┌────┐"); // Complete top border
@@ -815,12 +815,12 @@ describe("Border Integration", () => {
 		expect(output).toContain("└────┘"); // Complete bottom border
 	});
 
-	test("borders work with fillRect backgrounds", () => {
+	test("borders work with drawRect backgrounds", () => {
 		const renderer = new Screen(5, 10);
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
 			// Fill background
-			ctx.fillRect({x: 1, y: 1, width: 4, height: 3}, 0x00ff00);
+			ctx.drawRect({x: 1, y: 1, width: 4, height: 3}, 0x00ff00);
 
 			// Draw border on top
 			ctx.drawBorder(
@@ -897,9 +897,9 @@ describe("Border Integration", () => {
 		const renderer = new Screen(3, 10);
 
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
-			ctx.fillText("Hello", 0, 0);
-			ctx.fillText("World", 0, 1);
-			ctx.fillText("Test", 0, 2);
+			ctx.drawText("Hello", 0, 0);
+			ctx.drawText("World", 0, 1);
+			ctx.drawText("Test", 0, 2);
 		});
 
 		// Strip control codes but keep ANSI colors for testing
@@ -998,18 +998,18 @@ describe("Border Integration", () => {
 
 		// First render to establish baseline
 		renderFrame(renderer, {offset: 0}, (ctx) => {
-			ctx.fillText("Line 1", 0, 0);
-			ctx.fillText("Line 2", 0, 1);
-			ctx.fillText("Line 3", 0, 2);
-			ctx.fillText("Line 4", 0, 3);
+			ctx.drawText("Line 1", 0, 0);
+			ctx.drawText("Line 2", 0, 1);
+			ctx.drawText("Line 3", 0, 2);
+			ctx.drawText("Line 4", 0, 3);
 		});
 
 		// Second render with minimal changes
 		const output = renderFrame(renderer, {offset: 0}, (ctx) => {
-			ctx.fillText("Line 1", 0, 0);
-			ctx.fillText("Line TWO", 0, 1); // Changed
-			ctx.fillText("Line 3", 0, 2);
-			ctx.fillText("Line 4", 0, 3);
+			ctx.drawText("Line 1", 0, 0);
+			ctx.drawText("Line TWO", 0, 1); // Changed
+			ctx.drawText("Line 3", 0, 2);
+			ctx.drawText("Line 4", 0, 3);
 		});
 
 		// The renderer optimizes by only updating changed content
@@ -1041,9 +1041,9 @@ describe("Border Integration", () => {
 				},
 			);
 			// Add text inside
-			ctx.fillText(" TEST ", 1, 1);
-			ctx.fillText(" BOX  ", 1, 2);
-			ctx.fillText(" HERE ", 1, 3);
+			ctx.drawText(" TEST ", 1, 1);
+			ctx.drawText(" BOX  ", 1, 2);
+			ctx.drawText(" HERE ", 1, 3);
 		});
 
 		// Check that we have a complete box with text
@@ -1121,10 +1121,10 @@ describe("Border Integration", () => {
 			);
 
 			// Add cell content
-			ctx.fillText("A1", 1, 1);
-			ctx.fillText("B1", 5, 1);
-			ctx.fillText("A2", 1, 3);
-			ctx.fillText("B2", 5, 3);
+			ctx.drawText("A1", 1, 1);
+			ctx.drawText("B1", 5, 1);
+			ctx.drawText("A2", 1, 3);
+			ctx.drawText("B2", 5, 3);
 		});
 
 		const cleanOutput = stripControlCodes(output);
@@ -1167,8 +1167,8 @@ describe("Border Integration", () => {
 			);
 
 			// Add content to differentiate the cells
-			ctx.fillText("Sol", 1, 1);
-			ctx.fillText("Dbl", 6, 1);
+			ctx.drawText("Sol", 1, 1);
+			ctx.drawText("Dbl", 6, 1);
 		});
 
 		const cleanOutput = stripControlCodes(output);
@@ -1271,12 +1271,12 @@ describe("Border Integration", () => {
 			);
 
 			// Cell content - placed inside the cells (max 3 chars per cell)
-			ctx.fillText("Nam", 1, 1);
-			ctx.fillText("Age", 5, 1);
-			ctx.fillText("Cty", 9, 1);
-			ctx.fillText("Jon", 1, 3);
-			ctx.fillText("25", 5, 3);
-			ctx.fillText("NYC", 9, 3);
+			ctx.drawText("Nam", 1, 1);
+			ctx.drawText("Age", 5, 1);
+			ctx.drawText("Cty", 9, 1);
+			ctx.drawText("Jon", 1, 3);
+			ctx.drawText("25", 5, 3);
+			ctx.drawText("NYC", 9, 3);
 		});
 
 		const cleanOutput = stripControlCodes(output);
@@ -1323,7 +1323,7 @@ describe("Border Integration", () => {
 					},
 				},
 			);
-			ctx.fillText("Test", 2, 2);
+			ctx.drawText("Test", 2, 2);
 		});
 
 		const cleanOutput = stripControlCodes(output);
@@ -1347,7 +1347,7 @@ describe("Border Integration", () => {
 					},
 				},
 			);
-			ctx.fillText("Part", 1, 1);
+			ctx.drawText("Part", 1, 1);
 		});
 
 		const cleanOutput = stripControlCodes(output);
@@ -1374,7 +1374,7 @@ describe("Border Integration", () => {
 					},
 				},
 			);
-			ctx.fillText("Quote", 2, 1);
+			ctx.drawText("Quote", 2, 1);
 		});
 
 		// includes, not startsWith: the reset frame's erase sequence survives
@@ -1484,9 +1484,9 @@ describe("Border Integration", () => {
 				},
 			);
 
-			ctx.fillText("S", 1, 1);
-			ctx.fillText("D", 3, 1);
-			ctx.fillText("H", 5, 1);
+			ctx.drawText("S", 1, 1);
+			ctx.drawText("D", 3, 1);
+			ctx.drawText("H", 5, 1);
 		});
 
 		const cleanOutput = stripControlCodes(output);
@@ -1526,9 +1526,9 @@ describe("Border Integration", () => {
 				},
 			);
 
-			ctx.fillText("Out", 1, 1);
-			ctx.fillText("In", 3, 3);
-			ctx.fillText("Out", 5, 5); // Moved left by 2 to avoid overlap
+			ctx.drawText("Out", 1, 1);
+			ctx.drawText("In", 3, 3);
+			ctx.drawText("Out", 5, 5); // Moved left by 2 to avoid overlap
 		});
 
 		const cleanOutput = stripControlCodes(output);
@@ -1559,7 +1559,7 @@ describe("Border Integration", () => {
 						},
 					);
 
-					ctx.fillText(`${row + 1}${col + 1}`, x + 1, y + 1);
+					ctx.drawText(`${row + 1}${col + 1}`, x + 1, y + 1);
 				}
 			}
 		});
@@ -1590,7 +1590,7 @@ describe("Border Integration", () => {
 				},
 			);
 
-			ctx.fillText("Col", 2, 1);
+			ctx.drawText("Col", 2, 1);
 		});
 
 		const cleanOutput = stripControlCodes(output);

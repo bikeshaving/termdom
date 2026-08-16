@@ -123,7 +123,7 @@ function isSystemHighlightColor(value: string): boolean {
 }
 
 /**
- * A background-color as `fillRect` takes it: the two system colors keep their
+ * A background-color as `drawRect` takes it: the two system colors keep their
  * terminal meanings (Canvas the terminal's own background, Highlight a swap of
  * each cell's colors), every other color is its cells' background, and a
  * background that paints nothing answers null.
@@ -321,7 +321,7 @@ export class Painter {
 		if (fill === null) return;
 		// The viewport, in the document coordinates every draw call takes: the
 		// band the buffer holds, which is where a fixed box paints too.
-		ctx.fillRect(
+		ctx.drawRect(
 			{x: 0, y: -ctx.viewportOffset, width: ctx.cols, height: ctx.rows},
 			fill,
 		);
@@ -445,7 +445,7 @@ export class Painter {
 			const fragments = this.#layout.getRects(element);
 			if (fragments.length > 1) {
 				for (const fragment of fragments) {
-					ctx.fillRect(
+					ctx.drawRect(
 						{
 							x: fragment.left,
 							y: fragment.top,
@@ -456,7 +456,7 @@ export class Painter {
 					);
 				}
 			} else {
-				ctx.fillRect(
+				ctx.drawRect(
 					{x: rect.left, y: rect.top, width: rect.width, height: rect.height},
 					fill,
 				);
@@ -708,7 +708,7 @@ export class Painter {
 						});
 					}
 				} else {
-					ctx.edgeRow(
+					ctx.drawEdge(
 						Math.round(rect.left),
 						Math.round(rect.bottom) - 1,
 						Math.round(rect.width),
@@ -884,7 +884,7 @@ export class Painter {
 		const markerY = Math.round(rect.top);
 
 		// Render the marker (clipped to available space, never mutate the DOM)
-		ctx.fillText(markerContent, markerX, markerY, markerTextStyle);
+		ctx.drawText(markerContent, markerX, markerY, markerTextStyle);
 	}
 
 	/**
@@ -909,7 +909,7 @@ export class Painter {
 		if (!content) return;
 		const contentX = Math.round(content.x);
 		const contentY = Math.round(content.y);
-		ctx.fillText(
+		ctx.drawText(
 			mark,
 			contentX,
 			contentY,
@@ -961,7 +961,7 @@ export class Painter {
 			);
 			if (!text) continue;
 			painted = true;
-			ctx.fillText(
+			ctx.drawText(
 				applyTextTransform(text, textTransform),
 				Math.round(fragment.rect.x),
 				Math.round(fragment.rect.y),
@@ -1040,7 +1040,7 @@ export class Painter {
 		if (selectionStyle === textStyle) return; // no ::selection rule reaches here
 
 		for (const run of this.#layout.getRangeRuns(range)) {
-			ctx.fillText(
+			ctx.drawText(
 				applyTextTransform(run.text, textTransform),
 				run.rect.x,
 				run.rect.y,
