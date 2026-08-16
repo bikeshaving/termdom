@@ -65,84 +65,98 @@ interface InterfaceSpec {
 	reflect?: readonly ReflectSpec[];
 }
 
-const str = (
+function str(
 	property: string,
 	attribute = property.toLowerCase(),
-): ReflectSpec => ({
-	property,
-	attribute,
-	kind: "string",
-});
+): ReflectSpec {
+	return {
+		property,
+		attribute,
+		kind: "string",
+	};
+}
 
-const url = (
+function url(
 	property: string,
 	attribute = property.toLowerCase(),
-): ReflectSpec => ({
-	property,
-	attribute,
-	kind: "url",
-});
+): ReflectSpec {
+	return {
+		property,
+		attribute,
+		kind: "url",
+	};
+}
 
-const bool = (
+function bool(
 	property: string,
 	attribute = property.toLowerCase(),
-): ReflectSpec => ({
-	property,
-	attribute,
-	kind: "boolean",
-});
+): ReflectSpec {
+	return {
+		property,
+		attribute,
+		kind: "boolean",
+	};
+}
 
-const long = (
+function long(
 	property: string,
 	attribute: string,
 	fallback: number,
 	nonNegative = false,
-): ReflectSpec => ({
-	property,
-	attribute,
-	kind: "long",
-	fallback,
-	nonNegative,
-});
+): ReflectSpec {
+	return {
+		property,
+		attribute,
+		kind: "long",
+		fallback,
+		nonNegative,
+	};
+}
 
-const ulong = (
+function ulong(
 	property: string,
 	attribute: string,
 	fallback: number,
 	extra: Partial<ReflectSpec> = {},
-): ReflectSpec => ({
-	property,
-	attribute,
-	kind: "unsigned-long",
-	fallback,
-	...extra,
-});
+): ReflectSpec {
+	return {
+		property,
+		attribute,
+		kind: "unsigned-long",
+		fallback,
+		...extra,
+	};
+}
 
-const keyword = (
+function keyword(
 	property: string,
 	attribute: string,
 	keywords: readonly string[],
 	missing: string,
 	invalid: string,
-): ReflectSpec => ({
-	property,
-	attribute,
-	kind: "enum",
-	keywords,
-	missing,
-	invalid,
-});
+): ReflectSpec {
+	return {
+		property,
+		attribute,
+		kind: "enum",
+		keywords,
+		missing,
+		invalid,
+	};
+}
 
-const tokens = (
+function tokens(
 	property: string,
 	attribute: string,
 	supported: readonly string[] = [],
-): ReflectSpec => ({
-	property,
-	attribute,
-	kind: "tokenlist",
-	supported,
-});
+): ReflectSpec {
+	return {
+		property,
+		attribute,
+		kind: "tokenlist",
+		supported,
+	};
+}
 
 /** The referrer policies every attribute that names one is limited to. */
 const REFERRER_POLICIES = [
@@ -158,39 +172,45 @@ const REFERRER_POLICIES = [
 ];
 
 /** Which half of the toggle a button with popovertarget runs. */
-const popoverTargetAction = (): ReflectSpec =>
-	keyword(
+function popoverTargetAction(): ReflectSpec {
+	return keyword(
 		"popoverTargetAction",
 		"popovertargetaction",
 		["toggle", "show", "hide"],
 		"toggle",
 		"toggle",
 	);
+}
 
-const referrerPolicy = (): ReflectSpec =>
-	keyword("referrerPolicy", "referrerpolicy", REFERRER_POLICIES, "", "");
+function referrerPolicy(): ReflectSpec {
+	return keyword("referrerPolicy", "referrerpolicy", REFERRER_POLICIES, "", "");
+}
 
-const crossOrigin = (): ReflectSpec => ({
-	property: "crossOrigin",
-	attribute: "crossorigin",
-	kind: "enum",
-	keywords: ["anonymous", "use-credentials"],
-	nullable: true,
-	missing: "",
-	invalid: "anonymous",
-});
+function crossOrigin(): ReflectSpec {
+	return {
+		property: "crossOrigin",
+		attribute: "crossorigin",
+		kind: "enum",
+		keywords: ["anonymous", "use-credentials"],
+		nullable: true,
+		missing: "",
+		invalid: "anonymous",
+	};
+}
 
-const fetchPriority = (): ReflectSpec =>
-	keyword(
+function fetchPriority(): ReflectSpec {
+	return keyword(
 		"fetchPriority",
 		"fetchpriority",
 		["high", "low", "auto"],
 		"auto",
 		"auto",
 	);
+}
 
-const loading = (): ReflectSpec =>
-	keyword("loading", "loading", ["lazy", "eager"], "eager", "eager");
+function loading(): ReflectSpec {
+	return keyword("loading", "loading", ["lazy", "eager"], "eager", "eager");
+}
 
 /** The keywords a table cell, row, section or column aligns its content by. */
 const CELL_ALIGN = [

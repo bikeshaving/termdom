@@ -60,24 +60,29 @@ function encode(command: Command): string {
 
 type Model = {value: string; caret: number};
 
-const lineStart = (value: string, caret: number): number =>
-	caret === 0 ? 0 : value.lastIndexOf("\n", caret - 1) + 1;
+function lineStart(value: string, caret: number): number {
+	return caret === 0 ? 0 : value.lastIndexOf("\n", caret - 1) + 1;
+}
 
-const lineEnd = (value: string, caret: number): number => {
+function lineEnd(value: string, caret: number): number {
 	const index = value.indexOf("\n", caret);
 	return index === -1 ? value.length : index;
-};
+}
 
-const cut = (model: Model, from: number, to: number): Model => ({
-	value: model.value.slice(0, from) + model.value.slice(to),
-	caret: from,
-});
+function cut(model: Model, from: number, to: number): Model {
+	return {
+		value: model.value.slice(0, from) + model.value.slice(to),
+		caret: from,
+	};
+}
 
-const insert = (model: Model, text: string): Model => ({
-	value:
-		model.value.slice(0, model.caret) + text + model.value.slice(model.caret),
-	caret: model.caret + text.length,
-});
+function insert(model: Model, text: string): Model {
+	return {
+		value:
+			model.value.slice(0, model.caret) + text + model.value.slice(model.caret),
+		caret: model.caret + text.length,
+	};
+}
 
 /** What the command does to the model, for a field that takes newlines or not. */
 function step(model: Model, command: Command, multiline: boolean): Model {

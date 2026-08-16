@@ -415,8 +415,11 @@ function frameOf(terminal: any): string {
 		.replace(/\n+$/, "");
 }
 
-const find = (document: any, id: string): any =>
-	id === "body" ? document.body : document.querySelector(`[data-f="${id}"]`);
+function find(document: any, id: string): any {
+	return id === "body"
+		? document.body
+		: document.querySelector(`[data-f="${id}"]`);
+}
 
 /**
  * Run one action. Asynchronous for `flash`, which shows a dialog or a popover,

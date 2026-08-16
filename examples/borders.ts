@@ -6,7 +6,9 @@ term.attach();
 const {document} = term;
 
 const style = document.createElement("style");
-const edge = (kind: string) => `border: 1px ${kind};`;
+function edge(kind: string) {
+	return `border: 1px ${kind};`;
+}
 style.textContent = `
   .app { padding: 1 2ch; }
   h2 { color: cyan; }

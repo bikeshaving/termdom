@@ -205,8 +205,12 @@ if (!process.stdout.isTTY || fits) {
 // Pager mode: the document is taller than the screen, so move the camera over
 // it. window.scrollBy IS the camera (clamped to the document), so this is the
 // same scrolling any web page gets -- no terminal-specific plumbing.
-const page = () => Math.max(1, window.innerHeight - 1);
-const height = () => document.body.scrollHeight;
+function page() {
+	return Math.max(1, window.innerHeight - 1);
+}
+function height() {
+	return document.body.scrollHeight;
+}
 
 // The status line the sample's own task list asked for.
 const status = document.createElement("div");
@@ -218,10 +222,10 @@ pct.className = "pct";
 status.append(statusName, pct);
 document.body.appendChild(status);
 
-const updateStatus = () => {
+function updateStatus() {
 	const max = Math.max(1, height() - window.innerHeight);
 	pct.textContent = `${Math.min(100, Math.round((window.scrollY / max) * 100))}%`;
-};
+}
 updateStatus();
 const bindings: Record<string, () => void> = {
 	q: () => {

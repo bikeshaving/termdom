@@ -61,6 +61,10 @@
       {
         "selector": ":matches(PropertyDefinition, MethodDefinition, TSAbstractPropertyDefinition, TSAbstractMethodDefinition)[accessibility]",
         "message": "TypeScript access modifiers (public/private/protected) are banned. Use #private for internals, or omit the modifier for public members."
+      },
+      {
+        "selector": ":matches(Program, ExportNamedDeclaration, ExportDefaultDeclaration) > VariableDeclaration > VariableDeclarator > :matches(ArrowFunctionExpression[body.type='BlockStatement'][body.body.length>0], FunctionExpression)",
+        "message": "Declare multi-statement top-level functions with `function`. Arrows are for one-liners like `const noop = () => {};`."
       }
     ]
   }

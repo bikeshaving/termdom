@@ -142,8 +142,9 @@ function rng(seed: number): () => number {
 		return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 	};
 }
-const pick = <T>(next: () => number, items: T[]): T =>
-	items[Math.floor(next() * items.length) % items.length];
+function pick<T>(next: () => number, items: T[]): T {
+	return items[Math.floor(next() * items.length) % items.length];
+}
 
 type Action =
 	| {kind: "class"; id: string; cls: string}
@@ -192,8 +193,11 @@ function frameOf(terminal: any): string {
 		.replace(/\n+$/, "");
 }
 
-const find = (document: any, id: string): any =>
-	id === "body" ? document.body : document.querySelector(`[data-f="${id}"]`);
+function find(document: any, id: string): any {
+	return id === "body"
+		? document.body
+		: document.querySelector(`[data-f="${id}"]`);
+}
 
 function tag(document: any): void {
 	let counter = 0;

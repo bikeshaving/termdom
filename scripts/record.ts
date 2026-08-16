@@ -78,7 +78,9 @@ function makeRecorder(
 }
 
 /** Let queued renders and stdout writes settle between scripted actions. */
-const settle = () => new Promise((resolve) => setTimeout(resolve, 30));
+function settle() {
+	return new Promise((resolve) => setTimeout(resolve, 30));
+}
 
 type Step = number | string | (() => void | Promise<void>);
 
