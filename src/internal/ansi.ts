@@ -176,13 +176,13 @@ export interface Frame {
 }
 
 /**
- * What `measureText` answers, in cells. `uncertain` marks text a terminal
- * might size differently than this module predicts -- the sequences the
- * width probes exist for.
+ * What `measureText` answers: the columns the text occupies, which is the
+ * one metric a cell grid has -- nothing in a cell has a baseline. The name
+ * and the field are canvas's own original TextMetrics; further fields join
+ * if a consumer ever appears, the way canvas itself grew.
  */
 export interface TextMetrics {
 	width: number;
-	uncertain: boolean;
 }
 
 export interface CellStyle {
@@ -1060,15 +1060,13 @@ export class DrawingContext {
 	/** Measure `text` the way `fillText` will lay it down. */
 	measureText(text: string): TextMetrics {
 		if (asciiPrintable.test(text)) {
-			return {width: text.length, uncertain: false};
+			return {width: text.length};
 		}
 		let width = 0;
-		let uncertain = false;
 		for (const segment of graphemeSegmenter.segment(text)) {
 			width += stringWidth(segment.segment);
-			uncertain ||= widthIsUncertain(segment.segment);
 		}
-		return {width, uncertain};
+		return {width};
 	}
 
 	fillText(text: string, x: number, y: number, style?: CellStyle): void {
