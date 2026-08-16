@@ -20,12 +20,7 @@
  * `CellGrid`, `generateANSI` and `getBorderChar` are exported for tests
  * alone; nothing in src imports them.
  */
-import {
-	BOX_DRAWING,
-	BorderEdgeStyle,
-	ROUNDED_CORNERS,
-	type BorderStyles,
-} from "./styles.js";
+import {BOX_DRAWING, BorderEdgeStyle, ROUNDED_CORNERS} from "./styles.js";
 import {stringWidth, widthIsUncertain} from "./text.js";
 
 /** One shared grapheme segmenter -- construction is expensive. */
@@ -167,6 +162,49 @@ export interface Frame {
 	context: DrawingContext;
 	end(): string;
 }
+
+/** How a border side is drawn: the CSS keyword, in the CSS's own word. */
+export type BorderLineStyle =
+	| "solid"
+	| "double"
+	| "dashed"
+	| "dotted"
+	| "groove"
+	| "ridge"
+	| "inset"
+	| "outset"
+	| "hidden";
+
+export interface BorderSide {
+	style: BorderLineStyle;
+	/** The line's color; the terminal's default foreground when absent. */
+	color?: number | null;
+}
+
+export interface BorderOptions {
+	top?: BorderSide;
+	right?: BorderSide;
+	bottom?: BorderSide;
+	left?: BorderSide;
+	corners?: {
+		topLeft?: boolean;
+		topRight?: boolean;
+		bottomRight?: boolean;
+		bottomLeft?: boolean;
+	};
+}
+
+const BORDER_LINE_BITS: Record<BorderLineStyle, number> = {
+	solid: BorderEdgeStyle.Solid,
+	double: BorderEdgeStyle.Double,
+	dashed: BorderEdgeStyle.Dashed,
+	dotted: BorderEdgeStyle.Dotted,
+	groove: BorderEdgeStyle.Groove,
+	ridge: BorderEdgeStyle.Ridge,
+	inset: BorderEdgeStyle.Inset,
+	outset: BorderEdgeStyle.Outset,
+	hidden: BorderEdgeStyle.Hidden,
+};
 
 /**
  * What `measureText` answers: the columns the text occupies, which is the
@@ -430,9 +468,12 @@ export class CellGrid {
 	 * author-land only, and a border's style comes from the UA sheet.
 	 */
 	setBorderCell(index: number, border: number, style?: CellStyle): void {
+		// A border strokes; it does not fill. The cell keeps the background
+		// the fills beneath it painted, unless the caller names one.
+		const bg = style?.bg != null ? style.bg & Color.Mask : this.bg[index];
 		this.char[index] = 0x20;
 		this.fg[index] = (style?.fg ?? 0) & Color.Mask;
-		this.bg[index] = (style?.bg ?? 0) & Color.Mask;
+		this.bg[index] = bg;
 		this.attrs[index] =
 			(packAttrs(style) & ~Attr.DoubleUnderline) | (1 << Attr.WidthShift);
 		this.border[index] = border;
@@ -1141,37 +1182,37 @@ export class DrawingContext {
 		y: number,
 		width: number,
 		height: number,
-		{
-			border: borderStyles,
-			style,
-			edges: edgeStyles,
-		}: {
-			border: BorderStyles;
-			/** The style of any side `edges` does not name. */
-			style?: CellStyle;
-			/**
-			 * How each side is drawn. A corner cell's glyph spans two sides
-			 * but holds one color; it takes the horizontal side's, the
-			 * closest a cell gets to the browser's diagonal miter -- which is
-			 * this module's business, not the caller's.
-			 */
-			edges?: {
-				top?: CellStyle;
-				right?: CellStyle;
-				bottom?: CellStyle;
-				left?: CellStyle;
-			};
-		},
+		sides: BorderOptions,
 	): void {
-		if (!borderStyles.hasAnyBorder || width < 1 || height < 1) return;
+		if (
+			(!sides.top && !sides.right && !sides.bottom && !sides.left) ||
+			width < 1 ||
+			height < 1
+		) {
+			return;
+		}
 		// A thin box (a 1-row <hr>, say) still shows its horizontal edges: the loops
 		// below draw only the run that fits, so let it through.
 
 		const right = x + width - 1;
 		const bottom = y + height - 1;
 
-		const {topEdge, rightEdge, bottomEdge, leftEdge, roundedCorners} =
-			borderStyles;
+		const topEdge = sides.top ? BORDER_LINE_BITS[sides.top.style] : 0;
+		const rightEdge = sides.right ? BORDER_LINE_BITS[sides.right.style] : 0;
+		const bottomEdge = sides.bottom ? BORDER_LINE_BITS[sides.bottom.style] : 0;
+		const leftEdge = sides.left ? BORDER_LINE_BITS[sides.left.style] : 0;
+		const roundedCorners = sides.corners;
+		// A corner cell's glyph spans two sides but holds one color; it takes
+		// the horizontal side's, the closest a cell gets to the browser's
+		// diagonal miter -- this module's business, not the caller's.
+		const sideStyle = (side?: BorderSide): CellStyle | undefined =>
+			side && {fg: side.color ?? undefined};
+		const edgeStyles = {
+			top: sideStyle(sides.top),
+			right: sideStyle(sides.right),
+			bottom: sideStyle(sides.bottom),
+			left: sideStyle(sides.left),
+		};
 		const hasTop = topEdge > 0;
 		const hasRight = rightEdge > 0;
 		const hasBottom = bottomEdge > 0;
@@ -1204,7 +1245,7 @@ export class DrawingContext {
 			// culls after applying the viewport offset -- pre-culling against
 			// terminal rows dropped bottom edges the camera had scrolled INTO
 			// view.
-			this.#setBorderCell(col, row, encoding, edgeStyle ?? style);
+			this.#setBorderCell(col, row, encoding, edgeStyle);
 		};
 
 		// A radius bends one cell -- the corner where two edges turn -- so the

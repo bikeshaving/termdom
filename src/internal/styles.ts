@@ -7,6 +7,7 @@
  */
 
 import type {EngineWindow} from "./termdom.js";
+import type {BorderLineStyle} from "./ansi.js";
 import {
 	clearPseudoElement,
 	type Document as DOMDocument,
@@ -7039,74 +7040,48 @@ export const ROUNDED_CORNERS: Readonly<Record<string, string>> = {
 	"┘": "╯",
 };
 
-/** Which of a box's four corners a nonzero radius rounds. */
-interface RoundedCorners {
-	topLeft: boolean;
-	topRight: boolean;
-	bottomRight: boolean;
-	bottomLeft: boolean;
+/** An element's border sides, in `drawBorder`'s own vocabulary. */
+export interface BorderSides {
+	top?: BorderLineStyle;
+	right?: BorderLineStyle;
+	bottom?: BorderLineStyle;
+	left?: BorderLineStyle;
+	corners: {
+		topLeft: boolean;
+		topRight: boolean;
+		bottomRight: boolean;
+		bottomLeft: boolean;
+	};
 }
 
-/** An element's border as the painter draws it: per-edge encodings and corners. */
-export interface BorderStyles {
-	topEdge: number;
-	rightEdge: number;
-	bottomEdge: number;
-	leftEdge: number;
-	hasAnyBorder: boolean;
-	/** Absent where no radius was resolved, which squares every corner. */
-	roundedCorners?: RoundedCorners;
-}
+const BORDER_LINE_KEYWORDS = new Set<BorderLineStyle>([
+	"solid",
+	"double",
+	"dashed",
+	"dotted",
+	"groove",
+	"ridge",
+	"inset",
+	"outset",
+	"hidden",
+]);
 
-/**
- * Resolve border styles for an element: per-edge encoded data, and which
- * corners its radii round.
- */
-export function resolveBorderStyles(element: Element): BorderStyles {
+export function resolveBorderSides(element: Element): BorderSides {
 	const computedStyle = computedStyleOf(element);
 
-	// Helper to encode individual edge
-	const encodeEdge = (width: string, style: string): number => {
+	const sideOf = (
+		width: string,
+		style: string,
+	): BorderLineStyle | undefined => {
 		const parsed = parseBorderWidthValue(width);
 		const widthValue = typeof parsed === "number" ? parsed : NaN;
 		if (isNaN(widthValue) || widthValue <= 0 || !style || style === "none") {
-			return 0;
+			return undefined;
 		}
-
-		let edgeValue = 0;
-		switch (style) {
-			case "dashed":
-				edgeValue = BorderEdgeStyle.Dashed;
-				break;
-			case "dotted":
-				edgeValue = BorderEdgeStyle.Dotted;
-				break;
-			case "double":
-				edgeValue = BorderEdgeStyle.Double;
-				break;
-			case "groove":
-				edgeValue = BorderEdgeStyle.Groove;
-				break;
-			case "hidden":
-				edgeValue = BorderEdgeStyle.Hidden;
-				break;
-			case "inset":
-				edgeValue = BorderEdgeStyle.Inset;
-				break;
-			case "outset":
-				edgeValue = BorderEdgeStyle.Outset;
-				break;
-			case "ridge":
-				edgeValue = BorderEdgeStyle.Ridge;
-				break;
-			case "solid":
-				edgeValue = BorderEdgeStyle.Solid;
-				break;
-			default:
-				edgeValue = BorderEdgeStyle.Solid;
-		}
-
-		return edgeValue;
+		// An unknown style keyword draws as solid rather than not at all.
+		return BORDER_LINE_KEYWORDS.has(style as BorderLineStyle)
+			? (style as BorderLineStyle)
+			: "solid";
 	};
 
 	// A corner is rounded when its radius is nonzero on BOTH axes, exactly as
@@ -7121,49 +7096,20 @@ export function resolveBorderStyles(element: Element): BorderStyles {
 		return radii.every((radius) => parseFloat(radius) > 0);
 	};
 
-	// Resolve individual edges
-	const topWidth =
-		computedStyle.computedValueOf("border-top-width") ||
-		computedStyle.computedValueOf("border-width");
-	const topStyle =
-		computedStyle.computedValueOf("border-top-style") ||
-		computedStyle.computedValueOf("border-style");
-
-	const rightWidth =
-		computedStyle.computedValueOf("border-right-width") ||
-		computedStyle.computedValueOf("border-width");
-	const rightStyle =
-		computedStyle.computedValueOf("border-right-style") ||
-		computedStyle.computedValueOf("border-style");
-
-	const bottomWidth =
-		computedStyle.computedValueOf("border-bottom-width") ||
-		computedStyle.computedValueOf("border-width");
-	const bottomStyle =
-		computedStyle.computedValueOf("border-bottom-style") ||
-		computedStyle.computedValueOf("border-style");
-
-	const leftWidth =
-		computedStyle.computedValueOf("border-left-width") ||
-		computedStyle.computedValueOf("border-width");
-	const leftStyle =
-		computedStyle.computedValueOf("border-left-style") ||
-		computedStyle.computedValueOf("border-style");
-
-	// Encode each edge
-	const topEdge = encodeEdge(topWidth, topStyle);
-	const rightEdge = encodeEdge(rightWidth, rightStyle);
-	const bottomEdge = encodeEdge(bottomWidth, bottomStyle);
-	const leftEdge = encodeEdge(leftWidth, leftStyle);
+	const of = (side: string): BorderLineStyle | undefined =>
+		sideOf(
+			computedStyle.computedValueOf(`border-${side}-width`) ||
+				computedStyle.computedValueOf("border-width"),
+			computedStyle.computedValueOf(`border-${side}-style`) ||
+				computedStyle.computedValueOf("border-style"),
+		);
 
 	return {
-		topEdge,
-		rightEdge,
-		bottomEdge,
-		leftEdge,
-		hasAnyBorder:
-			topEdge > 0 || rightEdge > 0 || bottomEdge > 0 || leftEdge > 0,
-		roundedCorners: {
+		top: of("top"),
+		right: of("right"),
+		bottom: of("bottom"),
+		left: of("left"),
+		corners: {
 			topLeft: isRounded("top-left"),
 			topRight: isRounded("top-right"),
 			bottomRight: isRounded("bottom-right"),

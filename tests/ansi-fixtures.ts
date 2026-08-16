@@ -8,29 +8,12 @@
  */
 
 import {Screen, type ColorDepth, type CellStyle} from "../src/internal/ansi.js";
-import {BorderEdgeStyle} from "../src/internal/styles.js";
 import {renderFrame, renderStatic} from "./test-utils.js";
 
 export interface Scenario {
 	name: string;
 	run(): string;
 }
-
-const BOX = {
-	topEdge: BorderEdgeStyle.Solid,
-	rightEdge: BorderEdgeStyle.Solid,
-	bottomEdge: BorderEdgeStyle.Solid,
-	leftEdge: BorderEdgeStyle.Solid,
-	hasAnyBorder: true,
-};
-
-const DOUBLE_BOX = {
-	topEdge: BorderEdgeStyle.Double,
-	rightEdge: BorderEdgeStyle.Double,
-	bottomEdge: BorderEdgeStyle.Double,
-	leftEdge: BorderEdgeStyle.Double,
-	hasAnyBorder: true,
-};
 
 /** Every per-cell attribute the model carries, one cell each. */
 const EVERY_ATTRIBUTE: Array<[string, CellStyle]> = [
@@ -160,37 +143,43 @@ export const scenarios: Scenario[] = [
 		run: () => {
 			const renderer = new Screen(9, 24, "rgb");
 			return renderFrame(renderer, {offset: 0}, (ctx) => {
-				ctx.drawBorder(0, 0, 6, 3, {border: BOX});
-				ctx.drawBorder(5, 0, 6, 3, {border: BOX});
-				ctx.drawBorder(0, 2, 6, 3, {border: BOX});
-				ctx.drawBorder(5, 2, 6, 3, {border: DOUBLE_BOX});
+				ctx.drawBorder(0, 0, 6, 3, {
+					top: {style: "solid"},
+					right: {style: "solid"},
+					bottom: {style: "solid"},
+					left: {style: "solid"},
+				});
+				ctx.drawBorder(5, 0, 6, 3, {
+					top: {style: "solid"},
+					right: {style: "solid"},
+					bottom: {style: "solid"},
+					left: {style: "solid"},
+				});
+				ctx.drawBorder(0, 2, 6, 3, {
+					top: {style: "solid"},
+					right: {style: "solid"},
+					bottom: {style: "solid"},
+					left: {style: "solid"},
+				});
+				ctx.drawBorder(5, 2, 6, 3, {
+					top: {style: "double"},
+					right: {style: "double"},
+					bottom: {style: "double"},
+					left: {style: "double"},
+				});
 				ctx.drawBorder(12, 0, 8, 5, {
-					border: BOX,
-					style: {fg: 0xff0000, bold: true},
-					edges: {
-						top: {fg: 0x00ff00},
-						right: {fg: 0x0000ff},
-						bottom: {fg: 0xffff00},
-						left: {fg: 0xff00ff},
-					},
+					top: {style: "solid", color: 0x00ff00},
+					right: {style: "solid", color: 0x0000ff},
+					bottom: {style: "solid", color: 0xffff00},
+					left: {style: "solid", color: 0xff00ff},
 				});
-				ctx.drawBorder(0, 5, 10, 4, {
-					border: {
-						topEdge: 0,
-						rightEdge: 0,
-						bottomEdge: 0,
-						leftEdge: BorderEdgeStyle.Solid,
-						hasAnyBorder: true,
-					},
-				});
+				ctx.drawBorder(0, 5, 10, 4, {left: {style: "solid"}});
 				ctx.drawBorder(12, 5, 10, 4, {
-					border: {
-						topEdge: BorderEdgeStyle.Dashed,
-						rightEdge: BorderEdgeStyle.Dotted,
-						bottomEdge: BorderEdgeStyle.Groove,
-						leftEdge: BorderEdgeStyle.Solid | BorderEdgeStyle.Rounded,
-						hasAnyBorder: true,
-					},
+					top: {style: "dashed"},
+					right: {style: "dotted"},
+					bottom: {style: "groove"},
+					left: {style: "solid"},
+					corners: {topLeft: true, bottomLeft: true},
 				});
 				ctx.drawText("A1", 1, 1);
 				ctx.drawText("B2", 6, 3);
@@ -438,7 +427,12 @@ export const scenarios: Scenario[] = [
 				ctx.drawText("clipped horizontally", 0, 1);
 				ctx.drawText("also clipped", 0, 2);
 				ctx.drawText("outside the clip", 0, 3);
-				ctx.drawBorder(0, 1, 14, 3, {border: BOX});
+				ctx.drawBorder(0, 1, 14, 3, {
+					top: {style: "solid"},
+					right: {style: "solid"},
+					bottom: {style: "solid"},
+					left: {style: "solid"},
+				});
 				ctx.clipRect = null;
 				ctx.drawText("unclipped again", 0, 4);
 			});
@@ -452,7 +446,12 @@ export const scenarios: Scenario[] = [
 				ctx.drawText("plain", 0, 0);
 				ctx.drawText("styled", 0, 1, {fg: 0xff0000, bold: true});
 				ctx.drawText("日本語 wide", 0, 2);
-				ctx.drawBorder(0, 3, 8, 2, {border: BOX, style: {fg: 0x00ff00}});
+				ctx.drawBorder(0, 3, 8, 2, {
+					top: {style: "solid", color: 0x00ff00},
+					right: {style: "solid", color: 0x00ff00},
+					bottom: {style: "solid", color: 0x00ff00},
+					left: {style: "solid", color: 0x00ff00},
+				});
 				ctx.drawText("👍 tail", 10, 3);
 			});
 			out += "|";
