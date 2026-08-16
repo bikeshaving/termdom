@@ -158,13 +158,6 @@ function joinTouchingBorders(grid: CellGrid): void {
 	}
 }
 
-export interface CellRect {
-	x: number;
-	y: number;
-	width: number;
-	height: number;
-}
-
 /**
  * A frame in progress: paint into `context`, then take its ANSI from `end`.
  * Painting is the caller's business, so this module stays what it is -- cells
@@ -1030,14 +1023,15 @@ export class DrawingContext {
 	}
 
 	drawRect(
-		rect: CellRect,
+		x: number,
+		y: number,
+		width: number,
+		height: number,
 		background: number | null | undefined | "default" | "inverse",
 	): void {
 		if (background == null) {
 			return;
 		}
-
-		const {x, y, width, height} = rect;
 
 		// "default" clears the cells to the terminal's own background --
 		// CSS's Canvas system color -- which still OVERWRITES whatever was
@@ -1111,33 +1105,31 @@ export class DrawingContext {
 	 * DEFAULT color: a cell that already carries an explicit foreground
 	 * (::selection, ::placeholder, authored color) keeps it.
 	 */
-	drawDecoration(
-		x: number,
-		y: number,
-		width: number,
-		{line, style}: {line: "underline" | "overline"; style?: CellStyle},
-	): void {
+	drawDecoration(x: number, y: number, width: number, style: CellStyle): void {
 		const terminalRow = y + this.viewportOffset;
 		if (terminalRow < 0 || terminalRow >= this.rows) return;
 		const grid = this.grid;
 		const rowStart = terminalRow * this.cols;
-		const edgeBit = line === "underline" ? Attr.Underline : Attr.Overline;
+		const edgeBit =
+			(style.underline ? Attr.Underline : 0) |
+			(style.overline ? Attr.Overline : 0);
+		if (edgeBit === 0) return;
 		for (let col = x; col < x + width; col++) {
 			if (col < 0 || col >= this.cols) continue;
 			if (this.clipRect && !this.#inClip(y, col)) continue;
 			const index = rowStart + col;
 			if (grid.char[index] !== 0) {
 				let attrs = grid.attrs[index] | edgeBit;
-				if (style?.dim !== undefined) {
+				if (style.dim !== undefined) {
 					attrs = style.dim ? attrs | Attr.Dim : attrs & ~Attr.Dim;
 				}
 				grid.attrs[index] = attrs;
 			} else {
 				grid.char[index] = 0x20;
-				grid.fg[index] = (style?.fg ?? 0) & Color.Mask;
+				grid.fg[index] = (style.fg ?? 0) & Color.Mask;
 				grid.bg[index] = 0;
 				grid.attrs[index] =
-					edgeBit | (style?.dim ? Attr.Dim : 0) | (1 << Attr.WidthShift);
+					edgeBit | (style.dim ? Attr.Dim : 0) | (1 << Attr.WidthShift);
 			}
 			// The edge replaces a box-drawing glyph with the space that cell
 			// measures as: an outline is a line of its own, not a junction.
@@ -1146,7 +1138,10 @@ export class DrawingContext {
 	}
 
 	drawBorder(
-		rect: CellRect,
+		x: number,
+		y: number,
+		width: number,
+		height: number,
 		{
 			border: borderStyles,
 			style,
@@ -1169,7 +1164,6 @@ export class DrawingContext {
 			};
 		},
 	): void {
-		const {x, y, width, height} = rect;
 		if (!borderStyles.hasAnyBorder || width < 1 || height < 1) return;
 		// A thin box (a 1-row <hr>, say) still shows its horizontal edges: the loops
 		// below draw only the run that fits, so let it through.
