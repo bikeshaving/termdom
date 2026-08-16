@@ -32,7 +32,7 @@ describe("CellGrid", () => {
 				italic: true,
 			};
 			const grid = new CellGrid(1, 1);
-			grid.setCell(0, "A", {style: style});
+			grid.setCell(0, "A", {style});
 
 			expect(grid.graphemeAt(0)).toBe("A");
 			expect(grid.fg[0]).toBe(0xff0000);
@@ -127,7 +127,7 @@ describe("CellGrid", () => {
 	});
 });
 
-describe("Renderer with callback API", () => {
+describe("Renderer", () => {
 	describe("initialization", () => {
 		test("creates renderer with specified dimensions", () => {
 			const renderer = new Renderer(5, 10);
