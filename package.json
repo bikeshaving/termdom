@@ -52,16 +52,16 @@
   "scripts": {
     "build": "libuild build",
     "lint": "eslint .",
+    "prepublishOnly": "echo 'ERROR: Cannot publish from root directory. Use libuild publish instead.' && exit 1",
     "smoke": "node scripts/smoke.js",
     "smoke:deno": "deno run -A --node-modules-dir=manual scripts/smoke.js",
     "support": "bun scripts/support-matrix.ts",
     "test": "libuild test -p node -p bun",
     "typecheck": "tsc --noEmit",
-    "verify:tmux": "node scripts/verify-tmux.ts",
-    "verify:terminal": "node scripts/verify-terminal-app.ts",
-    "prepublishOnly": "echo 'ERROR: Cannot publish from root directory. Use libuild publish instead.' && exit 1",
     "verify:examples": "node scripts/verify-examples.ts",
-    "verify:ime": "npm --prefix website run verify:ime"
+    "verify:ime": "npm --prefix website run verify:ime",
+    "verify:terminal": "node scripts/verify-terminal-app.ts",
+    "verify:tmux": "node scripts/verify-tmux.ts"
   },
   "dependencies": {
     "arabic-persian-reshaper": "1.0.1",

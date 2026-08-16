@@ -95,3 +95,14 @@ export function resolve(path?: string): string {
 	if (path.startsWith("/")) return path.replace(/\/+/g, "/");
 	return join(FS_ROOT, path);
 }
+
+/**
+ * node:url, as far as the examples reach into it: `pathToFileURL` exists to
+ * ask "am I the entry point?" against `process.argv[1]`, and in the sandbox
+ * the entry point is the module the workbench started -- its URL is on the
+ * sandbox's globalThis, and argv[1] resolves to it.
+ */
+export function pathToFileURL(path: string): URL {
+	const main = (globalThis as {__mainModuleURL?: string}).__mainModuleURL;
+	return new URL(main ?? `file://${resolve(path)}`);
+}
