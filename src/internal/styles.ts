@@ -7,7 +7,7 @@
  */
 
 import type {EngineWindow} from "./termdom.js";
-import type {BorderLineStyle} from "./ansi.js";
+import type {LineStyle} from "./ansi.js";
 import {
 	clearPseudoElement,
 	type Document as DOMDocument,
@@ -7042,10 +7042,10 @@ export const ROUNDED_CORNERS: Readonly<Record<string, string>> = {
 
 /** An element's border sides, in `drawBorder`'s own vocabulary. */
 export interface BorderSides {
-	top?: BorderLineStyle["style"];
-	right?: BorderLineStyle["style"];
-	bottom?: BorderLineStyle["style"];
-	left?: BorderLineStyle["style"];
+	top?: LineStyle["style"];
+	right?: LineStyle["style"];
+	bottom?: LineStyle["style"];
+	left?: LineStyle["style"];
 	corners: {
 		topLeft: boolean;
 		topRight: boolean;
@@ -7054,7 +7054,7 @@ export interface BorderSides {
 	};
 }
 
-const BORDER_LINE_KEYWORDS = new Set<BorderLineStyle["style"]>([
+const LINE_KEYWORDS = new Set<LineStyle["style"]>([
 	"solid",
 	"double",
 	"dashed",
@@ -7072,15 +7072,15 @@ export function resolveBorderSides(element: Element): BorderSides {
 	const sideOf = (
 		width: string,
 		style: string,
-	): BorderLineStyle["style"] | undefined => {
+	): LineStyle["style"] | undefined => {
 		const parsed = parseBorderWidthValue(width);
 		const widthValue = typeof parsed === "number" ? parsed : NaN;
 		if (isNaN(widthValue) || widthValue <= 0 || !style || style === "none") {
 			return undefined;
 		}
 		// An unknown style keyword draws as solid rather than not at all.
-		return BORDER_LINE_KEYWORDS.has(style as BorderLineStyle["style"])
-			? (style as BorderLineStyle["style"])
+		return LINE_KEYWORDS.has(style as LineStyle["style"])
+			? (style as LineStyle["style"])
 			: "solid";
 	};
 
@@ -7096,7 +7096,7 @@ export function resolveBorderSides(element: Element): BorderSides {
 		return radii.every((radius) => parseFloat(radius) > 0);
 	};
 
-	const of = (side: string): BorderLineStyle["style"] | undefined =>
+	const of = (side: string): LineStyle["style"] | undefined =>
 		sideOf(
 			computedStyle.computedValueOf(`border-${side}-width`) ||
 				computedStyle.computedValueOf("border-width"),
